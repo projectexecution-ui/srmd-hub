@@ -2976,7 +2976,7 @@ async function downloadShareImage() {
   // Chart image — paint a matching background behind it so the chart blends with the card
   y += 56;
   const chartImg = new Image();
-  chartImg.src = mainChartInstance.toBase64Image('image/png', 1);
+  chartImg.src = await captureChartHiRes(mainChartInstance) || mainChartInstance.toBase64Image('image/png', 1);
   await new Promise(res => { chartImg.onload = res; });
   const chartAreaX = CX + 30;
   const chartAreaW = CW - 60;
@@ -3778,33 +3778,88 @@ function pdfDateStr(ts) {
   if (!ts) return '';
   return new Date(ts).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
 }
+
+// Cache for the SRMD logo (loaded once and reused across pages)
+let __pdfLogoCache = null;
+async function getPdfLogoDataUrl() {
+  if (__pdfLogoCache) return __pdfLogoCache;
+  try {
+    const res = await fetch('/srmd-icon.png');
+    const blob = await res.blob();
+    __pdfLogoCache = await new Promise((resolve, reject) => {
+      const r = new FileReader();
+      r.onload = () => resolve(r.result);
+      r.onerror = reject;
+      r.readAsDataURL(blob);
+    });
+    return __pdfLogoCache;
+  } catch {
+    return null;
+  }
+}
+
+// Capture a Chart.js instance at high resolution by temporarily bumping
+// devicePixelRatio. Restores the original DPR after capture.
+async function captureChartHiRes(chartInstance) {
+  if (!chartInstance) return null;
+  const origDPR = chartInstance.options.devicePixelRatio;
+  try {
+    chartInstance.options.devicePixelRatio = 3;
+    chartInstance.resize();
+    // Wait two animation frames so Chart.js fully re-renders at the new DPR
+    await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+    return chartInstance.toBase64Image('image/png', 1.0);
+  } finally {
+    chartInstance.options.devicePixelRatio = origDPR;
+    chartInstance.resize();
+  }
+}
 function addPdfBrandHeader(pdf, title, subtitle) {
   const pageW = pdf.internal.pageSize.getWidth();
   // Top accent bar
   pdf.setFillColor(79, 70, 229);
   pdf.rect(0, 0, pageW, 4, 'F');
-  // SRMD logo square
-  pdf.setFillColor(79, 70, 229);
-  pdf.roundedRect(40, 22, 38, 38, 7, 7, 'F');
-  pdf.setTextColor(255, 255, 255);
-  pdf.setFont('helvetica', 'bold');
-  pdf.setFontSize(11);
-  pdf.text('SRMD', 59, 46, { align: 'center' });
+  // SRMD logo — real PNG if loaded, fallback to rounded square with text
+  if (__pdfLogoCache) {
+    try {
+      pdf.addImage(__pdfLogoCache, 'PNG', 40, 22, 40, 40, undefined, 'SLOW');
+    } catch {
+      pdf.setFillColor(79, 70, 229);
+      pdf.roundedRect(40, 22, 38, 38, 7, 7, 'F');
+      pdf.setTextColor(255, 255, 255);
+      pdf.setFont('helvetica', 'bold');
+      pdf.setFontSize(11);
+      pdf.text('SRMD', 59, 46, { align: 'center' });
+    }
+  } else {
+    pdf.setFillColor(79, 70, 229);
+    pdf.roundedRect(40, 22, 38, 38, 7, 7, 'F');
+    pdf.setTextColor(255, 255, 255);
+    pdf.setFont('helvetica', 'bold');
+    pdf.setFontSize(11);
+    pdf.text('SRMD', 59, 46, { align: 'center' });
+  }
   // Title
   pdf.setTextColor(15, 23, 42);
   pdf.setFont('helvetica', 'bold');
   pdf.setFontSize(18);
-  pdf.text(title, 90, 42);
+  pdf.text(title, 92, 42);
   // Subtitle
   pdf.setTextColor(100, 116, 139);
   pdf.setFont('helvetica', 'normal');
   pdf.setFontSize(9.5);
-  pdf.text(subtitle, 90, 56);
+  pdf.text(subtitle, 92, 56);
+  // Right side tag — SRMD Construction
+  pdf.setTextColor(148, 163, 184);
+  pdf.setFont('helvetica', 'normal');
+  pdf.setFontSize(8.5);
+  pdf.text('SRMD Construction · Dharampur', pageW - 40, 42, { align: 'right' });
+  pdf.text(new Date().toLocaleDateString('en-IN', { weekday: 'short', day: '2-digit', month: 'short', year: 'numeric' }), pageW - 40, 56, { align: 'right' });
   // Divider
   pdf.setDrawColor(226, 232, 240);
   pdf.setLineWidth(0.5);
   pdf.line(40, 74, pageW - 40, 74);
-  return 88;
+  return 92;
 }
 function addPdfFooter(pdf, pageNum, totalPages) {
   const pageW = pdf.internal.pageSize.getWidth();
@@ -3929,6 +3984,8 @@ async function exportViewAsPDF() {
   if (!window.jspdf || !window.jspdf.jsPDF) { toast('PDF library still loading — retry in a moment'); return; }
   toast('Preparing PDF…');
   try {
+    // Preload SRMD logo so the brand header can use the real image
+    await getPdfLogoDataUrl();
     const { jsPDF } = window.jspdf;
     const pdf = new jsPDF({ orientation: 'portrait', unit: 'pt', format: 'a4', compress: true });
     if (typeof pdf.autoTable !== 'function') {
@@ -3980,11 +4037,11 @@ async function buildDashboardPDF(pdf) {
     pdf.text('Project-wise Budget vs Spent', margin, y);
     y += 14;
     try {
-      const chartImg = portfolioChartInstance.toBase64Image('image/png', 1);
+      const chartImg = await captureChartHiRes(portfolioChartInstance);
       const chartW = pageW - margin * 2;
-      const chartH = 200;
-      pdf.addImage(chartImg, 'PNG', margin, y, chartW, chartH, undefined, 'FAST');
-      y += chartH + 14;
+      const chartH = 220;
+      if (chartImg) pdf.addImage(chartImg, 'PNG', margin, y, chartW, chartH, undefined, 'SLOW');
+      y += chartH + 18;
     } catch {}
   }
   // Project Summary table
@@ -4158,6 +4215,7 @@ async function exportProjectAsPDF() {
   if (!project || !project.data) { toast('Upload data first'); return; }
   toast('Preparing PDF…');
   try {
+    await getPdfLogoDataUrl();
     const { jsPDF } = window.jspdf;
     const pdf = new jsPDF({ orientation: 'portrait', unit: 'pt', format: 'a4', compress: true });
     if (typeof pdf.autoTable !== 'function') throw new Error('Table plugin not loaded');
@@ -4193,13 +4251,26 @@ async function buildProjectPDF(pdf, project) {
   pdf.rect(0, 0, pageW * 0.5, 6, 'F');
   pdf.setFillColor(...PDF_BRAND.primary);
   pdf.rect(pageW * 0.5, 0, pageW * 0.5, 6, 'F');
-  // SRMD logo block
-  pdf.setFillColor(...PDF_BRAND.primary);
-  pdf.roundedRect(margin, 36, 56, 56, 10, 10, 'F');
-  pdf.setTextColor(255, 255, 255);
-  pdf.setFont('helvetica', 'bold');
-  pdf.setFontSize(15);
-  pdf.text('SRMD', margin + 28, 70, { align: 'center' });
+  // SRMD logo block — use real PNG if loaded
+  if (__pdfLogoCache) {
+    try {
+      pdf.addImage(__pdfLogoCache, 'PNG', margin, 36, 56, 56, undefined, 'SLOW');
+    } catch {
+      pdf.setFillColor(...PDF_BRAND.primary);
+      pdf.roundedRect(margin, 36, 56, 56, 10, 10, 'F');
+      pdf.setTextColor(255, 255, 255);
+      pdf.setFont('helvetica', 'bold');
+      pdf.setFontSize(15);
+      pdf.text('SRMD', margin + 28, 70, { align: 'center' });
+    }
+  } else {
+    pdf.setFillColor(...PDF_BRAND.primary);
+    pdf.roundedRect(margin, 36, 56, 56, 10, 10, 'F');
+    pdf.setTextColor(255, 255, 255);
+    pdf.setFont('helvetica', 'bold');
+    pdf.setFontSize(15);
+    pdf.text('SRMD', margin + 28, 70, { align: 'center' });
+  }
   // Brand tagline beside logo
   pdf.setTextColor(...PDF_BRAND.ink3);
   pdf.setFont('helvetica', 'bold');
@@ -4670,7 +4741,7 @@ async function exportDashboardImage() {
     ctx.fillText('Project-wise Budget vs Spent', CX + 40, y);
     y += 28;
     const chartImg = new Image();
-    chartImg.src = portfolioChartInstance.toBase64Image('image/png', 1);
+    chartImg.src = await captureChartHiRes(portfolioChartInstance) || portfolioChartInstance.toBase64Image('image/png', 1);
     await new Promise(res => { chartImg.onload = res; });
     const chartW = CW - 80;
     const chartH = 360;
