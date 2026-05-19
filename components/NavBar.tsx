@@ -8,6 +8,7 @@ import type { Profile } from '@/lib/types'
 import {
   LayoutDashboard, ClipboardList, FileText, PackageCheck, Receipt,
   Truck, Building2, Settings, LogOut, Menu, X, Hammer, Users, Upload,
+  BarChart3,
 } from 'lucide-react'
 
 interface NavBarProps {
@@ -22,6 +23,7 @@ const ALL_LINKS = [
   { href: '/invoices',  label: 'Invoices',  icon: Receipt,         minRole: 'viewer' as const },
   { href: '/vendors',   label: 'Vendors',   icon: Truck,           minRole: 'viewer' as const },
   { href: '/projects',  label: 'Projects',  icon: Building2,       minRole: 'viewer' as const },
+  { href: '/budget',    label: 'Budget',    icon: BarChart3,       minRole: 'viewer' as const },
   { href: '/uploads',   label: 'Uploads',   icon: Upload,          minRole: 'uploader' as const },
   { href: '/admin/users',    label: 'Users',     icon: Users,    minRole: 'admin' as const },
   { href: '/admin/settings', label: 'Settings',  icon: Settings, minRole: 'admin' as const },

@@ -127,12 +127,11 @@ export const MODULES: ModuleTile[] = [
   {
     slug: 'budget-vs-actual',
     label: 'Budget vs Actual',
-    description: 'Coming soon',
+    description: 'Upload IN4 export → cost variance dashboard',
     href: '/budget',
     icon: BarChart3,
     tone: 'teal',
     minRole: 'viewer',
-    comingSoon: true,
   },
   {
     slug: 'admin-users',
