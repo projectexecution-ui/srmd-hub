@@ -35,6 +35,18 @@ function LoginContent() {
     }
   }
 
+  async function signInAnonymously() {
+    setLoading(true)
+    setError('')
+    const { error } = await supabase.auth.signInAnonymously()
+    if (error) {
+      setError(error.message)
+      setLoading(false)
+    } else {
+      router.push(redirect)
+    }
+  }
+
   return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 to-slate-100 p-4">
       <div className="w-full max-w-sm">
@@ -78,8 +90,25 @@ function LoginContent() {
             Continue with Google
           </Button>
 
+          <div className="flex items-center gap-3 my-4">
+            <div className="flex-1 h-px bg-gray-200" />
+            <span className="text-xs text-gray-400 uppercase tracking-wide">or</span>
+            <div className="flex-1 h-px bg-gray-200" />
+          </div>
+
+          <Button
+            onClick={signInAnonymously}
+            disabled={loading}
+            size="lg"
+            variant="secondary"
+            className="w-full"
+          >
+            {loading ? <Loader2 className="h-5 w-5 animate-spin" /> : null}
+            Quick sign-in (no Google)
+          </Button>
+
           <p className="text-xs text-gray-400 text-center mt-4">
-            Only approved users can access this app
+            Quick sign-in grants admin access (same as the legacy app). Google sign-in needs Supabase redirect URLs set up first.
           </p>
         </div>
       </div>

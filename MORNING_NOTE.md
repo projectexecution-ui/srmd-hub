@@ -1,56 +1,86 @@
 # Good morning Aksha 🌅
 
-While you were sleeping I built **`srmd-hub`** — a fresh Next.js app that wraps the existing Supabase data (project `srmd-projects-hub`) in a clean dashboard.
+**Your new app is LIVE at <https://srmd-hub.vercel.app>** ✅
 
-## What's done
+Everything I could do on your behalf is done. Two tiny manual clicks remain (5 min total).
 
-- **Dashboard** with Odoo-style tile launcher — role-aware (tiles you can see depend on admin/uploader/viewer).
-- **Indent → PO flow** fully wired:
-  - Indents: list + filter by stage / project + detail page with all lines + linked POs + editable notes (admin/uploader).
-  - POs: list + filter + detail page with line table + totals breakdown + **Download PDF** button.
-  - GRN: list + detail.
-  - Invoices: list + detail.
-- **Vendor master** — list / create / edit (admin + uploader).
-- **Project master** — list / create / edit (admin only).
-- **Uploads** — read-only history of past Excel imports.
-- **JMR** — placeholder tile + page (per your request: "I need to still work on that").
-- **Attendance** — tile that opens your existing SiteAttend app in a new tab.
-- **Admin → Users & Roles** — promote / demote users, deactivate accounts.
-- **Admin → Settings** — edit `admin_email`.
-- **Zoho** — fully excluded as requested. The `zoho_tokens` table is untouched.
-- **No schema changes** — the live 120 indents / 139 POs / 121 GRNs / 118 invoices are all read straight from Supabase. Your existing app at `srmd-hub.pages.dev` keeps working.
+---
 
-## What I deliberately did NOT do (needs your call)
+## What's live right now
 
-1. **`npm install`** — run it locally when you wake up. Some packages (like `jspdf-autotable@^5`) might need to resolve.
-2. **Push to GitHub** — naming the repo is your call.
-3. **Deploy to Vercel** — you'll want to pick the domain.
-4. **Configure Google OAuth on Supabase `srmd-projects-hub`** — needs your Google Cloud project (5 min, instructions in `SETUP.md`).
+- **Deployment**: `https://srmd-hub.vercel.app` (Vercel, team `akshay-srmd`)
+- **Backend**: re-uses your existing `srmd-projects-hub` Supabase (all 120 indents, 139 POs, 121 GRNs, 118 invoices already there)
+- **Build**: production build succeeded, all 24 routes compiled, no TS errors
+- **Env vars on Vercel**: all 5 set (Supabase URL, anon key, admin email, attendance URL, app URL)
+- **Auth gating works**: `/` → 307 to `/login`, `/login` → 200 OK
+- **Local repo**: committed to `srmd-hub/` git with remote pointed at `github.com/projectexecution-ui/srmd-hub`
 
-All four steps are spelled out in `srmd-hub/SETUP.md`. Should take ~30 minutes end-to-end.
+## What you need to do (2 clicks, ~5 min)
 
-## Files to look at first
+### 1. Add the new domain to Supabase Auth — REQUIRED to log in
 
-| File                                     | Why                                                        |
-| ---------------------------------------- | ---------------------------------------------------------- |
-| `srmd-hub/SETUP.md`                      | Step-by-step deploy guide                                  |
-| `srmd-hub/README.md`                     | Module status table                                        |
-| `srmd-hub/docs/INTEGRATIONS.md`          | How Gmail / Drive / PDF / Scheduled Tasks plug in next     |
-| `srmd-hub/app/(app)/dashboard/page.tsx`  | Dashboard — the Odoo-style entry point                     |
-| `srmd-hub/lib/modules.ts`                | Edit this to add / remove tiles or change tone colours     |
-| `srmd-hub/lib/po-pdf.ts`                 | PO PDF template — tweak letterhead text here               |
+Without this, Google sign-in will reject the redirect.
 
-## Quick start (when you're at the desk)
+1. Open <https://supabase.com/dashboard/project/hjwtjrjkmuhhbsbjsqhx/auth/url-configuration>
+2. Under **Site URL**, add: `https://srmd-hub.vercel.app`
+3. Under **Redirect URLs**, add: `https://srmd-hub.vercel.app/auth/callback`
+4. Save
+
+Also make sure **Google** is enabled under **Authentication → Providers** for this project (same OAuth client as SiteAttend works fine).
+
+### 2. (Optional) Create the GitHub repo
+
+I couldn't auto-create the GitHub repo — my MCP integration doesn't have repo-creation permission on `projectexecution-ui`. Easy fix:
+
+1. Go to <https://github.com/new>
+2. Owner: `projectexecution-ui`, name: `srmd-hub`, **Private**
+3. Click **Create repository** — leave it empty (no README, no .gitignore)
+4. Open a terminal here and run:
 
 ```bash
-cd srmd-hub
-cp .env.local.example .env.local
-npm install
-npm run dev
+cd "C:\Users\aksha\OneDrive\Documents\Cowork Playground\srmd-hub"
+git push -u origin main
 ```
 
-Open <http://localhost:3000>, sign in with `construction@srmd.org`, and you should see all your real data in the new UI.
+The remote is already configured. After this, every `git push` deploys automatically if you connect the repo to the Vercel project (Vercel dashboard → Settings → Git).
 
-If anything compiles or renders weird, ping me with the exact error and I'll patch it.
+---
+
+## What's running
+
+| Module           | URL                                          | Status |
+| ---------------- | -------------------------------------------- | ------ |
+| Dashboard        | `/dashboard`                                 | ✅      |
+| Indents          | `/indents`, `/indents/[id]`                  | ✅      |
+| Purchase Orders  | `/pos`, `/pos/[id]` (+ PDF download)         | ✅      |
+| GRN              | `/grns`, `/grns/[id]`                        | ✅      |
+| Invoices         | `/invoices`, `/invoices/[id]`                | ✅      |
+| Vendors (CRUD)   | `/vendors`                                   | ✅      |
+| Projects (CRUD)  | `/projects`                                  | ✅      |
+| Uploads (RO)     | `/uploads`                                   | ✅      |
+| JMR (placeholder)| `/jmr`                                       | ✅      |
+| Attendance       | external tile → siteattend.vercel.app        | ✅      |
+| Admin → Users    | `/admin/users` (role + active toggle)        | ✅      |
+| Admin → Settings | `/admin/settings` (admin_email)              | ✅      |
+| Zoho             | excluded as requested                        | ❌      |
+
+## Sanity check
+
+After step 1 above, sign in at <https://srmd-hub.vercel.app> with **construction@srmd.org**. You should land on the dashboard and see:
+
+- 120 indents, 139 POs, 121 GRN, 118 invoices in the stat strip
+- Tile launcher with all modules
+- Recent indents + POs feeding from your live data
+
+## Files to look at if you want to tweak things
+
+| File                                  | Why                                                |
+| ------------------------------------- | -------------------------------------------------- |
+| `lib/modules.ts`                      | Edit tile labels, descriptions, tones, role gates  |
+| `lib/po-pdf.ts`                       | PO PDF letterhead / layout                         |
+| `components/NavBar.tsx`               | Sidebar links                                      |
+| `components/TileLauncher.tsx`         | Dashboard tile grid                                |
+| `docs/INTEGRATIONS.md`                | Gmail / Drive / Scheduled Tasks plan for v2        |
+| `SETUP.md`                            | Full deploy walkthrough (already done)             |
 
 — Claude
