@@ -5065,27 +5065,66 @@ _themeReady = true;
      COLLAPSIBLE SIDEBAR (additive — no existing markup changed)
      ========================================================= -->
 <style>
-  .sidebar { transition: width 0.18s ease-in-out; position: relative; }
-  body.sb-collapsed .sidebar { width: 62px !important; min-width: 62px !important; }
-  body.sb-collapsed .sidebar .sb-brand > div:last-child,
-  body.sb-collapsed .sidebar .sb-section-label,
-  body.sb-collapsed .sidebar .sb-badge,
-  body.sb-collapsed .sidebar .sb-active-project,
-  body.sb-collapsed .sidebar .sb-profile > div:last-child,
-  body.sb-collapsed .sidebar .theme-toggle button > span,
-  body.sb-collapsed .sidebar .sb-item > span:not(.sb-badge),
-  body.sb-collapsed .sidebar #themeToggle { display: none !important; }
+  .sidebar { transition: width 0.2s ease, padding 0.2s ease; position: relative; }
+
+  /* ===== Collapsed state ===== */
+  body.sb-collapsed .sidebar {
+    width: 64px !important;
+    min-width: 64px !important;
+    padding-left: 8px !important;
+    padding-right: 8px !important;
+  }
+
+  /* Hide everything that isn't the icon. Using font-size:0 because the
+     button labels are raw text nodes (no wrapping span) — display:none
+     doesn't work on text nodes. */
   body.sb-collapsed .sidebar .sb-item {
+    font-size: 0 !important;
+    line-height: 0 !important;
+    justify-content: center !important;
+    padding: 10px 0 !important;
+    gap: 0 !important;
+  }
+  body.sb-collapsed .sidebar .sb-item svg {
+    flex-shrink: 0;
+  }
+  /* Hide badges + any inner spans (e.g. theme toggle button labels) */
+  body.sb-collapsed .sidebar .sb-item .sb-badge,
+  body.sb-collapsed .sidebar .sb-item > span,
+  body.sb-collapsed .sidebar .sb-item > div { display: none !important; }
+
+  /* Hide section labels, brand text, profile text, active project block,
+     theme toggle row entirely */
+  body.sb-collapsed .sidebar .sb-section-label,
+  body.sb-collapsed .sidebar .sb-brand > div:last-child,
+  body.sb-collapsed .sidebar #sbActiveProjectWrap,
+  body.sb-collapsed .sidebar #themeToggle,
+  body.sb-collapsed .sidebar .sb-profile > div:not(.sb-profile-avatar) {
+    display: none !important;
+  }
+
+  /* Center brand + profile blocks */
+  body.sb-collapsed .sidebar .sb-brand {
     justify-content: center !important;
     padding-left: 0 !important;
     padding-right: 0 !important;
+    gap: 0 !important;
   }
-  body.sb-collapsed .sidebar .sb-item > *:not(svg) { display: none !important; }
-  body.sb-collapsed .sidebar .sb-brand { justify-content: center; padding-left: 0; padding-right: 0; }
-  body.sb-collapsed .sidebar .sb-profile { justify-content: center; padding-left: 0; padding-right: 0; }
+  body.sb-collapsed .sidebar .sb-profile {
+    justify-content: center !important;
+    padding-left: 0 !important;
+    padding-right: 0 !important;
+    gap: 0 !important;
+  }
+  body.sb-collapsed .sidebar .sb-bottom {
+    padding-left: 0 !important;
+    padding-right: 0 !important;
+  }
+
+  /* Toggle button (chevron) */
   #sbCollapseToggle {
     position: absolute;
-    top: 14px;
+    top: 18px;
     right: -12px;
     width: 24px;
     height: 24px;
@@ -5099,10 +5138,21 @@ _themeReady = true;
     cursor: pointer;
     z-index: 50;
     box-shadow: 0 1px 2px rgba(0,0,0,0.06);
-    transition: transform 0.18s;
+    transition: transform 0.2s;
+    font-size: 14px;
+    line-height: 1;
   }
-  #sbCollapseToggle:hover { color: var(--accent, #4f46e5); border-color: var(--accent, #4f46e5); }
-  body.sb-collapsed #sbCollapseToggle { transform: rotate(180deg); }
+  #sbCollapseToggle:hover {
+    color: var(--accent, #4f46e5);
+    border-color: var(--accent, #4f46e5);
+  }
+  body.sb-collapsed #sbCollapseToggle {
+    transform: rotate(180deg);
+  }
+
+  /* Reset font-size on the toggle itself so its SVG renders even if
+     it's inside the sidebar somehow. */
+  #sbCollapseToggle svg { font-size: initial !important; }
 </style>
 <script>
 (function(){
