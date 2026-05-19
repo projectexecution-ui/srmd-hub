@@ -1,0 +1,785 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>SRMD Indent → PO Tracker (Offline Backup)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg: #fff7ed;
+    --card: #ffffff;
+    --ink: #0f172a;
+    --ink-2: #475569;
+    --ink-3: #94a3b8;
+    --border: #e2e8f0;
+    --saffron: #C2410C;
+    --maroon: #7F1D1D;
+    --cream: #FFF7ED;
+    --pending: #dc2626;
+    --progress: #f59e0b;
+    --complete: #16a34a;
+    --info: #2563eb;
+    --shadow: 0 1px 3px rgba(15,23,42,0.06), 0 8px 24px rgba(15,23,42,0.06);
+  }
+  body {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    background: var(--bg);
+    color: var(--ink);
+    min-height: 100vh;
+    padding: 24px 16px 60px;
+    -webkit-font-smoothing: antialiased;
+  }
+  .container { max-width: 1400px; margin: 0 auto; }
+  .header {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 20px; flex-wrap: wrap; gap: 14px;
+  }
+  .brand { display: flex; align-items: center; gap: 12px; }
+  .brand-mark {
+    width: 42px; height: 42px; border-radius: 10px;
+    background: linear-gradient(135deg, var(--saffron), var(--maroon));
+    display: flex; align-items: center; justify-content: center;
+    color: white; font-weight: 800; font-size: 14px;
+    box-shadow: 0 4px 12px rgba(194,65,12,0.3);
+  }
+  h1 { font-size: 22px; font-weight: 700; letter-spacing: -0.02em; color: var(--maroon); }
+  .subtitle { color: var(--ink-2); font-size: 12px; margin-top: 2px; }
+  .meta { font-size: 11px; color: var(--ink-3); text-align: right; }
+  .meta b { color: var(--ink); font-weight: 600; }
+
+  .upload-card {
+    background: var(--card); border-radius: 14px; padding: 32px;
+    border: 2px dashed var(--border); text-align: center;
+    transition: all 0.2s; cursor: pointer; margin-bottom: 20px;
+  }
+  .upload-card:hover, .upload-card.dragging {
+    border-color: var(--saffron); background: #fff8f0;
+  }
+  .upload-icon {
+    width: 52px; height: 52px; margin: 0 auto 10px;
+    border-radius: 12px;
+    background: linear-gradient(135deg, var(--saffron), var(--maroon));
+    display: flex; align-items: center; justify-content: center;
+    color: white; font-size: 20px;
+  }
+  .upload-card h2 { font-size: 15px; font-weight: 600; margin-bottom: 4px; }
+  .upload-card p { color: var(--ink-2); font-size: 12px; }
+  #fileInput { display: none; }
+  .upload-status { margin-top: 10px; font-size: 12px; color: var(--ink-2); }
+  .upload-status.err { color: var(--pending); font-weight: 500; }
+
+  .kpi-grid {
+    display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px;
+    margin-bottom: 16px;
+  }
+  @media (max-width: 900px) { .kpi-grid { grid-template-columns: repeat(2, 1fr); } }
+  .kpi {
+    background: var(--card); border-radius: 12px; padding: 16px;
+    box-shadow: var(--shadow); position: relative; overflow: hidden;
+  }
+  .kpi::before {
+    content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 4px;
+    background: var(--saffron);
+  }
+  .kpi.warn::before { background: var(--progress); }
+  .kpi.info::before { background: var(--info); }
+  .kpi-label { font-size: 10px; font-weight: 600; color: var(--ink-3); text-transform: uppercase; letter-spacing: 0.08em; }
+  .kpi-value { font-size: 24px; font-weight: 700; margin-top: 6px; letter-spacing: -0.02em; color: var(--maroon); }
+  .kpi.warn .kpi-value { color: var(--progress); }
+  .kpi.info .kpi-value { color: var(--info); }
+  .kpi-sub { font-size: 11px; color: var(--ink-2); margin-top: 4px; }
+
+  .action-strip {
+    display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px;
+    margin-bottom: 16px;
+  }
+  @media (max-width: 900px) { .action-strip { grid-template-columns: 1fr; } }
+  .action {
+    background: var(--card); border-radius: 12px; padding: 14px;
+    box-shadow: var(--shadow); border-left: 3px solid var(--pending);
+  }
+  .action.amber { border-left-color: var(--progress); }
+  .action.blue { border-left-color: var(--info); }
+  .action-title { font-size: 10px; color: var(--ink-3); font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 4px; display: flex; align-items: center; gap: 6px; }
+  .action-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--pending); }
+  .action.amber .action-dot { background: var(--progress); }
+  .action.blue .action-dot { background: var(--info); }
+  .action-primary { font-weight: 700; color: var(--ink); font-size: 14px; margin-bottom: 2px; word-break: break-all; }
+  .action-sub { color: var(--ink-2); font-size: 11px; }
+
+  .tabs {
+    display: flex; gap: 4px; border-bottom: 1px solid var(--border);
+    margin-bottom: 16px; overflow-x: auto; white-space: nowrap;
+  }
+  .tab {
+    padding: 9px 14px; font-size: 13px; font-weight: 500;
+    color: var(--ink-2); cursor: pointer; border-bottom: 2px solid transparent;
+    transition: all 0.15s;
+  }
+  .tab:hover { color: var(--ink); }
+  .tab.active { color: var(--saffron); border-bottom-color: var(--saffron); font-weight: 600; }
+  .tab .count { color: var(--ink-3); font-size: 11px; margin-left: 4px; font-weight: 500; }
+
+  .filters {
+    display: flex; gap: 8px; align-items: center; margin-bottom: 14px;
+    flex-wrap: wrap;
+  }
+  .filter-label { font-size: 10px; color: var(--ink-3); font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; margin-right: 4px; }
+  .chip {
+    padding: 5px 11px; border-radius: 999px; font-size: 12px;
+    background: var(--card); color: var(--ink); cursor: pointer;
+    border: 1px solid var(--border); font-weight: 500; transition: all 0.15s;
+  }
+  .chip:hover { border-color: var(--saffron); }
+  .chip.active { background: var(--saffron); color: white; border-color: var(--saffron); }
+  .search {
+    flex: 1; max-width: 300px; padding: 7px 12px;
+    border: 1px solid var(--border); border-radius: 8px;
+    font-size: 13px; font-family: inherit; background: white;
+  }
+  .search:focus { outline: none; border-color: var(--saffron); }
+  .export-btn {
+    margin-left: auto; padding: 7px 14px; border-radius: 8px;
+    background: var(--ink); color: white; border: none; cursor: pointer;
+    font-size: 12px; font-weight: 500;
+  }
+  .export-btn:hover { background: #1e293b; }
+
+  .table-card {
+    background: var(--card); border-radius: 12px; padding: 0;
+    box-shadow: var(--shadow); overflow: hidden;
+  }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { padding: 9px 12px; text-align: left; border-bottom: 1px solid var(--border); }
+  th {
+    background: #f8fafc; font-weight: 600; font-size: 11px;
+    color: var(--ink-3); text-transform: uppercase; letter-spacing: 0.04em;
+    cursor: pointer; user-select: none;
+  }
+  th:hover { color: var(--ink); }
+  td.num { text-align: right; font-variant-numeric: tabular-nums; }
+  th.num { text-align: right; }
+  tbody tr:hover { background: #fafbfc; }
+  tbody tr.changed { background: #ecfdf5; }
+  tbody tr.changed:hover { background: #d1fae5; }
+  .pill {
+    display: inline-flex; align-items: center; gap: 4px;
+    padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 500;
+  }
+  .pill-dot { width: 6px; height: 6px; border-radius: 50%; }
+  .pill.pending { background: #fee2e2; color: #991b1b; }
+  .pill.pending .pill-dot { background: var(--pending); }
+  .pill.progress { background: #fef3c7; color: #92400e; }
+  .pill.progress .pill-dot { background: var(--progress); }
+  .pill.complete { background: #d1fae5; color: #065f46; }
+  .pill.complete .pill-dot { background: var(--complete); }
+  .age-red { color: #991b1b; font-weight: 600; }
+  .age-amber { color: #92400e; }
+
+  .vendor-card {
+    background: var(--card); border-radius: 12px; padding: 0;
+    box-shadow: var(--shadow); overflow: hidden; margin-top: 20px;
+  }
+  .vendor-card h3 {
+    padding: 12px 16px 0; font-size: 12px; color: var(--ink-3);
+    text-transform: uppercase; letter-spacing: 0.06em; font-weight: 600;
+  }
+
+  .hidden { display: none !important; }
+  .empty {
+    padding: 40px 20px; text-align: center; color: var(--ink-2); font-size: 13px;
+  }
+  .empty b { color: var(--ink); }
+
+  .funnel-band {
+    background: var(--card); border-radius: 10px; padding: 10px 16px;
+    box-shadow: var(--shadow); display: flex; gap: 24px; flex-wrap: wrap;
+    margin-bottom: 16px; font-size: 12px;
+  }
+  .funnel-item { display: flex; align-items: center; gap: 6px; color: var(--ink-2); }
+  .funnel-item b { color: var(--ink); font-weight: 700; font-variant-numeric: tabular-nums; }
+
+  .footer-note {
+    margin-top: 24px; text-align: center; font-size: 11px; color: var(--ink-3);
+  }
+
+  details summary { cursor: pointer; }
+  .badge-changed {
+    display: inline-flex; align-items: center; gap: 3px;
+    padding: 1px 6px; border-radius: 3px; font-size: 9px; font-weight: 700;
+    background: #d1fae5; color: #065f46; text-transform: uppercase;
+    letter-spacing: 0.04em; margin-left: 6px;
+  }
+</style>
+</head>
+<body>
+<div class="container">
+
+  <!-- Header -->
+  <div class="header">
+    <div class="brand">
+      <div class="brand-mark">SRMD</div>
+      <div>
+        <h1>Indent → PO Tracker</h1>
+        <div class="subtitle">Offline backup · drop your SRMD Purchase Order Report Excel</div>
+      </div>
+    </div>
+    <div class="meta" id="meta">
+      <div>No file loaded</div>
+    </div>
+  </div>
+
+  <!-- Upload -->
+  <div class="upload-card" id="upload" tabindex="0">
+    <div class="upload-icon">⬆</div>
+    <h2>Drop your Excel here</h2>
+    <p>SRMD PUR_PurchaseOrderReport_*.xlsx · max 20 MB · everything stays in your browser</p>
+    <div class="upload-status" id="uploadStatus"></div>
+    <input type="file" id="fileInput" accept=".xlsx,.xlsm,.xls" />
+  </div>
+
+  <!-- Dashboard -->
+  <div id="dashboard" class="hidden">
+
+    <!-- Action items -->
+    <div class="action-strip" id="actionStrip"></div>
+
+    <!-- KPIs -->
+    <div class="kpi-grid" id="kpis"></div>
+
+    <!-- Funnel -->
+    <div class="funnel-band" id="funnel"></div>
+
+    <!-- Project tabs -->
+    <div class="tabs" id="projectTabs"></div>
+
+    <!-- Status filter + search -->
+    <div class="filters">
+      <span class="filter-label">Status</span>
+      <div class="chip active" data-status="">All</div>
+      <div class="chip" data-status="pending_po">Pending PO</div>
+      <div class="chip" data-status="in_progress">In Progress</div>
+      <div class="chip" data-status="complete">Complete</div>
+      <input type="text" class="search" id="searchBox" placeholder="Search indent #, PO #, vendor..." />
+      <button class="export-btn" id="exportBtn">Export CSV</button>
+    </div>
+
+    <!-- Main table -->
+    <div class="table-card">
+      <table id="indentTable">
+        <thead>
+          <tr>
+            <th data-sort="indent_no">Indent No.</th>
+            <th data-sort="indent_date">Date</th>
+            <th class="num" data-sort="age_days">Age</th>
+            <th data-sort="project">Project</th>
+            <th class="num" data-sort="material_count">Items</th>
+            <th data-sort="status">Status</th>
+            <th>Funnel</th>
+            <th data-sort="vendor">Vendor</th>
+            <th class="num" data-sort="po_value">PO Value</th>
+          </tr>
+        </thead>
+        <tbody id="indentTbody"></tbody>
+      </table>
+    </div>
+
+    <!-- Top vendors -->
+    <div class="vendor-card" id="vendorCard"></div>
+  </div>
+
+  <div class="footer-note">
+    Offline HTML backup of <b>srmd-projects-hub</b>. Mirrors the live dashboard logic — Indent → PO → GRN → Invoice funnel computed entirely in your browser.
+  </div>
+</div>
+
+<script>
+// ============================================================
+// State
+// ============================================================
+let RAW_ROWS = [];     // ParsedRow[]
+let INDENTS = [];      // computed summary rows
+let CHANGED_INDENT_NOS = new Set(); // from upload diff (unused offline; placeholder)
+let ACTIVE_PROJECT = "";
+let ACTIVE_STATUS = "";
+let SEARCH = "";
+let SORT_COL = "indent_date";
+let SORT_DESC = true;
+
+// ============================================================
+// Helpers
+// ============================================================
+function parseINR(v) {
+  if (v == null || v === "") return 0;
+  if (typeof v === "number") return isFinite(v) ? v : 0;
+  const s = String(v).trim().replace(/,/g, "");
+  if (s === "" || s === "-") return 0;
+  const n = Number(s);
+  return isFinite(n) ? n : 0;
+}
+function parseDate(v) {
+  if (v == null || v === "") return null;
+  if (v instanceof Date && !isNaN(v.getTime())) return v.toISOString().slice(0, 10);
+  if (typeof v === "number") {
+    const ms = Math.round((v - 25569) * 86400 * 1000);
+    const d = new Date(ms);
+    return isNaN(d.getTime()) ? null : d.toISOString().slice(0, 10);
+  }
+  const d = new Date(String(v).trim());
+  return isNaN(d.getTime()) ? null : d.toISOString().slice(0, 10);
+}
+function cellText(v) {
+  if (v == null) return null;
+  const s = String(v).trim();
+  return s === "" ? null : s;
+}
+function formatINR(n) {
+  if (!isFinite(n) || n === 0) return "₹ 0";
+  const abs = Math.abs(n);
+  if (abs >= 1_00_00_000) return `₹ ${(n / 1_00_00_000).toFixed(2)} Cr`;
+  if (abs >= 1_00_000) return `₹ ${(n / 1_00_000).toFixed(2)} L`;
+  if (abs >= 1_000) return `₹ ${(n / 1_000).toFixed(1)} K`;
+  return `₹ ${n.toFixed(0)}`;
+}
+function daysSince(date) {
+  if (!date) return null;
+  const d = new Date(date);
+  if (isNaN(d.getTime())) return null;
+  return Math.floor((Date.now() - d.getTime()) / 86400000);
+}
+function getCell(sheet, col, row) {
+  const c = sheet[`${col}${row}`];
+  return c ? c.v : null;
+}
+
+// ============================================================
+// Parse SRMD Purchase Order Report Excel
+// ============================================================
+function parseSrmdPoReport(buffer) {
+  const wb = XLSX.read(buffer, { type: "array", cellDates: true });
+  const sheet = wb.Sheets[wb.SheetNames[0]];
+  if (!sheet) throw new Error("Empty workbook");
+
+  // Validate header band on row 8
+  const a8 = String(getCell(sheet, "A", 8) || "").toLowerCase();
+  const c8 = String(getCell(sheet, "C", 8) || "").toLowerCase();
+  if (!a8.startsWith("sr.") || !c8.includes("project")) {
+    throw new Error("Not a SRMD Purchase Order Report — header row 8 doesn't match expected layout");
+  }
+
+  const range = XLSX.utils.decode_range(sheet["!ref"] || "A1:AM1");
+  const rows = [];
+  let totalScanned = 0;
+  for (let R = 11; R <= range.e.r + 1; R++) {
+    const srRaw = getCell(sheet, "A", R);
+    if (srRaw == null || srRaw === "") continue;
+    const sr = Number(srRaw);
+    if (!isFinite(sr) || sr <= 0) continue;
+    totalScanned++;
+
+    const indent_no = cellText(getCell(sheet, "J", R));
+    const indent_date = parseDate(getCell(sheet, "I", R));
+    const material_name = cellText(getCell(sheet, "G", R));
+    if (!indent_no || !indent_date || !material_name) continue;
+
+    rows.push({
+      sr_no: sr,
+      project: cellText(getCell(sheet, "C", R)),
+      sub_project: cellText(getCell(sheet, "D", R)),
+      material_name,
+      indent_desc: cellText(getCell(sheet, "H", R)),
+      indent_date,
+      indent_no,
+      indent_qty: parseINR(getCell(sheet, "K", R)),
+      area_of_application: cellText(getCell(sheet, "M", R)),
+      vendor: cellText(getCell(sheet, "N", R)),
+      po_date: parseDate(getCell(sheet, "O", R)),
+      po_no: cellText(getCell(sheet, "P", R)),
+      po_qty: parseINR(getCell(sheet, "Q", R)),
+      po_rate: parseINR(getCell(sheet, "R", R)),
+      po_amount: parseINR(getCell(sheet, "W", R)),
+      received_qty: parseINR(getCell(sheet, "Y", R)),
+      net_received_qty: parseINR(getCell(sheet, "AA", R)),
+      invoice_no: cellText(getCell(sheet, "AE", R)),
+      invoice_qty: parseINR(getCell(sheet, "AF", R)),
+      invoice_amount: parseINR(getCell(sheet, "AL", R)),
+      certificate_id: cellText(getCell(sheet, "AD", R)),
+    });
+  }
+  return { rows, total: totalScanned };
+}
+
+// ============================================================
+// Roll up rows → per-indent summary
+// ============================================================
+function summarise(rows) {
+  // Group by indent_no
+  const byIndent = new Map();
+  for (const r of rows) {
+    if (!byIndent.has(r.indent_no)) {
+      byIndent.set(r.indent_no, {
+        indent_no: r.indent_no,
+        indent_date: r.indent_date,
+        project: r.project || "—",
+        vendors: new Set(),
+        po_nos: new Set(),
+        // per (po_no, material) dedup for line-level state
+        lines: new Map(), // key = material_name
+      });
+    }
+    const I = byIndent.get(r.indent_no);
+    if (r.vendor) I.vendors.add(r.vendor);
+    if (r.po_no) I.po_nos.add(r.po_no);
+
+    // Aggregate per material: last value wins for po_qty/po_amount; sum received/invoiced (multiple GRN per line)
+    if (!I.lines.has(r.material_name)) {
+      I.lines.set(r.material_name, {
+        material_name: r.material_name,
+        po_qty: 0,
+        po_amount: 0,
+        received_qty: 0,
+        invoice_qty: 0,
+        has_po: false,
+      });
+    }
+    const L = I.lines.get(r.material_name);
+    if (r.po_no) {
+      L.has_po = true;
+      L.po_qty = Math.max(L.po_qty, r.po_qty);   // accept latest
+      L.po_amount = Math.max(L.po_amount, r.po_amount); // (cumulative excel always has latest at top)
+    }
+    L.received_qty += r.net_received_qty || r.received_qty || 0;
+    L.invoice_qty += r.invoice_qty || 0;
+  }
+
+  // Unique PO amounts per indent (avoid double counting same PO across lines)
+  const summaries = [];
+  for (const I of byIndent.values()) {
+    let lines_with_po = 0;
+    let lines_received = 0;
+    let lines_invoiced = 0;
+    let pending_grn_value = 0;
+    let pending_invoice_value = 0;
+    for (const L of I.lines.values()) {
+      if (L.has_po) lines_with_po++;
+      if (L.po_qty > 0 && L.received_qty >= L.po_qty) lines_received++;
+      if (L.po_qty > 0 && L.invoice_qty >= L.po_qty) lines_invoiced++;
+      if (L.po_qty > 0 && L.received_qty < L.po_qty) {
+        pending_grn_value += L.po_amount * (1 - L.received_qty / L.po_qty);
+      }
+      if (L.po_qty > 0 && L.invoice_qty < L.received_qty) {
+        pending_invoice_value += L.po_amount * ((L.received_qty - L.invoice_qty) / L.po_qty);
+      }
+    }
+    const total_lines = I.lines.size;
+    let status = "in_progress";
+    if (total_lines === 0 || lines_with_po === 0) status = "pending_po";
+    else if (lines_invoiced === total_lines) status = "complete";
+
+    // Sum unique PO totals across rows (already handled — po_amount per-material)
+    const po_value = Array.from(I.lines.values()).reduce((s, L) => s + L.po_amount, 0);
+
+    summaries.push({
+      indent_no: I.indent_no,
+      indent_date: I.indent_date,
+      project: I.project,
+      material_count: total_lines,
+      lines_with_po,
+      lines_received,
+      lines_invoiced,
+      status,
+      vendors: Array.from(I.vendors),
+      po_nos: Array.from(I.po_nos),
+      po_value,
+      pending_grn_value,
+      pending_invoice_value,
+      age_days: daysSince(I.indent_date),
+    });
+  }
+  return summaries;
+}
+
+// ============================================================
+// Render
+// ============================================================
+function render() {
+  const filtered = INDENTS.filter((r) => {
+    if (ACTIVE_PROJECT && r.project !== ACTIVE_PROJECT) return false;
+    if (ACTIVE_STATUS && r.status !== ACTIVE_STATUS) return false;
+    if (SEARCH) {
+      const hay = `${r.indent_no} ${r.project} ${r.po_nos.join(" ")} ${r.vendors.join(" ")}`.toLowerCase();
+      if (!hay.includes(SEARCH)) return false;
+    }
+    return true;
+  });
+
+  // Sort
+  filtered.sort((a, b) => {
+    let x = a[SORT_COL], y = b[SORT_COL];
+    if (SORT_COL === "vendor") { x = a.vendors[0] || ""; y = b.vendors[0] || ""; }
+    if (SORT_COL === "indent_no") { x = a.indent_no; y = b.indent_no; }
+    if (x == null) x = "";
+    if (y == null) y = "";
+    if (x < y) return SORT_DESC ? 1 : -1;
+    if (x > y) return SORT_DESC ? -1 : 1;
+    return 0;
+  });
+
+  renderKpis();
+  renderActionStrip();
+  renderFunnel();
+  renderTabs();
+  renderTable(filtered);
+  renderVendors();
+}
+
+function renderKpis() {
+  const total = INDENTS.length;
+  const pending = INDENTS.filter(r => r.status === "pending_po").length;
+  const inProgress = INDENTS.filter(r => r.status === "in_progress").length;
+  // Unique POs
+  const uniquePos = new Map();
+  for (const r of INDENTS) {
+    for (const p of r.po_nos) uniquePos.set(p, (uniquePos.get(p) || 0));
+  }
+  // Sum PO value via unique po_nos: need raw amounts. We'll use sum of per-indent po_value but that double-counts shared POs.
+  // For accuracy: walk RAW_ROWS, dedupe by po_no
+  const poTotals = new Map();
+  for (const r of RAW_ROWS) {
+    if (r.po_no) {
+      // Each row carries the line po_amount. Sum per po_no.
+      poTotals.set(r.po_no, (poTotals.get(r.po_no) || 0) + r.po_amount);
+    }
+  }
+  const totalPoValue = Array.from(poTotals.values()).reduce((s, v) => s + v, 0);
+  const pendingGrn = INDENTS.reduce((s, r) => s + r.pending_grn_value, 0);
+  const pendingInv = INDENTS.reduce((s, r) => s + r.pending_invoice_value, 0);
+
+  document.getElementById("kpis").innerHTML = `
+    <div class="kpi"><div class="kpi-label">Approved Indents</div><div class="kpi-value">${total}</div><div class="kpi-sub">${pending} pending PO</div></div>
+    <div class="kpi"><div class="kpi-label">Total PO Value</div><div class="kpi-value">${formatINR(totalPoValue)}</div><div class="kpi-sub">${inProgress} in progress</div></div>
+    <div class="kpi warn"><div class="kpi-label">Pending GRN</div><div class="kpi-value">${formatINR(pendingGrn)}</div><div class="kpi-sub">ordered, not received</div></div>
+    <div class="kpi info"><div class="kpi-label">Pending Invoice</div><div class="kpi-value">${formatINR(pendingInv)}</div><div class="kpi-sub">received, not invoiced</div></div>
+  `;
+}
+
+function renderActionStrip() {
+  const oldestPending = INDENTS
+    .filter(r => r.status === "pending_po" && (r.age_days || 0) >= 7)
+    .sort((a, b) => (b.age_days || 0) - (a.age_days || 0))[0];
+  const biggestGrn = INDENTS
+    .filter(r => r.pending_grn_value > 0)
+    .sort((a, b) => b.pending_grn_value - a.pending_grn_value)[0];
+  const biggestInv = INDENTS
+    .filter(r => r.pending_invoice_value > 0)
+    .sort((a, b) => b.pending_invoice_value - a.pending_invoice_value)[0];
+
+  let html = "";
+  if (oldestPending) html += `<div class="action"><div class="action-title"><span class="action-dot"></span>Oldest Pending PO</div><div class="action-primary">${oldestPending.indent_no}</div><div class="action-sub">${oldestPending.age_days}d old · ${oldestPending.project} · ${oldestPending.material_count} items</div></div>`;
+  if (biggestGrn) html += `<div class="action amber"><div class="action-title"><span class="action-dot"></span>Biggest Pending GRN</div><div class="action-primary">${formatINR(biggestGrn.pending_grn_value)}</div><div class="action-sub">${biggestGrn.indent_no} · ${biggestGrn.vendors[0] || "—"}</div></div>`;
+  if (biggestInv) html += `<div class="action blue"><div class="action-title"><span class="action-dot"></span>Biggest Pending Invoice</div><div class="action-primary">${formatINR(biggestInv.pending_invoice_value)}</div><div class="action-sub">${biggestInv.indent_no} · ${biggestInv.vendors[0] || "—"}</div></div>`;
+  document.getElementById("actionStrip").innerHTML = html;
+}
+
+function renderFunnel() {
+  const total = INDENTS.length;
+  const pending = INDENTS.filter(r => r.status === "pending_po").length;
+  const inProgress = INDENTS.filter(r => r.status === "in_progress").length;
+  const complete = INDENTS.filter(r => r.status === "complete").length;
+  document.getElementById("funnel").innerHTML = `
+    <div class="funnel-item"><span style="color:var(--pending)">●</span> Pending PO <b>${pending}</b></div>
+    <div class="funnel-item"><span style="color:var(--progress)">●</span> In Progress <b>${inProgress}</b></div>
+    <div class="funnel-item"><span style="color:var(--complete)">●</span> Complete <b>${complete}</b></div>
+    <div class="funnel-item" style="margin-left:auto">${total} total</div>
+  `;
+}
+
+function renderTabs() {
+  const byProject = new Map();
+  for (const r of INDENTS) {
+    byProject.set(r.project, (byProject.get(r.project) || 0) + 1);
+  }
+  const projects = Array.from(byProject.entries()).sort((a, b) => b[1] - a[1]);
+  let html = `<div class="tab ${ACTIVE_PROJECT === "" ? "active" : ""}" data-project="">Master Dashboard <span class="count">(${INDENTS.length})</span></div>`;
+  for (const [name, count] of projects) {
+    html += `<div class="tab ${ACTIVE_PROJECT === name ? "active" : ""}" data-project="${escapeHtml(name)}">${escapeHtml(name)} <span class="count">(${count})</span></div>`;
+  }
+  document.getElementById("projectTabs").innerHTML = html;
+  document.querySelectorAll(".tab").forEach(t => t.addEventListener("click", () => {
+    ACTIVE_PROJECT = t.dataset.project;
+    render();
+  }));
+}
+
+function renderTable(rows) {
+  const tbody = document.getElementById("indentTbody");
+  if (rows.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="9" class="empty">No indents match these filters.</td></tr>`;
+    return;
+  }
+  tbody.innerHTML = rows.map(r => {
+    const pillCls = r.status === "pending_po" ? "pending" : r.status === "complete" ? "complete" : "progress";
+    const pillLbl = r.status === "pending_po" ? "Pending PO" : r.status === "complete" ? "Complete" : "In Progress";
+    const age = r.age_days != null ? `${r.age_days}d` : "—";
+    const ageCls = r.status === "pending_po" && r.age_days >= 14 ? "age-red" : r.status === "pending_po" && r.age_days >= 7 ? "age-amber" : "";
+    const dateStr = r.indent_date ? new Date(r.indent_date).toLocaleDateString("en-IN") : "—";
+    const vendor = r.vendors.length === 0 ? "—" : r.vendors.length === 1 ? r.vendors[0] : `${r.vendors[0]} +${r.vendors.length - 1}`;
+    const isChanged = CHANGED_INDENT_NOS.has(r.indent_no);
+    return `<tr class="${isChanged ? 'changed' : ''}">
+      <td><b>${escapeHtml(r.indent_no)}</b>${isChanged ? '<span class="badge-changed">✨ Changed</span>' : ''}</td>
+      <td>${dateStr}</td>
+      <td class="num ${ageCls}">${age}</td>
+      <td>${escapeHtml(r.project)}</td>
+      <td class="num">${r.material_count}</td>
+      <td><span class="pill ${pillCls}"><span class="pill-dot"></span>${pillLbl}</span></td>
+      <td style="font-size:11px;color:var(--ink-2);white-space:nowrap">PO ${r.lines_with_po}/${r.material_count} · GRN ${r.lines_received}/${r.material_count} · Inv ${r.lines_invoiced}/${r.material_count}</td>
+      <td style="font-size:12px">${escapeHtml(vendor)}</td>
+      <td class="num"><b>${r.po_value > 0 ? formatINR(r.po_value) : "—"}</b></td>
+    </tr>`;
+  }).join("");
+}
+
+function renderVendors() {
+  const agg = new Map();
+  for (const r of INDENTS) {
+    for (const v of r.vendors) {
+      if (!agg.has(v)) agg.set(v, { name: v, indents: 0, po_value: 0, pending_grn: 0, pending_inv: 0 });
+      const a = agg.get(v);
+      a.indents++;
+      a.pending_grn += r.pending_grn_value / Math.max(r.vendors.length, 1);
+      a.pending_inv += r.pending_invoice_value / Math.max(r.vendors.length, 1);
+      a.po_value += r.po_value / Math.max(r.vendors.length, 1);
+    }
+  }
+  const top = Array.from(agg.values())
+    .sort((a, b) => (b.pending_grn + b.pending_inv) - (a.pending_grn + a.pending_inv))
+    .slice(0, 8);
+  let html = `<h3>Top Vendors by Pending Value</h3><table style="margin-top:8px"><thead><tr><th>Vendor</th><th class="num">Indents</th><th class="num">PO Value</th><th class="num">Pending GRN</th><th class="num">Pending Invoice</th></tr></thead><tbody>`;
+  for (const v of top) {
+    html += `<tr><td>${escapeHtml(v.name)}</td><td class="num">${v.indents}</td><td class="num">${formatINR(v.po_value)}</td><td class="num" style="color:var(--progress);font-weight:500">${formatINR(v.pending_grn)}</td><td class="num" style="color:var(--info);font-weight:500">${formatINR(v.pending_inv)}</td></tr>`;
+  }
+  html += `</tbody></table>`;
+  document.getElementById("vendorCard").innerHTML = html;
+}
+
+function escapeHtml(s) {
+  if (s == null) return "";
+  return String(s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+}
+
+// ============================================================
+// Event handlers
+// ============================================================
+const uploadEl = document.getElementById("upload");
+const fileInput = document.getElementById("fileInput");
+const statusEl = document.getElementById("uploadStatus");
+const dashEl = document.getElementById("dashboard");
+const metaEl = document.getElementById("meta");
+
+uploadEl.addEventListener("click", () => fileInput.click());
+uploadEl.addEventListener("dragover", e => { e.preventDefault(); uploadEl.classList.add("dragging"); });
+uploadEl.addEventListener("dragleave", () => uploadEl.classList.remove("dragging"));
+uploadEl.addEventListener("drop", e => {
+  e.preventDefault();
+  uploadEl.classList.remove("dragging");
+  const f = e.dataTransfer.files?.[0];
+  if (f) handleFile(f);
+});
+fileInput.addEventListener("change", e => {
+  const f = e.target.files?.[0];
+  if (f) handleFile(f);
+});
+
+async function handleFile(file) {
+  statusEl.className = "upload-status";
+  statusEl.textContent = `Parsing ${file.name}...`;
+  try {
+    const buffer = await file.arrayBuffer();
+    const { rows, total } = parseSrmdPoReport(buffer);
+    if (rows.length === 0) throw new Error("No valid data rows found");
+
+    // Diff: compare new indent_nos against previously loaded
+    const prevIndentNos = new Set(INDENTS.map(i => i.indent_no));
+    const prevStatus = new Map(INDENTS.map(i => [i.indent_no, i.status]));
+
+    RAW_ROWS = rows;
+    INDENTS = summarise(rows);
+
+    // Mark changed indents
+    CHANGED_INDENT_NOS = new Set();
+    for (const cur of INDENTS) {
+      const before = prevStatus.get(cur.indent_no);
+      if (before === undefined) continue; // new = not "changed"
+      if (before !== cur.status) CHANGED_INDENT_NOS.add(cur.indent_no);
+    }
+
+    statusEl.textContent = `Loaded ${rows.length} rows · ${INDENTS.length} indents · ${file.name}`;
+    metaEl.innerHTML = `<div><b>${file.name}</b></div><div>Loaded ${new Date().toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" })}</div>`;
+    dashEl.classList.remove("hidden");
+    render();
+  } catch (e) {
+    statusEl.className = "upload-status err";
+    statusEl.textContent = `Could not parse: ${e.message || e}`;
+  }
+}
+
+document.getElementById("searchBox").addEventListener("input", e => {
+  SEARCH = e.target.value.trim().toLowerCase();
+  render();
+});
+
+document.querySelectorAll(".chip[data-status]").forEach(c => {
+  c.addEventListener("click", () => {
+    document.querySelectorAll(".chip[data-status]").forEach(x => x.classList.remove("active"));
+    c.classList.add("active");
+    ACTIVE_STATUS = c.dataset.status;
+    render();
+  });
+});
+
+document.querySelectorAll("th[data-sort]").forEach(th => {
+  th.addEventListener("click", () => {
+    const col = th.dataset.sort;
+    if (SORT_COL === col) SORT_DESC = !SORT_DESC;
+    else { SORT_COL = col; SORT_DESC = true; }
+    render();
+  });
+});
+
+document.getElementById("exportBtn").addEventListener("click", () => {
+  const filtered = INDENTS.filter((r) => {
+    if (ACTIVE_PROJECT && r.project !== ACTIVE_PROJECT) return false;
+    if (ACTIVE_STATUS && r.status !== ACTIVE_STATUS) return false;
+    if (SEARCH) {
+      const hay = `${r.indent_no} ${r.project} ${r.po_nos.join(" ")} ${r.vendors.join(" ")}`.toLowerCase();
+      if (!hay.includes(SEARCH)) return false;
+    }
+    return true;
+  });
+  const header = ["Indent No","Date","Age (days)","Project","Items","Status","PO Lines","GRN Done","Invoiced","PO Nos","Vendors","PO Value (INR)","Pending GRN (INR)","Pending Invoice (INR)"];
+  const esc = v => { const s = v == null ? "" : String(v); return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
+  const lines = filtered.map(r => [
+    r.indent_no, r.indent_date, r.age_days ?? "", r.project, r.material_count, r.status,
+    `${r.lines_with_po}/${r.material_count}`,
+    `${r.lines_received}/${r.material_count}`,
+    `${r.lines_invoiced}/${r.material_count}`,
+    r.po_nos.join("; "), r.vendors.join("; "),
+    r.po_value.toFixed(2), r.pending_grn_value.toFixed(2), r.pending_invoice_value.toFixed(2)
+  ].map(esc).join(","));
+  const csv = [header.join(","), ...lines].join("\n");
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `srmd-indents-${new Date().toISOString().slice(0,10)}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+});
+</script>
+</body>
+</html>
