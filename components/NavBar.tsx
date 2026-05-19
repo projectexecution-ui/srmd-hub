@@ -7,7 +7,7 @@ import { cn } from '@/lib/utils'
 import type { Profile } from '@/lib/types'
 import {
   LayoutDashboard, ClipboardList, FileText, PackageCheck, Receipt,
-  Truck, Building2, Settings, LogOut, Menu, X, Hammer, Users, Upload,
+  Truck, Building2, Settings, LogOut, Menu, X, Users, Upload,
   BarChart3, ChevronsLeft, ChevronsRight,
 } from 'lucide-react'
 
@@ -69,7 +69,7 @@ export default function NavBar({ profile }: NavBarProps) {
       {/* Mobile top bar */}
       <div className="md:hidden sticky top-0 z-30 flex items-center justify-between px-4 h-14 bg-white border-b border-gray-200">
         <Link href="/dashboard" className="flex items-center gap-2">
-          <Hammer className="h-5 w-5 text-blue-600" />
+          <img src="/srmd-icon.png" alt="SRMD" className="h-7 w-7" />
           <span className="font-bold text-gray-900">SRMD Hub</span>
         </Link>
         <button
@@ -89,7 +89,10 @@ export default function NavBar({ profile }: NavBarProps) {
             onClick={e => e.stopPropagation()}
           >
             <div className="flex items-center justify-between px-4 h-14 border-b border-gray-200">
-              <span className="font-bold text-gray-900">SRMD Hub</span>
+              <div className="flex items-center gap-2">
+                <img src="/srmd-icon.png" alt="SRMD" className="h-7 w-7" />
+                <span className="font-bold text-gray-900">SRMD Hub</span>
+              </div>
               <button onClick={() => setOpen(false)} className="p-2 -mr-2"><X className="h-5 w-5" /></button>
             </div>
             <ProfileRow profile={profile} />
@@ -132,16 +135,15 @@ export default function NavBar({ profile }: NavBarProps) {
           !hydrated && 'invisible'
         )}
       >
-        <div className={cn('flex items-center h-16 border-b border-gray-200', collapsed ? 'justify-center px-2' : 'justify-between px-4')}>
+        <div className={cn('flex items-center h-16 border-b border-gray-200', collapsed ? 'justify-center px-2' : 'justify-between px-3')}>
           {!collapsed && (
-            <Link href="/dashboard" className="flex items-center gap-2 min-w-0">
-              <Hammer className="h-6 w-6 text-blue-600 flex-shrink-0" />
-              <span className="font-bold text-gray-900 text-base truncate">SRMD Hub</span>
+            <Link href="/dashboard" className="flex items-center min-w-0 flex-1 mr-2">
+              <img src="/srmd-logo.svg" alt="SRMD" className="h-7 max-w-full object-contain" />
             </Link>
           )}
           {collapsed && (
             <Link href="/dashboard" className="flex items-center justify-center">
-              <Hammer className="h-6 w-6 text-blue-600" />
+              <img src="/srmd-icon.png" alt="SRMD" className="h-8 w-8" />
             </Link>
           )}
           <button

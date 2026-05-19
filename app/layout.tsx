@@ -4,6 +4,10 @@ import './globals.css'
 export const metadata: Metadata = {
   title: 'SRMD Hub',
   description: 'SRMD construction modules — Indents, POs, GRN, Invoices, and more',
+  icons: {
+    icon: '/srmd-icon.png',
+    apple: '/srmd-icon.png',
+  },
 }
 
 export const viewport: Viewport = {

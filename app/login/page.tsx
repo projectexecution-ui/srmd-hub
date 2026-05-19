@@ -2,7 +2,7 @@
 import { useState, useEffect, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
-import { Hammer, Loader2, Mail, Lock, User as UserIcon } from 'lucide-react'
+import { Loader2, Mail, Lock, User as UserIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -80,8 +80,8 @@ function LoginContent() {
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 to-slate-100 p-4">
       <div className="w-full max-w-sm">
         <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-blue-600 shadow-lg mb-4">
-            <Hammer className="h-8 w-8 text-white" />
+          <div className="inline-flex items-center justify-center w-20 h-20 rounded-2xl bg-white border border-gray-200 shadow-sm mb-4 p-2.5">
+            <img src="/srmd-icon.png" alt="SRMD" className="w-full h-full object-contain" />
           </div>
           <h1 className="text-2xl font-bold text-gray-900">SRMD Hub</h1>
           <p className="text-gray-500 text-sm mt-1">Construction modules — one app</p>
