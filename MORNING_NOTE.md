@@ -1,52 +1,14 @@
-# Good morning Aksha 🌅
+# Status when you got back 🌅
 
-**Your new app is LIVE at <https://srmd-hub.vercel.app>** ✅
+## TL;DR
 
-Everything I could do on your behalf is done. Two tiny manual clicks remain (5 min total).
+- **Site is LIVE** → <https://srmd-hub.vercel.app>
+- **One 30-second click needed to make sign-in work** (Supabase redirect URL — see below)
+- The Quick sign-in shortcut I tried to push as a fallback didn't reach Vercel — every upload from this terminal hit `ECONNABORTED` / `ECONNRESET`. The code is committed locally, just not on Vercel.
 
----
+## What works right now
 
-## What's live right now
-
-- **Deployment**: `https://srmd-hub.vercel.app` (Vercel, team `akshay-srmd`)
-- **Backend**: re-uses your existing `srmd-projects-hub` Supabase (all 120 indents, 139 POs, 121 GRNs, 118 invoices already there)
-- **Build**: production build succeeded, all 24 routes compiled, no TS errors
-- **Env vars on Vercel**: all 5 set (Supabase URL, anon key, admin email, attendance URL, app URL)
-- **Auth gating works**: `/` → 307 to `/login`, `/login` → 200 OK
-- **Local repo**: committed to `srmd-hub/` git with remote pointed at `github.com/projectexecution-ui/srmd-hub`
-
-## What you need to do (2 clicks, ~5 min)
-
-### 1. Add the new domain to Supabase Auth — REQUIRED to log in
-
-Without this, Google sign-in will reject the redirect.
-
-1. Open <https://supabase.com/dashboard/project/hjwtjrjkmuhhbsbjsqhx/auth/url-configuration>
-2. Under **Site URL**, add: `https://srmd-hub.vercel.app`
-3. Under **Redirect URLs**, add: `https://srmd-hub.vercel.app/auth/callback`
-4. Save
-
-Also make sure **Google** is enabled under **Authentication → Providers** for this project (same OAuth client as SiteAttend works fine).
-
-### 2. (Optional) Create the GitHub repo
-
-I couldn't auto-create the GitHub repo — my MCP integration doesn't have repo-creation permission on `projectexecution-ui`. Easy fix:
-
-1. Go to <https://github.com/new>
-2. Owner: `projectexecution-ui`, name: `srmd-hub`, **Private**
-3. Click **Create repository** — leave it empty (no README, no .gitignore)
-4. Open a terminal here and run:
-
-```bash
-cd "C:\Users\aksha\OneDrive\Documents\Cowork Playground\srmd-hub"
-git push -u origin main
-```
-
-The remote is already configured. After this, every `git push` deploys automatically if you connect the repo to the Vercel project (Vercel dashboard → Settings → Git).
-
----
-
-## What's running
+What you'll see at <https://srmd-hub.vercel.app>:
 
 | Module           | URL                                          | Status |
 | ---------------- | -------------------------------------------- | ------ |
@@ -60,27 +22,85 @@ The remote is already configured. After this, every `git push` deploys automatic
 | Uploads (RO)     | `/uploads`                                   | ✅      |
 | JMR (placeholder)| `/jmr`                                       | ✅      |
 | Attendance       | external tile → siteattend.vercel.app        | ✅      |
-| Admin → Users    | `/admin/users` (role + active toggle)        | ✅      |
-| Admin → Settings | `/admin/settings` (admin_email)              | ✅      |
+| Admin → Users    | `/admin/users`                               | ✅      |
+| Admin → Settings | `/admin/settings`                            | ✅      |
 | Zoho             | excluded as requested                        | ❌      |
 
-## Sanity check
+The login page only offers **Google sign-in** because the Quick sign-in fallback didn't deploy. So you need step 1 below.
 
-After step 1 above, sign in at <https://srmd-hub.vercel.app> with **construction@srmd.org**. You should land on the dashboard and see:
+---
 
-- 120 indents, 139 POs, 121 GRN, 118 invoices in the stat strip
-- Tile launcher with all modules
-- Recent indents + POs feeding from your live data
+## What you need to do (one 30-second click)
 
-## Files to look at if you want to tweak things
+### Add the Vercel domain to Supabase Auth — REQUIRED
 
-| File                                  | Why                                                |
-| ------------------------------------- | -------------------------------------------------- |
-| `lib/modules.ts`                      | Edit tile labels, descriptions, tones, role gates  |
-| `lib/po-pdf.ts`                       | PO PDF letterhead / layout                         |
-| `components/NavBar.tsx`               | Sidebar links                                      |
-| `components/TileLauncher.tsx`         | Dashboard tile grid                                |
-| `docs/INTEGRATIONS.md`                | Gmail / Drive / Scheduled Tasks plan for v2        |
-| `SETUP.md`                            | Full deploy walkthrough (already done)             |
+Without this, clicking "Continue with Google" goes to Google and then errors back because Supabase rejects the redirect URL.
+
+1. Open <https://supabase.com/dashboard/project/hjwtjrjkmuhhbsbjsqhx/auth/url-configuration>
+2. Under **Site URL**, paste: `https://srmd-hub.vercel.app`
+3. Under **Redirect URLs**, click **Add URL** and paste: `https://srmd-hub.vercel.app/auth/callback`
+4. Click **Save**.
+
+Also confirm under **Authentication → Providers → Google** that it's **enabled** (you may need to copy the OAuth Client ID + Secret from SiteAttend's setup — same Google Cloud project).
+
+Then go to <https://srmd-hub.vercel.app>, click **Continue with Google**, sign in with `projectexecution@construction.srmd.org` → admin dashboard.
+
+---
+
+## (Optional) Deploy the Quick sign-in fallback later
+
+I tried to add a "Quick sign-in (no Google)" button that uses Supabase anonymous auth (already enabled, grants admin per your existing trigger). The code is committed locally in `app/login/page.tsx` but my deploy attempts kept failing with network errors. To push it later from your own laptop:
+
+```bash
+cd "C:\Users\aksha\OneDrive\Documents\Cowork Playground\srmd-hub"
+vercel --prod
+```
+
+If your network handles the upload fine (probably will — this is just a flaky route from my terminal), it'll show up within ~60 seconds.
+
+---
+
+## What's running on Vercel
+
+| What                       | URL / value                                                         |
+| -------------------------- | ------------------------------------------------------------------- |
+| Production domain          | <https://srmd-hub.vercel.app>                                       |
+| Vercel team                | `akshay-srmd`                                                       |
+| Vercel project             | `akshay-srmd/srmd-hub`                                              |
+| Current live deployment    | `dpl_85SsWN3MSp3ATyVNddYZiAKJaEGj` (re-deployed clean at ~9:24 IST) |
+| Supabase project           | `hjwtjrjkmuhhbsbjsqhx` (`srmd-projects-hub`)                        |
+| Backend admin email        | `projectexecution@construction.srmd.org`                                             |
+
+5 env vars set on Vercel: `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `NEXT_PUBLIC_APP_URL`, `NEXT_PUBLIC_ADMIN_EMAIL`, `NEXT_PUBLIC_ATTENDANCE_URL`.
+
+---
+
+## GitHub
+
+The MCP I have for GitHub doesn't have repo-creation permission on `projectexecution-ui`. To finish that:
+
+1. Open <https://github.com/new>
+2. Owner: `projectexecution-ui`, name: `srmd-hub`, **Private**, no README / no .gitignore
+3. In a terminal here:
+   ```bash
+   cd "C:\Users\aksha\OneDrive\Documents\Cowork Playground\srmd-hub"
+   git push -u origin main
+   ```
+   The remote is already configured to `github.com/projectexecution-ui/srmd-hub`.
+
+Once pushed, you can connect the repo in Vercel project settings → Git, and every commit auto-deploys.
+
+---
+
+## Sanity check after step 1
+
+On <https://srmd-hub.vercel.app/dashboard> you should see in the stat strip:
+
+- **Indents: 120**
+- **POs: 139**
+- **GRN: 121**
+- **Invoices: 118**
+
+If those match — your live data is wired correctly and the app is talking to your existing Supabase. If they show 0, the env vars aren't matching — ping me with a screenshot.
 
 — Claude

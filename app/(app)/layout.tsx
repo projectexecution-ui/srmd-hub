@@ -20,7 +20,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         <div className="text-center max-w-sm">
           <h1 className="text-xl font-bold text-gray-900 mb-2">Account Deactivated</h1>
           <p className="text-gray-500 text-sm">
-            Your account is no longer active. Please contact your admin at construction@srmd.org.
+            Your account is no longer active. Please contact your admin at projectexecution@construction.srmd.org.
           </p>
         </div>
       </div>

@@ -32,7 +32,7 @@ Existing roles in the database: `admin`, `uploader`, `viewer`.
 - **uploader** — can edit vendors, edit indent notes (but not user management or projects)
 - **viewer** — read-only
 
-Aksha's account (`construction@srmd.org`) is admin by virtue of the `app_settings.admin_email` row.
+Aksha's account (`projectexecution@construction.srmd.org`) is admin by virtue of the `app_settings.admin_email` row.
 
 ## What this app does NOT do
 

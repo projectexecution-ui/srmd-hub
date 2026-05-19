@@ -11,7 +11,7 @@ You already have these — listed here for reference:
 - **Supabase project**: `srmd-projects-hub` (id `hjwtjrjkmuhhbsbjsqhx`, region `ap-south-1`)
 - **GitHub account**: `projectexecution-ui`
 - **Vercel team**: `projectexecution-9357's projects`
-- **Admin email** (already set in `app_settings`): `construction@srmd.org`
+- **Admin email** (already set in `app_settings`): `projectexecution@construction.srmd.org`
 
 You do **not** need a new Supabase project, new Postgres, or new schema. This app reuses the existing one.
 
@@ -81,7 +81,7 @@ git push -u origin main
    NEXT_PUBLIC_SUPABASE_URL      = https://hjwtjrjkmuhhbsbjsqhx.supabase.co
    NEXT_PUBLIC_SUPABASE_ANON_KEY = sb_publishable_By4r6YYHZnBcXWPjk8oKuw_K0gqam-a
    NEXT_PUBLIC_APP_URL           = https://srmd-hub.vercel.app   (or your custom domain)
-   NEXT_PUBLIC_ADMIN_EMAIL       = construction@srmd.org
+   NEXT_PUBLIC_ADMIN_EMAIL       = projectexecution@construction.srmd.org
    NEXT_PUBLIC_ATTENDANCE_URL    = https://siteattend.vercel.app
    ```
 
@@ -92,7 +92,7 @@ git push -u origin main
 
 ## Step 5 — First sign in
 
-Open the deployed URL on your phone or laptop. Sign in with **construction@srmd.org**. You become admin automatically (the `handle_new_user` trigger reads `app_settings.admin_email`).
+Open the deployed URL on your phone or laptop. Sign in with **projectexecution@construction.srmd.org**. You become admin automatically (the `handle_new_user` trigger reads `app_settings.admin_email`).
 
 After signing in:
 

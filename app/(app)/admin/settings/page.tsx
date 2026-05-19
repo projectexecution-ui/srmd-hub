@@ -28,8 +28,8 @@ export default async function AdminSettingsPage() {
           </p>
           <SettingsForm
             settingKey="admin_email"
-            initialValue={settings.admin_email ?? 'construction@srmd.org'}
-            placeholder="construction@srmd.org"
+            initialValue={settings.admin_email ?? 'projectexecution@construction.srmd.org'}
+            placeholder="projectexecution@construction.srmd.org"
             type="email"
           />
         </CardContent>
