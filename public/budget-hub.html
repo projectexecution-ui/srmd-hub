@@ -5153,6 +5153,12 @@ _themeReady = true;
   /* Reset font-size on the toggle itself so its SVG renders even if
      it's inside the sidebar somehow. */
   #sbCollapseToggle svg { font-size: initial !important; }
+
+  /* ===== Hide all "Load demo" entry points (per request) ===== */
+  #sbLoadDemo,
+  button[onclick*="loadDemoData"] {
+    display: none !important;
+  }
 </style>
 <script>
 (function(){
