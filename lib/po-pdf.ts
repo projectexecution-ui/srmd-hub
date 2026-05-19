@@ -1,0 +1,134 @@
+// Client-side PO PDF generator using jsPDF + jspdf-autotable.
+// Kept in lib/ so we can call it from any client component.
+
+import jsPDF from 'jspdf'
+import autoTable from 'jspdf-autotable'
+import type { PurchaseOrder, POLine } from './types'
+import { formatDate, formatINR, formatNumber } from './utils'
+
+export function generatePOPdf(po: PurchaseOrder & { vendors?: { name: string; gstin?: string | null; address?: string | null; contact_person?: string | null; contact_phone?: string | null; contact_email?: string | null } | null; projects?: { code?: string; name?: string } | null }, lines: POLine[]) {
+  const doc = new jsPDF({ unit: 'pt', format: 'a4' })
+  const pageWidth = doc.internal.pageSize.getWidth()
+  const margin = 40
+
+  // Header
+  doc.setFont('helvetica', 'bold')
+  doc.setFontSize(18)
+  doc.text('PURCHASE ORDER', margin, 50)
+
+  doc.setFont('helvetica', 'normal')
+  doc.setFontSize(10)
+  doc.text('Shrimad Rajchandra Mission Dharampur (SRMD)', margin, 68)
+  doc.text('Construction Department', margin, 82)
+
+  // Right side: PO number + date
+  doc.setFont('helvetica', 'bold')
+  doc.setFontSize(11)
+  doc.text(po.po_no, pageWidth - margin, 50, { align: 'right' })
+  doc.setFont('helvetica', 'normal')
+  doc.setFontSize(10)
+  doc.text(`Date: ${formatDate(po.po_date)}`, pageWidth - margin, 68, { align: 'right' })
+  if (po.projects?.code) {
+    doc.text(`Project: ${po.projects.code}`, pageWidth - margin, 82, { align: 'right' })
+  }
+
+  // Divider
+  doc.setDrawColor(200)
+  doc.line(margin, 100, pageWidth - margin, 100)
+
+  // Vendor block
+  let y = 120
+  doc.setFont('helvetica', 'bold')
+  doc.setFontSize(10)
+  doc.text('Vendor', margin, y)
+  doc.setFont('helvetica', 'normal')
+  y += 14
+  doc.text(po.vendors?.name ?? '—', margin, y); y += 12
+  if (po.vendors?.address) { doc.text(splitAddress(po.vendors.address), margin, y); y += 12 * splitAddress(po.vendors.address).length }
+  if (po.vendors?.gstin) { doc.text(`GSTIN: ${po.vendors.gstin}`, margin, y); y += 12 }
+  if (po.vendors?.contact_person) { doc.text(`Contact: ${po.vendors.contact_person}`, margin, y); y += 12 }
+  if (po.vendors?.contact_phone) { doc.text(`Phone: ${po.vendors.contact_phone}`, margin, y); y += 12 }
+
+  // Project block (right side, aligned to top of vendor block)
+  let py = 120
+  doc.setFont('helvetica', 'bold')
+  doc.text('Project / Site', pageWidth - margin, py, { align: 'right' })
+  doc.setFont('helvetica', 'normal')
+  py += 14
+  doc.text(po.projects?.name ?? '—', pageWidth - margin, py, { align: 'right' }); py += 12
+  if (po.sub_project) { doc.text(po.sub_project, pageWidth - margin, py, { align: 'right' }); py += 12 }
+
+  const tableStart = Math.max(y, py) + 16
+
+  // Lines table
+  const body = lines.map((l, i) => [
+    String(l.line_no ?? i + 1),
+    l.material_name + (l.material_desc ? `\n${l.material_desc}` : ''),
+    l.uom ?? '—',
+    formatNumber(l.po_qty, 3),
+    formatNumber(l.po_rate, 2),
+    formatNumber(l.line_amount, 2),
+  ])
+
+  autoTable(doc, {
+    startY: tableStart,
+    head: [['#', 'Material', 'UOM', 'Qty', 'Rate', 'Amount']],
+    body,
+    margin: { left: margin, right: margin },
+    styles: { fontSize: 9, cellPadding: 6, valign: 'top' },
+    headStyles: { fillColor: [37, 99, 235], textColor: 255, fontStyle: 'bold' },
+    columnStyles: {
+      0: { cellWidth: 24, halign: 'right' },
+      1: { cellWidth: 'auto' },
+      2: { cellWidth: 50 },
+      3: { cellWidth: 60, halign: 'right' },
+      4: { cellWidth: 70, halign: 'right' },
+      5: { cellWidth: 80, halign: 'right' },
+    },
+  })
+
+  // Totals
+  // @ts-expect-error - autotable adds lastAutoTable to doc
+  const afterY: number = doc.lastAutoTable?.finalY ?? tableStart + 200
+  let ty = afterY + 16
+  const labelX = pageWidth - margin - 180
+  const valueX = pageWidth - margin
+
+  doc.setFont('helvetica', 'normal')
+  doc.setFontSize(10)
+  totalRow('Subtotal', formatINR(po.subtotal), labelX, valueX, ty); ty += 14
+  if (Number(po.tax_on_material) > 0) { totalRow('Tax on material', formatINR(po.tax_on_material), labelX, valueX, ty); ty += 14 }
+  if (Number(po.other_charges) > 0) { totalRow('Other charges', formatINR(po.other_charges), labelX, valueX, ty); ty += 14 }
+  if (Number(po.taxes_on_other_charges) > 0) { totalRow('Tax on other', formatINR(po.taxes_on_other_charges), labelX, valueX, ty); ty += 14 }
+
+  doc.setFont('helvetica', 'bold')
+  doc.setFontSize(11)
+  totalRow('Total', formatINR(po.po_amount), labelX, valueX, ty + 4, doc)
+
+  // Notes (if any)
+  if (po.notes) {
+    doc.setFont('helvetica', 'normal')
+    doc.setFontSize(9)
+    doc.text('Notes:', margin, ty + 36)
+    const wrapped = doc.splitTextToSize(po.notes, pageWidth - margin * 2)
+    doc.text(wrapped, margin, ty + 50)
+  }
+
+  // Footer
+  const footerY = doc.internal.pageSize.getHeight() - 40
+  doc.setFont('helvetica', 'italic')
+  doc.setFontSize(8)
+  doc.setTextColor(150)
+  doc.text(`Generated by SRMD Hub · ${new Date().toLocaleString('en-IN')}`, pageWidth / 2, footerY, { align: 'center' })
+
+  doc.save(`${po.po_no.replace(/[\\/]/g, '_')}.pdf`)
+
+  function totalRow(label: string, value: string, lx: number, vx: number, y: number, d = doc) {
+    d.text(label, lx, y)
+    d.text(value, vx, y, { align: 'right' })
+  }
+}
+
+function splitAddress(addr: string): string[] {
+  return addr.split(/\r?\n/).slice(0, 4)
+}
