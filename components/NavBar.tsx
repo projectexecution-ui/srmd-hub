@@ -1,14 +1,14 @@
 'use client'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { cn } from '@/lib/utils'
 import type { Profile } from '@/lib/types'
 import {
   LayoutDashboard, ClipboardList, FileText, PackageCheck, Receipt,
   Truck, Building2, Settings, LogOut, Menu, X, Hammer, Users, Upload,
-  BarChart3,
+  BarChart3, ChevronsLeft, ChevronsRight,
 } from 'lucide-react'
 
 interface NavBarProps {
@@ -30,12 +30,32 @@ const ALL_LINKS = [
 ]
 
 const ROLE_RANK = { viewer: 1, uploader: 2, admin: 3 } as const
+const COLLAPSE_KEY = 'srmd_nav_collapsed'
 
 export default function NavBar({ profile }: NavBarProps) {
   const pathname = usePathname()
   const router = useRouter()
   const supabase = createClient()
   const [open, setOpen] = useState(false)
+  const [collapsed, setCollapsed] = useState(false)
+  const [hydrated, setHydrated] = useState(false)
+
+  // Read persisted collapse state on mount
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(COLLAPSE_KEY)
+      if (saved === '1') setCollapsed(true)
+    } catch {}
+    setHydrated(true)
+  }, [])
+
+  function toggleCollapsed() {
+    setCollapsed(c => {
+      const next = !c
+      try { localStorage.setItem(COLLAPSE_KEY, next ? '1' : '0') } catch {}
+      return next
+    })
+  }
 
   const links = ALL_LINKS.filter(l => ROLE_RANK[profile.role] >= ROLE_RANK[l.minRole])
 
@@ -103,13 +123,49 @@ export default function NavBar({ profile }: NavBarProps) {
         </div>
       )}
 
-      {/* Desktop sidebar */}
-      <nav className="hidden md:flex md:flex-col md:w-60 md:flex-shrink-0 md:border-r md:border-gray-200 md:bg-white md:h-screen md:sticky md:top-0">
-        <div className="flex items-center gap-2 px-4 h-16 border-b border-gray-200">
-          <Hammer className="h-6 w-6 text-blue-600" />
-          <span className="font-bold text-gray-900 text-base">SRMD Hub</span>
+      {/* Desktop sidebar (collapsible) */}
+      <nav
+        className={cn(
+          'hidden md:flex md:flex-col md:flex-shrink-0 md:border-r md:border-gray-200 md:bg-white md:h-screen md:sticky md:top-0 transition-[width] duration-200 ease-in-out',
+          collapsed ? 'md:w-16' : 'md:w-60',
+          // Avoid layout flash before localStorage is read
+          !hydrated && 'invisible'
+        )}
+      >
+        <div className={cn('flex items-center h-16 border-b border-gray-200', collapsed ? 'justify-center px-2' : 'justify-between px-4')}>
+          {!collapsed && (
+            <Link href="/dashboard" className="flex items-center gap-2 min-w-0">
+              <Hammer className="h-6 w-6 text-blue-600 flex-shrink-0" />
+              <span className="font-bold text-gray-900 text-base truncate">SRMD Hub</span>
+            </Link>
+          )}
+          {collapsed && (
+            <Link href="/dashboard" className="flex items-center justify-center">
+              <Hammer className="h-6 w-6 text-blue-600" />
+            </Link>
+          )}
+          <button
+            onClick={toggleCollapsed}
+            className={cn(
+              'p-1.5 rounded-lg text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-colors',
+              collapsed && 'absolute top-4 right-[-12px] bg-white border border-gray-200 shadow-sm'
+            )}
+            title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+            aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+          >
+            {collapsed ? <ChevronsRight className="h-4 w-4" /> : <ChevronsLeft className="h-4 w-4" />}
+          </button>
         </div>
-        <ProfileRow profile={profile} />
+
+        {!collapsed && <ProfileRow profile={profile} />}
+        {collapsed && (
+          <div className="flex justify-center py-3 border-b border-gray-100" title={profile.name || profile.email}>
+            <div className="h-8 w-8 rounded-full bg-blue-100 flex items-center justify-center text-blue-700 font-bold text-sm">
+              {(profile.name || profile.email)[0].toUpperCase()}
+            </div>
+          </div>
+        )}
+
         <div className="flex-1 overflow-y-auto py-2 px-2">
           {links.map(({ href, label, icon: Icon }) => {
             const active = isActive(pathname, href)
@@ -117,23 +173,30 @@ export default function NavBar({ profile }: NavBarProps) {
               <Link
                 key={href}
                 href={href}
+                title={collapsed ? label : undefined}
                 className={cn(
-                  'flex items-center gap-3 px-3 py-2 text-sm font-medium rounded-xl transition-colors',
+                  'flex items-center text-sm font-medium rounded-xl transition-colors',
+                  collapsed ? 'justify-center px-2 py-2.5 my-0.5' : 'gap-3 px-3 py-2',
                   active ? 'text-blue-700 bg-blue-50' : 'text-gray-700 hover:bg-gray-50'
                 )}
               >
-                <Icon className={cn('h-4.5 w-4.5', active ? 'text-blue-700' : 'text-gray-400')} />
-                {label}
+                <Icon className={cn('h-5 w-5 flex-shrink-0', active ? 'text-blue-700' : 'text-gray-400')} />
+                {!collapsed && <span className="truncate">{label}</span>}
               </Link>
             )
           })}
         </div>
+
         <button
           onClick={signOut}
-          className="flex items-center gap-3 px-4 py-3 text-sm font-medium text-gray-600 hover:text-red-600 hover:bg-red-50 border-t border-gray-200"
+          title={collapsed ? 'Sign out' : undefined}
+          className={cn(
+            'flex items-center text-sm font-medium text-gray-600 hover:text-red-600 hover:bg-red-50 border-t border-gray-200',
+            collapsed ? 'justify-center px-2 py-3' : 'gap-3 px-4 py-3'
+          )}
         >
-          <LogOut className="h-5 w-5" />
-          Sign out
+          <LogOut className="h-5 w-5 flex-shrink-0" />
+          {!collapsed && 'Sign out'}
         </button>
       </nav>
     </>

@@ -5060,5 +5060,80 @@ updateSidebarActiveProject();
 renderHub();
 _themeReady = true;
 </script>
+
+<!-- =========================================================
+     COLLAPSIBLE SIDEBAR (additive — no existing markup changed)
+     ========================================================= -->
+<style>
+  .sidebar { transition: width 0.18s ease-in-out; position: relative; }
+  body.sb-collapsed .sidebar { width: 62px !important; min-width: 62px !important; }
+  body.sb-collapsed .sidebar .sb-brand > div:last-child,
+  body.sb-collapsed .sidebar .sb-section-label,
+  body.sb-collapsed .sidebar .sb-badge,
+  body.sb-collapsed .sidebar .sb-active-project,
+  body.sb-collapsed .sidebar .sb-profile > div:last-child,
+  body.sb-collapsed .sidebar .theme-toggle button > span,
+  body.sb-collapsed .sidebar .sb-item > span:not(.sb-badge),
+  body.sb-collapsed .sidebar #themeToggle { display: none !important; }
+  body.sb-collapsed .sidebar .sb-item {
+    justify-content: center !important;
+    padding-left: 0 !important;
+    padding-right: 0 !important;
+  }
+  body.sb-collapsed .sidebar .sb-item > *:not(svg) { display: none !important; }
+  body.sb-collapsed .sidebar .sb-brand { justify-content: center; padding-left: 0; padding-right: 0; }
+  body.sb-collapsed .sidebar .sb-profile { justify-content: center; padding-left: 0; padding-right: 0; }
+  #sbCollapseToggle {
+    position: absolute;
+    top: 14px;
+    right: -12px;
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    background: var(--card, #fff);
+    border: 1px solid var(--border, #e2e8f0);
+    color: var(--ink-2, #475569);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    z-index: 50;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.06);
+    transition: transform 0.18s;
+  }
+  #sbCollapseToggle:hover { color: var(--accent, #4f46e5); border-color: var(--accent, #4f46e5); }
+  body.sb-collapsed #sbCollapseToggle { transform: rotate(180deg); }
+</style>
+<script>
+(function(){
+  var KEY = 'budgetHub_sbCollapsed';
+  var sb = document.getElementById('sidebar');
+  if (!sb) return;
+
+  var btn = document.createElement('button');
+  btn.id = 'sbCollapseToggle';
+  btn.title = 'Collapse sidebar';
+  btn.setAttribute('aria-label', 'Toggle sidebar');
+  btn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>';
+  sb.appendChild(btn);
+
+  function apply(collapsed) {
+    document.body.classList.toggle('sb-collapsed', collapsed);
+    btn.title = collapsed ? 'Expand sidebar' : 'Collapse sidebar';
+  }
+
+  try {
+    if (localStorage.getItem(KEY) === '1') apply(true);
+  } catch(e) {}
+
+  btn.addEventListener('click', function(e){
+    e.stopPropagation();
+    var next = !document.body.classList.contains('sb-collapsed');
+    apply(next);
+    try { localStorage.setItem(KEY, next ? '1' : '0'); } catch(e) {}
+  });
+})();
+</script>
+
 </body>
 </html>
