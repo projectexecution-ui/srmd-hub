@@ -312,6 +312,44 @@ let SORT_COL = "indent_date";
 let SORT_DESC = true;
 
 // ============================================================
+// Local persistence — survive tab switches / reloads
+// (everything stays in the browser; no server)
+// ============================================================
+const LS_KEY = "srmd_indent_tracker_v1";
+
+function saveToLocalStorage(meta) {
+  try {
+    const payload = {
+      version: 1,
+      saved_at: new Date().toISOString(),
+      file_name: meta?.file_name || "",
+      row_count: RAW_ROWS.length,
+      rows: RAW_ROWS,
+    };
+    localStorage.setItem(LS_KEY, JSON.stringify(payload));
+  } catch (e) {
+    // QuotaExceededError on very large files — silently skip persistence.
+    console.warn("[tracker] could not persist to localStorage:", e?.message);
+  }
+}
+
+function loadFromLocalStorage() {
+  try {
+    const raw = localStorage.getItem(LS_KEY);
+    if (!raw) return null;
+    const data = JSON.parse(raw);
+    if (data?.version !== 1 || !Array.isArray(data.rows)) return null;
+    return data;
+  } catch {
+    return null;
+  }
+}
+
+function clearLocalStorage() {
+  try { localStorage.removeItem(LS_KEY); } catch {}
+}
+
+// ============================================================
 // Helpers
 // ============================================================
 function parseINR(v) {
@@ -719,14 +757,51 @@ async function handleFile(file) {
     }
 
     statusEl.textContent = `Loaded ${rows.length} rows · ${INDENTS.length} indents · ${file.name}`;
-    metaEl.innerHTML = `<div><b>${file.name}</b></div><div>Loaded ${new Date().toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" })}</div>`;
+    metaEl.innerHTML = `<div><b>${file.name}</b></div><div>Loaded ${new Date().toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" })} · <a href="#" id="clearSavedLink" style="color:var(--saffron); text-decoration:underline">Clear saved data</a></div>`;
     dashEl.classList.remove("hidden");
+    saveToLocalStorage({ file_name: file.name });
+    wireClearSavedLink();
     render();
   } catch (e) {
     statusEl.className = "upload-status err";
     statusEl.textContent = `Could not parse: ${e.message || e}`;
   }
 }
+
+function wireClearSavedLink() {
+  const el = document.getElementById("clearSavedLink");
+  if (!el) return;
+  el.addEventListener("click", (e) => {
+    e.preventDefault();
+    if (!confirm("Clear the saved upload from this browser? You'll need to re-upload the Excel.")) return;
+    clearLocalStorage();
+    RAW_ROWS = [];
+    INDENTS = [];
+    statusEl.className = "upload-status";
+    statusEl.textContent = "";
+    metaEl.innerHTML = "";
+    dashEl.classList.add("hidden");
+  });
+}
+
+// On page load, try to restore from localStorage
+(function restoreOnLoad() {
+  const data = loadFromLocalStorage();
+  if (!data) return;
+  try {
+    RAW_ROWS = data.rows;
+    INDENTS = summarise(RAW_ROWS);
+    const when = new Date(data.saved_at).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" });
+    statusEl.className = "upload-status";
+    statusEl.textContent = `Restored ${RAW_ROWS.length} rows · ${INDENTS.length} indents from saved upload`;
+    metaEl.innerHTML = `<div><b>${data.file_name || "Previous upload"}</b></div><div>Saved ${when} · <a href="#" id="clearSavedLink" style="color:var(--saffron); text-decoration:underline">Clear saved data</a></div>`;
+    dashEl.classList.remove("hidden");
+    wireClearSavedLink();
+    render();
+  } catch (e) {
+    console.warn("[tracker] restore failed:", e?.message);
+  }
+})();
 
 document.getElementById("searchBox").addEventListener("input", e => {
   SEARCH = e.target.value.trim().toLowerCase();
