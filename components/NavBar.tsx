@@ -37,23 +37,30 @@ export default function NavBar({ profile }: NavBarProps) {
   const router = useRouter()
   const supabase = createClient()
   const [open, setOpen] = useState(false)
-  const [collapsed, setCollapsed] = useState(false)
-  const [hydrated, setHydrated] = useState(false)
+  // Single state object so we only call setState once after mount — avoids
+  // the react-hooks/set-state-in-effect lint flag for cascading renders.
+  const [ui, setUi] = useState<{ collapsed: boolean; hydrated: boolean }>({
+    collapsed: false,
+    hydrated: false,
+  })
+  const { collapsed, hydrated } = ui
 
-  // Read persisted collapse state on mount
   useEffect(() => {
+    let isCollapsed = false
     try {
-      const saved = localStorage.getItem(COLLAPSE_KEY)
-      if (saved === '1') setCollapsed(true)
+      isCollapsed = localStorage.getItem(COLLAPSE_KEY) === '1'
     } catch {}
-    setHydrated(true)
+    // hydrate-from-localStorage is the standard pattern; localStorage is
+    // unavailable during SSR so the initial state has to be set after mount.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setUi({ collapsed: isCollapsed, hydrated: true })
   }, [])
 
   function toggleCollapsed() {
-    setCollapsed(c => {
-      const next = !c
+    setUi(s => {
+      const next = !s.collapsed
       try { localStorage.setItem(COLLAPSE_KEY, next ? '1' : '0') } catch {}
-      return next
+      return { ...s, collapsed: next }
     })
   }
 

@@ -3,7 +3,7 @@
 
 import {
   ClipboardList, FileText, PackageCheck, Receipt, Wallet,
-  Truck, Building2, Upload, Users, Settings, Hammer,
+  Truck, Building2, Upload, Users, Settings,
   ExternalLink, BarChart3, Wrench,
 } from 'lucide-react'
 import type { Role } from './types'
