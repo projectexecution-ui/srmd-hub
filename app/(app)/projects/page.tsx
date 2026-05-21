@@ -1,5 +1,6 @@
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/server'
+import { requirePermission, can } from '@/lib/auth'
 import { PageHeader } from '@/components/PageHeader'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -10,10 +11,9 @@ import { Building2, Plus } from 'lucide-react'
 export const dynamic = 'force-dynamic'
 
 export default async function ProjectsPage() {
+  const perms = await requirePermission('projects', 'view')
+  const canWrite = can(perms, 'projects', 'edit')
   const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  const { data: profile } = user ? await supabase.from('profiles').select('role').eq('id', user.id).single() : { data: null }
-  const canWrite = profile?.role === 'admin'
 
   const { data: projects } = await supabase
     .from('projects')

@@ -2,20 +2,25 @@
 import Link from 'next/link'
 import { ArrowUpRight } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { MODULES, TILE_TONES, canSee, type ModuleTile } from '@/lib/modules'
-import type { Role } from '@/lib/types'
+import { MODULES, TILE_TONES, type ModuleTile } from '@/lib/modules'
+import type { PermissionMap } from '@/lib/types'
 
 interface TileLauncherProps {
-  role: Role
+  permissions: PermissionMap
 }
 
-export function TileLauncher({ role }: TileLauncherProps) {
-  const tiles = MODULES.filter(t => canSee(t, role))
+export function TileLauncher({ permissions }: TileLauncherProps) {
+  const tiles = MODULES.filter(m => permissions[m.slug]?.view)
+  if (tiles.length === 0) {
+    return (
+      <div className="text-sm text-gray-500 py-6 text-center">
+        You don&apos;t have access to any modules yet. Ask an admin to grant view access.
+      </div>
+    )
+  }
   return (
     <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3 md:gap-4">
-      {tiles.map(tile => (
-        <Tile key={tile.slug} tile={tile} />
-      ))}
+      {tiles.map(tile => <Tile key={tile.slug} tile={tile} />)}
     </div>
   )
 }
@@ -51,15 +56,9 @@ function Tile({ tile }: { tile: ModuleTile }) {
     </div>
   )
 
-  if (tile.comingSoon) {
-    return <div>{inner}</div>
-  }
+  if (tile.comingSoon) return <div>{inner}</div>
   if (tile.external) {
-    return (
-      <a href={tile.href} target="_blank" rel="noreferrer">
-        {inner}
-      </a>
-    )
+    return <a href={tile.href} target="_blank" rel="noreferrer">{inner}</a>
   }
   return <Link href={tile.href}>{inner}</Link>
 }

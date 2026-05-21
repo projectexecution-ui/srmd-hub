@@ -1,6 +1,7 @@
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/server'
+import { requirePermission, can } from '@/lib/auth'
 import { PageHeader } from '@/components/PageHeader'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -22,10 +23,9 @@ export default async function ProjectDetailPage({
   const sp = await searchParams
   const editing = sp.edit === '1'
 
+  const perms = await requirePermission('projects', 'view')
+  const canWrite = can(perms, 'projects', 'edit')
   const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  const { data: profile } = user ? await supabase.from('profiles').select('role').eq('id', user.id).single() : { data: null }
-  const canWrite = profile?.role === 'admin'
 
   const { data: project } = await supabase.from('projects').select('*').eq('id', id).single()
   if (!project) notFound()

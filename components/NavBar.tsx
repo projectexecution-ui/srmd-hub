@@ -4,54 +4,48 @@ import { usePathname, useRouter } from 'next/navigation'
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { cn } from '@/lib/utils'
-import type { Profile } from '@/lib/types'
+import type { Profile, PermissionMap } from '@/lib/types'
 import {
   LayoutDashboard, ClipboardList, FileText, PackageCheck, Receipt,
   Truck, Building2, Settings, LogOut, Menu, X, Users, Upload,
-  BarChart3, ChevronsLeft, ChevronsRight,
+  BarChart3, ChevronsLeft, ChevronsRight, ShieldCheck,
 } from 'lucide-react'
 
 interface NavBarProps {
   profile: Profile
+  permissions: PermissionMap
 }
 
+// Every link declares the permission slug it requires (view-level).
+// Visibility is data-driven from public.role_permissions.
 const ALL_LINKS = [
-  { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard, minRole: 'viewer' as const },
-  { href: '/indents',   label: 'Indents',   icon: ClipboardList,   minRole: 'viewer' as const },
-  { href: '/pos',       label: 'POs',       icon: FileText,        minRole: 'viewer' as const },
-  { href: '/grns',      label: 'GRN',       icon: PackageCheck,    minRole: 'viewer' as const },
-  { href: '/invoices',  label: 'Invoices',  icon: Receipt,         minRole: 'viewer' as const },
-  { href: '/vendors',   label: 'Vendors',   icon: Truck,           minRole: 'viewer' as const },
-  { href: '/projects',  label: 'Projects',  icon: Building2,       minRole: 'viewer' as const },
-  { href: '/budget',    label: 'Budget',    icon: BarChart3,       minRole: 'viewer' as const },
-  { href: '/uploads',   label: 'Uploads',   icon: Upload,          minRole: 'uploader' as const },
-  { href: '/admin/users',    label: 'Users',     icon: Users,    minRole: 'admin' as const },
-  { href: '/admin/settings', label: 'Settings',  icon: Settings, minRole: 'admin' as const },
-]
+  { href: '/dashboard',        label: 'Dashboard',   icon: LayoutDashboard, slug: null as string | null },
+  { href: '/indents',          label: 'Indents',     icon: ClipboardList,   slug: 'indents' },
+  { href: '/pos',              label: 'POs',         icon: FileText,        slug: 'pos' },
+  { href: '/grns',             label: 'GRN',         icon: PackageCheck,    slug: 'grns' },
+  { href: '/invoices',         label: 'Invoices',    icon: Receipt,         slug: 'invoices' },
+  { href: '/vendors',          label: 'Vendors',     icon: Truck,           slug: 'vendors' },
+  { href: '/projects',         label: 'Projects',    icon: Building2,       slug: 'projects' },
+  { href: '/budget',           label: 'Budget',      icon: BarChart3,       slug: 'budget-vs-actual' },
+  { href: '/uploads',          label: 'Uploads',     icon: Upload,          slug: 'uploads' },
+  { href: '/admin/users',      label: 'Users',       icon: Users,           slug: 'admin-users' },
+  { href: '/admin/permissions',label: 'Permissions', icon: ShieldCheck,     slug: 'admin-permissions' },
+  { href: '/admin/settings',   label: 'Settings',    icon: Settings,        slug: 'admin-settings' },
+] as const
 
-const ROLE_RANK = { viewer: 1, uploader: 2, admin: 3 } as const
 const COLLAPSE_KEY = 'srmd_nav_collapsed'
 
-export default function NavBar({ profile }: NavBarProps) {
+export default function NavBar({ profile, permissions }: NavBarProps) {
   const pathname = usePathname()
   const router = useRouter()
   const supabase = createClient()
   const [open, setOpen] = useState(false)
-  // Single state object so we only call setState once after mount — avoids
-  // the react-hooks/set-state-in-effect lint flag for cascading renders.
-  const [ui, setUi] = useState<{ collapsed: boolean; hydrated: boolean }>({
-    collapsed: false,
-    hydrated: false,
-  })
+  const [ui, setUi] = useState<{ collapsed: boolean; hydrated: boolean }>({ collapsed: false, hydrated: false })
   const { collapsed, hydrated } = ui
 
   useEffect(() => {
     let isCollapsed = false
-    try {
-      isCollapsed = localStorage.getItem(COLLAPSE_KEY) === '1'
-    } catch {}
-    // hydrate-from-localStorage is the standard pattern; localStorage is
-    // unavailable during SSR so the initial state has to be set after mount.
+    try { isCollapsed = localStorage.getItem(COLLAPSE_KEY) === '1' } catch {}
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setUi({ collapsed: isCollapsed, hydrated: true })
   }, [])
@@ -64,7 +58,7 @@ export default function NavBar({ profile }: NavBarProps) {
     })
   }
 
-  const links = ALL_LINKS.filter(l => ROLE_RANK[profile.role] >= ROLE_RANK[l.minRole])
+  const links = ALL_LINKS.filter(l => l.slug === null || permissions[l.slug]?.view)
 
   async function signOut() {
     await supabase.auth.signOut()
@@ -79,11 +73,7 @@ export default function NavBar({ profile }: NavBarProps) {
           <img src="/srmd-icon.png" alt="SRMD" className="h-7 w-7" />
           <span className="font-bold text-gray-900">SRMD Hub</span>
         </Link>
-        <button
-          onClick={() => setOpen(o => !o)}
-          className="p-2 -mr-2 text-gray-600 hover:text-gray-900"
-          aria-label="Menu"
-        >
+        <button onClick={() => setOpen(o => !o)} className="p-2 -mr-2 text-gray-600 hover:text-gray-900" aria-label="Menu">
           {open ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
         </button>
       </div>
@@ -91,10 +81,7 @@ export default function NavBar({ profile }: NavBarProps) {
       {/* Mobile sliding panel */}
       {open && (
         <div className="md:hidden fixed inset-0 z-40 bg-black/40" onClick={() => setOpen(false)}>
-          <nav
-            className="absolute right-0 top-0 bottom-0 w-72 bg-white shadow-xl flex flex-col"
-            onClick={e => e.stopPropagation()}
-          >
+          <nav className="absolute right-0 top-0 bottom-0 w-72 bg-white shadow-xl flex flex-col" onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between px-4 h-14 border-b border-gray-200">
               <div className="flex items-center gap-2">
                 <img src="/srmd-icon.png" alt="SRMD" className="h-7 w-7" />
@@ -107,25 +94,17 @@ export default function NavBar({ profile }: NavBarProps) {
               {links.map(({ href, label, icon: Icon }) => {
                 const active = isActive(pathname, href)
                 return (
-                  <Link
-                    key={href}
-                    href={href}
-                    onClick={() => setOpen(false)}
-                    className={cn(
-                      'flex items-center gap-3 px-4 py-2.5 text-sm font-medium',
-                      active ? 'text-blue-700 bg-blue-50' : 'text-gray-700 hover:bg-gray-50'
-                    )}
-                  >
+                  <Link key={href} href={href} onClick={() => setOpen(false)} className={cn(
+                    'flex items-center gap-3 px-4 py-2.5 text-sm font-medium',
+                    active ? 'text-blue-700 bg-blue-50' : 'text-gray-700 hover:bg-gray-50'
+                  )}>
                     <Icon className={cn('h-5 w-5', active ? 'text-blue-700' : 'text-gray-400')} />
                     {label}
                   </Link>
                 )
               })}
             </div>
-            <button
-              onClick={signOut}
-              className="flex items-center gap-3 px-4 py-3 text-sm font-medium text-gray-600 hover:text-red-600 hover:bg-red-50 border-t border-gray-200"
-            >
+            <button onClick={signOut} className="flex items-center gap-3 px-4 py-3 text-sm font-medium text-gray-600 hover:text-red-600 hover:bg-red-50 border-t border-gray-200">
               <LogOut className="h-5 w-5" />
               Sign out
             </button>
@@ -134,21 +113,17 @@ export default function NavBar({ profile }: NavBarProps) {
       )}
 
       {/* Desktop sidebar (collapsible) */}
-      <nav
-        className={cn(
-          'hidden md:flex md:flex-col md:flex-shrink-0 md:border-r md:border-gray-200 md:bg-white md:h-screen md:sticky md:top-0 transition-[width] duration-200 ease-in-out',
-          collapsed ? 'md:w-16' : 'md:w-60',
-          // Avoid layout flash before localStorage is read
-          !hydrated && 'invisible'
-        )}
-      >
+      <nav className={cn(
+        'hidden md:flex md:flex-col md:flex-shrink-0 md:border-r md:border-gray-200 md:bg-white md:h-screen md:sticky md:top-0 transition-[width] duration-200 ease-in-out',
+        collapsed ? 'md:w-16' : 'md:w-60',
+        !hydrated && 'invisible'
+      )}>
         <div className={cn('flex items-center h-16 border-b border-gray-200', collapsed ? 'justify-center px-2' : 'justify-between px-3')}>
-          {!collapsed && (
+          {!collapsed ? (
             <Link href="/dashboard" className="flex items-center min-w-0 flex-1 mr-2">
               <img src="/srmd-logo.svg" alt="SRMD" className="h-7 max-w-full object-contain" />
             </Link>
-          )}
-          {collapsed && (
+          ) : (
             <Link href="/dashboard" className="flex items-center justify-center">
               <img src="/srmd-icon.png" alt="SRMD" className="h-8 w-8" />
             </Link>
@@ -179,16 +154,11 @@ export default function NavBar({ profile }: NavBarProps) {
           {links.map(({ href, label, icon: Icon }) => {
             const active = isActive(pathname, href)
             return (
-              <Link
-                key={href}
-                href={href}
-                title={collapsed ? label : undefined}
-                className={cn(
-                  'flex items-center text-sm font-medium rounded-xl transition-colors',
-                  collapsed ? 'justify-center px-2 py-2.5 my-0.5' : 'gap-3 px-3 py-2',
-                  active ? 'text-blue-700 bg-blue-50' : 'text-gray-700 hover:bg-gray-50'
-                )}
-              >
+              <Link key={href} href={href} title={collapsed ? label : undefined} className={cn(
+                'flex items-center text-sm font-medium rounded-xl transition-colors',
+                collapsed ? 'justify-center px-2 py-2.5 my-0.5' : 'gap-3 px-3 py-2',
+                active ? 'text-blue-700 bg-blue-50' : 'text-gray-700 hover:bg-gray-50'
+              )}>
                 <Icon className={cn('h-5 w-5 flex-shrink-0', active ? 'text-blue-700' : 'text-gray-400')} />
                 {!collapsed && <span className="truncate">{label}</span>}
               </Link>
@@ -220,7 +190,7 @@ function ProfileRow({ profile }: { profile: Profile }) {
       </div>
       <div className="min-w-0">
         <p className="text-sm font-medium text-gray-900 truncate">{profile.name || profile.full_name || 'User'}</p>
-        <p className="text-xs text-gray-500 truncate capitalize">{profile.role}</p>
+        <p className="text-xs text-gray-500 truncate capitalize">{profile.role.replace('_', ' ')}</p>
       </div>
     </div>
   )

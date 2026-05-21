@@ -1,7 +1,38 @@
 // Mirror of the public schema in Supabase project `srmd-projects-hub`.
 // DO NOT alter the database schema; update these types if the SQL changes.
 
-export type Role = 'admin' | 'uploader' | 'viewer'
+// Roles are an enum in the database (public.user_role). Source of truth
+// for what each role can do is the public.role_permissions table — these
+// strings are just labels.
+export type Role =
+  | 'admin'      // super-user; manages users + permissions
+  | 'uploader'   // legacy: edit ops data
+  | 'viewer'     // legacy: read-only
+  | 'founder'    // org top — wide view, narrow edit
+  | 'head'       // PM / dept head
+  | 'engineer'   // site engineer
+  | 'site_staff' // labour / on-site
+
+export const ALL_ROLES: Role[] = [
+  'admin', 'founder', 'head', 'uploader', 'engineer', 'site_staff', 'viewer',
+]
+
+export type PermAction = 'view' | 'edit' | 'admin'
+
+export interface RolePermission {
+  role: Role
+  module_slug: string
+  can_view: boolean
+  can_edit: boolean
+  can_admin: boolean
+  updated_at: string | null
+  updated_by: string | null
+}
+
+// Shape of the my_permissions() RPC return + the in-memory perm map used
+// by the (app) layout.
+export type PermissionMap = Record<string, { view: boolean; edit: boolean; admin: boolean }>
+
 export type IndentStage = 'draft' | 'submitted' | 'verify' | 'approved'
 
 export interface Profile {

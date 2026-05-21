@@ -1,12 +1,13 @@
-// Central registry of all dashboard modules. The Dashboard launcher renders
-// these tiles, role-filtered. Add a new module here once it has a route.
+// Central registry of dashboard modules — pure metadata.
+// What a user can SEE/EDIT/ADMIN is no longer hardcoded here; it lives
+// in public.role_permissions and is editable by an Admin via the UI.
 
 import {
   ClipboardList, FileText, PackageCheck, Receipt, Wallet,
-  Truck, Building2, Upload, Users, Settings,
+  Truck, Building2, Upload, Users, Settings, ShieldCheck,
   ExternalLink, BarChart3, Wrench,
 } from 'lucide-react'
-import type { Role } from './types'
+import type { PermissionMap } from './types'
 
 export type ModuleTile = {
   slug: string
@@ -17,141 +18,30 @@ export type ModuleTile = {
   icon: typeof ClipboardList
   /** Tailwind colour name family used for the tile chrome */
   tone: 'blue' | 'green' | 'amber' | 'purple' | 'rose' | 'slate' | 'teal' | 'indigo' | 'orange'
-  /** Minimum role required to see this tile */
-  minRole: Role
   /** Optional "Coming soon" flag — tile shown but greyed */
   comingSoon?: boolean
 }
 
-const roleRank: Record<Role, number> = { viewer: 1, uploader: 2, admin: 3 }
-
-export function canSee(tile: ModuleTile, role: Role | null | undefined): boolean {
-  if (!role) return false
-  return roleRank[role] >= roleRank[tile.minRole]
-}
-
 export const MODULES: ModuleTile[] = [
-  {
-    slug: 'indents',
-    label: 'Indents',
-    description: 'Material indents raised from sites',
-    href: '/indents',
-    icon: ClipboardList,
-    tone: 'blue',
-    minRole: 'viewer',
-  },
-  {
-    slug: 'pos',
-    label: 'Purchase Orders',
-    description: 'POs issued to vendors',
-    href: '/pos',
-    icon: FileText,
-    tone: 'indigo',
-    minRole: 'viewer',
-  },
-  {
-    slug: 'grns',
-    label: 'GRN',
-    description: 'Goods received notes',
-    href: '/grns',
-    icon: PackageCheck,
-    tone: 'green',
-    minRole: 'viewer',
-  },
-  {
-    slug: 'invoices',
-    label: 'Invoices',
-    description: 'Vendor invoices',
-    href: '/invoices',
-    icon: Receipt,
-    tone: 'amber',
-    minRole: 'viewer',
-  },
-  {
-    slug: 'payments',
-    label: 'Payments',
-    description: 'Payments against invoices',
-    href: '/payments',
-    icon: Wallet,
-    tone: 'teal',
-    minRole: 'viewer',
-    comingSoon: true,
-  },
-  {
-    slug: 'vendors',
-    label: 'Vendors',
-    description: 'Vendor master',
-    href: '/vendors',
-    icon: Truck,
-    tone: 'purple',
-    minRole: 'viewer',
-  },
-  {
-    slug: 'projects',
-    label: 'Projects',
-    description: 'Site / project master',
-    href: '/projects',
-    icon: Building2,
-    tone: 'slate',
-    minRole: 'viewer',
-  },
-  {
-    slug: 'jmr',
-    label: 'JMR',
-    description: 'Joint Measurement Records',
-    href: '/jmr',
-    icon: Wrench,
-    tone: 'orange',
-    minRole: 'viewer',
-    comingSoon: true,
-  },
-  {
-    slug: 'attendance',
-    label: 'Attendance',
-    description: 'Open the SiteAttend app',
-    href: process.env.NEXT_PUBLIC_ATTENDANCE_URL || 'https://siteattend.vercel.app',
-    external: true,
-    icon: ExternalLink,
-    tone: 'rose',
-    minRole: 'viewer',
-  },
-  {
-    slug: 'uploads',
-    label: 'Uploads',
-    description: 'Excel imports history',
-    href: '/uploads',
-    icon: Upload,
-    tone: 'slate',
-    minRole: 'uploader',
-  },
-  {
-    slug: 'budget-vs-actual',
-    label: 'Budget vs Actual',
-    description: 'Upload IN4 export → cost variance dashboard',
-    href: '/budget',
-    icon: BarChart3,
-    tone: 'teal',
-    minRole: 'viewer',
-  },
-  {
-    slug: 'admin-users',
-    label: 'Users & Roles',
-    description: 'Manage app users',
-    href: '/admin/users',
-    icon: Users,
-    tone: 'slate',
-    minRole: 'admin',
-  },
-  {
-    slug: 'admin-settings',
-    label: 'Settings',
-    description: 'App settings (admin email, etc.)',
-    href: '/admin/settings',
-    icon: Settings,
-    tone: 'slate',
-    minRole: 'admin',
-  },
+  { slug: 'indents',          label: 'Indents',          description: 'Material indents raised from sites',         href: '/indents',        icon: ClipboardList, tone: 'blue' },
+  { slug: 'pos',              label: 'Purchase Orders',  description: 'POs issued to vendors',                       href: '/pos',            icon: FileText,      tone: 'indigo' },
+  { slug: 'grns',             label: 'GRN',              description: 'Goods received notes',                        href: '/grns',           icon: PackageCheck,  tone: 'green' },
+  { slug: 'invoices',         label: 'Invoices',         description: 'Vendor invoices',                             href: '/invoices',       icon: Receipt,       tone: 'amber' },
+  { slug: 'payments',         label: 'Payments',         description: 'Payments against invoices',                   href: '/payments',       icon: Wallet,        tone: 'teal',   comingSoon: true },
+  { slug: 'vendors',          label: 'Vendors',          description: 'Vendor master',                               href: '/vendors',        icon: Truck,         tone: 'purple' },
+  { slug: 'projects',         label: 'Projects',         description: 'Site / project master',                       href: '/projects',       icon: Building2,     tone: 'slate' },
+  { slug: 'jmr',              label: 'JMR',              description: 'Joint Measurement Records',                   href: '/jmr',            icon: Wrench,        tone: 'orange', comingSoon: true },
+  { slug: 'attendance',       label: 'Attendance',       description: 'Open the SiteAttend app',                     href: process.env.NEXT_PUBLIC_ATTENDANCE_URL || 'https://siteattend.vercel.app', external: true, icon: ExternalLink, tone: 'rose' },
+  { slug: 'uploads',          label: 'Uploads',          description: 'Excel imports history',                       href: '/uploads',        icon: Upload,        tone: 'slate' },
+  { slug: 'budget-vs-actual', label: 'Budget vs Actual', description: 'Upload IN4 export → cost variance dashboard', href: '/budget',         icon: BarChart3,     tone: 'teal' },
+  { slug: 'admin-users',      label: 'Users & Roles',    description: 'Manage app users',                            href: '/admin/users',    icon: Users,         tone: 'slate' },
+  { slug: 'admin-settings',   label: 'Settings',         description: 'App settings (admin email, etc.)',            href: '/admin/settings', icon: Settings,      tone: 'slate' },
+  { slug: 'admin-permissions',label: 'Permissions',      description: 'Who can do what in each module',              href: '/admin/permissions', icon: ShieldCheck, tone: 'slate' },
 ]
+
+export function visibleModules(perms: PermissionMap): ModuleTile[] {
+  return MODULES.filter(m => perms[m.slug]?.view)
+}
 
 // Tone → Tailwind classes. Kept here so JIT picks them up.
 export const TILE_TONES: Record<ModuleTile['tone'], { bg: string; ic: string; ring: string }> = {

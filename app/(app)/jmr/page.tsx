@@ -1,8 +1,10 @@
 import { PageHeader } from '@/components/PageHeader'
 import { Card, CardContent } from '@/components/ui/card'
 import { Wrench, ClipboardCheck, FileBarChart, Camera } from 'lucide-react'
+import { requirePermission } from '@/lib/auth'
 
-export default function JMRPage() {
+export default async function JMRPage() {
+  await requirePermission('jmr', 'view')
   return (
     <div className="p-4 md:p-6 max-w-3xl mx-auto">
       <PageHeader title="JMR" subtitle="Joint Measurement Records" />

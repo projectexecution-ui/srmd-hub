@@ -10,17 +10,26 @@ import {
   Users, Search, UserCheck, UserX, Mail, Shield, Copy, Check, Send,
 } from 'lucide-react'
 import type { Profile, Role } from '@/lib/types'
+import { ALL_ROLES } from '@/lib/types'
 
-const ROLES: Role[] = ['viewer', 'uploader', 'admin']
+const ROLES: Role[] = ALL_ROLES
 const ROLE_LABEL: Record<Role, string> = {
-  viewer: 'Viewer',
-  uploader: 'Uploader',
   admin: 'Admin',
+  founder: 'Founder',
+  head: 'Head',
+  uploader: 'Uploader',
+  engineer: 'Engineer',
+  site_staff: 'Site Staff',
+  viewer: 'Viewer',
 }
 const ROLE_DESC: Record<Role, string> = {
-  viewer: 'Read-only — can browse everything but cannot edit.',
-  uploader: 'Can edit vendors, indents notes, upload Excels.',
-  admin: 'Everything — including user management and settings.',
+  admin: 'Super-user. Manages users + permissions + settings.',
+  founder: 'Top org level. Wide view, narrow edit (default: budget).',
+  head: 'PM / department head. Edits ops modules.',
+  uploader: 'Edits operational data (vendors, indents, POs).',
+  engineer: 'Site engineer. Edits indents, GRN, JMR, attendance.',
+  site_staff: 'Labour / on-site. Attendance + view JMR.',
+  viewer: 'Read-only — can browse but cannot edit.',
 }
 
 export default function UsersClient({

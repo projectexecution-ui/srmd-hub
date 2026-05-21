@@ -1,5 +1,5 @@
-import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
+import { requirePermission } from '@/lib/auth'
 import { PageHeader } from '@/components/PageHeader'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { SettingsForm } from './settings-form'
@@ -7,11 +7,8 @@ import { SettingsForm } from './settings-form'
 export const dynamic = 'force-dynamic'
 
 export default async function AdminSettingsPage() {
+  await requirePermission('admin-settings', 'admin')
   const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) redirect('/login')
-  const { data: me } = await supabase.from('profiles').select('role').eq('id', user.id).single()
-  if (me?.role !== 'admin') redirect('/dashboard')
 
   const { data: rows } = await supabase.from('app_settings').select('key, value')
   const settings = Object.fromEntries((rows ?? []).map(r => [r.key, r.value]))

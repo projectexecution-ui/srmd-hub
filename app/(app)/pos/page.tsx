@@ -1,5 +1,6 @@
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/server'
+import { requirePermission } from '@/lib/auth'
 import { PageHeader } from '@/components/PageHeader'
 import { Card } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -14,6 +15,7 @@ export default async function POsPage({
 }: {
   searchParams: Promise<{ vendor?: string; project?: string; status?: string }>
 }) {
+  await requirePermission('pos', 'view')
   const sp = await searchParams
   const supabase = await createClient()
 

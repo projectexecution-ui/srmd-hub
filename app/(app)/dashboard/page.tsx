@@ -8,17 +8,14 @@ import { IndentStagePill } from '@/components/IndentStagePill'
 import { Badge } from '@/components/ui/badge'
 import { formatDate, formatINR } from '@/lib/utils'
 import { ClipboardList, FileText, PackageCheck, Receipt } from 'lucide-react'
+import { getMyProfile, getMyPermissions } from '@/lib/auth'
 
 export const dynamic = 'force-dynamic'
 
 export default async function DashboardPage() {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) redirect('/login')
-
-  const { data: profile } = await supabase
-    .from('profiles').select('*').eq('id', user.id).single()
+  const [profile, permissions] = await Promise.all([getMyProfile(), getMyPermissions()])
   if (!profile) redirect('/login')
+  const supabase = await createClient()
 
   // Counts (lightweight, head:true)
   const [indents, pos, grns, invoices, recentIndents, recentPos] = await Promise.all([
@@ -61,7 +58,7 @@ export default async function DashboardPage() {
       {/* Module tiles — Odoo style */}
       <section>
         <h2 className="text-sm font-bold uppercase tracking-wide text-gray-500 mb-3">Apps</h2>
-        <TileLauncher role={profile.role} />
+        <TileLauncher permissions={permissions} />
       </section>
 
       {/* Recent activity */}

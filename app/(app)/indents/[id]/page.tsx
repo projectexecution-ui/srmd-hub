@@ -1,6 +1,7 @@
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/server'
+import { requirePermission, can } from '@/lib/auth'
 import { PageHeader } from '@/components/PageHeader'
 import { IndentStagePill } from '@/components/IndentStagePill'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -17,11 +18,9 @@ export default async function IndentDetailPage({
   params: Promise<{ id: string }>
 }) {
   const { id } = await params
+  const perms = await requirePermission('indents', 'view')
+  const canEdit = can(perms, 'indents', 'edit')
   const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  const { data: profile } = user
-    ? await supabase.from('profiles').select('role').eq('id', user.id).single()
-    : { data: null }
 
   const { data: indent } = await supabase
     .from('indents')
@@ -55,7 +54,6 @@ export default async function IndentDetailPage({
   const uniquePos = Array.from(poMap.values())
 
   const proj = Array.isArray(indent.projects) ? indent.projects[0] : indent.projects
-  const canEdit = profile?.role === 'admin' || profile?.role === 'uploader'
 
   return (
     <div className="p-4 md:p-6 max-w-5xl mx-auto space-y-4">

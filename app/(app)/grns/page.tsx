@@ -1,5 +1,6 @@
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/server'
+import { requirePermission } from '@/lib/auth'
 import { PageHeader } from '@/components/PageHeader'
 import { Card } from '@/components/ui/card'
 import { EmptyState } from '@/components/ui/empty-state'
@@ -9,6 +10,7 @@ import { formatDate } from '@/lib/utils'
 export const dynamic = 'force-dynamic'
 
 export default async function GRNsPage() {
+  await requirePermission('grns', 'view')
   const supabase = await createClient()
   const { data: grns } = await supabase
     .from('grns')

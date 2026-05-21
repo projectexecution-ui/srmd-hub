@@ -1,26 +1,37 @@
-import { redirect } from 'next/navigation'
 import Link from 'next/link'
-import { createClient } from '@/lib/supabase/server'
 import { PageHeader } from '@/components/PageHeader'
 import { Card } from '@/components/ui/card'
-import { Users, Settings } from 'lucide-react'
+import { Users, Settings, ShieldCheck } from 'lucide-react'
+import { getMyPermissions, can } from '@/lib/auth'
 
 export const dynamic = 'force-dynamic'
 
 export default async function AdminHomePage() {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) redirect('/login')
-  const { data: profile } = await supabase.from('profiles').select('role').eq('id', user.id).single()
-  if (profile?.role !== 'admin') redirect('/dashboard')
+  const perms = await getMyPermissions()
+  const tiles = [
+    { href: '/admin/users',       slug: 'admin-users',       icon: Users,       title: 'Users & Roles', sub: 'Assign role per user, deactivate accounts.' },
+    { href: '/admin/permissions', slug: 'admin-permissions', icon: ShieldCheck, title: 'Permissions',   sub: 'Who can view / edit / admin each module.' },
+    { href: '/admin/settings',    slug: 'admin-settings',    icon: Settings,    title: 'Settings',      sub: 'Admin email, etc.' },
+  ].filter(t => can(perms, t.slug, 'view'))
 
   return (
     <div className="p-4 md:p-6 max-w-3xl mx-auto">
       <PageHeader title="Admin" subtitle="App configuration" />
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        <Link href="/admin/users"><Card className="p-5 hover:shadow-md transition-shadow"><Users className="h-6 w-6 text-slate-700 mb-3" /><h3 className="font-semibold text-gray-900">Users & Roles</h3><p className="text-sm text-gray-500 mt-1">Assign admin / uploader / viewer.</p></Card></Link>
-        <Link href="/admin/settings"><Card className="p-5 hover:shadow-md transition-shadow"><Settings className="h-6 w-6 text-slate-700 mb-3" /><h3 className="font-semibold text-gray-900">Settings</h3><p className="text-sm text-gray-500 mt-1">Admin email, etc.</p></Card></Link>
-      </div>
+      {tiles.length === 0 ? (
+        <p className="text-sm text-gray-500 text-center py-12">You don&apos;t have admin access.</p>
+      ) : (
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          {tiles.map(t => (
+            <Link key={t.href} href={t.href}>
+              <Card className="p-5 hover:shadow-md transition-shadow">
+                <t.icon className="h-6 w-6 text-slate-700 mb-3" />
+                <h3 className="font-semibold text-gray-900">{t.title}</h3>
+                <p className="text-sm text-gray-500 mt-1">{t.sub}</p>
+              </Card>
+            </Link>
+          ))}
+        </div>
+      )}
     </div>
   )
 }
