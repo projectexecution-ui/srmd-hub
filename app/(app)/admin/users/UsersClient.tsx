@@ -7,7 +7,7 @@ import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
 import { PageHeader } from '@/components/PageHeader'
 import {
-  Users, Search, UserCheck, UserX, Mail, Shield, Copy, Check, Send, Crown,
+  Users, Search, UserCheck, UserX, Mail, Shield, Copy, Check, Send, Crown, Trash2,
 } from 'lucide-react'
 import type { Profile, Role } from '@/lib/types'
 import { ALL_ROLES } from '@/lib/types'
@@ -45,6 +45,9 @@ export default function UsersClient({
   const [busyId, setBusyId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
+  // ID of the user whose delete is currently armed (one click → armed,
+  // second click within 5s → actually deletes). Null = not armed.
+  const [deleteArmed, setDeleteArmed] = useState<string | null>(null)
 
   const filtered = users.filter(u =>
     (u.name?.toLowerCase().includes(search.toLowerCase())) ||
@@ -72,6 +75,40 @@ export default function UsersClient({
     setBusyId(null)
     if (error) { setError(error.message); return }
     setUsers(prev => prev.map(x => x.id === u.id ? { ...x, is_active: next } : x))
+  }
+
+  async function deleteUser(u: Profile) {
+    if (!currentUserIsPortalOwner) {
+      setError('Only a Portal Owner can delete users.')
+      return
+    }
+    if (u.is_active) {
+      setError('Deactivate the user first, then delete.')
+      return
+    }
+    setBusyId(u.id); setError(null)
+    const { data, error: rpcErr } = await supabase.rpc('delete_user_account', { target_id: u.id })
+    setBusyId(null)
+    setDeleteArmed(null)
+    if (rpcErr) {
+      // Surface the friendly raise-exception message
+      setError(rpcErr.message || 'Could not delete user')
+      return
+    }
+    if (data && typeof data === 'object' && 'ok' in data && data.ok === true) {
+      setUsers(prev => prev.filter(x => x.id !== u.id))
+    } else {
+      setError('Delete returned an unexpected response')
+    }
+  }
+
+  function armDelete(userId: string) {
+    setError(null)
+    setDeleteArmed(userId)
+    // Auto-disarm after 5s so the button doesn't stay "Confirm" forever
+    setTimeout(() => {
+      setDeleteArmed(curr => (curr === userId ? null : curr))
+    }, 5000)
   }
 
   async function togglePortalOwner(u: Profile) {
@@ -220,6 +257,33 @@ export default function UsersClient({
                           <Crown className="h-3.5 w-3.5" />
                           {u.is_portal_owner ? 'Revoke owner' : 'Make owner'}
                         </Button>
+                      )}
+
+                      {currentUserIsPortalOwner && !isSelf && !u.is_active && (
+                        deleteArmed === u.id ? (
+                          <Button
+                            size="sm"
+                            variant="destructive"
+                            disabled={busy}
+                            onClick={() => deleteUser(u)}
+                            title="Click again to permanently delete"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                            {busy ? 'Deleting…' : 'Confirm delete'}
+                          </Button>
+                        ) : (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            disabled={busy}
+                            onClick={() => armDelete(u.id)}
+                            className="text-red-600 hover:bg-red-50 border-red-300"
+                            title="Delete this deactivated user — permanent, click twice to confirm"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                            Delete
+                          </Button>
+                        )
                       )}
                     </div>
                   </div>
