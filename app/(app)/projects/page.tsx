@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { EmptyState } from '@/components/ui/empty-state'
 import { Building2, Plus } from 'lucide-react'
+import { ProjectDeleteButton } from '@/components/ProjectDeleteButton'
 
 export const dynamic = 'force-dynamic'
 
@@ -17,7 +18,8 @@ export default async function ProjectsPage() {
 
   const { data: projects } = await supabase
     .from('projects')
-    .select('id, code, name, description, status')
+    .select('id, code, name, description, status, parent_project_id')
+    .is('parent_project_id', null)
     .order('code')
 
   return (
@@ -33,8 +35,8 @@ export default async function ProjectsPage() {
       {projects && projects.length > 0 ? (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {projects.map(p => (
-            <Link key={p.id} href={`/projects/${p.id}`}>
-              <Card className="hover:shadow-md transition-shadow h-full">
+            <Card key={p.id} className="hover:shadow-md transition-shadow h-full flex flex-col">
+              <Link href={`/projects/${p.id}`} className="flex-1">
                 <div className="p-5">
                   <div className="flex items-start justify-between mb-2">
                     <span className="text-xs font-mono font-bold text-blue-700">{p.code}</span>
@@ -45,8 +47,13 @@ export default async function ProjectsPage() {
                     <p className="text-sm text-gray-500 mt-2 line-clamp-2">{p.description}</p>
                   )}
                 </div>
-              </Card>
-            </Link>
+              </Link>
+              {canWrite && (
+                <div className="px-5 pb-4 pt-0 flex justify-end">
+                  <ProjectDeleteButton projectId={p.id} projectName={`${p.code} — ${p.name}`} redirectTo="/projects" />
+                </div>
+              )}
+            </Card>
           ))}
         </div>
       ) : (

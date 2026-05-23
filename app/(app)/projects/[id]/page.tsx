@@ -10,6 +10,7 @@ import { StatPill } from '@/components/ui/stat-pill'
 import { ClipboardList, FileText, Pencil } from 'lucide-react'
 import { formatINR } from '@/lib/utils'
 import { ProjectForm } from '../project-form'
+import { ProjectDeleteButton } from '@/components/ProjectDeleteButton'
 
 export const dynamic = 'force-dynamic'
 
@@ -43,9 +44,12 @@ export default async function ProjectDetailPage({
       <PageHeader title={`${project.code} — ${project.name}`} back="/projects">
         {project.status && <Badge variant={project.status === 'active' ? 'success' : 'secondary'}>{project.status}</Badge>}
         {!editing && canWrite && (
-          <Button asChild size="sm" variant="outline">
-            <Link href={`/projects/${id}?edit=1`}><Pencil className="h-4 w-4" /> Edit</Link>
-          </Button>
+          <>
+            <Button asChild size="sm" variant="outline">
+              <Link href={`/projects/${id}?edit=1`}><Pencil className="h-4 w-4" /> Edit</Link>
+            </Button>
+            <ProjectDeleteButton projectId={id} projectName={`${project.code} — ${project.name}`} redirectTo="/projects" />
+          </>
         )}
       </PageHeader>
 

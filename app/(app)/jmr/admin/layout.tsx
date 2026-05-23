@@ -4,6 +4,7 @@ import { requirePermission } from '@/lib/auth'
 import { PageHeader } from '@/components/PageHeader'
 
 const TABS = [
+  { slug: 'projects',    label: 'Projects',    href: '/jmr/admin/projects' },
   { slug: 'contractors', label: 'Contractors', href: '/jmr/admin/contractors' },
   { slug: 'items',       label: 'Items',       href: '/jmr/admin/items' },
   { slug: 'rate-cards',  label: 'Rate Cards',  href: '/jmr/admin/rate-cards' },
