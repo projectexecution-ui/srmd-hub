@@ -56,3 +56,16 @@ export async function requirePermission(slug: string, action: PermAction, redire
   if (!can(perms, slug, action)) redirect(redirectTo)
   return perms
 }
+
+/** True if the current user is a Portal Owner (additive super-power on top
+ *  of admin — can promote/demote other admins to Portal Owner, edit
+ *  portal-wide settings/layouts). */
+export const isPortalOwner = cache(async (): Promise<boolean> => {
+  const profile = await getMyProfile()
+  return !!profile?.is_portal_owner
+})
+
+/** Page guard: must be a Portal Owner or redirect. */
+export async function requirePortalOwner(redirectTo = '/dashboard') {
+  if (!(await isPortalOwner())) redirect(redirectTo)
+}

@@ -42,6 +42,9 @@ export interface Profile {
   name: string | null
   role: Role
   is_active: boolean
+  /** Portal Owner — additive super-power on top of admin. Can promote/demote
+   *  other admins to Portal Owner. There must always be ≥1 Portal Owner. */
+  is_portal_owner: boolean
   created_at: string | null
   updated_at: string | null
 }

@@ -7,7 +7,7 @@ import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
 import { PageHeader } from '@/components/PageHeader'
 import {
-  Users, Search, UserCheck, UserX, Mail, Shield, Copy, Check, Send,
+  Users, Search, UserCheck, UserX, Mail, Shield, Copy, Check, Send, Crown,
 } from 'lucide-react'
 import type { Profile, Role } from '@/lib/types'
 import { ALL_ROLES } from '@/lib/types'
@@ -33,10 +33,11 @@ const ROLE_DESC: Record<Role, string> = {
 }
 
 export default function UsersClient({
-  initialUsers, currentUserId,
+  initialUsers, currentUserId, currentUserIsPortalOwner,
 }: {
   initialUsers: Profile[]
   currentUserId: string
+  currentUserIsPortalOwner: boolean
 }) {
   const supabase = createClient()
   const [users, setUsers] = useState<Profile[]>(initialUsers)
@@ -54,6 +55,7 @@ export default function UsersClient({
   const activeCount = users.filter(u => u.is_active).length
   const adminCount = users.filter(u => u.role === 'admin').length
   const uploaderCount = users.filter(u => u.role === 'uploader').length
+  const portalOwnerCount = users.filter(u => u.is_portal_owner).length
 
   async function updateRole(u: Profile, next: Role) {
     setBusyId(u.id); setError(null)
@@ -72,6 +74,30 @@ export default function UsersClient({
     setUsers(prev => prev.map(x => x.id === u.id ? { ...x, is_active: next } : x))
   }
 
+  async function togglePortalOwner(u: Profile) {
+    if (!currentUserIsPortalOwner) {
+      setError('Only an existing Portal Owner can promote or demote Portal Owners.')
+      return
+    }
+    if (u.role !== 'admin') {
+      setError('Only admins can be Portal Owners. Change the role to admin first.')
+      return
+    }
+    setBusyId(u.id); setError(null)
+    const next = !u.is_portal_owner
+    const { error } = await supabase.from('profiles').update({ is_portal_owner: next }).eq('id', u.id)
+    setBusyId(null)
+    if (error) {
+      // The DB trigger refuses removal of the last Portal Owner — surface a friendly message.
+      const friendly = error.message?.includes('last Portal Owner')
+        ? 'Cannot remove the last Portal Owner. Promote another admin first.'
+        : error.message
+      setError(friendly)
+      return
+    }
+    setUsers(prev => prev.map(x => x.id === u.id ? { ...x, is_portal_owner: next } : x))
+  }
+
   async function copyInviteLink() {
     const url = typeof window !== 'undefined' ? window.location.origin : 'https://srmd-hub.vercel.app'
     try {
@@ -88,7 +114,7 @@ export default function UsersClient({
       <PageHeader
         title="Users & Permissions"
         back="/admin"
-        subtitle={`${activeCount} active · ${users.length} total · ${adminCount} admin · ${uploaderCount} uploader`}
+        subtitle={`${activeCount} active · ${users.length} total · ${adminCount} admin · ${uploaderCount} uploader · ${portalOwnerCount} portal owner${portalOwnerCount === 1 ? '' : 's'}`}
       >
         <Button onClick={copyInviteLink} variant="outline" size="sm">
           {copied ? <Check className="h-4 w-4 text-green-600" /> : <Copy className="h-4 w-4" />}
@@ -133,13 +159,18 @@ export default function UsersClient({
                     className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 py-3 border-b border-gray-100 last:border-0"
                   >
                     <div className="flex items-center gap-3 min-w-0">
-                      <div className="h-9 w-9 rounded-full bg-blue-100 flex items-center justify-center text-blue-700 font-bold text-sm flex-shrink-0">
-                        {(u.name || u.full_name || u.email)[0]?.toUpperCase()}
+                      <div className={`h-9 w-9 rounded-full ${u.is_portal_owner ? 'bg-amber-100 text-amber-700 ring-2 ring-amber-300' : 'bg-blue-100 text-blue-700'} flex items-center justify-center font-bold text-sm flex-shrink-0`}>
+                        {u.is_portal_owner ? <Crown className="h-4 w-4" /> : (u.name || u.full_name || u.email)[0]?.toUpperCase()}
                       </div>
                       <div className="min-w-0">
-                        <p className="text-sm font-medium text-gray-900 truncate">
+                        <p className="text-sm font-medium text-gray-900 truncate flex items-center gap-1.5">
                           {u.name || u.full_name || 'No name'}
-                          {isSelf && <span className="ml-2 text-xs text-blue-600 font-normal">(you)</span>}
+                          {u.is_portal_owner && (
+                            <Badge variant="warning" className="text-[10px] inline-flex items-center gap-1">
+                              <Crown className="h-3 w-3" /> Portal Owner
+                            </Badge>
+                          )}
+                          {isSelf && <span className="text-xs text-blue-600 font-normal">(you)</span>}
                         </p>
                         <p className="text-xs text-gray-500 flex items-center gap-1 truncate">
                           <Mail className="h-3 w-3 flex-shrink-0" />
@@ -176,6 +207,20 @@ export default function UsersClient({
                           <><UserCheck className="h-3.5 w-3.5" />Activate</>
                         )}
                       </Button>
+
+                      {currentUserIsPortalOwner && u.role === 'admin' && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          disabled={busy}
+                          onClick={() => togglePortalOwner(u)}
+                          className={u.is_portal_owner ? 'text-amber-700 hover:bg-amber-50 border-amber-300' : 'text-amber-700 hover:bg-amber-50'}
+                          title={u.is_portal_owner ? 'Revoke Portal Owner' : 'Make Portal Owner'}
+                        >
+                          <Crown className="h-3.5 w-3.5" />
+                          {u.is_portal_owner ? 'Revoke owner' : 'Make owner'}
+                        </Button>
+                      )}
                     </div>
                   </div>
                 )
@@ -195,6 +240,15 @@ export default function UsersClient({
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            <div className="rounded-xl border border-amber-300 bg-amber-50 p-3">
+              <Badge variant="warning" className="mb-2 inline-flex items-center gap-1">
+                <Crown className="h-3 w-3" /> Portal Owner
+              </Badge>
+              <p className="text-xs text-amber-900">
+                Super-power on top of admin. Promotes/demotes other admins to Portal Owner,
+                edits portal-wide settings and layouts. There must always be at least one.
+              </p>
+            </div>
             {ROLES.map(r => (
               <div key={r} className="rounded-xl border border-gray-200 p-3">
                 <Badge variant={r === 'admin' ? 'default' : r === 'uploader' ? 'warning' : 'secondary'} className="mb-2">
