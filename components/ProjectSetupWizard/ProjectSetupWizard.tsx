@@ -356,7 +356,7 @@ function Step2Disciplines({
   setPicked: (next: Set<string>) => void
   busy: boolean
   onSaveAndContinue: () => Promise<void>
-  onSkip: () => Promise<void>
+  onSkip: () => void
 }) {
   function toggle(id: string) {
     const next = new Set(picked)
