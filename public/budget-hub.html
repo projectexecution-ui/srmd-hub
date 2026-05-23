@@ -1113,26 +1113,155 @@
 <div class="toast" id="toast"></div>
 
 <script>
-// ============== STORAGE ==============
+// ============== STORAGE — server-backed, localStorage fallback ==============
+// State now lives in public.budget_hub_state via /api/budget-hub/state so
+// the whole team sees the same numbers. localStorage is kept as an offline
+// cache and a migration source (one-time push from each user's old browser).
 const STORAGE_KEY = 'srmd_budget_hub_v1';
 const THEME_KEY = 'srmd_budget_hub_theme';
 const HIER_KEY = 'srmd_budget_hub_hier';
+const SERVER_URL = '/api/budget-hub/state';
+let _serverVersion = 0;
+let _pendingSave = null;
+let _suppressNextSave = false; // set when we just received state from server
+
+function _normalize(s) {
+  const out = s || {};
+  out.projects = (out.projects || []).map(p => ({
+    type: 'individual',
+    parentId: null,
+    areaStatement: null,
+    ...p,
+  }));
+  return out;
+}
 function loadState() {
+  // Synchronous return from localStorage so the initial render works.
+  // A server pull is scheduled immediately to overlay the team-wide state.
+  let s = { projects: [] };
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return { projects: [] };
-    const s = JSON.parse(raw);
-    // Migration: add type, parentId, areaStatement to legacy projects
-    s.projects = (s.projects || []).map(p => ({
-      type: 'individual',
-      parentId: null,
-      areaStatement: null,
-      ...p,
-    }));
-    return s;
-  } catch { return { projects: [] }; }
+    if (raw) s = _normalize(JSON.parse(raw));
+  } catch {}
+  setTimeout(loadFromServer, 0);
+  return s;
 }
-function saveState() { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }
+async function loadFromServer() {
+  try {
+    const r = await fetch(SERVER_URL, { credentials: 'same-origin' });
+    if (!r.ok) {
+      if (r.status !== 401) showSyncStatus('Server unavailable · using local cache', true);
+      return;
+    }
+    const body = await r.json();
+    _serverVersion = body.version || 0;
+    const serverState = _normalize(body.state);
+    const localEmpty = !state.projects || state.projects.length === 0;
+    const serverHasData = serverState.projects.length > 0;
+
+    if (localEmpty && serverHasData) {
+      _suppressNextSave = true;
+      state = serverState;
+      try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch {}
+      try { renderHub(); } catch {}
+      showSyncStatus('Loaded ' + state.projects.length + ' projects from server · v' + _serverVersion);
+    } else if (!localEmpty && !serverHasData) {
+      showMigrationPrompt();
+    } else if (!localEmpty && serverHasData) {
+      // Both populated — trust server, but warn so user knows their local edits may differ.
+      _suppressNextSave = true;
+      state = serverState;
+      try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch {}
+      try { renderHub(); } catch {}
+      showSyncStatus('In sync with server · v' + _serverVersion);
+    } else {
+      showSyncStatus('No projects yet · server v' + _serverVersion);
+    }
+  } catch (e) {
+    showSyncStatus('Offline · using local cache', true);
+  }
+}
+function saveState() {
+  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch {}
+  if (_suppressNextSave) { _suppressNextSave = false; return; }
+  if (_pendingSave) clearTimeout(_pendingSave);
+  _pendingSave = setTimeout(saveToServer, 800);
+}
+async function saveToServer() {
+  _pendingSave = null;
+  try {
+    const r = await fetch(SERVER_URL, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'same-origin',
+      body: JSON.stringify({ state: state, baseVersion: _serverVersion }),
+    });
+    if (r.status === 409) {
+      showSyncStatus('Someone else saved — reload to merge', true);
+      return;
+    }
+    if (!r.ok) {
+      showSyncStatus('Save failed (HTTP ' + r.status + ')', true);
+      return;
+    }
+    const body = await r.json();
+    _serverVersion = body.version || _serverVersion + 1;
+    showSyncStatus('Saved to server · v' + _serverVersion);
+  } catch (e) {
+    showSyncStatus('Offline · saved locally', true);
+  }
+}
+function showSyncStatus(msg, isWarning) {
+  let el = document.getElementById('syncStatus');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'syncStatus';
+    el.style.cssText = 'position:fixed;bottom:12px;right:12px;padding:6px 12px;border-radius:6px;font-size:11px;font-weight:600;z-index:9999;color:#fff;opacity:0.92;pointer-events:none;';
+    document.body.appendChild(el);
+  }
+  el.style.background = isWarning ? '#b45309' : '#15803d';
+  el.textContent = msg;
+  el.style.display = 'block';
+  clearTimeout(el._t);
+  el._t = setTimeout(() => { el.style.display = 'none'; }, 3500);
+}
+function showMigrationPrompt() {
+  if (document.getElementById('migrationPrompt')) return;
+  const count = state.projects?.length || 0;
+  const el = document.createElement('div');
+  el.id = 'migrationPrompt';
+  el.style.cssText = 'position:fixed;top:12px;left:50%;transform:translateX(-50%);padding:12px 16px;border-radius:8px;background:#fef3c7;color:#92400e;font-size:13px;font-weight:600;z-index:9999;box-shadow:0 6px 20px rgba(0,0,0,0.12);max-width:520px;';
+  el.innerHTML = '⚠ This browser has <b>' + count + ' projects</b> that are not on the server yet. ' +
+    '<button id="bh_pushNow" style="margin-left:10px;padding:5px 12px;border-radius:5px;background:#92400e;color:#fff;border:0;font-weight:600;cursor:pointer;">Push to server →</button>' +
+    '<button id="bh_dismissMigrate" style="margin-left:6px;background:none;border:0;color:#92400e;cursor:pointer;font-size:18px;line-height:1;" title="Dismiss">×</button>';
+  document.body.appendChild(el);
+  document.getElementById('bh_pushNow').onclick = async () => {
+    const btn = document.getElementById('bh_pushNow');
+    btn.disabled = true;
+    btn.textContent = 'Pushing…';
+    try {
+      const r = await fetch(SERVER_URL, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'same-origin',
+        body: JSON.stringify({ state: state, force: true }),
+      });
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      const body = await r.json();
+      _serverVersion = body.version || 1;
+      el.style.background = '#dcfce7';
+      el.style.color = '#166534';
+      el.innerHTML = '✓ Pushed ' + count + ' projects to the server (v' + _serverVersion + '). Your team can see them now.';
+      setTimeout(() => el.remove(), 6000);
+    } catch (e) {
+      el.style.background = '#fee2e2';
+      el.style.color = '#991b1b';
+      el.innerHTML = '✗ Push failed: ' + (e && e.message ? e.message : 'unknown error') +
+        '. <button onclick="document.getElementById(\'migrationPrompt\').remove();showMigrationPrompt()" style="margin-left:6px;background:none;border:0;color:#991b1b;text-decoration:underline;cursor:pointer;font-weight:600;">Retry</button>';
+    }
+  };
+  document.getElementById('bh_dismissMigrate').onclick = () => el.remove();
+}
 let state = loadState();
 let currentProjectId = null;
 let mainChartInstance = null;
