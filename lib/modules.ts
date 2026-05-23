@@ -5,7 +5,7 @@
 import {
   ClipboardList, FileText, PackageCheck, Receipt, Wallet,
   Truck, Building2, Upload, Users, Settings, ShieldCheck,
-  ExternalLink, BarChart3, Wrench,
+  ExternalLink, BarChart3, Wrench, Calculator,
 } from 'lucide-react'
 import type { PermissionMap } from './types'
 
@@ -34,6 +34,7 @@ export const MODULES: ModuleTile[] = [
   { slug: 'attendance',       label: 'Attendance',       description: 'Open the SiteAttend app',                     href: process.env.NEXT_PUBLIC_ATTENDANCE_URL || 'https://siteattend.vercel.app', external: true, icon: ExternalLink, tone: 'rose' },
   { slug: 'uploads',          label: 'Uploads',          description: 'Excel imports history',                       href: '/uploads',        icon: Upload,        tone: 'slate' },
   { slug: 'budget-vs-actual', label: 'Budget vs Actual', description: 'Upload IN4 export → cost variance dashboard', href: '/budget',         icon: BarChart3,     tone: 'teal' },
+  { slug: 'cost-control',     label: 'Cost Control',     description: 'Working Sheets, budgets & approvals (SRASSK)',href: '/cost-control',   icon: Calculator,    tone: 'indigo' },
   { slug: 'admin-users',      label: 'Users & Roles',    description: 'Manage app users',                            href: '/admin/users',    icon: Users,         tone: 'slate' },
   { slug: 'admin-settings',   label: 'Settings',         description: 'App settings (admin email, etc.)',            href: '/admin/settings', icon: Settings,      tone: 'slate' },
   { slug: 'admin-permissions',label: 'Permissions',      description: 'Who can do what in each module',              href: '/admin/permissions', icon: ShieldCheck, tone: 'slate' },
