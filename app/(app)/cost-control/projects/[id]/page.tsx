@@ -37,10 +37,12 @@ export default async function CostControlProjectDetailPage(
         )}
       </PageHeader>
 
-      <SetupProgressBanner
-        projectId={project.id}
-        progressPct={project.setup_progress_pct ?? 0}
-      />
+      {project.cc_status && (
+        <SetupProgressBanner
+          projectId={project.id}
+          progressPct={project.setup_progress_pct ?? 0}
+        />
+      )}
 
       <Card className="p-6">
         <h2 className="font-semibold text-gray-900 mb-3">Disciplines</h2>

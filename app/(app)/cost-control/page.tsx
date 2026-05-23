@@ -25,9 +25,11 @@ export default async function CostControlLandingPage() {
   const canWrite = can(perms, 'cost-control', 'edit')
   const supabase = await createClient()
 
+  // Only Cost Control projects — the hub has ~18 unrelated indent/PO projects in the same table.
   const { data: projects, error } = await supabase
     .from('projects')
     .select('id, code, name, cc_status, setup_progress_pct, built_up_sft, parent_project_id')
+    .not('cc_status', 'is', null)
     .order('code')
 
   const ccProjects = (projects ?? []) as CCProject[]

@@ -32,7 +32,10 @@ export function SetupProgressBanner({
     )
   }
 
-  const href = continueHref ?? `/cost-control/projects/${projectId}/setup`
+  // TODO: route to /cost-control/projects/[id]/setup once the resumable
+  // setup screen exists (next session). For now, send PMs back to the
+  // wizard host page; project basics are already saved.
+  const href = continueHref ?? `/cost-control/projects/${projectId}`
 
   return (
     <div className="rounded-md border border-amber-200 bg-amber-50 p-4">

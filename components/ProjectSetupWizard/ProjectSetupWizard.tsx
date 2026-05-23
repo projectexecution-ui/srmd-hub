@@ -53,6 +53,7 @@ export function ProjectSetupWizard({
   const [projectId, setProjectId] = React.useState<string | null>(null)
   const [busy, setBusy] = React.useState(false)
   const [error, setError] = React.useState<string | null>(null)
+  const [fieldErrors, setFieldErrors] = React.useState<Record<string, string[]>>({})
 
   // Step 2 selection — default-tick the disciplines flagged as common.
   const [pickedDisciplines, setPickedDisciplines] = React.useState<Set<string>>(
@@ -62,10 +63,12 @@ export function ProjectSetupWizard({
   async function handleStep1(formData: FormData) {
     setBusy(true)
     setError(null)
+    setFieldErrors({})
     const res = await createProjectBasics(formData)
     setBusy(false)
     if (!res.ok) {
       setError(res.error)
+      if (res.fieldErrors) setFieldErrors(res.fieldErrors)
       return
     }
     setProjectId(res.projectId)
@@ -111,6 +114,7 @@ export function ProjectSetupWizard({
           parentProjects={parentProjects}
           users={users}
           busy={busy}
+          fieldErrors={fieldErrors}
           onSubmit={handleStep1}
         />
       )}
@@ -190,13 +194,19 @@ function Step1Basics({
   parentProjects,
   users,
   busy,
+  fieldErrors,
   onSubmit,
 }: {
   parentProjects: ParentProjectOption[]
   users: UserOption[]
   busy: boolean
+  fieldErrors: Record<string, string[]>
   onSubmit: (fd: FormData) => Promise<void>
 }) {
+  function err(name: string) {
+    const e = fieldErrors[name]
+    return e && e.length > 0 ? <p className="mt-1 text-xs text-red-600">{e[0]}</p> : null
+  }
   return (
     <Card className="p-5">
       <h2 className="text-lg font-semibold text-gray-900 mb-1">Project basics</h2>
@@ -209,11 +219,13 @@ function Step1Basics({
         <div className="md:col-span-2">
           <Label htmlFor="name">Project name *</Label>
           <Input id="name" name="name" required placeholder="e.g. NGH D" disabled={busy} />
+          {err('name')}
         </div>
 
         <div>
           <Label htmlFor="code">Short code *</Label>
           <Input id="code" name="code" required placeholder="NGH-D" disabled={busy} />
+          {err('code')}
         </div>
 
         <div>

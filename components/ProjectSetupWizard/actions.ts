@@ -14,7 +14,7 @@ const basicsSchema = z.object({
   name: z.string().min(2, 'Project name required'),
   code: z.string().min(1, 'Short code required'),
   parent_project_id: z.string().uuid().nullable().optional(),
-  built_up_sft: z.coerce.number().positive().nullable().optional(),
+  built_up_sft: z.coerce.number().nonnegative().nullable().optional(),
   pm_user_id: z.string().uuid().nullable().optional(),
   start_date: z.string().nullable().optional(),
   target_completion: z.string().nullable().optional(),
@@ -65,6 +65,14 @@ export async function createProjectBasics(formData: FormData): Promise<CreatePro
     .single()
 
   if (error || !data) {
+    // Postgres unique_violation on projects.code
+    if (error?.code === '23505') {
+      return {
+        ok: false,
+        error: 'A project with this code already exists. Pick a different short code.',
+        fieldErrors: { code: ['Already taken'] },
+      }
+    }
     return { ok: false, error: error?.message ?? 'Could not create project' }
   }
 
