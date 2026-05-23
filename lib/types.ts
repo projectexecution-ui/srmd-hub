@@ -12,9 +12,10 @@ export type Role =
   | 'head'       // PM / dept head
   | 'engineer'   // site engineer
   | 'site_staff' // labour / on-site
+  | 'contractor' // external contractor — sees only own bills + entries (JMR)
 
 export const ALL_ROLES: Role[] = [
-  'admin', 'founder', 'head', 'uploader', 'engineer', 'site_staff', 'viewer',
+  'admin', 'founder', 'head', 'uploader', 'engineer', 'site_staff', 'viewer', 'contractor',
 ]
 
 export type PermAction = 'view' | 'edit' | 'admin'
@@ -222,4 +223,137 @@ export interface Upload {
   created_at: string | null
   completed_at: string | null
   diff_summary: unknown | null
+}
+
+// ============================================================
+// JMR / Machinery Tracker module
+// ============================================================
+
+export type JmrItemCategory = 'equipment' | 'manpower'
+export type JmrItemUnit = 'hr' | 'day' | 'nos' | 'cu_m'
+export type JmrEntryStatus = 'submitted' | 'pm_approved' | 'flagged'
+export type JmrBillStatus = 'submitted' | 'pm_review' | 'approved' | 'paid' | 'rejected'
+
+export interface JmrContractor {
+  id: string
+  name: string
+  gst_number: string | null
+  contact_person: string | null
+  phone: string | null
+  email: string | null
+  profile_id: string | null
+  status: string
+  created_at: string | null
+  updated_at: string | null
+}
+
+export interface JmrItem {
+  id: string
+  name: string
+  category: JmrItemCategory
+  unit: JmrItemUnit
+  is_active: boolean
+  created_at: string | null
+  updated_at: string | null
+}
+
+export interface JmrRateCard {
+  id: string
+  contractor_id: string
+  item_id: string
+  project_id: string | null
+  rate_per_unit: number
+  valid_from: string
+  valid_till: string | null
+  created_at: string | null
+  updated_at: string | null
+  jmr_contractors?: JmrContractor | null
+  jmr_items?: JmrItem | null
+  projects?: Project | null
+}
+
+export interface JmrUserProjectAccess {
+  user_id: string
+  project_id: string
+  granted_at: string | null
+  granted_by: string | null
+}
+
+export interface JmrDailyEntry {
+  id: string
+  project_id: string
+  sub_project_id: string | null
+  contractor_id: string
+  item_id: string
+  entry_date: string
+  start_meter: number | null
+  end_meter: number | null
+  quantity: number
+  rate_snapshot: number
+  amount: number
+  work_description: string | null
+  log_sheet_photo_url: string | null
+  logged_by_user_id: string | null
+  status: JmrEntryStatus
+  approved_by_user_id: string | null
+  approved_at: string | null
+  created_at: string | null
+  updated_at: string | null
+  jmr_contractors?: JmrContractor | null
+  jmr_items?: JmrItem | null
+  projects?: Project | null
+  sub_project?: Project | null
+}
+
+export interface JmrBill {
+  id: string
+  bill_number: string
+  contractor_id: string
+  project_id: string
+  bill_date: string
+  period_from: string
+  period_to: string
+  subtotal: number
+  gst_rate: number
+  gst_amount: number
+  total_amount: number
+  bill_photo_url: string | null
+  status: JmrBillStatus
+  variance_flag: boolean
+  variance_notes: string | null
+  submitted_by_user_id: string | null
+  approved_by_user_id: string | null
+  approved_at: string | null
+  paid_on: string | null
+  payment_ref: string | null
+  created_at: string | null
+  updated_at: string | null
+  jmr_contractors?: JmrContractor | null
+  projects?: Project | null
+  jmr_bill_line_items?: JmrBillLineItem[]
+}
+
+export interface JmrBillLineItem {
+  id: string
+  bill_id: string
+  item_id: string
+  sub_project_id: string | null
+  billed_quantity: number
+  jmr_quantity: number
+  rate: number
+  amount: number
+  variance: number
+  variance_pct: number | null
+  created_at: string | null
+  jmr_items?: JmrItem | null
+}
+
+export interface JmrSettings {
+  gst_rate_pct: number
+  variance_tolerance_pct: number
+  variance_tolerance_min_hours: number
+  entry_edit_window_hours: number
+  weekly_report_day: string
+  weekly_report_hour_ist: number
+  weekly_report_recipients: string[]
 }

@@ -1,0 +1,18 @@
+{
+  "name": "SRMD Hub — JMR",
+  "short_name": "SRMD JMR",
+  "description": "Site machinery hours, JMR reports & bills",
+  "start_url": "/jmr",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#1d4ed8",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "/favicon.ico",
+      "sizes": "any",
+      "type": "image/x-icon"
+    }
+  ]
+}

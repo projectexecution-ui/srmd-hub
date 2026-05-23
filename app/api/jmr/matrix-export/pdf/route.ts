@@ -1,0 +1,144 @@
+import { NextRequest, NextResponse } from 'next/server'
+import { jsPDF } from 'jspdf'
+import autoTable from 'jspdf-autotable'
+import { buildMatrix, COLUMN_PALETTE } from '@/lib/jmr/matrix'
+import { getJmrSettings } from '@/lib/jmr/settings'
+import { getMyPermissions, getMyProfile, can } from '@/lib/auth'
+import { todayISO, formatDateIN, formatNumberIN } from '@/lib/jmr/format'
+
+export async function GET(req: NextRequest) {
+  const perms = await getMyPermissions()
+  if (!can(perms, 'jmr', 'view')) return new NextResponse('Forbidden', { status: 403 })
+
+  const sp = req.nextUrl.searchParams
+  const settings = await getJmrSettings()
+  const profile = await getMyProfile()
+  const data = await buildMatrix({
+    projectId: sp.get('project'),
+    contractorId: sp.get('contractor'),
+    subProjectIds: sp.getAll('sp').length ? sp.getAll('sp') : null,
+    category: (sp.get('cat') as 'equipment' | 'manpower' | 'both') ?? 'both',
+    dateFrom: sp.get('from'),
+    dateTo: sp.get('to') ?? todayISO(),
+    gstRatePct: settings.gst_rate_pct,
+  })
+
+  const subProjects = [...data.subProjects]
+  const hasUnassigned = data.rows.some(r => r.cells['unassigned'])
+  if (hasUnassigned) subProjects.push({ id: 'unassigned', name: 'Unassigned', code: null })
+
+  // A3 landscape
+  const doc = new jsPDF({ orientation: 'landscape', format: 'a3', unit: 'pt' })
+  const title = `${data.project?.name ?? 'JMR'} — JMR Summary for Equipment & Manpower Supply (${formatDateIN(data.dateTo)})`
+  doc.setFontSize(13)
+  doc.setFont('helvetica', 'bold')
+  doc.text(title, 40, 36)
+  doc.setFontSize(9)
+  doc.setFont('helvetica', 'normal')
+  doc.text(
+    `${data.contractor ? `Contractor: ${data.contractor.name}  ·  ` : ''}Cumulative ${data.dateFrom ? `from ${formatDateIN(data.dateFrom)} ` : ''}till ${formatDateIN(data.dateTo)}`,
+    40, 52
+  )
+
+  // Build head + body
+  const head1: string[] = ['Sr.', 'Item Description', 'Unit', 'Rate']
+  const head2: string[] = ['', '', '', '']
+  for (const sp of subProjects) {
+    head1.push(sp.code || sp.name, '')
+    head2.push('Qty', 'Amount')
+  }
+  head1.push('Total')
+  head2.push('')
+
+  const body: (string | number)[][] = []
+  let sr = 0
+
+  function rowFor(r: typeof data.rows[number]) {
+    sr++
+    const cols: (string | number)[] = [sr, r.item_name, r.unit, r.rate != null ? formatNumberIN(r.rate) : '']
+    for (const sp of subProjects) {
+      const c = r.cells[sp.id]
+      cols.push(c ? formatNumberIN(c.qty, c.qty % 1 === 0 ? 0 : 2) : '0')
+      cols.push(c ? formatNumberIN(c.amount) : '0')
+    }
+    cols.push(formatNumberIN(r.total.amount))
+    return cols
+  }
+
+  const equipmentRows = data.rows.filter(r => r.category === 'equipment')
+  const manpowerRows = data.rows.filter(r => r.category === 'manpower')
+
+  if (equipmentRows.length > 0) {
+    body.push([{ content: 'EQUIPMENT SUPPLY', colSpan: head1.length, styles: { fontStyle: 'bold', fillColor: [220, 220, 220] } } as unknown as string])
+    for (const r of equipmentRows) body.push(rowFor(r))
+  }
+  if (manpowerRows.length > 0) {
+    body.push([{ content: 'MANPOWER (FOR 8 HOURS) SUPPLY', colSpan: head1.length, styles: { fontStyle: 'bold', fillColor: [220, 220, 220] } } as unknown as string])
+    for (const r of manpowerRows) body.push(rowFor(r))
+  }
+
+  // Footer rows
+  const stCols: (string | number)[] = ['', 'SUB TOTAL', '', '']
+  for (const sp of subProjects) { stCols.push(''); stCols.push(formatNumberIN(data.subTotalsBySubProject[sp.id] ?? 0)) }
+  stCols.push(formatNumberIN(data.subTotalAll))
+  body.push(stCols)
+
+  const gstCols: (string | number)[] = ['', `GST ${data.gstRate}%`, '', '']
+  for (const _ of subProjects) { gstCols.push(''); gstCols.push('') }
+  gstCols.push(formatNumberIN(data.gstAmount))
+  body.push(gstCols)
+
+  const gtCols: (string | number)[] = ['', 'GRAND TOTAL', '', '']
+  for (const _ of subProjects) { gtCols.push(''); gtCols.push('') }
+  gtCols.push(formatNumberIN(data.grandTotal))
+  body.push(gtCols)
+
+  // Column-specific styles: color the sub-project columns lightly.
+  const columnStyles: Record<number, { fillColor: [number, number, number] }> = {}
+  let cIdx = 4
+  for (let i = 0; i < subProjects.length; i++) {
+    const p = COLUMN_PALETTE[i % COLUMN_PALETTE.length]!
+    const rgb = hexToRgb(p.header)
+    columnStyles[cIdx] = { fillColor: rgb }
+    columnStyles[cIdx + 1] = { fillColor: rgb }
+    cIdx += 2
+  }
+  columnStyles[head1.length - 1] = { fillColor: [254, 243, 199] } // amber-100 for Total column
+
+  autoTable(doc, {
+    startY: 64,
+    head: [head1, head2],
+    body,
+    theme: 'grid',
+    styles: { fontSize: 7, cellPadding: 3, lineColor: [200, 200, 200], lineWidth: 0.5 },
+    headStyles: { fillColor: [243, 244, 246], textColor: [17, 24, 39], fontStyle: 'bold' },
+    columnStyles,
+    didDrawPage: () => {
+      const pageHeight = doc.internal.pageSize.getHeight()
+      doc.setFontSize(7)
+      doc.setTextColor(120)
+      doc.text(
+        `Generated by ${profile?.full_name ?? profile?.email ?? 'SRMD'} · ${new Date().toISOString().slice(0, 16)}`,
+        40, pageHeight - 16
+      )
+    },
+  })
+
+  const buf = doc.output('arraybuffer')
+  const fileName = `JMR_${data.project?.code || 'export'}_${data.dateTo}.pdf`
+  return new NextResponse(new Uint8Array(buf), {
+    headers: {
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': `attachment; filename="${fileName}"`,
+    },
+  })
+}
+
+function hexToRgb(hex: string): [number, number, number] {
+  const h = hex.replace('#', '')
+  return [
+    parseInt(h.slice(0, 2), 16),
+    parseInt(h.slice(2, 4), 16),
+    parseInt(h.slice(4, 6), 16),
+  ]
+}

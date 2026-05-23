@@ -4,6 +4,7 @@ import './globals.css'
 export const metadata: Metadata = {
   title: 'SRMD Hub',
   description: 'SRMD construction modules — Indents, POs, GRN, Invoices, and more',
+  manifest: '/manifest.webmanifest',
   icons: {
     icon: '/srmd-icon.png',
     apple: '/srmd-icon.png',
