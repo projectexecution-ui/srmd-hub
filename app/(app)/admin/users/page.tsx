@@ -1,14 +1,16 @@
 import { createClient } from '@/lib/supabase/server'
 import { requirePermission, getMyUser, isPortalOwner } from '@/lib/auth'
+import { getRoleLabels } from '@/lib/role-labels'
 import UsersClient from './UsersClient'
 
 export const dynamic = 'force-dynamic'
 
 export default async function AdminUsersPage() {
   await requirePermission('admin-users', 'admin')
-  const [user, currentUserIsPortalOwner] = await Promise.all([
+  const [user, currentUserIsPortalOwner, roleLabels] = await Promise.all([
     getMyUser(),
     isPortalOwner(),
+    getRoleLabels(),
   ])
   const supabase = await createClient()
 
@@ -22,6 +24,7 @@ export default async function AdminUsersPage() {
       initialUsers={users ?? []}
       currentUserId={user!.id}
       currentUserIsPortalOwner={currentUserIsPortalOwner}
+      roleLabels={roleLabels}
     />
   )
 }

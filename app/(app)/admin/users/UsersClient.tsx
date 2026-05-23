@@ -11,33 +11,17 @@ import {
 } from 'lucide-react'
 import type { Profile, Role } from '@/lib/types'
 import { ALL_ROLES } from '@/lib/types'
+import type { RoleLabelMap } from '@/lib/role-labels'
 
 const ROLES: Role[] = ALL_ROLES
-const ROLE_LABEL: Record<Role, string> = {
-  admin: 'Admin',
-  founder: 'Founder',
-  head: 'Head',
-  uploader: 'Uploader',
-  engineer: 'Engineer',
-  site_staff: 'Site Staff',
-  viewer: 'Viewer',
-}
-const ROLE_DESC: Record<Role, string> = {
-  admin: 'Super-user. Manages users + permissions + settings.',
-  founder: 'Top org level. Wide view, narrow edit (default: budget).',
-  head: 'PM / department head. Edits ops modules.',
-  uploader: 'Edits operational data (vendors, indents, POs).',
-  engineer: 'Site engineer. Edits indents, GRN, JMR, attendance.',
-  site_staff: 'Labour / on-site. Attendance + view JMR.',
-  viewer: 'Read-only — can browse but cannot edit.',
-}
 
 export default function UsersClient({
-  initialUsers, currentUserId, currentUserIsPortalOwner,
+  initialUsers, currentUserId, currentUserIsPortalOwner, roleLabels,
 }: {
   initialUsers: Profile[]
   currentUserId: string
   currentUserIsPortalOwner: boolean
+  roleLabels: RoleLabelMap
 }) {
   const supabase = createClient()
   const [users, setUsers] = useState<Profile[]>(initialUsers)
@@ -222,9 +206,9 @@ export default function UsersClient({
                         disabled={busy || isSelf}
                         onChange={e => updateRole(u, e.target.value as Role)}
                         className="h-9 rounded-xl border border-gray-300 bg-white px-2 text-xs font-semibold text-gray-700 disabled:bg-gray-50 disabled:text-gray-400"
-                        title={isSelf ? "You can't change your own role" : ROLE_DESC[u.role]}
+                        title={isSelf ? "You can't change your own role" : roleLabels[u.role].description}
                       >
-                        {ROLES.map(r => <option key={r} value={r}>{ROLE_LABEL[r]}</option>)}
+                        {ROLES.map(r => <option key={r} value={r}>{roleLabels[r].label}</option>)}
                       </select>
 
                       <Badge variant={u.is_active ? 'success' : 'secondary'}>
@@ -316,9 +300,9 @@ export default function UsersClient({
             {ROLES.map(r => (
               <div key={r} className="rounded-xl border border-gray-200 p-3">
                 <Badge variant={r === 'admin' ? 'default' : r === 'uploader' ? 'warning' : 'secondary'} className="mb-2">
-                  {ROLE_LABEL[r]}
+                  {roleLabels[r].label}
                 </Badge>
-                <p className="text-xs text-gray-600">{ROLE_DESC[r]}</p>
+                <p className="text-xs text-gray-600">{roleLabels[r].description}</p>
               </div>
             ))}
           </div>

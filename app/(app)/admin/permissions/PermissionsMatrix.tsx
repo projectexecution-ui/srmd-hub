@@ -6,6 +6,7 @@ import { Badge } from '@/components/ui/badge'
 import { Eye, Pencil, ShieldCheck, Loader2, Check } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { Role, RolePermission, PermAction } from '@/lib/types'
+import type { RoleLabelMap } from '@/lib/role-labels'
 
 interface ModuleRef { slug: string; label: string }
 
@@ -13,6 +14,8 @@ interface Props {
   modules: ModuleRef[]
   roles: readonly Role[]
   initial: RolePermission[]
+  roleLabels: RoleLabelMap
+  currentUserIsPortalOwner: boolean
 }
 
 type Key = `${string}::${string}` // `${role}::${slug}`
@@ -24,27 +27,7 @@ const ACTIONS: { key: PermAction; label: string; icon: React.ComponentType<{ cla
   { key: 'admin', label: 'Admin', icon: ShieldCheck },
 ]
 
-const ROLE_LABEL: Record<Role, string> = {
-  admin:      'Admin',
-  founder:    'Founder',
-  head:       'Head',
-  uploader:   'Uploader',
-  engineer:   'Engineer',
-  site_staff: 'Site Staff',
-  viewer:     'Viewer',
-}
-
-const ROLE_DESC: Record<Role, string> = {
-  admin:      'Super-user. Manages users + permissions.',
-  founder:    'Top org level. Wide view, narrow edit.',
-  head:       'PM / department head.',
-  uploader:   'Edits operational data.',
-  engineer:   'Site engineer. Field-level edits.',
-  site_staff: 'Labour / on-site staff.',
-  viewer:     'Read-only.',
-}
-
-export default function PermissionsMatrix({ modules, roles, initial }: Props) {
+export default function PermissionsMatrix({ modules, roles, initial, roleLabels, currentUserIsPortalOwner }: Props) {
   const initialMap = useMemo<Record<Key, CellState>>(() => {
     const m: Record<Key, CellState> = {}
     for (const r of initial) {
@@ -57,6 +40,38 @@ export default function PermissionsMatrix({ modules, roles, initial }: Props) {
   const [busyKey, setBusyKey] = useState<Key | null>(null)
   const [savedKey, setSavedKey] = useState<Key | null>(null)
   const [error, setError] = useState<string | null>(null)
+
+  // Editable role labels (Portal Owner only). Mirrors the server-fetched map
+  // and lets us update the UI optimistically as the Portal Owner types.
+  const [labels, setLabels] = useState<RoleLabelMap>(roleLabels)
+  const [labelBusy, setLabelBusy] = useState<Role | null>(null)
+  const [labelSaved, setLabelSaved] = useState<Role | null>(null)
+
+  async function commitLabelEdit(role: Role, nextLabel: string) {
+    const trimmed = nextLabel.trim()
+    if (!trimmed || trimmed === labels[role].label) return
+    if (trimmed.length > 60) {
+      setError('Role name too long (max 60 characters)')
+      return
+    }
+    setLabelBusy(role); setError(null)
+    const prev = labels[role]
+    // Optimistic
+    setLabels(m => ({ ...m, [role]: { ...m[role], label: trimmed } }))
+    const supabase = createClient()
+    const { error } = await supabase.rpc('set_role_label', {
+      p_role: role, p_label: trimmed, p_description: null,
+    })
+    setLabelBusy(null)
+    if (error) {
+      // Revert
+      setLabels(m => ({ ...m, [role]: prev }))
+      setError(error.message || 'Could not rename role')
+      return
+    }
+    setLabelSaved(role)
+    setTimeout(() => setLabelSaved(r => (r === role ? null : r)), 1500)
+  }
 
   function getCell(role: Role, slug: string): CellState {
     return state[`${role}::${slug}`] ?? { view: false, edit: false, admin: false }
@@ -119,16 +134,46 @@ export default function PermissionsMatrix({ modules, roles, initial }: Props) {
                   <th className="px-3 py-2.5 text-left font-semibold text-xs uppercase tracking-wide text-gray-500 sticky left-0 bg-gray-50 z-10 min-w-[180px]">
                     Module
                   </th>
-                  {roles.map(role => (
-                    <th key={role} className="px-3 py-2.5 text-center align-bottom" title={ROLE_DESC[role]}>
-                      <div className="text-[11px] font-bold uppercase tracking-wide text-gray-700">{ROLE_LABEL[role]}</div>
-                      <div className="flex items-center justify-center gap-1 mt-2 text-[10px] text-gray-400">
-                        <Eye className="h-3 w-3" />
-                        <Pencil className="h-3 w-3" />
-                        <ShieldCheck className="h-3 w-3" />
-                      </div>
-                    </th>
-                  ))}
+                  {roles.map(role => {
+                    const rl = labels[role]
+                    const busy = labelBusy === role
+                    const saved = labelSaved === role
+                    return (
+                      <th key={role} className="px-3 py-2.5 text-center align-bottom" title={rl.description}>
+                        {currentUserIsPortalOwner ? (
+                          <input
+                            type="text"
+                            defaultValue={rl.label}
+                            disabled={busy}
+                            onBlur={e => commitLabelEdit(role, e.currentTarget.value)}
+                            onKeyDown={e => {
+                              if (e.key === 'Enter') (e.target as HTMLInputElement).blur()
+                              else if (e.key === 'Escape') {
+                                (e.target as HTMLInputElement).value = rl.label
+                                ;(e.target as HTMLInputElement).blur()
+                              }
+                            }}
+                            maxLength={60}
+                            className={cn(
+                              'text-[11px] font-bold uppercase tracking-wide text-gray-700 w-full text-center bg-transparent rounded border border-transparent hover:border-gray-300 focus:border-blue-500 focus:bg-white focus:outline-none px-1 py-0.5',
+                              busy && 'opacity-50',
+                              saved && 'border-green-300 bg-green-50',
+                            )}
+                            title="Click to rename · Enter to save · Esc to cancel"
+                          />
+                        ) : (
+                          <div className="text-[11px] font-bold uppercase tracking-wide text-gray-700">{rl.label}</div>
+                        )}
+                        <div className="flex items-center justify-center gap-1 mt-2 text-[10px] text-gray-400">
+                          <Eye className="h-3 w-3" />
+                          <Pencil className="h-3 w-3" />
+                          <ShieldCheck className="h-3 w-3" />
+                          {busy && <Loader2 className="h-3 w-3 animate-spin text-blue-600" />}
+                          {saved && <Check className="h-3 w-3 text-green-600" />}
+                        </div>
+                      </th>
+                    )
+                  })}
                 </tr>
               </thead>
               <tbody>
@@ -209,7 +254,7 @@ export default function PermissionsMatrix({ modules, roles, initial }: Props) {
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 mt-4 pt-4 border-t border-gray-100">
             {roles.map(r => (
-              <div key={r}><b className="text-gray-800">{ROLE_LABEL[r]}:</b> <span className="text-gray-500">{ROLE_DESC[r]}</span></div>
+              <div key={r}><b className="text-gray-800">{labels[r].label}:</b> <span className="text-gray-500">{labels[r].description}</span></div>
             ))}
           </div>
         </CardContent>
