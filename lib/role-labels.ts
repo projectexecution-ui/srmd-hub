@@ -24,6 +24,7 @@ export const DEFAULT_ROLE_LABELS: RoleLabelMap = {
   engineer:   { label: 'Engineer',   description: 'Site engineer. Edits indents, GRN, JMR, attendance.' },
   site_staff: { label: 'Site Staff', description: 'Labour / on-site. Attendance + view JMR.' },
   viewer:     { label: 'Viewer',     description: 'Read-only — can browse but cannot edit.' },
+  contractor: { label: 'Contractor', description: 'External contractor. Sees only own JMR entries + bills.' },
 }
 
 /**

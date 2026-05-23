@@ -3,28 +3,26 @@ import { notFound } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { requirePermission, can } from '@/lib/auth'
 import { PageHeader } from '@/components/PageHeader'
-import { Card } from '@/components/ui/card'
-import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
-import { EmptyState } from '@/components/ui/empty-state'
 import { SetupProgressBanner } from '@/components/ProjectSetupWizard/SetupProgressBanner'
-import { Plus, FileText, ClipboardList } from 'lucide-react'
+import { Plus, ArrowLeftRight, Flame, Info } from 'lucide-react'
 import { formatINR } from '@/lib/utils'
 
 export const dynamic = 'force-dynamic'
 
-interface DisciplineRow {
-  id: string
-  code: string
-  name: string
-  display_order: number
-}
-
-interface SubSkillRow {
-  id: string
+interface DisciplineRow { id: string; code: string; name: string; display_order: number }
+interface SubSkillRow  { id: string; discipline_id: string; code: string; name: string }
+interface BudgetLine {
   discipline_id: string
-  code: string
-  name: string
+  sub_skill_id: string | null
+  current_budget_amt: number | null
+  current_wo_committed_amt: number | null
+  current_paid_amt: number | null
+}
+interface WSAgg {
+  discipline_id: string
+  sub_skill_id: string
+  status: string
+  total_amount: number | null
 }
 
 export default async function CostControlProjectDetailPage(
@@ -43,8 +41,14 @@ export default async function CostControlProjectDetailPage(
 
   if (!project) notFound()
 
-  // Pull enabled disciplines + their sub-skills + engineer assignments + WS roll-ups in parallel
-  const [projDisRes, projSubRes, assignRes, profilesRes, wsRollupRes] = await Promise.all([
+  // Parent project name + pm name + everything else in parallel
+  const [parentRes, pmRes, projDisRes, projSubRes, blRes, wsRes, assignRes, profilesRes] = await Promise.all([
+    project.parent_project_id
+      ? supabase.from('projects').select('id, code, name').eq('id', project.parent_project_id).single()
+      : Promise.resolve({ data: null }),
+    project.pm_user_id
+      ? supabase.from('profiles').select('id, full_name, name').eq('id', project.pm_user_id).single()
+      : Promise.resolve({ data: null }),
     supabase
       .from('cc_project_disciplines')
       .select('discipline_id, cc_disciplines(id, code, name, display_order)')
@@ -56,35 +60,77 @@ export default async function CostControlProjectDetailPage(
       .eq('project_id', id)
       .eq('is_enabled', true),
     supabase
+      .from('cc_budget_lines')
+      .select('discipline_id, sub_skill_id, current_budget_amt, current_wo_committed_amt, current_paid_amt')
+      .eq('project_id', id),
+    supabase
+      .from('cc_working_sheets')
+      .select('discipline_id, sub_skill_id, status, total_amount')
+      .eq('project_id', id),
+    supabase
       .from('project_assignments')
       .select('user_id, role, assigned_disciplines')
       .eq('project_id', id)
       .eq('role', 'engineer'),
     supabase.from('profiles').select('id, full_name, name'),
-    supabase
-      .from('cc_working_sheets')
-      .select('id, status, total_amount')
-      .eq('project_id', id),
   ])
 
-  type ProjDisJoinRow = { discipline_id: string; cc_disciplines: DisciplineRow | DisciplineRow[] | null }
-  type ProjSubJoinRow = { sub_skill_id: string; cc_sub_skills: SubSkillRow | SubSkillRow[] | null }
+  // Flatten the joined disciplines / sub-skills
+  type ProjDisJoin = { discipline_id: string; cc_disciplines: DisciplineRow | DisciplineRow[] | null }
+  type ProjSubJoin = { sub_skill_id: string; cc_sub_skills: SubSkillRow | SubSkillRow[] | null }
 
-  const disciplines: DisciplineRow[] = ((projDisRes.data ?? []) as ProjDisJoinRow[])
+  const disciplines: DisciplineRow[] = ((projDisRes.data ?? []) as ProjDisJoin[])
     .map(r => Array.isArray(r.cc_disciplines) ? r.cc_disciplines[0] : r.cc_disciplines)
     .filter((d): d is DisciplineRow => !!d)
     .sort((a, b) => a.display_order - b.display_order)
 
-  const subSkills: SubSkillRow[] = ((projSubRes.data ?? []) as ProjSubJoinRow[])
+  const subSkills: SubSkillRow[] = ((projSubRes.data ?? []) as ProjSubJoin[])
     .map(r => Array.isArray(r.cc_sub_skills) ? r.cc_sub_skills[0] : r.cc_sub_skills)
     .filter((s): s is SubSkillRow => !!s)
+    .sort((a, b) => a.code.localeCompare(b.code))
 
+  // Look up budget lines by (discipline_id, sub_skill_id) — sub_skill_id null means the category row
+  const blMap = new Map<string, BudgetLine>()
+  for (const b of (blRes.data ?? []) as BudgetLine[]) {
+    blMap.set(`${b.discipline_id}::${b.sub_skill_id ?? '_root'}`, b)
+  }
+
+  // Working-sheet aggregates: count of approved/wo_issued/paid items per sub-skill, plus total approved value
+  const wsAgg = new Map<string, { approvedCount: number; approvedTotal: number; draftCount: number; submittedCount: number }>()
+  for (const w of (wsRes.data ?? []) as WSAgg[]) {
+    const k = `${w.discipline_id}::${w.sub_skill_id}`
+    const cur = wsAgg.get(k) ?? { approvedCount: 0, approvedTotal: 0, draftCount: 0, submittedCount: 0 }
+    if (w.status === 'approved' || w.status === 'wo_issued' || w.status === 'paid') {
+      cur.approvedCount += 1
+      cur.approvedTotal += Number(w.total_amount ?? 0)
+    } else if (w.status === 'submitted') {
+      cur.submittedCount += 1
+    } else if (w.status === 'draft' || w.status === 'returned' || w.status === 'draft_blocked') {
+      cur.draftCount += 1
+    }
+    wsAgg.set(k, cur)
+  }
+  // Disciplines-level rollups derived from sub-skills
+  const discAgg = new Map<string, { budget: number; wo: number; paid: number; approvedTotal: number }>()
+  for (const d of disciplines) discAgg.set(d.id, { budget: 0, wo: 0, paid: 0, approvedTotal: 0 })
+  for (const s of subSkills) {
+    const bl = blMap.get(`${s.discipline_id}::${s.id}`)
+    const a = wsAgg.get(`${s.discipline_id}::${s.id}`) ?? { approvedTotal: 0 }
+    const cur = discAgg.get(s.discipline_id)
+    if (cur) {
+      cur.budget += Number(bl?.current_budget_amt ?? 0)
+      cur.wo    += Number(bl?.current_wo_committed_amt ?? 0)
+      cur.paid  += Number(bl?.current_paid_amt ?? 0)
+      cur.approvedTotal += a.approvedTotal
+    }
+  }
+
+  // Engineers
   type ProfileLite = { id: string; full_name: string | null; name: string | null }
   const profileMap = new Map<string, string>()
   for (const p of (profilesRes.data ?? []) as ProfileLite[]) {
     profileMap.set(p.id, p.full_name ?? p.name ?? '(unnamed)')
   }
-
   type AssignmentRow = { user_id: string; role: string; assigned_disciplines: string[] | null }
   const engineers = ((assignRes.data ?? []) as AssignmentRow[]).map(a => ({
     user_id: a.user_id,
@@ -92,104 +138,202 @@ export default async function CostControlProjectDetailPage(
     discipline_ids: a.assigned_disciplines ?? [],
   }))
 
-  type WSRollupRow = { id: string; status: string; total_amount: number | null }
-  const wsRollup = (wsRollupRes.data ?? []) as WSRollupRow[]
-  const wsCount = wsRollup.length
-  const wsDrafts = wsRollup.filter(w => w.status === 'draft').length
-  const wsPending = wsRollup.filter(w => w.status === 'submitted').length
-  const wsApprovedTotal = wsRollup.filter(w => w.status === 'approved' || w.status === 'wo_issued' || w.status === 'paid')
-    .reduce((s, w) => s + Number(w.total_amount ?? 0), 0)
+  type ParentLite = { code: string; name: string } | null
+  type PMLite = { full_name: string | null; name: string | null } | null
+  const parent: ParentLite = (parentRes.data ?? null) as ParentLite
+  const pmRow: PMLite = (pmRes.data ?? null) as PMLite
+  const pmName = pmRow?.full_name ?? pmRow?.name ?? null
+
+  const setupPct = project.setup_progress_pct ?? 0
+  const showSetupBanner = setupPct < 100 && project.cc_status === 'setup_incomplete'
+
+  // Portfolio rollup (across all sub-skills on this project)
+  const totalBudget = Array.from(discAgg.values()).reduce((s, v) => s + v.budget, 0)
+  const totalWO = Array.from(discAgg.values()).reduce((s, v) => s + v.wo, 0)
+  const totalPaid = Array.from(discAgg.values()).reduce((s, v) => s + v.paid, 0)
+  const totalApproved = Array.from(discAgg.values()).reduce((s, v) => s + v.approvedTotal, 0)
+  const utilPct = totalBudget > 0 ? Math.round((totalPaid / totalBudget) * 100) : 0
 
   return (
     <div className="p-4 md:p-6 max-w-7xl mx-auto space-y-4">
-      <PageHeader
-        title={project.name}
-        subtitle={`${project.code}${project.built_up_sft ? ` · ${project.built_up_sft.toLocaleString('en-IN')} Sft` : ''}${project.start_date ? ` · started ${new Date(project.start_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}` : ''}`}
-        back="/cost-control"
-      >
-        {project.cc_status && (
-          <Badge variant={project.cc_status === 'active' ? 'success' : 'secondary'}>
-            {project.cc_status.replace('_', ' ')}
-          </Badge>
+      {/* Breadcrumb */}
+      <div className="flex items-center gap-2 text-xs">
+        <Link href="/cost-control" className="text-blue-600 hover:underline">← Cost Control</Link>
+        {parent && (
+          <>
+            <span className="text-gray-300">/</span>
+            <span className="text-gray-500">{parent.name} ({parent.code})</span>
+          </>
         )}
-        {canWrite && (
-          <Button asChild size="sm">
-            <Link href={`/cost-control/working-sheets/new?project=${project.id}`}>
-              <Plus className="h-4 w-4" /> New Working Sheet
-            </Link>
-          </Button>
-        )}
-      </PageHeader>
-
-      {project.cc_status && (
-        <SetupProgressBanner
-          projectId={project.id}
-          progressPct={project.setup_progress_pct ?? 0}
-        />
-      )}
-
-      {/* Stat strip */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <Stat label="Working Sheets" value={wsCount} hint={`${wsDrafts} draft · ${wsPending} pending`} icon={<FileText className="h-5 w-5" />} />
-        <Stat label="Approved value" value={formatINR(wsApprovedTotal)} hint="across approved + WO + paid" icon={<ClipboardList className="h-5 w-5" />} />
-        <Stat label="Disciplines" value={disciplines.length} icon={<ClipboardList className="h-5 w-5" />} />
-        <Stat label="Engineers" value={engineers.length} icon={<ClipboardList className="h-5 w-5" />} />
       </div>
 
-      {/* Disciplines + their sub-skills */}
-      <Card className="p-5">
-        <div className="flex items-center justify-between mb-3">
-          <h2 className="font-semibold text-gray-900">Enabled disciplines & sub-skills</h2>
+      {/* Title + actions */}
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0">
+          <PageHeader
+            title={project.name}
+            subtitle={[
+              project.code,
+              project.built_up_sft ? `${project.built_up_sft.toLocaleString('en-IN')} sft` : null,
+              pmName ? `Owner: ${pmName}` : null,
+              project.start_date ? `Started ${new Date(project.start_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}` : null,
+            ].filter(Boolean).join(' · ')}
+            className="mb-0"
+          />
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          {project.cc_status && (
+            <span className={`inline-flex items-center px-2 py-1 rounded-full text-[10px] font-bold tracking-wide ${
+              project.cc_status === 'active' ? 'bg-green-100 text-green-800' :
+              project.cc_status === 'on_hold' ? 'bg-amber-100 text-amber-800' :
+              project.cc_status === 'completed' ? 'bg-blue-100 text-blue-800' :
+              'bg-gray-100 text-gray-700'
+            }`}>{project.cc_status.replace('_', ' ').toUpperCase()}</span>
+          )}
           {canWrite && (
-            <Button asChild size="sm" variant="outline">
-              <Link href={`/cost-control/projects/new`}>
-                <Plus className="h-3.5 w-3.5" /> Add via Setup
+            <>
+              <Link
+                href={`/cost-control/working-sheets/new?project=${project.id}`}
+                className="inline-flex items-center gap-1.5 h-9 px-3 rounded-md bg-blue-600 text-white text-sm font-semibold hover:bg-blue-700"
+              >
+                <Plus className="h-4 w-4" /> New Working Sheet
               </Link>
-            </Button>
+              <Link
+                href={`/cost-control`}
+                className="inline-flex items-center gap-1.5 h-9 px-3 rounded-md bg-white text-blue-700 border border-blue-300 text-sm font-semibold hover:bg-blue-50"
+                title="Budget Shift wizard (coming next)"
+              >
+                <ArrowLeftRight className="h-4 w-4" /> Shift Budget
+              </Link>
+            </>
           )}
         </div>
+      </div>
 
-        {disciplines.length === 0 ? (
-          <EmptyState
-            icon={<ClipboardList className="h-10 w-10" />}
-            title="No disciplines enabled yet"
-            description="Open the Setup Wizard from the banner above to pick disciplines and sub-skills."
-          />
-        ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            {disciplines.map(d => {
-              const subs = subSkills.filter(s => s.discipline_id === d.id)
-              return (
-                <div key={d.id} className="rounded-md border border-gray-200 bg-white">
-                  <div className="px-3 py-2 border-b border-gray-100 bg-gray-50 rounded-t-md">
-                    <span className="font-mono text-xs text-gray-500 mr-2">{d.code}</span>
-                    <span className="font-semibold text-gray-900">{d.name}</span>
-                    <span className="ml-2 text-xs text-gray-500">· {subs.length} sub-skill{subs.length === 1 ? '' : 's'}</span>
-                  </div>
-                  {subs.length === 0 ? (
-                    <p className="px-3 py-2 text-xs text-gray-500 italic">No sub-skills enabled.</p>
-                  ) : (
-                    <ul className="px-3 py-2 text-sm text-gray-700 space-y-0.5">
-                      {subs.map(s => (
-                        <li key={s.id} className="flex items-center gap-2">
-                          <span className="font-mono text-[10px] text-gray-400">{s.code}</span>
-                          <span className="truncate">{s.name}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                </div>
-              )
-            })}
-          </div>
-        )}
-      </Card>
+      {/* KPI strip — portfolio-level numbers for this project */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <KPI label="Approved Budget" value={formatINR(totalBudget)} sub={totalBudget > 0 ? `${disciplines.length} disciplines` : 'Import budget to populate'} tone="blue" />
+        <KPI label="Committed (WO/PO)" value={formatINR(totalWO)}
+             sub={totalBudget > 0 ? `${Math.round((totalWO / totalBudget) * 100)}% of budget` : '—'} tone="purple" />
+        <KPI label="Paid to Date" value={formatINR(totalPaid)}
+             sub={totalBudget > 0 ? `${utilPct}% utilized` : '—'} tone="orange" />
+        <KPI label="Approved via WS" value={formatINR(totalApproved)}
+             sub="From this app's Working Sheets" tone="green" />
+      </div>
 
-      {/* Engineers */}
-      <Card className="p-5">
-        <h2 className="font-semibold text-gray-900 mb-3">Engineers assigned</h2>
+      {showSetupBanner && (
+        <SetupProgressBanner projectId={project.id} progressPct={setupPct} />
+      )}
+
+      {/* THE TABLE — discipline categories + sub-skill rows */}
+      <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full text-[13px]">
+            <thead className="bg-gray-50 text-left">
+              <tr>
+                <Th className="min-w-[280px]">Work Category / Sub-skill</Th>
+                <Th align="right">Budget</Th>
+                <Th align="right">WO / PO</Th>
+                <Th align="right">Paid</Th>
+                <Th align="right" className="w-20">% Used</Th>
+                <Th className="w-28">Working Sheets</Th>
+                <Th className="w-28"></Th>
+              </tr>
+            </thead>
+            <tbody>
+              {disciplines.length === 0 && (
+                <tr><td colSpan={7} className="px-4 py-8 text-center text-sm text-gray-500">No disciplines enabled. Open the setup wizard to pick them.</td></tr>
+              )}
+
+              {disciplines.map(d => {
+                const dAgg = discAgg.get(d.id) ?? { budget: 0, wo: 0, paid: 0, approvedTotal: 0 }
+                const dPct = dAgg.budget > 0 ? (dAgg.paid / dAgg.budget) * 100 : 0
+                const subs = subSkills.filter(s => s.discipline_id === d.id)
+                const dHot = dPct > 95
+
+                return (
+                  <>
+                    <tr key={d.id} className="border-t border-gray-200 bg-slate-50 font-semibold">
+                      <td className="px-3 py-2.5">
+                        <span className="font-mono text-[11px] text-gray-500 mr-2">{d.code}</span>
+                        <span className="text-gray-900">{d.name}</span>
+                        {dHot && <Flame className="inline h-3.5 w-3.5 text-orange-500 ml-2" />}
+                      </td>
+                      <Td align="right" mono>{dAgg.budget > 0 ? formatINR(dAgg.budget) : '—'}</Td>
+                      <Td align="right" mono className="text-gray-600">{dAgg.wo > 0 ? formatINR(dAgg.wo) : '—'}</Td>
+                      <Td align="right" mono className="text-gray-600">{dAgg.paid > 0 ? formatINR(dAgg.paid) : '—'}</Td>
+                      <Td align="right" className={dPct > 95 ? 'text-red-600' : dPct > 80 ? 'text-amber-700' : 'text-green-700'}>
+                        {dAgg.budget > 0 ? `${dPct.toFixed(0)}%` : '—'}
+                      </Td>
+                      <Td>{/* category-level WS counts not shown */}</Td>
+                      <Td></Td>
+                    </tr>
+
+                    {subs.map(s => {
+                      const bl = blMap.get(`${d.id}::${s.id}`)
+                      const a = wsAgg.get(`${d.id}::${s.id}`)
+                      const sPct = bl && Number(bl.current_budget_amt) > 0
+                        ? (Number(bl.current_paid_amt ?? 0) / Number(bl.current_budget_amt)) * 100
+                        : 0
+                      const sHot = sPct > 95
+                      const wsCount = (a?.approvedCount ?? 0) + (a?.draftCount ?? 0) + (a?.submittedCount ?? 0)
+                      return (
+                        <tr key={s.id} className="border-t border-gray-100 hover:bg-gray-50/60">
+                          <td className="pl-10 pr-3 py-2 text-gray-700">
+                            <span className="font-mono text-[11px] text-gray-400 mr-2">{s.code}</span>
+                            <span>{s.name}</span>
+                            {sHot && <Flame className="inline h-3 w-3 text-orange-500 ml-1.5" />}
+                          </td>
+                          <Td align="right" mono>{bl?.current_budget_amt ? formatINR(Number(bl.current_budget_amt)) : '—'}</Td>
+                          <Td align="right" mono className="text-gray-600">{bl?.current_wo_committed_amt ? formatINR(Number(bl.current_wo_committed_amt)) : '—'}</Td>
+                          <Td align="right" mono className="text-gray-600">{bl?.current_paid_amt ? formatINR(Number(bl.current_paid_amt)) : '—'}</Td>
+                          <Td align="right" className={sPct > 95 ? 'text-red-600 font-semibold' : sPct > 80 ? 'text-amber-700 font-semibold' : sPct > 0 ? 'text-green-700 font-semibold' : 'text-gray-400'}>
+                            {bl && Number(bl.current_budget_amt) > 0 ? `${sPct.toFixed(0)}%` : '—'}
+                          </Td>
+                          <Td>
+                            {wsCount > 0 ? (
+                              <Link
+                                href={`/cost-control/working-sheets?project=${project.id}`}
+                                className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-semibold bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100"
+                              >
+                                {wsCount} sheet{wsCount === 1 ? '' : 's'}
+                              </Link>
+                            ) : (
+                              <span className="text-[11px] text-gray-400">—</span>
+                            )}
+                          </Td>
+                          <Td>
+                            {canWrite && (
+                              <Link
+                                href={`/cost-control/working-sheets/new?project=${project.id}`}
+                                className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-semibold border border-blue-300 text-blue-700 hover:bg-blue-50"
+                              >
+                                <Plus className="h-3 w-3" /> New WS
+                              </Link>
+                            )}
+                          </Td>
+                        </tr>
+                      )
+                    })}
+
+                    {subs.length === 0 && (
+                      <tr className="border-t border-gray-100">
+                        <td colSpan={7} className="pl-10 pr-3 py-2 text-xs italic text-gray-400">No sub-skills enabled for this discipline. Add via the setup wizard.</td>
+                      </tr>
+                    )}
+                  </>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* Engineers strip */}
+      <div className="bg-white rounded-lg border border-gray-200 p-4">
+        <h2 className="text-sm font-semibold text-gray-900 mb-3">Engineers on this project</h2>
         {engineers.length === 0 ? (
-          <p className="text-sm text-gray-500">No engineers assigned to this project yet.</p>
+          <p className="text-sm text-gray-500">No engineers assigned yet. Reopen the setup wizard from the banner to assign.</p>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
             {engineers.map(e => {
@@ -205,22 +349,59 @@ export default async function CostControlProjectDetailPage(
             })}
           </div>
         )}
-      </Card>
+      </div>
+
+      {/* Tip */}
+      <div className="rounded-md border-l-4 border-blue-500 bg-blue-50 px-4 py-3 text-sm text-blue-900 flex items-start gap-2">
+        <Info className="h-4 w-4 mt-0.5 flex-shrink-0" />
+        <p>
+          Click <b>+ New WS</b> on any sub-skill row to start a Working Sheet pre-filled with that discipline & sub-skill.
+          Budget / WO / Paid columns will fill in automatically once you import the ENGG_CONSOLIDATED_BUDGET_REPORT
+          (or after Working Sheets get approved and bills land).
+        </p>
+      </div>
     </div>
   )
 }
 
-function Stat({ label, value, hint, icon }: { label: string; value: React.ReactNode; hint?: string; icon?: React.ReactNode }) {
+// ============================================================
+// Small inline cell helpers — keeps the table markup readable
+// ============================================================
+
+function Th({
+  children, align = 'left', className = '',
+}: { children?: React.ReactNode; align?: 'left' | 'right'; className?: string }) {
   return (
-    <div className="rounded-xl border border-gray-200 bg-white p-4">
-      <div className="flex items-center gap-3">
-        {icon && <div className="p-2 rounded-lg bg-indigo-50 text-indigo-700">{icon}</div>}
-        <div className="min-w-0">
-          <p className="text-xs uppercase tracking-wide text-gray-500">{label}</p>
-          <p className="text-lg font-bold text-gray-900 truncate">{value}</p>
-          {hint && <p className="text-xs text-gray-400 mt-0.5">{hint}</p>}
-        </div>
-      </div>
+    <th className={`px-3 py-2.5 text-${align} font-semibold text-[10px] uppercase tracking-wide text-gray-500 ${className}`}>
+      {children}
+    </th>
+  )
+}
+
+function Td({
+  children, align = 'left', mono = false, className = '',
+}: { children?: React.ReactNode; align?: 'left' | 'right'; mono?: boolean; className?: string }) {
+  return (
+    <td className={`px-3 py-2 text-${align} ${mono ? 'tabular-nums' : ''} ${className}`}>
+      {children}
+    </td>
+  )
+}
+
+function KPI({
+  label, value, sub, tone,
+}: { label: string; value: React.ReactNode; sub?: string; tone: 'blue' | 'purple' | 'orange' | 'green' }) {
+  const top = {
+    blue: 'border-t-blue-500',
+    purple: 'border-t-purple-500',
+    orange: 'border-t-orange-500',
+    green: 'border-t-green-500',
+  }[tone]
+  return (
+    <div className={`bg-white rounded-md border border-gray-200 border-t-2 ${top} p-4`}>
+      <p className="text-[10px] uppercase tracking-wider font-semibold text-gray-500">{label}</p>
+      <p className="text-xl font-bold text-gray-900 mt-1 tabular-nums">{value}</p>
+      {sub && <p className="text-[11px] text-gray-500 mt-0.5">{sub}</p>}
     </div>
   )
 }
