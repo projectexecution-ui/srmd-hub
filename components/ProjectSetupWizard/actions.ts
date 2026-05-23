@@ -131,34 +131,95 @@ export async function setProjectDisciplines(
 }
 
 // ============================================================
-// Step 3 — Sub-skills (STUB — wire fully in next session)
+// Step 3 — Sub-skills (FULLY WIRED)
 // ============================================================
+
+const subSkillsSchema = z.object({
+  project_id: z.string().uuid(),
+  sub_skill_ids: z.array(z.string().uuid()),
+})
 
 export async function setProjectSubSkills(
   projectId: string,
   subSkillIds: string[],
 ): Promise<{ ok: boolean; error?: string }> {
-  // TODO: replace cc_project_sub_skills for this project; bump progress to 80%.
-  // Same shape as setProjectDisciplines above. Left as stub to keep this
-  // session bounded — wired in the next Cost Control session.
-  void projectId
-  void subSkillIds
-  return { ok: false, error: 'Sub-skill configuration: coming next session' }
+  const user = await getMyUser()
+  if (!user) return { ok: false, error: 'Not signed in' }
+
+  const parsed = subSkillsSchema.safeParse({ project_id: projectId, sub_skill_ids: subSkillIds })
+  if (!parsed.success) return { ok: false, error: 'Validation failed' }
+
+  const supabase = await createClient()
+
+  // Replace strategy: drop existing, re-insert. Matches setProjectDisciplines.
+  const { error: delErr } = await supabase
+    .from('cc_project_sub_skills')
+    .delete()
+    .eq('project_id', projectId)
+  if (delErr) return { ok: false, error: delErr.message }
+
+  if (subSkillIds.length > 0) {
+    const rows = subSkillIds.map(ssid => ({
+      project_id: projectId,
+      sub_skill_id: ssid,
+      enabled_by: user.id,
+    }))
+    const { error: insErr } = await supabase.from('cc_project_sub_skills').insert(rows)
+    if (insErr) return { ok: false, error: insErr.message }
+  }
+
+  await supabase.from('projects').update({ setup_progress_pct: 80 }).eq('id', projectId)
+  revalidatePath(`/cost-control/projects/${projectId}`)
+  revalidatePath('/cost-control')
+  return { ok: true }
 }
 
 // ============================================================
-// Step 4 — Engineer assignments (STUB)
+// Step 4 — Engineer assignments (FULLY WIRED)
 // ============================================================
+
+const engineersSchema = z.object({
+  project_id: z.string().uuid(),
+  assignments: z.array(z.object({
+    user_id: z.string().uuid(),
+    discipline_ids: z.array(z.string().uuid()),
+  })),
+})
 
 export async function assignProjectEngineers(
   projectId: string,
   assignments: Array<{ user_id: string; discipline_ids: string[] }>,
 ): Promise<{ ok: boolean; error?: string }> {
-  // TODO: write to public.project_assignments with role='engineer'.
-  // Then mark setup_progress_pct = 100 and cc_status = 'active'.
-  void projectId
-  void assignments
-  return { ok: false, error: 'Engineer assignment: coming next session' }
+  const user = await getMyUser()
+  if (!user) return { ok: false, error: 'Not signed in' }
+
+  const parsed = engineersSchema.safeParse({ project_id: projectId, assignments })
+  if (!parsed.success) return { ok: false, error: 'Validation failed' }
+
+  const supabase = await createClient()
+
+  // Replace ALL engineer assignments on this project (other roles untouched)
+  const { error: delErr } = await supabase
+    .from('project_assignments')
+    .delete()
+    .eq('project_id', projectId)
+    .eq('role', 'engineer')
+  if (delErr) return { ok: false, error: delErr.message }
+
+  if (assignments.length > 0) {
+    const rows = assignments.map(a => ({
+      user_id: a.user_id,
+      project_id: projectId,
+      role: 'engineer',
+      assigned_disciplines: a.discipline_ids,
+      assigned_by: user.id,
+    }))
+    const { error: insErr } = await supabase.from('project_assignments').insert(rows)
+    if (insErr) return { ok: false, error: insErr.message }
+  }
+
+  revalidatePath(`/cost-control/projects/${projectId}`)
+  return { ok: true }
 }
 
 // ============================================================

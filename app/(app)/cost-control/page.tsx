@@ -1,12 +1,13 @@
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/server'
-import { requirePermission, can } from '@/lib/auth'
+import { requirePermission, can, getMyUser } from '@/lib/auth'
 import { PageHeader } from '@/components/PageHeader'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { EmptyState } from '@/components/ui/empty-state'
-import { Calculator, Plus, AlertTriangle } from 'lucide-react'
+import { Calculator, Plus, FileText, Clock, Inbox } from 'lucide-react'
+import { formatINR } from '@/lib/utils'
 
 export const dynamic = 'force-dynamic'
 
@@ -24,16 +25,42 @@ export default async function CostControlLandingPage() {
   const perms = await requirePermission('cost-control', 'view')
   const canWrite = can(perms, 'cost-control', 'edit')
   const supabase = await createClient()
+  const user = await getMyUser()
 
-  // Only Cost Control projects — the hub has ~18 unrelated indent/PO projects in the same table.
-  const { data: projects, error } = await supabase
-    .from('projects')
-    .select('id, code, name, cc_status, setup_progress_pct, built_up_sft, parent_project_id')
-    .not('cc_status', 'is', null)
-    .order('code')
+  const [projectsRes, wsAllRes, myDraftsRes, pendingRes] = await Promise.all([
+    supabase
+      .from('projects')
+      .select('id, code, name, cc_status, setup_progress_pct, built_up_sft, parent_project_id')
+      .not('cc_status', 'is', null)
+      .order('code'),
+    supabase.from('cc_working_sheets').select('id, status, total_amount, project_id'),
+    user
+      ? supabase
+          .from('cc_working_sheets')
+          .select('id', { count: 'exact', head: true })
+          .eq('engineer_id', user.id)
+          .in('status', ['draft', 'returned'])
+      : Promise.resolve({ count: 0 }),
+    supabase
+      .from('cc_working_sheets')
+      .select('id', { count: 'exact', head: true })
+      .eq('status', 'submitted'),
+  ])
 
-  const ccProjects = (projects ?? []) as CCProject[]
+  const ccProjects = (projectsRes.data ?? []) as CCProject[]
   const incompleteCount = ccProjects.filter(p => (p.setup_progress_pct ?? 0) < 100).length
+
+  type WSRollup = { id: string; status: string; total_amount: number | null; project_id: string }
+  const ws = (wsAllRes.data ?? []) as WSRollup[]
+  const wsByProject = new Map<string, number>()
+  for (const w of ws) {
+    wsByProject.set(w.project_id, (wsByProject.get(w.project_id) ?? 0) + 1)
+  }
+  const totalWS = ws.length
+  const approvedTotal = ws.filter(w => w.status === 'approved' || w.status === 'wo_issued' || w.status === 'paid')
+    .reduce((s, w) => s + Number(w.total_amount ?? 0), 0)
+  const myDraftsCount = (myDraftsRes as { count?: number }).count ?? 0
+  const pendingCount = (pendingRes as { count?: number }).count ?? 0
 
   return (
     <div className="p-4 md:p-6 max-w-7xl mx-auto space-y-4">
@@ -41,6 +68,11 @@ export default async function CostControlLandingPage() {
         title="Cost Control"
         subtitle={`SRASSK — ${ccProjects.length} project${ccProjects.length === 1 ? '' : 's'}${incompleteCount ? ` · ${incompleteCount} need setup` : ''}`}
       >
+        <Button asChild size="sm" variant="outline">
+          <Link href="/cost-control/working-sheets">
+            <FileText className="h-4 w-4" /> All Working Sheets
+          </Link>
+        </Button>
         {canWrite && (
           <Button asChild size="sm">
             <Link href="/cost-control/projects/new"><Plus className="h-4 w-4" /> New Project</Link>
@@ -48,15 +80,24 @@ export default async function CostControlLandingPage() {
         )}
       </PageHeader>
 
-      {error && (
+      {/* Stat strip */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <Stat label="Projects" value={ccProjects.length} hint={incompleteCount ? `${incompleteCount} need setup` : 'all set up'} icon={<Calculator className="h-5 w-5" />} />
+        <Stat
+          label="Pending approvals"
+          value={pendingCount}
+          hint={pendingCount > 0 ? 'submitted, awaiting head' : 'all clear'}
+          icon={<Inbox className="h-5 w-5" />}
+          tone={pendingCount > 0 ? 'amber' : 'default'}
+        />
+        <Stat label="Your drafts" value={myDraftsCount} hint="draft + returned to you" icon={<Clock className="h-5 w-5" />} />
+        <Stat label="Approved value" value={formatINR(approvedTotal)} hint={`${totalWS} sheet${totalWS === 1 ? '' : 's'} total`} icon={<FileText className="h-5 w-5" />} />
+      </div>
+
+      {projectsRes.error && (
         <Card className="border-amber-300 bg-amber-50 p-4 text-sm text-amber-900">
-          <div className="flex items-start gap-2">
-            <AlertTriangle className="h-5 w-5 mt-0.5 flex-shrink-0" />
-            <div>
-              <p className="font-semibold">Cost Control tables not yet applied to the database.</p>
-              <p className="mt-1">Run the migration at <code>supabase/migrations/20260523_cost_control_foundation.sql</code> followed by the seed. Until then, this page shows what exists in <code>public.projects</code> without the new columns.</p>
-            </div>
-          </div>
+          <p className="font-semibold">Cost Control tables not yet applied to the database.</p>
+          <p className="mt-1">Run the migrations in <code>supabase/migrations/20260523_cost_control_*.sql</code> first.</p>
         </Card>
       )}
 
@@ -65,6 +106,7 @@ export default async function CostControlLandingPage() {
           {ccProjects.map(p => {
             const pct = p.setup_progress_pct ?? 0
             const isIncomplete = pct < 100
+            const wsHere = wsByProject.get(p.id) ?? 0
             return (
               <Link key={p.id} href={`/cost-control/projects/${p.id}`}>
                 <Card className="hover:shadow-md transition-shadow h-full">
@@ -78,11 +120,10 @@ export default async function CostControlLandingPage() {
                       )}
                     </div>
                     <h3 className="font-semibold text-gray-900">{p.name}</h3>
-                    {p.built_up_sft != null && (
-                      <p className="text-xs text-gray-500 mt-1">
-                        {p.built_up_sft.toLocaleString('en-IN')} Sft built-up
-                      </p>
-                    )}
+                    <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 mt-1 text-xs text-gray-500">
+                      {p.built_up_sft != null && <span>{p.built_up_sft.toLocaleString('en-IN')} Sft</span>}
+                      <span>· {wsHere} WS</span>
+                    </div>
                     {isIncomplete && (
                       <div className="mt-3">
                         <div className="flex items-center justify-between text-xs text-amber-700 mb-1">
@@ -110,6 +151,23 @@ export default async function CostControlLandingPage() {
           />
         </Card>
       )}
+    </div>
+  )
+}
+
+function Stat({ label, value, hint, icon, tone = 'default' }: { label: string; value: React.ReactNode; hint?: string; icon?: React.ReactNode; tone?: 'default' | 'amber' }) {
+  const wrap = tone === 'amber' ? 'border-amber-200 bg-amber-50' : 'border-gray-200 bg-white'
+  const iconWrap = tone === 'amber' ? 'bg-amber-100 text-amber-700' : 'bg-indigo-50 text-indigo-700'
+  return (
+    <div className={`rounded-xl border ${wrap} p-4`}>
+      <div className="flex items-center gap-3">
+        {icon && <div className={`p-2 rounded-lg ${iconWrap}`}>{icon}</div>}
+        <div className="min-w-0">
+          <p className="text-xs uppercase tracking-wide text-gray-500">{label}</p>
+          <p className="text-lg font-bold text-gray-900 truncate">{value}</p>
+          {hint && <p className="text-xs text-gray-400 mt-0.5">{hint}</p>}
+        </div>
+      </div>
     </div>
   )
 }

@@ -4,4 +4,5 @@ export type {
   ParentProjectOption,
   UserOption,
   DisciplineOption,
+  SubSkillOption,
 } from './ProjectSetupWizard'

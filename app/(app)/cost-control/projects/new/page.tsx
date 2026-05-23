@@ -8,6 +8,7 @@ import {
   type ParentProjectOption,
   type UserOption,
   type DisciplineOption,
+  type SubSkillOption,
 } from '@/components/ProjectSetupWizard'
 
 export const dynamic = 'force-dynamic'
@@ -22,10 +23,11 @@ export default async function NewCostControlProjectPage() {
   await requirePermission('cost-control', 'edit')
   const supabase = await createClient()
 
-  const [parentsRes, usersRes, disciplinesRes] = await Promise.all([
+  const [parentsRes, usersRes, disciplinesRes, subSkillsRes] = await Promise.all([
     supabase.from('projects').select('id, code, name').order('code'),
     supabase.from('profiles').select('id, full_name, name').eq('is_active', true),
     supabase.from('cc_disciplines').select('id, code, name').order('display_order'),
+    supabase.from('cc_sub_skills').select('id, discipline_id, code, name').order('code'),
   ])
 
   const tablesMissing = !!disciplinesRes.error
@@ -41,6 +43,7 @@ export default async function NewCostControlProjectPage() {
     name: d.name,
     commonByDefault: COMMON_DISCIPLINE_CODES.has(d.code),
   }))
+  const subSkills: SubSkillOption[] = (subSkillsRes.data ?? []) as SubSkillOption[]
 
   return (
     <div className="p-4 md:p-6 max-w-3xl mx-auto space-y-4">
@@ -69,6 +72,7 @@ export default async function NewCostControlProjectPage() {
         parentProjects={parentProjects}
         users={users}
         disciplines={disciplines}
+        subSkills={subSkills}
       />
     </div>
   )
