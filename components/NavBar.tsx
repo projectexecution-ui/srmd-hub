@@ -8,7 +8,7 @@ import type { Profile, PermissionMap } from '@/lib/types'
 import {
   LayoutDashboard, ClipboardList, FileText, PackageCheck, Receipt,
   Truck, Building2, Settings, LogOut, Menu, X, Users, Upload,
-  BarChart3, ChevronsLeft, ChevronsRight, ShieldCheck,
+  BarChart3, ChevronsLeft, ChevronsRight, ShieldCheck, LayoutGrid,
 } from 'lucide-react'
 
 interface NavBarProps {
@@ -20,6 +20,7 @@ interface NavBarProps {
 
 // Every link declares the permission slug it requires (view-level).
 // Visibility is data-driven from public.role_permissions.
+// `portalOwnerOnly` flag = link is hidden unless the user is a Portal Owner.
 const ALL_LINKS = [
   { href: '/dashboard',        label: 'Dashboard',   icon: LayoutDashboard, slug: null as string | null },
   { href: '/indents',          label: 'Indents',     icon: ClipboardList,   slug: 'indents' },
@@ -32,6 +33,7 @@ const ALL_LINKS = [
   { href: '/uploads',          label: 'Uploads',     icon: Upload,          slug: 'uploads' },
   { href: '/admin/users',      label: 'Users',       icon: Users,           slug: 'admin-users' },
   { href: '/admin/permissions',label: 'Permissions', icon: ShieldCheck,     slug: 'admin-permissions' },
+  { href: '/admin/dashboard-modules', label: 'Modules', icon: LayoutGrid,   slug: null as string | null, portalOwnerOnly: true },
   { href: '/admin/settings',   label: 'Settings',    icon: Settings,        slug: 'admin-settings' },
 ] as const
 
@@ -62,6 +64,7 @@ export default function NavBar({ profile, permissions, disabledSlugs = [], isPor
   }
 
   const links = ALL_LINKS
+    .filter(l => !('portalOwnerOnly' in l) || !l.portalOwnerOnly || isPortalOwner)
     .filter(l => l.slug === null || permissions[l.slug]?.view)
     .filter(l => l.slug === null || isPortalOwner || !disabled.has(l.slug))
 
