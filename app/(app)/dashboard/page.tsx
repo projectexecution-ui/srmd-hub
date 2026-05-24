@@ -8,18 +8,19 @@ import { IndentStagePill } from '@/components/IndentStagePill'
 import { Badge } from '@/components/ui/badge'
 import { formatDate, formatINR } from '@/lib/utils'
 import { ClipboardList, FileText, PackageCheck, Receipt } from 'lucide-react'
-import { getMyProfile, getMyPermissions, getDisabledModuleSlugs, isPortalOwner } from '@/lib/auth'
+import { getMyProfile, getMyPermissions, getDisabledModuleSlugs } from '@/lib/auth'
 
 export const dynamic = 'force-dynamic'
 
 export default async function DashboardPage() {
-  const [profile, permissions, disabledSlugs, portalOwner] = await Promise.all([
+  const [profile, permissions, disabledSlugs] = await Promise.all([
     getMyProfile(),
     getMyPermissions(),
     getDisabledModuleSlugs(),
-    isPortalOwner(),
   ])
   if (!profile) redirect('/login')
+  const kpiHref = (slug: string, href: string) =>
+    permissions[slug]?.view && !disabledSlugs.has(slug) ? href : undefined
   const supabase = await createClient()
 
   // Counts (lightweight, head:true)
@@ -54,10 +55,10 @@ export default async function DashboardPage() {
 
       {/* Stat strip */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <StatPill label="Indents" value={indents.count ?? 0} icon={<ClipboardList className="h-5 w-5" />} />
-        <StatPill label="Purchase Orders" value={pos.count ?? 0} icon={<FileText className="h-5 w-5" />} />
-        <StatPill label="GRN" value={grns.count ?? 0} icon={<PackageCheck className="h-5 w-5" />} />
-        <StatPill label="Invoices" value={invoices.count ?? 0} icon={<Receipt className="h-5 w-5" />} />
+        <StatPill label="Indents"         value={indents.count ?? 0}  icon={<ClipboardList className="h-5 w-5" />} href={kpiHref('indents', '/indents')} />
+        <StatPill label="Purchase Orders" value={pos.count ?? 0}      icon={<FileText className="h-5 w-5" />}      href={kpiHref('pos', '/pos')} />
+        <StatPill label="GRN"             value={grns.count ?? 0}     icon={<PackageCheck className="h-5 w-5" />}  href={kpiHref('grns', '/grns')} />
+        <StatPill label="Invoices"        value={invoices.count ?? 0} icon={<Receipt className="h-5 w-5" />}       href={kpiHref('invoices', '/invoices')} />
       </div>
 
       {/* Module tiles — Odoo style */}
@@ -66,7 +67,6 @@ export default async function DashboardPage() {
         <TileLauncher
           permissions={permissions}
           disabledSlugs={Array.from(disabledSlugs)}
-          isPortalOwner={portalOwner}
         />
       </section>
 
