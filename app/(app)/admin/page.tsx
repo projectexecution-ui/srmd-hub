@@ -1,18 +1,19 @@
 import Link from 'next/link'
 import { PageHeader } from '@/components/PageHeader'
 import { Card } from '@/components/ui/card'
-import { Users, Settings, ShieldCheck } from 'lucide-react'
-import { getMyPermissions, can } from '@/lib/auth'
+import { Users, Settings, ShieldCheck, LayoutGrid } from 'lucide-react'
+import { getMyPermissions, can, isPortalOwner } from '@/lib/auth'
 
 export const dynamic = 'force-dynamic'
 
 export default async function AdminHomePage() {
-  const perms = await getMyPermissions()
+  const [perms, portalOwner] = await Promise.all([getMyPermissions(), isPortalOwner()])
   const tiles = [
-    { href: '/admin/users',       slug: 'admin-users',       icon: Users,       title: 'Users & Roles', sub: 'Assign role per user, deactivate accounts.' },
-    { href: '/admin/permissions', slug: 'admin-permissions', icon: ShieldCheck, title: 'Permissions',   sub: 'Who can view / edit / admin each module.' },
-    { href: '/admin/settings',    slug: 'admin-settings',    icon: Settings,    title: 'Settings',      sub: 'Admin email, etc.' },
-  ].filter(t => can(perms, t.slug, 'view'))
+    { href: '/admin/users',       slug: 'admin-users',       icon: Users,       title: 'Users & Roles', sub: 'Assign role per user, deactivate accounts.', show: can(perms, 'admin-users', 'view') },
+    { href: '/admin/permissions', slug: 'admin-permissions', icon: ShieldCheck, title: 'Permissions',   sub: 'Who can view / edit / admin each module.',   show: can(perms, 'admin-permissions', 'view') },
+    { href: '/admin/dashboard-modules', slug: 'dashboard-modules', icon: LayoutGrid, title: 'Dashboard Modules', sub: 'Turn modules on / off for the portal.',     show: portalOwner },
+    { href: '/admin/settings',    slug: 'admin-settings',    icon: Settings,    title: 'Settings',      sub: 'Admin email, etc.',                          show: can(perms, 'admin-settings', 'view') },
+  ].filter(t => t.show)
 
   return (
     <div className="p-4 md:p-6 max-w-3xl mx-auto">

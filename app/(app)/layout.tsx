@@ -1,9 +1,14 @@
 import { redirect } from 'next/navigation'
 import NavBar from '@/components/NavBar'
-import { getMyProfile, getMyPermissions } from '@/lib/auth'
+import { getMyProfile, getMyPermissions, getDisabledModuleSlugs, isPortalOwner } from '@/lib/auth'
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
-  const [profile, permissions] = await Promise.all([getMyProfile(), getMyPermissions()])
+  const [profile, permissions, disabledSlugs, portalOwner] = await Promise.all([
+    getMyProfile(),
+    getMyPermissions(),
+    getDisabledModuleSlugs(),
+    isPortalOwner(),
+  ])
 
   if (!profile) redirect('/login')
 
@@ -22,7 +27,12 @@ export default async function AppLayout({ children }: { children: React.ReactNod
 
   return (
     <div className="flex flex-col md:flex-row min-h-screen">
-      <NavBar profile={profile} permissions={permissions} />
+      <NavBar
+        profile={profile}
+        permissions={permissions}
+        disabledSlugs={Array.from(disabledSlugs)}
+        isPortalOwner={portalOwner}
+      />
       <main className="flex-1 min-w-0 overflow-x-auto">
         {children}
       </main>

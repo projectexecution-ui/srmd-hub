@@ -14,6 +14,8 @@ import {
 interface NavBarProps {
   profile: Profile
   permissions: PermissionMap
+  disabledSlugs?: string[]
+  isPortalOwner?: boolean
 }
 
 // Every link declares the permission slug it requires (view-level).
@@ -35,7 +37,8 @@ const ALL_LINKS = [
 
 const COLLAPSE_KEY = 'srmd_nav_collapsed'
 
-export default function NavBar({ profile, permissions }: NavBarProps) {
+export default function NavBar({ profile, permissions, disabledSlugs = [], isPortalOwner = false }: NavBarProps) {
+  const disabled = new Set(disabledSlugs)
   const pathname = usePathname()
   const router = useRouter()
   const supabase = createClient()
@@ -58,7 +61,9 @@ export default function NavBar({ profile, permissions }: NavBarProps) {
     })
   }
 
-  const links = ALL_LINKS.filter(l => l.slug === null || permissions[l.slug]?.view)
+  const links = ALL_LINKS
+    .filter(l => l.slug === null || permissions[l.slug]?.view)
+    .filter(l => l.slug === null || isPortalOwner || !disabled.has(l.slug))
 
   async function signOut() {
     await supabase.auth.signOut()

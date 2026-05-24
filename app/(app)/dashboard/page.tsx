@@ -8,12 +8,17 @@ import { IndentStagePill } from '@/components/IndentStagePill'
 import { Badge } from '@/components/ui/badge'
 import { formatDate, formatINR } from '@/lib/utils'
 import { ClipboardList, FileText, PackageCheck, Receipt } from 'lucide-react'
-import { getMyProfile, getMyPermissions } from '@/lib/auth'
+import { getMyProfile, getMyPermissions, getDisabledModuleSlugs, isPortalOwner } from '@/lib/auth'
 
 export const dynamic = 'force-dynamic'
 
 export default async function DashboardPage() {
-  const [profile, permissions] = await Promise.all([getMyProfile(), getMyPermissions()])
+  const [profile, permissions, disabledSlugs, portalOwner] = await Promise.all([
+    getMyProfile(),
+    getMyPermissions(),
+    getDisabledModuleSlugs(),
+    isPortalOwner(),
+  ])
   if (!profile) redirect('/login')
   const supabase = await createClient()
 
@@ -58,7 +63,11 @@ export default async function DashboardPage() {
       {/* Module tiles — Odoo style */}
       <section>
         <h2 className="text-sm font-bold uppercase tracking-wide text-gray-500 mb-3">Apps</h2>
-        <TileLauncher permissions={permissions} />
+        <TileLauncher
+          permissions={permissions}
+          disabledSlugs={Array.from(disabledSlugs)}
+          isPortalOwner={portalOwner}
+        />
       </section>
 
       {/* Recent activity */}
