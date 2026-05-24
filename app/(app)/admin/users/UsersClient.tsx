@@ -319,7 +319,7 @@ export default function UsersClient({
             <div>
               <p className="text-sm font-semibold text-blue-900 mb-1">How users join</p>
               <p className="text-sm text-blue-800 leading-relaxed">
-                Share the SRMD Hub link with your team. They sign in with their Google account on first visit — a profile is created automatically as <b>Viewer</b>. Come back here to promote them to <b>Uploader</b> or <b>Admin</b>. The email <b>{<span className="font-mono text-xs">{process.env.NEXT_PUBLIC_ADMIN_EMAIL || 'projectexecution@construction.srmd.org'}</span>}</b> always becomes Admin automatically.
+                Share the CT HUB link with your team. They sign in with their Google account on first visit — a profile is created automatically as <b>Viewer</b>. Come back here to promote them to <b>Uploader</b> or <b>Admin</b>. The email <b>{<span className="font-mono text-xs">{process.env.NEXT_PUBLIC_ADMIN_EMAIL || 'projectexecution@construction.srmd.org'}</span>}</b> always becomes Admin automatically.
               </p>
               <Button onClick={copyInviteLink} size="sm" variant="outline" className="mt-3">
                 {copied ? <Check className="h-4 w-4 text-green-600" /> : <Copy className="h-4 w-4" />}

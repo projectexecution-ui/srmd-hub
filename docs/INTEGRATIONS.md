@@ -1,6 +1,6 @@
 # Integration Plan
 
-How the connectors we already have wire into SRMD Hub. Each section is short, has a concrete trigger, and points at the exact files to touch when you're ready.
+How the connectors we already have wire into CT HUB. Each section is short, has a concrete trigger, and points at the exact files to touch when you're ready.
 
 ---
 

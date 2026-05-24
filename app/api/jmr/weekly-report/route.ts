@@ -36,7 +36,7 @@ async function handle(req: NextRequest): Promise<NextResponse> {
     return new NextResponse(pdf as BodyInit, {
       headers: {
         'Content-Type': 'application/pdf',
-        'Content-Disposition': `attachment; filename="SRMD_JMR_Weekly_${new Date().toISOString().slice(0, 10)}.pdf"`,
+        'Content-Disposition': `attachment; filename="CT_HUB_JMR_Weekly_${new Date().toISOString().slice(0, 10)}.pdf"`,
       },
     })
   }
@@ -53,7 +53,7 @@ async function handle(req: NextRequest): Promise<NextResponse> {
   }
 
   const RESEND_KEY = process.env.RESEND_API_KEY
-  const FROM = process.env.RESEND_FROM_EMAIL || 'SRMD JMR <noreply@srmd.org>'
+  const FROM = process.env.RESEND_FROM_EMAIL || 'CT HUB JMR <noreply@srmd.org>'
   if (RESEND_KEY) {
     try {
       const b64 = Buffer.from(pdf).toString('base64')
@@ -63,10 +63,10 @@ async function handle(req: NextRequest): Promise<NextResponse> {
         body: JSON.stringify({
           from: FROM,
           to: recipients,
-          subject: `SRMD Weekly Machinery Report — ${new Date().toISOString().slice(0, 10)}`,
+          subject: `CT HUB Weekly Machinery Report — ${new Date().toISOString().slice(0, 10)}`,
           text: buildExecSummaryText(),
           attachments: [{
-            filename: `SRMD_JMR_Weekly_${new Date().toISOString().slice(0, 10)}.pdf`,
+            filename: `CT_HUB_JMR_Weekly_${new Date().toISOString().slice(0, 10)}.pdf`,
             content: b64,
           }],
         }),

@@ -71,7 +71,7 @@ export default function NavBar({ profile, permissions }: NavBarProps) {
       <div className="md:hidden sticky top-0 z-30 flex items-center justify-between px-4 h-14 bg-white border-b border-gray-200">
         <Link href="/dashboard" className="flex items-center gap-2">
           <img src="/srmd-icon.png" alt="SRMD" className="h-7 w-7" />
-          <span className="font-bold text-gray-900">SRMD Hub</span>
+          <span className="font-bold text-gray-900">CT HUB</span>
         </Link>
         <button onClick={() => setOpen(o => !o)} className="p-2 -mr-2 text-gray-600 hover:text-gray-900" aria-label="Menu">
           {open ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
@@ -85,7 +85,7 @@ export default function NavBar({ profile, permissions }: NavBarProps) {
             <div className="flex items-center justify-between px-4 h-14 border-b border-gray-200">
               <div className="flex items-center gap-2">
                 <img src="/srmd-icon.png" alt="SRMD" className="h-7 w-7" />
-                <span className="font-bold text-gray-900">SRMD Hub</span>
+                <span className="font-bold text-gray-900">CT HUB</span>
               </div>
               <button onClick={() => setOpen(false)} className="p-2 -mr-2"><X className="h-5 w-5" /></button>
             </div>

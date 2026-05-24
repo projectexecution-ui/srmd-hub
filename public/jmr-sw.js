@@ -1,4 +1,4 @@
-// Minimal service worker for the SRMD Hub JMR module.
+// Minimal service worker for the CT HUB JMR module.
 // Caches the app shell + recent navigation responses so the daily entry
 // screen remains usable on flaky site networks. NOT a substitute for
 // full offline-first — daily entries themselves are queued in IndexedDB

@@ -34,10 +34,10 @@ export function SendReportButton() {
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
       a.href = url
-      a.download = `SRMD_JMR_Weekly_${new Date().toISOString().slice(0, 10)}.pdf`
+      a.download = `CT_HUB_JMR_Weekly_${new Date().toISOString().slice(0, 10)}.pdf`
       document.body.appendChild(a); a.click(); a.remove()
       URL.revokeObjectURL(url)
-      const text = encodeURIComponent('SRMD JMR — weekly snapshot attached.')
+      const text = encodeURIComponent('CT HUB JMR — weekly snapshot attached.')
       window.open(`https://wa.me/?text=${text}`, '_blank')
     } catch (e) {
       setMsg(e instanceof Error ? e.message : 'Failed')

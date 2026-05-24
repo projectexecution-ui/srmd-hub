@@ -1,4 +1,4 @@
-# SRMD Hub — Setup & Deploy
+# CT HUB — Setup & Deploy
 
 Everything you need to take this from local → live. Run this in the order shown.
 
@@ -54,7 +54,7 @@ Now `Continue with Google` on the login page will work.
 cd srmd-hub
 git init
 git add .
-git commit -m "feat: scaffold SRMD Hub — dashboard + Indent→PO modules"
+git commit -m "feat: scaffold CT HUB — dashboard + Indent→PO modules"
 
 # Create the repo (private recommended)
 # (Use the GitHub UI or the gh CLI — credentials manager will prompt)

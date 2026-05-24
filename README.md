@@ -1,4 +1,4 @@
-# SRMD Hub
+# CT HUB
 
 A single Next.js app that hosts every SRMD construction module behind one Odoo-style dashboard:
 

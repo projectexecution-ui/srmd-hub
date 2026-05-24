@@ -17,7 +17,7 @@ export async function buildExecOnePagerPdf(): Promise<Uint8Array> {
   doc.setTextColor(255, 255, 255)
   doc.setFontSize(15)
   doc.setFont('helvetica', 'bold')
-  doc.text('SRMD — Project Execution · JMR Weekly', 40, 26)
+  doc.text('CT HUB — Project Execution · JMR Weekly', 40, 26)
   doc.setFontSize(9)
   doc.setFont('helvetica', 'normal')
   doc.text(`Snapshot: ${formatDateIN(new Date())}`, 40, 42)
@@ -88,7 +88,7 @@ export async function buildExecOnePagerPdf(): Promise<Uint8Array> {
   const pageHeight = doc.internal.pageSize.getHeight()
   doc.setFontSize(7)
   doc.setTextColor(120)
-  doc.text(`Generated ${new Date().toISOString().slice(0, 16)} · SRMD JMR`, 40, pageHeight - 24)
+  doc.text(`Generated ${new Date().toISOString().slice(0, 16)} · CT HUB JMR`, 40, pageHeight - 24)
 
   return new Uint8Array(doc.output('arraybuffer'))
 }
@@ -96,7 +96,7 @@ export async function buildExecOnePagerPdf(): Promise<Uint8Array> {
 export function buildExecSummaryText(): string {
   // Used in WhatsApp pre-filled message + email body fallback.
   return [
-    'SRMD JMR — weekly snapshot',
+    'CT HUB JMR — weekly snapshot',
     `Date: ${formatDateIN(new Date())}`,
     'PDFs attached: Exec 1-pager + Full JMR.',
     '',

@@ -1,6 +1,6 @@
 {
-  "name": "SRMD Hub — JMR",
-  "short_name": "SRMD JMR",
+  "name": "CT HUB — JMR",
+  "short_name": "CT HUB JMR",
   "description": "Site machinery hours, JMR reports & bills",
   "start_url": "/jmr",
   "scope": "/",
