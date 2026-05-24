@@ -56,6 +56,29 @@ export interface Project {
   name: string
   description: string | null
   status: string | null
+  /** Physical location / address. Optional. */
+  location: string | null
+  /** 'individual' | 'group' — group projects parent sub-projects via parent_project_id. */
+  project_type: string | null
+  parent_project_id: string | null
+  // Area Statement (matches budget-hub.html template)
+  plot_area_sft: number | null
+  built_up_sft: number | null
+  carpet_sft: number | null
+  super_built_up_sft: number | null
+  fsi_permitted: number | null
+  fsi_consumed: number | null
+  created_at: string | null
+  updated_at: string | null
+}
+
+export interface ProjectFloor {
+  id: string
+  project_id: string
+  sequence: number
+  name: string
+  built_up_sft: number | null
+  carpet_sft: number | null
   created_at: string | null
   updated_at: string | null
 }

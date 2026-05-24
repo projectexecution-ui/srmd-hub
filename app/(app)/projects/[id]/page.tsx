@@ -7,10 +7,11 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { StatPill } from '@/components/ui/stat-pill'
-import { ClipboardList, FileText, Pencil } from 'lucide-react'
+import { ClipboardList, FileText, Pencil, MapPin } from 'lucide-react'
 import { formatINR } from '@/lib/utils'
 import { ProjectForm } from '../project-form'
 import { ProjectDeleteButton } from '@/components/ProjectDeleteButton'
+import type { ProjectFloor } from '@/lib/types'
 
 export const dynamic = 'force-dynamic'
 
@@ -31,10 +32,12 @@ export default async function ProjectDetailPage({
   const { data: project } = await supabase.from('projects').select('*').eq('id', id).single()
   if (!project) notFound()
 
-  const [indentsRes, posRes] = await Promise.all([
+  const [indentsRes, posRes, floorsRes] = await Promise.all([
     supabase.from('indents').select('id', { count: 'exact', head: true }).eq('project_id', id),
     supabase.from('purchase_orders').select('id, po_amount').eq('project_id', id),
+    supabase.from('project_floors').select('*').eq('project_id', id).order('sequence'),
   ])
+  const floors = (floorsRes.data ?? []) as ProjectFloor[]
   const indentCount = indentsRes.count ?? 0
   const posTotal = (posRes.data ?? []).reduce((s, p) => s + Number(p.po_amount ?? 0), 0)
   const poCount = posRes.data?.length ?? 0
@@ -54,13 +57,21 @@ export default async function ProjectDetailPage({
       </PageHeader>
 
       {editing ? (
-        <Card><CardContent className="pt-6"><ProjectForm initial={project} projectId={id} /></CardContent></Card>
+        <Card><CardContent className="pt-6"><ProjectForm initial={project} initialFloors={floors} projectId={id} /></CardContent></Card>
       ) : (
         <>
-          {project.description && (
+          {(project.location || project.description) && (
             <Card>
-              <CardContent className="pt-5">
-                <p className="text-sm text-gray-700 whitespace-pre-line">{project.description}</p>
+              <CardContent className="pt-5 space-y-2">
+                {project.location && (
+                  <p className="text-sm text-gray-700 flex items-center gap-1.5">
+                    <MapPin className="h-4 w-4 text-gray-400" />
+                    {project.location}
+                  </p>
+                )}
+                {project.description && (
+                  <p className="text-sm text-gray-700 whitespace-pre-line">{project.description}</p>
+                )}
               </CardContent>
             </Card>
           )}
@@ -70,6 +81,8 @@ export default async function ProjectDetailPage({
             <StatPill label="POs" value={poCount} icon={<FileText className="h-5 w-5" />} />
             <StatPill label="PO Value" value={formatINR(posTotal)} />
           </div>
+
+          <AreaStatementPanel project={project} floors={floors} />
 
           <Card>
             <CardHeader>
@@ -84,6 +97,90 @@ export default async function ProjectDetailPage({
           </Card>
         </>
       )}
+    </div>
+  )
+}
+
+// ─── Area Statement panel (read-only) ──────────────────────────────
+function fmt(n: number | null | undefined, unit = '') {
+  if (n == null) return '—'
+  const v = Number(n).toLocaleString('en-IN', { maximumFractionDigits: 2 })
+  return unit ? `${v} ${unit}` : v
+}
+
+function AreaStatementPanel({ project, floors }: {
+  project: {
+    plot_area_sft?: number | null
+    built_up_sft?: number | null
+    carpet_sft?: number | null
+    super_built_up_sft?: number | null
+    fsi_permitted?: number | null
+    fsi_consumed?: number | null
+  }
+  floors: ProjectFloor[]
+}) {
+  const hasAnyArea = [
+    project.plot_area_sft, project.built_up_sft, project.carpet_sft,
+    project.super_built_up_sft, project.fsi_permitted, project.fsi_consumed,
+  ].some(v => v != null) || floors.length > 0
+
+  if (!hasAnyArea) return null
+
+  const fsiPct = (project.fsi_permitted && project.fsi_consumed)
+    ? Math.round((Number(project.fsi_consumed) / Number(project.fsi_permitted)) * 100)
+    : null
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base">Area Statement</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+          <AreaCell label="Plot area"     value={fmt(project.plot_area_sft, 'sq ft')} />
+          <AreaCell label="Built-up"      value={fmt(project.built_up_sft, 'sq ft')} />
+          <AreaCell label="Carpet"        value={fmt(project.carpet_sft, 'sq ft')} />
+          <AreaCell label="Super built-up" value={fmt(project.super_built_up_sft, 'sq ft')} />
+          <AreaCell label="FSI permitted" value={fmt(project.fsi_permitted)} />
+          <AreaCell label="FSI consumed"  value={fmt(project.fsi_consumed)} />
+          {fsiPct != null && <AreaCell label="FSI utilisation" value={`${fsiPct}%`} />}
+        </div>
+
+        {floors.length > 0 && (
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-2">Floor breakdown</p>
+            <div className="overflow-x-auto">
+              <table className="min-w-full text-sm border border-gray-200 rounded-lg overflow-hidden">
+                <thead className="bg-gray-50">
+                  <tr className="text-left text-xs uppercase tracking-wide text-gray-500">
+                    <th className="px-3 py-2">Floor</th>
+                    <th className="px-3 py-2 text-right">Built-up (sq ft)</th>
+                    <th className="px-3 py-2 text-right">Carpet (sq ft)</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {floors.map(f => (
+                    <tr key={f.id} className="border-t border-gray-100">
+                      <td className="px-3 py-2 font-medium text-gray-800">{f.name}</td>
+                      <td className="px-3 py-2 text-right text-gray-700">{fmt(f.built_up_sft)}</td>
+                      <td className="px-3 py-2 text-right text-gray-700">{fmt(f.carpet_sft)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  )
+}
+
+function AreaCell({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-xl border border-gray-200 bg-white p-3">
+      <p className="text-[11px] uppercase tracking-wide text-gray-500">{label}</p>
+      <p className="text-base font-semibold text-gray-900 mt-0.5">{value}</p>
     </div>
   )
 }
