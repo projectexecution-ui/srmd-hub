@@ -6,6 +6,7 @@ import {
   ClipboardList, FileText, PackageCheck, Receipt, Wallet,
   Truck, Building2, Upload, Users, Settings, ShieldCheck,
   ExternalLink, BarChart3, Wrench, Calculator, FileSpreadsheet,
+  Boxes,
 } from 'lucide-react'
 import type { PermissionMap } from './types'
 
@@ -35,6 +36,7 @@ export const MODULES: ModuleTile[] = [
   // The slugs `jmr-bills` and `jmr-admin` still exist in role_permissions and
   // continue to gate the sub-routes; they're just not shown as separate tiles.
   { slug: 'jmr',              label: 'JMR / Machinery',  description: 'Site machinery hours, JMR matrix, bills',     href: '/jmr',            icon: Wrench,        tone: 'orange' },
+  { slug: 'inventory',        label: 'Inventory',        description: 'Stock, item master, requests & issue chain',  href: '/inventory',      icon: Boxes,         tone: 'green' },
   { slug: 'attendance',       label: 'Attendance',       description: 'Open the SiteAttend app',                     href: process.env.NEXT_PUBLIC_ATTENDANCE_URL || 'https://siteattend.vercel.app', external: true, icon: ExternalLink, tone: 'rose' },
   { slug: 'uploads',          label: 'Uploads',          description: 'Excel imports history',                       href: '/uploads',        icon: Upload,        tone: 'slate' },
   { slug: 'budget-vs-actual', label: 'IN4 BPH Report Hub',     description: 'IN4 Budget Performance report — server-backed BPH dashboard', href: '/budget',              icon: FileSpreadsheet, tone: 'teal' },

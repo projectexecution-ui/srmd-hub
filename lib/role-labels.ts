@@ -17,14 +17,18 @@ export type RoleLabelMap = Record<Role, RoleLabel>
 // Keep these in sync with the seed in 20260523_role_labels migration so the
 // UI looks identical when the table is freshly seeded.
 export const DEFAULT_ROLE_LABELS: RoleLabelMap = {
-  admin:      { label: 'Admin',      description: 'Super-user. Manages users + permissions + settings.' },
-  founder:    { label: 'Founder',    description: 'Top org level. Wide view, narrow edit (default: budget).' },
-  head:       { label: 'Head',       description: 'PM / department head. Edits ops modules.' },
-  uploader:   { label: 'Uploader',   description: 'Edits operational data (vendors, indents, POs).' },
-  engineer:   { label: 'Engineer',   description: 'Site engineer. Edits indents, GRN, JMR, attendance.' },
-  site_staff: { label: 'Site Staff', description: 'Labour / on-site. Attendance + view JMR.' },
-  viewer:     { label: 'Viewer',     description: 'Read-only — can browse but cannot edit.' },
-  contractor: { label: 'Contractor', description: 'External contractor. Sees only own JMR entries + bills.' },
+  admin:              { label: 'Admin',              description: 'Super-user. Manages users + permissions + settings.' },
+  founder:            { label: 'Founder',            description: 'Top org level. Wide view, narrow edit (default: budget).' },
+  head:               { label: 'Head',               description: 'PM / department head. Edits ops modules.' },
+  uploader:           { label: 'Uploader',           description: 'Edits operational data (vendors, indents, POs).' },
+  engineer:           { label: 'Engineer',           description: 'Site engineer. Raises indents / inventory requests; edits JMR.' },
+  site_staff:         { label: 'Site Staff',         description: 'Labour / on-site. Attendance + view JMR.' },
+  viewer:             { label: 'Viewer',             description: 'Read-only — can browse but cannot edit.' },
+  contractor:         { label: 'Contractor',         description: 'External contractor. Sees only own JMR entries + bills.' },
+  backoffice:         { label: 'Backoffice',         description: 'Inventory: first-level approver. Reserves stock on approve.' },
+  backoffice_backup:  { label: 'Backoffice Backup',  description: 'Acts for Backoffice when primary is unavailable.' },
+  store_manager:      { label: 'Store Manager',      description: 'Issues material from a warehouse, logs receipts + damage.' },
+  hop:                { label: 'HoP',                description: 'Inventory: final approver. Emergency bypass authority.' },
 }
 
 /**

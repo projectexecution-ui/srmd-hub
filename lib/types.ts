@@ -5,17 +5,22 @@
 // for what each role can do is the public.role_permissions table — these
 // strings are just labels.
 export type Role =
-  | 'admin'      // super-user; manages users + permissions
-  | 'uploader'   // legacy: edit ops data
-  | 'viewer'     // legacy: read-only
-  | 'founder'    // org top — wide view, narrow edit
-  | 'head'       // PM / dept head
-  | 'engineer'   // site engineer
-  | 'site_staff' // labour / on-site
-  | 'contractor' // external contractor — sees only own bills + entries (JMR)
+  | 'admin'              // super-user; manages users + permissions
+  | 'uploader'           // legacy: edit ops data
+  | 'viewer'             // legacy: read-only
+  | 'founder'            // org top — wide view, narrow edit
+  | 'head'               // PM / dept head
+  | 'engineer'           // site engineer (also raises inventory requests)
+  | 'site_staff'         // labour / on-site
+  | 'contractor'         // external contractor — sees only own bills + entries (JMR)
+  | 'backoffice'         // inventory: first-level request approver
+  | 'backoffice_backup'  // inventory: backup for backoffice
+  | 'store_manager'      // inventory: issues material from a warehouse
+  | 'hop'                // inventory: final approver + emergency bypass
 
 export const ALL_ROLES: Role[] = [
   'admin', 'founder', 'head', 'uploader', 'engineer', 'site_staff', 'viewer', 'contractor',
+  'backoffice', 'backoffice_backup', 'store_manager', 'hop',
 ]
 
 export type PermAction = 'view' | 'edit' | 'admin'

@@ -9,6 +9,7 @@ import {
   LayoutDashboard, ClipboardList, FileText, PackageCheck, Receipt,
   Truck, Building2, Settings, LogOut, Menu, X, Users, Upload,
   BarChart3, ChevronsLeft, ChevronsRight, ShieldCheck, LayoutGrid,
+  Boxes,
 } from 'lucide-react'
 
 interface NavBarProps {
@@ -31,6 +32,7 @@ const ALL_LINKS = [
   { href: '/projects',         label: 'Projects',    icon: Building2,       slug: 'projects' },
   { href: '/budget',           label: 'Budget',      icon: BarChart3,       slug: 'budget-vs-actual' },
   { href: '/uploads',          label: 'Uploads',     icon: Upload,          slug: 'uploads' },
+  { href: '/inventory',        label: 'Inventory',   icon: Boxes,           slug: 'inventory' },
   { href: '/admin/users',      label: 'Users',       icon: Users,           slug: 'admin-users' },
   { href: '/admin/permissions',label: 'Permissions', icon: ShieldCheck,     slug: 'admin-permissions' },
   { href: '/admin/dashboard-modules', label: 'Modules', icon: LayoutGrid,   slug: null as string | null, portalOwnerOnly: true },
