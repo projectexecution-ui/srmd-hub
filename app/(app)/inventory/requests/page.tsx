@@ -1,6 +1,6 @@
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/server'
-import { requirePermission, getMyUser, getMyProfile } from '@/lib/auth'
+import { requirePermission, requireInventorySection, getMyUser, getMyProfile } from '@/lib/auth'
 import { PageHeader } from '@/components/PageHeader'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -12,6 +12,7 @@ export const dynamic = 'force-dynamic'
 
 export default async function MyRequestsPage() {
   await requirePermission('inventory', 'view')
+  await requireInventorySection('inv-requests')
   const [user, profile] = await Promise.all([getMyUser(), getMyProfile()])
   const supabase = await createClient()
 

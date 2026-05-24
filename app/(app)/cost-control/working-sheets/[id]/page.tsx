@@ -5,6 +5,7 @@ import { PageHeader } from '@/components/PageHeader'
 import { Card } from '@/components/ui/card'
 import { WSStatusPill, type WSStatus } from '@/components/cost-control/WSStatusPill'
 import { WSEditor } from './WSEditor'
+import { ExcelSummaryPanel } from './ExcelSummaryPanel'
 import { formatINR } from '@/lib/utils'
 
 export const dynamic = 'force-dynamic'
@@ -25,11 +26,69 @@ export default async function WorkingSheetEditorPage(
 
   const { data: ws } = await supabase
     .from('cc_working_sheets')
-    .select('id, ws_code, status, total_amount, past_approved_in_subskill, return_reason, engineer_id, project_id, discipline_id, sub_skill_id, line_type, projects(code, name), cc_disciplines(code, name), cc_sub_skills(code, name)')
+    .select('id, ws_code, status, total_amount, past_approved_in_subskill, return_reason, engineer_id, project_id, discipline_id, sub_skill_id, line_type, entry_mode, source_excel_url, source_excel_name, summary_total, summary_notes, flag_summary, last_checked_at, projects(code, name), cc_disciplines(code, name), cc_sub_skills(code, name)')
     .eq('id', id)
     .single()
 
   if (!ws) notFound()
+
+  // Quick mode: short-circuit the line-item editor and render the Excel
+  // summary + flag panel instead.
+  if (ws.entry_mode === 'excel_summary') {
+    const { data: excelRows } = await supabase
+      .from('cc_excel_rows')
+      .select('id, row_no, description, unit, qty, rate, amount, formula_in_amount, flag, flag_reason, flag_severity')
+      .eq('working_sheet_id', id)
+      .order('row_no')
+
+    // Signed URL for downloading the original Excel
+    let downloadUrl: string | null = null
+    if (ws.source_excel_url) {
+      const { data: signed } = await supabase.storage
+        .from('cc-sheets')
+        .createSignedUrl(ws.source_excel_url, 60 * 60)
+      downloadUrl = signed?.signedUrl ?? null
+    }
+
+    const proj = (Array.isArray(ws.projects) ? ws.projects[0] : ws.projects) as PRow | null
+    const dis  = (Array.isArray(ws.cc_disciplines) ? ws.cc_disciplines[0] : ws.cc_disciplines) as DRow | null
+    const sub  = (Array.isArray(ws.cc_sub_skills) ? ws.cc_sub_skills[0] : ws.cc_sub_skills) as SRow | null
+
+    return (
+      <div className="p-4 md:p-6 max-w-6xl mx-auto space-y-4">
+        <PageHeader
+          title={ws.ws_code}
+          subtitle={`${proj?.code ?? '—'} · ${dis?.code} ${dis?.name} → ${sub?.code} ${sub?.name} · Quick mode (Excel)`}
+          back="/cost-control/working-sheets"
+        >
+          <WSStatusPill status={ws.status as WSStatus} />
+        </PageHeader>
+
+        <ExcelSummaryPanel
+          wsId={ws.id}
+          fileName={ws.source_excel_name}
+          downloadUrl={downloadUrl}
+          summaryTotal={ws.summary_total != null ? Number(ws.summary_total) : null}
+          summaryNotes={ws.summary_notes}
+          flagSummary={ws.flag_summary as { generated_at: string; total_rows: number; flagged_rows: number; by_flag: Record<string, number>; narrative: string | null; ai_used: boolean; ai_error: string | null } | null}
+          lastCheckedAt={ws.last_checked_at}
+          rows={(excelRows ?? []).map(r => ({
+            id: r.id,
+            row_no: r.row_no,
+            description: r.description,
+            unit: r.unit,
+            qty: r.qty != null ? Number(r.qty) : null,
+            rate: r.rate != null ? Number(r.rate) : null,
+            amount: r.amount != null ? Number(r.amount) : null,
+            formula_in_amount: r.formula_in_amount,
+            flag: r.flag,
+            flag_reason: r.flag_reason,
+            flag_severity: r.flag_severity,
+          }))}
+        />
+      </div>
+    )
+  }
 
   const [itemsRes, vendorsRes, blRes, pastItemsRes] = await Promise.all([
     supabase

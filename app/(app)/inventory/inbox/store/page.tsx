@@ -1,5 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
-import { requirePermission } from '@/lib/auth'
+import { requirePermission, requireInventorySection } from '@/lib/auth'
 import { PageHeader } from '@/components/PageHeader'
 import { RequestList } from '@/components/inventory/RequestList'
 
@@ -7,6 +7,7 @@ export const dynamic = 'force-dynamic'
 
 export default async function StoreInboxPage() {
   await requirePermission('inventory', 'view')
+  await requireInventorySection('inv-inbox-store')
   const supabase = await createClient()
   // Store Manager sees what's been approved (regular path) + what's been
   // emergency-authorised by HoP — both ready for physical issue.

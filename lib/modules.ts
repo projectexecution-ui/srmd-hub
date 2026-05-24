@@ -51,6 +51,30 @@ export function visibleModules(perms: PermissionMap): ModuleTile[] {
   return MODULES.filter(m => perms[m.slug]?.view)
 }
 
+// ─── Inventory sub-sections ─────────────────────────────────────────
+// Each inventory sub-section has its own toggleable slug. Stored in the
+// same public.module_visibility table; Portal Owner can hide any of
+// these from /admin/dashboard-modules. Slugs are prefixed `inv-` so they
+// never clash with top-level modules and are easy to spot in the DB.
+export interface InventorySection {
+  slug: string
+  label: string
+  description: string
+}
+
+export const INVENTORY_SECTIONS: InventorySection[] = [
+  { slug: 'inv-stock',             label: 'Stock at warehouses', description: 'Available qty per item per warehouse' },
+  { slug: 'inv-request-new',       label: 'Raise a request',     description: 'Engineer raises a material request' },
+  { slug: 'inv-requests',          label: 'My requests',         description: 'Track status of raised requests' },
+  { slug: 'inv-inbox-backoffice',  label: 'Backoffice inbox',    description: 'First-level approval queue' },
+  { slug: 'inv-inbox-hop',         label: 'HoP inbox',           description: 'Final approval + emergency bypass' },
+  { slug: 'inv-inbox-store',       label: 'Store inbox',         description: 'Approved requests ready to issue' },
+  { slug: 'inv-receipt',           label: 'Stock receipt',       description: 'Record vendor delivery into a warehouse' },
+  { slug: 'inv-returns',           label: 'Log a return',        description: 'Return surplus / damaged material' },
+  { slug: 'inv-admin-warehouses',  label: 'Warehouses (admin)',  description: 'Master list of physical stores' },
+  { slug: 'inv-admin-items',       label: 'Item master (admin)', description: 'Catalogue of materials' },
+]
+
 // Tone → Tailwind classes. Kept here so JIT picks them up.
 export const TILE_TONES: Record<ModuleTile['tone'], { bg: string; ic: string; ring: string }> = {
   blue:   { bg: 'bg-blue-50',   ic: 'text-blue-700',   ring: 'group-hover:ring-blue-200' },

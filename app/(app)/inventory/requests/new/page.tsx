@@ -1,5 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
-import { requirePermission, getMyUser } from '@/lib/auth'
+import { requirePermission, requireInventorySection, getMyUser } from '@/lib/auth'
 import { PageHeader } from '@/components/PageHeader'
 import { Card } from '@/components/ui/card'
 import { RequestForm } from './request-form'
@@ -8,6 +8,7 @@ export const dynamic = 'force-dynamic'
 
 export default async function NewRequestPage() {
   await requirePermission('inventory', 'edit', '/inventory')
+  await requireInventorySection('inv-request-new')
   const user = await getMyUser()
   const supabase = await createClient()
 

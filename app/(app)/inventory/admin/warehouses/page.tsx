@@ -1,5 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
-import { requirePermission } from '@/lib/auth'
+import { requirePermission, requireInventorySection } from '@/lib/auth'
 import { PageHeader } from '@/components/PageHeader'
 import { Card } from '@/components/ui/card'
 import { WarehouseList } from './warehouse-list'
@@ -8,6 +8,7 @@ export const dynamic = 'force-dynamic'
 
 export default async function WarehousesAdminPage() {
   await requirePermission('inventory', 'admin', '/inventory')
+  await requireInventorySection('inv-admin-warehouses')
   const supabase = await createClient()
   const [whRes, profilesRes] = await Promise.all([
     supabase.from('inv_warehouses').select('*').order('code'),

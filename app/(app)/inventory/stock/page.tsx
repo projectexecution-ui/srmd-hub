@@ -1,5 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
-import { requirePermission } from '@/lib/auth'
+import { requirePermission, requireInventorySection } from '@/lib/auth'
 import { PageHeader } from '@/components/PageHeader'
 import { Card } from '@/components/ui/card'
 import { StockTable } from './stock-table'
@@ -10,6 +10,7 @@ export default async function StockPage({
   searchParams,
 }: { searchParams: Promise<{ warehouse?: string }> }) {
   await requirePermission('inventory', 'view')
+  await requireInventorySection('inv-stock')
   const sp = await searchParams
   const supabase = await createClient()
 

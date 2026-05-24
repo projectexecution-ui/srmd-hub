@@ -1,5 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
-import { requirePermission } from '@/lib/auth'
+import { requirePermission, requireInventorySection } from '@/lib/auth'
 import { PageHeader } from '@/components/PageHeader'
 import { Card } from '@/components/ui/card'
 import { ReceiptForm } from './receipt-form'
@@ -8,6 +8,7 @@ export const dynamic = 'force-dynamic'
 
 export default async function StockReceiptPage() {
   await requirePermission('inventory', 'edit', '/inventory')
+  await requireInventorySection('inv-receipt')
   const supabase = await createClient()
   const [whRes, itemsRes] = await Promise.all([
     supabase.from('inv_warehouses').select('id, code, name').eq('is_active', true).order('code'),

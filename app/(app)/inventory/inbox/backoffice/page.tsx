@@ -1,5 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
-import { requirePermission } from '@/lib/auth'
+import { requirePermission, requireInventorySection } from '@/lib/auth'
 import { PageHeader } from '@/components/PageHeader'
 import { RequestList } from '@/components/inventory/RequestList'
 
@@ -7,6 +7,7 @@ export const dynamic = 'force-dynamic'
 
 export default async function BackofficeInboxPage() {
   await requirePermission('inventory', 'view')
+  await requireInventorySection('inv-inbox-backoffice')
   const supabase = await createClient()
   const { data } = await supabase
     .from('inv_requests')
