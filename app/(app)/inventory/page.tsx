@@ -40,57 +40,51 @@ export default async function InventoryLandingPage() {
     {
       href: '/inventory/stock', title: 'Stock at warehouses', icon: Boxes,
       sub: 'See available qty per item at your assigned warehouse.',
-      show: true, comingSoon: true,
+      show: true,
     },
     {
       href: '/inventory/requests/new', title: 'Raise a request', icon: ClipboardList,
       sub: 'Engineer raises a material request for site work.',
       show: role === 'engineer' || canEdit || canAdmin,
-      comingSoon: true,
     },
     {
       href: '/inventory/requests', title: 'My requests', icon: FileText,
       sub: 'Track status of requests you have raised.',
-      show: true, comingSoon: true,
+      show: true,
     },
     {
       href: '/inventory/inbox/backoffice', title: 'Backoffice inbox', icon: Inbox,
       sub: 'Approve / reject pending requests, reserve stock.',
       show: role === 'backoffice' || role === 'backoffice_backup' || canAdmin,
-      comingSoon: true,
     },
     {
       href: '/inventory/inbox/hop', title: 'HoP inbox', icon: ShieldCheck,
       sub: 'Final approval. Emergency bypass authority.',
       show: role === 'hop' || canAdmin,
-      comingSoon: true,
     },
     {
       href: '/inventory/inbox/store', title: 'Store inbox', icon: Truck,
       sub: 'Issue approved requests, log actual qty handed over.',
       show: role === 'store_manager' || canAdmin,
-      comingSoon: true,
     },
     {
       href: '/inventory/receipt', title: 'Stock receipt', icon: PackagePlus,
       sub: 'Record vendor delivery into a warehouse.',
       show: role === 'store_manager' || canAdmin,
-      comingSoon: true,
     },
     {
       href: '/inventory/returns/new', title: 'Log a return', icon: Undo2,
       sub: 'Return surplus / damaged material back to store.',
       show: canEdit || canAdmin,
-      comingSoon: true,
     },
     // Admin masters
     {
       href: '/inventory/admin/warehouses', title: 'Warehouses', icon: Building2,
-      sub: 'Master list of physical stores.', show: canAdmin, comingSoon: true,
+      sub: 'Master list of physical stores.', show: canAdmin,
     },
     {
       href: '/inventory/admin/items', title: 'Item master', icon: Tag,
-      sub: 'Catalog of materials with codes, units, images.', show: canAdmin, comingSoon: true,
+      sub: 'Catalog of materials with codes, units, images.', show: canAdmin,
     },
   ].filter(t => t.show)
 
@@ -134,12 +128,6 @@ export default async function InventoryLandingPage() {
         )}
       </section>
 
-      <Card className="p-4 bg-amber-50 border-amber-200">
-        <p className="text-xs text-amber-900">
-          <b>Heads up:</b> the inventory schema is live, but the pages above are still being built.
-          Sub-sections marked <b>Soon</b> open as we ship them.
-        </p>
-      </Card>
     </div>
   )
 }

@@ -1,0 +1,40 @@
+import { createClient } from '@/lib/supabase/server'
+import { requirePermission } from '@/lib/auth'
+import { PageHeader } from '@/components/PageHeader'
+import { Card } from '@/components/ui/card'
+import { StockTable } from './stock-table'
+
+export const dynamic = 'force-dynamic'
+
+export default async function StockPage({
+  searchParams,
+}: { searchParams: Promise<{ warehouse?: string }> }) {
+  await requirePermission('inventory', 'view')
+  const sp = await searchParams
+  const supabase = await createClient()
+
+  const [whRes, stockRes] = await Promise.all([
+    supabase.from('inv_warehouses').select('id, code, name').eq('is_active', true).order('code'),
+    supabase.from('inv_stock_available').select('*').order('item_code'),
+  ])
+
+  const warehouses = whRes.data ?? []
+  const allRows = stockRes.data ?? []
+  const selectedWarehouse = sp.warehouse || warehouses[0]?.id || null
+  const rows = selectedWarehouse
+    ? allRows.filter(r => r.warehouse_id === selectedWarehouse)
+    : []
+
+  return (
+    <div className="p-4 md:p-6 max-w-6xl mx-auto space-y-4">
+      <PageHeader title="Stock" back="/inventory" subtitle="Available quantity per item per warehouse" />
+      <Card className="p-5">
+        <StockTable
+          warehouses={warehouses}
+          selectedWarehouse={selectedWarehouse}
+          rows={rows}
+        />
+      </Card>
+    </div>
+  )
+}
