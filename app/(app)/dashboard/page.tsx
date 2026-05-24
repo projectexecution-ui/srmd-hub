@@ -19,27 +19,36 @@ export default async function DashboardPage() {
     getDisabledModuleSlugs(),
   ])
   if (!profile) redirect('/login')
-  const kpiHref = (slug: string, href: string) =>
-    permissions[slug]?.view && !disabledSlugs.has(slug) ? href : undefined
+  const canShow = (slug: string) => !!permissions[slug]?.view && !disabledSlugs.has(slug)
+  const showIndents  = canShow('indents')
+  const showPos      = canShow('pos')
+  const showGrns     = canShow('grns')
+  const showInvoices = canShow('invoices')
   const supabase = await createClient()
 
-  // Counts (lightweight, head:true)
+  // Counts (lightweight, head:true) — only fetch what we'll render
   const [indents, pos, grns, invoices, recentIndents, recentPos] = await Promise.all([
-    supabase.from('indents').select('id', { count: 'exact', head: true }),
-    supabase.from('purchase_orders').select('id', { count: 'exact', head: true }),
-    supabase.from('grns').select('id', { count: 'exact', head: true }),
-    supabase.from('invoices').select('id', { count: 'exact', head: true }),
-    supabase
-      .from('indents')
-      .select('id, indent_no, indent_date, stage, sub_project, projects(code, name)')
-      .order('indent_date', { ascending: false })
-      .limit(5),
-    supabase
-      .from('purchase_orders')
-      .select('id, po_no, po_date, po_amount, vendors(name), projects(code)')
-      .order('po_date', { ascending: false })
-      .limit(5),
+    showIndents  ? supabase.from('indents').select('id', { count: 'exact', head: true })         : Promise.resolve({ count: 0 }),
+    showPos      ? supabase.from('purchase_orders').select('id', { count: 'exact', head: true }) : Promise.resolve({ count: 0 }),
+    showGrns     ? supabase.from('grns').select('id', { count: 'exact', head: true })            : Promise.resolve({ count: 0 }),
+    showInvoices ? supabase.from('invoices').select('id', { count: 'exact', head: true })        : Promise.resolve({ count: 0 }),
+    showIndents
+      ? supabase
+          .from('indents')
+          .select('id, indent_no, indent_date, stage, sub_project, projects(code, name)')
+          .order('indent_date', { ascending: false })
+          .limit(5)
+      : Promise.resolve({ data: null }),
+    showPos
+      ? supabase
+          .from('purchase_orders')
+          .select('id, po_no, po_date, po_amount, vendors(name), projects(code)')
+          .order('po_date', { ascending: false })
+          .limit(5)
+      : Promise.resolve({ data: null }),
   ])
+  const showKpiStrip = showIndents || showPos || showGrns || showInvoices
+  const showRecent   = showIndents || showPos
 
   const hour = new Date().getHours()
   const greeting = hour < 12 ? 'Morning' : hour < 17 ? 'Afternoon' : 'Evening'
@@ -53,13 +62,15 @@ export default async function DashboardPage() {
         </p>
       </div>
 
-      {/* Stat strip */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <StatPill label="Indents"         value={indents.count ?? 0}  icon={<ClipboardList className="h-5 w-5" />} href={kpiHref('indents', '/indents')} />
-        <StatPill label="Purchase Orders" value={pos.count ?? 0}      icon={<FileText className="h-5 w-5" />}      href={kpiHref('pos', '/pos')} />
-        <StatPill label="GRN"             value={grns.count ?? 0}     icon={<PackageCheck className="h-5 w-5" />}  href={kpiHref('grns', '/grns')} />
-        <StatPill label="Invoices"        value={invoices.count ?? 0} icon={<Receipt className="h-5 w-5" />}       href={kpiHref('invoices', '/invoices')} />
-      </div>
+      {/* Stat strip — each pill is independently gated by perms + module visibility */}
+      {showKpiStrip && (
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          {showIndents  && <StatPill label="Indents"         value={indents.count ?? 0}  icon={<ClipboardList className="h-5 w-5" />} href="/indents" />}
+          {showPos      && <StatPill label="Purchase Orders" value={pos.count ?? 0}      icon={<FileText className="h-5 w-5" />}      href="/pos" />}
+          {showGrns     && <StatPill label="GRN"             value={grns.count ?? 0}     icon={<PackageCheck className="h-5 w-5" />}  href="/grns" />}
+          {showInvoices && <StatPill label="Invoices"        value={invoices.count ?? 0} icon={<Receipt className="h-5 w-5" />}       href="/invoices" />}
+        </div>
+      )}
 
       {/* Module tiles — Odoo style */}
       <section>
@@ -70,8 +81,10 @@ export default async function DashboardPage() {
         />
       </section>
 
-      {/* Recent activity */}
-      <section className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+      {/* Recent activity — each card gated by its module's visibility */}
+      {showRecent && (
+      <section className={`grid grid-cols-1 ${showIndents && showPos ? 'lg:grid-cols-2' : ''} gap-4`}>
+        {showIndents && (
         <Card>
           <CardHeader>
             <div className="flex items-center justify-between">
@@ -109,7 +122,9 @@ export default async function DashboardPage() {
             )}
           </CardContent>
         </Card>
+        )}
 
+        {showPos && (
         <Card>
           <CardHeader>
             <div className="flex items-center justify-between">
@@ -152,7 +167,9 @@ export default async function DashboardPage() {
             )}
           </CardContent>
         </Card>
+        )}
       </section>
+      )}
     </div>
   )
 }
