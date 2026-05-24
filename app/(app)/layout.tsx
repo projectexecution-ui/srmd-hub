@@ -1,5 +1,6 @@
 import { redirect } from 'next/navigation'
 import NavBar from '@/components/NavBar'
+import { InstallPrompt } from '@/components/InstallPrompt'
 import { getMyProfile, getMyPermissions, getDisabledModuleSlugs, isPortalOwner } from '@/lib/auth'
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
@@ -36,6 +37,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       <main className="flex-1 min-w-0 overflow-x-auto">
         {children}
       </main>
+      <InstallPrompt />
     </div>
   )
 }

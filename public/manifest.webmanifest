@@ -1,18 +1,16 @@
 {
-  "name": "CT HUB — JMR",
-  "short_name": "CT HUB JMR",
-  "description": "Site machinery hours, JMR reports & bills",
-  "start_url": "/jmr",
+  "name": "CT HUB",
+  "short_name": "CT HUB",
+  "description": "Construction modules — Indents, POs, GRN, Invoices, JMR and more",
+  "start_url": "/dashboard",
   "scope": "/",
   "display": "standalone",
   "background_color": "#ffffff",
-  "theme_color": "#1d4ed8",
+  "theme_color": "#2563eb",
   "orientation": "portrait-primary",
   "icons": [
-    {
-      "src": "/favicon.ico",
-      "sizes": "any",
-      "type": "image/x-icon"
-    }
+    { "src": "/srmd-icon.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
+    { "src": "/srmd-icon.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" },
+    { "src": "/favicon.ico", "sizes": "any", "type": "image/x-icon" }
   ]
 }
