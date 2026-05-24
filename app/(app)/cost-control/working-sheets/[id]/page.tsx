@@ -34,7 +34,7 @@ export default async function WorkingSheetEditorPage(
   const [itemsRes, vendorsRes, blRes] = await Promise.all([
     supabase
       .from('cc_working_sheet_items')
-      .select('id, sr_no, description, uom, qty, rate, gst_pct, total_amount, vendor_id, location_tag, remark')
+      .select('id, sr_no, description, uom, qty, qty_is_auto, rate, gst_pct, total_amount, vendor_id, location_tag, remark, sections:cc_ws_item_qty_sections(id)')
       .eq('working_sheet_id', id)
       .order('sr_no'),
     supabase.from('vendors').select('id, name').order('name'),
@@ -124,7 +124,11 @@ export default async function WorkingSheetEditorPage(
         canEdit={canEdit && (isOwner || canApprove)}
         canApprove={canApprove && !isOwner}
         vendors={vendorsRes.data ?? []}
-        initialItems={itemsRes.data ?? []}
+        initialItems={(itemsRes.data ?? []).map(i => ({
+          ...i,
+          qty_is_auto: !!(i as { qty_is_auto?: boolean }).qty_is_auto,
+          section_count: ((i as { sections?: { id: string }[] }).sections ?? []).length,
+        }))}
         wsTotal={ws.total_amount ?? 0}
       />
     </div>
