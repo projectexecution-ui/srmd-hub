@@ -8,6 +8,7 @@ export const dynamic = 'force-dynamic'
 
 export default async function ItemsAdminPage() {
   await requirePermission('inventory', 'admin', '/inventory')
+  await requireInventorySection('inv-admin-items')
   const supabase = await createClient()
   const { data } = await supabase
     .from('inv_items')
