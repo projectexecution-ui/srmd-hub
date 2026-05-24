@@ -6,7 +6,7 @@ import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { EmptyState } from '@/components/ui/empty-state'
-import { Calculator, Plus, FileText, Clock, Inbox } from 'lucide-react'
+import { Calculator, Plus, FileText, Clock, Inbox, Upload, ClipboardList, Settings, ArrowRight } from 'lucide-react'
 import { formatINR } from '@/lib/utils'
 
 export const dynamic = 'force-dynamic'
@@ -24,6 +24,7 @@ type CCProject = {
 export default async function CostControlLandingPage() {
   const perms = await requirePermission('cost-control', 'view')
   const canWrite = can(perms, 'cost-control', 'edit')
+  const canAdmin = can(perms, 'cost-control', 'admin')
   const supabase = await createClient()
   const user = await getMyUser()
 
@@ -83,16 +84,56 @@ export default async function CostControlLandingPage() {
       {/* Stat strip */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <Stat label="Projects" value={ccProjects.length} hint={incompleteCount ? `${incompleteCount} need setup` : 'all set up'} icon={<Calculator className="h-5 w-5" />} />
-        <Stat
-          label="Pending approvals"
-          value={pendingCount}
-          hint={pendingCount > 0 ? 'submitted, awaiting head' : 'all clear'}
-          icon={<Inbox className="h-5 w-5" />}
-          tone={pendingCount > 0 ? 'amber' : 'default'}
-        />
-        <Stat label="Your drafts" value={myDraftsCount} hint="draft + returned to you" icon={<Clock className="h-5 w-5" />} />
+        <Link href="/cost-control/approvals" className="block">
+          <Stat
+            label="Pending approvals"
+            value={pendingCount}
+            hint={pendingCount > 0 ? 'submitted, awaiting head' : 'all clear'}
+            icon={<Inbox className="h-5 w-5" />}
+            tone={pendingCount > 0 ? 'amber' : 'default'}
+          />
+        </Link>
+        <Link href="/cost-control/working-sheets" className="block">
+          <Stat label="Your drafts" value={myDraftsCount} hint="draft + returned to you" icon={<Clock className="h-5 w-5" />} />
+        </Link>
         <Stat label="Approved value" value={formatINR(approvedTotal)} hint={`${totalWS} sheet${totalWS === 1 ? '' : 's'} total`} icon={<FileText className="h-5 w-5" />} />
       </div>
+
+      {/* Quick actions */}
+      <Card className="p-4">
+        <h3 className="text-xs uppercase tracking-wide text-gray-500 font-semibold mb-3">Tools</h3>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+          <QuickAction
+            href="/cost-control/approvals"
+            label="Approvals inbox"
+            hint={pendingCount > 0 ? `${pendingCount} pending` : 'all clear'}
+            icon={<Inbox className="h-4 w-4" />}
+            highlight={pendingCount > 0}
+          />
+          {canWrite && (
+            <QuickAction
+              href="/cost-control/import"
+              label="Import Excel budget"
+              hint="bulk-load ENGG report"
+              icon={<Upload className="h-4 w-4" />}
+            />
+          )}
+          <QuickAction
+            href="/cost-control/audit"
+            label="Audit log"
+            hint="every edit & event"
+            icon={<ClipboardList className="h-4 w-4" />}
+          />
+          {canAdmin && (
+            <QuickAction
+              href="/cost-control/admin/qty-templates"
+              label="Quantification templates"
+              hint="manage measurement shapes"
+              icon={<Settings className="h-4 w-4" />}
+            />
+          )}
+        </div>
+      </Card>
 
       {projectsRes.error && (
         <Card className="border-amber-300 bg-amber-50 p-4 text-sm text-amber-900">
@@ -152,6 +193,44 @@ export default async function CostControlLandingPage() {
         </Card>
       )}
     </div>
+  )
+}
+
+function QuickAction({
+  href,
+  label,
+  hint,
+  icon,
+  highlight = false,
+}: {
+  href: string
+  label: string
+  hint?: string
+  icon: React.ReactNode
+  highlight?: boolean
+}) {
+  return (
+    <Link
+      href={href}
+      className={`group flex items-center gap-2 p-3 rounded-lg border transition-colors ${
+        highlight
+          ? 'border-amber-200 bg-amber-50 hover:bg-amber-100'
+          : 'border-gray-200 bg-white hover:bg-gray-50 hover:border-gray-300'
+      }`}
+    >
+      <div
+        className={`p-1.5 rounded-md ${
+          highlight ? 'bg-amber-100 text-amber-700' : 'bg-indigo-50 text-indigo-700'
+        }`}
+      >
+        {icon}
+      </div>
+      <div className="flex-1 min-w-0">
+        <div className="text-sm font-medium text-gray-900 truncate">{label}</div>
+        {hint && <div className="text-[10px] text-gray-500 truncate">{hint}</div>}
+      </div>
+      <ArrowRight className="h-3.5 w-3.5 text-gray-300 group-hover:text-gray-500 shrink-0" />
+    </Link>
   )
 }
 
