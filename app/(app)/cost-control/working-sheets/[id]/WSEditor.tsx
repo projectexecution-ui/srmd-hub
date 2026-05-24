@@ -6,7 +6,8 @@ import { useRouter } from 'next/navigation'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Plus, Trash2, Send, Check, RotateCcw, Loader2, Lock, Calculator } from 'lucide-react'
+import { Plus, Trash2, Send, Check, RotateCcw, Loader2, Lock, Calculator, AlertTriangle } from 'lucide-react'
+import { findDuplicateMatches, type PastItem, type DupMatch } from '@/lib/dup-detect'
 import { formatINR } from '@/lib/utils'
 import type { WSStatus } from '@/components/cost-control/WSStatusPill'
 import {
@@ -42,13 +43,14 @@ interface Props {
   canApprove: boolean
   vendors: Vendor[]
   initialItems: WSItem[]
+  pastItems?: PastItem[]
   wsTotal: number
 }
 
 const UOM_OPTIONS = ['Sft', 'Sqm', 'Rm', 'Mt', 'Cum', 'Nos', 'MT', 'Kg', 'Ltr', 'Ls']
 const GST_OPTIONS = [0, 5, 12, 18, 28]
 
-export function WSEditor({ wsId, status, canEdit, canApprove, vendors, initialItems, wsTotal }: Props) {
+export function WSEditor({ wsId, status, canEdit, canApprove, vendors, initialItems, pastItems = [], wsTotal }: Props) {
   const router = useRouter()
   const [items, setItems] = React.useState<WSItem[]>(initialItems)
   const [busy, setBusy] = React.useState(false)
@@ -225,6 +227,11 @@ export function WSEditor({ wsId, status, canEdit, canApprove, vendors, initialIt
                       disabled={!editable}
                       placeholder="e.g. Internal painting on walls"
                       className="h-9"
+                    />
+                    <DuplicateHint
+                      description={row.description}
+                      pastItems={pastItems}
+                      rowId={row.id}
                     />
                   </td>
                   <td className="px-2 py-2">
@@ -410,5 +417,59 @@ export function WSEditor({ wsId, status, canEdit, canApprove, vendors, initialIt
         </div>
       )}
     </Card>
+  )
+}
+
+// DuplicateHint — Layer 1 of the 3-layer dup detection (lexical Jaccard).
+function DuplicateHint({
+  description,
+  pastItems,
+  rowId,
+}: {
+  description: string
+  pastItems: PastItem[]
+  rowId: string
+}) {
+  const matches = React.useMemo<DupMatch[]>(() => {
+    if (!description || description.length < 4 || pastItems.length === 0) return []
+    return findDuplicateMatches(description, pastItems)
+  }, [description, pastItems])
+  const [expanded, setExpanded] = React.useState(false)
+  if (matches.length === 0) return null
+  const top = matches[0]
+  const bgClass =
+    top.level === 'high'
+      ? 'bg-red-50 border-red-200 text-red-800'
+      : 'bg-amber-50 border-amber-200 text-amber-800'
+  return (
+    <div className={`mt-1 text-[11px] rounded-md border px-2 py-1 ${bgClass}`}>
+      <button
+        type="button"
+        onClick={() => setExpanded(v => !v)}
+        className="flex items-center gap-1 w-full text-left"
+        aria-controls={`dup-${rowId}`}
+      >
+        <AlertTriangle className="h-3 w-3 shrink-0" />
+        <span className="truncate flex-1">
+          {top.level === 'high' ? 'Possible duplicate' : 'Similar past item'} —{' '}
+          <b>{Math.round(top.score * 100)}%</b> match{' '}
+          <span className="text-gray-600">&quot;{top.item.description}&quot;</span>
+        </span>
+        <span className="text-gray-500 ml-2">{expanded ? '▾' : '▸'}</span>
+      </button>
+      {expanded && (
+        <div id={`dup-${rowId}`} className="mt-1 space-y-0.5 pl-4 border-l border-current/20">
+          {matches.map(m => (
+            <div key={m.item.id} className="flex gap-2 text-gray-700">
+              <span className="font-mono text-[10px] text-gray-500 shrink-0">
+                {Math.round(m.score * 100)}%
+              </span>
+              <span className="truncate flex-1">{m.item.description}</span>
+              <span className="text-gray-500 shrink-0 font-mono text-[10px]">{m.item.ws_code}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
   )
 }

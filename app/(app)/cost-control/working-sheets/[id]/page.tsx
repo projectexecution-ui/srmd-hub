@@ -31,7 +31,7 @@ export default async function WorkingSheetEditorPage(
 
   if (!ws) notFound()
 
-  const [itemsRes, vendorsRes, blRes] = await Promise.all([
+  const [itemsRes, vendorsRes, blRes, pastItemsRes] = await Promise.all([
     supabase
       .from('cc_working_sheet_items')
       .select('id, sr_no, description, uom, qty, qty_is_auto, rate, gst_pct, total_amount, vendor_id, location_tag, remark, sections:cc_ws_item_qty_sections(id)')
@@ -47,6 +47,16 @@ export default async function WorkingSheetEditorPage(
       .eq('sub_skill_id', ws.sub_skill_id)
       .eq('line_type', ws.line_type)
       .maybeSingle(),
+    // Past items in same sub-skill (cross-project) for duplicate detection
+    supabase
+      .from('cc_working_sheet_items')
+      .select(
+        'id, description, qty, uom, rate, vendor_id, cc_working_sheets!inner(id, ws_code, status, sub_skill_id, project_id)',
+      )
+      .eq('cc_working_sheets.sub_skill_id', ws.sub_skill_id)
+      .in('cc_working_sheets.status', ['approved', 'wo_issued', 'paid', 'submitted'])
+      .neq('working_sheet_id', id)
+      .limit(200),
   ])
 
   const proj = (Array.isArray(ws.projects) ? ws.projects[0] : ws.projects) as PRow | null
@@ -129,6 +139,20 @@ export default async function WorkingSheetEditorPage(
           qty_is_auto: !!(i as { qty_is_auto?: boolean }).qty_is_auto,
           section_count: ((i as { sections?: { id: string }[] }).sections ?? []).length,
         }))}
+        pastItems={(pastItemsRes.data ?? []).map(p => {
+          const pws = (p as unknown as { cc_working_sheets: { id: string; ws_code: string } | { id: string; ws_code: string }[] }).cc_working_sheets
+          const wsRef = Array.isArray(pws) ? pws[0] : pws
+          return {
+            id: p.id,
+            description: p.description,
+            qty: Number(p.qty),
+            uom: p.uom,
+            rate: Number(p.rate),
+            vendor_id: p.vendor_id,
+            ws_id: wsRef?.id ?? '',
+            ws_code: wsRef?.ws_code ?? '',
+          }
+        })}
         wsTotal={ws.total_amount ?? 0}
       />
     </div>
