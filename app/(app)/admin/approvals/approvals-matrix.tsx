@@ -8,6 +8,7 @@ import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import {
   Loader2, Check, Plus, Trash2, X, Power, PowerOff, ArrowRight, ShieldAlert,
+  Flag, Square,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { RoleLabelMap } from '@/lib/role-labels'
@@ -26,8 +27,19 @@ interface Rule {
   notes: string | null
 }
 
+interface Stage {
+  id: string
+  module_slug: string
+  doc_type: string
+  stage: string
+  sequence: number
+  is_initial: boolean
+  is_terminal: boolean
+}
+
 interface Props {
   initial: Rule[]
+  initialStages: Stage[]
   roles: string[]
   roleLabels: RoleLabelMap
   moduleLabels: Record<string, string>
@@ -65,9 +77,10 @@ function fmtRoleLabel(role: string | null | undefined, labels: RoleLabelMap): st
   return (labels as any)[role]?.label || role
 }
 
-export default function ApprovalsMatrix({ initial, roles, roleLabels, moduleLabels }: Props) {
+export default function ApprovalsMatrix({ initial, initialStages, roles, roleLabels, moduleLabels }: Props) {
   const router = useRouter()
   const [rules, setRules]   = useState<Rule[]>(initial)
+  const [stages, setStages] = useState<Stage[]>(initialStages)
   const [drafts, setDrafts] = useState<DraftRule[]>([])
   const [busyId, setBusyId] = useState<string | null>(null)
   const [savedId, setSavedId] = useState<string | null>(null)
@@ -84,6 +97,23 @@ export default function ApprovalsMatrix({ initial, roles, roleLabels, moduleLabe
     }
     return map
   }, [rules])
+
+  // Stages keyed by `${module}::${doc_type}` — sorted by sequence
+  const stagesByDoc = useMemo(() => {
+    const map = new Map<string, Stage[]>()
+    for (const s of stages) {
+      const k = `${s.module_slug}::${s.doc_type}`
+      if (!map.has(k)) map.set(k, [])
+      map.get(k)!.push(s)
+    }
+    for (const arr of map.values()) {
+      arr.sort((a, b) => a.sequence - b.sequence || a.stage.localeCompare(b.stage))
+    }
+    return map
+  }, [stages])
+
+  const stageNamesFor = (mod: string, doc: string): string[] =>
+    (stagesByDoc.get(`${mod}::${doc}`) ?? []).map(s => s.stage)
 
   // ------- Mutators -------
 
@@ -166,6 +196,80 @@ export default function ApprovalsMatrix({ initial, roles, roleLabels, moduleLabe
     router.refresh()
   }
 
+  // ------- Stage mutators -------
+
+  async function addStage(module_slug: string, doc_type: string, stage: string) {
+    const name = stage.trim()
+    if (!name) return
+    setBusyId(`stage:${module_slug}:${doc_type}:new`); setError(null)
+    const supabase = createClient()
+    const { data, error } = await supabase
+      .from('approval_stages')
+      .insert({ module_slug, doc_type, stage: name, sequence: (stagesByDoc.get(`${module_slug}::${doc_type}`)?.length ?? 0) * 10 + 10 })
+      .select('*')
+      .single()
+    setBusyId(null)
+    if (error) { setError(error.message); return }
+    setStages(ss => [...ss, data as Stage])
+    router.refresh()
+  }
+
+  async function renameStage(s: Stage, next: string) {
+    const name = next.trim()
+    if (!name || name === s.stage) return
+    setBusyId(`stage:${s.id}`); setError(null)
+    const prev = stages
+    setStages(ss => ss.map(x => x.id === s.id ? { ...x, stage: name } : x))
+    const supabase = createClient()
+    // Cascade-rename: any approval_rule referencing the old stage in
+    // this (module, doc_type) gets updated to the new name.
+    const { error: stErr } = await supabase
+      .from('approval_stages')
+      .update({ stage: name })
+      .eq('id', s.id)
+    if (stErr) { setStages(prev); setBusyId(null); setError(stErr.message); return }
+    const { error: rfErr } = await supabase
+      .from('approval_rules')
+      .update({ from_stage: name })
+      .eq('module_slug', s.module_slug)
+      .eq('doc_type', s.doc_type)
+      .eq('from_stage', s.stage)
+    if (rfErr) { setBusyId(null); setError(rfErr.message); return }
+    const { error: rtErr } = await supabase
+      .from('approval_rules')
+      .update({ to_stage: name })
+      .eq('module_slug', s.module_slug)
+      .eq('doc_type', s.doc_type)
+      .eq('to_stage', s.stage)
+    setBusyId(null)
+    if (rtErr) { setError(rtErr.message); return }
+    setRules(rs => rs.map(r => ({
+      ...r,
+      from_stage: r.module_slug === s.module_slug && r.doc_type === s.doc_type && r.from_stage === s.stage ? name : r.from_stage,
+      to_stage:   r.module_slug === s.module_slug && r.doc_type === s.doc_type && r.to_stage   === s.stage ? name : r.to_stage,
+    })))
+    router.refresh()
+  }
+
+  async function deleteStage(s: Stage) {
+    // Block delete if any rule references this stage
+    const inUse = rules.some(r =>
+      r.module_slug === s.module_slug && r.doc_type === s.doc_type &&
+      (r.from_stage === s.stage || r.to_stage === s.stage))
+    if (inUse) {
+      setError(`Cannot delete "${s.stage}" — used by one or more rules. Edit or delete those rules first.`)
+      return
+    }
+    if (!confirm(`Delete stage "${s.stage}"?`)) return
+    setBusyId(`stage:${s.id}`); setError(null)
+    const supabase = createClient()
+    const { error } = await supabase.from('approval_stages').delete().eq('id', s.id)
+    setBusyId(null)
+    if (error) { setError(error.message); return }
+    setStages(ss => ss.filter(x => x.id !== s.id))
+    router.refresh()
+  }
+
   // ------- Render -------
 
   const moduleKeys = Array.from(grouped.keys()).sort()
@@ -199,6 +303,7 @@ export default function ApprovalsMatrix({ initial, roles, roleLabels, moduleLabe
               {docKeys.map(docKey => {
                 const rs = subMap.get(docKey)!
                 const docDrafts = draftsBy(modKey, docKey)
+                const docStages = stagesByDoc.get(`${modKey}::${docKey}`) ?? []
                 return (
                   <div key={docKey} className="mb-5 last:mb-0">
                     <div className="flex items-center justify-between mb-2">
@@ -209,6 +314,16 @@ export default function ApprovalsMatrix({ initial, roles, roleLabels, moduleLabe
                         <Plus className="h-4 w-4" /> Add rule
                       </Button>
                     </div>
+
+                    {/* Stages chip row */}
+                    <StagesEditor
+                      stages={docStages}
+                      busyKeyPrefix={`stage:`}
+                      busyKey={busyId}
+                      onRename={(s, next) => renameStage(s, next)}
+                      onDelete={(s) => deleteStage(s)}
+                      onAdd={(name) => addStage(modKey, docKey, name)}
+                    />
 
                     <div className="overflow-x-auto">
                       <table className="min-w-full text-sm">
@@ -230,6 +345,7 @@ export default function ApprovalsMatrix({ initial, roles, roleLabels, moduleLabe
                               rule={r}
                               roles={roles}
                               roleLabels={roleLabels}
+                              stageOptions={stageNamesFor(modKey, docKey)}
                               busy={busyId === r.id}
                               saved={savedId === r.id}
                               onUpdate={(patch) => updateRule(r.id, patch)}
@@ -241,6 +357,7 @@ export default function ApprovalsMatrix({ initial, roles, roleLabels, moduleLabe
                               draft={d}
                               roles={roles}
                               roleLabels={roleLabels}
+                              stageOptions={stageNamesFor(modKey, docKey)}
                               busy={busyId === d.tempId}
                               onPatch={(patch) => patchDraft(d.tempId, patch)}
                               onSave={() => saveDraft(d.tempId)}
@@ -270,10 +387,11 @@ export default function ApprovalsMatrix({ initial, roles, roleLabels, moduleLabe
 }
 
 // ─── Editable row ───────────────────────────────────────────────────────────
-function RuleRow({ rule, roles, roleLabels, busy, saved, onUpdate, onDelete }: {
+function RuleRow({ rule, roles, roleLabels, stageOptions, busy, saved, onUpdate, onDelete }: {
   rule: Rule
   roles: string[]
   roleLabels: RoleLabelMap
+  stageOptions: string[]
   busy: boolean
   saved: boolean
   onUpdate: (patch: Partial<Rule>) => void
@@ -282,18 +400,18 @@ function RuleRow({ rule, roles, roleLabels, busy, saved, onUpdate, onDelete }: {
   return (
     <tr className={cn('border-t border-gray-100', saved && 'bg-green-50 transition-colors', !rule.is_active && 'opacity-60')}>
       <td className="px-2 py-2">
-        <Input
-          defaultValue={rule.from_stage}
-          onBlur={e => { const v = e.target.value.trim(); if (v !== rule.from_stage) onUpdate({ from_stage: v }) }}
-          className="h-8 text-xs font-mono"
+        <StageSelect
+          value={rule.from_stage}
+          options={stageOptions}
+          onChange={(v) => { if (v !== rule.from_stage) onUpdate({ from_stage: v }) }}
         />
       </td>
       <td className="px-2 py-2 text-gray-400"><ArrowRight className="h-4 w-4" /></td>
       <td className="px-2 py-2">
-        <Input
-          defaultValue={rule.to_stage}
-          onBlur={e => { const v = e.target.value.trim(); if (v !== rule.to_stage) onUpdate({ to_stage: v }) }}
-          className="h-8 text-xs font-mono"
+        <StageSelect
+          value={rule.to_stage}
+          options={stageOptions}
+          onChange={(v) => { if (v !== rule.to_stage) onUpdate({ to_stage: v }) }}
         />
       </td>
       <td className="px-2 py-2">
@@ -342,10 +460,11 @@ function RuleRow({ rule, roles, roleLabels, busy, saved, onUpdate, onDelete }: {
 }
 
 // ─── New-rule draft row ─────────────────────────────────────────────────────
-function DraftRow({ draft, roles, roleLabels, busy, onPatch, onSave, onCancel }: {
+function DraftRow({ draft, roles, roleLabels, stageOptions, busy, onPatch, onSave, onCancel }: {
   draft: DraftRule
   roles: string[]
   roleLabels: RoleLabelMap
+  stageOptions: string[]
   busy: boolean
   onPatch: (patch: Partial<DraftRule>) => void
   onSave: () => void
@@ -354,11 +473,11 @@ function DraftRow({ draft, roles, roleLabels, busy, onPatch, onSave, onCancel }:
   return (
     <tr className="border-t border-blue-200 bg-blue-50/40">
       <td className="px-2 py-2">
-        <Input value={draft.from_stage} onChange={e => onPatch({ from_stage: e.target.value })} placeholder="e.g. submitted" className="h-8 text-xs font-mono" />
+        <StageSelect value={draft.from_stage} options={stageOptions} allowPickPrompt onChange={(v) => onPatch({ from_stage: v })} />
       </td>
       <td className="px-2 py-2 text-blue-500"><ArrowRight className="h-4 w-4" /></td>
       <td className="px-2 py-2">
-        <Input value={draft.to_stage} onChange={e => onPatch({ to_stage: e.target.value })} placeholder="e.g. approved" className="h-8 text-xs font-mono" />
+        <StageSelect value={draft.to_stage} options={stageOptions} allowPickPrompt onChange={(v) => onPatch({ to_stage: v })} />
       </td>
       <td className="px-2 py-2">
         <RoleSelect value={draft.approver_role} roles={roles} roleLabels={roleLabels} onChange={(v) => onPatch({ approver_role: v })} />
@@ -405,5 +524,143 @@ function RoleSelect({ value, roles, roleLabels, allowEmpty, onChange }: {
         <option key={r} value={r}>{fmtRoleLabel(r, roleLabels)}</option>
       ))}
     </select>
+  )
+}
+
+// ─── Stage select (used by rule rows) ───────────────────────────────────────
+// Always shows the current value even if it's not in the master stages list
+// (e.g. a legacy stage that hasn't been migrated yet). Falls back to a free-
+// text-style "(legacy)" option.
+function StageSelect({ value, options, allowPickPrompt, onChange }: {
+  value: string
+  options: string[]
+  allowPickPrompt?: boolean
+  onChange: (v: string) => void
+}) {
+  const inMaster = options.includes(value)
+  return (
+    <select
+      value={value}
+      onChange={e => onChange(e.target.value)}
+      className={cn(
+        'h-8 rounded-lg border bg-white px-2 text-xs font-mono',
+        !inMaster && value ? 'border-rose-300 text-rose-700' : 'border-gray-300',
+      )}
+      title={!inMaster && value ? 'This stage is not in the Stages list — add it above to keep it' : undefined}
+    >
+      {allowPickPrompt && !value && <option value="">— pick stage —</option>}
+      {!inMaster && value && <option value={value}>{value} (legacy)</option>}
+      {options.map(s => (
+        <option key={s} value={s}>{s}</option>
+      ))}
+    </select>
+  )
+}
+
+// ─── Stages chip row + add input ────────────────────────────────────────────
+function StagesEditor({ stages, busyKey, busyKeyPrefix, onRename, onDelete, onAdd }: {
+  stages: Stage[]
+  busyKey: string | null
+  busyKeyPrefix: string
+  onRename: (s: Stage, next: string) => void
+  onDelete: (s: Stage) => void
+  onAdd: (name: string) => void
+}) {
+  const [newName, setNewName] = useState('')
+
+  return (
+    <div className="mb-3 p-3 rounded-xl border border-gray-200 bg-gray-50">
+      <div className="flex items-baseline justify-between mb-2">
+        <p className="text-[10px] uppercase tracking-wide font-semibold text-gray-500">Stages</p>
+        <p className="text-[10px] text-gray-400">click a chip to rename · × to delete</p>
+      </div>
+      <div className="flex flex-wrap gap-2 items-center">
+        {stages.length === 0 ? (
+          <p className="text-xs text-gray-400 italic">No stages defined.</p>
+        ) : (
+          stages.map(s => (
+            <StageChip
+              key={s.id}
+              stage={s}
+              busy={busyKey === `${busyKeyPrefix}${s.id}`}
+              onRename={(next) => onRename(s, next)}
+              onDelete={() => onDelete(s)}
+            />
+          ))
+        )}
+        <form
+          onSubmit={(e) => { e.preventDefault(); onAdd(newName); setNewName('') }}
+          className="inline-flex items-center gap-1"
+        >
+          <Input
+            value={newName}
+            onChange={e => setNewName(e.target.value)}
+            placeholder="add stage…"
+            className="h-7 text-xs font-mono w-32"
+          />
+          <Button type="submit" size="sm" variant="outline" disabled={!newName.trim()} className="h-7 px-2">
+            <Plus className="h-3 w-3" />
+          </Button>
+        </form>
+      </div>
+    </div>
+  )
+}
+
+function StageChip({ stage, busy, onRename, onDelete }: {
+  stage: Stage
+  busy: boolean
+  onRename: (next: string) => void
+  onDelete: () => void
+}) {
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft] = useState(stage.stage)
+
+  if (editing) {
+    return (
+      <span className="inline-flex items-center gap-1 rounded-full bg-white border border-blue-300 px-2 py-0.5 text-xs">
+        <Input
+          autoFocus
+          value={draft}
+          onChange={e => setDraft(e.target.value)}
+          onKeyDown={e => {
+            if (e.key === 'Enter') { onRename(draft); setEditing(false) }
+            if (e.key === 'Escape') { setDraft(stage.stage); setEditing(false) }
+          }}
+          onBlur={() => { onRename(draft); setEditing(false) }}
+          className="h-6 text-xs font-mono w-28 px-1"
+        />
+      </span>
+    )
+  }
+
+  return (
+    <span
+      className={cn(
+        'inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs font-mono cursor-pointer',
+        stage.is_initial && 'border-blue-300 bg-blue-50 text-blue-800',
+        stage.is_terminal && 'border-emerald-300 bg-emerald-50 text-emerald-800',
+        !stage.is_initial && !stage.is_terminal && 'border-gray-300 bg-white text-gray-700',
+      )}
+      onClick={() => { setDraft(stage.stage); setEditing(true) }}
+      title={
+        stage.is_initial ? 'Initial stage — first state of a new doc'
+          : stage.is_terminal ? 'Terminal stage — final state'
+          : 'Click to rename'
+      }
+    >
+      {stage.is_initial && <Flag className="h-3 w-3" />}
+      {stage.is_terminal && <Square className="h-3 w-3" />}
+      {stage.stage}
+      <button
+        type="button"
+        onClick={(e) => { e.stopPropagation(); onDelete() }}
+        className="hover:text-rose-600 ml-0.5"
+        disabled={busy}
+        title="Delete stage"
+      >
+        {busy ? <Loader2 className="h-3 w-3 animate-spin" /> : <X className="h-3 w-3" />}
+      </button>
+    </span>
   )
 }

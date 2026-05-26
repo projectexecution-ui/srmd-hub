@@ -26,7 +26,7 @@ export default async function AdminApprovalsPage() {
   if (!profile.is_portal_owner && profile.role !== 'admin') redirect('/admin')
 
   const supabase = await createClient()
-  const [{ data: rules }, roleLabels] = await Promise.all([
+  const [{ data: rules }, { data: stages }, roleLabels] = await Promise.all([
     supabase
       .from('approval_rules')
       .select('*')
@@ -34,6 +34,12 @@ export default async function AdminApprovalsPage() {
       .order('doc_type')
       .order('from_stage')
       .order('to_stage'),
+    supabase
+      .from('approval_stages')
+      .select('*')
+      .order('module_slug')
+      .order('doc_type')
+      .order('sequence'),
     getRoleLabels(),
   ])
 
@@ -53,6 +59,7 @@ export default async function AdminApprovalsPage() {
       </Card>
       <ApprovalsMatrix
         initial={rules ?? []}
+        initialStages={stages ?? []}
         roles={ALL_ROLES as unknown as string[]}
         roleLabels={roleLabels}
         moduleLabels={MODULE_LABELS}
