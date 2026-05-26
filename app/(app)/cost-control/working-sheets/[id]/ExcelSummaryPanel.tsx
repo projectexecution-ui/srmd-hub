@@ -11,6 +11,8 @@ import {
 import { submitWorkingSheet, approveWorkingSheet, returnWorkingSheet } from '@/components/cost-control/ws-actions'
 import { WSStatusPill, type WSStatus } from '@/components/cost-control/WSStatusPill'
 
+interface Breakdown { label: string; value: number }
+
 interface Row {
   id: string
   row_no: number
@@ -20,6 +22,8 @@ interface Row {
   rate: number | null
   amount: number | null
   formula_in_amount: string | null
+  rate_breakdown: Breakdown[] | null
+  amount_breakdown: Breakdown[] | null
   flag: string | null
   flag_reason: string | null
   flag_severity: string | null
@@ -250,8 +254,22 @@ export function ExcelSummaryPanel({
                     </td>
                     <td className="px-2 py-2 text-gray-600">{r.unit ?? ''}</td>
                     <td className="px-2 py-2 text-right tabular-nums">{r.qty != null ? r.qty.toLocaleString('en-IN') : ''}</td>
-                    <td className="px-2 py-2 text-right tabular-nums">{r.rate != null ? r.rate.toLocaleString('en-IN') : ''}</td>
-                    <td className="px-2 py-2 text-right tabular-nums">{r.amount != null ? r.amount.toLocaleString('en-IN') : ''}</td>
+                    <td className="px-2 py-2 text-right tabular-nums">
+                      {r.rate != null ? r.rate.toLocaleString('en-IN') : ''}
+                      {r.rate_breakdown && r.rate_breakdown.length > 0 && (
+                        <div className="text-[10px] text-gray-400 font-normal">
+                          {r.rate_breakdown.map(b => `${b.label} ${b.value.toLocaleString('en-IN')}`).join(' + ')}
+                        </div>
+                      )}
+                    </td>
+                    <td className="px-2 py-2 text-right tabular-nums">
+                      {r.amount != null ? r.amount.toLocaleString('en-IN') : ''}
+                      {r.amount_breakdown && r.amount_breakdown.length > 0 && (
+                        <div className="text-[10px] text-gray-400 font-normal">
+                          {r.amount_breakdown.map(b => `${b.label} ${b.value.toLocaleString('en-IN')}`).join(' + ')}
+                        </div>
+                      )}
+                    </td>
                     <td className="px-2 py-2 max-w-xs">
                       {r.flag ? (
                         <div className="space-y-0.5">

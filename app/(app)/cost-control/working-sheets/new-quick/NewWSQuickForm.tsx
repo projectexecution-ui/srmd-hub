@@ -13,6 +13,8 @@ interface ProjectOpt   { id: string; code: string; name: string }
 interface DRow         { id: string; code: string; name: string }
 interface SRow         { id: string; discipline_id: string; code: string; name: string }
 
+interface Breakdown { label: string; value: number }
+
 interface ParsedRow {
   row_no: number
   raw_label: string | null
@@ -22,6 +24,8 @@ interface ParsedRow {
   rate: number | null
   amount: number | null
   formula_in_amount: string | null
+  rate_breakdown: Breakdown[] | null
+  amount_breakdown: Breakdown[] | null
 }
 
 interface Props {
@@ -31,21 +35,47 @@ interface Props {
   defaultProjectId?: string
 }
 
-// Try to detect which column in each row carries which value. Engineers'
-// Excels in the wild have wildly different shapes, so we use header
-// heuristics + fall back to position.
-function detectColumns(headerRow: unknown[]): Record<string, number> {
-  const map: Record<string, number> = {}
+type ColKind = 'description' | 'unit' | 'qty' | 'rate' | 'amount'
+interface DetectedCol {
+  i: number
+  kind: ColKind
+  isTotal: boolean   // header says "total" / "grand" / "sum" / "combined"
+  label: string      // original header text — used for breakdown labels
+}
+
+// Engineers' BoQ shapes in the wild vary a lot. Header detection captures
+// EVERY rate-like and amount-like column so split layouts like
+// "Supply Rate / Erection Rate / Total Rate" parse correctly.
+function detectColumns(headerRow: unknown[]): DetectedCol[] {
+  const out: DetectedCol[] = []
   headerRow.forEach((h, i) => {
-    const s = String(h ?? '').toLowerCase().trim()
-    if (!s) return
-    if (map.description === undefined && /(description|item|particular|work|head)/.test(s)) map.description = i
-    if (map.unit === undefined        && /^unit$|^uom$/.test(s)) map.unit = i
-    if (map.qty === undefined         && /(qty|quantity|nos|count)/.test(s)) map.qty = i
-    if (map.rate === undefined        && /(rate|price|unit\s*rate)/.test(s)) map.rate = i
-    if (map.amount === undefined      && /(amount|total|value|cost)/.test(s)) map.amount = i
+    const raw = String(h ?? '').trim()
+    if (!raw) return
+    const s = raw.toLowerCase()
+    // Amount-like first (so "Total Cost" doesn't bind to 'rate' just because
+    // it has 'cost per' nearby — rate regex stays narrow).
+    let kind: ColKind | null = null
+    if (/(description|item|particular|work|head|nature|scope|sr\.?\s*description)/.test(s)) kind = 'description'
+    else if (/^unit$|^uom$|\bof\s+meas/.test(s)) kind = 'unit'
+    else if (/^qty\b|^quantity\b|\bnos\b|\bcount\b/.test(s)) kind = 'qty'
+    else if (/(amount|value|cost(?!\s*per)|amt|line\s*total)/.test(s)) kind = 'amount'
+    else if (/(rate|price|unit\s*rate|cost\s*per|p\/u|per\s*unit)/.test(s)) kind = 'rate'
+    if (!kind) return
+    const isTotal = /\b(total|grand|sum|combined|all[\s-]*in|net)\b/.test(s)
+    out.push({ i, kind, isTotal, label: raw })
   })
-  return map
+  return out
+}
+
+// Pull the breakdown label for a rate/amount column. "Supply Rate" → "Supply",
+// "Erection Amount" → "Erection". Strips the words "rate / amount / total /
+// grand / sum / combined" so the label is the scope only.
+function breakdownLabel(raw: string): string {
+  return raw
+    .replace(/\b(rate|amount|value|cost|amt|total|grand|sum|combined|all[\s-]*in|net|per\s*unit|p\/u)\b/gi, '')
+    .replace(/[()\[\]]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim() || raw.trim()
 }
 
 function toNum(v: unknown): number | null {
@@ -66,16 +96,38 @@ async function parseExcel(file: File): Promise<{ rows: ParsedRow[]; grandTotal: 
   const sheet = wb.Sheets[sheetName]
   const aoa = XLSX.utils.sheet_to_json<unknown[]>(sheet, { header: 1, defval: null })
 
-  // Find a probable header row: first row where >=3 of the standard
-  // column words appear.
+  // Find a probable header row: first row whose detected columns include
+  // at least description + one of (rate, amount) + (qty or unit).
   let headerIdx = -1
-  let colMap: Record<string, number> = {}
+  let cols: DetectedCol[] = []
   for (let i = 0; i < Math.min(aoa.length, 25); i++) {
-    const m = detectColumns(aoa[i])
-    const hits = ['description','rate','amount','qty','unit'].filter(k => k in m).length
-    if (hits >= 3) { headerIdx = i; colMap = m; break }
+    const detected = detectColumns(aoa[i])
+    const kinds = new Set(detected.map(c => c.kind))
+    const hasMoney = kinds.has('rate') || kinds.has('amount')
+    const hasShape = kinds.has('qty') || kinds.has('unit')
+    if (kinds.has('description') && hasMoney && hasShape) {
+      headerIdx = i; cols = detected; break
+    }
   }
   if (headerIdx < 0) return { rows: [], grandTotal: null }
+
+  const descCol  = cols.find(c => c.kind === 'description')
+  const unitCol  = cols.find(c => c.kind === 'unit')
+  const qtyCol   = cols.find(c => c.kind === 'qty')
+  const rateCols   = cols.filter(c => c.kind === 'rate')
+  const amountCols = cols.filter(c => c.kind === 'amount')
+
+  // If multiple rate/amount columns exist, prefer the one tagged "total"
+  // as the combined value, and treat the rest as the breakdown.
+  function pickTotalAndParts(group: DetectedCol[]): { total: DetectedCol | null; parts: DetectedCol[] } {
+    if (group.length === 0) return { total: null, parts: [] }
+    if (group.length === 1) return { total: group[0], parts: [] }
+    const total = group.find(c => c.isTotal) ?? null
+    const parts = total ? group.filter(c => c.i !== total.i) : group
+    return { total, parts }
+  }
+  const ratePick   = pickTotalAndParts(rateCols)
+  const amountPick = pickTotalAndParts(amountCols)
 
   const rows: ParsedRow[] = []
   let grandTotal: number | null = null
@@ -84,11 +136,39 @@ async function parseExcel(file: File): Promise<{ rows: ParsedRow[]; grandTotal: 
     const r = aoa[i]
     if (!r || r.every(c => c == null || c === '')) continue
     const label  = r[0] != null ? String(r[0]) : null
-    const desc   = colMap.description !== undefined ? (r[colMap.description] != null ? String(r[colMap.description]) : null) : label
-    const unit   = colMap.unit        !== undefined ? (r[colMap.unit]        != null ? String(r[colMap.unit])        : null) : null
-    const qty    = colMap.qty         !== undefined ? toNum(r[colMap.qty])     : null
-    const rate   = colMap.rate        !== undefined ? toNum(r[colMap.rate])    : null
-    const amount = colMap.amount      !== undefined ? toNum(r[colMap.amount])  : null
+    const desc   = descCol ? (r[descCol.i] != null ? String(r[descCol.i]) : null) : label
+    const unit   = unitCol ? (r[unitCol.i] != null ? String(r[unitCol.i]) : null) : null
+    const qty    = qtyCol  ? toNum(r[qtyCol.i]) : null
+
+    // --- Rate (combined + breakdown) ---
+    let rate: number | null = null
+    const rateBreakdown: Breakdown[] = []
+    if (ratePick.total) {
+      const v = toNum(r[ratePick.total.i])
+      if (v != null) rate = v
+    }
+    for (const c of ratePick.parts) {
+      const v = toNum(r[c.i])
+      if (v != null) rateBreakdown.push({ label: breakdownLabel(c.label) || 'part', value: v })
+    }
+    if (rate == null && rateBreakdown.length > 0) {
+      rate = rateBreakdown.reduce((s, b) => s + b.value, 0)
+    }
+
+    // --- Amount (combined + breakdown) ---
+    let amount: number | null = null
+    const amountBreakdown: Breakdown[] = []
+    if (amountPick.total) {
+      const v = toNum(r[amountPick.total.i])
+      if (v != null) amount = v
+    }
+    for (const c of amountPick.parts) {
+      const v = toNum(r[c.i])
+      if (v != null) amountBreakdown.push({ label: breakdownLabel(c.label) || 'part', value: v })
+    }
+    if (amount == null && amountBreakdown.length > 0) {
+      amount = amountBreakdown.reduce((s, b) => s + b.value, 0)
+    }
 
     // Detect grand-total row (description like "total" / "grand total"
     // with an amount but no qty/rate).
@@ -98,10 +178,11 @@ async function parseExcel(file: File): Promise<{ rows: ParsedRow[]; grandTotal: 
       continue
     }
 
-    // Pull the original formula in the Amount cell if present
+    // Pull the original formula in the amount cell (prefer the total col)
     let formulaInAmount: string | null = null
-    if (colMap.amount !== undefined) {
-      const cellRef = XLSX.utils.encode_cell({ r: i, c: colMap.amount })
+    const formulaCol = amountPick.total ?? amountPick.parts[0]
+    if (formulaCol) {
+      const cellRef = XLSX.utils.encode_cell({ r: i, c: formulaCol.i })
       const cell = sheet[cellRef] as { f?: string } | undefined
       if (cell && cell.f) formulaInAmount = String(cell.f)
     }
@@ -115,6 +196,8 @@ async function parseExcel(file: File): Promise<{ rows: ParsedRow[]; grandTotal: 
       rate,
       amount,
       formula_in_amount: formulaInAmount,
+      rate_breakdown:   rateBreakdown.length   ? rateBreakdown   : null,
+      amount_breakdown: amountBreakdown.length ? amountBreakdown : null,
     })
   }
 
@@ -224,6 +307,8 @@ export function NewWSQuickForm({ projects, projectDisciplines, projectSubSkills,
           rate: r.rate,
           amount: r.amount,
           formula_in_amount: r.formula_in_amount,
+          rate_breakdown:   r.rate_breakdown,
+          amount_breakdown: r.amount_breakdown,
         })),
       )
       if (rowsErr) { setError(`Row save failed: ${rowsErr.message}`); setSubmitting(false); return }
@@ -322,13 +407,27 @@ export function NewWSQuickForm({ projects, projectDisciplines, projectSubSkills,
                 </thead>
                 <tbody>
                   {parsed.rows.slice(0, 8).map(r => (
-                    <tr key={r.row_no} className="border-t border-gray-100">
+                    <tr key={r.row_no} className="border-t border-gray-100 align-top">
                       <td className="px-2 py-1.5 text-gray-400">{r.row_no}</td>
                       <td className="px-2 py-1.5 text-gray-800 truncate max-w-xs">{r.description ?? '—'}</td>
                       <td className="px-2 py-1.5 text-gray-600">{r.unit ?? ''}</td>
                       <td className="px-2 py-1.5 text-right tabular-nums">{r.qty ?? ''}</td>
-                      <td className="px-2 py-1.5 text-right tabular-nums">{r.rate ?? ''}</td>
-                      <td className="px-2 py-1.5 text-right tabular-nums">{r.amount ?? ''}</td>
+                      <td className="px-2 py-1.5 text-right tabular-nums">
+                        {r.rate ?? ''}
+                        {r.rate_breakdown && (
+                          <div className="text-[10px] text-gray-400 font-normal">
+                            {r.rate_breakdown.map(b => `${b.label} ${b.value}`).join(' + ')}
+                          </div>
+                        )}
+                      </td>
+                      <td className="px-2 py-1.5 text-right tabular-nums">
+                        {r.amount ?? ''}
+                        {r.amount_breakdown && (
+                          <div className="text-[10px] text-gray-400 font-normal">
+                            {r.amount_breakdown.map(b => `${b.label} ${b.value}`).join(' + ')}
+                          </div>
+                        )}
+                      </td>
                     </tr>
                   ))}
                 </tbody>

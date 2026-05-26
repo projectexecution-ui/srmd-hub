@@ -37,7 +37,7 @@ export default async function WorkingSheetEditorPage(
   if (ws.entry_mode === 'excel_summary') {
     const { data: excelRows } = await supabase
       .from('cc_excel_rows')
-      .select('id, row_no, description, unit, qty, rate, amount, formula_in_amount, flag, flag_reason, flag_severity')
+      .select('id, row_no, description, unit, qty, rate, amount, formula_in_amount, rate_breakdown, amount_breakdown, flag, flag_reason, flag_severity')
       .eq('working_sheet_id', id)
       .order('row_no')
 
@@ -84,6 +84,8 @@ export default async function WorkingSheetEditorPage(
             rate: r.rate != null ? Number(r.rate) : null,
             amount: r.amount != null ? Number(r.amount) : null,
             formula_in_amount: r.formula_in_amount,
+            rate_breakdown:   r.rate_breakdown   as Array<{ label: string; value: number }> | null,
+            amount_breakdown: r.amount_breakdown as Array<{ label: string; value: number }> | null,
             flag: r.flag,
             flag_reason: r.flag_reason,
             flag_severity: r.flag_severity,
