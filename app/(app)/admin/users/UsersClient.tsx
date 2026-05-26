@@ -8,6 +8,7 @@ import { Input } from '@/components/ui/input'
 import { PageHeader } from '@/components/PageHeader'
 import {
   Users, Search, UserCheck, UserX, Mail, Shield, Copy, Check, Send, Crown, Trash2,
+  UserPlus, Loader2, Plus, X,
 } from 'lucide-react'
 import type { Profile, Role } from '@/lib/types'
 import { ALL_ROLES } from '@/lib/types'
@@ -15,20 +16,35 @@ import type { RoleLabelMap } from '@/lib/role-labels'
 
 const ROLES: Role[] = ALL_ROLES
 
+interface AllowedEmail {
+  email: string
+  role: Role
+  added_by: string | null
+  added_at: string
+  notes: string | null
+}
+
 export default function UsersClient({
-  initialUsers, currentUserId, currentUserIsPortalOwner, roleLabels,
+  initialUsers, initialAllowedEmails, currentUserId, currentUserIsPortalOwner, roleLabels,
 }: {
   initialUsers: Profile[]
+  initialAllowedEmails: AllowedEmail[]
   currentUserId: string
   currentUserIsPortalOwner: boolean
   roleLabels: RoleLabelMap
 }) {
   const supabase = createClient()
   const [users, setUsers] = useState<Profile[]>(initialUsers)
+  const [allowed, setAllowed] = useState<AllowedEmail[]>(initialAllowedEmails)
   const [search, setSearch] = useState('')
   const [busyId, setBusyId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
+  // New-allowed-email form state
+  const [newEmail, setNewEmail] = useState('')
+  const [newRole, setNewRole]   = useState<Role>('viewer')
+  const [adding, setAdding]     = useState(false)
+  const [removing, setRemoving] = useState<string | null>(null)
   // ID of the user whose delete is currently armed (one click → armed,
   // second click within 5s → actually deletes). Null = not armed.
   const [deleteArmed, setDeleteArmed] = useState<string | null>(null)
@@ -128,6 +144,46 @@ export default function UsersClient({
     } catch {
       // ignore
     }
+  }
+
+  async function addAllowedEmail(e?: React.FormEvent) {
+    e?.preventDefault()
+    const email = newEmail.trim().toLowerCase()
+    if (!email) return
+    if (!email.includes('@') || !email.includes('.')) {
+      setError('Enter a valid email address')
+      return
+    }
+    setAdding(true); setError(null)
+    const { data, error } = await supabase
+      .from('allowed_emails')
+      .upsert({ email, role: newRole }, { onConflict: 'email' })
+      .select('*')
+      .single()
+    setAdding(false)
+    if (error) { setError(error.message); return }
+    setAllowed(prev => {
+      const filtered = prev.filter(a => a.email !== email)
+      return [data as AllowedEmail, ...filtered]
+    })
+    setNewEmail(''); setNewRole('viewer')
+  }
+
+  async function removeAllowedEmail(email: string) {
+    if (!confirm(`Remove ${email} from the allowlist? They will be blocked on next sign-in (existing active profiles are NOT removed by this).`)) return
+    setRemoving(email); setError(null)
+    const { error } = await supabase.from('allowed_emails').delete().eq('email', email)
+    setRemoving(null)
+    if (error) { setError(error.message); return }
+    setAllowed(prev => prev.filter(a => a.email !== email))
+  }
+
+  async function updateAllowedRole(email: string, role: Role) {
+    setRemoving(email); setError(null)
+    const { error } = await supabase.from('allowed_emails').update({ role }).eq('email', email)
+    setRemoving(null)
+    if (error) { setError(error.message); return }
+    setAllowed(prev => prev.map(a => a.email === email ? { ...a, role } : a))
   }
 
   return (
@@ -309,7 +365,96 @@ export default function UsersClient({
         </CardContent>
       </Card>
 
-      {/* How users join — info card pattern from SiteAttend */}
+      {/* ─── Allowlist ───────────────────────────────────────────────── */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-base">
+            <UserPlus className="h-5 w-5 text-emerald-600" />
+            Allowed Emails ({allowed.length})
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="rounded-xl bg-amber-50 border border-amber-200 px-3 py-2 text-xs text-amber-900">
+            Only emails on this list can sign in and become active users.
+            Anyone else who tries to sign in lands on the <b>Account Deactivated</b> page
+            until you add them here.
+          </div>
+
+          <form onSubmit={addAllowedEmail} className="flex flex-col sm:flex-row gap-2 sm:items-end">
+            <div className="flex-1">
+              <label className="text-xs font-semibold text-gray-600 mb-1 block">Email</label>
+              <Input
+                type="email"
+                value={newEmail}
+                onChange={e => setNewEmail(e.target.value)}
+                placeholder="person@example.com"
+                disabled={adding}
+              />
+            </div>
+            <div>
+              <label className="text-xs font-semibold text-gray-600 mb-1 block">Role on first sign-in</label>
+              <select
+                value={newRole}
+                onChange={e => setNewRole(e.target.value as Role)}
+                disabled={adding}
+                className="h-10 rounded-xl border border-gray-300 bg-white px-3 text-sm min-w-[10rem]"
+              >
+                {ROLES.map(r => <option key={r} value={r}>{roleLabels[r].label}</option>)}
+              </select>
+            </div>
+            <Button type="submit" disabled={adding || !newEmail.trim()}>
+              {adding ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
+              Add to allowlist
+            </Button>
+          </form>
+
+          {allowed.length === 0 ? (
+            <p className="text-sm text-gray-500 italic py-2">
+              No emails allowlisted yet. Add one above.
+            </p>
+          ) : (
+            <div className="divide-y divide-gray-100">
+              {allowed.map(a => {
+                const onProfile = users.some(u => u.email?.toLowerCase() === a.email)
+                const busyMe = removing === a.email
+                return (
+                  <div key={a.email} className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 py-2">
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium text-gray-900 flex items-center gap-1.5">
+                        <Mail className="h-3.5 w-3.5 text-gray-400" />
+                        <span className="font-mono text-xs">{a.email}</span>
+                        {onProfile && <Badge variant="success" className="text-[10px]">signed in</Badge>}
+                      </p>
+                      {a.notes && <p className="text-xs text-gray-400 mt-0.5 truncate">{a.notes}</p>}
+                    </div>
+                    <div className="flex items-center gap-2 flex-shrink-0">
+                      <select
+                        value={a.role}
+                        disabled={busyMe}
+                        onChange={e => updateAllowedRole(a.email, e.target.value as Role)}
+                        className="h-9 rounded-xl border border-gray-300 bg-white px-2 text-xs font-semibold text-gray-700 disabled:bg-gray-50"
+                      >
+                        {ROLES.map(r => <option key={r} value={r}>{roleLabels[r].label}</option>)}
+                      </select>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={busyMe}
+                        onClick={() => removeAllowedEmail(a.email)}
+                        className="text-rose-600 hover:bg-rose-50 border-rose-200"
+                      >
+                        {busyMe ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <X className="h-3.5 w-3.5" />}
+                      </Button>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* How users join — updated copy reflecting allowlist */}
       <Card className="bg-blue-50 border-blue-200">
         <CardContent className="pt-4 pb-4">
           <div className="flex items-start gap-3">
@@ -319,7 +464,8 @@ export default function UsersClient({
             <div>
               <p className="text-sm font-semibold text-blue-900 mb-1">How users join</p>
               <p className="text-sm text-blue-800 leading-relaxed">
-                Share the CT HUB link with your team. They sign in with their Google account on first visit — a profile is created automatically as <b>Viewer</b>. Come back here to promote them to <b>Uploader</b> or <b>Admin</b>. The email <b>{<span className="font-mono text-xs">{process.env.NEXT_PUBLIC_ADMIN_EMAIL || 'projectexecution@construction.srmd.org'}</span>}</b> always becomes Admin automatically.
+                <b>Step 1:</b> Add the person&apos;s email to the Allowed Emails list above and pick their starting role.&nbsp;
+                <b>Step 2:</b> Share the CT HUB link with them. When they sign in with Google, their profile is created automatically with the role you chose. Anyone NOT on the allowlist gets blocked on the deactivated page until you add them.
               </p>
               <Button onClick={copyInviteLink} size="sm" variant="outline" className="mt-3">
                 {copied ? <Check className="h-4 w-4 text-green-600" /> : <Copy className="h-4 w-4" />}
