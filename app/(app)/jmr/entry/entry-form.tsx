@@ -46,7 +46,10 @@ export function EntryForm({ userName, projects, contractors, items }: Props) {
   const [rate, setRate] = useState<number | null>(null)
   const [description, setDescription] = useState('')
   const [photoFile, setPhotoFile] = useState<File | null>(null)
-  const [entryDate] = useState(todayISO())
+  // Entry date — defaults to today, but the engineer can back-date when
+  // catching up on a missed day. Future dates are blocked at the input.
+  const [entryDate, setEntryDate] = useState(todayISO())
+  const today = todayISO()
 
   const filteredItems = useMemo(() => items.filter(i => i.category === category), [items, category])
   const selectedItem = useMemo(() => items.find(i => i.id === itemId), [items, itemId])
@@ -167,6 +170,19 @@ export function EntryForm({ userName, projects, contractors, items }: Props) {
         <p className="text-xs text-gray-500 mt-0.5">{userName} · {fmt(new Date(entryDate), 'd MMM yy')}</p>
       </div>
       <form onSubmit={submit} className="space-y-3">
+        <div>
+          <Label>Entry date</Label>
+          <Input
+            type="date"
+            value={entryDate}
+            max={today}
+            onChange={e => setEntryDate(e.target.value || today)}
+            className="mt-1"
+          />
+          {entryDate !== today && (
+            <p className="text-[11px] text-amber-700 mt-1">Back-dated entry — rate will be looked up for {entryDate}.</p>
+          )}
+        </div>
         <div>
           <Label>Project</Label>
           <Select value={projectId} onChange={setProjectId} required>
