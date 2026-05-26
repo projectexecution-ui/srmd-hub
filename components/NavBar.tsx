@@ -6,11 +6,10 @@ import { createClient } from '@/lib/supabase/client'
 import { cn } from '@/lib/utils'
 import type { Profile, PermissionMap } from '@/lib/types'
 import {
-  LayoutDashboard, ClipboardList, FileText, PackageCheck, Receipt,
-  Truck, Building2, Settings, LogOut, Menu, X, Users, Upload,
-  BarChart3, ChevronsLeft, ChevronsRight, ShieldCheck, LayoutGrid,
-  Boxes,
+  LayoutDashboard, LogOut, Menu, X, LayoutGrid,
+  ChevronsLeft, ChevronsRight,
 } from 'lucide-react'
+import { MODULES } from '@/lib/modules'
 
 interface NavBarProps {
   profile: Profile
@@ -19,25 +18,17 @@ interface NavBarProps {
   isPortalOwner?: boolean
 }
 
-// Every link declares the permission slug it requires (view-level).
-// Visibility is data-driven from public.role_permissions.
-// `portalOwnerOnly` flag = link is hidden unless the user is a Portal Owner.
-const ALL_LINKS = [
-  { href: '/dashboard',        label: 'Dashboard',   icon: LayoutDashboard, slug: null as string | null },
-  { href: '/indents',          label: 'Indents',     icon: ClipboardList,   slug: 'indents' },
-  { href: '/pos',              label: 'POs',         icon: FileText,        slug: 'pos' },
-  { href: '/grns',             label: 'GRN',         icon: PackageCheck,    slug: 'grns' },
-  { href: '/invoices',         label: 'Invoices',    icon: Receipt,         slug: 'invoices' },
-  { href: '/vendors',          label: 'Vendors',     icon: Truck,           slug: 'vendors' },
-  { href: '/projects',         label: 'Projects',    icon: Building2,       slug: 'projects' },
-  { href: '/budget',           label: 'Budget',      icon: BarChart3,       slug: 'budget-vs-actual' },
-  { href: '/uploads',          label: 'Uploads',     icon: Upload,          slug: 'uploads' },
-  { href: '/inventory',        label: 'Inventory',   icon: Boxes,           slug: 'inventory' },
-  { href: '/admin/users',      label: 'Users',       icon: Users,           slug: 'admin-users' },
-  { href: '/admin/permissions',label: 'Permissions', icon: ShieldCheck,     slug: 'admin-permissions' },
-  { href: '/admin/dashboard-modules', label: 'Modules', icon: LayoutGrid,   slug: null as string | null, portalOwnerOnly: true },
-  { href: '/admin/settings',   label: 'Settings',    icon: Settings,        slug: 'admin-settings' },
-] as const
+// Compact labels for the sidebar so they don't wrap. Defaults to the
+// MODULES label if a slug isn't listed here.
+const SHORT_LABELS: Record<string, string> = {
+  'pos':              'POs',
+  'budget-vs-actual': 'Budget',
+  'in4-indent-to-po': 'IN4 Tracker',
+  'jmr':              'JMR',
+  'admin-users':      'Users',
+  'admin-permissions':'Permissions',
+  'admin-settings':   'Settings',
+}
 
 const COLLAPSE_KEY = 'srmd_nav_collapsed'
 
@@ -65,10 +56,37 @@ export default function NavBar({ profile, permissions, disabledSlugs = [], isPor
     })
   }
 
-  const links = ALL_LINKS
-    .filter(l => !('portalOwnerOnly' in l) || !l.portalOwnerOnly || isPortalOwner)
-    .filter(l => l.slug === null || permissions[l.slug]?.view)
-    .filter(l => l.slug === null || isPortalOwner || !disabled.has(l.slug))
+  // Sidebar links are derived from MODULES so it stays in sync with the
+  // dashboard tiles. Filtering rules (in order):
+  //   1. Drop external links + "coming soon" modules — they're tile-only.
+  //   2. User must have view permission on the slug.
+  //   3. Slug must NOT be disabled in module_visibility.
+  // Portal Owner sees the same set as everyone else (no override) so the
+  // sidebar reflects what's *actually* on, not what they could turn on.
+  // Disabled modules are still managed from /admin/dashboard-modules.
+  const moduleLinks = MODULES
+    .filter(m => !m.external && !m.comingSoon)
+    .filter(m => permissions[m.slug]?.view)
+    .filter(m => !disabled.has(m.slug))
+    .map(m => ({
+      href: m.href,
+      label: SHORT_LABELS[m.slug] ?? m.label,
+      icon: m.icon,
+      slug: m.slug as string | null,
+    }))
+
+  const dashboardLink = { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard, slug: null as string | null }
+  // Portal Owner gets a Modules link to /admin/dashboard-modules; it isn't
+  // a permission-gated module, just a Portal-Owner-only convenience entry.
+  const modulesAdminLink = isPortalOwner
+    ? { href: '/admin/dashboard-modules', label: 'Modules', icon: LayoutGrid, slug: null as string | null }
+    : null
+
+  const links = [
+    dashboardLink,
+    ...moduleLinks,
+    ...(modulesAdminLink ? [modulesAdminLink] : []),
+  ]
 
   async function signOut() {
     await supabase.auth.signOut()
