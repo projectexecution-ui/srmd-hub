@@ -66,6 +66,9 @@ export default async function WorkingSheetEditorPage(
 
         <ExcelSummaryPanel
           wsId={ws.id}
+          status={ws.status as WSStatus}
+          canEdit={canEdit && (user?.id === ws.engineer_id || canApprove)}
+          canApprove={canApprove && user?.id !== ws.engineer_id}
           fileName={ws.source_excel_name}
           downloadUrl={downloadUrl}
           summaryTotal={ws.summary_total != null ? Number(ws.summary_total) : null}

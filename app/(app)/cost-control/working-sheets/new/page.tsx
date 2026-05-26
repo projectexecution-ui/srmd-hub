@@ -1,7 +1,9 @@
+import Link from 'next/link'
 import { createClient } from '@/lib/supabase/server'
 import { requirePermission } from '@/lib/auth'
 import { PageHeader } from '@/components/PageHeader'
 import { Card } from '@/components/ui/card'
+import { FileSpreadsheet, ChevronRight } from 'lucide-react'
 import { NewWSForm } from './NewWSForm'
 
 export const dynamic = 'force-dynamic'
@@ -57,6 +59,23 @@ export default async function NewWorkingSheetPage({
         subtitle="Pick the project + sub-skill this sheet is for"
         back="/cost-control/working-sheets"
       />
+
+      {/* Quick Mode call-out — more discoverable than the list page button */}
+      <Link
+        href={`/cost-control/working-sheets/new-quick${sp.project ? `?project=${sp.project}` : ''}`}
+        className="block rounded-2xl border-2 border-dashed border-green-300 bg-green-50/40 hover:bg-green-50 hover:border-green-400 p-4 transition-colors"
+      >
+        <div className="flex items-center gap-3">
+          <div className="h-10 w-10 rounded-xl bg-green-100 text-green-700 flex items-center justify-center flex-shrink-0">
+            <FileSpreadsheet className="h-5 w-5" />
+          </div>
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-semibold text-gray-900">Already done quantification in Excel?</p>
+            <p className="text-xs text-gray-600">Switch to <b>Quick mode</b> — attach the .xlsx and we&apos;ll parse rows + flag rate outliers for you.</p>
+          </div>
+          <ChevronRight className="h-5 w-5 text-green-700 flex-shrink-0" />
+        </div>
+      </Link>
 
       <Card className="p-5">
         <NewWSForm

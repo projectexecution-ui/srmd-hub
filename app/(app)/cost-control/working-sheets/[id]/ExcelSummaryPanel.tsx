@@ -6,7 +6,10 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import {
   FileSpreadsheet, Download, RefreshCcw, Loader2, AlertTriangle, TrendingDown, TrendingUp, Sigma, Sparkles,
+  Send, Check, RotateCcw,
 } from 'lucide-react'
+import { submitWorkingSheet, approveWorkingSheet, returnWorkingSheet } from '@/components/cost-control/ws-actions'
+import { WSStatusPill, type WSStatus } from '@/components/cost-control/WSStatusPill'
 
 interface Row {
   id: string
@@ -33,9 +36,12 @@ interface FlagSummary {
 }
 
 export function ExcelSummaryPanel({
-  wsId, fileName, downloadUrl, summaryTotal, summaryNotes, flagSummary, lastCheckedAt, rows,
+  wsId, status, canEdit, canApprove, fileName, downloadUrl, summaryTotal, summaryNotes, flagSummary, lastCheckedAt, rows,
 }: {
   wsId: string
+  status: WSStatus
+  canEdit: boolean
+  canApprove: boolean
   fileName: string | null
   downloadUrl: string | null
   summaryTotal: number | null
@@ -46,7 +52,38 @@ export function ExcelSummaryPanel({
 }) {
   const router = useRouter()
   const [rechecking, setRechecking] = useState(false)
+  const [acting, setActing] = useState(false)
+  const [returnOpen, setReturnOpen] = useState(false)
+  const [returnReason, setReturnReason] = useState('')
   const [err, setErr] = useState<string | null>(null)
+
+  const canSubmit  = canEdit    && (status === 'draft' || status === 'returned')
+  const canDoApprove = canApprove && status === 'submitted'
+  const canDoReturn  = canApprove && status === 'submitted'
+
+  async function submit() {
+    setActing(true); setErr(null)
+    const r = await submitWorkingSheet(wsId)
+    setActing(false)
+    if (!r.ok) { setErr(r.error ?? 'Submit failed'); return }
+    router.refresh()
+  }
+  async function approve() {
+    setActing(true); setErr(null)
+    const r = await approveWorkingSheet(wsId)
+    setActing(false)
+    if (!r.ok) { setErr(r.error ?? 'Approve failed'); return }
+    router.refresh()
+  }
+  async function doReturn() {
+    if (returnReason.trim().length < 5) { setErr('Give a clear return reason (5+ chars)'); return }
+    setActing(true); setErr(null)
+    const r = await returnWorkingSheet(wsId, returnReason)
+    setActing(false)
+    if (!r.ok) { setErr(r.error ?? 'Return failed'); return }
+    setReturnOpen(false); setReturnReason('')
+    router.refresh()
+  }
 
   async function recheck() {
     setRechecking(true); setErr(null)
@@ -107,6 +144,45 @@ export function ExcelSummaryPanel({
           )}
 
           {err && <p className="mt-3 text-sm text-rose-700 bg-rose-50 border border-rose-200 rounded-lg px-3 py-2">{err}</p>}
+
+          {/* Status actions */}
+          <div className="mt-4 pt-4 border-t border-gray-100 flex flex-wrap items-center gap-2">
+            <WSStatusPill status={status} />
+            {canSubmit && (
+              <Button onClick={submit} disabled={acting || !summaryTotal || summaryTotal <= 0} className="ml-auto">
+                {acting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+                Submit for Approval
+              </Button>
+            )}
+            {canDoReturn && (
+              <Button variant="outline" onClick={() => setReturnOpen(o => !o)} disabled={acting}
+                className="ml-auto text-rose-700 border-rose-300 hover:bg-rose-50">
+                <RotateCcw className="h-4 w-4" /> Return
+              </Button>
+            )}
+            {canDoApprove && (
+              <Button variant="success" onClick={approve} disabled={acting}>
+                {acting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
+                Approve
+              </Button>
+            )}
+          </div>
+
+          {returnOpen && (
+            <div className="mt-3 border border-rose-200 bg-rose-50 rounded-lg p-3">
+              <p className="text-sm font-semibold text-rose-900 mb-2">Return for revision — give a clear reason</p>
+              <textarea value={returnReason} onChange={e => setReturnReason(e.target.value)} rows={2}
+                placeholder="e.g. Rate for cement seems high vs last month — please re-check vendor quote"
+                className="w-full rounded-md border border-rose-200 bg-white p-2 text-sm" />
+              <div className="mt-2 flex justify-end gap-2">
+                <Button variant="ghost" size="sm" onClick={() => { setReturnOpen(false); setReturnReason('') }} disabled={acting}>Cancel</Button>
+                <Button variant="outline" size="sm" disabled={acting || returnReason.trim().length < 5} onClick={doReturn}
+                  className="text-rose-700 border-rose-300 hover:bg-rose-50">
+                  {acting ? 'Returning…' : 'Confirm return'}
+                </Button>
+              </div>
+            </div>
+          )}
         </CardContent>
       </Card>
 
