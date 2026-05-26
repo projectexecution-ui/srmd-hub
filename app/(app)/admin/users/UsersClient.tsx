@@ -8,13 +8,21 @@ import { Input } from '@/components/ui/input'
 import { PageHeader } from '@/components/PageHeader'
 import {
   Users, Search, UserCheck, UserX, Mail, Shield, Copy, Check, Send, Crown, Trash2,
-  UserPlus, Loader2, Plus, X,
+  UserPlus, Loader2, Plus, X, ChevronDown, ChevronRight, Layers,
 } from 'lucide-react'
 import type { Profile, Role } from '@/lib/types'
 import { ALL_ROLES } from '@/lib/types'
 import type { RoleLabelMap } from '@/lib/role-labels'
+import { MODULES } from '@/lib/modules'
 
 const ROLES: Role[] = ALL_ROLES
+
+// Modules that have per-user role overrides on offer. Excludes external
+// links and pure-admin slugs (those are role-blind in this UI).
+const OVERRIDABLE_MODULES = MODULES
+  .filter(m => !m.external)
+  .filter(m => !m.slug.startsWith('admin-'))
+  .map(m => ({ slug: m.slug, label: m.label }))
 
 interface AllowedEmail {
   email: string
@@ -24,11 +32,21 @@ interface AllowedEmail {
   notes: string | null
 }
 
+interface UserModuleRole {
+  user_id: string
+  module_slug: string
+  role: Role
+  granted_at: string
+  notes: string | null
+}
+
 export default function UsersClient({
-  initialUsers, initialAllowedEmails, currentUserId, currentUserIsPortalOwner, roleLabels,
+  initialUsers, initialAllowedEmails, initialModuleRoles,
+  currentUserId, currentUserIsPortalOwner, roleLabels,
 }: {
   initialUsers: Profile[]
   initialAllowedEmails: AllowedEmail[]
+  initialModuleRoles: UserModuleRole[]
   currentUserId: string
   currentUserIsPortalOwner: boolean
   roleLabels: RoleLabelMap
@@ -36,6 +54,8 @@ export default function UsersClient({
   const supabase = createClient()
   const [users, setUsers] = useState<Profile[]>(initialUsers)
   const [allowed, setAllowed] = useState<AllowedEmail[]>(initialAllowedEmails)
+  const [moduleRoles, setModuleRoles] = useState<UserModuleRole[]>(initialModuleRoles)
+  const [expandedUserId, setExpandedUserId] = useState<string | null>(null)
   const [search, setSearch] = useState('')
   const [busyId, setBusyId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -178,6 +198,38 @@ export default function UsersClient({
     setAllowed(prev => prev.filter(a => a.email !== email))
   }
 
+  // ─── Per-module role overrides ────────────────────────────
+  function rolesFor(userId: string): UserModuleRole[] {
+    return moduleRoles.filter(r => r.user_id === userId)
+  }
+
+  async function setUserModuleRole(userId: string, moduleSlug: string, role: Role) {
+    setBusyId(`umr:${userId}:${moduleSlug}`); setError(null)
+    const { data, error } = await supabase
+      .from('user_module_roles')
+      .upsert({ user_id: userId, module_slug: moduleSlug, role }, { onConflict: 'user_id,module_slug' })
+      .select('*')
+      .single()
+    setBusyId(null)
+    if (error) { setError(error.message); return }
+    setModuleRoles(prev => {
+      const others = prev.filter(r => !(r.user_id === userId && r.module_slug === moduleSlug))
+      return [...others, data as UserModuleRole]
+    })
+  }
+
+  async function removeUserModuleRole(userId: string, moduleSlug: string) {
+    setBusyId(`umr:${userId}:${moduleSlug}`); setError(null)
+    const { error } = await supabase
+      .from('user_module_roles')
+      .delete()
+      .eq('user_id', userId)
+      .eq('module_slug', moduleSlug)
+    setBusyId(null)
+    if (error) { setError(error.message); return }
+    setModuleRoles(prev => prev.filter(r => !(r.user_id === userId && r.module_slug === moduleSlug)))
+  }
+
   async function updateAllowedRole(email: string, role: Role) {
     setRemoving(email); setError(null)
     const { error } = await supabase.from('allowed_emails').update({ role }).eq('email', email)
@@ -230,11 +282,11 @@ export default function UsersClient({
               {filtered.map(u => {
                 const isSelf = u.id === currentUserId
                 const busy = busyId === u.id
+                const userOverrides = rolesFor(u.id)
+                const expanded = expandedUserId === u.id
                 return (
-                  <div
-                    key={u.id}
-                    className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 py-3 border-b border-gray-100 last:border-0"
-                  >
+                  <div key={u.id} className="border-b border-gray-100 last:border-0">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 py-3">
                     <div className="flex items-center gap-3 min-w-0">
                       <div className={`h-9 w-9 rounded-full ${u.is_portal_owner ? 'bg-amber-100 text-amber-700 ring-2 ring-amber-300' : 'bg-blue-100 text-blue-700'} flex items-center justify-center font-bold text-sm flex-shrink-0`}>
                         {u.is_portal_owner ? <Crown className="h-4 w-4" /> : (u.name || u.full_name || u.email)[0]?.toUpperCase()}
@@ -325,7 +377,36 @@ export default function UsersClient({
                           </Button>
                         )
                       )}
+
+                      {/* Module-roles expander */}
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => setExpandedUserId(expanded ? null : u.id)}
+                        title="Per-module role overrides"
+                      >
+                        {expanded ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
+                        <Layers className="h-3.5 w-3.5" />
+                        Module roles
+                        {userOverrides.length > 0 && (
+                          <Badge variant="default" className="ml-1 text-[10px]">{userOverrides.length}</Badge>
+                        )}
+                      </Button>
                     </div>
+                  </div>
+
+                  {/* Expanded panel: per-module role overrides */}
+                  {expanded && (
+                    <ModuleRolesPanel
+                      user={u}
+                      defaultRole={u.role}
+                      overrides={userOverrides}
+                      roleLabels={roleLabels}
+                      busyId={busyId}
+                      onSet={(slug, role) => setUserModuleRole(u.id, slug, role)}
+                      onRemove={(slug) => removeUserModuleRole(u.id, slug)}
+                    />
+                  )}
                   </div>
                 )
               })}
@@ -476,5 +557,123 @@ export default function UsersClient({
         </CardContent>
       </Card>
     </div>
+  )
+}
+
+// ─── Per-user module role overrides panel ───────────────────────────────────
+function ModuleRolesPanel({
+  user, defaultRole, overrides, roleLabels, busyId, onSet, onRemove,
+}: {
+  user: Profile
+  defaultRole: Role
+  overrides: UserModuleRole[]
+  roleLabels: RoleLabelMap
+  busyId: string | null
+  onSet: (moduleSlug: string, role: Role) => void
+  onRemove: (moduleSlug: string) => void
+}) {
+  // Module options that don't already have an override
+  const overrideSlugs = new Set(overrides.map(o => o.module_slug))
+  const availableModules = OVERRIDABLE_MODULES.filter(m => !overrideSlugs.has(m.slug))
+
+  return (
+    <div className="px-4 py-3 mb-2 rounded-xl bg-slate-50 border border-slate-200">
+      <p className="text-xs text-gray-600 mb-3">
+        <b>{user.name || user.email}</b> is <Badge variant="secondary" className="text-[10px]">{roleLabels[defaultRole]?.label || defaultRole}</Badge> by default.
+        Add an override for a module below to give them a different role there.
+      </p>
+
+      {overrides.length > 0 ? (
+        <div className="space-y-1 mb-3">
+          {overrides.map(o => {
+            const mod = OVERRIDABLE_MODULES.find(m => m.slug === o.module_slug)
+            const key = `umr:${user.id}:${o.module_slug}`
+            const busy = busyId === key
+            return (
+              <div key={o.module_slug} className="flex items-center justify-between gap-2 py-1.5 text-sm">
+                <div className="min-w-0 flex items-center gap-2">
+                  <Layers className="h-3.5 w-3.5 text-slate-400" />
+                  <span className="font-medium text-gray-800">{mod?.label || o.module_slug}</span>
+                  <span className="text-[11px] font-mono text-gray-400">{o.module_slug}</span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <select
+                    value={o.role}
+                    disabled={busy}
+                    onChange={e => onSet(o.module_slug, e.target.value as Role)}
+                    className="h-8 rounded-lg border border-gray-300 bg-white px-2 text-xs font-semibold text-gray-700"
+                  >
+                    {ROLES.map(r => <option key={r} value={r}>{roleLabels[r].label}</option>)}
+                  </select>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    disabled={busy}
+                    onClick={() => onRemove(o.module_slug)}
+                    className="h-8 w-8 p-0 text-rose-600 hover:bg-rose-50"
+                    title="Remove override (reverts to default role)"
+                  >
+                    {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <X className="h-3.5 w-3.5" />}
+                  </Button>
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      ) : (
+        <p className="text-xs text-gray-400 italic mb-3">No module overrides yet — using the default role for every module.</p>
+      )}
+
+      {availableModules.length > 0 ? (
+        <AddOverrideRow
+          available={availableModules}
+          defaultRole={defaultRole}
+          roleLabels={roleLabels}
+          onAdd={(slug, role) => onSet(slug, role)}
+        />
+      ) : (
+        <p className="text-[11px] text-gray-400">Every module already has an override.</p>
+      )}
+    </div>
+  )
+}
+
+function AddOverrideRow({
+  available, defaultRole, roleLabels, onAdd,
+}: {
+  available: { slug: string; label: string }[]
+  defaultRole: Role
+  roleLabels: RoleLabelMap
+  onAdd: (slug: string, role: Role) => void
+}) {
+  const [slug, setSlug] = useState(available[0]?.slug ?? '')
+  const [role, setRole] = useState<Role>(defaultRole)
+
+  function submit(e: React.FormEvent) {
+    e.preventDefault()
+    if (!slug) return
+    onAdd(slug, role)
+  }
+
+  return (
+    <form onSubmit={submit} className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 pt-2 border-t border-slate-200">
+      <select
+        value={slug}
+        onChange={e => setSlug(e.target.value)}
+        className="h-9 rounded-xl border border-gray-300 bg-white px-2 text-xs font-medium text-gray-700 flex-1"
+      >
+        {available.map(m => <option key={m.slug} value={m.slug}>{m.label}</option>)}
+      </select>
+      <select
+        value={role}
+        onChange={e => setRole(e.target.value as Role)}
+        className="h-9 rounded-xl border border-gray-300 bg-white px-2 text-xs font-semibold text-gray-700"
+      >
+        {ROLES.map(r => <option key={r} value={r}>{roleLabels[r].label}</option>)}
+      </select>
+      <Button type="submit" size="sm" disabled={!slug}>
+        <Plus className="h-4 w-4" /> Add override
+      </Button>
+    </form>
   )
 }
