@@ -1,7 +1,7 @@
 'use client'
-// Persistent "Install CT HUB" banner. Stays visible on every authed page
-// until the user installs the PWA. Hides forever once the app is running
-// in standalone (installed) mode.
+// "Install CT HUB" banner. Visible on every authed page until installed.
+// Dismissable via the × button — re-appears automatically after a quiet
+// period so users keep getting nudged without being forced.
 //
 // Chrome / Edge / Android: captures the `beforeinstallprompt` event and
 //   triggers the native install dialog when the user clicks Install.
@@ -10,6 +10,26 @@
 
 import { useEffect, useState } from 'react'
 import { Download, Smartphone, X, Share } from 'lucide-react'
+
+// How long to stay quiet after a user dismisses (× button) before the
+// banner pops back up. Six hours is enough to not be annoying within a
+// work session but ensures they get reminded the next day.
+const DISMISS_QUIET_MS = 6 * 60 * 60 * 1000
+const DISMISS_KEY = 'srmd_hub_install_dismissed_at'
+
+function readDismissedAt(): number | null {
+  if (typeof window === 'undefined') return null
+  try {
+    const raw = localStorage.getItem(DISMISS_KEY)
+    if (!raw) return null
+    const n = Number(raw)
+    return Number.isFinite(n) ? n : null
+  } catch { return null }
+}
+
+function writeDismissedNow(): void {
+  try { localStorage.setItem(DISMISS_KEY, String(Date.now())) } catch { /* ignore */ }
+}
 
 // `BeforeInstallPromptEvent` is non-standard; declare just the bits we use.
 interface BeforeInstallPromptEvent extends Event {
@@ -35,6 +55,8 @@ export function InstallPrompt() {
   const [installEvent, setInstallEvent] = useState<BeforeInstallPromptEvent | null>(null)
   const [installed, setInstalled] = useState(false)
   const [showIosHelp, setShowIosHelp] = useState(false)
+  // True while we're inside the quiet window after a recent dismissal.
+  const [dismissed, setDismissed] = useState(false)
 
   useEffect(() => {
     setInstalled(isStandalone())
@@ -48,6 +70,29 @@ export function InstallPrompt() {
         .catch(() => { /* non-fatal */ })
     }
 
+    // Respect a recent dismissal — re-arm after the quiet window expires.
+    const dismissedAt = readDismissedAt()
+    if (dismissedAt && Date.now() - dismissedAt < DISMISS_QUIET_MS) {
+      setDismissed(true)
+      const remaining = DISMISS_QUIET_MS - (Date.now() - dismissedAt)
+      const id = setTimeout(() => setDismissed(false), remaining)
+      // Also re-check when the page becomes visible again so quick
+      // tab-switchers see the banner promptly after the window passes.
+      function onVis() {
+        if (document.visibilityState === 'visible') {
+          const at = readDismissedAt()
+          if (!at || Date.now() - at >= DISMISS_QUIET_MS) setDismissed(false)
+        }
+      }
+      document.addEventListener('visibilitychange', onVis)
+      return () => {
+        clearTimeout(id)
+        document.removeEventListener('visibilitychange', onVis)
+      }
+    }
+  }, [])
+
+  useEffect(() => {
     function onBeforeInstall(e: Event) {
       e.preventDefault()
       setInstallEvent(e as BeforeInstallPromptEvent)
@@ -55,6 +100,9 @@ export function InstallPrompt() {
     function onAppInstalled() {
       setInstalled(true)
       setInstallEvent(null)
+      // Clear any lingering dismissal so a future uninstall+revisit
+      // doesn't start from a stale state.
+      try { localStorage.removeItem(DISMISS_KEY) } catch { /* ignore */ }
     }
     function onDisplayModeChange() {
       setInstalled(isStandalone())
@@ -71,6 +119,11 @@ export function InstallPrompt() {
       mq.removeEventListener?.('change', onDisplayModeChange)
     }
   }, [])
+
+  function dismiss() {
+    writeDismissedNow()
+    setDismissed(true)
+  }
 
   async function clickInstall() {
     if (installEvent) {
@@ -92,12 +145,13 @@ export function InstallPrompt() {
   }
 
   if (installed) return null
+  if (dismissed) return null
 
   return (
     <>
-      {/* Slim sticky banner — stays put on every page */}
+      {/* Slim sticky banner — dismissable via the × button; re-pops up after the quiet window. */}
       <div className="fixed bottom-0 inset-x-0 z-40 md:bottom-3 md:left-auto md:right-3 md:max-w-sm pointer-events-none">
-        <div className="pointer-events-auto mx-3 mb-3 md:mx-0 md:mb-0 rounded-2xl border border-blue-200 bg-white shadow-lg p-3 md:p-4 flex items-center gap-3">
+        <div className="pointer-events-auto mx-3 mb-3 md:mx-0 md:mb-0 rounded-2xl border border-blue-200 bg-white shadow-lg p-3 md:p-4 flex items-center gap-3 relative">
           <div className="h-10 w-10 rounded-xl bg-blue-50 text-blue-700 flex items-center justify-center flex-shrink-0">
             <Smartphone className="h-5 w-5" />
           </div>
@@ -112,6 +166,15 @@ export function InstallPrompt() {
           >
             <Download className="h-4 w-4" />
             Install
+          </button>
+          <button
+            type="button"
+            onClick={dismiss}
+            className="absolute -top-2 -right-2 h-6 w-6 rounded-full bg-white border border-gray-200 shadow-sm text-gray-500 hover:text-gray-700 hover:bg-gray-50 inline-flex items-center justify-center"
+            aria-label="Dismiss install prompt"
+            title="Dismiss — we'll remind you again later"
+          >
+            <X className="h-3.5 w-3.5" />
           </button>
         </div>
       </div>
