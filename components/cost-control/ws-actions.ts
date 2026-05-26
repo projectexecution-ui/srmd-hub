@@ -3,7 +3,55 @@
 import { revalidatePath } from 'next/cache'
 import { z } from 'zod'
 import { createClient } from '@/lib/supabase/server'
-import { getMyUser } from '@/lib/auth'
+import { getMyUser, getMyProfile, getMyPermissions, can } from '@/lib/auth'
+
+// ---------- shared authorization helpers ----------
+
+/** Read the caller's profile + cost-control perms in one go. */
+async function whoAmI() {
+  const [user, profile, perms] = await Promise.all([getMyUser(), getMyProfile(), getMyPermissions()])
+  return {
+    user,
+    profile,
+    isAdmin:    profile?.role === 'admin',
+    canView:    can(perms, 'cost-control', 'view'),
+    canEdit:    can(perms, 'cost-control', 'edit'),
+    canCcAdmin: can(perms, 'cost-control', 'admin'),
+  }
+}
+
+/** Public version of can_approve so server pages can decide which
+ *  buttons to render. Mirrors the same RPC used by the actions. */
+export async function checkCanApproveWS(wsId: string, toStage: 'approved' | 'returned'): Promise<boolean> {
+  const me = await whoAmI()
+  if (!me.user) return false
+  const supabase = await createClient()
+  const { data: ws } = await supabase
+    .from('cc_working_sheets')
+    .select('engineer_id, status, total_amount')
+    .eq('id', wsId)
+    .single()
+  if (!ws) return false
+  if (ws.status !== 'submitted') return false
+  if (ws.engineer_id === me.user.id && !me.isAdmin) return false
+  return callCanApprove('submitted', toStage, Number(ws.total_amount ?? 0))
+}
+
+/** Asks the DB whether the caller may move this WS through this stage
+ *  transition. Wraps public.can_approve() which already implements the
+ *  approval_rules table + admin-always-allowed escape. */
+async function callCanApprove(fromStage: string, toStage: string, amount: number | null): Promise<boolean> {
+  const supabase = await createClient()
+  const { data, error } = await supabase.rpc('can_approve', {
+    p_module_slug: 'cost-control',
+    p_doc_type: 'cc_working_sheet',
+    p_from_stage: fromStage,
+    p_to_stage: toStage,
+    p_amount: amount,
+  })
+  if (error) return false
+  return !!data
+}
 
 // ============================================================
 // Create a new Working Sheet
@@ -166,8 +214,9 @@ async function recalculateWSTotal(wsId: string) {
 // ============================================================
 
 export async function submitWorkingSheet(wsId: string): Promise<{ ok: boolean; error?: string }> {
-  const user = await getMyUser()
-  if (!user) return { ok: false, error: 'Not signed in' }
+  const me = await whoAmI()
+  if (!me.user) return { ok: false, error: 'Not signed in' }
+  if (!me.canEdit) return { ok: false, error: 'You do not have edit permission on Cost Control' }
 
   const supabase = await createClient()
   const { data: ws, error } = await supabase
@@ -179,9 +228,14 @@ export async function submitWorkingSheet(wsId: string): Promise<{ ok: boolean; e
   if (ws.status !== 'draft' && ws.status !== 'returned') return { ok: false, error: 'Only drafts can be submitted' }
   if (!ws.total_amount || ws.total_amount <= 0) return { ok: false, error: 'Add at least one item with amount > 0 before submitting' }
 
+  // Only the engineer who raised it (or an admin) can submit it.
+  if (ws.engineer_id !== me.user.id && !me.isAdmin) {
+    return { ok: false, error: 'Only the sheet owner can submit it for approval' }
+  }
+
   const { error: updErr } = await supabase
     .from('cc_working_sheets')
-    .update({ status: 'submitted', submitted_at: new Date().toISOString(), locked_at: new Date().toISOString(), locked_by: user.id })
+    .update({ status: 'submitted', submitted_at: new Date().toISOString(), locked_at: new Date().toISOString(), locked_by: me.user.id })
     .eq('id', wsId)
   if (updErr) return { ok: false, error: updErr.message }
 
@@ -191,19 +245,31 @@ export async function submitWorkingSheet(wsId: string): Promise<{ ok: boolean; e
 }
 
 export async function approveWorkingSheet(wsId: string): Promise<{ ok: boolean; error?: string }> {
-  const user = await getMyUser()
-  if (!user) return { ok: false, error: 'Not signed in' }
+  const me = await whoAmI()
+  if (!me.user) return { ok: false, error: 'Not signed in' }
+  if (!me.canView) return { ok: false, error: 'You do not have access to Cost Control' }
 
-  // For v1, any user with cost-control edit can approve. We'll wire role-
-  // and threshold-based gating in the next session.
   const supabase = await createClient()
   const { data: ws, error } = await supabase
     .from('cc_working_sheets')
-    .select('id, status, project_id, discipline_id, sub_skill_id, line_type, total_amount')
+    .select('id, status, engineer_id, project_id, discipline_id, sub_skill_id, line_type, total_amount')
     .eq('id', wsId)
     .single()
   if (error || !ws) return { ok: false, error: 'Working Sheet not found' }
   if (ws.status !== 'submitted') return { ok: false, error: 'Only submitted sheets can be approved' }
+
+  // Self-approval is blocked unless the caller is an admin (escape hatch
+  // for single-approver teams during rollout).
+  if (ws.engineer_id === me.user.id && !me.isAdmin) {
+    return { ok: false, error: 'You cannot approve a sheet you raised yourself' }
+  }
+
+  // The approval matrix says which role(s) may move submitted → approved
+  // at this amount. Admin always passes inside can_approve().
+  const allowed = await callCanApprove('submitted', 'approved', Number(ws.total_amount ?? 0))
+  if (!allowed) {
+    return { ok: false, error: 'Your role is not configured to approve this transition. Check /admin/approvals.' }
+  }
 
   // Best-effort: find a matching budget line so we can write an event against it.
   // If none exists, write the event with budget_line_id=null but project_id set.
@@ -218,7 +284,7 @@ export async function approveWorkingSheet(wsId: string): Promise<{ ok: boolean; 
 
   const { error: updErr } = await supabase
     .from('cc_working_sheets')
-    .update({ status: 'approved', approved_at: new Date().toISOString(), approved_by: user.id })
+    .update({ status: 'approved', approved_at: new Date().toISOString(), approved_by: me.user.id })
     .eq('id', wsId)
   if (updErr) return { ok: false, error: updErr.message }
 
@@ -229,8 +295,8 @@ export async function approveWorkingSheet(wsId: string): Promise<{ ok: boolean; 
     delta_amount: ws.total_amount ?? 0,
     related_ws_id: wsId,
     remarks: 'Working Sheet approved',
-    requested_by: user.id,
-    approved_by: user.id,
+    requested_by: me.user.id,
+    approved_by: me.user.id,
     approval_status: 'approved',
   })
 
@@ -241,25 +307,35 @@ export async function approveWorkingSheet(wsId: string): Promise<{ ok: boolean; 
 }
 
 export async function returnWorkingSheet(wsId: string, reason: string): Promise<{ ok: boolean; error?: string }> {
-  const user = await getMyUser()
-  if (!user) return { ok: false, error: 'Not signed in' }
+  const me = await whoAmI()
+  if (!me.user) return { ok: false, error: 'Not signed in' }
+  if (!me.canView) return { ok: false, error: 'You do not have access to Cost Control' }
   if (!reason || reason.trim().length < 5) return { ok: false, error: 'Return reason required (min 5 chars)' }
 
   const supabase = await createClient()
   const { data: ws, error } = await supabase
     .from('cc_working_sheets')
-    .select('id, status, project_id')
+    .select('id, status, engineer_id, project_id, total_amount')
     .eq('id', wsId)
     .single()
   if (error || !ws) return { ok: false, error: 'Working Sheet not found' }
   if (ws.status !== 'submitted') return { ok: false, error: 'Only submitted sheets can be returned' }
+
+  if (ws.engineer_id === me.user.id && !me.isAdmin) {
+    return { ok: false, error: 'You cannot return a sheet you raised yourself' }
+  }
+
+  const allowed = await callCanApprove('submitted', 'returned', Number(ws.total_amount ?? 0))
+  if (!allowed) {
+    return { ok: false, error: 'Your role is not configured to return this sheet. Check /admin/approvals.' }
+  }
 
   const { error: updErr } = await supabase
     .from('cc_working_sheets')
     .update({
       status: 'returned',
       returned_at: new Date().toISOString(),
-      returned_by: user.id,
+      returned_by: me.user.id,
       return_reason: reason.trim(),
       locked_at: null,
       locked_by: null,
@@ -273,7 +349,7 @@ export async function returnWorkingSheet(wsId: string, reason: string): Promise<
     delta_amount: 0,
     related_ws_id: wsId,
     remarks: reason.trim(),
-    requested_by: user.id,
+    requested_by: me.user.id,
   })
 
   revalidatePath(`/cost-control/working-sheets/${wsId}`)

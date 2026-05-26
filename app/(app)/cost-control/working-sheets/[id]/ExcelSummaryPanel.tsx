@@ -40,12 +40,13 @@ interface FlagSummary {
 }
 
 export function ExcelSummaryPanel({
-  wsId, status, canEdit, canApprove, fileName, downloadUrl, summaryTotal, summaryNotes, flagSummary, lastCheckedAt, rows,
+  wsId, status, canEdit, canApprove, canReturn, fileName, downloadUrl, summaryTotal, summaryNotes, flagSummary, lastCheckedAt, rows,
 }: {
   wsId: string
   status: WSStatus
   canEdit: boolean
   canApprove: boolean
+  canReturn: boolean
   fileName: string | null
   downloadUrl: string | null
   summaryTotal: number | null
@@ -61,9 +62,9 @@ export function ExcelSummaryPanel({
   const [returnReason, setReturnReason] = useState('')
   const [err, setErr] = useState<string | null>(null)
 
-  const canSubmit  = canEdit    && (status === 'draft' || status === 'returned')
+  const canSubmit    = canEdit    && (status === 'draft' || status === 'returned')
   const canDoApprove = canApprove && status === 'submitted'
-  const canDoReturn  = canApprove && status === 'submitted'
+  const canDoReturn  = canReturn  && status === 'submitted'
 
   async function submit() {
     setActing(true); setErr(null)

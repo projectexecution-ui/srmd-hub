@@ -1,6 +1,7 @@
 import { notFound } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
-import { requirePermission, can, getMyUser } from '@/lib/auth'
+import { requirePermission, can, getMyUser, getMyProfile } from '@/lib/auth'
+import { checkCanApproveWS } from '@/components/cost-control/ws-actions'
 import { PageHeader } from '@/components/PageHeader'
 import { Card } from '@/components/ui/card'
 import { WSStatusPill, type WSStatus } from '@/components/cost-control/WSStatusPill'
@@ -19,10 +20,19 @@ export default async function WorkingSheetEditorPage(
 ) {
   const perms = await requirePermission('cost-control', 'view')
   const canEdit = can(perms, 'cost-control', 'edit')
-  const canApprove = can(perms, 'cost-control', 'admin') || canEdit // simplified for v1 — refine via thresholds in next session
   const { id } = await params
   const supabase = await createClient()
-  const user = await getMyUser()
+  const [user, profile] = await Promise.all([getMyUser(), getMyProfile()])
+  const isAdmin = profile?.role === 'admin'
+
+  // Ask the DB whether THIS specific viewer is allowed to approve / return
+  // THIS specific sheet at THIS amount. Encapsulates the approval_rules
+  // matrix + admin override + self-approval block.
+  const [mayApprove, mayReturn] = await Promise.all([
+    checkCanApproveWS(id, 'approved'),
+    checkCanApproveWS(id, 'returned'),
+  ])
+  const canApprove = mayApprove || mayReturn
 
   const { data: ws } = await supabase
     .from('cc_working_sheets')
@@ -67,8 +77,9 @@ export default async function WorkingSheetEditorPage(
         <ExcelSummaryPanel
           wsId={ws.id}
           status={ws.status as WSStatus}
-          canEdit={canEdit && (user?.id === ws.engineer_id || canApprove)}
-          canApprove={canApprove && user?.id !== ws.engineer_id}
+          canEdit={canEdit && (user?.id === ws.engineer_id || isAdmin)}
+          canApprove={mayApprove}
+          canReturn={mayReturn}
           fileName={ws.source_excel_name}
           downloadUrl={downloadUrl}
           summaryTotal={ws.summary_total != null ? Number(ws.summary_total) : null}
@@ -195,8 +206,8 @@ export default async function WorkingSheetEditorPage(
       <WSEditor
         wsId={ws.id}
         status={status}
-        canEdit={canEdit && (isOwner || canApprove)}
-        canApprove={canApprove && !isOwner}
+        canEdit={canEdit && (isOwner || isAdmin)}
+        canApprove={mayApprove}
         vendors={vendorsRes.data ?? []}
         initialItems={(itemsRes.data ?? []).map(i => ({
           ...i,
