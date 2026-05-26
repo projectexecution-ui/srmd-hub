@@ -36,8 +36,12 @@ export function EntryForm({ userName, projects, contractors, items }: Props) {
   const [category, setCategory] = useState<JmrItemCategory>('equipment')
   const [contractorId, setContractorId] = useState('')
   const [itemId, setItemId] = useState('')
-  const [startMeter, setStartMeter] = useState('')
-  const [endMeter, setEndMeter] = useState('')
+  // For hourly items we now collect time-of-day (HH:MM) instead of a
+  // numeric meter reading. Stored as decimal hours in start_meter /
+  // end_meter (e.g. 08:00 → 8.0, 17:30 → 17.5) so the existing column
+  // schema still works.
+  const [startTime, setStartTime] = useState('')
+  const [endTime, setEndTime] = useState('')
   const [qty, setQty] = useState('')
   const [rate, setRate] = useState<number | null>(null)
   const [description, setDescription] = useState('')
@@ -83,12 +87,24 @@ export function EntryForm({ userName, projects, contractors, items }: Props) {
     if (itemId && !filteredItems.find(i => i.id === itemId)) setItemId('')
   }, [filteredItems, itemId])
 
+  // Convert "HH:MM" → decimal hours (e.g. "08:30" → 8.5). Empty → null.
+  function timeToHours(t: string): number | null {
+    if (!t) return null
+    const [hh, mm] = t.split(':').map(Number)
+    if (Number.isNaN(hh) || Number.isNaN(mm)) return null
+    return hh + mm / 60
+  }
+  const startHours = timeToHours(startTime)
+  const endHours = timeToHours(endTime)
   const hours = useMemo(() => {
     if (!isHourly) return null
-    const s = Number(startMeter); const e = Number(endMeter)
-    if (isNaN(s) || isNaN(e) || e <= s) return null
-    return +(e - s).toFixed(2)
-  }, [startMeter, endMeter, isHourly])
+    if (startHours == null || endHours == null) return null
+    // Handle overnight wrap (e.g. 22:00 → 06:00 = 8 hr) — if end <= start,
+    // assume the shift crossed midnight.
+    const raw = endHours >= startHours ? endHours - startHours : (24 - startHours) + endHours
+    if (raw <= 0 || raw > 24) return null
+    return +raw.toFixed(2)
+  }, [startHours, endHours, isHourly])
 
   const effectiveQty = isHourly ? hours : (qty ? Number(qty) : null)
   const earned = (rate != null && effectiveQty != null) ? +(rate * effectiveQty).toFixed(2) : null
@@ -125,8 +141,8 @@ export function EntryForm({ userName, projects, contractors, items }: Props) {
       contractor_id: contractorId,
       item_id: itemId,
       entry_date: entryDate,
-      start_meter: isHourly && startMeter ? Number(startMeter) : null,
-      end_meter: isHourly && endMeter ? Number(endMeter) : null,
+      start_meter: isHourly && startHours != null ? startHours : null,
+      end_meter:   isHourly && endHours   != null ? endHours   : null,
       quantity: effectiveQty,
       rate_snapshot: rate,
       amount: earned,
@@ -138,7 +154,7 @@ export function EntryForm({ userName, projects, contractors, items }: Props) {
     if (insErr) { setError(insErr.message); setSaving(false); return }
 
     // Reset form (keep project/sub-project/contractor for fast follow-up logging)
-    setItemId(''); setStartMeter(''); setEndMeter(''); setQty('')
+    setItemId(''); setStartTime(''); setEndTime(''); setQty('')
     setDescription(''); setPhotoFile(null); setRate(null)
     setSaving(false)
     router.refresh()
@@ -202,15 +218,20 @@ export function EntryForm({ userName, projects, contractors, items }: Props) {
           </div>
         )}
         {isHourly ? (
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <Label>Start meter</Label>
-              <Input type="number" inputMode="decimal" step="0.01" value={startMeter} onChange={e => setStartMeter(e.target.value)} className="mt-1" />
+          <div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label>Start time</Label>
+                <Input type="time" value={startTime} onChange={e => setStartTime(e.target.value)} className="mt-1" />
+              </div>
+              <div>
+                <Label>End time</Label>
+                <Input type="time" value={endTime} onChange={e => setEndTime(e.target.value)} className="mt-1" />
+              </div>
             </div>
-            <div>
-              <Label>End meter</Label>
-              <Input type="number" inputMode="decimal" step="0.01" value={endMeter} onChange={e => setEndMeter(e.target.value)} className="mt-1" />
-            </div>
+            {startHours != null && endHours != null && endHours < startHours && (
+              <p className="text-[11px] text-amber-700 mt-1">Night shift — end is the next morning.</p>
+            )}
           </div>
         ) : selectedItem ? (
           <div>
