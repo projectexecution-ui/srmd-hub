@@ -14,12 +14,17 @@ type Contractor = { id: string; name: string }
 type Item = { id: string; name: string; category: 'equipment' | 'manpower'; unit: string }
 
 type Line = {
+  // Composite key — same item at two different rates = two separate lines.
+  key: string
   item_id: string
   item: Item
   sub_project_id: string | null
   jmr_quantity: number
   billed_quantity: number
   rate: number
+  // Date range (inside the bill period) this rate-band actually saw entries.
+  effective_from: string  // earliest entry_date in this bucket
+  effective_to: string    // latest entry_date in this bucket
 }
 
 interface Props {
@@ -51,24 +56,56 @@ export function BillForm({ projects, contractors, items, gstRate, varTolPct, var
       setLoadingJmr(true)
       const { data } = await supabase
         .from('jmr_daily_entries')
-        .select('item_id, sub_project_id, quantity, rate_snapshot')
+        .select('item_id, sub_project_id, quantity, rate_snapshot, entry_date')
         .eq('project_id', projectId)
         .eq('contractor_id', contractorId)
         .gte('entry_date', periodFrom)
         .lte('entry_date', periodTo)
       if (!alive) return
-      const agg = new Map<string, { qty: number; rate: number }>()
+      // Bucket by (item_id, rate_snapshot) so a rate change mid-period
+      // produces two separate bill lines (one per rate band) — exactly
+      // what we want for the A + B report breakdown.
+      const agg = new Map<string, { qty: number; rate: number; item_id: string; from: string; to: string }>()
       for (const e of data ?? []) {
-        const key = e.item_id
-        const prev = agg.get(key) ?? { qty: 0, rate: Number(e.rate_snapshot) }
-        agg.set(key, { qty: prev.qty + Number(e.quantity), rate: Number(e.rate_snapshot) })
+        const rate = Number(e.rate_snapshot)
+        const key = `${e.item_id}::${rate}`
+        const prev = agg.get(key)
+        if (!prev) {
+          agg.set(key, {
+            qty: Number(e.quantity),
+            rate,
+            item_id: e.item_id,
+            from: e.entry_date,
+            to: e.entry_date,
+          })
+        } else {
+          prev.qty += Number(e.quantity)
+          if (e.entry_date < prev.from) prev.from = e.entry_date
+          if (e.entry_date > prev.to)   prev.to = e.entry_date
+        }
       }
       const newLines: Line[] = []
-      for (const [item_id, { qty, rate }] of agg) {
-        const item = items.find(i => i.id === item_id)
+      for (const [key, b] of agg) {
+        const item = items.find(i => i.id === b.item_id)
         if (!item) continue
-        newLines.push({ item_id, item, sub_project_id: null, jmr_quantity: qty, billed_quantity: qty, rate })
+        newLines.push({
+          key,
+          item_id: b.item_id,
+          item,
+          sub_project_id: null,
+          jmr_quantity: b.qty,
+          billed_quantity: b.qty,
+          rate: b.rate,
+          effective_from: b.from,
+          effective_to: b.to,
+        })
       }
+      // Group same items together (different rates of the same item
+      // appear back-to-back), oldest period first.
+      newLines.sort((a, b) =>
+        a.item.name.localeCompare(b.item.name) ||
+        a.effective_from.localeCompare(b.effective_from),
+      )
       setLines(newLines)
       setLoadingJmr(false)
     })()
@@ -136,7 +173,8 @@ export function BillForm({ projects, contractors, items, gstRate, varTolPct, var
     }).select('id').single()
     if (billErr) { setError(billErr.message); setSaving(false); return }
 
-    // Insert line items
+    // Insert line items — one row per (item, rate) bucket so the report
+    // can break down A (before escalation) + B (after) cleanly.
     const lineRows = lines.map(l => ({
       bill_id: bill.id,
       item_id: l.item_id,
@@ -149,6 +187,8 @@ export function BillForm({ projects, contractors, items, gstRate, varTolPct, var
       variance_pct: l.jmr_quantity > 0
         ? +(((l.billed_quantity - l.jmr_quantity) / l.jmr_quantity) * 100).toFixed(2)
         : null,
+      effective_from: l.effective_from,
+      effective_to:   l.effective_to,
     }))
     const { error: linesErr } = await supabase.from('jmr_bill_line_items').insert(lineRows)
     if (linesErr) { setError(linesErr.message); setSaving(false); return }
@@ -210,29 +250,44 @@ export function BillForm({ projects, contractors, items, gstRate, varTolPct, var
 
         <div>
           <Label>Billed quantities</Label>
+          <p className="text-[11px] text-gray-500 mt-0.5 mb-1">
+            Same item at two different rates (e.g. before / after 31&nbsp;Mar) is
+            shown as two separate rows.
+          </p>
           <div className="mt-1 border border-gray-200 rounded-md overflow-hidden">
             <table className="w-full text-xs">
               <thead className="bg-gray-50 text-gray-600">
                 <tr>
-                  <th className="px-2 py-2 text-left">Item</th>
+                  <th className="px-2 py-2 text-left">Item · period</th>
+                  <th className="px-2 py-2 text-right">Rate</th>
                   <th className="px-2 py-2 text-right">JMR qty</th>
                   <th className="px-2 py-2 text-right">Billed qty</th>
                 </tr>
               </thead>
               <tbody>
                 {loadingJmr && (
-                  <tr><td colSpan={3} className="px-2 py-3 text-center text-gray-500">Loading JMR data…</td></tr>
+                  <tr><td colSpan={4} className="px-2 py-3 text-center text-gray-500">Loading JMR data…</td></tr>
                 )}
                 {!loadingJmr && lines.length === 0 && (
-                  <tr><td colSpan={3} className="px-2 py-3 text-center text-gray-500">
+                  <tr><td colSpan={4} className="px-2 py-3 text-center text-gray-500">
                     {projectId && contractorId && periodFrom && periodTo ? 'No JMR entries for this period.' : 'Select project + contractor + period to load JMR data.'}
                   </td></tr>
                 )}
                 {lines.map((l, idx) => {
                   const flagged = isVariance(l, varTolPct, varTolMinHours)
                   return (
-                    <tr key={l.item_id} className={`border-t border-gray-100 ${flagged ? 'bg-rose-50' : ''}`}>
-                      <td className="px-2 py-2 truncate max-w-[140px]">{l.item.name}</td>
+                    <tr key={l.key} className={`border-t border-gray-100 ${flagged ? 'bg-rose-50' : ''}`}>
+                      <td className="px-2 py-2 max-w-[180px]">
+                        <div className="truncate">{l.item.name}</div>
+                        <div className="text-[10px] text-gray-500">
+                          {l.effective_from === l.effective_to
+                            ? l.effective_from
+                            : `${l.effective_from} → ${l.effective_to}`}
+                        </div>
+                      </td>
+                      <td className="px-2 py-2 text-right font-mono text-gray-700 whitespace-nowrap">
+                        {formatINR(l.rate)}<span className="text-[10px] text-gray-500">/{l.item.unit}</span>
+                      </td>
                       <td className="px-2 py-2 text-right text-gray-700">{l.jmr_quantity.toFixed(l.jmr_quantity % 1 === 0 ? 0 : 2)} {l.item.unit}</td>
                       <td className="px-2 py-1">
                         <input

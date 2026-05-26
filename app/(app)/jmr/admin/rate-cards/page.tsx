@@ -27,7 +27,13 @@ export default async function JmrRateCardsPage() {
   return (
     <>
       <div className="flex justify-between items-center mb-3">
-        <p className="text-sm text-gray-500">{rates?.length ?? 0} rate card{rates?.length === 1 ? '' : 's'}</p>
+        <div>
+          <p className="text-sm text-gray-500">{rates?.length ?? 0} rate card{rates?.length === 1 ? '' : 's'}</p>
+          <p className="text-xs text-gray-400 mt-0.5">
+            Same item can have several cards with different <b>Valid from</b> / <b>Valid till</b> windows
+            — e.g. ₹500 until 31 Mar, ₹600 from 1 Apr. Bills auto-split per rate.
+          </p>
+        </div>
         {canEdit && (
           <Button asChild size="sm">
             <Link href="/jmr/admin/rate-cards/new"><Plus className="h-4 w-4" />New rate</Link>
