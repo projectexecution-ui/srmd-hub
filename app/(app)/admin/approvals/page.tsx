@@ -9,8 +9,7 @@ import ApprovalsMatrix from './approvals-matrix'
 
 export const dynamic = 'force-dynamic'
 
-// Module → friendly label (just for grouping in the UI). Modules not in
-// this map still appear under their slug.
+// Friendly headings per module. Anything not listed falls back to the slug.
 const MODULE_LABELS: Record<string, string> = {
   'indents':      'Indents',
   'jmr':          'JMR — Daily entries',
@@ -22,44 +21,31 @@ const MODULE_LABELS: Record<string, string> = {
 export default async function AdminApprovalsPage() {
   const profile = await getMyProfile()
   if (!profile) redirect('/login')
-  // Portal Owner OR Admin
   if (!profile.is_portal_owner && profile.role !== 'admin') redirect('/admin')
 
   const supabase = await createClient()
-  const [{ data: rules }, { data: stages }, roleLabels] = await Promise.all([
+  const [{ data: rules }, roleLabels] = await Promise.all([
     supabase
       .from('approval_rules')
       .select('*')
       .order('module_slug')
-      .order('doc_type')
       .order('from_stage')
       .order('to_stage'),
-    supabase
-      .from('approval_stages')
-      .select('*')
-      .order('module_slug')
-      .order('doc_type')
-      .order('sequence'),
     getRoleLabels(),
   ])
 
   return (
-    <div className="p-4 md:p-6 max-w-7xl mx-auto space-y-4">
+    <div className="p-4 md:p-6 max-w-5xl mx-auto space-y-4">
       <PageHeader
         title="Approvals"
         back="/admin"
-        subtitle="Who can move a document from one stage to the next, per module. Admin can always act."
+        subtitle="Who can move a document to the next stage, per module."
       />
       <Card className="p-4 bg-blue-50 border-blue-200 text-sm text-blue-900">
-        <p>
-          Each row says: <b>at this stage</b>, a user with <b>this role</b> can move the document to <b>this next stage</b>.
-          The <b>override role</b> (optional) can also act — useful for emergency bypass.
-          The <b>amount cap</b> (optional, for money docs) limits the rule to docs at or below that ₹ amount.
-        </p>
+        Read each row as a sentence: <b>at this stage</b>, a user with <b>this role</b> can move the document to <b>this next stage</b>. Admin is always allowed. Override role is optional.
       </Card>
       <ApprovalsMatrix
         initial={rules ?? []}
-        initialStages={stages ?? []}
         roles={ALL_ROLES as unknown as string[]}
         roleLabels={roleLabels}
         moduleLabels={MODULE_LABELS}
