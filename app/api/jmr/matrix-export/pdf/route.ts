@@ -57,9 +57,20 @@ export async function GET(req: NextRequest) {
   const body: (string | number)[][] = []
   let sr = 0
 
+  // Annotate items that span multiple rate bands with the period each
+  // band actually covers, so the PDF reader can tell which row is which.
+  const itemRowCounts = new Map<string, number>()
+  for (const r of data.rows) itemRowCounts.set(r.item_id, (itemRowCounts.get(r.item_id) ?? 0) + 1)
+
   function rowFor(r: typeof data.rows[number]) {
     sr++
-    const cols: (string | number)[] = [sr, r.item_name, r.unit, r.rate != null ? formatNumberIN(r.rate) : '']
+    const showPeriod = (itemRowCounts.get(r.item_id) ?? 0) > 1
+    const itemLabel = showPeriod && r.effectiveFrom && r.effectiveTo
+      ? (r.effectiveFrom === r.effectiveTo
+          ? `${r.item_name}\n${formatDateIN(r.effectiveFrom)}`
+          : `${r.item_name}\n${formatDateIN(r.effectiveFrom)} → ${formatDateIN(r.effectiveTo)}`)
+      : r.item_name
+    const cols: (string | number)[] = [sr, itemLabel, r.unit, r.rate != null ? formatNumberIN(r.rate) : '']
     for (const sp of subProjects) {
       const c = r.cells[sp.id]
       cols.push(c ? formatNumberIN(c.qty, c.qty % 1 === 0 ? 0 : 2) : '0')

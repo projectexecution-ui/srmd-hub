@@ -1,10 +1,16 @@
 import type { MatrixData } from '@/lib/jmr/matrix'
 import { COLUMN_PALETTE } from '@/lib/jmr/matrix'
-import { formatNumberIN, formatINR } from '@/lib/jmr/format'
+import { formatNumberIN, formatINR, formatDateIN } from '@/lib/jmr/format'
 
 export function MatrixTable({ data }: { data: MatrixData }) {
   const equipmentRows = data.rows.filter(r => r.category === 'equipment')
   const manpowerRows = data.rows.filter(r => r.category === 'manpower')
+  // Items that appear in more than one row (different rate bands) — for
+  // these we always render the period meta-line so the user knows which
+  // window each row covers. Single-band items don't need it (the page
+  // header already shows the overall date range).
+  const itemRowCounts = new Map<string, number>()
+  for (const r of data.rows) itemRowCounts.set(r.item_id, (itemRowCounts.get(r.item_id) ?? 0) + 1)
 
   // Include all sub-projects from the filter; also include "unassigned" if any rows have it.
   const subProjects = [...data.subProjects]
@@ -51,13 +57,25 @@ export function MatrixTable({ data }: { data: MatrixData }) {
           {equipmentRows.map((r, idx) => (
             // Key is (item_id, rate) — same item at two different rates
             // produces two separate rows (the A + B split).
-            <ItemRow key={`${r.item_id}::${r.rate}`} row={r} idx={idx + 1} subProjects={subProjects} />
+            <ItemRow
+              key={`${r.item_id}::${r.rate}`}
+              row={r}
+              idx={idx + 1}
+              subProjects={subProjects}
+              showPeriod={(itemRowCounts.get(r.item_id) ?? 0) > 1}
+            />
           ))}
           {manpowerRows.length > 0 && (
             <SectionRow label="MANPOWER (FOR 8 HOURS) SUPPLY" colSpan={4 + subProjects.length * 2 + 1} />
           )}
           {manpowerRows.map((r, idx) => (
-            <ItemRow key={`${r.item_id}::${r.rate}`} row={r} idx={equipmentRows.length + idx + 1} subProjects={subProjects} />
+            <ItemRow
+              key={`${r.item_id}::${r.rate}`}
+              row={r}
+              idx={equipmentRows.length + idx + 1}
+              subProjects={subProjects}
+              showPeriod={(itemRowCounts.get(r.item_id) ?? 0) > 1}
+            />
           ))}
           <tr className="font-bold bg-gray-100">
             <td colSpan={4} className="px-2 py-2 border border-gray-300 text-right uppercase">Sub-total</td>
@@ -97,15 +115,26 @@ function SectionRow({ label, colSpan }: { label: string; colSpan: number }) {
   )
 }
 
-function ItemRow({ row, idx, subProjects }: {
+function ItemRow({ row, idx, subProjects, showPeriod }: {
   row: import('@/lib/jmr/matrix').MatrixRow
   idx: number
   subProjects: { id: string; name: string; code: string | null }[]
+  showPeriod: boolean
 }) {
+  const period = showPeriod && row.effectiveFrom && row.effectiveTo
+    ? (row.effectiveFrom === row.effectiveTo
+        ? formatDateIN(row.effectiveFrom)
+        : `${formatDateIN(row.effectiveFrom)} → ${formatDateIN(row.effectiveTo)}`)
+    : null
   return (
     <tr className="hover:bg-blue-50/40">
       <td className="px-2 py-1.5 border border-gray-300 text-gray-500 sticky left-0 bg-white">{idx}</td>
-      <td className="px-2 py-1.5 border border-gray-300">{row.item_name}</td>
+      <td className="px-2 py-1.5 border border-gray-300">
+        <div>{row.item_name}</div>
+        {period && (
+          <div className="text-[10px] text-gray-500 mt-0.5">{period}</div>
+        )}
+      </td>
       <td className="px-2 py-1.5 border border-gray-300 text-center text-gray-700">{row.unit}</td>
       <td className="px-2 py-1.5 border border-gray-300 text-right font-mono">{row.rate != null ? formatNumberIN(row.rate) : '—'}</td>
       {subProjects.map((sp, i) => {

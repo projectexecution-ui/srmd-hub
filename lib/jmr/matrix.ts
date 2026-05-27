@@ -10,9 +10,14 @@ export type MatrixRow = {
   item_name: string
   category: 'equipment' | 'manpower'
   unit: string
-  rate: number | null            // Most-recent rate for this contractor+item (display only)
-  cells: Record<string, MatrixCell> // keyed by sub_project_id (or 'unassigned')
+  rate: number | null            // Rate for THIS row's rate band (same item at
+                                 // different rates appears as separate rows).
+  cells: Record<string, MatrixCell> // keyed by sub_project_id (or parent project_id)
   total: MatrixCell
+  /** Earliest entry_date seen for this (item, rate) bucket. ISO yyyy-mm-dd. */
+  effectiveFrom: string | null
+  /** Latest entry_date seen for this (item, rate) bucket. */
+  effectiveTo: string | null
 }
 
 export type MatrixSubProject = { id: string; name: string; code: string | null }
@@ -90,7 +95,7 @@ export async function buildMatrix(filters: MatrixFilters): Promise<MatrixData> {
   let q = supabase
     .from('jmr_daily_entries')
     .select(`
-      project_id, sub_project_id, item_id, quantity, amount, rate_snapshot,
+      project_id, sub_project_id, item_id, quantity, amount, rate_snapshot, entry_date,
       jmr_items!inner ( id, name, category, unit )
     `)
     .lte('entry_date', filters.dateTo)
@@ -117,6 +122,7 @@ export async function buildMatrix(filters: MatrixFilters): Promise<MatrixData> {
     rate_snapshot: number | string
     quantity: number | string
     amount: number | string
+    entry_date: string
     jmr_items?: { id: string; name: string; category: 'equipment' | 'manpower'; unit: 'hr' | 'day' | 'nos' | 'cu_m' } | { id: string; name: string; category: 'equipment' | 'manpower'; unit: 'hr' | 'day' | 'nos' | 'cu_m' }[] | null
   }
   for (const eRaw of (entries ?? [])) {
@@ -134,6 +140,8 @@ export async function buildMatrix(filters: MatrixFilters): Promise<MatrixData> {
         rate,
         cells: {},
         total: { qty: 0, amount: 0 },
+        effectiveFrom: e.entry_date,
+        effectiveTo: e.entry_date,
       })
     }
     const row = rowMap.get(key)!
@@ -145,6 +153,9 @@ export async function buildMatrix(filters: MatrixFilters): Promise<MatrixData> {
     row.cells[colKey].amount += amount
     row.total.qty += qty
     row.total.amount += amount
+    // Widen the period window if this entry sits outside it.
+    if (row.effectiveFrom == null || e.entry_date < row.effectiveFrom) row.effectiveFrom = e.entry_date
+    if (row.effectiveTo   == null || e.entry_date > row.effectiveTo)   row.effectiveTo = e.entry_date
   }
 
   const rows = Array.from(rowMap.values()).sort((a, b) => {

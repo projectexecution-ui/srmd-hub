@@ -40,10 +40,22 @@ export async function GET(req: NextRequest) {
 
   const sheetData: (string | number)[][] = [topHeader, subHeader]
 
+  // Items that have more than one rate band → annotate item name with the
+  // period each row covers, so the spreadsheet reader can see which window
+  // corresponds to which rate.
+  const itemRowCounts = new Map<string, number>()
+  for (const r of data.rows) itemRowCounts.set(r.item_id, (itemRowCounts.get(r.item_id) ?? 0) + 1)
+
   let sr = 0
   function pushRow(row: typeof data.rows[number]) {
     sr++
-    const cols: (string | number)[] = [sr, row.item_name, row.unit, row.rate ?? '']
+    const showPeriod = (itemRowCounts.get(row.item_id) ?? 0) > 1
+    const periodSuffix = showPeriod && row.effectiveFrom && row.effectiveTo
+      ? (row.effectiveFrom === row.effectiveTo
+          ? ` (${row.effectiveFrom})`
+          : ` (${row.effectiveFrom} → ${row.effectiveTo})`)
+      : ''
+    const cols: (string | number)[] = [sr, row.item_name + periodSuffix, row.unit, row.rate ?? '']
     for (const s of subProjects) {
       const c = row.cells[s.id]
       cols.push(c ? c.qty : 0, c ? c.amount : 0)
