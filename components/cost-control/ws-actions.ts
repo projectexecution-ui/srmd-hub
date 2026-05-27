@@ -20,6 +20,51 @@ async function whoAmI() {
   }
 }
 
+/** Whether the caller may set / change a WS deadline. Driven by the
+ *  approval_rules row module_slug='cost-control', to_stage='deadline_set'.
+ *  Admin / Head pass by default; others need an explicit rule via
+ *  /admin/approvals. Used by forms + the inline edit button. */
+export async function checkCanSetDeadline(): Promise<boolean> {
+  const me = await whoAmI()
+  if (!me.user) return false
+  return callCanApprove('any', 'deadline_set', null)
+}
+
+/** Set or change the deadline on a working sheet. Allowed only when
+ *  checkCanSetDeadline() returns true. Pass null to clear. */
+export async function setWorkingSheetDeadline(
+  wsId: string,
+  deadlineDate: string | null,
+  deadlineNotes: string | null,
+): Promise<{ ok: boolean; error?: string }> {
+  const me = await whoAmI()
+  if (!me.user) return { ok: false, error: 'Not signed in' }
+
+  const allowed = await callCanApprove('any', 'deadline_set', null)
+  if (!allowed) {
+    return { ok: false, error: 'Only a Head (or Admin) can set the deadline. Update at /admin/approvals to allow other roles.' }
+  }
+
+  if (deadlineDate != null && !/^\d{4}-\d{2}-\d{2}$/.test(deadlineDate)) {
+    return { ok: false, error: 'Bad date format (expected yyyy-mm-dd)' }
+  }
+
+  const supabase = await createClient()
+  const { error } = await supabase
+    .from('cc_working_sheets')
+    .update({
+      deadline_date: deadlineDate,
+      deadline_notes: deadlineNotes && deadlineNotes.trim() ? deadlineNotes.trim() : null,
+    })
+    .eq('id', wsId)
+  if (error) return { ok: false, error: error.message }
+
+  revalidatePath(`/cost-control/working-sheets/${wsId}`)
+  revalidatePath('/cost-control/working-sheets')
+  revalidatePath('/cost-control')
+  return { ok: true }
+}
+
 /** Public version of can_approve so server pages can decide which
  *  buttons to render. Mirrors the same RPC used by the actions. */
 export async function checkCanApproveWS(wsId: string, toStage: 'approved' | 'returned'): Promise<boolean> {
@@ -97,6 +142,16 @@ export async function createWorkingSheet(input: {
   const supabase = await createClient()
   const ws_code = await nextWSCode()
 
+  // Deadlines are gated behind the 'deadline_set' approval rule. If
+  // the caller can't set one, silently drop the fields from the
+  // payload — the UI hides them too, but defence in depth.
+  let safeDeadlineDate = parsed.data.deadline_date ?? null
+  let safeDeadlineNotes = parsed.data.deadline_notes ?? null
+  if (safeDeadlineDate || safeDeadlineNotes) {
+    const mayDeadline = await callCanApprove('any', 'deadline_set', null)
+    if (!mayDeadline) { safeDeadlineDate = null; safeDeadlineNotes = null }
+  }
+
   // Snapshot past approved spend at creation time for the past-spend strip
   const { data: past } = await supabase
     .from('cc_working_sheets')
@@ -115,8 +170,8 @@ export async function createWorkingSheet(input: {
       engineer_id: user.id,
       total_amount: 0,
       past_approved_in_subskill: pastSnapshot,
-      deadline_date:  parsed.data.deadline_date ?? null,
-      deadline_notes: parsed.data.deadline_notes ?? null,
+      deadline_date:  safeDeadlineDate,
+      deadline_notes: safeDeadlineNotes,
     })
     .select('id, ws_code')
     .single()

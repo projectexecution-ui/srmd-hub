@@ -15,9 +15,11 @@ interface Props {
   projectDisciplines: Array<{ project_id: string; discipline: DRow }>
   projectSubSkills: Array<{ project_id: string; sub_skill: SRow }>
   defaultProjectId?: string
+  /** True when caller may set/change the WS deadline (Head / Admin). */
+  canSetDeadline?: boolean
 }
 
-export function NewWSForm({ projects, projectDisciplines, projectSubSkills, defaultProjectId }: Props) {
+export function NewWSForm({ projects, projectDisciplines, projectSubSkills, defaultProjectId, canSetDeadline = false }: Props) {
   const router = useRouter()
   const [projectId, setProjectId] = React.useState(defaultProjectId ?? '')
   const [disciplineId, setDisciplineId] = React.useState('')
@@ -139,30 +141,36 @@ export function NewWSForm({ projects, projectDisciplines, projectSubSkills, defa
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-2 border-t border-gray-100">
-        <div>
-          <Label htmlFor="deadline">Deadline</Label>
-          <input
-            id="deadline"
-            type="date"
-            value={deadline}
-            onChange={e => setDeadline(e.target.value)}
-            className="mt-1 flex h-10 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm"
-          />
-          <p className="text-[11px] text-gray-500 mt-1">When does this work need to be approved + WO issued by?</p>
+      {canSetDeadline ? (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-2 border-t border-gray-100">
+          <div>
+            <Label htmlFor="deadline">Deadline</Label>
+            <input
+              id="deadline"
+              type="date"
+              value={deadline}
+              onChange={e => setDeadline(e.target.value)}
+              className="mt-1 flex h-10 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm"
+            />
+            <p className="text-[11px] text-gray-500 mt-1">When does this work need to be approved + WO issued by?</p>
+          </div>
+          <div>
+            <Label htmlFor="deadline_notes">Deadline notes</Label>
+            <input
+              id="deadline_notes"
+              type="text"
+              value={deadlineNotes}
+              onChange={e => setDeadlineNotes(e.target.value)}
+              placeholder="optional — e.g. site mobilisation tied to this"
+              className="mt-1 flex h-10 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm"
+            />
+          </div>
         </div>
-        <div>
-          <Label htmlFor="deadline_notes">Deadline notes</Label>
-          <input
-            id="deadline_notes"
-            type="text"
-            value={deadlineNotes}
-            onChange={e => setDeadlineNotes(e.target.value)}
-            placeholder="optional — e.g. site mobilisation tied to this"
-            className="mt-1 flex h-10 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm"
-          />
-        </div>
-      </div>
+      ) : (
+        <p className="text-xs text-gray-500 pt-2 border-t border-gray-100">
+          Deadlines are set by the Head once the sheet is raised. You don&apos;t need to enter one here.
+        </p>
+      )}
 
       <div className="flex justify-end">
         <Button type="submit" disabled={busy || !projectId || !disciplineId || !subSkillId}>

@@ -9,7 +9,7 @@ import { createClient } from '@/lib/supabase/client'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Loader2, Check, Plus, Trash2, X, ArrowRight } from 'lucide-react'
+import { Loader2, Check, Plus, Trash2, X, ArrowRight, MessageSquare, Paperclip } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { RoleLabelMap } from '@/lib/role-labels'
 
@@ -23,6 +23,8 @@ interface Rule {
   override_role: string | null
   amount_cap_max: number | null
   is_active: boolean
+  requires_remarks?: boolean
+  requires_attachment?: boolean
 }
 
 interface Props {
@@ -164,6 +166,8 @@ export default function ApprovalsMatrix({ initial, roles, roleLabels, moduleLabe
                       <th className="px-2 py-2">Approver</th>
                       <th className="px-2 py-2">Override (optional)</th>
                       <th className="px-2 py-2 text-right w-32">₹ cap</th>
+                      <th className="px-2 py-2 text-center w-14" title="Require comment on approval">💬</th>
+                      <th className="px-2 py-2 text-center w-14" title="Require attachment on approval">📎</th>
                       <th className="px-2 py-2 text-center w-16">Active</th>
                       <th className="px-2 py-2 w-10"></th>
                     </tr>
@@ -194,7 +198,7 @@ export default function ApprovalsMatrix({ initial, roles, roleLabels, moduleLabe
                     ))}
 
                     {modRules.length === 0 && draftsForMod.length === 0 && (
-                      <tr><td colSpan={8} className="px-2 py-3 text-xs text-gray-400 italic">No rules.</td></tr>
+                      <tr><td colSpan={10} className="px-2 py-3 text-xs text-gray-400 italic">No rules.</td></tr>
                     )}
                   </tbody>
                 </table>
@@ -272,6 +276,36 @@ function Row({ rule, roles, roleLabels, busy, saved, onSave, onRemove }: {
           placeholder="no cap"
           className="h-8 text-xs w-28 ml-auto text-right tabular-nums" />
       </td>
+      <td className="px-2 py-2 text-center" title="Require approver to leave a comment">
+        <button
+          type="button"
+          onClick={() => onSave({ requires_remarks: !rule.requires_remarks })}
+          className={cn(
+            'inline-flex items-center justify-center h-7 w-7 rounded-md border',
+            rule.requires_remarks
+              ? 'bg-blue-100 text-blue-700 border-blue-300'
+              : 'bg-gray-50 text-gray-400 border-gray-200 hover:text-gray-600',
+          )}
+          aria-label={rule.requires_remarks ? 'Comment is required' : 'Comment is optional'}
+        >
+          <MessageSquare className="h-3.5 w-3.5" />
+        </button>
+      </td>
+      <td className="px-2 py-2 text-center" title="Require approver to attach a file">
+        <button
+          type="button"
+          onClick={() => onSave({ requires_attachment: !rule.requires_attachment })}
+          className={cn(
+            'inline-flex items-center justify-center h-7 w-7 rounded-md border',
+            rule.requires_attachment
+              ? 'bg-amber-100 text-amber-700 border-amber-300'
+              : 'bg-gray-50 text-gray-400 border-gray-200 hover:text-gray-600',
+          )}
+          aria-label={rule.requires_attachment ? 'Attachment is required' : 'Attachment is optional'}
+        >
+          <Paperclip className="h-3.5 w-3.5" />
+        </button>
+      </td>
       <td className="px-2 py-2 text-center">
         <input type="checkbox" checked={rule.is_active}
           onChange={e => onSave({ is_active: e.target.checked })}
@@ -326,6 +360,8 @@ function DraftRow({ draft, roles, roleLabels, busy, onPatch, onSave, onCancel }:
           placeholder="no cap"
           className="h-8 text-xs w-28 ml-auto text-right tabular-nums" />
       </td>
+      <td className="px-2 py-2 text-center text-gray-300" title="Editable after the rule is saved"><MessageSquare className="h-3.5 w-3.5 mx-auto" /></td>
+      <td className="px-2 py-2 text-center text-gray-300" title="Editable after the rule is saved"><Paperclip className="h-3.5 w-3.5 mx-auto" /></td>
       <td className="px-2 py-2 text-center text-[11px] text-blue-700 font-semibold">new</td>
       <td className="px-2 py-2 flex items-center gap-1 justify-end">
         <Button type="button" size="sm" onClick={onSave} disabled={busy} className="h-7 w-7 p-0">

@@ -1,6 +1,7 @@
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/server'
 import { requirePermission } from '@/lib/auth'
+import { checkCanSetDeadline } from '@/components/cost-control/ws-actions'
 import { PageHeader } from '@/components/PageHeader'
 import { Card } from '@/components/ui/card'
 import { FileSpreadsheet, ChevronRight } from 'lucide-react'
@@ -52,6 +53,8 @@ export default async function NewWorkingSheetPage({
     if (s) projectSubSkills.push({ project_id: r.project_id, sub_skill: s })
   }
 
+  const canSetDeadline = await checkCanSetDeadline()
+
   return (
     <div className="p-4 md:p-6 max-w-2xl mx-auto space-y-4">
       <PageHeader
@@ -83,6 +86,7 @@ export default async function NewWorkingSheetPage({
           projectDisciplines={projectDisciplines}
           projectSubSkills={projectSubSkills}
           defaultProjectId={sp.project}
+          canSetDeadline={canSetDeadline}
         />
       </Card>
     </div>

@@ -27,7 +27,7 @@ export default async function AdminApprovalsPage() {
   const [{ data: rules }, roleLabels] = await Promise.all([
     supabase
       .from('approval_rules')
-      .select('*')
+      .select('id, module_slug, doc_type, from_stage, to_stage, approver_role, override_role, amount_cap_max, requires_remarks, requires_attachment, is_active')
       .order('module_slug')
       .order('from_stage')
       .order('to_stage'),

@@ -33,6 +33,7 @@ interface Props {
   projectDisciplines: Array<{ project_id: string; discipline: DRow }>
   projectSubSkills: Array<{ project_id: string; sub_skill: SRow }>
   defaultProjectId?: string
+  canSetDeadline?: boolean
 }
 
 type ColKind = 'description' | 'unit' | 'qty' | 'rate' | 'amount'
@@ -209,7 +210,7 @@ async function parseExcel(file: File): Promise<{ rows: ParsedRow[]; grandTotal: 
   return { rows, grandTotal }
 }
 
-export function NewWSQuickForm({ projects, projectDisciplines, projectSubSkills, defaultProjectId }: Props) {
+export function NewWSQuickForm({ projects, projectDisciplines, projectSubSkills, defaultProjectId, canSetDeadline = false }: Props) {
   const router = useRouter()
   const [projectId, setProjectId]     = useState(defaultProjectId ?? projects[0]?.id ?? '')
   const [disciplineId, setDisciplineId] = useState('')
@@ -446,17 +447,25 @@ export function NewWSQuickForm({ projects, projectDisciplines, projectSubSkills,
             <Input type="number" step="any" inputMode="decimal" value={summaryTotal}
               onChange={e => setSummaryTotal(e.target.value)} placeholder="auto-filled from Excel" className="mt-1" />
           </div>
+          {canSetDeadline && (
+            <div>
+              <Label>Deadline</Label>
+              <Input type="date" value={deadline} onChange={e => setDeadline(e.target.value)} className="mt-1" />
+              <p className="text-[11px] text-gray-500 mt-1">When does this need to be approved + WO issued by?</p>
+            </div>
+          )}
+        </div>
+        {canSetDeadline ? (
           <div>
-            <Label>Deadline</Label>
-            <Input type="date" value={deadline} onChange={e => setDeadline(e.target.value)} className="mt-1" />
-            <p className="text-[11px] text-gray-500 mt-1">When does this need to be approved + WO issued by?</p>
+            <Label>Deadline notes</Label>
+            <Input value={deadlineNotes} onChange={e => setDeadlineNotes(e.target.value)}
+              placeholder="optional — e.g. site mobilisation tied to this" className="mt-1" />
           </div>
-        </div>
-        <div>
-          <Label>Deadline notes</Label>
-          <Input value={deadlineNotes} onChange={e => setDeadlineNotes(e.target.value)}
-            placeholder="optional — e.g. site mobilisation tied to this" className="mt-1" />
-        </div>
+        ) : (
+          <p className="text-xs text-gray-500">
+            Deadlines are set by the Head once the sheet is raised.
+          </p>
+        )}
 
         <div>
           <Label>Notes</Label>

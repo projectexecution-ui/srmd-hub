@@ -6,6 +6,7 @@ import { PageHeader } from '@/components/PageHeader'
 import { SetupProgressBanner } from '@/components/ProjectSetupWizard/SetupProgressBanner'
 import { Plus, ArrowLeftRight, Flame, Info } from 'lucide-react'
 import { formatINR } from '@/lib/utils'
+import { DeadlineBadge } from '@/components/cost-control/DeadlineBadge'
 
 export const dynamic = 'force-dynamic'
 
@@ -23,6 +24,7 @@ interface WSAgg {
   sub_skill_id: string
   status: string
   total_amount: number | null
+  deadline_date: string | null
 }
 
 export default async function CostControlProjectDetailPage(
@@ -65,7 +67,7 @@ export default async function CostControlProjectDetailPage(
       .eq('project_id', id),
     supabase
       .from('cc_working_sheets')
-      .select('discipline_id, sub_skill_id, status, total_amount')
+      .select('discipline_id, sub_skill_id, status, total_amount, deadline_date')
       .eq('project_id', id),
     supabase
       .from('project_assignments')
@@ -110,6 +112,23 @@ export default async function CostControlProjectDetailPage(
     }
     wsAgg.set(k, cur)
   }
+  // Per-(discipline, sub-skill) deadline rollup: earliest open deadline +
+  // overdue count for sheets that are still in flight (not approved/paid).
+  const TERMINAL = new Set(['approved','wo_issued','paid','cancelled'])
+  const dlAgg = new Map<string, { earliest: string | null; overdue: number; openCount: number }>()
+  const today = new Date()
+  const todayISO = today.toISOString().slice(0, 10)
+  for (const w of (wsRes.data ?? []) as WSAgg[]) {
+    if (!w.deadline_date) continue
+    if (TERMINAL.has(w.status)) continue
+    const k = `${w.discipline_id}::${w.sub_skill_id}`
+    const cur = dlAgg.get(k) ?? { earliest: null, overdue: 0, openCount: 0 }
+    cur.openCount += 1
+    if (w.deadline_date < todayISO) cur.overdue += 1
+    if (!cur.earliest || w.deadline_date < cur.earliest) cur.earliest = w.deadline_date
+    dlAgg.set(k, cur)
+  }
+
   // Disciplines-level rollups derived from sub-skills
   const discAgg = new Map<string, { budget: number; wo: number; paid: number; approvedTotal: number }>()
   for (const d of disciplines) discAgg.set(d.id, { budget: 0, wo: 0, paid: 0, approvedTotal: 0 })
@@ -237,12 +256,13 @@ export default async function CostControlProjectDetailPage(
                 <Th align="right">Paid</Th>
                 <Th align="right" className="w-20">% Used</Th>
                 <Th className="w-28">Working Sheets</Th>
+                <Th className="w-44">Deadline</Th>
                 <Th className="w-28"></Th>
               </tr>
             </thead>
             <tbody>
               {disciplines.length === 0 && (
-                <tr><td colSpan={7} className="px-4 py-8 text-center text-sm text-gray-500">No disciplines enabled. Open the setup wizard to pick them.</td></tr>
+                <tr><td colSpan={8} className="px-4 py-8 text-center text-sm text-gray-500">No disciplines enabled. Open the setup wizard to pick them.</td></tr>
               )}
 
               {disciplines.map(d => {
@@ -250,6 +270,16 @@ export default async function CostControlProjectDetailPage(
                 const dPct = dAgg.budget > 0 ? (dAgg.paid / dAgg.budget) * 100 : 0
                 const subs = subSkills.filter(s => s.discipline_id === d.id)
                 const dHot = dPct > 95
+
+                // Discipline-level earliest open deadline across its sub-skills
+                let dEarliest: string | null = null
+                let dOverdue = 0
+                for (const s of subs) {
+                  const dl = dlAgg.get(`${d.id}::${s.id}`)
+                  if (!dl) continue
+                  dOverdue += dl.overdue
+                  if (dl.earliest && (!dEarliest || dl.earliest < dEarliest)) dEarliest = dl.earliest
+                }
 
                 return (
                   <>
@@ -266,6 +296,16 @@ export default async function CostControlProjectDetailPage(
                         {dAgg.budget > 0 ? `${dPct.toFixed(0)}%` : '—'}
                       </Td>
                       <Td>{/* category-level WS counts not shown */}</Td>
+                      <Td>
+                        {dEarliest ? (
+                          <div className="flex items-center gap-1.5">
+                            <DeadlineBadge deadlineDate={dEarliest} className="text-[11px] px-2 py-0.5" />
+                            {dOverdue > 0 && <span className="text-[10px] font-bold text-rose-700 bg-rose-100 rounded-full px-1.5">+{dOverdue} overdue</span>}
+                          </div>
+                        ) : (
+                          <span className="text-[11px] text-gray-400">—</span>
+                        )}
+                      </Td>
                       <Td></Td>
                     </tr>
 
@@ -303,6 +343,22 @@ export default async function CostControlProjectDetailPage(
                             )}
                           </Td>
                           <Td>
+                            {(() => {
+                              const dl = dlAgg.get(`${d.id}::${s.id}`)
+                              if (!dl?.earliest) return <span className="text-[11px] text-gray-400">—</span>
+                              return (
+                                <div className="flex items-center gap-1.5">
+                                  <DeadlineBadge deadlineDate={dl.earliest} className="text-[11px] px-2 py-0.5" />
+                                  {dl.overdue > 0 && (
+                                    <span className="text-[10px] font-bold text-rose-700 bg-rose-100 rounded-full px-1.5">
+                                      +{dl.overdue}
+                                    </span>
+                                  )}
+                                </div>
+                              )
+                            })()}
+                          </Td>
+                          <Td>
                             {canWrite && (
                               <Link
                                 href={`/cost-control/working-sheets/new?project=${project.id}`}
@@ -318,7 +374,7 @@ export default async function CostControlProjectDetailPage(
 
                     {subs.length === 0 && (
                       <tr className="border-t border-gray-100">
-                        <td colSpan={7} className="pl-10 pr-3 py-2 text-xs italic text-gray-400">No sub-skills enabled for this discipline. Add via the setup wizard.</td>
+                        <td colSpan={8} className="pl-10 pr-3 py-2 text-xs italic text-gray-400">No sub-skills enabled for this discipline. Add via the setup wizard.</td>
                       </tr>
                     )}
                   </>

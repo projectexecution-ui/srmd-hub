@@ -1,7 +1,7 @@
 import { notFound } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { requirePermission, can, getMyUser, getMyProfile } from '@/lib/auth'
-import { checkCanApproveWS } from '@/components/cost-control/ws-actions'
+import { checkCanApproveWS, checkCanSetDeadline } from '@/components/cost-control/ws-actions'
 import { PageHeader } from '@/components/PageHeader'
 import { Card } from '@/components/ui/card'
 import { WSStatusPill, type WSStatus } from '@/components/cost-control/WSStatusPill'
@@ -9,6 +9,7 @@ import { DeadlineBadge } from '@/components/cost-control/DeadlineBadge'
 import { WSEditor } from './WSEditor'
 import { ExcelSummaryPanel } from './ExcelSummaryPanel'
 import { SourceExcelViewer } from './SourceExcelViewer'
+import { EditDeadlineButton } from './EditDeadlineButton'
 import { formatINR } from '@/lib/utils'
 
 export const dynamic = 'force-dynamic'
@@ -30,9 +31,10 @@ export default async function WorkingSheetEditorPage(
   // Ask the DB whether THIS specific viewer is allowed to approve / return
   // THIS specific sheet at THIS amount. Encapsulates the approval_rules
   // matrix + admin override + self-approval block.
-  const [mayApprove, mayReturn] = await Promise.all([
+  const [mayApprove, mayReturn, canEditDeadline] = await Promise.all([
     checkCanApproveWS(id, 'approved'),
     checkCanApproveWS(id, 'returned'),
+    checkCanSetDeadline(),
   ])
   const canApprove = mayApprove || mayReturn
 
@@ -76,12 +78,23 @@ export default async function WorkingSheetEditorPage(
           <WSStatusPill status={ws.status as WSStatus} />
         </PageHeader>
 
-        {ws.deadline_date && (
-          <DeadlineBadge
-            deadlineDate={ws.deadline_date}
-            notes={ws.deadline_notes}
-            approved={ws.status === 'approved' || ws.status === 'wo_issued' || ws.status === 'paid'}
-          />
+        {(ws.deadline_date || canEditDeadline) && (
+          <div className="flex items-center gap-2 flex-wrap">
+            {ws.deadline_date && (
+              <DeadlineBadge
+                deadlineDate={ws.deadline_date}
+                notes={ws.deadline_notes}
+                approved={ws.status === 'approved' || ws.status === 'wo_issued' || ws.status === 'paid'}
+              />
+            )}
+            {canEditDeadline && (
+              <EditDeadlineButton
+                wsId={ws.id}
+                initialDate={ws.deadline_date}
+                initialNotes={ws.deadline_notes}
+              />
+            )}
+          </div>
         )}
 
         <SourceExcelViewer url={downloadUrl} name={ws.source_excel_name} />
@@ -170,12 +183,23 @@ export default async function WorkingSheetEditorPage(
         <WSStatusPill status={status} />
       </PageHeader>
 
-      {ws.deadline_date && (
-        <DeadlineBadge
-          deadlineDate={ws.deadline_date}
-          notes={ws.deadline_notes}
-          approved={status === 'approved' || status === 'wo_issued' || status === 'paid'}
-        />
+      {(ws.deadline_date || canEditDeadline) && (
+        <div className="flex items-center gap-2 flex-wrap">
+          {ws.deadline_date && (
+            <DeadlineBadge
+              deadlineDate={ws.deadline_date}
+              notes={ws.deadline_notes}
+              approved={status === 'approved' || status === 'wo_issued' || status === 'paid'}
+            />
+          )}
+          {canEditDeadline && (
+            <EditDeadlineButton
+              wsId={ws.id}
+              initialDate={ws.deadline_date}
+              initialNotes={ws.deadline_notes}
+            />
+          )}
+        </div>
       )}
 
       {/* Past-spend strip */}

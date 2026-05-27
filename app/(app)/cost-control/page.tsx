@@ -6,8 +6,9 @@ import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { EmptyState } from '@/components/ui/empty-state'
-import { Calculator, Plus, FileText, Clock, Inbox, Upload, ClipboardList, Settings, ArrowRight } from 'lucide-react'
+import { Calculator, Plus, FileText, Clock, Inbox, Upload, ClipboardList, Settings, ArrowRight, CalendarClock } from 'lucide-react'
 import { formatINR } from '@/lib/utils'
+import { DeadlineBadge } from '@/components/cost-control/DeadlineBadge'
 
 export const dynamic = 'force-dynamic'
 
@@ -28,7 +29,7 @@ export default async function CostControlLandingPage() {
   const supabase = await createClient()
   const user = await getMyUser()
 
-  const [projectsRes, wsAllRes, myDraftsRes, pendingRes] = await Promise.all([
+  const [projectsRes, wsAllRes, myDraftsRes, pendingRes, deadlinesRes] = await Promise.all([
     supabase
       .from('projects')
       .select('id, code, name, cc_status, setup_progress_pct, built_up_sft, parent_project_id')
@@ -46,6 +47,14 @@ export default async function CostControlLandingPage() {
       .from('cc_working_sheets')
       .select('id', { count: 'exact', head: true })
       .eq('status', 'submitted'),
+    // Upcoming deadlines across all projects — open sheets only, soonest first.
+    supabase
+      .from('cc_working_sheets')
+      .select('id, ws_code, status, total_amount, deadline_date, deadline_notes, project_id, projects(code, name), cc_disciplines(code, name), cc_sub_skills(code, name)')
+      .not('deadline_date', 'is', null)
+      .not('status', 'in', '(approved,wo_issued,paid,cancelled)')
+      .order('deadline_date', { ascending: true })
+      .limit(15),
   ])
 
   const ccProjects = (projectsRes.data ?? []) as CCProject[]
@@ -62,6 +71,22 @@ export default async function CostControlLandingPage() {
     .reduce((s, w) => s + Number(w.total_amount ?? 0), 0)
   const myDraftsCount = (myDraftsRes as { count?: number }).count ?? 0
   const pendingCount = (pendingRes as { count?: number }).count ?? 0
+
+  type DeadlineRow = {
+    id: string
+    ws_code: string
+    status: string
+    total_amount: number | null
+    deadline_date: string
+    deadline_notes: string | null
+    project_id: string
+    projects: { code: string; name: string } | { code: string; name: string }[] | null
+    cc_disciplines: { code: string; name: string } | { code: string; name: string }[] | null
+    cc_sub_skills: { code: string; name: string } | { code: string; name: string }[] | null
+  }
+  const upcomingDeadlines = (deadlinesRes.data ?? []) as DeadlineRow[]
+  const todayISO = new Date().toISOString().slice(0, 10)
+  const overdueCount = upcomingDeadlines.filter(d => d.deadline_date < todayISO).length
 
   return (
     <div className="p-4 md:p-6 max-w-7xl mx-auto space-y-4">
@@ -98,6 +123,55 @@ export default async function CostControlLandingPage() {
         </Link>
         <Stat label="Approved value" value={formatINR(approvedTotal)} hint={`${totalWS} sheet${totalWS === 1 ? '' : 's'} total`} icon={<FileText className="h-5 w-5" />} />
       </div>
+
+      {/* Upcoming deadlines — cross-project summary */}
+      {upcomingDeadlines.length > 0 && (
+        <Card className="p-4">
+          <div className="flex items-baseline justify-between mb-3">
+            <h3 className="text-xs uppercase tracking-wide text-gray-500 font-semibold inline-flex items-center gap-1.5">
+              <CalendarClock className="h-4 w-4 text-blue-600" />
+              Upcoming deadlines
+            </h3>
+            <div className="flex items-center gap-2">
+              {overdueCount > 0 && (
+                <span className="text-[10px] font-bold text-rose-700 bg-rose-100 rounded-full px-2 py-0.5">
+                  {overdueCount} overdue
+                </span>
+              )}
+              <span className="text-[10px] text-gray-500">{upcomingDeadlines.length} open</span>
+            </div>
+          </div>
+          <ul className="divide-y divide-gray-100">
+            {upcomingDeadlines.map(d => {
+              const proj = Array.isArray(d.projects) ? d.projects[0] : d.projects
+              const dis  = Array.isArray(d.cc_disciplines) ? d.cc_disciplines[0] : d.cc_disciplines
+              const sub  = Array.isArray(d.cc_sub_skills) ? d.cc_sub_skills[0] : d.cc_sub_skills
+              return (
+                <li key={d.id} className="py-2.5">
+                  <Link href={`/cost-control/working-sheets/${d.id}`} className="flex items-center gap-3 hover:bg-gray-50 -mx-2 px-2 py-1 rounded">
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="font-semibold text-sm text-gray-900 truncate">
+                          {proj?.code ?? '—'}
+                        </span>
+                        <span className="text-xs text-gray-500 truncate">
+                          {dis?.code} · {sub?.name}
+                        </span>
+                        <Badge variant="secondary" className="text-[10px]">{d.status}</Badge>
+                      </div>
+                      <p className="text-[11px] text-gray-500 mt-0.5">
+                        {d.ws_code}{d.deadline_notes ? ` · ${d.deadline_notes}` : ''}
+                      </p>
+                    </div>
+                    <span className="text-xs text-gray-600 tabular-nums hidden md:inline">{formatINR(d.total_amount ?? 0)}</span>
+                    <DeadlineBadge deadlineDate={d.deadline_date} className="text-[11px] px-2 py-0.5 flex-shrink-0" />
+                  </Link>
+                </li>
+              )
+            })}
+          </ul>
+        </Card>
+      )}
 
       {/* Quick actions */}
       <Card className="p-4">
