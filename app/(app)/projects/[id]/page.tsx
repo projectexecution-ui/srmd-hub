@@ -2,6 +2,8 @@ import { notFound } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/server'
 import { requirePermission, can, getMyProfile } from '@/lib/auth'
+import { getRoleLabels } from '@/lib/role-labels'
+import { ALL_ROLES } from '@/lib/types'
 import { PageHeader } from '@/components/PageHeader'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -39,7 +41,7 @@ export default async function ProjectDetailPage({
   const { data: project } = await supabase.from('projects').select('*').eq('id', id).single()
   if (!project) notFound()
 
-  const [indentsRes, posRes, floorsRes, assignmentsRes, profilesRes] = await Promise.all([
+  const [indentsRes, posRes, floorsRes, assignmentsRes, profilesRes, roleLabels] = await Promise.all([
     supabase.from('indents').select('id', { count: 'exact', head: true }).eq('project_id', id),
     supabase.from('purchase_orders').select('id, po_amount').eq('project_id', id),
     supabase.from('project_floors').select('*').eq('project_id', id).order('sequence'),
@@ -51,6 +53,7 @@ export default async function ProjectDetailPage({
       .select('id, name, full_name, email, role, is_active')
       .eq('is_active', true)
       .order('name'),
+    getRoleLabels(),
   ])
   const floors = (floorsRes.data ?? []) as ProjectFloor[]
   const indentCount = indentsRes.count ?? 0
@@ -90,6 +93,7 @@ export default async function ProjectDetailPage({
           initialAssignments={assignments}
           allProfiles={allProfiles}
           canManage={canManageUsers}
+          roleOptions={ALL_ROLES.map(r => ({ value: r, label: roleLabels[r]?.label ?? r }))}
         />
       ) : (
         <>

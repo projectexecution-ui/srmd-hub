@@ -24,17 +24,18 @@ interface Assignment {
   assigned_at: string
 }
 
-// Common preset roles for a project team. The text input still allows
-// custom values for one-offs.
-const ROLE_PRESETS = ['PM', 'HoP', 'Engineer', 'Backoffice', 'Store Manager', 'Contractor', 'Viewer']
+interface RoleOption { value: string; label: string }
+
+const CUSTOM_SENTINEL = '__custom__'
 
 export default function ProjectUsersTab({
-  projectId, initialAssignments, allProfiles, canManage,
+  projectId, initialAssignments, allProfiles, canManage, roleOptions,
 }: {
   projectId: string
   initialAssignments: Assignment[]
   allProfiles: ProfileLite[]
   canManage: boolean
+  roleOptions: RoleOption[]
 }) {
   const router = useRouter()
   const supabase = createClient()
@@ -42,8 +43,13 @@ export default function ProjectUsersTab({
   const [busyId, setBusyId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [pickUserId, setPickUserId] = useState(allProfiles[0]?.id ?? '')
-  const [pickRole, setPickRole]     = useState(ROLE_PRESETS[0])
+  // Picker holds either a real role value, the empty string ("choose…"),
+  // or CUSTOM_SENTINEL when the admin wants a free-text role.
+  const [rolePick, setRolePick] = useState<string>(roleOptions[0]?.value ?? CUSTOM_SENTINEL)
+  const [customRole, setCustomRole] = useState('')
   const [adding, setAdding]         = useState(false)
+
+  const effectiveRole = rolePick === CUSTOM_SENTINEL ? customRole.trim() : rolePick
 
   const profileById = useMemo(
     () => new Map(allProfiles.map(p => [p.id, p])),
@@ -52,17 +58,18 @@ export default function ProjectUsersTab({
 
   async function addAssignment(e: React.FormEvent) {
     e.preventDefault()
-    if (!pickUserId || !pickRole.trim()) return
+    if (!pickUserId) { setError('Pick a user'); return }
+    if (!effectiveRole) { setError('Pick or type a role'); return }
     setAdding(true); setError(null)
-    const role = pickRole.trim()
     const { data, error } = await supabase
       .from('project_assignments')
-      .insert({ user_id: pickUserId, project_id: projectId, role })
+      .insert({ user_id: pickUserId, project_id: projectId, role: effectiveRole })
       .select('id, user_id, role, assigned_at')
       .single()
     setAdding(false)
     if (error) { setError(error.message); return }
     setAssignments(prev => [data as Assignment, ...prev])
+    if (rolePick === CUSTOM_SENTINEL) setCustomRole('')
     router.refresh()
   }
 
@@ -100,30 +107,53 @@ export default function ProjectUsersTab({
         {canManage && candidateUsers.length > 0 && (
           <form
             onSubmit={addAssignment}
-            className="grid grid-cols-1 sm:grid-cols-[1fr_auto_auto] gap-2 p-3 bg-blue-50/40 border border-blue-200 rounded-xl"
+            className="grid grid-cols-1 sm:grid-cols-[1fr_minmax(10rem,auto)_minmax(8rem,auto)_auto] gap-2 p-3 bg-blue-50/40 border border-blue-200 rounded-xl items-start"
           >
-            <select
-              value={pickUserId}
-              onChange={e => setPickUserId(e.target.value)}
-              className="h-10 rounded-xl border border-gray-300 bg-white px-3 text-sm"
-            >
-              {candidateUsers.map(p => (
-                <option key={p.id} value={p.id}>
-                  {(p.name || p.full_name || p.email)} · {p.email}
-                </option>
-              ))}
-            </select>
-            <Input
-              list="project-role-presets"
-              value={pickRole}
-              onChange={e => setPickRole(e.target.value)}
-              placeholder="Role on project"
-              className="sm:w-40"
-            />
-            <datalist id="project-role-presets">
-              {ROLE_PRESETS.map(r => <option key={r} value={r} />)}
-            </datalist>
-            <Button type="submit" disabled={adding || !pickUserId || !pickRole.trim()}>
+            <div>
+              <label className="text-[11px] font-semibold uppercase tracking-wide text-gray-600 mb-1 block">User</label>
+              <select
+                value={pickUserId}
+                onChange={e => setPickUserId(e.target.value)}
+                className="h-10 w-full rounded-xl border border-gray-300 bg-white px-3 text-sm"
+              >
+                {candidateUsers.map(p => (
+                  <option key={p.id} value={p.id}>
+                    {(p.name || p.full_name || p.email)} · {p.email}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="text-[11px] font-semibold uppercase tracking-wide text-gray-600 mb-1 block">Role on project</label>
+              <select
+                value={rolePick}
+                onChange={e => setRolePick(e.target.value)}
+                className="h-10 w-full rounded-xl border border-gray-300 bg-white px-3 text-sm"
+              >
+                {roleOptions.map(o => (
+                  <option key={o.value} value={o.value}>{o.label}</option>
+                ))}
+                <option value={CUSTOM_SENTINEL}>Custom…</option>
+              </select>
+            </div>
+            <div>
+              <label className={`text-[11px] font-semibold uppercase tracking-wide mb-1 block ${rolePick === CUSTOM_SENTINEL ? 'text-blue-700' : 'text-transparent'}`}>
+                Custom role
+              </label>
+              {rolePick === CUSTOM_SENTINEL ? (
+                <Input
+                  value={customRole}
+                  onChange={e => setCustomRole(e.target.value)}
+                  placeholder="e.g. Site Lead"
+                  autoFocus
+                />
+              ) : (
+                <div className="h-10 px-3 inline-flex items-center text-xs text-gray-400 italic">
+                  using system role
+                </div>
+              )}
+            </div>
+            <Button type="submit" disabled={adding || !pickUserId || !effectiveRole} className="self-end">
               {adding ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
               Add to project
             </Button>
