@@ -38,9 +38,16 @@ export default async function AdminHomePage() {
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           {tiles.map(t => (
             <Link key={t.href} href={t.href}>
-              <Card className="p-5 hover:shadow-md transition-shadow">
+              <Card className="p-5 hover:shadow-md transition-shadow relative">
                 <t.icon className="h-6 w-6 text-slate-700 mb-3" />
-                <h3 className="font-semibold text-gray-900">{t.title}</h3>
+                <h3 className="font-semibold text-gray-900 flex items-center gap-2">
+                  {t.title}
+                  {'badge' in t && t.badge ? (
+                    <span className="inline-flex items-center justify-center min-w-[1.5rem] h-5 px-1.5 rounded-full bg-rose-100 text-rose-700 text-[11px] font-bold">
+                      {t.badge}
+                    </span>
+                  ) : null}
+                </h3>
                 <p className="text-sm text-gray-500 mt-1">{t.sub}</p>
               </Card>
             </Link>
