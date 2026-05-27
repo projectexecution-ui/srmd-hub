@@ -8,7 +8,7 @@ import { Input } from '@/components/ui/input'
 import { PageHeader } from '@/components/PageHeader'
 import {
   Users, Search, UserCheck, UserX, Mail, Shield, Copy, Check, Send, Crown, Trash2,
-  UserPlus, Loader2, Plus, X, ChevronDown, ChevronRight, Layers,
+  UserPlus, Loader2, Plus, X, ChevronDown, ChevronRight, Layers, Ban,
 } from 'lucide-react'
 import type { Profile, Role } from '@/lib/types'
 import { ALL_ROLES } from '@/lib/types'
@@ -40,13 +40,22 @@ interface UserModuleRole {
   notes: string | null
 }
 
+interface UserModuleBlock {
+  user_id: string
+  module_slug: string
+  blocked_by: string | null
+  blocked_at: string
+  reason: string | null
+}
+
 export default function UsersClient({
-  initialUsers, initialAllowedEmails, initialModuleRoles,
+  initialUsers, initialAllowedEmails, initialModuleRoles, initialModuleBlocks,
   currentUserId, currentUserIsPortalOwner, roleLabels,
 }: {
   initialUsers: Profile[]
   initialAllowedEmails: AllowedEmail[]
   initialModuleRoles: UserModuleRole[]
+  initialModuleBlocks: UserModuleBlock[]
   currentUserId: string
   currentUserIsPortalOwner: boolean
   roleLabels: RoleLabelMap
@@ -55,6 +64,7 @@ export default function UsersClient({
   const [users, setUsers] = useState<Profile[]>(initialUsers)
   const [allowed, setAllowed] = useState<AllowedEmail[]>(initialAllowedEmails)
   const [moduleRoles, setModuleRoles] = useState<UserModuleRole[]>(initialModuleRoles)
+  const [moduleBlocks, setModuleBlocks] = useState<UserModuleBlock[]>(initialModuleBlocks)
   const [expandedUserId, setExpandedUserId] = useState<string | null>(null)
   const [search, setSearch] = useState('')
   const [busyId, setBusyId] = useState<string | null>(null)
@@ -230,6 +240,38 @@ export default function UsersClient({
     setModuleRoles(prev => prev.filter(r => !(r.user_id === userId && r.module_slug === moduleSlug)))
   }
 
+  // ─── Per-user module BLOCKS ────────────────────────────
+  function blocksFor(userId: string): UserModuleBlock[] {
+    return moduleBlocks.filter(b => b.user_id === userId)
+  }
+
+  async function blockUserModule(userId: string, moduleSlug: string) {
+    setBusyId(`umb:${userId}:${moduleSlug}`); setError(null)
+    const { data, error } = await supabase
+      .from('user_module_blocks')
+      .upsert({ user_id: userId, module_slug: moduleSlug }, { onConflict: 'user_id,module_slug' })
+      .select('*')
+      .single()
+    setBusyId(null)
+    if (error) { setError(error.message); return }
+    setModuleBlocks(prev => {
+      const others = prev.filter(b => !(b.user_id === userId && b.module_slug === moduleSlug))
+      return [...others, data as UserModuleBlock]
+    })
+  }
+
+  async function unblockUserModule(userId: string, moduleSlug: string) {
+    setBusyId(`umb:${userId}:${moduleSlug}`); setError(null)
+    const { error } = await supabase
+      .from('user_module_blocks')
+      .delete()
+      .eq('user_id', userId)
+      .eq('module_slug', moduleSlug)
+    setBusyId(null)
+    if (error) { setError(error.message); return }
+    setModuleBlocks(prev => prev.filter(b => !(b.user_id === userId && b.module_slug === moduleSlug)))
+  }
+
   async function updateAllowedRole(email: string, role: Role) {
     setRemoving(email); setError(null)
     const { error } = await supabase.from('allowed_emails').update({ role }).eq('email', email)
@@ -283,6 +325,7 @@ export default function UsersClient({
                 const isSelf = u.id === currentUserId
                 const busy = busyId === u.id
                 const userOverrides = rolesFor(u.id)
+                const userBlocks    = blocksFor(u.id)
                 const expanded = expandedUserId === u.id
                 return (
                   <div key={u.id} className="border-b border-gray-100 last:border-0">
@@ -378,34 +421,45 @@ export default function UsersClient({
                         )
                       )}
 
-                      {/* Module-roles expander */}
+                      {/* Module-roles + blocks expander */}
                       <Button
                         size="sm"
                         variant="outline"
                         onClick={() => setExpandedUserId(expanded ? null : u.id)}
-                        title="Per-module role overrides"
+                        title="Per-module role overrides + module blocks"
                       >
                         {expanded ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
                         <Layers className="h-3.5 w-3.5" />
-                        Module roles
-                        {userOverrides.length > 0 && (
-                          <Badge variant="default" className="ml-1 text-[10px]">{userOverrides.length}</Badge>
+                        Modules
+                        {(userOverrides.length + userBlocks.length) > 0 && (
+                          <Badge variant="default" className="ml-1 text-[10px]">
+                            {userOverrides.length + userBlocks.length}
+                          </Badge>
                         )}
                       </Button>
                     </div>
                   </div>
 
-                  {/* Expanded panel: per-module role overrides */}
+                  {/* Expanded panel: per-module role overrides + blocks */}
                   {expanded && (
-                    <ModuleRolesPanel
-                      user={u}
-                      defaultRole={u.role}
-                      overrides={userOverrides}
-                      roleLabels={roleLabels}
-                      busyId={busyId}
-                      onSet={(slug, role) => setUserModuleRole(u.id, slug, role)}
-                      onRemove={(slug) => removeUserModuleRole(u.id, slug)}
-                    />
+                    <>
+                      <ModuleRolesPanel
+                        user={u}
+                        defaultRole={u.role}
+                        overrides={userOverrides}
+                        roleLabels={roleLabels}
+                        busyId={busyId}
+                        onSet={(slug, role) => setUserModuleRole(u.id, slug, role)}
+                        onRemove={(slug) => removeUserModuleRole(u.id, slug)}
+                      />
+                      <ModuleBlocksPanel
+                        user={u}
+                        blocks={userBlocks}
+                        busyId={busyId}
+                        onBlock={(slug) => blockUserModule(u.id, slug)}
+                        onUnblock={(slug) => unblockUserModule(u.id, slug)}
+                      />
+                    </>
                   )}
                   </div>
                 )
@@ -633,6 +687,84 @@ function ModuleRolesPanel({
         />
       ) : (
         <p className="text-[11px] text-gray-400">Every module already has an override.</p>
+      )}
+    </div>
+  )
+}
+
+// ─── Per-user module BLOCK panel ────────────────────────────────────────────
+function ModuleBlocksPanel({
+  user, blocks, busyId, onBlock, onUnblock,
+}: {
+  user: Profile
+  blocks: UserModuleBlock[]
+  busyId: string | null
+  onBlock: (moduleSlug: string) => void
+  onUnblock: (moduleSlug: string) => void
+}) {
+  const blockedSlugs = new Set(blocks.map(b => b.module_slug))
+  const availableModules = OVERRIDABLE_MODULES.filter(m => !blockedSlugs.has(m.slug))
+  const [pickSlug, setPickSlug] = useState(availableModules[0]?.slug ?? '')
+
+  return (
+    <div className="px-4 py-3 mb-2 rounded-xl bg-rose-50 border border-rose-200">
+      <p className="text-xs text-rose-900 mb-3 flex items-start gap-1.5">
+        <Ban className="h-3.5 w-3.5 mt-0.5 flex-shrink-0" />
+        <span>
+          Block specific modules from <b>{user.name || user.email}</b>. Blocked modules
+          disappear from their dashboard and sidebar regardless of their role.
+        </span>
+      </p>
+
+      {blocks.length > 0 ? (
+        <div className="flex flex-wrap gap-1.5 mb-3">
+          {blocks.map(b => {
+            const mod = OVERRIDABLE_MODULES.find(m => m.slug === b.module_slug)
+            const key = `umb:${user.id}:${b.module_slug}`
+            const busy = busyId === key
+            return (
+              <span
+                key={b.module_slug}
+                className="inline-flex items-center gap-1.5 rounded-full bg-rose-100 border border-rose-300 px-2 py-1 text-xs text-rose-900"
+              >
+                <Ban className="h-3 w-3" />
+                <span className="font-medium">{mod?.label || b.module_slug}</span>
+                <button
+                  type="button"
+                  onClick={() => onUnblock(b.module_slug)}
+                  disabled={busy}
+                  className="hover:text-rose-700 ml-0.5"
+                  title="Unblock"
+                >
+                  {busy ? <Loader2 className="h-3 w-3 animate-spin" /> : <X className="h-3 w-3" />}
+                </button>
+              </span>
+            )
+          })}
+        </div>
+      ) : (
+        <p className="text-xs text-rose-800 italic mb-3">No modules blocked for this user.</p>
+      )}
+
+      {availableModules.length > 0 ? (
+        <form
+          onSubmit={(e) => { e.preventDefault(); if (pickSlug) onBlock(pickSlug) }}
+          className="flex items-center gap-2 pt-2 border-t border-rose-200"
+        >
+          <select
+            value={pickSlug}
+            onChange={e => setPickSlug(e.target.value)}
+            className="h-9 rounded-xl border border-rose-300 bg-white px-2 text-xs font-medium text-rose-900 flex-1"
+          >
+            {availableModules.map(m => <option key={m.slug} value={m.slug}>{m.label}</option>)}
+          </select>
+          <Button type="submit" size="sm" disabled={!pickSlug}
+            className="bg-rose-600 hover:bg-rose-700 text-white">
+            <Ban className="h-4 w-4" /> Block
+          </Button>
+        </form>
+      ) : (
+        <p className="text-[11px] text-rose-700">Every module is already blocked.</p>
       )}
     </div>
   )

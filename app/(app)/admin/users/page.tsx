@@ -14,10 +14,16 @@ export default async function AdminUsersPage() {
   ])
   const supabase = await createClient()
 
-  const [{ data: users }, { data: allowed }, { data: moduleRoles }] = await Promise.all([
+  const [
+    { data: users },
+    { data: allowed },
+    { data: moduleRoles },
+    { data: moduleBlocks },
+  ] = await Promise.all([
     supabase.from('profiles').select('*').order('created_at', { ascending: false }),
     supabase.from('allowed_emails').select('*').order('added_at', { ascending: false }),
     supabase.from('user_module_roles').select('*'),
+    supabase.from('user_module_blocks').select('*'),
   ])
 
   return (
@@ -25,6 +31,7 @@ export default async function AdminUsersPage() {
       initialUsers={users ?? []}
       initialAllowedEmails={allowed ?? []}
       initialModuleRoles={moduleRoles ?? []}
+      initialModuleBlocks={moduleBlocks ?? []}
       currentUserId={user!.id}
       currentUserIsPortalOwner={currentUserIsPortalOwner}
       roleLabels={roleLabels}
