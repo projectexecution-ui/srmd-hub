@@ -1,46 +1,64 @@
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/server'
-import { requirePermission, can } from '@/lib/auth'
+import { requirePermission, can, getMyProfile } from '@/lib/auth'
 import { PageHeader } from '@/components/PageHeader'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { StatPill } from '@/components/ui/stat-pill'
-import { ClipboardList, FileText, Pencil, MapPin } from 'lucide-react'
+import { ClipboardList, FileText, Pencil, MapPin, Info, Users as UsersIcon } from 'lucide-react'
 import { formatINR } from '@/lib/utils'
+import { cn } from '@/lib/utils'
 import { ProjectForm } from '../project-form'
 import { ProjectDeleteButton } from '@/components/ProjectDeleteButton'
 import type { ProjectFloor } from '@/lib/types'
+import ProjectUsersTab from './project-users-tab'
 
 export const dynamic = 'force-dynamic'
+
+type Tab = 'overview' | 'users'
 
 export default async function ProjectDetailPage({
   params, searchParams,
 }: {
   params: Promise<{ id: string }>
-  searchParams: Promise<{ edit?: string }>
+  searchParams: Promise<{ edit?: string; tab?: string }>
 }) {
   const { id } = await params
   const sp = await searchParams
   const editing = sp.edit === '1'
+  const tab: Tab = sp.tab === 'users' ? 'users' : 'overview'
 
   const perms = await requirePermission('projects', 'view')
   const canWrite = can(perms, 'projects', 'edit')
+  const profile = await getMyProfile()
+  const canManageUsers = profile?.role === 'admin' || !!profile?.is_portal_owner
   const supabase = await createClient()
 
   const { data: project } = await supabase.from('projects').select('*').eq('id', id).single()
   if (!project) notFound()
 
-  const [indentsRes, posRes, floorsRes] = await Promise.all([
+  const [indentsRes, posRes, floorsRes, assignmentsRes, profilesRes] = await Promise.all([
     supabase.from('indents').select('id', { count: 'exact', head: true }).eq('project_id', id),
     supabase.from('purchase_orders').select('id, po_amount').eq('project_id', id),
     supabase.from('project_floors').select('*').eq('project_id', id).order('sequence'),
+    supabase.from('project_assignments')
+      .select('id, user_id, role, assigned_at')
+      .eq('project_id', id)
+      .order('assigned_at', { ascending: false }),
+    supabase.from('profiles')
+      .select('id, name, full_name, email, role, is_active')
+      .eq('is_active', true)
+      .order('name'),
   ])
   const floors = (floorsRes.data ?? []) as ProjectFloor[]
   const indentCount = indentsRes.count ?? 0
   const posTotal = (posRes.data ?? []).reduce((s, p) => s + Number(p.po_amount ?? 0), 0)
   const poCount = posRes.data?.length ?? 0
+  const assignments = assignmentsRes.data ?? []
+  const allProfiles = profilesRes.data ?? []
+  const assignmentCount = assignments.length
 
   return (
     <div className="p-4 md:p-6 max-w-4xl mx-auto space-y-4">
@@ -56,8 +74,23 @@ export default async function ProjectDetailPage({
         )}
       </PageHeader>
 
+      {/* Tabs — hidden in edit mode to keep the form full-width */}
+      {!editing && (
+        <div className="flex gap-2 border-b border-gray-200 -mx-4 px-4 md:mx-0 md:px-0">
+          <TabLink href={`/projects/${id}`} active={tab === 'overview'} icon={Info} label="Overview" />
+          <TabLink href={`/projects/${id}?tab=users`} active={tab === 'users'} icon={UsersIcon} label="Users" count={assignmentCount} />
+        </div>
+      )}
+
       {editing ? (
         <Card><CardContent className="pt-6"><ProjectForm initial={project} initialFloors={floors} projectId={id} /></CardContent></Card>
+      ) : tab === 'users' ? (
+        <ProjectUsersTab
+          projectId={id}
+          initialAssignments={assignments}
+          allProfiles={allProfiles}
+          canManage={canManageUsers}
+        />
       ) : (
         <>
           {(project.location || project.description) && (
@@ -182,5 +215,38 @@ function AreaCell({ label, value }: { label: string; value: string }) {
       <p className="text-[11px] uppercase tracking-wide text-gray-500">{label}</p>
       <p className="text-base font-semibold text-gray-900 mt-0.5">{value}</p>
     </div>
+  )
+}
+
+function TabLink({
+  href, active, icon: Icon, label, count,
+}: {
+  href: string
+  active: boolean
+  icon: React.ComponentType<{ className?: string }>
+  label: string
+  count?: number
+}) {
+  return (
+    <Link
+      href={href}
+      className={cn(
+        'inline-flex items-center gap-1.5 px-3 py-2 text-sm border-b-2 -mb-px transition-colors',
+        active
+          ? 'border-blue-600 text-blue-700 font-semibold'
+          : 'border-transparent text-gray-500 hover:text-gray-800 hover:border-gray-300',
+      )}
+    >
+      <Icon className="h-4 w-4" />
+      {label}
+      {typeof count === 'number' && count > 0 && (
+        <span className={cn(
+          'inline-flex items-center justify-center min-w-[1.25rem] h-5 px-1.5 rounded-full text-[10px] font-bold',
+          active ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-600',
+        )}>
+          {count}
+        </span>
+      )}
+    </Link>
   )
 }
