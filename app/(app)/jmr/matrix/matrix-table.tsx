@@ -49,13 +49,15 @@ export function MatrixTable({ data }: { data: MatrixData }) {
             <SectionRow label="EQUIPMENT SUPPLY" colSpan={4 + subProjects.length * 2 + 1} />
           )}
           {equipmentRows.map((r, idx) => (
-            <ItemRow key={r.item_id} row={r} idx={idx + 1} subProjects={subProjects} />
+            // Key is (item_id, rate) — same item at two different rates
+            // produces two separate rows (the A + B split).
+            <ItemRow key={`${r.item_id}::${r.rate}`} row={r} idx={idx + 1} subProjects={subProjects} />
           ))}
           {manpowerRows.length > 0 && (
             <SectionRow label="MANPOWER (FOR 8 HOURS) SUPPLY" colSpan={4 + subProjects.length * 2 + 1} />
           )}
           {manpowerRows.map((r, idx) => (
-            <ItemRow key={r.item_id} row={r} idx={equipmentRows.length + idx + 1} subProjects={subProjects} />
+            <ItemRow key={`${r.item_id}::${r.rate}`} row={r} idx={equipmentRows.length + idx + 1} subProjects={subProjects} />
           ))}
           <tr className="font-bold bg-gray-100">
             <td colSpan={4} className="px-2 py-2 border border-gray-300 text-right uppercase">Sub-total</td>

@@ -105,6 +105,11 @@ export async function buildMatrix(filters: MatrixFilters): Promise<MatrixData> {
 
   // Pivot. colKey = sub_project_id ?? project_id, so parent-direct entries
   // land in their parent's column.
+  //
+  // ROW KEY = (item_id, rate_snapshot). Same item at two different rates
+  // (rate escalation / devaluation inside the period) becomes two rows —
+  // this is the A + B split the report needs. Subtotals sum across all
+  // rows so the grand total is unchanged.
   const rowMap = new Map<string, MatrixRow>()
   type EntryRow = {
     project_id: string
@@ -118,14 +123,15 @@ export async function buildMatrix(filters: MatrixFilters): Promise<MatrixData> {
     const e = eRaw as EntryRow
     const item = Array.isArray(e.jmr_items) ? e.jmr_items[0] : e.jmr_items
     if (!item) continue
-    const key = item.id
+    const rate = Number(e.rate_snapshot)
+    const key = `${item.id}::${rate}`
     if (!rowMap.has(key)) {
       rowMap.set(key, {
         item_id: item.id,
         item_name: item.name,
         category: item.category,
         unit: item.unit,
-        rate: Number(e.rate_snapshot),
+        rate,
         cells: {},
         total: { qty: 0, amount: 0 },
       })
@@ -139,13 +145,15 @@ export async function buildMatrix(filters: MatrixFilters): Promise<MatrixData> {
     row.cells[colKey].amount += amount
     row.total.qty += qty
     row.total.amount += amount
-    // Keep latest seen rate.
-    row.rate = Number(e.rate_snapshot)
   }
 
   const rows = Array.from(rowMap.values()).sort((a, b) => {
     if (a.category !== b.category) return a.category === 'equipment' ? -1 : 1
-    return a.item_name.localeCompare(b.item_name)
+    const byName = a.item_name.localeCompare(b.item_name)
+    if (byName !== 0) return byName
+    // Same item, different rates → lower rate first (treat as Period A,
+    // the typical "before escalation" band).
+    return (a.rate ?? 0) - (b.rate ?? 0)
   })
 
   // Drop columns that have zero activity (cleaner table — esp. for parents
