@@ -19,7 +19,7 @@ export default async function HopInboxPage() {
 
   return (
     <div className="p-4 md:p-6 max-w-5xl mx-auto space-y-4">
-      <PageHeader title="HoP inbox" back="/inventory" subtitle="Final approval — and emergency bypass for the Backoffice queue" />
+      <PageHeader title="Atm Head approval" back="/inventory" subtitle="Final approval — flag returnable items + emergency bypass for the check queue" />
       <RequestList rows={data ?? []} emptyText="No pending requests in your queue." />
     </div>
   )

@@ -6,7 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
-import { Loader2, Check, X, AlertTriangle, Truck, Undo2 } from 'lucide-react'
+import { Loader2, Check, X, AlertTriangle, Truck, Undo2, PackageCheck } from 'lucide-react'
 import type { Role } from '@/lib/types'
 
 interface Line {
@@ -20,13 +20,19 @@ interface Line {
   available_qty: number
   returned_good_qty: number
   returned_damaged_qty: number
+  is_returnable: boolean
 }
 
-export function RequestActions({ requestId, status, role, lines }: {
+export function RequestActions({
+  requestId, status, role, lines, currentUserId, engineerId, alreadyAcknowledged,
+}: {
   requestId: string
   status: string
   role: Role | null
   lines: Line[]
+  currentUserId: string | null
+  engineerId: string
+  alreadyAcknowledged: boolean
 }) {
   const router = useRouter()
   const [busy, setBusy] = useState(false)
@@ -34,17 +40,25 @@ export function RequestActions({ requestId, status, role, lines }: {
   const [msg, setMsg] = useState<string | null>(null)
   const supabase = createClient()
 
-  const isAdmin = role === 'admin'
-  const isBackoffice = role === 'backoffice' || role === 'backoffice_backup'
-  const isHop = role === 'hop'
-  const isStore = role === 'store_manager'
+  const isAdmin       = role === 'admin'
+  const isBackoffice  = role === 'backoffice' || role === 'backoffice_backup'
+  const isStore       = role === 'store_manager'
+  // Atm Head = `head` canonically. Legacy `hop` still works for backward compat.
+  const isAtmHead     = role === 'head' || role === 'hop'
+  const isRequesting  = currentUserId != null && currentUserId === engineerId
 
-  // Editable approved/issued/return qtys
+  // Either Backoffice or Storekeeper can do the availability check.
+  const canDoCheck    = isBackoffice || isStore || isAdmin
+
+  // Editable approved/issued qtys + returnable flags
   const [approvedQty, setApprovedQty] = useState<Record<string, string>>(
     Object.fromEntries(lines.map(l => [l.id, String(l.approved_qty ?? l.requested_qty)])),
   )
   const [issuedQty, setIssuedQty] = useState<Record<string, string>>(
     Object.fromEntries(lines.map(l => [l.id, String(l.approved_qty ?? 0)])),
+  )
+  const [returnable, setReturnable] = useState<Record<string, boolean>>(
+    Object.fromEntries(lines.map(l => [l.id, !!l.is_returnable])),
   )
   const [remarks, setRemarks] = useState('')
 
@@ -64,15 +78,18 @@ export function RequestActions({ requestId, status, role, lines }: {
     return true
   }
 
-  // ---------- Backoffice / Admin: approve / reject when PENDING_BACKOFFICE ----------
-  function backofficePanel() {
+  // ─── Availability check (Backoffice OR Storekeeper) ────────────
+  function checkPanel() {
     if (status !== 'PENDING_BACKOFFICE') return null
-    if (!isBackoffice && !isAdmin) return null
+    if (!canDoCheck) return null
     return (
       <Card>
-        <CardHeader><CardTitle className="text-base">Backoffice action</CardTitle></CardHeader>
+        <CardHeader><CardTitle className="text-base">Availability check</CardTitle></CardHeader>
         <CardContent className="space-y-3">
-          <p className="text-xs text-gray-500">Edit approved qty per line, then approve to reserve stock — or reject with reason.</p>
+          <p className="text-xs text-gray-500">
+            Confirm whether the requested items are available — either backoffice or storekeeper can do this step.
+            Edit qty per line if you can only partially fulfil, then mark available.
+          </p>
           <div className="space-y-1">
             {lines.map(l => (
               <div key={l.id} className="grid grid-cols-12 gap-2 items-center text-sm">
@@ -89,20 +106,20 @@ export function RequestActions({ requestId, status, role, lines }: {
               </div>
             ))}
           </div>
-          <Textarea value={remarks} onChange={e => setRemarks(e.target.value)} rows={2} placeholder="Remarks (optional for approve, required for reject)" />
+          <Textarea value={remarks} onChange={e => setRemarks(e.target.value)} rows={2} placeholder="Remarks (optional for available, required for not-available)" />
           <div className="flex flex-wrap gap-2">
             <Button onClick={async () => {
               const items = lines.map(l => ({ request_item_id: l.id, approved_qty: Number(approvedQty[l.id]) }))
-              if (items.some(i => !Number.isFinite(i.approved_qty) || i.approved_qty < 0)) { setErr('Enter a valid approved qty for every line'); return }
-              await rpc('inv_rpc_backoffice_approve', { p_request_id: requestId, p_approved_items: items, p_remarks: remarks.trim() || null }, 'Approved. Stock reserved.')
+              if (items.some(i => !Number.isFinite(i.approved_qty) || i.approved_qty < 0)) { setErr('Enter a valid qty for every line'); return }
+              await rpc('inv_rpc_backoffice_approve', { p_request_id: requestId, p_approved_items: items, p_remarks: remarks.trim() || null }, 'Marked available. Stock reserved. Sent to Atm Head.')
             }} disabled={busy} className="bg-emerald-600 hover:bg-emerald-700">
-              <Check className="h-4 w-4" /> Approve & reserve
+              <Check className="h-4 w-4" /> Mark available & send to Atm Head
             </Button>
             <Button onClick={async () => {
-              if (!remarks.trim()) { setErr('Reject reason is required'); return }
-              await rpc('inv_rpc_backoffice_reject', { p_request_id: requestId, p_remarks: remarks.trim() }, 'Rejected.')
+              if (!remarks.trim()) { setErr('Reason required when marking not-available'); return }
+              await rpc('inv_rpc_backoffice_reject', { p_request_id: requestId, p_remarks: remarks.trim() }, 'Not available — engineer notified.')
             }} disabled={busy} variant="outline" className="text-rose-700 border-rose-200 hover:bg-rose-50">
-              <X className="h-4 w-4" /> Reject
+              <X className="h-4 w-4" /> Not available
             </Button>
           </div>
         </CardContent>
@@ -110,18 +127,43 @@ export function RequestActions({ requestId, status, role, lines }: {
     )
   }
 
-  // ---------- HoP: approve / reject when PENDING_HOP + emergency on PENDING_BACKOFFICE ----------
-  function hopPanel() {
-    if (!isHop && !isAdmin) return null
+  // ─── Atm Head approval (with per-line returnable flag) ─────────
+  function atmHeadPanel() {
+    if (!isAtmHead && !isAdmin) return null
 
     if (status === 'PENDING_HOP') {
       return (
         <Card>
-          <CardHeader><CardTitle className="text-base">HoP action</CardTitle></CardHeader>
+          <CardHeader><CardTitle className="text-base">Atm Head approval</CardTitle></CardHeader>
           <CardContent className="space-y-3">
+            <p className="text-xs text-gray-500">
+              Tick <b>Returnable</b> for items the engineer must return when the project ends (e.g. tools, formwork).
+              Items left unticked are consumable and don&apos;t need to come back.
+            </p>
+            <div className="space-y-1">
+              {lines.map(l => (
+                <div key={l.id} className="grid grid-cols-12 gap-2 items-center text-sm">
+                  <div className="col-span-8 truncate">
+                    <span className="text-gray-800">{l.item_label}</span>
+                    <span className="text-xs text-gray-500 ml-2">approved {l.approved_qty ?? 0} {l.unit}</span>
+                  </div>
+                  <label className="col-span-4 inline-flex items-center gap-2 text-sm text-gray-700">
+                    <input
+                      type="checkbox"
+                      checked={returnable[l.id] ?? false}
+                      onChange={e => setReturnable(s => ({ ...s, [l.id]: e.target.checked }))}
+                    />
+                    Returnable
+                  </label>
+                </div>
+              ))}
+            </div>
             <Textarea value={remarks} onChange={e => setRemarks(e.target.value)} rows={2} placeholder="Remarks (optional for approve, required for reject)" />
             <div className="flex flex-wrap gap-2">
-              <Button onClick={() => rpc('inv_rpc_hop_approve', { p_request_id: requestId, p_remarks: remarks.trim() || null }, 'Approved. Ready for store to issue.')} disabled={busy} className="bg-emerald-600 hover:bg-emerald-700">
+              <Button onClick={() => {
+                const returnableItems = lines.map(l => ({ request_item_id: l.id, is_returnable: !!returnable[l.id] }))
+                return rpc('inv_rpc_hop_approve', { p_request_id: requestId, p_remarks: remarks.trim() || null, p_returnable_items: returnableItems }, 'Approved. Store can now issue.')
+              }} disabled={busy} className="bg-emerald-600 hover:bg-emerald-700">
                 <Check className="h-4 w-4" /> Approve
               </Button>
               <Button onClick={async () => {
@@ -136,12 +178,12 @@ export function RequestActions({ requestId, status, role, lines }: {
       )
     }
 
-    if (status === 'PENDING_BACKOFFICE' && isHop) {
+    if (status === 'PENDING_BACKOFFICE' && isAtmHead) {
       return (
         <Card className="border-rose-200 bg-rose-50/40">
-          <CardHeader><CardTitle className="text-base text-rose-800 inline-flex items-center gap-1.5"><AlertTriangle className="h-4 w-4" /> HoP emergency bypass</CardTitle></CardHeader>
+          <CardHeader><CardTitle className="text-base text-rose-800 inline-flex items-center gap-1.5"><AlertTriangle className="h-4 w-4" /> Atm Head emergency bypass</CardTitle></CardHeader>
           <CardContent className="space-y-3">
-            <p className="text-sm text-rose-700">Skips Backoffice. Reserves stock at requested qty and routes straight to Store to issue. Logged in the audit trail.</p>
+            <p className="text-sm text-rose-700">Skips the availability check. Reserves stock at requested qty and routes straight to Store. Logged in the audit trail.</p>
             <Textarea value={remarks} onChange={e => setRemarks(e.target.value)} rows={2} placeholder="Reason for bypass (required)" />
             <Button onClick={async () => {
               if (!remarks.trim()) { setErr('Bypass reason is required'); return }
@@ -156,7 +198,7 @@ export function RequestActions({ requestId, status, role, lines }: {
     return null
   }
 
-  // ---------- Store: issue when APPROVED or EMERGENCY_ISSUED ----------
+  // ─── Store issue ──────────────────────────────────────────────
   function storePanel() {
     if (!isStore && !isAdmin) return null
     if (status !== 'APPROVED' && status !== 'EMERGENCY_ISSUED') return null
@@ -170,7 +212,7 @@ export function RequestActions({ requestId, status, role, lines }: {
               <div key={l.id} className="grid grid-cols-12 gap-2 items-center text-sm">
                 <div className="col-span-7 truncate">
                   <span className="text-gray-800">{l.item_label}</span>
-                  <span className="text-xs text-gray-500 ml-2">approved {l.approved_qty ?? 0} {l.unit}</span>
+                  <span className="text-xs text-gray-500 ml-2">approved {l.approved_qty ?? 0} {l.unit}{l.is_returnable && <span className="ml-2 text-amber-700 font-semibold">· returnable</span>}</span>
                 </div>
                 <div className="col-span-4">
                   <Input type="number" step="any" inputMode="decimal"
@@ -185,7 +227,7 @@ export function RequestActions({ requestId, status, role, lines }: {
           <Button onClick={async () => {
             const items = lines.map(l => ({ request_item_id: l.id, issued_qty: Number(issuedQty[l.id]) }))
             if (items.some(i => !Number.isFinite(i.issued_qty) || i.issued_qty < 0)) { setErr('Enter a valid issued qty for every line'); return }
-            await rpc('inv_rpc_store_issue', { p_request_id: requestId, p_issued_items: items, p_remarks: remarks.trim() || null }, 'Issued. Stock deducted.')
+            await rpc('inv_rpc_store_issue', { p_request_id: requestId, p_issued_items: items, p_remarks: remarks.trim() || null }, 'Issued. Engineer will be asked to confirm receipt.')
           }} disabled={busy} className="bg-blue-600 hover:bg-blue-700">
             <Truck className="h-4 w-4" /> Issue
           </Button>
@@ -194,16 +236,50 @@ export function RequestActions({ requestId, status, role, lines }: {
     )
   }
 
-  // ---------- Returns when something has been issued ----------
+  // ─── Engineer receipt acknowledgement ─────────────────────────
+  function receiptPanel() {
+    if (status !== 'ISSUED' && status !== 'EMERGENCY_ISSUED') return null
+    if (alreadyAcknowledged) return null
+    if (!isRequesting && !isAdmin) return null
+    const returnables = lines.filter(l => l.is_returnable)
+    return (
+      <Card className="border-emerald-200 bg-emerald-50/30">
+        <CardHeader><CardTitle className="text-base inline-flex items-center gap-1.5"><PackageCheck className="h-4 w-4 text-emerald-700" /> Confirm receipt</CardTitle></CardHeader>
+        <CardContent className="space-y-3">
+          <p className="text-sm text-gray-700">
+            Confirm that you received the items issued against this request. Once confirmed, the request closes
+            {returnables.length > 0 ? <> — but <b>{returnables.length}</b> line{returnables.length === 1 ? '' : 's'} flagged as returnable stays open until you log the return at project end.</> : '.'}
+          </p>
+          {returnables.length > 0 && (
+            <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+              <b>To return at project end:</b>
+              <ul className="list-disc pl-5 mt-1 space-y-0.5">
+                {returnables.map(l => <li key={l.id}>{l.item_label} ({l.issued_qty} {l.unit})</li>)}
+              </ul>
+            </div>
+          )}
+          <Textarea value={remarks} onChange={e => setRemarks(e.target.value)} rows={2} placeholder="Notes (optional)" />
+          <Button onClick={() => rpc('inv_rpc_engineer_acknowledge', { p_request_id: requestId, p_notes: remarks.trim() || null },
+            returnables.length > 0 ? 'Receipt confirmed. Returnable items still tracked.' : 'Receipt confirmed. Request closed.')
+          } disabled={busy} className="bg-emerald-600 hover:bg-emerald-700">
+            <PackageCheck className="h-4 w-4" /> Confirm receipt
+          </Button>
+        </CardContent>
+      </Card>
+    )
+  }
+
+  // ─── Returns ──────────────────────────────────────────────────
   function returnPanel() {
     if (status !== 'ISSUED' && status !== 'CLOSED' && status !== 'EMERGENCY_ISSUED') return null
-    // Only show if there's outstanding qty to return
-    const returnable = lines.filter(l => (l.issued_qty - l.returned_good_qty - l.returned_damaged_qty) > 0)
+    // Only items flagged as returnable AND with outstanding qty
+    const returnable = lines.filter(l => l.is_returnable && (l.issued_qty - l.returned_good_qty - l.returned_damaged_qty) > 0)
     if (returnable.length === 0) return null
     return (
       <Card>
         <CardHeader><CardTitle className="text-base">Log a return</CardTitle></CardHeader>
         <CardContent className="space-y-3">
+          <p className="text-xs text-gray-500">Returnable items flagged at Atm Head approval can be returned here.</p>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             <div>
               <p className="text-xs text-gray-500 mb-1">Item</p>
@@ -252,7 +328,7 @@ export function RequestActions({ requestId, status, role, lines }: {
     )
   }
 
-  const anyPanel = backofficePanel() || hopPanel() || storePanel() || returnPanel()
+  const anyPanel = checkPanel() || atmHeadPanel() || storePanel() || receiptPanel() || returnPanel()
   if (!anyPanel) return null
 
   return (
@@ -260,9 +336,10 @@ export function RequestActions({ requestId, status, role, lines }: {
       {err && <p className="text-sm text-rose-700 bg-rose-50 border border-rose-200 rounded-lg px-3 py-2">{err}</p>}
       {msg && <p className="text-sm text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2">{msg}</p>}
       {busy && <p className="text-sm text-gray-500 inline-flex items-center gap-1.5"><Loader2 className="h-4 w-4 animate-spin" /> Working…</p>}
-      {backofficePanel()}
-      {hopPanel()}
+      {checkPanel()}
+      {atmHeadPanel()}
       {storePanel()}
+      {receiptPanel()}
       {returnPanel()}
     </div>
   )

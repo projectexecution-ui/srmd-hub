@@ -8,6 +8,7 @@ import { WSStatusPill, type WSStatus } from '@/components/cost-control/WSStatusP
 import { DeadlineBadge } from '@/components/cost-control/DeadlineBadge'
 import { WSEditor } from './WSEditor'
 import { ExcelSummaryPanel } from './ExcelSummaryPanel'
+import { SourceExcelViewer } from './SourceExcelViewer'
 import { formatINR } from '@/lib/utils'
 
 export const dynamic = 'force-dynamic'
@@ -82,6 +83,8 @@ export default async function WorkingSheetEditorPage(
             approved={ws.status === 'approved' || ws.status === 'wo_issued' || ws.status === 'paid'}
           />
         )}
+
+        <SourceExcelViewer url={downloadUrl} name={ws.source_excel_name} />
 
         <ExcelSummaryPanel
           wsId={ws.id}

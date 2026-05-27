@@ -17,7 +17,7 @@ export default async function BackofficeInboxPage() {
 
   return (
     <div className="p-4 md:p-6 max-w-5xl mx-auto space-y-4">
-      <PageHeader title="Backoffice inbox" back="/inventory" subtitle="Requests pending first-level approval" />
+      <PageHeader title="Availability check" back="/inventory" subtitle="Requests pending availability check (Backoffice or Storekeeper)" />
       <RequestList rows={data ?? []} emptyText="Nothing pending. Engineers haven't raised anything new." />
     </div>
   )

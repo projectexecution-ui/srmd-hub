@@ -1,6 +1,6 @@
 import { notFound } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
-import { requirePermission, getMyProfile } from '@/lib/auth'
+import { requirePermission, getMyProfile, getMyUser } from '@/lib/auth'
 import { PageHeader } from '@/components/PageHeader'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { RequestStatusPill } from '@/components/inventory/RequestStatusPill'
@@ -14,7 +14,7 @@ export default async function RequestDetailPage({
 }: { params: Promise<{ id: string }> }) {
   const { id } = await params
   await requirePermission('inventory', 'view')
-  const profile = await getMyProfile()
+  const [profile, user] = await Promise.all([getMyProfile(), getMyUser()])
   const role = profile?.role ?? null
   const supabase = await createClient()
 
@@ -52,6 +52,7 @@ export default async function RequestDetailPage({
     issued_qty: number
     returned_good_qty: number
     returned_damaged_qty: number
+    is_returnable: boolean
     remarks: string | null
     inv_items: { code: string; name: string; unit: string; image_url: string | null } | Array<{ code: string; name: string; unit: string; image_url: string | null }> | null
   }
@@ -92,6 +93,7 @@ export default async function RequestDetailPage({
                   <th className="px-2 py-2 text-right">Approved</th>
                   <th className="px-2 py-2 text-right">Issued</th>
                   <th className="px-2 py-2 text-right">Available</th>
+                  <th className="px-2 py-2 text-center">Returnable</th>
                 </tr>
               </thead>
               <tbody>
@@ -109,6 +111,11 @@ export default async function RequestDetailPage({
                       <td className="px-2 py-2 text-right tabular-nums">{l.approved_qty != null ? Number(l.approved_qty).toLocaleString('en-IN') : '—'}</td>
                       <td className="px-2 py-2 text-right tabular-nums">{Number(l.issued_qty).toLocaleString('en-IN')}</td>
                       <td className="px-2 py-2 text-right tabular-nums text-gray-500">{Number(avail).toLocaleString('en-IN')}</td>
+                      <td className="px-2 py-2 text-center">
+                        {l.is_returnable
+                          ? <span className="inline-flex items-center text-amber-700 text-xs font-semibold">●</span>
+                          : <span className="text-gray-300 text-xs">—</span>}
+                      </td>
                     </tr>
                   )
                 })}
@@ -123,6 +130,9 @@ export default async function RequestDetailPage({
         requestId={req.id}
         status={req.status}
         role={role}
+        currentUserId={user?.id ?? null}
+        engineerId={req.engineer_id}
+        alreadyAcknowledged={!!req.engineer_acknowledged_at}
         lines={lines.map(l => {
           const it = Array.isArray(l.inv_items) ? l.inv_items[0] : l.inv_items
           return {
@@ -136,6 +146,7 @@ export default async function RequestDetailPage({
             available_qty: availByItem.get(l.item_id) ?? 0,
             returned_good_qty: Number(l.returned_good_qty),
             returned_damaged_qty: Number(l.returned_damaged_qty),
+            is_returnable: !!l.is_returnable,
           }
         })}
       />

@@ -9,18 +9,22 @@ export type Role =
   | 'uploader'           // legacy: edit ops data
   | 'viewer'             // legacy: read-only
   | 'founder'            // org top — wide view, narrow edit
-  | 'head'               // PM / dept head
-  | 'engineer'           // site engineer (also raises inventory requests)
+  | 'head'               // PM / dept head / Atm Head — inventory final approver
+  | 'engineer'           // site engineer; raises inventory requests; confirms receipt
   | 'site_staff'         // labour / on-site
   | 'contractor'         // external contractor — sees only own bills + entries (JMR)
-  | 'backoffice'         // inventory: first-level request approver
-  | 'backoffice_backup'  // inventory: backup for backoffice
-  | 'store_manager'      // inventory: issues material from a warehouse
-  | 'hop'                // inventory: final approver + emergency bypass
+  | 'backoffice'         // inventory: marks requests "available"
+  | 'store_manager'      // inventory: storekeeper — issues material; can also mark "available"
+  | 'backoffice_backup'  // LEGACY — kept for DB enum compat, not surfaced in UI
+  | 'hop'                // LEGACY — superseded by `head` (Atm Head)
 
+// Roles shown in the permissions matrix UI. `backoffice_backup` and `hop`
+// are intentionally omitted — they're kept in the enum for backward compat
+// but the workflow now uses `head` for Atm Head and `backoffice`/`store_manager`
+// for the availability-check stage.
 export const ALL_ROLES: Role[] = [
-  'admin', 'founder', 'head', 'uploader', 'engineer', 'site_staff', 'viewer', 'contractor',
-  'backoffice', 'backoffice_backup', 'store_manager', 'hop',
+  'admin', 'founder', 'head', 'uploader', 'engineer', 'backoffice', 'store_manager',
+  'site_staff', 'viewer', 'contractor',
 ]
 
 export type PermAction = 'view' | 'edit' | 'admin'

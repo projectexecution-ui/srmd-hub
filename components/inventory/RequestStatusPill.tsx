@@ -7,13 +7,13 @@ type Status =
 
 const LABEL: Record<Status, string> = {
   DRAFT: 'Draft',
-  PENDING_BACKOFFICE: 'Pending: Backoffice',
-  PENDING_HOP: 'Pending: HoP',
-  APPROVED: 'Approved',
-  ISSUED: 'Issued',
-  CLOSED: 'Closed',
-  REJECTED_BACKOFFICE: 'Rejected by Backoffice',
-  REJECTED_HOP: 'Rejected by HoP',
+  PENDING_BACKOFFICE: 'Pending availability check',
+  PENDING_HOP: 'Pending Atm Head approval',
+  APPROVED: 'Approved — ready to issue',
+  ISSUED: 'Issued — confirm receipt',
+  CLOSED: 'Received & closed',
+  REJECTED_BACKOFFICE: 'Rejected at availability check',
+  REJECTED_HOP: 'Rejected by Atm Head',
   CANCELLED_BY_ENGINEER: 'Cancelled',
   EMERGENCY_ISSUED: 'Emergency authorised',
 }

@@ -19,16 +19,19 @@ export type RoleLabelMap = Record<Role, RoleLabel>
 export const DEFAULT_ROLE_LABELS: RoleLabelMap = {
   admin:              { label: 'Admin',              description: 'Super-user. Manages users + permissions + settings.' },
   founder:            { label: 'Founder',            description: 'Top org level. Wide view, narrow edit (default: budget).' },
-  head:               { label: 'Head',               description: 'PM / department head. Edits ops modules.' },
+  head:               { label: 'Head (Atm Head)',    description: 'PM / dept head. Atm Head — final approval on inventory + flags returnable items.' },
   uploader:           { label: 'Uploader',           description: 'Edits operational data (vendors, indents, POs).' },
-  engineer:           { label: 'Engineer',           description: 'Site engineer. Raises indents / inventory requests; edits JMR.' },
+  engineer:           { label: 'Engineer',           description: 'Site engineer. Raises inventory + indents; confirms receipt of issued material.' },
   site_staff:         { label: 'Site Staff',         description: 'Labour / on-site. Attendance + view JMR.' },
   viewer:             { label: 'Viewer',             description: 'Read-only — can browse but cannot edit.' },
   contractor:         { label: 'Contractor',         description: 'External contractor. Sees only own JMR entries + bills.' },
-  backoffice:         { label: 'Backoffice',         description: 'Inventory: first-level approver. Reserves stock on approve.' },
-  backoffice_backup:  { label: 'Backoffice Backup',  description: 'Acts for Backoffice when primary is unavailable.' },
-  store_manager:      { label: 'Store Manager',      description: 'Issues material from a warehouse, logs receipts + damage.' },
-  hop:                { label: 'HoP',                description: 'Inventory: final approver. Emergency bypass authority.' },
+  backoffice:         { label: 'Backoffice',         description: 'Inventory: marks requests "available", reserves stock. Pairs with Storekeeper.' },
+  store_manager:      { label: 'Storekeeper',        description: 'Inventory: warehouse staff. Marks "available", issues material, logs receipts + damage.' },
+  // Below: kept in DB enum + type for backward compat, but not surfaced in
+  // /admin/permissions matrix. Use `head` instead of `hop`. No backup role
+  // — the storekeeper covers when backoffice is unavailable.
+  backoffice_backup:  { label: 'Backoffice Backup (legacy)', description: 'Legacy — superseded by Storekeeper covering for Backoffice.' },
+  hop:                { label: 'HoP (legacy)',               description: 'Legacy — use Head (Atm Head) instead.' },
 }
 
 /**
