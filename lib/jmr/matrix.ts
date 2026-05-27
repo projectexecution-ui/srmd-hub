@@ -18,8 +18,14 @@ export type MatrixRow = {
 export type MatrixSubProject = { id: string; name: string; code: string | null }
 
 export interface MatrixData {
-  project: { id: string; name: string; code: string | null } | null
+  /** All selected top-level projects (was single `project`). The page title
+   *  picks a sensible label from this list. */
+  projects: { id: string; name: string; code: string | null }[]
   contractor: { id: string; name: string } | null
+  /** Renamed conceptually to "columns" — each column is either a sub-project
+   *  or one of the selected parent projects (when entries landed directly on
+   *  the parent rather than on a sub-project). Field name kept for backward
+   *  compatibility with matrix-table.tsx. */
   subProjects: MatrixSubProject[]
   rows: MatrixRow[]
   subTotalsBySubProject: Record<string, number>
@@ -32,7 +38,10 @@ export interface MatrixData {
 }
 
 export interface MatrixFilters {
-  projectId: string | null
+  /** Top-level project IDs. Empty / null = no project selected (caller
+   *  should render an empty state). One ID = single-project view (legacy).
+   *  Multiple IDs = combined matrix spanning all of them. */
+  projectIds: string[]
   contractorId: string | null
   subProjectIds: string[] | null   // null = all
   category: 'equipment' | 'manpower' | 'both'
@@ -44,38 +53,49 @@ export interface MatrixFilters {
 export async function buildMatrix(filters: MatrixFilters): Promise<MatrixData> {
   const supabase = await createClient()
 
-  const project = filters.projectId
-    ? (await supabase.from('projects').select('id, name, code').eq('id', filters.projectId).single()).data
-    : null
+  const projectIds = filters.projectIds ?? []
+  const projects = projectIds.length > 0
+    ? ((await supabase
+        .from('projects')
+        .select('id, name, code')
+        .in('id', projectIds)
+        .order('name')
+      ).data ?? [])
+    : []
 
   const contractor = filters.contractorId
     ? (await supabase.from('jmr_contractors').select('id, name').eq('id', filters.contractorId).single()).data
     : null
 
-  // Sub-projects of the selected project.
-  let subProjects: MatrixSubProject[] = []
-  if (filters.projectId) {
+  // Columns are sub-projects of the selected parents PLUS each parent itself
+  // (so entries with no sub_project_id land in the parent's column instead of
+  // a generic 'Unassigned' bucket). Empty columns are filtered out at the end.
+  let subProjectsRaw: MatrixSubProject[] = []
+  if (projectIds.length > 0) {
     const { data } = await supabase
       .from('projects')
       .select('id, name, code')
-      .eq('parent_project_id', filters.projectId)
+      .in('parent_project_id', projectIds)
       .order('name')
-    subProjects = data ?? []
+    subProjectsRaw = data ?? []
     if (filters.subProjectIds && filters.subProjectIds.length > 0) {
-      subProjects = subProjects.filter(s => filters.subProjectIds!.includes(s.id))
+      subProjectsRaw = subProjectsRaw.filter(s => filters.subProjectIds!.includes(s.id))
     }
   }
+  // Parent projects are also columns (for entries directly on the parent).
+  const parentColumns: MatrixSubProject[] = projects.map(p => ({ id: p.id, name: p.name, code: p.code }))
+  const allColumns: MatrixSubProject[] = [...parentColumns, ...subProjectsRaw]
 
   // Query daily entries with joins.
   let q = supabase
     .from('jmr_daily_entries')
     .select(`
-      sub_project_id, item_id, quantity, amount, rate_snapshot,
+      project_id, sub_project_id, item_id, quantity, amount, rate_snapshot,
       jmr_items!inner ( id, name, category, unit )
     `)
     .lte('entry_date', filters.dateTo)
   if (filters.dateFrom) q = q.gte('entry_date', filters.dateFrom)
-  if (filters.projectId) q = q.eq('project_id', filters.projectId)
+  if (projectIds.length > 0) q = q.in('project_id', projectIds)
   if (filters.contractorId) q = q.eq('contractor_id', filters.contractorId)
   if (filters.category !== 'both') {
     q = q.eq('jmr_items.category', filters.category)
@@ -83,9 +103,11 @@ export async function buildMatrix(filters: MatrixFilters): Promise<MatrixData> {
   const { data: entries, error } = await q
   if (error) throw error
 
-  // Pivot.
+  // Pivot. colKey = sub_project_id ?? project_id, so parent-direct entries
+  // land in their parent's column.
   const rowMap = new Map<string, MatrixRow>()
   type EntryRow = {
+    project_id: string
     sub_project_id: string | null
     rate_snapshot: number | string
     quantity: number | string
@@ -109,7 +131,7 @@ export async function buildMatrix(filters: MatrixFilters): Promise<MatrixData> {
       })
     }
     const row = rowMap.get(key)!
-    const colKey = e.sub_project_id ?? 'unassigned'
+    const colKey = e.sub_project_id ?? e.project_id
     if (!row.cells[colKey]) row.cells[colKey] = { qty: 0, amount: 0 }
     const qty = Number(e.quantity)
     const amount = Number(e.amount)
@@ -126,10 +148,18 @@ export async function buildMatrix(filters: MatrixFilters): Promise<MatrixData> {
     return a.item_name.localeCompare(b.item_name)
   })
 
+  // Drop columns that have zero activity (cleaner table — esp. for parents
+  // when all their entries are under sub-projects).
+  const activeColKeys = new Set<string>()
+  for (const row of rows) {
+    for (const k of Object.keys(row.cells)) activeColKeys.add(k)
+  }
+  // Preserve order: parent columns first (in projects order), then sub-projects.
+  const subProjects = allColumns.filter(c => activeColKeys.has(c.id))
+
   // Column subtotals.
   const subTotalsBySubProject: Record<string, number> = {}
   for (const sp of subProjects) subTotalsBySubProject[sp.id] = 0
-  subTotalsBySubProject['unassigned'] = 0
   for (const row of rows) {
     for (const [colKey, cell] of Object.entries(row.cells)) {
       subTotalsBySubProject[colKey] = (subTotalsBySubProject[colKey] ?? 0) + cell.amount
@@ -140,7 +170,7 @@ export async function buildMatrix(filters: MatrixFilters): Promise<MatrixData> {
   const grandTotal = +(subTotalAll + gstAmount).toFixed(2)
 
   return {
-    project: project ?? null,
+    projects,
     contractor: contractor ?? null,
     subProjects,
     rows,

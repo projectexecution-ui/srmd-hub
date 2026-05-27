@@ -14,7 +14,7 @@ export async function GET(req: NextRequest) {
   const settings = await getJmrSettings()
   const profile = await getMyProfile()
   const data = await buildMatrix({
-    projectId: sp.get('project'),
+    projectIds: sp.getAll('project'),
     contractorId: sp.get('contractor'),
     subProjectIds: sp.getAll('sp').length ? sp.getAll('sp') : null,
     category: (sp.get('cat') as 'equipment' | 'manpower' | 'both') ?? 'both',
@@ -23,13 +23,17 @@ export async function GET(req: NextRequest) {
     gstRatePct: settings.gst_rate_pct,
   })
 
-  const subProjects = [...data.subProjects]
-  const hasUnassigned = data.rows.some(r => r.cells['unassigned'])
-  if (hasUnassigned) subProjects.push({ id: 'unassigned', name: 'Unassigned', code: null })
+  // Columns already finalised by buildMatrix (active sub-projects + parents).
+  const subProjects = data.subProjects
 
   // A3 landscape
   const doc = new jsPDF({ orientation: 'landscape', format: 'a3', unit: 'pt' })
-  const title = `${data.project?.name ?? 'JMR'} — JMR Summary for Equipment & Manpower Supply (${formatDateIN(data.dateTo)})`
+  const projectLabel = data.projects.length === 1
+    ? data.projects[0].name
+    : data.projects.length > 1
+      ? data.projects.map(p => p.code || p.name).join(' + ')
+      : 'JMR'
+  const title = `${projectLabel} — JMR Summary for Equipment & Manpower Supply (${formatDateIN(data.dateTo)})`
   doc.setFontSize(13)
   doc.setFont('helvetica', 'bold')
   doc.text(title, 40, 36)
@@ -125,7 +129,10 @@ export async function GET(req: NextRequest) {
   })
 
   const buf = doc.output('arraybuffer')
-  const fileName = `JMR_${data.project?.code || 'export'}_${data.dateTo}.pdf`
+  const exportTag = data.projects.length === 1
+    ? (data.projects[0].code || 'export')
+    : `${data.projects.length}-projects`
+  const fileName = `JMR_${exportTag}_${data.dateTo}.pdf`
   return new NextResponse(new Uint8Array(buf), {
     headers: {
       'Content-Type': 'application/pdf',

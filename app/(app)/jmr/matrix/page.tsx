@@ -21,7 +21,11 @@ export default async function JmrMatrixPage({ searchParams }: { searchParams: SP
   const settings = await getJmrSettings()
   const supabase = await createClient()
 
-  const projectId = (sp.project as string) || ''
+  // `project` is now repeatable: ?project=id1&project=id2 selects both.
+  // Empty / missing → defaults to the first parent project (legacy behaviour).
+  const projectIdsRaw = sp.project
+    ? (Array.isArray(sp.project) ? sp.project : [sp.project])
+    : []
   const contractorId = (sp.contractor as string) || ''
   const category = (sp.cat as 'equipment' | 'manpower' | 'both') || 'both'
   const dateFrom = (sp.from as string) || ''
@@ -37,21 +41,24 @@ export default async function JmrMatrixPage({ searchParams }: { searchParams: SP
   const projects = projectsRes.data ?? []
   const contractors = contractorsRes.data ?? []
 
-  // If no project selected, default to first.
-  const effectiveProjectId = projectId || projects[0]?.id || null
+  // If no project picked, default to the first one so the page isn't empty
+  // on first load (matches the old single-project default).
+  const effectiveProjectIds = projectIdsRaw.length > 0
+    ? projectIdsRaw.filter(id => projects.some(p => p.id === id))
+    : (projects[0] ? [projects[0].id] : [])
 
   let matrix = null
   let subProjectsAll: { id: string; name: string; code: string | null }[] = []
-  if (effectiveProjectId) {
+  if (effectiveProjectIds.length > 0) {
     const { data: subs } = await supabase
       .from('projects')
       .select('id, name, code')
-      .eq('parent_project_id', effectiveProjectId)
+      .in('parent_project_id', effectiveProjectIds)
       .order('name')
     subProjectsAll = subs ?? []
 
     matrix = await buildMatrix({
-      projectId: effectiveProjectId,
+      projectIds: effectiveProjectIds,
       contractorId: contractorId || null,
       subProjectIds,
       category,
@@ -61,19 +68,24 @@ export default async function JmrMatrixPage({ searchParams }: { searchParams: SP
     })
   }
 
-  const exportParams = new URLSearchParams({
-    project: effectiveProjectId ?? '',
-    ...(contractorId && { contractor: contractorId }),
-    cat: category,
-    to: dateTo,
-    ...(dateFrom && { from: dateFrom }),
-  })
+  const exportParams = new URLSearchParams()
+  for (const pid of effectiveProjectIds) exportParams.append('project', pid)
+  if (contractorId) exportParams.set('contractor', contractorId)
+  exportParams.set('cat', category)
+  exportParams.set('to', dateTo)
+  if (dateFrom) exportParams.set('from', dateFrom)
   ;(subProjectIds ?? []).forEach(id => exportParams.append('sp', id))
 
   return (
     <div className="p-4 md:p-6 max-w-[1400px] mx-auto">
       <PageHeader
-        title={matrix?.project ? `${matrix.project.name} — JMR Summary` : 'JMR Matrix'}
+        title={
+          matrix?.projects?.length
+            ? (matrix.projects.length === 1
+                ? `${matrix.projects[0].name} — JMR Summary`
+                : `${matrix.projects.length} projects — JMR Summary`)
+            : 'JMR Matrix'
+        }
         subtitle={`Equipment & manpower · cumulative ${dateFrom ? `from ${formatDateIN(dateFrom)} ` : ''}till ${formatDateIN(dateTo)}`}
         back="/jmr"
       >
@@ -97,7 +109,7 @@ export default async function JmrMatrixPage({ searchParams }: { searchParams: SP
         projects={projects}
         contractors={contractors}
         subProjects={subProjectsAll}
-        currentProjectId={effectiveProjectId ?? ''}
+        currentProjectIds={effectiveProjectIds}
         currentContractorId={contractorId}
         currentCategory={category}
         currentDateFrom={dateFrom}

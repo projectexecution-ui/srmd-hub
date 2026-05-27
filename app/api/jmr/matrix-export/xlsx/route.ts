@@ -12,7 +12,7 @@ export async function GET(req: NextRequest) {
   const sp = req.nextUrl.searchParams
   const settings = await getJmrSettings()
   const data = await buildMatrix({
-    projectId: sp.get('project'),
+    projectIds: sp.getAll('project'),
     contractorId: sp.get('contractor'),
     subProjectIds: sp.getAll('sp').length ? sp.getAll('sp') : null,
     category: (sp.get('cat') as 'equipment' | 'manpower' | 'both') ?? 'both',
@@ -21,9 +21,9 @@ export async function GET(req: NextRequest) {
     gstRatePct: settings.gst_rate_pct,
   })
 
-  const subProjects = [...data.subProjects]
-  const hasUnassigned = data.rows.some(r => r.cells['unassigned'])
-  if (hasUnassigned) subProjects.push({ id: 'unassigned', name: 'Unassigned', code: null })
+  // buildMatrix now returns the active column set (parent + sub-projects) and
+  // already drops the legacy 'unassigned' bucket — no extra append needed.
+  const subProjects = data.subProjects
 
   // Build header rows
   const topHeader: (string | number)[] = ['Sr.', 'Item', 'Unit', 'Rate']
@@ -95,11 +95,17 @@ export async function GET(req: NextRequest) {
   ws['!freeze'] = { xSplit: 4, ySplit: 2 }
 
   const wb = XLSX.utils.book_new()
-  const sheetName = (data.project?.code || data.project?.name || 'JMR').slice(0, 30)
+  const labelFromProjects = data.projects.length === 1
+    ? (data.projects[0].code || data.projects[0].name || 'JMR')
+    : `${data.projects.length} projects`
+  const sheetName = labelFromProjects.slice(0, 30)
   XLSX.utils.book_append_sheet(wb, ws, sheetName)
   const buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' }) as Buffer
 
-  const fileName = `JMR_${data.project?.code || 'export'}_${data.dateTo}.xlsx`
+  const exportTag = data.projects.length === 1
+    ? (data.projects[0].code || 'export')
+    : `${data.projects.length}-projects`
+  const fileName = `JMR_${exportTag}_${data.dateTo}.xlsx`
   return new NextResponse(new Uint8Array(buf), {
     headers: {
       'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
