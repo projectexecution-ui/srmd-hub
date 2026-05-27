@@ -217,6 +217,8 @@ export function NewWSQuickForm({ projects, projectDisciplines, projectSubSkills,
   const [lineType, setLineType]       = useState<'work' | 'material'>('work')
   const [summaryTotal, setSummaryTotal] = useState('')
   const [summaryNotes, setSummaryNotes] = useState('')
+  const [deadline, setDeadline] = useState('')
+  const [deadlineNotes, setDeadlineNotes] = useState('')
   const [file, setFile]               = useState<File | null>(null)
   const [parsed, setParsed]           = useState<{ rows: ParsedRow[]; grandTotal: number | null } | null>(null)
   const [parsing, setParsing]         = useState(false)
@@ -291,6 +293,8 @@ export function NewWSQuickForm({ projects, projectDisciplines, projectSubSkills,
       source_excel_name: file.name,
       summary_total: Number(summaryTotal) || null,
       summary_notes: summaryNotes.trim() || null,
+      deadline_date:  deadline || null,
+      deadline_notes: deadlineNotes.trim() || null,
     }).select('id').single()
     if (wsErr || !ws) { setError(`Save failed: ${wsErr?.message}`); setSubmitting(false); return }
 
@@ -442,6 +446,16 @@ export function NewWSQuickForm({ projects, projectDisciplines, projectSubSkills,
             <Input type="number" step="any" inputMode="decimal" value={summaryTotal}
               onChange={e => setSummaryTotal(e.target.value)} placeholder="auto-filled from Excel" className="mt-1" />
           </div>
+          <div>
+            <Label>Deadline</Label>
+            <Input type="date" value={deadline} onChange={e => setDeadline(e.target.value)} className="mt-1" />
+            <p className="text-[11px] text-gray-500 mt-1">When does this need to be approved + WO issued by?</p>
+          </div>
+        </div>
+        <div>
+          <Label>Deadline notes</Label>
+          <Input value={deadlineNotes} onChange={e => setDeadlineNotes(e.target.value)}
+            placeholder="optional — e.g. site mobilisation tied to this" className="mt-1" />
         </div>
 
         <div>

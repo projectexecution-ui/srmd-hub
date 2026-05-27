@@ -5,6 +5,7 @@ import { PageHeader } from '@/components/PageHeader'
 import { MODULES } from '@/lib/modules'
 import { type RolePermission, type Role } from '@/lib/types'
 import PermissionsMatrix from './PermissionsMatrix'
+import DeletePermissionsMatrix from './DeletePermissionsMatrix'
 
 export const dynamic = 'force-dynamic'
 
@@ -14,7 +15,7 @@ export default async function AdminPermissionsPage() {
   const [permsRes, rolesRes, roleLabels, currentUserIsPortalOwner, profile] = await Promise.all([
     supabase
       .from('role_permissions')
-      .select('role, module_slug, can_view, can_edit, can_admin, updated_at, updated_by'),
+      .select('role, module_slug, can_view, can_edit, can_admin, delete_mode, delete_approver_role, updated_at, updated_by'),
     // Source roles live from role_labels so newly-added roles show up
     // immediately. is_active=false rows are soft-deleted and excluded.
     supabase
@@ -50,6 +51,18 @@ export default async function AdminPermissionsPage() {
         roleLabels={roleLabels}
         currentUserIsPortalOwner={currentUserIsPortalOwner}
         canManageRoles={canManageRoles}
+      />
+
+      <DeletePermissionsMatrix
+        modules={MODULES.map(m => ({ slug: m.slug, label: m.label }))}
+        roles={activeRoles}
+        roleLabels={roleLabels}
+        initial={(permsRes.data ?? []).map(r => ({
+          role: r.role as Role,
+          module_slug: r.module_slug,
+          delete_mode: (r.delete_mode ?? 'none') as 'none' | 'direct' | 'request',
+          delete_approver_role: r.delete_approver_role ?? null,
+        }))}
       />
     </div>
   )

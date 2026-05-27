@@ -62,6 +62,8 @@ const newWSSchema = z.object({
   discipline_id: z.string().uuid(),
   sub_skill_id: z.string().uuid(),
   line_type: z.enum(['work', 'material']).default('work'),
+  deadline_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
+  deadline_notes: z.string().max(500).nullable().optional(),
 })
 
 export type NewWSResult =
@@ -83,6 +85,8 @@ export async function createWorkingSheet(input: {
   discipline_id: string
   sub_skill_id: string
   line_type?: 'work' | 'material'
+  deadline_date?: string | null
+  deadline_notes?: string | null
 }): Promise<NewWSResult> {
   const user = await getMyUser()
   if (!user) return { ok: false, error: 'Not signed in' }
@@ -111,6 +115,8 @@ export async function createWorkingSheet(input: {
       engineer_id: user.id,
       total_amount: 0,
       past_approved_in_subskill: pastSnapshot,
+      deadline_date:  parsed.data.deadline_date ?? null,
+      deadline_notes: parsed.data.deadline_notes ?? null,
     })
     .select('id, ws_code')
     .single()

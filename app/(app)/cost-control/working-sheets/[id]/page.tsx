@@ -5,6 +5,7 @@ import { checkCanApproveWS } from '@/components/cost-control/ws-actions'
 import { PageHeader } from '@/components/PageHeader'
 import { Card } from '@/components/ui/card'
 import { WSStatusPill, type WSStatus } from '@/components/cost-control/WSStatusPill'
+import { DeadlineBadge } from '@/components/cost-control/DeadlineBadge'
 import { WSEditor } from './WSEditor'
 import { ExcelSummaryPanel } from './ExcelSummaryPanel'
 import { formatINR } from '@/lib/utils'
@@ -36,7 +37,7 @@ export default async function WorkingSheetEditorPage(
 
   const { data: ws } = await supabase
     .from('cc_working_sheets')
-    .select('id, ws_code, status, total_amount, past_approved_in_subskill, return_reason, engineer_id, project_id, discipline_id, sub_skill_id, line_type, entry_mode, source_excel_url, source_excel_name, summary_total, summary_notes, flag_summary, last_checked_at, projects(code, name), cc_disciplines(code, name), cc_sub_skills(code, name)')
+    .select('id, ws_code, status, total_amount, past_approved_in_subskill, return_reason, engineer_id, project_id, discipline_id, sub_skill_id, line_type, entry_mode, source_excel_url, source_excel_name, summary_total, summary_notes, flag_summary, last_checked_at, deadline_date, deadline_notes, projects(code, name), cc_disciplines(code, name), cc_sub_skills(code, name)')
     .eq('id', id)
     .single()
 
@@ -73,6 +74,14 @@ export default async function WorkingSheetEditorPage(
         >
           <WSStatusPill status={ws.status as WSStatus} />
         </PageHeader>
+
+        {ws.deadline_date && (
+          <DeadlineBadge
+            deadlineDate={ws.deadline_date}
+            notes={ws.deadline_notes}
+            approved={ws.status === 'approved' || ws.status === 'wo_issued' || ws.status === 'paid'}
+          />
+        )}
 
         <ExcelSummaryPanel
           wsId={ws.id}
@@ -157,6 +166,14 @@ export default async function WorkingSheetEditorPage(
       >
         <WSStatusPill status={status} />
       </PageHeader>
+
+      {ws.deadline_date && (
+        <DeadlineBadge
+          deadlineDate={ws.deadline_date}
+          notes={ws.deadline_notes}
+          approved={status === 'approved' || status === 'wo_issued' || status === 'paid'}
+        />
+      )}
 
       {/* Past-spend strip */}
       <Card className="p-4 bg-blue-50/50 border-blue-100">

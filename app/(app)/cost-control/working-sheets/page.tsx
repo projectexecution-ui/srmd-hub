@@ -6,6 +6,7 @@ import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { EmptyState } from '@/components/ui/empty-state'
 import { WSStatusPill, type WSStatus } from '@/components/cost-control/WSStatusPill'
+import { DeadlineBadge } from '@/components/cost-control/DeadlineBadge'
 import { FileText, Plus, FileSpreadsheet } from 'lucide-react'
 import { formatINR, formatDate } from '@/lib/utils'
 
@@ -31,7 +32,7 @@ export default async function WorkingSheetsPage({
 
   let q = supabase
     .from('cc_working_sheets')
-    .select('id, ws_code, status, total_amount, created_at, engineer_id, project_id, sub_skill_id, projects(code, name), cc_disciplines(code, name), cc_sub_skills(code, name)')
+    .select('id, ws_code, status, total_amount, created_at, deadline_date, engineer_id, project_id, sub_skill_id, projects(code, name), cc_disciplines(code, name), cc_sub_skills(code, name)')
     .order('created_at', { ascending: false })
     .limit(500)
   if (sp.project) q = q.eq('project_id', sp.project)
@@ -50,6 +51,7 @@ export default async function WorkingSheetsPage({
     status: WSStatus
     total_amount: number | null
     created_at: string
+    deadline_date: string | null
     engineer_id: string
     project_id: string
     sub_skill_id: string
@@ -149,6 +151,7 @@ export default async function WorkingSheetsPage({
                   <th className="px-4 py-3 font-semibold">Engineer</th>
                   <th className="px-4 py-3 font-semibold text-right">Amount</th>
                   <th className="px-4 py-3 font-semibold">Status</th>
+                  <th className="px-4 py-3 font-semibold">Deadline</th>
                   <th className="px-4 py-3 font-semibold">Created</th>
                 </tr>
               </thead>
@@ -171,6 +174,17 @@ export default async function WorkingSheetsPage({
                       <td className="px-4 py-3 text-gray-700">{profileMap.get(w.engineer_id) ?? '—'}</td>
                       <td className="px-4 py-3 font-semibold text-gray-900 text-right tabular-nums">{formatINR(w.total_amount ?? 0)}</td>
                       <td className="px-4 py-3"><WSStatusPill status={w.status} /></td>
+                      <td className="px-4 py-3">
+                        {w.deadline_date ? (
+                          <DeadlineBadge
+                            deadlineDate={w.deadline_date}
+                            approved={w.status === 'approved' || w.status === 'wo_issued' || w.status === 'paid'}
+                            className="text-xs px-2 py-1"
+                          />
+                        ) : (
+                          <span className="text-xs text-gray-400">—</span>
+                        )}
+                      </td>
                       <td className="px-4 py-3 text-xs text-gray-500">{formatDate(w.created_at)}</td>
                     </tr>
                   )

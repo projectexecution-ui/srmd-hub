@@ -23,6 +23,8 @@ export function NewWSForm({ projects, projectDisciplines, projectSubSkills, defa
   const [disciplineId, setDisciplineId] = React.useState('')
   const [subSkillId, setSubSkillId] = React.useState('')
   const [lineType, setLineType] = React.useState<'work' | 'material'>('work')
+  const [deadline, setDeadline] = React.useState('')
+  const [deadlineNotes, setDeadlineNotes] = React.useState('')
   const [busy, setBusy] = React.useState(false)
   const [error, setError] = React.useState<string | null>(null)
 
@@ -56,6 +58,8 @@ export function NewWSForm({ projects, projectDisciplines, projectSubSkills, defa
       discipline_id: disciplineId,
       sub_skill_id: subSkillId,
       line_type: lineType,
+      deadline_date: deadline || null,
+      deadline_notes: deadlineNotes.trim() || null,
     })
     setBusy(false)
     if (!res.ok) {
@@ -132,6 +136,31 @@ export function NewWSForm({ projects, projectDisciplines, projectSubSkills, defa
               {opt === 'work' ? 'Work (labour / service)' : 'Material (procurement)'}
             </button>
           ))}
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-2 border-t border-gray-100">
+        <div>
+          <Label htmlFor="deadline">Deadline</Label>
+          <input
+            id="deadline"
+            type="date"
+            value={deadline}
+            onChange={e => setDeadline(e.target.value)}
+            className="mt-1 flex h-10 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm"
+          />
+          <p className="text-[11px] text-gray-500 mt-1">When does this work need to be approved + WO issued by?</p>
+        </div>
+        <div>
+          <Label htmlFor="deadline_notes">Deadline notes</Label>
+          <input
+            id="deadline_notes"
+            type="text"
+            value={deadlineNotes}
+            onChange={e => setDeadlineNotes(e.target.value)}
+            placeholder="optional — e.g. site mobilisation tied to this"
+            className="mt-1 flex h-10 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm"
+          />
         </div>
       </div>
 

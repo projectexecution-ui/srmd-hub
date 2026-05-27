@@ -1,8 +1,9 @@
 import Link from 'next/link'
 import { PageHeader } from '@/components/PageHeader'
 import { Card } from '@/components/ui/card'
-import { Users, Settings, ShieldCheck, LayoutGrid, GitBranch } from 'lucide-react'
+import { Users, Settings, ShieldCheck, LayoutGrid, GitBranch, Trash2 } from 'lucide-react'
 import { getMyPermissions, can, isPortalOwner, getMyProfile } from '@/lib/auth'
+import { createClient } from '@/lib/supabase/server'
 
 export const dynamic = 'force-dynamic'
 
@@ -13,10 +14,17 @@ export default async function AdminHomePage() {
     getMyProfile(),
   ])
   const canEditApprovals = portalOwner || profile?.role === 'admin'
+  // Count of pending delete requests — small badge on the tile
+  const supabase = await createClient()
+  const { count: pendingDeleteCount } = canEditApprovals
+    ? await supabase.from('delete_requests').select('id', { count: 'exact', head: true }).eq('status', 'pending')
+    : { count: 0 }
+
   const tiles = [
     { href: '/admin/users',       slug: 'admin-users',       icon: Users,       title: 'Users & Roles', sub: 'Assign role per user, deactivate accounts.', show: can(perms, 'admin-users', 'view') },
-    { href: '/admin/permissions', slug: 'admin-permissions', icon: ShieldCheck, title: 'Permissions',   sub: 'Who can view / edit / admin each module.',   show: can(perms, 'admin-permissions', 'view') },
+    { href: '/admin/permissions', slug: 'admin-permissions', icon: ShieldCheck, title: 'Permissions',   sub: 'Who can view / edit / admin / delete each module.',   show: can(perms, 'admin-permissions', 'view') },
     { href: '/admin/approvals',   slug: 'admin-approvals',   icon: GitBranch,   title: 'Approvals',     sub: 'Who approves what at each stage — across modules.', show: canEditApprovals },
+    { href: '/admin/delete-requests', slug: 'admin-delete-requests', icon: Trash2, title: 'Delete Requests', sub: `Approve / reject pending deletes${pendingDeleteCount && pendingDeleteCount > 0 ? ` · ${pendingDeleteCount} waiting` : ''}.`, show: canEditApprovals, badge: pendingDeleteCount && pendingDeleteCount > 0 ? pendingDeleteCount : null },
     { href: '/admin/dashboard-modules', slug: 'dashboard-modules', icon: LayoutGrid, title: 'Dashboard Modules', sub: 'Turn modules on / off for the portal.',     show: portalOwner },
     { href: '/admin/settings',    slug: 'admin-settings',    icon: Settings,    title: 'Settings',      sub: 'Admin email, etc.',                          show: can(perms, 'admin-settings', 'view') },
   ].filter(t => t.show)
