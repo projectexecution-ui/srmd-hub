@@ -6,7 +6,8 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
-import { Loader2, Plus, X, UserPlus, Mail, Crown } from 'lucide-react'
+import { Loader2, Plus, X, UserPlus, Mail, Crown, Search, Check } from 'lucide-react'
+import { cn } from '@/lib/utils'
 
 interface ProfileLite {
   id: string
@@ -42,34 +43,60 @@ export default function ProjectUsersTab({
   const [assignments, setAssignments] = useState(initialAssignments)
   const [busyId, setBusyId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [pickUserId, setPickUserId] = useState(allProfiles[0]?.id ?? '')
-  // Picker holds either a real role value, the empty string ("choose…"),
-  // or CUSTOM_SENTINEL when the admin wants a free-text role.
-  const [rolePick, setRolePick] = useState<string>(roleOptions[0]?.value ?? CUSTOM_SENTINEL)
-  const [customRole, setCustomRole] = useState('')
-  const [adding, setAdding]         = useState(false)
-
-  const effectiveRole = rolePick === CUSTOM_SENTINEL ? customRole.trim() : rolePick
+  // Multi-pick state: user_id → role (per-row override, defaults to system role)
+  const [picked, setPicked]   = useState<Map<string, string>>(new Map())
+  const [pickerQuery, setPickerQuery] = useState('')
+  const [adding, setAdding]   = useState(false)
 
   const profileById = useMemo(
     () => new Map(allProfiles.map(p => [p.id, p])),
     [allProfiles],
   )
 
-  async function addAssignment(e: React.FormEvent) {
-    e.preventDefault()
-    if (!pickUserId) { setError('Pick a user'); return }
-    if (!effectiveRole) { setError('Pick or type a role'); return }
+  // The "smart default" role for a user = role_labels label of their
+  // system role if it's in the dropdown, else CUSTOM_SENTINEL.
+  function defaultRoleForUser(p: ProfileLite): string {
+    return roleOptions.find(o => o.value === p.role)?.value ?? p.role
+  }
+
+  function togglePick(p: ProfileLite) {
+    setPicked(prev => {
+      const next = new Map(prev)
+      if (next.has(p.id)) next.delete(p.id)
+      else next.set(p.id, defaultRoleForUser(p))
+      return next
+    })
+  }
+
+  function setPickRole(userId: string, role: string) {
+    setPicked(prev => {
+      const next = new Map(prev)
+      next.set(userId, role)
+      return next
+    })
+  }
+
+  async function addPicked() {
+    if (picked.size === 0) return
+    // Anyone whose role is the CUSTOM sentinel with no real value → block
+    const bad = Array.from(picked.values()).filter(r => !r || r === CUSTOM_SENTINEL)
+    if (bad.length > 0) {
+      setError('Some picked users have no role set. Choose a role for each.')
+      return
+    }
     setAdding(true); setError(null)
+    const rows = Array.from(picked.entries()).map(([user_id, role]) => ({
+      user_id, project_id: projectId, role,
+    }))
     const { data, error } = await supabase
       .from('project_assignments')
-      .insert({ user_id: pickUserId, project_id: projectId, role: effectiveRole })
+      .insert(rows)
       .select('id, user_id, role, assigned_at')
-      .single()
     setAdding(false)
     if (error) { setError(error.message); return }
-    setAssignments(prev => [data as Assignment, ...prev])
-    if (rolePick === CUSTOM_SENTINEL) setCustomRole('')
+    setAssignments(prev => [...((data ?? []) as Assignment[]), ...prev])
+    setPicked(new Map())
+    setPickerQuery('')
     router.refresh()
   }
 
@@ -86,12 +113,21 @@ export default function ProjectUsersTab({
     router.refresh()
   }
 
-  // Users not yet assigned (in any role) — to populate the add dropdown
+  // Users not yet assigned (in any role) — to populate the picker
   const assignedUserIds = useMemo(
     () => new Set(assignments.map(a => a.user_id)),
     [assignments],
   )
   const candidateUsers = allProfiles.filter(p => !assignedUserIds.has(p.id))
+  const visibleCandidates = useMemo(() => {
+    const q = pickerQuery.trim().toLowerCase()
+    if (!q) return candidateUsers
+    return candidateUsers.filter(p =>
+      (p.name?.toLowerCase().includes(q) ?? false) ||
+      (p.full_name?.toLowerCase().includes(q) ?? false) ||
+      p.email.toLowerCase().includes(q),
+    )
+  }, [candidateUsers, pickerQuery])
 
   return (
     <Card>
@@ -105,59 +141,104 @@ export default function ProjectUsersTab({
         {error && <p className="text-sm text-rose-600">{error}</p>}
 
         {canManage && candidateUsers.length > 0 && (
-          <form
-            onSubmit={addAssignment}
-            className="grid grid-cols-1 sm:grid-cols-[1fr_minmax(10rem,auto)_minmax(8rem,auto)_auto] gap-2 p-3 bg-blue-50/40 border border-blue-200 rounded-xl items-start"
-          >
-            <div>
-              <label className="text-[11px] font-semibold uppercase tracking-wide text-gray-600 mb-1 block">User</label>
-              <select
-                value={pickUserId}
-                onChange={e => setPickUserId(e.target.value)}
-                className="h-10 w-full rounded-xl border border-gray-300 bg-white px-3 text-sm"
-              >
-                {candidateUsers.map(p => (
-                  <option key={p.id} value={p.id}>
-                    {(p.name || p.full_name || p.email)} · {p.email}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className="text-[11px] font-semibold uppercase tracking-wide text-gray-600 mb-1 block">Role on project</label>
-              <select
-                value={rolePick}
-                onChange={e => setRolePick(e.target.value)}
-                className="h-10 w-full rounded-xl border border-gray-300 bg-white px-3 text-sm"
-              >
-                {roleOptions.map(o => (
-                  <option key={o.value} value={o.value}>{o.label}</option>
-                ))}
-                <option value={CUSTOM_SENTINEL}>Custom…</option>
-              </select>
-            </div>
-            <div>
-              <label className={`text-[11px] font-semibold uppercase tracking-wide mb-1 block ${rolePick === CUSTOM_SENTINEL ? 'text-blue-700' : 'text-transparent'}`}>
-                Custom role
-              </label>
-              {rolePick === CUSTOM_SENTINEL ? (
-                <Input
-                  value={customRole}
-                  onChange={e => setCustomRole(e.target.value)}
-                  placeholder="e.g. Site Lead"
-                  autoFocus
-                />
-              ) : (
-                <div className="h-10 px-3 inline-flex items-center text-xs text-gray-400 italic">
-                  using system role
-                </div>
+          <div className="p-3 bg-blue-50/40 border border-blue-200 rounded-xl space-y-3">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+              <p className="text-[11px] font-semibold uppercase tracking-wide text-blue-900 inline-flex items-center gap-1.5">
+                <UserPlus className="h-3.5 w-3.5" />
+                Pick people to add ({picked.size} selected)
+              </p>
+              {picked.size > 0 && (
+                <Button onClick={addPicked} size="sm" disabled={adding}>
+                  {adding ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
+                  Add {picked.size} to project
+                </Button>
               )}
             </div>
-            <Button type="submit" disabled={adding || !pickUserId || !effectiveRole} className="self-end">
-              {adding ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
-              Add to project
-            </Button>
-          </form>
+
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+              <Input
+                value={pickerQuery}
+                onChange={e => setPickerQuery(e.target.value)}
+                placeholder="Search by name or email…"
+                className="pl-9 bg-white"
+              />
+            </div>
+
+            <div className="max-h-72 overflow-y-auto bg-white border border-blue-100 rounded-xl divide-y divide-gray-100">
+              {visibleCandidates.length === 0 ? (
+                <p className="text-xs text-gray-500 italic p-3">No users match your search.</p>
+              ) : (
+                visibleCandidates.map(p => {
+                  const isPicked = picked.has(p.id)
+                  const currentRole = picked.get(p.id) ?? defaultRoleForUser(p)
+                  const isCustom = currentRole === CUSTOM_SENTINEL || !roleOptions.some(o => o.value === currentRole)
+                  return (
+                    <div
+                      key={p.id}
+                      className={cn(
+                        'flex flex-col sm:flex-row sm:items-center gap-2 px-3 py-2 transition-colors',
+                        isPicked && 'bg-blue-50',
+                      )}
+                    >
+                      <button
+                        type="button"
+                        onClick={() => togglePick(p)}
+                        className="flex items-center gap-2.5 min-w-0 flex-1 text-left"
+                      >
+                        <span className={cn(
+                          'h-5 w-5 rounded-md border inline-flex items-center justify-center flex-shrink-0',
+                          isPicked ? 'bg-blue-600 border-blue-600 text-white' : 'border-gray-300 bg-white',
+                        )}>
+                          {isPicked && <Check className="h-3 w-3" />}
+                        </span>
+                        <div className="h-8 w-8 rounded-full bg-gray-100 text-gray-700 flex items-center justify-center text-xs font-bold flex-shrink-0">
+                          {(p.name || p.full_name || p.email)[0]?.toUpperCase()}
+                        </div>
+                        <div className="min-w-0">
+                          <p className="text-sm font-medium text-gray-900 truncate flex items-center gap-1.5">
+                            {p.name || p.full_name || 'No name'}
+                            <Badge variant="secondary" className="text-[10px] font-mono">
+                              {roleOptions.find(o => o.value === p.role)?.label ?? p.role}
+                            </Badge>
+                          </p>
+                          <p className="text-xs text-gray-500 truncate">{p.email}</p>
+                        </div>
+                      </button>
+
+                      {isPicked && (
+                        <div className="flex items-center gap-1.5 flex-shrink-0">
+                          <span className="text-[10px] uppercase tracking-wide text-blue-700">as</span>
+                          <select
+                            value={isCustom && currentRole !== CUSTOM_SENTINEL ? CUSTOM_SENTINEL : currentRole}
+                            onChange={e => setPickRole(p.id, e.target.value)}
+                            className="h-8 rounded-lg border border-blue-200 bg-white px-2 text-xs"
+                          >
+                            {roleOptions.map(o => (
+                              <option key={o.value} value={o.value}>{o.label}</option>
+                            ))}
+                            <option value={CUSTOM_SENTINEL}>Custom…</option>
+                          </select>
+                          {currentRole === CUSTOM_SENTINEL && (
+                            <Input
+                              autoFocus
+                              defaultValue=""
+                              onBlur={e => {
+                                const v = e.currentTarget.value.trim()
+                                if (v) setPickRole(p.id, v)
+                              }}
+                              placeholder="e.g. Site Lead"
+                              className="h-8 text-xs w-32"
+                            />
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )
+                })
+              )}
+            </div>
+          </div>
         )}
 
         {canManage && candidateUsers.length === 0 && (
