@@ -9,7 +9,9 @@ import { PageHeader } from '@/components/PageHeader'
 import {
   Users, Search, UserCheck, UserX, Mail, Shield, Copy, Check, Send, Crown, Trash2,
   UserPlus, Loader2, Plus, X, ChevronDown, ChevronRight, Layers, Ban,
+  Settings2, Info, EyeOff,
 } from 'lucide-react'
+import { cn } from '@/lib/utils'
 import type { Profile, Role } from '@/lib/types'
 import { ALL_ROLES } from '@/lib/types'
 import type { RoleLabelMap } from '@/lib/role-labels'
@@ -67,6 +69,10 @@ export default function UsersClient({
   const [moduleBlocks, setModuleBlocks] = useState<UserModuleBlock[]>(initialModuleBlocks)
   const [expandedUserId, setExpandedUserId] = useState<string | null>(null)
   const [search, setSearch] = useState('')
+  // Status filter chip — drives the table contents
+  const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'inactive' | 'admins' | 'portal_owners'>('all')
+  // Anonymous quick-signin profiles hide by default — admin can opt in.
+  const [showAnonymous, setShowAnonymous] = useState(false)
   const [busyId, setBusyId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
@@ -79,16 +85,33 @@ export default function UsersClient({
   // second click within 5s → actually deletes). Null = not armed.
   const [deleteArmed, setDeleteArmed] = useState<string | null>(null)
 
-  const filtered = users.filter(u =>
-    (u.name?.toLowerCase().includes(search.toLowerCase())) ||
-    (u.full_name?.toLowerCase().includes(search.toLowerCase())) ||
-    u.email.toLowerCase().includes(search.toLowerCase())
-  )
+  // Detect quick-signin / anonymous accounts so admin can hide them.
+  // Pattern: email starts with anon- and ends with @srmd.local
+  const isAnonymous = (u: Profile) => /^anon-/i.test(u.email) && /@srmd\.local$/i.test(u.email)
+
+  const filtered = users.filter(u => {
+    // Status chip
+    if (statusFilter === 'active' && !u.is_active) return false
+    if (statusFilter === 'inactive' && u.is_active) return false
+    if (statusFilter === 'admins' && u.role !== 'admin') return false
+    if (statusFilter === 'portal_owners' && !u.is_portal_owner) return false
+    // Hide anonymous unless explicitly opted in
+    if (!showAnonymous && isAnonymous(u)) return false
+    // Free-text search
+    const q = search.toLowerCase()
+    if (!q) return true
+    return (
+      (u.name?.toLowerCase().includes(q) ?? false) ||
+      (u.full_name?.toLowerCase().includes(q) ?? false) ||
+      u.email.toLowerCase().includes(q)
+    )
+  })
 
   const activeCount = users.filter(u => u.is_active).length
   const adminCount = users.filter(u => u.role === 'admin').length
   const uploaderCount = users.filter(u => u.role === 'uploader').length
   const portalOwnerCount = users.filter(u => u.is_portal_owner).length
+  const anonymousCount = users.filter(isAnonymous).length
 
   async function updateRole(u: Profile, next: Role) {
     setBusyId(u.id); setError(null)
@@ -280,12 +303,14 @@ export default function UsersClient({
     setAllowed(prev => prev.map(a => a.email === email ? { ...a, role } : a))
   }
 
+  const totalUsers = users.length
+
   return (
-    <div className="p-4 md:p-6 max-w-5xl mx-auto space-y-4">
+    <div className="p-4 md:p-6 max-w-6xl mx-auto space-y-4">
       <PageHeader
         title="Users & Permissions"
         back="/admin"
-        subtitle={`${activeCount} active · ${users.length} total · ${adminCount} admin · ${uploaderCount} uploader · ${portalOwnerCount} portal owner${portalOwnerCount === 1 ? '' : 's'}`}
+        subtitle="Active accounts, their roles, and per-user access controls."
       >
         <Button onClick={copyInviteLink} variant="outline" size="sm">
           {copied ? <Check className="h-4 w-4 text-green-600" /> : <Copy className="h-4 w-4" />}
@@ -297,21 +322,62 @@ export default function UsersClient({
         <div className="p-3 rounded-xl bg-red-50 border border-red-200 text-sm text-red-700">{error}</div>
       )}
 
-      <div className="relative">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
-        <Input
-          className="pl-9"
-          placeholder="Search by name or email..."
-          value={search}
-          onChange={e => setSearch(e.target.value)}
-        />
+      {/* ─── Stats strip ───────────────────────────── */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+        <StatTile label="Total"         value={totalUsers}        icon={<Users className="h-4 w-4" />}    tone="slate"  onClick={() => setStatusFilter('all')}           active={statusFilter === 'all'} />
+        <StatTile label="Active"        value={activeCount}       icon={<UserCheck className="h-4 w-4" />} tone="green"  onClick={() => setStatusFilter('active')}        active={statusFilter === 'active'} />
+        <StatTile label="Admins"        value={adminCount}        icon={<Shield className="h-4 w-4" />}    tone="blue"   onClick={() => setStatusFilter('admins')}        active={statusFilter === 'admins'} />
+        <StatTile label="Portal Owners" value={portalOwnerCount}  icon={<Crown className="h-4 w-4" />}     tone="amber"  onClick={() => setStatusFilter('portal_owners')} active={statusFilter === 'portal_owners'} />
       </div>
+
+      {/* ─── Filter chips + search ───────────────── */}
+      <div className="flex flex-col sm:flex-row gap-2 sm:items-center">
+        <div className="relative flex-1">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+          <Input
+            className="pl-9"
+            placeholder="Search by name or email…"
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+          />
+        </div>
+        <div className="flex flex-wrap items-center gap-1.5">
+          <FilterChip active={statusFilter === 'all'}       onClick={() => setStatusFilter('all')}>All</FilterChip>
+          <FilterChip active={statusFilter === 'active'}    onClick={() => setStatusFilter('active')}>Active</FilterChip>
+          <FilterChip active={statusFilter === 'inactive'}  onClick={() => setStatusFilter('inactive')}>Inactive</FilterChip>
+          <FilterChip active={statusFilter === 'admins'}    onClick={() => setStatusFilter('admins')}>Admins</FilterChip>
+          {anonymousCount > 0 && (
+            <label className={cn(
+              'inline-flex items-center gap-1 text-xs px-2.5 h-7 rounded-full border cursor-pointer',
+              showAnonymous
+                ? 'border-blue-200 bg-blue-50 text-blue-700'
+                : 'border-gray-200 bg-white text-gray-500 hover:bg-gray-50',
+            )}>
+              <input type="checkbox" checked={showAnonymous} onChange={e => setShowAnonymous(e.target.checked)} className="h-3 w-3" />
+              <EyeOff className="h-3 w-3" /> Show anonymous ({anonymousCount})
+            </label>
+          )}
+        </div>
+      </div>
+
+      {/* ─── Plain-English guide to each control on a row ───────── */}
+      <Card className="bg-blue-50 border-blue-200">
+        <CardContent className="pt-4 pb-4 text-xs text-blue-900 leading-relaxed">
+          <p className="font-semibold mb-1 flex items-center gap-1.5"><Info className="h-3.5 w-3.5" /> How to read each row</p>
+          <ul className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1 list-disc pl-5">
+            <li><b>Role dropdown</b> — the default role the user holds across all modules.</li>
+            <li><b>Active / Inactive</b> — whether the user can sign in at all.</li>
+            <li><b>Make owner / Revoke owner</b> — promote an admin to Portal Owner.</li>
+            <li><b>Access</b> — open per-user controls: change role inside a specific module, or block a module entirely.</li>
+          </ul>
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-base">
             <Users className="h-5 w-5 text-blue-600" />
-            All Users ({filtered.length})
+            All Users ({filtered.length}{filtered.length !== totalUsers && <span className="text-gray-400 font-normal"> of {totalUsers}</span>})
           </CardTitle>
         </CardHeader>
         <CardContent>
@@ -421,19 +487,27 @@ export default function UsersClient({
                         )
                       )}
 
-                      {/* Module-roles + blocks expander */}
+                      {/* Per-user Access expander — module-role overrides + module blocks */}
                       <Button
                         size="sm"
                         variant="outline"
                         onClick={() => setExpandedUserId(expanded ? null : u.id)}
-                        title="Per-module role overrides + module blocks"
+                        title="Open per-user access: override the role for a specific module, or block this user from a module"
+                        className={cn(
+                          (userOverrides.length + userBlocks.length) > 0 && 'border-blue-300 text-blue-700 bg-blue-50',
+                        )}
                       >
                         {expanded ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
-                        <Layers className="h-3.5 w-3.5" />
-                        Modules
-                        {(userOverrides.length + userBlocks.length) > 0 && (
-                          <Badge variant="default" className="ml-1 text-[10px]">
-                            {userOverrides.length + userBlocks.length}
+                        <Settings2 className="h-3.5 w-3.5" />
+                        Access
+                        {userOverrides.length > 0 && (
+                          <Badge variant="default" className="ml-1 text-[10px] inline-flex items-center gap-0.5" title="Module role overrides">
+                            <Layers className="h-2.5 w-2.5" />{userOverrides.length}
+                          </Badge>
+                        )}
+                        {userBlocks.length > 0 && (
+                          <Badge className="ml-1 text-[10px] bg-rose-100 text-rose-800 inline-flex items-center gap-0.5" title="Modules blocked for this user">
+                            <Ban className="h-2.5 w-2.5" />{userBlocks.length}
                           </Badge>
                         )}
                       </Button>
@@ -807,5 +881,65 @@ function AddOverrideRow({
         <Plus className="h-4 w-4" /> Add override
       </Button>
     </form>
+  )
+}
+
+// ─── Stats tile: clickable mini-stat that doubles as a status filter ──────
+const TILE_TONES: Record<'slate'|'green'|'blue'|'amber', { bg: string; ic: string; activeRing: string }> = {
+  slate: { bg: 'bg-slate-100', ic: 'text-slate-700', activeRing: 'ring-slate-300' },
+  green: { bg: 'bg-emerald-50', ic: 'text-emerald-700', activeRing: 'ring-emerald-300' },
+  blue:  { bg: 'bg-blue-50',    ic: 'text-blue-700',    activeRing: 'ring-blue-300' },
+  amber: { bg: 'bg-amber-50',   ic: 'text-amber-700',   activeRing: 'ring-amber-300' },
+}
+
+function StatTile({ label, value, icon, tone, onClick, active }: {
+  label: string
+  value: number
+  icon: React.ReactNode
+  tone: keyof typeof TILE_TONES
+  onClick?: () => void
+  active?: boolean
+}) {
+  const t = TILE_TONES[tone]
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        'group rounded-2xl border border-gray-200 bg-white p-3 text-left transition-all hover:shadow-sm hover:-translate-y-0.5',
+        active && `ring-2 ${t.activeRing}`,
+      )}
+    >
+      <div className="flex items-center gap-2.5">
+        <div className={cn('h-9 w-9 rounded-xl inline-flex items-center justify-center', t.bg, t.ic)}>
+          {icon}
+        </div>
+        <div className="min-w-0">
+          <p className="text-[11px] uppercase tracking-wide text-gray-500">{label}</p>
+          <p className="text-lg font-bold text-gray-900 leading-tight">{value}</p>
+        </div>
+      </div>
+    </button>
+  )
+}
+
+function FilterChip({ active, onClick, children }: {
+  active: boolean
+  onClick: () => void
+  children: React.ReactNode
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        'inline-flex items-center text-xs px-3 h-7 rounded-full border transition-colors',
+        active
+          ? 'border-blue-500 bg-blue-50 text-blue-700 font-semibold'
+          : 'border-gray-200 bg-white text-gray-600 hover:bg-gray-50',
+      )}
+    >
+      {children}
+    </button>
   )
 }
