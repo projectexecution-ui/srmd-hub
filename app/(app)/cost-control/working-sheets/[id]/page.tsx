@@ -141,7 +141,7 @@ export default async function WorkingSheetEditorPage(
     // Best-effort budget headroom lookup
     supabase
       .from('cc_budget_lines')
-      .select('current_budget_amt, current_wo_committed_amt, current_paid_amt')
+      .select('current_budget_amt, current_wo_committed_amt, current_paid_amt, internal_estimate_amt')
       .eq('project_id', ws.project_id)
       .eq('discipline_id', ws.discipline_id)
       .eq('sub_skill_id', ws.sub_skill_id)
@@ -167,8 +167,10 @@ export default async function WorkingSheetEditorPage(
   const budgeted = Number(bl?.current_budget_amt ?? 0)
   const committed = Number(bl?.current_wo_committed_amt ?? 0)
   const paid = Number(bl?.current_paid_amt ?? 0)
+  const estimate = Number(bl?.internal_estimate_amt ?? 0)
   const remainingBeforeThisWS = budgeted - committed
   const remainingAfter = remainingBeforeThisWS - Number(ws.total_amount ?? 0)
+  const estimateRemainingAfter = estimate > 0 ? estimate - Number(ws.past_approved_in_subskill ?? 0) - Number(ws.total_amount ?? 0) : null
 
   const isOwner = user?.id === ws.engineer_id
   const status = ws.status as WSStatus
@@ -206,11 +208,15 @@ export default async function WorkingSheetEditorPage(
       <Card className="p-4 bg-blue-50/50 border-blue-100">
         <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-sm">
           <div>
+            <span className="text-xs uppercase tracking-wide text-blue-700/70">Internal Estimate</span>
+            <p className="font-bold text-indigo-900">{estimate > 0 ? formatINR(estimate) : '—'}</p>
+          </div>
+          <div>
             <span className="text-xs uppercase tracking-wide text-blue-700/70">Past approved in this sub-skill</span>
             <p className="font-bold text-blue-900">{formatINR(ws.past_approved_in_subskill ?? 0)}</p>
           </div>
           <div>
-            <span className="text-xs uppercase tracking-wide text-blue-700/70">Budget</span>
+            <span className="text-xs uppercase tracking-wide text-blue-700/70">Approved Budget (ERP)</span>
             <p className="font-bold text-blue-900">{bl ? formatINR(budgeted) : '—'}</p>
           </div>
           <div>
@@ -238,6 +244,15 @@ export default async function WorkingSheetEditorPage(
           <p className="text-xs text-blue-700 mt-2">
             No budget line set for this sub-skill yet. Import the ENGG_CONSOLIDATED_BUDGET_REPORT or add a budget line to see headroom checks.
           </p>
+        )}
+        {estimateRemainingAfter != null && estimateRemainingAfter < 0 && (
+          <div className="mt-3 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+            <p className="font-semibold mb-0.5">Heads-up: this WS pushes past the Internal Estimate</p>
+            <p className="text-xs">
+              Internal Estimate {formatINR(estimate)} − past approved {formatINR(ws.past_approved_in_subskill ?? 0)} − this WS {formatINR(ws.total_amount ?? 0)} = <b>{formatINR(estimateRemainingAfter)}</b>.
+              Approval can still proceed (ERP gate is separate), but flag to HOD before approving.
+            </p>
+          </div>
         )}
         {status === 'returned' && ws.return_reason && (
           <div className="mt-3 rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-800">

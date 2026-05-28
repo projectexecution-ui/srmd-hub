@@ -4,9 +4,11 @@ import { createClient } from '@/lib/supabase/server'
 import { requirePermission, can } from '@/lib/auth'
 import { PageHeader } from '@/components/PageHeader'
 import { SetupProgressBanner } from '@/components/ProjectSetupWizard/SetupProgressBanner'
-import { Plus, ArrowLeftRight, Flame, Info } from 'lucide-react'
+import { Plus, ArrowLeftRight, Flame, Info, Calculator } from 'lucide-react'
 import { formatINR } from '@/lib/utils'
 import { DeadlineBadge } from '@/components/cost-control/DeadlineBadge'
+import { checkCanSetEstimate } from '@/components/cost-control/ws-actions'
+import { EstimateEditButton } from './EstimateEditButton'
 
 export const dynamic = 'force-dynamic'
 
@@ -15,9 +17,12 @@ interface SubSkillRow  { id: string; discipline_id: string; code: string; name: 
 interface BudgetLine {
   discipline_id: string
   sub_skill_id: string | null
+  line_type: string | null
   current_budget_amt: number | null
   current_wo_committed_amt: number | null
   current_paid_amt: number | null
+  internal_estimate_amt: number | null
+  internal_estimate_notes: string | null
 }
 interface WSAgg {
   discipline_id: string
@@ -63,7 +68,7 @@ export default async function CostControlProjectDetailPage(
       .eq('is_enabled', true),
     supabase
       .from('cc_budget_lines')
-      .select('discipline_id, sub_skill_id, current_budget_amt, current_wo_committed_amt, current_paid_amt')
+      .select('discipline_id, sub_skill_id, line_type, current_budget_amt, current_wo_committed_amt, current_paid_amt, internal_estimate_amt, internal_estimate_notes')
       .eq('project_id', id),
     supabase
       .from('cc_working_sheets')
@@ -130,8 +135,8 @@ export default async function CostControlProjectDetailPage(
   }
 
   // Disciplines-level rollups derived from sub-skills
-  const discAgg = new Map<string, { budget: number; wo: number; paid: number; approvedTotal: number }>()
-  for (const d of disciplines) discAgg.set(d.id, { budget: 0, wo: 0, paid: 0, approvedTotal: 0 })
+  const discAgg = new Map<string, { budget: number; wo: number; paid: number; approvedTotal: number; estimate: number }>()
+  for (const d of disciplines) discAgg.set(d.id, { budget: 0, wo: 0, paid: 0, approvedTotal: 0, estimate: 0 })
   for (const s of subSkills) {
     const bl = blMap.get(`${s.discipline_id}::${s.id}`)
     const a = wsAgg.get(`${s.discipline_id}::${s.id}`) ?? { approvedTotal: 0 }
@@ -141,8 +146,12 @@ export default async function CostControlProjectDetailPage(
       cur.wo    += Number(bl?.current_wo_committed_amt ?? 0)
       cur.paid  += Number(bl?.current_paid_amt ?? 0)
       cur.approvedTotal += a.approvedTotal
+      cur.estimate += Number(bl?.internal_estimate_amt ?? 0)
     }
   }
+
+  // Permission flag — drives the inline "Set estimate" buttons.
+  const canSetEstimate = await checkCanSetEstimate()
 
   // Engineers
   type ProfileLite = { id: string; full_name: string | null; name: string | null }
@@ -171,7 +180,9 @@ export default async function CostControlProjectDetailPage(
   const totalWO = Array.from(discAgg.values()).reduce((s, v) => s + v.wo, 0)
   const totalPaid = Array.from(discAgg.values()).reduce((s, v) => s + v.paid, 0)
   const totalApproved = Array.from(discAgg.values()).reduce((s, v) => s + v.approvedTotal, 0)
+  const totalEstimate = Array.from(discAgg.values()).reduce((s, v) => s + v.estimate, 0)
   const utilPct = totalBudget > 0 ? Math.round((totalPaid / totalBudget) * 100) : 0
+  const releasedPct = totalEstimate > 0 ? Math.round((totalBudget / totalEstimate) * 100) : 0
 
   return (
     <div className="p-4 md:p-6 max-w-7xl mx-auto space-y-4">
@@ -230,14 +241,31 @@ export default async function CostControlProjectDetailPage(
       </div>
 
       {/* KPI strip — portfolio-level numbers for this project */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <KPI label="Approved Budget" value={formatINR(totalBudget)} sub={totalBudget > 0 ? `${disciplines.length} disciplines` : 'Import budget to populate'} tone="blue" />
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+        <KPI
+          label="Internal Estimate"
+          value={totalEstimate > 0 ? formatINR(totalEstimate) : '—'}
+          sub={totalEstimate > 0 ? "HOD's planning ceiling" : 'Not yet set'}
+          tone="indigo"
+        />
+        <KPI
+          label="Approved Budget (ERP)"
+          value={formatINR(totalBudget)}
+          sub={
+            totalEstimate > 0
+              ? `${releasedPct}% of estimate released`
+              : (totalBudget > 0 ? `${disciplines.length} disciplines` : 'Import budget to populate')
+          }
+          tone="blue"
+        />
         <KPI label="Committed (WO/PO)" value={formatINR(totalWO)}
              sub={totalBudget > 0 ? `${Math.round((totalWO / totalBudget) * 100)}% of budget` : '—'} tone="purple" />
         <KPI label="Paid to Date" value={formatINR(totalPaid)}
              sub={totalBudget > 0 ? `${utilPct}% utilized` : '—'} tone="orange" />
         <KPI label="Approved via WS" value={formatINR(totalApproved)}
-             sub="From this app's Working Sheets" tone="green" />
+             sub={totalEstimate > 0
+               ? `${Math.round((totalApproved / totalEstimate) * 100)}% of estimate`
+               : "From this app's Working Sheets"} tone="green" />
       </div>
 
       {showSetupBanner && (
@@ -251,7 +279,8 @@ export default async function CostControlProjectDetailPage(
             <thead className="bg-gray-50 text-left">
               <tr>
                 <Th className="min-w-[280px]">Work Category / Sub-skill</Th>
-                <Th align="right">Budget</Th>
+                <Th align="right" className="w-32">Estimate</Th>
+                <Th align="right">Budget (ERP)</Th>
                 <Th align="right">WO / PO</Th>
                 <Th align="right">Paid</Th>
                 <Th align="right" className="w-20">% Used</Th>
@@ -262,11 +291,11 @@ export default async function CostControlProjectDetailPage(
             </thead>
             <tbody>
               {disciplines.length === 0 && (
-                <tr><td colSpan={8} className="px-4 py-8 text-center text-sm text-gray-500">No disciplines enabled. Open the setup wizard to pick them.</td></tr>
+                <tr><td colSpan={9} className="px-4 py-8 text-center text-sm text-gray-500">No disciplines enabled. Open the setup wizard to pick them.</td></tr>
               )}
 
               {disciplines.map(d => {
-                const dAgg = discAgg.get(d.id) ?? { budget: 0, wo: 0, paid: 0, approvedTotal: 0 }
+                const dAgg = discAgg.get(d.id) ?? { budget: 0, wo: 0, paid: 0, approvedTotal: 0, estimate: 0 }
                 const dPct = dAgg.budget > 0 ? (dAgg.paid / dAgg.budget) * 100 : 0
                 const subs = subSkills.filter(s => s.discipline_id === d.id)
                 const dHot = dPct > 95
@@ -289,6 +318,9 @@ export default async function CostControlProjectDetailPage(
                         <span className="text-gray-900">{d.name}</span>
                         {dHot && <Flame className="inline h-3.5 w-3.5 text-orange-500 ml-2" />}
                       </td>
+                      <Td align="right" mono className="text-indigo-800">
+                        {dAgg.estimate > 0 ? formatINR(dAgg.estimate) : '—'}
+                      </Td>
                       <Td align="right" mono>{dAgg.budget > 0 ? formatINR(dAgg.budget) : '—'}</Td>
                       <Td align="right" mono className="text-gray-600">{dAgg.wo > 0 ? formatINR(dAgg.wo) : '—'}</Td>
                       <Td align="right" mono className="text-gray-600">{dAgg.paid > 0 ? formatINR(dAgg.paid) : '—'}</Td>
@@ -324,6 +356,25 @@ export default async function CostControlProjectDetailPage(
                             <span>{s.name}</span>
                             {sHot && <Flame className="inline h-3 w-3 text-orange-500 ml-1.5" />}
                           </td>
+                          <Td align="right">
+                            <div className="inline-flex items-center gap-1.5 justify-end">
+                              <span className="font-mono text-indigo-800">
+                                {bl?.internal_estimate_amt != null && Number(bl.internal_estimate_amt) > 0 ? formatINR(Number(bl.internal_estimate_amt)) : '—'}
+                              </span>
+                              {canSetEstimate && (
+                                <EstimateEditButton
+                                  projectId={id}
+                                  disciplineId={d.id}
+                                  subSkillId={s.id}
+                                  subSkillLabel={`${s.code} · ${s.name}`}
+                                  lineType={(bl?.line_type as 'work' | 'material' | null) ?? 'work'}
+                                  currentEstimate={bl?.internal_estimate_amt != null ? Number(bl.internal_estimate_amt) : null}
+                                  currentNotes={bl?.internal_estimate_notes ?? null}
+                                  compact
+                                />
+                              )}
+                            </div>
+                          </Td>
                           <Td align="right" mono>{bl?.current_budget_amt ? formatINR(Number(bl.current_budget_amt)) : '—'}</Td>
                           <Td align="right" mono className="text-gray-600">{bl?.current_wo_committed_amt ? formatINR(Number(bl.current_wo_committed_amt)) : '—'}</Td>
                           <Td align="right" mono className="text-gray-600">{bl?.current_paid_amt ? formatINR(Number(bl.current_paid_amt)) : '—'}</Td>
@@ -374,7 +425,7 @@ export default async function CostControlProjectDetailPage(
 
                     {subs.length === 0 && (
                       <tr className="border-t border-gray-100">
-                        <td colSpan={8} className="pl-10 pr-3 py-2 text-xs italic text-gray-400">No sub-skills enabled for this discipline. Add via the setup wizard.</td>
+                        <td colSpan={9} className="pl-10 pr-3 py-2 text-xs italic text-gray-400">No sub-skills enabled for this discipline. Add via the setup wizard.</td>
                       </tr>
                     )}
                   </>
@@ -446,12 +497,13 @@ function Td({
 
 function KPI({
   label, value, sub, tone,
-}: { label: string; value: React.ReactNode; sub?: string; tone: 'blue' | 'purple' | 'orange' | 'green' }) {
+}: { label: string; value: React.ReactNode; sub?: string; tone: 'blue' | 'purple' | 'orange' | 'green' | 'indigo' }) {
   const top = {
     blue: 'border-t-blue-500',
     purple: 'border-t-purple-500',
     orange: 'border-t-orange-500',
     green: 'border-t-green-500',
+    indigo: 'border-t-indigo-500',
   }[tone]
   return (
     <div className={`bg-white rounded-md border border-gray-200 border-t-2 ${top} p-4`}>
