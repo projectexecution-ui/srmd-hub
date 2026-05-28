@@ -132,6 +132,10 @@ export function RequestActions({
     if (!isAtmHead && !isAdmin) return null
 
     if (status === 'PENDING_HOP') {
+      const tickedCount = lines.reduce((n, l) => n + (returnable[l.id] ? 1 : 0), 0)
+      const allTicked = tickedCount === lines.length && lines.length > 0
+      const tickAll  = () => setReturnable(Object.fromEntries(lines.map(l => [l.id, true])))
+      const clearAll = () => setReturnable(Object.fromEntries(lines.map(l => [l.id, false])))
       return (
         <Card>
           <CardHeader><CardTitle className="text-base">Atm Head approval</CardTitle></CardHeader>
@@ -140,7 +144,23 @@ export function RequestActions({
               Tick <b>Returnable</b> for items the engineer must return when the project ends (e.g. tools, formwork).
               Items left unticked are consumable and don&apos;t need to come back.
             </p>
-            <div className="space-y-1">
+            {/* Select-all / clear toggles — essential when a request has many lines */}
+            <div className="flex items-center justify-between gap-2 px-1 py-1.5 border-y border-gray-100 bg-gray-50/50 rounded">
+              <span className="text-xs text-gray-600">
+                <b>{tickedCount}</b> of <b>{lines.length}</b> ticked returnable
+              </span>
+              <div className="flex gap-1.5">
+                <button type="button" onClick={tickAll}
+                  className="text-xs font-medium px-2.5 py-1 rounded-md border border-gray-200 bg-white hover:bg-gray-50 inline-flex items-center gap-1">
+                  <Check className="h-3 w-3" /> {allTicked ? 'All ticked' : 'Select all'}
+                </button>
+                <button type="button" onClick={clearAll}
+                  className="text-xs font-medium px-2.5 py-1 rounded-md border border-gray-200 bg-white hover:bg-gray-50 inline-flex items-center gap-1">
+                  <X className="h-3 w-3" /> Clear all
+                </button>
+              </div>
+            </div>
+            <div className="space-y-1 max-h-96 overflow-y-auto">
               {lines.map(l => (
                 <div key={l.id} className="grid grid-cols-12 gap-2 items-center text-sm">
                   <div className="col-span-8 truncate">
