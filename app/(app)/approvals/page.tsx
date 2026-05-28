@@ -46,61 +46,138 @@ const TONE_CLASSES: Record<string, { bg: string; text: string; ring: string }> =
   indigo: { bg: 'bg-indigo-50',  text: 'text-indigo-700',  ring: 'ring-indigo-100' },
 }
 
-export default async function MyApprovalsPage() {
+type Filter = 'all' | 'overdue' | 'urgent'
+
+export default async function MyApprovalsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ filter?: string; module?: string }>
+}) {
   await requirePermission('approvals', 'view')
+  const sp = await searchParams
+  const filter: Filter = sp.filter === 'overdue' || sp.filter === 'urgent' ? sp.filter : 'all'
+  const moduleFilter = sp.module ?? null
+
   const supabase = await createClient()
   const { data } = await supabase.rpc('my_approval_inbox')
-  const rows = (data ?? []) as InboxRow[]
+  const allRows = (data ?? []) as InboxRow[]
 
-  // Group by module + counts
+  const now = Date.now()
+  // Totals are based on the FULL list — the stats describe the inbox, not the filter view.
+  const totalCount   = allRows.length
+  const overdueCount = allRows.filter(r => isOverdue(r, now)).length
+  const urgentCount  = allRows.filter(r => r.urgency === 'urgent' || r.urgency === 'emergency').length
+
+  // Apply the active filter to the visible list
+  let rows = allRows
+  if (filter === 'overdue') rows = rows.filter(r => isOverdue(r, now))
+  else if (filter === 'urgent') rows = rows.filter(r => r.urgency === 'urgent' || r.urgency === 'emergency')
+  if (moduleFilter) rows = rows.filter(r => r.module_slug === moduleFilter)
+
+  // Group filtered rows by module
   const byModule = new Map<string, InboxRow[]>()
   for (const r of rows) {
     if (!byModule.has(r.module_slug)) byModule.set(r.module_slug, [])
     byModule.get(r.module_slug)!.push(r)
   }
   const moduleKeys = Array.from(byModule.keys()).sort()
+  // Module count comes from the full list so the stat doesn't lie when filtered.
+  const moduleCountAll = new Set(allRows.map(r => r.module_slug)).size
 
-  const now = Date.now()
-  const overdueCount = rows.filter(r => isOverdue(r, now)).length
-  const urgentCount  = rows.filter(r => r.urgency === 'urgent' || r.urgency === 'emergency').length
+  // Helper: build a search-param URL preserving others
+  const urlFor = (next: Partial<{ filter: Filter | 'all'; module: string | null }>): string => {
+    const params = new URLSearchParams()
+    const f = next.filter !== undefined ? next.filter : filter
+    const m = next.module !== undefined ? next.module : moduleFilter
+    if (f && f !== 'all') params.set('filter', f)
+    if (m) params.set('module', m)
+    const qs = params.toString()
+    return qs ? `/approvals?${qs}` : '/approvals'
+  }
 
   return (
     <div className="p-4 md:p-6 max-w-5xl mx-auto space-y-4">
       <PageHeader title="My Approvals" subtitle="Only the items waiting on your action — grouped by module." />
 
-      {/* Headline stats */}
+      {/* Headline stats — clickable filters */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
-        <Stat icon={<Inbox className="h-4 w-4" />}            label="Waiting"  value={rows.length}    tone="slate" />
-        <Stat icon={<Clock className="h-4 w-4" />}            label="Overdue"  value={overdueCount}  tone={overdueCount > 0 ? 'rose' : 'slate'} />
-        <Stat icon={<AlertTriangle className="h-4 w-4" />}    label="Urgent"   value={urgentCount}   tone={urgentCount > 0 ? 'amber' : 'slate'} />
-        <Stat icon={<Building2 className="h-4 w-4" />}        label="Modules"  value={moduleKeys.length} tone="blue" />
+        <Stat icon={<Inbox className="h-4 w-4" />}            label="Waiting"  value={totalCount}    tone="slate"
+              href={urlFor({ filter: 'all', module: null })}
+              active={filter === 'all' && !moduleFilter} />
+        <Stat icon={<Clock className="h-4 w-4" />}            label="Overdue"  value={overdueCount}  tone={overdueCount > 0 ? 'rose' : 'slate'}
+              href={urlFor({ filter: filter === 'overdue' ? 'all' : 'overdue' })}
+              active={filter === 'overdue'} />
+        <Stat icon={<AlertTriangle className="h-4 w-4" />}    label="Urgent"   value={urgentCount}   tone={urgentCount > 0 ? 'amber' : 'slate'}
+              href={urlFor({ filter: filter === 'urgent' ? 'all' : 'urgent' })}
+              active={filter === 'urgent'} />
+        <Stat icon={<Building2 className="h-4 w-4" />}        label="Modules"  value={moduleCountAll} tone="blue" />
       </div>
 
+      {/* Active filter chips */}
+      {(filter !== 'all' || moduleFilter) && (
+        <div className="flex items-center gap-2 text-xs">
+          <span className="text-gray-500">Filtering by:</span>
+          {filter !== 'all' && (
+            <Link href={urlFor({ filter: 'all' })}
+              className="inline-flex items-center gap-1 px-2 h-7 rounded-full bg-blue-100 text-blue-800 hover:bg-blue-200">
+              {filter === 'overdue' ? 'Overdue' : 'Urgent'}
+              <span className="ml-0.5 text-blue-600">×</span>
+            </Link>
+          )}
+          {moduleFilter && (
+            <Link href={urlFor({ module: null })}
+              className="inline-flex items-center gap-1 px-2 h-7 rounded-full bg-blue-100 text-blue-800 hover:bg-blue-200">
+              {MODULE_META[moduleFilter]?.label ?? moduleFilter}
+              <span className="ml-0.5 text-blue-600">×</span>
+            </Link>
+          )}
+          <Link href="/approvals" className="text-gray-500 hover:text-gray-800 underline-offset-2 hover:underline">
+            Clear all
+          </Link>
+        </div>
+      )}
+
       {rows.length === 0 ? (
-        <Card>
-          <CardContent className="py-12 text-center">
-            <div className="inline-flex h-12 w-12 items-center justify-center rounded-full bg-emerald-50 text-emerald-700 mb-3">
-              <CheckCheck className="h-6 w-6" />
-            </div>
-            <p className="text-base font-semibold text-gray-900">All caught up</p>
-            <p className="text-sm text-gray-500 mt-1">Nothing is waiting on you right now.</p>
-          </CardContent>
-        </Card>
+        allRows.length === 0 ? (
+          <Card>
+            <CardContent className="py-12 text-center">
+              <div className="inline-flex h-12 w-12 items-center justify-center rounded-full bg-emerald-50 text-emerald-700 mb-3">
+                <CheckCheck className="h-6 w-6" />
+              </div>
+              <p className="text-base font-semibold text-gray-900">All caught up</p>
+              <p className="text-sm text-gray-500 mt-1">Nothing is waiting on you right now.</p>
+            </CardContent>
+          </Card>
+        ) : (
+          <Card>
+            <CardContent className="py-10 text-center">
+              <p className="text-sm font-semibold text-gray-900">No matches for this filter</p>
+              <p className="text-xs text-gray-500 mt-1">
+                Try a different filter or <Link href="/approvals" className="text-blue-700 hover:underline">clear all</Link>.
+              </p>
+            </CardContent>
+          </Card>
+        )
       ) : (
         moduleKeys.map(mod => {
           const meta = MODULE_META[mod] ?? { label: mod, icon: Inbox, tone: 'slate' }
           const tones = TONE_CLASSES[meta.tone] ?? TONE_CLASSES['blue']
           const items = byModule.get(mod)!
+          const isModuleFilter = moduleFilter === mod
           return (
             <Card key={mod}>
               <CardContent className="pt-5">
                 <div className="flex items-center justify-between mb-3">
-                  <h3 className="text-base font-bold text-gray-900 inline-flex items-center gap-2">
+                  <Link
+                    href={urlFor({ module: isModuleFilter ? null : mod })}
+                    className="inline-flex items-center gap-2 hover:opacity-80"
+                    title={isModuleFilter ? 'Click to clear module filter' : `Show only ${meta.label}`}
+                  >
                     <span className={`inline-flex h-8 w-8 items-center justify-center rounded-lg ${tones.bg} ${tones.text}`}>
                       <meta.icon className="h-4 w-4" />
                     </span>
-                    {meta.label}
-                  </h3>
+                    <h3 className="text-base font-bold text-gray-900">{meta.label}</h3>
+                  </Link>
                   <Badge variant="default" className="text-xs">{items.length}</Badge>
                 </div>
 
@@ -162,11 +239,13 @@ export default async function MyApprovalsPage() {
   )
 }
 
-function Stat({ icon, label, value, tone }: {
+function Stat({ icon, label, value, tone, href, active }: {
   icon: React.ReactNode
   label: string
   value: number
   tone: 'slate' | 'blue' | 'rose' | 'amber'
+  href?: string
+  active?: boolean
 }) {
   const tones: Record<string, string> = {
     slate: 'bg-slate-100 text-slate-700',
@@ -174,8 +253,14 @@ function Stat({ icon, label, value, tone }: {
     rose:  'bg-rose-50 text-rose-700',
     amber: 'bg-amber-50 text-amber-700',
   }
-  return (
-    <div className="rounded-2xl border border-gray-200 bg-white p-3 flex items-center gap-2.5">
+  const activeRings: Record<string, string> = {
+    slate: 'ring-slate-300',
+    blue:  'ring-blue-300',
+    rose:  'ring-rose-300',
+    amber: 'ring-amber-300',
+  }
+  const inner = (
+    <div className={`rounded-2xl border border-gray-200 bg-white p-3 flex items-center gap-2.5 transition-all ${href ? 'hover:shadow-md hover:-translate-y-0.5 cursor-pointer' : ''} ${active ? `ring-2 ${activeRings[tone]}` : ''}`}>
       <div className={`h-9 w-9 rounded-xl inline-flex items-center justify-center ${tones[tone]}`}>
         {icon}
       </div>
@@ -185,6 +270,8 @@ function Stat({ icon, label, value, tone }: {
       </div>
     </div>
   )
+  if (href) return <Link href={href} className="block">{inner}</Link>
+  return inner
 }
 
 // ─── helpers ─────────────────────────────────────────────────────────────
