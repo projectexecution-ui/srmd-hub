@@ -14,9 +14,9 @@ import {
   upsertWorkingSheetItem,
   deleteWorkingSheetItem,
   submitWorkingSheet,
-  approveWorkingSheet,
   returnWorkingSheet,
 } from '@/components/cost-control/ws-actions'
+import { ApproveTrancheButton } from '@/components/cost-control/ApproveTrancheButton'
 
 interface Vendor { id: string; name: string }
 
@@ -45,12 +45,13 @@ interface Props {
   initialItems: WSItem[]
   pastItems?: PastItem[]
   wsTotal: number
+  approvedSoFar?: number
 }
 
 const UOM_OPTIONS = ['Sft', 'Sqm', 'Rm', 'Mt', 'Cum', 'Nos', 'MT', 'Kg', 'Ltr', 'Ls']
 const GST_OPTIONS = [0, 5, 12, 18, 28]
 
-export function WSEditor({ wsId, status, canEdit, canApprove, vendors, initialItems, pastItems = [], wsTotal }: Props) {
+export function WSEditor({ wsId, status, canEdit, canApprove, vendors, initialItems, pastItems = [], wsTotal, approvedSoFar = 0 }: Props) {
   const router = useRouter()
   const [items, setItems] = React.useState<WSItem[]>(initialItems)
   const [busy, setBusy] = React.useState(false)
@@ -161,14 +162,6 @@ export function WSEditor({ wsId, status, canEdit, canApprove, vendors, initialIt
     const res = await submitWorkingSheet(wsId)
     setBusy(false)
     if (!res.ok) { setError(res.error ?? 'Submit failed'); return }
-    router.refresh()
-  }
-
-  async function approve() {
-    setBusy(true); setError(null)
-    const res = await approveWorkingSheet(wsId)
-    setBusy(false)
-    if (!res.ok) { setError(res.error ?? 'Approve failed'); return }
     router.refresh()
   }
 
@@ -365,30 +358,26 @@ export function WSEditor({ wsId, status, canEdit, canApprove, vendors, initialIt
             Submit for Approval
           </Button>
         )}
-        {status === 'submitted' && canApprove && (
-          <>
+        {(status === 'submitted' || status === 'partially_approved') && canApprove && (
+          <div className="ml-auto flex flex-wrap items-start gap-2">
             <Button
               type="button"
               variant="outline"
               size="sm"
-              className="ml-auto text-red-700 border-red-300 hover:bg-red-50"
+              className="text-red-700 border-red-300 hover:bg-red-50"
               onClick={() => setReturnOpen(o => !o)}
               disabled={busy}
             >
               <RotateCcw className="h-3.5 w-3.5" />
               Return
             </Button>
-            <Button
-              type="button"
-              variant="success"
-              size="sm"
-              onClick={approve}
-              disabled={busy}
-            >
-              {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
-              Approve
-            </Button>
-          </>
+            <ApproveTrancheButton
+              wsId={wsId}
+              totalAmount={displayTotal}
+              approvedSoFar={approvedSoFar}
+              compact
+            />
+          </div>
         )}
       </div>
 

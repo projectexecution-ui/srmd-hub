@@ -148,20 +148,42 @@ export async function setWorkingSheetDeadline(
 }
 
 /** Public version of can_approve so server pages can decide which
- *  buttons to render. Mirrors the same RPC used by the actions. */
+ *  buttons to render. Mirrors the same RPC used by the actions.
+ *  For 'approved' we check both the full and partial transitions —
+ *  HOD can approve a tranche (status → partially_approved) OR finalise
+ *  (status → approved). Either yes = the Approve button is allowed. */
 export async function checkCanApproveWS(wsId: string, toStage: 'approved' | 'returned'): Promise<boolean> {
   const me = await whoAmI()
   if (!me.user) return false
   const supabase = await createClient()
   const { data: ws } = await supabase
     .from('cc_working_sheets')
-    .select('engineer_id, status, total_amount')
+    .select('engineer_id, status, total_amount, approved_for_erp_amt')
     .eq('id', wsId)
     .single()
   if (!ws) return false
-  if (ws.status !== 'submitted') return false
   if (ws.engineer_id === me.user.id && !me.isAdmin) return false
-  return callCanApprove('submitted', toStage, Number(ws.total_amount ?? 0))
+
+  const total = Number(ws.total_amount ?? 0)
+  const already = Number(ws.approved_for_erp_amt ?? 0)
+  const remaining = Math.max(total - already, 0)
+
+  if (toStage === 'returned') {
+    if (ws.status !== 'submitted' && ws.status !== 'partially_approved') return false
+    return callCanApprove(ws.status, 'returned', total)
+  }
+
+  // Approve path — allow when sheet is submitted or already in tranche-mode.
+  if (ws.status !== 'submitted' && ws.status !== 'partially_approved') return false
+
+  // The button shows if EITHER a partial tranche or a full finalise is
+  // allowed for this user at any amount up to remaining.
+  const fromStage = ws.status as 'submitted' | 'partially_approved'
+  const [okPartial, okFull] = await Promise.all([
+    callCanApprove(fromStage, 'partially_approved', remaining),
+    callCanApprove(fromStage, 'approved', remaining),
+  ])
+  return okPartial || okFull
 }
 
 /** Asks the DB whether the caller may move this WS through this stage
@@ -387,7 +409,17 @@ export async function submitWorkingSheet(wsId: string): Promise<{ ok: boolean; e
   return { ok: true }
 }
 
-export async function approveWorkingSheet(wsId: string): Promise<{ ok: boolean; error?: string }> {
+/** Approve a working sheet. Two modes:
+ *  - tranche: pass `trancheAmount` to approve a slice. Adds to the
+ *    running approved_for_erp_amt. Status becomes 'partially_approved'
+ *    while cumulative < total, or 'approved' once it reaches total.
+ *  - full:    pass nothing — backwards compatible. Approves the full
+ *    remaining amount in one go.
+ */
+export async function approveWorkingSheet(
+  wsId: string,
+  trancheAmount?: number | null,
+): Promise<{ ok: boolean; error?: string; new_status?: string; approved_so_far?: number }> {
   const me = await whoAmI()
   if (!me.user) return { ok: false, error: 'Not signed in' }
   if (!me.canView) return { ok: false, error: 'You do not have access to Cost Control' }
@@ -395,11 +427,13 @@ export async function approveWorkingSheet(wsId: string): Promise<{ ok: boolean; 
   const supabase = await createClient()
   const { data: ws, error } = await supabase
     .from('cc_working_sheets')
-    .select('id, status, engineer_id, project_id, discipline_id, sub_skill_id, line_type, total_amount')
+    .select('id, status, engineer_id, project_id, discipline_id, sub_skill_id, line_type, total_amount, approved_for_erp_amt')
     .eq('id', wsId)
     .single()
   if (error || !ws) return { ok: false, error: 'Working Sheet not found' }
-  if (ws.status !== 'submitted') return { ok: false, error: 'Only submitted sheets can be approved' }
+  if (ws.status !== 'submitted' && ws.status !== 'partially_approved') {
+    return { ok: false, error: 'Only submitted or partially-approved sheets can be approved further' }
+  }
 
   // Self-approval is blocked unless the caller is an admin (escape hatch
   // for single-approver teams during rollout).
@@ -407,15 +441,37 @@ export async function approveWorkingSheet(wsId: string): Promise<{ ok: boolean; 
     return { ok: false, error: 'You cannot approve a sheet you raised yourself' }
   }
 
-  // The approval matrix says which role(s) may move submitted → approved
-  // at this amount. Admin always passes inside can_approve().
-  const allowed = await callCanApprove('submitted', 'approved', Number(ws.total_amount ?? 0))
+  const total = Number(ws.total_amount ?? 0)
+  const alreadyApproved = Number(ws.approved_for_erp_amt ?? 0)
+  const remaining = total - alreadyApproved
+
+  // Decide tranche size. If trancheAmount is provided, use it; otherwise
+  // approve the rest in one shot.
+  let tranche = trancheAmount == null || !Number.isFinite(trancheAmount)
+    ? remaining
+    : Number(trancheAmount)
+
+  if (tranche <= 0) return { ok: false, error: 'Tranche amount must be greater than zero' }
+  if (tranche > remaining + 1) {
+    // 1 ₹ floating-point tolerance for the "approve all remaining" path
+    return { ok: false, error: `Tranche ${formatRupees(tranche)} exceeds remaining ${formatRupees(remaining)}` }
+  }
+  // Clamp to remaining so the running total never overshoots.
+  if (tranche > remaining) tranche = remaining
+
+  const cumulative = alreadyApproved + tranche
+  const willBeFull = cumulative >= total - 0.5
+  const toStage: 'partially_approved' | 'approved' = willBeFull ? 'approved' : 'partially_approved'
+  const fromStage = ws.status as 'submitted' | 'partially_approved'
+
+  // Approval matrix gate — passes the TRANCHE amount so amount_cap_max
+  // rules apply per slice (head ≤ ₹2L per tranche).
+  const allowed = await callCanApprove(fromStage, toStage, tranche)
   if (!allowed) {
-    return { ok: false, error: 'Your role is not configured to approve this transition. Check /admin/approvals.' }
+    return { ok: false, error: `Your role can't approve a ${formatRupees(tranche)} tranche on this sheet. Check /admin/approvals.` }
   }
 
   // Best-effort: find a matching budget line so we can write an event against it.
-  // If none exists, write the event with budget_line_id=null but project_id set.
   const { data: bl } = await supabase
     .from('cc_budget_lines')
     .select('id')
@@ -425,19 +481,32 @@ export async function approveWorkingSheet(wsId: string): Promise<{ ok: boolean; 
     .eq('line_type', ws.line_type)
     .maybeSingle()
 
-  const { error: updErr } = await supabase
-    .from('cc_working_sheets')
-    .update({ status: 'approved', approved_at: new Date().toISOString(), approved_by: me.user.id })
-    .eq('id', wsId)
+  const now = new Date().toISOString()
+  const update: Record<string, unknown> = {
+    status: toStage,
+    approved_for_erp_amt: cumulative,
+    approved_for_erp_at: now,
+    approved_for_erp_by: me.user.id,
+  }
+  // Only set approved_at / approved_by when fully approved, so we
+  // preserve the "first tranche" vs "fully signed off" distinction.
+  if (willBeFull) {
+    update.approved_at = now
+    update.approved_by = me.user.id
+  }
+
+  const { error: updErr } = await supabase.from('cc_working_sheets').update(update).eq('id', wsId)
   if (updErr) return { ok: false, error: updErr.message }
 
   await supabase.from('cc_budget_events').insert({
     budget_line_id: bl?.id ?? null,
     project_id: ws.project_id,
     event_type: 'ws_approved',
-    delta_amount: ws.total_amount ?? 0,
+    delta_amount: tranche,
     related_ws_id: wsId,
-    remarks: 'Working Sheet approved',
+    remarks: willBeFull
+      ? `WS fully approved — final tranche ${formatRupees(tranche)}`
+      : `WS tranche approved ${formatRupees(tranche)} (cumulative ${formatRupees(cumulative)} of ${formatRupees(total)})`,
     requested_by: me.user.id,
     approved_by: me.user.id,
     approval_status: 'approved',
@@ -446,7 +515,13 @@ export async function approveWorkingSheet(wsId: string): Promise<{ ok: boolean; 
   revalidatePath(`/cost-control/working-sheets/${wsId}`)
   revalidatePath('/cost-control/working-sheets')
   revalidatePath('/cost-control')
-  return { ok: true }
+  revalidatePath(`/cost-control/projects/${ws.project_id}`)
+  return { ok: true, new_status: toStage, approved_so_far: cumulative }
+}
+
+function formatRupees(n: number): string {
+  if (!Number.isFinite(n)) return '—'
+  return '₹' + n.toLocaleString('en-IN', { maximumFractionDigits: 0 })
 }
 
 export async function returnWorkingSheet(wsId: string, reason: string): Promise<{ ok: boolean; error?: string }> {
@@ -462,13 +537,15 @@ export async function returnWorkingSheet(wsId: string, reason: string): Promise<
     .eq('id', wsId)
     .single()
   if (error || !ws) return { ok: false, error: 'Working Sheet not found' }
-  if (ws.status !== 'submitted') return { ok: false, error: 'Only submitted sheets can be returned' }
+  if (ws.status !== 'submitted' && ws.status !== 'partially_approved') {
+    return { ok: false, error: 'Only submitted or partially-approved sheets can be returned' }
+  }
 
   if (ws.engineer_id === me.user.id && !me.isAdmin) {
     return { ok: false, error: 'You cannot return a sheet you raised yourself' }
   }
 
-  const allowed = await callCanApprove('submitted', 'returned', Number(ws.total_amount ?? 0))
+  const allowed = await callCanApprove(ws.status as 'submitted' | 'partially_approved', 'returned', Number(ws.total_amount ?? 0))
   if (!allowed) {
     return { ok: false, error: 'Your role is not configured to return this sheet. Check /admin/approvals.' }
   }

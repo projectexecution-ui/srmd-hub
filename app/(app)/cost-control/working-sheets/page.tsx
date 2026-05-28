@@ -13,12 +13,30 @@ import { formatINR, formatDate } from '@/lib/utils'
 export const dynamic = 'force-dynamic'
 
 const STATUS_FILTERS: Array<{ value: '' | WSStatus; label: string }> = [
-  { value: '',          label: 'All' },
-  { value: 'draft',     label: 'Draft' },
-  { value: 'submitted', label: 'Submitted' },
-  { value: 'approved',  label: 'Approved' },
-  { value: 'returned',  label: 'Returned' },
+  { value: '',                    label: 'All' },
+  { value: 'draft',               label: 'Draft' },
+  { value: 'submitted',           label: 'Submitted' },
+  { value: 'partially_approved',  label: 'Partially approved' },
+  { value: 'approved',            label: 'Approved' },
+  { value: 'returned',            label: 'Returned' },
 ]
+
+// Display order for the status-group sections in the list.
+const STATUS_ORDER: WSStatus[] = [
+  'submitted', 'partially_approved', 'returned', 'draft', 'draft_blocked',
+  'approved', 'wo_issued', 'paid', 'cancelled',
+]
+const STATUS_GROUP_TITLES: Record<WSStatus, string> = {
+  draft:              'Draft (in progress with engineer)',
+  draft_blocked:      'Blocked drafts',
+  submitted:          'Awaiting approval',
+  partially_approved: 'Partially approved (awaiting more tranches)',
+  approved:           'Fully approved',
+  returned:           'Returned to engineer',
+  wo_issued:          'WO issued',
+  paid:               'Paid',
+  cancelled:          'Cancelled',
+}
 
 export default async function WorkingSheetsPage({
   searchParams,
@@ -32,7 +50,7 @@ export default async function WorkingSheetsPage({
 
   let q = supabase
     .from('cc_working_sheets')
-    .select('id, ws_code, status, total_amount, created_at, deadline_date, engineer_id, project_id, sub_skill_id, projects(code, name), cc_disciplines(code, name), cc_sub_skills(code, name)')
+    .select('id, ws_code, status, total_amount, approved_for_erp_amt, created_at, deadline_date, engineer_id, project_id, sub_skill_id, projects(code, name), cc_disciplines(code, name), cc_sub_skills(code, name)')
     .order('created_at', { ascending: false })
     .limit(500)
   if (sp.project) q = q.eq('project_id', sp.project)
@@ -50,6 +68,7 @@ export default async function WorkingSheetsPage({
     ws_code: string
     status: WSStatus
     total_amount: number | null
+    approved_for_erp_amt: number | null
     created_at: string
     deadline_date: string | null
     engineer_id: string
@@ -66,6 +85,34 @@ export default async function WorkingSheetsPage({
   const profileMap = new Map(profiles.map(p => [p.id, p.full_name ?? p.name ?? '(unnamed)']))
 
   const total = rows.reduce((s, r) => s + Number(r.total_amount ?? 0), 0)
+
+  // KPI roll-up across the filtered set.
+  const kpis = rows.reduce((acc, r) => {
+    const amt = Number(r.total_amount ?? 0)
+    const appr = Number(r.approved_for_erp_amt ?? 0)
+    if (r.status === 'cancelled') return acc
+    acc.estimateTotal += amt
+    acc.approvedToDate += appr
+    if (r.status === 'submitted' || r.status === 'partially_approved') {
+      acc.pendingCount += 1
+      acc.pendingAmount += Math.max(amt - appr, 0)
+    }
+    if (r.status === 'wo_issued' || r.status === 'paid' || r.status === 'approved') {
+      acc.issuedReadyCount += 1
+    }
+    return acc
+  }, { estimateTotal: 0, approvedToDate: 0, pendingCount: 0, pendingAmount: 0, issuedReadyCount: 0 })
+
+  // Group rows by status for the rendered list.
+  const groups = new Map<WSStatus, WSRow[]>()
+  for (const r of rows) {
+    const arr = groups.get(r.status) ?? []
+    arr.push(r)
+    groups.set(r.status, arr)
+  }
+  const orderedGroups = STATUS_ORDER
+    .map(s => ({ status: s, rows: groups.get(s) ?? [] }))
+    .filter(g => g.rows.length > 0)
 
   function buildQuery(params: Record<string, string | undefined>): string {
     const entries = Object.entries(params).filter(([, v]) => v !== undefined && v !== '')
@@ -133,67 +180,130 @@ export default async function WorkingSheetsPage({
         </form>
       </div>
 
-      <Card className="overflow-hidden">
-        {rows.length === 0 ? (
+      {/* KPI strip — running roll-up across the filtered set */}
+      {rows.length > 0 && (
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+          <KpiTile label="Estimate (total)"   value={formatINR(kpis.estimateTotal)}  sub={`${rows.length} sheet${rows.length === 1 ? '' : 's'}`} tone="indigo" />
+          <KpiTile label="Approved to date"   value={formatINR(kpis.approvedToDate)} sub={kpis.estimateTotal > 0 ? `${Math.round((kpis.approvedToDate / kpis.estimateTotal) * 100)}% of estimate` : '—'} tone="green" />
+          <KpiTile label="Pending approval"   value={formatINR(kpis.pendingAmount)}  sub={`${kpis.pendingCount} sheet${kpis.pendingCount === 1 ? '' : 's'} awaiting`} tone="amber" />
+          <KpiTile label="Fully approved+"    value={String(kpis.issuedReadyCount)}  sub="approved / WO issued / paid" tone="blue" />
+        </div>
+      )}
+
+      {rows.length === 0 ? (
+        <Card>
           <EmptyState
             icon={<FileText className="h-10 w-10" />}
             title="No Working Sheets match these filters"
             description="Create the first one with the button at the top right."
           />
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead className="bg-gray-50 text-left text-xs uppercase tracking-wide text-gray-500">
-                <tr>
-                  <th className="px-4 py-3 font-semibold">WS Code</th>
-                  <th className="px-4 py-3 font-semibold">Project</th>
-                  <th className="px-4 py-3 font-semibold">Discipline · Sub-skill</th>
-                  <th className="px-4 py-3 font-semibold">Engineer</th>
-                  <th className="px-4 py-3 font-semibold text-right">Amount</th>
-                  <th className="px-4 py-3 font-semibold">Status</th>
-                  <th className="px-4 py-3 font-semibold">Deadline</th>
-                  <th className="px-4 py-3 font-semibold">Created</th>
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map(w => {
-                  const proj = Array.isArray(w.projects) ? w.projects[0] : w.projects
-                  const dis = Array.isArray(w.cc_disciplines) ? w.cc_disciplines[0] : w.cc_disciplines
-                  const sub = Array.isArray(w.cc_sub_skills) ? w.cc_sub_skills[0] : w.cc_sub_skills
-                  return (
-                    <tr key={w.id} className="border-t border-gray-100 hover:bg-gray-50">
-                      <td className="px-4 py-3">
-                        <Link href={`/cost-control/working-sheets/${w.id}`} className="font-semibold text-blue-700 hover:underline">
-                          {w.ws_code}
-                        </Link>
-                      </td>
-                      <td className="px-4 py-3 text-gray-700">{proj?.code ?? '—'}</td>
-                      <td className="px-4 py-3 text-gray-700 truncate max-w-[260px]">
-                        {dis?.code} · {sub?.name}
-                      </td>
-                      <td className="px-4 py-3 text-gray-700">{profileMap.get(w.engineer_id) ?? '—'}</td>
-                      <td className="px-4 py-3 font-semibold text-gray-900 text-right tabular-nums">{formatINR(w.total_amount ?? 0)}</td>
-                      <td className="px-4 py-3"><WSStatusPill status={w.status} /></td>
-                      <td className="px-4 py-3">
-                        {w.deadline_date ? (
-                          <DeadlineBadge
-                            deadlineDate={w.deadline_date}
-                            approved={w.status === 'approved' || w.status === 'wo_issued' || w.status === 'paid'}
-                            className="text-xs px-2 py-1"
-                          />
-                        ) : (
-                          <span className="text-xs text-gray-400">—</span>
-                        )}
-                      </td>
-                      <td className="px-4 py-3 text-xs text-gray-500">{formatDate(w.created_at)}</td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </Card>
+        </Card>
+      ) : (
+        <div className="space-y-4">
+          {orderedGroups.map(g => {
+            const sum = g.rows.reduce((s, r) => s + Number(r.total_amount ?? 0), 0)
+            const apprSum = g.rows.reduce((s, r) => s + Number(r.approved_for_erp_amt ?? 0), 0)
+            return (
+              <Card key={g.status} className="overflow-hidden">
+                <div className="flex items-center justify-between gap-3 px-4 py-2.5 bg-slate-50 border-b border-gray-200">
+                  <div className="flex items-center gap-2">
+                    <WSStatusPill status={g.status} />
+                    <span className="text-sm font-semibold text-gray-900">{STATUS_GROUP_TITLES[g.status]}</span>
+                    <span className="text-xs text-gray-500">· {g.rows.length}</span>
+                  </div>
+                  <div className="text-xs text-gray-600 tabular-nums text-right">
+                    <span>{formatINR(sum)}</span>
+                    {apprSum > 0 && apprSum < sum && (
+                      <span className="ml-2 text-emerald-700">· {formatINR(apprSum)} approved</span>
+                    )}
+                  </div>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead className="bg-gray-50 text-left text-xs uppercase tracking-wide text-gray-500">
+                      <tr>
+                        <th className="px-4 py-2 font-semibold">WS Code</th>
+                        <th className="px-4 py-2 font-semibold">Project</th>
+                        <th className="px-4 py-2 font-semibold">Discipline · Sub-skill</th>
+                        <th className="px-4 py-2 font-semibold">Engineer</th>
+                        <th className="px-4 py-2 font-semibold text-right">Estimate</th>
+                        <th className="px-4 py-2 font-semibold text-right">Approved</th>
+                        <th className="px-4 py-2 font-semibold">Deadline</th>
+                        <th className="px-4 py-2 font-semibold">Created</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {g.rows.map(w => {
+                        const proj = Array.isArray(w.projects) ? w.projects[0] : w.projects
+                        const dis = Array.isArray(w.cc_disciplines) ? w.cc_disciplines[0] : w.cc_disciplines
+                        const sub = Array.isArray(w.cc_sub_skills) ? w.cc_sub_skills[0] : w.cc_sub_skills
+                        const appr = Number(w.approved_for_erp_amt ?? 0)
+                        const est = Number(w.total_amount ?? 0)
+                        const pct = est > 0 ? Math.round((appr / est) * 100) : 0
+                        return (
+                          <tr key={w.id} className="border-t border-gray-100 hover:bg-gray-50">
+                            <td className="px-4 py-2.5">
+                              <Link href={`/cost-control/working-sheets/${w.id}`} className="font-semibold text-blue-700 hover:underline">
+                                {w.ws_code}
+                              </Link>
+                            </td>
+                            <td className="px-4 py-2.5 text-gray-700">{proj?.code ?? '—'}</td>
+                            <td className="px-4 py-2.5 text-gray-700 truncate max-w-[260px]">
+                              {dis?.code} · {sub?.name}
+                            </td>
+                            <td className="px-4 py-2.5 text-gray-700">{profileMap.get(w.engineer_id) ?? '—'}</td>
+                            <td className="px-4 py-2.5 font-semibold text-gray-900 text-right tabular-nums">{formatINR(est)}</td>
+                            <td className="px-4 py-2.5 text-right tabular-nums">
+                              {appr > 0 ? (
+                                <span className={appr >= est ? 'text-emerald-700 font-semibold' : 'text-amber-700 font-semibold'}>
+                                  {formatINR(appr)}
+                                  {appr < est && <span className="ml-1 text-[10px] text-amber-700/80">({pct}%)</span>}
+                                </span>
+                              ) : (
+                                <span className="text-xs text-gray-400">—</span>
+                              )}
+                            </td>
+                            <td className="px-4 py-2.5">
+                              {w.deadline_date ? (
+                                <DeadlineBadge
+                                  deadlineDate={w.deadline_date}
+                                  approved={w.status === 'approved' || w.status === 'wo_issued' || w.status === 'paid'}
+                                  className="text-xs px-2 py-1"
+                                />
+                              ) : (
+                                <span className="text-xs text-gray-400">—</span>
+                              )}
+                            </td>
+                            <td className="px-4 py-2.5 text-xs text-gray-500">{formatDate(w.created_at)}</td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </Card>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function KpiTile({ label, value, sub, tone }: {
+  label: string; value: string; sub?: string; tone: 'indigo' | 'green' | 'amber' | 'blue'
+}) {
+  const top = {
+    indigo: 'border-t-indigo-500',
+    green:  'border-t-emerald-500',
+    amber:  'border-t-amber-500',
+    blue:   'border-t-blue-500',
+  }[tone]
+  return (
+    <div className={`bg-white rounded-md border border-gray-200 border-t-2 ${top} p-4`}>
+      <p className="text-[10px] uppercase tracking-wider font-semibold text-gray-500">{label}</p>
+      <p className="text-xl font-bold text-gray-900 mt-1 tabular-nums">{value}</p>
+      {sub && <p className="text-[11px] text-gray-500 mt-0.5">{sub}</p>}
     </div>
   )
 }

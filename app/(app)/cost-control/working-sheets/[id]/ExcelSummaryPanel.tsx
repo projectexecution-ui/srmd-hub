@@ -8,8 +8,9 @@ import {
   FileSpreadsheet, Download, RefreshCcw, Loader2, AlertTriangle, TrendingDown, TrendingUp, Sigma, Sparkles,
   Send, Check, RotateCcw,
 } from 'lucide-react'
-import { submitWorkingSheet, approveWorkingSheet, returnWorkingSheet } from '@/components/cost-control/ws-actions'
+import { submitWorkingSheet, returnWorkingSheet } from '@/components/cost-control/ws-actions'
 import { WSStatusPill, type WSStatus } from '@/components/cost-control/WSStatusPill'
+import { ApproveTrancheButton } from '@/components/cost-control/ApproveTrancheButton'
 
 interface Breakdown { label: string; value: number }
 
@@ -40,13 +41,15 @@ interface FlagSummary {
 }
 
 export function ExcelSummaryPanel({
-  wsId, status, canEdit, canApprove, canReturn, fileName, downloadUrl, summaryTotal, summaryNotes, flagSummary, lastCheckedAt, rows,
+  wsId, status, canEdit, canApprove, canReturn, totalAmount, approvedSoFar, fileName, downloadUrl, summaryTotal, summaryNotes, flagSummary, lastCheckedAt, rows,
 }: {
   wsId: string
   status: WSStatus
   canEdit: boolean
   canApprove: boolean
   canReturn: boolean
+  totalAmount: number
+  approvedSoFar: number
   fileName: string | null
   downloadUrl: string | null
   summaryTotal: number | null
@@ -63,21 +66,14 @@ export function ExcelSummaryPanel({
   const [err, setErr] = useState<string | null>(null)
 
   const canSubmit    = canEdit    && (status === 'draft' || status === 'returned')
-  const canDoApprove = canApprove && status === 'submitted'
-  const canDoReturn  = canReturn  && status === 'submitted'
+  const canDoApprove = canApprove && (status === 'submitted' || status === 'partially_approved')
+  const canDoReturn  = canReturn  && (status === 'submitted' || status === 'partially_approved')
 
   async function submit() {
     setActing(true); setErr(null)
     const r = await submitWorkingSheet(wsId)
     setActing(false)
     if (!r.ok) { setErr(r.error ?? 'Submit failed'); return }
-    router.refresh()
-  }
-  async function approve() {
-    setActing(true); setErr(null)
-    const r = await approveWorkingSheet(wsId)
-    setActing(false)
-    if (!r.ok) { setErr(r.error ?? 'Approve failed'); return }
     router.refresh()
   }
   async function doReturn() {
@@ -166,10 +162,9 @@ export function ExcelSummaryPanel({
               </Button>
             )}
             {canDoApprove && (
-              <Button variant="success" onClick={approve} disabled={acting}>
-                {acting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
-                Approve
-              </Button>
+              <div className="w-full">
+                <ApproveTrancheButton wsId={wsId} totalAmount={totalAmount} approvedSoFar={approvedSoFar} compact />
+              </div>
             )}
           </div>
 

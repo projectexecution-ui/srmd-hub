@@ -40,7 +40,7 @@ export default async function WorkingSheetEditorPage(
 
   const { data: ws } = await supabase
     .from('cc_working_sheets')
-    .select('id, ws_code, status, total_amount, past_approved_in_subskill, return_reason, engineer_id, project_id, discipline_id, sub_skill_id, line_type, entry_mode, source_excel_url, source_excel_name, summary_total, summary_notes, flag_summary, last_checked_at, deadline_date, deadline_notes, projects(code, name), cc_disciplines(code, name), cc_sub_skills(code, name)')
+    .select('id, ws_code, status, total_amount, approved_for_erp_amt, past_approved_in_subskill, return_reason, engineer_id, project_id, discipline_id, sub_skill_id, line_type, entry_mode, source_excel_url, source_excel_name, summary_total, summary_notes, flag_summary, last_checked_at, deadline_date, deadline_notes, projects(code, name), cc_disciplines(code, name), cc_sub_skills(code, name)')
     .eq('id', id)
     .single()
 
@@ -105,6 +105,8 @@ export default async function WorkingSheetEditorPage(
           canEdit={canEdit && (user?.id === ws.engineer_id || isAdmin)}
           canApprove={mayApprove}
           canReturn={mayReturn}
+          totalAmount={Number(ws.total_amount ?? 0)}
+          approvedSoFar={Number(ws.approved_for_erp_amt ?? 0)}
           fileName={ws.source_excel_name}
           downloadUrl={downloadUrl}
           summaryTotal={ws.summary_total != null ? Number(ws.summary_total) : null}
@@ -279,6 +281,7 @@ export default async function WorkingSheetEditorPage(
         status={status}
         canEdit={canEdit && (isOwner || isAdmin)}
         canApprove={mayApprove}
+        approvedSoFar={Number(ws.approved_for_erp_amt ?? 0)}
         vendors={vendorsRes.data ?? []}
         initialItems={(itemsRes.data ?? []).map(i => ({
           ...i,
