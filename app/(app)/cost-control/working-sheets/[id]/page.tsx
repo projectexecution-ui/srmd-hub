@@ -141,7 +141,7 @@ export default async function WorkingSheetEditorPage(
     // Best-effort budget headroom lookup
     supabase
       .from('cc_budget_lines')
-      .select('current_budget_amt, current_wo_committed_amt, current_paid_amt, internal_estimate_amt')
+      .select('current_budget_amt, current_wo_committed_amt, current_paid_amt')
       .eq('project_id', ws.project_id)
       .eq('discipline_id', ws.discipline_id)
       .eq('sub_skill_id', ws.sub_skill_id)
@@ -167,10 +167,22 @@ export default async function WorkingSheetEditorPage(
   const budgeted = Number(bl?.current_budget_amt ?? 0)
   const committed = Number(bl?.current_wo_committed_amt ?? 0)
   const paid = Number(bl?.current_paid_amt ?? 0)
-  const estimate = Number(bl?.internal_estimate_amt ?? 0)
   const remainingBeforeThisWS = budgeted - committed
   const remainingAfter = remainingBeforeThisWS - Number(ws.total_amount ?? 0)
-  const estimateRemainingAfter = estimate > 0 ? estimate - Number(ws.past_approved_in_subskill ?? 0) - Number(ws.total_amount ?? 0) : null
+
+  // Internal Estimate for this sub-skill = LIVE sum of every WS total
+  // (except cancelled). HOD reads this to size ERP releases — nobody
+  // types it. Live so a new draft instantly shows up.
+  const { data: planRows } = await supabase
+    .from('cc_working_sheets')
+    .select('total_amount, status')
+    .eq('project_id', ws.project_id)
+    .eq('discipline_id', ws.discipline_id)
+    .eq('sub_skill_id', ws.sub_skill_id)
+    .eq('line_type', ws.line_type)
+  const estimate = (planRows ?? [])
+    .filter(r => r.status !== 'cancelled')
+    .reduce((s, r) => s + Number(r.total_amount ?? 0), 0)
 
   const isOwner = user?.id === ws.engineer_id
   const status = ws.status as WSStatus
@@ -245,12 +257,12 @@ export default async function WorkingSheetEditorPage(
             No budget line set for this sub-skill yet. Import the ENGG_CONSOLIDATED_BUDGET_REPORT or add a budget line to see headroom checks.
           </p>
         )}
-        {estimateRemainingAfter != null && estimateRemainingAfter < 0 && (
-          <div className="mt-3 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
-            <p className="font-semibold mb-0.5">Heads-up: this WS pushes past the Internal Estimate</p>
+        {estimate > 0 && budgeted > 0 && budgeted < estimate && (
+          <div className="mt-3 rounded-md border border-indigo-200 bg-indigo-50 p-3 text-sm text-indigo-900">
+            <p className="font-semibold mb-0.5">ERP has released {Math.round((budgeted / estimate) * 100)}% of the team plan</p>
             <p className="text-xs">
-              Internal Estimate {formatINR(estimate)} − past approved {formatINR(ws.past_approved_in_subskill ?? 0)} − this WS {formatINR(ws.total_amount ?? 0)} = <b>{formatINR(estimateRemainingAfter)}</b>.
-              Approval can still proceed (ERP gate is separate), but flag to HOD before approving.
+              Internal Estimate (sum of all WS in this sub-skill) is {formatINR(estimate)}; ERP Budget so far is {formatINR(budgeted)}.
+              HOD reads this gap to decide on the next release.
             </p>
           </div>
         )}

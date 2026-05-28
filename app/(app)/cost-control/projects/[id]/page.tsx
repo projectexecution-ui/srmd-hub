@@ -4,11 +4,9 @@ import { createClient } from '@/lib/supabase/server'
 import { requirePermission, can } from '@/lib/auth'
 import { PageHeader } from '@/components/PageHeader'
 import { SetupProgressBanner } from '@/components/ProjectSetupWizard/SetupProgressBanner'
-import { Plus, ArrowLeftRight, Flame, Info, Calculator } from 'lucide-react'
+import { Plus, ArrowLeftRight, Flame, Info } from 'lucide-react'
 import { formatINR } from '@/lib/utils'
 import { DeadlineBadge } from '@/components/cost-control/DeadlineBadge'
-import { checkCanSetEstimate } from '@/components/cost-control/ws-actions'
-import { EstimateEditButton } from './EstimateEditButton'
 
 export const dynamic = 'force-dynamic'
 
@@ -102,11 +100,14 @@ export default async function CostControlProjectDetailPage(
     blMap.set(`${b.discipline_id}::${b.sub_skill_id ?? '_root'}`, b)
   }
 
-  // Working-sheet aggregates: count of approved/wo_issued/paid items per sub-skill, plus total approved value
-  const wsAgg = new Map<string, { approvedCount: number; approvedTotal: number; draftCount: number; submittedCount: number }>()
+  // Working-sheet aggregates per sub-skill. `planTotal` = the Internal
+  // Estimate, computed live as the sum of EVERY working-sheet total
+  // except cancelled ones. HOD reads this to decide what to release in
+  // ERP — they don't type the estimate themselves.
+  const wsAgg = new Map<string, { approvedCount: number; approvedTotal: number; draftCount: number; submittedCount: number; planTotal: number }>()
   for (const w of (wsRes.data ?? []) as WSAgg[]) {
     const k = `${w.discipline_id}::${w.sub_skill_id}`
-    const cur = wsAgg.get(k) ?? { approvedCount: 0, approvedTotal: 0, draftCount: 0, submittedCount: 0 }
+    const cur = wsAgg.get(k) ?? { approvedCount: 0, approvedTotal: 0, draftCount: 0, submittedCount: 0, planTotal: 0 }
     if (w.status === 'approved' || w.status === 'wo_issued' || w.status === 'paid') {
       cur.approvedCount += 1
       cur.approvedTotal += Number(w.total_amount ?? 0)
@@ -114,6 +115,9 @@ export default async function CostControlProjectDetailPage(
       cur.submittedCount += 1
     } else if (w.status === 'draft' || w.status === 'returned' || w.status === 'draft_blocked') {
       cur.draftCount += 1
+    }
+    if (w.status !== 'cancelled') {
+      cur.planTotal += Number(w.total_amount ?? 0)
     }
     wsAgg.set(k, cur)
   }
@@ -139,19 +143,16 @@ export default async function CostControlProjectDetailPage(
   for (const d of disciplines) discAgg.set(d.id, { budget: 0, wo: 0, paid: 0, approvedTotal: 0, estimate: 0 })
   for (const s of subSkills) {
     const bl = blMap.get(`${s.discipline_id}::${s.id}`)
-    const a = wsAgg.get(`${s.discipline_id}::${s.id}`) ?? { approvedTotal: 0 }
+    const a = wsAgg.get(`${s.discipline_id}::${s.id}`) ?? { approvedTotal: 0, planTotal: 0 }
     const cur = discAgg.get(s.discipline_id)
     if (cur) {
       cur.budget += Number(bl?.current_budget_amt ?? 0)
       cur.wo    += Number(bl?.current_wo_committed_amt ?? 0)
       cur.paid  += Number(bl?.current_paid_amt ?? 0)
       cur.approvedTotal += a.approvedTotal
-      cur.estimate += Number(bl?.internal_estimate_amt ?? 0)
+      cur.estimate += a.planTotal
     }
   }
-
-  // Permission flag — drives the inline "Set estimate" buttons.
-  const canSetEstimate = await checkCanSetEstimate()
 
   // Engineers
   type ProfileLite = { id: string; full_name: string | null; name: string | null }
@@ -245,7 +246,7 @@ export default async function CostControlProjectDetailPage(
         <KPI
           label="Internal Estimate"
           value={totalEstimate > 0 ? formatINR(totalEstimate) : '—'}
-          sub={totalEstimate > 0 ? "HOD's planning ceiling" : 'Not yet set'}
+          sub={totalEstimate > 0 ? 'Sum of all Working Sheets (live)' : 'Will populate once WSes are raised'}
           tone="indigo"
         />
         <KPI
@@ -356,24 +357,8 @@ export default async function CostControlProjectDetailPage(
                             <span>{s.name}</span>
                             {sHot && <Flame className="inline h-3 w-3 text-orange-500 ml-1.5" />}
                           </td>
-                          <Td align="right">
-                            <div className="inline-flex items-center gap-1.5 justify-end">
-                              <span className="font-mono text-indigo-800">
-                                {bl?.internal_estimate_amt != null && Number(bl.internal_estimate_amt) > 0 ? formatINR(Number(bl.internal_estimate_amt)) : '—'}
-                              </span>
-                              {canSetEstimate && (
-                                <EstimateEditButton
-                                  projectId={id}
-                                  disciplineId={d.id}
-                                  subSkillId={s.id}
-                                  subSkillLabel={`${s.code} · ${s.name}`}
-                                  lineType={(bl?.line_type as 'work' | 'material' | null) ?? 'work'}
-                                  currentEstimate={bl?.internal_estimate_amt != null ? Number(bl.internal_estimate_amt) : null}
-                                  currentNotes={bl?.internal_estimate_notes ?? null}
-                                  compact
-                                />
-                              )}
-                            </div>
+                          <Td align="right" mono className="text-indigo-800">
+                            {a && a.planTotal > 0 ? formatINR(a.planTotal) : '—'}
                           </Td>
                           <Td align="right" mono>{bl?.current_budget_amt ? formatINR(Number(bl.current_budget_amt)) : '—'}</Td>
                           <Td align="right" mono className="text-gray-600">{bl?.current_wo_committed_amt ? formatINR(Number(bl.current_wo_committed_amt)) : '—'}</Td>
