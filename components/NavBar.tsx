@@ -21,6 +21,7 @@ interface NavBarProps {
 // Compact labels for the sidebar so they don't wrap. Defaults to the
 // MODULES label if a slug isn't listed here.
 const SHORT_LABELS: Record<string, string> = {
+  'approvals':        'Approvals',
   'pos':              'POs',
   'budget-vs-actual': 'Budget',
   'in4-indent-to-po': 'IN4 Tracker',

@@ -6,7 +6,7 @@ import {
   ClipboardList, FileText, PackageCheck, Receipt, Wallet,
   Truck, Building2, Upload, Users, Settings, ShieldCheck,
   ExternalLink, BarChart3, Wrench, Calculator, FileSpreadsheet,
-  Boxes,
+  Boxes, Inbox,
 } from 'lucide-react'
 import type { PermissionMap } from './types'
 
@@ -24,6 +24,7 @@ export type ModuleTile = {
 }
 
 export const MODULES: ModuleTile[] = [
+  { slug: 'approvals',        label: 'My Approvals',     description: 'Things waiting on you across every module',   href: '/approvals',      icon: Inbox,         tone: 'rose' },
   { slug: 'indents',          label: 'Indents',          description: 'Material indents raised from sites',         href: '/indents',        icon: ClipboardList, tone: 'blue' },
   { slug: 'pos',              label: 'Purchase Orders',  description: 'POs issued to vendors',                       href: '/pos',            icon: FileText,      tone: 'indigo' },
   { slug: 'grns',             label: 'GRN',              description: 'Goods received notes',                        href: '/grns',           icon: PackageCheck,  tone: 'green' },
