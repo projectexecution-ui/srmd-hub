@@ -118,27 +118,50 @@ export async function POST(
       }
     }
 
-    // Rate band check
+    // Rate band check.
+    // Previously required ≥3 peers before any flag fired — too strict
+    // for fresh data where each item only has one prior approved row.
+    // Now: any peer triggers a flag if the deviation is ≥20%; severity
+    // escalates with the sample size + magnitude of the deviation.
     if (r.rate != null && r.rate > 0) {
-      const peers = history.filter(h => looseMatch(r.description, h.description) && (!r.unit || !h.unit || h.unit.toLowerCase() === r.unit.toLowerCase()))
+      const peers = history.filter(h =>
+        looseMatch(r.description, h.description) &&
+        (!r.unit || !h.unit || h.unit.toLowerCase() === r.unit.toLowerCase()),
+      )
       const med = median(peers.map(p => p.rate))
-      if (med != null && peers.length >= 3) {
+      if (med != null && peers.length >= 1) {
         const ratio = r.rate / med
-        if (ratio >= 1.3) {
+        const pct = Math.round((ratio - 1) * 100) // positive when above
+        const peerLabel = `${peers.length} approved peer${peers.length === 1 ? '' : 's'}`
+        const sampleNote = peers.length === 1
+          ? ' (single peer — confirm with another approved sheet)'
+          : peers.length === 2
+            ? ' (only 2 peers — sample is small)'
+            : ''
+
+        // Severity ladder. Bigger deviation OR bigger sample → louder.
+        function pickSeverity(dev: number, n: number): 'info' | 'warn' | 'error' {
+          if (n >= 3 && dev >= 60) return 'error'
+          if (n >= 3 && dev >= 30) return 'warn'
+          if (n >= 2 && dev >= 30) return 'warn'
+          return 'info'
+        }
+
+        if (ratio >= 1.2) {
           flags.push({
             row_no: r.row_no,
             description: r.description,
             flag: 'rate_high',
-            flag_severity: ratio >= 1.6 ? 'error' : 'warn',
-            flag_reason: `Rate ₹${r.rate} is ${Math.round((ratio - 1) * 100)}% above the median of ${peers.length} approved peers (₹${med})`,
+            flag_severity: pickSeverity(pct, peers.length),
+            flag_reason: `Rate ₹${r.rate.toLocaleString('en-IN')} is ${pct}% above the median of ${peerLabel} (₹${med.toLocaleString('en-IN')})${sampleNote}`,
           })
-        } else if (ratio <= 0.7) {
+        } else if (ratio <= 0.8) {
           flags.push({
             row_no: r.row_no,
             description: r.description,
             flag: 'rate_low',
-            flag_severity: 'info',
-            flag_reason: `Rate ₹${r.rate} is ${Math.round((1 - ratio) * 100)}% below the median of ${peers.length} approved peers (₹${med})`,
+            flag_severity: pickSeverity(Math.abs(pct), peers.length),
+            flag_reason: `Rate ₹${r.rate.toLocaleString('en-IN')} is ${Math.abs(pct)}% below the median of ${peerLabel} (₹${med.toLocaleString('en-IN')})${sampleNote}`,
           })
         }
       }
