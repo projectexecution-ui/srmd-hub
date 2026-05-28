@@ -471,10 +471,13 @@ export async function approveWorkingSheet(
     return { ok: false, error: `Your role can't approve a ${formatRupees(tranche)} tranche on this sheet. Check /admin/approvals.` }
   }
 
-  // Best-effort: find a matching budget line so we can write an event against it.
+  // Find the matching budget line. Each tranche directly bumps
+  // current_budget_amt — CT Hub is the source of truth for what HOD has
+  // released into ERP. Excel import is only used for one-time backfill
+  // of legacy data; new approvals don't need to round-trip through Excel.
   const { data: bl } = await supabase
     .from('cc_budget_lines')
-    .select('id')
+    .select('id, current_budget_amt')
     .eq('project_id', ws.project_id)
     .eq('discipline_id', ws.discipline_id)
     .eq('sub_skill_id', ws.sub_skill_id)
@@ -498,15 +501,45 @@ export async function approveWorkingSheet(
   const { error: updErr } = await supabase.from('cc_working_sheets').update(update).eq('id', wsId)
   if (updErr) return { ok: false, error: updErr.message }
 
+  // Bump the ERP-approved budget by this tranche. Upsert: if no budget
+  // line exists yet (no Excel import was done), create one with the
+  // tranche as its initial current_budget_amt. Else increment.
+  let budgetLineId = bl?.id ?? null
+  if (bl) {
+    const newAmt = Number(bl.current_budget_amt ?? 0) + tranche
+    const { error: blErr } = await supabase
+      .from('cc_budget_lines')
+      .update({ current_budget_amt: newAmt })
+      .eq('id', bl.id)
+    if (blErr) return { ok: false, error: `Budget update failed: ${blErr.message}` }
+  } else {
+    const { data: newBl, error: insErr } = await supabase
+      .from('cc_budget_lines')
+      .insert({
+        project_id: ws.project_id,
+        discipline_id: ws.discipline_id,
+        sub_skill_id: ws.sub_skill_id,
+        line_type: ws.line_type,
+        current_budget_amt: tranche,
+        current_wo_committed_amt: 0,
+        current_paid_amt: 0,
+        current_advance_amt: 0,
+      })
+      .select('id')
+      .single()
+    if (insErr) return { ok: false, error: `Budget create failed: ${insErr.message}` }
+    budgetLineId = newBl?.id ?? null
+  }
+
   await supabase.from('cc_budget_events').insert({
-    budget_line_id: bl?.id ?? null,
+    budget_line_id: budgetLineId,
     project_id: ws.project_id,
     event_type: 'ws_approved',
     delta_amount: tranche,
     related_ws_id: wsId,
     remarks: willBeFull
-      ? `WS fully approved — final tranche ${formatRupees(tranche)}`
-      : `WS tranche approved ${formatRupees(tranche)} (cumulative ${formatRupees(cumulative)} of ${formatRupees(total)})`,
+      ? `WS fully approved — final tranche ${formatRupees(tranche)} (budget bumped)`
+      : `WS tranche approved ${formatRupees(tranche)} (cumulative ${formatRupees(cumulative)} of ${formatRupees(total)} · budget bumped)`,
     requested_by: me.user.id,
     approved_by: me.user.id,
     approval_status: 'approved',
