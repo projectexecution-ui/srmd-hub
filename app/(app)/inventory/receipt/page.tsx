@@ -12,7 +12,7 @@ export default async function StockReceiptPage() {
   const supabase = await createClient()
   const [whRes, itemsRes] = await Promise.all([
     supabase.from('inv_warehouses').select('id, code, name').eq('is_active', true).order('code'),
-    supabase.from('inv_items').select('id, code, name, unit').eq('is_active', true).order('code'),
+    supabase.from('inv_items').select('id, code, name, unit, category, image_url').eq('is_active', true).order('code'),
   ])
 
   return (

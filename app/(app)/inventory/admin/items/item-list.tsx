@@ -8,7 +8,8 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Badge } from '@/components/ui/badge'
-import { Loader2, Plus, Trash2, Pencil, X, Check, Upload, ImageOff } from 'lucide-react'
+import { Loader2, Plus, Trash2, Pencil, X, Check, Upload, ImageOff, ChevronDown, ChevronRight } from 'lucide-react'
+import { INVENTORY_CATEGORIES } from '@/lib/inventory-categories'
 
 interface Item {
   id: string
@@ -30,18 +31,62 @@ export function ItemList({ items: initial }: { items: Item[] }) {
   const [editingId, setEditingId] = useState<string | null>(null)
   const [showAdd, setShowAdd] = useState(false)
   const [q, setQ] = useState('')
+  const [activeCategory, setActiveCategory] = useState<string>('All')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  // Categories collapsed by default? Keep them all open — handy for browse.
+  const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
+
+  // Categories that actually have items + "Uncategorised"
+  const categoryOrder = useMemo(() => {
+    const used = new Set<string>()
+    for (const r of rows) used.add(r.category || 'Uncategorised')
+    // Standard order: as declared in INVENTORY_CATEGORIES, then any extras.
+    const out: string[] = []
+    for (const c of INVENTORY_CATEGORIES) if (used.has(c)) out.push(c)
+    for (const c of Array.from(used).sort()) {
+      if (!out.includes(c)) out.push(c)
+    }
+    return out
+  }, [rows])
 
   const filtered = useMemo(() => {
-    if (!q.trim()) return rows
-    const lc = q.toLowerCase()
-    return rows.filter(r =>
-      r.code.toLowerCase().includes(lc) ||
-      r.name.toLowerCase().includes(lc) ||
-      (r.category ?? '').toLowerCase().includes(lc),
-    )
-  }, [rows, q])
+    let out = rows
+    if (activeCategory !== 'All') out = out.filter(r => (r.category || 'Uncategorised') === activeCategory)
+    const lc = q.trim().toLowerCase()
+    if (lc) {
+      out = out.filter(r =>
+        r.code.toLowerCase().includes(lc) ||
+        r.name.toLowerCase().includes(lc) ||
+        (r.category ?? '').toLowerCase().includes(lc),
+      )
+    }
+    return out
+  }, [rows, q, activeCategory])
+
+  // Group filtered items by category for the rendered view
+  const grouped = useMemo(() => {
+    const map = new Map<string, Item[]>()
+    for (const it of filtered) {
+      const k = it.category || 'Uncategorised'
+      if (!map.has(k)) map.set(k, [])
+      map.get(k)!.push(it)
+    }
+    // Preserve category order
+    const ordered: Array<{ category: string; items: Item[] }> = []
+    for (const c of categoryOrder) {
+      if (map.has(c)) ordered.push({ category: c, items: map.get(c)! })
+    }
+    return ordered
+  }, [filtered, categoryOrder])
+
+  function toggleCollapse(cat: string) {
+    setCollapsed(s => {
+      const next = new Set(s)
+      if (next.has(cat)) next.delete(cat); else next.add(cat)
+      return next
+    })
+  }
 
   return (
     <div className="space-y-4">
@@ -52,13 +97,34 @@ export function ItemList({ items: initial }: { items: Item[] }) {
           placeholder="Search by code, name or category…"
           value={q}
           onChange={e => setQ(e.target.value)}
-          className="max-w-sm"
+          className="md:max-w-sm"
         />
         {!showAdd && (
           <Button size="sm" onClick={() => setShowAdd(true)}>
             <Plus className="h-4 w-4" /> New item
           </Button>
         )}
+      </div>
+
+      {/* Category chips */}
+      <div className="overflow-x-auto -mx-1 px-1">
+        <div className="flex gap-1.5 min-w-min">
+          <CategoryChip
+            label="All"
+            count={rows.length}
+            active={activeCategory === 'All'}
+            onClick={() => setActiveCategory('All')}
+          />
+          {categoryOrder.map(c => (
+            <CategoryChip
+              key={c}
+              label={c}
+              count={rows.filter(r => (r.category || 'Uncategorised') === c).length}
+              active={activeCategory === c}
+              onClick={() => setActiveCategory(c)}
+            />
+          ))}
+        </div>
       </div>
 
       {showAdd && (
@@ -76,34 +142,75 @@ export function ItemList({ items: initial }: { items: Item[] }) {
       {filtered.length === 0 && !showAdd ? (
         <p className="text-sm text-gray-500 italic py-4">No items found.</p>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-          {filtered.map(it =>
-            editingId === it.id ? (
-              <div key={it.id} className="md:col-span-2">
-                <ItemForm
-                  initial={it}
-                  onCancel={() => setEditingId(null)}
-                  onSaved={(updated) => {
-                    setRows(rs => rs.map(r => r.id === updated.id ? updated : r))
-                    setEditingId(null)
-                    router.refresh()
-                  }}
-                  setBusy={setBusy} setError={setError} busy={busy}
-                />
+        <div className="space-y-4">
+          {grouped.map(g => {
+            const isCollapsed = collapsed.has(g.category)
+            return (
+              <div key={g.category}>
+                <button
+                  type="button"
+                  onClick={() => toggleCollapse(g.category)}
+                  className="w-full flex items-center justify-between gap-2 px-1 py-1.5 text-xs font-bold uppercase tracking-wide text-gray-500 hover:text-gray-800"
+                >
+                  <span className="inline-flex items-center gap-1.5">
+                    {isCollapsed
+                      ? <ChevronRight className="h-3.5 w-3.5" />
+                      : <ChevronDown className="h-3.5 w-3.5" />}
+                    {g.category}
+                    <span className="text-gray-400 normal-case">· {g.items.length}</span>
+                  </span>
+                </button>
+                {!isCollapsed && (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2 mt-1">
+                    {g.items.map(it =>
+                      editingId === it.id ? (
+                        <div key={it.id} className="md:col-span-2">
+                          <ItemForm
+                            initial={it}
+                            onCancel={() => setEditingId(null)}
+                            onSaved={(updated) => {
+                              setRows(rs => rs.map(r => r.id === updated.id ? updated : r))
+                              setEditingId(null)
+                              router.refresh()
+                            }}
+                            setBusy={setBusy} setError={setError} busy={busy}
+                          />
+                        </div>
+                      ) : (
+                        <ItemRow
+                          key={it.id}
+                          item={it}
+                          onEdit={() => setEditingId(it.id)}
+                          onDeleted={() => { setRows(rs => rs.filter(r => r.id !== it.id)); router.refresh() }}
+                          setError={setError}
+                        />
+                      ),
+                    )}
+                  </div>
+                )}
               </div>
-            ) : (
-              <ItemRow
-                key={it.id}
-                item={it}
-                onEdit={() => setEditingId(it.id)}
-                onDeleted={() => { setRows(rs => rs.filter(r => r.id !== it.id)); router.refresh() }}
-                setError={setError}
-              />
-            ),
-          )}
+            )
+          })}
         </div>
       )}
     </div>
+  )
+}
+
+function CategoryChip({ label, count, active, onClick }: {
+  label: string; count: number; active: boolean; onClick: () => void
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`inline-flex items-center gap-1 text-xs font-medium px-3 h-7 rounded-full whitespace-nowrap ${
+        active ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+      }`}
+    >
+      {label}
+      <span className={active ? 'text-blue-100' : 'text-gray-400'}>{count}</span>
+    </button>
   )
 }
 
@@ -140,7 +247,7 @@ function ItemRow({ item, onEdit, onDeleted, setError }: {
           {!item.is_active && <Badge variant="secondary">inactive</Badge>}
         </div>
         <p className="text-xs text-gray-500 mt-0.5 truncate">
-          {item.unit}{item.category ? ` · ${item.category}` : ''}{item.hsn_code ? ` · HSN ${item.hsn_code}` : ''}
+          {item.unit}{item.hsn_code ? ` · HSN ${item.hsn_code}` : ''}
         </p>
       </div>
       <div className="flex items-center gap-1 flex-shrink-0">
@@ -166,7 +273,7 @@ function ItemForm({ initial, onCancel, onSaved, setBusy, setError, busy }: {
   const [name, setName]               = useState(initial?.name ?? '')
   const [description, setDescription] = useState(initial?.description ?? '')
   const [unit, setUnit]               = useState(initial?.unit ?? 'nos')
-  const [category, setCategory]       = useState(initial?.category ?? '')
+  const [category, setCategory]       = useState(initial?.category ?? INVENTORY_CATEGORIES[0])
   const [hsnCode, setHsnCode]         = useState(initial?.hsn_code ?? '')
   const [isActive, setIsActive]       = useState(initial?.is_active ?? true)
   const [imageUrl, setImageUrl]       = useState(initial?.image_url ?? '')
@@ -253,8 +360,11 @@ function ItemForm({ initial, onCancel, onSaved, setBusy, setError, busy }: {
           </select>
         </div>
         <div>
-          <Label>Category</Label>
-          <Input value={category} onChange={e => setCategory(e.target.value)} placeholder="e.g. Cement" className="mt-1" />
+          <Label>Category *</Label>
+          <select value={category} onChange={e => setCategory(e.target.value)} required
+            className="mt-1 flex h-10 w-full rounded-xl border border-gray-300 bg-white px-3 py-2 text-sm">
+            {INVENTORY_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+          </select>
         </div>
         <div>
           <Label>HSN code</Label>

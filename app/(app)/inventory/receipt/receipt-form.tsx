@@ -6,11 +6,12 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
-import { Loader2, Check, PackagePlus } from 'lucide-react'
+import { Loader2, PackagePlus } from 'lucide-react'
+import { ItemPicker, type PickerItem } from '@/components/inventory/ItemPicker'
 
-interface Opt { id: string; code: string; name: string; unit?: string }
+interface WhOpt { id: string; code: string; name: string }
 
-export function ReceiptForm({ warehouses, items }: { warehouses: Opt[]; items: Opt[] }) {
+export function ReceiptForm({ warehouses, items }: { warehouses: WhOpt[]; items: PickerItem[] }) {
   const router = useRouter()
   const [warehouseId, setWarehouseId] = useState(warehouses[0]?.id ?? '')
   const [itemId, setItemId]           = useState('')
@@ -39,7 +40,7 @@ export function ReceiptForm({ warehouses, items }: { warehouses: Opt[]; items: O
     setBusy(false)
     if (rpcErr) { setError(rpcErr.message); return }
     setSuccess(`Recorded ${qtyNum} ${item?.unit ?? ''} of ${item?.code} into ${warehouses.find(w => w.id === warehouseId)?.code}.`)
-    setQty(''); setRemarks('')
+    setQty(''); setRemarks(''); setItemId('')
     router.refresh()
   }
 
@@ -70,11 +71,9 @@ export function ReceiptForm({ warehouses, items }: { warehouses: Opt[]; items: O
 
       <div>
         <Label>Item *</Label>
-        <select value={itemId} onChange={e => setItemId(e.target.value)} required
-          className="mt-1 flex h-10 w-full rounded-xl border border-gray-300 bg-white px-3 py-2 text-sm">
-          <option value="">— Select item —</option>
-          {items.map(it => <option key={it.id} value={it.id}>{it.code} — {it.name}{it.unit ? ` (${it.unit})` : ''}</option>)}
-        </select>
+        <div className="mt-1">
+          <ItemPicker items={items} value={itemId} onChange={setItemId} />
+        </div>
       </div>
 
       <div>

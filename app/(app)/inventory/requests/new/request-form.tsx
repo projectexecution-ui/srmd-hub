@@ -7,8 +7,9 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Loader2, Plus, Trash2, Send } from 'lucide-react'
+import { ItemPicker, type PickerItem } from '@/components/inventory/ItemPicker'
 
-interface Opt { id: string; code: string; name: string; unit?: string }
+interface Opt { id: string; code: string; name: string }
 
 type LineDraft = {
   tempId: string
@@ -24,7 +25,7 @@ function newLine(): LineDraft {
 export function RequestForm({ projects, warehouses, items }: {
   projects: Opt[]
   warehouses: Opt[]
-  items: Opt[]
+  items: PickerItem[]
 }) {
   const router = useRouter()
   const [projectId, setProjectId]   = useState(projects[0]?.id ?? '')
@@ -83,12 +84,9 @@ export function RequestForm({ projects, warehouses, items }: {
       validLines.map(l => ({ ...l, request_id: reqRow.id })),
     )
     if (linesErr) {
-      // Best effort: tell the user. The orphan request row stays but
-      // won't show line items — they can delete it from /requests.
       setError(`Lines failed: ${linesErr.message}`); setBusy(false); return
     }
 
-    // Log status transition (RLS allows insert for the engineer)
     await supabase.from('inv_request_status_log').insert({
       request_id: reqRow.id,
       from_status: 'DRAFT',
@@ -162,21 +160,21 @@ export function RequestForm({ projects, warehouses, items }: {
           const item = items.find(i => i.id === l.item_id)
           return (
             <div key={l.tempId} className="grid grid-cols-12 gap-2 items-center">
-              <div className="col-span-6">
-                <select value={l.item_id} onChange={e => update(l.tempId, { item_id: e.target.value })}
-                  className="h-10 w-full rounded-xl border border-gray-300 bg-white px-3 text-sm">
-                  <option value="">— Select item —</option>
-                  {items.map(it => <option key={it.id} value={it.id}>{it.code} — {it.name}</option>)}
-                </select>
+              <div className="col-span-12 md:col-span-6">
+                <ItemPicker
+                  items={items}
+                  value={l.item_id}
+                  onChange={(id) => update(l.tempId, { item_id: id })}
+                />
               </div>
-              <div className="col-span-3">
+              <div className="col-span-6 md:col-span-3">
                 <div className="flex items-center gap-1">
                   <Input type="number" step="any" inputMode="decimal" value={l.requested_qty}
                     onChange={e => update(l.tempId, { requested_qty: e.target.value })} placeholder="qty" />
-                  <span className="text-xs text-gray-500 w-10">{item?.unit ?? ''}</span>
+                  <span className="text-xs text-gray-500 w-12">{item?.unit ?? ''}</span>
                 </div>
               </div>
-              <div className="col-span-2">
+              <div className="col-span-5 md:col-span-2">
                 <Input value={l.remarks} onChange={e => update(l.tempId, { remarks: e.target.value })} placeholder="remarks" />
               </div>
               <div className="col-span-1 flex justify-end">
