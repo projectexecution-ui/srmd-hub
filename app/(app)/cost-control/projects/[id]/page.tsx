@@ -369,7 +369,7 @@ export default async function CostControlProjectDetailPage(
                           <Td>
                             {wsCount > 0 ? (
                               <Link
-                                href={`/cost-control/working-sheets?project=${project.id}`}
+                                href={`/cost-control/working-sheets?project=${project.id}&discipline=${d.id}&sub_skill=${s.id}`}
                                 className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-semibold bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100"
                               >
                                 {wsCount} sheet{wsCount === 1 ? '' : 's'}

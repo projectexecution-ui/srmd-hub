@@ -41,20 +41,26 @@ const STATUS_GROUP_TITLES: Record<WSStatus, string> = {
 export default async function WorkingSheetsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ project?: string; status?: string; engineer?: string }>
+  searchParams: Promise<{ project?: string; status?: string; engineer?: string; discipline?: string; sub_skill?: string }>
 }) {
   const perms = await requirePermission('cost-control', 'view')
   const canWrite = can(perms, 'cost-control', 'edit')
   const sp = await searchParams
   const supabase = await createClient()
+  const scoped = !!sp.sub_skill
 
   let q = supabase
     .from('cc_working_sheets')
     .select('id, ws_code, status, total_amount, approved_for_erp_amt, created_at, deadline_date, engineer_id, project_id, sub_skill_id, projects(code, name), cc_disciplines(code, name), cc_sub_skills(code, name)')
-    .order('created_at', { ascending: false })
+    // Scoped view (single sub-skill) sorts oldest → newest so the cumulative
+    // approved column reads left-to-right as a timeline. Default list still
+    // newest-first.
+    .order('created_at', { ascending: scoped })
     .limit(500)
   if (sp.project) q = q.eq('project_id', sp.project)
   if (sp.engineer) q = q.eq('engineer_id', sp.engineer)
+  if (sp.discipline) q = q.eq('discipline_id', sp.discipline)
+  if (sp.sub_skill) q = q.eq('sub_skill_id', sp.sub_skill)
   if (sp.status) q = q.eq('status', sp.status as WSStatus)
 
   const [wsRes, projectsRes, profilesRes] = await Promise.all([
@@ -114,6 +120,38 @@ export default async function WorkingSheetsPage({
     .map(s => ({ status: s, rows: groups.get(s) ?? [] }))
     .filter(g => g.rows.length > 0)
 
+  // Labels for the "scoped" banner. Prefer the joined data on the first row;
+  // fall back to a small lookup when the scoped filter has zero matches.
+  type LabelPair = { code: string; name: string } | undefined
+  let scopeLabels: { project: LabelPair; discipline: LabelPair; subSkill: LabelPair } | null = null
+  if (scoped) {
+    if (rows.length > 0) {
+      const r0 = rows[0]
+      const pickOne = <T,>(x: T | T[] | null): T | undefined =>
+        (Array.isArray(x) ? x[0] : x) ?? undefined
+      scopeLabels = {
+        project: pickOne(r0.projects),
+        discipline: pickOne(r0.cc_disciplines),
+        subSkill: pickOne(r0.cc_sub_skills),
+      }
+    } else {
+      const [{ data: ss }, { data: dis }, { data: pr }] = await Promise.all([
+        supabase.from('cc_sub_skills').select('code, name').eq('id', sp.sub_skill!).maybeSingle(),
+        sp.discipline
+          ? supabase.from('cc_disciplines').select('code, name').eq('id', sp.discipline).maybeSingle()
+          : Promise.resolve({ data: null as { code: string; name: string } | null }),
+        sp.project
+          ? supabase.from('projects').select('code, name').eq('id', sp.project).maybeSingle()
+          : Promise.resolve({ data: null as { code: string; name: string } | null }),
+      ])
+      scopeLabels = {
+        project: pr ?? undefined,
+        discipline: dis ?? undefined,
+        subSkill: ss ?? undefined,
+      }
+    }
+  }
+
   function buildQuery(params: Record<string, string | undefined>): string {
     const entries = Object.entries(params).filter(([, v]) => v !== undefined && v !== '')
     if (entries.length === 0) return ''
@@ -158,6 +196,8 @@ export default async function WorkingSheetsPage({
         ))}
         <form action="/cost-control/working-sheets" method="get" className="ml-auto flex items-center gap-2 flex-wrap">
           {sp.status && <input type="hidden" name="status" value={sp.status} />}
+          {sp.discipline && <input type="hidden" name="discipline" value={sp.discipline} />}
+          {sp.sub_skill && <input type="hidden" name="sub_skill" value={sp.sub_skill} />}
           <select
             name="project"
             defaultValue={sp.project ?? ''}
@@ -180,6 +220,37 @@ export default async function WorkingSheetsPage({
         </form>
       </div>
 
+      {scoped && scopeLabels && (
+        <div className="mb-4 flex items-center justify-between gap-3 rounded-lg border border-blue-200 bg-blue-50/60 px-3 py-2">
+          <div className="text-xs text-blue-900">
+            <span className="uppercase tracking-wide font-semibold text-[10px] text-blue-700 mr-2">Scoped to</span>
+            {scopeLabels.project && (
+              <span className="font-semibold">{scopeLabels.project.code}</span>
+            )}
+            {scopeLabels.discipline && (
+              <>
+                <span className="text-blue-400 mx-1.5">›</span>
+                <span className="font-semibold">{scopeLabels.discipline.code}</span>
+                <span className="text-blue-700"> {scopeLabels.discipline.name}</span>
+              </>
+            )}
+            {scopeLabels.subSkill && (
+              <>
+                <span className="text-blue-400 mx-1.5">›</span>
+                <span className="font-semibold">{scopeLabels.subSkill.code}</span>
+                <span className="text-blue-700"> {scopeLabels.subSkill.name}</span>
+              </>
+            )}
+          </div>
+          <Link
+            href={`/cost-control/working-sheets${buildQuery({ project: sp.project, status: sp.status, engineer: sp.engineer })}`}
+            className="text-[11px] font-semibold text-blue-700 hover:text-blue-900 underline-offset-2 hover:underline"
+          >
+            Clear scope
+          </Link>
+        </div>
+      )}
+
       {/* KPI strip — running roll-up across the filtered set */}
       {rows.length > 0 && (
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
@@ -197,6 +268,96 @@ export default async function WorkingSheetsPage({
             title="No Working Sheets match these filters"
             description="Create the first one with the button at the top right."
           />
+        </Card>
+      ) : scoped ? (
+        <Card className="overflow-hidden">
+          <div className="flex items-center justify-between gap-3 px-4 py-2.5 bg-slate-50 border-b border-gray-200">
+            <span className="text-sm font-semibold text-gray-900">Approval timeline · oldest → newest</span>
+            <div className="text-xs text-gray-600 tabular-nums">
+              {formatINR(kpis.estimateTotal)} estimate · <span className="text-emerald-700 font-semibold">{formatINR(kpis.approvedToDate)}</span> approved
+              {kpis.estimateTotal > 0 && (
+                <span className="ml-1 text-gray-500">({Math.round((kpis.approvedToDate / kpis.estimateTotal) * 100)}%)</span>
+              )}
+            </div>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-gray-50 text-left text-xs uppercase tracking-wide text-gray-500">
+                <tr>
+                  <th className="px-4 py-2 font-semibold">Created</th>
+                  <th className="px-4 py-2 font-semibold">WS Code</th>
+                  <th className="px-4 py-2 font-semibold">Status</th>
+                  <th className="px-4 py-2 font-semibold">Engineer</th>
+                  <th className="px-4 py-2 font-semibold text-right">This WS estimate</th>
+                  <th className="px-4 py-2 font-semibold text-right">This WS approved</th>
+                  <th className="px-4 py-2 font-semibold text-right">Cumulative approved</th>
+                  <th className="px-4 py-2 font-semibold text-right">% of running total</th>
+                  <th className="px-4 py-2 font-semibold">Deadline</th>
+                </tr>
+              </thead>
+              <tbody>
+                {(() => {
+                  // rows are already chronological (oldest → newest) when scoped.
+                  let cumApproved = 0
+                  let cumEstimate = 0
+                  return rows.map(w => {
+                    const est = Number(w.total_amount ?? 0)
+                    const appr = Number(w.approved_for_erp_amt ?? 0)
+                    cumApproved += appr
+                    cumEstimate += est
+                    const pct = cumEstimate > 0 ? Math.round((cumApproved / cumEstimate) * 100) : 0
+                    return (
+                      <tr key={w.id} className="border-t border-gray-100 hover:bg-gray-50">
+                        <td className="px-4 py-2.5 text-xs text-gray-500 whitespace-nowrap">{formatDate(w.created_at)}</td>
+                        <td className="px-4 py-2.5">
+                          <Link href={`/cost-control/working-sheets/${w.id}`} className="font-semibold text-blue-700 hover:underline">
+                            {w.ws_code}
+                          </Link>
+                        </td>
+                        <td className="px-4 py-2.5"><WSStatusPill status={w.status} /></td>
+                        <td className="px-4 py-2.5 text-gray-700">{profileMap.get(w.engineer_id) ?? '—'}</td>
+                        <td className="px-4 py-2.5 text-right tabular-nums font-semibold text-gray-900">{formatINR(est)}</td>
+                        <td className="px-4 py-2.5 text-right tabular-nums">
+                          {appr > 0 ? (
+                            <span className={appr >= est ? 'text-emerald-700 font-semibold' : 'text-amber-700 font-semibold'}>
+                              {formatINR(appr)}
+                            </span>
+                          ) : (
+                            <span className="text-xs text-gray-400">—</span>
+                          )}
+                        </td>
+                        <td className="px-4 py-2.5 text-right tabular-nums font-semibold text-emerald-800">{formatINR(cumApproved)}</td>
+                        <td className="px-4 py-2.5 text-right tabular-nums text-gray-600">{pct}%</td>
+                        <td className="px-4 py-2.5">
+                          {w.deadline_date ? (
+                            <DeadlineBadge
+                              deadlineDate={w.deadline_date}
+                              approved={w.status === 'approved' || w.status === 'wo_issued' || w.status === 'paid'}
+                              className="text-xs px-2 py-1"
+                            />
+                          ) : (
+                            <span className="text-xs text-gray-400">—</span>
+                          )}
+                        </td>
+                      </tr>
+                    )
+                  })
+                })()}
+              </tbody>
+              <tfoot className="bg-slate-50 border-t-2 border-gray-300">
+                <tr>
+                  <td colSpan={4} className="px-4 py-2.5 text-xs font-semibold uppercase text-gray-600">Sub-skill totals</td>
+                  <td className="px-4 py-2.5 text-right tabular-nums font-bold text-gray-900">{formatINR(kpis.estimateTotal)}</td>
+                  <td className="px-4 py-2.5 text-right tabular-nums font-bold text-emerald-800">{formatINR(kpis.approvedToDate)}</td>
+                  <td className="px-4 py-2.5 text-right tabular-nums text-gray-400">—</td>
+                  <td className="px-4 py-2.5 text-right tabular-nums font-bold text-gray-900">
+                    {kpis.estimateTotal > 0 ? `${Math.round((kpis.approvedToDate / kpis.estimateTotal) * 100)}%` : '—'}
+                  </td>
+                  <td className="px-4 py-2.5"></td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
         </Card>
       ) : (
         <div className="space-y-4">
