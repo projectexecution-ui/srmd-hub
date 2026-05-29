@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { MoneyInput } from '@/components/ui/money-input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Loader2, Plus, Trash2, Send } from 'lucide-react'
@@ -169,8 +170,8 @@ export function RequestForm({ projects, warehouses, items }: {
               </div>
               <div className="col-span-6 md:col-span-3">
                 <div className="flex items-center gap-1">
-                  <Input type="number" step="any" inputMode="decimal" value={l.requested_qty}
-                    onChange={e => update(l.tempId, { requested_qty: e.target.value })} placeholder="qty" />
+                  <MoneyInput value={l.requested_qty}
+                    onChange={(v) => update(l.tempId, { requested_qty: v })} placeholder="qty" />
                   <span className="text-xs text-gray-500 w-12">{item?.unit ?? ''}</span>
                 </div>
               </div>

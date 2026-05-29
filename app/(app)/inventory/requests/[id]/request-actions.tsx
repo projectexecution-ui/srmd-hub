@@ -5,6 +5,7 @@ import { createClient } from '@/lib/supabase/client'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { MoneyInput } from '@/components/ui/money-input'
 import { Textarea } from '@/components/ui/textarea'
 import { Loader2, Check, X, AlertTriangle, Truck, Undo2, PackageCheck } from 'lucide-react'
 import type { Role } from '@/lib/types'
@@ -98,9 +99,9 @@ export function RequestActions({
                   <span className="text-xs text-gray-500 ml-2">req {l.requested_qty} {l.unit} · avail {l.available_qty} {l.unit}</span>
                 </div>
                 <div className="col-span-4">
-                  <Input type="number" step="any" inputMode="decimal"
+                  <MoneyInput
                     value={approvedQty[l.id] ?? ''}
-                    onChange={e => setApprovedQty(s => ({ ...s, [l.id]: e.target.value }))} />
+                    onChange={(v) => setApprovedQty(s => ({ ...s, [l.id]: v }))} />
                 </div>
                 <span className="col-span-1 text-xs text-gray-500">{l.unit}</span>
               </div>
@@ -235,9 +236,9 @@ export function RequestActions({
                   <span className="text-xs text-gray-500 ml-2">approved {l.approved_qty ?? 0} {l.unit}{l.is_returnable && <span className="ml-2 text-amber-700 font-semibold">· returnable</span>}</span>
                 </div>
                 <div className="col-span-4">
-                  <Input type="number" step="any" inputMode="decimal"
+                  <MoneyInput
                     value={issuedQty[l.id] ?? ''}
-                    onChange={e => setIssuedQty(s => ({ ...s, [l.id]: e.target.value }))} />
+                    onChange={(v) => setIssuedQty(s => ({ ...s, [l.id]: v }))} />
                 </div>
                 <span className="col-span-1 text-xs text-gray-500">{l.unit}</span>
               </div>
@@ -314,7 +315,7 @@ export function RequestActions({
             </div>
             <div>
               <p className="text-xs text-gray-500 mb-1">Qty</p>
-              <Input type="number" step="any" inputMode="decimal" value={returnQty} onChange={e => setReturnQty(e.target.value)} />
+              <MoneyInput value={returnQty} onChange={setReturnQty} />
             </div>
             <div>
               <p className="text-xs text-gray-500 mb-1">Condition</p>

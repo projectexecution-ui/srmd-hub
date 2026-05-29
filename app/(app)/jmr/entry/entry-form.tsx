@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { MoneyInput } from '@/components/ui/money-input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Card } from '@/components/ui/card'
@@ -252,7 +253,7 @@ export function EntryForm({ userName, projects, contractors, items }: Props) {
         ) : selectedItem ? (
           <div>
             <Label>Quantity ({selectedItem.unit})</Label>
-            <Input type="number" inputMode="decimal" step="0.01" min="0" value={qty} onChange={e => setQty(e.target.value)} className="mt-1" />
+            <MoneyInput value={qty} onChange={setQty} className="mt-1" />
           </div>
         ) : null}
         {(effectiveQty != null || earned != null) && (

@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { MoneyInput } from '@/components/ui/money-input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Loader2, PackagePlus } from 'lucide-react'
@@ -79,7 +80,7 @@ export function ReceiptForm({ warehouses, items }: { warehouses: WhOpt[]; items:
       <div>
         <Label>Quantity *</Label>
         <div className="mt-1 flex gap-2">
-          <Input type="number" step="any" inputMode="decimal" value={qty} onChange={e => setQty(e.target.value)} required placeholder="e.g. 100" />
+          <MoneyInput value={qty} onChange={setQty} required placeholder="e.g. 100" />
           <span className="inline-flex items-center text-sm text-gray-500 w-12">{item?.unit ?? ''}</span>
         </div>
       </div>

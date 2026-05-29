@@ -5,6 +5,7 @@ import * as XLSX from 'xlsx'
 import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { MoneyInput } from '@/components/ui/money-input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Loader2, Upload, Send, FileSpreadsheet, X } from 'lucide-react'
@@ -444,8 +445,8 @@ export function NewWSQuickForm({ projects, projectDisciplines, projectSubSkills,
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
           <div>
             <Label>Grand total (₹)</Label>
-            <Input type="number" step="any" inputMode="decimal" value={summaryTotal}
-              onChange={e => setSummaryTotal(e.target.value)} placeholder="auto-filled from Excel" className="mt-1" />
+            <MoneyInput value={summaryTotal}
+              onChange={setSummaryTotal} placeholder="auto-filled from Excel" className="mt-1" />
           </div>
           {canSetDeadline && (
             <div>

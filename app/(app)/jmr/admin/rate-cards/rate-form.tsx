@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { MoneyInput } from '@/components/ui/money-input'
 import { Label } from '@/components/ui/label'
 import { Loader2 } from 'lucide-react'
 import { todayISO } from '@/lib/jmr/format'
@@ -120,10 +121,10 @@ export function RateForm({ contractors, items, projects, initial, rateCardId }: 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <div>
           <Label>Rate per {selectedItem?.unit ?? 'unit'} *</Label>
-          <Input
-            type="number" step="0.01" min="0" required
+          <MoneyInput
+            required
             value={v.rate_per_unit}
-            onChange={e => setV({ ...v, rate_per_unit: e.target.value })}
+            onChange={(raw) => setV({ ...v, rate_per_unit: raw })}
             className="mt-1"
           />
         </div>

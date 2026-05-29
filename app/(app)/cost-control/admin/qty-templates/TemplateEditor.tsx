@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { MoneyInput } from '@/components/ui/money-input'
 import { Label } from '@/components/ui/label'
 import { Plus, Trash2, Loader2, AlertCircle, CheckCircle2 } from 'lucide-react'
 import { createTemplate, updateTemplate, deleteTemplate, type TemplatePayload } from './actions'
@@ -326,14 +327,12 @@ export function TemplateEditor({
                 .map(c => (
                   <div key={c.key}>
                     <Label className="text-[10px]">{c.label || c.key}</Label>
-                    <Input
-                      type="number"
-                      step="any"
+                    <MoneyInput
                       value={testValues[c.key] ?? ''}
-                      onChange={e =>
+                      onChange={(raw) =>
                         setTestValues(v => ({
                           ...v,
-                          [c.key]: e.target.value === '' ? 0 : Number(e.target.value),
+                          [c.key]: raw === '' ? 0 : Number(raw),
                         }))
                       }
                       className="h-8 text-xs"

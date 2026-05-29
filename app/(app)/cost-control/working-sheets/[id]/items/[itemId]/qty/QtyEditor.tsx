@@ -5,6 +5,7 @@ import { ChevronDown, ChevronRight, Plus, Trash2, Loader2, Check, X } from 'luci
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { MoneyInput } from '@/components/ui/money-input'
 import { Label } from '@/components/ui/label'
 import {
   addSection,
@@ -574,14 +575,10 @@ function RowEditor({
       {section.columns.map(col => (
         <td key={col.key} className="px-2 py-1.5 align-top text-right">
           {col.type === 'number' ? (
-            <Input
-              type="number"
-              step="any"
+            <MoneyInput
               disabled={readOnly}
               value={(row.field_values[col.key] as number | undefined) ?? ''}
-              onChange={e =>
-                updateFieldValue(col.key, e.target.value === '' ? null : Number(e.target.value))
-              }
+              onChange={(v) => updateFieldValue(col.key, v === '' ? null : Number(v))}
               className="h-8 w-20 text-right text-xs"
             />
           ) : (

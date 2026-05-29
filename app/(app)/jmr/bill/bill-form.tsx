@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { MoneyInput } from '@/components/ui/money-input'
 import { Label } from '@/components/ui/label'
 import { Card } from '@/components/ui/card'
 import { Camera, AlertTriangle, Loader2 } from 'lucide-react'
@@ -290,11 +291,10 @@ export function BillForm({ projects, contractors, items, gstRate, varTolPct, var
                       </td>
                       <td className="px-2 py-2 text-right text-gray-700">{l.jmr_quantity.toFixed(l.jmr_quantity % 1 === 0 ? 0 : 2)} {l.item.unit}</td>
                       <td className="px-2 py-1">
-                        <input
-                          type="number" step="0.01" min="0"
+                        <MoneyInput
                           value={l.billed_quantity}
-                          onChange={e => setLineBilledQty(idx, e.target.value)}
-                          className="w-20 h-8 rounded border border-gray-300 px-1.5 text-right text-xs"
+                          onChange={(v) => setLineBilledQty(idx, v)}
+                          className="w-20 h-8 px-1.5 text-right text-xs rounded"
                         />
                       </td>
                     </tr>

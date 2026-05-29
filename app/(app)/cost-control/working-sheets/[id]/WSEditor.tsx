@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { MoneyInput } from '@/components/ui/money-input'
 import { Plus, Trash2, Send, Check, RotateCcw, Loader2, Lock, Calculator, AlertTriangle } from 'lucide-react'
 import { findDuplicateMatches, type PastItem, type DupMatch } from '@/lib/dup-detect'
 import { formatINR } from '@/lib/utils'
@@ -245,11 +246,9 @@ export function WSEditor({ wsId, status, canEdit, canApprove, vendors, initialIt
                           <Calculator className="h-3 w-3 text-blue-600 shrink-0" />
                         </span>
                       )}
-                      <Input
-                        type="number"
-                        step="any"
+                      <MoneyInput
                         value={row.qty}
-                        onChange={e => updateField(idx, 'qty', Number(e.target.value))}
+                        onChange={(v) => updateField(idx, 'qty', v === '' ? 0 : Number(v))}
                         onBlur={() => persistRow(idx)}
                         disabled={!editable || row.qty_is_auto}
                         className={`h-9 text-right tabular-nums ${row.qty_is_auto ? 'bg-blue-50 text-blue-900' : ''}`}
@@ -265,11 +264,9 @@ export function WSEditor({ wsId, status, canEdit, canApprove, vendors, initialIt
                     )}
                   </td>
                   <td className="px-2 py-2">
-                    <Input
-                      type="number"
-                      step="any"
+                    <MoneyInput
                       value={row.rate}
-                      onChange={e => updateField(idx, 'rate', Number(e.target.value))}
+                      onChange={(v) => updateField(idx, 'rate', v === '' ? 0 : Number(v))}
                       onBlur={() => persistRow(idx)}
                       disabled={!editable}
                       className="h-9 text-right tabular-nums"
