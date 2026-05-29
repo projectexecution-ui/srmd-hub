@@ -6,7 +6,7 @@ import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { EmptyState } from '@/components/ui/empty-state'
-import { Calculator, Plus, FileText, Clock, Inbox, Upload, ClipboardList, Settings, ArrowRight, CalendarClock } from 'lucide-react'
+import { Calculator, Plus, FileText, Clock, Inbox, Upload, ClipboardList, Settings, CalendarClock, ChevronDown } from 'lucide-react'
 import { formatINR } from '@/lib/utils'
 import { DeadlineBadge } from '@/components/cost-control/DeadlineBadge'
 
@@ -94,6 +94,39 @@ export default async function CostControlLandingPage() {
         title="Cost Control"
         subtitle={`SRASSK — ${ccProjects.length} project${ccProjects.length === 1 ? '' : 's'}${incompleteCount ? ` · ${incompleteCount} need setup` : ''}`}
       >
+        <details className="relative group [&_summary::-webkit-details-marker]:hidden">
+          <summary className="list-none cursor-pointer inline-flex items-center gap-1.5 h-9 px-3 rounded-md border border-gray-300 bg-white text-sm font-medium text-gray-700 hover:bg-gray-50 select-none">
+            <Settings className="h-4 w-4" /> Tools
+            <ChevronDown className="h-3.5 w-3.5 transition-transform group-open:rotate-180" />
+          </summary>
+          <div className="absolute right-0 top-[calc(100%+4px)] z-20 w-64 bg-white border border-gray-200 rounded-lg shadow-lg p-1.5">
+            {canWrite && (
+              <Link href="/cost-control/import" className="flex items-start gap-2.5 px-2.5 py-2 rounded-md hover:bg-gray-50">
+                <Upload className="h-4 w-4 text-gray-500 mt-0.5 flex-shrink-0" />
+                <div className="min-w-0">
+                  <p className="text-sm font-medium text-gray-900">Import Excel budget</p>
+                  <p className="text-[11px] text-gray-500">bulk-load ENGG report</p>
+                </div>
+              </Link>
+            )}
+            <Link href="/cost-control/audit" className="flex items-start gap-2.5 px-2.5 py-2 rounded-md hover:bg-gray-50">
+              <ClipboardList className="h-4 w-4 text-gray-500 mt-0.5 flex-shrink-0" />
+              <div className="min-w-0">
+                <p className="text-sm font-medium text-gray-900">Audit log</p>
+                <p className="text-[11px] text-gray-500">every edit & event</p>
+              </div>
+            </Link>
+            {canAdmin && (
+              <Link href="/cost-control/admin/qty-templates" className="flex items-start gap-2.5 px-2.5 py-2 rounded-md hover:bg-gray-50">
+                <Settings className="h-4 w-4 text-gray-500 mt-0.5 flex-shrink-0" />
+                <div className="min-w-0">
+                  <p className="text-sm font-medium text-gray-900">Quantification templates</p>
+                  <p className="text-[11px] text-gray-500">manage measurement shapes</p>
+                </div>
+              </Link>
+            )}
+          </div>
+        </details>
         <Button asChild size="sm" variant="outline">
           <Link href="/cost-control/working-sheets">
             <FileText className="h-4 w-4" /> All Working Sheets
@@ -173,42 +206,6 @@ export default async function CostControlLandingPage() {
         </Card>
       )}
 
-      {/* Quick actions */}
-      <Card className="p-4">
-        <h3 className="text-xs uppercase tracking-wide text-gray-500 font-semibold mb-3">Tools</h3>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-          <QuickAction
-            href="/cost-control/approvals"
-            label="Approvals inbox"
-            hint={pendingCount > 0 ? `${pendingCount} pending` : 'all clear'}
-            icon={<Inbox className="h-4 w-4" />}
-            highlight={pendingCount > 0}
-          />
-          {canWrite && (
-            <QuickAction
-              href="/cost-control/import"
-              label="Import Excel budget"
-              hint="bulk-load ENGG report"
-              icon={<Upload className="h-4 w-4" />}
-            />
-          )}
-          <QuickAction
-            href="/cost-control/audit"
-            label="Audit log"
-            hint="every edit & event"
-            icon={<ClipboardList className="h-4 w-4" />}
-          />
-          {canAdmin && (
-            <QuickAction
-              href="/cost-control/admin/qty-templates"
-              label="Quantification templates"
-              hint="manage measurement shapes"
-              icon={<Settings className="h-4 w-4" />}
-            />
-          )}
-        </div>
-      </Card>
-
       {projectsRes.error && (
         <Card className="border-amber-300 bg-amber-50 p-4 text-sm text-amber-900">
           <p className="font-semibold">Cost Control tables not yet applied to the database.</p>
@@ -267,44 +264,6 @@ export default async function CostControlLandingPage() {
         </Card>
       )}
     </div>
-  )
-}
-
-function QuickAction({
-  href,
-  label,
-  hint,
-  icon,
-  highlight = false,
-}: {
-  href: string
-  label: string
-  hint?: string
-  icon: React.ReactNode
-  highlight?: boolean
-}) {
-  return (
-    <Link
-      href={href}
-      className={`group flex items-center gap-2 p-3 rounded-lg border transition-colors ${
-        highlight
-          ? 'border-amber-200 bg-amber-50 hover:bg-amber-100'
-          : 'border-gray-200 bg-white hover:bg-gray-50 hover:border-gray-300'
-      }`}
-    >
-      <div
-        className={`p-1.5 rounded-md ${
-          highlight ? 'bg-amber-100 text-amber-700' : 'bg-indigo-50 text-indigo-700'
-        }`}
-      >
-        {icon}
-      </div>
-      <div className="flex-1 min-w-0">
-        <div className="text-sm font-medium text-gray-900 truncate">{label}</div>
-        {hint && <div className="text-[10px] text-gray-500 truncate">{hint}</div>}
-      </div>
-      <ArrowRight className="h-3.5 w-3.5 text-gray-300 group-hover:text-gray-500 shrink-0" />
-    </Link>
   )
 }
 
