@@ -46,6 +46,18 @@ export default async function WorkingSheetEditorPage(
 
   if (!ws) notFound()
 
+  // Back link is scoped to this WS's project + discipline + sub-skill so the
+  // user returns to the same chronological timeline they came from, not the
+  // unfiltered cross-project WS list.
+  const backHref = (() => {
+    const qs = new URLSearchParams()
+    if (ws.project_id) qs.set('project', ws.project_id)
+    if (ws.discipline_id) qs.set('discipline', ws.discipline_id)
+    if (ws.sub_skill_id) qs.set('sub_skill', ws.sub_skill_id)
+    const s = qs.toString()
+    return s ? `/cost-control/working-sheets?${s}` : '/cost-control/working-sheets'
+  })()
+
   // Quick mode: short-circuit the line-item editor and render the Excel
   // summary + flag panel instead.
   if (ws.entry_mode === 'excel_summary') {
@@ -73,7 +85,7 @@ export default async function WorkingSheetEditorPage(
         <PageHeader
           title={ws.ws_code}
           subtitle={`${proj?.code ?? '—'} · ${dis?.code} ${dis?.name} → ${sub?.code} ${sub?.name} · Quick mode (Excel)`}
-          back="/cost-control/working-sheets"
+          back={backHref}
         >
           <WSStatusPill status={ws.status as WSStatus} />
         </PageHeader>
@@ -194,7 +206,7 @@ export default async function WorkingSheetEditorPage(
       <PageHeader
         title={ws.ws_code}
         subtitle={`${proj?.code ?? '—'} · ${dis?.code} ${dis?.name} → ${sub?.code} ${sub?.name} · ${ws.line_type === 'material' ? 'Material' : 'Work'}`}
-        back="/cost-control/working-sheets"
+        back={backHref}
       >
         <WSStatusPill status={status} />
       </PageHeader>
