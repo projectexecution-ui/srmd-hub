@@ -15,7 +15,7 @@ import { useRouter } from 'next/navigation'
 import { approveWorkingSheet } from '@/components/cost-control/ws-actions'
 import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
+import { MoneyInput } from '@/components/ui/money-input'
 import { Textarea } from '@/components/ui/textarea'
 import { Check, Loader2, Wallet, Paperclip, MessageSquare, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -187,9 +187,9 @@ export function ApproveTrancheButton({
       </div>
       <div>
         <label className="text-[11px] font-semibold text-gray-700">Tranche amount (₹)</label>
-        <Input
-          type="number" step="any" inputMode="decimal"
-          value={amount} onChange={e => setAmount(e.target.value)}
+        <MoneyInput
+          value={amount}
+          onChange={setAmount}
           placeholder={String(remaining)}
           className="mt-1 font-mono"
         />

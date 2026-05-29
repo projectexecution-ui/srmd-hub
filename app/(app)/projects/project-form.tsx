@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
+import { MoneyInput } from '@/components/ui/money-input'
 import { Loader2, Plus, Trash2 } from 'lucide-react'
 import type { Project, ProjectFloor } from '@/lib/types'
 
@@ -206,19 +207,19 @@ export function ProjectForm({ initial, initialFloors, projectId }: Props) {
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           <div>
             <Label>Plot area</Label>
-            <Input type="number" inputMode="decimal" step="any" value={p.plot_area_sft}      onChange={e => setP({ ...p, plot_area_sft: e.target.value })}      placeholder="sq ft" className="mt-1" />
+            <MoneyInput value={p.plot_area_sft}      onChange={v => setP({ ...p, plot_area_sft: v })}      placeholder="sq ft" className="mt-1" />
           </div>
           <div>
             <Label>Built-up</Label>
-            <Input type="number" inputMode="decimal" step="any" value={p.built_up_sft}       onChange={e => setP({ ...p, built_up_sft: e.target.value })}       placeholder="sq ft" className="mt-1" />
+            <MoneyInput value={p.built_up_sft}       onChange={v => setP({ ...p, built_up_sft: v })}       placeholder="sq ft" className="mt-1" />
           </div>
           <div>
             <Label>Carpet</Label>
-            <Input type="number" inputMode="decimal" step="any" value={p.carpet_sft}         onChange={e => setP({ ...p, carpet_sft: e.target.value })}         placeholder="sq ft" className="mt-1" />
+            <MoneyInput value={p.carpet_sft}         onChange={v => setP({ ...p, carpet_sft: v })}         placeholder="sq ft" className="mt-1" />
           </div>
           <div>
             <Label>Super built-up</Label>
-            <Input type="number" inputMode="decimal" step="any" value={p.super_built_up_sft} onChange={e => setP({ ...p, super_built_up_sft: e.target.value })} placeholder="sq ft" className="mt-1" />
+            <MoneyInput value={p.super_built_up_sft} onChange={v => setP({ ...p, super_built_up_sft: v })} placeholder="sq ft" className="mt-1" />
           </div>
         </div>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
@@ -266,10 +267,10 @@ export function ProjectForm({ initial, initialFloors, projectId }: Props) {
                   <Input value={f.name}        onChange={e => updateFloor(f.tempId, { name: e.target.value })}        placeholder="e.g. Ground / 1st Floor" />
                 </div>
                 <div className="md:col-span-3">
-                  <Input type="number" inputMode="decimal" step="any" value={f.built_up_sft} onChange={e => updateFloor(f.tempId, { built_up_sft: e.target.value })} placeholder="sq ft" />
+                  <MoneyInput value={f.built_up_sft} onChange={v => updateFloor(f.tempId, { built_up_sft: v })} placeholder="sq ft" />
                 </div>
                 <div className="md:col-span-3">
-                  <Input type="number" inputMode="decimal" step="any" value={f.carpet_sft}   onChange={e => updateFloor(f.tempId, { carpet_sft: e.target.value })}   placeholder="sq ft" />
+                  <MoneyInput value={f.carpet_sft}   onChange={v => updateFloor(f.tempId, { carpet_sft: v })}   placeholder="sq ft" />
                 </div>
                 <div className="md:col-span-1 flex justify-end">
                   <Button type="button" variant="ghost" size="sm" onClick={() => removeFloor(f.tempId)} className="text-rose-600 hover:text-rose-700 hover:bg-rose-50">

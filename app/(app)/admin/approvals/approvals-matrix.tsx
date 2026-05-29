@@ -3,7 +3,7 @@
 // no per-doc-type subgroups, no badges-for-the-sake-of-badges. Five columns:
 // From → To · Approver · Override · Cap · Active · 🗑.
 
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { Card, CardContent } from '@/components/ui/card'
@@ -11,6 +11,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Loader2, Check, Plus, Trash2, X, ArrowRight, MessageSquare, Paperclip } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { MoneyInput } from '@/components/ui/money-input'
 import type { RoleLabelMap } from '@/lib/role-labels'
 
 interface Rule {
@@ -266,15 +267,7 @@ function Row({ rule, roles, roleLabels, busy, saved, onSave, onRemove }: {
           onChange={(v) => onSave({ override_role: v || null })} />
       </td>
       <td className="px-2 py-2 text-right">
-        <Input type="number" min="0" step="any" inputMode="decimal"
-          defaultValue={rule.amount_cap_max ?? ''}
-          onBlur={e => {
-            const raw = e.target.value.trim()
-            const next = raw === '' ? null : Number(raw)
-            if (next !== rule.amount_cap_max) onSave({ amount_cap_max: next })
-          }}
-          placeholder="no cap"
-          className="h-8 text-xs w-28 ml-auto text-right tabular-nums" />
+        <AmountCapInput rule={rule} onSave={onSave} />
       </td>
       <td className="px-2 py-2 text-center" title="Require approver to leave a comment">
         <button
@@ -354,11 +347,12 @@ function DraftRow({ draft, roles, roleLabels, busy, onPatch, onSave, onCancel }:
           onChange={(v) => onPatch({ override_role: v })} />
       </td>
       <td className="px-2 py-2 text-right">
-        <Input type="number" min="0" step="any" inputMode="decimal"
+        <MoneyInput
           value={draft.amount_cap_max}
-          onChange={e => onPatch({ amount_cap_max: e.target.value })}
+          onChange={(v) => onPatch({ amount_cap_max: v })}
           placeholder="no cap"
-          className="h-8 text-xs w-28 ml-auto text-right tabular-nums" />
+          className="h-8 text-xs w-28 ml-auto text-right tabular-nums"
+        />
       </td>
       <td className="px-2 py-2 text-center text-gray-300" title="Editable after the rule is saved"><MessageSquare className="h-3.5 w-3.5 mx-auto" /></td>
       <td className="px-2 py-2 text-center text-gray-300" title="Editable after the rule is saved"><Paperclip className="h-3.5 w-3.5 mx-auto" /></td>
@@ -394,5 +388,25 @@ function RoleSelect({ value, roles, roleLabels, allowEmpty, onChange }: {
         <option key={r} value={r}>{fmtRole(r, roleLabels)}</option>
       ))}
     </select>
+  )
+}
+
+// ─── Amount-cap cell — uses MoneyInput, saves on blur ─────────────
+function AmountCapInput({ rule, onSave }: { rule: Rule; onSave: (patch: Partial<Rule>) => void }) {
+  const [val, setVal] = useState<string>(rule.amount_cap_max == null ? '' : String(rule.amount_cap_max))
+  useEffect(() => {
+    setVal(rule.amount_cap_max == null ? '' : String(rule.amount_cap_max))
+  }, [rule.amount_cap_max])
+  return (
+    <MoneyInput
+      value={val}
+      onChange={setVal}
+      onBlur={() => {
+        const next = val.trim() === '' ? null : Number(val)
+        if (next !== rule.amount_cap_max) onSave({ amount_cap_max: next })
+      }}
+      placeholder="no cap"
+      className="h-8 text-xs w-28 ml-auto text-right tabular-nums"
+    />
   )
 }
