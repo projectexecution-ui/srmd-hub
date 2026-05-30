@@ -82,6 +82,27 @@ export function daysBetween(earlier: string, later: string): number | null {
   return Math.round((b.getTime() - a.getTime()) / 86_400_000)
 }
 
+/**
+ * Format a day-count into a humans-can-scan-quickly label. We still
+ * display the raw day count alongside (so it stays precise — tables
+ * are easier to compare in same units) but the "(~2y 3mo)" suffix
+ * makes 800d feel less abstract.
+ */
+export function formatAgeFriendly(days: number | null): { short: string; long: string } {
+  if (days == null) return { short: '—', long: '' }
+  const absDays = Math.abs(days)
+  const sign = days < 0 ? '−' : ''
+  if (absDays < 30) return { short: `${sign}${absDays}d`, long: '' }
+  if (absDays < 365) {
+    const months = Math.round(absDays / 30)
+    return { short: `${sign}${absDays}d`, long: `~${months}mo` }
+  }
+  const years = Math.floor(absDays / 365)
+  const remainderMonths = Math.round((absDays % 365) / 30)
+  const long = remainderMonths > 0 ? `~${years}y ${remainderMonths}mo` : `~${years}y`
+  return { short: `${sign}${absDays}d`, long }
+}
+
 export const num = (v: unknown): number => {
   if (typeof v === 'number' && Number.isFinite(v)) return v
   if (typeof v === 'string') {

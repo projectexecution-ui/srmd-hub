@@ -11,6 +11,7 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import type { LineRecord } from '@/lib/procurement'
+import { formatAgeFriendly } from '@/lib/procurement/shared'
 import { Download, ClipboardList, Layers, AlertTriangle, FileSpreadsheet, CheckCircle2 } from 'lucide-react'
 
 type GroupKey = 'indent' | 'block'
@@ -315,6 +316,7 @@ export function IndentsNeedingPoView({
                     <tbody className="divide-y divide-stone-50">
                       {g.lines.map(ln => {
                         const age = ageDays(ln)
+                        const fmt = formatAgeFriendly(age)
                         return (
                           <tr key={ln.id} className="hover:bg-stone-50">
                             {groupBy === 'block' && (
@@ -331,8 +333,14 @@ export function IndentsNeedingPoView({
                             <td className="px-4 py-2 text-right text-xs tabular-nums font-bold text-amber-700">
                               {ln.indentQty.toLocaleString('en-IN')} <span className="text-stone-400 text-[10px] font-normal">{ln.uom}</span>
                             </td>
-                            <td className={`px-4 py-2 text-right text-xs tabular-nums whitespace-nowrap ${ageClass(age)}`}>
-                              {age != null ? `${age}d` : '—'}
+                            <td
+                              className={`px-4 py-2 text-right text-xs tabular-nums whitespace-nowrap ${ageClass(age)}`}
+                              title={ln.indentDate ? `Indent date: ${ln.indentDate}` : 'Indent date unknown'}
+                            >
+                              <div>{fmt.short}</div>
+                              {fmt.long && (
+                                <div className="text-[10px] font-normal text-stone-400 leading-tight">{fmt.long}</div>
+                              )}
                             </td>
                           </tr>
                         )

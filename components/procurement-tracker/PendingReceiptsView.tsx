@@ -13,6 +13,7 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import type { LineRecord } from '@/lib/procurement'
+import { formatAgeFriendly } from '@/lib/procurement/shared'
 import { Download, Users, ClipboardList, AlertTriangle, FileSpreadsheet } from 'lucide-react'
 
 type GroupKey = 'supplier' | 'indent'
@@ -27,10 +28,15 @@ function fmtINR(n: number) {
   return `₹${n.toLocaleString('en-IN')}`
 }
 
-function ageDays(ln: LineRecord): number | null {
-  // Prefer oldest PO age (relevant for "how long has my supplier been late")
-  if (ln.oldestPoAgeDays != null) return ln.oldestPoAgeDays
+// PRIMARY age = days since the INDENT was raised — that's the clock
+// that matters to a project manager chasing a supplier. PO age is
+// secondary context: "yes, indent is 230d old, but PO is only 30d
+// old so the supplier isn't really late."
+function indentAge(ln: LineRecord): number | null {
   return ln.indentAgeDays
+}
+function poAge(ln: LineRecord): number | null {
+  return ln.oldestPoAgeDays
 }
 
 function ageClass(age: number | null) {
@@ -47,16 +53,18 @@ function csvEscape(v: unknown) {
 }
 
 const CSV_HEADER = [
-  'Supplier', 'PO No', 'PO Date', 'Age (days)',
-  'Indent No', 'Indent Date', 'Project / Block', 'Material', 'UOM',
+  'Supplier', 'PO No', 'PO Date', 'Days since PO',
+  'Indent No', 'Indent Date', 'Days since indent',
+  'Project / Block', 'Material', 'UOM',
   'Ordered', 'Received', 'Pending',
   'Pending Value (INR)',
 ]
 function csvRow(ln: LineRecord) {
   const po = ln.pos[0]
   return [
-    ln.supplier, po?.poNo ?? '', po?.poDate ?? '', ageDays(ln) ?? '',
-    ln.indentNo, ln.indentDate, ln.block, ln.material, ln.uom,
+    ln.supplier, po?.poNo ?? '', po?.poDate ?? '', poAge(ln) ?? '',
+    ln.indentNo, ln.indentDate, indentAge(ln) ?? '',
+    ln.block, ln.material, ln.uom,
     ln.orderedQty, ln.receivedQty, ln.pendingQty,
     ln.pendingValue.toFixed(2),
   ].map(csvEscape).join(',')
@@ -106,10 +114,12 @@ export function PendingReceiptsView({
   const filtered = useMemo(() => {
     const threshold = ageFilter === 'all' ? null : Number(ageFilter)
     if (threshold == null) return pending
-    return pending.filter(ln => (ageDays(ln) ?? 0) >= threshold)
+    // Filter by INDENT age — matches the buckets bar above the list.
+    return pending.filter(ln => (indentAge(ln) ?? 0) >= threshold)
   }, [pending, ageFilter])
 
-  // Group + sort by age (oldest first within each group)
+  // Group + sort by INDENT age (oldest indent first within each group)
+  // so the longest-outstanding requests bubble up.
   const groups = useMemo(() => {
     const map = new Map<string, { key: string; label: string; lines: LineRecord[] }>()
     for (const ln of filtered) {
@@ -120,7 +130,7 @@ export function PendingReceiptsView({
       g.lines.push(ln)
     }
     for (const g of map.values()) {
-      g.lines.sort((a, b) => (ageDays(b) ?? 0) - (ageDays(a) ?? 0))
+      g.lines.sort((a, b) => (indentAge(b) ?? 0) - (indentAge(a) ?? 0))
     }
     // Sort groups by total pending value desc
     return Array.from(map.values()).sort((a, b) =>
@@ -132,12 +142,12 @@ export function PendingReceiptsView({
   const totalPendingValue = filtered.reduce((s, l) => s + l.pendingValue, 0)
   const totalPendingLines = filtered.length
 
-  // Aging buckets — operate on the UNFILTERED pending set so users can see
-  // the full distribution and click into any bucket.
+  // Aging buckets — based on INDENT age (days since the indent was raised).
+  // That's the clock that matters to the project manager.
   const buckets = useMemo(() => {
     const out = { 'lt7': 0, '7to14': 0, '14to30': 0, '30plus': 0 }
     for (const ln of pending) {
-      const a = ageDays(ln) ?? 0
+      const a = indentAge(ln) ?? 0
       if (a < 7) out.lt7++
       else if (a < 14) out['7to14']++
       else if (a < 30) out['14to30']++
@@ -274,8 +284,11 @@ export function PendingReceiptsView({
         <div className="space-y-3">
           {groups.map(g => {
             const groupPendingValue = g.lines.reduce((s, l) => s + l.pendingValue, 0)
+            // "Oldest" in the group header = oldest indent age — same
+            // anchor as the table sort + aging buckets, so the user
+            // sees one consistent clock per group.
             const oldestAge = g.lines.reduce<number | null>((mx, l) => {
-              const a = ageDays(l)
+              const a = indentAge(l)
               if (a == null) return mx
               return mx == null ? a : Math.max(mx, a)
             }, null)
@@ -314,7 +327,12 @@ export function PendingReceiptsView({
                         {groupBy === 'indent'   && <th className="text-left px-4 py-2 text-[10px] font-medium text-stone-500 uppercase tracking-wide">Supplier</th>}
                         <th className="text-left px-4 py-2 text-[10px] font-medium text-stone-500 uppercase tracking-wide">Material</th>
                         <th className="text-left px-4 py-2 text-[10px] font-medium text-stone-500 uppercase tracking-wide">PO</th>
-                        <th className="text-right px-4 py-2 text-[10px] font-medium text-stone-500 uppercase tracking-wide">Age</th>
+                        <th className="text-right px-4 py-2 text-[10px] font-medium text-stone-500 uppercase tracking-wide" title="Days since the indent was raised (your primary clock)">
+                          Since indent
+                        </th>
+                        <th className="text-right px-4 py-2 text-[10px] font-medium text-stone-500 uppercase tracking-wide" title="Days since PO was raised — '—' if no PO yet">
+                          Since PO
+                        </th>
                         <th className="text-right px-4 py-2 text-[10px] font-medium text-stone-500 uppercase tracking-wide">Ordered</th>
                         <th className="text-right px-4 py-2 text-[10px] font-medium text-stone-500 uppercase tracking-wide">Received</th>
                         <th className="text-right px-4 py-2 text-[10px] font-medium text-stone-500 uppercase tracking-wide">Pending</th>
@@ -324,7 +342,10 @@ export function PendingReceiptsView({
                     <tbody className="divide-y divide-stone-50">
                       {g.lines.map(ln => {
                         const po = ln.pos[0]
-                        const age = ageDays(ln)
+                        const indentAg = indentAge(ln)
+                        const poAg = poAge(ln)
+                        const indentFmt = formatAgeFriendly(indentAg)
+                        const poFmt = formatAgeFriendly(poAg)
                         return (
                           <tr key={ln.id} className="hover:bg-stone-50">
                             {groupBy === 'supplier' && (
@@ -344,8 +365,23 @@ export function PendingReceiptsView({
                             <td className="px-4 py-2 font-mono text-[11px] text-stone-500 whitespace-nowrap" title={po?.poNo}>
                               {po?.poNo ? po.poNo.replace('PO/SRASSK/', '').replace('PO/SRET/', '') : '—'}
                             </td>
-                            <td className={`px-4 py-2 text-right text-xs tabular-nums whitespace-nowrap ${ageClass(age)}`}>
-                              {age != null ? `${age}d` : '—'}
+                            <td
+                              className={`px-4 py-2 text-right text-xs tabular-nums whitespace-nowrap ${ageClass(indentAg)}`}
+                              title={ln.indentDate ? `Indent date: ${ln.indentDate}` : 'Indent date unknown'}
+                            >
+                              <div>{indentFmt.short}</div>
+                              {indentFmt.long && (
+                                <div className="text-[10px] font-normal text-stone-400 leading-tight">{indentFmt.long}</div>
+                              )}
+                            </td>
+                            <td
+                              className={`px-4 py-2 text-right text-xs tabular-nums whitespace-nowrap ${ageClass(poAg)}`}
+                              title={po?.poDate ? `PO date: ${po.poDate}` : 'No PO yet'}
+                            >
+                              <div>{poFmt.short}</div>
+                              {poFmt.long && (
+                                <div className="text-[10px] font-normal text-stone-400 leading-tight">{poFmt.long}</div>
+                              )}
                             </td>
                             <td className="px-4 py-2 text-right text-xs tabular-nums text-stone-700">
                               {ln.orderedQty.toLocaleString('en-IN')} <span className="text-stone-400 text-[10px]">{ln.uom}</span>
