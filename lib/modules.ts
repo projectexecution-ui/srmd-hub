@@ -42,6 +42,7 @@ export const MODULES: ModuleTile[] = [
   { slug: 'uploads',          label: 'Uploads',          description: 'Excel imports history',                       href: '/uploads',        icon: Upload,        tone: 'slate' },
   { slug: 'budget-vs-actual', label: 'IN4 BPH Report Hub',     description: 'IN4 Budget Performance report — server-backed BPH dashboard', href: '/budget',              icon: FileSpreadsheet, tone: 'teal' },
   { slug: 'in4-indent-to-po', label: 'IN4 Indent to PO Hub',   description: 'IN4 export — Indent → PO funnel tracker',                      href: '/in4/indent-to-po',    icon: ClipboardList,   tone: 'blue' },
+  { slug: 'procurement-tracker', label: 'Procurement Tracker', description: 'PURCHINDENT_TO_ISSUE_RPT — Indent → PO → GRN with discipline breakdown', href: '/procurement-tracker', icon: FileSpreadsheet, tone: 'amber' },
   { slug: 'cost-control',     label: 'Cost Control',           description: 'Working Sheets, budgets & approvals (SRASSK)',                 href: '/cost-control',        icon: Calculator,      tone: 'indigo' },
   { slug: 'admin-users',      label: 'Users & Roles',    description: 'Manage app users',                            href: '/admin/users',    icon: Users,         tone: 'slate' },
   { slug: 'admin-settings',   label: 'Settings',         description: 'App settings (admin email, etc.)',            href: '/admin/settings', icon: Settings,      tone: 'slate' },
