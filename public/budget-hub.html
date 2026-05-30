@@ -2074,9 +2074,17 @@ function extractIN4Rows(raw, headerIdx, map) {
     const advBalNum = hasAdvBal && typeof row[map.advanceBalance] === 'number' ? row[map.advanceBalance] : 0;
     const smartActual = (hasGross || hasAdvBal) ? Math.max(paidNum, grossNum + advBalNum) : paidNum;
     const catNum = m[1];
-    // (M) parents (Material side) and non-(M) parents (Contractor side) are tracked
-    // separately in the source data — keep them as distinct keys here so the byCat
-    // rollup below can sum both contributions for the same category.
+    // The IN4 export tags parent rows with a single-letter flavour suffix:
+    //   (M) = Material        — explicit material side
+    //   (A) = Asset           — bucketed with Contractor below (still counted in totals)
+    //   (L) = Labour          — also bucketed with Contractor
+    //   (no tag) = Contractor — the default "work" side
+    // We split (M) vs everything-else only so each flavour gets one row per
+    // category before the byCat rollup. (A) / (L) / untagged all flow through
+    // the "C" bucket here, and the byCat loop below SUMS both 'M' and 'C'
+    // contributions into a single per-category budget + actual figure.
+    // So (A) Asset rows ARE included in the chart and KPI totals — they're
+    // just not visually split out from Contractor.
     const isMaterial = /\(M\)/.test(chTrim);
     const key = catNum + '||' + currentSubProject + '||' + (isMaterial ? 'M' : 'C');
     const entry = { head: chTrim, budget: b, actual: smartActual, woApproved: typeof w === 'number' ? w : 0, catNum };
@@ -2129,6 +2137,9 @@ function extractIN4SubRows(raw, headerIdx, map) {
     const grossNum = hasGross && typeof row[map.gross] === 'number' ? row[map.gross] : 0;
     const advBalNum = hasAdvBal && typeof row[map.advanceBalance] === 'number' ? row[map.advanceBalance] : 0;
     const smartActual = (hasGross || hasAdvBal) ? Math.max(paidNum, grossNum + advBalNum) : paidNum;
+    // Same flavour convention as the parent extractor — (A) Asset rows fall
+    // through to the 'C' bucket here and are merged into the per-sub-skill
+    // total in the loop below. They ARE counted, just not split out visually.
     const isMaterial = /\(M\)/.test(siTrim);
     const dedupKey = subNum + '||' + (isMaterial ? 'M' : 'C');
     const cleanName = siTrim.replace(/\s*\(M\)\s*/i, ' ').replace(/\s+/g, ' ').trim();
