@@ -38,12 +38,17 @@ export async function POST(req: NextRequest) {
     const buffer = await file.arrayBuffer()
     const result = parseProcurementReport(buffer)
 
+    // Shape MUST match what client.tsx consumes:
+    //   AnalyseResponse = ParseResult & { success, fileName, error? }
+    // i.e. the parsed payload lives under `projects`, not `summaries`.
+    // (Earlier draft used `summaries` here, which made every upload
+    // crash on the client with `Cannot read properties of undefined
+    // (reading '0')` from `json.projects[0]`.)
     return NextResponse.json({
       success: true,
       fileName: file.name,
       format: result.format,
-      totalProjects: result.projects.length,
-      summaries: result.projects,
+      projects: result.projects,
     })
   } catch (err) {
     console.error('Procurement parse error:', err)
