@@ -4,7 +4,12 @@
 // full offline-first — daily entries themselves are queued in IndexedDB
 // (see lib/jmr/offline-queue.ts) and posted when navigator.onLine flips.
 
-const CACHE = 'srmd-jmr-v1'
+// Bump this version whenever the fetch handler logic changes.
+// v2: refuse to cache or return redirected/non-2xx navigation responses.
+// Previously the SW poisoned itself by caching login-redirect HTML under
+// protected URLs (e.g. /procurement-tracker), which Chromium/Brave then
+// refused to serve for a navigation → "This page couldn't load".
+const CACHE = 'srmd-jmr-v2'
 const SHELL = [
   '/',
   '/jmr',
@@ -39,11 +44,24 @@ self.addEventListener('fetch', event => {
     event.respondWith(
       fetch(event.request)
         .then(res => {
-          const copy = res.clone()
-          caches.open(CACHE).then(c => c.put(event.request, copy))
+          // Only cache real, final, successful HTML responses.
+          // Never cache redirects (login bounces), opaque responses, or
+          // non-2xx — caching those poisons the URL and Chromium refuses
+          // to use a redirected response from a SW for a navigation.
+          if (res && res.ok && !res.redirected && res.type === 'basic') {
+            const copy = res.clone()
+            caches.open(CACHE).then(c => c.put(event.request, copy)).catch(() => null)
+          }
           return res
         })
-        .catch(() => caches.match(event.request).then(r => r || caches.match('/jmr')))
+        .catch(() =>
+          caches.match(event.request).then(r => {
+            // Refuse to serve a redirected cached response for a navigation —
+            // the browser will reject it. Fall back to the JMR shell instead.
+            if (r && !r.redirected) return r
+            return caches.match('/jmr')
+          })
+        )
     )
     return
   }
@@ -52,8 +70,10 @@ self.addEventListener('fetch', event => {
   if (url.pathname.startsWith('/_next/static') || /\.(png|svg|jpg|jpeg|webp|ico|css|js)$/.test(url.pathname)) {
     event.respondWith(
       caches.match(event.request).then(hit => hit || fetch(event.request).then(res => {
-        const copy = res.clone()
-        caches.open(CACHE).then(c => c.put(event.request, copy))
+        if (res && res.ok && res.type === 'basic') {
+          const copy = res.clone()
+          caches.open(CACHE).then(c => c.put(event.request, copy)).catch(() => null)
+        }
         return res
       }))
     )
