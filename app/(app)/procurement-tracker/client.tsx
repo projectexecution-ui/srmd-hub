@@ -7,6 +7,9 @@ import type { ProjectSummary } from '@/lib/procurement-tracker'
 import { SummaryCards } from '@/components/procurement-tracker/SummaryCards'
 import { DisciplineChart } from '@/components/procurement-tracker/DisciplineChart'
 import { IndentTable } from '@/components/procurement-tracker/IndentTable'
+import { ActionStrip } from '@/components/procurement-tracker/ActionStrip'
+import { FunnelBand } from '@/components/procurement-tracker/FunnelBand'
+import { TopVendors } from '@/components/procurement-tracker/TopVendors'
 import { Upload, FileSpreadsheet, Loader2 } from 'lucide-react'
 
 type AnalyseResponse = {
@@ -167,9 +170,12 @@ export function ProcurementTrackerClient() {
             </div>
           )}
 
+          <ActionStrip summary={currentSummary} />
           <SummaryCards summary={currentSummary} />
+          <FunnelBand summary={currentSummary} />
           <DisciplineChart summary={currentSummary} />
-          <IndentTable records={currentSummary.records} />
+          <IndentTable records={currentSummary.records} projectName={currentSummary.projectName} />
+          <TopVendors vendors={currentSummary.topVendors} />
         </div>
       )}
     </div>
