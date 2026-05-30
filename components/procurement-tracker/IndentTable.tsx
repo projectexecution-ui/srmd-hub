@@ -1,8 +1,8 @@
 'use client'
-import { useState, useMemo } from 'react'
-import type { IndentRecord, IndentStatus } from '@/lib/procurement-tracker'
-import { StatusBadge } from './StatusBadge'
-import { ArrowUpDown, Download } from 'lucide-react'
+import { useState, useMemo, Fragment } from 'react'
+import type { IndentRollup, IndentStatus, LineRecord } from '@/lib/procurement-tracker'
+import { StatusBadge, LineStatusBadge } from './StatusBadge'
+import { ArrowUpDown, Download, ChevronRight, ChevronDown } from 'lucide-react'
 
 const STATUS_FILTERS: { label: string; value: IndentStatus | 'all' }[] = [
   { label: 'All', value: 'all' },
@@ -11,9 +11,7 @@ const STATUS_FILTERS: { label: string; value: IndentStatus | 'all' }[] = [
   { label: 'No PO Yet', value: 'Indent Only – No PO' },
 ]
 
-type SortKey =
-  | 'indentNo' | 'indentDate' | 'ageDays' | 'block' | 'discipline'
-  | 'supplier' | 'poValue' | 'status'
+type SortKey = 'indentNo' | 'indentDate' | 'worstAgeDays' | 'block' | 'pendingValue' | 'status'
 
 function fmtINR(n: number) {
   if (n >= 1e7) return `₹${(n / 1e7).toFixed(2)} Cr`
@@ -22,10 +20,10 @@ function fmtINR(n: number) {
   return `₹${n.toLocaleString('en-IN')}`
 }
 
-function ageClass(r: IndentRecord) {
-  if (r.status !== 'Indent Only – No PO' || r.ageDays == null) return 'text-stone-500'
-  if (r.ageDays >= 14) return 'text-red-700 font-bold'
-  if (r.ageDays >= 7) return 'text-amber-700 font-semibold'
+function ageClass(r: IndentRollup) {
+  if (r.status !== 'Indent Only – No PO' || r.worstAgeDays == null) return 'text-stone-500'
+  if (r.worstAgeDays >= 14) return 'text-red-700 font-bold'
+  if (r.worstAgeDays >= 7) return 'text-amber-700 font-semibold'
   return 'text-stone-500'
 }
 
@@ -34,43 +32,61 @@ function csvEscape(v: unknown) {
   return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s
 }
 
-export function IndentTable({ records, projectName }: { records: IndentRecord[]; projectName: string }) {
+export function IndentTable({
+  indents, lines, projectName,
+}: {
+  indents: IndentRollup[]
+  lines: LineRecord[]
+  projectName: string
+}) {
   const [statusFilter, setStatusFilter] = useState<IndentStatus | 'all'>('all')
   const [search, setSearch] = useState('')
   const [page, setPage] = useState(1)
   const [sortKey, setSortKey] = useState<SortKey>('indentDate')
   const [sortDesc, setSortDesc] = useState(true)
+  const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const PAGE_SIZE = 25
 
+  const linesByIndent = useMemo(() => {
+    const m = new Map<string, LineRecord[]>()
+    for (const ln of lines) {
+      let arr = m.get(ln.indentNo)
+      if (!arr) { arr = []; m.set(ln.indentNo, arr) }
+      arr.push(ln)
+    }
+    return m
+  }, [lines])
+
   const filtered = useMemo(() => {
-    let out = records
+    let out = indents
     if (statusFilter !== 'all') out = out.filter(r => r.status === statusFilter)
     if (search) {
       const q = search.toLowerCase()
-      out = out.filter(r =>
-        r.indentNo.toLowerCase().includes(q) ||
-        r.material.toLowerCase().includes(q) ||
-        r.supplier.toLowerCase().includes(q) ||
-        r.discipline.toLowerCase().includes(q) ||
-        r.poNos.toLowerCase().includes(q),
-      )
+      out = out.filter(r => {
+        if (r.indentNo.toLowerCase().includes(q)) return true
+        if (r.suppliers.some(s => s.toLowerCase().includes(q))) return true
+        if (r.poNos.some(p => p.toLowerCase().includes(q))) return true
+        const memberLines = linesByIndent.get(r.indentNo) ?? []
+        return memberLines.some(ln =>
+          ln.material.toLowerCase().includes(q) ||
+          ln.discipline.toLowerCase().includes(q),
+        )
+      })
     }
     return out
-  }, [records, statusFilter, search])
+  }, [indents, lines, linesByIndent, statusFilter, search])
 
   const sorted = useMemo(() => {
-    const cmp = (a: IndentRecord, b: IndentRecord): number => {
+    const cmp = (a: IndentRollup, b: IndentRollup): number => {
       let x: string | number | null | undefined
       let y: string | number | null | undefined
       switch (sortKey) {
-        case 'indentNo':   x = a.indentNo; y = b.indentNo; break
-        case 'indentDate': x = a.indentDate; y = b.indentDate; break
-        case 'ageDays':    x = a.ageDays ?? -1; y = b.ageDays ?? -1; break
-        case 'block':      x = a.block; y = b.block; break
-        case 'discipline': x = a.discipline; y = b.discipline; break
-        case 'supplier':   x = a.supplier; y = b.supplier; break
-        case 'poValue':    x = a.poValue; y = b.poValue; break
-        case 'status':     x = a.status; y = b.status; break
+        case 'indentNo':      x = a.indentNo; y = b.indentNo; break
+        case 'indentDate':    x = a.indentDate; y = b.indentDate; break
+        case 'worstAgeDays':  x = a.worstAgeDays ?? -1; y = b.worstAgeDays ?? -1; break
+        case 'block':         x = a.block; y = b.block; break
+        case 'pendingValue':  x = a.pendingValue; y = b.pendingValue; break
+        case 'status':        x = a.status; y = b.status; break
       }
       const xn = x ?? '', yn = y ?? ''
       if (xn < yn) return sortDesc ? 1 : -1
@@ -88,23 +104,41 @@ export function IndentTable({ records, projectName }: { records: IndentRecord[];
     else { setSortKey(key); setSortDesc(true) }
   }
 
+  function toggle(indentNo: string) {
+    setExpanded(s => {
+      const next = new Set(s)
+      if (next.has(indentNo)) next.delete(indentNo); else next.add(indentNo)
+      return next
+    })
+  }
+
   function exportCsv() {
     const header = [
-      'Indent No', 'Date', 'Age (days)', 'Project / Block', 'Discipline', 'Material',
-      'Indent Qty', 'UOM', 'Status', 'PO Count', 'PO Nos', 'Supplier',
-      'GRN Count', 'GRN Qty', 'GRN Value (INR)', 'PO Value (INR)',
+      'Indent No', 'Indent Date', 'Block', 'Material', 'UOM',
+      'Ordered Qty', 'Received Qty', 'Pending Qty',
+      'Suppliers', 'PO Nos', 'GRN Count',
+      'Pending Value (INR)', 'GRN Value (INR)', 'Line Status',
     ]
-    const rows = sorted.map(r => [
-      r.indentNo, r.indentDate, r.ageDays ?? '', r.block, r.discipline, r.material,
-      r.indentQty, r.uom, r.status, r.poCount, r.poNos, r.supplier,
-      r.hasGRN ? r.grnNos.split(',').length : 0, r.grnQty.toFixed(2), r.grnValue.toFixed(2), r.poValue.toFixed(2),
-    ].map(csvEscape).join(','))
+    const rows: string[] = []
+    for (const r of sorted) {
+      const memberLines = linesByIndent.get(r.indentNo) ?? []
+      for (const ln of memberLines) {
+        rows.push([
+          ln.indentNo, ln.indentDate, ln.block, ln.material, ln.uom,
+          ln.orderedQty, ln.receivedQty, ln.pendingQty,
+          ln.pos.map(p => p.supplier).filter(Boolean).join('; '),
+          ln.pos.map(p => p.poNo).join('; '),
+          ln.grns.length,
+          ln.pendingValue.toFixed(2), ln.grnValue.toFixed(2), ln.status,
+        ].map(csvEscape).join(','))
+      }
+    }
     const csv = [header.join(','), ...rows].join('\n')
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
-    a.download = `${projectName.replace(/[^a-z0-9]+/gi, '-')}-procurement-${new Date().toISOString().slice(0, 10)}.csv`
+    a.download = `${projectName.replace(/[^a-z0-9]+/gi, '-')}-procurement-lines-${new Date().toISOString().slice(0, 10)}.csv`
     a.click()
     URL.revokeObjectURL(url)
   }
@@ -123,7 +157,6 @@ export function IndentTable({ records, projectName }: { records: IndentRecord[];
 
   return (
     <div className="bg-white rounded-xl border border-stone-200">
-      {/* Toolbar */}
       <div className="flex flex-wrap items-center gap-3 p-4 border-b border-stone-100">
         <div className="flex gap-1 flex-wrap">
           {STATUS_FILTERS.map(f => (
@@ -139,7 +172,7 @@ export function IndentTable({ records, projectName }: { records: IndentRecord[];
               {f.label}
               {f.value !== 'all' && (
                 <span className="ml-1.5 opacity-70">
-                  {records.filter(r => r.status === f.value).length}
+                  {indents.filter(r => r.status === f.value).length}
                 </span>
               )}
             </button>
@@ -156,74 +189,116 @@ export function IndentTable({ records, projectName }: { records: IndentRecord[];
           onClick={exportCsv}
           className="inline-flex items-center gap-1.5 text-xs font-medium bg-stone-800 text-white px-3 py-1.5 rounded-lg hover:bg-stone-700"
         >
-          <Download className="h-3.5 w-3.5" /> Export CSV
+          <Download className="h-3.5 w-3.5" /> Export lines CSV
         </button>
-        <span className="text-xs text-stone-400 w-full sm:w-auto">{sorted.length} records</span>
+        <span className="text-xs text-stone-400 w-full sm:w-auto">{sorted.length} indents · {lines.length} lines total</span>
       </div>
 
-      {/* Table */}
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead className="bg-stone-50 border-b border-stone-100">
             <tr>
-              <SortableTh k="indentNo"   label="Indent no." />
-              <SortableTh k="indentDate" label="Date" />
-              <SortableTh k="ageDays"    label="Age" num />
-              <SortableTh k="block"      label="Block" />
-              <SortableTh k="discipline" label="Discipline" />
-              <th className="px-4 py-2.5 text-[11px] font-medium text-stone-500 uppercase tracking-wide text-left max-w-xs">Material · qty</th>
-              <SortableTh k="status"     label="Status" />
+              <th className="w-8"></th>
+              <SortableTh k="indentNo"     label="Indent no." />
+              <SortableTh k="indentDate"   label="Date" />
+              <SortableTh k="worstAgeDays" label="Age" num />
+              <SortableTh k="block"        label="Block" />
+              <th className="px-4 py-2.5 text-[11px] font-medium text-stone-500 uppercase tracking-wide text-left">Lines</th>
+              <SortableTh k="status"       label="Status" />
               <th className="px-4 py-2.5 text-[11px] font-medium text-stone-500 uppercase tracking-wide text-left">Funnel</th>
-              <SortableTh k="supplier"   label="Supplier" />
-              <SortableTh k="poValue"    label="PO value" num />
+              <SortableTh k="pendingValue" label="Pending value" num />
             </tr>
           </thead>
           <tbody className="divide-y divide-stone-50">
-            {paged.map((r, i) => {
-              const funnel = `PO ${r.hasPO ? r.poCount : 0} · GRN ${r.hasGRN ? r.grnNos.split(',').length : 0}`
+            {paged.map((r) => {
+              const isOpen = expanded.has(r.indentNo)
+              const memberLines = linesByIndent.get(r.indentNo) ?? []
               return (
-                <tr
-                  key={r.indentNo + i}
-                  className={`hover:bg-stone-50 transition-colors ${
-                    r.status === 'Indent Only – No PO' ? 'bg-red-50/30'
-                    : r.status === 'PO Raised – GRN Pending' ? 'bg-amber-50/20' : ''
-                  }`}
-                >
-                  <td className="px-4 py-2.5 font-mono text-xs text-stone-700 whitespace-nowrap">
-                    {r.indentNo.replace('IND/SRASSK/', '').replace('IND/SRET/', '')}
-                  </td>
-                  <td className="px-4 py-2.5 text-xs text-stone-500 whitespace-nowrap">{r.indentDate || '—'}</td>
-                  <td className={`px-4 py-2.5 text-xs text-right tabular-nums whitespace-nowrap ${ageClass(r)}`}>
-                    {r.ageDays != null ? `${r.ageDays}d` : '—'}
-                  </td>
-                  <td className="px-4 py-2.5 text-xs text-stone-600 max-w-[120px] truncate" title={r.block}>
-                    {r.block || '—'}
-                  </td>
-                  <td className="px-4 py-2.5 text-xs text-stone-600 max-w-[140px] truncate" title={r.discipline}>
-                    {r.discipline}
-                  </td>
-                  <td className="px-4 py-2.5 text-xs text-stone-800 max-w-[220px]">
-                    <span className="line-clamp-2" title={r.material}>{r.material}</span>
-                    <span className="text-[11px] text-stone-400 block mt-0.5 tabular-nums">
-                      {r.indentQty} {r.uom}
-                    </span>
-                  </td>
-                  <td className="px-4 py-2.5"><StatusBadge status={r.status} /></td>
-                  <td className="px-4 py-2.5 text-[11px] text-stone-500 whitespace-nowrap">{funnel}</td>
-                  <td className="px-4 py-2.5 text-xs text-stone-600 max-w-[160px] truncate" title={r.supplier}>
-                    {r.supplier
-                      ? (r.vendorCount > 1 ? `${r.supplier} +${r.vendorCount - 1}` : r.supplier)
-                      : '—'}
-                  </td>
-                  <td className="px-4 py-2.5 text-xs text-right tabular-nums font-semibold text-stone-800 whitespace-nowrap">
-                    {r.poValue > 0 ? fmtINR(r.poValue) : '—'}
-                  </td>
-                </tr>
+                <Fragment key={r.indentNo}>
+                  <tr
+                    className={`hover:bg-stone-50 transition-colors cursor-pointer ${
+                      r.status === 'Indent Only – No PO' ? 'bg-red-50/30'
+                      : r.status === 'PO Raised – GRN Pending' ? 'bg-amber-50/20' : ''
+                    }`}
+                    onClick={() => toggle(r.indentNo)}
+                  >
+                    <td className="px-2 py-2.5 text-stone-400">
+                      {isOpen ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                    </td>
+                    <td className="px-4 py-2.5 font-mono text-xs text-stone-700 whitespace-nowrap">
+                      {r.indentNo.replace('IND/SRASSK/', '').replace('IND/SRET/', '')}
+                    </td>
+                    <td className="px-4 py-2.5 text-xs text-stone-500 whitespace-nowrap">{r.indentDate || '—'}</td>
+                    <td className={`px-4 py-2.5 text-xs text-right tabular-nums whitespace-nowrap ${ageClass(r)}`}>
+                      {r.worstAgeDays != null ? `${r.worstAgeDays}d` : '—'}
+                    </td>
+                    <td className="px-4 py-2.5 text-xs text-stone-600 max-w-[140px] truncate" title={r.block}>
+                      {r.block || '—'}
+                    </td>
+                    <td className="px-4 py-2.5 text-xs text-stone-600 tabular-nums">{r.totalLines}</td>
+                    <td className="px-4 py-2.5"><StatusBadge status={r.status} /></td>
+                    <td className="px-4 py-2.5 text-[11px] text-stone-600 whitespace-nowrap tabular-nums">
+                      PO <b className="text-stone-800">{r.linesWithPo}</b>/{r.totalLines} ·{' '}
+                      GRN <b className="text-stone-800">{r.linesReceived}</b>/{r.totalLines}
+                      {r.linesPartial > 0 && <span className="text-amber-700"> · {r.linesPartial} part.</span>}
+                    </td>
+                    <td className="px-4 py-2.5 text-xs text-right tabular-nums font-semibold text-amber-700 whitespace-nowrap">
+                      {r.pendingValue > 0 ? fmtINR(r.pendingValue) : '—'}
+                    </td>
+                  </tr>
+
+                  {/* Expanded line breakdown */}
+                  {isOpen && (
+                    <tr className="bg-stone-50/50">
+                      <td colSpan={9} className="p-0">
+                        <div className="px-4 py-3">
+                          <table className="w-full text-xs">
+                            <thead>
+                              <tr className="text-[10px] uppercase tracking-wider text-stone-500">
+                                <th className="text-left py-1.5 pr-3">Material</th>
+                                <th className="text-right py-1.5 px-2">Ordered</th>
+                                <th className="text-right py-1.5 px-2">Received</th>
+                                <th className="text-right py-1.5 px-2">Pending</th>
+                                <th className="text-left py-1.5 px-2">Supplier(s)</th>
+                                <th className="text-left py-1.5 px-2">PO / GRN</th>
+                                <th className="text-left py-1.5 pl-2">Status</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-stone-100">
+                              {memberLines.map(ln => (
+                                <tr key={ln.id}>
+                                  <td className="py-1.5 pr-3 text-stone-800 max-w-[260px] line-clamp-2" title={ln.material}>
+                                    {ln.material || '—'}
+                                    <span className="text-stone-400 ml-1">({ln.uom})</span>
+                                  </td>
+                                  <td className="text-right tabular-nums text-stone-700 py-1.5 px-2">{ln.orderedQty.toLocaleString('en-IN')}</td>
+                                  <td className="text-right tabular-nums text-emerald-700 py-1.5 px-2">{ln.receivedQty.toLocaleString('en-IN')}</td>
+                                  <td className={`text-right tabular-nums py-1.5 px-2 ${ln.pendingQty > 0 ? 'text-amber-700 font-semibold' : 'text-stone-400'}`}>
+                                    {ln.pendingQty.toLocaleString('en-IN')}
+                                  </td>
+                                  <td className="py-1.5 px-2 text-stone-600 max-w-[160px] truncate" title={ln.pos.map(p => p.supplier).join(', ')}>
+                                    {ln.supplier || '—'}{ln.vendorCount > 1 ? ` +${ln.vendorCount - 1}` : ''}
+                                  </td>
+                                  <td className="py-1.5 px-2 text-[10px] text-stone-500 font-mono whitespace-nowrap">
+                                    {ln.pos.length} PO · {ln.grns.length} GRN
+                                  </td>
+                                  <td className="py-1.5 pl-2">
+                                    <LineStatusBadge status={ln.status} />
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                </Fragment>
               )
             })}
             {paged.length === 0 && (
               <tr>
-                <td colSpan={10} className="px-4 py-10 text-center text-sm text-stone-400">
+                <td colSpan={9} className="px-4 py-10 text-center text-sm text-stone-400">
                   No records match your filters.
                 </td>
               </tr>
@@ -232,7 +307,6 @@ export function IndentTable({ records, projectName }: { records: IndentRecord[];
         </table>
       </div>
 
-      {/* Pagination */}
       {totalPages > 1 && (
         <div className="flex items-center justify-between px-4 py-3 border-t border-stone-100">
           <span className="text-xs text-stone-400">

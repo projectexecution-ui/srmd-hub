@@ -1,71 +1,157 @@
 /**
  * Parser for the ERP PURCHINDENT_TO_ISSUE_RPT Excel export.
- * Adapted into the hub from procurement-tracker module.
- * Compatible with SRASSK/SRET procurement report structure.
+ *
+ * IMPORTANT: This report is NOT a flat per-row layout. Each indent occupies
+ * a BAND of rows:
+ *
+ *   ┌─ Indent header row     (col 3 = IND/…)
+ *   ├─ Material row          (col 6 = material name, col 7 = indent qty, col 9 = UOM)
+ *   │   ├─ PO row(s)         (col 12 supplier, col 13 PO/…, col 15 date, col 17 qty)
+ *   │   └─ GRN row(s)        (col 18 GRN/…, col 19 date, col 20 qty, col 21 rate, col 22 value)
+ *   ├─ Material row          (next material under same indent)
+ *   │   └─ …
+ *   └─ (next indent header)
+ *
+ * Roughly half of all indents in a real export are multi-material. The
+ * previous parser used an indent-window approach and `break`ed after the
+ * first material — silently discarding 80%+ of the data and making it
+ * impossible to see line-level pending qty.
+ *
+ * This parser uses a stateful walker that emits one LineRecord per
+ * (indent, material) and lets the UI compute pending qty per line.
  */
 
 import * as XLSX from 'xlsx'
 
+// ─── Types ────────────────────────────────────────────────────────
+
+export type LineStatus =
+  | 'no_po'      // Material requested, no PO raised yet
+  | 'pending'    // PO raised, zero received
+  | 'partial'    // PO raised, partial GRN
+  | 'received'   // GRN qty meets or exceeds ordered qty
+
+export interface PoEntry {
+  poNo: string
+  poDate: string
+  supplier: string
+  qty: number
+  rate: number    // best-effort: GRN rate when known, else 0
+}
+
+export interface GrnEntry {
+  grnNo: string
+  grnDate: string
+  qty: number
+  rate: number
+  value: number
+}
+
+export interface LineRecord {
+  /** Stable id = indentNo + '|' + index of material under the indent */
+  id: string
+  indentNo: string
+  indentDate: string
+  subProject: string
+  block: string
+  project: string
+  discipline: string
+  material: string
+  indentQty: number
+  uom: string
+  pos: PoEntry[]
+  grns: GrnEntry[]
+  orderedQty: number
+  receivedQty: number
+  /** max(orderedQty - receivedQty, 0) */
+  pendingQty: number
+  /** Best-effort value of what's still owed: pendingQty × first-PO rate */
+  pendingValue: number
+  /** Sum of GRN values actually recorded */
+  grnValue: number
+  /** First supplier across the line's POs (canonical for grouping) */
+  supplier: string
+  /** Distinct supplier count across the line's POs */
+  vendorCount: number
+  /** Oldest PO age in days (null if no PO) */
+  oldestPoAgeDays: number | null
+  /** Age since indent_date in days */
+  indentAgeDays: number | null
+  status: LineStatus
+}
+
+export interface IndentRollup {
+  indentNo: string
+  indentDate: string
+  block: string
+  project: string
+  subProject: string
+  /** Materials in this indent, in document order */
+  lineIds: string[]
+  totalLines: number
+  linesWithPo: number
+  linesReceived: number
+  linesPartial: number
+  linesPending: number    // PO raised, zero received
+  linesNoPo: number
+  /** Sum of pendingValue across the indent's lines */
+  pendingValue: number
+  /** Sum of grnValue (cash that's already crossed the gate) */
+  grnValue: number
+  /** Worst (largest) indentAgeDays from member lines */
+  worstAgeDays: number | null
+  suppliers: string[]
+  poNos: string[]
+  /** Indent-level status — derived from its lines for use in the table */
+  status: IndentStatus
+}
+
+/** Legacy enum kept for the headline table — derived from the rollup. */
 export type IndentStatus =
   | 'PO Done & GRN Received'
   | 'PO Raised – GRN Pending'
   | 'Indent Only – No PO'
 
-export interface IndentRecord {
-  indentNo: string
-  indentDate: string
-  subProject: string
-  block: string
-  discipline: string
-  material: string
-  indentQty: number | string
-  uom: string
-  hasPO: boolean
-  poNos: string
-  /** Number of distinct POs raised against this indent. */
-  poCount: number
-  supplier: string
-  /** Number of distinct suppliers across the POs. */
-  vendorCount: number
-  hasGRN: boolean
-  grnNos: string
-  grnQty: number
-  grnValue: number
-  /** Best-effort PO value: sum(po_qty × grn_rate) when GRN rate is known; else 0. */
-  poValue: number
-  /** Days since indent_date (null when date unparseable). */
-  ageDays: number | null
-  status: IndentStatus
-}
-
 export interface VendorRollup {
   name: string
   indents: number
   poValue: number
-  pendingGrnValue: number
+  pendingValue: number
+  pendingLines: number
+  /** Worst-offender flag: how many overdue-≥7d pending lines */
+  overdueLines: number
 }
 
 export interface ProjectSummary {
   projectName: string
+  /** Indents in this project */
   total: number
   poDoneGrnReceived: number
   poRaisedGrnPending: number
   indentOnlyNoPo: number
   totalGrnValue: number
-  /** Sum of poValue across records. */
   totalPoValue: number
-  /** Sum of (poValue − grnValue) for indents that have a PO but no full GRN. */
-  pendingGrnValue: number
-  /** Oldest indent that hasn't gotten a PO yet (or null when none). */
-  oldestPendingPo: IndentRecord | null
-  /** Indent with the biggest pending-GRN value (or null when none). */
-  biggestPendingGrn: IndentRecord | null
+  /** Sum of line pendingValue */
+  pendingValue: number
+  /** Count of LineRecord where pendingQty > 0 — the "items pending receipt" number */
+  pendingLineCount: number
+  oldestPendingPo: IndentRollup | null
+  /** Biggest single line that's still pending receipt */
+  biggestPendingLine: LineRecord | null
+  /** Worst-offender vendor by overdue line count */
+  worstVendor: VendorRollup | null
   byDiscipline: Record<string, { total: number; done: number; pending: number; noPo: number }>
   topVendors: VendorRollup[]
-  records: IndentRecord[]
+  /** All lines across all indents in this project */
+  lines: LineRecord[]
+  /** Per-indent rollups */
+  indents: IndentRollup[]
 }
 
+// ─── Helpers ──────────────────────────────────────────────────────
+
 function simplifyBlock(sp: string): string {
+  if (!sp) return ''
   if (sp.includes('New Guest House B')) return 'NGH – Block B'
   if (sp.includes('New Guest House A')) return 'NGH – Block A'
   if (sp.includes('New Guest House C')) return 'NGH – Block C'
@@ -77,255 +163,394 @@ function simplifyBlock(sp: string): string {
   if (sp.includes('Admin Block')) return 'Admin Block'
   if (sp.includes('Prem Parking')) return 'Prem Parking'
   if (sp.includes('CFB')) return 'CFB'
-  return sp.slice(0, 25)
+  if (sp.includes('Staff Facilities')) return 'Staff Facilities'
+  return sp.slice(0, 28)
 }
 
 function extractDiscipline(material: string): string {
-  const m = String(material)
+  const m = String(material || '')
   const match = m.match(/^(\d{2})\s*(?:\([AM]\))?\s*([^-]+)/)
   if (match) return match[0].replace(/\([AM]\)\s*/g, '').trim().slice(0, 35)
   return 'Other'
 }
 
 function cleanMaterial(raw: string): string {
+  if (!raw) return ''
+  // "13 (A) Interiors - 1302 (A) Loose Furniture-Cupboard Metal" → "Cupboard Metal"
   const parts = String(raw).split('-')
   if (parts.length >= 3) return parts.slice(2).join('-').trim()
   if (parts.length === 2) return parts[1].trim()
   return String(raw).slice(0, 80)
 }
 
-/** Days since a date string like "12/05/2026" / "2026-05-12" / Excel serial. */
 function daysSince(raw: string): number | null {
   if (!raw) return null
-  // dd/mm/yyyy or dd-mm-yyyy (Indian convention)
-  const m = raw.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})/)
+  // Try ISO first, then dd/mm/yyyy, then "Mar 1, 2024" — the IN4 export uses
+  // long-form date strings like "Mar 2, 2024" so we let Date parse it.
   let d: Date | null = null
-  if (m) {
-    const day = Number(m[1])
-    const mon = Number(m[2]) - 1
-    let year = Number(m[3])
-    if (year < 100) year += 2000
-    d = new Date(year, mon, day)
+  const isoMatch = String(raw).match(/^(\d{4})-(\d{2})-(\d{2})/)
+  if (isoMatch) {
+    d = new Date(raw)
   } else {
-    const parsed = new Date(raw)
-    if (!isNaN(parsed.getTime())) d = parsed
+    const dmy = String(raw).match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})/)
+    if (dmy) {
+      const day = Number(dmy[1]), mon = Number(dmy[2]) - 1
+      let year = Number(dmy[3]); if (year < 100) year += 2000
+      d = new Date(year, mon, day)
+    } else {
+      const parsed = new Date(String(raw))
+      if (!isNaN(parsed.getTime())) d = parsed
+    }
   }
   if (!d || isNaN(d.getTime())) return null
   return Math.floor((Date.now() - d.getTime()) / 86_400_000)
 }
 
-export function parseProcurementReport(
-  buffer: ArrayBuffer,
-  filterProject?: string,
-): ProjectSummary[] {
-  const wb = XLSX.read(buffer, { type: 'array' })
+const num = (v: unknown): number => {
+  if (typeof v === 'number' && Number.isFinite(v)) return v
+  if (typeof v === 'string') {
+    const n = Number(v.replace(/,/g, ''))
+    return Number.isFinite(n) ? n : 0
+  }
+  return 0
+}
+
+const str = (v: unknown): string => (v == null ? '' : String(v).trim())
+
+// ─── Parser ───────────────────────────────────────────────────────
+
+export function parseProcurementReport(buffer: ArrayBuffer): ProjectSummary[] {
+  const wb = XLSX.read(buffer, { type: 'array', cellDates: false })
   const ws = wb.Sheets[wb.SheetNames[0]]
   const raw: (string | number | null)[][] = XLSX.utils.sheet_to_json(ws, {
     header: 1,
     defval: null,
   }) as (string | number | null)[][]
 
-  // Column indices (0-based) based on SRASSK report format
-  const COL = {
-    WO_CAT: 0,
+  // Column indices (0-based) — verified against the user's real export.
+  const C = {
+    WO_CAT:     0,
     CONTRACTOR: 1,
-    WO_NO: 2,
-    INDENT_NO: 3,
-    INDENT_TYPE: 4,
-    INDENT_DATE: 5,
-    MATERIAL: 6,
+    WO_NO:      2,
+    INDENT_NO:  3,
+    INDENT_TY:  4,
+    INDENT_DT:  5,
+    MATERIAL:   6,
     INDENT_QTY: 7,
-    UOM: 9,
-    SUPPLIER: 12,
-    PO_NO: 13,
-    PO_QTY: 17,
-    GRN_NO: 18,
-    GRN_DATE: 19,
-    GRN_QTY: 20,
-    GRN_RATE: 21,
-    GRN_VALUE: 22,
+    UOM:        9,
+    SUPPLIER:   12,
+    PO_NO:      13,
+    PO_DATE:    15,
+    PO_QTY:     17,
+    GRN_NO:     18,
+    GRN_DATE:   19,
+    GRN_QTY:    20,
+    GRN_RATE:   21,
+    GRN_VALUE:  22,
   }
 
-  // Find all indent row indices
-  const indentIndices: number[] = []
-  for (let i = 0; i < raw.length; i++) {
-    const v = raw[i]?.[COL.INDENT_NO]
-    if (v && String(v).startsWith('IND/')) indentIndices.push(i)
-  }
-
-  // Forward-fill project + discipline from cols 0 and 1
-  const projectFill: string[] = new Array(raw.length).fill('')
-  const disciplineFill: string[] = new Array(raw.length).fill('')
+  // Forward-fill the WO_CATEGORY column — it's only set on the indent's
+  // first row but defines which top-level project this band belongs to.
   let lastProject = ''
-  let lastDisc = ''
+  const projectFill: string[] = new Array(raw.length).fill('')
   for (let i = 0; i < raw.length; i++) {
-    const p = raw[i]?.[COL.WO_CAT]
-    if (p && String(p).trim()) lastProject = String(p).trim()
+    const p = raw[i]?.[C.WO_CAT]
+    if (p != null && String(p).trim()) lastProject = String(p).trim()
     projectFill[i] = lastProject
-
-    const d = raw[i]?.[COL.CONTRACTOR]
-    if (d && String(d).trim() && String(d) !== 'Internal Works') lastDisc = String(d).trim()
-    disciplineFill[i] = lastDisc
   }
 
-  const projectMap: Record<string, IndentRecord[]> = {}
+  // ─── Stateful line walker ──────────────────────────────────────
+  // We track the current indent, current material line, and (within a
+  // material line) the most recent PO so GRN rows attach to the right PO.
+  const lines: LineRecord[] = []
+  let currentIndentNo = ''
+  let currentIndentDate = ''
+  let currentSubProject = ''
+  let currentMaterial: LineRecord | null = null
+  let currentPo: PoEntry | null = null
+  // Track material index inside an indent for stable line ids.
+  const materialIndexByIndent = new Map<string, number>()
 
-  for (let ii = 0; ii < indentIndices.length; ii++) {
-    const idx = indentIndices[ii]
-    const nextIdx = ii + 1 < indentIndices.length ? indentIndices[ii + 1] : raw.length
+  function flushMaterial() {
+    if (!currentMaterial) return
+    // Compute aggregates now that we know all POs + GRNs against this line.
+    let orderedQty = 0
+    let receivedQty = 0
+    let grnValue = 0
+    const vendorSet = new Set<string>()
+    let oldestPoAgeDays: number | null = null
+    let firstPoRate = 0
+    for (const po of currentMaterial.pos) {
+      orderedQty += po.qty
+      if (po.supplier) vendorSet.add(po.supplier)
+      const age = daysSince(po.poDate)
+      if (age != null) oldestPoAgeDays = Math.max(oldestPoAgeDays ?? -Infinity, age)
+      if (!firstPoRate && po.rate) firstPoRate = po.rate
+    }
+    for (const g of currentMaterial.grns) {
+      receivedQty += g.qty
+      grnValue += g.value
+      if (!firstPoRate && g.rate) firstPoRate = g.rate
+    }
+    const pendingQty = Math.max(orderedQty - receivedQty, 0)
+    let status: LineStatus
+    if (currentMaterial.pos.length === 0) status = 'no_po'
+    else if (receivedQty <= 0) status = 'pending'
+    else if (receivedQty < orderedQty) status = 'partial'
+    else status = 'received'
 
-    const indentNo = String(raw[idx][COL.INDENT_NO])
-    const indentDate = String(raw[idx][COL.INDENT_DATE] ?? '')
-    const subProject = projectFill[idx]
+    currentMaterial.orderedQty = orderedQty
+    currentMaterial.receivedQty = receivedQty
+    currentMaterial.pendingQty = pendingQty
+    currentMaterial.grnValue = grnValue
+    currentMaterial.pendingValue = pendingQty * (firstPoRate || 0)
+    currentMaterial.supplier = currentMaterial.pos[0]?.supplier ?? ''
+    currentMaterial.vendorCount = vendorSet.size
+    currentMaterial.oldestPoAgeDays = oldestPoAgeDays === -Infinity ? null : oldestPoAgeDays
+    currentMaterial.status = status
 
-    if (filterProject && !subProject.toLowerCase().includes(filterProject.toLowerCase())) continue
+    lines.push(currentMaterial)
+    currentMaterial = null
+    currentPo = null
+  }
 
-    // Find material from col 6 in this window
-    let material = ''
-    let indentQty: number | string = ''
-    let uom = ''
-    for (let r = idx; r < nextIdx; r++) {
-      if (raw[r]?.[COL.MATERIAL]) {
-        material = String(raw[r][COL.MATERIAL])
-        indentQty = (raw[r][COL.INDENT_QTY] as number) ?? ''
-        uom = String(raw[r][COL.UOM] ?? '')
-        break
+  for (let r = 0; r < raw.length; r++) {
+    const row = raw[r]
+    if (!row) continue
+
+    const indentCell = str(row[C.INDENT_NO])
+    const materialCell = str(row[C.MATERIAL])
+    const poCell = str(row[C.PO_NO])
+    const grnCell = str(row[C.GRN_NO])
+
+    // ① New indent header
+    if (indentCell.startsWith('IND/')) {
+      flushMaterial()
+      currentIndentNo = indentCell
+      currentIndentDate = str(row[C.INDENT_DT])
+      currentSubProject = projectFill[r] || ''
+      materialIndexByIndent.set(currentIndentNo, 0)
+      continue
+    }
+
+    // ② New material line under the current indent
+    if (materialCell && currentIndentNo) {
+      flushMaterial()
+      const idx = materialIndexByIndent.get(currentIndentNo) ?? 0
+      materialIndexByIndent.set(currentIndentNo, idx + 1)
+      currentMaterial = {
+        id: `${currentIndentNo}|${idx}`,
+        indentNo: currentIndentNo,
+        indentDate: currentIndentDate,
+        subProject: currentSubProject,
+        block: simplifyBlock(currentSubProject),
+        project: (currentSubProject.split(' - ')[0] || currentSubProject || 'Unknown').trim(),
+        discipline: extractDiscipline(materialCell),
+        material: cleanMaterial(materialCell),
+        indentQty: num(row[C.INDENT_QTY]),
+        uom: str(row[C.UOM]),
+        pos: [],
+        grns: [],
+        orderedQty: 0,
+        receivedQty: 0,
+        pendingQty: 0,
+        pendingValue: 0,
+        grnValue: 0,
+        supplier: '',
+        vendorCount: 0,
+        oldestPoAgeDays: null,
+        indentAgeDays: daysSince(currentIndentDate),
+        status: 'no_po',
+      }
+      currentPo = null
+      continue
+    }
+
+    // ③ PO row attached to current material
+    if (poCell.startsWith('PO/') && currentMaterial) {
+      const po: PoEntry = {
+        poNo: poCell,
+        poDate: str(row[C.PO_DATE]),
+        supplier: str(row[C.SUPPLIER]),
+        qty: num(row[C.PO_QTY]),
+        rate: num(row[C.GRN_RATE]), // best-effort; updated by GRN rows
+      }
+      currentMaterial.pos.push(po)
+      currentPo = po
+      continue
+    }
+
+    // ④ GRN row attached to current PO (or fall back to last PO of material)
+    if (grnCell.startsWith('GRN/') && currentMaterial) {
+      const grn: GrnEntry = {
+        grnNo: grnCell,
+        grnDate: str(row[C.GRN_DATE]),
+        qty: num(row[C.GRN_QTY]),
+        rate: num(row[C.GRN_RATE]),
+        value: num(row[C.GRN_VALUE]),
+      }
+      currentMaterial.grns.push(grn)
+      // Update the PO rate to the most-recent GRN rate (more accurate than 0).
+      if (currentPo && !currentPo.rate && grn.rate) currentPo.rate = grn.rate
+      continue
+    }
+
+    // Other rows (sub-totals, blank separators, etc.) — ignore.
+  }
+  flushMaterial()
+
+  // ─── Build per-indent rollups ───────────────────────────────────
+  const byIndent = new Map<string, IndentRollup>()
+  const lineById = new Map<string, LineRecord>()
+  for (const ln of lines) {
+    lineById.set(ln.id, ln)
+    let rollup = byIndent.get(ln.indentNo)
+    if (!rollup) {
+      rollup = {
+        indentNo: ln.indentNo,
+        indentDate: ln.indentDate,
+        block: ln.block,
+        project: ln.project,
+        subProject: ln.subProject,
+        lineIds: [],
+        totalLines: 0,
+        linesWithPo: 0,
+        linesReceived: 0,
+        linesPartial: 0,
+        linesPending: 0,
+        linesNoPo: 0,
+        pendingValue: 0,
+        grnValue: 0,
+        worstAgeDays: ln.indentAgeDays,
+        suppliers: [],
+        poNos: [],
+        status: 'Indent Only – No PO',
+      }
+      byIndent.set(ln.indentNo, rollup)
+    }
+    rollup.lineIds.push(ln.id)
+    rollup.totalLines++
+    if (ln.pos.length > 0) rollup.linesWithPo++
+    if (ln.status === 'received') rollup.linesReceived++
+    else if (ln.status === 'partial') rollup.linesPartial++
+    else if (ln.status === 'pending') rollup.linesPending++
+    else rollup.linesNoPo++
+    rollup.pendingValue += ln.pendingValue
+    rollup.grnValue += ln.grnValue
+    rollup.worstAgeDays = Math.max(rollup.worstAgeDays ?? -Infinity, ln.indentAgeDays ?? -Infinity)
+    for (const po of ln.pos) {
+      if (po.supplier && !rollup.suppliers.includes(po.supplier)) rollup.suppliers.push(po.supplier)
+      if (po.poNo && !rollup.poNos.includes(po.poNo)) rollup.poNos.push(po.poNo)
+    }
+  }
+  // Indent status — same buckets as before, derived from line counts.
+  for (const rollup of byIndent.values()) {
+    if (rollup.linesWithPo === 0) rollup.status = 'Indent Only – No PO'
+    else if (rollup.linesReceived === rollup.totalLines) rollup.status = 'PO Done & GRN Received'
+    else rollup.status = 'PO Raised – GRN Pending'
+    if (rollup.worstAgeDays === -Infinity) rollup.worstAgeDays = null
+  }
+
+  // ─── Build per-project summaries ────────────────────────────────
+  const byProject = new Map<string, ProjectSummary>()
+  for (const rollup of byIndent.values()) {
+    const key = rollup.project || 'Unknown'
+    let p = byProject.get(key)
+    if (!p) {
+      p = {
+        projectName: key,
+        total: 0,
+        poDoneGrnReceived: 0,
+        poRaisedGrnPending: 0,
+        indentOnlyNoPo: 0,
+        totalGrnValue: 0,
+        totalPoValue: 0,
+        pendingValue: 0,
+        pendingLineCount: 0,
+        oldestPendingPo: null,
+        biggestPendingLine: null,
+        worstVendor: null,
+        byDiscipline: {},
+        topVendors: [],
+        lines: [],
+        indents: [],
+      }
+      byProject.set(key, p)
+    }
+    p.total++
+    if (rollup.status === 'PO Done & GRN Received') p.poDoneGrnReceived++
+    else if (rollup.status === 'PO Raised – GRN Pending') p.poRaisedGrnPending++
+    else p.indentOnlyNoPo++
+    p.indents.push(rollup)
+  }
+
+  for (const p of byProject.values()) {
+    // Attach lines belonging to this project.
+    for (const rollup of p.indents) {
+      for (const id of rollup.lineIds) {
+        const ln = lineById.get(id)
+        if (ln) p.lines.push(ln)
       }
     }
 
-    // PO info — dedupe and best-effort PO value via (po_qty × grn_rate)
-    const poSet = new Set<string>()
-    const vendorSet = new Set<string>()
-    let supplier = ''
-    let poValue = 0
-    for (let r = idx; r < nextIdx; r++) {
-      const po = raw[r]?.[COL.PO_NO]
-      if (po && String(po).startsWith('PO/')) {
-        poSet.add(String(po))
-        const sup = raw[r][COL.SUPPLIER]
-        if (sup) {
-          const s = String(sup).trim()
-          if (s) {
-            vendorSet.add(s)
-            if (!supplier) supplier = s
+    let totalPo = 0
+    for (const ln of p.lines) {
+      p.totalGrnValue += ln.grnValue
+      p.pendingValue += ln.pendingValue
+      if (ln.pendingQty > 0) p.pendingLineCount++
+      // Best-effort total PO value: orderedQty × first PO rate
+      const rate = ln.pos[0]?.rate ?? 0
+      if (ln.orderedQty && rate) totalPo += ln.orderedQty * rate
+      const d = ln.discipline
+      if (!p.byDiscipline[d]) p.byDiscipline[d] = { total: 0, done: 0, pending: 0, noPo: 0 }
+      p.byDiscipline[d].total++
+      if (ln.status === 'received')        p.byDiscipline[d].done++
+      else if (ln.status === 'no_po')      p.byDiscipline[d].noPo++
+      else                                 p.byDiscipline[d].pending++
+    }
+    p.totalPoValue = totalPo
+
+    // Action picks
+    p.oldestPendingPo = p.indents
+      .filter(r => r.linesNoPo > 0 && r.worstAgeDays != null)
+      .sort((a, b) => (b.worstAgeDays ?? 0) - (a.worstAgeDays ?? 0))[0] ?? null
+
+    p.biggestPendingLine = p.lines
+      .filter(ln => ln.pendingQty > 0 && ln.pendingValue > 0)
+      .sort((a, b) => b.pendingValue - a.pendingValue)[0] ?? null
+
+    // Vendor rollup
+    const vendorMap = new Map<string, VendorRollup>()
+    for (const ln of p.lines) {
+      for (const po of ln.pos) {
+        if (!po.supplier) continue
+        let v = vendorMap.get(po.supplier)
+        if (!v) {
+          v = { name: po.supplier, indents: 0, poValue: 0, pendingValue: 0, pendingLines: 0, overdueLines: 0 }
+          vendorMap.set(po.supplier, v)
+        }
+        v.poValue += po.qty * (po.rate || 0)
+      }
+      // Per-line vendor effects (so we don't multiply counts by # of POs)
+      if (ln.supplier) {
+        const v = vendorMap.get(ln.supplier)
+        if (v) {
+          v.indents++ // counts lines, not indents — name is kept for backward compat with UI
+          if (ln.pendingQty > 0) {
+            v.pendingLines++
+            v.pendingValue += ln.pendingValue
+            if ((ln.oldestPoAgeDays ?? 0) >= 7) v.overdueLines++
           }
         }
-        // PO value estimate: most reports don't carry po_amount directly,
-        // but po_qty × grn_rate is a close proxy where GRN exists. When
-        // GRN isn't recorded yet, fall back to po_qty × 0 (i.e. unknown)
-        // so we don't pretend to know the value.
-        const poQty = Number(raw[r][COL.PO_QTY]) || 0
-        const grnRate = Number(raw[r][COL.GRN_RATE]) || 0
-        if (poQty && grnRate) poValue += poQty * grnRate
       }
     }
-    const hasPO = poSet.size > 0
-    const poRows = Array.from(poSet)
-
-    // GRN info
-    const grnSet = new Set<string>()
-    let grnQty = 0
-    let grnValue = 0
-    for (let r = idx; r < nextIdx; r++) {
-      const grn = raw[r]?.[COL.GRN_NO]
-      if (grn && String(grn).startsWith('GRN/')) {
-        grnSet.add(String(grn))
-        grnQty += Number(raw[r][COL.GRN_QTY]) || 0
-        grnValue += Number(raw[r][COL.GRN_VALUE]) || 0
-      }
-    }
-    const grnRows = Array.from(grnSet)
-    const hasGRN = grnRows.length > 0
-
-    let status: IndentStatus = 'Indent Only – No PO'
-    if (hasPO && hasGRN) status = 'PO Done & GRN Received'
-    else if (hasPO && !hasGRN) status = 'PO Raised – GRN Pending'
-
-    const record: IndentRecord = {
-      indentNo,
-      indentDate,
-      subProject,
-      block: simplifyBlock(subProject),
-      discipline: extractDiscipline(material),
-      material: cleanMaterial(material),
-      indentQty,
-      uom,
-      hasPO,
-      poNos: poRows.slice(0, 3).join(', '),
-      poCount: poRows.length,
-      supplier,
-      vendorCount: vendorSet.size,
-      hasGRN,
-      grnNos: grnRows.slice(0, 3).join(', '),
-      grnQty,
-      grnValue,
-      poValue,
-      ageDays: daysSince(indentDate),
-      status,
-    }
-
-    // Group by top-level project name (first segment before " - ")
-    const topProject = subProject.split(' - ')[0].trim() || subProject
-    if (!projectMap[topProject]) projectMap[topProject] = []
-    projectMap[topProject].push(record)
-  }
-
-  // Build summaries
-  const summaries: ProjectSummary[] = []
-  for (const [projectName, records] of Object.entries(projectMap)) {
-    const byDisc: ProjectSummary['byDiscipline'] = {}
-    for (const r of records) {
-      const d = r.discipline
-      if (!byDisc[d]) byDisc[d] = { total: 0, done: 0, pending: 0, noPo: 0 }
-      byDisc[d].total++
-      if (r.status === 'PO Done & GRN Received') byDisc[d].done++
-      else if (r.status === 'PO Raised – GRN Pending') byDisc[d].pending++
-      else byDisc[d].noPo++
-    }
-
-    // Vendor rollup — sum poValue + pendingGrn per supplier
-    const vendorMap = new Map<string, VendorRollup>()
-    for (const r of records) {
-      if (!r.supplier) continue
-      let v = vendorMap.get(r.supplier)
-      if (!v) {
-        v = { name: r.supplier, indents: 0, poValue: 0, pendingGrnValue: 0 }
-        vendorMap.set(r.supplier, v)
-      }
-      v.indents++
-      v.poValue += r.poValue
-      if (r.hasPO && !r.hasGRN) v.pendingGrnValue += r.poValue
-    }
-    const topVendors = Array.from(vendorMap.values())
-      .sort((a, b) => (b.pendingGrnValue + b.poValue) - (a.pendingGrnValue + a.poValue))
+    p.topVendors = Array.from(vendorMap.values())
+      .sort((a, b) => (b.pendingValue + b.poValue * 0.05) - (a.pendingValue + a.poValue * 0.05))
       .slice(0, 8)
-
-    const oldestPendingPo = records
-      .filter(r => r.status === 'Indent Only – No PO' && r.ageDays != null)
-      .sort((a, b) => (b.ageDays ?? 0) - (a.ageDays ?? 0))[0] ?? null
-
-    const biggestPendingGrn = records
-      .filter(r => r.status === 'PO Raised – GRN Pending' && r.poValue > 0)
-      .sort((a, b) => b.poValue - a.poValue)[0] ?? null
-
-    summaries.push({
-      projectName,
-      total: records.length,
-      poDoneGrnReceived: records.filter(r => r.status === 'PO Done & GRN Received').length,
-      poRaisedGrnPending: records.filter(r => r.status === 'PO Raised – GRN Pending').length,
-      indentOnlyNoPo: records.filter(r => r.status === 'Indent Only – No PO').length,
-      totalGrnValue: records.reduce((s, r) => s + r.grnValue, 0),
-      totalPoValue: records.reduce((s, r) => s + r.poValue, 0),
-      pendingGrnValue: records
-        .filter(r => r.status === 'PO Raised – GRN Pending')
-        .reduce((s, r) => s + r.poValue, 0),
-      oldestPendingPo,
-      biggestPendingGrn,
-      byDiscipline: byDisc,
-      topVendors,
-      records,
-    })
+    p.worstVendor = Array.from(vendorMap.values())
+      .filter(v => v.overdueLines > 0)
+      .sort((a, b) => b.overdueLines - a.overdueLines || b.pendingValue - a.pendingValue)[0] ?? null
   }
 
-  return summaries.sort((a, b) => b.total - a.total)
+  return Array.from(byProject.values()).sort((a, b) => b.total - a.total)
 }
