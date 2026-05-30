@@ -1,8 +1,8 @@
 'use client'
-import { useState, useMemo, Fragment } from 'react'
-import type { IndentRollup, IndentStatus, LineRecord } from '@/lib/procurement-tracker'
+import { useState, useMemo, useEffect, Fragment } from 'react'
+import type { IndentRollup, IndentStatus, LineRecord, ReportFormat } from '@/lib/procurement'
 import { StatusBadge, LineStatusBadge } from './StatusBadge'
-import { ArrowUpDown, Download, ChevronRight, ChevronDown } from 'lucide-react'
+import { ArrowUpDown, Download, ChevronRight, ChevronDown, Sparkles } from 'lucide-react'
 
 const STATUS_FILTERS: { label: string; value: IndentStatus | 'all' }[] = [
   { label: 'All', value: 'all' },
@@ -33,19 +33,35 @@ function csvEscape(v: unknown) {
 }
 
 export function IndentTable({
-  indents, lines, projectName,
+  indents, lines, projectName, format,
+  changedIndents,
+  externalStatusFilter,
+  onExternalStatusFilterChange,
 }: {
   indents: IndentRollup[]
   lines: LineRecord[]
   projectName: string
+  format?: ReportFormat
+  /** Indents whose status changed since the last upload — get a ✨ marker. */
+  changedIndents?: Set<string>
+  /** Optional controlled filter so SummaryCards / FunnelBand can set it. */
+  externalStatusFilter?: IndentStatus | 'all'
+  onExternalStatusFilterChange?: (v: IndentStatus | 'all') => void
 }) {
-  const [statusFilter, setStatusFilter] = useState<IndentStatus | 'all'>('all')
+  const [internalStatusFilter, setInternalStatusFilter] = useState<IndentStatus | 'all'>('all')
+  const statusFilter = externalStatusFilter ?? internalStatusFilter
+  const setStatusFilter = (v: IndentStatus | 'all') => {
+    setInternalStatusFilter(v)
+    onExternalStatusFilterChange?.(v)
+  }
+  useEffect(() => { if (externalStatusFilter != null) setInternalStatusFilter(externalStatusFilter) }, [externalStatusFilter])
   const [search, setSearch] = useState('')
   const [page, setPage] = useState(1)
   const [sortKey, setSortKey] = useState<SortKey>('indentDate')
   const [sortDesc, setSortDesc] = useState(true)
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const PAGE_SIZE = 25
+  const showInvoiceColumn = format === 'flat'
 
   const linesByIndent = useMemo(() => {
     const m = new Map<string, LineRecord[]>()
@@ -227,6 +243,11 @@ export function IndentTable({
                     </td>
                     <td className="px-4 py-2.5 font-mono text-xs text-stone-700 whitespace-nowrap">
                       {r.indentNo.replace('IND/SRASSK/', '').replace('IND/SRET/', '')}
+                      {changedIndents?.has(r.indentNo) && (
+                        <span title="Changed since last upload" className="ml-1.5 inline-flex items-center text-amber-600">
+                          <Sparkles className="h-3 w-3" />
+                        </span>
+                      )}
                     </td>
                     <td className="px-4 py-2.5 text-xs text-stone-500 whitespace-nowrap">{r.indentDate || '—'}</td>
                     <td className={`px-4 py-2.5 text-xs text-right tabular-nums whitespace-nowrap ${ageClass(r)}`}>
@@ -240,6 +261,7 @@ export function IndentTable({
                     <td className="px-4 py-2.5 text-[11px] text-stone-600 whitespace-nowrap tabular-nums">
                       PO <b className="text-stone-800">{r.linesWithPo}</b>/{r.totalLines} ·{' '}
                       GRN <b className="text-stone-800">{r.linesReceived}</b>/{r.totalLines}
+                      {showInvoiceColumn && <> · Inv <b className="text-indigo-700">{r.linesInvoiced}</b>/{r.totalLines}</>}
                       {r.linesPartial > 0 && <span className="text-amber-700"> · {r.linesPartial} part.</span>}
                     </td>
                     <td className="px-4 py-2.5 text-xs text-right tabular-nums font-semibold text-amber-700 whitespace-nowrap">

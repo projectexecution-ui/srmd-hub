@@ -1,5 +1,5 @@
 'use client'
-import type { ProjectSummary } from '@/lib/procurement-tracker'
+import type { ProjectSummary } from '@/lib/procurement'
 
 export function DisciplineChart({ summary }: { summary: ProjectSummary }) {
   const entries = Object.entries(summary.byDiscipline)

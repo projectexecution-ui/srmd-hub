@@ -36,18 +36,20 @@ export async function POST(req: NextRequest) {
     }
 
     const buffer = await file.arrayBuffer()
-    const summaries = parseProcurementReport(buffer)
+    const result = parseProcurementReport(buffer)
 
     return NextResponse.json({
       success: true,
       fileName: file.name,
-      totalProjects: summaries.length,
-      summaries,
+      format: result.format,
+      totalProjects: result.projects.length,
+      summaries: result.projects,
     })
   } catch (err) {
     console.error('Procurement parse error:', err)
+    const message = err instanceof Error ? err.message : 'Failed to parse file.'
     return NextResponse.json(
-      { error: 'Failed to parse file. Make sure it is a valid PURCHINDENT_TO_ISSUE_RPT export.' },
+      { error: message },
       { status: 500 },
     )
   }

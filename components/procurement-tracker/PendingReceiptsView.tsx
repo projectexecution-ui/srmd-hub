@@ -12,7 +12,7 @@
 // reloads.
 
 import { useEffect, useMemo, useState } from 'react'
-import type { LineRecord } from '@/lib/procurement-tracker'
+import type { LineRecord } from '@/lib/procurement'
 import { Download, Users, ClipboardList, AlertTriangle, FileSpreadsheet } from 'lucide-react'
 
 type GroupKey = 'supplier' | 'indent'
@@ -132,6 +132,21 @@ export function PendingReceiptsView({
   const totalPendingValue = filtered.reduce((s, l) => s + l.pendingValue, 0)
   const totalPendingLines = filtered.length
 
+  // Aging buckets — operate on the UNFILTERED pending set so users can see
+  // the full distribution and click into any bucket.
+  const buckets = useMemo(() => {
+    const out = { 'lt7': 0, '7to14': 0, '14to30': 0, '30plus': 0 }
+    for (const ln of pending) {
+      const a = ageDays(ln) ?? 0
+      if (a < 7) out.lt7++
+      else if (a < 14) out['7to14']++
+      else if (a < 30) out['14to30']++
+      else out['30plus']++
+    }
+    return out
+  }, [pending])
+  const bucketTotal = pending.length || 1
+
   if (lines.length === 0) {
     return (
       <div className="bg-white rounded-xl border border-stone-200 p-10 text-center">
@@ -161,6 +176,50 @@ export function PendingReceiptsView({
             <Download className="h-3.5 w-3.5" /> Download all ({filtered.length})
           </button>
         </div>
+
+        {/* Aging buckets — click any segment to filter to that age range */}
+        {pending.length > 0 && (
+          <div className="mb-3">
+            <div className="flex items-center justify-between text-[10px] uppercase tracking-wider text-stone-500 font-semibold mb-1">
+              <span>Aging buckets — click to filter</span>
+              <span>{pending.length} total pending</span>
+            </div>
+            <div className="flex h-7 w-full rounded-md overflow-hidden border border-stone-200">
+              <button
+                type="button" onClick={() => setAgeFilter('all')}
+                style={{ width: `${(buckets.lt7 / bucketTotal) * 100}%` }}
+                className="bg-stone-200 hover:bg-stone-300 text-[11px] font-medium text-stone-700 inline-flex items-center justify-center min-w-0 px-1"
+                title={`${buckets.lt7} lines under 7 days`}
+              >
+                {buckets.lt7 > 0 && `<7d: ${buckets.lt7}`}
+              </button>
+              <button
+                type="button" onClick={() => setAgeFilter('7')}
+                style={{ width: `${(buckets['7to14'] / bucketTotal) * 100}%` }}
+                className="bg-amber-300 hover:bg-amber-400 text-[11px] font-medium text-amber-900 inline-flex items-center justify-center min-w-0 px-1"
+                title={`${buckets['7to14']} lines 7-14 days`}
+              >
+                {buckets['7to14'] > 0 && `7-14d: ${buckets['7to14']}`}
+              </button>
+              <button
+                type="button" onClick={() => setAgeFilter('14')}
+                style={{ width: `${(buckets['14to30'] / bucketTotal) * 100}%` }}
+                className="bg-rose-400 hover:bg-rose-500 text-[11px] font-medium text-rose-900 inline-flex items-center justify-center min-w-0 px-1"
+                title={`${buckets['14to30']} lines 14-30 days`}
+              >
+                {buckets['14to30'] > 0 && `14-30d: ${buckets['14to30']}`}
+              </button>
+              <button
+                type="button" onClick={() => setAgeFilter('30')}
+                style={{ width: `${(buckets['30plus'] / bucketTotal) * 100}%` }}
+                className="bg-red-600 hover:bg-red-700 text-[11px] font-medium text-white inline-flex items-center justify-center min-w-0 px-1"
+                title={`${buckets['30plus']} lines 30+ days`}
+              >
+                {buckets['30plus'] > 0 && `30+d: ${buckets['30plus']}`}
+              </button>
+            </div>
+          </div>
+        )}
 
         <div className="flex flex-wrap items-center gap-3">
           {/* Group-by toggle */}

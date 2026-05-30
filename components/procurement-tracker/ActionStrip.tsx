@@ -1,6 +1,6 @@
 'use client'
-import type { ProjectSummary } from '@/lib/procurement-tracker'
-import { AlertTriangle, PackageX, UserX } from 'lucide-react'
+import type { ProjectSummary, IndentStatus } from '@/lib/procurement'
+import { AlertTriangle, PackageX, UserX, FileText } from 'lucide-react'
 
 function fmtINR(n: number) {
   if (n >= 1e7) return `₹${(n / 1e7).toFixed(2)} Cr`
@@ -9,17 +9,44 @@ function fmtINR(n: number) {
   return `₹${n.toLocaleString('en-IN')}`
 }
 
-export function ActionStrip({ summary }: { summary: ProjectSummary }) {
+interface Props {
+  summary: ProjectSummary
+  onJumpToIndent?: (filter: IndentStatus | 'all') => void
+  onJumpToPending?: () => void
+}
+
+export function ActionStrip({ summary, onJumpToIndent, onJumpToPending }: Props) {
   const oldest = summary.oldestPendingPo
   const biggest = summary.biggestPendingLine
   const worst = summary.worstVendor
+  const biggestInvoice = summary.biggestPendingInvoice
 
-  if (!oldest && !biggest && !worst) return null
+  if (!oldest && !biggest && !worst && !biggestInvoice) return null
+
+  const cardCount = [oldest, biggest, worst, biggestInvoice].filter(Boolean).length
+  const cols = cardCount === 4 ? 'sm:grid-cols-2 lg:grid-cols-4' : 'sm:grid-cols-3'
+
+  const Card = ({ accent, children, onClick }: {
+    accent: 'red' | 'amber' | 'rose' | 'indigo'
+    children: React.ReactNode
+    onClick?: () => void
+  }) => {
+    const border = {
+      red:    'border-l-red-500',
+      amber:  'border-l-amber-500',
+      rose:   'border-l-rose-500',
+      indigo: 'border-l-indigo-500',
+    }[accent]
+    const cls = `bg-white rounded-xl border border-orange-200 p-4 border-l-4 ${border} ${onClick ? 'hover:shadow-md transition-shadow text-left w-full' : ''}`
+    return onClick
+      ? <button type="button" onClick={onClick} className={cls}>{children}</button>
+      : <div className={cls}>{children}</div>
+  }
 
   return (
-    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-6">
-      {oldest ? (
-        <div className="bg-white rounded-xl border border-stone-200 p-4 border-l-4 border-l-red-500">
+    <div className={`grid grid-cols-1 ${cols} gap-3 mb-6`}>
+      {oldest && (
+        <Card accent="red" onClick={onJumpToIndent ? () => onJumpToIndent('Indent Only – No PO') : undefined}>
           <p className="text-[10px] font-semibold uppercase tracking-wider text-stone-500 inline-flex items-center gap-1.5 mb-1">
             <AlertTriangle className="h-3 w-3 text-red-500" /> Oldest pending PO
           </p>
@@ -32,15 +59,11 @@ export function ActionStrip({ summary }: { summary: ProjectSummary }) {
           <p className="text-[11px] text-stone-400 mt-0.5">
             {oldest.linesNoPo} of {oldest.totalLines} lines need PO
           </p>
-        </div>
-      ) : (
-        <div className="bg-stone-50 rounded-xl border border-stone-200 p-4 text-center text-xs text-stone-400">
-          No indents waiting on PO
-        </div>
+        </Card>
       )}
 
-      {biggest ? (
-        <div className="bg-white rounded-xl border border-stone-200 p-4 border-l-4 border-l-amber-500">
+      {biggest && (
+        <Card accent="amber" onClick={onJumpToPending}>
           <p className="text-[10px] font-semibold uppercase tracking-wider text-stone-500 inline-flex items-center gap-1.5 mb-1">
             <PackageX className="h-3 w-3 text-amber-500" /> Biggest pending receipt
           </p>
@@ -52,15 +75,11 @@ export function ActionStrip({ summary }: { summary: ProjectSummary }) {
             pending {biggest.pendingQty.toLocaleString('en-IN')} {biggest.uom}
             {biggest.oldestPoAgeDays != null ? ` · ${biggest.oldestPoAgeDays}d since PO` : ''}
           </p>
-        </div>
-      ) : (
-        <div className="bg-stone-50 rounded-xl border border-stone-200 p-4 text-center text-xs text-stone-400">
-          No outstanding receipts
-        </div>
+        </Card>
       )}
 
-      {worst ? (
-        <div className="bg-white rounded-xl border border-stone-200 p-4 border-l-4 border-l-rose-500">
+      {worst && (
+        <Card accent="rose" onClick={onJumpToPending}>
           <p className="text-[10px] font-semibold uppercase tracking-wider text-stone-500 inline-flex items-center gap-1.5 mb-1">
             <UserX className="h-3 w-3 text-rose-500" /> Worst-offender vendor
           </p>
@@ -70,12 +89,24 @@ export function ActionStrip({ summary }: { summary: ProjectSummary }) {
           </p>
           <p className="text-[11px] text-stone-400 mt-0.5">
             {fmtINR(worst.pendingValue)} owed
+            {worst.avgLagDays != null && <> · avg lag {worst.avgLagDays}d</>}
           </p>
-        </div>
-      ) : (
-        <div className="bg-stone-50 rounded-xl border border-stone-200 p-4 text-center text-xs text-stone-400">
-          No vendor backlog
-        </div>
+        </Card>
+      )}
+
+      {biggestInvoice && (
+        <Card accent="indigo">
+          <p className="text-[10px] font-semibold uppercase tracking-wider text-stone-500 inline-flex items-center gap-1.5 mb-1">
+            <FileText className="h-3 w-3 text-indigo-500" /> Biggest pending invoice
+          </p>
+          <p className="text-sm font-bold text-stone-800">{fmtINR(biggestInvoice.grnValue - biggestInvoice.invoiceAmount)}</p>
+          <p className="text-xs text-stone-500 mt-0.5 truncate" title={`${biggestInvoice.material} · ${biggestInvoice.supplier}`}>
+            {biggestInvoice.material || biggestInvoice.indentNo} · {biggestInvoice.supplier || '—'}
+          </p>
+          <p className="text-[11px] text-stone-400 mt-0.5">
+            received {biggestInvoice.receivedQty} · invoiced for {fmtINR(biggestInvoice.invoiceAmount)}
+          </p>
+        </Card>
       )}
     </div>
   )

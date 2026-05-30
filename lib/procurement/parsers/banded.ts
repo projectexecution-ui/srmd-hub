@@ -1,0 +1,204 @@
+// Parser for the IN4 PURCHINDENT_TO_ISSUE_RPT.xlsx (banded layout).
+//
+// Each indent occupies a band of rows:
+//   Indent header (col 3 = IND/…)
+//   Material row (col 6 = name, col 7 = indent qty, col 9 = UOM)
+//     1..N PO rows (col 12 supplier, col 13 PO/…, col 15 date, col 17 qty)
+//     0..N GRN rows (col 18 GRN/…, col 19 date, col 20 qty, col 21 rate, col 22 value)
+//   (next material row...)
+//
+// Stateful walker — emits one LineRecord per (indent, material).
+
+import * as XLSX from 'xlsx'
+import type { LineRecord, PoEntry, GrnEntry, LineStatus } from '../types'
+import { simplifyBlock, extractDiscipline, cleanMaterial, daysSince, daysBetween, num, str } from '../shared'
+
+// Column indices (0-based) verified against real PURCHINDENT_TO_ISSUE_RPT exports.
+const C = {
+  WO_CAT:     0,
+  CONTRACTOR: 1,
+  WO_NO:      2,
+  INDENT_NO:  3,
+  INDENT_TY:  4,
+  INDENT_DT:  5,
+  MATERIAL:   6,
+  INDENT_QTY: 7,
+  UOM:        9,
+  SUPPLIER:   12,
+  PO_NO:      13,
+  PO_DATE:    15,
+  PO_QTY:     17,
+  GRN_NO:     18,
+  GRN_DATE:   19,
+  GRN_QTY:    20,
+  GRN_RATE:   21,
+  GRN_VALUE:  22,
+}
+
+export function isBanded(raw: (string | number | null)[][]): boolean {
+  // Header band sits on row 4 (index 4). Identify by exact column headers.
+  const header = raw[4] ?? []
+  return String(header[C.WO_CAT] ?? '').toLowerCase().includes('wo category')
+      && String(header[C.INDENT_NO] ?? '').toLowerCase().includes('indent no')
+}
+
+export function parseBanded(buffer: ArrayBuffer): LineRecord[] {
+  const wb = XLSX.read(buffer, { type: 'array', cellDates: false })
+  const ws = wb.Sheets[wb.SheetNames[0]]
+  const raw: (string | number | null)[][] = XLSX.utils.sheet_to_json(ws, {
+    header: 1,
+    defval: null,
+  }) as (string | number | null)[][]
+
+  // Forward-fill WO_CATEGORY so each row knows its top-level project.
+  let lastProject = ''
+  const projectFill: string[] = new Array(raw.length).fill('')
+  for (let i = 0; i < raw.length; i++) {
+    const p = raw[i]?.[C.WO_CAT]
+    if (p != null && String(p).trim()) lastProject = String(p).trim()
+    projectFill[i] = lastProject
+  }
+
+  const lines: LineRecord[] = []
+  let currentIndentNo = ''
+  let currentIndentDate = ''
+  let currentSubProject = ''
+  let currentMaterial: LineRecord | null = null
+  let currentPo: PoEntry | null = null
+  const materialIndexByIndent = new Map<string, number>()
+
+  function flushMaterial() {
+    if (!currentMaterial) return
+    let orderedQty = 0
+    let receivedQty = 0
+    let grnValue = 0
+    const vendorSet = new Set<string>()
+    let oldestPoAgeDays: number | null = null
+    let firstPoRate = 0
+    const lags: number[] = []
+    for (const po of currentMaterial.pos) {
+      orderedQty += po.qty
+      if (po.supplier) vendorSet.add(po.supplier)
+      const age = daysSince(po.poDate)
+      if (age != null) oldestPoAgeDays = Math.max(oldestPoAgeDays ?? -Infinity, age)
+      if (!firstPoRate && po.rate) firstPoRate = po.rate
+    }
+    for (const g of currentMaterial.grns) {
+      receivedQty += g.qty
+      grnValue += g.value
+      if (g.lagDays != null) lags.push(g.lagDays)
+      if (!firstPoRate && g.rate) firstPoRate = g.rate
+    }
+    const pendingQty = Math.max(orderedQty - receivedQty, 0)
+    let status: LineStatus
+    if (currentMaterial.pos.length === 0) status = 'no_po'
+    else if (receivedQty <= 0) status = 'pending'
+    else if (receivedQty < orderedQty) status = 'partial'
+    else status = 'received'
+
+    currentMaterial.orderedQty = orderedQty
+    currentMaterial.receivedQty = receivedQty
+    currentMaterial.pendingQty = pendingQty
+    currentMaterial.grnValue = grnValue
+    currentMaterial.pendingValue = pendingQty * (firstPoRate || 0)
+    currentMaterial.supplier = currentMaterial.pos[0]?.supplier ?? ''
+    currentMaterial.vendorCount = vendorSet.size
+    currentMaterial.oldestPoAgeDays = oldestPoAgeDays === -Infinity ? null : oldestPoAgeDays
+    currentMaterial.avgGrnLagDays = lags.length > 0
+      ? Math.round(lags.reduce((s, x) => s + x, 0) / lags.length)
+      : null
+    currentMaterial.status = status
+    lines.push(currentMaterial)
+    currentMaterial = null
+    currentPo = null
+  }
+
+  for (let r = 0; r < raw.length; r++) {
+    const row = raw[r]
+    if (!row) continue
+
+    const indentCell = str(row[C.INDENT_NO])
+    const materialCell = str(row[C.MATERIAL])
+    const poCell = str(row[C.PO_NO])
+    const grnCell = str(row[C.GRN_NO])
+
+    // ① New indent header
+    if (indentCell.startsWith('IND/')) {
+      flushMaterial()
+      currentIndentNo = indentCell
+      currentIndentDate = str(row[C.INDENT_DT])
+      currentSubProject = projectFill[r] || ''
+      materialIndexByIndent.set(currentIndentNo, 0)
+      continue
+    }
+
+    // ② New material line under the current indent
+    if (materialCell && currentIndentNo) {
+      flushMaterial()
+      const idx = materialIndexByIndent.get(currentIndentNo) ?? 0
+      materialIndexByIndent.set(currentIndentNo, idx + 1)
+      currentMaterial = {
+        id: `${currentIndentNo}|${idx}`,
+        indentNo: currentIndentNo,
+        indentDate: currentIndentDate,
+        subProject: currentSubProject,
+        block: simplifyBlock(currentSubProject),
+        project: (currentSubProject.split(' - ')[0] || currentSubProject || 'Unknown').trim(),
+        discipline: extractDiscipline(materialCell),
+        material: cleanMaterial(materialCell),
+        indentQty: num(row[C.INDENT_QTY]),
+        uom: str(row[C.UOM]),
+        pos: [],
+        grns: [],
+        invoices: [],
+        orderedQty: 0,
+        receivedQty: 0,
+        pendingQty: 0,
+        pendingValue: 0,
+        grnValue: 0,
+        invoiceQty: 0,
+        invoiceAmount: 0,
+        supplier: '',
+        vendorCount: 0,
+        oldestPoAgeDays: null,
+        indentAgeDays: daysSince(currentIndentDate),
+        avgGrnLagDays: null,
+        status: 'no_po',
+      }
+      currentPo = null
+      continue
+    }
+
+    // ③ PO row
+    if (poCell.startsWith('PO/') && currentMaterial) {
+      const po: PoEntry = {
+        poNo: poCell,
+        poDate: str(row[C.PO_DATE]),
+        supplier: str(row[C.SUPPLIER]),
+        qty: num(row[C.PO_QTY]),
+        rate: num(row[C.GRN_RATE]),
+      }
+      currentMaterial.pos.push(po)
+      currentPo = po
+      continue
+    }
+
+    // ④ GRN row
+    if (grnCell.startsWith('GRN/') && currentMaterial) {
+      const grnDate = str(row[C.GRN_DATE])
+      const grn: GrnEntry = {
+        grnNo: grnCell,
+        grnDate,
+        qty: num(row[C.GRN_QTY]),
+        rate: num(row[C.GRN_RATE]),
+        value: num(row[C.GRN_VALUE]),
+        lagDays: currentPo ? daysBetween(currentPo.poDate, grnDate) : null,
+      }
+      currentMaterial.grns.push(grn)
+      if (currentPo && !currentPo.rate && grn.rate) currentPo.rate = grn.rate
+      continue
+    }
+  }
+  flushMaterial()
+  return lines
+}
