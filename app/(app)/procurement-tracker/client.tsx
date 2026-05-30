@@ -1,22 +1,24 @@
 'use client'
 
+// Two-view procurement tracker. Aksha's actual job here is to know:
+//   1. Which materials have I ordered but not yet received?  → Pending Receipts
+//   2. Which materials haven't been PO'd by my purchase team? → Needs PO
+// Everything else is noise for that workflow, so we hide it. The richer
+// dashboard widgets (KPI grid, funnel band, discipline chart, top
+// vendors scorecard, full indent table) still exist in the codebase
+// but no longer ship in the default UI.
+
 import { useState, useCallback, useRef, useMemo, useEffect } from 'react'
 import { Card } from '@/components/ui/card'
-import type { ParseResult, ProjectSummary, LineRecord, SnapshotDiff, IndentStatus, TrendPoint } from '@/lib/procurement'
+import type { ParseResult, LineRecord, SnapshotDiff } from '@/lib/procurement'
 import {
-  loadStoredSnapshot, loadPreviousIndents, loadPreviousMeta, loadTrend,
+  loadStoredSnapshot, loadPreviousIndents, loadPreviousMeta,
   saveSnapshot, clearAll, computeDiff, formatSavedAt,
 } from '@/lib/procurement/storage'
-import { SummaryCards } from '@/components/procurement-tracker/SummaryCards'
-import { DisciplineChart } from '@/components/procurement-tracker/DisciplineChart'
-import { IndentTable } from '@/components/procurement-tracker/IndentTable'
-import { ActionStrip } from '@/components/procurement-tracker/ActionStrip'
-import { FunnelBand } from '@/components/procurement-tracker/FunnelBand'
-import { TopVendors } from '@/components/procurement-tracker/TopVendors'
 import { PendingReceiptsView } from '@/components/procurement-tracker/PendingReceiptsView'
+import { IndentsNeedingPoView } from '@/components/procurement-tracker/IndentsNeedingPoView'
 import { DiffBanner } from '@/components/procurement-tracker/DiffBanner'
-import { TrendRibbon } from '@/components/procurement-tracker/TrendRibbon'
-import { Upload, FileSpreadsheet, Loader2, AlertOctagon } from 'lucide-react'
+import { Upload, FileSpreadsheet, Loader2, PackageX, ClipboardList } from 'lucide-react'
 
 type AnalyseResponse = ParseResult & {
   success: boolean
@@ -24,33 +26,24 @@ type AnalyseResponse = ParseResult & {
   error?: string
 }
 
-type View = 'project' | 'pending'
+type View = 'pending' | 'needs-po'
 
 export function ProcurementTrackerClient() {
   const [isDragging, setIsDragging] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [data, setData] = useState<AnalyseResponse | null>(null)
-  const [selectedProject, setSelectedProject] = useState<string | null>(null)
-  const [view, setView] = useState<View>('project')
-  const [indentFilter, setIndentFilter] = useState<IndentStatus | 'all'>('all')
+  const [selectedProject, setSelectedProject] = useState<string>('__all__')
+  const [view, setView] = useState<View>('pending')
   const [diff, setDiff] = useState<SnapshotDiff | null>(null)
-  const [trend, setTrend] = useState<TrendPoint[]>([])
   const [savedAt, setSavedAt] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
-  const indentTableRef = useRef<HTMLDivElement>(null)
 
-  // Restore from localStorage on mount.
+  // Restore saved-at marker on mount (full data is not persisted to keep
+  // localStorage small — user re-uploads to rehydrate the dashboard).
   useEffect(() => {
     const snap = loadStoredSnapshot()
-    if (!snap) return
-    // We can't fully restore a ParseResult from the snapshot alone since
-    // we only persist indent statuses (full data is large). Instead, hint
-    // the user to re-upload to get the dashboard back — they can keep the
-    // diff baseline. (Real-world: keeping just statuses keeps localStorage
-    // small. Trend ribbon still works.)
-    setSavedAt(snap.savedAt)
-    setTrend(loadTrend())
+    if (snap) setSavedAt(snap.savedAt)
   }, [])
 
   const handleFile = useCallback(async (file: File) => {
@@ -65,11 +58,10 @@ export function ProcurementTrackerClient() {
         return
       }
       setData(json)
-      setSelectedProject(json.projects[0]?.projectName ?? null)
-      setView('project')
+      setSelectedProject('__all__')
+      setView('pending')
 
-      // Compute diff against previous snapshot BEFORE saving (which moves
-      // current → previous and would otherwise lose the baseline).
+      // Diff against previous snapshot BEFORE saveSnapshot rolls current → previous.
       const prevIndents = loadPreviousIndents()
       const prevMeta = loadPreviousMeta()
       const newDiff = computeDiff(json.projects.flatMap(p => p.indents), prevIndents, prevMeta)
@@ -77,7 +69,6 @@ export function ProcurementTrackerClient() {
 
       saveSnapshot({ format: json.format, projects: json.projects }, file.name)
       setSavedAt(new Date().toISOString())
-      setTrend(loadTrend())
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Network error. Please try again.')
     } finally {
@@ -97,27 +88,37 @@ export function ProcurementTrackerClient() {
     if (file) handleFile(file)
   }
 
-  const currentSummary = data?.projects.find(s => s.projectName === selectedProject)
-  const allLines = useMemo<LineRecord[]>(() => data ? data.projects.flatMap(s => s.lines) : [], [data])
-  const totalPendingLines = useMemo(() => allLines.filter(l => l.pendingQty > 0).length, [allLines])
+  // Filter lines by selected project. "__all__" = aggregate across every project.
+  const linesForActiveProject = useMemo<LineRecord[]>(() => {
+    if (!data) return []
+    if (selectedProject === '__all__') return data.projects.flatMap(p => p.lines)
+    const proj = data.projects.find(p => p.projectName === selectedProject)
+    return proj?.lines ?? []
+  }, [data, selectedProject])
 
-  function jumpToPending() { setView('pending') }
-  function jumpToIndentTable(filter: IndentStatus | 'all') {
-    setView('project')
-    setIndentFilter(filter)
-    setTimeout(() => indentTableRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50)
-  }
+  const pendingCount = useMemo(
+    () => linesForActiveProject.filter(l => l.pendingQty > 0).length,
+    [linesForActiveProject],
+  )
+  const needsPoCount = useMemo(
+    () => linesForActiveProject.filter(l => l.status === 'no_po').length,
+    [linesForActiveProject],
+  )
 
   function clearSaved() {
     clearAll()
-    setData(null); setDiff(null); setSavedAt(null); setTrend([])
+    setData(null); setDiff(null); setSavedAt(null)
     if (fileInputRef.current) fileInputRef.current.value = ''
   }
 
+  const activeProjectLabel = selectedProject === '__all__'
+    ? (data?.fileName?.replace(/\.xlsx?$/, '') ?? 'All projects')
+    : selectedProject
+
   return (
     <div className="min-h-screen bg-orange-50/40">
-      <div className="px-4 md:px-6 pt-4 md:pt-6 pb-12 max-w-7xl mx-auto space-y-4">
-        {/* Branded header (saffron palette) */}
+      <div className="px-4 md:px-6 pt-4 md:pt-6 pb-12 max-w-6xl mx-auto space-y-4">
+        {/* Compact header */}
         <header className="flex items-start justify-between gap-3 flex-wrap">
           <div className="flex items-center gap-3">
             <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-orange-700 to-red-900 text-white font-extrabold text-xs flex items-center justify-center shadow-md">
@@ -126,23 +127,23 @@ export function ProcurementTrackerClient() {
             <div>
               <h1 className="text-xl md:text-2xl font-bold text-red-900 leading-tight">Indent → PO Tracker</h1>
               <p className="text-xs text-stone-500 mt-0.5">
-                Drop your IN4 procurement Excel — supports both <b>PURCHINDENT_TO_ISSUE_RPT</b> and <b>PUR_PurchaseOrderReport</b>
+                What you&apos;re still waiting on — by vendor and by indent.
               </p>
             </div>
           </div>
           {savedAt && (
             <div className="text-right text-[11px] text-stone-500">
-              <div className="text-stone-700 font-medium">{data?.fileName ?? 'Saved upload'}</div>
+              {data?.fileName && <div className="text-stone-700 font-medium">{data.fileName}</div>}
               <div>
                 Saved {formatSavedAt(savedAt)}
                 {' · '}
                 <button onClick={clearSaved} className="text-orange-700 hover:underline">Clear saved data</button>
               </div>
-              <TrendRibbon trend={trend} />
             </div>
           )}
         </header>
 
+        {/* Upload zone (only when there's nothing to show) */}
         {!data && !isLoading && !savedAt && (
           <Card
             onDrop={onDrop}
@@ -197,101 +198,72 @@ export function ProcurementTrackerClient() {
 
         {data && (
           <div className="space-y-4">
-            <div className="flex items-center gap-3 flex-wrap">
-              <span className="text-xs bg-orange-100 text-orange-800 rounded-full px-3 py-1 inline-flex items-center gap-1.5">
-                <FileSpreadsheet className="h-3 w-3" />
-                {data.fileName}
-              </span>
-              <span className="text-[11px] text-stone-500">
-                <b className="text-stone-700">{data.format.toUpperCase()}</b> · {data.projects.length} project{data.projects.length !== 1 ? 's' : ''} found
-              </span>
-            </div>
+            {/* What changed since last upload */}
+            {diff && diff.changedIndents.size > 0 && <DiffBanner diff={diff} />}
 
-            {diff && diff.changedIndents.size > 0 && (
-              <DiffBanner diff={diff} />
+            {/* Project filter — only when there's more than one */}
+            {data.projects.length > 1 && (
+              <div className="flex items-center gap-2 flex-wrap">
+                <label className="text-xs text-stone-500 font-medium">Project</label>
+                <select
+                  value={selectedProject}
+                  onChange={e => setSelectedProject(e.target.value)}
+                  className="text-sm bg-white border border-orange-200 rounded-lg px-3 py-1.5 text-stone-800 focus:outline-none focus:ring-2 focus:ring-orange-300"
+                >
+                  <option value="__all__">All projects ({data.projects.length})</option>
+                  {data.projects.map(p => (
+                    <option key={p.projectName} value={p.projectName}>
+                      {p.projectName} — {p.total}
+                    </option>
+                  ))}
+                </select>
+                <span className="text-[11px] text-stone-400 ml-1">
+                  {data.format === 'flat' ? 'Per-project PO report' : 'Company-wide indent report'}
+                </span>
+              </div>
             )}
 
-            <div className="border-b border-orange-200 flex flex-wrap gap-1 -mb-px">
+            {/* The toggle — the entire page hinges on this */}
+            <div className="grid grid-cols-2 gap-2 bg-white rounded-xl border border-orange-200 p-1">
               <button
-                onClick={() => setView('project')}
-                className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
-                  view === 'project'
-                    ? 'border-orange-700 text-orange-900'
-                    : 'border-transparent text-stone-500 hover:text-stone-800'
+                onClick={() => setView('pending')}
+                className={`flex items-center justify-center gap-2 px-3 py-3 rounded-lg text-sm font-semibold transition-colors ${
+                  view === 'pending'
+                    ? 'bg-gradient-to-br from-orange-700 to-red-900 text-white shadow-sm'
+                    : 'text-stone-600 hover:bg-orange-50'
                 }`}
               >
-                By project
+                <PackageX className={`h-4 w-4 ${view === 'pending' ? '' : 'text-amber-600'}`} />
+                <span>Pending receipts</span>
+                <span className={`text-[11px] font-bold rounded-full px-2 py-0.5 ${
+                  view === 'pending' ? 'bg-white/20 text-white' : 'bg-amber-100 text-amber-800'
+                }`}>
+                  {pendingCount}
+                </span>
               </button>
               <button
-                onClick={jumpToPending}
-                className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors inline-flex items-center gap-2 ${
-                  view === 'pending'
-                    ? 'border-orange-700 text-orange-900'
-                    : 'border-transparent text-stone-500 hover:text-stone-800'
+                onClick={() => setView('needs-po')}
+                className={`flex items-center justify-center gap-2 px-3 py-3 rounded-lg text-sm font-semibold transition-colors ${
+                  view === 'needs-po'
+                    ? 'bg-gradient-to-br from-orange-700 to-red-900 text-white shadow-sm'
+                    : 'text-stone-600 hover:bg-orange-50'
                 }`}
               >
-                <AlertOctagon className="h-3.5 w-3.5" />
-                Pending receipts
-                {totalPendingLines > 0 && (
-                  <span className={`ml-1 text-[11px] font-semibold rounded-full px-1.5 py-0.5 ${
-                    view === 'pending' ? 'bg-orange-100 text-orange-800' : 'bg-stone-200 text-stone-600'
-                  }`}>
-                    {totalPendingLines}
-                  </span>
-                )}
+                <ClipboardList className={`h-4 w-4 ${view === 'needs-po' ? '' : 'text-red-600'}`} />
+                <span>Indents needing PO</span>
+                <span className={`text-[11px] font-bold rounded-full px-2 py-0.5 ${
+                  view === 'needs-po' ? 'bg-white/20 text-white' : 'bg-red-100 text-red-800'
+                }`}>
+                  {needsPoCount}
+                </span>
               </button>
             </div>
 
+            {/* Active view */}
             {view === 'pending' ? (
-              <PendingReceiptsView lines={allLines} projectName={data.fileName.replace(/\.xlsx?$/, '')} />
+              <PendingReceiptsView lines={linesForActiveProject} projectName={activeProjectLabel} />
             ) : (
-              <>
-                {data.projects.length > 1 && (
-                  <div className="flex gap-2 flex-wrap">
-                    {data.projects.map(s => (
-                      <button
-                        key={s.projectName}
-                        onClick={() => setSelectedProject(s.projectName)}
-                        className={`px-4 py-2 rounded-xl text-sm font-medium transition-colors ${
-                          selectedProject === s.projectName
-                            ? 'bg-red-900 text-white shadow-sm'
-                            : 'bg-white border border-orange-200 text-stone-600 hover:bg-orange-50'
-                        }`}
-                      >
-                        {s.projectName}
-                        <span className={`ml-2 text-xs ${selectedProject === s.projectName ? 'opacity-70' : 'text-stone-400'}`}>
-                          {s.total}
-                        </span>
-                      </button>
-                    ))}
-                  </div>
-                )}
-
-                {currentSummary && (
-                  <>
-                    <ActionStrip summary={currentSummary} onJumpToIndent={jumpToIndentTable} onJumpToPending={jumpToPending} />
-                    <SummaryCards
-                      summary={currentSummary}
-                      onJumpToPending={jumpToPending}
-                      onJumpToIndent={jumpToIndentTable}
-                    />
-                    <FunnelBand summary={currentSummary} onJumpToIndent={jumpToIndentTable} />
-                    <DisciplineChart summary={currentSummary} />
-                    <div ref={indentTableRef}>
-                      <IndentTable
-                        indents={currentSummary.indents}
-                        lines={currentSummary.lines}
-                        projectName={currentSummary.projectName}
-                        format={data.format}
-                        changedIndents={diff?.changedIndents}
-                        externalStatusFilter={indentFilter}
-                        onExternalStatusFilterChange={setIndentFilter}
-                      />
-                    </div>
-                    <TopVendors vendors={currentSummary.topVendors} hasInvoices={data.format === 'flat'} />
-                  </>
-                )}
-              </>
+              <IndentsNeedingPoView lines={linesForActiveProject} projectName={activeProjectLabel} />
             )}
           </div>
         )}
