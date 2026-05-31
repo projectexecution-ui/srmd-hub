@@ -137,6 +137,8 @@ export function parseFlat(buffer: ArrayBuffer): LineRecord[] {
           qty: num(row[C.PO_QTY]),
           rate: num(row[C.PO_RATE]),
           amount: num(row[C.PO_AMOUNT]),
+          // Same DRAFT-PO/ semantic as the banded parser (see banded.ts).
+          draft: poNo.startsWith('DRAFT-PO/'),
         }
         line.pos.push(po)
       }

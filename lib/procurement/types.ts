@@ -33,6 +33,14 @@ export interface PoEntry {
   /** Sum of GRN rows attached to this PO (when known). */
   grnQty?: number
   amount?: number
+  /**
+   * True when the IN4 PO number starts with "DRAFT-PO/" — i.e. the
+   * purchase team has raised the PO but it hasn't been finalised /
+   * sent to the supplier yet. We still count it as a real PO (the
+   * material is no longer in "needs PO" limbo) but the UI can flag
+   * it visually so the user knows it's still pending approval.
+   */
+  draft?: boolean
 }
 
 export interface GrnEntry {

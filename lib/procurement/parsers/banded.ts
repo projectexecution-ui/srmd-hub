@@ -189,14 +189,21 @@ export function parseBanded(buffer: ArrayBuffer): LineRecord[] {
       continue
     }
 
-    // ③ PO row
-    if (poCell.startsWith('PO/') && currentMaterial) {
+    // ③ PO row. IN4 uses TWO prefixes in this column:
+    //    "PO/…"        — finalised PO sent to supplier
+    //    "DRAFT-PO/…"  — purchase team raised it, not yet approved
+    // Both count as "PO exists" for the purposes of the Indents
+    // Needing PO view — the material is no longer in limbo. We mark
+    // draft POs with .draft = true so the UI can surface that nuance.
+    const isPo = poCell.startsWith('PO/') || poCell.startsWith('DRAFT-PO/')
+    if (isPo && currentMaterial) {
       const po: PoEntry = {
         poNo: poCell,
         poDate: str(row[C.PO_DATE]),
         supplier: str(row[C.SUPPLIER]),
         qty: num(row[C.PO_QTY]),
         rate: num(row[C.GRN_RATE]),
+        draft: poCell.startsWith('DRAFT-PO/'),
       }
       currentMaterial.pos.push(po)
       currentPo = po

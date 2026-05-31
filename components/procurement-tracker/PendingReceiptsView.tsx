@@ -373,7 +373,24 @@ export function PendingReceiptsView({
                               <span className="text-[10px] text-stone-400">{ln.block}</span>
                             </td>
                             <td className="px-4 py-2 font-mono text-[11px] text-stone-500 whitespace-nowrap" title={po?.poNo}>
-                              {po?.poNo ? po.poNo.replace('PO/SRASSK/', '').replace('PO/SRET/', '') : '—'}
+                              {po?.poNo ? (
+                                <span className="inline-flex items-center gap-1">
+                                  {po.draft && (
+                                    <span
+                                      className="text-[9px] font-bold uppercase tracking-wider px-1 py-0.5 rounded bg-amber-100 text-amber-800 border border-amber-200"
+                                      title="DRAFT-PO/… — purchase team raised it but not yet finalised in IN4"
+                                    >
+                                      Draft
+                                    </span>
+                                  )}
+                                  <span>
+                                    {po.poNo
+                                      .replace('DRAFT-PO/', '')
+                                      .replace('PO/SRASSK/', '')
+                                      .replace('PO/SRET/', '')}
+                                  </span>
+                                </span>
+                              ) : '—'}
                             </td>
                             <td
                               className={`px-4 py-2 text-right text-xs tabular-nums whitespace-nowrap ${ageClass(indentAg)}`}
