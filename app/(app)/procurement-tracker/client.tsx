@@ -245,25 +245,41 @@ export function ProcurementTrackerClient() {
               <DiffBanner diff={diff} />
             )}
 
-            {/* Project filter — only when there's more than one */}
+            {/* Project filter — chip grid so every project is one click away.
+                Sorted by pendingLineCount desc so the projects you most
+                need to chase bubble to the front. */}
             {data.projects.length > 1 && (
-              <div className="flex items-center gap-2 flex-wrap">
-                <label className="text-xs text-stone-500 font-medium">Project</label>
-                <select
-                  value={selectedProject}
-                  onChange={e => setSelectedProject(e.target.value)}
-                  className="text-sm bg-white border border-orange-200 rounded-lg px-3 py-1.5 text-stone-800 focus:outline-none focus:ring-2 focus:ring-orange-300"
-                >
-                  <option value="__all__">All projects ({data.projects.length})</option>
-                  {data.projects.map(p => (
-                    <option key={p.projectName} value={p.projectName}>
-                      {p.projectName} — {p.total}
-                    </option>
-                  ))}
-                </select>
-                <span className="text-[11px] text-stone-400 ml-1">
-                  {data.format === 'flat' ? 'Per-project PO report' : 'Company-wide indent report'}
-                </span>
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between gap-2 flex-wrap">
+                  <label className="text-[10px] text-stone-500 font-semibold uppercase tracking-wider">
+                    Filter by project
+                  </label>
+                  <span className="text-[11px] text-stone-400">
+                    {data.format === 'flat'
+                      ? `Per-project PO report · ${data.projects.length} project${data.projects.length === 1 ? '' : 's'}`
+                      : `Company-wide indent report · ${data.projects.length} trade categories`}
+                  </span>
+                </div>
+                <div className="flex flex-wrap gap-1.5">
+                  {/* "All projects" anchor chip — always first */}
+                  <ProjectChip
+                    label="All projects"
+                    pendingCount={data.projects.reduce((s, p) => s + p.pendingLineCount, 0)}
+                    selected={selectedProject === '__all__'}
+                    onClick={() => setSelectedProject('__all__')}
+                  />
+                  {[...data.projects]
+                    .sort((a, b) => b.pendingLineCount - a.pendingLineCount)
+                    .map(p => (
+                      <ProjectChip
+                        key={p.projectName}
+                        label={p.projectName}
+                        pendingCount={p.pendingLineCount}
+                        selected={selectedProject === p.projectName}
+                        onClick={() => setSelectedProject(p.projectName)}
+                      />
+                    ))}
+                </div>
               </div>
             )}
 
@@ -323,5 +339,47 @@ export function ProcurementTrackerClient() {
         )}
       </div>
     </div>
+  )
+}
+
+// ─── ProjectChip ──────────────────────────────────────────────────────
+// One clickable chip for the project filter strip. Surfaces the project
+// name + a pendingLineCount badge so the user can prioritise visually
+// (amber = needs chasing, emerald = fully fulfilled).
+function ProjectChip({
+  label,
+  pendingCount,
+  selected,
+  onClick,
+}: {
+  label: string
+  pendingCount: number
+  selected: boolean
+  onClick: () => void
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title={label}
+      className={`text-xs font-medium px-3 py-1.5 rounded-lg transition-colors inline-flex items-center gap-1.5 max-w-full ${
+        selected
+          ? 'bg-red-900 text-white shadow-sm ring-2 ring-red-200'
+          : 'bg-white border border-orange-200 text-stone-700 hover:bg-orange-50 hover:border-orange-400'
+      }`}
+    >
+      <span className="truncate max-w-[180px]">{label}</span>
+      <span
+        className={`text-[10px] font-bold rounded-full px-1.5 py-0.5 leading-none ${
+          selected
+            ? 'bg-white/20 text-white'
+            : pendingCount > 0
+              ? 'bg-amber-100 text-amber-800'
+              : 'bg-emerald-100 text-emerald-700'
+        }`}
+      >
+        {pendingCount}
+      </span>
+    </button>
   )
 }
