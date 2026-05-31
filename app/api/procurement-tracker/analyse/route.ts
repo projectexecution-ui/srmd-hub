@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { parseProcurementReport } from '@/lib/procurement-tracker'
 import { requirePermission } from '@/lib/auth'
+import { createClient } from '@/lib/supabase/server'
 
 export const runtime = 'nodejs'
 export const maxDuration = 30
@@ -37,6 +38,26 @@ export async function POST(req: NextRequest) {
 
     const buffer = await file.arrayBuffer()
     const result = parseProcurementReport(buffer)
+
+    // Register every project name into the auto-grown known-projects
+    // registry so the admin "project visibility" page can list real
+    // names without the admin having to type them. Best-effort — we
+    // don't want to fail the upload if this DB call hiccups.
+    try {
+      const supabase = await createClient()
+      const { data: { user } } = await supabase.auth.getUser()
+      const now = new Date().toISOString()
+      const rows = result.projects
+        .map(p => p.projectName?.trim())
+        .filter((n): n is string => !!n)
+        .map(name => ({ name, last_seen_at: now, last_seen_by: user?.id ?? null }))
+      if (rows.length > 0) {
+        await supabase.from('procurement_known_projects').upsert(rows, { onConflict: 'name' })
+      }
+    } catch (e) {
+      // Swallow — registry sync is non-critical to the parse result.
+      console.warn('[procurement] known-projects upsert failed:', e)
+    }
 
     // Shape MUST match what client.tsx consumes:
     //   AnalyseResponse = ParseResult & { success, fileName, error? }

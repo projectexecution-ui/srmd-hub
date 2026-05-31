@@ -37,7 +37,25 @@ export function ProcurementTrackerClient() {
   const [view, setView] = useState<View>('pending')
   const [diff, setDiff] = useState<SnapshotDiff | null>(null)
   const [savedAt, setSavedAt] = useState<string | null>(null)
+  /**
+   * Projects that the Admin has hidden for the current signed-in
+   * user via /admin/procurement-projects. Drives a filter applied
+   * before chips and lines are rendered. Fetched once on mount.
+   */
+  const [hiddenProjects, setHiddenProjects] = useState<Set<string>>(new Set())
   const fileInputRef = useRef<HTMLInputElement>(null)
+
+  // Fetch the per-user hidden-projects list once on mount. Admin-
+  // managed via /admin/procurement-projects. Best-effort — if the
+  // fetch fails we just don't filter anything (default = show all).
+  useEffect(() => {
+    fetch('/api/procurement-tracker/my-hidden-projects')
+      .then(r => r.ok ? r.json() : { hidden: [] })
+      .then(json => {
+        if (Array.isArray(json?.hidden)) setHiddenProjects(new Set(json.hidden))
+      })
+      .catch(() => { /* swallow */ })
+  }, [])
 
   // Rehydrate the full dashboard from the last upload on mount, so a
   // page reload does NOT lose Aksha's data. The full `projects[]` is
@@ -111,13 +129,23 @@ export function ProcurementTrackerClient() {
     if (file) handleFile(file)
   }
 
-  // Filter lines by selected project. "__all__" = aggregate across every project.
+  // Apply Admin's hide list BEFORE anything else uses `data.projects`.
+  // visibleProjects is the filtered slice used by the chip grid, the
+  // line filters, and the count badges.
+  const visibleProjects = useMemo(() => {
+    if (!data) return []
+    if (hiddenProjects.size === 0) return data.projects
+    return data.projects.filter(p => !hiddenProjects.has(p.projectName))
+  }, [data, hiddenProjects])
+  const hiddenInUploadCount = (data?.projects.length ?? 0) - visibleProjects.length
+
+  // Filter lines by selected project. "__all__" = aggregate across every VISIBLE project.
   const linesForActiveProject = useMemo<LineRecord[]>(() => {
     if (!data) return []
-    if (selectedProject === '__all__') return data.projects.flatMap(p => p.lines)
-    const proj = data.projects.find(p => p.projectName === selectedProject)
+    if (selectedProject === '__all__') return visibleProjects.flatMap(p => p.lines)
+    const proj = visibleProjects.find(p => p.projectName === selectedProject)
     return proj?.lines ?? []
-  }, [data, selectedProject])
+  }, [data, selectedProject, visibleProjects])
 
   const pendingCount = useMemo(
     () => linesForActiveProject.filter(l => l.pendingQty > 0).length,
@@ -247,8 +275,9 @@ export function ProcurementTrackerClient() {
 
             {/* Project filter — chip grid so every project is one click away.
                 Sorted by pendingLineCount desc so the projects you most
-                need to chase bubble to the front. */}
-            {data.projects.length > 1 && (
+                need to chase bubble to the front. Admin-hidden projects
+                are stripped from `visibleProjects` upstream. */}
+            {visibleProjects.length > 1 && (
               <div className="space-y-1.5">
                 <div className="flex items-center justify-between gap-2 flex-wrap">
                   <label className="text-[10px] text-stone-500 font-semibold uppercase tracking-wider">
@@ -256,19 +285,22 @@ export function ProcurementTrackerClient() {
                   </label>
                   <span className="text-[11px] text-stone-400">
                     {data.format === 'flat'
-                      ? `Per-project PO report · ${data.projects.length} project${data.projects.length === 1 ? '' : 's'}`
-                      : `Company-wide indent report · ${data.projects.length} trade categories`}
+                      ? `Per-project PO report · ${visibleProjects.length} project${visibleProjects.length === 1 ? '' : 's'}`
+                      : `Company-wide indent report · ${visibleProjects.length} project${visibleProjects.length === 1 ? '' : 's'}`}
+                    {hiddenInUploadCount > 0 && (
+                      <span className="text-stone-400 italic"> · {hiddenInUploadCount} hidden by admin</span>
+                    )}
                   </span>
                 </div>
                 <div className="flex flex-wrap gap-1.5">
                   {/* "All projects" anchor chip — always first */}
                   <ProjectChip
                     label="All projects"
-                    pendingCount={data.projects.reduce((s, p) => s + p.pendingLineCount, 0)}
+                    pendingCount={visibleProjects.reduce((s, p) => s + p.pendingLineCount, 0)}
                     selected={selectedProject === '__all__'}
                     onClick={() => setSelectedProject('__all__')}
                   />
-                  {[...data.projects]
+                  {[...visibleProjects]
                     .sort((a, b) => b.pendingLineCount - a.pendingLineCount)
                     .map(p => (
                       <ProjectChip
