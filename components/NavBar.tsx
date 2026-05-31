@@ -22,6 +22,7 @@ interface NavBarProps {
 // MODULES label if a slug isn't listed here.
 const SHORT_LABELS: Record<string, string> = {
   'approvals':        'Approvals',
+  'comparison':       'Comparisons',
   'pos':              'POs',
   'budget-vs-actual': 'Budget',
   'in4-indent-to-po': 'IN4 Tracker',
