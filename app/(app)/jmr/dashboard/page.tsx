@@ -29,7 +29,7 @@ export default async function JmrDashboardPage() {
   const { data: pendingRaw } = await supabase
     .from('jmr_daily_entries')
     .select(`
-      id, entry_date, quantity, amount, rate_snapshot,
+      id, entry_date, quantity, amount, rate_snapshot, log_sheet_photo_url,
       jmr_items ( name, unit ),
       jmr_contractors ( name ),
       projects!jmr_daily_entries_project_id_fkey ( code, name ),
@@ -41,8 +41,24 @@ export default async function JmrDashboardPage() {
     .order('created_at', { ascending: false })
     .limit(200)
 
+  // Batch-mint 1h signed URLs for the log sheet photos so the PM can
+  // see them inline on the approval row. jmr-photos is a private bucket
+  // (matches the bills flow). One call covers all paths in this batch.
+  const photoPaths = (pendingRaw ?? [])
+    .map(r => (r as { log_sheet_photo_url: string | null }).log_sheet_photo_url)
+    .filter((p): p is string => !!p)
+  const signedByPath = new Map<string, string>()
+  if (photoPaths.length > 0) {
+    const { data: signedList } = await supabase.storage
+      .from('jmr-photos').createSignedUrls(photoPaths, 3600)
+    for (const s of signedList ?? []) {
+      if (s.path && s.signedUrl) signedByPath.set(s.path, s.signedUrl)
+    }
+  }
+
   const pending: PendingEntry[] = (pendingRaw ?? []).map((r: {
     id: string; entry_date: string; quantity: number | string; amount: number | string; rate_snapshot: number | string;
+    log_sheet_photo_url: string | null;
     jmr_items: RelObj<{ name: string; unit: string }>;
     jmr_contractors: RelObj<{ name: string }>;
     projects: RelObj<{ code: string | null; name: string }>;
@@ -66,6 +82,8 @@ export default async function JmrDashboardPage() {
       project_label: projLabel,
       contractor_name: ctr?.name ?? '—',
       engineer_name: eng?.name ?? eng?.full_name ?? eng?.email ?? '—',
+      photo_url: r.log_sheet_photo_url ? signedByPath.get(r.log_sheet_photo_url) ?? null : null,
+      has_photo: !!r.log_sheet_photo_url,
     }
   })
 

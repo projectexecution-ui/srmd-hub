@@ -1,4 +1,5 @@
 import Link from 'next/link'
+import Image from 'next/image'
 import { createClient } from '@/lib/supabase/server'
 import { requirePermission } from '@/lib/auth'
 import { PageHeader } from '@/components/PageHeader'
@@ -8,7 +9,7 @@ import { StatPill } from '@/components/ui/stat-pill'
 import { JmrEntryStatusPill } from '@/components/jmr/JmrEntryStatusPill'
 import { getJmrSettings } from '@/lib/jmr/settings'
 import { formatINR, formatINRShort, formatDateIN, todayISO } from '@/lib/jmr/format'
-import { Plus, Grid, ClipboardCheck, AlertTriangle, Clock } from 'lucide-react'
+import { Plus, Grid, ClipboardCheck, AlertTriangle, Clock, Camera, FileImage } from 'lucide-react'
 
 export const dynamic = 'force-dynamic'
 
@@ -41,7 +42,7 @@ export default async function MyJmrPage() {
   const { data: entries } = await supabase
     .from('jmr_daily_entries')
     .select(`
-      id, entry_date, status, quantity, amount, rate_snapshot, created_at, work_description,
+      id, entry_date, status, quantity, amount, rate_snapshot, created_at, work_description, log_sheet_photo_url,
       jmr_items ( name, unit ),
       jmr_contractors ( name ),
       projects!jmr_daily_entries_project_id_fkey ( code, name ),
@@ -61,11 +62,26 @@ export default async function MyJmrPage() {
     rate_snapshot: number | string
     created_at: string
     work_description: string | null
+    log_sheet_photo_url: string | null
     jmr_items: Item
     jmr_contractors: Contractor
     projects: Project
     sub_project: Project
   }>
+
+  // Batch-mint 1h signed URLs for the log sheet photos. Same pattern as
+  // the PM dashboard — engineer sees what they uploaded with each entry.
+  const photoPaths = rows
+    .map(r => r.log_sheet_photo_url)
+    .filter((p): p is string => !!p)
+  const signedByPath = new Map<string, string>()
+  if (photoPaths.length > 0) {
+    const { data: signedList } = await supabase.storage
+      .from('jmr-photos').createSignedUrls(photoPaths, 3600)
+    for (const s of signedList ?? []) {
+      if (s.path && s.signedUrl) signedByPath.set(s.path, s.signedUrl)
+    }
+  }
 
   // ── Stat tiles ──────────────────────────────────────────────────
   const thisWeek = rows.filter(r => r.entry_date >= weekStartISO)
@@ -153,8 +169,39 @@ export default async function MyJmrPage() {
                       const inWindow = ageMs < settings.entry_edit_window_hours * 3600 * 1000
                       const canEdit = inWindow && r.status === 'submitted'
                       const isFlagged = r.status === 'flagged'
+                      const photoUrl = r.log_sheet_photo_url ? signedByPath.get(r.log_sheet_photo_url) ?? null : null
+                      const hasPhoto = !!r.log_sheet_photo_url
                       return (
                         <li key={r.id} className="px-4 py-3 flex items-start gap-3">
+                          {/* Log sheet photo thumbnail — engineer confirms what they submitted. */}
+                          {photoUrl ? (
+                            <a
+                              href={photoUrl}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="flex-shrink-0 h-14 w-14 rounded-lg border border-gray-200 bg-gray-50 overflow-hidden hover:ring-2 hover:ring-blue-300 transition-shadow"
+                              title="Open log sheet photo in a new tab"
+                            >
+                              <Image
+                                src={photoUrl}
+                                alt={`Log sheet — ${it?.name ?? 'entry'} · ${r.entry_date}`}
+                                width={56}
+                                height={56}
+                                unoptimized
+                                className="h-14 w-14 object-cover"
+                              />
+                            </a>
+                          ) : (
+                            <div
+                              className="flex-shrink-0 h-14 w-14 rounded-lg border border-dashed border-gray-300 bg-gray-50 flex flex-col items-center justify-center text-gray-400"
+                              title={hasPhoto ? 'Photo on file but URL could not be signed' : 'Imported entry — no photo on file'}
+                            >
+                              {hasPhoto ? <Camera className="h-5 w-5" /> : <FileImage className="h-5 w-5" />}
+                              <span className="text-[8px] uppercase tracking-wide mt-0.5">
+                                {hasPhoto ? '!' : 'import'}
+                              </span>
+                            </div>
+                          )}
                           <div className="min-w-0 flex-1">
                             <div className="flex items-center gap-2 flex-wrap">
                               <span className="font-medium text-gray-900">{it?.name ?? '—'}</span>

@@ -1,10 +1,11 @@
 'use client'
 import { useMemo, useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
+import Image from 'next/image'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Loader2, Check, AlertTriangle, X } from 'lucide-react'
+import { Loader2, Check, AlertTriangle, X, Camera, FileImage } from 'lucide-react'
 import { formatINR, formatDateIN } from '@/lib/jmr/format'
 
 export interface PendingEntry {
@@ -18,6 +19,13 @@ export interface PendingEntry {
   project_label: string
   contractor_name: string
   engineer_name: string
+  /** Pre-minted 1h signed URL for the log sheet photo, or null when the
+   *  entry came in via bulk import (no photo on file). */
+  photo_url: string | null
+  /** True when the entry has a photo path saved (regardless of whether
+   *  the signed-URL mint succeeded). Used to distinguish "imported, no
+   *  photo" from "photo exists but URL expired / failed to sign". */
+  has_photo: boolean
 }
 
 export function EntriesPendingApproval({ initial }: { initial: PendingEntry[] }) {
@@ -129,10 +137,44 @@ export function EntriesPendingApproval({ initial }: { initial: PendingEntry[] })
                 className="h-4 w-4 mt-1"
                 aria-label={`Select entry ${r.id}`}
               />
+              {/* Log sheet photo — the PM needs this to actually trust an approval. */}
+              {r.photo_url ? (
+                <a
+                  href={r.photo_url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="flex-shrink-0 h-14 w-14 rounded-lg border border-gray-200 bg-gray-50 overflow-hidden hover:ring-2 hover:ring-blue-300 transition-shadow"
+                  title="Open log sheet photo in a new tab"
+                >
+                  <Image
+                    src={r.photo_url}
+                    alt={`Log sheet — ${r.item_name} · ${r.entry_date}`}
+                    width={56}
+                    height={56}
+                    unoptimized
+                    className="h-14 w-14 object-cover"
+                  />
+                </a>
+              ) : (
+                <div
+                  className="flex-shrink-0 h-14 w-14 rounded-lg border border-dashed border-gray-300 bg-gray-50 flex flex-col items-center justify-center text-gray-400"
+                  title={r.has_photo ? 'Photo on file but URL could not be signed' : 'No photo — imported entry'}
+                >
+                  {r.has_photo ? <Camera className="h-5 w-5" /> : <FileImage className="h-5 w-5" />}
+                  <span className="text-[8px] uppercase tracking-wide mt-0.5">
+                    {r.has_photo ? '!' : 'import'}
+                  </span>
+                </div>
+              )}
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2 flex-wrap">
                   <span className="font-medium text-gray-900">{r.item_name}</span>
                   <span className="text-xs text-gray-500">{formatDateIN(r.entry_date)}</span>
+                  {!r.has_photo && (
+                    <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-gray-100 text-gray-600 uppercase tracking-wide">
+                      imported · no photo
+                    </span>
+                  )}
                 </div>
                 <p className="text-xs text-gray-600 mt-0.5">
                   {r.project_label} · {r.contractor_name} · <span className="text-gray-500">by {r.engineer_name}</span>
