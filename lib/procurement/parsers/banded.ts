@@ -50,13 +50,33 @@ export function parseBanded(buffer: ArrayBuffer): LineRecord[] {
     defval: null,
   }) as (string | number | null)[][]
 
-  // Forward-fill WO_CATEGORY so each row knows its top-level project.
-  let lastProject = ''
+  // Col 0 ("WO Category") interleaves TWO kinds of headers in the same
+  // column:
+  //   - PROJECT / SITE headers, e.g. "Staff Facilities Block - Staff
+  //     Facilities Block - Execution", "New Guest House A - …"
+  //   - TRADE CATEGORY headers, e.g. "13 Interiors", "07 Electrical
+  //     Works" (always start with a 2-digit code).
+  // Aksha thinks of "project" as the SITE, not the trade. So we have to
+  // forward-fill these two kinds separately. Trade-category-shaped
+  // values update `lastTrade`, everything else updates `lastSite`. Each
+  // row then knows both its site and its trade — and crucially, a row
+  // appearing right after a "13 Interiors" header still inherits the
+  // most recent SITE (not "13 Interiors" — that was the bug behind
+  // Aksha's chip-grid screenshot).
+  const TRADE_RX = /^\d{2}\s/   // matches "07 Electrical Works", "13 Interiors", etc.
+  let lastSite = ''
+  let lastTrade = ''
   const projectFill: string[] = new Array(raw.length).fill('')
+  const tradeFill: string[] = new Array(raw.length).fill('')
   for (let i = 0; i < raw.length; i++) {
-    const p = raw[i]?.[C.WO_CAT]
-    if (p != null && String(p).trim()) lastProject = String(p).trim()
-    projectFill[i] = lastProject
+    const cell = raw[i]?.[C.WO_CAT]
+    if (cell != null && String(cell).trim()) {
+      const v = String(cell).trim()
+      if (TRADE_RX.test(v)) lastTrade = v
+      else lastSite = v
+    }
+    projectFill[i] = lastSite
+    tradeFill[i] = lastTrade
   }
 
   const lines: LineRecord[] = []
