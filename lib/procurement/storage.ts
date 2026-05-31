@@ -42,7 +42,23 @@ function readAll(): Stored | null {
 
 function writeAll(s: Stored): void {
   if (typeof window === 'undefined') return
-  try { localStorage.setItem(KEY, JSON.stringify(s)) } catch { /* quota — drop silently */ }
+  try {
+    localStorage.setItem(KEY, JSON.stringify(s))
+  } catch {
+    // Quota error (full payload too big). Retry with the heavy
+    // `projects` field dropped — at least the diff baseline +
+    // savedAt + trend survive so the diff banner and trend ribbon
+    // keep working on the next upload.
+    if (s.current?.projects) {
+      try {
+        const lite: Stored = { ...s, current: { ...s.current, projects: undefined } }
+        localStorage.setItem(KEY, JSON.stringify(lite))
+        if (typeof console !== 'undefined') {
+          console.warn('[procurement-tracker] localStorage quota hit — persisted metadata only. Reload will require re-upload.')
+        }
+      } catch { /* even lite write failed — give up silently */ }
+    }
+  }
 }
 
 export function loadStoredSnapshot(): StoredSnapshot | null {
@@ -89,6 +105,9 @@ export function saveSnapshot(result: ParseResult, fileName: string): void {
       totalGrnValue,
       pendingValue,
       indentStatuses,
+      // Persist the full payload so reloads don't force a re-upload.
+      // writeAll() falls back to metadata-only on quota errors.
+      projects: result.projects,
     },
     // The PREVIOUS upload becomes the diff baseline for the NEXT one we make.
     previousIndents: prev.current?.indentStatuses ?? [],

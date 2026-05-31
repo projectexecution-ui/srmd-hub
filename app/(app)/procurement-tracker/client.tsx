@@ -39,11 +39,27 @@ export function ProcurementTrackerClient() {
   const [savedAt, setSavedAt] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
-  // Restore saved-at marker on mount (full data is not persisted to keep
-  // localStorage small — user re-uploads to rehydrate the dashboard).
+  // Rehydrate the full dashboard from the last upload on mount, so a
+  // page reload does NOT lose Aksha's data. The full `projects[]` is
+  // persisted in localStorage (see lib/procurement/storage.ts).
+  // Legacy snapshots (saved before this fix) lack `projects` — for
+  // those we still surface the savedAt marker so the user knows a
+  // snapshot exists, and the upload zone falls through into the
+  // re-upload prompt.
   useEffect(() => {
     const snap = loadStoredSnapshot()
-    if (snap) setSavedAt(snap.savedAt)
+    if (!snap) return
+    setSavedAt(snap.savedAt)
+    if (snap.projects && snap.projects.length > 0) {
+      setData({
+        success: true,
+        fileName: snap.fileName,
+        format: snap.format,
+        projects: snap.projects,
+      } as AnalyseResponse)
+      setSelectedProject('__all__')
+      setView('pending')
+    }
   }, [])
 
   const handleFile = useCallback(async (file: File) => {
@@ -137,8 +153,27 @@ export function ProcurementTrackerClient() {
               <div>
                 Saved {formatSavedAt(savedAt)}
                 {' · '}
+                <button
+                  onClick={() => fileInputRef.current?.click()}
+                  className="text-orange-700 hover:underline"
+                  title="Upload a fresh Excel — replaces the current saved data"
+                >
+                  Upload new
+                </button>
+                {' · '}
                 <button onClick={clearSaved} className="text-orange-700 hover:underline">Clear saved data</button>
               </div>
+              {/* Hidden input attached so "Upload new" works even when the
+                  drop-zone Card isn't rendered (i.e. when data is loaded). */}
+              {data && (
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept=".xlsx,.xls"
+                  className="hidden"
+                  onChange={onFileInput}
+                />
+              )}
             </div>
           )}
         </header>

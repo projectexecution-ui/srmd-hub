@@ -193,6 +193,12 @@ export interface StoredSnapshot {
   totalGrnValue: number
   pendingValue: number
   indentStatuses: IndentStatusSnapshot[]   // for the diff against the next upload
+  /**
+   * Full parsed projects. Persisted so the dashboard can rehydrate
+   * after a reload without forcing the user to re-upload. Omitted
+   * (undefined) when a quota error fell us back to metadata-only.
+   */
+  projects?: ProjectSummary[]
 }
 
 export interface SnapshotDiff {
