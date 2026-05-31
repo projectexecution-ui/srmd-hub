@@ -15,6 +15,7 @@ import { useEffect, useMemo, useState } from 'react'
 import type { LineRecord } from '@/lib/procurement'
 import { formatAgeFriendly } from '@/lib/procurement/shared'
 import { Download, Users, ClipboardList, AlertTriangle, FileSpreadsheet } from 'lucide-react'
+import { ChangeBadge } from './ChangeBadge'
 
 type GroupKey = 'supplier' | 'indent'
 type AgeFilter = 'all' | '7' | '14' | '30'
@@ -88,9 +89,15 @@ function safe(s: string): string {
 export function PendingReceiptsView({
   lines,
   projectName,
+  newLineIds,
+  changedLineIds,
 }: {
   lines: LineRecord[]
   projectName: string
+  /** Line ids that didn't exist in the prior upload. Renders the green NEW pill. */
+  newLineIds?: Set<string>
+  /** Line ids that existed before but have changed. Renders the amber Updated pill. */
+  changedLineIds?: Set<string>
 }) {
   const [groupBy, setGroupBy] = useState<GroupKey>('supplier')
   const [ageFilter, setAgeFilter] = useState<AgeFilter>('all')
@@ -359,7 +366,10 @@ export function PendingReceiptsView({
                               </td>
                             )}
                             <td className="px-4 py-2 text-xs text-stone-800 max-w-[260px]">
-                              <span className="line-clamp-2" title={ln.material}>{ln.material}</span>
+                              <div className="flex items-start gap-1.5">
+                                <ChangeBadge id={ln.id} newLineIds={newLineIds} changedLineIds={changedLineIds} />
+                                <span className="line-clamp-2 flex-1" title={ln.material}>{ln.material}</span>
+                              </div>
                               <span className="text-[10px] text-stone-400">{ln.block}</span>
                             </td>
                             <td className="px-4 py-2 font-mono text-[11px] text-stone-500 whitespace-nowrap" title={po?.poNo}>

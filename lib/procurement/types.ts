@@ -185,6 +185,17 @@ export interface IndentStatusSnapshot {
   pendingValue: number
 }
 
+/**
+ * Per-line snapshot used to compute the line-level diff between two
+ * uploads. We only persist what's needed to detect "is this line
+ * different from last time?" — id, status, pendingQty.
+ */
+export interface LineStatusSnapshot {
+  id: string
+  status: LineStatus
+  pendingQty: number
+}
+
 export interface StoredSnapshot {
   format: ReportFormat
   fileName: string
@@ -193,6 +204,13 @@ export interface StoredSnapshot {
   totalGrnValue: number
   pendingValue: number
   indentStatuses: IndentStatusSnapshot[]   // for the diff against the next upload
+  /**
+   * Per-line statuses captured at save time so a future upload can
+   * compute a precise NEW / UPDATED diff at line resolution (not
+   * just indent resolution). ~200 KB even for the largest real
+   * file — cheap to keep.
+   */
+  lineStatuses: LineStatusSnapshot[]
   /**
    * Full parsed projects. Persisted so the dashboard can rehydrate
    * after a reload without forcing the user to re-upload. Omitted
@@ -204,7 +222,18 @@ export interface StoredSnapshot {
 export interface SnapshotDiff {
   prevSavedAt: string
   prevFileName: string
+  /** Indents whose status flipped since the previous upload (indent-level). */
   changedIndents: Set<string>
+  /**
+   * LINE IDs (indentNo|materialIndex) that didn't exist in the previous
+   * upload at all — truly new materials. Drive the green "NEW" pills.
+   */
+  newLineIds: Set<string>
+  /**
+   * LINE IDs that existed before but have changed (status flip or
+   * pending-qty change). Drive the amber "Updated" pills.
+   */
+  changedLineIds: Set<string>
   newlyGrnDone: number
   newlyInProgress: number
   newlyOverdue: number

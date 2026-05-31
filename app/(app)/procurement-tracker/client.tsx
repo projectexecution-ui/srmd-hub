@@ -12,7 +12,7 @@ import { useState, useCallback, useRef, useMemo, useEffect } from 'react'
 import { Card } from '@/components/ui/card'
 import type { ParseResult, LineRecord, SnapshotDiff } from '@/lib/procurement'
 import {
-  loadStoredSnapshot, loadPreviousIndents, loadPreviousMeta,
+  loadStoredSnapshot, loadPreviousIndents, loadPreviousLineStatuses, loadPreviousMeta,
   saveSnapshot, clearAll, computeDiff, formatSavedAt,
 } from '@/lib/procurement/storage'
 import { PendingReceiptsView } from '@/components/procurement-tracker/PendingReceiptsView'
@@ -79,8 +79,15 @@ export function ProcurementTrackerClient() {
 
       // Diff against previous snapshot BEFORE saveSnapshot rolls current → previous.
       const prevIndents = loadPreviousIndents()
+      const prevLines = loadPreviousLineStatuses()
       const prevMeta = loadPreviousMeta()
-      const newDiff = computeDiff(json.projects.flatMap(p => p.indents), prevIndents, prevMeta)
+      const newDiff = computeDiff(
+        json.projects.flatMap(p => p.indents),
+        json.projects.flatMap(p => p.lines),
+        prevIndents,
+        prevLines,
+        prevMeta,
+      )
       setDiff(newDiff)
 
       saveSnapshot({ format: json.format, projects: json.projects }, file.name)
@@ -234,7 +241,9 @@ export function ProcurementTrackerClient() {
         {data && (
           <div className="space-y-4">
             {/* What changed since last upload */}
-            {diff && diff.changedIndents.size > 0 && <DiffBanner diff={diff} />}
+            {diff && (diff.newLineIds.size > 0 || diff.changedLineIds.size > 0) && (
+              <DiffBanner diff={diff} />
+            )}
 
             {/* Project filter — only when there's more than one */}
             {data.projects.length > 1 && (
@@ -296,9 +305,19 @@ export function ProcurementTrackerClient() {
 
             {/* Active view */}
             {view === 'pending' ? (
-              <PendingReceiptsView lines={linesForActiveProject} projectName={activeProjectLabel} />
+              <PendingReceiptsView
+                lines={linesForActiveProject}
+                projectName={activeProjectLabel}
+                newLineIds={diff?.newLineIds}
+                changedLineIds={diff?.changedLineIds}
+              />
             ) : (
-              <IndentsNeedingPoView lines={linesForActiveProject} projectName={activeProjectLabel} />
+              <IndentsNeedingPoView
+                lines={linesForActiveProject}
+                projectName={activeProjectLabel}
+                newLineIds={diff?.newLineIds}
+                changedLineIds={diff?.changedLineIds}
+              />
             )}
           </div>
         )}
