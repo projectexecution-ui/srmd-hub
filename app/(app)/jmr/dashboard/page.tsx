@@ -1,4 +1,5 @@
 import Link from 'next/link'
+import { createClient } from '@/lib/supabase/server'
 import { requirePermission } from '@/lib/auth'
 import { PageHeader } from '@/components/PageHeader'
 import { Card, CardContent } from '@/components/ui/card'
@@ -7,12 +8,66 @@ import { getDashboardSnapshot } from '@/lib/jmr/dashboard'
 import { formatINR, formatINRShort } from '@/lib/jmr/format'
 import { AlertTriangle, Coins, Receipt, Wallet, Send, FileText } from 'lucide-react'
 import { SendReportButton } from './send-report-button'
+import { EntriesPendingApproval, type PendingEntry } from './EntriesPendingApproval'
 
 export const dynamic = 'force-dynamic'
 
 export default async function JmrDashboardPage() {
   await requirePermission('jmr', 'view')
   const snap = await getDashboardSnapshot()
+
+  // ── Pending JMR entries awaiting PM approval ────────────────────
+  // Fetched here (server-side) so the page is one round trip. The
+  // EntriesPendingApproval client component handles approve / flag
+  // actions and updates optimistically.
+  const supabase = await createClient()
+  type RelObj<T> = T | T[] | null | undefined
+  function unwrap<T>(v: RelObj<T>): T | null {
+    if (!v) return null
+    return Array.isArray(v) ? (v[0] ?? null) : v
+  }
+  const { data: pendingRaw } = await supabase
+    .from('jmr_daily_entries')
+    .select(`
+      id, entry_date, quantity, amount, rate_snapshot,
+      jmr_items ( name, unit ),
+      jmr_contractors ( name ),
+      projects!jmr_daily_entries_project_id_fkey ( code, name ),
+      sub_project:projects!jmr_daily_entries_sub_project_id_fkey ( code, name ),
+      engineer:profiles!jmr_daily_entries_logged_by_user_id_fkey ( name, full_name, email )
+    `)
+    .eq('status', 'submitted')
+    .order('entry_date', { ascending: false })
+    .order('created_at', { ascending: false })
+    .limit(200)
+
+  const pending: PendingEntry[] = (pendingRaw ?? []).map((r: {
+    id: string; entry_date: string; quantity: number | string; amount: number | string; rate_snapshot: number | string;
+    jmr_items: RelObj<{ name: string; unit: string }>;
+    jmr_contractors: RelObj<{ name: string }>;
+    projects: RelObj<{ code: string | null; name: string }>;
+    sub_project: RelObj<{ code: string | null; name: string }>;
+    engineer: RelObj<{ name: string | null; full_name: string | null; email: string }>;
+  }) => {
+    const it = unwrap(r.jmr_items)
+    const ctr = unwrap(r.jmr_contractors)
+    const proj = unwrap(r.projects)
+    const sub = unwrap(r.sub_project)
+    const eng = unwrap(r.engineer)
+    const projLabel = sub?.code || sub?.name || proj?.code || proj?.name || '—'
+    return {
+      id: r.id,
+      entry_date: r.entry_date,
+      quantity: Number(r.quantity),
+      amount: Number(r.amount),
+      rate_snapshot: Number(r.rate_snapshot),
+      unit: it?.unit ?? '',
+      item_name: it?.name ?? '—',
+      project_label: projLabel,
+      contractor_name: ctr?.name ?? '—',
+      engineer_name: eng?.name ?? eng?.full_name ?? eng?.email ?? '—',
+    }
+  })
 
   return (
     <div className="p-4 md:p-6 max-w-6xl mx-auto">
@@ -61,6 +116,17 @@ export default async function JmrDashboardPage() {
           </CardContent>
         </Card>
       )}
+
+      {/* JMR entries awaiting PM / Head approval */}
+      <div className="mb-4">
+        <div className="flex items-baseline justify-between mb-2">
+          <h2 className="text-sm font-bold text-gray-800">Entries awaiting approval</h2>
+          {pending.length > 0 && (
+            <p className="text-xs text-gray-500">Click ✓ to approve, ⚠ to flag</p>
+          )}
+        </div>
+        <EntriesPendingApproval initial={pending} />
+      </div>
 
       <Card className="mb-4">
         <div className="px-4 py-3 border-b border-gray-100">

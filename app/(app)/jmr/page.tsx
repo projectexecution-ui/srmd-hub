@@ -1,7 +1,7 @@
 import Link from 'next/link'
 import { PageHeader } from '@/components/PageHeader'
 import { Card, CardContent } from '@/components/ui/card'
-import { Wrench, ClipboardCheck, Receipt, BarChart3, Settings, Grid } from 'lucide-react'
+import { Wrench, ClipboardCheck, Receipt, BarChart3, Settings, Grid, User } from 'lucide-react'
 import { requirePermission, can, getMyProfile } from '@/lib/auth'
 
 export const dynamic = 'force-dynamic'
@@ -17,6 +17,12 @@ export default async function JMRPage() {
       icon: ClipboardCheck, tone: 'bg-blue-50 text-blue-700',
       desc: 'Log machine hours or manpower for today',
       show: can(perms, 'jmr', 'edit'),
+    },
+    {
+      slug: 'my', label: 'My JMR', href: '/jmr/my',
+      icon: User, tone: 'bg-indigo-50 text-indigo-700',
+      desc: 'Your entries · pending approval · flagged',
+      show: can(perms, 'jmr', 'view'),
     },
     {
       slug: 'bill', label: 'New Bill', href: '/jmr/bill',
