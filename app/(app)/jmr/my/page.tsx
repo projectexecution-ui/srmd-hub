@@ -1,5 +1,4 @@
 import Link from 'next/link'
-import Image from 'next/image'
 import { createClient } from '@/lib/supabase/server'
 import { requirePermission } from '@/lib/auth'
 import { PageHeader } from '@/components/PageHeader'
@@ -182,12 +181,14 @@ export default async function MyJmrPage() {
                               className="flex-shrink-0 h-14 w-14 rounded-lg border border-gray-200 bg-gray-50 overflow-hidden hover:ring-2 hover:ring-blue-300 transition-shadow"
                               title="Open log sheet photo in a new tab"
                             >
-                              <Image
+                              {/* Plain <img> — see note in EntriesPendingApproval.tsx for why. */}
+                              {/* eslint-disable-next-line @next/next/no-img-element */}
+                              <img
                                 src={photoUrl}
                                 alt={`Log sheet — ${it?.name ?? 'entry'} · ${r.entry_date}`}
                                 width={56}
                                 height={56}
-                                unoptimized
+                                loading="lazy"
                                 className="h-14 w-14 object-cover"
                               />
                             </a>

@@ -1,7 +1,6 @@
 'use client'
 import { useMemo, useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
-import Image from 'next/image'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -146,12 +145,16 @@ export function EntriesPendingApproval({ initial }: { initial: PendingEntry[] })
                   className="flex-shrink-0 h-14 w-14 rounded-lg border border-gray-200 bg-gray-50 overflow-hidden hover:ring-2 hover:ring-blue-300 transition-shadow"
                   title="Open log sheet photo in a new tab"
                 >
-                  <Image
+                  {/* Plain <img> — Supabase storage host isn't in next.config.ts
+                      remotePatterns, and the signed URL expires in 1h so the
+                      optimiser couldn't usefully cache it anyway. */}
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
                     src={r.photo_url}
                     alt={`Log sheet — ${r.item_name} · ${r.entry_date}`}
                     width={56}
                     height={56}
-                    unoptimized
+                    loading="lazy"
                     className="h-14 w-14 object-cover"
                   />
                 </a>
