@@ -21,7 +21,7 @@ import { AddRateModal } from './add-rate-modal'
 
 interface Discipline   { id: string; code: string | null; name: string; display_order: number }
 interface Category     { id: string; discipline_id: string; code: string | null; name: string; display_order: number }
-interface Subcategory  { id: string; category_id: string; name: string; uom: string }
+interface Subcategory  { id: string; category_id: string; name: string; short_name: string | null; uom: string }
 interface Rate {
   id: string
   subcategory_id: string
@@ -68,10 +68,19 @@ function fmtINR(n: number | null | undefined): string {
   return '₹' + Number(n).toLocaleString('en-IN', { maximumFractionDigits: 2 })
 }
 
-function rankClasses(idx: number): string {
-  if (idx === 0) return 'bg-emerald-100 text-emerald-800 border-emerald-200'
-  if (idx === 1) return 'bg-amber-100   text-amber-800   border-amber-200'
-  return            'bg-gray-100    text-gray-600    border-gray-200'
+// Display short_name when present, else trim the long IN4 description.
+function displayShort(sub: { name: string; short_name: string | null }): string {
+  if (sub.short_name && sub.short_name.trim()) return sub.short_name
+  const s = sub.name.trim()
+  return s.length > 60 ? s.slice(0, 57).trimEnd() + '…' : s
+}
+
+// Tag the cheapest and the most expensive rate when there's a meaningful gap.
+function rankBadge(idx: number, total: number): { label: string; classes: string } | null {
+  if (total <= 1) return null              // only one quote → no badge
+  if (idx === 0) return { label: 'Cheapest', classes: 'bg-emerald-100 text-emerald-800 border-emerald-200' }
+  if (idx === total - 1 && total > 2) return { label: 'Highest', classes: 'bg-gray-100 text-gray-500 border-gray-200' }
+  return null
 }
 
 export function RateLibrary({
@@ -82,6 +91,7 @@ export function RateLibrary({
   const [activeDisc, setActiveDisc] = useState<string>('all')
   const [vendorFilter, setVendorFilter] = useState<string>('')
   const [activeOnly, setActiveOnly] = useState(true)
+  const [showEmpty, setShowEmpty] = useState(false)
   const [sort, setSort] = useState<{ key: SortKey; dir: SortDir }>({ key: 'item', dir: 'asc' })
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const [addingForSub, setAddingForSub] = useState<Subcategory | null>(null)
@@ -164,6 +174,8 @@ export function RateLibrary({
       const wos = woBySub.get(sub.id) ?? []
       // Vendor filter: also drop sub-cats with zero matching rates
       if (vendorFilter && rs.length === 0) continue
+      // Default: hide items with no rates AND no WOs — they're noise.
+      if (!showEmpty && rs.length === 0 && wos.length === 0) continue
       const l1 = rs[0]
       const l1PartyName = l1
         ? (l1.source_type === 'vendor'
@@ -182,7 +194,7 @@ export function RateLibrary({
       })
     }
     return out
-  }, [subcategories, catById, discById, activeDisc, ratesBySub, woBySub, vendorFilter, vendorById, contractorById])
+  }, [subcategories, catById, discById, activeDisc, ratesBySub, woBySub, vendorFilter, vendorById, contractorById, showEmpty])
 
   // ── Search filter ────────────────────────────────────────────
   const searched = useMemo(() => {
@@ -190,6 +202,7 @@ export function RateLibrary({
     const lc = q.toLowerCase()
     return rows.filter(r =>
       r.sub.name.toLowerCase().includes(lc) ||
+      (r.sub.short_name ?? '').toLowerCase().includes(lc) ||
       r.catName.toLowerCase().includes(lc) ||
       r.discName.toLowerCase().includes(lc) ||
       r.l1PartyName.toLowerCase().includes(lc),
@@ -269,6 +282,10 @@ export function RateLibrary({
                 <input type="checkbox" checked={activeOnly} onChange={e => setActiveOnly(e.target.checked)} />
                 Active only
               </label>
+              <label className="inline-flex items-center gap-1.5 text-sm text-gray-700 whitespace-nowrap" title="Items without any rates or WOs">
+                <input type="checkbox" checked={showEmpty} onChange={e => setShowEmpty(e.target.checked)} />
+                Show empty
+              </label>
             </div>
           </div>
 
@@ -300,7 +317,7 @@ export function RateLibrary({
                   <th className="px-2 py-2 w-6"></th>
                   <SortableTh label="Item" k="item" sort={sort} onSort={toggleSort} className="min-w-[16rem]" />
                   <th className="px-2 py-2 w-16">UoM</th>
-                  <SortableTh label="L1 rate" k="l1" sort={sort} onSort={toggleSort} className="text-right w-32" />
+                  <SortableTh label="Best rate" k="l1" sort={sort} onSort={toggleSort} className="text-right w-32" />
                   <th className="px-2 py-2 w-44">Best vendor</th>
                   <th className="px-2 py-2 text-center w-20">Quotes</th>
                   <SortableTh label="WOs" k="wos" sort={sort} onSort={toggleSort} className="text-center w-16" />
@@ -421,7 +438,12 @@ function ItemRow({
           {isOpen ? <ChevronDown className="h-4 w-4 text-gray-400" /> : <ChevronRight className="h-4 w-4 text-gray-400" />}
         </td>
         <td className="px-2 py-2 align-top">
-          <p className="text-sm text-gray-900 font-medium line-clamp-2">{sub.name}</p>
+          <p
+            className="text-sm text-gray-900 font-medium line-clamp-1"
+            title={sub.name !== displayShort(sub) ? sub.name : undefined}
+          >
+            {displayShort(sub)}
+          </p>
           <p className="text-[11px] text-gray-500 mt-0.5">
             {discCode && <span className="font-mono">{discCode}</span>} {discName}
             <span className="text-gray-300 mx-1">›</span>
@@ -486,9 +508,14 @@ function ItemRow({
                     const party = r.source_type === 'vendor'
                       ? vendorById.get(r.vendor_id ?? '')?.name
                       : contractorById.get(r.contractor_id ?? '')?.name
+                    const badge = rankBadge(idx, rates.length)
                     return (
                       <div key={r.id} className="flex items-center gap-2 text-sm bg-white border border-gray-100 rounded-md px-2 py-1.5">
-                        <Badge className={cn('w-7 justify-center text-[10px] border', rankClasses(idx))}>L{idx + 1}</Badge>
+                        {badge ? (
+                          <Badge className={cn('text-[10px] border', badge.classes)}>{badge.label}</Badge>
+                        ) : (
+                          <span className="w-[68px]" />
+                        )}
                         <span className="text-gray-700 flex-1 truncate" title={party}>{party || '—'}</span>
                         <span className="font-semibold text-gray-900 tabular-nums">{fmtINR(r.rate_per_unit)}</span>
                         {r.gst_pct != null && <span className="text-[11px] text-gray-500">+{r.gst_pct}%</span>}

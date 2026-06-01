@@ -9,7 +9,7 @@
 import * as XLSX from 'xlsx'
 import { createClient } from '@/lib/supabase/server'
 import {
-  extractFromAbstract, extractWoDetailRow, classifyAsContractor,
+  extractFromAbstract, extractWoDetailRow, classifyAsContractor, shortenName,
 } from '@/lib/in4-parser'
 
 type ImportResult = {
@@ -115,7 +115,7 @@ export async function importIn4Abstract(formData: FormData): Promise<ImportResul
     const subKey = `${catId}|${s.name.toLowerCase()}`
     if (subByKey.has(subKey)) continue
     const { data, error } = await supabase.from('est_subcategories')
-      .insert({ category_id: catId, name: s.name, uom: s.uom || 'Nos' })
+      .insert({ category_id: catId, name: s.name, short_name: shortenName(s.name), uom: s.uom || 'Nos' })
       .select('id').single()
     if (error) { errors.push(`Sub-cat ${s.name}: ${error.message}`); continue }
     subByKey.set(subKey, data.id)

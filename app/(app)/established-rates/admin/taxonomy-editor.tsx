@@ -15,7 +15,7 @@ import { cn } from '@/lib/utils'
 
 interface Discipline   { id: string; code: string | null; name: string; display_order: number; is_archived: boolean }
 interface Category     { id: string; discipline_id: string; code: string | null; name: string; display_order: number; is_archived: boolean }
-interface Subcategory  { id: string; category_id: string; code: string | null; name: string; uom: string; display_order: number; is_archived: boolean }
+interface Subcategory  { id: string; category_id: string; code: string | null; name: string; short_name: string | null; uom: string; display_order: number; is_archived: boolean }
 
 interface Props {
   disciplines: Discipline[]

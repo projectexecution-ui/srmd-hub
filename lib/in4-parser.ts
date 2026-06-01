@@ -6,6 +6,33 @@
 //   2. ENGGWorkOrderDetailReport.xlsx — flat table of WOs with lumpsum totals.
 //      Feeds est_wo_history.
 
+// ─── Short-name generator ───────────────────────────────────────────────
+// IN4 sub-BOQ descriptions are often 100-300 chars and prefixed with junk
+// ("Civil Work Material Related 305 Masonry work \\ ..."). Pick the most
+// useful 60 chars so the rate library stays scannable.
+const SHORT_NAME_PREFIX_GARBAGE = [
+  /^Civil Work Material Related\s+\d+\s+/i,
+  /^Electrical Work Material Related\s+\d+\s+/i,
+  /^\d+\s+[\w ]+\\\s+/,             // e.g. "03 Civil \\ Civil Item Base Rate"
+  /^Civil Work\s*\\\s*/i,
+]
+
+export function shortenName(full: string | null | undefined): string {
+  if (!full) return ''
+  let s = String(full).trim().replace(/\s+/g, ' ')
+  for (const re of SHORT_NAME_PREFIX_GARBAGE) {
+    s = s.replace(re, '')
+  }
+  // Cut at first ". " or " - " if early sentence captures the gist
+  const breakpoints = ['. ', ' - ', ' — ', ' ('] as const
+  for (const bp of breakpoints) {
+    const idx = s.indexOf(bp)
+    if (idx > 12 && idx < 70) { s = s.slice(0, idx); break }
+  }
+  if (s.length > 60) s = s.slice(0, 57).trimEnd() + '…'
+  return s.trim()
+}
+
 // ─── Vendor / contractor classification ─────────────────────────────────
 
 const CONTRACTOR_HINTS = [
