@@ -60,6 +60,26 @@ export interface InvoiceEntry {
   amount: number
 }
 
+/**
+ * A single row from the original Excel that contributed to a parsed
+ * LineRecord. Persisted alongside the parsed view so the user can
+ * verify "what's in the Excel" vs "what the parser produced" without
+ * needing the original file.
+ *
+ *   role = which kind of row this is. The parser emits one per phase
+ *          of the indent → PO → GRN chain.
+ *   rowIndex = 0-based row number in the source Excel sheet (the same
+ *              number a user sees in Excel's row header minus 1).
+ *   cells = labelled subset of the row's cells — only the columns
+ *           the parser actually cares about, so the inspector stays
+ *           readable. Order: header-first, then value-first.
+ */
+export interface SourceRow {
+  rowIndex: number
+  role: 'indent' | 'material' | 'po' | 'grn' | 'invoice'
+  cells: Array<{ label: string; value: string | number | null }>
+}
+
 export interface LineRecord {
   /** Stable id = indentNo + '|' + index of material under the indent */
   id: string
@@ -99,6 +119,13 @@ export interface LineRecord {
   /** Average GRN lag in days (avg over GRNs that have a date) — null if no GRN. */
   avgGrnLagDays: number | null
   status: LineStatus
+  /**
+   * Raw rows from the source Excel that built this material. Used by
+   * the inspector panel so the user can verify the parser's view
+   * against the actual upload without leaving the page. Optional so
+   * older persisted states still hydrate.
+   */
+  sourceRows?: SourceRow[]
 }
 
 export interface IndentRollup {

@@ -14,8 +14,9 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { LineRecord } from '@/lib/procurement'
 import { formatAgeFriendly } from '@/lib/procurement/shared'
-import { Download, Users, ClipboardList, AlertTriangle, FileSpreadsheet } from 'lucide-react'
+import { Download, Users, ClipboardList, AlertTriangle, FileSpreadsheet, Search } from 'lucide-react'
 import { ChangeBadge } from './ChangeBadge'
+import { SourceInspector } from './SourceInspector'
 
 type GroupKey = 'supplier' | 'indent'
 type AgeFilter = 'all' | '7' | '14' | '30'
@@ -101,6 +102,8 @@ export function PendingReceiptsView({
 }) {
   const [groupBy, setGroupBy] = useState<GroupKey>('supplier')
   const [ageFilter, setAgeFilter] = useState<AgeFilter>('all')
+  // Line currently shown in the source-rows inspector modal (or null = closed).
+  const [inspectingLine, setInspectingLine] = useState<LineRecord | null>(null)
 
   // Restore the group-by choice from localStorage on mount
   useEffect(() => {
@@ -369,6 +372,15 @@ export function PendingReceiptsView({
                               <div className="flex items-start gap-1.5">
                                 <ChangeBadge id={ln.id} newLineIds={newLineIds} changedLineIds={changedLineIds} />
                                 <span className="line-clamp-2 flex-1" title={ln.material}>{ln.material}</span>
+                                <button
+                                  type="button"
+                                  onClick={() => setInspectingLine(ln)}
+                                  className="text-stone-400 hover:text-orange-700 flex-shrink-0 mt-0.5"
+                                  title="Show the Excel rows that built this entry"
+                                  aria-label="Inspect source rows"
+                                >
+                                  <Search className="h-3 w-3" />
+                                </button>
                               </div>
                               <span className="text-[10px] text-stone-400">{ln.block}</span>
                             </td>
@@ -433,6 +445,7 @@ export function PendingReceiptsView({
           })}
         </div>
       )}
+      <SourceInspector line={inspectingLine} onClose={() => setInspectingLine(null)} />
     </div>
   )
 }

@@ -30,7 +30,7 @@
 //   Col 37  Invoice Amount
 
 import * as XLSX from 'xlsx'
-import type { LineRecord, PoEntry, GrnEntry, InvoiceEntry, LineStatus } from '../types'
+import type { LineRecord, PoEntry, GrnEntry, InvoiceEntry, LineStatus, SourceRow } from '../types'
 import { simplifyBlock, extractDiscipline, cleanMaterial, daysSince, daysBetween, num, str } from '../shared'
 
 const C = {
@@ -71,6 +71,40 @@ export function parseFlat(buffer: ArrayBuffer): LineRecord[] {
     header: 1,
     defval: null,
   }) as (string | number | null)[][]
+
+  // Each row in the flat report is one (indent line × PO instance).
+  // Captured for the inspector panel — labelled subset of the cells
+  // the parser uses so the user can verify parser output against
+  // source without leaving the page.
+  function makeSourceRow(rowIndex: number, role: SourceRow['role'], row: (string | number | null)[]): SourceRow {
+    return {
+      rowIndex,
+      role,
+      cells: [
+        { label: 'Sr No',         value: row[C.SR_NO] ?? null },
+        { label: 'Project',       value: row[C.PROJECT] ?? null },
+        { label: 'Sub Project',   value: row[C.SUB_PROJECT] ?? null },
+        { label: 'Material',      value: row[C.MATERIAL] ?? null },
+        { label: 'Indent Date',   value: row[C.INDENT_DATE] ?? null },
+        { label: 'Indent No',     value: row[C.INDENT_NO] ?? null },
+        { label: 'Indent Qty',    value: row[C.INDENT_QTY] ?? null },
+        { label: 'Vendor',        value: row[C.VENDOR] ?? null },
+        { label: 'PO Date',       value: row[C.PO_DATE] ?? null },
+        { label: 'PO No',         value: row[C.PO_NO] ?? null },
+        { label: 'PO Qty',        value: row[C.PO_QTY] ?? null },
+        { label: 'PO Rate',       value: row[C.PO_RATE] ?? null },
+        { label: 'PO Amount',     value: row[C.PO_AMOUNT] ?? null },
+        { label: 'Order Qty',     value: row[C.ORDER_QTY] ?? null },
+        { label: 'Received Qty',  value: row[C.RECEIVED_QTY] ?? null },
+        { label: 'Net Received',  value: row[C.NET_RCVD] ?? null },
+        { label: 'Balance Qty',   value: row[C.BALANCE] ?? null },
+        { label: 'Invoice Date',  value: row[C.INVOICE_DATE] ?? null },
+        { label: 'Invoice No',    value: row[C.INVOICE_NO] ?? null },
+        { label: 'Invoice Qty',   value: row[C.INVOICE_QTY] ?? null },
+        { label: 'Invoice Amount',value: row[C.INVOICE_AMT] ?? null },
+      ].filter(c => c.value != null && c.value !== ''),
+    }
+  }
 
   // Group rows by (indent_no, material_name).
   const byKey = new Map<string, LineRecord>()
@@ -120,9 +154,20 @@ export function parseFlat(buffer: ArrayBuffer): LineRecord[] {
         indentAgeDays: daysSince(str(row[C.INDENT_DATE])),
         avgGrnLagDays: null,
         status: 'no_po',
+        sourceRows: [],
       }
       byKey.set(key, line)
     }
+    // Every contributing row gets captured. Role is the most
+    // specific tag that row carries: invoice > grn-ish > po > material.
+    const role: SourceRow['role'] = str(row[C.INVOICE_NO])
+      ? 'invoice'
+      : (num(row[C.NET_RCVD]) > 0 || num(row[C.RECEIVED_QTY]) > 0)
+      ? 'grn'
+      : str(row[C.PO_NO])
+      ? 'po'
+      : 'material'
+    line.sourceRows?.push(makeSourceRow(r, role, row))
 
     // PO data on this row (may be blank if indent has no PO yet)
     const poNo = str(row[C.PO_NO])

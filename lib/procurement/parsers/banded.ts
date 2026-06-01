@@ -10,7 +10,7 @@
 // Stateful walker — emits one LineRecord per (indent, material).
 
 import * as XLSX from 'xlsx'
-import type { LineRecord, PoEntry, GrnEntry, LineStatus } from '../types'
+import type { LineRecord, PoEntry, GrnEntry, LineStatus, SourceRow } from '../types'
 import { simplifyBlock, extractDiscipline, cleanMaterial, daysSince, daysBetween, num, str, projectFromIndentNo } from '../shared'
 
 // Column indices (0-based) verified against real PURCHINDENT_TO_ISSUE_RPT exports.
@@ -86,6 +86,44 @@ export function parseBanded(buffer: ArrayBuffer): LineRecord[] {
   let currentMaterial: LineRecord | null = null
   let currentPo: PoEntry | null = null
   const materialIndexByIndent = new Map<string, number>()
+  /**
+   * The "indent header" SourceRow captured the last time we saw an
+   * IND/ row. Cached so every material started under that indent can
+   * carry it as the first entry in its sourceRows[] (lets the inspector
+   * show the indent line even though the parser handles it as a
+   * separate row).
+   */
+  let lastIndentSourceRow: SourceRow | null = null
+
+  function makeSourceRow(rowIndex: number, role: SourceRow['role'], row: (string | number | null)[]): SourceRow {
+    // Labelled subset of the row — only the columns the parser uses,
+    // keeps the inspector readable. Order roughly matches IN4's
+    // header band (indent metadata → material → PO → GRN).
+    return {
+      rowIndex,
+      role,
+      cells: [
+        { label: 'WO Category', value: row[C.WO_CAT] ?? null },
+        { label: 'Contractor',  value: row[C.CONTRACTOR] ?? null },
+        { label: 'WO No',       value: row[C.WO_NO] ?? null },
+        { label: 'Indent No',   value: row[C.INDENT_NO] ?? null },
+        { label: 'Indent Type', value: row[C.INDENT_TY] ?? null },
+        { label: 'Indent Date', value: row[C.INDENT_DT] ?? null },
+        { label: 'Material',    value: row[C.MATERIAL] ?? null },
+        { label: 'Qty',         value: row[C.INDENT_QTY] ?? null },
+        { label: 'UOM',         value: row[C.UOM] ?? null },
+        { label: 'Supplier',    value: row[C.SUPPLIER] ?? null },
+        { label: 'PO No',       value: row[C.PO_NO] ?? null },
+        { label: 'PO Date',     value: row[C.PO_DATE] ?? null },
+        { label: 'PO Qty',      value: row[C.PO_QTY] ?? null },
+        { label: 'GRN No',      value: row[C.GRN_NO] ?? null },
+        { label: 'GRN Date',    value: row[C.GRN_DATE] ?? null },
+        { label: 'GRN Qty',     value: row[C.GRN_QTY] ?? null },
+        { label: 'GRN Rate',    value: row[C.GRN_RATE] ?? null },
+        { label: 'GRN Value',   value: row[C.GRN_VALUE] ?? null },
+      ].filter(c => c.value != null && c.value !== ''),
+    }
+  }
 
   function flushMaterial() {
     if (!currentMaterial) return
@@ -149,6 +187,7 @@ export function parseBanded(buffer: ArrayBuffer): LineRecord[] {
       currentIndentDate = str(row[C.INDENT_DT])
       currentSubProject = projectFill[r] || ''
       materialIndexByIndent.set(currentIndentNo, 0)
+      lastIndentSourceRow = makeSourceRow(r, 'indent', row)
       continue
     }
 
@@ -193,6 +232,9 @@ export function parseBanded(buffer: ArrayBuffer): LineRecord[] {
         indentAgeDays: daysSince(currentIndentDate),
         avgGrnLagDays: null,
         status: 'no_po',
+        sourceRows: lastIndentSourceRow
+          ? [lastIndentSourceRow, makeSourceRow(r, 'material', row)]
+          : [makeSourceRow(r, 'material', row)],
       }
       currentPo = null
       continue
@@ -216,6 +258,7 @@ export function parseBanded(buffer: ArrayBuffer): LineRecord[] {
       }
       currentMaterial.pos.push(po)
       currentPo = po
+      currentMaterial.sourceRows?.push(makeSourceRow(r, 'po', row))
       continue
     }
 
@@ -232,6 +275,7 @@ export function parseBanded(buffer: ArrayBuffer): LineRecord[] {
       }
       currentMaterial.grns.push(grn)
       if (currentPo && !currentPo.rate && grn.rate) currentPo.rate = grn.rate
+      currentMaterial.sourceRows?.push(makeSourceRow(r, 'grn', row))
       continue
     }
   }

@@ -12,8 +12,9 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { LineRecord } from '@/lib/procurement'
 import { formatAgeFriendly } from '@/lib/procurement/shared'
-import { Download, ClipboardList, Layers, AlertTriangle, FileSpreadsheet, CheckCircle2 } from 'lucide-react'
+import { Download, ClipboardList, Layers, AlertTriangle, FileSpreadsheet, CheckCircle2, Search } from 'lucide-react'
 import { ChangeBadge } from './ChangeBadge'
+import { SourceInspector } from './SourceInspector'
 
 type GroupKey = 'indent' | 'block'
 type AgeFilter = 'all' | '7' | '14' | '30'
@@ -78,6 +79,7 @@ export function IndentsNeedingPoView({
 }) {
   const [groupBy, setGroupBy] = useState<GroupKey>('indent')
   const [ageFilter, setAgeFilter] = useState<AgeFilter>('all')
+  const [inspectingLine, setInspectingLine] = useState<LineRecord | null>(null)
 
   // Restore preference
   useEffect(() => {
@@ -335,6 +337,15 @@ export function IndentsNeedingPoView({
                               <div className="flex items-start gap-1.5">
                                 <ChangeBadge id={ln.id} newLineIds={newLineIds} changedLineIds={changedLineIds} />
                                 <span className="line-clamp-2 flex-1" title={ln.material}>{ln.material}</span>
+                                <button
+                                  type="button"
+                                  onClick={() => setInspectingLine(ln)}
+                                  className="text-stone-400 hover:text-orange-700 flex-shrink-0 mt-0.5"
+                                  title="Show the Excel rows that built this entry"
+                                  aria-label="Inspect source rows"
+                                >
+                                  <Search className="h-3 w-3" />
+                                </button>
                               </div>
                             </td>
                             {groupBy === 'indent' && (
@@ -363,6 +374,7 @@ export function IndentsNeedingPoView({
           })}
         </div>
       )}
+      <SourceInspector line={inspectingLine} onClose={() => setInspectingLine(null)} />
     </div>
   )
 }
