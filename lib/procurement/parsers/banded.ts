@@ -26,6 +26,8 @@ const C = {
   UOM:        9,
   SUPPLIER:   12,
   PO_NO:      13,
+  PO_CCY:     14,   // "Base Currency" — IN4 fills "INR" here even when the
+                    // rest of the PO row cells are blank (sparse continuation).
   PO_DATE:    15,
   PO_QTY:     17,
   GRN_NO:     18,
@@ -85,6 +87,16 @@ export function parseBanded(buffer: ArrayBuffer): LineRecord[] {
   let currentSubProject = ''
   let currentMaterial: LineRecord | null = null
   let currentPo: PoEntry | null = null
+  /**
+   * Most recent fully-exported PO row on the current indent. When
+   * IN4 emits a sparse "INR-only" continuation row (currency cell
+   * populated but PO no / supplier / qty all blank), we infer the
+   * PO from this — IN4's export silently shares one PO across
+   * several materials of the same indent without re-listing the
+   * PO data on each material's row.
+   * Reset to null whenever a new IND/ row appears.
+   */
+  let lastFullPoOnIndent: PoEntry | null = null
   const materialIndexByIndent = new Map<string, number>()
   /**
    * The "indent header" SourceRow captured the last time we saw an
@@ -188,6 +200,7 @@ export function parseBanded(buffer: ArrayBuffer): LineRecord[] {
       currentSubProject = projectFill[r] || ''
       materialIndexByIndent.set(currentIndentNo, 0)
       lastIndentSourceRow = makeSourceRow(r, 'indent', row)
+      lastFullPoOnIndent = null
       continue
     }
 
@@ -258,6 +271,44 @@ export function parseBanded(buffer: ArrayBuffer): LineRecord[] {
       }
       currentMaterial.pos.push(po)
       currentPo = po
+      lastFullPoOnIndent = po
+      currentMaterial.sourceRows?.push(makeSourceRow(r, 'po', row))
+      continue
+    }
+
+    // ③.5 Sparse "INR-only" continuation row. IN4's export sometimes
+    // drops the PO no/supplier/date/qty when one PO covers several
+    // materials in the same indent, leaving only the currency
+    // marker. Without this branch the material is wrongly flagged
+    // "needs PO" (Aksha's Gabion Box bug — IND/SRASSK/P2I/2026-27/8,
+    // rows 18218 + 18222). Detection: currency populated, every
+    // other identifier column blank, AND we have a real PO from
+    // earlier in the same indent to clone.
+    const currencyCell = str(row[C.PO_CCY])
+    const sparseRow =
+      currencyCell === 'INR' &&
+      !poCell &&
+      !grnCell &&
+      !materialCell &&
+      !indentCell &&
+      !str(row[C.SUPPLIER]) &&
+      !str(row[C.PO_DATE]) &&
+      !num(row[C.PO_QTY])
+    if (sparseRow && currentMaterial && currentMaterial.pos.length === 0 && lastFullPoOnIndent) {
+      const inferred: PoEntry = {
+        poNo: lastFullPoOnIndent.poNo,
+        poDate: lastFullPoOnIndent.poDate,
+        supplier: lastFullPoOnIndent.supplier,
+        // We don't know the actual PO qty for this material — use
+        // its indent qty as a best-effort estimate. Real qty can be
+        // verified via the source-rows inspector.
+        qty: currentMaterial.indentQty,
+        rate: lastFullPoOnIndent.rate,
+        draft: lastFullPoOnIndent.draft,
+        inferred: true,
+      }
+      currentMaterial.pos.push(inferred)
+      currentPo = inferred
       currentMaterial.sourceRows?.push(makeSourceRow(r, 'po', row))
       continue
     }

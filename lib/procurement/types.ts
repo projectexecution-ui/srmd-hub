@@ -41,6 +41,15 @@ export interface PoEntry {
    * it visually so the user knows it's still pending approval.
    */
   draft?: boolean
+  /**
+   * True when this PoEntry was INFERRED from a sparse "INR-only"
+   * continuation row in the source Excel (IN4's export sometimes
+   * drops the PO number / supplier / qty cells on a continuation
+   * row but leaves the currency marker, signalling that the
+   * previous PO covers this material too). The inspector flags it
+   * so the user can verify against IN4.
+   */
+  inferred?: boolean
 }
 
 export interface GrnEntry {

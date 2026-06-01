@@ -395,6 +395,14 @@ export function PendingReceiptsView({
                                       Draft
                                     </span>
                                   )}
+                                  {po.inferred && (
+                                    <span
+                                      className="text-[9px] font-bold uppercase tracking-wider px-1 py-0.5 rounded bg-indigo-100 text-indigo-800 border border-indigo-200"
+                                      title="IN4 export dropped this PO's details on this row but the same PO appears on another material in the same indent. Inferred — verify in IN4."
+                                    >
+                                      Inferred
+                                    </span>
+                                  )}
                                   <span>
                                     {po.poNo
                                       .replace('DRAFT-PO/', '')
