@@ -11,7 +11,7 @@
 
 import * as XLSX from 'xlsx'
 import type { LineRecord, PoEntry, GrnEntry, LineStatus } from '../types'
-import { simplifyBlock, extractDiscipline, cleanMaterial, daysSince, daysBetween, num, str } from '../shared'
+import { simplifyBlock, extractDiscipline, cleanMaterial, daysSince, daysBetween, num, str, projectFromIndentNo } from '../shared'
 
 // Column indices (0-based) verified against real PURCHINDENT_TO_ISSUE_RPT exports.
 const C = {
@@ -157,13 +157,22 @@ export function parseBanded(buffer: ArrayBuffer): LineRecord[] {
       flushMaterial()
       const idx = materialIndexByIndent.get(currentIndentNo) ?? 0
       materialIndexByIndent.set(currentIndentNo, idx + 1)
+      // Project name comes from the INDENT NUMBER'S code (NGH, RU,
+      // SQ, …) — that's IN4's actual project signal. The col 0 site
+      // header is only used as a fallback for malformed indent
+      // numbers, because forward-filling it across rare cross-project
+      // indents leaks the wrong name (e.g. an "ND" office-supplies
+      // indent inheriting "New Guest House").
+      const projectFromCode = projectFromIndentNo(currentIndentNo)
+      const projectName = projectFromCode
+        ?? (currentSubProject.split(' - ')[0] || currentSubProject || 'Unknown').trim()
       currentMaterial = {
         id: `${currentIndentNo}|${idx}`,
         indentNo: currentIndentNo,
         indentDate: currentIndentDate,
         subProject: currentSubProject,
         block: simplifyBlock(currentSubProject),
-        project: (currentSubProject.split(' - ')[0] || currentSubProject || 'Unknown').trim(),
+        project: projectName,
         discipline: extractDiscipline(materialCell),
         material: cleanMaterial(materialCell),
         indentQty: num(row[C.INDENT_QTY]),

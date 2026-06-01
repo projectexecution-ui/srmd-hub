@@ -1,5 +1,63 @@
 // Shared helpers used by both parsers.
 
+/**
+ * Map IN4 indent-number project codes to canonical project names.
+ * Indent numbers look like `IND/SRASSK/<CODE>/<year>/<num>` and the
+ * <CODE> is the one truly reliable signal of which project the indent
+ * belongs to — much more reliable than the col 0 site-header forward
+ * fill (which leaks the last seen header onto unrelated indents that
+ * appear between site bands). The site header is still useful for the
+ * `block` / `subProject` granularity, but project grouping should
+ * key off this map.
+ *
+ * Built from a real PURCHINDENT_TO_ISSUE_RPT export. Add codes here
+ * if a new project shows up.
+ */
+const PROJECT_CODE_TO_NAME: Record<string, string> = {
+  NGH:   'New Guest House',
+  P2ST:  'P2 Stepped Terraces',
+  P2I:   'P2 Infra',
+  P2RH:  'P2 Row Houses',
+  RU:    'Raj Uphaar',
+  SQ:    'Staff Facilities Block',
+  SRAH:  'SR Animal Hospital',
+  WH:    'Warehouse',
+  DAE:   'DN Annex Extension',
+  DN:    'DN Extension',
+  WCRO:  'WC Reg Office',
+  AB:    'Admin Block',
+  PP:    'Prem Parking',
+  CSS:   'Covered Seating Spaces',
+  B01:   'Baby Care and Cloak Room',
+  OSH:   'Old Swadhyay Hall',
+  AIST:  'Ashram Infra (Security Team)',
+  AIS:   'Ashram Infra Signage',
+  RSM:   'Raj Sabhagruh Museum',
+  VVST:  'Vinay Vivek',
+}
+
+/**
+ * Pull the project code out of an indent number. Returns null when
+ * the indent doesn't match the expected `IND/<org>/<code>/...` shape.
+ */
+export function extractIndentCode(indentNo: string): string | null {
+  const m = indentNo.match(/^IND\/[A-Z]+\/([A-Z0-9]+)\//)
+  return m ? m[1] : null
+}
+
+/**
+ * Resolve an indent number to its canonical project name. Falls back
+ * to the raw code (uppercase) when we don't have a mapping — the
+ * admin can hide it via /procurement-tracker/admin if it's spurious,
+ * or it'll just show up as a project named after the code. Returns
+ * null only when the indent number is malformed.
+ */
+export function projectFromIndentNo(indentNo: string): string | null {
+  const code = extractIndentCode(indentNo)
+  if (!code) return null
+  return PROJECT_CODE_TO_NAME[code] ?? code
+}
+
 export function simplifyBlock(sp: string): string {
   if (!sp) return ''
   if (sp.includes('New Guest House B')) return 'NGH – Block B'
