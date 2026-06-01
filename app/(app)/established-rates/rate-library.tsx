@@ -60,7 +60,7 @@ interface Props {
   canEdit: boolean
 }
 
-type SortKey = 'item' | 'l1' | 'updated' | 'wos'
+type SortKey = 'item' | 'latest' | 'updated' | 'wos'
 type SortDir = 'asc' | 'desc'
 
 function fmtINR(n: number | null | undefined): string {
@@ -75,11 +75,10 @@ function displayShort(sub: { name: string; short_name: string | null }): string 
   return s.length > 60 ? s.slice(0, 57).trimEnd() + '…' : s
 }
 
-// Tag the cheapest and the most expensive rate when there's a meaningful gap.
+// Tag the latest rate as the reference for new orders; older quotes go unlabelled.
 function rankBadge(idx: number, total: number): { label: string; classes: string } | null {
-  if (total <= 1) return null              // only one quote → no badge
-  if (idx === 0) return { label: 'Cheapest', classes: 'bg-emerald-100 text-emerald-800 border-emerald-200' }
-  if (idx === total - 1 && total > 2) return { label: 'Highest', classes: 'bg-gray-100 text-gray-500 border-gray-200' }
+  if (total === 0) return null
+  if (idx === 0) return { label: 'Latest', classes: 'bg-emerald-100 text-emerald-800 border-emerald-200' }
   return null
 }
 
@@ -121,7 +120,15 @@ export function RateLibrary({
       if (!m.has(r.subcategory_id)) m.set(r.subcategory_id, [])
       m.get(r.subcategory_id)!.push(r)
     }
-    for (const arr of m.values()) arr.sort((a, b) => a.rate_per_unit - b.rate_per_unit)
+    // Sort latest first (valid_from desc), tie-break by lower rate, then by id.
+    // The first element is the "current going rate" for that sub-category.
+    for (const arr of m.values()) arr.sort((a, b) => {
+      const af = a.valid_from ?? ''
+      const bf = b.valid_from ?? ''
+      if (af !== bf) return bf.localeCompare(af)
+      if (a.rate_per_unit !== b.rate_per_unit) return a.rate_per_unit - b.rate_per_unit
+      return a.id.localeCompare(b.id)
+    })
     return m
   }, [filteredRates])
 
@@ -157,8 +164,8 @@ export function RateLibrary({
     discCode: string | null
     rates: Rate[]
     wos: WoHistory[]
-    l1?: Rate
-    l1PartyName: string
+    latest?: Rate        // most-recent rate (first element of sorted rates)
+    latestPartyName: string
     latestUpdated: string | null
   }
 
@@ -176,11 +183,12 @@ export function RateLibrary({
       if (vendorFilter && rs.length === 0) continue
       // Default: hide items with no rates AND no WOs — they're noise.
       if (!showEmpty && rs.length === 0 && wos.length === 0) continue
-      const l1 = rs[0]
-      const l1PartyName = l1
-        ? (l1.source_type === 'vendor'
-            ? (vendorById.get(l1.vendor_id ?? '')?.name ?? '—')
-            : (contractorById.get(l1.contractor_id ?? '')?.name ?? '—'))
+      // First element is the latest rate (rates already sorted valid_from desc).
+      const latest = rs[0]
+      const latestPartyName = latest
+        ? (latest.source_type === 'vendor'
+            ? (vendorById.get(latest.vendor_id ?? '')?.name ?? '—')
+            : (contractorById.get(latest.contractor_id ?? '')?.name ?? '—'))
         : ''
       const latestUpdated = rs.reduce<string | null>((acc, r) => {
         if (!r.updated_at) return acc
@@ -190,7 +198,7 @@ export function RateLibrary({
       out.push({
         sub, catName: cat.name, catCode: cat.code,
         discId: disc.id, discName: disc.name, discCode: disc.code,
-        rates: rs, wos, l1, l1PartyName, latestUpdated,
+        rates: rs, wos, latest, latestPartyName, latestUpdated,
       })
     }
     return out
@@ -205,7 +213,7 @@ export function RateLibrary({
       (r.sub.short_name ?? '').toLowerCase().includes(lc) ||
       r.catName.toLowerCase().includes(lc) ||
       r.discName.toLowerCase().includes(lc) ||
-      r.l1PartyName.toLowerCase().includes(lc),
+      r.latestPartyName.toLowerCase().includes(lc),
     )
   }, [rows, q])
 
@@ -216,7 +224,7 @@ export function RateLibrary({
     arr.sort((a, b) => {
       switch (sort.key) {
         case 'item':    return mul * a.sub.name.localeCompare(b.sub.name)
-        case 'l1':      return mul * ((a.l1?.rate_per_unit ?? Infinity) - (b.l1?.rate_per_unit ?? Infinity))
+        case 'latest':  return mul * ((a.latest?.rate_per_unit ?? Infinity) - (b.latest?.rate_per_unit ?? Infinity))
         case 'updated': return mul * String(a.latestUpdated ?? '').localeCompare(String(b.latestUpdated ?? ''))
         case 'wos':     return mul * (a.wos.length - b.wos.length)
       }
@@ -317,8 +325,8 @@ export function RateLibrary({
                   <th className="px-2 py-2 w-6"></th>
                   <SortableTh label="Item" k="item" sort={sort} onSort={toggleSort} className="min-w-[16rem]" />
                   <th className="px-2 py-2 w-16">UoM</th>
-                  <SortableTh label="Best rate" k="l1" sort={sort} onSort={toggleSort} className="text-right w-32" />
-                  <th className="px-2 py-2 w-44">Best vendor</th>
+                  <SortableTh label="Latest rate" k="latest" sort={sort} onSort={toggleSort} className="text-right w-32" />
+                  <th className="px-2 py-2 w-44">From vendor</th>
                   <th className="px-2 py-2 text-center w-20">Quotes</th>
                   <SortableTh label="WOs" k="wos" sort={sort} onSort={toggleSort} className="text-center w-16" />
                   <SortableTh label="Updated" k="updated" sort={sort} onSort={toggleSort} className="w-28 hidden md:table-cell" />
@@ -414,7 +422,7 @@ function ItemRow({
   row: {
     sub: Subcategory; catName: string; catCode: string | null;
     discName: string; discCode: string | null;
-    rates: Rate[]; wos: WoHistory[]; l1?: Rate; l1PartyName: string; latestUpdated: string | null;
+    rates: Rate[]; wos: WoHistory[]; latest?: Rate; latestPartyName: string; latestUpdated: string | null;
   }
   isOpen: boolean
   onToggle: () => void
@@ -425,7 +433,7 @@ function ItemRow({
   onDeleteRate: (id: string) => void
   busyRate: string | null
 }) {
-  const { sub, catName, catCode, discName, discCode, rates, wos, l1, l1PartyName, latestUpdated } = row
+  const { sub, catName, catCode, discName, discCode, rates, wos, latest, latestPartyName, latestUpdated } = row
   const others = Math.max(0, rates.length - 1)
 
   return (
@@ -451,11 +459,22 @@ function ItemRow({
           </p>
         </td>
         <td className="px-2 py-2 align-top text-xs text-gray-600">{sub.uom}</td>
-        <td className="px-2 py-2 align-top text-right tabular-nums font-semibold text-gray-900">
-          {l1 ? fmtINR(l1.rate_per_unit) : <span className="text-gray-300">—</span>}
+        <td className="px-2 py-2 align-top text-right">
+          {latest ? (
+            <>
+              <p className="tabular-nums font-semibold text-gray-900">{fmtINR(latest.rate_per_unit)}</p>
+              {latest.valid_from && (
+                <p className="text-[10px] text-gray-400 leading-tight">
+                  {new Date(latest.valid_from).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: '2-digit' })}
+                </p>
+              )}
+            </>
+          ) : (
+            <span className="text-gray-300">—</span>
+          )}
         </td>
-        <td className="px-2 py-2 align-top text-sm text-gray-700 truncate max-w-[12rem]" title={l1PartyName}>
-          {l1PartyName || <span className="text-gray-300">no quotes</span>}
+        <td className="px-2 py-2 align-top text-sm text-gray-700 truncate max-w-[12rem]" title={latestPartyName}>
+          {latestPartyName || <span className="text-gray-300">no quotes</span>}
         </td>
         <td className="px-2 py-2 align-top text-center">
           {rates.length === 0 ? (
