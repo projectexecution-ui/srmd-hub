@@ -1,7 +1,9 @@
 'use client'
-// Library view — 3-level accordion (Discipline → Category → Sub-category rows)
-// with multi-source unit rates per item (L1 / L2 / Ln highlights), search,
-// filters and a "Past WOs" expander.
+// Flat, spreadsheet-style rate library. One row per rate-item.
+//   ▸ Search box + Discipline chip strip (counts inline)
+//   ▸ Sortable table: Item · UoM · L1 rate · Vendor · # quotes · # WOs · Updated
+//   ▸ Click row → inline expand showing all rates (ranked L1/L2/Ln) + Past WOs
+// Designed for the volume that an IN4 Abstract Report dumps in (600-1000 items).
 
 import { useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
@@ -10,7 +12,10 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
-import { ChevronDown, ChevronRight, Plus, Trash2, Loader2 } from 'lucide-react'
+import {
+  ChevronDown, ChevronRight, Plus, Trash2, Loader2, Search, Filter,
+  ArrowUpDown, ArrowUp, ArrowDown,
+} from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { AddRateModal } from './add-rate-modal'
 
@@ -29,6 +34,7 @@ interface Rate {
   valid_till: string | null
   source: string
   source_ref: string | null
+  updated_at: string | null
 }
 interface WoHistory {
   id: string
@@ -54,20 +60,18 @@ interface Props {
   canEdit: boolean
 }
 
+type SortKey = 'item' | 'l1' | 'updated' | 'wos'
+type SortDir = 'asc' | 'desc'
+
 function fmtINR(n: number | null | undefined): string {
   if (n == null) return '—'
   return '₹' + Number(n).toLocaleString('en-IN', { maximumFractionDigits: 2 })
 }
 
-function rankLabel(idx: number, total: number): string {
-  if (total === 1) return 'L1'
-  return 'L' + (idx + 1)
-}
-
 function rankClasses(idx: number): string {
   if (idx === 0) return 'bg-emerald-100 text-emerald-800 border-emerald-200'
-  if (idx === 1) return 'bg-amber-100 text-amber-800 border-amber-200'
-  return 'bg-gray-100 text-gray-600 border-gray-200'
+  if (idx === 1) return 'bg-amber-100   text-amber-800   border-amber-200'
+  return            'bg-gray-100    text-gray-600    border-gray-200'
 }
 
 export function RateLibrary({
@@ -75,59 +79,42 @@ export function RateLibrary({
 }: Props) {
   const router = useRouter()
   const [q, setQ] = useState('')
-  const [discFilter, setDiscFilter] = useState<string>('')
+  const [activeDisc, setActiveDisc] = useState<string>('all')
   const [vendorFilter, setVendorFilter] = useState<string>('')
   const [activeOnly, setActiveOnly] = useState(true)
-  const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
-  const [woExpanded, setWoExpanded] = useState<Set<string>>(new Set())
+  const [sort, setSort] = useState<{ key: SortKey; dir: SortDir }>({ key: 'item', dir: 'asc' })
+  const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const [addingForSub, setAddingForSub] = useState<Subcategory | null>(null)
   const [busyRate, setBusyRate] = useState<string | null>(null)
 
-  // Build lookup maps
+  // ── Lookup maps ──────────────────────────────────────────────
   const vendorById     = useMemo(() => new Map(vendors.map(v => [v.id, v])),     [vendors])
   const contractorById = useMemo(() => new Map(contractors.map(c => [c.id, c])), [contractors])
-  const subById        = useMemo(() => new Map(subcategories.map(s => [s.id, s])), [subcategories])
+  const catById        = useMemo(() => new Map(categories.map(c => [c.id, c])),  [categories])
+  const discById       = useMemo(() => new Map(disciplines.map(d => [d.id, d])), [disciplines])
 
-  // Sub-categories grouped by category
-  const subsByCategory = useMemo(() => {
-    const m = new Map<string, Subcategory[]>()
-    for (const s of subcategories) {
-      if (!m.has(s.category_id)) m.set(s.category_id, [])
-      m.get(s.category_id)!.push(s)
-    }
-    return m
-  }, [subcategories])
+  // ── Filtered rates (active-only + vendor filter applied) ─────
+  const filteredRates = useMemo(() => {
+    const today = new Date().toISOString().slice(0, 10)
+    return rates.filter(r => {
+      if (activeOnly && r.valid_till && r.valid_till < today) return false
+      if (vendorFilter) {
+        if (r.vendor_id !== vendorFilter && r.contractor_id !== vendorFilter) return false
+      }
+      return true
+    })
+  }, [rates, activeOnly, vendorFilter])
 
-  // Categories grouped by discipline
-  const catsByDiscipline = useMemo(() => {
-    const m = new Map<string, Category[]>()
-    for (const c of categories) {
-      if (!m.has(c.discipline_id)) m.set(c.discipline_id, [])
-      m.get(c.discipline_id)!.push(c)
-    }
-    return m
-  }, [categories])
-
-  // Rates grouped by sub-category, sorted ascending. Filtered.
   const ratesBySub = useMemo(() => {
     const m = new Map<string, Rate[]>()
-    const today = new Date().toISOString().slice(0, 10)
-    for (const r of rates) {
-      if (activeOnly && r.valid_till && r.valid_till < today) continue
-      if (vendorFilter) {
-        const matches = r.vendor_id === vendorFilter || r.contractor_id === vendorFilter
-        if (!matches) continue
-      }
+    for (const r of filteredRates) {
       if (!m.has(r.subcategory_id)) m.set(r.subcategory_id, [])
       m.get(r.subcategory_id)!.push(r)
     }
-    for (const arr of m.values()) {
-      arr.sort((a, b) => a.rate_per_unit - b.rate_per_unit)
-    }
+    for (const arr of m.values()) arr.sort((a, b) => a.rate_per_unit - b.rate_per_unit)
     return m
-  }, [rates, activeOnly, vendorFilter])
+  }, [filteredRates])
 
-  // WO history grouped by sub-category
   const woBySub = useMemo(() => {
     const m = new Map<string, WoHistory[]>()
     for (const w of woHistory) {
@@ -138,28 +125,100 @@ export function RateLibrary({
     return m
   }, [woHistory])
 
-  // Search: which sub-categories match?
-  const matchesSearch = useMemo(() => {
-    if (!q.trim()) return null
-    const lc = q.toLowerCase()
-    const matches = new Set<string>()
+  // ── Per-discipline counts for the chip strip ─────────────────
+  const discCounts = useMemo(() => {
+    const m = new Map<string, number>()
     for (const s of subcategories) {
-      if (s.name.toLowerCase().includes(lc)) matches.add(s.id)
+      const cat = catById.get(s.category_id)
+      if (!cat) continue
+      const d = cat.discipline_id
+      m.set(d, (m.get(d) ?? 0) + 1)
     }
-    return matches
-  }, [q, subcategories])
+    return m
+  }, [subcategories, catById])
 
-  function toggleCollapse(key: string) {
-    setCollapsed(s => {
-      const next = new Set(s)
-      if (next.has(key)) next.delete(key); else next.add(key)
-      return next
-    })
+  // ── Compose rows ─────────────────────────────────────────────
+  interface Row {
+    sub: Subcategory
+    catName: string
+    catCode: string | null
+    discId: string
+    discName: string
+    discCode: string | null
+    rates: Rate[]
+    wos: WoHistory[]
+    l1?: Rate
+    l1PartyName: string
+    latestUpdated: string | null
   }
-  function toggleWo(subId: string) {
-    setWoExpanded(s => {
+
+  const rows: Row[] = useMemo(() => {
+    const out: Row[] = []
+    for (const sub of subcategories) {
+      const cat = catById.get(sub.category_id)
+      if (!cat) continue
+      const disc = discById.get(cat.discipline_id)
+      if (!disc) continue
+      if (activeDisc !== 'all' && activeDisc !== disc.id) continue
+      const rs = ratesBySub.get(sub.id) ?? []
+      const wos = woBySub.get(sub.id) ?? []
+      // Vendor filter: also drop sub-cats with zero matching rates
+      if (vendorFilter && rs.length === 0) continue
+      const l1 = rs[0]
+      const l1PartyName = l1
+        ? (l1.source_type === 'vendor'
+            ? (vendorById.get(l1.vendor_id ?? '')?.name ?? '—')
+            : (contractorById.get(l1.contractor_id ?? '')?.name ?? '—'))
+        : ''
+      const latestUpdated = rs.reduce<string | null>((acc, r) => {
+        if (!r.updated_at) return acc
+        if (!acc || r.updated_at > acc) return r.updated_at
+        return acc
+      }, null)
+      out.push({
+        sub, catName: cat.name, catCode: cat.code,
+        discId: disc.id, discName: disc.name, discCode: disc.code,
+        rates: rs, wos, l1, l1PartyName, latestUpdated,
+      })
+    }
+    return out
+  }, [subcategories, catById, discById, activeDisc, ratesBySub, woBySub, vendorFilter, vendorById, contractorById])
+
+  // ── Search filter ────────────────────────────────────────────
+  const searched = useMemo(() => {
+    if (!q.trim()) return rows
+    const lc = q.toLowerCase()
+    return rows.filter(r =>
+      r.sub.name.toLowerCase().includes(lc) ||
+      r.catName.toLowerCase().includes(lc) ||
+      r.discName.toLowerCase().includes(lc) ||
+      r.l1PartyName.toLowerCase().includes(lc),
+    )
+  }, [rows, q])
+
+  // ── Sort ─────────────────────────────────────────────────────
+  const sorted = useMemo(() => {
+    const arr = [...searched]
+    const mul = sort.dir === 'asc' ? 1 : -1
+    arr.sort((a, b) => {
+      switch (sort.key) {
+        case 'item':    return mul * a.sub.name.localeCompare(b.sub.name)
+        case 'l1':      return mul * ((a.l1?.rate_per_unit ?? Infinity) - (b.l1?.rate_per_unit ?? Infinity))
+        case 'updated': return mul * String(a.latestUpdated ?? '').localeCompare(String(b.latestUpdated ?? ''))
+        case 'wos':     return mul * (a.wos.length - b.wos.length)
+      }
+    })
+    return arr
+  }, [searched, sort])
+
+  function toggleSort(key: SortKey) {
+    setSort(s => s.key === key ? { key, dir: s.dir === 'asc' ? 'desc' : 'asc' } : { key, dir: 'asc' })
+  }
+
+  function toggleExpand(id: string) {
+    setExpanded(s => {
       const next = new Set(s)
-      if (next.has(subId)) next.delete(subId); else next.add(subId)
+      if (next.has(id)) next.delete(id); else next.add(id)
       return next
     })
   }
@@ -173,11 +232,7 @@ export function RateLibrary({
     router.refresh()
   }
 
-  const filteredDisciplines = discFilter
-    ? disciplines.filter(d => d.id === discFilter)
-    : disciplines
-
-  // Vendor/contractor combined options for filter
+  const totalShown = sorted.length
   const allParties = useMemo(() => {
     const out: Array<{ id: string; label: string }> = []
     for (const v of vendors)     out.push({ id: v.id, label: v.name })
@@ -186,189 +241,106 @@ export function RateLibrary({
   }, [vendors, contractors])
 
   return (
-    <div className="space-y-4">
-      {/* ── Filter strip ─────────────────────────────────────── */}
+    <div className="space-y-3">
+      {/* ── Filter strip ────────────────────────────────────── */}
       <Card>
-        <CardContent className="pt-4 pb-4 flex flex-col md:flex-row gap-2 md:items-center">
-          <Input
-            value={q}
-            onChange={e => setQ(e.target.value)}
-            placeholder="Search rate-item by name…"
-            className="md:max-w-sm"
-          />
-          <select
-            value={discFilter}
-            onChange={e => setDiscFilter(e.target.value)}
-            className="h-10 rounded-xl border border-gray-300 bg-white px-3 text-sm"
-          >
-            <option value="">All disciplines</option>
-            {disciplines.map(d => (
-              <option key={d.id} value={d.id}>{d.code ? `${d.code} ` : ''}{d.name}</option>
-            ))}
-          </select>
-          <select
-            value={vendorFilter}
-            onChange={e => setVendorFilter(e.target.value)}
-            className="h-10 rounded-xl border border-gray-300 bg-white px-3 text-sm"
-          >
-            <option value="">All vendors / contractors</option>
-            {allParties.map(p => <option key={p.id} value={p.id}>{p.label}</option>)}
-          </select>
-          <label className="inline-flex items-center gap-1.5 text-sm text-gray-700 ml-auto">
-            <input type="checkbox" checked={activeOnly} onChange={e => setActiveOnly(e.target.checked)} />
-            Active only
-          </label>
+        <CardContent className="pt-4 pb-3 space-y-3">
+          <div className="flex flex-col md:flex-row gap-2 md:items-center">
+            <div className="relative flex-1 max-w-md">
+              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+              <Input
+                value={q}
+                onChange={e => setQ(e.target.value)}
+                placeholder="Search item, category, vendor…"
+                className="pl-8"
+              />
+            </div>
+            <div className="flex items-center gap-2 md:ml-auto">
+              <Filter className="h-4 w-4 text-gray-400" />
+              <select
+                value={vendorFilter}
+                onChange={e => setVendorFilter(e.target.value)}
+                className="h-10 rounded-xl border border-gray-300 bg-white px-3 text-sm"
+              >
+                <option value="">All vendors / contractors</option>
+                {allParties.map(p => <option key={p.id} value={p.id}>{p.label}</option>)}
+              </select>
+              <label className="inline-flex items-center gap-1.5 text-sm text-gray-700 whitespace-nowrap">
+                <input type="checkbox" checked={activeOnly} onChange={e => setActiveOnly(e.target.checked)} />
+                Active only
+              </label>
+            </div>
+          </div>
+
+          {/* Discipline chip strip */}
+          <div className="overflow-x-auto -mx-1 px-1">
+            <div className="flex gap-1.5 min-w-min">
+              <Chip label="All" count={subcategories.length} active={activeDisc === 'all'} onClick={() => setActiveDisc('all')} />
+              {disciplines.map(d => (
+                <Chip
+                  key={d.id}
+                  label={(d.code ? `${d.code} ` : '') + d.name}
+                  count={discCounts.get(d.id) ?? 0}
+                  active={activeDisc === d.id}
+                  onClick={() => setActiveDisc(d.id)}
+                />
+              ))}
+            </div>
+          </div>
         </CardContent>
       </Card>
 
-      {/* ── Accordions ──────────────────────────────────────── */}
-      {filteredDisciplines.map(d => {
-        const cats = catsByDiscipline.get(d.id) ?? []
-        // Count sub-categories under this discipline (after search match)
-        const allSubsInDisc = cats.flatMap(c => subsByCategory.get(c.id) ?? [])
-        const visibleSubsInDisc = matchesSearch
-          ? allSubsInDisc.filter(s => matchesSearch.has(s.id))
-          : allSubsInDisc
-        if (matchesSearch && visibleSubsInDisc.length === 0) return null
-
-        const discCollapsed = collapsed.has(`d:${d.id}`)
-        return (
-          <Card key={d.id}>
-            <CardContent className="pt-4 pb-4">
-              <button
-                type="button"
-                onClick={() => toggleCollapse(`d:${d.id}`)}
-                className="w-full flex items-center justify-between gap-2 text-left"
-              >
-                <span className="flex items-center gap-2">
-                  {discCollapsed ? <ChevronRight className="h-4 w-4 text-gray-400" /> : <ChevronDown className="h-4 w-4 text-gray-400" />}
-                  {d.code && <span className="font-mono text-xs text-gray-400">{d.code}</span>}
-                  <span className="font-bold text-gray-900">{d.name}</span>
-                </span>
-                <span className="text-xs text-gray-500">{visibleSubsInDisc.length} items</span>
-              </button>
-
-              {!discCollapsed && (
-                <div className="mt-3 space-y-3">
-                  {cats.map(cat => {
-                    const subs = subsByCategory.get(cat.id) ?? []
-                    const visibleSubs = matchesSearch
-                      ? subs.filter(s => matchesSearch.has(s.id))
-                      : subs
-                    if (visibleSubs.length === 0) return null
-                    const catCollapsed = collapsed.has(`c:${cat.id}`)
-                    return (
-                      <div key={cat.id} className="border-l-2 border-gray-100 pl-3">
-                        <button
-                          type="button"
-                          onClick={() => toggleCollapse(`c:${cat.id}`)}
-                          className="w-full flex items-center justify-between gap-2 text-left py-1"
-                        >
-                          <span className="flex items-center gap-2">
-                            {catCollapsed ? <ChevronRight className="h-3.5 w-3.5 text-gray-400" /> : <ChevronDown className="h-3.5 w-3.5 text-gray-400" />}
-                            {cat.code && <span className="font-mono text-[11px] text-gray-400">{cat.code}</span>}
-                            <span className="text-sm font-semibold text-gray-700">{cat.name}</span>
-                          </span>
-                          <span className="text-[11px] text-gray-500">{visibleSubs.length} items</span>
-                        </button>
-
-                        {!catCollapsed && (
-                          <div className="mt-2 space-y-2">
-                            {visibleSubs.map(sub => {
-                              const subRates = ratesBySub.get(sub.id) ?? []
-                              const subWos = woBySub.get(sub.id) ?? []
-                              const wosOpen = woExpanded.has(sub.id)
-                              return (
-                                <div key={sub.id} className="border border-gray-100 rounded-lg p-3 bg-white">
-                                  <div className="flex items-start justify-between gap-2 mb-2">
-                                    <p className="text-sm text-gray-900">
-                                      <span className="font-medium">{sub.name}</span>
-                                      <span className="text-xs text-gray-500"> · per {sub.uom}</span>
-                                    </p>
-                                    {canEdit && (
-                                      <Button size="sm" variant="outline" onClick={() => setAddingForSub(sub)}>
-                                        <Plus className="h-3.5 w-3.5" /> Add rate
-                                      </Button>
-                                    )}
-                                  </div>
-
-                                  {subRates.length === 0 ? (
-                                    <p className="text-xs text-gray-400 italic mb-2">No rates yet.</p>
-                                  ) : (
-                                    <div className="space-y-1 mb-2">
-                                      {subRates.map((r, idx) => {
-                                        const partyName = r.source_type === 'vendor'
-                                          ? vendorById.get(r.vendor_id ?? '')?.name
-                                          : contractorById.get(r.contractor_id ?? '')?.name
-                                        return (
-                                          <div key={r.id} className="flex items-center gap-2 text-sm">
-                                            <Badge className={cn('w-7 justify-center text-[10px] border', rankClasses(idx))}>
-                                              {rankLabel(idx, subRates.length)}
-                                            </Badge>
-                                            <span className="text-gray-700 flex-1 truncate">{partyName || '—'}</span>
-                                            <span className="font-semibold text-gray-900 tabular-nums">{fmtINR(r.rate_per_unit)}</span>
-                                            {r.gst_pct != null && <span className="text-[11px] text-gray-500">+{r.gst_pct}%</span>}
-                                            <span className="text-[11px] text-gray-400 hidden md:inline">
-                                              {r.valid_from}{r.valid_till ? ` → ${r.valid_till}` : ' → open'}
-                                            </span>
-                                            {r.source !== 'manual' && (
-                                              <span className="text-[10px] text-gray-400 italic">{r.source}</span>
-                                            )}
-                                            {canEdit && (
-                                              <Button
-                                                type="button" size="sm" variant="ghost"
-                                                onClick={() => deleteRate(r.id)}
-                                                disabled={busyRate === r.id}
-                                                className="text-rose-600 hover:bg-rose-50 h-7 w-7 p-0"
-                                              >
-                                                {busyRate === r.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
-                                              </Button>
-                                            )}
-                                          </div>
-                                        )
-                                      })}
-                                    </div>
-                                  )}
-
-                                  {subWos.length > 0 && (
-                                    <div className="mt-2">
-                                      <button
-                                        type="button"
-                                        onClick={() => toggleWo(sub.id)}
-                                        className="text-[11px] text-blue-600 hover:underline inline-flex items-center gap-1"
-                                      >
-                                        {wosOpen ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
-                                        Past WOs ({subWos.length})
-                                      </button>
-                                      {wosOpen && (
-                                        <div className="mt-1 space-y-1 pl-4">
-                                          {subWos.map(w => (
-                                            <div key={w.id} className="text-[11px] text-gray-600 flex flex-wrap items-center gap-2">
-                                              <span className="font-mono text-blue-600">{w.wo_number}</span>
-                                              <span>{w.contractor_name}</span>
-                                              {w.base_value != null && w.base_value > 0 && <span className="font-semibold">{fmtINR(w.base_value)}</span>}
-                                              <span className="text-gray-400">{w.from_date} → {w.to_date}</span>
-                                              {w.status && <Badge className="text-[10px]" variant="secondary">{w.status}</Badge>}
-                                            </div>
-                                          ))}
-                                        </div>
-                                      )}
-                                    </div>
-                                  )}
-                                </div>
-                              )
-                            })}
-                          </div>
-                        )}
-                      </div>
-                    )
-                  })}
-                </div>
+      {/* ── Table ──────────────────────────────────────────── */}
+      <Card>
+        <CardContent className="p-0">
+          <div className="overflow-x-auto">
+            <table className="min-w-full text-sm">
+              <thead className="bg-gray-50 sticky top-0 z-10">
+                <tr className="text-left text-[11px] uppercase tracking-wide text-gray-500">
+                  <th className="px-2 py-2 w-6"></th>
+                  <SortableTh label="Item" k="item" sort={sort} onSort={toggleSort} className="min-w-[16rem]" />
+                  <th className="px-2 py-2 w-16">UoM</th>
+                  <SortableTh label="L1 rate" k="l1" sort={sort} onSort={toggleSort} className="text-right w-32" />
+                  <th className="px-2 py-2 w-44">Best vendor</th>
+                  <th className="px-2 py-2 text-center w-20">Quotes</th>
+                  <SortableTh label="WOs" k="wos" sort={sort} onSort={toggleSort} className="text-center w-16" />
+                  <SortableTh label="Updated" k="updated" sort={sort} onSort={toggleSort} className="w-28 hidden md:table-cell" />
+                  <th className="px-2 py-2 w-12 text-right">{canEdit ? 'Add' : ''}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {sorted.length === 0 ? (
+                  <tr><td colSpan={9} className="px-4 py-8 text-center text-sm text-gray-400 italic">No items match the current filters.</td></tr>
+                ) : sorted.map(row => {
+                  const isOpen = expanded.has(row.sub.id)
+                  return (
+                    <ItemRow
+                      key={row.sub.id}
+                      row={row}
+                      isOpen={isOpen}
+                      onToggle={() => toggleExpand(row.sub.id)}
+                      vendorById={vendorById}
+                      contractorById={contractorById}
+                      canEdit={canEdit}
+                      onAdd={() => setAddingForSub(row.sub)}
+                      onDeleteRate={deleteRate}
+                      busyRate={busyRate}
+                    />
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+          {sorted.length > 0 && (
+            <div className="px-3 py-2 text-[11px] text-gray-500 border-t border-gray-100">
+              Showing <b>{totalShown}</b> item{totalShown === 1 ? '' : 's'}
+              {activeDisc !== 'all' && discById.get(activeDisc) && (
+                <> in <b>{discById.get(activeDisc)!.name}</b></>
               )}
-            </CardContent>
-          </Card>
-        )
-      })}
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       {addingForSub && (
         <AddRateModal
@@ -380,5 +352,191 @@ export function RateLibrary({
         />
       )}
     </div>
+  )
+}
+
+function Chip({ label, count, active, onClick }: {
+  label: string; count: number; active: boolean; onClick: () => void
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        'inline-flex items-center gap-1.5 h-8 px-3 rounded-full text-xs font-semibold whitespace-nowrap transition-colors',
+        active
+          ? 'bg-blue-600 text-white'
+          : 'bg-white border border-gray-200 text-gray-700 hover:bg-gray-50',
+      )}
+    >
+      <span>{label}</span>
+      <span className={cn('text-[10px] font-bold rounded-full px-1.5 py-0.5', active ? 'bg-blue-700' : 'bg-gray-100 text-gray-500')}>{count}</span>
+    </button>
+  )
+}
+
+function SortableTh({ label, k, sort, onSort, className }: {
+  label: string; k: SortKey; sort: { key: SortKey; dir: 'asc' | 'desc' }; onSort: (k: SortKey) => void; className?: string
+}) {
+  const active = sort.key === k
+  return (
+    <th className={cn('px-2 py-2', className)}>
+      <button type="button" onClick={() => onSort(k)} className="inline-flex items-center gap-1 hover:text-gray-700">
+        {label}
+        {active
+          ? (sort.dir === 'asc' ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />)
+          : <ArrowUpDown className="h-3 w-3 text-gray-300" />}
+      </button>
+    </th>
+  )
+}
+
+function ItemRow({
+  row, isOpen, onToggle, vendorById, contractorById, canEdit, onAdd, onDeleteRate, busyRate,
+}: {
+  row: {
+    sub: Subcategory; catName: string; catCode: string | null;
+    discName: string; discCode: string | null;
+    rates: Rate[]; wos: WoHistory[]; l1?: Rate; l1PartyName: string; latestUpdated: string | null;
+  }
+  isOpen: boolean
+  onToggle: () => void
+  vendorById: Map<string, Opt>
+  contractorById: Map<string, Opt>
+  canEdit: boolean
+  onAdd: () => void
+  onDeleteRate: (id: string) => void
+  busyRate: string | null
+}) {
+  const { sub, catName, catCode, discName, discCode, rates, wos, l1, l1PartyName, latestUpdated } = row
+  const others = Math.max(0, rates.length - 1)
+
+  return (
+    <>
+      <tr
+        className={cn('border-t border-gray-100 hover:bg-gray-50 cursor-pointer', isOpen && 'bg-blue-50/40')}
+        onClick={onToggle}
+      >
+        <td className="px-2 py-2 align-top">
+          {isOpen ? <ChevronDown className="h-4 w-4 text-gray-400" /> : <ChevronRight className="h-4 w-4 text-gray-400" />}
+        </td>
+        <td className="px-2 py-2 align-top">
+          <p className="text-sm text-gray-900 font-medium line-clamp-2">{sub.name}</p>
+          <p className="text-[11px] text-gray-500 mt-0.5">
+            {discCode && <span className="font-mono">{discCode}</span>} {discName}
+            <span className="text-gray-300 mx-1">›</span>
+            {catCode && <span className="font-mono">{catCode}</span>} {catName}
+          </p>
+        </td>
+        <td className="px-2 py-2 align-top text-xs text-gray-600">{sub.uom}</td>
+        <td className="px-2 py-2 align-top text-right tabular-nums font-semibold text-gray-900">
+          {l1 ? fmtINR(l1.rate_per_unit) : <span className="text-gray-300">—</span>}
+        </td>
+        <td className="px-2 py-2 align-top text-sm text-gray-700 truncate max-w-[12rem]" title={l1PartyName}>
+          {l1PartyName || <span className="text-gray-300">no quotes</span>}
+        </td>
+        <td className="px-2 py-2 align-top text-center">
+          {rates.length === 0 ? (
+            <span className="text-gray-300 text-xs">—</span>
+          ) : others > 0 ? (
+            <Badge variant="secondary" className="text-[10px]">{rates.length}</Badge>
+          ) : (
+            <Badge className="bg-emerald-100 text-emerald-800 text-[10px]">1</Badge>
+          )}
+        </td>
+        <td className="px-2 py-2 align-top text-center">
+          {wos.length > 0 ? (
+            <Badge variant="default" className="text-[10px]">{wos.length}</Badge>
+          ) : <span className="text-gray-300 text-xs">—</span>}
+        </td>
+        <td className="px-2 py-2 align-top text-[11px] text-gray-500 hidden md:table-cell">
+          {latestUpdated ? new Date(latestUpdated).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: '2-digit' }) : '—'}
+        </td>
+        <td className="px-2 py-2 align-top text-right">
+          {canEdit && (
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={(e) => { e.stopPropagation(); onAdd() }}
+              className="h-7 w-7 p-0"
+              title="Add rate"
+            >
+              <Plus className="h-4 w-4" />
+            </Button>
+          )}
+        </td>
+      </tr>
+
+      {isOpen && (
+        <tr className="bg-blue-50/30 border-t border-blue-100">
+          <td></td>
+          <td colSpan={8} className="px-3 py-3 space-y-3">
+            {/* All rates ranked */}
+            {rates.length === 0 ? (
+              <p className="text-sm text-gray-500 italic">
+                No rates yet for this item. {canEdit && <button onClick={onAdd} className="text-blue-600 hover:underline">Add the first one</button>}
+              </p>
+            ) : (
+              <div>
+                <p className="text-[11px] uppercase tracking-wide font-semibold text-gray-500 mb-1.5">
+                  Rates ({rates.length})
+                </p>
+                <div className="space-y-1">
+                  {rates.map((r, idx) => {
+                    const party = r.source_type === 'vendor'
+                      ? vendorById.get(r.vendor_id ?? '')?.name
+                      : contractorById.get(r.contractor_id ?? '')?.name
+                    return (
+                      <div key={r.id} className="flex items-center gap-2 text-sm bg-white border border-gray-100 rounded-md px-2 py-1.5">
+                        <Badge className={cn('w-7 justify-center text-[10px] border', rankClasses(idx))}>L{idx + 1}</Badge>
+                        <span className="text-gray-700 flex-1 truncate" title={party}>{party || '—'}</span>
+                        <span className="font-semibold text-gray-900 tabular-nums">{fmtINR(r.rate_per_unit)}</span>
+                        {r.gst_pct != null && <span className="text-[11px] text-gray-500">+{r.gst_pct}%</span>}
+                        <span className="text-[11px] text-gray-400 hidden md:inline">
+                          {r.valid_from}{r.valid_till ? ` → ${r.valid_till}` : ' → open'}
+                        </span>
+                        {r.source !== 'manual' && (
+                          <span className="text-[10px] text-gray-400 italic">{r.source}</span>
+                        )}
+                        {canEdit && (
+                          <Button
+                            type="button" size="sm" variant="ghost"
+                            onClick={(e) => { e.stopPropagation(); onDeleteRate(r.id) }}
+                            disabled={busyRate === r.id}
+                            className="text-rose-600 hover:bg-rose-50 h-7 w-7 p-0"
+                          >
+                            {busyRate === r.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
+                          </Button>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* Past WOs */}
+            {wos.length > 0 && (
+              <div>
+                <p className="text-[11px] uppercase tracking-wide font-semibold text-gray-500 mb-1.5">
+                  Past WOs ({wos.length})
+                </p>
+                <div className="space-y-1">
+                  {wos.map(w => (
+                    <div key={w.id} className="text-[11px] text-gray-600 flex flex-wrap items-center gap-2 bg-white border border-gray-100 rounded-md px-2 py-1.5">
+                      <span className="font-mono text-blue-600">{w.wo_number}</span>
+                      <span className="text-gray-800">{w.contractor_name}</span>
+                      {w.base_value != null && w.base_value > 0 && <span className="font-semibold">{fmtINR(w.base_value)}</span>}
+                      <span className="text-gray-400">{w.from_date} → {w.to_date}</span>
+                      {w.status && <Badge className="text-[10px]" variant="secondary">{w.status}</Badge>}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </td>
+        </tr>
+      )}
+    </>
   )
 }
