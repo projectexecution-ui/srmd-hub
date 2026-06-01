@@ -57,13 +57,14 @@ export async function importIn4Abstract(formData: FormData): Promise<ImportResul
   const stats = { ...emptyStats() }
   stats.rows_total = rows.length
 
-  // Load existing taxonomy + parties so we don't re-create
-  const [discRes, catRes, subRes, vendorRes, contractorRes] = await Promise.all([
+  // Load existing taxonomy + parties + projects so we don't re-create
+  const [discRes, catRes, subRes, vendorRes, contractorRes, projectsRes] = await Promise.all([
     supabase.from('est_disciplines').select('id, code, name'),
     supabase.from('est_categories').select('id, discipline_id, code, name'),
     supabase.from('est_subcategories').select('id, category_id, name'),
     supabase.from('vendors').select('id, name'),
     supabase.from('jmr_contractors').select('id, name'),
+    supabase.from('projects').select('id, code, name, parent_project_id'),
   ])
 
   const discByCode = new Map<string, string>(
@@ -81,6 +82,29 @@ export async function importIn4Abstract(formData: FormData): Promise<ImportResul
   const contractorByName = new Map<string, string>(
     (contractorRes.data ?? []).map(c => [c.name.toLowerCase(), c.id]),
   )
+
+  // Project lookup: match by name OR code. Prefer sub-project (parent_project_id IS NOT NULL)
+  // when both a parent and a sub-project share a name.
+  const projectsAll = projectsRes.data ?? []
+  const projectByName = new Map<string, string>()
+  // Two-pass: sub-projects first (they win on a tie), then parents.
+  for (const p of projectsAll) {
+    if (p.parent_project_id) projectByName.set(p.name.toLowerCase(), p.id)
+  }
+  for (const p of projectsAll) {
+    const k = p.name.toLowerCase()
+    if (!projectByName.has(k)) projectByName.set(k, p.id)
+    if (p.code) {
+      const ck = p.code.toLowerCase()
+      if (!projectByName.has(ck)) projectByName.set(ck, p.id)
+    }
+  }
+  // For sub-project look-up: try sub-project name first, then parent name, then null.
+  function resolveProjectId(subName: string, parentName: string): string | null {
+    if (subName && projectByName.has(subName.toLowerCase())) return projectByName.get(subName.toLowerCase())!
+    if (parentName && projectByName.has(parentName.toLowerCase())) return projectByName.get(parentName.toLowerCase())!
+    return null
+  }
 
   // 1. Disciplines
   for (const [code, line] of extract.disciplines) {
@@ -161,8 +185,10 @@ export async function importIn4Abstract(formData: FormData): Promise<ImportResul
       rate_per_unit:  r.rate,
       valid_from:     r.validFrom || null,
       valid_till:     r.validTill || null,
+      project_id:     resolveProjectId(r.subProjectName, r.projectName),
       source_ref:     r.wo,
       source:         'in4-abstract',
+      remarks:        r.subProjectName ? `Sub-project: ${r.subProjectName}` : null,
       created_by:     profile.id,
     }
     const { error } = await supabase.from('est_rates').insert(payload)
@@ -188,6 +214,7 @@ export async function importIn4Abstract(formData: FormData): Promise<ImportResul
     const catId = discId ? (catByKey.get(`${discId}|${w.catCode.toLowerCase()}`) ?? null) : null
     const payload = {
       wo_number:             w.wo,
+      project_id:            resolveProjectId(w.subProjectName, w.projectName),
       contractor_name:       w.contractor,
       vendor_id:             party?.type === 'vendor'     ? party.id : null,
       contractor_id:         party?.type === 'contractor' ? party.id : null,
@@ -201,6 +228,7 @@ export async function importIn4Abstract(formData: FormData): Promise<ImportResul
       base_value:            w.baseValue || null,
       source_file_name:      file.name,
       imported_by:           profile.id,
+      remarks:               w.subProjectName ? `Sub-project: ${w.subProjectName}` : null,
     }
     const { error } = await supabase.from('est_wo_history')
       .upsert(payload, { onConflict: 'wo_number' })
@@ -245,14 +273,34 @@ export async function importIn4WoDetail(formData: FormData): Promise<ImportResul
   const stats = { ...emptyStats() }
   stats.rows_total = rows.length
 
-  const [vendorRes, contractorRes, subRes] = await Promise.all([
+  const [vendorRes, contractorRes, subRes, projectsRes] = await Promise.all([
     supabase.from('vendors').select('id, name'),
     supabase.from('jmr_contractors').select('id, name'),
     supabase.from('est_subcategories').select('id, name'),
+    supabase.from('projects').select('id, code, name, parent_project_id'),
   ])
   const vendorByName = new Map((vendorRes.data ?? []).map(v => [v.name.toLowerCase(), v.id]))
   const contractorByName = new Map((contractorRes.data ?? []).map(c => [c.name.toLowerCase(), c.id]))
   const subByName = new Map((subRes.data ?? []).map(s => [s.name.toLowerCase(), s.id]))
+
+  const projectsAll = projectsRes.data ?? []
+  const projectByName = new Map<string, string>()
+  for (const p of projectsAll) {
+    if (p.parent_project_id) projectByName.set(p.name.toLowerCase(), p.id)
+  }
+  for (const p of projectsAll) {
+    const k = p.name.toLowerCase()
+    if (!projectByName.has(k)) projectByName.set(k, p.id)
+    if (p.code) {
+      const ck = p.code.toLowerCase()
+      if (!projectByName.has(ck)) projectByName.set(ck, p.id)
+    }
+  }
+  function resolveProjectId(subName: string, parentName: string): string | null {
+    if (subName && projectByName.has(subName.toLowerCase())) return projectByName.get(subName.toLowerCase())!
+    if (parentName && projectByName.has(parentName.toLowerCase())) return projectByName.get(parentName.toLowerCase())!
+    return null
+  }
 
   for (const r of rows) {
     const row = extractWoDetailRow(r)
@@ -276,6 +324,7 @@ export async function importIn4WoDetail(formData: FormData): Promise<ImportResul
 
     const payload = {
       wo_number:             row.wo_number,
+      project_id:            resolveProjectId(row.sub_project_name, row.project_name),
       contractor_name:       row.contractor_name,
       vendor_id:             vendorId,
       contractor_id:         contractorId,

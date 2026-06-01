@@ -34,14 +34,17 @@ interface Rate {
   valid_till: string | null
   source: string
   source_ref: string | null
+  project_id: string | null
   updated_at: string | null
 }
+interface Project { id: string; code: string | null; name: string; parent_project_id: string | null }
 interface WoHistory {
   id: string
   wo_number: string
   contractor_name: string
   work_description: string | null
   subcategory_id: string | null
+  project_id: string | null
   from_date: string | null
   to_date: string | null
   status: string | null
@@ -57,6 +60,7 @@ interface Props {
   woHistory: WoHistory[]
   vendors: Opt[]
   contractors: Opt[]
+  projects: Project[]
   canEdit: boolean
 }
 
@@ -83,11 +87,12 @@ function rankBadge(idx: number, total: number): { label: string; classes: string
 }
 
 export function RateLibrary({
-  disciplines, categories, subcategories, rates, woHistory, vendors, contractors, canEdit,
+  disciplines, categories, subcategories, rates, woHistory, vendors, contractors, projects, canEdit,
 }: Props) {
   const router = useRouter()
   const [q, setQ] = useState('')
   const [activeDisc, setActiveDisc] = useState<string>('all')
+  const [activeProject, setActiveProject] = useState<string>('all')
   const [vendorFilter, setVendorFilter] = useState<string>('')
   const [activeOnly, setActiveOnly] = useState(true)
   const [showEmpty, setShowEmpty] = useState(false)
@@ -101,6 +106,16 @@ export function RateLibrary({
   const contractorById = useMemo(() => new Map(contractors.map(c => [c.id, c])), [contractors])
   const catById        = useMemo(() => new Map(categories.map(c => [c.id, c])),  [categories])
   const discById       = useMemo(() => new Map(disciplines.map(d => [d.id, d])), [disciplines])
+  const projectById    = useMemo(() => new Map(projects.map(p => [p.id, p])),    [projects])
+  // Only show top-level projects (parents) in the chip strip; sub-projects roll up to their parent.
+  // Parent id for a row → use parent_project_id if set, else self id.
+  function rootProjectId(pid: string | null | undefined): string | null {
+    if (!pid) return null
+    const p = projectById.get(pid)
+    if (!p) return null
+    return p.parent_project_id ?? p.id
+  }
+  const parentProjects = useMemo(() => projects.filter(p => !p.parent_project_id), [projects])
 
   // ── Filtered rates (active-only + vendor filter applied) ─────
   const filteredRates = useMemo(() => {
@@ -110,9 +125,12 @@ export function RateLibrary({
       if (vendorFilter) {
         if (r.vendor_id !== vendorFilter && r.contractor_id !== vendorFilter) return false
       }
+      if (activeProject !== 'all') {
+        if (rootProjectId(r.project_id) !== activeProject) return false
+      }
       return true
     })
-  }, [rates, activeOnly, vendorFilter])
+  }, [rates, activeOnly, vendorFilter, activeProject, projectById])
 
   const ratesBySub = useMemo(() => {
     const m = new Map<string, Rate[]>()
@@ -153,6 +171,19 @@ export function RateLibrary({
     }
     return m
   }, [subcategories, catById])
+
+  // Per-project rate counts (rolled up to parent project) for the project chip strip
+  const projectRateCounts = useMemo(() => {
+    const m = new Map<string, number>()
+    let untagged = 0
+    for (const r of rates) {
+      const root = rootProjectId(r.project_id)
+      if (!root) { untagged++; continue }
+      m.set(root, (m.get(root) ?? 0) + 1)
+    }
+    return { byProject: m, untagged }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rates, projectById])
 
   // ── Compose rows ─────────────────────────────────────────────
   interface Row {
@@ -297,9 +328,34 @@ export function RateLibrary({
             </div>
           </div>
 
+          {/* Project chip strip — only shown if there are projects worth filtering by */}
+          {parentProjects.length > 0 && (
+            <div className="overflow-x-auto -mx-1 px-1">
+              <div className="flex items-center gap-1.5 min-w-min">
+                <span className="text-[10px] font-bold uppercase tracking-wide text-gray-400 whitespace-nowrap pr-1">Project</span>
+                <Chip label="All projects" count={rates.length} active={activeProject === 'all'} onClick={() => setActiveProject('all')} />
+                {parentProjects.map(p => (
+                  <Chip
+                    key={p.id}
+                    label={(p.code ? `${p.code} ` : '') + p.name}
+                    count={projectRateCounts.byProject.get(p.id) ?? 0}
+                    active={activeProject === p.id}
+                    onClick={() => setActiveProject(p.id)}
+                  />
+                ))}
+                {projectRateCounts.untagged > 0 && (
+                  <span className="text-[11px] text-gray-400 whitespace-nowrap pl-1">
+                    · {projectRateCounts.untagged} rate{projectRateCounts.untagged === 1 ? '' : 's'} not yet linked to any project
+                  </span>
+                )}
+              </div>
+            </div>
+          )}
+
           {/* Discipline chip strip */}
           <div className="overflow-x-auto -mx-1 px-1">
-            <div className="flex gap-1.5 min-w-min">
+            <div className="flex items-center gap-1.5 min-w-min">
+              <span className="text-[10px] font-bold uppercase tracking-wide text-gray-400 whitespace-nowrap pr-1">Discipline</span>
               <Chip label="All" count={subcategories.length} active={activeDisc === 'all'} onClick={() => setActiveDisc('all')} />
               {disciplines.map(d => (
                 <Chip
@@ -346,6 +402,7 @@ export function RateLibrary({
                       onToggle={() => toggleExpand(row.sub.id)}
                       vendorById={vendorById}
                       contractorById={contractorById}
+                      projectById={projectById}
                       canEdit={canEdit}
                       onAdd={() => setAddingForSub(row.sub)}
                       onDeleteRate={deleteRate}
@@ -417,7 +474,7 @@ function SortableTh({ label, k, sort, onSort, className }: {
 }
 
 function ItemRow({
-  row, isOpen, onToggle, vendorById, contractorById, canEdit, onAdd, onDeleteRate, busyRate,
+  row, isOpen, onToggle, vendorById, contractorById, projectById, canEdit, onAdd, onDeleteRate, busyRate,
 }: {
   row: {
     sub: Subcategory; catName: string; catCode: string | null;
@@ -428,6 +485,7 @@ function ItemRow({
   onToggle: () => void
   vendorById: Map<string, Opt>
   contractorById: Map<string, Opt>
+  projectById: Map<string, Project>
   canEdit: boolean
   onAdd: () => void
   onDeleteRate: (id: string) => void
@@ -528,6 +586,7 @@ function ItemRow({
                       ? vendorById.get(r.vendor_id ?? '')?.name
                       : contractorById.get(r.contractor_id ?? '')?.name
                     const badge = rankBadge(idx, rates.length)
+                    const proj = r.project_id ? projectById.get(r.project_id) : null
                     return (
                       <div key={r.id} className="flex items-center gap-2 text-sm bg-white border border-gray-100 rounded-md px-2 py-1.5">
                         {badge ? (
@@ -536,6 +595,11 @@ function ItemRow({
                           <span className="w-[68px]" />
                         )}
                         <span className="text-gray-700 flex-1 truncate" title={party}>{party || '—'}</span>
+                        {proj && (
+                          <Badge variant="secondary" className="text-[10px]" title={proj.name}>
+                            {proj.code || proj.name}
+                          </Badge>
+                        )}
                         <span className="font-semibold text-gray-900 tabular-nums">{fmtINR(r.rate_per_unit)}</span>
                         {r.gst_pct != null && <span className="text-[11px] text-gray-500">+{r.gst_pct}%</span>}
                         <span className="text-[11px] text-gray-400 hidden md:inline">
@@ -568,15 +632,23 @@ function ItemRow({
                   Past WOs ({wos.length})
                 </p>
                 <div className="space-y-1">
-                  {wos.map(w => (
-                    <div key={w.id} className="text-[11px] text-gray-600 flex flex-wrap items-center gap-2 bg-white border border-gray-100 rounded-md px-2 py-1.5">
-                      <span className="font-mono text-blue-600">{w.wo_number}</span>
-                      <span className="text-gray-800">{w.contractor_name}</span>
-                      {w.base_value != null && w.base_value > 0 && <span className="font-semibold">{fmtINR(w.base_value)}</span>}
-                      <span className="text-gray-400">{w.from_date} → {w.to_date}</span>
-                      {w.status && <Badge className="text-[10px]" variant="secondary">{w.status}</Badge>}
-                    </div>
-                  ))}
+                  {wos.map(w => {
+                    const proj = w.project_id ? projectById.get(w.project_id) : null
+                    return (
+                      <div key={w.id} className="text-[11px] text-gray-600 flex flex-wrap items-center gap-2 bg-white border border-gray-100 rounded-md px-2 py-1.5">
+                        <span className="font-mono text-blue-600">{w.wo_number}</span>
+                        <span className="text-gray-800">{w.contractor_name}</span>
+                        {proj && (
+                          <Badge variant="secondary" className="text-[10px]" title={proj.name}>
+                            {proj.code || proj.name}
+                          </Badge>
+                        )}
+                        {w.base_value != null && w.base_value > 0 && <span className="font-semibold">{fmtINR(w.base_value)}</span>}
+                        <span className="text-gray-400">{w.from_date} → {w.to_date}</span>
+                        {w.status && <Badge className="text-[10px]" variant="secondary">{w.status}</Badge>}
+                      </div>
+                    )
+                  })}
                 </div>
               </div>
             )}

@@ -16,7 +16,7 @@ export default async function EstablishedRatesPage() {
   const isAdmin = profile?.role === 'admin' || !!profile?.is_portal_owner
 
   const supabase = await createClient()
-  const [discRes, catRes, subRes, rateRes, woRes, vendorRes, contractorRes] = await Promise.all([
+  const [discRes, catRes, subRes, rateRes, woRes, vendorRes, contractorRes, projectsRes] = await Promise.all([
     supabase.from('est_disciplines').select('*').eq('is_archived', false).order('display_order').order('code'),
     supabase.from('est_categories').select('*').eq('is_archived', false).order('display_order').order('code'),
     supabase.from('est_subcategories').select('*').eq('is_archived', false).order('name'),
@@ -24,6 +24,7 @@ export default async function EstablishedRatesPage() {
     supabase.from('est_wo_history').select('*').order('from_date', { ascending: false }),
     supabase.from('vendors').select('id, name').order('name'),
     supabase.from('jmr_contractors').select('id, name').order('name'),
+    supabase.from('projects').select('id, code, name, parent_project_id').order('code'),
   ])
 
   const disciplines  = discRes.data ?? []
@@ -33,6 +34,7 @@ export default async function EstablishedRatesPage() {
   const woHistory    = woRes.data ?? []
   const vendors      = vendorRes.data ?? []
   const contractors  = contractorRes.data ?? []
+  const projects     = projectsRes.data ?? []
 
   const totalRates = rates.length
   const totalItems = subcategories.length
@@ -80,6 +82,7 @@ export default async function EstablishedRatesPage() {
           woHistory={woHistory}
           vendors={vendors}
           contractors={contractors}
+          projects={projects}
           canEdit={canEdit}
         />
       )}

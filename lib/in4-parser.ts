@@ -48,6 +48,23 @@ export function classifyAsContractor(rawName: string): boolean {
   return CONTRACTOR_HINTS.some(h => n.includes(h))
 }
 
+// ─── Project header ───────────────────────────────────────────────────────
+// Example: "Project Name: New Guest House, Sub-Project Name: New Guest House B-Execution"
+const PROJECT_HEADER_RE =
+  /^\s*Project Name\s*:\s*(.+?),\s*Sub-?\s*Project Name\s*:\s*(.+?)\s*$/i
+
+export interface ProjectHeader {
+  projectName: string
+  subProjectName: string
+}
+
+export function parseProjectHeader(cell: string): ProjectHeader | null {
+  if (!cell || typeof cell !== 'string') return null
+  const m = cell.match(PROJECT_HEADER_RE)
+  if (!m) return null
+  return { projectName: m[1].trim(), subProjectName: m[2].trim() }
+}
+
 // ─── Section header ───────────────────────────────────────────────────────
 // Example: "Accu Tape Engineers - WO/SRASSK/ND/2023-24/12 - WO Start Date: Apr 01, 2023, WO End Date: Jun 30, 2023"
 const SECTION_HEADER_RE =
@@ -114,7 +131,7 @@ export function parseAmount(raw: string | number | null | undefined): number {
 export type AbstractRow =
   | { kind: 'title' }                                  // first 4 title rows
   | { kind: 'header' }                                  // row 5 column headers
-  | { kind: 'project' }                                 // "Project Name: ..., Sub-Project Name: ..."
+  | { kind: 'project'; header: ProjectHeader }          // "Project Name: ..., Sub-Project Name: ..."
   | { kind: 'section'; header: SectionHeader }
   | { kind: 'discipline'; line: TaxonomyLine }
   | { kind: 'category'; line: TaxonomyLine }
@@ -132,7 +149,10 @@ export function classifyAbstractRow(cols: (string | number | null | undefined)[]
   if (all === 0) return { kind: 'blank' }
 
   // Project header — col A starts with "Project Name:"
-  if (A.startsWith('Project Name')) return { kind: 'project' }
+  if (A.startsWith('Project Name')) {
+    const ph = parseProjectHeader(A)
+    if (ph) return { kind: 'project', header: ph }
+  }
 
   // Section header — col A contains the contractor+WO line
   const hdr = parseSectionHeader(A)
@@ -194,6 +214,8 @@ export interface AbstractExtract {
     validFrom: string
     validTill: string
     rate: number
+    projectName: string       // "" if no project header has been seen
+    subProjectName: string
   }>
   woHistory: Array<{
     contractor: string
@@ -206,6 +228,8 @@ export interface AbstractExtract {
     inCatRaw: string
     workDescription: string
     baseValue: number  // sum of Sub-BOQ qty × rate, best-effort
+    projectName: string
+    subProjectName: string
   }>
 }
 
@@ -218,6 +242,7 @@ export function extractFromAbstract(rows: (string | number | null | undefined)[]
     woHistory: [],
   }
 
+  let curProject: ProjectHeader | null = null
   let curSection: SectionHeader | null = null
   let curDisc: TaxonomyLine | null = null
   let curCat: TaxonomyLine | null = null
@@ -237,6 +262,8 @@ export function extractFromAbstract(rows: (string | number | null | undefined)[]
         inCatRaw: `${curCat.code} ${curCat.name}`,
         workDescription: curWoDescription,
         baseValue: curWoLumpsum,
+        projectName: curProject?.projectName ?? '',
+        subProjectName: curProject?.subProjectName ?? '',
       })
     }
     curWoDescription = ''
@@ -246,6 +273,15 @@ export function extractFromAbstract(rows: (string | number | null | undefined)[]
   for (const r of rows) {
     const c = classifyAbstractRow(r)
     switch (c.kind) {
+      case 'project': {
+        // Flush any pending WO under the previous project before switching
+        if (curSection) flushWoHistory()
+        curProject = c.header
+        curSection = null
+        curDisc = null
+        curCat = null
+        break
+      }
       case 'section': {
         if (curSection) flushWoHistory()
         curSection = c.header
@@ -295,6 +331,8 @@ export function extractFromAbstract(rows: (string | number | null | undefined)[]
             validFrom: curSection.validFrom,
             validTill: curSection.validTill,
             rate: c.rate,
+            projectName: curProject?.projectName ?? '',
+            subProjectName: curProject?.subProjectName ?? '',
           })
           curWoLumpsum += c.rate * c.wo_qty
         }
