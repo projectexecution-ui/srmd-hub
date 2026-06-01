@@ -89,16 +89,20 @@ export default async function JmrDashboardPage() {
 
   return (
     <div className="p-4 md:p-6 max-w-6xl mx-auto">
-      <PageHeader title="PM Dashboard" subtitle="Earned · Billed · Paid · alerts" back="/jmr">
+      <PageHeader title="PM Dashboard" subtitle="Spend · Billed · Paid · alerts" back="/jmr">
         <SendReportButton />
       </PageHeader>
 
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
+        {/* These are SRMD's costs — the contractor earns, we owe.
+            "SPEND" = work logged in JMR (full cumulative liability).
+            "BILLED" = what contractors have invoiced so far (a subset of SPEND).
+            "PAID" = what's actually gone out the door (a subset of BILLED). */}
         <StatCard
           tone="emerald" icon={<Coins className="h-5 w-5" />}
-          label="EARNED (JMR)"
+          label="SPEND (JMR)"
           big={formatINRShort(snap.totals.earned)}
-          sub="work done · cumulative"
+          sub="machinery + manpower cost · cumulative"
         />
         <StatCard
           tone="blue" icon={<Receipt className="h-5 w-5" />}
@@ -124,11 +128,11 @@ export default async function JmrDashboardPage() {
               </p>
               {snap.oldestGap ? (
                 <p className="text-xs text-rose-900/80 mt-0.5">
-                  Earned but contractors haven&apos;t billed yet · oldest gap: {snap.oldestGap.days} days
+                  Work logged but contractors haven&apos;t billed yet · oldest gap: {snap.oldestGap.days} days
                   ({snap.oldestGap.contractorName}, {snap.oldestGap.projectName})
                 </p>
               ) : (
-                <p className="text-xs text-rose-900/80 mt-0.5">Earned but not yet billed.</p>
+                <p className="text-xs text-rose-900/80 mt-0.5">Work logged but not yet billed.</p>
               )}
             </div>
           </CardContent>
@@ -148,7 +152,8 @@ export default async function JmrDashboardPage() {
 
       <Card className="mb-4">
         <div className="px-4 py-3 border-b border-gray-100">
-          <h2 className="text-sm font-bold text-gray-800">Contractor-wise · Earned vs Billed vs Paid</h2>
+          <h2 className="text-sm font-bold text-gray-800">Contractor-wise · Spend vs Billed vs Paid</h2>
+          <p className="text-[11px] text-gray-500 mt-0.5">Reads from SRMD&apos;s side — &quot;Spend&quot; = our cost (work logged), &quot;Billed&quot; = what they&apos;ve invoiced, &quot;Paid&quot; = what we&apos;ve released.</p>
         </div>
         {snap.perContractor.length === 0 ? (
           <p className="px-4 py-6 text-sm text-gray-500 text-center">No data yet.</p>
@@ -158,7 +163,7 @@ export default async function JmrDashboardPage() {
               <thead className="bg-gray-50 text-xs uppercase text-gray-500">
                 <tr>
                   <th className="px-4 py-2 text-left font-semibold">Contractor</th>
-                  <th className="px-4 py-2 text-right font-semibold">Earned</th>
+                  <th className="px-4 py-2 text-right font-semibold">Spend</th>
                   <th className="px-4 py-2 text-right font-semibold">Billed</th>
                   <th className="px-4 py-2 text-right font-semibold">Paid</th>
                   <th className="px-4 py-2 text-right font-semibold">Unbilled</th>

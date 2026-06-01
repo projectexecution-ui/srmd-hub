@@ -263,7 +263,7 @@ export function EntryForm({ userName, projects, contractors, items }: Props) {
               <p className="font-bold text-gray-900">{effectiveQty ?? '—'}{isHourly ? ' hr' : ''}</p>
             </div>
             <div className="text-right">
-              <p className="text-xs text-gray-500">Earned today</p>
+              <p className="text-xs text-gray-500">Value</p>
               <p className="font-bold text-emerald-700">{earned != null ? formatINR(earned) : '—'}</p>
             </div>
           </div>

@@ -45,7 +45,7 @@ export default async function JMRPage() {
     {
       slug: 'dashboard', label: 'PM Dashboard', href: '/jmr/dashboard',
       icon: BarChart3, tone: 'bg-purple-50 text-purple-700',
-      desc: 'Earned · Billed · Paid + alerts',
+      desc: 'Spend · Billed · Paid + alerts',
       show: can(perms, 'jmr', 'view') && (role === 'admin' || role === 'head' || role === 'founder'),
     },
     {

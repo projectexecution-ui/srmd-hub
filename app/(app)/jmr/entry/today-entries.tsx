@@ -30,7 +30,7 @@ export async function TodayEntries({ editWindowHours }: { editWindowHours: numbe
         <summary className="flex items-center justify-between cursor-pointer list-none">
           <div>
             <p className="text-sm font-bold text-gray-900">Today&apos;s entries</p>
-            <p className="text-xs text-gray-500">{entries?.length ?? 0} entries · {formatINR(total)} earned</p>
+            <p className="text-xs text-gray-500">{entries?.length ?? 0} entries · {formatINR(total)} value</p>
           </div>
           <ChevronDown className="h-4 w-4 text-gray-500 group-open:rotate-180 transition-transform" />
         </summary>
