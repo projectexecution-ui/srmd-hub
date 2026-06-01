@@ -6,7 +6,7 @@ import { createClient } from '@/lib/supabase/client'
 import { cn } from '@/lib/utils'
 import type { Profile, PermissionMap } from '@/lib/types'
 import {
-  LayoutDashboard, LogOut, Menu, X, LayoutGrid,
+  LayoutDashboard, LogOut, Menu, X, LayoutGrid, EyeOff,
   ChevronsLeft, ChevronsRight,
 } from 'lucide-react'
 import { MODULES } from '@/lib/modules'
@@ -83,11 +83,18 @@ export default function NavBar({ profile, permissions, disabledSlugs = [], isPor
   const modulesAdminLink = isPortalOwner
     ? { href: '/admin/dashboard-modules', label: 'Modules', icon: LayoutGrid, slug: null as string | null }
     : null
+  // Admins also get a "Project Visibility" link to /admin/procurement-projects.
+  // Same pattern: not in MODULES, just a hardcoded convenience entry so the
+  // page is reachable without having to type the URL.
+  const projectVisibilityLink = profile.role === 'admin'
+    ? { href: '/admin/procurement-projects', label: 'Project Visibility', icon: EyeOff, slug: null as string | null }
+    : null
 
   const links = [
     dashboardLink,
     ...moduleLinks,
     ...(modulesAdminLink ? [modulesAdminLink] : []),
+    ...(projectVisibilityLink ? [projectVisibilityLink] : []),
   ]
 
   async function signOut() {
