@@ -11,10 +11,7 @@
 import { useState, useCallback, useRef, useMemo, useEffect } from 'react'
 import { Card } from '@/components/ui/card'
 import type { ParseResult, LineRecord, SnapshotDiff } from '@/lib/procurement'
-import {
-  loadStoredSnapshot, loadPreviousIndents, loadPreviousLineStatuses, loadPreviousMeta,
-  saveSnapshot, clearAll, computeDiff, formatSavedAt,
-} from '@/lib/procurement/storage'
+import { formatSavedAt } from '@/lib/procurement/storage'
 import { PendingReceiptsView } from '@/components/procurement-tracker/PendingReceiptsView'
 import { IndentsNeedingPoView } from '@/components/procurement-tracker/IndentsNeedingPoView'
 import { DiffBanner } from '@/components/procurement-tracker/DiffBanner'
@@ -25,6 +22,33 @@ type AnalyseResponse = ParseResult & {
   success: boolean
   fileName: string
   error?: string
+  /** Wire-format diff: arrays in JSON, converted to Sets at receive-time. */
+  diff?: {
+    prevSavedAt: string
+    prevFileName: string
+    prevUpdatedByName?: string | null
+    changedIndents: string[]
+    newLineIds: string[]
+    changedLineIds: string[]
+    newlyGrnDone: number
+    newlyInProgress: number
+    newlyOverdue: number
+    newlyComplete: number
+  } | null
+}
+
+function hydrateDiff(wire: NonNullable<AnalyseResponse['diff']>): SnapshotDiff {
+  return {
+    prevSavedAt: wire.prevSavedAt,
+    prevFileName: wire.prevFileName,
+    changedIndents: new Set(wire.changedIndents),
+    newLineIds: new Set(wire.newLineIds),
+    changedLineIds: new Set(wire.changedLineIds),
+    newlyGrnDone: wire.newlyGrnDone,
+    newlyInProgress: wire.newlyInProgress,
+    newlyOverdue: wire.newlyOverdue,
+    newlyComplete: wire.newlyComplete,
+  }
 }
 
 type View = 'pending' | 'needs-po'
@@ -44,11 +68,11 @@ export function ProcurementTrackerClient({ isAdmin = false }: { isAdmin?: boolea
    * before chips and lines are rendered. Fetched once on mount.
    */
   const [hiddenProjects, setHiddenProjects] = useState<Set<string>>(new Set())
+  const [savedByName, setSavedByName] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   // Fetch the per-user hidden-projects list once on mount. Admin-
-  // managed via /admin/procurement-projects. Best-effort — if the
-  // fetch fails we just don't filter anything (default = show all).
+  // managed via /procurement-tracker/admin. Best-effort.
   useEffect(() => {
     fetch('/api/procurement-tracker/my-hidden-projects')
       .then(r => r.ok ? r.json() : { hidden: [] })
@@ -58,27 +82,27 @@ export function ProcurementTrackerClient({ isAdmin = false }: { isAdmin?: boolea
       .catch(() => { /* swallow */ })
   }, [])
 
-  // Rehydrate the full dashboard from the last upload on mount, so a
-  // page reload does NOT lose Aksha's data. The full `projects[]` is
-  // persisted in localStorage (see lib/procurement/storage.ts).
-  // Legacy snapshots (saved before this fix) lack `projects` — for
-  // those we still surface the savedAt marker so the user knows a
-  // snapshot exists, and the upload zone falls through into the
-  // re-upload prompt.
+  // Hydrate from the shared org-wide server state on mount (same
+  // pattern as Budget vs Actual). Any user landing on the page sees
+  // the latest upload without re-uploading themselves.
   useEffect(() => {
-    const snap = loadStoredSnapshot()
-    if (!snap) return
-    setSavedAt(snap.savedAt)
-    if (snap.projects && snap.projects.length > 0) {
-      setData({
-        success: true,
-        fileName: snap.fileName,
-        format: snap.format,
-        projects: snap.projects,
-      } as AnalyseResponse)
-      setSelectedProject('__all__')
-      setView('pending')
-    }
+    fetch('/api/procurement-tracker/state')
+      .then(r => r.ok ? r.json() : null)
+      .then(json => {
+        if (!json?.state) return
+        const s = json.state
+        setData({
+          success: true,
+          fileName: s.fileName,
+          format: s.format,
+          projects: s.projects,
+        } as AnalyseResponse)
+        setSavedAt(s.savedAt)
+        setSavedByName(json.updatedByName ?? null)
+        setSelectedProject('__all__')
+        setView('pending')
+      })
+      .catch(() => { /* swallow */ })
   }, [])
 
   const handleFile = useCallback(async (file: File) => {
@@ -95,22 +119,11 @@ export function ProcurementTrackerClient({ isAdmin = false }: { isAdmin?: boolea
       setData(json)
       setSelectedProject('__all__')
       setView('pending')
-
-      // Diff against previous snapshot BEFORE saveSnapshot rolls current → previous.
-      const prevIndents = loadPreviousIndents()
-      const prevLines = loadPreviousLineStatuses()
-      const prevMeta = loadPreviousMeta()
-      const newDiff = computeDiff(
-        json.projects.flatMap(p => p.indents),
-        json.projects.flatMap(p => p.lines),
-        prevIndents,
-        prevLines,
-        prevMeta,
-      )
-      setDiff(newDiff)
-
-      saveSnapshot({ format: json.format, projects: json.projects }, file.name)
+      // Diff is now computed server-side against the prior persisted
+      // state and returned alongside the parsed projects.
+      setDiff(json.diff ? hydrateDiff(json.diff) : null)
       setSavedAt(new Date().toISOString())
+      setSavedByName(null) // refreshed by mount fetch on next load
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Network error. Please try again.')
     } finally {
@@ -157,12 +170,6 @@ export function ProcurementTrackerClient({ isAdmin = false }: { isAdmin?: boolea
     [linesForActiveProject],
   )
 
-  function clearSaved() {
-    clearAll()
-    setData(null); setDiff(null); setSavedAt(null)
-    if (fileInputRef.current) fileInputRef.current.value = ''
-  }
-
   const activeProjectLabel = selectedProject === '__all__'
     ? (data?.fileName?.replace(/\.xlsx?$/, '') ?? 'All projects')
     : selectedProject
@@ -198,16 +205,15 @@ export function ProcurementTrackerClient({ isAdmin = false }: { isAdmin?: boolea
               {data?.fileName && <div className="text-stone-700 font-medium">{data.fileName}</div>}
               <div>
                 Saved {formatSavedAt(savedAt)}
+                {savedByName && <> by <span className="text-stone-600">{savedByName}</span></>}
                 {' · '}
                 <button
                   onClick={() => fileInputRef.current?.click()}
                   className="text-orange-700 hover:underline"
-                  title="Upload a fresh Excel — replaces the current saved data"
+                  title="Upload a fresh Excel — replaces the saved data for everyone"
                 >
                   Upload new
                 </button>
-                {' · '}
-                <button onClick={clearSaved} className="text-orange-700 hover:underline">Clear saved data</button>
               </div>
               {/* Hidden input attached so "Upload new" works even when the
                   drop-zone Card isn't rendered (i.e. when data is loaded). */}
@@ -247,20 +253,6 @@ export function ProcurementTrackerClient({ isAdmin = false }: { isAdmin?: boolea
               <FileSpreadsheet className="h-3 w-3" />
               IN4 → Reports → Purchase → Indent to Issue / Purchase Order Report
             </p>
-          </Card>
-        )}
-
-        {savedAt && !data && !isLoading && (
-          <Card className="p-6 text-center border-orange-200 bg-white">
-            <p className="text-stone-700 font-medium">Saved snapshot from {formatSavedAt(savedAt)}.</p>
-            <p className="text-sm text-stone-500 mb-3">Re-upload your Excel to refresh the dashboard.</p>
-            <button
-              onClick={() => fileInputRef.current?.click()}
-              className="inline-flex items-center gap-1.5 text-sm font-medium bg-orange-700 text-white px-4 py-2 rounded-lg hover:bg-orange-800"
-            >
-              <Upload className="h-4 w-4" /> Upload Excel
-            </button>
-            <input ref={fileInputRef} type="file" accept=".xlsx,.xls" className="hidden" onChange={onFileInput} />
           </Card>
         )}
 
