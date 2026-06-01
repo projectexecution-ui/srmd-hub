@@ -294,19 +294,34 @@ export function parseBanded(buffer: ArrayBuffer): LineRecord[] {
       !str(row[C.SUPPLIER]) &&
       !str(row[C.PO_DATE]) &&
       !num(row[C.PO_QTY])
-    if (sparseRow && currentMaterial && currentMaterial.pos.length === 0 && lastFullPoOnIndent) {
-      const inferred: PoEntry = {
-        poNo: lastFullPoOnIndent.poNo,
-        poDate: lastFullPoOnIndent.poDate,
-        supplier: lastFullPoOnIndent.supplier,
-        // We don't know the actual PO qty for this material — use
-        // its indent qty as a best-effort estimate. Real qty can be
-        // verified via the source-rows inspector.
-        qty: currentMaterial.indentQty,
-        rate: lastFullPoOnIndent.rate,
-        draft: lastFullPoOnIndent.draft,
-        inferred: true,
-      }
+    if (sparseRow && currentMaterial && currentMaterial.pos.length === 0) {
+      // Two cases — both treat the sparse row as proof a PO exists:
+      //   1. We have a prior full PO on the same indent → clone it
+      //      (one PO covering multiple materials, e.g. the Gabion
+      //      Box case at IND/SRASSK/P2I/2026-27/8).
+      //   2. No prior full PO this indent → IN4 dropped the PO
+      //      details entirely (e.g. IND/SRET/RU/2025-26/265 where
+      //      only an INR row survives). Create a placeholder so
+      //      the material flips from "needs PO" to "pending receipt"
+      //      — the user can verify against IN4 via the inspector.
+      const inferred: PoEntry = lastFullPoOnIndent
+        ? {
+            poNo: lastFullPoOnIndent.poNo,
+            poDate: lastFullPoOnIndent.poDate,
+            supplier: lastFullPoOnIndent.supplier,
+            qty: currentMaterial.indentQty,
+            rate: lastFullPoOnIndent.rate,
+            draft: lastFullPoOnIndent.draft,
+            inferred: true,
+          }
+        : {
+            poNo: 'PO/—',                                    // visible "missing" marker
+            poDate: '',
+            supplier: '— not exported by IN4 —',
+            qty: currentMaterial.indentQty,
+            rate: 0,
+            inferred: true,
+          }
       currentMaterial.pos.push(inferred)
       currentPo = inferred
       currentMaterial.sourceRows?.push(makeSourceRow(r, 'po', row))
