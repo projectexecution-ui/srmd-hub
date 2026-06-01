@@ -6,7 +6,7 @@ import {
   ClipboardList, FileText, PackageCheck, Receipt, Wallet,
   Truck, Building2, Upload, Users, Settings, ShieldCheck,
   ExternalLink, BarChart3, Wrench, Calculator, FileSpreadsheet,
-  Boxes, Inbox, GitCompareArrows,
+  Boxes, Inbox, GitCompareArrows, Tags,
 } from 'lucide-react'
 import type { PermissionMap } from './types'
 
@@ -39,6 +39,7 @@ export const MODULES: ModuleTile[] = [
   { slug: 'jmr',              label: 'JMR / Machinery',  description: 'Site machinery hours, JMR matrix, bills',     href: '/jmr',            icon: Wrench,        tone: 'orange' },
   { slug: 'inventory',        label: 'Inventory',        description: 'Stock, item master, requests & issue chain',  href: '/inventory',      icon: Boxes,         tone: 'green' },
   { slug: 'comparison',       label: 'Comparison Maker', description: 'Compare vendor quotations side-by-side — L1, L2, missing items', href: '/comparisons', icon: GitCompareArrows, tone: 'purple' },
+  { slug: 'established-rates',label: 'Established Rates',description: 'Master rate catalogue — Discipline → Category → Sub-category, multi-vendor with L1 highlight', href: '/established-rates', icon: Tags, tone: 'teal' },
   { slug: 'attendance',       label: 'Attendance',       description: 'Open the SiteAttend app',                     href: process.env.NEXT_PUBLIC_ATTENDANCE_URL || 'https://siteattend.vercel.app', external: true, icon: ExternalLink, tone: 'rose' },
   { slug: 'uploads',          label: 'Uploads',          description: 'Excel imports history',                       href: '/uploads',        icon: Upload,        tone: 'slate' },
   { slug: 'budget-vs-actual', label: 'IN4 BPH Report Hub',     description: 'IN4 Budget Performance report — server-backed BPH dashboard', href: '/budget',              icon: FileSpreadsheet, tone: 'teal' },

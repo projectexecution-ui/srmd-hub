@@ -16,12 +16,20 @@
 //     ]
 //   }
 
+import LZString from 'lz-string'
 import type {
   ParseResult, IndentRollup, LineRecord, IndentStatusSnapshot,
   LineStatusSnapshot, StoredSnapshot, SnapshotDiff, TrendPoint,
 } from './types'
 
 const KEY = 'ct-procurement-tracker-v1'
+
+// When the payload is LZ-compressed we prepend this marker so the
+// reader knows to decompress vs parse as raw JSON. The marker is a
+// non-JSON character so it won't ever collide with a valid JSON
+// document. Keeps backwards compatibility with older uncompressed
+// saves (which just start with `{`).
+const COMPRESSED_MARKER = '#LZ:'
 
 interface Stored {
   current?: StoredSnapshot
@@ -41,25 +49,40 @@ function readAll(): Stored | null {
   try {
     const raw = localStorage.getItem(KEY)
     if (!raw) return null
-    return JSON.parse(raw) as Stored
+    // Backwards-compat: older saves are plain JSON (start with "{").
+    // New saves start with COMPRESSED_MARKER + lz-string payload.
+    let jsonText: string | null = null
+    if (raw.startsWith(COMPRESSED_MARKER)) {
+      jsonText = LZString.decompressFromUTF16(raw.slice(COMPRESSED_MARKER.length))
+    } else {
+      jsonText = raw
+    }
+    if (!jsonText) return null
+    return JSON.parse(jsonText) as Stored
   } catch { return null }
 }
 
 function writeAll(s: Stored): void {
   if (typeof window === 'undefined') return
+  // ~5x compression on JSON — pushes a 3.7 MB banded snapshot down
+  // to ~750 KB raw chars (~1.5 MB UTF-16 stored), well inside the
+  // 5–10 MB localStorage quota across browsers.
+  const compressed = COMPRESSED_MARKER + LZString.compressToUTF16(JSON.stringify(s))
   try {
-    localStorage.setItem(KEY, JSON.stringify(s))
+    localStorage.setItem(KEY, compressed)
+    return
   } catch {
-    // Quota error (full payload too big). Retry with the heavy
-    // `projects` field dropped — at least the diff baseline +
-    // savedAt + trend survive so the diff banner and trend ribbon
-    // keep working on the next upload.
+    // Still over quota — almost impossible after compression, but
+    // be defensive. Drop the heavy `projects` field and retry; the
+    // diff baseline + savedAt + trend ring survive so the next
+    // upload still produces a useful diff banner.
     if (s.current?.projects) {
       try {
         const lite: Stored = { ...s, current: { ...s.current, projects: undefined } }
-        localStorage.setItem(KEY, JSON.stringify(lite))
+        const liteCompressed = COMPRESSED_MARKER + LZString.compressToUTF16(JSON.stringify(lite))
+        localStorage.setItem(KEY, liteCompressed)
         if (typeof console !== 'undefined') {
-          console.warn('[procurement-tracker] localStorage quota hit — persisted metadata only. Reload will require re-upload.')
+          console.warn('[procurement-tracker] localStorage quota hit even after compression — persisted metadata only. Reload will require re-upload.')
         }
       } catch { /* even lite write failed — give up silently */ }
     }
