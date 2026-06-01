@@ -7,10 +7,12 @@ import { ProcurementProjectVisibilityEditor } from './ProcurementProjectVisibili
 export const dynamic = 'force-dynamic'
 
 export default async function ProcurementProjectVisibilityPage() {
-  // Admin-only — Portal Owners are admins too via role check elsewhere,
-  // but for project visibility we keep it strictly to role='admin'.
+  // Admin-only. Lives INSIDE the procurement-tracker module (Aksha
+  // asked to keep module-specific admin out of the global sidebar
+  // and reachable from the module's own header instead — same
+  // pattern as /inventory/admin/…).
   const profile = await getMyProfile()
-  if (!profile || profile.role !== 'admin') redirect('/admin')
+  if (!profile || profile.role !== 'admin') redirect('/procurement-tracker')
 
   const supabase = await createClient()
   const [
@@ -36,7 +38,7 @@ export default async function ProcurementProjectVisibilityPage() {
     <div className="p-4 md:p-6 max-w-4xl mx-auto space-y-4">
       <PageHeader
         title="Procurement — Project Visibility"
-        back="/admin"
+        back="/procurement-tracker"
         subtitle="Hide individual projects from individual users. Default is show-everything; row exists ⇒ hidden for that user. Names auto-grow from every upload."
       />
       <ProcurementProjectVisibilityEditor

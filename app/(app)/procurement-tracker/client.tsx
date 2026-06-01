@@ -18,7 +18,8 @@ import {
 import { PendingReceiptsView } from '@/components/procurement-tracker/PendingReceiptsView'
 import { IndentsNeedingPoView } from '@/components/procurement-tracker/IndentsNeedingPoView'
 import { DiffBanner } from '@/components/procurement-tracker/DiffBanner'
-import { Upload, FileSpreadsheet, Loader2, PackageX, ClipboardList } from 'lucide-react'
+import Link from 'next/link'
+import { Upload, FileSpreadsheet, Loader2, PackageX, ClipboardList, EyeOff } from 'lucide-react'
 
 type AnalyseResponse = ParseResult & {
   success: boolean
@@ -28,7 +29,7 @@ type AnalyseResponse = ParseResult & {
 
 type View = 'pending' | 'needs-po'
 
-export function ProcurementTrackerClient() {
+export function ProcurementTrackerClient({ isAdmin = false }: { isAdmin?: boolean }) {
   const [isDragging, setIsDragging] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -180,6 +181,16 @@ export function ProcurementTrackerClient() {
               <p className="text-xs text-stone-500 mt-0.5">
                 What you&apos;re still waiting on — by vendor and by indent.
               </p>
+              {isAdmin && (
+                <Link
+                  href="/procurement-tracker/admin"
+                  className="inline-flex items-center gap-1 text-[11px] font-medium text-orange-700 hover:text-orange-900 hover:underline mt-1"
+                  title="Hide specific projects from specific users"
+                >
+                  <EyeOff className="h-3 w-3" />
+                  Manage project visibility
+                </Link>
+              )}
             </div>
           </div>
           {savedAt && (

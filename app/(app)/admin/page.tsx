@@ -1,7 +1,7 @@
 import Link from 'next/link'
 import { PageHeader } from '@/components/PageHeader'
 import { Card } from '@/components/ui/card'
-import { Users, Settings, ShieldCheck, LayoutGrid, GitBranch, Trash2, EyeOff } from 'lucide-react'
+import { Users, Settings, ShieldCheck, LayoutGrid, GitBranch, Trash2 } from 'lucide-react'
 import { getMyPermissions, can, isPortalOwner, getMyProfile } from '@/lib/auth'
 import { createClient } from '@/lib/supabase/server'
 
@@ -26,7 +26,6 @@ export default async function AdminHomePage() {
     { href: '/admin/approvals',   slug: 'admin-approvals',   icon: GitBranch,   title: 'Approvals',     sub: 'Who approves what at each stage — across modules.', show: canEditApprovals },
     { href: '/admin/delete-requests', slug: 'admin-delete-requests', icon: Trash2, title: 'Delete Requests', sub: `Approve / reject pending deletes${pendingDeleteCount && pendingDeleteCount > 0 ? ` · ${pendingDeleteCount} waiting` : ''}.`, show: canEditApprovals, badge: pendingDeleteCount && pendingDeleteCount > 0 ? pendingDeleteCount : null },
     { href: '/admin/dashboard-modules', slug: 'dashboard-modules', icon: LayoutGrid, title: 'Dashboard Modules', sub: 'Turn modules on / off for the portal.',     show: portalOwner },
-    { href: '/admin/procurement-projects', slug: 'admin-procurement-projects', icon: EyeOff, title: 'Procurement Projects', sub: 'Hide specific sites/projects from specific users in /procurement-tracker.', show: profile?.role === 'admin' },
     { href: '/admin/settings',    slug: 'admin-settings',    icon: Settings,    title: 'Settings',      sub: 'Admin email, etc.',                          show: can(perms, 'admin-settings', 'view') },
   ].filter(t => t.show)
 
