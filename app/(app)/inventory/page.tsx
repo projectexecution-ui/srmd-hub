@@ -156,16 +156,27 @@ export default async function InventoryLandingPage() {
         </Card>
       )}
 
-      {/* Admin (only for admins) — tucked at the bottom in a smaller row */}
+      {/* Admin (only for admins). Promoted to full tiles in their own
+          row so "Add new item" and "Add new warehouse" are obvious —
+          the previous chip-link styling was too easy to miss. */}
       {adminSections.length > 0 && (
-        <div className="pt-2 border-t border-gray-100">
-          <p className="text-[11px] uppercase tracking-wide text-gray-500 mb-2">Admin</p>
-          <div className="flex flex-wrap gap-2">
+        <div className="pt-2 border-t border-gray-100 space-y-2">
+          <p className="text-[11px] uppercase tracking-wide text-gray-500">Admin · setup</p>
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
             {adminSections.map(s => (
-              <Link key={s.slug} href={s.href}
-                className="inline-flex items-center gap-1.5 text-sm border border-gray-200 hover:border-gray-300 hover:bg-gray-50 rounded-lg px-3 py-1.5 text-gray-700">
-                <s.icon className="h-4 w-4 text-gray-400" />
-                {s.title}
+              <Link key={s.slug} href={s.href}>
+                <Card className="p-4 h-full hover:shadow-md hover:-translate-y-0.5 transition-all flex flex-col items-start gap-2 border-dashed bg-gray-50/40">
+                  <div className="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-orange-50 text-orange-700">
+                    <s.icon className="h-5 w-5" />
+                  </div>
+                  <div className="min-w-0">
+                    <h3 className="text-sm font-semibold text-gray-900 leading-tight">{s.title}</h3>
+                    <p className="text-[11px] text-gray-500 leading-tight mt-0.5">
+                      {s.slug === 'inv-admin-items'      ? 'Add / edit materials catalogue' :
+                       s.slug === 'inv-admin-warehouses' ? 'Add / edit physical stores' : ''}
+                    </p>
+                  </div>
+                </Card>
               </Link>
             ))}
           </div>
