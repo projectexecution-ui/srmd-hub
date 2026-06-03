@@ -1,5 +1,18 @@
 // Server-side aggregation for the JMR PM dashboard.
-// Three layers: EARNED (daily entries) → BILLED (bills approved+paid) → PAID (bills paid).
+// Three layers: SPEND (daily entries) → BILLED (bills approved+paid) → PAID (bills paid).
+//
+// All three are on the **pre-GST basis** — i.e. SPEND uses
+// jmr_daily_entries.amount (rate × qty, no tax) and BILLED + PAID use
+// jmr_bills.subtotal (not total_amount). This keeps the three cards
+// comparable: when an engineer logs ₹1,624 of work and the contractor
+// invoices that exact quantity with no variance, all three cards read
+// ₹1,624. The GST on the bill is a pass-through (ITC-recoverable),
+// not "what the work cost SRMD" — surfacing it would make the three
+// cards look unequal even when nothing's actually different.
+//
+// The "Bills awaiting your action" list elsewhere on the dashboard
+// still shows jmr_bills.total_amount because that's the literal
+// invoice value the contractor sent — different question, different answer.
 
 import { createClient } from '@/lib/supabase/server'
 
@@ -38,7 +51,7 @@ export async function getDashboardSnapshot(): Promise<DashboardSnapshot> {
     supabase
       .from('jmr_bills')
       .select(`
-        id, bill_number, contractor_id, total_amount, status, variance_flag, period_to,
+        id, bill_number, contractor_id, subtotal, total_amount, status, variance_flag, period_to,
         jmr_contractors ( name )
       `)
       .in('status', ['submitted', 'pm_review', 'approved', 'paid']),
@@ -65,8 +78,11 @@ export async function getDashboardSnapshot(): Promise<DashboardSnapshot> {
   }
   for (const b of bills) {
     const a = map.get(b.contractor_id) ?? { earned: 0, billed: 0, paid: 0, entriesSeen: [] }
-    if (b.status === 'approved' || b.status === 'paid') a.billed += Number(b.total_amount)
-    if (b.status === 'paid') a.paid += Number(b.total_amount)
+    // Use SUBTOTAL (pre-GST) so BILLED + PAID sit on the same basis as SPEND.
+    // total_amount = subtotal + gst_amount; using it would always make BILLED
+    // look ~18% bigger than SPEND even when there's no actual variance.
+    if (b.status === 'approved' || b.status === 'paid') a.billed += Number(b.subtotal)
+    if (b.status === 'paid') a.paid += Number(b.subtotal)
     map.set(b.contractor_id, a)
   }
 

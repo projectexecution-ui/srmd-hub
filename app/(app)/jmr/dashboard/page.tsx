@@ -3,10 +3,9 @@ import { createClient } from '@/lib/supabase/server'
 import { requirePermission } from '@/lib/auth'
 import { PageHeader } from '@/components/PageHeader'
 import { Card, CardContent } from '@/components/ui/card'
-import { Button } from '@/components/ui/button'
 import { getDashboardSnapshot } from '@/lib/jmr/dashboard'
 import { formatINR, formatINRShort } from '@/lib/jmr/format'
-import { AlertTriangle, Coins, Receipt, Wallet, Send, FileText } from 'lucide-react'
+import { AlertTriangle, Coins, Receipt, Wallet } from 'lucide-react'
 import { SendReportButton } from './send-report-button'
 import { EntriesPendingApproval, type PendingEntry } from './EntriesPendingApproval'
 
@@ -89,15 +88,18 @@ export default async function JmrDashboardPage() {
 
   return (
     <div className="p-4 md:p-6 max-w-6xl mx-auto">
-      <PageHeader title="PM Dashboard" subtitle="Spend · Billed · Paid · alerts" back="/jmr">
+      <PageHeader title="PM Dashboard" subtitle="Spend · Billed · Paid · alerts (all pre-GST)" back="/jmr">
         <SendReportButton />
       </PageHeader>
 
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
         {/* These are SRMD's costs — the contractor earns, we owe.
-            "SPEND" = work logged in JMR (full cumulative liability).
-            "BILLED" = what contractors have invoiced so far (a subset of SPEND).
-            "PAID" = what's actually gone out the door (a subset of BILLED). */}
+            All three are PRE-GST so they sit on the same basis:
+            "SPEND" = work logged in JMR (rate × qty, no tax).
+            "BILLED" = invoice subtotal for bills approved + paid (a subset of SPEND).
+            "PAID" = subtotal portion released against paid bills (a subset of BILLED).
+            GST on the bills is a tax pass-through (ITC) — visible only on the
+            individual bill detail page, not in these cards. */}
         <StatCard
           tone="emerald" icon={<Coins className="h-5 w-5" />}
           label="SPEND (JMR)"
@@ -153,7 +155,7 @@ export default async function JmrDashboardPage() {
       <Card className="mb-4">
         <div className="px-4 py-3 border-b border-gray-100">
           <h2 className="text-sm font-bold text-gray-800">Contractor-wise · Spend vs Billed vs Paid</h2>
-          <p className="text-[11px] text-gray-500 mt-0.5">Reads from SRMD&apos;s side — &quot;Spend&quot; = our cost (work logged), &quot;Billed&quot; = what they&apos;ve invoiced, &quot;Paid&quot; = what we&apos;ve released.</p>
+          <p className="text-[11px] text-gray-500 mt-0.5">All amounts pre-GST. &quot;Spend&quot; = work logged (rate × qty), &quot;Billed&quot; = invoice subtotal, &quot;Paid&quot; = subtotal portion released. When everything matches the three columns are equal; gaps surface variance.</p>
         </div>
         {snap.perContractor.length === 0 ? (
           <p className="px-4 py-6 text-sm text-gray-500 text-center">No data yet.</p>
