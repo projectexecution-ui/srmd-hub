@@ -10,6 +10,7 @@ import {
   ChevronsLeft, ChevronsRight,
 } from 'lucide-react'
 import { MODULES } from '@/lib/modules'
+import NotificationBell from '@/components/NotificationBell'
 
 interface NavBarProps {
   profile: Profile
@@ -103,9 +104,12 @@ export default function NavBar({ profile, permissions, disabledSlugs = [], isPor
           <img src="/srmd-icon.png" alt="SRMD" className="h-7 w-7" />
           <span className="font-bold text-gray-900">CT HUB</span>
         </Link>
-        <button onClick={() => setOpen(o => !o)} className="p-2 -mr-2 text-gray-600 hover:text-gray-900" aria-label="Menu">
-          {open ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
-        </button>
+        <div className="flex items-center gap-1">
+          <NotificationBell userId={profile.id} />
+          <button onClick={() => setOpen(o => !o)} className="p-2 -mr-2 text-gray-600 hover:text-gray-900" aria-label="Menu">
+            {open ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
+          </button>
+        </div>
       </div>
 
       {/* Mobile sliding panel */}
@@ -171,12 +175,26 @@ export default function NavBar({ profile, permissions, disabledSlugs = [], isPor
           </button>
         </div>
 
-        {!collapsed && <ProfileRow profile={profile} />}
+        {!collapsed && (
+          <div className="flex items-center justify-between gap-2 px-4 py-3 border-b border-gray-100">
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="h-8 w-8 rounded-full bg-blue-100 flex items-center justify-center text-blue-700 font-bold text-sm flex-shrink-0">
+                {(profile.name || profile.email)[0].toUpperCase()}
+              </div>
+              <div className="min-w-0">
+                <p className="text-sm font-medium text-gray-900 truncate">{profile.name || profile.full_name || 'User'}</p>
+                <p className="text-xs text-gray-500 truncate capitalize">{profile.role.replace('_', ' ')}</p>
+              </div>
+            </div>
+            <NotificationBell userId={profile.id} />
+          </div>
+        )}
         {collapsed && (
-          <div className="flex justify-center py-3 border-b border-gray-100" title={profile.name || profile.email}>
-            <div className="h-8 w-8 rounded-full bg-blue-100 flex items-center justify-center text-blue-700 font-bold text-sm">
+          <div className="flex flex-col items-center gap-2 py-3 border-b border-gray-100">
+            <div className="h-8 w-8 rounded-full bg-blue-100 flex items-center justify-center text-blue-700 font-bold text-sm" title={profile.name || profile.email}>
               {(profile.name || profile.email)[0].toUpperCase()}
             </div>
+            <NotificationBell userId={profile.id} />
           </div>
         )}
 
