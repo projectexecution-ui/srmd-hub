@@ -39,7 +39,7 @@ export async function buildExecOnePagerPdf(): Promise<Uint8Array> {
     doc.setFont('helvetica', 'normal')
     doc.text(sub, x + 12, y + 56)
   }
-  drawTile(40, 'SPEND (JMR)', formatINRShort(snap.totals.earned), 'machinery + manpower cost · cumulative', [220, 252, 231])
+  drawTile(40, 'SPEND (JMR)', formatINRShort(snap.totals.earned), 'machinery + manpower · incl. GST', [220, 252, 231])
   drawTile(40 + tileW + 16, 'BILLED', formatINRShort(snap.totals.billed), `${snap.billsAwaitingAction.length} bills awaiting`, [219, 234, 254])
   drawTile(40 + (tileW + 16) * 2, 'PAID', formatINRShort(snap.totals.paid), `${formatINRShort(snap.totals.pendingRelease)} pending`, [254, 243, 199])
 

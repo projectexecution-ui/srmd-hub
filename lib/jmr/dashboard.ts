@@ -1,20 +1,26 @@
 // Server-side aggregation for the JMR PM dashboard.
 // Three layers: SPEND (daily entries) → BILLED (bills approved+paid) → PAID (bills paid).
 //
-// All three are on the **pre-GST basis** — i.e. SPEND uses
-// jmr_daily_entries.amount (rate × qty, no tax) and BILLED + PAID use
-// jmr_bills.subtotal (not total_amount). This keeps the three cards
-// comparable: when an engineer logs ₹1,624 of work and the contractor
-// invoices that exact quantity with no variance, all three cards read
-// ₹1,624. The GST on the bill is a pass-through (ITC-recoverable),
-// not "what the work cost SRMD" — surfacing it would make the three
-// cards look unequal even when nothing's actually different.
+// All three are on the **GST-inclusive (cash-outflow) basis**:
+//
+//   SPEND  = SUM(jmr_daily_entries.amount) × (1 + GST%)
+//            i.e. rate × qty + the GST we'll have to pay when contractor invoices
+//   BILLED = SUM(jmr_bills.total_amount) for status IN (approved, paid)
+//            i.e. invoice subtotal + GST (what the contractor's GST invoice asks for)
+//   PAID   = SUM(jmr_bills.total_amount) for status = paid
+//            i.e. cash actually released against those invoices
+//
+// We gross up SPEND with the JMR module GST rate (app_settings.jmr_gst_rate_pct,
+// defaults to 18). This gives the PM the "full picture" — what we expect to spend
+// end-to-end, not just the rate × qty cost which understates the cash outflow.
+// When a contractor invoices the logged quantity at the logged rate, all three
+// cards read the same number.
 //
 // The "Bills awaiting your action" list elsewhere on the dashboard
-// still shows jmr_bills.total_amount because that's the literal
-// invoice value the contractor sent — different question, different answer.
+// also uses jmr_bills.total_amount — same basis, no surprise.
 
 import { createClient } from '@/lib/supabase/server'
+import { getJmrSettings } from '@/lib/jmr/settings'
 
 export interface DashboardSnapshot {
   totals: { earned: number; billed: number; paid: number; pendingRelease: number; unbilled: number }
@@ -43,7 +49,8 @@ export async function getDashboardSnapshot(): Promise<DashboardSnapshot> {
   const supabase = await createClient()
 
   // Single-shot reads, then aggregate in JS — simpler than crafting Postgres views.
-  const [entriesRes, billsRes, contractorsRes, projectsRes] = await Promise.all([
+  // Settings call is cached per-request so callers stacking with it pay once.
+  const [entriesRes, billsRes, contractorsRes, projectsRes, settings] = await Promise.all([
     supabase
       .from('jmr_daily_entries')
       .select('contractor_id, project_id, amount, entry_date')
@@ -51,13 +58,18 @@ export async function getDashboardSnapshot(): Promise<DashboardSnapshot> {
     supabase
       .from('jmr_bills')
       .select(`
-        id, bill_number, contractor_id, subtotal, total_amount, status, variance_flag, period_to,
+        id, bill_number, contractor_id, total_amount, status, variance_flag, period_to,
         jmr_contractors ( name )
       `)
       .in('status', ['submitted', 'pm_review', 'approved', 'paid']),
     supabase.from('jmr_contractors').select('id, name'),
     supabase.from('projects').select('id, name'),
+    getJmrSettings(),
   ])
+
+  // GST gross-up multiplier for SPEND so it sits on the same cash-outflow basis
+  // as BILLED + PAID. e.g. 18% → 1.18.
+  const gstMul = 1 + (settings.gst_rate_pct / 100)
 
   const entries = entriesRes.data ?? []
   const bills = billsRes.data ?? []
@@ -72,17 +84,17 @@ export async function getDashboardSnapshot(): Promise<DashboardSnapshot> {
   const map = new Map<string, Agg>()
   for (const e of entries) {
     const a = map.get(e.contractor_id) ?? { earned: 0, billed: 0, paid: 0, entriesSeen: [] }
-    a.earned += Number(e.amount)
-    a.entriesSeen.push({ project_id: e.project_id, entry_date: e.entry_date, amount: Number(e.amount) })
+    // Gross up by GST so SPEND matches the eventual cash-outflow basis of BILLED + PAID.
+    a.earned += Number(e.amount) * gstMul
+    a.entriesSeen.push({ project_id: e.project_id, entry_date: e.entry_date, amount: Number(e.amount) * gstMul })
     map.set(e.contractor_id, a)
   }
   for (const b of bills) {
     const a = map.get(b.contractor_id) ?? { earned: 0, billed: 0, paid: 0, entriesSeen: [] }
-    // Use SUBTOTAL (pre-GST) so BILLED + PAID sit on the same basis as SPEND.
-    // total_amount = subtotal + gst_amount; using it would always make BILLED
-    // look ~18% bigger than SPEND even when there's no actual variance.
-    if (b.status === 'approved' || b.status === 'paid') a.billed += Number(b.subtotal)
-    if (b.status === 'paid') a.paid += Number(b.subtotal)
+    // total_amount = subtotal + GST. We compare like-with-like against the
+    // grossed-up SPEND above so when nothing's wrong, all three cards match.
+    if (b.status === 'approved' || b.status === 'paid') a.billed += Number(b.total_amount)
+    if (b.status === 'paid') a.paid += Number(b.total_amount)
     map.set(b.contractor_id, a)
   }
 

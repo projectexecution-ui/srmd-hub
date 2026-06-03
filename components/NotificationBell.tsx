@@ -1,85 +1,21 @@
 'use client'
-// Bell that lives in the NavBar header. Subscribes to Realtime on the
-// `notifications` table so new rows appear without polling. Click the
-// bell to open a dropdown showing the latest 20 — each item links to
-// its `url` and marks itself read on click. "Mark all read" hits a
-// single update for the user.
-//
-// We intentionally keep this lean: no infinite scroll, no filters. The
-// dedicated /approvals page is the heavy view; this is just the live
-// nudge that says "there's something for you".
+// Pure UI bell. All state + Realtime + fetching lives in
+// NotificationProvider — this can be safely rendered in multiple
+// positions (mobile top bar / desktop expanded / desktop collapsed)
+// without each instance creating its own fetch + WebSocket. That was
+// the bug behind the request flood on /rest/v1/notifications.
 
 import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
-import { createClient } from '@/lib/supabase/client'
 import { Bell, CheckCheck, Settings as SettingsIcon } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { useNotifications, type NotificationRow } from '@/components/NotificationProvider'
 
-interface NotificationRow {
-  id: string
-  type: string
-  title: string
-  body: string | null
-  url: string | null
-  module_slug: string | null
-  is_read: boolean
-  created_at: string
-}
-
-const RECENT_LIMIT = 20
-
-export default function NotificationBell({ userId }: { userId: string }) {
-  const supabase = createClient()
-  const [items, setItems] = useState<NotificationRow[]>([])
+export default function NotificationBell() {
+  const { items, loading, unread, markAllRead, markOneRead } = useNotifications()
   const [open, setOpen] = useState(false)
-  const [loading, setLoading] = useState(true)
   const panelRef = useRef<HTMLDivElement>(null)
   const buttonRef = useRef<HTMLButtonElement>(null)
-
-  // Initial fetch + Realtime subscription. Cleanup unsubscribes.
-  useEffect(() => {
-    let cancelled = false
-
-    async function load() {
-      const { data } = await supabase
-        .from('notifications')
-        .select('id, type, title, body, url, module_slug, is_read, created_at')
-        .eq('user_id', userId)
-        .order('created_at', { ascending: false })
-        .limit(RECENT_LIMIT)
-      if (cancelled) return
-      setItems((data as NotificationRow[]) ?? [])
-      setLoading(false)
-    }
-    load()
-
-    const ch = supabase
-      .channel(`notif:${userId}`)
-      .on(
-        'postgres_changes',
-        { event: 'INSERT', schema: 'public', table: 'notifications', filter: `user_id=eq.${userId}` },
-        payload => {
-          const row = payload.new as NotificationRow
-          setItems(prev => [row, ...prev].slice(0, RECENT_LIMIT))
-        },
-      )
-      .on(
-        'postgres_changes',
-        { event: 'UPDATE', schema: 'public', table: 'notifications', filter: `user_id=eq.${userId}` },
-        payload => {
-          const row = payload.new as NotificationRow
-          setItems(prev => prev.map(n => (n.id === row.id ? row : n)))
-        },
-      )
-      .subscribe()
-
-    return () => {
-      cancelled = true
-      supabase.removeChannel(ch)
-    }
-    // supabase client is stable per-render of this client component
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [userId])
 
   // Close on outside click / ESC
   useEffect(() => {
@@ -98,27 +34,6 @@ export default function NotificationBell({ userId }: { userId: string }) {
       document.removeEventListener('keydown', onEsc)
     }
   }, [open])
-
-  const unread = items.filter(n => !n.is_read).length
-
-  async function markAllRead() {
-    const unreadIds = items.filter(n => !n.is_read).map(n => n.id)
-    if (unreadIds.length === 0) return
-    // Optimistic — Realtime UPDATE will reconcile if it differs.
-    setItems(prev => prev.map(n => ({ ...n, is_read: true })))
-    await supabase
-      .from('notifications')
-      .update({ is_read: true, read_at: new Date().toISOString() })
-      .in('id', unreadIds)
-  }
-
-  async function markOneRead(id: string) {
-    setItems(prev => prev.map(n => (n.id === id ? { ...n, is_read: true } : n)))
-    await supabase
-      .from('notifications')
-      .update({ is_read: true, read_at: new Date().toISOString() })
-      .eq('id', id)
-  }
 
   return (
     <div className="relative">

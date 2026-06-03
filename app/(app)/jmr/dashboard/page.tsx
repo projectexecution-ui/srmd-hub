@@ -88,23 +88,22 @@ export default async function JmrDashboardPage() {
 
   return (
     <div className="p-4 md:p-6 max-w-6xl mx-auto">
-      <PageHeader title="PM Dashboard" subtitle="Spend · Billed · Paid · alerts (all pre-GST)" back="/jmr">
+      <PageHeader title="PM Dashboard" subtitle="Spend · Billed · Paid · alerts (incl. GST)" back="/jmr">
         <SendReportButton />
       </PageHeader>
 
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
-        {/* These are SRMD's costs — the contractor earns, we owe.
-            All three are PRE-GST so they sit on the same basis:
-            "SPEND" = work logged in JMR (rate × qty, no tax).
-            "BILLED" = invoice subtotal for bills approved + paid (a subset of SPEND).
-            "PAID" = subtotal portion released against paid bills (a subset of BILLED).
-            GST on the bills is a tax pass-through (ITC) — visible only on the
-            individual bill detail page, not in these cards. */}
+        {/* These are SRMD's cash-outflow costs — what we'll actually pay end-to-end.
+            All three are GST-INCLUSIVE so they sit on the same basis:
+            "SPEND" = work logged × (1 + GST%) — forecast cash to be paid.
+            "BILLED" = total invoice value (subtotal + GST) for approved + paid bills.
+            "PAID" = cash released against paid bills (= invoice total).
+            GST rate comes from app_settings.jmr_gst_rate_pct (default 18). */}
         <StatCard
           tone="emerald" icon={<Coins className="h-5 w-5" />}
           label="SPEND (JMR)"
           big={formatINRShort(snap.totals.earned)}
-          sub="machinery + manpower cost · cumulative"
+          sub="machinery + manpower · incl. GST"
         />
         <StatCard
           tone="blue" icon={<Receipt className="h-5 w-5" />}
@@ -155,7 +154,7 @@ export default async function JmrDashboardPage() {
       <Card className="mb-4">
         <div className="px-4 py-3 border-b border-gray-100">
           <h2 className="text-sm font-bold text-gray-800">Contractor-wise · Spend vs Billed vs Paid</h2>
-          <p className="text-[11px] text-gray-500 mt-0.5">All amounts pre-GST. &quot;Spend&quot; = work logged (rate × qty), &quot;Billed&quot; = invoice subtotal, &quot;Paid&quot; = subtotal portion released. When everything matches the three columns are equal; gaps surface variance.</p>
+          <p className="text-[11px] text-gray-500 mt-0.5">All amounts include GST (cash-outflow view). &quot;Spend&quot; = work logged grossed up by GST, &quot;Billed&quot; = contractor invoice total, &quot;Paid&quot; = cash released. When everything matches the three columns are equal; gaps surface variance.</p>
         </div>
         {snap.perContractor.length === 0 ? (
           <p className="px-4 py-6 text-sm text-gray-500 text-center">No data yet.</p>

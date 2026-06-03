@@ -105,7 +105,7 @@ export default function NavBar({ profile, permissions, disabledSlugs = [], isPor
           <span className="font-bold text-gray-900">CT HUB</span>
         </Link>
         <div className="flex items-center gap-1">
-          <NotificationBell userId={profile.id} />
+          <NotificationBell />
           <button onClick={() => setOpen(o => !o)} className="p-2 -mr-2 text-gray-600 hover:text-gray-900" aria-label="Menu">
             {open ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
           </button>
@@ -186,7 +186,7 @@ export default function NavBar({ profile, permissions, disabledSlugs = [], isPor
                 <p className="text-xs text-gray-500 truncate capitalize">{profile.role.replace('_', ' ')}</p>
               </div>
             </div>
-            <NotificationBell userId={profile.id} />
+            <NotificationBell />
           </div>
         )}
         {collapsed && (
@@ -194,7 +194,7 @@ export default function NavBar({ profile, permissions, disabledSlugs = [], isPor
             <div className="h-8 w-8 rounded-full bg-blue-100 flex items-center justify-center text-blue-700 font-bold text-sm" title={profile.name || profile.email}>
               {(profile.name || profile.email)[0].toUpperCase()}
             </div>
-            <NotificationBell userId={profile.id} />
+            <NotificationBell />
           </div>
         )}
 
