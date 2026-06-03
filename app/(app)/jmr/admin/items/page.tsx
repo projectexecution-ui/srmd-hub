@@ -5,6 +5,7 @@ import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { EmptyState } from '@/components/ui/empty-state'
 import { Plus, Package } from 'lucide-react'
+import { AdminRowDeleteButton } from '@/components/jmr/AdminRowDeleteButton'
 
 export const dynamic = 'force-dynamic'
 
@@ -48,6 +49,7 @@ export default async function JmrItemsPage() {
                   <th className="px-4 py-2 font-semibold">Name</th>
                   <th className="px-4 py-2 font-semibold">Unit</th>
                   <th className="px-4 py-2 font-semibold">Status</th>
+                  {canEdit && <th className="px-4 py-2"></th>}
                 </tr>
               </thead>
               <tbody>
@@ -62,6 +64,16 @@ export default async function JmrItemsPage() {
                         {it.is_active ? 'active' : 'inactive'}
                       </span>
                     </td>
+                    {canEdit && (
+                      <td className="px-4 py-2 text-right">
+                        <AdminRowDeleteButton
+                          table="jmr_items"
+                          id={it.id}
+                          label={it.name}
+                          cascadeNote="Rate cards for this item will be removed too. Refused if any entry / bill still references it."
+                        />
+                      </td>
+                    )}
                   </tr>
                 ))}
               </tbody>

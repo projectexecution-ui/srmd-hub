@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button'
 import { EmptyState } from '@/components/ui/empty-state'
 import { Plus, Coins } from 'lucide-react'
 import { formatINR, formatDateIN } from '@/lib/jmr/format'
+import { AdminRowDeleteButton } from '@/components/jmr/AdminRowDeleteButton'
 
 export const dynamic = 'force-dynamic'
 
@@ -52,6 +53,7 @@ export default async function JmrRateCardsPage() {
                   <th className="px-4 py-3 font-semibold text-right">Rate</th>
                   <th className="px-4 py-3 font-semibold">Valid from</th>
                   <th className="px-4 py-3 font-semibold">Valid till</th>
+                  {canEdit && <th className="px-4 py-3"></th>}
                 </tr>
               </thead>
               <tbody>
@@ -77,6 +79,15 @@ export default async function JmrRateCardsPage() {
                       </td>
                       <td className="px-4 py-3 text-gray-700">{formatDateIN(r.valid_from)}</td>
                       <td className="px-4 py-3 text-gray-700">{r.valid_till ? formatDateIN(r.valid_till) : <span className="italic text-gray-400">open</span>}</td>
+                      {canEdit && (
+                        <td className="px-4 py-3 text-right">
+                          <AdminRowDeleteButton
+                            table="jmr_rate_cards"
+                            id={r.id}
+                            label={`${contractor?.name ?? '?'} × ${item?.name ?? '?'}`}
+                          />
+                        </td>
+                      )}
                     </tr>
                   )
                 })}
