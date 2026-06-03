@@ -64,6 +64,14 @@ export function MatrixFilters(p: Props) {
   const [views, setViews] = useState<SavedView[]>([])
   const [showSave, setShowSave] = useState(false)
   const [newName, setNewName] = useState('')
+  // Saved views live in localStorage, which is undefined during SSR.
+  // We must defer the read to the client after mount — hence the
+  // setState-in-effect pattern. The alternative (lazy useState
+  // initializer) runs on both SSR and hydration; readViews()'s SSR
+  // guard returns [] there, so the client would briefly render with
+  // no views before the localStorage read landed. The effect is the
+  // explicit, intentional way to do this.
+  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { setViews(readViews()) }, [])
 
   function apply() {

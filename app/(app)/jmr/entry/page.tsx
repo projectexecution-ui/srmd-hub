@@ -3,14 +3,12 @@ import { requirePermission, getMyProfile } from '@/lib/auth'
 import { PageHeader } from '@/components/PageHeader'
 import { EntryForm } from './entry-form'
 import { TodayEntries } from './today-entries'
-import { getJmrSettings } from '@/lib/jmr/settings'
 
 export const dynamic = 'force-dynamic'
 
 export default async function JmrEntryPage() {
   await requirePermission('jmr', 'edit')
   const profile = await getMyProfile()
-  const settings = await getJmrSettings()
   const supabase = await createClient()
 
   // Top-level projects only — sub-projects are loaded once a project is picked.
@@ -42,7 +40,7 @@ export default async function JmrEntryPage() {
         contractors={contractors ?? []}
         items={items ?? []}
       />
-      <TodayEntries editWindowHours={settings.entry_edit_window_hours} />
+      <TodayEntries />
     </div>
   )
 }

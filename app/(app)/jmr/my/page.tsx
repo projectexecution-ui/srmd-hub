@@ -6,7 +6,6 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { StatPill } from '@/components/ui/stat-pill'
 import { JmrEntryStatusPill } from '@/components/jmr/JmrEntryStatusPill'
-import { getJmrSettings } from '@/lib/jmr/settings'
 import { formatINR, formatINRShort, formatDateIN, todayISO } from '@/lib/jmr/format'
 import { Plus, Grid, ClipboardCheck, AlertTriangle, Clock, Camera, FileImage } from 'lucide-react'
 
@@ -22,7 +21,6 @@ function unwrap<T>(v: T | T[] | null | undefined): T | null {
 
 export default async function MyJmrPage() {
   await requirePermission('jmr', 'view')
-  const settings = await getJmrSettings()
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return null
@@ -164,9 +162,11 @@ export default async function MyJmrPage() {
                       const ctr  = unwrap(r.jmr_contractors)
                       const proj = unwrap(r.projects)
                       const sub  = unwrap(r.sub_project)
-                      const ageMs = Date.now() - new Date(r.created_at).getTime()
-                      const inWindow = ageMs < settings.entry_edit_window_hours * 3600 * 1000
-                      const canEdit = inWindow && r.status === 'submitted'
+                      // Note: engineers can no longer edit submitted entries —
+                      // RLS UPDATE policy is admin/head-only (lock-on-submit).
+                      // We keep the status pill + work-description visible so
+                      // the engineer sees the flag reason or approver note,
+                      // but no inline edit action.
                       const isFlagged = r.status === 'flagged'
                       const photoUrl = r.log_sheet_photo_url ? signedByPath.get(r.log_sheet_photo_url) ?? null : null
                       const hasPhoto = !!r.log_sheet_photo_url
@@ -224,16 +224,20 @@ export default async function MyJmrPage() {
                           </div>
                           <div className="text-right flex-shrink-0">
                             <p className="font-semibold text-emerald-700">{formatINR(Number(r.amount))}</p>
-                            {canEdit ? (
-                              <Link href={`/jmr/entry/${r.id}`} className="text-[11px] text-blue-600 hover:underline">
-                                Edit
-                              </Link>
-                            ) : isFlagged ? (
-                              <Link href={`/jmr/entry/${r.id}`} className="text-[11px] text-rose-700 hover:underline">
-                                Re-submit
-                              </Link>
+                            {isFlagged ? (
+                              <span
+                                className="text-[10px] text-rose-700"
+                                title="Entry was flagged — only admin / head can amend it. To correct, ask them or log a fresh entry."
+                              >
+                                flagged — ask admin
+                              </span>
                             ) : (
-                              <span className="text-[10px] text-gray-400">locked</span>
+                              <span
+                                className="text-[10px] text-gray-400"
+                                title="Submitted entries are locked. Only admin / head can amend."
+                              >
+                                locked
+                              </span>
                             )}
                           </div>
                         </li>

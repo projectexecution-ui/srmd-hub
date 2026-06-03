@@ -2,9 +2,11 @@ import { createClient } from '@/lib/supabase/server'
 import { Card } from '@/components/ui/card'
 import { formatINR, todayISO } from '@/lib/jmr/format'
 import { ChevronDown } from 'lucide-react'
-import Link from 'next/link'
 
-export async function TodayEntries({ editWindowHours }: { editWindowHours: number }) {
+// Engineers cannot edit submitted entries (lock-on-submit RLS).
+// We just list today's entries for verification — no inline edit
+// affordance.
+export async function TodayEntries() {
   const supabase = await createClient()
   const today = todayISO()
   const { data: { user } } = await supabase.auth.getUser()
@@ -47,8 +49,6 @@ export async function TodayEntries({ editWindowHours }: { editWindowHours: numbe
             const contractor = e.jmr_contractors?.name ?? '—'
             // @ts-expect-error supabase relation typing is loose
             const project = e.projects?.name ?? '—'
-            const ageMs = Date.now() - new Date(e.created_at as string).getTime()
-            const canEdit = ageMs < editWindowHours * 3600 * 1000 && e.status === 'submitted'
             return (
               <div key={e.id} className="flex items-start justify-between gap-2 py-2 border-t border-gray-100 first:border-t-0">
                 <div className="min-w-0">
@@ -58,11 +58,12 @@ export async function TodayEntries({ editWindowHours }: { editWindowHours: numbe
                 </div>
                 <div className="text-right flex-shrink-0">
                   <p className="text-sm font-semibold text-emerald-700">{formatINR(Number(e.amount))}</p>
-                  {canEdit ? (
-                    <Link href={`/jmr/entry/${e.id}`} className="text-[10px] text-blue-600 hover:underline">Edit</Link>
-                  ) : (
-                    <span className="text-[10px] text-gray-400">locked</span>
-                  )}
+                  <span
+                    className="text-[10px] text-gray-400"
+                    title="Submitted entries are locked. Only admin / head can amend."
+                  >
+                    locked
+                  </span>
                 </div>
               </div>
             )
