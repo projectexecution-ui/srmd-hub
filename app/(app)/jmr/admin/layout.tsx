@@ -9,6 +9,7 @@ const TABS = [
   { slug: 'items',       label: 'Items',       href: '/jmr/admin/items' },
   { slug: 'rate-cards',  label: 'Rate Cards',  href: '/jmr/admin/rate-cards' },
   { slug: 'access',      label: 'User Access', href: '/jmr/admin/access' },
+  { slug: 'admins',      label: 'Admins',      href: '/jmr/admin/admins' },
   { slug: 'import',      label: 'Import',      href: '/jmr/admin/import' },
   { slug: 'settings',    label: 'Settings',    href: '/jmr/admin/settings' },
 ]
