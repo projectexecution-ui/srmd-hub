@@ -23,18 +23,38 @@ function newLine(): LineDraft {
   return { tempId: crypto.randomUUID(), item_id: '', requested_qty: '', remarks: '' }
 }
 
-export function RequestForm({ projects, warehouses, items }: {
+interface InitialDraft {
+  projectId?: string
+  warehouseId?: string
+  urgency?: string
+  purpose?: string
+  requiredBy?: string
+  lines: Array<{ item_id: string; requested_qty: number; remarks: string | null }>
+  sourceRequestNo?: string
+}
+
+export function RequestForm({ projects, warehouses, items, initialDraft }: {
   projects: Opt[]
   warehouses: Opt[]
   items: PickerItem[]
+  initialDraft?: InitialDraft
 }) {
   const router = useRouter()
-  const [projectId, setProjectId]   = useState(projects[0]?.id ?? '')
-  const [warehouseId, setWarehouseId] = useState(warehouses[0]?.id ?? '')
-  const [urgency, setUrgency]       = useState('normal')
-  const [purpose, setPurpose]       = useState('')
-  const [requiredBy, setRequiredBy] = useState('')
-  const [lines, setLines]           = useState<LineDraft[]>([newLine()])
+  const [projectId, setProjectId]   = useState(initialDraft?.projectId ?? projects[0]?.id ?? '')
+  const [warehouseId, setWarehouseId] = useState(initialDraft?.warehouseId ?? warehouses[0]?.id ?? '')
+  const [urgency, setUrgency]       = useState(initialDraft?.urgency ?? 'normal')
+  const [purpose, setPurpose]       = useState(initialDraft?.purpose ?? '')
+  const [requiredBy, setRequiredBy] = useState(initialDraft?.requiredBy ?? '')
+  const [lines, setLines]           = useState<LineDraft[]>(
+    initialDraft && initialDraft.lines.length > 0
+      ? initialDraft.lines.map(l => ({
+          tempId: crypto.randomUUID(),
+          item_id: l.item_id,
+          requested_qty: String(l.requested_qty),
+          remarks: l.remarks ?? '',
+        }))
+      : [newLine()],
+  )
   const [busy, setBusy]             = useState(false)
   const [error, setError]           = useState<string | null>(null)
 

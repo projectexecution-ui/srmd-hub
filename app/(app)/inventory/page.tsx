@@ -1,6 +1,6 @@
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/server'
-import { requirePermission, can, getMyProfile, getDisabledModuleSlugs } from '@/lib/auth'
+import { requirePermission, can, getMyProfile, getMyUser, getDisabledModuleSlugs } from '@/lib/auth'
 import { PageHeader } from '@/components/PageHeader'
 import { Card } from '@/components/ui/card'
 import {
@@ -11,66 +11,144 @@ import type { Role } from '@/lib/types'
 
 export const dynamic = 'force-dynamic'
 
+// Statuses by stage — single source of truth so the counts on tiles
+// match exactly what the inbox pages show when you click them.
+const PENDING_BACKOFFICE = 'PENDING_BACKOFFICE'
+const PENDING_HOP        = 'PENDING_HOP'
+const TO_ISSUE           = ['APPROVED', 'EMERGENCY_ISSUED']
+const ENGINEER_ACTIONABLE = ['ISSUED', 'EMERGENCY_ISSUED']  // need receipt confirmation
+const REJECTED            = ['REJECTED_BACKOFFICE', 'REJECTED_HOP']
+
 export default async function InventoryLandingPage() {
   const perms = await requirePermission('inventory', 'view')
-  const [profile, disabledSlugs] = await Promise.all([getMyProfile(), getDisabledModuleSlugs()])
+  const [profile, user, disabledSlugs] = await Promise.all([getMyProfile(), getMyUser(), getDisabledModuleSlugs()])
   const role: Role | null = profile?.role ?? null
   const canEdit  = can(perms, 'inventory', 'edit')
   const canAdmin = can(perms, 'inventory', 'admin')
   const isEnabled = (slug: string) => !disabledSlugs.has(slug)
 
-  // Just the count that's actually actionable for THIS user — nothing else
-  // on the landing. Everything else lives on its own page.
+  // ─── Live counts for every tile so the user knows what's queued
+  //     where without opening each inbox. Each `count` is null when
+  //     the user can't see that queue (so we hide the badge). ──────
   const supabase = await createClient()
-  let myPendingCount = 0
-  if (role === 'backoffice' || role === 'backoffice_backup' || role === 'store_manager') {
-    const { count } = await supabase.from('inv_requests').select('id', { count: 'exact', head: true }).eq('status', 'PENDING_BACKOFFICE')
-    myPendingCount = count ?? 0
-  } else if (role === 'head' || role === 'hop') {
-    const { count } = await supabase.from('inv_requests').select('id', { count: 'exact', head: true }).eq('status', 'PENDING_HOP')
-    myPendingCount = count ?? 0
-  }
+  const myUid = user?.id ?? null
 
-  // ─── Section tiles — only show what's enabled AND relevant ─────
-  type Section = { slug: string; href: string; title: string; icon: React.ComponentType<{ className?: string }>; show: boolean }
-  const main: Section[] = [
-    { slug: 'inv-stock',            href: '/inventory/stock',            title: 'Stock',          icon: Boxes,         show: true },
-    { slug: 'inv-request-new',      href: '/inventory/requests/new',     title: 'Raise request',  icon: ClipboardList, show: role === 'engineer' || canEdit || canAdmin },
-    { slug: 'inv-requests',         href: '/inventory/requests',         title: 'My requests',    icon: FileText,      show: true },
-    { slug: 'inv-inbox-backoffice', href: '/inventory/inbox/backoffice', title: 'Availability check', icon: Inbox,    show: role === 'backoffice' || role === 'backoffice_backup' || role === 'store_manager' || canAdmin },
-    { slug: 'inv-inbox-hop',        href: '/inventory/inbox/hop',        title: 'Atm Head approval',  icon: ShieldCheck, show: role === 'head' || role === 'hop' || canAdmin },
-    { slug: 'inv-inbox-store',      href: '/inventory/inbox/store',      title: 'To issue',       icon: Truck,         show: role === 'store_manager' || canAdmin },
-    { slug: 'inv-receipt',          href: '/inventory/receipt',          title: 'Stock receipt',  icon: PackagePlus,   show: role === 'store_manager' || canAdmin },
-    { slug: 'inv-returns',          href: '/inventory/returns/new',      title: 'Returns',        icon: Undo2,         show: canEdit || canAdmin },
-  ].filter(s => s.show && isEnabled(s.slug))
+  const [
+    backofficeCount,
+    hopCount,
+    storeCount,
+    myAwaitingReceiptCount,
+    myRejectedCount,
+    myOutstandingReturnsCount,
+  ] = await Promise.all([
+    // Backoffice / storekeeper queue
+    (role === 'backoffice' || role === 'backoffice_backup' || role === 'store_manager' || canAdmin)
+      ? supabase.from('inv_requests').select('id', { count: 'exact', head: true }).eq('status', PENDING_BACKOFFICE).then(r => r.count ?? 0)
+      : Promise.resolve(null),
+    // Atm Head queue
+    (role === 'head' || role === 'hop' || canAdmin)
+      ? supabase.from('inv_requests').select('id', { count: 'exact', head: true }).eq('status', PENDING_HOP).then(r => r.count ?? 0)
+      : Promise.resolve(null),
+    // Store queue (ready to issue)
+    (role === 'store_manager' || canAdmin)
+      ? supabase.from('inv_requests').select('id', { count: 'exact', head: true }).in('status', TO_ISSUE).then(r => r.count ?? 0)
+      : Promise.resolve(null),
+    // My requests awaiting receipt confirmation (engineer only)
+    myUid
+      ? supabase.from('inv_requests')
+          .select('id', { count: 'exact', head: true })
+          .eq('engineer_id', myUid)
+          .in('status', ENGINEER_ACTIONABLE)
+          .is('engineer_acknowledged_at', null)
+          .then(r => r.count ?? 0)
+      : Promise.resolve(0),
+    // My rejected requests (engineer only)
+    myUid
+      ? supabase.from('inv_requests')
+          .select('id', { count: 'exact', head: true })
+          .eq('engineer_id', myUid)
+          .in('status', REJECTED)
+          .then(r => r.count ?? 0)
+      : Promise.resolve(0),
+    // Outstanding returnable lines (engineer's own; admins see all)
+    (myUid || canAdmin)
+      ? supabase.from('inv_request_items')
+          .select('id, requested_qty, returned_good_qty, returned_damaged_qty, inv_requests!inner(engineer_id, status)', { count: 'exact', head: false })
+          .eq('is_returnable', true)
+          .in('inv_requests.status', ['ISSUED', 'EMERGENCY_ISSUED', 'CLOSED'])
+          .then(r => {
+            const rows = (r.data ?? []) as Array<{
+              id: string; requested_qty: number; returned_good_qty: number; returned_damaged_qty: number;
+              inv_requests: { engineer_id: string; status: string } | Array<{ engineer_id: string; status: string }>
+            }>
+            return rows.filter(row => {
+              const req = Array.isArray(row.inv_requests) ? row.inv_requests[0] : row.inv_requests
+              if (!canAdmin && req?.engineer_id !== myUid) return false
+              const outstanding = Number(row.requested_qty) - Number(row.returned_good_qty) - Number(row.returned_damaged_qty)
+              return outstanding > 0
+            }).length
+          })
+      : Promise.resolve(0),
+  ])
+
+  // ─── Section tiles — show what's enabled + relevant; badge with
+  //     live count when queue applies. ──────────────────────────────
+  type BadgeStyle = 'amber' | 'rose' | 'emerald' | 'blue'
+  type Section = {
+    slug: string; href: string; title: string; subtitle?: string
+    icon: React.ComponentType<{ className?: string }>; show: boolean
+    badge?: number | null
+    badgeStyle?: BadgeStyle
+  }
+  const main: Section[] = ([
+    { slug: 'inv-stock',            href: '/inventory/stock',            title: 'Stock',          subtitle: 'Live warehouse levels', icon: Boxes,         show: true },
+    { slug: 'inv-request-new',      href: '/inventory/requests/new',     title: 'Raise request',  subtitle: 'New material need',  icon: ClipboardList, show: role === 'engineer' || canEdit || canAdmin },
+    { slug: 'inv-requests',         href: '/inventory/requests',         title: 'My requests',    subtitle: 'Everything I raised', icon: FileText,     show: true,
+      badge: myAwaitingReceiptCount + myRejectedCount, badgeStyle: (myRejectedCount > 0 ? 'rose' : 'emerald') as BadgeStyle },
+    { slug: 'inv-inbox-backoffice', href: '/inventory/inbox/backoffice', title: 'Availability check', subtitle: 'Backoffice + Store', icon: Inbox,    show: role === 'backoffice' || role === 'backoffice_backup' || role === 'store_manager' || canAdmin,
+      badge: backofficeCount, badgeStyle: 'amber' as BadgeStyle },
+    { slug: 'inv-inbox-hop',        href: '/inventory/inbox/hop',        title: 'Atm Head approval', subtitle: 'Final + emergency bypass', icon: ShieldCheck, show: role === 'head' || role === 'hop' || canAdmin,
+      badge: hopCount, badgeStyle: 'amber' as BadgeStyle },
+    { slug: 'inv-inbox-store',      href: '/inventory/inbox/store',      title: 'To issue',       subtitle: 'Approved requests', icon: Truck,         show: role === 'store_manager' || canAdmin,
+      badge: storeCount, badgeStyle: 'blue' as BadgeStyle },
+    { slug: 'inv-receipt',          href: '/inventory/receipt',          title: 'Stock receipt',  subtitle: 'Record vendor delivery', icon: PackagePlus,   show: role === 'store_manager' || canAdmin },
+    { slug: 'inv-returns',          href: '/inventory/returns/new',      title: 'Returns',        subtitle: 'Log returnable items', icon: Undo2,         show: canEdit || canAdmin,
+      badge: myOutstandingReturnsCount, badgeStyle: 'amber' as BadgeStyle },
+  ] as Section[]).filter(s => s.show && isEnabled(s.slug))
 
   const adminSections: Section[] = [
     { slug: 'inv-admin-warehouses', href: '/inventory/admin/warehouses', title: 'Warehouses',  icon: Building2, show: canAdmin },
     { slug: 'inv-admin-items',      href: '/inventory/admin/items',      title: 'Item master', icon: Tag,       show: canAdmin },
   ].filter(s => s.show && isEnabled(s.slug))
 
+  // Top callout — the SINGLE most urgent thing waiting on this user.
+  const calloutQueue: { count: number; href: string; label: string } | null = (() => {
+    if (hopCount && hopCount > 0)                  return { count: hopCount,        href: '/inventory/inbox/hop',        label: 'Atm Head approval' }
+    if (backofficeCount && backofficeCount > 0)    return { count: backofficeCount, href: '/inventory/inbox/backoffice', label: 'Availability check' }
+    if (storeCount && storeCount > 0)              return { count: storeCount,      href: '/inventory/inbox/store',      label: 'To issue' }
+    if (myAwaitingReceiptCount > 0)                return { count: myAwaitingReceiptCount, href: '/inventory/requests', label: 'Confirm receipt' }
+    return null
+  })()
+
   return (
     <div className="p-4 md:p-6 max-w-5xl mx-auto space-y-6">
-      <PageHeader title="Inventory" />
+      <PageHeader title="Inventory" subtitle="Request material, approve, issue, return — the full chain." />
 
-      {myPendingCount > 0 && (
+      {calloutQueue && (
         <Card className="p-4 bg-amber-50 border-amber-200 text-sm flex items-center justify-between">
           <span className="text-amber-900">
-            <b>{myPendingCount}</b> request{myPendingCount === 1 ? '' : 's'} waiting on you.
+            <b>{calloutQueue.count}</b> request{calloutQueue.count === 1 ? '' : 's'} waiting on you in <b>{calloutQueue.label}</b>.
           </span>
-          <Link
-            href={role === 'head' || role === 'hop' ? '/inventory/inbox/hop' : '/inventory/inbox/backoffice'}
-            className="text-amber-900 font-semibold underline-offset-2 hover:underline"
-          >
+          <Link href={calloutQueue.href} className="text-amber-900 font-semibold underline-offset-2 hover:underline whitespace-nowrap">
             Open queue →
           </Link>
         </Card>
       )}
 
-      {/* Main actions */}
+      {/* Main actions — live badges on every tile that has a queue */}
       {main.length > 0 ? (
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
-          {main.map(s => <Tile key={s.slug} href={s.href} title={s.title} icon={s.icon} />)}
+          {main.map(s => <Tile key={s.slug} section={s} />)}
         </div>
       ) : (
         <Card className="p-6 text-center text-sm text-gray-500">
@@ -97,16 +175,38 @@ export default async function InventoryLandingPage() {
   )
 }
 
-function Tile({ href, title, icon: Icon }: {
-  href: string; title: string; icon: React.ComponentType<{ className?: string }>;
+const BADGE_STYLES = {
+  amber:   'bg-amber-100 text-amber-900 border-amber-200',
+  rose:    'bg-rose-100 text-rose-900 border-rose-200',
+  emerald: 'bg-emerald-100 text-emerald-900 border-emerald-200',
+  blue:    'bg-blue-100 text-blue-900 border-blue-200',
+} as const
+
+function Tile({ section }: {
+  section: {
+    href: string; title: string; subtitle?: string
+    icon: React.ComponentType<{ className?: string }>
+    badge?: number | null
+    badgeStyle?: keyof typeof BADGE_STYLES
+  }
 }) {
+  const { href, title, subtitle, icon: Icon, badge, badgeStyle = 'amber' } = section
+  const showBadge = typeof badge === 'number' && badge > 0
   return (
     <Link href={href}>
-      <Card className="p-4 h-full hover:shadow-md hover:-translate-y-0.5 transition-all flex flex-col items-start gap-2">
+      <Card className="p-4 h-full hover:shadow-md hover:-translate-y-0.5 transition-all flex flex-col items-start gap-2 relative">
+        {showBadge && (
+          <span className={`absolute top-2 right-2 inline-flex items-center justify-center min-w-[1.5rem] h-5 px-1.5 rounded-full border text-[11px] font-bold tabular-nums ${BADGE_STYLES[badgeStyle]}`}>
+            {badge! > 99 ? '99+' : badge}
+          </span>
+        )}
         <div className="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-green-50 text-green-700">
           <Icon className="h-5 w-5" />
         </div>
-        <h3 className="text-sm font-semibold text-gray-900 leading-tight">{title}</h3>
+        <div className="min-w-0">
+          <h3 className="text-sm font-semibold text-gray-900 leading-tight">{title}</h3>
+          {subtitle && <p className="text-[11px] text-gray-500 leading-tight mt-0.5">{subtitle}</p>}
+        </div>
       </Card>
     </Link>
   )

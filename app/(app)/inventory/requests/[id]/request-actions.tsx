@@ -69,13 +69,36 @@ export function RequestActions({
   const [returnCondition, setReturnCondition] = useState<'good' | 'damaged'>('good')
   const [returnRemarks, setReturnRemarks] = useState('')
 
-  async function rpc(name: string, params: Record<string, unknown>, successMsg: string) {
+  /**
+   * Run an inventory RPC and react to the outcome.
+   *
+   * @param redirectTo  Where to go after a SUCCESSFUL action.
+   *                    Set to '' (empty string) to stay on the
+   *                    same page (e.g. when the user might want
+   *                    to log another return).
+   *                    Otherwise we router.push() the user to the
+   *                    next logical screen so the chain feels
+   *                    connected — backoffice approves → back to
+   *                    their inbox to grab the next one, etc.
+   */
+  async function rpc(
+    name: string,
+    params: Record<string, unknown>,
+    successMsg: string,
+    redirectTo: string = '',
+  ) {
     setBusy(true); setErr(null); setMsg(null)
     const { error } = await supabase.rpc(name, params)
     setBusy(false)
     if (error) { setErr(error.message); return false }
     setMsg(successMsg)
-    router.refresh()
+    if (redirectTo) {
+      // Small delay so the success banner is visible before
+      // the navigation kicks in — feels less abrupt.
+      setTimeout(() => router.push(redirectTo), 700)
+    } else {
+      router.refresh()
+    }
     return true
   }
 
@@ -112,13 +135,13 @@ export function RequestActions({
             <Button onClick={async () => {
               const items = lines.map(l => ({ request_item_id: l.id, approved_qty: Number(approvedQty[l.id]) }))
               if (items.some(i => !Number.isFinite(i.approved_qty) || i.approved_qty < 0)) { setErr('Enter a valid qty for every line'); return }
-              await rpc('inv_rpc_backoffice_approve', { p_request_id: requestId, p_approved_items: items, p_remarks: remarks.trim() || null }, 'Marked available. Stock reserved. Sent to Atm Head.')
+              await rpc('inv_rpc_backoffice_approve', { p_request_id: requestId, p_approved_items: items, p_remarks: remarks.trim() || null }, 'Marked available. Stock reserved. Sent to Atm Head.', '/inventory/inbox/backoffice')
             }} disabled={busy} className="bg-emerald-600 hover:bg-emerald-700">
               <Check className="h-4 w-4" /> Mark available & send to Atm Head
             </Button>
             <Button onClick={async () => {
               if (!remarks.trim()) { setErr('Reason required when marking not-available'); return }
-              await rpc('inv_rpc_backoffice_reject', { p_request_id: requestId, p_remarks: remarks.trim() }, 'Not available — engineer notified.')
+              await rpc('inv_rpc_backoffice_reject', { p_request_id: requestId, p_remarks: remarks.trim() }, 'Not available — engineer notified.', '/inventory/inbox/backoffice')
             }} disabled={busy} variant="outline" className="text-rose-700 border-rose-200 hover:bg-rose-50">
               <X className="h-4 w-4" /> Not available
             </Button>
@@ -183,13 +206,13 @@ export function RequestActions({
             <div className="flex flex-wrap gap-2">
               <Button onClick={() => {
                 const returnableItems = lines.map(l => ({ request_item_id: l.id, is_returnable: !!returnable[l.id] }))
-                return rpc('inv_rpc_hop_approve', { p_request_id: requestId, p_remarks: remarks.trim() || null, p_returnable_items: returnableItems }, 'Approved. Store can now issue.')
+                return rpc('inv_rpc_hop_approve', { p_request_id: requestId, p_remarks: remarks.trim() || null, p_returnable_items: returnableItems }, 'Approved. Store can now issue.', '/inventory/inbox/hop')
               }} disabled={busy} className="bg-emerald-600 hover:bg-emerald-700">
                 <Check className="h-4 w-4" /> Approve
               </Button>
               <Button onClick={async () => {
                 if (!remarks.trim()) { setErr('Reject reason is required'); return }
-                await rpc('inv_rpc_hop_reject', { p_request_id: requestId, p_remarks: remarks.trim() }, 'Rejected. Reservations released.')
+                await rpc('inv_rpc_hop_reject', { p_request_id: requestId, p_remarks: remarks.trim() }, 'Rejected. Reservations released.', '/inventory/inbox/hop')
               }} disabled={busy} variant="outline" className="text-rose-700 border-rose-200 hover:bg-rose-50">
                 <X className="h-4 w-4" /> Reject
               </Button>
@@ -208,7 +231,7 @@ export function RequestActions({
             <Textarea value={remarks} onChange={e => setRemarks(e.target.value)} rows={2} placeholder="Reason for bypass (required)" />
             <Button onClick={async () => {
               if (!remarks.trim()) { setErr('Bypass reason is required'); return }
-              await rpc('inv_rpc_hop_emergency_authorize', { p_request_id: requestId, p_remarks: remarks.trim() }, 'Emergency authorised. Store can issue.')
+              await rpc('inv_rpc_hop_emergency_authorize', { p_request_id: requestId, p_remarks: remarks.trim() }, 'Emergency authorised. Store can issue.', '/inventory/inbox/hop')
             }} disabled={busy} className="bg-rose-600 hover:bg-rose-700">
               <AlertTriangle className="h-4 w-4" /> Authorise emergency
             </Button>
@@ -248,7 +271,7 @@ export function RequestActions({
           <Button onClick={async () => {
             const items = lines.map(l => ({ request_item_id: l.id, issued_qty: Number(issuedQty[l.id]) }))
             if (items.some(i => !Number.isFinite(i.issued_qty) || i.issued_qty < 0)) { setErr('Enter a valid issued qty for every line'); return }
-            await rpc('inv_rpc_store_issue', { p_request_id: requestId, p_issued_items: items, p_remarks: remarks.trim() || null }, 'Issued. Engineer will be asked to confirm receipt.')
+            await rpc('inv_rpc_store_issue', { p_request_id: requestId, p_issued_items: items, p_remarks: remarks.trim() || null }, 'Issued. Engineer will be asked to confirm receipt.', '/inventory/inbox/store')
           }} disabled={busy} className="bg-blue-600 hover:bg-blue-700">
             <Truck className="h-4 w-4" /> Issue
           </Button>
@@ -281,8 +304,9 @@ export function RequestActions({
           )}
           <Textarea value={remarks} onChange={e => setRemarks(e.target.value)} rows={2} placeholder="Notes (optional)" />
           <Button onClick={() => rpc('inv_rpc_engineer_acknowledge', { p_request_id: requestId, p_notes: remarks.trim() || null },
-            returnables.length > 0 ? 'Receipt confirmed. Returnable items still tracked.' : 'Receipt confirmed. Request closed.')
-          } disabled={busy} className="bg-emerald-600 hover:bg-emerald-700">
+            returnables.length > 0 ? 'Receipt confirmed. Returnable items still tracked.' : 'Receipt confirmed. Request closed.',
+            returnables.length > 0 ? '' : '/inventory/requests',
+          )} disabled={busy} className="bg-emerald-600 hover:bg-emerald-700">
             <PackageCheck className="h-4 w-4" /> Confirm receipt
           </Button>
         </CardContent>

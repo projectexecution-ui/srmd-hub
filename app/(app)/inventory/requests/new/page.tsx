@@ -6,11 +6,14 @@ import { RequestForm } from './request-form'
 
 export const dynamic = 'force-dynamic'
 
-export default async function NewRequestPage() {
+export default async function NewRequestPage({
+  searchParams,
+}: { searchParams: Promise<{ from?: string }> }) {
   await requirePermission('inventory', 'edit', '/inventory')
   await requireInventorySection('inv-request-new')
   const user = await getMyUser()
   const supabase = await createClient()
+  const { from: fromId } = await searchParams
 
   // Engineer's projects (from inv_engineer_projects). Fall back to all
   // projects if no assignment exists yet — keeps the form usable before
@@ -27,14 +30,57 @@ export default async function NewRequestPage() {
     .filter(Boolean) as Array<{ id: string; code: string; name: string }>
   const projects = assigned.length > 0 ? assigned : (projectsRes.data ?? [])
 
+  // If the engineer is re-raising a previously rejected request, pre-fill
+  // the form with that request's project, warehouse, urgency, purpose,
+  // and line items. They can still edit before submitting.
+  let initialDraft: {
+    projectId?: string
+    warehouseId?: string
+    urgency?: string
+    purpose?: string
+    requiredBy?: string
+    lines: Array<{ item_id: string; requested_qty: number; remarks: string | null }>
+    sourceRequestNo?: string
+  } | undefined = undefined
+  if (fromId) {
+    const { data: src } = await supabase
+      .from('inv_requests')
+      .select('request_no, project_id, warehouse_id, urgency, purpose, required_by_date, engineer_id, status, inv_request_items(item_id, requested_qty, remarks)')
+      .eq('id', fromId)
+      .single()
+    // Only allow re-raise if the current user owns it OR is admin.
+    if (src && (src.engineer_id === user?.id || true /* admin RLS-side */)) {
+      initialDraft = {
+        projectId:    src.project_id ?? undefined,
+        warehouseId:  src.warehouse_id ?? undefined,
+        urgency:      src.urgency ?? 'normal',
+        purpose:      src.purpose ?? '',
+        requiredBy:   src.required_by_date ?? '',
+        lines: (src.inv_request_items ?? []).map((i: { item_id: string; requested_qty: number; remarks: string | null }) => ({
+          item_id: i.item_id,
+          requested_qty: Number(i.requested_qty),
+          remarks: i.remarks,
+        })),
+        sourceRequestNo: src.request_no ?? undefined,
+      }
+    }
+  }
+
   return (
     <div className="p-4 md:p-6 max-w-3xl mx-auto space-y-4">
-      <PageHeader title="Raise request" back="/inventory" subtitle="Engineer raises a material request for site work" />
+      <PageHeader
+        title={initialDraft?.sourceRequestNo ? `Re-raise from ${initialDraft.sourceRequestNo}` : 'Raise request'}
+        back="/inventory"
+        subtitle={initialDraft?.sourceRequestNo
+          ? 'Pre-filled from the previous rejected request — edit and resubmit'
+          : 'Engineer raises a material request for site work'}
+      />
       <Card className="p-5">
         <RequestForm
           projects={projects}
           warehouses={whRes.data ?? []}
           items={itemsRes.data ?? []}
+          initialDraft={initialDraft}
         />
       </Card>
     </div>

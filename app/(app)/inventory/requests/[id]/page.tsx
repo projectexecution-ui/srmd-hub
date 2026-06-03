@@ -1,3 +1,4 @@
+import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { requirePermission, getMyProfile, getMyUser } from '@/lib/auth'
@@ -6,6 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { RequestStatusPill } from '@/components/inventory/RequestStatusPill'
 import { formatDate } from '@/lib/utils'
 import { RequestActions } from './request-actions'
+import { RefreshCw } from 'lucide-react'
 
 export const dynamic = 'force-dynamic'
 
@@ -63,6 +65,25 @@ export default async function RequestDetailPage({
       <PageHeader title={req.request_no} back="/inventory/requests">
         <RequestStatusPill status={req.status} />
       </PageHeader>
+
+      {/* Re-raise banner: shown when the request was rejected and the
+          current user owns it (or is admin). One click opens the
+          /requests/new form with every line + project + warehouse +
+          urgency pre-filled from this rejected request. */}
+      {(req.status === 'REJECTED_BACKOFFICE' || req.status === 'REJECTED_HOP') &&
+        (user?.id === req.engineer_id || role === 'admin') && (
+        <Card className="bg-orange-50 border-orange-200 p-4 flex items-center justify-between gap-3 flex-wrap">
+          <div className="text-sm text-orange-900">
+            This request was rejected. Open a fresh request with the same items pre-filled, edit what changed, and resubmit.
+          </div>
+          <Link
+            href={`/inventory/requests/new?from=${req.id}`}
+            className="inline-flex items-center gap-1.5 text-sm font-medium bg-orange-700 text-white px-3 py-1.5 rounded-lg hover:bg-orange-800 whitespace-nowrap"
+          >
+            <RefreshCw className="h-4 w-4" /> Re-raise this request
+          </Link>
+        </Card>
+      )}
 
       {/* Meta card */}
       <Card>
