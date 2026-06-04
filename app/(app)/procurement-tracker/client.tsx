@@ -14,9 +14,10 @@ import type { ParseResult, LineRecord, SnapshotDiff } from '@/lib/procurement'
 import { formatSavedAt } from '@/lib/procurement/storage'
 import { PendingReceiptsView } from '@/components/procurement-tracker/PendingReceiptsView'
 import { IndentsNeedingPoView } from '@/components/procurement-tracker/IndentsNeedingPoView'
+import { CompletedView } from '@/components/procurement-tracker/CompletedView'
 import { DiffBanner } from '@/components/procurement-tracker/DiffBanner'
 import Link from 'next/link'
-import { Upload, FileSpreadsheet, Loader2, PackageX, ClipboardList, EyeOff } from 'lucide-react'
+import { Upload, FileSpreadsheet, Loader2, PackageX, ClipboardList, EyeOff, CheckCircle2 } from 'lucide-react'
 
 type AnalyseResponse = ParseResult & {
   success: boolean
@@ -51,7 +52,7 @@ function hydrateDiff(wire: NonNullable<AnalyseResponse['diff']>): SnapshotDiff {
   }
 }
 
-type View = 'pending' | 'needs-po'
+type View = 'pending' | 'needs-po' | 'completed'
 
 export function ProcurementTrackerClient({ isAdmin = false }: { isAdmin?: boolean }) {
   const [isDragging, setIsDragging] = useState(false)
@@ -167,6 +168,10 @@ export function ProcurementTrackerClient({ isAdmin = false }: { isAdmin?: boolea
   )
   const needsPoCount = useMemo(
     () => linesForActiveProject.filter(l => l.status === 'no_po').length,
+    [linesForActiveProject],
+  )
+  const completedCount = useMemo(
+    () => linesForActiveProject.filter(l => l.status === 'received' && l.pos.length > 0 && l.grns.length > 0).length,
     [linesForActiveProject],
   )
 
@@ -319,17 +324,18 @@ export function ProcurementTrackerClient({ isAdmin = false }: { isAdmin?: boolea
             )}
 
             {/* The toggle — the entire page hinges on this */}
-            <div className="grid grid-cols-2 gap-2 bg-white rounded-xl border border-orange-200 p-1">
+            <div className="grid grid-cols-3 gap-2 bg-white rounded-xl border border-orange-200 p-1">
               <button
                 onClick={() => setView('pending')}
-                className={`flex items-center justify-center gap-2 px-3 py-3 rounded-lg text-sm font-semibold transition-colors ${
+                className={`flex items-center justify-center gap-2 px-2 py-3 rounded-lg text-sm font-semibold transition-colors ${
                   view === 'pending'
                     ? 'bg-gradient-to-br from-orange-700 to-red-900 text-white shadow-sm'
                     : 'text-stone-600 hover:bg-orange-50'
                 }`}
               >
                 <PackageX className={`h-4 w-4 ${view === 'pending' ? '' : 'text-amber-600'}`} />
-                <span>Pending receipts</span>
+                <span className="hidden sm:inline">Pending receipts</span>
+                <span className="sm:hidden">Pending</span>
                 <span className={`text-[11px] font-bold rounded-full px-2 py-0.5 ${
                   view === 'pending' ? 'bg-white/20 text-white' : 'bg-amber-100 text-amber-800'
                 }`}>
@@ -338,36 +344,62 @@ export function ProcurementTrackerClient({ isAdmin = false }: { isAdmin?: boolea
               </button>
               <button
                 onClick={() => setView('needs-po')}
-                className={`flex items-center justify-center gap-2 px-3 py-3 rounded-lg text-sm font-semibold transition-colors ${
+                className={`flex items-center justify-center gap-2 px-2 py-3 rounded-lg text-sm font-semibold transition-colors ${
                   view === 'needs-po'
                     ? 'bg-gradient-to-br from-orange-700 to-red-900 text-white shadow-sm'
                     : 'text-stone-600 hover:bg-orange-50'
                 }`}
               >
                 <ClipboardList className={`h-4 w-4 ${view === 'needs-po' ? '' : 'text-red-600'}`} />
-                <span>Indents needing PO</span>
+                <span className="hidden sm:inline">Needing PO</span>
+                <span className="sm:hidden">No PO</span>
                 <span className={`text-[11px] font-bold rounded-full px-2 py-0.5 ${
                   view === 'needs-po' ? 'bg-white/20 text-white' : 'bg-red-100 text-red-800'
                 }`}>
                   {needsPoCount}
                 </span>
               </button>
+              <button
+                onClick={() => setView('completed')}
+                className={`flex items-center justify-center gap-2 px-2 py-3 rounded-lg text-sm font-semibold transition-colors ${
+                  view === 'completed'
+                    ? 'bg-gradient-to-br from-orange-700 to-red-900 text-white shadow-sm'
+                    : 'text-stone-600 hover:bg-orange-50'
+                }`}
+                title="Cycle-time analysis on fully-delivered items"
+              >
+                <CheckCircle2 className={`h-4 w-4 ${view === 'completed' ? '' : 'text-emerald-600'}`} />
+                <span className="hidden sm:inline">Completed</span>
+                <span className="sm:hidden">Done</span>
+                <span className={`text-[11px] font-bold rounded-full px-2 py-0.5 ${
+                  view === 'completed' ? 'bg-white/20 text-white' : 'bg-emerald-100 text-emerald-800'
+                }`}>
+                  {completedCount}
+                </span>
+              </button>
             </div>
 
             {/* Active view */}
-            {view === 'pending' ? (
+            {view === 'pending' && (
               <PendingReceiptsView
                 lines={linesForActiveProject}
                 projectName={activeProjectLabel}
                 newLineIds={diff?.newLineIds}
                 changedLineIds={diff?.changedLineIds}
               />
-            ) : (
+            )}
+            {view === 'needs-po' && (
               <IndentsNeedingPoView
                 lines={linesForActiveProject}
                 projectName={activeProjectLabel}
                 newLineIds={diff?.newLineIds}
                 changedLineIds={diff?.changedLineIds}
+              />
+            )}
+            {view === 'completed' && (
+              <CompletedView
+                lines={linesForActiveProject}
+                projectName={activeProjectLabel}
               />
             )}
           </div>
