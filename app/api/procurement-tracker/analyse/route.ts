@@ -8,7 +8,10 @@ import { requirePermission } from '@/lib/auth'
 import { createClient } from '@/lib/supabase/server'
 
 export const runtime = 'nodejs'
-export const maxDuration = 30
+// 60s ceiling — bigger Excels can take longer once the state JSONB
+// gets large enough that the Supabase upsert dominates wall time.
+// Vercel Pro caps at 300, but 60 has been comfortable in practice.
+export const maxDuration = 60
 
 // Shape of the JSONB blob persisted in `procurement_tracker_state`.
 interface StoredStateShape {
@@ -61,11 +64,25 @@ export async function POST(req: NextRequest) {
       indentNo: i.indentNo, status: i.status, pendingValue: i.pendingValue,
     }))
 
+    // sourceRows balloons the JSONB by 3-5×. They're only needed for
+    // the in-session inspector (verifying a row against the raw Excel
+    // cells). Strip them before persisting so the upsert finishes
+    // inside Vercel's function-timeout window — the parsed result
+    // returned to the CALLER below still includes them.
+    const projectsForState = result.projects.map(p => ({
+      ...p,
+      lines: p.lines.map(l => {
+        const copy: LineRecord & { sourceRows?: unknown } = { ...l }
+        delete copy.sourceRows
+        return copy
+      }),
+    }))
+
     const nextState: StoredStateShape = {
       format: result.format,
       fileName: file.name,
       savedAt,
-      projects: result.projects,
+      projects: projectsForState,
       pendingLineCount,
       totalGrnValue,
       pendingValue,
