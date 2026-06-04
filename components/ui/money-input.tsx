@@ -16,6 +16,7 @@
 
 import { forwardRef, useEffect, useRef, useState } from 'react'
 import { Input } from '@/components/ui/input'
+import { stripToRaw, formatIndian, countDigitsLeftOf, caretPosForDigitCount } from '@/lib/money'
 
 interface Props extends Omit<React.InputHTMLAttributes<HTMLInputElement>, 'value' | 'onChange' | 'type'> {
   value: string | number | null | undefined
@@ -27,62 +28,6 @@ interface Props extends Omit<React.InputHTMLAttributes<HTMLInputElement>, 'value
   allowNegative?: boolean
   /** Decimal places to allow during typing. Default 2. Pass 0 for integers only. */
   decimals?: number
-}
-
-function stripToRaw(s: string, allowNegative: boolean, decimals: number): string {
-  // Keep digits, optional leading minus, single dot
-  let cleaned = s.replace(/[^0-9.\-]/g, '')
-  // Single leading minus
-  const neg = allowNegative && cleaned.startsWith('-')
-  cleaned = cleaned.replace(/-/g, '')
-  // Single decimal point
-  const firstDot = cleaned.indexOf('.')
-  if (firstDot !== -1) {
-    cleaned = cleaned.slice(0, firstDot + 1) + cleaned.slice(firstDot + 1).replace(/\./g, '')
-  }
-  // Truncate decimals
-  if (decimals === 0) {
-    cleaned = cleaned.replace(/\..*$/, '')
-  } else if (firstDot !== -1) {
-    const dot = cleaned.indexOf('.')
-    cleaned = cleaned.slice(0, dot + 1) + cleaned.slice(dot + 1, dot + 1 + decimals)
-  }
-  return (neg ? '-' : '') + cleaned
-}
-
-function formatIndian(raw: string): string {
-  if (raw === '' || raw === '-' || raw === '.' || raw === '-.') return raw
-  const neg = raw.startsWith('-')
-  const body = neg ? raw.slice(1) : raw
-  const dot = body.indexOf('.')
-  const intPart = dot === -1 ? body : body.slice(0, dot)
-  const fracPart = dot === -1 ? '' : body.slice(dot)  // includes the "."
-  if (intPart === '') return (neg ? '-' : '') + fracPart
-  // Indian grouping: last 3 digits, then groups of 2
-  const intNum = intPart.replace(/^0+(?=\d)/, '') // strip leading zeros but keep a lone 0
-  const head = intNum.length > 3 ? intNum.slice(0, intNum.length - 3) : ''
-  const tail = intNum.slice(-3)
-  const grouped = (head ? head.replace(/\B(?=(\d{2})+(?!\d))/g, ',') + ',' : '') + tail
-  return (neg ? '-' : '') + grouped + fracPart
-}
-
-function countDigitsLeftOf(value: string, caret: number): number {
-  let n = 0
-  for (let i = 0; i < Math.min(caret, value.length); i++) {
-    if (/[0-9]/.test(value[i])) n++
-  }
-  return n
-}
-
-function caretPosForDigitCount(formatted: string, digitCount: number): number {
-  let seen = 0
-  for (let i = 0; i < formatted.length; i++) {
-    if (/[0-9]/.test(formatted[i])) {
-      if (seen === digitCount) return i
-      seen++
-    }
-  }
-  return formatted.length
 }
 
 export const MoneyInput = forwardRef<HTMLInputElement, Props>(function MoneyInput(
