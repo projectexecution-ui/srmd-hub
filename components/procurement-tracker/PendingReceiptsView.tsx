@@ -14,7 +14,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { LineRecord } from '@/lib/procurement'
 import { formatAgeFriendly } from '@/lib/procurement/shared'
-import { Download, Users, ClipboardList, AlertTriangle, FileSpreadsheet, Search } from 'lucide-react'
+import { Download, Users, ClipboardList, AlertTriangle, FileSpreadsheet, Search, ChevronDown, ChevronRight } from 'lucide-react'
 import { ChangeBadge } from './ChangeBadge'
 import { SourceInspector } from './SourceInspector'
 
@@ -104,6 +104,16 @@ export function PendingReceiptsView({
   const [ageFilter, setAgeFilter] = useState<AgeFilter>('all')
   // Line currently shown in the source-rows inspector modal (or null = closed).
   const [inspectingLine, setInspectingLine] = useState<LineRecord | null>(null)
+  // Per-group collapse state — keyed by group.key. Group is shown
+  // expanded by default; clicking the header header tucks it down
+  // to just the summary row. "Collapse all" / "Expand all" toggles
+  // every group at once.
+  const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
+  const toggleCollapsed = (key: string) => setCollapsed(prev => {
+    const next = new Set(prev)
+    if (next.has(key)) next.delete(key); else next.add(key)
+    return next
+  })
 
   // Restore the group-by choice from localStorage on mount
   useEffect(() => {
@@ -263,7 +273,7 @@ export function PendingReceiptsView({
           </div>
 
           {/* Age filter */}
-          <div className="inline-flex gap-1 ml-auto flex-wrap">
+          <div className="inline-flex gap-1 flex-wrap">
             {([
               { v: 'all',  label: 'All' },
               { v: '7',    label: '≥ 7 days' },
@@ -281,6 +291,27 @@ export function PendingReceiptsView({
               </button>
             ))}
           </div>
+
+          {/* Collapse-all / Expand-all — only useful when there are
+              multiple groups; hide otherwise. */}
+          {groups.length > 1 && (
+            <div className="inline-flex gap-1 ml-auto">
+              <button
+                onClick={() => setCollapsed(new Set(groups.map(g => g.key)))}
+                className="text-[11px] font-medium px-2 py-1 rounded-md bg-stone-100 text-stone-600 hover:bg-stone-200 inline-flex items-center gap-1"
+                title="Collapse every group"
+              >
+                <ChevronRight className="h-3 w-3" /> Collapse all
+              </button>
+              <button
+                onClick={() => setCollapsed(new Set())}
+                className="text-[11px] font-medium px-2 py-1 rounded-md bg-stone-100 text-stone-600 hover:bg-stone-200 inline-flex items-center gap-1"
+                title="Expand every group"
+              >
+                <ChevronDown className="h-3 w-3" /> Expand all
+              </button>
+            </div>
+          )}
         </div>
       </div>
 
@@ -302,23 +333,34 @@ export function PendingReceiptsView({
               if (a == null) return mx
               return mx == null ? a : Math.max(mx, a)
             }, null)
+            const isCollapsed = collapsed.has(g.key)
             return (
               <div key={g.key} className="bg-white rounded-xl border border-stone-200 overflow-hidden">
-                {/* Group header */}
+                {/* Group header — click anywhere except the CSV button to toggle */}
                 <div className="flex items-center justify-between gap-3 px-4 py-3 bg-stone-50 border-b border-stone-100">
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className="font-semibold text-stone-800 truncate" title={g.label}>{g.label}</span>
-                      <span className="text-[11px] text-stone-500">
-                        {g.lines.length} line{g.lines.length === 1 ? '' : 's'} · {fmtINR(groupPendingValue)} pending
-                      </span>
-                      {oldestAge != null && oldestAge >= 7 && (
-                        <span className={`text-[10px] uppercase font-bold tracking-wider px-1.5 py-0.5 rounded ${ageClass(oldestAge)} bg-white border border-stone-200`}>
-                          {oldestAge}d
+                  <button
+                    type="button"
+                    onClick={() => toggleCollapsed(g.key)}
+                    className="flex items-center gap-2 min-w-0 flex-1 text-left hover:opacity-80"
+                    aria-expanded={!isCollapsed}
+                  >
+                    {isCollapsed
+                      ? <ChevronRight className="h-4 w-4 text-stone-400 flex-shrink-0" />
+                      : <ChevronDown  className="h-4 w-4 text-stone-400 flex-shrink-0" />}
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="font-semibold text-stone-800 truncate" title={g.label}>{g.label}</span>
+                        <span className="text-[11px] text-stone-500">
+                          {g.lines.length} line{g.lines.length === 1 ? '' : 's'} · {fmtINR(groupPendingValue)} pending
                         </span>
-                      )}
+                        {oldestAge != null && oldestAge >= 7 && (
+                          <span className={`text-[10px] uppercase font-bold tracking-wider px-1.5 py-0.5 rounded ${ageClass(oldestAge)} bg-white border border-stone-200`}>
+                            {oldestAge}d
+                          </span>
+                        )}
+                      </div>
                     </div>
-                  </div>
+                  </button>
                   <button
                     onClick={() => downloadCsv(`${safe(groupBy === 'supplier' ? g.key : g.label)}-pending-${new Date().toISOString().slice(0, 10)}.csv`, g.lines)}
                     className="inline-flex items-center gap-1 text-[11px] font-medium text-stone-600 hover:text-stone-900 bg-white border border-stone-200 hover:border-stone-300 px-2 py-1 rounded-md flex-shrink-0"
@@ -328,7 +370,8 @@ export function PendingReceiptsView({
                   </button>
                 </div>
 
-                {/* Lines */}
+                {/* Lines — hidden when collapsed */}
+                {!isCollapsed && (
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
                     <thead className="bg-white border-b border-stone-100">
@@ -448,6 +491,7 @@ export function PendingReceiptsView({
                     </tbody>
                   </table>
                 </div>
+                )}
               </div>
             )
           })}

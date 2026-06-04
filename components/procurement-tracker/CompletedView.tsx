@@ -15,7 +15,7 @@
 import { useMemo, useState } from 'react'
 import type { LineRecord } from '@/lib/procurement'
 import { daysBetween } from '@/lib/procurement/shared'
-import { Download, Search, Users, Layers, CheckCircle2, FileSpreadsheet, AlertTriangle } from 'lucide-react'
+import { Download, Search, Users, Layers, CheckCircle2, FileSpreadsheet, AlertTriangle, ChevronDown, ChevronRight } from 'lucide-react'
 import { SourceInspector } from './SourceInspector'
 
 type GroupKey = 'vendor' | 'project' | 'none'
@@ -123,6 +123,12 @@ export function CompletedView({
   const [groupBy, setGroupBy] = useState<GroupKey>('vendor')
   const [search, setSearch] = useState('')
   const [inspectingLine, setInspectingLine] = useState<LineRecord | null>(null)
+  const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
+  const toggleCollapsed = (key: string) => setCollapsed(prev => {
+    const next = new Set(prev)
+    if (next.has(key)) next.delete(key); else next.add(key)
+    return next
+  })
 
   // Only completed lines (PO raised AND fully received)
   const completed = useMemo(
@@ -303,7 +309,7 @@ export function CompletedView({
             </button>
           </div>
 
-          <div className="relative ml-auto">
+          <div className="relative">
             <Search className="h-3.5 w-3.5 text-stone-400 absolute left-2 top-1/2 -translate-y-1/2 pointer-events-none" />
             <input
               type="text"
@@ -313,6 +319,25 @@ export function CompletedView({
               className="text-sm bg-white border border-stone-300 rounded-lg pl-7 pr-3 py-1 focus:outline-none focus:ring-2 focus:ring-orange-300 min-w-[240px]"
             />
           </div>
+
+          {groups.length > 1 && (
+            <div className="inline-flex gap-1 ml-auto">
+              <button
+                onClick={() => setCollapsed(new Set(groups.map(g => g.key)))}
+                className="text-[11px] font-medium px-2 py-1 rounded-md bg-stone-100 text-stone-600 hover:bg-stone-200 inline-flex items-center gap-1"
+                title="Collapse every group"
+              >
+                <ChevronRight className="h-3 w-3" /> Collapse all
+              </button>
+              <button
+                onClick={() => setCollapsed(new Set())}
+                className="text-[11px] font-medium px-2 py-1 rounded-md bg-stone-100 text-stone-600 hover:bg-stone-200 inline-flex items-center gap-1"
+                title="Expand every group"
+              >
+                <ChevronDown className="h-3 w-3" /> Expand all
+              </button>
+            </div>
+          )}
         </div>
       </div>
 
@@ -327,11 +352,20 @@ export function CompletedView({
           {groups.map(g => {
             const groupCycle = avg(g.lines.map(totalCycle).filter((n): n is number => n != null))
             const groupValue = g.lines.reduce((s, l) => s + l.grnValue, 0)
+            const isCollapsed = collapsed.has(g.key)
             return (
               <div key={g.key} className="bg-white rounded-xl border border-stone-200 overflow-hidden">
-                {/* Group header */}
+                {/* Group header — click anywhere except CSV to toggle */}
                 <div className="flex items-center justify-between gap-3 px-4 py-3 bg-stone-50 border-b border-stone-100">
-                  <div className="min-w-0 flex items-baseline gap-2 flex-wrap">
+                  <button
+                    type="button"
+                    onClick={() => toggleCollapsed(g.key)}
+                    className="flex items-baseline gap-2 min-w-0 flex-1 text-left hover:opacity-80 flex-wrap"
+                    aria-expanded={!isCollapsed}
+                  >
+                    {isCollapsed
+                      ? <ChevronRight className="h-4 w-4 text-stone-400 flex-shrink-0 self-center" />
+                      : <ChevronDown  className="h-4 w-4 text-stone-400 flex-shrink-0 self-center" />}
                     <span className="font-semibold text-stone-800 truncate" title={g.label}>{g.label}</span>
                     <span className="text-[11px] text-stone-500">
                       {g.lines.length} line{g.lines.length === 1 ? '' : 's'} · {fmtINR(groupValue)} received
@@ -341,7 +375,7 @@ export function CompletedView({
                         avg {groupCycle}d total
                       </span>
                     )}
-                  </div>
+                  </button>
                   <button
                     onClick={() => downloadCsv(`${safe(g.label)}-completed-${new Date().toISOString().slice(0, 10)}.csv`, g.lines)}
                     className="inline-flex items-center gap-1 text-[11px] font-medium text-stone-600 hover:text-stone-900 bg-white border border-stone-200 hover:border-stone-300 px-2 py-1 rounded-md flex-shrink-0"
@@ -349,6 +383,7 @@ export function CompletedView({
                     <Download className="h-3 w-3" /> CSV
                   </button>
                 </div>
+                {!isCollapsed && (
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
                     <thead className="bg-white border-b border-stone-100">
@@ -414,6 +449,7 @@ export function CompletedView({
                     </tbody>
                   </table>
                 </div>
+                )}
               </div>
             )
           })}
