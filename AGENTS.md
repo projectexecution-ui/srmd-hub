@@ -23,3 +23,52 @@ Tables you'll touch (all in `public`):
 - `zoho_tokens` — **DO NOT USE** in this UI (Zoho integration is intentionally excluded)
 
 Helper SQL functions already exist: `current_user_role()`, `is_writer()`, `set_updated_at()`, `handle_new_user()`.
+
+## Adding a new module (do it the SAME way every time)
+
+There is ONE source of truth for modules: **`lib/modules.ts`** (the `MODULES`
+array). Add one entry there and the module automatically appears, styled and
+permission-gated, in ALL of these — do NOT hardcode the module anywhere else:
+
+- Dashboard tiles (`visibleModules`)
+- Sidebar nav (`components/NavBar.tsx`)
+- Permissions matrix (`/admin/permissions`)
+- Per-user role overrides + module blocks (the **Advanced** panel on `/admin/users`)
+- My Approvals inbox styling (`/approvals` derives icon/label/colour from the registry)
+
+### The checklist
+
+1. **Registry** — add a `MODULES` entry in `lib/modules.ts`:
+   `{ slug, label, description, href, icon, tone }`. The `slug` is the
+   permanent key used by `role_permissions`, overrides, and blocks. Pick a
+   `tone` from the `TILE_TONES` palette. Mark `comingSoon: true` to show the
+   tile greyed before the pages exist; `external: true` for off-site links.
+2. **Pages** — build the route under `app/(app)/<module>/`. Gate every page
+   with `await requirePermission('<slug>', 'view' | 'edit' | 'admin')`.
+3. **Permissions** — no migration needed: a missing `role_permissions` row
+   reads as "off". The admin grants access per role from `/admin/permissions`.
+   (Optionally seed defaults with an INSERT if the module should be on for
+   some role out of the box.)
+4. **Approvals (only if the module has an approve/reject flow)** — add its
+   `approval_rules` rows via `/admin/approvals`. The generic
+   `enforce_approval_via_matrix()` trigger + `can_approve()` already cover
+   any module; you do NOT write per-module approval code. To show its items
+   in `/approvals`, surface them through the `my_approval_inbox()` RPC, and
+   (optional) add a nicer label in `MODULE_META_OVERRIDES` in
+   `app/(app)/approvals/page.tsx`.
+5. **Money / dates** — use `MoneyInput` (`components/ui/money-input.tsx`) for
+   amounts and the `lib/utils` / `lib/jmr/format` helpers for display, so
+   formatting stays uniform (Indian lakh/crore grouping everywhere).
+6. **Errors** — destructure `error` from every Supabase call and show the
+   `QueryError` banner (or a toast) instead of a blank/empty state. Use the
+   app-styled `confirm()` from `components/ui/confirm-dialog.tsx`, never the
+   native `window.confirm()`.
+
+### The role model (keep it simple for laymen)
+
+One role per person. A user's single `role` decides what they can do in
+EVERY module via the `role_permissions` matrix. Per-module differences are
+the rare exception, set under the **Advanced** button on `/admin/users`
+(`user_module_roles` overrides + `user_module_blocks`). The allowlist's
+"Starting role" is only the seed role on first sign-in. `effective_user_role(user_id, slug)`
+resolves the override-or-default and is what `can_approve()` / `my_permissions()` use.

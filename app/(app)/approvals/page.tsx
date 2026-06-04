@@ -5,10 +5,11 @@ import { PageHeader } from '@/components/PageHeader'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import {
-  Inbox, Calendar, Building2, ArrowRight, ClipboardList, FileText,
-  Wrench, Calculator, Boxes, AlertTriangle, CheckCheck, Clock,
+  Inbox, Calendar, Building2, ArrowRight, FileText,
+  AlertTriangle, CheckCheck, Clock,
 } from 'lucide-react'
 import { formatINR } from '@/lib/utils'
+import { MODULES } from '@/lib/modules'
 
 export const dynamic = 'force-dynamic'
 
@@ -30,20 +31,41 @@ interface InboxRow {
   urgency: string | null
 }
 
-const MODULE_META: Record<string, { label: string; icon: React.ComponentType<{ className?: string }>; tone: string }> = {
-  'inventory':    { label: 'Inventory requests',   icon: Boxes,         tone: 'green'  },
-  'indents':      { label: 'Indents',              icon: ClipboardList, tone: 'blue'   },
-  'jmr':          { label: 'JMR — daily entries',  icon: Wrench,        tone: 'orange' },
-  'jmr-bills':    { label: 'JMR — contractor bills', icon: FileText,    tone: 'amber'  },
-  'cost-control': { label: 'Cost Control sheets',  icon: Calculator,    tone: 'indigo' },
+// Display meta for each module group in the inbox. The BASE (icon, label,
+// colour) is pulled straight from the central registry in lib/modules.ts,
+// so any NEW module you add there automatically shows up here styled
+// correctly — no edit to this file needed. OVERRIDES only exist for
+// (a) nicer approval-context labels and (b) sub-slugs like 'jmr-bills'
+// that aren't top-level modules in the registry.
+type ModuleMeta = { label: string; icon: React.ComponentType<{ className?: string }>; tone: string }
+
+const REGISTRY_META: Record<string, ModuleMeta> = Object.fromEntries(
+  MODULES.map(m => [m.slug, { label: m.label, icon: m.icon, tone: m.tone as string }]),
+)
+
+const MODULE_META_OVERRIDES: Record<string, Partial<ModuleMeta>> = {
+  inventory:      { label: 'Inventory requests' },
+  jmr:            { label: 'JMR — daily entries' },
+  'jmr-bills':    { label: 'JMR — contractor bills', icon: FileText, tone: 'amber' }, // sub-slug, not in registry
+  'cost-control': { label: 'Cost Control sheets' },
 }
 
+function moduleMeta(slug: string): ModuleMeta {
+  const base = REGISTRY_META[slug] ?? { label: slug, icon: Inbox, tone: 'slate' }
+  return { ...base, ...MODULE_META_OVERRIDES[slug] }
+}
+
+// Covers every tone the registry can assign, so no module renders unstyled.
 const TONE_CLASSES: Record<string, { bg: string; text: string; ring: string }> = {
-  green:  { bg: 'bg-emerald-50', text: 'text-emerald-700', ring: 'ring-emerald-100' },
   blue:   { bg: 'bg-blue-50',    text: 'text-blue-700',    ring: 'ring-blue-100' },
-  orange: { bg: 'bg-orange-50',  text: 'text-orange-700',  ring: 'ring-orange-100' },
-  amber:  { bg: 'bg-amber-50',   text: 'text-amber-700',   ring: 'ring-amber-100' },
   indigo: { bg: 'bg-indigo-50',  text: 'text-indigo-700',  ring: 'ring-indigo-100' },
+  green:  { bg: 'bg-emerald-50', text: 'text-emerald-700', ring: 'ring-emerald-100' },
+  amber:  { bg: 'bg-amber-50',   text: 'text-amber-700',   ring: 'ring-amber-100' },
+  purple: { bg: 'bg-purple-50',  text: 'text-purple-700',  ring: 'ring-purple-100' },
+  rose:   { bg: 'bg-rose-50',    text: 'text-rose-700',    ring: 'ring-rose-100' },
+  slate:  { bg: 'bg-slate-100',  text: 'text-slate-700',   ring: 'ring-slate-200' },
+  teal:   { bg: 'bg-teal-50',    text: 'text-teal-700',    ring: 'ring-teal-100' },
+  orange: { bg: 'bg-orange-50',  text: 'text-orange-700',  ring: 'ring-orange-100' },
 }
 
 type Filter = 'all' | 'overdue' | 'urgent'
@@ -145,7 +167,7 @@ export default async function MyApprovalsPage({
           {moduleFilter && (
             <Link href={urlFor({ module: null })}
               className="inline-flex items-center gap-1 px-2 h-7 rounded-full bg-blue-100 text-blue-800 hover:bg-blue-200">
-              {MODULE_META[moduleFilter]?.label ?? moduleFilter}
+              {moduleMeta(moduleFilter).label}
               <span className="ml-0.5 text-blue-600">×</span>
             </Link>
           )}
@@ -178,7 +200,7 @@ export default async function MyApprovalsPage({
         )
       ) : (
         moduleKeys.map(mod => {
-          const meta = MODULE_META[mod] ?? { label: mod, icon: Inbox, tone: 'slate' }
+          const meta = moduleMeta(mod)
           const tones = TONE_CLASSES[meta.tone] ?? TONE_CLASSES['blue']
           const items = byModule.get(mod)!
           const isModuleFilter = moduleFilter === mod

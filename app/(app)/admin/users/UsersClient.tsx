@@ -365,11 +365,12 @@ export default function UsersClient({
       <Card className="bg-blue-50 border-blue-200">
         <CardContent className="pt-4 pb-4 text-xs text-blue-900 leading-relaxed">
           <p className="font-semibold mb-1 flex items-center gap-1.5"><Info className="h-3.5 w-3.5" /> How to read each row</p>
+          <p className="mb-2">Almost always you only touch the <b>Role</b> dropdown — that one role decides what the person can do in <i>every</i> module. The rest is optional.</p>
           <ul className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1 list-disc pl-5">
-            <li><b>Role dropdown</b> — the default role the user holds across all modules.</li>
+            <li><b>Role</b> — the single role the user holds everywhere. Set this and you&apos;re done.</li>
             <li><b>Active / Inactive</b> — whether the user can sign in at all.</li>
             <li><b>Make owner / Revoke owner</b> — promote an admin to Portal Owner.</li>
-            <li><b>Access</b> — open per-user controls: change role inside a specific module, or block a module entirely.</li>
+            <li><b>Advanced</b> — <i>optional.</i> Only if someone needs a <i>different</i> role in one specific module, or should be blocked from a module.</li>
           </ul>
         </CardContent>
       </Card>
@@ -493,14 +494,14 @@ export default function UsersClient({
                         size="sm"
                         variant="outline"
                         onClick={() => setExpandedUserId(expanded ? null : u.id)}
-                        title="Open per-user access: override the role for a specific module, or block this user from a module"
+                        title="Optional / advanced: give this person a different role in one specific module, or block them from a module. Most users never need this."
                         className={cn(
                           (userOverrides.length + userBlocks.length) > 0 && 'border-blue-300 text-blue-700 bg-blue-50',
                         )}
                       >
                         {expanded ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
                         <Settings2 className="h-3.5 w-3.5" />
-                        Access
+                        Advanced
                         {userOverrides.length > 0 && (
                           <Badge variant="default" className="ml-1 text-[10px] inline-flex items-center gap-0.5" title="Module role overrides">
                             <Layers className="h-2.5 w-2.5" />{userOverrides.length}
@@ -602,12 +603,13 @@ export default function UsersClient({
               />
             </div>
             <div>
-              <label className="text-xs font-semibold text-gray-600 mb-1 block">Role on first sign-in</label>
+              <label className="text-xs font-semibold text-gray-600 mb-1 block">Starting role</label>
               <select
                 value={newRole}
                 onChange={e => setNewRole(e.target.value as Role)}
                 disabled={adding}
                 className="h-10 rounded-xl border border-gray-300 bg-white px-3 text-sm min-w-[10rem]"
+                title="The role this person gets when they first sign in. You can change it anytime from the Users list above."
               >
                 {ROLES.map(r => <option key={r} value={r}>{roleLabels[r].label}</option>)}
               </select>
@@ -617,6 +619,10 @@ export default function UsersClient({
               Add to allowlist
             </Button>
           </form>
+          <p className="text-[11px] text-gray-500">
+            This is just their <b>starting role</b>. To change it later — or give them a different role in one specific module —
+            use the <b>Role</b> dropdown (or <b>Advanced</b>) on the <b>Users</b> list above.
+          </p>
 
           {allowed.length === 0 ? (
             <p className="text-sm text-gray-500 italic py-2">
