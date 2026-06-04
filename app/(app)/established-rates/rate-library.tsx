@@ -17,6 +17,8 @@ import {
   ArrowUpDown, ArrowUp, ArrowDown,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { toast } from 'sonner'
+import { confirm } from '@/components/ui/confirm-dialog'
 import { AddRateModal } from './add-rate-modal'
 
 interface Discipline   { id: string; code: string | null; name: string; display_order: number }
@@ -276,11 +278,12 @@ export function RateLibrary({
   }
 
   async function deleteRate(id: string) {
-    if (!confirm('Delete this rate?')) return
+    if (!(await confirm('Delete this rate?'))) return
     setBusyRate(id)
     const { error } = await createClient().from('est_rates').delete().eq('id', id)
     setBusyRate(null)
-    if (error) { alert(error.message); return }
+    if (error) { toast.error(error.message); return }
+    toast.success('Rate deleted')
     router.refresh()
   }
 

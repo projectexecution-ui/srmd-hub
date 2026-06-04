@@ -12,6 +12,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Loader2, Plus, Trash2, Check, X, ArrowRight } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { confirm } from '@/components/ui/confirm-dialog'
 
 interface Discipline   { id: string; code: string | null; name: string; display_order: number; is_archived: boolean }
 interface Category     { id: string; discipline_id: string; code: string | null; name: string; display_order: number; is_archived: boolean }
@@ -76,7 +77,7 @@ export function TaxonomyEditor({ disciplines: initialD, categories: initialC, su
                 return true
               }}
               onDelete={async (id) => {
-                if (!confirm('Delete this discipline? Categories beneath block deletion if they exist.')) return false
+                if (!(await confirm('Delete this discipline? Categories beneath block deletion if they exist.'))) return false
                 setBusy(id); setError(null)
                 const { error } = await createClient().from('est_disciplines').delete().eq('id', id)
                 setBusy(null)
@@ -121,7 +122,7 @@ export function TaxonomyEditor({ disciplines: initialD, categories: initialC, su
                   return true
                 }}
                 onDelete={async (id) => {
-                  if (!confirm('Delete this category?')) return false
+                  if (!(await confirm('Delete this category?'))) return false
                   setBusy(id); setError(null)
                   const { error } = await createClient().from('est_categories').delete().eq('id', id)
                   setBusy(null)
@@ -166,7 +167,7 @@ export function TaxonomyEditor({ disciplines: initialD, categories: initialC, su
                   return true
                 }}
                 onDelete={async (id) => {
-                  if (!confirm('Delete this sub-category? All rates beneath are also deleted.')) return false
+                  if (!(await confirm('Delete this sub-category? All rates beneath are also deleted.'))) return false
                   setBusy(id); setError(null)
                   const { error } = await createClient().from('est_subcategories').delete().eq('id', id)
                   setBusy(null)

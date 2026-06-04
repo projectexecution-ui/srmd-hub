@@ -10,6 +10,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { Badge } from '@/components/ui/badge'
 import { Loader2, Plus, Trash2, Pencil, X, Check, Upload, ImageOff, ChevronDown, ChevronRight } from 'lucide-react'
 import { INVENTORY_CATEGORIES } from '@/lib/inventory-categories'
+import { confirm } from '@/components/ui/confirm-dialog'
 
 interface Item {
   id: string
@@ -223,7 +224,7 @@ function ItemRow({ item, onEdit, onDeleted, setError }: {
   const [deleting, setDeleting] = useState(false)
 
   async function del() {
-    if (!confirm(`Delete item "${item.code} — ${item.name}"?`)) return
+    if (!(await confirm(`Delete item "${item.code} — ${item.name}"?`))) return
     setDeleting(true); setError(null)
     const { error } = await createClient().from('inv_items').delete().eq('id', item.id)
     setDeleting(false)

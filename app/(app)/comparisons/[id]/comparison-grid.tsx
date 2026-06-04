@@ -19,6 +19,7 @@ import { Input } from '@/components/ui/input'
 import { MoneyInput } from '@/components/ui/money-input'
 import { Badge } from '@/components/ui/badge'
 import { Loader2, Plus, Trash2, Users, Trophy, AlertTriangle } from 'lucide-react'
+import { confirm } from '@/components/ui/confirm-dialog'
 import { cn } from '@/lib/utils'
 
 interface Vendor { id: string; comparison_id: string; name: string; contact: string | null; sequence: number }
@@ -121,7 +122,7 @@ export default function ComparisonGrid({
   }
 
   async function removeItem(id: string) {
-    if (!confirm('Delete this scope item? Quotes for it are also removed.')) return
+    if (!(await confirm('Delete this scope item? Quotes for it are also removed.'))) return
     setBusy(`item:${id}`); setError(null)
     const { error } = await supabase.from('cmp_items').delete().eq('id', id)
     setBusy(null)
@@ -157,7 +158,7 @@ export default function ComparisonGrid({
   }
 
   async function removeVendor(id: string) {
-    if (!confirm('Remove this vendor? Their quotes are deleted.')) return
+    if (!(await confirm('Remove this vendor? Their quotes are deleted.'))) return
     setBusy(`vendor:${id}`); setError(null)
     const { error } = await supabase.from('cmp_vendors').delete().eq('id', id)
     setBusy(null)

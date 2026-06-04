@@ -7,6 +7,7 @@ import { Input } from '@/components/ui/input'
 import { MoneyInput } from '@/components/ui/money-input'
 import { Label } from '@/components/ui/label'
 import { Plus, Trash2, Loader2, AlertCircle, CheckCircle2 } from 'lucide-react'
+import { confirm } from '@/components/ui/confirm-dialog'
 import { createTemplate, updateTemplate, deleteTemplate, type TemplatePayload } from './actions'
 import { validateFormula, evaluateFormula, type QtyColumn } from '@/lib/formula'
 
@@ -97,7 +98,7 @@ export function TemplateEditor({
 
   async function handleDelete() {
     if (!form.id) return
-    if (!confirm(`Delete template "${form.name}"? This can break existing sections that reference it.`)) return
+    if (!(await confirm(`Delete template "${form.name}"? This can break existing sections that reference it.`))) return
     setBusy(true)
     const result = await deleteTemplate(form.id)
     if (result && 'error' in result && result.error) {

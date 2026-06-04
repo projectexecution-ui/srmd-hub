@@ -8,6 +8,7 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { Trash2, Loader2 } from 'lucide-react'
+import { confirm } from '@/components/ui/confirm-dialog'
 
 interface Props {
   /** Table name to delete from — exactly one of the JMR master tables. */
@@ -32,7 +33,7 @@ export function AdminRowDeleteButton({ table, id, label, cascadeNote }: Props) {
       `Delete "${label}"?\n\n`
       + (cascadeNote ? `${cascadeNote}\n\n` : '')
       + `If this row is referenced by live data (entries / bills), the delete will be refused.`
-    if (!confirm(msg)) return
+    if (!(await confirm(msg))) return
     setBusy(true)
     const { error } = await createClient().from(table).delete().eq('id', id)
     setBusy(false)

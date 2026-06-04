@@ -2,6 +2,7 @@
 import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { ChevronDown, ChevronRight, Plus, Trash2, Loader2, Check, X } from 'lucide-react'
+import { confirm } from '@/components/ui/confirm-dialog'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -110,7 +111,7 @@ export function QtyEditor({
   }
 
   async function handleDeleteSection(secId: string) {
-    if (!confirm('Delete this entire section and all its rows?')) return
+    if (!(await confirm('Delete this entire section and all its rows?'))) return
     const result = await deleteSection(secId, wsId, itemId)
     if (result?.error) {
       setError(result.error)

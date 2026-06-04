@@ -7,6 +7,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Eye, Pencil, ShieldCheck, Loader2, Check, Plus, X } from 'lucide-react'
+import { confirm } from '@/components/ui/confirm-dialog'
 import { cn } from '@/lib/utils'
 import type { Role, RolePermission, PermAction } from '@/lib/types'
 import type { RoleLabelMap } from '@/lib/role-labels'
@@ -85,7 +86,7 @@ export default function PermissionsMatrix({ modules, roles, initial, roleLabels,
   }
 
   async function deactivateRole(role: Role) {
-    if (!confirm(`Deactivate role "${labels[role]?.label || role}"? Existing data referencing it stays intact, but the role won't appear in new dropdowns or this matrix.`)) return
+    if (!(await confirm(`Deactivate role "${labels[role]?.label || role}"? Existing data referencing it stays intact, but the role won't appear in new dropdowns or this matrix.`))) return
     setDelBusyRole(role); setError(null)
     const supabase = createClient()
     const { error } = await supabase.rpc('admin_deactivate_role', { p_key: role as unknown as string })

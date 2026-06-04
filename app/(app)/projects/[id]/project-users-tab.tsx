@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { Loader2, Plus, X, UserPlus, Mail, Crown, Search, Check } from 'lucide-react'
+import { confirm } from '@/components/ui/confirm-dialog'
 import { cn } from '@/lib/utils'
 
 interface ProfileLite {
@@ -101,7 +102,7 @@ export default function ProjectUsersTab({
   }
 
   async function removeAssignment(a: Assignment) {
-    if (!confirm('Remove this user from the project?')) return
+    if (!(await confirm('Remove this user from the project?'))) return
     setBusyId(a.id); setError(null)
     const { error } = await supabase
       .from('project_assignments')

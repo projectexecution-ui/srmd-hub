@@ -16,6 +16,7 @@ import type { Profile, Role } from '@/lib/types'
 import { ALL_ROLES } from '@/lib/types'
 import type { RoleLabelMap } from '@/lib/role-labels'
 import { MODULES } from '@/lib/modules'
+import { confirm } from '@/components/ui/confirm-dialog'
 
 const ROLES: Role[] = ALL_ROLES
 
@@ -223,7 +224,7 @@ export default function UsersClient({
   }
 
   async function removeAllowedEmail(email: string) {
-    if (!confirm(`Remove ${email} from the allowlist? They will be blocked on next sign-in (existing active profiles are NOT removed by this).`)) return
+    if (!(await confirm(`Remove ${email} from the allowlist? They will be blocked on next sign-in (existing active profiles are NOT removed by this).`))) return
     setRemoving(email); setError(null)
     const { error } = await supabase.from('allowed_emails').delete().eq('email', email)
     setRemoving(null)

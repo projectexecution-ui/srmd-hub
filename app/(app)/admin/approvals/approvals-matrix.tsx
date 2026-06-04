@@ -10,6 +10,7 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Loader2, Check, Plus, Trash2, X, ArrowRight, MessageSquare, Paperclip } from 'lucide-react'
+import { confirm } from '@/components/ui/confirm-dialog'
 import { cn } from '@/lib/utils'
 import { MoneyInput } from '@/components/ui/money-input'
 import type { RoleLabelMap } from '@/lib/role-labels'
@@ -101,7 +102,7 @@ export default function ApprovalsMatrix({ initial, roles, roleLabels, moduleLabe
   }
 
   async function remove(id: string) {
-    if (!confirm('Delete this rule?')) return
+    if (!(await confirm('Delete this rule?'))) return
     setBusyId(id); setError(null)
     const prev = rules
     setRules(rs => rs.filter(r => r.id !== id))

@@ -7,6 +7,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
 import { Loader2, Plus, Trash2, Pencil, X, Check } from 'lucide-react'
+import { confirm } from '@/components/ui/confirm-dialog'
 
 interface Warehouse {
   id: string
@@ -110,7 +111,7 @@ function WarehouseRow({ warehouse, managers, onEdit, onDeleted, setError }: {
   const manager = managers.find(m => m.id === warehouse.store_manager_id)
 
   async function del() {
-    if (!confirm(`Delete warehouse "${warehouse.code} — ${warehouse.name}"? Items + stock at this warehouse will be blocked from deletion if any exist.`)) return
+    if (!(await confirm(`Delete warehouse "${warehouse.code} — ${warehouse.name}"? Items + stock at this warehouse will be blocked from deletion if any exist.`))) return
     setDeleting(true); setError(null)
     const { error } = await createClient().from('inv_warehouses').delete().eq('id', warehouse.id)
     setDeleting(false)

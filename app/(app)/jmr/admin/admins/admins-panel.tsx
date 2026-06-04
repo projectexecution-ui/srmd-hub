@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
 import { Loader2, ShieldCheck, ShieldOff, UserPlus, Lock } from 'lucide-react'
+import { confirm } from '@/components/ui/confirm-dialog'
 
 type Profile = {
   id: string
@@ -65,7 +66,7 @@ export function AdminsPanel({ profiles, overrides: initialOverrides, canManage }
   }
 
   async function revoke(userId: string, label: string) {
-    if (!confirm(`Revoke JMR admin from "${label}"?\n\nThey will keep their global role but lose access to JMR Admin pages (Projects, Contractors, Items, Rate Cards, etc.) and lose approve/flag rights.`)) return
+    if (!(await confirm(`Revoke JMR admin from "${label}"?\n\nThey will keep their global role but lose access to JMR Admin pages (Projects, Contractors, Items, Rate Cards, etc.) and lose approve/flag rights.`))) return
     setBusyId(userId); setError(null)
     const supabase = createClient()
     const { error } = await supabase
