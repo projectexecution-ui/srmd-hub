@@ -11,7 +11,7 @@ export default async function StoreInboxPage() {
   const supabase = await createClient()
   // Store Manager sees what's been approved (regular path) + what's been
   // emergency-authorised by HoP — both ready for physical issue.
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from('inv_requests')
     .select('id, request_no, status, urgency, purpose, created_at, projects(code, name), inv_warehouses(code)')
     .in('status', ['APPROVED', 'EMERGENCY_ISSUED'])
@@ -20,7 +20,7 @@ export default async function StoreInboxPage() {
   return (
     <div className="p-4 md:p-6 max-w-5xl mx-auto space-y-4">
       <PageHeader title="Store inbox" back="/inventory" subtitle="Approved requests ready to be issued from the warehouse" />
-      <RequestList rows={data ?? []} emptyText="Nothing to issue right now." />
+      <RequestList rows={data ?? []} error={error?.message} emptyText="Nothing to issue right now." />
     </div>
   )
 }

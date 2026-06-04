@@ -5,6 +5,7 @@ import { PageHeader } from '@/components/PageHeader'
 import { Card } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { EmptyState } from '@/components/ui/empty-state'
+import { QueryError } from '@/components/ui/query-error'
 import { FileText } from 'lucide-react'
 import { formatDate, formatINR } from '@/lib/utils'
 
@@ -28,7 +29,7 @@ export default async function POsPage({
   if (sp.vendor) query = query.eq('vendor_id', sp.vendor)
   if (sp.project) query = query.eq('project_id', sp.project)
 
-  const { data: pos } = await query
+  const { data: pos, error: posError } = await query
   const { data: vendors } = await supabase.from('vendors').select('id, name').order('name')
   const { data: projects } = await supabase.from('projects').select('id, code, name').order('code')
 
@@ -47,6 +48,8 @@ export default async function POsPage({
         title="Purchase Orders"
         subtitle={`${filtered?.length ?? 0} PO${filtered?.length === 1 ? '' : 's'} · ${formatINR(total)}`}
       />
+
+      {posError && <QueryError what="purchase orders" message={posError.message} />}
 
       <div className="flex flex-wrap gap-2 mb-4 items-center">
         <FilterChip href="/pos" label="All" active={!sp.status} />

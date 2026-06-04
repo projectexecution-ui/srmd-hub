@@ -1,6 +1,7 @@
 import Link from 'next/link'
 import { Card } from '@/components/ui/card'
 import { RequestStatusPill } from '@/components/inventory/RequestStatusPill'
+import { QueryError } from '@/components/ui/query-error'
 import { formatDate } from '@/lib/utils'
 
 interface Row {
@@ -14,7 +15,12 @@ interface Row {
   inv_warehouses: { code: string } | { code: string }[] | null
 }
 
-export function RequestList({ rows, emptyText }: { rows: Row[]; emptyText: string }) {
+export function RequestList({ rows, emptyText, error }: { rows: Row[]; emptyText: string; error?: string | null }) {
+  // An error must NOT look like an empty queue — a storekeeper would think
+  // there's nothing to do when really the query failed.
+  if (error) {
+    return <QueryError what="this queue" message={error} />
+  }
   if (rows.length === 0) {
     return <Card className="p-8 text-center text-sm text-gray-500">{emptyText}</Card>
   }

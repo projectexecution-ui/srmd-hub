@@ -11,7 +11,7 @@ export default async function HopInboxPage() {
   const supabase = await createClient()
   // HoP sees both their stage (PENDING_HOP) and the Backoffice queue
   // (PENDING_BACKOFFICE) so they can emergency-bypass when needed.
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from('inv_requests')
     .select('id, request_no, status, urgency, purpose, created_at, projects(code, name), inv_warehouses(code)')
     .in('status', ['PENDING_HOP', 'PENDING_BACKOFFICE'])
@@ -20,7 +20,7 @@ export default async function HopInboxPage() {
   return (
     <div className="p-4 md:p-6 max-w-5xl mx-auto space-y-4">
       <PageHeader title="Atm Head approval" back="/inventory" subtitle="Final approval — flag returnable items + emergency bypass for the check queue" />
-      <RequestList rows={data ?? []} emptyText="No pending requests in your queue." />
+      <RequestList rows={data ?? []} error={error?.message} emptyText="No pending requests in your queue." />
     </div>
   )
 }

@@ -97,19 +97,31 @@ export function NotificationProvider({
     if (!userId) return
     const unreadIds = items.filter(n => !n.is_read).map(n => n.id)
     if (unreadIds.length === 0) return
+    const snapshot = items
     setItems(prev => prev.map(n => ({ ...n, is_read: true })))
-    await supabase
+    const { error } = await supabase
       .from('notifications')
       .update({ is_read: true, read_at: new Date().toISOString() })
       .in('id', unreadIds)
+    // Revert the optimistic update if the write failed — otherwise the
+    // badge says "0" while the rows are still unread server-side.
+    if (error) {
+      console.error('[notifications] markAllRead failed', error)
+      setItems(snapshot)
+    }
   }
 
   async function markOneRead(id: string) {
+    const snapshot = items
     setItems(prev => prev.map(n => (n.id === id ? { ...n, is_read: true } : n)))
-    await supabase
+    const { error } = await supabase
       .from('notifications')
       .update({ is_read: true, read_at: new Date().toISOString() })
       .eq('id', id)
+    if (error) {
+      console.error('[notifications] markOneRead failed', error)
+      setItems(snapshot)
+    }
   }
 
   const value = useMemo<NotificationContextValue>(

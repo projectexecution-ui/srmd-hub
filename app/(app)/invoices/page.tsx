@@ -4,6 +4,7 @@ import { requirePermission } from '@/lib/auth'
 import { PageHeader } from '@/components/PageHeader'
 import { Card } from '@/components/ui/card'
 import { EmptyState } from '@/components/ui/empty-state'
+import { QueryError } from '@/components/ui/query-error'
 import { Receipt } from 'lucide-react'
 import { formatDate, formatINR } from '@/lib/utils'
 
@@ -12,7 +13,7 @@ export const dynamic = 'force-dynamic'
 export default async function InvoicesPage() {
   await requirePermission('invoices', 'view')
   const supabase = await createClient()
-  const { data: invoices } = await supabase
+  const { data: invoices, error } = await supabase
     .from('invoices')
     .select('id, invoice_no, invoice_date, invoice_amount, vendors(name), purchase_orders(po_no)')
     .order('invoice_date', { ascending: false })
@@ -23,6 +24,7 @@ export default async function InvoicesPage() {
   return (
     <div className="p-4 md:p-6 max-w-7xl mx-auto">
       <PageHeader title="Invoices" subtitle={`${invoices?.length ?? 0} invoice${invoices?.length === 1 ? '' : 's'} · ${formatINR(total)}`} />
+      {error && <QueryError what="invoices" message={error.message} />}
       <Card className="overflow-hidden">
         {invoices && invoices.length > 0 ? (
           <div className="overflow-x-auto">
