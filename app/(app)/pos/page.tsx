@@ -52,12 +52,12 @@ export default async function POsPage({
         <FilterChip href="/pos" label="All" active={!sp.status} />
         <FilterChip href="/pos?status=issued" label="Issued" active={sp.status === 'issued'} />
         <FilterChip href="/pos?status=draft" label="Draft" active={sp.status === 'draft'} />
-        <form action="/pos" method="get" className="ml-auto flex items-center gap-2 flex-wrap">
+        <form action="/pos" method="get" className="w-full sm:w-auto sm:ml-auto flex items-center gap-2 flex-wrap">
           {sp.status && <input type="hidden" name="status" value={sp.status} />}
           <select
             name="project"
             defaultValue={sp.project ?? ''}
-            className="h-8 rounded-xl border border-gray-300 bg-white px-2 text-xs text-gray-700"
+            className="h-8 rounded-xl border border-gray-300 bg-white px-2 text-xs text-gray-700 w-full sm:w-auto min-w-0"
           >
             <option value="">All projects</option>
             {projects?.map(p => <option key={p.id} value={p.id}>{p.code}</option>)}
@@ -65,12 +65,12 @@ export default async function POsPage({
           <select
             name="vendor"
             defaultValue={sp.vendor ?? ''}
-            className="h-8 rounded-xl border border-gray-300 bg-white px-2 text-xs text-gray-700 max-w-[200px]"
+            className="h-8 rounded-xl border border-gray-300 bg-white px-2 text-xs text-gray-700 w-full sm:w-auto sm:max-w-[200px] min-w-0"
           >
             <option value="">All vendors</option>
             {vendors?.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
           </select>
-          <button className="h-8 px-3 rounded-xl bg-gray-100 hover:bg-gray-200 text-xs font-semibold text-gray-700">Apply</button>
+          <button className="h-8 px-3 rounded-xl bg-gray-100 hover:bg-gray-200 text-xs font-semibold text-gray-700 w-full sm:w-auto">Apply</button>
         </form>
       </div>
 

@@ -242,7 +242,7 @@ export default async function CostControlProjectDetailPage(
       </div>
 
       {/* KPI strip — portfolio-level numbers for this project */}
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
         <KPI
           label="Internal Estimate"
           value={totalEstimate > 0 ? formatINR(totalEstimate) : '—'}

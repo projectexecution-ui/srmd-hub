@@ -18,7 +18,12 @@ export function SummaryCards({
   onJumpToIndent?: (filter: IndentStatus | 'all') => void
 }) {
   const hasInvoices = summary.totalInvoiceAmount > 0
-  const showCols = hasInvoices ? 'sm:grid-cols-6' : 'sm:grid-cols-5'
+  // grid-cols-2 on phone, then sm/lg cascade so the strip never leaves
+  // an orphan tile at any breakpoint. With invoices we have 6 tiles, so
+  // the lg=6 step is the natural fit; without, 5 with lg=5 (sm=3).
+  const showCols = hasInvoices
+    ? 'sm:grid-cols-3 lg:grid-cols-6'
+    : 'sm:grid-cols-3 lg:grid-cols-5'
   const pct = (v: number) => summary.total > 0 ? Math.round((v / summary.total) * 100) : 0
   const linePct = summary.lines.length > 0
     ? Math.round(((summary.lines.length - summary.pendingLineCount) / summary.lines.length) * 100)

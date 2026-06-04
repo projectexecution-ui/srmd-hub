@@ -262,19 +262,23 @@ export function ProjectForm({ initial, initialFloors, projectId }: Props) {
               <div className="md:col-span-1"></div>
             </div>
             {floors.map((f) => (
-              <div key={f.tempId} className="grid grid-cols-1 md:grid-cols-12 gap-2 items-center">
+              <div key={f.tempId} className="grid grid-cols-1 md:grid-cols-12 gap-2 md:items-center border border-gray-100 md:border-0 rounded-xl p-3 md:p-0">
                 <div className="md:col-span-5">
+                  <label className="text-[11px] font-semibold uppercase tracking-wide text-gray-500 md:hidden block mb-1">Floor name</label>
                   <Input value={f.name}        onChange={e => updateFloor(f.tempId, { name: e.target.value })}        placeholder="e.g. Ground / 1st Floor" />
                 </div>
                 <div className="md:col-span-3">
+                  <label className="text-[11px] font-semibold uppercase tracking-wide text-gray-500 md:hidden block mb-1">Built-up (sq ft)</label>
                   <MoneyInput value={f.built_up_sft} onChange={v => updateFloor(f.tempId, { built_up_sft: v })} placeholder="sq ft" />
                 </div>
                 <div className="md:col-span-3">
+                  <label className="text-[11px] font-semibold uppercase tracking-wide text-gray-500 md:hidden block mb-1">Carpet (sq ft)</label>
                   <MoneyInput value={f.carpet_sft}   onChange={v => updateFloor(f.tempId, { carpet_sft: v })}   placeholder="sq ft" />
                 </div>
                 <div className="md:col-span-1 flex justify-end">
                   <Button type="button" variant="ghost" size="sm" onClick={() => removeFloor(f.tempId)} className="text-rose-600 hover:text-rose-700 hover:bg-rose-50">
                     <Trash2 className="h-4 w-4" />
+                    <span className="md:hidden">Remove floor</span>
                   </Button>
                 </div>
               </div>

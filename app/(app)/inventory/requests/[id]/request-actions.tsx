@@ -116,17 +116,18 @@ export function RequestActions({
           </p>
           <div className="space-y-1">
             {lines.map(l => (
-              <div key={l.id} className="grid grid-cols-12 gap-2 items-center text-sm">
-                <div className="col-span-7 truncate">
-                  <span className="text-gray-800">{l.item_label}</span>
-                  <span className="text-xs text-gray-500 ml-2">req {l.requested_qty} {l.unit} · avail {l.available_qty} {l.unit}</span>
+              <div key={l.id} className="grid grid-cols-1 md:grid-cols-12 gap-2 md:items-center text-sm border-b border-gray-100 md:border-0 pb-2 md:pb-0 last:border-0">
+                <div className="md:col-span-7 min-w-0">
+                  <div className="text-gray-800 truncate">{l.item_label}</div>
+                  <div className="text-xs text-gray-500">req {l.requested_qty} {l.unit} · avail {l.available_qty} {l.unit}</div>
                 </div>
-                <div className="col-span-4">
-                  <MoneyInput
+                <div className="md:col-span-4 flex items-center gap-2">
+                  <div className="flex-1"><MoneyInput
                     value={approvedQty[l.id] ?? ''}
-                    onChange={(v) => setApprovedQty(s => ({ ...s, [l.id]: v }))} />
+                    onChange={(v) => setApprovedQty(s => ({ ...s, [l.id]: v }))} /></div>
+                  <span className="text-xs text-gray-500 md:hidden">{l.unit}</span>
                 </div>
-                <span className="col-span-1 text-xs text-gray-500">{l.unit}</span>
+                <span className="hidden md:inline md:col-span-1 text-xs text-gray-500">{l.unit}</span>
               </div>
             ))}
           </div>
@@ -186,12 +187,12 @@ export function RequestActions({
             </div>
             <div className="space-y-1 max-h-96 overflow-y-auto">
               {lines.map(l => (
-                <div key={l.id} className="grid grid-cols-12 gap-2 items-center text-sm">
-                  <div className="col-span-8 truncate">
-                    <span className="text-gray-800">{l.item_label}</span>
-                    <span className="text-xs text-gray-500 ml-2">approved {l.approved_qty ?? 0} {l.unit}</span>
+                <div key={l.id} className="grid grid-cols-1 md:grid-cols-12 gap-2 md:items-center text-sm border-b border-gray-100 md:border-0 pb-2 md:pb-0 last:border-0">
+                  <div className="md:col-span-8 min-w-0">
+                    <div className="text-gray-800 truncate">{l.item_label}</div>
+                    <div className="text-xs text-gray-500">approved {l.approved_qty ?? 0} {l.unit}</div>
                   </div>
-                  <label className="col-span-4 inline-flex items-center gap-2 text-sm text-gray-700">
+                  <label className="md:col-span-4 inline-flex items-center gap-2 text-sm text-gray-700">
                     <input
                       type="checkbox"
                       checked={returnable[l.id] ?? false}
@@ -253,17 +254,18 @@ export function RequestActions({
           <p className="text-xs text-gray-500">Enter the actual qty being handed over (cannot exceed approved). Issuing deducts stock and releases the reservation.</p>
           <div className="space-y-1">
             {lines.map(l => (
-              <div key={l.id} className="grid grid-cols-12 gap-2 items-center text-sm">
-                <div className="col-span-7 truncate">
-                  <span className="text-gray-800">{l.item_label}</span>
-                  <span className="text-xs text-gray-500 ml-2">approved {l.approved_qty ?? 0} {l.unit}{l.is_returnable && <span className="ml-2 text-amber-700 font-semibold">· returnable</span>}</span>
+              <div key={l.id} className="grid grid-cols-1 md:grid-cols-12 gap-2 md:items-center text-sm border-b border-gray-100 md:border-0 pb-2 md:pb-0 last:border-0">
+                <div className="md:col-span-7 min-w-0">
+                  <div className="text-gray-800 truncate">{l.item_label}</div>
+                  <div className="text-xs text-gray-500">approved {l.approved_qty ?? 0} {l.unit}{l.is_returnable && <span className="ml-2 text-amber-700 font-semibold">· returnable</span>}</div>
                 </div>
-                <div className="col-span-4">
-                  <MoneyInput
+                <div className="md:col-span-4 flex items-center gap-2">
+                  <div className="flex-1"><MoneyInput
                     value={issuedQty[l.id] ?? ''}
-                    onChange={(v) => setIssuedQty(s => ({ ...s, [l.id]: v }))} />
+                    onChange={(v) => setIssuedQty(s => ({ ...s, [l.id]: v }))} /></div>
+                  <span className="text-xs text-gray-500 md:hidden">{l.unit}</span>
                 </div>
-                <span className="col-span-1 text-xs text-gray-500">{l.unit}</span>
+                <span className="hidden md:inline md:col-span-1 text-xs text-gray-500">{l.unit}</span>
               </div>
             ))}
           </div>

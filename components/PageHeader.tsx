@@ -11,10 +11,19 @@ interface PageHeaderProps {
   className?: string
 }
 
+// Mobile-aware: stacks title above actions on phones, side-by-side on
+// sm+. Subtitle uses line-clamp-2 instead of truncate so KPI summary
+// strings like "12 indents · 87 lines" don't get chopped to nothing on
+// narrow screens.
 export function PageHeader({ title, subtitle, back, children, className }: PageHeaderProps) {
   return (
-    <div className={cn('flex items-start justify-between gap-3 mb-4', className)}>
-      <div className="min-w-0">
+    <div
+      className={cn(
+        'mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between',
+        className,
+      )}
+    >
+      <div className="min-w-0 flex-1">
         {back && (
           <Link
             href={back}
@@ -24,10 +33,16 @@ export function PageHeader({ title, subtitle, back, children, className }: PageH
             Back
           </Link>
         )}
-        <h1 className="text-xl md:text-2xl font-bold text-gray-900 truncate">{title}</h1>
-        {subtitle && <p className="text-sm text-gray-500 mt-0.5 truncate">{subtitle}</p>}
+        <h1 className="text-xl md:text-2xl font-bold text-gray-900 break-words">{title}</h1>
+        {subtitle && (
+          <p className="text-sm text-gray-500 mt-0.5 line-clamp-2">{subtitle}</p>
+        )}
       </div>
-      {children && <div className="flex items-center gap-2 flex-shrink-0">{children}</div>}
+      {children && (
+        <div className="flex flex-wrap items-center gap-2 sm:flex-shrink-0">
+          {children}
+        </div>
+      )}
     </div>
   )
 }

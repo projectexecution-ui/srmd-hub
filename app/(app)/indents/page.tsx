@@ -86,24 +86,24 @@ export default async function IndentsPage({
             active={(sp.stage ?? '') === opt.value}
           />
         ))}
-        <form action="/indents" method="get" className="ml-auto flex items-center gap-2 flex-wrap">
+        <form action="/indents" method="get" className="w-full sm:w-auto sm:ml-auto flex items-center gap-2 flex-wrap">
           {sp.stage && <input type="hidden" name="stage" value={sp.stage} />}
           <input
             type="search"
             name="q"
             defaultValue={sp.q ?? ''}
             placeholder="Indent no…"
-            className="h-8 rounded-xl border border-gray-300 bg-white px-3 text-xs text-gray-700 w-[150px]"
+            className="h-8 rounded-xl border border-gray-300 bg-white px-3 text-xs text-gray-700 w-full sm:w-[150px] min-w-0"
           />
           <select
             name="project"
             defaultValue={sp.project ?? ''}
-            className="h-8 rounded-xl border border-gray-300 bg-white px-2 text-xs text-gray-700"
+            className="h-8 rounded-xl border border-gray-300 bg-white px-2 text-xs text-gray-700 w-full sm:w-auto min-w-0"
           >
             <option value="">All projects</option>
             {projects.map(p => <option key={p.id} value={p.id}>{p.code}</option>)}
           </select>
-          <button className="h-8 px-3 rounded-xl bg-gray-100 hover:bg-gray-200 text-xs font-semibold text-gray-700">
+          <button className="h-8 px-3 rounded-xl bg-gray-100 hover:bg-gray-200 text-xs font-semibold text-gray-700 w-full sm:w-auto">
             Apply
           </button>
         </form>
