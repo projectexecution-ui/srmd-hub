@@ -17,11 +17,24 @@ export const getMyProfile = cache(async (): Promise<Profile | null> => {
   const user = await getMyUser()
   if (!user) return null
   const supabase = await createClient()
-  const { data } = await supabase
+  // .maybeSingle() returns {data: null, error: null} when the row is
+  // genuinely missing (e.g. handle_new_user trigger hadn't fired yet);
+  // .single() would surface that as a "0 rows" error and we'd lose
+  // the distinction between "no profile" and "DB hiccup". Differentiate
+  // here so a transient RLS / network error doesn't masquerade as
+  // "logged-out user" and redirect to /login.
+  const { data, error } = await supabase
     .from('profiles')
     .select('*')
     .eq('id', user.id)
-    .single()
+    .maybeSingle()
+  if (error) {
+    // Log so we can spot it in Vercel runtime logs; throwing here would
+    // let the (app)/error.tsx boundary catch it and offer a Try-again
+    // instead of bouncing the user to /login.
+    console.error('[getMyProfile] DB error', error)
+    throw new Error(`Failed to load your profile (${error.code ?? 'unknown'})`)
+  }
   return (data as Profile) ?? null
 })
 

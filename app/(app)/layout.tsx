@@ -1,4 +1,5 @@
 import { redirect } from 'next/navigation'
+import { Toaster } from 'sonner'
 import NavBar from '@/components/NavBar'
 import { InstallPrompt } from '@/components/InstallPrompt'
 import { NotificationProvider } from '@/components/NotificationProvider'
@@ -41,6 +42,11 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         </main>
         <InstallPrompt />
       </div>
+      {/* Hub-wide toast outlet. `toast.success(...)`, `toast.error(...)`
+          etc. work from any client component without an explicit import
+          of a context. Positioned top-right to stay out of mobile thumb
+          reach + above the keyboard. */}
+      <Toaster position="top-right" richColors closeButton />
     </NotificationProvider>
   )
 }

@@ -59,9 +59,12 @@ export default async function MyApprovalsPage({
   const moduleFilter = sp.module ?? null
 
   const supabase = await createClient()
-  const { data } = await supabase.rpc('my_approval_inbox')
+  const { data, error: inboxError } = await supabase.rpc('my_approval_inbox')
   const allRows = (data ?? []) as InboxRow[]
 
+  // This is an async server component — it renders once per request, so
+  // Date.now() is a stable "as-of-now" snapshot, not an impure render.
+  // eslint-disable-next-line react-hooks/purity
   const now = Date.now()
   // Totals are based on the FULL list — the stats describe the inbox, not the filter view.
   const totalCount   = allRows.length
@@ -98,6 +101,21 @@ export default async function MyApprovalsPage({
   return (
     <div className="p-4 md:p-6 max-w-5xl mx-auto space-y-4">
       <PageHeader title="My Approvals" subtitle="Only the items waiting on your action — grouped by module." />
+
+      {/* If the inbox RPC failed we MUST say so — otherwise an empty list
+          looks identical to "all caught up" and someone misses an approval. */}
+      {inboxError && (
+        <div className="rounded-xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-800 flex items-start gap-2">
+          <AlertTriangle className="h-4 w-4 mt-0.5 flex-shrink-0" />
+          <div>
+            <p className="font-semibold">Couldn&apos;t load your approvals.</p>
+            <p className="text-rose-700 text-xs mt-0.5">
+              This is usually transient — refresh the page. If it keeps happening, tell your admin.
+              ({inboxError.message})
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* Headline stats — clickable filters */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
