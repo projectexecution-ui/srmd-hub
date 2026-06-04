@@ -16,7 +16,8 @@ import { createClient } from '@/lib/supabase/server'
 import { getMyPermissions, can } from '@/lib/auth'
 
 // Tables that reference public.projects via project_id (or parent_project_id).
-// Keep this list in sync with the schema.
+// Keep this list in sync with the schema. invoices has no direct project_id —
+// it's linked via purchase_orders.po_id, handled below as a special case.
 const DEP_TABLES: Array<{
   table: string
   column: string
@@ -26,7 +27,6 @@ const DEP_TABLES: Array<{
   { table: 'projects',                 column: 'parent_project_id', label: 'Sub-projects',          module: 'Projects'        },
   { table: 'indents',                  column: 'project_id',        label: 'Indents',               module: 'Indent → PO'     },
   { table: 'purchase_orders',          column: 'project_id',        label: 'Purchase Orders',       module: 'Indent → PO'     },
-  { table: 'invoices',                 column: 'project_id',        label: 'Invoices',              module: 'Invoices'        },
   { table: 'jmr_daily_entries',        column: 'project_id',        label: 'JMR daily entries',     module: 'JMR'             },
   { table: 'jmr_bills',                column: 'project_id',        label: 'JMR bills',             module: 'JMR'             },
   { table: 'jmr_rate_cards',           column: 'project_id',        label: 'JMR rate cards',        module: 'JMR'             },
@@ -39,7 +39,7 @@ const DEP_TABLES: Array<{
 
 async function countDeps(projectId: string) {
   const supabase = await createClient()
-  const results = await Promise.all(
+  const direct = await Promise.all(
     DEP_TABLES.map(async d => {
       const { count } = await supabase
         .from(d.table)
@@ -48,7 +48,24 @@ async function countDeps(projectId: string) {
       return { ...d, count: count ?? 0 }
     })
   )
-  return results
+
+  // Invoices have no project_id of their own — they hang off purchase_orders.
+  // Count via an inner join.
+  const { count: invoiceCount } = await supabase
+    .from('invoices')
+    .select('id, purchase_orders!inner(project_id)', { count: 'exact', head: true })
+    .eq('purchase_orders.project_id', projectId)
+
+  return [
+    ...direct,
+    {
+      table: 'invoices',
+      column: 'po_id',
+      label: 'Invoices',
+      module: 'Invoices',
+      count: invoiceCount ?? 0,
+    },
+  ]
 }
 
 export async function GET(_req: NextRequest, ctx: { params: Promise<{ id: string }> }) {

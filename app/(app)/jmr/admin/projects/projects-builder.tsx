@@ -76,8 +76,18 @@ export function ProjectsBuilder({ tops, childrenBy, canEdit }: Props) {
     e.preventDefault()
     if (!name) return
     setSaving(true); setError(null)
+    // projects.code is NOT NULL — if the user didn't type one, derive a
+    // code from the parent + sibling count so we never blow up the
+    // insert. Falls back to a timestamp if the parent has no code yet.
+    let finalCode = code.trim()
+    if (!finalCode) {
+      const parent = tops.find(t => t.id === parentId)
+      const siblingCount = (childrenBy[parentId] || []).length
+      const base = (parent?.code || 'SUB').trim()
+      finalCode = `${base}-SUB-${siblingCount + 1}`
+    }
     const { error } = await supabase.from('projects').insert({
-      name, code: code || null, parent_project_id: parentId, status: 'active',
+      name, code: finalCode, parent_project_id: parentId, status: 'active',
     })
     setSaving(false)
     if (error) { setError(error.message); return }

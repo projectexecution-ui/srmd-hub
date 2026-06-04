@@ -27,7 +27,10 @@ async function whoAmI() {
 export async function checkCanSetDeadline(): Promise<boolean> {
   const me = await whoAmI()
   if (!me.user) return false
-  return callCanApprove('any', 'deadline_set', null)
+  // The missing `await` here was silently returning a Promise, which
+  // coerces to truthy — i.e. anyone could set / change a deadline. Now
+  // properly resolved against the approval matrix.
+  return await callCanApprove('any', 'deadline_set', null)
 }
 
 /** Whether the caller may set / change an Internal Estimate. */

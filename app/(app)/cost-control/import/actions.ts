@@ -93,16 +93,21 @@ export async function commitImport(payload: CommitImportPayload) {
       }
     }
 
-    // Upsert the budget line (one row per project + discipline + sub-skill + line_type)
-    const { data: existingLine } = await supabase
+    // Upsert the budget line (one row per project + discipline + sub-skill + line_type).
+    // sub_skill_id is nullable — the previous code chained `.is(...)` AND
+    // `.eq(...)` which produced `is.null AND eq.null` for null inputs and
+    // matched nothing, so every re-import inserted duplicates instead of
+    // updating. Split the query depending on null-ness.
+    const baseQuery = supabase
       .from('cc_budget_lines')
       .select('id, current_budget_amt, current_wo_committed_amt, current_paid_amt')
       .eq('project_id', payload.project_id)
       .eq('discipline_id', discipline_id)
-      .is('sub_skill_id', sub_skill_id === null ? null : undefined)
-      .eq('sub_skill_id', sub_skill_id as string)
       .eq('line_type', row.line_type)
-      .maybeSingle()
+    const { data: existingLine } = await (sub_skill_id === null
+      ? baseQuery.is('sub_skill_id', null)
+      : baseQuery.eq('sub_skill_id', sub_skill_id)
+    ).maybeSingle()
 
     let budget_line_id = existingLine?.id ?? null
 
