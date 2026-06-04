@@ -24,7 +24,7 @@ export function MatrixTable({ data }: { data: MatrixData }) {
       <table className="text-xs border-collapse min-w-[1200px] w-full">
         <thead>
           <tr>
-            <th rowSpan={2} className="px-2 py-2 border border-gray-300 bg-gray-50 text-left font-bold sticky left-0 z-10">Sr.</th>
+            <th rowSpan={2} className="px-2 py-2 border border-gray-300 bg-gray-50 text-left font-bold sticky left-0 z-20">Sr.</th>
             <th rowSpan={2} className="px-2 py-2 border border-gray-300 bg-amber-100 text-left font-bold min-w-[200px]">Item Description</th>
             <th rowSpan={2} className="px-2 py-2 border border-gray-300 bg-gray-50 font-bold">Unit</th>
             <th rowSpan={2} className="px-2 py-2 border border-gray-300 bg-gray-50 text-right font-bold">Rate</th>
@@ -79,7 +79,7 @@ export function MatrixTable({ data }: { data: MatrixData }) {
           ))}
           <tr className="font-bold bg-gray-100">
             <td colSpan={4} className="px-2 py-2 border border-gray-300 text-right uppercase">Sub-total</td>
-            {subProjects.map((sp, i) => (
+            {subProjects.map((sp) => (
               <>
                 <td key={`${sp.id}-stq`} className="px-2 py-2 border border-gray-300"></td>
                 <td key={`${sp.id}-sta`} className="px-2 py-2 border border-gray-300 text-right">
@@ -128,7 +128,7 @@ function ItemRow({ row, idx, subProjects, showPeriod }: {
     : null
   return (
     <tr className="hover:bg-blue-50/40">
-      <td className="px-2 py-1.5 border border-gray-300 text-gray-500 sticky left-0 bg-white">{idx}</td>
+      <td className="px-2 py-1.5 border border-gray-300 text-gray-500 sticky left-0 z-10 bg-white">{idx}</td>
       <td className="px-2 py-1.5 border border-gray-300">
         <div>{row.item_name}</div>
         {period && (

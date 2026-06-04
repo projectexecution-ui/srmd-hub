@@ -182,19 +182,19 @@ export default function PermissionsMatrix({ modules, roles, initial, roleLabels,
                   <Plus className="h-4 w-4" /> Add role
                 </Button>
               ) : (
-                <form onSubmit={addRole} className="flex flex-wrap items-end gap-2 p-3 bg-blue-50/40 border border-blue-200 rounded-xl">
-                  <div>
+                <form onSubmit={addRole} className="w-full flex flex-col sm:flex-row sm:flex-wrap sm:items-end gap-2 p-3 bg-blue-50/40 border border-blue-200 rounded-xl">
+                  <div className="w-full sm:w-auto">
                     <label className="text-[11px] font-semibold uppercase tracking-wide text-gray-600 mb-1 block">Role name</label>
                     <Input
                       value={newRoleLabel}
                       onChange={e => setNewRoleLabel(e.target.value)}
                       placeholder="e.g. QC Inspector"
                       disabled={addBusy}
-                      className="min-w-[12rem]"
+                      className="w-full sm:min-w-[12rem]"
                       autoFocus
                     />
                   </div>
-                  <div className="flex-1">
+                  <div className="w-full sm:flex-1 sm:min-w-[14rem]">
                     <label className="text-[11px] font-semibold uppercase tracking-wide text-gray-600 mb-1 block">Description (optional)</label>
                     <Input
                       value={newRoleDesc}
@@ -203,13 +203,15 @@ export default function PermissionsMatrix({ modules, roles, initial, roleLabels,
                       disabled={addBusy}
                     />
                   </div>
-                  <Button type="submit" size="sm" disabled={addBusy || !newRoleLabel.trim()}>
-                    {addBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
-                    Create role
-                  </Button>
-                  <Button type="button" size="sm" variant="ghost" onClick={() => { setShowAddRole(false); setNewRoleLabel(''); setNewRoleDesc('') }} disabled={addBusy}>
-                    <X className="h-4 w-4" /> Cancel
-                  </Button>
+                  <div className="flex gap-2 w-full sm:w-auto">
+                    <Button type="submit" size="sm" disabled={addBusy || !newRoleLabel.trim()} className="flex-1 sm:flex-none">
+                      {addBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
+                      Create role
+                    </Button>
+                    <Button type="button" size="sm" variant="ghost" onClick={() => { setShowAddRole(false); setNewRoleLabel(''); setNewRoleDesc('') }} disabled={addBusy}>
+                      <X className="h-4 w-4" /> Cancel
+                    </Button>
+                  </div>
                 </form>
               )}
             </div>
