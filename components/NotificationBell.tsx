@@ -11,7 +11,13 @@ import { Bell, CheckCheck, Settings as SettingsIcon } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useNotifications, type NotificationRow } from '@/components/NotificationProvider'
 
-export default function NotificationBell() {
+// `align` controls which way the dropdown opens:
+//   'right' (default) — anchors to the bell's right edge, opens leftward.
+//     Correct for the mobile top-bar bell sitting in the top-right corner.
+//   'left' — anchors to the bell's left edge, opens rightward into the page.
+//     Correct for the desktop sidebar bell, where 'right' would push the
+//     ~320px panel off the left screen edge and clip its text.
+export default function NotificationBell({ align = 'right' }: { align?: 'left' | 'right' }) {
   const { items, loading, unread, markAllRead, markOneRead } = useNotifications()
   const [open, setOpen] = useState(false)
   const panelRef = useRef<HTMLDivElement>(null)
@@ -55,7 +61,10 @@ export default function NotificationBell() {
       {open && (
         <div
           ref={panelRef}
-          className="absolute right-0 mt-2 w-[20rem] sm:w-[22rem] max-h-[28rem] overflow-hidden rounded-xl border border-gray-200 bg-white shadow-xl z-50 flex flex-col"
+          className={cn(
+            'absolute mt-2 w-[18rem] sm:w-[22rem] max-w-[calc(100vw-1.5rem)] max-h-[28rem] overflow-hidden rounded-xl border border-gray-200 bg-white shadow-xl z-50 flex flex-col',
+            align === 'left' ? 'left-0' : 'right-0',
+          )}
         >
           <div className="flex items-center justify-between px-3 py-2 border-b border-gray-100">
             <p className="text-sm font-semibold text-gray-900">Notifications</p>

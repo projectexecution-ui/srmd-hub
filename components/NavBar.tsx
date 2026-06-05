@@ -186,7 +186,7 @@ export default function NavBar({ profile, permissions, disabledSlugs = [], isPor
                 <p className="text-xs text-gray-500 truncate capitalize">{profile.role.replace('_', ' ')}</p>
               </div>
             </div>
-            <NotificationBell />
+            <NotificationBell align="left" />
           </div>
         )}
         {collapsed && (
@@ -194,7 +194,7 @@ export default function NavBar({ profile, permissions, disabledSlugs = [], isPor
             <div className="h-8 w-8 rounded-full bg-blue-100 flex items-center justify-center text-blue-700 font-bold text-sm" title={profile.name || profile.email}>
               {(profile.name || profile.email)[0].toUpperCase()}
             </div>
-            <NotificationBell />
+            <NotificationBell align="left" />
           </div>
         )}
 
