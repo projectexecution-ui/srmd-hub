@@ -21,6 +21,9 @@ import { Badge } from '@/components/ui/badge'
 import { Loader2, Plus, Trash2, Users, Trophy, AlertTriangle } from 'lucide-react'
 import { confirm } from '@/components/ui/confirm-dialog'
 import { cn } from '@/lib/utils'
+import {
+  buildQuoteMap, computeItemBest, computeVendorTotals, computeRanking, quoteLineAmount,
+} from '@/lib/comparison'
 
 interface Vendor { id: string; comparison_id: string; name: string; contact: string | null; sequence: number }
 interface Item   { id: string; comparison_id: string; sequence: number; code: string | null; description: string; uom: string | null; quantity: number | null }
@@ -50,62 +53,26 @@ export default function ComparisonGrid({
   const [showAddVendor, setShowAddVendor] = useState(false)
   const [newVendorName, setNewVendorName] = useState('')
 
-  // ───────── Index quotes by (itemId, vendorId) for O(1) lookup
-  const quoteMap = useMemo(() => {
-    const m = new Map<string, Quote>()
-    for (const q of quotes) m.set(`${q.item_id}::${q.vendor_id}`, q)
-    return m
-  }, [quotes])
+  // ───────── All the comparison math lives in lib/comparison.ts (pure +
+  //           unit-tested). The grid just memoises the calls. Amounts are
+  //           computed LIVE from current quantity, so editing a qty after
+  //           rates were typed correctly re-totals (no stale snapshot).
+  const quoteMap = useMemo(() => buildQuoteMap(quotes), [quotes])
 
   function getQuote(itemId: string, vendorId: string): Quote | null {
     return quoteMap.get(`${itemId}::${vendorId}`) ?? null
   }
 
   // Per-item L1 = lowest non-null rate among quoted vendors
-  const itemBest = useMemo(() => {
-    const m = new Map<string, number>()  // item_id → best rate
-    for (const it of items) {
-      let best: number | null = null
-      for (const v of vendors) {
-        const q = getQuote(it.id, v.id)
-        if (q && !q.not_quoted && q.rate != null && Number.isFinite(q.rate)) {
-          if (best == null || q.rate < best) best = q.rate
-        }
-      }
-      if (best != null) m.set(it.id, best)
-    }
-    return m
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [items, vendors, quotes])
+  const itemBest = useMemo(() => computeItemBest(items, vendors, quoteMap), [items, vendors, quoteMap])
 
-  // Per-vendor grand total + missing count
-  const vendorTotals = useMemo(() => {
-    const out = new Map<string, { total: number; missing: number; quoted: number }>()
-    for (const v of vendors) {
-      let total = 0, missing = 0, quoted = 0
-      for (const it of items) {
-        const q = getQuote(it.id, v.id)
-        if (!q || q.not_quoted || q.rate == null) { missing++; continue }
-        quoted++
-        const amount = q.amount != null ? q.amount : (it.quantity != null ? Number(it.quantity) * Number(q.rate) : 0)
-        total += amount
-      }
-      out.set(v.id, { total, missing, quoted })
-    }
-    return out
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [items, vendors, quotes])
+  // Per-vendor grand total + missing/quoted counts
+  const vendorTotals = useMemo(() => computeVendorTotals(items, vendors, quoteMap), [items, vendors, quoteMap])
 
-  // L-ranking: sort vendors by total ASC (lower is better)
-  const ranking = useMemo(() => {
-    const ranked = vendors
-      .map(v => ({ id: v.id, total: vendorTotals.get(v.id)?.total ?? 0 }))
-      .filter(r => r.total > 0)
-      .sort((a, b) => a.total - b.total)
-    const map = new Map<string, number>()
-    ranked.forEach((r, i) => map.set(r.id, i + 1))  // 1 = L1
-    return map
-  }, [vendors, vendorTotals])
+  // L-ranking: sort vendors by total ASC (lower is better). NOTE: a vendor
+  // missing most items but cheap on a few can rank L1 — the "missing" count
+  // is shown next to the rank so the user sees incomplete bids.
+  const ranking = useMemo(() => computeRanking(vendors, vendorTotals), [vendors, vendorTotals])
 
   // ───────── Mutators ─────────
   async function addItem() {
@@ -322,9 +289,7 @@ export default function ComparisonGrid({
                             className="h-8 text-xs text-right tabular-nums"
                           />
                           <div className={cn('text-[10px] text-right mt-0.5 tabular-nums', isL1 ? 'text-emerald-700 font-semibold' : 'text-gray-500')}>
-                            {q?.amount != null
-                              ? fmtINR(q.amount)
-                              : (it.quantity != null && rate != null ? fmtINR(Number(it.quantity) * rate) : '—')}
+                            {(() => { const a = quoteLineAmount(q, it); return a != null ? fmtINR(a) : '—' })()}
                           </div>
                         </td>
                       )
