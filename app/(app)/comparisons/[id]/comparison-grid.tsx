@@ -211,7 +211,21 @@ export default function ComparisonGrid({
                       <th key={v.id} className="px-2 py-2 text-center text-[10px] uppercase tracking-wide text-gray-500 min-w-[140px] border-l border-gray-200">
                         <div className="flex items-center justify-center gap-1.5 flex-wrap">
                           <span className="font-bold text-gray-700 normal-case text-sm">{v.name}</span>
-                          {rank === 1 && <Badge className="bg-emerald-100 text-emerald-800 text-[10px]"><Trophy className="h-3 w-3 mr-0.5 inline" />L1</Badge>}
+                          {rank === 1 && (
+                            // L1 = cheapest total. If this vendor hasn't quoted every
+                            // item, flag it amber + "*" so the trophy isn't mistaken for
+                            // a complete, comparable bid (Finding A).
+                            t && t.missing > 0 ? (
+                              <Badge className="bg-amber-100 text-amber-900 text-[10px]"
+                                title={`Cheapest by total, but ${t.missing} item(s) not quoted — compare with caution`}>
+                                <Trophy className="h-3 w-3 mr-0.5 inline" />L1*
+                              </Badge>
+                            ) : (
+                              <Badge className="bg-emerald-100 text-emerald-800 text-[10px]" title="Lowest total, all items quoted">
+                                <Trophy className="h-3 w-3 mr-0.5 inline" />L1
+                              </Badge>
+                            )
+                          )}
                           {rank === 2 && <Badge className="bg-blue-100 text-blue-800 text-[10px]">L2</Badge>}
                           {rank === 3 && <Badge className="bg-slate-100 text-slate-700 text-[10px]">L3</Badge>}
                           {rank !== undefined && rank > 3 && <Badge variant="secondary" className="text-[10px]">L{rank}</Badge>}
