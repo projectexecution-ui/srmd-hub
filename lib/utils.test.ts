@@ -20,6 +20,12 @@ describe('formatINR', () => {
     expect(formatINR('not-a-number')).toBe('—')
   })
 
+  it('returns an em dash for ±Infinity — why: Intl would render "₹∞"', () => {
+    expect(formatINR(Infinity)).toBe('—')
+    expect(formatINR(-Infinity)).toBe('—')
+    expect(formatINR('Infinity')).toBe('—')
+  })
+
   it('handles zero', () => {
     expect(formatINR(0)).toMatch(/0/)
   })
@@ -36,9 +42,10 @@ describe('formatNumber', () => {
     expect(formatNumber(1234.567, 3)).toBe('1,234.567')
   })
 
-  it('returns an em dash for null / NaN', () => {
+  it('returns an em dash for null / NaN / Infinity', () => {
     expect(formatNumber(null)).toBe('—')
     expect(formatNumber('xyz')).toBe('—')
+    expect(formatNumber(Infinity)).toBe('—')
   })
 })
 

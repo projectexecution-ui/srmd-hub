@@ -100,3 +100,57 @@ describe('caret helpers', () => {
     expect(caretPosForDigitCount('1,50,000', 99)).toBe('1,50,000'.length)
   })
 })
+
+// ============================================================================
+// "Try to break it" — invalid + extreme inputs into the money INPUT parser.
+// stripToRaw is the first thing every amount field runs on raw user typing /
+// paste, so it must never crash and never emit a comma-bearing string.
+// ============================================================================
+
+describe('stripToRaw — invalid inputs', () => {
+  it('junk-only / symbols → "" — why: pasting "$%^&" should clear, not error', () => {
+    expect(stripToRaw('$%^&', false, 2)).toBe('')
+    expect(stripToRaw('abc', false, 2)).toBe('')
+    expect(stripToRaw('   ', false, 2)).toBe('')
+  })
+  it('digits embedded in letters keep only the digits', () => {
+    expect(stripToRaw('12abc34', false, 2)).toBe('1234')
+  })
+  it('whitespace inside a number is removed (paste from a spreadsheet)', () => {
+    expect(stripToRaw('  1 50 000 ', false, 2)).toBe('150000')
+  })
+})
+
+describe('stripToRaw — extreme inputs', () => {
+  it('emoji / multibyte chars are stripped, digits survive', () => {
+    expect(stripToRaw('12🎉34', false, 2)).toBe('1234')
+  })
+  it('KNOWN LIMIT: full-width (Unicode) digits are dropped → "" — flagged in gap report', () => {
+    // A paste of "１２３" (full-width) silently clears. Only ASCII 0-9 are kept.
+    expect(stripToRaw('１２３', false, 2)).toBe('')
+  })
+  it('KNOWN LIMIT: scientific notation is mangled, not honoured', () => {
+    // "1.5e3" → the 'e' is stripped, leaving "1.53" (NOT 1500). Documented.
+    expect(stripToRaw('1.5e3', false, 2)).toBe('1.53')
+  })
+  it('a very long digit run is preserved (no overflow / no crash)', () => {
+    const out = stripToRaw('1'.repeat(30), false, 0)
+    expect(out).toBe('1'.repeat(30))
+    // …and still groups cleanly when formatted
+    expect(formatIndian(out)).toBe('1,11,11,11,11,11,11,11,11,11,11,11,11,11,111')
+  })
+  it('a comma-formatted paste round-trips back to the same display', () => {
+    const raw = stripToRaw('1,00,00,00,000', false, 0)
+    expect(raw).toBe('1000000000')
+    expect(formatIndian(raw)).toBe('1,00,00,00,000')
+  })
+})
+
+describe('formatIndian — contract note', () => {
+  it('KNOWN: GIGO if fed malformed raw directly (only ever receives stripToRaw output)', () => {
+    // formatIndian assumes its input is already sanitised. Calling it with a
+    // double-dot string returns it unchanged — acceptable because the input
+    // component always pipes through stripToRaw first. Documented in gaps.
+    expect(formatIndian('1.2.3')).toBe('1.2.3')
+  })
+})

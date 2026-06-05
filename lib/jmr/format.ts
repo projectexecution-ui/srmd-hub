@@ -5,11 +5,13 @@
 // want — but for the "₹82.57 L" / "₹14.17 Cr" tile format we need our
 // own short formatter.
 
-import { format as formatDate, parseISO } from 'date-fns'
+import { format as formatDate, parseISO, isValid } from 'date-fns'
 
 export function formatINR(n: number, opts: { decimals?: number } = {}): string {
   const { decimals = 0 } = opts
-  if (n == null || isNaN(n)) return '—'
+  // !Number.isFinite() rejects NaN AND ±Infinity. The old isNaN() check let
+  // Infinity through, producing garbage like "₹Infin,ity" on screen.
+  if (n == null || !Number.isFinite(n)) return '—'
   const sign = n < 0 ? '-' : ''
   const abs = Math.abs(n)
   const fixed = abs.toFixed(decimals)
@@ -23,7 +25,7 @@ export function formatINR(n: number, opts: { decimals?: number } = {}): string {
 
 /** Short form: ₹82.57 L (lakh) / ₹14.17 Cr (crore). */
 export function formatINRShort(n: number): string {
-  if (n == null || isNaN(n)) return '—'
+  if (n == null || !Number.isFinite(n)) return '—'
   const sign = n < 0 ? '-' : ''
   const abs = Math.abs(n)
   if (abs >= 1e7) return `${sign}₹${(abs / 1e7).toFixed(2)} Cr`
@@ -34,21 +36,25 @@ export function formatINRShort(n: number): string {
 
 /** Plain Indian-grouped number, no currency symbol. */
 export function formatNumberIN(n: number, decimals = 0): string {
-  if (n == null || isNaN(n)) return '—'
+  if (n == null || !Number.isFinite(n)) return '—'
   return formatINR(n, { decimals }).replace('₹', '').trim()
 }
 
-/** "21 May 2026" — never US-style. */
+/** "21 May 2026" — never US-style. Returns "—" for missing OR unparseable
+ *  input (a bad string like "2026/05/21" would otherwise make date-fns
+ *  throw RangeError and crash the whole render). */
 export function formatDateIN(d: string | Date | null | undefined): string {
   if (!d) return '—'
   const date = typeof d === 'string' ? parseISO(d) : d
+  if (!isValid(date)) return '—'
   return formatDate(date, 'd MMM yyyy')
 }
 
-/** "21 May 26" — compact. */
+/** "21 May 26" — compact. Same invalid-date guard as formatDateIN. */
 export function formatDateShort(d: string | Date | null | undefined): string {
   if (!d) return '—'
   const date = typeof d === 'string' ? parseISO(d) : d
+  if (!isValid(date)) return '—'
   return formatDate(date, 'd MMM yy')
 }
 

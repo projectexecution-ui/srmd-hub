@@ -28,13 +28,14 @@ const INR = new Intl.NumberFormat('en-IN', {
 
 export function formatINR(n: number | string | null | undefined): string {
   const v = typeof n === 'string' ? Number(n) : n
-  if (v === null || v === undefined || isNaN(v as number)) return '—'
+  // !Number.isFinite rejects NaN and ±Infinity (Intl would render "₹∞").
+  if (v === null || v === undefined || !Number.isFinite(v as number)) return '—'
   return INR.format(v as number)
 }
 
 export function formatNumber(n: number | string | null | undefined, decimals = 2): string {
   const v = typeof n === 'string' ? Number(n) : n
-  if (v === null || v === undefined || isNaN(v as number)) return '—'
+  if (v === null || v === undefined || !Number.isFinite(v as number)) return '—'
   return (v as number).toLocaleString('en-IN', {
     minimumFractionDigits: decimals, maximumFractionDigits: decimals,
   })
