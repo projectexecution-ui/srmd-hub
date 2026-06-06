@@ -296,7 +296,7 @@ function ReportView({ doc, showWorking }: { doc: ReportDoc; showWorking: boolean
 
   // Collapse/expand per category (by index — categories are unique per doc).
   const [collapsed, setCollapsed] = useState<Set<number>>(new Set())
-  const toggle = (i: number) => setCollapsed(s => { const n = new Set(s); n.has(i) ? n.delete(i) : n.add(i); return n })
+  const toggle = (i: number) => setCollapsed(s => { const n = new Set(s); if (n.has(i)) n.delete(i); else n.add(i); return n })
   const allCollapsed = doc.categories.length > 0 && collapsed.size === doc.categories.length
   const expandAll = () => setCollapsed(new Set())
   const collapseAll = () => setCollapsed(new Set(doc.categories.map((_, i) => i)))
