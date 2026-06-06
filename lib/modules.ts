@@ -5,8 +5,8 @@
 import {
   ClipboardList, FileText, PackageCheck, Receipt, Wallet,
   Truck, Building2, Upload, Users, Settings, ShieldCheck,
-  ExternalLink, BarChart3, Wrench, Calculator, FileSpreadsheet,
-  Boxes, Inbox, GitCompareArrows, Tags,
+  ExternalLink, Wrench, Calculator, FileSpreadsheet,
+  Boxes, Inbox, GitCompareArrows, Tags, FlaskConical,
 } from 'lucide-react'
 import type { PermissionMap } from './types'
 
@@ -44,7 +44,12 @@ export const MODULES: ModuleTile[] = [
   { slug: 'uploads',          label: 'Uploads',          description: 'Excel imports history',                       href: '/uploads',        icon: Upload,        tone: 'slate' },
   { slug: 'budget-vs-actual', label: 'IN4 BPH Report Hub',     description: 'IN4 Budget Performance report — server-backed BPH dashboard', href: '/budget',              icon: FileSpreadsheet, tone: 'teal' },
   { slug: 'procurement-tracker', label: 'Indent → PO Tracker', description: 'Upload IN4 PURCHINDENT_TO_ISSUE_RPT or PUR_PurchaseOrderReport — Indent → PO → GRN → Invoice with pending-receipts focus', href: '/procurement-tracker', icon: FileSpreadsheet, tone: 'amber' },
+  { slug: 'contractor-report', label: 'Contractor Report',  description: 'Upload IN4 “All Types Certificates Details” → Category × Contractor summary, in-app view + Excel export', href: '/contractor-report', icon: FileSpreadsheet, tone: 'blue' },
   { slug: 'cost-control',     label: 'Cost Control',           description: 'Working Sheets, budgets & approvals (SRASSK)',                 href: '/cost-control',        icon: Calculator,      tone: 'indigo' },
+  // Smart-Blueprint sandbox — proves the SLA + aging-dashboard UX in
+  // isolation before any production module gets touched. Purple tone
+  // (+ FlaskConical icon) marks it as an experiment.
+  { slug: 'blueprint-demo',   label: 'Blueprint Demo',   description: 'Sandbox for Smart Blueprints — SLA dashboard, auto-derived thresholds, escalation chain', href: '/blueprint-demo', icon: FlaskConical, tone: 'purple' },
   { slug: 'admin-users',      label: 'Users & Roles',    description: 'Manage app users',                            href: '/admin/users',    icon: Users,         tone: 'slate' },
   { slug: 'admin-settings',   label: 'Settings',         description: 'App settings (admin email, etc.)',            href: '/admin/settings', icon: Settings,      tone: 'slate' },
   { slug: 'admin-permissions',label: 'Permissions',      description: 'Who can do what in each module',              href: '/admin/permissions', icon: ShieldCheck, tone: 'slate' },
