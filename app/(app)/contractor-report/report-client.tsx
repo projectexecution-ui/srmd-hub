@@ -5,7 +5,7 @@
 // it on screen with the working columns (Deductions / Retention / Balance)
 // hidden by default, and exports the exact 9-column format.
 
-import { Fragment, useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import * as XLSX from 'xlsx'
 import { PageHeader } from '@/components/PageHeader'
 import { Card } from '@/components/ui/card'
@@ -13,7 +13,7 @@ import { Button } from '@/components/ui/button'
 import { QueryError } from '@/components/ui/query-error'
 import {
   FileSpreadsheet, UploadCloud, Download, Loader2, Eye, EyeOff, X, Clock,
-  CheckCircle2, AlertTriangle, ChevronRight, ChevronDown, ChevronsDownUp, ChevronsUpDown,
+  CheckCircle2, AlertTriangle, ChevronRight, ChevronDown, ChevronsDownUp, ChevronsUpDown, Layers,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { formatNumber, cn } from '@/lib/utils'
@@ -357,55 +357,75 @@ function ReportView({ doc, showWorking }: { doc: ReportDoc; showWorking: boolean
 
       <ReconciliationPanel doc={doc} />
 
-      <div className="p-4 overflow-x-auto">
-        <table className="min-w-full text-sm">
-          <thead>
-            <tr className="bg-[#1F4E78] text-white text-xs uppercase tracking-wide">
-              <th className="px-3 py-2 text-left font-semibold">Category</th>
-              <th className="px-3 py-2 text-left font-semibold">Contractor</th>
-              {cols.map(c => <th key={c} className="px-3 py-2 text-right font-semibold">{c}</th>)}
-            </tr>
-          </thead>
-          <tbody>
-            {sections.map((sp, si) => (
-              <Fragment key={si}>
-                <SubprojectBanner sp={sp} showWorking={showWorking} />
-                {sp.categories.map((cat, ci) => (
-                  <CategoryBlock
-                    key={ci}
-                    cat={cat}
-                    showWorking={showWorking}
-                    collapsed={collapsed.has(`${si}:${ci}`)}
-                    onToggle={() => toggle(`${si}:${ci}`)}
-                  />
-                ))}
-              </Fragment>
-            ))}
-            <TotalsRow label="GRAND TOTAL" totals={gt} showWorking={showWorking} grand />
-          </tbody>
-        </table>
+      {/* One card per sub-project so it's always obvious which sub-project a
+          row belongs to. (Combined mode shows a single merged card.) */}
+      <div className="p-4 space-y-5">
+        {sections.map((sp, si) => (
+          <SubprojectCard
+            key={si}
+            sp={sp}
+            cols={cols}
+            showWorking={showWorking}
+            isCollapsed={(ci: number) => collapsed.has(`${si}:${ci}`)}
+            onToggle={(ci: number) => toggle(`${si}:${ci}`)}
+          />
+        ))}
+        <GrandTotalBar totals={gt} />
       </div>
     </Card>
   )
 }
 
-// Dark banner row that opens each sub-project section, carrying its total.
-function SubprojectBanner({ sp, showWorking }: { sp: SubprojectGroup; showWorking: boolean }) {
+// A self-contained sub-project section: a dark header naming the sub-project +
+// its totals, then its own column headers + collapsible categories.
+function SubprojectCard({ sp, cols, showWorking, isCollapsed, onToggle }: {
+  sp: SubprojectGroup; cols: string[]; showWorking: boolean
+  isCollapsed: (ci: number) => boolean; onToggle: (ci: number) => void
+}) {
   const t = subprojectTotal(sp)
   return (
-    <tr className="bg-[#1F4E78] text-white">
-      <td className="px-3 py-2 font-bold" colSpan={2}>
-        ▌ {sp.name}
-        <span className="ml-2 text-[10px] font-normal text-blue-100">{sp.categories.length} categor{sp.categories.length === 1 ? 'y' : 'ies'}</span>
-      </td>
-      <td className="px-3 py-2 text-right tabular-nums">{formatNumber(t.woValue, 0)}</td>
-      <td className="px-3 py-2 text-right tabular-nums">{formatNumber(t.billValue, 0)}</td>
-      <td className="px-3 py-2 text-right tabular-nums">{formatNumber(t.paidValue, 0)}</td>
-      {showWorking && <td className="px-3 py-2 text-right tabular-nums">{formatNumber(t.deductions, 0)}</td>}
-      {showWorking && <td className="px-3 py-2 text-right tabular-nums">{formatNumber(t.retentionHeld, 0)}</td>}
-      {showWorking && <td className="px-3 py-2 text-right tabular-nums">{formatNumber(t.balanceValue, 0)}</td>}
-      <td className="px-3 py-2 text-right tabular-nums">{formatNumber(t.totalOwed, 0)}</td>
-    </tr>
+    <div className="rounded-xl border border-gray-200 overflow-hidden shadow-sm">
+      <div className="bg-[#1F4E78] text-white px-3 py-2.5 flex flex-wrap items-center justify-between gap-2">
+        <span className="font-bold text-sm inline-flex items-center gap-2">
+          <Layers className="h-4 w-4 text-amber-300" />
+          {sp.name}
+          <span className="text-[10px] font-normal text-blue-100">
+            {sp.categories.length} categor{sp.categories.length === 1 ? 'y' : 'ies'}
+          </span>
+        </span>
+        <span className="text-[11px] text-blue-100 tabular-nums">
+          Bill {formatNumber(t.billValue, 0)} · Paid {formatNumber(t.paidValue, 0)} · Owed {formatNumber(t.totalOwed, 0)}
+        </span>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="min-w-full text-sm">
+          <thead>
+            <tr className="bg-gray-100 text-gray-600 text-[10px] uppercase tracking-wide">
+              <th className="px-3 py-1.5 text-left font-semibold">Category</th>
+              <th className="px-3 py-1.5 text-left font-semibold">Contractor</th>
+              {cols.map(c => <th key={c} className="px-3 py-1.5 text-right font-semibold">{c}</th>)}
+            </tr>
+          </thead>
+          <tbody>
+            {sp.categories.map((cat, ci) => (
+              <CategoryBlock key={ci} cat={cat} showWorking={showWorking} collapsed={isCollapsed(ci)} onToggle={() => onToggle(ci)} />
+            ))}
+            <TotalsRow label={`${sp.name} — total`} totals={t} showWorking={showWorking} />
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )
+}
+
+function GrandTotalBar({ totals }: { totals: Totals }) {
+  return (
+    <div className="rounded-xl bg-[#FFE699] border border-amber-300 px-4 py-3 flex flex-wrap items-center justify-between gap-2 font-bold text-gray-900">
+      <span>GRAND TOTAL — all sub-projects</span>
+      <span className="text-sm tabular-nums">
+        WO {formatNumber(totals.woValue, 0)} · Bill {formatNumber(totals.billValue, 0)} · Paid {formatNumber(totals.paidValue, 0)} · Owed {formatNumber(totals.totalOwed, 0)}
+      </span>
+    </div>
   )
 }
 
