@@ -117,6 +117,15 @@ export default async function CostControlLandingPage() {
               </div>
             </Link>
             {canAdmin && (
+              <Link href="/cost-control/admin/disciplines" className="flex items-start gap-2.5 px-2.5 py-2 rounded-md hover:bg-gray-50">
+                <Settings className="h-4 w-4 text-gray-500 mt-0.5 flex-shrink-0" />
+                <div className="min-w-0">
+                  <p className="text-sm font-medium text-gray-900">Disciplines master</p>
+                  <p className="text-[11px] text-gray-500">add / edit / archive disciplines + sub-skills</p>
+                </div>
+              </Link>
+            )}
+            {canAdmin && (
               <Link href="/cost-control/admin/qty-templates" className="flex items-start gap-2.5 px-2.5 py-2 rounded-md hover:bg-gray-50">
                 <Settings className="h-4 w-4 text-gray-500 mt-0.5 flex-shrink-0" />
                 <div className="min-w-0">
