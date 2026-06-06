@@ -13,7 +13,7 @@ import { Button } from '@/components/ui/button'
 import { QueryError } from '@/components/ui/query-error'
 import {
   FileSpreadsheet, UploadCloud, Download, Loader2, Eye, EyeOff, X, Clock,
-  CheckCircle2, AlertTriangle,
+  CheckCircle2, AlertTriangle, ChevronRight, ChevronDown, ChevronsDownUp, ChevronsUpDown,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { formatNumber } from '@/lib/utils'
@@ -294,6 +294,13 @@ function ReportView({ doc, showWorking }: { doc: ReportDoc; showWorking: boolean
     ? ['WO Value', 'Total Bill', 'Total Paid', 'Deductions', 'Retention', 'Balance', 'Total Owed']
     : ['WO Value', 'Total Bill', 'Total Paid', 'Total Owed']
 
+  // Collapse/expand per category (by index — categories are unique per doc).
+  const [collapsed, setCollapsed] = useState<Set<number>>(new Set())
+  const toggle = (i: number) => setCollapsed(s => { const n = new Set(s); n.has(i) ? n.delete(i) : n.add(i); return n })
+  const allCollapsed = doc.categories.length > 0 && collapsed.size === doc.categories.length
+  const expandAll = () => setCollapsed(new Set())
+  const collapseAll = () => setCollapsed(new Set(doc.categories.map((_, i) => i)))
+
   return (
     <Card className="overflow-hidden">
       <div className="px-4 py-3 border-b border-gray-100 flex flex-wrap items-center justify-between gap-2">
@@ -301,9 +308,15 @@ function ReportView({ doc, showWorking }: { doc: ReportDoc; showWorking: boolean
           <p className="text-sm font-semibold text-gray-900 truncate">{doc.title}</p>
           <p className="text-[11px] text-gray-500 truncate">{doc.subtitle} · from {doc.sourceFilename}</p>
         </div>
-        <Button size="sm" onClick={() => exportReport(doc)} className="bg-[#1F4E78] hover:bg-[#163a5c]">
-          <Download className="h-4 w-4" /> Export Excel
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button size="sm" variant="outline" onClick={() => { if (allCollapsed) expandAll(); else collapseAll() }} title="Expand or collapse all categories">
+            {allCollapsed ? <ChevronsUpDown className="h-4 w-4" /> : <ChevronsDownUp className="h-4 w-4" />}
+            {allCollapsed ? 'Expand all' : 'Collapse all'}
+          </Button>
+          <Button size="sm" onClick={() => exportReport(doc)} className="bg-[#1F4E78] hover:bg-[#163a5c]">
+            <Download className="h-4 w-4" /> Export Excel
+          </Button>
+        </div>
       </div>
 
       <ReconciliationPanel doc={doc} />
@@ -319,7 +332,13 @@ function ReportView({ doc, showWorking }: { doc: ReportDoc; showWorking: boolean
           </thead>
           <tbody>
             {doc.categories.map((cat, ci) => (
-              <CategoryBlock key={ci} cat={cat} showWorking={showWorking} colCount={cols.length} />
+              <CategoryBlock
+                key={ci}
+                cat={cat}
+                showWorking={showWorking}
+                collapsed={collapsed.has(ci)}
+                onToggle={() => toggle(ci)}
+              />
             ))}
             <TotalsRow label="GRAND TOTAL" totals={gt} showWorking={showWorking} grand />
           </tbody>
@@ -329,13 +348,31 @@ function ReportView({ doc, showWorking }: { doc: ReportDoc; showWorking: boolean
   )
 }
 
-function CategoryBlock({ cat, showWorking, colCount }: { cat: RawCategory; showWorking: boolean; colCount: number }) {
+// One category = a clickable header row carrying the category SUBTOTAL (always
+// visible), with the contractor detail rows shown only when expanded.
+function CategoryBlock({ cat, showWorking, collapsed, onToggle }: {
+  cat: RawCategory; showWorking: boolean; collapsed: boolean; onToggle: () => void
+}) {
+  const sub = categorySubtotal(cat)
   return (
     <>
-      <tr className="bg-[#D9E1F2]">
-        <td className="px-3 py-1.5 font-semibold text-gray-800" colSpan={colCount + 2}>{displayCategory(cat.category)}</td>
+      <tr className="bg-[#D9E1F2] font-semibold cursor-pointer select-none hover:bg-[#cdd8ee]" onClick={onToggle}>
+        <td className="px-3 py-1.5 text-gray-800" colSpan={2}>
+          <span className="inline-flex items-center gap-1.5">
+            {collapsed ? <ChevronRight className="h-3.5 w-3.5 text-[#1F4E78]" /> : <ChevronDown className="h-3.5 w-3.5 text-[#1F4E78]" />}
+            {displayCategory(cat.category)}
+            <span className="text-[10px] font-normal text-gray-500">({cat.contractors.length})</span>
+          </span>
+        </td>
+        <td className="px-3 py-1.5 text-right tabular-nums">{formatNumber(sub.woValue, 0)}</td>
+        <td className="px-3 py-1.5 text-right tabular-nums">{formatNumber(sub.billValue, 0)}</td>
+        <td className="px-3 py-1.5 text-right tabular-nums">{formatNumber(sub.paidValue, 0)}</td>
+        {showWorking && <td className="px-3 py-1.5 text-right tabular-nums">{formatNumber(sub.deductions, 0)}</td>}
+        {showWorking && <td className="px-3 py-1.5 text-right tabular-nums">{formatNumber(sub.retentionHeld, 0)}</td>}
+        {showWorking && <td className="px-3 py-1.5 text-right tabular-nums">{formatNumber(sub.balanceValue, 0)}</td>}
+        <td className="px-3 py-1.5 text-right tabular-nums">{formatNumber(sub.totalOwed, 0)}</td>
       </tr>
-      {cat.contractors.map((raw, i) => {
+      {!collapsed && cat.contractors.map((raw, i) => {
         const c = deriveContractor(raw)
         return (
           <tr key={i} className="border-t border-gray-100 hover:bg-gray-50">
@@ -351,7 +388,6 @@ function CategoryBlock({ cat, showWorking, colCount }: { cat: RawCategory; showW
           </tr>
         )
       })}
-      <TotalsRow label={`${displayCategory(cat.category)} — Subtotal`} totals={categorySubtotal(cat)} showWorking={showWorking} />
     </>
   )
 }
