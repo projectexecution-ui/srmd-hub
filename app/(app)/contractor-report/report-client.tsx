@@ -13,12 +13,13 @@ import { Button } from '@/components/ui/button'
 import { QueryError } from '@/components/ui/query-error'
 import {
   FileSpreadsheet, UploadCloud, Download, Loader2, Eye, EyeOff, X, Clock,
+  CheckCircle2, AlertTriangle,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { formatNumber } from '@/lib/utils'
 import { confirm } from '@/components/ui/confirm-dialog'
 import {
-  parseGeneratedReport, deriveContractor, categorySubtotal, grandTotal, displayCategory,
+  parseSourceReport, reconcile, deriveContractor, categorySubtotal, grandTotal, displayCategory,
   type ReportDoc, type RawCategory, type Totals,
 } from '@/lib/contractor-report'
 
@@ -30,9 +31,9 @@ async function parseFile(file: File): Promise<ReportDoc> {
   const ws = wb.Sheets[wb.SheetNames[0]]
   if (!ws) throw new Error('Workbook has no sheets')
   const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: null, raw: true }) as (string | number | null)[][]
-  const parsed = parseGeneratedReport(rows)
+  const parsed = parseSourceReport(rows)
   if (parsed.categories.length === 0) {
-    throw new Error('No category / contractor rows found — is this a generated Contractor Report (.xlsx)?')
+    throw new Error('No contractor rows found — is this the IN4 “All Types Certificates Details” export (.xlsx)?')
   }
   return {
     id: crypto.randomUUID(),
@@ -42,6 +43,8 @@ async function parseFile(file: File): Promise<ReportDoc> {
     sourceFilename: file.name,
     uploadedAt: new Date().toISOString(),
     categories: parsed.categories,
+    computed: parsed.computed,
+    source: parsed.source,
   }
 }
 
@@ -162,7 +165,7 @@ export default function ContractorReportClient() {
             {busy ? <Loader2 className="h-6 w-6 animate-spin" /> : <UploadCloud className="h-6 w-6" />}
           </div>
           <div className="min-w-0">
-            <p className="text-sm text-gray-700">Drag &amp; drop the generated <b>Contractor Report .xlsx</b>, or</p>
+            <p className="text-sm text-gray-700">Drag &amp; drop the IN4 <b>“All Types Certificates Details”</b> export (.xlsx), or</p>
             <p className="text-[11px] text-gray-500">Re-uploading a project replaces its saved data for everyone.</p>
           </div>
           <Button variant="outline" size="sm" onClick={() => inputRef.current?.click()} disabled={busy} className="sm:ml-2">
@@ -179,7 +182,7 @@ export default function ContractorReportClient() {
         <Card className="p-8 text-center text-sm text-gray-400"><Loader2 className="h-4 w-4 animate-spin inline mr-2" />Loading saved reports…</Card>
       ) : reports.length === 0 ? (
         <Card className="p-8 text-center text-sm text-gray-500">
-          No reports saved yet. Upload a generated Contractor Report to get started — it&apos;ll be saved for the whole team.
+          No reports saved yet. Upload the IN4 “All Types Certificates Details” export to get started — it&apos;ll be saved for the whole team.
         </Card>
       ) : (
         <>
@@ -253,6 +256,37 @@ function exportReport(doc: ReportDoc) {
   XLSX.writeFile(wb, `${doc.projectName.replace(/[^\w-]+/g, '_')}_ContractorReport.xlsx`)
 }
 
+// Proof the figures tie back to IN4's own "Project Total" row — so the user
+// can trust the numbers. Shows each raw column: computed vs IN4, with the delta.
+function ReconciliationPanel({ doc }: { doc: ReportDoc }) {
+  const rec = reconcile(doc.computed, doc.source)
+  if (!rec.available) {
+    return (
+      <div className="px-4 py-2 bg-gray-50 border-b border-gray-100 text-[11px] text-gray-500">
+        No “Project Total” row found in the source — totals shown are computed from the contractor rows.
+      </div>
+    )
+  }
+  return (
+    <div className={`px-4 py-2 border-b text-[11px] ${rec.allOk ? 'bg-emerald-50 border-emerald-100' : 'bg-amber-50 border-amber-100'}`}>
+      <div className="flex items-center gap-1.5 font-semibold mb-1">
+        {rec.allOk
+          ? <span className="text-emerald-800 inline-flex items-center gap-1"><CheckCircle2 className="h-3.5 w-3.5" /> Reconciles with IN4 Project Total</span>
+          : <span className="text-amber-800 inline-flex items-center gap-1"><AlertTriangle className="h-3.5 w-3.5" /> Some totals differ from IN4 — review below</span>}
+      </div>
+      <div className="flex flex-wrap gap-x-5 gap-y-0.5">
+        {rec.lines.map(l => (
+          <span key={l.label} className={l.ok ? 'text-gray-600' : 'text-amber-800 font-medium'}>
+            {l.label}: <span className="tabular-nums">{formatNumber(l.computed, 0)}</span>
+            {!l.ok && <span className="tabular-nums"> vs IN4 {formatNumber(l.source, 0)} (Δ{formatNumber(l.delta, 0)})</span>}
+            {l.ok && ' ✓'}
+          </span>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 function ReportView({ doc, showWorking }: { doc: ReportDoc; showWorking: boolean }) {
   const gt = grandTotal(doc.categories)
   // Columns shown depend on the working-columns toggle.
@@ -271,6 +305,8 @@ function ReportView({ doc, showWorking }: { doc: ReportDoc; showWorking: boolean
           <Download className="h-4 w-4" /> Export Excel
         </Button>
       </div>
+
+      <ReconciliationPanel doc={doc} />
 
       <div className="p-4 overflow-x-auto">
         <table className="min-w-full text-sm">
