@@ -248,7 +248,7 @@ function exportReport(doc: ReportDoc) {
   for (let R = 3; R <= range.e.r; R++) {
     for (let C = 2; C <= 8; C++) {
       const cell = ws[XLSX.utils.encode_cell({ r: R, c: C })]
-      if (cell && typeof cell.v === 'number') cell.z = '#,##0.00;(#,##0.00);-'
+      if (cell && typeof cell.v === 'number') cell.z = '#,##0;(#,##0);-'
     }
   }
   const wb = XLSX.utils.book_new()
@@ -341,13 +341,13 @@ function CategoryBlock({ cat, showWorking, colCount }: { cat: RawCategory; showW
           <tr key={i} className="border-t border-gray-100 hover:bg-gray-50">
             <td className="px-3 py-1.5" />
             <td className="px-3 py-1.5 pl-6 text-gray-700">{c.contractor}</td>
-            <td className="px-3 py-1.5 text-right tabular-nums text-gray-700">{formatNumber(c.woValue, 2)}</td>
-            <td className="px-3 py-1.5 text-right tabular-nums text-gray-700">{formatNumber(c.billValue, 2)}</td>
-            <td className="px-3 py-1.5 text-right tabular-nums text-gray-700">{formatNumber(c.paidValue, 2)}</td>
-            {showWorking && <td className="px-3 py-1.5 text-right tabular-nums text-gray-500">{formatNumber(c.deductions, 2)}</td>}
-            {showWorking && <td className="px-3 py-1.5 text-right tabular-nums text-gray-500">{formatNumber(c.retentionHeld, 2)}</td>}
-            {showWorking && <td className="px-3 py-1.5 text-right tabular-nums text-gray-500">{formatNumber(c.balanceValue, 2)}</td>}
-            <td className="px-3 py-1.5 text-right tabular-nums font-medium text-gray-900">{formatNumber(c.totalOwed, 2)}</td>
+            <td className="px-3 py-1.5 text-right tabular-nums text-gray-700">{formatNumber(c.woValue, 0)}</td>
+            <td className="px-3 py-1.5 text-right tabular-nums text-gray-700">{formatNumber(c.billValue, 0)}</td>
+            <td className="px-3 py-1.5 text-right tabular-nums text-gray-700">{formatNumber(c.paidValue, 0)}</td>
+            {showWorking && <td className="px-3 py-1.5 text-right tabular-nums text-gray-500">{formatNumber(c.deductions, 0)}</td>}
+            {showWorking && <td className="px-3 py-1.5 text-right tabular-nums text-gray-500">{formatNumber(c.retentionHeld, 0)}</td>}
+            {showWorking && <td className="px-3 py-1.5 text-right tabular-nums text-gray-500">{formatNumber(c.balanceValue, 0)}</td>}
+            <td className="px-3 py-1.5 text-right tabular-nums font-medium text-gray-900">{formatNumber(c.totalOwed, 0)}</td>
           </tr>
         )
       })}
@@ -361,13 +361,13 @@ function TotalsRow({ label, totals, showWorking, grand }: { label: string; total
   return (
     <tr className={cls}>
       <td className="px-3 py-2" colSpan={2}>{label}</td>
-      <td className="px-3 py-2 text-right tabular-nums">{formatNumber(totals.woValue, 2)}</td>
-      <td className="px-3 py-2 text-right tabular-nums">{formatNumber(totals.billValue, 2)}</td>
-      <td className="px-3 py-2 text-right tabular-nums">{formatNumber(totals.paidValue, 2)}</td>
-      {showWorking && <td className="px-3 py-2 text-right tabular-nums">{formatNumber(totals.deductions, 2)}</td>}
-      {showWorking && <td className="px-3 py-2 text-right tabular-nums">{formatNumber(totals.retentionHeld, 2)}</td>}
-      {showWorking && <td className="px-3 py-2 text-right tabular-nums">{formatNumber(totals.balanceValue, 2)}</td>}
-      <td className="px-3 py-2 text-right tabular-nums">{formatNumber(totals.totalOwed, 2)}</td>
+      <td className="px-3 py-2 text-right tabular-nums">{formatNumber(totals.woValue, 0)}</td>
+      <td className="px-3 py-2 text-right tabular-nums">{formatNumber(totals.billValue, 0)}</td>
+      <td className="px-3 py-2 text-right tabular-nums">{formatNumber(totals.paidValue, 0)}</td>
+      {showWorking && <td className="px-3 py-2 text-right tabular-nums">{formatNumber(totals.deductions, 0)}</td>}
+      {showWorking && <td className="px-3 py-2 text-right tabular-nums">{formatNumber(totals.retentionHeld, 0)}</td>}
+      {showWorking && <td className="px-3 py-2 text-right tabular-nums">{formatNumber(totals.balanceValue, 0)}</td>}
+      <td className="px-3 py-2 text-right tabular-nums">{formatNumber(totals.totalOwed, 0)}</td>
     </tr>
   )
 }
