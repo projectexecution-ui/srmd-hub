@@ -9,14 +9,16 @@ import { Badge } from '@/components/ui/badge'
 import { formatDate, formatINR } from '@/lib/utils'
 import { ClipboardList, FileText, PackageCheck, Receipt } from 'lucide-react'
 import { getMyProfile, getMyPermissions, getDisabledModuleSlugs } from '@/lib/auth'
+import { getModuleLabels } from '@/lib/module-labels'
 
 export const dynamic = 'force-dynamic'
 
 export default async function DashboardPage() {
-  const [profile, permissions, disabledSlugs] = await Promise.all([
+  const [profile, permissions, disabledSlugs, moduleLabels] = await Promise.all([
     getMyProfile(),
     getMyPermissions(),
     getDisabledModuleSlugs(),
+    getModuleLabels(),
   ])
   if (!profile) redirect('/login')
   const canShow = (slug: string) => !!permissions[slug]?.view && !disabledSlugs.has(slug)
@@ -78,6 +80,7 @@ export default async function DashboardPage() {
         <TileLauncher
           permissions={permissions}
           disabledSlugs={Array.from(disabledSlugs)}
+          moduleLabels={moduleLabels}
         />
       </section>
 

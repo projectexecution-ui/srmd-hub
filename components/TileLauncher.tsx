@@ -9,9 +9,11 @@ interface TileLauncherProps {
   permissions: PermissionMap
   /** Slugs the Portal Owner has hidden from the dashboard. */
   disabledSlugs?: string[]
+  /** Optional per-slug label / description overrides. Falls back to MODULES default. */
+  moduleLabels?: Record<string, { label: string; description: string }>
 }
 
-export function TileLauncher({ permissions, disabledSlugs = [] }: TileLauncherProps) {
+export function TileLauncher({ permissions, disabledSlugs = [], moduleLabels = {} }: TileLauncherProps) {
   const disabled = new Set(disabledSlugs)
   const tiles = MODULES
     .filter(m => permissions[m.slug]?.view)
@@ -25,12 +27,15 @@ export function TileLauncher({ permissions, disabledSlugs = [] }: TileLauncherPr
   }
   return (
     <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3 md:gap-4">
-      {tiles.map(tile => <Tile key={tile.slug} tile={tile} />)}
+      {tiles.map(tile => {
+        const override = moduleLabels[tile.slug]
+        return <Tile key={tile.slug} tile={tile} labelOverride={override?.label} descriptionOverride={override?.description} />
+      })}
     </div>
   )
 }
 
-function Tile({ tile }: { tile: ModuleTile }) {
+function Tile({ tile, labelOverride, descriptionOverride }: { tile: ModuleTile; labelOverride?: string; descriptionOverride?: string }) {
   const tones = TILE_TONES[tile.tone]
   const Icon = tile.icon
 
@@ -51,8 +56,8 @@ function Tile({ tile }: { tile: ModuleTile }) {
           <ArrowUpRight className="h-4 w-4 text-gray-300 group-hover:text-gray-500 transition-colors" />
         )}
       </div>
-      <h3 className="text-sm md:text-base font-semibold text-gray-900 leading-tight">{tile.label}</h3>
-      <p className="text-xs text-gray-500 mt-1 line-clamp-2">{tile.description}</p>
+      <h3 className="text-sm md:text-base font-semibold text-gray-900 leading-tight">{labelOverride || tile.label}</h3>
+      <p className="text-xs text-gray-500 mt-1 line-clamp-2">{descriptionOverride || tile.description}</p>
       {tile.comingSoon && (
         <div className="absolute top-3 right-3 text-[10px] uppercase tracking-wide font-bold text-gray-400">
           Soon

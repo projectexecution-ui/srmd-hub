@@ -5,14 +5,20 @@ import { InstallPrompt } from '@/components/InstallPrompt'
 import { NotificationProvider } from '@/components/NotificationProvider'
 import { ConfirmHost } from '@/components/ui/confirm-dialog'
 import { getMyProfile, getMyPermissions, getDisabledModuleSlugs, isPortalOwner } from '@/lib/auth'
+import { getModuleLabels } from '@/lib/module-labels'
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
-  const [profile, permissions, disabledSlugs, portalOwner] = await Promise.all([
+  const [profile, permissions, disabledSlugs, portalOwner, moduleLabelsMap] = await Promise.all([
     getMyProfile(),
     getMyPermissions(),
     getDisabledModuleSlugs(),
     isPortalOwner(),
+    getModuleLabels(),
   ])
+  // Flatten { label, description } → just label for the NavBar prop shape.
+  const moduleLabels: Record<string, string> = Object.fromEntries(
+    Object.entries(moduleLabelsMap).map(([slug, m]) => [slug, m.label]),
+  )
 
   if (!profile) redirect('/login')
 
@@ -37,6 +43,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           permissions={permissions}
           disabledSlugs={Array.from(disabledSlugs)}
           isPortalOwner={portalOwner}
+          moduleLabels={moduleLabels}
         />
         <main className="flex-1 min-w-0 overflow-x-auto">
           {children}

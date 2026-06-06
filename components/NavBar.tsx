@@ -17,6 +17,8 @@ interface NavBarProps {
   permissions: PermissionMap
   disabledSlugs?: string[]
   isPortalOwner?: boolean
+  /** Override labels by slug. If absent for a slug, fall back to MODULES default. */
+  moduleLabels?: Record<string, string>
 }
 
 // Compact labels for the sidebar so they don't wrap. Defaults to the
@@ -35,7 +37,7 @@ const SHORT_LABELS: Record<string, string> = {
 
 const COLLAPSE_KEY = 'srmd_nav_collapsed'
 
-export default function NavBar({ profile, permissions, disabledSlugs = [], isPortalOwner = false }: NavBarProps) {
+export default function NavBar({ profile, permissions, disabledSlugs = [], isPortalOwner = false, moduleLabels = {} }: NavBarProps) {
   const disabled = new Set(disabledSlugs)
   const pathname = usePathname()
   const router = useRouter()
@@ -67,13 +69,16 @@ export default function NavBar({ profile, permissions, disabledSlugs = [], isPor
   // Portal Owner sees the same set as everyone else (no override) so the
   // sidebar reflects what's *actually* on, not what they could turn on.
   // Disabled modules are still managed from /admin/dashboard-modules.
+  // Label resolution priority: server-side override (moduleLabels) > short
+  // hand-curated label (SHORT_LABELS) > MODULES default. So renames done from
+  // /admin/dashboard-modules trump everything else.
   const moduleLinks = MODULES
     .filter(m => !m.external && !m.comingSoon)
     .filter(m => permissions[m.slug]?.view)
     .filter(m => !disabled.has(m.slug))
     .map(m => ({
       href: m.href,
-      label: SHORT_LABELS[m.slug] ?? m.label,
+      label: moduleLabels[m.slug] ?? SHORT_LABELS[m.slug] ?? m.label,
       icon: m.icon,
       slug: m.slug as string | null,
     }))

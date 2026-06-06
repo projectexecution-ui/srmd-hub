@@ -3,7 +3,7 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { Card, CardContent } from '@/components/ui/card'
-import { Loader2, Check, Eye, EyeOff } from 'lucide-react'
+import { Loader2, Check, Eye, EyeOff, Pencil } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 interface ModuleRow {
@@ -17,14 +17,17 @@ interface Group { title: string; rows: ModuleRow[] }
 
 interface Props {
   groups: Group[]
+  /** True iff the current user can rename module labels (admin / Portal Owner). */
+  canRename?: boolean
 }
 
-export default function DashboardModulesEditor({ groups: initialGroups }: Props) {
+export default function DashboardModulesEditor({ groups: initialGroups, canRename = false }: Props) {
   const router = useRouter()
   const [groups, setGroups] = useState(initialGroups)
   const [busy, setBusy] = useState<string | null>(null)
   const [saved, setSaved] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [editingSlug, setEditingSlug] = useState<string | null>(null)
 
   async function toggle(slug: string) {
     let nextValue: boolean | null = null
@@ -43,6 +46,33 @@ export default function DashboardModulesEditor({ groups: initialGroups }: Props)
     const { error } = await supabase
       .from('module_visibility')
       .upsert({ slug, enabled: nextValue }, { onConflict: 'slug' })
+    setBusy(null)
+    if (error) {
+      setGroups(prev)
+      setError(`${slug}: ${error.message}`)
+      return
+    }
+    setSaved(slug)
+    setTimeout(() => setSaved(s => (s === slug ? null : s)), 1500)
+    router.refresh()
+  }
+
+  async function renameLabel(slug: string, nextLabel: string, nextDescription: string) {
+    const trimmed = nextLabel.trim()
+    if (!trimmed) { setEditingSlug(null); return }
+    // Optimistic
+    const prev = groups
+    setGroups(gs => gs.map(g => ({
+      ...g,
+      rows: g.rows.map(r => r.slug === slug ? { ...r, label: trimmed, description: nextDescription } : r),
+    })))
+    setBusy(slug); setError(null); setEditingSlug(null)
+    const supabase = createClient()
+    const { error } = await supabase.rpc('set_module_label', {
+      p_slug: slug,
+      p_label: trimmed,
+      p_description: nextDescription,
+    })
     setBusy(null)
     if (error) {
       setGroups(prev)
@@ -74,12 +104,33 @@ export default function DashboardModulesEditor({ groups: initialGroups }: Props)
                   const isSaved = saved === r.slug
                   return (
                     <li key={r.slug} className="flex items-center justify-between gap-3 py-3">
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-2">
-                          <span className="font-medium text-gray-900">{r.label}</span>
-                          <span className="text-[11px] font-mono text-gray-400">{r.slug}</span>
-                        </div>
-                        <p className="text-xs text-gray-500 mt-0.5 line-clamp-1">{r.description}</p>
+                      <div className="min-w-0 flex-1">
+                        {editingSlug === r.slug && canRename ? (
+                          <LabelEditor
+                            initialLabel={r.label}
+                            initialDescription={r.description}
+                            onCancel={() => setEditingSlug(null)}
+                            onSave={(lbl, desc) => renameLabel(r.slug, lbl, desc)}
+                          />
+                        ) : (
+                          <>
+                            <div className="flex items-center gap-2">
+                              <span className="font-medium text-gray-900">{r.label}</span>
+                              <span className="text-[11px] font-mono text-gray-400">{r.slug}</span>
+                              {canRename && (
+                                <button
+                                  type="button"
+                                  onClick={() => setEditingSlug(r.slug)}
+                                  className="text-gray-300 hover:text-blue-600"
+                                  title="Rename module"
+                                >
+                                  <Pencil className="h-3 w-3" />
+                                </button>
+                              )}
+                            </div>
+                            <p className="text-xs text-gray-500 mt-0.5 line-clamp-1">{r.description}</p>
+                          </>
+                        )}
                       </div>
                       <div className="flex items-center gap-2 flex-shrink-0">
                         {isSaved && (
@@ -122,6 +173,63 @@ export default function DashboardModulesEditor({ groups: initialGroups }: Props)
           </Card>
         )
       })}
+    </div>
+  )
+}
+
+// ─── Inline label editor ──────────────────────────────────────────────
+function LabelEditor({
+  initialLabel, initialDescription, onCancel, onSave,
+}: {
+  initialLabel: string
+  initialDescription: string
+  onCancel: () => void
+  onSave: (label: string, description: string) => void
+}) {
+  const [label, setLabel] = useState(initialLabel)
+  const [description, setDescription] = useState(initialDescription)
+
+  return (
+    <div className="space-y-1.5">
+      <input
+        autoFocus
+        value={label}
+        onChange={e => setLabel(e.target.value)}
+        onKeyDown={e => {
+          if (e.key === 'Enter') { e.preventDefault(); onSave(label, description) }
+          else if (e.key === 'Escape') { e.preventDefault(); onCancel() }
+        }}
+        maxLength={40}
+        className="w-full text-sm font-medium border border-blue-300 bg-white rounded px-2 py-1 focus:outline-none focus:ring-2 focus:ring-blue-300"
+        placeholder="Module name"
+      />
+      <input
+        value={description}
+        onChange={e => setDescription(e.target.value)}
+        onKeyDown={e => {
+          if (e.key === 'Enter') { e.preventDefault(); onSave(label, description) }
+          else if (e.key === 'Escape') { e.preventDefault(); onCancel() }
+        }}
+        maxLength={120}
+        className="w-full text-xs text-gray-700 border border-blue-200 bg-white rounded px-2 py-1 focus:outline-none focus:ring-2 focus:ring-blue-300"
+        placeholder="Short description (optional)"
+      />
+      <div className="flex gap-1">
+        <button
+          type="button"
+          onClick={() => onSave(label, description)}
+          className="inline-flex items-center gap-1 text-[11px] font-semibold bg-blue-600 hover:bg-blue-700 text-white rounded px-2 py-0.5"
+        >
+          <Check className="h-3 w-3" /> Save
+        </button>
+        <button
+          type="button"
+          onClick={onCancel}
+          className="text-[11px] font-medium text-gray-500 hover:text-gray-800 px-2 py-0.5"
+        >
+          Cancel
+        </button>
+      </div>
     </div>
   )
 }
