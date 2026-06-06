@@ -29,13 +29,21 @@ export default async function NewWorkingSheetPage({
   const [pdRes, psRes] = await Promise.all([
     supabase
       .from('cc_project_disciplines')
-      .select('project_id, discipline_id, cc_disciplines(id, code, name)')
+      .select('project_id, discipline_id, estimation_mode, cc_disciplines(id, code, name)')
       .eq('is_enabled', true),
     supabase
       .from('cc_project_sub_skills')
       .select('project_id, sub_skill_id, cc_sub_skills(id, discipline_id, code, name)')
       .eq('is_enabled', true),
   ])
+
+  // (project_id, discipline_id) pairs flagged as thumbrule. Form warns the
+  // engineer to use the dedicated thumbrule page when picked.
+  const thumbruleKeys = new Set<string>(
+    (pdRes.data ?? [])
+      .filter((r: { estimation_mode?: string | null }) => r.estimation_mode === 'thumbrule')
+      .map((r: { project_id: string; discipline_id: string }) => `${r.project_id}::${r.discipline_id}`),
+  )
 
   type DRow = { id: string; code: string; name: string }
   type SRow = { id: string; discipline_id: string; code: string; name: string }
@@ -87,6 +95,7 @@ export default async function NewWorkingSheetPage({
           projectSubSkills={projectSubSkills}
           defaultProjectId={sp.project}
           canSetDeadline={canSetDeadline}
+          thumbruleKeys={Array.from(thumbruleKeys)}
         />
       </Card>
     </div>

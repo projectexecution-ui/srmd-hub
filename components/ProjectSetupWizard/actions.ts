@@ -84,21 +84,30 @@ export async function createProjectBasics(formData: FormData): Promise<CreatePro
 // Step 2 — Toggle disciplines for a project (FULLY WIRED)
 // ============================================================
 
+const disciplineConfigSchema = z.object({
+  discipline_id: z.string().uuid(),
+  estimation_mode: z.enum(['detailed', 'thumbrule']).default('detailed'),
+  thumbrule_rate_per_sft: z.number().nullable().optional(),
+  thumbrule_notes: z.string().nullable().optional(),
+})
+
 const togglDisciplinesSchema = z.object({
   project_id: z.string().uuid(),
-  discipline_ids: z.array(z.string().uuid()),
+  disciplines: z.array(disciplineConfigSchema),
 })
+
+export type DisciplineConfig = z.infer<typeof disciplineConfigSchema>
 
 export async function setProjectDisciplines(
   projectId: string,
-  disciplineIds: string[],
+  disciplines: DisciplineConfig[],
 ): Promise<{ ok: boolean; error?: string }> {
   const user = await getMyUser()
   if (!user) return { ok: false, error: 'Not signed in' }
 
   const parsed = togglDisciplinesSchema.safeParse({
     project_id: projectId,
-    discipline_ids: disciplineIds,
+    disciplines,
   })
   if (!parsed.success) return { ok: false, error: 'Validation failed' }
 
@@ -112,10 +121,13 @@ export async function setProjectDisciplines(
     .eq('project_id', projectId)
   if (delErr) return { ok: false, error: delErr.message }
 
-  if (disciplineIds.length > 0) {
-    const rows = disciplineIds.map(did => ({
+  if (disciplines.length > 0) {
+    const rows = disciplines.map(d => ({
       project_id: projectId,
-      discipline_id: did,
+      discipline_id: d.discipline_id,
+      estimation_mode: d.estimation_mode,
+      thumbrule_rate_per_sft: d.estimation_mode === 'thumbrule' ? (d.thumbrule_rate_per_sft ?? null) : null,
+      thumbrule_notes: d.estimation_mode === 'thumbrule' ? (d.thumbrule_notes ?? null) : null,
       enabled_by: user.id,
     }))
     const { error: insErr } = await supabase.from('cc_project_disciplines').insert(rows)

@@ -1,9 +1,11 @@
 'use client'
 
 import * as React from 'react'
+import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
+import { Ruler } from 'lucide-react'
 import { createWorkingSheet } from '@/components/cost-control/ws-actions'
 
 interface ProjectLite { id: string; code: string; name: string }
@@ -17,9 +19,14 @@ interface Props {
   defaultProjectId?: string
   /** True when caller may set/change the WS deadline (Head / Admin). */
   canSetDeadline?: boolean
+  /** "project::discipline" keys that are flagged as Thumbrule. When the
+   *  user picks such a combo, we show a callout redirecting them to the
+   *  dedicated thumbrule form. */
+  thumbruleKeys?: string[]
 }
 
-export function NewWSForm({ projects, projectDisciplines, projectSubSkills, defaultProjectId, canSetDeadline = false }: Props) {
+export function NewWSForm({ projects, projectDisciplines, projectSubSkills, defaultProjectId, canSetDeadline = false, thumbruleKeys = [] }: Props) {
+  const thumbruleSet = React.useMemo(() => new Set(thumbruleKeys), [thumbruleKeys])
   const router = useRouter()
   const [projectId, setProjectId] = React.useState(defaultProjectId ?? '')
   const [disciplineId, setDisciplineId] = React.useState('')
@@ -104,6 +111,21 @@ export function NewWSForm({ projects, projectDisciplines, projectSubSkills, defa
         </select>
         {projectId && disciplinesForProject.length === 0 && (
           <p className="mt-1 text-xs text-amber-700">No disciplines enabled on this project yet. Configure via the project setup wizard.</p>
+        )}
+        {projectId && disciplineId && thumbruleSet.has(`${projectId}::${disciplineId}`) && (
+          <div className="mt-2 rounded-lg border border-indigo-200 bg-indigo-50 p-3 flex items-start gap-2">
+            <Ruler className="h-4 w-4 text-indigo-600 mt-0.5 flex-shrink-0" />
+            <div className="min-w-0 flex-1 text-xs text-indigo-900">
+              <p className="font-semibold">This discipline is set to Thumbrule (no drawings).</p>
+              <p>Use the dedicated form — area + rate/sft, no Excel needed.</p>
+            </div>
+            <Link
+              href={`/cost-control/working-sheets/new-thumbrule?project=${projectId}`}
+              className="flex-shrink-0 text-xs font-semibold bg-indigo-600 text-white px-3 py-1.5 rounded-md hover:bg-indigo-700"
+            >
+              Open thumbrule form
+            </Link>
+          </div>
         )}
       </div>
 

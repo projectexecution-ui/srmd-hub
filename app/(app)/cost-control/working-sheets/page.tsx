@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button'
 import { EmptyState } from '@/components/ui/empty-state'
 import { WSStatusPill, type WSStatus } from '@/components/cost-control/WSStatusPill'
 import { DeadlineBadge } from '@/components/cost-control/DeadlineBadge'
-import { FileText, Plus, FileSpreadsheet } from 'lucide-react'
+import { FileText, Plus, FileSpreadsheet, Ruler } from 'lucide-react'
 import { formatINR, formatDate } from '@/lib/utils'
 
 export const dynamic = 'force-dynamic'
@@ -167,6 +167,11 @@ export default async function WorkingSheetsPage({
       >
         {canWrite && (
           <>
+            <Button asChild size="sm" variant="outline">
+              <Link href="/cost-control/working-sheets/new-thumbrule">
+                <Ruler className="h-4 w-4" /> Thumbrule
+              </Link>
+            </Button>
             <Button asChild size="sm" variant="outline">
               <Link href="/cost-control/working-sheets/new-quick">
                 <FileSpreadsheet className="h-4 w-4" /> Quick mode (Excel)

@@ -205,7 +205,7 @@ export default async function WorkingSheetEditorPage(
     <div className="p-4 md:p-6 max-w-6xl mx-auto space-y-4">
       <PageHeader
         title={ws.ws_code}
-        subtitle={`${proj?.code ?? '—'} · ${dis?.code} ${dis?.name} → ${sub?.code} ${sub?.name} · ${ws.line_type === 'material' ? 'Material' : 'Work'}`}
+        subtitle={`${proj?.code ?? '—'} · ${dis?.code} ${dis?.name} → ${sub?.code} ${sub?.name} · ${ws.line_type === 'material' ? 'Material' : 'Work'}${ws.entry_mode === 'thumbrule' ? ' · Thumbrule estimate' : ''}`}
         back={backHref}
       >
         <WSStatusPill status={status} />

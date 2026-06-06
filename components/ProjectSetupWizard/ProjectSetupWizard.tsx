@@ -75,6 +75,10 @@ export function ProjectSetupWizard({
   const [pickedDisciplines, setPickedDisciplines] = React.useState<Set<string>>(
     new Set(disciplines.filter(d => d.commonByDefault).map(d => d.id)),
   )
+  // Mode + thumbrule rate per discipline. Default 'detailed' (= drawings
+  // available, full BOQ). Toggling to 'thumbrule' enables a rate-per-sft
+  // input. Only persisted for ticked disciplines.
+  const [disciplineModes, setDisciplineModes] = React.useState<Map<string, { mode: 'detailed' | 'thumbrule'; rate: string; notes: string }>>(new Map())
 
   // Step 3 selection — all sub-skills of picked disciplines, pre-ticked.
   const [pickedSubSkills, setPickedSubSkills] = React.useState<Set<string>>(new Set())
@@ -101,7 +105,18 @@ export function ProjectSetupWizard({
     if (!projectId) return
     setBusy(true)
     setError(null)
-    const res = await setProjectDisciplines(projectId, Array.from(pickedDisciplines))
+    const configs = Array.from(pickedDisciplines).map(id => {
+      const m = disciplineModes.get(id)
+      const mode = m?.mode ?? 'detailed'
+      const rate = m?.rate ? Number(m.rate) : null
+      return {
+        discipline_id: id,
+        estimation_mode: mode,
+        thumbrule_rate_per_sft: mode === 'thumbrule' && rate != null && Number.isFinite(rate) ? rate : null,
+        thumbrule_notes: mode === 'thumbrule' ? (m?.notes ?? null) : null,
+      }
+    })
+    const res = await setProjectDisciplines(projectId, configs)
     setBusy(false)
     if (!res.ok) {
       setError(res.error ?? 'Failed to save disciplines')
@@ -171,6 +186,8 @@ export function ProjectSetupWizard({
           disciplines={disciplines}
           picked={pickedDisciplines}
           setPicked={setPickedDisciplines}
+          modes={disciplineModes}
+          setModes={setDisciplineModes}
           busy={busy}
           onSaveAndContinue={handleStep2}
           onSkip={handleSkipToProject}
@@ -347,6 +364,8 @@ function Step2Disciplines({
   disciplines,
   picked,
   setPicked,
+  modes,
+  setModes,
   busy,
   onSaveAndContinue,
   onSkip,
@@ -354,6 +373,8 @@ function Step2Disciplines({
   disciplines: DisciplineOption[]
   picked: Set<string>
   setPicked: (next: Set<string>) => void
+  modes: Map<string, { mode: 'detailed' | 'thumbrule'; rate: string; notes: string }>
+  setModes: (next: Map<string, { mode: 'detailed' | 'thumbrule'; rate: string; notes: string }>) => void
   busy: boolean
   onSaveAndContinue: () => Promise<void>
   onSkip: () => void
@@ -365,39 +386,97 @@ function Step2Disciplines({
     setPicked(next)
   }
 
+  function setMode(id: string, mode: 'detailed' | 'thumbrule') {
+    const next = new Map(modes)
+    const prev = next.get(id) ?? { mode: 'detailed', rate: '', notes: '' }
+    next.set(id, { ...prev, mode })
+    setModes(next)
+  }
+
+  function setRate(id: string, rate: string) {
+    const next = new Map(modes)
+    const prev = next.get(id) ?? { mode: 'thumbrule', rate: '', notes: '' }
+    next.set(id, { ...prev, rate })
+    setModes(next)
+  }
+
+  function setNotes(id: string, notes: string) {
+    const next = new Map(modes)
+    const prev = next.get(id) ?? { mode: 'thumbrule', rate: '', notes: '' }
+    next.set(id, { ...prev, notes })
+    setModes(next)
+  }
+
   return (
     <Card className="p-5">
       <h2 className="text-lg font-semibold text-gray-900 mb-1">Applicable disciplines</h2>
       <p className="text-sm text-gray-500 mb-4">
-        Common disciplines are pre-ticked. Untick the ones not applicable.
-        You can add more anytime from the project page.
+        Tick the disciplines this project covers. For each, choose:
+        <b className="ml-1">Detailed BOQ</b> when drawings are available,
+        or <b>Thumbrule</b> when you only have a rate-per-sft estimate
+        (drawings not ready yet).
       </p>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2 mb-4">
+      <div className="space-y-2 mb-4">
         {disciplines.map(d => {
           const on = picked.has(d.id)
+          const m = modes.get(d.id) ?? { mode: 'detailed' as const, rate: '', notes: '' }
           return (
-            <button
+            <div
               key={d.id}
-              type="button"
-              onClick={() => toggle(d.id)}
-              className={`flex items-start gap-2 rounded-md border p-3 text-left text-sm transition-colors ${
-                on
-                  ? 'border-blue-300 bg-blue-50 text-blue-900'
-                  : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50'
+              className={`rounded-md border transition-colors ${
+                on ? 'border-blue-300 bg-blue-50/40' : 'border-gray-200 bg-white'
               }`}
             >
-              <input
-                type="checkbox"
-                checked={on}
-                onChange={() => {}}
-                className="mt-0.5 pointer-events-none"
-              />
-              <div className="min-w-0">
-                <div className="font-mono text-xs text-gray-500">{d.code}</div>
-                <div className="font-semibold truncate">{d.name}</div>
-              </div>
-            </button>
+              <button
+                type="button"
+                onClick={() => toggle(d.id)}
+                className="w-full flex items-center gap-2 p-3 text-left text-sm"
+              >
+                <input type="checkbox" checked={on} onChange={() => {}} className="pointer-events-none" />
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-baseline gap-2">
+                    <span className="font-mono text-xs text-gray-500">{d.code}</span>
+                    <span className="font-semibold">{d.name}</span>
+                  </div>
+                </div>
+              </button>
+
+              {on && (
+                <div className="px-3 pb-3 space-y-2">
+                  <div className="flex gap-2">
+                    <ModeChip
+                      label="Detailed BOQ"
+                      hint="Drawings available"
+                      active={m.mode === 'detailed'}
+                      onClick={() => setMode(d.id, 'detailed')}
+                    />
+                    <ModeChip
+                      label="Thumbrule"
+                      hint="No drawings — estimate by rate/sft"
+                      active={m.mode === 'thumbrule'}
+                      onClick={() => setMode(d.id, 'thumbrule')}
+                    />
+                  </div>
+                  {m.mode === 'thumbrule' && (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                      <input
+                        type="number" step="any" inputMode="decimal"
+                        value={m.rate} onChange={e => setRate(d.id, e.target.value)}
+                        placeholder="Rate (₹ / sft) — optional default"
+                        className="flex h-9 w-full rounded-md border border-gray-300 bg-white px-3 text-sm"
+                      />
+                      <input
+                        type="text"
+                        value={m.notes} onChange={e => setNotes(d.id, e.target.value)}
+                        placeholder="Source of rate (optional)"
+                        className="flex h-9 w-full rounded-md border border-gray-300 bg-white px-3 text-sm"
+                      />
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
           )
         })}
       </div>
@@ -409,6 +488,23 @@ function Step2Disciplines({
         </Button>
       </div>
     </Card>
+  )
+}
+
+function ModeChip({ label, hint, active, onClick }: { label: string; hint: string; active: boolean; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`flex-1 rounded-md border px-3 py-2 text-left text-xs transition-colors ${
+        active
+          ? 'border-blue-500 bg-blue-100 text-blue-900'
+          : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50'
+      }`}
+    >
+      <div className="font-semibold">{label}</div>
+      <div className="text-[11px] text-gray-500 mt-0.5">{hint}</div>
+    </button>
   )
 }
 
