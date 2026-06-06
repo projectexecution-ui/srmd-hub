@@ -324,6 +324,11 @@ function ReportView({ doc, showWorking }: { doc: ReportDoc; showWorking: boolean
     ? doc.subprojects
     : [{ name: 'All sub-projects (combined)', categories: combineSubprojects(doc.subprojects) }]
 
+  // A report uploaded before the sub-project feature (or from a pre-combined
+  // file) has no sub-project breakdown — flag it so the toggle isn't confusing.
+  const noSubprojectBreakdown = doc.subprojects.length <= 1 &&
+    (doc.subprojects[0]?.name === 'All sub-projects' || doc.subprojects[0]?.name === '(Unknown Sub-project)')
+
   // Collapse/expand per category, keyed "sectionIdx:catIdx".
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
   const toggle = (k: string) => setCollapsed(s => { const n = new Set(s); if (n.has(k)) n.delete(k); else n.add(k); return n })
@@ -360,6 +365,17 @@ function ReportView({ doc, showWorking }: { doc: ReportDoc; showWorking: boolean
       {/* One card per sub-project so it's always obvious which sub-project a
           row belongs to. (Combined mode shows a single merged card.) */}
       <div className="p-4 space-y-5">
+        {noSubprojectBreakdown && (
+          <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 flex items-start gap-2">
+            <AlertTriangle className="h-4 w-4 mt-0.5 flex-shrink-0" />
+            <span>
+              This report has <b>no sub-project breakdown</b> — it was saved before sub-project grouping, or from an
+              already-combined file. To split it into sub-projects, <b>re-upload the raw IN4 “All Types Certificates
+              Details” export</b> (the file <i>without</i> “_ContractorReport” in its name), which contains the
+              <code className="mx-1 px-1 bg-amber-100 rounded">Subproject:</code> markers.
+            </span>
+          </div>
+        )}
         {sections.map((sp, si) => (
           <SubprojectCard
             key={si}
