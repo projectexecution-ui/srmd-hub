@@ -5,7 +5,7 @@
 // it on screen with the working columns (Deductions / Retention / Balance)
 // hidden by default, and exports the exact 9-column format.
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { Fragment, useCallback, useEffect, useRef, useState } from 'react'
 import * as XLSX from 'xlsx'
 import { PageHeader } from '@/components/PageHeader'
 import { Card } from '@/components/ui/card'
@@ -16,12 +16,22 @@ import {
   CheckCircle2, AlertTriangle, ChevronRight, ChevronDown, ChevronsDownUp, ChevronsUpDown,
 } from 'lucide-react'
 import { toast } from 'sonner'
-import { formatNumber } from '@/lib/utils'
+import { formatNumber, cn } from '@/lib/utils'
 import { confirm } from '@/components/ui/confirm-dialog'
 import {
-  parseSourceReport, reconcile, deriveContractor, categorySubtotal, grandTotal, displayCategory,
-  type ReportDoc, type RawCategory, type Totals,
+  parseSourceReport, reconcile, deriveContractor, categorySubtotal, subprojectTotal,
+  reportGrandTotal, combineSubprojects, displayCategory,
+  type ReportDoc, type RawCategory, type SubprojectGroup, type Totals,
 } from '@/lib/contractor-report'
+
+// Backward-compat: older saved reports stored a flat `categories` array
+// (before sub-project grouping). Wrap those into a single section so they
+// still render until the user re-uploads.
+function normalizeDoc(d: ReportDoc & { categories?: RawCategory[] }): ReportDoc {
+  if (d.subprojects && d.subprojects.length) return d
+  const cats = d.categories ?? []
+  return { ...d, subprojects: cats.length ? [{ name: 'All sub-projects', categories: cats }] : [] }
+}
 
 const STATE_URL = '/api/contractor-report/state'
 
@@ -32,7 +42,7 @@ async function parseFile(file: File): Promise<ReportDoc> {
   if (!ws) throw new Error('Workbook has no sheets')
   const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: null, raw: true }) as (string | number | null)[][]
   const parsed = parseSourceReport(rows)
-  if (parsed.categories.length === 0) {
+  if (parsed.subprojects.length === 0) {
     throw new Error('No contractor rows found — is this the IN4 “All Types Certificates Details” export (.xlsx)?')
   }
   return {
@@ -42,7 +52,7 @@ async function parseFile(file: File): Promise<ReportDoc> {
     subtitle: parsed.subtitle,
     sourceFilename: file.name,
     uploadedAt: new Date().toISOString(),
-    categories: parsed.categories,
+    subprojects: parsed.subprojects,
     computed: parsed.computed,
     source: parsed.source,
   }
@@ -68,7 +78,7 @@ export default function ContractorReportClient() {
         const j = await res.json()
         if (cancelled) return
         if (!res.ok) { setLoadError(j.error || 'Failed to load saved reports'); setLoading(false); return }
-        const list: ReportDoc[] = j.state?.reports ?? []
+        const list: ReportDoc[] = (j.state?.reports ?? []).map(normalizeDoc)
         setReports(list)
         setUpdatedInfo({ at: j.updated_at ?? null, by: j.updated_by_name ?? null })
         setSelectedId(prev => prev ?? list[0]?.id ?? null)
@@ -217,12 +227,14 @@ export default function ContractorReportClient() {
 }
 
 // ── Excel export (exact 9-column format, F/G/H hidden) ─────────────────────
-function exportReport(doc: ReportDoc) {
-  const HEADERS = ['Category', 'Contractor Name', 'WO Value', 'Total Bill Value', 'Total Paid Value', 'Deductions', 'Retention Held', 'Balance Value', 'Total Owed']
-  const aoa: (string | number | null)[][] = [
-    [doc.title], [doc.subtitle], [], HEADERS,
-  ]
-  for (const cat of doc.categories) {
+function safeSheetName(name: string): string {
+  return (name.replace(/[:\\/?*[\]]/g, '-').slice(0, 31)) || 'Sheet'
+}
+const XL_HEADERS = ['Category', 'Contractor Name', 'WO Value', 'Total Bill Value', 'Total Paid Value', 'Deductions', 'Retention Held', 'Balance Value', 'Total Owed']
+
+function categoriesToSheet(title: string, subtitle: string, categories: RawCategory[], grand: Totals) {
+  const aoa: (string | number | null)[][] = [[title], [subtitle], [], XL_HEADERS]
+  for (const cat of categories) {
     aoa.push([cat.category, null, null, null, null, null, null, null, null])
     for (const raw of cat.contractors) {
       const c = deriveContractor(raw)
@@ -232,8 +244,7 @@ function exportReport(doc: ReportDoc) {
     aoa.push([`${displayCategory(cat.category)} — Subtotal`, null, s.woValue, s.billValue, s.paidValue, s.deductions, s.retentionHeld, s.balanceValue, s.totalOwed])
     aoa.push([])
   }
-  const gt = grandTotal(doc.categories)
-  aoa.push(['GRAND TOTAL', null, gt.woValue, gt.billValue, gt.paidValue, gt.deductions, gt.retentionHeld, gt.balanceValue, gt.totalOwed])
+  aoa.push(['GRAND TOTAL', null, grand.woValue, grand.billValue, grand.paidValue, grand.deductions, grand.retentionHeld, grand.balanceValue, grand.totalOwed])
   aoa.push([])
   aoa.push(['Notes:'])
   aoa.push(['• Total Owed (I) = Balance Value (H) + Retention Held (G) — the full amount still due to the contractor.'])
@@ -242,17 +253,31 @@ function exportReport(doc: ReportDoc) {
 
   const ws = XLSX.utils.aoa_to_sheet(aoa)
   const widths = [34, 42, 16, 18, 18, 14, 14, 18, 18]
-  ws['!cols'] = widths.map((wch, i) => ({ wch, hidden: i === 5 || i === 6 || i === 7 })) // F,G,H hidden
+  ws['!cols'] = widths.map((wch, i) => ({ wch, hidden: i === 5 || i === 6 || i === 7 }))
   ws['!merges'] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: 8 } }, { s: { r: 1, c: 0 }, e: { r: 1, c: 8 } }]
   const range = XLSX.utils.decode_range(ws['!ref'] as string)
   for (let R = 3; R <= range.e.r; R++) {
-    for (let C = 2; C <= 8; C++) {
-      const cell = ws[XLSX.utils.encode_cell({ r: R, c: C })]
+    for (let Col = 2; Col <= 8; Col++) {
+      const cell = ws[XLSX.utils.encode_cell({ r: R, c: Col })]
       if (cell && typeof cell.v === 'number') cell.z = '#,##0;(#,##0);-'
     }
   }
+  return ws
+}
+
+// In sub-project mode: one sheet per sub-project. In combined mode: a single
+// "— All" sheet with sub-projects merged.
+function exportReport(doc: ReportDoc, groupBySub: boolean) {
   const wb = XLSX.utils.book_new()
-  XLSX.utils.book_append_sheet(wb, ws, (doc.projectName.replace(/[:\\/?*[\]]/g, '-').slice(0, 28) || 'Report') + ' — All')
+  if (groupBySub) {
+    for (const sp of doc.subprojects) {
+      const ws = categoriesToSheet(`${doc.projectName} — ${sp.name}`, `${sp.name} — Category-wise & Contractor-wise Summary (INR)`, sp.categories, subprojectTotal(sp))
+      XLSX.utils.book_append_sheet(wb, ws, safeSheetName(sp.name))
+    }
+  } else {
+    const ws = categoriesToSheet(doc.title, 'Category-wise & Contractor-wise Summary (All Sub-projects, INR)', combineSubprojects(doc.subprojects), reportGrandTotal(doc.subprojects))
+    XLSX.utils.book_append_sheet(wb, ws, safeSheetName(`${doc.projectName} — All`))
+  }
   XLSX.writeFile(wb, `${doc.projectName.replace(/[^\w-]+/g, '_')}_ContractorReport.xlsx`)
 }
 
@@ -288,18 +313,24 @@ function ReconciliationPanel({ doc }: { doc: ReportDoc }) {
 }
 
 function ReportView({ doc, showWorking }: { doc: ReportDoc; showWorking: boolean }) {
-  const gt = grandTotal(doc.categories)
-  // Columns shown depend on the working-columns toggle.
+  const gt = reportGrandTotal(doc.subprojects)
   const cols = showWorking
     ? ['WO Value', 'Total Bill', 'Total Paid', 'Deductions', 'Retention', 'Balance', 'Total Owed']
     : ['WO Value', 'Total Bill', 'Total Paid', 'Total Owed']
 
-  // Collapse/expand per category (by index — categories are unique per doc).
-  const [collapsed, setCollapsed] = useState<Set<number>>(new Set())
-  const toggle = (i: number) => setCollapsed(s => { const n = new Set(s); if (n.has(i)) n.delete(i); else n.add(i); return n })
-  const allCollapsed = doc.categories.length > 0 && collapsed.size === doc.categories.length
+  // By sub-project (default) vs Combined (sub-projects merged into one list).
+  const [groupBySub, setGroupBySub] = useState(true)
+  const sections: SubprojectGroup[] = groupBySub
+    ? doc.subprojects
+    : [{ name: 'All sub-projects (combined)', categories: combineSubprojects(doc.subprojects) }]
+
+  // Collapse/expand per category, keyed "sectionIdx:catIdx".
+  const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
+  const toggle = (k: string) => setCollapsed(s => { const n = new Set(s); if (n.has(k)) n.delete(k); else n.add(k); return n })
+  const allKeys = sections.flatMap((sp, si) => sp.categories.map((_, ci) => `${si}:${ci}`))
+  const allCollapsed = allKeys.length > 0 && allKeys.every(k => collapsed.has(k))
   const expandAll = () => setCollapsed(new Set())
-  const collapseAll = () => setCollapsed(new Set(doc.categories.map((_, i) => i)))
+  const collapseAll = () => setCollapsed(new Set(allKeys))
 
   return (
     <Card className="overflow-hidden">
@@ -308,12 +339,17 @@ function ReportView({ doc, showWorking }: { doc: ReportDoc; showWorking: boolean
           <p className="text-sm font-semibold text-gray-900 truncate">{doc.title}</p>
           <p className="text-[11px] text-gray-500 truncate">{doc.subtitle} · from {doc.sourceFilename}</p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          {/* By sub-project / Combined */}
+          <div className="inline-flex rounded-lg border border-gray-200 overflow-hidden text-xs">
+            <button onClick={() => setGroupBySub(true)} className={cn('px-2.5 py-1.5 font-medium', groupBySub ? 'bg-[#1F4E78] text-white' : 'bg-white text-gray-600 hover:bg-gray-50')}>By sub-project</button>
+            <button onClick={() => setGroupBySub(false)} className={cn('px-2.5 py-1.5 font-medium', !groupBySub ? 'bg-[#1F4E78] text-white' : 'bg-white text-gray-600 hover:bg-gray-50')}>Combined</button>
+          </div>
           <Button size="sm" variant="outline" onClick={() => { if (allCollapsed) expandAll(); else collapseAll() }} title="Expand or collapse all categories">
             {allCollapsed ? <ChevronsUpDown className="h-4 w-4" /> : <ChevronsDownUp className="h-4 w-4" />}
             {allCollapsed ? 'Expand all' : 'Collapse all'}
           </Button>
-          <Button size="sm" onClick={() => exportReport(doc)} className="bg-[#1F4E78] hover:bg-[#163a5c]">
+          <Button size="sm" onClick={() => exportReport(doc, groupBySub)} className="bg-[#1F4E78] hover:bg-[#163a5c]">
             <Download className="h-4 w-4" /> Export Excel
           </Button>
         </div>
@@ -331,20 +367,45 @@ function ReportView({ doc, showWorking }: { doc: ReportDoc; showWorking: boolean
             </tr>
           </thead>
           <tbody>
-            {doc.categories.map((cat, ci) => (
-              <CategoryBlock
-                key={ci}
-                cat={cat}
-                showWorking={showWorking}
-                collapsed={collapsed.has(ci)}
-                onToggle={() => toggle(ci)}
-              />
+            {sections.map((sp, si) => (
+              <Fragment key={si}>
+                <SubprojectBanner sp={sp} showWorking={showWorking} />
+                {sp.categories.map((cat, ci) => (
+                  <CategoryBlock
+                    key={ci}
+                    cat={cat}
+                    showWorking={showWorking}
+                    collapsed={collapsed.has(`${si}:${ci}`)}
+                    onToggle={() => toggle(`${si}:${ci}`)}
+                  />
+                ))}
+              </Fragment>
             ))}
             <TotalsRow label="GRAND TOTAL" totals={gt} showWorking={showWorking} grand />
           </tbody>
         </table>
       </div>
     </Card>
+  )
+}
+
+// Dark banner row that opens each sub-project section, carrying its total.
+function SubprojectBanner({ sp, showWorking }: { sp: SubprojectGroup; showWorking: boolean }) {
+  const t = subprojectTotal(sp)
+  return (
+    <tr className="bg-[#1F4E78] text-white">
+      <td className="px-3 py-2 font-bold" colSpan={2}>
+        ▌ {sp.name}
+        <span className="ml-2 text-[10px] font-normal text-blue-100">{sp.categories.length} categor{sp.categories.length === 1 ? 'y' : 'ies'}</span>
+      </td>
+      <td className="px-3 py-2 text-right tabular-nums">{formatNumber(t.woValue, 0)}</td>
+      <td className="px-3 py-2 text-right tabular-nums">{formatNumber(t.billValue, 0)}</td>
+      <td className="px-3 py-2 text-right tabular-nums">{formatNumber(t.paidValue, 0)}</td>
+      {showWorking && <td className="px-3 py-2 text-right tabular-nums">{formatNumber(t.deductions, 0)}</td>}
+      {showWorking && <td className="px-3 py-2 text-right tabular-nums">{formatNumber(t.retentionHeld, 0)}</td>}
+      {showWorking && <td className="px-3 py-2 text-right tabular-nums">{formatNumber(t.balanceValue, 0)}</td>}
+      <td className="px-3 py-2 text-right tabular-nums">{formatNumber(t.totalOwed, 0)}</td>
+    </tr>
   )
 }
 

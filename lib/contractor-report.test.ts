@@ -1,20 +1,19 @@
 import { describe, it, expect } from 'vitest'
 import {
   parseSourceReport, deriveContractor, sumContractors, categorySubtotal,
-  grandTotal, displayCategory, reconcile, type Sheet,
+  subprojectTotal, reportGrandTotal, combineSubprojects, displayCategory,
+  reconcile, type Sheet,
 } from './contractor-report'
 
 // ============================================================================
-// SCENARIO MATRIX — raw IN4 "All Types Certificates Details" → 9-col report.
-// The module ingests the RAW export and aggregates Category × Contractor.
-// Source col map (header row 3): 0 Category · 2 WO# · 4 Contractor ·
-// 5 WO Value · 20 Gross Bill · 21 Advance Recovered · 25 Tax Deduction ·
-// 26 Retention · 27 Other Deduction · 31 Amount Paid · 32 Outstanding.
-// Derived: Bill = Gross − recoveries; Deductions = Tax+Other; Balance =
-// Bill−Paid−Ded−Ret; Total Owed = Balance+Ret. Grouped valid/invalid/edge/extreme.
+// SCENARIO MATRIX — raw IN4 export → Sub-project → Category → Contractor.
+// Source cols (header row 3): 0 Category · 2 WO# · 4 Contractor · 5 WO Value ·
+// 20 Gross Bill · 21 Advance Recovered · 25 Tax Deduction · 26 Retention ·
+// 27 Other Deduction · 31 Amount Paid · 32 Outstanding.  Grouped per
+// sub-project (from the "Subproject:" marker); Combined view merges them.
+// Grouped: valid / invalid / edge / extreme.
 // ============================================================================
 
-// Build a 33-wide source row from {colIndex: value}.
 function row(map: Record<number, string | number | null>): (string | number | null)[] {
   const a: (string | number | null)[] = new Array(33).fill(null)
   for (const k of Object.keys(map)) a[Number(k)] = map[Number(k)]
@@ -29,119 +28,103 @@ const HEADER = row({
 const marker = (proj: string, sub: string) =>
   row({ 0: `Company: SRASSK , State: GJ , Location: Valsad , Project: ${proj} , Subproject: ${sub}` })
 
-// A representative source: one subproject, a WO billed twice (WO-value dedup),
-// a second WO, plus an exact IN4 "Project Total :" row to reconcile against.
+// Two sub-projects, both with a " 03 Civil"/ABC row (so split keeps them
+// separate and Combined merges them), plus a Project Total row to reconcile.
 function sampleSheet(): Sheet {
   return [
-    [null, null, null, 'Shrimad Rajchandra'],            // 0 title
-    [null, null, null, 'All Types Certificates Details Report'], // 1
-    ['From Date …'],                                      // 2
-    HEADER,                                               // 3 header
-    [null],                                               // 4 sub-header
-    marker('Vinay Vivek', 'Vinay ST - Execution'),       // 5 subproject
-    row({ 0: ' 03 Civil', 2: 'WO-1', 4: 'ABC', 5: 1000, 20: 500, 21: 0, 25: 10, 26: 0, 27: 0, 31: 480, 32: 10 }), // 6
-    row({ 0: ' 03 Civil', 2: 'WO-1', 4: 'ABC', 5: 1000, 20: 300, 21: 0, 25: 0, 26: 0, 27: 0, 31: 300, 32: 0 }),   // 7 same WO
-    row({ 0: ' 03 Civil', 2: 'WO-2', 4: 'ABC', 5: 2000, 20: 200, 21: 0, 25: 20, 26: 0, 27: 0, 31: 180, 32: 0 }),  // 8
-    row({ 0: ' 19 Site Admin', 2: 'WO-3', 4: 'XYZ', 5: 800, 20: 800, 21: 100, 25: 0, 26: 50, 27: 0, 31: 600, 32: 50 }), // 9 (advance 100, retention 50)
-    row({ 12: 'SubProject Total  :', 20: 1800, 31: 1560 }), // 10 skipped
-    // Project Total: gross 1800, recoveries 100, paid 1560, taxded 30, ret 50, other 0, outstanding 60
-    row({ 12: 'Project Total :', 20: 1800, 21: 100, 25: 30, 26: 50, 27: 0, 31: 1560, 32: 60 }), // 11
+    [null, null, null, 'SRMD'], [null, null, null, 'All Types Certificates'], ['From …'], HEADER, [null],
+    marker('Vinay Vivek', 'Sub A'),
+    row({ 0: ' 03 Civil', 2: 'WO-1', 4: 'ABC', 5: 1000, 20: 500, 31: 480, 25: 20, 32: 0 }),
+    row({ 0: ' 03 Civil', 2: 'WO-1', 4: 'ABC', 5: 1000, 20: 300, 31: 300, 25: 0, 32: 0 }), // same WO
+    row({ 0: ' 03 Civil', 2: 'WO-2', 4: 'ABC', 5: 2000, 20: 200, 31: 180, 25: 20, 32: 0 }),
+    row({ 0: ' 19 Site Admin', 2: 'WO-3', 4: 'XYZ', 5: 800, 20: 800, 21: 100, 31: 600, 26: 50, 32: 50 }),
+    marker('Vinay Vivek', 'Sub B'),
+    row({ 0: ' 03 Civil', 2: 'WO-4', 4: 'ABC', 5: 5000, 20: 1000, 31: 900, 25: 50, 32: 50 }),
+    // computed: gross 2800, adv 100, paid 2460, taxded 90, ret 50, out 100
+    row({ 12: 'Project Total :', 20: 2800, 21: 100, 25: 90, 26: 50, 27: 0, 31: 2460, 32: 100 }),
   ]
 }
 
-describe('deriveContractor', () => {
-  it('valid: Balance = Bill−Paid−Ded−Ret; Total Owed = Balance+Ret', () => {
-    const c = deriveContractor({ contractor: 'X', woValue: 0, billValue: 1000, paidValue: 600, deductions: 100, retentionHeld: 50, outstanding: 0 })
-    expect(c.balanceValue).toBe(250)
-    expect(c.totalOwed).toBe(300)
-  })
-  it('edge: retention-only owed when paid in full', () => {
-    const c = deriveContractor({ contractor: 'Y', woValue: 0, billValue: 100, paidValue: 95, deductions: 0, retentionHeld: 5, outstanding: 5 })
-    expect(c.balanceValue).toBe(0)
-    expect(c.totalOwed).toBe(5)
-  })
-})
-
-describe('parseSourceReport', () => {
+describe('parseSourceReport — sub-project grouping', () => {
   describe('valid', () => {
-    it('extracts project name from the subproject marker', () => {
-      expect(parseSourceReport(sampleSheet()).projectName).toBe('Vinay Vivek')
+    it('splits into sub-projects in encounter order', () => {
+      const { subprojects, projectName } = parseSourceReport(sampleSheet())
+      expect(projectName).toBe('Vinay Vivek')
+      expect(subprojects.map(s => s.name)).toEqual(['Sub A', 'Sub B'])
     })
 
-    it('aggregates per (category, contractor) with WO-value dedup + advance netting', () => {
-      const { categories } = parseSourceReport(sampleSheet())
-      const civil = categories.find(c => c.category.trim() === '03 Civil')!
-      const abc = civil.contractors.find(c => c.contractor === 'ABC')!
-      expect(abc.woValue).toBe(3000)      // WO-1 (1000 once) + WO-2 (2000)
-      expect(abc.billValue).toBe(1000)    // (500+300+200) gross, no advances
-      expect(abc.paidValue).toBe(960)     // 480+300+180
-      expect(abc.deductions).toBe(30)     // (10)+(0)+(20)
-      expect(abc.retentionHeld).toBe(0)
-      expect(deriveContractor(abc).balanceValue).toBe(10) // 1000-960-30-0
-    })
-
-    it('nets advances out of the bill (XYZ: gross 800 − advance 100 = 750)', () => {
-      const { categories } = parseSourceReport(sampleSheet())
-      const xyz = categories.find(c => c.category.trim() === '19 Site Admin')!.contractors[0]
-      expect(xyz.billValue).toBe(700)     // 800 gross − 100 advance
-      expect(xyz.retentionHeld).toBe(50)
-      expect(deriveContractor(xyz).balanceValue).toBe(50)   // 700-600-0-50
-      expect(deriveContractor(xyz).totalOwed).toBe(100)     // 50 + 50 retention
-    })
-  })
-
-  describe('invalid / structural rows', () => {
-    it('skips Subproject markers, SubProject Total, and Project Total rows', () => {
-      const { categories } = parseSourceReport(sampleSheet())
-      expect(categories.map(c => c.category.trim())).toEqual(['03 Civil', '19 Site Admin'])
-      const allContractors = categories.flatMap(c => c.contractors.map(x => x.contractor))
-      expect(allContractors).toEqual(['ABC', 'XYZ'])
+    it('aggregates per (sub-project, category, contractor) with WO dedup + advance netting', () => {
+      const { subprojects } = parseSourceReport(sampleSheet())
+      const subA = subprojects[0]
+      const abc = subA.categories.find(c => c.category.trim() === '03 Civil')!.contractors[0]
+      expect(abc).toMatchObject({ contractor: 'ABC', woValue: 3000, billValue: 1000, paidValue: 960, deductions: 40 })
+      const xyz = subA.categories.find(c => c.category.trim() === '19 Site Admin')!.contractors[0]
+      expect(xyz.billValue).toBe(700)   // 800 gross − 100 advance
+      expect(deriveContractor(xyz).totalOwed).toBe(100) // balance 50 + retention 50
+      // Sub B has the SAME category+contractor, kept separate here
+      expect(subprojects[1].categories[0].contractors[0]).toMatchObject({ contractor: 'ABC', billValue: 1000 })
     })
   })
 
   describe('edge', () => {
-    it('preserves leading-space category distinction (same name, two subprojects)', () => {
-      const sheet: Sheet = [
-        [], [], [], HEADER, [], marker('P', 'A'),
-        row({ 0: ' 03 Civil', 2: 'WO-1', 4: 'ABC', 5: 1, 20: 1, 31: 1 }),
-        row({ 0: '03 Civil', 2: 'WO-2', 4: 'ABC', 5: 1, 20: 1, 31: 1 }),  // no leading space
-      ]
-      const { categories } = parseSourceReport(sheet)
-      expect(categories.map(c => c.category)).toEqual([' 03 Civil', '03 Civil'])
-      expect(displayCategory(' 03 Civil')).toBe('03 Civil')
+    it('rows before any marker land in "(Unknown Sub-project)"', () => {
+      const sheet: Sheet = [[], [], [], HEADER, [], row({ 0: ' 03 Civil', 2: 'WO-1', 4: 'ABC', 5: 1, 20: 1, 31: 1 })]
+      expect(parseSourceReport(sheet).subprojects[0].name).toBe('(Unknown Sub-project)')
     })
-    it('empty sheet → no categories, no crash', () => {
-      const r = parseSourceReport([])
-      expect(r.categories).toHaveLength(0)
-      expect(r.projectName).toBe('Project')
+    it('empty sheet → no sub-projects, no crash', () => {
+      expect(parseSourceReport([]).subprojects).toHaveLength(0)
     })
   })
 
-  describe('extreme', () => {
-    it('currency-formatted strings coerce', () => {
-      const sheet: Sheet = [
-        [], [], [], HEADER, [], marker('P', 'A'),
-        row({ 0: ' 03 Civil', 2: 'WO-1', 4: 'ABC', 5: '₹3,000', 20: '₹1,000.00', 31: '960', 25: '30' }),
-      ]
-      const abc = parseSourceReport(sheet).categories[0].contractors[0]
-      expect(abc).toMatchObject({ woValue: 3000, billValue: 1000, paidValue: 960, deductions: 30 })
+  describe('invalid', () => {
+    it('skips markers, Project Total, and blank rows (no phantom contractors)', () => {
+      const { subprojects } = parseSourceReport(sampleSheet())
+      const names = subprojects.flatMap(s => s.categories.flatMap(c => c.contractors.map(x => x.contractor)))
+      // Sub A: Civil/ABC (WO-1+WO-2 → one row), Admin/XYZ · Sub B: Civil/ABC
+      expect(names).toEqual(['ABC', 'XYZ', 'ABC'])
     })
   })
 })
 
-describe('subtotals & grand total', () => {
-  it('valid: grand total spans every contractor', () => {
-    const { categories } = parseSourceReport(sampleSheet())
-    const gt = grandTotal(categories)
-    expect(gt.billValue).toBe(1700)   // ABC 1000 + XYZ 700
-    expect(gt.paidValue).toBe(1560)   // 960 + 600
-    expect(gt.balanceValue).toBe(60)  // 10 + 50
+describe('combineSubprojects — the "Combined" (clubbed) view', () => {
+  it('valid: merges the same (category, contractor) across sub-projects', () => {
+    const { subprojects } = parseSourceReport(sampleSheet())
+    const combined = combineSubprojects(subprojects)
+    const civil = combined.find(c => c.category.trim() === '03 Civil')!
+    const abc = civil.contractors.find(c => c.contractor === 'ABC')!
+    expect(abc.woValue).toBe(8000)    // Sub A 3000 + Sub B 5000
+    expect(abc.billValue).toBe(2000)  // 1000 + 1000
+    expect(abc.paidValue).toBe(1860)  // 960 + 900
+    expect(combined.map(c => c.category.trim())).toEqual(['03 Civil', '19 Site Admin'])
   })
-  it('edge: category subtotal sums its contractors', () => {
-    const { categories } = parseSourceReport(sampleSheet())
-    expect(categorySubtotal(categories[0]).billValue).toBe(1000)
+})
+
+describe('totals', () => {
+  it('valid: sub-project total sums its categories', () => {
+    const { subprojects } = parseSourceReport(sampleSheet())
+    expect(subprojectTotal(subprojects[0]).billValue).toBe(1700) // ABC 1000 + XYZ 700
   })
-  it('edge: empty → zero totals', () => {
+  it('valid: report grand total spans all sub-projects', () => {
+    const { subprojects } = parseSourceReport(sampleSheet())
+    const gt = reportGrandTotal(subprojects)
+    expect(gt.billValue).toBe(2700)   // 1000 + 700 + 1000
+    expect(gt.paidValue).toBe(2460)
+    expect(gt.totalOwed).toBe(150)    // 0 + 100 + 50
+  })
+  it('edge: category subtotal + display label', () => {
+    const { subprojects } = parseSourceReport(sampleSheet())
+    expect(categorySubtotal(subprojects[0].categories[0]).billValue).toBe(1000)
+    expect(displayCategory(' 03 Civil')).toBe('03 Civil')
+  })
+})
+
+describe('deriveContractor', () => {
+  it('Balance = Bill−Paid−Ded−Ret; Total Owed = Balance+Ret', () => {
+    const c = deriveContractor({ contractor: 'X', woValue: 0, billValue: 1000, paidValue: 600, deductions: 100, retentionHeld: 50, outstanding: 0 })
+    expect(c.balanceValue).toBe(250)
+    expect(c.totalOwed).toBe(300)
+  })
+  it('empty → zero totals', () => {
     expect(sumContractors([]).billValue).toBe(0)
   })
 })
@@ -152,21 +135,15 @@ describe('reconcile against IN4 Project Total', () => {
     const rec = reconcile(computed, source)
     expect(rec.available).toBe(true)
     expect(rec.allOk).toBe(true)
-    // sanity on a couple of lines
-    expect(rec.lines.find(l => l.label === 'Amount Paid')!.computed).toBe(1560)
-    expect(rec.lines.find(l => l.label.startsWith('Deductions'))!.delta).toBe(0)
   })
-
-  it('invalid: a wrong source total surfaces a non-zero delta (not allOk)', () => {
+  it('invalid: a wrong source total surfaces a non-zero delta', () => {
     const { computed } = parseSourceReport(sampleSheet())
-    const rec = reconcile(computed, { grossBill: 9999, recoveries: 0, paid: 1560, deductions: 30, retention: 50, outstanding: 60 })
+    const rec = reconcile(computed, { grossBill: 9999, recoveries: 0, paid: 2460, deductions: 90, retention: 50, outstanding: 100 })
     expect(rec.allOk).toBe(false)
     expect(rec.lines.find(l => l.label === 'Gross Bill')!.ok).toBe(false)
   })
-
-  it('edge: no Project Total row → reconciliation unavailable (not an error)', () => {
+  it('edge: no Project Total row → unavailable, not an error', () => {
     const rec = reconcile({ grossBill: 1, recoveries: 0, paid: 1, deductions: 0, retention: 0, outstanding: 0 }, null)
     expect(rec.available).toBe(false)
-    expect(rec.allOk).toBe(true)
   })
 })

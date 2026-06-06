@@ -1,7 +1,7 @@
-// Pure logic for the IN4 Contractor Report. The module ingests the RAW IN4
-// "All Types Certificates Details" export (the file uploaded frequently),
-// aggregates it per Category × Contractor, and derives the report columns.
-// Verified against SRMD's own generated report (31/31 contractors matched).
+// Pure logic for the IN4 Contractor Report. Ingests the RAW IN4 "All Types
+// Certificates Details" export, tags each row with its sub-project, and
+// aggregates per Sub-project → Category → Contractor. Verified against SRMD's
+// own generated report (31/31 contractors matched).
 //
 // Source layout (header row 3, 0-indexed; 33 columns):
 //   [0]  Work Category            [20] Gross Bill Amount
@@ -11,38 +11,34 @@
 //   [25] Tax Deduction            [24] Debit Note Adj. Recovered
 //   [26] Retention Amount         [31] Amount Paid
 //   [27] Other Deduction          [32] Outstanding Amount
-// Subproject markers: col 0 "Company: … Project: X , Subproject: Y".
-// Total rows: col 12 contains "… Total :" (Project / SubProject / etc.).
+// Sub-project markers: col 0 "Company: … Project: X , Subproject: Y".
+// Total rows: col 12 "… Total :".
 //
-// Derived report columns (matches the existing report + its Notes):
-//   Total Bill Value = Gross Bill − (Advance+Misc+Material+DebitNote recovered)
-//   Deductions       = Tax Deduction + Other Deduction
-//   Retention Held   = Retention Amount
-//   Balance Value    = Bill − Paid − Deductions − Retention          [derived]
-//   Total Owed       = Balance + Retention = Bill − Paid − Deductions [derived]
+// Derived columns (match the existing report + its Notes):
+//   Bill = Gross − (Advance+Misc+Material+DebitNote recovered)
+//   Deductions = Tax Deduction + Other Deduction; Retention = Retention Amount
+//   Balance = Bill − Paid − Deductions − Retention; Total Owed = Balance + Retention
 
 import { parseAmount } from './in4-parser'
 
 type Cell = string | number | null | undefined
 export type Sheet = Cell[][]
 
-// Source column indices.
 const C = {
   category: 0, wo: 2, contractor: 4, woValue: 5,
   grossBill: 20, advRecovered: 21, miscRecovered: 22, matRecovered: 23, debitRecovered: 24,
   taxDeduction: 25, retention: 26, otherDeduction: 27,
-  amountPaid: 31, outstanding: 32,
-  totalMarker: 12,
+  amountPaid: 31, outstanding: 32, totalMarker: 12,
 } as const
 
 export interface RawContractor {
   contractor: string
   woValue: number
-  billValue: number      // net of advances/recoveries
+  billValue: number
   paidValue: number
-  deductions: number     // tax + other
+  deductions: number
   retentionHeld: number
-  outstanding: number     // source Outstanding (reference / reconciliation)
+  outstanding: number
 }
 
 export interface ComputedContractor extends RawContractor {
@@ -51,12 +47,16 @@ export interface ComputedContractor extends RawContractor {
 }
 
 export interface RawCategory {
-  category: string         // exact source string (leading space kept = subproject distinction)
+  category: string
   contractors: RawContractor[]
 }
 
-/** Grand sums of the underlying IN4 columns — used to reconcile against the
- *  source's own "Project Total" row so the user can trust the numbers. */
+/** A sub-project section: its categories + (implicitly) its own total. */
+export interface SubprojectGroup {
+  name: string
+  categories: RawCategory[]
+}
+
 export interface In4Totals {
   grossBill: number
   recoveries: number
@@ -73,9 +73,9 @@ export interface ReportDoc {
   subtitle: string
   sourceFilename: string
   uploadedAt: string
-  categories: RawCategory[]
-  computed: In4Totals          // summed from the rows we ingested
-  source: In4Totals | null     // the IN4 "Project Total" row
+  subprojects: SubprojectGroup[]
+  computed: In4Totals
+  source: In4Totals | null
 }
 
 export interface ContractorReportState { reports: ReportDoc[] }
@@ -92,8 +92,9 @@ export interface Totals {
 
 const str = (c: Cell): string => (c == null ? '' : String(c).trim())
 const rawStr = (c: Cell): string => (c == null ? '' : String(c))
+const num = (row: Cell[], i: number) => parseAmount(row[i])
 
-// ─── Derivations (single source of truth for the formula columns) ──────────
+// ─── Derivations ───────────────────────────────────────────────────────────
 
 export function deriveContractor(r: RawContractor): ComputedContractor {
   const balanceValue = r.billValue - r.paidValue - r.deductions - r.retentionHeld
@@ -121,9 +122,40 @@ export function sumContractors(rows: RawContractor[]): Totals {
 }
 
 export const categorySubtotal = (cat: RawCategory): Totals => sumContractors(cat.contractors)
-export const grandTotal = (categories: RawCategory[]): Totals => sumContractors(categories.flatMap(c => c.contractors))
-
+export const subprojectTotal = (sp: SubprojectGroup): Totals => sumContractors(sp.categories.flatMap(c => c.contractors))
+export const reportGrandTotal = (sps: SubprojectGroup[]): Totals =>
+  sumContractors(sps.flatMap(s => s.categories.flatMap(c => c.contractors)))
 export const displayCategory = (raw: string): string => raw.trim()
+
+/** Merge all sub-projects into a single flat category list (the "Combined"
+ *  view): contractors with the same (category, contractor) are summed. */
+export function combineSubprojects(sps: SubprojectGroup[]): RawCategory[] {
+  const catOrder: string[] = []
+  const cats = new Map<string, RawCategory>()
+  const cons = new Map<string, RawContractor>()
+  for (const sp of sps) {
+    for (const cat of sp.categories) {
+      if (!cats.has(cat.category)) { cats.set(cat.category, { category: cat.category, contractors: [] }); catOrder.push(cat.category) }
+      for (const c of cat.contractors) {
+        const k = `${cat.category}||${c.contractor}`
+        const existing = cons.get(k)
+        if (!existing) {
+          const copy = { ...c }
+          cons.set(k, copy)
+          cats.get(cat.category)!.contractors.push(copy)
+        } else {
+          existing.woValue += c.woValue
+          existing.billValue += c.billValue
+          existing.paidValue += c.paidValue
+          existing.deductions += c.deductions
+          existing.retentionHeld += c.retentionHeld
+          existing.outstanding += c.outstanding
+        }
+      }
+    }
+  }
+  return catOrder.map(k => cats.get(k)!)
+}
 
 // ─── Parsing the raw IN4 source ────────────────────────────────────────────
 
@@ -135,45 +167,44 @@ function findHeaderRow(rows: Sheet): number {
 }
 
 const PROJECT_RE = /Project:\s*([^,]+?)\s*,\s*Subproject:/i
+const SUBPROJECT_RE = /Subproject:\s*(.+?)\s*$/i
 
 export interface ParsedSource {
   projectName: string
   title: string
   subtitle: string
-  categories: RawCategory[]
+  subprojects: SubprojectGroup[]
   computed: In4Totals
   source: In4Totals | null
 }
 
-const num = (row: Cell[], i: number) => parseAmount(row[i])
-
-/** Parse + aggregate a raw IN4 "All Types Certificates Details" export into a
- *  combined Category × Contractor report (one row per exact category string ×
- *  contractor). Captures the IN4 "Project Total" row for reconciliation. */
 export function parseSourceReport(rows: Sheet): ParsedSource {
   const headerRow = findHeaderRow(rows)
   let projectName = ''
+  let currentSub = '(Unknown Sub-project)'
   let source: In4Totals | null = null
-
-  // (category, contractor) → aggregate; WO values deduped per work order.
-  const order: string[] = []
-  const meta = new Map<string, { category: string; contractor: string }>()
-  const acc = new Map<string, RawContractor>()
-  const woSeen = new Set<string>()
   const computed: In4Totals = { grossBill: 0, recoveries: 0, paid: 0, deductions: 0, retention: 0, outstanding: 0 }
+
+  const subOrder: string[] = []
+  const subs = new Map<string, SubprojectGroup>()
+  const catIndex = new Map<string, RawCategory>()      // `${sub}||${categoryRaw}`
+  const conIndex = new Map<string, RawContractor>()    // `${sub}||${categoryRaw}||${contractor}`
+  const woSeen = new Set<string>()
 
   for (let i = headerRow + 1; i < rows.length; i++) {
     const row = rows[i] ?? []
     const cell0 = str(row[C.category])
 
-    // Subproject / company marker
+    // Sub-project / company marker
     if (cell0.startsWith('Company:') || cell0.includes('Subproject:')) {
-      const m = cell0.match(PROJECT_RE)
-      if (m && !projectName) projectName = m[1].trim()
+      const mp = cell0.match(PROJECT_RE)
+      if (mp && !projectName) projectName = mp[1].trim()
+      const ms = cell0.match(SUBPROJECT_RE)
+      currentSub = ms ? ms[1].trim() : '(Unknown Sub-project)'
       continue
     }
 
-    // Total rows (col 12 = "Project Total :" / "SubProject Total :" / …)
+    // Total rows
     const totalCell = str(row[C.totalMarker])
     if (/Total\s*:?\s*$/i.test(totalCell)) {
       if (/^Project Total/i.test(totalCell)) {
@@ -189,7 +220,7 @@ export function parseSourceReport(rows: Sheet): ParsedSource {
       continue
     }
 
-    const categoryRaw = rawStr(row[C.category])    // keep leading space
+    const categoryRaw = rawStr(row[C.category])
     const contractor = str(row[C.contractor])
     if (!categoryRaw.trim() || !contractor) continue
     if (categoryRaw.trim().startsWith('Company:')) continue
@@ -208,38 +239,35 @@ export function parseSourceReport(rows: Sheet): ParsedSource {
     computed.retention += ret
     computed.outstanding += out
 
-    const key = `${categoryRaw}||${contractor}`
-    if (!meta.has(key)) {
-      meta.set(key, { category: categoryRaw, contractor })
-      order.push(key)
-      acc.set(key, { contractor, woValue: 0, billValue: 0, paidValue: 0, deductions: 0, retentionHeld: 0, outstanding: 0 })
+    if (!subs.has(currentSub)) { subs.set(currentSub, { name: currentSub, categories: [] }); subOrder.push(currentSub) }
+    const catKey = `${currentSub}||${categoryRaw}`
+    if (!catIndex.has(catKey)) {
+      const rc: RawCategory = { category: categoryRaw, contractors: [] }
+      catIndex.set(catKey, rc)
+      subs.get(currentSub)!.categories.push(rc)
     }
-    const a = acc.get(key)!
+    const conKey = `${catKey}||${contractor}`
+    if (!conIndex.has(conKey)) {
+      const nc: RawContractor = { contractor, woValue: 0, billValue: 0, paidValue: 0, deductions: 0, retentionHeld: 0, outstanding: 0 }
+      conIndex.set(conKey, nc)
+      catIndex.get(catKey)!.contractors.push(nc)
+    }
+    const a = conIndex.get(conKey)!
     a.billValue += gross - recovered
     a.paidValue += paid
     a.deductions += ded
     a.retentionHeld += ret
     a.outstanding += out
 
-    const woNum = str(row[C.wo])
-    const woKey = `${key}||${woNum}`
+    const woKey = `${conKey}||${str(row[C.wo])}`
     if (!woSeen.has(woKey)) { woSeen.add(woKey); a.woValue += num(row, C.woValue) }
-  }
-
-  // Group ordered (cat, contractor) keys into categories, preserving order.
-  const categories: RawCategory[] = []
-  const byCat = new Map<string, RawCategory>()
-  for (const key of order) {
-    const m = meta.get(key)!
-    if (!byCat.has(m.category)) { const rc = { category: m.category, contractors: [] }; byCat.set(m.category, rc); categories.push(rc) }
-    byCat.get(m.category)!.contractors.push(acc.get(key)!)
   }
 
   return {
     projectName: projectName || 'Project',
     title: `${projectName || 'Project'} — Project Execution Expenses`,
-    subtitle: 'Category-wise & Contractor-wise Summary (All Subprojects, INR)',
-    categories,
+    subtitle: 'Category-wise & Contractor-wise Summary (by Sub-project, INR)',
+    subprojects: subOrder.map(s => subs.get(s)!),
     computed,
     source,
   }
@@ -250,9 +278,6 @@ export function parseSourceReport(rows: Sheet): ParsedSource {
 export interface ReconLine { label: string; computed: number; source: number; delta: number; ok: boolean }
 export interface ReconResult { available: boolean; allOk: boolean; lines: ReconLine[] }
 
-/** Compare the figures we summed against the source's "Project Total" row.
- *  The raw columns (Bill, Paid, Deductions, Retention, Outstanding) should
- *  tie to the rupee — proof every data row was read once and only once. */
 export function reconcile(computed: In4Totals, source: In4Totals | null): ReconResult {
   if (!source) return { available: false, allOk: true, lines: [] }
   const line = (label: string, c: number, s: number): ReconLine =>
