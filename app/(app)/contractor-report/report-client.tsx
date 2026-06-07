@@ -74,6 +74,9 @@ export default function ContractorReportClient() {
   const [busy, setBusy] = useState(false)
   const [dragOver, setDragOver] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
+  // Drag counter — keeps the overlay stable as the cursor crosses child
+  // boundaries (HTML drag events fire enter/leave for every nested element).
+  const dragCounter = useRef(0)
 
   // ── Load saved state + Budget-vs-Actual areas on open ───────────────────
   useEffect(() => {
@@ -188,10 +191,60 @@ export default function ContractorReportClient() {
     }
   }
 
+  // Page-wide drag handlers. Overlay only shows while the user is actively
+  // dragging a *file* (we filter on dataTransfer.types).
+  function isFileDrag(e: React.DragEvent): boolean {
+    const types = e.dataTransfer?.types
+    if (!types) return false
+    for (let i = 0; i < types.length; i++) if (types[i] === 'Files') return true
+    return false
+  }
+  const onPageDragEnter = (e: React.DragEvent) => {
+    if (!isFileDrag(e)) return
+    e.preventDefault()
+    dragCounter.current += 1
+    setDragOver(true)
+  }
+  const onPageDragOver = (e: React.DragEvent) => {
+    if (!isFileDrag(e)) return
+    e.preventDefault()
+  }
+  const onPageDragLeave = (e: React.DragEvent) => {
+    if (!isFileDrag(e)) return
+    e.preventDefault()
+    dragCounter.current = Math.max(0, dragCounter.current - 1)
+    if (dragCounter.current === 0) setDragOver(false)
+  }
+  const onPageDrop = (e: React.DragEvent) => {
+    e.preventDefault()
+    dragCounter.current = 0
+    setDragOver(false)
+    handleFiles(e.dataTransfer.files)
+  }
+
   const selected = reports.find(r => r.id === selectedId) ?? null
 
   return (
-    <div className="p-4 md:p-6 max-w-6xl mx-auto space-y-5">
+    <div
+      className="p-4 md:p-6 max-w-6xl mx-auto space-y-5 relative"
+      onDragEnter={onPageDragEnter}
+      onDragOver={onPageDragOver}
+      onDragLeave={onPageDragLeave}
+      onDrop={onPageDrop}
+    >
+      {/* Page-wide drop overlay — only visible while the user is actively
+          dragging a file. Pointer-events disabled so React still receives the
+          drop event on the wrapper underneath. */}
+      {dragOver && (
+        <div className="fixed inset-0 z-50 bg-[#1F4E78]/15 backdrop-blur-[2px] flex items-center justify-center pointer-events-none">
+          <div className="bg-white rounded-2xl px-8 py-7 shadow-2xl border-2 border-dashed border-[#1F4E78] text-center">
+            <UploadCloud className="h-10 w-10 text-[#1F4E78] mx-auto mb-2" />
+            <p className="text-base font-semibold text-gray-900">Drop the IN4 .xlsx anywhere</p>
+            <p className="text-xs text-gray-500 mt-1">“All Types Certificates Details” export</p>
+          </div>
+        </div>
+      )}
+
       <PageHeader
         title="Contractor Report"
         subtitle="Category × Contractor summary, saved for the whole team. Re-upload the latest IN4 export to update."
@@ -208,38 +261,39 @@ export default function ContractorReportClient() {
           {showMetrics ? <Eye className="h-3.5 w-3.5" /> : <EyeOff className="h-3.5 w-3.5" />}
           Show % / Rs·Sft
         </label>
+        {/* Compact upload affordance — replaces the old main-entrance card.
+            Click → file picker. Drop anywhere on the page → the overlay
+            above catches it. */}
+        <button
+          type="button"
+          onClick={() => inputRef.current?.click()}
+          disabled={busy}
+          title='Upload IN4 "All Types Certificates Details" (.xlsx) — or drop the file anywhere on this page'
+          className="inline-flex items-center gap-1.5 h-8 px-2.5 rounded-lg border border-gray-300 bg-white text-xs font-medium text-gray-700 hover:border-[#1F4E78] hover:text-[#1F4E78] hover:bg-blue-50/40 disabled:opacity-60 disabled:cursor-not-allowed transition-colors"
+        >
+          {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <UploadCloud className="h-4 w-4" />}
+          <span className="hidden sm:inline">{busy ? 'Uploading…' : 'Upload'}</span>
+        </button>
+        <input ref={inputRef} type="file" accept=".xlsx,.xls" multiple className="hidden"
+          onChange={e => { handleFiles(e.target.files); e.target.value = '' }} />
       </PageHeader>
-
-      {/* Upload / update zone */}
-      <Card
-        className={`p-5 border-2 border-dashed transition-colors ${dragOver ? 'border-[#1F4E78] bg-blue-50/50' : 'border-gray-300'}`}
-        onDragOver={e => { e.preventDefault(); setDragOver(true) }}
-        onDragLeave={() => setDragOver(false)}
-        onDrop={e => { e.preventDefault(); setDragOver(false); handleFiles(e.dataTransfer.files) }}
-      >
-        <div className="flex flex-col sm:flex-row items-center justify-center gap-3 text-center sm:text-left">
-          <div className="h-11 w-11 rounded-2xl bg-[#1F4E78]/10 text-[#1F4E78] inline-flex items-center justify-center flex-shrink-0">
-            {busy ? <Loader2 className="h-6 w-6 animate-spin" /> : <UploadCloud className="h-6 w-6" />}
-          </div>
-          <div className="min-w-0">
-            <p className="text-sm text-gray-700">Drag &amp; drop the IN4 <b>“All Types Certificates Details”</b> export (.xlsx), or</p>
-            <p className="text-[11px] text-gray-500">Re-uploading a project replaces its saved data for everyone.</p>
-          </div>
-          <Button variant="outline" size="sm" onClick={() => inputRef.current?.click()} disabled={busy} className="sm:ml-2">
-            <FileSpreadsheet className="h-4 w-4" /> Choose file
-          </Button>
-          <input ref={inputRef} type="file" accept=".xlsx,.xls" multiple className="hidden"
-            onChange={e => { handleFiles(e.target.files); e.target.value = '' }} />
-        </div>
-      </Card>
 
       {loadError && <QueryError what="saved reports" message={loadError} />}
 
       {loading ? (
         <Card className="p-8 text-center text-sm text-gray-400"><Loader2 className="h-4 w-4 animate-spin inline mr-2" />Loading saved reports…</Card>
       ) : reports.length === 0 ? (
-        <Card className="p-8 text-center text-sm text-gray-500">
-          No reports saved yet. Upload the IN4 “All Types Certificates Details” export to get started — it&apos;ll be saved for the whole team.
+        <Card className="p-10 text-center">
+          <div className="h-12 w-12 rounded-2xl bg-[#1F4E78]/10 text-[#1F4E78] inline-flex items-center justify-center mb-3">
+            <UploadCloud className="h-6 w-6" />
+          </div>
+          <p className="text-sm text-gray-700 font-medium">No reports saved yet.</p>
+          <p className="text-xs text-gray-500 mt-1">
+            Upload the IN4 <b>“All Types Certificates Details”</b> export, or drop it anywhere on this page — it&apos;ll be saved for the whole team.
+          </p>
+          <Button variant="outline" size="sm" onClick={() => inputRef.current?.click()} disabled={busy} className="mt-4">
+            <FileSpreadsheet className="h-4 w-4" /> Choose file
+          </Button>
         </Card>
       ) : (
         <>
