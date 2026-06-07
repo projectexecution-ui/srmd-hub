@@ -372,19 +372,35 @@ export default function UsersClient({
 
       {/* ─── Pending access requests ─────────────────────────────────────
           People who signed in via the shared link but aren't allowlisted.
-          Approve (pick a role) or deny — no need to pre-add their email. */}
-      {pendingRequests.length > 0 && (
-        <Card className="border-amber-300 bg-amber-50/60">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-base text-amber-900">
-              <span className="relative inline-flex">
-                <Clock className="h-5 w-5 text-amber-600" />
+          Approve (pick a role) or deny — no need to pre-add their email.
+          Always shown (even when empty) so the feature is discoverable. */}
+      <Card className={cn(pendingRequests.length > 0 ? 'border-amber-300 bg-amber-50/60' : 'border-gray-200')}>
+        <CardHeader>
+          <CardTitle className={cn('flex items-center gap-2 text-base', pendingRequests.length > 0 ? 'text-amber-900' : 'text-gray-700')}>
+            <span className="relative inline-flex">
+              <Clock className={cn('h-5 w-5', pendingRequests.length > 0 ? 'text-amber-600' : 'text-gray-400')} />
+              {pendingRequests.length > 0 && (
                 <span className="absolute -top-1 -right-1 h-2 w-2 rounded-full bg-amber-500 animate-pulse" />
-              </span>
-              Pending access requests ({pendingRequests.length})
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3">
+              )}
+            </span>
+            Pending access requests ({pendingRequests.length})
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {pendingRequests.length === 0 ? (
+            <div className="text-sm text-gray-600">
+              <p className="mb-3">
+                No one&apos;s waiting right now. <b>Share your CT&nbsp;HUB link</b> with anyone — when they sign
+                in with Google, they&apos;ll appear here for you to approve and give a role. You don&apos;t need
+                to add their email first.
+              </p>
+              <Button onClick={copyInviteLink} variant="outline" size="sm">
+                {copied ? <Check className="h-4 w-4 text-green-600" /> : <Copy className="h-4 w-4" />}
+                {copied ? 'Link copied' : 'Copy invite link'}
+              </Button>
+            </div>
+          ) : (
+            <>
             <p className="text-xs text-amber-800">
               These people signed in with the shared link and are waiting for you to let them in.
               Pick a role and <b>Approve</b> — or <b>Deny</b> to keep them out. No need to add their email first.
@@ -444,9 +460,10 @@ export default function UsersClient({
                 )
               })}
             </div>
-          </CardContent>
-        </Card>
-      )}
+            </>
+          )}
+        </CardContent>
+      </Card>
 
       {/* ─── Stats strip ───────────────────────────── */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
@@ -710,10 +727,11 @@ export default function UsersClient({
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="rounded-xl bg-amber-50 border border-amber-200 px-3 py-2 text-xs text-amber-900">
-            Only emails on this list can sign in and become active users.
-            Anyone else who tries to sign in lands on the <b>Account Deactivated</b> page
-            until you add them here.
+          <div className="rounded-xl bg-emerald-50 border border-emerald-200 px-3 py-2 text-xs text-emerald-900">
+            <b>Optional shortcut.</b> Emails on this list are <b>auto-approved</b> — they sign in and
+            become active right away with the role you set, skipping the approval queue. You don&apos;t
+            have to use it: anyone can sign in via the shared link and simply wait in
+            <b> Pending access requests</b> above for you to approve.
           </div>
 
           <form onSubmit={addAllowedEmail} className="flex flex-col sm:flex-row gap-2 sm:items-end">
@@ -805,8 +823,11 @@ export default function UsersClient({
             <div>
               <p className="text-sm font-semibold text-blue-900 mb-1">How users join</p>
               <p className="text-sm text-blue-800 leading-relaxed">
-                <b>Step 1:</b> Add the person&apos;s email to the Allowed Emails list above and pick their starting role.&nbsp;
-                <b>Step 2:</b> Share the CT HUB link with them. When they sign in with Google, their profile is created automatically with the role you chose. Anyone NOT on the allowlist gets blocked on the deactivated page until you add them.
+                <b>Step 1:</b> Share the CT&nbsp;HUB link with anyone.&nbsp;
+                <b>Step 2:</b> When they sign in with Google, they show up under <b>Pending access requests</b> at
+                the top of this page (and you get a notification). Pick a role and <b>Approve</b> — done. No need to
+                know or pre-add their email. <span className="text-blue-700">(Tip: for people you already know, add
+                their email to the allowlist below to auto-approve them so they skip the wait.)</span>
               </p>
               <Button onClick={copyInviteLink} size="sm" variant="outline" className="mt-3">
                 {copied ? <Check className="h-4 w-4 text-green-600" /> : <Copy className="h-4 w-4" />}
