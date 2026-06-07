@@ -328,8 +328,8 @@ export default async function CostControlProjectDetailPage(
                 <Th align="right">Paid</Th>
                 <Th align="right" className="w-20">% Used</Th>
                 <Th className="w-28">Working Sheets</Th>
-                <Th className="w-52">Plan Deadline</Th>
-                <Th className="w-40">WS Status</Th>
+                <Th className="w-44">Plan Deadline</Th>
+                <Th className="w-28">WS Status</Th>
                 <Th className="w-28"></Th>
               </tr>
             </thead>
@@ -381,14 +381,15 @@ export default async function CostControlProjectDetailPage(
                           projectId={project.id}
                           disciplineId={d.id}
                           initialDeadline={discMeta.get(d.id)?.deadline ?? null}
+                          inheritedFromWS={dEarliest}
                           canWrite={canWrite}
                         />
                       </Td>
                       <Td>
                         {dEarliest ? (
-                          <div className="flex items-center gap-1.5">
-                            <DeadlineBadge deadlineDate={dEarliest} className="text-[11px] px-2 py-0.5" />
-                            {dOverdue > 0 && <span className="text-[10px] font-bold text-rose-700 bg-rose-100 rounded-full px-1.5">+{dOverdue} overdue</span>}
+                          <div className="inline-flex items-center gap-1">
+                            <DeadlineBadge deadlineDate={dEarliest} compact />
+                            {dOverdue > 0 && <span className="text-[10px] font-bold text-rose-700 bg-rose-100 rounded-full px-1.5">+{dOverdue}</span>}
                           </div>
                         ) : (
                           <span className="text-[11px] text-gray-400">—</span>
@@ -458,6 +459,7 @@ export default async function CostControlProjectDetailPage(
                               subSkillId={s.id}
                               initialDeadline={subMeta.get(s.id)?.deadline ?? null}
                               inheritedFromDiscipline={discMeta.get(d.id)?.deadline ?? null}
+                              inheritedFromWS={dlAgg.get(`${d.id}::${s.id}`)?.earliest ?? null}
                               canWrite={canWrite}
                             />
                           </Td>
@@ -466,8 +468,8 @@ export default async function CostControlProjectDetailPage(
                               const dl = dlAgg.get(`${d.id}::${s.id}`)
                               if (!dl?.earliest) return <span className="text-[11px] text-gray-400">—</span>
                               return (
-                                <div className="flex items-center gap-1.5">
-                                  <DeadlineBadge deadlineDate={dl.earliest} className="text-[11px] px-2 py-0.5" />
+                                <div className="inline-flex items-center gap-1">
+                                  <DeadlineBadge deadlineDate={dl.earliest} compact />
                                   {dl.overdue > 0 && (
                                     <span className="text-[10px] font-bold text-rose-700 bg-rose-100 rounded-full px-1.5">
                                       +{dl.overdue}

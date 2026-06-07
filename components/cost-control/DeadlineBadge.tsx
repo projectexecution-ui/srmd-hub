@@ -12,12 +12,16 @@ export function DeadlineBadge({
   deadlineDate,
   notes,
   approved,
+  compact,
   className = '',
 }: {
   deadlineDate: string | null
   notes?: string | null
   /** When true the work is already approved — render in a calm tone regardless of days remaining. */
   approved?: boolean
+  /** Tight single-line variant for use inside narrow table columns. Strips
+   *  the year + notes, drops the icon, halves the padding. */
+  compact?: boolean
   className?: string
 }) {
   if (!deadlineDate) return null
@@ -50,14 +54,34 @@ export function DeadlineBadge({
     label = `${days}d left`
   }
 
-  const dateText = deadline.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })
+  const dateLong  = deadline.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })
+  const dateShort = deadline.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: '2-digit' })
+
+  if (compact) {
+    // Tight single-line variant. Just the date + a short urgency suffix
+    // (e.g. "31 Dec 26 · 207d"). Full info on hover.
+    const shortLabel = approved
+      ? '✓'
+      : days < 0 ? `−${Math.abs(days)}d`
+      : days === 0 ? '0d'
+      : `${days}d`
+    return (
+      <span
+        className={`inline-flex items-center gap-1 rounded border ${tone} px-1.5 py-0.5 text-[11px] whitespace-nowrap font-mono ${className}`}
+        title={`${label} · ${dateLong}${notes ? ` — ${notes}` : ''}`}
+      >
+        {dateShort}
+        <span className="opacity-70">· {shortLabel}</span>
+      </span>
+    )
+  }
 
   return (
     <div className={`inline-flex items-center gap-2 rounded-xl border ${tone} px-3 py-1.5 text-sm ${className}`}>
       <Icon className="h-4 w-4 flex-shrink-0" />
       <div className="flex items-baseline gap-2">
         <span className="font-semibold">{label}</span>
-        <span className="text-xs opacity-80">· {dateText}</span>
+        <span className="text-xs opacity-80">· {dateLong}</span>
       </div>
       {notes && <span className="text-xs opacity-80 truncate max-w-xs hidden md:inline">— {notes}</span>}
     </div>

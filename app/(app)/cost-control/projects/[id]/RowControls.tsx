@@ -28,6 +28,7 @@ export function DeadlineCell({
   initialDeadline,
   canWrite,
   inheritedFromDiscipline,
+  inheritedFromWS,
 }: {
   projectId: string
   /** Pass exactly one of disciplineId / subSkillId */
@@ -37,6 +38,10 @@ export function DeadlineCell({
   canWrite: boolean
   /** When the sub-skill has no own deadline but its discipline has one, show that as a hint. */
   inheritedFromDiscipline?: string | null
+  /** When the sub-skill has no own deadline but at least one WS under it
+   *  has a deadline_date, show that as an inherited hint instead of
+   *  asking the PM to type the same date again. */
+  inheritedFromWS?: string | null
 }) {
   const router = useRouter()
   const [open, setOpen] = useState(false)
@@ -57,10 +62,18 @@ export function DeadlineCell({
     })
   }
 
+  // Inheritance order when sub-skill has no own deadline:
+  //   1. earliest WS deadline (engineer commitments)   → "from WS"
+  //   2. discipline plan deadline (PM target)          → "from disc"
+  // Showing inherited stops the "Set deadline" prompt from nagging when
+  // the deadline is already implied elsewhere.
+  const inheritedDate = inheritedFromWS ?? inheritedFromDiscipline ?? null
+  const inheritedSource: 'ws' | 'disc' | null = inheritedFromWS ? 'ws' : (inheritedFromDiscipline ? 'disc' : null)
+
   if (!canWrite) {
     // Read-only view — just show what's saved.
     if (initialDeadline) return <DeadlineChip date={initialDeadline} />
-    if (inheritedFromDiscipline) return <DeadlineChip date={inheritedFromDiscipline} inherited />
+    if (inheritedDate) return <DeadlineChip date={inheritedDate} inherited source={inheritedSource ?? undefined} />
     return <span className="text-[11px] text-gray-400">—</span>
   }
 
@@ -78,12 +91,28 @@ export function DeadlineCell({
         </button>
       )
     }
+    // Inherited from WS or discipline — show that instead of nagging.
+    // Tiny pencil still lets the PM override with an explicit sub-skill
+    // target if they want.
+    if (inheritedDate) {
+      return (
+        <button
+          type="button"
+          onClick={() => setOpen(true)}
+          className="inline-flex items-center gap-1 group"
+          title={inheritedSource === 'ws' ? 'Auto-derived from the earliest Working Sheet deadline. Click to set an explicit sub-skill target.' : 'Inheriting the discipline-level plan deadline. Click to override.'}
+        >
+          <DeadlineChip date={inheritedDate} inherited source={inheritedSource ?? undefined} />
+          <Pencil className="h-3 w-3 text-gray-400 group-hover:text-blue-600" />
+        </button>
+      )
+    }
     return (
       <button
         type="button"
         onClick={() => setOpen(true)}
         className="inline-flex items-center gap-1 text-[11px] text-blue-700 hover:text-blue-900 hover:underline"
-        title={inheritedFromDiscipline ? `Inheriting discipline deadline ${inheritedFromDiscipline}` : 'Set a plan deadline'}
+        title="Set a plan deadline"
       >
         <CalendarClock className="h-3.5 w-3.5" />
         Set deadline
@@ -135,12 +164,28 @@ export function DeadlineCell({
   )
 }
 
-function DeadlineChip({ date, inherited }: { date: string; inherited?: boolean }) {
-  const formatted = new Date(date + 'T00:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: '2-digit' })
+function DeadlineChip({ date, inherited, source }: { date: string; inherited?: boolean; source?: 'ws' | 'disc' }) {
+  const d = new Date(date + 'T00:00:00')
+  const formatted = d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: '2-digit' })
+  // Days remaining for at-a-glance urgency colouring.
+  const today = new Date()
+  const ms = Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()) - Date.UTC(today.getFullYear(), today.getMonth(), today.getDate())
+  const days = Math.round(ms / 86400000)
+  // Tone driven by urgency, dimmed when inherited.
+  let tone = 'bg-blue-50 text-blue-800 border-blue-200'
+  if (days < 0)        tone = 'bg-rose-50 text-rose-700 border-rose-200'
+  else if (days <= 7)  tone = 'bg-amber-50 text-amber-800 border-amber-200'
+  if (inherited)       tone = 'bg-gray-50 text-gray-500 border-dashed border-gray-200'
+  const suffix = inherited ? (source === 'ws' ? ' · WS' : ' · disc') : ''
   return (
-    <span className={`inline-flex items-center gap-1 text-[11px] rounded px-1.5 py-0.5 ${inherited ? 'bg-gray-50 text-gray-500 border border-dashed border-gray-200' : 'bg-blue-50 text-blue-800 border border-blue-200'}`} title={inherited ? 'Inherited from discipline' : 'Plan deadline'}>
+    <span
+      className={`inline-flex items-center gap-1 text-[11px] whitespace-nowrap rounded px-1.5 py-0.5 border ${tone}`}
+      title={inherited
+        ? `Inherited from ${source === 'ws' ? 'Working Sheet deadline' : 'discipline plan'} · ${days >= 0 ? days + 'd left' : Math.abs(days) + 'd overdue'}`
+        : `Plan deadline · ${days >= 0 ? days + 'd left' : Math.abs(days) + 'd overdue'}`}
+    >
       <CalendarClock className="h-3 w-3" />
-      {formatted}{inherited && ' (disc)'}
+      {formatted}{suffix}
     </span>
   )
 }
