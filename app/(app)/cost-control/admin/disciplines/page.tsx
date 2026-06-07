@@ -3,6 +3,7 @@ import { requirePermission } from '@/lib/auth'
 import { PageHeader } from '@/components/PageHeader'
 import { Card } from '@/components/ui/card'
 import { DisciplinesAdmin } from './DisciplinesAdmin'
+import { ImportPanel } from './ImportPanel'
 
 export const dynamic = 'force-dynamic'
 
@@ -45,6 +46,11 @@ export default async function DisciplinesAdminPage() {
         setup wizard. Archive (don&apos;t delete) a discipline that you stop using — past projects
         keep their history intact.
       </Card>
+      <ImportPanel
+        unusedDisciplineIds={(discRes.data ?? [])
+          .filter(d => !d.is_archived && (discProjectCount.get(d.id) ?? 0) === 0)
+          .map(d => d.id)}
+      />
       <DisciplinesAdmin
         disciplines={(discRes.data ?? []).map(d => ({
           ...d,
