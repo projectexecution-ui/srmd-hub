@@ -7,7 +7,7 @@ import { SetupProgressBanner } from '@/components/ProjectSetupWizard/SetupProgre
 import { Plus, ArrowLeftRight, Flame, Info } from 'lucide-react'
 import { formatINR } from '@/lib/utils'
 import { DeadlineBadge } from '@/components/cost-control/DeadlineBadge'
-import { DeadlineCell, SubSkillModeCell } from './RowControls'
+import { DeadlineCell, SubSkillModeCell, DisableButton } from './RowControls'
 
 export const dynamic = 'force-dynamic'
 
@@ -340,11 +340,15 @@ export default async function CostControlProjectDetailPage(
                 // Discipline-level earliest open deadline across its sub-skills
                 let dEarliest: string | null = null
                 let dOverdue = 0
+                let dWsCount = 0
                 for (const s of subs) {
                   const dl = dlAgg.get(`${d.id}::${s.id}`)
-                  if (!dl) continue
-                  dOverdue += dl.overdue
-                  if (dl.earliest && (!dEarliest || dl.earliest < dEarliest)) dEarliest = dl.earliest
+                  if (dl) {
+                    dOverdue += dl.overdue
+                    if (dl.earliest && (!dEarliest || dl.earliest < dEarliest)) dEarliest = dl.earliest
+                  }
+                  const sAgg = wsAgg.get(`${d.id}::${s.id}`)
+                  if (sAgg) dWsCount += sAgg.approvedCount + sAgg.draftCount + sAgg.submittedCount
                 }
 
                 return (
@@ -383,7 +387,15 @@ export default async function CostControlProjectDetailPage(
                           <span className="text-[11px] text-gray-400">—</span>
                         )}
                       </Td>
-                      <Td></Td>
+                      <Td>
+                        <DisableButton
+                          projectId={project.id}
+                          disciplineId={d.id}
+                          label={`${d.code} ${d.name}`}
+                          attachedCount={dWsCount}
+                          canWrite={canWrite}
+                        />
+                      </Td>
                     </tr>
 
                     {subs.map(s => {
@@ -459,14 +471,23 @@ export default async function CostControlProjectDetailPage(
                             })()}
                           </Td>
                           <Td>
-                            {canWrite && (
-                              <Link
-                                href={`/cost-control/working-sheets/new?project=${project.id}`}
-                                className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-semibold border border-blue-300 text-blue-700 hover:bg-blue-50"
-                              >
-                                <Plus className="h-3 w-3" /> New WS
-                              </Link>
-                            )}
+                            <div className="inline-flex items-center gap-1">
+                              {canWrite && (
+                                <Link
+                                  href={`/cost-control/working-sheets/new?project=${project.id}`}
+                                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-semibold border border-blue-300 text-blue-700 hover:bg-blue-50"
+                                >
+                                  <Plus className="h-3 w-3" /> New WS
+                                </Link>
+                              )}
+                              <DisableButton
+                                projectId={project.id}
+                                subSkillId={s.id}
+                                label={`${s.code} ${s.name}`}
+                                attachedCount={wsCount}
+                                canWrite={canWrite}
+                              />
+                            </div>
                           </Td>
                         </tr>
                       )

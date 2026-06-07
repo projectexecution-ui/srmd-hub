@@ -76,6 +76,86 @@ export async function setSubSkillDeadline(
 }
 
 // ============================================================
+// Disable a discipline on this project (soft — sets is_enabled=false).
+// Past working sheets / budget lines stay intact; the row just stops
+// appearing in the project detail table. Re-enable from the wizard or
+// resumable setup screen.
+// ============================================================
+export async function setDisciplineEnabled(
+  projectId: string,
+  disciplineId: string,
+  enabled: boolean,
+): Promise<Result> {
+  await requirePermission('cost-control', 'edit')
+
+  const parsed = z.object({
+    project_id: uuid,
+    discipline_id: uuid,
+    enabled: z.boolean(),
+  }).safeParse({ project_id: projectId, discipline_id: disciplineId, enabled })
+  if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? 'Invalid input' }
+
+  const supabase = await createClient()
+  const { error } = await supabase
+    .from('cc_project_disciplines')
+    .update({ is_enabled: enabled })
+    .eq('project_id', projectId)
+    .eq('discipline_id', disciplineId)
+  if (error) return { ok: false, error: error.message }
+
+  // Also flip every sub-skill under this discipline so they don't linger
+  // as orphans on the detail page. Re-enabling the discipline does NOT
+  // automatically re-enable its sub-skills (resume wizard handles that).
+  if (!enabled) {
+    // Fetch sub-skill ids belonging to this discipline first
+    const { data: subs } = await supabase
+      .from('cc_sub_skills')
+      .select('id')
+      .eq('discipline_id', disciplineId)
+    const subIds = (subs ?? []).map(s => s.id as string)
+    if (subIds.length > 0) {
+      await supabase
+        .from('cc_project_sub_skills')
+        .update({ is_enabled: false })
+        .eq('project_id', projectId)
+        .in('sub_skill_id', subIds)
+    }
+  }
+
+  revalidatePath(`/cost-control/projects/${projectId}`)
+  return { ok: true }
+}
+
+// ============================================================
+// Disable a sub-skill on this project (soft).
+// ============================================================
+export async function setSubSkillEnabled(
+  projectId: string,
+  subSkillId: string,
+  enabled: boolean,
+): Promise<Result> {
+  await requirePermission('cost-control', 'edit')
+
+  const parsed = z.object({
+    project_id: uuid,
+    sub_skill_id: uuid,
+    enabled: z.boolean(),
+  }).safeParse({ project_id: projectId, sub_skill_id: subSkillId, enabled })
+  if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? 'Invalid input' }
+
+  const supabase = await createClient()
+  const { error } = await supabase
+    .from('cc_project_sub_skills')
+    .update({ is_enabled: enabled })
+    .eq('project_id', projectId)
+    .eq('sub_skill_id', subSkillId)
+  if (error) return { ok: false, error: error.message }
+
+  revalidatePath(`/cost-control/projects/${projectId}`)
+  return { ok: true }
+}
+
+// ============================================================
 // Estimation mode + thumbrule rate on a sub-skill row.
 // Pass mode=null to clear the override and inherit from the discipline.
 // ============================================================

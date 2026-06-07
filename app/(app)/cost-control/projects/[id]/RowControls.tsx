@@ -6,11 +6,14 @@
 
 import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
-import { CalendarClock, Pencil, Loader2, Check, X, Ruler } from 'lucide-react'
+import { CalendarClock, Pencil, Loader2, Check, X, Ruler, EyeOff } from 'lucide-react'
+import { confirm } from '@/components/ui/confirm-dialog'
 import {
   setDisciplineDeadline,
   setSubSkillDeadline,
   setSubSkillEstimationMode,
+  setDisciplineEnabled,
+  setSubSkillEnabled,
 } from './actions'
 
 // ──────────────────────────────────────────────────────────────────────
@@ -290,6 +293,72 @@ export function SubSkillModeCell({
       </div>
       {err && <span className="text-[10px] text-rose-700">{err}</span>}
     </div>
+  )
+}
+
+// ──────────────────────────────────────────────────────────────────────
+// DisableButton — soft-removes a discipline or sub-skill from the project
+// view by flipping cc_project_*.is_enabled to false. Past working sheets
+// and budget lines stay intact; the row just stops appearing. Re-enable
+// from the resumable setup screen.
+// ──────────────────────────────────────────────────────────────────────
+export function DisableButton({
+  projectId,
+  disciplineId,
+  subSkillId,
+  label,
+  attachedCount,
+  canWrite,
+}: {
+  projectId: string
+  disciplineId?: string
+  subSkillId?: string
+  /** What to call the thing in the confirm message ("01 Site Pre-lims") */
+  label: string
+  /** Working-sheet count under this row — surfaced in the warning */
+  attachedCount: number
+  canWrite: boolean
+}) {
+  const router = useRouter()
+  const [pending, startTransition] = useTransition()
+
+  if (!canWrite) return null
+
+  async function onClick() {
+    const what = disciplineId ? 'discipline' : 'sub-skill'
+    const lines = [
+      `Hide "${label}" from this project's view.`,
+      attachedCount > 0
+        ? `${attachedCount} working sheet${attachedCount === 1 ? '' : 's'} attached — they stay intact in history, just disappear from this table.`
+        : 'Nothing is attached yet.',
+      'Re-enable later from the setup wizard.',
+    ]
+    const ok = await confirm({
+      title: `Remove ${what}?`,
+      message: lines.join('\n\n'),
+      confirmLabel: 'Remove',
+      danger: true,
+    })
+    if (!ok) return
+    startTransition(async () => {
+      const res = disciplineId
+        ? await setDisciplineEnabled(projectId, disciplineId, false)
+        : await setSubSkillEnabled(projectId, subSkillId!, false)
+      if (!res.ok) { alert(res.error); return }
+      router.refresh()
+    })
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={pending}
+      className="inline-flex items-center justify-center h-6 w-6 rounded text-gray-400 hover:text-rose-600 hover:bg-rose-50 disabled:opacity-50"
+      title={`Remove from this project${attachedCount > 0 ? ` (${attachedCount} WS attached — history kept)` : ''}`}
+    >
+      {pending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <EyeOff className="h-3.5 w-3.5" />}
+    </button>
   )
 }
 
