@@ -20,6 +20,30 @@ interface Row {
   sub_uom: string | null
 }
 
+interface ParseOutcome {
+  rows: Row[]
+  error: string | null
+  /** User-facing notes: duplicates skipped, unrecognised rows, etc. */
+  warnings: string[]
+}
+
+// Split a cell like "01 Site Pre-lims" / "23  Equipment Cost" / "02Extra Works"
+// into (code, name). Returns null when there's no leading digit prefix
+// (filters out section titles like "Categories" / "Pre Design Works").
+function splitCodeName(s: string): { code: string; name: string } | null {
+  if (!s) return null
+  const trimmed = s.trim()
+  if (!trimmed) return null
+  // Leading numeric (+ optional single letter suffix) prefix.
+  const m = trimmed.match(/^(\d+[A-Za-z]?)\s*[-.:)]?\s*(.+?)\s*$/)
+  if (!m) return null
+  const code = m[1]
+  // Collapse whitespace inside the name and trim trailing tabs/spaces
+  const name = m[2].replace(/\s+/g, ' ').trim()
+  if (!name) return null
+  return { code, name }
+}
+
 // Heuristic column detection — matches every reasonable header word
 // the IN4 export (or a hand-rolled sheet) might throw at us.
 function detectHeaderMap(headers: string[]): Record<string, number> {
@@ -41,12 +65,102 @@ function detectHeaderMap(headers: string[]): Record<string, number> {
   return map
 }
 
-function parseAOA(aoa: unknown[][]): { rows: Row[]; error: string | null } {
-  if (aoa.length < 2) return { rows: [], error: 'Need at least one header row + one data row' }
-  const headers = (aoa[0] ?? []).map(c => String(c ?? ''))
-  const map = detectHeaderMap(headers)
+// Find the row index that looks like the column-header row. Scan the
+// first ~25 rows for one that contains recognisable header words.
+function findHeaderRow(aoa: unknown[][]): number {
+  for (let i = 0; i < Math.min(aoa.length, 25); i++) {
+    const r = (aoa[i] ?? []).map(c => String(c ?? '').toLowerCase())
+    const text = r.join('|')
+    if (/work\s*category/.test(text)) return i
+    if (/(disc(?:ipline)?\s*code|disc(?:ipline)?\s*name)/.test(text)) return i
+    if (/^code$|^name$/.test(r.join('|'))) return i
+  }
+  return 0
+}
+
+// SRMD layout: "Work Category" cell holds "01 Disc Name", "Sub Work
+// Category" cell holds "101 Sub Skill Name", null in either marks the
+// row's purpose. Sub-skills inherit the last seen discipline.
+function parseSrmd(
+  aoa: unknown[][],
+  headerRow: number,
+  wcCol: number,
+  swcCol: number,
+): ParseOutcome {
   const out: Row[] = []
-  for (let i = 1; i < aoa.length; i++) {
+  const warnings: string[] = []
+  const seenDisciplineCodes = new Set<string>()
+  let curDisc: { code: string; name: string } | null = null
+  let discOrder = 0
+  let skippedDuplicates = 0
+  let skippedNoCode = 0
+  let firstSubForCurrent = true
+
+  for (let i = headerRow + 1; i < aoa.length; i++) {
+    const r = aoa[i] ?? []
+    const wc  = r[wcCol]  != null ? String(r[wcCol]).trim()  : ''
+    const swc = r[swcCol] != null ? String(r[swcCol]).trim() : ''
+
+    // Discipline row: WC populated, SWC empty/blank
+    if (wc && !swc) {
+      const split = splitCodeName(wc)
+      if (!split) { skippedNoCode++; continue }
+      if (seenDisciplineCodes.has(split.code)) {
+        skippedDuplicates++
+        // Don't update curDisc to the duplicate — keep current section
+        continue
+      }
+      seenDisciplineCodes.add(split.code)
+      discOrder++
+      curDisc = split
+      firstSubForCurrent = true
+      // Emit a discipline-only row so the importer creates the discipline
+      // even if it has no sub-skills (rare but possible)
+      out.push({
+        disc_code: split.code,
+        disc_name: split.name,
+        disc_order: discOrder,
+        sub_code: null, sub_name: null, sub_uom: null,
+      })
+      continue
+    }
+
+    // Sub-skill row: SWC populated
+    if (swc && curDisc) {
+      const split = splitCodeName(swc)
+      if (!split) { skippedNoCode++; continue }
+      // Replace the first "no-subs" placeholder for this discipline; from
+      // then on, append additional sub-skill rows.
+      if (firstSubForCurrent) {
+        // Remove the placeholder row that has matching disc_code + null sub_code
+        const last = out[out.length - 1]
+        if (last && last.disc_code === curDisc.code && last.sub_code === null) {
+          out.pop()
+        }
+        firstSubForCurrent = false
+      }
+      out.push({
+        disc_code: curDisc.code,
+        disc_name: curDisc.name,
+        disc_order: discOrder,
+        sub_code: split.code,
+        sub_name: split.name,
+        sub_uom: null,
+      })
+    }
+    // else: blank / irrelevant row — skip silently
+  }
+
+  if (skippedDuplicates > 0) warnings.push(`${skippedDuplicates} duplicate discipline code${skippedDuplicates === 1 ? '' : 's'} skipped (kept the first occurrence)`)
+  if (skippedNoCode > 0)     warnings.push(`${skippedNoCode} row${skippedNoCode === 1 ? '' : 's'} skipped (no recognisable code prefix)`)
+  return { rows: out, error: null, warnings }
+}
+
+// Flat layout: every data row carries disc_code, disc_name, optional sub.
+function parseFlat(aoa: unknown[][], headerRow: number, map: Record<string, number>): ParseOutcome {
+  const out: Row[] = []
+  const warnings: string[] = []
+  for (let i = headerRow + 1; i < aoa.length; i++) {
     const r = aoa[i] ?? []
     const get = (k: string) => {
       const idx = map[k]
@@ -67,7 +181,21 @@ function parseAOA(aoa: unknown[][]): { rows: Row[]; error: string | null } {
       sub_uom:   get('sub_uom'),
     })
   }
-  return { rows: out, error: null }
+  return { rows: out, error: null, warnings }
+}
+
+function parseAOA(aoa: unknown[][]): ParseOutcome {
+  if (aoa.length < 2) return { rows: [], error: 'Need at least one header row + one data row', warnings: [] }
+  const headerRow = findHeaderRow(aoa)
+  const headers = (aoa[headerRow] ?? []).map(c => String(c ?? ''))
+  // SRMD-style? "Work Category" + "Sub Work Category" columns
+  const wcIdx  = headers.findIndex(h => /work\s*category/i.test(h) && !/sub\s*work/i.test(h))
+  const swcIdx = headers.findIndex(h => /sub\s*work\s*category/i.test(h))
+  if (wcIdx >= 0 && swcIdx >= 0) {
+    return parseSrmd(aoa, headerRow, wcIdx, swcIdx)
+  }
+  const map = detectHeaderMap(headers)
+  return parseFlat(aoa, headerRow, map)
 }
 
 function pasteToAOA(text: string): unknown[][] {
@@ -93,30 +221,34 @@ export function ImportPanel({
   const [text, setText]       = useState('')
   const [rows, setRows]       = useState<Row[]>([])
   const [parseErr, setParseErr] = useState<string | null>(null)
+  const [warnings, setWarnings] = useState<string[]>([])
   const [busy, setBusy]       = useState(false)
   const [result, setResult]   = useState<{ disc_inserted: number; disc_updated: number; sub_inserted: number; sub_updated: number } | null>(null)
 
   function onParse(textIn: string) {
     setText(textIn)
     setResult(null)
-    if (!textIn.trim()) { setRows([]); setParseErr(null); return }
-    const { rows: parsed, error } = parseAOA(pasteToAOA(textIn))
+    if (!textIn.trim()) { setRows([]); setParseErr(null); setWarnings([]); return }
+    const { rows: parsed, error, warnings: w } = parseAOA(pasteToAOA(textIn))
     setRows(parsed)
     setParseErr(error)
+    setWarnings(w)
   }
 
   async function onFile(e: React.ChangeEvent<HTMLInputElement>) {
     const f = e.target.files?.[0]
     if (!f) return
-    setBusy(true); setParseErr(null); setResult(null)
+    setBusy(true); setParseErr(null); setResult(null); setWarnings([])
     try {
       const buf = await f.arrayBuffer()
       const wb = XLSX.read(buf, { type: 'array' })
       const sheet = wb.Sheets[wb.SheetNames[0]]
       const aoa = XLSX.utils.sheet_to_json<unknown[]>(sheet, { header: 1, defval: null })
-      const { rows: parsed, error } = parseAOA(aoa as unknown[][])
-      setRows(parsed); setParseErr(error)
-      // Also reflect the contents in the textarea so the user can edit
+      const { rows: parsed, error, warnings: w } = parseAOA(aoa as unknown[][])
+      setRows(parsed); setParseErr(error); setWarnings(w)
+      // Also reflect the contents in the textarea so the user can edit. We
+      // emit one row per discipline (sub fields blank) so the SRMD-style
+      // hierarchy round-trips through the flat textarea preview.
       setText((parsed ?? []).map(r => [r.disc_code, r.disc_name, r.disc_order ?? '', r.sub_code ?? '', r.sub_name ?? '', r.sub_uom ?? ''].join('\t')).join('\n'))
     } catch (err) {
       setParseErr(err instanceof Error ? err.message : 'Could not read file')
@@ -250,6 +382,10 @@ export function ImportPanel({
             Paste from Excel (Ctrl+C → paste here), or upload a .xlsx. Match by <b>code</b> —
             existing rows are <i>updated</i>, new ones are inserted. Sub-skill columns are optional.
           </p>
+          <p className="text-[11px] text-blue-700 mt-1">
+            Supports the SRMD <b>Work Category</b> / <b>Sub Work Category</b> sheet directly —
+            duplicate codes get flagged, the first occurrence wins.
+          </p>
         </div>
         <Button size="sm" variant="ghost" onClick={() => { setOpen(false); setText(''); setRows([]); setParseErr(null); setResult(null) }}>
           <X className="h-4 w-4" />
@@ -285,6 +421,17 @@ export function ImportPanel({
         </p>
       )}
 
+      {warnings.length > 0 && (
+        <div className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded px-2 py-1.5 space-y-0.5">
+          <p className="font-medium inline-flex items-center gap-1.5">
+            <AlertTriangle className="h-3.5 w-3.5" /> Parsed with warnings
+          </p>
+          <ul className="list-disc ml-5">
+            {warnings.map((w, i) => <li key={i}>{w}</li>)}
+          </ul>
+        </div>
+      )}
+
       {rows.length > 0 && (
         <div className="rounded-md border border-gray-200 bg-white p-2 max-h-48 overflow-auto">
           <p className="text-[11px] text-gray-500 mb-1">Preview: <b>{grouped.length}</b> discipline{grouped.length === 1 ? '' : 's'} · <b>{rows.filter(r => r.sub_code).length}</b> sub-skill row{rows.filter(r => r.sub_code).length === 1 ? '' : 's'}</p>
@@ -308,7 +455,7 @@ export function ImportPanel({
       )}
 
       <div className="flex justify-end gap-2">
-        <Button size="sm" variant="ghost" onClick={() => { setText(''); setRows([]); setParseErr(null); setResult(null) }} disabled={busy}>
+        <Button size="sm" variant="ghost" onClick={() => { setText(''); setRows([]); setParseErr(null); setResult(null); setWarnings([]) }} disabled={busy}>
           Clear
         </Button>
         <Button size="sm" onClick={runImport} disabled={busy || rows.length === 0}>
