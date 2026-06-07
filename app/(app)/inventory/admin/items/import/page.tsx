@@ -23,7 +23,7 @@ export default async function ImportItemsPage() {
       <PageHeader
         title="Bulk import items"
         back="/inventory/admin/items"
-        subtitle="Upload a .xlsx to add items to the master in one shot. Existing codes are skipped, not overwritten."
+        subtitle="Upload a .xlsx to add items to the master in one shot. Re-upload the same file later with “Update existing” on to refresh changed fields. Odoo product.template exports are supported — Code is auto-generated from Name when missing."
       />
       {error ? (
         <QueryError what="existing item codes" message={error.message} />
