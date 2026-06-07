@@ -7,12 +7,14 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import * as XLSX from 'xlsx'
+import { jsPDF } from 'jspdf'
+import autoTable from 'jspdf-autotable'
 import { PageHeader } from '@/components/PageHeader'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { QueryError } from '@/components/ui/query-error'
 import {
-  FileSpreadsheet, UploadCloud, Download, Loader2, Eye, EyeOff, X, Clock,
+  FileSpreadsheet, FileText, UploadCloud, Download, Loader2, Eye, EyeOff, X, Clock, Lock,
   CheckCircle2, AlertTriangle, ChevronRight, ChevronDown, ChevronsDownUp, ChevronsUpDown, Layers,
 } from 'lucide-react'
 import { toast } from 'sonner'
@@ -61,7 +63,7 @@ async function parseFile(file: File): Promise<ReportDoc> {
 
 type FullState = { reports: ReportDoc[]; settings: ContractorReportSettings }
 
-export default function ContractorReportClient() {
+export default function ContractorReportClient({ canDelete = false }: { canDelete?: boolean }) {
   const [reports, setReports] = useState<ReportDoc[]>([])
   const [costBase, setCostBase] = useState<CostBase>('bill')
   const [showMetrics, setShowMetrics] = useState(true)
@@ -297,21 +299,33 @@ export default function ContractorReportClient() {
         </Card>
       ) : (
         <>
-          {/* Project selector chips */}
+          {/* Project selector chips. The X (remove) action affects the whole
+              team, so it's gated to Portal Owner / admin via `canDelete`. */}
           <div className="flex flex-wrap items-center gap-2">
-            {reports.map(r => (
-              <span key={r.id}
-                className={`inline-flex items-center gap-1.5 rounded-full border pl-3 pr-1.5 py-1 text-xs cursor-pointer ${
-                  r.id === selectedId ? 'bg-[#1F4E78] text-white border-[#1F4E78]' : 'bg-white border-gray-200 text-gray-700 hover:border-gray-300'}`}
-                onClick={() => setSelectedId(r.id)}>
-                <FileSpreadsheet className="h-3 w-3" />
-                <span className="max-w-[16rem] truncate">{r.projectName}</span>
-                <button onClick={e => { e.stopPropagation(); removeReport(r) }}
-                  className={`${r.id === selectedId ? 'text-white/80 hover:text-white' : 'text-gray-400 hover:text-rose-600'}`} title="Remove">
-                  <X className="h-3.5 w-3.5" />
-                </button>
+            {reports.map(r => {
+              const active = r.id === selectedId
+              return (
+                <span key={r.id}
+                  className={`inline-flex items-center gap-1.5 rounded-full border py-1 text-xs cursor-pointer ${canDelete ? 'pl-3 pr-1.5' : 'px-3'} ${
+                    active ? 'bg-[#1F4E78] text-white border-[#1F4E78]' : 'bg-white border-gray-200 text-gray-700 hover:border-gray-300'}`}
+                  onClick={() => setSelectedId(r.id)}>
+                  <FileSpreadsheet className="h-3 w-3" />
+                  <span className="max-w-[16rem] truncate">{r.projectName}</span>
+                  {canDelete && (
+                    <button onClick={e => { e.stopPropagation(); removeReport(r) }}
+                      className={`${active ? 'text-white/80 hover:text-white' : 'text-gray-400 hover:text-rose-600'}`}
+                      title="Remove (admin only)">
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  )}
+                </span>
+              )
+            })}
+            {!canDelete && reports.length > 0 && (
+              <span className="inline-flex items-center gap-1 text-[11px] text-gray-400" title="Only admins / Portal Owner can remove a saved report">
+                <Lock className="h-3 w-3" /> admin only
               </span>
-            ))}
+            )}
           </div>
 
           {updatedInfo.at && (
@@ -402,6 +416,221 @@ function categoriesToSheet(title: string, subtitle: string, categories: RawCateg
     }
   }
   return ws
+}
+
+// ── PDF export — mirrors the on-screen layout ──────────────────────────────
+// Each sub-project becomes a section: title strip → table (category-group
+// rows in slate; contractor rows; subtotal row in amber) → spacer. Final
+// "Grand Total" bar across the bottom, plus the same Notes block as Excel.
+const PDF_HEADERS_BASE  = ['Category', 'Contractor', 'WO Value', 'Total Bill', 'Total Paid', 'Total Owed']
+const PDF_HEADERS_WORK  = ['Category', 'Contractor', 'WO Value', 'Total Bill', 'Total Paid', 'Deductions', 'Retention', 'Balance', 'Total Owed']
+const PDF_HEADERS_METRIC = ['% Cost', 'Rs/Sft']
+
+type PdfRowKind = 'group' | 'item' | 'subtotal'
+interface PdfRow { kind: PdfRowKind; cells: (string | number | null)[] }
+
+function fmtAmount(n: number | null): string {
+  if (n == null) return ''
+  if (n === 0) return '-'
+  return formatNumber(n, 0)
+}
+function pctOf(amount: number, grandCost: number): string {
+  return grandCost > 0 ? ((amount / grandCost) * 100).toFixed(1) + '%' : '—'
+}
+function rsPerSft(amount: number, area: number): string {
+  return area > 0 ? formatNumber(amount / area, 0) : '—'
+}
+
+/** Build a single sub-project's table rows (group header + contractors + subtotal). */
+function buildSectionRows(
+  categories: RawCategory[],
+  showWorking: boolean,
+  showMetrics: boolean,
+  costBase: CostBase,
+  area: number,
+  grandCost: number,
+): PdfRow[] {
+  const rows: PdfRow[] = []
+  for (const cat of categories) {
+    // Category group row — spans the whole table, no numbers
+    rows.push({ kind: 'group', cells: [displayCategory(cat.category)] })
+    for (const raw of cat.contractors) {
+      const c = deriveContractor(raw)
+      const base = showWorking
+        ? ['', c.contractor, fmtAmount(c.woValue), fmtAmount(c.billValue), fmtAmount(c.paidValue),
+           fmtAmount(c.deductions), fmtAmount(c.retentionHeld), fmtAmount(c.balanceValue), fmtAmount(c.totalOwed)]
+        : ['', c.contractor, fmtAmount(c.woValue), fmtAmount(c.billValue), fmtAmount(c.paidValue), fmtAmount(c.totalOwed)]
+      const metrics = showMetrics ? [pctOf(costOf(c, costBase), grandCost), rsPerSft(costOf(c, costBase), area)] : []
+      rows.push({ kind: 'item', cells: [...base, ...metrics] })
+    }
+    const s = categorySubtotal(cat)
+    const subBase = showWorking
+      ? [`${displayCategory(cat.category)} — Subtotal`, '', fmtAmount(s.woValue), fmtAmount(s.billValue), fmtAmount(s.paidValue),
+         fmtAmount(s.deductions), fmtAmount(s.retentionHeld), fmtAmount(s.balanceValue), fmtAmount(s.totalOwed)]
+      : [`${displayCategory(cat.category)} — Subtotal`, '', fmtAmount(s.woValue), fmtAmount(s.billValue), fmtAmount(s.paidValue), fmtAmount(s.totalOwed)]
+    const subMetrics = showMetrics ? [pctOf(costOf(s, costBase), grandCost), rsPerSft(costOf(s, costBase), area)] : []
+    rows.push({ kind: 'subtotal', cells: [...subBase, ...subMetrics] })
+  }
+  return rows
+}
+
+function exportReportPDF(
+  doc: ReportDoc,
+  groupBySub: boolean,
+  costBase: CostBase,
+  areaFor: (subName: string) => number,
+  showWorking: boolean,
+  showMetrics: boolean,
+) {
+  const pdf = new jsPDF({ orientation: 'landscape', format: 'a4', unit: 'pt' })
+  const pageW = pdf.internal.pageSize.getWidth()
+  const margin = 32
+  let y = margin
+
+  // ── Title block ──
+  pdf.setFont('helvetica', 'bold')
+  pdf.setFontSize(16)
+  pdf.setTextColor(31, 78, 120) // #1F4E78
+  pdf.text(doc.title, margin, y)
+  y += 20
+  pdf.setFont('helvetica', 'normal')
+  pdf.setFontSize(9)
+  pdf.setTextColor(110, 110, 110)
+  pdf.text(`${doc.subtitle} · from ${doc.sourceFilename}`, margin, y)
+  y += 14
+  // Reconciliation note (matches the on-screen ReconciliationPanel)
+  const rec = reconcile(doc.computed, doc.source)
+  if (rec.available) {
+    pdf.setFont('helvetica', 'bold')
+    pdf.setFontSize(8.5)
+    pdf.setTextColor(rec.allOk ? 6 : 146, rec.allOk ? 95 : 64, rec.allOk ? 70 : 14)
+    pdf.text(rec.allOk ? '✓ Reconciles with IN4 Project Total' : '⚠ Some totals differ from IN4 — see notes', margin, y)
+    y += 12
+  }
+
+  const baseHeaders = showWorking ? PDF_HEADERS_WORK : PDF_HEADERS_BASE
+  const headers = showMetrics ? [...baseHeaders, ...PDF_HEADERS_METRIC] : baseHeaders
+  const numCols = headers.length
+
+  const gt = reportGrandTotal(doc.subprojects)
+  const grandCost = costOf(gt, costBase)
+  const totalArea = doc.subprojects.reduce((s, sp) => s + areaFor(sp.name), 0)
+
+  // ── One table per section ──
+  const sections: SubprojectGroup[] = groupBySub
+    ? doc.subprojects
+    : [{ name: 'All sub-projects (combined)', categories: combineSubprojects(doc.subprojects) }]
+
+  for (const sp of sections) {
+    const area = groupBySub ? areaFor(sp.name) : totalArea
+    const spTotals = sumOfCategories(sp.categories)
+    // Sub-project header strip
+    pdf.setFillColor(243, 244, 246) // slate-100
+    pdf.setDrawColor(229, 231, 235)
+    pdf.rect(margin, y, pageW - 2 * margin, 18, 'F')
+    pdf.setFont('helvetica', 'bold')
+    pdf.setFontSize(10)
+    pdf.setTextColor(31, 78, 120)
+    pdf.text(sp.name, margin + 6, y + 12)
+    if (area > 0) {
+      pdf.setFont('helvetica', 'normal')
+      pdf.setFontSize(8)
+      pdf.setTextColor(120, 120, 120)
+      pdf.text(`Built-up area: ${formatNumber(area, 0)} sq ft`, pageW - margin - 6, y + 12, { align: 'right' })
+    }
+    y += 22
+
+    const rows = buildSectionRows(sp.categories, showWorking, showMetrics, costBase, area, grandCost)
+    autoTable(pdf, {
+      startY: y,
+      head: [headers],
+      body: rows.map(r => {
+        // Pad group rows so the cell still spans correctly.
+        if (r.kind === 'group') return [{ content: r.cells[0], colSpan: numCols, styles: { fillColor: [248, 250, 252] as [number, number, number], textColor: 30, fontStyle: 'bold' } }] as unknown as (string | number | null)[]
+        return r.cells
+      }),
+      didParseCell: (data) => {
+        const row = rows[data.row.index]
+        if (!row) return
+        if (row.kind === 'subtotal') {
+          data.cell.styles.fillColor = [255, 251, 235] // amber-50
+          data.cell.styles.textColor = [120, 53, 15]   // amber-900
+          data.cell.styles.fontStyle = 'bold'
+        }
+        // Right-align all numeric columns (everything after Contractor).
+        if (data.section === 'body' && data.column.index >= 2 && row.kind !== 'group') {
+          data.cell.styles.halign = 'right'
+        }
+      },
+      headStyles: { fillColor: [31, 78, 120], textColor: 255, fontStyle: 'bold', halign: 'right' },
+      columnStyles: { 0: { halign: 'left' }, 1: { halign: 'left' } },
+      styles: { font: 'helvetica', fontSize: 8, cellPadding: 3, lineColor: [229, 231, 235], lineWidth: 0.5 },
+      margin: { left: margin, right: margin },
+      theme: 'grid',
+      // Sub-project subtotal row appended manually below the table:
+      foot: [[
+        ...(showWorking
+          ? [`${sp.name} — TOTAL`, '', fmtAmount(spTotals.woValue), fmtAmount(spTotals.billValue), fmtAmount(spTotals.paidValue), fmtAmount(spTotals.deductions), fmtAmount(spTotals.retentionHeld), fmtAmount(spTotals.balanceValue), fmtAmount(spTotals.totalOwed)]
+          : [`${sp.name} — TOTAL`, '', fmtAmount(spTotals.woValue), fmtAmount(spTotals.billValue), fmtAmount(spTotals.paidValue), fmtAmount(spTotals.totalOwed)]),
+        ...(showMetrics ? [pctOf(costOf(spTotals, costBase), grandCost), rsPerSft(costOf(spTotals, costBase), area)] : []),
+      ]],
+      footStyles: { fillColor: [31, 78, 120], textColor: 255, fontStyle: 'bold', halign: 'right' },
+    })
+    // @ts-expect-error autoTable attaches lastAutoTable on the doc at runtime.
+    y = (pdf.lastAutoTable?.finalY ?? y) + 14
+  }
+
+  // ── Grand total bar (across all sub-projects) ──
+  if (sections.length > 1 || groupBySub) {
+    if (y > pdf.internal.pageSize.getHeight() - 60) { pdf.addPage(); y = margin }
+    pdf.setFillColor(120, 53, 15)  // amber-900
+    pdf.rect(margin, y, pageW - 2 * margin, 24, 'F')
+    pdf.setFont('helvetica', 'bold')
+    pdf.setFontSize(11)
+    pdf.setTextColor(255, 255, 255)
+    pdf.text(`GRAND TOTAL — all sub-projects: ${formatNumber(grandCost, 0)}` +
+      (showMetrics && totalArea > 0 ? ` · ${formatNumber(grandCost / totalArea, 0)} Rs/Sft` : ''),
+      margin + 8, y + 16)
+    y += 32
+  }
+
+  // ── Notes ──
+  pdf.setFont('helvetica', 'bold')
+  pdf.setFontSize(8.5)
+  pdf.setTextColor(80, 80, 80)
+  pdf.text('Notes:', margin, y)
+  y += 11
+  pdf.setFont('helvetica', 'normal')
+  pdf.setFontSize(8)
+  const notes: string[] = []
+  if (showMetrics) {
+    notes.push(`• % of Cost and Rs/Sft are based on ${COST_BASE_OPTIONS.find(o => o.value === costBase)?.label ?? 'Total Bill Value'}${totalArea > 0 ? `; total built-up area = ${formatNumber(totalArea, 0)} sq ft` : ' (no built-up area set — Rs/Sft blank)'}.`)
+  }
+  notes.push('• Total Owed = Balance Value + Retention Held — the full amount still due to the contractor.')
+  notes.push('• Balance Value = Total Bill Value − Total Paid Value − Deductions − Retention Held.')
+  if (!showWorking) notes.push('• Working columns (Deductions, Retention, Balance) are hidden in this view — turn them on in the app to see the full breakdown.')
+  for (const n of notes) {
+    if (y > pdf.internal.pageSize.getHeight() - margin) { pdf.addPage(); y = margin }
+    const wrapped = pdf.splitTextToSize(n, pageW - 2 * margin)
+    pdf.text(wrapped, margin, y)
+    y += wrapped.length * 10
+  }
+
+  pdf.save(`${doc.projectName.replace(/[^\w-]+/g, '_')}_ContractorReport.pdf`)
+}
+
+// Tiny helper: sum across a flat category list (no need to round-trip through SubprojectGroup).
+function sumOfCategories(cats: RawCategory[]): Totals {
+  const all = cats.flatMap(c => c.contractors)
+  // Reuse the existing computed-sum logic.
+  let woValue = 0, billValue = 0, paidValue = 0, deductions = 0, retentionHeld = 0, balanceValue = 0, totalOwed = 0
+  for (const raw of all) {
+    const c = deriveContractor(raw)
+    woValue += c.woValue; billValue += c.billValue; paidValue += c.paidValue
+    deductions += c.deductions; retentionHeld += c.retentionHeld
+    balanceValue += c.balanceValue; totalOwed += c.totalOwed
+  }
+  return { woValue, billValue, paidValue, deductions, retentionHeld, balanceValue, totalOwed }
 }
 
 // In sub-project mode: one sheet per sub-project (its own area). In combined
@@ -526,6 +755,10 @@ function ReportView({ doc, showWorking, showMetrics, costBase, onCostBase, areaF
           <Button size="sm" variant="outline" onClick={() => { if (allCollapsed) expandAll(); else collapseAll() }} title="Expand or collapse all categories">
             {allCollapsed ? <ChevronsUpDown className="h-4 w-4" /> : <ChevronsDownUp className="h-4 w-4" />}
             {allCollapsed ? 'Expand all' : 'Collapse all'}
+          </Button>
+          <Button size="sm" variant="outline" onClick={() => exportReportPDF(doc, groupBySub, costBase, areaFor, showWorking, showMetrics)}
+            title="Download a print-ready PDF in the same layout as on screen">
+            <FileText className="h-4 w-4" /> Export PDF
           </Button>
           <Button size="sm" onClick={() => exportReport(doc, groupBySub, costBase, areaFor, showMetrics)} className="bg-[#1F4E78] hover:bg-[#163a5c]">
             <Download className="h-4 w-4" /> Export Excel
