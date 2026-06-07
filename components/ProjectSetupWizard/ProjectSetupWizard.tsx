@@ -41,12 +41,29 @@ export interface SubSkillOption {
   name: string
 }
 
+/** Per-discipline mode preset used when resuming a half-finished setup. */
+export interface DisciplineModePreset {
+  discipline_id: string
+  mode: 'detailed' | 'thumbrule'
+  rate: string
+  notes: string
+}
+
 interface ProjectSetupWizardProps {
   parentProjects: ParentProjectOption[]
   users: UserOption[]
   disciplines: DisciplineOption[]
   /** All sub-skills across all disciplines; wizard filters by picked disciplines in Step 3 */
   subSkills: SubSkillOption[]
+  // ---- Resume props (all optional). When initialProjectId is set we skip
+  // Step 1 entirely — the project basics row already exists. The wizard
+  // opens on the first incomplete step.
+  initialProjectId?: string
+  initialStep?: 1 | 2 | 3 | 4
+  initialPickedDisciplines?: string[]
+  initialDisciplineModes?: DisciplineModePreset[]
+  initialPickedSubSkills?: string[]
+  initialEngineerPicks?: Array<{ user_id: string; discipline_ids: string[] }>
 }
 
 type Step = 1 | 2 | 3 | 4
@@ -63,28 +80,46 @@ export function ProjectSetupWizard({
   users,
   disciplines,
   subSkills,
+  initialProjectId,
+  initialStep,
+  initialPickedDisciplines,
+  initialDisciplineModes,
+  initialPickedSubSkills,
+  initialEngineerPicks,
 }: ProjectSetupWizardProps) {
   const router = useRouter()
-  const [step, setStep] = React.useState<Step>(1)
-  const [projectId, setProjectId] = React.useState<string | null>(null)
+  // When resuming, seed step from the saved state. Default to step 1 for
+  // brand-new flows.
+  const [step, setStep] = React.useState<Step>(initialStep ?? 1)
+  const [projectId, setProjectId] = React.useState<string | null>(initialProjectId ?? null)
   const [busy, setBusy] = React.useState(false)
   const [error, setError] = React.useState<string | null>(null)
   const [fieldErrors, setFieldErrors] = React.useState<Record<string, string[]>>({})
 
-  // Step 2 selection — default-tick the disciplines flagged as common.
+  // Step 2 selection — when resuming, use what's saved. Otherwise default-
+  // tick the "common 19" flagged disciplines.
   const [pickedDisciplines, setPickedDisciplines] = React.useState<Set<string>>(
-    new Set(disciplines.filter(d => d.commonByDefault).map(d => d.id)),
+    initialPickedDisciplines && initialPickedDisciplines.length > 0
+      ? new Set(initialPickedDisciplines)
+      : new Set(disciplines.filter(d => d.commonByDefault).map(d => d.id)),
   )
   // Mode + thumbrule rate per discipline. Default 'detailed' (= drawings
   // available, full BOQ). Toggling to 'thumbrule' enables a rate-per-sft
   // input. Only persisted for ticked disciplines.
-  const [disciplineModes, setDisciplineModes] = React.useState<Map<string, { mode: 'detailed' | 'thumbrule'; rate: string; notes: string }>>(new Map())
+  const [disciplineModes, setDisciplineModes] = React.useState<Map<string, { mode: 'detailed' | 'thumbrule'; rate: string; notes: string }>>(
+    new Map((initialDisciplineModes ?? []).map(m => [m.discipline_id, { mode: m.mode, rate: m.rate, notes: m.notes }])),
+  )
 
-  // Step 3 selection — all sub-skills of picked disciplines, pre-ticked.
-  const [pickedSubSkills, setPickedSubSkills] = React.useState<Set<string>>(new Set())
+  // Step 3 selection — when resuming use saved; else empty (Step 2 will
+  // pre-tick all sub-skills under picked disciplines).
+  const [pickedSubSkills, setPickedSubSkills] = React.useState<Set<string>>(
+    new Set(initialPickedSubSkills ?? []),
+  )
 
   // Step 4 — engineer assignments: userId → set of disciplineIds
-  const [engineerPicks, setEngineerPicks] = React.useState<Map<string, Set<string>>>(new Map())
+  const [engineerPicks, setEngineerPicks] = React.useState<Map<string, Set<string>>>(
+    new Map((initialEngineerPicks ?? []).map(e => [e.user_id, new Set(e.discipline_ids)])),
+  )
 
   async function handleStep1(formData: FormData) {
     setBusy(true)
