@@ -4,10 +4,19 @@ import './globals.css'
 export const metadata: Metadata = {
   title: 'CT HUB',
   description: 'Construction modules — Indents, POs, GRN, Invoices, and more',
+  applicationName: 'CT HUB',
   manifest: '/manifest.webmanifest',
+  appleWebApp: {
+    capable: true,
+    title: 'CT HUB',
+    statusBarStyle: 'default',
+  },
   icons: {
-    icon: '/srmd-icon.png',
-    apple: '/srmd-icon.png',
+    icon: [
+      { url: '/icon-192.png', sizes: '192x192', type: 'image/png' },
+      { url: '/icon-512.png', sizes: '512x512', type: 'image/png' },
+    ],
+    apple: [{ url: '/apple-touch-icon.png', sizes: '180x180', type: 'image/png' }],
   },
 }
 

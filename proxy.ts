@@ -17,6 +17,6 @@ export async function proxy(request: NextRequest) {
 // save ~50–200 ms per nested iframe load.
 export const config = {
   matcher: [
-    '/((?!_next/static|_next/image|favicon.ico|icons|manifest.json|indent-tracker\\.html|budget-hub\\.html|srmd-icon\\.png|srmd-logo\\.svg|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico|css|js|woff|woff2|ttf|map)$).*)',
+    '/((?!_next/static|_next/image|favicon.ico|icons|manifest\\.json|manifest\\.webmanifest|indent-tracker\\.html|budget-hub\\.html|srmd-icon\\.png|srmd-logo\\.svg|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico|css|js|woff|woff2|ttf|map)$).*)',
   ],
 }
