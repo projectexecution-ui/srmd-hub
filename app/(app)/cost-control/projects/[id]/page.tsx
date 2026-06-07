@@ -7,6 +7,7 @@ import { SetupProgressBanner } from '@/components/ProjectSetupWizard/SetupProgre
 import { Plus, ArrowLeftRight, Flame, Info } from 'lucide-react'
 import { formatINR } from '@/lib/utils'
 import { DeadlineBadge } from '@/components/cost-control/DeadlineBadge'
+import { DeadlineCell, SubSkillModeCell } from './RowControls'
 
 export const dynamic = 'force-dynamic'
 
@@ -56,12 +57,12 @@ export default async function CostControlProjectDetailPage(
       : Promise.resolve({ data: null }),
     supabase
       .from('cc_project_disciplines')
-      .select('discipline_id, cc_disciplines(id, code, name, display_order)')
+      .select('discipline_id, estimation_mode, thumbrule_rate_per_sft, thumbrule_notes, target_deadline, cc_disciplines(id, code, name, display_order)')
       .eq('project_id', id)
       .eq('is_enabled', true),
     supabase
       .from('cc_project_sub_skills')
-      .select('sub_skill_id, cc_sub_skills(id, discipline_id, code, name)')
+      .select('sub_skill_id, estimation_mode, thumbrule_rate_per_sft, thumbrule_notes, target_deadline, cc_sub_skills(id, discipline_id, code, name)')
       .eq('project_id', id)
       .eq('is_enabled', true),
     supabase
@@ -81,8 +82,22 @@ export default async function CostControlProjectDetailPage(
   ])
 
   // Flatten the joined disciplines / sub-skills
-  type ProjDisJoin = { discipline_id: string; cc_disciplines: DisciplineRow | DisciplineRow[] | null }
-  type ProjSubJoin = { sub_skill_id: string; cc_sub_skills: SubSkillRow | SubSkillRow[] | null }
+  type ProjDisJoin = {
+    discipline_id: string
+    estimation_mode: 'detailed' | 'thumbrule' | null
+    thumbrule_rate_per_sft: number | null
+    thumbrule_notes: string | null
+    target_deadline: string | null
+    cc_disciplines: DisciplineRow | DisciplineRow[] | null
+  }
+  type ProjSubJoin = {
+    sub_skill_id: string
+    estimation_mode: 'detailed' | 'thumbrule' | null
+    thumbrule_rate_per_sft: number | null
+    thumbrule_notes: string | null
+    target_deadline: string | null
+    cc_sub_skills: SubSkillRow | SubSkillRow[] | null
+  }
 
   const disciplines: DisciplineRow[] = ((projDisRes.data ?? []) as ProjDisJoin[])
     .map(r => Array.isArray(r.cc_disciplines) ? r.cc_disciplines[0] : r.cc_disciplines)
@@ -93,6 +108,26 @@ export default async function CostControlProjectDetailPage(
     .map(r => Array.isArray(r.cc_sub_skills) ? r.cc_sub_skills[0] : r.cc_sub_skills)
     .filter((s): s is SubSkillRow => !!s)
     .sort((a, b) => a.code.localeCompare(b.code))
+
+  // Per-row metadata lookup maps — used by the inline RowControls.
+  const discMeta = new Map<string, { mode: 'detailed' | 'thumbrule'; rate: number | null; notes: string | null; deadline: string | null }>()
+  for (const r of (projDisRes.data ?? []) as ProjDisJoin[]) {
+    discMeta.set(r.discipline_id, {
+      mode: (r.estimation_mode ?? 'detailed') as 'detailed' | 'thumbrule',
+      rate: r.thumbrule_rate_per_sft,
+      notes: r.thumbrule_notes,
+      deadline: r.target_deadline,
+    })
+  }
+  const subMeta = new Map<string, { mode: 'detailed' | 'thumbrule' | null; rate: number | null; notes: string | null; deadline: string | null }>()
+  for (const r of (projSubRes.data ?? []) as ProjSubJoin[]) {
+    subMeta.set(r.sub_skill_id, {
+      mode: r.estimation_mode, // null = inherit
+      rate: r.thumbrule_rate_per_sft,
+      notes: r.thumbrule_notes,
+      deadline: r.target_deadline,
+    })
+  }
 
   // Look up budget lines by (discipline_id, sub_skill_id) — sub_skill_id null means the category row
   const blMap = new Map<string, BudgetLine>()
@@ -286,13 +321,14 @@ export default async function CostControlProjectDetailPage(
                 <Th align="right">Paid</Th>
                 <Th align="right" className="w-20">% Used</Th>
                 <Th className="w-28">Working Sheets</Th>
-                <Th className="w-44">Deadline</Th>
+                <Th className="w-52">Plan Deadline</Th>
+                <Th className="w-40">WS Status</Th>
                 <Th className="w-28"></Th>
               </tr>
             </thead>
             <tbody>
               {disciplines.length === 0 && (
-                <tr><td colSpan={9} className="px-4 py-8 text-center text-sm text-gray-500">No disciplines enabled. Open the setup wizard to pick them.</td></tr>
+                <tr><td colSpan={10} className="px-4 py-8 text-center text-sm text-gray-500">No disciplines enabled. Open the setup wizard to pick them.</td></tr>
               )}
 
               {disciplines.map(d => {
@@ -330,6 +366,14 @@ export default async function CostControlProjectDetailPage(
                       </Td>
                       <Td>{/* category-level WS counts not shown */}</Td>
                       <Td>
+                        <DeadlineCell
+                          projectId={project.id}
+                          disciplineId={d.id}
+                          initialDeadline={discMeta.get(d.id)?.deadline ?? null}
+                          canWrite={canWrite}
+                        />
+                      </Td>
+                      <Td>
                         {dEarliest ? (
                           <div className="flex items-center gap-1.5">
                             <DeadlineBadge deadlineDate={dEarliest} className="text-[11px] px-2 py-0.5" />
@@ -356,6 +400,17 @@ export default async function CostControlProjectDetailPage(
                             <span className="font-mono text-[11px] text-gray-400 mr-2">{s.code}</span>
                             <span>{s.name}</span>
                             {sHot && <Flame className="inline h-3 w-3 text-orange-500 ml-1.5" />}
+                            <span className="ml-2 inline-block align-middle">
+                              <SubSkillModeCell
+                                projectId={project.id}
+                                subSkillId={s.id}
+                                initialMode={subMeta.get(s.id)?.mode ?? null}
+                                initialRate={subMeta.get(s.id)?.rate ?? null}
+                                initialNotes={subMeta.get(s.id)?.notes ?? null}
+                                inheritedMode={discMeta.get(d.id)?.mode ?? 'detailed'}
+                                canWrite={canWrite}
+                              />
+                            </span>
                           </td>
                           <Td align="right" mono className="text-indigo-800">
                             {a && a.planTotal > 0 ? formatINR(a.planTotal) : '—'}
@@ -377,6 +432,15 @@ export default async function CostControlProjectDetailPage(
                             ) : (
                               <span className="text-[11px] text-gray-400">—</span>
                             )}
+                          </Td>
+                          <Td>
+                            <DeadlineCell
+                              projectId={project.id}
+                              subSkillId={s.id}
+                              initialDeadline={subMeta.get(s.id)?.deadline ?? null}
+                              inheritedFromDiscipline={discMeta.get(d.id)?.deadline ?? null}
+                              canWrite={canWrite}
+                            />
                           </Td>
                           <Td>
                             {(() => {
@@ -410,7 +474,7 @@ export default async function CostControlProjectDetailPage(
 
                     {subs.length === 0 && (
                       <tr className="border-t border-gray-100">
-                        <td colSpan={9} className="pl-10 pr-3 py-2 text-xs italic text-gray-400">No sub-skills enabled for this discipline. Add via the setup wizard.</td>
+                        <td colSpan={10} className="pl-10 pr-3 py-2 text-xs italic text-gray-400">No sub-skills enabled for this discipline. Add via the setup wizard.</td>
                       </tr>
                     )}
                   </>
