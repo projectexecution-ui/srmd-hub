@@ -14,7 +14,8 @@ import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { Loader2, Sparkles, Copy, Check } from 'lucide-react'
+import { Input } from '@/components/ui/input'
+import { Loader2, Sparkles, Copy, Check, Plus, Power, PowerOff } from 'lucide-react'
 
 interface Rule {
   id: string
@@ -46,12 +47,35 @@ function key(r: { from_stage: string; to_stage: string }) {
   return `${r.from_stage}__${r.to_stage}`
 }
 
+// Allowed stages of the sandbox state machine (from the
+// blueprint_demo_status enum in the migration). Used by the
+// "Add new transition" form so the admin picks from the known set
+// — typing a stage that doesn't exist in the enum would break the
+// matrix trigger silently.
+const STAGES = ['draft', 'submitted', 'review', 'approved', 'closed', 'rejected'] as const
+// Roles that can be approvers / overrides. Matches the roles seeded
+// with view perms on the demo (admin/head/founder/engineer); a few
+// more are listed so the admin can experiment with cross-team flows.
+const ROLES = ['admin', 'head', 'founder', 'engineer', 'backoffice', 'store_manager', 'uploader', 'viewer'] as const
+
 export function AdminMatrixClient({ rules, stats }: { rules: Rule[]; stats: Stat[] }) {
   const router = useRouter()
   const [busy, setBusy] = useState<string | null>(null)   // row id being mutated
   const [bulkBusy, setBulkBusy] = useState(false)
   const [msg, setMsg] = useState<string | null>(null)
   const [err, setErr] = useState<string | null>(null)
+
+  // "Add new transition" form state — lets the admin design a new
+  // blueprint rule from scratch (e.g. add a "draft → cancelled"
+  // path, or insert an intermediate stage).
+  const [showAddForm, setShowAddForm] = useState(false)
+  const [newFromStage,   setNewFromStage]   = useState<typeof STAGES[number]>('draft')
+  const [newToStage,     setNewToStage]     = useState<typeof STAGES[number]>('submitted')
+  const [newApproverRole,setNewApproverRole]= useState<typeof ROLES[number]>('engineer')
+  const [newOverrideRole,setNewOverrideRole]= useState<string>('')   // '' = no override
+  const [newSlaHours,    setNewSlaHours]    = useState<string>('')   // optional
+  const [newRequiresRem, setNewRequiresRem] = useState(false)
+  const [addBusy,        setAddBusy]        = useState(false)
 
   // Index stats by (from→to) for fast lookup per rule
   const statByPair = useMemo(() => {
@@ -92,7 +116,7 @@ export function AdminMatrixClient({ rules, stats }: { rules: Rule[]; stats: Stat
   }
 
   // ─── Mutations ───────────────────────────────────────────────
-  async function patchRule(id: string, patch: { sla_hours?: number | null; escalate_to_role?: string | null }) {
+  async function patchRule(id: string, patch: { sla_hours?: number | null; escalate_to_role?: string | null; is_active?: boolean }) {
     const supabase = createClient()
     const { error } = await supabase
       .from('approval_rules')
@@ -100,6 +124,52 @@ export function AdminMatrixClient({ rules, stats }: { rules: Rule[]; stats: Stat
       .eq('id', id)
       .eq('module_slug', 'blueprint-demo')  // belt + suspenders
     return error
+  }
+
+  /** Insert a brand-new approval_rule for the demo module. The trigger
+      + RLS gate everything; we just need a unique (module, doc_type,
+      from_stage, to_stage) — duplicates would fail the unique index
+      if one exists, so we check before inserting. */
+  async function addRule() {
+    setErr(null); setMsg(null)
+    if (newFromStage === newToStage) { setErr('From and To must differ'); return }
+    if (rules.some(r => r.from_stage === newFromStage && r.to_stage === newToStage)) {
+      setErr(`A rule for ${newFromStage} → ${newToStage} already exists`)
+      return
+    }
+    setAddBusy(true)
+    const supabase = createClient()
+    const { error } = await supabase
+      .from('approval_rules')
+      .insert({
+        module_slug: 'blueprint-demo',
+        doc_type: 'blueprint_demo_request',
+        from_stage: newFromStage,
+        to_stage: newToStage,
+        approver_role: newApproverRole,
+        override_role: newOverrideRole || null,
+        sla_hours: newSlaHours ? Number(newSlaHours) : null,
+        requires_remarks: newRequiresRem,
+        is_active: true,
+      })
+    setAddBusy(false)
+    if (error) { setErr(error.message); return }
+    setMsg(`Created ${newFromStage} → ${newToStage} for role ${newApproverRole}`)
+    setShowAddForm(false)
+    // reset
+    setNewOverrideRole(''); setNewSlaHours(''); setNewRequiresRem(false)
+    router.refresh()
+  }
+
+  /** Activate / deactivate a rule. Deactivated rules don't block —
+      the matrix-enforcement trigger simply skips them. */
+  async function toggleActive(r: Rule) {
+    setBusy(r.id); setErr(null); setMsg(null)
+    const error = await patchRule(r.id, { is_active: !r.is_active })
+    setBusy(null)
+    if (error) { setErr(error.message); return }
+    setMsg(`${r.is_active ? 'Deactivated' : 'Activated'} ${r.from_stage} → ${r.to_stage}`)
+    router.refresh()
   }
 
   async function adoptP90(r: Rule) {
@@ -211,11 +281,12 @@ export function AdminMatrixClient({ rules, stats }: { rules: Rule[]; stats: Stat
                   const isRowBusy  = busy === r.id
 
                   return (
-                    <tr key={r.id} className="hover:bg-stone-50">
+                    <tr key={r.id} className={`hover:bg-stone-50 ${!r.is_active ? 'opacity-50' : ''}`}>
                       <td className="px-3 py-2 text-stone-800 whitespace-nowrap">
                         <span className="font-medium">{r.from_stage}</span>
                         <span className="text-stone-400 mx-1">→</span>
                         <span className="font-medium">{r.to_stage}</span>
+                        {!r.is_active && <span className="ml-2 text-[9px] uppercase tracking-wider font-bold text-stone-500 bg-stone-100 px-1 py-0.5 rounded">Off</span>}
                       </td>
                       <td className="px-3 py-2 text-stone-700 whitespace-nowrap text-xs">{r.approver_role}</td>
                       <td className="px-3 py-2 text-stone-500 whitespace-nowrap text-xs">{r.override_role ?? '—'}</td>
@@ -266,11 +337,26 @@ export function AdminMatrixClient({ rules, stats }: { rules: Rule[]; stats: Stat
                               Apply to {similarN}
                             </button>
                           )}
-                          {!canAdopt && similarN === 0 && r.sla_hours != null && (
+                          {!canAdopt && similarN === 0 && r.sla_hours != null && r.is_active && (
                             <span className="inline-flex items-center gap-1 text-[11px] text-emerald-700">
                               <Check className="h-3 w-3" /> Tuned
                             </span>
                           )}
+                          <button
+                            type="button"
+                            onClick={() => toggleActive(r)}
+                            disabled={isRowBusy || bulkBusy}
+                            className={`text-[11px] font-medium px-2 py-1 rounded-md disabled:opacity-40 inline-flex items-center gap-1 ${
+                              r.is_active
+                                ? 'bg-stone-100 text-stone-700 hover:bg-stone-200'
+                                : 'bg-emerald-100 text-emerald-800 hover:bg-emerald-200'
+                            }`}
+                            title={r.is_active ? 'Deactivate this rule — the matrix trigger stops enforcing it' : 'Reactivate this rule'}
+                          >
+                            {r.is_active
+                              ? (<><PowerOff className="h-3 w-3" /> Deactivate</>)
+                              : (<><Power    className="h-3 w-3" /> Activate</>)}
+                          </button>
                         </div>
                       </td>
                     </tr>
@@ -282,8 +368,117 @@ export function AdminMatrixClient({ rules, stats }: { rules: Rule[]; stats: Stat
         </CardContent>
       </Card>
 
+      {/* ─── Add new transition (sandbox-only design surface) ─── */}
+      <Card className="border-purple-200">
+        <CardHeader className="flex flex-row items-center justify-between gap-3">
+          <CardTitle className="text-base inline-flex items-center gap-2">
+            <Plus className="h-4 w-4 text-purple-700" />
+            Add a new transition to this Blueprint
+          </CardTitle>
+          <Button
+            type="button"
+            onClick={() => setShowAddForm(s => !s)}
+            variant={showAddForm ? 'outline' : 'default'}
+            className={showAddForm ? '' : 'bg-purple-700 hover:bg-purple-800 text-white'}
+          >
+            {showAddForm ? 'Cancel' : (<><Plus className="h-4 w-4" /> New transition</>)}
+          </Button>
+        </CardHeader>
+
+        {showAddForm && (
+          <CardContent className="space-y-3">
+            <p className="text-xs text-stone-600">
+              Design a new <b>{newFromStage} → {newToStage}</b> move, pick the role that owns it,
+              optionally set an SLA. The matrix trigger and the SLA inbox pick it up automatically.
+            </p>
+
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              <div>
+                <label className="text-[11px] uppercase tracking-wider text-stone-500 font-semibold">From stage</label>
+                <select
+                  value={newFromStage}
+                  onChange={e => setNewFromStage(e.target.value as typeof STAGES[number])}
+                  className="mt-1 h-10 w-full rounded-xl border border-gray-300 bg-white px-3 text-sm"
+                >
+                  {STAGES.map(s => <option key={s} value={s}>{s}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="text-[11px] uppercase tracking-wider text-stone-500 font-semibold">To stage</label>
+                <select
+                  value={newToStage}
+                  onChange={e => setNewToStage(e.target.value as typeof STAGES[number])}
+                  className="mt-1 h-10 w-full rounded-xl border border-gray-300 bg-white px-3 text-sm"
+                >
+                  {STAGES.map(s => <option key={s} value={s}>{s}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="text-[11px] uppercase tracking-wider text-stone-500 font-semibold">Approver role</label>
+                <select
+                  value={newApproverRole}
+                  onChange={e => setNewApproverRole(e.target.value as typeof ROLES[number])}
+                  className="mt-1 h-10 w-full rounded-xl border border-gray-300 bg-white px-3 text-sm"
+                >
+                  {ROLES.map(r => <option key={r} value={r}>{r}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="text-[11px] uppercase tracking-wider text-stone-500 font-semibold">Override role (optional)</label>
+                <select
+                  value={newOverrideRole}
+                  onChange={e => setNewOverrideRole(e.target.value)}
+                  className="mt-1 h-10 w-full rounded-xl border border-gray-300 bg-white px-3 text-sm"
+                >
+                  <option value="">— None —</option>
+                  {ROLES.map(r => <option key={r} value={r}>{r}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="text-[11px] uppercase tracking-wider text-stone-500 font-semibold">SLA (hours, optional)</label>
+                <Input
+                  type="number"
+                  min="1"
+                  value={newSlaHours}
+                  onChange={e => setNewSlaHours(e.target.value)}
+                  className="mt-1"
+                  placeholder="leave blank to derive from P90 later"
+                />
+              </div>
+              <div className="flex items-end">
+                <label className="inline-flex items-center gap-2 text-sm text-stone-700 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={newRequiresRem}
+                    onChange={e => setNewRequiresRem(e.target.checked)}
+                  />
+                  Requires remarks
+                </label>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 pt-2 border-t border-gray-100">
+              <Button onClick={addRule} disabled={addBusy} className="bg-purple-700 hover:bg-purple-800 text-white">
+                {addBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
+                Add transition
+              </Button>
+              <p className="text-[11px] text-stone-500">
+                Rule writes to <code className="text-[10px] bg-stone-100 px-1 rounded">approval_rules</code> with{' '}
+                <code className="text-[10px] bg-stone-100 px-1 rounded">module_slug = &apos;blueprint-demo&apos;</code>.
+              </p>
+            </div>
+          </CardContent>
+        )}
+      </Card>
+
       <p className="text-[11px] text-stone-500 italic">
         Observed P50 / P90 come from <code className="text-[10px] bg-stone-100 px-1 rounded">approval_rule_stats</code> view, recomputed live from <code className="text-[10px] bg-stone-100 px-1 rounded">approval_events</code>. As real activity accumulates, the suggestions improve automatically.
+      </p>
+
+      <p className="text-[11px] text-stone-500">
+        ⓘ Setting up Blueprints for <b>production modules</b> (Inventory, JMR, Cost Control, Indents) lives at{' '}
+        <a href="/admin/approvals" className="text-purple-700 hover:underline">/admin/approvals</a>{' '}
+        — same matrix engine, different scope. This sandbox is the place to design + iterate before applying changes there.
       </p>
     </div>
   )
