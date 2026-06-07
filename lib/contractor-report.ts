@@ -92,7 +92,11 @@ export function costOf(t: { billValue: number; woValue: number; paidValue: numbe
   return base === 'wo' ? t.woValue : base === 'paid' ? t.paidValue : t.billValue
 }
 
-export interface ContractorReportSettings { costBase?: CostBase }
+export interface ContractorReportSettings {
+  costBase?: CostBase
+  /** Show % of Cost + Rs/Sft columns in the table + Excel export. Defaults to true. */
+  showMetrics?: boolean
+}
 export interface ContractorReportState { reports: ReportDoc[]; settings?: ContractorReportSettings }
 
 export interface Totals {

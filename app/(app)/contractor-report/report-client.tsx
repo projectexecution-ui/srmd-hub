@@ -64,6 +64,7 @@ type FullState = { reports: ReportDoc[]; settings: ContractorReportSettings }
 export default function ContractorReportClient() {
   const [reports, setReports] = useState<ReportDoc[]>([])
   const [costBase, setCostBase] = useState<CostBase>('bill')
+  const [showMetrics, setShowMetrics] = useState(true)
   const [budgetAreas, setBudgetAreas] = useState<Record<string, number>>({})
   const [updatedInfo, setUpdatedInfo] = useState<{ at: string | null; by: string | null }>({ at: null, by: null })
   const [selectedId, setSelectedId] = useState<string | null>(null)
@@ -86,6 +87,7 @@ export default function ContractorReportClient() {
         if (!stateRes.ok) { setLoadError(j.error || 'Failed to load saved reports'); setLoading(false); return }
         setReports((j.state?.reports ?? []).map(normalizeDoc))
         setCostBase(j.state?.settings?.costBase ?? 'bill')
+        setShowMetrics(j.state?.settings?.showMetrics ?? true)
         setBudgetAreas(a.areas ?? {})
         setUpdatedInfo({ at: j.updated_at ?? null, by: j.updated_by_name ?? null })
         setSelectedId(prev => prev ?? (j.state?.reports ?? [])[0]?.id ?? null)
@@ -113,6 +115,7 @@ export default function ContractorReportClient() {
       if (!put.ok) throw new Error(j.error || 'Save failed')
       setReports(next.reports.map(normalizeDoc))
       setCostBase(next.settings.costBase ?? 'bill')
+      setShowMetrics(next.settings.showMetrics ?? true)
       setUpdatedInfo({ at: new Date().toISOString(), by: 'you' })
       return next
     } finally {
@@ -128,6 +131,12 @@ export default function ContractorReportClient() {
   async function changeCostBase(base: CostBase) {
     setCostBase(base) // optimistic
     try { await persistState(s => ({ ...s, settings: { ...s.settings, costBase: base } })) }
+    catch (e) { toast.error(e instanceof Error ? e.message : 'Could not save setting') }
+  }
+
+  async function changeShowMetrics(next: boolean) {
+    setShowMetrics(next) // optimistic
+    try { await persistState(s => ({ ...s, settings: { ...s.settings, showMetrics: next } })) }
     catch (e) { toast.error(e instanceof Error ? e.message : 'Could not save setting') }
   }
 
@@ -193,6 +202,12 @@ export default function ContractorReportClient() {
           {showWorking ? <Eye className="h-3.5 w-3.5" /> : <EyeOff className="h-3.5 w-3.5" />}
           Show working columns
         </label>
+        <label className="inline-flex items-center gap-1.5 text-xs text-gray-600 cursor-pointer" title="Show % of Cost and Rs/Sft columns (saved for the whole team)">
+          <input type="checkbox" checked={showMetrics} onChange={e => changeShowMetrics(e.target.checked)}
+            className="h-4 w-4 rounded border-gray-300 text-[#1F4E78] focus:ring-[#1F4E78]" />
+          {showMetrics ? <Eye className="h-3.5 w-3.5" /> : <EyeOff className="h-3.5 w-3.5" />}
+          Show % / Rs·Sft
+        </label>
       </PageHeader>
 
       {/* Upload / update zone */}
@@ -256,6 +271,7 @@ export default function ContractorReportClient() {
               key={selected.id}
               doc={selected}
               showWorking={showWorking}
+              showMetrics={showMetrics}
               costBase={costBase}
               onCostBase={changeCostBase}
               areaFor={(subName: string) => selected.areaBySub?.[subName] ?? budgetAreas[subName] ?? 0}
@@ -273,61 +289,80 @@ export default function ContractorReportClient() {
 function safeSheetName(name: string): string {
   return (name.replace(/[:\\/?*[\]]/g, '-').slice(0, 31)) || 'Sheet'
 }
-const XL_HEADERS = ['Category', 'Contractor Name', 'WO Value', 'Total Bill Value', 'Total Paid Value', 'Deductions', 'Retention Held', 'Balance Value', 'Total Owed', '% of Cost', 'Rs/Sft']
+const XL_HEADERS_BASE = ['Category', 'Contractor Name', 'WO Value', 'Total Bill Value', 'Total Paid Value', 'Deductions', 'Retention Held', 'Balance Value', 'Total Owed']
+const XL_METRIC_HEADERS = ['% of Cost', 'Rs/Sft']
 
-function categoriesToSheet(title: string, subtitle: string, categories: RawCategory[], grand: Totals, costBase: CostBase, area: number, grandCost: number) {
-  const pct = (t: Totals) => grandCost > 0 ? Number(((costOf(t, costBase) / grandCost) * 100).toFixed(1)) : null
-  const rs = (t: Totals) => area > 0 ? Math.round(costOf(t, costBase) / area) : null
-  const aoa: (string | number | null)[][] = [[title], [subtitle], [], XL_HEADERS]
+function categoriesToSheet(title: string, subtitle: string, categories: RawCategory[], grand: Totals, costBase: CostBase, area: number, grandCost: number, showMetrics: boolean) {
+  const headers = showMetrics ? [...XL_HEADERS_BASE, ...XL_METRIC_HEADERS] : XL_HEADERS_BASE
+  const lastCol = headers.length - 1
+  // Row builder: optionally appends the two metric cells.
+  const withMetrics = (row: (string | number | null)[], t: Totals): (string | number | null)[] => {
+    if (!showMetrics) return row
+    const pct = grandCost > 0 ? Number(((costOf(t, costBase) / grandCost) * 100).toFixed(1)) : null
+    const rs  = area > 0      ? Math.round(costOf(t, costBase) / area)                       : null
+    return [...row, pct, rs]
+  }
+  const fillerLen = headers.length
+
+  const aoa: (string | number | null)[][] = [[title], [subtitle], [], headers]
   for (const cat of categories) {
-    aoa.push([cat.category, null, null, null, null, null, null, null, null, null, null])
+    aoa.push([cat.category, ...Array(fillerLen - 1).fill(null)])
     for (const raw of cat.contractors) {
       const c = deriveContractor(raw)
-      aoa.push([null, c.contractor, c.woValue, c.billValue, c.paidValue, c.deductions, c.retentionHeld, c.balanceValue, c.totalOwed, pct(c), rs(c)])
+      aoa.push(withMetrics([null, c.contractor, c.woValue, c.billValue, c.paidValue, c.deductions, c.retentionHeld, c.balanceValue, c.totalOwed], c))
     }
     const s = categorySubtotal(cat)
-    aoa.push([`${displayCategory(cat.category)} — Subtotal`, null, s.woValue, s.billValue, s.paidValue, s.deductions, s.retentionHeld, s.balanceValue, s.totalOwed, pct(s), rs(s)])
+    aoa.push(withMetrics([`${displayCategory(cat.category)} — Subtotal`, null, s.woValue, s.billValue, s.paidValue, s.deductions, s.retentionHeld, s.balanceValue, s.totalOwed], s))
     aoa.push([])
   }
-  aoa.push(['GRAND TOTAL', null, grand.woValue, grand.billValue, grand.paidValue, grand.deductions, grand.retentionHeld, grand.balanceValue, grand.totalOwed, pct(grand), rs(grand)])
+  aoa.push(withMetrics(['GRAND TOTAL', null, grand.woValue, grand.billValue, grand.paidValue, grand.deductions, grand.retentionHeld, grand.balanceValue, grand.totalOwed], grand))
   aoa.push([])
   aoa.push(['Notes:'])
-  aoa.push([`• % of Cost and Rs/Sft are based on ${COST_BASE_OPTIONS.find(o => o.value === costBase)?.label ?? 'Total Bill Value'}${area > 0 ? `; built-up area = ${area.toLocaleString('en-IN')} sq ft` : ' (no built-up area set — Rs/Sft blank)'}.`])
+  if (showMetrics) {
+    aoa.push([`• % of Cost and Rs/Sft are based on ${COST_BASE_OPTIONS.find(o => o.value === costBase)?.label ?? 'Total Bill Value'}${area > 0 ? `; built-up area = ${area.toLocaleString('en-IN')} sq ft` : ' (no built-up area set — Rs/Sft blank)'}.`])
+  }
   aoa.push(['• Total Owed (I) = Balance Value (H) + Retention Held (G) — the full amount still due to the contractor.'])
   aoa.push(['• Balance Value (H) = Total Bill Value (D) − Total Paid Value (E) − Deductions (F) − Retention Held (G).'])
   aoa.push(['• Columns F, G and H are hidden for a cleaner view; unhide to see the full working.'])
 
   const ws = XLSX.utils.aoa_to_sheet(aoa)
-  const widths = [34, 42, 16, 18, 18, 14, 14, 18, 18, 10, 12]
+  const baseWidths = [34, 42, 16, 18, 18, 14, 14, 18, 18]
+  const metricWidths = [10, 12]
+  const widths = showMetrics ? [...baseWidths, ...metricWidths] : baseWidths
   ws['!cols'] = widths.map((wch, i) => ({ wch, hidden: i === 5 || i === 6 || i === 7 }))
-  ws['!merges'] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: 10 } }, { s: { r: 1, c: 0 }, e: { r: 1, c: 10 } }]
+  ws['!merges'] = [
+    { s: { r: 0, c: 0 }, e: { r: 0, c: lastCol } },
+    { s: { r: 1, c: 0 }, e: { r: 1, c: lastCol } },
+  ]
   const range = XLSX.utils.decode_range(ws['!ref'] as string)
   for (let R = 3; R <= range.e.r; R++) {
     for (let Col = 2; Col <= 8; Col++) {
       const cell = ws[XLSX.utils.encode_cell({ r: R, c: Col })]
       if (cell && typeof cell.v === 'number') cell.z = '#,##0;(#,##0);-'
     }
-    const pctCell = ws[XLSX.utils.encode_cell({ r: R, c: 9 })]
-    if (pctCell && typeof pctCell.v === 'number') pctCell.z = '0.0"%"'
-    const rsCell = ws[XLSX.utils.encode_cell({ r: R, c: 10 })]
-    if (rsCell && typeof rsCell.v === 'number') rsCell.z = '#,##0'
+    if (showMetrics) {
+      const pctCell = ws[XLSX.utils.encode_cell({ r: R, c: 9 })]
+      if (pctCell && typeof pctCell.v === 'number') pctCell.z = '0.0"%"'
+      const rsCell = ws[XLSX.utils.encode_cell({ r: R, c: 10 })]
+      if (rsCell && typeof rsCell.v === 'number') rsCell.z = '#,##0'
+    }
   }
   return ws
 }
 
 // In sub-project mode: one sheet per sub-project (its own area). In combined
 // mode: a single "— All" sheet using the total area across sub-projects.
-function exportReport(doc: ReportDoc, groupBySub: boolean, costBase: CostBase, areaFor: (subName: string) => number) {
+function exportReport(doc: ReportDoc, groupBySub: boolean, costBase: CostBase, areaFor: (subName: string) => number, showMetrics: boolean) {
   const wb = XLSX.utils.book_new()
   const grandCost = costOf(reportGrandTotal(doc.subprojects), costBase)
   if (groupBySub) {
     for (const sp of doc.subprojects) {
-      const ws = categoriesToSheet(`${doc.projectName} — ${sp.name}`, `${sp.name} — Category-wise & Contractor-wise Summary (INR)`, sp.categories, subprojectTotal(sp), costBase, areaFor(sp.name), grandCost)
+      const ws = categoriesToSheet(`${doc.projectName} — ${sp.name}`, `${sp.name} — Category-wise & Contractor-wise Summary (INR)`, sp.categories, subprojectTotal(sp), costBase, areaFor(sp.name), grandCost, showMetrics)
       XLSX.utils.book_append_sheet(wb, ws, safeSheetName(sp.name))
     }
   } else {
     const totalArea = doc.subprojects.reduce((s, sp) => s + areaFor(sp.name), 0)
-    const ws = categoriesToSheet(doc.title, 'Category-wise & Contractor-wise Summary (All Sub-projects, INR)', combineSubprojects(doc.subprojects), reportGrandTotal(doc.subprojects), costBase, totalArea, grandCost)
+    const ws = categoriesToSheet(doc.title, 'Category-wise & Contractor-wise Summary (All Sub-projects, INR)', combineSubprojects(doc.subprojects), reportGrandTotal(doc.subprojects), costBase, totalArea, grandCost, showMetrics)
     XLSX.utils.book_append_sheet(wb, ws, safeSheetName(`${doc.projectName} — All`))
   }
   XLSX.writeFile(wb, `${doc.projectName.replace(/[^\w-]+/g, '_')}_ContractorReport.xlsx`)
@@ -378,9 +413,10 @@ function MetricCells({ amount, area, grandCost, tone = 'text-gray-700', py = 'py
   )
 }
 
-function ReportView({ doc, showWorking, costBase, onCostBase, areaFor, isAreaAuto, onSetArea }: {
+function ReportView({ doc, showWorking, showMetrics, costBase, onCostBase, areaFor, isAreaAuto, onSetArea }: {
   doc: ReportDoc
   showWorking: boolean
+  showMetrics: boolean
   costBase: CostBase
   onCostBase: (b: CostBase) => void
   areaFor: (subName: string) => number
@@ -390,9 +426,10 @@ function ReportView({ doc, showWorking, costBase, onCostBase, areaFor, isAreaAut
   const gt = reportGrandTotal(doc.subprojects)
   const grandCost = costOf(gt, costBase)
   const totalArea = doc.subprojects.reduce((s, sp) => s + areaFor(sp.name), 0)
-  const cols = showWorking
-    ? ['WO Value', 'Total Bill', 'Total Paid', 'Deductions', 'Retention', 'Balance', 'Total Owed', '% Cost', 'Rs/Sft']
-    : ['WO Value', 'Total Bill', 'Total Paid', 'Total Owed', '% Cost', 'Rs/Sft']
+  const baseCols = showWorking
+    ? ['WO Value', 'Total Bill', 'Total Paid', 'Deductions', 'Retention', 'Balance', 'Total Owed']
+    : ['WO Value', 'Total Bill', 'Total Paid', 'Total Owed']
+  const cols = showMetrics ? [...baseCols, '% Cost', 'Rs/Sft'] : baseCols
 
   // By sub-project (default) vs Combined (sub-projects merged into one list).
   const [groupBySub, setGroupBySub] = useState(true)
@@ -418,14 +455,16 @@ function ReportView({ doc, showWorking, costBase, onCostBase, areaFor, isAreaAut
           <p className="text-[11px] text-gray-500 truncate">{doc.subtitle} · from {doc.sourceFilename}</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          {/* Cost basis for % and Rs/Sft */}
-          <label className="inline-flex items-center gap-1 text-[11px] text-gray-500">
-            % / Rs·Sft on
-            <select value={costBase} onChange={e => onCostBase(e.target.value as CostBase)}
-              className="h-8 rounded-lg border border-gray-300 bg-white px-1.5 text-xs font-medium text-gray-700">
-              {COST_BASE_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-            </select>
-          </label>
+          {/* Cost basis for % and Rs/Sft — only relevant when the metrics are shown */}
+          {showMetrics && (
+            <label className="inline-flex items-center gap-1 text-[11px] text-gray-500">
+              % / Rs·Sft on
+              <select value={costBase} onChange={e => onCostBase(e.target.value as CostBase)}
+                className="h-8 rounded-lg border border-gray-300 bg-white px-1.5 text-xs font-medium text-gray-700">
+                {COST_BASE_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+              </select>
+            </label>
+          )}
           <div className="inline-flex rounded-lg border border-gray-200 overflow-hidden text-xs">
             <button onClick={() => setGroupBySub(true)} className={cn('px-2.5 py-1.5 font-medium', groupBySub ? 'bg-[#1F4E78] text-white' : 'bg-white text-gray-600 hover:bg-gray-50')}>By sub-project</button>
             <button onClick={() => setGroupBySub(false)} className={cn('px-2.5 py-1.5 font-medium', !groupBySub ? 'bg-[#1F4E78] text-white' : 'bg-white text-gray-600 hover:bg-gray-50')}>Combined</button>
@@ -434,7 +473,7 @@ function ReportView({ doc, showWorking, costBase, onCostBase, areaFor, isAreaAut
             {allCollapsed ? <ChevronsUpDown className="h-4 w-4" /> : <ChevronsDownUp className="h-4 w-4" />}
             {allCollapsed ? 'Expand all' : 'Collapse all'}
           </Button>
-          <Button size="sm" onClick={() => exportReport(doc, groupBySub, costBase, areaFor)} className="bg-[#1F4E78] hover:bg-[#163a5c]">
+          <Button size="sm" onClick={() => exportReport(doc, groupBySub, costBase, areaFor, showMetrics)} className="bg-[#1F4E78] hover:bg-[#163a5c]">
             <Download className="h-4 w-4" /> Export Excel
           </Button>
         </div>
@@ -462,6 +501,7 @@ function ReportView({ doc, showWorking, costBase, onCostBase, areaFor, isAreaAut
               sp={sp}
               cols={cols}
               showWorking={showWorking}
+              showMetrics={showMetrics}
               costBase={costBase}
               area={area}
               grandCost={grandCost}
@@ -473,7 +513,7 @@ function ReportView({ doc, showWorking, costBase, onCostBase, areaFor, isAreaAut
             />
           )
         })}
-        <GrandTotalBar totals={gt} grandCost={grandCost} totalArea={totalArea} />
+        <GrandTotalBar totals={gt} grandCost={grandCost} totalArea={totalArea} showMetrics={showMetrics} />
       </div>
     </Card>
   )
@@ -496,14 +536,14 @@ function AreaBox({ value, isAuto, onSet }: { value: number; isAuto: boolean; onS
   )
 }
 
-function SubprojectCard({ sp, cols, showWorking, costBase, area, grandCost, areaEditable, isAreaAuto, onSetArea, isCollapsed, onToggle }: {
-  sp: SubprojectGroup; cols: string[]; showWorking: boolean; costBase: CostBase
+function SubprojectCard({ sp, cols, showWorking, showMetrics, costBase, area, grandCost, areaEditable, isAreaAuto, onSetArea, isCollapsed, onToggle }: {
+  sp: SubprojectGroup; cols: string[]; showWorking: boolean; showMetrics: boolean; costBase: CostBase
   area: number; grandCost: number; areaEditable: boolean; isAreaAuto: boolean
   onSetArea: (sqft: number | null) => void
   isCollapsed: (ci: number) => boolean; onToggle: (ci: number) => void
 }) {
   const t = subprojectTotal(sp)
-  const rs = area > 0 ? costOf(t, costBase) / area : null
+  const rs = showMetrics && area > 0 ? costOf(t, costBase) / area : null
   return (
     <div className="rounded-xl border border-gray-200 overflow-hidden shadow-sm">
       <div className="bg-[#1F4E78] text-white px-3 py-2.5 flex flex-wrap items-center justify-between gap-2">
@@ -530,9 +570,9 @@ function SubprojectCard({ sp, cols, showWorking, costBase, area, grandCost, area
           </thead>
           <tbody>
             {sp.categories.map((cat, ci) => (
-              <CategoryBlock key={ci} cat={cat} showWorking={showWorking} costBase={costBase} area={area} grandCost={grandCost} collapsed={isCollapsed(ci)} onToggle={() => onToggle(ci)} />
+              <CategoryBlock key={ci} cat={cat} showWorking={showWorking} showMetrics={showMetrics} costBase={costBase} area={area} grandCost={grandCost} collapsed={isCollapsed(ci)} onToggle={() => onToggle(ci)} />
             ))}
-            <TotalsRow label={`${sp.name} — total`} totals={t} showWorking={showWorking} costBase={costBase} area={area} grandCost={grandCost} />
+            <TotalsRow label={`${sp.name} — total`} totals={t} showWorking={showWorking} showMetrics={showMetrics} costBase={costBase} area={area} grandCost={grandCost} />
           </tbody>
         </table>
       </div>
@@ -540,8 +580,8 @@ function SubprojectCard({ sp, cols, showWorking, costBase, area, grandCost, area
   )
 }
 
-function GrandTotalBar({ totals, grandCost, totalArea }: { totals: Totals; grandCost: number; totalArea: number }) {
-  const rs = totalArea > 0 ? grandCost / totalArea : null
+function GrandTotalBar({ totals, grandCost, totalArea, showMetrics }: { totals: Totals; grandCost: number; totalArea: number; showMetrics: boolean }) {
+  const rs = showMetrics && totalArea > 0 ? grandCost / totalArea : null
   return (
     <div className="rounded-xl bg-[#FFE699] border border-amber-300 px-4 py-3 flex flex-wrap items-center justify-between gap-2 font-bold text-gray-900">
       <span>GRAND TOTAL — all sub-projects{totalArea > 0 ? ` · ${formatNumber(totalArea, 0)} sq ft` : ''}</span>
@@ -552,8 +592,8 @@ function GrandTotalBar({ totals, grandCost, totalArea }: { totals: Totals; grand
   )
 }
 
-function CategoryBlock({ cat, showWorking, costBase, area, grandCost, collapsed, onToggle }: {
-  cat: RawCategory; showWorking: boolean; costBase: CostBase; area: number; grandCost: number
+function CategoryBlock({ cat, showWorking, showMetrics, costBase, area, grandCost, collapsed, onToggle }: {
+  cat: RawCategory; showWorking: boolean; showMetrics: boolean; costBase: CostBase; area: number; grandCost: number
   collapsed: boolean; onToggle: () => void
 }) {
   const sub = categorySubtotal(cat)
@@ -574,7 +614,7 @@ function CategoryBlock({ cat, showWorking, costBase, area, grandCost, collapsed,
         {showWorking && <td className="px-3 py-1.5 text-right tabular-nums">{formatNumber(sub.retentionHeld, 0)}</td>}
         {showWorking && <td className="px-3 py-1.5 text-right tabular-nums">{formatNumber(sub.balanceValue, 0)}</td>}
         <td className="px-3 py-1.5 text-right tabular-nums">{formatNumber(sub.totalOwed, 0)}</td>
-        <MetricCells amount={costOf(sub, costBase)} area={area} grandCost={grandCost} tone="text-gray-800" />
+        {showMetrics && <MetricCells amount={costOf(sub, costBase)} area={area} grandCost={grandCost} tone="text-gray-800" />}
       </tr>
       {!collapsed && cat.contractors.map((raw, i) => {
         const c = deriveContractor(raw)
@@ -589,7 +629,7 @@ function CategoryBlock({ cat, showWorking, costBase, area, grandCost, collapsed,
             {showWorking && <td className="px-3 py-1.5 text-right tabular-nums text-gray-500">{formatNumber(c.retentionHeld, 0)}</td>}
             {showWorking && <td className="px-3 py-1.5 text-right tabular-nums text-gray-500">{formatNumber(c.balanceValue, 0)}</td>}
             <td className="px-3 py-1.5 text-right tabular-nums font-medium text-gray-900">{formatNumber(c.totalOwed, 0)}</td>
-            <MetricCells amount={costOf(c, costBase)} area={area} grandCost={grandCost} />
+            {showMetrics && <MetricCells amount={costOf(c, costBase)} area={area} grandCost={grandCost} />}
           </tr>
         )
       })}
@@ -597,8 +637,8 @@ function CategoryBlock({ cat, showWorking, costBase, area, grandCost, collapsed,
   )
 }
 
-function TotalsRow({ label, totals, showWorking, costBase, area, grandCost, grand }: {
-  label: string; totals: Totals; showWorking: boolean; costBase: CostBase; area: number; grandCost: number; grand?: boolean
+function TotalsRow({ label, totals, showWorking, showMetrics, costBase, area, grandCost, grand }: {
+  label: string; totals: Totals; showWorking: boolean; showMetrics: boolean; costBase: CostBase; area: number; grandCost: number; grand?: boolean
 }) {
   const cls = grand ? 'bg-[#FFE699] font-bold text-gray-900 border-t-2 border-amber-300' : 'bg-[#D9E1F2]/60 font-semibold'
   return (
@@ -611,7 +651,7 @@ function TotalsRow({ label, totals, showWorking, costBase, area, grandCost, gran
       {showWorking && <td className="px-3 py-2 text-right tabular-nums">{formatNumber(totals.retentionHeld, 0)}</td>}
       {showWorking && <td className="px-3 py-2 text-right tabular-nums">{formatNumber(totals.balanceValue, 0)}</td>}
       <td className="px-3 py-2 text-right tabular-nums">{formatNumber(totals.totalOwed, 0)}</td>
-      <MetricCells amount={costOf(totals, costBase)} area={area} grandCost={grandCost} tone="" py="py-2" />
+      {showMetrics && <MetricCells amount={costOf(totals, costBase)} area={area} grandCost={grandCost} tone="" py="py-2" />}
     </tr>
   )
 }
