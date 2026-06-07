@@ -113,6 +113,8 @@ export default async function WorkingSheetEditorPage(
         <SourceExcelViewer url={downloadUrl} name={ws.source_excel_name} />
 
         <AiBifurcationPanel
+          wsId={ws.id}
+          canEdit={canEdit && (user?.id === ws.engineer_id || isAdmin)}
           aiParseMeta={ws.ai_parse_meta as {
             text?: string | null
             model?: string

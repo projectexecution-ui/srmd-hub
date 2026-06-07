@@ -1,9 +1,13 @@
 // Compact AI insights panel for an Excel-mode working sheet. Renders the
 // material / labour / equipment bifurcation produced by the AI parser
 // (/api/cost-control/working-sheets/ai-parse) along with sub-skill move
-// suggestions and rate concerns. Shows nothing when the AI didn't run.
+// suggestions and rate concerns. Always renders — when AI hasn't run, it
+// shows a "Re-parse with AI" CTA so the engineer can trigger it now.
 
-import { Sparkles, AlertTriangle, Move } from 'lucide-react'
+'use client'
+import { useState, useTransition } from 'react'
+import { useRouter } from 'next/navigation'
+import { Sparkles, AlertTriangle, Move, Loader2, Wand2 } from 'lucide-react'
 import { formatINR } from '@/lib/utils'
 
 interface AiParseMeta {
@@ -33,13 +37,56 @@ interface Row {
 }
 
 export function AiBifurcationPanel({
+  wsId,
   aiParseMeta,
   rows,
+  canEdit = true,
 }: {
+  wsId: string
   aiParseMeta: AiParseMeta | null
   rows: Row[]
+  canEdit?: boolean
 }) {
-  if (!aiParseMeta) return null
+  const router = useRouter()
+  const [error, setError] = useState<string | null>(null)
+  const [pending, startTransition] = useTransition()
+
+  function runReparse() {
+    setError(null)
+    startTransition(async () => {
+      const res = await fetch(`/api/cost-control/working-sheets/${wsId}/ai-reparse`, { method: 'POST' })
+      const json = await res.json().catch(() => null)
+      if (!res.ok || !json?.ok) {
+        setError(json?.reason ?? 'AI re-parse failed')
+        return
+      }
+      router.refresh()
+    })
+  }
+
+  // Empty state: AI never ran on this WS. Offer a button to run it now.
+  if (!aiParseMeta) {
+    if (!canEdit) return null
+    return (
+      <div className="rounded-xl border border-dashed border-violet-300 bg-violet-50/40 p-4 flex items-center gap-3">
+        <Wand2 className="h-5 w-5 text-violet-700 flex-shrink-0" />
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-semibold text-violet-900">No AI bifurcation yet</p>
+          <p className="text-xs text-violet-800/80">Re-parse this sheet to split material vs labour, map sub-skills, and flag rate concerns. Uses claude-sonnet-4-5.</p>
+          {error && <p className="text-xs text-rose-700 mt-1">{error}</p>}
+        </div>
+        <button
+          type="button"
+          onClick={runReparse}
+          disabled={pending}
+          className="inline-flex items-center gap-1.5 h-9 px-3 rounded-md bg-violet-600 text-white text-sm font-semibold hover:bg-violet-700 disabled:opacity-60"
+        >
+          {pending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+          Run AI parse
+        </button>
+      </div>
+    )
+  }
 
   // Prefer DB-computed split_totals; fall back to row-level reduction so
   // the panel still works for older WSes saved before this column existed.
@@ -71,7 +118,20 @@ export function AiBifurcationPanel({
         <Sparkles className="h-4 w-4 text-violet-700" />
         <p className="text-sm font-bold text-violet-900">AI bifurcation summary</p>
         <span className="text-[10px] text-violet-600 ml-auto">{aiParseMeta.model ?? 'AI'} · {aiParseMeta.rows_out ?? rows.length} line items</span>
+        {canEdit && (
+          <button
+            type="button"
+            onClick={runReparse}
+            disabled={pending}
+            className="inline-flex items-center gap-1 text-[11px] text-violet-700 hover:text-violet-900 hover:underline disabled:opacity-50"
+            title="Re-run AI parse on this sheet"
+          >
+            {pending ? <Loader2 className="h-3 w-3 animate-spin" /> : <Wand2 className="h-3 w-3" />}
+            Re-run
+          </button>
+        )}
       </div>
+      {error && <p className="text-xs text-rose-700">{error}</p>}
       {aiParseMeta.text && <p className="text-xs text-violet-900/90 whitespace-pre-line">{aiParseMeta.text}</p>}
 
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
