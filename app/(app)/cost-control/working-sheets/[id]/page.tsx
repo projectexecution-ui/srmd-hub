@@ -6,6 +6,7 @@ import { PageHeader } from '@/components/PageHeader'
 import { Card } from '@/components/ui/card'
 import { WSStatusPill, type WSStatus } from '@/components/cost-control/WSStatusPill'
 import { DeadlineBadge } from '@/components/cost-control/DeadlineBadge'
+import { AiBifurcationPanel } from '@/components/cost-control/AiBifurcationPanel'
 import { WSEditor } from './WSEditor'
 import { ExcelSummaryPanel } from './ExcelSummaryPanel'
 import { SourceExcelViewer } from './SourceExcelViewer'
@@ -40,7 +41,7 @@ export default async function WorkingSheetEditorPage(
 
   const { data: ws } = await supabase
     .from('cc_working_sheets')
-    .select('id, ws_code, status, total_amount, approved_for_erp_amt, past_approved_in_subskill, return_reason, engineer_id, project_id, discipline_id, sub_skill_id, line_type, entry_mode, source_excel_url, source_excel_name, summary_total, summary_notes, flag_summary, last_checked_at, deadline_date, deadline_notes, projects(code, name), cc_disciplines(code, name), cc_sub_skills(code, name)')
+    .select('id, ws_code, status, total_amount, approved_for_erp_amt, past_approved_in_subskill, return_reason, engineer_id, project_id, discipline_id, sub_skill_id, line_type, entry_mode, source_excel_url, source_excel_name, summary_total, summary_notes, flag_summary, ai_parse_meta, last_checked_at, deadline_date, deadline_notes, projects(code, name), cc_disciplines(code, name), cc_sub_skills(code, name)')
     .eq('id', id)
     .single()
 
@@ -63,7 +64,7 @@ export default async function WorkingSheetEditorPage(
   if (ws.entry_mode === 'excel_summary') {
     const { data: excelRows } = await supabase
       .from('cc_excel_rows')
-      .select('id, row_no, description, unit, qty, rate, amount, formula_in_amount, rate_breakdown, amount_breakdown, flag, flag_reason, flag_severity')
+      .select('id, row_no, description, unit, qty, rate, amount, formula_in_amount, rate_breakdown, amount_breakdown, ai_meta, flag, flag_reason, flag_severity')
       .eq('working_sheet_id', id)
       .order('row_no')
 
@@ -110,6 +111,31 @@ export default async function WorkingSheetEditorPage(
         )}
 
         <SourceExcelViewer url={downloadUrl} name={ws.source_excel_name} />
+
+        <AiBifurcationPanel
+          aiParseMeta={ws.ai_parse_meta as {
+            text?: string | null
+            model?: string
+            rows_in?: number
+            rows_out?: number
+            suggestions_count?: number
+            rate_concerns_count?: number
+            totals_by_category?: Partial<Record<'material' | 'labour' | 'material_and_labour' | 'equipment', number>>
+            split_totals?: Partial<Record<'material' | 'labour' | 'equipment', number>>
+            run_at?: string
+          } | null}
+          rows={(excelRows ?? []).map(r => ({
+            row_no: r.row_no,
+            amount: r.amount != null ? Number(r.amount) : null,
+            ai_meta: r.ai_meta as {
+              category?: 'material' | 'labour' | 'material_and_labour' | 'equipment' | null
+              material_value?: number | null
+              labour_value?: number | null
+              suggested_sub_skill_id?: string | null
+              rate_concern?: string | null
+            } | null,
+          }))}
+        />
 
         <ExcelSummaryPanel
           wsId={ws.id}

@@ -8,13 +8,27 @@ import { Input } from '@/components/ui/input'
 import { MoneyInput } from '@/components/ui/money-input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
-import { Loader2, Upload, Send, FileSpreadsheet, X } from 'lucide-react'
+import { Loader2, Upload, Send, FileSpreadsheet, X, Sparkles, AlertTriangle } from 'lucide-react'
 
 interface ProjectOpt   { id: string; code: string; name: string }
 interface DRow         { id: string; code: string; name: string }
 interface SRow         { id: string; discipline_id: string; code: string; name: string }
 
 interface Breakdown { label: string; value: number }
+
+interface AiRowMeta {
+  suggested_sub_skill_id: string | null
+  confidence: number | null
+  cleaned_description: string | null
+  rate_concern: string | null
+  /** Bifurcation tag. material_and_labour rows carry both material_value
+   *  and labour_value such that they sum to amount. */
+  category: 'material' | 'labour' | 'material_and_labour' | 'equipment' | null
+  material_value: number | null
+  labour_value: number | null
+  anomaly: string | null
+  model: string
+}
 
 interface ParsedRow {
   row_no: number
@@ -27,6 +41,19 @@ interface ParsedRow {
   formula_in_amount: string | null
   rate_breakdown: Breakdown[] | null
   amount_breakdown: Breakdown[] | null
+  ai_meta?: AiRowMeta | null
+}
+
+interface AiSummary {
+  text: string | null
+  model: string
+  rows_in: number
+  rows_out: number
+  suggestions_count: number
+  rate_concerns_count: number
+  totals_by_category?: Partial<Record<'material' | 'labour' | 'material_and_labour' | 'equipment', number>>
+  split_totals?: Partial<Record<'material' | 'labour' | 'equipment', number>>
+  run_at: string
 }
 
 interface Props {
@@ -86,7 +113,7 @@ function toNum(v: unknown): number | null {
   return Number.isFinite(n) ? n : null
 }
 
-async function parseExcel(file: File): Promise<{ rows: ParsedRow[]; grandTotal: number | null }> {
+async function parseExcel(file: File): Promise<{ rows: ParsedRow[]; grandTotal: number | null; aoa: unknown[][] }> {
   const buf = await file.arrayBuffer()
   const wb = XLSX.read(buf, { type: 'array', cellFormula: true })
   // Heuristic: pick the first non-empty sheet
@@ -94,7 +121,7 @@ async function parseExcel(file: File): Promise<{ rows: ParsedRow[]; grandTotal: 
     const s = wb.Sheets[n]
     return s && s['!ref']
   }) ?? wb.SheetNames[0]
-  if (!sheetName) return { rows: [], grandTotal: null }
+  if (!sheetName) return { rows: [], grandTotal: null, aoa: [] }
   const sheet = wb.Sheets[sheetName]
   const aoa = XLSX.utils.sheet_to_json<unknown[]>(sheet, { header: 1, defval: null })
 
@@ -111,7 +138,7 @@ async function parseExcel(file: File): Promise<{ rows: ParsedRow[]; grandTotal: 
       headerIdx = i; cols = detected; break
     }
   }
-  if (headerIdx < 0) return { rows: [], grandTotal: null }
+  if (headerIdx < 0) return { rows: [], grandTotal: null, aoa }
 
   const descCol  = cols.find(c => c.kind === 'description')
   const unitCol  = cols.find(c => c.kind === 'unit')
@@ -208,7 +235,7 @@ async function parseExcel(file: File): Promise<{ rows: ParsedRow[]; grandTotal: 
     const sum = rows.reduce((s, r) => s + (r.amount ?? 0), 0)
     grandTotal = sum > 0 ? sum : null
   }
-  return { rows, grandTotal }
+  return { rows, grandTotal, aoa }
 }
 
 export function NewWSQuickForm({ projects, projectDisciplines, projectSubSkills, defaultProjectId, canSetDeadline = false }: Props) {
@@ -222,8 +249,11 @@ export function NewWSQuickForm({ projects, projectDisciplines, projectSubSkills,
   const [deadline, setDeadline] = useState('')
   const [deadlineNotes, setDeadlineNotes] = useState('')
   const [file, setFile]               = useState<File | null>(null)
-  const [parsed, setParsed]           = useState<{ rows: ParsedRow[]; grandTotal: number | null } | null>(null)
+  const [parsed, setParsed]           = useState<{ rows: ParsedRow[]; grandTotal: number | null; aoa: unknown[][] } | null>(null)
+  const [aiSummary, setAiSummary]     = useState<AiSummary | null>(null)
+  const [aiMode, setAiMode]           = useState<'ai' | 'fallback' | null>(null)
   const [parsing, setParsing]         = useState(false)
+  const [aiParsing, setAiParsing]     = useState(false)
   const [submitting, setSubmitting]   = useState(false)
   const [error, setError]             = useState<string | null>(null)
 
@@ -241,11 +271,18 @@ export function NewWSQuickForm({ projects, projectDisciplines, projectSubSkills,
   async function onFile(e: React.ChangeEvent<HTMLInputElement>) {
     const f = e.target.files?.[0]
     if (!f) return
-    setFile(f); setError(null); setParsing(true); setParsed(null)
+    setFile(f); setError(null); setParsing(true); setParsed(null); setAiSummary(null); setAiMode(null)
     try {
-      const result = await parseExcel(f)
-      setParsed(result)
-      if (result.grandTotal != null && !summaryTotal) setSummaryTotal(String(result.grandTotal))
+      const local = await parseExcel(f)
+      setParsed(local)
+      if (local.grandTotal != null && !summaryTotal) setSummaryTotal(String(local.grandTotal))
+      // Kick off the AI parse silently — runs on the server with Claude.
+      // Replaces our regex result with a smarter one if everything succeeds
+      // (better column detection, material/labour bifurcation, sub-skill
+      // suggestions, rate concerns). Falls back to local on any failure.
+      if (projectId && disciplineId && subSkillId && local.rows.length > 0) {
+        runAiParse(local).catch(() => null)
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not parse Excel')
     } finally {
@@ -253,8 +290,44 @@ export function NewWSQuickForm({ projects, projectDisciplines, projectSubSkills,
     }
   }
 
+  async function runAiParse(local: { rows: ParsedRow[]; grandTotal: number | null; aoa: unknown[][] }) {
+    setAiParsing(true)
+    try {
+      // Cap the AoA payload to keep request bodies sane on huge sheets.
+      const aoaSlim = local.aoa.slice(0, 80)
+      const res = await fetch('/api/cost-control/working-sheets/ai-parse', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          aoa: aoaSlim,
+          project_id: projectId,
+          discipline_id: disciplineId,
+          sub_skill_id: subSkillId,
+          line_type: lineType,
+          local_rows: local.rows,
+          local_grand_total: local.grandTotal,
+        }),
+      })
+      if (!res.ok) return
+      const json = await res.json()
+      if (!json.ok) return
+      setAiMode(json.mode)
+      if (json.mode === 'ai' && Array.isArray(json.rows)) {
+        // Swap in AI rows + summary. Preserve the original aoa so future
+        // re-runs (e.g. if the user changes sub-skill) work.
+        setParsed({ rows: json.rows as ParsedRow[], grandTotal: json.grand_total ?? local.grandTotal, aoa: local.aoa })
+        setAiSummary(json.ai_summary ?? null)
+        if (json.grand_total != null && (!summaryTotal || Number(summaryTotal) === local.grandTotal)) {
+          setSummaryTotal(String(json.grand_total))
+        }
+      }
+    } finally {
+      setAiParsing(false)
+    }
+  }
+
   function clearFile() {
-    setFile(null); setParsed(null)
+    setFile(null); setParsed(null); setAiSummary(null); setAiMode(null)
   }
 
   async function submit(e: React.FormEvent) {
@@ -280,7 +353,8 @@ export function NewWSQuickForm({ projects, projectDisciplines, projectSubSkills,
     // 2. Auto-generate ws_code (timestamp; admin can rename)
     const wsCode = `WS-Q-${new Date().toISOString().slice(0,10).replace(/-/g,'')}-${Math.random().toString(36).slice(2,5).toUpperCase()}`
 
-    // 3. Insert working sheet header
+    // 3. Insert working sheet header — include AI parse meta when the AI
+    // path ran so the WS detail page can show the bifurcation summary.
     const { data: ws, error: wsErr } = await supabase.from('cc_working_sheets').insert({
       ws_code: wsCode,
       project_id: projectId,
@@ -297,10 +371,11 @@ export function NewWSQuickForm({ projects, projectDisciplines, projectSubSkills,
       summary_notes: summaryNotes.trim() || null,
       deadline_date:  deadline || null,
       deadline_notes: deadlineNotes.trim() || null,
+      ai_parse_meta: aiMode === 'ai' && aiSummary ? aiSummary : null,
     }).select('id').single()
     if (wsErr || !ws) { setError(`Save failed: ${wsErr?.message}`); setSubmitting(false); return }
 
-    // 4. Insert parsed rows
+    // 4. Insert parsed rows — including the AI metadata when present.
     if (parsed.rows.length > 0) {
       const { error: rowsErr } = await supabase.from('cc_excel_rows').insert(
         parsed.rows.map(r => ({
@@ -315,6 +390,7 @@ export function NewWSQuickForm({ projects, projectDisciplines, projectSubSkills,
           formula_in_amount: r.formula_in_amount,
           rate_breakdown:   r.rate_breakdown,
           amount_breakdown: r.amount_breakdown,
+          ai_meta: r.ai_meta ?? null,
         })),
       )
       if (rowsErr) { setError(`Row save failed: ${rowsErr.message}`); setSubmitting(false); return }
@@ -396,9 +472,27 @@ export function NewWSQuickForm({ projects, projectDisciplines, projectSubSkills,
           )}
         </div>
 
+        {aiParsing && (
+          <div className="inline-flex items-center gap-2 text-xs text-violet-700 bg-violet-50 border border-violet-200 rounded-lg px-3 py-1.5">
+            <Sparkles className="h-3.5 w-3.5 animate-pulse" />
+            AI is re-parsing this sheet — bifurcating material vs labour, mapping sub-skills, checking rates…
+          </div>
+        )}
+
+        {aiSummary && (
+          <AiSummaryBanner summary={aiSummary} parsedRows={parsed?.rows ?? []} />
+        )}
+
         {parsed && parsed.rows.length > 0 && (
           <div className="border border-gray-200 rounded-xl overflow-hidden">
-            <p className="px-3 py-2 text-xs font-semibold uppercase tracking-wide text-gray-500 bg-gray-50">Preview (first 8 rows)</p>
+            <p className="px-3 py-2 text-xs font-semibold uppercase tracking-wide text-gray-500 bg-gray-50 flex items-center justify-between">
+              <span>Preview (first 8 rows)</span>
+              {aiMode === 'ai' && (
+                <span className="inline-flex items-center gap-1 text-violet-700 text-[10px] font-bold normal-case">
+                  <Sparkles className="h-3 w-3" /> AI-parsed
+                </span>
+              )}
+            </p>
             <div className="max-h-64 overflow-y-auto">
               <table className="min-w-full text-xs">
                 <thead className="bg-gray-50 text-left text-gray-500">
@@ -415,7 +509,15 @@ export function NewWSQuickForm({ projects, projectDisciplines, projectSubSkills,
                   {parsed.rows.slice(0, 8).map(r => (
                     <tr key={r.row_no} className="border-t border-gray-100 align-top">
                       <td className="px-2 py-1.5 text-gray-400">{r.row_no}</td>
-                      <td className="px-2 py-1.5 text-gray-800 truncate max-w-xs">{r.description ?? '—'}</td>
+                      <td className="px-2 py-1.5 text-gray-800 max-w-xs">
+                        <div className="truncate">{r.ai_meta?.cleaned_description ?? r.description ?? '—'}</div>
+                        {r.ai_meta?.category && <CategoryChip cat={r.ai_meta.category} />}
+                        {r.ai_meta?.rate_concern && (
+                          <div className="text-[10px] text-amber-700 mt-0.5 inline-flex items-center gap-0.5">
+                            <AlertTriangle className="h-2.5 w-2.5" /> {r.ai_meta.rate_concern}
+                          </div>
+                        )}
+                      </td>
                       <td className="px-2 py-1.5 text-gray-600">{r.unit ?? ''}</td>
                       <td className="px-2 py-1.5 text-right tabular-nums">{r.qty ?? ''}</td>
                       <td className="px-2 py-1.5 text-right tabular-nums">
@@ -431,6 +533,11 @@ export function NewWSQuickForm({ projects, projectDisciplines, projectSubSkills,
                         {r.amount_breakdown && (
                           <div className="text-[10px] text-gray-400 font-normal">
                             {r.amount_breakdown.map(b => `${b.label} ${b.value}`).join(' + ')}
+                          </div>
+                        )}
+                        {r.ai_meta?.category === 'material_and_labour' && r.ai_meta.material_value != null && r.ai_meta.labour_value != null && (
+                          <div className="text-[10px] text-gray-500 font-normal">
+                            M ₹{r.ai_meta.material_value.toLocaleString('en-IN')} · L ₹{r.ai_meta.labour_value.toLocaleString('en-IN')}
                           </div>
                         )}
                       </td>
@@ -479,5 +586,86 @@ export function NewWSQuickForm({ projects, projectDisciplines, projectSubSkills,
         Save & analyse
       </Button>
     </form>
+  )
+}
+
+// ──────────────────────────────────────────────────────────────────────
+// AI summary banner — shown after AI re-parses the sheet. Bifurcates
+// material vs labour totals + lists rate concerns + flags rows where AI
+// thinks the sub-skill differs from what the user selected.
+// ──────────────────────────────────────────────────────────────────────
+function AiSummaryBanner({ summary, parsedRows }: { summary: AiSummary; parsedRows: ParsedRow[] }) {
+  // Pull totals from the rows directly so the banner stays in sync if
+  // the user edits state later.
+  const splitTotals = parsedRows.reduce(
+    (acc, r) => {
+      const m = r.ai_meta?.category
+      if (m === 'material') acc.material += r.amount ?? 0
+      else if (m === 'labour') acc.labour += r.amount ?? 0
+      else if (m === 'material_and_labour') {
+        acc.material += r.ai_meta?.material_value ?? 0
+        acc.labour   += r.ai_meta?.labour_value   ?? 0
+      } else if (m === 'equipment') acc.equipment += r.amount ?? 0
+      return acc
+    },
+    { material: 0, labour: 0, equipment: 0 } as Record<string, number>,
+  )
+  const total = splitTotals.material + splitTotals.labour + splitTotals.equipment
+  const pct = (v: number) => total > 0 ? Math.round((v / total) * 100) : 0
+  const rateConcerns = parsedRows.filter(r => r.ai_meta?.rate_concern).length
+  return (
+    <div className="rounded-xl border border-violet-200 bg-violet-50/60 p-3 space-y-2">
+      <div className="flex items-center gap-2">
+        <Sparkles className="h-4 w-4 text-violet-700" />
+        <p className="text-sm font-semibold text-violet-900">AI parse complete</p>
+        <span className="text-[10px] text-violet-600">claude-sonnet-4-5</span>
+      </div>
+      {summary.text && <p className="text-xs text-violet-900/90 whitespace-pre-line">{summary.text}</p>}
+      <div className="grid grid-cols-3 gap-2 text-xs">
+        <div className="bg-white rounded-lg border border-gray-200 px-2 py-1.5">
+          <p className="text-[10px] uppercase tracking-wide text-gray-500">Material</p>
+          <p className="font-semibold text-gray-900 tabular-nums">₹{splitTotals.material.toLocaleString('en-IN')}</p>
+          <p className="text-[10px] text-gray-500">{pct(splitTotals.material)}%</p>
+        </div>
+        <div className="bg-white rounded-lg border border-gray-200 px-2 py-1.5">
+          <p className="text-[10px] uppercase tracking-wide text-gray-500">Labour</p>
+          <p className="font-semibold text-gray-900 tabular-nums">₹{splitTotals.labour.toLocaleString('en-IN')}</p>
+          <p className="text-[10px] text-gray-500">{pct(splitTotals.labour)}%</p>
+        </div>
+        <div className="bg-white rounded-lg border border-gray-200 px-2 py-1.5">
+          <p className="text-[10px] uppercase tracking-wide text-gray-500">Equipment</p>
+          <p className="font-semibold text-gray-900 tabular-nums">₹{splitTotals.equipment.toLocaleString('en-IN')}</p>
+          <p className="text-[10px] text-gray-500">{pct(splitTotals.equipment)}%</p>
+        </div>
+      </div>
+      <div className="flex flex-wrap items-center gap-3 text-[11px] text-violet-900/80">
+        <span>{summary.rows_out} line items</span>
+        {summary.suggestions_count > 0 && (
+          <span className="inline-flex items-center gap-1 text-blue-700">
+            <Sparkles className="h-3 w-3" /> {summary.suggestions_count} row{summary.suggestions_count === 1 ? '' : 's'} fit a different sub-skill — visible on detail
+          </span>
+        )}
+        {rateConcerns > 0 && (
+          <span className="inline-flex items-center gap-1 text-amber-700">
+            <AlertTriangle className="h-3 w-3" /> {rateConcerns} rate concern{rateConcerns === 1 ? '' : 's'}
+          </span>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function CategoryChip({ cat }: { cat: 'material' | 'labour' | 'material_and_labour' | 'equipment' }) {
+  const map = {
+    material: { label: 'Material', cls: 'bg-blue-100 text-blue-800 border-blue-200' },
+    labour: { label: 'Labour', cls: 'bg-green-100 text-green-800 border-green-200' },
+    material_and_labour: { label: 'M + L', cls: 'bg-violet-100 text-violet-800 border-violet-200' },
+    equipment: { label: 'Equipment', cls: 'bg-amber-100 text-amber-800 border-amber-200' },
+  } as const
+  const c = map[cat]
+  return (
+    <span className={`inline-block mt-0.5 text-[9px] font-semibold tracking-wide uppercase rounded px-1 py-px border ${c.cls}`}>
+      {c.label}
+    </span>
   )
 }
