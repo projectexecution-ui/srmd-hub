@@ -31,7 +31,7 @@ const STATUS_GROUP_TITLES: Record<WSStatus, string> = {
   draft:              'Draft (in progress with engineer)',
   draft_blocked:      'Blocked drafts',
   submitted:          'Awaiting approval',
-  partially_approved: 'Partially approved (awaiting more tranches)',
+  partially_approved: 'Partially approved (awaiting more releases)',
   approved:           'Fully approved',
   returned:           'Returned to engineer',
   wo_issued:          'WO issued',

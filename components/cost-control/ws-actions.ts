@@ -153,7 +153,7 @@ export async function setWorkingSheetDeadline(
 /** Public version of can_approve so server pages can decide which
  *  buttons to render. Mirrors the same RPC used by the actions.
  *  For 'approved' we check both the full and partial transitions —
- *  HOD can approve a tranche (status → partially_approved) OR finalise
+ *  HOD can approve a release (status → partially_approved) OR finalise
  *  (status → approved). Either yes = the Approve button is allowed. */
 export async function checkCanApproveWS(wsId: string, toStage: 'approved' | 'returned'): Promise<boolean> {
   const me = await whoAmI()
@@ -176,10 +176,10 @@ export async function checkCanApproveWS(wsId: string, toStage: 'approved' | 'ret
     return callCanApprove(ws.status, 'returned', total)
   }
 
-  // Approve path — allow when sheet is submitted or already in tranche-mode.
+  // Approve path — allow when sheet is submitted or already partially released.
   if (ws.status !== 'submitted' && ws.status !== 'partially_approved') return false
 
-  // The button shows if EITHER a partial tranche or a full finalise is
+  // The button shows if EITHER a partial release or a full finalise is
   // allowed for this user at any amount up to remaining.
   const fromStage = ws.status as 'submitted' | 'partially_approved'
   const [okPartial, okFull] = await Promise.all([
@@ -413,9 +413,11 @@ export async function submitWorkingSheet(wsId: string): Promise<{ ok: boolean; e
 }
 
 /** Approve a working sheet. Two modes:
- *  - tranche: pass `trancheAmount` to approve a slice. Adds to the
- *    running approved_for_erp_amt. Status becomes 'partially_approved'
- *    while cumulative < total, or 'approved' once it reaches total.
+ *  - release: pass `trancheAmount` to release just a part of the total.
+ *    Adds to the running approved_for_erp_amt. Status becomes
+ *    'partially_approved' while cumulative < total, or 'approved' once
+ *    cumulative reaches total. (Param name kept as trancheAmount for
+ *    backwards compat with any external callers; UI says "release".)
  *  - full:    pass nothing — backwards compatible. Approves the full
  *    remaining amount in one go.
  */
@@ -448,16 +450,16 @@ export async function approveWorkingSheet(
   const alreadyApproved = Number(ws.approved_for_erp_amt ?? 0)
   const remaining = total - alreadyApproved
 
-  // Decide tranche size. If trancheAmount is provided, use it; otherwise
+  // Decide release amount. If trancheAmount is provided, use it; otherwise
   // approve the rest in one shot.
   let tranche = trancheAmount == null || !Number.isFinite(trancheAmount)
     ? remaining
     : Number(trancheAmount)
 
-  if (tranche <= 0) return { ok: false, error: 'Tranche amount must be greater than zero' }
+  if (tranche <= 0) return { ok: false, error: 'Release amount must be greater than zero' }
   if (tranche > remaining + 1) {
     // 1 ₹ floating-point tolerance for the "approve all remaining" path
-    return { ok: false, error: `Tranche ${formatRupees(tranche)} exceeds remaining ${formatRupees(remaining)}` }
+    return { ok: false, error: `Release ${formatRupees(tranche)} exceeds remaining ${formatRupees(remaining)}` }
   }
   // Clamp to remaining so the running total never overshoots.
   if (tranche > remaining) tranche = remaining
@@ -467,14 +469,14 @@ export async function approveWorkingSheet(
   const toStage: 'partially_approved' | 'approved' = willBeFull ? 'approved' : 'partially_approved'
   const fromStage = ws.status as 'submitted' | 'partially_approved'
 
-  // Approval matrix gate — passes the TRANCHE amount so amount_cap_max
-  // rules apply per slice (head ≤ ₹2L per tranche).
+  // Approval matrix gate — passes the RELEASE amount so amount_cap_max
+  // rules apply per release (head ≤ ₹2L per release).
   const allowed = await callCanApprove(fromStage, toStage, tranche)
   if (!allowed) {
-    return { ok: false, error: `Your role can't approve a ${formatRupees(tranche)} tranche on this sheet. Check /admin/approvals.` }
+    return { ok: false, error: `Your role can't approve a ${formatRupees(tranche)} release on this sheet. Check /admin/approvals.` }
   }
 
-  // Find the matching budget line. Each tranche directly bumps
+  // Find the matching budget line. Each release directly bumps
   // current_budget_amt — CT Hub is the source of truth for what HOD has
   // released into ERP. Excel import is only used for one-time backfill
   // of legacy data; new approvals don't need to round-trip through Excel.
@@ -495,7 +497,7 @@ export async function approveWorkingSheet(
     approved_for_erp_by: me.user.id,
   }
   // Only set approved_at / approved_by when fully approved, so we
-  // preserve the "first tranche" vs "fully signed off" distinction.
+  // preserve the "first release" vs "fully signed off" distinction.
   if (willBeFull) {
     update.approved_at = now
     update.approved_by = me.user.id
@@ -504,9 +506,9 @@ export async function approveWorkingSheet(
   const { error: updErr } = await supabase.from('cc_working_sheets').update(update).eq('id', wsId)
   if (updErr) return { ok: false, error: updErr.message }
 
-  // Bump the ERP-approved budget by this tranche. Upsert: if no budget
+  // Bump the ERP-approved budget by this release. Upsert: if no budget
   // line exists yet (no Excel import was done), create one with the
-  // tranche as its initial current_budget_amt. Else increment.
+  // release as its initial current_budget_amt. Else increment.
   let budgetLineId = bl?.id ?? null
   if (bl) {
     const newAmt = Number(bl.current_budget_amt ?? 0) + tranche
@@ -541,8 +543,8 @@ export async function approveWorkingSheet(
     delta_amount: tranche,
     related_ws_id: wsId,
     remarks: willBeFull
-      ? `WS fully approved — final tranche ${formatRupees(tranche)} (budget bumped)`
-      : `WS tranche approved ${formatRupees(tranche)} (cumulative ${formatRupees(cumulative)} of ${formatRupees(total)} · budget bumped)`,
+      ? `WS fully approved — final release ${formatRupees(tranche)} (budget bumped)`
+      : `WS release approved ${formatRupees(tranche)} (cumulative ${formatRupees(cumulative)} of ${formatRupees(total)} · budget bumped)`,
     requested_by: me.user.id,
     approved_by: me.user.id,
     approval_status: 'approved',

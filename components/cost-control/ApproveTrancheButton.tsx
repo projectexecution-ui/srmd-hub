@@ -1,14 +1,15 @@
 'use client'
-// Approve a working sheet in tranches. Opens a small panel with the
-// estimate / already-approved / remaining numbers and an amount input
-// (pre-filled with the remaining). HOD can type a smaller number to
-// release just a slice; clicking "Approve all remaining" finalises it.
+// Approve a working sheet in releases (Indian construction-finance term:
+// HOD "releases" budget into ERP). Opens a small panel with the estimate
+// / already-approved / remaining numbers and an amount input (pre-filled
+// with the remaining). HOD can type a smaller number to release just
+// part of the budget; clicking "Approve all remaining" finalises it.
 //
-// Every tranche is logged into approval_events via record_approval_event
+// Every release is logged into approval_events via record_approval_event
 // with an optional comment + attachments. The logged transition is fixed
-// at submitted → partially_approved (canonical "WS tranche approval"
-// event) regardless of the sheet's actual current state or whether the
-// tranche closes the sheet.
+// at submitted → partially_approved (canonical "WS release approval"
+// event) regardless of the sheet's actual current state or whether this
+// release closes the sheet.
 
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
@@ -128,7 +129,7 @@ export function ApproveTrancheButton({
     if (!useAll) {
       const num = Number(amount)
       if (!Number.isFinite(num) || num <= 0) { setErr('Enter an amount greater than zero'); setBusy(false); return }
-      if (num > remaining + 0.5) { setErr(`Tranche ${formatINR(num)} exceeds remaining ${formatINR(remaining)}`); setBusy(false); return }
+      if (num > remaining + 0.5) { setErr(`Release ${formatINR(num)} exceeds remaining ${formatINR(remaining)}`); setBusy(false); return }
       trancheArg = num
       trancheAmount = num
     }
@@ -178,7 +179,7 @@ export function ApproveTrancheButton({
     <div className="rounded-xl border border-emerald-200 bg-emerald-50/50 p-3 space-y-3">
       <div className="flex items-center gap-2 text-xs">
         <Wallet className="h-3.5 w-3.5 text-emerald-700" />
-        <span className="text-emerald-900 font-semibold">Approve a tranche into ERP</span>
+        <span className="text-emerald-900 font-semibold">Approve a release into ERP</span>
       </div>
       <div className="grid grid-cols-3 gap-2 text-xs">
         <Stat label="Estimate" value={formatINR(totalAmount)} />
@@ -186,7 +187,7 @@ export function ApproveTrancheButton({
         <Stat label="Remaining" value={formatINR(remaining)} tone="amber" />
       </div>
       <div>
-        <label className="text-[11px] font-semibold text-gray-700">Tranche amount (₹)</label>
+        <label className="text-[11px] font-semibold text-gray-700">Release amount (₹)</label>
         <MoneyInput
           value={amount}
           onChange={setAmount}
@@ -194,7 +195,7 @@ export function ApproveTrancheButton({
           className="mt-1 font-mono"
         />
         <p className="text-[11px] text-gray-500 mt-1">
-          Enter the slice HOD is approving now. Sheet stays open at &quot;partially approved&quot; until the full estimate is reached.
+          Enter the amount HOD is releasing now. Sheet stays open at &quot;partially approved&quot; until the full estimate is reached.
         </p>
       </div>
 
@@ -207,7 +208,7 @@ export function ApproveTrancheButton({
           value={comment}
           onChange={e => setComment(e.target.value)}
           rows={2}
-          placeholder="Why HOD is approving this slice (visible to the team)."
+          placeholder="Why HOD is releasing this amount (visible to the team)."
           disabled={busy}
           className="mt-1"
         />
@@ -268,7 +269,7 @@ export function ApproveTrancheButton({
         </Button>
         <Button variant="success" size="sm" disabled={busy || uploading || !amount} onClick={() => submit(false)}>
           {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
-          Approve this tranche
+          Approve this release
         </Button>
       </div>
     </div>
