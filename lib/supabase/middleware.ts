@@ -27,7 +27,10 @@ export async function updateSession(request: NextRequest) {
 
   const pathname = request.nextUrl.pathname
 
-  const publicRoutes = ['/login', '/auth/callback']
+  // Public (un-gated) paths. /api/email/send is called server-to-server by the
+  // database (pg_net) with no auth cookie — it authenticates itself with the
+  // NOTIFY_INTERNAL_SECRET header, so it must skip the login redirect here.
+  const publicRoutes = ['/login', '/auth/callback', '/api/email/send']
   const isPublic = publicRoutes.some(r => pathname.startsWith(r))
 
   if (!user && !isPublic) {
