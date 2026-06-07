@@ -9,7 +9,7 @@ import { PageHeader } from '@/components/PageHeader'
 import {
   Users, Search, UserCheck, UserX, Mail, Shield, Copy, Check, Send, Crown, Trash2,
   UserPlus, Loader2, Plus, X, ChevronDown, ChevronRight, Layers, Ban,
-  Settings2, Info, EyeOff,
+  Settings2, Info, EyeOff, Clock, ThumbsDown,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { Profile, Role } from '@/lib/types'
@@ -17,6 +17,7 @@ import { ALL_ROLES } from '@/lib/types'
 import type { RoleLabelMap } from '@/lib/role-labels'
 import { MODULES } from '@/lib/modules'
 import { confirm } from '@/components/ui/confirm-dialog'
+import { isPendingAccessRequest, allowedEmailSet } from '@/lib/access-requests'
 
 const ROLES: Role[] = ALL_ROLES
 
@@ -53,7 +54,7 @@ interface UserModuleBlock {
 
 export default function UsersClient({
   initialUsers, initialAllowedEmails, initialModuleRoles, initialModuleBlocks,
-  currentUserId, currentUserIsPortalOwner, roleLabels,
+  currentUserId, currentUserIsPortalOwner, roleLabels, adminEmail,
 }: {
   initialUsers: Profile[]
   initialAllowedEmails: AllowedEmail[]
@@ -62,6 +63,7 @@ export default function UsersClient({
   currentUserId: string
   currentUserIsPortalOwner: boolean
   roleLabels: RoleLabelMap
+  adminEmail: string | null
 }) {
   const supabase = createClient()
   const [users, setUsers] = useState<Profile[]>(initialUsers)
@@ -85,6 +87,8 @@ export default function UsersClient({
   // ID of the user whose delete is currently armed (one click → armed,
   // second click within 5s → actually deletes). Null = not armed.
   const [deleteArmed, setDeleteArmed] = useState<string | null>(null)
+  // Per-pending-request role choice (defaults to viewer). Keyed by profile id.
+  const [requestRole, setRequestRole] = useState<Record<string, Role>>({})
 
   // Detect quick-signin / anonymous accounts so admin can hide them.
   // Pattern: email starts with anon- and ends with @srmd.local
@@ -113,6 +117,14 @@ export default function UsersClient({
   const uploaderCount = users.filter(u => u.role === 'uploader').length
   const portalOwnerCount = users.filter(u => u.is_portal_owner).length
   const anonymousCount = users.filter(isAnonymous).length
+
+  // ─── Pending access requests ───────────────────────────────
+  // People who signed in via the public link but aren't allowlisted yet, and
+  // haven't been approved/denied. Newest first.
+  const allowedSet = allowedEmailSet(allowed)
+  const pendingRequests = users
+    .filter(u => isPendingAccessRequest(u, allowedSet, adminEmail))
+    .sort((a, b) => (b.created_at ?? '').localeCompare(a.created_at ?? ''))
 
   async function updateRole(u: Profile, next: Role) {
     setBusyId(u.id); setError(null)
@@ -304,6 +316,41 @@ export default function UsersClient({
     setAllowed(prev => prev.map(a => a.email === email ? { ...a, role } : a))
   }
 
+  // ─── Approve / deny self-service access requests ──────────────
+  async function approveRequest(u: Profile) {
+    const role = requestRole[u.id] ?? 'viewer'
+    const email = (u.email ?? '').toLowerCase().trim()
+    setBusyId(`req:${u.id}`); setError(null)
+    // 1) Add to the allowlist so future sign-ins stay clean + auditable.
+    const { data: allowedRow, error: allowErr } = await supabase
+      .from('allowed_emails')
+      .upsert({ email, role }, { onConflict: 'email' })
+      .select('*')
+      .single()
+    if (allowErr) { setBusyId(null); setError(allowErr.message); return }
+    // 2) Activate the profile with the chosen role and clear the pending marker.
+    const { error: profErr } = await supabase
+      .from('profiles')
+      .update({ role, is_active: true, access_state: 'approved' })
+      .eq('id', u.id)
+    setBusyId(null)
+    if (profErr) { setError(profErr.message); return }
+    setUsers(prev => prev.map(x => x.id === u.id ? { ...x, role, is_active: true, access_state: 'approved' } : x))
+    setAllowed(prev => [allowedRow as AllowedEmail, ...prev.filter(a => a.email !== email)])
+  }
+
+  async function denyRequest(u: Profile) {
+    if (!(await confirm(`Deny access for ${u.name || u.full_name || u.email}? They'll stay signed out. You can still approve them later from this list.`))) return
+    setBusyId(`req:${u.id}`); setError(null)
+    const { error } = await supabase
+      .from('profiles')
+      .update({ access_state: 'denied', is_active: false })
+      .eq('id', u.id)
+    setBusyId(null)
+    if (error) { setError(error.message); return }
+    setUsers(prev => prev.map(x => x.id === u.id ? { ...x, access_state: 'denied', is_active: false } : x))
+  }
+
   const totalUsers = users.length
 
   return (
@@ -321,6 +368,84 @@ export default function UsersClient({
 
       {error && (
         <div className="p-3 rounded-xl bg-red-50 border border-red-200 text-sm text-red-700">{error}</div>
+      )}
+
+      {/* ─── Pending access requests ─────────────────────────────────────
+          People who signed in via the shared link but aren't allowlisted.
+          Approve (pick a role) or deny — no need to pre-add their email. */}
+      {pendingRequests.length > 0 && (
+        <Card className="border-amber-300 bg-amber-50/60">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-base text-amber-900">
+              <span className="relative inline-flex">
+                <Clock className="h-5 w-5 text-amber-600" />
+                <span className="absolute -top-1 -right-1 h-2 w-2 rounded-full bg-amber-500 animate-pulse" />
+              </span>
+              Pending access requests ({pendingRequests.length})
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <p className="text-xs text-amber-800">
+              These people signed in with the shared link and are waiting for you to let them in.
+              Pick a role and <b>Approve</b> — or <b>Deny</b> to keep them out. No need to add their email first.
+            </p>
+            <div className="divide-y divide-amber-200">
+              {pendingRequests.map(u => {
+                const busy = busyId === `req:${u.id}`
+                const sel = requestRole[u.id] ?? 'viewer'
+                return (
+                  <div key={u.id} className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 py-3">
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className="h-9 w-9 rounded-full bg-amber-100 text-amber-700 flex items-center justify-center font-bold text-sm flex-shrink-0">
+                        {(u.name || u.full_name || u.email)[0]?.toUpperCase()}
+                      </div>
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium text-gray-900 truncate">{u.name || u.full_name || 'No name'}</p>
+                        <p className="text-xs text-gray-500 flex items-center gap-1 truncate">
+                          <Mail className="h-3 w-3 flex-shrink-0" />
+                          <span className="truncate">{u.email}</span>
+                        </p>
+                        {u.created_at && (
+                          <p className="text-[11px] text-gray-400 mt-0.5">Requested {timeAgo(u.created_at)}</p>
+                        )}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2 flex-shrink-0">
+                      <select
+                        value={sel}
+                        disabled={busy}
+                        onChange={e => setRequestRole(prev => ({ ...prev, [u.id]: e.target.value as Role }))}
+                        className="h-9 rounded-xl border border-gray-300 bg-white px-2 text-xs font-semibold text-gray-700 disabled:bg-gray-50"
+                        title="The role this person gets when you approve them"
+                      >
+                        {ROLES.map(r => <option key={r} value={r}>{roleLabels[r].label}</option>)}
+                      </select>
+                      <Button
+                        size="sm"
+                        disabled={busy}
+                        onClick={() => approveRequest(u)}
+                        className="bg-green-600 hover:bg-green-700 text-white"
+                      >
+                        {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <UserCheck className="h-3.5 w-3.5" />}
+                        Approve
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={busy}
+                        onClick={() => denyRequest(u)}
+                        className="text-rose-600 hover:bg-rose-50 border-rose-200"
+                      >
+                        <ThumbsDown className="h-3.5 w-3.5" />
+                        Deny
+                      </Button>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          </CardContent>
+        </Card>
       )}
 
       {/* ─── Stats strip ───────────────────────────── */}
@@ -897,6 +1022,24 @@ const TILE_TONES: Record<'slate'|'green'|'blue'|'amber', { bg: string; ic: strin
   green: { bg: 'bg-emerald-50', ic: 'text-emerald-700', activeRing: 'ring-emerald-300' },
   blue:  { bg: 'bg-blue-50',    ic: 'text-blue-700',    activeRing: 'ring-blue-300' },
   amber: { bg: 'bg-amber-50',   ic: 'text-amber-700',   activeRing: 'ring-amber-300' },
+}
+
+// Compact "x ago" for the pending-request timestamp. Falls back to '' on a
+// bad/empty date so the row never shows "Invalid Date".
+function timeAgo(iso: string): string {
+  const t = Date.parse(iso)
+  if (Number.isNaN(t)) return ''
+  const secs = Math.floor((Date.now() - t) / 1000)
+  if (secs < 60) return 'just now'
+  const mins = Math.floor(secs / 60)
+  if (mins < 60) return `${mins} min ago`
+  const hours = Math.floor(mins / 60)
+  if (hours < 24) return `${hours} hour${hours === 1 ? '' : 's'} ago`
+  const days = Math.floor(hours / 24)
+  if (days < 30) return `${days} day${days === 1 ? '' : 's'} ago`
+  const months = Math.floor(days / 30)
+  if (months < 12) return `${months} month${months === 1 ? '' : 's'} ago`
+  return `${Math.floor(months / 12)} year${Math.floor(months / 12) === 1 ? '' : 's'} ago`
 }
 
 function StatTile({ label, value, icon, tone, onClick, active }: {

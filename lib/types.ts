@@ -55,6 +55,10 @@ export interface Profile {
   /** Portal Owner — additive super-power on top of admin. Can promote/demote
    *  other admins to Portal Owner. There must always be ≥1 Portal Owner. */
   is_portal_owner: boolean
+  /** Self-service access lifecycle marker. `null` = brand-new sign-in awaiting
+   *  an admin's decision (a pending request); `'approved'` / `'denied'` once an
+   *  admin has acted. Only meaningful while `is_active` is false. */
+  access_state?: string | null
   created_at: string | null
   updated_at: string | null
 }

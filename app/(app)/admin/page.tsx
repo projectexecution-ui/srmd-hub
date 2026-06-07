@@ -4,6 +4,7 @@ import { Card } from '@/components/ui/card'
 import { Users, Settings, ShieldCheck, LayoutGrid, GitBranch, Trash2 } from 'lucide-react'
 import { getMyPermissions, can, isPortalOwner, getMyProfile } from '@/lib/auth'
 import { createClient } from '@/lib/supabase/server'
+import { isPendingAccessRequest, allowedEmailSet } from '@/lib/access-requests'
 
 export const dynamic = 'force-dynamic'
 
@@ -14,14 +15,28 @@ export default async function AdminHomePage() {
     getMyProfile(),
   ])
   const canEditApprovals = portalOwner || profile?.role === 'admin'
+  const canViewUsers = can(perms, 'admin-users', 'view')
   // Count of pending delete requests — small badge on the tile
   const supabase = await createClient()
   const { count: pendingDeleteCount } = canEditApprovals
     ? await supabase.from('delete_requests').select('id', { count: 'exact', head: true }).eq('status', 'pending')
     : { count: 0 }
 
+  // Count of self-service access requests waiting on a decision — badge on Users.
+  let pendingAccessCount = 0
+  if (canViewUsers) {
+    const [{ data: cand }, { data: allowedRows }, { data: adminEmailRow }] = await Promise.all([
+      supabase.from('profiles').select('email, is_active, access_state').eq('is_active', false).is('access_state', null),
+      supabase.from('allowed_emails').select('email'),
+      supabase.from('app_settings').select('value').eq('key', 'admin_email').maybeSingle(),
+    ])
+    const allowedSet = allowedEmailSet(allowedRows ?? [])
+    const adminEmail = (adminEmailRow?.value as string | null) ?? null
+    pendingAccessCount = (cand ?? []).filter(p => isPendingAccessRequest(p, allowedSet, adminEmail)).length
+  }
+
   const tiles = [
-    { href: '/admin/users',       slug: 'admin-users',       icon: Users,       title: 'Users & Roles', sub: 'Assign role per user, deactivate accounts.', show: can(perms, 'admin-users', 'view') },
+    { href: '/admin/users',       slug: 'admin-users',       icon: Users,       title: 'Users & Roles', sub: `Assign role per user, deactivate accounts${pendingAccessCount > 0 ? ` · ${pendingAccessCount} awaiting approval` : ''}.`, show: canViewUsers, badge: pendingAccessCount > 0 ? pendingAccessCount : null },
     { href: '/admin/permissions', slug: 'admin-permissions', icon: ShieldCheck, title: 'Permissions',   sub: 'Who can view / edit / admin / delete each module.',   show: can(perms, 'admin-permissions', 'view') },
     { href: '/admin/approvals',   slug: 'admin-approvals',   icon: GitBranch,   title: 'Approvals',     sub: 'Who approves what at each stage — across modules.', show: canEditApprovals },
     { href: '/admin/delete-requests', slug: 'admin-delete-requests', icon: Trash2, title: 'Delete Requests', sub: `Approve / reject pending deletes${pendingDeleteCount && pendingDeleteCount > 0 ? ` · ${pendingDeleteCount} waiting` : ''}.`, show: canEditApprovals, badge: pendingDeleteCount && pendingDeleteCount > 0 ? pendingDeleteCount : null },

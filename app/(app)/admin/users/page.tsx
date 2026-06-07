@@ -19,11 +19,13 @@ export default async function AdminUsersPage() {
     { data: allowed },
     { data: moduleRoles },
     { data: moduleBlocks },
+    { data: adminEmailRow },
   ] = await Promise.all([
     supabase.from('profiles').select('*').order('created_at', { ascending: false }),
     supabase.from('allowed_emails').select('*').order('added_at', { ascending: false }),
     supabase.from('user_module_roles').select('*'),
     supabase.from('user_module_blocks').select('*'),
+    supabase.from('app_settings').select('value').eq('key', 'admin_email').maybeSingle(),
   ])
 
   return (
@@ -35,6 +37,7 @@ export default async function AdminUsersPage() {
       currentUserId={user!.id}
       currentUserIsPortalOwner={currentUserIsPortalOwner}
       roleLabels={roleLabels}
+      adminEmail={(adminEmailRow?.value as string | null) ?? null}
     />
   )
 }
