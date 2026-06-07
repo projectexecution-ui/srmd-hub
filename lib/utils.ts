@@ -20,10 +20,15 @@ export function formatDateTime(date: string | Date | null | undefined): string {
   })
 }
 
+// No paise. Construction BOQs / budgets / approvals deal in whole rupees;
+// trailing ".00" was just noise that made columns feel cluttered. If a
+// non-integer ever sneaks in (rare — usually a stray ÷ result), Intl
+// rounds half-to-even, same as Math.round.
 const INR = new Intl.NumberFormat('en-IN', {
   style: 'currency',
   currency: 'INR',
-  maximumFractionDigits: 2,
+  minimumFractionDigits: 0,
+  maximumFractionDigits: 0,
 })
 
 export function formatINR(n: number | string | null | undefined): string {
