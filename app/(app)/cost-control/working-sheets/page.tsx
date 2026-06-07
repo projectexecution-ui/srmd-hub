@@ -1,13 +1,14 @@
 import Link from 'next/link'
+import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
-import { requirePermission, can } from '@/lib/auth'
+import { requirePermission, can, getMyUser } from '@/lib/auth'
 import { PageHeader } from '@/components/PageHeader'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { EmptyState } from '@/components/ui/empty-state'
 import { WSStatusPill, type WSStatus } from '@/components/cost-control/WSStatusPill'
 import { DeadlineBadge } from '@/components/cost-control/DeadlineBadge'
-import { FileText, Plus, FileSpreadsheet, Ruler } from 'lucide-react'
+import { FileText, Plus, FileSpreadsheet, Ruler, GitBranch } from 'lucide-react'
 import { formatINR, formatDate } from '@/lib/utils'
 
 export const dynamic = 'force-dynamic'
@@ -49,12 +50,46 @@ export default async function WorkingSheetsPage({
   const supabase = await createClient()
   const scoped = !!sp.sub_skill
 
+  // Virgin URL (no query params) → redirect to the user's most-recently-
+  // touched project so they don't see a confusing cross-project mash-up.
+  // After Apply (even with "All projects" picked) the URL carries empty
+  // params, so this only fires on the very first land from a nav click.
+  if (Object.keys(sp).length === 0) {
+    const me = await getMyUser()
+    let recentProjectId: string | null = null
+    if (me) {
+      // Their own most recent WS first
+      const { data: mine } = await supabase
+        .from('cc_working_sheets')
+        .select('project_id')
+        .eq('engineer_id', me.id)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+      recentProjectId = (mine?.project_id as string | null) ?? null
+      // Fallback for non-engineers (PMs, Heads) — most recent WS overall
+      if (!recentProjectId) {
+        const { data: any1 } = await supabase
+          .from('cc_working_sheets')
+          .select('project_id')
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle()
+        recentProjectId = (any1?.project_id as string | null) ?? null
+      }
+    }
+    if (recentProjectId) {
+      redirect(`/cost-control/working-sheets?project=${recentProjectId}`)
+    }
+    // No WSes exist anywhere → fall through and show empty state
+  }
+
+  // Query the versions VIEW (cc_ws_with_versions) instead of the base
+  // table so every row carries chain_anchor_id + version_no + chain_size
+  // without an N+1 in TypeScript.
   let q = supabase
-    .from('cc_working_sheets')
-    .select('id, ws_code, status, total_amount, approved_for_erp_amt, created_at, deadline_date, engineer_id, project_id, sub_skill_id, projects(code, name), cc_disciplines(code, name), cc_sub_skills(code, name)')
-    // Scoped view (single sub-skill) sorts oldest → newest so the cumulative
-    // approved column reads left-to-right as a timeline. Default list still
-    // newest-first.
+    .from('cc_ws_with_versions')
+    .select('id, ws_code, status, total_amount, approved_for_erp_amt, created_at, deadline_date, engineer_id, project_id, sub_skill_id, line_type, discipline_id, break_chain, chain_anchor_id, version_no, chain_size, projects(code, name), cc_disciplines(code, name), cc_sub_skills(code, name)')
     .order('created_at', { ascending: scoped })
     .limit(500)
   if (sp.project) q = q.eq('project_id', sp.project)
@@ -79,7 +114,13 @@ export default async function WorkingSheetsPage({
     deadline_date: string | null
     engineer_id: string
     project_id: string
+    discipline_id: string
     sub_skill_id: string
+    line_type: 'work' | 'material'
+    break_chain: boolean
+    chain_anchor_id: string
+    version_no: number
+    chain_size: number
     projects: { code: string; name: string } | { code: string; name: string }[] | null
     cc_disciplines: { code: string; name: string } | { code: string; name: string }[] | null
     cc_sub_skills: { code: string; name: string } | { code: string; name: string }[] | null
@@ -291,6 +332,7 @@ export default async function WorkingSheetsPage({
                 <tr>
                   <th className="px-4 py-2 font-semibold">Created</th>
                   <th className="px-4 py-2 font-semibold">WS Code</th>
+                  <th className="px-3 py-2 font-semibold">Version</th>
                   <th className="px-4 py-2 font-semibold">Status</th>
                   <th className="px-4 py-2 font-semibold">Engineer</th>
                   <th className="px-4 py-2 font-semibold text-right">This WS estimate</th>
@@ -318,6 +360,9 @@ export default async function WorkingSheetsPage({
                           <Link href={`/cost-control/working-sheets/${w.id}`} className="font-semibold text-blue-700 hover:underline">
                             {w.ws_code}
                           </Link>
+                        </td>
+                        <td className="px-3 py-2.5">
+                          <VersionBadge versionNo={w.version_no} chainSize={w.chain_size} breakChain={w.break_chain} />
                         </td>
                         <td className="px-4 py-2.5"><WSStatusPill status={w.status} /></td>
                         <td className="px-4 py-2.5 text-gray-700">{profileMap.get(w.engineer_id) ?? '—'}</td>
@@ -351,7 +396,7 @@ export default async function WorkingSheetsPage({
               </tbody>
               <tfoot className="bg-slate-50 border-t-2 border-gray-300">
                 <tr>
-                  <td colSpan={4} className="px-4 py-2.5 text-xs font-semibold uppercase text-gray-600">Sub-skill totals</td>
+                  <td colSpan={5} className="px-4 py-2.5 text-xs font-semibold uppercase text-gray-600">Sub-skill totals</td>
                   <td className="px-4 py-2.5 text-right tabular-nums font-bold text-gray-900">{formatINR(kpis.estimateTotal)}</td>
                   <td className="px-4 py-2.5 text-right tabular-nums font-bold text-emerald-800">{formatINR(kpis.approvedToDate)}</td>
                   <td className="px-4 py-2.5 text-right tabular-nums text-gray-400">—</td>
@@ -409,9 +454,12 @@ export default async function WorkingSheetsPage({
                         return (
                           <tr key={w.id} className="border-t border-gray-100 hover:bg-gray-50">
                             <td className="px-4 py-2.5">
-                              <Link href={`/cost-control/working-sheets/${w.id}`} className="font-semibold text-blue-700 hover:underline">
-                                {w.ws_code}
-                              </Link>
+                              <div className="inline-flex items-center gap-1.5">
+                                <Link href={`/cost-control/working-sheets/${w.id}`} className="font-semibold text-blue-700 hover:underline">
+                                  {w.ws_code}
+                                </Link>
+                                <VersionBadge versionNo={w.version_no} chainSize={w.chain_size} breakChain={w.break_chain} compact />
+                              </div>
                             </td>
                             <td className="px-4 py-2.5 text-gray-700">{proj?.code ?? '—'}</td>
                             <td className="px-4 py-2.5 text-gray-700 truncate max-w-[260px]">
@@ -453,6 +501,36 @@ export default async function WorkingSheetsPage({
         </div>
       )}
     </div>
+  )
+}
+
+/**
+ * Compact version-chain marker shown next to each WS row. Always renders
+ * so the engineer can tell whether their WS is the only one in its
+ * bucket (v1/1, faint grey) or part of a chain (v2/3, bold blue).
+ * A break_chain row gets a small fork icon to flag the explicit reset.
+ */
+function VersionBadge({
+  versionNo,
+  chainSize,
+  breakChain,
+  compact = false,
+}: {
+  versionNo: number
+  chainSize: number
+  breakChain: boolean
+  compact?: boolean
+}) {
+  const lonely = chainSize === 1
+  const tone = lonely ? 'text-gray-400 bg-gray-50 border-gray-200' : 'text-blue-800 bg-blue-50 border-blue-200'
+  return (
+    <span
+      className={`inline-flex items-center gap-0.5 rounded ${compact ? 'text-[10px] px-1' : 'text-[11px] px-1.5 py-0.5'} font-mono border ${tone}`}
+      title={lonely ? 'Only version in this bucket' : `Version ${versionNo} of ${chainSize}${breakChain ? ' · starts a new chain' : ''}`}
+    >
+      {breakChain && <GitBranch className="h-2.5 w-2.5" />}
+      v{versionNo}/{chainSize}
+    </span>
   )
 }
 

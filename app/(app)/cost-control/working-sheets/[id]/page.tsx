@@ -7,6 +7,7 @@ import { Card } from '@/components/ui/card'
 import { WSStatusPill, type WSStatus } from '@/components/cost-control/WSStatusPill'
 import { DeadlineBadge } from '@/components/cost-control/DeadlineBadge'
 import { AiBifurcationPanel } from '@/components/cost-control/AiBifurcationPanel'
+import { VersionChainBar } from './VersionChainBar'
 import { WSEditor } from './WSEditor'
 import { ExcelSummaryPanel } from './ExcelSummaryPanel'
 import { SourceExcelViewer } from './SourceExcelViewer'
@@ -40,12 +41,24 @@ export default async function WorkingSheetEditorPage(
   const canApprove = mayApprove || mayReturn
 
   const { data: ws } = await supabase
-    .from('cc_working_sheets')
-    .select('id, ws_code, status, total_amount, approved_for_erp_amt, past_approved_in_subskill, return_reason, engineer_id, project_id, discipline_id, sub_skill_id, line_type, entry_mode, source_excel_url, source_excel_name, summary_total, summary_notes, flag_summary, ai_parse_meta, last_checked_at, deadline_date, deadline_notes, projects(code, name), cc_disciplines(code, name), cc_sub_skills(code, name)')
+    .from('cc_ws_with_versions')
+    .select('id, ws_code, status, total_amount, approved_for_erp_amt, past_approved_in_subskill, return_reason, engineer_id, project_id, discipline_id, sub_skill_id, line_type, entry_mode, source_excel_url, source_excel_name, summary_total, summary_notes, flag_summary, ai_parse_meta, last_checked_at, deadline_date, deadline_notes, break_chain, chain_anchor_id, version_no, chain_size, created_at, projects(code, name), cc_disciplines(code, name), cc_sub_skills(code, name)')
     .eq('id', id)
     .single()
 
   if (!ws) notFound()
+
+  // Sibling versions in the same chain — drives the prev/next nav.
+  const { data: chainSiblings } = await supabase
+    .from('cc_ws_with_versions')
+    .select('id, ws_code, status, version_no, created_at')
+    .eq('chain_anchor_id', ws.chain_anchor_id)
+    .order('version_no', { ascending: true })
+  type Sibling = { id: string; ws_code: string; status: WSStatus; version_no: number; created_at: string }
+  const siblings = (chainSiblings ?? []) as Sibling[]
+  const myIdx = siblings.findIndex(s => s.id === ws.id)
+  const prevSibling = myIdx > 0 ? siblings[myIdx - 1] : null
+  const nextSibling = myIdx >= 0 && myIdx < siblings.length - 1 ? siblings[myIdx + 1] : null
 
   // Back link is scoped to this WS's project + discipline + sub-skill so the
   // user returns to the same chronological timeline they came from, not the
@@ -90,6 +103,16 @@ export default async function WorkingSheetEditorPage(
         >
           <WSStatusPill status={ws.status as WSStatus} />
         </PageHeader>
+
+        <VersionChainBar
+          wsId={ws.id}
+          versionNo={ws.version_no}
+          chainSize={ws.chain_size}
+          breakChain={ws.break_chain}
+          prev={prevSibling ? { id: prevSibling.id, ws_code: prevSibling.ws_code, version_no: prevSibling.version_no } : null}
+          next={nextSibling ? { id: nextSibling.id, ws_code: nextSibling.ws_code, version_no: nextSibling.version_no } : null}
+          canEdit={canEdit && (user?.id === ws.engineer_id || isAdmin)}
+        />
 
         {(ws.deadline_date || canEditDeadline) && (
           <div className="flex items-center gap-2 flex-wrap">
@@ -238,6 +261,16 @@ export default async function WorkingSheetEditorPage(
       >
         <WSStatusPill status={status} />
       </PageHeader>
+
+      <VersionChainBar
+        wsId={ws.id}
+        versionNo={ws.version_no}
+        chainSize={ws.chain_size}
+        breakChain={ws.break_chain}
+        prev={prevSibling ? { id: prevSibling.id, ws_code: prevSibling.ws_code, version_no: prevSibling.version_no } : null}
+        next={nextSibling ? { id: nextSibling.id, ws_code: nextSibling.ws_code, version_no: nextSibling.version_no } : null}
+        canEdit={canEdit && (isOwner || isAdmin)}
+      />
 
       {(ws.deadline_date || canEditDeadline) && (
         <div className="flex items-center gap-2 flex-wrap">
