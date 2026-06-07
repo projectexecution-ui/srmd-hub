@@ -1,4 +1,4 @@
-import { notFound, redirect } from 'next/navigation'
+import { notFound } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { requirePermission } from '@/lib/auth'
 import { PageHeader } from '@/components/PageHeader'
@@ -44,10 +44,10 @@ export default async function ResumeProjectSetupPage(
 
   if (!project) notFound()
 
-  // Already complete? Send back to the project detail page.
-  if ((project.setup_progress_pct ?? 0) >= 100) {
-    redirect(`/cost-control/projects/${id}`)
-  }
+  // Used to bounce 100%-complete projects, but PMs need to be able to
+  // edit setup after going active (add/remove disciplines, re-tick subs,
+  // change engineers). Just open the wizard with everything pre-seeded.
+  const isComplete = (project.setup_progress_pct ?? 0) >= 100
 
   const [parentsRes, usersRes, disciplinesRes, subSkillsRes, projDisRes, projSubRes, assignRes] = await Promise.all([
     supabase.from('projects').select('id, code, name').order('code'),
@@ -116,8 +116,10 @@ export default async function ResumeProjectSetupPage(
   return (
     <div className="p-4 md:p-6 max-w-3xl mx-auto space-y-4">
       <PageHeader
-        title={`Finish setup — ${project.name}`}
-        subtitle={`${project.setup_progress_pct ?? 0}% complete. Resuming from where you left off.`}
+        title={isComplete ? `Edit setup — ${project.name}` : `Finish setup — ${project.name}`}
+        subtitle={isComplete
+          ? 'Add/remove disciplines, sub-skills or engineers. Existing working sheets stay intact.'
+          : `${project.setup_progress_pct ?? 0}% complete. Resuming from where you left off.`}
         back={`/cost-control/projects/${id}`}
       />
 

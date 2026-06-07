@@ -4,7 +4,7 @@ import { createClient } from '@/lib/supabase/server'
 import { requirePermission, can } from '@/lib/auth'
 import { PageHeader } from '@/components/PageHeader'
 import { SetupProgressBanner } from '@/components/ProjectSetupWizard/SetupProgressBanner'
-import { Plus, ArrowLeftRight, Flame, Info } from 'lucide-react'
+import { Plus, ArrowLeftRight, Flame, Info, Settings } from 'lucide-react'
 import { formatINR } from '@/lib/utils'
 import { DeadlineBadge } from '@/components/cost-control/DeadlineBadge'
 import { DeadlineCell, SubSkillModeCell, DisableButton } from './RowControls'
@@ -270,6 +270,13 @@ export default async function CostControlProjectDetailPage(
                 title="Budget Shift wizard (coming next)"
               >
                 <ArrowLeftRight className="h-4 w-4" /> Shift Budget
+              </Link>
+              <Link
+                href={`/cost-control/projects/${project.id}/setup`}
+                className="inline-flex items-center gap-1.5 h-9 px-3 rounded-md bg-white text-gray-700 border border-gray-300 text-sm font-semibold hover:bg-gray-50"
+                title="Re-open the setup wizard to add/remove disciplines, sub-skills or engineers"
+              >
+                <Settings className="h-4 w-4" /> Edit Setup
               </Link>
             </>
           )}
