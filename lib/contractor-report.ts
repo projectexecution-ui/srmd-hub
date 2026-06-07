@@ -76,9 +76,24 @@ export interface ReportDoc {
   subprojects: SubprojectGroup[]
   computed: In4Totals
   source: In4Totals | null
+  /** Manual built-up area (sq ft) per sub-project name — overrides the
+   *  Budget-vs-Actual auto-match. */
+  areaBySub?: Record<string, number>
 }
 
-export interface ContractorReportState { reports: ReportDoc[] }
+/** Which amount the "% of cost" and "Rs/Sft" metrics divide / share. */
+export type CostBase = 'bill' | 'wo' | 'paid'
+export const COST_BASE_OPTIONS: { value: CostBase; label: string }[] = [
+  { value: 'bill', label: 'Total Bill Value' },
+  { value: 'wo',   label: 'WO Value' },
+  { value: 'paid', label: 'Total Paid' },
+]
+export function costOf(t: { billValue: number; woValue: number; paidValue: number }, base: CostBase): number {
+  return base === 'wo' ? t.woValue : base === 'paid' ? t.paidValue : t.billValue
+}
+
+export interface ContractorReportSettings { costBase?: CostBase }
+export interface ContractorReportState { reports: ReportDoc[]; settings?: ContractorReportSettings }
 
 export interface Totals {
   woValue: number
