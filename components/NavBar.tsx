@@ -153,7 +153,7 @@ export default function NavBar({ profile, permissions, disabledSlugs = [], isPor
 
       {/* Desktop sidebar (collapsible) */}
       <nav className={cn(
-        'hidden md:flex md:flex-col md:flex-shrink-0 md:border-r md:border-gray-200 md:bg-white md:h-screen md:sticky md:top-0 transition-[width] duration-200 ease-in-out',
+        'hidden md:flex md:flex-col md:flex-shrink-0 md:border-r md:border-gray-200 md:bg-white md:h-screen md:sticky md:top-0 md:z-40 transition-[width] duration-200 ease-in-out',
         collapsed ? 'md:w-16' : 'md:w-60',
         !hydrated && 'invisible'
       )}>
