@@ -6,6 +6,8 @@ import { Badge } from '@/components/ui/badge'
 import { Upload, FileSpreadsheet } from 'lucide-react'
 import { ImportClient } from './ImportClient'
 import { formatINR } from '@/lib/utils'
+import Link from 'next/link'
+import { ArrowRight } from 'lucide-react'
 
 export const dynamic = 'force-dynamic'
 
@@ -35,6 +37,26 @@ export default async function CostControlImportPage({
         subtitle="Drag-drop a budget spreadsheet (.xlsx) — auto-detect columns, preview, commit to a project"
         back="/cost-control"
       />
+
+      {/* Highlight the BPH path — most PMs already upload weekly to /budget,
+          so this is usually the better option than re-uploading the Excel. */}
+      <Link
+        href="/cost-control/import/bph"
+        className="block rounded-lg border border-teal-300 bg-teal-50 px-4 py-3 hover:bg-teal-100 transition-colors"
+      >
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <p className="text-sm font-bold text-teal-900 inline-flex items-center gap-2">
+              <FileSpreadsheet className="h-4 w-4" />
+              Already uploaded to BPH this week? Pull from there instead.
+            </p>
+            <p className="text-xs text-teal-800/90 mt-0.5">
+              Reuse your weekly /budget upload. Map BPH project → CT Hub project, click commit. No double-upload.
+            </p>
+          </div>
+          <ArrowRight className="h-4 w-4 text-teal-700" />
+        </div>
+      </Link>
 
       {canImport ? (
         <ImportClient

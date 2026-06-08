@@ -301,12 +301,12 @@ export default async function CostControlProjectDetailPage(
                   : `${disciplines.length} disciplines`)
               : (
                   <span className="text-[11px] text-gray-500">
-                    Fills automatically when Heads approve releases.{' '}
+                    Fills when Heads approve releases.{' '}
                     <Link
-                      href={`/cost-control/import?project=${project.id}`}
-                      className="text-blue-700 hover:underline font-medium"
+                      href={`/cost-control/import/bph?cc_project=${project.id}`}
+                      className="text-teal-700 hover:underline font-medium"
                     >
-                      Or import an ERP report →
+                      Or pull from your BPH report →
                     </Link>
                   </span>
                 )
