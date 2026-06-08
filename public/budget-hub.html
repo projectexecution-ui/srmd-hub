@@ -845,28 +845,7 @@
 
     <div id="projectsView" style="display:none">
       <div class="summary-strip" id="summaryStrip"></div>
-
-      <!-- 3-option toggle, mirrors the Area Statement view's pattern.
-           Cards (default) · Ranked Table · Comparison Bars. -->
-      <div class="area-view-tabs" id="projectsViewTabs" style="display:none">
-        <button class="area-view-tab active" data-pview="cards">Cards</button>
-        <button class="area-view-tab" data-pview="table">Ranked Table</button>
-        <button class="area-view-tab" data-pview="bars">Comparison Bars</button>
-      </div>
-
       <div id="projectsArea"></div>
-
-      <div id="projectsTableHost" class="table-card" style="display:none">
-        <h3 style="margin-bottom:14px">Project Summary</h3>
-        <div style="overflow-x:auto"><table id="projectsTable"></table></div>
-      </div>
-
-      <div id="projectsBarsHost" class="chart-card" style="display:none">
-        <h3>Project-wise Budget vs Spent</h3>
-        <div class="chart-sub">All projects with uploaded data · sorted by budget</div>
-        <div id="projectsBarsUtilSummary" style="font-size:13px; color:var(--ink-2); margin: 6px 0 10px; font-weight:500"></div>
-        <div class="chart-wrap" id="projectsBarsWrap" style="height:480px"><canvas id="projectsBarsChart"></canvas></div>
-      </div>
     </div>
 
     <!-- ============ AREA STATEMENT VIEW ============ -->
@@ -1134,17 +1113,6 @@
 <div class="toast" id="toast"></div>
 
 <script>
-// ============== ADMIN GATE ==============
-// The parent Next page (`app/(app)/budget/page.tsx`) is a server component
-// that checks `isPortalOwner()` and appends `?admin=1` to the iframe src
-// when the viewer is a Portal Owner. We read that flag here so destructive
-// controls (Reset All) stay hidden for everyone else. Save / Import /
-// Export remain available to all viewers.
-const IS_PORTAL_ADMIN = (() => {
-  try { return new URLSearchParams(location.search).get('admin') === '1'; }
-  catch { return false; }
-})();
-
 // ============== STORAGE — server-backed, localStorage fallback ==============
 // State now lives in public.budget_hub_state via /api/budget-hub/state so
 // the whole team sees the same numbers. localStorage is kept as an offline
@@ -1300,7 +1268,6 @@ let mainChartInstance = null;
 let hierMode = localStorage.getItem(HIER_KEY) || 'main';
 let currentNav = 'dashboard';
 let currentAreaView = 'cards';
-let currentProjectsView = 'cards';
 
 // ============== THEME ==============
 let _themeReady = false;
@@ -1395,9 +1362,6 @@ function totalsFor(project) {
 // ============== HUB RENDER ==============
 let currentHubTab = 'dashboard';
 let portfolioChartInstance = null;
-// Per-target chart instances so the Master Dashboard's portfolio chart and
-// the Projects view's "Comparison Bars" sub-tab can coexist on the same page.
-const portfolioChartInstancesByCanvas = {};
 function renderHub() {
   if (currentNav === 'dashboard') renderMasterDashboard();
   else if (currentNav === 'projects') renderProjectsView();
@@ -1483,8 +1447,7 @@ function renderMasterDashboard() {
     all.length === 0 ? 'No projects yet' :
     `${all.length} project${all.length === 1 ? '' : 's'} · ${withData.length} with data uploaded${utilHtml}`;
   const sbResetEl = document.getElementById('sbReset');
-  // Portal Owners only — Reset is destructive (wipes everyone's data).
-  if (sbResetEl) sbResetEl.style.display = (IS_PORTAL_ADMIN && all.length) ? 'flex' : 'none';
+  if (sbResetEl) sbResetEl.style.display = all.length ? 'flex' : 'none';
 
   const emptyEl = document.getElementById('dashEmpty');
   if (!all.length) {
@@ -1516,10 +1479,7 @@ function renderMasterDashboard() {
   renderDashboardTable(all);
 }
 
-function renderPortfolioChart(projects, opts = {}) {
-  const canvasId  = opts.canvasId  || 'portfolioChart';
-  const wrapId    = opts.wrapId    || 'portfolioChartWrap';
-  const summaryId = opts.summaryId || 'portfolioUtilSummary';
+function renderPortfolioChart(projects) {
   const sorted = [...projects].sort((a, b) => totalsFor(b).budget - totalsFor(a).budget);
   // Multi-line Y-axis labels: project name on top, area (sft) below
   const labels = sorted.map(p => {
@@ -1531,7 +1491,7 @@ function renderPortfolioChart(projects, opts = {}) {
   const portTotalActual = sorted.reduce((s, p) => s + totalsFor(p).actual, 0);
   const portUtilPct = portTotalBudget > 0 ? (portTotalActual / portTotalBudget * 100) : 0;
   const portUtilCls = portUtilPct > 100 ? 'over' : (portUtilPct > 90 ? 'tight' : 'ok');
-  const portfolioSummaryEl = document.getElementById(summaryId);
+  const portfolioSummaryEl = document.getElementById('portfolioUtilSummary');
   if (portfolioSummaryEl) {
     portfolioSummaryEl.innerHTML = portTotalBudget > 0
       ? `Portfolio: <b>${formatINR(portTotalActual)}</b> spent of <b>${formatINR(portTotalBudget)}</b> budget <span class="util-pill ${portUtilCls} lg">${portUtilPct.toFixed(1)}% utilised</span>`
@@ -1542,14 +1502,10 @@ function renderPortfolioChart(projects, opts = {}) {
   const budgetData = sorted.map(p => totalsFor(p).budget / unit.divisor);
   const actualData = sorted.map(p => totalsFor(p).actual / unit.divisor);
   const chartH = Math.max(360, sorted.length * 50 + 80);
-  const wrapEl = document.getElementById(wrapId);
-  if (wrapEl) wrapEl.style.height = chartH + 'px';
-  // Destroy any previous instance on this canvas (per-canvas, so the master
-  // dashboard's portfolio chart and the Projects view's bars chart don't fight).
-  const prev = portfolioChartInstancesByCanvas[canvasId];
-  if (prev) prev.destroy();
+  document.getElementById('portfolioChartWrap').style.height = chartH + 'px';
+  if (portfolioChartInstance) portfolioChartInstance.destroy();
   const cc = chartColors();
-  const newInstance = new Chart(document.getElementById(canvasId), {
+  portfolioChartInstance = new Chart(document.getElementById('portfolioChart'), {
     type: 'bar',
     data: { labels, datasets: [
       { label: 'Budget', data: budgetData, backgroundColor: 'rgba(37,99,235,0.92)', borderRadius: 6, barPercentage: 0.92, categoryPercentage: 0.7 },
@@ -1584,10 +1540,6 @@ function renderPortfolioChart(projects, opts = {}) {
     },
     plugins: [portfolioValueLabelPlugin(unit, sorted)]
   });
-  portfolioChartInstancesByCanvas[canvasId] = newInstance;
-  // Keep the legacy single-instance reference pointing at the master dashboard's
-  // canvas so the export-PDF code (line ~4198) continues to work unchanged.
-  if (canvasId === 'portfolioChart') portfolioChartInstance = newInstance;
 }
 
 function portfolioValueLabelPlugin(unit, projects) {
@@ -1619,7 +1571,7 @@ function portfolioValueLabelPlugin(unit, projects) {
   };
 }
 
-function renderDashboardTable(projects, tableId = 'dashTable') {
+function renderDashboardTable(projects) {
   let html = `<thead><tr>
     <th style="text-align:left">Project</th>
     <th>Budget</th>
@@ -1672,8 +1624,7 @@ function renderDashboardTable(projects, tableId = 'dashTable') {
     </tr>`;
   });
   html += `</tbody>`;
-  const tableEl = document.getElementById(tableId);
-  if (tableEl) tableEl.innerHTML = html;
+  document.getElementById('dashTable').innerHTML = html;
 }
 
 function renderProjectsView() {
@@ -1728,8 +1679,7 @@ function renderProjectsView() {
     return;
   }
   const sbResetEl3 = document.getElementById('sbReset');
-  // Portal Owners only — Reset is destructive (wipes everyone's data).
-  if (sbResetEl3) sbResetEl3.style.display = IS_PORTAL_ADMIN ? 'flex' : 'none';
+  if (sbResetEl3) sbResetEl3.style.display = 'flex';
 
   let html = '<div class="project-grid">';
   allProjects.forEach(p => {
@@ -1796,44 +1746,7 @@ function renderProjectsView() {
   `;
   html += '</div>';
   area.innerHTML = html;
-
-  // 3-tab toggle for the Projects view — Cards (above), Ranked Table,
-  // Comparison Bars. Mirror the Area Statement pattern. Hide the toggle if
-  // there are no projects with data (table/bars would be empty).
-  // The bars sub-view renders on-demand so Chart.js sees real dimensions.
-  const withData = allProjects.filter(p => !!totalsFor(p));
-  const tabsEl = document.getElementById('projectsViewTabs');
-  if (tabsEl) tabsEl.style.display = withData.length ? 'flex' : 'none';
-  if (withData.length) {
-    renderDashboardTable(allProjects, 'projectsTable');
-  }
-  applyProjectsView(currentProjectsView);
 }
-
-function applyProjectsView(v) {
-  currentProjectsView = v;
-  document.querySelectorAll('#projectsViewTabs .area-view-tab').forEach(b =>
-    b.classList.toggle('active', b.dataset.pview === v));
-  document.getElementById('projectsArea').style.display      = v === 'cards' ? 'block' : 'none';
-  document.getElementById('projectsTableHost').style.display = v === 'table' ? 'block' : 'none';
-  document.getElementById('projectsBarsHost').style.display  = v === 'bars'  ? 'block' : 'none';
-  // Lazy-render the bars chart only when its host is visible — Chart.js
-  // needs the canvas to have real width to size correctly.
-  if (v === 'bars') {
-    const withData = projectsForView().filter(p => !!totalsFor(p));
-    if (withData.length) {
-      renderPortfolioChart(withData, {
-        canvasId:  'projectsBarsChart',
-        wrapId:    'projectsBarsWrap',
-        summaryId: 'projectsBarsUtilSummary',
-      });
-    }
-  }
-}
-document.getElementById('projectsViewTabs').addEventListener('click', e => {
-  const b = e.target.closest('button[data-pview]');
-  if (b) applyProjectsView(b.dataset.pview);
-});
 
 // ============== ADD PROJECT MODAL ==============
 let newProjectType = 'individual';
@@ -3704,7 +3617,7 @@ function renderAreaStatementView() {
 }
 function applyAreaView(v) {
   currentAreaView = v;
-  document.querySelectorAll('#areaViewTabs .area-view-tab').forEach(b => b.classList.toggle('active', b.dataset.aview === v));
+  document.querySelectorAll('.area-view-tab').forEach(b => b.classList.toggle('active', b.dataset.aview === v));
   document.getElementById('areaCardsView').style.display = v === 'cards' ? 'block' : 'none';
   document.getElementById('areaTableView').style.display = v === 'table' ? 'block' : 'none';
   document.getElementById('areaVisualView').style.display = v === 'visual' ? 'block' : 'none';
