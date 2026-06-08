@@ -618,7 +618,7 @@ function AiSummaryBanner({ summary, parsedRows }: { summary: AiSummary; parsedRo
       <div className="flex items-center gap-2">
         <Sparkles className="h-4 w-4 text-violet-700" />
         <p className="text-sm font-semibold text-violet-900">AI parse complete</p>
-        <span className="text-[10px] text-violet-600">claude-sonnet-4-5</span>
+        <span className="text-[10px] text-violet-600">{summary.model}</span>
       </div>
       {summary.text && <p className="text-xs text-violet-900/90 whitespace-pre-line">{summary.text}</p>}
       <div className="grid grid-cols-3 gap-2 text-xs">

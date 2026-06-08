@@ -1,11 +1,12 @@
 // POST /api/cost-control/working-sheets/[id]/check
-// Re-runs the rate-history check + (optional) Claude review against the
+// Re-runs the rate-history check + (optional) AI narrative against the
 // uploaded Excel rows. Idempotent — overwrites the previous flag_summary
 // and re-flags rows on cc_excel_rows.
 
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { requirePermission } from '@/lib/auth'
+import { generateText, hasAiProvider } from '@/lib/ai'
 
 interface ExcelRow {
   id: string
@@ -168,37 +169,30 @@ export async function POST(
     }
   }
 
-  // 4. Optional Claude pass — produces narrative + finds rows the
-  // mechanical check missed (e.g. ambiguous item names, unusual scope).
-  // Skipped silently when ANTHROPIC_API_KEY isn't set.
+  // 4. Optional AI pass — produces narrative + finds rows the mechanical
+  // check missed (e.g. ambiguous item names, unusual scope). Skipped
+  // silently when no AI provider is configured. Uses lib/ai (Gemini → Groq).
   let narrative: string | null = null
   let aiUsed = false
   let aiError: string | null = null
-  if (process.env.ANTHROPIC_API_KEY) {
-    try {
-      const Anthropic = (await import('@anthropic-ai/sdk')).default
-      const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
-      const payload = {
-        line_type: ws.line_type,
-        rows: rows.slice(0, 100).map(r => ({ row: r.row_no, desc: r.description, unit: r.unit, qty: r.qty, rate: r.rate, amount: r.amount })),
-        flags,
-        peer_count: history.length,
-        summary_total: ws.summary_total,
-      }
-      const resp = await client.messages.create({
-        model: 'claude-sonnet-4-5',
-        max_tokens: 600,
-        system: 'You are a construction cost-control reviewer. Be terse. Output 3–6 short bullet points only, no preamble. Highlight the highest-risk rows (by rupee impact), unusual rate patterns, and anything an approver should ask about. If everything looks fine, say so in one line.',
-        messages: [{
-          role: 'user',
-          content: `Working sheet to review (JSON):\n\`\`\`json\n${JSON.stringify(payload, null, 2)}\n\`\`\``,
-        }],
-      })
-      const textBlock = resp.content.find(b => b.type === 'text')
-      if (textBlock && textBlock.type === 'text') narrative = textBlock.text
+  if (hasAiProvider()) {
+    const payload = {
+      line_type: ws.line_type,
+      rows: rows.slice(0, 100).map(r => ({ row: r.row_no, desc: r.description, unit: r.unit, qty: r.qty, rate: r.rate, amount: r.amount })),
+      flags,
+      peer_count: history.length,
+      summary_total: ws.summary_total,
+    }
+    const r = await generateText({
+      system: 'You are a construction cost-control reviewer. Be terse. Output 3–6 short bullet points only, no preamble. Highlight the highest-risk rows (by rupee impact), unusual rate patterns, and anything an approver should ask about. If everything looks fine, say so in one line.',
+      user: `Working sheet to review (JSON):\n\`\`\`json\n${JSON.stringify(payload, null, 2)}\n\`\`\``,
+      maxOutputTokens: 600,
+    })
+    if (r.ok) {
+      narrative = r.data
       aiUsed = true
-    } catch (err) {
-      aiError = err instanceof Error ? err.message : 'Unknown AI error'
+    } else {
+      aiError = r.reason
     }
   }
 

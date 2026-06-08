@@ -1,16 +1,17 @@
 // Re-run the AI parser on an existing working sheet's source Excel.
 // Used by the "Re-parse with AI" button on the WS detail page when the
-// initial upload happened before ANTHROPIC_API_KEY was set, or when the
-// engineer wants to retry after the model improves.
+// initial upload happened before an AI key was set, or when the engineer
+// wants to retry after improving the prompt.
 //
-// Loads the file from storage, parses the AoA, calls Claude with the
-// same prompt the upload-time endpoint uses, then replaces cc_excel_rows
-// + cc_working_sheets.ai_parse_meta on success.
+// Loads the file from storage, parses the AoA, calls the configured AI
+// provider (Gemini → Groq fallback, see lib/ai/index.ts), then replaces
+// cc_excel_rows + cc_working_sheets.ai_parse_meta on success.
 
 import { NextResponse } from 'next/server'
 import * as XLSX from 'xlsx'
 import { createClient } from '@/lib/supabase/server'
 import { requirePermission } from '@/lib/auth'
+import { generateJSON, hasAiProvider } from '@/lib/ai'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -49,10 +50,10 @@ export async function POST(
   await requirePermission('cost-control', 'edit')
   const { id } = await params
 
-  if (!process.env.ANTHROPIC_API_KEY) {
+  if (!hasAiProvider()) {
     return NextResponse.json({
       ok: false,
-      reason: 'ANTHROPIC_API_KEY is not configured on the server. Add it in Vercel → Settings → Environment Variables and redeploy.',
+      reason: 'No AI key configured on the server. Add GEMINI_API_KEY (free — https://aistudio.google.com/apikey) in Vercel → Settings → Environment Variables and redeploy.',
     }, { status: 503 })
   }
 
@@ -167,22 +168,17 @@ Output STRICTLY JSON (no preamble, no markdown):
     local_parser_rows: (existingRows ?? []).slice(0, 100),
   }
 
+  const aiCall = await generateJSON<{ rows: Array<Record<string, unknown>>; grand_total: number | null; summary: string }>({
+    system: systemPrompt,
+    user: `Sheet to parse (JSON):\n\`\`\`json\n${JSON.stringify(payload)}\n\`\`\``,
+    maxOutputTokens: 8000,
+  })
+  if (!aiCall.ok) {
+    return NextResponse.json({ ok: false, reason: aiCall.reason }, { status: 500 })
+  }
+  const aiResult = aiCall.data
+  const aiModel = aiCall.model
   try {
-    const Anthropic = (await import('@anthropic-ai/sdk')).default
-    const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
-    const resp = await client.messages.create({
-      model: 'claude-sonnet-4-5',
-      max_tokens: 8000,
-      system: systemPrompt,
-      messages: [{
-        role: 'user',
-        content: `Sheet to parse (JSON):\n\`\`\`json\n${JSON.stringify(payload)}\n\`\`\``,
-      }],
-    })
-    const textBlock = resp.content.find(b => b.type === 'text')
-    if (!textBlock || textBlock.type !== 'text') throw new Error('No text response')
-    const text = textBlock.text.trim().replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/```$/i, '').trim()
-    const aiResult = JSON.parse(text) as { rows: Array<Record<string, unknown>>; grand_total: number | null; summary: string }
 
     const validSubIds = new Set(enabledSubs.map(s => s.id))
     const VALID_CATS = ['material', 'labour', 'material_and_labour', 'equipment'] as const
@@ -210,7 +206,7 @@ Output STRICTLY JSON (no preamble, no markdown):
           material_value: typeof meta.material_value === 'number' ? meta.material_value : null,
           labour_value: typeof meta.labour_value === 'number' ? meta.labour_value : null,
           anomaly: typeof meta.anomaly === 'string' ? meta.anomaly : null,
-          model: 'claude-sonnet-4-5',
+          model: aiModel,
         },
       }
     })
@@ -255,7 +251,7 @@ Output STRICTLY JSON (no preamble, no markdown):
     )
     const summary = {
       text: typeof aiResult.summary === 'string' ? aiResult.summary : null,
-      model: 'claude-sonnet-4-5',
+      model: aiModel,
       rows_in: (existingRows ?? []).length,
       rows_out: aiRows.length,
       suggestions_count: aiRows.filter(r => r.ai_meta.suggested_sub_skill_id && r.ai_meta.suggested_sub_skill_id !== ws.sub_skill_id).length,

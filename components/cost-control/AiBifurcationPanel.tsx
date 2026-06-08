@@ -72,7 +72,7 @@ export function AiBifurcationPanel({
         <Wand2 className="h-5 w-5 text-violet-700 flex-shrink-0" />
         <div className="min-w-0 flex-1">
           <p className="text-sm font-semibold text-violet-900">No AI bifurcation yet</p>
-          <p className="text-xs text-violet-800/80">Re-parse this sheet to split material vs labour, map sub-skills, and flag rate concerns. Uses claude-sonnet-4-5.</p>
+          <p className="text-xs text-violet-800/80">Re-parse this sheet to split material vs labour, map sub-skills, and flag rate concerns. Uses free AI (Gemini, falls back to Groq).</p>
           {error && <p className="text-xs text-rose-700 mt-1">{error}</p>}
         </div>
         <button

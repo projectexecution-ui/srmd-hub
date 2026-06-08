@@ -3,18 +3,20 @@
 // Input: the raw array-of-arrays (headers + body, up to ~80 rows) from the
 // uploaded Excel + project context (chosen discipline + the project's
 // enabled sub-skills + line type). The local regex parser ships ITS guess
-// as `local_rows` so Claude can correct rather than start from scratch.
+// as `local_rows` so the model can correct rather than start from scratch.
 //
 // Output: the same row shape the regex parser produces, plus per-row
 // `ai_meta` (suggested sub-skill / cleaned description / rate concerns).
 //
-// Falls back gracefully when ANTHROPIC_API_KEY is missing or Claude
-// errors — the client uses its local parse result in that case.
+// Provider: Gemini 2.5 Flash-Lite (free) with Groq Llama 3.3 70B fallback —
+// see lib/ai/index.ts. Falls back to local-only parse when neither key is
+// set or both providers error.
 
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
 import { createClient } from '@/lib/supabase/server'
 import { requirePermission } from '@/lib/auth'
+import { generateJSON, hasAiProvider } from '@/lib/ai'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -105,11 +107,11 @@ export async function POST(req: Request) {
     .map(r => Array.isArray(r.cc_sub_skills) ? r.cc_sub_skills[0] : r.cc_sub_skills)
     .filter((s): s is SubSkillCtx => !!s)
 
-  if (!process.env.ANTHROPIC_API_KEY) {
+  if (!hasAiProvider()) {
     return NextResponse.json({
       ok: true,
       mode: 'fallback',
-      reason: 'ANTHROPIC_API_KEY missing — local parser kept',
+      reason: 'No AI key set — local parser kept (set GEMINI_API_KEY for free AI)',
       rows: local_rows.map(r => ({ ...r, ai_meta: null })),
       grand_total: local_grand_total,
       ai_summary: null,
@@ -193,28 +195,29 @@ Output STRICTLY JSON matching this schema (no preamble, no markdown):
     local_parser_grand_total: local_grand_total,
   }
 
-  try {
-    const Anthropic = (await import('@anthropic-ai/sdk')).default
-    const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
-    const resp = await client.messages.create({
-      model: 'claude-sonnet-4-5',
-      max_tokens: 8000,
-      system: systemPrompt,
-      messages: [{
-        role: 'user',
-        content: `Sheet to parse (JSON):\n\`\`\`json\n${JSON.stringify(userPayload)}\n\`\`\``,
-      }],
+  const aiCall = await generateJSON<{
+    rows: Array<Record<string, unknown>>
+    grand_total: number | null
+    summary: string
+    totals_by_category?: Partial<Record<'material' | 'labour' | 'material_and_labour' | 'equipment', number>>
+  }>({
+    system: systemPrompt,
+    user: `Sheet to parse (JSON):\n\`\`\`json\n${JSON.stringify(userPayload)}\n\`\`\``,
+    maxOutputTokens: 8000,
+  })
+  if (!aiCall.ok) {
+    return NextResponse.json({
+      ok: true,
+      mode: 'fallback',
+      reason: aiCall.reason,
+      rows: local_rows.map(r => ({ ...r, ai_meta: null })),
+      grand_total: local_grand_total,
+      ai_summary: null,
     })
-    const textBlock = resp.content.find(b => b.type === 'text')
-    if (!textBlock || textBlock.type !== 'text') throw new Error('No text response')
-    // Claude sometimes wraps JSON in ```json fences even when told not to.
-    const text = textBlock.text.trim().replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/```$/i, '').trim()
-    const aiResult = JSON.parse(text) as {
-      rows: Array<Record<string, unknown>>
-      grand_total: number | null
-      summary: string
-      totals_by_category?: Partial<Record<'material' | 'labour' | 'material_and_labour' | 'equipment', number>>
-    }
+  }
+  const aiResult = aiCall.data
+  const aiModel = aiCall.model
+  try {
 
     const validSubIds = new Set(enabledSubs.map(s => s.id))
     const VALID_CATS = ['material', 'labour', 'material_and_labour', 'equipment'] as const
@@ -262,7 +265,7 @@ Output STRICTLY JSON matching this schema (no preamble, no markdown):
           material_value: matV,
           labour_value: labV,
           anomaly,
-          model: 'claude-sonnet-4-5',
+          model: aiModel,
         },
       }
     })
@@ -300,7 +303,7 @@ Output STRICTLY JSON matching this schema (no preamble, no markdown):
       grand_total: typeof aiResult.grand_total === 'number' ? aiResult.grand_total : local_grand_total,
       ai_summary: {
         text: typeof aiResult.summary === 'string' ? aiResult.summary : null,
-        model: 'claude-sonnet-4-5',
+        model: aiModel,
         rows_in: local_rows.length,
         rows_out: aiRows.length,
         suggestions_count: aiRows.filter(r => r.ai_meta?.suggested_sub_skill_id && r.ai_meta.suggested_sub_skill_id !== sub_skill_id).length,

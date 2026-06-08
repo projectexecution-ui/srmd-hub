@@ -212,7 +212,7 @@ export function ExcelSummaryPanel({
             )}
             {!flagSummary.ai_used && (
               <p className="text-xs text-gray-500 italic">
-                AI narrative skipped {flagSummary.ai_error ? `(error: ${flagSummary.ai_error})` : '— set ANTHROPIC_API_KEY on Vercel to enable.'}
+                AI narrative skipped {flagSummary.ai_error ? `(error: ${flagSummary.ai_error})` : '— set GEMINI_API_KEY (free) on Vercel to enable.'}
               </p>
             )}
           </CardContent>
