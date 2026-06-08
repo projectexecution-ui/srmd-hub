@@ -8,7 +8,7 @@ import { Input } from '@/components/ui/input'
 import { PageHeader } from '@/components/PageHeader'
 import {
   Users, Search, UserCheck, UserX, Mail, Shield, Copy, Check, Send, Crown, Trash2,
-  UserPlus, Loader2, Plus, X, ChevronDown, ChevronRight, Layers, Ban,
+  Loader2, Plus, X, ChevronDown, ChevronRight, Layers, Ban,
   Settings2, Info, EyeOff, Clock, ThumbsDown,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -79,11 +79,6 @@ export default function UsersClient({
   const [busyId, setBusyId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
-  // New-allowed-email form state
-  const [newEmail, setNewEmail] = useState('')
-  const [newRole, setNewRole]   = useState<Role>('viewer')
-  const [adding, setAdding]     = useState(false)
-  const [removing, setRemoving] = useState<string | null>(null)
   // ID of the user whose delete is currently armed (one click → armed,
   // second click within 5s → actually deletes). Null = not armed.
   const [deleteArmed, setDeleteArmed] = useState<string | null>(null)
@@ -212,38 +207,6 @@ export default function UsersClient({
     }
   }
 
-  async function addAllowedEmail(e?: React.FormEvent) {
-    e?.preventDefault()
-    const email = newEmail.trim().toLowerCase()
-    if (!email) return
-    if (!email.includes('@') || !email.includes('.')) {
-      setError('Enter a valid email address')
-      return
-    }
-    setAdding(true); setError(null)
-    const { data, error } = await supabase
-      .from('allowed_emails')
-      .upsert({ email, role: newRole }, { onConflict: 'email' })
-      .select('*')
-      .single()
-    setAdding(false)
-    if (error) { setError(error.message); return }
-    setAllowed(prev => {
-      const filtered = prev.filter(a => a.email !== email)
-      return [data as AllowedEmail, ...filtered]
-    })
-    setNewEmail(''); setNewRole('viewer')
-  }
-
-  async function removeAllowedEmail(email: string) {
-    if (!(await confirm(`Remove ${email} from the allowlist? They will be blocked on next sign-in (existing active profiles are NOT removed by this).`))) return
-    setRemoving(email); setError(null)
-    const { error } = await supabase.from('allowed_emails').delete().eq('email', email)
-    setRemoving(null)
-    if (error) { setError(error.message); return }
-    setAllowed(prev => prev.filter(a => a.email !== email))
-  }
-
   // ─── Per-module role overrides ────────────────────────────
   function rolesFor(userId: string): UserModuleRole[] {
     return moduleRoles.filter(r => r.user_id === userId)
@@ -306,30 +269,6 @@ export default function UsersClient({
     setBusyId(null)
     if (error) { setError(error.message); return }
     setModuleBlocks(prev => prev.filter(b => !(b.user_id === userId && b.module_slug === moduleSlug)))
-  }
-
-  async function updateAllowedRole(email: string, role: Role) {
-    setRemoving(email); setError(null)
-    // 1) Update the allowlist row (seed role for future sign-ins)
-    const { error: allowErr } = await supabase.from('allowed_emails').update({ role }).eq('email', email)
-    if (allowErr) { setRemoving(null); setError(allowErr.message); return }
-    setAllowed(prev => prev.map(a => a.email === email ? { ...a, role } : a))
-
-    // 2) If a profile already exists for this email, sync its LIVE role too.
-    //    Without this, admins changing the dropdown see no effect on the signed-in
-    //    user — the source of constant "RLS rejected my insert" confusion.
-    //    profiles.email is text + we lowercase for safety.
-    const target = email.toLowerCase().trim()
-    const { error: profErr } = await supabase
-      .from('profiles')
-      .update({ role })
-      .eq('email', target)
-    setRemoving(null)
-    if (profErr) { setError(`Allowlist updated, but failed to sync profile: ${profErr.message}`); return }
-    // Reflect in local UI state too so the Users list above shows the new role immediately.
-    setUsers(prev => prev.map(u =>
-      (u.email?.toLowerCase() === target) ? { ...u, role } : u
-    ))
   }
 
   // ─── Approve / deny self-service access requests ──────────────
@@ -734,105 +673,7 @@ export default function UsersClient({
         </CardContent>
       </Card>
 
-      {/* ─── Allowlist ───────────────────────────────────────────────── */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-base">
-            <UserPlus className="h-5 w-5 text-emerald-600" />
-            Allowed Emails ({allowed.length})
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="rounded-xl bg-emerald-50 border border-emerald-200 px-3 py-2 text-xs text-emerald-900">
-            <b>Optional shortcut.</b> Emails on this list are <b>auto-approved</b> — they sign in and
-            become active right away with the role you set, skipping the approval queue. You don&apos;t
-            have to use it: anyone can sign in via the shared link and simply wait in
-            <b> Pending access requests</b> above for you to approve.
-          </div>
-
-          <form onSubmit={addAllowedEmail} className="flex flex-col sm:flex-row gap-2 sm:items-end">
-            <div className="flex-1">
-              <label className="text-xs font-semibold text-gray-600 mb-1 block">Email</label>
-              <Input
-                type="email"
-                value={newEmail}
-                onChange={e => setNewEmail(e.target.value)}
-                placeholder="person@example.com"
-                disabled={adding}
-              />
-            </div>
-            <div>
-              <label className="text-xs font-semibold text-gray-600 mb-1 block">Starting role</label>
-              <select
-                value={newRole}
-                onChange={e => setNewRole(e.target.value as Role)}
-                disabled={adding}
-                className="h-10 rounded-xl border border-gray-300 bg-white px-3 text-sm min-w-[10rem]"
-                title="The role this person gets when they first sign in. You can change it anytime from the Users list above."
-              >
-                {ROLES.map(r => <option key={r} value={r}>{roleLabels[r].label}</option>)}
-              </select>
-            </div>
-            <Button type="submit" disabled={adding || !newEmail.trim()}>
-              {adding ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
-              Add to allowlist
-            </Button>
-          </form>
-          <p className="text-[11px] text-gray-500">
-            The role dropdown on each row is <b>live</b> — change it and the user&apos;s current role updates immediately
-            (no need to bounce between this card and the Users list). For per-module role overrides, use <b>Advanced</b> on the Users list above.
-          </p>
-
-          {allowed.length === 0 ? (
-            <p className="text-sm text-gray-500 italic py-2">
-              No emails allowlisted yet. Add one above.
-            </p>
-          ) : (
-            <div className="divide-y divide-gray-100">
-              {allowed.map(a => {
-                const onProfile = users.some(u => u.email?.toLowerCase() === a.email)
-                const busyMe = removing === a.email
-                return (
-                  <div key={a.email} className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 py-2">
-                    <div className="min-w-0">
-                      <p className="text-sm font-medium text-gray-900 flex items-center gap-1.5">
-                        <Mail className="h-3.5 w-3.5 text-gray-400" />
-                        <span className="font-mono text-xs">{a.email}</span>
-                        {onProfile && <Badge variant="success" className="text-[10px]">signed in</Badge>}
-                      </p>
-                      {a.notes && <p className="text-xs text-gray-400 mt-0.5 truncate">{a.notes}</p>}
-                    </div>
-                    <div className="flex items-center gap-2 flex-shrink-0">
-                      <select
-                        value={a.role}
-                        disabled={busyMe}
-                        onChange={e => updateAllowedRole(a.email, e.target.value as Role)}
-                        title={onProfile
-                          ? 'Changing this updates the user\'s current role immediately'
-                          : 'Role they get on first sign-in'}
-                        className="h-9 rounded-xl border border-gray-300 bg-white px-2 text-xs font-semibold text-gray-700 disabled:bg-gray-50"
-                      >
-                        {ROLES.map(r => <option key={r} value={r}>{roleLabels[r].label}</option>)}
-                      </select>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        disabled={busyMe}
-                        onClick={() => removeAllowedEmail(a.email)}
-                        className="text-rose-600 hover:bg-rose-50 border-rose-200"
-                      >
-                        {busyMe ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <X className="h-3.5 w-3.5" />}
-                      </Button>
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
-          )}
-        </CardContent>
-      </Card>
-
-      {/* How users join — updated copy reflecting allowlist */}
+      {/* How users join — single, simple flow (no allowlist) */}
       <Card className="bg-blue-50 border-blue-200">
         <CardContent className="pt-4 pb-4">
           <div className="flex items-start gap-3">
@@ -843,10 +684,9 @@ export default function UsersClient({
               <p className="text-sm font-semibold text-blue-900 mb-1">How users join</p>
               <p className="text-sm text-blue-800 leading-relaxed">
                 <b>Step 1:</b> Share the CT&nbsp;HUB link with anyone.&nbsp;
-                <b>Step 2:</b> When they sign in with Google, they show up under <b>Pending access requests</b> at
-                the top of this page (and you get a notification). Pick a role and <b>Approve</b> — done. No need to
-                know or pre-add their email. <span className="text-blue-700">(Tip: for people you already know, add
-                their email to the allowlist below to auto-approve them so they skip the wait.)</span>
+                <b>Step 2:</b> When they sign in with Google, they appear under <b>Pending access requests</b> at
+                the top of this page (and you get a notification). Pick a role and <b>Approve</b> — done.
+                You set their role just once, right there. To change it later, use the <b>Role</b> dropdown in the Users list above.
               </p>
               <Button onClick={copyInviteLink} size="sm" variant="outline" className="mt-3">
                 {copied ? <Check className="h-4 w-4 text-green-600" /> : <Copy className="h-4 w-4" />}
