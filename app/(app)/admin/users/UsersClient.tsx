@@ -310,10 +310,26 @@ export default function UsersClient({
 
   async function updateAllowedRole(email: string, role: Role) {
     setRemoving(email); setError(null)
-    const { error } = await supabase.from('allowed_emails').update({ role }).eq('email', email)
-    setRemoving(null)
-    if (error) { setError(error.message); return }
+    // 1) Update the allowlist row (seed role for future sign-ins)
+    const { error: allowErr } = await supabase.from('allowed_emails').update({ role }).eq('email', email)
+    if (allowErr) { setRemoving(null); setError(allowErr.message); return }
     setAllowed(prev => prev.map(a => a.email === email ? { ...a, role } : a))
+
+    // 2) If a profile already exists for this email, sync its LIVE role too.
+    //    Without this, admins changing the dropdown see no effect on the signed-in
+    //    user — the source of constant "RLS rejected my insert" confusion.
+    //    profiles.email is text + we lowercase for safety.
+    const target = email.toLowerCase().trim()
+    const { error: profErr } = await supabase
+      .from('profiles')
+      .update({ role })
+      .eq('email', target)
+    setRemoving(null)
+    if (profErr) { setError(`Allowlist updated, but failed to sync profile: ${profErr.message}`); return }
+    // Reflect in local UI state too so the Users list above shows the new role immediately.
+    setUsers(prev => prev.map(u =>
+      (u.email?.toLowerCase() === target) ? { ...u, role } : u
+    ))
   }
 
   // ─── Approve / deny self-service access requests ──────────────
@@ -763,8 +779,8 @@ export default function UsersClient({
             </Button>
           </form>
           <p className="text-[11px] text-gray-500">
-            This is just their <b>starting role</b>. To change it later — or give them a different role in one specific module —
-            use the <b>Role</b> dropdown (or <b>Advanced</b>) on the <b>Users</b> list above.
+            The role dropdown on each row is <b>live</b> — change it and the user&apos;s current role updates immediately
+            (no need to bounce between this card and the Users list). For per-module role overrides, use <b>Advanced</b> on the Users list above.
           </p>
 
           {allowed.length === 0 ? (
@@ -791,6 +807,9 @@ export default function UsersClient({
                         value={a.role}
                         disabled={busyMe}
                         onChange={e => updateAllowedRole(a.email, e.target.value as Role)}
+                        title={onProfile
+                          ? 'Changing this updates the user\'s current role immediately'
+                          : 'Role they get on first sign-in'}
                         className="h-9 rounded-xl border border-gray-300 bg-white px-2 text-xs font-semibold text-gray-700 disabled:bg-gray-50"
                       >
                         {ROLES.map(r => <option key={r} value={r}>{roleLabels[r].label}</option>)}
