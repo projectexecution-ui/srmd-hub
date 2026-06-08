@@ -12,14 +12,24 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { LineRecord } from '@/lib/procurement'
 import { formatAgeFriendly } from '@/lib/procurement/shared'
-import { Download, ClipboardList, Layers, AlertTriangle, FileSpreadsheet, CheckCircle2, Search, ChevronDown, ChevronRight } from 'lucide-react'
+import { Download, ClipboardList, Layers, AlertTriangle, FileSpreadsheet, CheckCircle2, Search, ChevronDown, ChevronRight, X } from 'lucide-react'
+import { cn } from '@/lib/utils'
 import { ChangeBadge } from './ChangeBadge'
 import { SourceInspector } from './SourceInspector'
 
 type GroupKey = 'indent' | 'block'
-type AgeFilter = 'all' | '7' | '14' | '30'
+type AgeFilter = 'all' | 'lt7' | '7to14' | '14to30' | '30plus'
 
 const GROUP_KEY_STORAGE = 'ct-procurement-needspo-groupby'
+
+// Aging overview cards — exact bands. 'all' clears the age filter.
+const AGING_CARDS: { key: AgeFilter; label: string; cls: string; ring: string }[] = [
+  { key: 'all',    label: 'All waiting',  cls: 'bg-stone-50 border-stone-200 text-stone-700',       ring: 'ring-stone-300' },
+  { key: 'lt7',    label: 'Under 7 days', cls: 'bg-emerald-50 border-emerald-200 text-emerald-800', ring: 'ring-emerald-300' },
+  { key: '7to14',  label: '7–14 days',    cls: 'bg-amber-50 border-amber-200 text-amber-800',       ring: 'ring-amber-300' },
+  { key: '14to30', label: '14–30 days',   cls: 'bg-rose-50 border-rose-200 text-rose-800',          ring: 'ring-rose-300' },
+  { key: '30plus', label: '30+ days',     cls: 'bg-red-50 border-red-200 text-red-800',             ring: 'ring-red-400' },
+]
 
 function ageDays(ln: LineRecord): number | null {
   return ln.indentAgeDays
@@ -79,6 +89,7 @@ export function IndentsNeedingPoView({
 }) {
   const [groupBy, setGroupBy] = useState<GroupKey>('indent')
   const [ageFilter, setAgeFilter] = useState<AgeFilter>('all')
+  const [searchQuery, setSearchQuery] = useState('')
   const [inspectingLine, setInspectingLine] = useState<LineRecord | null>(null)
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
   const toggleCollapsed = (key: string) => setCollapsed(prev => {
@@ -103,11 +114,29 @@ export function IndentsNeedingPoView({
     return lines.filter(ln => ln.status === 'no_po')
   }, [lines])
 
+  // Search narrows the whole view. No-PO lines have no supplier yet, so we
+  // match material / indent no / block — what you'd actually look up here.
+  const searched = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase()
+    if (!q) return needsPo
+    return needsPo.filter(ln =>
+      (ln.material || '').toLowerCase().includes(q) ||
+      (ln.indentNo || '').toLowerCase().includes(q) ||
+      (ln.block || '').toLowerCase().includes(q),
+    )
+  }, [needsPo, searchQuery])
+
+  // Each card is an exact age band, so the filter matches the label exactly.
   const filtered = useMemo(() => {
-    const threshold = ageFilter === 'all' ? null : Number(ageFilter)
-    if (threshold == null) return needsPo
-    return needsPo.filter(ln => (ageDays(ln) ?? 0) >= threshold)
-  }, [needsPo, ageFilter])
+    if (ageFilter === 'all') return searched
+    return searched.filter(ln => {
+      const a = ageDays(ln) ?? 0
+      if (ageFilter === 'lt7') return a < 7
+      if (ageFilter === '7to14') return a >= 7 && a < 14
+      if (ageFilter === '14to30') return a >= 14 && a < 30
+      return a >= 30
+    })
+  }, [searched, ageFilter])
 
   const groups = useMemo(() => {
     const map = new Map<string, { key: string; label: string; subLabel: string; lines: LineRecord[] }>()
@@ -135,19 +164,18 @@ export function IndentsNeedingPoView({
   const totalLines = filtered.length
   const uniqueIndents = new Set(filtered.map(l => l.indentNo)).size
 
-  // Aging buckets across the full no-PO set
+  // Aging distribution — line count per exact band over the searched set.
+  // Drives the clickable cards above the list.
   const buckets = useMemo(() => {
-    const out = { 'lt7': 0, '7to14': 0, '14to30': 0, '30plus': 0 }
-    for (const ln of needsPo) {
+    const out = { all: 0, lt7: 0, '7to14': 0, '14to30': 0, '30plus': 0 }
+    for (const ln of searched) {
       const a = ageDays(ln) ?? 0
-      if (a < 7) out.lt7++
-      else if (a < 14) out['7to14']++
-      else if (a < 30) out['14to30']++
-      else out['30plus']++
+      out.all++
+      const b: 'lt7' | '7to14' | '14to30' | '30plus' = a < 7 ? 'lt7' : a < 14 ? '7to14' : a < 30 ? '14to30' : '30plus'
+      out[b]++
     }
     return out
-  }, [needsPo])
-  const bucketTotal = needsPo.length || 1
+  }, [searched])
 
   if (lines.length === 0) {
     return (
@@ -188,46 +216,34 @@ export function IndentsNeedingPoView({
           </button>
         </div>
 
-        {/* Aging buckets */}
-        {needsPo.length > 0 && (
+        {/* Aging overview — one card per exact band; click to filter */}
+        {searched.length > 0 && (
           <div className="mb-3">
-            <div className="flex items-center justify-between text-[10px] uppercase tracking-wider text-stone-500 font-semibold mb-1">
-              <span>Aging buckets — click to filter</span>
-              <span>{needsPo.length} total waiting</span>
+            <div className="text-[10px] uppercase tracking-wider text-stone-500 font-semibold mb-1.5">
+              Aging by indent age — click to filter
             </div>
-            <div className="flex h-7 w-full rounded-md overflow-hidden border border-stone-200">
-              <button
-                type="button" onClick={() => setAgeFilter('all')}
-                style={{ width: `${(buckets.lt7 / bucketTotal) * 100}%` }}
-                className="bg-stone-200 hover:bg-stone-300 text-[11px] font-medium text-stone-700 inline-flex items-center justify-center min-w-0 px-1"
-                title={`${buckets.lt7} lines under 7 days`}
-              >
-                {buckets.lt7 > 0 && `<7d: ${buckets.lt7}`}
-              </button>
-              <button
-                type="button" onClick={() => setAgeFilter('7')}
-                style={{ width: `${(buckets['7to14'] / bucketTotal) * 100}%` }}
-                className="bg-amber-300 hover:bg-amber-400 text-[11px] font-medium text-amber-900 inline-flex items-center justify-center min-w-0 px-1"
-                title={`${buckets['7to14']} lines 7-14 days`}
-              >
-                {buckets['7to14'] > 0 && `7-14d: ${buckets['7to14']}`}
-              </button>
-              <button
-                type="button" onClick={() => setAgeFilter('14')}
-                style={{ width: `${(buckets['14to30'] / bucketTotal) * 100}%` }}
-                className="bg-rose-400 hover:bg-rose-500 text-[11px] font-medium text-rose-900 inline-flex items-center justify-center min-w-0 px-1"
-                title={`${buckets['14to30']} lines 14-30 days`}
-              >
-                {buckets['14to30'] > 0 && `14-30d: ${buckets['14to30']}`}
-              </button>
-              <button
-                type="button" onClick={() => setAgeFilter('30')}
-                style={{ width: `${(buckets['30plus'] / bucketTotal) * 100}%` }}
-                className="bg-red-600 hover:bg-red-700 text-[11px] font-medium text-white inline-flex items-center justify-center min-w-0 px-1"
-                title={`${buckets['30plus']} lines 30+ days`}
-              >
-                {buckets['30plus'] > 0 && `30+d: ${buckets['30plus']}`}
-              </button>
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2">
+              {AGING_CARDS.map(c => {
+                const count = buckets[c.key]
+                const active = ageFilter === c.key
+                return (
+                  <button
+                    key={c.key}
+                    type="button"
+                    onClick={() => setAgeFilter(c.key)}
+                    className={cn(
+                      'text-left rounded-lg border px-3 py-2 transition-all',
+                      c.cls,
+                      active ? `ring-2 ring-offset-1 ${c.ring}` : 'hover:shadow-sm',
+                    )}
+                    title={`${count} line${count === 1 ? '' : 's'} waiting on a PO`}
+                  >
+                    <div className="text-[11px] font-semibold leading-tight">{c.label}</div>
+                    <div className="text-lg font-bold leading-none mt-1 tabular-nums">{count}</div>
+                    <div className="text-[10px] opacity-80 mt-0.5">line{count === 1 ? '' : 's'}</div>
+                  </button>
+                )
+              })}
             </div>
           </div>
         )}
@@ -253,24 +269,26 @@ export function IndentsNeedingPoView({
             </button>
           </div>
 
-          {/* Age filter */}
-          <div className="inline-flex gap-1 flex-wrap">
-            {([
-              { v: 'all',  label: 'All' },
-              { v: '7',    label: '≥ 7 days' },
-              { v: '14',   label: '≥ 14 days' },
-              { v: '30',   label: '≥ 30 days' },
-            ] as const).map(o => (
+          {/* Search — match material / indent / block (no supplier yet) */}
+          <div className="relative">
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-stone-400 pointer-events-none" />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={e => setSearchQuery(e.target.value)}
+              placeholder="Search material or indent…"
+              className="pl-8 pr-7 h-8 w-52 max-w-full rounded-lg border border-stone-200 bg-white text-xs text-stone-700 placeholder:text-stone-400 focus:outline-none focus:ring-2 focus:ring-amber-200 focus:border-amber-300"
+            />
+            {searchQuery && (
               <button
-                key={o.v}
-                onClick={() => setAgeFilter(o.v)}
-                className={`text-[11px] font-medium px-2.5 py-1 rounded-md ${
-                  ageFilter === o.v ? 'bg-amber-100 text-amber-800 border border-amber-200' : 'bg-stone-100 text-stone-600 hover:bg-stone-200'
-                }`}
+                type="button"
+                onClick={() => setSearchQuery('')}
+                className="absolute right-1.5 top-1/2 -translate-y-1/2 text-stone-400 hover:text-stone-700"
+                aria-label="Clear search"
               >
-                {o.label}
+                <X className="h-3.5 w-3.5" />
               </button>
-            ))}
+            )}
           </div>
 
           {groups.length > 1 && (
@@ -297,8 +315,12 @@ export function IndentsNeedingPoView({
       {filtered.length === 0 ? (
         <div className="bg-white rounded-xl border border-stone-200 p-10 text-center">
           <AlertTriangle className="h-7 w-7 text-emerald-500 mx-auto mb-2" />
-          <p className="text-stone-700 font-medium">All clear in this filter.</p>
-          <p className="text-stone-500 text-sm">Nothing waiting at this threshold.</p>
+          <p className="text-stone-700 font-medium">
+            {searchQuery ? `No matches for “${searchQuery}”.` : 'All clear in this filter.'}
+          </p>
+          <p className="text-stone-500 text-sm">
+            {searchQuery ? 'Try a different term, or clear the search.' : 'Nothing waiting in this band.'}
+          </p>
         </div>
       ) : (
         <div className="space-y-3">
