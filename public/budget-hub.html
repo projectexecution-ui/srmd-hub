@@ -1113,6 +1113,33 @@
 <div class="toast" id="toast"></div>
 
 <script>
+// ============== ADMIN GATE ==============
+// Destructive controls (Reset All) are hidden until we confirm the viewer
+// is a Portal Owner. We start `false` (safe default), then fetch from a
+// read-only "who am I?" endpoint — no touch to state, no touch to data.
+let IS_PORTAL_ADMIN = false;
+async function checkPortalAdmin() {
+  try {
+    const r = await fetch('/api/budget-hub/me', { credentials: 'same-origin' });
+    if (!r.ok) return;
+    const body = await r.json();
+    if (body && body.portalOwner === true) {
+      IS_PORTAL_ADMIN = true;
+      // Re-evaluate Reset visibility for whichever view is currently active.
+      try { applyResetVisibility(); } catch {}
+    }
+  } catch {}
+}
+// Central re-evaluator so any branch that flips IS_PORTAL_ADMIN later just
+// calls this and gets the correct visibility for the active view.
+function applyResetVisibility() {
+  const sbResetEl = document.getElementById('sbReset');
+  if (!sbResetEl) return;
+  const hasProjects = (state && state.projects && state.projects.length > 0);
+  sbResetEl.style.display = (IS_PORTAL_ADMIN && hasProjects) ? 'flex' : 'none';
+}
+setTimeout(checkPortalAdmin, 0);
+
 // ============== STORAGE — server-backed, localStorage fallback ==============
 // State now lives in public.budget_hub_state via /api/budget-hub/state so
 // the whole team sees the same numbers. localStorage is kept as an offline
@@ -1446,8 +1473,7 @@ function renderMasterDashboard() {
   document.getElementById('dashCounts').innerHTML =
     all.length === 0 ? 'No projects yet' :
     `${all.length} project${all.length === 1 ? '' : 's'} · ${withData.length} with data uploaded${utilHtml}`;
-  const sbResetEl = document.getElementById('sbReset');
-  if (sbResetEl) sbResetEl.style.display = all.length ? 'flex' : 'none';
+  applyResetVisibility();
 
   const emptyEl = document.getElementById('dashEmpty');
   if (!all.length) {
@@ -1674,12 +1700,10 @@ function renderProjectsView() {
         </div>
       </div>
     `;
-    const sbResetEl2 = document.getElementById('sbReset');
-    if (sbResetEl2) sbResetEl2.style.display = 'none';
+    applyResetVisibility();
     return;
   }
-  const sbResetEl3 = document.getElementById('sbReset');
-  if (sbResetEl3) sbResetEl3.style.display = 'flex';
+  applyResetVisibility();
 
   let html = '<div class="project-grid">';
   allProjects.forEach(p => {
