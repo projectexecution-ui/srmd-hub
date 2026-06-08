@@ -173,7 +173,12 @@ export default async function CostControlProjectDetailPage(
     dlAgg.set(k, cur)
   }
 
-  // Disciplines-level rollups derived from sub-skills
+  // Disciplines-level rollups. Sums two kinds of budget lines:
+  //   1. Per-sub-skill lines (the granular ones) — accumulated below.
+  //   2. Discipline-root lines (sub_skill_id NULL) — from BPH pulls that
+  //      don't have sub-skill detail, or from the Excel-import path when
+  //      the import lacked sub-skill codes. Without this, BPH-imported
+  //      budgets silently rendered as ₹0 on the KPI strip.
   const discAgg = new Map<string, { budget: number; wo: number; paid: number; approvedTotal: number; estimate: number }>()
   for (const d of disciplines) discAgg.set(d.id, { budget: 0, wo: 0, paid: 0, approvedTotal: 0, estimate: 0 })
   for (const s of subSkills) {
@@ -186,6 +191,17 @@ export default async function CostControlProjectDetailPage(
       cur.paid  += Number(bl?.current_paid_amt ?? 0)
       cur.approvedTotal += a.approvedTotal
       cur.estimate += a.planTotal
+    }
+  }
+  // Add the discipline-root budget lines (sub_skill_id NULL) on top.
+  for (const d of disciplines) {
+    const blRoot = blMap.get(`${d.id}::_root`)
+    if (!blRoot) continue
+    const cur = discAgg.get(d.id)
+    if (cur) {
+      cur.budget += Number(blRoot.current_budget_amt ?? 0)
+      cur.wo    += Number(blRoot.current_wo_committed_amt ?? 0)
+      cur.paid  += Number(blRoot.current_paid_amt ?? 0)
     }
   }
 
