@@ -28,8 +28,9 @@ import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
 import {
   Loader2, Upload, FileSpreadsheet, X, Check, AlertTriangle,
-  Download, RotateCcw, Info, RefreshCw, Warehouse,
+  Download, RotateCcw, Info, RefreshCw, Warehouse, Sparkles,
 } from 'lucide-react'
+import { suggestCategories } from './ai-actions'
 
 export interface WarehouseOpt {
   id: string
@@ -54,6 +55,8 @@ interface ParsedRow {
   status: 'ok' | 'duplicate' | 'error'
   reason: string | null
   code_derived: boolean
+  /** AI's cleaned-up category for this row, set after "Clean with AI" runs. */
+  ai_category?: string | null
 }
 
 type ColKind = 'code' | 'name' | 'unit' | 'description' | 'category' | 'image_url' | 'hsn_code' | 'qty'
@@ -288,6 +291,11 @@ export function ImportForm({
   const [committing, setCommitting] = useState(false)
   const [done, setDone] = useState<{ inserted: number; updated: number; stocked: number; skipped: number } | null>(null)
   const [error, setError] = useState<string | null>(null)
+  // AI category cleanup state
+  const [aiBusy, setAiBusy] = useState(false)
+  const [useAiCategories, setUseAiCategories] = useState(false)
+  const [aiInfo, setAiInfo] = useState<{ provider?: string; model?: string; count: number } | null>(null)
+  const aiSuggestionCount = rows.filter(r => r.ai_category).length
 
   const okCount   = rows.filter(r => r.status === 'ok').length
   const dupCount  = rows.filter(r => r.status === 'duplicate').length
@@ -319,6 +327,45 @@ export function ImportForm({
 
   function reset() {
     setFile(null); setRows([]); setIgnored([]); setDone(null); setError(null); setWarehouseId('')
+    setAiInfo(null); setUseAiCategories(false)
+  }
+
+  async function runAiCategoryCleanup() {
+    // Only suggest for rows we'd actually write to the DB — error rows are
+    // a waste of model time. Also skip rows that already have an ai_category
+    // (lets the user click again to re-suggest without re-doing all work).
+    const targets = rows.filter(r => r.status !== 'error' && !r.ai_category)
+    if (targets.length === 0 && aiSuggestionCount === 0) {
+      setError('No rows to categorise.')
+      return
+    }
+    if (targets.length === 0) return  // already done
+    setAiBusy(true); setError(null)
+    try {
+      const res = await suggestCategories(
+        targets.map(r => ({ code: r.code, name: r.name, currentCategory: r.category })),
+      )
+      if (!res.ok && res.count === 0) {
+        setError(res.reason ?? 'AI category suggestion failed')
+        return
+      }
+      setRows(prev => prev.map(r => {
+        const s = res.byCode[r.code]
+        return s ? { ...r, ai_category: s } : r
+      }))
+      setAiInfo({ provider: res.provider, model: res.model, count: res.count })
+      if (!res.ok && res.reason) {
+        // Partial success — show a soft warning but keep what worked.
+        setError(`Got ${res.count} suggestions before AI stopped: ${res.reason}`)
+      }
+      // Auto-tick the "apply" toggle on first successful run — the user
+      // almost certainly wants what they just generated.
+      if (res.count > 0 && !useAiCategories) setUseAiCategories(true)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'AI request failed')
+    } finally {
+      setAiBusy(false)
+    }
   }
 
   function downloadTemplate() {
@@ -344,7 +391,9 @@ export function ImportForm({
       name: r.name,
       unit: r.unit,
       description: r.description,
-      category: r.category,
+      // AI-suggested category wins when the user opted in AND we have one
+      // for this row; otherwise the file's value (or null) stands.
+      category: useAiCategories && r.ai_category ? r.ai_category : r.category,
       image_url: r.image_url,
       hsn_code: r.hsn_code,
       is_active: true,
@@ -572,6 +621,51 @@ export function ImportForm({
             </label>
           )}
 
+          {/* AI category cleanup */}
+          <div className="p-3 border border-gray-200 rounded-xl bg-white space-y-2">
+            <div className="flex items-center gap-2 flex-wrap">
+              <Sparkles className="h-4 w-4 text-violet-600" />
+              <p className="text-sm font-medium text-gray-900">Clean up categories with AI</p>
+              {aiInfo && (
+                <span className="text-[10px] text-violet-700 bg-violet-50 border border-violet-100 rounded px-1.5 py-0.5">
+                  {aiInfo.provider}{aiInfo.model ? ` · ${aiInfo.model}` : ''} · {aiInfo.count} suggested
+                </span>
+              )}
+            </div>
+            <p className="text-xs text-gray-500">
+              Send the items to the same model Cost Control uses. It normalises typos, merges
+              near-duplicates (“Plumbing / fittings” → “Plumbing”), and infers categories for rows
+              that have none. Existing values are never changed in the DB until you tick the toggle
+              and click Import.
+            </p>
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={runAiCategoryCleanup}
+                disabled={aiBusy}
+              >
+                {aiBusy
+                  ? <><Loader2 className="h-4 w-4 animate-spin" /> Suggesting…</>
+                  : aiSuggestionCount > 0
+                    ? <><RefreshCw className="h-4 w-4" /> Re-suggest categories</>
+                    : <><Sparkles className="h-4 w-4" /> Suggest categories ({rows.filter(r => r.status !== 'error').length} items)</>}
+              </Button>
+              {aiSuggestionCount > 0 && (
+                <label className="flex items-center gap-2 text-sm cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={useAiCategories}
+                    onChange={e => setUseAiCategories(e.target.checked)}
+                    className="h-4 w-4 rounded border-gray-300 text-violet-600 focus:ring-violet-500"
+                  />
+                  <span>Use AI categories on import</span>
+                </label>
+              )}
+            </div>
+          </div>
+
           {/* Opening-stock warehouse picker */}
           {qtyColumnPresent && qtyRows.length > 0 && (
             <div className="p-3 border border-gray-200 rounded-xl bg-white space-y-2">
@@ -624,6 +718,7 @@ export function ImportForm({
                     <th className="px-2 py-2">Name</th>
                     <th className="px-2 py-2 w-16">Unit</th>
                     <th className="px-2 py-2 w-32">Category</th>
+                    {aiSuggestionCount > 0 && <th className="px-2 py-2 w-32">AI Category</th>}
                     {qtyColumnPresent && <th className="px-2 py-2 w-16 text-right">Qty</th>}
                     <th className="px-2 py-2">Reason</th>
                   </tr>
@@ -671,6 +766,20 @@ export function ImportForm({
                         <td className="px-2 py-1.5 text-gray-800 truncate max-w-md">{r.name || '—'}</td>
                         <td className="px-2 py-1.5 text-gray-700">{r.unit || '—'}</td>
                         <td className="px-2 py-1.5 text-gray-700 truncate max-w-[10rem]">{r.category || '—'}</td>
+                        {aiSuggestionCount > 0 && (
+                          <td className="px-2 py-1.5 truncate max-w-[10rem]">
+                            {r.ai_category ? (
+                              <span className={useAiCategories ? 'text-violet-700 font-semibold' : 'text-violet-700'}>
+                                {r.ai_category}
+                                {r.category && r.ai_category !== r.category && useAiCategories && (
+                                  <span className="ml-1 text-[9px] text-violet-500 align-middle">↻</span>
+                                )}
+                              </span>
+                            ) : (
+                              <span className="text-gray-300">—</span>
+                            )}
+                          </td>
+                        )}
                         {qtyColumnPresent && (
                           <td className="px-2 py-1.5 text-right tabular-nums">
                             <span className={willLandQty ? 'text-emerald-700 font-semibold' : 'text-gray-500'}>
