@@ -3,6 +3,7 @@ import { useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import * as XLSX from 'xlsx'
 import { createClient } from '@/lib/supabase/client'
+import { generateSmartWSCode } from '@/components/cost-control/ws-code-action'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { MoneyInput } from '@/components/ui/money-input'
@@ -350,8 +351,13 @@ export function NewWSQuickForm({ projects, projectDisciplines, projectSubSkills,
     if (upErr) { setError(`Upload failed: ${upErr.message}`); setSubmitting(false); return }
     const sourceUrl = path  // we store the path; reads use signed URLs
 
-    // 2. Auto-generate ws_code (timestamp; admin can rename)
-    const wsCode = `WS-Q-${new Date().toISOString().slice(0,10).replace(/-/g,'')}-${Math.random().toString(36).slice(2,5).toUpperCase()}`
+    // 2. Smart ws_code — e.g. P2A02-1102-Q01 (project, sub-skill, Quick mode, seq).
+    // Computed server-side so the seq is consistent with concurrent inserts.
+    const wsCode = await generateSmartWSCode({
+      project_id: projectId,
+      sub_skill_id: subSkillId,
+      entry_mode: 'excel_summary',
+    })
 
     // 3. Insert working sheet header — include AI parse meta when the AI
     // path ran so the WS detail page can show the bifurcation summary.

@@ -2,6 +2,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
+import { generateSmartWSCode } from '@/components/cost-control/ws-code-action'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -88,7 +89,12 @@ export function NewWSThumbruleForm({
       .in('status', ['approved', 'wo_issued', 'paid'])
     const pastSnap = (past ?? []).reduce((s, r) => s + Number(r.total_amount ?? 0), 0)
 
-    const wsCode = `WS-T-${new Date().toISOString().slice(0,10).replace(/-/g,'')}-${Math.random().toString(36).slice(2,5).toUpperCase()}`
+    // Smart ws_code — e.g. P2A02-1102-T01 (Thumbrule mode).
+    const wsCode = await generateSmartWSCode({
+      project_id: projectId,
+      sub_skill_id: subSkillId,
+      entry_mode: 'thumbrule',
+    })
 
     const summaryNotes = [
       `Thumbrule estimate: ${fmtINR(Number(area))} sft × ₹${fmtINR(Number(rate))}/sft`,

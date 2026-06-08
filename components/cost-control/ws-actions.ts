@@ -4,6 +4,7 @@ import { revalidatePath } from 'next/cache'
 import { z } from 'zod'
 import { createClient } from '@/lib/supabase/server'
 import { getMyUser, getMyProfile, getMyPermissions, can } from '@/lib/auth'
+import { generateSmartWSCode } from './ws-code-action'
 
 // ---------- shared authorization helpers ----------
 
@@ -222,6 +223,8 @@ export type NewWSResult =
   | { ok: true; id: string; ws_code: string }
   | { ok: false; error: string }
 
+// Legacy global-serial code. Kept as a fallback only — the smart helper
+// (generateSmartWSCode) is preferred and used by every new entry path.
 async function nextWSCode(): Promise<string> {
   const supabase = await createClient()
   const year = new Date().getFullYear()
@@ -247,7 +250,20 @@ export async function createWorkingSheet(input: {
   if (!parsed.success) return { ok: false, error: 'Validation failed' }
 
   const supabase = await createClient()
-  const ws_code = await nextWSCode()
+  // Smart code: <ProjectCode>-<SubSkillCode>-W<seq> (W = full Working sheet
+  // mode). Falls back to the legacy global serial if the helper errors —
+  // ws_code has a NOT NULL constraint we don't want to trip on a partial
+  // input.
+  let ws_code: string
+  try {
+    ws_code = await generateSmartWSCode({
+      project_id: parsed.data.project_id,
+      sub_skill_id: parsed.data.sub_skill_id,
+      entry_mode: 'line_items',
+    })
+  } catch {
+    ws_code = await nextWSCode()
+  }
 
   // Deadlines are gated behind the 'deadline_set' approval rule. If
   // the caller can't set one, silently drop the fields from the
