@@ -101,7 +101,46 @@ export function ExcelSummaryPanel({
   }
 
   const flaggedRowIds = new Set(rows.filter(r => r.flag).map(r => r.id))
-  const totalFromRows = rows.reduce((s, r) => s + (r.amount ?? 0), 0)
+
+  // Classify each row so the totals reconcile against the typed grand
+  // total. Indian BOQ sheets often have GST / freight / discount rows
+  // sitting BELOW the line items, with no qty/rate but a flat amount.
+  // Previously we summed every row's `amount` as if it were a line item
+  // → the sum was lower than the sheet total → confusing mismatch
+  // warning. Now we bucket by description so the math reconciles:
+  //
+  //   line items + add-ons + tax − discounts ≈ sheet total
+  //
+  // Matching the AI's `ai_meta.category` if present, else inferring
+  // from the description text. Case-insensitive, whitespace-tolerant.
+  function classifyRow(r: { description: string | null; qty: number | null; rate: number | null; amount: number | null }): 'line' | 'tax' | 'addon' | 'discount' {
+    const d = (r.description ?? '').toLowerCase().trim()
+    if (!d) return 'line'
+    // Discounts first — usually negative or labelled "less"/"discount"/"trade"
+    if (/(^|\s)(discount|less|trade\s+discount|rebate)(\s|$|:)/.test(d)) return 'discount'
+    // Tax row: GST, CGST, SGST, IGST, UTGST, TDS, TCS, cess, vat, service tax
+    if (/(^|\s)(gst|cgst|sgst|igst|utgst|tds|tcs|cess|vat|service\s*tax|input\s*tax)(\s|$|:|%|\d|@)/.test(d)) return 'tax'
+    if (/tax\s*(amount|amt|@|on)/.test(d)) return 'tax'
+    // Add-ons: freight, transport, packing, insurance, loading, handling, P&F
+    if (/(^|\s)(freight|transport(ation)?|carriage|packing|insurance|handling|loading|unloading|p\s*&\s*f|pnf|carting|cartage|loading\/unloading|installation\s*charges|service\s*charge)(\s|$|:)/.test(d)) return 'addon'
+    if (/\b(misc(ellaneous)?|other\s*charges|sundry)\b/.test(d) && (r.qty == null || r.rate == null)) return 'addon'
+    return 'line'
+  }
+
+  type Bucket = 'line' | 'tax' | 'addon' | 'discount'
+  const buckets: Record<Bucket, { count: number; total: number }> = {
+    line:     { count: 0, total: 0 },
+    tax:      { count: 0, total: 0 },
+    addon:    { count: 0, total: 0 },
+    discount: { count: 0, total: 0 },
+  }
+  for (const r of rows) {
+    const b = classifyRow(r)
+    buckets[b].count += 1
+    buckets[b].total += r.amount ?? 0
+  }
+  // Net reconciliation total
+  const totalFromRows = buckets.line.total + buckets.addon.total + buckets.tax.total - Math.abs(buckets.discount.total)
 
   return (
     <div className="space-y-4">
@@ -131,13 +170,13 @@ export function ExcelSummaryPanel({
             </div>
           </div>
 
-          {/* Plain-language totals card. Two amounts side-by-side:
-              what the engineer typed/uploaded vs what the line items add
-              up to. When they disagree by > 1% we surface a small warning
-              with the exact gap. */}
+          {/* Plain-language totals card. When the sheet has tax / freight /
+              discount rows, we show the breakdown so the reconciliation is
+              obvious. Otherwise the simpler 4-tile layout. */}
           {(() => {
             const stated  = summaryTotal ?? 0
             const fromRows = totalFromRows
+            const hasExtras = buckets.tax.count + buckets.addon.count + buckets.discount.count > 0
             const diff = fromRows - stated
             const pct = stated > 0 ? Math.abs(diff / stated) * 100 : 0
             const mismatch = stated > 0 && pct > 1
@@ -150,9 +189,11 @@ export function ExcelSummaryPanel({
                     hint="What was entered as the grand total"
                   />
                   <Cell
-                    label="Lines add up to"
+                    label={hasExtras ? 'Items + tax add up to' : 'Lines add up to'}
                     value={formatINR(fromRows)}
-                    hint={`${rows.length} line item${rows.length === 1 ? '' : 's'} in the sheet`}
+                    hint={hasExtras
+                      ? `${buckets.line.count} items + ${buckets.tax.count} tax + ${buckets.addon.count} add-on${buckets.discount.count > 0 ? ` − ${buckets.discount.count} discount` : ''} row${buckets.line.count + buckets.tax.count + buckets.addon.count + buckets.discount.count === 1 ? '' : 's'}`
+                      : `${rows.length} line item${rows.length === 1 ? '' : 's'} in the sheet`}
                   />
                   <Cell
                     label="Items to check"
@@ -165,19 +206,39 @@ export function ExcelSummaryPanel({
                     hint={flagSummary?.ai_used ? 'AI reviewed this sheet' : 'AI was not run yet'}
                   />
                 </div>
+
+                {/* Breakdown of how the recon total is built — only shown
+                    when extras exist. Reads like an invoice footer. */}
+                {hasExtras && (
+                  <div className="mt-3 rounded-lg border border-gray-200 bg-gray-50/60 px-3 py-2 text-xs">
+                    <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-500 mb-1.5">How the total reconciles</p>
+                    <div className="space-y-0.5 font-mono text-gray-700">
+                      <Line label={`Line items (${buckets.line.count})`} amt={buckets.line.total} />
+                      {buckets.addon.count > 0 && <Line label={`Add-ons (${buckets.addon.count}) — freight, P&F, etc.`} amt={buckets.addon.total} prefix="+" />}
+                      {buckets.tax.count > 0 && <Line label={`Tax (${buckets.tax.count}) — GST / cess / etc.`} amt={buckets.tax.total} prefix="+" />}
+                      {buckets.discount.count > 0 && <Line label={`Discounts (${buckets.discount.count})`} amt={Math.abs(buckets.discount.total)} prefix="−" />}
+                      <div className="border-t border-gray-300 pt-1 mt-1 flex justify-between font-semibold text-gray-900">
+                        <span>Reconciled total</span>
+                        <span>{formatINR(fromRows)}</span>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
                 {mismatch && (
                   <div className="mt-3 inline-flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
                     <AlertTriangle className="h-3.5 w-3.5 mt-0.5 flex-shrink-0" />
                     <div>
                       <p className="font-semibold">
-                        Sheet total and line items don&apos;t match — {pct.toFixed(1)}% gap
+                        Sheet total and reconciled total don&apos;t match — {pct.toFixed(1)}% gap
                       </p>
                       <p className="opacity-80">
-                        Lines add up to <b>{formatINR(fromRows)}</b>, but the sheet total says <b>{formatINR(stated)}</b>
-                        {diff > 0 ? ' — lines are ' : ' — sheet is '}
-                        <b>{formatINR(Math.abs(diff))}</b> {diff > 0 ? 'higher' : 'higher'}.
-                        Likely cause: heading / sub-total rows are being counted as items, or the typed grand total is stale.
-                        Run AI parse to clean it up.
+                        Sheet total <b>{formatINR(stated)}</b> vs reconciled <b>{formatINR(fromRows)}</b>
+                        {' — gap of '}
+                        <b>{formatINR(Math.abs(diff))}</b>.
+                        {hasExtras
+                          ? ' Some tax / freight / discount rows may be missing or misclassified. Run AI parse to tag them correctly.'
+                          : ' Likely: heading rows being counted, or GST/freight/discount rows that we couldn’t auto-detect. Run AI parse to clean it up.'}
                       </p>
                     </div>
                   </div>
@@ -330,6 +391,15 @@ export function ExcelSummaryPanel({
           </div>
         </CardContent>
       </Card>
+    </div>
+  )
+}
+
+function Line({ label, amt, prefix = '' }: { label: string; amt: number; prefix?: '+' | '−' | '' }) {
+  return (
+    <div className="flex justify-between">
+      <span className="text-gray-600">{prefix && <span className="mr-1">{prefix}</span>}{label}</span>
+      <span className="tabular-nums">{formatINR(amt)}</span>
     </div>
   )
 }

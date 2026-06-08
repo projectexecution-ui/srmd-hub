@@ -46,7 +46,7 @@ const bodySchema = z.object({
   local_grand_total: z.number().nullable(),
 })
 
-type Category = 'material' | 'labour' | 'material_and_labour' | 'equipment' | null
+type Category = 'material' | 'labour' | 'material_and_labour' | 'equipment' | 'tax' | 'addon' | 'discount' | null
 
 interface AiRow {
   row_no: number
@@ -130,10 +130,16 @@ export async function POST(req: Request) {
 2. Produce a corrected, structured list of LINE ITEM ROWS. Drop heading / section / sub-total / grand-total rows.
 
 3. CATEGORY BIFURCATION — for each row, decide whether the cost is:
-   - "material"           → just material supply (e.g. cement bags, M.S. rebar, PVC pipes)
-   - "labour"             → just installation / erection / labour service
+   - "material"            → just material supply (e.g. cement bags, M.S. rebar, PVC pipes)
+   - "labour"              → just installation / erection / labour service
    - "material_and_labour" → contractor supplies AND installs (BOM contract). MUST split.
-   - "equipment"          → equipment hire (cranes, vibrators, hoists)
+   - "equipment"           → equipment hire (cranes, vibrators, hoists)
+   - "tax"                 → GST, CGST, SGST, IGST, UTGST, TDS, TCS, cess, VAT, service tax. Usually below the line items.
+   - "addon"               → freight, transport, packing, P&F, insurance, loading, handling, carting, misc / other / sundry charges
+   - "discount"            → rebates / trade discounts / less amounts. Treated as negative when totalling.
+   IMPORTANT: tax / addon / discount rows must be KEPT (do not drop them) so the
+   reconciliation total = items + addons + tax − discounts ≈ the sheet's grand total.
+   Only drop genuine heading / sub-total / grand-total rows.
    Many sheets mix all of these in one file. Look at the description AND the column headers:
    - "Supply + Installation" split columns → material_and_labour, split into material_value/labour_value using the breakdown
    - "M&L" / "SITC" / "Supply Install Test Commission" in description → material_and_labour
@@ -167,7 +173,7 @@ Output STRICTLY JSON matching this schema (no preamble, no markdown):
         "confidence": <0..1>,
         "cleaned_description": <string|null — only when materially different from input>,
         "rate_concern": <string|null>,
-        "category": "material"|"labour"|"material_and_labour"|"equipment"|null,
+        "category": "material"|"labour"|"material_and_labour"|"equipment"|"tax"|"addon"|"discount"|null,
         "material_value": <number|null — portion of amount that is material>,
         "labour_value":   <number|null — portion of amount that is labour>,
         "anomaly": <string|null>
@@ -219,7 +225,7 @@ Output STRICTLY JSON matching this schema (no preamble, no markdown):
   try {
 
     const validSubIds = new Set(enabledSubs.map(s => s.id))
-    const VALID_CATS = ['material', 'labour', 'material_and_labour', 'equipment'] as const
+    const VALID_CATS = ['material', 'labour', 'material_and_labour', 'equipment', 'tax', 'addon', 'discount'] as const
 
     // Normalise + validate Claude's output. Cast each field through the
     // same shape as the local parser's, so the client doesn't care which
@@ -277,7 +283,7 @@ Output STRICTLY JSON matching this schema (no preamble, no markdown):
         acc[r.ai_meta.category] = (acc[r.ai_meta.category] ?? 0) + r.amount
         return acc
       },
-      { material: 0, labour: 0, material_and_labour: 0, equipment: 0 } as Record<'material' | 'labour' | 'material_and_labour' | 'equipment', number>,
+      { material: 0, labour: 0, material_and_labour: 0, equipment: 0, tax: 0, addon: 0, discount: 0 } as Record<'material' | 'labour' | 'material_and_labour' | 'equipment' | 'tax' | 'addon' | 'discount', number>,
     )
     // Also derive a material-vs-labour pure split (combined rows
     // contribute their material_value + labour_value separately).

@@ -35,7 +35,7 @@ interface AiRow {
     confidence: number | null
     cleaned_description: string | null
     rate_concern: string | null
-    category: 'material' | 'labour' | 'material_and_labour' | 'equipment' | null
+    category: 'material' | 'labour' | 'material_and_labour' | 'equipment' | 'tax' | 'addon' | 'discount' | null
     material_value: number | null
     labour_value: number | null
     anomaly: string | null
@@ -117,6 +117,12 @@ export async function POST(
    - "labour"              → just installation / erection / labour service
    - "material_and_labour" → contractor supplies AND installs (BOM contract). MUST split.
    - "equipment"           → equipment hire
+   - "tax"                 → GST, CGST, SGST, IGST, UTGST, TDS, TCS, cess, VAT, service tax
+   - "addon"               → freight, transport, P&F, packing, insurance, handling, misc / other / sundry charges
+   - "discount"            → rebates / trade discounts / less amounts (treat as negative)
+   IMPORTANT: KEEP tax / addon / discount rows in the output — only drop true
+   heading / sub-total / grand-total rows. The reconciliation depends on them:
+   line items + addons + tax − discounts ≈ sheet grand total.
    Look at the description AND column headers:
    - "Supply + Installation" split columns → material_and_labour, split into material_value/labour_value using the breakdown
    - "M&L" / "SITC" / "Supply Install Test Commission" in description → material_and_labour
@@ -150,7 +156,7 @@ Output STRICTLY JSON (no preamble, no markdown):
         "confidence": <0..1>,
         "cleaned_description": <string|null>,
         "rate_concern": <string|null>,
-        "category": "material"|"labour"|"material_and_labour"|"equipment"|null,
+        "category": "material"|"labour"|"material_and_labour"|"equipment"|"tax"|"addon"|"discount"|null,
         "material_value": <number|null>,
         "labour_value":   <number|null>,
         "anomaly": <string|null>
@@ -183,7 +189,7 @@ Output STRICTLY JSON (no preamble, no markdown):
   try {
 
     const validSubIds = new Set(enabledSubs.map(s => s.id))
-    const VALID_CATS = ['material', 'labour', 'material_and_labour', 'equipment'] as const
+    const VALID_CATS = ['material', 'labour', 'material_and_labour', 'equipment', 'tax', 'addon', 'discount'] as const
 
     const aiRows: AiRow[] = (aiResult.rows ?? []).map((r, i) => {
       const meta = (r.ai_meta ?? {}) as Record<string, unknown>
