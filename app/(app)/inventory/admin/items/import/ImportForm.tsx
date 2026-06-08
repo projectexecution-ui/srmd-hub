@@ -1,24 +1,25 @@
 'use client'
-// Bulk import items into inv_items from an .xlsx file.
+// Bulk import items into inv_items from an .xlsx file, with optional
+// opening-stock landing into inv_stock + a matching inv_stock_movements
+// row (movement_type='adjustment') for the audit trail.
 //
 // Flow:
-//   1. Click the drop area, pick a .xlsx (template OR an Odoo
-//      product.template export — both supported)
+//   1. Click drop area, pick a .xlsx (template OR Odoo product.template
+//      export — both supported)
 //   2. We parse client-side with xlsx
-//   3. Auto-detect the header row + column positions (case-insensitive,
-//      several aliases per column — see HEADER_ALIASES)
-//   4. If the file has no Code / Internal Reference column (Odoo doesn't
-//      populate it), we slugify Name into a stable code
-//   5. Each row is classified ok / duplicate / error with a reason
-//   6. Preview shows everything + a toggle "Update existing items if
-//      codes match" — when ON, duplicates become updates and we upsert
-//      on code instead of skipping
+//   3. Auto-detect headers (case-insensitive aliases, incl. Odoo names)
+//   4. Code derived from Name when missing (Odoo Internal Reference is
+//      mostly blank), stable so re-uploads match the same items
+//   5. Optionally pick a warehouse — when set, rows with a positive Qty
+//      land as opening stock there
+//   6. Preview classifies every row + lets the user toggle update mode
+//      (upsert on code) before committing
 //
-// Odoo-specific columns that aren't part of the item master (Image 128,
-// Quantity On Hand, Sales Price, Currency, etc.) are detected and listed
-// in an "ignored columns" banner so the user knows nothing was lost.
+// Odoo extras we recognise but don't import: Image 128, Sales Price,
+// Currency, Activity State, etc. — listed in a sky-blue info banner.
 //
-// No new schema — straight insert / upsert into public.inv_items.
+// No schema changes — uses existing inv_items / inv_stock /
+// inv_stock_movements tables.
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
@@ -27,11 +28,18 @@ import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
 import {
   Loader2, Upload, FileSpreadsheet, X, Check, AlertTriangle,
-  Download, RotateCcw, Info, RefreshCw,
+  Download, RotateCcw, Info, RefreshCw, Warehouse,
 } from 'lucide-react'
 
+export interface WarehouseOpt {
+  id: string
+  code: string
+  name: string
+  location: string | null
+}
+
 interface ParsedRow {
-  row_no: number          // 1-based, matches Excel
+  row_no: number
   code: string
   name: string
   unit: string
@@ -39,28 +47,26 @@ interface ParsedRow {
   category: string | null
   image_url: string | null
   hsn_code: string | null
+  qty: number          // 0 when not provided / non-numeric
   // 'ok'        — new code, will insert
   // 'duplicate' — code exists in master (skipped in insert mode, updated in upsert mode)
-  // 'error'     — bad row, will be skipped either way
+  // 'error'     — bad row, skipped either way
   status: 'ok' | 'duplicate' | 'error'
   reason: string | null
-  // True when the code wasn't in the file and we derived it from name —
-  // shown in the preview so the user can see what they'll end up with.
   code_derived: boolean
 }
 
-type ColKind = 'code' | 'name' | 'unit' | 'description' | 'category' | 'image_url' | 'hsn_code'
+type ColKind = 'code' | 'name' | 'unit' | 'description' | 'category' | 'image_url' | 'hsn_code' | 'qty'
 
 // Case-insensitive header aliases. First match wins per kind.
-// Includes Odoo product.template export headers (Internal Reference,
-// Product Category) alongside our own template headers.
+// Includes Odoo product.template export headers.
 const HEADER_ALIASES: Record<ColKind, RegExp[]> = {
   code:        [
     /^(item[ _-]*)?code$/i,
     /^sku$/i,
     /^material[ _-]*code$/i,
     /^internal[ _-]*reference$/i,   // Odoo
-    /^default[ _-]*code$/i,         // Odoo (technical name)
+    /^default[ _-]*code$/i,         // Odoo (technical)
   ],
   name:        [/^(item[ _-]*)?name$/i, /^particular$/i],
   unit:        [/^unit$/i, /^uom$/i, /^u\.o\.m\.?$/i, /^of[ _-]*meas/i],
@@ -68,15 +74,20 @@ const HEADER_ALIASES: Record<ColKind, RegExp[]> = {
   category:    [/^category$/i, /^product[ _-]*category$/i, /^group$/i, /^class$/i],
   image_url:   [/^image[ _-]*url$/i, /^photo[ _-]*url$/i, /^picture[ _-]*url$/i],
   hsn_code:    [/^hsn$/i, /^hsn[ _-]*code$/i],
+  qty:         [
+    /^qty$/i, /^quantity$/i,
+    /^opening[ _-]*(stock|qty|quantity|balance)$/i,
+    /^quantity[ _-]*on[ _-]*hand$/i,    // Odoo
+    /^stock[ _-]*qty$/i, /^on[ _-]*hand$/i,
+  ],
 }
 
-// Headers we recognise as "Odoo gave you this but it isn't part of the item
-// master" — listed in the ignored-columns banner so the user knows nothing
-// silently went missing. Anything not matched here is just ignored quietly.
+// Headers Odoo gives you that we deliberately don't import.
+// 'Quantity On Hand' is NOT in this list anymore — it's mapped to qty
+// above when the user picks a warehouse to land it in.
 const KNOWN_IGNORED_HEADERS: { pattern: RegExp; reason: string }[] = [
   { pattern: /^image[ _-]*128$/i,                   reason: 'Image (base64) — too large to import, add per-item later' },
   { pattern: /^image[ _-]*(512|1024|256)$/i,        reason: 'Image (base64) — too large to import' },
-  { pattern: /^quantity[ _-]*on[ _-]*hand$/i,       reason: 'Opening stock — use Receive Stock, not Item Master' },
   { pattern: /^sales[ _-]*price$/i,                 reason: 'Pricing isn’t part of the master' },
   { pattern: /^currency$/i,                         reason: 'Pricing isn’t part of the master' },
   { pattern: /^activity[ _-]*state$/i,              reason: 'Odoo activity field' },
@@ -93,7 +104,7 @@ function detectColumns(headerRow: unknown[]): {
   ignored: { label: string; reason: string }[]
 } {
   const cols: Record<ColKind, number> = {
-    code: -1, name: -1, unit: -1, description: -1, category: -1, image_url: -1, hsn_code: -1,
+    code: -1, name: -1, unit: -1, description: -1, category: -1, image_url: -1, hsn_code: -1, qty: -1,
   }
   const ignored: { label: string; reason: string }[] = []
   const usedKinds = new Set<ColKind>()
@@ -101,7 +112,6 @@ function detectColumns(headerRow: unknown[]): {
   headerRow.forEach((h, i) => {
     const s = String(h ?? '').trim()
     if (!s) return
-    // First check if it maps to one of our columns
     let mapped = false
     for (const kind of Object.keys(HEADER_ALIASES) as ColKind[]) {
       if (usedKinds.has(kind)) continue
@@ -113,7 +123,6 @@ function detectColumns(headerRow: unknown[]): {
       }
     }
     if (mapped) return
-    // Not one of ours — see if it's a known Odoo column we should flag
     const known = KNOWN_IGNORED_HEADERS.find(k => k.pattern.test(s))
     if (known) ignored.push({ label: s, reason: known.reason })
   })
@@ -126,10 +135,18 @@ function cellStr(v: unknown): string {
   return String(v).trim()
 }
 
-// Build a stable, human-readable code from a name. Same input → same output,
-// so re-importing the same Odoo file matches the same items.
+function cellNum(v: unknown): number {
+  if (v == null || v === '') return 0
+  if (typeof v === 'number') return Number.isFinite(v) ? v : 0
+  const s = String(v).replace(/,/g, '').trim()
+  if (!s) return 0
+  const n = Number(s)
+  return Number.isFinite(n) ? n : 0
+}
+
+// Same input → same output, so re-importing the same Odoo file matches
+// the same items.
 //   "6A 3PIN TOP PLUG (RU)"  → "6A-3PIN-TOP-PLUG-RU"
-//   "Door Closer (DC522S)"   → "DOOR-CLOSER-DC522S"
 //   "1/2M GI STEEL BOX"      → "1-2M-GI-STEEL-BOX"
 function slugifyCode(name: string): string {
   return name
@@ -143,6 +160,7 @@ async function parseExcel(file: File, existingCodes: Set<string>): Promise<{
   rows: ParsedRow[]
   ignored: { label: string; reason: string }[]
   codeColumnPresent: boolean
+  qtyColumnPresent: boolean
 }> {
   const buf = await file.arrayBuffer()
   const wb = XLSX.read(buf, { type: 'array' })
@@ -150,16 +168,13 @@ async function parseExcel(file: File, existingCodes: Set<string>): Promise<{
     const s = wb.Sheets[n]
     return s && s['!ref']
   }) ?? wb.SheetNames[0]
-  if (!sheetName) return { rows: [], ignored: [], codeColumnPresent: false }
+  if (!sheetName) return { rows: [], ignored: [], codeColumnPresent: false, qtyColumnPresent: false }
   const sheet = wb.Sheets[sheetName]
   const aoa = XLSX.utils.sheet_to_json<unknown[]>(sheet, { header: 1, defval: null })
 
-  // Find the header row — first row where we can resolve Name + Unit.
-  // Code is optional (Odoo exports have an Internal Reference column but it's
-  // mostly blank — we slug-derive from Name in that case).
   let headerIdx = -1
   let cols: Record<ColKind, number> = {
-    code: -1, name: -1, unit: -1, description: -1, category: -1, image_url: -1, hsn_code: -1,
+    code: -1, name: -1, unit: -1, description: -1, category: -1, image_url: -1, hsn_code: -1, qty: -1,
   }
   let ignored: { label: string; reason: string }[] = []
   for (let i = 0; i < Math.min(aoa.length, 25); i++) {
@@ -172,20 +187,20 @@ async function parseExcel(file: File, existingCodes: Set<string>): Promise<{
     return {
       rows: [{
         row_no: 0, code: '', name: '', unit: '', description: null, category: null,
-        image_url: null, hsn_code: null,
+        image_url: null, hsn_code: null, qty: 0,
         status: 'error',
         reason: 'Could not find a header row with at least Name + Unit. Download the template if unsure.',
         code_derived: false,
       }],
       ignored: [],
       codeColumnPresent: false,
+      qtyColumnPresent: false,
     }
   }
 
   const codeColumnPresent = cols.code !== -1
+  const qtyColumnPresent  = cols.qty  !== -1
   const rows: ParsedRow[] = []
-  // Codes seen IN THE FILE so two rows resolving to the same code don't both
-  // import — the second is flagged as an in-file duplicate.
   const seenInFile = new Set<string>()
 
   for (let i = headerIdx + 1; i < aoa.length; i++) {
@@ -199,13 +214,10 @@ async function parseExcel(file: File, existingCodes: Set<string>): Promise<{
     const category    = cols.category !== -1 ? cellStr(r[cols.category]) : ''
     const image_url   = cols.image_url !== -1 ? cellStr(r[cols.image_url]) : ''
     const hsn_code    = cols.hsn_code !== -1 ? cellStr(r[cols.hsn_code]) : ''
+    const qty         = cols.qty !== -1 ? cellNum(r[cols.qty]) : 0
 
-    // If image_url cell looks like base64 (Odoo Image 128 leaks in here when
-    // the user picks "image_url" as the column), drop it — we don't store
-    // base64 in image_url.
     const imageClean = (image_url && image_url.length > 500) ? '' : image_url
 
-    // Derive code from name when the file has no code value
     let code_derived = false
     if (!codeRaw && name) {
       const slug = slugifyCode(name)
@@ -218,6 +230,7 @@ async function parseExcel(file: File, existingCodes: Set<string>): Promise<{
     if (!name) { status = 'error'; reason = 'Name is empty' }
     else if (!unit) { status = 'error'; reason = 'Unit is empty' }
     else if (!codeRaw) { status = 'error'; reason = 'Code is empty and could not be derived from name' }
+    else if (qty < 0) { status = 'error'; reason = `Qty is negative (${qty}) — opening stock must be ≥ 0` }
     else if (existingCodes.has(codeRaw.toLowerCase())) {
       status = 'duplicate'; reason = `Code "${codeRaw}" already exists in the master`
     } else if (seenInFile.has(codeRaw.toLowerCase())) {
@@ -235,18 +248,19 @@ async function parseExcel(file: File, existingCodes: Set<string>): Promise<{
       category: category || null,
       image_url: imageClean || null,
       hsn_code: hsn_code || null,
+      qty: Math.max(0, qty),
       status, reason, code_derived,
     })
   }
-  return { rows, ignored, codeColumnPresent }
+  return { rows, ignored, codeColumnPresent, qtyColumnPresent }
 }
 
 function buildTemplate(): Blob {
-  const headers = ['code', 'name', 'unit', 'category', 'description', 'hsn_code', 'image_url']
-  const example = ['CEM-OPC53', 'OPC 53 Grade Cement', 'bags', 'Cement', '53-grade ordinary portland', '25232990', '']
+  const headers = ['code', 'name', 'unit', 'category', 'description', 'hsn_code', 'image_url', 'qty']
+  const example = ['CEM-OPC53', 'OPC 53 Grade Cement', 'bags', 'Cement', '53-grade ordinary portland', '25232990', '', 100]
   const ws = XLSX.utils.aoa_to_sheet([headers, example])
   ws['!cols'] = [
-    { wch: 14 }, { wch: 36 }, { wch: 8 }, { wch: 14 }, { wch: 32 }, { wch: 12 }, { wch: 40 },
+    { wch: 14 }, { wch: 36 }, { wch: 8 }, { wch: 14 }, { wch: 32 }, { wch: 12 }, { wch: 40 }, { wch: 8 },
   ]
   const wb = XLSX.utils.book_new()
   XLSX.utils.book_append_sheet(wb, ws, 'items')
@@ -254,7 +268,13 @@ function buildTemplate(): Blob {
   return new Blob([arr], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
 }
 
-export function ImportForm({ existingCodes }: { existingCodes: string[] }) {
+export function ImportForm({
+  existingCodes,
+  warehouses,
+}: {
+  existingCodes: string[]
+  warehouses: WarehouseOpt[]
+}) {
   const router = useRouter()
   const existingSet = new Set(existingCodes)
   const [file, setFile] = useState<File | null>(null)
@@ -262,17 +282,21 @@ export function ImportForm({ existingCodes }: { existingCodes: string[] }) {
   const [rows, setRows] = useState<ParsedRow[]>([])
   const [ignored, setIgnored] = useState<{ label: string; reason: string }[]>([])
   const [codeColumnPresent, setCodeColumnPresent] = useState(true)
-  const [updateMode, setUpdateMode] = useState(false)   // upsert on code when ON
+  const [qtyColumnPresent, setQtyColumnPresent] = useState(false)
+  const [updateMode, setUpdateMode] = useState(false)
+  const [warehouseId, setWarehouseId] = useState<string>('')
   const [committing, setCommitting] = useState(false)
-  const [done, setDone] = useState<{ inserted: number; updated: number; skipped: number } | null>(null)
+  const [done, setDone] = useState<{ inserted: number; updated: number; stocked: number; skipped: number } | null>(null)
   const [error, setError] = useState<string | null>(null)
 
   const okCount   = rows.filter(r => r.status === 'ok').length
   const dupCount  = rows.filter(r => r.status === 'duplicate').length
   const errCount  = rows.filter(r => r.status === 'error').length
   const derivedCount = rows.filter(r => r.code_derived && r.status !== 'error').length
+  // Rows that would actually land opening stock (NEW items with qty > 0)
+  const qtyRows = rows.filter(r => r.status === 'ok' && r.qty > 0)
+  const qtyTotal = qtyRows.reduce((s, r) => s + r.qty, 0)
 
-  // In update mode, duplicates become updates and are committed alongside OKs.
   const willCommit = updateMode ? okCount + dupCount : okCount
   const willSkip   = updateMode ? errCount : dupCount + errCount
 
@@ -285,6 +309,7 @@ export function ImportForm({ existingCodes }: { existingCodes: string[] }) {
       setRows(parsed.rows)
       setIgnored(parsed.ignored)
       setCodeColumnPresent(parsed.codeColumnPresent)
+      setQtyColumnPresent(parsed.qtyColumnPresent)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not parse this file')
     } finally {
@@ -293,7 +318,7 @@ export function ImportForm({ existingCodes }: { existingCodes: string[] }) {
   }
 
   function reset() {
-    setFile(null); setRows([]); setIgnored([]); setDone(null); setError(null)
+    setFile(null); setRows([]); setIgnored([]); setDone(null); setError(null); setWarehouseId('')
   }
 
   function downloadTemplate() {
@@ -311,7 +336,6 @@ export function ImportForm({ existingCodes }: { existingCodes: string[] }) {
     setCommitting(true); setError(null)
     const supabase = createClient()
 
-    // Rows that will end up in the database — OK + (if update mode) duplicates
     const toWrite = rows.filter(r =>
       r.status === 'ok' || (updateMode && r.status === 'duplicate')
     )
@@ -326,23 +350,76 @@ export function ImportForm({ existingCodes }: { existingCodes: string[] }) {
       is_active: true,
     }))
 
-    let result
-    if (updateMode) {
-      // ON CONFLICT (code) DO UPDATE — overwrites the columns in payload.
-      // Blank cells become NULL in the DB (clearing existing values). This is
-      // the right semantics when the Excel is your source of truth (Odoo
-      // re-export). If you want "preserve blanks", clear the cell in Excel
-      // before re-uploading isn't enough — leave it as-is.
-      result = await supabase.from('inv_items').upsert(payload, { onConflict: 'code' })
-    } else {
-      result = await supabase.from('inv_items').insert(payload)
+    // INSERT or UPSERT — .select() returns the rows so we can match codes back
+    // to ids for the stock writes below.
+    const itemsRes = updateMode
+      ? await supabase.from('inv_items').upsert(payload, { onConflict: 'code' }).select('id, code')
+      : await supabase.from('inv_items').insert(payload).select('id, code')
+
+    if (itemsRes.error) {
+      setCommitting(false); setError(itemsRes.error.message); return
+    }
+
+    let stockedCount = 0
+
+    // Opening stock — only land for the NEW items (status='ok'). For
+    // duplicates, even in update mode, we don't touch stock so that any
+    // receipts/issues that happened since the first import survive.
+    if (warehouseId && qtyRows.length > 0) {
+      const codeToId = new Map<string, string>()
+      for (const r of (itemsRes.data ?? [])) {
+        codeToId.set(String(r.code), String(r.id))
+      }
+      const stockPayload = qtyRows
+        .map(r => ({ item_id: codeToId.get(r.code), qty: r.qty }))
+        .filter((x): x is { item_id: string; qty: number } => Boolean(x.item_id))
+
+      if (stockPayload.length > 0) {
+        // 1) inv_stock — physical_qty for the chosen warehouse.
+        //    Upsert in case a stock row already exists for this (item, warehouse).
+        const { error: stockErr } = await supabase
+          .from('inv_stock')
+          .upsert(
+            stockPayload.map(p => ({
+              item_id: p.item_id,
+              warehouse_id: warehouseId,
+              physical_qty: p.qty,
+            })),
+            { onConflict: 'item_id,warehouse_id' }
+          )
+        if (stockErr) {
+          setCommitting(false)
+          setError(`Items imported, but opening stock failed: ${stockErr.message}`)
+          return
+        }
+
+        // 2) inv_stock_movements — adjustment row per item for the audit trail.
+        const { error: moveErr } = await supabase
+          .from('inv_stock_movements')
+          .insert(stockPayload.map(p => ({
+            item_id: p.item_id,
+            warehouse_id: warehouseId,
+            movement_type: 'adjustment',
+            qty: p.qty,
+            ref_table: 'bulk_import',
+            ref_id: null,
+            remarks: 'Opening balance — bulk import from Excel',
+          })))
+        if (moveErr) {
+          setCommitting(false)
+          setError(`Items + stock saved, but the movement ledger entry failed: ${moveErr.message}`)
+          return
+        }
+
+        stockedCount = stockPayload.length
+      }
     }
 
     setCommitting(false)
-    if (result.error) { setError(result.error.message); return }
     setDone({
       inserted: okCount,
       updated:  updateMode ? dupCount : 0,
+      stocked:  stockedCount,
       skipped:  willSkip,
     })
     router.refresh()
@@ -362,6 +439,11 @@ export function ImportForm({ existingCodes }: { existingCodes: string[] }) {
               {done.updated > 0 && <>Updated {done.updated} existing item{done.updated === 1 ? '' : 's'}.</>}
               {done.inserted === 0 && done.updated === 0 && 'No changes — nothing to import.'}
             </p>
+            {done.stocked > 0 && (
+              <p className="text-xs text-emerald-800">
+                Opening stock recorded for {done.stocked} item{done.stocked === 1 ? '' : 's'}.
+              </p>
+            )}
             {done.skipped > 0 && (
               <p className="text-xs text-emerald-800">
                 {done.skipped} row{done.skipped === 1 ? '' : 's'} skipped — fix the source file and re-upload if needed.
@@ -394,7 +476,7 @@ export function ImportForm({ existingCodes }: { existingCodes: string[] }) {
             <Upload className="h-5 w-5" />
             <span>Click to choose an .xlsx file</span>
             <span className="text-[11px] text-gray-400 text-center max-w-md">
-              Required: <b>Name</b> + <b>Unit</b>. Optional: Code / Internal Reference, Category / Product Category, Description, HSN, Image URL.
+              Required: <b>Name</b> + <b>Unit</b>. Optional: Code / Internal Reference, Category / Product Category, Description, HSN, Image URL, <b>Qty / Quantity On Hand</b>.
               <br />Code is auto-generated from Name when missing (e.g. Odoo exports).
             </span>
             <input type="file" accept=".xls,.xlsx" className="hidden" onChange={onFile} />
@@ -414,7 +496,7 @@ export function ImportForm({ existingCodes }: { existingCodes: string[] }) {
               {parsing
                 ? 'Parsing…'
                 : rows.length > 0
-                  ? `${rows.length} data row${rows.length === 1 ? '' : 's'} · ${okCount} new · ${dupCount} existing · ${errCount} error${errCount === 1 ? '' : 's'}`
+                  ? `${rows.length} data row${rows.length === 1 ? '' : 's'} · ${okCount} new · ${dupCount} existing · ${errCount} error${errCount === 1 ? '' : 's'}${qtyColumnPresent ? ` · ${qtyRows.length} with qty` : ''}`
                   : '—'}
             </p>
           </div>
@@ -462,7 +544,7 @@ export function ImportForm({ existingCodes }: { existingCodes: string[] }) {
         </div>
       )}
 
-      {/* Step 2 — preview + commit */}
+      {/* Step 2 — controls + preview + commit */}
       {rows.length > 0 && (
         <>
           {/* Update-mode toggle */}
@@ -481,13 +563,54 @@ export function ImportForm({ existingCodes }: { existingCodes: string[] }) {
                 </p>
                 <p className="text-xs text-gray-500 mt-0.5">
                   {dupCount} row{dupCount === 1 ? '' : 's'} match codes that already exist. With this on,
-                  they&rsquo;ll be overwritten from this file (name, category, unit, etc.). With this off,
-                  they&rsquo;ll be skipped and the existing rows stay untouched.
+                  their master fields are overwritten from this file. Stock is NOT touched for existing items —
+                  use stock adjustments for that.
                   <br />
-                  <span className="text-amber-700">⚠ Blank cells in your file will clear those fields in the master.</span>
+                  <span className="text-amber-700">⚠ Blank cells in your file will clear those master fields.</span>
                 </p>
               </div>
             </label>
+          )}
+
+          {/* Opening-stock warehouse picker */}
+          {qtyColumnPresent && qtyRows.length > 0 && (
+            <div className="p-3 border border-gray-200 rounded-xl bg-white space-y-2">
+              <div className="flex items-center gap-2">
+                <Warehouse className="h-4 w-4 text-emerald-700" />
+                <p className="text-sm font-medium text-gray-900">Opening stock</p>
+                <span className="text-xs text-gray-500">
+                  {qtyRows.length} new item{qtyRows.length === 1 ? '' : 's'} have Qty &gt; 0 (total {qtyTotal.toLocaleString('en-IN')} units)
+                </span>
+              </div>
+              {warehouses.length === 0 ? (
+                <p className="text-xs text-amber-700">
+                  No active warehouses found. Add one under Inventory → Warehouses to land opening stock.
+                </p>
+              ) : (
+                <>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <label htmlFor="wh" className="text-xs text-gray-600">Land into warehouse:</label>
+                    <select
+                      id="wh"
+                      value={warehouseId}
+                      onChange={e => setWarehouseId(e.target.value)}
+                      className="text-sm border border-gray-300 rounded-lg px-2 py-1 bg-white"
+                    >
+                      <option value="">— don't import qty —</option>
+                      {warehouses.map(w => (
+                        <option key={w.id} value={w.id}>
+                          {w.name}{w.location ? ` (${w.location})` : ''}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <p className="text-[11px] text-gray-500">
+                    Creates an <span className="font-mono">adjustment</span> entry in the stock ledger with remark
+                    “Opening balance — bulk import from Excel”. Only NEW items get opening stock; existing items are left as-is.
+                  </p>
+                </>
+              )}
+            </div>
           )}
 
           <div className="border border-gray-200 rounded-xl overflow-hidden">
@@ -501,12 +624,14 @@ export function ImportForm({ existingCodes }: { existingCodes: string[] }) {
                     <th className="px-2 py-2">Name</th>
                     <th className="px-2 py-2 w-16">Unit</th>
                     <th className="px-2 py-2 w-32">Category</th>
+                    {qtyColumnPresent && <th className="px-2 py-2 w-16 text-right">Qty</th>}
                     <th className="px-2 py-2">Reason</th>
                   </tr>
                 </thead>
                 <tbody>
                   {rows.map(r => {
                     const willUpdate = updateMode && r.status === 'duplicate'
+                    const willLandQty = warehouseId !== '' && r.status === 'ok' && r.qty > 0
                     const tint =
                       r.status === 'error' ? 'bg-rose-50/40'
                       : willUpdate ? 'bg-blue-50/40'
@@ -546,6 +671,13 @@ export function ImportForm({ existingCodes }: { existingCodes: string[] }) {
                         <td className="px-2 py-1.5 text-gray-800 truncate max-w-md">{r.name || '—'}</td>
                         <td className="px-2 py-1.5 text-gray-700">{r.unit || '—'}</td>
                         <td className="px-2 py-1.5 text-gray-700 truncate max-w-[10rem]">{r.category || '—'}</td>
+                        {qtyColumnPresent && (
+                          <td className="px-2 py-1.5 text-right tabular-nums">
+                            <span className={willLandQty ? 'text-emerald-700 font-semibold' : 'text-gray-500'}>
+                              {r.qty || '—'}
+                            </span>
+                          </td>
+                        )}
                         <td className="px-2 py-1.5 text-gray-600">{r.reason || ''}</td>
                       </tr>
                     )
@@ -559,8 +691,8 @@ export function ImportForm({ existingCodes }: { existingCodes: string[] }) {
             <Button onClick={commit} disabled={committing || willCommit === 0}>
               {committing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
               {updateMode && dupCount > 0
-                ? `Import (${okCount} new · ${dupCount} update${dupCount === 1 ? '' : 's'})`
-                : `Import ${willCommit} item${willCommit === 1 ? '' : 's'}`}
+                ? `Import (${okCount} new · ${dupCount} update${dupCount === 1 ? '' : 's'}${warehouseId ? ` · stock for ${qtyRows.length}` : ''})`
+                : `Import ${willCommit} item${willCommit === 1 ? '' : 's'}${warehouseId ? ` · stock for ${qtyRows.length}` : ''}`}
             </Button>
             <Button variant="ghost" onClick={reset}>
               Cancel
