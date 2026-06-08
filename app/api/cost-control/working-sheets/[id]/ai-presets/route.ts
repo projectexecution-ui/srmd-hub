@@ -1,13 +1,9 @@
 // Smart preset prompt suggestions for the WS Ask-AI box.
 //
-// User said: presets should be smart — look at the uploaded Excel and
-// suggest the top 5 questions a PM might want to ask about THIS specific
-// sheet. Not a hardcoded list of generic prompts.
-//
-// Lazy-loaded by the client when the Ask-AI panel mounts. Cached for the
-// life of the request only — we don't persist these on the WS yet,
-// because the bifurcation already gave the user a summary and a re-parse
-// would invalidate them anyway.
+// Generated once per sheet and cached in cc_working_sheets.ai_preset_prompts.
+// Subsequent panel opens read from cache — zero Gemini calls. The user
+// can force a refresh by passing { force: true } in the request body
+// (wired to a "Refresh suggestions" link in the panel UI).
 
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
@@ -22,18 +18,52 @@ interface PresetOut {
   prompt: string  // full question we'll feed to the Ask endpoint
 }
 
+interface CachedPresets {
+  presets: PresetOut[]
+  model: string
+  generated_at: string
+}
+
 export async function POST(
-  _req: Request,
+  req: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
   await requirePermission('cost-control', 'view')
   const { id } = await params
 
+  // Body is optional — when force=true we bypass the cache and regenerate.
+  let force = false
+  try {
+    const body = await req.json().catch(() => null)
+    if (body && typeof body === 'object' && (body as { force?: boolean }).force === true) force = true
+  } catch { /* no body, fine */ }
+
+  const supabase = await createClient()
+
+  // Cache hit: skip AI entirely.
+  if (!force) {
+    const { data: cached } = await supabase
+      .from('cc_working_sheets')
+      .select('ai_preset_prompts')
+      .eq('id', id)
+      .single()
+    const meta = cached?.ai_preset_prompts as CachedPresets | null
+    if (meta && Array.isArray(meta.presets) && meta.presets.length > 0) {
+      return NextResponse.json({
+        ok: true,
+        cached: true,
+        model: meta.model,
+        provider: 'cache',
+        presets: meta.presets,
+        generated_at: meta.generated_at,
+      })
+    }
+  }
+
   if (!hasAiProvider()) {
     return NextResponse.json({ ok: false, reason: 'No AI key configured' }, { status: 503 })
   }
 
-  const supabase = await createClient()
   const { data: ws } = await supabase
     .from('cc_working_sheets')
     .select('ws_code, line_type, entry_mode, total_amount, ai_parse_meta, cc_disciplines(code, name), cc_sub_skills(code, name)')
@@ -105,9 +135,11 @@ Output STRICTLY JSON, no markdown:
     .map(p => ({ label: p.label.trim(), prompt: p.prompt.trim() }))
 
   // Fallback to a safe minimum if the model returns nothing usable.
+  // (Don't cache the fallback — next time someone opens, try AI again.)
   if (presets.length === 0) {
     return NextResponse.json({
       ok: true,
+      cached: false,
       model: r.model,
       provider: r.provider,
       presets: [
@@ -120,10 +152,23 @@ Output STRICTLY JSON, no markdown:
     })
   }
 
+  // Persist for next time — single biggest token saver.
+  const cachePayload: CachedPresets = {
+    presets,
+    model: r.model,
+    generated_at: new Date().toISOString(),
+  }
+  await supabase
+    .from('cc_working_sheets')
+    .update({ ai_preset_prompts: cachePayload })
+    .eq('id', id)
+
   return NextResponse.json({
     ok: true,
+    cached: false,
     model: r.model,
     provider: r.provider,
     presets,
+    generated_at: cachePayload.generated_at,
   })
 }

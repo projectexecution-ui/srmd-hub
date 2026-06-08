@@ -85,12 +85,14 @@ export async function POST(
   const sheet = wb.Sheets[sheetName]
   const aoa = XLSX.utils.sheet_to_json<unknown[]>(sheet, { header: 1, defval: null })
 
-  // 3. Load the project's enabled sub-skills as the catalogue Claude maps onto
+  // 3. Catalogue — only sub-skills under the WS's discipline. Sending
+  // every sub-skill in the project burned input tokens for no gain.
   const { data: subRes } = await supabase
     .from('cc_project_sub_skills')
-    .select('sub_skill_id, cc_sub_skills(id, discipline_id, code, name)')
+    .select('sub_skill_id, cc_sub_skills!inner(id, discipline_id, code, name)')
     .eq('project_id', ws.project_id)
     .eq('is_enabled', true)
+    .eq('cc_sub_skills.discipline_id', ws.discipline_id)
   type SubJoin = { sub_skill_id: string; cc_sub_skills: SubSkillCtx | SubSkillCtx[] | null }
   const enabledSubs: SubSkillCtx[] = ((subRes ?? []) as SubJoin[])
     .map(r => Array.isArray(r.cc_sub_skills) ? r.cc_sub_skills[0] : r.cc_sub_skills)
@@ -164,8 +166,8 @@ Output STRICTLY JSON (no preamble, no markdown):
     project_chosen_sub_skill_id: ws.sub_skill_id,
     project_chosen_discipline_id: ws.discipline_id,
     sub_skill_catalogue: enabledSubs.map(s => ({ id: s.id, code: s.code, name: s.name, discipline_id: s.discipline_id })),
-    raw_sheet_aoa: aoa.slice(0, 80),
-    local_parser_rows: (existingRows ?? []).slice(0, 100),
+    raw_sheet_aoa: aoa.slice(0, 50),
+    local_parser_rows: (existingRows ?? []).slice(0, 60),
   }
 
   const aiCall = await generateJSON<{ rows: Array<Record<string, unknown>>; grand_total: number | null; summary: string }>({
@@ -259,7 +261,12 @@ Output STRICTLY JSON (no preamble, no markdown):
       split_totals: splitTotals,
       run_at: new Date().toISOString(),
     }
-    await supabase.from('cc_working_sheets').update({ ai_parse_meta: summary }).eq('id', id)
+    // Re-parse invalidates the cached Ask-AI presets — they were built
+    // off the previous row content. Next panel open will regenerate.
+    await supabase
+      .from('cc_working_sheets')
+      .update({ ai_parse_meta: summary, ai_preset_prompts: null })
+      .eq('id', id)
 
     return NextResponse.json({ ok: true, rows_out: aiRows.length, summary })
   } catch (err) {

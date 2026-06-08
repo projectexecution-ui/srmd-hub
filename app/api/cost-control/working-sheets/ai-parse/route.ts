@@ -87,23 +87,19 @@ export async function POST(req: Request) {
   }
   const { aoa, project_id, discipline_id, sub_skill_id, line_type, local_rows, local_grand_total } = parsed.data
 
-  // Fetch the project's enabled disciplines + sub-skills so we can hand
-  // Claude the catalogue to map rows onto.
+  // Fetch enabled sub-skills under the picked discipline ONLY. Sending
+  // the whole project's catalogue (often 100+ sub-skills) was eating
+  // input tokens without helping — most rows belong to the discipline
+  // the engineer already picked.
   const supabase = await createClient()
-  const [discRes, subRes] = await Promise.all([
-    supabase
-      .from('cc_project_disciplines')
-      .select('discipline_id, cc_disciplines(id, code, name)')
-      .eq('project_id', project_id)
-      .eq('is_enabled', true),
-    supabase
-      .from('cc_project_sub_skills')
-      .select('sub_skill_id, cc_sub_skills(id, discipline_id, code, name)')
-      .eq('project_id', project_id)
-      .eq('is_enabled', true),
-  ])
+  const { data: subRes } = await supabase
+    .from('cc_project_sub_skills')
+    .select('sub_skill_id, cc_sub_skills!inner(id, discipline_id, code, name)')
+    .eq('project_id', project_id)
+    .eq('is_enabled', true)
+    .eq('cc_sub_skills.discipline_id', discipline_id)
   type SubJoin = { sub_skill_id: string; cc_sub_skills: SubSkillCtx | SubSkillCtx[] | null }
-  const enabledSubs: SubSkillCtx[] = ((subRes.data ?? []) as SubJoin[])
+  const enabledSubs: SubSkillCtx[] = ((subRes ?? []) as SubJoin[])
     .map(r => Array.isArray(r.cc_sub_skills) ? r.cc_sub_skills[0] : r.cc_sub_skills)
     .filter((s): s is SubSkillCtx => !!s)
 
@@ -121,7 +117,10 @@ export async function POST(req: Request) {
   // Slim the payload to what Claude needs: first 80 rows of the AoA + the
   // local parser's guess + the catalogue. Claude returns a corrected row
   // list with metadata.
-  const aoaSlim = aoa.slice(0, 80)
+  // Trim the raw sheet payload — most BOQs have their full structure
+  // visible in the first 50 rows. Larger sheets get truncated; AI still
+  // produces accurate row mappings off the local parser's full list.
+  const aoaSlim = aoa.slice(0, 50)
   const subCatalogue = enabledSubs.map(s => ({ id: s.id, code: s.code, name: s.name, discipline_id: s.discipline_id }))
 
   const systemPrompt = `You are a construction cost-control Excel parser for the SRMD Cost Control system. Engineers upload BOQ-style sheets in wildly different formats — some are material-only POs, some are labour-only contracts, and many MIX BOTH (the contractor supplies material AND erects). Your job:
@@ -191,7 +190,7 @@ Output STRICTLY JSON matching this schema (no preamble, no markdown):
     project_chosen_discipline_id: discipline_id,
     sub_skill_catalogue: subCatalogue,
     raw_sheet_aoa: aoaSlim,
-    local_parser_rows: local_rows.slice(0, 100),
+    local_parser_rows: local_rows.slice(0, 60),
     local_parser_grand_total: local_grand_total,
   }
 

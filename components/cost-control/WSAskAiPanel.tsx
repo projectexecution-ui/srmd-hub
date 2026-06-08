@@ -16,6 +16,24 @@ interface QnA {
 
 interface Preset { label: string; prompt: string }
 
+async function loadPresets(wsId: string, force: boolean): Promise<{
+  ok: boolean
+  presets: Preset[]
+  cached?: boolean
+  reason?: string
+}> {
+  const res = await fetch(`/api/cost-control/working-sheets/${wsId}/ai-presets`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ force }),
+  })
+  const json = await res.json().catch(() => null)
+  if (!res.ok || !json?.ok) {
+    return { ok: false, presets: [], reason: json?.reason ?? `HTTP ${res.status}` }
+  }
+  return { ok: true, presets: json.presets ?? [], cached: !!json.cached }
+}
+
 export function WSAskAiPanel({ wsId, defaultOpen = false }: { wsId: string; defaultOpen?: boolean }) {
   const [open, setOpen]           = useState(defaultOpen)
   const [question, setQuestion]   = useState('')
@@ -24,23 +42,26 @@ export function WSAskAiPanel({ wsId, defaultOpen = false }: { wsId: string; defa
   const [presets, setPresets]     = useState<Preset[] | null>(null)
   const [presetsLoading, setPresetsLoading] = useState(false)
   const [presetsErr, setPresetsErr] = useState<string | null>(null)
+  const [presetsCached, setPresetsCached] = useState(false)
   const [pending, startTransition] = useTransition()
   const answerRef = useRef<HTMLDivElement>(null)
 
-  // Lazy-load presets when the panel first opens.
+  // Lazy-load presets when the panel first opens. Server returns cached
+  // presets when present — first open generates + saves, every other
+  // open is zero AI calls.
   useEffect(() => {
     if (!open || presets !== null || presetsLoading) return
     setPresetsLoading(true)
     setPresetsErr(null)
-    fetch(`/api/cost-control/working-sheets/${wsId}/ai-presets`, { method: 'POST' })
-      .then(async res => {
-        const json = await res.json().catch(() => null)
-        if (!res.ok || !json?.ok) {
-          setPresetsErr(json?.reason ?? `Failed to load suggestions (HTTP ${res.status})`)
+    loadPresets(wsId, false)
+      .then(r => {
+        if (r.ok) {
+          setPresets(r.presets)
+          setPresetsCached(!!r.cached)
+        } else {
+          setPresetsErr(r.reason ?? 'Failed to load suggestions')
           setPresets([])
-          return
         }
-        setPresets(json.presets ?? [])
       })
       .catch(e => {
         setPresetsErr(e instanceof Error ? e.message : 'Network error')
@@ -48,6 +69,19 @@ export function WSAskAiPanel({ wsId, defaultOpen = false }: { wsId: string; defa
       })
       .finally(() => setPresetsLoading(false))
   }, [open, wsId, presets, presetsLoading])
+
+  async function refreshPresets() {
+    setPresetsLoading(true)
+    setPresetsErr(null)
+    const r = await loadPresets(wsId, true)
+    if (r.ok) {
+      setPresets(r.presets)
+      setPresetsCached(false)
+    } else {
+      setPresetsErr(r.reason ?? 'Failed to refresh')
+    }
+    setPresetsLoading(false)
+  }
 
   function ask(q: string) {
     const trimmed = q.trim()
@@ -151,8 +185,24 @@ export function WSAskAiPanel({ wsId, defaultOpen = false }: { wsId: string; defa
           <p className="text-[11px] text-gray-500 italic">Couldn&apos;t load suggestions ({presetsErr}). You can still type your own question.</p>
         ) : presets && presets.length > 0 ? (
           <div>
-            <p className="text-[10px] font-semibold text-violet-700 uppercase tracking-wide mb-1.5">
-              <Wand2 className="h-3 w-3 inline mr-0.5" /> Try one of these
+            <p className="text-[10px] font-semibold text-violet-700 uppercase tracking-wide mb-1.5 inline-flex items-center gap-2">
+              <span>
+                <Wand2 className="h-3 w-3 inline mr-0.5" /> Try one of these
+              </span>
+              {presetsCached && (
+                <span className="text-[9px] font-normal normal-case text-gray-400">
+                  · cached ·{' '}
+                  <button
+                    type="button"
+                    onClick={refreshPresets}
+                    disabled={pending || presetsLoading}
+                    className="text-violet-700 hover:underline disabled:opacity-50"
+                    title="Regenerate suggestions from latest sheet content (uses 1 AI call)"
+                  >
+                    refresh
+                  </button>
+                </span>
+              )}
             </p>
             <div className="flex flex-wrap gap-1.5">
               {presets.map((p, i) => (

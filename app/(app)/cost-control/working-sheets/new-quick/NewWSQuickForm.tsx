@@ -277,11 +277,31 @@ export function NewWSQuickForm({ projects, projectDisciplines, projectSubSkills,
       const local = await parseExcel(f)
       setParsed(local)
       if (local.grandTotal != null && !summaryTotal) setSummaryTotal(String(local.grandTotal))
-      // Kick off the AI parse silently — runs on the server with Claude.
-      // Replaces our regex result with a smarter one if everything succeeds
-      // (better column detection, material/labour bifurcation, sub-skill
-      // suggestions, rate concerns). Falls back to local on any failure.
-      if (projectId && disciplineId && subSkillId && local.rows.length > 0) {
+
+      // Only auto-fire the AI parse when the local regex result looks
+      // suspicious. We're on a free Gemini quota (1,500/day shared with
+      // every other AI feature) so blowing it on uploads that the regex
+      // already parsed perfectly is wasteful. Heuristics:
+      //
+      //   1. Zero / very few rows extracted (parser missed columns)
+      //   2. Sum of row amounts is materially off the stated grand total
+      //      (likely heading rows being counted, or wrong column picked)
+      //   3. > 30% of rows have NULL rate AND NULL amount (parser confused)
+      //
+      // The user can ALWAYS click "Re-parse with AI" on the WS detail
+      // page later — this gate only skips the silent auto-fire.
+      const needsAi = (() => {
+        if (!projectId || !disciplineId || !subSkillId) return false
+        if (local.rows.length === 0) return true
+        if (local.rows.length < 3) return true
+        const sumRows = local.rows.reduce((s, r) => s + (r.amount ?? 0), 0)
+        if (local.grandTotal && Math.abs(sumRows - local.grandTotal) / local.grandTotal > 0.05) return true
+        const blanks = local.rows.filter(r => r.rate == null && r.amount == null).length
+        if (blanks / local.rows.length > 0.3) return true
+        return false
+      })()
+
+      if (needsAi) {
         runAiParse(local).catch(() => null)
       }
     } catch (err) {
