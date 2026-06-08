@@ -26,7 +26,7 @@ export interface CategorySuggestionOut {
 interface BatchResult {
   ok: boolean
   reason?: string
-  provider?: 'gemini' | 'groq'
+  provider?: 'gemini' | 'groq' | 'cerebras'
   model?: string
   suggestions: CategorySuggestionOut[]
 }
@@ -107,7 +107,7 @@ async function processBatch(items: CategorySuggestionIn[]): Promise<BatchResult>
 export interface SuggestCategoriesResult {
   ok: boolean
   reason?: string
-  provider?: 'gemini' | 'groq'
+  provider?: 'gemini' | 'groq' | 'cerebras'
   model?: string
   /** Total items the model returned a suggestion for. */
   count: number
@@ -132,7 +132,7 @@ export async function suggestCategories(
   }
 
   const byCode: Record<string, string> = {}
-  let provider: 'gemini' | 'groq' | undefined
+  let provider: 'gemini' | 'groq' | 'cerebras' | undefined
   let model: string | undefined
 
   for (let i = 0; i < items.length; i += BATCH_SIZE) {

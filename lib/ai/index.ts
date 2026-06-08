@@ -1,19 +1,23 @@
-// Provider-agnostic AI helper. Tries Gemini (free, generous quota,
-// India-allowed, native JSON output) first; falls back to Groq (free,
-// fast, OpenAI-compatible) when Gemini rate-limits or errors. Both are
-// no-credit-card free tiers — well within volume for SRMD Cost Control.
+// Provider-agnostic AI helper with a three-deep free-tier fallback chain:
 //
-// Callers don't need to know which provider answered. Result includes
-// `provider` + `model` for logging and the UI's tiny model badge.
+//   1. Gemini 2.5 Flash-Lite  — 1,500 req/day,  great structured JSON
+//   2. Groq Llama 3.3 70B    — ~14,400/day, fastest mainstream API
+//   3. Cerebras Llama 3.3 70B — ~14,400/day,  separate quota pool
 //
-// All AI features in Cost Control go through this file. Replaces the
+// All three are no-credit-card free tiers. Combined, they give SRMD
+// roughly 30,000 free AI calls per day — well beyond what Cost Control
+// can use. Callers don't need to know which provider answered: the
+// result carries `provider` + `model` for logging and the UI badge.
+//
+// All Cost Control AI features go through this file. Replaces the old
 // direct @anthropic-ai/sdk calls that were costing money per invocation.
 
 const GEMINI_MODEL = 'gemini-2.5-flash-lite'
 const GEMINI_EMBED_MODEL = 'text-embedding-004'
 const GROQ_MODEL = 'llama-3.3-70b-versatile'
+const CEREBRAS_MODEL = 'llama-3.3-70b'
 
-export type AiProvider = 'gemini' | 'groq'
+export type AiProvider = 'gemini' | 'groq' | 'cerebras'
 
 export interface AiOk<T> {
   ok: true
@@ -31,16 +35,19 @@ export interface AiErr {
 export type AiResult<T> = AiOk<T> | AiErr
 
 export function hasAiProvider(): boolean {
-  return !!(process.env.GEMINI_API_KEY || process.env.GROQ_API_KEY)
+  return !!(process.env.GEMINI_API_KEY || process.env.GROQ_API_KEY || process.env.CEREBRAS_API_KEY)
 }
 
 export function aiProviderHint(): string {
   if (process.env.GEMINI_API_KEY) return 'gemini'
   if (process.env.GROQ_API_KEY) return 'groq'
+  if (process.env.CEREBRAS_API_KEY) return 'cerebras'
   return 'none'
 }
 
-/** Structured JSON. Gemini uses native responseMimeType=application/json; Groq uses JSON mode. */
+/** Structured JSON. Cascades Gemini → Groq → Cerebras, falling through
+ *  only on rate-limit / quota errors so genuine 4xx / 5xx (bad input,
+ *  safety blocks) surface immediately instead of being silently retried. */
 export async function generateJSON<T = unknown>(args: {
   system: string
   user: string
@@ -49,11 +56,17 @@ export async function generateJSON<T = unknown>(args: {
   if (process.env.GEMINI_API_KEY) {
     const r = await callGeminiJSON<T>(args)
     if (r.ok) return r
-    if (!r.rateLimited || !process.env.GROQ_API_KEY) return r
-    console.warn('[ai] Gemini failed (rate-limit/quota) — falling back to Groq')
+    if (!r.rateLimited) return r
+    console.warn('[ai] Gemini rate-limited — trying Groq')
   }
-  if (process.env.GROQ_API_KEY) return callGroqJSON<T>(args)
-  return { ok: false, reason: 'No AI provider configured. Set GEMINI_API_KEY (recommended, free) or GROQ_API_KEY in your env.' }
+  if (process.env.GROQ_API_KEY) {
+    const r = await callGroqJSON<T>(args)
+    if (r.ok) return r
+    if (!r.rateLimited || !process.env.CEREBRAS_API_KEY) return r
+    console.warn('[ai] Groq rate-limited — trying Cerebras')
+  }
+  if (process.env.CEREBRAS_API_KEY) return callCerebrasJSON<T>(args)
+  return { ok: false, reason: 'No AI provider configured. Set GEMINI_API_KEY (free, https://aistudio.google.com/apikey), GROQ_API_KEY (free, https://console.groq.com/keys), or CEREBRAS_API_KEY (free, https://cloud.cerebras.ai).' }
 }
 
 /** Plain text generation (for justifications, approval summaries). */
@@ -65,10 +78,16 @@ export async function generateText(args: {
   if (process.env.GEMINI_API_KEY) {
     const r = await callGeminiText(args)
     if (r.ok) return r
-    if (!r.rateLimited || !process.env.GROQ_API_KEY) return r
-    console.warn('[ai] Gemini failed (rate-limit/quota) — falling back to Groq')
+    if (!r.rateLimited) return r
+    console.warn('[ai] Gemini rate-limited — trying Groq')
   }
-  if (process.env.GROQ_API_KEY) return callGroqText(args)
+  if (process.env.GROQ_API_KEY) {
+    const r = await callGroqText(args)
+    if (r.ok) return r
+    if (!r.rateLimited || !process.env.CEREBRAS_API_KEY) return r
+    console.warn('[ai] Groq rate-limited — trying Cerebras')
+  }
+  if (process.env.CEREBRAS_API_KEY) return callCerebrasText(args)
   return { ok: false, reason: 'No AI provider configured.' }
 }
 
@@ -252,5 +271,90 @@ async function callGroqText(args: { system: string; user: string; maxOutputToken
     }
   } catch (err) {
     return { ok: false, reason: err instanceof Error ? err.message : 'Groq call failed' }
+  }
+}
+
+// ---------- Cerebras REST (OpenAI-compatible, same Llama as Groq) ----------
+//
+// Cerebras runs Llama 3.3 70B on their own ASIC silicon at ~2x the speed
+// of Groq. Free tier ~14,400 req/day. Endpoint is OpenAI-compatible so
+// body / response shape mirrors Groq — only the URL and model name
+// differ. Treated as the LAST link in the fallback chain (Gemini → Groq
+// → Cerebras) so it's only hit when the two above are rate-limited.
+// Get a key at https://cloud.cerebras.ai → API Keys.
+
+async function callCerebrasJSON<T>(args: { system: string; user: string; maxOutputTokens?: number }): Promise<AiResult<T>> {
+  try {
+    const res = await fetch('https://api.cerebras.ai/v1/chat/completions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${process.env.CEREBRAS_API_KEY}` },
+      body: JSON.stringify({
+        model: CEREBRAS_MODEL,
+        temperature: 0.2,
+        max_tokens: args.maxOutputTokens ?? 8000,
+        response_format: { type: 'json_object' },
+        messages: [
+          { role: 'system', content: args.system },
+          { role: 'user', content: args.user },
+        ],
+      }),
+    })
+    if (!res.ok) {
+      const body = await res.text()
+      return { ok: false, reason: `Cerebras ${res.status}: ${body.slice(0, 300)}`, rateLimited: res.status === 429 }
+    }
+    type CerebrasResp = {
+      choices?: { message?: { content?: string } }[]
+      usage?: { prompt_tokens?: number; completion_tokens?: number }
+    }
+    const json = await res.json() as CerebrasResp
+    const text = (json.choices?.[0]?.message?.content ?? '').trim()
+    if (!text) return { ok: false, reason: 'Cerebras returned empty response' }
+    let data: T
+    try { data = JSON.parse(text) as T }
+    catch { return { ok: false, reason: `Cerebras returned non-JSON: ${text.slice(0, 200)}` } }
+    console.log(`[ai] cerebras json tokens=${json.usage?.prompt_tokens ?? '?'}/${json.usage?.completion_tokens ?? '?'}`)
+    return {
+      ok: true, provider: 'cerebras', model: CEREBRAS_MODEL, data,
+      tokens: { input: json.usage?.prompt_tokens, output: json.usage?.completion_tokens },
+    }
+  } catch (err) {
+    return { ok: false, reason: err instanceof Error ? err.message : 'Cerebras call failed' }
+  }
+}
+
+async function callCerebrasText(args: { system: string; user: string; maxOutputTokens?: number }): Promise<AiResult<string>> {
+  try {
+    const res = await fetch('https://api.cerebras.ai/v1/chat/completions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${process.env.CEREBRAS_API_KEY}` },
+      body: JSON.stringify({
+        model: CEREBRAS_MODEL,
+        temperature: 0.4,
+        max_tokens: args.maxOutputTokens ?? 600,
+        messages: [
+          { role: 'system', content: args.system },
+          { role: 'user', content: args.user },
+        ],
+      }),
+    })
+    if (!res.ok) {
+      const body = await res.text()
+      return { ok: false, reason: `Cerebras ${res.status}: ${body.slice(0, 300)}`, rateLimited: res.status === 429 }
+    }
+    type CerebrasResp = {
+      choices?: { message?: { content?: string } }[]
+      usage?: { prompt_tokens?: number; completion_tokens?: number }
+    }
+    const json = await res.json() as CerebrasResp
+    const text = (json.choices?.[0]?.message?.content ?? '').trim()
+    if (!text) return { ok: false, reason: 'Cerebras returned empty response' }
+    console.log(`[ai] cerebras text tokens=${json.usage?.prompt_tokens ?? '?'}/${json.usage?.completion_tokens ?? '?'}`)
+    return {
+      ok: true, provider: 'cerebras', model: CEREBRAS_MODEL, data: text,
+      tokens: { input: json.usage?.prompt_tokens, output: json.usage?.completion_tokens },
+    }
+  } catch (err) {
+    return { ok: false, reason: err instanceof Error ? err.message : 'Cerebras call failed' }
   }
 }
