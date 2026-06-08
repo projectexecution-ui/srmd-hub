@@ -9,10 +9,15 @@ import { formatINR } from '@/lib/utils'
 
 export const dynamic = 'force-dynamic'
 
-export default async function CostControlImportPage() {
+export default async function CostControlImportPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ project?: string }>
+}) {
   const perms = await requirePermission('cost-control', 'edit')
   const canImport = can(perms, 'cost-control', 'edit')
   const supabase = await createClient()
+  const sp = await searchParams
 
   const [{ data: projects }, { data: imports }] = await Promise.all([
     supabase.from('projects').select('id, code, name, cc_status').order('code'),
@@ -32,12 +37,15 @@ export default async function CostControlImportPage() {
       />
 
       {canImport ? (
-        <ImportClient projects={(projects ?? []).map(p => ({
-          id: p.id,
-          code: p.code,
-          name: p.name,
-          cc_status: p.cc_status,
-        }))} />
+        <ImportClient
+          defaultProjectId={sp.project ?? ''}
+          projects={(projects ?? []).map(p => ({
+            id: p.id,
+            code: p.code,
+            name: p.name,
+            cc_status: p.cc_status,
+          }))}
+        />
       ) : (
         <Card className="p-5 border-amber-200 bg-amber-50 text-sm text-amber-900">
           You need <b>edit</b> permission on cost-control to import budgets.

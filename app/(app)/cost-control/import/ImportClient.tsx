@@ -29,7 +29,7 @@ interface ColMap {
 
 const NONE = '__none__'
 
-export function ImportClient({ projects }: { projects: ProjectOpt[] }) {
+export function ImportClient({ projects, defaultProjectId = '' }: { projects: ProjectOpt[]; defaultProjectId?: string }) {
   const router = useRouter()
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [filename, setFilename] = useState('')
@@ -48,7 +48,7 @@ export function ImportClient({ projects }: { projects: ProjectOpt[] }) {
     paid_amount: NONE,
     line_type: NONE,
   })
-  const [projectId, setProjectId] = useState('')
+  const [projectId, setProjectId] = useState(defaultProjectId)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [result, setResult] = useState<{

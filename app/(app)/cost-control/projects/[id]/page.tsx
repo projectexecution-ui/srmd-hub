@@ -295,9 +295,21 @@ export default async function CostControlProjectDetailPage(
           label="Approved Budget (ERP)"
           value={formatINR(totalBudget)}
           sub={
-            totalEstimate > 0
-              ? `${releasedPct}% of estimate released`
-              : (totalBudget > 0 ? `${disciplines.length} disciplines` : 'Import budget to populate')
+            totalBudget > 0
+              ? (totalEstimate > 0
+                  ? `${releasedPct}% of estimate released`
+                  : `${disciplines.length} disciplines`)
+              : (
+                  <span className="text-[11px] text-gray-500">
+                    Fills automatically when Heads approve releases.{' '}
+                    <Link
+                      href={`/cost-control/import?project=${project.id}`}
+                      className="text-blue-700 hover:underline font-medium"
+                    >
+                      Or import an ERP report →
+                    </Link>
+                  </span>
+                )
           }
           tone="blue"
         />
@@ -576,7 +588,7 @@ function Td({
 
 function KPI({
   label, value, sub, tone,
-}: { label: string; value: React.ReactNode; sub?: string; tone: 'blue' | 'purple' | 'orange' | 'green' | 'indigo' }) {
+}: { label: string; value: React.ReactNode; sub?: React.ReactNode; tone: 'blue' | 'purple' | 'orange' | 'green' | 'indigo' }) {
   const top = {
     blue: 'border-t-blue-500',
     purple: 'border-t-purple-500',
