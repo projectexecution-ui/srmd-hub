@@ -29,6 +29,7 @@ interface WSAgg {
   status: string
   total_amount: number | null
   deadline_date: string | null
+  entry_mode: 'line_items' | 'excel_summary' | 'thumbrule' | null
 }
 
 export default async function CostControlProjectDetailPage(
@@ -71,7 +72,7 @@ export default async function CostControlProjectDetailPage(
       .eq('project_id', id),
     supabase
       .from('cc_working_sheets')
-      .select('discipline_id, sub_skill_id, status, total_amount, deadline_date')
+      .select('discipline_id, sub_skill_id, status, total_amount, deadline_date, entry_mode')
       .eq('project_id', id),
     supabase
       .from('project_assignments')
@@ -227,6 +228,15 @@ export default async function CostControlProjectDetailPage(
   const setupPct = project.setup_progress_pct ?? 0
   const showSetupBanner = setupPct < 100 && project.cc_status === 'setup_incomplete'
 
+  // Pending thumbrule sheets in THIS project — drives a shortcut banner
+  // to the bulk approval page so the PM doesn't have to leave the project
+  // context to clear them.
+  const pendingThumbrule = ((wsRes.data ?? []) as WSAgg[]).filter(w =>
+    w.entry_mode === 'thumbrule' && (w.status === 'submitted' || w.status === 'partially_approved'),
+  )
+  const pendingThumbruleCount = pendingThumbrule.length
+  const pendingThumbruleTotal = pendingThumbrule.reduce((s, w) => s + Number(w.total_amount ?? 0), 0)
+
   // Portfolio rollup (across all sub-skills on this project)
   const totalBudget = Array.from(discAgg.values()).reduce((s, v) => s + v.budget, 0)
   const totalWO = Array.from(discAgg.values()).reduce((s, v) => s + v.wo, 0)
@@ -298,6 +308,24 @@ export default async function CostControlProjectDetailPage(
           )}
         </div>
       </div>
+
+      {/* Pending Thumbrule shortcut — one-click bulk approval scoped to
+          this project. Hides itself when nothing is pending. */}
+      {pendingThumbruleCount > 0 && canWrite && (
+        <Link
+          href={`/cost-control/approvals/thumbrule?project=${project.id}`}
+          className="block rounded-lg border border-amber-200 bg-amber-50/60 px-4 py-2.5 hover:bg-amber-50 transition-colors"
+        >
+          <div className="flex items-center justify-between gap-3 flex-wrap">
+            <p className="text-sm font-semibold text-amber-900 inline-flex items-center gap-2">
+              <Flame className="h-4 w-4" />
+              {pendingThumbruleCount} Thumbrule sheet{pendingThumbruleCount === 1 ? '' : 's'} pending approval in this project
+              <span className="text-xs font-normal text-amber-700">· total {formatINR(pendingThumbruleTotal)}</span>
+            </p>
+            <span className="text-xs font-semibold text-amber-700">Bulk approve →</span>
+          </div>
+        </Link>
+      )}
 
       {/* Gap between what HOD has approved in CT Hub and what IN4 has
           released. Positive gap = work to do in IN4 + then re-pull BPH. */}

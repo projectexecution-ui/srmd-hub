@@ -18,10 +18,24 @@ function pickOne<T>(v: T | T[] | null): T | null {
   return Array.isArray(v) ? v[0] ?? null : v
 }
 
-export default async function BulkThumbruleApprovalPage() {
+export default async function BulkThumbruleApprovalPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ project?: string }>
+}) {
   await requirePermission('cost-control', 'edit')
   const me = await getMyUser()
+  const sp = await searchParams
   const supabase = await createClient()
+
+  // Optional ?project=<id> scopes the list to one project. Used by the
+  // 'Bulk approve thumbrule for this project' shortcut on the project
+  // detail page so the PM doesn't have to scan thumbrules across the
+  // whole portfolio.
+  const scopedProjectId = sp.project ?? null
+  const scopedProject = scopedProjectId
+    ? await supabase.from('projects').select('id, code, name').eq('id', scopedProjectId).single().then(r => r.data ?? null)
+    : null
 
   // Restrict to disciplines the current user is an approver for, mirroring
   // the main /cost-control/approvals inbox. Heads & admins typically pick
@@ -51,6 +65,9 @@ export default async function BulkThumbruleApprovalPage() {
 
   if (myDisciplineIds.length > 0) {
     q = q.in('discipline_id', myDisciplineIds)
+  }
+  if (scopedProjectId) {
+    q = q.eq('project_id', scopedProjectId)
   }
 
   const { data: rowsRaw } = await q
@@ -107,11 +124,13 @@ export default async function BulkThumbruleApprovalPage() {
   return (
     <div className="p-4 md:p-6 max-w-6xl mx-auto space-y-4">
       <PageHeader
-        title="Bulk approve Thumbrule sheets"
+        title={scopedProject ? `Bulk approve Thumbrule — ${scopedProject.code}` : 'Bulk approve Thumbrule sheets'}
         subtitle={items.length === 0
-          ? 'No thumbrule sheets awaiting approval in your disciplines.'
-          : `${items.length} thumbrule estimate${items.length === 1 ? '' : 's'} ready to review`}
-        back="/cost-control/approvals"
+          ? (scopedProject
+              ? `No thumbrule sheets awaiting approval in ${scopedProject.code}.`
+              : 'No thumbrule sheets awaiting approval in your disciplines.')
+          : `${items.length} thumbrule estimate${items.length === 1 ? '' : 's'} ready to review${scopedProject ? ` in ${scopedProject.code}` : ''}`}
+        back={scopedProject ? `/cost-control/projects/${scopedProject.id}` : '/cost-control/approvals'}
       />
 
       <Card className="p-3 bg-blue-50/50 border-blue-200 text-xs text-blue-900">
