@@ -5,7 +5,7 @@ import { PageHeader } from '@/components/PageHeader'
 import { Card } from '@/components/ui/card'
 import { WSStatusPill } from '@/components/cost-control/WSStatusPill'
 import { formatINR } from '@/lib/utils'
-import { Inbox, ArrowRight, ClipboardList } from 'lucide-react'
+import { Inbox, ArrowRight, ClipboardList, Ruler } from 'lucide-react'
 
 export const dynamic = 'force-dynamic'
 
@@ -71,6 +71,22 @@ export default async function ApprovalsInboxPage() {
         subtitle={`${rows.length} working sheet${rows.length === 1 ? '' : 's'} pending · ${formatINR(totalPendingValue)} pending value`}
         back="/cost-control"
       />
+
+      {/* Quick-link to bulk approval for thumbrule rows — saves PMs the
+          one-at-a-time click when a project has many quick estimates. */}
+      <Link
+        href="/cost-control/approvals/thumbrule"
+        className="block rounded-lg border border-amber-200 bg-amber-50/50 px-4 py-2.5 hover:bg-amber-50/80 transition-colors"
+      >
+        <div className="flex items-center justify-between gap-3">
+          <div className="inline-flex items-center gap-2">
+            <Ruler className="h-4 w-4 text-amber-700" />
+            <span className="text-sm font-semibold text-amber-900">Bulk approve Thumbrule sheets</span>
+            <span className="text-xs text-amber-700">— review rate × area on one page, approve in one click</span>
+          </div>
+          <ArrowRight className="h-4 w-4 text-amber-700" />
+        </div>
+      </Link>
 
       {mine.length > 0 && (
         <ApprovalSection

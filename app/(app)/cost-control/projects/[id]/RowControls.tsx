@@ -6,7 +6,7 @@
 
 import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
-import { CalendarClock, Pencil, Loader2, Check, X, Ruler, EyeOff } from 'lucide-react'
+import { CalendarClock, Pencil, Loader2, Check, X, Ruler, EyeOff, ArrowRight } from 'lucide-react'
 import { confirm } from '@/components/ui/confirm-dialog'
 import {
   setDisciplineDeadline,
@@ -242,21 +242,63 @@ export function SubSkillModeCell({
     })
   }
 
+  // One-click switch to detailed BOQ. Used as a prominent CTA when the
+  // sub-skill is currently in thumbrule mode and BOQ has become available.
+  // Confirms first so the PM understands what changes.
+  async function switchToBOQ() {
+    setErr(null)
+    const ok = await confirm({
+      title: 'Switch to detailed BOQ?',
+      message:
+        'New Working Sheets under this sub-skill will use the full BOQ flow (line items, rate × qty). ' +
+        'The thumbrule estimates you already raised stay intact in their version chain — nothing is deleted. ' +
+        'You can switch back to Thumbrule anytime.',
+      confirmLabel: 'Switch to BOQ',
+      danger: false,
+    })
+    if (!ok) return
+    startTransition(async () => {
+      const res = await setSubSkillEstimationMode(projectId, subSkillId, 'detailed', null, null)
+      if (!res.ok) { setErr(res.error); return }
+      setMode('detailed')
+      setRate('')
+      setNotes('')
+      router.refresh()
+    })
+  }
+
   if (!canWrite) {
     return <ModeChip mode={effective} override={isOverride} />
   }
 
   if (!open) {
     return (
-      <button
-        type="button"
-        onClick={() => setOpen(true)}
-        className="inline-flex items-center gap-1 group"
-        title="Click to change estimation mode"
-      >
-        <ModeChip mode={effective} override={isOverride} />
-        <Pencil className="h-3 w-3 text-gray-300 group-hover:text-blue-600" />
-      </button>
+      <span className="inline-flex items-center gap-1.5">
+        <button
+          type="button"
+          onClick={() => setOpen(true)}
+          className="inline-flex items-center gap-1 group"
+          title="Click to change estimation mode"
+        >
+          <ModeChip mode={effective} override={isOverride} />
+          <Pencil className="h-3 w-3 text-gray-300 group-hover:text-blue-600" />
+        </button>
+        {/* Prominent "Switch to BOQ" appears next to the chip ONLY when
+            mode is currently thumbrule. Most PM-friendly placement —
+            they don't need to know the popover exists to find this. */}
+        {effective === 'thumbrule' && (
+          <button
+            type="button"
+            onClick={switchToBOQ}
+            disabled={pending}
+            className="inline-flex items-center gap-0.5 text-[10px] font-semibold text-blue-700 hover:text-blue-900 hover:underline disabled:opacity-50"
+            title="BOQ is now available — switch this sub-skill to detailed line-item entry"
+          >
+            {pending ? <Loader2 className="h-2.5 w-2.5 animate-spin" /> : <ArrowRight className="h-2.5 w-2.5" />}
+            Switch to BOQ
+          </button>
+        )}
+      </span>
     )
   }
 
