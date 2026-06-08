@@ -7,7 +7,7 @@ import { cn } from '@/lib/utils'
 import type { Profile, PermissionMap } from '@/lib/types'
 import {
   LayoutDashboard, LogOut, Menu, X, LayoutGrid,
-  ChevronsLeft, ChevronsRight,
+  ChevronsLeft, ChevronsRight, Shield,
 } from 'lucide-react'
 import { MODULES } from '@/lib/modules'
 import NotificationBell from '@/components/NotificationBell'
@@ -72,8 +72,13 @@ export default function NavBar({ profile, permissions, disabledSlugs = [], isPor
   // Label resolution priority: server-side override (moduleLabels) > short
   // hand-curated label (SHORT_LABELS) > MODULES default. So renames done from
   // /admin/dashboard-modules trump everything else.
+  // The admin-* slugs are NOT listed individually in the sidebar — they all
+  // live under a single "Admin" hub link below, so the sidebar stays tidy and
+  // every admin page (Users, Permissions, Settings, Approvals, Notifications,
+  // Delete Requests, Dashboard Modules) is reachable from one obvious door.
   const moduleLinks = MODULES
     .filter(m => !m.external && !m.comingSoon)
+    .filter(m => !m.slug.startsWith('admin-'))
     .filter(m => permissions[m.slug]?.view)
     .filter(m => !disabled.has(m.slug))
     .map(m => ({
@@ -84,6 +89,17 @@ export default function NavBar({ profile, permissions, disabledSlugs = [], isPor
     }))
 
   const dashboardLink = { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard, slug: null as string | null }
+
+  // Single "Admin" hub link → /admin. Shown to Portal Owners, admins, or
+  // anyone with view on an admin section. From the hub, every admin tile
+  // (including Notifications) is one click away.
+  const canSeeAdmin = isPortalOwner
+    || profile.role === 'admin'
+    || ['admin-users', 'admin-permissions', 'admin-settings'].some(s => permissions[s]?.view)
+  const adminLink = canSeeAdmin
+    ? { href: '/admin', label: 'Admin', icon: Shield, slug: null as string | null }
+    : null
+
   // Portal Owner gets a Modules link to /admin/dashboard-modules; it isn't
   // a permission-gated module, just a Portal-Owner-only convenience entry.
   const modulesAdminLink = isPortalOwner
@@ -93,6 +109,7 @@ export default function NavBar({ profile, permissions, disabledSlugs = [], isPor
   const links = [
     dashboardLink,
     ...moduleLinks,
+    ...(adminLink ? [adminLink] : []),
     ...(modulesAdminLink ? [modulesAdminLink] : []),
   ]
 
