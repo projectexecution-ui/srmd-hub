@@ -2432,15 +2432,21 @@ function renderActiveChart() {
   if (useSub && activeProject.data.rows) {
     activeProject.data.rows.forEach(r => { if (r.catNum) parentLookup.set(r.catNum, r.head); });
   }
-  // Build a single-line "Parent › Sub" label so the main category is always visible
-  const sorted = [...sourceRows].sort((a, b) => b.budget - a.budget).map(r => {
-    if (useSub) {
-      const parentName = r.__isOthers ? '' : (parentLookup.get(r.catNum) || '');
-      r.__parentName = parentName;
-      return { ...r, __label: parentName ? `${parentName} › ${r.head}` : r.head };
-    }
-    return r;
-  });
+  // Build a single-line "Parent › Sub" label so the main category is always visible.
+  // Sub-category view stays in Excel sequence (by sub-number); cost-head view
+  // remains sorted by budget desc so the biggest heads appear first.
+  const sorted = [...sourceRows]
+    .sort((a, b) => useSub
+      ? Number(a.subNum || 0) - Number(b.subNum || 0)
+      : b.budget - a.budget)
+    .map(r => {
+      if (useSub) {
+        const parentName = r.__isOthers ? '' : (parentLookup.get(r.catNum) || '');
+        r.__parentName = parentName;
+        return { ...r, __label: parentName ? `${parentName} › ${r.head}` : r.head };
+      }
+      return r;
+    });
   const area = activeProject.data.area;
   const titleEl = document.getElementById('chartTitle');
   const subEl = document.getElementById('chartSub');
@@ -2471,7 +2477,7 @@ function renderActiveChart() {
   if (currentChartTab === 'ba') {
     const hasWO = sorted.some(r => (r.woApproved || 0) > 0);
     titleEl.textContent = `Budget vs Spent by ${levelLabel}`;
-    subEl.textContent = (hasWO ? 'Dark blue = WO/PO committed · Light blue = budget balance · ' : '') + (area ? '₹/sft shown inline · ' : '') + 'sorted by budget' + smartHint;
+    subEl.textContent = (hasWO ? 'Dark blue = WO/PO committed · Light blue = budget balance · ' : '') + (area ? '₹/sft shown inline · ' : '') + (useSub ? 'in Excel sequence by sub-number' : 'sorted by budget') + smartHint;
     wrap.style.height = Math.max(360, sorted.length * baRowH + 80) + 'px';
     renderBudgetVsActualChart(sorted, area);
   } else if (currentChartTab === 'mix') {
@@ -2877,12 +2883,18 @@ function renderSnapshot(project) {
     keep = Math.max(8, Math.min(40, keep));
     if (keep < sortedAll.length) tblSource = sortedAll.slice(0, keep);
   }
-  // Attach parent name so the table cell can render "<parent>\n<sub>" hierarchy
+  // Attach parent name so the table cell can render "<parent>\n<sub>" hierarchy.
+  // Sub-category table stays in Excel sequence (by sub-number); cost-head table
+  // remains sorted by budget desc.
   const tblParentLookup = new Map((project.data.rows || []).map(r => [r.catNum, r.head]));
-  const sorted = [...tblSource].sort((a, b) => b.budget - a.budget).map(r => {
-    if (useSubForTbl && !r.__isOthers) r = { ...r, __parentName: tblParentLookup.get(r.catNum) || '' };
-    return r;
-  });
+  const sorted = [...tblSource]
+    .sort((a, b) => useSubForTbl
+      ? Number(a.subNum || 0) - Number(b.subNum || 0)
+      : b.budget - a.budget)
+    .map(r => {
+      if (useSubForTbl && !r.__isOthers) r = { ...r, __parentName: tblParentLookup.get(r.catNum) || '' };
+      return r;
+    });
   const tblHeader = useSubForTbl ? 'Sub-Category' : 'Cost Head';
   const tblCardHeader = document.querySelector('#snapshot .table-card h3');
   if (tblCardHeader) tblCardHeader.textContent = tblHeader + ' Breakdown';
@@ -4528,10 +4540,18 @@ async function buildProjectPDF(pdf, project) {
   pdf.setTextColor(...PDF_BRAND.ink3);
   pdf.setFont('helvetica', 'normal');
   pdf.setFontSize(9);
-  pdf.text('Sorted by budget · highest spend first', margin, y + 13);
+  pdf.text(
+    useSub ? 'In Excel sequence · by sub-category number' : 'Sorted by budget · highest spend first',
+    margin, y + 13,
+  );
   y += 24;
-  // Native vector bar chart of top 10 — uses the active view (categories or sub-categories)
-  const topCats = [...source].sort((a, b) => b.budget - a.budget).slice(0, 10);
+  // Native vector bar chart of top 10 — uses the active view (categories or sub-categories).
+  // For sub-categories we still pick the top 10 by budget (so the chart highlights
+  // what matters), but then lay them out in Excel sequence by sub-number.
+  const topByBudget = [...source].sort((a, b) => b.budget - a.budget).slice(0, 10);
+  const topCats = useSub
+    ? [...topByBudget].sort((a, b) => Number(a.subNum || 0) - Number(b.subNum || 0))
+    : topByBudget;
   const chartH = Math.max(180, topCats.length * 28 + 50);
   drawNativeBarChart(pdf, margin, y, pageW - margin * 2, chartH, topCats);
   y += chartH + 16;
@@ -4572,7 +4592,10 @@ async function buildProjectPDF(pdf, project) {
   pdf.text(chipLabel, chipX + chipW / 2, chipY + chipH / 2 + 2.6, { align: 'center' });
   y += secH + 4;
   const parentLookup = new Map((project.data.rows || []).map(r => [r.catNum, r.head]));
-  const sortedRows = [...source].sort((a, b) => b.budget - a.budget);
+  // Sub-category PDF table stays in Excel sequence; cost-head table by budget desc.
+  const sortedRows = [...source].sort((a, b) => useSub
+    ? Number(a.subNum || 0) - Number(b.subNum || 0)
+    : b.budget - a.budget);
   const head = useSub ? 'Sub-Category' : 'Cost Head';
   const body = sortedRows.map(r => {
     const v = r.actual - r.budget;
