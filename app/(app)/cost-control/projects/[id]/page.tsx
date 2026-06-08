@@ -299,6 +299,22 @@ export default async function CostControlProjectDetailPage(
         </div>
       </div>
 
+      {/* Gap between what HOD has approved in CT Hub and what IN4 has
+          released. Positive gap = work to do in IN4 + then re-pull BPH. */}
+      {(() => {
+        const gap = totalApproved - totalBudget
+        if (gap <= 0 || totalApproved === 0) return null
+        return (
+          <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900 flex items-center gap-2">
+            <Info className="h-3.5 w-3.5 flex-shrink-0" />
+            <span>
+              <b>{formatINR(gap)}</b> approved here but not yet in IN4 — push it through IN4,
+              then your next BPH upload will bring this in line.
+            </span>
+          </div>
+        )
+      })()}
+
       {/* KPI strip — portfolio-level numbers for this project */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
         <KPI

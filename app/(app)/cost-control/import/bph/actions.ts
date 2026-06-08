@@ -3,18 +3,18 @@
 // Aksha uploads to /budget every week. That data lives in the
 // budget_hub_state.state JSONB as { projects: [{ id, name, data: { rows: [...] } }] }.
 //
-// We let the user pick which BPH project maps to which CT Hub project
-// (often P2 ST in BPH vs P2 ST in cc, but names can drift), then for
-// each row we match catNum → cc_disciplines.code and subNum →
-// cc_sub_skills.code, upserting cc_budget_lines.
+// The first time a PM commits a pull for a (BPH, CT Hub) pair, we save
+// the mapping in cc_bph_project_links. From then on, every save to
+// /api/budget-hub/state auto-runs the pull for every mapped pair —
+// no more weekly clicks.
 //
-// This way the PM doesn't need to re-upload the same Excel into two
-// places — one weekly upload to /budget is the single source of truth.
+// One-to-one constraint per side: a BPH project can map to at most one
+// CT Hub project, and vice versa. Manage from /cost-control/import/bph.
 
 import { z } from 'zod'
 import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
-import { requirePermission } from '@/lib/auth'
+import { requirePermission, getMyUser } from '@/lib/auth'
 
 const previewSchema = z.object({
   bph_project_id: z.string(),
@@ -264,10 +264,137 @@ export async function commitBphImport(input: z.infer<typeof commitSchema>): Prom
     }
   }
 
+  // Persist the BPH↔CT mapping so future BPH saves auto-pull. Upsert keyed
+  // on bph_project_id (the BPH side); if the same BPH project is being
+  // remapped to a different CT project (rare — usually a fix), update.
+  const me = await getMyUser()
+  await supabase
+    .from('cc_bph_project_links')
+    .upsert({
+      bph_project_id: parsed.data.bph_project_id,
+      cc_project_id: parsed.data.cc_project_id,
+      created_by: me?.id ?? null,
+      last_pulled_at: new Date().toISOString(),
+      last_pull_result: { inserted, updated, skipped, errors_count: errors.length },
+    }, { onConflict: 'bph_project_id' })
+
   revalidatePath(`/cost-control/projects/${parsed.data.cc_project_id}`)
   revalidatePath('/cost-control')
   revalidatePath('/cost-control/import')
   revalidatePath('/cost-control/import/bph')
 
   return { ok: true, inserted, updated, skipped, errors }
+}
+
+// ────────────────────────────────────────────────────────────────────
+// Auto-pull on every BPH save. Called from /api/budget-hub/state PUT
+// AND from a manual "Sync all mapped" button on /cost-control/import/bph.
+// Returns a per-project outcome so the caller can render a freshness chip.
+// ────────────────────────────────────────────────────────────────────
+
+export interface MappedPullOutcome {
+  bph_project_id: string
+  cc_project_id: string
+  ok: boolean
+  inserted?: number
+  updated?: number
+  skipped?: number
+  error?: string
+}
+
+export async function runAllMappedPulls(): Promise<{ ok: true; outcomes: MappedPullOutcome[]; ran_at: string }> {
+  // Best-effort: each pull catches its own error so one bad mapping
+  // doesn't take down the whole sync. Permission is intentionally relaxed
+  // here because this is also called from the /budget save hook by any
+  // signed-in user — the underlying writes still go through Supabase RLS.
+  const supabase = await createClient()
+  const { data: links } = await supabase
+    .from('cc_bph_project_links')
+    .select('bph_project_id, cc_project_id')
+  const ranAt = new Date().toISOString()
+  const outcomes: MappedPullOutcome[] = []
+  for (const link of links ?? []) {
+    try {
+      const r = await commitBphImport({
+        bph_project_id: link.bph_project_id,
+        cc_project_id: link.cc_project_id,
+      })
+      if (r.ok) {
+        outcomes.push({
+          bph_project_id: link.bph_project_id,
+          cc_project_id: link.cc_project_id,
+          ok: true,
+          inserted: r.inserted,
+          updated: r.updated,
+          skipped: r.skipped,
+        })
+      } else {
+        outcomes.push({
+          bph_project_id: link.bph_project_id,
+          cc_project_id: link.cc_project_id,
+          ok: false,
+          error: r.error,
+        })
+      }
+    } catch (err) {
+      outcomes.push({
+        bph_project_id: link.bph_project_id,
+        cc_project_id: link.cc_project_id,
+        ok: false,
+        error: err instanceof Error ? err.message : 'Unknown error',
+      })
+    }
+  }
+  return { ok: true, outcomes, ran_at: ranAt }
+}
+
+// Lightweight read for the freshness chip on the dashboard.
+export async function getLastBphSync(): Promise<{
+  ran_at: string | null
+  total_links: number
+  ok_count: number
+  err_count: number
+}> {
+  const supabase = await createClient()
+  const { data } = await supabase
+    .from('cc_bph_project_links')
+    .select('last_pulled_at, last_pull_result')
+  const links = data ?? []
+  let mostRecent: string | null = null
+  let okCount = 0
+  let errCount = 0
+  for (const l of links) {
+    if (l.last_pulled_at && (!mostRecent || l.last_pulled_at > mostRecent)) mostRecent = l.last_pulled_at
+    const r = (l.last_pull_result as { errors_count?: number } | null)
+    if (r && (r.errors_count ?? 0) > 0) errCount++
+    else if (l.last_pulled_at) okCount++
+  }
+  return { ran_at: mostRecent, total_links: links.length, ok_count: okCount, err_count: errCount }
+}
+
+export async function listMappings(): Promise<Array<{
+  bph_project_id: string
+  cc_project_id: string
+  last_pulled_at: string | null
+}>> {
+  await requirePermission('cost-control', 'view')
+  const supabase = await createClient()
+  const { data } = await supabase
+    .from('cc_bph_project_links')
+    .select('bph_project_id, cc_project_id, last_pulled_at')
+    .order('last_pulled_at', { ascending: false, nullsFirst: false })
+  return (data ?? []).map(r => ({
+    bph_project_id: r.bph_project_id as string,
+    cc_project_id: r.cc_project_id as string,
+    last_pulled_at: r.last_pulled_at as string | null,
+  }))
+}
+
+export async function unlinkBphMapping(bph_project_id: string): Promise<{ ok: boolean; error?: string }> {
+  await requirePermission('cost-control', 'edit')
+  const supabase = await createClient()
+  const { error } = await supabase.from('cc_bph_project_links').delete().eq('bph_project_id', bph_project_id)
+  if (error) return { ok: false, error: error.message }
+  revalidatePath('/cost-control/import/bph')
+  return { ok: true }
 }

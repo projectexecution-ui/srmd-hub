@@ -9,6 +9,8 @@ import { EmptyState } from '@/components/ui/empty-state'
 import { Calculator, Plus, FileText, Clock, Inbox, Upload, ClipboardList, Settings, CalendarClock, ChevronDown } from 'lucide-react'
 import { formatINR } from '@/lib/utils'
 import { DeadlineBadge } from '@/components/cost-control/DeadlineBadge'
+import { getLastBphSync } from '@/app/(app)/cost-control/import/bph/actions'
+import { RefreshCw, AlertTriangle, CheckCircle2 } from 'lucide-react'
 
 export const dynamic = 'force-dynamic'
 
@@ -88,6 +90,9 @@ export default async function CostControlLandingPage() {
   const todayISO = new Date().toISOString().slice(0, 10)
   const overdueCount = upcomingDeadlines.filter(d => d.deadline_date < todayISO).length
 
+  // BPH auto-sync freshness — read-only, doesn't trigger a pull
+  const bphSync = await getLastBphSync()
+
   return (
     <div className="p-4 md:p-6 max-w-7xl mx-auto space-y-4">
       <PageHeader
@@ -147,6 +152,10 @@ export default async function CostControlLandingPage() {
           </Button>
         )}
       </PageHeader>
+
+      {/* BPH auto-sync freshness chip — only renders when at least one
+          project is mapped. Otherwise a one-time CTA. */}
+      <BphSyncChip sync={bphSync} canWrite={canWrite} />
 
       {/* Stat strip */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
@@ -273,6 +282,61 @@ export default async function CostControlLandingPage() {
         </Card>
       )}
     </div>
+  )
+}
+
+function BphSyncChip({
+  sync,
+  canWrite,
+}: {
+  sync: { ran_at: string | null; total_links: number; ok_count: number; err_count: number }
+  canWrite: boolean
+}) {
+  // No mappings yet — show a one-time CTA so the PM discovers the BPH pull.
+  if (sync.total_links === 0) {
+    if (!canWrite) return null
+    return (
+      <Link
+        href="/cost-control/import/bph"
+        className="block rounded-lg border border-teal-200 bg-teal-50 px-4 py-2.5 hover:bg-teal-100 transition-colors"
+      >
+        <p className="text-sm font-semibold text-teal-900 inline-flex items-center gap-2">
+          <RefreshCw className="h-4 w-4" />
+          Connect your weekly BPH report
+        </p>
+        <p className="text-[11px] text-teal-800/80 mt-0.5">
+          Pull budget data from your /budget upload into Cost Control. After a one-time mapping per project, it auto-syncs on every BPH upload.
+        </p>
+      </Link>
+    )
+  }
+
+  const tone = sync.err_count > 0 ? 'amber' : 'emerald'
+  const when = sync.ran_at
+    ? new Date(sync.ran_at).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })
+    : 'never'
+
+  return (
+    <Link
+      href="/cost-control/import/bph"
+      className={`block rounded-lg border px-4 py-2 transition-colors ${
+        tone === 'emerald' ? 'border-emerald-200 bg-emerald-50/60 hover:bg-emerald-50' : 'border-amber-200 bg-amber-50/60 hover:bg-amber-50'
+      }`}
+    >
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <p className={`text-xs font-semibold inline-flex items-center gap-1.5 ${
+          tone === 'emerald' ? 'text-emerald-900' : 'text-amber-900'
+        }`}>
+          {tone === 'emerald' ? <CheckCircle2 className="h-3.5 w-3.5" /> : <AlertTriangle className="h-3.5 w-3.5" />}
+          BPH auto-sync · {sync.total_links} project{sync.total_links === 1 ? '' : 's'} mapped · last run {when}
+        </p>
+        {sync.err_count > 0 && (
+          <span className="text-[11px] text-amber-800">
+            {sync.err_count} mapping{sync.err_count === 1 ? '' : 's'} had errors — open to review
+          </span>
+        )}
+      </div>
+    </Link>
   )
 }
 

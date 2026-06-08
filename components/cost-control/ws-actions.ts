@@ -522,45 +522,40 @@ export async function approveWorkingSheet(
   const { error: updErr } = await supabase.from('cc_working_sheets').update(update).eq('id', wsId)
   if (updErr) return { ok: false, error: updErr.message }
 
-  // Bump the ERP-approved budget by this release. Upsert: if no budget
-  // line exists yet (no Excel import was done), create one with the
-  // release as its initial current_budget_amt. Else increment.
-  let budgetLineId = bl?.id ?? null
-  if (bl) {
-    const newAmt = Number(bl.current_budget_amt ?? 0) + tranche
-    const { error: blErr } = await supabase
-      .from('cc_budget_lines')
-      .update({ current_budget_amt: newAmt })
-      .eq('id', bl.id)
-    if (blErr) return { ok: false, error: `Budget update failed: ${blErr.message}` }
-  } else {
-    const { data: newBl, error: insErr } = await supabase
-      .from('cc_budget_lines')
-      .insert({
-        project_id: ws.project_id,
-        discipline_id: ws.discipline_id,
-        sub_skill_id: ws.sub_skill_id,
-        line_type: ws.line_type,
-        current_budget_amt: tranche,
-        current_wo_committed_amt: 0,
-        current_paid_amt: 0,
-        current_advance_amt: 0,
-      })
-      .select('id')
-      .single()
-    if (insErr) return { ok: false, error: `Budget create failed: ${insErr.message}` }
-    budgetLineId = newBl?.id ?? null
-  }
+  // NOTE: we used to ALSO bump cc_budget_lines.current_budget_amt here
+  // so the "Approved Budget (ERP)" tile reflected this release immediately.
+  // That was correct when CT Hub was the only writer; with the BPH weekly
+  // pull active, BPH is the ERP source of truth and bumping here just
+  // gets overwritten on next sync — creating phantom budget swings.
+  //
+  // New semantics:
+  //   - approved_for_erp_amt on the WS  → feeds 'Approved via WS' tile
+  //   - current_budget_amt on cc_budget_lines → only BPH writes here
+  //   - The gap between them is informative: it's the amount the PM
+  //     has approved in this app but hasn't yet pushed to IN4. The
+  //     project KPI strip surfaces this gap so the PM knows when to
+  //     update IN4 + re-pull BPH.
+  //
+  // We still emit the audit event for traceability (so the
+  // approval_events / cc_budget_events trail stays complete).
+  const { data: blForEvent } = await supabase
+    .from('cc_budget_lines')
+    .select('id')
+    .eq('project_id', ws.project_id)
+    .eq('discipline_id', ws.discipline_id)
+    .eq('sub_skill_id', ws.sub_skill_id)
+    .eq('line_type', ws.line_type)
+    .maybeSingle()
 
   await supabase.from('cc_budget_events').insert({
-    budget_line_id: budgetLineId,
+    budget_line_id: blForEvent?.id ?? bl?.id ?? null,
     project_id: ws.project_id,
     event_type: 'ws_approved',
     delta_amount: tranche,
     related_ws_id: wsId,
     remarks: willBeFull
-      ? `WS fully approved — final release ${formatRupees(tranche)} (budget bumped)`
-      : `WS release approved ${formatRupees(tranche)} (cumulative ${formatRupees(cumulative)} of ${formatRupees(total)} · budget bumped)`,
+      ? `WS fully approved — final release ${formatRupees(tranche)} (awaiting IN4 entry)`
+      : `WS release approved ${formatRupees(tranche)} (cumulative ${formatRupees(cumulative)} of ${formatRupees(total)} · awaiting IN4 entry)`,
     requested_by: me.user.id,
     approved_by: me.user.id,
     approval_status: 'approved',

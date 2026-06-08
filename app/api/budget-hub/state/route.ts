@@ -113,5 +113,26 @@ export async function PUT(req: Request) {
 
   if (updErr) return NextResponse.json({ error: updErr.message }, { status: 500 })
 
-  return NextResponse.json({ ok: true, version: newVersion })
+  // ── Auto-pull mapped CT Hub projects ────────────────────────────────
+  // After the BPH state is saved, run a sync for every saved BPH↔CT
+  // mapping so the Cost Control module's Approved Budget (ERP) tiles
+  // stay fresh without the PM clicking through each project.
+  //
+  // Best-effort: failures get returned but never block the save. The
+  // BPH UI shows "n synced / m failed" in a chip after the response.
+  let autoSync: { ran_at: string; ok_count: number; err_count: number; outcomes: unknown[] } | null = null
+  try {
+    const { runAllMappedPulls } = await import('@/app/(app)/cost-control/import/bph/actions')
+    const r = await runAllMappedPulls()
+    autoSync = {
+      ran_at: r.ran_at,
+      ok_count: r.outcomes.filter(o => o.ok).length,
+      err_count: r.outcomes.filter(o => !o.ok).length,
+      outcomes: r.outcomes,
+    }
+  } catch (e) {
+    console.warn('[budget-hub] auto-pull failed:', e instanceof Error ? e.message : e)
+  }
+
+  return NextResponse.json({ ok: true, version: newVersion, autoSync })
 }
