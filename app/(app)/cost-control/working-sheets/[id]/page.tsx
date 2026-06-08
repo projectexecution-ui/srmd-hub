@@ -7,6 +7,7 @@ import { Card } from '@/components/ui/card'
 import { WSStatusPill, type WSStatus } from '@/components/cost-control/WSStatusPill'
 import { DeadlineBadge } from '@/components/cost-control/DeadlineBadge'
 import { AiBifurcationPanel } from '@/components/cost-control/AiBifurcationPanel'
+import { WSAskAiPanel } from '@/components/cost-control/WSAskAiPanel'
 import { VersionChainBar } from './VersionChainBar'
 import { WSEditor } from './WSEditor'
 import { ExcelSummaryPanel } from './ExcelSummaryPanel'
@@ -134,6 +135,8 @@ export default async function WorkingSheetEditorPage(
         )}
 
         <SourceExcelViewer url={downloadUrl} name={ws.source_excel_name} />
+
+        <WSAskAiPanel wsId={ws.id} />
 
         <AiBifurcationPanel
           wsId={ws.id}
@@ -271,6 +274,8 @@ export default async function WorkingSheetEditorPage(
         next={nextSibling ? { id: nextSibling.id, ws_code: nextSibling.ws_code, version_no: nextSibling.version_no } : null}
         canEdit={canEdit && (isOwner || isAdmin)}
       />
+
+      <WSAskAiPanel wsId={ws.id} />
 
       {(ws.deadline_date || canEditDeadline) && (
         <div className="flex items-center gap-2 flex-wrap">
