@@ -11,6 +11,7 @@ import {
 import { submitWorkingSheet, returnWorkingSheet } from '@/components/cost-control/ws-actions'
 import { WSStatusPill, type WSStatus } from '@/components/cost-control/WSStatusPill'
 import { ApproveTrancheButton } from '@/components/cost-control/ApproveTrancheButton'
+import { formatINR } from '@/lib/utils'
 
 interface Breakdown { label: string; value: number }
 
@@ -113,7 +114,7 @@ export function ExcelSummaryPanel({
             </div>
             <div className="min-w-0 flex-1">
               <p className="text-sm font-semibold text-gray-900 truncate">{fileName ?? 'Excel attachment'}</p>
-              <p className="text-xs text-gray-500">{rows.length} parsed row{rows.length === 1 ? '' : 's'}{lastCheckedAt ? ` · checked ${new Date(lastCheckedAt).toLocaleString('en-IN')}` : ''}</p>
+              <p className="text-xs text-gray-500">{rows.length} line item{rows.length === 1 ? '' : 's'}{lastCheckedAt ? ` · checked ${new Date(lastCheckedAt).toLocaleString('en-IN')}` : ''}</p>
             </div>
             <div className="flex items-center gap-2">
               {downloadUrl && (
@@ -130,12 +131,60 @@ export function ExcelSummaryPanel({
             </div>
           </div>
 
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mt-4 text-sm">
-            <Cell label="Grand total (stated)" value={summaryTotal != null ? `₹${summaryTotal.toLocaleString('en-IN')}` : '—'} />
-            <Cell label="Sum of parsed rows"   value={`₹${totalFromRows.toLocaleString('en-IN')}`} />
-            <Cell label="Flagged rows"          value={flagSummary?.flagged_rows ?? rows.filter(r => r.flag).length} />
-            <Cell label="AI review"             value={flagSummary?.ai_used ? 'On' : 'Off'} />
-          </div>
+          {/* Plain-language totals card. Two amounts side-by-side:
+              what the engineer typed/uploaded vs what the line items add
+              up to. When they disagree by > 1% we surface a small warning
+              with the exact gap. */}
+          {(() => {
+            const stated  = summaryTotal ?? 0
+            const fromRows = totalFromRows
+            const diff = fromRows - stated
+            const pct = stated > 0 ? Math.abs(diff / stated) * 100 : 0
+            const mismatch = stated > 0 && pct > 1
+            return (
+              <>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mt-4 text-sm">
+                  <Cell
+                    label="Sheet total"
+                    value={summaryTotal != null ? formatINR(summaryTotal) : '—'}
+                    hint="What was entered as the grand total"
+                  />
+                  <Cell
+                    label="Lines add up to"
+                    value={formatINR(fromRows)}
+                    hint={`${rows.length} line item${rows.length === 1 ? '' : 's'} in the sheet`}
+                  />
+                  <Cell
+                    label="Items to check"
+                    value={flagSummary?.flagged_rows ?? rows.filter(r => r.flag).length}
+                    hint="Rows our checker is unsure about"
+                  />
+                  <Cell
+                    label="AI check"
+                    value={flagSummary?.ai_used ? 'Done' : 'Off'}
+                    hint={flagSummary?.ai_used ? 'AI reviewed this sheet' : 'AI was not run yet'}
+                  />
+                </div>
+                {mismatch && (
+                  <div className="mt-3 inline-flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+                    <AlertTriangle className="h-3.5 w-3.5 mt-0.5 flex-shrink-0" />
+                    <div>
+                      <p className="font-semibold">
+                        Sheet total and line items don&apos;t match — {pct.toFixed(1)}% gap
+                      </p>
+                      <p className="opacity-80">
+                        Lines add up to <b>{formatINR(fromRows)}</b>, but the sheet total says <b>{formatINR(stated)}</b>
+                        {diff > 0 ? ' — lines are ' : ' — sheet is '}
+                        <b>{formatINR(Math.abs(diff))}</b> {diff > 0 ? 'higher' : 'higher'}.
+                        Likely cause: heading / sub-total rows are being counted as items, or the typed grand total is stale.
+                        Run AI parse to clean it up.
+                      </p>
+                    </div>
+                  </div>
+                )}
+              </>
+            )
+          })()}
 
           {summaryNotes && (
             <div className="mt-4 text-sm text-gray-700">
@@ -285,11 +334,12 @@ export function ExcelSummaryPanel({
   )
 }
 
-function Cell({ label, value }: { label: string; value: string | number | null | undefined }) {
+function Cell({ label, value, hint }: { label: string; value: string | number | null | undefined; hint?: string }) {
   return (
-    <div className="rounded-xl border border-gray-200 bg-white p-3">
+    <div className="rounded-xl border border-gray-200 bg-white p-3" title={hint}>
       <p className="text-[11px] uppercase tracking-wide text-gray-500">{label}</p>
       <p className="text-base font-semibold text-gray-900 mt-0.5">{value ?? '—'}</p>
+      {hint && <p className="text-[10px] text-gray-400 mt-0.5 leading-tight">{hint}</p>}
     </div>
   )
 }
