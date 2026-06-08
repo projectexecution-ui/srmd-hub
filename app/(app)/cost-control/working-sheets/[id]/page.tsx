@@ -190,6 +190,7 @@ export default async function WorkingSheetEditorPage(
             formula_in_amount: r.formula_in_amount,
             rate_breakdown:   r.rate_breakdown   as Array<{ label: string; value: number }> | null,
             amount_breakdown: r.amount_breakdown as Array<{ label: string; value: number }> | null,
+            ai_meta: r.ai_meta as { category?: 'material' | 'labour' | 'material_and_labour' | 'equipment' | 'tax' | 'addon' | 'discount' | null } | null,
             flag: r.flag,
             flag_reason: r.flag_reason,
             flag_severity: r.flag_severity,

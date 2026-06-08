@@ -26,6 +26,11 @@ interface Row {
   formula_in_amount: string | null
   rate_breakdown: Breakdown[] | null
   amount_breakdown: Breakdown[] | null
+  /** Per-row AI metadata (set by /ai-parse). When present, we trust the
+   *  AI's `category` over the regex fallback for bucket classification. */
+  ai_meta: {
+    category?: 'material' | 'labour' | 'material_and_labour' | 'equipment' | 'tax' | 'addon' | 'discount' | null
+  } | null
   flag: string | null
   flag_reason: string | null
   flag_severity: string | null
@@ -113,16 +118,30 @@ export function ExcelSummaryPanel({
   //
   // Matching the AI's `ai_meta.category` if present, else inferring
   // from the description text. Case-insensitive, whitespace-tolerant.
-  function classifyRow(r: { description: string | null; qty: number | null; rate: number | null; amount: number | null }): 'line' | 'tax' | 'addon' | 'discount' {
+  function classifyRow(r: Row): 'line' | 'tax' | 'addon' | 'discount' {
+    // 1. AI's tag wins when present. /ai-parse already classified each
+    //    row with category=tax/addon/discount/etc., so we don't need to
+    //    re-guess from description text.
+    const aiCat = r.ai_meta?.category
+    if (aiCat === 'tax') return 'tax'
+    if (aiCat === 'addon') return 'addon'
+    if (aiCat === 'discount') return 'discount'
+    // material / labour / material_and_labour / equipment all roll up as
+    // line items for the reconciliation total.
+    if (aiCat === 'material' || aiCat === 'labour' || aiCat === 'material_and_labour' || aiCat === 'equipment') return 'line'
+
+    // 2. Regex fallback for rows that haven't been AI-parsed yet (or when
+    //    AI returned null). Indian-construction-aware patterns.
     const d = (r.description ?? '').toLowerCase().trim()
     if (!d) return 'line'
-    // Discounts first — usually negative or labelled "less"/"discount"/"trade"
+    // Discounts first
     if (/(^|\s)(discount|less|trade\s+discount|rebate)(\s|$|:)/.test(d)) return 'discount'
-    // Tax row: GST, CGST, SGST, IGST, UTGST, TDS, TCS, cess, vat, service tax
+    // Tax: GST, CGST, SGST, IGST, UTGST, TDS, TCS, cess, vat, service tax
     if (/(^|\s)(gst|cgst|sgst|igst|utgst|tds|tcs|cess|vat|service\s*tax|input\s*tax)(\s|$|:|%|\d|@)/.test(d)) return 'tax'
     if (/tax\s*(amount|amt|@|on)/.test(d)) return 'tax'
-    // Add-ons: freight, transport, packing, insurance, loading, handling, P&F
-    if (/(^|\s)(freight|transport(ation)?|carriage|packing|insurance|handling|loading|unloading|p\s*&\s*f|pnf|carting|cartage|loading\/unloading|installation\s*charges|service\s*charge)(\s|$|:)/.test(d)) return 'addon'
+    // Add-ons: freight, transport, packing, insurance, loading, handling,
+    // P&F, contingency, provisional sum, retainage, escalation
+    if (/(^|\s)(freight|transport(ation)?|carriage|packing|insurance|handling|loading|unloading|p\s*&\s*f|pnf|carting|cartage|loading\/unloading|installation\s*charges|service\s*charge|contingency|contingencies|provisional\s*sum|prov\s*sum|provision|escalation|retainage|round[-\s]*off|rounding)(\s|$|:|%|\d|@)/.test(d)) return 'addon'
     if (/\b(misc(ellaneous)?|other\s*charges|sundry)\b/.test(d) && (r.qty == null || r.rate == null)) return 'addon'
     return 'line'
   }
