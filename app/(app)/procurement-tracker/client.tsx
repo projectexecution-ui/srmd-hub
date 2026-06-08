@@ -71,6 +71,10 @@ export function ProcurementTrackerClient({ isAdmin = false }: { isAdmin?: boolea
   const [hiddenProjects, setHiddenProjects] = useState<Set<string>>(new Set())
   const [savedByName, setSavedByName] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  // Drag counter — keeps the page-wide drop overlay stable as the cursor
+  // crosses nested child elements (HTML drag events fire enter/leave for
+  // every descendant, not just the wrapper).
+  const dragCounter = useRef(0)
 
   // Fetch the per-user hidden-projects list once on mount. Admin-
   // managed via /procurement-tracker/admin. Best-effort.
@@ -134,7 +138,7 @@ export function ProcurementTrackerClient({ isAdmin = false }: { isAdmin?: boolea
 
   const onDrop = useCallback(
     (e: React.DragEvent) => {
-      e.preventDefault(); setIsDragging(false)
+      e.preventDefault(); setIsDragging(false); dragCounter.current = 0
       const file = e.dataTransfer.files[0]
       if (file) handleFile(file)
     }, [handleFile],
@@ -142,6 +146,32 @@ export function ProcurementTrackerClient({ isAdmin = false }: { isAdmin?: boolea
   const onFileInput = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (file) handleFile(file)
+    e.target.value = '' // allow re-uploading the same filename
+  }
+  // Page-wide drag handlers. Overlay only shows while a *file* is being
+  // dragged (we filter on dataTransfer.types) so accidental text-selects
+  // don't trigger it.
+  function isFileDrag(e: React.DragEvent): boolean {
+    const types = e.dataTransfer?.types
+    if (!types) return false
+    for (let i = 0; i < types.length; i++) if (types[i] === 'Files') return true
+    return false
+  }
+  const onPageDragEnter = (e: React.DragEvent) => {
+    if (!isFileDrag(e)) return
+    e.preventDefault()
+    dragCounter.current += 1
+    setIsDragging(true)
+  }
+  const onPageDragOver = (e: React.DragEvent) => {
+    if (!isFileDrag(e)) return
+    e.preventDefault()
+  }
+  const onPageDragLeave = (e: React.DragEvent) => {
+    if (!isFileDrag(e)) return
+    e.preventDefault()
+    dragCounter.current = Math.max(0, dragCounter.current - 1)
+    if (dragCounter.current === 0) setIsDragging(false)
   }
 
   // Apply Admin's hide list BEFORE anything else uses `data.projects`.
@@ -180,7 +210,31 @@ export function ProcurementTrackerClient({ isAdmin = false }: { isAdmin?: boolea
     : selectedProject
 
   return (
-    <div className="min-h-screen bg-orange-50/40">
+    <div
+      className="min-h-screen bg-orange-50/40"
+      onDragEnter={onPageDragEnter}
+      onDragOver={onPageDragOver}
+      onDragLeave={onPageDragLeave}
+      onDrop={onDrop}
+    >
+      {/* Page-wide drop overlay — only visible while the user is actively
+          dragging a file. Pointer-events disabled so React still receives
+          the drop event on the wrapper underneath. */}
+      {isDragging && (
+        <div className="fixed inset-0 z-50 bg-orange-900/15 backdrop-blur-[2px] flex items-center justify-center pointer-events-none">
+          <div className="bg-white rounded-2xl px-8 py-7 shadow-2xl border-2 border-dashed border-orange-700 text-center">
+            <Upload className="h-10 w-10 text-orange-700 mx-auto mb-2" />
+            <p className="text-base font-semibold text-stone-900">Drop the IN4 .xlsx anywhere</p>
+            <p className="text-xs text-stone-500 mt-1">Indent to Issue / Purchase Order Report</p>
+          </div>
+        </div>
+      )}
+
+      {/* Single hidden file input — used by every upload affordance on the
+          page (header icon, "Upload new" link, empty-state button) so the
+          input survives state changes. */}
+      <input ref={fileInputRef} type="file" accept=".xlsx,.xls" className="hidden" onChange={onFileInput} />
+
       <div className="px-4 md:px-6 pt-4 md:pt-6 pb-12 max-w-6xl mx-auto space-y-4">
         {/* Compact header */}
         <header className="flex items-start justify-between gap-3 flex-wrap">
@@ -205,56 +259,43 @@ export function ProcurementTrackerClient({ isAdmin = false }: { isAdmin?: boolea
               )}
             </div>
           </div>
-          {savedAt && (
-            <div className="text-right text-[11px] text-stone-500">
-              {data?.fileName && <div className="text-stone-700 font-medium">{data.fileName}</div>}
-              <div>
-                Saved {formatSavedAt(savedAt)}
-                {savedByName && <> by <span className="text-stone-600">{savedByName}</span></>}
-                {' · '}
-                <button
-                  onClick={() => fileInputRef.current?.click()}
-                  className="text-orange-700 hover:underline"
-                  title="Upload a fresh Excel — replaces the saved data for everyone"
-                >
-                  Upload new
-                </button>
+          {/* Right cluster: always-on Upload icon + (when present) savedAt info */}
+          <div className="flex flex-col items-end gap-1.5">
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={isLoading}
+              title="Upload IN4 'Indent to Issue / Purchase Order Report' (.xlsx) — or drop the file anywhere on this page"
+              className="inline-flex items-center gap-1.5 h-8 px-2.5 rounded-lg border border-orange-300 bg-white text-xs font-medium text-stone-700 hover:border-orange-700 hover:text-orange-700 hover:bg-orange-50 disabled:opacity-60 disabled:cursor-not-allowed transition-colors shadow-sm"
+            >
+              {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
+              <span className="hidden sm:inline">{isLoading ? 'Uploading…' : 'Upload'}</span>
+            </button>
+            {savedAt && (
+              <div className="text-right text-[11px] text-stone-500">
+                {data?.fileName && <div className="text-stone-700 font-medium">{data.fileName}</div>}
+                <div>
+                  Saved {formatSavedAt(savedAt)}
+                  {savedByName && <> by <span className="text-stone-600">{savedByName}</span></>}
+                </div>
               </div>
-              {/* Hidden input attached so "Upload new" works even when the
-                  drop-zone Card isn't rendered (i.e. when data is loaded). */}
-              {data && (
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept=".xlsx,.xls"
-                  className="hidden"
-                  onChange={onFileInput}
-                />
-              )}
-            </div>
-          )}
+            )}
+          </div>
         </header>
 
-        {/* Upload zone (only when there's nothing to show) */}
-        {!data && !isLoading && !savedAt && (
-          <Card
-            onDrop={onDrop}
-            onDragOver={(e: React.DragEvent) => { e.preventDefault(); setIsDragging(true) }}
-            onDragLeave={() => setIsDragging(false)}
-            onClick={() => fileInputRef.current?.click()}
-            className={`cursor-pointer border-2 border-dashed rounded-2xl p-12 md:p-16 text-center transition-all ${
-              isDragging
-                ? 'border-orange-700 bg-orange-50'
-                : 'border-orange-300 bg-white hover:border-orange-500 hover:bg-orange-50/50'
-            }`}
-          >
-            <input ref={fileInputRef} type="file" accept=".xlsx,.xls" className="hidden" onChange={onFileInput} />
-            <div className="mx-auto h-14 w-14 rounded-2xl bg-gradient-to-br from-orange-700 to-red-900 text-white flex items-center justify-center shadow-md mb-3">
+        {/* Compact empty state — only when there's truly nothing to show.
+            No giant dashed dropzone anymore; the icon above + page-wide drop
+            cover it. */}
+        {!data && !isLoading && !savedAt && !error && (
+          <Card className="p-8 md:p-10 text-center bg-white border-orange-200">
+            <div className="mx-auto h-12 w-12 rounded-2xl bg-orange-100 text-orange-700 flex items-center justify-center mb-3">
               <Upload className="h-6 w-6" />
             </div>
-            <p className="text-stone-800 font-semibold text-base mb-1">Drop your Excel here</p>
-            <p className="text-stone-500 text-sm mb-4">or click to browse · max 20 MB · everything stays in your browser</p>
-            <p className="text-xs text-stone-500 bg-orange-100 inline-flex items-center gap-1.5 px-3 py-1 rounded-full">
+            <p className="text-stone-800 font-semibold text-base mb-1">No procurement data yet</p>
+            <p className="text-stone-500 text-sm mb-4">
+              Click <b>Upload</b> at the top right, or drop the IN4 export anywhere on this page — it&apos;ll be saved for the whole team.
+            </p>
+            <p className="text-xs text-stone-500 bg-orange-50 border border-orange-100 inline-flex items-center gap-1.5 px-3 py-1 rounded-full">
               <FileSpreadsheet className="h-3 w-3" />
               IN4 → Reports → Purchase → Indent to Issue / Purchase Order Report
             </p>
