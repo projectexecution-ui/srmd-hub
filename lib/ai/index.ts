@@ -38,6 +38,14 @@ export function hasAiProvider(): boolean {
   return !!(process.env.GEMINI_API_KEY || process.env.GROQ_API_KEY || process.env.CEREBRAS_API_KEY)
 }
 
+// HTTP statuses that mean "this provider is hiccuping — try the next one".
+// 429 = rate limit / quota; 5xx = upstream sick (Gemini 500 INTERNAL is a
+// regular flake even when the request is valid). Falling through to the
+// next provider in the chain is the right move for all of these.
+function isTransient(status: number): boolean {
+  return status === 429 || status >= 500
+}
+
 export function aiProviderHint(): string {
   if (process.env.GEMINI_API_KEY) return 'gemini'
   if (process.env.GROQ_API_KEY) return 'groq'
@@ -111,7 +119,7 @@ export async function embed(texts: string[]): Promise<AiResult<number[][]>> {
     })
     if (!res.ok) {
       const body = await res.text()
-      return { ok: false, reason: `Gemini embed ${res.status}: ${body.slice(0, 200)}`, rateLimited: res.status === 429 || res.status === 503 }
+      return { ok: false, reason: `Gemini embed ${res.status}: ${body.slice(0, 200)}`, rateLimited: isTransient(res.status) }
     }
     const json = await res.json() as { embeddings: { values: number[] }[] }
     return { ok: true, provider: 'gemini', model: GEMINI_EMBED_MODEL, data: json.embeddings.map(e => e.values) }
@@ -140,7 +148,7 @@ async function callGeminiJSON<T>(args: { system: string; user: string; maxOutput
     })
     if (!res.ok) {
       const body = await res.text()
-      return { ok: false, reason: `Gemini ${res.status}: ${body.slice(0, 300)}`, rateLimited: res.status === 429 || res.status === 503 }
+      return { ok: false, reason: `Gemini ${res.status}: ${body.slice(0, 300)}`, rateLimited: isTransient(res.status) }
     }
     type GeminiResp = {
       candidates?: { content?: { parts?: { text?: string }[] } }[]
@@ -177,7 +185,7 @@ async function callGeminiText(args: { system: string; user: string; maxOutputTok
     })
     if (!res.ok) {
       const body = await res.text()
-      return { ok: false, reason: `Gemini ${res.status}: ${body.slice(0, 300)}`, rateLimited: res.status === 429 || res.status === 503 }
+      return { ok: false, reason: `Gemini ${res.status}: ${body.slice(0, 300)}`, rateLimited: isTransient(res.status) }
     }
     type GeminiResp = {
       candidates?: { content?: { parts?: { text?: string }[] } }[]
@@ -216,7 +224,7 @@ async function callGroqJSON<T>(args: { system: string; user: string; maxOutputTo
     })
     if (!res.ok) {
       const body = await res.text()
-      return { ok: false, reason: `Groq ${res.status}: ${body.slice(0, 300)}`, rateLimited: res.status === 429 }
+      return { ok: false, reason: `Groq ${res.status}: ${body.slice(0, 300)}`, rateLimited: isTransient(res.status) }
     }
     type GroqResp = {
       choices?: { message?: { content?: string } }[]
@@ -255,7 +263,7 @@ async function callGroqText(args: { system: string; user: string; maxOutputToken
     })
     if (!res.ok) {
       const body = await res.text()
-      return { ok: false, reason: `Groq ${res.status}: ${body.slice(0, 300)}`, rateLimited: res.status === 429 }
+      return { ok: false, reason: `Groq ${res.status}: ${body.slice(0, 300)}`, rateLimited: isTransient(res.status) }
     }
     type GroqResp = {
       choices?: { message?: { content?: string } }[]
@@ -301,7 +309,7 @@ async function callCerebrasJSON<T>(args: { system: string; user: string; maxOutp
     })
     if (!res.ok) {
       const body = await res.text()
-      return { ok: false, reason: `Cerebras ${res.status}: ${body.slice(0, 300)}`, rateLimited: res.status === 429 }
+      return { ok: false, reason: `Cerebras ${res.status}: ${body.slice(0, 300)}`, rateLimited: isTransient(res.status) }
     }
     type CerebrasResp = {
       choices?: { message?: { content?: string } }[]
@@ -340,7 +348,7 @@ async function callCerebrasText(args: { system: string; user: string; maxOutputT
     })
     if (!res.ok) {
       const body = await res.text()
-      return { ok: false, reason: `Cerebras ${res.status}: ${body.slice(0, 300)}`, rateLimited: res.status === 429 }
+      return { ok: false, reason: `Cerebras ${res.status}: ${body.slice(0, 300)}`, rateLimited: isTransient(res.status) }
     }
     type CerebrasResp = {
       choices?: { message?: { content?: string } }[]
