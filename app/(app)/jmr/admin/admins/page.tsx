@@ -1,28 +1,27 @@
 import { createClient } from '@/lib/supabase/server'
 import { requirePermission, can } from '@/lib/auth'
+import { getRoleLabels } from '@/lib/role-labels'
 import { Card } from '@/components/ui/card'
-import { AdminsPanel } from './admins-panel'
+import { JmrRolesPanel } from './admins-panel'
 
 export const dynamic = 'force-dynamic'
 
-// "Who is a JMR admin?" lives here so an existing JMR admin can grant
-// another user JMR-admin access without leaving the module.
+// "Who has what role inside JMR?" — independent from the hub-wide role.
 //
-// The DB plumbing already exists: public.user_module_roles is a
-// per-user-per-module role override. We write `(user_id, 'jmr-admin', 'admin')`
-// to promote, delete the row to revoke. The user's global profiles.role
-// is untouched.
+// A user can be Backoffice globally but Head for JMR, or Engineer globally
+// but Admin for JMR. We write the override to public.user_module_roles
+// scoped to module_slug='jmr-admin' (the parent JMR admin module slug —
+// other JMR sub-routes like /jmr/entry honour 'jmr' too, but for the
+// admin-level powers it's 'jmr-admin').
 //
-// Why only role='admin'? Per role_permissions, that's the only role with
-// can_admin=true on the jmr-admin module. `head` has edit but not admin;
-// if you want to give someone edit-only access, use the global /admin/users
-// page — this panel is the focused "is/isn't a JMR admin" toggle.
-export default async function JmrAdminsPage() {
+// A "Block" picks user_module_blocks instead — useful if you have a global
+// admin who you specifically do NOT want touching JMR.
+export default async function JmrRolesPage() {
   const perms = await requirePermission('jmr-admin', 'admin')
   const canManage = can(perms, 'jmr-admin', 'admin')
   const supabase = await createClient()
 
-  const [profilesRes, overridesRes] = await Promise.all([
+  const [profilesRes, overridesRes, blocksRes, roleLabels] = await Promise.all([
     supabase
       .from('profiles')
       .select('id, full_name, email, role, is_active')
@@ -32,23 +31,28 @@ export default async function JmrAdminsPage() {
       .from('user_module_roles')
       .select('user_id, module_slug, role')
       .eq('module_slug', 'jmr-admin'),
+    supabase
+      .from('user_module_blocks')
+      .select('user_id, module_slug')
+      .eq('module_slug', 'jmr-admin'),
+    getRoleLabels(),
   ])
-
-  const profiles = profilesRes.data ?? []
-  const overrides = overridesRes.data ?? []
 
   return (
     <Card className="p-0 overflow-hidden">
       <div className="px-4 py-3 border-b border-gray-100">
-        <h2 className="text-sm font-bold text-gray-800">JMR Admins</h2>
+        <h2 className="text-sm font-bold text-gray-800">JMR Roles · per user</h2>
         <p className="text-xs text-gray-500 mt-1">
-          A JMR Admin can manage Projects, Contractors, Items, Rate Cards, User Access and Settings — and approve / flag any engineer&apos;s entry.
-          {' '}Global Admins (left column) are auto-JMR-admin; demote them under <span className="font-mono">Admin → Users</span> if needed.
+          Decide what each user can do inside JMR <b>independently</b> of their hub-wide role.
+          {' '}A Backoffice user can be a JMR <b>Admin</b>, an Engineer can stay an Engineer everywhere except JMR, etc.
+          {' '}Pick &quot;Inherit&quot; to fall back to their hub role; pick &quot;Block&quot; to deny JMR access to a global admin.
         </p>
       </div>
-      <AdminsPanel
-        profiles={profiles}
-        overrides={overrides}
+      <JmrRolesPanel
+        profiles={profilesRes.data ?? []}
+        overrides={overridesRes.data ?? []}
+        blocks={blocksRes.data ?? []}
+        roleLabels={roleLabels}
         canManage={canManage}
       />
     </Card>
