@@ -70,6 +70,10 @@ export function ProcurementTrackerClient({ isAdmin = false }: { isAdmin?: boolea
    */
   const [hiddenProjects, setHiddenProjects] = useState<Set<string>>(new Set())
   const [savedByName, setSavedByName] = useState<string | null>(null)
+  // Tracks the initial /api/procurement-tracker/state hydration call so we
+  // don't flash the empty-state Card for ~3s before the saved data arrives.
+  // Starts `true`; flips to `false` once the fetch resolves (success or fail).
+  const [isHydrating, setIsHydrating] = useState(true)
   const fileInputRef = useRef<HTMLInputElement>(null)
   // Drag counter — keeps the page-wide drop overlay stable as the cursor
   // crosses nested child elements (HTML drag events fire enter/leave for
@@ -108,6 +112,7 @@ export function ProcurementTrackerClient({ isAdmin = false }: { isAdmin?: boolea
         setView('pending')
       })
       .catch(() => { /* swallow */ })
+      .finally(() => setIsHydrating(false))
   }, [])
 
   const handleFile = useCallback(async (file: File) => {
@@ -283,10 +288,21 @@ export function ProcurementTrackerClient({ isAdmin = false }: { isAdmin?: boolea
           </div>
         </header>
 
-        {/* Compact empty state — only when there's truly nothing to show.
-            No giant dashed dropzone anymore; the icon above + page-wide drop
-            cover it. */}
-        {!data && !isLoading && !savedAt && !error && (
+        {/* Initial-hydration placeholder. The server-state fetch is async
+            (~1-3s), so without this we'd flash the empty-state Card before
+            the real data arrives. Keep it quiet — no big spinner, no copy
+            that competes with the real UI. */}
+        {isHydrating && (
+          <Card className="p-8 text-center bg-white border-orange-200">
+            <Loader2 className="h-5 w-5 text-orange-700 animate-spin inline mr-2" />
+            <span className="text-stone-500 text-sm align-middle">Loading saved data…</span>
+          </Card>
+        )}
+
+        {/* Compact empty state — only AFTER hydration finishes with nothing
+            saved. No giant dashed dropzone; the icon above + page-wide drop
+            cover the upload affordances. */}
+        {!isHydrating && !data && !isLoading && !savedAt && !error && (
           <Card className="p-8 md:p-10 text-center bg-white border-orange-200">
             <div className="mx-auto h-12 w-12 rounded-2xl bg-orange-100 text-orange-700 flex items-center justify-center mb-3">
               <Upload className="h-6 w-6" />
