@@ -213,16 +213,16 @@ export function ExcelSummaryPanel({
               <>
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mt-4 text-sm">
                   <Cell
-                    label="Sheet total"
+                    label="Sheet total (used for approval)"
                     value={summaryTotal != null ? formatINR(summaryTotal) : '—'}
-                    hint="What was entered as the grand total"
+                    hint="Your Excel's own grand total — this is the figure approved"
                   />
                   <Cell
-                    label={hasExtras ? 'Items + tax add up to' : 'Lines add up to'}
+                    label={hasExtras ? "AI's read: items+tax" : "AI's read of lines"}
                     value={formatINR(fromRows)}
                     hint={hasExtras
-                      ? `${buckets.line.count} items + ${buckets.tax.count} tax + ${buckets.addon.count} add-on${buckets.discount.count > 0 ? ` − ${buckets.discount.count} discount` : ''} row${buckets.line.count + buckets.tax.count + buckets.addon.count + buckets.discount.count === 1 ? '' : 's'}`
-                      : `${rows.length} line item${rows.length === 1 ? '' : 's'} in the sheet`}
+                      ? `AI cross-check: ${buckets.line.count} items + ${buckets.tax.count} tax + ${buckets.addon.count} add-on${buckets.discount.count > 0 ? ` − ${buckets.discount.count} discount` : ''}`
+                      : `AI cross-check of ${rows.length} line item${rows.length === 1 ? '' : 's'}`}
                   />
                   <Cell
                     label="Items to check"
@@ -255,19 +255,18 @@ export function ExcelSummaryPanel({
                 )}
 
                 {mismatch && (
-                  <div className="mt-3 inline-flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+                  <div className="mt-3 inline-flex items-start gap-2 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-xs text-blue-900">
                     <AlertTriangle className="h-3.5 w-3.5 mt-0.5 flex-shrink-0" />
                     <div>
                       <p className="font-semibold">
-                        Sheet total and reconciled total don&apos;t match — {pct.toFixed(1)}% gap
+                        Heads-up: AI&apos;s line reading is {pct.toFixed(1)}% off the sheet total — that&apos;s fine.
                       </p>
                       <p className="opacity-80">
-                        Sheet total <b>{formatINR(stated)}</b> vs reconciled <b>{formatINR(fromRows)}</b>
-                        {' — gap of '}
-                        <b>{formatINR(Math.abs(diff))}</b>.
-                        {hasExtras
-                          ? ' Some tax / freight / discount rows may be missing or misclassified. Run AI parse to tag them correctly.'
-                          : ' Likely: heading rows being counted, or GST/freight/discount rows that we couldn’t auto-detect. Run AI parse to clean it up.'}
+                        <b>{formatINR(stated)}</b> (your sheet&apos;s grand total) is what gets approved.
+                        The AI summed <b>{formatINR(fromRows)}</b> from the rows — gaps like this happen when a
+                        sheet has Supply / Installation split columns or computes GST &amp; contingency on a
+                        different base. The breakdown below is just AI insight; <b>your grand total is the number that counts.</b>
+                        {' '}Run AI parse to tighten the breakdown if you like.
                       </p>
                     </div>
                   </div>

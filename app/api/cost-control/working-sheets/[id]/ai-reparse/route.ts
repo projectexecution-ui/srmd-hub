@@ -200,13 +200,16 @@ Output STRICTLY JSON (no preamble, no markdown):
       // amount, keep them but flag in anomaly.
       const matV = typeof meta.material_value === 'number' ? meta.material_value : null
       const labV = typeof meta.labour_value   === 'number' ? meta.labour_value   : null
-      const amount = typeof r.amount === 'number' ? r.amount : null
+      let amount = typeof r.amount === 'number' ? r.amount : null
       let anomaly = typeof meta.anomaly === 'string' ? meta.anomaly : null
-      if (cat === 'material_and_labour' && amount != null && matV != null && labV != null) {
+      if (cat === 'material_and_labour' && matV != null && labV != null) {
         const sum = matV + labV
-        if (Math.abs(sum - amount) > Math.max(1, amount * 0.02)) {
-          const note = `Split (${matV} + ${labV}) ≠ amount (${amount})`
-          anomaly = anomaly ? `${anomaly}. ${note}` : note
+        if (amount == null || Math.abs(sum - amount) > Math.max(1, sum * 0.02)) {
+          if (amount != null) {
+            const note = `Line total corrected to material+labour (${sum}); AI had ${amount}`
+            anomaly = anomaly ? `${anomaly}. ${note}` : note
+          }
+          amount = sum
         }
       }
       return {
