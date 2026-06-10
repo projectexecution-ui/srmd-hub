@@ -78,6 +78,46 @@ function prettyStage(s: string | null | undefined): string {
   return s.trim().replace(/[_-]+/g, ' ').replace(/\s+/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
 }
 
+// Order a module's rules by the ACTUAL document flow instead of A–Z:
+// start stages (never a destination) first, then each stage they lead to, and
+// so on (topological sort, Kahn's algorithm). Self-loops are ignored for
+// ordering; any leftover (cycles) keep their original order. Within the same
+// from→to step, original order is preserved (stable).
+function flowOrder(modRules: Rule[]): Rule[] {
+  const indeg = new Map<string, number>()
+  const adj = new Map<string, Set<string>>()
+  const discovery: string[] = []
+  const seen = new Set<string>()
+  const touch = (s: string) => {
+    if (!seen.has(s)) { seen.add(s); discovery.push(s); indeg.set(s, 0); adj.set(s, new Set()) }
+  }
+  for (const r of modRules) { touch(r.from_stage); touch(r.to_stage) }
+  for (const r of modRules) {
+    if (r.from_stage === r.to_stage) continue // self-loop: not a forward edge
+    const dests = adj.get(r.from_stage)!
+    if (!dests.has(r.to_stage)) { dests.add(r.to_stage); indeg.set(r.to_stage, (indeg.get(r.to_stage) ?? 0) + 1) }
+  }
+  const rank = new Map<string, number>()
+  let next = 0
+  const queue = discovery.filter(s => (indeg.get(s) ?? 0) === 0)
+  while (queue.length) {
+    queue.sort((a, b) => discovery.indexOf(a) - discovery.indexOf(b))
+    const s = queue.shift()!
+    if (rank.has(s)) continue
+    rank.set(s, next++)
+    for (const nb of adj.get(s) ?? []) {
+      indeg.set(nb, (indeg.get(nb) ?? 0) - 1)
+      if ((indeg.get(nb) ?? 0) <= 0 && !rank.has(nb)) queue.push(nb)
+    }
+  }
+  for (const s of discovery) if (!rank.has(s)) rank.set(s, next++)
+  const idx = (s: string) => rank.get(s) ?? 9999
+  return modRules
+    .map((r, i) => ({ r, i }))
+    .sort((a, b) => (idx(a.r.from_stage) - idx(b.r.from_stage)) || (idx(a.r.to_stage) - idx(b.r.to_stage)) || (a.i - b.i))
+    .map(x => x.r)
+}
+
 export default function ApprovalsMatrix({ initial, roles, roleLabels, moduleLabels }: Props) {
   const router = useRouter()
   const [rules, setRules] = useState<Rule[]>(initial)
@@ -229,7 +269,7 @@ export default function ApprovalsMatrix({ initial, roles, roleLabels, moduleLabe
                     </tr>
                   </thead>
                   <tbody>
-                    {modRules.map(r => (
+                    {flowOrder(modRules).map(r => (
                       <Row key={r.id}
                         rule={r}
                         roles={roles}
@@ -275,7 +315,7 @@ export default function ApprovalsMatrix({ initial, roles, roleLabels, moduleLabe
           <CardContent className="pt-5">
             <h3 className="text-sm font-bold uppercase tracking-wide text-gray-500 mb-2">In plain English</h3>
             <ul className="space-y-1.5 text-sm text-gray-700">
-              {rules.filter(r => r.is_active && !HIDDEN_MODULES.has(r.module_slug)).map(r => (
+              {groups.flatMap(([, modRules]) => flowOrder(modRules.filter(r => r.is_active))).map(r => (
                 <li key={r.id} className="leading-relaxed">
                   When a <b>{moduleLabels[r.module_slug] ?? prettyStage(r.module_slug)}</b> is{' '}
                   <code className="text-xs bg-gray-100 px-1.5 py-0.5 rounded">{prettyStage(r.from_stage)}</code>,{' '}
