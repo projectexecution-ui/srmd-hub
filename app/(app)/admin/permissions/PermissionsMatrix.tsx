@@ -1,5 +1,5 @@
 'use client'
-import { useMemo, useState } from 'react'
+import { useMemo, useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { Card, CardContent } from '@/components/ui/card'
@@ -120,6 +120,33 @@ export default function PermissionsMatrix({ modules, roles, initial, roleLabels,
     }
     setLabelSaved(role)
     setTimeout(() => setLabelSaved(r => (r === role ? null : r)), 1500)
+  }
+
+  // Edit BOTH the name and the description of a role (from the Legend). This is
+  // what makes the legend "smart": rename or repurpose a role and its plain-
+  // English explanation updates live + persists, everywhere it's shown.
+  async function commitRoleMeta(role: Role, nextLabel: string, nextDesc: string) {
+    const label = nextLabel.trim()
+    const description = nextDesc.trim()
+    if (!label) { setError('Role name cannot be empty'); return }
+    if (label.length > 60) { setError('Role name too long (max 60 characters)'); return }
+    setLabelBusy(role); setError(null)
+    const prev = labels[role]
+    // Optimistic — updates the legend, the matrix header, and every dropdown
+    // that reads this map, immediately.
+    setLabels(m => ({ ...m, [role]: { label, description } }))
+    const { error } = await createClient().rpc('set_role_label', {
+      p_role: role, p_label: label, p_description: description,
+    })
+    setLabelBusy(null)
+    if (error) {
+      setLabels(m => ({ ...m, [role]: prev }))
+      setError(error.message || 'Could not save role')
+      return
+    }
+    setLabelSaved(role)
+    setTimeout(() => setLabelSaved(r => (r === role ? null : r)), 1500)
+    router.refresh()
   }
 
   function getCell(role: Role, slug: string): CellState {
@@ -340,7 +367,12 @@ export default function PermissionsMatrix({ modules, roles, initial, roleLabels,
       {/* Legend */}
       <Card>
         <CardContent className="pt-5">
-          <h3 className="text-sm font-semibold text-gray-900 mb-3">Legend</h3>
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-sm font-semibold text-gray-900">Legend</h3>
+            {currentUserIsPortalOwner && (
+              <span className="text-[11px] text-gray-400">Hover a role below to rename it or edit its description — updates everywhere.</span>
+            )}
+          </div>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-sm">
             <div className="flex items-start gap-2">
               <Badge variant="default" className="mt-0.5"><Eye className="h-3 w-3 mr-1 inline" />View</Badge>
@@ -357,14 +389,79 @@ export default function PermissionsMatrix({ modules, roles, initial, roleLabels,
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 mt-4 pt-4 border-t border-gray-100">
             {visibleRoles.map(r => (
-              <div key={r}>
-                <b className="text-gray-800">{labels[r]?.label || r}:</b>{' '}
-                <span className="text-gray-500">{labels[r]?.description || '—'}</span>
-              </div>
+              <LegendRole
+                key={r}
+                label={labels[r]?.label || r}
+                description={labels[r]?.description || ''}
+                canEdit={currentUserIsPortalOwner}
+                busy={labelBusy === r}
+                saved={labelSaved === r}
+                onSave={(label, desc) => commitRoleMeta(r, label, desc)}
+              />
             ))}
           </div>
         </CardContent>
       </Card>
+    </div>
+  )
+}
+
+// ─── One editable role entry in the Legend ─────────────────────────────
+// View: "Label: description" with a pencil (Portal Owner). Edit: name +
+// description fields that save together, so the legend always matches reality.
+function LegendRole({ label, description, canEdit, busy, saved, onSave }: {
+  label: string
+  description: string
+  canEdit: boolean
+  busy: boolean
+  saved: boolean
+  onSave: (label: string, description: string) => void
+}) {
+  const [editing, setEditing] = useState(false)
+  const [l, setL] = useState(label)
+  const [d, setD] = useState(description)
+  // Re-sync if the underlying value changes (e.g. renamed from the matrix header).
+  useEffect(() => { if (!editing) { setL(label); setD(description) } }, [label, description, editing])
+
+  if (editing) {
+    return (
+      <div className="rounded-lg border border-blue-200 bg-blue-50/40 p-2 space-y-1.5">
+        <Input value={l} onChange={e => setL(e.target.value)} placeholder="Role name" maxLength={60} className="h-8 text-sm font-semibold" autoFocus />
+        <textarea
+          value={d}
+          onChange={e => setD(e.target.value)}
+          placeholder="What this role can do…"
+          rows={2}
+          className="w-full rounded-lg border border-gray-300 px-2 py-1 text-xs text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-200 resize-none"
+        />
+        <div className="flex items-center gap-1.5">
+          <Button size="sm" disabled={busy || !l.trim()} onClick={() => { onSave(l, d); setEditing(false) }} className="h-7">
+            {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />} Save
+          </Button>
+          <Button size="sm" variant="ghost" onClick={() => { setL(label); setD(description); setEditing(false) }} className="h-7">
+            <X className="h-3.5 w-3.5" /> Cancel
+          </Button>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className={cn('group flex items-start gap-1.5 rounded-md px-1 -mx-1', saved && 'bg-green-50')}>
+      <div className="flex-1 min-w-0">
+        <b className="text-gray-800">{label}:</b>{' '}
+        <span className="text-gray-500">{description || '—'}</span>
+      </div>
+      {canEdit && (
+        <button
+          type="button"
+          onClick={() => setEditing(true)}
+          title="Rename / edit description"
+          className="flex-shrink-0 mt-0.5 h-5 w-5 inline-flex items-center justify-center rounded text-gray-300 group-hover:text-blue-600 hover:bg-blue-50"
+        >
+          <Pencil className="h-3 w-3" />
+        </button>
+      )}
     </div>
   )
 }
