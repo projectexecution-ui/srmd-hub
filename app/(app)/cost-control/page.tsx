@@ -31,13 +31,13 @@ export default async function CostControlLandingPage() {
   const supabase = await createClient()
   const user = await getMyUser()
 
-  const [projectsRes, wsAllRes, myDraftsRes, pendingRes, deadlinesRes] = await Promise.all([
+  const [projectsRes, wsAllRes, myDraftsRes, pendingRes, deadlinesRes, budgetRes] = await Promise.all([
     supabase
       .from('projects')
       .select('id, code, name, cc_status, setup_progress_pct, built_up_sft, parent_project_id')
       .not('cc_status', 'is', null)
       .order('code'),
-    supabase.from('cc_working_sheets').select('id, status, total_amount, project_id'),
+    supabase.from('cc_working_sheets').select('id, status, total_amount, project_id, deadline_date'),
     user
       ? supabase
           .from('cc_working_sheets')
@@ -57,16 +57,45 @@ export default async function CostControlLandingPage() {
       .not('status', 'in', '(approved,wo_issued,paid,cancelled)')
       .order('deadline_date', { ascending: true })
       .limit(15),
+    // Per-project budget rollup for the tiles (ERP budget / committed / paid).
+    supabase.from('cc_budget_lines').select('project_id, current_budget_amt, current_wo_committed_amt, current_paid_amt'),
   ])
 
   const ccProjects = (projectsRes.data ?? []) as CCProject[]
   const incompleteCount = ccProjects.filter(p => (p.setup_progress_pct ?? 0) < 100).length
 
-  type WSRollup = { id: string; status: string; total_amount: number | null; project_id: string }
+  type WSRollup = { id: string; status: string; total_amount: number | null; project_id: string; deadline_date: string | null }
   const ws = (wsAllRes.data ?? []) as WSRollup[]
-  const wsByProject = new Map<string, number>()
+  const todayStr = new Date().toISOString().slice(0, 10)
+  const TERMINAL = new Set(['approved', 'wo_issued', 'paid', 'cancelled'])
+
+  // Per-project signals for the tiles.
+  const wsByProject     = new Map<string, number>()   // total WS count
+  const estimateByProj  = new Map<string, number>()   // live internal estimate (non-cancelled WS sum)
+  const pendingByProj   = new Map<string, number>()   // WS awaiting approval
+  const overdueByProj   = new Map<string, number>()   // open WS past deadline
   for (const w of ws) {
     wsByProject.set(w.project_id, (wsByProject.get(w.project_id) ?? 0) + 1)
+    if (w.status !== 'cancelled') {
+      estimateByProj.set(w.project_id, (estimateByProj.get(w.project_id) ?? 0) + Number(w.total_amount ?? 0))
+    }
+    if (w.status === 'submitted' || w.status === 'partially_approved') {
+      pendingByProj.set(w.project_id, (pendingByProj.get(w.project_id) ?? 0) + 1)
+    }
+    if (w.deadline_date && w.deadline_date < todayStr && !TERMINAL.has(w.status)) {
+      overdueByProj.set(w.project_id, (overdueByProj.get(w.project_id) ?? 0) + 1)
+    }
+  }
+
+  // Per-project budget rollup (ERP budget / committed / paid).
+  type BLRow = { project_id: string; current_budget_amt: number | null; current_wo_committed_amt: number | null; current_paid_amt: number | null }
+  const budgetByProj = new Map<string, { budget: number; committed: number; paid: number }>()
+  for (const b of (budgetRes.data ?? []) as BLRow[]) {
+    const cur = budgetByProj.get(b.project_id) ?? { budget: 0, committed: 0, paid: 0 }
+    cur.budget    += Number(b.current_budget_amt ?? 0)
+    cur.committed += Number(b.current_wo_committed_amt ?? 0)
+    cur.paid      += Number(b.current_paid_amt ?? 0)
+    budgetByProj.set(b.project_id, cur)
   }
   const totalWS = ws.length
   const approvedTotal = ws.filter(w => w.status === 'approved' || w.status === 'wo_issued' || w.status === 'paid')
@@ -237,24 +266,44 @@ export default async function CostControlLandingPage() {
             const pct = p.setup_progress_pct ?? 0
             const isIncomplete = pct < 100
             const wsHere = wsByProject.get(p.id) ?? 0
+            const bud = budgetByProj.get(p.id) ?? { budget: 0, committed: 0, paid: 0 }
+            const estimate = estimateByProj.get(p.id) ?? 0
+            const pending = pendingByProj.get(p.id) ?? 0
+            const overdue = overdueByProj.get(p.id) ?? 0
+            const paidPct = bud.budget > 0 ? Math.round((bud.paid / bud.budget) * 100) : 0
+            const hot = paidPct > 95
             return (
               <Link key={p.id} href={`/cost-control/projects/${p.id}`}>
                 <Card className="hover:shadow-md transition-shadow h-full">
                   <div className="p-5">
                     <div className="flex items-start justify-between mb-2">
                       <span className="text-xs font-mono font-bold text-indigo-700">{p.code}</span>
-                      {p.cc_status && (
-                        <Badge variant={p.cc_status === 'active' ? 'success' : 'secondary'}>
-                          {p.cc_status.replace('_', ' ')}
-                        </Badge>
-                      )}
+                      <div className="flex items-center gap-1.5">
+                        {/* Action signals — surface what needs attention */}
+                        {pending > 0 && (
+                          <span className="inline-flex items-center gap-0.5 text-[10px] font-bold text-amber-800 bg-amber-100 rounded-full px-2 py-0.5" title={`${pending} working sheet${pending === 1 ? '' : 's'} awaiting approval`}>
+                            {pending} pending
+                          </span>
+                        )}
+                        {overdue > 0 && (
+                          <span className="inline-flex items-center gap-0.5 text-[10px] font-bold text-rose-800 bg-rose-100 rounded-full px-2 py-0.5" title={`${overdue} open sheet${overdue === 1 ? '' : 's'} past deadline`}>
+                            {overdue} overdue
+                          </span>
+                        )}
+                        {p.cc_status && pending === 0 && overdue === 0 && (
+                          <Badge variant={p.cc_status === 'active' ? 'success' : 'secondary'}>
+                            {p.cc_status.replace('_', ' ')}
+                          </Badge>
+                        )}
+                      </div>
                     </div>
                     <h3 className="font-semibold text-gray-900">{p.name}</h3>
                     <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 mt-1 text-xs text-gray-500">
                       {p.built_up_sft != null && <span>{p.built_up_sft.toLocaleString('en-IN')} Sft</span>}
                       <span>· {wsHere} WS</span>
                     </div>
-                    {isIncomplete && (
+
+                    {isIncomplete ? (
                       <div className="mt-3">
                         <div className="flex items-center justify-between text-xs text-amber-700 mb-1">
                           <span>Setup {pct}% complete</span>
@@ -263,6 +312,30 @@ export default async function CostControlLandingPage() {
                         <div className="h-1.5 bg-amber-100 rounded-full overflow-hidden">
                           <div className="h-full bg-amber-500" style={{ width: `${pct}%` }} />
                         </div>
+                      </div>
+                    ) : (
+                      // Financial snapshot for set-up projects.
+                      <div className="mt-3 space-y-2">
+                        {bud.budget > 0 ? (
+                          <>
+                            <div className="flex items-baseline justify-between">
+                              <span className="text-[10px] uppercase tracking-wide text-gray-500">Budget (ERP)</span>
+                              <span className="text-sm font-bold text-gray-900 tabular-nums">{formatINR(bud.budget)}</span>
+                            </div>
+                            <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                              <div className={`h-full ${hot ? 'bg-rose-500' : paidPct > 80 ? 'bg-amber-500' : 'bg-emerald-500'}`} style={{ width: `${Math.min(paidPct, 100)}%` }} />
+                            </div>
+                            <div className="flex items-center justify-between text-[11px] text-gray-500">
+                              <span>Paid {formatINR(bud.paid)}</span>
+                              <span className={hot ? 'text-rose-600 font-semibold' : ''}>{paidPct}% used</span>
+                            </div>
+                          </>
+                        ) : (
+                          <div className="flex items-baseline justify-between text-xs">
+                            <span className="text-gray-500">Internal estimate</span>
+                            <span className="font-semibold text-indigo-800 tabular-nums">{estimate > 0 ? formatINR(estimate) : '— no budget yet'}</span>
+                          </div>
+                        )}
                       </div>
                     )}
                   </div>
