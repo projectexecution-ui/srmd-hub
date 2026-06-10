@@ -3041,7 +3041,32 @@ async function downloadShareImage() {
   try { await document.fonts.ready; } catch {}
   const t = totalsFor(project);
   const palette = imageColors();
-  const W = 1080, H = 1350;
+
+  // ── Capture the chart FIRST so we know its true aspect ratio ──
+  // The old code stretched the chart into a fixed box, so a project with
+  // few cost heads (a short, wide chart) got squished tall and a project
+  // with many got squished flat. Now we size the whole image to the chart's
+  // real proportions, so it is never distorted.
+  const chartImg = new Image();
+  chartImg.src = await captureChartHiRes(mainChartInstance) || mainChartInstance.toBase64Image('image/png', 1);
+  await new Promise(res => { chartImg.onload = res; chartImg.onerror = res; });
+  const chartNatW = chartImg.naturalWidth || 1000;
+  const chartNatH = chartImg.naturalHeight || 600;
+
+  const W = 1080;
+  const PAD = 36;
+  const CW = W - PAD * 2;
+  // Fixed top block: accent + brand + name + subtitle pill + KPI row + chart heading.
+  // (These offsets are anchored to the top, so they don't depend on H.)
+  const CHART_TOP_Y = PAD + 370;
+  const chartDrawW = CW - 60;
+  // Preserve aspect ratio; clamp so a huge cost-head list doesn't make an
+  // absurdly tall image and a tiny one doesn't look starved.
+  let chartDrawH = chartDrawW * (chartNatH / chartNatW);
+  chartDrawH = Math.max(300, Math.min(chartDrawH, 1500));
+  const FOOTER_SPACE = 96;
+  const H = Math.round(CHART_TOP_Y + chartDrawH + FOOTER_SPACE);
+
   const c = document.createElement('canvas');
   c.width = W; c.height = H;
   const ctx = c.getContext('2d');
@@ -3051,9 +3076,8 @@ async function downloadShareImage() {
   ctx.fillStyle = palette.bg;
   ctx.fillRect(0, 0, W, H);
 
-  // Outer card
-  const PAD = 36;
-  const CX = PAD, CY = PAD, CW = W - PAD * 2, CH = H - PAD * 2;
+  // Outer card (PAD / CW computed above so the layout can size to the chart)
+  const CX = PAD, CY = PAD, CH = H - PAD * 2;
   ctx.fillStyle = palette.card;
   drawRoundRect(ctx, CX, CY, CW, CH, 24);
 
@@ -3149,17 +3173,13 @@ async function downloadShareImage() {
   ctx.font = '500 13px Inter, Arial, sans-serif';
   ctx.fillText(tabSub.length > 80 ? tabSub.slice(0, 80) + '…' : tabSub, CX + 40, y + 28);
 
-  // Chart image — paint a matching background behind it so the chart blends with the card
-  y += 56;
-  const chartImg = new Image();
-  chartImg.src = await captureChartHiRes(mainChartInstance) || mainChartInstance.toBase64Image('image/png', 1);
-  await new Promise(res => { chartImg.onload = res; });
+  // Chart image — drawn at its TRUE aspect ratio (computed up front), so it
+  // never stretches. The canvas height was sized to fit it exactly.
+  y += 56; // y is now CHART_TOP_Y
   const chartAreaX = CX + 30;
-  const chartAreaW = CW - 60;
-  const chartAreaH = CY + CH - y - 90;
   ctx.fillStyle = palette.card;
-  ctx.fillRect(chartAreaX, y, chartAreaW, chartAreaH);
-  ctx.drawImage(chartImg, chartAreaX, y, chartAreaW, chartAreaH);
+  ctx.fillRect(chartAreaX, y, chartDrawW, chartDrawH);
+  ctx.drawImage(chartImg, chartAreaX, y, chartDrawW, chartDrawH);
 
   // Footer
   ctx.fillStyle = palette.footer;
@@ -3990,6 +4010,20 @@ async function captureChartHiRes(chartInstance) {
     chartInstance.resize();
   }
 }
+// Place a captured chart image into a PDF preserving its aspect ratio.
+// Fits within (maxW × maxH), centers horizontally, returns the bottom Y.
+// Prevents the "25 bars squished into 220pt" overlap the fixed-box version had.
+function addChartImageFitted(pdf, dataUrl, chartInstance, x, y, maxW, maxH) {
+  const natW = (chartInstance && chartInstance.width) || 1000;
+  const natH = (chartInstance && chartInstance.height) || 500;
+  const aspect = natH / natW; // height per unit width
+  let drawW = maxW;
+  let drawH = drawW * aspect;
+  if (drawH > maxH) { drawH = maxH; drawW = drawH / aspect; }
+  const drawX = x + (maxW - drawW) / 2;
+  try { pdf.addImage(dataUrl, 'PNG', drawX, y, drawW, drawH, undefined, 'SLOW'); } catch {}
+  return y + drawH;
+}
 function addPdfBrandHeader(pdf, title, subtitle) {
   const pageW = pdf.internal.pageSize.getWidth();
   // Top accent bar
@@ -4106,8 +4140,11 @@ function drawPdfStatusPill(pdf, x, y, w, h, accentRGB, text) {
 function drawNativeBarChart(pdf, x, y, w, h, rows, opts) {
   // rows: [{ head, budget, actual }]
   // opts: { showWO } not used here for simplicity
-  const padding = { top: 30, right: 80, bottom: 22, left: 0 };
+  // Right padding reserves room for the value label at each bar's end.
+  // 96pt comfortably fits the longest "Rs 99.99 Cr  (100%)" spent label.
+  const padding = { top: 30, right: 96, bottom: 22, left: 0 };
   const labelColW = Math.min(180, w * 0.4);
+  const rightEdge = x + w; // labels must never cross this
   const plotX = x + labelColW;
   const plotY = y + padding.top;
   const plotW = w - labelColW - padding.right;
@@ -4142,17 +4179,21 @@ function drawNativeBarChart(pdf, x, y, w, h, rows, opts) {
     const bW = ((r.budget || 0) / maxVal) * plotW;
     pdf.setFillColor(...PDF_BRAND.accent);
     pdf.roundedRect(plotX, rY, Math.max(1, bW), barH, 2, 2, 'F');
-    // Value at end of budget bar
+    // Value at end of budget bar — clamp X so it never runs off the page.
     pdf.setFont('helvetica', 'normal');
     pdf.setFontSize(7);
     pdf.setTextColor(...PDF_BRAND.ink2);
-    pdf.text(pdfFormatINR(r.budget || 0), plotX + bW + 4, rY + barH - 2.5);
+    const budgetTxt = pdfFormatINR(r.budget || 0);
+    const budgetX = Math.min(plotX + bW + 4, rightEdge - pdf.getTextWidth(budgetTxt));
+    pdf.text(budgetTxt, budgetX, rY + barH - 2.5);
     // Spent bar
     const sW = ((r.actual || 0) / maxVal) * plotW;
     pdf.setFillColor(...PDF_BRAND.spent);
     pdf.roundedRect(plotX, rY + barH + gap, Math.max(1, sW), barH, 2, 2, 'F');
     const pct = (r.budget || 0) > 0 ? ((r.actual || 0) / r.budget * 100) : 0;
-    pdf.text(pdfFormatINR(r.actual || 0) + '  (' + pct.toFixed(0) + '%)', plotX + sW + 4, rY + barH * 2 + gap - 2.5);
+    const spentTxt = pdfFormatINR(r.actual || 0) + '  (' + pct.toFixed(0) + '%)';
+    const spentX = Math.min(plotX + sW + 4, rightEdge - pdf.getTextWidth(spentTxt));
+    pdf.text(spentTxt, spentX, rY + barH * 2 + gap - 2.5);
   });
 }
 
@@ -4205,7 +4246,8 @@ async function buildDashboardPDF(pdf) {
   drawPdfKPI(pdf, margin + (kpiW + gap) * 2, y, kpiW, kpiH, [245, 158, 11], 'Total Spent', pdfFormatINR(totalActual), utilPct.toFixed(1) + '% utilised');
   drawPdfKPI(pdf, margin + (kpiW + gap) * 3, y, kpiW, kpiH, overCount > 0 ? [220, 38, 38] : [22, 163, 74], 'Over Budget', String(overCount), 'of ' + withData.length + ' tracked');
   y += kpiH + 18;
-  // Portfolio chart (if available)
+  // Portfolio chart (if available) — fit to its real aspect ratio so the
+  // bars never overlap, no matter how many projects there are.
   if (portfolioChartInstance && withData.length) {
     pdf.setTextColor(15, 23, 42);
     pdf.setFont('helvetica', 'bold');
@@ -4214,10 +4256,14 @@ async function buildDashboardPDF(pdf) {
     y += 14;
     try {
       const chartImg = await captureChartHiRes(portfolioChartInstance);
-      const chartW = pageW - margin * 2;
-      const chartH = 220;
-      if (chartImg) pdf.addImage(chartImg, 'PNG', margin, y, chartW, chartH, undefined, 'SLOW');
-      y += chartH + 18;
+      if (chartImg) {
+        const pageH = pdf.internal.pageSize.getHeight();
+        const maxW = pageW - margin * 2;
+        // Cap height so the summary table still has room; tall charts (many
+        // projects) flow to a sensible size and the table starts on the next page.
+        const maxH = Math.min(pageH - y - 90, 470);
+        y = addChartImageFitted(pdf, chartImg, portfolioChartInstance, margin, y, maxW, maxH) + 18;
+      }
     } catch {}
   }
   // Project Summary table
