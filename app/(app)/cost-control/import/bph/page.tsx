@@ -5,9 +5,12 @@ import { Card } from '@/components/ui/card'
 import { EmptyState } from '@/components/ui/empty-state'
 import { FileSpreadsheet } from 'lucide-react'
 import { BphImportClient } from './BphImportClient'
-import { listBphProjects } from './actions'
+import { MappingsPanel, type MappingRow } from './MappingsPanel'
+import { listBphProjects, listMappings } from './actions'
 
 export const dynamic = 'force-dynamic'
+
+interface BphStateLite { projects?: Array<{ id: string; name: string }> }
 
 export default async function BphImportPage({
   searchParams,
@@ -18,10 +21,28 @@ export default async function BphImportPage({
   const sp = await searchParams
   const supabase = await createClient()
 
-  const [bphRes, ccProjectsRes] = await Promise.all([
+  const [bphRes, ccProjectsRes, mappings, stateRes] = await Promise.all([
     listBphProjects(),
     supabase.from('projects').select('id, code, name, cc_status').not('cc_status', 'is', null).order('code'),
+    listMappings(),
+    supabase.from('budget_hub_state').select('state').eq('id', 'global').single(),
   ])
+
+  // Resolve mapping ids → display names for the Current Mappings panel.
+  const bphNameById = new Map(
+    (((stateRes.data?.state ?? {}) as BphStateLite).projects ?? []).map(p => [p.id, p.name]),
+  )
+  const ccById = new Map((ccProjectsRes.data ?? []).map(p => [p.id, p]))
+  const mappingRows: MappingRow[] = mappings.map(m => {
+    const cc = ccById.get(m.cc_project_id)
+    return {
+      bph_project_id: m.bph_project_id,
+      cc_project_id: m.cc_project_id,
+      bph_name: bphNameById.get(m.bph_project_id) ?? '(BPH project not in current upload)',
+      cc_label: cc ? `${cc.code} — ${cc.name}` : '(deleted project)',
+      last_pulled_at: m.last_pulled_at,
+    }
+  })
 
   if (!bphRes.ok) {
     return (
@@ -54,6 +75,9 @@ export default async function BphImportPage({
         BPH numbers — that&apos;s the point of pulling weekly.
       </Card>
 
+      {/* Existing mappings — re-sync (applies latest BPH numbers) or unlink */}
+      {mappingRows.length > 0 && <MappingsPanel mappings={mappingRows} />}
+
       {bphRes.projects.length === 0 ? (
         <Card>
           <EmptyState
@@ -63,11 +87,16 @@ export default async function BphImportPage({
           />
         </Card>
       ) : (
-        <BphImportClient
-          bphProjects={bphRes.projects}
-          ccProjects={(ccProjectsRes.data ?? []).map(p => ({ id: p.id, code: p.code, name: p.name }))}
-          defaultCcProjectId={sp.cc_project ?? null}
-        />
+        <>
+          <p className="text-sm font-semibold text-gray-700 pt-1">
+            {mappingRows.length > 0 ? 'Map another project' : 'Map a project'}
+          </p>
+          <BphImportClient
+            bphProjects={bphRes.projects}
+            ccProjects={(ccProjectsRes.data ?? []).map(p => ({ id: p.id, code: p.code, name: p.name }))}
+            defaultCcProjectId={sp.cc_project ?? null}
+          />
+        </>
       )}
     </div>
   )
