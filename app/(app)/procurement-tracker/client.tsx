@@ -16,6 +16,7 @@ import { PendingReceiptsView } from '@/components/procurement-tracker/PendingRec
 import { IndentsNeedingPoView } from '@/components/procurement-tracker/IndentsNeedingPoView'
 import { CompletedView } from '@/components/procurement-tracker/CompletedView'
 import { DiffBanner } from '@/components/procurement-tracker/DiffBanner'
+import { ProjectFilterStrip } from '@/components/procurement-tracker/ProjectFilterStrip'
 import Link from 'next/link'
 import { Upload, FileSpreadsheet, Loader2, PackageX, ClipboardList, EyeOff, CheckCircle2 } from 'lucide-react'
 
@@ -338,46 +339,17 @@ export function ProcurementTrackerClient({ isAdmin = false }: { isAdmin?: boolea
               <DiffBanner diff={diff} />
             )}
 
-            {/* Project filter — chip grid so every project is one click away.
-                Sorted by pendingLineCount desc so the projects you most
-                need to chase bubble to the front. Admin-hidden projects
+            {/* Project filter — smarter strip: insight ribbon, search,
+                active/cleared split, richer chips. Admin-hidden projects
                 are stripped from `visibleProjects` upstream. */}
             {visibleProjects.length > 1 && (
-              <div className="space-y-1.5">
-                <div className="flex items-center justify-between gap-2 flex-wrap">
-                  <label className="text-[10px] text-stone-500 font-semibold uppercase tracking-wider">
-                    Filter by project
-                  </label>
-                  <span className="text-[11px] text-stone-400">
-                    {data.format === 'flat'
-                      ? `Per-project PO report · ${visibleProjects.length} project${visibleProjects.length === 1 ? '' : 's'}`
-                      : `Company-wide indent report · ${visibleProjects.length} project${visibleProjects.length === 1 ? '' : 's'}`}
-                    {hiddenInUploadCount > 0 && (
-                      <span className="text-stone-400 italic"> · {hiddenInUploadCount} hidden by admin</span>
-                    )}
-                  </span>
-                </div>
-                <div className="flex flex-wrap gap-1.5">
-                  {/* "All projects" anchor chip — always first */}
-                  <ProjectChip
-                    label="All projects"
-                    pendingCount={visibleProjects.reduce((s, p) => s + p.pendingLineCount, 0)}
-                    selected={selectedProject === '__all__'}
-                    onClick={() => setSelectedProject('__all__')}
-                  />
-                  {[...visibleProjects]
-                    .sort((a, b) => b.pendingLineCount - a.pendingLineCount)
-                    .map(p => (
-                      <ProjectChip
-                        key={p.projectName}
-                        label={p.projectName}
-                        pendingCount={p.pendingLineCount}
-                        selected={selectedProject === p.projectName}
-                        onClick={() => setSelectedProject(p.projectName)}
-                      />
-                    ))}
-                </div>
-              </div>
+              <ProjectFilterStrip
+                projects={visibleProjects}
+                selectedProject={selectedProject}
+                onSelect={setSelectedProject}
+                format={data.format}
+                hiddenInUploadCount={hiddenInUploadCount}
+              />
             )}
 
             {/* The toggle — the entire page hinges on this */}
@@ -463,47 +435,5 @@ export function ProcurementTrackerClient({ isAdmin = false }: { isAdmin?: boolea
         )}
       </div>
     </div>
-  )
-}
-
-// ─── ProjectChip ──────────────────────────────────────────────────────
-// One clickable chip for the project filter strip. Surfaces the project
-// name + a pendingLineCount badge so the user can prioritise visually
-// (amber = needs chasing, emerald = fully fulfilled).
-function ProjectChip({
-  label,
-  pendingCount,
-  selected,
-  onClick,
-}: {
-  label: string
-  pendingCount: number
-  selected: boolean
-  onClick: () => void
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      title={label}
-      className={`text-xs font-medium px-3 py-1.5 rounded-lg transition-colors inline-flex items-center gap-1.5 max-w-full ${
-        selected
-          ? 'bg-red-900 text-white shadow-sm ring-2 ring-red-200'
-          : 'bg-white border border-orange-200 text-stone-700 hover:bg-orange-50 hover:border-orange-400'
-      }`}
-    >
-      <span className="truncate max-w-[180px]">{label}</span>
-      <span
-        className={`text-[10px] font-bold rounded-full px-1.5 py-0.5 leading-none ${
-          selected
-            ? 'bg-white/20 text-white'
-            : pendingCount > 0
-              ? 'bg-amber-100 text-amber-800'
-              : 'bg-emerald-100 text-emerald-700'
-        }`}
-      >
-        {pendingCount}
-      </span>
-    </button>
   )
 }
