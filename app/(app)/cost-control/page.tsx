@@ -6,7 +6,7 @@ import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { EmptyState } from '@/components/ui/empty-state'
-import { Calculator, Plus, FileText, Clock, Inbox, Upload, ClipboardList, Settings, CalendarClock, ChevronDown } from 'lucide-react'
+import { Calculator, Plus, FileText, Clock, Inbox, Upload, ClipboardList, Settings, CalendarClock, ChevronDown, Download } from 'lucide-react'
 import { formatINR } from '@/lib/utils'
 import { DeadlineBadge } from '@/components/cost-control/DeadlineBadge'
 import { getLastBphSync } from '@/app/(app)/cost-control/import/bph/actions'
@@ -122,6 +122,18 @@ export default async function CostControlLandingPage() {
   // BPH auto-sync freshness — read-only, doesn't trigger a pull
   const bphSync = await getLastBphSync()
 
+  // Last auto-backup timestamp (set by the daily cron) for the Tools menu.
+  let lastBackup: string | null = null
+  if (canAdmin) {
+    const { data: bk } = await supabase.from('app_settings').select('value').eq('key', 'cc_last_backup').maybeSingle()
+    if (bk?.value) {
+      try {
+        const parsed = JSON.parse(bk.value as string) as { at?: string }
+        if (parsed.at) lastBackup = new Date(parsed.at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })
+      } catch { /* ignore */ }
+    }
+  }
+
   return (
     <div className="p-4 md:p-6 max-w-7xl mx-auto space-y-4">
       <PageHeader
@@ -167,6 +179,17 @@ export default async function CostControlLandingPage() {
                   <p className="text-[11px] text-gray-500">manage measurement shapes</p>
                 </div>
               </Link>
+            )}
+            {canAdmin && (
+              <a href="/api/cost-control/backup" className="flex items-start gap-2.5 px-2.5 py-2 rounded-md hover:bg-gray-50 border-t border-gray-100 mt-1 pt-2">
+                <Download className="h-4 w-4 text-gray-500 mt-0.5 flex-shrink-0" />
+                <div className="min-w-0">
+                  <p className="text-sm font-medium text-gray-900">Download full backup (Excel)</p>
+                  <p className="text-[11px] text-gray-500">
+                    {lastBackup ? `auto-saved daily · last ${lastBackup}` : 'all Cost Control data · auto-saved daily'}
+                  </p>
+                </div>
+              </a>
             )}
           </div>
         </details>

@@ -5,6 +5,10 @@
     {
       "path": "/api/jmr/weekly-report?cron=1",
       "schedule": "30 3 * * *"
+    },
+    {
+      "path": "/api/cost-control/backup?cron=1",
+      "schedule": "0 20 * * *"
     }
   ]
 }
