@@ -6,7 +6,7 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Eye, Pencil, ShieldCheck, Loader2, Check, Plus, X } from 'lucide-react'
+import { Eye, Pencil, ShieldCheck, Loader2, Check, Plus, X, Sparkles } from 'lucide-react'
 import { confirm } from '@/components/ui/confirm-dialog'
 import { cn } from '@/lib/utils'
 import type { Role, RolePermission, PermAction } from '@/lib/types'
@@ -31,6 +31,19 @@ const ACTIONS: { key: PermAction; label: string; icon: React.ComponentType<{ cla
   { key: 'edit',  label: 'Edit',  icon: Pencil },
   { key: 'admin', label: 'Admin', icon: ShieldCheck },
 ]
+
+// Ask the AI route for a one-line role description. Throws on failure so the
+// caller can surface a friendly message.
+async function fetchAiDescription(roleName: string, context: string): Promise<string> {
+  const res = await fetch('/api/ai/role-description', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ roleName, context }),
+  })
+  const json = await res.json().catch(() => ({}))
+  if (!res.ok) throw new Error(json?.error || 'AI could not write a description.')
+  return (json?.description as string) || ''
+}
 
 export default function PermissionsMatrix({ modules, roles, initial, roleLabels, currentUserIsPortalOwner, canManageRoles = false }: Props) {
   const router = useRouter()
@@ -59,6 +72,7 @@ export default function PermissionsMatrix({ modules, roles, initial, roleLabels,
   const [newRoleLabel, setNewRoleLabel] = useState('')
   const [newRoleDesc, setNewRoleDesc] = useState('')
   const [addBusy, setAddBusy] = useState(false)
+  const [aiAddBusy, setAiAddBusy] = useState(false)
   const [delBusyRole, setDelBusyRole] = useState<Role | null>(null)
 
   async function addRole(e: React.FormEvent) {
@@ -153,6 +167,19 @@ export default function PermissionsMatrix({ modules, roles, initial, roleLabels,
     return state[`${role}::${slug}`] ?? { view: false, edit: false, admin: false }
   }
 
+  // A short summary of what a role can do across modules — fed to the AI so the
+  // generated description matches the role's real access, not just its name.
+  function roleContext(role: Role): string {
+    const parts: string[] = []
+    for (const m of modules) {
+      const c = getCell(role, m.slug)
+      if (c.admin) parts.push(`manage ${m.label}`)
+      else if (c.edit) parts.push(`edit ${m.label}`)
+      else if (c.view) parts.push(`view ${m.label}`)
+    }
+    return parts.slice(0, 14).join(', ')
+  }
+
   async function toggle(role: Role, slug: string, action: PermAction) {
     const key: Key = `${role}::${slug}`
     const current = getCell(role, slug)
@@ -223,7 +250,23 @@ export default function PermissionsMatrix({ modules, roles, initial, roleLabels,
                     />
                   </div>
                   <div className="w-full sm:flex-1 sm:min-w-[14rem]">
-                    <label className="text-[11px] font-semibold uppercase tracking-wide text-gray-600 mb-1 block">Description (optional)</label>
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="text-[11px] font-semibold uppercase tracking-wide text-gray-600 block">Description (optional)</label>
+                      <button
+                        type="button"
+                        disabled={aiAddBusy || addBusy || !newRoleLabel.trim()}
+                        onClick={async () => {
+                          setAiAddBusy(true); setError(null)
+                          try { setNewRoleDesc(await fetchAiDescription(newRoleLabel, '')) }
+                          catch (e) { setError(e instanceof Error ? e.message : 'AI failed') }
+                          finally { setAiAddBusy(false) }
+                        }}
+                        title="Let AI write the description from the role name"
+                        className="inline-flex items-center gap-1 text-[11px] font-medium text-violet-700 hover:text-violet-900 disabled:opacity-40"
+                      >
+                        {aiAddBusy ? <Loader2 className="h-3 w-3 animate-spin" /> : <Sparkles className="h-3 w-3" />} Write with AI
+                      </button>
+                    </div>
                     <Input
                       value={newRoleDesc}
                       onChange={e => setNewRoleDesc(e.target.value)}
@@ -397,6 +440,8 @@ export default function PermissionsMatrix({ modules, roles, initial, roleLabels,
                 busy={labelBusy === r}
                 saved={labelSaved === r}
                 onSave={(label, desc) => commitRoleMeta(r, label, desc)}
+                onAi={(name) => fetchAiDescription(name, roleContext(r))}
+                onError={setError}
               />
             ))}
           </div>
@@ -409,33 +454,56 @@ export default function PermissionsMatrix({ modules, roles, initial, roleLabels,
 // ─── One editable role entry in the Legend ─────────────────────────────
 // View: "Label: description" with a pencil (Portal Owner). Edit: name +
 // description fields that save together, so the legend always matches reality.
-function LegendRole({ label, description, canEdit, busy, saved, onSave }: {
+function LegendRole({ label, description, canEdit, busy, saved, onSave, onAi, onError }: {
   label: string
   description: string
   canEdit: boolean
   busy: boolean
   saved: boolean
   onSave: (label: string, description: string) => void
+  onAi: (name: string) => Promise<string>
+  onError: (msg: string) => void
 }) {
   const [editing, setEditing] = useState(false)
   const [l, setL] = useState(label)
   const [d, setD] = useState(description)
+  const [aiBusy, setAiBusy] = useState(false)
   // Re-sync if the underlying value changes (e.g. renamed from the matrix header).
   useEffect(() => { if (!editing) { setL(label); setD(description) } }, [label, description, editing])
+
+  async function runAi() {
+    if (!l.trim()) { onError('Type a role name first.'); return }
+    setAiBusy(true)
+    try { setD(await onAi(l)) }
+    catch (e) { onError(e instanceof Error ? e.message : 'AI failed') }
+    finally { setAiBusy(false) }
+  }
 
   if (editing) {
     return (
       <div className="rounded-lg border border-blue-200 bg-blue-50/40 p-2 space-y-1.5">
         <Input value={l} onChange={e => setL(e.target.value)} placeholder="Role name" maxLength={60} className="h-8 text-sm font-semibold" autoFocus />
+        <div className="flex items-center justify-between">
+          <span className="text-[10px] font-semibold uppercase tracking-wide text-gray-500">Description</span>
+          <button
+            type="button"
+            onClick={runAi}
+            disabled={aiBusy || !l.trim()}
+            title="Let AI write the description from the role name + its access"
+            className="inline-flex items-center gap-1 text-[11px] font-medium text-violet-700 hover:text-violet-900 disabled:opacity-40"
+          >
+            {aiBusy ? <Loader2 className="h-3 w-3 animate-spin" /> : <Sparkles className="h-3 w-3" />} Write with AI
+          </button>
+        </div>
         <textarea
           value={d}
           onChange={e => setD(e.target.value)}
-          placeholder="What this role can do…"
+          placeholder="What this role can do… (or tap “Write with AI”)"
           rows={2}
           className="w-full rounded-lg border border-gray-300 px-2 py-1 text-xs text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-200 resize-none"
         />
         <div className="flex items-center gap-1.5">
-          <Button size="sm" disabled={busy || !l.trim()} onClick={() => { onSave(l, d); setEditing(false) }} className="h-7">
+          <Button size="sm" disabled={busy || aiBusy || !l.trim()} onClick={() => { onSave(l, d); setEditing(false) }} className="h-7">
             {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />} Save
           </Button>
           <Button size="sm" variant="ghost" onClick={() => { setL(label); setD(description); setEditing(false) }} className="h-7">
