@@ -5,7 +5,7 @@
 // it on screen with the working columns (Deductions / Retention / Balance)
 // hidden by default, and exports the exact 9-column format.
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import * as XLSX from 'xlsx'
 import { jsPDF } from 'jspdf'
 import autoTable from 'jspdf-autotable'
@@ -14,11 +14,12 @@ import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { QueryError } from '@/components/ui/query-error'
 import {
-  FileSpreadsheet, FileText, UploadCloud, Download, Loader2, Eye, EyeOff, X, Clock, Lock,
+  FileSpreadsheet, FileText, UploadCloud, Download, Loader2, Eye, EyeOff, X, Clock, Lock, Search,
   CheckCircle2, AlertTriangle, ChevronRight, ChevronDown, ChevronsDownUp, ChevronsUpDown, Layers,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { formatNumber, cn } from '@/lib/utils'
+import { formatINR as compactINR } from '@/lib/budget-utils'
 import { confirm } from '@/components/ui/confirm-dialog'
 import {
   parseSourceReports, reconcile, deriveContractor, categorySubtotal, subprojectTotal,
@@ -74,6 +75,7 @@ export default function ContractorReportClient({ canDelete = false }: { canDelet
   const [budgetAreas, setBudgetAreas] = useState<Record<string, number>>({})
   const [updatedInfo, setUpdatedInfo] = useState<{ at: string | null; by: string | null }>({ at: null, by: null })
   const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [projectFilter, setProjectFilter] = useState('')
   const [showWorking, setShowWorking] = useState(false)
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
@@ -236,6 +238,26 @@ export default function ContractorReportClient({ canDelete = false }: { canDelet
 
   const selected = reports.find(r => r.id === selectedId) ?? null
 
+  // Per-project headline = total bill value (project size). Used to sort the
+  // chips biggest-first and to show an amount on each chip.
+  const reportMeta = useMemo(() => {
+    const m = new Map<string, { bill: number }>()
+    for (const r of reports) m.set(r.id, { bill: reportGrandTotal(r.subprojects).billValue })
+    return m
+  }, [reports])
+
+  // Sorted (biggest spend first) then filtered by the search box.
+  const sortedReports = useMemo(
+    () => [...reports].sort((a, b) => (reportMeta.get(b.id)?.bill ?? 0) - (reportMeta.get(a.id)?.bill ?? 0)),
+    [reports, reportMeta],
+  )
+  const q = projectFilter.trim().toLowerCase()
+  const shownReports = q ? sortedReports.filter(r => r.projectName.toLowerCase().includes(q)) : sortedReports
+  const totalBillAll = useMemo(
+    () => reports.reduce((s, r) => s + (reportMeta.get(r.id)?.bill ?? 0), 0),
+    [reports, reportMeta],
+  )
+
   return (
     <div
       className="p-4 md:p-6 max-w-6xl mx-auto space-y-5 relative"
@@ -309,32 +331,78 @@ export default function ContractorReportClient({ canDelete = false }: { canDelet
         </Card>
       ) : (
         <>
-          {/* Project selector chips. The X (remove) action affects the whole
-              team, so it's gated to Portal Owner / admin via `canDelete`. */}
-          <div className="flex flex-wrap items-center gap-2">
-            {reports.map(r => {
-              const active = r.id === selectedId
-              return (
-                <span key={r.id}
-                  className={`inline-flex items-center gap-1.5 rounded-full border py-1 text-xs cursor-pointer ${canDelete ? 'pl-3 pr-1.5' : 'px-3'} ${
-                    active ? 'bg-[#1F4E78] text-white border-[#1F4E78]' : 'bg-white border-gray-200 text-gray-700 hover:border-gray-300'}`}
-                  onClick={() => setSelectedId(r.id)}>
-                  <FileSpreadsheet className="h-3 w-3" />
-                  <span className="max-w-[16rem] truncate">{r.projectName}</span>
-                  {canDelete && (
-                    <button onClick={e => { e.stopPropagation(); removeReport(r) }}
-                      className={`${active ? 'text-white/80 hover:text-white' : 'text-gray-400 hover:text-rose-600'}`}
-                      title="Remove (admin only)">
-                      <X className="h-3.5 w-3.5" />
-                    </button>
-                  )}
+          {/* Project picker. Chips are sorted by total bill value (biggest
+              first) and show that amount, so the strip doubles as an at-a-
+              glance portfolio. A filter box keeps 25+ projects manageable.
+              The X (remove) affects the whole team → admin / Portal Owner only. */}
+          <div className="rounded-xl border border-gray-200 bg-gray-50/60 p-3 space-y-2.5">
+            <div className="flex items-center justify-between gap-3 flex-wrap">
+              <div className="flex items-baseline gap-2">
+                <span className="text-[11px] font-semibold uppercase tracking-wide text-gray-500">Projects</span>
+                <span className="text-[11px] text-gray-400">
+                  {shownReports.length === reports.length ? `${reports.length}` : `${shownReports.length} of ${reports.length}`}
+                  {' · '}{compactINR(totalBillAll)} billed
                 </span>
-              )
-            })}
-            {!canDelete && reports.length > 0 && (
-              <span className="inline-flex items-center gap-1 text-[11px] text-gray-400" title="Only admins / Portal Owner can remove a saved report">
-                <Lock className="h-3 w-3" /> admin only
-              </span>
+              </div>
+              <div className="flex items-center gap-2">
+                {reports.length > 6 && (
+                  <div className="relative">
+                    <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400 pointer-events-none" />
+                    <input
+                      value={projectFilter}
+                      onChange={e => setProjectFilter(e.target.value)}
+                      placeholder="Filter projects…"
+                      className="h-8 w-44 sm:w-52 rounded-lg border border-gray-200 bg-white pl-7 pr-7 text-xs text-gray-700 focus:border-[#1F4E78] focus:ring-1 focus:ring-[#1F4E78]/30 outline-none"
+                    />
+                    {projectFilter && (
+                      <button onClick={() => setProjectFilter('')} title="Clear"
+                        className="absolute right-1.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
+                        <X className="h-3.5 w-3.5" />
+                      </button>
+                    )}
+                  </div>
+                )}
+                {!canDelete && (
+                  <span className="hidden sm:inline-flex items-center gap-1 text-[11px] text-gray-400" title="Only admins / Portal Owner can remove a saved report">
+                    <Lock className="h-3 w-3" /> admin only
+                  </span>
+                )}
+              </div>
+            </div>
+
+            {shownReports.length === 0 ? (
+              <p className="text-xs text-gray-400 py-1">No projects match “{projectFilter}”.</p>
+            ) : (
+              <div className="flex flex-wrap gap-1.5">
+                {shownReports.map(r => {
+                  const active = r.id === selectedId
+                  const bill = reportMeta.get(r.id)?.bill ?? 0
+                  return (
+                    <span key={r.id}
+                      className={cn(
+                        'group inline-flex items-center gap-1.5 rounded-lg border py-1 text-xs cursor-pointer transition-colors',
+                        canDelete ? 'pl-2.5 pr-1.5' : 'px-2.5',
+                        active
+                          ? 'bg-[#1F4E78] text-white border-[#1F4E78] shadow-sm'
+                          : 'bg-white border-gray-200 text-gray-700 hover:border-[#1F4E78]/50 hover:bg-blue-50/40',
+                      )}
+                      onClick={() => setSelectedId(r.id)}>
+                      <FileSpreadsheet className={cn('h-3 w-3 flex-shrink-0', active ? 'text-white/80' : 'text-gray-400')} />
+                      <span className="max-w-[14rem] truncate font-medium">{r.projectName}</span>
+                      <span className={cn('tabular-nums text-[10px] rounded px-1 py-0.5', active ? 'bg-white/15 text-white/90' : 'bg-gray-100 text-gray-500')}>
+                        {compactINR(bill)}
+                      </span>
+                      {canDelete && (
+                        <button onClick={e => { e.stopPropagation(); removeReport(r) }}
+                          className={cn(active ? 'text-white/70 hover:text-white' : 'text-gray-300 hover:text-rose-600')}
+                          title="Remove (admin only)">
+                          <X className="h-3.5 w-3.5" />
+                        </button>
+                      )}
+                    </span>
+                  )
+                })}
+              </div>
             )}
           </div>
 
