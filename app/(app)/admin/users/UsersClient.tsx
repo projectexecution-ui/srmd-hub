@@ -9,7 +9,7 @@ import { PageHeader } from '@/components/PageHeader'
 import {
   Users, Search, UserCheck, UserX, Mail, Shield, Copy, Check, Send, Crown, Trash2,
   Loader2, Plus, X, ChevronDown, ChevronRight, Layers, Ban,
-  Settings2, Info, EyeOff, Clock, ThumbsDown,
+  Settings2, Info, EyeOff, Clock, ThumbsDown, Pencil,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { Profile, Role } from '@/lib/types'
@@ -84,6 +84,10 @@ export default function UsersClient({
   const [deleteArmed, setDeleteArmed] = useState<string | null>(null)
   // Per-pending-request role choice (defaults to viewer). Keyed by profile id.
   const [requestRole, setRequestRole] = useState<Record<string, Role>>({})
+  // Inline name-edit state (rename a user's display name).
+  const [editingNameId, setEditingNameId] = useState<string | null>(null)
+  const [nameDraft, setNameDraft] = useState('')
+  const [nameBusy, setNameBusy] = useState(false)
 
   // Detect quick-signin / anonymous accounts so admin can hide them.
   // Pattern: email starts with anon- and ends with @srmd.local
@@ -127,6 +131,17 @@ export default function UsersClient({
     setBusyId(null)
     if (error) { setError(error.message); return }
     setUsers(prev => prev.map(x => x.id === u.id ? { ...x, role: next } : x))
+  }
+
+  async function saveName(u: Profile, next: string) {
+    const trimmed = next.trim()
+    if (!trimmed || trimmed === (u.name ?? '')) { setEditingNameId(null); return }
+    setNameBusy(true); setError(null)
+    const { error } = await supabase.from('profiles').update({ name: trimmed }).eq('id', u.id)
+    setNameBusy(false)
+    if (error) { setError(error.message); return }
+    setUsers(prev => prev.map(x => x.id === u.id ? { ...x, name: trimmed } : x))
+    setEditingNameId(null)
   }
 
   async function toggleActive(u: Profile) {
@@ -500,15 +515,48 @@ export default function UsersClient({
                         {u.is_portal_owner ? <Crown className="h-4 w-4" /> : (u.name || u.full_name || u.email)[0]?.toUpperCase()}
                       </div>
                       <div className="min-w-0">
-                        <p className="text-sm font-medium text-gray-900 truncate flex items-center gap-1.5">
-                          {u.name || u.full_name || 'No name'}
-                          {u.is_portal_owner && (
-                            <Badge variant="warning" className="text-[10px] inline-flex items-center gap-1">
-                              <Crown className="h-3 w-3" /> Portal Owner
-                            </Badge>
-                          )}
-                          {isSelf && <span className="text-xs text-blue-600 font-normal">(you)</span>}
-                        </p>
+                        {editingNameId === u.id ? (
+                          <div className="flex items-center gap-1">
+                            <Input
+                              value={nameDraft}
+                              onChange={e => setNameDraft(e.target.value)}
+                              onKeyDown={e => {
+                                if (e.key === 'Enter') saveName(u, nameDraft)
+                                else if (e.key === 'Escape') setEditingNameId(null)
+                              }}
+                              autoFocus
+                              disabled={nameBusy}
+                              placeholder="Full name"
+                              className="h-7 text-sm py-0 w-48"
+                            />
+                            <button type="button" onClick={() => saveName(u, nameDraft)} disabled={nameBusy}
+                              title="Save name" className="text-green-600 hover:bg-green-50 rounded p-1">
+                              {nameBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
+                            </button>
+                            <button type="button" onClick={() => setEditingNameId(null)} disabled={nameBusy}
+                              title="Cancel" className="text-gray-400 hover:bg-gray-100 rounded p-1">
+                              <X className="h-3.5 w-3.5" />
+                            </button>
+                          </div>
+                        ) : (
+                          <p className="text-sm font-medium text-gray-900 truncate flex items-center gap-1.5">
+                            {u.name || u.full_name || 'No name'}
+                            <button
+                              type="button"
+                              onClick={() => { setEditingNameId(u.id); setNameDraft(u.name || u.full_name || '') }}
+                              title="Rename this user"
+                              className="text-gray-300 hover:text-blue-600 flex-shrink-0"
+                            >
+                              <Pencil className="h-3 w-3" />
+                            </button>
+                            {u.is_portal_owner && (
+                              <Badge variant="warning" className="text-[10px] inline-flex items-center gap-1">
+                                <Crown className="h-3 w-3" /> Portal Owner
+                              </Badge>
+                            )}
+                            {isSelf && <span className="text-xs text-blue-600 font-normal">(you)</span>}
+                          </p>
+                        )}
                         <p className="text-xs text-gray-500 flex items-center gap-1 truncate">
                           <Mail className="h-3 w-3 flex-shrink-0" />
                           <span className="truncate">{u.email}</span>
