@@ -3,7 +3,7 @@
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
-import { getMyUser } from '@/lib/auth'
+import { getMyUser, requirePermission } from '@/lib/auth'
 import { validateFormula, type QtyColumn } from '@/lib/formula'
 
 export interface TemplatePayload {
@@ -48,6 +48,7 @@ function preflight(payload: TemplatePayload): string | null {
 }
 
 export async function createTemplate(payload: TemplatePayload) {
+  await requirePermission('cost-control', 'admin')
   const user = await getMyUser()
   if (!user) return { error: 'unauthenticated' }
   const err = preflight(payload)
@@ -75,6 +76,7 @@ export async function createTemplate(payload: TemplatePayload) {
 }
 
 export async function updateTemplate(payload: TemplatePayload) {
+  await requirePermission('cost-control', 'admin')
   if (!payload.id) return { error: 'id required for update' }
   const user = await getMyUser()
   if (!user) return { error: 'unauthenticated' }
@@ -101,6 +103,7 @@ export async function updateTemplate(payload: TemplatePayload) {
 }
 
 export async function deleteTemplate(id: string) {
+  await requirePermission('cost-control', 'admin')
   const user = await getMyUser()
   if (!user) return { error: 'unauthenticated' }
   const supabase = await createClient()

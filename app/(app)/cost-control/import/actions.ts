@@ -2,7 +2,7 @@
 
 import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
-import { getMyUser } from '@/lib/auth'
+import { getMyUser, requirePermission } from '@/lib/auth'
 
 export interface ImportRow {
   discipline_code: string | null
@@ -23,6 +23,7 @@ export interface CommitImportPayload {
 }
 
 export async function commitImport(payload: CommitImportPayload) {
+  await requirePermission('cost-control', 'edit')
   const user = await getMyUser()
   if (!user) return { error: 'unauthenticated' }
   if (!payload.project_id) return { error: 'project_id required' }

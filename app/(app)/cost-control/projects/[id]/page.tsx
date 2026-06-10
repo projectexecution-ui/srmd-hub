@@ -174,28 +174,45 @@ export default async function CostControlProjectDetailPage(
     dlAgg.set(k, cur)
   }
 
-  // Disciplines-level rollups. Sums two kinds of budget lines:
-  //   1. Per-sub-skill lines (the granular ones) — accumulated below.
-  //   2. Discipline-root lines (sub_skill_id NULL) — from BPH pulls that
-  //      don't have sub-skill detail, or from the Excel-import path when
-  //      the import lacked sub-skill codes. Without this, BPH-imported
-  //      budgets silently rendered as ₹0 on the KPI strip.
+  // Disciplines-level rollups. Budget can live at two granularities:
+  //   1. Per-sub-skill lines — the granular ones (WS approvals, or a BPH
+  //      report that has sub-skill detail rows).
+  //   2. Discipline-root line (sub_skill_id NULL) — a BPH discipline
+  //      SUMMARY row, or an Excel import that lacked sub-skill codes.
+  //
+  // CRITICAL: never add BOTH for the same discipline. A BPH report often
+  // carries a "03 Civil" summary row AND its "0301 …" detail rows; the
+  // summary is the PARENT total of the details, so counting both doubles
+  // the budget. Rule: if a discipline has ANY sub-skill budget line, use
+  // those and IGNORE its root line; only fall back to the root line when
+  // there are no sub-skill lines.
   const discAgg = new Map<string, { budget: number; wo: number; paid: number; approvedTotal: number; estimate: number }>()
   for (const d of disciplines) discAgg.set(d.id, { budget: 0, wo: 0, paid: 0, approvedTotal: 0, estimate: 0 })
+
+  // Track which disciplines have at least one sub-skill budget line.
+  const discHasSubSkillBudget = new Set<string>()
+
   for (const s of subSkills) {
     const bl = blMap.get(`${s.discipline_id}::${s.id}`)
     const a = wsAgg.get(`${s.discipline_id}::${s.id}`) ?? { approvedTotal: 0, planTotal: 0 }
     const cur = discAgg.get(s.discipline_id)
     if (cur) {
-      cur.budget += Number(bl?.current_budget_amt ?? 0)
+      const subBudget = Number(bl?.current_budget_amt ?? 0)
+      if (bl && (subBudget !== 0 || Number(bl.current_wo_committed_amt ?? 0) !== 0 || Number(bl.current_paid_amt ?? 0) !== 0)) {
+        discHasSubSkillBudget.add(s.discipline_id)
+      }
+      cur.budget += subBudget
       cur.wo    += Number(bl?.current_wo_committed_amt ?? 0)
       cur.paid  += Number(bl?.current_paid_amt ?? 0)
       cur.approvedTotal += a.approvedTotal
       cur.estimate += a.planTotal
     }
   }
-  // Add the discipline-root budget lines (sub_skill_id NULL) on top.
+  // Add the discipline-root line ONLY when no sub-skill budget exists for
+  // that discipline — otherwise it would double-count the summary on top
+  // of its own detail rows.
   for (const d of disciplines) {
+    if (discHasSubSkillBudget.has(d.id)) continue
     const blRoot = blMap.get(`${d.id}::_root`)
     if (!blRoot) continue
     const cur = discAgg.get(d.id)

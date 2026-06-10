@@ -8,6 +8,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Upload, FileSpreadsheet, AlertCircle, CheckCircle2, Loader2, X } from 'lucide-react'
 import { commitImport, type ImportRow } from './actions'
+import { formatINR } from '@/lib/utils'
 
 interface ProjectOpt {
   id: string
@@ -408,13 +409,13 @@ export function ImportClient({ projects, defaultProjectId = '' }: { projects: Pr
                         <td className="px-2 py-1 truncate max-w-[200px]">{r.description ?? '—'}</td>
                         <td className="px-2 py-1">{r.uom ?? '—'}</td>
                         <td className="px-2 py-1 text-right tabular-nums">
-                          {r.budget_amount?.toLocaleString('en-IN') ?? '—'}
+                          {r.budget_amount != null ? formatINR(r.budget_amount) : '—'}
                         </td>
                         <td className="px-2 py-1 text-right tabular-nums">
-                          {r.committed_amount?.toLocaleString('en-IN') ?? '—'}
+                          {r.committed_amount != null ? formatINR(r.committed_amount) : '—'}
                         </td>
                         <td className="px-2 py-1 text-right tabular-nums">
-                          {r.paid_amount?.toLocaleString('en-IN') ?? '—'}
+                          {r.paid_amount != null ? formatINR(r.paid_amount) : '—'}
                         </td>
                         <td className="px-2 py-1">{r.line_type}</td>
                       </tr>

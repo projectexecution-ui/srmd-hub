@@ -118,10 +118,13 @@ export function ExcelSummaryPanel({
   //
   // Matching the AI's `ai_meta.category` if present, else inferring
   // from the description text. Case-insensitive, whitespace-tolerant.
-  function classifyRow(r: Row): 'line' | 'tax' | 'addon' | 'discount' {
+  // 'skip' = don't count this row in the reconciliation total (a heading /
+  // sub-total row the AI deliberately kept but left uncategorised).
+  function classifyRow(r: Row): 'line' | 'tax' | 'addon' | 'discount' | 'skip' {
     // 1. AI's tag wins when present. /ai-parse already classified each
     //    row with category=tax/addon/discount/etc., so we don't need to
     //    re-guess from description text.
+    const hasAi = r.ai_meta != null
     const aiCat = r.ai_meta?.category
     if (aiCat === 'tax') return 'tax'
     if (aiCat === 'addon') return 'addon'
@@ -129,9 +132,13 @@ export function ExcelSummaryPanel({
     // material / labour / material_and_labour / equipment all roll up as
     // line items for the reconciliation total.
     if (aiCat === 'material' || aiCat === 'labour' || aiCat === 'material_and_labour' || aiCat === 'equipment') return 'line'
+    // AI saw this row but couldn't categorise it (category null) — it's
+    // almost certainly a heading / sub-total the AI kept for context.
+    // Don't sum it, or we inflate the reconciliation total.
+    if (hasAi) return 'skip'
 
-    // 2. Regex fallback for rows that haven't been AI-parsed yet (or when
-    //    AI returned null). Indian-construction-aware patterns.
+    // 2. Regex fallback for rows that were NEVER AI-parsed (older WSes /
+    //    AI not run). Indian-construction-aware patterns.
     const d = (r.description ?? '').toLowerCase().trim()
     if (!d) return 'line'
     // Discounts first
@@ -153,11 +160,14 @@ export function ExcelSummaryPanel({
     addon:    { count: 0, total: 0 },
     discount: { count: 0, total: 0 },
   }
+  let skippedRows = 0
   for (const r of rows) {
     const b = classifyRow(r)
+    if (b === 'skip') { skippedRows += 1; continue }
     buckets[b].count += 1
     buckets[b].total += r.amount ?? 0
   }
+  void skippedRows // available if we later want to surface "N rows excluded"
   // Net reconciliation total
   const totalFromRows = buckets.line.total + buckets.addon.total + buckets.tax.total - Math.abs(buckets.discount.total)
 
@@ -380,18 +390,18 @@ export function ExcelSummaryPanel({
                     <td className="px-2 py-2 text-gray-600">{r.unit ?? ''}</td>
                     <td className="px-2 py-2 text-right tabular-nums">{r.qty != null ? r.qty.toLocaleString('en-IN') : ''}</td>
                     <td className="px-2 py-2 text-right tabular-nums">
-                      {r.rate != null ? r.rate.toLocaleString('en-IN') : ''}
+                      {r.rate != null ? formatINR(r.rate) : ''}
                       {r.rate_breakdown && r.rate_breakdown.length > 0 && (
                         <div className="text-[10px] text-gray-400 font-normal">
-                          {r.rate_breakdown.map(b => `${b.label} ${b.value.toLocaleString('en-IN')}`).join(' + ')}
+                          {r.rate_breakdown.map(b => `${b.label} ${formatINR(b.value)}`).join(' + ')}
                         </div>
                       )}
                     </td>
                     <td className="px-2 py-2 text-right tabular-nums">
-                      {r.amount != null ? r.amount.toLocaleString('en-IN') : ''}
+                      {r.amount != null ? formatINR(r.amount) : ''}
                       {r.amount_breakdown && r.amount_breakdown.length > 0 && (
                         <div className="text-[10px] text-gray-400 font-normal">
-                          {r.amount_breakdown.map(b => `${b.label} ${b.value.toLocaleString('en-IN')}`).join(' + ')}
+                          {r.amount_breakdown.map(b => `${b.label} ${formatINR(b.value)}`).join(' + ')}
                         </div>
                       )}
                     </td>

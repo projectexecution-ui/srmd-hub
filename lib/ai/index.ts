@@ -9,8 +9,9 @@
 // can use. Callers don't need to know which provider answered: the
 // result carries `provider` + `model` for logging and the UI badge.
 //
-// All Cost Control AI features go through this file. Replaces the old
-// direct @anthropic-ai/sdk calls that were costing money per invocation.
+// All Cost Control AI features go through this file. Replaced the old
+// paid per-call Anthropic integration (SDK since removed) with these
+// free-tier providers.
 
 const GEMINI_MODEL = 'gemini-2.5-flash-lite'
 const GEMINI_EMBED_MODEL = 'text-embedding-004'

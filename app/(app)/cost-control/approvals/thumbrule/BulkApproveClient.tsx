@@ -162,7 +162,7 @@ export function BulkApproveClient({ items }: { items: BulkItem[] }) {
                     {i.built_up_sft != null ? `${i.built_up_sft.toLocaleString('en-IN')} sft` : '—'}
                   </td>
                   <td className="px-3 py-2.5 text-right tabular-nums text-gray-900 font-semibold">
-                    {i.rate_per_sft != null ? `₹${Math.round(i.rate_per_sft).toLocaleString('en-IN')}` : '—'}
+                    {i.rate_per_sft != null ? formatINR(i.rate_per_sft) : '—'}
                   </td>
                   <td className="px-3 py-2.5 text-right tabular-nums font-semibold text-gray-900">{formatINR(i.total_amount)}</td>
                   <td className="px-3 py-2.5 text-xs text-gray-500">

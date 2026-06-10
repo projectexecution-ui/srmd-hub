@@ -28,4 +28,9 @@ yarn-error.log*
 # vercel
 .vercel
 
-.vercel
+# local scratch / temp files (never commit)
+.tmp-*
+*.tmp.*
+deploy*.log
+.claude-dev.cmd
+ONBOARDING.md

@@ -10,6 +10,7 @@ import { MoneyInput } from '@/components/ui/money-input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Loader2, Upload, Send, FileSpreadsheet, X, Sparkles, AlertTriangle } from 'lucide-react'
+import { formatINR } from '@/lib/utils'
 
 interface ProjectOpt   { id: string; code: string; name: string }
 interface DRow         { id: string; code: string; name: string }
@@ -488,7 +489,7 @@ export function NewWSQuickForm({ projects, projectDisciplines, projectSubSkills,
               <div className="min-w-0 flex-1">
                 <p className="text-sm font-medium text-gray-900 truncate">{file.name}</p>
                 <p className="text-xs text-gray-500">
-                  {parsing ? 'Parsing…' : parsed ? `${parsed.rows.length} row(s) parsed${parsed.grandTotal != null ? ` · grand total ₹${parsed.grandTotal.toLocaleString('en-IN')}` : ''}` : '—'}
+                  {parsing ? 'Parsing…' : parsed ? `${parsed.rows.length} row(s) parsed${parsed.grandTotal != null ? ` · grand total ${formatINR(parsed.grandTotal)}` : ''}` : '—'}
                 </p>
               </div>
               <Button type="button" size="sm" variant="ghost" onClick={clearFile}>
@@ -563,7 +564,7 @@ export function NewWSQuickForm({ projects, projectDisciplines, projectSubSkills,
                         )}
                         {r.ai_meta?.category === 'material_and_labour' && r.ai_meta.material_value != null && r.ai_meta.labour_value != null && (
                           <div className="text-[10px] text-gray-500 font-normal">
-                            M ₹{r.ai_meta.material_value.toLocaleString('en-IN')} · L ₹{r.ai_meta.labour_value.toLocaleString('en-IN')}
+                            M {formatINR(r.ai_meta.material_value)} · L {formatINR(r.ai_meta.labour_value)}
                           </div>
                         )}
                       </td>
@@ -650,17 +651,17 @@ function AiSummaryBanner({ summary, parsedRows }: { summary: AiSummary; parsedRo
       <div className="grid grid-cols-3 gap-2 text-xs">
         <div className="bg-white rounded-lg border border-gray-200 px-2 py-1.5">
           <p className="text-[10px] uppercase tracking-wide text-gray-500">Material</p>
-          <p className="font-semibold text-gray-900 tabular-nums">₹{splitTotals.material.toLocaleString('en-IN')}</p>
+          <p className="font-semibold text-gray-900 tabular-nums">{formatINR(splitTotals.material)}</p>
           <p className="text-[10px] text-gray-500">{pct(splitTotals.material)}%</p>
         </div>
         <div className="bg-white rounded-lg border border-gray-200 px-2 py-1.5">
           <p className="text-[10px] uppercase tracking-wide text-gray-500">Labour</p>
-          <p className="font-semibold text-gray-900 tabular-nums">₹{splitTotals.labour.toLocaleString('en-IN')}</p>
+          <p className="font-semibold text-gray-900 tabular-nums">{formatINR(splitTotals.labour)}</p>
           <p className="text-[10px] text-gray-500">{pct(splitTotals.labour)}%</p>
         </div>
         <div className="bg-white rounded-lg border border-gray-200 px-2 py-1.5">
           <p className="text-[10px] uppercase tracking-wide text-gray-500">Equipment</p>
-          <p className="font-semibold text-gray-900 tabular-nums">₹{splitTotals.equipment.toLocaleString('en-IN')}</p>
+          <p className="font-semibold text-gray-900 tabular-nums">{formatINR(splitTotals.equipment)}</p>
           <p className="text-[10px] text-gray-500">{pct(splitTotals.equipment)}%</p>
         </div>
       </div>

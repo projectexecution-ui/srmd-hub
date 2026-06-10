@@ -14,7 +14,7 @@
 import { z } from 'zod'
 import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
-import { requirePermission, getMyUser } from '@/lib/auth'
+import { requirePermission, getMyUser, getMyPermissions, can } from '@/lib/auth'
 
 const previewSchema = z.object({
   bph_project_id: z.string(),
@@ -303,10 +303,21 @@ export interface MappedPullOutcome {
 }
 
 export async function runAllMappedPulls(): Promise<{ ok: true; outcomes: MappedPullOutcome[]; ran_at: string }> {
+  // Soft permission gate. This is called from the /budget save hook, which
+  // any signed-in user with budget access can trigger — but only users
+  // with cost-control EDIT should be able to write CC budget lines or
+  // audit events. We check softly (no redirect) and no-op for everyone
+  // else, so a non-CC user saving the BPH report doesn't pollute Cost
+  // Control data or its audit trail. (commitBphImport also hard-gates,
+  // but it uses redirect() which must NOT run inside the per-link
+  // try/catch below — hence the early return here.)
+  const perms = await getMyPermissions()
+  if (!can(perms, 'cost-control', 'edit')) {
+    return { ok: true, outcomes: [], ran_at: new Date().toISOString() }
+  }
+
   // Best-effort: each pull catches its own error so one bad mapping
-  // doesn't take down the whole sync. Permission is intentionally relaxed
-  // here because this is also called from the /budget save hook by any
-  // signed-in user — the underlying writes still go through Supabase RLS.
+  // doesn't take down the whole sync.
   const supabase = await createClient()
   const { data: links } = await supabase
     .from('cc_bph_project_links')

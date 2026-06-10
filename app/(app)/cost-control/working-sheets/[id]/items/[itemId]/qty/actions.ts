@@ -2,7 +2,7 @@
 
 import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
-import { getMyUser } from '@/lib/auth'
+import { getMyUser, requirePermission } from '@/lib/auth'
 
 export interface QtyColumnDef {
   key: string
@@ -23,6 +23,7 @@ export interface AddSectionPayload {
 }
 
 export async function addSection(payload: AddSectionPayload, wsId: string) {
+  await requirePermission('cost-control', 'edit')
   const user = await getMyUser()
   if (!user) return { error: 'unauthenticated' }
   const supabase = await createClient()
@@ -60,6 +61,7 @@ export async function updateSection(
   wsId: string,
   itemId: string,
 ) {
+  await requirePermission('cost-control', 'edit')
   const user = await getMyUser()
   if (!user) return { error: 'unauthenticated' }
   const supabase = await createClient()
@@ -70,6 +72,7 @@ export async function updateSection(
 }
 
 export async function deleteSection(id: string, wsId: string, itemId: string) {
+  await requirePermission('cost-control', 'edit')
   const user = await getMyUser()
   if (!user) return { error: 'unauthenticated' }
   const supabase = await createClient()
@@ -88,6 +91,7 @@ export interface AddRowPayload {
 }
 
 export async function addRow(payload: AddRowPayload, wsId: string, itemId: string) {
+  await requirePermission('cost-control', 'edit')
   const user = await getMyUser()
   if (!user) return { error: 'unauthenticated' }
   const supabase = await createClient()
@@ -127,6 +131,7 @@ export async function updateRow(
   wsId: string,
   itemId: string,
 ) {
+  await requirePermission('cost-control', 'edit')
   const user = await getMyUser()
   if (!user) return { error: 'unauthenticated' }
   const supabase = await createClient()
@@ -137,6 +142,7 @@ export async function updateRow(
 }
 
 export async function deleteRow(id: string, wsId: string, itemId: string) {
+  await requirePermission('cost-control', 'edit')
   const user = await getMyUser()
   if (!user) return { error: 'unauthenticated' }
   const supabase = await createClient()

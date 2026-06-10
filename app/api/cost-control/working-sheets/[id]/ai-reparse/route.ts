@@ -195,6 +195,20 @@ Output STRICTLY JSON (no preamble, no markdown):
       const meta = (r.ai_meta ?? {}) as Record<string, unknown>
       const suggested = typeof meta.suggested_sub_skill_id === 'string' && validSubIds.has(meta.suggested_sub_skill_id) ? meta.suggested_sub_skill_id : null
       const cat = VALID_CATS.includes(meta.category as typeof VALID_CATS[number]) ? meta.category as typeof VALID_CATS[number] : null
+      // Sanity-check the material/labour split — mirrors /ai-parse so the
+      // two routes stay consistent. When a combined row's M+L don't add to
+      // amount, keep them but flag in anomaly.
+      const matV = typeof meta.material_value === 'number' ? meta.material_value : null
+      const labV = typeof meta.labour_value   === 'number' ? meta.labour_value   : null
+      const amount = typeof r.amount === 'number' ? r.amount : null
+      let anomaly = typeof meta.anomaly === 'string' ? meta.anomaly : null
+      if (cat === 'material_and_labour' && amount != null && matV != null && labV != null) {
+        const sum = matV + labV
+        if (Math.abs(sum - amount) > Math.max(1, amount * 0.02)) {
+          const note = `Split (${matV} + ${labV}) ≠ amount (${amount})`
+          anomaly = anomaly ? `${anomaly}. ${note}` : note
+        }
+      }
       return {
         row_no: typeof r.row_no === 'number' ? r.row_no : i + 1,
         raw_label: typeof r.raw_label === 'string' ? r.raw_label : null,
@@ -202,7 +216,7 @@ Output STRICTLY JSON (no preamble, no markdown):
         unit: typeof r.unit === 'string' ? r.unit : null,
         qty: typeof r.qty === 'number' ? r.qty : null,
         rate: typeof r.rate === 'number' ? r.rate : null,
-        amount: typeof r.amount === 'number' ? r.amount : null,
+        amount,
         rate_breakdown: Array.isArray(r.rate_breakdown) ? (r.rate_breakdown as Breakdown[]) : null,
         amount_breakdown: Array.isArray(r.amount_breakdown) ? (r.amount_breakdown as Breakdown[]) : null,
         ai_meta: {
@@ -211,9 +225,9 @@ Output STRICTLY JSON (no preamble, no markdown):
           cleaned_description: typeof meta.cleaned_description === 'string' ? meta.cleaned_description : null,
           rate_concern: typeof meta.rate_concern === 'string' ? meta.rate_concern : null,
           category: cat,
-          material_value: typeof meta.material_value === 'number' ? meta.material_value : null,
-          labour_value: typeof meta.labour_value === 'number' ? meta.labour_value : null,
-          anomaly: typeof meta.anomaly === 'string' ? meta.anomaly : null,
+          material_value: matV,
+          labour_value: labV,
+          anomaly,
           model: aiModel,
         },
       }
