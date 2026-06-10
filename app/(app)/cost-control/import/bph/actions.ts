@@ -15,6 +15,7 @@ import { z } from 'zod'
 import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
 import { requirePermission, getMyUser, getMyPermissions, can } from '@/lib/auth'
+import { generateJSON, hasAiProvider } from '@/lib/ai'
 
 const previewSchema = z.object({
   bph_project_id: z.string(),
@@ -106,6 +107,16 @@ export interface BphMatchedRow {
   matched_discipline_label: string | null
   matched_sub_skill_id: string | null
   matched_sub_skill_label: string | null
+  /** How the match was made: 'code' (exact/normalised code), 'ai' (name
+   *  similarity fallback), or null (unmatched). */
+  match_source: 'code' | 'ai' | null
+  /** AI confidence 0..1 when match_source==='ai'. */
+  ai_confidence: number | null
+  /** True when the matched discipline isn't enabled in the project's setup
+   *  yet — importing will auto-enable it. Surfaced in the preview so the
+   *  PM knows a forgotten discipline is being added. */
+  will_enable_discipline: boolean
+  will_enable_sub_skill: boolean
   /** Whether we can upsert (needs at least a discipline match). */
   importable: boolean
 }
@@ -119,6 +130,8 @@ export type BphPreview =
         total_rows: number
         importable_rows: number
         unmatched_rows: number
+        ai_matched_rows: number
+        will_enable_count: number
         total_budget: number
       } }
   | { ok: false; error: string }
@@ -159,17 +172,24 @@ export async function previewBphImport(input: z.infer<typeof previewSchema>): Pr
   if (!parsed.success) return { ok: false, error: 'Invalid input' }
 
   const supabase = await createClient()
-  const [{ data: stateRow }, { data: ccProject }, { data: disciplines }, { data: subSkills }] = await Promise.all([
+  const [{ data: stateRow }, { data: ccProject }, { data: disciplines }, { data: subSkills }, { data: enDisc }, { data: enSub }] = await Promise.all([
     supabase.from('budget_hub_state').select('state').eq('id', 'global').single(),
     supabase.from('projects').select('id, code, name').eq('id', parsed.data.cc_project_id).single(),
     supabase.from('cc_disciplines').select('id, code, name').eq('is_archived', false),
     supabase.from('cc_sub_skills').select('id, code, name, discipline_id').eq('is_archived', false),
+    // Currently-enabled disciplines / sub-skills for THIS project — used
+    // to flag rows whose discipline/sub-skill the import will auto-enable.
+    supabase.from('cc_project_disciplines').select('discipline_id').eq('project_id', parsed.data.cc_project_id).eq('is_enabled', true),
+    supabase.from('cc_project_sub_skills').select('sub_skill_id').eq('project_id', parsed.data.cc_project_id).eq('is_enabled', true),
   ])
 
   const state = (stateRow?.state ?? {}) as BphState
   const bph = (state.projects ?? []).find(p => p.id === parsed.data.bph_project_id)
   if (!bph) return { ok: false, error: 'BPH project not found in /budget' }
   if (!ccProject) return { ok: false, error: 'CT Hub project not found' }
+
+  const enabledDiscIds = new Set((enDisc ?? []).map(d => d.discipline_id as string))
+  const enabledSubIds  = new Set((enSub ?? []).map(s => s.sub_skill_id as string))
 
   // Lookup maps keyed by NORMALISED code. BPH sheets are hand-typed and
   // codes drift in format — the same discipline shows up as "01", "001",
@@ -181,6 +201,8 @@ export async function previewBphImport(input: z.infer<typeof previewSchema>): Pr
   const subByCompositeCode = new Map(
     (subSkills ?? []).map(s => [`${s.discipline_id}::${normCode(s.code)}`, s]),
   )
+  const discById = new Map((disciplines ?? []).map(d => [d.id, d]))
+  const subById  = new Map((subSkills ?? []).map(s => [s.id, s]))
 
   const rawRows = bphSourceRows(bph)
   const matched: BphMatchedRow[] = rawRows.map((r, i) => {
@@ -200,11 +222,62 @@ export async function previewBphImport(input: z.infer<typeof previewSchema>): Pr
       matched_discipline_label: disc ? `${disc.code} ${disc.name}` : null,
       matched_sub_skill_id: sub?.id ?? null,
       matched_sub_skill_label: sub ? `${sub.code} ${sub.name}` : null,
+      match_source: disc ? 'code' : null,
+      ai_confidence: null,
+      will_enable_discipline: !!disc && !enabledDiscIds.has(disc.id),
+      will_enable_sub_skill: !!sub && !enabledSubIds.has(sub.id),
       // We need at least a discipline match. Sub-skill is optional — when
       // missing we'll upsert into the discipline-level rollup row.
       importable: !!disc,
     }
   })
+
+  // ── AI fallback (second layer) ──────────────────────────────────────
+  // For rows the code matcher couldn't place, ask the AI to match the BPH
+  // "head" text to a discipline (and sub-skill) by NAME similarity. This
+  // catches cases where the code is wrong/missing but the name is clear
+  // (e.g. head "Plumbing Works" with a junk cat code). Only runs when an
+  // AI provider is configured and there ARE unmatched rows — keeps it
+  // free-tier-friendly.
+  const unmatched = matched.filter(m => !m.importable && m.head?.trim())
+  if (unmatched.length > 0 && hasAiProvider()) {
+    try {
+      const catalogue = {
+        disciplines: (disciplines ?? []).map(d => ({ id: d.id, code: d.code, name: d.name })),
+        sub_skills: (subSkills ?? []).map(s => ({ id: s.id, code: s.code, name: s.name, discipline_id: s.discipline_id })),
+      }
+      const aiRes = await generateJSON<{ matches?: Array<{ key: string; discipline_id: string | null; sub_skill_id: string | null; confidence: number }> }>({
+        system: `You match construction budget line headings to a catalogue of disciplines + sub-skills by NAME similarity. Indian construction (SRMD). For each input row, pick the best discipline_id from the catalogue (and sub_skill_id if one clearly fits under that discipline). Use null when there's no confident match — do NOT force a match. confidence is 0..1; only suggest discipline matches you'd be ≥0.6 sure of. Output STRICT JSON: {"matches":[{"key","discipline_id","sub_skill_id","confidence"}]}, one per input row.`,
+        user: `Catalogue:\n${JSON.stringify(catalogue)}\n\nRows to match (by head text):\n${JSON.stringify(unmatched.map(u => ({ key: u.key, head: u.head, catNum: u.catNum, subNum: u.subNum })))}`,
+        maxOutputTokens: 4000,
+      })
+      if (aiRes.ok) {
+        const byKey = new Map((aiRes.data.matches ?? []).map(m => [m.key, m]))
+        for (const row of matched) {
+          if (row.importable) continue
+          const sug = byKey.get(row.key)
+          if (!sug || !sug.discipline_id || (sug.confidence ?? 0) < 0.6) continue
+          const d = discById.get(sug.discipline_id)
+          if (!d) continue
+          // Only accept a sub-skill suggestion that genuinely sits under
+          // the suggested discipline.
+          const s = sug.sub_skill_id ? subById.get(sug.sub_skill_id) : null
+          const sValid = s && s.discipline_id === d.id ? s : null
+          row.matched_discipline_id = d.id
+          row.matched_discipline_label = `${d.code} ${d.name}`
+          row.matched_sub_skill_id = sValid?.id ?? null
+          row.matched_sub_skill_label = sValid ? `${sValid.code} ${sValid.name}` : null
+          row.match_source = 'ai'
+          row.ai_confidence = Math.max(0, Math.min(1, sug.confidence ?? 0))
+          row.will_enable_discipline = !enabledDiscIds.has(d.id)
+          row.will_enable_sub_skill = !!sValid && !enabledSubIds.has(sValid.id)
+          row.importable = true
+        }
+      }
+    } catch {
+      // AI is best-effort — code matches still stand if it fails.
+    }
+  }
 
   return {
     ok: true,
@@ -215,6 +288,8 @@ export async function previewBphImport(input: z.infer<typeof previewSchema>): Pr
       total_rows: matched.length,
       importable_rows: matched.filter(r => r.importable).length,
       unmatched_rows: matched.filter(r => !r.importable).length,
+      ai_matched_rows: matched.filter(r => r.match_source === 'ai').length,
+      will_enable_count: matched.filter(r => r.importable && (r.will_enable_discipline || r.will_enable_sub_skill)).length,
       total_budget: matched.filter(r => r.importable).reduce((s, r) => s + r.budget, 0),
     },
   }

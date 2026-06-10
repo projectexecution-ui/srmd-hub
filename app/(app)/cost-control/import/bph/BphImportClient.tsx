@@ -12,7 +12,7 @@ import { useRouter } from 'next/navigation'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
-import { Loader2, ArrowRight, Check, X, AlertTriangle, FileSpreadsheet } from 'lucide-react'
+import { Loader2, ArrowRight, Check, X, AlertTriangle, FileSpreadsheet, Sparkles } from 'lucide-react'
 import { formatINR } from '@/lib/utils'
 import { previewBphImport, commitBphImport, type BphProjectSummary, type BphMatchedRow, type CommitOutcome } from './actions'
 
@@ -34,7 +34,7 @@ export function BphImportClient({
     bph_project_name: string
     cc_project_label: string
     rows: BphMatchedRow[]
-    stats: { total_rows: number; importable_rows: number; unmatched_rows: number; total_budget: number }
+    stats: { total_rows: number; importable_rows: number; unmatched_rows: number; ai_matched_rows: number; will_enable_count: number; total_budget: number }
   } | null>(null)
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [result, setResult] = useState<CommitOutcome | null>(null)
@@ -195,7 +195,10 @@ export function BphImportClient({
           <FileSpreadsheet className="h-4 w-4 text-blue-600 inline mr-1" />
           <span className="font-semibold text-gray-900">{preview.bph_project_name}</span> → <span className="font-semibold text-gray-900">{preview.cc_project_label}</span>
           <span className="ml-2 text-xs text-gray-500">
-            {preview.stats.importable_rows} importable · {preview.stats.unmatched_rows} unmatched · {formatINR(preview.stats.total_budget)} total
+            {preview.stats.importable_rows} importable · {preview.stats.unmatched_rows} unmatched
+            {preview.stats.ai_matched_rows > 0 && <span className="text-violet-700"> · {preview.stats.ai_matched_rows} AI-matched</span>}
+            {preview.stats.will_enable_count > 0 && <span className="text-blue-700"> · {preview.stats.will_enable_count} will enable in setup</span>}
+            {' · '}{formatINR(preview.stats.total_budget)} total
           </span>
         </div>
         <Button variant="ghost" size="sm" onClick={reset}>
@@ -248,7 +251,21 @@ export function BphImportClient({
                 </td>
                 <td className="px-3 py-2.5 text-xs">
                   {r.matched_discipline_label ? (
-                    <span className="text-emerald-700">{r.matched_discipline_label}</span>
+                    <span className="inline-flex items-center gap-1 flex-wrap">
+                      <span className="text-emerald-700">{r.matched_discipline_label}</span>
+                      {r.match_source === 'ai' && (
+                        <span className="inline-flex items-center gap-0.5 text-[9px] font-semibold text-violet-700 bg-violet-50 border border-violet-200 rounded px-1"
+                          title={`Matched by AI on name${r.ai_confidence != null ? ` · ${Math.round(r.ai_confidence * 100)}% confident` : ''} — code didn't match, please verify`}>
+                          <Sparkles className="h-2.5 w-2.5" /> AI{r.ai_confidence != null ? ` ${Math.round(r.ai_confidence * 100)}%` : ''}
+                        </span>
+                      )}
+                      {r.will_enable_discipline && (
+                        <span className="text-[9px] font-semibold text-blue-700 bg-blue-50 border border-blue-200 rounded px-1"
+                          title="This discipline isn't enabled in the project setup — importing will enable it">
+                          + enable
+                        </span>
+                      )}
+                    </span>
                   ) : (
                     <span className="text-rose-700 inline-flex items-center gap-0.5">
                       <AlertTriangle className="h-3 w-3" /> no match for cat {r.catNum || '(blank)'}
@@ -257,7 +274,15 @@ export function BphImportClient({
                 </td>
                 <td className="px-3 py-2.5 text-xs text-gray-700">
                   {r.matched_sub_skill_label
-                    ? r.matched_sub_skill_label
+                    ? <span className="inline-flex items-center gap-1 flex-wrap">
+                        {r.matched_sub_skill_label}
+                        {r.will_enable_sub_skill && (
+                          <span className="text-[9px] font-semibold text-blue-700 bg-blue-50 border border-blue-200 rounded px-1"
+                            title="This sub-skill isn't enabled in the project setup — importing will enable it">
+                            + enable
+                          </span>
+                        )}
+                      </span>
                     : r.subNum
                       ? <span className="text-amber-700">no sub-skill {r.subNum} → rolls up to discipline</span>
                       : <span className="text-gray-400">(rolls up to discipline)</span>}
