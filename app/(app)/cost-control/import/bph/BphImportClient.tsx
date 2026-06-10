@@ -230,7 +230,9 @@ export function BphImportClient({
             </tr>
           </thead>
           <tbody>
-            {preview.rows.map(r => (
+            {/* Only show rows that carry money — zero-everywhere rows are
+                skipped entirely (no clutter, nothing to import). */}
+            {preview.rows.filter(r => r.has_data).map(r => (
               <tr key={r.key} className={`border-t border-gray-100 ${
                 !r.importable ? 'bg-rose-50/30' : selected.has(r.key) ? 'bg-emerald-50/30' : 'hover:bg-gray-50/50'
               }`}>

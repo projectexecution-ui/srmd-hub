@@ -117,7 +117,11 @@ export interface BphMatchedRow {
    *  PM knows a forgotten discipline is being added. */
   will_enable_discipline: boolean
   will_enable_sub_skill: boolean
-  /** Whether we can upsert (needs at least a discipline match). */
+  /** True when the row carries any money (budget / WO / actual ≠ 0).
+   *  Zero-everywhere rows are skipped — no point enabling a sub-skill or
+   *  writing an all-zero budget line. */
+  has_data: boolean
+  /** Whether we can upsert (needs a discipline match AND some data). */
   importable: boolean
 }
 
@@ -210,25 +214,31 @@ export async function previewBphImport(input: z.infer<typeof previewSchema>): Pr
     const subNumStr = r.subNum == null ? '' : String(r.subNum).trim()
     const disc = catNumStr ? discByCode.get(normCode(catNumStr)) : null
     const sub = (disc && subNumStr) ? subByCompositeCode.get(`${disc.id}::${normCode(subNumStr)}`) : null
+    const budget = Number(r.budget) || 0
+    const actual = Number(r.actual) || 0
+    const woApproved = Number(r.woApproved) || 0
+    const hasData = budget !== 0 || actual !== 0 || woApproved !== 0
     return {
       key: `${i}-${catNumStr || 'x'}-${subNumStr || 'x'}`,
       head: r.head,
       catNum: catNumStr,
       subNum: subNumStr || null,
-      budget: Number(r.budget) || 0,
-      actual: Number(r.actual) || 0,
-      woApproved: Number(r.woApproved) || 0,
+      budget,
+      actual,
+      woApproved,
       matched_discipline_id: disc?.id ?? null,
       matched_discipline_label: disc ? `${disc.code} ${disc.name}` : null,
       matched_sub_skill_id: sub?.id ?? null,
       matched_sub_skill_label: sub ? `${sub.code} ${sub.name}` : null,
       match_source: disc ? 'code' : null,
       ai_confidence: null,
-      will_enable_discipline: !!disc && !enabledDiscIds.has(disc.id),
-      will_enable_sub_skill: !!sub && !enabledSubIds.has(sub.id),
-      // We need at least a discipline match. Sub-skill is optional — when
-      // missing we'll upsert into the discipline-level rollup row.
-      importable: !!disc,
+      will_enable_discipline: !!disc && hasData && !enabledDiscIds.has(disc.id),
+      will_enable_sub_skill: !!sub && hasData && !enabledSubIds.has(sub.id),
+      has_data: hasData,
+      // Importable = matched to a discipline AND carries money. Zero-
+      // everywhere rows are dropped so they don't enable empty sub-skills
+      // or write all-zero budget lines.
+      importable: !!disc && hasData,
     }
   })
 
@@ -239,7 +249,9 @@ export async function previewBphImport(input: z.infer<typeof previewSchema>): Pr
   // (e.g. head "Plumbing Works" with a junk cat code). Only runs when an
   // AI provider is configured and there ARE unmatched rows — keeps it
   // free-tier-friendly.
-  const unmatched = matched.filter(m => !m.importable && m.head?.trim())
+  // Only AI-match rows that have data but no code match — no point
+  // resolving a zero-everywhere row.
+  const unmatched = matched.filter(m => !m.importable && m.has_data && m.head?.trim())
   if (unmatched.length > 0 && hasAiProvider()) {
     try {
       const catalogue = {
@@ -285,9 +297,11 @@ export async function previewBphImport(input: z.infer<typeof previewSchema>): Pr
     cc_project_label: `${ccProject.code} — ${ccProject.name}`,
     rows: matched,
     stats: {
-      total_rows: matched.length,
+      total_rows: matched.filter(r => r.has_data).length,
       importable_rows: matched.filter(r => r.importable).length,
-      unmatched_rows: matched.filter(r => !r.importable).length,
+      // "unmatched" = rows that carry money but we couldn't place — the
+      // real concern. Zero-everywhere rows aren't counted (we ignore them).
+      unmatched_rows: matched.filter(r => r.has_data && !r.matched_discipline_id).length,
       ai_matched_rows: matched.filter(r => r.match_source === 'ai').length,
       will_enable_count: matched.filter(r => r.importable && (r.will_enable_discipline || r.will_enable_sub_skill)).length,
       total_budget: matched.filter(r => r.importable).reduce((s, r) => s + r.budget, 0),
