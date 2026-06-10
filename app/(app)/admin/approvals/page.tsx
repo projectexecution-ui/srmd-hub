@@ -41,8 +41,15 @@ export default async function AdminApprovalsPage() {
         back="/admin"
         subtitle="Who can move a document to the next stage, per module."
       />
-      <Card className="p-4 bg-blue-50 border-blue-200 text-sm text-blue-900">
-        Read each row as a sentence: <b>at this stage</b>, a user with <b>this role</b> can move the document to <b>this next stage</b>. Admin is always allowed. Override role is optional.
+      <Card className="p-4 bg-blue-50 border-blue-200 text-sm text-blue-900 space-y-1">
+        <p>
+          An <b>approval step</b> answers one question: <b>when a document reaches a stage, which role is allowed to move it forward?</b>
+        </p>
+        <p className="text-blue-800">
+          Example — <i>when an Indent is <b>Submitted</b>, the <b>Atm Head</b> can move it to <b>Verify</b>.</i>{' '}
+          <b>Admin can always approve everything</b>, so no one ever gets stuck. Keep it to one step per row; the extra options
+          (₹ limits, required notes/files, a backup approver) stay hidden until you flip <b>“Show advanced options”</b>.
+        </p>
       </Card>
       <ApprovalsMatrix
         initial={rules ?? []}
