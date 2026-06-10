@@ -89,7 +89,7 @@ export default async function WorkingSheetsPage({
   // without an N+1 in TypeScript.
   let q = supabase
     .from('cc_ws_with_versions')
-    .select('id, ws_code, status, total_amount, approved_for_erp_amt, created_at, deadline_date, engineer_id, project_id, sub_skill_id, line_type, discipline_id, break_chain, chain_anchor_id, version_no, chain_size, projects(code, name), cc_disciplines(code, name), cc_sub_skills(code, name)')
+    .select('id, ws_code, status, total_amount, approved_for_erp_amt, created_at, deadline_date, engineer_id, project_id, sub_skill_id, line_type, discipline_id, break_chain, chain_anchor_id, version_no, chain_size, source_excel_url, projects(code, name), cc_disciplines(code, name), cc_sub_skills(code, name)')
     .order('created_at', { ascending: scoped })
     .limit(500)
   if (sp.project) q = q.eq('project_id', sp.project)
@@ -121,6 +121,7 @@ export default async function WorkingSheetsPage({
     chain_anchor_id: string
     version_no: number
     chain_size: number
+    source_excel_url: string | null
     projects: { code: string; name: string } | { code: string; name: string }[] | null
     cc_disciplines: { code: string; name: string } | { code: string; name: string }[] | null
     cc_sub_skills: { code: string; name: string } | { code: string; name: string }[] | null
@@ -459,6 +460,15 @@ export default async function WorkingSheetsPage({
                                   {w.ws_code}
                                 </Link>
                                 <VersionBadge versionNo={w.version_no} chainSize={w.chain_size} breakChain={w.break_chain} compact />
+                                {w.source_excel_url && (
+                                  <a
+                                    href={`/api/cost-control/working-sheets/${w.id}/download`}
+                                    className="text-gray-400 hover:text-blue-700"
+                                    title="Download the original uploaded Excel"
+                                  >
+                                    <FileSpreadsheet className="h-3.5 w-3.5" />
+                                  </a>
+                                )}
                               </div>
                             </td>
                             <td className="px-4 py-2.5 text-gray-700">{proj?.code ?? '—'}</td>
