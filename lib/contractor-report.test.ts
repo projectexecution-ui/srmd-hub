@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import {
-  parseSourceReport, deriveContractor, sumContractors, categorySubtotal,
+  parseSourceReport, parseSourceReports, deriveContractor, sumContractors, categorySubtotal,
   subprojectTotal, reportGrandTotal, combineSubprojects, displayCategory,
   reconcile, type Sheet,
 } from './contractor-report'
@@ -145,5 +145,52 @@ describe('reconcile against IN4 Project Total', () => {
   it('edge: no Project Total row → unavailable, not an error', () => {
     const rec = reconcile({ grossBill: 1, recoveries: 0, paid: 1, deductions: 0, retention: 0, outstanding: 0 }, null)
     expect(rec.available).toBe(false)
+  })
+})
+
+describe('parseSourceReports — multi-project split (company-wide export)', () => {
+  // A company-wide export interleaves several Project: values. Each should
+  // become its own ParsedSource — NOT all lumped under the first project.
+  function companyWideSheet(): Sheet {
+    return [
+      [null, null, null, 'SRMD'], [null, null, null, 'All Types Certificates'], ['From …'], HEADER, [null],
+      marker('AV House', 'AV House - Design'),
+      row({ 0: ' 03 Civil', 2: 'WO-A1', 4: 'ABC', 5: 1000, 20: 500, 31: 480, 25: 20, 32: 0 }),
+      marker('AV House', 'AV House - Execution'),
+      row({ 0: ' 03 Civil', 2: 'WO-A2', 4: 'ABC', 5: 2000, 20: 800, 31: 700, 25: 0, 32: 100 }),
+      marker('Vinay Vivek', 'Vinay Vivek - Design'),
+      row({ 0: ' 03 Civil', 2: 'WO-V1', 4: 'XYZ', 5: 3000, 20: 1200, 31: 1000, 25: 0, 32: 200 }),
+      marker('New Guest House', 'New Guest House A-Execution'),
+      row({ 0: ' 07 Electrical', 2: 'WO-N1', 4: 'PQR', 5: 4000, 20: 1500, 31: 1500, 25: 0, 32: 0 }),
+    ]
+  }
+
+  it('valid: one report per Project: value, in encounter order', () => {
+    const reports = parseSourceReports(companyWideSheet())
+    expect(reports.map(r => r.projectName)).toEqual(['AV House', 'Vinay Vivek', 'New Guest House'])
+  })
+
+  it('valid: AV House keeps ONLY its own two sub-projects (not the whole company)', () => {
+    const reports = parseSourceReports(companyWideSheet())
+    const av = reports.find(r => r.projectName === 'AV House')!
+    expect(av.subprojects.map(s => s.name)).toEqual(['AV House - Design', 'AV House - Execution'])
+    // Its bill total = 500 + 800, NOT including Vinay/NGH rows.
+    expect(reportGrandTotal(av.subprojects).billValue).toBe(1300)
+  })
+
+  it('valid: each other project is scoped to its own rows', () => {
+    const reports = parseSourceReports(companyWideSheet())
+    const vinay = reports.find(r => r.projectName === 'Vinay Vivek')!
+    expect(reportGrandTotal(vinay.subprojects).billValue).toBe(1200)
+    const ngh = reports.find(r => r.projectName === 'New Guest House')!
+    expect(reportGrandTotal(ngh.subprojects).billValue).toBe(1500)
+  })
+
+  it('back-compat: parseSourceReport still returns just the first project', () => {
+    expect(parseSourceReport(companyWideSheet()).projectName).toBe('AV House')
+  })
+
+  it('edge: a single-project export yields a one-element array', () => {
+    expect(parseSourceReports(sampleSheet()).map(r => r.projectName)).toEqual(['Vinay Vivek'])
   })
 })

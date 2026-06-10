@@ -21,7 +21,7 @@ import { toast } from 'sonner'
 import { formatNumber, cn } from '@/lib/utils'
 import { confirm } from '@/components/ui/confirm-dialog'
 import {
-  parseSourceReport, reconcile, deriveContractor, categorySubtotal, subprojectTotal,
+  parseSourceReports, reconcile, deriveContractor, categorySubtotal, subprojectTotal,
   reportGrandTotal, combineSubprojects, displayCategory, costOf, COST_BASE_OPTIONS,
   type ReportDoc, type RawCategory, type SubprojectGroup, type Totals,
   type CostBase, type ContractorReportSettings,
@@ -38,27 +38,31 @@ function normalizeDoc(d: ReportDoc & { categories?: RawCategory[] }): ReportDoc 
 
 const STATE_URL = '/api/contractor-report/state'
 
-async function parseFile(file: File): Promise<ReportDoc> {
+// One upload can carry MANY projects (a company-wide export). We split it
+// into one ReportDoc per project so each becomes its own chip — instead of
+// everything lumping under whichever project appeared first.
+async function parseFile(file: File): Promise<ReportDoc[]> {
   const buf = await file.arrayBuffer()
   const wb = XLSX.read(new Uint8Array(buf), { type: 'array' })
   const ws = wb.Sheets[wb.SheetNames[0]]
   if (!ws) throw new Error('Workbook has no sheets')
   const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: null, raw: true }) as (string | number | null)[][]
-  const parsed = parseSourceReport(rows)
-  if (parsed.subprojects.length === 0) {
+  const parsedList = parseSourceReports(rows).filter(p => p.subprojects.length > 0)
+  if (parsedList.length === 0) {
     throw new Error('No contractor rows found — is this the IN4 “All Types Certificates Details” export (.xlsx)?')
   }
-  return {
+  const uploadedAt = new Date().toISOString()
+  return parsedList.map(parsed => ({
     id: crypto.randomUUID(),
     projectName: parsed.projectName,
     title: parsed.title,
     subtitle: parsed.subtitle,
     sourceFilename: file.name,
-    uploadedAt: new Date().toISOString(),
+    uploadedAt,
     subprojects: parsed.subprojects,
     computed: parsed.computed,
     source: parsed.source,
-  }
+  }))
 }
 
 type FullState = { reports: ReportDoc[]; settings: ContractorReportSettings }
@@ -165,7 +169,7 @@ export default function ContractorReportClient({ canDelete = false }: { canDelet
     if (files.length === 0) { toast.error('Please choose a generated Contractor Report .xlsx'); return }
     try {
       const docs: ReportDoc[] = []
-      for (const f of files) docs.push(await parseFile(f))
+      for (const f of files) docs.push(...await parseFile(f))
       const next = await persistReports(reports => {
         let out = reports
         for (const doc of docs) {
@@ -174,9 +178,15 @@ export default function ContractorReportClient({ canDelete = false }: { canDelet
         }
         return out
       })
-      const justAdded = docs[docs.length - 1]
-      setSelectedId(next.find(r => r.projectName === justAdded.projectName)?.id ?? next[0]?.id ?? null)
-      toast.success(`Saved ${docs.length} report${docs.length === 1 ? '' : 's'} for the whole team`)
+      // Select the first project from this upload so the user lands on data.
+      const firstAdded = docs[0]
+      setSelectedId(next.find(r => r.projectName === firstAdded.projectName)?.id ?? next[0]?.id ?? null)
+      const nProjects = new Set(docs.map(d => d.projectName)).size
+      toast.success(
+        nProjects === 1
+          ? `Saved “${firstAdded.projectName}” for the whole team`
+          : `Saved ${nProjects} projects for the whole team`,
+      )
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Could not process the file')
     }

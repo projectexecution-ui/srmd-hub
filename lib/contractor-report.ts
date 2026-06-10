@@ -197,37 +197,76 @@ export interface ParsedSource {
   source: In4Totals | null
 }
 
-export function parseSourceReport(rows: Sheet): ParsedSource {
-  const headerRow = findHeaderRow(rows)
-  let projectName = ''
-  let currentSub = '(Unknown Sub-project)'
-  let source: In4Totals | null = null
-  const computed: In4Totals = { grossBill: 0, recoveries: 0, paid: 0, deductions: 0, retention: 0, outstanding: 0 }
+const emptyTotals = (): In4Totals => ({ grossBill: 0, recoveries: 0, paid: 0, deductions: 0, retention: 0, outstanding: 0 })
+const emptyParsed = (name = 'Project'): ParsedSource => ({
+  projectName: name,
+  title: `${name} — Project Execution Expenses`,
+  subtitle: 'Category-wise & Contractor-wise Summary (by Sub-project, INR)',
+  subprojects: [],
+  computed: emptyTotals(),
+  source: null,
+})
 
-  const subOrder: string[] = []
-  const subs = new Map<string, SubprojectGroup>()
-  const catIndex = new Map<string, RawCategory>()      // `${sub}||${categoryRaw}`
-  const conIndex = new Map<string, RawContractor>()    // `${sub}||${categoryRaw}||${contractor}`
-  const woSeen = new Set<string>()
+// Per-project accumulator used by the multi-project walker.
+interface ProjectAcc {
+  projectName: string
+  subOrder: string[]
+  subs: Map<string, SubprojectGroup>
+  catIndex: Map<string, RawCategory>      // `${sub}||${categoryRaw}`
+  conIndex: Map<string, RawContractor>    // `${sub}||${categoryRaw}||${contractor}`
+  woSeen: Set<string>
+  computed: In4Totals
+  source: In4Totals | null
+}
+
+/**
+ * Parse a raw IN4 export into ONE ParsedSource PER PROJECT.
+ *
+ * A company-wide "All Types Certificates Details" export carries many
+ * `Project:` values in its sub-project markers. Earlier we only kept the
+ * first one and lumped every sub-project under it (so one project's chip
+ * showed the whole company). Now we group by the `Project:` field so each
+ * project becomes its own report — a single-project export simply yields a
+ * one-element array.
+ */
+export function parseSourceReports(rows: Sheet): ParsedSource[] {
+  const headerRow = findHeaderRow(rows)
+  let currentProject = 'Project'
+  let currentSub = '(Unknown Sub-project)'
+
+  const projOrder: string[] = []
+  const projs = new Map<string, ProjectAcc>()
+  const accFor = (name: string): ProjectAcc => {
+    let acc = projs.get(name)
+    if (!acc) {
+      acc = {
+        projectName: name, subOrder: [], subs: new Map(), catIndex: new Map(),
+        conIndex: new Map(), woSeen: new Set(), computed: emptyTotals(), source: null,
+      }
+      projs.set(name, acc)
+      projOrder.push(name)
+    }
+    return acc
+  }
 
   for (let i = headerRow + 1; i < rows.length; i++) {
     const row = rows[i] ?? []
     const cell0 = str(row[C.category])
 
-    // Sub-project / company marker
+    // Sub-project / company marker — update BOTH the project and the sub.
     if (cell0.startsWith('Company:') || cell0.includes('Subproject:')) {
       const mp = cell0.match(PROJECT_RE)
-      if (mp && !projectName) projectName = mp[1].trim()
+      if (mp) currentProject = mp[1].trim() || currentProject
       const ms = cell0.match(SUBPROJECT_RE)
       currentSub = ms ? ms[1].trim() : '(Unknown Sub-project)'
       continue
     }
 
-    // Total rows
+    // Total rows — a "Project Total" attaches to the CURRENT project's acc.
     const totalCell = str(row[C.totalMarker])
     if (/Total\s*:?\s*$/i.test(totalCell)) {
       if (/^Project Total/i.test(totalCell)) {
-        source = {
+        accFor(currentProject).source = {
           grossBill: num(row, C.grossBill),
           recoveries: num(row, C.advRecovered) + num(row, C.miscRecovered) + num(row, C.matRecovered) + num(row, C.debitRecovered),
           paid: num(row, C.amountPaid),
@@ -251,27 +290,28 @@ export function parseSourceReport(rows: Sheet): ParsedSource {
     const ret = num(row, C.retention)
     const out = num(row, C.outstanding)
 
-    computed.grossBill += gross
-    computed.recoveries += recovered
-    computed.paid += paid
-    computed.deductions += ded
-    computed.retention += ret
-    computed.outstanding += out
+    const acc = accFor(currentProject)
+    acc.computed.grossBill += gross
+    acc.computed.recoveries += recovered
+    acc.computed.paid += paid
+    acc.computed.deductions += ded
+    acc.computed.retention += ret
+    acc.computed.outstanding += out
 
-    if (!subs.has(currentSub)) { subs.set(currentSub, { name: currentSub, categories: [] }); subOrder.push(currentSub) }
+    if (!acc.subs.has(currentSub)) { acc.subs.set(currentSub, { name: currentSub, categories: [] }); acc.subOrder.push(currentSub) }
     const catKey = `${currentSub}||${categoryRaw}`
-    if (!catIndex.has(catKey)) {
+    if (!acc.catIndex.has(catKey)) {
       const rc: RawCategory = { category: categoryRaw, contractors: [] }
-      catIndex.set(catKey, rc)
-      subs.get(currentSub)!.categories.push(rc)
+      acc.catIndex.set(catKey, rc)
+      acc.subs.get(currentSub)!.categories.push(rc)
     }
     const conKey = `${catKey}||${contractor}`
-    if (!conIndex.has(conKey)) {
+    if (!acc.conIndex.has(conKey)) {
       const nc: RawContractor = { contractor, woValue: 0, billValue: 0, paidValue: 0, deductions: 0, retentionHeld: 0, outstanding: 0 }
-      conIndex.set(conKey, nc)
-      catIndex.get(catKey)!.contractors.push(nc)
+      acc.conIndex.set(conKey, nc)
+      acc.catIndex.get(catKey)!.contractors.push(nc)
     }
-    const a = conIndex.get(conKey)!
+    const a = acc.conIndex.get(conKey)!
     a.billValue += gross - recovered
     a.paidValue += paid
     a.deductions += ded
@@ -279,17 +319,31 @@ export function parseSourceReport(rows: Sheet): ParsedSource {
     a.outstanding += out
 
     const woKey = `${conKey}||${str(row[C.wo])}`
-    if (!woSeen.has(woKey)) { woSeen.add(woKey); a.woValue += num(row, C.woValue) }
+    if (!acc.woSeen.has(woKey)) { acc.woSeen.add(woKey); a.woValue += num(row, C.woValue) }
   }
 
-  return {
-    projectName: projectName || 'Project',
-    title: `${projectName || 'Project'} — Project Execution Expenses`,
-    subtitle: 'Category-wise & Contractor-wise Summary (by Sub-project, INR)',
-    subprojects: subOrder.map(s => subs.get(s)!),
-    computed,
-    source,
-  }
+  return projOrder.map(p => {
+    const acc = projs.get(p)!
+    const name = acc.projectName || 'Project'
+    return {
+      projectName: name,
+      title: `${name} — Project Execution Expenses`,
+      subtitle: 'Category-wise & Contractor-wise Summary (by Sub-project, INR)',
+      subprojects: acc.subOrder.map(s => acc.subs.get(s)!),
+      computed: acc.computed,
+      source: acc.source,
+    }
+  })
+}
+
+/**
+ * Back-compat single-project view: the FIRST project in the export (or an
+ * empty shell if there were no contractor rows). The UI uses
+ * `parseSourceReports` so a multi-project file splits into many chips.
+ */
+export function parseSourceReport(rows: Sheet): ParsedSource {
+  const all = parseSourceReports(rows)
+  return all.length > 0 ? all[0] : emptyParsed()
 }
 
 // ─── Reconciliation against IN4's own Project Total row ────────────────────
