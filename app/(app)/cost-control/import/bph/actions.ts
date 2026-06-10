@@ -52,6 +52,18 @@ interface BphState {
   projects?: BphProject[]
 }
 
+// Normalise a category / sub-skill code for matching. Hand-typed BPH
+// sheets pad codes inconsistently (01 vs 001 vs 0001); CT Hub stores a
+// clean "01". For all-digit codes we strip leading zeros so they compare
+// numerically (001 → "1", 01 → "1", 10 → "10"). Codes with letters
+// (e.g. "02E") just get trimmed + uppercased.
+function normCode(s: string | number | null | undefined): string {
+  const t = String(s ?? '').trim()
+  if (!t) return ''
+  if (/^\d+$/.test(t)) return String(parseInt(t, 10))
+  return t.toUpperCase()
+}
+
 // Build the canonical row set to import from a BPH project:
 //   - Every subRow (catNum + subNum) becomes a sub-skill budget line.
 //   - For any catNum that has NO subRows, fall back to its discipline
@@ -159,19 +171,23 @@ export async function previewBphImport(input: z.infer<typeof previewSchema>): Pr
   if (!bph) return { ok: false, error: 'BPH project not found in /budget' }
   if (!ccProject) return { ok: false, error: 'CT Hub project not found' }
 
-  // Lookup maps keyed by code (always stringify to compare cleanly with
-  // BPH's catNum which may be number-or-string).
-  const discByCode = new Map((disciplines ?? []).map(d => [String(d.code), d]))
+  // Lookup maps keyed by NORMALISED code. BPH sheets are hand-typed and
+  // codes drift in format — the same discipline shows up as "01", "001",
+  // and "0001" across rows, while CT Hub stores a clean "01". normCode
+  // strips leading zeros from all-digit codes so 001 / 0001 / 01 all
+  // collapse to the same key. Non-numeric codes (e.g. "02E") fall back to
+  // trimmed-uppercase.
+  const discByCode = new Map((disciplines ?? []).map(d => [normCode(d.code), d]))
   const subByCompositeCode = new Map(
-    (subSkills ?? []).map(s => [`${s.discipline_id}::${String(s.code)}`, s]),
+    (subSkills ?? []).map(s => [`${s.discipline_id}::${normCode(s.code)}`, s]),
   )
 
   const rawRows = bphSourceRows(bph)
   const matched: BphMatchedRow[] = rawRows.map((r, i) => {
     const catNumStr = r.catNum == null ? '' : String(r.catNum).trim()
     const subNumStr = r.subNum == null ? '' : String(r.subNum).trim()
-    const disc = catNumStr ? discByCode.get(catNumStr) : null
-    const sub = (disc && subNumStr) ? subByCompositeCode.get(`${disc.id}::${subNumStr}`) : null
+    const disc = catNumStr ? discByCode.get(normCode(catNumStr)) : null
+    const sub = (disc && subNumStr) ? subByCompositeCode.get(`${disc.id}::${normCode(subNumStr)}`) : null
     return {
       key: `${i}-${catNumStr || 'x'}-${subNumStr || 'x'}`,
       head: r.head,
