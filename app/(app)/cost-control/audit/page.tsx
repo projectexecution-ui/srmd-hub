@@ -5,14 +5,14 @@ import { PageHeader } from '@/components/PageHeader'
 import { Card } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { formatINR } from '@/lib/utils'
-import { ClipboardList, FilePen, FileSpreadsheet, IndianRupee } from 'lucide-react'
+import { ClipboardList, FilePen, FileSpreadsheet, IndianRupee, CheckCircle2 } from 'lucide-react'
 
 export const dynamic = 'force-dynamic'
 
 interface UnifiedEvent {
   id: string
   ts: string
-  kind: 'ws_edit' | 'budget_event' | 'excel_import'
+  kind: 'approval' | 'ws_edit' | 'budget_event' | 'excel_import'
   who: string | null
   project_code: string | null
   project_id: string | null
@@ -67,9 +67,37 @@ export default async function AuditLogPage({
     .order('created_at', { ascending: false })
     .limit(50)
 
-  const [wsEditsR, budgetEventsR, importsR] = await Promise.all([wsEditsQ, budgetEventsQ, importsQ])
+  // Approval decisions — the heart of the audit trail (who approved /
+  // returned, the stage journey, the comment). Joined to the WS for its
+  // code + project. We resolve actor names in a second pass.
+  const approvalsQ = supabase
+    .from('approval_events')
+    .select('id, from_stage, to_stage, decision, comment, created_at, actor_id, doc_id')
+    .eq('module_slug', 'cost-control')
+    .eq('doc_type', 'cc_working_sheet')
+    .order('created_at', { ascending: false })
+    .limit(200)
+
+  const [wsEditsR, budgetEventsR, importsR, approvalsR] = await Promise.all([wsEditsQ, budgetEventsQ, importsQ, approvalsQ])
 
   const events: UnifiedEvent[] = []
+
+  // Resolve approval WSes + actors in bulk.
+  type ApprovalRow = { id: string; from_stage: string | null; to_stage: string | null; decision: string | null; comment: string | null; created_at: string; actor_id: string | null; doc_id: string }
+  const apprRows = (approvalsR.data ?? []) as ApprovalRow[]
+  const apprWsIds = Array.from(new Set(apprRows.map(a => a.doc_id)))
+  const apprActorIds = Array.from(new Set(apprRows.map(a => a.actor_id).filter((x): x is string => !!x)))
+  const [{ data: apprWs }, { data: apprActors }] = await Promise.all([
+    apprWsIds.length > 0
+      ? supabase.from('cc_working_sheets').select('id, ws_code, project_id, projects(code, name)').in('id', apprWsIds)
+      : Promise.resolve({ data: [] as unknown[] }),
+    apprActorIds.length > 0
+      ? supabase.from('profiles').select('id, full_name, email').in('id', apprActorIds)
+      : Promise.resolve({ data: [] as unknown[] }),
+  ])
+  type ApprWsRow = { id: string; ws_code: string; project_id: string; projects: { code: string; name: string } | { code: string; name: string }[] | null }
+  const apprWsById = new Map((apprWs as ApprWsRow[] ?? []).map(w => [w.id, w]))
+  const apprActorById = new Map((apprActors as { id: string; full_name: string | null; email: string }[] ?? []).map(p => [p.id, p.full_name || p.email || null]))
 
   type WSEditRow = {
     id: string
@@ -89,6 +117,27 @@ export default async function AuditLogPage({
   function pickFirst<T>(v: T | T[] | null | undefined): T | null {
     if (!v) return null
     return Array.isArray(v) ? v[0] ?? null : v
+  }
+
+  for (const a of apprRows) {
+    if (kindFilter && kindFilter !== 'approval') continue
+    const w = apprWsById.get(a.doc_id)
+    const proj = w ? pickFirst(w.projects) : null
+    if (projectFilter && w?.project_id !== projectFilter) continue
+    const isReturn = a.decision === 'returned' || a.to_stage === 'returned'
+    const isFull = a.to_stage === 'approved'
+    events.push({
+      id: `ae-${a.id}`,
+      ts: a.created_at,
+      kind: 'approval',
+      who: a.actor_id ? apprActorById.get(a.actor_id) ?? null : null,
+      project_code: proj?.code ?? null,
+      project_id: w?.project_id ?? null,
+      ws_code: w?.ws_code ?? null,
+      ws_id: a.doc_id,
+      description: isReturn ? 'Returned to engineer' : isFull ? 'Fully approved into ERP' : 'Release approved',
+      detail: a.comment ? `“${a.comment}”` : undefined,
+    })
   }
 
   for (const e of (wsEditsR.data ?? []) as unknown as WSEditRow[]) {
@@ -204,6 +253,7 @@ export default async function AuditLogPage({
             className="h-8 rounded-md border border-gray-300 bg-white px-2 text-sm"
           >
             <option value="">All event types</option>
+            <option value="approval">Approvals</option>
             <option value="ws_edit">WS edits</option>
             <option value="budget_event">Budget events</option>
             <option value="excel_import">Excel imports</option>
@@ -240,6 +290,7 @@ export default async function AuditLogPage({
               {events.map(ev => (
                 <tr key={ev.id} className="hover:bg-gray-50">
                   <td className="px-3 py-2 text-gray-400">
+                    {ev.kind === 'approval' && <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" />}
                     {ev.kind === 'ws_edit' && <FilePen className="h-3.5 w-3.5" />}
                     {ev.kind === 'budget_event' && <IndianRupee className="h-3.5 w-3.5" />}
                     {ev.kind === 'excel_import' && <FileSpreadsheet className="h-3.5 w-3.5" />}

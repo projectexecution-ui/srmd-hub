@@ -10,6 +10,7 @@ import { AiBifurcationPanel } from '@/components/cost-control/AiBifurcationPanel
 import { WSAskAiPanel } from '@/components/cost-control/WSAskAiPanel'
 import { VersionChainBar } from './VersionChainBar'
 import { ThumbruleSummaryPanel } from './ThumbruleSummaryPanel'
+import { ApprovalTimeline } from '@/components/cost-control/ApprovalTimeline'
 import { WSEditor } from './WSEditor'
 import { ExcelSummaryPanel } from './ExcelSummaryPanel'
 import { SourceExcelViewer } from './SourceExcelViewer'
@@ -127,6 +128,8 @@ export default async function WorkingSheetEditorPage(
           summaryNotes={ws.summary_notes}
           pastApproved={Number(ws.past_approved_in_subskill ?? 0)}
         />
+
+        <ApprovalTimeline wsId={ws.id} />
       </div>
     )
   }
@@ -254,6 +257,8 @@ export default async function WorkingSheetEditorPage(
             flag_severity: r.flag_severity,
           }))}
         />
+
+        <ApprovalTimeline wsId={ws.id} />
       </div>
     )
   }
@@ -441,6 +446,8 @@ export default async function WorkingSheetEditorPage(
         })}
         wsTotal={ws.total_amount ?? 0}
       />
+
+      <ApprovalTimeline wsId={ws.id} />
     </div>
   )
 }
