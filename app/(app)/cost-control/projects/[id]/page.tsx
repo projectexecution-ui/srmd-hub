@@ -8,6 +8,8 @@ import { Plus, ArrowLeftRight, Flame, Info, Settings } from 'lucide-react'
 import { formatINR } from '@/lib/utils'
 import { DeadlineBadge } from '@/components/cost-control/DeadlineBadge'
 import { DeadlineCell, SubSkillModeCell, DisableButton } from './RowControls'
+import { BphSyncButton } from './BphSyncButton'
+import { getBphMappingForProject } from '@/app/(app)/cost-control/import/bph/actions'
 
 export const dynamic = 'force-dynamic'
 
@@ -242,6 +244,9 @@ export default async function CostControlProjectDetailPage(
   const pmRow: PMLite = (pmRes.data ?? null) as PMLite
   const pmName = pmRow?.full_name ?? pmRow?.name ?? null
 
+  // Is this project mapped to a BPH report? Drives the header sync button.
+  const isBphMapped = !!(await getBphMappingForProject(id))
+
   const setupPct = project.setup_progress_pct ?? 0
   const showSetupBanner = setupPct < 100 && project.cc_status === 'setup_incomplete'
 
@@ -314,6 +319,7 @@ export default async function CostControlProjectDetailPage(
               >
                 <ArrowLeftRight className="h-4 w-4" /> Shift Budget
               </Link>
+              <BphSyncButton projectId={project.id} isMapped={isBphMapped} />
               <Link
                 href={`/cost-control/projects/${project.id}/setup`}
                 className="inline-flex items-center gap-1.5 h-9 px-3 rounded-md bg-white text-gray-700 border border-gray-300 text-sm font-semibold hover:bg-gray-50"

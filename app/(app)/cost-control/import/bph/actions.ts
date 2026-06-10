@@ -608,3 +608,30 @@ export async function unlinkBphMapping(bph_project_id: string): Promise<{ ok: bo
   revalidatePath('/cost-control/import/bph')
   return { ok: true }
 }
+
+// Is this CT project mapped to a BPH project? (Drives the project-page
+// "Sync from BPH" button: re-sync when mapped, else send to map flow.)
+export async function getBphMappingForProject(cc_project_id: string): Promise<{ bph_project_id: string } | null> {
+  const supabase = await createClient()
+  const { data } = await supabase
+    .from('cc_bph_project_links')
+    .select('bph_project_id')
+    .eq('cc_project_id', cc_project_id)
+    .maybeSingle()
+  return data ? { bph_project_id: data.bph_project_id as string } : null
+}
+
+// One-click re-sync from the project detail page. Looks up the mapping and
+// re-runs the pull. Returns 'not_mapped' so the button can route to the
+// map flow instead.
+export async function resyncBphForProject(cc_project_id: string): Promise<CommitOutcome | { ok: false; error: string }> {
+  await requirePermission('cost-control', 'edit')
+  const supabase = await createClient()
+  const { data: link } = await supabase
+    .from('cc_bph_project_links')
+    .select('bph_project_id')
+    .eq('cc_project_id', cc_project_id)
+    .maybeSingle()
+  if (!link) return { ok: false, error: 'not_mapped' }
+  return commitBphImport({ bph_project_id: link.bph_project_id as string, cc_project_id })
+}
