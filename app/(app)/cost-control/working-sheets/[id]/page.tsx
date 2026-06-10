@@ -9,6 +9,7 @@ import { DeadlineBadge } from '@/components/cost-control/DeadlineBadge'
 import { AiBifurcationPanel } from '@/components/cost-control/AiBifurcationPanel'
 import { WSAskAiPanel } from '@/components/cost-control/WSAskAiPanel'
 import { VersionChainBar } from './VersionChainBar'
+import { ThumbruleSummaryPanel } from './ThumbruleSummaryPanel'
 import { WSEditor } from './WSEditor'
 import { ExcelSummaryPanel } from './ExcelSummaryPanel'
 import { SourceExcelViewer } from './SourceExcelViewer'
@@ -72,6 +73,63 @@ export default async function WorkingSheetEditorPage(
     const s = qs.toString()
     return s ? `/cost-control/working-sheets?${s}` : '/cost-control/working-sheets'
   })()
+
+  // Thumbrule mode: a single rate × area figure — no line items. Render
+  // a read-only summary + the same submit/approve/return actions, NOT the
+  // line-item editor (which would wrongly invite "Add row").
+  if (ws.entry_mode === 'thumbrule') {
+    const proj = (Array.isArray(ws.projects) ? ws.projects[0] : ws.projects) as PRow | null
+    const dis  = (Array.isArray(ws.cc_disciplines) ? ws.cc_disciplines[0] : ws.cc_disciplines) as DRow | null
+    const sub  = (Array.isArray(ws.cc_sub_skills) ? ws.cc_sub_skills[0] : ws.cc_sub_skills) as SRow | null
+    return (
+      <div className="p-4 md:p-6 max-w-4xl mx-auto space-y-4">
+        <PageHeader
+          title={ws.ws_code}
+          subtitle={`${proj?.code ?? '—'} · ${dis?.code} ${dis?.name} → ${sub?.code} ${sub?.name} · Thumbrule estimate`}
+          back={backHref}
+        >
+          <WSStatusPill status={ws.status as WSStatus} />
+        </PageHeader>
+
+        <VersionChainBar
+          wsId={ws.id}
+          versionNo={ws.version_no}
+          chainSize={ws.chain_size}
+          breakChain={ws.break_chain}
+          prev={prevSibling ? { id: prevSibling.id, ws_code: prevSibling.ws_code, version_no: prevSibling.version_no } : null}
+          next={nextSibling ? { id: nextSibling.id, ws_code: nextSibling.ws_code, version_no: nextSibling.version_no } : null}
+          canEdit={canEdit && (user?.id === ws.engineer_id || isAdmin)}
+        />
+
+        {(ws.deadline_date || canEditDeadline) && (
+          <div className="flex items-center gap-2 flex-wrap">
+            {ws.deadline_date && (
+              <DeadlineBadge
+                deadlineDate={ws.deadline_date}
+                notes={ws.deadline_notes}
+                approved={ws.status === 'approved' || ws.status === 'wo_issued' || ws.status === 'paid'}
+              />
+            )}
+            {canEditDeadline && (
+              <EditDeadlineButton wsId={ws.id} initialDate={ws.deadline_date} initialNotes={ws.deadline_notes} />
+            )}
+          </div>
+        )}
+
+        <ThumbruleSummaryPanel
+          wsId={ws.id}
+          status={ws.status as WSStatus}
+          canEdit={canEdit && (user?.id === ws.engineer_id || isAdmin)}
+          canApprove={mayApprove}
+          canReturn={mayReturn}
+          totalAmount={Number(ws.total_amount ?? 0)}
+          approvedSoFar={Number(ws.approved_for_erp_amt ?? 0)}
+          summaryNotes={ws.summary_notes}
+          pastApproved={Number(ws.past_approved_in_subskill ?? 0)}
+        />
+      </div>
+    )
+  }
 
   // Quick mode: short-circuit the line-item editor and render the Excel
   // summary + flag panel instead.
