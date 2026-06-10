@@ -41,11 +41,35 @@ interface BphProject {
   location?: string | null
   parentId?: string | null
   type?: string | null
-  data?: { rows?: BphRow[] } | null
+  // `rows` = discipline rollup (one per catNum). `subRows` = the real
+  // sub-skill detail (catNum + subNum). The BPH hub computes both: rows
+  // is the byCat summary, subRows is the bySub breakdown. We prefer
+  // subRows so Cost Control gets per-sub-skill budget/actuals.
+  data?: { rows?: BphRow[]; subRows?: BphRow[] } | null
 }
 
 interface BphState {
   projects?: BphProject[]
+}
+
+// Build the canonical row set to import from a BPH project:
+//   - Every subRow (catNum + subNum) becomes a sub-skill budget line.
+//   - For any catNum that has NO subRows, fall back to its discipline
+//     rollup row (catNum only) so disciplines reported only at summary
+//     level still come through.
+// This avoids double-counting (a discipline + its own sub-detail) at the
+// source while giving the finest granularity BPH actually provides.
+function bphSourceRows(bph: BphProject): BphRow[] {
+  const subRows = bph.data?.subRows ?? []
+  const catRows = bph.data?.rows ?? []
+  const catsWithSub = new Set(
+    subRows.map(r => (r.catNum == null ? '' : String(r.catNum).trim())).filter(Boolean),
+  )
+  const catOnly = catRows.filter(c => {
+    const cat = c.catNum == null ? '' : String(c.catNum).trim()
+    return cat && !catsWithSub.has(cat)
+  })
+  return [...subRows, ...catOnly]
 }
 
 export interface BphProjectSummary {
@@ -99,9 +123,10 @@ export async function listBphProjects(): Promise<{ ok: true; projects: BphProjec
 
   const state = (data?.state ?? {}) as BphState
   const projects: BphProjectSummary[] = (state.projects ?? [])
-    .filter(p => p.data?.rows && p.data.rows.length > 0)
     .map(p => {
-      const rows = p.data?.rows ?? []
+      // Count + total the canonical source rows (subRows preferred), so
+      // the picker shows the granular row count + true budget.
+      const rows = bphSourceRows(p)
       return {
         id: p.id,
         name: p.name,
@@ -111,6 +136,7 @@ export async function listBphProjects(): Promise<{ ok: true; projects: BphProjec
         total_actual: rows.reduce((s, r) => s + (Number(r.actual) || 0), 0),
       }
     })
+    .filter(p => p.row_count > 0)
     .sort((a, b) => b.total_budget - a.total_budget)
   return { ok: true, projects }
 }
@@ -140,7 +166,7 @@ export async function previewBphImport(input: z.infer<typeof previewSchema>): Pr
     (subSkills ?? []).map(s => [`${s.discipline_id}::${String(s.code)}`, s]),
   )
 
-  const rawRows = bph.data?.rows ?? []
+  const rawRows = bphSourceRows(bph)
   const matched: BphMatchedRow[] = rawRows.map((r, i) => {
     const catNumStr = r.catNum == null ? '' : String(r.catNum).trim()
     const subNumStr = r.subNum == null ? '' : String(r.subNum).trim()
@@ -201,11 +227,65 @@ export async function commitBphImport(input: z.infer<typeof commitSchema>): Prom
   const toImport = preview.rows.filter(r => r.importable && (!wanted || wanted.has(r.key)))
 
   const supabase = await createClient()
+  const me = await getMyUser()
   let inserted = 0, updated = 0, skipped = 0
   const errors: string[] = []
+  // Disciplines that received a sub-skill line in this import — their old
+  // discipline-root (sub_skill_id NULL) summary line, if any, is now
+  // redundant and must be removed so it doesn't linger as stale data.
+  const discWithSubLines = new Set<string>()
+
+  // Auto-enable the disciplines + sub-skills that appear in this BPH pull.
+  // If IN4 reports budget/actuals against a sub-skill, the project clearly
+  // uses it — so it must be enabled, or its budget line would be invisible
+  // on the detail page AND excluded from the discipline rollup (which only
+  // sums ENABLED sub-skills). We only INSERT missing rows; we never touch
+  // existing config (estimation_mode, thumbrule rate, etc.).
+  const neededDiscIds = Array.from(new Set(toImport.map(r => r.matched_discipline_id).filter((x): x is string => !!x)))
+  const neededSubIds  = Array.from(new Set(toImport.map(r => r.matched_sub_skill_id).filter((x): x is string => !!x)))
+
+  if (neededDiscIds.length > 0) {
+    const { data: existingDisc } = await supabase
+      .from('cc_project_disciplines')
+      .select('discipline_id')
+      .eq('project_id', parsed.data.cc_project_id)
+      .in('discipline_id', neededDiscIds)
+    const haveDisc = new Set((existingDisc ?? []).map(d => d.discipline_id as string))
+    const missingDisc = neededDiscIds.filter(id => !haveDisc.has(id))
+    if (missingDisc.length > 0) {
+      await supabase.from('cc_project_disciplines').insert(
+        missingDisc.map(discipline_id => ({
+          project_id: parsed.data.cc_project_id,
+          discipline_id,
+          is_enabled: true,
+          enabled_by: me?.id ?? null,
+        })),
+      )
+    }
+  }
+  if (neededSubIds.length > 0) {
+    const { data: existingSub } = await supabase
+      .from('cc_project_sub_skills')
+      .select('sub_skill_id')
+      .eq('project_id', parsed.data.cc_project_id)
+      .in('sub_skill_id', neededSubIds)
+    const haveSub = new Set((existingSub ?? []).map(s => s.sub_skill_id as string))
+    const missingSub = neededSubIds.filter(id => !haveSub.has(id))
+    if (missingSub.length > 0) {
+      await supabase.from('cc_project_sub_skills').insert(
+        missingSub.map(sub_skill_id => ({
+          project_id: parsed.data.cc_project_id,
+          sub_skill_id,
+          is_enabled: true,
+          enabled_by: me?.id ?? null,
+        })),
+      )
+    }
+  }
 
   for (const r of toImport) {
     const sub_skill_id = r.matched_sub_skill_id // may be null
+    if (sub_skill_id && r.matched_discipline_id) discWithSubLines.add(r.matched_discipline_id)
 
     // Look up existing budget line for this (project, discipline, sub_skill, line_type='work').
     // BPH doesn't split work/material so we pick a single canonical bucket: 'work'.
@@ -264,10 +344,24 @@ export async function commitBphImport(input: z.infer<typeof commitSchema>): Prom
     }
   }
 
+  // Remove now-redundant discipline-root summary lines for disciplines
+  // that got sub-skill detail in this import. (Cleans up the stale lines
+  // written by the earlier version that only read data.rows.) Only the
+  // root line — sub_skill_id IS NULL — is deleted; the sub-skill lines we
+  // just wrote replace it.
+  for (const discId of discWithSubLines) {
+    await supabase
+      .from('cc_budget_lines')
+      .delete()
+      .eq('project_id', parsed.data.cc_project_id)
+      .eq('discipline_id', discId)
+      .eq('line_type', 'work')
+      .is('sub_skill_id', null)
+  }
+
   // Persist the BPH↔CT mapping so future BPH saves auto-pull. Upsert keyed
   // on bph_project_id (the BPH side); if the same BPH project is being
   // remapped to a different CT project (rare — usually a fix), update.
-  const me = await getMyUser()
   await supabase
     .from('cc_bph_project_links')
     .upsert({
