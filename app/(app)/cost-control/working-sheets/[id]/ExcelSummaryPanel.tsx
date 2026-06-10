@@ -199,30 +199,29 @@ export function ExcelSummaryPanel({
             </div>
           </div>
 
-          {/* Plain-language totals card. When the sheet has tax / freight /
-              discount rows, we show the breakdown so the reconciliation is
-              obvious. Otherwise the simpler 4-tile layout. */}
+          {/* ONE number that matters: the sheet's own grand total — the
+              figure that gets approved. Everything else (the AI's row-by-row
+              reading, the material/labour split) is secondary insight and is
+              NOT expected to equal this, because Excel sheets compute GST /
+              contingency on a sub-total and often carry Supply / Installation
+              in separate columns the AI flattens into one. We used to show a
+              competing "reconciled total" + a mismatch % warning here — that
+              was the source of the "three different numbers" confusion. Gone. */}
           {(() => {
-            const stated  = summaryTotal ?? 0
-            const fromRows = totalFromRows
             const hasExtras = buckets.tax.count + buckets.addon.count + buckets.discount.count > 0
-            const diff = fromRows - stated
-            const pct = stated > 0 ? Math.abs(diff / stated) * 100 : 0
-            const mismatch = stated > 0 && pct > 1
             return (
               <>
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mt-4 text-sm">
                   <Cell
-                    label="Sheet total (used for approval)"
+                    accent
+                    label="Sheet total"
                     value={summaryTotal != null ? formatINR(summaryTotal) : '—'}
-                    hint="Your Excel's own grand total — this is the figure approved"
+                    hint="Your Excel's own grand total — this is the figure that gets approved"
                   />
                   <Cell
-                    label={hasExtras ? "AI's read: items+tax" : "AI's read of lines"}
-                    value={formatINR(fromRows)}
-                    hint={hasExtras
-                      ? `AI cross-check: ${buckets.line.count} items + ${buckets.tax.count} tax + ${buckets.addon.count} add-on${buckets.discount.count > 0 ? ` − ${buckets.discount.count} discount` : ''}`
-                      : `AI cross-check of ${rows.length} line item${rows.length === 1 ? '' : 's'}`}
+                    label="Line items"
+                    value={rows.length}
+                    hint="Rows read from your sheet"
                   />
                   <Cell
                     label="Items to check"
@@ -236,40 +235,37 @@ export function ExcelSummaryPanel({
                   />
                 </div>
 
-                {/* Breakdown of how the recon total is built — only shown
-                    when extras exist. Reads like an invoice footer. */}
-                {hasExtras && (
-                  <div className="mt-3 rounded-lg border border-gray-200 bg-gray-50/60 px-3 py-2 text-xs">
-                    <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-500 mb-1.5">How the total reconciles</p>
-                    <div className="space-y-0.5 font-mono text-gray-700">
-                      <Line label={`Line items (${buckets.line.count})`} amt={buckets.line.total} />
-                      {buckets.addon.count > 0 && <Line label={`Add-ons (${buckets.addon.count}) — freight, P&F, etc.`} amt={buckets.addon.total} prefix="+" />}
-                      {buckets.tax.count > 0 && <Line label={`Tax (${buckets.tax.count}) — GST / cess / etc.`} amt={buckets.tax.total} prefix="+" />}
-                      {buckets.discount.count > 0 && <Line label={`Discounts (${buckets.discount.count})`} amt={Math.abs(buckets.discount.total)} prefix="−" />}
-                      <div className="border-t border-gray-300 pt-1 mt-1 flex justify-between font-semibold text-gray-900">
-                        <span>Reconciled total</span>
-                        <span>{formatINR(fromRows)}</span>
-                      </div>
-                    </div>
-                  </div>
+                {/* Restate the one authoritative number in plain words. */}
+                {summaryTotal != null && (
+                  <p className="mt-3 text-xs text-gray-600">
+                    <b className="text-emerald-800">{formatINR(summaryTotal)}</b> is the approved figure for this sheet — taken straight from your Excel&apos;s grand total. The breakdown below is only the AI helping you sanity-check it.
+                  </p>
                 )}
 
-                {mismatch && (
-                  <div className="mt-3 inline-flex items-start gap-2 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-xs text-blue-900">
-                    <AlertTriangle className="h-3.5 w-3.5 mt-0.5 flex-shrink-0" />
-                    <div>
-                      <p className="font-semibold">
-                        Heads-up: AI&apos;s line reading is {pct.toFixed(1)}% off the sheet total — that&apos;s fine.
-                      </p>
-                      <p className="opacity-80">
-                        <b>{formatINR(stated)}</b> (your sheet&apos;s grand total) is what gets approved.
-                        The AI summed <b>{formatINR(fromRows)}</b> from the rows — gaps like this happen when a
-                        sheet has Supply / Installation split columns or computes GST &amp; contingency on a
-                        different base. The breakdown below is just AI insight; <b>your grand total is the number that counts.</b>
-                        {' '}Run AI parse to tighten the breakdown if you like.
-                      </p>
+                {/* AI's reading of the composition — collapsed by default,
+                    clearly labelled as a cross-check that won't always tie to
+                    the grand total. No alarm, no competing headline number. */}
+                {hasExtras && (
+                  <details className="mt-3 rounded-lg border border-gray-200 bg-gray-50/60 px-3 py-2 text-xs">
+                    <summary className="cursor-pointer select-none text-[11px] font-semibold text-gray-600">
+                      What the AI sees inside this sheet (for review — won&apos;t always equal the sheet total)
+                    </summary>
+                    <div className="mt-2 space-y-0.5 font-mono text-gray-700">
+                      <Line label={`Line items (${buckets.line.count})`} amt={buckets.line.total} />
+                      {buckets.addon.count > 0 && <Line label={`Add-ons (${buckets.addon.count}) — freight, P&F, contingency`} amt={buckets.addon.total} prefix="+" />}
+                      {buckets.tax.count > 0 && <Line label={`Tax (${buckets.tax.count}) — GST / cess`} amt={buckets.tax.total} prefix="+" />}
+                      {buckets.discount.count > 0 && <Line label={`Discounts (${buckets.discount.count})`} amt={Math.abs(buckets.discount.total)} prefix="−" />}
+                      <div className="mt-1 flex justify-between border-t border-gray-300 pt-1 text-gray-500">
+                        <span>AI adds the rows to</span>
+                        <span className="tabular-nums">{formatINR(totalFromRows)}</span>
+                      </div>
                     </div>
-                  </div>
+                    <p className="mt-2 text-[10px] leading-relaxed text-gray-500">
+                      A small gap from the sheet total above is normal — it happens when a sheet has Supply / Installation
+                      split columns or computes GST &amp; contingency on a sub-total. The <b>sheet total</b> is always the
+                      number that counts.
+                    </p>
+                  </details>
                 )}
               </>
             )
@@ -432,12 +428,14 @@ function Line({ label, amt, prefix = '' }: { label: string; amt: number; prefix?
   )
 }
 
-function Cell({ label, value, hint }: { label: string; value: string | number | null | undefined; hint?: string }) {
+function Cell({ label, value, hint, accent }: { label: string; value: string | number | null | undefined; hint?: string; accent?: boolean }) {
   return (
-    <div className="rounded-xl border border-gray-200 bg-white p-3" title={hint}>
-      <p className="text-[11px] uppercase tracking-wide text-gray-500">{label}</p>
-      <p className="text-base font-semibold text-gray-900 mt-0.5">{value ?? '—'}</p>
-      {hint && <p className="text-[10px] text-gray-400 mt-0.5 leading-tight">{hint}</p>}
+    <div className={accent
+      ? 'rounded-xl border-2 border-emerald-300 bg-emerald-50/60 p-3 ring-1 ring-emerald-200'
+      : 'rounded-xl border border-gray-200 bg-white p-3'} title={hint}>
+      <p className={accent ? 'text-[11px] uppercase tracking-wide font-semibold text-emerald-700' : 'text-[11px] uppercase tracking-wide text-gray-500'}>{label}</p>
+      <p className={accent ? 'text-xl font-bold text-emerald-900 mt-0.5 tabular-nums' : 'text-base font-semibold text-gray-900 mt-0.5'}>{value ?? '—'}</p>
+      {hint && <p className={accent ? 'text-[10px] text-emerald-700/70 mt-0.5 leading-tight' : 'text-[10px] text-gray-400 mt-0.5 leading-tight'}>{hint}</p>}
     </div>
   )
 }

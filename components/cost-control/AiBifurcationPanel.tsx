@@ -134,11 +134,19 @@ export function AiBifurcationPanel({
       {error && <p className="text-xs text-rose-700">{error}</p>}
       {aiParseMeta.text && <p className="text-xs text-violet-900/90 whitespace-pre-line">{aiParseMeta.text}</p>}
 
+      <p className="text-[11px] text-violet-800/80 -mt-1">
+        How the <b>work cost</b> splits into material vs labour. GST, freight &amp; contingency are <b>extra</b> — they sit in the sheet total, so this adds up to less than it on purpose.
+      </p>
+
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
         <BifurcationCard label="Material" amount={material} pct={total > 0 ? Math.round(material / total * 100) : 0} tone="blue" />
         <BifurcationCard label="Labour" amount={labour} pct={total > 0 ? Math.round(labour / total * 100) : 0} tone="green" />
         <BifurcationCard label="Equipment" amount={equipment} pct={total > 0 ? Math.round(equipment / total * 100) : 0} tone="amber" />
       </div>
+
+      <p className="text-[11px] text-violet-900/80 pt-0.5">
+        Work value (material + labour + equipment): <b className="tabular-nums">{formatINR(total)}</b>
+      </p>
 
       {(subSuggestions > 0 || rateConcerns > 0) && (
         <div className="flex flex-wrap items-center gap-3 text-[11px] pt-1 border-t border-violet-100">
@@ -178,7 +186,7 @@ function BifurcationCard({ label, amount, pct, tone }: { label: string; amount: 
       <div className="mt-1 h-1.5 w-full bg-gray-100 rounded-full overflow-hidden">
         <div className={`h-full ${barMap[tone]} transition-all`} style={{ width: `${pct}%` }} />
       </div>
-      <p className="text-[10px] mt-0.5 opacity-70">{pct}% of total</p>
+      <p className="text-[10px] mt-0.5 opacity-70">{pct}% of work</p>
     </div>
   )
 }
