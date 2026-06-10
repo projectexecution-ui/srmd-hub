@@ -10,7 +10,7 @@ export const dynamic = 'force-dynamic'
 export default async function NewWSThumbrulePage({
   searchParams,
 }: {
-  searchParams: Promise<{ project?: string }>
+  searchParams: Promise<{ project?: string; discipline?: string; sub_skill?: string }>
 }) {
   await requirePermission('cost-control', 'edit')
   const sp = await searchParams
@@ -81,6 +81,8 @@ export default async function NewWSThumbrulePage({
           projectDisciplines={projectDisciplines}
           projectSubSkills={projectSubSkills}
           defaultProjectId={sp.project}
+          defaultDisciplineId={sp.discipline}
+          defaultSubSkillId={sp.sub_skill}
           canSetDeadline={await checkCanSetDeadline()}
         />
       </Card>

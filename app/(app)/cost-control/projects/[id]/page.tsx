@@ -570,14 +570,26 @@ export default async function CostControlProjectDetailPage(
                           </Td>
                           <Td>
                             <div className="inline-flex items-center gap-1">
-                              {canWrite && (
-                                <Link
-                                  href={`/cost-control/working-sheets/new?project=${project.id}`}
-                                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-semibold border border-blue-300 text-blue-700 hover:bg-blue-50"
-                                >
-                                  <Plus className="h-3 w-3" /> New WS
-                                </Link>
-                              )}
+                              {canWrite && (() => {
+                                // Route to the thumbrule form when this
+                                // sub-skill's effective mode is thumbrule
+                                // (own override, else inherited from the
+                                // discipline) — pre-filled with project +
+                                // discipline + sub-skill. Otherwise the
+                                // normal BOQ flow.
+                                const effMode = subMeta.get(s.id)?.mode ?? discMeta.get(d.id)?.mode ?? 'detailed'
+                                const href = effMode === 'thumbrule'
+                                  ? `/cost-control/working-sheets/new-thumbrule?project=${project.id}&discipline=${d.id}&sub_skill=${s.id}`
+                                  : `/cost-control/working-sheets/new?project=${project.id}`
+                                return (
+                                  <Link
+                                    href={href}
+                                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-semibold border border-blue-300 text-blue-700 hover:bg-blue-50"
+                                  >
+                                    <Plus className="h-3 w-3" /> New WS
+                                  </Link>
+                                )
+                              })()}
                               <DisableButton
                                 projectId={project.id}
                                 subSkillId={s.id}

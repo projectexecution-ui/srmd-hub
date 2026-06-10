@@ -18,6 +18,8 @@ interface Props {
   projectDisciplines: Array<{ project_id: string; discipline: DRow; rate_per_sft: number | null; notes: string | null }>
   projectSubSkills: Array<{ project_id: string; sub_skill: SRow }>
   defaultProjectId?: string
+  defaultDisciplineId?: string
+  defaultSubSkillId?: string
   canSetDeadline?: boolean
 }
 
@@ -26,12 +28,14 @@ function fmtINR(n: number): string {
 }
 
 export function NewWSThumbruleForm({
-  projects, projectDisciplines, projectSubSkills, defaultProjectId, canSetDeadline = false,
+  projects, projectDisciplines, projectSubSkills, defaultProjectId, defaultDisciplineId, defaultSubSkillId, canSetDeadline = false,
 }: Props) {
   const router = useRouter()
   const [projectId, setProjectId]     = useState(defaultProjectId ?? projects[0]?.id ?? '')
-  const [disciplineId, setDisciplineId] = useState('')
-  const [subSkillId, setSubSkillId]   = useState('')
+  // Pre-select discipline + sub-skill when arriving from a thumbrule
+  // sub-skill row's "New WS" link.
+  const [disciplineId, setDisciplineId] = useState(defaultDisciplineId ?? '')
+  const [subSkillId, setSubSkillId]   = useState(defaultSubSkillId ?? '')
   const [lineType, setLineType]       = useState<'work' | 'material'>('work')
   const [area, setArea]               = useState('')
   const [rate, setRate]               = useState('')
