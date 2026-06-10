@@ -5,7 +5,7 @@
 // branches (line-item / excel / thumbrule).
 
 import { createClient } from '@/lib/supabase/server'
-import { formatINR } from '@/lib/utils'
+import { formatINR, personName, formatDuration } from '@/lib/utils'
 import {
   FilePlus2, Send, CheckCircle2, RotateCcw, Wallet, Paperclip, CircleDot, Clock,
 } from 'lucide-react'
@@ -85,8 +85,8 @@ export async function ApprovalTimeline({ wsId }: { wsId: string }) {
   ].filter((x): x is string => !!x)))
   const nameById = new Map<string, string>()
   if (ids.length > 0) {
-    const { data: profs } = await supabase.from('profiles').select('id, full_name, name').in('id', ids)
-    for (const p of profs ?? []) nameById.set(p.id as string, (p.full_name ?? p.name ?? '—') as string)
+    const { data: profs } = await supabase.from('profiles').select('id, full_name, name, email').in('id', ids)
+    for (const p of profs ?? []) nameById.set(p.id as string, personName(p.full_name, p.name, p.email))
   }
 
   const items: TLItem[] = []
@@ -152,6 +152,9 @@ export async function ApprovalTimeline({ wsId }: { wsId: string }) {
           {items.map((it, i) => {
             const s = style[it.kind]
             const last = i === items.length - 1
+            // Time elapsed since the previous step — gives a feel for how
+            // long each stage of the cycle took.
+            const gap = i > 0 ? formatDuration(items[i - 1].ts, it.ts) : ''
             return (
               <li key={i} className="relative flex gap-3 pb-4 last:pb-0">
                 {/* connector line */}
@@ -167,7 +170,14 @@ export async function ApprovalTimeline({ wsId }: { wsId: string }) {
                     </p>
                     <time className="text-[11px] text-gray-400 whitespace-nowrap">{fmtWhen(it.ts)}</time>
                   </div>
-                  <p className="text-xs text-gray-500">{it.who ?? '—'}</p>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <p className="text-xs text-gray-500">{it.who ?? '—'}</p>
+                    {gap && i > 0 && (
+                      <span className="text-[10px] text-gray-400 bg-gray-100 rounded-full px-1.5 py-0.5" title="Time since the previous step">
+                        +{gap} after previous
+                      </span>
+                    )}
+                  </div>
                   {it.comment && (
                     <p className="mt-1 text-xs text-gray-700 bg-gray-50 border border-gray-100 rounded px-2 py-1 whitespace-pre-line">“{it.comment}”</p>
                   )}

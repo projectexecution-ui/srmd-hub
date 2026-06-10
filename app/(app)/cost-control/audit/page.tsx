@@ -4,7 +4,7 @@ import { requirePermission } from '@/lib/auth'
 import { PageHeader } from '@/components/PageHeader'
 import { Card } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
-import { formatINR } from '@/lib/utils'
+import { formatINR, personName } from '@/lib/utils'
 import { ClipboardList, FilePen, FileSpreadsheet, IndianRupee, CheckCircle2 } from 'lucide-react'
 
 export const dynamic = 'force-dynamic'
@@ -41,7 +41,7 @@ export default async function AuditLogPage({
     .select(
       `id, field_name, old_value, new_value, reason, edited_at, edited_by,
        working_sheet_id, cc_working_sheets(ws_code, project_id, projects(code, name)),
-       profiles:edited_by(full_name, email)`,
+       profiles:edited_by(full_name, name, email)`,
     )
     .order('edited_at', { ascending: false })
     .limit(200)
@@ -52,7 +52,7 @@ export default async function AuditLogPage({
       `id, event_type, delta_amount, remarks, event_date, project_id,
        requested_by, approved_by,
        projects(code, name),
-       requested:profiles!cc_budget_events_requested_by_fkey(full_name, email)`,
+       requested:profiles!cc_budget_events_requested_by_fkey(full_name, name, email)`,
     )
     .order('event_date', { ascending: false })
     .limit(200)
@@ -62,7 +62,7 @@ export default async function AuditLogPage({
     .select(
       `id, filename, lines_imported, lines_skipped, created_at, project_id,
        imported_by, projects(code, name),
-       imported:profiles!cc_excel_imports_imported_by_fkey(full_name, email)`,
+       imported:profiles!cc_excel_imports_imported_by_fkey(full_name, name, email)`,
     )
     .order('created_at', { ascending: false })
     .limit(50)
@@ -92,12 +92,12 @@ export default async function AuditLogPage({
       ? supabase.from('cc_working_sheets').select('id, ws_code, project_id, projects(code, name)').in('id', apprWsIds)
       : Promise.resolve({ data: [] as unknown[] }),
     apprActorIds.length > 0
-      ? supabase.from('profiles').select('id, full_name, email').in('id', apprActorIds)
+      ? supabase.from('profiles').select('id, full_name, name, email').in('id', apprActorIds)
       : Promise.resolve({ data: [] as unknown[] }),
   ])
   type ApprWsRow = { id: string; ws_code: string; project_id: string; projects: { code: string; name: string } | { code: string; name: string }[] | null }
   const apprWsById = new Map((apprWs as ApprWsRow[] ?? []).map(w => [w.id, w]))
-  const apprActorById = new Map((apprActors as { id: string; full_name: string | null; email: string }[] ?? []).map(p => [p.id, p.full_name || p.email || null]))
+  const apprActorById = new Map((apprActors as { id: string; full_name: string | null; name: string | null; email: string }[] ?? []).map(p => [p.id, personName(p.full_name, p.name, p.email)]))
 
   type WSEditRow = {
     id: string
@@ -111,7 +111,7 @@ export default async function AuditLogPage({
       | { ws_code: string; project_id: string; projects: { code: string; name: string } | { code: string; name: string }[] | null }
       | { ws_code: string; project_id: string; projects: { code: string; name: string } | { code: string; name: string }[] | null }[]
       | null
-    profiles: { full_name: string | null; email: string } | { full_name: string | null; email: string }[] | null
+    profiles: { full_name: string | null; name: string | null; email: string } | { full_name: string | null; name: string | null; email: string }[] | null
   }
 
   function pickFirst<T>(v: T | T[] | null | undefined): T | null {
@@ -150,7 +150,7 @@ export default async function AuditLogPage({
       id: `wse-${e.id}`,
       ts: e.edited_at,
       kind: 'ws_edit',
-      who: who?.full_name || who?.email || null,
+      who: who ? personName(who.full_name, who.name, who.email) : null,
       project_code: proj?.code ?? null,
       project_id: ws?.project_id ?? null,
       ws_code: ws?.ws_code ?? null,
@@ -168,7 +168,7 @@ export default async function AuditLogPage({
     event_date: string
     project_id: string
     projects: { code: string; name: string } | { code: string; name: string }[] | null
-    requested: { full_name: string | null; email: string } | { full_name: string | null; email: string }[] | null
+    requested: { full_name: string | null; name: string | null; email: string } | { full_name: string | null; name: string | null; email: string }[] | null
   }
 
   for (const e of (budgetEventsR.data ?? []) as unknown as BudgetEventRow[]) {
@@ -180,7 +180,7 @@ export default async function AuditLogPage({
       id: `be-${e.id}`,
       ts: e.event_date,
       kind: 'budget_event',
-      who: who?.full_name || who?.email || null,
+      who: who ? personName(who.full_name, who.name, who.email) : null,
       project_code: proj?.code ?? null,
       project_id: e.project_id,
       ws_code: null,
@@ -198,7 +198,7 @@ export default async function AuditLogPage({
     created_at: string
     project_id: string | null
     projects: { code: string; name: string } | { code: string; name: string }[] | null
-    imported: { full_name: string | null; email: string } | { full_name: string | null; email: string }[] | null
+    imported: { full_name: string | null; name: string | null; email: string } | { full_name: string | null; name: string | null; email: string }[] | null
   }
 
   for (const e of (importsR.data ?? []) as unknown as ImportRow[]) {
@@ -210,7 +210,7 @@ export default async function AuditLogPage({
       id: `ei-${e.id}`,
       ts: e.created_at,
       kind: 'excel_import',
-      who: who?.full_name || who?.email || null,
+      who: who ? personName(who.full_name, who.name, who.email) : null,
       project_code: proj?.code ?? null,
       project_id: e.project_id,
       ws_code: null,

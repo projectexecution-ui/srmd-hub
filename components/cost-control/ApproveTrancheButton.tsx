@@ -140,13 +140,18 @@ export function ApproveTrancheButton({
     const r = await approveWorkingSheet(wsId, trancheArg)
     if (!r.ok) { setErr(r.error ?? 'Approve failed'); setBusy(false); return }
 
+    // Log the ACTUAL resulting stage, not a hardcoded one — so a release
+    // that fully completes the sheet is recorded as 'approved' (and the
+    // audit trail reads "Fully approved"), while a true partial stays
+    // 'partially_approved'.
+    const actualToStage = r.new_status ?? TO_STAGE
     const { error: recErr } = await supabase.rpc('record_approval_event', {
       p_module_slug: MODULE_SLUG,
       p_doc_type:    DOC_TYPE,
       p_doc_table:   DOC_TABLE,
       p_doc_id:      wsId,
       p_from_stage:  FROM_STAGE,
-      p_to_stage:    TO_STAGE,
+      p_to_stage:    actualToStage,
       p_decision:    'approved',
       p_comment:     comment.trim() || null,
       p_attachments: attachments,

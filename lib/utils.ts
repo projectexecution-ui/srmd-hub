@@ -69,3 +69,33 @@ export function indentStageLabel(stage: string): string {
 export function todayISO(): string {
   return new Date().toISOString().slice(0, 10)
 }
+
+/** Best display name for a person. Profiles in this DB sometimes have
+ *  full_name auto-set to the email local-part (e.g. "projectexecution")
+ *  while the real name lives in `name` ("Akshay"). Prefer whichever value
+ *  is NOT just the email prefix. Falls back to the email local-part. */
+export function personName(
+  full_name: string | null | undefined,
+  name: string | null | undefined,
+  email: string | null | undefined,
+): string {
+  const local = email ? email.split('@')[0].trim().toLowerCase() : ''
+  const candidates = [full_name, name].map(s => (s ?? '').trim()).filter(Boolean)
+  const real = candidates.find(c => c.toLowerCase() !== local)
+  return real ?? candidates[0] ?? (email ? email.split('@')[0] : '—')
+}
+
+/** Human-friendly elapsed time between two instants, e.g. "2d 3h", "7h 43m",
+ *  "12m", "<1m". Used for "time taken" between audit-trail steps. */
+export function formatDuration(fromISO: string, toISO: string): string {
+  const ms = new Date(toISO).getTime() - new Date(fromISO).getTime()
+  if (!Number.isFinite(ms) || ms < 0) return ''
+  const mins = Math.floor(ms / 60000)
+  if (mins < 1) return '<1m'
+  const d = Math.floor(mins / 1440)
+  const h = Math.floor((mins % 1440) / 60)
+  const m = mins % 60
+  if (d > 0) return `${d}d ${h}h`
+  if (h > 0) return `${h}h ${m}m`
+  return `${m}m`
+}
