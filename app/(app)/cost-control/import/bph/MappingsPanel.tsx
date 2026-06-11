@@ -44,7 +44,9 @@ function MappingItem({ m }: { m: MappingRow }) {
   function syncNow() {
     setMsg(null)
     startTransition(async () => {
-      const res = await commitBphImport({ bph_project_id: m.bph_project_id, cc_project_id: m.cc_project_id })
+      // useAi:false — this button has no preview step, so AI must never
+      // guess a mapping here; only exact/normalised code matches land.
+      const res = await commitBphImport({ bph_project_id: m.bph_project_id, cc_project_id: m.cc_project_id }, { useAi: false })
       if (!res.ok) { setMsg({ ok: false, text: res.error }); return }
       setMsg({ ok: true, text: `${res.inserted} new · ${res.updated} updated${res.skipped ? ` · ${res.skipped} skipped` : ''}` })
       router.refresh()

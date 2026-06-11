@@ -66,10 +66,31 @@ export function BphImportClient({
     if (!preview || !bphId || !ccId) return
     setErr(null)
     startTransition(async () => {
+      // Send the exact previewed rows — commit writes these as-is (it never
+      // re-runs the matcher), so what you saw above is what lands.
       const res = await commitBphImport({
         bph_project_id: bphId,
         cc_project_id: ccId,
-        row_keys: Array.from(selected),
+        rows: preview.rows
+          .filter(r => r.importable && r.matched_discipline_id && selected.has(r.key))
+          .map(r => ({
+            key: r.key,
+            head: r.head,
+            discipline_id: r.matched_discipline_id!,
+            sub_skill_id: r.matched_sub_skill_id,
+            budget: r.budget,
+            woApproved: r.woApproved,
+            actual: r.actual,
+            will_enable_discipline: r.will_enable_discipline,
+            will_enable_sub_skill: r.will_enable_sub_skill,
+          })),
+        // ALL importable lines in the report, ticked or not — the server's
+        // stale-line detection compares against what's IN the report, so
+        // unticking a row never reads as "vanished from IN4".
+        present_lines: preview.rows
+          .filter(r => r.importable && r.matched_discipline_id)
+          .map(r => ({ discipline_id: r.matched_discipline_id!, sub_skill_id: r.matched_sub_skill_id })),
+        unmatched_count: preview.stats.unmatched_rows,
       })
       if (!res.ok) { setErr(res.error); return }
       setResult(res)

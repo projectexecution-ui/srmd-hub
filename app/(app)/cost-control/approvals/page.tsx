@@ -3,7 +3,8 @@ import { createClient } from '@/lib/supabase/server'
 import { requirePermission, getMyUser } from '@/lib/auth'
 import { PageHeader } from '@/components/PageHeader'
 import { Card } from '@/components/ui/card'
-import { WSStatusPill } from '@/components/cost-control/WSStatusPill'
+import { QueryError } from '@/components/ui/query-error'
+import { WSStatusPill, type WSStatus } from '@/components/cost-control/WSStatusPill'
 import { formatINR } from '@/lib/utils'
 import { Inbox, ArrowRight, ClipboardList, Ruler } from 'lucide-react'
 
@@ -18,6 +19,7 @@ interface WSRow {
   ws_code: string
   status: string
   total_amount: number
+  approved_for_erp_amt: number | null
   submitted_at: string | null
   engineer_id: string
   discipline_id: string
@@ -38,31 +40,51 @@ export default async function ApprovalsInboxPage() {
   const supabase = await createClient()
 
   // Disciplines the current user heads
-  const { data: myDisciplines } = await supabase
+  const { data: myDisciplines, error: discErr } = await supabase
     .from('cc_discipline_approvers')
     .select('discipline_id')
     .eq('approver_user_id', user?.id ?? '')
     .eq('is_active', true)
   const myDisciplineIds = (myDisciplines ?? []).map(d => d.discipline_id)
 
-  const { data: pendingWS } = await supabase
+  // partially_approved sheets stay in the inbox — they still need the
+  // remaining releases approved before they're done.
+  const { data: pendingWS, error: wsErr } = await supabase
     .from('cc_working_sheets')
     .select(
-      `id, ws_code, status, total_amount, submitted_at, engineer_id, discipline_id, project_id,
+      `id, ws_code, status, total_amount, approved_for_erp_amt, submitted_at, engineer_id, discipline_id, project_id,
        projects(code, name),
        cc_disciplines(code, name),
        cc_sub_skills(code, name)`,
     )
-    .eq('status', 'submitted')
+    .in('status', ['submitted', 'partially_approved'])
     .order('submitted_at', { ascending: true })
+
+  const queryErr = wsErr ?? discErr
+  if (queryErr) {
+    return (
+      <div className="p-4 md:p-6 max-w-6xl mx-auto space-y-4">
+        <PageHeader
+          title="Approvals"
+          subtitle="Working sheets waiting for a decision"
+          back="/cost-control"
+        />
+        <QueryError message={queryErr.message} what="the approvals inbox" />
+      </div>
+    )
+  }
 
   const rows = (pendingWS ?? []) as unknown as WSRow[]
 
   const mine = rows.filter(r => myDisciplineIds.includes(r.discipline_id))
   const others = rows.filter(r => !myDisciplineIds.includes(r.discipline_id))
 
-  // Total pending value (across all)
-  const totalPendingValue = rows.reduce((a, r) => a + Number(r.total_amount ?? 0), 0)
+  // Total pending value (across all) — for partially approved sheets only
+  // the unreleased remainder is still pending.
+  const totalPendingValue = rows.reduce(
+    (a, r) => a + Math.max(Number(r.total_amount ?? 0) - Number(r.approved_for_erp_amt ?? 0), 0),
+    0,
+  )
 
   return (
     <div className="p-4 md:p-6 max-w-6xl mx-auto space-y-4">
@@ -158,6 +180,9 @@ function ApprovalSection({
               const proj = pickFirst(ws.projects)
               const disc = pickFirst(ws.cc_disciplines)
               const sub = pickFirst(ws.cc_sub_skills)
+              const est = Number(ws.total_amount ?? 0)
+              const released = Number(ws.approved_for_erp_amt ?? 0)
+              const partial = ws.status === 'partially_approved' && released > 0
               return (
                 <tr key={ws.id} className="hover:bg-gray-50">
                   <td className="px-4 py-2.5 font-mono text-xs text-gray-700">
@@ -178,9 +203,14 @@ function ApprovalSection({
                   </td>
                   <td className="px-3 py-2.5 text-right font-semibold text-gray-900">
                     {formatINR(ws.total_amount)}
+                    {partial && (
+                      <div className="text-[11px] font-normal text-amber-700 whitespace-nowrap mt-0.5">
+                        {formatINR(released)} of {formatINR(est)} released — {formatINR(Math.max(est - released, 0))} remaining
+                      </div>
+                    )}
                   </td>
                   <td className="px-3 py-2.5">
-                    <WSStatusPill status={ws.status as 'submitted'} />
+                    <WSStatusPill status={ws.status as WSStatus} />
                   </td>
                   <td className="px-3 py-2.5 text-right">
                     <Link

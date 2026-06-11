@@ -6,6 +6,7 @@ import { PageHeader } from '@/components/PageHeader'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { EmptyState } from '@/components/ui/empty-state'
+import { QueryError } from '@/components/ui/query-error'
 import { WSStatusPill, type WSStatus } from '@/components/cost-control/WSStatusPill'
 import { DeadlineBadge } from '@/components/cost-control/DeadlineBadge'
 import { FileText, Plus, FileSpreadsheet, Ruler, GitBranch } from 'lucide-react'
@@ -42,7 +43,7 @@ const STATUS_GROUP_TITLES: Record<WSStatus, string> = {
 export default async function WorkingSheetsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ project?: string; status?: string; engineer?: string; discipline?: string; sub_skill?: string }>
+  searchParams: Promise<{ project?: string; status?: string; engineer?: string; discipline?: string; sub_skill?: string; auto?: string; dl?: string }>
 }) {
   const perms = await requirePermission('cost-control', 'view')
   const canWrite = can(perms, 'cost-control', 'edit')
@@ -79,7 +80,8 @@ export default async function WorkingSheetsPage({
       }
     }
     if (recentProjectId) {
-      redirect(`/cost-control/working-sheets?project=${recentProjectId}`)
+      // auto=1 lets the destination explain the silent project pick.
+      redirect(`/cost-control/working-sheets?project=${recentProjectId}&auto=1`)
     }
     // No WSes exist anywhere → fall through and show empty state
   }
@@ -126,7 +128,8 @@ export default async function WorkingSheetsPage({
     cc_disciplines: { code: string; name: string } | { code: string; name: string }[] | null
     cc_sub_skills: { code: string; name: string } | { code: string; name: string }[] | null
   }
-  const rows = (wsRes.data ?? []) as WSRow[]
+  const { data: wsData, error: wsError } = wsRes
+  const rows = (wsData ?? []) as WSRow[]
   const projects = projectsRes.data ?? []
   type ProfileLite = { id: string; full_name: string | null; name: string | null }
   const profiles = (profilesRes.data ?? []) as ProfileLite[]
@@ -200,6 +203,18 @@ export default async function WorkingSheetsPage({
     return '?' + entries.map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v as string)}`).join('&')
   }
 
+  // Real filters only — keeps one-shot flags (auto, dl) out of the links the
+  // filter chips and forms build, so notes/banners don't follow the user around.
+  const filterParams = {
+    project: sp.project,
+    status: sp.status,
+    engineer: sp.engineer,
+    discipline: sp.discipline,
+    sub_skill: sp.sub_skill,
+  }
+  const autoPickedProject =
+    sp.auto === '1' && sp.project ? projects.find(p => p.id === sp.project) ?? null : null
+
   return (
     <div className="p-4 md:p-6 max-w-7xl mx-auto">
       <PageHeader
@@ -228,11 +243,26 @@ export default async function WorkingSheetsPage({
         )}
       </PageHeader>
 
+      {sp.dl === 'failed' && (
+        <div className="mb-4 flex items-start justify-between gap-3 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2.5">
+          <p className="text-sm text-amber-900">
+            Couldn&apos;t prepare the Excel download — the file may have been moved. Open the
+            sheet and try again, or re-upload the Excel.
+          </p>
+          <Link
+            href={`/cost-control/working-sheets${buildQuery({ ...filterParams, auto: sp.auto })}`}
+            className="text-xs font-semibold text-amber-800 hover:text-amber-950 whitespace-nowrap underline-offset-2 hover:underline"
+          >
+            Dismiss
+          </Link>
+        </div>
+      )}
+
       <div className="flex flex-wrap gap-2 mb-4 items-center">
         {STATUS_FILTERS.map(opt => (
           <Link
             key={opt.value || 'all'}
-            href={`/cost-control/working-sheets${buildQuery({ ...sp, status: opt.value || undefined })}`}
+            href={`/cost-control/working-sheets${buildQuery({ ...filterParams, status: opt.value || undefined })}`}
             className={
               'inline-flex items-center px-3 h-8 rounded-full text-xs font-semibold transition-colors ' +
               ((sp.status ?? '') === opt.value ? 'bg-blue-600 text-white' : 'bg-white border border-gray-300 text-gray-600 hover:bg-gray-50')
@@ -298,6 +328,13 @@ export default async function WorkingSheetsPage({
         </div>
       )}
 
+      {autoPickedProject && (
+        <p className="mb-3 text-xs text-gray-500">
+          Showing <span className="font-semibold text-gray-700">{autoPickedProject.name}</span> — your
+          most recent project. Pick another from the project filter.
+        </p>
+      )}
+
       {/* KPI strip — running roll-up across the filtered set */}
       {rows.length > 0 && (
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
@@ -308,12 +345,35 @@ export default async function WorkingSheetsPage({
         </div>
       )}
 
-      {rows.length === 0 ? (
+      {wsError ? (
+        <QueryError message={wsError.message} what="working sheets" />
+      ) : rows.length === 0 ? (
         <Card>
           <EmptyState
             icon={<FileText className="h-10 w-10" />}
             title="No Working Sheets match these filters"
-            description="Create the first one with the button at the top right."
+            description={
+              canWrite
+                ? 'Clear the filters to see every sheet, or create a new one right here.'
+                : 'Clear the filters to see every sheet.'
+            }
+            action={
+              <div className="flex flex-wrap items-center justify-center gap-3">
+                <Link
+                  href={`/cost-control/working-sheets${buildQuery({ project: sp.project })}`}
+                  className="text-sm font-semibold text-blue-700 hover:underline"
+                >
+                  Clear filters
+                </Link>
+                {canWrite && (
+                  <Button asChild size="sm">
+                    <Link href="/cost-control/working-sheets/new">
+                      <Plus className="h-4 w-4" /> New Working Sheet
+                    </Link>
+                  </Button>
+                )}
+              </div>
+            }
           />
         </Card>
       ) : scoped ? (

@@ -15,6 +15,7 @@ import { WSEditor } from './WSEditor'
 import { ExcelSummaryPanel } from './ExcelSummaryPanel'
 import { SourceExcelViewer } from './SourceExcelViewer'
 import { EditDeadlineButton } from './EditDeadlineButton'
+import { QueryError } from '@/components/ui/query-error'
 import { formatINR } from '@/lib/utils'
 
 export const dynamic = 'force-dynamic'
@@ -43,12 +44,21 @@ export default async function WorkingSheetEditorPage(
   ])
   const canApprove = mayApprove || mayReturn
 
-  const { data: ws } = await supabase
+  const { data: ws, error: wsErr } = await supabase
     .from('cc_ws_with_versions')
     .select('id, ws_code, status, total_amount, approved_for_erp_amt, past_approved_in_subskill, return_reason, engineer_id, project_id, discipline_id, sub_skill_id, line_type, entry_mode, source_excel_url, source_excel_name, summary_total, summary_notes, flag_summary, ai_parse_meta, last_checked_at, deadline_date, deadline_notes, break_chain, chain_anchor_id, version_no, chain_size, created_at, projects(code, name), cc_disciplines(code, name), cc_sub_skills(code, name)')
     .eq('id', id)
     .single()
 
+  // PGRST116 = .single() found no row → a genuine 404. Anything else is a
+  // transient query failure and must NOT render the not-found page.
+  if (wsErr && wsErr.code !== 'PGRST116') {
+    return (
+      <div className="p-4 md:p-6 max-w-6xl mx-auto">
+        <QueryError message={wsErr.message} what="this Working Sheet" />
+      </div>
+    )
+  }
   if (!ws) notFound()
 
   // Sibling versions in the same chain — drives the prev/next nav.
@@ -418,6 +428,11 @@ export default async function WorkingSheetEditorPage(
         )}
       </Card>
 
+      {/* A failed items query must not render the editor's "No items yet"
+          empty state — someone would re-type rows that already exist. */}
+      {itemsRes.error ? (
+        <QueryError message={itemsRes.error.message} what="the items on this sheet" />
+      ) : (
       <WSEditor
         wsId={ws.id}
         status={status}
@@ -446,6 +461,7 @@ export default async function WorkingSheetEditorPage(
         })}
         wsTotal={ws.total_amount ?? 0}
       />
+      )}
 
       <ApprovalTimeline wsId={ws.id} />
     </div>

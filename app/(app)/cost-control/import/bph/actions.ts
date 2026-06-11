@@ -16,15 +16,52 @@ import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
 import { requirePermission, getMyUser, getMyPermissions, can } from '@/lib/auth'
 import { generateJSON, hasAiProvider } from '@/lib/ai'
+import { formatINR } from '@/lib/utils'
 
 const previewSchema = z.object({
   bph_project_id: z.string(),
   cc_project_id: z.string().uuid(),
 })
 
-const commitSchema = previewSchema.extend({
-  row_keys: z.array(z.string()).optional(), // when provided, only commit these rows; otherwise commit all matched
+// A row exactly as the client previewed it. Commit writes THESE — it never
+// re-runs the matcher, so what the PM previewed is what lands. (head is
+// carried along for notes / audit remarks.)
+const commitRowSchema = z.object({
+  key: z.string(),
+  head: z.string(),
+  discipline_id: z.string().uuid(),
+  sub_skill_id: z.string().uuid().nullable(),
+  budget: z.number().finite(),
+  woApproved: z.number().finite(),
+  actual: z.number().finite(),
+  will_enable_discipline: z.boolean(),
+  will_enable_sub_skill: z.boolean(),
 })
+
+const commitSchema = previewSchema.extend({
+  // When provided (the interactive import screen), commit these exact
+  // previewed rows. When absent (auto-pull / Sync now / project re-sync),
+  // a fresh code-match runs server-side.
+  rows: z.array(commitRowSchema).optional(),
+  // ALL importable lines the preview saw in the report — ticked or not.
+  // Stale-line zeroing must compare against what's IN THE REPORT, not what
+  // the PM selected; otherwise unticking a row zeroes a live budget line.
+  present_lines: z.array(z.object({
+    discipline_id: z.string().uuid(),
+    sub_skill_id: z.string().uuid().nullable(),
+  })).optional(),
+  // Money-carrying rows the preview could NOT place. When > 0 we skip
+  // stale-line zeroing for safety — one of them could be a previously
+  // pulled line whose code mapping broke.
+  unmatched_count: z.number().int().min(0).optional(),
+})
+
+type CommitRow = z.infer<typeof commitRowSchema>
+
+// Stable identity of a budget line within a project for last_pull tracking.
+function lineKey(discipline_id: string, sub_skill_id: string | null): string {
+  return `${discipline_id}::${sub_skill_id ?? ''}`
+}
 
 // ─── Read-only listing of BPH projects ────────────────────────────────
 interface BphRow {
@@ -75,11 +112,13 @@ function normCode(s: string | number | null | undefined): string {
 function bphSourceRows(bph: BphProject): BphRow[] {
   const subRows = bph.data?.subRows ?? []
   const catRows = bph.data?.rows ?? []
-  const catsWithSub = new Set(
-    subRows.map(r => (r.catNum == null ? '' : String(r.catNum).trim())).filter(Boolean),
-  )
+  // Compare NORMALISED cat codes on both sides — sheets pad inconsistently
+  // ('001' on the cat rollup vs '01' on its sub rows), and a raw-string
+  // comparison let both through, double-counting that discipline in the
+  // preview total.
+  const catsWithSub = new Set(subRows.map(r => normCode(r.catNum)).filter(Boolean))
   const catOnly = catRows.filter(c => {
-    const cat = c.catNum == null ? '' : String(c.catNum).trim()
+    const cat = normCode(c.catNum)
     return cat && !catsWithSub.has(cat)
   })
   return [...subRows, ...catOnly]
@@ -170,7 +209,12 @@ export async function listBphProjects(): Promise<{ ok: true; projects: BphProjec
   return { ok: true, projects }
 }
 
-export async function previewBphImport(input: z.infer<typeof previewSchema>): Promise<BphPreview> {
+export async function previewBphImport(
+  input: z.infer<typeof previewSchema>,
+  // useAi:false = code matches only. The unsupervised auto-pull uses it so
+  // AI never guesses a mapping without a human looking at the preview.
+  opts?: { useAi?: boolean },
+): Promise<BphPreview> {
   await requirePermission('cost-control', 'edit')
   const parsed = previewSchema.safeParse(input)
   if (!parsed.success) return { ok: false, error: 'Invalid input' }
@@ -252,7 +296,7 @@ export async function previewBphImport(input: z.infer<typeof previewSchema>): Pr
   // Only AI-match rows that have data but no code match — no point
   // resolving a zero-everywhere row.
   const unmatched = matched.filter(m => !m.importable && m.has_data && m.head?.trim())
-  if (unmatched.length > 0 && hasAiProvider()) {
+  if (unmatched.length > 0 && (opts?.useAi ?? true) && hasAiProvider()) {
     try {
       const catalogue = {
         disciplines: (disciplines ?? []).map(d => ({ id: d.id, code: d.code, name: d.name })),
@@ -317,24 +361,148 @@ export interface CommitOutcome {
   errors: string[]
 }
 
-export async function commitBphImport(input: z.infer<typeof commitSchema>): Promise<CommitOutcome | { ok: false; error: string }> {
+export async function commitBphImport(
+  input: z.infer<typeof commitSchema>,
+  opts?: { useAi?: boolean },
+): Promise<CommitOutcome | { ok: false; error: string }> {
   await requirePermission('cost-control', 'edit')
   const parsed = commitSchema.safeParse(input)
   if (!parsed.success) return { ok: false, error: 'Invalid input' }
 
-  const preview = await previewBphImport({
-    bph_project_id: parsed.data.bph_project_id,
-    cc_project_id: parsed.data.cc_project_id,
-  })
-  if (!preview.ok) return preview
-
-  const wanted = parsed.data.row_keys ? new Set(parsed.data.row_keys) : null
-  const toImport = preview.rows.filter(r => r.importable && (!wanted || wanted.has(r.key)))
-
   const supabase = await createClient()
+
+  let toImport: CommitRow[]
+  // Money-carrying rows we couldn't place. Only known when WE run the match
+  // (the non-interactive paths); recorded in last_pull_result so the mapping
+  // screen can show how many rows still need manual mapping.
+  let unmatchedNames: string[] | null = null
+
+  if (parsed.data.rows) {
+    // Interactive commit: write EXACTLY the rows the PM previewed and kept
+    // ticked — never re-run the matcher (a re-run could land different rows
+    // than the ones shown). Validate the client-held ids + amounts against
+    // the masters first.
+    if (parsed.data.rows.length === 0) return { ok: false, error: 'No rows selected' }
+    const rowDiscIds = Array.from(new Set(parsed.data.rows.map(r => r.discipline_id)))
+    const rowSubIds  = Array.from(new Set(parsed.data.rows.map(r => r.sub_skill_id).filter((x): x is string => !!x)))
+    const { data: validDisc, error: discErr } = await supabase
+      .from('cc_disciplines')
+      .select('id')
+      .eq('is_archived', false)
+      .in('id', rowDiscIds)
+    if (discErr) return { ok: false, error: discErr.message }
+    const validDiscIds = new Set((validDisc ?? []).map(d => d.id as string))
+    const subDiscById = new Map<string, string>()
+    if (rowSubIds.length > 0) {
+      const { data: validSub, error: subErr } = await supabase
+        .from('cc_sub_skills')
+        .select('id, discipline_id')
+        .eq('is_archived', false)
+        .in('id', rowSubIds)
+      if (subErr) return { ok: false, error: subErr.message }
+      for (const s of validSub ?? []) subDiscById.set(s.id as string, s.discipline_id as string)
+    }
+    for (const r of parsed.data.rows) {
+      if (!validDiscIds.has(r.discipline_id)) {
+        return { ok: false, error: `"${r.head}": its matched discipline no longer exists — please preview again` }
+      }
+      if (r.sub_skill_id && subDiscById.get(r.sub_skill_id) !== r.discipline_id) {
+        return { ok: false, error: `"${r.head}": its matched sub-skill doesn't sit under that discipline — please preview again` }
+      }
+    }
+    // The amounts must be the REPORT's amounts, not whatever the client
+    // posted — server actions are callable endpoints, and BPH figures are
+    // the ERP source of truth. Re-derive the source rows and verify each
+    // posted row by its preview key; any drift (tampering OR a report
+    // re-uploaded since the preview) rejects with a re-preview prompt.
+    const { data: stateRow, error: stateErr } = await supabase
+      .from('budget_hub_state')
+      .select('state')
+      .eq('id', 'global')
+      .single()
+    if (stateErr) return { ok: false, error: stateErr.message }
+    const bph = (((stateRow?.state ?? {}) as BphState).projects ?? []).find(p => p.id === parsed.data.bph_project_id)
+    if (!bph) return { ok: false, error: 'BPH project not found in /budget — please preview again' }
+    const srcByKey = new Map<string, BphRow>(bphSourceRows(bph).map((r, i) => {
+      const catNumStr = r.catNum == null ? '' : String(r.catNum).trim()
+      const subNumStr = r.subNum == null ? '' : String(r.subNum).trim()
+      return [`${i}-${catNumStr || 'x'}-${subNumStr || 'x'}`, r] as [string, BphRow]
+    }))
+    for (const r of parsed.data.rows) {
+      const src = srcByKey.get(r.key)
+      const drift = !src
+        || Math.abs((Number(src.budget) || 0) - r.budget) > 1
+        || Math.abs((Number(src.woApproved) || 0) - r.woApproved) > 1
+        || Math.abs((Number(src.actual) || 0) - r.actual) > 1
+      if (drift) {
+        return { ok: false, error: `"${r.head}": the BPH report has changed since this preview — please preview again` }
+      }
+    }
+    toImport = parsed.data.rows
+  } else {
+    // Non-interactive (auto-pull on /budget save, Sync now, project-page
+    // re-sync): run the matcher fresh. The unsupervised auto-pull passes
+    // useAi:false so it only ever writes exact/normalised code matches.
+    const preview = await previewBphImport(
+      { bph_project_id: parsed.data.bph_project_id, cc_project_id: parsed.data.cc_project_id },
+      { useAi: opts?.useAi ?? true },
+    )
+    if (!preview.ok) return preview
+    toImport = preview.rows
+      .filter(r => r.importable)
+      .map(r => ({
+        key: r.key,
+        head: r.head,
+        discipline_id: r.matched_discipline_id!,
+        sub_skill_id: r.matched_sub_skill_id,
+        budget: r.budget,
+        woApproved: r.woApproved,
+        actual: r.actual,
+        will_enable_discipline: r.will_enable_discipline,
+        will_enable_sub_skill: r.will_enable_sub_skill,
+      }))
+    unmatchedNames = preview.rows
+      .filter(r => r.has_data && !r.matched_discipline_id)
+      .map(r => r.head)
+  }
+
   const me = await getMyUser()
+
+  // Keys this pull carries (attempted, not just succeeded — a transient
+  // write error must not make the next pull think the line vanished and
+  // zero it). Compared against the PREVIOUS pull's keys to find lines that
+  // dropped out of the IN4 report.
+  const pulledKeys = toImport.map(r => lineKey(r.discipline_id, r.sub_skill_id))
+  // Keys PRESENT in the report this pull — the zeroing baseline. On the
+  // interactive path this is every importable preview row (ticked or not:
+  // unticking a row must never read as "vanished from IN4"); on the auto
+  // path importable == present. Zeroing is skipped entirely when the
+  // report still has unmatched money rows (one could be a previously
+  // pulled line whose mapping broke) or when an older client didn't send
+  // the present set.
+  const presentKeys: string[] | null = parsed.data.rows
+    ? (parsed.data.present_lines?.map(l => lineKey(l.discipline_id, l.sub_skill_id)) ?? null)
+    : pulledKeys
+  const unmatchedMoneyRows = parsed.data.rows
+    ? (parsed.data.unmatched_count ?? 0)
+    : (unmatchedNames?.length ?? 0)
+  const canZeroStale = presentKeys !== null && unmatchedMoneyRows === 0
+  // Read the previous pull's keys BEFORE we overwrite the link row. Guard on
+  // cc_project_id so a remapped link never zeroes lines in a different
+  // project.
+  const { data: prevLink, error: prevLinkErr } = await supabase
+    .from('cc_bph_project_links')
+    .select('cc_project_id, last_pull')
+    .eq('bph_project_id', parsed.data.bph_project_id)
+    .maybeSingle()
+  const prevKeys: string[] =
+    !prevLinkErr && prevLink && prevLink.cc_project_id === parsed.data.cc_project_id
+      ? ((prevLink.last_pull as { keys?: string[] } | null)?.keys ?? [])
+      : []
+
   let inserted = 0, updated = 0, skipped = 0
   const errors: string[] = []
+  if (prevLinkErr) errors.push(`Couldn't read the previous pull's bookkeeping — removed-line cleanup skipped this time (${prevLinkErr.message})`)
   // Disciplines that received a sub-skill line in this import — their old
   // discipline-root (sub_skill_id NULL) summary line, if any, is now
   // redundant and must be removed so it doesn't linger as stale data.
@@ -346,8 +514,8 @@ export async function commitBphImport(input: z.infer<typeof commitSchema>): Prom
   // on the detail page AND excluded from the discipline rollup (which only
   // sums ENABLED sub-skills). We only INSERT missing rows; we never touch
   // existing config (estimation_mode, thumbrule rate, etc.).
-  const neededDiscIds = Array.from(new Set(toImport.map(r => r.matched_discipline_id).filter((x): x is string => !!x)))
-  const neededSubIds  = Array.from(new Set(toImport.map(r => r.matched_sub_skill_id).filter((x): x is string => !!x)))
+  const neededDiscIds = Array.from(new Set(toImport.map(r => r.discipline_id)))
+  const neededSubIds  = Array.from(new Set(toImport.map(r => r.sub_skill_id).filter((x): x is string => !!x)))
 
   if (neededDiscIds.length > 0) {
     const { data: existingDisc } = await supabase
@@ -389,8 +557,8 @@ export async function commitBphImport(input: z.infer<typeof commitSchema>): Prom
   }
 
   for (const r of toImport) {
-    const sub_skill_id = r.matched_sub_skill_id // may be null
-    if (sub_skill_id && r.matched_discipline_id) discWithSubLines.add(r.matched_discipline_id)
+    const sub_skill_id = r.sub_skill_id // may be null
+    if (sub_skill_id) discWithSubLines.add(r.discipline_id)
 
     // Look up existing budget line for this (project, discipline, sub_skill, line_type='work').
     // BPH doesn't split work/material so we pick a single canonical bucket: 'work'.
@@ -398,14 +566,16 @@ export async function commitBphImport(input: z.infer<typeof commitSchema>): Prom
       .from('cc_budget_lines')
       .select('id, current_budget_amt, current_wo_committed_amt, current_paid_amt')
       .eq('project_id', parsed.data.cc_project_id)
-      .eq('discipline_id', r.matched_discipline_id!)
+      .eq('discipline_id', r.discipline_id)
       .eq('line_type', 'work')
-    const { data: existing } = await (sub_skill_id === null
+    const { data: existing, error: lookupErr } = await (sub_skill_id === null
       ? baseQ.is('sub_skill_id', null)
       : baseQ.eq('sub_skill_id', sub_skill_id)
     ).maybeSingle()
+    if (lookupErr) { errors.push(`${r.head}: ${lookupErr.message}`); skipped++; continue }
 
     if (existing) {
+      const oldBudget = Number(existing.current_budget_amt) || 0
       const { error } = await supabase
         .from('cc_budget_lines')
         .update({
@@ -415,13 +585,26 @@ export async function commitBphImport(input: z.infer<typeof commitSchema>): Prom
         })
         .eq('id', existing.id)
       if (error) { errors.push(`${r.head}: ${error.message}`); skipped++ }
-      else { updated++ }
+      else {
+        updated++
+        // Audit the weekly drift — updates used to change figures silently.
+        if (oldBudget !== r.budget) {
+          const { error: evErr } = await supabase.from('cc_budget_events').insert({
+            budget_line_id: existing.id,
+            project_id: parsed.data.cc_project_id,
+            event_type: 'budget_update',
+            delta_amount: r.budget - oldBudget,
+            remarks: `BPH sync: budget ${formatINR(oldBudget)} → ${formatINR(r.budget)} · ${r.head}`.slice(0, 500),
+          })
+          if (evErr) errors.push(`${r.head}: figures saved, but the audit event failed (${evErr.message})`)
+        }
+      }
     } else {
       const { data: newLine, error } = await supabase
         .from('cc_budget_lines')
         .insert({
           project_id: parsed.data.cc_project_id,
-          discipline_id: r.matched_discipline_id,
+          discipline_id: r.discipline_id,
           sub_skill_id,
           line_type: 'work',
           current_budget_amt: r.budget,
@@ -464,18 +647,79 @@ export async function commitBphImport(input: z.infer<typeof commitSchema>): Prom
       .is('sub_skill_id', null)
   }
 
+  // Lines the previous pull wrote that are NOT in the report any more have
+  // dropped out of IN4 — zero their ERP figures so stale numbers don't
+  // linger. internal_estimate_* stays untouched, and only keys tracked in
+  // last_pull are ever zeroed (Excel-imported / manual lines are safe).
+  const presentKeySet = new Set(presentKeys ?? [])
+  const zeroedKeys = new Set<string>()
+  const staleKeys = canZeroStale ? prevKeys.filter(k => !presentKeySet.has(k)) : []
+  for (const staleKey of staleKeys) {
+    const [staleDiscId, staleSubId] = staleKey.split('::')
+    if (!staleDiscId) continue
+    const staleQ = supabase
+      .from('cc_budget_lines')
+      .select('id, current_budget_amt, current_wo_committed_amt, current_paid_amt')
+      .eq('project_id', parsed.data.cc_project_id)
+      .eq('discipline_id', staleDiscId)
+      .eq('line_type', 'work')
+    const { data: staleLine, error: staleErr } = await (staleSubId
+      ? staleQ.eq('sub_skill_id', staleSubId)
+      : staleQ.is('sub_skill_id', null)
+    ).maybeSingle()
+    if (staleErr || !staleLine) continue // line already deleted — nothing to zero
+    const oldB = Number(staleLine.current_budget_amt) || 0
+    const oldW = Number(staleLine.current_wo_committed_amt) || 0
+    const oldP = Number(staleLine.current_paid_amt) || 0
+    if (oldB === 0 && oldW === 0 && oldP === 0) continue
+    const { error: zeroErr } = await supabase
+      .from('cc_budget_lines')
+      .update({ current_budget_amt: 0, current_wo_committed_amt: 0, current_paid_amt: 0 })
+      .eq('id', staleLine.id)
+    if (zeroErr) { errors.push(`Couldn't clear a line that left the report: ${zeroErr.message}`); continue }
+    zeroedKeys.add(staleKey)
+    const { error: zeroEvErr } = await supabase.from('cc_budget_events').insert({
+      budget_line_id: staleLine.id,
+      project_id: parsed.data.cc_project_id,
+      event_type: 'budget_update',
+      delta_amount: -oldB,
+      remarks: 'BPH sync: line no longer in IN4 report — ERP figures zeroed',
+    })
+    if (zeroEvErr) errors.push(`Cleared a removed line, but the audit event failed (${zeroEvErr.message})`)
+  }
+
   // Persist the BPH↔CT mapping so future BPH saves auto-pull. Upsert keyed
   // on bph_project_id (the BPH side); if the same BPH project is being
   // remapped to a different CT project (rare — usually a fix), update.
-  await supabase
+  // last_pull remembers which lines this pull wrote (drives the zeroing
+  // above next time); unmatched_* feed the mapping screen.
+  const now = new Date().toISOString()
+  const { error: linkErr } = await supabase
     .from('cc_bph_project_links')
     .upsert({
       bph_project_id: parsed.data.bph_project_id,
       cc_project_id: parsed.data.cc_project_id,
       created_by: me?.id ?? null,
-      last_pulled_at: new Date().toISOString(),
-      last_pull_result: { inserted, updated, skipped, errors_count: errors.length },
+      last_pulled_at: now,
+      last_pull_result: {
+        inserted, updated, skipped,
+        errors_count: errors.length,
+        ...(unmatchedNames !== null
+          ? { unmatched_count: unmatchedNames.length, unmatched_names: unmatchedNames.slice(0, 50) }
+          : parsed.data.unmatched_count != null
+            ? { unmatched_count: parsed.data.unmatched_count }
+            : {}),
+      },
+      // Tracked keys = every line BPH has ever written that hasn't been
+      // zeroed-out. Union with the previous set so a selective/partial
+      // pull can never silently shrink the baseline (which would exempt
+      // lines from future stale-detection).
+      last_pull: {
+        keys: Array.from(new Set([...prevKeys, ...pulledKeys])).filter(k => !zeroedKeys.has(k)),
+        at: now,
+      },
     }, { onConflict: 'bph_project_id' })
+  if (linkErr) errors.push(`Pull saved, but its bookkeeping didn't (${linkErr.message})`)
 
   revalidatePath(`/cost-control/projects/${parsed.data.cc_project_id}`)
   revalidatePath('/cost-control')
@@ -525,10 +769,13 @@ export async function runAllMappedPulls(): Promise<{ ok: true; outcomes: MappedP
   const outcomes: MappedPullOutcome[] = []
   for (const link of links ?? []) {
     try {
+      // useAi:false — nobody reviews this pull, so only exact/normalised
+      // code matches are written. Unmatched rows are skipped and counted in
+      // last_pull_result for the mapping screen.
       const r = await commitBphImport({
         bph_project_id: link.bph_project_id,
         cc_project_id: link.cc_project_id,
-      })
+      }, { useAi: false })
       if (r.ok) {
         outcomes.push({
           bph_project_id: link.bph_project_id,
@@ -633,5 +880,7 @@ export async function resyncBphForProject(cc_project_id: string): Promise<Commit
     .eq('cc_project_id', cc_project_id)
     .maybeSingle()
   if (!link) return { ok: false, error: 'not_mapped' }
-  return commitBphImport({ bph_project_id: link.bph_project_id as string, cc_project_id })
+  // useAi:false — "Sync now" has no preview step, so AI must never guess a
+  // mapping here; only exact/normalised code matches are written.
+  return commitBphImport({ bph_project_id: link.bph_project_id as string, cc_project_id }, { useAi: false })
 }

@@ -29,7 +29,7 @@ async function loadPresets(wsId: string, force: boolean): Promise<{
   })
   const json = await res.json().catch(() => null)
   if (!res.ok || !json?.ok) {
-    return { ok: false, presets: [], reason: json?.reason ?? `HTTP ${res.status}` }
+    return { ok: false, presets: [], reason: json?.reason ?? 'Couldn\'t reach the server — please try again.' }
   }
   return { ok: true, presets: json.presets ?? [], cached: !!json.cached }
 }
@@ -63,8 +63,8 @@ export function WSAskAiPanel({ wsId, defaultOpen = false }: { wsId: string; defa
           setPresets([])
         }
       })
-      .catch(e => {
-        setPresetsErr(e instanceof Error ? e.message : 'Network error')
+      .catch(() => {
+        setPresetsErr('Couldn\'t reach the server — please try again.')
         setPresets([])
       })
       .finally(() => setPresetsLoading(false))
@@ -100,7 +100,7 @@ export function WSAskAiPanel({ wsId, defaultOpen = false }: { wsId: string; defa
         })
         const json = await res.json().catch(() => null)
         if (!res.ok || !json?.ok) {
-          setErr(json?.reason ?? `HTTP ${res.status}`)
+          setErr(json?.reason ?? 'Couldn\'t reach the server — please try again.')
           setHistory(h => h.filter((_, i) => i !== placeholderId))
           return
         }
@@ -109,8 +109,8 @@ export function WSAskAiPanel({ wsId, defaultOpen = false }: { wsId: string; defa
           : qa))
         // Scroll new answer into view
         setTimeout(() => answerRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' }), 50)
-      } catch (e) {
-        setErr(e instanceof Error ? e.message : 'Network error')
+      } catch {
+        setErr('Couldn\'t reach the server — please try again.')
         setHistory(h => h.filter((_, i) => i !== placeholderId))
       }
     })

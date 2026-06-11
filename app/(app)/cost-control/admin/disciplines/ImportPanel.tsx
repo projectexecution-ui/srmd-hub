@@ -7,6 +7,7 @@ import { useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import * as XLSX from 'xlsx'
 import { createClient } from '@/lib/supabase/client'
+import { confirm as confirmDialog } from '@/components/ui/confirm-dialog'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Loader2, Upload, Check, X, AlertTriangle, ClipboardPaste, Archive } from 'lucide-react'
@@ -345,7 +346,12 @@ export function ImportPanel({
 
   async function archiveUnused() {
     if (unusedDisciplineIds.length === 0) { setParseErr('Nothing to archive — every discipline is used by at least one project'); return }
-    if (!confirm(`Archive ${unusedDisciplineIds.length} unused discipline${unusedDisciplineIds.length === 1 ? '' : 's'}? You can restore them later from the Show-archived toggle.`)) return
+    const ok = await confirmDialog({
+      title: 'Archive unused disciplines?',
+      message: `Archive ${unusedDisciplineIds.length} unused discipline${unusedDisciplineIds.length === 1 ? '' : 's'}? You can restore them later from the Show-archived toggle.`,
+      confirmLabel: 'Archive',
+    })
+    if (!ok) return
     setBusy(true); setParseErr(null)
     const { error } = await createClient()
       .from('cc_disciplines')

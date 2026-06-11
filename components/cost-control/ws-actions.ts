@@ -385,10 +385,13 @@ export async function deleteWorkingSheetItem(itemId: string, wsId: string): Prom
 
 async function recalculateWSTotal(wsId: string) {
   const supabase = await createClient()
-  const { data: items } = await supabase
+  const { data: items, error } = await supabase
     .from('cc_working_sheet_items')
     .select('total_amount')
     .eq('working_sheet_id', wsId)
+  // A failed read yields no rows — bail out rather than overwrite the
+  // sheet's stored total with 0 on a transient error.
+  if (error) return
   const sum = (items ?? []).reduce((s, r) => s + Number((r as { total_amount: number | null }).total_amount ?? 0), 0)
   await supabase.from('cc_working_sheets').update({ total_amount: sum }).eq('id', wsId)
 }
@@ -436,19 +439,27 @@ export async function submitWorkingSheet(wsId: string): Promise<{ ok: boolean; e
  *    backwards compat with any external callers; UI says "release".)
  *  - full:    pass nothing — backwards compatible. Approves the full
  *    remaining amount in one go.
+ *
+ *  The amount validation, approval-matrix gate, status update and audit
+ *  event all happen inside public.cc_approve_release in ONE transaction
+ *  with a row lock — so two HODs releasing at the same moment can't both
+ *  read the same approved_for_erp_amt and overshoot the estimate.
  */
 export async function approveWorkingSheet(
   wsId: string,
   trancheAmount?: number | null,
-): Promise<{ ok: boolean; error?: string; new_status?: string; approved_so_far?: number }> {
+): Promise<{ ok: boolean; error?: string; new_status?: string; approved_so_far?: number; released?: number; prior_status?: string }> {
   const me = await whoAmI()
   if (!me.user) return { ok: false, error: 'Not signed in' }
   if (!me.canView) return { ok: false, error: 'You do not have access to Cost Control' }
 
   const supabase = await createClient()
+  // Lightweight pre-read: powers the friendly status / self-approval
+  // failures below and gives us project_id for revalidation. The RPC
+  // re-checks everything atomically; this is just for fast feedback.
   const { data: ws, error } = await supabase
     .from('cc_working_sheets')
-    .select('id, status, engineer_id, project_id, discipline_id, sub_skill_id, line_type, total_amount, approved_for_erp_amt')
+    .select('id, status, engineer_id, project_id')
     .eq('id', wsId)
     .single()
   if (error || !ws) return { ok: false, error: 'Working Sheet not found' }
@@ -462,115 +473,25 @@ export async function approveWorkingSheet(
     return { ok: false, error: 'You cannot approve a sheet you raised yourself' }
   }
 
-  const total = Number(ws.total_amount ?? 0)
-  const alreadyApproved = Number(ws.approved_for_erp_amt ?? 0)
-  const remaining = total - alreadyApproved
-
-  // Decide release amount. If trancheAmount is provided, use it; otherwise
-  // approve the rest in one shot.
-  let tranche = trancheAmount == null || !Number.isFinite(trancheAmount)
-    ? remaining
-    : Number(trancheAmount)
-
-  if (tranche <= 0) return { ok: false, error: 'Release amount must be greater than zero' }
-  if (tranche > remaining + 1) {
-    // 1 ₹ floating-point tolerance for the "approve all remaining" path
-    return { ok: false, error: `Release ${formatRupees(tranche)} exceeds remaining ${formatRupees(remaining)}` }
-  }
-  // Clamp to remaining so the running total never overshoots.
-  if (tranche > remaining) tranche = remaining
-
-  const cumulative = alreadyApproved + tranche
-  const willBeFull = cumulative >= total - 0.5
-  const toStage: 'partially_approved' | 'approved' = willBeFull ? 'approved' : 'partially_approved'
-  const fromStage = ws.status as 'submitted' | 'partially_approved'
-
-  // Approval matrix gate — passes the RELEASE amount so amount_cap_max
-  // rules apply per release (head ≤ ₹2L per release).
-  const allowed = await callCanApprove(fromStage, toStage, tranche)
-  if (!allowed) {
-    return { ok: false, error: `Your role can't approve a ${formatRupees(tranche)} release on this sheet. Check /admin/approvals.` }
-  }
-
-  // Find the matching budget line. Each release directly bumps
-  // current_budget_amt — CT Hub is the source of truth for what HOD has
-  // released into ERP. Excel import is only used for one-time backfill
-  // of legacy data; new approvals don't need to round-trip through Excel.
-  const { data: bl } = await supabase
-    .from('cc_budget_lines')
-    .select('id, current_budget_amt')
-    .eq('project_id', ws.project_id)
-    .eq('discipline_id', ws.discipline_id)
-    .eq('sub_skill_id', ws.sub_skill_id)
-    .eq('line_type', ws.line_type)
-    .maybeSingle()
-
-  const now = new Date().toISOString()
-  const update: Record<string, unknown> = {
-    status: toStage,
-    approved_for_erp_amt: cumulative,
-    approved_for_erp_at: now,
-    approved_for_erp_by: me.user.id,
-  }
-  // Only set approved_at / approved_by when fully approved, so we
-  // preserve the "first release" vs "fully signed off" distinction.
-  if (willBeFull) {
-    update.approved_at = now
-    update.approved_by = me.user.id
-  }
-
-  const { error: updErr } = await supabase.from('cc_working_sheets').update(update).eq('id', wsId)
-  if (updErr) return { ok: false, error: updErr.message }
-
-  // NOTE: we used to ALSO bump cc_budget_lines.current_budget_amt here
-  // so the "Approved Budget (ERP)" tile reflected this release immediately.
-  // That was correct when CT Hub was the only writer; with the BPH weekly
-  // pull active, BPH is the ERP source of truth and bumping here just
-  // gets overwritten on next sync — creating phantom budget swings.
-  //
-  // New semantics:
-  //   - approved_for_erp_amt on the WS  → feeds 'Approved via WS' tile
-  //   - current_budget_amt on cc_budget_lines → only BPH writes here
-  //   - The gap between them is informative: it's the amount the PM
-  //     has approved in this app but hasn't yet pushed to IN4. The
-  //     project KPI strip surfaces this gap so the PM knows when to
-  //     update IN4 + re-pull BPH.
-  //
-  // We still emit the audit event for traceability (so the
-  // approval_events / cc_budget_events trail stays complete).
-  const { data: blForEvent } = await supabase
-    .from('cc_budget_lines')
-    .select('id')
-    .eq('project_id', ws.project_id)
-    .eq('discipline_id', ws.discipline_id)
-    .eq('sub_skill_id', ws.sub_skill_id)
-    .eq('line_type', ws.line_type)
-    .maybeSingle()
-
-  await supabase.from('cc_budget_events').insert({
-    budget_line_id: blForEvent?.id ?? bl?.id ?? null,
-    project_id: ws.project_id,
-    event_type: 'ws_approved',
-    delta_amount: tranche,
-    related_ws_id: wsId,
-    remarks: willBeFull
-      ? `WS fully approved — final release ${formatRupees(tranche)} (awaiting IN4 entry)`
-      : `WS release approved ${formatRupees(tranche)} (cumulative ${formatRupees(cumulative)} of ${formatRupees(total)} · awaiting IN4 entry)`,
-    requested_by: me.user.id,
-    approved_by: me.user.id,
-    approval_status: 'approved',
+  const { data, error: rpcErr } = await supabase.rpc('cc_approve_release', {
+    p_ws_id: wsId,
+    p_tranche: trancheAmount ?? null,
   })
+  // The RPC raises human-readable messages (bad amount, matrix denial,
+  // concurrent state change), so its message is safe to show as-is.
+  if (rpcErr) return { ok: false, error: rpcErr.message }
+
+  const result = data as { ok: boolean; new_status: string; approved_so_far: number; released: number }
 
   revalidatePath(`/cost-control/working-sheets/${wsId}`)
   revalidatePath('/cost-control/working-sheets')
   revalidatePath('/cost-control')
   revalidatePath(`/cost-control/projects/${ws.project_id}`)
-  return { ok: true, new_status: toStage, approved_so_far: cumulative }
-}
-
-function formatRupees(n: number): string {
-  if (!Number.isFinite(n)) return '—'
-  return '₹' + n.toLocaleString('en-IN', { maximumFractionDigits: 0 })
+  // prior_status = the stage the sheet was in when this release happened —
+  // the audit event must record the REAL transition (a release that
+  // completes a partially-approved sheet is partially_approved → approved,
+  // not submitted → approved).
+  return { ok: true, new_status: result.new_status, approved_so_far: result.approved_so_far, released: result.released, prior_status: ws.status as string }
 }
 
 export async function returnWorkingSheet(wsId: string, reason: string): Promise<{ ok: boolean; error?: string }> {

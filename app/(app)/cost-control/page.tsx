@@ -6,11 +6,13 @@ import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { EmptyState } from '@/components/ui/empty-state'
-import { Calculator, Plus, FileText, Clock, Inbox, Upload, ClipboardList, Settings, CalendarClock, ChevronDown, Download } from 'lucide-react'
+import { Calculator, Plus, FileText, Clock, Inbox, Upload, ClipboardList, Settings, CalendarClock, ChevronDown, Download, RefreshCw, AlertTriangle, CheckCircle2 } from 'lucide-react'
 import { formatINR } from '@/lib/utils'
 import { DeadlineBadge } from '@/components/cost-control/DeadlineBadge'
+import { QueryError } from '@/components/ui/query-error'
+import { wsStatusLabel } from '@/components/cost-control/WSStatusPill'
+import { AutoBackup } from '@/components/cost-control/AutoBackup'
 import { getLastBphSync } from '@/app/(app)/cost-control/import/bph/actions'
-import { RefreshCw, AlertTriangle, CheckCircle2 } from 'lucide-react'
 
 export const dynamic = 'force-dynamic'
 
@@ -31,24 +33,29 @@ export default async function CostControlLandingPage() {
   const supabase = await createClient()
   const user = await getMyUser()
 
-  const [projectsRes, wsAllRes, myDraftsRes, pendingRes, deadlinesRes, budgetRes] = await Promise.all([
+  const [projectsRes, wsAllRes, myDraftsRes, approversRes, deadlinesRes, budgetRes, backupRes] = await Promise.all([
     supabase
       .from('projects')
       .select('id, code, name, cc_status, setup_progress_pct, built_up_sft, parent_project_id')
       .not('cc_status', 'is', null)
       .order('code'),
-    supabase.from('cc_working_sheets').select('id, status, total_amount, project_id, deadline_date'),
+    supabase.from('cc_working_sheets').select('id, status, total_amount, approved_for_erp_amt, project_id, discipline_id, deadline_date'),
     user
       ? supabase
           .from('cc_working_sheets')
           .select('id', { count: 'exact', head: true })
           .eq('engineer_id', user.id)
           .in('status', ['draft', 'returned'])
-      : Promise.resolve({ count: 0 }),
-    supabase
-      .from('cc_working_sheets')
-      .select('id', { count: 'exact', head: true })
-      .eq('status', 'submitted'),
+      : Promise.resolve({ count: 0, error: null }),
+    // Disciplines the current user actively approves — powers the
+    // "waiting on you" split on the pending stat (mirrors /approvals).
+    user
+      ? supabase
+          .from('cc_discipline_approvers')
+          .select('discipline_id')
+          .eq('approver_user_id', user.id)
+          .eq('is_active', true)
+      : Promise.resolve({ data: [] as Array<{ discipline_id: string }>, error: null }),
     // Upcoming deadlines across all projects — open sheets only, soonest first.
     supabase
       .from('cc_working_sheets')
@@ -58,26 +65,45 @@ export default async function CostControlLandingPage() {
       .order('deadline_date', { ascending: true })
       .limit(15),
     // Per-project budget rollup for the tiles (ERP budget / committed / paid).
-    supabase.from('cc_budget_lines').select('project_id, current_budget_amt, current_wo_committed_amt, current_paid_amt'),
+    // discipline_id + sub_skill_id are needed for the summary-vs-detail dedup below.
+    supabase.from('cc_budget_lines').select('project_id, discipline_id, sub_skill_id, current_budget_amt, current_wo_committed_amt, current_paid_amt'),
+    supabase.from('app_settings').select('value').eq('key', 'cc_last_backup').maybeSingle(),
   ])
 
   const ccProjects = (projectsRes.data ?? []) as CCProject[]
   const incompleteCount = ccProjects.filter(p => (p.setup_progress_pct ?? 0) < 100).length
 
-  type WSRollup = { id: string; status: string; total_amount: number | null; project_id: string; deadline_date: string | null }
-  const ws = (wsAllRes.data ?? []) as WSRollup[]
+  type WSRollup = { id: string; status: string; total_amount: number | null; approved_for_erp_amt: number | null; project_id: string; discipline_id: string; deadline_date: string | null }
+  const { data: wsData, error: wsErr } = wsAllRes
+  const ws = (wsData ?? []) as WSRollup[]
   const todayStr = new Date().toISOString().slice(0, 10)
   const TERMINAL = new Set(['approved', 'wo_issued', 'paid', 'cancelled'])
+  const APPROVED_DONE = new Set(['approved', 'wo_issued', 'paid'])
+
+  // Money a sheet has actually had approved so far. Fully-approved sheets
+  // fall back to total_amount when no ERP release figure was recorded;
+  // partially-approved sheets count ONLY what has been released so far.
+  const approvedSoFar = (w: WSRollup) => {
+    const released = Number(w.approved_for_erp_amt ?? 0)
+    if (APPROVED_DONE.has(w.status)) return released > 0 ? released : Number(w.total_amount ?? 0)
+    if (w.status === 'partially_approved') return released
+    return 0
+  }
 
   // Per-project signals for the tiles.
   const wsByProject     = new Map<string, number>()   // total WS count
   const estimateByProj  = new Map<string, number>()   // live internal estimate (non-cancelled WS sum)
+  const approvedByProj  = new Map<string, number>()   // approved-so-far money (incl. partial releases)
   const pendingByProj   = new Map<string, number>()   // WS awaiting approval
   const overdueByProj   = new Map<string, number>()   // open WS past deadline
   for (const w of ws) {
     wsByProject.set(w.project_id, (wsByProject.get(w.project_id) ?? 0) + 1)
     if (w.status !== 'cancelled') {
       estimateByProj.set(w.project_id, (estimateByProj.get(w.project_id) ?? 0) + Number(w.total_amount ?? 0))
+    }
+    const released = approvedSoFar(w)
+    if (released > 0) {
+      approvedByProj.set(w.project_id, (approvedByProj.get(w.project_id) ?? 0) + released)
     }
     if (w.status === 'submitted' || w.status === 'partially_approved') {
       pendingByProj.set(w.project_id, (pendingByProj.get(w.project_id) ?? 0) + 1)
@@ -88,20 +114,53 @@ export default async function CostControlLandingPage() {
   }
 
   // Per-project budget rollup (ERP budget / committed / paid).
-  type BLRow = { project_id: string; current_budget_amt: number | null; current_wo_committed_amt: number | null; current_paid_amt: number | null }
+  // Same rule as the project detail page: a BPH report often carries BOTH a
+  // discipline summary row (sub_skill_id null) and its sub-skill detail rows;
+  // the summary is the parent total of the details, so adding both doubles
+  // the budget. Per (project, discipline): if any sub-skill line has money,
+  // use only sub-skill lines; otherwise fall back to the root line.
+  type BLRow = { project_id: string; discipline_id: string; sub_skill_id: string | null; current_budget_amt: number | null; current_wo_committed_amt: number | null; current_paid_amt: number | null }
+  const { data: budgetData, error: budgetErr } = budgetRes
+  const byProjDisc = new Map<string, { sub: BLRow[]; root: BLRow[] }>()
+  for (const b of (budgetData ?? []) as BLRow[]) {
+    const k = `${b.project_id}::${b.discipline_id}`
+    const cur = byProjDisc.get(k) ?? { sub: [], root: [] }
+    ;(b.sub_skill_id ? cur.sub : cur.root).push(b)
+    byProjDisc.set(k, cur)
+  }
   const budgetByProj = new Map<string, { budget: number; committed: number; paid: number }>()
-  for (const b of (budgetRes.data ?? []) as BLRow[]) {
+  const addBudgetLine = (b: BLRow) => {
     const cur = budgetByProj.get(b.project_id) ?? { budget: 0, committed: 0, paid: 0 }
     cur.budget    += Number(b.current_budget_amt ?? 0)
     cur.committed += Number(b.current_wo_committed_amt ?? 0)
     cur.paid      += Number(b.current_paid_amt ?? 0)
     budgetByProj.set(b.project_id, cur)
   }
+  for (const { sub, root } of byProjDisc.values()) {
+    const hasSubMoney = sub.some(b =>
+      Number(b.current_budget_amt ?? 0) !== 0 ||
+      Number(b.current_wo_committed_amt ?? 0) !== 0 ||
+      Number(b.current_paid_amt ?? 0) !== 0,
+    )
+    for (const b of sub) addBudgetLine(b)
+    if (!hasSubMoney) for (const b of root) addBudgetLine(b)
+  }
+
   const totalWS = ws.length
-  const approvedTotal = ws.filter(w => w.status === 'approved' || w.status === 'wo_issued' || w.status === 'paid')
-    .reduce((s, w) => s + Number(w.total_amount ?? 0), 0)
-  const myDraftsCount = (myDraftsRes as { count?: number }).count ?? 0
-  const pendingCount = (pendingRes as { count?: number }).count ?? 0
+  const approvedTotal = ws.reduce((s, w) => s + approvedSoFar(w), 0)
+  const myDrafts = myDraftsRes as { count?: number | null; error?: { message: string } | null }
+  const draftsErr = myDrafts.error ?? null
+  const myDraftsCount = myDrafts.count ?? 0
+
+  // "Waiting on you" split for the pending stat. A sheet waits on the
+  // current user when they actively approve its discipline, or always
+  // when they are a Cost Control admin.
+  const { data: approverData, error: approversErr } = approversRes
+  const myDiscIds = new Set(((approverData ?? []) as Array<{ discipline_id: string }>).map(r => r.discipline_id))
+  const pendingSheets = ws.filter(w => w.status === 'submitted' || w.status === 'partially_approved')
+  const pendingCount = pendingSheets.length
+  const waitingOnMe = pendingSheets.filter(w => canAdmin || myDiscIds.has(w.discipline_id)).length
+  const withOthers = pendingCount - waitingOnMe
 
   type DeadlineRow = {
     id: string
@@ -115,27 +174,36 @@ export default async function CostControlLandingPage() {
     cc_disciplines: { code: string; name: string } | { code: string; name: string }[] | null
     cc_sub_skills: { code: string; name: string } | { code: string; name: string }[] | null
   }
-  const upcomingDeadlines = (deadlinesRes.data ?? []) as DeadlineRow[]
-  const todayISO = new Date().toISOString().slice(0, 10)
-  const overdueCount = upcomingDeadlines.filter(d => d.deadline_date < todayISO).length
+  const { data: deadlineData, error: deadlinesErr } = deadlinesRes
+  const upcomingDeadlines = (deadlineData ?? []) as DeadlineRow[]
+  const overdueCount = upcomingDeadlines.filter(d => d.deadline_date < todayStr).length
 
   // BPH auto-sync freshness — read-only, doesn't trigger a pull
   const bphSync = await getLastBphSync()
 
-  // Last auto-backup timestamp (set by the daily cron) for the Tools menu.
+  // Last auto-backup marker for the Tools menu. Newer backups store a plain
+  // ISO timestamp; older ones stored JSON {at: ...} — accept both.
+  const { data: backupRow, error: backupErr } = backupRes
   let lastBackup: string | null = null
-  if (canAdmin) {
-    const { data: bk } = await supabase.from('app_settings').select('value').eq('key', 'cc_last_backup').maybeSingle()
-    if (bk?.value) {
-      try {
-        const parsed = JSON.parse(bk.value as string) as { at?: string }
-        if (parsed.at) lastBackup = new Date(parsed.at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })
-      } catch { /* ignore */ }
+  const rawBackup = backupRow?.value ? String(backupRow.value) : null
+  if (rawBackup) {
+    let at: string | null = rawBackup
+    try {
+      const parsed = JSON.parse(rawBackup) as { at?: string } | string
+      at = typeof parsed === 'string' ? parsed : parsed?.at ?? null
+    } catch { /* plain ISO string — use as-is */ }
+    const dt = at ? new Date(at) : null
+    if (dt && !Number.isNaN(dt.getTime())) {
+      lastBackup = dt.toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })
     }
   }
+  const lastBackupLine = backupErr
+    ? "Last backup: couldn't check right now"
+    : `Last backup: ${lastBackup ?? 'never yet'}`
 
   return (
     <div className="p-4 md:p-6 max-w-7xl mx-auto space-y-4">
+      <AutoBackup isAdmin={canAdmin} />
       <PageHeader
         title="Cost Control"
         subtitle={`SRASSK — ${ccProjects.length} project${ccProjects.length === 1 ? '' : 's'}${incompleteCount ? ` · ${incompleteCount} need setup` : ''}`}
@@ -185,11 +253,14 @@ export default async function CostControlLandingPage() {
                 <Download className="h-4 w-4 text-gray-500 mt-0.5 flex-shrink-0" />
                 <div className="min-w-0">
                   <p className="text-sm font-medium text-gray-900">Download full backup (Excel)</p>
-                  <p className="text-[11px] text-gray-500">
-                    {lastBackup ? `auto-saved daily · last ${lastBackup}` : 'all Cost Control data · auto-saved daily'}
-                  </p>
+                  <p className="text-[11px] text-gray-500">all Cost Control data · auto-saved daily</p>
                 </div>
               </a>
+            )}
+            {canAdmin && (
+              <div className="border-t border-gray-100 mt-1 px-2.5 py-1.5">
+                <p className="text-[11px] text-gray-400">{lastBackupLine}</p>
+              </div>
             )}
           </div>
         </details>
@@ -210,25 +281,40 @@ export default async function CostControlLandingPage() {
       <BphSyncChip sync={bphSync} canWrite={canWrite} />
 
       {/* Stat strip */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <Stat label="Projects" value={ccProjects.length} hint={incompleteCount ? `${incompleteCount} need setup` : 'all set up'} icon={<Calculator className="h-5 w-5" />} />
-        <Link href="/cost-control/approvals" className="block">
-          <Stat
-            label="Pending approvals"
-            value={pendingCount}
-            hint={pendingCount > 0 ? 'submitted, awaiting head' : 'all clear'}
-            icon={<Inbox className="h-5 w-5" />}
-            tone={pendingCount > 0 ? 'amber' : 'default'}
-          />
-        </Link>
-        <Link href="/cost-control/working-sheets" className="block">
-          <Stat label="Your drafts" value={myDraftsCount} hint="draft + returned to you" icon={<Clock className="h-5 w-5" />} />
-        </Link>
-        <Stat label="Approved value" value={formatINR(approvedTotal)} hint={`${totalWS} sheet${totalWS === 1 ? '' : 's'} total`} icon={<FileText className="h-5 w-5" />} />
-      </div>
+      {wsErr || draftsErr ? (
+        <QueryError message={(wsErr ?? draftsErr)?.message} what="the summary numbers" />
+      ) : (
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          <Stat label="Projects" value={ccProjects.length} hint={incompleteCount ? `${incompleteCount} need setup` : 'all set up'} icon={<Calculator className="h-5 w-5" />} />
+          <Link href="/cost-control/approvals" className="block">
+            <Stat
+              label="Pending approvals"
+              value={pendingCount}
+              hint={
+                pendingCount === 0
+                  ? 'all clear'
+                  : approversErr && !canAdmin
+                    ? "couldn't check whose turn — open to review"
+                    : `${waitingOnMe} waiting on you · ${withOthers} with others`
+              }
+              icon={<Inbox className="h-5 w-5" />}
+              tone={pendingCount > 0 ? 'amber' : 'default'}
+            />
+          </Link>
+          <Link
+            href={user ? `/cost-control/working-sheets?engineer=${user.id}` : '/cost-control/working-sheets'}
+            className="block"
+          >
+            <Stat label="Your drafts" value={myDraftsCount} hint="draft + returned to you" icon={<Clock className="h-5 w-5" />} />
+          </Link>
+          <Stat label="Approved value" value={formatINR(approvedTotal)} hint={`${totalWS} sheet${totalWS === 1 ? '' : 's'} total`} icon={<FileText className="h-5 w-5" />} />
+        </div>
+      )}
 
       {/* Upcoming deadlines — cross-project summary */}
-      {upcomingDeadlines.length > 0 && (
+      {deadlinesErr ? (
+        <QueryError message={deadlinesErr.message} what="upcoming deadlines" />
+      ) : upcomingDeadlines.length > 0 && (
         <Card className="p-4">
           <div className="flex items-baseline justify-between mb-3">
             <h3 className="text-xs uppercase tracking-wide text-gray-500 font-semibold inline-flex items-center gap-1.5">
@@ -260,7 +346,7 @@ export default async function CostControlLandingPage() {
                         <span className="text-xs text-gray-500 truncate">
                           {dis?.code} · {sub?.name}
                         </span>
-                        <Badge variant="secondary" className="text-[10px]">{d.status}</Badge>
+                        <Badge variant="secondary" className="text-[10px]">{wsStatusLabel(d.status)}</Badge>
                       </div>
                       <p className="text-[11px] text-gray-500 mt-0.5">
                         {d.ws_code}{d.deadline_notes ? ` · ${d.deadline_notes}` : ''}
@@ -283,6 +369,10 @@ export default async function CostControlLandingPage() {
         </Card>
       )}
 
+      {/* Budget rollup failed — tiles below fall back to internal estimates,
+          so say so instead of silently showing "no budget yet". */}
+      {budgetErr && <QueryError message={budgetErr.message} what="the project budget totals" />}
+
       {ccProjects.length > 0 ? (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {ccProjects.map(p => {
@@ -291,6 +381,7 @@ export default async function CostControlLandingPage() {
             const wsHere = wsByProject.get(p.id) ?? 0
             const bud = budgetByProj.get(p.id) ?? { budget: 0, committed: 0, paid: 0 }
             const estimate = estimateByProj.get(p.id) ?? 0
+            const approvedHere = approvedByProj.get(p.id) ?? 0
             const pending = pendingByProj.get(p.id) ?? 0
             const overdue = overdueByProj.get(p.id) ?? 0
             const paidPct = bud.budget > 0 ? Math.round((bud.paid / bud.budget) * 100) : 0
@@ -352,12 +443,26 @@ export default async function CostControlLandingPage() {
                               <span>Paid {formatINR(bud.paid)}</span>
                               <span className={hot ? 'text-rose-600 font-semibold' : ''}>{paidPct}% used</span>
                             </div>
+                            {approvedHere > 0 && (
+                              <div className="flex items-center justify-between text-[11px] text-gray-500">
+                                <span>Approved so far</span>
+                                <span className="text-emerald-700 font-semibold tabular-nums">{formatINR(approvedHere)}</span>
+                              </div>
+                            )}
                           </>
                         ) : (
-                          <div className="flex items-baseline justify-between text-xs">
-                            <span className="text-gray-500">Internal estimate</span>
-                            <span className="font-semibold text-indigo-800 tabular-nums">{estimate > 0 ? formatINR(estimate) : '— no budget yet'}</span>
-                          </div>
+                          <>
+                            <div className="flex items-baseline justify-between text-xs">
+                              <span className="text-gray-500">Internal estimate</span>
+                              <span className="font-semibold text-indigo-800 tabular-nums">{estimate > 0 ? formatINR(estimate) : '— no budget yet'}</span>
+                            </div>
+                            {approvedHere > 0 && (
+                              <div className="flex items-baseline justify-between text-xs">
+                                <span className="text-gray-500">Approved so far</span>
+                                <span className="font-semibold text-emerald-700 tabular-nums">{formatINR(approvedHere)}</span>
+                              </div>
+                            )}
+                          </>
                         )}
                       </div>
                     )}

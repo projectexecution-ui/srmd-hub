@@ -96,10 +96,10 @@ export function ExcelSummaryPanel({
     setRechecking(true); setErr(null)
     try {
       const r = await fetch(`/api/cost-control/working-sheets/${wsId}/check`, { method: 'POST' })
-      if (!r.ok) throw new Error(`HTTP ${r.status}`)
+      if (!r.ok) throw new Error()
       router.refresh()
-    } catch (e) {
-      setErr(e instanceof Error ? e.message : 'Recheck failed')
+    } catch {
+      setErr('Couldn\'t re-check the sheet — please try again.')
     } finally {
       setRechecking(false)
     }

@@ -160,6 +160,23 @@ export default async function AuditLogPage({
     })
   }
 
+  // Plain-English labels for the event_type values actually inserted by the
+  // app (ws-actions, imports, cc_approve_release) plus the rest of the
+  // cc_event_type enum's budget values. Fallback: underscores → spaces.
+  const BUDGET_EVENT_LABELS: Record<string, string> = {
+    ws_approved: 'Release approved',
+    ws_returned: 'Returned to engineer',
+    budget_add: 'Budget added',
+    budget_update: 'Budget updated',
+    budget_remove: 'Budget removed',
+    budget_shift_in: 'Budget shifted in',
+    budget_shift_out: 'Budget shifted out',
+  }
+  function budgetEventLabel(t: string): string {
+    const fallback = t.replace(/_/g, ' ')
+    return BUDGET_EVENT_LABELS[t] ?? fallback.charAt(0).toUpperCase() + fallback.slice(1)
+  }
+
   type BudgetEventRow = {
     id: string
     event_type: string
@@ -185,7 +202,7 @@ export default async function AuditLogPage({
       project_id: e.project_id,
       ws_code: null,
       ws_id: null,
-      description: `${e.event_type}${e.remarks ? ` — ${e.remarks}` : ''}`,
+      description: `${budgetEventLabel(e.event_type)}${e.remarks ? ` — ${e.remarks}` : ''}`,
       amount: e.delta_amount,
     })
   }

@@ -28,6 +28,16 @@ const VARIANT: Record<WSStatus, 'default' | 'success' | 'warning' | 'secondary' 
   cancelled:          'secondary',
 }
 
+/** Human label for a WS status — for prose like "Sheet is locked — status
+ *  is WO issued". Unknown values degrade to "Some status" rather than raw
+ *  snake_case, so new DB statuses never leak to users. */
+export function wsStatusLabel(status: string): string {
+  const known = LABEL[status as WSStatus]
+  if (known) return known
+  const words = (status ?? '').replace(/_/g, ' ').trim()
+  return words ? words.charAt(0).toUpperCase() + words.slice(1) : 'Unknown'
+}
+
 export function WSStatusPill({ status }: { status: WSStatus }) {
-  return <Badge variant={VARIANT[status]}>{LABEL[status]}</Badge>
+  return <Badge variant={VARIANT[status] ?? 'secondary'}>{wsStatusLabel(status)}</Badge>
 }

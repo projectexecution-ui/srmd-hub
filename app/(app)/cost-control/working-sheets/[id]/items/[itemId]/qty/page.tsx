@@ -3,6 +3,8 @@ import { notFound } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { requirePermission, can } from '@/lib/auth'
 import { PageHeader } from '@/components/PageHeader'
+import { QueryError } from '@/components/ui/query-error'
+import { wsStatusLabel } from '@/components/cost-control/WSStatusPill'
 import { ChevronLeft } from 'lucide-react'
 import { QtyEditor } from './QtyEditor'
 
@@ -18,7 +20,7 @@ export default async function QuantificationPage({
   const { id: wsId, itemId } = await params
   const supabase = await createClient()
 
-  const { data: item } = await supabase
+  const { data: item, error: itemErr } = await supabase
     .from('cc_working_sheet_items')
     .select(
       `*, cc_working_sheets(id, ws_code, status, project_id, discipline_id, sub_skill_id, cc_sub_skills(name))`,
@@ -26,6 +28,15 @@ export default async function QuantificationPage({
     .eq('id', itemId)
     .single()
 
+  // PGRST116 = .single() found no row → a genuine 404. Anything else is a
+  // transient query failure and must NOT render the not-found page.
+  if (itemErr && itemErr.code !== 'PGRST116') {
+    return (
+      <div className="p-4 md:p-6 max-w-6xl mx-auto">
+        <QueryError message={itemErr.message} what="this item" />
+      </div>
+    )
+  }
   if (!item) notFound()
   const wsRaw = (item as unknown as {
     cc_working_sheets:
@@ -76,7 +87,7 @@ export default async function QuantificationPage({
 
       {readOnly && !isDraft && (
         <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
-          WS is {ws.status} — quantification is read-only.
+          This sheet is {wsStatusLabel(ws.status)} — quantification is read-only.
         </div>
       )}
 

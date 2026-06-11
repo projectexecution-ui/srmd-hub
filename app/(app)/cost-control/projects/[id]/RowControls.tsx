@@ -408,10 +408,12 @@ export function DisableButton({
 }) {
   const router = useRouter()
   const [pending, startTransition] = useTransition()
+  const [err, setErr] = useState<string | null>(null)
 
   if (!canWrite) return null
 
   async function onClick() {
+    setErr(null)
     const what = disciplineId ? 'discipline' : 'sub-skill'
     const lines = [
       `Hide "${label}" from this project's view.`,
@@ -431,21 +433,24 @@ export function DisableButton({
       const res = disciplineId
         ? await setDisciplineEnabled(projectId, disciplineId, false)
         : await setSubSkillEnabled(projectId, subSkillId!, false)
-      if (!res.ok) { alert(res.error); return }
+      if (!res.ok) { setErr(res.error); return }
       router.refresh()
     })
   }
 
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      disabled={pending}
-      className="inline-flex items-center justify-center h-6 w-6 rounded text-gray-400 hover:text-rose-600 hover:bg-rose-50 disabled:opacity-50"
-      title={`Remove from this project${attachedCount > 0 ? ` (${attachedCount} WS attached — history kept)` : ''}`}
-    >
-      {pending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <EyeOff className="h-3.5 w-3.5" />}
-    </button>
+    <span className="inline-flex items-center gap-1">
+      <button
+        type="button"
+        onClick={onClick}
+        disabled={pending}
+        className="inline-flex items-center justify-center h-6 w-6 rounded text-gray-400 hover:text-rose-600 hover:bg-rose-50 disabled:opacity-50"
+        title={`Remove from this project${attachedCount > 0 ? ` (${attachedCount} WS attached — history kept)` : ''}`}
+      >
+        {pending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <EyeOff className="h-3.5 w-3.5" />}
+      </button>
+      {err && <span className="text-[10px] text-rose-700">{err}</span>}
+    </span>
   )
 }
 

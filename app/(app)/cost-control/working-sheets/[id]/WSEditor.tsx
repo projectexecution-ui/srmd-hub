@@ -10,7 +10,8 @@ import { MoneyInput } from '@/components/ui/money-input'
 import { Plus, Trash2, Send, Check, RotateCcw, Loader2, Lock, Calculator, AlertTriangle } from 'lucide-react'
 import { findDuplicateMatches, type PastItem, type DupMatch } from '@/lib/dup-detect'
 import { formatINR } from '@/lib/utils'
-import type { WSStatus } from '@/components/cost-control/WSStatusPill'
+import { wsStatusLabel, type WSStatus } from '@/components/cost-control/WSStatusPill'
+import { confirm } from '@/components/ui/confirm-dialog'
 import {
   upsertWorkingSheetItem,
   deleteWorkingSheetItem,
@@ -135,6 +136,15 @@ export function WSEditor({ wsId, status, canEdit, canApprove, vendors, initialIt
       setItems(prev => prev.filter((_, i) => i !== idx))
       return
     }
+    const ok = await confirm({
+      title: 'Delete this row?',
+      message: row.description.trim()
+        ? `"${row.description.trim()}" will be removed from this sheet.`
+        : `Row ${row.sr_no} will be removed from this sheet.`,
+      danger: true,
+      confirmLabel: 'Delete',
+    })
+    if (!ok) return
     setSavingItemId(row.id); setError(null)
     const res = await deleteWorkingSheetItem(row.id, wsId)
     setSavingItemId(null)
@@ -180,7 +190,7 @@ export function WSEditor({ wsId, status, canEdit, canApprove, vendors, initialIt
       {locked && (
         <div className="flex items-center gap-2 px-4 py-2 text-sm bg-amber-50 border-b border-amber-200 text-amber-900">
           <Lock className="h-4 w-4" />
-          <span>Sheet is locked — status is <b>{status}</b>. Items can no longer be edited.</span>
+          <span>Sheet is locked — status is <b>{wsStatusLabel(status)}</b>. Items can no longer be edited.</span>
         </div>
       )}
 

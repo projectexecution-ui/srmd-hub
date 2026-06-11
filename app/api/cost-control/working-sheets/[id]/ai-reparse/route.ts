@@ -62,10 +62,19 @@ export async function POST(
   // 1. Load WS + the rows we'll be replacing
   const { data: ws, error: wsErr } = await supabase
     .from('cc_working_sheets')
-    .select('id, project_id, discipline_id, sub_skill_id, line_type, entry_mode, source_excel_url')
+    .select('id, status, project_id, discipline_id, sub_skill_id, line_type, entry_mode, source_excel_url')
     .eq('id', id)
     .single()
   if (wsErr || !ws) return NextResponse.json({ ok: false, reason: 'Working sheet not found' }, { status: 404 })
+  // Re-parse rewrites cc_excel_rows wholesale. Once a sheet is in the
+  // approval flow those rows are the evidence behind approved figures —
+  // refuse to touch them.
+  if (ws.status !== 'draft' && ws.status !== 'returned') {
+    return NextResponse.json({
+      ok: false,
+      reason: 'This sheet is already in approval — re-parsing is locked so the approved figures keep their backing rows. Return it to draft first if you really need to re-read the Excel.',
+    }, { status: 409 })
+  }
   if (ws.entry_mode !== 'excel_summary') {
     return NextResponse.json({ ok: false, reason: 'This is a line-item working sheet — AI parse only applies to Quick (Excel) mode.' }, { status: 400 })
   }
@@ -98,13 +107,28 @@ export async function POST(
     .map(r => Array.isArray(r.cc_sub_skills) ? r.cc_sub_skills[0] : r.cc_sub_skills)
     .filter((s): s is SubSkillCtx => !!s)
 
-  // 4. Load the existing rows as "local parser guess" so Claude has the
-  // best regex extraction to correct from
-  const { data: existingRows } = await supabase
+  // 4. Load the existing rows IN FULL — they serve both as the "local
+  // parser guess" the AI corrects from, and as the restore copy if the
+  // re-insert fails after the delete below.
+  const { data: existingRows, error: exErr } = await supabase
     .from('cc_excel_rows')
-    .select('row_no, raw_label, description, unit, qty, rate, amount, rate_breakdown, amount_breakdown')
+    .select('working_sheet_id, row_no, raw_label, description, unit, qty, rate, amount, formula_in_amount, rate_breakdown, amount_breakdown, ai_meta, flag, flag_reason, flag_severity')
     .eq('working_sheet_id', id)
     .order('row_no')
+  if (exErr) {
+    return NextResponse.json({ ok: false, reason: 'Couldn\'t read the existing rows — nothing was changed. Please try again.' }, { status: 500 })
+  }
+  const originalRows = existingRows ?? []
+
+  // Size guard BEFORE anything destructive: the AI input is capped, so a
+  // bigger sheet would be re-parsed from a truncated view and the rows
+  // past the cap silently lost. Refuse instead and keep the original parse.
+  if (originalRows.length > 60 || aoa.length > 120) {
+    return NextResponse.json({
+      ok: false,
+      reason: `This sheet is too large for AI re-parse (${Math.max(aoa.length, originalRows.length)} rows) — the original parse is kept.`,
+    }, { status: 413 })
+  }
 
   const systemPrompt = `You are a construction cost-control Excel parser for the SRMD Cost Control system. Engineers upload BOQ-style sheets in wildly different formats — some are material-only POs, some are labour-only contracts, and many MIX BOTH (the contractor supplies material AND erects). Your job:
 
@@ -174,8 +198,13 @@ Output STRICTLY JSON (no preamble, no markdown):
     project_chosen_sub_skill_id: ws.sub_skill_id,
     project_chosen_discipline_id: ws.discipline_id,
     sub_skill_catalogue: enabledSubs.map(s => ({ id: s.id, code: s.code, name: s.name, discipline_id: s.discipline_id })),
-    raw_sheet_aoa: aoa.slice(0, 50),
-    local_parser_rows: (existingRows ?? []).slice(0, 60),
+    raw_sheet_aoa: aoa.slice(0, 120),
+    // Trimmed columns only — ai_meta / flags would burn input tokens.
+    local_parser_rows: originalRows.map(r => ({
+      row_no: r.row_no, raw_label: r.raw_label, description: r.description, unit: r.unit,
+      qty: r.qty, rate: r.rate, amount: r.amount,
+      rate_breakdown: r.rate_breakdown, amount_breakdown: r.amount_breakdown,
+    })),
   }
 
   const aiCall = await generateJSON<{ rows: Array<Record<string, unknown>>; grand_total: number | null; summary: string }>({
@@ -246,10 +275,20 @@ Output STRICTLY JSON (no preamble, no markdown):
       }
     })
 
+    // An empty AI result must never destroy the existing parse: with no
+    // rows to insert, the delete below would wipe the sheet and report
+    // success. Refuse instead.
+    if (aiRows.length === 0) {
+      return NextResponse.json({
+        ok: false,
+        reason: 'The AI couldn\'t read any line items from this sheet — your original rows were kept unchanged.',
+      }, { status: 422 })
+    }
+
     // Replace strategy: drop existing rows + re-insert. This keeps row_no
     // contiguous after AI removed headers / sub-totals.
     const { error: delErr } = await supabase.from('cc_excel_rows').delete().eq('working_sheet_id', id)
-    if (delErr) return NextResponse.json({ ok: false, reason: `DB delete failed: ${delErr.message}` }, { status: 500 })
+    if (delErr) return NextResponse.json({ ok: false, reason: `Couldn't replace the old rows (${delErr.message}) — nothing was changed. Please try again.` }, { status: 500 })
 
     if (aiRows.length > 0) {
       const { error: insErr } = await supabase.from('cc_excel_rows').insert(
@@ -267,7 +306,24 @@ Output STRICTLY JSON (no preamble, no markdown):
           ai_meta: r.ai_meta,
         })),
       )
-      if (insErr) return NextResponse.json({ ok: false, reason: `DB insert failed: ${insErr.message}` }, { status: 500 })
+      if (insErr) {
+        // Best-effort rollback: the delete already ran, so put the saved
+        // originals back rather than leave the sheet with zero rows.
+        let restored = true
+        if (originalRows.length > 0) {
+          const { error: restoreErr } = await supabase.from('cc_excel_rows').insert(originalRows)
+          if (restoreErr) {
+            restored = false
+            console.error('[ai-reparse] failed to restore original rows after insert failure:', restoreErr.message)
+          }
+        }
+        return NextResponse.json({
+          ok: false,
+          reason: restored
+            ? 'Saving the AI\'s new rows failed, so your original rows were restored — nothing was lost. Please try again.'
+            : 'Saving the AI\'s new rows failed, and restoring the originals also failed — please re-upload the Excel or tell your admin.',
+        }, { status: 500 })
+      }
     }
 
     // Compute split totals + persist summary
@@ -287,7 +343,7 @@ Output STRICTLY JSON (no preamble, no markdown):
     const summary = {
       text: typeof aiResult.summary === 'string' ? aiResult.summary : null,
       model: aiModel,
-      rows_in: (existingRows ?? []).length,
+      rows_in: originalRows.length,
       rows_out: aiRows.length,
       suggestions_count: aiRows.filter(r => r.ai_meta.suggested_sub_skill_id && r.ai_meta.suggested_sub_skill_id !== ws.sub_skill_id).length,
       rate_concerns_count: aiRows.filter(r => r.ai_meta.rate_concern).length,

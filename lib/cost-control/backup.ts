@@ -33,6 +33,10 @@ export interface BackupResult {
   sheetCounts: Record<string, number>
 }
 
+// PostgREST caps every response at 1000 rows regardless of .limit(), so a
+// single big read silently truncates. Page with .range() instead.
+const PAGE_SIZE = 1000
+
 export async function buildCostControlBackup(supabase: SupabaseClient, stampISO: string): Promise<BackupResult> {
   const wb = XLSX.utils.book_new()
   const sheetCounts: Record<string, number> = {}
@@ -46,13 +50,25 @@ export async function buildCostControlBackup(supabase: SupabaseClient, stampISO:
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(cover), 'README')
 
   for (const t of TABLES) {
-    let q = supabase.from(t.table).select(t.select)
-    if (t.order) q = q.order(t.order, { ascending: true })
-    // Cap each sheet at 10k rows — well above current volume, keeps a
-    // runaway table from blowing memory in the serverless function.
-    const { data, error } = await q.limit(10000)
-    const rows = error ? [{ _error: error.message }] : (data ?? [])
-    sheetCounts[t.sheet] = error ? 0 : rows.length
+    // Always order — page boundaries are only stable with an explicit sort.
+    // Tables without a natural order sort by their first selected column.
+    // 'id' as a second key breaks ties: a non-unique sort column (e.g.
+    // created_at) would otherwise let rows repeat or vanish across pages.
+    const orderCol = t.order ?? t.select.split(',')[0].trim()
+    const rows: unknown[] = []
+    for (let from = 0; ; from += PAGE_SIZE) {
+      let q = supabase
+        .from(t.table)
+        .select(t.select)
+        .order(orderCol, { ascending: true })
+      if (orderCol !== 'id') q = q.order('id', { ascending: true })
+      const { data, error } = await q.range(from, from + PAGE_SIZE - 1)
+      if (error) throw new Error(`Backup failed while reading the ${t.table} table: ${error.message}`)
+      const page = data ?? []
+      rows.push(...page)
+      if (page.length < PAGE_SIZE) break
+    }
+    sheetCounts[t.sheet] = rows.length
     // Empty table → still create the sheet with a header row so the tab
     // exists and the structure is documented.
     const sheetData = rows.length > 0 ? rows : [{ _note: 'no rows' }]

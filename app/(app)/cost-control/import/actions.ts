@@ -74,7 +74,7 @@ export async function commitImport(payload: CommitImportPayload) {
       errors.push(`skipped: row missing discipline code (${row.description ?? ''})`)
       continue
     }
-    const discipline_id = discByCode.get(row.discipline_code)
+    let discipline_id = discByCode.get(row.discipline_code)
     if (!discipline_id) {
       skipped++
       errors.push(`skipped: unknown discipline "${row.discipline_code}" (add it under Admin → Disciplines)`)
@@ -85,9 +85,12 @@ export async function commitImport(payload: CommitImportPayload) {
       const ss = subByCode.get(row.sub_skill_code)
       if (ss) {
         sub_skill_id = ss.id
-        // sanity: sub-skill should belong to this discipline
         if (ss.discipline_id !== discipline_id) {
-          errors.push(`warning: sub-skill ${row.sub_skill_code} belongs to a different discipline; importing anyway`)
+          // The sub-skill master decides which discipline a line sits under —
+          // the project page groups lines by the sub-skill's parent, so
+          // importing under the file's claimed discipline would orphan it.
+          discipline_id = ss.discipline_id
+          errors.push(`note: sub-skill ${row.sub_skill_code} sits under a different discipline than ${row.discipline_code} in the file — imported under its own discipline`)
         }
       } else {
         errors.push(`warning: unknown sub-skill "${row.sub_skill_code}"; importing at discipline level`)

@@ -20,6 +20,7 @@ import { MoneyInput } from '@/components/ui/money-input'
 import { Textarea } from '@/components/ui/textarea'
 import { Check, Loader2, Wallet, Paperclip, MessageSquare, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { toast } from 'sonner'
 
 const MODULE_SLUG = 'cost-control'
 const DOC_TYPE = 'cc_working_sheet'
@@ -60,23 +61,28 @@ export function ApproveTrancheButton({
   const [requiresRemarks, setRequiresRemarks] = useState(false)
   const [requiresAttachment, setRequiresAttachment] = useState(false)
 
+  // The sheet's REAL current stage: a sheet with releases already against
+  // it sits at partially_approved, not submitted. Rule lookups and the
+  // audit event must use the true transition.
+  const fromStage = approvedSoFar > 0 ? 'partially_approved' : FROM_STAGE
+
   useEffect(() => {
     if (!open) return
     void (async () => {
+      // A release can land on either to-stage (partial or completing), so
+      // honour the strictest requirements across both possible rules.
       const { data } = await supabase
         .from('approval_rules')
         .select('requires_remarks, requires_attachment')
         .eq('module_slug', MODULE_SLUG)
         .eq('doc_type', DOC_TYPE)
-        .eq('from_stage', FROM_STAGE)
-        .eq('to_stage', TO_STAGE)
+        .eq('from_stage', fromStage)
+        .in('to_stage', ['partially_approved', 'approved'])
         .eq('is_active', true)
-        .limit(1)
-        .maybeSingle()
-      setRequiresRemarks(!!data?.requires_remarks)
-      setRequiresAttachment(!!data?.requires_attachment)
+      setRequiresRemarks((data ?? []).some(r => r.requires_remarks))
+      setRequiresAttachment((data ?? []).some(r => r.requires_attachment))
     })()
-  }, [open, supabase])
+  }, [open, supabase, fromStage])
 
   useEffect(() => {
     if (!open) {
@@ -140,17 +146,25 @@ export function ApproveTrancheButton({
     const r = await approveWorkingSheet(wsId, trancheArg)
     if (!r.ok) { setErr(r.error ?? 'Approve failed'); setBusy(false); return }
 
-    // Log the ACTUAL resulting stage, not a hardcoded one — so a release
-    // that fully completes the sheet is recorded as 'approved' (and the
-    // audit trail reads "Fully approved"), while a true partial stays
-    // 'partially_approved'.
+    const released = r.released ?? trancheAmount
+    const fullyApproved = (r.new_status ?? TO_STAGE) === 'approved'
+    toast.success(
+      fullyApproved
+        ? `Released ${formatINR(released)} — sheet is now fully approved`
+        : `Released ${formatINR(released)} — sheet stays partially approved`,
+    )
+
+    // Log the ACTUAL transition, not a hardcoded one — a release that
+    // completes a partially-approved sheet is partially_approved →
+    // approved, and the matrix rules for that exact pair are what
+    // record_approval_event re-checks.
     const actualToStage = r.new_status ?? TO_STAGE
     const { error: recErr } = await supabase.rpc('record_approval_event', {
       p_module_slug: MODULE_SLUG,
       p_doc_type:    DOC_TYPE,
       p_doc_table:   DOC_TABLE,
       p_doc_id:      wsId,
-      p_from_stage:  FROM_STAGE,
+      p_from_stage:  r.prior_status ?? fromStage,
       p_to_stage:    actualToStage,
       p_decision:    'approved',
       p_comment:     comment.trim() || null,
