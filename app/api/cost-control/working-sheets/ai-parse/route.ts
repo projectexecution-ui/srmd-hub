@@ -149,6 +149,8 @@ export async function POST(req: Request) {
 
 4. For "material_and_labour" rows, populate BOTH material_value AND labour_value such that they sum to amount. Use rate_breakdown if Supply/Installation columns are present. If only a combined number is available, estimate the split using typical industry ratios for that item (e.g. tiling ~60% material / 40% labour; PCC ~70% material / 30% labour; brickwork ~50/50; structural steel fab ~75/25) AND set anomaly="estimated split — no breakdown columns".
 
+4b. CRITICAL — SPLIT-COLUMN SHEETS: when the sheet has Supply / Installation (or Material / Labour) value columns side by side, EVERY row's "amount" MUST be the combined TOTAL (supply + installation), NEVER the supply column alone. This applies to tax / addon / contingency / discount rows too — sheets often compute GST or contingency separately per column; amount = the SUM across both columns for that row. Record the per-column split in amount_breakdown ([{"label":"Supply","value":X},{"label":"Installation","value":Y}]). For unit-rate rows, "rate" is the combined per-unit rate (so qty × rate = amount), with the per-column rates in rate_breakdown. Done right, the rows sum EXACTLY to the sheet's grand total.
+
 5. Tag the most likely SUB-SKILL from the supplied catalogue (suggested_sub_skill_id). null when unsure — confidence < 0.4 should be null.
 
 6. Flag rate concerns briefly (rate_concern) when the rate looks impossible for the description (e.g. ₹50/cum for RCC concrete).
@@ -245,6 +247,8 @@ Output STRICTLY JSON matching this schema (no preamble, no markdown):
       const matV = typeof meta.material_value === 'number' ? meta.material_value : null
       const labV = typeof meta.labour_value   === 'number' ? meta.labour_value   : null
       let amount = typeof r.amount === 'number' ? r.amount : null
+      let rate   = typeof r.rate   === 'number' ? r.rate   : null
+      const qty  = typeof r.qty    === 'number' ? r.qty    : null
       let anomaly = typeof meta.anomaly === 'string' ? meta.anomaly : null
       if (cat === 'material_and_labour' && matV != null && labV != null) {
         const sum = matV + labV
@@ -255,14 +259,20 @@ Output STRICTLY JSON matching this schema (no preamble, no markdown):
           }
           amount = sum
         }
+        // Keep table arithmetic honest: qty × rate must equal the (now
+        // combined) amount. If the AI kept the supply-only unit rate,
+        // derive the combined per-unit rate from the corrected amount.
+        if (qty != null && qty > 0 && amount != null && (rate == null || Math.abs(rate * qty - amount) > Math.max(1, amount * 0.02))) {
+          rate = amount / qty
+        }
       }
       return {
         row_no: typeof r.row_no === 'number' ? r.row_no : i + 1,
         raw_label: typeof r.raw_label === 'string' ? r.raw_label : null,
         description: typeof r.description === 'string' ? r.description : null,
         unit: typeof r.unit === 'string' ? r.unit : null,
-        qty: typeof r.qty === 'number' ? r.qty : null,
-        rate: typeof r.rate === 'number' ? r.rate : null,
+        qty,
+        rate,
         amount,
         formula_in_amount: null,
         rate_breakdown: Array.isArray(r.rate_breakdown) ? (r.rate_breakdown as Array<{ label: string; value: number }>) : null,
