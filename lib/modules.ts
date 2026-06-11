@@ -45,6 +45,7 @@ export const MODULES: ModuleTile[] = [
   { slug: 'budget-vs-actual', label: 'IN4 BPH Report Hub',     description: 'IN4 Budget Performance report — server-backed BPH dashboard', href: '/budget',              icon: FileSpreadsheet, tone: 'teal' },
   { slug: 'procurement-tracker', label: 'Indent → PO Tracker', description: 'Upload IN4 PURCHINDENT_TO_ISSUE_RPT or PUR_PurchaseOrderReport — Indent → PO → GRN → Invoice with pending-receipts focus', href: '/procurement-tracker', icon: FileSpreadsheet, tone: 'amber' },
   { slug: 'contractor-report', label: 'Contractor Report',  description: 'Upload IN4 “All Types Certificates Details” → Category × Contractor summary, in-app view + Excel export', href: '/contractor-report', icon: FileSpreadsheet, tone: 'blue' },
+  { slug: 'supplier-report',  label: 'Supplier Report',    description: 'Upload IN4 “All Purchase Payments Report” → Category × Supplier summary, in-app view + Excel/PDF export', href: '/supplier-report', icon: FileSpreadsheet, tone: 'green' },
   { slug: 'cost-control',     label: 'Cost Control',           description: 'Working Sheets, budgets & approvals (SRASSK)',                 href: '/cost-control',        icon: Calculator,      tone: 'indigo' },
   // Smart-Blueprint sandbox — proves the SLA + aging-dashboard UX in
   // isolation before any production module gets touched. Purple tone
