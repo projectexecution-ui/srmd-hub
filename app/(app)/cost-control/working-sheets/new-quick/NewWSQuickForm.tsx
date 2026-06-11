@@ -162,12 +162,20 @@ async function parseExcel(file: File): Promise<{ rows: ParsedRow[]; grandTotal: 
 
   const rows: ParsedRow[] = []
   let grandTotal: number | null = null
+  // 0 = none yet, 1 = plain "Total"/"Sub-total", 2 = "Grand Total".
+  // A grand-total row always beats plain totals; within the same rank the
+  // BOTTOM-most row wins (Indian sheets put the real total last, after
+  // contingency/GST). The old "biggest total wins" picked the pre-tax
+  // TOTAL row on Supply/Install sheets — the approval went out without GST.
+  let grandTotalRank = 0
 
   for (let i = headerIdx + 1; i < aoa.length; i++) {
     const r = aoa[i]
     if (!r || r.every(c => c == null || c === '')) continue
     const label  = r[0] != null ? String(r[0]) : null
-    const desc   = descCol ? (r[descCol.i] != null ? String(r[descCol.i]) : null) : label
+    // Fall back to column A: total rows often carry their label there
+    // ("Grand Total" in A with an empty Description cell).
+    const desc   = descCol ? (r[descCol.i] != null ? String(r[descCol.i]) : label) : label
     const unit   = unitCol ? (r[unitCol.i] != null ? String(r[unitCol.i]) : null) : null
     const qty    = qtyCol  ? toNum(r[qtyCol.i]) : null
 
@@ -205,7 +213,8 @@ async function parseExcel(file: File): Promise<{ rows: ParsedRow[]; grandTotal: 
     // with an amount but no qty/rate).
     const isTotalRow = !!desc && /\b(grand\s*total|total|sub[\s-]*total|sum)\b/i.test(desc) && amount != null && (qty == null || rate == null)
     if (isTotalRow) {
-      if (grandTotal == null || (amount ?? 0) > grandTotal) grandTotal = amount
+      const rank = /grand\s*total/i.test(desc!) ? 2 : 1
+      if (rank >= grandTotalRank) { grandTotalRank = rank; grandTotal = amount }
       continue
     }
 
@@ -581,6 +590,22 @@ export function NewWSQuickForm({ projects, projectDisciplines, projectSubSkills,
             <Label>Grand total (₹)</Label>
             <MoneyInput value={summaryTotal}
               onChange={setSummaryTotal} placeholder="auto-filled from Excel" className="mt-1" />
+            {(() => {
+              // Cross-check: this number is what gets approved, so warn
+              // when it disagrees with what the parsed rows add up to
+              // (classic miss: the pre-tax TOTAL picked instead of the
+              // GST-inclusive Grand Total).
+              const rowsSum = (parsed?.rows ?? []).reduce((s, r) => s + (r.amount ?? 0), 0)
+              const typed = Number(summaryTotal) || 0
+              if (rowsSum > 0 && typed > 0 && Math.abs(rowsSum - typed) > rowsSum * 0.02) {
+                return (
+                  <p className="text-[11px] text-amber-700 mt-1">
+                    Heads-up: the rows in your sheet add up to <b>₹{rowsSum.toLocaleString('en-IN', { maximumFractionDigits: 0 })}</b> — make sure this total includes GST / contingency before submitting.
+                  </p>
+                )
+              }
+              return null
+            })()}
           </div>
           {canSetDeadline && (
             <div>
