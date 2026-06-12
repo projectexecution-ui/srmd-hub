@@ -48,13 +48,20 @@ function utilColors(u: number) {
 }
 function sumBy<T>(arr: T[], f: (t: T) => number): number { return arr.reduce((s, t) => s + f(t), 0) }
 
-function Cell({ value, area, dash }: { value: number | null; area: number | null; dash?: boolean }) {
-  if (value == null || dash) return <div className="w-[88px] text-right flex-shrink-0"><span className="text-xs text-gray-300">—</span></div>
+function Cell({ value, area, dash, cls, subCls, dashCls }: {
+  value: number | null; area: number | null; dash?: boolean
+  /** colour class for the amount (e.g. emerald for healthy spend, rose for over) */
+  cls?: string
+  /** colour class for the ₹/sft line */
+  subCls?: string
+  dashCls?: string
+}) {
+  if (value == null || dash) return <div className="w-[88px] text-right flex-shrink-0"><span className={cn('text-xs', dashCls ?? 'text-gray-300')}>—</span></div>
   const sft = perSft(value, area)
   return (
     <div className="w-[88px] text-right flex-shrink-0">
-      <div className="text-[13px] text-gray-900 tabular-nums">{fmtINR(value)}</div>
-      {sft && <div className="text-[11px] text-gray-400 tabular-nums">{sft}</div>}
+      <div className={cn('text-[13px] tabular-nums', cls ?? 'text-gray-900')}>{fmtINR(value)}</div>
+      {sft && <div className={cn('text-[11px] tabular-nums', subCls ?? 'text-gray-400')}>{sft}</div>}
     </div>
   )
 }
@@ -247,6 +254,10 @@ export default function BudgetV2Client({
         const gBudget = sumBy(g.projects, p => p.budget)
         const gSpent = sumBy(g.projects, p => p.spent)
         const gu = utilPct(gSpent, gBudget)
+        // group avg ₹/sft (spent ÷ total area of projects that HAVE an area)
+        const withArea = g.projects.filter(p => p.area && p.area > 0)
+        const gArea = sumBy(withArea, p => p.area ?? 0)
+        const gAvgSft = gArea > 0 ? sumBy(withArea, p => p.spent) / gArea : null
         return (
           <section key={g.name}>
             <div className="flex items-end justify-between gap-3 px-1 mb-1.5">
@@ -256,7 +267,7 @@ export default function BudgetV2Client({
                 <span className="text-[11px] text-gray-400 flex-shrink-0">{g.projects.length} project{g.projects.length === 1 ? '' : 's'}</span>
               </div>
               <span className="text-[11px] text-gray-400 flex-shrink-0 tabular-nums">
-                budget {fmtINR(gBudget)} · spent {fmtINR(gSpent)}{gu != null ? ` · ${gu}%` : ''}
+                budget {fmtINR(gBudget)} · spent {fmtINR(gSpent)}{gu != null ? ` · ${gu}%` : ''}{gAvgSft != null ? ` · avg ₹${Math.round(gAvgSft).toLocaleString('en-IN')}/sft` : ''}
               </span>
             </div>
             {gu != null && (
@@ -273,10 +284,10 @@ export default function BudgetV2Client({
                   <div className="w-[88px] text-right text-[10px] uppercase tracking-wide text-gray-400">Spent</div>
                   <div className="w-[88px] text-right text-[10px] uppercase tracking-wide text-gray-400">Outstanding</div>
                 </div>
-                <div className="space-y-2">
+                <div className="space-y-2.5">
                   {g.projects.map(p => (
                     <ProjectCard key={p.name} p={p} open={open} toggle={toggle} forceOpen={searching}
-                      onStatus={setStatus} statusBusy={busy === `st:${p.name}`} />
+                      groupAvgSft={gAvgSft} onStatus={setStatus} statusBusy={busy === `st:${p.name}`} />
                   ))}
                 </div>
               </div>
@@ -304,18 +315,19 @@ function Metric({ icon, tone, label, value }: { icon: React.ReactNode; tone: 'sl
       <div className={cn('h-9 w-9 rounded-xl flex items-center justify-center flex-shrink-0', tones[tone])}>{icon}</div>
       <div className="min-w-0">
         <div className="text-[11px] text-gray-500 truncate">{label}</div>
-        <div className="text-[17px] font-semibold text-gray-900 tabular-nums">{value}</div>
+        <div className="text-xl font-semibold text-gray-900 tabular-nums">{value}</div>
       </div>
     </div>
   )
 }
 
-// ─── project card ────────────────────────────────────────────────────────────
-function ProjectCard({ p, open, toggle, forceOpen, onStatus, statusBusy }: {
+// ─── project card — dark header band (Contractor-Report style) ──────────────
+function ProjectCard({ p, open, toggle, forceOpen, groupAvgSft, onStatus, statusBusy }: {
   p: ProjectNode
   open: Set<string>
   toggle: (k: string) => void
   forceOpen: boolean
+  groupAvgSft: number | null
   onStatus: (name: string, next: 'open' | 'closed') => void
   statusBusy: boolean
 }) {
@@ -323,15 +335,28 @@ function ProjectCard({ p, open, toggle, forceOpen, onStatus, statusBusy }: {
   const isOpen = forceOpen || open.has(pk)
   const u = utilPct(p.spent, p.budget)
   const c = u != null ? utilColors(u) : null
+  const mySft = p.area && p.area > 0 ? p.spent / p.area : null
+
+  // "₹719/sft spent · 11% above group avg" caption
+  let caption = ''
+  if (u != null) caption += `${u}% of budget used`
+  if (mySft != null) caption += `${caption ? ' · ' : ''}₹${Math.round(mySft).toLocaleString('en-IN')}/sft spent`
+  if (mySft != null && groupAvgSft != null && groupAvgSft > 0) {
+    const d = Math.round(((mySft - groupAvgSft) / groupAvgSft) * 100)
+    caption += Math.abs(d) < 1 ? ' · at group avg' : ` · ${Math.abs(d)}% ${d > 0 ? 'above' : 'below'} group avg`
+  }
+
+  const spentCls = u != null && u > 100 ? 'text-rose-300 font-medium' : 'text-emerald-300 font-medium'
   return (
-    <div className={cn('border border-gray-200 rounded-2xl overflow-hidden bg-white transition-shadow hover:shadow-sm', p.status === 'closed' && 'opacity-55')}>
-      <div className="px-3 py-2.5 cursor-pointer" onClick={() => toggle(pk)}>
+    <div className={cn('border border-slate-200 rounded-2xl overflow-hidden bg-white transition-shadow hover:shadow-md', p.status === 'closed' && 'opacity-55')}>
+      {/* dark header band */}
+      <div className="bg-slate-800 px-3 py-2.5 cursor-pointer hover:bg-slate-700/90 transition-colors" onClick={() => toggle(pk)}>
         <div className="flex items-center gap-2">
-          <ChevronRight className={cn('h-4 w-4 text-gray-400 flex-shrink-0 transition-transform', isOpen && 'rotate-90')} />
-          <div className="h-7 w-7 rounded-lg bg-gray-100 flex items-center justify-center flex-shrink-0">
-            <Building2 className="h-4 w-4 text-gray-500" />
+          <ChevronRight className={cn('h-4 w-4 text-slate-400 flex-shrink-0 transition-transform', isOpen && 'rotate-90')} />
+          <div className="h-7 w-7 rounded-lg bg-white/10 flex items-center justify-center flex-shrink-0">
+            <Building2 className="h-4 w-4 text-slate-200" />
           </div>
-          <span className="font-semibold text-sm text-gray-900 truncate">{p.name}</span>
+          <span className="font-semibold text-sm text-white truncate">{p.name}</span>
           <button
             type="button"
             onClick={e => { e.stopPropagation(); onStatus(p.name, p.status === 'open' ? 'closed' : 'open') }}
@@ -342,22 +367,23 @@ function ProjectCard({ p, open, toggle, forceOpen, onStatus, statusBusy }: {
           >
             {statusBusy ? '…' : p.status}
           </button>
-          {p.area && <span className="text-[10px] text-gray-400 flex-shrink-0">{p.area.toLocaleString('en-IN')} sft</span>}
+          {p.area && <span className="text-[10px] text-slate-400 flex-shrink-0">{p.area.toLocaleString('en-IN')} sft</span>}
           {u != null && <UtilChip u={u} />}
           <div className="flex-1" />
-          <Cell value={p.budget} area={p.area} />
-          <Cell value={p.spent} area={p.area} />
-          <Cell value={p.outstanding || null} area={p.area} />
+          <Cell value={p.budget} area={p.area} cls="text-white font-medium" subCls="text-slate-400" dashCls="text-slate-500" />
+          <Cell value={p.spent} area={p.area} cls={spentCls} subCls="text-slate-400" dashCls="text-slate-500" />
+          <Cell value={p.outstanding || null} area={p.area} cls="text-amber-300 font-medium" subCls="text-slate-400" dashCls="text-slate-500" />
         </div>
         {u != null && c && (
-          <div className="mt-2 h-[5px] rounded-full bg-gray-100 overflow-hidden">
+          <div className="mt-2 h-[5px] rounded-full bg-white/15 overflow-hidden">
             <div className="h-full rounded-full transition-[width]" style={{ width: `${Math.min(u, 100)}%`, background: c.bar }} />
           </div>
         )}
+        {caption && <div className="mt-1.5 text-[11px] text-slate-400">{caption}</div>}
       </div>
 
       {isOpen && (
-        <div className="border-t border-gray-100">
+        <div>
           {p.categories.length === 0 && <div className="px-4 py-2.5 text-xs text-gray-400 italic">No budget lines.</div>}
           {p.categories.map((cat, i) => (
             <CategoryBlock key={cat.code + ':' + i} cat={cat} project={p} idx={i} open={open} toggle={toggle} forceOpen={forceOpen} />
@@ -376,22 +402,24 @@ function CategoryBlock({ cat, project, idx, open, toggle, forceOpen }: {
   const isOpen = forceOpen || open.has(ck)
   const u = cat.hasBudget ? utilPct(cat.spent, cat.budget) : null
   const hasChildren = cat.subcats.length > 0 || cat.parties.length > 0
+  const spentCls = u != null && u > 100 ? 'text-rose-600 font-medium' : 'text-emerald-700 font-medium'
   return (
     <div>
-      <div className={cn('flex items-center gap-2 pr-3 py-2 border-t border-gray-50', hasChildren && 'cursor-pointer hover:bg-gray-50', idx % 2 ? 'bg-gray-50/40' : '')}
+      {/* category band — light slate-blue, like the Contractor Report category headers */}
+      <div className={cn('flex items-center gap-2 pr-3 py-2 border-t border-slate-200/60 bg-slate-100/70', hasChildren && 'cursor-pointer hover:bg-slate-200/50')}
         onClick={() => hasChildren && toggle(ck)} style={{ paddingLeft: 30 }}>
         {hasChildren
-          ? <ChevronRight className={cn('h-3.5 w-3.5 text-gray-400 flex-shrink-0 transition-transform', isOpen && 'rotate-90')} />
+          ? <ChevronRight className={cn('h-3.5 w-3.5 text-slate-400 flex-shrink-0 transition-transform', isOpen && 'rotate-90')} />
           : <span className="w-3.5 flex-shrink-0" />}
-        <Folder className="h-3.5 w-3.5 text-gray-400 flex-shrink-0" />
-        {cat.code && <span className="font-mono text-[11px] text-gray-500 flex-shrink-0">{cat.code}</span>}
-        <span className="text-[13px] text-gray-800 truncate">{cat.label}</span>
-        {!cat.hasBudget && <span className="text-[9px] px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 flex-shrink-0">payments only</span>}
+        <Folder className="h-3.5 w-3.5 text-slate-500 flex-shrink-0" />
+        {cat.code && <span className="font-mono text-[10px] text-slate-600 bg-white border border-slate-200 rounded px-1 py-px flex-shrink-0">{cat.code}</span>}
+        <span className="text-[13px] font-medium text-slate-800 truncate">{cat.label}</span>
+        {!cat.hasBudget && <span className="text-[9px] px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-100 flex-shrink-0">payments only</span>}
         {u != null && <UtilChip u={u} />}
         <div className="flex-1" />
         <Cell value={cat.hasBudget ? cat.budget : null} area={project.area} dash={!cat.hasBudget} />
-        <Cell value={cat.hasBudget ? cat.spent : null} area={project.area} dash={!cat.hasBudget} />
-        <Cell value={cat.outstanding || null} area={project.area} />
+        <Cell value={cat.hasBudget ? cat.spent : null} area={project.area} dash={!cat.hasBudget} cls={spentCls} />
+        <Cell value={cat.outstanding || null} area={project.area} cls="text-amber-700 font-medium" />
       </div>
 
       {isOpen && (
@@ -429,18 +457,18 @@ function CategoryBlock({ cat, project, idx, open, toggle, forceOpen }: {
                   </span>
                   <div className="flex-1" />
                   <Cell value={null} area={project.area} dash />
-                  <Cell value={paidSum || null} area={project.area} />
-                  <Cell value={outSum || null} area={project.area} />
+                  <Cell value={paidSum || null} area={project.area} cls="text-gray-800 font-medium" />
+                  <Cell value={outSum || null} area={project.area} cls="text-amber-700 font-medium" />
                 </div>
                 {pOpen && cat.parties.map((pt, j) => (
-                  <div key={'pt' + j} className="flex items-center gap-2 pr-3 pl-9 py-1.5 border-t border-gray-50">
+                  <div key={'pt' + j} className="flex items-center gap-2 pr-3 pl-9 py-1.5 border-t border-gray-50 hover:bg-gray-50/60">
                     <User className="h-3 w-3 text-gray-400 flex-shrink-0" />
                     <span className="text-[12px] text-gray-700 truncate">{pt.name}</span>
                     <SourceTag source={pt.source} />
                     <div className="flex-1" />
                     <Cell value={null} area={project.area} dash />
                     <Cell value={pt.paid} area={project.area} />
-                    <Cell value={pt.outstanding || null} area={project.area} />
+                    <Cell value={pt.outstanding || null} area={project.area} cls="text-amber-600" />
                   </div>
                 ))}
               </>
