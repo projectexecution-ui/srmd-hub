@@ -264,17 +264,22 @@ export default function BudgetV2Client({
                 <div className="h-full rounded-full" style={{ width: `${Math.min(gu, 100)}%`, background: utilColors(gu).bar }} />
               </div>
             )}
-            <div className="flex items-center gap-2 px-4 mb-1">
-              <div className="flex-1 text-[10px] uppercase tracking-wide text-gray-400">Project · category · party</div>
-              <div className="w-[88px] text-right text-[10px] uppercase tracking-wide text-gray-400">Budget</div>
-              <div className="w-[88px] text-right text-[10px] uppercase tracking-wide text-gray-400">Spent</div>
-              <div className="w-[88px] text-right text-[10px] uppercase tracking-wide text-gray-400">Outstanding</div>
-            </div>
-            <div className="space-y-2">
-              {g.projects.map(p => (
-                <ProjectCard key={p.name} p={p} open={open} toggle={toggle} forceOpen={searching}
-                  onStatus={setStatus} statusBusy={busy === `st:${p.name}`} />
-              ))}
+            {/* Horizontal scroll on narrow screens so the 3 amount columns never wrap/overflow */}
+            <div className="overflow-x-auto">
+              <div className="min-w-[640px]">
+                <div className="flex items-center gap-2 px-4 mb-1">
+                  <div className="flex-1 text-[10px] uppercase tracking-wide text-gray-400">Project · category · party</div>
+                  <div className="w-[88px] text-right text-[10px] uppercase tracking-wide text-gray-400">Budget</div>
+                  <div className="w-[88px] text-right text-[10px] uppercase tracking-wide text-gray-400">Spent</div>
+                  <div className="w-[88px] text-right text-[10px] uppercase tracking-wide text-gray-400">Outstanding</div>
+                </div>
+                <div className="space-y-2">
+                  {g.projects.map(p => (
+                    <ProjectCard key={p.name} p={p} open={open} toggle={toggle} forceOpen={searching}
+                      onStatus={setStatus} statusBusy={busy === `st:${p.name}`} />
+                  ))}
+                </div>
+              </div>
             </div>
           </section>
         )

@@ -80,4 +80,59 @@ describe('composeBudgetV2', () => {
   it('normName strips phase suffixes', () => {
     expect(normName('Admin Block - Execution')).toBe('admin block')
   })
+
+  it('keeps "(A)" marker categories separate from the base category (IN4 style)', () => {
+    const b = [{
+      id: 'p9', type: 'individual', name: 'NGH A', parentId: null,
+      areaStatement: { builtUp: 1000 },
+      data: {
+        rows: [
+          { head: '001 (A) Site Pre-lims', catNum: '001', budget: 52000, actual: 52000 },
+          { head: '01 Site Pre-lims', catNum: '01', budget: 236739, actual: 228284 },
+        ],
+        subRows: [{ head: '109 Utility Disconnection', catNum: '01', subNum: '109', budget: 236739, actual: 228284 }],
+      },
+    }]
+    const r = composeBudgetV2(b, [], [], [], {})
+    const cats = r.groups[0].projects[0].categories
+    expect(cats).toHaveLength(2)
+    const marked = cats.find(c => c.label.includes('(A)'))!
+    const plain = cats.find(c => !c.label.includes('(A)'))!
+    expect(marked.budget).toBe(52000)
+    expect(plain.budget).toBe(236739)
+    // sub-row (no marker) attaches to the PLAIN category, not the (A) one
+    expect(plain.subcats).toHaveLength(1)
+    expect(marked.subcats).toHaveLength(0)
+  })
+
+  it('routes "(A)" payments to the marked category and "(M)" payments to the base (no (M) budget line)', () => {
+    const b = [{
+      id: 'p9', type: 'individual', name: 'NGH A', parentId: null,
+      areaStatement: { builtUp: 1000 },
+      data: {
+        rows: [
+          { head: '001 (A) Site Pre-lims', catNum: '001', budget: 52000, actual: 52000 },
+          { head: '01 Site Pre-lims', catNum: '01', budget: 236739, actual: 228284 },
+        ],
+        subRows: [],
+      },
+    }]
+    const sup = [{
+      projectName: 'NGH A',
+      subprojects: [{
+        name: 'NGH A',
+        categories: [
+          { category: '01 (A) Site Pre-lims', suppliers: [{ supplier: 'AssetCo', paidValue: 52000, outstanding: 0 }] },
+          { category: '01 (M) Site Pre-lims', suppliers: [{ supplier: 'MatCo', paidValue: 22505, outstanding: 0 }] },
+        ],
+      }],
+    }]
+    const r = composeBudgetV2(b, [], sup, [], {})
+    const cats = r.groups[0].projects[0].categories
+    const marked = cats.find(c => c.label.includes('(A)'))!
+    const plain = cats.find(c => !c.label.includes('(A)') && !c.label.includes('(M)'))!
+    expect(marked.parties.map(p => p.name)).toEqual(['AssetCo'])
+    expect(plain.parties.map(p => p.name)).toEqual(['MatCo'])
+    expect(cats).toHaveLength(2) // no stray "(M)" category created
+  })
 })

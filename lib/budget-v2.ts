@@ -49,14 +49,25 @@ function tokenIn(token: string, rawLower: string): boolean {
   const t = token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
   return new RegExp(`(^|[^a-z0-9])${t}([^a-z0-9]|$)`).test(rawLower)
 }
-function codeKey(raw: string | undefined): string {
-  const m = (raw ?? '').trim().match(/^(\d+)/)
-  return m ? String(parseInt(m[1], 10)) : (raw ?? '').trim().toLowerCase()
+// IN4 marks asset/material/labour variants of a category with "(A)/(M)/(L)/(C)"
+// in the head — e.g. "001 (A) Site Pre-lims" is a SEPARATE line from
+// "01 Site Pre-lims" and must NOT merge with it.
+function catMarker(s: string | undefined): string {
+  const m = (s ?? '').match(/\(([AMLC])\)/i)
+  return m ? m[1].toUpperCase() : ''
 }
+/** Category identity: numeric code (zero-insensitive) + variant marker. */
+function codeKey(raw: string | undefined, markerSource?: string): string {
+  const t = (raw ?? '').trim()
+  const m = t.match(/^(\d+)/)
+  const base = m ? String(parseInt(m[1], 10)) : t.toLowerCase()
+  return `${base}:${catMarker(markerSource ?? raw)}`
+}
+const baseOf = (key: string): string => key.slice(0, key.lastIndexOf(':') + 1)
 function splitCode(raw: string | undefined): { code: string; label: string } {
   const s = (raw ?? '').trim()
   const m = s.match(/^(\d+)\s*(.*)$/)
-  if (m) return { code: m[1].replace(/^0+(?=\d)/, ''), label: m[2].trim() || s }
+  if (m) return { code: m[1], label: m[2].trim() || s }
   return { code: '', label: s }
 }
 export function normName(s: string): string {
@@ -195,16 +206,20 @@ function idOf(p: BudgetProjectRaw): string { return ((p as unknown as { id?: str
 function buildProjectFromBudget(p: BudgetProjectRaw, group: string, status: StatusMap): ProjectNode {
   const cats = new Map<string, CatNode>()
   for (const row of p.data?.rows ?? []) {
-    const key = codeKey(row.catNum ?? row.head)
+    // Marker comes from the head ("001 (A) Site Pre-lims") so (A)/(M) variants
+    // stay separate categories, matching the IN4 tree.
+    const key = codeKey(row.catNum ?? row.head, row.head)
     const { code, label } = splitCode(row.head)
     const c = cats.get(key) ?? { code: code || key, label, budget: 0, spent: 0, outstanding: 0, hasBudget: true, subcats: [], parties: [] }
     c.budget += num(row.budget); c.spent += num(row.actual); c.hasBudget = true
     cats.set(key, c)
   }
   for (const sr of p.data?.subRows ?? []) {
-    const key = codeKey(sr.catNum)
-    let c = cats.get(key)
-    if (!c) { c = { code: String(sr.catNum ?? ''), label: 'Other', budget: 0, spent: 0, outstanding: 0, hasBudget: true, subcats: [], parties: [] }; cats.set(key, c) }
+    // Sub-rows carry the marker (if any) in their head; fall back to the base
+    // (unmarked) category when no marked one exists.
+    const full = codeKey(sr.catNum, sr.head)
+    let c = cats.get(full) ?? cats.get(baseOf(full))
+    if (!c) { c = { code: String(sr.catNum ?? ''), label: 'Other', budget: 0, spent: 0, outstanding: 0, hasBudget: true, subcats: [], parties: [] }; cats.set(full, c) }
     const { code, label } = splitCode(sr.head)
     c.subcats.push({ code: code || (sr.subNum ?? ''), label, budget: num(sr.budget), spent: num(sr.actual) })
   }
@@ -218,9 +233,20 @@ function buildProjectFromBudget(p: BudgetProjectRaw, group: string, status: Stat
 }
 
 function findOrCreateCat(proj: ProjectNode, code: string, label: string): CatNode {
-  const key = codeKey(code || label)
-  for (const c of proj.categories) if (codeKey(c.code) === key || normName(c.label) === normName(label)) return c
-  const fresh: CatNode = { code: code || key, label: label || 'Uncategorised', budget: 0, spent: 0, outstanding: 0, hasBudget: false, subcats: [], parties: [] }
+  // Payment category identity = numeric code + (A)/(M) marker from its label.
+  const full = codeKey(code || label, label)
+  const catKey = (c: CatNode) => codeKey(c.code, c.label)
+  // 1) exact marker match ("01 (A) …" → budget's "(A)" category)
+  for (const c of proj.categories) if (catKey(c) === full) return c
+  // 2) marked payment with no marked budget line → fold into the base category
+  //    (e.g. supplier "(M) Site Pre-lims" → "01 Site Pre-lims")
+  if (catMarker(label)) {
+    const base = baseOf(full)
+    for (const c of proj.categories) if (catKey(c) === base) return c
+  }
+  // 3) name match as a last resort
+  for (const c of proj.categories) if (normName(c.label) === normName(label)) return c
+  const fresh: CatNode = { code: code || full, label: label || 'Uncategorised', budget: 0, spent: 0, outstanding: 0, hasBudget: false, subcats: [], parties: [] }
   proj.categories.push(fresh)
   return fresh
 }
