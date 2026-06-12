@@ -6,7 +6,7 @@ import {
   ClipboardList, FileText, PackageCheck, Receipt, Wallet,
   Truck, Building2, Upload, Users, Settings, ShieldCheck,
   ExternalLink, Wrench, Calculator, FileSpreadsheet,
-  Boxes, Inbox, GitCompareArrows, Tags, FlaskConical,
+  Boxes, Inbox, GitCompareArrows, Tags, FlaskConical, ListTree,
 } from 'lucide-react'
 import type { PermissionMap } from './types'
 
@@ -46,6 +46,7 @@ export const MODULES: ModuleTile[] = [
   { slug: 'procurement-tracker', label: 'Indent → PO Tracker', description: 'Upload IN4 PURCHINDENT_TO_ISSUE_RPT or PUR_PurchaseOrderReport — Indent → PO → GRN → Invoice with pending-receipts focus', href: '/procurement-tracker', icon: FileSpreadsheet, tone: 'amber' },
   { slug: 'contractor-report', label: 'Contractor Report',  description: 'Upload IN4 “All Types Certificates Details” → Category × Contractor summary, in-app view + Excel export', href: '/contractor-report', icon: FileSpreadsheet, tone: 'blue' },
   { slug: 'supplier-report',  label: 'Supplier Report',    description: 'Upload IN4 “All Purchase Payments Report” → Category × Supplier summary, in-app view + Excel/PDF export', href: '/supplier-report', icon: FileSpreadsheet, tone: 'green' },
+  { slug: 'budget-vs-actual-v2', label: 'Budget vs Actual V2', description: 'Consolidated tree — budget + contractor + supplier in one snapshot, with ₹/sft and open/closed status', href: '/budget-vs-actual-v2', icon: ListTree, tone: 'teal' },
   { slug: 'cost-control',     label: 'Cost Control',           description: 'Working Sheets, budgets & approvals (SRASSK)',                 href: '/cost-control',        icon: Calculator,      tone: 'indigo' },
   // Smart-Blueprint sandbox — proves the SLA + aging-dashboard UX in
   // isolation before any production module gets touched. Purple tone
