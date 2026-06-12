@@ -11,7 +11,7 @@ import { PageHeader } from '@/components/PageHeader'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import {
-  ChevronRight, ChevronDown, Building2, Folder, User, Sparkles, Loader2, Layers, AlertTriangle, ListTree,
+  ChevronRight, ChevronDown, Building2, Folder, User, Users, Sparkles, Loader2, Layers, AlertTriangle, ListTree,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { ComposeResult, CatNode, ProjectNode, UnmatchedProject, UnmatchedLine } from '@/lib/budget-v2'
@@ -138,7 +138,15 @@ export default function BudgetV2Client({
               <span className="text-[11px] text-gray-400">budget {fmtINR(g.budget)} · spent {fmtINR(g.spent)}{g.budget > 0 ? ` · ${Math.round(g.spent / g.budget * 100)}%` : ''}</span>
             </div>
 
-            <div className="space-y-2 mt-2">
+            {/* Column headers for the amount columns */}
+            <div className="flex items-center gap-2 px-3 mt-2 mb-1">
+              <div className="flex-1 text-[10px] uppercase tracking-wide text-gray-400">Project · category · party</div>
+              <div className="w-[88px] text-right text-[10px] uppercase tracking-wide text-gray-400">Budget</div>
+              <div className="w-[88px] text-right text-[10px] uppercase tracking-wide text-gray-400">Spent</div>
+              <div className="w-[88px] text-right text-[10px] uppercase tracking-wide text-gray-400">Outstanding</div>
+            </div>
+
+            <div className="space-y-2">
               {g.projects.map(p => (
                 <ProjectCard key={p.name} p={p} open={open} toggle={toggle}
                   onStatus={setStatus} statusBusy={busy === `st:${p.name}`} />
@@ -254,17 +262,40 @@ function CategoryBlock({ cat, project, idx, open, toggle }: {
               <Cell value={null} area={project.area} dash />
             </div>
           ))}
-          {cat.parties.map((pt, j) => (
-            <div key={'pt' + j} className="flex items-center gap-2 px-3 py-1.5 border-t border-gray-50" style={{ paddingLeft: 50 }}>
-              <User className="h-3 w-3 text-gray-400 flex-shrink-0" />
-              <span className="text-[12px] text-gray-700 truncate">{pt.name}</span>
-              <span className="text-[9px] px-1.5 py-0.5 rounded flex-shrink-0" style={pt.source === 'contractor' ? { background: '#EEEDFE', color: '#3C3489' } : { background: '#E6F1FB', color: '#0C447C' }}>{pt.source}</span>
-              <div className="flex-1" />
-              <Cell value={null} area={project.area} dash />
-              <Cell value={pt.paid} area={project.area} />
-              <Cell value={pt.outstanding || null} area={project.area} />
-            </div>
-          ))}
+          {cat.parties.length > 0 && (() => {
+            const pkk = ck + ':parties'
+            const pOpen = open.has(pkk)
+            const paidSum = cat.parties.reduce((s, p) => s + p.paid, 0)
+            const outSum = cat.parties.reduce((s, p) => s + p.outstanding, 0)
+            const conN = cat.parties.filter(p => p.source === 'contractor').length
+            const supN = cat.parties.length - conN
+            return (
+              <>
+                <div className="flex items-center gap-2 px-3 py-1.5 border-t border-gray-50 cursor-pointer hover:bg-gray-50" style={{ paddingLeft: 50 }} onClick={() => toggle(pkk)}>
+                  {pOpen ? <ChevronDown className="h-3.5 w-3.5 text-gray-400 flex-shrink-0" /> : <ChevronRight className="h-3.5 w-3.5 text-gray-400 flex-shrink-0" />}
+                  <Users className="h-3.5 w-3.5 text-gray-400 flex-shrink-0" />
+                  <span className="text-[12px] text-gray-500">
+                    {conN > 0 && `${conN} contractor${conN === 1 ? '' : 's'}`}{conN > 0 && supN > 0 && ' · '}{supN > 0 && `${supN} supplier${supN === 1 ? '' : 's'}`}{conN === 0 && supN === 0 && 'parties'}
+                  </span>
+                  <div className="flex-1" />
+                  <Cell value={null} area={project.area} dash />
+                  <Cell value={paidSum || null} area={project.area} />
+                  <Cell value={outSum || null} area={project.area} />
+                </div>
+                {pOpen && cat.parties.map((pt, j) => (
+                  <div key={'pt' + j} className="flex items-center gap-2 px-3 py-1.5 border-t border-gray-50" style={{ paddingLeft: 68 }}>
+                    <User className="h-3 w-3 text-gray-400 flex-shrink-0" />
+                    <span className="text-[12px] text-gray-700 truncate">{pt.name}</span>
+                    <span className="text-[9px] px-1.5 py-0.5 rounded flex-shrink-0" style={pt.source === 'contractor' ? { background: '#EEEDFE', color: '#3C3489' } : { background: '#E6F1FB', color: '#0C447C' }}>{pt.source}</span>
+                    <div className="flex-1" />
+                    <Cell value={null} area={project.area} dash />
+                    <Cell value={pt.paid} area={project.area} />
+                    <Cell value={pt.outstanding || null} area={project.area} />
+                  </div>
+                ))}
+              </>
+            )
+          })()}
         </>
       )}
     </div>
