@@ -157,7 +157,10 @@ export default function BudgetV2Client({
       ))}
 
       <p className="text-[11px] text-gray-400 px-1">
-        ₹/sft under every amount · budget shown only to sub-category (payments have no own budget) · open on top, closed dimmed · status saved per project, survives re-uploads.
+        ₹/sft under every amount · open on top, closed dimmed · status saved per project, survives re-uploads.
+      </p>
+      <p className="text-[11px] text-gray-400 px-1">
+        Inside a category, <b className="font-medium">Budget breakdown</b> (by work item) and <b className="font-medium">Paid to</b> (by contractor/supplier) are two views of the same category total — each reconciles to the category, they don’t add to each other.
       </p>
     </div>
   )
@@ -251,6 +254,11 @@ function CategoryBlock({ cat, project, idx, open, toggle }: {
 
       {isOpen && (
         <>
+          {cat.subcats.length > 0 && (
+            <div className="px-3 pt-1.5 text-[10px] uppercase tracking-wide text-gray-400" style={{ paddingLeft: 50 }}>
+              Budget breakdown <span className="normal-case text-gray-300">(by work item)</span>
+            </div>
+          )}
           {cat.subcats.map((sc, j) => (
             <div key={'sc' + j} className="flex items-center gap-2 px-3 py-1.5 border-t border-gray-50" style={{ paddingLeft: 50 }}>
               <span className="w-3 flex-shrink-0" />
@@ -274,6 +282,7 @@ function CategoryBlock({ cat, project, idx, open, toggle }: {
                 <div className="flex items-center gap-2 px-3 py-1.5 border-t border-gray-50 cursor-pointer hover:bg-gray-50" style={{ paddingLeft: 50 }} onClick={() => toggle(pkk)}>
                   {pOpen ? <ChevronDown className="h-3.5 w-3.5 text-gray-400 flex-shrink-0" /> : <ChevronRight className="h-3.5 w-3.5 text-gray-400 flex-shrink-0" />}
                   <Users className="h-3.5 w-3.5 text-gray-400 flex-shrink-0" />
+                  <span className="text-[10px] uppercase tracking-wide text-gray-400 flex-shrink-0">Paid to</span>
                   <span className="text-[12px] text-gray-500">
                     {conN > 0 && `${conN} contractor${conN === 1 ? '' : 's'}`}{conN > 0 && supN > 0 && ' · '}{supN > 0 && `${supN} supplier${supN === 1 ? '' : 's'}`}{conN === 0 && supN === 0 && 'parties'}
                   </span>
