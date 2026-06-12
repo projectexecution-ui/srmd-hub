@@ -14,7 +14,7 @@ import {
   ChevronRight, ChevronDown, Building2, Folder, User, Sparkles, Loader2, Layers, AlertTriangle, ListTree,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import type { ComposeResult, CatNode, ProjectNode, UnmatchedPayment } from '@/lib/budget-v2'
+import type { ComposeResult, CatNode, ProjectNode, UnmatchedProject, UnmatchedLine } from '@/lib/budget-v2'
 
 function fmtINR(v: number): string {
   if (!isFinite(v) || v === 0) return '₹0'
@@ -80,6 +80,11 @@ export default function BudgetV2Client({
   const spentPct = t.budget > 0 ? Math.round((t.spent / t.budget) * 100) : 0
   const avgSft = t.area > 0 ? Math.round(t.spent / t.area) : 0
   const overCount = result.groups.flatMap(g => g.projects).filter(p => (utilPct(p.spent, p.budget) ?? 0) > 100).length
+  const needsMapping = result.unmatchedProjects.length + result.unmatchedLines.length
+  // Budget targets for the mapping dropdowns: real groups first, then projects.
+  const groupNames = result.groups.map(g => g.name).filter(n => n !== '— Ungrouped')
+  const projectsByGroup: Record<string, string[]> = {}
+  for (const g of result.groups) projectsByGroup[g.name] = g.projects.map(p => p.name)
 
   return (
     <div className="p-4 md:p-6 max-w-5xl mx-auto space-y-4">
@@ -104,13 +109,21 @@ export default function BudgetV2Client({
         <p className="text-[13px] text-gray-600 leading-snug">
           <span className="font-medium text-gray-900">Snapshot</span> — {result.groups.length} group{result.groups.length === 1 ? '' : 's'},
           {' '}{result.groups.flatMap(g => g.projects).length} projects · <b className="text-gray-800">{overCount}</b> over budget · <b className="text-amber-700">{fmtINR(t.outstanding)}</b> outstanding
-          {result.unmatched.length > 0 && <> · <b className="text-rose-700">{result.unmatched.length}</b> payment group{result.unmatched.length === 1 ? '' : 's'} need a project match (below)</>}.
+          {needsMapping > 0 && <> · <b className="text-rose-700">{needsMapping}</b> to map (below)</>}.
         </p>
       </div>
 
-      {result.unmatched.length > 0 && (
-        <MappingPanel unmatched={result.unmatched} budgetProjectNames={budgetProjectNames} currentUserId={currentUserId}
-          onError={setError} onSaved={() => router.refresh()} />
+      {needsMapping > 0 && (
+        <MappingPanel
+          unmatchedProjects={result.unmatchedProjects}
+          unmatchedLines={result.unmatchedLines}
+          groupNames={groupNames}
+          projectNames={budgetProjectNames}
+          projectsByGroup={projectsByGroup}
+          currentUserId={currentUserId}
+          onError={setError}
+          onSaved={() => router.refresh()}
+        />
       )}
 
       {/* Tree */}
@@ -258,45 +271,51 @@ function CategoryBlock({ cat, project, idx, open, toggle }: {
   )
 }
 
-// ─── AI-assisted name mapping panel ─────────────────────────────────────────
-function MappingPanel({ unmatched, budgetProjectNames, currentUserId, onError, onSaved }: {
-  unmatched: UnmatchedPayment[]
-  budgetProjectNames: string[]
+// ─── AI-assisted mapping panel (project-level + leftover lines) ──────────────
+function MappingPanel({ unmatchedProjects, unmatchedLines, groupNames, projectNames, projectsByGroup, currentUserId, onError, onSaved }: {
+  unmatchedProjects: UnmatchedProject[]
+  unmatchedLines: UnmatchedLine[]
+  groupNames: string[]
+  projectNames: string[]
+  projectsByGroup: Record<string, string[]>
   currentUserId: string
   onError: (m: string) => void
   onSaved: () => void
 }) {
   const supabase = createClient()
-  const [picks, setPicks] = useState<Record<string, string>>({}) // `${source}::${name}` → budget project | '' (unset) | '__ignore__'
+  const [picks, setPicks] = useState<Record<string, string>>({}) // `${source}::${name}` → target | '' | '__ignore__'
   const [aiBusy, setAiBusy] = useState(false)
   const [saveBusy, setSaveBusy] = useState(false)
-  const keyOf = (u: UnmatchedPayment) => `${u.source}::${u.paymentName}`
+  const pk = (source: string, name: string) => `${source}::${name}`
 
-  async function suggest() {
+  async function autoMap() {
     setAiBusy(true); onError('')
     try {
       const res = await fetch('/api/budget-v2/suggest-aliases', {
         method: 'POST', headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ payments: unmatched.map(u => ({ source: u.source, name: u.paymentName })), budgetProjects: budgetProjectNames }),
+        body: JSON.stringify({
+          payments: unmatchedProjects.map(u => ({ source: u.source, name: u.projectName })),
+          budgetProjects: [...groupNames, ...projectNames], // groups first (preferred)
+        }),
       })
       const json = await res.json()
       if (!res.ok) throw new Error(json?.error || 'AI failed')
       const next: Record<string, string> = {}
-      for (const s of json.suggestions ?? []) if (s.budget_project) next[`${s.source}::${s.name}`] = s.budget_project
-      setPicks(p => ({ ...next, ...p })) // keep any manual picks already made
+      for (const s of json.suggestions ?? []) if (s.budget_project) next[pk(s.source, s.name)] = s.budget_project
+      setPicks(p => ({ ...next, ...p }))
     } catch (e) { onError(e instanceof Error ? e.message : 'AI failed') }
     finally { setAiBusy(false) }
   }
 
   async function save() {
-    const rows = unmatched
-      .map(u => ({ u, v: picks[keyOf(u)] }))
-      .filter(x => x.v && x.v !== '')
-      .map(x => ({
-        source: x.u.source, payment_name: x.u.paymentName,
-        budget_project: x.v === '__ignore__' ? null : x.v,
-        confirmed: true, updated_by: currentUserId, updated_at: new Date().toISOString(),
-      }))
+    const rows: { source: string; payment_name: string; budget_project: string | null; confirmed: boolean; updated_by: string; updated_at: string }[] = []
+    const push = (source: string, name: string) => {
+      const v = picks[pk(source, name)]
+      if (!v) return
+      rows.push({ source, payment_name: name, budget_project: v === '__ignore__' ? null : v, confirmed: true, updated_by: currentUserId, updated_at: new Date().toISOString() })
+    }
+    unmatchedProjects.forEach(u => push(u.source, u.projectName))
+    unmatchedLines.forEach(u => push(u.source, u.subprojectName))
     if (rows.length === 0) { onError('Pick at least one match (or “ignore”) first.'); return }
     setSaveBusy(true); onError('')
     const { error } = await supabase.from('budget_v2_alias').upsert(rows, { onConflict: 'source,payment_name' })
@@ -305,46 +324,77 @@ function MappingPanel({ unmatched, budgetProjectNames, currentUserId, onError, o
     onSaved()
   }
 
+  const tag = (s: string) => <span className="text-[9px] px-1.5 py-0.5 rounded flex-shrink-0" style={s === 'contractor' ? { background: '#EEEDFE', color: '#3C3489' } : { background: '#E6F1FB', color: '#0C447C' }}>{s}</span>
+
   return (
     <Card className="border-amber-300 bg-amber-50/40">
       <CardContent className="pt-4 space-y-3">
         <div className="flex items-center justify-between gap-2 flex-wrap">
           <div className="flex items-center gap-2">
             <AlertTriangle className="h-4 w-4 text-amber-600" />
-            <span className="font-semibold text-sm text-amber-900">Payments needing a project match ({unmatched.length})</span>
+            <span className="font-semibold text-sm text-amber-900">Match payments to budget projects</span>
           </div>
-          <Button size="sm" variant="outline" onClick={suggest} disabled={aiBusy}
-            className="text-violet-700 border-violet-200 hover:bg-violet-50">
-            {aiBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />} Suggest with AI
-          </Button>
+          {unmatchedProjects.length > 0 && (
+            <Button size="sm" variant="outline" onClick={autoMap} disabled={aiBusy} className="text-violet-700 border-violet-200 hover:bg-violet-50">
+              {aiBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />} Auto-map with AI
+            </Button>
+          )}
         </div>
-        <p className="text-[11px] text-amber-800">
-          These payment groups don’t name their project the way Budget does. Pick the budget project each belongs to (or AI-suggest, then confirm) — saved once, applied forever.
-        </p>
-        <div className="divide-y divide-amber-200">
-          {unmatched.map(u => (
-            <div key={keyOf(u)} className="flex items-center gap-2 py-2 flex-wrap">
-              <span className="text-[9px] px-1.5 py-0.5 rounded flex-shrink-0" style={u.source === 'contractor' ? { background: '#EEEDFE', color: '#3C3489' } : { background: '#E6F1FB', color: '#0C447C' }}>{u.source}</span>
-              <span className="text-[13px] text-gray-800 flex-1 min-w-[160px] truncate" title={u.paymentName}>{u.paymentName}</span>
-              <span className="text-[11px] text-gray-400 flex-shrink-0">{fmtINR(u.paid)} paid</span>
-              <ChevronRight className="h-3.5 w-3.5 text-gray-300 flex-shrink-0" />
-              <select
-                value={picks[keyOf(u)] ?? ''}
-                onChange={e => setPicks(p => ({ ...p, [keyOf(u)]: e.target.value }))}
-                className="h-8 rounded-lg border border-gray-300 bg-white px-2 text-xs max-w-[180px]"
-              >
-                <option value="">— pick budget project —</option>
-                {budgetProjectNames.map(n => <option key={n} value={n}>{n}</option>)}
-                <option value="__ignore__">— ignore this —</option>
-              </select>
+
+        {unmatchedProjects.length > 0 && (
+          <div>
+            <p className="text-[11px] text-amber-800 mb-1">
+              Map each <b>payment project</b> to a budget <b>group</b> (the A/B/C blocks sort themselves out) — tap <b>Auto-map</b>, glance, save.
+            </p>
+            <div className="divide-y divide-amber-200">
+              {unmatchedProjects.map(u => (
+                <div key={pk(u.source, u.projectName)} className="flex items-center gap-2 py-2 flex-wrap">
+                  {tag(u.source)}
+                  <span className="text-[13px] text-gray-800 flex-1 min-w-[150px] truncate" title={u.projectName}>{u.projectName}</span>
+                  <span className="text-[11px] text-gray-400 flex-shrink-0">{u.subCount} line{u.subCount === 1 ? '' : 's'} · {fmtINR(u.paid)}</span>
+                  <ChevronRight className="h-3.5 w-3.5 text-gray-300 flex-shrink-0" />
+                  <select value={picks[pk(u.source, u.projectName)] ?? ''}
+                    onChange={e => setPicks(p => ({ ...p, [pk(u.source, u.projectName)]: e.target.value }))}
+                    className="h-8 rounded-lg border border-gray-300 bg-white px-2 text-xs max-w-[190px]">
+                    <option value="">— pick a group / project —</option>
+                    {groupNames.length > 0 && <optgroup label="Groups">{groupNames.map(g => <option key={'g' + g} value={g}>{g} (group)</option>)}</optgroup>}
+                    <optgroup label="Projects">{projectNames.map(p => <option key={'p' + p} value={p}>{p}</option>)}</optgroup>
+                    <option value="__ignore__">— ignore this —</option>
+                  </select>
+                </div>
+              ))}
             </div>
-          ))}
-        </div>
-        <div>
-          <Button size="sm" onClick={save} disabled={saveBusy}>
-            {saveBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <ListTree className="h-4 w-4" />} Save mappings & merge
-          </Button>
-        </div>
+          </div>
+        )}
+
+        {unmatchedLines.length > 0 && (
+          <div className="pt-1">
+            <p className="text-[11px] text-amber-800 mb-1">
+              These few lines are inside a mapped group but couldn’t auto-pick a block — place them once:
+            </p>
+            <div className="divide-y divide-amber-200">
+              {unmatchedLines.map(u => (
+                <div key={pk(u.source, u.subprojectName)} className="flex items-center gap-2 py-2 flex-wrap">
+                  {tag(u.source)}
+                  <span className="text-[13px] text-gray-800 flex-1 min-w-[150px] truncate" title={u.subprojectName}>{u.subprojectName}</span>
+                  <span className="text-[10px] text-gray-400 flex-shrink-0">{u.group}</span>
+                  <ChevronRight className="h-3.5 w-3.5 text-gray-300 flex-shrink-0" />
+                  <select value={picks[pk(u.source, u.subprojectName)] ?? ''}
+                    onChange={e => setPicks(p => ({ ...p, [pk(u.source, u.subprojectName)]: e.target.value }))}
+                    className="h-8 rounded-lg border border-gray-300 bg-white px-2 text-xs max-w-[190px]">
+                    <option value="">— pick project in {u.group} —</option>
+                    {(projectsByGroup[u.group] ?? []).map(p => <option key={p} value={p}>{p}</option>)}
+                    <option value="__ignore__">— ignore this —</option>
+                  </select>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        <Button size="sm" onClick={save} disabled={saveBusy}>
+          {saveBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <ListTree className="h-4 w-4" />} Save & merge
+        </Button>
       </CardContent>
     </Card>
   )

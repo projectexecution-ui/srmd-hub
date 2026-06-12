@@ -31,14 +31,16 @@ export async function POST(req: Request) {
 
   const r = await generateJSON<{ matches: Suggestion[] }>({
     system:
-      'You map construction PAYMENT sub-project names to BUDGET project names for SRMD. ' +
-      'Budget names are short codes (e.g. "NGH A", "VV", "P2 Infra"); payment names are longer with phase suffixes ' +
-      '(e.g. "New Guest House A-Execution", "Vinay Vivek - Design"). Common abbreviations: NGH = New Guest House, VV = Vinay Vivek, ' +
-      'SRAH = SR Animal Hospital, DC = Dining Complex, RS = Raj Sabhagruh. The block letter (A/B/C) and the project must both match. ' +
-      'For each payment, pick the SINGLE best budget_project from the provided list, or null if none is a confident match. ' +
-      'Return JSON: {"matches":[{"name":<payment name verbatim>,"budget_project":<one of the budget list or null>,"confidence":0..1}]}. ' +
-      'Never invent a budget_project not in the list.',
-    user: JSON.stringify({ budget_projects: budgetProjects, payments: payments.map(p => p.name) }),
+      'You map a construction PAYMENT project name to a BUDGET target for SRMD. ' +
+      'Budget targets are either GROUPS (e.g. "NGH", "VV", "P2 Step Terrace") or individual projects (e.g. "Admin Block", "NGH A"). ' +
+      'Payment project names are longer (e.g. "New Guest House", "Vinay Vivek"). Common abbreviations: NGH = New Guest House, ' +
+      'VV = Vinay Vivek, SRAH = SR Animal Hospital, DC = Dining Complex, RS = Raj Sabhagruh. ' +
+      'PREFER mapping to a GROUP when one fits (the specific A/B/C block resolves automatically downstream); only map to an individual ' +
+      'project when there is no matching group (e.g. a standalone like Admin Block). ' +
+      'For each payment, pick the SINGLE best budget target from the provided list, or null if none is a confident match. ' +
+      'Return JSON: {"matches":[{"name":<payment name verbatim>,"budget_project":<one of the list or null>,"confidence":0..1}]}. ' +
+      'Never invent a target not in the list.',
+    user: JSON.stringify({ budget_targets: budgetProjects, payment_projects: payments.map(p => p.name) }),
     maxOutputTokens: 4000,
   })
 

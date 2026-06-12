@@ -1,88 +1,54 @@
 // Budget vs Actual V2 — pure consolidation engine.
 //
-// READ-ONLY over the three existing state blobs (budget_hub_state,
-// contractor_report_state, supplier_report_state). Produces one grouped tree:
+// READ-ONLY over the three existing state blobs. Produces one grouped tree:
+//   Group → Project (open/closed) → Category → Sub-Category
+//                                    └→ Party (contractor|supplier)
 //
-//   Group (alpha) → Project (open top / closed dimmed) → Category → Sub-Category
-//                                                          └→ Party (contractor|supplier)
+// Budget + Spent + sub-categories come from the BPH (budget) source. Parties +
+// Outstanding come from payments, attached to a budget project.
 //
-// Budget + Spent come from the BPH (budget) source at Category/Sub-Category.
-// Party rows + Outstanding come from the payment sources, attached to a budget
-// project via the confirmed alias map (AI-suggested, human-confirmed) with an
-// exact-name fallback. Anything that can't be matched is SURFACED in `unmatched`
-// — never dropped. ₹/sft is computed by the caller (needs project area).
+// SIMPLIFIED MATCHING (map once per project): the admin maps a payment PROJECT
+// name → a budget GROUP (or project) once. Each payment sub-project then resolves
+// to the specific budget project automatically by its block token (A/B/C/Common/
+// Infra…). Order: line-alias → project-alias(+block resolve) → exact name. What
+// still can't be placed is SURFACED (unmatchedProjects / unmatchedLines), never
+// dropped. ₹/sft is computed by the caller (needs project area).
 
-// ─── Loose input shapes (as stored in jsonb) ───────────────────────────────
 interface BudgetRow { head?: string; budget?: number; actual?: number; catNum?: string; subNum?: string }
 interface BudgetProjectRaw {
   name?: string; type?: string; parentId?: string | null
   areaStatement?: { builtUp?: number | null } | null
   data?: { rows?: BudgetRow[]; subRows?: BudgetRow[] } | null
 }
-interface PartyRaw {
-  contractor?: string; supplier?: string
-  woValue?: number; billValue?: number; paidValue?: number; outstanding?: number
-}
+interface PartyRaw { contractor?: string; supplier?: string; woValue?: number; billValue?: number; paidValue?: number; outstanding?: number }
 interface PayCategoryRaw { category?: string; contractors?: PartyRaw[]; suppliers?: PartyRaw[] }
 interface PaySubprojectRaw { name?: string; categories?: PayCategoryRaw[] }
 interface PayReportRaw { projectName?: string; subprojects?: PaySubprojectRaw[] }
 
-export interface AliasRow { source: 'contractor' | 'supplier'; payment_name: string; budget_project: string | null; confirmed: boolean }
+export type Src = 'contractor' | 'supplier'
+export interface AliasRow { source: Src; payment_name: string; budget_project: string | null; confirmed: boolean }
 export type StatusMap = Record<string, 'open' | 'closed'>
 
-// ─── Output tree ────────────────────────────────────────────────────────────
-export interface PartyLine {
-  name: string
-  source: 'contractor' | 'supplier'
-  wo: number
-  paid: number
-  outstanding: number
-  via: string // which payment sub-project it came from (for transparency)
-}
+export interface PartyLine { name: string; source: Src; wo: number; paid: number; outstanding: number; via: string }
 export interface SubCatNode { code: string; label: string; budget: number; spent: number }
-export interface CatNode {
-  code: string
-  label: string
-  budget: number
-  spent: number
-  outstanding: number
-  hasBudget: boolean // false when the node exists only because of payments (no BPH line)
-  subcats: SubCatNode[]
-  parties: PartyLine[]
-}
-export interface ProjectNode {
-  name: string
-  status: 'open' | 'closed'
-  area: number | null
-  budget: number
-  spent: number
-  outstanding: number
-  categories: CatNode[]
-}
-export interface GroupNode {
-  name: string
-  budget: number
-  spent: number
-  outstanding: number
-  area: number
-  projects: ProjectNode[]
-}
-export interface UnmatchedPayment {
-  source: 'contractor' | 'supplier'
-  paymentName: string
-  paid: number
-  outstanding: number
-}
+export interface CatNode { code: string; label: string; budget: number; spent: number; outstanding: number; hasBudget: boolean; subcats: SubCatNode[]; parties: PartyLine[] }
+export interface ProjectNode { name: string; group: string; status: 'open' | 'closed'; area: number | null; budget: number; spent: number; outstanding: number; categories: CatNode[] }
+export interface GroupNode { name: string; budget: number; spent: number; outstanding: number; area: number; projects: ProjectNode[] }
+export interface UnmatchedProject { source: Src; projectName: string; paid: number; outstanding: number; subCount: number }
+export interface UnmatchedLine { source: Src; subprojectName: string; viaProject: string; group: string; paid: number; outstanding: number }
 export interface ComposeResult {
   groups: GroupNode[]
   totals: { budget: number; spent: number; outstanding: number; area: number }
-  unmatched: UnmatchedPayment[]
+  unmatchedProjects: UnmatchedProject[]
+  unmatchedLines: UnmatchedLine[]
 }
 
-// ─── helpers ────────────────────────────────────────────────────────────────
-const n = (v: unknown): number => (typeof v === 'number' && isFinite(v) ? v : 0)
-
-/** Leading numeric code → integer key (so "001", "01", " 03 " all normalise). NaN-safe. */
+const num = (v: unknown): number => (typeof v === 'number' && isFinite(v) ? v : 0)
+const tokens = (s: string): string[] => ((s ?? '').toLowerCase().match(/[a-z0-9]+/g) ?? [])
+function tokenIn(token: string, rawLower: string): boolean {
+  const t = token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  return new RegExp(`(^|[^a-z0-9])${t}([^a-z0-9]|$)`).test(rawLower)
+}
 function codeKey(raw: string | undefined): string {
   const m = (raw ?? '').trim().match(/^(\d+)/)
   return m ? String(parseInt(m[1], 10)) : (raw ?? '').trim().toLowerCase()
@@ -93,7 +59,6 @@ function splitCode(raw: string | undefined): { code: string; label: string } {
   if (m) return { code: m[1].replace(/^0+(?=\d)/, ''), label: m[2].trim() || s }
   return { code: '', label: s }
 }
-/** Normalise a project/sub-project name for the exact-match fallback. */
 export function normName(s: string): string {
   return (s ?? '')
     .toLowerCase()
@@ -102,7 +67,6 @@ export function normName(s: string): string {
     .trim()
 }
 
-// ─── compose ─────────────────────────────────────────────────────────────────
 export function composeBudgetV2(
   budgetProjects: BudgetProjectRaw[],
   contractorReports: PayReportRaw[],
@@ -110,67 +74,81 @@ export function composeBudgetV2(
   aliases: AliasRow[],
   status: StatusMap,
 ): ComposeResult {
-  // 1) Index budget groups + build project nodes from budget data.
   const groupNameById = new Map<string, string>()
-  for (const p of budgetProjects) {
-    if (p.type === 'group' && p.name) groupNameById.set(idOf(p), p.name)
-  }
+  for (const p of budgetProjects) if (p.type === 'group' && p.name) groupNameById.set(idOf(p), p.name)
 
-  const projectByName = new Map<string, ProjectNode>()   // budget project name → node
-  const projectGroup = new Map<string, string>()         // project name → group name ('' = ungrouped)
-
+  const projectByName = new Map<string, ProjectNode>()
+  const projectsByGroup = new Map<string, ProjectNode[]>()
   for (const p of budgetProjects) {
     if (p.type === 'group' || !p.name) continue
-    const node = buildProjectFromBudget(p, status)
-    projectByName.set(p.name, node)
     const gname = p.parentId ? (groupNameById.get(p.parentId) ?? '') : ''
-    projectGroup.set(p.name, gname)
+    const node = buildProjectFromBudget(p, gname || '— Ungrouped', status)
+    projectByName.set(p.name, node)
+    const gk = node.group
+    if (!projectsByGroup.has(gk)) projectsByGroup.set(gk, [])
+    projectsByGroup.get(gk)!.push(node)
   }
-
-  // 2) Build the exact-match fallback index (normalised budget name → real name).
+  const groupNames = new Set(Array.from(groupNameById.values()))
   const byNorm = new Map<string, string>()
   for (const name of projectByName.keys()) byNorm.set(normName(name), name)
 
-  // 3) Confirmed alias lookup.
-  const aliasMap = new Map<string, string | null>() // `${source}::${payment_name}` → budget project | null
+  const aliasMap = new Map<string, string | null>()
   for (const a of aliases) if (a.confirmed) aliasMap.set(`${a.source}::${a.payment_name}`, a.budget_project)
 
-  const unmatched: UnmatchedPayment[] = []
-  const resolve = (source: 'contractor' | 'supplier', payName: string): ProjectNode | null => {
-    const aliased = aliasMap.get(`${source}::${payName}`)
-    if (aliased !== undefined) return aliased ? (projectByName.get(aliased) ?? null) : null // null = intentionally ignored
-    const exact = byNorm.get(normName(payName))
-    return exact ? projectByName.get(exact)! : null
+  type Res = { kind: 'project'; node: ProjectNode } | { kind: 'ignore' } | { kind: 'ambiguous'; group: string } | { kind: 'none' }
+  const targetToProject = (target: string, subName: string): Res => {
+    const proj = projectByName.get(target)
+    if (proj) return { kind: 'project', node: proj }
+    if (groupNames.has(target)) {
+      const inGroup = projectsByGroup.get(target) ?? []
+      const node = resolveInGroup(target, inGroup, subName)
+      return node ? { kind: 'project', node } : { kind: 'ambiguous', group: target }
+    }
+    return { kind: 'none' }
+  }
+  const resolve = (source: Src, projectName: string, subName: string): Res => {
+    const la = aliasMap.get(`${source}::${subName}`)
+    if (la !== undefined) return la === null ? { kind: 'ignore' } : targetToProject(la, subName)
+    const pa = aliasMap.get(`${source}::${projectName}`)
+    if (pa !== undefined) return pa === null ? { kind: 'ignore' } : targetToProject(pa, subName)
+    const ex = byNorm.get(normName(subName)); if (ex) return { kind: 'project', node: projectByName.get(ex)! }
+    const exp = byNorm.get(normName(projectName)); if (exp) return { kind: 'project', node: projectByName.get(exp)! }
+    return { kind: 'none' }
   }
 
-  // 4) Fold payment sources into the budget projects.
-  const fold = (reports: PayReportRaw[], source: 'contractor' | 'supplier') => {
+  const unmatchedProjects = new Map<string, UnmatchedProject>()
+  const unmatchedLines: UnmatchedLine[] = []
+
+  const fold = (reports: PayReportRaw[], source: Src) => {
     for (const r of reports) {
+      const projectName = r.projectName ?? '(unknown)'
       for (const sp of r.subprojects ?? []) {
-        const payName = sp.name ?? ''
-        const proj = resolve(source, payName)
-        // sum this sub-project's totals once (for the unmatched bucket)
         let spPaid = 0, spOut = 0
-        for (const cat of sp.categories ?? []) {
-          for (const party of partiesOf(cat, source)) { spPaid += n(party.paidValue); spOut += n(party.outstanding) }
-        }
-        if (!proj) {
-          if (aliasMap.get(`${source}::${payName}`) === null) continue // explicitly ignored
-          if (spPaid !== 0 || spOut !== 0) unmatched.push({ source, paymentName: payName, paid: spPaid, outstanding: spOut })
+        for (const cat of sp.categories ?? []) for (const party of partiesOf(cat, source)) { spPaid += num(party.paidValue); spOut += num(party.outstanding) }
+        const res = resolve(source, projectName, sp.name ?? '')
+        if (res.kind === 'ignore') continue
+        if (res.kind === 'none') {
+          const k = `${source}::${projectName}`
+          const u = unmatchedProjects.get(k) ?? { source, projectName, paid: 0, outstanding: 0, subCount: 0 }
+          u.paid += spPaid; u.outstanding += spOut; u.subCount += 1
+          unmatchedProjects.set(k, u)
           continue
         }
+        if (res.kind === 'ambiguous') {
+          if (spPaid !== 0 || spOut !== 0) unmatchedLines.push({ source, subprojectName: sp.name ?? '', viaProject: projectName, group: res.group, paid: spPaid, outstanding: spOut })
+          continue
+        }
+        const proj = res.node
         for (const cat of sp.categories ?? []) {
           const { code, label } = splitCode(cat.category)
           const catNode = findOrCreateCat(proj, code, label)
           for (const party of partiesOf(cat, source)) {
-            const pname = (source === 'contractor' ? party.contractor : party.supplier) ?? '—'
             catNode.parties.push({
-              name: pname, source,
-              wo: n(party.woValue), paid: n(party.paidValue), outstanding: n(party.outstanding),
-              via: payName,
+              name: (source === 'contractor' ? party.contractor : party.supplier) ?? '—',
+              source, wo: num(party.woValue), paid: num(party.paidValue), outstanding: num(party.outstanding), via: sp.name ?? '',
             })
-            catNode.outstanding += n(party.outstanding)
-            proj.outstanding += n(party.outstanding)
+            catNode.outstanding += num(party.outstanding)
+            proj.outstanding += num(party.outstanding)
           }
         }
       }
@@ -179,55 +157,48 @@ export function composeBudgetV2(
   fold(contractorReports, 'contractor')
   fold(supplierReports, 'supplier')
 
-  // 5) Group + sort.
-  const groupMap = new Map<string, ProjectNode[]>()
-  for (const [name, node] of projectByName) {
-    const g = projectGroup.get(name) || '— Ungrouped'
-    if (!groupMap.has(g)) groupMap.set(g, [])
-    groupMap.get(g)!.push(node)
-  }
-  const groups: GroupNode[] = Array.from(groupMap.entries())
+  const groups: GroupNode[] = Array.from(projectsByGroup.entries())
     .map(([gname, projs]) => {
       projs.sort(projectSort)
-      return {
-        name: gname,
-        projects: projs,
-        budget: sum(projs, p => p.budget),
-        spent: sum(projs, p => p.spent),
-        outstanding: sum(projs, p => p.outstanding),
-        area: sum(projs, p => p.area ?? 0),
-      }
+      return { name: gname, projects: projs, budget: sum(projs, p => p.budget), spent: sum(projs, p => p.spent), outstanding: sum(projs, p => p.outstanding), area: sum(projs, p => p.area ?? 0) }
     })
-    .sort((a, b) => {
-      if (a.name === '— Ungrouped') return 1
-      if (b.name === '— Ungrouped') return -1
-      return a.name.localeCompare(b.name)
-    })
+    .sort((a, b) => (a.name === '— Ungrouped' ? 1 : b.name === '— Ungrouped' ? -1 : a.name.localeCompare(b.name)))
 
   return {
     groups,
-    totals: {
-      budget: sum(groups, g => g.budget),
-      spent: sum(groups, g => g.spent),
-      outstanding: sum(groups, g => g.outstanding),
-      area: sum(groups, g => g.area),
-    },
-    unmatched: unmatched.sort((a, b) => b.paid - a.paid),
+    totals: { budget: sum(groups, g => g.budget), spent: sum(groups, g => g.spent), outstanding: sum(groups, g => g.outstanding), area: sum(groups, g => g.area) },
+    unmatchedProjects: Array.from(unmatchedProjects.values()).sort((a, b) => b.paid - a.paid),
+    unmatchedLines: unmatchedLines.sort((a, b) => b.paid - a.paid),
   }
 }
 
-function idOf(p: BudgetProjectRaw): string {
-  // budget-hub stores an `id` we don't type; fall back to name. parentId references it.
-  return ((p as unknown as { id?: string }).id) ?? (p.name ?? '')
+// Pick the budget project within a group whose distinctive leaf token (A/B/C,
+// Common, Infra, building name…) appears in the payment sub-project name.
+// One clear winner → that project; tie or none → null (ambiguous).
+function resolveInGroup(groupName: string, projects: ProjectNode[], subName: string): ProjectNode | null {
+  if (projects.length === 0) return null
+  if (projects.length === 1) return projects[0]
+  const raw = (subName ?? '').toLowerCase()
+  const gTok = new Set(tokens(groupName))
+  let best: ProjectNode | null = null, bestScore = 0, tie = false
+  for (const p of projects) {
+    const leaf = tokens(p.name).filter(t => !gTok.has(t))
+    const score = leaf.reduce((s, t) => s + (tokenIn(t, raw) ? 1 : 0), 0)
+    if (score > bestScore) { bestScore = score; best = p; tie = false }
+    else if (score === bestScore && score > 0) tie = true
+  }
+  return bestScore > 0 && !tie ? best : null
 }
 
-function buildProjectFromBudget(p: BudgetProjectRaw, status: StatusMap): ProjectNode {
+function idOf(p: BudgetProjectRaw): string { return ((p as unknown as { id?: string }).id) ?? (p.name ?? '') }
+
+function buildProjectFromBudget(p: BudgetProjectRaw, group: string, status: StatusMap): ProjectNode {
   const cats = new Map<string, CatNode>()
   for (const row of p.data?.rows ?? []) {
     const key = codeKey(row.catNum ?? row.head)
     const { code, label } = splitCode(row.head)
     const c = cats.get(key) ?? { code: code || key, label, budget: 0, spent: 0, outstanding: 0, hasBudget: true, subcats: [], parties: [] }
-    c.budget += n(row.budget); c.spent += n(row.actual); c.hasBudget = true
+    c.budget += num(row.budget); c.spent += num(row.actual); c.hasBudget = true
     cats.set(key, c)
   }
   for (const sr of p.data?.subRows ?? []) {
@@ -235,17 +206,14 @@ function buildProjectFromBudget(p: BudgetProjectRaw, status: StatusMap): Project
     let c = cats.get(key)
     if (!c) { c = { code: String(sr.catNum ?? ''), label: 'Other', budget: 0, spent: 0, outstanding: 0, hasBudget: true, subcats: [], parties: [] }; cats.set(key, c) }
     const { code, label } = splitCode(sr.head)
-    c.subcats.push({ code: code || (sr.subNum ?? ''), label, budget: n(sr.budget), spent: n(sr.actual) })
+    c.subcats.push({ code: code || (sr.subNum ?? ''), label, budget: num(sr.budget), spent: num(sr.actual) })
   }
   const categories = Array.from(cats.values()).sort((a, b) => a.code.localeCompare(b.code, undefined, { numeric: true }))
   return {
-    name: p.name!,
+    name: p.name!, group,
     status: status[p.name!] ?? 'open',
     area: typeof p.areaStatement?.builtUp === 'number' && p.areaStatement.builtUp > 0 ? p.areaStatement.builtUp : null,
-    budget: sum(categories, c => c.budget),
-    spent: sum(categories, c => c.spent),
-    outstanding: 0,
-    categories,
+    budget: sum(categories, c => c.budget), spent: sum(categories, c => c.spent), outstanding: 0, categories,
   }
 }
 
@@ -256,12 +224,6 @@ function findOrCreateCat(proj: ProjectNode, code: string, label: string): CatNod
   proj.categories.push(fresh)
   return fresh
 }
-
-function partiesOf(cat: PayCategoryRaw, source: 'contractor' | 'supplier'): PartyRaw[] {
-  return (source === 'contractor' ? cat.contractors : cat.suppliers) ?? []
-}
+function partiesOf(cat: PayCategoryRaw, source: Src): PartyRaw[] { return (source === 'contractor' ? cat.contractors : cat.suppliers) ?? [] }
 function sum<T>(arr: T[], f: (t: T) => number): number { return arr.reduce((s, t) => s + f(t), 0) }
-function projectSort(a: ProjectNode, b: ProjectNode): number {
-  if (a.status !== b.status) return a.status === 'open' ? -1 : 1 // open first
-  return a.name.localeCompare(b.name)
-}
+function projectSort(a: ProjectNode, b: ProjectNode): number { return a.status !== b.status ? (a.status === 'open' ? -1 : 1) : a.name.localeCompare(b.name) }
