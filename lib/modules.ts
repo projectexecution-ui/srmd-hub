@@ -6,7 +6,7 @@ import {
   ClipboardList, FileText, PackageCheck, Receipt, Wallet,
   Truck, Building2, Upload, Users, Settings, ShieldCheck,
   ExternalLink, Wrench, Calculator, FileSpreadsheet,
-  Boxes, Inbox, GitCompareArrows, Tags, FlaskConical, ListTree,
+  Boxes, Inbox, GitCompareArrows, Tags, FlaskConical, ListTree, Sun,
 } from 'lucide-react'
 import type { PermissionMap } from './types'
 
@@ -52,6 +52,7 @@ export const MODULES: ModuleTile[] = [
   // isolation before any production module gets touched. Purple tone
   // (+ FlaskConical icon) marks it as an experiment.
   { slug: 'blueprint-demo',   label: 'Blueprint Demo',   description: 'Sandbox for Smart Blueprints — SLA dashboard, auto-derived thresholds, escalation chain', href: '/blueprint-demo', icon: FlaskConical, tone: 'purple' },
+  { slug: 'sadhana',          label: 'Daily Sadhana',    description: 'Track your daily spiritual practices — japa, meditation, pranayama and more', href: '/sadhana', icon: Sun, tone: 'amber' },
   { slug: 'admin-users',      label: 'Users & Roles',    description: 'Manage app users',                            href: '/admin/users',    icon: Users,         tone: 'slate' },
   { slug: 'admin-settings',   label: 'Settings',         description: 'App settings (admin email, etc.)',            href: '/admin/settings', icon: Settings,      tone: 'slate' },
   { slug: 'admin-permissions',label: 'Permissions',      description: 'Who can do what in each module',              href: '/admin/permissions', icon: ShieldCheck, tone: 'slate' },
