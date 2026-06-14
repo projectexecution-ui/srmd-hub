@@ -28,6 +28,10 @@ interface PayReportRaw { projectName?: string; subprojects?: PaySubprojectRaw[] 
 export type Src = 'contractor' | 'supplier'
 export interface AliasRow { source: Src; payment_name: string; budget_project: string | null; confirmed: boolean }
 export type StatusMap = Record<string, 'open' | 'closed'>
+/** Per-project area override (overrides budget_hub_state.areaStatement.builtUp). */
+export type AreaOverrideMap = Record<string, number>
+/** Extra projects that don't exist in BPH yet — V2 placeholders. */
+export interface ExtraProject { name: string; group_name?: string | null; area_sft?: number | null }
 
 export interface PartyLine { name: string; source: Src; wo: number; paid: number; outstanding: number; via: string }
 export interface SubCatNode { code: string; label: string; budget: number; spent: number }
@@ -86,6 +90,10 @@ export function composeBudgetV2(
   supplierReports: PayReportRaw[],
   aliases: AliasRow[],
   status: StatusMap,
+  /** Per-project area override (V2-owned). When set, beats budget_hub_state.areaStatement.builtUp. */
+  areaOverrides: AreaOverrideMap = {},
+  /** Extra V2-owned projects/groups that don't exist in BPH yet. */
+  extras: ExtraProject[] = [],
 ): ComposeResult {
   const groupNameById = new Map<string, string>()
   for (const p of budgetProjects) if (p.type === 'group' && p.name) groupNameById.set(idOf(p), p.name)
@@ -96,12 +104,35 @@ export function composeBudgetV2(
     if (p.type === 'group' || !p.name) continue
     const gname = p.parentId ? (groupNameById.get(p.parentId) ?? '') : ''
     const node = buildProjectFromBudget(p, gname || '— Ungrouped', status)
+    // Apply V2 area override (admin-set in V2; doesn't touch the original).
+    const ov = areaOverrides[p.name!]
+    if (typeof ov === 'number' && ov > 0) node.area = ov
     projectByName.set(p.name, node)
     const gk = node.group
     if (!projectsByGroup.has(gk)) projectsByGroup.set(gk, [])
     projectsByGroup.get(gk)!.push(node)
   }
+  // V2-owned EXTRA projects: appear in the tree as empty-budget placeholders;
+  // status + area + group all come from this table. Their group becomes a
+  // valid group_name even if BPH has no such group yet (so payments mapped to
+  // it can resolve).
   const groupNames = new Set(Array.from(groupNameById.values()))
+  for (const ex of extras) {
+    if (!ex.name) continue
+    if (projectByName.has(ex.name)) continue // BPH wins if a project already exists
+    const gname = (ex.group_name ?? '').trim() || '— Ungrouped'
+    const area = typeof ex.area_sft === 'number' && ex.area_sft > 0 ? ex.area_sft : null
+    const node: ProjectNode = {
+      name: ex.name, group: gname,
+      status: status[ex.name] ?? 'open',
+      area: areaOverrides[ex.name] ?? area,
+      budget: 0, spent: 0, outstanding: 0, categories: [],
+    }
+    projectByName.set(ex.name, node)
+    if (!projectsByGroup.has(gname)) projectsByGroup.set(gname, [])
+    projectsByGroup.get(gname)!.push(node)
+    if (gname !== '— Ungrouped') groupNames.add(gname)
+  }
   const byNorm = new Map<string, string>()
   for (const name of projectByName.keys()) byNorm.set(normName(name), name)
 

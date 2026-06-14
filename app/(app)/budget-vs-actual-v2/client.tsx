@@ -20,7 +20,7 @@ import { Input } from '@/components/ui/input'
 import {
   ChevronRight, ChevronsUpDown, ChevronsDownUp, Building2, Folder,
   User, Users, Sparkles, Loader2, Layers, AlertTriangle, ListTree, Search, X,
-  Wallet, TrendingUp, Hourglass, Ruler, UploadCloud, Printer, Clock,
+  Wallet, TrendingUp, Hourglass, Ruler, UploadCloud, Printer, Clock, Plus, Pencil, Check, Ban,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { ComposeResult, CatNode, ProjectNode, GroupNode, UnmatchedProject, UnmatchedLine } from '@/lib/budget-v2'
@@ -114,11 +114,13 @@ function fmtAge(iso: string | null): { text: string; stale: boolean } {
 }
 
 export default function BudgetV2Client({
-  result, budgetProjectNames, currentUserId, freshness,
+  result, budgetProjectNames, knownGroupNames, currentUserId, isAdmin, freshness,
 }: {
   result: ComposeResult
   budgetProjectNames: string[]
+  knownGroupNames: string[]
   currentUserId: string
+  isAdmin: boolean
   freshness: Freshness
 }) {
   const router = useRouter()
@@ -127,6 +129,7 @@ export default function BudgetV2Client({
   const [query, setQuery] = useState('')
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
   const [busy, setBusy] = useState<string | null>(null)
+  const [addProjectOpen, setAddProjectOpen] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const toggle = (k: string) => setOpen(p => { const n = new Set(p); n.has(k) ? n.delete(k) : n.add(k); return n })
 
@@ -172,6 +175,36 @@ export default function BudgetV2Client({
     setBusy(`st:${projectName}`); setError(null)
     const { error } = await supabase.from('budget_v2_project_status')
       .upsert({ project_name: projectName, status: next, updated_by: currentUserId, updated_at: new Date().toISOString() }, { onConflict: 'project_name' })
+    setBusy(null)
+    if (error) { setError(error.message); return }
+    router.refresh()
+  }
+
+  // Admin only — V2 area override (beats BPH areaStatement.builtUp).
+  async function setArea(projectName: string, area_sft: number | null) {
+    setBusy(`ar:${projectName}`); setError(null)
+    let err: { message: string } | null = null
+    if (area_sft == null) {
+      const { error } = await supabase.from('budget_v2_project_area').delete().eq('project_name', projectName)
+      err = error
+    } else {
+      const { error } = await supabase.from('budget_v2_project_area')
+        .upsert({ project_name: projectName, area_sft, updated_by: currentUserId, updated_at: new Date().toISOString() }, { onConflict: 'project_name' })
+      err = error
+    }
+    setBusy(null)
+    if (err) { setError(err.message); return }
+    router.refresh()
+  }
+
+  // Admin only — V2 extra project (placeholder; doesn't touch BPH).
+  async function addExtraProject(name: string, group_name: string | null, area_sft: number | null) {
+    if (!name.trim()) { setError('Project name is required'); return }
+    setBusy(`addp:${name}`); setError(null)
+    const { error } = await supabase.from('budget_v2_extra_project').upsert(
+      { name: name.trim(), group_name: group_name?.trim() || null, area_sft, updated_by: currentUserId, updated_at: new Date().toISOString() },
+      { onConflict: 'name' },
+    )
     setBusy(null)
     if (error) { setError(error.message); return }
     router.refresh()
@@ -292,6 +325,11 @@ export default function BudgetV2Client({
           ))}
         </div>
         <div className="inline-flex gap-1">
+          {isAdmin && (
+            <Button size="sm" variant="outline" onClick={() => setAddProjectOpen(true)} title="Add a V2-only project (placeholder for upcoming work)">
+              <Plus className="h-3.5 w-3.5" /> Add project
+            </Button>
+          )}
           <Button size="sm" variant="outline" onClick={expandAll} title="Expand everything">
             <ChevronsUpDown className="h-3.5 w-3.5" /> Expand all
           </Button>
@@ -301,6 +339,14 @@ export default function BudgetV2Client({
         </div>
       </div>
 
+      {isAdmin && addProjectOpen && (
+        <AddProjectInline
+          knownGroupNames={knownGroupNames}
+          onSubmit={async (name, gname, area) => { await addExtraProject(name, gname, area); setAddProjectOpen(false) }}
+          onCancel={() => setAddProjectOpen(false)}
+        />
+      )}
+
       {needsMapping > 0 && (
         <MappingPanel
           unmatchedProjects={result.unmatchedProjects}
@@ -309,6 +355,7 @@ export default function BudgetV2Client({
           projectNames={budgetProjectNames}
           projectsByGroup={projectsByGroup}
           currentUserId={currentUserId}
+          isAdmin={isAdmin}
           onError={setError}
           onSaved={() => router.refresh()}
         />
@@ -356,7 +403,9 @@ export default function BudgetV2Client({
                 <div className="space-y-2.5">
                   {g.projects.map(p => (
                     <ProjectCard key={p.name} p={p} open={open} toggle={toggle} forceOpen={searching}
-                      groupAvgSft={gAvgSft} onStatus={setStatus} statusBusy={busy === `st:${p.name}`} />
+                      groupAvgSft={gAvgSft} isAdmin={isAdmin}
+                      onStatus={setStatus} statusBusy={busy === `st:${p.name}`}
+                      onArea={setArea} areaBusy={busy === `ar:${p.name}`} />
                   ))}
                 </div>
               </div>
@@ -391,15 +440,20 @@ function Metric({ icon, tone, label, value }: { icon: React.ReactNode; tone: 'sl
 }
 
 // ─── project card — dark header band (Contractor-Report style) ──────────────
-function ProjectCard({ p, open, toggle, forceOpen, groupAvgSft, onStatus, statusBusy }: {
+function ProjectCard({ p, open, toggle, forceOpen, groupAvgSft, isAdmin, onStatus, statusBusy, onArea, areaBusy }: {
   p: ProjectNode
   open: Set<string>
   toggle: (k: string) => void
   forceOpen: boolean
   groupAvgSft: number | null
+  isAdmin: boolean
   onStatus: (name: string, next: 'open' | 'closed') => void
   statusBusy: boolean
+  onArea: (name: string, area_sft: number | null) => void
+  areaBusy: boolean
 }) {
+  const [editingArea, setEditingArea] = useState(false)
+  const [areaDraft, setAreaDraft] = useState<string>(p.area ? String(p.area) : '')
   const pk = `proj:${p.name}`
   const isOpen = forceOpen || open.has(pk)
   const u = utilPct(p.spent, p.budget)
@@ -426,17 +480,53 @@ function ProjectCard({ p, open, toggle, forceOpen, groupAvgSft, onStatus, status
             <Building2 className="h-4 w-4 text-gray-500" />
           </div>
           <span className="font-semibold text-sm text-gray-900 truncate">{p.name}</span>
-          <button
-            type="button"
-            onClick={e => { e.stopPropagation(); onStatus(p.name, p.status === 'open' ? 'closed' : 'open') }}
-            disabled={statusBusy}
-            className="text-[10px] font-medium px-2 py-0.5 rounded-full flex-shrink-0"
-            style={p.status === 'open' ? { background: '#EAF3DE', color: '#27500A' } : { background: '#F1EFE8', color: '#444441' }}
-            title="Saved per project — survives re-uploads"
-          >
-            {statusBusy ? '…' : p.status}
-          </button>
-          {p.area && <span className="text-[10px] text-gray-400 flex-shrink-0">{p.area.toLocaleString('en-IN')} sft</span>}
+          {isAdmin ? (
+            <button
+              type="button"
+              onClick={e => { e.stopPropagation(); onStatus(p.name, p.status === 'open' ? 'closed' : 'open') }}
+              disabled={statusBusy}
+              className="text-[10px] font-medium px-2 py-0.5 rounded-full flex-shrink-0"
+              style={p.status === 'open' ? { background: '#EAF3DE', color: '#27500A' } : { background: '#F1EFE8', color: '#444441' }}
+              title="Saved per project — survives re-uploads"
+            >
+              {statusBusy ? '…' : p.status}
+            </button>
+          ) : (
+            <span
+              className="text-[10px] font-medium px-2 py-0.5 rounded-full flex-shrink-0"
+              style={p.status === 'open' ? { background: '#EAF3DE', color: '#27500A' } : { background: '#F1EFE8', color: '#444441' }}
+              title="Status — admin can change this"
+            >
+              {p.status}
+            </span>
+          )}
+          {/* Area — inline editable for admin, read-only for others */}
+          {editingArea && isAdmin ? (
+            <span className="inline-flex items-center gap-1 flex-shrink-0" onClick={e => e.stopPropagation()}>
+              <input
+                type="number" min={0} value={areaDraft}
+                onChange={e => setAreaDraft(e.target.value)}
+                placeholder="sft" autoFocus
+                className="h-6 w-20 text-[11px] tabular-nums rounded border border-gray-300 px-1.5 focus:outline-none focus:ring-2 focus:ring-blue-200"
+              />
+              <button type="button" disabled={areaBusy}
+                onClick={() => { const n = areaDraft.trim() === '' ? null : Number(areaDraft); onArea(p.name, n); setEditingArea(false) }}
+                className="text-emerald-600 hover:bg-emerald-50 rounded p-0.5"
+                title="Save area"><Check className="h-3.5 w-3.5" /></button>
+              <button type="button" disabled={areaBusy}
+                onClick={() => { setAreaDraft(p.area ? String(p.area) : ''); setEditingArea(false) }}
+                className="text-gray-400 hover:bg-gray-100 rounded p-0.5" title="Cancel"><X className="h-3.5 w-3.5" /></button>
+            </span>
+          ) : (
+            <span
+              className={cn('inline-flex items-center gap-1 text-[10px] text-gray-400 flex-shrink-0', isAdmin && 'cursor-pointer hover:text-gray-700 hover:underline')}
+              onClick={e => { if (isAdmin) { e.stopPropagation(); setAreaDraft(p.area ? String(p.area) : ''); setEditingArea(true) } }}
+              title={isAdmin ? 'Click to edit built-up area (saved in V2)' : ''}
+            >
+              {p.area ? `${p.area.toLocaleString('en-IN')} sft` : (isAdmin ? '+ set area' : 'no area')}
+              {isAdmin && <Pencil className="h-2.5 w-2.5 opacity-0 group-hover:opacity-100" />}
+            </span>
+          )}
           {u != null && <UtilChip u={u} />}
           <div className="flex-1" />
           <Cell value={p.budget} area={p.area} size="lg" />
@@ -592,13 +682,14 @@ function CategoryBlock({ cat, project, idx, open, toggle, forceOpen }: {
 }
 
 // ─── AI-assisted mapping panel (project-level + leftover lines) ──────────────
-function MappingPanel({ unmatchedProjects, unmatchedLines, groupNames, projectNames, projectsByGroup, currentUserId, onError, onSaved }: {
+function MappingPanel({ unmatchedProjects, unmatchedLines, groupNames, projectNames, projectsByGroup, currentUserId, isAdmin, onError, onSaved }: {
   unmatchedProjects: UnmatchedProject[]
   unmatchedLines: UnmatchedLine[]
   groupNames: string[]
   projectNames: string[]
   projectsByGroup: Record<string, string[]>
   currentUserId: string
+  isAdmin: boolean
   onError: (m: string) => void
   onSaved: () => void
 }) {
@@ -606,11 +697,27 @@ function MappingPanel({ unmatchedProjects, unmatchedLines, groupNames, projectNa
   const [picks, setPicks] = useState<Record<string, string>>({})
   const [aiBusy, setAiBusy] = useState(false)
   const [saveBusy, setSaveBusy] = useState(false)
+  const [dropBusy, setDropBusy] = useState<string | null>(null)
   // Collapsed by default once any picks are made or once the user dismisses —
   // keeps a long mapping list out of the way while still one click to reopen.
   const [collapsed, setCollapsed] = useState(false)
   const pk = (source: string, name: string) => `${source}::${name}`
   const totalToMap = unmatchedProjects.length + unmatchedLines.length
+
+  // One-click DROP: persist this payment as intentionally ignored (alias row
+  // with budget_project = null + confirmed = true). Next render it disappears
+  // from the unmatched list — without going through the dropdown.
+  async function dropOne(source: string, name: string) {
+    if (!isAdmin) return
+    setDropBusy(pk(source, name)); onError('')
+    const { error } = await supabase.from('budget_v2_alias').upsert(
+      { source, payment_name: name, budget_project: null, confirmed: true, updated_by: currentUserId, updated_at: new Date().toISOString() },
+      { onConflict: 'source,payment_name' },
+    )
+    setDropBusy(null)
+    if (error) { onError(error.message); return }
+    onSaved()
+  }
 
   async function autoMap() {
     setAiBusy(true); onError('')
@@ -705,6 +812,18 @@ function MappingPanel({ unmatchedProjects, unmatchedLines, groupNames, projectNa
                         <optgroup label="Projects">{projectNames.map(p => <option key={'p' + p} value={p}>{p}</option>)}</optgroup>
                         <option value="__ignore__">— ignore this —</option>
                       </select>
+                      {isAdmin && (
+                        <button
+                          type="button"
+                          onClick={() => dropOne(u.source, u.projectName)}
+                          disabled={dropBusy === pk(u.source, u.projectName)}
+                          className="inline-flex items-center gap-1 text-[11px] font-medium px-2 py-1 rounded-md text-rose-700 border border-rose-200 hover:bg-rose-50"
+                          title="Don't map this — keep its payments out of the tree"
+                        >
+                          {dropBusy === pk(u.source, u.projectName) ? <Loader2 className="h-3 w-3 animate-spin" /> : <Ban className="h-3 w-3" />}
+                          Drop
+                        </button>
+                      )}
                     </div>
                   ))}
                 </div>
@@ -730,6 +849,18 @@ function MappingPanel({ unmatchedProjects, unmatchedLines, groupNames, projectNa
                         {(projectsByGroup[u.group] ?? []).map(p => <option key={p} value={p}>{p}</option>)}
                         <option value="__ignore__">— ignore this —</option>
                       </select>
+                      {isAdmin && (
+                        <button
+                          type="button"
+                          onClick={() => dropOne(u.source, u.subprojectName)}
+                          disabled={dropBusy === pk(u.source, u.subprojectName)}
+                          className="inline-flex items-center gap-1 text-[11px] font-medium px-2 py-1 rounded-md text-rose-700 border border-rose-200 hover:bg-rose-50"
+                          title="Don't map this line — keep its payments out of the tree"
+                        >
+                          {dropBusy === pk(u.source, u.subprojectName) ? <Loader2 className="h-3 w-3 animate-spin" /> : <Ban className="h-3 w-3" />}
+                          Drop
+                        </button>
+                      )}
                     </div>
                   ))}
                 </div>
@@ -741,6 +872,59 @@ function MappingPanel({ unmatchedProjects, unmatchedLines, groupNames, projectNa
             </Button>
           </div>
         )}
+      </CardContent>
+    </Card>
+  )
+}
+
+// ─── Admin-only: inline form to add a V2 project (placeholder) ──────────────
+function AddProjectInline({ knownGroupNames, onSubmit, onCancel }: {
+  knownGroupNames: string[]
+  onSubmit: (name: string, group: string | null, area: number | null) => Promise<void>
+  onCancel: () => void
+}) {
+  const [name, setName] = useState('')
+  const [group, setGroup] = useState<string>('')   // '' = standalone, '__new__' = type-in
+  const [newGroup, setNewGroup] = useState('')
+  const [area, setArea] = useState('')
+  const [busy, setBusy] = useState(false)
+
+  async function go() {
+    if (!name.trim()) return
+    setBusy(true)
+    const g = group === '__new__' ? (newGroup.trim() || null) : (group || null)
+    const a = area.trim() === '' ? null : Number(area)
+    try { await onSubmit(name, g, isFinite(a as number) ? (a as number) : null) }
+    finally { setBusy(false) }
+  }
+
+  return (
+    <Card className="border-emerald-300 bg-emerald-50/40">
+      <CardContent className="pt-4 space-y-3">
+        <div className="flex items-center gap-2">
+          <Plus className="h-4 w-4 text-emerald-700" />
+          <span className="text-sm font-semibold text-emerald-900">New project</span>
+          <span className="text-[11px] text-emerald-800">— placeholder; appears in the tree alongside BPH projects</span>
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+          <Input value={name} onChange={e => setName(e.target.value)} placeholder="Project name (e.g. NGH D)" />
+          <select value={group} onChange={e => setGroup(e.target.value)}
+            className="h-10 rounded-xl border border-gray-300 bg-white px-3 text-sm">
+            <option value="">— Standalone (no group) —</option>
+            {knownGroupNames.map(g => <option key={g} value={g}>{g}</option>)}
+            <option value="__new__">+ New group…</option>
+          </select>
+          <Input type="number" min={0} value={area} onChange={e => setArea(e.target.value)} placeholder="Built-up area (sft, optional)" />
+        </div>
+        {group === '__new__' && (
+          <Input value={newGroup} onChange={e => setNewGroup(e.target.value)} placeholder="New group name (e.g. Phase 3)" />
+        )}
+        <div className="flex items-center gap-2">
+          <Button size="sm" onClick={go} disabled={busy || !name.trim() || (group === '__new__' && !newGroup.trim())}>
+            {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />} Add project
+          </Button>
+          <Button size="sm" variant="ghost" onClick={onCancel} disabled={busy}>Cancel</Button>
+        </div>
       </CardContent>
     </Card>
   )

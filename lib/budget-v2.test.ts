@@ -81,6 +81,32 @@ describe('composeBudgetV2', () => {
     expect(normName('Admin Block - Execution')).toBe('admin block')
   })
 
+  it('honours V2 area override (beats budget_hub_state.areaStatement.builtUp)', () => {
+    const r = composeBudgetV2(budget, [], [], [], {}, { 'NGH A': 99999 })
+    const a = r.groups.find(g => g.name === 'NGH')!.projects.find(p => p.name === 'NGH A')!
+    expect(a.area).toBe(99999)
+  })
+
+  it('injects V2 EXTRA projects into the tree with empty budgets', () => {
+    const r = composeBudgetV2(budget, [], [], [], {}, {}, [
+      { name: 'NGH D', group_name: 'NGH', area_sft: 50000 },
+      { name: 'Future Block', group_name: null, area_sft: 12000 },
+    ])
+    const ngh = r.groups.find(g => g.name === 'NGH')!
+    expect(ngh.projects.some(p => p.name === 'NGH D' && p.area === 50000 && p.budget === 0)).toBe(true)
+    const standalone = r.groups.find(g => g.name === '— Ungrouped')!
+    expect(standalone.projects.some(p => p.name === 'Future Block')).toBe(true)
+  })
+
+  it('does not duplicate when an extra project name collides with a BPH project', () => {
+    const r = composeBudgetV2(budget, [], [], [], {}, {}, [
+      { name: 'NGH A', group_name: 'NGH', area_sft: 11111 }, // BPH already has NGH A
+    ])
+    const a = r.groups.find(g => g.name === 'NGH')!.projects.filter(p => p.name === 'NGH A')
+    expect(a).toHaveLength(1)
+    expect(a[0].area).toBe(57000) // BPH area wins (no override given)
+  })
+
   it('merges IN4 "(A)" variant lines under one clean category by LABEL', () => {
     const b = [{
       id: 'p9', type: 'individual', name: 'NGH A', parentId: null,
