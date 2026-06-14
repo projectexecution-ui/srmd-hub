@@ -477,15 +477,15 @@ function CategoryBlock({ cat, project, idx, open, toggle, forceOpen }: {
   const shownSubcats = showAll ? cat.subcats : subcatsWithValue
   return (
     <div>
-      {/* category row — light + airy */}
-      <div className={cn('flex items-center gap-2 pr-3 py-2 border-t border-gray-100', hasChildren && 'cursor-pointer hover:bg-gray-50/70')}
+      {/* category row — refined header */}
+      <div className={cn('flex items-center gap-2.5 pr-3 py-2.5 border-t border-gray-100', hasChildren && 'cursor-pointer hover:bg-gray-50/60', isOpen && 'bg-gray-50/40')}
         onClick={() => hasChildren && toggle(ck)} style={{ paddingLeft: 30 }}>
         {hasChildren
           ? <ChevronRight className={cn('h-3.5 w-3.5 text-gray-400 flex-shrink-0 transition-transform', isOpen && 'rotate-90')} />
           : <span className="w-3.5 flex-shrink-0" />}
-        <Folder className="h-3.5 w-3.5 text-gray-400 flex-shrink-0" />
-        {cat.code && <span className="font-mono text-[10px] text-gray-500 bg-gray-50 border border-gray-200 rounded px-1 py-px flex-shrink-0">{cat.code}</span>}
-        <span className="text-[13px] font-medium text-gray-800 truncate">{cat.label}</span>
+        <Folder className={cn('h-3.5 w-3.5 flex-shrink-0', isOpen ? 'text-gray-600' : 'text-gray-400')} />
+        {cat.code && <span className="font-mono text-[10px] text-gray-500 bg-white border border-gray-200 rounded px-1 py-px flex-shrink-0">{cat.code}</span>}
+        <span className={cn('text-[13px] truncate', isOpen ? 'font-semibold text-gray-900' : 'font-medium text-gray-800')}>{cat.label}</span>
         {!cat.hasBudget && <span className="text-[9px] px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-100 flex-shrink-0">payments only</span>}
         {u != null && <UtilChip u={u} />}
         <div className="flex-1" />
@@ -497,9 +497,9 @@ function CategoryBlock({ cat, project, idx, open, toggle, forceOpen }: {
       {isOpen && (
         <div className="ml-[37px] border-l-2 border-gray-100">
           {cat.subcats.length > 0 && (
-            <div className="pl-4 pt-1.5 flex items-center justify-between gap-2">
-              <span className="text-[10px] uppercase tracking-wide text-gray-400">
-                Budget breakdown <span className="normal-case text-gray-300">(by work item)</span>
+            <div className="pl-4 pt-2 pb-1 flex items-center justify-between gap-2 border-b border-gray-100">
+              <span className="text-[10px] uppercase tracking-[0.08em] font-semibold text-gray-500">
+                Budget breakdown <span className="font-normal tracking-normal normal-case text-gray-400">· by work item</span>
               </span>
               {hiddenCount > 0 && (
                 <button
@@ -514,7 +514,7 @@ function CategoryBlock({ cat, project, idx, open, toggle, forceOpen }: {
             </div>
           )}
           {shownSubcats.map((sc, j) => (
-            <div key={'sc' + j} className="flex items-center gap-2 pr-3 pl-4 py-1.5 border-t border-gray-50 first:border-t-0">
+            <div key={'sc' + j} className={cn('flex items-center gap-2 pr-3 pl-4 py-1.5 hover:bg-gray-50/60', j > 0 && 'border-t border-gray-50')}>
               {sc.code && <span className="font-mono text-[11px] text-gray-400 flex-shrink-0">{sc.code}</span>}
               <span className="text-[12px] text-gray-600 truncate">{sc.label}</span>
               <div className="flex-1" />
@@ -532,21 +532,43 @@ function CategoryBlock({ cat, project, idx, open, toggle, forceOpen }: {
             const supN = cat.parties.length - conN
             return (
               <>
-                <div className="flex items-center gap-2 pr-3 pl-4 py-1.5 border-t border-gray-50 cursor-pointer hover:bg-gray-50" onClick={() => toggle(pkk)}>
-                  <ChevronRight className={cn('h-3.5 w-3.5 text-gray-400 flex-shrink-0 transition-transform', pOpen && 'rotate-90')} />
-                  <Users className="h-3.5 w-3.5 text-gray-400 flex-shrink-0" />
-                  <span className="text-[10px] uppercase tracking-wide text-gray-400 flex-shrink-0">Paid to</span>
-                  <span className="text-[12px] text-gray-500">
-                    {conN > 0 && `${conN} contractor${conN === 1 ? '' : 's'}`}{conN > 0 && supN > 0 && ' · '}{supN > 0 && `${supN} supplier${supN === 1 ? '' : 's'}`}{conN === 0 && supN === 0 && 'parties'}
+                {/* Paid-to banner — emphasised section header inside a category */}
+                <div className={cn('flex items-center gap-2.5 pr-3 pl-4 py-2 cursor-pointer transition-colors border-t border-gray-100',
+                  pOpen ? 'bg-violet-50/40 hover:bg-violet-50/60' : 'bg-gray-50/40 hover:bg-gray-100/50')}
+                  onClick={() => toggle(pkk)}>
+                  <ChevronRight className={cn('h-3.5 w-3.5 flex-shrink-0 transition-transform', pOpen ? 'text-violet-500 rotate-90' : 'text-gray-400')} />
+                  {/* avatar-stack chip */}
+                  <div className="flex items-center -space-x-1 flex-shrink-0">
+                    {conN > 0 && (
+                      <span className="h-5 w-5 rounded-full bg-violet-100 text-violet-700 border border-white inline-flex items-center justify-center" title={`${conN} contractor${conN === 1 ? '' : 's'}`}>
+                        <Users className="h-2.5 w-2.5" />
+                      </span>
+                    )}
+                    {supN > 0 && (
+                      <span className="h-5 w-5 rounded-full bg-blue-100 text-blue-700 border border-white inline-flex items-center justify-center" title={`${supN} supplier${supN === 1 ? '' : 's'}`}>
+                        <User className="h-2.5 w-2.5" />
+                      </span>
+                    )}
+                  </div>
+                  <span className="text-[10px] uppercase tracking-[0.08em] font-semibold text-gray-500 flex-shrink-0">Paid to</span>
+                  <span className="text-[12px] text-gray-700 truncate">
+                    {conN > 0 && <span className="text-violet-700 font-medium">{conN} contractor{conN === 1 ? '' : 's'}</span>}
+                    {conN > 0 && supN > 0 && <span className="text-gray-300 mx-1">·</span>}
+                    {supN > 0 && <span className="text-blue-700 font-medium">{supN} supplier{supN === 1 ? '' : 's'}</span>}
+                    {conN === 0 && supN === 0 && 'parties'}
                   </span>
+                  <span className="text-[10px] text-gray-400 flex-shrink-0 hidden sm:inline">{pOpen ? 'tap to hide' : 'tap to expand'}</span>
                   <div className="flex-1" />
                   <Cell value={null} area={project.area} dash />
-                  <Cell value={paidSum || null} area={project.area} cls="text-gray-800 font-medium" />
-                  <Cell value={outSum || null} area={project.area} cls="text-amber-700 font-medium" />
+                  <Cell value={paidSum || null} area={project.area} cls="text-gray-900 font-semibold" />
+                  <Cell value={outSum || null} area={project.area} cls="text-amber-700 font-semibold" />
                 </div>
                 {pOpen && cat.parties.map((pt, j) => (
-                  <div key={'pt' + j} className="flex items-center gap-2 pr-3 pl-9 py-1.5 border-t border-gray-50 hover:bg-gray-50/60">
-                    <User className="h-3 w-3 text-gray-400 flex-shrink-0" />
+                  <div key={'pt' + j} className={cn('flex items-center gap-2 pr-3 pl-9 py-1.5 hover:bg-gray-50/60', j > 0 && 'border-t border-gray-50')}>
+                    <span className={cn('h-4 w-4 rounded-full inline-flex items-center justify-center flex-shrink-0',
+                      pt.source === 'contractor' ? 'bg-violet-100 text-violet-700' : 'bg-blue-100 text-blue-700')}>
+                      {pt.source === 'contractor' ? <Users className="h-2 w-2" /> : <User className="h-2 w-2" />}
+                    </span>
                     <span className="text-[12px] text-gray-700 truncate">{pt.name}</span>
                     <SourceTag source={pt.source} />
                     <div className="flex-1" />
