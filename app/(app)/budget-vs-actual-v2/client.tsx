@@ -11,15 +11,16 @@
 
 import { useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
+import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { PageHeader } from '@/components/PageHeader'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import {
-  ChevronRight, ChevronDown, ChevronsUpDown, ChevronsDownUp, Building2, Folder,
+  ChevronRight, ChevronsUpDown, ChevronsDownUp, Building2, Folder,
   User, Users, Sparkles, Loader2, Layers, AlertTriangle, ListTree, Search, X,
-  Wallet, TrendingUp, Hourglass, Ruler,
+  Wallet, TrendingUp, Hourglass, Ruler, UploadCloud, Printer, Clock,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { ComposeResult, CatNode, ProjectNode, GroupNode, UnmatchedProject, UnmatchedLine } from '@/lib/budget-v2'
@@ -81,12 +82,28 @@ function SourceTag({ source }: { source: 'contractor' | 'supplier' }) {
 // ─── main client ─────────────────────────────────────────────────────────────
 type StatusFilter = 'all' | 'open' | 'closed'
 
+interface Freshness { budget: string | null; contractor: string | null; supplier: string | null }
+
+function fmtAge(iso: string | null): { text: string; stale: boolean } {
+  if (!iso) return { text: 'no upload yet', stale: true }
+  const t = Date.parse(iso); if (!isFinite(t)) return { text: 'unknown', stale: true }
+  const days = Math.floor((Date.now() - t) / (24 * 3600 * 1000))
+  let text: string
+  if (days <= 0) text = 'today'
+  else if (days === 1) text = 'yesterday'
+  else if (days < 7) text = `${days} d ago`
+  else if (days < 30) text = `${Math.floor(days / 7)} w ago`
+  else text = `${Math.floor(days / 30)} mo ago`
+  return { text, stale: days >= 14 }
+}
+
 export default function BudgetV2Client({
-  result, budgetProjectNames, currentUserId,
+  result, budgetProjectNames, currentUserId, freshness,
 }: {
   result: ComposeResult
   budgetProjectNames: string[]
   currentUserId: string
+  freshness: Freshness
 }) {
   const router = useRouter()
   const supabase = createClient()
@@ -163,8 +180,44 @@ export default function BudgetV2Client({
     <div className="p-4 md:p-6 max-w-5xl mx-auto space-y-4">
       <PageHeader title="Budget vs Actual V2" back="/dashboard"
         subtitle="One snapshot — budget, contractor & supplier payments in a single tree, with ₹/sft.">
-        <span className="text-[11px] font-semibold px-2 py-1 rounded-full bg-amber-50 text-amber-800 border border-amber-200">Preview · admin only</span>
+        <div className="flex items-center gap-1.5 flex-wrap">
+          <Link href="/budget-vs-actual-v2/upload"
+            className="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-lg border border-gray-200 bg-white hover:bg-gray-50 text-gray-800">
+            <UploadCloud className="h-3.5 w-3.5" /> Upload
+          </Link>
+          <Link href="/budget-vs-actual-v2/print"
+            className="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-lg border border-gray-200 bg-white hover:bg-gray-50 text-gray-800">
+            <Printer className="h-3.5 w-3.5" /> Board view
+          </Link>
+          <span className="text-[11px] font-semibold px-2 py-1 rounded-full bg-amber-50 text-amber-800 border border-amber-200">Preview · admin only</span>
+        </div>
       </PageHeader>
+
+      {/* Freshness strip — at-a-glance: which source data is stale */}
+      <div className="grid grid-cols-3 gap-2.5">
+        {([
+          { key: 'budget', label: 'Budget (BPH)', at: freshness.budget },
+          { key: 'contractor', label: 'Contractor', at: freshness.contractor },
+          { key: 'supplier', label: 'Supplier', at: freshness.supplier },
+        ] as const).map(s => {
+          const { text, stale } = fmtAge(s.at)
+          return (
+            <Link key={s.key} href="/budget-vs-actual-v2/upload"
+              className={cn('rounded-xl border px-3 py-2.5 flex items-center gap-2.5 hover:shadow-sm transition-shadow',
+                stale ? 'border-amber-200 bg-amber-50/40' : 'border-gray-200 bg-white')}>
+              <div className={cn('h-7 w-7 rounded-lg flex items-center justify-center flex-shrink-0',
+                stale ? 'bg-amber-100 text-amber-700' : 'bg-gray-100 text-gray-500')}>
+                <Clock className="h-3.5 w-3.5" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="text-[10px] uppercase tracking-wide text-gray-500">{s.label}</div>
+                <div className={cn('text-[13px] font-medium tabular-nums', stale ? 'text-amber-800' : 'text-gray-900')}>{text}</div>
+              </div>
+              <UploadCloud className="h-4 w-4 text-gray-300 flex-shrink-0" />
+            </Link>
+          )
+        })}
+      </div>
 
       {error && <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-sm text-rose-700">{error}</div>}
 

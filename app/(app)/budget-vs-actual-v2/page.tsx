@@ -11,12 +11,21 @@ export default async function BudgetV2Page() {
   const user = await getMyUser()
   const supabase = await createClient()
 
-  const [{ data: bud }, { data: con }, { data: sup }, { data: statusRows }, { data: aliasRows }] = await Promise.all([
+  const [
+    { data: bud }, { data: con }, { data: sup },
+    { data: statusRows }, { data: aliasRows },
+    // Freshness — latest history snapshot per source. Reads the same history
+    // tables the originals already write to, so V2 stays read-only.
+    { data: budHistRows }, { data: conHistRows }, { data: supHistRows },
+  ] = await Promise.all([
     supabase.from('budget_hub_state').select('state').eq('id', 'global').maybeSingle(),
     supabase.from('contractor_report_state').select('state').eq('id', 'global').maybeSingle(),
     supabase.from('supplier_report_state').select('state').eq('id', 'global').maybeSingle(),
     supabase.from('budget_v2_project_status').select('project_name, status'),
     supabase.from('budget_v2_alias').select('source, payment_name, budget_project, confirmed'),
+    supabase.from('budget_hub_state').select('updated_at').eq('id', 'global').maybeSingle(),
+    supabase.from('contractor_report_state').select('updated_at').eq('id', 'global').maybeSingle(),
+    supabase.from('supplier_report_state').select('updated_at').eq('id', 'global').maybeSingle(),
   ])
 
   const budgetProjects = ((bud?.state as any)?.projects ?? []) as any[]
@@ -30,11 +39,18 @@ export default async function BudgetV2Page() {
   const result = composeBudgetV2(budgetProjects, contractorReports, supplierReports, aliases, statusMap)
   const budgetProjectNames = result.groups.flatMap(g => g.projects.map(p => p.name)).sort((a, b) => a.localeCompare(b))
 
+  const freshness = {
+    budget: (budHistRows as { updated_at?: string } | null)?.updated_at ?? null,
+    contractor: (conHistRows as { updated_at?: string } | null)?.updated_at ?? null,
+    supplier: (supHistRows as { updated_at?: string } | null)?.updated_at ?? null,
+  }
+
   return (
     <BudgetV2Client
       result={result}
       budgetProjectNames={budgetProjectNames}
       currentUserId={user!.id}
+      freshness={freshness}
     />
   )
 }
