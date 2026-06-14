@@ -467,6 +467,14 @@ function CategoryBlock({ cat, project, idx, open, toggle, forceOpen }: {
   const u = cat.hasBudget ? utilPct(cat.spent, cat.budget) : null
   const hasChildren = cat.subcats.length > 0 || cat.parties.length > 0
   const spentCls = u != null && u > 100 ? 'text-rose-600 font-medium' : 'text-emerald-700 font-medium'
+  // BPH exports many empty placeholder sub-rows (IN4 stores the full work-item
+  // checklist even when nothing's been spent on most of them). They drown the
+  // real numbers, so hide zero-only rows by default; user can reveal.
+  const subcatsWithValue = cat.subcats.filter(sc => sc.budget !== 0 || sc.spent !== 0)
+  const hiddenCount = cat.subcats.length - subcatsWithValue.length
+  const showAllKey = ck + ':allsubs'
+  const showAll = forceOpen || open.has(showAllKey)
+  const shownSubcats = showAll ? cat.subcats : subcatsWithValue
   return (
     <div>
       {/* category row — light + airy */}
@@ -489,11 +497,23 @@ function CategoryBlock({ cat, project, idx, open, toggle, forceOpen }: {
       {isOpen && (
         <div className="ml-[37px] border-l-2 border-gray-100">
           {cat.subcats.length > 0 && (
-            <div className="pl-4 pt-1.5 text-[10px] uppercase tracking-wide text-gray-400">
-              Budget breakdown <span className="normal-case text-gray-300">(by work item)</span>
+            <div className="pl-4 pt-1.5 flex items-center justify-between gap-2">
+              <span className="text-[10px] uppercase tracking-wide text-gray-400">
+                Budget breakdown <span className="normal-case text-gray-300">(by work item)</span>
+              </span>
+              {hiddenCount > 0 && (
+                <button
+                  type="button"
+                  onClick={() => toggle(showAllKey)}
+                  className="text-[10px] font-medium px-2 py-0.5 rounded-md text-gray-500 hover:text-gray-800 hover:bg-gray-100"
+                  title={showAll ? 'Hide empty work-items' : `Show ${hiddenCount} empty work-items in the BPH template`}
+                >
+                  {showAll ? `Hide ${hiddenCount} empty` : `Show all (${hiddenCount} empty hidden)`}
+                </button>
+              )}
             </div>
           )}
-          {cat.subcats.map((sc, j) => (
+          {shownSubcats.map((sc, j) => (
             <div key={'sc' + j} className="flex items-center gap-2 pr-3 pl-4 py-1.5 border-t border-gray-50 first:border-t-0">
               {sc.code && <span className="font-mono text-[11px] text-gray-400 flex-shrink-0">{sc.code}</span>}
               <span className="text-[12px] text-gray-600 truncate">{sc.label}</span>
