@@ -559,7 +559,11 @@ function MappingPanel({ unmatchedProjects, unmatchedLines, groupNames, projectNa
   const [picks, setPicks] = useState<Record<string, string>>({})
   const [aiBusy, setAiBusy] = useState(false)
   const [saveBusy, setSaveBusy] = useState(false)
+  // Collapsed by default once any picks are made or once the user dismisses —
+  // keeps a long mapping list out of the way while still one click to reopen.
+  const [collapsed, setCollapsed] = useState(false)
   const pk = (source: string, name: string) => `${source}::${name}`
+  const totalToMap = unmatchedProjects.length + unmatchedLines.length
 
   async function autoMap() {
     setAiBusy(true); onError('')
@@ -601,71 +605,95 @@ function MappingPanel({ unmatchedProjects, unmatchedLines, groupNames, projectNa
     <Card className="border-amber-300 bg-amber-50/40">
       <CardContent className="pt-4 space-y-3">
         <div className="flex items-center justify-between gap-2 flex-wrap">
-          <div className="flex items-center gap-2">
-            <AlertTriangle className="h-4 w-4 text-amber-600" />
+          <button
+            type="button"
+            onClick={() => setCollapsed(c => !c)}
+            className="flex items-center gap-2 text-left hover:opacity-80"
+            aria-expanded={!collapsed}
+            aria-controls="bv2-mapping-body"
+            title={collapsed ? 'Show mapping list' : 'Hide mapping list'}
+          >
+            <ChevronRight className={cn('h-4 w-4 text-amber-700 flex-shrink-0 transition-transform', !collapsed && 'rotate-90')} />
+            <AlertTriangle className="h-4 w-4 text-amber-600 flex-shrink-0" />
             <span className="font-semibold text-sm text-amber-900">Match payments to budget projects</span>
+            <span className="text-[11px] font-medium px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-800 border border-amber-200">
+              {totalToMap} to map
+            </span>
+          </button>
+          <div className="flex items-center gap-1.5">
+            {unmatchedProjects.length > 0 && (
+              <Button size="sm" variant="outline" onClick={autoMap} disabled={aiBusy} className="text-violet-700 border-violet-200 hover:bg-violet-50">
+                {aiBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />} Auto-map with AI
+              </Button>
+            )}
+            <button
+              type="button"
+              onClick={() => setCollapsed(c => !c)}
+              className="text-[11px] font-medium px-2 py-1 rounded-md text-amber-800 hover:bg-amber-100/60"
+            >
+              {collapsed ? 'Show' : 'Hide'}
+            </button>
           </div>
-          {unmatchedProjects.length > 0 && (
-            <Button size="sm" variant="outline" onClick={autoMap} disabled={aiBusy} className="text-violet-700 border-violet-200 hover:bg-violet-50">
-              {aiBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />} Auto-map with AI
-            </Button>
-          )}
         </div>
 
-        {unmatchedProjects.length > 0 && (
-          <div>
-            <p className="text-[11px] text-amber-800 mb-1">
-              Map each <b>payment project</b> to a budget <b>group</b> (the A/B/C blocks sort themselves out) — tap <b>Auto-map</b>, glance, save.
-            </p>
-            <div className="divide-y divide-amber-200">
-              {unmatchedProjects.map(u => (
-                <div key={pk(u.source, u.projectName)} className="flex items-center gap-2 py-2 flex-wrap">
-                  <SourceTag source={u.source} />
-                  <span className="text-[13px] text-gray-800 flex-1 min-w-[150px] truncate" title={u.projectName}>{u.projectName}</span>
-                  <span className="text-[11px] text-gray-400 flex-shrink-0">{u.subCount} line{u.subCount === 1 ? '' : 's'} · {fmtINR(u.paid)}</span>
-                  <ChevronRight className="h-3.5 w-3.5 text-gray-300 flex-shrink-0" />
-                  <select value={picks[pk(u.source, u.projectName)] ?? ''}
-                    onChange={e => setPicks(p => ({ ...p, [pk(u.source, u.projectName)]: e.target.value }))}
-                    className="h-8 rounded-lg border border-gray-300 bg-white px-2 text-xs max-w-[190px]">
-                    <option value="">— pick a group / project —</option>
-                    {groupNames.length > 0 && <optgroup label="Groups">{groupNames.map(g => <option key={'g' + g} value={g}>{g} (group)</option>)}</optgroup>}
-                    <optgroup label="Projects">{projectNames.map(p => <option key={'p' + p} value={p}>{p}</option>)}</optgroup>
-                    <option value="__ignore__">— ignore this —</option>
-                  </select>
+        {!collapsed && (
+          <div id="bv2-mapping-body" className="space-y-3">
+            {unmatchedProjects.length > 0 && (
+              <div>
+                <p className="text-[11px] text-amber-800 mb-1">
+                  Map each <b>payment project</b> to a budget <b>group</b> (the A/B/C blocks sort themselves out) — tap <b>Auto-map</b>, glance, save.
+                </p>
+                <div className="divide-y divide-amber-200">
+                  {unmatchedProjects.map(u => (
+                    <div key={pk(u.source, u.projectName)} className="flex items-center gap-2 py-2 flex-wrap">
+                      <SourceTag source={u.source} />
+                      <span className="text-[13px] text-gray-800 flex-1 min-w-[150px] truncate" title={u.projectName}>{u.projectName}</span>
+                      <span className="text-[11px] text-gray-400 flex-shrink-0">{u.subCount} line{u.subCount === 1 ? '' : 's'} · {fmtINR(u.paid)}</span>
+                      <ChevronRight className="h-3.5 w-3.5 text-gray-300 flex-shrink-0" />
+                      <select value={picks[pk(u.source, u.projectName)] ?? ''}
+                        onChange={e => setPicks(p => ({ ...p, [pk(u.source, u.projectName)]: e.target.value }))}
+                        className="h-8 rounded-lg border border-gray-300 bg-white px-2 text-xs max-w-[190px]">
+                        <option value="">— pick a group / project —</option>
+                        {groupNames.length > 0 && <optgroup label="Groups">{groupNames.map(g => <option key={'g' + g} value={g}>{g} (group)</option>)}</optgroup>}
+                        <optgroup label="Projects">{projectNames.map(p => <option key={'p' + p} value={p}>{p}</option>)}</optgroup>
+                        <option value="__ignore__">— ignore this —</option>
+                      </select>
+                    </div>
+                  ))}
                 </div>
-              ))}
-            </div>
+              </div>
+            )}
+
+            {unmatchedLines.length > 0 && (
+              <div className="pt-1">
+                <p className="text-[11px] text-amber-800 mb-1">
+                  These few lines are inside a mapped group but couldn’t auto-pick a block — place them once:
+                </p>
+                <div className="divide-y divide-amber-200">
+                  {unmatchedLines.map(u => (
+                    <div key={pk(u.source, u.subprojectName)} className="flex items-center gap-2 py-2 flex-wrap">
+                      <SourceTag source={u.source} />
+                      <span className="text-[13px] text-gray-800 flex-1 min-w-[150px] truncate" title={u.subprojectName}>{u.subprojectName}</span>
+                      <span className="text-[10px] text-gray-400 flex-shrink-0">{u.group}</span>
+                      <ChevronRight className="h-3.5 w-3.5 text-gray-300 flex-shrink-0" />
+                      <select value={picks[pk(u.source, u.subprojectName)] ?? ''}
+                        onChange={e => setPicks(p => ({ ...p, [pk(u.source, u.subprojectName)]: e.target.value }))}
+                        className="h-8 rounded-lg border border-gray-300 bg-white px-2 text-xs max-w-[190px]">
+                        <option value="">— pick project in {u.group} —</option>
+                        {(projectsByGroup[u.group] ?? []).map(p => <option key={p} value={p}>{p}</option>)}
+                        <option value="__ignore__">— ignore this —</option>
+                      </select>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <Button size="sm" onClick={save} disabled={saveBusy}>
+              {saveBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <ListTree className="h-4 w-4" />} Save & merge
+            </Button>
           </div>
         )}
-
-        {unmatchedLines.length > 0 && (
-          <div className="pt-1">
-            <p className="text-[11px] text-amber-800 mb-1">
-              These few lines are inside a mapped group but couldn’t auto-pick a block — place them once:
-            </p>
-            <div className="divide-y divide-amber-200">
-              {unmatchedLines.map(u => (
-                <div key={pk(u.source, u.subprojectName)} className="flex items-center gap-2 py-2 flex-wrap">
-                  <SourceTag source={u.source} />
-                  <span className="text-[13px] text-gray-800 flex-1 min-w-[150px] truncate" title={u.subprojectName}>{u.subprojectName}</span>
-                  <span className="text-[10px] text-gray-400 flex-shrink-0">{u.group}</span>
-                  <ChevronRight className="h-3.5 w-3.5 text-gray-300 flex-shrink-0" />
-                  <select value={picks[pk(u.source, u.subprojectName)] ?? ''}
-                    onChange={e => setPicks(p => ({ ...p, [pk(u.source, u.subprojectName)]: e.target.value }))}
-                    className="h-8 rounded-lg border border-gray-300 bg-white px-2 text-xs max-w-[190px]">
-                    <option value="">— pick project in {u.group} —</option>
-                    {(projectsByGroup[u.group] ?? []).map(p => <option key={p} value={p}>{p}</option>)}
-                    <option value="__ignore__">— ignore this —</option>
-                  </select>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        <Button size="sm" onClick={save} disabled={saveBusy}>
-          {saveBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <ListTree className="h-4 w-4" />} Save & merge
-        </Button>
       </CardContent>
     </Card>
   )
