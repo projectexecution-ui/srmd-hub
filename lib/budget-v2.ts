@@ -49,26 +49,28 @@ function tokenIn(token: string, rawLower: string): boolean {
   const t = token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
   return new RegExp(`(^|[^a-z0-9])${t}([^a-z0-9]|$)`).test(rawLower)
 }
-// IN4 marks asset/material/labour variants of a category with "(A)/(M)/(L)/(C)"
-// in the head — e.g. "001 (A) Site Pre-lims" is a SEPARATE line from
-// "01 Site Pre-lims" and must NOT merge with it.
+// IN4 sometimes splits a category into "(A)/(M)/(L)/(C)" variants on separate
+// lines — e.g. "001 (A) Site Pre-lims" + "01 Site Pre-lims" are two BPH rows
+// that mean the SAME category, just split by asset vs material/labour. For
+// V2 we MERGE them under one human-named category so the tree doesn't read
+// like a duplicate. SRAH's "01 Pre Design Works" stays separate from
+// "001 (A) Site Pre-lims" because the labels differ — merging is by LABEL,
+// not code.
 function catMarker(s: string | undefined): string {
   const m = (s ?? '').match(/\(([AMLC])\)/i)
   return m ? m[1].toUpperCase() : ''
 }
-/** Category identity: numeric code (zero-insensitive) + variant marker. */
-function codeKey(raw: string | undefined, markerSource?: string): string {
-  const t = (raw ?? '').trim()
-  const m = t.match(/^(\d+)/)
-  const base = m ? String(parseInt(m[1], 10)) : t.toLowerCase()
-  return `${base}:${catMarker(markerSource ?? raw)}`
-}
-const baseOf = (key: string): string => key.slice(0, key.lastIndexOf(':') + 1)
 function splitCode(raw: string | undefined): { code: string; label: string } {
   const s = (raw ?? '').trim()
   const m = s.match(/^(\d+)\s*(.*)$/)
   if (m) return { code: m[1], label: m[2].trim() || s }
   return { code: '', label: s }
+}
+/** Strip the "(A)/(M)/…" marker AND the leading number, then normalise. The
+ *  result is what we group by — "001 (A) Site Pre-lims" → "site pre lims". */
+function labelKey(rawHead: string | undefined): string {
+  const { label } = splitCode(rawHead)
+  return label.replace(/\([AMLC]\)/i, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim()
 }
 export function normName(s: string): string {
   return (s ?? '')
@@ -204,26 +206,35 @@ function resolveInGroup(groupName: string, projects: ProjectNode[], subName: str
 function idOf(p: BudgetProjectRaw): string { return ((p as unknown as { id?: string }).id) ?? (p.name ?? '') }
 
 function buildProjectFromBudget(p: BudgetProjectRaw, group: string, status: StatusMap): ProjectNode {
+  // Group categories by LABEL (after stripping the (A)/(M) marker) so IN4's
+  // split lines fold into ONE clean row. SRAH-style cases — different labels
+  // that happen to share a code — stay separate because their labelKey differs.
   const cats = new Map<string, CatNode>()
   for (const row of p.data?.rows ?? []) {
-    // Marker comes from the head ("001 (A) Site Pre-lims") so (A)/(M) variants
-    // stay separate categories, matching the IN4 tree.
-    const key = codeKey(row.catNum ?? row.head, row.head)
+    const key = labelKey(row.head)
     const { code, label } = splitCode(row.head)
-    const c = cats.get(key) ?? { code: code || key, label, budget: 0, spent: 0, outstanding: 0, hasBudget: true, subcats: [], parties: [] }
+    // Pick the cleanest representative label (no marker; shortest code wins).
+    const cleanLabel = label.replace(/\([AMLC]\)\s*/i, '').trim() || label
+    const c = cats.get(key) ?? { code: code || key, label: cleanLabel, budget: 0, spent: 0, outstanding: 0, hasBudget: true, subcats: [], parties: [] }
+    // Prefer the unmarked label + lowest numeric code as the display.
+    if (!catMarker(c.label) && !catMarker(row.head)) {
+      if (cleanLabel.length < c.label.length || (cleanLabel === c.label && code && (!c.code || code.length < c.code.length))) c.label = cleanLabel
+    } else if (catMarker(c.label) && !catMarker(row.head)) {
+      c.label = cleanLabel
+    }
+    if (code && (!c.code || (code.replace(/^0+/, '').length < c.code.replace(/^0+/, '').length))) c.code = code
     c.budget += num(row.budget); c.spent += num(row.actual); c.hasBudget = true
     cats.set(key, c)
   }
   for (const sr of p.data?.subRows ?? []) {
-    // Sub-rows carry the marker (if any) in their head; fall back to the base
-    // (unmarked) category when no marked one exists.
-    const full = codeKey(sr.catNum, sr.head)
-    let c = cats.get(full) ?? cats.get(baseOf(full))
-    if (!c) { c = { code: String(sr.catNum ?? ''), label: 'Other', budget: 0, spent: 0, outstanding: 0, hasBudget: true, subcats: [], parties: [] }; cats.set(full, c) }
+    // Sub-rows attach by label-key so they land on the merged parent.
+    const key = labelKeyForSubRow(sr.head, p.data?.rows ?? [], sr.catNum)
+    let c = cats.get(key)
+    if (!c) { c = { code: String(sr.catNum ?? ''), label: splitCode(sr.head).label || 'Other', budget: 0, spent: 0, outstanding: 0, hasBudget: true, subcats: [], parties: [] }; cats.set(key, c) }
     const { code, label } = splitCode(sr.head)
     c.subcats.push({ code: code || (sr.subNum ?? ''), label, budget: num(sr.budget), spent: num(sr.actual) })
   }
-  const categories = Array.from(cats.values()).sort((a, b) => a.code.localeCompare(b.code, undefined, { numeric: true }))
+  const categories = Array.from(cats.values()).sort((a, b) => (a.code || '').localeCompare(b.code || '', undefined, { numeric: true }))
   return {
     name: p.name!, group,
     status: status[p.name!] ?? 'open',
@@ -233,22 +244,35 @@ function buildProjectFromBudget(p: BudgetProjectRaw, group: string, status: Stat
 }
 
 function findOrCreateCat(proj: ProjectNode, code: string, label: string): CatNode {
-  // Payment category identity = numeric code + (A)/(M) marker from its label.
-  const full = codeKey(code || label, label)
-  const catKey = (c: CatNode) => codeKey(c.code, c.label)
-  // 1) exact marker match ("01 (A) …" → budget's "(A)" category)
-  for (const c of proj.categories) if (catKey(c) === full) return c
-  // 2) marked payment with no marked budget line → fold into the base category
-  //    (e.g. supplier "(M) Site Pre-lims" → "01 Site Pre-lims")
-  if (catMarker(label)) {
-    const base = baseOf(full)
-    for (const c of proj.categories) if (catKey(c) === base) return c
-  }
-  // 3) name match as a last resort
+  // Payments group by the SAME label-key as budget — so "(A) Site Pre-lims",
+  // "(M) Site Pre-lims" and "Site Pre-lims" all land on the same node.
+  const want = labelKey(`${code} ${label}`)
+  for (const c of proj.categories) if (labelKey(`${c.code} ${c.label}`) === want) return c
+  // Fallback: name match (handles cases where code is blank on one side).
   for (const c of proj.categories) if (normName(c.label) === normName(label)) return c
-  const fresh: CatNode = { code: code || full, label: label || 'Uncategorised', budget: 0, spent: 0, outstanding: 0, hasBudget: false, subcats: [], parties: [] }
+  const fresh: CatNode = {
+    code: code || want,
+    label: (label || 'Uncategorised').replace(/\([AMLC]\)\s*/i, '').trim() || 'Uncategorised',
+    budget: 0, spent: 0, outstanding: 0, hasBudget: false, subcats: [], parties: [],
+  }
   proj.categories.push(fresh)
   return fresh
+}
+
+// A sub-row's catNum can be different from its parent's (e.g. "01" sub under
+// a "001" parent). Resolve by label-key first, then fall back to the closest
+// matching parent's catNum.
+function labelKeyForSubRow(head: string | undefined, rows: BudgetRow[], catNum: string | undefined): string {
+  // First: see if any parent row matches the sub-row's category-NUMBER prefix.
+  const norm = (s: string) => (s ?? '').replace(/^0+/, '')
+  const target = norm(catNum ?? '')
+  if (target) {
+    for (const r of rows) {
+      if (norm(r.catNum ?? '') === target) return labelKey(r.head)
+    }
+  }
+  // Else fall back to the sub-row's own head text.
+  return labelKey(head)
 }
 function partiesOf(cat: PayCategoryRaw, source: Src): PartyRaw[] { return (source === 'contractor' ? cat.contractors : cat.suppliers) ?? [] }
 function sum<T>(arr: T[], f: (t: T) => number): number { return arr.reduce((s, t) => s + f(t), 0) }

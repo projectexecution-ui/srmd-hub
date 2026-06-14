@@ -81,7 +81,7 @@ describe('composeBudgetV2', () => {
     expect(normName('Admin Block - Execution')).toBe('admin block')
   })
 
-  it('keeps "(A)" marker categories separate from the base category (IN4 style)', () => {
+  it('merges IN4 "(A)" variant lines under one clean category by LABEL', () => {
     const b = [{
       id: 'p9', type: 'individual', name: 'NGH A', parentId: null,
       areaStatement: { builtUp: 1000 },
@@ -95,17 +95,35 @@ describe('composeBudgetV2', () => {
     }]
     const r = composeBudgetV2(b, [], [], [], {})
     const cats = r.groups[0].projects[0].categories
-    expect(cats).toHaveLength(2)
-    const marked = cats.find(c => c.label.includes('(A)'))!
-    const plain = cats.find(c => !c.label.includes('(A)'))!
-    expect(marked.budget).toBe(52000)
-    expect(plain.budget).toBe(236739)
-    // sub-row (no marker) attaches to the PLAIN category, not the (A) one
-    expect(plain.subcats).toHaveLength(1)
-    expect(marked.subcats).toHaveLength(0)
+    expect(cats).toHaveLength(1) // ← merged: was 2 before
+    const c = cats[0]
+    expect(c.label).toBe('Site Pre-lims') // ← uses the cleanest label, no "(A)"
+    expect(c.budget).toBe(52000 + 236739)
+    expect(c.spent).toBe(52000 + 228284)
+    expect(c.subcats).toHaveLength(1)
   })
 
-  it('routes "(A)" payments to the marked category and "(M)" payments to the base (no (M) budget line)', () => {
+  it('does NOT merge same-code categories with different labels (SRAH case)', () => {
+    // SRAH has both "001 (A) Site Pre-lims" and "01 Pre Design Works" sharing
+    // base code 1 — they are GENUINELY different categories and must stay split.
+    const b = [{
+      id: 'p9', type: 'individual', name: 'SRAH', parentId: null,
+      areaStatement: { builtUp: 1000 },
+      data: {
+        rows: [
+          { head: '001 (A) Site Pre-lims', catNum: '001', budget: 52000, actual: 52000 },
+          { head: '01 Pre Design Works', catNum: '01', budget: 100000, actual: 80000 },
+        ],
+        subRows: [],
+      },
+    }]
+    const r = composeBudgetV2(b, [], [], [], {})
+    expect(r.groups[0].projects[0].categories).toHaveLength(2)
+    expect(r.groups[0].projects[0].categories.map(c => c.label).sort())
+      .toEqual(['Pre Design Works', 'Site Pre-lims'])
+  })
+
+  it('routes both "(A)" and "(M)" payments to the same merged category', () => {
     const b = [{
       id: 'p9', type: 'individual', name: 'NGH A', parentId: null,
       areaStatement: { builtUp: 1000 },
@@ -129,10 +147,7 @@ describe('composeBudgetV2', () => {
     }]
     const r = composeBudgetV2(b, [], sup, [], {})
     const cats = r.groups[0].projects[0].categories
-    const marked = cats.find(c => c.label.includes('(A)'))!
-    const plain = cats.find(c => !c.label.includes('(A)') && !c.label.includes('(M)'))!
-    expect(marked.parties.map(p => p.name)).toEqual(['AssetCo'])
-    expect(plain.parties.map(p => p.name)).toEqual(['MatCo'])
-    expect(cats).toHaveLength(2) // no stray "(M)" category created
+    expect(cats).toHaveLength(1) // merged into one Site Pre-lims
+    expect(cats[0].parties.map(p => p.name).sort()).toEqual(['AssetCo', 'MatCo'])
   })
 })

@@ -400,16 +400,16 @@ function ProjectCard({ p, open, toggle, forceOpen, groupAvgSft, onStatus, status
   }
 
   const spentCls = u != null && u > 100 ? 'text-rose-300 font-medium' : 'text-emerald-300 font-medium'
+  const spentLight = u != null && u > 100 ? 'text-rose-700 font-medium' : 'text-emerald-700 font-medium'
   return (
-    <div className={cn('border border-slate-200 rounded-2xl overflow-hidden bg-white transition-shadow hover:shadow-md', p.status === 'closed' && 'opacity-55')}>
-      {/* dark header band */}
-      <div className="bg-slate-800 px-3 py-2.5 cursor-pointer hover:bg-slate-700/90 transition-colors" onClick={() => toggle(pk)}>
+    <div className={cn('border border-gray-200 rounded-2xl overflow-hidden bg-white transition-shadow hover:shadow-sm', p.status === 'closed' && 'opacity-55')}>
+      <div className="px-3 py-2.5 cursor-pointer hover:bg-gray-50/70 transition-colors" onClick={() => toggle(pk)}>
         <div className="flex items-center gap-2">
-          <ChevronRight className={cn('h-4 w-4 text-slate-400 flex-shrink-0 transition-transform', isOpen && 'rotate-90')} />
-          <div className="h-7 w-7 rounded-lg bg-white/10 flex items-center justify-center flex-shrink-0">
-            <Building2 className="h-4 w-4 text-slate-200" />
+          <ChevronRight className={cn('h-4 w-4 text-gray-400 flex-shrink-0 transition-transform', isOpen && 'rotate-90')} />
+          <div className="h-7 w-7 rounded-lg bg-gray-100 flex items-center justify-center flex-shrink-0">
+            <Building2 className="h-4 w-4 text-gray-500" />
           </div>
-          <span className="font-semibold text-sm text-white truncate">{p.name}</span>
+          <span className="font-semibold text-sm text-gray-900 truncate">{p.name}</span>
           <button
             type="button"
             onClick={e => { e.stopPropagation(); onStatus(p.name, p.status === 'open' ? 'closed' : 'open') }}
@@ -420,23 +420,23 @@ function ProjectCard({ p, open, toggle, forceOpen, groupAvgSft, onStatus, status
           >
             {statusBusy ? '…' : p.status}
           </button>
-          {p.area && <span className="text-[10px] text-slate-400 flex-shrink-0">{p.area.toLocaleString('en-IN')} sft</span>}
+          {p.area && <span className="text-[10px] text-gray-400 flex-shrink-0">{p.area.toLocaleString('en-IN')} sft</span>}
           {u != null && <UtilChip u={u} />}
           <div className="flex-1" />
-          <Cell value={p.budget} area={p.area} cls="text-white font-medium" subCls="text-slate-400" dashCls="text-slate-500" />
-          <Cell value={p.spent} area={p.area} cls={spentCls} subCls="text-slate-400" dashCls="text-slate-500" />
-          <Cell value={p.outstanding || null} area={p.area} cls="text-amber-300 font-medium" subCls="text-slate-400" dashCls="text-slate-500" />
+          <Cell value={p.budget} area={p.area} />
+          <Cell value={p.spent} area={p.area} cls={spentLight} />
+          <Cell value={p.outstanding || null} area={p.area} cls="text-amber-700 font-medium" />
         </div>
         {u != null && c && (
-          <div className="mt-2 h-[5px] rounded-full bg-white/15 overflow-hidden">
+          <div className="mt-2 h-[5px] rounded-full bg-gray-100 overflow-hidden">
             <div className="h-full rounded-full transition-[width]" style={{ width: `${Math.min(u, 100)}%`, background: c.bar }} />
           </div>
         )}
-        {caption && <div className="mt-1.5 text-[11px] text-slate-400">{caption}</div>}
+        {caption && <div className="mt-1.5 text-[11px] text-gray-500">{caption}</div>}
       </div>
 
       {isOpen && (
-        <div>
+        <div className="border-t border-gray-100">
           {p.categories.length === 0 && <div className="px-4 py-2.5 text-xs text-gray-400 italic">No budget lines.</div>}
           {p.categories.map((cat, i) => (
             <CategoryBlock key={cat.code + ':' + i} cat={cat} project={p} idx={i} open={open} toggle={toggle} forceOpen={forceOpen} />
@@ -458,15 +458,15 @@ function CategoryBlock({ cat, project, idx, open, toggle, forceOpen }: {
   const spentCls = u != null && u > 100 ? 'text-rose-600 font-medium' : 'text-emerald-700 font-medium'
   return (
     <div>
-      {/* category band — light slate-blue, like the Contractor Report category headers */}
-      <div className={cn('flex items-center gap-2 pr-3 py-2 border-t border-slate-200/60 bg-slate-100/70', hasChildren && 'cursor-pointer hover:bg-slate-200/50')}
+      {/* category row — light + airy */}
+      <div className={cn('flex items-center gap-2 pr-3 py-2 border-t border-gray-100', hasChildren && 'cursor-pointer hover:bg-gray-50/70')}
         onClick={() => hasChildren && toggle(ck)} style={{ paddingLeft: 30 }}>
         {hasChildren
-          ? <ChevronRight className={cn('h-3.5 w-3.5 text-slate-400 flex-shrink-0 transition-transform', isOpen && 'rotate-90')} />
+          ? <ChevronRight className={cn('h-3.5 w-3.5 text-gray-400 flex-shrink-0 transition-transform', isOpen && 'rotate-90')} />
           : <span className="w-3.5 flex-shrink-0" />}
-        <Folder className="h-3.5 w-3.5 text-slate-500 flex-shrink-0" />
-        {cat.code && <span className="font-mono text-[10px] text-slate-600 bg-white border border-slate-200 rounded px-1 py-px flex-shrink-0">{cat.code}</span>}
-        <span className="text-[13px] font-medium text-slate-800 truncate">{cat.label}</span>
+        <Folder className="h-3.5 w-3.5 text-gray-400 flex-shrink-0" />
+        {cat.code && <span className="font-mono text-[10px] text-gray-500 bg-gray-50 border border-gray-200 rounded px-1 py-px flex-shrink-0">{cat.code}</span>}
+        <span className="text-[13px] font-medium text-gray-800 truncate">{cat.label}</span>
         {!cat.hasBudget && <span className="text-[9px] px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-100 flex-shrink-0">payments only</span>}
         {u != null && <UtilChip u={u} />}
         <div className="flex-1" />
