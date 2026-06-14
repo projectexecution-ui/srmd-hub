@@ -49,28 +49,33 @@ function utilColors(u: number) {
 }
 function sumBy<T>(arr: T[], f: (t: T) => number): number { return arr.reduce((s, t) => s + f(t), 0) }
 
-function Cell({ value, area, dash, cls, subCls, dashCls }: {
+function Cell({ value, area, dash, cls, subCls, dashCls, size = 'md' }: {
   value: number | null; area: number | null; dash?: boolean
   /** colour class for the amount (e.g. emerald for healthy spend, rose for over) */
   cls?: string
   /** colour class for the ₹/sft pill */
   subCls?: string
   dashCls?: string
+  /** Visual size — 'lg' for project/category header rows, 'md' default for sub-rows. */
+  size?: 'md' | 'lg'
 }) {
-  if (value == null || dash) return <div className="w-[92px] text-right flex-shrink-0"><span className={cn('text-xs', dashCls ?? 'text-gray-300')}>—</span></div>
+  const isLg = size === 'lg'
+  const widthCls = isLg ? 'w-[108px]' : 'w-[100px]'
+  const amtCls = isLg ? 'text-[15.5px] font-semibold' : 'text-[14px]'
+  if (value == null || dash) return <div className={cn(widthCls, 'text-right flex-shrink-0')}><span className={cn('text-sm', dashCls ?? 'text-gray-300')}>—</span></div>
   const sft = perSft(value, area)
   return (
-    <div className="w-[92px] text-right flex-shrink-0">
-      <div className={cn('text-[13px] tabular-nums', cls ?? 'text-gray-900')}>{fmtINR(value)}</div>
+    <div className={cn(widthCls, 'text-right flex-shrink-0')}>
+      <div className={cn(amtCls, 'tabular-nums leading-tight', cls ?? 'text-gray-900')}>{fmtINR(value)}</div>
       {sft && (
-        <div className="mt-0.5 flex justify-end">
+        <div className="mt-1 flex justify-end">
           <span className={cn(
-            'inline-flex items-baseline gap-0.5 text-[10.5px] tabular-nums px-1.5 py-px rounded-md bg-gray-100/80 border border-gray-200/60',
+            'inline-flex items-baseline gap-0.5 text-[11.5px] tabular-nums px-1.5 py-0.5 rounded-md bg-gray-100/80 border border-gray-200/60',
             subCls ?? 'text-gray-500',
           )}>
-            <span className="text-[9px] opacity-70">₹</span>
-            <span className="font-medium">{sft}</span>
-            <span className="text-[8.5px] uppercase tracking-wider opacity-60 ml-0.5">/sft</span>
+            <span className="text-[9.5px] opacity-70">₹</span>
+            <span className="font-semibold">{sft}</span>
+            <span className="text-[9px] uppercase tracking-wider opacity-60 ml-0.5">/sft</span>
           </span>
         </div>
       )}
@@ -341,12 +346,12 @@ export default function BudgetV2Client({
             )}
             {/* Horizontal scroll on narrow screens so the 3 amount columns never wrap/overflow */}
             <div className="overflow-x-auto">
-              <div className="min-w-[660px]">
+              <div className="min-w-[720px]">
                 <div className="flex items-center gap-2 px-4 mb-1">
-                  <div className="flex-1 text-[10px] uppercase tracking-wide text-gray-400">Project · category · party</div>
-                  <div className="w-[92px] text-right text-[10px] uppercase tracking-wide text-gray-400">Budget</div>
-                  <div className="w-[92px] text-right text-[10px] uppercase tracking-wide text-gray-400">Spent</div>
-                  <div className="w-[92px] text-right text-[10px] uppercase tracking-wide text-gray-400">Outstanding</div>
+                  <div className="flex-1 text-[10.5px] uppercase tracking-wide text-gray-400">Project · category · party</div>
+                  <div className="w-[108px] text-right text-[10.5px] uppercase tracking-wide text-gray-400">Budget</div>
+                  <div className="w-[108px] text-right text-[10.5px] uppercase tracking-wide text-gray-400">Spent</div>
+                  <div className="w-[108px] text-right text-[10.5px] uppercase tracking-wide text-gray-400">Outstanding</div>
                 </div>
                 <div className="space-y-2.5">
                   {g.projects.map(p => (
@@ -434,9 +439,9 @@ function ProjectCard({ p, open, toggle, forceOpen, groupAvgSft, onStatus, status
           {p.area && <span className="text-[10px] text-gray-400 flex-shrink-0">{p.area.toLocaleString('en-IN')} sft</span>}
           {u != null && <UtilChip u={u} />}
           <div className="flex-1" />
-          <Cell value={p.budget} area={p.area} />
-          <Cell value={p.spent} area={p.area} cls={spentLight} />
-          <Cell value={p.outstanding || null} area={p.area} cls="text-amber-700 font-medium" />
+          <Cell value={p.budget} area={p.area} size="lg" />
+          <Cell value={p.spent} area={p.area} cls={spentLight} size="lg" />
+          <Cell value={p.outstanding || null} area={p.area} cls="text-amber-700 font-semibold" size="lg" />
         </div>
         {u != null && c && (
           <div className="mt-2 h-[5px] rounded-full bg-gray-100 overflow-hidden">
@@ -489,9 +494,9 @@ function CategoryBlock({ cat, project, idx, open, toggle, forceOpen }: {
         {!cat.hasBudget && <span className="text-[9px] px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-100 flex-shrink-0">payments only</span>}
         {u != null && <UtilChip u={u} />}
         <div className="flex-1" />
-        <Cell value={cat.hasBudget ? cat.budget : null} area={project.area} dash={!cat.hasBudget} />
-        <Cell value={cat.hasBudget ? cat.spent : null} area={project.area} dash={!cat.hasBudget} cls={spentCls} />
-        <Cell value={cat.outstanding || null} area={project.area} cls="text-amber-700 font-medium" />
+        <Cell value={cat.hasBudget ? cat.budget : null} area={project.area} dash={!cat.hasBudget} size="lg" />
+        <Cell value={cat.hasBudget ? cat.spent : null} area={project.area} dash={!cat.hasBudget} cls={spentCls} size="lg" />
+        <Cell value={cat.outstanding || null} area={project.area} cls="text-amber-700 font-semibold" size="lg" />
       </div>
 
       {isOpen && (
@@ -559,9 +564,9 @@ function CategoryBlock({ cat, project, idx, open, toggle, forceOpen }: {
                   </span>
                   <span className="text-[10px] text-gray-400 flex-shrink-0 hidden sm:inline">{pOpen ? 'tap to hide' : 'tap to expand'}</span>
                   <div className="flex-1" />
-                  <Cell value={null} area={project.area} dash />
-                  <Cell value={paidSum || null} area={project.area} cls="text-gray-900 font-semibold" />
-                  <Cell value={outSum || null} area={project.area} cls="text-amber-700 font-semibold" />
+                  <Cell value={null} area={project.area} dash size="lg" />
+                  <Cell value={paidSum || null} area={project.area} cls="text-gray-900 font-semibold" size="lg" />
+                  <Cell value={outSum || null} area={project.area} cls="text-amber-700 font-semibold" size="lg" />
                 </div>
                 {pOpen && cat.parties.map((pt, j) => (
                   <div key={'pt' + j} className={cn('flex items-center gap-2 pr-3 pl-9 py-1.5 hover:bg-gray-50/60', j > 0 && 'border-t border-gray-50')}>
