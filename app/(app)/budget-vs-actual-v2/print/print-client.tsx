@@ -42,8 +42,20 @@ function projectSentence(p: ProjectNode, groupAvgSft: number | null): string {
 }
 
 export default function PrintClient({ result }: { result: ComposeResult }) {
-  const allProjects = result.groups.flatMap(g =>
-    g.projects.map(p => ({ p, groupName: g.name, groupAvgSft: groupAvgSft(g.projects) })))
+  // Sequence: groups alphabetical (compose() already sorts this way) → inside a
+  // group, OPEN projects first then CLOSED (also from compose). Standalones go
+  // into a "Standalone projects" pseudo-group at the end.
+  const orderedGroups = result.groups.map(g => ({
+    name: g.name === '— Ungrouped' ? 'Standalone projects' : g.name,
+    isStandalone: g.name === '— Ungrouped',
+    projects: g.projects, // already sorted open→closed, alpha within
+    avgSft: groupAvgSft(g.projects),
+    budget: g.budget,
+    spent: g.spent,
+    outstanding: g.outstanding,
+  }))
+  const allProjects = orderedGroups.flatMap(g =>
+    g.projects.map(p => ({ p, groupName: g.name, groupAvgSft: g.avgSft })))
   const t = result.totals
   const overruns = allProjects
     .map(({ p, groupName }) => ({ p, groupName, u: utilPct(p.spent, p.budget) ?? 0 }))
@@ -139,59 +151,103 @@ export default function PrintClient({ result }: { result: ComposeResult }) {
           </>
         )}
 
-        <p className="muted mt-6">Each project that follows is on its own page — same numbers as the V2 tree, written in plain English.</p>
+        <h2 className="h2 mt-7">Contents</h2>
+        <table className="tbl">
+          <thead><tr><th>Group</th><th>Projects</th><th className="right">Budget</th><th className="right">Spent</th></tr></thead>
+          <tbody>
+            {orderedGroups.map(g => (
+              <tr key={g.name}>
+                <td>{g.name}</td>
+                <td>{g.projects.map(p => p.name).join(', ')}</td>
+                <td className="right">{fmtINR(g.budget)}</td>
+                <td className="right">{fmtINR(g.spent)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+
+        <p className="muted mt-6">Groups follow alphabetically. Inside each group, open projects come first, then closed.</p>
       </div>
 
-      {/* One project per page */}
-      {allProjects.map(({ p, groupName, groupAvgSft }) => {
-        const u = utilPct(p.spent, p.budget)
-        const tone = u == null ? '' : (u > 100 ? 'over' : (u >= 85 ? 'warn' : 'ok'))
-        const cats = topCategories(p)
-        return (
-          <div className="page" key={p.name}>
-            <div className="muted">{groupName === '— Ungrouped' ? 'Standalone' : groupName + ' group'}</div>
-            <div className="flex items-center gap-2 mt-1">
-              <h1 className="h1">{p.name}</h1>
-              <span className={`pill ${p.status === 'open' ? 'pill-open' : 'pill-closed'}`}>{p.status}</span>
-              {p.area && <span className="muted">· {p.area.toLocaleString('en-IN')} sft</span>}
+      {/* Group divider + projects in that group */}
+      {orderedGroups.map(g => (
+        <div key={'gset:' + g.name}>
+          {/* Divider page — section heading for each group */}
+          <div className="page" style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+            <div className="text-xs uppercase tracking-wider text-gray-400">{g.isStandalone ? 'Section' : 'Project Group'}</div>
+            <h1 className="h1 mt-1" style={{ fontSize: 28 }}>{g.name}</h1>
+            <p className="muted mt-2">{g.projects.length} project{g.projects.length === 1 ? '' : 's'} · budget {fmtINR(g.budget)} · spent {fmtINR(g.spent)}{g.budget > 0 ? ` (${Math.round(g.spent / g.budget * 100)}%)` : ''}{g.outstanding > 0 ? ` · outstanding ${fmtINR(g.outstanding)}` : ''}</p>
+            <div className="grid grid-cols-2 gap-3 mt-6">
+              {g.projects.map(p => {
+                const u = utilPct(p.spent, p.budget)
+                const ctone = u == null ? '' : (u > 100 ? 'over' : (u >= 85 ? 'warn' : 'ok'))
+                return (
+                  <div key={p.name} className="kpi">
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <span className="kpi-label" style={{ flex: 1 }}>{p.name}</span>
+                      <span className={`pill ${p.status === 'open' ? 'pill-open' : 'pill-closed'}`}>{p.status}</span>
+                    </div>
+                    <div className={`kpi-value ${ctone}`} style={{ fontSize: 16 }}>{fmtINR(p.spent)} <span style={{ fontSize: 11, color: '#9ca3af', fontWeight: 400 }}>of {fmtINR(p.budget)}</span></div>
+                    <div className="kpi-sub">{u != null ? `${u}% used` : ''}{p.outstanding > 0 ? ` · ${fmtINR(p.outstanding)} outstanding` : ''}</div>
+                  </div>
+                )
+              })}
             </div>
-            <p className="lead mt-3">{projectSentence(p, groupAvgSft)}</p>
-
-            <div className="grid grid-cols-2 gap-3 mt-5">
-              <div className="kpi"><div className="kpi-label">Budget</div><div className="kpi-value">{fmtINR(p.budget)}</div><div className="kpi-sub">{inrPerSft(p.budget, p.area)}</div></div>
-              <div className="kpi"><div className="kpi-label">Spent so far</div><div className={`kpi-value ${tone}`}>{fmtINR(p.spent)}</div><div className="kpi-sub">{u != null ? `${u}% of budget · ` : ''}{inrPerSft(p.spent, p.area)}</div></div>
-              <div className="kpi"><div className="kpi-label">Outstanding</div><div className="kpi-value warn">{fmtINR(p.outstanding)}</div><div className="kpi-sub">{inrPerSft(p.outstanding, p.area)}</div></div>
-              <div className="kpi"><div className="kpi-label">Categories tracked</div><div className="kpi-value">{p.categories.length}</div><div className="kpi-sub">{p.categories.filter(c => c.hasBudget && utilPct(c.spent, c.budget)! > 100).length} over budget</div></div>
-            </div>
-
-            {cats.length > 0 && (
-              <>
-                <h2 className="h2 mt-6">Top categories by spend</h2>
-                <table className="tbl">
-                  <thead><tr><th>Category</th><th className="right">Budget</th><th className="right">Spent</th><th className="right">₹/sft spent</th><th className="right">% used</th></tr></thead>
-                  <tbody>
-                    {cats.map(c => {
-                      const cu = c.hasBudget ? utilPct(c.spent, c.budget) : null
-                      const ctone = cu == null ? '' : (cu > 100 ? 'over' : (cu >= 85 ? 'warn' : 'ok'))
-                      return (
-                        <tr key={c.code + c.label}>
-                          <td>{c.code ? `${c.code} ` : ''}{c.label}</td>
-                          <td className="right">{c.hasBudget ? fmtINR(c.budget) : '—'}</td>
-                          <td className={`right ${ctone}`}>{c.hasBudget ? fmtINR(c.spent) : '—'}</td>
-                          <td className="right">{inrPerSft(c.spent, p.area)}</td>
-                          <td className={`right ${ctone}`}>{cu != null ? `${cu}%` : '—'}</td>
-                        </tr>
-                      )
-                    })}
-                  </tbody>
-                </table>
-              </>
-            )}
-
-            <p className="muted mt-6">For party-by-party detail (contractors &amp; suppliers), open this project in the V2 tree.</p>
+            <p className="muted mt-7">Each project in this group follows on its own page →</p>
           </div>
-        )
-      })}
+
+          {/* One project per page, in sequence within the group */}
+          {g.projects.map(p => {
+            const u = utilPct(p.spent, p.budget)
+            const tone = u == null ? '' : (u > 100 ? 'over' : (u >= 85 ? 'warn' : 'ok'))
+            const cats = topCategories(p)
+            return (
+              <div className="page" key={p.name}>
+                <div className="muted">{g.name}</div>
+                <div className="flex items-center gap-2 mt-1">
+                  <h1 className="h1">{p.name}</h1>
+                  <span className={`pill ${p.status === 'open' ? 'pill-open' : 'pill-closed'}`}>{p.status}</span>
+                  {p.area && <span className="muted">· {p.area.toLocaleString('en-IN')} sft</span>}
+                </div>
+                <p className="lead mt-3">{projectSentence(p, g.avgSft)}</p>
+
+                <div className="grid grid-cols-2 gap-3 mt-5">
+                  <div className="kpi"><div className="kpi-label">Budget</div><div className="kpi-value">{fmtINR(p.budget)}</div><div className="kpi-sub">{inrPerSft(p.budget, p.area)}</div></div>
+                  <div className="kpi"><div className="kpi-label">Spent so far</div><div className={`kpi-value ${tone}`}>{fmtINR(p.spent)}</div><div className="kpi-sub">{u != null ? `${u}% of budget · ` : ''}{inrPerSft(p.spent, p.area)}</div></div>
+                  <div className="kpi"><div className="kpi-label">Outstanding</div><div className="kpi-value warn">{fmtINR(p.outstanding)}</div><div className="kpi-sub">{inrPerSft(p.outstanding, p.area)}</div></div>
+                  <div className="kpi"><div className="kpi-label">Categories tracked</div><div className="kpi-value">{p.categories.length}</div><div className="kpi-sub">{p.categories.filter(c => c.hasBudget && utilPct(c.spent, c.budget)! > 100).length} over budget</div></div>
+                </div>
+
+                {cats.length > 0 && (
+                  <>
+                    <h2 className="h2 mt-6">Top categories by spend</h2>
+                    <table className="tbl">
+                      <thead><tr><th>Category</th><th className="right">Budget</th><th className="right">Spent</th><th className="right">₹/sft spent</th><th className="right">% used</th></tr></thead>
+                      <tbody>
+                        {cats.map(c => {
+                          const cu = c.hasBudget ? utilPct(c.spent, c.budget) : null
+                          const ctone = cu == null ? '' : (cu > 100 ? 'over' : (cu >= 85 ? 'warn' : 'ok'))
+                          return (
+                            <tr key={c.code + c.label}>
+                              <td>{c.code ? `${c.code} ` : ''}{c.label}</td>
+                              <td className="right">{c.hasBudget ? fmtINR(c.budget) : '—'}</td>
+                              <td className={`right ${ctone}`}>{c.hasBudget ? fmtINR(c.spent) : '—'}</td>
+                              <td className="right">{inrPerSft(c.spent, p.area)}</td>
+                              <td className={`right ${ctone}`}>{cu != null ? `${cu}%` : '—'}</td>
+                            </tr>
+                          )
+                        })}
+                      </tbody>
+                    </table>
+                  </>
+                )}
+
+                <p className="muted mt-6">For party-by-party detail (contractors &amp; suppliers), open this project in the V2 tree.</p>
+              </div>
+            )
+          })}
+        </div>
+      ))}
     </div>
   )
 }
