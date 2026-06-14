@@ -36,7 +36,7 @@ function fmtINR(v: number): string {
 }
 function perSft(v: number, area: number | null): string {
   if (!area || area <= 0 || !isFinite(v) || v === 0) return ''
-  return `₹${Math.round(v / area).toLocaleString('en-IN')}/sft`
+  return Math.round(v / area).toLocaleString('en-IN')
 }
 function utilPct(spent: number, budget: number): number | null {
   if (!budget || budget <= 0) return null
@@ -53,16 +53,27 @@ function Cell({ value, area, dash, cls, subCls, dashCls }: {
   value: number | null; area: number | null; dash?: boolean
   /** colour class for the amount (e.g. emerald for healthy spend, rose for over) */
   cls?: string
-  /** colour class for the ₹/sft line */
+  /** colour class for the ₹/sft pill */
   subCls?: string
   dashCls?: string
 }) {
-  if (value == null || dash) return <div className="w-[88px] text-right flex-shrink-0"><span className={cn('text-xs', dashCls ?? 'text-gray-300')}>—</span></div>
+  if (value == null || dash) return <div className="w-[92px] text-right flex-shrink-0"><span className={cn('text-xs', dashCls ?? 'text-gray-300')}>—</span></div>
   const sft = perSft(value, area)
   return (
-    <div className="w-[88px] text-right flex-shrink-0">
+    <div className="w-[92px] text-right flex-shrink-0">
       <div className={cn('text-[13px] tabular-nums', cls ?? 'text-gray-900')}>{fmtINR(value)}</div>
-      {sft && <div className={cn('text-[11px] tabular-nums', subCls ?? 'text-gray-400')}>{sft}</div>}
+      {sft && (
+        <div className="mt-0.5 flex justify-end">
+          <span className={cn(
+            'inline-flex items-baseline gap-0.5 text-[10.5px] tabular-nums px-1.5 py-px rounded-md bg-gray-100/80 border border-gray-200/60',
+            subCls ?? 'text-gray-500',
+          )}>
+            <span className="text-[9px] opacity-70">₹</span>
+            <span className="font-medium">{sft}</span>
+            <span className="text-[8.5px] uppercase tracking-wider opacity-60 ml-0.5">/sft</span>
+          </span>
+        </div>
+      )}
     </div>
   )
 }
@@ -330,12 +341,12 @@ export default function BudgetV2Client({
             )}
             {/* Horizontal scroll on narrow screens so the 3 amount columns never wrap/overflow */}
             <div className="overflow-x-auto">
-              <div className="min-w-[640px]">
+              <div className="min-w-[660px]">
                 <div className="flex items-center gap-2 px-4 mb-1">
                   <div className="flex-1 text-[10px] uppercase tracking-wide text-gray-400">Project · category · party</div>
-                  <div className="w-[88px] text-right text-[10px] uppercase tracking-wide text-gray-400">Budget</div>
-                  <div className="w-[88px] text-right text-[10px] uppercase tracking-wide text-gray-400">Spent</div>
-                  <div className="w-[88px] text-right text-[10px] uppercase tracking-wide text-gray-400">Outstanding</div>
+                  <div className="w-[92px] text-right text-[10px] uppercase tracking-wide text-gray-400">Budget</div>
+                  <div className="w-[92px] text-right text-[10px] uppercase tracking-wide text-gray-400">Spent</div>
+                  <div className="w-[92px] text-right text-[10px] uppercase tracking-wide text-gray-400">Outstanding</div>
                 </div>
                 <div className="space-y-2.5">
                   {g.projects.map(p => (
