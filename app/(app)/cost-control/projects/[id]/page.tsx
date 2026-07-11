@@ -1,7 +1,8 @@
 import Link from 'next/link'
-import { notFound } from 'next/navigation'
+import { notFound, redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { requirePermission, can } from '@/lib/auth'
+import { checkIsCcReviewer } from '@/components/cost-control/ws-actions'
 import { PageHeader } from '@/components/PageHeader'
 import { SetupProgressBanner } from '@/components/ProjectSetupWizard/SetupProgressBanner'
 import { Plus, Flame, Info, Settings } from 'lucide-react'
@@ -41,6 +42,13 @@ export default async function CostControlProjectDetailPage(
   const perms = await requirePermission('cost-control', 'view')
   const canWrite = can(perms, 'cost-control', 'edit')
   const { id } = await params
+
+  // This page is 100% project financials (Internal Estimate, ERP budget,
+  // committed, paid) — MANAGEMENT ONLY. Engineers go to their own sheets.
+  if (!(await checkIsCcReviewer())) {
+    redirect('/cost-control/working-sheets')
+  }
+
   const supabase = await createClient()
 
   const { data: project, error: projectErr } = await supabase
@@ -195,7 +203,8 @@ export default async function CostControlProjectDetailPage(
       cur.partialCount += 1
       cur.approvedTotal += appr
       cur.pendingAmount += Math.max(amt - appr, 0)
-    } else if (w.status === 'submitted') {
+    } else if (w.status === 'submitted' || w.status === 'ph_approved' || w.status === 'atm_approved') {
+      // Anywhere in the sign-off chain = still pending release.
       cur.submittedCount += 1
       cur.pendingAmount += Math.max(amt - appr, 0)
     } else if (w.status === 'draft' || w.status === 'returned' || w.status === 'draft_blocked') {
@@ -297,11 +306,11 @@ export default async function CostControlProjectDetailPage(
   const setupPct = project.setup_progress_pct ?? 0
   const showSetupBanner = setupPct < 100 && project.cc_status === 'setup_incomplete'
 
-  // Sheets in THIS project still awaiting (further) approval — submitted
-  // or partially approved. Drives one shortcut banner; when thumbrule
-  // sheets are among them, the bulk-approve page gets a secondary link.
+  // Sheets in THIS project still awaiting (further) approval — anywhere in
+  // the 3-stage chain. Drives one shortcut banner; when thumbrule sheets
+  // are among them, the bulk-approve page gets a secondary link.
   const pendingSheets = ((wsRes.data ?? []) as WSAgg[]).filter(w =>
-    w.status === 'submitted' || w.status === 'partially_approved',
+    ['submitted', 'ph_approved', 'atm_approved', 'partially_approved'].includes(w.status),
   )
   const pendingCount = pendingSheets.length
   const pendingTotal = Array.from(wsAgg.values()).reduce((s, v) => s + v.pendingAmount, 0)

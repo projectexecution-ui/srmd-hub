@@ -1,20 +1,20 @@
 'use server'
-// Server action: bulk-approve thumbrule Working Sheets.
+// Server action: bulk-advance thumbrule Working Sheets through the
+// 3-stage chain. Each ticked row advances ONE stage based on its status:
+//   submitted     → Project Head sign-off  (ph_approved)
+//   ph_approved   → Atm Head sign-off      (atm_approved)
+//   atm_approved / partially_approved → Trustee full release (approved)
 //
-// Loops through the selected WSes and calls the existing single-WS
-// approval flow for each (approveWorkingSheet + record_approval_event).
-// This preserves all the per-row matrix checks, audit logging, and budget-
-// line side-effects — bulk is just a UX wrapper over N normal approvals.
-//
-// Returns a per-row outcome list so the UI can show "8 approved, 2
-// blocked by matrix" without aborting the whole batch on the first
-// failure.
+// Loops the existing single-WS actions so every per-row matrix check,
+// audit log, and budget-line side-effect is identical to doing them one
+// at a time. Returns a per-row outcome list so the UI can show "8 done,
+// 2 blocked" without aborting the whole batch.
 
 import { z } from 'zod'
 import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
 import { requirePermission, getMyUser } from '@/lib/auth'
-import { approveWorkingSheet } from '@/components/cost-control/ws-actions'
+import { approveWorkingSheet, signOffWorkingSheet } from '@/components/cost-control/ws-actions'
 
 const schema = z.object({
   ws_ids: z.array(z.string().uuid()).min(1, 'Tick at least one sheet').max(50, 'Approve max 50 at a time'),
@@ -66,14 +66,24 @@ export async function bulkApproveThumbrule(input: {
       results.push({ ws_id: wsId, ws_code: ws.ws_code, ok: false, error: 'Not a thumbrule sheet' })
       continue
     }
-    if (ws.status !== 'submitted' && ws.status !== 'partially_approved') {
-      results.push({ ws_id: wsId, ws_code: ws.ws_code, ok: false, error: `Status is ${ws.status} — can't approve` })
+
+    // Sign-off stages advance ONE step; the sign-off action logs its own
+    // approval event (with the shared comment).
+    if (ws.status === 'submitted' || ws.status === 'ph_approved') {
+      const r = await signOffWorkingSheet(wsId, parsed.data.comment)
+      results.push(r.ok
+        ? { ws_id: wsId, ws_code: ws.ws_code, ok: true, error: r.error } // r.error = log-only warning
+        : { ws_id: wsId, ws_code: ws.ws_code, ok: false, error: r.error ?? 'Sign-off failed' })
       continue
     }
 
-    // Approve the FULL remaining amount in one shot — bulk path doesn't
-    // try to support partial releases (the user can still do that per-row
-    // from the WS detail page if they want).
+    if (ws.status !== 'atm_approved' && ws.status !== 'partially_approved') {
+      results.push({ ws_id: wsId, ws_code: ws.ws_code, ok: false, error: `Status is ${ws.status} — can't advance` })
+      continue
+    }
+
+    // Trustee stage — release the FULL remaining amount in one shot. Bulk
+    // doesn't support partial releases (use the WS detail page for that).
     const r = await approveWorkingSheet(wsId, null)
     if (!r.ok) {
       results.push({ ws_id: wsId, ws_code: ws.ws_code, ok: false, error: r.error ?? 'Approve failed' })

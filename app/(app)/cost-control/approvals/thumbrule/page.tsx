@@ -1,5 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
+import { redirect } from 'next/navigation'
 import { requirePermission, getMyUser } from '@/lib/auth'
+import { checkIsCcReviewer } from '@/components/cost-control/ws-actions'
 import { PageHeader } from '@/components/PageHeader'
 import { Card } from '@/components/ui/card'
 import { EmptyState } from '@/components/ui/empty-state'
@@ -24,6 +26,9 @@ export default async function BulkThumbruleApprovalPage({
   searchParams: Promise<{ project?: string }>
 }) {
   await requirePermission('cost-control', 'edit')
+  // Management only — this page carries project-level financials.
+  if (!(await checkIsCcReviewer())) redirect("/cost-control")
+
   const me = await getMyUser()
   const sp = await searchParams
   const supabase = await createClient()
@@ -60,7 +65,7 @@ export default async function BulkThumbruleApprovalPage({
        cc_sub_skills(code, name)`,
     )
     .eq('entry_mode', 'thumbrule')
-    .in('status', ['submitted', 'partially_approved'])
+    .in('status', ['submitted', 'ph_approved', 'atm_approved', 'partially_approved'])
     .order('submitted_at', { ascending: true })
 
   if (myDisciplineIds.length > 0) {
@@ -74,7 +79,7 @@ export default async function BulkThumbruleApprovalPage({
   type Row = {
     id: string
     ws_code: string
-    status: 'submitted' | 'partially_approved'
+    status: 'submitted' | 'ph_approved' | 'atm_approved' | 'partially_approved'
     total_amount: number | null
     summary_notes: string | null
     summary_total: number | null

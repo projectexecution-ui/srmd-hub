@@ -6,11 +6,10 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import {
   FileSpreadsheet, Download, RefreshCcw, Loader2, AlertTriangle, TrendingDown, TrendingUp, Sigma, Sparkles,
-  Send, Check, RotateCcw,
 } from 'lucide-react'
-import { submitWorkingSheet, returnWorkingSheet } from '@/components/cost-control/ws-actions'
-import { WSStatusPill, type WSStatus } from '@/components/cost-control/WSStatusPill'
-import { ApproveTrancheButton } from '@/components/cost-control/ApproveTrancheButton'
+import { WSApprovalActions } from '@/components/cost-control/WSApprovalActions'
+import type { WSApprovalContext } from '@/components/cost-control/ws-actions'
+import type { WSStatus } from '@/components/cost-control/WSStatusPill'
 import { formatINR } from '@/lib/utils'
 
 interface Breakdown { label: string; value: number }
@@ -47,13 +46,15 @@ interface FlagSummary {
 }
 
 export function ExcelSummaryPanel({
-  wsId, status, canEdit, canApprove, canReturn, totalAmount, approvedSoFar, fileName, downloadUrl, summaryTotal, summaryNotes, flagSummary, lastCheckedAt, rows,
+  wsId, status, ctx, reviewer, totalAmount, approvedSoFar, fileName, downloadUrl, summaryTotal, summaryNotes, flagSummary, lastCheckedAt, rows,
 }: {
   wsId: string
   status: WSStatus
-  canEdit: boolean
-  canApprove: boolean
-  canReturn: boolean
+  ctx: WSApprovalContext
+  /** AI cross-check chrome (re-check, flags, AI narrative) is for
+   *  reviewers (Project Head / Atm Head / Trustee / admin) only —
+   *  engineers just upload and submit. */
+  reviewer: boolean
   totalAmount: number
   approvedSoFar: number
   fileName: string | null
@@ -66,31 +67,7 @@ export function ExcelSummaryPanel({
 }) {
   const router = useRouter()
   const [rechecking, setRechecking] = useState(false)
-  const [acting, setActing] = useState(false)
-  const [returnOpen, setReturnOpen] = useState(false)
-  const [returnReason, setReturnReason] = useState('')
   const [err, setErr] = useState<string | null>(null)
-
-  const canSubmit    = canEdit    && (status === 'draft' || status === 'returned')
-  const canDoApprove = canApprove && (status === 'submitted' || status === 'partially_approved')
-  const canDoReturn  = canReturn  && (status === 'submitted' || status === 'partially_approved')
-
-  async function submit() {
-    setActing(true); setErr(null)
-    const r = await submitWorkingSheet(wsId)
-    setActing(false)
-    if (!r.ok) { setErr(r.error ?? 'Submit failed'); return }
-    router.refresh()
-  }
-  async function doReturn() {
-    if (returnReason.trim().length < 5) { setErr('Give a clear return reason (5+ chars)'); return }
-    setActing(true); setErr(null)
-    const r = await returnWorkingSheet(wsId, returnReason)
-    setActing(false)
-    if (!r.ok) { setErr(r.error ?? 'Return failed'); return }
-    setReturnOpen(false); setReturnReason('')
-    router.refresh()
-  }
 
   async function recheck() {
     setRechecking(true); setErr(null)
@@ -192,10 +169,12 @@ export function ExcelSummaryPanel({
                   </a>
                 </Button>
               )}
-              <Button size="sm" onClick={recheck} disabled={rechecking}>
-                {rechecking ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCcw className="h-4 w-4" />}
-                Re-check
-              </Button>
+              {reviewer && (
+                <Button size="sm" onClick={recheck} disabled={rechecking}>
+                  {rechecking ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCcw className="h-4 w-4" />}
+                  Re-check
+                </Button>
+              )}
             </div>
           </div>
 
@@ -211,7 +190,7 @@ export function ExcelSummaryPanel({
             const hasExtras = buckets.tax.count + buckets.addon.count + buckets.discount.count > 0
             return (
               <>
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mt-4 text-sm">
+                <div className={`grid grid-cols-2 ${reviewer ? 'md:grid-cols-4' : 'md:grid-cols-2'} gap-3 mt-4 text-sm`}>
                   <Cell
                     accent
                     label="Sheet total"
@@ -223,16 +202,20 @@ export function ExcelSummaryPanel({
                     value={rows.length}
                     hint="Rows read from your sheet"
                   />
-                  <Cell
-                    label="Items to check"
-                    value={flagSummary?.flagged_rows ?? rows.filter(r => r.flag).length}
-                    hint="Rows our checker is unsure about"
-                  />
-                  <Cell
-                    label="AI check"
-                    value={flagSummary?.ai_used ? 'Done' : 'Off'}
-                    hint={flagSummary?.ai_used ? 'AI reviewed this sheet' : 'AI was not run yet'}
-                  />
+                  {reviewer && (
+                    <Cell
+                      label="Items to check"
+                      value={flagSummary?.flagged_rows ?? rows.filter(r => r.flag).length}
+                      hint="Rows our checker is unsure about"
+                    />
+                  )}
+                  {reviewer && (
+                    <Cell
+                      label="AI check"
+                      value={flagSummary?.ai_used ? 'Done' : 'Off'}
+                      hint={flagSummary?.ai_used ? 'AI reviewed this sheet' : 'AI was not run yet'}
+                    />
+                  )}
                 </div>
 
                 {/* Restate the one authoritative number in plain words. */}
@@ -244,8 +227,8 @@ export function ExcelSummaryPanel({
 
                 {/* AI's reading of the composition — collapsed by default,
                     clearly labelled as a cross-check that won't always tie to
-                    the grand total. No alarm, no competing headline number. */}
-                {hasExtras && (
+                    the grand total. Reviewers only. */}
+                {reviewer && hasExtras && (
                   <details className="mt-3 rounded-lg border border-gray-200 bg-gray-50/60 px-3 py-2 text-xs">
                     <summary className="cursor-pointer select-none text-[11px] font-semibold text-gray-600">
                       What the AI sees inside this sheet (for review — won&apos;t always equal the sheet total)
@@ -280,48 +263,22 @@ export function ExcelSummaryPanel({
 
           {err && <p className="mt-3 text-sm text-rose-700 bg-rose-50 border border-rose-200 rounded-lg px-3 py-2">{err}</p>}
 
-          {/* Status actions */}
-          <div className="mt-4 pt-4 border-t border-gray-100 flex flex-wrap items-center gap-2">
-            <WSStatusPill status={status} />
-            {canSubmit && (
-              <Button onClick={submit} disabled={acting || !summaryTotal || summaryTotal <= 0} className="ml-auto">
-                {acting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-                Submit for Approval
-              </Button>
-            )}
-            {canDoReturn && (
-              <Button variant="outline" onClick={() => setReturnOpen(o => !o)} disabled={acting}
-                className="ml-auto text-rose-700 border-rose-300 hover:bg-rose-50">
-                <RotateCcw className="h-4 w-4" /> Return
-              </Button>
-            )}
-            {canDoApprove && (
-              <div className="w-full">
-                <ApproveTrancheButton wsId={wsId} totalAmount={totalAmount} approvedSoFar={approvedSoFar} compact />
-              </div>
-            )}
+          {/* Shared 3-stage approval block (stepper + actions) */}
+          <div className="mt-4 pt-4 border-t border-gray-100">
+            <WSApprovalActions
+              wsId={wsId}
+              status={status}
+              ctx={ctx}
+              totalAmount={totalAmount}
+              approvedSoFar={approvedSoFar}
+              submitDisabled={!summaryTotal || summaryTotal <= 0}
+            />
           </div>
-
-          {returnOpen && (
-            <div className="mt-3 border border-rose-200 bg-rose-50 rounded-lg p-3">
-              <p className="text-sm font-semibold text-rose-900 mb-2">Return for revision — give a clear reason</p>
-              <textarea value={returnReason} onChange={e => setReturnReason(e.target.value)} rows={2}
-                placeholder="e.g. Rate for cement seems high vs last month — please re-check vendor quote"
-                className="w-full rounded-md border border-rose-200 bg-white p-2 text-sm" />
-              <div className="mt-2 flex justify-end gap-2">
-                <Button variant="ghost" size="sm" onClick={() => { setReturnOpen(false); setReturnReason('') }} disabled={acting}>Cancel</Button>
-                <Button variant="outline" size="sm" disabled={acting || returnReason.trim().length < 5} onClick={doReturn}
-                  className="text-rose-700 border-rose-300 hover:bg-rose-50">
-                  {acting ? 'Returning…' : 'Confirm return'}
-                </Button>
-              </div>
-            </div>
-          )}
         </CardContent>
       </Card>
 
-      {/* Flag summary card */}
-      {flagSummary && (
+      {/* Flag summary card — AI cross-check, reviewers only */}
+      {reviewer && flagSummary && (
         <Card>
           <CardHeader>
             <CardTitle className="text-base inline-flex items-center gap-2">
@@ -369,12 +326,12 @@ export function ExcelSummaryPanel({
                   <th className="px-2 py-2 text-right">Qty</th>
                   <th className="px-2 py-2 text-right">Rate</th>
                   <th className="px-2 py-2 text-right">Amount</th>
-                  <th className="px-2 py-2">Flag</th>
+                  {reviewer && <th className="px-2 py-2">Flag</th>}
                 </tr>
               </thead>
               <tbody>
                 {rows.map(r => (
-                  <tr key={r.id} className={`border-t border-gray-100 ${flaggedRowIds.has(r.id) ? rowTintBySeverity(r.flag_severity) : ''}`}>
+                  <tr key={r.id} className={`border-t border-gray-100 ${reviewer && flaggedRowIds.has(r.id) ? rowTintBySeverity(r.flag_severity) : ''}`}>
                     <td className="px-2 py-2 text-gray-400">{r.row_no}</td>
                     <td className="px-2 py-2 text-gray-800 max-w-md">
                       <p className="truncate" title={r.description ?? ''}>{r.description ?? '—'}</p>
@@ -400,14 +357,16 @@ export function ExcelSummaryPanel({
                         </div>
                       )}
                     </td>
-                    <td className="px-2 py-2 max-w-xs">
-                      {r.flag ? (
-                        <div className="space-y-0.5">
-                          <Badge className={flagClass(r.flag)}>{flagIcon(r.flag)}{flagLabel(r.flag)}</Badge>
-                          {r.flag_reason && <p className="text-[11px] text-gray-600 truncate" title={r.flag_reason}>{r.flag_reason}</p>}
-                        </div>
-                      ) : null}
-                    </td>
+                    {reviewer && (
+                      <td className="px-2 py-2 max-w-xs">
+                        {r.flag ? (
+                          <div className="space-y-0.5">
+                            <Badge className={flagClass(r.flag)}>{flagIcon(r.flag)}{flagLabel(r.flag)}</Badge>
+                            {r.flag_reason && <p className="text-[11px] text-gray-600 truncate" title={r.flag_reason}>{r.flag_reason}</p>}
+                          </div>
+                        ) : null}
+                      </td>
+                    )}
                   </tr>
                 ))}
               </tbody>

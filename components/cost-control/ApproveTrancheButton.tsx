@@ -1,15 +1,14 @@
 'use client'
-// Approve a working sheet in releases (Indian construction-finance term:
-// HOD "releases" budget into ERP). Opens a small panel with the estimate
-// / already-approved / remaining numbers and an amount input (pre-filled
-// with the remaining). HOD can type a smaller number to release just
-// part of the budget; clicking "Approve all remaining" finalises it.
+// Trustee release — the FINAL stage of the 3-step chain (Project Head →
+// Atm Head → Trustee). Opens a small panel with the estimate /
+// already-released / remaining numbers and an amount input (pre-filled
+// with the remaining). The Trustee can type a smaller number to release
+// just part of the budget; "Approve all remaining" finalises the sheet.
 //
 // Every release is logged into approval_events via record_approval_event
-// with an optional comment + attachments. The logged transition is fixed
-// at submitted → partially_approved (canonical "WS release approval"
-// event) regardless of the sheet's actual current state or whether this
-// release closes the sheet.
+// with an optional comment + attachments, using the sheet's REAL
+// from-stage (atm_approved for the first release, partially_approved for
+// later tranches).
 
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
@@ -25,7 +24,9 @@ import { toast } from 'sonner'
 const MODULE_SLUG = 'cost-control'
 const DOC_TYPE = 'cc_working_sheet'
 const DOC_TABLE = 'cc_working_sheets'
-const FROM_STAGE = 'submitted'
+// Releases start AFTER both sign-offs — the sheet sits at atm_approved
+// for the first release, partially_approved for subsequent tranches.
+const FROM_STAGE = 'atm_approved'
 const TO_STAGE = 'partially_approved'
 
 function formatINR(n: number): string {
@@ -189,7 +190,7 @@ export function ApproveTrancheButton({
         onClick={() => { setOpen(true); setAmount(String(remaining)) }}
       >
         <Check className="h-4 w-4" />
-        {approvedSoFar > 0 ? 'Approve more' : 'Approve'}
+        {approvedSoFar > 0 ? 'Release more into ERP' : 'Release into ERP'}
       </Button>
     )
   }
@@ -198,11 +199,11 @@ export function ApproveTrancheButton({
     <div className="rounded-xl border border-emerald-200 bg-emerald-50/50 p-3 space-y-3">
       <div className="flex items-center gap-2 text-xs">
         <Wallet className="h-3.5 w-3.5 text-emerald-700" />
-        <span className="text-emerald-900 font-semibold">Approve a release into ERP</span>
+        <span className="text-emerald-900 font-semibold">Trustee release into ERP</span>
       </div>
       <div className="grid grid-cols-3 gap-2 text-xs">
         <Stat label="Estimate" value={formatINR(totalAmount)} />
-        <Stat label="Already approved" value={formatINR(approvedSoFar)} tone="green" />
+        <Stat label="Already released" value={formatINR(approvedSoFar)} tone="green" />
         <Stat label="Remaining" value={formatINR(remaining)} tone="amber" />
       </div>
       <div>
@@ -214,7 +215,7 @@ export function ApproveTrancheButton({
           className="mt-1 font-mono"
         />
         <p className="text-[11px] text-gray-500 mt-1">
-          Enter the amount HOD is releasing now. Sheet stays open at &quot;partially approved&quot; until the full estimate is reached.
+          Enter the amount being released now. The sheet stays open at &quot;partly released&quot; until the full estimate is reached.
         </p>
       </div>
 

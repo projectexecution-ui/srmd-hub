@@ -6,7 +6,7 @@ import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { MoneyInput } from '@/components/ui/money-input'
-import { Plus, Trash2, Send, Check, RotateCcw, Loader2, Lock, AlertTriangle } from 'lucide-react'
+import { Plus, Trash2, Loader2, Lock, AlertTriangle } from 'lucide-react'
 import { findDuplicateMatches, type PastItem, type DupMatch } from '@/lib/dup-detect'
 import { formatINR } from '@/lib/utils'
 import { wsStatusLabel, type WSStatus } from '@/components/cost-control/WSStatusPill'
@@ -14,10 +14,9 @@ import { confirm } from '@/components/ui/confirm-dialog'
 import {
   upsertWorkingSheetItem,
   deleteWorkingSheetItem,
-  submitWorkingSheet,
-  returnWorkingSheet,
+  type WSApprovalContext,
 } from '@/components/cost-control/ws-actions'
-import { ApproveTrancheButton } from '@/components/cost-control/ApproveTrancheButton'
+import { WSApprovalActions } from '@/components/cost-control/WSApprovalActions'
 
 interface Vendor { id: string; name: string }
 
@@ -39,7 +38,7 @@ interface Props {
   wsId: string
   status: WSStatus
   canEdit: boolean
-  canApprove: boolean
+  ctx: WSApprovalContext
   vendors: Vendor[]
   initialItems: WSItem[]
   pastItems?: PastItem[]
@@ -50,14 +49,11 @@ interface Props {
 const UOM_OPTIONS = ['Sft', 'Sqm', 'Rm', 'Mt', 'Cum', 'Nos', 'MT', 'Kg', 'Ltr', 'Ls']
 const GST_OPTIONS = [0, 5, 12, 18, 28]
 
-export function WSEditor({ wsId, status, canEdit, canApprove, vendors, initialItems, pastItems = [], wsTotal, approvedSoFar = 0 }: Props) {
+export function WSEditor({ wsId, status, canEdit, ctx, vendors, initialItems, pastItems = [], wsTotal, approvedSoFar = 0 }: Props) {
   const router = useRouter()
   const [items, setItems] = React.useState<WSItem[]>(initialItems)
-  const [busy, setBusy] = React.useState(false)
   const [error, setError] = React.useState<string | null>(null)
   const [savingItemId, setSavingItemId] = React.useState<string | null>(null)
-  const [returnOpen, setReturnOpen] = React.useState(false)
-  const [returnReason, setReturnReason] = React.useState('')
 
   const locked = status !== 'draft' && status !== 'returned'
   const editable = canEdit && !locked
@@ -158,26 +154,12 @@ export function WSEditor({ wsId, status, canEdit, canApprove, vendors, initialIt
     }))
   }
 
-  async function submitForApproval() {
-    setBusy(true); setError(null)
-    // Save any dirty rows first
+  // Save any dirty (never-blurred) rows before the shared block submits.
+  async function flushNewRows() {
     for (let i = 0; i < items.length; i++) {
       const r = items[i]
       if (r.id.startsWith('new-')) await persistRow(i)
     }
-    const res = await submitWorkingSheet(wsId)
-    setBusy(false)
-    if (!res.ok) { setError(res.error ?? 'Submit failed'); return }
-    router.refresh()
-  }
-
-  async function doReturn() {
-    setBusy(true); setError(null)
-    const res = await returnWorkingSheet(wsId, returnReason)
-    setBusy(false)
-    if (!res.ok) { setError(res.error ?? 'Return failed'); return }
-    setReturnOpen(false); setReturnReason('')
-    router.refresh()
   }
 
   return (
@@ -198,12 +180,12 @@ export function WSEditor({ wsId, status, canEdit, canApprove, vendors, initialIt
           <thead className="bg-gray-50 text-xs uppercase tracking-wide text-gray-500">
             <tr>
               <th className="px-2 py-2 text-left w-10">Sr</th>
-              <th className="px-2 py-2 text-left">Description</th>
-              <th className="px-2 py-2 text-left w-24">UOM</th>
-              <th className="px-2 py-2 text-right w-20">Qty</th>
-              <th className="px-2 py-2 text-right w-28">Rate (₹)</th>
+              <th className="px-2 py-2 text-left" title="What is the work or material?">What is the work?</th>
+              <th className="px-2 py-2 text-left w-24" title="Unit of measure — Sft, Nos, Kg…">Unit</th>
+              <th className="px-2 py-2 text-right w-20" title="How many units?">How many</th>
+              <th className="px-2 py-2 text-right w-28" title="Price per unit, in rupees">Rate (₹)</th>
               <th className="px-2 py-2 text-right w-16">GST %</th>
-              <th className="px-2 py-2 text-right w-32">Amount</th>
+              <th className="px-2 py-2 text-right w-32" title="Auto-calculated: how many × rate + GST">Amount (₹)</th>
               <th className="px-2 py-2 text-left w-40">Vendor</th>
               <th className="px-2 py-2 text-left w-32">Location</th>
               <th className="px-2 py-2 w-10"></th>
@@ -318,7 +300,7 @@ export function WSEditor({ wsId, status, canEdit, canApprove, vendors, initialIt
           </tbody>
           <tfoot>
             <tr className="border-t-2 border-gray-200 bg-gray-50">
-              <td colSpan={6} className="px-2 py-2 text-right text-sm uppercase tracking-wide text-gray-600">Total</td>
+              <td colSpan={6} className="px-2 py-2 text-right text-sm text-gray-600">This sheet adds up to</td>
               <td className="px-2 py-2 text-right font-bold text-lg text-gray-900 tabular-nums">{formatINR(displayTotal)}</td>
               <td colSpan={3}></td>
             </tr>
@@ -326,72 +308,23 @@ export function WSEditor({ wsId, status, canEdit, canApprove, vendors, initialIt
         </table>
       </div>
 
-      {/* Actions */}
-      <div className="flex flex-wrap items-center gap-2 px-4 py-3 border-t border-gray-100 bg-white">
+      {/* Add row + shared 3-stage approval block */}
+      <div className="px-4 py-3 border-t border-gray-100 bg-white space-y-3">
         {editable && (
           <Button type="button" onClick={addRow} size="sm" variant="outline">
             <Plus className="h-3.5 w-3.5" /> Add row
           </Button>
         )}
-        {(status === 'draft' || status === 'returned') && canEdit && (
-          <Button
-            type="button"
-            onClick={submitForApproval}
-            disabled={busy || items.length === 0 || displayTotal <= 0}
-            size="sm"
-            className="ml-auto"
-          >
-            {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
-            Submit for Approval
-          </Button>
-        )}
-        {(status === 'submitted' || status === 'partially_approved') && canApprove && (
-          <div className="ml-auto flex flex-wrap items-start gap-2">
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              className="text-red-700 border-red-300 hover:bg-red-50"
-              onClick={() => setReturnOpen(o => !o)}
-              disabled={busy}
-            >
-              <RotateCcw className="h-3.5 w-3.5" />
-              Return
-            </Button>
-            <ApproveTrancheButton
-              wsId={wsId}
-              totalAmount={displayTotal}
-              approvedSoFar={approvedSoFar}
-              compact
-            />
-          </div>
-        )}
+        <WSApprovalActions
+          wsId={wsId}
+          status={status}
+          ctx={ctx}
+          totalAmount={displayTotal}
+          approvedSoFar={approvedSoFar}
+          submitDisabled={items.length === 0 || displayTotal <= 0}
+          onBeforeSubmit={flushNewRows}
+        />
       </div>
-
-      {returnOpen && (
-        <div className="border-t border-red-100 bg-red-50 px-4 py-3">
-          <p className="text-sm font-semibold text-red-900 mb-2">Return for revision — give a clear reason</p>
-          <textarea
-            value={returnReason}
-            onChange={e => setReturnReason(e.target.value)}
-            placeholder="e.g. Qty for painting seems high — please verify drawing R-12"
-            rows={2}
-            className="w-full rounded-md border border-red-200 bg-white p-2 text-sm"
-          />
-          <div className="mt-2 flex justify-end gap-2">
-            <Button variant="ghost" size="sm" onClick={() => { setReturnOpen(false); setReturnReason('') }} disabled={busy}>Cancel</Button>
-            <Button
-              variant="outline"
-              size="sm"
-              className="text-red-700 border-red-300 hover:bg-red-50"
-              disabled={busy || returnReason.trim().length < 5}
-              onClick={doReturn}
-            >
-              {busy ? 'Returning…' : 'Confirm return'}
-            </Button>
-          </div>
-        </div>
-      )}
     </Card>
   )
 }

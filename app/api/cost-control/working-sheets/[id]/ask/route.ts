@@ -10,6 +10,7 @@ import { NextResponse } from 'next/server'
 import { z } from 'zod'
 import { createClient } from '@/lib/supabase/server'
 import { requirePermission } from '@/lib/auth'
+import { checkIsCcReviewer } from '@/components/cost-control/ws-actions'
 import { generateText, hasAiProvider } from '@/lib/ai'
 
 export const runtime = 'nodejs'
@@ -24,6 +25,11 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> },
 ) {
   await requirePermission('cost-control', 'view')
+  // AI review tools are for the approval chain (PH / Atm Head / Trustee /
+  // admin) — engineers submit raw workings, reviewers cross-check with AI.
+  if (!(await checkIsCcReviewer())) {
+    return NextResponse.json({ ok: false, reason: 'AI review tools are for approvers only.' }, { status: 403 })
+  }
   const { id } = await params
 
   if (!hasAiProvider()) {

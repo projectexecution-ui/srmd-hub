@@ -1,20 +1,25 @@
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/server'
 import { requirePermission, can, getMyUser } from '@/lib/auth'
+import { checkIsCcReviewer } from '@/components/cost-control/ws-actions'
 import { PageHeader } from '@/components/PageHeader'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { EmptyState } from '@/components/ui/empty-state'
-import { Calculator, Plus, FileText, Clock, Inbox, Upload, ClipboardList, Settings, CalendarClock, ChevronDown, Download, RefreshCw, AlertTriangle, CheckCircle2 } from 'lucide-react'
-import { formatINR } from '@/lib/utils'
+import { Calculator, Plus, FileText, Clock, Inbox, Upload, ClipboardList, Settings, CalendarClock, ChevronDown, Download, RefreshCw, AlertTriangle, CheckCircle2, FileSpreadsheet, Ruler, ArrowRight } from 'lucide-react'
+import { formatINR, formatDate } from '@/lib/utils'
 import { DeadlineBadge } from '@/components/cost-control/DeadlineBadge'
 import { QueryError } from '@/components/ui/query-error'
-import { wsStatusLabel } from '@/components/cost-control/WSStatusPill'
+import { wsStatusLabel, WSStatusPill, type WSStatus } from '@/components/cost-control/WSStatusPill'
+import { plainStatusLabel, isPendingStatus } from '@/lib/cost-control/chain'
 import { AutoBackup } from '@/components/cost-control/AutoBackup'
 import { getLastBphSync } from '@/app/(app)/cost-control/import/bph/actions'
 
 export const dynamic = 'force-dynamic'
+
+// Statuses that count as "waiting in the approval chain".
+const PENDING_STATUSES = ['submitted', 'ph_approved', 'atm_approved', 'partially_approved']
 
 type CCProject = {
   id: string
@@ -32,6 +37,14 @@ export default async function CostControlLandingPage() {
   const canAdmin = can(perms, 'cost-control', 'admin')
   const supabase = await createClient()
   const user = await getMyUser()
+
+  // Management (approval-chain roles + admin) gets the full financial
+  // dashboard. Everyone else (engineers) gets a personal home with their
+  // OWN sheets only — no project-level money anywhere in the payload.
+  const isManagement = await checkIsCcReviewer()
+  if (!isManagement) {
+    return <EngineerHome userId={user?.id ?? null} canWrite={canWrite} />
+  }
 
   const [projectsRes, wsAllRes, myDraftsRes, approversRes, deadlinesRes, budgetRes, backupRes] = await Promise.all([
     supabase
@@ -105,7 +118,7 @@ export default async function CostControlLandingPage() {
     if (released > 0) {
       approvedByProj.set(w.project_id, (approvedByProj.get(w.project_id) ?? 0) + released)
     }
-    if (w.status === 'submitted' || w.status === 'partially_approved') {
+    if (PENDING_STATUSES.includes(w.status)) {
       pendingByProj.set(w.project_id, (pendingByProj.get(w.project_id) ?? 0) + 1)
     }
     if (w.deadline_date && w.deadline_date < todayStr && !TERMINAL.has(w.status)) {
@@ -157,7 +170,7 @@ export default async function CostControlLandingPage() {
   // when they are a Cost Control admin.
   const { data: approverData, error: approversErr } = approversRes
   const myDiscIds = new Set(((approverData ?? []) as Array<{ discipline_id: string }>).map(r => r.discipline_id))
-  const pendingSheets = ws.filter(w => w.status === 'submitted' || w.status === 'partially_approved')
+  const pendingSheets = ws.filter(w => PENDING_STATUSES.includes(w.status))
   const pendingCount = pendingSheets.length
   const waitingOnMe = pendingSheets.filter(w => canAdmin || myDiscIds.has(w.discipline_id)).length
   const withOthers = pendingCount - waitingOnMe
@@ -529,6 +542,137 @@ function BphSyncChip({
         )}
       </div>
     </Link>
+  )
+}
+
+// ─── Engineer personal home ─────────────────────────────────────────────
+// Layman-friendly landing for non-management users: THEIR sheets, THEIR
+// deadlines, big create buttons — and zero project-level financials.
+async function EngineerHome({ userId, canWrite }: { userId: string | null; canWrite: boolean }) {
+  const supabase = await createClient()
+
+  type MyWS = {
+    id: string
+    ws_code: string
+    status: string
+    total_amount: number | null
+    deadline_date: string | null
+    return_reason: string | null
+    created_at: string
+    entry_mode: string | null
+    projects: { code: string; name: string } | { code: string; name: string }[] | null
+    cc_disciplines: { code: string; name: string } | { code: string; name: string }[] | null
+    cc_sub_skills: { code: string; name: string } | { code: string; name: string }[] | null
+  }
+  const { data: myData, error: myErr } = userId
+    ? await supabase
+        .from('cc_working_sheets')
+        .select('id, ws_code, status, total_amount, deadline_date, return_reason, created_at, entry_mode, projects(code, name), cc_disciplines(code, name), cc_sub_skills(code, name)')
+        .eq('engineer_id', userId)
+        .neq('status', 'cancelled')
+        .order('created_at', { ascending: false })
+        .limit(50)
+    : { data: [], error: null }
+  const mine = (myData ?? []) as MyWS[]
+
+  const needsMyAction = mine.filter(w => w.status === 'draft' || w.status === 'returned')
+  const inApproval    = mine.filter(w => isPendingStatus(w.status))
+  const done          = mine.filter(w => w.status === 'approved' || w.status === 'wo_issued' || w.status === 'paid')
+  const todayStr = new Date().toISOString().slice(0, 10)
+  const overdue = mine.filter(w =>
+    w.deadline_date && w.deadline_date < todayStr &&
+    !['approved', 'wo_issued', 'paid', 'cancelled'].includes(w.status)).length
+
+  const pickOne = <T,>(x: T | T[] | null): T | undefined => (Array.isArray(x) ? x[0] : x) ?? undefined
+
+  return (
+    <div className="p-4 md:p-6 max-w-5xl mx-auto space-y-5">
+      {/* Hero */}
+      <div className="rounded-2xl bg-gradient-to-r from-indigo-600 to-indigo-500 text-white px-5 py-6 md:px-7 shadow-sm">
+        <h1 className="text-xl md:text-2xl font-bold">Cost Control — my work</h1>
+        <p className="text-indigo-100 text-sm mt-1">
+          Upload your working, send it for approval, and track where each sheet is in the chain.
+        </p>
+        {canWrite && (
+          <div className="flex flex-wrap gap-2 mt-4">
+            <Link href="/cost-control/working-sheets/new-quick"
+              className="inline-flex items-center gap-2 rounded-xl bg-white text-indigo-800 font-semibold text-sm px-4 py-2.5 hover:bg-indigo-50 transition-colors shadow-sm">
+              <FileSpreadsheet className="h-4 w-4" /> Upload my working (Excel)
+            </Link>
+            <Link href="/cost-control/working-sheets/new-thumbrule"
+              className="inline-flex items-center gap-2 rounded-xl bg-indigo-700/60 border border-white/30 text-white font-semibold text-sm px-4 py-2.5 hover:bg-indigo-700 transition-colors">
+              <Ruler className="h-4 w-4" /> Thumbrule estimate
+            </Link>
+            <Link href="/cost-control/working-sheets/new"
+              className="inline-flex items-center gap-2 rounded-xl bg-indigo-700/60 border border-white/30 text-white font-semibold text-sm px-4 py-2.5 hover:bg-indigo-700 transition-colors">
+              <Plus className="h-4 w-4" /> Type a sheet
+            </Link>
+          </div>
+        )}
+      </div>
+
+      {/* My counters — counts only, no org money */}
+      <div className="grid grid-cols-3 gap-3">
+        <Stat label="Needs my action" value={needsMyAction.length} hint="drafts + returned to me" icon={<Clock className="h-5 w-5" />} tone={needsMyAction.length > 0 ? 'amber' : 'default'} />
+        <Stat label="In approval" value={inApproval.length} hint="moving through the chain" icon={<Inbox className="h-5 w-5" />} />
+        <Stat label="Approved" value={done.length} hint={overdue > 0 ? `${overdue} overdue deadline${overdue === 1 ? '' : 's'}` : 'all on time'} icon={<CheckCircle2 className="h-5 w-5" />} />
+      </div>
+
+      {myErr && <QueryError message={myErr.message} what="your working sheets" />}
+
+      {/* My sheets */}
+      <Card className="overflow-hidden">
+        <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
+          <h2 className="text-sm font-bold text-gray-900">My working sheets</h2>
+          <Link href="/cost-control/working-sheets" className="text-xs font-semibold text-indigo-700 hover:underline inline-flex items-center gap-1">
+            See all <ArrowRight className="h-3 w-3" />
+          </Link>
+        </div>
+        {mine.length === 0 ? (
+          <EmptyState
+            icon={<FileText className="h-10 w-10" />}
+            title="No working sheets yet"
+            description="Upload your first working — it goes to the Project Head, then the Atm Head, then the Trustee."
+          />
+        ) : (
+          <ul className="divide-y divide-gray-100">
+            {mine.slice(0, 15).map(w => {
+              const proj = pickOne(w.projects)
+              const dis  = pickOne(w.cc_disciplines)
+              const sub  = pickOne(w.cc_sub_skills)
+              return (
+                <li key={w.id}>
+                  <Link href={`/cost-control/working-sheets/${w.id}`} className="flex items-center gap-3 px-4 py-3 hover:bg-gray-50">
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="font-semibold text-sm text-gray-900">{w.ws_code}</span>
+                        <WSStatusPill status={w.status as WSStatus} />
+                        {w.deadline_date && (
+                          <DeadlineBadge deadlineDate={w.deadline_date} className="text-[10px] px-1.5 py-0.5"
+                            approved={['approved', 'wo_issued', 'paid'].includes(w.status)} />
+                        )}
+                      </div>
+                      <p className="text-xs text-gray-500 mt-0.5 truncate">
+                        {proj?.code ?? '—'} · {dis?.name ?? ''}{sub ? ` → ${sub.name}` : ''} · {formatDate(w.created_at)}
+                      </p>
+                      <p className="text-[11px] text-indigo-700 mt-0.5">{plainStatusLabel(w.status)}</p>
+                      {w.status === 'returned' && w.return_reason && (
+                        <p className="text-[11px] text-rose-700 mt-0.5 truncate" title={w.return_reason}>
+                          Reason: {w.return_reason}
+                        </p>
+                      )}
+                    </div>
+                    <span className="text-sm font-semibold text-gray-900 tabular-nums whitespace-nowrap">
+                      {formatINR(Number(w.total_amount ?? 0))}
+                    </span>
+                  </Link>
+                </li>
+              )
+            })}
+          </ul>
+        )}
+      </Card>
+    </div>
   )
 }
 

@@ -39,7 +39,7 @@ interface WSRow {
 
 type TLItem = {
   ts: string
-  kind: 'raised' | 'submitted' | 'approved' | 'partial' | 'returned' | 'released'
+  kind: 'raised' | 'submitted' | 'signoff' | 'approved' | 'partial' | 'returned' | 'released'
   who: string | null
   title: string
   comment?: string | null
@@ -99,15 +99,21 @@ export async function ApprovalTimeline({ wsId }: { wsId: string }) {
   if (wsRow?.submitted_at) {
     items.push({ ts: wsRow.submitted_at, kind: 'submitted', who: wsRow.engineer_id ? nameById.get(wsRow.engineer_id) ?? null : null, title: 'Submitted for approval' })
   }
-  // 3. Approval events (decisions by stakeholders)
+  // 3. Approval events (decisions by stakeholders). The 3-stage chain
+  //    logs sign-offs (→ ph_approved / atm_approved) as well as releases.
   for (const e of evRows) {
-    const isReturn = e.decision === 'returned' || e.to_stage === 'returned'
-    const isFull   = e.to_stage === 'approved'
+    const isReturn  = e.decision === 'returned' || e.to_stage === 'returned'
+    const isFull    = e.to_stage === 'approved'
+    const isSignOff = e.to_stage === 'ph_approved' || e.to_stage === 'atm_approved'
     items.push({
       ts: e.created_at,
-      kind: isReturn ? 'returned' : isFull ? 'approved' : 'partial',
+      kind: isReturn ? 'returned' : isSignOff ? 'signoff' : isFull ? 'approved' : 'partial',
       who: e.actor_id ? nameById.get(e.actor_id) ?? null : null,
-      title: isReturn ? 'Returned to engineer' : isFull ? 'Fully approved into ERP' : 'Release approved (partial)',
+      title: isReturn
+        ? `Returned to engineer${e.from_stage === 'ph_approved' ? ' (by Atm Head stage)' : e.from_stage === 'atm_approved' || e.from_stage === 'partially_approved' ? ' (by Trustee stage)' : ''}`
+        : e.to_stage === 'ph_approved' ? 'Project Head signed off'
+        : e.to_stage === 'atm_approved' ? 'Atm Head signed off'
+        : isFull ? 'Fully approved into ERP' : 'Release approved (partial)',
       comment: e.comment,
       attachments: e.attachments,
     })
@@ -130,6 +136,7 @@ export async function ApprovalTimeline({ wsId }: { wsId: string }) {
   const style: Record<TLItem['kind'], { Icon: typeof Send; dot: string; ring: string }> = {
     raised:    { Icon: FilePlus2,    dot: 'bg-gray-400',    ring: 'ring-gray-100' },
     submitted: { Icon: Send,         dot: 'bg-blue-500',    ring: 'ring-blue-100' },
+    signoff:   { Icon: CheckCircle2, dot: 'bg-indigo-500',  ring: 'ring-indigo-100' },
     partial:   { Icon: CircleDot,    dot: 'bg-amber-500',   ring: 'ring-amber-100' },
     approved:  { Icon: CheckCircle2, dot: 'bg-emerald-500', ring: 'ring-emerald-100' },
     returned:  { Icon: RotateCcw,    dot: 'bg-rose-500',    ring: 'ring-rose-100' },

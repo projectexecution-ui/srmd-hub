@@ -8,6 +8,7 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { requirePermission } from '@/lib/auth'
+import { checkIsCcReviewer } from '@/components/cost-control/ws-actions'
 import { generateJSON, hasAiProvider } from '@/lib/ai'
 
 export const runtime = 'nodejs'
@@ -29,6 +30,10 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> },
 ) {
   await requirePermission('cost-control', 'view')
+  // AI review tools are approver-only (engineers submit raw workings).
+  if (!(await checkIsCcReviewer())) {
+    return NextResponse.json({ ok: false, reason: 'AI review tools are for approvers only.' }, { status: 403 })
+  }
   const { id } = await params
 
   // Body is optional — when force=true we bypass the cache and regenerate.

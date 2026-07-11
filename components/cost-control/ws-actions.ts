@@ -69,43 +69,93 @@ export async function setWorkingSheetDeadline(
   return { ok: true }
 }
 
-/** Public version of can_approve so server pages can decide which
- *  buttons to render. Mirrors the same RPC used by the actions.
- *  For 'approved' we check both the full and partial transitions —
- *  HOD can approve a release (status → partially_approved) OR finalise
- *  (status → approved). Either yes = the Approve button is allowed. */
-export async function checkCanApproveWS(wsId: string, toStage: 'approved' | 'returned'): Promise<boolean> {
+/** Everything the WS detail page needs to decide which action buttons to
+ *  render for THIS viewer on THIS sheet. One round trip, matrix-driven.
+ *  The 3-stage chain: submitted →(PH)→ ph_approved →(Atm)→ atm_approved
+ *  →(Trustee release)→ partially_approved* → approved. */
+export interface WSApprovalContext {
+  /** Owner (or admin) may edit + submit — sheet is draft / returned. */
+  canSubmit: boolean
+  /** The sign-off THIS viewer may perform now, or null. */
+  nextSignOff: 'ph_approved' | 'atm_approved' | null
+  /** Viewer may release money (Trustee stage) now. */
+  canRelease: boolean
+  /** Viewer may return the sheet for revision now. */
+  canReturn: boolean
+}
+
+export async function getWSApprovalContext(wsId: string): Promise<WSApprovalContext> {
+  const none: WSApprovalContext = { canSubmit: false, nextSignOff: null, canRelease: false, canReturn: false }
   const me = await whoAmI()
-  if (!me.user) return false
+  if (!me.user) return none
   const supabase = await createClient()
   const { data: ws } = await supabase
     .from('cc_working_sheets')
     .select('engineer_id, status, total_amount, approved_for_erp_amt')
     .eq('id', wsId)
     .single()
-  if (!ws) return false
-  if (ws.engineer_id === me.user.id && !me.isAdmin) return false
+  if (!ws) return none
+
+  const status = ws.status as string
+  const isOwner = ws.engineer_id === me.user.id
+  const canSubmit = me.canEdit && (isOwner || me.isAdmin) && (status === 'draft' || status === 'returned')
+
+  // Approvals: self-approval blocked unless admin.
+  if (isOwner && !me.isAdmin) return { ...none, canSubmit }
 
   const total = Number(ws.total_amount ?? 0)
   const already = Number(ws.approved_for_erp_amt ?? 0)
   const remaining = Math.max(total - already, 0)
 
-  if (toStage === 'returned') {
-    if (ws.status !== 'submitted' && ws.status !== 'partially_approved') return false
-    return callCanApprove(ws.status, 'returned', total)
+  // Sign-off stages (full sheet, no money moves → amount null so caps
+  // don't bind; the chain has no caps anyway).
+  let nextSignOff: 'ph_approved' | 'atm_approved' | null = null
+  if (status === 'submitted' && await callCanApprove('submitted', 'ph_approved', null)) {
+    nextSignOff = 'ph_approved'
+  } else if (status === 'ph_approved' && await callCanApprove('ph_approved', 'atm_approved', null)) {
+    nextSignOff = 'atm_approved'
   }
 
-  // Approve path — allow when sheet is submitted or already partially released.
-  if (ws.status !== 'submitted' && ws.status !== 'partially_approved') return false
+  // Trustee release stage.
+  let canRelease = false
+  if (status === 'atm_approved' || status === 'partially_approved') {
+    const [okPartial, okFull] = await Promise.all([
+      callCanApprove(status, 'partially_approved', remaining),
+      callCanApprove(status, 'approved', remaining),
+    ])
+    canRelease = okPartial || okFull
+  }
 
-  // The button shows if EITHER a partial release or a full finalise is
-  // allowed for this user at any amount up to remaining.
-  const fromStage = ws.status as 'submitted' | 'partially_approved'
-  const [okPartial, okFull] = await Promise.all([
-    callCanApprove(fromStage, 'partially_approved', remaining),
-    callCanApprove(fromStage, 'approved', remaining),
+  // Return — from any pending stage the viewer's role covers.
+  let canReturn = false
+  if (['submitted', 'ph_approved', 'atm_approved', 'partially_approved'].includes(status)) {
+    canReturn = await callCanApprove(status, 'returned', total)
+  }
+
+  return { canSubmit, nextSignOff, canRelease, canReturn }
+}
+
+/** Whether the viewer is Cost Control "management" — i.e. their effective
+ *  role appears on ANY active approval rule for the module (or they're
+ *  admin). Drives AI-review tools + big-number visibility. Config-driven:
+ *  editing /admin/approvals automatically retargets this. */
+export async function checkIsCcReviewer(): Promise<boolean> {
+  const me = await whoAmI()
+  if (!me.user) return false
+  if (me.isAdmin) return true
+  const supabase = await createClient()
+  const [{ data: eff }, { data: rules }] = await Promise.all([
+    supabase.rpc('effective_user_role', { p_user_id: me.user.id, p_module_slug: 'cost-control' }),
+    supabase
+      .from('approval_rules')
+      .select('approver_role, override_role')
+      .eq('module_slug', 'cost-control')
+      .eq('doc_type', 'cc_working_sheet')
+      .eq('is_active', true),
   ])
-  return okPartial || okFull
+  const role = (eff as string | null) ?? me.profile?.role ?? null
+  if (!role) return false
+  return (rules ?? []).some(r => r.approver_role === role || r.override_role === role)
 }
 
 /** Asks the DB whether the caller may move this WS through this stage
@@ -337,6 +387,77 @@ export async function submitWorkingSheet(wsId: string): Promise<{ ok: boolean; e
   return { ok: true }
 }
 
+/** Full-sheet sign-off — stages 1 + 2 of the chain. The target stage is
+ *  derived SERVER-side from the sheet's current status (submitted →
+ *  ph_approved by the Project Head; ph_approved → atm_approved by the Atm
+ *  Head), so a stale client can never skip a stage. No money moves here —
+ *  releases happen at the Trustee stage via cc_approve_release. */
+export async function signOffWorkingSheet(
+  wsId: string,
+  comment?: string | null,
+): Promise<{ ok: boolean; error?: string; new_status?: string }> {
+  const me = await whoAmI()
+  if (!me.user) return { ok: false, error: 'Not signed in' }
+  if (!me.canView) return { ok: false, error: 'You do not have access to Cost Control' }
+
+  const supabase = await createClient()
+  const { data: ws, error } = await supabase
+    .from('cc_working_sheets')
+    .select('id, status, engineer_id, project_id, total_amount')
+    .eq('id', wsId)
+    .single()
+  if (error || !ws) return { ok: false, error: 'Working Sheet not found' }
+
+  const toStage =
+    ws.status === 'submitted' ? 'ph_approved'
+    : ws.status === 'ph_approved' ? 'atm_approved'
+    : null
+  if (!toStage) {
+    return { ok: false, error: 'This sheet is not waiting for a sign-off at your stage' }
+  }
+
+  if (ws.engineer_id === me.user.id && !me.isAdmin) {
+    return { ok: false, error: 'You cannot sign off a sheet you raised yourself' }
+  }
+
+  const allowed = await callCanApprove(ws.status as string, toStage, null)
+  if (!allowed) {
+    return { ok: false, error: 'Your role is not configured for this sign-off. Check /admin/approvals.' }
+  }
+
+  const { error: updErr } = await supabase
+    .from('cc_working_sheets')
+    .update({ status: toStage })
+    .eq('id', wsId)
+    .eq('status', ws.status) // optimistic: someone else may have acted meanwhile
+  if (updErr) return { ok: false, error: updErr.message }
+
+  // Log the sign-off so the approval trail names the stage + person.
+  // record_approval_event re-checks can_approve for this exact pair.
+  const { error: recErr } = await supabase.rpc('record_approval_event', {
+    p_module_slug: 'cost-control',
+    p_doc_type:    'cc_working_sheet',
+    p_doc_table:   'cc_working_sheets',
+    p_doc_id:      wsId,
+    p_from_stage:  ws.status,
+    p_to_stage:    toStage,
+    p_decision:    'approved',
+    p_comment:     comment?.trim() || null,
+    p_attachments: [],
+    p_amount:      null,
+  })
+
+  revalidatePath(`/cost-control/working-sheets/${wsId}`)
+  revalidatePath('/cost-control/working-sheets')
+  revalidatePath('/cost-control/approvals')
+  revalidatePath('/cost-control')
+  revalidatePath(`/cost-control/projects/${ws.project_id}`)
+  if (recErr) {
+    return { ok: true, new_status: toStage, error: `Signed off, but event log failed: ${recErr.message}` }
+  }
+  return { ok: true, new_status: toStage }
+}
+
 /** Approve a working sheet. Two modes:
  *  - release: pass `trancheAmount` to release just a part of the total.
  *    Adds to the running approved_for_erp_amt. Status becomes
@@ -369,8 +490,8 @@ export async function approveWorkingSheet(
     .eq('id', wsId)
     .single()
   if (error || !ws) return { ok: false, error: 'Working Sheet not found' }
-  if (ws.status !== 'submitted' && ws.status !== 'partially_approved') {
-    return { ok: false, error: 'Only submitted or partially-approved sheets can be approved further' }
+  if (ws.status !== 'atm_approved' && ws.status !== 'partially_approved') {
+    return { ok: false, error: 'Only sheets signed off by the Atm Head (or already partially released) can be released into ERP' }
   }
 
   // Self-approval is blocked unless the caller is an admin (escape hatch
@@ -413,15 +534,16 @@ export async function returnWorkingSheet(wsId: string, reason: string): Promise<
     .eq('id', wsId)
     .single()
   if (error || !ws) return { ok: false, error: 'Working Sheet not found' }
-  if (ws.status !== 'submitted' && ws.status !== 'partially_approved') {
-    return { ok: false, error: 'Only submitted or partially-approved sheets can be returned' }
+  const PENDING = ['submitted', 'ph_approved', 'atm_approved', 'partially_approved']
+  if (!PENDING.includes(ws.status as string)) {
+    return { ok: false, error: 'Only sheets waiting in the approval chain can be returned' }
   }
 
   if (ws.engineer_id === me.user.id && !me.isAdmin) {
     return { ok: false, error: 'You cannot return a sheet you raised yourself' }
   }
 
-  const allowed = await callCanApprove(ws.status as 'submitted' | 'partially_approved', 'returned', Number(ws.total_amount ?? 0))
+  const allowed = await callCanApprove(ws.status as string, 'returned', Number(ws.total_amount ?? 0))
   if (!allowed) {
     return { ok: false, error: 'Your role is not configured to return this sheet. Check /admin/approvals.' }
   }
@@ -448,7 +570,23 @@ export async function returnWorkingSheet(wsId: string, reason: string): Promise<
     requested_by: me.user.id,
   })
 
+  // Log into the approval trail too, so the timeline shows WHICH stage
+  // returned the sheet (PH vs Atm Head vs Trustee).
+  await supabase.rpc('record_approval_event', {
+    p_module_slug: 'cost-control',
+    p_doc_type:    'cc_working_sheet',
+    p_doc_table:   'cc_working_sheets',
+    p_doc_id:      wsId,
+    p_from_stage:  ws.status,
+    p_to_stage:    'returned',
+    p_decision:    'returned',
+    p_comment:     reason.trim(),
+    p_attachments: [],
+    p_amount:      null,
+  })
+
   revalidatePath(`/cost-control/working-sheets/${wsId}`)
   revalidatePath('/cost-control/working-sheets')
+  revalidatePath('/cost-control/approvals')
   return { ok: true }
 }

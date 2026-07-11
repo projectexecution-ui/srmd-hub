@@ -6,6 +6,7 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { requirePermission } from '@/lib/auth'
+import { checkIsCcReviewer } from '@/components/cost-control/ws-actions'
 import { generateText, hasAiProvider } from '@/lib/ai'
 
 interface ExcelRow {
@@ -69,6 +70,10 @@ export async function POST(
 ) {
   const { id } = await ctx.params
   await requirePermission('cost-control', 'edit', '/cost-control')
+  // AI review tools are approver-only (engineers submit raw workings).
+  if (!(await checkIsCcReviewer())) {
+    return NextResponse.json({ error: 'AI review tools are for approvers only.' }, { status: 403 })
+  }
 
   const supabase = await createClient()
 

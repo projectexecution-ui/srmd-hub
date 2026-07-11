@@ -1,5 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
+import { redirect } from 'next/navigation'
 import { requirePermission } from '@/lib/auth'
+import { checkIsCcReviewer } from '@/components/cost-control/ws-actions'
 import { PageHeader } from '@/components/PageHeader'
 import { Card } from '@/components/ui/card'
 import { EmptyState } from '@/components/ui/empty-state'
@@ -18,6 +20,9 @@ export default async function BphImportPage({
   searchParams: Promise<{ cc_project?: string }>
 }) {
   await requirePermission('cost-control', 'edit')
+  // Management only — this page carries project-level financials.
+  if (!(await checkIsCcReviewer())) redirect("/cost-control")
+
   const sp = await searchParams
   const supabase = await createClient()
 

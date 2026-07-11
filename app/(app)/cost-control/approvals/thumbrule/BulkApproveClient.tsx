@@ -1,8 +1,8 @@
 'use client'
-// Bulk-approve UI for thumbrule sheets. Single table, checkboxes,
-// shared comment, one button. Results panel after submit shows
-// per-row outcome (✓ approved / ✗ blocked) so the user knows which
-// rows still need attention.
+// Bulk-advance UI for thumbrule sheets. Single table, checkboxes,
+// shared comment, one button. Each ticked row moves ONE stage along the
+// 3-step chain (submitted→PH · ph_approved→Atm · atm_approved→released).
+// Results panel after submit shows per-row outcome (✓ / ✗ blocked).
 
 import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
@@ -13,12 +13,13 @@ import { Textarea } from '@/components/ui/textarea'
 import { Check, Loader2, X, AlertTriangle, ExternalLink } from 'lucide-react'
 import { formatINR, formatDate } from '@/lib/utils'
 import { confirm } from '@/components/ui/confirm-dialog'
+import { wsStatusLabel } from '@/components/cost-control/WSStatusPill'
 import { bulkApproveThumbrule, type BulkApprovalResult } from './actions'
 
 export interface BulkItem {
   id: string
   ws_code: string
-  status: 'submitted' | 'partially_approved'
+  status: 'submitted' | 'ph_approved' | 'atm_approved' | 'partially_approved'
   total_amount: number
   built_up_sft: number | null
   rate_per_sft: number | null
@@ -62,10 +63,11 @@ export function BulkApproveClient({ items }: { items: BulkItem[] }) {
     if (selected.size === 0) return
     setError(null)
     const ok = await confirm({
-      title: `Approve ${selected.size} thumbrule sheet${selected.size === 1 ? '' : 's'}?`,
-      message: `Total amount being released into ERP: ${formatINR(selectedTotal)}.\n\n` +
-        `Each sheet still passes through the normal approval matrix — any blocked by role/cap rules will be reported back.`,
-      confirmLabel: `Approve ${selected.size}`,
+      title: `Advance ${selected.size} thumbrule sheet${selected.size === 1 ? '' : 's'}?`,
+      message: `Each ticked sheet moves ONE stage along the chain (Project Head → Atm Head → Trustee release). ` +
+        `Sheets at the Trustee stage release their full amount — ${formatINR(selectedTotal)} total selected.\n\n` +
+        `Each sheet still passes through the approval matrix — any blocked by role rules will be reported back.`,
+      confirmLabel: `Advance ${selected.size}`,
       danger: false,
     })
     if (!ok) return
@@ -104,6 +106,7 @@ export function BulkApproveClient({ items }: { items: BulkItem[] }) {
                 />
               </th>
               <th className="px-3 py-2 font-semibold">WS Code</th>
+              <th className="px-3 py-2 font-semibold">Waiting on</th>
               <th className="px-3 py-2 font-semibold">Project</th>
               <th className="px-3 py-2 font-semibold">Discipline · Sub-skill</th>
               <th className="px-3 py-2 font-semibold">Engineer</th>
@@ -149,8 +152,11 @@ export function BulkApproveClient({ items }: { items: BulkItem[] }) {
                       </p>
                     )}
                     {approved && (
-                      <p className="text-[10px] text-emerald-700 mt-0.5">Approved {approved.error ? `(${approved.error})` : ''}</p>
+                      <p className="text-[10px] text-emerald-700 mt-0.5">Advanced {approved.error ? `(${approved.error})` : ''}</p>
                     )}
+                  </td>
+                  <td className="px-3 py-2.5 text-xs font-medium text-indigo-800 whitespace-nowrap">
+                    {wsStatusLabel(i.status)}
                   </td>
                   <td className="px-3 py-2.5">
                     <p className="font-medium text-gray-900">{i.project_code}</p>
@@ -214,7 +220,7 @@ export function BulkApproveClient({ items }: { items: BulkItem[] }) {
           </Button>
           <Button variant="success" size="sm" disabled={pending || selected.size === 0} onClick={onApprove}>
             {pending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
-            Approve {selected.size > 0 ? selected.size : ''} selected
+            Advance {selected.size > 0 ? selected.size : ''} selected
           </Button>
         </div>
       </div>

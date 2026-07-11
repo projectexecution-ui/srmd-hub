@@ -18,8 +18,9 @@ export type RoleLabelMap = Record<Role, RoleLabel>
 // UI looks identical when the table is freshly seeded.
 export const DEFAULT_ROLE_LABELS: RoleLabelMap = {
   admin:              { label: 'Admin',              description: 'Super-user. Manages users + permissions + settings.' },
-  founder:            { label: 'Founder',            description: 'Top org level. Wide view, narrow edit (default: budget).' },
-  head:               { label: 'Head (Atm Head)',    description: 'PM / dept head. Atm Head — final approval on inventory + flags returnable items.' },
+  founder:            { label: 'Founder',            description: 'Top org level / Trustee. Final release on Cost Control working sheets.' },
+  head:               { label: 'Head (Atm Head)',    description: 'PM / dept head. Atm Head — 2nd sign-off on Cost Control sheets, final approval on inventory.' },
+  project_head:       { label: 'Project Head',       description: 'First sign-off on Cost Control working sheets. Chain: Project Head → Atm Head → Trustee.' },
   uploader:           { label: 'Uploader',           description: 'Edits operational data (vendors, indents, POs).' },
   engineer:           { label: 'Engineer',           description: 'Site engineer. Raises inventory + indents; confirms receipt of issued material.' },
   site_staff:         { label: 'Site Staff',         description: 'Labour / on-site. Attendance + view JMR.' },

@@ -2,6 +2,7 @@ import Link from 'next/link'
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { requirePermission, can, getMyUser } from '@/lib/auth'
+import { checkIsCcReviewer } from '@/components/cost-control/ws-actions'
 import { PageHeader } from '@/components/PageHeader'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -17,28 +18,35 @@ export const dynamic = 'force-dynamic'
 const STATUS_FILTERS: Array<{ value: '' | WSStatus; label: string }> = [
   { value: '',                    label: 'All' },
   { value: 'draft',               label: 'Draft' },
-  { value: 'submitted',           label: 'Submitted' },
-  { value: 'partially_approved',  label: 'Partially approved' },
+  { value: 'submitted',           label: 'With Project Head' },
+  { value: 'ph_approved',         label: 'With Atm Head' },
+  { value: 'atm_approved',        label: 'With Trustee' },
+  { value: 'partially_approved',  label: 'Partly released' },
   { value: 'approved',            label: 'Approved' },
   { value: 'returned',            label: 'Returned' },
 ]
 
 // Display order for the status-group sections in the list.
 const STATUS_ORDER: WSStatus[] = [
-  'submitted', 'partially_approved', 'returned', 'draft', 'draft_blocked',
-  'approved', 'wo_issued', 'paid', 'cancelled',
+  'submitted', 'ph_approved', 'atm_approved', 'partially_approved', 'returned',
+  'draft', 'draft_blocked', 'approved', 'wo_issued', 'paid', 'cancelled',
 ]
 const STATUS_GROUP_TITLES: Record<WSStatus, string> = {
   draft:              'Draft (in progress with engineer)',
   draft_blocked:      'Blocked drafts',
-  submitted:          'Awaiting approval',
-  partially_approved: 'Partially approved (awaiting more releases)',
+  submitted:          'Waiting for the Project Head (stage 1 of 3)',
+  ph_approved:        'Waiting for the Atm Head (stage 2 of 3)',
+  atm_approved:       'Waiting for the Trustee (stage 3 of 3)',
+  partially_approved: 'Partly released by the Trustee (awaiting more releases)',
   approved:           'Fully approved',
   returned:           'Returned to engineer',
   wo_issued:          'WO issued',
   paid:               'Paid',
   cancelled:          'Cancelled',
 }
+
+// Statuses that count as "waiting in the approval chain".
+const PENDING: WSStatus[] = ['submitted', 'ph_approved', 'atm_approved', 'partially_approved']
 
 export default async function WorkingSheetsPage({
   searchParams,
@@ -51,12 +59,16 @@ export default async function WorkingSheetsPage({
   const supabase = await createClient()
   const scoped = !!sp.sub_skill
 
+  // Management (approval-chain roles + admin) sees everything; everyone
+  // else (engineers) sees ONLY their own sheets and none of the project
+  // roll-up numbers.
+  const [isManagement, me] = await Promise.all([checkIsCcReviewer(), getMyUser()])
+
   // Virgin URL (no query params) → redirect to the user's most-recently-
   // touched project so they don't see a confusing cross-project mash-up.
   // After Apply (even with "All projects" picked) the URL carries empty
   // params, so this only fires on the very first land from a nav click.
   if (Object.keys(sp).length === 0) {
-    const me = await getMyUser()
     let recentProjectId: string | null = null
     if (me) {
       // Their own most recent WS first
@@ -99,6 +111,9 @@ export default async function WorkingSheetsPage({
   if (sp.discipline) q = q.eq('discipline_id', sp.discipline)
   if (sp.sub_skill) q = q.eq('sub_skill_id', sp.sub_skill)
   if (sp.status) q = q.eq('status', sp.status as WSStatus)
+  // Engineers see ONLY their own sheets — enforced server-side regardless
+  // of the URL's filter params.
+  if (!isManagement && me) q = q.eq('engineer_id', me.id)
 
   const [wsRes, projectsRes, profilesRes] = await Promise.all([
     q,
@@ -144,7 +159,7 @@ export default async function WorkingSheetsPage({
     if (r.status === 'cancelled') return acc
     acc.estimateTotal += amt
     acc.approvedToDate += appr
-    if (r.status === 'submitted' || r.status === 'partially_approved') {
+    if (PENDING.includes(r.status)) {
       acc.pendingCount += 1
       acc.pendingAmount += Math.max(amt - appr, 0)
     }
@@ -218,8 +233,10 @@ export default async function WorkingSheetsPage({
   return (
     <div className="p-4 md:p-6 max-w-7xl mx-auto">
       <PageHeader
-        title="Working Sheets"
-        subtitle={`${rows.length} sheet${rows.length === 1 ? '' : 's'} · ${formatINR(total)}`}
+        title={isManagement ? 'Working Sheets' : 'My Working Sheets'}
+        subtitle={isManagement
+          ? `${rows.length} sheet${rows.length === 1 ? '' : 's'} · ${formatINR(total)}`
+          : `${rows.length} of your sheet${rows.length === 1 ? '' : 's'} · ${formatINR(total)}`}
         back="/cost-control"
       >
         {canWrite && (
@@ -283,14 +300,16 @@ export default async function WorkingSheetsPage({
             <option value="">All projects</option>
             {projects.map(p => <option key={p.id} value={p.id}>{p.code}</option>)}
           </select>
-          <select
-            name="engineer"
-            defaultValue={sp.engineer ?? ''}
-            className="h-8 rounded-xl border border-gray-300 bg-white px-2 text-xs text-gray-700"
-          >
-            <option value="">All engineers</option>
-            {profiles.map(p => <option key={p.id} value={p.id}>{p.full_name ?? p.name ?? p.id}</option>)}
-          </select>
+          {isManagement && (
+            <select
+              name="engineer"
+              defaultValue={sp.engineer ?? ''}
+              className="h-8 rounded-xl border border-gray-300 bg-white px-2 text-xs text-gray-700"
+            >
+              <option value="">All engineers</option>
+              {profiles.map(p => <option key={p.id} value={p.id}>{p.full_name ?? p.name ?? p.id}</option>)}
+            </select>
+          )}
           <button className="h-8 px-3 rounded-xl bg-gray-100 hover:bg-gray-200 text-xs font-semibold text-gray-700">
             Apply
           </button>
@@ -335,8 +354,9 @@ export default async function WorkingSheetsPage({
         </p>
       )}
 
-      {/* KPI strip — running roll-up across the filtered set */}
-      {rows.length > 0 && (
+      {/* KPI strip — running roll-up across the filtered set. MANAGEMENT
+          ONLY: these are project-level big numbers. */}
+      {isManagement && rows.length > 0 && (
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
           <KpiTile label="Estimate (total)"   value={formatINR(kpis.estimateTotal)}  sub={`${rows.length} sheet${rows.length === 1 ? '' : 's'}`} tone="indigo" />
           <KpiTile label="Approved to date"   value={formatINR(kpis.approvedToDate)} sub={kpis.estimateTotal > 0 ? `${Math.round((kpis.approvedToDate / kpis.estimateTotal) * 100)}% of estimate` : '—'} tone="green" />
@@ -376,7 +396,7 @@ export default async function WorkingSheetsPage({
             }
           />
         </Card>
-      ) : scoped ? (
+      ) : scoped && isManagement ? (
         <Card className="overflow-hidden">
           <div className="flex items-center justify-between gap-3 px-4 py-2.5 bg-slate-50 border-b border-gray-200">
             <span className="text-sm font-semibold text-gray-900">Approval timeline · oldest → newest</span>

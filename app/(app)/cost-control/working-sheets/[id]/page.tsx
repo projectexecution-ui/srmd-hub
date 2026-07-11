@@ -1,7 +1,7 @@
 import { notFound } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { requirePermission, can, getMyUser, getMyProfile } from '@/lib/auth'
-import { checkCanApproveWS, checkCanSetDeadline } from '@/components/cost-control/ws-actions'
+import { getWSApprovalContext, checkIsCcReviewer, checkCanSetDeadline } from '@/components/cost-control/ws-actions'
 import { PageHeader } from '@/components/PageHeader'
 import { Card } from '@/components/ui/card'
 import { WSStatusPill, type WSStatus } from '@/components/cost-control/WSStatusPill'
@@ -34,15 +34,14 @@ export default async function WorkingSheetEditorPage(
   const [user, profile] = await Promise.all([getMyUser(), getMyProfile()])
   const isAdmin = profile?.role === 'admin'
 
-  // Ask the DB whether THIS specific viewer is allowed to approve / return
-  // THIS specific sheet at THIS amount. Encapsulates the approval_rules
-  // matrix + admin override + self-approval block.
-  const [mayApprove, mayReturn, canEditDeadline] = await Promise.all([
-    checkCanApproveWS(id, 'approved'),
-    checkCanApproveWS(id, 'returned'),
+  // Ask the DB what THIS viewer may do on THIS sheet (3-stage chain:
+  // submit / sign-off / release / return), whether they're Cost Control
+  // management (AI tools + big numbers), and deadline rights.
+  const [ctx, reviewer, canEditDeadline] = await Promise.all([
+    getWSApprovalContext(id),
+    checkIsCcReviewer(),
     checkCanSetDeadline(),
   ])
-  const canApprove = mayApprove || mayReturn
 
   const { data: ws, error: wsErr } = await supabase
     .from('cc_ws_with_versions')
@@ -130,13 +129,12 @@ export default async function WorkingSheetEditorPage(
         <ThumbruleSummaryPanel
           wsId={ws.id}
           status={ws.status as WSStatus}
-          canEdit={canEdit && (user?.id === ws.engineer_id || isAdmin)}
-          canApprove={mayApprove}
-          canReturn={mayReturn}
+          ctx={ctx}
           totalAmount={Number(ws.total_amount ?? 0)}
           approvedSoFar={Number(ws.approved_for_erp_amt ?? 0)}
           summaryNotes={ws.summary_notes}
           pastApproved={Number(ws.past_approved_in_subskill ?? 0)}
+          showPastApproved={reviewer}
         />
 
         <ApprovalTimeline wsId={ws.id} />
@@ -207,9 +205,11 @@ export default async function WorkingSheetEditorPage(
 
         <SourceExcelViewer url={downloadUrl} name={ws.source_excel_name} />
 
-        <WSAskAiPanel wsId={ws.id} />
+        {/* AI review tools — for the approval chain (PH / Atm Head /
+            Trustee / admin), not engineers. */}
+        {reviewer && <WSAskAiPanel wsId={ws.id} />}
 
-        <AiBifurcationPanel
+        {reviewer && <AiBifurcationPanel
           wsId={ws.id}
           canEdit={canEdit && (user?.id === ws.engineer_id || isAdmin)}
           aiParseMeta={ws.ai_parse_meta as {
@@ -234,14 +234,13 @@ export default async function WorkingSheetEditorPage(
               rate_concern?: string | null
             } | null,
           }))}
-        />
+        />}
 
         <ExcelSummaryPanel
           wsId={ws.id}
           status={ws.status as WSStatus}
-          canEdit={canEdit && (user?.id === ws.engineer_id || isAdmin)}
-          canApprove={mayApprove}
-          canReturn={mayReturn}
+          ctx={ctx}
+          reviewer={reviewer}
           totalAmount={Number(ws.total_amount ?? 0)}
           approvedSoFar={Number(ws.approved_for_erp_amt ?? 0)}
           fileName={ws.source_excel_name}
@@ -280,15 +279,18 @@ export default async function WorkingSheetEditorPage(
       .eq('working_sheet_id', id)
       .order('sr_no'),
     supabase.from('vendors').select('id, name').order('name'),
-    // Best-effort budget headroom lookup
-    supabase
-      .from('cc_budget_lines')
-      .select('current_budget_amt, current_wo_committed_amt, current_paid_amt')
-      .eq('project_id', ws.project_id)
-      .eq('discipline_id', ws.discipline_id)
-      .eq('sub_skill_id', ws.sub_skill_id)
-      .eq('line_type', ws.line_type)
-      .maybeSingle(),
+    // Best-effort budget headroom lookup — MANAGEMENT ONLY. For engineers
+    // the query never runs, so the big numbers never reach the payload.
+    reviewer
+      ? supabase
+          .from('cc_budget_lines')
+          .select('current_budget_amt, current_wo_committed_amt, current_paid_amt')
+          .eq('project_id', ws.project_id)
+          .eq('discipline_id', ws.discipline_id)
+          .eq('sub_skill_id', ws.sub_skill_id)
+          .eq('line_type', ws.line_type)
+          .maybeSingle()
+      : Promise.resolve({ data: null }),
     // Past items in same sub-skill (cross-project) for duplicate detection
     supabase
       .from('cc_working_sheet_items')
@@ -313,18 +315,21 @@ export default async function WorkingSheetEditorPage(
   const remainingAfter = remainingBeforeThisWS - Number(ws.total_amount ?? 0)
 
   // Internal Estimate for this sub-skill = LIVE sum of every WS total
-  // (except cancelled). HOD reads this to size ERP releases — nobody
-  // types it. Live so a new draft instantly shows up.
-  const { data: planRows } = await supabase
-    .from('cc_working_sheets')
-    .select('total_amount, status')
-    .eq('project_id', ws.project_id)
-    .eq('discipline_id', ws.discipline_id)
-    .eq('sub_skill_id', ws.sub_skill_id)
-    .eq('line_type', ws.line_type)
-  const estimate = (planRows ?? [])
-    .filter(r => r.status !== 'cancelled')
-    .reduce((s, r) => s + Number(r.total_amount ?? 0), 0)
+  // (except cancelled). Management reads this to size ERP releases —
+  // nobody types it. MANAGEMENT ONLY: skipped entirely for engineers.
+  let estimate = 0
+  if (reviewer) {
+    const { data: planRows } = await supabase
+      .from('cc_working_sheets')
+      .select('total_amount, status')
+      .eq('project_id', ws.project_id)
+      .eq('discipline_id', ws.discipline_id)
+      .eq('sub_skill_id', ws.sub_skill_id)
+      .eq('line_type', ws.line_type)
+    estimate = (planRows ?? [])
+      .filter(r => r.status !== 'cancelled')
+      .reduce((s, r) => s + Number(r.total_amount ?? 0), 0)
+  }
 
   const isOwner = user?.id === ws.engineer_id
   const status = ws.status as WSStatus
@@ -349,7 +354,8 @@ export default async function WorkingSheetEditorPage(
         canEdit={canEdit && (isOwner || isAdmin)}
       />
 
-      <WSAskAiPanel wsId={ws.id} />
+      {/* AI review tools — approval chain only, not engineers. */}
+      {reviewer && <WSAskAiPanel wsId={ws.id} />}
 
       {(ws.deadline_date || canEditDeadline) && (
         <div className="flex items-center gap-2 flex-wrap">
@@ -370,7 +376,18 @@ export default async function WorkingSheetEditorPage(
         </div>
       )}
 
-      {/* Past-spend strip */}
+      {/* Returned-reason — the engineer MUST see this even without the
+          management strip below. */}
+      {!reviewer && status === 'returned' && ws.return_reason && (
+        <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-800">
+          <p className="font-semibold mb-1">Returned for revision</p>
+          <p>{ws.return_reason}</p>
+        </div>
+      )}
+
+      {/* Past-spend strip — MANAGEMENT ONLY (Internal Estimate, ERP budget,
+          committed, paid are big numbers engineers don't see). */}
+      {reviewer && (
       <Card className="p-4 bg-blue-50/50 border-blue-100">
         <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-sm">
           <div>
@@ -427,6 +444,7 @@ export default async function WorkingSheetEditorPage(
           </div>
         )}
       </Card>
+      )}
 
       {/* A failed items query must not render the editor's "No items yet"
           empty state — someone would re-type rows that already exist. */}
@@ -437,7 +455,7 @@ export default async function WorkingSheetEditorPage(
         wsId={ws.id}
         status={status}
         canEdit={canEdit && (isOwner || isAdmin)}
-        canApprove={mayApprove}
+        ctx={ctx}
         approvedSoFar={Number(ws.approved_for_erp_amt ?? 0)}
         vendors={vendorsRes.data ?? []}
         initialItems={itemsRes.data ?? []}

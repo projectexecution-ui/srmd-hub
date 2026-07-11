@@ -1,6 +1,8 @@
 import Link from 'next/link'
+import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { requirePermission } from '@/lib/auth'
+import { checkIsCcReviewer } from '@/components/cost-control/ws-actions'
 import { PageHeader } from '@/components/PageHeader'
 import { Card } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -30,6 +32,9 @@ export default async function AuditLogPage({
 }) {
   const params = await searchParams
   await requirePermission('cost-control', 'view')
+  // Management only — this page carries project-level financials.
+  if (!(await checkIsCcReviewer())) redirect("/cost-control")
+
   const supabase = await createClient()
 
   const projectFilter = params.project

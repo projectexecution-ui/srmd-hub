@@ -1,14 +1,16 @@
 import { Badge } from '@/components/ui/badge'
 
 export type WSStatus =
-  | 'draft' | 'draft_blocked' | 'submitted' | 'partially_approved' | 'approved'
-  | 'returned' | 'wo_issued' | 'paid' | 'cancelled'
+  | 'draft' | 'draft_blocked' | 'submitted' | 'ph_approved' | 'atm_approved'
+  | 'partially_approved' | 'approved' | 'returned' | 'wo_issued' | 'paid' | 'cancelled'
 
 const LABEL: Record<WSStatus, string> = {
   draft:              'Draft',
   draft_blocked:      'Blocked',
-  submitted:          'Submitted',
-  partially_approved: 'Partially approved',
+  submitted:          'With Project Head',
+  ph_approved:        'With Atm Head',
+  atm_approved:       'With Trustee',
+  partially_approved: 'Partly released',
   approved:           'Approved',
   returned:           'Returned',
   wo_issued:          'WO issued',
@@ -20,6 +22,8 @@ const VARIANT: Record<WSStatus, 'default' | 'success' | 'warning' | 'secondary' 
   draft:              'secondary',
   draft_blocked:      'warning',
   submitted:          'default',
+  ph_approved:        'default',
+  atm_approved:       'default',
   partially_approved: 'warning',
   approved:           'success',
   returned:           'destructive',

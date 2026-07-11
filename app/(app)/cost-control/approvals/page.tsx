@@ -1,6 +1,8 @@
 import Link from 'next/link'
+import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { requirePermission, getMyUser } from '@/lib/auth'
+import { checkIsCcReviewer } from '@/components/cost-control/ws-actions'
 import { PageHeader } from '@/components/PageHeader'
 import { Card } from '@/components/ui/card'
 import { QueryError } from '@/components/ui/query-error'
@@ -36,6 +38,9 @@ function pickFirst<T>(v: T | T[] | null): T | null {
 
 export default async function ApprovalsInboxPage() {
   await requirePermission('cost-control', 'view')
+  // Management only — this page carries project-level financials.
+  if (!(await checkIsCcReviewer())) redirect("/cost-control")
+
   const user = await getMyUser()
   const supabase = await createClient()
 
@@ -47,8 +52,9 @@ export default async function ApprovalsInboxPage() {
     .eq('is_active', true)
   const myDisciplineIds = (myDisciplines ?? []).map(d => d.discipline_id)
 
-  // partially_approved sheets stay in the inbox — they still need the
-  // remaining releases approved before they're done.
+  // Every stage of the 3-step chain stays in the inbox until fully
+  // released: submitted (→ Project Head), ph_approved (→ Atm Head),
+  // atm_approved + partially_approved (→ Trustee).
   const { data: pendingWS, error: wsErr } = await supabase
     .from('cc_working_sheets')
     .select(
@@ -57,7 +63,7 @@ export default async function ApprovalsInboxPage() {
        cc_disciplines(code, name),
        cc_sub_skills(code, name)`,
     )
-    .in('status', ['submitted', 'partially_approved'])
+    .in('status', ['submitted', 'ph_approved', 'atm_approved', 'partially_approved'])
     .order('submitted_at', { ascending: true })
 
   const queryErr = wsErr ?? discErr
@@ -78,6 +84,12 @@ export default async function ApprovalsInboxPage() {
 
   const mine = rows.filter(r => myDisciplineIds.includes(r.discipline_id))
   const others = rows.filter(r => !myDisciplineIds.includes(r.discipline_id))
+
+  // Group the "other" queue by which stage each sheet is waiting on, so
+  // Project Head / Atm Head / Trustee each spot their pile instantly.
+  const awaitingPH      = others.filter(r => r.status === 'submitted')
+  const awaitingAtm     = others.filter(r => r.status === 'ph_approved')
+  const awaitingTrustee = others.filter(r => r.status === 'atm_approved' || r.status === 'partially_approved')
 
   // Total pending value (across all) — for partially approved sheets only
   // the unreleased remainder is still pending.
@@ -119,14 +131,21 @@ export default async function ApprovalsInboxPage() {
         />
       )}
 
+      {/* Stage queues — one section per approver in the chain */}
       <ApprovalSection
-        title={mine.length > 0 ? 'Other pending' : 'All pending'}
-        subtitle={
-          mine.length > 0
-            ? "Other heads' queues — you can still open and view"
-            : 'Click into any WS to approve or return'
-        }
-        rows={others}
+        title="Awaiting Project Head"
+        subtitle="Stage 1 of 3 — first sign-off"
+        rows={awaitingPH}
+      />
+      <ApprovalSection
+        title="Awaiting Atm Head"
+        subtitle="Stage 2 of 3 — signed off by the Project Head"
+        rows={awaitingAtm}
+      />
+      <ApprovalSection
+        title="Awaiting Trustee"
+        subtitle="Stage 3 of 3 — release into ERP (part or full)"
+        rows={awaitingTrustee}
       />
 
       {rows.length === 0 && (

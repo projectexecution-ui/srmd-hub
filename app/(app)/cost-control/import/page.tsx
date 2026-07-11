@@ -1,5 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
+import { redirect } from 'next/navigation'
 import { requirePermission, can } from '@/lib/auth'
+import { checkIsCcReviewer } from '@/components/cost-control/ws-actions'
 import { PageHeader } from '@/components/PageHeader'
 import { Card } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -16,6 +18,9 @@ export default async function CostControlImportPage({
   searchParams: Promise<{ project?: string }>
 }) {
   const perms = await requirePermission('cost-control', 'edit')
+  // Management only — this page carries project-level financials.
+  if (!(await checkIsCcReviewer())) redirect("/cost-control")
+
   const canImport = can(perms, 'cost-control', 'edit')
   const supabase = await createClient()
   const sp = await searchParams

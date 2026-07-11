@@ -8,8 +8,9 @@ export type Role =
   | 'admin'              // super-user; manages users + permissions
   | 'uploader'           // legacy: edit ops data
   | 'viewer'             // legacy: read-only
-  | 'founder'            // org top — wide view, narrow edit
-  | 'head'               // PM / dept head / Atm Head — inventory final approver
+  | 'founder'            // org top / Trustee — final Cost Control release
+  | 'head'               // PM / dept head / Atm Head — 2nd Cost Control sign-off, inventory final approver
+  | 'project_head'       // Project Head — 1st Cost Control sign-off in the 3-stage chain
   | 'engineer'           // site engineer; raises inventory requests; confirms receipt
   | 'site_staff'         // labour / on-site
   | 'contractor'         // external contractor — sees only own bills + entries (JMR)
@@ -23,7 +24,7 @@ export type Role =
 // but the workflow now uses `head` for Atm Head and `backoffice`/`store_manager`
 // for the availability-check stage.
 export const ALL_ROLES: Role[] = [
-  'admin', 'founder', 'head', 'uploader', 'engineer', 'backoffice', 'store_manager',
+  'admin', 'founder', 'head', 'project_head', 'uploader', 'engineer', 'backoffice', 'store_manager',
   'site_staff', 'viewer', 'contractor',
 ]
 
