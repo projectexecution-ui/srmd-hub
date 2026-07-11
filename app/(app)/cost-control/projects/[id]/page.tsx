@@ -4,7 +4,7 @@ import { createClient } from '@/lib/supabase/server'
 import { requirePermission, can } from '@/lib/auth'
 import { PageHeader } from '@/components/PageHeader'
 import { SetupProgressBanner } from '@/components/ProjectSetupWizard/SetupProgressBanner'
-import { Plus, ArrowLeftRight, Flame, Info, Settings } from 'lucide-react'
+import { Plus, Flame, Info, Settings } from 'lucide-react'
 import { formatINR } from '@/lib/utils'
 import { QueryError } from '@/components/ui/query-error'
 import { DeadlineBadge } from '@/components/cost-control/DeadlineBadge'
@@ -24,8 +24,6 @@ interface BudgetLine {
   current_budget_amt: number | null
   current_wo_committed_amt: number | null
   current_paid_amt: number | null
-  internal_estimate_amt: number | null
-  internal_estimate_notes: string | null
 }
 interface WSAgg {
   discipline_id: string
@@ -86,7 +84,7 @@ export default async function CostControlProjectDetailPage(
       .eq('is_enabled', true),
     supabase
       .from('cc_budget_lines')
-      .select('discipline_id, sub_skill_id, line_type, current_budget_amt, current_wo_committed_amt, current_paid_amt, internal_estimate_amt, internal_estimate_notes')
+      .select('discipline_id, sub_skill_id, line_type, current_budget_amt, current_wo_committed_amt, current_paid_amt')
       .eq('project_id', id),
     supabase
       .from('cc_working_sheets')
@@ -362,14 +360,6 @@ export default async function CostControlProjectDetailPage(
               >
                 <Plus className="h-4 w-4" /> New Working Sheet
               </Link>
-              <button
-                type="button"
-                disabled
-                className="inline-flex items-center gap-1.5 h-9 px-3 rounded-md bg-gray-50 text-gray-400 border border-gray-200 text-sm font-semibold cursor-not-allowed"
-                title="Budget shifting between sub-skills isn't ready yet"
-              >
-                <ArrowLeftRight className="h-4 w-4" /> Shift Budget — coming soon
-              </button>
               <BphSyncButton projectId={project.id} isMapped={isBphMapped} />
               <Link
                 href={`/cost-control/projects/${project.id}/setup`}

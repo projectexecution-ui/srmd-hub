@@ -1,13 +1,12 @@
 'use client'
 
 import * as React from 'react'
-import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { MoneyInput } from '@/components/ui/money-input'
-import { Plus, Trash2, Send, Check, RotateCcw, Loader2, Lock, Calculator, AlertTriangle } from 'lucide-react'
+import { Plus, Trash2, Send, Check, RotateCcw, Loader2, Lock, AlertTriangle } from 'lucide-react'
 import { findDuplicateMatches, type PastItem, type DupMatch } from '@/lib/dup-detect'
 import { formatINR } from '@/lib/utils'
 import { wsStatusLabel, type WSStatus } from '@/components/cost-control/WSStatusPill'
@@ -28,14 +27,12 @@ export interface WSItem {
   description: string
   uom: string
   qty: number
-  qty_is_auto: boolean
   rate: number
   gst_pct: number
   total_amount: number | null
   vendor_id: string | null
   location_tag: string | null
   remark: string | null
-  section_count: number
 }
 
 interface Props {
@@ -82,14 +79,12 @@ export function WSEditor({ wsId, status, canEdit, canApprove, vendors, initialIt
       description: '',
       uom: 'Sft',
       qty: 1,
-      qty_is_auto: false,
       rate: 0,
       gst_pct: 18,
       total_amount: 0,
       vendor_id: null,
       location_tag: null,
       remark: null,
-      section_count: 0,
     }
     setItems(prev => [...prev, draft])
   }
@@ -250,28 +245,13 @@ export function WSEditor({ wsId, status, canEdit, canApprove, vendors, initialIt
                     </select>
                   </td>
                   <td className="px-2 py-2">
-                    <div className="flex items-center gap-1 justify-end">
-                      {row.qty_is_auto && (
-                        <span title="Auto-derived from quantification working below">
-                          <Calculator className="h-3 w-3 text-blue-600 shrink-0" />
-                        </span>
-                      )}
-                      <MoneyInput
-                        value={row.qty}
-                        onChange={(v) => updateField(idx, 'qty', v === '' ? 0 : Number(v))}
-                        onBlur={() => persistRow(idx)}
-                        disabled={!editable || row.qty_is_auto}
-                        className={`h-9 text-right tabular-nums ${row.qty_is_auto ? 'bg-blue-50 text-blue-900' : ''}`}
-                      />
-                    </div>
-                    {!row.id.startsWith('new-') && (
-                      <Link
-                        href={`/cost-control/working-sheets/${wsId}/items/${row.id}/qty`}
-                        className="text-[10px] text-blue-600 hover:underline block mt-0.5 text-right"
-                      >
-                        📐 {row.section_count} section{row.section_count === 1 ? '' : 's'}
-                      </Link>
-                    )}
+                    <MoneyInput
+                      value={row.qty}
+                      onChange={(v) => updateField(idx, 'qty', v === '' ? 0 : Number(v))}
+                      onBlur={() => persistRow(idx)}
+                      disabled={!editable}
+                      className="h-9 text-right tabular-nums"
+                    />
                   </td>
                   <td className="px-2 py-2">
                     <MoneyInput

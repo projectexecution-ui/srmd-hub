@@ -34,88 +34,6 @@ export async function checkCanSetDeadline(): Promise<boolean> {
   return await callCanApprove('any', 'deadline_set', null)
 }
 
-/** Whether the caller may set / change an Internal Estimate. */
-export async function checkCanSetEstimate(): Promise<boolean> {
-  const me = await whoAmI()
-  if (!me.user) return false
-  const supabase = await createClient()
-  const { data, error } = await supabase.rpc('can_approve', {
-    p_module_slug: 'cost-control',
-    p_doc_type: 'cc_budget_line',
-    p_from_stage: 'any',
-    p_to_stage: 'estimate_set',
-    p_amount: null,
-  })
-  if (error) return false
-  return !!data
-}
-
-/** Upsert the Internal Estimate (HOD planning ceiling) on the budget
- *  line identified by (project, discipline, sub_skill, line_type).
- *  Creates the row when none exists, leaving ERP columns at zero. */
-export async function setInternalEstimate(input: {
-  projectId: string
-  disciplineId: string
-  subSkillId: string
-  lineType: 'work' | 'material'
-  amount: number | null
-  notes?: string | null
-}): Promise<{ ok: boolean; error?: string }> {
-  const me = await whoAmI()
-  if (!me.user) return { ok: false, error: 'Not signed in' }
-
-  const allowed = await checkCanSetEstimate()
-  if (!allowed) {
-    return { ok: false, error: 'Only Head (or Admin) can set the Internal Estimate. Update at /admin/approvals to allow other roles.' }
-  }
-
-  if (input.amount != null && (!Number.isFinite(input.amount) || input.amount < 0)) {
-    return { ok: false, error: 'Estimate must be a non-negative number (or empty to clear)' }
-  }
-
-  const supabase = await createClient()
-  // Find existing budget line for this (project, discipline, sub-skill, line_type).
-  // Note: cc_budget_lines.sub_skill_id is nullable — for sub-skill rows we always
-  // expect a non-null value here.
-  const { data: existing } = await supabase
-    .from('cc_budget_lines')
-    .select('id')
-    .eq('project_id', input.projectId)
-    .eq('discipline_id', input.disciplineId)
-    .eq('sub_skill_id', input.subSkillId)
-    .eq('line_type', input.lineType)
-    .maybeSingle()
-
-  const payload = {
-    internal_estimate_amt: input.amount,
-    internal_estimate_notes: input.notes?.trim() ? input.notes.trim() : null,
-  }
-
-  let opErr: { message: string } | null = null
-  if (existing?.id) {
-    const { error } = await supabase.from('cc_budget_lines').update(payload).eq('id', existing.id)
-    opErr = error
-  } else {
-    const { error } = await supabase.from('cc_budget_lines').insert({
-      project_id: input.projectId,
-      discipline_id: input.disciplineId,
-      sub_skill_id: input.subSkillId,
-      line_type: input.lineType,
-      current_budget_amt: 0,
-      current_wo_committed_amt: 0,
-      current_paid_amt: 0,
-      current_advance_amt: 0,
-      ...payload,
-    })
-    opErr = error
-  }
-  if (opErr) return { ok: false, error: opErr.message }
-
-  revalidatePath(`/cost-control/projects/${input.projectId}`)
-  revalidatePath('/cost-control')
-  return { ok: true }
-}
-
 /** Set or change the deadline on a working sheet. Allowed only when
  *  checkCanSetDeadline() returns true. Pass null to clear. */
 export async function setWorkingSheetDeadline(
@@ -223,18 +141,6 @@ export type NewWSResult =
   | { ok: true; id: string; ws_code: string }
   | { ok: false; error: string }
 
-// Legacy global-serial code. Kept as a fallback only — the smart helper
-// (generateSmartWSCode) is preferred and used by every new entry path.
-async function nextWSCode(): Promise<string> {
-  const supabase = await createClient()
-  const year = new Date().getFullYear()
-  const { count } = await supabase
-    .from('cc_working_sheets')
-    .select('id', { count: 'exact', head: true })
-  const seq = String((count ?? 0) + 1).padStart(4, '0')
-  return `WS-${year}-${seq}`
-}
-
 export async function createWorkingSheet(input: {
   project_id: string
   discipline_id: string
@@ -251,7 +157,7 @@ export async function createWorkingSheet(input: {
 
   const supabase = await createClient()
   // Smart code: <ProjectCode>-<SubSkillCode>-W<seq> (W = full Working sheet
-  // mode). Falls back to the legacy global serial if the helper errors —
+  // mode). Falls back to a timestamp-based code if the helper errors —
   // ws_code has a NOT NULL constraint we don't want to trip on a partial
   // input.
   let ws_code: string
@@ -262,7 +168,7 @@ export async function createWorkingSheet(input: {
       entry_mode: 'line_items',
     })
   } catch {
-    ws_code = await nextWSCode()
+    ws_code = `WS-${new Date().getFullYear()}-${Date.now().toString(36).toUpperCase()}`
   }
 
   // Deadlines are gated behind the 'deadline_set' approval rule. If

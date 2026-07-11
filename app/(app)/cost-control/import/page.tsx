@@ -5,7 +5,6 @@ import { Card } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Upload, FileSpreadsheet } from 'lucide-react'
 import { ImportClient } from './ImportClient'
-import { formatINR } from '@/lib/utils'
 import Link from 'next/link'
 import { ArrowRight } from 'lucide-react'
 
@@ -134,6 +133,3 @@ export default async function CostControlImportPage({
     </div>
   )
 }
-
-// Silence unused-import lint when formatINR isn't used directly (kept for future RAG totals)
-void formatINR
