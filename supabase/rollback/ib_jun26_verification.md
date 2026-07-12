@@ -63,3 +63,40 @@ verified by reading the footer cell formulas. The parser keeps the itemized rows
 - Area (sft) from the title block where present.
 
 Total across the wave: **₹3,51,55,25,347** captured line-by-line (Σ items).
+
+---
+
+# Ingestion result (executed 2026-07-12, tag `[IB-Jun26]`)
+
+**551 draft Working Sheets · ₹3,50,86,90,390 · 17 projects · 1,342 line rows.**
+DB-asserted: every WS is `draft`, every WS carries the source file name + full
+G:\ path in its notes, 330 carry the Excel remarks, approval inbox untouched.
+
+- Projects created: SRAH, WCE, EK, NRH, CV4, CV5 (tagged in description).
+  `built_up_sft` set on all 17 projects from the files' area rows.
+- Master sub-skills added: 12 × "Others — Budget Import" buckets
+  (399, 999, 1099, 1299, 1399, 1599, 1699, 1999, 2099, 2199, 2399, 2599)
+  to hold uncoded Excel rows WITH full line detail — nothing dropped.
+- Enablements: 233 (project × discipline), 551 (project × sub-skill) pairs
+  enabled (175 / 444 newly created; rest already existed).
+- Skipped as already covered by Aksha's earlier sheets (₹66,44,730):
+  NGH-A 101 (₹1L), 109 (₹3L), 1101 (₹30.61L), 1102 (₹6.84L), 201 (₹25L).
+- Wave total ₹351.55Cr − covered ₹66.45L − ₹2 rounding = ingested ₹350.87Cr ✓.
+- Mapping: 517 lines by exact code, 5 by exact name, 128 rows grouped into
+  the per-discipline buckets (each visible as its own line item + remark).
+- Manual placements (documented in each WS's notes): SRAH "OT'S" → Interiors,
+  SRAH "Vinyl Flooring" → Finishes, NGH-B "Special Item - Auditorium" → Extra Works.
+
+**Rollback:** run `supabase/rollback/ib_jun26_ROLLBACK.sql` top-to-bottom —
+deletes only what the import created and restores the 3 previously-disabled
+sub-skill enablements it flipped.
+
+**One manual follow-up:** attaching the 17 source .xlsx files to the sheets'
+built-in viewer needs a storage upload key that isn't available locally
+(only the anon key is in .env.local; cc-sheets is a private bucket). Every WS
+already shows the file name + full shared-drive path in its notes, so nothing
+is lost — say the word and I'll wire the uploads when a service key is available.
+
+**Master-data observation:** `cc_disciplines` contains a pre-existing entry
+code `02E` named "xtra Works" that looks like a mangled duplicate of
+"20 Extra Works" — left untouched (curated masters), flagged for review.
