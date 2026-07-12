@@ -325,6 +325,22 @@ export default async function CostControlProjectDetailPage(
   const utilPct = totalBudget > 0 ? Math.round((totalPaid / totalBudget) * 100) : 0
   const releasedPct = totalEstimate > 0 ? Math.round((totalBudget / totalEstimate) * 100) : 0
 
+  // ₹/sft companion for every money figure (Trustee requirement). Uses the
+  // project's built-up area; hidden gracefully when no area is set.
+  const sft = Number(project.built_up_sft ?? 0)
+  const perSft = (amt: number): string | null =>
+    sft > 0 && amt > 0 ? `₹${Math.round(amt / sft).toLocaleString('en-IN')}/sft` : null
+  const Money = ({ amt, dash = '—' }: { amt: number; dash?: string }) => {
+    if (!(amt > 0)) return <>{dash}</>
+    const rate = perSft(amt)
+    return (
+      <>
+        {formatINR(amt)}
+        {rate && <span className="block text-[10px] font-normal text-gray-400 leading-tight">{rate}</span>}
+      </>
+    )
+  }
+
   return (
     <div className="p-4 md:p-6 max-w-7xl mx-auto space-y-4">
       {/* Breadcrumb */}
@@ -435,12 +451,14 @@ export default async function CostControlProjectDetailPage(
         <KPI
           label="Internal Estimate"
           value={totalEstimate > 0 ? formatINR(totalEstimate) : '—'}
+          perSft={perSft(totalEstimate)}
           sub={totalEstimate > 0 ? 'Sum of all Working Sheets (live)' : 'Will populate once WSes are raised'}
           tone="indigo"
         />
         <KPI
           label="Approved Budget (ERP)"
           value={formatINR(totalBudget)}
+          perSft={perSft(totalBudget)}
           sub={
             totalBudget > 0
               ? (totalEstimate > 0
@@ -460,11 +478,11 @@ export default async function CostControlProjectDetailPage(
           }
           tone="blue"
         />
-        <KPI label="Committed (WO/PO)" value={formatINR(totalWO)}
+        <KPI label="Committed (WO/PO)" value={formatINR(totalWO)} perSft={perSft(totalWO)}
              sub={totalBudget > 0 ? `${Math.round((totalWO / totalBudget) * 100)}% of budget` : '—'} tone="purple" />
-        <KPI label="Paid to Date" value={formatINR(totalPaid)}
+        <KPI label="Paid to Date" value={formatINR(totalPaid)} perSft={perSft(totalPaid)}
              sub={totalBudget > 0 ? `${utilPct}% utilized` : '—'} tone="orange" />
-        <KPI label="Approved via WS" value={formatINR(totalApproved)}
+        <KPI label="Approved via WS" value={formatINR(totalApproved)} perSft={perSft(totalApproved)}
              sub={totalEstimate > 0
                ? `${Math.round((totalApproved / totalEstimate) * 100)}% of estimate`
                : "From this app's Working Sheets"} tone="green" />
@@ -526,11 +544,11 @@ export default async function CostControlProjectDetailPage(
                         {dHot && <Flame className="inline h-3.5 w-3.5 text-orange-500 ml-2" />}
                       </td>
                       <Td align="right" mono className="text-indigo-800">
-                        {dAgg.estimate > 0 ? formatINR(dAgg.estimate) : '—'}
+                        <Money amt={dAgg.estimate} />
                       </Td>
-                      <Td align="right" mono>{dAgg.budget > 0 ? formatINR(dAgg.budget) : '—'}</Td>
-                      <Td align="right" mono className="text-gray-600">{dAgg.wo > 0 ? formatINR(dAgg.wo) : '—'}</Td>
-                      <Td align="right" mono className="text-gray-600">{dAgg.paid > 0 ? formatINR(dAgg.paid) : '—'}</Td>
+                      <Td align="right" mono><Money amt={dAgg.budget} /></Td>
+                      <Td align="right" mono className="text-gray-600"><Money amt={dAgg.wo} /></Td>
+                      <Td align="right" mono className="text-gray-600"><Money amt={dAgg.paid} /></Td>
                       <Td align="right" className={dPct > 95 ? 'text-red-600' : dPct > 80 ? 'text-amber-700' : 'text-green-700'}>
                         {dAgg.budget > 0 ? `${dPct.toFixed(0)}%` : '—'}
                       </Td>
@@ -592,11 +610,11 @@ export default async function CostControlProjectDetailPage(
                             </span>
                           </td>
                           <Td align="right" mono className="text-indigo-800">
-                            {a && a.planTotal > 0 ? formatINR(a.planTotal) : '—'}
+                            <Money amt={a?.planTotal ?? 0} />
                           </Td>
-                          <Td align="right" mono>{bl?.budget ? formatINR(bl.budget) : '—'}</Td>
-                          <Td align="right" mono className="text-gray-600">{bl?.wo ? formatINR(bl.wo) : '—'}</Td>
-                          <Td align="right" mono className="text-gray-600">{bl?.paid ? formatINR(bl.paid) : '—'}</Td>
+                          <Td align="right" mono><Money amt={bl?.budget ?? 0} /></Td>
+                          <Td align="right" mono className="text-gray-600"><Money amt={bl?.wo ?? 0} /></Td>
+                          <Td align="right" mono className="text-gray-600"><Money amt={bl?.paid ?? 0} /></Td>
                           <Td align="right" className={sPct > 95 ? 'text-red-600 font-semibold' : sPct > 80 ? 'text-amber-700 font-semibold' : sPct > 0 ? 'text-green-700 font-semibold' : 'text-gray-400'}>
                             {bl && bl.budget > 0 ? `${sPct.toFixed(0)}%` : '—'}
                           </Td>
@@ -746,8 +764,8 @@ function Td({
 }
 
 function KPI({
-  label, value, sub, tone,
-}: { label: string; value: React.ReactNode; sub?: React.ReactNode; tone: 'blue' | 'purple' | 'orange' | 'green' | 'indigo' }) {
+  label, value, sub, tone, perSft,
+}: { label: string; value: React.ReactNode; sub?: React.ReactNode; tone: 'blue' | 'purple' | 'orange' | 'green' | 'indigo'; perSft?: string | null }) {
   const top = {
     blue: 'border-t-blue-500',
     purple: 'border-t-purple-500',
@@ -759,6 +777,7 @@ function KPI({
     <div className={`bg-white rounded-md border border-gray-200 border-t-2 ${top} p-4`}>
       <p className="text-[10px] uppercase tracking-wider font-semibold text-gray-500">{label}</p>
       <p className="text-xl font-bold text-gray-900 mt-1 tabular-nums">{value}</p>
+      {perSft && <p className="text-[11px] font-semibold text-gray-600 tabular-nums">{perSft}</p>}
       {sub && <p className="text-[11px] text-gray-500 mt-0.5">{sub}</p>}
     </div>
   )
