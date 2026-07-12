@@ -34,6 +34,7 @@ interface WSAgg {
   approved_for_erp_amt: number | null
   deadline_date: string | null
   entry_mode: 'line_items' | 'excel_summary' | 'thumbrule' | null
+  summary_notes: string | null
 }
 
 export default async function CostControlProjectDetailPage(
@@ -96,7 +97,7 @@ export default async function CostControlProjectDetailPage(
       .eq('project_id', id),
     supabase
       .from('cc_working_sheets')
-      .select('discipline_id, sub_skill_id, status, total_amount, approved_for_erp_amt, deadline_date, entry_mode')
+      .select('discipline_id, sub_skill_id, status, total_amount, approved_for_erp_amt, deadline_date, entry_mode, summary_notes')
       .eq('project_id', id),
     supabase
       .from('project_assignments')
@@ -215,6 +216,18 @@ export default async function CostControlProjectDetailPage(
     }
     wsAgg.set(k, cur)
   }
+  // Short remark per (discipline, sub-skill) — the "Remark: …" line that the
+  // Internal Budget import (and any sheet notes) carry. First non-empty wins;
+  // shown truncated under the sub-skill name with the full text on hover.
+  const remarkAgg = new Map<string, string>()
+  for (const w of (wsRes.data ?? []) as WSAgg[]) {
+    if (w.status === 'cancelled' || !w.summary_notes) continue
+    const k = `${w.discipline_id}::${w.sub_skill_id}`
+    if (remarkAgg.has(k)) continue
+    const m = w.summary_notes.match(/^Remark:\s*(.+)$/m)
+    if (m) remarkAgg.set(k, m[1].trim())
+  }
+
   // Per-(discipline, sub-skill) deadline rollup: earliest open deadline +
   // overdue count for sheets that are still in flight (not approved/paid).
   const TERMINAL = new Set(['approved','wo_issued','paid','cancelled'])
@@ -608,6 +621,18 @@ export default async function CostControlProjectDetailPage(
                                 canWrite={canWrite}
                               />
                             </span>
+                            {(() => {
+                              const remark = remarkAgg.get(`${d.id}::${s.id}`)
+                              if (!remark) return null
+                              return (
+                                <p
+                                  className="text-[11px] italic text-gray-400 truncate max-w-[260px] leading-snug"
+                                  title={remark}
+                                >
+                                  {remark.length > 70 ? remark.slice(0, 70) + '…' : remark}
+                                </p>
+                              )
+                            })()}
                           </td>
                           <Td align="right" mono className="text-indigo-800">
                             <Money amt={a?.planTotal ?? 0} />
