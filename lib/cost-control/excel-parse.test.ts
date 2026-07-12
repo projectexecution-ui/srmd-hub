@@ -10,6 +10,7 @@ import {
   SIMPLE_BOQ, SPLIT_COLUMNS,
   NO_HEADER_SHEET, TOTAL_ONLY_SHEET, TWO_ROW_NOT_MERGEABLE,
   FINISHING_RATE_BOQ, QUANTITY_ONLY_SHEET,
+  MULTI_SECTION_SHEET, MULTI_SECTION_WITH_GRAND,
 } from './excel-parse.fixtures'
 
 // ============================================================================
@@ -173,6 +174,26 @@ describe('File D — quantity-only measurement sheet', () => {
     expect(a.totalCandidates.every(c => c.excluded)).toBe(true)
     expect(a.approvalFigure).toBeNull()
     expect(a.totalSource).not.toBe('approval')
+  })
+})
+
+describe('File E — multi-section working (Warehouse-ABS shape)', () => {
+  it('with NO closing grand total: total = SUM of section subtotals, not the last section', () => {
+    const a = analyzeSheet({ name: 'Warehouse-ABS', aoa: MULTI_SECTION_SHEET })
+    expect(a.grandTotal).toBe(902_500 + 3_900_000 + 300_000) // 5,102,500
+    expect(a.totalSource).toBe('sum_of_sections')
+    // every section's items survive — nothing gets ladder-cut
+    expect(a.itemCount).toBe(6)
+    expect(a.rows.some(r => (r.description ?? '').includes('Tremix flooring ground'))).toBe(true)
+    expect(a.rows.some(r => (r.description ?? '').includes('Sump treatment'))).toBe(true)
+  })
+
+  it('with a closing Grand Total: the grand total wins and all section items survive', () => {
+    const a = analyzeSheet({ name: 'Warehouse-ABS', aoa: MULTI_SECTION_WITH_GRAND })
+    expect(a.grandTotal).toBe(5_102_500)
+    expect(a.totalSource).toBe('grand_total')
+    expect(a.itemCount).toBe(6)
+    expect(a.rows.some(r => (r.description ?? '').includes('Sump treatment'))).toBe(true)
   })
 })
 

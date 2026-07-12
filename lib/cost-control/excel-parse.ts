@@ -75,7 +75,7 @@ export interface SheetInput {
   formulaOf?: (r: number, c: number) => string | null
 }
 
-export type TotalSource = 'approval' | 'grand_total' | 'total' | 'sum_of_rows' | 'none'
+export type TotalSource = 'approval' | 'grand_total' | 'total' | 'sum_of_sections' | 'sum_of_rows' | 'none'
 
 export interface SheetAnalysis {
   name: string
@@ -347,6 +347,52 @@ export function extractRows(
 
 // ─── Approval-figure pick + ladder cut ─────────────────────────────────────
 
+/** Multi-section workings put a "Total Amount for <package>" row after EACH
+ *  work package, with more items following. Those are SECTION subtotals —
+ *  they must not win the grand-total race (the last one would understate the
+ *  sheet by every other section) and must not trigger the ladder cut (which
+ *  would delete the later sections' items).
+ *
+ *  A candidate is a section subtotal when item rows follow it: ≥1 item
+ *  before the NEXT candidate, or ≥2 items after it when it is the last
+ *  candidate (a lone trailing item like "Cost Per SqFt" doesn't demote a
+ *  real final total). Everything else forms the final ladder. */
+/** "Total Amount for <package>" — the wording engineers use on per-package
+ *  subtotals. 'total' must come BEFORE 'for', so "APPROVAL FOR TOTAL
+ *  AMOUNT..." never matches. */
+export const SECTION_TOTAL_RE = /\btotal\b[^]*?\bfor\b/i
+
+export function classifySections(
+  rows: ParsedRow[],
+  candidates: TotalCandidate[],
+): { sections: TotalCandidate[]; finalLadder: TotalCandidate[] } {
+  const sorted = [...candidates].sort((a, b) => a.aoaRowIdx - b.aoaRowIdx)
+  const itemIdxs = rows
+    .filter(r => r.ladder_role === 'item' && r.amount != null)
+    .map(r => r.aoa_row_idx)
+
+  // Pattern rule: when TWO OR MORE rank ≤2 candidates read "Total … for …",
+  // they are per-package subtotals — including the last one, even when the
+  // sheet ends right after it. Rank-3 approval phrases are never demoted.
+  const patternMatches = new Set(
+    sorted.filter(c => c.rank <= 2 && SECTION_TOTAL_RE.test(c.description)).map(c => c.aoaRowIdx),
+  )
+  const usePattern = patternMatches.size >= 2
+
+  const sections: TotalCandidate[] = []
+  const finalLadder: TotalCandidate[] = []
+  for (let k = 0; k < sorted.length; k++) {
+    const c = sorted[k]
+    if (usePattern && patternMatches.has(c.aoaRowIdx)) { sections.push(c); continue }
+    const next = sorted[k + 1]
+    const upper = next ? next.aoaRowIdx : Infinity
+    const itemsAfter = itemIdxs.filter(i => i > c.aoaRowIdx && i < upper).length
+    const isSection = next ? itemsAfter >= 1 : itemsAfter >= 2
+    ;(isSection ? sections : finalLadder).push(c)
+  }
+  return { sections, finalLadder }
+}
+
 export function pickApprovalFigure(candidates: TotalCandidate[]): ApprovalFigure | null {
   const eligible = candidates.filter(c => !c.excluded)
   if (eligible.length === 0) return null
@@ -360,15 +406,19 @@ export function pickApprovalFigure(candidates: TotalCandidate[]): ApprovalFigure
 }
 
 /** Drop everything below the winning total (payment terms, contacts, notes,
- *  Cost/SqFt). Inside the ladder zone (first candidate → winner), keep only
- *  tax/addon/discount rows — plain rows there are ladder arithmetic. */
+ *  Cost/SqFt). Inside the ladder zone (first FINAL-ladder candidate →
+ *  winner), keep only tax/addon/discount rows — plain rows there are ladder
+ *  arithmetic. Section subtotals never define the zone, so multi-section
+ *  sheets keep every section's items. */
 export function applyLadderCut(
   rows: ParsedRow[],
-  candidates: TotalCandidate[],
+  ladderCandidates: TotalCandidate[],
   winner: ApprovalFigure | null,
 ): ParsedRow[] {
   if (!winner) return rows
-  const ladderStart = candidates.length > 0 ? Math.min(...candidates.map(c => c.aoaRowIdx)) : winner.aoaRowIdx
+  const ladderStart = ladderCandidates.length > 0
+    ? Math.min(...ladderCandidates.map(c => c.aoaRowIdx))
+    : winner.aoaRowIdx
   const kept = rows.filter(r => {
     if (r.aoa_row_idx > winner.aoaRowIdx) return false            // below the winner → tail junk
     if (r.aoa_row_idx > ladderStart) {                            // inside the ladder zone
@@ -467,22 +517,32 @@ export function analyzeSheet(input: SheetInput): SheetAnalysis {
     totalCandidates = scanTotalsWithoutHeader(aoa)
   }
 
-  const approvalFigure = pickApprovalFigure(totalCandidates)
-  if (header) rows = applyLadderCut(rows, totalCandidates, approvalFigure)
+  // Split section subtotals (mid-sheet "Total Amount for <package>" rows
+  // with more items after them) from the final ladder at the bottom.
+  const { sections, finalLadder } = classifySections(rows, totalCandidates)
+  const approvalFigure = pickApprovalFigure(finalLadder)
+  if (header) rows = applyLadderCut(rows, finalLadder, approvalFigure)
 
-  // Grand total: winner, else reconciled sum of kept rows.
+  // Grand total precedence: final-ladder winner → sum of section subtotals
+  // (multi-section sheets with no closing grand total) → reconciled row sum.
   let grandTotal: number | null = null
   let totalSource: TotalSource = 'none'
   if (approvalFigure) {
     grandTotal = approvalFigure.amount
     totalSource = approvalFigure.rank === 3 ? 'approval' : approvalFigure.rank === 2 ? 'grand_total' : 'total'
   } else {
-    const sum = rows.reduce((s, r) => {
-      const a = r.amount ?? 0
-      if (r.ladder_role === 'discount') return s - Math.abs(a)
-      return s + a
-    }, 0)
-    if (sum > 0) { grandTotal = sum; totalSource = 'sum_of_rows' }
+    const eligibleSections = sections.filter(s => !s.excluded)
+    if (eligibleSections.length > 0) {
+      grandTotal = eligibleSections.reduce((s, c) => s + c.amount, 0)
+      totalSource = 'sum_of_sections'
+    } else {
+      const sum = rows.reduce((s, r) => {
+        const a = r.amount ?? 0
+        if (r.ladder_role === 'discount') return s - Math.abs(a)
+        return s + a
+      }, 0)
+      if (sum > 0) { grandTotal = sum; totalSource = 'sum_of_rows' }
+    }
   }
 
   const preHeaderRows = header ? aoa.slice(0, header.headerRowIdx) : aoa.slice(0, 10)

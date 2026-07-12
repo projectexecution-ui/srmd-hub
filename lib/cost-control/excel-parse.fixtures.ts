@@ -187,6 +187,33 @@ export const FINISHING_RATE_BOQ: unknown[][] = [
   [3, 'Providing and fixing of Vitrified tile treads', 'rmt', N, 1640, 0],
 ]
 
+// ─── Fixture E — multi-section working (Warehouse-ABS shape) ──────────────
+// One sheet, MULTIPLE work packages, each ending in its own "Total Amount
+// for <package>" row, with more items following. No closing grand total.
+// The sheet total = sum of the section subtotals — NOT the last section.
+export const MULTI_SECTION_SHEET: unknown[][] = [
+  ['Sr', 'Description', 'Unit', 'Qty', 'Rate', 'Amount'],
+  ['A', '309 Tremix Works'],
+  [1, 'Tremix flooring ground floor', 'Sqm', 500, 900, 450000],
+  [2, 'Tremix flooring first floor', 'Sqm', 500, 905, 452500],
+  ['', 'Total Amount for 309 Tremix Works', '', N, N, 902500],
+  ['B', '501 Building & Terrace Waterproofing'],
+  [3, 'Terrace brickbat coba', 'Sqm', 1200, 2500, 3000000],
+  [4, 'Parapet coping', 'Rmt', 300, 3000, 900000],
+  ['', 'Total Amount for 501 Building & Terrace Waterproofing', '', N, N, 3900000],
+  ['C', '507 Lift-Pit Waterproofing'],
+  [5, 'Lift pit box waterproofing', 'Nos', 4, 60000, 240000],
+  [6, 'Sump treatment', 'Nos', 2, 30000, 60000],
+  ['', 'Total Amount for 507 Lift-Pit Waterproofing Chemical', '', N, N, 300000],
+]
+
+/** Same shape but WITH a closing grand total — the grand total must win
+ *  and the sections' items must all survive the cut. */
+export const MULTI_SECTION_WITH_GRAND: unknown[][] = [
+  ...MULTI_SECTION_SHEET,
+  ['', 'Grand Total', '', N, N, 5102500],
+]
+
 // ─── Fixture D — quantity-only measurement sheet (no money anywhere) ───────
 // Mirrors "SRD-NGH B-Quantity Sheet" tabs: totals are SMT/NOS quantities
 // and must be EXCLUDED so no quantity masquerades as a money total.
