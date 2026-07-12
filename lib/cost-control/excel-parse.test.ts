@@ -9,6 +9,7 @@ import {
   CIVIL_WORKBOOK, CIVIL_MONEY_SHEET,
   SIMPLE_BOQ, SPLIT_COLUMNS,
   NO_HEADER_SHEET, TOTAL_ONLY_SHEET, TWO_ROW_NOT_MERGEABLE,
+  FINISHING_RATE_BOQ, QUANTITY_ONLY_SHEET,
 } from './excel-parse.fixtures'
 
 // ============================================================================
@@ -140,6 +141,38 @@ describe('File B — Civil estimate (area trap + RA double-count)', () => {
   it('the Area Statement sheet loses the sheet race', () => {
     expect(wb.bestSheetIndex).toBe(0)
     expect(wb.sheets[1].score).toBeLessThan(money.score)
+  })
+})
+
+describe('File C — consultant finishing BOQ (desc row + money row header)', () => {
+  const a = analyzeSheet({ name: 'Finishes', aoa: FINISHING_RATE_BOQ })
+
+  it('merges the Sr/Description row with the Unit/Quantity/Rate/Amount row', () => {
+    expect(a.headerRowIdx).toBe(2)
+    expect(a.headerSpansTwoRows).toBe(true)
+    const kinds = new Set(a.columns.map(c => c.kind))
+    expect(kinds.has('description')).toBe(true)
+    expect(kinds.has('unit')).toBe(true)
+    expect(kinds.has('qty')).toBe(true)
+    expect(kinds.has('rate')).toBe(true)
+    expect(kinds.has('amount')).toBe(true)
+  })
+
+  it('extracts the rate-only items (amount 0, quantities blank)', () => {
+    expect(a.itemCount).toBe(3)
+    const first = a.rows.find(r => r.raw_label === '1')
+    expect(first).toMatchObject({ unit: 'm2', rate: 1495, amount: 0 })
+  })
+})
+
+describe('File D — quantity-only measurement sheet', () => {
+  const a = analyzeSheet({ name: 'NGH B - Flooring & Dedo', aoa: QUANTITY_ONLY_SHEET })
+
+  it('SMT/RMT/Quantity totals are EXCLUDED — no quantity masquerades as money', () => {
+    expect(a.totalCandidates.length).toBeGreaterThan(0)
+    expect(a.totalCandidates.every(c => c.excluded)).toBe(true)
+    expect(a.approvalFigure).toBeNull()
+    expect(a.totalSource).not.toBe('approval')
   })
 })
 

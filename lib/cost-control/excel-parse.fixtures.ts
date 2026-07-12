@@ -170,3 +170,31 @@ export const TWO_ROW_NOT_MERGEABLE: unknown[][] = [
   ['', 'Description', 'Rate', 'Amount'],
   [1, 'Something', 10, 100],
 ]
+
+// ─── Fixture C — consultant finishing BOQ (desc row + money row header) ────
+// Mirrors "DCPL Rate - NGH Finishing Work BOQ...xlsx": R3 = Sr/Description
+// only; R4 = Unit/Quantity/Rate/Amount only. Amounts all 0 (rate-only BOQ
+// submitted for rate approval, quantities blank).
+export const FINISHING_RATE_BOQ: unknown[][] = [
+  [N],
+  [N],
+  ['Sr. No.', 'Description'],
+  [N, N, 'Unit', 'Quantity', 'Rate', 'Amount', 'Remarks'],
+  [N],
+  ['A', 'Flooring, Skirting, Dado Works'],
+  [1, 'Providing and fixing of Vitrified tile 600x1200', 'm2', N, 1495, 0],
+  [2, 'Providing and fixing of Vetrified tile skirting', 'rmt', N, 270, 0],
+  [3, 'Providing and fixing of Vitrified tile treads', 'rmt', N, 1640, 0],
+]
+
+// ─── Fixture D — quantity-only measurement sheet (no money anywhere) ───────
+// Mirrors "SRD-NGH B-Quantity Sheet" tabs: totals are SMT/NOS quantities
+// and must be EXCLUDED so no quantity masquerades as a money total.
+export const QUANTITY_ONLY_SHEET: unknown[][] = [
+  ['NGH B - Flooring & Dedo Quantity'],
+  ['Sr', 'Location', 'Length', 'Width', 'Qty SMT'],
+  [1, 'Unit 1 Living', 5.2, 4.1, 21.32],
+  [2, 'Unit 1 Bedroom', 4.0, 3.5, 14.0],
+  ['Total Quantity for 9 Units SMT', N, N, N, 1589.9],
+  ['Total  RMT', N, N, N, 387],
+]

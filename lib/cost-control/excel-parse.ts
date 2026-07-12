@@ -102,9 +102,9 @@ export const RANK3_RE = /approval.*(amount|total)|to\s*enter\s*in\s*erp|total\s*
 export const RANK2_RE = /grand\s*total/i
 /** Rank 1 — any total-ish row. */
 export const RANK1_RE = /\b(total|sub[\s-]*total|sum)\b/i
-/** Unit-metric trap — "Total Slab Area", "Cost per Sqft", area rows.
- *  These are measurements, never money. */
-export const UNIT_METRIC_RE = /\b(area|slab|sq\.?\s*m\b|sqm|sft|sq\.?\s*ft|sqft|rmt|cum)\b|per\s+(sq|sft|sqft|sqm|unit)/i
+/** Unit-metric trap — "Total Slab Area", "Total Quantity … SMT", "Cost per
+ *  Sqft", area rows. These are measurements, never money. */
+export const UNIT_METRIC_RE = /\b(area|slab|sq\.?\s*m\b|sqm|smt|sft|sq\.?\s*ft|sqft|rmt|cum|nos\.?|quantity)\b|per\s+(sq|sft|sqft|sqm|unit)/i
 export const TAX_RE = /\bgst\b|cgst|sgst|igst|utgst|cess|\bvat\b|service\s*tax|\btds\b|\btcs\b|\btax\b/i
 export const ADDON_RE = /freight|transport|packing|p\s*&\s*f|insurance|loading|handling|carting|misc|sundry|conting|\bra\s*-?\s*\d+\b|previous\s*wo|advance/i
 export const DISCOUNT_RE = /discount|rebate|\bless\b/i
@@ -172,16 +172,19 @@ export function detectHeader(aoa: unknown[][]): HeaderDetection | null {
     }
   }
 
-  // Pass 2 — TWO-ROW headers: labels split across two adjacent rows
-  // (e.g. R1: SR.NO | ACTIVITY | UNIT | QTY | <vendor name>;
-  //       R2:                              "ITC" RATE | TOTAL AMOUNT | REMARK).
+  // Pass 2 — TWO-ROW headers: labels split across two adjacent rows.
+  // Seen in the wild both ways:
+  //   R1: SR.NO | ACTIVITY | UNIT | QTY;   R2: "ITC" RATE | TOTAL AMOUNT
+  //   R1: Sr. No. | Description;           R2: Unit | Quantity | Rate | Amount
+  // Row 1 must carry the description (and NO money); row 2 the money (and
+  // NO description); qty/unit may sit on either row — the merged header
+  // must pass the full description+money+shape condition.
   for (let i = 0; i < scanMax; i++) {
     const row1 = aoa[i] ?? []
     const d1 = detectColumns(row1)
     const k1 = new Set(d1.map(c => c.kind))
-    const shapeOnly = k1.has('description') && (k1.has('qty') || k1.has('unit'))
-      && !k1.has('rate') && !k1.has('amount')
-    if (!shapeOnly) continue
+    const descNoMoney = k1.has('description') && !k1.has('rate') && !k1.has('amount')
+    if (!descNoMoney) continue
     // next non-empty row (allow one blank in between)
     let j = i + 1
     while (j < Math.min(aoa.length, i + 3) && isRowEmpty(aoa[j])) j++
@@ -493,6 +496,9 @@ export function analyzeSheet(input: SheetInput): SheetAnalysis {
   score += Math.min(itemCount, 20) * 2
   if (approvalFigure) score += approvalFigure.rank * 10
   score += magnitudeBucket(grandTotal)
+  // A sheet with actual money on it beats a bigger rate-only sheet whose
+  // amounts are all zero (comparison workbooks embed both).
+  if (grandTotal != null && grandTotal > 0) score += 15
   if (SUPPORT_SHEET_RE.test(input.name)) score -= 15
 
   return {
