@@ -5,9 +5,10 @@ import { Card } from '@/components/ui/card'
 import { EmptyState } from '@/components/ui/empty-state'
 import { formatINRShort } from '@/lib/jmr/format'
 import { type EccCategory } from '@/lib/ecc/triage'
-import { Mail, Star, Sparkles, Flame, AlertTriangle, Clock, Gauge, IndianRupee } from 'lucide-react'
+import { Mail, Star, Flame, AlertTriangle, Clock, Gauge, IndianRupee } from 'lucide-react'
 import { RefreshButton } from './refresh-button'
 import { AskAI } from './ask-ai'
+import { BriefButton } from './brief-button'
 import { FollowupRadar } from './followup-radar'
 import { BoardClient, type BoardItem } from './board-client'
 
@@ -104,6 +105,8 @@ export default async function CommandCenterPage() {
         subtitle={acctEmail ? `GOD Mode · ${acctEmail}` : 'GOD Mode'}
         back="/"
       >
+        {brief && <BriefButton brief={brief} />}
+        <AskAI />
         <RefreshButton connected={accounts?.[0]?.status === 'connected'} />
       </PageHeader>
 
@@ -117,45 +120,29 @@ export default async function CommandCenterPage() {
         </Card>
       ) : (
         <>
-          {/* Cockpit stat bar */}
-          <div className="grid grid-cols-3 sm:grid-cols-6 gap-2.5 mb-4">
+          {/* Cockpit stat bar — compact */}
+          <div className="grid grid-cols-3 sm:grid-cols-6 gap-2 mb-3">
             {stats.map(s => {
               const Icon = s.icon
               return (
                 <a
                   key={s.key}
                   href={s.href}
-                  className="rounded-2xl bg-white shadow-sm ring-1 ring-gray-200/70 px-3.5 py-3 hover:shadow-md hover:-translate-y-0.5 transition-all"
+                  className="rounded-xl bg-white shadow-sm ring-1 ring-gray-200/70 px-3 py-2 hover:shadow-md hover:-translate-y-0.5 transition-all"
                 >
-                  <div className="flex items-center gap-2">
-                    <span className={`h-7 w-7 rounded-lg grid place-items-center ${s.ic}`}>
-                      <Icon className="h-4 w-4" />
+                  <div className="flex items-center gap-1.5">
+                    <span className={`h-5 w-5 rounded-md grid place-items-center ${s.ic}`}>
+                      <Icon className="h-3 w-3" />
                     </span>
-                    <span className="text-[10.5px] font-semibold text-gray-500 uppercase tracking-wide truncate">{s.label}</span>
+                    <span className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide truncate">{s.label}</span>
                   </div>
-                  <div className="text-[26px] leading-none font-bold text-gray-900 mt-2 tabular-nums">{s.value}</div>
+                  <div className="text-xl leading-none font-bold text-gray-900 mt-1 tabular-nums">{s.value}</div>
                 </a>
               )
             })}
           </div>
 
-          {/* Ask AI */}
-          <AskAI />
-
-          {/* Daily brief */}
-          {brief && (
-            <div className="mb-5 rounded-2xl bg-gradient-to-br from-teal-50 to-white ring-1 ring-teal-200/60 shadow-sm px-4 py-3.5 flex items-start gap-3">
-              <span className="h-8 w-8 rounded-xl bg-teal-100 text-teal-700 grid place-items-center flex-shrink-0">
-                <Sparkles className="h-4 w-4" />
-              </span>
-              <div>
-                <p className="text-[10.5px] font-semibold uppercase tracking-wide text-teal-700/80">Your brief</p>
-                <p className="text-sm text-gray-700 leading-relaxed mt-0.5">{brief}</p>
-              </div>
-            </div>
-          )}
-
-          {/* Follow-up radar — who owes you a reply */}
+          {/* Follow-up radar — who owes you a reply (collapsible / dismissable) */}
           <FollowupRadar items={boardItems} />
 
           {/* GOD Mode board */}
