@@ -1,6 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { requirePermission } from '@/lib/auth'
 import { checkCanSetDeadline } from '@/components/cost-control/ws-actions'
+import { getCcSettings } from '@/lib/cost-control/settings'
 import { PageHeader } from '@/components/PageHeader'
 import { Card } from '@/components/ui/card'
 import { NewWSThumbruleForm } from './NewWSThumbruleForm'
@@ -83,7 +84,7 @@ export default async function NewWSThumbrulePage({
           defaultProjectId={sp.project}
           defaultDisciplineId={sp.discipline}
           defaultSubSkillId={sp.sub_skill}
-          canSetDeadline={await checkCanSetDeadline()}
+          canSetDeadline={(await checkCanSetDeadline()) && (await getCcSettings()).show_deadlines}
         />
       </Card>
     </div>

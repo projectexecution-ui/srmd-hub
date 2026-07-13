@@ -1,6 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { requirePermission } from '@/lib/auth'
 import { checkCanSetDeadline, checkIsCcReviewer } from '@/components/cost-control/ws-actions'
+import { getCcSettings } from '@/lib/cost-control/settings'
 import { PageHeader } from '@/components/PageHeader'
 import { Card } from '@/components/ui/card'
 import { NewWSQuickForm } from './NewWSQuickForm'
@@ -64,7 +65,7 @@ export default async function NewWorkingSheetQuickPage({
           projectDisciplines={projectDisciplines}
           projectSubSkills={projectSubSkills}
           defaultProjectId={sp.project}
-          canSetDeadline={await checkCanSetDeadline()}
+          canSetDeadline={(await checkCanSetDeadline()) && (await getCcSettings()).show_deadlines}
           reviewer={await checkIsCcReviewer()}
         />
       </Card>

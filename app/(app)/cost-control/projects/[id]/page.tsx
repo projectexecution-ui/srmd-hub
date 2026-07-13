@@ -7,6 +7,7 @@ import { PageHeader } from '@/components/PageHeader'
 import { SetupProgressBanner } from '@/components/ProjectSetupWizard/SetupProgressBanner'
 import { Plus, Flame, Info, Settings } from 'lucide-react'
 import { formatINR } from '@/lib/utils'
+import { getCcSettings } from '@/lib/cost-control/settings'
 import { QueryError } from '@/components/ui/query-error'
 import { DeadlineBadge } from '@/components/cost-control/DeadlineBadge'
 import { wsStatusLabel } from '@/components/cost-control/WSStatusPill'
@@ -51,6 +52,7 @@ export default async function CostControlProjectDetailPage(
   }
 
   const supabase = await createClient()
+  const ccSettings = await getCcSettings()
 
   const { data: project, error: projectErr } = await supabase
     .from('projects')
@@ -339,10 +341,17 @@ export default async function CostControlProjectDetailPage(
   const releasedPct = totalEstimate > 0 ? Math.round((totalBudget / totalEstimate) * 100) : 0
 
   // ₹/sft companion for every money figure (Trustee requirement). Uses the
-  // project's built-up area; hidden gracefully when no area is set.
+  // project's built-up area; hidden gracefully when no area is set, and
+  // switchable off from Cost Control settings.
   const sft = Number(project.built_up_sft ?? 0)
   const perSft = (amt: number): string | null =>
-    sft > 0 && amt > 0 ? `₹${Math.round(amt / sft).toLocaleString('en-IN')}/sft` : null
+    ccSettings.show_per_sft && sft > 0 && amt > 0
+      ? `₹${Math.round(amt / sft).toLocaleString('en-IN')}/sft`
+      : null
+  // Visible column count for empty-state rows (name + Estimate + Working
+  // Sheets + actions, plus the toggleable ERP and deadline groups).
+  const tableCols = 4 + (ccSettings.show_erp_columns ? 4 : 0) + (ccSettings.show_deadlines ? 2 : 0)
+
   const Money = ({ amt, dash = '—' }: { amt: number; dash?: string }) => {
     if (!(amt > 0)) return <>{dash}</>
     const rate = perSft(amt)
@@ -446,6 +455,7 @@ export default async function CostControlProjectDetailPage(
       {/* Gap between what HOD has approved in CT Hub and what IN4 has
           released. Positive gap = work to do in IN4 + then re-pull BPH. */}
       {(() => {
+        if (!ccSettings.show_erp_columns) return null
         const gap = totalApproved - totalBudget
         if (gap <= 0 || totalApproved === 0) return null
         return (
@@ -459,8 +469,9 @@ export default async function CostControlProjectDetailPage(
         )
       })()}
 
-      {/* KPI strip — portfolio-level numbers for this project */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+      {/* KPI strip — portfolio-level numbers for this project. The ERP
+          tiles (from Budget vs Actual) hide when the toggle is off. */}
+      <div className={`grid grid-cols-2 sm:grid-cols-3 ${ccSettings.show_erp_columns ? 'lg:grid-cols-5' : ''} gap-3`}>
         <KPI
           label="Internal Estimate"
           value={totalEstimate > 0 ? formatINR(totalEstimate) : '—'}
@@ -468,33 +479,39 @@ export default async function CostControlProjectDetailPage(
           sub={totalEstimate > 0 ? 'Sum of all Working Sheets (live)' : 'Will populate once WSes are raised'}
           tone="indigo"
         />
-        <KPI
-          label="Approved Budget (ERP)"
-          value={formatINR(totalBudget)}
-          perSft={perSft(totalBudget)}
-          sub={
-            totalBudget > 0
-              ? (totalEstimate > 0
-                  ? `${releasedPct}% of estimate released`
-                  : `${disciplines.length} disciplines`)
-              : (
-                  <span className="text-[11px] text-gray-500">
-                    Fills when Heads approve releases.{' '}
-                    <Link
-                      href={`/cost-control/import/bph?cc_project=${project.id}`}
-                      className="text-teal-700 hover:underline font-medium"
-                    >
-                      Or pull from your BPH report →
-                    </Link>
-                  </span>
-                )
-          }
-          tone="blue"
-        />
-        <KPI label="Committed (WO/PO)" value={formatINR(totalWO)} perSft={perSft(totalWO)}
-             sub={totalBudget > 0 ? `${Math.round((totalWO / totalBudget) * 100)}% of budget` : '—'} tone="purple" />
-        <KPI label="Paid to Date" value={formatINR(totalPaid)} perSft={perSft(totalPaid)}
-             sub={totalBudget > 0 ? `${utilPct}% utilized` : '—'} tone="orange" />
+        {ccSettings.show_erp_columns && (
+          <KPI
+            label="Approved Budget (ERP)"
+            value={formatINR(totalBudget)}
+            perSft={perSft(totalBudget)}
+            sub={
+              totalBudget > 0
+                ? (totalEstimate > 0
+                    ? `${releasedPct}% of estimate released`
+                    : `${disciplines.length} disciplines`)
+                : (
+                    <span className="text-[11px] text-gray-500">
+                      Fills when Heads approve releases.{' '}
+                      <Link
+                        href={`/cost-control/import/bph?cc_project=${project.id}`}
+                        className="text-teal-700 hover:underline font-medium"
+                      >
+                        Or pull from your BPH report →
+                      </Link>
+                    </span>
+                  )
+            }
+            tone="blue"
+          />
+        )}
+        {ccSettings.show_erp_columns && (
+          <KPI label="Committed (WO/PO)" value={formatINR(totalWO)} perSft={perSft(totalWO)}
+               sub={totalBudget > 0 ? `${Math.round((totalWO / totalBudget) * 100)}% of budget` : '—'} tone="purple" />
+        )}
+        {ccSettings.show_erp_columns && (
+          <KPI label="Paid to Date" value={formatINR(totalPaid)} perSft={perSft(totalPaid)}
+               sub={totalBudget > 0 ? `${utilPct}% utilized` : '—'} tone="orange" />
+        )}
         <KPI label="Approved via WS" value={formatINR(totalApproved)} perSft={perSft(totalApproved)}
              sub={totalEstimate > 0
                ? `${Math.round((totalApproved / totalEstimate) * 100)}% of estimate`
@@ -505,7 +522,8 @@ export default async function CostControlProjectDetailPage(
         <SetupProgressBanner projectId={project.id} progressPct={setupPct} />
       )}
 
-      {/* THE TABLE — discipline categories + sub-skill rows */}
+      {/* THE TABLE — discipline categories + sub-skill rows. ERP columns
+          (Budget vs Actual) and deadline columns follow the settings toggles. */}
       <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-[13px]">
@@ -513,19 +531,27 @@ export default async function CostControlProjectDetailPage(
               <tr>
                 <Th className="min-w-[280px]">Work Category / Sub-skill</Th>
                 <Th align="right" className="w-32">Estimate</Th>
-                <Th align="right">Budget (ERP)</Th>
-                <Th align="right">WO / PO</Th>
-                <Th align="right">Paid</Th>
-                <Th align="right" className="w-20">% Used</Th>
+                {ccSettings.show_erp_columns && (
+                  <>
+                    <Th align="right">Budget (ERP)</Th>
+                    <Th align="right">WO / PO</Th>
+                    <Th align="right">Paid</Th>
+                    <Th align="right" className="w-20">% Used</Th>
+                  </>
+                )}
                 <Th className="w-28">Working Sheets</Th>
-                <Th className="w-44">Plan Deadline</Th>
-                <Th className="w-28">WS Status</Th>
+                {ccSettings.show_deadlines && (
+                  <>
+                    <Th className="w-44">Plan Deadline</Th>
+                    <Th className="w-28">WS Status</Th>
+                  </>
+                )}
                 <Th className="w-28"></Th>
               </tr>
             </thead>
             <tbody>
               {disciplines.length === 0 && (
-                <tr><td colSpan={10} className="px-4 py-8 text-center text-sm text-gray-500">No disciplines enabled. Open the setup wizard to pick them.</td></tr>
+                <tr><td colSpan={tableCols} className="px-4 py-8 text-center text-sm text-gray-500">No disciplines enabled. Open the setup wizard to pick them.</td></tr>
               )}
 
               {disciplines.map(d => {
@@ -559,32 +585,40 @@ export default async function CostControlProjectDetailPage(
                       <Td align="right" mono className="text-indigo-800">
                         <Money amt={dAgg.estimate} />
                       </Td>
-                      <Td align="right" mono><Money amt={dAgg.budget} /></Td>
-                      <Td align="right" mono className="text-gray-600"><Money amt={dAgg.wo} /></Td>
-                      <Td align="right" mono className="text-gray-600"><Money amt={dAgg.paid} /></Td>
-                      <Td align="right" className={dPct > 95 ? 'text-red-600' : dPct > 80 ? 'text-amber-700' : 'text-green-700'}>
-                        {dAgg.budget > 0 ? `${dPct.toFixed(0)}%` : '—'}
-                      </Td>
+                      {ccSettings.show_erp_columns && (
+                        <>
+                          <Td align="right" mono><Money amt={dAgg.budget} /></Td>
+                          <Td align="right" mono className="text-gray-600"><Money amt={dAgg.wo} /></Td>
+                          <Td align="right" mono className="text-gray-600"><Money amt={dAgg.paid} /></Td>
+                          <Td align="right" className={dPct > 95 ? 'text-red-600' : dPct > 80 ? 'text-amber-700' : 'text-green-700'}>
+                            {dAgg.budget > 0 ? `${dPct.toFixed(0)}%` : '—'}
+                          </Td>
+                        </>
+                      )}
                       <Td>{/* category-level WS counts not shown */}</Td>
-                      <Td>
-                        <DeadlineCell
-                          projectId={project.id}
-                          disciplineId={d.id}
-                          initialDeadline={discMeta.get(d.id)?.deadline ?? null}
-                          inheritedFromWS={dEarliest}
-                          canWrite={canWrite}
-                        />
-                      </Td>
-                      <Td>
-                        {dEarliest ? (
-                          <div className="inline-flex items-center gap-1">
-                            <DeadlineBadge deadlineDate={dEarliest} compact />
-                            {dOverdue > 0 && <span className="text-[10px] font-bold text-rose-700 bg-rose-100 rounded-full px-1.5">+{dOverdue}</span>}
-                          </div>
-                        ) : (
-                          <span className="text-[11px] text-gray-400">—</span>
-                        )}
-                      </Td>
+                      {ccSettings.show_deadlines && (
+                        <>
+                          <Td>
+                            <DeadlineCell
+                              projectId={project.id}
+                              disciplineId={d.id}
+                              initialDeadline={discMeta.get(d.id)?.deadline ?? null}
+                              inheritedFromWS={dEarliest}
+                              canWrite={canWrite}
+                            />
+                          </Td>
+                          <Td>
+                            {dEarliest ? (
+                              <div className="inline-flex items-center gap-1">
+                                <DeadlineBadge deadlineDate={dEarliest} compact />
+                                {dOverdue > 0 && <span className="text-[10px] font-bold text-rose-700 bg-rose-100 rounded-full px-1.5">+{dOverdue}</span>}
+                              </div>
+                            ) : (
+                              <span className="text-[11px] text-gray-400">—</span>
+                            )}
+                          </Td>
+                        </>
+                      )}
                       <Td>
                         <DisableButton
                           projectId={project.id}
@@ -637,12 +671,16 @@ export default async function CostControlProjectDetailPage(
                           <Td align="right" mono className="text-indigo-800">
                             <Money amt={a?.planTotal ?? 0} />
                           </Td>
-                          <Td align="right" mono><Money amt={bl?.budget ?? 0} /></Td>
-                          <Td align="right" mono className="text-gray-600"><Money amt={bl?.wo ?? 0} /></Td>
-                          <Td align="right" mono className="text-gray-600"><Money amt={bl?.paid ?? 0} /></Td>
-                          <Td align="right" className={sPct > 95 ? 'text-red-600 font-semibold' : sPct > 80 ? 'text-amber-700 font-semibold' : sPct > 0 ? 'text-green-700 font-semibold' : 'text-gray-400'}>
-                            {bl && bl.budget > 0 ? `${sPct.toFixed(0)}%` : '—'}
-                          </Td>
+                          {ccSettings.show_erp_columns && (
+                            <>
+                              <Td align="right" mono><Money amt={bl?.budget ?? 0} /></Td>
+                              <Td align="right" mono className="text-gray-600"><Money amt={bl?.wo ?? 0} /></Td>
+                              <Td align="right" mono className="text-gray-600"><Money amt={bl?.paid ?? 0} /></Td>
+                              <Td align="right" className={sPct > 95 ? 'text-red-600 font-semibold' : sPct > 80 ? 'text-amber-700 font-semibold' : sPct > 0 ? 'text-green-700 font-semibold' : 'text-gray-400'}>
+                                {bl && bl.budget > 0 ? `${sPct.toFixed(0)}%` : '—'}
+                              </Td>
+                            </>
+                          )}
                           <Td>
                             {wsCount > 0 ? (
                               <Link
@@ -655,32 +693,36 @@ export default async function CostControlProjectDetailPage(
                               <span className="text-[11px] text-gray-400">—</span>
                             )}
                           </Td>
-                          <Td>
-                            <DeadlineCell
-                              projectId={project.id}
-                              subSkillId={s.id}
-                              initialDeadline={subMeta.get(s.id)?.deadline ?? null}
-                              inheritedFromDiscipline={discMeta.get(d.id)?.deadline ?? null}
-                              inheritedFromWS={dlAgg.get(`${d.id}::${s.id}`)?.earliest ?? null}
-                              canWrite={canWrite}
-                            />
-                          </Td>
-                          <Td>
-                            {(() => {
-                              const dl = dlAgg.get(`${d.id}::${s.id}`)
-                              if (!dl?.earliest) return <span className="text-[11px] text-gray-400">—</span>
-                              return (
-                                <div className="inline-flex items-center gap-1">
-                                  <DeadlineBadge deadlineDate={dl.earliest} compact />
-                                  {dl.overdue > 0 && (
-                                    <span className="text-[10px] font-bold text-rose-700 bg-rose-100 rounded-full px-1.5">
-                                      +{dl.overdue}
-                                    </span>
-                                  )}
-                                </div>
-                              )
-                            })()}
-                          </Td>
+                          {ccSettings.show_deadlines && (
+                            <>
+                              <Td>
+                                <DeadlineCell
+                                  projectId={project.id}
+                                  subSkillId={s.id}
+                                  initialDeadline={subMeta.get(s.id)?.deadline ?? null}
+                                  inheritedFromDiscipline={discMeta.get(d.id)?.deadline ?? null}
+                                  inheritedFromWS={dlAgg.get(`${d.id}::${s.id}`)?.earliest ?? null}
+                                  canWrite={canWrite}
+                                />
+                              </Td>
+                              <Td>
+                                {(() => {
+                                  const dl = dlAgg.get(`${d.id}::${s.id}`)
+                                  if (!dl?.earliest) return <span className="text-[11px] text-gray-400">—</span>
+                                  return (
+                                    <div className="inline-flex items-center gap-1">
+                                      <DeadlineBadge deadlineDate={dl.earliest} compact />
+                                      {dl.overdue > 0 && (
+                                        <span className="text-[10px] font-bold text-rose-700 bg-rose-100 rounded-full px-1.5">
+                                          +{dl.overdue}
+                                        </span>
+                                      )}
+                                    </div>
+                                  )
+                                })()}
+                              </Td>
+                            </>
+                          )}
                           <Td>
                             <div className="inline-flex items-center gap-1">
                               {canWrite && (() => {
@@ -718,7 +760,7 @@ export default async function CostControlProjectDetailPage(
 
                     {subs.length === 0 && (
                       <tr className="border-t border-gray-100">
-                        <td colSpan={10} className="pl-10 pr-3 py-2 text-xs italic text-gray-400">No sub-skills enabled for this discipline. Add via the setup wizard.</td>
+                        <td colSpan={tableCols} className="pl-10 pr-3 py-2 text-xs italic text-gray-400">No sub-skills enabled for this discipline. Add via the setup wizard.</td>
                       </tr>
                     )}
                   </>

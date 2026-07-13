@@ -46,7 +46,7 @@ interface FlagSummary {
 }
 
 export function ExcelSummaryPanel({
-  wsId, status, ctx, reviewer, totalAmount, approvedSoFar, fileName, downloadUrl, summaryTotal, summaryNotes, flagSummary, lastCheckedAt, rows,
+  wsId, status, ctx, reviewer, aiEnabled = true, totalAmount, approvedSoFar, fileName, downloadUrl, summaryTotal, summaryNotes, flagSummary, lastCheckedAt, rows,
 }: {
   wsId: string
   status: WSStatus
@@ -55,6 +55,9 @@ export function ExcelSummaryPanel({
    *  reviewers (Project Head / Atm Head / Trustee / admin) only —
    *  engineers just upload and submit. */
   reviewer: boolean
+  /** Cost Control settings switch: hides the AI/flag chrome for everyone
+   *  when management turns AI tools off (reviewer extras stay). */
+  aiEnabled?: boolean
   totalAmount: number
   approvedSoFar: number
   fileName: string | null
@@ -68,6 +71,8 @@ export function ExcelSummaryPanel({
   const router = useRouter()
   const [rechecking, setRechecking] = useState(false)
   const [err, setErr] = useState<string | null>(null)
+  // AI/flag chrome renders only for reviewers AND when the toggle is on.
+  const showFlags = reviewer && aiEnabled
 
   async function recheck() {
     setRechecking(true); setErr(null)
@@ -169,7 +174,7 @@ export function ExcelSummaryPanel({
                   </a>
                 </Button>
               )}
-              {reviewer && (
+              {showFlags && (
                 <Button size="sm" onClick={recheck} disabled={rechecking}>
                   {rechecking ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCcw className="h-4 w-4" />}
                   Re-check
@@ -190,7 +195,7 @@ export function ExcelSummaryPanel({
             const hasExtras = buckets.tax.count + buckets.addon.count + buckets.discount.count > 0
             return (
               <>
-                <div className={`grid grid-cols-2 ${reviewer ? 'md:grid-cols-4' : 'md:grid-cols-2'} gap-3 mt-4 text-sm`}>
+                <div className={`grid grid-cols-2 ${showFlags ? 'md:grid-cols-4' : 'md:grid-cols-2'} gap-3 mt-4 text-sm`}>
                   <Cell
                     accent
                     label="Sheet total"
@@ -202,14 +207,14 @@ export function ExcelSummaryPanel({
                     value={rows.length}
                     hint="Rows read from your sheet"
                   />
-                  {reviewer && (
+                  {showFlags && (
                     <Cell
                       label="Items to check"
                       value={flagSummary?.flagged_rows ?? rows.filter(r => r.flag).length}
                       hint="Rows our checker is unsure about"
                     />
                   )}
-                  {reviewer && (
+                  {showFlags && (
                     <Cell
                       label="AI check"
                       value={flagSummary?.ai_used ? 'Done' : 'Off'}
@@ -228,7 +233,7 @@ export function ExcelSummaryPanel({
                 {/* AI's reading of the composition — collapsed by default,
                     clearly labelled as a cross-check that won't always tie to
                     the grand total. Reviewers only. */}
-                {reviewer && hasExtras && (
+                {showFlags && hasExtras && (
                   <details className="mt-3 rounded-lg border border-gray-200 bg-gray-50/60 px-3 py-2 text-xs">
                     <summary className="cursor-pointer select-none text-[11px] font-semibold text-gray-600">
                       What the AI sees inside this sheet (for review — won&apos;t always equal the sheet total)
@@ -278,7 +283,7 @@ export function ExcelSummaryPanel({
       </Card>
 
       {/* Flag summary card — AI cross-check, reviewers only */}
-      {reviewer && flagSummary && (
+      {showFlags && flagSummary && (
         <Card>
           <CardHeader>
             <CardTitle className="text-base inline-flex items-center gap-2">
@@ -326,12 +331,12 @@ export function ExcelSummaryPanel({
                   <th className="px-2 py-2 text-right">Qty</th>
                   <th className="px-2 py-2 text-right">Rate</th>
                   <th className="px-2 py-2 text-right">Amount</th>
-                  {reviewer && <th className="px-2 py-2">Flag</th>}
+                  {showFlags && <th className="px-2 py-2">Flag</th>}
                 </tr>
               </thead>
               <tbody>
                 {rows.map(r => (
-                  <tr key={r.id} className={`border-t border-gray-100 ${reviewer && flaggedRowIds.has(r.id) ? rowTintBySeverity(r.flag_severity) : ''}`}>
+                  <tr key={r.id} className={`border-t border-gray-100 ${showFlags && flaggedRowIds.has(r.id) ? rowTintBySeverity(r.flag_severity) : ''}`}>
                     <td className="px-2 py-2 text-gray-400">{r.row_no}</td>
                     <td className="px-2 py-2 text-gray-800 max-w-md">
                       <p className="truncate" title={r.description ?? ''}>{r.description ?? '—'}</p>
@@ -357,7 +362,7 @@ export function ExcelSummaryPanel({
                         </div>
                       )}
                     </td>
-                    {reviewer && (
+                    {showFlags && (
                       <td className="px-2 py-2 max-w-xs">
                         {r.flag ? (
                           <div className="space-y-0.5">

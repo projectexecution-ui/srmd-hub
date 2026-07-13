@@ -15,6 +15,7 @@ import { wsStatusLabel, WSStatusPill, type WSStatus } from '@/components/cost-co
 import { plainStatusLabel, isPendingStatus } from '@/lib/cost-control/chain'
 import { AutoBackup } from '@/components/cost-control/AutoBackup'
 import { getLastBphSync } from '@/app/(app)/cost-control/import/bph/actions'
+import { getCcSettings } from '@/lib/cost-control/settings'
 
 export const dynamic = 'force-dynamic'
 
@@ -37,6 +38,7 @@ export default async function CostControlLandingPage() {
   const canAdmin = can(perms, 'cost-control', 'admin')
   const supabase = await createClient()
   const user = await getMyUser()
+  const ccSettings = await getCcSettings()
 
   // Management (approval-chain roles + admin) gets the full financial
   // dashboard. Everyone else (engineers) gets a personal home with their
@@ -253,6 +255,15 @@ export default async function CostControlLandingPage() {
               </Link>
             )}
             {canAdmin && (
+              <Link href="/cost-control/settings" className="flex items-start gap-2.5 px-2.5 py-2 rounded-md hover:bg-gray-50">
+                <Settings className="h-4 w-4 text-gray-500 mt-0.5 flex-shrink-0" />
+                <div className="min-w-0">
+                  <p className="text-sm font-medium text-gray-900">Settings</p>
+                  <p className="text-[11px] text-gray-500">toggles for deadlines, ERP columns, AI, comments…</p>
+                </div>
+              </Link>
+            )}
+            {canAdmin && (
               <a href="/api/cost-control/backup" className="flex items-start gap-2.5 px-2.5 py-2 rounded-md hover:bg-gray-50 border-t border-gray-100 mt-1 pt-2">
                 <Download className="h-4 w-4 text-gray-500 mt-0.5 flex-shrink-0" />
                 <div className="min-w-0">
@@ -315,8 +326,8 @@ export default async function CostControlLandingPage() {
         </div>
       )}
 
-      {/* Upcoming deadlines — cross-project summary */}
-      {deadlinesErr ? (
+      {/* Upcoming deadlines — cross-project summary (settings toggle) */}
+      {ccSettings.show_deadlines && (deadlinesErr ? (
         <QueryError message={deadlinesErr.message} what="upcoming deadlines" />
       ) : upcomingDeadlines.length > 0 && (
         <Card className="p-4">
@@ -364,7 +375,7 @@ export default async function CostControlLandingPage() {
             })}
           </ul>
         </Card>
-      )}
+      ))}
 
       {projectsRes.error && (
         <Card className="border-amber-300 bg-amber-50 p-4 text-sm text-amber-900">
@@ -403,12 +414,12 @@ export default async function CostControlLandingPage() {
                             {pending} pending
                           </span>
                         )}
-                        {overdue > 0 && (
+                        {ccSettings.show_deadlines && overdue > 0 && (
                           <span className="inline-flex items-center gap-0.5 text-[10px] font-bold text-rose-800 bg-rose-100 rounded-full px-2 py-0.5" title={`${overdue} open sheet${overdue === 1 ? '' : 's'} past deadline`}>
                             {overdue} overdue
                           </span>
                         )}
-                        {p.cc_status && pending === 0 && overdue === 0 && (
+                        {p.cc_status && pending === 0 && (!ccSettings.show_deadlines || overdue === 0) && (
                           <Badge variant={p.cc_status === 'active' ? 'success' : 'secondary'}>
                             {p.cc_status.replace('_', ' ')}
                           </Badge>

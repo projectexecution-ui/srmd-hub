@@ -12,6 +12,7 @@ import { WSStatusPill, type WSStatus } from '@/components/cost-control/WSStatusP
 import { DeadlineBadge } from '@/components/cost-control/DeadlineBadge'
 import { FileText, Plus, FileSpreadsheet, Ruler, GitBranch } from 'lucide-react'
 import { formatINR, formatDate } from '@/lib/utils'
+import { getCcSettings } from '@/lib/cost-control/settings'
 
 export const dynamic = 'force-dynamic'
 
@@ -57,6 +58,7 @@ export default async function WorkingSheetsPage({
   const canWrite = can(perms, 'cost-control', 'edit')
   const sp = await searchParams
   const supabase = await createClient()
+  const showDeadlines = (await getCcSettings()).show_deadlines
   const scoped = !!sp.sub_skill
 
   // Management (approval-chain roles + admin) sees everything; everyone
@@ -420,7 +422,7 @@ export default async function WorkingSheetsPage({
                   <th className="px-4 py-2 font-semibold text-right">This WS approved</th>
                   <th className="px-4 py-2 font-semibold text-right">Cumulative approved</th>
                   <th className="px-4 py-2 font-semibold text-right">% of running total</th>
-                  <th className="px-4 py-2 font-semibold">Deadline</th>
+                  {showDeadlines && <th className="px-4 py-2 font-semibold">Deadline</th>}
                 </tr>
               </thead>
               <tbody>
@@ -459,17 +461,19 @@ export default async function WorkingSheetsPage({
                         </td>
                         <td className="px-4 py-2.5 text-right tabular-nums font-semibold text-emerald-800">{formatINR(cumApproved)}</td>
                         <td className="px-4 py-2.5 text-right tabular-nums text-gray-600">{pct}%</td>
-                        <td className="px-4 py-2.5">
-                          {w.deadline_date ? (
-                            <DeadlineBadge
-                              deadlineDate={w.deadline_date}
-                              approved={w.status === 'approved' || w.status === 'wo_issued' || w.status === 'paid'}
-                              className="text-xs px-2 py-1"
-                            />
-                          ) : (
-                            <span className="text-xs text-gray-400">—</span>
-                          )}
-                        </td>
+                        {showDeadlines && (
+                          <td className="px-4 py-2.5">
+                            {w.deadline_date ? (
+                              <DeadlineBadge
+                                deadlineDate={w.deadline_date}
+                                approved={w.status === 'approved' || w.status === 'wo_issued' || w.status === 'paid'}
+                                className="text-xs px-2 py-1"
+                              />
+                            ) : (
+                              <span className="text-xs text-gray-400">—</span>
+                            )}
+                          </td>
+                        )}
                       </tr>
                     )
                   })
@@ -484,7 +488,7 @@ export default async function WorkingSheetsPage({
                   <td className="px-4 py-2.5 text-right tabular-nums font-bold text-gray-900">
                     {kpis.estimateTotal > 0 ? `${Math.round((kpis.approvedToDate / kpis.estimateTotal) * 100)}%` : '—'}
                   </td>
-                  <td className="px-4 py-2.5"></td>
+                  {showDeadlines && <td className="px-4 py-2.5"></td>}
                 </tr>
               </tfoot>
             </table>
@@ -520,7 +524,7 @@ export default async function WorkingSheetsPage({
                         <th className="px-4 py-2 font-semibold">Engineer</th>
                         <th className="px-4 py-2 font-semibold text-right">Estimate</th>
                         <th className="px-4 py-2 font-semibold text-right">Approved</th>
-                        <th className="px-4 py-2 font-semibold">Deadline</th>
+                        {showDeadlines && <th className="px-4 py-2 font-semibold">Deadline</th>}
                         <th className="px-4 py-2 font-semibold">Created</th>
                       </tr>
                     </thead>
@@ -567,17 +571,19 @@ export default async function WorkingSheetsPage({
                                 <span className="text-xs text-gray-400">—</span>
                               )}
                             </td>
-                            <td className="px-4 py-2.5">
-                              {w.deadline_date ? (
-                                <DeadlineBadge
-                                  deadlineDate={w.deadline_date}
-                                  approved={w.status === 'approved' || w.status === 'wo_issued' || w.status === 'paid'}
-                                  className="text-xs px-2 py-1"
-                                />
-                              ) : (
-                                <span className="text-xs text-gray-400">—</span>
-                              )}
-                            </td>
+                            {showDeadlines && (
+                              <td className="px-4 py-2.5">
+                                {w.deadline_date ? (
+                                  <DeadlineBadge
+                                    deadlineDate={w.deadline_date}
+                                    approved={w.status === 'approved' || w.status === 'wo_issued' || w.status === 'paid'}
+                                    className="text-xs px-2 py-1"
+                                  />
+                                ) : (
+                                  <span className="text-xs text-gray-400">—</span>
+                                )}
+                              </td>
+                            )}
                             <td className="px-4 py-2.5 text-xs text-gray-500">{formatDate(w.created_at)}</td>
                           </tr>
                         )

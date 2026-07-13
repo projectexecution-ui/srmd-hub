@@ -17,6 +17,7 @@ import { SourceExcelViewer } from './SourceExcelViewer'
 import { EditDeadlineButton } from './EditDeadlineButton'
 import { QueryError } from '@/components/ui/query-error'
 import { formatINR } from '@/lib/utils'
+import { getCcSettings } from '@/lib/cost-control/settings'
 
 export const dynamic = 'force-dynamic'
 
@@ -37,11 +38,14 @@ export default async function WorkingSheetEditorPage(
   // Ask the DB what THIS viewer may do on THIS sheet (3-stage chain:
   // submit / sign-off / release / return), whether they're Cost Control
   // management (AI tools + big numbers), and deadline rights.
-  const [ctx, reviewer, canEditDeadline] = await Promise.all([
+  const [ctx, reviewer, canSetDeadlineRaw, ccSettings] = await Promise.all([
     getWSApprovalContext(id),
     checkIsCcReviewer(),
     checkCanSetDeadline(),
+    getCcSettings(),
   ])
+  const canEditDeadline = canSetDeadlineRaw && ccSettings.show_deadlines
+  const showAi = reviewer && ccSettings.ai_tools
 
   const { data: ws, error: wsErr } = await supabase
     .from('cc_ws_with_versions')
@@ -122,7 +126,7 @@ export default async function WorkingSheetEditorPage(
           canEdit={canEdit && (user?.id === ws.engineer_id || isAdmin)}
         />
 
-        {(ws.deadline_date || canEditDeadline) && (
+        {ccSettings.show_deadlines && (ws.deadline_date || canEditDeadline) && (
           <div className="flex items-center gap-2 flex-wrap">
             {ws.deadline_date && (
               <DeadlineBadge
@@ -199,7 +203,7 @@ export default async function WorkingSheetEditorPage(
           canEdit={canEdit && (user?.id === ws.engineer_id || isAdmin)}
         />
 
-        {(ws.deadline_date || canEditDeadline) && (
+        {ccSettings.show_deadlines && (ws.deadline_date || canEditDeadline) && (
           <div className="flex items-center gap-2 flex-wrap">
             {ws.deadline_date && (
               <DeadlineBadge
@@ -222,9 +226,9 @@ export default async function WorkingSheetEditorPage(
 
         {/* AI review tools — for the approval chain (PH / Atm Head /
             Trustee / admin), not engineers. */}
-        {reviewer && <WSAskAiPanel wsId={ws.id} />}
+        {showAi && <WSAskAiPanel wsId={ws.id} />}
 
-        {reviewer && <AiBifurcationPanel
+        {showAi && <AiBifurcationPanel
           wsId={ws.id}
           canEdit={canEdit && (user?.id === ws.engineer_id || isAdmin)}
           aiParseMeta={ws.ai_parse_meta as {
@@ -256,6 +260,7 @@ export default async function WorkingSheetEditorPage(
           status={ws.status as WSStatus}
           ctx={ctx}
           reviewer={reviewer}
+          aiEnabled={ccSettings.ai_tools}
           totalAmount={Number(ws.total_amount ?? 0)}
           approvedSoFar={Number(ws.approved_for_erp_amt ?? 0)}
           fileName={ws.source_excel_name}
@@ -370,9 +375,9 @@ export default async function WorkingSheetEditorPage(
       />
 
       {/* AI review tools — approval chain only, not engineers. */}
-      {reviewer && <WSAskAiPanel wsId={ws.id} />}
+      {showAi && <WSAskAiPanel wsId={ws.id} />}
 
-      {(ws.deadline_date || canEditDeadline) && (
+      {ccSettings.show_deadlines && (ws.deadline_date || canEditDeadline) && (
         <div className="flex items-center gap-2 flex-wrap">
           {ws.deadline_date && (
             <DeadlineBadge
@@ -413,23 +418,27 @@ export default async function WorkingSheetEditorPage(
             <span className="text-xs uppercase tracking-wide text-blue-700/70">Past approved in this sub-skill</span>
             <p className="font-bold text-blue-900">{formatINR(ws.past_approved_in_subskill ?? 0)}</p>
           </div>
-          <div>
-            <span className="text-xs uppercase tracking-wide text-blue-700/70">Approved Budget (ERP)</span>
-            <p className="font-bold text-blue-900">{bl ? formatINR(budgeted) : '—'}</p>
-          </div>
-          <div>
-            <span className="text-xs uppercase tracking-wide text-blue-700/70">Already committed</span>
-            <p className="font-bold text-blue-900">{bl ? formatINR(committed) : '—'}</p>
-          </div>
-          <div>
-            <span className="text-xs uppercase tracking-wide text-blue-700/70">Paid</span>
-            <p className="font-bold text-blue-900">{bl ? formatINR(paid) : '—'}</p>
-          </div>
+          {ccSettings.show_erp_columns && (
+            <>
+              <div>
+                <span className="text-xs uppercase tracking-wide text-blue-700/70">Approved Budget (ERP)</span>
+                <p className="font-bold text-blue-900">{bl ? formatINR(budgeted) : '—'}</p>
+              </div>
+              <div>
+                <span className="text-xs uppercase tracking-wide text-blue-700/70">Already committed</span>
+                <p className="font-bold text-blue-900">{bl ? formatINR(committed) : '—'}</p>
+              </div>
+              <div>
+                <span className="text-xs uppercase tracking-wide text-blue-700/70">Paid</span>
+                <p className="font-bold text-blue-900">{bl ? formatINR(paid) : '—'}</p>
+              </div>
+            </>
+          )}
           <div className="ml-auto">
             <span className="text-xs uppercase tracking-wide text-blue-700/70">This WS</span>
             <p className="font-bold text-blue-900">{formatINR(ws.total_amount ?? 0)}</p>
           </div>
-          {bl && (
+          {ccSettings.show_erp_columns && bl && (
             <div>
               <span className="text-xs uppercase tracking-wide text-blue-700/70">Remaining after</span>
               <p className={`font-bold ${remainingAfter < 0 ? 'text-red-700' : 'text-green-800'}`}>
@@ -438,12 +447,12 @@ export default async function WorkingSheetEditorPage(
             </div>
           )}
         </div>
-        {!bl && (
+        {ccSettings.show_erp_columns && !bl && (
           <p className="text-xs text-blue-700 mt-2">
             No budget line set for this sub-skill yet. Import the ENGG_CONSOLIDATED_BUDGET_REPORT or add a budget line to see headroom checks.
           </p>
         )}
-        {estimate > 0 && budgeted > 0 && budgeted < estimate && (
+        {ccSettings.show_erp_columns && estimate > 0 && budgeted > 0 && budgeted < estimate && (
           <div className="mt-3 rounded-md border border-indigo-200 bg-indigo-50 p-3 text-sm text-indigo-900">
             <p className="font-semibold mb-0.5">ERP has released {Math.round((budgeted / estimate) * 100)}% of the team plan</p>
             <p className="text-xs">
