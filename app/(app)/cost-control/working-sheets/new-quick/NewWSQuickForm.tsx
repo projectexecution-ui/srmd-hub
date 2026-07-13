@@ -64,6 +64,9 @@ interface Props {
   projectSubSkills: Array<{ project_id: string; sub_skill: SRow }>
   defaultProjectId?: string
   canSetDeadline?: boolean
+  /** The check route is approver-only (403 for engineers) — skip the
+   *  post-upload auto-check unless the uploader is a reviewer. */
+  reviewer?: boolean
 }
 
 type ColKind = 'description' | 'unit' | 'qty' | 'rate' | 'amount'
@@ -249,7 +252,7 @@ async function parseExcel(file: File): Promise<{ rows: ParsedRow[]; grandTotal: 
   return { rows, grandTotal, aoa }
 }
 
-export function NewWSQuickForm({ projects, projectDisciplines, projectSubSkills, defaultProjectId, canSetDeadline = false }: Props) {
+export function NewWSQuickForm({ projects, projectDisciplines, projectSubSkills, defaultProjectId, canSetDeadline = false, reviewer = false }: Props) {
   const router = useRouter()
   const [projectId, setProjectId]     = useState(defaultProjectId ?? projects[0]?.id ?? '')
   const [disciplineId, setDisciplineId] = useState('')
@@ -432,8 +435,12 @@ export function NewWSQuickForm({ projects, projectDisciplines, projectSubSkills,
       if (rowsErr) { setError(`Row save failed: ${rowsErr.message}`); setSubmitting(false); return }
     }
 
-    // 5. Fire the check route (non-blocking — UI navigates anyway)
-    fetch(`/api/cost-control/working-sheets/${ws.id}/check`, { method: 'POST' }).catch(() => null)
+    // 5. Fire the check route (non-blocking — UI navigates anyway). The
+    // route is approver-only, so engineers skip it: their sheet gets
+    // checked when a reviewer opens it.
+    if (reviewer) {
+      fetch(`/api/cost-control/working-sheets/${ws.id}/check`, { method: 'POST' }).catch(() => null)
+    }
 
     router.push(`/cost-control/working-sheets/${ws.id}`)
     router.refresh()
@@ -587,7 +594,7 @@ export function NewWSQuickForm({ projects, projectDisciplines, projectSubSkills,
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
           <div>
-            <Label>Grand total (₹)</Label>
+            <Label>Estimate Amount for approval (₹)</Label>
             <MoneyInput value={summaryTotal}
               onChange={setSummaryTotal} placeholder="auto-filled from Excel" className="mt-1" />
             {(() => {
