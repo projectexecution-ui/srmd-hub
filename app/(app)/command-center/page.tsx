@@ -1,3 +1,4 @@
+import Link from 'next/link'
 import { createClient } from '@/lib/supabase/server'
 import { requirePermission } from '@/lib/auth'
 import { PageHeader } from '@/components/PageHeader'
@@ -5,7 +6,7 @@ import { Card, CardContent } from '@/components/ui/card'
 import { EmptyState } from '@/components/ui/empty-state'
 import { formatINR, formatINRShort, formatDateShort } from '@/lib/jmr/format'
 import { ECC_CATEGORIES, ECC_CATEGORY_LABELS, type EccCategory } from '@/lib/ecc/triage'
-import { Mail, AlertTriangle, Star, Sparkles, Flame } from 'lucide-react'
+import { Mail, AlertTriangle, Star, Sparkles, Flame, X, ExternalLink } from 'lucide-react'
 import { ItemActions } from './item-actions'
 import { RefreshButton } from './refresh-button'
 
@@ -51,8 +52,27 @@ const BADGE_TONE: Record<EccCategory, string> = {
 
 const ACTIONABLE: EccCategory[] = ['do_today', 'this_week', 'monitor', 'draft_pending']
 
-export default async function CommandCenterPage() {
+// Account-correct Gmail deep link. We search by sender + subject (rather
+// than the API thread-id, which Gmail's web URLs don't resolve) and route
+// via /u/<email>/ so it opens in the RIGHT Google account, not account 0.
+function gmailUrlFor(senderEmail: string | null, subject: string | null, acct: string | undefined): string {
+  const parts: string[] = []
+  if (senderEmail) parts.push(`from:${senderEmail}`)
+  if (subject) parts.push(subject)
+  const q = parts.join(' ').trim() || 'in:inbox'
+  const u = acct ? encodeURIComponent(acct) : '0'
+  return `https://mail.google.com/mail/u/${u}/#search/${encodeURIComponent(q)}`
+}
+
+export default async function CommandCenterPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ cat?: string }>
+}) {
   await requirePermission('ecc', 'view')
+  const sp = await searchParams
+  const activeCat = ECC_CATEGORIES.includes(sp.cat as EccCategory) ? (sp.cat as EccCategory) : null
+
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return null
@@ -79,16 +99,16 @@ export default async function CommandCenterPage() {
   const today = new Date().toISOString().slice(0, 10)
   const isOverdue = (i: EccItem) => !!i.chase_on && i.chase_on < today
 
-  // "Do these first" — top actionable items by priority.
+  const acctEmail = accounts?.[0]?.email_address
   const doFirst = items.filter(i => ACTIONABLE.includes(i.category)).slice(0, 5)
   const brief = runs?.[0]?.brief as string | undefined
-  const inbox = accounts?.[0]?.email_address
+  const shownCats = activeCat ? [activeCat] : ECC_CATEGORIES
 
   return (
     <div className="p-4 md:p-6 max-w-5xl mx-auto">
       <PageHeader
         title="Command Centre"
-        subtitle={inbox ? `Your inbox, triaged · ${inbox}` : 'Your inbox, triaged'}
+        subtitle={acctEmail ? `Your inbox, triaged · ${acctEmail}` : 'Your inbox, triaged'}
         back="/"
       >
         <RefreshButton connected={accounts?.[0]?.status === 'connected'} />
@@ -105,7 +125,7 @@ export default async function CommandCenterPage() {
       ) : (
         <>
           {/* Daily brief */}
-          {brief && (
+          {brief && !activeCat && (
             <Card className="mb-3 bg-teal-50 border-teal-200">
               <CardContent className="p-3 flex items-start gap-2">
                 <Sparkles className="h-4 w-4 text-teal-700 mt-0.5 flex-shrink-0" />
@@ -117,44 +137,69 @@ export default async function CommandCenterPage() {
             </Card>
           )}
 
-          {/* Stat header */}
+          {/* Stat header — clickable filters */}
           <div className="grid grid-cols-3 sm:grid-cols-5 gap-2 mb-3">
-            {ECC_CATEGORIES.slice(0, 5).map(c => (
-              <div key={c} className={`rounded-lg px-2 py-2 text-center ${BADGE_TONE[c]}`}>
-                <div className="text-xl font-bold leading-tight">{counts[c]}</div>
-                <div className="text-[11px] leading-tight">{ECC_CATEGORY_LABELS[c]}</div>
-              </div>
-            ))}
+            {ECC_CATEGORIES.slice(0, 5).map(c => {
+              const active = activeCat === c
+              return (
+                <Link
+                  key={c}
+                  href={active ? '/command-center' : `/command-center?cat=${c}`}
+                  aria-current={active ? 'true' : undefined}
+                  className={`rounded-lg px-2 py-2 text-center transition ${BADGE_TONE[c]} hover:brightness-95 ${active ? 'ring-2 ring-offset-1 ring-gray-800' : 'ring-0'}`}
+                >
+                  <div className="text-xl font-bold leading-tight">{counts[c]}</div>
+                  <div className="text-[11px] leading-tight">{ECC_CATEGORY_LABELS[c]}</div>
+                </Link>
+              )
+            })}
           </div>
-          {blocked > 0 && (
-            <p className="text-xs text-gray-600 mb-4 flex items-center gap-1">
-              <AlertTriangle className="h-3.5 w-3.5 text-rose-600" />
-              <span><b>{formatINRShort(blocked)}</b> at stake across items awaiting your action</span>
-            </p>
+
+          {activeCat ? (
+            <div className="mb-4 flex items-center gap-2 text-xs">
+              <span className="text-gray-500">Showing <b className="text-gray-800">{ECC_CATEGORY_LABELS[activeCat]}</b> only</span>
+              <Link href="/command-center" className="inline-flex items-center gap-1 text-blue-700 hover:underline">
+                <X className="h-3 w-3" /> clear filter
+              </Link>
+            </div>
+          ) : (
+            blocked > 0 && (
+              <p className="text-xs text-gray-600 mb-4 flex items-center gap-1">
+                <AlertTriangle className="h-3.5 w-3.5 text-rose-600" />
+                <span><b>{formatINRShort(blocked)}</b> at stake across items awaiting your action</span>
+              </p>
+            )
           )}
 
-          {/* Do these first */}
-          {doFirst.length > 0 && (
+          {/* Do these first — only in the unfiltered view */}
+          {!activeCat && doFirst.length > 0 && (
             <div className="mb-5">
               <div className="text-xs font-semibold text-gray-800 flex items-center gap-1 mb-2">
                 <Flame className="h-3.5 w-3.5 text-rose-600" /> Do these first
               </div>
               <div className="space-y-1.5">
                 {doFirst.map((i, idx) => (
-                  <div key={i.id} className="flex items-center gap-2 text-sm">
+                  <a
+                    key={i.id}
+                    href={gmailUrlFor(i.sender_email, i.subject, acctEmail)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center gap-2 text-sm group"
+                  >
                     <span className="flex-shrink-0 h-5 w-5 rounded-full bg-gray-900 text-white text-[11px] flex items-center justify-center font-semibold">{idx + 1}</span>
                     {i.is_vip && <Star className="h-3.5 w-3.5 text-amber-500 flex-shrink-0" fill="currentColor" />}
-                    <span className="font-medium text-gray-900 truncate">{i.subject}</span>
+                    <span className="font-medium text-gray-900 truncate group-hover:underline">{i.subject}</span>
                     {i.amount_inr ? <span className="text-[11px] font-semibold text-rose-700 flex-shrink-0">{formatINR(Number(i.amount_inr))}</span> : null}
+                    <ExternalLink className="h-3 w-3 text-gray-300 group-hover:text-gray-500 flex-shrink-0" />
                     <span className="text-[11px] text-gray-400 flex-shrink-0 ml-auto">{i.sender}</span>
-                  </div>
+                  </a>
                 ))}
               </div>
             </div>
           )}
 
           {/* Buckets */}
-          {ECC_CATEGORIES.map(cat => {
+          {shownCats.map(cat => {
             const rows = byCat(cat)
             if (rows.length === 0) return null
             const meta = SECTION_META[cat]
@@ -206,7 +251,7 @@ export default async function CommandCenterPage() {
                             <ItemActions
                               id={item.id}
                               status={item.status}
-                              threadId={item.thread_id}
+                              gmailUrl={gmailUrlFor(item.sender_email, item.subject, acctEmail)}
                               canReply={ACTIONABLE.includes(item.category)}
                             />
                           </div>

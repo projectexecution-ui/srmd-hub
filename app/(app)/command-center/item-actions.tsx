@@ -1,4 +1,5 @@
 'use client'
+// Command Centre per-row actions: Reply · Open in Gmail · Done · Snooze.
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
@@ -11,11 +12,11 @@ import { Check, Clock, RotateCcw, Loader2, ExternalLink, CornerUpLeft } from 'lu
 //   compose window pre-filled — review + send in one click. True in-app
 //   send (never leaving CT Hub) is Phase 2 (needs Gmail send scope).
 export function ItemActions({
-  id, status, threadId, canReply,
+  id, status, gmailUrl, canReply,
 }: {
   id: string
   status: 'open' | 'done' | 'snoozed'
-  threadId: string | null
+  gmailUrl: string | null
   canReply: boolean
 }) {
   const router = useRouter()
@@ -34,8 +35,6 @@ export function ItemActions({
     const d = new Date(); d.setDate(d.getDate() + n)
     return d.toISOString().slice(0, 10)
   }
-
-  const gmailThreadUrl = threadId ? `https://mail.google.com/mail/u/0/#all/${threadId}` : null
 
   async function reply() {
     setBusy('reply'); setErr(null)
@@ -74,9 +73,9 @@ export function ItemActions({
             {busy === 'reply' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CornerUpLeft className="h-3.5 w-3.5" />}
           </button>
         )}
-        {gmailThreadUrl && (
+        {gmailUrl && (
           <a
-            href={gmailThreadUrl}
+            href={gmailUrl}
             target="_blank"
             rel="noopener noreferrer"
             title="Open in Gmail"
