@@ -20,3 +20,11 @@ update cc_project_sub_skills e set is_enabled = false
 from projects p, cc_sub_skills s
 where e.project_id = p.id and e.sub_skill_id = s.id
   and (p.code, s.code) in (values ('A','701'),('A','801'),('P2 A01','101'));
+
+-- Uploaded source Excels (2026-07-13): detach + remove metadata rows.
+-- (Storage blobs become inaccessible; purge fully via the dashboard if needed.)
+delete from storage.objects where bucket_id = 'cc-sheets' and name like '%/ib-jun26-%';
+
+-- Setup flags set to active/100 by the import (2026-07-13) — restore:
+update projects set cc_status = 'setup_incomplete', setup_progress_pct = 0
+where code in ('B','C','NGH','P2','P2 A03','VINAY','VIVEK','VV');

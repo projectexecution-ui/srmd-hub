@@ -91,6 +91,17 @@ export default async function WorkingSheetEditorPage(
     const proj = (Array.isArray(ws.projects) ? ws.projects[0] : ws.projects) as PRow | null
     const dis  = (Array.isArray(ws.cc_disciplines) ? ws.cc_disciplines[0] : ws.cc_disciplines) as DRow | null
     const sub  = (Array.isArray(ws.cc_sub_skills) ? ws.cc_sub_skills[0] : ws.cc_sub_skills) as SRow | null
+
+    // When a source Excel is attached (e.g. the Internal Budget import),
+    // reviewers get the same preview + download as quick-mode sheets — the
+    // working behind the figure stays one click away.
+    let thumbDownloadUrl: string | null = null
+    if (ws.source_excel_url) {
+      const { data: signed } = await supabase.storage
+        .from('cc-sheets')
+        .createSignedUrl(ws.source_excel_url, 60 * 60)
+      thumbDownloadUrl = signed?.signedUrl ?? null
+    }
     return (
       <div className="p-4 md:p-6 max-w-4xl mx-auto space-y-4">
         <PageHeader
@@ -136,6 +147,10 @@ export default async function WorkingSheetEditorPage(
           pastApproved={Number(ws.past_approved_in_subskill ?? 0)}
           showPastApproved={reviewer}
         />
+
+        {ws.source_excel_url && (
+          <SourceExcelViewer url={thumbDownloadUrl} name={ws.source_excel_name} />
+        )}
 
         <ApprovalTimeline wsId={ws.id} />
       </div>

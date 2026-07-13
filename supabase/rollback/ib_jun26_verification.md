@@ -91,11 +91,12 @@ G:\ path in its notes, 330 carry the Excel remarks, approval inbox untouched.
 deletes only what the import created and restores the 3 previously-disabled
 sub-skill enablements it flipped.
 
-**One manual follow-up:** attaching the 17 source .xlsx files to the sheets'
-built-in viewer needs a storage upload key that isn't available locally
-(only the anon key is in .env.local; cc-sheets is a private bucket). Every WS
-already shows the file name + full shared-drive path in its notes, so nothing
-is lost — say the word and I'll wire the uploads when a service key is available.
+**Source files attached (done 2026-07-13):** all 17 .xlsx files uploaded to
+the private `cc-sheets` bucket under `<project_id>/ib-jun26-<name>.xlsx` (via a
+temporary insert-only storage policy, dropped immediately after) and linked to
+all 551 sheets (`source_excel_url`). Thumbrule sheets now render the same
+preview + download panel as quick-mode sheets. Setup flags for all 17 projects
+set to active / 100% (restores included in the rollback script).
 
 **Master-data observation:** `cc_disciplines` contains a pre-existing entry
 code `02E` named "xtra Works" that looks like a mangled duplicate of
