@@ -23,6 +23,8 @@ const C = {
   RED:   '#bf3b30',
   WHITE: '#ffffff',
 }
+// Sequential blue ramp for the project stacked bar (largest = darkest)
+const PROJ_RAMP = ['#1f4e79', '#2f6fb0', '#4a90c2', '#7fb0d4', '#b9d3e6', '#d4e3f0']
 
 const FONT_FAMILY = 'Noto Sans'
 const FONT_PATH = join(process.cwd(), 'lib', 'bills-pipeline', 'fonts', 'NotoSans.ttf')
@@ -39,10 +41,11 @@ function inr(n: number): string {
   if (s.length <= 3) return neg + s
   return neg + s.slice(0, -3).replace(/\B(?=(\d{2})+(?!\d))/g, ',') + ',' + s.slice(-3)
 }
-/** Compact Indian notation for headline figures: ₹2.40 Cr / ₹90.5 L / ₹78,900 */
+/** Compact Indian notation: ₹2.40 Cr / ₹90.5 L / ₹78,900 */
 function rupees(n: number): string {
-  if (n >= 1_00_00_000) return '₹' + (n / 1_00_00_000).toFixed(2) + ' Cr'
-  if (n >= 1_00_000)    return '₹' + (n / 1_00_000).toFixed(1).replace(/\.0$/, '') + ' L'
+  const a = Math.abs(n)
+  if (a >= 1_00_00_000) return '₹' + (n / 1_00_00_000).toFixed(2) + ' Cr'
+  if (a >= 1_00_000)    return '₹' + (n / 1_00_000).toFixed(1).replace(/\.0$/, '') + ' L'
   return '₹' + inr(n)
 }
 
@@ -72,6 +75,18 @@ function fmtDate(iso: string): string {
   return d.toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', day: '2-digit', month: 'short', year: 'numeric' })
 }
 
+// A small week-over-week delta chip: arrow + compact ₹, coloured by whether the
+// movement is good or bad for that metric.
+function deltaText(delta: number | null, dir: 'lowerBetter' | 'higherBetter' | 'neutral'): { s: string; fill: string } | null {
+  if (delta == null) return null
+  if (delta === 0) return { s: '— no change', fill: C.FAINT }
+  const up = delta > 0
+  const good = dir === 'neutral' ? null : (dir === 'lowerBetter' ? !up : up)
+  const fill = good == null ? C.MUT : good ? C.GREEN : C.RED
+  // Noto Sans (base) has no ▲/▼ glyphs — use +/- which always render.
+  return { s: `${up ? '+' : '-'}${rupees(Math.abs(delta))} wk`, fill }
+}
+
 // ─── buildSvg ─────────────────────────────────────────────────────────────────
 export function buildSvg(d: CardData): string {
   const P: string[] = []
@@ -79,35 +94,51 @@ export function buildSvg(d: CardData): string {
 
   // Layout constants
   const H_HEADER = 138
+  const H_EXEC   = 62
   const H_KPI    = 156
   const AGE_HEAD = 58
   const AGE_ROW  = 46
   const H_AGE    = AGE_HEAD + d.ageBuckets.length * AGE_ROW + 6
+  const H_PROJ   = 148
   const FUP_TITLE = 56
   const FUP_HEAD  = 40
   const FUP_ROW   = 46
   const fupRows   = Math.max(d.followUps.length, 1)
   const H_FUP     = FUP_TITLE + FUP_HEAD + fupRows * FUP_ROW + 16
   const H_FOOTER  = 96
-  const totalH = H_HEADER + H_KPI + H_AGE + H_FUP + H_FOOTER
+  const totalH = H_HEADER + H_EXEC + H_KPI + H_AGE + H_PROJ + H_FUP + H_FOOTER
 
   P.push(rect(0, 0, W, totalH, C.BG))
 
   // ── HEADER ───────────────────────────────────────────────────────────────
   P.push(rect(0, y, W, H_HEADER, C.NAVY))
-  P.push(rect(PAD, y + 40, 5, 58, C.GOLD, 2))            // gold rule
+  P.push(rect(PAD, y + 40, 5, 58, C.GOLD, 2))
   P.push(text(PAD + 22, y + 66, 'SRA CONTRACTOR BILLS', { fill: C.WHITE, size: 38, weight: 700, spacing: 0.5 }))
   P.push(text(PAD + 22, y + 100, 'Weekly Pipeline Status', { fill: C.GOLD, size: 22, weight: 500 }))
   P.push(text(W - PAD, y + 60, `As on ${fmtDate(d.asOf)}`, { fill: '#c7d2e0', size: 22, weight: 500, anchor: 'end' }))
   P.push(text(W - PAD, y + 92, 'Confidential · for management review', { fill: C.FAINT, size: 16, anchor: 'end' }))
   y += H_HEADER
 
-  // ── KPI TILES ──────────────────────────────────────────────────────────────
-  const tiles = [
-    { label: 'PIPELINE VALUE', value: rupees(d.totalValue), sub: `${d.totalCount} live bills`,          accent: C.NAVY2 },
-    { label: 'PENDING WITH CT', value: rupees(d.ctValue),   sub: `${d.ctCount} bills`,                    accent: C.AMBER },
-    { label: 'WITH TRUST A/C',  value: rupees(d.trustValue), sub: `${d.trustCount} bills`,                accent: C.GREEN },
-    { label: 'NEEDS ATTENTION', value: rupees(d.stalledValue), sub: `${d.stalledCount} stalled > ${BP_CONFIG.STALL_DAYS}d`, accent: C.RED },
+  // ── EXECUTIVE SUMMARY BAND ──────────────────────────────────────────────────
+  P.push(rect(0, y, W, H_EXEC, C.PANEL))
+  P.push(line(0, y + H_EXEC, W, y + H_EXEC, C.LINE, 1))
+  const oldest = d.followUps[0]?.ageDays ?? 0
+  const sentence = d.ctCount === 0
+    ? 'No bills pending with CT — all clear with Trust Accounts or paid.'
+    : `${rupees(d.ctValue)} pending with CT (${d.ctCount} bills) · ${rupees(d.stalledValue)} stalled · oldest ${oldest}d`
+  P.push(text(PAD, y + 38, sentence, { fill: C.INK, size: 19, weight: 500 }))
+  const clearedTxt = d.clearedValue > 0 || d.clearedCount > 0
+    ? `${rupees(d.clearedValue)} cleared this week · ${d.clearedCount} ${d.clearedCount === 1 ? 'bill' : 'bills'}`
+    : 'No bills cleared in last 7 days'
+  P.push(text(W - PAD, y + 38, clearedTxt, { fill: d.clearedCount > 0 ? C.GREEN : C.FAINT, size: 18, weight: 600, anchor: 'end' }))
+  y += H_EXEC
+
+  // ── KPI TILES (with week-over-week deltas) ──────────────────────────────────
+  const tiles: Array<{ label: string; value: string; sub: string; accent: string; delta: number | null; dir: 'lowerBetter' | 'higherBetter' | 'neutral' }> = [
+    { label: 'PIPELINE VALUE', value: rupees(d.totalValue),   sub: `${d.totalCount} live bills`, accent: C.NAVY2, delta: d.deltas.totalValue,   dir: 'neutral' },
+    { label: 'PENDING WITH CT', value: rupees(d.ctValue),     sub: `${d.ctCount} bills`,         accent: C.AMBER, delta: d.deltas.ctValue,      dir: 'lowerBetter' },
+    { label: 'WITH TRUST A/C',  value: rupees(d.trustValue),  sub: `${d.trustCount} bills`,      accent: C.GREEN, delta: d.deltas.trustValue,   dir: 'neutral' },
+    { label: 'NEEDS ATTENTION', value: rupees(d.stalledValue), sub: `${d.stalledCount} stalled > ${BP_CONFIG.STALL_DAYS}d`, accent: C.RED, delta: d.deltas.stalledValue, dir: 'lowerBetter' },
   ]
   const gap = 16
   const tileW = (W - PAD * 2 - gap * 3) / 4
@@ -116,10 +147,12 @@ export function buildSvg(d: CardData): string {
     const tx = PAD + i * (tileW + gap)
     const ty = y + 16
     P.push(rect(tx, ty, tileW, tileH, C.PANEL, 10))
-    P.push(rect(tx, ty, tileW, 4, t.accent, 2))          // top accent
-    P.push(text(tx + 18, ty + 34, t.label, { fill: C.MUT, size: 14, weight: 600, spacing: 0.8 }))
-    P.push(text(tx + 18, ty + 78, t.value, { fill: C.INK, size: 32, weight: 700 }))
-    P.push(text(tx + 18, ty + 106, t.sub, { fill: t.accent, size: 16, weight: 600 }))
+    P.push(rect(tx, ty, tileW, 4, t.accent, 2))
+    P.push(text(tx + 18, ty + 32, t.label, { fill: C.MUT, size: 14, weight: 600, spacing: 0.8 }))
+    P.push(text(tx + 18, ty + 74, t.value, { fill: C.INK, size: 31, weight: 700 }))
+    P.push(text(tx + 18, ty + 102, t.sub, { fill: t.accent, size: 15, weight: 600 }))
+    const dt = deltaText(t.delta, t.dir)
+    if (dt) P.push(text(tx + tileW - 18, ty + 102, dt.s, { fill: dt.fill, size: 14, weight: 600, anchor: 'end' }))
   })
   y += H_KPI
 
@@ -144,18 +177,51 @@ export function buildSvg(d: CardData): string {
   })
   y += H_AGE
 
+  // ── PENDING WITH CT — BY PROJECT (stacked bar) ──────────────────────────────
+  P.push(text(PAD, y + 34, 'Pending with CT — by project', { fill: C.INK, size: 24, weight: 700 }))
+  P.push(text(W - PAD, y + 34, 'share of value', { fill: C.FAINT, size: 16, anchor: 'end' }))
+  P.push(line(PAD, y + 46, W - PAD, y + 46, C.LINE, 1))
+
+  const projTotal = d.byProject.reduce((s, p) => s + p.value, 0)
+  const sbY = y + 62
+  const sbH = 30
+  const sbW = W - PAD * 2
+  if (projTotal <= 0) {
+    P.push(text(PAD, sbY + 40, 'No bills pending with CT.', { fill: C.MUT, size: 18 }))
+  } else {
+    // stacked bar
+    let sx = PAD
+    P.push(rect(PAD, sbY, sbW, sbH, C.PANEL, 6))
+    d.byProject.forEach((p, i) => {
+      const w = Math.max(2, Math.round((p.value / projTotal) * sbW))
+      const clampW = Math.min(w, PAD + sbW - sx)
+      P.push(rect(sx, sbY, clampW, sbH, PROJ_RAMP[i] ?? C.BLUE, 0))
+      sx += clampW
+    })
+    // rounded mask ends
+    P.push(`<rect x="${PAD}" y="${sbY}" width="${sbW}" height="${sbH}" rx="6" fill="none" stroke="${C.BG}" stroke-width="0"/>`)
+    // legend
+    let lx = PAD
+    const ly = sbY + sbH + 30
+    d.byProject.forEach((p, i) => {
+      P.push(rect(lx, ly - 12, 14, 14, PROJ_RAMP[i] ?? C.BLUE, 3))
+      const label = `${p.code}  ${rupees(p.value)} (${p.count})`
+      P.push(text(lx + 22, ly, label, { fill: C.INK, size: 16, weight: 500 }))
+      lx += 22 + label.length * 9.2 + 26
+    })
+  }
+  y += H_PROJ
+
   // ── PRIORITY FOLLOW-UPS ──────────────────────────────────────────────────────
   P.push(text(PAD, y + 34, 'Priority follow-ups', { fill: C.INK, size: 24, weight: 700 }))
   P.push(text(PAD, y + 54, 'Oldest bills pending with CT — push these first', { fill: C.MUT, size: 15 }))
   y += FUP_TITLE
 
-  // column geometry
   const cProj = PAD
   const cName = PAD + 70
   const cBill = 620
-  const cAmt  = 930    // right anchor
-  const cAge  = W - PAD // right anchor
-  // header
+  const cAmt  = 930
+  const cAge  = W - PAD
   P.push(rect(0, y, W, FUP_HEAD, C.PANEL))
   P.push(text(cProj, y + 26, 'PROJECT', { fill: C.MUT, size: 13, weight: 700, spacing: 0.6 }))
   P.push(text(cName, y + 26, 'CONTRACTOR', { fill: C.MUT, size: 13, weight: 700, spacing: 0.6 }))
@@ -173,23 +239,18 @@ export function buildSvg(d: CardData): string {
       const ry = y + i * FUP_ROW
       if (i % 2 === 1) P.push(rect(0, ry, W, FUP_ROW, C.PANEL))
       P.push(line(0, ry + FUP_ROW, W, ry + FUP_ROW, C.LINE, 1))
-      // project badge
       const code = d.projectMap[f.projectId] ?? f.project
       P.push(rect(cProj, ry + 11, 52, 24, C.NAVY, 5))
       P.push(text(cProj + 26, ry + 28, code, { fill: C.WHITE, size: 13, weight: 700, anchor: 'middle' }))
-      // contractor (+ optional No WO tag)
       const nameMax = f.noWO ? 34 : 42
       P.push(text(cName, ry + 29, clip(f.contractor || '(unnamed)', nameMax), { fill: C.INK, size: 18, weight: 500 }))
       if (f.noWO) {
-        const tagX = cName + Math.min((f.contractor || '').length, nameMax) * 9 + 12
-        P.push(rect(Math.min(tagX, cBill - 78), ry + 13, 66, 20, '#fbe6d4', 4))
-        P.push(text(Math.min(tagX, cBill - 78) + 33, ry + 27, 'No WO', { fill: C.ORANGE, size: 12, weight: 700, anchor: 'middle' }))
+        const tagX = Math.min(cName + Math.min((f.contractor || '').length, nameMax) * 9 + 12, cBill - 78)
+        P.push(rect(tagX, ry + 13, 66, 20, '#fbe6d4', 4))
+        P.push(text(tagX + 33, ry + 27, 'No WO', { fill: C.ORANGE, size: 12, weight: 700, anchor: 'middle' }))
       }
-      // bill no
       P.push(text(cBill, ry + 29, clip(f.billNo || '—', 20), { fill: C.MUT, size: 16 }))
-      // amount (full grouping, precise for management)
       P.push(text(cAmt, ry + 29, '₹' + inr(f.value), { fill: C.INK, size: 18, weight: 600, anchor: 'end' }))
-      // age (red if stalled)
       P.push(text(cAge, ry + 29, `${f.ageDays}d`, { fill: f.stalled ? C.RED : C.MUT, size: 18, weight: f.stalled ? 700 : 500, anchor: 'end' }))
     })
     y += d.followUps.length * FUP_ROW

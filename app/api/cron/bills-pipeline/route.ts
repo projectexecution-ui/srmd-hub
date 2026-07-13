@@ -10,7 +10,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient as createServiceClient, type SupabaseClient } from '@supabase/supabase-js'
 import { getMyPermissions, can } from '@/lib/auth'
 import { getZohoToken, fetchAllTasks } from '@/lib/bills-pipeline/zoho'
-import { parseBill, aggregateCard } from '@/lib/bills-pipeline/transform'
+import { parseBill, aggregateCard, clearedThisWeek } from '@/lib/bills-pipeline/transform'
 import { renderCard } from '@/lib/bills-pipeline/render'
 import { BP_CONFIG } from '@/lib/bills-pipeline/config'
 
@@ -72,8 +72,26 @@ async function runPipeline(supabase: SupabaseClient): Promise<NextResponse> {
     error:   r.error ?? null,
   }))
 
-  // 4. Aggregate
+  // 4. Aggregate + enrich (cleared-this-week from raw tasks, week-over-week
+  //    deltas from the previously stored snapshot).
   const cardData = aggregateCard(bills, asOf, isoNow)
+
+  const allTasks = projectResults.flatMap(r => r.tasks)
+  const cleared  = clearedThisWeek(allTasks, now)
+  cardData.clearedCount = cleared.count
+  cardData.clearedValue = cleared.value
+
+  const prev = await readPrevMeta(supabase)
+  if (prev) {
+    const d = (cur: number, key: string) =>
+      typeof prev[key] === 'number' ? cur - (prev[key] as number) : null
+    cardData.deltas = {
+      totalValue:   d(cardData.totalValue,   'totalValue'),
+      ctValue:      d(cardData.ctValue,      'ctValue'),
+      trustValue:   d(cardData.trustValue,   'trustValue'),
+      stalledValue: d(cardData.stalledValue, 'stalledValue'),
+    }
+  }
 
   // 5. Render PNG — abort on failure, do NOT touch storage
   let png: Buffer
@@ -93,16 +111,21 @@ async function runPipeline(supabase: SupabaseClient): Promise<NextResponse> {
     return NextResponse.json({ ok: false, reason: `Upload failed: ${uploadError}` }, { status: 500 })
   }
 
-  // 7. Record metadata
+  // 7. Record metadata — includes the value snapshot so next week can show
+  //    week-over-week deltas.
   const meta = JSON.stringify({
-    generatedAt: isoNow,
+    generatedAt:  isoNow,
     asOf,
-    file:        filename,
-    billCount:   cardData.totalCount,
-    totalValue:  cardData.totalValue,
-    ctCount:     cardData.ctCount,
-    stalled:     cardData.stalledCount,
-    noWoCount:   cardData.noWoCount,
+    file:         filename,
+    billCount:    cardData.totalCount,
+    totalValue:   cardData.totalValue,
+    ctValue:      cardData.ctValue,
+    trustValue:   cardData.trustValue,
+    stalledValue: cardData.stalledValue,
+    clearedValue: cardData.clearedValue,
+    ctCount:      cardData.ctCount,
+    stalled:      cardData.stalledCount,
+    noWoCount:    cardData.noWoCount,
   })
   const metaError = await recordMeta(supabase, meta)
   if (metaError) {
@@ -169,6 +192,21 @@ async function recordMeta(supabase: SupabaseClient, value: string): Promise<stri
     .from('app_settings')
     .upsert({ key: BP_CONFIG.APP_SETTINGS_KEY, value }, { onConflict: 'key' })
   return error ? error.message : null
+}
+
+// Last run's stored snapshot — used to compute week-over-week deltas.
+async function readPrevMeta(supabase: SupabaseClient): Promise<Record<string, unknown> | null> {
+  const { data, error } = await supabase
+    .from('app_settings')
+    .select('value')
+    .eq('key', BP_CONFIG.APP_SETTINGS_KEY)
+    .maybeSingle()
+  if (error || !data?.value) return null
+  try {
+    return JSON.parse(data.value as string) as Record<string, unknown>
+  } catch {
+    return null
+  }
 }
 
 // Returns the ISO date of the most-recent Monday (or today if Monday)

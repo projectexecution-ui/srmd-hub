@@ -44,6 +44,20 @@ export interface FollowUp {
   noWO:      boolean
 }
 
+export interface ProjectSlice {
+  code:  string
+  count: number
+  value: number
+}
+
+// Week-over-week change vs the previous run. null = no prior snapshot yet.
+export interface Deltas {
+  totalValue:   number | null
+  ctValue:      number | null
+  trustValue:   number | null
+  stalledValue: number | null
+}
+
 export interface CardData {
   asOf:        string   // ISO date the snapshot represents
   generatedAt: string
@@ -60,8 +74,14 @@ export interface CardData {
   noWoCount:    number
   noWoValue:    number
 
-  ageBuckets:  AgeBucket[]   // ageing of bills pending with CT
-  followUps:   FollowUp[]    // priority list (oldest with CT)
+  // Throughput — bills paid/closed in the trailing 7 days
+  clearedCount: number
+  clearedValue: number
+
+  ageBuckets:  AgeBucket[]     // ageing of bills pending with CT
+  byProject:   ProjectSlice[]  // value pending with CT, per site
+  followUps:   FollowUp[]      // priority list (oldest with CT)
+  deltas:      Deltas          // week-over-week change
   projectMap:  Record<string, string>
 }
 
@@ -88,6 +108,22 @@ function cleanText(raw: string): string {
 function money(m: ZohoMoney | undefined | null): number {
   const n = m?.amount
   return typeof n === 'number' && isFinite(n) ? n : 0
+}
+
+// Bills paid/closed within the trailing `days` window — a throughput read.
+export function clearedThisWeek(tasks: ZohoTask[], now: Date, days = 7): { count: number; value: number } {
+  const cutoff = now.getTime() - days * 86_400_000
+  let count = 0, value = 0
+  for (const t of tasks) {
+    const stage  = normalizeStage(t.status?.name ?? '')
+    const closed = t.is_completed === true || t.status?.is_closed_type === true || stage === BP_CONFIG.DONE_STAGE
+    if (!closed) continue
+    const done = t.completed_on ? new Date(t.completed_on).getTime() : NaN
+    if (!Number.isFinite(done) || done < cutoff) continue
+    count++
+    value += money(t.this_bill_amt)
+  }
+  return { count, value }
 }
 
 function daysSince(iso: string | undefined, now: Date): number {
@@ -182,6 +218,18 @@ export function aggregateCard(bills: Bill[], asOf: string, generatedAt: string):
     return { label: b.label, count: group.length, value: sumClaimed(group) }
   })
 
+  // Value pending with CT, per site — which project is heaviest.
+  const projectMap: Record<string, string> = {}
+  for (const [code, id] of Object.entries(BP_CONFIG.PROJECTS)) projectMap[id] = code
+  const sliceMap = new Map<string, ProjectSlice>()
+  for (const b of ct) {
+    const code = projectMap[b.projectId] ?? b.project
+    const s = sliceMap.get(code) ?? { code, count: 0, value: 0 }
+    s.count++; s.value += b.claimed
+    sliceMap.set(code, s)
+  }
+  const byProject = [...sliceMap.values()].sort((a, b) => b.value - a.value)
+
   // Priority follow-ups: oldest bills still with CT (highest management value).
   const followUps: FollowUp[] = [...ct]
     .sort((a, b) => (b.ageDays - a.ageDays) || (b.claimed - a.claimed))
@@ -198,9 +246,6 @@ export function aggregateCard(bills: Bill[], asOf: string, generatedAt: string):
       noWO:       b.noWO,
     }))
 
-  const projectMap: Record<string, string> = {}
-  for (const [code, id] of Object.entries(BP_CONFIG.PROJECTS)) projectMap[id] = code
-
   return {
     asOf,
     generatedAt,
@@ -214,8 +259,12 @@ export function aggregateCard(bills: Bill[], asOf: string, generatedAt: string):
     stalledValue: sumClaimed(stalled),
     noWoCount:    noWo.length,
     noWoValue:    sumClaimed(noWo),
+    clearedCount: 0,                                    // filled by the route
+    clearedValue: 0,
     ageBuckets,
+    byProject,
     followUps,
+    deltas: { totalValue: null, ctValue: null, trustValue: null, stalledValue: null },
     projectMap,
   }
 }

@@ -71,6 +71,7 @@ export interface ZohoTask {
   is_completed?:      boolean
   created_time?:      string
   last_modified_time?: string
+  completed_on?:      string
   tasklist?:          { name?: string }
   // flattened custom fields
   vendor_from_module_2?: { value?: string }
