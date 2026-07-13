@@ -15,7 +15,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { generateText, hasAiProvider } from '@/lib/ai'
 
-interface Body { itemId?: string }
+interface Body { itemId?: string; intent?: string }
 
 export async function POST(req: NextRequest) {
   let body: Body
@@ -60,7 +60,9 @@ export async function POST(req: NextRequest) {
       `Subject: ${item.subject ?? ''}\n` +
       `Snippet: ${item.snippet ?? ''}\n` +
       (item.suggested_action ? `Intended action: ${item.suggested_action}\n` : '') +
-      (item.amount_inr ? `Amount involved: Rs ${item.amount_inr}\n` : ''),
+      (item.amount_inr ? `Amount involved: Rs ${item.amount_inr}\n` : '') +
+      // The chip the user tapped — the reply must take THIS stance.
+      (body.intent ? `\nThe reply must take this stance: "${body.intent}". Write the reply accordingly.\n` : ''),
     maxOutputTokens: 500,
   })
 

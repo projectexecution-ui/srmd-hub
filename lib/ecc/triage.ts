@@ -50,6 +50,8 @@ export interface TriagedEmail extends RawEmail {
   tags: string[]
   suggested_action: string | null
   chase_on: string | null   // ISO date (yyyy-mm-dd) for monitor chase-ups
+  summary: string | null    // one-line "what they want" (Auto-Summarize)
+  smart_replies: string[]   // 2-3 short reply intents (Instant Reply chips)
 }
 
 // ── SRMD domain knowledge, ported from the skill ────────────────────────────
@@ -71,8 +73,10 @@ Rules:
 - tags: 1–3 short kebab tags like ["bill","srassk"] or ["hr"] or ["design","p2"].
 - suggested_action: one short imperative line (e.g. "Certify the RA bill and reply to Desai"), or null for just_know/delete.
 - chase_on: yyyy-mm-dd for monitor items only, else null.
+- summary: ONE plain-English line saying what the sender actually wants / what this is (e.g. "Desai wants you to certify the ROAD-02 bill"). Always fill it.
+- smart_replies: 2-3 SHORT reply-intent chips a busy PM would tap (e.g. ["Certify & acknowledge","Ask for measurement sheet","Flag a discrepancy"]). Empty array [] for just_know / delete / pure FYI.
 
-Return STRICT JSON: {"items":[{"thread_id":"...","category":"...","amount_inr":null,"tags":[],"suggested_action":null,"chase_on":null}]}. One object per input email, same thread_id.`
+Return STRICT JSON: {"items":[{"thread_id":"...","category":"...","amount_inr":null,"tags":[],"suggested_action":null,"chase_on":null,"summary":"...","smart_replies":[]}]}. One object per input email, same thread_id.`
 
 interface AiTriageRow {
   thread_id: string
@@ -81,6 +85,8 @@ interface AiTriageRow {
   tags: string[] | null
   suggested_action: string | null
   chase_on: string | null
+  summary: string | null
+  smart_replies: string[] | null
 }
 
 /**
@@ -119,6 +125,8 @@ export async function triageEmails(emails: RawEmail[]): Promise<TriagedEmail[]> 
           tags: Array.isArray(r.tags) ? r.tags.slice(0, 3) : [],
           suggested_action: r.suggested_action || null,
           chase_on: r.chase_on || null,
+          summary: r.summary || null,
+          smart_replies: Array.isArray(r.smart_replies) ? r.smart_replies.slice(0, 3) : [],
         }
       })
     }
@@ -148,13 +156,16 @@ function heuristicOne(e: RawEmail): TriagedEmail {
   else if (FYI_WORDS.some(w => hay.includes(w))) category = 'just_know'
   else if (e.age_days >= 7) category = 'this_week'
 
+  const actionable = category !== 'just_know' && category !== 'delete'
   return {
     ...e,
     category,
     amount_inr: amount,
     tags: heuristicTags(hay),
-    suggested_action: category === 'just_know' || category === 'delete' ? null : `Review "${e.subject.slice(0, 48)}"`,
+    suggested_action: actionable ? `Review "${e.subject.slice(0, 48)}"` : null,
     chase_on: null,
+    summary: e.snippet ? e.snippet.slice(0, 140) : e.subject,
+    smart_replies: actionable ? ['Acknowledge', 'Ask for details'] : [],
   }
 }
 
