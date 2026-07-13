@@ -36,6 +36,7 @@ interface WSAgg {
   deadline_date: string | null
   entry_mode: 'line_items' | 'excel_summary' | 'thumbrule' | null
   summary_notes: string | null
+  in4_entered_at: string | null
 }
 
 export default async function CostControlProjectDetailPage(
@@ -99,7 +100,7 @@ export default async function CostControlProjectDetailPage(
       .eq('project_id', id),
     supabase
       .from('cc_working_sheets')
-      .select('discipline_id, sub_skill_id, status, total_amount, approved_for_erp_amt, deadline_date, entry_mode, summary_notes')
+      .select('discipline_id, sub_skill_id, status, total_amount, approved_for_erp_amt, deadline_date, entry_mode, summary_notes, in4_entered_at')
       .eq('project_id', id),
     supabase
       .from('project_assignments')
@@ -339,6 +340,11 @@ export default async function CostControlProjectDetailPage(
   const totalEstimate = Array.from(discAgg.values()).reduce((s, v) => s + v.estimate, 0)
   const utilPct = totalBudget > 0 ? Math.round((totalPaid / totalBudget) * 100) : 0
   const releasedPct = totalEstimate > 0 ? Math.round((totalBudget / totalEstimate) * 100) : 0
+  // Released money Billing has already keyed into IN4 — it shows here
+  // until the next BPH pull brings the ERP numbers in line.
+  const enteredAwaitingPull = ((wsRes.data ?? []) as WSAgg[])
+    .filter(w => w.in4_entered_at && (w.status === 'approved' || w.status === 'partially_approved'))
+    .reduce((s, w) => s + Number(w.approved_for_erp_amt ?? 0), 0)
 
   // ₹/sft companion for every money figure (Trustee requirement). Uses the
   // project's built-up area; hidden gracefully when no area is set, and
@@ -462,8 +468,8 @@ export default async function CostControlProjectDetailPage(
           <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900 flex items-center gap-2">
             <Info className="h-3.5 w-3.5 flex-shrink-0" />
             <span>
-              <b>{formatINR(gap)}</b> approved here but not yet in IN4 — push it through IN4,
-              then your next BPH upload will bring this in line.
+              <b>{formatINR(gap)}</b> approved here but not yet reflected from IN4
+              {enteredAwaitingPull > 0 && <> — of which <b>{formatINR(enteredAwaitingPull)}</b> is already entered in IN4 by Billing, awaiting your next BPH pull</>}. Push the rest through IN4, then the next BPH upload brings this in line.
             </span>
           </div>
         )

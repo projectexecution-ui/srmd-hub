@@ -130,6 +130,11 @@ export default async function WorkingSheetEditorPage(
           back={backHref}
         >
           <WSStatusPill status={ws.status as WSStatus} />
+          {ccSettings.billing_step && extraCols?.in4_entered_at && (
+            <span className="inline-flex items-center rounded-full bg-teal-100 text-teal-800 text-[10px] font-bold px-2 py-1 whitespace-nowrap">
+              Entered in IN4{extraCols.in4_ref ? ` · ${extraCols.in4_ref}` : ""}
+            </span>
+          )}
         </PageHeader>
 
         <VersionChainBar
@@ -210,6 +215,11 @@ export default async function WorkingSheetEditorPage(
           back={backHref}
         >
           <WSStatusPill status={ws.status as WSStatus} />
+          {ccSettings.billing_step && extraCols?.in4_entered_at && (
+            <span className="inline-flex items-center rounded-full bg-teal-100 text-teal-800 text-[10px] font-bold px-2 py-1 whitespace-nowrap">
+              Entered in IN4{extraCols.in4_ref ? ` · ${extraCols.in4_ref}` : ""}
+            </span>
+          )}
         </PageHeader>
 
         <VersionChainBar
@@ -384,6 +394,11 @@ export default async function WorkingSheetEditorPage(
         back={backHref}
       >
         <WSStatusPill status={status} />
+        {ccSettings.billing_step && extraCols?.in4_entered_at && (
+          <span className="inline-flex items-center rounded-full bg-teal-100 text-teal-800 text-[10px] font-bold px-2 py-1 whitespace-nowrap">
+            Entered in IN4{extraCols.in4_ref ? ` · ${extraCols.in4_ref}` : ''}
+          </span>
+        )}
       </PageHeader>
 
       <VersionChainBar

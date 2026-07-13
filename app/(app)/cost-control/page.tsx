@@ -1,4 +1,5 @@
 import Link from 'next/link'
+import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { requirePermission, can, getMyUser } from '@/lib/auth'
 import { checkIsCcReviewer } from '@/components/cost-control/ws-actions'
@@ -16,6 +17,7 @@ import { plainStatusLabel, isPendingStatus } from '@/lib/cost-control/chain'
 import { AutoBackup } from '@/components/cost-control/AutoBackup'
 import { getLastBphSync } from '@/app/(app)/cost-control/import/bph/actions'
 import { getCcSettings } from '@/lib/cost-control/settings'
+import { getEffectiveCcRole } from '@/app/(app)/cost-control/billing/billing-actions'
 
 export const dynamic = 'force-dynamic'
 
@@ -41,10 +43,14 @@ export default async function CostControlLandingPage() {
   const ccSettings = await getCcSettings()
 
   // Management (approval-chain roles + admin) gets the full financial
-  // dashboard. Everyone else (engineers) gets a personal home with their
-  // OWN sheets only — no project-level money anywhere in the payload.
+  // dashboard. The Billing team lands straight on their IN4 queue.
+  // Everyone else (engineers) gets a personal home with their OWN sheets
+  // only — no project-level money anywhere in the payload.
   const isManagement = await checkIsCcReviewer()
   if (!isManagement) {
+    if (ccSettings.billing_step && (await getEffectiveCcRole()) === 'billing') {
+      redirect('/cost-control/billing')
+    }
     return <EngineerHome userId={user?.id ?? null} canWrite={canWrite} />
   }
 
@@ -54,7 +60,7 @@ export default async function CostControlLandingPage() {
       .select('id, code, name, cc_status, setup_progress_pct, built_up_sft, parent_project_id')
       .not('cc_status', 'is', null)
       .order('code'),
-    supabase.from('cc_working_sheets').select('id, status, total_amount, approved_for_erp_amt, project_id, discipline_id, deadline_date'),
+    supabase.from('cc_working_sheets').select('id, status, total_amount, approved_for_erp_amt, project_id, discipline_id, deadline_date, in4_entered_at'),
     user
       ? supabase
           .from('cc_working_sheets')
@@ -88,7 +94,7 @@ export default async function CostControlLandingPage() {
   const ccProjects = (projectsRes.data ?? []) as CCProject[]
   const incompleteCount = ccProjects.filter(p => (p.setup_progress_pct ?? 0) < 100).length
 
-  type WSRollup = { id: string; status: string; total_amount: number | null; approved_for_erp_amt: number | null; project_id: string; discipline_id: string; deadline_date: string | null }
+  type WSRollup = { id: string; status: string; total_amount: number | null; approved_for_erp_amt: number | null; project_id: string; discipline_id: string; deadline_date: string | null; in4_entered_at: string | null }
   const { data: wsData, error: wsErr } = wsAllRes
   const ws = (wsData ?? []) as WSRollup[]
   const todayStr = new Date().toISOString().slice(0, 10)
@@ -323,6 +329,24 @@ export default async function CostControlLandingPage() {
             <Stat label="Your drafts" value={myDraftsCount} hint="draft + returned to you" icon={<Clock className="h-5 w-5" />} />
           </Link>
           <Stat label="Approved value" value={formatINR(approvedTotal)} hint={`${totalWS} sheet${totalWS === 1 ? '' : 's'} total`} icon={<FileText className="h-5 w-5" />} />
+          {ccSettings.billing_step && (() => {
+            const queue = ws.filter(w =>
+              (w.status === 'approved' || w.status === 'partially_approved')
+              && Number(w.approved_for_erp_amt ?? 0) > 0
+              && !w.in4_entered_at)
+            if (queue.length === 0) return null
+            return (
+              <Link href="/cost-control/billing" className="block">
+                <Stat
+                  label="IN4 entry queue"
+                  value={queue.length}
+                  hint="released sheets awaiting IN4 entry by Billing"
+                  icon={<ClipboardList className="h-5 w-5" />}
+                  tone="amber"
+                />
+              </Link>
+            )
+          })()}
         </div>
       )}
 
