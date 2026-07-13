@@ -1,11 +1,11 @@
 import { createClient as createServiceClient } from '@supabase/supabase-js'
 import { requirePermission, can } from '@/lib/auth'
 import { PageHeader } from '@/components/PageHeader'
-import { EmptyState } from '@/components/ui/empty-state'
 import { Button } from '@/components/ui/button'
-import { Activity, Download, Link2, AlertTriangle } from 'lucide-react'
+import { Link2, AlertTriangle } from 'lucide-react'
 import RefreshButton from './refresh-button'
 import ZohoToast from './zoho-toast'
+import ReportTabs, { type ReportTab } from './report-tabs'
 
 export const dynamic = 'force-dynamic'
 
@@ -24,9 +24,10 @@ export default async function BillsPipelinePage({ searchParams }: Props) {
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
 
-  let signedUrl: string | null  = null
   let meta: Record<string, string | number> | null = null
   let hasZohoToken = false
+  let cardUrl: string | null = null
+  let scorecardUrl: string | null = null
 
   if (serviceKey) {
     const sb = createServiceClient(supabaseUrl, serviceKey, { auth: { persistSession: false } })
@@ -48,15 +49,21 @@ export default async function BillsPipelinePage({ searchParams }: Props) {
       } catch { /* ignore bad JSON */ }
     }
 
-    if (meta?.file) {
-      const { data: signed } = await sb.storage
-        .from('bills-pipeline')
-        .createSignedUrl(meta.file as string, 3600)
-      signedUrl = signed?.signedUrl ?? null
+    const sign = async (file?: string | number | null) => {
+      if (!file || typeof file !== 'string') return null
+      const { data } = await sb.storage.from('bills-pipeline').createSignedUrl(file, 3600)
+      return data?.signedUrl ?? null
     }
+    cardUrl      = await sign(meta?.file)
+    scorecardUrl = await sign(meta?.scorecardFile)
   }
 
   const showConnectBanner = canAdmin && !hasZohoToken
+  const asOf = (meta?.asOf as string) ?? 'latest'
+  const tabs: ReportTab[] = [
+    { key: 'card',      label: 'Weekly Card',      url: cardUrl,      filename: `sra-bills-weekly-${asOf}.png` },
+    { key: 'scorecard', label: 'Project Scorecard', url: scorecardUrl, filename: `sra-project-scorecard-${asOf}.png` },
+  ]
 
   return (
     <div className="p-4 md:p-6 max-w-5xl mx-auto space-y-4">
@@ -64,19 +71,9 @@ export default async function BillsPipelinePage({ searchParams }: Props) {
 
       <PageHeader
         title="Bills Pipeline"
-        subtitle="Weekly SRA contractor bills command card"
+        subtitle="Weekly SRA contractor bills — management reports"
       >
-        <div className="flex items-center gap-2">
-          {canEdit && <RefreshButton />}
-          {signedUrl && (
-            <Button asChild variant="outline" size="sm">
-              <a href={signedUrl} download={`bills-pipeline-${meta?.asOf ?? 'latest'}.png`}>
-                <Download className="h-4 w-4 mr-2" />
-                Download
-              </a>
-            </Button>
-          )}
-        </div>
+        {canEdit && <RefreshButton />}
       </PageHeader>
 
       {showConnectBanner && (
@@ -108,26 +105,7 @@ export default async function BillsPipelinePage({ searchParams }: Props) {
         </div>
       )}
 
-      {signedUrl ? (
-        <div className="rounded-xl border border-gray-200 overflow-hidden shadow-sm">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src={signedUrl}
-            alt="Bills Pipeline Command Card"
-            className="w-full h-auto block"
-          />
-        </div>
-      ) : (
-        <EmptyState
-          icon={<Activity className="h-10 w-10" />}
-          title="No card yet"
-          description={
-            canEdit
-              ? 'Click "Refresh Card" to generate the first command card.'
-              : 'The weekly command card will appear here after the first run.'
-          }
-        />
-      )}
+      <ReportTabs tabs={tabs} canEdit={canEdit} />
     </div>
   )
 }

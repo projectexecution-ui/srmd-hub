@@ -11,7 +11,7 @@ import { createClient as createServiceClient, type SupabaseClient } from '@supab
 import { getMyPermissions, can } from '@/lib/auth'
 import { getZohoToken, fetchAllTasks } from '@/lib/bills-pipeline/zoho'
 import { parseBill, aggregateCard, clearedThisWeek } from '@/lib/bills-pipeline/transform'
-import { renderCard } from '@/lib/bills-pipeline/render'
+import { renderCard, renderScorecard } from '@/lib/bills-pipeline/render'
 import { BP_CONFIG } from '@/lib/bills-pipeline/config'
 
 export const runtime = 'nodejs'
@@ -93,10 +93,11 @@ async function runPipeline(supabase: SupabaseClient): Promise<NextResponse> {
     }
   }
 
-  // 5. Render PNG — abort on failure, do NOT touch storage
-  let png: Buffer
+  // 5. Render report PNGs — abort on failure, do NOT touch storage
+  let png: Buffer, scorecardPng: Buffer
   try {
-    png = await renderCard(cardData)
+    png          = await renderCard(cardData)
+    scorecardPng = await renderScorecard(cardData)
   } catch (e) {
     return NextResponse.json(
       { ok: false, reason: `Render failed: ${e instanceof Error ? e.message : String(e)}` },
@@ -104,28 +105,35 @@ async function runPipeline(supabase: SupabaseClient): Promise<NextResponse> {
     )
   }
 
-  // 6. Upload + prune
-  const filename   = `bills-pipeline-${weekOf}.png`
-  const { uploadError, pruned } = await uploadAndPrune(supabase, filename, png)
-  if (uploadError) {
-    return NextResponse.json({ ok: false, reason: `Upload failed: ${uploadError}` }, { status: 500 })
+  // 6. Upload both reports + prune
+  const filename      = `bills-pipeline-${weekOf}.png`
+  const scorecardName = `bills-pipeline-scorecard-${weekOf}.png`
+  const up1 = await uploadAndPrune(supabase, filename, png)
+  if (up1.uploadError) {
+    return NextResponse.json({ ok: false, reason: `Upload failed: ${up1.uploadError}` }, { status: 500 })
   }
+  const up2 = await uploadAndPrune(supabase, scorecardName, scorecardPng)
+  if (up2.uploadError) {
+    return NextResponse.json({ ok: false, reason: `Scorecard upload failed: ${up2.uploadError}` }, { status: 500 })
+  }
+  const pruned = up1.pruned + up2.pruned
 
   // 7. Record metadata — includes the value snapshot so next week can show
-  //    week-over-week deltas.
+  //    week-over-week deltas, plus each report's stored filename.
   const meta = JSON.stringify({
-    generatedAt:  isoNow,
+    generatedAt:   isoNow,
     asOf,
-    file:         filename,
-    billCount:    cardData.totalCount,
-    totalValue:   cardData.totalValue,
-    ctValue:      cardData.ctValue,
-    trustValue:   cardData.trustValue,
-    stalledValue: cardData.stalledValue,
-    clearedValue: cardData.clearedValue,
-    ctCount:      cardData.ctCount,
-    stalled:      cardData.stalledCount,
-    noWoCount:    cardData.noWoCount,
+    file:          filename,
+    scorecardFile: scorecardName,
+    billCount:     cardData.totalCount,
+    totalValue:    cardData.totalValue,
+    ctValue:       cardData.ctValue,
+    trustValue:    cardData.trustValue,
+    stalledValue:  cardData.stalledValue,
+    clearedValue:  cardData.clearedValue,
+    ctCount:       cardData.ctCount,
+    stalled:       cardData.stalledCount,
+    noWoCount:     cardData.noWoCount,
   })
   const metaError = await recordMeta(supabase, meta)
   if (metaError) {

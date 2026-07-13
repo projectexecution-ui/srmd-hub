@@ -50,6 +50,19 @@ export interface ProjectSlice {
   value: number
 }
 
+// Full per-site breakdown for the Project Scorecard report.
+export interface ScorecardRow {
+  code:         string
+  totalCount:   number
+  totalValue:   number
+  ctCount:      number
+  ctValue:      number
+  trustCount:   number
+  trustValue:   number
+  stalledCount: number
+  stalledValue: number
+}
+
 // Week-over-week change vs the previous run. null = no prior snapshot yet.
 export interface Deltas {
   totalValue:   number | null
@@ -78,11 +91,12 @@ export interface CardData {
   clearedCount: number
   clearedValue: number
 
-  ageBuckets:  AgeBucket[]     // ageing of bills pending with CT
-  byProject:   ProjectSlice[]  // value pending with CT, per site
-  followUps:   FollowUp[]      // priority list (oldest with CT)
-  deltas:      Deltas          // week-over-week change
-  projectMap:  Record<string, string>
+  ageBuckets:      AgeBucket[]     // ageing of bills pending with CT
+  byProject:       ProjectSlice[]  // value pending with CT, per site
+  projectScorecard: ScorecardRow[] // full per-site breakdown (Project Scorecard report)
+  followUps:       FollowUp[]      // priority list (oldest with CT)
+  deltas:          Deltas          // week-over-week change
+  projectMap:      Record<string, string>
 }
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
@@ -230,6 +244,23 @@ export function aggregateCard(bills: Bill[], asOf: string, generatedAt: string):
   }
   const byProject = [...sliceMap.values()].sort((a, b) => b.value - a.value)
 
+  // Full per-site scorecard — all sites in a fixed order (even zero rows) so
+  // the recurring report is predictable and every HOD sees their site.
+  const projectScorecard: ScorecardRow[] = Object.keys(BP_CONFIG.PROJECTS).map(code => {
+    const id  = BP_CONFIG.PROJECTS[code as keyof typeof BP_CONFIG.PROJECTS]
+    const own = bills.filter(b => b.projectId === id)
+    const oct = own.filter(b => b.isInternal)
+    const otr = own.filter(b => b.isTrust)
+    const ost = oct.filter(b => b.stalled)
+    return {
+      code,
+      totalCount: own.length, totalValue: sumClaimed(own),
+      ctCount: oct.length,    ctValue: sumClaimed(oct),
+      trustCount: otr.length, trustValue: sumClaimed(otr),
+      stalledCount: ost.length, stalledValue: sumClaimed(ost),
+    }
+  })
+
   // Priority follow-ups: oldest bills still with CT (highest management value).
   const followUps: FollowUp[] = [...ct]
     .sort((a, b) => (b.ageDays - a.ageDays) || (b.claimed - a.claimed))
@@ -263,6 +294,7 @@ export function aggregateCard(bills: Bill[], asOf: string, generatedAt: string):
     clearedValue: 0,
     ageBuckets,
     byProject,
+    projectScorecard,
     followUps,
     deltas: { totalValue: null, ctValue: null, trustValue: null, stalledValue: null },
     projectMap,

@@ -16,7 +16,7 @@ export default function RefreshButton() {
       const res  = await fetch('/api/cron/bills-pipeline', { method: 'POST' })
       const json = await res.json()
       if (json.ok) {
-        toast.success(`Card generated — ${json.bills} bills, ${json.stalled} stalled`)
+        toast.success(`Reports refreshed — ${json.bills} live bills, ${json.stalled} stalled`)
         router.refresh()
       } else {
         toast.error(json.reason ?? 'Refresh failed')
@@ -31,7 +31,7 @@ export default function RefreshButton() {
   return (
     <Button onClick={handleRefresh} disabled={loading} variant="outline" size="sm">
       <RefreshCw className={`h-4 w-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
-      {loading ? 'Generating…' : 'Refresh Card'}
+      {loading ? 'Generating…' : 'Refresh'}
     </Button>
   )
 }

@@ -269,6 +269,96 @@ export function buildSvg(d: CardData): string {
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${y}" viewBox="0 0 ${W} ${y}">${P.join('')}</svg>`
 }
 
+// ─── Project Scorecard report ───────────────────────────────────────────────
+export function buildScorecardSvg(d: CardData): string {
+  const P: string[] = []
+  let y = 0
+
+  const H_HEADER = 138
+  const SUB      = 46
+  const TH       = 44
+  const ROW      = 58
+  const rows     = d.projectScorecard.length
+  const H_FOOTER = 96
+  const totalH   = H_HEADER + SUB + TH + rows * ROW + ROW /*total*/ + H_FOOTER + 24
+
+  P.push(rect(0, 0, W, totalH, C.BG))
+
+  // Header
+  P.push(rect(0, y, W, H_HEADER, C.NAVY))
+  P.push(rect(PAD, y + 40, 5, 58, C.GOLD, 2))
+  P.push(text(PAD + 22, y + 66, 'PROJECT SCORECARD', { fill: C.WHITE, size: 38, weight: 700, spacing: 0.5 }))
+  P.push(text(PAD + 22, y + 100, 'SRA Contractor Bills · per-site status', { fill: C.GOLD, size: 22, weight: 500 }))
+  P.push(text(W - PAD, y + 60, `As on ${fmtDate(d.asOf)}`, { fill: '#c7d2e0', size: 22, weight: 500, anchor: 'end' }))
+  P.push(text(W - PAD, y + 92, 'Confidential · for management review', { fill: C.FAINT, size: 16, anchor: 'end' }))
+  y += H_HEADER
+
+  P.push(text(PAD, y + 32, 'Live bill value by site — pipeline, ownership and stalls', { fill: C.MUT, size: 17 }))
+  y += SUB
+
+  // Columns (amounts right-anchored)
+  const cols = [
+    { label: 'PIPELINE',  x: 430,  val: (r: typeof d.projectScorecard[number]) => r.totalValue,   cnt: (r: typeof d.projectScorecard[number]) => r.totalCount,   danger: false },
+    { label: 'WITH CT',   x: 640,  val: (r: typeof d.projectScorecard[number]) => r.ctValue,      cnt: (r: typeof d.projectScorecard[number]) => r.ctCount,      danger: false },
+    { label: 'AT TRUST',  x: 840,  val: (r: typeof d.projectScorecard[number]) => r.trustValue,   cnt: (r: typeof d.projectScorecard[number]) => r.trustCount,   danger: false },
+    { label: 'STALLED',   x: W - PAD, val: (r: typeof d.projectScorecard[number]) => r.stalledValue, cnt: (r: typeof d.projectScorecard[number]) => r.stalledCount, danger: true },
+  ]
+
+  // Table header
+  P.push(rect(0, y, W, TH, C.PANEL))
+  P.push(text(PAD, y + 28, 'PROJECT', { fill: C.MUT, size: 13, weight: 700, spacing: 0.6 }))
+  cols.forEach(c => P.push(text(c.x, y + 28, c.label, { fill: C.MUT, size: 13, weight: 700, spacing: 0.6, anchor: 'end' })))
+  y += TH
+
+  const drawCell = (x: number, ry: number, value: number, count: number, danger: boolean) => {
+    const col = danger && value > 0 ? C.RED : C.INK
+    P.push(text(x, ry + 26, rupees(value), { fill: col, size: 19, weight: 600, anchor: 'end' }))
+    P.push(text(x, ry + 46, `${count} ${count === 1 ? 'bill' : 'bills'}`, { fill: C.FAINT, size: 14, anchor: 'end' }))
+  }
+
+  d.projectScorecard.forEach((r, i) => {
+    const ry = y + i * ROW
+    if (i % 2 === 1) P.push(rect(0, ry, W, ROW, C.PANEL))
+    P.push(line(0, ry + ROW, W, ry + ROW, C.LINE, 1))
+    P.push(rect(PAD, ry + 16, 58, 26, C.NAVY, 5))
+    P.push(text(PAD + 29, ry + 34, r.code, { fill: C.WHITE, size: 14, weight: 700, anchor: 'middle' }))
+    cols.forEach(c => drawCell(c.x, ry, c.val(r), c.cnt(r), c.danger))
+  })
+  y += rows * ROW
+
+  // Total row
+  P.push(rect(0, y, W, ROW, '#eef2f7'))
+  P.push(line(0, y, W, y, C.LINE, 1))
+  P.push(text(PAD, y + 36, 'TOTAL', { fill: C.INK, size: 17, weight: 700, spacing: 0.5 }))
+  const totals = [
+    { x: 430,    v: d.totalValue,   c: d.totalCount,   danger: false },
+    { x: 640,    v: d.ctValue,      c: d.ctCount,      danger: false },
+    { x: 840,    v: d.trustValue,   c: d.trustCount,   danger: false },
+    { x: W - PAD, v: d.stalledValue, c: d.stalledCount, danger: true },
+  ]
+  totals.forEach(t => {
+    const col = t.danger && t.v > 0 ? C.RED : C.INK
+    P.push(text(t.x, y + 30, rupees(t.v), { fill: col, size: 19, weight: 700, anchor: 'end' }))
+    P.push(text(t.x, y + 48, `${t.c} ${t.c === 1 ? 'bill' : 'bills'}`, { fill: C.MUT, size: 14, anchor: 'end' }))
+  })
+  y += ROW + 24
+
+  // Footer
+  P.push(rect(0, y, W, H_FOOTER, C.NAVY))
+  P.push(text(PAD, y + 40, 'SRMD Construction Technology Hub', { fill: '#c7d2e0', size: 18, weight: 600 }))
+  P.push(text(PAD, y + 66, `Source: Zoho Projects — ${Object.keys(BP_CONFIG.PROJECTS).join(', ')} · All amounts in ₹`, { fill: C.FAINT, size: 15 }))
+  const gen = new Date(d.generatedAt).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', dateStyle: 'medium', timeStyle: 'short' })
+  P.push(text(W - PAD, y + 40, 'Auto-generated weekly', { fill: '#c7d2e0', size: 16, anchor: 'end' }))
+  P.push(text(W - PAD, y + 66, gen, { fill: C.FAINT, size: 15, anchor: 'end' }))
+  y += H_FOOTER
+
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${y}" viewBox="0 0 ${W} ${y}">${P.join('')}</svg>`
+}
+
+export async function renderScorecard(data: CardData): Promise<Buffer> {
+  return svgToPng(buildScorecardSvg(data))
+}
+
 // ─── svgToPng ─────────────────────────────────────────────────────────────────
 export async function svgToPng(svg: string): Promise<Buffer> {
   const hasFont = existsSync(FONT_PATH)
