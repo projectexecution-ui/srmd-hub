@@ -3,12 +3,12 @@ import { requirePermission } from '@/lib/auth'
 import { PageHeader } from '@/components/PageHeader'
 import { Card } from '@/components/ui/card'
 import { EmptyState } from '@/components/ui/empty-state'
-import { formatINRShort } from '@/lib/jmr/format'
+import { formatINRShort, formatDateShort } from '@/lib/jmr/format'
 import { type EccCategory } from '@/lib/ecc/triage'
 import { Mail, Star, Flame, AlertTriangle, Clock, Gauge, IndianRupee } from 'lucide-react'
 import { RefreshButton } from './refresh-button'
 import { AskAI } from './ask-ai'
-import { BriefButton } from './brief-button'
+import { BriefButton, type BriefData } from './brief-button'
 import { FollowupRadar } from './followup-radar'
 import { BoardClient, type BoardItem } from './board-client'
 
@@ -48,7 +48,7 @@ export default async function CommandCenterPage() {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return null
 
-  const [{ data: itemsRaw }, { data: accounts }, { data: runs }] = await Promise.all([
+  const [{ data: itemsRaw }, { data: accounts }] = await Promise.all([
     supabase
       .from('ecc_items')
       .select('id, category, subject, sender, sender_email, summary, age_days, amount_inr, chase_on, status, is_vip, reason, tags, smart_replies')
@@ -56,7 +56,6 @@ export default async function CommandCenterPage() {
       .neq('status', 'done')
       .order('priority', { ascending: false }),
     supabase.from('ecc_accounts').select('email_address, status').eq('user_id', user.id).limit(5),
-    supabase.from('ecc_runs').select('brief, ran_at').eq('user_id', user.id).order('ran_at', { ascending: false }).limit(1),
   ])
 
   const rows = (itemsRaw ?? []) as EccRow[]
@@ -87,7 +86,22 @@ export default async function CommandCenterPage() {
   const vipCount = boardItems.filter(i => i.is_vip).length
   const overdueCount = boardItems.filter(i => i.overdue).length
   const oldest = boardItems.reduce((m, i) => Math.max(m, i.age_days ?? 0), 0)
-  const brief = runs?.[0]?.brief as string | undefined
+
+  // Scannable executive brief — computed from the data, not a paragraph.
+  const actionableItems = boardItems.filter(i => ACTIONABLE.includes(i.category))
+  const waitingList = boardItems.filter(i => i.category === 'monitor' || i.overdue)
+  const thisWeekList = boardItems.filter(i => i.category === 'this_week')
+  const briefData: BriefData = {
+    date: formatDateShort(new Date()),
+    toAction: actionableItems.length,
+    blocked,
+    overdue: overdueCount,
+    waiting: waitingList.length,
+    doFirst: actionableItems.slice(0, 3).map(i => ({ subject: i.subject, sender: i.sender, vip: i.is_vip, amount: i.amount_inr, age: i.age_days })),
+    thisWeek: thisWeekList.slice(0, 3).map(i => i.subject),
+    thisWeekCount: thisWeekList.length,
+    waitingItems: waitingList.slice(0, 3).map(i => ({ subject: i.subject, sender: i.sender, overdue: i.overdue })),
+  }
 
   const stats = [
     { key: 'do_today', label: 'Do today', value: String(count('do_today')), icon: Flame, ic: 'bg-rose-100 text-rose-600', href: '#col-do_today' },
@@ -105,7 +119,7 @@ export default async function CommandCenterPage() {
         subtitle={acctEmail ? `GOD Mode · ${acctEmail}` : 'GOD Mode'}
         back="/"
       >
-        {brief && <BriefButton brief={brief} />}
+        {boardItems.length > 0 && <BriefButton data={briefData} />}
         <AskAI />
         <RefreshButton connected={accounts?.[0]?.status === 'connected'} />
       </PageHeader>
