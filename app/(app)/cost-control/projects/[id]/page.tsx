@@ -12,6 +12,7 @@ import { QueryError } from '@/components/ui/query-error'
 import { DeadlineBadge } from '@/components/cost-control/DeadlineBadge'
 import { wsStatusLabel } from '@/components/cost-control/WSStatusPill'
 import { DeadlineCell, SubSkillModeCell, DisableButton } from './RowControls'
+import { AreaChip } from './AreaChip'
 import { BphSyncButton } from './BphSyncButton'
 import { getBphMappingForProject } from '@/app/(app)/cost-control/import/bph/actions'
 
@@ -389,7 +390,6 @@ export default async function CostControlProjectDetailPage(
             title={project.name}
             subtitle={[
               project.code,
-              project.built_up_sft ? `${project.built_up_sft.toLocaleString('en-IN')} sft` : null,
               pmName ? `Owner: ${pmName}` : null,
               project.start_date ? `Started ${new Date(project.start_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}` : null,
             ].filter(Boolean).join(' · ')}
@@ -397,6 +397,11 @@ export default async function CostControlProjectDetailPage(
           />
         </div>
         <div className="flex flex-wrap items-center gap-2">
+          <AreaChip
+            projectId={project.id}
+            sft={project.built_up_sft != null ? Number(project.built_up_sft) : null}
+            canWrite={canWrite}
+          />
           {project.cc_status && (
             <span className={`inline-flex items-center px-2 py-1 rounded-full text-[10px] font-bold tracking-wide ${
               project.cc_status === 'active' ? 'bg-green-100 text-green-800' :

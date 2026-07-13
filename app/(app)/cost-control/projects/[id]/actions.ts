@@ -194,3 +194,25 @@ export async function setSubSkillEstimationMode(
   revalidatePath(`/cost-control/projects/${projectId}`)
   return { ok: true }
 }
+
+/** Set / correct the project's built-up area (sft). Goes through the
+ *  cc_set_project_area definer RPC because the projects table's UPDATE
+ *  RLS is admin/uploader-only while this page serves all CC management. */
+export async function setProjectArea(
+  projectId: string,
+  sft: number | null,
+): Promise<{ ok: boolean; error?: string }> {
+  if (sft != null && (!Number.isFinite(sft) || sft < 0 || sft > 100_000_000)) {
+    return { ok: false, error: 'Area must be a positive number of sft' }
+  }
+  const supabase = await createClient()
+  const { error } = await supabase.rpc('cc_set_project_area', {
+    p_project_id: projectId,
+    p_sft: sft,
+  })
+  if (error) return { ok: false, error: error.message }
+
+  revalidatePath(`/cost-control/projects/${projectId}`)
+  revalidatePath('/cost-control')
+  return { ok: true }
+}
