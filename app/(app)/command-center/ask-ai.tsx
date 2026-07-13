@@ -34,22 +34,22 @@ export function AskAI() {
   }
 
   return (
-    <div className="mb-4 rounded-xl border border-teal-200 bg-teal-50/50 p-3">
+    <div className="mb-4">
       <form
         onSubmit={e => { e.preventDefault(); ask(q) }}
-        className="flex items-center gap-2"
+        className="flex items-center gap-2 rounded-2xl bg-white ring-1 ring-gray-200/70 shadow-sm focus-within:ring-2 focus-within:ring-teal-400 px-3.5 py-2.5 transition"
       >
-        <Sparkles className="h-4 w-4 text-teal-700 flex-shrink-0" />
+        <Sparkles className="h-4 w-4 text-teal-600 flex-shrink-0" />
         <input
           value={q}
           onChange={e => setQ(e.target.value)}
           placeholder="Ask your inbox anything…  e.g. what needs money today?"
-          className="flex-1 bg-transparent text-sm outline-none placeholder:text-teal-700/50 text-teal-900"
+          className="flex-1 bg-transparent text-sm outline-none placeholder:text-gray-400 text-gray-800"
         />
         <button
           type="submit"
           disabled={busy || !q.trim()}
-          className="inline-flex items-center gap-1 text-xs font-semibold bg-teal-700 text-white px-3 py-1.5 rounded-lg hover:bg-teal-800 disabled:opacity-50"
+          className="inline-flex items-center gap-1 text-xs font-semibold bg-teal-600 text-white px-3.5 py-1.5 rounded-xl hover:bg-teal-700 disabled:opacity-50 transition"
         >
           {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ArrowRight className="h-3.5 w-3.5" />} Ask
         </button>

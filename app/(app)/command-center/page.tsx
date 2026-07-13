@@ -88,12 +88,12 @@ export default async function CommandCenterPage() {
   const brief = runs?.[0]?.brief as string | undefined
 
   const stats = [
-    { key: 'do_today', label: 'Do today', value: String(count('do_today')), icon: Flame, cls: 'bg-rose-50 text-rose-700', href: '#col-do_today' },
-    { key: 'blocked', label: '₹ blocked', value: formatINRShort(blocked), icon: IndianRupee, cls: 'bg-rose-50 text-rose-700', href: '#col-do_today' },
-    { key: 'vip', label: 'VIP', value: String(vipCount), icon: Star, cls: 'bg-amber-50 text-amber-700', href: '#col-do_today' },
-    { key: 'overdue', label: 'Overdue', value: String(overdueCount), icon: AlertTriangle, cls: overdueCount ? 'bg-rose-100 text-rose-800' : 'bg-gray-100 text-gray-500', href: '#col-monitor' },
-    { key: 'this_week', label: 'This week', value: String(count('this_week')), icon: Gauge, cls: 'bg-amber-50 text-amber-700', href: '#col-this_week' },
-    { key: 'oldest', label: 'Oldest', value: oldest ? `${oldest}d` : '—', icon: Clock, cls: 'bg-gray-100 text-gray-600', href: '#col-do_today' },
+    { key: 'do_today', label: 'Do today', value: String(count('do_today')), icon: Flame, ic: 'bg-rose-100 text-rose-600', href: '#col-do_today' },
+    { key: 'blocked', label: '₹ blocked', value: formatINRShort(blocked), icon: IndianRupee, ic: 'bg-rose-100 text-rose-600', href: '#col-do_today' },
+    { key: 'vip', label: 'VIP', value: String(vipCount), icon: Star, ic: 'bg-amber-100 text-amber-600', href: '#col-do_today' },
+    { key: 'overdue', label: 'Overdue', value: String(overdueCount), icon: AlertTriangle, ic: overdueCount ? 'bg-rose-100 text-rose-600' : 'bg-gray-100 text-gray-400', href: '#col-monitor' },
+    { key: 'this_week', label: 'This week', value: String(count('this_week')), icon: Gauge, ic: 'bg-amber-100 text-amber-600', href: '#col-this_week' },
+    { key: 'oldest', label: 'Oldest', value: oldest ? `${oldest}d` : '—', icon: Clock, ic: 'bg-slate-100 text-slate-500', href: '#col-do_today' },
   ]
 
   return (
@@ -117,32 +117,44 @@ export default async function CommandCenterPage() {
       ) : (
         <>
           {/* Cockpit stat bar */}
-          <div className="grid grid-cols-3 sm:grid-cols-6 gap-2 mb-3">
+          <div className="grid grid-cols-3 sm:grid-cols-6 gap-2.5 mb-4">
             {stats.map(s => {
               const Icon = s.icon
               return (
-                <a key={s.key} href={s.href} className={`rounded-xl px-3 py-2.5 ${s.cls} hover:brightness-95 transition`}>
-                  <div className="flex items-center gap-1 text-[11px] font-medium opacity-80">
-                    <Icon className="h-3.5 w-3.5" /> {s.label}
+                <a
+                  key={s.key}
+                  href={s.href}
+                  className="rounded-2xl bg-white shadow-sm ring-1 ring-gray-200/70 px-3.5 py-3 hover:shadow-md hover:-translate-y-0.5 transition-all"
+                >
+                  <div className="flex items-center gap-2">
+                    <span className={`h-7 w-7 rounded-lg grid place-items-center ${s.ic}`}>
+                      <Icon className="h-4 w-4" />
+                    </span>
+                    <span className="text-[10.5px] font-semibold text-gray-500 uppercase tracking-wide truncate">{s.label}</span>
                   </div>
-                  <div className="text-2xl font-bold leading-tight mt-0.5">{s.value}</div>
+                  <div className="text-[26px] leading-none font-bold text-gray-900 mt-2 tabular-nums">{s.value}</div>
                 </a>
               )
             })}
           </div>
 
-          {/* Ask AI across the inbox */}
+          {/* Ask AI */}
           <AskAI />
 
           {/* Daily brief */}
           {brief && (
-            <div className="mb-4 rounded-xl bg-teal-50 border border-teal-200 px-3 py-2.5 flex items-start gap-2">
-              <Sparkles className="h-4 w-4 text-teal-700 mt-0.5 flex-shrink-0" />
-              <p className="text-sm text-teal-900/90 leading-relaxed">{brief}</p>
+            <div className="mb-5 rounded-2xl bg-gradient-to-br from-teal-50 to-white ring-1 ring-teal-200/60 shadow-sm px-4 py-3.5 flex items-start gap-3">
+              <span className="h-8 w-8 rounded-xl bg-teal-100 text-teal-700 grid place-items-center flex-shrink-0">
+                <Sparkles className="h-4 w-4" />
+              </span>
+              <div>
+                <p className="text-[10.5px] font-semibold uppercase tracking-wide text-teal-700/80">Your brief</p>
+                <p className="text-sm text-gray-700 leading-relaxed mt-0.5">{brief}</p>
+              </div>
             </div>
           )}
 
-          {/* GOD Mode board (client: summaries, smart replies, group, bulk) */}
+          {/* GOD Mode board */}
           <BoardClient items={boardItems} />
         </>
       )}
