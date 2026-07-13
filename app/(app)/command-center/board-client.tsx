@@ -9,8 +9,9 @@ import { createClient } from '@/lib/supabase/client'
 import { formatINRShort, formatDateShort } from '@/lib/jmr/format'
 import {
   Star, CornerUpLeft, ExternalLink, Check, Clock, RotateCcw, Loader2,
-  Users, CheckCheck, X,
+  Users, CheckCheck, X, Zap,
 } from 'lucide-react'
+import { TriageMode } from './triage-mode'
 
 export type EccCategory =
   | 'do_today' | 'this_week' | 'monitor' | 'draft_pending' | 'just_know' | 'delete'
@@ -64,8 +65,10 @@ export function BoardClient({ items }: { items: BoardItem[] }) {
   const [replyBusy, setReplyBusy] = useState<string | null>(null)
   const [snoozeMenu, setSnoozeMenu] = useState<string | null>(null)
   const [err, setErr] = useState<string | null>(null)
+  const [triageOpen, setTriageOpen] = useState(false)
 
   const shownCats = CATS.filter(c => items.some(i => i.category === c))
+  const triageCount = items.filter(i => (['do_today', 'this_week', 'monitor', 'draft_pending'] as EccCategory[]).includes(i.category)).length
 
   function toggleSel(id: string) {
     setSelected(prev => {
@@ -133,8 +136,19 @@ export function BoardClient({ items }: { items: BoardItem[] }) {
 
   return (
     <div>
+      {triageOpen && <TriageMode items={items} onClose={() => { setTriageOpen(false); router.refresh() }} />}
+
       {/* Toolbar */}
       <div className="flex items-center gap-2 mb-3 flex-wrap">
+        {triageCount > 0 && (
+          <button
+            type="button"
+            onClick={() => setTriageOpen(true)}
+            className="inline-flex items-center gap-1.5 text-xs font-semibold px-3.5 py-1.5 rounded-lg bg-gray-900 text-white hover:bg-gray-800 transition shadow-sm"
+          >
+            <Zap className="h-3.5 w-3.5" fill="currentColor" /> Triage {triageCount}
+          </button>
+        )}
         <button
           type="button"
           onClick={() => setGroupBySender(g => !g)}

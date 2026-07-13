@@ -8,6 +8,7 @@ import { type EccCategory } from '@/lib/ecc/triage'
 import { Mail, Star, Sparkles, Flame, AlertTriangle, Clock, Gauge, IndianRupee } from 'lucide-react'
 import { RefreshButton } from './refresh-button'
 import { AskAI } from './ask-ai'
+import { FollowupRadar } from './followup-radar'
 import { BoardClient, type BoardItem } from './board-client'
 
 export const dynamic = 'force-dynamic'
@@ -153,6 +154,9 @@ export default async function CommandCenterPage() {
               </div>
             </div>
           )}
+
+          {/* Follow-up radar — who owes you a reply */}
+          <FollowupRadar items={boardItems} />
 
           {/* GOD Mode board */}
           <BoardClient items={boardItems} />
