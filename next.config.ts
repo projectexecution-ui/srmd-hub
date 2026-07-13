@@ -2,6 +2,10 @@ import type { NextConfig } from 'next'
 
 const nextConfig: NextConfig = {
   reactStrictMode: true,
+  // @resvg/resvg-js ships a native .node binding that Turbopack can't bundle
+  // into an ESM chunk ("non-ecmascript placeable asset"). Marking it external
+  // keeps it as a runtime require() in the server bundle.
+  serverExternalPackages: ['@resvg/resvg-js'],
   images: {
     remotePatterns: [
       { protocol: 'https', hostname: 'lh3.googleusercontent.com' },

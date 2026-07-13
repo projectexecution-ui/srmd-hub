@@ -1,5 +1,3 @@
-'use server'
-
 import { createClient as createServiceClient } from '@supabase/supabase-js'
 import { requirePermission, can } from '@/lib/auth'
 import { PageHeader } from '@/components/PageHeader'
