@@ -390,15 +390,24 @@ export async function submitWorkingSheet(wsId: string): Promise<{ ok: boolean; e
 /** Full-sheet sign-off — stages 1 + 2 of the chain. The target stage is
  *  derived SERVER-side from the sheet's current status (submitted →
  *  ph_approved by the Project Head; ph_approved → atm_approved by the Atm
- *  Head), so a stale client can never skip a stage. No money moves here —
- *  releases happen at the Trustee stage via cc_approve_release. */
+ *  Head), so a stale client can never skip a stage. Every sign-off must
+ *  carry the CHECKED AMOUNT the approver typed themselves — deliberately
+ *  not prefilled, and never compared to the sheet total: the independent
+ *  figure is the point. Stored per stage (ph_checked_* / atm_checked_*).
+ *  No money is released here — that happens at the Trustee stage via
+ *  cc_approve_release. */
 export async function signOffWorkingSheet(
   wsId: string,
+  checkedAmt: number,
   comment?: string | null,
 ): Promise<{ ok: boolean; error?: string; new_status?: string }> {
   const me = await whoAmI()
   if (!me.user) return { ok: false, error: 'Not signed in' }
   if (!me.canView) return { ok: false, error: 'You do not have access to Cost Control' }
+
+  if (!Number.isFinite(checkedAmt) || checkedAmt <= 0) {
+    return { ok: false, error: 'Type the amount you checked before signing off' }
+  }
 
   const supabase = await createClient()
   const { data: ws, error } = await supabase
@@ -425,15 +434,23 @@ export async function signOffWorkingSheet(
     return { ok: false, error: 'Your role is not configured for this sign-off. Check /admin/approvals.' }
   }
 
+  const now = new Date().toISOString()
+  const checkedCols = toStage === 'ph_approved'
+    ? { ph_checked_amt: checkedAmt, ph_checked_at: now, ph_checked_by: me.user.id }
+    : { atm_checked_amt: checkedAmt, atm_checked_at: now, atm_checked_by: me.user.id }
+
   const { error: updErr } = await supabase
     .from('cc_working_sheets')
-    .update({ status: toStage })
+    .update({ status: toStage, ...checkedCols })
     .eq('id', wsId)
     .eq('status', ws.status) // optimistic: someone else may have acted meanwhile
   if (updErr) return { ok: false, error: updErr.message }
 
-  // Log the sign-off so the approval trail names the stage + person.
-  // record_approval_event re-checks can_approve for this exact pair.
+  // Log the sign-off so the approval trail names the stage + person. The
+  // checked amount rides in the comment (approval_events has no amount
+  // column) — the sheet columns hold the latest cycle, the trail keeps
+  // every cycle. record_approval_event re-checks can_approve.
+  const eventComment = `Checked ₹${Math.round(checkedAmt).toLocaleString('en-IN')}${comment?.trim() ? ` — ${comment.trim()}` : ''}`
   const { error: recErr } = await supabase.rpc('record_approval_event', {
     p_module_slug: 'cost-control',
     p_doc_type:    'cc_working_sheet',
@@ -442,7 +459,7 @@ export async function signOffWorkingSheet(
     p_from_stage:  ws.status,
     p_to_stage:    toStage,
     p_decision:    'approved',
-    p_comment:     comment?.trim() || null,
+    p_comment:     eventComment,
     p_attachments: [],
     p_amount:      null,
   })

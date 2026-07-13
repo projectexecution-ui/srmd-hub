@@ -16,7 +16,7 @@ import {
   deleteWorkingSheetItem,
   type WSApprovalContext,
 } from '@/components/cost-control/ws-actions'
-import { WSApprovalActions } from '@/components/cost-control/WSApprovalActions'
+import { WSApprovalActions, type SignOffCfg } from '@/components/cost-control/WSApprovalActions'
 
 interface Vendor { id: string; name: string }
 
@@ -44,12 +44,13 @@ interface Props {
   pastItems?: PastItem[]
   wsTotal: number
   approvedSoFar?: number
+  signOffCfg?: SignOffCfg
 }
 
 const UOM_OPTIONS = ['Sft', 'Sqm', 'Rm', 'Mt', 'Cum', 'Nos', 'MT', 'Kg', 'Ltr', 'Ls']
 const GST_OPTIONS = [0, 5, 12, 18, 28]
 
-export function WSEditor({ wsId, status, canEdit, ctx, vendors, initialItems, pastItems = [], wsTotal, approvedSoFar = 0 }: Props) {
+export function WSEditor({ wsId, status, canEdit, ctx, vendors, initialItems, pastItems = [], wsTotal, approvedSoFar = 0, signOffCfg }: Props) {
   const router = useRouter()
   const [items, setItems] = React.useState<WSItem[]>(initialItems)
   const [error, setError] = React.useState<string | null>(null)
@@ -316,6 +317,7 @@ export function WSEditor({ wsId, status, canEdit, ctx, vendors, initialItems, pa
           </Button>
         )}
         <WSApprovalActions
+            signOffCfg={signOffCfg}
           wsId={wsId}
           status={status}
           ctx={ctx}

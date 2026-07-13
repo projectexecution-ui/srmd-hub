@@ -68,9 +68,12 @@ export async function bulkApproveThumbrule(input: {
     }
 
     // Sign-off stages advance ONE step; the sign-off action logs its own
-    // approval event (with the shared comment).
+    // approval event (with the shared comment). Bulk mode checks the
+    // sheet's own figure — thumbrule sheets are simple rate × area lines;
+    // anyone wanting to type an independent checked amount uses the WS
+    // detail page instead.
     if (ws.status === 'submitted' || ws.status === 'ph_approved') {
-      const r = await signOffWorkingSheet(wsId, parsed.data.comment)
+      const r = await signOffWorkingSheet(wsId, Number(ws.total_amount ?? 0), parsed.data.comment)
       results.push(r.ok
         ? { ws_id: wsId, ws_code: ws.ws_code, ok: true, error: r.error } // r.error = log-only warning
         : { ws_id: wsId, ws_code: ws.ws_code, ok: false, error: r.error ?? 'Sign-off failed' })

@@ -7,7 +7,7 @@ import { Badge } from '@/components/ui/badge'
 import {
   FileSpreadsheet, Download, RefreshCcw, Loader2, AlertTriangle, TrendingDown, TrendingUp, Sigma, Sparkles,
 } from 'lucide-react'
-import { WSApprovalActions } from '@/components/cost-control/WSApprovalActions'
+import { WSApprovalActions, type SignOffCfg } from '@/components/cost-control/WSApprovalActions'
 import type { WSApprovalContext } from '@/components/cost-control/ws-actions'
 import type { WSStatus } from '@/components/cost-control/WSStatusPill'
 import { formatINR } from '@/lib/utils'
@@ -46,7 +46,7 @@ interface FlagSummary {
 }
 
 export function ExcelSummaryPanel({
-  wsId, status, ctx, reviewer, aiEnabled = true, totalAmount, approvedSoFar, fileName, downloadUrl, summaryTotal, summaryNotes, flagSummary, lastCheckedAt, rows,
+  wsId, status, ctx, reviewer, aiEnabled = true, signOffCfg, totalAmount, approvedSoFar, fileName, downloadUrl, summaryTotal, summaryNotes, flagSummary, lastCheckedAt, rows,
 }: {
   wsId: string
   status: WSStatus
@@ -58,6 +58,7 @@ export function ExcelSummaryPanel({
   /** Cost Control settings switch: hides the AI/flag chrome for everyone
    *  when management turns AI tools off (reviewer extras stay). */
   aiEnabled?: boolean
+  signOffCfg?: SignOffCfg
   totalAmount: number
   approvedSoFar: number
   fileName: string | null
@@ -271,6 +272,7 @@ export function ExcelSummaryPanel({
           {/* Shared 3-stage approval block (stepper + actions) */}
           <div className="mt-4 pt-4 border-t border-gray-100">
             <WSApprovalActions
+            signOffCfg={signOffCfg}
               wsId={wsId}
               status={status}
               ctx={ctx}

@@ -35,11 +35,14 @@ interface WSRow {
   status: string
   total_amount: number | null
   approved_for_erp_amt: number | null
+  in4_entered_at: string | null
+  in4_entered_by: string | null
+  in4_ref: string | null
 }
 
 type TLItem = {
   ts: string
-  kind: 'raised' | 'submitted' | 'signoff' | 'approved' | 'partial' | 'returned' | 'released'
+  kind: 'raised' | 'submitted' | 'signoff' | 'approved' | 'partial' | 'returned' | 'released' | 'in4'
   who: string | null
   title: string
   comment?: string | null
@@ -57,7 +60,7 @@ export async function ApprovalTimeline({ wsId }: { wsId: string }) {
   const [{ data: ws }, { data: events }, { data: budgetEvents }] = await Promise.all([
     supabase
       .from('cc_working_sheets')
-      .select('created_at, submitted_at, engineer_id, status, total_amount, approved_for_erp_amt')
+      .select('created_at, submitted_at, engineer_id, status, total_amount, approved_for_erp_amt, in4_entered_at, in4_entered_by, in4_ref')
       .eq('id', wsId)
       .single(),
     supabase
@@ -80,6 +83,7 @@ export async function ApprovalTimeline({ wsId }: { wsId: string }) {
   // Resolve all actor names in one query.
   const ids = Array.from(new Set([
     wsRow?.engineer_id,
+    wsRow?.in4_entered_by,
     ...evRows.map(e => e.actor_id),
     ...beRows.map(b => b.approved_by),
   ].filter((x): x is string => !!x)))
@@ -131,6 +135,17 @@ export async function ApprovalTimeline({ wsId }: { wsId: string }) {
     })
   }
 
+  // 5. Billing marked the released amount as entered in the IN4 ERP.
+  if (wsRow?.in4_entered_at) {
+    items.push({
+      ts: wsRow.in4_entered_at,
+      kind: 'in4',
+      who: wsRow.in4_entered_by ? nameById.get(wsRow.in4_entered_by) ?? null : null,
+      title: 'Entered in IN4 ERP',
+      comment: wsRow.in4_ref ? `IN4 reference: ${wsRow.in4_ref}` : null,
+    })
+  }
+
   items.sort((a, b) => a.ts.localeCompare(b.ts))
 
   const style: Record<TLItem['kind'], { Icon: typeof Send; dot: string; ring: string }> = {
@@ -141,6 +156,7 @@ export async function ApprovalTimeline({ wsId }: { wsId: string }) {
     approved:  { Icon: CheckCircle2, dot: 'bg-emerald-500', ring: 'ring-emerald-100' },
     returned:  { Icon: RotateCcw,    dot: 'bg-rose-500',    ring: 'ring-rose-100' },
     released:  { Icon: Wallet,       dot: 'bg-emerald-600', ring: 'ring-emerald-100' },
+    in4:       { Icon: Wallet,       dot: 'bg-teal-600',    ring: 'ring-teal-100' },
   }
 
   return (

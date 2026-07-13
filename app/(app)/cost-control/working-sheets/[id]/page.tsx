@@ -76,6 +76,21 @@ export default async function WorkingSheetEditorPage(
   const prevSibling = myIdx > 0 ? siblings[myIdx - 1] : null
   const nextSibling = myIdx >= 0 && myIdx < siblings.length - 1 ? siblings[myIdx + 1] : null
 
+  // Per-stage checked amounts + IN4 tracking live on the base table (the
+  // versions view has a frozen column list) — one supplementary select.
+  const { data: extraCols } = await supabase
+    .from('cc_working_sheets')
+    .select('ph_checked_amt, atm_checked_amt, in4_entered_at, in4_ref')
+    .eq('id', id)
+    .single()
+  const signOffCfg = {
+    phLabel: ccSettings.label_ph_checked,
+    atmLabel: ccSettings.label_atm_checked,
+    approvedLabel: ccSettings.label_approved,
+    phChecked: extraCols?.ph_checked_amt != null ? { amt: Number(extraCols.ph_checked_amt) } : null,
+    atmChecked: extraCols?.atm_checked_amt != null ? { amt: Number(extraCols.atm_checked_amt) } : null,
+  }
+
   // Back link is scoped to this WS's project + discipline + sub-skill so the
   // user returns to the same chronological timeline they came from, not the
   // unfiltered cross-project WS list.
@@ -142,6 +157,7 @@ export default async function WorkingSheetEditorPage(
         )}
 
         <ThumbruleSummaryPanel
+          signOffCfg={signOffCfg}
           wsId={ws.id}
           status={ws.status as WSStatus}
           ctx={ctx}
@@ -256,6 +272,7 @@ export default async function WorkingSheetEditorPage(
         />}
 
         <ExcelSummaryPanel
+          signOffCfg={signOffCfg}
           wsId={ws.id}
           status={ws.status as WSStatus}
           ctx={ctx}
@@ -476,6 +493,7 @@ export default async function WorkingSheetEditorPage(
         <QueryError message={itemsRes.error.message} what="the items on this sheet" />
       ) : (
       <WSEditor
+          signOffCfg={signOffCfg}
         wsId={ws.id}
         status={status}
         canEdit={canEdit && (isOwner || isAdmin)}

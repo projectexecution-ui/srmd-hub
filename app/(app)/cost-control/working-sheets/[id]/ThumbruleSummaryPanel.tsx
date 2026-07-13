@@ -6,13 +6,13 @@
 
 import { Card, CardContent } from '@/components/ui/card'
 import { Ruler } from 'lucide-react'
-import { WSApprovalActions } from '@/components/cost-control/WSApprovalActions'
+import { WSApprovalActions, type SignOffCfg } from '@/components/cost-control/WSApprovalActions'
 import type { WSApprovalContext } from '@/components/cost-control/ws-actions'
 import type { WSStatus } from '@/components/cost-control/WSStatusPill'
 import { formatINR } from '@/lib/utils'
 
 export function ThumbruleSummaryPanel({
-  wsId, status, ctx, totalAmount, approvedSoFar, summaryNotes, pastApproved, showPastApproved = true,
+  wsId, status, ctx, totalAmount, approvedSoFar, summaryNotes, pastApproved, showPastApproved = true, signOffCfg,
 }: {
   wsId: string
   status: WSStatus
@@ -23,6 +23,7 @@ export function ThumbruleSummaryPanel({
   pastApproved: number
   /** Big historical numbers are management-only. */
   showPastApproved?: boolean
+  signOffCfg?: SignOffCfg
 }) {
   return (
     <Card>
@@ -58,6 +59,7 @@ export function ThumbruleSummaryPanel({
 
         <div className="pt-3 border-t border-gray-100">
           <WSApprovalActions
+            signOffCfg={signOffCfg}
             wsId={wsId}
             status={status}
             ctx={ctx}
