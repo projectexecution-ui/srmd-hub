@@ -9,8 +9,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient as createServiceClient, type SupabaseClient } from '@supabase/supabase-js'
 import { getMyPermissions, can } from '@/lib/auth'
-import { getZohoToken, fetchAllTasks, fetchTaskComments } from '@/lib/bills-pipeline/zoho'
-import { parseBill, aggregateCard, deriveReason } from '@/lib/bills-pipeline/transform'
+import { getZohoToken, fetchAllTasks } from '@/lib/bills-pipeline/zoho'
+import { parseBill, aggregateCard } from '@/lib/bills-pipeline/transform'
 import { renderCard } from '@/lib/bills-pipeline/render'
 import { BP_CONFIG } from '@/lib/bills-pipeline/config'
 
@@ -31,9 +31,10 @@ function makeServiceClient(): SupabaseClient {
 // ── Shared pipeline ──────────────────────────────────────────────────────────
 
 async function runPipeline(supabase: SupabaseClient): Promise<NextResponse> {
-  const now     = new Date()
-  const weekOf  = monday(now)
-  const isoNow  = now.toISOString()
+  const now      = new Date()
+  const weekOf   = monday(now)          // stable weekly filename
+  const isoNow   = now.toISOString()
+  const asOf     = isoNow.slice(0, 10)  // "as on" date shown on the card
 
   // 1. Zoho OAuth token
   let token: string
@@ -71,24 +72,10 @@ async function runPipeline(supabase: SupabaseClient): Promise<NextResponse> {
     error:   r.error ?? null,
   }))
 
-  // 4. Enrich stalled push-list candidates with comment-derived reason
-  const pushCandidates = bills.filter(
-    b =>
-      b.stalled &&
-      b.ageDays >= BP_CONFIG.PUSH_MIN_AGE_DAYS &&
-      b.claimed >= BP_CONFIG.PUSH_MIN_CLAIMED,
-  )
-  await Promise.allSettled(
-    pushCandidates.map(async b => {
-      const comments = await fetchTaskComments(token, b.projectId, b.id)
-      b.pushReason   = deriveReason(comments)
-    }),
-  )
+  // 4. Aggregate
+  const cardData = aggregateCard(bills, asOf, isoNow)
 
-  // 5. Aggregate
-  const cardData = aggregateCard(bills, weekOf, isoNow)
-
-  // 6. Render PNG — abort on failure, do NOT touch storage
+  // 5. Render PNG — abort on failure, do NOT touch storage
   let png: Buffer
   try {
     png = await renderCard(cardData)
@@ -99,21 +86,23 @@ async function runPipeline(supabase: SupabaseClient): Promise<NextResponse> {
     )
   }
 
-  // 7. Upload + prune
+  // 6. Upload + prune
   const filename   = `bills-pipeline-${weekOf}.png`
   const { uploadError, pruned } = await uploadAndPrune(supabase, filename, png)
   if (uploadError) {
     return NextResponse.json({ ok: false, reason: `Upload failed: ${uploadError}` }, { status: 500 })
   }
 
-  // 8. Record metadata
+  // 7. Record metadata
   const meta = JSON.stringify({
     generatedAt: isoNow,
-    weekOf,
+    asOf,
     file:        filename,
-    billCount:   cardData.totalBills,
+    billCount:   cardData.totalCount,
+    totalValue:  cardData.totalValue,
+    ctCount:     cardData.ctCount,
     stalled:     cardData.stalledCount,
-    noWOcount:   cardData.noWOcount,
+    noWoCount:   cardData.noWoCount,
   })
   const metaError = await recordMeta(supabase, meta)
   if (metaError) {
@@ -130,11 +119,11 @@ async function runPipeline(supabase: SupabaseClient): Promise<NextResponse> {
     ok:        true,
     file:      filename,
     bytes:     png.byteLength,
-    bills:     cardData.totalBills,
-    internal:  cardData.internalCount,
+    bills:     cardData.totalCount,
+    pendingCT: cardData.ctCount,
     trust:     cardData.trustCount,
     stalled:   cardData.stalledCount,
-    noWO:      cardData.noWOcount,
+    noWO:      cardData.noWoCount,
     projects,
     pruned,
   })

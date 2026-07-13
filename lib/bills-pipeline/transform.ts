@@ -26,35 +26,43 @@ export interface Bill {
   pushReason?: string
 }
 
-export interface StageBar {
-  stage:  string
-  count:  number
-  total:  number   // sum of claimed
-  maxAge: number
+export interface AgeBucket {
+  label: string
+  count: number
+  value: number   // sum of claimed ₹
 }
 
-export interface PushItem {
+export interface FollowUp {
   id:        string
   project:   string
   projectId: string
-  name:      string
-  vendor:    string
-  claimed:   number
+  contractor: string
+  billNo:    string
+  value:     number
   ageDays:   number
-  reason:    string
+  stalled:   boolean
+  noWO:      boolean
 }
 
 export interface CardData {
-  weekOf:        string
-  generatedAt:   string
-  totalBills:    number
-  internalCount: number
-  trustCount:    number
-  stalledCount:  number
-  noWOcount:     number
-  perStage:      StageBar[]
-  pushList:      PushItem[]
-  projectMap:    Record<string, string>
+  asOf:        string   // ISO date the snapshot represents
+  generatedAt: string
+
+  // Counts + ₹ value, side by side (management reads money first)
+  totalCount:   number
+  totalValue:   number
+  ctCount:      number   // pending with CT (not yet at Trust, not paid)
+  ctValue:      number
+  trustCount:   number   // submitted to Trust Accounts
+  trustValue:   number
+  stalledCount: number   // idle beyond STALL_DAYS, still with CT
+  stalledValue: number
+  noWoCount:    number
+  noWoValue:    number
+
+  ageBuckets:  AgeBucket[]   // ageing of bills pending with CT
+  followUps:   FollowUp[]    // priority list (oldest with CT)
+  projectMap:  Record<string, string>
 }
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
@@ -154,67 +162,60 @@ export function deriveReason(comments: string[]): string {
 
 // ─── aggregateCard ────────────────────────────────────────────────────────────
 
-export function aggregateCard(bills: Bill[], weekOf: string, generatedAt: string): CardData {
-  const internal = bills.filter(b => b.isInternal)
-  const trust    = bills.filter(b => b.isTrust)
-  const stalled  = internal.filter(b => b.stalled)
-  const noWOcount = bills.filter(b => b.noWO).length
+const sumClaimed = (arr: Bill[]) => arr.reduce((s, b) => s + b.claimed, 0)
 
-  // Dynamic per-stage bars over whatever internal stages actually appear.
-  const byStage = new Map<string, Bill[]>()
-  for (const b of internal) {
-    const arr = byStage.get(b.stage) ?? []
-    arr.push(b)
-    byStage.set(b.stage, arr)
-  }
-  let perStage: StageBar[] = [...byStage.entries()].map(([stage, group]) => ({
-    stage,
-    count:  group.length,
-    total:  group.reduce((s, b) => s + b.claimed, 0),
-    maxAge: group.reduce((m, b) => Math.max(m, b.ageDays), 0),
-  })).sort((a, b) => b.count - a.count)
+export function aggregateCard(bills: Bill[], asOf: string, generatedAt: string): CardData {
+  const ct      = bills.filter(b => b.isInternal)   // pending with CT
+  const trust   = bills.filter(b => b.isTrust)      // with Trust Accounts
+  const stalled = ct.filter(b => b.stalled)
+  const noWo    = bills.filter(b => b.noWO)
 
-  // Collapse the long tail into "Other" so the chart stays readable.
-  if (perStage.length > BP_CONFIG.MAX_STAGE_BARS) {
-    const head = perStage.slice(0, BP_CONFIG.MAX_STAGE_BARS - 1)
-    const tail = perStage.slice(BP_CONFIG.MAX_STAGE_BARS - 1)
-    head.push({
-      stage:  `Other (${tail.length})`,
-      count:  tail.reduce((s, x) => s + x.count, 0),
-      total:  tail.reduce((s, x) => s + x.total, 0),
-      maxAge: tail.reduce((m, x) => Math.max(m, x.maxAge), 0),
-    })
-    perStage = head
-  }
+  // Ageing of bills pending with CT — the classic management view.
+  const BUCKETS: Array<{ label: string; lo: number; hi: number }> = [
+    { label: '0-15 days',  lo: 0,  hi: 15 },
+    { label: '16-30 days', lo: 16, hi: 30 },
+    { label: '31-45 days', lo: 31, hi: 45 },
+    { label: '45+ days',   lo: 46, hi: Infinity },
+  ]
+  const ageBuckets: AgeBucket[] = BUCKETS.map(b => {
+    const group = ct.filter(x => x.ageDays >= b.lo && x.ageDays <= b.hi)
+    return { label: b.label, count: group.length, value: sumClaimed(group) }
+  })
 
-  const pushList: PushItem[] = internal
-    .filter(b => b.ageDays >= BP_CONFIG.PUSH_MIN_AGE_DAYS && b.claimed >= BP_CONFIG.PUSH_MIN_CLAIMED)
-    .sort((a, b) => b.ageDays - a.ageDays)
+  // Priority follow-ups: oldest bills still with CT (highest management value).
+  const followUps: FollowUp[] = [...ct]
+    .sort((a, b) => (b.ageDays - a.ageDays) || (b.claimed - a.claimed))
     .slice(0, BP_CONFIG.PUSH_LIST_MAX)
     .map(b => ({
-      id:        b.id,
-      project:   b.project,
-      projectId: b.projectId,
-      name:      b.name,
-      vendor:    b.vendor,
-      claimed:   b.claimed,
-      ageDays:   b.ageDays,
-      reason:    b.pushReason ?? 'No update',
+      id:         b.id,
+      project:    b.project,
+      projectId:  b.projectId,
+      contractor: b.name,
+      billNo:     b.billNo,
+      value:      b.claimed,
+      ageDays:    b.ageDays,
+      stalled:    b.stalled,
+      noWO:       b.noWO,
     }))
 
   const projectMap: Record<string, string> = {}
   for (const [code, id] of Object.entries(BP_CONFIG.PROJECTS)) projectMap[id] = code
 
   return {
-    weekOf,
+    asOf,
     generatedAt,
-    totalBills:    bills.length,
-    internalCount: internal.length,
-    trustCount:    trust.length,
-    stalledCount:  stalled.length,
-    noWOcount,
-    perStage,
-    pushList,
+    totalCount:   bills.length,
+    totalValue:   sumClaimed(bills),
+    ctCount:      ct.length,
+    ctValue:      sumClaimed(ct),
+    trustCount:   trust.length,
+    trustValue:   sumClaimed(trust),
+    stalledCount: stalled.length,
+    stalledValue: sumClaimed(stalled),
+    noWoCount:    noWo.length,
+    noWoValue:    sumClaimed(noWo),
+    ageBuckets,
+    followUps,
     projectMap,
   }
 }

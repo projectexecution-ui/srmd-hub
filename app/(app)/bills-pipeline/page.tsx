@@ -70,7 +70,7 @@ export default async function BillsPipelinePage({ searchParams }: Props) {
           {canEdit && <RefreshButton />}
           {signedUrl && (
             <Button asChild variant="outline" size="sm">
-              <a href={signedUrl} download={`bills-pipeline-${meta?.weekOf ?? 'latest'}.png`}>
+              <a href={signedUrl} download={`bills-pipeline-${meta?.asOf ?? 'latest'}.png`}>
                 <Download className="h-4 w-4 mr-2" />
                 Download
               </a>
@@ -103,9 +103,8 @@ export default async function BillsPipelinePage({ searchParams }: Props) {
         <div className="flex gap-4 text-sm text-muted-foreground">
           <span>Generated: {new Date(meta.generatedAt as string).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', dateStyle: 'medium', timeStyle: 'short' })}</span>
           <span>·</span>
-          <span>{meta.billCount} active bills</span>
-          <span>·</span>
-          <span>{meta.stalled} stalled</span>
+          <span>{meta.billCount} live bills</span>
+          {meta.stalled != null && <><span>·</span><span>{meta.stalled} stalled</span></>}
         </div>
       )}
 
