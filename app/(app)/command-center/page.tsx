@@ -52,16 +52,18 @@ const BADGE_TONE: Record<EccCategory, string> = {
 
 const ACTIONABLE: EccCategory[] = ['do_today', 'this_week', 'monitor', 'draft_pending']
 
-// Account-correct Gmail deep link. We search by sender + subject (rather
-// than the API thread-id, which Gmail's web URLs don't resolve) and route
-// via /u/<email>/ so it opens in the RIGHT Google account, not account 0.
+// Account-correct Gmail deep link. We search by sender + subject (the Gmail
+// API thread-id doesn't resolve in Gmail's web URLs) and target the right
+// Google account with ?authuser=<email> — NOT /u/<email>/, whose path segment
+// only accepts a numeric index and 404s on an email. Gmail resolves authuser
+// to the correct /u/N/ and applies the #search hash there.
 function gmailUrlFor(senderEmail: string | null, subject: string | null, acct: string | undefined): string {
   const parts: string[] = []
   if (senderEmail) parts.push(`from:${senderEmail}`)
   if (subject) parts.push(subject)
   const q = parts.join(' ').trim() || 'in:inbox'
-  const u = acct ? encodeURIComponent(acct) : '0'
-  return `https://mail.google.com/mail/u/${u}/#search/${encodeURIComponent(q)}`
+  const auth = acct ? `?authuser=${encodeURIComponent(acct)}` : ''
+  return `https://mail.google.com/mail/${auth}#search/${encodeURIComponent(q)}`
 }
 
 export default async function CommandCenterPage({
