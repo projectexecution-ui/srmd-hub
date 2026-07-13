@@ -1,5 +1,5 @@
 import { BP_CONFIG } from './config'
-import type { ZohoTask } from './zoho'
+import type { ZohoTask, ZohoMoney } from './zoho'
 
 export interface Bill {
   id:          string
@@ -21,14 +21,16 @@ export interface Bill {
   ageDays:     number
   idleDays:    number
   stalled:     boolean
-  pushReason?: string   // populated after comment fetch
+  isTrust:     boolean
+  isInternal:  boolean
+  pushReason?: string
 }
 
 export interface StageBar {
-  stage:    string
-  count:    number
-  total:    number   // sum of claimed amounts
-  maxAge:   number   // oldest bill age in days
+  stage:  string
+  count:  number
+  total:  number   // sum of claimed
+  maxAge: number
 }
 
 export interface PushItem {
@@ -43,83 +45,100 @@ export interface PushItem {
 }
 
 export interface CardData {
-  weekOf:      string          // ISO date of the Monday the card was generated
-  generatedAt: string          // ISO timestamp
-  totalBills:  number          // all non-done
+  weekOf:        string
+  generatedAt:   string
+  totalBills:    number
   internalCount: number
-  trustCount:  number
-  stalledCount: number
-  noWOcount:   number
-  perStage:    StageBar[]
-  pushList:    PushItem[]
-  projectMap:  Record<string, string>  // id → code (NGH, P2 …)
+  trustCount:    number
+  stalledCount:  number
+  noWOcount:     number
+  perStage:      StageBar[]
+  pushList:      PushItem[]
+  projectMap:    Record<string, string>
 }
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
 export function normalizeStage(raw: string): string {
-  return raw.trim().replace(/Under\s*:\s*/g, 'Under: ')
+  return (raw ?? '').trim().replace(/Under\s*:\s*/g, 'Under: ')
 }
 
-function cf(task: ZohoTask, label: string): string {
-  return (
-    task.custom_fields?.find(f => f.label === label)?.value?.toString() ?? ''
-  )
+// Zoho task names / descriptions carry HTML entities + tags.
+function cleanText(raw: string): string {
+  return (raw ?? '')
+    .replace(/<[^>]*>/g, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/\s+/g, ' ')
+    .trim()
 }
 
-function parseAmount(raw: string): number {
-  const n = parseFloat(raw.replace(/,/g, ''))
-  return isNaN(n) ? 0 : n
+function money(m: ZohoMoney | undefined | null): number {
+  const n = m?.amount
+  return typeof n === 'number' && isFinite(n) ? n : 0
 }
 
-function daysBetween(a: string, b: string): number {
-  const diff = new Date(b).getTime() - new Date(a).getTime()
-  return Math.max(0, Math.floor(diff / 86_400_000))
+function daysSince(iso: string | undefined, now: Date): number {
+  if (!iso) return 0
+  const diff = now.getTime() - new Date(iso).getTime()
+  return Number.isFinite(diff) ? Math.max(0, Math.floor(diff / 86_400_000)) : 0
 }
 
 // ─── parseBill ───────────────────────────────────────────────────────────────
 
 export function parseBill(
-  task: ZohoTask,
-  project: string,
-  projectId: string,
-  now: Date,
+  task: ZohoTask, project: string, projectId: string, now: Date,
 ): Bill | null {
   const stage = normalizeStage(task.status?.name ?? '')
-  if (stage === BP_CONFIG.DONE_STAGE) return null
 
-  const claimed   = parseAmount(cf(task, BP_CONFIG.CUSTOM_FIELDS.CLAIMED_AMOUNT))
-  const certified = parseAmount(cf(task, BP_CONFIG.CUSTOM_FIELDS.CERTIFIED_AMT))
-  const paid      = parseAmount(cf(task, BP_CONFIG.CUSTOM_FIELDS.PAID_AMOUNT))
-  const woNo      = cf(task, BP_CONFIG.CUSTOM_FIELDS.WO_NO)
+  // Drop paid/closed bills — the card is about what's still live.
+  const closed = task.is_completed === true
+    || task.status?.is_closed_type === true
+    || stage === BP_CONFIG.DONE_STAGE
+  if (closed) return null
 
-  const nowMs     = now.getTime()
-  const ageDays   = daysBetween(task.created_time,      now.toISOString())
-  const idleDays  = daysBetween(task.last_updated_time, now.toISOString())
-
+  const woNo = (task.wo_po_no ?? '').trim()
+  const orderType = (task.order_type ?? '').trim()
   const noWO =
-    !woNo || (BP_CONFIG.NO_WO_VALUES as readonly string[]).includes(woNo)
+    !woNo
+    || (BP_CONFIG.NO_WO_VALUES as readonly string[]).includes(woNo)
+    || /without\s*wo/i.test(orderType)
+
+  const vendorRaw = task.vendor_from_module_2?.value ?? ''
+  const vendor = /not created/i.test(vendorRaw) ? '' : vendorRaw
+
+  const ageDays  = daysSince(task.created_time, now)
+  const idleDays = daysSince(task.last_modified_time, now)
+
+  const isTrust    = stage === BP_CONFIG.TRUST_STAGE
+  const isInternal = !isTrust   // not-trust + not-closed (closed already returned)
 
   return {
     id:        task.id,
     project,
     projectId,
-    name:      task.name,
+    name:      cleanText(task.name) || '(untitled bill)',
     stage,
-    vendor:    cf(task, BP_CONFIG.CUSTOM_FIELDS.VENDOR),
-    building:  cf(task, BP_CONFIG.CUSTOM_FIELDS.BUILDING) || task.tasklist?.name || '',
-    billNo:    cf(task, BP_CONFIG.CUSTOM_FIELDS.BILL_NO),
-    raNo:      cf(task, BP_CONFIG.CUSTOM_FIELDS.RA_NO),
-    billType:  cf(task, BP_CONFIG.CUSTOM_FIELDS.BILL_TYPE),
-    claimed,
-    certified,
-    paid,
+    vendor,
+    building:  task.tasklist?.name ?? '',
+    billNo:    task.bill_number ?? '',
+    raNo:      task.task_cf_0002 ?? '',
+    billType:  task.bill_type ?? '',
+    claimed:   money(task.this_bill_amt),
+    certified: money(task.certified_payment_amount),
+    paid:      money(task.paid_till_date),
     woNo,
     noWO,
-    billDate:  cf(task, BP_CONFIG.CUSTOM_FIELDS.BILL_DATE),
+    billDate:  task.bill_date ?? '',
     ageDays,
     idleDays,
     stalled:   idleDays > BP_CONFIG.STALL_DAYS,
+    isTrust,
+    isInternal,
   }
 }
 
@@ -136,25 +155,38 @@ export function deriveReason(comments: string[]): string {
 // ─── aggregateCard ────────────────────────────────────────────────────────────
 
 export function aggregateCard(bills: Bill[], weekOf: string, generatedAt: string): CardData {
-  const internalSet = new Set(BP_CONFIG.INTERNAL_STAGES as unknown as string[])
-
-  const internal = bills.filter(b => internalSet.has(b.stage))
-  const trust    = bills.filter(b => b.stage === BP_CONFIG.TRUST_STAGE)
+  const internal = bills.filter(b => b.isInternal)
+  const trust    = bills.filter(b => b.isTrust)
   const stalled  = internal.filter(b => b.stalled)
   const noWOcount = bills.filter(b => b.noWO).length
 
-  // Per-stage bar data (internal stages only, in defined order)
-  const perStage: StageBar[] = (BP_CONFIG.INTERNAL_STAGES as unknown as string[]).map(stage => {
-    const group = internal.filter(b => b.stage === stage)
-    return {
-      stage,
-      count:  group.length,
-      total:  group.reduce((s, b) => s + b.claimed, 0),
-      maxAge: group.reduce((m, b) => Math.max(m, b.ageDays), 0),
-    }
-  })
+  // Dynamic per-stage bars over whatever internal stages actually appear.
+  const byStage = new Map<string, Bill[]>()
+  for (const b of internal) {
+    const arr = byStage.get(b.stage) ?? []
+    arr.push(b)
+    byStage.set(b.stage, arr)
+  }
+  let perStage: StageBar[] = [...byStage.entries()].map(([stage, group]) => ({
+    stage,
+    count:  group.length,
+    total:  group.reduce((s, b) => s + b.claimed, 0),
+    maxAge: group.reduce((m, b) => Math.max(m, b.ageDays), 0),
+  })).sort((a, b) => b.count - a.count)
 
-  // Push list: internal, aged ≥ threshold, claimed ≥ threshold
+  // Collapse the long tail into "Other" so the chart stays readable.
+  if (perStage.length > BP_CONFIG.MAX_STAGE_BARS) {
+    const head = perStage.slice(0, BP_CONFIG.MAX_STAGE_BARS - 1)
+    const tail = perStage.slice(BP_CONFIG.MAX_STAGE_BARS - 1)
+    head.push({
+      stage:  `Other (${tail.length})`,
+      count:  tail.reduce((s, x) => s + x.count, 0),
+      total:  tail.reduce((s, x) => s + x.total, 0),
+      maxAge: tail.reduce((m, x) => Math.max(m, x.maxAge), 0),
+    })
+    perStage = head
+  }
+
   const pushList: PushItem[] = internal
     .filter(b => b.ageDays >= BP_CONFIG.PUSH_MIN_AGE_DAYS && b.claimed >= BP_CONFIG.PUSH_MIN_CLAIMED)
     .sort((a, b) => b.ageDays - a.ageDays)
@@ -170,11 +202,8 @@ export function aggregateCard(bills: Bill[], weekOf: string, generatedAt: string
       reason:    b.pushReason ?? 'No update',
     }))
 
-  // projectId → project code map for display
   const projectMap: Record<string, string> = {}
-  for (const [code, id] of Object.entries(BP_CONFIG.PROJECTS)) {
-    projectMap[id] = code
-  }
+  for (const [code, id] of Object.entries(BP_CONFIG.PROJECTS)) projectMap[id] = code
 
   return {
     weekOf,

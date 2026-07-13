@@ -62,6 +62,15 @@ async function runPipeline(supabase: SupabaseClient): Promise<NextResponse> {
       .filter((b): b is NonNullable<typeof b> => b !== null)
   })
 
+  // Per-project diagnostics — surfaced in the response so a zero-bill run is
+  // explainable (which project returned what, and any fetch error) instead of
+  // silently showing an empty card.
+  const projects = projectResults.map(r => ({
+    code:    r.project,
+    fetched: r.tasks.length,
+    error:   r.error ?? null,
+  }))
+
   // 4. Enrich stalled push-list candidates with comment-derived reason
   const pushCandidates = bills.filter(
     b =>
@@ -118,11 +127,15 @@ async function runPipeline(supabase: SupabaseClient): Promise<NextResponse> {
   // TODO: email PNG via nodemailer
 
   return NextResponse.json({
-    ok:       true,
-    file:     filename,
-    bytes:    png.byteLength,
-    bills:    cardData.totalBills,
-    stalled:  cardData.stalledCount,
+    ok:        true,
+    file:      filename,
+    bytes:     png.byteLength,
+    bills:     cardData.totalBills,
+    internal:  cardData.internalCount,
+    trust:     cardData.trustCount,
+    stalled:   cardData.stalledCount,
+    noWO:      cardData.noWOcount,
+    projects,
     pruned,
   })
 }

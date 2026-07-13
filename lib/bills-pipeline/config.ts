@@ -9,32 +9,33 @@ export const BP_CONFIG = {
     RH:  '395368000001722146',
   } as const,
 
-  // Days of inactivity before a bill is flagged as stalled
+  // Days of inactivity (since last_modified_time) before a bill is stalled
   STALL_DAYS: 21,
   // Push-list inclusion thresholds
   PUSH_LIST_MAX:      10,
   PUSH_MIN_AGE_DAYS:  24,
   PUSH_MIN_CLAIMED:   100_000,   // ₹1,00,000
 
-  // Stage classification — adjust labels to match your Zoho portal exactly
-  INTERNAL_STAGES: [
-    'Under: Site Head',
-    'Under: CT Billing',
-    'Under: CT Head',
-    'Under: CT Disc Head',
-  ] as const,
+  // Stage classification (confirmed against the live SRA billing blueprint).
+  // "Internal / in our court" is derived dynamically = any live bill that is
+  // neither at Trust nor closed — so we never hardcode the internal stage
+  // names (they can change in the blueprint without breaking the card).
   TRUST_STAGE: 'Submitted to Trust A/c',
   DONE_STAGE:  'Payment Done',
+  // How many distinct internal stages to show as bars (rest lumped as "Other")
+  MAX_STAGE_BARS: 6,
 
-  // WO field values that indicate no work order is attached
-  NO_WO_VALUES: ['Pending', 'Without WO', '0', ''] as const,
+  // wo_po_no values that mean "no work order attached"
+  NO_WO_VALUES: ['Pending', 'Without WO', 'Without WO/PO', '0', ''] as const,
 
   // Storage
   BUCKET:           'bills-pipeline',
   KEEP_FILES:       12,
   APP_SETTINGS_KEY: 'bills_pipeline_last',
 
-  // Zoho API
+  // Zoho Projects API v3 (India DC). Tasks live at:
+  //   /api/v3/portal/{portalId}/projects/{projectId}/tasks
+  // Response shape: { status, data: { page_info: { has_next_page }, tasks[] } }
   ZOHO_TOKEN_URL: 'https://accounts.zoho.in/oauth/v2/token',
   ZOHO_API_BASE:  'https://projectsapi.zoho.in/api/v3',
   PAGE_SIZE:      200,
@@ -45,23 +46,11 @@ export const BP_CONFIG = {
     TITLE:       150,
     ACTION_BAND:  80,
     KPI_TILES:   130,
-    BARS:        200,
+    BARS_HEADER:  56,   // title strip inside the bars card
+    BARS_ROW:     38,   // per-stage bar row height
+    BARS_PAD:     24,   // top+bottom padding of the bars card
     PUSH_HEADER:  40,
     PUSH_ROW:     40,
     FOOTER:       90,
-  },
-
-  // Custom field labels — adjust after inspecting your Zoho portal's API response
-  CUSTOM_FIELDS: {
-    BILL_NO:        'Bill No',
-    VENDOR:         'Vendor',
-    BUILDING:       'Building',
-    RA_NO:          'RA No',
-    BILL_TYPE:      'Bill Type',
-    CLAIMED_AMOUNT: 'Claimed Amount',
-    CERTIFIED_AMT:  'Certified Amount',
-    PAID_AMOUNT:    'Paid Amount',
-    BILL_DATE:      'Bill Date',
-    WO_NO:          'WO No',
   },
 } as const

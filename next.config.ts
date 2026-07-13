@@ -6,6 +6,12 @@ const nextConfig: NextConfig = {
   // into an ESM chunk ("non-ecmascript placeable asset"). Marking it external
   // keeps it as a runtime require() in the server bundle.
   serverExternalPackages: ['@resvg/resvg-js'],
+  // The bills-pipeline card renderer reads a bundled TTF at runtime. Next's
+  // file tracer can't see the fs.readFile path, so force-include the font in
+  // the route's serverless bundle (Vercel has no system fonts to fall back on).
+  outputFileTracingIncludes: {
+    '/api/cron/bills-pipeline': ['./lib/bills-pipeline/fonts/**'],
+  },
   images: {
     remotePatterns: [
       { protocol: 'https', hostname: 'lh3.googleusercontent.com' },

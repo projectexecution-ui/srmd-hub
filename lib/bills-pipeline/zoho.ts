@@ -56,49 +56,88 @@ export async function getZohoToken(supabase: SupabaseClient): Promise<string> {
   return json.access_token as string
 }
 
-// Raw Zoho task shape — only the fields we use
+// A Zoho money field: { amount, formatted_amount, currency_code }
+export interface ZohoMoney {
+  amount?: number
+  formatted_amount?: string
+}
+
+// Raw v3 task shape — only the fields we consume. Custom fields are FLATTENED
+// as top-level keys (not a custom_fields[] array).
 export interface ZohoTask {
-  id:               string
-  name:             string
-  status:           { name: string }
-  created_time:     string   // ISO or epoch-ms string
-  last_updated_time: string
-  tasklist:         { name: string }
-  custom_fields?:   Array<{ label: string; value: string | number | null }>
+  id:                 string
+  name:               string
+  status?:            { name?: string; is_closed_type?: boolean }
+  is_completed?:      boolean
+  created_time?:      string
+  last_modified_time?: string
+  tasklist?:          { name?: string }
+  // flattened custom fields
+  vendor_from_module_2?: { value?: string }
+  wo_po_no?:          string
+  order_type?:        string
+  bill_number?:       string
+  task_cf_0002?:      string   // RA number
+  bill_type?:         string
+  bill_date?:         string
+  this_bill_amt?:            ZohoMoney   // claimed
+  certified_payment_amount?: ZohoMoney
+  paid_till_date?:           ZohoMoney
 }
 
 interface ProjectResult {
   project: string
   tasks:   ZohoTask[]
+  error?:  string
 }
 
-async function fetchProjectTasks(token: string, projectId: string): Promise<ZohoTask[]> {
-  const base   = apiBase()
-  const tasks: ZohoTask[] = []
-  let   page   = 1
-  const PAGE_CAP = 20
+// Zoho's v3 base path has been seen written both as /portal/ and /portals/.
+// Probe once, cache the winner, so we don't 404 on a guess.
+let RESOLVED_SEGMENT: 'portal' | 'portals' | null = null
 
-  while (page <= PAGE_CAP) {
-    const url = `${base}/portal/${BP_CONFIG.PORTAL_ID}/projects/${projectId}/tasks/`
-      + `?page=${page}&page_size=${BP_CONFIG.PAGE_SIZE}&include_subtask=false`
+async function fetchTasksPage(
+  token: string, projectId: string, page: number,
+): Promise<{ tasks: ZohoTask[]; hasNext: boolean }> {
+  const base = apiBase()
+  const segments: Array<'portal' | 'portals'> =
+    RESOLVED_SEGMENT ? [RESOLVED_SEGMENT] : ['portal', 'portals']
 
+  let lastErr = ''
+  for (const seg of segments) {
+    const url = `${base}/${seg}/${BP_CONFIG.PORTAL_ID}/projects/${projectId}/tasks`
+      + `?page=${page}&per_page=${BP_CONFIG.PAGE_SIZE}`
     const res = await fetch(url, {
       headers: { Authorization: `Zoho-oauthtoken ${token}` },
     })
 
+    if (res.status === 404) { lastErr = `404 on /${seg}/`; continue }
     if (!res.ok) {
       const text = await res.text().catch(() => '')
-      throw new Error(`Zoho tasks fetch failed for project ${projectId} (${res.status}): ${text}`)
+      throw new Error(`Zoho tasks fetch failed for ${projectId} (${res.status}): ${text}`)
     }
 
+    RESOLVED_SEGMENT = seg
     const json = await res.json()
-    const batch: ZohoTask[] = json.tasks ?? []
-    tasks.push(...batch)
+    // v3 wraps in data{}, but tolerate a flat shape too
+    const container = json.data ?? json
+    const tasks: ZohoTask[] = container.tasks ?? []
+    const hasNext = !!container.page_info?.has_next_page
+    return { tasks, hasNext }
+  }
+  throw new Error(`Zoho tasks fetch failed for ${projectId}: ${lastErr || 'unknown'}`)
+}
 
-    if (!json.page_info?.has_next_page) break
+async function fetchProjectTasks(token: string, projectId: string): Promise<ZohoTask[]> {
+  const tasks: ZohoTask[] = []
+  let page = 1
+  const PAGE_CAP = 20
+
+  while (page <= PAGE_CAP) {
+    const { tasks: batch, hasNext } = await fetchTasksPage(token, projectId, page)
+    tasks.push(...batch)
+    if (!hasNext) break
     page++
   }
-
   return tasks
 }
 
@@ -114,27 +153,27 @@ export async function fetchAllTasks(token: string): Promise<ProjectResult[]> {
 
   return settled.map((r, i) => {
     if (r.status === 'fulfilled') return r.value
-    console.warn(`[bills-pipeline] Failed to fetch project ${entries[i][0]}:`, r.reason)
-    return { project: entries[i][0], tasks: [] }
+    const msg = r.reason instanceof Error ? r.reason.message : String(r.reason)
+    console.warn(`[bills-pipeline] Failed to fetch project ${entries[i][0]}:`, msg)
+    return { project: entries[i][0], tasks: [], error: msg }
   })
 }
 
 export async function fetchTaskComments(
-  token: string,
-  projectId: string,
-  taskId: string,
+  token: string, projectId: string, taskId: string,
 ): Promise<string[]> {
   try {
-    const url = `${apiBase()}/portal/${BP_CONFIG.PORTAL_ID}/projects/${projectId}/tasks/${taskId}/comments/`
-    const res  = await fetch(url, {
+    const seg = RESOLVED_SEGMENT ?? 'portal'
+    const url = `${apiBase()}/${seg}/${BP_CONFIG.PORTAL_ID}/projects/${projectId}/tasks/${taskId}/comments`
+    const res = await fetch(url, {
       headers: { Authorization: `Zoho-oauthtoken ${token}` },
     })
     if (!res.ok) return []
     const json = await res.json()
-    const comments: Array<{ content: string; added_time: string }> = json.comments ?? []
-    // Newest first
+    const container = json.data ?? json
+    const comments: Array<{ content?: string; added_time?: string }> = container.comments ?? []
     return comments
-      .sort((a, b) => new Date(b.added_time).getTime() - new Date(a.added_time).getTime())
+      .sort((a, b) => new Date(b.added_time ?? 0).getTime() - new Date(a.added_time ?? 0).getTime())
       .map(c => c.content ?? '')
   } catch {
     return []
