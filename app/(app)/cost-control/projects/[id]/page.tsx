@@ -541,7 +541,7 @@ export default async function CostControlProjectDetailPage(
             <thead className="bg-gray-50 text-left">
               <tr>
                 <Th className="min-w-[280px]">Work Category / Sub-skill</Th>
-                <Th align="right" className="w-32">Estimate</Th>
+                <Th align="right" className="w-32">Internal Estimate</Th>
                 {ccSettings.show_erp_columns && (
                   <>
                     <Th align="right">Budget (ERP)</Th>
