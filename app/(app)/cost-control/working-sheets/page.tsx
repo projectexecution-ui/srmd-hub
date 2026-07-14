@@ -106,16 +106,23 @@ export default async function WorkingSheetsPage({
   // Query the versions VIEW (cc_ws_with_versions) instead of the base
   // table so every row carries chain_anchor_id + version_no + chain_size
   // without an N+1 in TypeScript.
+  // "archived" is a pseudo-status: it filters on archived_at, not on the
+  // real status column. Everywhere else archived sheets are hidden.
+  const showArchived = sp.status === 'archived' && isManagement
   let q = supabase
     .from('cc_ws_with_versions')
-    .select('id, ws_code, status, total_amount, approved_for_erp_amt, created_at, deadline_date, engineer_id, project_id, sub_skill_id, line_type, discipline_id, break_chain, chain_anchor_id, version_no, chain_size, source_excel_url, projects(code, name), cc_disciplines(code, name), cc_sub_skills(code, name)')
+    .select('id, ws_code, status, total_amount, approved_for_erp_amt, created_at, deadline_date, engineer_id, project_id, sub_skill_id, line_type, discipline_id, break_chain, chain_anchor_id, version_no, chain_size, source_excel_url, archived_at, archived_by, projects(code, name), cc_disciplines(code, name), cc_sub_skills(code, name)')
     .order('created_at', { ascending: scoped })
     .limit(500)
   if (sp.project) q = q.eq('project_id', sp.project)
   if (sp.engineer) q = q.eq('engineer_id', sp.engineer)
   if (sp.discipline) q = q.eq('discipline_id', sp.discipline)
   if (sp.sub_skill) q = q.eq('sub_skill_id', sp.sub_skill)
-  if (sp.status) q = q.eq('status', sp.status as WSStatus)
+  if (showArchived) q = q.not('archived_at', 'is', null)
+  else {
+    q = q.is('archived_at', null)
+    if (sp.status && sp.status !== 'archived') q = q.eq('status', sp.status as WSStatus)
+  }
   // Engineer estimate visibility — enforced server-side regardless of the
   // URL's filter params. Admin picks the scope in Settings.
   if (!isManagement && me) {
@@ -159,6 +166,8 @@ export default async function WorkingSheetsPage({
     version_no: number
     chain_size: number
     source_excel_url: string | null
+    archived_at: string | null
+    archived_by: string | null
     projects: { code: string; name: string } | { code: string; name: string }[] | null
     cc_disciplines: { code: string; name: string } | { code: string; name: string }[] | null
     cc_sub_skills: { code: string; name: string } | { code: string; name: string }[] | null
@@ -308,6 +317,17 @@ export default async function WorkingSheetsPage({
             {opt.label}
           </Link>
         ))}
+        {isManagement && (
+          <Link
+            href={`/cost-control/working-sheets${buildQuery({ ...filterParams, status: 'archived' })}`}
+            className={
+              'inline-flex items-center px-3 h-8 rounded-full text-xs font-semibold transition-colors ' +
+              (sp.status === 'archived' ? 'bg-gray-700 text-white' : 'bg-white border border-dashed border-gray-400 text-gray-500 hover:bg-gray-50')
+            }
+          >
+            Archived
+          </Link>
+        )}
         <form action="/cost-control/working-sheets" method="get" className="ml-auto flex items-center gap-2 flex-wrap">
           {sp.status && <input type="hidden" name="status" value={sp.status} />}
           {sp.discipline && <input type="hidden" name="discipline" value={sp.discipline} />}
@@ -563,6 +583,14 @@ export default async function WorkingSheetsPage({
                                   {w.ws_code}
                                 </Link>
                                 <VersionBadge versionNo={w.version_no} chainSize={w.chain_size} breakChain={w.break_chain} compact />
+                                {w.archived_at && (
+                                  <span
+                                    className="inline-flex items-center text-[10px] font-bold text-gray-600 bg-gray-100 border border-gray-300 rounded-full px-1.5 py-0.5"
+                                    title={`Archived by ${profileMap.get(w.archived_by ?? '') ?? 'unknown'} on ${formatDate(w.archived_at)}`}
+                                  >
+                                    Archived · {profileMap.get(w.archived_by ?? '') ?? 'unknown'}
+                                  </span>
+                                )}
                                 {w.source_excel_url && (
                                   <a
                                     href={`/api/cost-control/working-sheets/${w.id}/download`}

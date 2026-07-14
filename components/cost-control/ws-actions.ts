@@ -193,6 +193,36 @@ export async function setInternalEstimateDecision(input: {
   return { ok: true }
 }
 
+/** Admin, or a user the admin granted via the cc_archive_users setting, may
+ *  archive / restore working sheets. Delete stays admin-only (in the RPC). */
+export async function checkCanArchiveWs(): Promise<boolean> {
+  const me = await whoAmI()
+  if (!me.user) return false
+  if (me.isAdmin) return true
+  const supabase = await createClient()
+  const { data } = await supabase
+    .from('app_settings')
+    .select('value')
+    .eq('key', 'cc_archive_users')
+    .maybeSingle()
+  return ((data?.value as string | null) ?? '').includes(me.user.id)
+}
+
+/** Archive / restore / permanently delete a working sheet. All permission
+ *  checks re-run inside the SECURITY DEFINER RPC (delete = admin only, and
+ *  only after the sheet is archived). */
+export async function archiveWorkingSheet(
+  wsId: string,
+  action: 'archive' | 'restore' | 'delete',
+): Promise<{ ok: boolean; error?: string }> {
+  const supabase = await createClient()
+  const { error } = await supabase.rpc('cc_archive_ws', { p_ws: wsId, p_action: action })
+  if (error) return { ok: false, error: error.message }
+  revalidatePath('/cost-control/working-sheets')
+  revalidatePath(`/cost-control/working-sheets/${wsId}`)
+  return { ok: true }
+}
+
 /** Asks the DB whether the caller may move this WS through this stage
  *  transition. Wraps public.can_approve() which already implements the
  *  approval_rules table + admin-always-allowed escape. */

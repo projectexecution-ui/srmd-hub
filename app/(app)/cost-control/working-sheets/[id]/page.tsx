@@ -1,7 +1,8 @@
 import { notFound } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { requirePermission, can, getMyUser, getMyProfile } from '@/lib/auth'
-import { getWSApprovalContext, checkIsCcReviewer, checkCanSetDeadline } from '@/components/cost-control/ws-actions'
+import { getWSApprovalContext, checkIsCcReviewer, checkCanSetDeadline, checkCanArchiveWs } from '@/components/cost-control/ws-actions'
+import { ArchiveControls } from './ArchiveControls'
 import { PageHeader } from '@/components/PageHeader'
 import { Card } from '@/components/ui/card'
 import { WSStatusPill, type WSStatus } from '@/components/cost-control/WSStatusPill'
@@ -39,11 +40,12 @@ export default async function WorkingSheetEditorPage(
   // Ask the DB what THIS viewer may do on THIS sheet (3-stage chain:
   // submit / sign-off / release / return), whether they're Cost Control
   // management (AI tools + big numbers), and deadline rights.
-  const [ctx, reviewer, canSetDeadlineRaw, ccSettings] = await Promise.all([
+  const [rawCtx, reviewer, canSetDeadlineRaw, ccSettings, canArchive] = await Promise.all([
     getWSApprovalContext(id),
     checkIsCcReviewer(),
     checkCanSetDeadline(),
     getCcSettings(),
+    checkCanArchiveWs(),
   ])
   const canEditDeadline = canSetDeadlineRaw && ccSettings.show_deadlines
   const showAi = reviewer && ccSettings.ai_tools
@@ -68,22 +70,45 @@ export default async function WorkingSheetEditorPage(
   // Sibling versions in the same chain — drives the prev/next nav.
   const { data: chainSiblings } = await supabase
     .from('cc_ws_with_versions')
-    .select('id, ws_code, status, version_no, created_at')
+    .select('id, ws_code, status, version_no, created_at, archived_at, archived_by')
     .eq('chain_anchor_id', ws.chain_anchor_id)
     .order('version_no', { ascending: true })
-  type Sibling = { id: string; ws_code: string; status: WSStatus; version_no: number; created_at: string }
+  type Sibling = { id: string; ws_code: string; status: WSStatus; version_no: number; created_at: string; archived_at: string | null; archived_by: string | null }
   const siblings = (chainSiblings ?? []) as Sibling[]
   const myIdx = siblings.findIndex(s => s.id === ws.id)
   const prevSibling = myIdx > 0 ? siblings[myIdx - 1] : null
   const nextSibling = myIdx >= 0 && myIdx < siblings.length - 1 ? siblings[myIdx + 1] : null
 
-  // Per-stage checked amounts + IN4 tracking live on the base table (the
-  // versions view has a frozen column list) — one supplementary select.
+  // Per-stage checked amounts + IN4 tracking + archive state live on the
+  // base table (the versions view has a frozen column list on old rows) —
+  // one supplementary select.
   const { data: extraCols } = await supabase
     .from('cc_working_sheets')
-    .select('ph_checked_amt, atm_checked_amt, in4_entered_at, in4_ref')
+    .select('ph_checked_amt, atm_checked_amt, in4_entered_at, in4_ref, archived_at, archived_by')
     .eq('id', id)
     .single()
+
+  // Archived sheets are frozen: no submit/sign-off/release/return actions.
+  const isArchived = !!extraCols?.archived_at
+  const ctx = isArchived
+    ? { ...rawCtx, canSubmit: false, nextSignOff: null, canRelease: false, canReturn: false }
+    : rawCtx
+
+  // Names for "archived by X" — this sheet + any archived version-mates.
+  const archiverIds = Array.from(new Set(
+    [extraCols?.archived_by, ...siblings.map(s => s.archived_by)].filter((x): x is string => !!x),
+  ))
+  const archiverName = new Map<string, string>()
+  if (archiverIds.length) {
+    const { data: archProfiles } = await supabase
+      .from('profiles').select('id, full_name, name').in('id', archiverIds)
+    for (const p of archProfiles ?? []) archiverName.set(p.id as string, (p.full_name ?? p.name ?? 'unknown') as string)
+  }
+  // e.g. "v1 archived by Aksha" — shown on the version bar so the missing
+  // serial numbers are accounted for.
+  const chainArchivedNotes = siblings
+    .filter(s => s.archived_at && s.id !== ws.id)
+    .map(s => `v${s.version_no} (${s.ws_code}) archived by ${archiverName.get(s.archived_by ?? '') ?? 'unknown'}`)
   const signOffCfg = {
     phLabel: ccSettings.label_ph_checked,
     atmLabel: ccSettings.label_atm_checked,
@@ -144,7 +169,17 @@ export default async function WorkingSheetEditorPage(
           breakChain={ws.break_chain}
           prev={prevSibling ? { id: prevSibling.id, ws_code: prevSibling.ws_code, version_no: prevSibling.version_no } : null}
           next={nextSibling ? { id: nextSibling.id, ws_code: nextSibling.ws_code, version_no: nextSibling.version_no } : null}
-          canEdit={canEdit && (user?.id === ws.engineer_id || isAdmin)}
+          canEdit={canEdit && (user?.id === ws.engineer_id || isAdmin) && !isArchived}
+          archivedNotes={chainArchivedNotes}
+        />
+
+        <ArchiveControls
+          wsId={ws.id}
+          wsCode={ws.ws_code}
+          archivedAt={extraCols?.archived_at ?? null}
+          archivedByName={archiverName.get(extraCols?.archived_by ?? '') ?? null}
+          canArchive={canArchive}
+          isAdmin={isAdmin}
         />
 
         {ccSettings.show_deadlines && (ws.deadline_date || canEditDeadline) && (
@@ -229,7 +264,17 @@ export default async function WorkingSheetEditorPage(
           breakChain={ws.break_chain}
           prev={prevSibling ? { id: prevSibling.id, ws_code: prevSibling.ws_code, version_no: prevSibling.version_no } : null}
           next={nextSibling ? { id: nextSibling.id, ws_code: nextSibling.ws_code, version_no: nextSibling.version_no } : null}
-          canEdit={canEdit && (user?.id === ws.engineer_id || isAdmin)}
+          canEdit={canEdit && (user?.id === ws.engineer_id || isAdmin) && !isArchived}
+          archivedNotes={chainArchivedNotes}
+        />
+
+        <ArchiveControls
+          wsId={ws.id}
+          wsCode={ws.ws_code}
+          archivedAt={extraCols?.archived_at ?? null}
+          archivedByName={archiverName.get(extraCols?.archived_by ?? '') ?? null}
+          canArchive={canArchive}
+          isAdmin={isAdmin}
         />
 
         {ccSettings.show_deadlines && (ws.deadline_date || canEditDeadline) && (
@@ -378,6 +423,7 @@ export default async function WorkingSheetEditorPage(
       .eq('discipline_id', ws.discipline_id)
       .eq('sub_skill_id', ws.sub_skill_id)
       .eq('line_type', ws.line_type)
+      .is('archived_at', null)
     estimate = (planRows ?? [])
       .filter(r => r.status !== 'cancelled')
       .reduce((s, r) => s + Number(r.total_amount ?? 0), 0)

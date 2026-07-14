@@ -66,6 +66,7 @@ export default async function BulkThumbruleApprovalPage({
     )
     .eq('entry_mode', 'thumbrule')
     .in('status', ['submitted', 'ph_approved', 'atm_approved', 'partially_approved'])
+    .is('archived_at', null)
     .order('submitted_at', { ascending: true })
 
   if (myDisciplineIds.length > 0) {

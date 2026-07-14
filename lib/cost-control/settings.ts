@@ -41,6 +41,9 @@ export interface CcSettings {
   /** Show engineers the Budget (ERP) / WO-PO / Paid figures. Off = engineers
    *  never see the ERP/spend numbers even if they can open the project page. */
   eng_erp: boolean
+  /** User ids (besides admins) allowed to archive/restore working sheets.
+   *  Admin grants these from the Settings page. */
+  archive_users: string[]
 }
 
 export const CC_SETTINGS_DEFAULTS: CcSettings = {
@@ -57,6 +60,7 @@ export const CC_SETTINGS_DEFAULTS: CcSettings = {
   eng_estimates: 'own',
   eng_projects: false,
   eng_erp: false,
+  archive_users: [],
 }
 
 /** Pure parser — exported so tests cover defaults/overrides without Supabase. */
@@ -89,6 +93,7 @@ export function parseCcSettings(map: Record<string, string | null | undefined>):
     eng_estimates:     parseEngScope('cc_eng_estimates', d.eng_estimates),
     eng_projects:      parseBool('cc_eng_projects', d.eng_projects),
     eng_erp:           parseBool('cc_eng_erp', d.eng_erp),
+    archive_users:     ((map['cc_archive_users'] ?? '').match(/[0-9a-f-]{36}/gi) ?? []),
   }
 }
 

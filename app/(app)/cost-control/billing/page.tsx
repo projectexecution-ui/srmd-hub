@@ -43,6 +43,7 @@ export default async function BillingQueuePage() {
     .from('cc_working_sheets')
     .select('id, ws_code, status, total_amount, approved_for_erp_amt, approved_for_erp_at, projects(code, name), cc_disciplines(code, name), cc_sub_skills(code, name)')
     .in('status', ['approved', 'partially_approved'])
+    .is('archived_at', null)
     .gt('approved_for_erp_amt', 0)
     .is('in4_entered_at', null)
     .order('approved_for_erp_at', { ascending: true })

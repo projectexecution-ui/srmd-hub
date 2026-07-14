@@ -25,6 +25,7 @@ export function VersionChainBar({
   prev,
   next,
   canEdit,
+  archivedNotes = [],
 }: {
   wsId: string
   versionNo: number
@@ -33,6 +34,9 @@ export function VersionChainBar({
   prev: SiblingLite | null
   next: SiblingLite | null
   canEdit: boolean
+  /** "v1 (A-101-Q01) archived by Aksha" — accounts for version numbers
+   *  hidden from the lists because those versions were archived. */
+  archivedNotes?: string[]
 }) {
   const router = useRouter()
   const [pending, startTransition] = useTransition()
@@ -120,6 +124,11 @@ export function VersionChainBar({
             {breakChain ? 'Re-join chain' : 'Start fresh chain'}
           </button>
         </div>
+      )}
+      {archivedNotes.length > 0 && (
+        <p className="w-full text-[10px] text-gray-400 leading-snug">
+          {archivedNotes.join(' · ')}
+        </p>
       )}
     </div>
   )

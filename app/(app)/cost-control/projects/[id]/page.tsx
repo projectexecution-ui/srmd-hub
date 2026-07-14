@@ -117,7 +117,8 @@ export default async function CostControlProjectDetailPage(
     supabase
       .from('cc_working_sheets')
       .select('discipline_id, sub_skill_id, status, total_amount, approved_for_erp_amt, deadline_date, entry_mode, summary_notes, in4_entered_at')
-      .eq('project_id', id),
+      .eq('project_id', id)
+      .is('archived_at', null),
     supabase
       .from('project_assignments')
       .select('user_id, role, assigned_disciplines')

@@ -34,7 +34,10 @@ function Toggle({
   )
 }
 
-export function CcSettingsForm({ initial }: { initial: CcSettings }) {
+export function CcSettingsForm({ initial, users = [] }: {
+  initial: CcSettings
+  users?: Array<{ id: string; name: string; role: string }>
+}) {
   const router = useRouter()
   const [v, setV] = useState({ ...initial })
   const [saving, setSaving] = useState(false)
@@ -60,6 +63,7 @@ export function CcSettingsForm({ initial }: { initial: CcSettings }) {
       { key: 'cc_eng_estimates',    value: v.eng_estimates },
       { key: 'cc_eng_projects',     value: String(v.eng_projects) },
       { key: 'cc_eng_erp',          value: String(v.eng_erp) },
+      { key: 'cc_archive_users',    value: v.archive_users.join(',') },
     ]
     const { error } = await supabase.from('app_settings').upsert(rows, { onConflict: 'key' })
     if (error) { setError(error.message); setSaving(false); return }
@@ -165,6 +169,43 @@ export function CcSettingsForm({ initial }: { initial: CcSettings }) {
           checked={v.eng_erp}
           onChange={x => setV({ ...v, eng_erp: x })}
         />
+      </div>
+
+      <div className="space-y-2">
+        <p className="text-[11px] uppercase tracking-wider font-semibold text-gray-500">Who can archive Working Sheets</p>
+        <p className="text-xs text-gray-500">
+          Admins can always archive/restore. Tick anyone else you want to give that power to.
+          Permanent delete stays admin-only, and only from the Archived list.
+        </p>
+        <div className="rounded-md border border-gray-200 divide-y divide-gray-100 max-h-56 overflow-y-auto">
+          {users.filter(u => u.role !== 'admin').map(u => {
+            const on = v.archive_users.includes(u.id)
+            return (
+              <button
+                key={u.id}
+                type="button"
+                onClick={() => setV({
+                  ...v,
+                  archive_users: on
+                    ? v.archive_users.filter(x => x !== u.id)
+                    : [...v.archive_users, u.id],
+                })}
+                className="flex w-full items-center justify-between gap-3 px-3 py-2 text-left hover:bg-gray-50"
+              >
+                <span className="min-w-0">
+                  <span className="block text-sm text-gray-900">{u.name}</span>
+                  <span className="block text-[11px] text-gray-500">{u.role}</span>
+                </span>
+                <span className={`inline-flex h-4 w-4 flex-shrink-0 items-center justify-center rounded border ${on ? 'bg-blue-600 border-blue-600 text-white' : 'border-gray-300 bg-white'}`}>
+                  {on && <span className="text-[10px] leading-none">✓</span>}
+                </span>
+              </button>
+            )
+          })}
+          {users.filter(u => u.role !== 'admin').length === 0 && (
+            <p className="px-3 py-2 text-xs text-gray-400">No other active users.</p>
+          )}
+        </div>
       </div>
 
       <div className="space-y-3">

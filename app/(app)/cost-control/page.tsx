@@ -60,7 +60,7 @@ export default async function CostControlLandingPage() {
       .select('id, code, name, cc_status, setup_progress_pct, built_up_sft, parent_project_id')
       .not('cc_status', 'is', null)
       .order('code'),
-    supabase.from('cc_working_sheets').select('id, status, total_amount, approved_for_erp_amt, project_id, discipline_id, deadline_date, in4_entered_at'),
+    supabase.from('cc_working_sheets').select('id, status, total_amount, approved_for_erp_amt, project_id, discipline_id, deadline_date, in4_entered_at').is('archived_at', null),
     user
       ? supabase
           .from('cc_working_sheets')
@@ -82,6 +82,7 @@ export default async function CostControlLandingPage() {
       .from('cc_working_sheets')
       .select('id, ws_code, status, total_amount, deadline_date, deadline_notes, project_id, projects(code, name), cc_disciplines(code, name), cc_sub_skills(code, name)')
       .not('deadline_date', 'is', null)
+      .is('archived_at', null)
       .not('status', 'in', '(approved,wo_issued,paid,cancelled)')
       .order('deadline_date', { ascending: true })
       .limit(15),
@@ -305,7 +306,7 @@ export default async function CostControlLandingPage() {
       {wsErr || draftsErr ? (
         <QueryError message={(wsErr ?? draftsErr)?.message} what="the summary numbers" />
       ) : (
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
           <Stat label="Projects" value={ccProjects.length} hint={incompleteCount ? `${incompleteCount} need setup` : 'all set up'} icon={<Calculator className="h-5 w-5" />} />
           <Link href="/cost-control/approvals" className="block">
             <Stat
@@ -413,104 +414,102 @@ export default async function CostControlLandingPage() {
       {budgetErr && <QueryError message={budgetErr.message} what="the project budget totals" />}
 
       {ccProjects.length > 0 ? (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {ccProjects.map(p => {
-            const pct = p.setup_progress_pct ?? 0
-            const isIncomplete = pct < 100
-            const wsHere = wsByProject.get(p.id) ?? 0
-            const bud = budgetByProj.get(p.id) ?? { budget: 0, committed: 0, paid: 0 }
-            const estimate = estimateByProj.get(p.id) ?? 0
-            const approvedHere = approvedByProj.get(p.id) ?? 0
-            const pending = pendingByProj.get(p.id) ?? 0
-            const overdue = overdueByProj.get(p.id) ?? 0
-            const paidPct = bud.budget > 0 ? Math.round((bud.paid / bud.budget) * 100) : 0
-            const hot = paidPct > 95
-            return (
-              <Link key={p.id} href={`/cost-control/projects/${p.id}`}>
-                <Card className="hover:shadow-md transition-shadow h-full">
-                  <div className="p-5">
-                    <div className="flex items-start justify-between mb-2">
-                      <span className="text-xs font-mono font-bold text-indigo-700">{p.code}</span>
-                      <div className="flex items-center gap-1.5">
-                        {/* Action signals — surface what needs attention */}
-                        {pending > 0 && (
-                          <span className="inline-flex items-center gap-0.5 text-[10px] font-bold text-amber-800 bg-amber-100 rounded-full px-2 py-0.5" title={`${pending} working sheet${pending === 1 ? '' : 's'} awaiting approval`}>
-                            {pending} pending
-                          </span>
-                        )}
-                        {ccSettings.show_deadlines && overdue > 0 && (
-                          <span className="inline-flex items-center gap-0.5 text-[10px] font-bold text-rose-800 bg-rose-100 rounded-full px-2 py-0.5" title={`${overdue} open sheet${overdue === 1 ? '' : 's'} past deadline`}>
-                            {overdue} overdue
-                          </span>
-                        )}
-                        {p.cc_status && pending === 0 && (!ccSettings.show_deadlines || overdue === 0) && (
-                          <Badge variant={p.cc_status === 'active' ? 'success' : 'secondary'}>
-                            {p.cc_status.replace('_', ' ')}
-                          </Badge>
-                        )}
-                      </div>
-                    </div>
-                    <h3 className="font-semibold text-gray-900">{p.name}</h3>
-                    <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 mt-1 text-xs text-gray-500">
-                      {p.built_up_sft != null && <span>{p.built_up_sft.toLocaleString('en-IN')} Sft</span>}
-                      <span>· {wsHere} WS</span>
-                    </div>
-
-                    {isIncomplete ? (
-                      <div className="mt-3">
-                        <div className="flex items-center justify-between text-xs text-amber-700 mb-1">
-                          <span>Setup {pct}% complete</span>
-                          <span>{100 - pct}% remaining</span>
-                        </div>
-                        <div className="h-1.5 bg-amber-100 rounded-full overflow-hidden">
-                          <div className="h-full bg-amber-500" style={{ width: `${pct}%` }} />
-                        </div>
-                      </div>
-                    ) : (
-                      // Financial snapshot for set-up projects.
-                      <div className="mt-3 space-y-2">
-                        {bud.budget > 0 ? (
-                          <>
-                            <div className="flex items-baseline justify-between">
-                              <span className="text-[10px] uppercase tracking-wide text-gray-500">Budget (ERP)</span>
-                              <span className="text-sm font-bold text-gray-900 tabular-nums">{formatINR(bud.budget)}</span>
-                            </div>
-                            <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
-                              <div className={`h-full ${hot ? 'bg-rose-500' : paidPct > 80 ? 'bg-amber-500' : 'bg-emerald-500'}`} style={{ width: `${Math.min(paidPct, 100)}%` }} />
-                            </div>
-                            <div className="flex items-center justify-between text-[11px] text-gray-500">
-                              <span>Paid {formatINR(bud.paid)}</span>
-                              <span className={hot ? 'text-rose-600 font-semibold' : ''}>{paidPct}% used</span>
-                            </div>
-                            {approvedHere > 0 && (
-                              <div className="flex items-center justify-between text-[11px] text-gray-500">
-                                <span>Approved so far</span>
-                                <span className="text-emerald-700 font-semibold tabular-nums">{formatINR(approvedHere)}</span>
-                              </div>
-                            )}
-                          </>
-                        ) : (
-                          <>
-                            <div className="flex items-baseline justify-between text-xs">
-                              <span className="text-gray-500">Internal estimate</span>
-                              <span className="font-semibold text-indigo-800 tabular-nums">{estimate > 0 ? formatINR(estimate) : '— no budget yet'}</span>
-                            </div>
-                            {approvedHere > 0 && (
-                              <div className="flex items-baseline justify-between text-xs">
-                                <span className="text-gray-500">Approved so far</span>
-                                <span className="font-semibold text-emerald-700 tabular-nums">{formatINR(approvedHere)}</span>
-                              </div>
-                            )}
-                          </>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                </Card>
-              </Link>
-            )
-          })}
-        </div>
+        // Tabular project overview — more data per glance than the old cards.
+        <Card className="overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full text-[13px]">
+              <thead className="bg-gray-50 text-left">
+                <tr>
+                  <th className="px-3 py-2.5 font-semibold text-[10px] uppercase tracking-wide text-gray-500 min-w-[220px]">Project</th>
+                  <th className="px-3 py-2.5 font-semibold text-[10px] uppercase tracking-wide text-gray-500">Status</th>
+                  <th className="px-3 py-2.5 font-semibold text-[10px] uppercase tracking-wide text-gray-500 text-right">Area (sft)</th>
+                  <th className="px-3 py-2.5 font-semibold text-[10px] uppercase tracking-wide text-gray-500 text-right">WS</th>
+                  <th className="px-3 py-2.5 font-semibold text-[10px] uppercase tracking-wide text-gray-500 text-right">Internal Estimate</th>
+                  <th className="px-3 py-2.5 font-semibold text-[10px] uppercase tracking-wide text-gray-500 text-right">Approved via WS</th>
+                  {ccSettings.show_erp_columns && (
+                    <>
+                      <th className="px-3 py-2.5 font-semibold text-[10px] uppercase tracking-wide text-gray-500 text-right">Budget (ERP)</th>
+                      <th className="px-3 py-2.5 font-semibold text-[10px] uppercase tracking-wide text-gray-500 text-right">Paid</th>
+                      <th className="px-3 py-2.5 font-semibold text-[10px] uppercase tracking-wide text-gray-500 text-right">% Used</th>
+                    </>
+                  )}
+                </tr>
+              </thead>
+              <tbody>
+                {ccProjects.map(p => {
+                  const pct = p.setup_progress_pct ?? 0
+                  const isIncomplete = pct < 100
+                  const wsHere = wsByProject.get(p.id) ?? 0
+                  const bud = budgetByProj.get(p.id) ?? { budget: 0, committed: 0, paid: 0 }
+                  const estimate = estimateByProj.get(p.id) ?? 0
+                  const approvedHere = approvedByProj.get(p.id) ?? 0
+                  const pending = pendingByProj.get(p.id) ?? 0
+                  const overdue = overdueByProj.get(p.id) ?? 0
+                  const paidPct = bud.budget > 0 ? Math.round((bud.paid / bud.budget) * 100) : 0
+                  const hot = paidPct > 95
+                  return (
+                    <tr key={p.id} className="border-t border-gray-100 hover:bg-gray-50/70">
+                      <td className="px-3 py-2.5">
+                        <Link href={`/cost-control/projects/${p.id}`} className="block">
+                          <span className="font-mono text-[11px] font-bold text-indigo-700 mr-2">{p.code}</span>
+                          <span className="font-semibold text-gray-900 hover:underline">{p.name}</span>
+                        </Link>
+                      </td>
+                      <td className="px-3 py-2.5">
+                        <span className="inline-flex items-center gap-1.5 flex-wrap">
+                          {isIncomplete ? (
+                            <span className="inline-flex items-center text-[10px] font-bold text-amber-800 bg-amber-100 rounded-full px-2 py-0.5">
+                              Setup {pct}%
+                            </span>
+                          ) : (
+                            p.cc_status && (
+                              <Badge variant={p.cc_status === 'active' ? 'success' : 'secondary'}>
+                                {p.cc_status.replace('_', ' ')}
+                              </Badge>
+                            )
+                          )}
+                          {pending > 0 && (
+                            <span className="inline-flex items-center text-[10px] font-bold text-amber-800 bg-amber-100 rounded-full px-2 py-0.5" title={`${pending} working sheet${pending === 1 ? '' : 's'} awaiting approval`}>
+                              {pending} pending
+                            </span>
+                          )}
+                          {ccSettings.show_deadlines && overdue > 0 && (
+                            <span className="inline-flex items-center text-[10px] font-bold text-rose-800 bg-rose-100 rounded-full px-2 py-0.5">
+                              {overdue} overdue
+                            </span>
+                          )}
+                        </span>
+                      </td>
+                      <td className="px-3 py-2.5 text-right tabular-nums text-gray-600">
+                        {p.built_up_sft != null ? p.built_up_sft.toLocaleString('en-IN') : '—'}
+                      </td>
+                      <td className="px-3 py-2.5 text-right tabular-nums text-gray-600">{wsHere || '—'}</td>
+                      <td className="px-3 py-2.5 text-right tabular-nums font-semibold text-indigo-800">
+                        {estimate > 0 ? formatINR(estimate) : '—'}
+                      </td>
+                      <td className="px-3 py-2.5 text-right tabular-nums text-emerald-700 font-semibold">
+                        {approvedHere > 0 ? formatINR(approvedHere) : '—'}
+                      </td>
+                      {ccSettings.show_erp_columns && (
+                        <>
+                          <td className="px-3 py-2.5 text-right tabular-nums font-semibold text-gray-900">
+                            {bud.budget > 0 ? formatINR(bud.budget) : '—'}
+                          </td>
+                          <td className="px-3 py-2.5 text-right tabular-nums text-gray-600">
+                            {bud.paid > 0 ? formatINR(bud.paid) : '—'}
+                          </td>
+                          <td className={`px-3 py-2.5 text-right tabular-nums font-semibold ${hot ? 'text-rose-600' : paidPct > 80 ? 'text-amber-700' : paidPct > 0 ? 'text-green-700' : 'text-gray-400'}`}>
+                            {bud.budget > 0 ? `${paidPct}%` : '—'}
+                          </td>
+                        </>
+                      )}
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        </Card>
       ) : (
         <Card>
           <EmptyState
@@ -604,6 +603,7 @@ async function EngineerHome({ userId, canWrite }: { userId: string | null; canWr
         .from('cc_working_sheets')
         .select('id, ws_code, status, total_amount, deadline_date, return_reason, created_at, entry_mode, projects(code, name), cc_disciplines(code, name), cc_sub_skills(code, name)')
         .eq('engineer_id', userId)
+        .is('archived_at', null)
         .neq('status', 'cancelled')
         .order('created_at', { ascending: false })
         .limit(50)

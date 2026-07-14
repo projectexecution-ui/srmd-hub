@@ -64,6 +64,7 @@ export default async function ApprovalsInboxPage() {
        cc_sub_skills(code, name)`,
     )
     .in('status', ['submitted', 'ph_approved', 'atm_approved', 'partially_approved'])
+    .is('archived_at', null)
     .order('submitted_at', { ascending: true })
 
   const queryErr = wsErr ?? discErr
