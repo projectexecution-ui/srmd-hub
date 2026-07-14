@@ -12,8 +12,8 @@ const FIELDS = ['ms_sheet', 'abstract_sheet', 'po_wo', 'drawing'] as const
 
 export async function POST(req: NextRequest) {
   const perms = await getMyPermissions()
-  if (!can(perms, 'bills-pipeline', 'edit')) {
-    return NextResponse.json({ ok: false, reason: 'Forbidden — bills-pipeline edit required' }, { status: 403 })
+  if (!can(perms, 'bills-pipeline', 'edit') && !can(perms, 'stuck-bills', 'edit')) {
+    return NextResponse.json({ ok: false, reason: 'Forbidden — bills edit permission required' }, { status: 403 })
   }
 
   let body: Record<string, unknown>
