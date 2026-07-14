@@ -7,6 +7,7 @@ export const BP_CONFIG = {
     VV:  '395368000001107938',
     EK:  '395368000001720081',
     RH:  '395368000001722146',
+    RU:  '395368000000189264',   // Billing - RU - SRET
   } as const,
 
   // Days of inactivity (since last_modified_time) before a bill is stalled

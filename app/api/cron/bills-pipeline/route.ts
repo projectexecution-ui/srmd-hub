@@ -143,9 +143,11 @@ async function runPipeline(supabase: SupabaseClient): Promise<NextResponse> {
     )
   }
 
-  // 8. Persist the full live-bill list (all not-paid bills) for the
-  //    interactive "Stuck Bills" tab. Sorted by delay (oldest bill first).
+  // 8. Persist the bills that still need CT follow-up for the interactive
+  //    "Stuck Bills" tab. Bills already submitted to Trust are done from our
+  //    end — excluded. Sorted by delay (oldest bill first).
   const stuck = bills
+    .filter(b => b.isInternal)
     .map(b => toStuckBill(b, cardData.projectMap))
     .sort((a, b) => b.delayDays - a.delayDays)
     .slice(0, 500)
