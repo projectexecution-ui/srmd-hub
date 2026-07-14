@@ -158,6 +158,41 @@ export async function checkIsCcReviewer(): Promise<boolean> {
   return (rules ?? []).some(r => r.approver_role === role || r.override_role === role)
 }
 
+/** Only the Trustee (founder) or an Admin may accept/reject the management
+ *  Internal Estimate. Kept narrower than checkIsCcReviewer (which also
+ *  includes Project Head / Atm Head). */
+export async function checkCanDecideInternalEstimate(): Promise<boolean> {
+  const me = await whoAmI()
+  if (!me.user) return false
+  if (me.isAdmin) return true
+  const supabase = await createClient()
+  const { data: eff } = await supabase.rpc('effective_user_role', { p_user_id: me.user.id, p_module_slug: 'cost-control' })
+  const role = (eff as string | null) ?? me.profile?.role ?? null
+  return role === 'founder' // Trustee
+}
+
+/** Trustee/Admin accept, reject, or clear the Internal Estimate baseline for
+ *  a (project, sub-skill). Role is re-checked inside the SECURITY DEFINER RPC. */
+export async function setInternalEstimateDecision(input: {
+  project_id: string
+  discipline_id: string
+  sub_skill_id: string
+  decision: 'accept' | 'reject' | 'clear'
+  amount?: number | null
+}): Promise<{ ok: boolean; error?: string }> {
+  const supabase = await createClient()
+  const { error } = await supabase.rpc('cc_set_internal_estimate', {
+    p_project: input.project_id,
+    p_discipline: input.discipline_id,
+    p_sub_skill: input.sub_skill_id,
+    p_decision: input.decision,
+    p_amount: input.amount ?? null,
+  })
+  if (error) return { ok: false, error: error.message }
+  revalidatePath(`/cost-control/projects/${input.project_id}`)
+  return { ok: true }
+}
+
 /** Asks the DB whether the caller may move this WS through this stage
  *  transition. Wraps public.can_approve() which already implements the
  *  approval_rules table + admin-always-allowed escape. */
@@ -182,7 +217,7 @@ const newWSSchema = z.object({
   project_id: z.string().uuid(),
   discipline_id: z.string().uuid(),
   sub_skill_id: z.string().uuid(),
-  line_type: z.enum(['work', 'material']).default('work'),
+  line_type: z.enum(['work', 'material', 'combined']).default('work'),
   deadline_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
   deadline_notes: z.string().max(500).nullable().optional(),
 })
@@ -195,7 +230,7 @@ export async function createWorkingSheet(input: {
   project_id: string
   discipline_id: string
   sub_skill_id: string
-  line_type?: 'work' | 'material'
+  line_type?: 'work' | 'material' | 'combined'
   deadline_date?: string | null
   deadline_notes?: string | null
 }): Promise<NewWSResult> {

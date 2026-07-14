@@ -260,7 +260,7 @@ export function NewWSQuickForm({ projects, projectDisciplines, projectSubSkills,
   const [projectId, setProjectId]     = useState(defaultProjectId ?? projects[0]?.id ?? '')
   const [disciplineId, setDisciplineId] = useState(defaultDisciplineId ?? '')
   const [subSkillId, setSubSkillId]   = useState(defaultSubSkillId ?? '')
-  const [lineType, setLineType]       = useState<'work' | 'material'>('work')
+  const [lineType, setLineType]       = useState<'work' | 'material' | 'combined'>('work')
   const [summaryTotal, setSummaryTotal] = useState('')
   const [summaryNotes, setSummaryNotes] = useState('')
   const [deadline, setDeadline] = useState('')
@@ -467,10 +467,11 @@ export function NewWSQuickForm({ projects, projectDisciplines, projectSubSkills,
         </div>
         <div>
           <Label>Line type *</Label>
-          <select value={lineType} onChange={e => setLineType(e.target.value as 'work' | 'material')}
+          <select value={lineType} onChange={e => setLineType(e.target.value as 'work' | 'material' | 'combined')}
             className="mt-1 flex h-10 w-full rounded-xl border border-gray-300 bg-white px-3 py-2 text-sm">
-            <option value="work">Work</option>
-            <option value="material">Material</option>
+            <option value="work">Work (labour / service)</option>
+            <option value="material">Material (procurement)</option>
+            <option value="combined">Combined (Material + Labour)</option>
           </select>
         </div>
         <div>

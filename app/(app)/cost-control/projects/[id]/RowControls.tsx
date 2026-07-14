@@ -15,6 +15,7 @@ import {
   setDisciplineEnabled,
   setSubSkillEnabled,
 } from './actions'
+import { setInternalEstimateDecision } from '@/components/cost-control/ws-actions'
 
 // ──────────────────────────────────────────────────────────────────────
 // DeadlineCell — used on both discipline + sub-skill rows. The currently-
@@ -469,6 +470,87 @@ function ModeChip({ mode, override }: { mode: 'detailed' | 'thumbrule'; override
       title={override ? 'Detailed BOQ (sub-skill override)' : 'Detailed BOQ (inherited)'}
     >
       BOQ
+    </span>
+  )
+}
+
+// ──────────────────────────────────────────────────────────────────────
+// InternalEstimateDecision — small ✓ / ✗ next to a sub-skill's Internal
+// Estimate. Trustee / Admin only: Accept snapshots the current estimate as
+// the approved baseline (used to flag engineer asks above it); Reject marks
+// it for management to revise. Everyone else just sees the resulting badge.
+// ──────────────────────────────────────────────────────────────────────
+export function InternalEstimateDecision({
+  projectId, disciplineId, subSkillId, liveAmount, decision, acceptedAmt, canDecide,
+}: {
+  projectId: string
+  disciplineId: string
+  subSkillId: string
+  liveAmount: number
+  decision: 'accepted' | 'rejected' | null
+  acceptedAmt: number | null
+  canDecide: boolean
+}) {
+  const router = useRouter()
+  const [busy, startTransition] = useTransition()
+  const [err, setErr] = useState<string | null>(null)
+
+  function run(d: 'accept' | 'reject' | 'clear') {
+    setErr(null)
+    startTransition(async () => {
+      const res = await setInternalEstimateDecision({
+        project_id: projectId, discipline_id: disciplineId, sub_skill_id: subSkillId,
+        decision: d, amount: d === 'accept' ? liveAmount : null,
+      })
+      if (!res.ok) { setErr(res.error || 'Could not save'); return }
+      router.refresh()
+    })
+  }
+
+  const rupee = (n: number) => `₹${Math.round(n).toLocaleString('en-IN')}`
+
+  if (decision === 'accepted') {
+    return (
+      <span className="inline-flex items-center gap-1" title={acceptedAmt != null ? `Accepted at ${rupee(acceptedAmt)}` : 'Accepted'}>
+        <span className="inline-flex items-center gap-0.5 text-[10px] font-bold text-green-700 bg-green-100 rounded-full px-1.5 py-0.5">
+          <Check className="h-3 w-3" /> Accepted
+        </span>
+        {canDecide && !busy && (
+          <button onClick={() => run('clear')} className="text-[10px] text-gray-400 hover:text-gray-600 underline">undo</button>
+        )}
+      </span>
+    )
+  }
+  if (decision === 'rejected') {
+    return (
+      <span className="inline-flex items-center gap-1">
+        <span className="inline-flex items-center gap-0.5 text-[10px] font-bold text-rose-700 bg-rose-100 rounded-full px-1.5 py-0.5">
+          <X className="h-3 w-3" /> Rejected
+        </span>
+        {canDecide && !busy && (
+          <button onClick={() => run('accept')} className="text-[10px] text-green-700 hover:underline">accept</button>
+        )}
+      </span>
+    )
+  }
+  if (!canDecide) return null
+  return (
+    <span className="inline-flex items-center gap-1">
+      {busy ? (
+        <Loader2 className="h-3.5 w-3.5 animate-spin text-gray-400" />
+      ) : (
+        <>
+          <button onClick={() => run('accept')} title="Accept this Internal Estimate as the approved baseline"
+            className="inline-flex h-5 w-5 items-center justify-center rounded-full border border-green-300 text-green-600 hover:bg-green-50">
+            <Check className="h-3 w-3" />
+          </button>
+          <button onClick={() => run('reject')} title="Reject this Internal Estimate"
+            className="inline-flex h-5 w-5 items-center justify-center rounded-full border border-rose-300 text-rose-600 hover:bg-rose-50">
+            <X className="h-3 w-3" />
+          </button>
+        </>
+      )}
+      {err && <span className="text-[10px] text-rose-600" title={err}>!</span>}
     </span>
   )
 }

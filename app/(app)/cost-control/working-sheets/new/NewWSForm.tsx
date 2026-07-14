@@ -35,7 +35,7 @@ export function NewWSForm({ projects, projectDisciplines, projectSubSkills, defa
   const [projectId, setProjectId] = React.useState(defaultProjectId ?? '')
   const [disciplineId, setDisciplineId] = React.useState(defaultDisciplineId ?? '')
   const [subSkillId, setSubSkillId] = React.useState(defaultSubSkillId ?? '')
-  const [lineType, setLineType] = React.useState<'work' | 'material'>('work')
+  const [lineType, setLineType] = React.useState<'work' | 'material' | 'combined'>('work')
   const [deadline, setDeadline] = React.useState('')
   const [deadlineNotes, setDeadlineNotes] = React.useState('')
   const [busy, setBusy] = React.useState(false)
@@ -163,15 +163,19 @@ export function NewWSForm({ projects, projectDisciplines, projectSubSkills, defa
 
       <div>
         <Label htmlFor="line_type">Type</Label>
-        <div className="mt-1 flex gap-2">
-          {(['work', 'material'] as const).map(opt => (
+        <div className="mt-1 grid grid-cols-3 gap-2">
+          {([
+            ['work', 'Work (labour / service)'],
+            ['material', 'Material (procurement)'],
+            ['combined', 'Combined (Material + Labour)'],
+          ] as const).map(([opt, label]) => (
             <button
               key={opt}
               type="button"
               onClick={() => setLineType(opt)}
-              className={`flex-1 h-10 rounded-md border text-sm font-semibold transition-colors ${lineType === opt ? 'border-blue-500 bg-blue-50 text-blue-700' : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-50'}`}
+              className={`h-10 rounded-md border text-xs font-semibold px-1 transition-colors ${lineType === opt ? 'border-blue-500 bg-blue-50 text-blue-700' : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-50'}`}
             >
-              {opt === 'work' ? 'Work (labour / service)' : 'Material (procurement)'}
+              {label}
             </button>
           ))}
         </div>

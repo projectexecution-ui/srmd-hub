@@ -116,7 +116,7 @@ export default async function CommandCenterPage() {
     <div className="p-4 md:p-6 max-w-[1600px] mx-auto">
       <PageHeader
         title="Command Centre"
-        subtitle={acctEmail ? `GOD Mode · ${acctEmail}` : 'GOD Mode'}
+        subtitle={acctEmail ? `Your inbox, triaged · ${acctEmail}` : 'Your inbox, triaged'}
         back="/"
       >
         {boardItems.length > 0 && <BriefButton data={briefData} />}
@@ -159,7 +159,7 @@ export default async function CommandCenterPage() {
           {/* Follow-up radar — who owes you a reply (collapsible / dismissable) */}
           <FollowupRadar items={boardItems} />
 
-          {/* GOD Mode board */}
+          {/* Triage board */}
           <BoardClient items={boardItems} />
         </>
       )}

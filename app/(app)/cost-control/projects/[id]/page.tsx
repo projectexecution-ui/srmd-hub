@@ -2,7 +2,7 @@ import Link from 'next/link'
 import { notFound, redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { requirePermission, can } from '@/lib/auth'
-import { checkIsCcReviewer } from '@/components/cost-control/ws-actions'
+import { checkIsCcReviewer, checkCanDecideInternalEstimate } from '@/components/cost-control/ws-actions'
 import { PageHeader } from '@/components/PageHeader'
 import { SetupProgressBanner } from '@/components/ProjectSetupWizard/SetupProgressBanner'
 import { Plus, Flame, Info, Settings } from 'lucide-react'
@@ -11,7 +11,7 @@ import { getCcSettings } from '@/lib/cost-control/settings'
 import { QueryError } from '@/components/ui/query-error'
 import { DeadlineBadge } from '@/components/cost-control/DeadlineBadge'
 import { wsStatusLabel } from '@/components/cost-control/WSStatusPill'
-import { DeadlineCell, SubSkillModeCell, DisableButton } from './RowControls'
+import { DeadlineCell, SubSkillModeCell, DisableButton, InternalEstimateDecision } from './RowControls'
 import { AreaChip } from './AreaChip'
 import { BphSyncButton } from './BphSyncButton'
 import { getBphMappingForProject } from '@/app/(app)/cost-control/import/bph/actions'
@@ -27,6 +27,9 @@ interface BudgetLine {
   current_budget_amt: number | null
   current_wo_committed_amt: number | null
   current_paid_amt: number | null
+  internal_estimate_amt: number | null
+  internal_estimate_set_at: string | null
+  internal_estimate_notes: string | null
 }
 interface WSAgg {
   discipline_id: string
@@ -49,6 +52,9 @@ export default async function CostControlProjectDetailPage(
   const supabase = await createClient()
   const ccSettings = await getCcSettings()
   const reviewer = await checkIsCcReviewer()
+  // Only the Trustee (founder) / Admin may accept or reject the Internal
+  // Estimate baseline. Narrower than `reviewer` (which includes PH/Atm Head).
+  const canDecideIE = await checkCanDecideInternalEstimate()
 
   // This page is the project Internal Estimate (category/sub-skill rollup +
   // ERP figures). Management always sees it; engineers reach it only when
@@ -106,7 +112,7 @@ export default async function CostControlProjectDetailPage(
       .eq('is_enabled', true),
     supabase
       .from('cc_budget_lines')
-      .select('discipline_id, sub_skill_id, line_type, current_budget_amt, current_wo_committed_amt, current_paid_amt')
+      .select('discipline_id, sub_skill_id, line_type, current_budget_amt, current_wo_committed_amt, current_paid_amt, internal_estimate_amt, internal_estimate_set_at, internal_estimate_notes')
       .eq('project_id', id),
     supabase
       .from('cc_working_sheets')
@@ -196,6 +202,19 @@ export default async function CostControlProjectDetailPage(
     cur.wo     += Number(b.current_wo_committed_amt ?? 0)
     cur.paid   += Number(b.current_paid_amt ?? 0)
     blMap.set(k, cur)
+  }
+
+  // Trustee/Admin accept-or-reject decisions on the Internal Estimate, keyed
+  // by "discipline::sub_skill". Written by cc_set_internal_estimate onto the
+  // 'work' line: set_at + amt ⇒ accepted; set_at + null amt ⇒ rejected.
+  type IEDecision = { decision: 'accepted' | 'rejected'; amt: number | null }
+  const ieMap = new Map<string, IEDecision>()
+  for (const b of (blRes.data ?? []) as BudgetLine[]) {
+    if (!b.sub_skill_id || !b.internal_estimate_set_at) continue
+    ieMap.set(`${b.discipline_id}::${b.sub_skill_id}`, {
+      decision: b.internal_estimate_amt != null ? 'accepted' : 'rejected',
+      amt: b.internal_estimate_amt != null ? Number(b.internal_estimate_amt) : null,
+    })
   }
 
   // Working-sheet aggregates per sub-skill. `planTotal` = the Internal
@@ -673,6 +692,12 @@ export default async function CostControlProjectDetailPage(
                         : 0
                       const sHot = sPct > 95
                       const wsCount = (a?.approvedCount ?? 0) + (a?.partialCount ?? 0) + (a?.draftCount ?? 0) + (a?.submittedCount ?? 0)
+                      const ie = ieMap.get(`${d.id}::${s.id}`)
+                      const estLive = a?.planTotal ?? 0
+                      const ask = a?.pendingAmount ?? 0
+                      // Engineer asking above the ACCEPTED internal estimate?
+                      const overBy = ie?.decision === 'accepted' && ie.amt != null && ask > ie.amt
+                        ? ask - ie.amt : 0
                       return (
                         <tr key={s.id} className="border-t border-gray-100 hover:bg-gray-50/60">
                           <td className="pl-10 pr-3 py-2 text-gray-700">
@@ -704,10 +729,29 @@ export default async function CostControlProjectDetailPage(
                             })()}
                           </td>
                           <Td align="right" mono className="text-indigo-800">
-                            <Money amt={a?.planTotal ?? 0} />
+                            <Money amt={estLive} />
+                            {(estLive > 0 || ie) && (
+                              <div className="mt-1 flex justify-end">
+                                <InternalEstimateDecision
+                                  projectId={project.id}
+                                  disciplineId={d.id}
+                                  subSkillId={s.id}
+                                  liveAmount={estLive}
+                                  decision={ie?.decision ?? null}
+                                  acceptedAmt={ie?.amt ?? null}
+                                  canDecide={canDecideIE}
+                                />
+                              </div>
+                            )}
                           </Td>
-                          <Td align="right" mono className="text-amber-700">
-                            <Money amt={a?.pendingAmount ?? 0} />
+                          <Td align="right" mono className={overBy > 0 ? 'text-rose-700 font-semibold' : 'text-amber-700'}>
+                            <Money amt={ask} />
+                            {overBy > 0 && (
+                              <span className="block text-[10px] font-bold text-rose-600 leading-tight"
+                                title={`Engineer is asking ${formatINR(overBy)} above the accepted Internal Estimate`}>
+                                ▲ over by {formatINR(overBy)}
+                              </span>
+                            )}
                           </Td>
                           {showErp && (
                             <>
