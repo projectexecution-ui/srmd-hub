@@ -74,7 +74,7 @@ export default async function NewWSThumbrulePage({
       <PageHeader
         title="Thumbrule estimate"
         subtitle="No drawings yet — estimate by rate-per-sft × built-up area"
-        back="/cost-control/working-sheets"
+        back={sp.project ? `/cost-control/projects/${sp.project}` : "/cost-control/working-sheets"}
       />
       <Card className="p-5">
         <NewWSThumbruleForm

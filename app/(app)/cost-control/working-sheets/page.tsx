@@ -266,7 +266,7 @@ export default async function WorkingSheetsPage({
         subtitle={canSeeOthers
           ? `${rows.length} sheet${rows.length === 1 ? '' : 's'} · ${formatINR(total)}`
           : `${rows.length} of your sheet${rows.length === 1 ? '' : 's'} · ${formatINR(total)}`}
-        back="/cost-control"
+        back={sp.project ? `/cost-control/projects/${sp.project}` : '/cost-control'}
       >
         {canWrite && (
           <>

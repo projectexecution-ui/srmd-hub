@@ -57,7 +57,7 @@ export default async function NewWorkingSheetQuickPage({
       <PageHeader
         title="New Working Sheet — Quick mode"
         subtitle="Attach your Excel and fill only the summary. We'll preview rows and flag rate outliers."
-        back="/cost-control/working-sheets"
+        back={sp.project ? `/cost-control/projects/${sp.project}` : "/cost-control/working-sheets"}
       />
       <Card className="p-5">
         <NewWSQuickForm

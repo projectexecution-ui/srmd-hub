@@ -69,7 +69,7 @@ export default async function NewWorkingSheetPage({
       <PageHeader
         title="New Working Sheet"
         subtitle="Pick the project + sub-skill this sheet is for"
-        back="/cost-control/working-sheets"
+        back={sp.project ? `/cost-control/projects/${sp.project}` : "/cost-control/working-sheets"}
       />
 
       {/* Quick Mode call-out — more discoverable than the list page button.
