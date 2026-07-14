@@ -11,6 +11,7 @@ import { createClient as createServiceClient, type SupabaseClient } from '@supab
 import { getMyPermissions, can } from '@/lib/auth'
 import { getZohoToken, fetchAllTasks } from '@/lib/bills-pipeline/zoho'
 import { parseBill, aggregateCard, clearedThisWeek, toStuckBill } from '@/lib/bills-pipeline/transform'
+import { getSelectedProjects } from '@/lib/bills-pipeline/projects'
 import { renderCard, renderScorecard } from '@/lib/bills-pipeline/render'
 import { BP_CONFIG } from '@/lib/bills-pipeline/config'
 
@@ -47,14 +48,13 @@ async function runPipeline(supabase: SupabaseClient): Promise<NextResponse> {
     )
   }
 
-  // 2. Fetch all tasks (partial failures tolerated)
-  const projectResults = await fetchAllTasks(token)
+  // 2. Fetch all tasks for the selected projects (partial failures tolerated)
+  const selectedProjects = await getSelectedProjects(supabase)
+  const projectResults = await fetchAllTasks(token, selectedProjects)
 
   // 3. Parse bills
   const projectIdMap: Record<string, string> = {}
-  for (const [code, id] of Object.entries(BP_CONFIG.PROJECTS)) {
-    projectIdMap[code] = id
-  }
+  for (const p of selectedProjects) projectIdMap[p.code] = p.id
 
   const bills = projectResults.flatMap(({ project, tasks }) => {
     const projectId = projectIdMap[project] ?? ''
@@ -74,7 +74,7 @@ async function runPipeline(supabase: SupabaseClient): Promise<NextResponse> {
 
   // 4. Aggregate + enrich (cleared-this-week from raw tasks, week-over-week
   //    deltas from the previously stored snapshot).
-  const cardData = aggregateCard(bills, asOf, isoNow)
+  const cardData = aggregateCard(bills, asOf, isoNow, selectedProjects)
 
   const allTasks = projectResults.flatMap(r => r.tasks)
   const cleared  = clearedThisWeek(allTasks, now)

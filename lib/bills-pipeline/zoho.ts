@@ -144,22 +144,49 @@ async function fetchProjectTasks(token: string, projectId: string): Promise<Zoho
   return tasks
 }
 
-export async function fetchAllTasks(token: string): Promise<ProjectResult[]> {
-  const entries = Object.entries(BP_CONFIG.PROJECTS) as [string, string][]
-
+export async function fetchAllTasks(
+  token: string,
+  projects: Array<{ code: string; id: string }>,
+): Promise<ProjectResult[]> {
   const settled = await Promise.allSettled(
-    entries.map(async ([project, id]) => {
-      const tasks = await fetchProjectTasks(token, id)
-      return { project, tasks }
+    projects.map(async p => {
+      const tasks = await fetchProjectTasks(token, p.id)
+      return { project: p.code, tasks }
     }),
   )
 
   return settled.map((r, i) => {
     if (r.status === 'fulfilled') return r.value
     const msg = r.reason instanceof Error ? r.reason.message : String(r.reason)
-    console.warn(`[bills-pipeline] Failed to fetch project ${entries[i][0]}:`, msg)
-    return { project: entries[i][0], tasks: [], error: msg }
+    console.warn(`[bills-pipeline] Failed to fetch project ${projects[i].code}:`, msg)
+    return { project: projects[i].code, tasks: [], error: msg }
   })
+}
+
+// All billing projects in the portal (name starts with "Billing") — powers the
+// admin project picker. Returns {id, name}; the caller derives a short code.
+export async function fetchBillingProjects(token: string): Promise<Array<{ id: string; name: string }>> {
+  const base = apiBase()
+  const segments: Array<'portal' | 'portals'> = RESOLVED_SEGMENT ? [RESOLVED_SEGMENT] : ['portal', 'portals']
+  let lastErr = ''
+  for (const seg of segments) {
+    const url = `${base}/${seg}/${BP_CONFIG.PORTAL_ID}/projects?page=1&per_page=200`
+    const res = await fetch(url, { headers: { Authorization: `Zoho-oauthtoken ${token}` } })
+    if (res.status === 404) { lastErr = `404 on /${seg}/`; continue }
+    if (!res.ok) {
+      const text = await res.text().catch(() => '')
+      throw new Error(`Zoho projects fetch failed (${res.status}): ${text}`)
+    }
+    RESOLVED_SEGMENT = seg
+    const json = await res.json()
+    const container = json.data ?? json
+    const list: Array<{ id: string; name: string }> = container.result ?? container.projects ?? []
+    return list
+      .map(p => ({ id: String(p.id), name: String(p.name ?? '') }))
+      .filter(p => /billing/i.test(p.name))
+      .sort((a, b) => a.name.localeCompare(b.name))
+  }
+  throw new Error(`Zoho projects fetch failed: ${lastErr || 'unknown'}`)
 }
 
 export async function fetchTaskComments(

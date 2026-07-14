@@ -263,7 +263,7 @@ export function buildSvg(d: CardData): string {
   // ── FOOTER ────────────────────────────────────────────────────────────────
   P.push(rect(0, y, W, H_FOOTER, C.NAVY))
   P.push(text(PAD, y + 40, 'SRMD Construction Technology Hub', { fill: '#c7d2e0', size: 18, weight: 600 }))
-  P.push(text(PAD, y + 66, `Source: Zoho Projects — ${Object.keys(BP_CONFIG.PROJECTS).join(', ')} · All amounts in ₹`, { fill: C.FAINT, size: 15 }))
+  P.push(text(PAD, y + 66, `Source: Zoho Projects — ${d.projectScorecard.map(s => s.code).join(', ')} · All amounts in ₹`, { fill: C.FAINT, size: 15 }))
   const gen = new Date(d.generatedAt).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', dateStyle: 'medium', timeStyle: 'short' })
   P.push(text(W - PAD, y + 40, 'Auto-generated weekly', { fill: '#c7d2e0', size: 16, anchor: 'end' }))
   P.push(text(W - PAD, y + 66, gen, { fill: C.FAINT, size: 15, anchor: 'end' }))
@@ -349,7 +349,7 @@ export function buildScorecardSvg(d: CardData): string {
   // Footer
   P.push(rect(0, y, W, H_FOOTER, C.NAVY))
   P.push(text(PAD, y + 40, 'SRMD Construction Technology Hub', { fill: '#c7d2e0', size: 18, weight: 600 }))
-  P.push(text(PAD, y + 66, `Source: Zoho Projects — ${Object.keys(BP_CONFIG.PROJECTS).join(', ')} · All amounts in ₹`, { fill: C.FAINT, size: 15 }))
+  P.push(text(PAD, y + 66, `Source: Zoho Projects — ${d.projectScorecard.map(s => s.code).join(', ')} · All amounts in ₹`, { fill: C.FAINT, size: 15 }))
   const gen = new Date(d.generatedAt).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', dateStyle: 'medium', timeStyle: 'short' })
   P.push(text(W - PAD, y + 40, 'Auto-generated weekly', { fill: '#c7d2e0', size: 16, anchor: 'end' }))
   P.push(text(W - PAD, y + 66, gen, { fill: C.FAINT, size: 15, anchor: 'end' }))

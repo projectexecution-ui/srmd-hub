@@ -7,6 +7,7 @@ import RefreshButton from './refresh-button'
 import ZohoToast from './zoho-toast'
 import ReportTabs, { type ReportTab } from './report-tabs'
 import StuckBills, { type StuckBillRow, type ChecklistState } from './stuck-bills'
+import ProjectSettings from './project-settings'
 
 export const dynamic = 'force-dynamic'
 
@@ -93,7 +94,10 @@ export default async function BillsPipelinePage({ searchParams }: Props) {
         title="Bills Pipeline"
         subtitle="Weekly SRA contractor bills — management reports"
       >
-        {canEdit && <RefreshButton />}
+        <div className="flex items-center gap-2">
+          {canAdmin && <ProjectSettings />}
+          {canEdit && <RefreshButton />}
+        </div>
       </PageHeader>
 
       {showConnectBanner && (

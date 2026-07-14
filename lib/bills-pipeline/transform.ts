@@ -1,5 +1,6 @@
 import { BP_CONFIG } from './config'
 import type { ZohoTask, ZohoMoney } from './zoho'
+import type { BpProject } from './projects'
 
 export interface Bill {
   id:          string
@@ -259,7 +260,7 @@ export function deriveReason(comments: string[]): string {
 
 const sumClaimed = (arr: Bill[]) => arr.reduce((s, b) => s + b.claimed, 0)
 
-export function aggregateCard(bills: Bill[], asOf: string, generatedAt: string): CardData {
+export function aggregateCard(bills: Bill[], asOf: string, generatedAt: string, projects: BpProject[]): CardData {
   const ct      = bills.filter(b => b.isInternal)   // pending with CT
   const trust   = bills.filter(b => b.isTrust)      // with Trust Accounts
   const stalled = ct.filter(b => b.stalled)
@@ -279,7 +280,7 @@ export function aggregateCard(bills: Bill[], asOf: string, generatedAt: string):
 
   // Value pending with CT, per site — which project is heaviest.
   const projectMap: Record<string, string> = {}
-  for (const [code, id] of Object.entries(BP_CONFIG.PROJECTS)) projectMap[id] = code
+  for (const p of projects) projectMap[p.id] = p.code
   const sliceMap = new Map<string, ProjectSlice>()
   for (const b of ct) {
     const code = projectMap[b.projectId] ?? b.project
@@ -291,8 +292,7 @@ export function aggregateCard(bills: Bill[], asOf: string, generatedAt: string):
 
   // Full per-site scorecard — all sites in a fixed order (even zero rows) so
   // the recurring report is predictable and every HOD sees their site.
-  const projectScorecard: ScorecardRow[] = Object.keys(BP_CONFIG.PROJECTS).map(code => {
-    const id  = BP_CONFIG.PROJECTS[code as keyof typeof BP_CONFIG.PROJECTS]
+  const projectScorecard: ScorecardRow[] = projects.map(({ code, id }) => {
     const own = bills.filter(b => b.projectId === id)
     const oct = own.filter(b => b.isInternal)
     const otr = own.filter(b => b.isTrust)
