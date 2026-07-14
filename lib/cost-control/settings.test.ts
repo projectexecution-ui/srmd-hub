@@ -26,4 +26,18 @@ describe('parseCcSettings', () => {
     expect(parseCcSettings({ cc_label_ph_checked: 'x'.repeat(100) }).label_ph_checked).toHaveLength(60)
     expect(parseCcSettings({ cc_label_atm_checked: '   ' }).label_atm_checked).toBe('Atm Head Checked Amt')
   })
+
+  it('engineer visibility defaults to the most locked state', () => {
+    const s = parseCcSettings({})
+    expect(s.eng_estimates).toBe('own')
+    expect(s.eng_projects).toBe(false)
+    expect(s.eng_erp).toBe(false)
+  })
+
+  it('engineer estimate scope only accepts own/projects/all, else default', () => {
+    expect(parseCcSettings({ cc_eng_estimates: 'all' }).eng_estimates).toBe('all')
+    expect(parseCcSettings({ cc_eng_estimates: 'projects' }).eng_estimates).toBe('projects')
+    expect(parseCcSettings({ cc_eng_estimates: 'garbage' }).eng_estimates).toBe('own')
+    expect(parseCcSettings({ cc_eng_estimates: '' }).eng_estimates).toBe('own')
+  })
 })

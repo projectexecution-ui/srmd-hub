@@ -28,6 +28,19 @@ export interface CcSettings {
   label_atm_checked: string
   /** Display label for the Trustee's approved amount. */
   label_approved: string
+
+  // ── Engineer visibility (admin decides what non-management sees) ──
+  /** How many Estimate (Working Sheet) rows an engineer sees:
+   *  'own'      — only sheets they created (default, most locked)
+   *  'projects' — every sheet in the projects they're assigned to
+   *  'all'      — every Estimate across all projects */
+  eng_estimates: 'own' | 'projects' | 'all'
+  /** Let engineers open the project Internal Estimate page (the
+   *  category/sub-skill rollup). Off = they're redirected to their sheets. */
+  eng_projects: boolean
+  /** Show engineers the Budget (ERP) / WO-PO / Paid figures. Off = engineers
+   *  never see the ERP/spend numbers even if they can open the project page. */
+  eng_erp: boolean
 }
 
 export const CC_SETTINGS_DEFAULTS: CcSettings = {
@@ -41,6 +54,9 @@ export const CC_SETTINGS_DEFAULTS: CcSettings = {
   label_ph_checked: 'Project Head Checked Amt',
   label_atm_checked: 'Atm Head Checked Amt',
   label_approved: 'Approved Amount',
+  eng_estimates: 'own',
+  eng_projects: false,
+  eng_erp: false,
 }
 
 /** Pure parser — exported so tests cover defaults/overrides without Supabase. */
@@ -54,6 +70,10 @@ export function parseCcSettings(map: Record<string, string | null | undefined>):
     const v = (map[k] ?? '').trim()
     return v.length > 0 ? v.slice(0, 60) : fallback
   }
+  const parseEngScope = (k: string, fallback: CcSettings['eng_estimates']): CcSettings['eng_estimates'] => {
+    const v = (map[k] ?? '').trim()
+    return v === 'own' || v === 'projects' || v === 'all' ? v : fallback
+  }
   const d = CC_SETTINGS_DEFAULTS
   return {
     show_deadlines:    parseBool('cc_show_deadlines', d.show_deadlines),
@@ -66,6 +86,9 @@ export function parseCcSettings(map: Record<string, string | null | undefined>):
     label_ph_checked:  parseLabel('cc_label_ph_checked', d.label_ph_checked),
     label_atm_checked: parseLabel('cc_label_atm_checked', d.label_atm_checked),
     label_approved:    parseLabel('cc_label_approved', d.label_approved),
+    eng_estimates:     parseEngScope('cc_eng_estimates', d.eng_estimates),
+    eng_projects:      parseBool('cc_eng_projects', d.eng_projects),
+    eng_erp:           parseBool('cc_eng_erp', d.eng_erp),
   }
 }
 

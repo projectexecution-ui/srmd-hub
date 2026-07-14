@@ -58,13 +58,16 @@ export default async function WorkingSheetsPage({
   const canWrite = can(perms, 'cost-control', 'edit')
   const sp = await searchParams
   const supabase = await createClient()
-  const showDeadlines = (await getCcSettings()).show_deadlines
+  const cc = await getCcSettings()
+  const showDeadlines = cc.show_deadlines
   const scoped = !!sp.sub_skill
 
-  // Management (approval-chain roles + admin) sees everything; everyone
-  // else (engineers) sees ONLY their own sheets and none of the project
-  // roll-up numbers.
+  // Management (approval-chain roles + admin) sees everything. Engineers see
+  // as much as the admin has opened up via Settings → "What engineers can
+  // see": their own sheets (default), everything in their assigned projects,
+  // or every estimate. `canSeeOthers` = they see beyond their own uploads.
   const [isManagement, me] = await Promise.all([checkIsCcReviewer(), getMyUser()])
+  const canSeeOthers = isManagement || cc.eng_estimates !== 'own'
 
   // Virgin URL (no query params) → redirect to the user's most-recently-
   // touched project so they don't see a confusing cross-project mash-up.
@@ -113,9 +116,24 @@ export default async function WorkingSheetsPage({
   if (sp.discipline) q = q.eq('discipline_id', sp.discipline)
   if (sp.sub_skill) q = q.eq('sub_skill_id', sp.sub_skill)
   if (sp.status) q = q.eq('status', sp.status as WSStatus)
-  // Engineers see ONLY their own sheets — enforced server-side regardless
-  // of the URL's filter params.
-  if (!isManagement && me) q = q.eq('engineer_id', me.id)
+  // Engineer estimate visibility — enforced server-side regardless of the
+  // URL's filter params. Admin picks the scope in Settings.
+  if (!isManagement && me) {
+    if (cc.eng_estimates === 'all') {
+      // sees every estimate — no extra scoping
+    } else if (cc.eng_estimates === 'projects') {
+      const { data: pa } = await supabase
+        .from('project_assignments')
+        .select('project_id')
+        .eq('user_id', me.id)
+      const ids = (pa ?? []).map(r => r.project_id as string)
+      // No project assigned yet → safest fallback is their own sheets only.
+      if (ids.length) q = q.in('project_id', ids)
+      else q = q.eq('engineer_id', me.id)
+    } else {
+      q = q.eq('engineer_id', me.id) // 'own' (default)
+    }
+  }
 
   const [wsRes, projectsRes, profilesRes] = await Promise.all([
     q,
@@ -235,8 +253,8 @@ export default async function WorkingSheetsPage({
   return (
     <div className="p-4 md:p-6 max-w-7xl mx-auto">
       <PageHeader
-        title={isManagement ? 'Working Sheets' : 'My Working Sheets'}
-        subtitle={isManagement
+        title={canSeeOthers ? 'Working Sheets' : 'My Working Sheets'}
+        subtitle={canSeeOthers
           ? `${rows.length} sheet${rows.length === 1 ? '' : 's'} · ${formatINR(total)}`
           : `${rows.length} of your sheet${rows.length === 1 ? '' : 's'} · ${formatINR(total)}`}
         back="/cost-control"
@@ -356,9 +374,10 @@ export default async function WorkingSheetsPage({
         </p>
       )}
 
-      {/* KPI strip — running roll-up across the filtered set. MANAGEMENT
-          ONLY: these are project-level big numbers. */}
-      {isManagement && rows.length > 0 && (
+      {/* KPI strip — running roll-up across the filtered set. Shown to
+          management, and to engineers only when the admin has widened their
+          estimate visibility beyond their own sheets. */}
+      {canSeeOthers && rows.length > 0 && (
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
           <KpiTile label="Estimate (total)"   value={formatINR(kpis.estimateTotal)}  sub={`${rows.length} sheet${rows.length === 1 ? '' : 's'}`} tone="indigo" />
           <KpiTile label="Approved to date"   value={formatINR(kpis.approvedToDate)} sub={kpis.estimateTotal > 0 ? `${Math.round((kpis.approvedToDate / kpis.estimateTotal) * 100)}% of estimate` : '—'} tone="green" />

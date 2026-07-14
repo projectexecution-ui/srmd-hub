@@ -57,6 +57,9 @@ export function CcSettingsForm({ initial }: { initial: CcSettings }) {
       { key: 'cc_label_ph_checked',  value: v.label_ph_checked.trim() },
       { key: 'cc_label_atm_checked', value: v.label_atm_checked.trim() },
       { key: 'cc_label_approved',    value: v.label_approved.trim() },
+      { key: 'cc_eng_estimates',    value: v.eng_estimates },
+      { key: 'cc_eng_projects',     value: String(v.eng_projects) },
+      { key: 'cc_eng_erp',          value: String(v.eng_erp) },
     ]
     const { error } = await supabase.from('app_settings').upsert(rows, { onConflict: 'key' })
     if (error) { setError(error.message); setSaving(false); return }
@@ -110,6 +113,57 @@ export function CcSettingsForm({ initial }: { initial: CcSettings }) {
           hint="Pixel-perfect Excel rendering — but each preview SENDS the file to Microsoft's servers (they may cache it). Off = the in-app viewer keeps everything inside your app."
           checked={v.excel_microsoft}
           onChange={x => setV({ ...v, excel_microsoft: x })}
+        />
+      </div>
+
+      <div className="space-y-2">
+        <p className="text-[11px] uppercase tracking-wider font-semibold text-gray-500">What engineers can see</p>
+        <p className="text-xs text-gray-500">
+          You decide how much of the estimate an engineer sees when they log in. Everything below is OFF/locked
+          by default — engineers only see the sheets they upload until you open it up here.
+        </p>
+        <div className="rounded-md border border-gray-200 px-3 py-2.5">
+          <span className="block text-sm font-semibold text-gray-900">Estimates an engineer can see</span>
+          <span className="block text-xs text-gray-500 mt-0.5 mb-2">
+            No ERP / Budget / Paid numbers are shown either way unless you turn on the toggle below.
+          </span>
+          <div className="flex flex-wrap gap-2">
+            {([
+              ['own', 'Only their own uploads'],
+              ['projects', 'All estimates in their projects'],
+              ['all', 'All estimates (every project)'],
+            ] as const).map(([val, lbl]) => (
+              <button
+                key={val}
+                type="button"
+                onClick={() => setV({ ...v, eng_estimates: val })}
+                className={`rounded-full px-3 py-1 text-xs font-semibold border ${
+                  v.eng_estimates === val
+                    ? 'bg-blue-600 text-white border-blue-600'
+                    : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
+                }`}
+              >
+                {lbl}
+              </button>
+            ))}
+          </div>
+          {v.eng_estimates === 'projects' && (
+            <p className="text-[11px] text-amber-700 mt-2">
+              Needs engineers assigned to projects (in the project setup) — an engineer with no project sees nothing.
+            </p>
+          )}
+        </div>
+        <Toggle
+          label="Let engineers open the Internal Estimate page"
+          hint="The category / sub-skill rollup page. Off = engineers stay on their own working-sheets list."
+          checked={v.eng_projects}
+          onChange={x => setV({ ...v, eng_projects: x })}
+        />
+        <Toggle
+          label="Show engineers the Budget (ERP) / WO / Paid figures"
+          hint="The spend numbers from Budget vs Actual. Off = engineers never see ERP/spend even if they can open the project page."
+          checked={v.eng_erp}
+          onChange={x => setV({ ...v, eng_erp: x })}
         />
       </div>
 

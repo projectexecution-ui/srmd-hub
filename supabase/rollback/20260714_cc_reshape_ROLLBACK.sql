@@ -57,4 +57,5 @@ delete from public.role_permissions where role = 'billing';
 delete from public.app_settings where key in (
   'cc_show_deadlines', 'cc_show_erp_columns', 'cc_show_per_sft', 'cc_ai_tools',
   'cc_comments', 'cc_billing_step', 'cc_excel_microsoft',
+  'cc_eng_estimates', 'cc_eng_projects', 'cc_eng_erp',
   'cc_label_ph_checked', 'cc_label_atm_checked', 'cc_label_approved');

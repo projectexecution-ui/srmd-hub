@@ -44,17 +44,26 @@ export default async function CostControlProjectDetailPage(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const perms = await requirePermission('cost-control', 'view')
-  const canWrite = can(perms, 'cost-control', 'edit')
   const { id } = await params
-
-  // This page is 100% project financials (Internal Estimate, ERP budget,
-  // committed, paid) — MANAGEMENT ONLY. Engineers go to their own sheets.
-  if (!(await checkIsCcReviewer())) {
-    redirect('/cost-control/working-sheets')
-  }
 
   const supabase = await createClient()
   const ccSettings = await getCcSettings()
+  const reviewer = await checkIsCcReviewer()
+
+  // This page is the project Internal Estimate (category/sub-skill rollup +
+  // ERP figures). Management always sees it; engineers reach it only when
+  // the admin has enabled "Let engineers open the Internal Estimate page",
+  // and then it is READ-ONLY with the ERP/spend numbers hidden unless the
+  // admin also enabled "Show engineers the Budget (ERP) figures".
+  if (!reviewer && !ccSettings.eng_projects) {
+    redirect('/cost-control/working-sheets')
+  }
+  // Setup / disable / deadline / BPH-sync controls are management-only even
+  // when an engineer is allowed to view.
+  const canWrite = can(perms, 'cost-control', 'edit') && reviewer
+  // ERP columns + spend KPIs: shown to management, and to engineers only if
+  // the admin opened them up.
+  const showErp = ccSettings.show_erp_columns && (reviewer || ccSettings.eng_erp)
 
   const { data: project, error: projectErr } = await supabase
     .from('projects')
@@ -357,7 +366,7 @@ export default async function CostControlProjectDetailPage(
       : null
   // Visible column count for empty-state rows (name + Estimate + Working
   // Sheets + actions, plus the toggleable ERP and deadline groups).
-  const tableCols = 4 + (ccSettings.show_erp_columns ? 4 : 0) + (ccSettings.show_deadlines ? 2 : 0)
+  const tableCols = 4 + (showErp ? 4 : 0) + (ccSettings.show_deadlines ? 2 : 0)
 
   const Money = ({ amt, dash = '—' }: { amt: number; dash?: string }) => {
     if (!(amt > 0)) return <>{dash}</>
@@ -466,7 +475,7 @@ export default async function CostControlProjectDetailPage(
       {/* Gap between what HOD has approved in CT Hub and what IN4 has
           released. Positive gap = work to do in IN4 + then re-pull BPH. */}
       {(() => {
-        if (!ccSettings.show_erp_columns) return null
+        if (!showErp) return null
         const gap = totalApproved - totalBudget
         if (gap <= 0 || totalApproved === 0) return null
         return (
@@ -482,7 +491,7 @@ export default async function CostControlProjectDetailPage(
 
       {/* KPI strip — portfolio-level numbers for this project. The ERP
           tiles (from Budget vs Actual) hide when the toggle is off. */}
-      <div className={`grid grid-cols-2 sm:grid-cols-3 ${ccSettings.show_erp_columns ? 'lg:grid-cols-5' : ''} gap-3`}>
+      <div className={`grid grid-cols-2 sm:grid-cols-3 ${showErp ? 'lg:grid-cols-5' : ''} gap-3`}>
         <KPI
           label="Internal Estimate"
           value={totalEstimate > 0 ? formatINR(totalEstimate) : '—'}
@@ -490,7 +499,7 @@ export default async function CostControlProjectDetailPage(
           sub={totalEstimate > 0 ? 'Sum of all Working Sheets (live)' : 'Will populate once WSes are raised'}
           tone="indigo"
         />
-        {ccSettings.show_erp_columns && (
+        {showErp && (
           <KPI
             label="Approved Budget (ERP)"
             value={formatINR(totalBudget)}
@@ -515,11 +524,11 @@ export default async function CostControlProjectDetailPage(
             tone="blue"
           />
         )}
-        {ccSettings.show_erp_columns && (
+        {showErp && (
           <KPI label="Committed (WO/PO)" value={formatINR(totalWO)} perSft={perSft(totalWO)}
                sub={totalBudget > 0 ? `${Math.round((totalWO / totalBudget) * 100)}% of budget` : '—'} tone="purple" />
         )}
-        {ccSettings.show_erp_columns && (
+        {showErp && (
           <KPI label="Paid to Date" value={formatINR(totalPaid)} perSft={perSft(totalPaid)}
                sub={totalBudget > 0 ? `${utilPct}% utilized` : '—'} tone="orange" />
         )}
@@ -542,7 +551,7 @@ export default async function CostControlProjectDetailPage(
               <tr>
                 <Th className="min-w-[280px]">Work Category / Sub-skill</Th>
                 <Th align="right" className="w-32">Internal Estimate</Th>
-                {ccSettings.show_erp_columns && (
+                {showErp && (
                   <>
                     <Th align="right">Budget (ERP)</Th>
                     <Th align="right">WO / PO</Th>
@@ -596,7 +605,7 @@ export default async function CostControlProjectDetailPage(
                       <Td align="right" mono className="text-indigo-800">
                         <Money amt={dAgg.estimate} />
                       </Td>
-                      {ccSettings.show_erp_columns && (
+                      {showErp && (
                         <>
                           <Td align="right" mono><Money amt={dAgg.budget} /></Td>
                           <Td align="right" mono className="text-gray-600"><Money amt={dAgg.wo} /></Td>
@@ -682,7 +691,7 @@ export default async function CostControlProjectDetailPage(
                           <Td align="right" mono className="text-indigo-800">
                             <Money amt={a?.planTotal ?? 0} />
                           </Td>
-                          {ccSettings.show_erp_columns && (
+                          {showErp && (
                             <>
                               <Td align="right" mono><Money amt={bl?.budget ?? 0} /></Td>
                               <Td align="right" mono className="text-gray-600"><Money amt={bl?.wo ?? 0} /></Td>
