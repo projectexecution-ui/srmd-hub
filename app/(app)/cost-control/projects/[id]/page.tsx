@@ -270,15 +270,15 @@ export default async function CostControlProjectDetailPage(
   // the budget. Rule: if a discipline has ANY sub-skill budget line, use
   // those and IGNORE its root line; only fall back to the root line when
   // there are no sub-skill lines.
-  const discAgg = new Map<string, { budget: number; wo: number; paid: number; approvedTotal: number; estimate: number }>()
-  for (const d of disciplines) discAgg.set(d.id, { budget: 0, wo: 0, paid: 0, approvedTotal: 0, estimate: 0 })
+  const discAgg = new Map<string, { budget: number; wo: number; paid: number; approvedTotal: number; estimate: number; pending: number }>()
+  for (const d of disciplines) discAgg.set(d.id, { budget: 0, wo: 0, paid: 0, approvedTotal: 0, estimate: 0, pending: 0 })
 
   // Track which disciplines have at least one sub-skill budget line.
   const discHasSubSkillBudget = new Set<string>()
 
   for (const s of subSkills) {
     const bl = blMap.get(`${s.discipline_id}::${s.id}`)
-    const a = wsAgg.get(`${s.discipline_id}::${s.id}`) ?? { approvedTotal: 0, planTotal: 0 }
+    const a = wsAgg.get(`${s.discipline_id}::${s.id}`) ?? { approvedTotal: 0, planTotal: 0, pendingAmount: 0 }
     const cur = discAgg.get(s.discipline_id)
     if (cur) {
       const subBudget = bl?.budget ?? 0
@@ -290,6 +290,7 @@ export default async function CostControlProjectDetailPage(
       cur.paid  += bl?.paid ?? 0
       cur.approvedTotal += a.approvedTotal
       cur.estimate += a.planTotal
+      cur.pending += a.pendingAmount
     }
   }
   // Add the discipline-root line ONLY when no sub-skill budget exists for
@@ -364,9 +365,10 @@ export default async function CostControlProjectDetailPage(
     ccSettings.show_per_sft && sft > 0 && amt > 0
       ? `₹${Math.round(amt / sft).toLocaleString('en-IN')}/sft`
       : null
-  // Visible column count for empty-state rows (name + Estimate + Working
-  // Sheets + actions, plus the toggleable ERP and deadline groups).
-  const tableCols = 4 + (showErp ? 4 : 0) + (ccSettings.show_deadlines ? 2 : 0)
+  // Visible column count for empty-state rows (name + Internal Estimate +
+  // Awaiting Approval + Working Sheets + actions, plus the toggleable ERP
+  // and deadline groups).
+  const tableCols = 5 + (showErp ? 4 : 0) + (ccSettings.show_deadlines ? 2 : 0)
 
   const Money = ({ amt, dash = '—' }: { amt: number; dash?: string }) => {
     if (!(amt > 0)) return <>{dash}</>
@@ -560,6 +562,7 @@ export default async function CostControlProjectDetailPage(
               <tr>
                 <Th className="min-w-[280px]">Work Category / Sub-skill</Th>
                 <Th align="right" className="w-32">Internal Estimate</Th>
+                <Th align="right" className="w-32">Awaiting Approval</Th>
                 {showErp && (
                   <>
                     <Th align="right">Budget (ERP)</Th>
@@ -584,7 +587,7 @@ export default async function CostControlProjectDetailPage(
               )}
 
               {disciplines.map(d => {
-                const dAgg = discAgg.get(d.id) ?? { budget: 0, wo: 0, paid: 0, approvedTotal: 0, estimate: 0 }
+                const dAgg = discAgg.get(d.id) ?? { budget: 0, wo: 0, paid: 0, approvedTotal: 0, estimate: 0, pending: 0 }
                 const dPct = dAgg.budget > 0 ? (dAgg.paid / dAgg.budget) * 100 : 0
                 const subs = subSkills.filter(s => s.discipline_id === d.id)
                 const dHot = dPct > 95
@@ -613,6 +616,9 @@ export default async function CostControlProjectDetailPage(
                       </td>
                       <Td align="right" mono className="text-indigo-800">
                         <Money amt={dAgg.estimate} />
+                      </Td>
+                      <Td align="right" mono className="text-amber-700">
+                        <Money amt={dAgg.pending} />
                       </Td>
                       {showErp && (
                         <>
@@ -699,6 +705,9 @@ export default async function CostControlProjectDetailPage(
                           </td>
                           <Td align="right" mono className="text-indigo-800">
                             <Money amt={a?.planTotal ?? 0} />
+                          </Td>
+                          <Td align="right" mono className="text-amber-700">
+                            <Money amt={a?.pendingAmount ?? 0} />
                           </Td>
                           {showErp && (
                             <>
