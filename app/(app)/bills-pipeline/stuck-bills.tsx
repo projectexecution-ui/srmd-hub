@@ -60,6 +60,9 @@ export default function StuckBills({
 }) {
   const [checks, setChecks] = useState<Record<string, ChecklistState>>(initialChecklist)
   const [query, setQuery] = useState('')
+  const [projectFilter, setProjectFilter] = useState('')
+  const [statusFilter, setStatusFilter] = useState('')
+  const [stalledOnly, setStalledOnly] = useState(false)
   const [onlyPending, setOnlyPending] = useState(false)
 
   const isReady = (id: string) => {
@@ -67,16 +70,26 @@ export default function StuckBills({
     return c.ms_sheet && c.abstract_sheet && c.po_wo && c.drawing
   }
 
+  const projects = useMemo(() => [...new Set(bills.map(b => b.project).filter(Boolean))].sort(), [bills])
+  const statuses = useMemo(() => [...new Set(bills.map(b => b.status).filter(Boolean))].sort(), [bills])
+
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase()
     return bills.filter(b => {
+      if (projectFilter && b.project !== projectFilter) return false
+      if (statusFilter && b.status !== statusFilter) return false
+      if (stalledOnly && !b.stalled) return false
       if (onlyPending && isReady(b.id)) return false
-      if (!q) return true
-      return [b.vendor, b.invoiceNo, b.project, b.prefix, b.status]
-        .some(v => (v ?? '').toLowerCase().includes(q))
+      if (q && ![b.vendor, b.invoiceNo, b.project, b.prefix, b.status].some(v => (v ?? '').toLowerCase().includes(q))) return false
+      return true
     })
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [bills, query, onlyPending, checks])
+  }, [bills, query, projectFilter, statusFilter, stalledOnly, onlyPending, checks])
+
+  const anyFilter = !!(query || projectFilter || statusFilter || stalledOnly || onlyPending)
+  function clearFilters() {
+    setQuery(''); setProjectFilter(''); setStatusFilter(''); setStalledOnly(false); setOnlyPending(false)
+  }
 
   const readyCount = bills.filter(b => isReady(b.id)).length
 
@@ -110,22 +123,47 @@ export default function StuckBills({
   return (
     <div className="space-y-3">
       {/* Controls */}
-      <div className="flex flex-wrap items-center gap-3">
+      <div className="flex flex-wrap items-center gap-2.5">
         <div className="relative">
           <Search className="pointer-events-none absolute left-2.5 top-2.5 h-4 w-4 text-gray-400" />
           <input
             value={query}
             onChange={e => setQuery(e.target.value)}
-            placeholder="Search vendor, invoice no, project…"
-            className="h-9 w-72 rounded-md border border-gray-300 bg-white pl-8 pr-3 text-sm outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100"
+            placeholder="Search vendor, invoice no…"
+            className="h-9 w-60 rounded-md border border-gray-300 bg-white pl-8 pr-3 text-sm outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100"
           />
         </div>
-        <label className="flex items-center gap-2 text-sm text-gray-600">
-          <input type="checkbox" checked={onlyPending} onChange={e => setOnlyPending(e.target.checked)} className="h-4 w-4 accent-indigo-600" />
-          Only pending checklist
+        <select
+          value={projectFilter}
+          onChange={e => setProjectFilter(e.target.value)}
+          className="h-9 rounded-md border border-gray-300 bg-white px-2 text-sm text-gray-700 outline-none focus:border-indigo-400"
+        >
+          <option value="">All projects</option>
+          {projects.map(p => <option key={p} value={p}>{p}</option>)}
+        </select>
+        <select
+          value={statusFilter}
+          onChange={e => setStatusFilter(e.target.value)}
+          className="h-9 max-w-[200px] rounded-md border border-gray-300 bg-white px-2 text-sm text-gray-700 outline-none focus:border-indigo-400"
+        >
+          <option value="">All statuses</option>
+          {statuses.map(s => <option key={s} value={s}>{s}</option>)}
+        </select>
+        <label className="flex items-center gap-1.5 text-sm text-gray-600">
+          <input type="checkbox" checked={stalledOnly} onChange={e => setStalledOnly(e.target.checked)} className="h-4 w-4 accent-red-600" />
+          Stalled only
         </label>
+        <label className="flex items-center gap-1.5 text-sm text-gray-600">
+          <input type="checkbox" checked={onlyPending} onChange={e => setOnlyPending(e.target.checked)} className="h-4 w-4 accent-indigo-600" />
+          Pending checklist
+        </label>
+        {anyFilter && (
+          <button onClick={clearFilters} className="text-sm font-medium text-indigo-600 hover:text-indigo-800">
+            Clear
+          </button>
+        )}
         <div className="ml-auto text-sm text-gray-500">
-          {filtered.length} of {bills.length} bills · <span className="font-medium text-green-700">{readyCount} fully checked</span>
+          {filtered.length} of {bills.length} · <span className="font-medium text-green-700">{readyCount} checked</span>
         </div>
       </div>
 
@@ -153,10 +191,18 @@ export default function StuckBills({
               const ready = isReady(b.id)
               return (
                 <tr key={b.id} className={cn('border-t border-gray-100', i % 2 ? 'bg-gray-50/50' : 'bg-white', ready && 'bg-green-50/70')}>
-                  <td className="px-2 py-2.5 text-gray-400">
+                  <td
+                    className="cursor-help px-2 py-2.5 text-gray-400"
+                    title={b.prefix ? `Task ID: ${b.prefix}` : undefined}
+                  >
                     {ready ? <CheckCircle2 className="h-4 w-4 text-green-600" /> : i + 1}
                   </td>
-                  <td className="px-2 py-2.5 font-medium text-gray-900">{b.vendor || '—'}</td>
+                  <td
+                    className="max-w-[210px] truncate px-2 py-2.5 font-medium text-gray-900"
+                    title={b.vendor || undefined}
+                  >
+                    {b.vendor || '—'}
+                  </td>
                   <td className="px-2 py-2.5">
                     <span className="rounded bg-slate-800 px-1.5 py-0.5 text-xs font-semibold text-white">{b.project}</span>
                   </td>
