@@ -7,6 +7,7 @@ import { NextResponse } from 'next/server'
 import * as XLSX from 'xlsx'
 import { createClient } from '@/lib/supabase/server'
 import { requirePermission } from '@/lib/auth'
+import { checkCanDecideInternalEstimate } from '@/components/cost-control/ws-actions'
 import { workbookToSheetInputs } from '@/lib/cost-control/excel-parse-adapter'
 import { parseInternalBudget } from '@/lib/cost-control/internal-budget-parse'
 import { mapBudgetToWS } from '@/lib/cost-control/ib-reimport'
@@ -19,6 +20,12 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> },
 ) {
   await requirePermission('cost-control', 'edit')
+  // CRITICAL: only the Trustee / Admin may run the destructive re-import.
+  // (Engineers hold cost-control edit, so requirePermission alone is not
+  // enough — check the decider role BEFORE any archive/insert happens.)
+  if (!(await checkCanDecideInternalEstimate())) {
+    return NextResponse.json({ ok: false, reason: 'Only the Trustee or an Admin can approve the revision.' }, { status: 403 })
+  }
   const { id: projectId } = await params
   const body = await req.json().catch(() => ({}))
   const revisionId = body?.revision_id as string | undefined
@@ -88,16 +95,22 @@ export async function POST(
 
   // Archive the project's CURRENT estimate sheets (any prior [IB…] import),
   // rather than delete — fully reversible.
-  await supabase
+  const archivedAt = new Date().toISOString()
+  const { data: archivedRows } = await supabase
     .from('cc_working_sheets')
-    .update({ archived_at: new Date().toISOString() })
+    .update({ archived_at: archivedAt })
     .eq('project_id', projectId)
     .is('archived_at', null)
     .like('summary_notes', '[IB%')
+    .select('id')
 
-  // Insert the revised estimate sheets.
+  // Insert the revised estimate sheets. ws_code carries the revision id so it
+  // is unique across projects and re-imports (the old projectId-prefix +
+  // date scheme could collide and silently drop rows).
+  const revShort = revisionId.replace(/-/g, '').slice(0, 8)
   let inserted = 0
-  for (const row of plan.rows) {
+  const insertErrors: string[] = []
+  for (const [idx, row] of plan.rows.entries()) {
     const subId = subIdByCode.get(row.subCode)
     const discId = discIdByCode.get(row.discCode)
     if (!subId || !discId) continue
@@ -109,15 +122,15 @@ export async function POST(
       `Total ${inr(row.amount)}${perSft}`,
     ].filter(Boolean).join('\n')
 
-    const { data: wsIns } = await supabase.from('cc_working_sheets').insert({
-      ws_code: `${projectId.slice(0, 4)}-${row.subCode}-R${stamp.replace(/-/g, '').slice(2)}`,
+    const { data: wsIns, error: insErr } = await supabase.from('cc_working_sheets').insert({
+      ws_code: `${row.subCode}-Rev-${revShort}-${idx}`,
       project_id: projectId, discipline_id: discId, sub_skill_id: subId,
       line_type: 'work', status: 'draft', engineer_id: null,
       total_amount: row.amount, entry_mode: row.mode, summary_total: row.amount,
       summary_notes: notes, source_excel_name: rev.revised_excel_name,
       source_excel_url: rev.revised_excel_url,
     }).select('id').single()
-    if (!wsIns) continue
+    if (insErr || !wsIns) { insertErrors.push(`${row.subCode}: ${insErr?.message ?? 'insert failed'}`); continue }
     inserted++
     if (row.lines.length) {
       const rows = row.lines.slice(0, 300).map((l, i) => ({
@@ -133,9 +146,17 @@ export async function POST(
       .upsert({ project_id: projectId, sub_skill_id: subId, is_enabled: true }, { onConflict: 'project_id,sub_skill_id' })
   }
 
+  // Nothing inserted → the revised sheet mapped to no known sub-skills.
+  // Un-archive the old estimate so it isn't lost, and abort.
+  if (inserted === 0) {
+    const ids = (archivedRows ?? []).map(r => r.id as string)
+    if (ids.length) await supabase.from('cc_working_sheets').update({ archived_at: null }).in('id', ids)
+    return NextResponse.json({ ok: false, reason: 'The revised sheet produced no mappable sheets — the previous estimate was kept unchanged.' }, { status: 422 })
+  }
+
   const summary = {
     file: rev.revised_excel_name, total: plan.total, sheets: inserted,
-    unplaced: plan.unplaced.length, at: new Date().toISOString(),
+    unplaced: plan.unplaced.length, insert_errors: insertErrors.length, at: new Date().toISOString(),
   }
   const { error: finErr } = await supabase.rpc('cc_ie_finalize', { p_revision: revisionId, p_summary: summary })
   if (finErr) return NextResponse.json({ ok: false, reason: finErr.message }, { status: 403 })

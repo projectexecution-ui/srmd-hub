@@ -736,10 +736,15 @@ export default async function CostControlProjectDetailPage(
                       const ie = ieMap.get(`${d.id}::${s.id}`)
                       const estLive = a?.planTotal ?? 0
                       const ask = a?.pendingAmount ?? 0
-                      // Baseline = the accepted amount when review is used,
-                      // else the uploaded Internal Estimate itself. Flag when
-                      // the engineer's ask exceeds that baseline.
-                      const baseline = ie?.decision === 'accepted' && ie.amt != null ? ie.amt : estLive
+                      // Baseline for the ask-vs-estimate check. estLive is the
+                      // sum of EVERY sheet in this sub-skill, which already
+                      // includes the engineer's pending ask — so subtract the
+                      // ask to get the estimate to compare it against (the
+                      // [IB] baseline + anything already released). When the
+                      // Trustee has accepted an amount, that wins.
+                      const baseline = ie?.decision === 'accepted' && ie.amt != null
+                        ? ie.amt
+                        : Math.max(estLive - ask, 0)
                       const overBy = baseline > 0 && ask > baseline ? ask - baseline : 0
                       return (
                         <tr key={s.id} className="border-t border-gray-100 hover:bg-gray-50/60">
@@ -791,7 +796,7 @@ export default async function CostControlProjectDetailPage(
                             <Money amt={ask} />
                             {overBy > 0 && (
                               <span className="block text-[10px] font-bold text-rose-600 leading-tight"
-                                title={`Engineer is asking ${formatINR(overBy)} above the accepted Internal Estimate`}>
+                                title={`Engineer is asking ${formatINR(overBy)} above the Internal Estimate`}>
                                 ▲ over by {formatINR(overBy)}
                               </span>
                             )}
