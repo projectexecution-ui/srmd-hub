@@ -27,7 +27,13 @@ export interface Bill {
   stalled:     boolean
   isTrust:     boolean
   isInternal:  boolean
-  pushReason?: string
+  owner:       string   // current holder (first Zoho owner)
+  hasComments: boolean
+  // Populated during comment enrichment (cron):
+  latestComment?: string
+  commentAuthor?: string
+  commentAt?:     string
+  reason?:        string
 }
 
 // Flat record persisted per run to power the interactive "Stuck Bills" table.
@@ -45,6 +51,11 @@ export interface StuckBill {
   delayDays:  number   // since bill date
   stalled:    boolean
   atTrust:    boolean
+  owner:      string
+  reason:     string        // derived delay-reason chip
+  latestComment: string     // latest Zoho comment text ('' if none)
+  commentAuthor: string
+  commentAt:  string         // ISO
 }
 
 export function toStuckBill(b: Bill, projectMap: Record<string, string>): StuckBill {
@@ -62,6 +73,11 @@ export function toStuckBill(b: Bill, projectMap: Record<string, string>): StuckB
     delayDays:   b.delayDays,
     stalled:     b.stalled,
     atTrust:     b.isTrust,
+    owner:       b.owner,
+    reason:        b.reason ?? deriveReason('', { noWO: b.noWO, hasComments: b.hasComments }),
+    latestComment: b.latestComment ?? '',
+    commentAuthor: b.commentAuthor ?? '',
+    commentAt:     b.commentAt ?? '',
   }
 }
 
@@ -243,17 +259,29 @@ export function parseBill(
     stalled:   idleDays > BP_CONFIG.STALL_DAYS,
     isTrust,
     isInternal,
+    owner:       (task.owners_and_work?.owners?.[0]?.name ?? task.owners_and_work?.owners?.[0]?.first_name ?? '').trim(),
+    hasComments: task.association_info?.has_comments === true,
   }
 }
 
 // ─── deriveReason ────────────────────────────────────────────────────────────
 
-export function deriveReason(comments: string[]): string {
-  if (!comments.length) return 'No update'
-  const latest = comments[0].toLowerCase()
-  if (/revision|correct|wrong/.test(latest)) return 'Vendor to revise'
-  if (/budget|sanction|wo|hold|approval/.test(latest)) return 'Budget / WO hold'
-  return 'No reason logged'
+// Classify WHY a bill is delayed, from the latest comment text + bill signals.
+// Returns a short chip label management can scan.
+export function deriveReason(latestComment: string, opts: { noWO: boolean; hasComments: boolean }): string {
+  const t = (latestComment ?? '').toLowerCase()
+  if (t) {
+    if (/revis|correct|wrong|resubmit|redo/.test(t))          return 'Vendor to revise'
+    if (/measur|quantit|\bqty\b|mb\b|abstract/.test(t))        return 'Measurement pending'
+    if (/rate|excess|deduct|dispute|less|extra item/.test(t))  return 'Rate dispute'
+    if (/certif|check|verif|scrutin/.test(t))                  return 'Under certification'
+    if (/wo\b|w\.o|work order|po\b|p\.o/.test(t))              return 'WO / PO hold'
+    if (/budget|sanction|approval|fund|hold/.test(t))          return 'Approval / budget hold'
+    if (/trust|account|payment|release/.test(t))               return 'Awaiting Trust A/c'
+    return 'See latest update'
+  }
+  if (opts.noWO) return 'No WO / PO'
+  return opts.hasComments ? 'See latest update' : 'No update logged'
 }
 
 // ─── aggregateCard ────────────────────────────────────────────────────────────

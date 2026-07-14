@@ -19,6 +19,30 @@ export interface StuckBillRow {
   delayDays:   number
   stalled:     boolean
   atTrust:     boolean
+  owner?:         string
+  reason?:        string
+  latestComment?: string
+  commentAuthor?: string
+  commentAt?:     string
+}
+
+// Colour the delay-reason chip by type.
+function reasonChip(reason: string): string {
+  const r = (reason || '').toLowerCase()
+  if (/no update|no wo|no reason/.test(r)) return 'bg-gray-100 text-gray-500'
+  if (/revise|dispute/.test(r))            return 'bg-rose-100 text-rose-700'
+  if (/wo|po|budget|approval|hold/.test(r))return 'bg-amber-100 text-amber-800'
+  if (/measure|certif/.test(r))            return 'bg-blue-100 text-blue-700'
+  if (/trust|account|payment/.test(r))     return 'bg-green-100 text-green-700'
+  return 'bg-slate-100 text-slate-700'
+}
+
+function daysAgo(iso: string): string {
+  if (!iso) return ''
+  const t = new Date(iso).getTime()
+  if (!Number.isFinite(t)) return ''
+  const d = Math.max(0, Math.floor((Date.now() - t) / 86_400_000))
+  return d === 0 ? 'today' : `${d}d ago`
 }
 
 // Tidy a Zoho task-list name for display: title-case long words, keep short
@@ -94,7 +118,7 @@ export default function StuckBills({
       if (statusFilter && b.status !== statusFilter) return false
       if (stalledOnly && !b.stalled) return false
       if (onlyPending && isReady(b.id)) return false
-      if (q && ![b.vendor, b.invoiceNo, b.project, b.tasklist, b.prefix, b.status].some(v => (v ?? '').toLowerCase().includes(q))) return false
+      if (q && ![b.vendor, b.invoiceNo, b.project, b.tasklist, b.prefix, b.status, b.reason, b.latestComment, b.owner].some(v => (v ?? '').toLowerCase().includes(q))) return false
       return true
     })
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -213,6 +237,7 @@ export default function StuckBills({
               <th className="px-2 py-2.5">Invoice No</th>
               <th className="px-2 py-2.5 text-right">Amount</th>
               <th className="px-2 py-2.5">Status</th>
+              <th className="px-2 py-2.5">Latest update</th>
               <th className="px-2 py-2.5 text-right">Delay</th>
               {CHECK_FIELDS.map(f => (
                 <th key={f.key} className="px-1.5 py-2.5 text-center" title={f.label}>{f.short}</th>
@@ -250,6 +275,22 @@ export default function StuckBills({
                   <td className="px-2 py-2.5 whitespace-nowrap text-gray-600">{b.invoiceNo || '—'}</td>
                   <td className="px-2 py-2.5 whitespace-nowrap text-right font-semibold tabular-nums text-gray-900">₹{inr(b.amount)}</td>
                   <td className="px-2 py-2.5 whitespace-nowrap text-gray-700">{b.status}</td>
+                  <td className="px-2 py-2.5">
+                    <div className="flex max-w-[260px] flex-col gap-0.5">
+                      {b.reason && (
+                        <span className={cn('w-fit rounded px-1.5 py-0.5 text-xs font-semibold', reasonChip(b.reason))}>
+                          {b.reason}
+                        </span>
+                      )}
+                      {b.latestComment
+                        ? (
+                          <span className="truncate text-xs text-gray-500" title={`${b.latestComment}${b.commentAuthor ? ` — ${b.commentAuthor}` : ''}${b.commentAt ? ` (${daysAgo(b.commentAt)})` : ''}`}>
+                            {b.latestComment}{b.commentAt ? ` · ${daysAgo(b.commentAt)}` : ''}
+                          </span>
+                        )
+                        : <span className="text-xs text-gray-300">no Zoho comment</span>}
+                    </div>
+                  </td>
                   <td className={cn('px-2 py-2.5 text-right font-semibold tabular-nums', b.stalled ? 'text-red-600' : 'text-gray-600')}>
                     {b.delayDays}d
                   </td>
