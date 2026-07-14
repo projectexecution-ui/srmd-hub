@@ -72,8 +72,7 @@ async function runPipeline(supabase: SupabaseClient): Promise<NextResponse> {
     error:   r.error ?? null,
   }))
 
-  // 4. Aggregate + enrich (cleared-this-week from raw tasks, week-over-week
-  //    deltas from the previously stored snapshot).
+  // 4. Aggregate + enrich (cleared-this-week from raw tasks).
   const cardData = aggregateCard(bills, asOf, isoNow, selectedProjects)
 
   const allTasks = projectResults.flatMap(r => r.tasks)
@@ -81,16 +80,33 @@ async function runPipeline(supabase: SupabaseClient): Promise<NextResponse> {
   cardData.clearedCount = cleared.count
   cardData.clearedValue = cleared.value
 
-  const prev = await readPrevMeta(supabase)
-  if (prev) {
+  // Week-over-week deltas anchored to a WEEKLY baseline (not the last run, so
+  // running twice a day doesn't reduce deltas to noise). The baseline is
+  // snapshotted on the first run of each ISO week and compared against all week.
+  const baseline = await readBaseline(supabase)
+  if (baseline) {
     const d = (cur: number, key: string) =>
-      typeof prev[key] === 'number' ? cur - (prev[key] as number) : null
+      typeof baseline[key] === 'number' ? cur - (baseline[key] as number) : null
     cardData.deltas = {
       totalValue:   d(cardData.totalValue,   'totalValue'),
       ctValue:      d(cardData.ctValue,      'ctValue'),
       trustValue:   d(cardData.trustValue,   'trustValue'),
       stalledValue: d(cardData.stalledValue, 'stalledValue'),
     }
+  }
+  // Roll the baseline forward once per week (first run of a new week captures
+  // this week's opening values for the rest of the week to compare against).
+  if (!baseline || baseline.weekOf !== weekOf) {
+    await supabase.from('app_settings').upsert({
+      key: 'bills_pipeline_wbaseline',
+      value: JSON.stringify({
+        weekOf,
+        totalValue:   cardData.totalValue,
+        ctValue:      cardData.ctValue,
+        trustValue:   cardData.trustValue,
+        stalledValue: cardData.stalledValue,
+      }),
+    }, { onConflict: 'key' })
   }
 
   // 5. Render report PNGs — abort on failure, do NOT touch storage
@@ -215,12 +231,12 @@ async function recordMeta(supabase: SupabaseClient, value: string): Promise<stri
   return error ? error.message : null
 }
 
-// Last run's stored snapshot — used to compute week-over-week deltas.
-async function readPrevMeta(supabase: SupabaseClient): Promise<Record<string, unknown> | null> {
+// The weekly baseline snapshot — used to compute week-over-week deltas.
+async function readBaseline(supabase: SupabaseClient): Promise<Record<string, unknown> | null> {
   const { data, error } = await supabase
     .from('app_settings')
     .select('value')
-    .eq('key', BP_CONFIG.APP_SETTINGS_KEY)
+    .eq('key', 'bills_pipeline_wbaseline')
     .maybeSingle()
   if (error || !data?.value) return null
   try {

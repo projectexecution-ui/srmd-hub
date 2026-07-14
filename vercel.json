@@ -12,7 +12,11 @@
     },
     {
       "path": "/api/cron/bills-pipeline?cron=1",
-      "schedule": "0 4 * * 1"
+      "schedule": "0 4 * * *"
+    },
+    {
+      "path": "/api/cron/bills-pipeline?cron=1&slot=pm",
+      "schedule": "0 13 * * *"
     }
   ]
 }
