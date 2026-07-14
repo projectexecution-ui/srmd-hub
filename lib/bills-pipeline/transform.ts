@@ -36,6 +36,7 @@ export interface StuckBill {
   zohoDate:   string   // ISO date it entered Zoho
   vendor:     string
   project:    string   // site code
+  tasklist:   string   // task-list / area name, e.g. "NGH Infra", "P2 A01"
   invoiceDate: string  // bill date
   invoiceNo:  string
   amount:     number
@@ -52,6 +53,7 @@ export function toStuckBill(b: Bill, projectMap: Record<string, string>): StuckB
     zohoDate:    b.createdDate,
     vendor:      b.vendor || b.name,
     project:     projectMap[b.projectId] ?? b.project,
+    tasklist:    b.building,
     invoiceDate: b.billDate,
     invoiceNo:   b.billNo,
     amount:      b.claimed,

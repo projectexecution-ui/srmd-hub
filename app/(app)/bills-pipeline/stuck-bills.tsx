@@ -11,6 +11,7 @@ export interface StuckBillRow {
   zohoDate:    string
   vendor:      string
   project:     string
+  tasklist:    string
   invoiceDate: string
   invoiceNo:   string
   amount:      number
@@ -18,6 +19,16 @@ export interface StuckBillRow {
   delayDays:   number
   stalled:     boolean
   atTrust:     boolean
+}
+
+// Tidy a Zoho task-list name for display: title-case long words, keep short
+// acronyms / codes as-is ("NGH INFRA" -> "NGH Infra", "P2 A01" stays).
+function prettyArea(s: string): string {
+  return (s ?? '')
+    .split(/\s+/)
+    .map(w => (w.length > 3 && /^[A-Za-z]+$/.test(w) ? w[0].toUpperCase() + w.slice(1).toLowerCase() : w))
+    .join(' ')
+    .trim()
 }
 
 export interface ChecklistState {
@@ -80,7 +91,7 @@ export default function StuckBills({
       if (statusFilter && b.status !== statusFilter) return false
       if (stalledOnly && !b.stalled) return false
       if (onlyPending && isReady(b.id)) return false
-      if (q && ![b.vendor, b.invoiceNo, b.project, b.prefix, b.status].some(v => (v ?? '').toLowerCase().includes(q))) return false
+      if (q && ![b.vendor, b.invoiceNo, b.project, b.tasklist, b.prefix, b.status].some(v => (v ?? '').toLowerCase().includes(q))) return false
       return true
     })
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -174,7 +185,7 @@ export default function StuckBills({
             <tr className="bg-gray-50 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
               <th className="px-2 py-2.5">#</th>
               <th className="px-2 py-2.5">Vendor</th>
-              <th className="px-2 py-2.5">Proj</th>
+              <th className="px-2 py-2.5">Project / Area</th>
               <th className="px-2 py-2.5 whitespace-nowrap">Inv Date</th>
               <th className="px-2 py-2.5">Invoice No</th>
               <th className="px-2 py-2.5 text-right">Amount</th>
@@ -198,13 +209,18 @@ export default function StuckBills({
                     {ready ? <CheckCircle2 className="h-4 w-4 text-green-600" /> : i + 1}
                   </td>
                   <td
-                    className="max-w-[210px] truncate px-2 py-2.5 font-medium text-gray-900"
+                    className="max-w-[180px] truncate px-2 py-2.5 font-medium text-gray-900"
                     title={b.vendor || undefined}
                   >
                     {b.vendor || '—'}
                   </td>
                   <td className="px-2 py-2.5">
-                    <span className="rounded bg-slate-800 px-1.5 py-0.5 text-xs font-semibold text-white">{b.project}</span>
+                    <div className="flex items-center gap-1.5">
+                      <span className="shrink-0 rounded bg-slate-800 px-1.5 py-0.5 text-xs font-semibold text-white">{b.project}</span>
+                      {b.tasklist && (
+                        <span className="max-w-[130px] truncate text-gray-700" title={b.tasklist}>{prettyArea(b.tasklist)}</span>
+                      )}
+                    </div>
                   </td>
                   <td className="px-2 py-2.5 whitespace-nowrap text-gray-600">{fmtDate(b.invoiceDate)}</td>
                   <td className="px-2 py-2.5 whitespace-nowrap text-gray-600">{b.invoiceNo || '—'}</td>
