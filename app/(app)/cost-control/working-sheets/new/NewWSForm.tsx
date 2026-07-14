@@ -17,6 +17,10 @@ interface Props {
   projectDisciplines: Array<{ project_id: string; discipline: DRow }>
   projectSubSkills: Array<{ project_id: string; sub_skill: SRow }>
   defaultProjectId?: string
+  /** Prefill discipline + sub-skill when arriving from a sub-skill row's
+   *  "New WS" link, so the engineer doesn't re-pick what they clicked. */
+  defaultDisciplineId?: string
+  defaultSubSkillId?: string
   /** True when caller may set/change the WS deadline (Head / Admin). */
   canSetDeadline?: boolean
   /** "project::discipline" keys that are flagged as Thumbrule. When the
@@ -25,12 +29,12 @@ interface Props {
   thumbruleKeys?: string[]
 }
 
-export function NewWSForm({ projects, projectDisciplines, projectSubSkills, defaultProjectId, canSetDeadline = false, thumbruleKeys = [] }: Props) {
+export function NewWSForm({ projects, projectDisciplines, projectSubSkills, defaultProjectId, defaultDisciplineId, defaultSubSkillId, canSetDeadline = false, thumbruleKeys = [] }: Props) {
   const thumbruleSet = React.useMemo(() => new Set(thumbruleKeys), [thumbruleKeys])
   const router = useRouter()
   const [projectId, setProjectId] = React.useState(defaultProjectId ?? '')
-  const [disciplineId, setDisciplineId] = React.useState('')
-  const [subSkillId, setSubSkillId] = React.useState('')
+  const [disciplineId, setDisciplineId] = React.useState(defaultDisciplineId ?? '')
+  const [subSkillId, setSubSkillId] = React.useState(defaultSubSkillId ?? '')
   const [lineType, setLineType] = React.useState<'work' | 'material'>('work')
   const [deadline, setDeadline] = React.useState('')
   const [deadlineNotes, setDeadlineNotes] = React.useState('')
@@ -55,9 +59,19 @@ export function NewWSForm({ projects, projectDisciplines, projectSubSkills, defa
     return out.sort((a, b) => a.code.localeCompare(b.code))
   }, [projectId, disciplineId, projectSubSkills])
 
-  // Reset cascade when parent changes
-  React.useEffect(() => { setDisciplineId(''); setSubSkillId('') }, [projectId])
-  React.useEffect(() => { setSubSkillId('') }, [disciplineId])
+  // Reset the cascade when the user changes a parent — but NOT on the first
+  // render, so a prefilled discipline/sub-skill (from a "New WS" link)
+  // survives mount instead of being wiped by these effects.
+  const firstProjectRun = React.useRef(true)
+  React.useEffect(() => {
+    if (firstProjectRun.current) { firstProjectRun.current = false; return }
+    setDisciplineId(''); setSubSkillId('')
+  }, [projectId])
+  const firstDisciplineRun = React.useRef(true)
+  React.useEffect(() => {
+    if (firstDisciplineRun.current) { firstDisciplineRun.current = false; return }
+    setSubSkillId('')
+  }, [disciplineId])
 
   async function submit(e: React.FormEvent) {
     e.preventDefault()

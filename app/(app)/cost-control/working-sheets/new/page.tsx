@@ -13,7 +13,7 @@ export const dynamic = 'force-dynamic'
 export default async function NewWorkingSheetPage({
   searchParams,
 }: {
-  searchParams: Promise<{ project?: string }>
+  searchParams: Promise<{ project?: string; discipline?: string; sub_skill?: string }>
 }) {
   await requirePermission('cost-control', 'edit')
   const sp = await searchParams
@@ -72,9 +72,14 @@ export default async function NewWorkingSheetPage({
         back="/cost-control/working-sheets"
       />
 
-      {/* Quick Mode call-out — more discoverable than the list page button */}
+      {/* Quick Mode call-out — more discoverable than the list page button.
+          Carry the project + sub-skill context so it stays prefilled there too. */}
       <Link
-        href={`/cost-control/working-sheets/new-quick${sp.project ? `?project=${sp.project}` : ''}`}
+        href={`/cost-control/working-sheets/new-quick${
+          sp.project
+            ? `?project=${sp.project}${sp.discipline ? `&discipline=${sp.discipline}` : ''}${sp.sub_skill ? `&sub_skill=${sp.sub_skill}` : ''}`
+            : ''
+        }`}
         className="block rounded-2xl border-2 border-dashed border-green-300 bg-green-50/40 hover:bg-green-50 hover:border-green-400 p-4 transition-colors"
       >
         <div className="flex items-center gap-3">
@@ -95,6 +100,8 @@ export default async function NewWorkingSheetPage({
           projectDisciplines={projectDisciplines}
           projectSubSkills={projectSubSkills}
           defaultProjectId={sp.project}
+          defaultDisciplineId={sp.discipline}
+          defaultSubSkillId={sp.sub_skill}
           canSetDeadline={canSetDeadline}
           thumbruleKeys={Array.from(thumbruleKeys)}
         />

@@ -63,6 +63,9 @@ interface Props {
   projectDisciplines: Array<{ project_id: string; discipline: DRow }>
   projectSubSkills: Array<{ project_id: string; sub_skill: SRow }>
   defaultProjectId?: string
+  /** Prefill discipline + sub-skill when arriving from a sub-skill row. */
+  defaultDisciplineId?: string
+  defaultSubSkillId?: string
   canSetDeadline?: boolean
   /** The check route is approver-only (403 for engineers) — skip the
    *  post-upload auto-check unless the uploader is a reviewer. */
@@ -252,11 +255,11 @@ async function parseExcel(file: File): Promise<{ rows: ParsedRow[]; grandTotal: 
   return { rows, grandTotal, aoa }
 }
 
-export function NewWSQuickForm({ projects, projectDisciplines, projectSubSkills, defaultProjectId, canSetDeadline = false, reviewer = false }: Props) {
+export function NewWSQuickForm({ projects, projectDisciplines, projectSubSkills, defaultProjectId, defaultDisciplineId, defaultSubSkillId, canSetDeadline = false, reviewer = false }: Props) {
   const router = useRouter()
   const [projectId, setProjectId]     = useState(defaultProjectId ?? projects[0]?.id ?? '')
-  const [disciplineId, setDisciplineId] = useState('')
-  const [subSkillId, setSubSkillId]   = useState('')
+  const [disciplineId, setDisciplineId] = useState(defaultDisciplineId ?? '')
+  const [subSkillId, setSubSkillId]   = useState(defaultSubSkillId ?? '')
   const [lineType, setLineType]       = useState<'work' | 'material'>('work')
   const [summaryTotal, setSummaryTotal] = useState('')
   const [summaryNotes, setSummaryNotes] = useState('')

@@ -773,7 +773,7 @@ export default async function CostControlProjectDetailPage(
                                 const effMode = subMeta.get(s.id)?.mode ?? discMeta.get(d.id)?.mode ?? 'detailed'
                                 const href = effMode === 'thumbrule'
                                   ? `/cost-control/working-sheets/new-thumbrule?project=${project.id}&discipline=${d.id}&sub_skill=${s.id}`
-                                  : `/cost-control/working-sheets/new?project=${project.id}`
+                                  : `/cost-control/working-sheets/new?project=${project.id}&discipline=${d.id}&sub_skill=${s.id}`
                                 return (
                                   <Link
                                     href={href}
