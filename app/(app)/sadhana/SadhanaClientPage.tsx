@@ -8,8 +8,8 @@ export type SadhanaItem = {
   id: string
   name: string
   emoji: string
-  input_type: 'boolean' | 'number'
-  unit: string | null
+  input_type: 'boolean' | 'number' | 'scale' | 'text'
+  unit: string | null       // for scale: '1-2' or '0-2'; for number: 'min' etc.
   target_value: number | null
   sort_order: number
 }
@@ -20,9 +20,15 @@ export type DayStats = {
   total: number
 }
 
+type EntryState = {
+  done: boolean
+  valueNum: number | null
+  valueText: string | null
+}
+
 type Props = {
   items: SadhanaItem[]
-  todayLogs: Record<string, { done: boolean; valueNum: number | null }>
+  todayLogs: Record<string, EntryState>
   dayStats: DayStats[]
   todayStr: string
   streak: number
@@ -30,10 +36,10 @@ type Props = {
 }
 
 export function SadhanaClientPage({ items, todayLogs, dayStats, todayStr, streak, bestStreak }: Props) {
-  const [entries, setEntries] = useState<Record<string, { done: boolean; valueNum: number | null }>>(() => {
-    const init: Record<string, { done: boolean; valueNum: number | null }> = {}
+  const [entries, setEntries] = useState<Record<string, EntryState>>(() => {
+    const init: Record<string, EntryState> = {}
     for (const item of items) {
-      init[item.id] = todayLogs[item.id] ?? { done: false, valueNum: null }
+      init[item.id] = todayLogs[item.id] ?? { done: false, valueNum: null, valueText: null }
     }
     return init
   })
@@ -42,24 +48,22 @@ export function SadhanaClientPage({ items, todayLogs, dayStats, todayStr, streak
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saved' | 'error'>('idle')
   const [errorMsg, setErrorMsg] = useState('')
 
-  const completedCount = items.filter(item => {
+  function isDone(item: SadhanaItem): boolean {
     const e = entries[item.id]
     if (!e) return false
-    return item.input_type === 'boolean' ? e.done : (e.valueNum ?? 0) > 0
-  }).length
+    if (item.input_type === 'boolean') return e.done
+    if (item.input_type === 'scale') return (e.valueNum ?? 0) >= 1
+    if (item.input_type === 'number') return (e.valueNum ?? 0) > 0
+    if (item.input_type === 'text') return !!(e.valueText?.trim())
+    return false
+  }
+
+  const completedCount = items.filter(isDone).length
   const totalCount = items.length
   const completionPct = totalCount > 0 ? Math.round((completedCount / totalCount) * 100) : 0
 
-  type EntryMap = Record<string, { done: boolean; valueNum: number | null }>
-
-  function toggleBoolean(itemId: string) {
-    setEntries((prev: EntryMap) => ({ ...prev, [itemId]: { done: !prev[itemId]?.done, valueNum: null } }))
-    setSaveStatus('idle')
-  }
-
-  function setNumber(itemId: string, val: number) {
-    const v = Math.max(0, val)
-    setEntries((prev: EntryMap) => ({ ...prev, [itemId]: { done: v > 0, valueNum: v } }))
+  function patch(itemId: string, update: Partial<EntryState>) {
+    setEntries((prev: Record<string, EntryState>) => ({ ...prev, [itemId]: { ...prev[itemId], ...update } }))
     setSaveStatus('idle')
   }
 
@@ -69,16 +73,13 @@ export function SadhanaClientPage({ items, todayLogs, dayStats, todayStr, streak
         todayStr,
         items.map(item => ({
           itemId: item.id,
-          done: entries[item.id]?.done ?? false,
+          done: isDone(item),
           valueNum: entries[item.id]?.valueNum ?? null,
+          valueText: entries[item.id]?.valueText ?? null,
         }))
       )
-      if (result.ok) {
-        setSaveStatus('saved')
-      } else {
-        setSaveStatus('error')
-        setErrorMsg(result.error)
-      }
+      if (result.ok) setSaveStatus('saved')
+      else { setSaveStatus('error'); setErrorMsg(result.error) }
     })
   }
 
@@ -88,36 +89,17 @@ export function SadhanaClientPage({ items, todayLogs, dayStats, todayStr, streak
 
   return (
     <div className="space-y-5">
-      {/* Stats row */}
+      {/* Stats */}
       <div className="grid grid-cols-3 gap-3">
-        <StatCard
-          value={`${completionPct}%`}
-          label="Today"
-          sub={`${completedCount}/${totalCount} done`}
-          bg="bg-amber-50"
-          border="border-amber-200"
-          text="text-amber-700"
-          sub2="text-amber-600"
-        />
-        <StatCard
-          value={`🔥 ${streak}`}
-          label="Day streak"
-          bg="bg-orange-50"
-          border="border-orange-200"
-          text="text-orange-700"
-          sub2="text-orange-600"
-        />
-        <StatCard
-          value={`⭐ ${bestStreak}`}
-          label="Best streak"
-          bg="bg-purple-50"
-          border="border-purple-200"
-          text="text-purple-700"
-          sub2="text-purple-600"
-        />
+        <StatCard value={`${completionPct}%`} label="Today" sub={`${completedCount}/${totalCount}`}
+          bg="bg-amber-50" border="border-amber-200" text="text-amber-700" sub2="text-amber-600" />
+        <StatCard value={`🔥 ${streak}`} label="Day streak"
+          bg="bg-orange-50" border="border-orange-200" text="text-orange-700" sub2="text-orange-600" />
+        <StatCard value={`⭐ ${bestStreak}`} label="Best streak"
+          bg="bg-purple-50" border="border-purple-200" text="text-purple-700" sub2="text-purple-600" />
       </div>
 
-      {/* Today's entry */}
+      {/* Entry form */}
       <div className="bg-white border border-amber-100 rounded-2xl p-4 shadow-sm">
         <div className="flex items-center justify-between mb-3">
           <h2 className="font-semibold text-gray-800">Today&apos;s Entry</h2>
@@ -132,67 +114,92 @@ export function SadhanaClientPage({ items, todayLogs, dayStats, todayStr, streak
           />
         </div>
 
-        {/* Items */}
         <div className="space-y-2">
           {items.map(item => {
-            const entry = entries[item.id] ?? { done: false, valueNum: null }
-            const isDone = item.input_type === 'boolean' ? entry.done : (entry.valueNum ?? 0) > 0
+            const entry = entries[item.id] ?? { done: false, valueNum: null, valueText: null }
+            const done = isDone(item)
 
             return (
               <div
                 key={item.id}
                 className={`flex items-center gap-3 p-3 rounded-xl border transition-all ${
-                  isDone ? 'bg-amber-50 border-amber-200' : 'bg-white border-gray-100 hover:border-gray-200'
+                  done ? 'bg-amber-50 border-amber-200' : 'bg-white border-gray-100 hover:border-gray-200'
                 }`}
               >
                 <span className="text-xl w-8 text-center flex-shrink-0">{item.emoji}</span>
-                <span className={`flex-1 text-sm font-medium ${isDone ? 'text-amber-900' : 'text-gray-700'}`}>
+                <span className={`flex-1 text-sm font-medium min-w-0 ${done ? 'text-amber-900' : 'text-gray-700'}`}>
                   {item.name}
-                  {item.target_value && item.unit && (
-                    <span className="ml-1 text-xs text-gray-400 font-normal">
-                      (target: {item.target_value} {item.unit})
-                    </span>
-                  )}
                 </span>
 
-                {item.input_type === 'boolean' ? (
+                {/* boolean */}
+                {item.input_type === 'boolean' && (
                   <button
-                    onClick={() => toggleBoolean(item.id)}
+                    onClick={() => patch(item.id, { done: !entry.done })}
                     className={`w-9 h-9 rounded-full flex items-center justify-center transition-all flex-shrink-0 ${
-                      entry.done
-                        ? 'bg-amber-500 text-white shadow-sm'
-                        : 'bg-gray-100 text-gray-300 hover:bg-gray-200'
+                      entry.done ? 'bg-amber-500 text-white shadow-sm' : 'bg-gray-100 text-gray-300 hover:bg-gray-200'
                     }`}
                   >
                     <Check className="w-4 h-4" />
                   </button>
-                ) : (
+                )}
+
+                {/* scale (1-2 or 0-2) */}
+                {item.input_type === 'scale' && (() => {
+                  const range = item.unit === '0-2' ? [0, 1, 2] : [1, 2]
+                  return (
+                    <div className="flex items-center gap-1 flex-shrink-0">
+                      {range.map(v => (
+                        <button
+                          key={v}
+                          onClick={() => patch(item.id, { valueNum: v, done: v >= 1 })}
+                          className={`w-9 h-9 rounded-full text-sm font-bold transition-all ${
+                            entry.valueNum === v
+                              ? 'bg-amber-500 text-white shadow-sm'
+                              : 'bg-gray-100 text-gray-500 hover:bg-amber-100 hover:text-amber-700'
+                          }`}
+                        >
+                          {v}
+                        </button>
+                      ))}
+                    </div>
+                  )
+                })()}
+
+                {/* number (minutes etc.) */}
+                {item.input_type === 'number' && (
                   <div className="flex items-center gap-1 flex-shrink-0">
                     <button
-                      onClick={() => setNumber(item.id, (entry.valueNum ?? 0) - (item.unit === 'hours' ? 0.5 : item.unit === 'minutes' ? 5 : 1))}
+                      onClick={() => patch(item.id, { valueNum: Math.max(0, (entry.valueNum ?? 0) - 5) })}
                       className="w-7 h-7 rounded-lg bg-gray-100 hover:bg-gray-200 flex items-center justify-center text-gray-600 font-bold text-base leading-none"
-                    >
-                      −
-                    </button>
+                    >−</button>
                     <input
                       type="number"
                       min={0}
-                      step={item.unit === 'hours' ? 0.5 : item.unit === 'minutes' ? 5 : 1}
+                      step={5}
                       value={entry.valueNum ?? ''}
-                      onChange={e => setNumber(item.id, Number(e.target.value))}
+                      onChange={e => patch(item.id, { valueNum: Number(e.target.value) || 0 })}
                       className="w-14 h-7 text-center text-sm font-semibold border border-gray-200 rounded-lg bg-white focus:outline-none focus:border-amber-400"
                       placeholder="0"
                     />
                     <button
-                      onClick={() => setNumber(item.id, (entry.valueNum ?? 0) + (item.unit === 'hours' ? 0.5 : item.unit === 'minutes' ? 5 : 1))}
+                      onClick={() => patch(item.id, { valueNum: (entry.valueNum ?? 0) + 5 })}
                       className="w-7 h-7 rounded-lg bg-gray-100 hover:bg-gray-200 flex items-center justify-center text-gray-600 font-bold text-base leading-none"
-                    >
-                      +
-                    </button>
-                    {item.unit && (
-                      <span className="text-xs text-gray-400 w-10 truncate">{item.unit}</span>
-                    )}
+                    >+</button>
+                    <span className="text-xs text-gray-400 w-7 flex-shrink-0">
+                      {item.unit === 'min' ? 'min' : item.unit ?? ''}
+                    </span>
                   </div>
+                )}
+
+                {/* text */}
+                {item.input_type === 'text' && (
+                  <input
+                    type="text"
+                    value={entry.valueText ?? ''}
+                    onChange={e => patch(item.id, { valueText: e.target.value, done: e.target.value.trim().length > 0 })}
+                    placeholder="Write here…"
+                    className="flex-1 min-w-0 h-8 px-2 text-sm border border-gray-200 rounded-lg bg-white focus:outline-none focus:border-amber-400"
+                  />
                 )}
               </div>
             )
@@ -208,16 +215,11 @@ export function SadhanaClientPage({ items, todayLogs, dayStats, todayStr, streak
           >
             {isPending ? 'Saving…' : 'Save Today\'s Entry'}
           </button>
-          {saveStatus === 'saved' && (
-            <span className="text-sm text-green-600 font-medium whitespace-nowrap">✓ Saved!</span>
-          )}
-          {saveStatus === 'error' && (
-            <span className="text-xs text-red-600 max-w-[120px] leading-tight">{errorMsg}</span>
-          )}
+          {saveStatus === 'saved' && <span className="text-sm text-green-600 font-medium whitespace-nowrap">✓ Saved!</span>}
+          {saveStatus === 'error' && <span className="text-xs text-red-600 max-w-[120px] leading-tight">{errorMsg}</span>}
         </div>
       </div>
 
-      {/* Heatmap */}
       <SadhanaHeatmap dayStats={dayStats} todayStr={todayStr} />
     </div>
   )
@@ -225,9 +227,7 @@ export function SadhanaClientPage({ items, todayLogs, dayStats, todayStr, streak
 
 // ─── Stat card ────────────────────────────────────────────────────────────────
 
-function StatCard({
-  value, label, sub, bg, border, text, sub2,
-}: {
+function StatCard({ value, label, sub, bg, border, text, sub2 }: {
   value: string; label: string; sub?: string
   bg: string; border: string; text: string; sub2: string
 }) {
@@ -254,7 +254,6 @@ function cellBg(pct: number | null): string {
 function SadhanaHeatmap({ dayStats, todayStr }: { dayStats: DayStats[]; todayStr: string }) {
   const statsMap = new Map(dayStats.map(d => [d.date, d]))
 
-  // Build last 63 days (9 × 7)
   const DAYS = 63
   const cells: { date: string; pct: number | null }[] = []
   for (let i = DAYS - 1; i >= 0; i--) {
@@ -265,7 +264,6 @@ function SadhanaHeatmap({ dayStats, todayStr }: { dayStats: DayStats[]; todayStr
     cells.push({ date: dateStr, pct: s && s.total > 0 ? (s.done / s.total) * 100 : null })
   }
 
-  // Pad front to start on Sunday
   const startDow = new Date(cells[0].date + 'T00:00:00').getDay()
   const padded: ({ date: string; pct: number | null } | null)[] = [
     ...Array<null>(startDow).fill(null),
@@ -273,18 +271,14 @@ function SadhanaHeatmap({ dayStats, todayStr }: { dayStats: DayStats[]; todayStr
   ]
 
   const weeks: ({ date: string; pct: number | null } | null)[][] = []
-  for (let i = 0; i < padded.length; i += 7) {
-    weeks.push(padded.slice(i, i + 7))
-  }
-
-  const DOW = ['S', 'M', 'T', 'W', 'T', 'F', 'S']
+  for (let i = 0; i < padded.length; i += 7) weeks.push(padded.slice(i, i + 7))
 
   return (
     <div className="bg-white border border-gray-100 rounded-2xl p-4 shadow-sm">
       <h2 className="font-semibold text-gray-800 mb-3">Last 9 Weeks</h2>
 
       <div className="grid grid-cols-7 gap-1 mb-1">
-        {DOW.map((d, i) => (
+        {['S','M','T','W','T','F','S'].map((d, i) => (
           <div key={i} className="text-center text-[10px] text-gray-400 font-medium">{d}</div>
         ))}
       </div>
@@ -299,9 +293,7 @@ function SadhanaHeatmap({ dayStats, todayStr }: { dayStats: DayStats[]; todayStr
                 key={day.date}
                 title={`${day.date}${day.pct !== null ? ` · ${Math.round(day.pct)}%` : ' · no entry'}`}
                 className={`aspect-square rounded-sm ${cellBg(day.pct)} ${
-                  day.date === todayStr
-                    ? 'ring-2 ring-orange-500 ring-offset-1'
-                    : ''
+                  day.date === todayStr ? 'ring-2 ring-orange-500 ring-offset-1' : ''
                 }`}
               />
             )
@@ -311,7 +303,7 @@ function SadhanaHeatmap({ dayStats, todayStr }: { dayStats: DayStats[]; todayStr
 
       <div className="flex items-center gap-2 mt-3 text-[11px] text-gray-400">
         <span>Less</span>
-        {(['bg-gray-100', 'bg-amber-100', 'bg-amber-200', 'bg-amber-300', 'bg-amber-400', 'bg-amber-600'] as const).map((c, i) => (
+        {(['bg-gray-100','bg-amber-100','bg-amber-200','bg-amber-300','bg-amber-400','bg-amber-600'] as const).map((c, i) => (
           <div key={i} className={`w-3 h-3 rounded-sm ${c}`} />
         ))}
         <span>More</span>

@@ -8,6 +8,7 @@ type EntryInput = {
   itemId: string
   done: boolean
   valueNum: number | null
+  valueText: string | null
 }
 
 type Result = { ok: true } | { ok: false; error: string }
@@ -27,6 +28,7 @@ export async function saveDailyEntry(date: string, entries: EntryInput[]): Promi
     item_id: e.itemId,
     done: e.done,
     value_num: e.valueNum,
+    value_text: e.valueText,
   }))
 
   const { error } = await supabase

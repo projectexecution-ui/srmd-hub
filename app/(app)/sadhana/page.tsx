@@ -7,18 +7,30 @@ import type { SadhanaItem, DayStats } from './SadhanaClientPage'
 
 export const dynamic = 'force-dynamic'
 
-const DEFAULT_ITEMS = [
-  { name: 'Morning Puja / Prayer',   emoji: '🌅', input_type: 'boolean', unit: null,      target_value: null, sort_order: 1 },
-  { name: 'Japa (Mala rounds)',       emoji: '📿', input_type: 'number',  unit: 'rounds',  target_value: 16,   sort_order: 2 },
-  { name: 'Meditation',               emoji: '🧘', input_type: 'number',  unit: 'minutes', target_value: 30,   sort_order: 3 },
-  { name: 'Scripture Reading',        emoji: '📖', input_type: 'number',  unit: 'minutes', target_value: 20,   sort_order: 4 },
-  { name: 'Pranayama',                emoji: '🌬️', input_type: 'number',  unit: 'minutes', target_value: 15,   sort_order: 5 },
-  { name: 'Exercise / Yoga',          emoji: '💪', input_type: 'number',  unit: 'minutes', target_value: 30,   sort_order: 6 },
-  { name: 'Evening Prayer / Aarti',   emoji: '🕯️', input_type: 'boolean', unit: null,      target_value: null, sort_order: 7 },
-  { name: 'Satsang / Discourse',      emoji: '🙌', input_type: 'boolean', unit: null,      target_value: null, sort_order: 8 },
-  { name: 'Gratitude Journal',        emoji: '📝', input_type: 'boolean', unit: null,      target_value: null, sort_order: 9 },
-  { name: 'Sleep',                    emoji: '😴', input_type: 'number',  unit: 'hours',   target_value: 7,    sort_order: 10 },
-] as const
+// Seeded on first visit — matches the Google Form exactly
+const DEFAULT_ITEMS: Omit<SadhanaItem, 'id'>[] = [
+  // scale 1-2: select once (1) or twice (2)
+  { name: 'Charan Pujan',    emoji: '🙏',  input_type: 'scale',   unit: '1-2', target_value: 2,  sort_order: 1  },
+  { name: 'Pranayam',        emoji: '🌬️', input_type: 'scale',   unit: '1-2', target_value: 2,  sort_order: 2  },
+  { name: 'Morning Kram',    emoji: '🌅',  input_type: 'scale',   unit: '1-2', target_value: 2,  sort_order: 3  },
+  { name: 'Evening Kram',    emoji: '🌙',  input_type: 'scale',   unit: '1-2', target_value: 2,  sort_order: 4  },
+  { name: 'CV',              emoji: '📿',  input_type: 'scale',   unit: '1-2', target_value: 2,  sort_order: 5  },
+  { name: 'DV',              emoji: '🕯️', input_type: 'scale',   unit: '1-2', target_value: 2,  sort_order: 6  },
+  // scale 0-2: 0=not done, 1=partial, 2=full
+  { name: 'PAUSHAD',         emoji: '💊',  input_type: 'scale',   unit: '0-2', target_value: 2,  sort_order: 7  },
+  // duration (stored as minutes)
+  { name: 'Swadhyay',        emoji: '📖',  input_type: 'number',  unit: 'min', target_value: 30, sort_order: 8  },
+  { name: 'Extra Dhyan',     emoji: '🧘',  input_type: 'number',  unit: 'min', target_value: 30, sort_order: 9  },
+  { name: 'Extra Maun',      emoji: '🤫',  input_type: 'number',  unit: 'min', target_value: 30, sort_order: 10 },
+  { name: 'Walk',            emoji: '🚶',  input_type: 'number',  unit: 'min', target_value: 30, sort_order: 11 },
+  // boolean yes/no
+  { name: 'Walk Turns',      emoji: '🔄',  input_type: 'boolean', unit: null,  target_value: null, sort_order: 12 },
+  // duration
+  { name: 'Seva Hours',      emoji: '🤲',  input_type: 'number',  unit: 'min', target_value: 60, sort_order: 13 },
+  // free text
+  { name: 'Prasang Bodh / Letter',              emoji: '✉️',  input_type: 'text', unit: null, target_value: null, sort_order: 14 },
+  { name: 'Bapa Days / Travel Days Seva hours', emoji: '✈️',  input_type: 'text', unit: null, target_value: null, sort_order: 15 },
+]
 
 export default async function SadhanaPage() {
   await requirePermission('sadhana', 'view')
@@ -30,7 +42,7 @@ export default async function SadhanaPage() {
   const todayStr = new Date().toISOString().split('T')[0]
   const nineWeeksAgo = new Date(Date.now() - 63 * 86400000).toISOString().split('T')[0]
 
-  // Load (or seed) user's items
+  // Load (or seed) the user's items
   let { data: rawItems } = await supabase
     .from('sadhana_items')
     .select('id, name, emoji, input_type, unit, target_value, sort_order')
@@ -48,7 +60,7 @@ export default async function SadhanaPage() {
 
   const items: SadhanaItem[] = (rawItems ?? []).map(i => ({
     ...i,
-    input_type: i.input_type as 'boolean' | 'number',
+    input_type: i.input_type as SadhanaItem['input_type'],
   }))
 
   const itemIds = items.map(i => i.id)
@@ -56,30 +68,36 @@ export default async function SadhanaPage() {
   // Today's saved logs
   const { data: todayLogRows } = await supabase
     .from('sadhana_logs')
-    .select('item_id, done, value_num')
+    .select('item_id, done, value_num, value_text')
     .eq('user_id', user.id)
     .eq('log_date', todayStr)
     .in('item_id', itemIds)
 
-  const todayLogs: Record<string, { done: boolean; valueNum: number | null }> = {}
+  const todayLogs: Record<string, { done: boolean; valueNum: number | null; valueText: string | null }> = {}
   for (const row of todayLogRows ?? []) {
-    todayLogs[row.item_id] = { done: row.done, valueNum: row.value_num as number | null }
+    todayLogs[row.item_id] = {
+      done: row.done,
+      valueNum: row.value_num as number | null,
+      valueText: row.value_text as string | null,
+    }
   }
 
-  // Last 9 weeks of logs for heatmap + streak
+  // Last 9 weeks for heatmap + streak
   const { data: recentLogs } = await supabase
     .from('sadhana_logs')
-    .select('log_date, done, value_num')
+    .select('log_date, done, value_num, value_text')
     .eq('user_id', user.id)
     .gte('log_date', nineWeeksAgo)
     .in('item_id', itemIds)
 
-  // Aggregate per day
   const dayMap = new Map<string, { done: number; total: number }>()
   for (const log of recentLogs ?? []) {
     const s = dayMap.get(log.log_date) ?? { done: 0, total: 0 }
     s.total++
-    if (log.done || (log.value_num as number | null ?? 0) > 0) s.done++
+    const counted = log.done
+      || (log.value_num as number | null ?? 0) >= 1
+      || !!(log.value_text as string | null)?.trim()
+    if (counted) s.done++
     dayMap.set(log.log_date, s)
   }
 
@@ -88,14 +106,12 @@ export default async function SadhanaPage() {
   }))
 
   function streakEndingOn(date: string): number {
-    let count = 0
-    let d = date
+    let count = 0; let d = date
     while (true) {
       const s = dayMap.get(d)
       if (!s || s.total === 0 || s.done / s.total < 0.5) break
       count++
-      const prev = new Date(d + 'T00:00:00')
-      prev.setDate(prev.getDate() - 1)
+      const prev = new Date(d + 'T00:00:00'); prev.setDate(prev.getDate() - 1)
       d = prev.toISOString().split('T')[0]
       if (d < nineWeeksAgo) break
     }
