@@ -64,6 +64,7 @@ export function CcSettingsForm({ initial, users = [] }: {
       { key: 'cc_eng_projects',     value: String(v.eng_projects) },
       { key: 'cc_eng_erp',          value: String(v.eng_erp) },
       { key: 'cc_archive_users',    value: v.archive_users.join(',') },
+      { key: 'cc_ie_review',        value: String(v.ie_review) },
     ]
     const { error } = await supabase.from('app_settings').upsert(rows, { onConflict: 'key' })
     if (error) { setError(error.message); setSaving(false); return }
@@ -111,6 +112,12 @@ export function CcSettingsForm({ initial, users = [] }: {
           hint="After the Trustee approves, the Billing team marks each sheet as entered in IN4. Tracking only — no money moves."
           checked={v.billing_step}
           onChange={x => setV({ ...v, billing_step: x })}
+        />
+        <Toggle
+          label="Trustee accept/reject on each Internal Estimate"
+          hint="Off (default) — the uploaded Internal Estimate is the baseline that engineer asks are checked against. On — Trustee/Admin must ✓/✗ each sub-skill's estimate."
+          checked={v.ie_review}
+          onChange={x => setV({ ...v, ie_review: x })}
         />
         <Toggle
           label="Excel preview via Microsoft Office Online"

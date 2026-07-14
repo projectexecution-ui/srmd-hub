@@ -53,8 +53,9 @@ export default async function CostControlProjectDetailPage(
   const ccSettings = await getCcSettings()
   const reviewer = await checkIsCcReviewer()
   // Only the Trustee (founder) / Admin may accept or reject the Internal
-  // Estimate baseline. Narrower than `reviewer` (which includes PH/Atm Head).
-  const canDecideIE = await checkCanDecideInternalEstimate()
+  // Estimate baseline — and only when the (off-by-default) review toggle is
+  // on. Off: the uploaded estimate is simply the baseline, no manual step.
+  const canDecideIE = ccSettings.ie_review && (await checkCanDecideInternalEstimate())
 
   // This page is the project Internal Estimate (category/sub-skill rollup +
   // ERP figures). Management always sees it; engineers reach it only when
@@ -696,9 +697,11 @@ export default async function CostControlProjectDetailPage(
                       const ie = ieMap.get(`${d.id}::${s.id}`)
                       const estLive = a?.planTotal ?? 0
                       const ask = a?.pendingAmount ?? 0
-                      // Engineer asking above the ACCEPTED internal estimate?
-                      const overBy = ie?.decision === 'accepted' && ie.amt != null && ask > ie.amt
-                        ? ask - ie.amt : 0
+                      // Baseline = the accepted amount when review is used,
+                      // else the uploaded Internal Estimate itself. Flag when
+                      // the engineer's ask exceeds that baseline.
+                      const baseline = ie?.decision === 'accepted' && ie.amt != null ? ie.amt : estLive
+                      const overBy = baseline > 0 && ask > baseline ? ask - baseline : 0
                       return (
                         <tr key={s.id} className="border-t border-gray-100 hover:bg-gray-50/60">
                           <td className="pl-10 pr-3 py-2 text-gray-700">
@@ -731,7 +734,7 @@ export default async function CostControlProjectDetailPage(
                           </td>
                           <Td align="right" mono className="text-indigo-800">
                             <Money amt={estLive} />
-                            {(estLive > 0 || ie) && (
+                            {ccSettings.ie_review && (estLive > 0 || ie) && (
                               <div className="mt-1 flex justify-end">
                                 <InternalEstimateDecision
                                   projectId={project.id}
