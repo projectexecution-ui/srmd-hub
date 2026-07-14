@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, type ReactNode } from 'react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { EmptyState } from '@/components/ui/empty-state'
@@ -12,6 +12,7 @@ export interface ReportTab {
   label:    string
   url:      string | null   // signed URL of the report PNG (null = not generated yet)
   filename: string
+  content?: ReactNode        // interactive tab (table etc.) instead of an image
 }
 
 export default function ReportTabs({ tabs, canEdit }: { tabs: ReportTab[]; canEdit: boolean }) {
@@ -66,7 +67,7 @@ export default function ReportTabs({ tabs, canEdit }: { tabs: ReportTab[]; canEd
           </button>
         ))}
         <div className="ml-auto flex items-center gap-2 pl-2">
-          {cur?.url && (
+          {cur?.url && !cur.content && (
             <>
               <Button onClick={copyImage} disabled={copying} variant="outline" size="sm">
                 {copied
@@ -86,7 +87,9 @@ export default function ReportTabs({ tabs, canEdit }: { tabs: ReportTab[]; canEd
       </div>
 
       {/* Active report */}
-      {cur?.url ? (
+      {cur?.content ? (
+        cur.content
+      ) : cur?.url ? (
         <div className="overflow-hidden rounded-xl border border-gray-200 shadow-sm">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src={cur.url} alt={cur.label} className="block h-auto w-full" />

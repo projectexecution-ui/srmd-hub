@@ -10,7 +10,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient as createServiceClient, type SupabaseClient } from '@supabase/supabase-js'
 import { getMyPermissions, can } from '@/lib/auth'
 import { getZohoToken, fetchAllTasks } from '@/lib/bills-pipeline/zoho'
-import { parseBill, aggregateCard, clearedThisWeek } from '@/lib/bills-pipeline/transform'
+import { parseBill, aggregateCard, clearedThisWeek, toStuckBill } from '@/lib/bills-pipeline/transform'
 import { renderCard, renderScorecard } from '@/lib/bills-pipeline/render'
 import { BP_CONFIG } from '@/lib/bills-pipeline/config'
 
@@ -142,6 +142,17 @@ async function runPipeline(supabase: SupabaseClient): Promise<NextResponse> {
       { status: 500 },
     )
   }
+
+  // 8. Persist the full live-bill list (all not-paid bills) for the
+  //    interactive "Stuck Bills" tab. Sorted by delay (oldest bill first).
+  const stuck = bills
+    .map(b => toStuckBill(b, cardData.projectMap))
+    .sort((a, b) => b.delayDays - a.delayDays)
+    .slice(0, 500)
+  const { error: stuckErr } = await supabase
+    .from('app_settings')
+    .upsert({ key: 'bills_pipeline_stuck', value: JSON.stringify(stuck) }, { onConflict: 'key' })
+  if (stuckErr) console.warn('[bills-pipeline] stuck-bills persist failed:', stuckErr.message)
 
   // TODO: send PNG to WhatsApp via WABA API
   // TODO: email PNG via nodemailer

@@ -3,6 +3,7 @@ import type { ZohoTask, ZohoMoney } from './zoho'
 
 export interface Bill {
   id:          string
+  prefix:      string   // Zoho task ref, e.g. "B-2-T5"
   project:     string
   projectId:   string
   name:        string
@@ -17,13 +18,48 @@ export interface Bill {
   paid:        number
   woNo:        string
   noWO:        boolean
-  billDate:    string
-  ageDays:     number
+  billDate:    string   // invoice / bill date (the bill's own date)
+  createdDate: string   // when it entered Zoho
+  ageDays:     number   // days since it entered Zoho
+  delayDays:   number   // days since the bill date (how long the bill has been pending)
   idleDays:    number
   stalled:     boolean
   isTrust:     boolean
   isInternal:  boolean
   pushReason?: string
+}
+
+// Flat record persisted per run to power the interactive "Stuck Bills" table.
+export interface StuckBill {
+  id:         string
+  prefix:     string
+  zohoDate:   string   // ISO date it entered Zoho
+  vendor:     string
+  project:    string   // site code
+  invoiceDate: string  // bill date
+  invoiceNo:  string
+  amount:     number
+  status:     string   // stage
+  delayDays:  number   // since bill date
+  stalled:    boolean
+  atTrust:    boolean
+}
+
+export function toStuckBill(b: Bill, projectMap: Record<string, string>): StuckBill {
+  return {
+    id:          b.id,
+    prefix:      b.prefix,
+    zohoDate:    b.createdDate,
+    vendor:      b.vendor || b.name,
+    project:     projectMap[b.projectId] ?? b.project,
+    invoiceDate: b.billDate,
+    invoiceNo:   b.billNo,
+    amount:      b.claimed,
+    status:      b.stage,
+    delayDays:   b.delayDays,
+    stalled:     b.stalled,
+    atTrust:     b.isTrust,
+  }
 }
 
 export interface AgeBucket {
@@ -171,12 +207,16 @@ export function parseBill(
 
   const ageDays  = daysSince(task.created_time, now)
   const idleDays = daysSince(task.last_modified_time, now)
+  // Delay = days since the bill's own date (falls back to Zoho create date).
+  const billDate = task.bill_date ?? ''
+  const delayDays = daysSince(billDate || task.created_time, now)
 
   const isTrust    = stage === BP_CONFIG.TRUST_STAGE
   const isInternal = !isTrust   // not-trust + not-closed (closed already returned)
 
   return {
     id:        task.id,
+    prefix:    task.prefix ?? '',
     project,
     projectId,
     name:      cleanText(task.name) || '(untitled bill)',
@@ -191,8 +231,10 @@ export function parseBill(
     paid:      money(task.paid_till_date),
     woNo,
     noWO,
-    billDate:  task.bill_date ?? '',
+    billDate,
+    createdDate: task.created_time ?? '',
     ageDays,
+    delayDays,
     idleDays,
     stalled:   idleDays > BP_CONFIG.STALL_DAYS,
     isTrust,

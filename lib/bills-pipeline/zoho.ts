@@ -66,7 +66,9 @@ export interface ZohoMoney {
 // as top-level keys (not a custom_fields[] array).
 export interface ZohoTask {
   id:                 string
+  prefix?:            string   // human task ref, e.g. "B-2-T5"
   name:               string
+  start_date?:        string
   status?:            { name?: string; is_closed_type?: boolean }
   is_completed?:      boolean
   created_time?:      string

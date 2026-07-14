@@ -6,6 +6,7 @@ import { Link2, AlertTriangle } from 'lucide-react'
 import RefreshButton from './refresh-button'
 import ZohoToast from './zoho-toast'
 import ReportTabs, { type ReportTab } from './report-tabs'
+import StuckBills, { type StuckBillRow, type ChecklistState } from './stuck-bills'
 
 export const dynamic = 'force-dynamic'
 
@@ -28,6 +29,8 @@ export default async function BillsPipelinePage({ searchParams }: Props) {
   let hasZohoToken = false
   let cardUrl: string | null = null
   let scorecardUrl: string | null = null
+  let stuckBills: StuckBillRow[] = []
+  const checklist: Record<string, ChecklistState> = {}
 
   if (serviceKey) {
     const sb = createServiceClient(supabaseUrl, serviceKey, { auth: { persistSession: false } })
@@ -35,18 +38,31 @@ export default async function BillsPipelinePage({ searchParams }: Props) {
     const { data: settings } = await sb
       .from('app_settings')
       .select('key, value')
-      .in('key', ['bills_pipeline_last', 'zoho_bp_refresh_token'])
+      .in('key', ['bills_pipeline_last', 'zoho_bp_refresh_token', 'bills_pipeline_stuck'])
 
     const rows = (settings ?? []) as Array<{ key: string; value: string }>
     const metaRow  = rows.find(r => r.key === 'bills_pipeline_last')
     const tokenRow = rows.find(r => r.key === 'zoho_bp_refresh_token')
+    const stuckRow = rows.find(r => r.key === 'bills_pipeline_stuck')
 
     hasZohoToken = !!tokenRow?.value
 
     if (metaRow?.value) {
-      try {
-        meta = JSON.parse(metaRow.value) as Record<string, string | number>
-      } catch { /* ignore bad JSON */ }
+      try { meta = JSON.parse(metaRow.value) as Record<string, string | number> } catch { /* ignore */ }
+    }
+    if (stuckRow?.value) {
+      try { stuckBills = JSON.parse(stuckRow.value) as StuckBillRow[] } catch { /* ignore */ }
+    }
+
+    // Saved checklist ticks, keyed by bill id.
+    const { data: checks } = await sb
+      .from('bp_bill_checklist')
+      .select('bill_id, ms_sheet, abstract_sheet, po_wo, drawing')
+    for (const c of (checks ?? []) as Array<{ bill_id: string } & ChecklistState>) {
+      checklist[c.bill_id] = {
+        ms_sheet: !!c.ms_sheet, abstract_sheet: !!c.abstract_sheet,
+        po_wo: !!c.po_wo, drawing: !!c.drawing,
+      }
     }
 
     const sign = async (file?: string | number | null) => {
@@ -61,12 +77,16 @@ export default async function BillsPipelinePage({ searchParams }: Props) {
   const showConnectBanner = canAdmin && !hasZohoToken
   const asOf = (meta?.asOf as string) ?? 'latest'
   const tabs: ReportTab[] = [
-    { key: 'card',      label: 'Weekly Card',      url: cardUrl,      filename: `sra-bills-weekly-${asOf}.png` },
+    { key: 'card',      label: 'Weekly Card',       url: cardUrl,      filename: `sra-bills-weekly-${asOf}.png` },
     { key: 'scorecard', label: 'Project Scorecard', url: scorecardUrl, filename: `sra-project-scorecard-${asOf}.png` },
+    {
+      key: 'stuck', label: 'Stuck Bills', url: null, filename: '',
+      content: <StuckBills bills={stuckBills} initialChecklist={checklist} canEdit={canEdit} />,
+    },
   ]
 
   return (
-    <div className="p-4 md:p-6 max-w-5xl mx-auto space-y-4">
+    <div className="p-4 md:p-6 max-w-6xl mx-auto space-y-4">
       <ZohoToast zoho={sp.zoho} reason={sp.reason} />
 
       <PageHeader
