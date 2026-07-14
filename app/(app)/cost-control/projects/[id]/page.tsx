@@ -491,13 +491,22 @@ export default async function CostControlProjectDetailPage(
 
       {/* KPI strip — portfolio-level numbers for this project. The ERP
           tiles (from Budget vs Actual) hide when the toggle is off. */}
-      <div className={`grid grid-cols-2 sm:grid-cols-3 ${showErp ? 'lg:grid-cols-5' : ''} gap-3`}>
+      <div className={`grid grid-cols-2 sm:grid-cols-3 ${showErp ? 'lg:grid-cols-6' : ''} gap-3`}>
         <KPI
           label="Internal Estimate"
           value={totalEstimate > 0 ? formatINR(totalEstimate) : '—'}
           perSft={perSft(totalEstimate)}
           sub={totalEstimate > 0 ? 'Sum of all Working Sheets (live)' : 'Will populate once WSes are raised'}
           tone="indigo"
+        />
+        <KPI
+          label="Awaiting Approval"
+          value={pendingTotal > 0 ? formatINR(pendingTotal) : '—'}
+          perSft={perSft(pendingTotal)}
+          sub={pendingCount > 0
+            ? `${pendingCount} sheet${pendingCount === 1 ? '' : 's'} in the approval chain`
+            : 'Nothing pending'}
+          tone="amber"
         />
         {showErp && (
           <KPI
@@ -852,13 +861,14 @@ function Td({
 
 function KPI({
   label, value, sub, tone, perSft,
-}: { label: string; value: React.ReactNode; sub?: React.ReactNode; tone: 'blue' | 'purple' | 'orange' | 'green' | 'indigo'; perSft?: string | null }) {
+}: { label: string; value: React.ReactNode; sub?: React.ReactNode; tone: 'blue' | 'purple' | 'orange' | 'green' | 'indigo' | 'amber'; perSft?: string | null }) {
   const top = {
     blue: 'border-t-blue-500',
     purple: 'border-t-purple-500',
     orange: 'border-t-orange-500',
     green: 'border-t-green-500',
     indigo: 'border-t-indigo-500',
+    amber: 'border-t-amber-500',
   }[tone]
   return (
     <div className={`bg-white rounded-md border border-gray-200 border-t-2 ${top} p-4`}>

@@ -612,6 +612,8 @@ async function EngineerHome({ userId, canWrite }: { userId: string | null; canWr
 
   const needsMyAction = mine.filter(w => w.status === 'draft' || w.status === 'returned')
   const inApproval    = mine.filter(w => isPendingStatus(w.status))
+  // Their own estimate value currently waiting in the approval chain.
+  const inApprovalAmt = inApproval.reduce((s, w) => s + Number(w.total_amount ?? 0), 0)
   const done          = mine.filter(w => w.status === 'approved' || w.status === 'wo_issued' || w.status === 'paid')
   const todayStr = new Date().toISOString().slice(0, 10)
   const overdue = mine.filter(w =>
@@ -649,7 +651,7 @@ async function EngineerHome({ userId, canWrite }: { userId: string | null; canWr
       {/* My counters — counts only, no org money */}
       <div className="grid grid-cols-3 gap-3">
         <Stat label="Needs my action" value={needsMyAction.length} hint="drafts + returned to me" icon={<Clock className="h-5 w-5" />} tone={needsMyAction.length > 0 ? 'amber' : 'default'} />
-        <Stat label="In approval" value={inApproval.length} hint="moving through the chain" icon={<Inbox className="h-5 w-5" />} />
+        <Stat label="Awaiting approval" value={inApproval.length} hint={inApprovalAmt > 0 ? `${formatINR(inApprovalAmt)} estimate in the chain` : 'moving through the chain'} icon={<Inbox className="h-5 w-5" />} />
         <Stat label="Approved" value={done.length} hint={overdue > 0 ? `${overdue} overdue deadline${overdue === 1 ? '' : 's'}` : 'all on time'} icon={<CheckCircle2 className="h-5 w-5" />} />
       </div>
 
