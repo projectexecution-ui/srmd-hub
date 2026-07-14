@@ -171,6 +171,19 @@ export async function checkCanDecideInternalEstimate(): Promise<boolean> {
   return role === 'founder' // Trustee
 }
 
+/** Atm Head (head) / Project Head / Admin — may request an Internal Estimate
+ *  reopen and upload the revised sheet. (Trustee decides, via
+ *  checkCanDecideInternalEstimate.) */
+export async function checkCanRequestIeRevision(): Promise<boolean> {
+  const me = await whoAmI()
+  if (!me.user) return false
+  if (me.isAdmin) return true
+  const supabase = await createClient()
+  const { data: eff } = await supabase.rpc('effective_user_role', { p_user_id: me.user.id, p_module_slug: 'cost-control' })
+  const role = (eff as string | null) ?? me.profile?.role ?? null
+  return role === 'head' || role === 'project_head'
+}
+
 /** Trustee/Admin accept, reject, or clear the Internal Estimate baseline for
  *  a (project, sub-skill). Role is re-checked inside the SECURITY DEFINER RPC. */
 export async function setInternalEstimateDecision(input: {

@@ -88,9 +88,20 @@ export default async function WorkingSheetEditorPage(
     .eq('id', id)
     .single()
 
-  // Archived sheets are frozen: no submit/sign-off/release/return actions.
+  // A management estimate sheet (imported Internal Budget, tagged [IB…]) is
+  // frozen while its project's Internal Estimate is locked — it can only be
+  // changed through the Trustee-approved revision flow.
+  let estimateLocked = false
+  if ((ws.summary_notes ?? '').startsWith('[IB') && ws.project_id) {
+    const { data: lk } = await supabase.rpc('cc_ie_lock_state', { p_project: ws.project_id })
+    estimateLocked = (lk as string | null) !== 'unlocked'
+  }
+
+  // Archived sheets — and locked estimate sheets — are frozen: no
+  // submit/sign-off/release/return actions.
   const isArchived = !!extraCols?.archived_at
-  const ctx = isArchived
+  const frozen = isArchived || estimateLocked
+  const ctx = frozen
     ? { ...rawCtx, canSubmit: false, nextSignOff: null, canRelease: false, canReturn: false }
     : rawCtx
 
@@ -173,6 +184,12 @@ export default async function WorkingSheetEditorPage(
           archivedNotes={chainArchivedNotes}
         />
 
+        {estimateLocked && !isArchived && (
+          <div className="rounded-lg border border-gray-300 bg-gray-50 px-4 py-2.5 text-sm text-gray-700 flex items-center gap-2">
+            <span className="font-semibold">Internal Estimate locked.</span>
+            <span className="text-gray-500">This is a baseline estimate sheet — change it through the project&apos;s revision workflow (request reopen → Trustee approves → upload revised sheet).</span>
+          </div>
+        )}
         <ArchiveControls
           wsId={ws.id}
           wsCode={ws.ws_code}
@@ -268,6 +285,12 @@ export default async function WorkingSheetEditorPage(
           archivedNotes={chainArchivedNotes}
         />
 
+        {estimateLocked && !isArchived && (
+          <div className="rounded-lg border border-gray-300 bg-gray-50 px-4 py-2.5 text-sm text-gray-700 flex items-center gap-2">
+            <span className="font-semibold">Internal Estimate locked.</span>
+            <span className="text-gray-500">This is a baseline estimate sheet — change it through the project&apos;s revision workflow (request reopen → Trustee approves → upload revised sheet).</span>
+          </div>
+        )}
         <ArchiveControls
           wsId={ws.id}
           wsCode={ws.ws_code}

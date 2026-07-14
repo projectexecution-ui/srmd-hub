@@ -2,7 +2,8 @@ import Link from 'next/link'
 import { notFound, redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { requirePermission, can } from '@/lib/auth'
-import { checkIsCcReviewer, checkCanDecideInternalEstimate } from '@/components/cost-control/ws-actions'
+import { checkIsCcReviewer, checkCanDecideInternalEstimate, checkCanRequestIeRevision } from '@/components/cost-control/ws-actions'
+import { IeRevisionPanel, type IeRevision } from './IeRevisionPanel'
 import { PageHeader } from '@/components/PageHeader'
 import { SetupProgressBanner } from '@/components/ProjectSetupWizard/SetupProgressBanner'
 import { Plus, Flame, Info, Settings } from 'lucide-react'
@@ -55,7 +56,34 @@ export default async function CostControlProjectDetailPage(
   // Only the Trustee (founder) / Admin may accept or reject the Internal
   // Estimate baseline — and only when the (off-by-default) review toggle is
   // on. Off: the uploaded estimate is simply the baseline, no manual step.
-  const canDecideIE = ccSettings.ie_review && (await checkCanDecideInternalEstimate())
+  const canDecideRevision = await checkCanDecideInternalEstimate() // Trustee/Admin
+  const canDecideIE = ccSettings.ie_review && canDecideRevision
+  const canRequestRevision = await checkCanRequestIeRevision()      // Atm/PH/Admin
+
+  // Internal Estimate lock + any in-flight revision.
+  const [{ data: lockRaw }, { data: revRow }] = await Promise.all([
+    supabase.rpc('cc_ie_lock_state', { p_project: id }),
+    supabase.from('cc_ie_revisions')
+      .select('id, status, request_note, requested_by, reopen_note, revised_excel_name, decision_note')
+      .eq('project_id', id).order('created_at', { ascending: false }).limit(1).maybeSingle(),
+  ])
+  const lockState = (lockRaw as 'locked' | 'reopen_requested' | 'unlocked' | 'revision_submitted' | null) ?? 'locked'
+  let ieRevision: IeRevision | null = null
+  if (revRow && !['approved', 'rejected', 'reopen_denied'].includes(revRow.status as string)) {
+    let requesterName: string | null = null
+    if (revRow.requested_by) {
+      const { data: rp } = await supabase.from('profiles').select('full_name, name').eq('id', revRow.requested_by).maybeSingle()
+      requesterName = (rp?.full_name ?? rp?.name ?? null) as string | null
+    }
+    ieRevision = {
+      id: revRow.id as string, status: revRow.status as string,
+      request_note: revRow.request_note as string | null,
+      requested_by_name: requesterName,
+      reopen_note: revRow.reopen_note as string | null,
+      revised_excel_name: revRow.revised_excel_name as string | null,
+      decision_note: revRow.decision_note as string | null,
+    }
+  }
 
   // This page is the project Internal Estimate (category/sub-skill rollup +
   // ERP figures). Management always sees it; engineers reach it only when
@@ -462,6 +490,17 @@ export default async function CostControlProjectDetailPage(
           )}
         </div>
       </div>
+
+      {/* Internal Estimate lock + revision workflow (management only) */}
+      {reviewer && (
+        <IeRevisionPanel
+          projectId={project.id}
+          lockState={lockState}
+          revision={ieRevision}
+          canRequest={canRequestRevision}
+          canDecide={canDecideRevision}
+        />
+      )}
 
       {/* Pending-approval shortcut — covers EVERY sheet type (submitted or
           partially approved). Hides itself when nothing is pending. */}
