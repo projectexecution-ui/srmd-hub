@@ -146,7 +146,13 @@ async function parseWorkbook(buf: ArrayBuffer): Promise<SheetModel[]> {
   return models
 }
 
-export function SourceExcelViewer({ url, name }: { url: string | null; name: string | null }) {
+export function SourceExcelViewer({ url, name, microsoft = false }: {
+  url: string | null
+  name: string | null
+  /** Render through Microsoft Office Online instead of the in-app table.
+   *  Pixel-perfect, but the file is sent to Microsoft's servers. */
+  microsoft?: boolean
+}) {
   const [sheets, setSheets] = useState<SheetModel[] | null>(null)
   const [active, setActive] = useState(0)
   const [loading, setLoading] = useState(false)
@@ -154,7 +160,13 @@ export function SourceExcelViewer({ url, name }: { url: string | null; name: str
   const [err, setErr] = useState<string | null>(null)
   const [showFormulas, setShowFormulas] = useState(true)
 
+  // Microsoft mode works on .xlsx only (it can't reach a private file with
+  // no public URL, and won't render .xls reliably). We hand it the signed
+  // URL, which is publicly fetchable for its TTL.
+  const canUseMicrosoft = microsoft && !!url && !(name ?? '').toLowerCase().endsWith('.xls')
+
   async function load() {
+    if (canUseMicrosoft) { setOpen(true); return } // no local parse needed
     if (sheets) { setOpen(true); return }
     if (!url) { setErr('No source file attached'); return }
     setLoading(true); setErr(null)
@@ -241,11 +253,24 @@ export function SourceExcelViewer({ url, name }: { url: string | null; name: str
           </CardTitle>
           <Button size="sm" variant="outline" onClick={() => (open ? setOpen(false) : load())} disabled={loading || !url}>
             {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : open ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-            {open ? 'Hide' : (sheets ? 'Show' : 'Open viewer')}
+            {open ? 'Hide' : ((sheets || canUseMicrosoft) ? 'Show' : 'Open viewer')}
           </Button>
         </div>
       </CardHeader>
-      {open && (
+      {open && canUseMicrosoft && (
+        <CardContent className="space-y-2">
+          <p className="text-xs text-gray-500">
+            Showing <b>{name ?? 'the uploaded file'}</b> via Microsoft Office Online — pixel-perfect.
+            The file is sent to Microsoft&apos;s servers to display it. Download gives the exact original.
+          </p>
+          <iframe
+            title="Excel preview (Microsoft Office Online)"
+            src={`https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(url!)}`}
+            className="w-full h-[70vh] rounded-lg border border-gray-200"
+          />
+        </CardContent>
+      )}
+      {open && !canUseMicrosoft && (
         <CardContent className="space-y-3">
           {err && <p className="text-sm text-rose-700 bg-rose-50 border border-rose-200 rounded-lg px-3 py-2">{err}</p>}
           {!err && (

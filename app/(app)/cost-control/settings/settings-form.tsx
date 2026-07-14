@@ -53,6 +53,7 @@ export function CcSettingsForm({ initial }: { initial: CcSettings }) {
       { key: 'cc_ai_tools',         value: String(v.ai_tools) },
       { key: 'cc_comments',         value: String(v.comments) },
       { key: 'cc_billing_step',     value: String(v.billing_step) },
+      { key: 'cc_excel_microsoft',  value: String(v.excel_microsoft) },
       { key: 'cc_label_ph_checked',  value: v.label_ph_checked.trim() },
       { key: 'cc_label_atm_checked', value: v.label_atm_checked.trim() },
       { key: 'cc_label_approved',    value: v.label_approved.trim() },
@@ -103,6 +104,12 @@ export function CcSettingsForm({ initial }: { initial: CcSettings }) {
           hint="After the Trustee approves, the Billing team marks each sheet as entered in IN4. Tracking only — no money moves."
           checked={v.billing_step}
           onChange={x => setV({ ...v, billing_step: x })}
+        />
+        <Toggle
+          label="Excel preview via Microsoft Office Online"
+          hint="Pixel-perfect Excel rendering — but each preview SENDS the file to Microsoft's servers (they may cache it). Off = the in-app viewer keeps everything inside your app."
+          checked={v.excel_microsoft}
+          onChange={x => setV({ ...v, excel_microsoft: x })}
         />
       </div>
 

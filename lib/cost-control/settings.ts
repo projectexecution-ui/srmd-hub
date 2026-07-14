@@ -18,6 +18,10 @@ export interface CcSettings {
   comments: boolean
   /** Show the Billing team's IN4-entry step (queue, chips, banner note). */
   billing_step: boolean
+  /** Render the source Excel preview through Microsoft Office Online
+   *  (pixel-perfect, but the file is sent to Microsoft's servers). When
+   *  off, the in-app viewer renders it inside the app. */
+  excel_microsoft: boolean
   /** Display label for the Project Head's checked amount. */
   label_ph_checked: string
   /** Display label for the Atm Head's checked amount. */
@@ -33,6 +37,7 @@ export const CC_SETTINGS_DEFAULTS: CcSettings = {
   ai_tools: true,
   comments: true,
   billing_step: true,
+  excel_microsoft: false,
   label_ph_checked: 'Project Head Checked Amt',
   label_atm_checked: 'Atm Head Checked Amt',
   label_approved: 'Approved Amount',
@@ -57,6 +62,7 @@ export function parseCcSettings(map: Record<string, string | null | undefined>):
     ai_tools:          parseBool('cc_ai_tools', d.ai_tools),
     comments:          parseBool('cc_comments', d.comments),
     billing_step:      parseBool('cc_billing_step', d.billing_step),
+    excel_microsoft:   parseBool('cc_excel_microsoft', d.excel_microsoft),
     label_ph_checked:  parseLabel('cc_label_ph_checked', d.label_ph_checked),
     label_atm_checked: parseLabel('cc_label_atm_checked', d.label_atm_checked),
     label_approved:    parseLabel('cc_label_approved', d.label_approved),
