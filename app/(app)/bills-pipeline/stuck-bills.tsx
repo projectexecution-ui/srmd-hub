@@ -36,16 +36,19 @@ export interface ChecklistState {
   abstract_sheet: boolean
   po_wo:          boolean
   drawing:        boolean
+  note?:          string
 }
 
-const CHECK_FIELDS: Array<{ key: keyof ChecklistState; label: string; short: string }> = [
+type CheckKey = 'ms_sheet' | 'abstract_sheet' | 'po_wo' | 'drawing'
+
+const CHECK_FIELDS: Array<{ key: CheckKey; label: string; short: string }> = [
   { key: 'ms_sheet',       label: 'MS Sheet',      short: 'MS' },
   { key: 'abstract_sheet', label: 'Abstract Sheet', short: 'Abs' },
   { key: 'po_wo',          label: 'PO / WO',       short: 'PO/WO' },
   { key: 'drawing',        label: 'Drawing',       short: 'Dwg' },
 ]
 
-const EMPTY: ChecklistState = { ms_sheet: false, abstract_sheet: false, po_wo: false, drawing: false }
+const EMPTY: ChecklistState = { ms_sheet: false, abstract_sheet: false, po_wo: false, drawing: false, note: '' }
 
 function inr(n: number): string {
   const v = Math.round(n || 0)
@@ -104,7 +107,7 @@ export default function StuckBills({
 
   const readyCount = bills.filter(b => isReady(b.id)).length
 
-  async function toggle(id: string, field: keyof ChecklistState) {
+  async function toggle(id: string, field: CheckKey) {
     if (!canEdit) return
     const cur = checks[id] ?? EMPTY
     const next = { ...cur, [field]: !cur[field] }
@@ -120,6 +123,26 @@ export default function StuckBills({
     } catch (e) {
       setChecks(prev => ({ ...prev, [id]: cur }))   // revert
       toast.error(`Couldn't save — ${e instanceof Error ? e.message : 'try again'}`)
+    }
+  }
+
+  // Remarks: update locally as the user types; save on blur.
+  function setNoteLocal(id: string, note: string) {
+    setChecks(prev => ({ ...prev, [id]: { ...(prev[id] ?? EMPTY), note } }))
+  }
+  async function saveNote(id: string) {
+    if (!canEdit) return
+    const note = (checks[id]?.note ?? '').slice(0, 500)
+    try {
+      const res = await fetch('/api/bills-pipeline/checklist', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ billId: id, note }),
+      })
+      const json = await res.json()
+      if (!json.ok) throw new Error(json.reason ?? 'save failed')
+    } catch (e) {
+      toast.error(`Couldn't save remark — ${e instanceof Error ? e.message : 'try again'}`)
     }
   }
 
@@ -194,6 +217,7 @@ export default function StuckBills({
               {CHECK_FIELDS.map(f => (
                 <th key={f.key} className="px-1.5 py-2.5 text-center" title={f.label}>{f.short}</th>
               ))}
+              <th className="px-2 py-2.5">Remarks</th>
             </tr>
           </thead>
           <tbody>
@@ -241,6 +265,18 @@ export default function StuckBills({
                       />
                     </td>
                   ))}
+                  <td className="px-2 py-2.5">
+                    <input
+                      type="text"
+                      value={c.note ?? ''}
+                      disabled={!canEdit}
+                      onChange={e => setNoteLocal(b.id, e.target.value)}
+                      onBlur={() => saveNote(b.id)}
+                      placeholder={canEdit ? 'Add remark…' : '—'}
+                      title={c.note || undefined}
+                      className="w-full min-w-[130px] max-w-[190px] rounded border border-transparent bg-transparent px-1.5 py-1 text-sm text-gray-700 outline-none hover:border-gray-200 focus:border-indigo-400 focus:bg-white focus:ring-1 focus:ring-indigo-100 disabled:cursor-not-allowed"
+                    />
+                  </td>
                 </tr>
               )
             })}

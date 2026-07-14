@@ -54,14 +54,14 @@ export default async function BillsPipelinePage({ searchParams }: Props) {
       try { stuckBills = JSON.parse(stuckRow.value) as StuckBillRow[] } catch { /* ignore */ }
     }
 
-    // Saved checklist ticks, keyed by bill id.
+    // Saved checklist ticks + remarks, keyed by bill id.
     const { data: checks } = await sb
       .from('bp_bill_checklist')
-      .select('bill_id, ms_sheet, abstract_sheet, po_wo, drawing')
-    for (const c of (checks ?? []) as Array<{ bill_id: string } & ChecklistState>) {
+      .select('bill_id, ms_sheet, abstract_sheet, po_wo, drawing, note')
+    for (const c of (checks ?? []) as Array<{ bill_id: string; note: string | null } & ChecklistState>) {
       checklist[c.bill_id] = {
         ms_sheet: !!c.ms_sheet, abstract_sheet: !!c.abstract_sheet,
-        po_wo: !!c.po_wo, drawing: !!c.drawing,
+        po_wo: !!c.po_wo, drawing: !!c.drawing, note: c.note ?? '',
       }
     }
 

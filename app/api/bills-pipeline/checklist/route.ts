@@ -34,6 +34,7 @@ export async function POST(req: NextRequest) {
   for (const f of FIELDS) {
     if (typeof body[f] === 'boolean') row[f] = body[f]
   }
+  if (typeof body.note === 'string') row.note = body.note.slice(0, 500)
 
   const supabase = await createClient()
   const { error } = await supabase
