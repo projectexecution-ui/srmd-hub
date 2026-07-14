@@ -633,35 +633,63 @@ async function EngineerHome({ userId, canWrite }: { userId: string | null; canWr
     ws_code: string
     status: string
     total_amount: number | null
+    approved_for_erp_amt: number | null
     deadline_date: string | null
     return_reason: string | null
     created_at: string
     entry_mode: string | null
+    chain_anchor_id: string | null
+    version_no: number | null
     projects: { code: string; name: string } | { code: string; name: string }[] | null
     cc_disciplines: { code: string; name: string } | { code: string; name: string }[] | null
     cc_sub_skills: { code: string; name: string } | { code: string; name: string }[] | null
   }
+  // Query the versions view so we can collapse each revision chain to the
+  // engineer's latest version (a sheet revised N times must count once, not N).
   const { data: myData, error: myErr } = userId
     ? await supabase
-        .from('cc_working_sheets')
-        .select('id, ws_code, status, total_amount, deadline_date, return_reason, created_at, entry_mode, projects(code, name), cc_disciplines(code, name), cc_sub_skills(code, name)')
+        .from('cc_ws_with_versions')
+        .select('id, ws_code, status, total_amount, approved_for_erp_amt, deadline_date, return_reason, created_at, entry_mode, chain_anchor_id, version_no, projects(code, name), cc_disciplines(code, name), cc_sub_skills(code, name)')
         .eq('engineer_id', userId)
         .is('archived_at', null)
         .neq('status', 'cancelled')
         .order('created_at', { ascending: false })
         .limit(50)
     : { data: [], error: null }
-  const mine = (myData ?? []) as MyWS[]
+  const allMine = (myData ?? []) as MyWS[]
+  // Keep only the latest version of each chain (same as the Working Sheets
+  // list), so counts and money never count an older revision.
+  const latestByChain = new Map<string, MyWS>()
+  for (const w of allMine) {
+    const key = w.chain_anchor_id ?? w.id
+    const prev = latestByChain.get(key)
+    if (!prev || (w.version_no ?? 1) > (prev.version_no ?? 1)) latestByChain.set(key, w)
+  }
+  const mine = [...latestByChain.values()].sort((a, b) => (a.created_at < b.created_at ? 1 : -1))
+
+  const showDeadlines = (await getCcSettings()).show_deadlines
+  const pending = (w: MyWS) => Math.max(Number(w.total_amount ?? 0) - Number(w.approved_for_erp_amt ?? 0), 0)
 
   const needsMyAction = mine.filter(w => w.status === 'draft' || w.status === 'returned')
   const inApproval    = mine.filter(w => isPendingStatus(w.status))
-  // Their own estimate value currently waiting in the approval chain.
-  const inApprovalAmt = inApproval.reduce((s, w) => s + Number(w.total_amount ?? 0), 0)
+  // Their own estimate STILL waiting — the not-yet-released part (a partly
+  // released sheet only counts what the Trustee hasn't released yet).
+  const inApprovalAmt = inApproval.reduce((s, w) => s + pending(w), 0)
   const done          = mine.filter(w => w.status === 'approved' || w.status === 'wo_issued' || w.status === 'paid')
+  // Money actually released to the engineer (fully approved sheets + the
+  // released slice of partly-approved ones).
+  const releasedAmt = mine.reduce((s, w) => {
+    if (['approved', 'wo_issued', 'paid'].includes(w.status)) {
+      return s + (Number(w.approved_for_erp_amt ?? 0) || Number(w.total_amount ?? 0))
+    }
+    if (w.status === 'partially_approved') return s + Number(w.approved_for_erp_amt ?? 0)
+    return s
+  }, 0)
   const todayStr = new Date().toISOString().slice(0, 10)
-  const overdue = mine.filter(w =>
+  // Overdue is a deadline concept — only meaningful when deadlines are on.
+  const overdue = showDeadlines ? mine.filter(w =>
     w.deadline_date && w.deadline_date < todayStr &&
-    !['approved', 'wo_issued', 'paid', 'cancelled'].includes(w.status)).length
+    !['approved', 'wo_issued', 'paid', 'cancelled'].includes(w.status)).length : 0
 
   const pickOne = <T,>(x: T | T[] | null): T | undefined => (Array.isArray(x) ? x[0] : x) ?? undefined
 
@@ -694,9 +722,17 @@ async function EngineerHome({ userId, canWrite }: { userId: string | null; canWr
       {/* My counters — counts only, no org money */}
       <div className="grid grid-cols-3 gap-3">
         <Stat label="Needs my action" value={needsMyAction.length} hint="drafts + returned to me" icon={<Clock className="h-5 w-5" />} tone={needsMyAction.length > 0 ? 'amber' : 'default'} />
-        <Stat label="Awaiting approval" value={inApproval.length} hint={inApprovalAmt > 0 ? `${formatINR(inApprovalAmt)} estimate in the chain` : 'moving through the chain'} icon={<Inbox className="h-5 w-5" />} />
-        <Stat label="Approved" value={done.length} hint={overdue > 0 ? `${overdue} overdue deadline${overdue === 1 ? '' : 's'}` : 'all on time'} icon={<CheckCircle2 className="h-5 w-5" />} />
+        <Stat label="Awaiting approval" value={inApproval.length} hint={inApprovalAmt > 0 ? `${formatINR(inApprovalAmt)} still to be released` : 'moving through the chain'} icon={<Inbox className="h-5 w-5" />} />
+        <Stat label="Approved" value={done.length} hint={releasedAmt > 0 ? `${formatINR(releasedAmt)} released to you` : 'nothing released yet'} icon={<CheckCircle2 className="h-5 w-5" />} />
       </div>
+
+      {/* Deadline warning — only shown when the org actually uses deadlines. */}
+      {showDeadlines && overdue > 0 && (
+        <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-800 flex items-center gap-2">
+          <AlertTriangle className="h-3.5 w-3.5 flex-shrink-0" />
+          {overdue} of your sheet{overdue === 1 ? '' : 's'} {overdue === 1 ? 'is' : 'are'} past the deadline and not yet approved.
+        </div>
+      )}
 
       {myErr && <QueryError message={myErr.message} what="your working sheets" />}
 
@@ -727,7 +763,10 @@ async function EngineerHome({ userId, canWrite }: { userId: string | null; canWr
                       <div className="flex items-center gap-2 flex-wrap">
                         <span className="font-semibold text-sm text-gray-900">{w.ws_code}</span>
                         <WSStatusPill status={w.status as WSStatus} />
-                        {w.deadline_date && (
+                        {(w.version_no ?? 1) > 1 && (
+                          <span className="text-[10px] font-semibold text-gray-500 bg-gray-100 rounded px-1.5 py-0.5">v{w.version_no}</span>
+                        )}
+                        {showDeadlines && w.deadline_date && (
                           <DeadlineBadge deadlineDate={w.deadline_date} className="text-[10px] px-1.5 py-0.5"
                             approved={['approved', 'wo_issued', 'paid'].includes(w.status)} />
                         )}
@@ -736,6 +775,11 @@ async function EngineerHome({ userId, canWrite }: { userId: string | null; canWr
                         {proj?.code ?? '—'} · {dis?.name ?? ''}{sub ? ` → ${sub.name}` : ''} · {formatDate(w.created_at)}
                       </p>
                       <p className="text-[11px] text-indigo-700 mt-0.5">{plainStatusLabel(w.status)}</p>
+                      {w.status === 'partially_approved' && (
+                        <p className="text-[11px] text-gray-500 mt-0.5">
+                          {formatINR(Number(w.approved_for_erp_amt ?? 0))} released · {formatINR(pending(w))} still pending
+                        </p>
+                      )}
                       {w.status === 'returned' && w.return_reason && (
                         <p className="text-[11px] text-rose-700 mt-0.5 truncate" title={w.return_reason}>
                           Reason: {w.return_reason}
