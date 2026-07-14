@@ -1,4 +1,4 @@
-import { notFound } from 'next/navigation'
+import { notFound, redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { requirePermission, can, getMyUser, getMyProfile } from '@/lib/auth'
 import { getWSApprovalContext, checkIsCcReviewer, checkCanSetDeadline, checkCanArchiveWs } from '@/components/cost-control/ws-actions'
@@ -66,6 +66,14 @@ export default async function WorkingSheetEditorPage(
     )
   }
   if (!ws) notFound()
+
+  // Internal Estimate baseline sheets (imported Internal Budget, tagged
+  // [IB…]) are confidential management numbers. A non-reviewer (engineer,
+  // billing, etc.) who lands on one by URL is sent back — never shown the
+  // amount or the source budget Excel.
+  if (!reviewer && (ws.summary_notes ?? '').startsWith('[IB')) {
+    redirect('/cost-control/working-sheets')
+  }
 
   // Sibling versions in the same chain — drives the prev/next nav.
   const { data: chainSiblings } = await supabase

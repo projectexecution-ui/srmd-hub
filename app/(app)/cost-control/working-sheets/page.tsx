@@ -111,7 +111,7 @@ export default async function WorkingSheetsPage({
   const showArchived = sp.status === 'archived' && isManagement
   let q = supabase
     .from('cc_ws_with_versions')
-    .select('id, ws_code, status, total_amount, approved_for_erp_amt, created_at, deadline_date, engineer_id, project_id, sub_skill_id, line_type, discipline_id, break_chain, chain_anchor_id, version_no, chain_size, source_excel_url, archived_at, archived_by, projects(code, name), cc_disciplines(code, name), cc_sub_skills(code, name)')
+    .select('id, ws_code, status, total_amount, approved_for_erp_amt, created_at, deadline_date, engineer_id, project_id, sub_skill_id, line_type, discipline_id, break_chain, chain_anchor_id, version_no, chain_size, source_excel_url, summary_notes, archived_at, archived_by, projects(code, name), cc_disciplines(code, name), cc_sub_skills(code, name)')
     .order('created_at', { ascending: scoped })
     .limit(500)
   if (sp.project) q = q.eq('project_id', sp.project)
@@ -126,8 +126,15 @@ export default async function WorkingSheetsPage({
   // Engineer estimate visibility — enforced server-side regardless of the
   // URL's filter params. Admin picks the scope in Settings.
   if (!isManagement && me) {
+    // Internal Estimate baseline ([IB…]) sheets are management-only. They
+    // carry a "[IB…]" tag in summary_notes — engineer_id is NOT a safe
+    // signal (the import attributed them to a real user). Exclude them from
+    // any engineer view that reaches beyond their own uploads; the is.null
+    // arm keeps plain engineer sheets that have no notes. (`*` is PostgREST's
+    // wildcard inside .or() — it maps to LIKE '[IB%'.)
+    const HIDE_IB = 'summary_notes.is.null,summary_notes.not.like.[IB*'
     if (cc.eng_estimates === 'all') {
-      // sees every estimate — no extra scoping
+      q = q.or(HIDE_IB) // every engineer estimate, but never the [IB] baseline
     } else if (cc.eng_estimates === 'projects') {
       const { data: pa } = await supabase
         .from('project_assignments')
@@ -135,10 +142,10 @@ export default async function WorkingSheetsPage({
         .eq('user_id', me.id)
       const ids = (pa ?? []).map(r => r.project_id as string)
       // No project assigned yet → safest fallback is their own sheets only.
-      if (ids.length) q = q.in('project_id', ids)
+      if (ids.length) q = q.in('project_id', ids).or(HIDE_IB)
       else q = q.eq('engineer_id', me.id)
     } else {
-      q = q.eq('engineer_id', me.id) // 'own' (default)
+      q = q.eq('engineer_id', me.id) // 'own' (default) — never includes [IB]
     }
   }
 
@@ -166,6 +173,7 @@ export default async function WorkingSheetsPage({
     version_no: number
     chain_size: number
     source_excel_url: string | null
+    summary_notes: string | null
     archived_at: string | null
     archived_by: string | null
     projects: { code: string; name: string } | { code: string; name: string }[] | null
@@ -173,7 +181,12 @@ export default async function WorkingSheetsPage({
     cc_sub_skills: { code: string; name: string } | { code: string; name: string }[] | null
   }
   const { data: wsData, error: wsError } = wsRes
-  const rows = (wsData ?? []) as WSRow[]
+  let rows = (wsData ?? []) as WSRow[]
+  if (!isManagement) {
+    // Defence in depth: never render an [IB…] baseline sheet to an engineer,
+    // even if the query-level filter above is somehow bypassed.
+    rows = rows.filter(r => !(r.summary_notes ?? '').startsWith('[IB'))
+  }
   const projects = projectsRes.data ?? []
   type ProfileLite = { id: string; full_name: string | null; name: string | null }
   const profiles = (profilesRes.data ?? []) as ProfileLite[]

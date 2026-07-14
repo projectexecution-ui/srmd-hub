@@ -86,12 +86,12 @@ export default async function CostControlProjectDetailPage(
     }
   }
 
-  // This page is the project Internal Estimate (category/sub-skill rollup +
-  // ERP figures). Management always sees it; engineers reach it only when
-  // the admin has enabled "Let engineers open the Internal Estimate page",
-  // and then it is READ-ONLY with the ERP/spend numbers hidden unless the
-  // admin also enabled "Show engineers the Budget (ERP) figures".
-  if (!reviewer && !ccSettings.eng_projects) {
+  // This page IS the project's Internal Estimate — every figure on it is a
+  // confidential management number. Internal Estimate is never shown to
+  // engineers or other non-management members, so the page is management-
+  // only: any non-reviewer is sent away, regardless of the "let engineers
+  // open projects" toggle.
+  if (!reviewer) {
     redirect('/cost-control/working-sheets')
   }
   // Setup / disable / deadline / BPH-sync controls are management-only even
