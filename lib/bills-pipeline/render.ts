@@ -217,17 +217,19 @@ export function buildSvg(d: CardData): string {
   P.push(text(PAD, y + 54, 'Oldest bills pending with CT — push these first', { fill: C.MUT, size: 15 }))
   y += FUP_TITLE
 
-  const cProj = PAD
-  const cName = PAD + 70
-  const cBill = 620
-  const cAmt  = 930
-  const cAge  = W - PAD
+  const cProj   = PAD
+  const cName   = PAD + 68
+  const cStatus = 408
+  const cBill   = 600
+  const cAmt    = 902
+  const cAge    = W - PAD
   P.push(rect(0, y, W, FUP_HEAD, C.PANEL))
-  P.push(text(cProj, y + 26, 'PROJECT', { fill: C.MUT, size: 13, weight: 700, spacing: 0.6 }))
-  P.push(text(cName, y + 26, 'CONTRACTOR', { fill: C.MUT, size: 13, weight: 700, spacing: 0.6 }))
-  P.push(text(cBill, y + 26, 'BILL NO', { fill: C.MUT, size: 13, weight: 700, spacing: 0.6 }))
-  P.push(text(cAmt,  y + 26, 'AMOUNT', { fill: C.MUT, size: 13, weight: 700, spacing: 0.6, anchor: 'end' }))
-  P.push(text(cAge,  y + 26, 'AGE', { fill: C.MUT, size: 13, weight: 700, spacing: 0.6, anchor: 'end' }))
+  P.push(text(cProj,   y + 26, 'PROJECT', { fill: C.MUT, size: 13, weight: 700, spacing: 0.6 }))
+  P.push(text(cName,   y + 26, 'CONTRACTOR', { fill: C.MUT, size: 13, weight: 700, spacing: 0.6 }))
+  P.push(text(cStatus, y + 26, 'STATUS', { fill: C.MUT, size: 13, weight: 700, spacing: 0.6 }))
+  P.push(text(cBill,   y + 26, 'BILL NO', { fill: C.MUT, size: 13, weight: 700, spacing: 0.6 }))
+  P.push(text(cAmt,    y + 26, 'AMOUNT', { fill: C.MUT, size: 13, weight: 700, spacing: 0.6, anchor: 'end' }))
+  P.push(text(cAge,    y + 26, 'AGE', { fill: C.MUT, size: 13, weight: 700, spacing: 0.6, anchor: 'end' }))
   y += FUP_HEAD
 
   if (d.followUps.length === 0) {
@@ -242,14 +244,15 @@ export function buildSvg(d: CardData): string {
       const code = d.projectMap[f.projectId] ?? f.project
       P.push(rect(cProj, ry + 11, 52, 24, C.NAVY, 5))
       P.push(text(cProj + 26, ry + 28, code, { fill: C.WHITE, size: 13, weight: 700, anchor: 'middle' }))
-      const nameMax = f.noWO ? 34 : 42
-      P.push(text(cName, ry + 29, clip(f.contractor || '(unnamed)', nameMax), { fill: C.INK, size: 18, weight: 500 }))
+      // contractor (+ small No-WO dot flag so the tag doesn't crowd Status)
+      P.push(text(cName, ry + 29, clip(f.contractor || '(unnamed)', 20), { fill: C.INK, size: 18, weight: 500 }))
       if (f.noWO) {
-        const tagX = Math.min(cName + Math.min((f.contractor || '').length, nameMax) * 9 + 12, cBill - 78)
-        P.push(rect(tagX, ry + 13, 66, 20, '#fbe6d4', 4))
-        P.push(text(tagX + 33, ry + 27, 'No WO', { fill: C.ORANGE, size: 12, weight: 700, anchor: 'middle' }))
+        P.push(rect(cStatus - 74, ry + 13, 62, 20, '#fbe6d4', 4))
+        P.push(text(cStatus - 74 + 31, ry + 27, 'No WO', { fill: C.ORANGE, size: 12, weight: 700, anchor: 'middle' }))
       }
-      P.push(text(cBill, ry + 29, clip(f.billNo || '—', 20), { fill: C.MUT, size: 16 }))
+      // status (short — drop the "Under: " prefix)
+      P.push(text(cStatus, ry + 29, clip(f.stage.replace(/^Under:\s*/, ''), 20), { fill: C.INK, size: 16 }))
+      P.push(text(cBill, ry + 29, clip(f.billNo || '—', 18), { fill: C.MUT, size: 16 }))
       P.push(text(cAmt, ry + 29, '₹' + inr(f.value), { fill: C.INK, size: 18, weight: 600, anchor: 'end' }))
       P.push(text(cAge, ry + 29, `${f.ageDays}d`, { fill: f.stalled ? C.RED : C.MUT, size: 18, weight: f.stalled ? 700 : 500, anchor: 'end' }))
     })

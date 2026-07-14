@@ -76,6 +76,7 @@ export interface FollowUp {
   projectId: string
   contractor: string
   billNo:    string
+  stage:     string
   value:     number
   ageDays:   number
   stalled:   boolean
@@ -315,6 +316,7 @@ export function aggregateCard(bills: Bill[], asOf: string, generatedAt: string):
       projectId:  b.projectId,
       contractor: b.name,
       billNo:     b.billNo,
+      stage:      b.stage,
       value:      b.claimed,
       ageDays:    b.ageDays,
       stalled:    b.stalled,
