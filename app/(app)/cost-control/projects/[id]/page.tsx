@@ -33,6 +33,7 @@ interface BudgetLine {
   internal_estimate_notes: string | null
 }
 interface WSAgg {
+  id: string
   discipline_id: string
   sub_skill_id: string
   status: string
@@ -145,7 +146,7 @@ export default async function CostControlProjectDetailPage(
       .eq('project_id', id),
     supabase
       .from('cc_working_sheets')
-      .select('discipline_id, sub_skill_id, status, total_amount, approved_for_erp_amt, deadline_date, entry_mode, summary_notes, in4_entered_at')
+      .select('id, discipline_id, sub_skill_id, status, total_amount, approved_for_erp_amt, deadline_date, entry_mode, summary_notes, in4_entered_at')
       .eq('project_id', id)
       .is('archived_at', null),
     supabase
@@ -155,6 +156,16 @@ export default async function CostControlProjectDetailPage(
       .eq('role', 'engineer'),
     supabase.from('profiles').select('id, full_name, name'),
   ])
+
+  // Version-chain identity (anchor + version_no) for this project's live
+  // sheets. Only the versions view computes these; the base table can't.
+  // Used to collapse each revision chain to its latest live version so the
+  // Internal Estimate never counts the same sheet's older versions again.
+  const verRes = await supabase
+    .from('cc_ws_with_versions')
+    .select('id, chain_anchor_id, version_no')
+    .eq('project_id', id)
+    .is('archived_at', null)
 
   // Budget lines + working sheets drive every number on this page. If
   // either query broke, zeros would masquerade as "no budget yet" — stop
@@ -247,36 +258,69 @@ export default async function CostControlProjectDetailPage(
     })
   }
 
-  // Working-sheet aggregates per sub-skill. `planTotal` = the Internal
-  // Estimate, computed live as the sum of EVERY working-sheet total
-  // except cancelled ones. HOD reads this to decide what to release in
-  // ERP — they don't type the estimate themselves.
-  const wsAgg = new Map<string, { approvedCount: number; approvedTotal: number; draftCount: number; submittedCount: number; partialCount: number; pendingAmount: number; planTotal: number }>()
-  for (const w of (wsRes.data ?? []) as WSAgg[]) {
-    const k = `${w.discipline_id}::${w.sub_skill_id}`
-    const cur = wsAgg.get(k) ?? { approvedCount: 0, approvedTotal: 0, draftCount: 0, submittedCount: 0, partialCount: 0, pendingAmount: 0, planTotal: 0 }
+  // Working-sheet aggregates per sub-skill.
+  //
+  // Two DIFFERENT things live in a sub-skill and must never be added
+  // together:
+  //   • the imported Internal Estimate baseline — sheets tagged "[IB…]",
+  //     the amounts management uploaded from Excel; and
+  //   • engineers' own sheets — their "ask", which runs through approval.
+  // They can even share a version chain (an engineer's ask is saved as a
+  // later version of the same sub-skill+line the [IB] baseline seeded).
+  // And every sheet keeps its OLD versions live. Summing all live rows
+  // therefore (a) counted an engineer's ask into the estimate and (b)
+  // counted a 6-times-revised sheet six times. Fix:
+  //   1. classify each live sheet as baseline ([IB]) vs engineer, then
+  //   2. within each class keep only the LATEST version of each chain.
+  // `planTotal` = the Internal Estimate baseline (latest [IB] per chain);
+  // pending/approved come from engineers' latest sheets only.
+  const chainOf = new Map<string, { anchor: string; ver: number }>()
+  for (const r of (verRes.data ?? []) as { id: string; chain_anchor_id: string | null; version_no: number | null }[]) {
+    if (r.chain_anchor_id) chainOf.set(r.id, { anchor: r.chain_anchor_id, ver: Number(r.version_no ?? 1) })
+  }
+  const liveRows = ((wsRes.data ?? []) as WSAgg[]).filter(w => w.status !== 'cancelled')
+  // Latest [IB] and latest engineer sheet per chain. Sheets with no chain
+  // info (shouldn't happen) fall back to their own id as a singleton chain.
+  const latestIB = new Map<string, { w: WSAgg; ver: number }>()
+  const latestEng = new Map<string, { w: WSAgg; ver: number }>()
+  for (const w of liveRows) {
+    const ch = chainOf.get(w.id) ?? { anchor: w.id, ver: 1 }
+    const bag = (w.summary_notes ?? '').startsWith('[IB') ? latestIB : latestEng
+    const prev = bag.get(ch.anchor)
+    if (!prev || ch.ver > prev.ver) bag.set(ch.anchor, { w, ver: ch.ver })
+  }
+
+  const wsAgg = new Map<string, { approvedTotal: number; pendingAmount: number; planTotal: number; chains: Set<string> }>()
+  const ensureAgg = (k: string) => {
+    let cur = wsAgg.get(k)
+    if (!cur) { cur = { approvedTotal: 0, pendingAmount: 0, planTotal: 0, chains: new Set<string>() }; wsAgg.set(k, cur) }
+    return cur
+  }
+  // Internal Estimate baseline = latest [IB] sheet per chain.
+  for (const { w } of latestIB.values()) {
+    const cur = ensureAgg(`${w.discipline_id}::${w.sub_skill_id}`)
+    cur.planTotal += Number(w.total_amount ?? 0)
+    cur.chains.add(chainOf.get(w.id)?.anchor ?? w.id)
+  }
+  // Engineers' latest sheets → pending / approved (never their old versions).
+  const PENDING_STATUS = new Set(['submitted', 'ph_approved', 'atm_approved'])
+  for (const { w } of latestEng.values()) {
+    const cur = ensureAgg(`${w.discipline_id}::${w.sub_skill_id}`)
+    cur.chains.add(chainOf.get(w.id)?.anchor ?? w.id)
     const amt = Number(w.total_amount ?? 0)
     const appr = Number(w.approved_for_erp_amt ?? 0)
     if (w.status === 'approved' || w.status === 'wo_issued' || w.status === 'paid') {
-      cur.approvedCount += 1
       cur.approvedTotal += appr > 0 ? appr : amt
     } else if (w.status === 'partially_approved') {
-      // Some releases approved, more to come: the released portion counts
-      // as approved, the remainder stays pending.
-      cur.partialCount += 1
+      // Some releases approved, more to come: released portion counts as
+      // approved, remainder stays pending.
       cur.approvedTotal += appr
       cur.pendingAmount += Math.max(amt - appr, 0)
-    } else if (w.status === 'submitted' || w.status === 'ph_approved' || w.status === 'atm_approved') {
+    } else if (PENDING_STATUS.has(w.status)) {
       // Anywhere in the sign-off chain = still pending release.
-      cur.submittedCount += 1
       cur.pendingAmount += Math.max(amt - appr, 0)
-    } else if (w.status === 'draft' || w.status === 'returned' || w.status === 'draft_blocked') {
-      cur.draftCount += 1
     }
-    if (w.status !== 'cancelled') {
-      cur.planTotal += amt
-    }
-    wsAgg.set(k, cur)
+    // draft / returned / draft_blocked add nothing but the chain count.
   }
   // Short remark per (discipline, sub-skill) — the "Remark: …" line that the
   // Internal Budget import (and any sheet notes) carry. First non-empty wins;
@@ -385,7 +429,9 @@ export default async function CostControlProjectDetailPage(
   // Sheets in THIS project still awaiting (further) approval — anywhere in
   // the 3-stage chain. Drives one shortcut banner; when thumbrule sheets
   // are among them, the bulk-approve page gets a secondary link.
-  const pendingSheets = ((wsRes.data ?? []) as WSAgg[]).filter(w =>
+  // Only the latest version of each engineer chain — same set the money
+  // uses — so the shortcut banner's count matches the pending ₹ total.
+  const pendingSheets = [...latestEng.values()].map(x => x.w).filter(w =>
     ['submitted', 'ph_approved', 'atm_approved', 'partially_approved'].includes(w.status),
   )
   const pendingCount = pendingSheets.length
@@ -558,7 +604,7 @@ export default async function CostControlProjectDetailPage(
           label="Internal Estimate"
           value={totalEstimate > 0 ? formatINR(totalEstimate) : '—'}
           perSft={perSft(totalEstimate)}
-          sub={totalEstimate > 0 ? 'Sum of all Working Sheets (live)' : 'Will populate once WSes are raised'}
+          sub={totalEstimate > 0 ? 'Imported baseline (latest per item)' : 'Will populate once WSes are raised'}
           tone="indigo"
         />
         <KPI
@@ -663,7 +709,7 @@ export default async function CostControlProjectDetailPage(
                     if (dl.earliest && (!dEarliest || dl.earliest < dEarliest)) dEarliest = dl.earliest
                   }
                   const sAgg = wsAgg.get(`${d.id}::${s.id}`)
-                  if (sAgg) dWsCount += sAgg.approvedCount + sAgg.partialCount + sAgg.draftCount + sAgg.submittedCount
+                  if (sAgg) dWsCount += sAgg.chains.size
                 }
 
                 return (
@@ -732,19 +778,17 @@ export default async function CostControlProjectDetailPage(
                         ? (bl.paid / bl.budget) * 100
                         : 0
                       const sHot = sPct > 95
-                      const wsCount = (a?.approvedCount ?? 0) + (a?.partialCount ?? 0) + (a?.draftCount ?? 0) + (a?.submittedCount ?? 0)
+                      const wsCount = a?.chains.size ?? 0
                       const ie = ieMap.get(`${d.id}::${s.id}`)
                       const estLive = a?.planTotal ?? 0
                       const ask = a?.pendingAmount ?? 0
-                      // Baseline for the ask-vs-estimate check. estLive is the
-                      // sum of EVERY sheet in this sub-skill, which already
-                      // includes the engineer's pending ask — so subtract the
-                      // ask to get the estimate to compare it against (the
-                      // [IB] baseline + anything already released). When the
-                      // Trustee has accepted an amount, that wins.
+                      // estLive is now the Internal Estimate baseline alone
+                      // (the latest [IB] upload) — no longer mixed with the
+                      // engineer's ask — so compare the ask straight against
+                      // it. A Trustee-accepted amount still wins.
                       const baseline = ie?.decision === 'accepted' && ie.amt != null
                         ? ie.amt
-                        : Math.max(estLive - ask, 0)
+                        : estLive
                       const overBy = baseline > 0 && ask > baseline ? ask - baseline : 0
                       return (
                         <tr key={s.id} className="border-t border-gray-100 hover:bg-gray-50/60">

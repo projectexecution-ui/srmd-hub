@@ -60,7 +60,7 @@ export default async function CostControlLandingPage() {
       .select('id, code, name, cc_status, setup_progress_pct, built_up_sft, parent_project_id')
       .not('cc_status', 'is', null)
       .order('code'),
-    supabase.from('cc_working_sheets').select('id, status, total_amount, approved_for_erp_amt, project_id, discipline_id, deadline_date, in4_entered_at').is('archived_at', null),
+    supabase.from('cc_working_sheets').select('id, status, total_amount, approved_for_erp_amt, project_id, discipline_id, deadline_date, in4_entered_at, summary_notes').is('archived_at', null),
     user
       ? supabase
           .from('cc_working_sheets')
@@ -92,10 +92,18 @@ export default async function CostControlLandingPage() {
     supabase.from('app_settings').select('value').eq('key', 'cc_last_backup').maybeSingle(),
   ])
 
+  // Version-chain identity for every live sheet (all projects). The base
+  // table can't compute versions; only this view can. Used to collapse each
+  // revision chain to its latest live version so money isn't counted twice.
+  const verRes = await supabase
+    .from('cc_ws_with_versions')
+    .select('id, chain_anchor_id, version_no')
+    .is('archived_at', null)
+
   const ccProjects = (projectsRes.data ?? []) as CCProject[]
   const incompleteCount = ccProjects.filter(p => (p.setup_progress_pct ?? 0) < 100).length
 
-  type WSRollup = { id: string; status: string; total_amount: number | null; approved_for_erp_amt: number | null; project_id: string; discipline_id: string; deadline_date: string | null; in4_entered_at: string | null }
+  type WSRollup = { id: string; status: string; total_amount: number | null; approved_for_erp_amt: number | null; project_id: string; discipline_id: string; deadline_date: string | null; in4_entered_at: string | null; summary_notes: string | null }
   const { data: wsData, error: wsErr } = wsAllRes
   const ws = (wsData ?? []) as WSRollup[]
   const todayStr = new Date().toISOString().slice(0, 10)
@@ -112,17 +120,50 @@ export default async function CostControlLandingPage() {
     return 0
   }
 
-  // Per-project signals for the tiles.
-  const wsByProject     = new Map<string, number>()   // total WS count
-  const estimateByProj  = new Map<string, number>()   // live internal estimate (non-cancelled WS sum)
-  const approvedByProj  = new Map<string, number>()   // approved-so-far money (incl. partial releases)
-  const pendingByProj   = new Map<string, number>()   // WS awaiting approval
-  const overdueByProj   = new Map<string, number>()   // open WS past deadline
+  // Collapse each revision chain to its latest live version, split into the
+  // imported Internal Estimate baseline ([IB…]) and engineers' own sheets.
+  // The two can share a chain (an engineer's ask is saved as a later
+  // version of the sub-skill the [IB] baseline seeded), so keeping "latest
+  // per chain" alone would drop the baseline. Baseline → estimate; engineer
+  // sheets → approved / pending. Mirrors the project detail page exactly, so
+  // the dashboard and the project page always show the same numbers.
+  const chainOf = new Map<string, { anchor: string; ver: number }>()
+  for (const r of (verRes.data ?? []) as { id: string; chain_anchor_id: string | null; version_no: number | null }[]) {
+    if (r.chain_anchor_id) chainOf.set(r.id, { anchor: r.chain_anchor_id, ver: Number(r.version_no ?? 1) })
+  }
+  const latestIB  = new Map<string, { w: WSRollup; ver: number }>()
+  const latestEng = new Map<string, { w: WSRollup; ver: number }>()
   for (const w of ws) {
-    wsByProject.set(w.project_id, (wsByProject.get(w.project_id) ?? 0) + 1)
-    if (w.status !== 'cancelled') {
-      estimateByProj.set(w.project_id, (estimateByProj.get(w.project_id) ?? 0) + Number(w.total_amount ?? 0))
+    if (w.status === 'cancelled') continue
+    const ch = chainOf.get(w.id) ?? { anchor: w.id, ver: 1 }
+    const bag = (w.summary_notes ?? '').startsWith('[IB') ? latestIB : latestEng
+    const prev = bag.get(ch.anchor)
+    if (!prev || ch.ver > prev.ver) bag.set(ch.anchor, { w, ver: ch.ver })
+  }
+  const engWinners = [...latestEng.values()].map(x => x.w)
+
+  // Per-project signals for the tiles.
+  const wsChainsByProj  = new Map<string, Set<string>>() // distinct live chains
+  const estimateByProj  = new Map<string, number>()   // Internal Estimate baseline (latest [IB] per chain)
+  const approvedByProj  = new Map<string, number>()   // approved-so-far money (incl. partial releases)
+  const pendingByProj   = new Map<string, number>()   // engineer sheets awaiting approval
+  const overdueByProj   = new Map<string, number>()   // open sheets past deadline
+  const addChain = (proj: string, anchor: string) => {
+    const set = wsChainsByProj.get(proj) ?? new Set<string>()
+    set.add(anchor); wsChainsByProj.set(proj, set)
+  }
+  const addOverdue = (w: WSRollup) => {
+    if (w.deadline_date && w.deadline_date < todayStr && !TERMINAL.has(w.status)) {
+      overdueByProj.set(w.project_id, (overdueByProj.get(w.project_id) ?? 0) + 1)
     }
+  }
+  for (const { w } of latestIB.values()) {
+    addChain(w.project_id, chainOf.get(w.id)?.anchor ?? w.id)
+    estimateByProj.set(w.project_id, (estimateByProj.get(w.project_id) ?? 0) + Number(w.total_amount ?? 0))
+    addOverdue(w)
+  }
+  for (const w of engWinners) {
+    addChain(w.project_id, chainOf.get(w.id)?.anchor ?? w.id)
     const released = approvedSoFar(w)
     if (released > 0) {
       approvedByProj.set(w.project_id, (approvedByProj.get(w.project_id) ?? 0) + released)
@@ -130,10 +171,11 @@ export default async function CostControlLandingPage() {
     if (PENDING_STATUSES.includes(w.status)) {
       pendingByProj.set(w.project_id, (pendingByProj.get(w.project_id) ?? 0) + 1)
     }
-    if (w.deadline_date && w.deadline_date < todayStr && !TERMINAL.has(w.status)) {
-      overdueByProj.set(w.project_id, (overdueByProj.get(w.project_id) ?? 0) + 1)
-    }
+    addOverdue(w)
   }
+  // Distinct live chains per project (for the "N sheets" tile figure).
+  const wsByProject = new Map<string, number>()
+  for (const [proj, set] of wsChainsByProj) wsByProject.set(proj, set.size)
 
   // Per-project budget rollup (ERP budget / committed / paid).
   // Same rule as the project detail page: a BPH report often carries BOTH a
@@ -168,8 +210,9 @@ export default async function CostControlLandingPage() {
     if (!hasSubMoney) for (const b of root) addBudgetLine(b)
   }
 
-  const totalWS = ws.length
-  const approvedTotal = ws.reduce((s, w) => s + approvedSoFar(w), 0)
+  // Distinct live chains across all projects (baseline + engineer, deduped).
+  const totalWS = new Set<string>([...latestIB.keys(), ...latestEng.keys()]).size
+  const approvedTotal = engWinners.reduce((s, w) => s + approvedSoFar(w), 0)
   const myDrafts = myDraftsRes as { count?: number | null; error?: { message: string } | null }
   const draftsErr = myDrafts.error ?? null
   const myDraftsCount = myDrafts.count ?? 0
@@ -179,7 +222,7 @@ export default async function CostControlLandingPage() {
   // when they are a Cost Control admin.
   const { data: approverData, error: approversErr } = approversRes
   const myDiscIds = new Set(((approverData ?? []) as Array<{ discipline_id: string }>).map(r => r.discipline_id))
-  const pendingSheets = ws.filter(w => PENDING_STATUSES.includes(w.status))
+  const pendingSheets = engWinners.filter(w => PENDING_STATUSES.includes(w.status))
   const pendingCount = pendingSheets.length
   const waitingOnMe = pendingSheets.filter(w => canAdmin || myDiscIds.has(w.discipline_id)).length
   const withOthers = pendingCount - waitingOnMe
@@ -331,7 +374,7 @@ export default async function CostControlLandingPage() {
           </Link>
           <Stat label="Approved value" value={formatINR(approvedTotal)} hint={`${totalWS} sheet${totalWS === 1 ? '' : 's'} total`} icon={<FileText className="h-5 w-5" />} />
           {ccSettings.billing_step && (() => {
-            const queue = ws.filter(w =>
+            const queue = engWinners.filter(w =>
               (w.status === 'approved' || w.status === 'partially_approved')
               && Number(w.approved_for_erp_amt ?? 0) > 0
               && !w.in4_entered_at)
