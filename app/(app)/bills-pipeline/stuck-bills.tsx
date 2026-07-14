@@ -27,11 +27,11 @@ export interface ChecklistState {
   drawing:        boolean
 }
 
-const CHECK_FIELDS: Array<{ key: keyof ChecklistState; label: string }> = [
-  { key: 'ms_sheet',       label: 'MS Sheet' },
-  { key: 'abstract_sheet', label: 'Abstract' },
-  { key: 'po_wo',          label: 'PO / WO' },
-  { key: 'drawing',        label: 'Drawing' },
+const CHECK_FIELDS: Array<{ key: keyof ChecklistState; label: string; short: string }> = [
+  { key: 'ms_sheet',       label: 'MS Sheet',      short: 'MS' },
+  { key: 'abstract_sheet', label: 'Abstract Sheet', short: 'Abs' },
+  { key: 'po_wo',          label: 'PO / WO',       short: 'PO/WO' },
+  { key: 'drawing',        label: 'Drawing',       short: 'Dwg' },
 ]
 
 const EMPTY: ChecklistState = { ms_sheet: false, abstract_sheet: false, po_wo: false, drawing: false }
@@ -129,25 +129,22 @@ export default function StuckBills({
         </div>
       </div>
 
-      {/* Table */}
+      {/* Table — sized to fit without a right-side scroll on desktop */}
       <div className="overflow-x-auto rounded-xl border border-gray-200">
-        <table className="w-full min-w-[1100px] border-collapse text-sm">
+        <table className="w-full min-w-[940px] border-collapse text-sm">
           <thead>
             <tr className="bg-gray-50 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
-              <th className="px-3 py-2.5">#</th>
-              <th className="px-3 py-2.5">ID</th>
-              <th className="px-3 py-2.5">Zoho Date</th>
-              <th className="px-3 py-2.5">Vendor</th>
-              <th className="px-3 py-2.5">Project</th>
-              <th className="px-3 py-2.5">Invoice Date</th>
-              <th className="px-3 py-2.5">Invoice No</th>
-              <th className="px-3 py-2.5 text-right">Amount</th>
-              <th className="px-3 py-2.5">Status</th>
-              <th className="px-3 py-2.5 text-right">Delay</th>
+              <th className="px-2 py-2.5">#</th>
+              <th className="px-2 py-2.5">Vendor</th>
+              <th className="px-2 py-2.5">Proj</th>
+              <th className="px-2 py-2.5 whitespace-nowrap">Inv Date</th>
+              <th className="px-2 py-2.5">Invoice No</th>
+              <th className="px-2 py-2.5 text-right">Amount</th>
+              <th className="px-2 py-2.5">Status</th>
+              <th className="px-2 py-2.5 text-right">Delay</th>
               {CHECK_FIELDS.map(f => (
-                <th key={f.key} className="px-2 py-2.5 text-center">{f.label}</th>
+                <th key={f.key} className="px-1.5 py-2.5 text-center" title={f.label}>{f.short}</th>
               ))}
-              <th className="px-3 py-2.5 text-center">Ready</th>
             </tr>
           </thead>
           <tbody>
@@ -155,26 +152,23 @@ export default function StuckBills({
               const c = checks[b.id] ?? EMPTY
               const ready = isReady(b.id)
               return (
-                <tr key={b.id} className={cn('border-t border-gray-100', i % 2 ? 'bg-gray-50/50' : 'bg-white', ready && 'bg-green-50/60')}>
-                  <td className="px-3 py-2.5 text-gray-400">{i + 1}</td>
-                  <td className="px-3 py-2.5 font-medium text-gray-700">{b.prefix || '—'}</td>
-                  <td className="px-3 py-2.5 whitespace-nowrap text-gray-600">{fmtDate(b.zohoDate)}</td>
-                  <td className="px-3 py-2.5 font-medium text-gray-900">{b.vendor || '—'}</td>
-                  <td className="px-3 py-2.5">
+                <tr key={b.id} className={cn('border-t border-gray-100', i % 2 ? 'bg-gray-50/50' : 'bg-white', ready && 'bg-green-50/70')}>
+                  <td className="px-2 py-2.5 text-gray-400">
+                    {ready ? <CheckCircle2 className="h-4 w-4 text-green-600" /> : i + 1}
+                  </td>
+                  <td className="px-2 py-2.5 font-medium text-gray-900">{b.vendor || '—'}</td>
+                  <td className="px-2 py-2.5">
                     <span className="rounded bg-slate-800 px-1.5 py-0.5 text-xs font-semibold text-white">{b.project}</span>
                   </td>
-                  <td className="px-3 py-2.5 whitespace-nowrap text-gray-600">{fmtDate(b.invoiceDate)}</td>
-                  <td className="px-3 py-2.5 whitespace-nowrap text-gray-600">{b.invoiceNo || '—'}</td>
-                  <td className="px-3 py-2.5 whitespace-nowrap text-right font-semibold tabular-nums text-gray-900">₹{inr(b.amount)}</td>
-                  <td className="px-3 py-2.5 whitespace-nowrap">
-                    <span className="text-gray-700">{b.status}</span>
-                    {b.atTrust && <span className="ml-1 text-xs text-green-700">· Trust</span>}
-                  </td>
-                  <td className={cn('px-3 py-2.5 text-right font-semibold tabular-nums', b.stalled ? 'text-red-600' : 'text-gray-600')}>
+                  <td className="px-2 py-2.5 whitespace-nowrap text-gray-600">{fmtDate(b.invoiceDate)}</td>
+                  <td className="px-2 py-2.5 whitespace-nowrap text-gray-600">{b.invoiceNo || '—'}</td>
+                  <td className="px-2 py-2.5 whitespace-nowrap text-right font-semibold tabular-nums text-gray-900">₹{inr(b.amount)}</td>
+                  <td className="px-2 py-2.5 whitespace-nowrap text-gray-700">{b.status}</td>
+                  <td className={cn('px-2 py-2.5 text-right font-semibold tabular-nums', b.stalled ? 'text-red-600' : 'text-gray-600')}>
                     {b.delayDays}d
                   </td>
                   {CHECK_FIELDS.map(f => (
-                    <td key={f.key} className="px-2 py-2.5 text-center">
+                    <td key={f.key} className="px-1.5 py-2.5 text-center">
                       <input
                         type="checkbox"
                         checked={c[f.key]}
@@ -185,9 +179,6 @@ export default function StuckBills({
                       />
                     </td>
                   ))}
-                  <td className="px-3 py-2.5 text-center">
-                    {ready && <CheckCircle2 className="mx-auto h-5 w-5 text-green-600" />}
-                  </td>
                 </tr>
               )
             })}
