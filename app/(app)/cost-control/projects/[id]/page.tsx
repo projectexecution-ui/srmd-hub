@@ -1,5 +1,5 @@
 import Link from 'next/link'
-import { notFound, redirect } from 'next/navigation'
+import { notFound } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { requirePermission, can } from '@/lib/auth'
 import { checkIsCcReviewer, checkCanDecideInternalEstimate, checkCanRequestIeRevision } from '@/components/cost-control/ws-actions'
@@ -117,12 +117,11 @@ export default async function CostControlProjectDetailPage(
   }
   if (!project) notFound()
 
-  // Engineers never see the Internal Estimate. When the admin has opened up
-  // "let engineers open projects", they get a SEPARATE, safe view (ERP
-  // budget + their own sheets, no Internal Estimate figures anywhere);
-  // otherwise they are sent to their own Working Sheets.
+  // Engineers never see the Internal Estimate. A non-reviewer gets a
+  // SEPARATE, safe view (the management-style category/sub-skill table minus
+  // Internal Estimate / Paid / % Used) — reached by opening one of their
+  // projects from the Cost Control home.
   if (!reviewer) {
-    if (!ccSettings.eng_projects) redirect('/cost-control/working-sheets')
     return <EngineerProjectView project={{ id: project.id, code: project.code, name: project.name, built_up_sft: project.built_up_sft }} />
   }
 

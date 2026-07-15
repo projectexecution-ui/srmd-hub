@@ -17,7 +17,6 @@ import { AutoBackup } from '@/components/cost-control/AutoBackup'
 import { getLastBphSync } from '@/app/(app)/cost-control/import/bph/actions'
 import { getCcSettings } from '@/lib/cost-control/settings'
 import { getEffectiveCcRole } from '@/app/(app)/cost-control/billing/billing-actions'
-import { EngineerProjectTable } from '@/app/(app)/cost-control/projects/[id]/EngineerProjectView'
 
 export const dynamic = 'force-dynamic'
 
@@ -667,6 +666,46 @@ async function EngineerHome({ userId, canWrite }: { userId: string | null; canWr
     : { data: [] as Array<{ id: string; code: string; name: string; built_up_sft: number | null }> }
   const projects = (projData ?? []) as Array<{ id: string; code: string; name: string; built_up_sft: number | null }>
 
+  // Per-project ERP budget (Budget + WO) for the project cards. Same
+  // summary-vs-detail dedup as management: per (project, discipline), if any
+  // sub-skill line carries money use those and ignore the discipline root
+  // line; else fall back to the root. Paid is never fetched (hidden from
+  // engineers).
+  type BLRow = { project_id: string; discipline_id: string; sub_skill_id: string | null; current_budget_amt: number | null; current_wo_committed_amt: number | null }
+  const { data: blData } = projIds.size
+    ? await supabase.from('cc_budget_lines').select('project_id, discipline_id, sub_skill_id, current_budget_amt, current_wo_committed_amt').in('project_id', [...projIds])
+    : { data: [] as BLRow[] }
+  const byProjDisc = new Map<string, { sub: BLRow[]; root: BLRow[] }>()
+  for (const b of (blData ?? []) as BLRow[]) {
+    const k = `${b.project_id}::${b.discipline_id}`
+    const cur = byProjDisc.get(k) ?? { sub: [], root: [] }
+    ;(b.sub_skill_id ? cur.sub : cur.root).push(b)
+    byProjDisc.set(k, cur)
+  }
+  const budgetByProj = new Map<string, { budget: number; wo: number }>()
+  const blMoney = (b: BLRow) => Number(b.current_budget_amt ?? 0) || Number(b.current_wo_committed_amt ?? 0)
+  for (const { sub, root } of byProjDisc.values()) {
+    const rows = sub.some(blMoney) ? sub : root
+    for (const b of rows) {
+      const cur = budgetByProj.get(b.project_id) ?? { budget: 0, wo: 0 }
+      cur.budget += Number(b.current_budget_amt ?? 0)
+      cur.wo += Number(b.current_wo_committed_amt ?? 0)
+      budgetByProj.set(b.project_id, cur)
+    }
+  }
+
+  // Per-project: how many sub-skills are assigned to me + how many I still
+  // haven't started, and how many of my own sheets sit in the project.
+  const assignedByProj = new Map<string, { total: number; toStart: number }>()
+  for (const a of myAssignments) {
+    const cur = assignedByProj.get(a.project_id) ?? { total: 0, toStart: 0 }
+    cur.total += 1
+    if (!mySubSet.has(`${a.project_id}::${a.sub_skill_id}`)) cur.toStart += 1
+    assignedByProj.set(a.project_id, cur)
+  }
+  const mySheetsByProj = new Map<string, number>()
+  for (const w of myWs) mySheetsByProj.set(w.project_id, (mySheetsByProj.get(w.project_id) ?? 0) + 1)
+
   const pickOne = <T,>(x: T | T[] | null): T | undefined => (Array.isArray(x) ? x[0] : x) ?? undefined
 
   return (
@@ -753,20 +792,64 @@ async function EngineerHome({ userId, canWrite }: { userId: string | null; canWr
       {/* Every project I'm on — stacked so I see them ALL on one screen, no
           switcher hiding anything. Same layout management sees, minus the
           Internal Estimate / Paid / % Used columns. */}
-      {projects.length === 0 ? (
-        <EmptyState
-          icon={<FileText className="h-10 w-10" />}
-          title="No projects yet"
-          description="You're not on any Cost Control project yet. Once you're added, your project's budget and sub-skills show up here."
-        />
-      ) : (
-        projects.map(p => (
-          <div key={p.id} className="space-y-2">
-            <h2 className="text-sm font-bold text-gray-900">{p.code} · {p.name}</h2>
-            <EngineerProjectTable projectId={p.id} />
+      {/* My projects — pick one to open its full budget + sub-skill table.
+          Same idea as the management all-projects view, scoped to mine. */}
+      <div>
+        <h2 className="text-sm font-bold text-gray-900 mb-2">My projects</h2>
+        {projects.length === 0 ? (
+          <EmptyState
+            icon={<FileText className="h-10 w-10" />}
+            title="No projects yet"
+            description="You're not on any Cost Control project yet. Once you're added, your projects show up here to open."
+          />
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+            {projects.map(p => {
+              const bud = budgetByProj.get(p.id)
+              const asg = assignedByProj.get(p.id)
+              const sheets = mySheetsByProj.get(p.id) ?? 0
+              const sft = Number(p.built_up_sft ?? 0)
+              return (
+                <Link
+                  key={p.id}
+                  href={`/cost-control/projects/${p.id}`}
+                  className="block rounded-xl border border-gray-200 bg-white p-4 hover:border-indigo-300 hover:shadow-sm transition-colors"
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <p className="font-semibold text-gray-900 truncate">{p.name}</p>
+                      <p className="text-xs text-gray-500">{p.code}{sft > 0 ? ` · ${sft.toLocaleString('en-IN')} sft` : ''}</p>
+                    </div>
+                    {asg && asg.toStart > 0 && (
+                      <span className="text-[10px] font-bold text-amber-800 bg-amber-100 border border-amber-200 rounded px-1.5 py-0.5 whitespace-nowrap">
+                        {asg.toStart} to start
+                      </span>
+                    )}
+                  </div>
+                  <div className="mt-3 grid grid-cols-2 gap-2">
+                    <div>
+                      <p className="text-[10px] uppercase tracking-wide text-gray-400">Budget (ERP)</p>
+                      <p className="text-sm font-semibold text-gray-900 tabular-nums">{bud?.budget ? formatINR(bud.budget) : '—'}</p>
+                    </div>
+                    <div>
+                      <p className="text-[10px] uppercase tracking-wide text-gray-400">WO / PO</p>
+                      <p className="text-sm font-semibold text-gray-700 tabular-nums">{bud?.wo ? formatINR(bud.wo) : '—'}</p>
+                    </div>
+                  </div>
+                  <div className="mt-3 flex items-center justify-between">
+                    <span className="text-[11px] text-gray-500">
+                      {sheets} of my sheet{sheets === 1 ? '' : 's'}{asg && asg.total > 0 ? ` · ${asg.total} assigned to me` : ''}
+                    </span>
+                    <span className="text-indigo-600 text-xs font-semibold inline-flex items-center gap-1">
+                      Open <ArrowRight className="h-3 w-3" />
+                    </span>
+                  </div>
+                </Link>
+              )
+            })}
           </div>
-        ))
-      )}
+        )}
+      </div>
     </div>
   )
 }
