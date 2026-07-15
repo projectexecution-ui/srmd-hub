@@ -285,6 +285,31 @@ export async function setProjectGroupLabel(
 }
 
 // ============================================================
+// Add / remove a per-project approver (Project Head / Atm Head / Trustee).
+// Reviewer/Admin only — re-checked in the SECURITY DEFINER RPC.
+// ============================================================
+export async function setProjectApprover(input: {
+  project_id: string
+  role: 'project_head' | 'head' | 'founder'
+  user_id: string
+  add: boolean
+}): Promise<{ ok: boolean; error?: string }> {
+  if (!uuid.safeParse(input.project_id).success || !uuid.safeParse(input.user_id).success) {
+    return { ok: false, error: 'Bad id' }
+  }
+  const supabase = await createClient()
+  const { error } = await supabase.rpc('cc_set_project_approver', {
+    p_project: input.project_id,
+    p_role: input.role,
+    p_user: input.user_id,
+    p_add: input.add,
+  })
+  if (error) return { ok: false, error: error.message }
+  revalidatePath(`/cost-control/projects/${input.project_id}`)
+  return { ok: true }
+}
+
+// ============================================================
 // Change the project ALIAS (the short `code` badge) — ADMIN only.
 // It's the short label shown everywhere + the prefix on NEW Working-Sheet
 // codes. Existing sheet codes are stored strings and keep their old prefix

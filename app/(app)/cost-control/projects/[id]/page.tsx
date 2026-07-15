@@ -5,6 +5,7 @@ import { requirePermission, can, getMyProfile } from '@/lib/auth'
 import { checkIsCcReviewer, checkCanDecideInternalEstimate, checkCanRequestIeRevision } from '@/components/cost-control/ws-actions'
 import { IeRevisionPanel, type IeRevision } from './IeRevisionPanel'
 import { EngineerProjectView } from './EngineerProjectView'
+import { ProjectApproversPanel } from './ProjectApproversPanel'
 import { PageHeader } from '@/components/PageHeader'
 import { SetupProgressBanner } from '@/components/ProjectSetupWizard/SetupProgressBanner'
 import { Plus, Flame, Info, Settings } from 'lucide-react'
@@ -440,6 +441,16 @@ export default async function CostControlProjectDetailPage(
   const pmRow: PMLite = (pmRes.data ?? null) as PMLite
   const pmName = pmRow?.full_name ?? pmRow?.name ?? null
 
+  // Per-project approvers roster (Phase 1) + candidate users to assign.
+  const [approverRes, candRes] = await Promise.all([
+    supabase.from('cc_project_approvers').select('role, user_id').eq('project_id', id),
+    supabase.from('profiles').select('id, full_name, name').eq('is_active', true).order('full_name'),
+  ])
+  const projectApprovers = ((approverRes.data ?? []) as Array<{ role: 'project_head' | 'head' | 'founder'; user_id: string }>)
+    .map(r => ({ role: r.role, user_id: r.user_id, name: profileMap.get(r.user_id) ?? '(user)' }))
+  const approverCandidates = ((candRes.data ?? []) as ProfileLite[])
+    .map(p => ({ id: p.id, name: p.full_name ?? p.name ?? '(unnamed)' }))
+
   // Is this project mapped to a BPH report? Drives the header sync button.
   const isBphMapped = !!(await getBphMappingForProject(id))
 
@@ -567,6 +578,16 @@ export default async function CostControlProjectDetailPage(
           revision={ieRevision}
           canRequest={canRequestRevision}
           canDecide={canDecideRevision}
+        />
+      )}
+
+      {/* Per-project approvers (Phase 1 — roster only; scoping comes next). */}
+      {reviewer && (
+        <ProjectApproversPanel
+          projectId={project.id}
+          approvers={projectApprovers}
+          candidates={approverCandidates}
+          canWrite={canWrite}
         />
       )}
 
