@@ -2,7 +2,7 @@ import { Fragment } from 'react'
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
-import { requirePermission, can, getMyUser } from '@/lib/auth'
+import { requirePermission, can, getMyUser, getMyProfile } from '@/lib/auth'
 import { checkIsCcReviewer } from '@/components/cost-control/ws-actions'
 import { PageHeader } from '@/components/PageHeader'
 import { Card } from '@/components/ui/card'
@@ -18,6 +18,7 @@ import { AutoBackup } from '@/components/cost-control/AutoBackup'
 import { getLastBphSync } from '@/app/(app)/cost-control/import/bph/actions'
 import { getCcSettings } from '@/lib/cost-control/settings'
 import { getEffectiveCcRole } from '@/app/(app)/cost-control/billing/billing-actions'
+import { GroupLabelChip } from './GroupLabelChip'
 
 export const dynamic = 'force-dynamic'
 
@@ -32,6 +33,7 @@ type CCProject = {
   setup_progress_pct: number | null
   built_up_sft: number | null
   parent_project_id: string | null
+  group_label: string | null
 }
 
 export default async function CostControlLandingPage() {
@@ -41,6 +43,8 @@ export default async function CostControlLandingPage() {
   const supabase = await createClient()
   const user = await getMyUser()
   const ccSettings = await getCcSettings()
+  // Renaming a group is admin-only (matches project rename/alias).
+  const isAdmin = (await getMyProfile())?.role === 'admin'
 
   // Management (approval-chain roles + admin) gets the full financial
   // dashboard. The Billing team lands straight on their IN4 queue.
@@ -57,7 +61,7 @@ export default async function CostControlLandingPage() {
   const [projectsRes, wsAllRes, myDraftsRes, approversRes, deadlinesRes, budgetRes, backupRes] = await Promise.all([
     supabase
       .from('projects')
-      .select('id, code, name, cc_status, setup_progress_pct, built_up_sft, parent_project_id')
+      .select('id, code, name, cc_status, setup_progress_pct, built_up_sft, parent_project_id, group_label')
       .not('cc_status', 'is', null)
       .order('code'),
     supabase.from('cc_working_sheets').select('id, status, total_amount, approved_for_erp_amt, project_id, discipline_id, deadline_date, in4_entered_at, summary_notes').is('archived_at', null),
@@ -289,10 +293,10 @@ export default async function CostControlLandingPage() {
     // Children render inside their parent's group, not at top level.
     if (p.parent_project_id && projById.has(p.parent_project_id)) continue
     const kids = (childrenOf.get(p.id) ?? []).slice().sort((a, b) => a.code.localeCompare(b.code))
-    // Label the group by the parent's short CODE (e.g. "NGH", "P2", "VV") —
-    // the parent's full name can carry extra words ("NGH Infra") that don't
-    // belong in the group heading.
-    if (kids.length > 0) projGroups.push({ key: p.id, label: p.code.trim() || p.name.trim(), members: [p, ...kids] })
+    // Group heading = the admin's custom group name, else the parent's short
+    // code (e.g. "NGH", "P2", "VV") — never the parent's full name, which can
+    // carry extra words ("NGH Infra").
+    if (kids.length > 0) projGroups.push({ key: p.id, label: p.group_label?.trim() || p.code.trim() || p.name.trim(), members: [p, ...kids] })
     else independents.push(p)
   }
   projGroups.sort((a, b) => (a.label ?? '').localeCompare(b.label ?? ''))
@@ -536,7 +540,9 @@ export default async function CostControlLandingPage() {
                     {g.label && (
                       <tr className="bg-indigo-50/80 border-t border-indigo-100">
                         <td className="px-3 py-2 font-bold text-[11px] uppercase tracking-wide text-indigo-900" colSpan={2}>
-                          {g.label}
+                          {g.key !== '_independent'
+                            ? <GroupLabelChip projectId={g.key} label={g.label ?? ''} isAdmin={isAdmin} />
+                            : g.label}
                           <span className="ml-2 font-normal normal-case text-indigo-400">{g.members.length} project{g.members.length === 1 ? '' : 's'}</span>
                         </td>
                         <td className="px-3 py-2 text-right tabular-nums text-[11px] font-semibold text-indigo-900/70">

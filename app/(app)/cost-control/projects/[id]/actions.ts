@@ -253,6 +253,38 @@ export async function renameProject(
 }
 
 // ============================================================
+// Set / clear a project GROUP label — ADMIN only. Shown on the dashboard
+// group band for the PARENT project; blank → the band falls back to the
+// parent's short code. Purely a display label.
+// ============================================================
+export async function setProjectGroupLabel(
+  projectId: string,
+  label: string | null,
+): Promise<{ ok: boolean; error?: string }> {
+  const profile = await getMyProfile()
+  if (profile?.role !== 'admin') {
+    return { ok: false, error: 'Only an Admin can rename a group' }
+  }
+  if (!uuid.safeParse(projectId).success) return { ok: false, error: 'Bad project id' }
+  const trimmed = (label ?? '').trim()
+  if (trimmed.length > 60) return { ok: false, error: 'Group name must be 60 characters or fewer' }
+  const value = trimmed === '' ? null : trimmed
+
+  const supabase = await createClient()
+  const { data, error } = await supabase
+    .from('projects')
+    .update({ group_label: value })
+    .eq('id', projectId)
+    .select('id')
+  if (error) return { ok: false, error: error.message }
+  if (!data || data.length === 0) return { ok: false, error: 'Change was blocked — check your permissions' }
+
+  revalidatePath('/cost-control')
+  revalidatePath(`/cost-control/projects/${projectId}`)
+  return { ok: true }
+}
+
+// ============================================================
 // Change the project ALIAS (the short `code` badge) — ADMIN only.
 // It's the short label shown everywhere + the prefix on NEW Working-Sheet
 // codes. Existing sheet codes are stored strings and keep their old prefix
