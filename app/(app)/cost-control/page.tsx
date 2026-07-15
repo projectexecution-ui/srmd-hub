@@ -19,6 +19,7 @@ import { getLastBphSync } from '@/app/(app)/cost-control/import/bph/actions'
 import { getCcSettings } from '@/lib/cost-control/settings'
 import { getEffectiveCcRole } from '@/app/(app)/cost-control/billing/billing-actions'
 import { GroupLabelChip } from './GroupLabelChip'
+import { AssignedToMePopover } from './AssignedToMePopover'
 
 export const dynamic = 'force-dynamic'
 
@@ -756,10 +757,11 @@ async function EngineerHome({ userId, canWrite }: { userId: string | null; canWr
   for (const w of myWs) projIds.add(w.project_id)
   for (const a of myAssignments) projIds.add(a.project_id)
 
+  type EProj = { id: string; code: string; name: string; built_up_sft: number | null; parent_project_id: string | null; group_label: string | null }
   const { data: projData } = projIds.size
-    ? await supabase.from('projects').select('id, code, name, built_up_sft').in('id', [...projIds]).not('cc_status', 'is', null).order('code')
-    : { data: [] as Array<{ id: string; code: string; name: string; built_up_sft: number | null }> }
-  const projects = (projData ?? []) as Array<{ id: string; code: string; name: string; built_up_sft: number | null }>
+    ? await supabase.from('projects').select('id, code, name, built_up_sft, parent_project_id, group_label').in('id', [...projIds]).not('cc_status', 'is', null).order('code')
+    : { data: [] as EProj[] }
+  const projects = (projData ?? []) as EProj[]
 
   // Per-project ERP budget (Budget + WO) for the project cards. Same
   // summary-vs-detail dedup as management: per (project, discipline), if any
@@ -803,145 +805,178 @@ async function EngineerHome({ userId, canWrite }: { userId: string | null; canWr
 
   const pickOne = <T,>(x: T | T[] | null): T | undefined => (Array.isArray(x) ? x[0] : x) ?? undefined
 
-  return (
-    <div className="p-4 md:p-6 max-w-5xl mx-auto space-y-5">
-      {/* Hero */}
-      <div className="rounded-2xl bg-gradient-to-r from-indigo-600 to-indigo-500 text-white px-5 py-6 md:px-7 shadow-sm">
-        <div className="flex items-start justify-between gap-3 flex-wrap">
-          <div>
-            <h1 className="text-xl md:text-2xl font-bold">Cost Control</h1>
-            <p className="text-indigo-100 text-sm mt-1">
-              Your projects&apos; budget and the estimates moving through approval.
-            </p>
-          </div>
-          <Link href="/cost-control/working-sheets" className="text-xs font-semibold text-white/90 hover:text-white underline underline-offset-2 whitespace-nowrap mt-1">
-            My working sheets →
+  // Flat list of my assigned sub-skills for the collapsible header popover.
+  const assignedItems = myAssignments.map(a => {
+    const ss = pickOne(a.cc_sub_skills)
+    const pr = pickOne(a.projects)
+    return {
+      projectId: a.project_id,
+      subSkillId: a.sub_skill_id,
+      disciplineId: ss?.discipline_id ?? null,
+      subCode: ss?.code ?? null,
+      subName: ss?.name ?? null,
+      projectCode: pr?.code ?? null,
+      projectName: pr?.name ?? null,
+      done: mySubSet.has(`${a.project_id}::${a.sub_skill_id}`),
+    }
+  })
+
+  // Group my projects by parent (mirrors the management dashboard). A parent
+  // I'm not assigned to still labels the band — fetch those labels too.
+  const projByIdE = new Map(projects.map(p => [p.id, p]))
+  const parentIds = [...new Set(projects.map(p => p.parent_project_id).filter((x): x is string => !!x && !projByIdE.has(x)))]
+  const { data: parentData } = parentIds.length
+    ? await supabase.from('projects').select('id, code, name, group_label').in('id', parentIds)
+    : { data: [] as Array<{ id: string; code: string; name: string; group_label: string | null }> }
+  const parentLabelById = new Map<string, { code: string; name: string; group_label: string | null }>()
+  for (const p of (parentData ?? [])) parentLabelById.set(p.id, { code: p.code, name: p.name, group_label: p.group_label })
+
+  const parentHasKids = new Set<string>()
+  for (const p of projects) if (p.parent_project_id) parentHasKids.add(p.parent_project_id)
+  const groupKeyOf = (p: EProj): string =>
+    p.parent_project_id ? p.parent_project_id : parentHasKids.has(p.id) ? p.id : `solo:${p.id}`
+  const groupLabelFor = (key: string): string => {
+    const inSet = projByIdE.get(key)
+    if (inSet) return inSet.group_label?.trim() || inSet.code.trim() || inSet.name.trim()
+    const par = parentLabelById.get(key)
+    return par ? (par.group_label?.trim() || par.code.trim() || par.name.trim()) : ''
+  }
+  const groupMap = new Map<string, EProj[]>()
+  for (const p of projects) {
+    const k = groupKeyOf(p)
+    const arr = groupMap.get(k) ?? []
+    arr.push(p)
+    groupMap.set(k, arr)
+  }
+  type EGroup = { key: string; label: string; members: EProj[] }
+  const realGroups: EGroup[] = []
+  const soloProjects: EProj[] = []
+  for (const [k, members] of groupMap) {
+    if (k.startsWith('solo:')) { soloProjects.push(...members); continue }
+    members.sort((a, b) => (a.id === k ? -1 : b.id === k ? 1 : a.code.localeCompare(b.code)))
+    realGroups.push({ key: k, label: groupLabelFor(k), members })
+  }
+  realGroups.sort((a, b) => a.label.localeCompare(b.label))
+  soloProjects.sort((a, b) => a.code.localeCompare(b.code))
+
+  // One project row — reused for grouped members + independents.
+  const renderProjRow = (p: EProj, indent: boolean) => {
+    const bud = budgetByProj.get(p.id)
+    const asg = assignedByProj.get(p.id)
+    const sheets = mySheetsByProj.get(p.id) ?? 0
+    const sft = Number(p.built_up_sft ?? 0)
+    return (
+      <tr key={p.id} className="border-t border-gray-100 hover:bg-gray-50/70">
+        <td className={`px-3 py-2.5 ${indent ? 'pl-8' : ''}`}>
+          <Link href={`/cost-control/projects/${p.id}`} className="block">
+            <span className="font-mono text-[11px] font-bold text-indigo-700 mr-2">{p.code}</span>
+            <span className="font-semibold text-gray-900 hover:underline">{p.name}</span>
           </Link>
-        </div>
-        {/* Engineers raise sheets ONLY by uploading their working Excel —
-            the typed sheet and thumbrule paths are management-only. */}
+        </td>
+        <td className="px-3 py-2.5 text-right tabular-nums text-gray-600">{sft > 0 ? sft.toLocaleString('en-IN') : '—'}</td>
+        <td className="px-3 py-2.5 text-right tabular-nums font-semibold text-gray-900">{bud?.budget ? formatINR(bud.budget) : '—'}</td>
+        <td className="px-3 py-2.5 text-right tabular-nums text-gray-600">{bud?.wo ? formatINR(bud.wo) : '—'}</td>
+        <td className="px-3 py-2.5">
+          {asg && asg.toStart > 0 ? (
+            <span className="inline-flex items-center text-[10px] font-bold text-amber-800 bg-amber-100 rounded-full px-2 py-0.5">{asg.toStart} to start</span>
+          ) : sheets > 0 ? (
+            <span className="text-[11px] text-gray-500">{sheets} sheet{sheets === 1 ? '' : 's'}</span>
+          ) : (
+            <span className="text-[11px] text-gray-400">—</span>
+          )}
+        </td>
+      </tr>
+    )
+  }
+
+  return (
+    <div className="p-4 md:p-6 max-w-6xl mx-auto space-y-4">
+      <PageHeader
+        title="Cost Control"
+        subtitle="Your projects' budget and the estimates moving through approval."
+      >
         {canWrite && (
-          <div className="flex flex-wrap items-center gap-3 mt-4">
-            <Link href="/cost-control/working-sheets/new-quick"
-              className="inline-flex items-center gap-2 rounded-xl bg-white text-indigo-800 font-semibold text-sm px-4 py-2.5 hover:bg-indigo-50 transition-colors shadow-sm">
+          <Button asChild size="sm">
+            <Link href="/cost-control/working-sheets/new-quick">
               <FileSpreadsheet className="h-4 w-4" /> Upload my working (Excel)
             </Link>
-            <span className="text-[11px] text-indigo-100">Attach your quantification Excel — it&apos;s required.</span>
-          </div>
+          </Button>
         )}
-      </div>
+        <Button asChild size="sm" variant="outline">
+          <Link href="/cost-control/working-sheets">
+            <FileText className="h-4 w-4" /> My working sheets
+          </Link>
+        </Button>
+        <AssignedToMePopover items={assignedItems} canWrite={canWrite} pendingCount={pendingAssignments} />
+      </PageHeader>
 
-      {/* My budget working — assigned to me. PINNED AT THE TOP: this is the
-          engineer's to-do across EVERY project, so it's read before anything
-          else. No amounts here — a to-do, not a money view. */}
-      {myAssignments.length > 0 && (
-        <Card className="overflow-hidden border-indigo-200">
-          <div className="px-4 py-3 border-b border-indigo-100 bg-indigo-50/60 flex items-center justify-between">
-            <h2 className="text-sm font-bold text-indigo-900 inline-flex items-center gap-1.5">
-              <ClipboardList className="h-4 w-4" /> My budget working — assigned to me
-            </h2>
-            <span className="text-[11px] font-semibold text-indigo-700">
-              {pendingAssignments > 0 ? `${pendingAssignments} still to start` : 'all started'}
-            </span>
-          </div>
-          <ul className="divide-y divide-gray-100">
-            {myAssignments.map(a => {
-              const ss = pickOne(a.cc_sub_skills)
-              const pr = pickOne(a.projects)
-              const done = mySubSet.has(`${a.project_id}::${a.sub_skill_id}`)
-              return (
-                <li key={`${a.project_id}::${a.sub_skill_id}`} className="flex items-center gap-3 px-4 py-2.5">
-                  <div className="min-w-0 flex-1">
-                    <p className="text-sm text-gray-900 truncate">
-                      <span className="font-mono text-[11px] text-gray-400 mr-1.5">{ss?.code}</span>
-                      {ss?.name ?? 'Sub-skill'}
-                    </p>
-                    <p className="text-[11px] text-gray-500">{pr?.code ? `${pr.code}${pr.name ? ` · ${pr.name}` : ''}` : 'Project'}</p>
-                  </div>
-                  {done ? (
-                    <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-green-700 whitespace-nowrap">
-                      <CheckCircle2 className="h-3.5 w-3.5" /> Sheet raised
-                    </span>
-                  ) : canWrite ? (
-                    <Link
-                      href={`/cost-control/working-sheets/new-quick?project=${a.project_id}${ss?.discipline_id ? `&discipline=${ss.discipline_id}` : ''}&sub_skill=${a.sub_skill_id}`}
-                      className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-indigo-600 text-white hover:bg-indigo-700 whitespace-nowrap"
-                    >
-                      Start sheet <ArrowRight className="h-3 w-3" />
-                    </Link>
-                  ) : (
-                    <span className="text-[11px] text-amber-700 font-semibold whitespace-nowrap">Not started</span>
-                  )}
-                </li>
-              )
-            })}
-          </ul>
-        </Card>
-      )}
-
-      {/* Every project I'm on — stacked so I see them ALL on one screen, no
-          switcher hiding anything. Same layout management sees, minus the
-          Internal Estimate / Paid / % Used columns. */}
-      {/* My projects — pick one to open its full budget + sub-skill table.
-          Same idea as the management all-projects view, scoped to mine. */}
-      <div>
-        <h2 className="text-sm font-bold text-gray-900 mb-2">My projects</h2>
-        {projects.length === 0 ? (
+      {projects.length === 0 ? (
+        <Card>
           <EmptyState
-            icon={<FileText className="h-10 w-10" />}
+            icon={<Calculator className="h-10 w-10" />}
             title="No projects yet"
             description="You're not on any Cost Control project yet. Once you're added, your projects show up here to open."
           />
-        ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-            {projects.map(p => {
-              const bud = budgetByProj.get(p.id)
-              const asg = assignedByProj.get(p.id)
-              const sheets = mySheetsByProj.get(p.id) ?? 0
-              const sft = Number(p.built_up_sft ?? 0)
-              return (
-                <Link
-                  key={p.id}
-                  href={`/cost-control/projects/${p.id}`}
-                  className="block rounded-xl border border-gray-200 bg-white p-4 hover:border-indigo-300 hover:shadow-sm transition-colors"
-                >
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="min-w-0">
-                      <p className="font-semibold text-gray-900 truncate">{p.name}</p>
-                      <p className="text-xs text-gray-500">{p.code}{sft > 0 ? ` · ${sft.toLocaleString('en-IN')} sft` : ''}</p>
-                    </div>
-                    {asg && asg.toStart > 0 && (
-                      <span className="text-[10px] font-bold text-amber-800 bg-amber-100 border border-amber-200 rounded px-1.5 py-0.5 whitespace-nowrap">
-                        {asg.toStart} to start
-                      </span>
+        </Card>
+      ) : (
+        <Card className="overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full text-[13px]">
+              <thead className="bg-gray-50 text-left">
+                <tr>
+                  <th className="px-3 py-2.5 font-semibold text-[10px] uppercase tracking-wide text-gray-500 min-w-[220px]">Project</th>
+                  <th className="px-3 py-2.5 font-semibold text-[10px] uppercase tracking-wide text-gray-500 text-right">Area (sft)</th>
+                  <th className="px-3 py-2.5 font-semibold text-[10px] uppercase tracking-wide text-gray-500 text-right">Budget (ERP)</th>
+                  <th className="px-3 py-2.5 font-semibold text-[10px] uppercase tracking-wide text-gray-500 text-right">WO / PO</th>
+                  <th className="px-3 py-2.5 font-semibold text-[10px] uppercase tracking-wide text-gray-500 w-28">My work</th>
+                </tr>
+              </thead>
+              <tbody>
+                {realGroups.map(g => {
+                  const gt = g.members.reduce((t, p) => {
+                    const bud = budgetByProj.get(p.id)
+                    t.sft += Number(p.built_up_sft ?? 0)
+                    t.budget += bud?.budget ?? 0
+                    t.wo += bud?.wo ?? 0
+                    return t
+                  }, { sft: 0, budget: 0, wo: 0 })
+                  return (
+                    <Fragment key={g.key}>
+                      <tr className="bg-indigo-50/80 border-t border-indigo-100">
+                        <td className="px-3 py-2 font-bold text-[11px] uppercase tracking-wide text-indigo-900">
+                          {g.label}
+                          <span className="ml-2 font-normal normal-case text-indigo-400">{g.members.length} project{g.members.length === 1 ? '' : 's'}</span>
+                        </td>
+                        <td className="px-3 py-2 text-right tabular-nums text-[11px] font-semibold text-indigo-900/70">{gt.sft > 0 ? gt.sft.toLocaleString('en-IN') : '—'}</td>
+                        <td className="px-3 py-2 text-right tabular-nums text-[11px] font-bold text-indigo-900">{gt.budget > 0 ? formatINR(gt.budget) : '—'}</td>
+                        <td className="px-3 py-2 text-right tabular-nums text-[11px] font-semibold text-indigo-900/70">{gt.wo > 0 ? formatINR(gt.wo) : '—'}</td>
+                        <td className="px-3 py-2"></td>
+                      </tr>
+                      {g.members.map(p => renderProjRow(p, true))}
+                    </Fragment>
+                  )
+                })}
+                {soloProjects.length > 0 && (
+                  <Fragment key="_independent">
+                    {realGroups.length > 0 && (
+                      <tr className="bg-gray-50 border-t border-gray-200">
+                        <td className="px-3 py-2 font-bold text-[11px] uppercase tracking-wide text-gray-500" colSpan={5}>
+                          Independent projects
+                          <span className="ml-2 font-normal normal-case text-gray-400">{soloProjects.length} project{soloProjects.length === 1 ? '' : 's'}</span>
+                        </td>
+                      </tr>
                     )}
-                  </div>
-                  <div className="mt-3 grid grid-cols-2 gap-2">
-                    <div>
-                      <p className="text-[10px] uppercase tracking-wide text-gray-400">Budget (ERP)</p>
-                      <p className="text-sm font-semibold text-gray-900 tabular-nums">{bud?.budget ? formatINR(bud.budget) : '—'}</p>
-                    </div>
-                    <div>
-                      <p className="text-[10px] uppercase tracking-wide text-gray-400">WO / PO</p>
-                      <p className="text-sm font-semibold text-gray-700 tabular-nums">{bud?.wo ? formatINR(bud.wo) : '—'}</p>
-                    </div>
-                  </div>
-                  <div className="mt-3 flex items-center justify-between">
-                    <span className="text-[11px] text-gray-500">
-                      {sheets} of my sheet{sheets === 1 ? '' : 's'}{asg && asg.total > 0 ? ` · ${asg.total} assigned to me` : ''}
-                    </span>
-                    <span className="text-indigo-600 text-xs font-semibold inline-flex items-center gap-1">
-                      Open <ArrowRight className="h-3 w-3" />
-                    </span>
-                  </div>
-                </Link>
-              )
-            })}
+                    {soloProjects.map(p => renderProjRow(p, false))}
+                  </Fragment>
+                )}
+              </tbody>
+            </table>
           </div>
-        )}
-      </div>
+        </Card>
+      )}
     </div>
   )
+
 }
 
 function Stat({ label, value, hint, icon, tone = 'default' }: { label: string; value: React.ReactNode; hint?: string; icon?: React.ReactNode; tone?: 'default' | 'amber' }) {
