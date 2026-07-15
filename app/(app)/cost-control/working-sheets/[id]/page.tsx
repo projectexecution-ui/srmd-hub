@@ -114,9 +114,11 @@ export default async function WorkingSheetEditorPage(
 
   // A management estimate sheet (imported Internal Budget, tagged [IB…]) is
   // frozen while its project's Internal Estimate is locked — it can only be
-  // changed through the Trustee-approved revision flow.
+  // changed through the Trustee-approved revision flow. These sheets sit at
+  // DB status 'draft'; the pill relabels them "Internal Estimate".
+  const isEstimateSheet = (ws.summary_notes ?? '').startsWith('[IB')
   let estimateLocked = false
-  if ((ws.summary_notes ?? '').startsWith('[IB') && ws.project_id) {
+  if (isEstimateSheet && ws.project_id) {
     const { data: lk } = await supabase.rpc('cc_ie_lock_state', { p_project: ws.project_id })
     estimateLocked = (lk as string | null) !== 'unlocked'
   }
@@ -236,7 +238,7 @@ export default async function WorkingSheetEditorPage(
           subtitle={`${proj?.code ?? '—'} · ${dis?.code} ${dis?.name} → ${sub?.code} ${sub?.name} · Thumbrule estimate`}
           back={backHref}
         >
-          <WSStatusPill status={ws.status as WSStatus} />
+          <WSStatusPill status={ws.status as WSStatus} estimateBaseline={isEstimateSheet} />
           {ccSettings.billing_step && extraCols?.in4_entered_at && (
             <span className="inline-flex items-center rounded-full bg-teal-100 text-teal-800 text-[10px] font-bold px-2 py-0.5 whitespace-nowrap">
               Entered in IN4{extraCols.in4_ref ? ` · ${extraCols.in4_ref}` : ""}
@@ -339,7 +341,7 @@ export default async function WorkingSheetEditorPage(
           subtitle={`${proj?.code ?? '—'} · ${dis?.code} ${dis?.name} → ${sub?.code} ${sub?.name} · Quick mode (Excel)`}
           back={backHref}
         >
-          <WSStatusPill status={ws.status as WSStatus} />
+          <WSStatusPill status={ws.status as WSStatus} estimateBaseline={isEstimateSheet} />
           {ccSettings.billing_step && extraCols?.in4_entered_at && (
             <span className="inline-flex items-center rounded-full bg-teal-100 text-teal-800 text-[10px] font-bold px-2 py-0.5 whitespace-nowrap">
               Entered in IN4{extraCols.in4_ref ? ` · ${extraCols.in4_ref}` : ""}
@@ -537,7 +539,7 @@ export default async function WorkingSheetEditorPage(
         subtitle={`${proj?.code ?? '—'} · ${dis?.code} ${dis?.name} → ${sub?.code} ${sub?.name} · ${ws.line_type === 'material' ? 'Material' : ws.line_type === 'combined' ? 'Material + Labour' : 'Work'}${ws.entry_mode === 'thumbrule' ? ' · Thumbrule estimate' : ''}`}
         back={backHref}
       >
-        <WSStatusPill status={status} />
+        <WSStatusPill status={status} estimateBaseline={isEstimateSheet} />
         {ccSettings.billing_step && extraCols?.in4_entered_at && (
           <span className="inline-flex items-center rounded-full bg-teal-100 text-teal-800 text-[10px] font-bold px-2 py-0.5 whitespace-nowrap">
             Entered in IN4{extraCols.in4_ref ? ` · ${extraCols.in4_ref}` : ''}

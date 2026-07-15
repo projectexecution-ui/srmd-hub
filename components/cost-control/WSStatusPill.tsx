@@ -42,6 +42,16 @@ export function wsStatusLabel(status: string): string {
   return words ? words.charAt(0).toUpperCase() + words.slice(1) : 'Unknown'
 }
 
-export function WSStatusPill({ status }: { status: WSStatus }) {
+export function WSStatusPill({ status, estimateBaseline = false }: { status: WSStatus; estimateBaseline?: boolean }) {
+  // Imported Internal Budget sheets ([IB…]) sit at DB status 'draft' (they're
+  // frozen, never enter the approval chain). Showing "Draft" reads like an
+  // engineer's work-in-progress, so relabel them as the baseline they are.
+  if (estimateBaseline) {
+    return (
+      <span className="inline-flex items-center rounded-full border border-indigo-200 bg-indigo-100 px-2 py-0.5 text-xs font-semibold text-indigo-800">
+        Internal Estimate
+      </span>
+    )
+  }
   return <Badge variant={VARIANT[status] ?? 'secondary'}>{wsStatusLabel(status)}</Badge>
 }

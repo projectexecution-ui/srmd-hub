@@ -220,14 +220,21 @@ export default async function WorkingSheetsPage({
     return acc
   }, { estimateTotal: 0, approvedToDate: 0, pendingCount: 0, pendingAmount: 0, issuedReadyCount: 0 })
 
-  // Group rows by status for the rendered list.
-  const groups = new Map<WSStatus, WSRow[]>()
+  // Group rows by status for the rendered list. Imported Internal Budget
+  // sheets ([IB…]) are DB status 'draft' but aren't engineer drafts — pull
+  // them into their own "Internal Estimate" group so they don't read as
+  // work-in-progress. (Group key is a string to allow the pseudo-status.)
+  const isEstimateRow = (r: WSRow) => (r.summary_notes ?? '').startsWith('[IB')
+  const groups = new Map<string, WSRow[]>()
   for (const r of rows) {
-    const arr = groups.get(r.status) ?? []
+    const key = isEstimateRow(r) ? 'estimate' : r.status
+    const arr = groups.get(key) ?? []
     arr.push(r)
-    groups.set(r.status, arr)
+    groups.set(key, arr)
   }
-  const orderedGroups = STATUS_ORDER
+  // Actionable statuses first; the imported baseline group sits at the end.
+  const GROUP_ORDER: string[] = [...STATUS_ORDER, 'estimate']
+  const orderedGroups = GROUP_ORDER
     .map(s => ({ status: s, rows: groups.get(s) ?? [] }))
     .filter(g => g.rows.length > 0)
 
@@ -514,7 +521,7 @@ export default async function WorkingSheetsPage({
                         <td className="px-3 py-2.5">
                           <VersionBadge versionNo={w.version_no} chainSize={w.chain_size} breakChain={w.break_chain} />
                         </td>
-                        <td className="px-4 py-2.5"><WSStatusPill status={w.status} /></td>
+                        <td className="px-4 py-2.5"><WSStatusPill status={w.status} estimateBaseline={(w.summary_notes ?? '').startsWith('[IB')} /></td>
                         <td className="px-4 py-2.5 text-gray-700">{profileMap.get(w.engineer_id) ?? '—'}</td>
                         <td className="px-4 py-2.5 text-right tabular-nums font-semibold text-gray-900">{formatINR(est)}</td>
                         <td className="px-4 py-2.5 text-right tabular-nums">
@@ -566,25 +573,30 @@ export default async function WorkingSheetsPage({
           {orderedGroups.map(g => {
             const sum = g.rows.reduce((s, r) => s + Number(r.total_amount ?? 0), 0)
             const apprSum = g.rows.reduce((s, r) => s + Number(r.approved_for_erp_amt ?? 0), 0)
+            const isEstimate = g.status === 'estimate'
+            const gStatus = g.status as WSStatus
+            const stage = isEstimate ? undefined : STAGE_OF[gStatus]
             return (
               <Card key={g.status} className="overflow-hidden">
                 <div className="flex items-center justify-between gap-3 px-4 py-2.5 bg-slate-50 border-b border-gray-200">
                   <div className="flex items-center gap-2 flex-wrap">
-                    <WSStatusPill status={g.status} />
-                    <span className="text-sm font-semibold text-gray-900">{STATUS_GROUP_TITLES[g.status]}</span>
+                    <WSStatusPill status={isEstimate ? ('draft' as WSStatus) : gStatus} estimateBaseline={isEstimate} />
+                    <span className="text-sm font-semibold text-gray-900">
+                      {isEstimate ? 'Internal Estimate — imported baseline' : STATUS_GROUP_TITLES[gStatus]}
+                    </span>
                     {/* ●●○ progress: which of Project Head → Atm Head → Trustee it's reached. */}
-                    {STAGE_OF[g.status] && (
+                    {stage && (
                       <span className="inline-flex items-center gap-1" title="Project Head → Atm Head → Trustee">
                         {[1, 2, 3].map(n => (
-                          <span key={n} className={`h-1.5 w-1.5 rounded-full ${n <= (STAGE_OF[g.status] ?? 0) ? 'bg-indigo-600' : 'bg-gray-300'}`} />
+                          <span key={n} className={`h-1.5 w-1.5 rounded-full ${n <= (stage ?? 0) ? 'bg-indigo-600' : 'bg-gray-300'}`} />
                         ))}
                       </span>
                     )}
                     <span className="text-xs text-gray-500">· {g.rows.length} sheet{g.rows.length === 1 ? '' : 's'}</span>
                   </div>
                   <div className="text-xs text-gray-600 tabular-nums text-right">
-                    <span>{formatINR(sum)}{STAGE_OF[g.status] ? ' waiting' : ''}</span>
-                    {apprSum > 0 && apprSum < sum && (
+                    <span>{formatINR(sum)}{stage ? ' waiting' : isEstimate ? ' baseline' : ''}</span>
+                    {apprSum > 0 && apprSum < sum && !isEstimate && (
                       <span className="ml-2 text-emerald-700">· {formatINR(apprSum)} released</span>
                     )}
                   </div>
