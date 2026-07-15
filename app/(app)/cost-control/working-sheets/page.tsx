@@ -49,6 +49,13 @@ const STATUS_GROUP_TITLES: Record<WSStatus, string> = {
 // Statuses that count as "waiting in the approval chain".
 const PENDING: WSStatus[] = ['submitted', 'ph_approved', 'atm_approved', 'partially_approved']
 
+// Which of the 3 approval steps a pending sheet has reached — drives the
+// little ●●○ progress dots on each status band (Project Head → Atm Head →
+// Trustee). Non-pending statuses aren't in the map (no dots shown).
+const STAGE_OF: Partial<Record<WSStatus, number>> = {
+  submitted: 1, ph_approved: 2, atm_approved: 3, partially_approved: 3,
+}
+
 export default async function WorkingSheetsPage({
   searchParams,
 }: {
@@ -380,7 +387,7 @@ export default async function WorkingSheetsPage({
       {scoped && scopeLabels && (
         <div className="mb-4 flex items-center justify-between gap-3 rounded-lg border border-blue-200 bg-blue-50/60 px-3 py-2">
           <div className="text-xs text-blue-900">
-            <span className="uppercase tracking-wide font-semibold text-[10px] text-blue-700 mr-2">Scoped to</span>
+            <span className="uppercase tracking-wide font-semibold text-[10px] text-blue-700 mr-2">Showing only</span>
             {scopeLabels.project && (
               <span className="font-semibold">{scopeLabels.project.code}</span>
             )}
@@ -401,9 +408,9 @@ export default async function WorkingSheetsPage({
           </div>
           <Link
             href={`/cost-control/working-sheets${buildQuery({ project: sp.project, status: sp.status, engineer: sp.engineer })}`}
-            className="text-[11px] font-semibold text-blue-700 hover:text-blue-900 underline-offset-2 hover:underline"
+            className="text-[11px] font-semibold text-blue-700 hover:text-blue-900 underline-offset-2 hover:underline whitespace-nowrap"
           >
-            Clear scope
+            Show all sheets
           </Link>
         </div>
       )}
@@ -562,15 +569,23 @@ export default async function WorkingSheetsPage({
             return (
               <Card key={g.status} className="overflow-hidden">
                 <div className="flex items-center justify-between gap-3 px-4 py-2.5 bg-slate-50 border-b border-gray-200">
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 flex-wrap">
                     <WSStatusPill status={g.status} />
                     <span className="text-sm font-semibold text-gray-900">{STATUS_GROUP_TITLES[g.status]}</span>
-                    <span className="text-xs text-gray-500">· {g.rows.length}</span>
+                    {/* ●●○ progress: which of Project Head → Atm Head → Trustee it's reached. */}
+                    {STAGE_OF[g.status] && (
+                      <span className="inline-flex items-center gap-1" title="Project Head → Atm Head → Trustee">
+                        {[1, 2, 3].map(n => (
+                          <span key={n} className={`h-1.5 w-1.5 rounded-full ${n <= (STAGE_OF[g.status] ?? 0) ? 'bg-indigo-600' : 'bg-gray-300'}`} />
+                        ))}
+                      </span>
+                    )}
+                    <span className="text-xs text-gray-500">· {g.rows.length} sheet{g.rows.length === 1 ? '' : 's'}</span>
                   </div>
                   <div className="text-xs text-gray-600 tabular-nums text-right">
-                    <span>{formatINR(sum)}</span>
+                    <span>{formatINR(sum)}{STAGE_OF[g.status] ? ' waiting' : ''}</span>
                     {apprSum > 0 && apprSum < sum && (
-                      <span className="ml-2 text-emerald-700">· {formatINR(apprSum)} approved</span>
+                      <span className="ml-2 text-emerald-700">· {formatINR(apprSum)} released</span>
                     )}
                   </div>
                 </div>
@@ -578,71 +593,75 @@ export default async function WorkingSheetsPage({
                   <table className="w-full text-sm">
                     <thead className="bg-gray-50 text-left text-xs uppercase tracking-wide text-gray-500">
                       <tr>
-                        <th className="px-4 py-2 font-semibold">WS Code</th>
-                        <th className="px-4 py-2 font-semibold">Project</th>
-                        <th className="px-4 py-2 font-semibold">Discipline · Sub-skill</th>
-                        <th className="px-4 py-2 font-semibold">Engineer</th>
+                        <th className="px-4 py-2 font-semibold">Sheet</th>
                         <th className="px-4 py-2 font-semibold text-right">Estimate</th>
-                        <th className="px-4 py-2 font-semibold text-right">Approved</th>
+                        <th className="px-4 py-2 font-semibold text-right">Released</th>
                         {showDeadlines && <th className="px-4 py-2 font-semibold">Deadline</th>}
-                        <th className="px-4 py-2 font-semibold">Created</th>
+                        <th className="px-4 py-2 font-semibold">Raised</th>
+                        <th className="px-4 py-2 font-semibold"></th>
                       </tr>
                     </thead>
                     <tbody>
                       {g.rows.map(w => {
                         const proj = Array.isArray(w.projects) ? w.projects[0] : w.projects
-                        const dis = Array.isArray(w.cc_disciplines) ? w.cc_disciplines[0] : w.cc_disciplines
                         const sub = Array.isArray(w.cc_sub_skills) ? w.cc_sub_skills[0] : w.cc_sub_skills
                         const appr = Number(w.approved_for_erp_amt ?? 0)
                         const est = Number(w.total_amount ?? 0)
                         const pct = est > 0 ? Math.round((appr / est) * 100) : 0
+                        const engName = profileMap.get(w.engineer_id)
+                        const revLabel = (w.chain_size ?? 1) > 1 ? `Rev ${w.version_no} of ${w.chain_size}` : null
+                        const href = `/cost-control/working-sheets/${w.id}`
                         return (
                           <tr key={w.id} className="border-t border-gray-100 hover:bg-gray-50">
+                            {/* Headline = what the sheet is FOR; the code / revision /
+                                project / engineer sit as muted context beneath. */}
                             <td className="px-4 py-2.5">
-                              <div className="inline-flex items-center gap-1.5">
-                                <Link href={`/cost-control/working-sheets/${w.id}`} className="font-semibold text-blue-700 hover:underline">
-                                  {w.ws_code}
-                                </Link>
-                                <VersionBadge versionNo={w.version_no} chainSize={w.chain_size} breakChain={w.break_chain} compact />
-                                {w.archived_at && (
-                                  <span
-                                    className="inline-flex items-center text-[10px] font-bold text-gray-600 bg-gray-100 border border-gray-300 rounded-full px-1.5 py-0.5"
-                                    title={`Archived by ${profileMap.get(w.archived_by ?? '') ?? 'unknown'} on ${formatDate(w.archived_at)}`}
-                                  >
-                                    Archived · {profileMap.get(w.archived_by ?? '') ?? 'unknown'}
-                                  </span>
-                                )}
-                                {w.source_excel_url && (
-                                  <a
-                                    href={`/api/cost-control/working-sheets/${w.id}/download`}
-                                    className="text-gray-400 hover:text-blue-700"
-                                    title="Download the original uploaded Excel"
-                                  >
-                                    <FileSpreadsheet className="h-3.5 w-3.5" />
-                                  </a>
-                                )}
-                              </div>
-                            </td>
-                            <td className="px-4 py-2.5 text-gray-700">{proj?.code ?? '—'}</td>
-                            <td className="px-4 py-2.5 text-gray-700 truncate max-w-[260px]">
-                              {dis?.code} · {sub?.name}
-                            </td>
-                            <td className="px-4 py-2.5 text-gray-700">{profileMap.get(w.engineer_id) ?? '—'}</td>
-                            <td className="px-4 py-2.5 font-semibold text-gray-900 text-right tabular-nums">{formatINR(est)}</td>
-                            <td className="px-4 py-2.5 text-right tabular-nums">
-                              {appr > 0 ? (
-                                <span className={appr >= est ? 'text-emerald-700 font-semibold' : 'text-amber-700 font-semibold'}>
-                                  {formatINR(appr)}
-                                  {appr < est && <span className="ml-1 text-[10px] text-amber-700/80">({pct}%)</span>}
-                                  {/* Partly released → say exactly how much is still due. */}
-                                  {appr < est && (
-                                    <span className="block text-[10px] font-semibold text-rose-600/90 leading-tight">
-                                      {formatINR(est - appr)} balance
+                              <Link href={href} className="group block">
+                                <span className="font-semibold text-gray-900 group-hover:text-blue-700">
+                                  {sub?.name ?? 'Working sheet'}
+                                </span>
+                                <span className="block text-[11px] text-gray-400 mt-0.5">
+                                  <span className="font-mono">{w.ws_code}</span>
+                                  {revLabel && <> · {revLabel}</>}
+                                  {!scoped && proj?.code && <> · {proj.code}</>}
+                                  {engName && <> · by {engName}</>}
+                                </span>
+                              </Link>
+                              {(w.archived_at || w.source_excel_url) && (
+                                <span className="inline-flex items-center gap-1.5 mt-1">
+                                  {w.archived_at && (
+                                    <span
+                                      className="inline-flex items-center text-[10px] font-bold text-gray-600 bg-gray-100 border border-gray-300 rounded-full px-1.5 py-0.5"
+                                      title={`Archived by ${profileMap.get(w.archived_by ?? '') ?? 'unknown'} on ${formatDate(w.archived_at)}`}
+                                    >
+                                      Archived · {profileMap.get(w.archived_by ?? '') ?? 'unknown'}
                                     </span>
                                   )}
+                                  {w.source_excel_url && (
+                                    <a
+                                      href={`/api/cost-control/working-sheets/${w.id}/download`}
+                                      className="inline-flex items-center gap-0.5 text-[10px] text-gray-400 hover:text-blue-700"
+                                      title="Download the original uploaded Excel"
+                                    >
+                                      <FileSpreadsheet className="h-3 w-3" /> Excel
+                                    </a>
+                                  )}
                                 </span>
+                              )}
+                            </td>
+                            <td className="px-4 py-2.5 font-semibold text-gray-900 text-right tabular-nums">{formatINR(est)}</td>
+                            <td className="px-4 py-2.5 text-right tabular-nums">
+                              {appr <= 0 ? (
+                                <span className="text-xs text-gray-400">Not released yet</span>
+                              ) : appr >= est ? (
+                                <span className="text-emerald-700 font-semibold">{formatINR(appr)}</span>
                               ) : (
-                                <span className="text-xs text-gray-400">—</span>
+                                <span className="text-amber-700 font-semibold">
+                                  {formatINR(appr)} <span className="text-[10px] font-normal">({pct}%)</span>
+                                  <span className="block text-[10px] font-semibold text-rose-600/90 leading-tight">
+                                    {formatINR(est - appr)} still to come
+                                  </span>
+                                </span>
                               )}
                             </td>
                             {showDeadlines && (
@@ -658,7 +677,12 @@ export default async function WorkingSheetsPage({
                                 )}
                               </td>
                             )}
-                            <td className="px-4 py-2.5 text-xs text-gray-500">{formatDate(w.created_at)}</td>
+                            <td className="px-4 py-2.5 text-xs text-gray-500 whitespace-nowrap">{formatDate(w.created_at)}</td>
+                            <td className="px-4 py-2.5 text-right">
+                              <Link href={href} className="text-xs font-semibold text-blue-700 hover:underline whitespace-nowrap">
+                                View →
+                              </Link>
+                            </td>
                           </tr>
                         )
                       })}
