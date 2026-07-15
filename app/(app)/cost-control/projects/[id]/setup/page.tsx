@@ -2,6 +2,7 @@ import { notFound, redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { requirePermission } from '@/lib/auth'
 import { checkIsCcReviewer } from '@/components/cost-control/ws-actions'
+import { getRoleSides } from '@/lib/role-sides'
 import { PageHeader } from '@/components/PageHeader'
 import { Card } from '@/components/ui/card'
 import { AlertTriangle } from 'lucide-react'
@@ -92,14 +93,16 @@ export default async function ResumeProjectSetupPage(
     name: p.full_name ?? p.name ?? '(unnamed)',
     email: p.email,
   }))
-  // Effective engineers only: base role 'engineer', or a cost-control
-  // override to 'engineer' (and an override AWAY from engineer excludes).
+  // Effective engineers only: the admin decides WHICH roles count as
+  // "Engineer" (Role sides on /admin/users); a cost-control override is
+  // honoured in both directions.
+  const engineerRoles = new Set<string>((await getRoleSides()).engineer)
   const ccOverride = new Map<string, string>()
   for (const r of (overridesRes.data ?? []) as Array<{ user_id: string; role: string }>) {
     ccOverride.set(r.user_id, r.role)
   }
   const engineerUsers: UserOption[] = profRows
-    .filter(p => (ccOverride.get(p.id) ?? p.role) === 'engineer')
+    .filter(p => engineerRoles.has(ccOverride.get(p.id) ?? p.role))
     .map(p => ({ id: p.id, name: p.full_name ?? p.name ?? '(unnamed)', email: p.email }))
     .sort((a, b) => a.name.localeCompare(b.name))
 

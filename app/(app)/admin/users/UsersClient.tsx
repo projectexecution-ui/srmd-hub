@@ -55,6 +55,7 @@ interface UserModuleBlock {
 export default function UsersClient({
   initialUsers, initialAllowedEmails, initialModuleRoles, initialModuleBlocks,
   currentUserId, currentUserIsPortalOwner, roleLabels, adminEmail,
+  roleSides, approvalRoles,
 }: {
   initialUsers: Profile[]
   initialAllowedEmails: AllowedEmail[]
@@ -64,6 +65,10 @@ export default function UsersClient({
   currentUserIsPortalOwner: boolean
   roleLabels: RoleLabelMap
   adminEmail: string | null
+  /** Admin-configured Management/Engineer role mapping (lib/role-sides). */
+  roleSides: { management: Role[]; engineer: Role[] }
+  /** Roles sitting on an ACTIVE approval rule — mismatch warning source. */
+  approvalRoles: string[]
 }) {
   const supabase = createClient()
   const [users, setUsers] = useState<Profile[]>(initialUsers)
@@ -93,12 +98,42 @@ export default function UsersClient({
   // Pattern: email starts with anon- and ends with @srmd.local
   const isAnonymous = (u: Profile) => /^anon-/i.test(u.email) && /@srmd\.local$/i.test(u.email)
 
-  // Management vs Engineer — derived from the role, nothing extra to
-  // maintain. "Management" = the approval-chain roles (they see the
-  // confidential figures); "Engineer" = site engineers raising estimates.
-  const MANAGEMENT_ROLES = new Set<string>(['admin', 'project_head', 'head', 'founder'])
+  // Management vs Engineer — the ADMIN decides which roles sit on which
+  // side (the "Role sides" panel below). Drives the badges + grouping here
+  // and the project-setup engineer picker. Who can actually approve / see
+  // confidential figures stays governed by the Approvals matrix.
+  const [sides, setSides] = useState<{ management: Role[]; engineer: Role[] }>(roleSides)
+  const [sidesOpen, setSidesOpen] = useState(false)
+  const [sidesBusy, setSidesBusy] = useState(false)
+  const [sidesMsg, setSidesMsg] = useState<string | null>(null)
+  const managementSet = new Set<string>(sides.management)
+  const engineerSet = new Set<string>(sides.engineer)
   const sideOf = (u: Profile): 'management' | 'engineer' | 'other' =>
-    MANAGEMENT_ROLES.has(u.role) ? 'management' : u.role === 'engineer' ? 'engineer' : 'other'
+    managementSet.has(u.role) ? 'management' : engineerSet.has(u.role) ? 'engineer' : 'other'
+
+  function setRoleSide(role: Role, side: 'management' | 'engineer' | 'neither') {
+    if (role === 'admin') return // admin is always Management
+    setSides(prev => ({
+      management: side === 'management'
+        ? [...prev.management.filter(r => r !== role), role]
+        : prev.management.filter(r => r !== role),
+      engineer: side === 'engineer'
+        ? [...prev.engineer.filter(r => r !== role), role]
+        : prev.engineer.filter(r => r !== role),
+    }))
+    setSidesMsg(null)
+  }
+
+  async function saveRoleSides() {
+    setSidesBusy(true); setSidesMsg(null); setError(null)
+    const { error } = await supabase.from('app_settings').upsert([
+      { key: 'roles_management', value: sides.management.join(',') },
+      { key: 'roles_engineer',   value: sides.engineer.join(',') },
+    ], { onConflict: 'key' })
+    setSidesBusy(false)
+    if (error) { setError(error.message); return }
+    setSidesMsg('Saved — badges, grouping and the engineer picker now follow this mapping.')
+  }
 
   const filtered = users.filter(u => {
     // Status chip
@@ -500,6 +535,84 @@ export default function UsersClient({
             <li><b>Advanced</b> — <i>optional.</i> Only if someone needs a <i>different</i> role in one specific module, or should be blocked from a module.</li>
           </ul>
         </CardContent>
+      </Card>
+
+      {/* ─── Role sides — the admin decides which roles count as
+          Management vs Engineer. Badges, grouping and the project-setup
+          engineer picker all follow this mapping. ───────────────── */}
+      <Card>
+        <CardHeader className="pb-2">
+          <button
+            type="button"
+            onClick={() => setSidesOpen(o => !o)}
+            className="flex w-full items-center justify-between gap-2 text-left"
+          >
+            <CardTitle className="flex items-center gap-2 text-base">
+              <Settings2 className="h-5 w-5 text-indigo-600" />
+              Role sides — who counts as Management vs Engineer
+            </CardTitle>
+            {sidesOpen ? <ChevronDown className="h-4 w-4 text-gray-400" /> : <ChevronRight className="h-4 w-4 text-gray-400" />}
+          </button>
+          {!sidesOpen && (
+            <p className="text-xs text-gray-500 mt-1">
+              Management: {sides.management.map(r => roleLabels[r]?.label ?? r).join(', ') || '—'} · Engineer: {sides.engineer.map(r => roleLabels[r]?.label ?? r).join(', ') || '—'}
+            </p>
+          )}
+        </CardHeader>
+        {sidesOpen && (
+          <CardContent className="pt-0">
+            <p className="text-xs text-gray-500 mb-3">
+              This drives the badges and grouping below, and <b>which roles appear in the project-setup engineer picker</b>.
+              Who can approve or see confidential figures is still decided by the{' '}
+              <a href="/admin/approvals" className="text-blue-700 font-semibold hover:underline">Approvals matrix</a>.
+            </p>
+            <div className="space-y-1.5">
+              {ROLES.map(r => {
+                const side: 'management' | 'engineer' | 'neither' =
+                  managementSet.has(r) ? 'management' : engineerSet.has(r) ? 'engineer' : 'neither'
+                const onChain = approvalRoles.includes(r)
+                const locked = r === 'admin'
+                return (
+                  <div key={r} className="flex items-center gap-3 flex-wrap rounded-md border border-gray-100 px-3 py-1.5">
+                    <span className="text-sm font-medium text-gray-800 min-w-[160px]">{roleLabels[r]?.label ?? r}</span>
+                    <div className="inline-flex rounded-lg border border-gray-200 overflow-hidden">
+                      {(['management', 'engineer', 'neither'] as const).map(s => (
+                        <button
+                          key={s}
+                          type="button"
+                          disabled={locked || sidesBusy}
+                          onClick={() => setRoleSide(r, s)}
+                          className={`px-2.5 py-1 text-[11px] font-semibold border-r border-gray-200 last:border-r-0 disabled:opacity-60 ${
+                            side === s
+                              ? s === 'management' ? 'bg-indigo-600 text-white'
+                                : s === 'engineer' ? 'bg-green-600 text-white'
+                                : 'bg-gray-500 text-white'
+                              : 'bg-white text-gray-600 hover:bg-gray-50'
+                          }`}
+                        >
+                          {s === 'management' ? 'Management' : s === 'engineer' ? 'Engineer' : 'Neither'}
+                        </button>
+                      ))}
+                    </div>
+                    {locked && <span className="text-[10px] text-gray-400">Admin is always Management</span>}
+                    {onChain && side !== 'management' && (
+                      <span className="text-[10px] font-semibold text-amber-700 bg-amber-50 border border-amber-200 rounded-full px-2 py-0.5">
+                        On the approval chain — expected to be Management
+                      </span>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+            <div className="mt-3 flex items-center gap-3 flex-wrap">
+              <Button size="sm" onClick={saveRoleSides} disabled={sidesBusy}>
+                {sidesBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
+                Save role sides
+              </Button>
+              {sidesMsg && <span className="text-xs font-medium text-green-700">{sidesMsg}</span>}
+            </div>
+          </CardContent>
+        )}
       </Card>
 
       <Card>
