@@ -16,6 +16,7 @@ import { wsStatusLabel } from '@/components/cost-control/WSStatusPill'
 import { DeadlineCell, SubSkillModeCell, DisableButton, InternalEstimateDecision, SubSkillAssignControl } from './RowControls'
 import { AreaChip } from './AreaChip'
 import { RenameProjectChip } from './RenameProjectChip'
+import { ProjectAliasChip } from './ProjectAliasChip'
 import { BphSyncButton } from './BphSyncButton'
 import { getBphMappingForProject } from '@/app/(app)/cost-control/import/bph/actions'
 
@@ -523,6 +524,7 @@ export default async function CostControlProjectDetailPage(
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <RenameProjectChip projectId={project.id} name={project.name} isAdmin={isAdmin} />
+          <ProjectAliasChip projectId={project.id} code={project.code} isAdmin={isAdmin} />
           <AreaChip
             projectId={project.id}
             sft={project.built_up_sft != null ? Number(project.built_up_sft) : null}

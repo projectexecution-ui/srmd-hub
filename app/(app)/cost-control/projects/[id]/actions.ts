@@ -251,3 +251,47 @@ export async function renameProject(
   revalidatePath('/cost-control')
   return { ok: true }
 }
+
+// ============================================================
+// Change the project ALIAS (the short `code` badge) — ADMIN only.
+// It's the short label shown everywhere + the prefix on NEW Working-Sheet
+// codes. Existing sheet codes are stored strings and keep their old prefix
+// (we don't rewrite history). Must stay unique across projects.
+// ============================================================
+export async function setProjectAlias(
+  projectId: string,
+  code: string,
+): Promise<{ ok: boolean; error?: string }> {
+  const profile = await getMyProfile()
+  if (profile?.role !== 'admin') {
+    return { ok: false, error: 'Only an Admin can change the project alias' }
+  }
+  if (!uuid.safeParse(projectId).success) return { ok: false, error: 'Bad project id' }
+  const trimmed = code.trim()
+  if (trimmed.length < 1 || trimmed.length > 20) {
+    return { ok: false, error: 'Alias must be 1–20 characters' }
+  }
+
+  const supabase = await createClient()
+  // Alias must stay unique — it's the short label + WS-code prefix.
+  const { data: clash } = await supabase
+    .from('projects')
+    .select('id')
+    .ilike('code', trimmed)
+    .neq('id', projectId)
+    .limit(1)
+    .maybeSingle()
+  if (clash) return { ok: false, error: `Another project already uses the alias "${trimmed}"` }
+
+  const { data, error } = await supabase
+    .from('projects')
+    .update({ code: trimmed })
+    .eq('id', projectId)
+    .select('id')
+  if (error) return { ok: false, error: error.message }
+  if (!data || data.length === 0) return { ok: false, error: 'Change was blocked — check your permissions' }
+
+  revalidatePath(`/cost-control/projects/${projectId}`)
+  revalidatePath('/cost-control')
+  return { ok: true }
+}
