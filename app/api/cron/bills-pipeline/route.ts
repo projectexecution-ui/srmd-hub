@@ -9,15 +9,15 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient as createServiceClient, type SupabaseClient } from '@supabase/supabase-js'
 import { getMyPermissions, can } from '@/lib/auth'
-import { getZohoToken, fetchAllTasks, fetchTaskComments } from '@/lib/bills-pipeline/zoho'
-import { parseBill, aggregateCard, clearedThisWeek, toStuckBill, deriveReason } from '@/lib/bills-pipeline/transform'
+import { getZohoToken, fetchAllTasks } from '@/lib/bills-pipeline/zoho'
+import { parseBill, aggregateCard, clearedThisWeek, toStuckBill } from '@/lib/bills-pipeline/transform'
 import { getSelectedProjects } from '@/lib/bills-pipeline/projects'
 import { renderCard, renderScorecard } from '@/lib/bills-pipeline/render'
 import { BP_CONFIG } from '@/lib/bills-pipeline/config'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
-export const maxDuration = 120   // comment enrichment adds per-bill Zoho calls
+export const maxDuration = 60
 
 const CRON_SECRET = process.env.CRON_SECRET
 
@@ -27,18 +27,6 @@ function makeServiceClient(): SupabaseClient {
   return createServiceClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, serviceKey, {
     auth: { persistSession: false },
   })
-}
-
-// Run fn over items with bounded concurrency; individual failures are swallowed.
-async function mapLimit<T>(items: T[], limit: number, fn: (item: T) => Promise<void>): Promise<void> {
-  let i = 0
-  const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
-    while (i < items.length) {
-      const idx = i++
-      try { await fn(items[idx]) } catch { /* non-fatal */ }
-    }
-  })
-  await Promise.all(workers)
 }
 
 // ── Shared pipeline ──────────────────────────────────────────────────────────
@@ -83,27 +71,6 @@ async function runPipeline(supabase: SupabaseClient): Promise<NextResponse> {
     fetched: r.tasks.length,
     error:   r.error ?? null,
   }))
-
-  // 3b. Delay-comment enrichment — for bills still pending with CT, pull the
-  //     latest Zoho comment (only those that have any) and derive a reason
-  //     chip. Bounded concurrency + partial-failure tolerant so a comments
-  //     scope/rate issue never breaks the run.
-  const internalBills = bills.filter(b => b.isInternal)
-  const toEnrich = internalBills.filter(b => b.hasComments).slice(0, 400)
-  let commentsPulled = 0
-  await mapLimit(toEnrich, 8, async b => {
-    const cs = await fetchTaskComments(token, b.projectId, b.id)
-    if (cs.length) {
-      b.latestComment = cs[0].text
-      b.commentAuthor = cs[0].author
-      b.commentAt     = cs[0].at
-      commentsPulled++
-    }
-  })
-  // Reason chip for every pending-with-CT bill (works with or without a comment).
-  for (const b of internalBills) {
-    b.reason = deriveReason(b.latestComment ?? '', { noWO: b.noWO, hasComments: b.hasComments })
-  }
 
   // 4. Aggregate + enrich (cleared-this-week from raw tasks).
   const cardData = aggregateCard(bills, asOf, isoNow, selectedProjects)
@@ -217,7 +184,6 @@ async function runPipeline(supabase: SupabaseClient): Promise<NextResponse> {
     trust:     cardData.trustCount,
     stalled:   cardData.stalledCount,
     noWO:      cardData.noWoCount,
-    commentsPulled,
     projects,
     pruned,
   })

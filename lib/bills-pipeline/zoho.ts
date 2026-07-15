@@ -75,8 +75,6 @@ export interface ZohoTask {
   last_modified_time?: string
   completed_on?:      string
   tasklist?:          { name?: string }
-  association_info?:  { has_comments?: boolean }
-  owners_and_work?:   { owners?: Array<{ name?: string; first_name?: string }> }
   // flattened custom fields
   vendor_from_module_2?: { value?: string }
   wo_po_no?:          string
@@ -191,17 +189,9 @@ export async function fetchBillingProjects(token: string): Promise<Array<{ id: s
   throw new Error(`Zoho projects fetch failed: ${lastErr || 'unknown'}`)
 }
 
-export interface ZohoComment {
-  text:   string
-  author: string
-  at:     string   // ISO added_time
-}
-
-// Returns a task's comments newest-first. Non-fatal: [] on any error (e.g. a
-// scope/permission issue), so a missing comments scope never breaks a run.
 export async function fetchTaskComments(
   token: string, projectId: string, taskId: string,
-): Promise<ZohoComment[]> {
+): Promise<string[]> {
   try {
     const seg = RESOLVED_SEGMENT ?? 'portal'
     const url = `${apiBase()}/${seg}/${BP_CONFIG.PORTAL_ID}/projects/${projectId}/tasks/${taskId}/comments`
@@ -211,29 +201,11 @@ export async function fetchTaskComments(
     if (!res.ok) return []
     const json = await res.json()
     const container = json.data ?? json
-    type RawComment = {
-      content?: string; added_time?: string;
-      added_by?: { name?: string }; added_by_name?: string; commented_by_name?: string; created_by?: { name?: string }
-    }
-    const comments: RawComment[] = container.comments ?? container.result ?? []
+    const comments: Array<{ content?: string; added_time?: string }> = container.comments ?? []
     return comments
-      .map(c => ({
-        text:   stripHtml(c.content ?? ''),
-        author: c.added_by?.name ?? c.added_by_name ?? c.commented_by_name ?? c.created_by?.name ?? '',
-        at:     c.added_time ?? '',
-      }))
-      .filter(c => c.text)
-      .sort((a, b) => new Date(b.at || 0).getTime() - new Date(a.at || 0).getTime())
+      .sort((a, b) => new Date(b.added_time ?? 0).getTime() - new Date(a.added_time ?? 0).getTime())
+      .map(c => c.content ?? '')
   } catch {
     return []
   }
-}
-
-function stripHtml(s: string): string {
-  return (s ?? '')
-    .replace(/<[^>]*>/g, ' ')
-    .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
-    .replace(/&nbsp;/g, ' ').replace(/&quot;/g, '"').replace(/&#39;/g, "'")
-    .replace(/\s+/g, ' ')
-    .trim()
 }
