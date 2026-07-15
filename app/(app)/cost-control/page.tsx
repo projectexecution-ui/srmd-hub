@@ -1,3 +1,4 @@
+import { Fragment } from 'react'
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
@@ -267,6 +268,49 @@ export default async function CostControlLandingPage() {
     ? "Last backup: couldn't check right now"
     : `Last backup: ${lastBackup ?? 'never yet'}`
 
+  // ─── Group the projects table by parent project (NGH → NGH A/B/C,
+  // P2 → P2 A01…, VV → VINAY/VIVEK) so the list reads group-wise. A parent
+  // that is itself a project leads its group; projects with no parent and
+  // no children collect under "Independent projects". Falls back to a flat
+  // list when no groups exist.
+  const projById = new Map(ccProjects.map(p => [p.id, p]))
+  const childrenOf = new Map<string, CCProject[]>()
+  for (const p of ccProjects) {
+    if (p.parent_project_id && projById.has(p.parent_project_id)) {
+      const arr = childrenOf.get(p.parent_project_id) ?? []
+      arr.push(p)
+      childrenOf.set(p.parent_project_id, arr)
+    }
+  }
+  type ProjGroup = { key: string; label: string | null; members: CCProject[] }
+  const projGroups: ProjGroup[] = []
+  const independents: CCProject[] = []
+  for (const p of ccProjects) {
+    // Children render inside their parent's group, not at top level.
+    if (p.parent_project_id && projById.has(p.parent_project_id)) continue
+    const kids = (childrenOf.get(p.id) ?? []).slice().sort((a, b) => a.code.localeCompare(b.code))
+    if (kids.length > 0) projGroups.push({ key: p.id, label: p.name.trim() || p.code, members: [p, ...kids] })
+    else independents.push(p)
+  }
+  projGroups.sort((a, b) => (a.label ?? '').localeCompare(b.label ?? ''))
+  if (independents.length > 0) {
+    independents.sort((a, b) => a.code.localeCompare(b.code))
+    // Only label the leftovers when there ARE real groups to separate from.
+    projGroups.push({ key: '_independent', label: projGroups.length > 0 ? 'Independent projects' : null, members: independents })
+  }
+  const isChildProject = (p: CCProject) => !!p.parent_project_id && projById.has(p.parent_project_id)
+  // Rollup across a group's members for the header band.
+  const groupTotals = (members: CCProject[]) => members.reduce((t, p) => {
+    const bud = budgetByProj.get(p.id) ?? { budget: 0, committed: 0, paid: 0 }
+    t.sft += Number(p.built_up_sft ?? 0)
+    t.ws += wsByProject.get(p.id) ?? 0
+    t.estimate += estimateByProj.get(p.id) ?? 0
+    t.approved += approvedByProj.get(p.id) ?? 0
+    t.budget += bud.budget
+    t.paid += bud.paid
+    return t
+  }, { sft: 0, ws: 0, estimate: 0, approved: 0, budget: 0, paid: 0 })
+
   return (
     <div className="p-4 md:p-6 max-w-7xl mx-auto space-y-4">
       <AutoBackup isAdmin={canAdmin} />
@@ -480,7 +524,44 @@ export default async function CostControlLandingPage() {
                 </tr>
               </thead>
               <tbody>
-                {ccProjects.map(p => {
+                {projGroups.map(g => {
+                  const gt = groupTotals(g.members)
+                  const gPaidPct = gt.budget > 0 ? Math.round((gt.paid / gt.budget) * 100) : 0
+                  return (
+                  <Fragment key={g.key}>
+                    {/* Group band — name + rollup of the whole group. */}
+                    {g.label && (
+                      <tr className="bg-indigo-50/80 border-t border-indigo-100">
+                        <td className="px-3 py-2 font-bold text-[11px] uppercase tracking-wide text-indigo-900" colSpan={2}>
+                          {g.label}
+                          <span className="ml-2 font-normal normal-case text-indigo-400">{g.members.length} project{g.members.length === 1 ? '' : 's'}</span>
+                        </td>
+                        <td className="px-3 py-2 text-right tabular-nums text-[11px] font-semibold text-indigo-900/70">
+                          {gt.sft > 0 ? gt.sft.toLocaleString('en-IN') : '—'}
+                        </td>
+                        <td className="px-3 py-2 text-right tabular-nums text-[11px] font-semibold text-indigo-900/70">{gt.ws || '—'}</td>
+                        <td className="px-3 py-2 text-right tabular-nums text-[11px] font-bold text-indigo-900">
+                          {gt.estimate > 0 ? formatINR(gt.estimate) : '—'}
+                        </td>
+                        <td className="px-3 py-2 text-right tabular-nums text-[11px] font-bold text-emerald-800">
+                          {gt.approved > 0 ? formatINR(gt.approved) : '—'}
+                        </td>
+                        {ccSettings.show_erp_columns && (
+                          <>
+                            <td className="px-3 py-2 text-right tabular-nums text-[11px] font-bold text-indigo-900">
+                              {gt.budget > 0 ? formatINR(gt.budget) : '—'}
+                            </td>
+                            <td className="px-3 py-2 text-right tabular-nums text-[11px] font-semibold text-indigo-900/70">
+                              {gt.paid > 0 ? formatINR(gt.paid) : '—'}
+                            </td>
+                            <td className="px-3 py-2 text-right tabular-nums text-[11px] font-bold text-indigo-900/70">
+                              {gt.budget > 0 ? `${gPaidPct}%` : '—'}
+                            </td>
+                          </>
+                        )}
+                      </tr>
+                    )}
+                    {g.members.map(p => {
                   const pct = p.setup_progress_pct ?? 0
                   const isIncomplete = pct < 100
                   const wsHere = wsByProject.get(p.id) ?? 0
@@ -493,7 +574,7 @@ export default async function CostControlLandingPage() {
                   const hot = paidPct > 95
                   return (
                     <tr key={p.id} className="border-t border-gray-100 hover:bg-gray-50/70">
-                      <td className="px-3 py-2.5">
+                      <td className={`px-3 py-2.5 ${isChildProject(p) ? 'pl-8' : ''}`}>
                         <Link href={`/cost-control/projects/${p.id}`} className="block">
                           <span className="font-mono text-[11px] font-bold text-indigo-700 mr-2">{p.code}</span>
                           <span className="font-semibold text-gray-900 hover:underline">{p.name}</span>
@@ -548,6 +629,9 @@ export default async function CostControlLandingPage() {
                         </>
                       )}
                     </tr>
+                  )
+                    })}
+                  </Fragment>
                   )
                 })}
               </tbody>
