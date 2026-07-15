@@ -6,6 +6,7 @@ import { checkIsCcReviewer, checkCanDecideInternalEstimate, checkCanRequestIeRev
 import { IeRevisionPanel, type IeRevision } from './IeRevisionPanel'
 import { EngineerProjectView } from './EngineerProjectView'
 import { ProjectApproversPanel } from './ProjectApproversPanel'
+import { BulkAssignPanel } from './BulkAssignPanel'
 import { PageHeader } from '@/components/PageHeader'
 import { SetupProgressBanner } from '@/components/ProjectSetupWizard/SetupProgressBanner'
 import { Plus, Flame, Info, Settings } from 'lucide-react'
@@ -441,11 +442,15 @@ export default async function CostControlProjectDetailPage(
   const pmRow: PMLite = (pmRes.data ?? null) as PMLite
   const pmName = pmRow?.full_name ?? pmRow?.name ?? null
 
-  // Per-project approvers roster (Phase 1) + candidate users to assign.
-  const [approverRes, candRes] = await Promise.all([
+  // Per-project approvers roster (Phase 1) + candidate users + other projects
+  // (for the Phase 5 "copy assignments from another project" shortcut).
+  const [approverRes, candRes, otherProjRes] = await Promise.all([
     supabase.from('cc_project_approvers').select('role, user_id').eq('project_id', id),
     supabase.from('profiles').select('id, full_name, name').eq('is_active', true).order('full_name'),
+    supabase.from('projects').select('id, code, name').not('cc_status', 'is', null).neq('id', id).order('code'),
   ])
+  const otherProjects = ((otherProjRes.data ?? []) as Array<{ id: string; code: string; name: string }>)
+    .map(p => ({ id: p.id, label: `${p.code} · ${p.name}` }))
   const projectApprovers = ((approverRes.data ?? []) as Array<{ role: 'project_head' | 'head' | 'founder'; user_id: string }>)
     .map(r => ({ role: r.role, user_id: r.user_id, name: profileMap.get(r.user_id) ?? '(user)' }))
   const approverCandidates = ((candRes.data ?? []) as ProfileLite[])
@@ -588,6 +593,16 @@ export default async function CostControlProjectDetailPage(
           approvers={projectApprovers}
           candidates={approverCandidates}
           canWrite={canWrite}
+        />
+      )}
+
+      {/* Bulk-assign engineers to sub-skills (Phase 5). */}
+      {canWrite && (
+        <BulkAssignPanel
+          projectId={project.id}
+          disciplines={disciplines.map(d => ({ id: d.id, label: `${d.code} ${d.name}` }))}
+          engineers={engineers.map(e => ({ id: e.user_id, label: e.name }))}
+          otherProjects={otherProjects}
         />
       )}
 

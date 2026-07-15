@@ -7,6 +7,7 @@ import { revalidatePath } from 'next/cache'
 import { z } from 'zod'
 import { createClient } from '@/lib/supabase/server'
 import { requirePermission, getMyProfile } from '@/lib/auth'
+import { checkIsCcReviewer } from '@/components/cost-control/ws-actions'
 
 const uuid = z.string().uuid()
 const isoDateOrNull = z
@@ -282,6 +283,73 @@ export async function setProjectGroupLabel(
   revalidatePath('/cost-control')
   revalidatePath(`/cost-control/projects/${projectId}`)
   return { ok: true }
+}
+
+// ============================================================
+// Bulk sub-skill assignment helpers (Phase 5 — faster assignment). Both
+// reuse the reviewer-gated cc_set_subskill_engineer RPC per sub-skill.
+// ============================================================
+
+/** Assign every enabled sub-skill under one discipline to a single engineer
+ *  (engineer_id null clears them). Reviewer/Admin only. */
+export async function bulkAssignDisciplineEngineer(input: {
+  project_id: string
+  discipline_id: string
+  engineer_id: string | null
+}): Promise<{ ok: boolean; error?: string; count?: number }> {
+  if (!uuid.safeParse(input.project_id).success || !uuid.safeParse(input.discipline_id).success) {
+    return { ok: false, error: 'Bad id' }
+  }
+  if (!(await checkIsCcReviewer())) return { ok: false, error: 'Only Cost Control management can assign engineers' }
+  const supabase = await createClient()
+  const [{ data: enabled }, { data: discSubs }] = await Promise.all([
+    supabase.from('cc_project_sub_skills').select('sub_skill_id').eq('project_id', input.project_id).eq('is_enabled', true),
+    supabase.from('cc_sub_skills').select('id').eq('discipline_id', input.discipline_id),
+  ])
+  const inDisc = new Set((discSubs ?? []).map(r => r.id as string))
+  const targets = (enabled ?? []).map(r => r.sub_skill_id as string).filter(id => inDisc.has(id))
+  let count = 0
+  for (const subId of targets) {
+    const { error } = await supabase.rpc('cc_set_subskill_engineer', {
+      p_project: input.project_id, p_sub_skill: subId, p_engineer: input.engineer_id,
+    })
+    if (error) return { ok: false, error: error.message, count }
+    count++
+  }
+  revalidatePath(`/cost-control/projects/${input.project_id}`)
+  revalidatePath('/cost-control')
+  return { ok: true, count }
+}
+
+/** Copy sub-skill → engineer assignments from another project into this one
+ *  (only where the same sub-skill is enabled here). Reviewer/Admin only. */
+export async function copySubSkillAssignments(input: {
+  project_id: string
+  from_project_id: string
+}): Promise<{ ok: boolean; error?: string; count?: number }> {
+  if (!uuid.safeParse(input.project_id).success || !uuid.safeParse(input.from_project_id).success) {
+    return { ok: false, error: 'Bad id' }
+  }
+  if (input.project_id === input.from_project_id) return { ok: false, error: 'Pick a different project to copy from' }
+  if (!(await checkIsCcReviewer())) return { ok: false, error: 'Only Cost Control management can assign engineers' }
+  const supabase = await createClient()
+  const [{ data: src }, { data: enabled }] = await Promise.all([
+    supabase.from('cc_subskill_assignments').select('sub_skill_id, engineer_id').eq('project_id', input.from_project_id),
+    supabase.from('cc_project_sub_skills').select('sub_skill_id').eq('project_id', input.project_id).eq('is_enabled', true),
+  ])
+  const enabledHere = new Set((enabled ?? []).map(r => r.sub_skill_id as string))
+  const rows = (src ?? []).filter(r => enabledHere.has(r.sub_skill_id as string))
+  let count = 0
+  for (const r of rows) {
+    const { error } = await supabase.rpc('cc_set_subskill_engineer', {
+      p_project: input.project_id, p_sub_skill: r.sub_skill_id, p_engineer: r.engineer_id,
+    })
+    if (error) return { ok: false, error: error.message, count }
+    count++
+  }
+  revalidatePath(`/cost-control/projects/${input.project_id}`)
+  revalidatePath('/cost-control')
+  return { ok: true, count }
 }
 
 // ============================================================
