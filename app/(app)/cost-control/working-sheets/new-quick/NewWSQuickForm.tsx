@@ -9,7 +9,7 @@ import { Input } from '@/components/ui/input'
 import { MoneyInput } from '@/components/ui/money-input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
-import { Loader2, Upload, Send, FileSpreadsheet, X, Sparkles, AlertTriangle } from 'lucide-react'
+import { Loader2, Upload, Send, FileSpreadsheet, X, Sparkles, AlertTriangle, Image as ImageIcon } from 'lucide-react'
 import { formatINR } from '@/lib/utils'
 
 interface ProjectOpt   { id: string; code: string; name: string }
@@ -266,6 +266,10 @@ export function NewWSQuickForm({ projects, projectDisciplines, projectSubSkills,
   const [deadline, setDeadline] = useState('')
   const [deadlineNotes, setDeadlineNotes] = useState('')
   const [file, setFile]               = useState<File | null>(null)
+  // Screenshot of the Excel summary — compulsory for engineers, so anyone
+  // opening the sheet can glance the working without opening the file.
+  const [shot, setShot]               = useState<File | null>(null)
+  const [shotPreview, setShotPreview] = useState<string | null>(null)
   const [parsed, setParsed]           = useState<{ rows: ParsedRow[]; grandTotal: number | null; aoa: unknown[][] } | null>(null)
   const [aiSummary, setAiSummary]     = useState<AiSummary | null>(null)
   const [aiMode, setAiMode]           = useState<'ai' | 'fallback' | null>(null)
@@ -367,9 +371,28 @@ export function NewWSQuickForm({ projects, projectDisciplines, projectSubSkills,
     setFile(null); setParsed(null); setAiSummary(null); setAiMode(null)
   }
 
+  function onShot(e: React.ChangeEvent<HTMLInputElement>) {
+    const f = e.target.files?.[0]
+    if (!f) return
+    if (!f.type.startsWith('image/')) { setError('The summary screenshot must be an image (PNG / JPG)'); return }
+    if (f.size > 10 * 1024 * 1024) { setError('Screenshot too large — keep it under 10 MB'); return }
+    setError(null)
+    if (shotPreview) URL.revokeObjectURL(shotPreview)
+    setShot(f)
+    setShotPreview(URL.createObjectURL(f))
+  }
+
+  function clearShot() {
+    if (shotPreview) URL.revokeObjectURL(shotPreview)
+    setShot(null); setShotPreview(null)
+  }
+
   async function submit(e: React.FormEvent) {
     e.preventDefault()
     if (!file || !parsed) { setError('Attach an Excel and wait for parsing to finish'); return }
+    // Engineers must also attach a screenshot of the summary — it is shown
+    // at the top of the sheet so approvers can glance the working.
+    if (!reviewer && !shot) { setError('Attach a screenshot of your summary — it is required along with the Excel'); return }
     if (!projectId || !disciplineId || !subSkillId) { setError('Pick project / discipline / sub-skill'); return }
     setSubmitting(true); setError(null)
     const supabase = createClient()
@@ -386,6 +409,18 @@ export function NewWSQuickForm({ projects, projectDisciplines, projectSubSkills,
     })
     if (upErr) { setError(`Upload failed: ${upErr.message}`); setSubmitting(false); return }
     const sourceUrl = path  // we store the path; reads use signed URLs
+
+    // 1b. Upload the summary screenshot (same bucket, image path).
+    let shotPath: string | null = null
+    if (shot) {
+      const safeShot = shot.name.replace(/[^A-Za-z0-9._-]/g, '_')
+      shotPath = `${projectId}/${ts}-summary-${safeShot}`
+      const { error: shotErr } = await supabase.storage.from('cc-sheets').upload(shotPath, shot, {
+        cacheControl: '3600', upsert: false,
+        contentType: shot.type || 'image/png',
+      })
+      if (shotErr) { setError(`Screenshot upload failed: ${shotErr.message}`); setSubmitting(false); return }
+    }
 
     // 2. Smart ws_code — e.g. P2A02-1102-Q01 (project, sub-skill, Quick mode, seq).
     // Computed server-side so the seq is consistent with concurrent inserts.
@@ -409,6 +444,8 @@ export function NewWSQuickForm({ projects, projectDisciplines, projectSubSkills,
       entry_mode: 'excel_summary',
       source_excel_url: sourceUrl,
       source_excel_name: file.name,
+      summary_image_url: shotPath,
+      summary_image_name: shot?.name ?? null,
       summary_total: Number(summaryTotal) || null,
       summary_notes: summaryNotes.trim() || null,
       deadline_date:  deadline || null,
@@ -515,6 +552,35 @@ export function NewWSQuickForm({ projects, projectDisciplines, projectSubSkills,
               <Button type="button" size="sm" variant="ghost" onClick={clearFile}>
                 <X className="h-4 w-4" />
               </Button>
+            </div>
+          )}
+        </div>
+
+        {/* Summary screenshot — compulsory for engineers. Shown full-width at
+            the top of the sheet so approvers can glance the working without
+            opening the Excel. */}
+        <div>
+          <Label>Summary screenshot {reviewer ? '(optional)' : '*'}</Label>
+          {!shot ? (
+            <label className="mt-1 flex flex-col items-center justify-center gap-1.5 border-2 border-dashed border-gray-300 rounded-xl px-4 py-5 text-sm text-gray-600 cursor-pointer hover:border-indigo-400 hover:bg-indigo-50/40 transition-colors">
+              <ImageIcon className="h-5 w-5 text-gray-400" />
+              <span>Attach a screenshot of your summary (PNG / JPG)</span>
+              <span className="text-[11px] text-gray-400">It shows on the sheet for everyone — clear enough to read at a glance</span>
+              <input type="file" accept="image/*" className="hidden" onChange={onShot} />
+            </label>
+          ) : (
+            <div className="mt-1 border border-gray-200 rounded-xl overflow-hidden">
+              <div className="flex items-center gap-3 px-3 py-2 bg-gray-50 border-b border-gray-100">
+                <ImageIcon className="h-4 w-4 text-indigo-600 flex-shrink-0" />
+                <p className="text-xs font-medium text-gray-800 truncate flex-1">{shot.name}</p>
+                <Button type="button" size="sm" variant="ghost" onClick={clearShot}>
+                  <X className="h-4 w-4" />
+                </Button>
+              </div>
+              {shotPreview && (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={shotPreview} alt="Summary screenshot preview" className="max-w-full h-auto max-h-72 mx-auto" />
+              )}
             </div>
           )}
         </div>
@@ -644,7 +710,7 @@ export function NewWSQuickForm({ projects, projectDisciplines, projectSubSkills,
         </div>
       </div>
 
-      <Button type="submit" disabled={submitting || parsing || !file || !parsed}>
+      <Button type="submit" disabled={submitting || parsing || !file || !parsed || (!reviewer && !shot)}>
         {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
         Save & analyse
       </Button>

@@ -108,7 +108,7 @@ export default async function WorkingSheetEditorPage(
   // one supplementary select.
   const { data: extraCols } = await supabase
     .from('cc_working_sheets')
-    .select('ph_checked_amt, atm_checked_amt, in4_entered_at, in4_ref, archived_at, archived_by')
+    .select('ph_checked_amt, atm_checked_amt, in4_entered_at, in4_ref, archived_at, archived_by, summary_image_url, summary_image_name')
     .eq('id', id)
     .single()
 
@@ -161,6 +161,43 @@ export default async function WorkingSheetEditorPage(
     ws.status === 'partially_approved' && !frozen && canEdit && user?.id === ws.engineer_id && balanceAmt > 0 ? (
       <RequestReleaseButton wsId={ws.id} released={releasedAmt} balance={balanceAmt} />
     ) : null
+
+  // The engineer's summary screenshot — shown inline near the top for EVERY
+  // viewer so the working can be read at a glance without opening the Excel.
+  // Any image size: natural size up to the container width, capped at 75vh
+  // (tall phone screenshots scroll the page, not the card); click opens the
+  // full-size original in a new tab.
+  let summaryShotPanel: React.ReactNode = null
+  if (extraCols?.summary_image_url) {
+    const { data: shotSigned } = await supabase.storage
+      .from('cc-sheets')
+      .createSignedUrl(extraCols.summary_image_url, 60 * 60)
+    if (shotSigned?.signedUrl) {
+      summaryShotPanel = (
+        <div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
+          <div className="flex items-center justify-between gap-3 px-4 py-2 bg-gray-50 border-b border-gray-100">
+            <p className="text-xs font-bold uppercase tracking-wide text-gray-600">Summary screenshot</p>
+            <a
+              href={shotSigned.signedUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="text-[11px] font-semibold text-indigo-700 hover:underline"
+            >
+              Open full size ↗
+            </a>
+          </div>
+          <a href={shotSigned.signedUrl} target="_blank" rel="noreferrer" title={extraCols.summary_image_name ?? 'Summary screenshot'}>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={shotSigned.signedUrl}
+              alt={`Summary screenshot — ${extraCols.summary_image_name ?? 'uploaded by the engineer'}`}
+              className="block max-w-full h-auto max-h-[75vh] mx-auto"
+            />
+          </a>
+        </div>
+      )
+    }
+  }
 
   // Back link is scoped to this WS's project + discipline + sub-skill so the
   // user returns to the same chronological timeline they came from, not the
@@ -233,6 +270,7 @@ export default async function WorkingSheetEditorPage(
           isAdmin={isAdmin}
         />
         {releaseRequestPanel}
+        {summaryShotPanel}
 
         {ccSettings.show_deadlines && (ws.deadline_date || canEditDeadline) && (
           <div className="flex items-center gap-2 flex-wrap">
@@ -335,6 +373,7 @@ export default async function WorkingSheetEditorPage(
           isAdmin={isAdmin}
         />
         {releaseRequestPanel}
+        {summaryShotPanel}
 
         {ccSettings.show_deadlines && (ws.deadline_date || canEditDeadline) && (
           <div className="flex items-center gap-2 flex-wrap">
@@ -517,6 +556,7 @@ export default async function WorkingSheetEditorPage(
       />
 
       {releaseRequestPanel}
+      {summaryShotPanel}
 
       {/* AI review tools — approval chain only, not engineers. */}
       {showAi && <WSAskAiPanel wsId={ws.id} />}
