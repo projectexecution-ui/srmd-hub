@@ -289,7 +289,10 @@ export default async function CostControlLandingPage() {
     // Children render inside their parent's group, not at top level.
     if (p.parent_project_id && projById.has(p.parent_project_id)) continue
     const kids = (childrenOf.get(p.id) ?? []).slice().sort((a, b) => a.code.localeCompare(b.code))
-    if (kids.length > 0) projGroups.push({ key: p.id, label: p.name.trim() || p.code, members: [p, ...kids] })
+    // Label the group by the parent's short CODE (e.g. "NGH", "P2", "VV") —
+    // the parent's full name can carry extra words ("NGH Infra") that don't
+    // belong in the group heading.
+    if (kids.length > 0) projGroups.push({ key: p.id, label: p.code.trim() || p.name.trim(), members: [p, ...kids] })
     else independents.push(p)
   }
   projGroups.sort((a, b) => (a.label ?? '').localeCompare(b.label ?? ''))
