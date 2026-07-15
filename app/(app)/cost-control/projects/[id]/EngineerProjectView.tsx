@@ -1,6 +1,7 @@
 import { Fragment } from 'react'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/server'
+import { getMyUser } from '@/lib/auth'
 import { PageHeader } from '@/components/PageHeader'
 import { QueryError } from '@/components/ui/query-error'
 import { formatINR } from '@/lib/utils'
@@ -18,8 +19,9 @@ type SRow = { id: string; discipline_id: string; code: string; name: string }
 
 export async function EngineerProjectTable({ projectId }: { projectId: string }) {
   const supabase = await createClient()
+  const user = await getMyUser()
 
-  const [pdRes, psRes, blRes, wsRes] = await Promise.all([
+  const [pdRes, psRes, blRes, wsRes, ssaRes] = await Promise.all([
     supabase
       .from('cc_project_disciplines')
       .select('discipline_id, cc_disciplines(id, code, name, display_order)')
@@ -38,13 +40,22 @@ export async function EngineerProjectTable({ projectId }: { projectId: string })
       .eq('project_id', projectId),
     // Working sheets for Awaiting-Approval + sheet counts. summary_notes lets
     // us drop the [IB] Internal Estimate baseline; chain fields let us count
-    // each revision chain once.
+    // each revision chain once; engineer_id scopes to the viewer's sheets.
     supabase
       .from('cc_ws_with_versions')
-      .select('discipline_id, sub_skill_id, status, total_amount, approved_for_erp_amt, chain_anchor_id, version_no, summary_notes')
+      .select('discipline_id, sub_skill_id, engineer_id, status, total_amount, approved_for_erp_amt, chain_anchor_id, version_no, summary_notes')
       .eq('project_id', projectId)
       .is('archived_at', null),
+    // Sub-skills assigned to the viewer here — those sheets are visible too.
+    user
+      ? supabase
+          .from('cc_subskill_assignments')
+          .select('sub_skill_id')
+          .eq('project_id', projectId)
+          .eq('engineer_id', user.id)
+      : Promise.resolve({ data: [] as Array<{ sub_skill_id: string }>, error: null }),
   ])
+  const myAssignedSubs = new Set(((ssaRes.data ?? []) as Array<{ sub_skill_id: string }>).map(r => r.sub_skill_id))
 
   const disciplines: DRow[] = ((pdRes.data ?? []) as Array<{ cc_disciplines: DRow | DRow[] | null }>)
     .map(r => (Array.isArray(r.cc_disciplines) ? r.cc_disciplines[0] : r.cc_disciplines))
@@ -67,13 +78,15 @@ export async function EngineerProjectTable({ projectId }: { projectId: string })
     blMap.set(k, cur)
   }
 
-  // Awaiting-approval + sheet count per (discipline, sub-skill): drop [IB]
-  // baseline sheets, collapse each chain to its latest version.
-  type WSV = { discipline_id: string; sub_skill_id: string; status: string; total_amount: number | null; approved_for_erp_amt: number | null; chain_anchor_id: string; version_no: number | null; summary_notes: string | null }
+  // Awaiting-approval + sheet count per (discipline, sub-skill): only sheets
+  // the viewer may see (their own, or in a sub-skill assigned to them) —
+  // never the [IB] baseline — collapsed to each chain's latest version.
+  type WSV = { discipline_id: string; sub_skill_id: string; engineer_id: string | null; status: string; total_amount: number | null; approved_for_erp_amt: number | null; chain_anchor_id: string; version_no: number | null; summary_notes: string | null }
   const latestByChain = new Map<string, WSV>()
   for (const w of (wsRes.data ?? []) as WSV[]) {
     if ((w.summary_notes ?? '').startsWith('[IB')) continue   // never expose the Internal Estimate baseline
     if (w.status === 'cancelled') continue
+    if (w.engineer_id !== user?.id && !myAssignedSubs.has(w.sub_skill_id)) continue // not mine, not assigned to me
     const prev = latestByChain.get(w.chain_anchor_id)
     if (!prev || (w.version_no ?? 1) > (prev.version_no ?? 1)) latestByChain.set(w.chain_anchor_id, w)
   }
@@ -118,7 +131,7 @@ export async function EngineerProjectTable({ projectId }: { projectId: string })
 
       <div className="rounded-lg border border-indigo-100 bg-indigo-50/50 px-3 py-2 text-xs text-indigo-900 flex items-center gap-2">
         <Info className="h-3.5 w-3.5 flex-shrink-0" />
-        Project budget (from ERP) and the estimates in the approval chain. The Internal Estimate and spend figures are management-only.
+        Project budget (from ERP) and your sheets in the approval chain — you see the sheets you raised or are assigned to. The Internal Estimate and spend figures are management-only.
       </div>
 
       {/* KPI strip — no Internal Estimate, no Paid. */}

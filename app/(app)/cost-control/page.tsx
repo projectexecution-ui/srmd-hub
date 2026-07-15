@@ -110,13 +110,15 @@ export default async function CostControlLandingPage() {
   const APPROVED_DONE = new Set(['approved', 'wo_issued', 'paid'])
 
   // Money a sheet has actually had approved so far. Fully-approved sheets
-  // fall back to total_amount when no ERP release figure was recorded;
-  // partially-approved sheets count ONLY what has been released so far.
+  // fall back to total_amount when no ERP release figure was recorded; any
+  // other live sheet counts what has been released so far — released money
+  // stays counted even while the sheet is back in the chain asking for its
+  // balance (the release re-request flow).
   const approvedSoFar = (w: WSRollup) => {
     const released = Number(w.approved_for_erp_amt ?? 0)
     if (APPROVED_DONE.has(w.status)) return released > 0 ? released : Number(w.total_amount ?? 0)
-    if (w.status === 'partially_approved') return released
-    return 0
+    if (w.status === 'cancelled') return 0
+    return released
   }
 
   // Collapse each revision chain to its latest live version, split into the
@@ -723,20 +725,15 @@ async function EngineerHome({ userId, canWrite }: { userId: string | null; canWr
             My working sheets →
           </Link>
         </div>
+        {/* Engineers raise sheets ONLY by uploading their working Excel —
+            the typed sheet and thumbrule paths are management-only. */}
         {canWrite && (
-          <div className="flex flex-wrap gap-2 mt-4">
+          <div className="flex flex-wrap items-center gap-3 mt-4">
             <Link href="/cost-control/working-sheets/new-quick"
               className="inline-flex items-center gap-2 rounded-xl bg-white text-indigo-800 font-semibold text-sm px-4 py-2.5 hover:bg-indigo-50 transition-colors shadow-sm">
               <FileSpreadsheet className="h-4 w-4" /> Upload my working (Excel)
             </Link>
-            <Link href="/cost-control/working-sheets/new-thumbrule"
-              className="inline-flex items-center gap-2 rounded-xl bg-indigo-700/60 border border-white/30 text-white font-semibold text-sm px-4 py-2.5 hover:bg-indigo-700 transition-colors">
-              <Ruler className="h-4 w-4" /> Thumbrule estimate
-            </Link>
-            <Link href="/cost-control/working-sheets/new"
-              className="inline-flex items-center gap-2 rounded-xl bg-indigo-700/60 border border-white/30 text-white font-semibold text-sm px-4 py-2.5 hover:bg-indigo-700 transition-colors">
-              <Plus className="h-4 w-4" /> Type a sheet
-            </Link>
+            <span className="text-[11px] text-indigo-100">Attach your quantification Excel — it&apos;s required.</span>
           </div>
         )}
       </div>

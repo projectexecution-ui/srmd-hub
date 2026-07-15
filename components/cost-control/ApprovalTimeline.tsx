@@ -109,12 +109,16 @@ export async function ApprovalTimeline({ wsId }: { wsId: string }) {
     const isReturn  = e.decision === 'returned' || e.to_stage === 'returned'
     const isFull    = e.to_stage === 'approved'
     const isSignOff = e.to_stage === 'ph_approved' || e.to_stage === 'atm_approved'
+    // Engineer sent a partly released sheet back through the chain to ask
+    // for the balance (cc_request_release).
+    const isReleaseRequest = e.decision === 'release_requested' || e.to_stage === 'submitted'
     items.push({
       ts: e.created_at,
-      kind: isReturn ? 'returned' : isSignOff ? 'signoff' : isFull ? 'approved' : 'partial',
+      kind: isReturn ? 'returned' : isReleaseRequest ? 'submitted' : isSignOff ? 'signoff' : isFull ? 'approved' : 'partial',
       who: e.actor_id ? nameById.get(e.actor_id) ?? null : null,
       title: isReturn
         ? `Returned to engineer${e.from_stage === 'ph_approved' ? ' (by Atm Head stage)' : e.from_stage === 'atm_approved' || e.from_stage === 'partially_approved' ? ' (by Trustee stage)' : ''}`
+        : isReleaseRequest ? 'Requested release of the balance — back into the approval chain'
         : e.to_stage === 'ph_approved' ? 'Project Head signed off'
         : e.to_stage === 'atm_approved' ? 'Atm Head signed off'
         : isFull ? 'Fully approved into ERP' : 'Release approved (partial)',

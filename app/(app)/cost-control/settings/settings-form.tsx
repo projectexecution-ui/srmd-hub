@@ -60,9 +60,8 @@ export function CcSettingsForm({ initial, users = [] }: {
       { key: 'cc_label_ph_checked',  value: v.label_ph_checked.trim() },
       { key: 'cc_label_atm_checked', value: v.label_atm_checked.trim() },
       { key: 'cc_label_approved',    value: v.label_approved.trim() },
-      { key: 'cc_eng_estimates',    value: v.eng_estimates },
-      { key: 'cc_eng_projects',     value: String(v.eng_projects) },
-      { key: 'cc_eng_erp',          value: String(v.eng_erp) },
+      // Engineer visibility is fixed policy now (own + assigned sheets,
+      // ERP visible, Internal Estimate/Paid hidden) — no keys saved for it.
       { key: 'cc_archive_users',    value: v.archive_users.join(',') },
       { key: 'cc_ie_review',        value: String(v.ie_review) },
     ]
@@ -129,53 +128,12 @@ export function CcSettingsForm({ initial, users = [] }: {
 
       <div className="space-y-2">
         <p className="text-[11px] uppercase tracking-wider font-semibold text-gray-500">What engineers can see</p>
-        <p className="text-xs text-gray-500">
-          You decide how much of the estimate an engineer sees when they log in. Everything below is OFF/locked
-          by default — engineers only see the sheets they upload until you open it up here.
-        </p>
-        <div className="rounded-md border border-gray-200 px-3 py-2.5">
-          <span className="block text-sm font-semibold text-gray-900">Estimates an engineer can see</span>
-          <span className="block text-xs text-gray-500 mt-0.5 mb-2">
-            No ERP / Budget / Paid numbers are shown either way unless you turn on the toggle below.
-          </span>
-          <div className="flex flex-wrap gap-2">
-            {([
-              ['own', 'Only their own uploads'],
-              ['projects', 'All estimates in their projects'],
-              ['all', 'All estimates (every project)'],
-            ] as const).map(([val, lbl]) => (
-              <button
-                key={val}
-                type="button"
-                onClick={() => setV({ ...v, eng_estimates: val })}
-                className={`rounded-full px-3 py-1 text-xs font-semibold border ${
-                  v.eng_estimates === val
-                    ? 'bg-blue-600 text-white border-blue-600'
-                    : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
-                }`}
-              >
-                {lbl}
-              </button>
-            ))}
-          </div>
-          {v.eng_estimates === 'projects' && (
-            <p className="text-[11px] text-amber-700 mt-2">
-              Needs engineers assigned to projects (in the project setup) — an engineer with no project sees nothing.
-            </p>
-          )}
+        <div className="rounded-md border border-gray-200 bg-gray-50/60 px-3 py-2.5 text-xs text-gray-600 space-y-1">
+          <p className="font-semibold text-gray-800">Fixed rules — no toggles needed:</p>
+          <p>• An engineer sees only the working sheets <b>they created</b> or in sub-skills <b>assigned to them</b> (from the Internal Estimate page).</p>
+          <p>• They see each project&apos;s <b>Budget (ERP)</b> and <b>WO/PO</b> — never the <b>Internal Estimate</b>, <b>Paid</b>, or <b>% Used</b>.</p>
+          <p>• They raise sheets only by <b>uploading their working Excel</b> (typed sheets and thumbrule are management-only).</p>
         </div>
-        <Toggle
-          label="Let engineers open the Internal Estimate page"
-          hint="The category / sub-skill rollup page. Off = engineers stay on their own working-sheets list."
-          checked={v.eng_projects}
-          onChange={x => setV({ ...v, eng_projects: x })}
-        />
-        <Toggle
-          label="Show engineers the Budget (ERP) / WO / Paid figures"
-          hint="The spend numbers from Budget vs Actual. Off = engineers never see ERP/spend even if they can open the project page."
-          checked={v.eng_erp}
-          onChange={x => setV({ ...v, eng_erp: x })}
-        />
       </div>
 
       <div className="space-y-2">

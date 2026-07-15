@@ -3,6 +3,7 @@ import { createClient } from '@/lib/supabase/server'
 import { requirePermission, can, getMyUser, getMyProfile } from '@/lib/auth'
 import { getWSApprovalContext, checkIsCcReviewer, checkCanSetDeadline, checkCanArchiveWs } from '@/components/cost-control/ws-actions'
 import { ArchiveControls } from './ArchiveControls'
+import { RequestReleaseButton } from './RequestReleaseButton'
 import { PageHeader } from '@/components/PageHeader'
 import { Card } from '@/components/ui/card'
 import { WSStatusPill, type WSStatus } from '@/components/cost-control/WSStatusPill'
@@ -75,6 +76,21 @@ export default async function WorkingSheetEditorPage(
     redirect('/cost-control/working-sheets')
   }
 
+  // An engineer may open a sheet only if THEY created it, or the sub-skill
+  // is assigned to them for budget working — same rule as the list.
+  if (!reviewer && ws.engineer_id !== user?.id) {
+    const { data: ssa } = user
+      ? await supabase
+          .from('cc_subskill_assignments')
+          .select('id')
+          .eq('engineer_id', user.id)
+          .eq('project_id', ws.project_id)
+          .eq('sub_skill_id', ws.sub_skill_id)
+          .maybeSingle()
+      : { data: null }
+    if (!ssa) redirect('/cost-control/working-sheets')
+  }
+
   // Sibling versions in the same chain — drives the prev/next nav.
   const { data: chainSiblings } = await supabase
     .from('cc_ws_with_versions')
@@ -135,6 +151,16 @@ export default async function WorkingSheetEditorPage(
     phChecked: extraCols?.ph_checked_amt != null ? { amt: Number(extraCols.ph_checked_amt) } : null,
     atmChecked: extraCols?.atm_checked_amt != null ? { amt: Number(extraCols.atm_checked_amt) } : null,
   }
+
+  // Partly released + viewer owns the sheet → offer to send it back through
+  // the SAME approval chain to release the balance. Rendered in all three
+  // layout branches (thumbrule / excel / typed).
+  const releasedAmt = Number(ws.approved_for_erp_amt ?? 0)
+  const balanceAmt = Math.max(Number(ws.total_amount ?? 0) - releasedAmt, 0)
+  const releaseRequestPanel =
+    ws.status === 'partially_approved' && !frozen && canEdit && user?.id === ws.engineer_id && balanceAmt > 0 ? (
+      <RequestReleaseButton wsId={ws.id} released={releasedAmt} balance={balanceAmt} />
+    ) : null
 
   // Back link is scoped to this WS's project + discipline + sub-skill so the
   // user returns to the same chronological timeline they came from, not the
@@ -206,6 +232,7 @@ export default async function WorkingSheetEditorPage(
           canArchive={canArchive}
           isAdmin={isAdmin}
         />
+        {releaseRequestPanel}
 
         {ccSettings.show_deadlines && (ws.deadline_date || canEditDeadline) && (
           <div className="flex items-center gap-2 flex-wrap">
@@ -307,6 +334,7 @@ export default async function WorkingSheetEditorPage(
           canArchive={canArchive}
           isAdmin={isAdmin}
         />
+        {releaseRequestPanel}
 
         {ccSettings.show_deadlines && (ws.deadline_date || canEditDeadline) && (
           <div className="flex items-center gap-2 flex-wrap">
@@ -487,6 +515,8 @@ export default async function WorkingSheetEditorPage(
         next={nextSibling ? { id: nextSibling.id, ws_code: nextSibling.ws_code, version_no: nextSibling.version_no } : null}
         canEdit={canEdit && (isOwner || isAdmin)}
       />
+
+      {releaseRequestPanel}
 
       {/* AI review tools — approval chain only, not engineers. */}
       {showAi && <WSAskAiPanel wsId={ws.id} />}

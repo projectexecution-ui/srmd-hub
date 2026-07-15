@@ -226,6 +226,19 @@ export async function assignSubSkillEngineer(input: {
   return { ok: true }
 }
 
+/** Owner engineer asks the chain to release the balance of a partly
+ *  released sheet. The RPC re-checks ownership + status and flips the sheet
+ *  back to 'submitted' so it walks the SAME PH → Atm → Trustee chain. */
+export async function requestBalanceRelease(wsId: string): Promise<{ ok: boolean; error?: string }> {
+  const supabase = await createClient()
+  const { error } = await supabase.rpc('cc_request_release', { p_ws: wsId, p_note: null })
+  if (error) return { ok: false, error: error.message }
+  revalidatePath(`/cost-control/working-sheets/${wsId}`)
+  revalidatePath('/cost-control/working-sheets')
+  revalidatePath('/cost-control')
+  return { ok: true }
+}
+
 /** Admin, or a user the admin granted via the cc_archive_users setting, may
  *  archive / restore working sheets. Delete stays admin-only (in the RPC). */
 export async function checkCanArchiveWs(): Promise<boolean> {

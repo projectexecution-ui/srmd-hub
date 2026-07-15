@@ -62,12 +62,11 @@ export default async function WorkingSheetsPage({
   const showDeadlines = cc.show_deadlines
   const scoped = !!sp.sub_skill
 
-  // Management (approval-chain roles + admin) sees everything. Engineers see
-  // as much as the admin has opened up via Settings → "What engineers can
-  // see": their own sheets (default), everything in their assigned projects,
-  // or every estimate. `canSeeOthers` = they see beyond their own uploads.
+  // Management (approval-chain roles + admin) sees everything. An engineer
+  // sees only sheets they created + sheets in sub-skills assigned to them
+  // for budget working — enforced below regardless of URL params.
   const [isManagement, me] = await Promise.all([checkIsCcReviewer(), getMyUser()])
-  const canSeeOthers = isManagement || cc.eng_estimates !== 'own'
+  const canSeeOthers = isManagement
 
   // Virgin URL (no query params) → redirect to the user's most-recently-
   // touched project so they don't see a confusing cross-project mash-up.
@@ -125,27 +124,26 @@ export default async function WorkingSheetsPage({
   }
   // Engineer estimate visibility — enforced server-side regardless of the
   // URL's filter params. Admin picks the scope in Settings.
+  // An engineer sees a sheet only if THEY created it, or the sub-skill is
+  // assigned to them for budget working (cc_subskill_assignments). Never the
+  // [IB…] Internal Estimate baseline. (engineer_id is not a safe [IB]
+  // signal — the import attributed those to a real user — so the TS filter
+  // below also drops them by the summary-notes tag.)
+  let myAssignedPairs = new Set<string>()
   if (!isManagement && me) {
-    // Internal Estimate baseline ([IB…]) sheets are management-only. They
-    // carry a "[IB…]" tag in summary_notes — engineer_id is NOT a safe
-    // signal (the import attributed them to a real user). Exclude them from
-    // any engineer view that reaches beyond their own uploads; the is.null
-    // arm keeps plain engineer sheets that have no notes. (`*` is PostgREST's
-    // wildcard inside .or() — it maps to LIKE '[IB%'.)
-    const HIDE_IB = 'summary_notes.is.null,summary_notes.not.like.[IB*'
-    if (cc.eng_estimates === 'all') {
-      q = q.or(HIDE_IB) // every engineer estimate, but never the [IB] baseline
-    } else if (cc.eng_estimates === 'projects') {
-      const { data: pa } = await supabase
-        .from('project_assignments')
-        .select('project_id')
-        .eq('user_id', me.id)
-      const ids = (pa ?? []).map(r => r.project_id as string)
-      // No project assigned yet → safest fallback is their own sheets only.
-      if (ids.length) q = q.in('project_id', ids).or(HIDE_IB)
-      else q = q.eq('engineer_id', me.id)
+    const { data: ssa } = await supabase
+      .from('cc_subskill_assignments')
+      .select('project_id, sub_skill_id')
+      .eq('engineer_id', me.id)
+    const pairs = (ssa ?? []) as Array<{ project_id: string; sub_skill_id: string }>
+    myAssignedPairs = new Set(pairs.map(a => `${a.project_id}::${a.sub_skill_id}`))
+    const subIds = [...new Set(pairs.map(a => a.sub_skill_id))]
+    if (subIds.length) {
+      // Own sheets OR sheets in an assigned sub-skill; exact (project,
+      // sub-skill) pairing is re-checked in TS below.
+      q = q.or(`engineer_id.eq.${me.id},sub_skill_id.in.(${subIds.join(',')})`)
     } else {
-      q = q.eq('engineer_id', me.id) // 'own' (default) — never includes [IB]
+      q = q.eq('engineer_id', me.id)
     }
   }
 
@@ -183,9 +181,13 @@ export default async function WorkingSheetsPage({
   const { data: wsData, error: wsError } = wsRes
   let rows = (wsData ?? []) as WSRow[]
   if (!isManagement) {
-    // Defence in depth: never render an [IB…] baseline sheet to an engineer,
-    // even if the query-level filter above is somehow bypassed.
-    rows = rows.filter(r => !(r.summary_notes ?? '').startsWith('[IB'))
+    // Defence in depth: an engineer only ever sees their OWN sheets or those
+    // in a sub-skill assigned to them (exact project+sub-skill pair) — and
+    // never an [IB…] baseline sheet, whatever the query returned.
+    rows = rows.filter(r =>
+      !(r.summary_notes ?? '').startsWith('[IB') &&
+      (r.engineer_id === me?.id || myAssignedPairs.has(`${r.project_id}::${r.sub_skill_id}`)),
+    )
   }
   const projects = projectsRes.data ?? []
   type ProfileLite = { id: string; full_name: string | null; name: string | null }
@@ -283,21 +285,27 @@ export default async function WorkingSheetsPage({
       >
         {canWrite && (
           <>
-            <Button asChild size="sm" variant="outline">
-              <Link href="/cost-control/working-sheets/new-thumbrule">
-                <Ruler className="h-4 w-4" /> Thumbrule
-              </Link>
-            </Button>
-            <Button asChild size="sm" variant="outline">
+            {/* Typed sheets + thumbrule are management-only; engineers must
+                upload their working as Excel (the routes enforce this too). */}
+            {isManagement && (
+              <Button asChild size="sm" variant="outline">
+                <Link href="/cost-control/working-sheets/new-thumbrule">
+                  <Ruler className="h-4 w-4" /> Thumbrule
+                </Link>
+              </Button>
+            )}
+            <Button asChild size="sm" variant={isManagement ? 'outline' : 'default'}>
               <Link href="/cost-control/working-sheets/new-quick">
-                <FileSpreadsheet className="h-4 w-4" /> Quick mode (Excel)
+                <FileSpreadsheet className="h-4 w-4" /> {isManagement ? 'Quick mode (Excel)' : 'Upload my working (Excel)'}
               </Link>
             </Button>
-            <Button asChild size="sm">
-              <Link href="/cost-control/working-sheets/new">
-                <Plus className="h-4 w-4" /> New Working Sheet
-              </Link>
-            </Button>
+            {isManagement && (
+              <Button asChild size="sm">
+                <Link href="/cost-control/working-sheets/new">
+                  <Plus className="h-4 w-4" /> New Working Sheet
+                </Link>
+              </Button>
+            )}
           </>
         )}
       </PageHeader>
@@ -441,8 +449,8 @@ export default async function WorkingSheetsPage({
                 </Link>
                 {canWrite && (
                   <Button asChild size="sm">
-                    <Link href="/cost-control/working-sheets/new">
-                      <Plus className="h-4 w-4" /> New Working Sheet
+                    <Link href={isManagement ? '/cost-control/working-sheets/new' : '/cost-control/working-sheets/new-quick'}>
+                      <Plus className="h-4 w-4" /> {isManagement ? 'New Working Sheet' : 'Upload my working (Excel)'}
                     </Link>
                   </Button>
                 )}
@@ -626,6 +634,12 @@ export default async function WorkingSheetsPage({
                                 <span className={appr >= est ? 'text-emerald-700 font-semibold' : 'text-amber-700 font-semibold'}>
                                   {formatINR(appr)}
                                   {appr < est && <span className="ml-1 text-[10px] text-amber-700/80">({pct}%)</span>}
+                                  {/* Partly released → say exactly how much is still due. */}
+                                  {appr < est && (
+                                    <span className="block text-[10px] font-semibold text-rose-600/90 leading-tight">
+                                      {formatINR(est - appr)} balance
+                                    </span>
+                                  )}
                                 </span>
                               ) : (
                                 <span className="text-xs text-gray-400">—</span>

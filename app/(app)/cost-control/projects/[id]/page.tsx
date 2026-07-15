@@ -92,9 +92,9 @@ export default async function CostControlProjectDetailPage(
   // Setup / disable / deadline / BPH-sync controls are management-only even
   // when an engineer is allowed to view.
   const canWrite = can(perms, 'cost-control', 'edit') && reviewer
-  // ERP columns + spend KPIs: shown to management, and to engineers only if
-  // the admin opened them up.
-  const showErp = ccSettings.show_erp_columns && (reviewer || ccSettings.eng_erp)
+  // ERP columns + spend KPIs (engineers never reach this page — they get
+  // the EngineerProjectView below).
+  const showErp = ccSettings.show_erp_columns
 
   const { data: project, error: projectErr } = await supabase
     .from('projects')
@@ -330,7 +330,10 @@ export default async function CostControlProjectDetailPage(
       cur.approvedTotal += appr
       cur.pendingAmount += Math.max(amt - appr, 0)
     } else if (PENDING_STATUS.has(w.status)) {
-      // Anywhere in the sign-off chain = still pending release.
+      // Anywhere in the sign-off chain = still pending release. A partly
+      // released sheet re-requesting its balance keeps its released money
+      // counted as approved; only the balance stays pending.
+      cur.approvedTotal += appr
       cur.pendingAmount += Math.max(amt - appr, 0)
     }
     // draft / returned / draft_blocked add nothing but the chain count.

@@ -1,7 +1,8 @@
 import Link from 'next/link'
+import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { requirePermission } from '@/lib/auth'
-import { checkCanSetDeadline } from '@/components/cost-control/ws-actions'
+import { checkCanSetDeadline, checkIsCcReviewer } from '@/components/cost-control/ws-actions'
 import { getCcSettings } from '@/lib/cost-control/settings'
 import { PageHeader } from '@/components/PageHeader'
 import { Card } from '@/components/ui/card'
@@ -17,6 +18,15 @@ export default async function NewWorkingSheetPage({
 }) {
   await requirePermission('cost-control', 'edit')
   const sp = await searchParams
+  // Engineers must upload their working as Excel — the typed sheet is
+  // management-only. Send them to Quick mode with the same prefill.
+  if (!(await checkIsCcReviewer())) {
+    const qs = new URLSearchParams()
+    if (sp.project) qs.set('project', sp.project)
+    if (sp.discipline) qs.set('discipline', sp.discipline)
+    if (sp.sub_skill) qs.set('sub_skill', sp.sub_skill)
+    redirect(`/cost-control/working-sheets/new-quick${qs.size ? `?${qs}` : ''}`)
+  }
   const supabase = await createClient()
 
   const { data: projects } = await supabase
