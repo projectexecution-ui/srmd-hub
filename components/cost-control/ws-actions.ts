@@ -91,7 +91,7 @@ export async function getWSApprovalContext(wsId: string): Promise<WSApprovalCont
   const supabase = await createClient()
   const { data: ws } = await supabase
     .from('cc_working_sheets')
-    .select('engineer_id, status, total_amount, approved_for_erp_amt')
+    .select('engineer_id, status, total_amount, approved_for_erp_amt, project_id')
     .eq('id', wsId)
     .single()
   if (!ws) return none
@@ -102,6 +102,13 @@ export async function getWSApprovalContext(wsId: string): Promise<WSApprovalCont
 
   // Approvals: self-approval blocked unless admin.
   if (isOwner && !me.isAdmin) return { ...none, canSubmit }
+
+  // Phase 2: if this project names its approvers for the current stage,
+  // only they (or an admin) may act — hide the buttons for everyone else.
+  const projectAllows = await projectApproverAllows(
+    (ws as { project_id: string | null }).project_id, status, me.user.id, me.isAdmin,
+  )
+  if (!projectAllows) return { ...none, canSubmit }
 
   const total = Number(ws.total_amount ?? 0)
   const already = Number(ws.approved_for_erp_amt ?? 0)
@@ -283,6 +290,40 @@ async function callCanApprove(fromStage: string, toStage: string, amount: number
   })
   if (error) return false
   return !!data
+}
+
+// Which per-project approver role covers a sheet at a given status.
+function coveringApproverRole(status: string): 'project_head' | 'head' | 'founder' | null {
+  switch (status) {
+    case 'submitted':          return 'project_head'
+    case 'ph_approved':        return 'head'
+    case 'atm_approved':
+    case 'partially_approved': return 'founder'
+    default:                   return null
+  }
+}
+
+/** Phase 2 gate, layered ON TOP of role-based can_approve: when this project
+ *  has NAMED approvers for the stage's covering role, only they (or an admin)
+ *  may act — so other projects' Heads aren't in the loop. When a stage has no
+ *  named approver, it falls back to the role-wide behaviour (non-breaking).
+ *  Fails open to role-wide on a query error. */
+async function projectApproverAllows(
+  projectId: string | null, status: string, userId: string, isAdmin: boolean,
+): Promise<boolean> {
+  if (isAdmin) return true
+  const role = coveringApproverRole(status)
+  if (!role || !projectId) return true
+  const supabase = await createClient()
+  const { data, error } = await supabase
+    .from('cc_project_approvers')
+    .select('user_id')
+    .eq('project_id', projectId)
+    .eq('role', role)
+  if (error) return true
+  const list = (data ?? []) as Array<{ user_id: string }>
+  if (list.length === 0) return true       // no named approvers → role-wide fallback
+  return list.some(r => r.user_id === userId)
 }
 
 // ============================================================
@@ -544,6 +585,9 @@ export async function signOffWorkingSheet(
   if (!allowed) {
     return { ok: false, error: 'Your role is not configured for this sign-off. Check /admin/approvals.' }
   }
+  if (!(await projectApproverAllows(ws.project_id as string | null, ws.status as string, me.user.id, me.isAdmin))) {
+    return { ok: false, error: 'This stage is assigned to a specific approver for this project — it is not with you.' }
+  }
 
   const now = new Date().toISOString()
   const checkedCols = toStage === 'ph_approved'
@@ -627,6 +671,9 @@ export async function approveWorkingSheet(
   if (ws.engineer_id === me.user.id && !me.isAdmin) {
     return { ok: false, error: 'You cannot approve a sheet you raised yourself' }
   }
+  if (!(await projectApproverAllows(ws.project_id as string | null, ws.status as string, me.user.id, me.isAdmin))) {
+    return { ok: false, error: "This project's release is assigned to a specific Trustee — it is not with you." }
+  }
 
   const { data, error: rpcErr } = await supabase.rpc('cc_approve_release', {
     p_ws_id: wsId,
@@ -674,6 +721,9 @@ export async function returnWorkingSheet(wsId: string, reason: string): Promise<
   const allowed = await callCanApprove(ws.status as string, 'returned', Number(ws.total_amount ?? 0))
   if (!allowed) {
     return { ok: false, error: 'Your role is not configured to return this sheet. Check /admin/approvals.' }
+  }
+  if (!(await projectApproverAllows(ws.project_id as string | null, ws.status as string, me.user.id, me.isAdmin))) {
+    return { ok: false, error: 'This stage is assigned to a specific approver for this project — it is not with you.' }
   }
 
   const { error: updErr } = await supabase
