@@ -9,15 +9,15 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { EmptyState } from '@/components/ui/empty-state'
 import { Calculator, Plus, FileText, Clock, Inbox, Upload, ClipboardList, Settings, CalendarClock, ChevronDown, Download, RefreshCw, AlertTriangle, CheckCircle2, FileSpreadsheet, Ruler, ArrowRight } from 'lucide-react'
-import { formatINR, formatDate } from '@/lib/utils'
+import { formatINR } from '@/lib/utils'
 import { DeadlineBadge } from '@/components/cost-control/DeadlineBadge'
 import { QueryError } from '@/components/ui/query-error'
-import { wsStatusLabel, WSStatusPill, type WSStatus } from '@/components/cost-control/WSStatusPill'
-import { plainStatusLabel, isPendingStatus } from '@/lib/cost-control/chain'
+import { wsStatusLabel, WSStatusPill } from '@/components/cost-control/WSStatusPill'
 import { AutoBackup } from '@/components/cost-control/AutoBackup'
 import { getLastBphSync } from '@/app/(app)/cost-control/import/bph/actions'
 import { getCcSettings } from '@/lib/cost-control/settings'
 import { getEffectiveCcRole } from '@/app/(app)/cost-control/billing/billing-actions'
+import { EngineerProjectTable } from '@/app/(app)/cost-control/projects/[id]/EngineerProjectView'
 
 export const dynamic = 'force-dynamic'
 
@@ -34,7 +34,12 @@ type CCProject = {
   parent_project_id: string | null
 }
 
-export default async function CostControlLandingPage() {
+export default async function CostControlLandingPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ project?: string }>
+}) {
+  const sp = await searchParams
   const perms = await requirePermission('cost-control', 'view')
   const canWrite = can(perms, 'cost-control', 'edit')
   const canAdmin = can(perms, 'cost-control', 'admin')
@@ -51,7 +56,7 @@ export default async function CostControlLandingPage() {
     if (ccSettings.billing_step && (await getEffectiveCcRole()) === 'billing') {
       redirect('/cost-control/billing')
     }
-    return <EngineerHome userId={user?.id ?? null} canWrite={canWrite} />
+    return <EngineerHome userId={user?.id ?? null} canWrite={canWrite} selectedProject={sp.project ?? null} />
   }
 
   const [projectsRes, wsAllRes, myDraftsRes, approversRes, deadlinesRes, budgetRes, backupRes] = await Promise.all([
@@ -622,107 +627,67 @@ function BphSyncChip({
   )
 }
 
-// ─── Engineer personal home ─────────────────────────────────────────────
-// Layman-friendly landing for non-management users: THEIR sheets, THEIR
-// deadlines, big create buttons — and zero project-level financials.
-async function EngineerHome({ userId, canWrite }: { userId: string | null; canWrite: boolean }) {
+// ─── Engineer home ──────────────────────────────────────────────────────
+// The engineer landing mirrors the management project page — every Category
+// and Sub-skill, with Awaiting Approval / Budget (ERP) / WO / Working Sheets
+// — but NEVER the Internal Estimate, Paid, or % Used. A project switcher
+// scopes the table; below it sits their "assigned to me" to-do list.
+async function EngineerHome({ userId, canWrite, selectedProject }: { userId: string | null; canWrite: boolean; selectedProject: string | null }) {
   const supabase = await createClient()
 
-  type MyWS = {
-    id: string
-    ws_code: string
-    status: string
-    total_amount: number | null
-    approved_for_erp_amt: number | null
-    deadline_date: string | null
-    return_reason: string | null
-    created_at: string
-    entry_mode: string | null
-    chain_anchor_id: string | null
-    version_no: number | null
-    project_id: string
-    discipline_id: string
-    sub_skill_id: string
-    projects: { code: string; name: string } | { code: string; name: string }[] | null
-    cc_disciplines: { code: string; name: string } | { code: string; name: string }[] | null
-    cc_sub_skills: { code: string; name: string } | { code: string; name: string }[] | null
-  }
-  // Query the versions view so we can collapse each revision chain to the
-  // engineer's latest version (a sheet revised N times must count once, not N).
-  const { data: myData, error: myErr } = userId
-    ? await supabase
-        .from('cc_ws_with_versions')
-        .select('id, ws_code, status, total_amount, approved_for_erp_amt, deadline_date, return_reason, created_at, entry_mode, chain_anchor_id, version_no, project_id, discipline_id, sub_skill_id, projects(code, name), cc_disciplines(code, name), cc_sub_skills(code, name)')
-        .eq('engineer_id', userId)
-        .is('archived_at', null)
-        .neq('status', 'cancelled')
-        .order('created_at', { ascending: false })
-        .limit(50)
-    : { data: [], error: null }
-  const allMine = (myData ?? []) as MyWS[]
-  // Keep only the latest version of each chain (same as the Working Sheets
-  // list), so counts and money never count an older revision.
-  const latestByChain = new Map<string, MyWS>()
-  for (const w of allMine) {
-    const key = w.chain_anchor_id ?? w.id
-    const prev = latestByChain.get(key)
-    if (!prev || (w.version_no ?? 1) > (prev.version_no ?? 1)) latestByChain.set(key, w)
-  }
-  const mine = [...latestByChain.values()].sort((a, b) => (a.created_at < b.created_at ? 1 : -1))
-
-  const showDeadlines = (await getCcSettings()).show_deadlines
-  const pending = (w: MyWS) => Math.max(Number(w.total_amount ?? 0) - Number(w.approved_for_erp_amt ?? 0), 0)
-
-  const needsMyAction = mine.filter(w => w.status === 'draft' || w.status === 'returned')
-  const inApproval    = mine.filter(w => isPendingStatus(w.status))
-  // Their own estimate STILL waiting — the not-yet-released part (a partly
-  // released sheet only counts what the Trustee hasn't released yet).
-  const inApprovalAmt = inApproval.reduce((s, w) => s + pending(w), 0)
-  const done          = mine.filter(w => w.status === 'approved' || w.status === 'wo_issued' || w.status === 'paid')
-  // Money actually released to the engineer (fully approved sheets + the
-  // released slice of partly-approved ones).
-  const releasedAmt = mine.reduce((s, w) => {
-    if (['approved', 'wo_issued', 'paid'].includes(w.status)) {
-      return s + (Number(w.approved_for_erp_amt ?? 0) || Number(w.total_amount ?? 0))
-    }
-    if (w.status === 'partially_approved') return s + Number(w.approved_for_erp_amt ?? 0)
-    return s
-  }, 0)
-  const todayStr = new Date().toISOString().slice(0, 10)
-  // Overdue is a deadline concept — only meaningful when deadlines are on.
-  const overdue = showDeadlines ? mine.filter(w =>
-    w.deadline_date && w.deadline_date < todayStr &&
-    !['approved', 'wo_issued', 'paid', 'cancelled'].includes(w.status)).length : 0
-
-  const pickOne = <T,>(x: T | T[] | null): T | undefined => (Array.isArray(x) ? x[0] : x) ?? undefined
-
-  // Sub-skills management has made this engineer responsible for (budget
-  // working), + whether they've already raised a sheet for each — so nothing
-  // is missed. No amounts here: this is a to-do list, not a money view.
+  // The engineer's projects (assigned to the project, or has a sheet there,
+  // or a sub-skill assigned to them), + their sub-skill to-do list.
   type AssignRow = {
     project_id: string
     sub_skill_id: string
     cc_sub_skills: { code: string; name: string; discipline_id: string } | { code: string; name: string; discipline_id: string }[] | null
     projects: { code: string; name: string } | { code: string; name: string }[] | null
   }
-  const { data: assignData } = userId
-    ? await supabase
-        .from('cc_subskill_assignments')
-        .select('project_id, sub_skill_id, cc_sub_skills(code, name, discipline_id), projects(code, name)')
-        .eq('engineer_id', userId)
-    : { data: [] as AssignRow[] }
-  const myAssignments = (assignData ?? []) as AssignRow[]
-  const mySubSet = new Set(allMine.map(w => `${w.project_id}::${w.sub_skill_id}`))
+  const [paRes, myWsRes, assignRes] = await Promise.all([
+    userId
+      ? supabase.from('project_assignments').select('project_id').eq('user_id', userId).eq('role', 'engineer')
+      : Promise.resolve({ data: [] as Array<{ project_id: string }> }),
+    userId
+      ? supabase.from('cc_working_sheets').select('project_id, sub_skill_id').eq('engineer_id', userId).is('archived_at', null).neq('status', 'cancelled')
+      : Promise.resolve({ data: [] as Array<{ project_id: string; sub_skill_id: string }> }),
+    userId
+      ? supabase.from('cc_subskill_assignments').select('project_id, sub_skill_id, cc_sub_skills(code, name, discipline_id), projects(code, name)').eq('engineer_id', userId)
+      : Promise.resolve({ data: [] as AssignRow[] }),
+  ])
+  const myWs = (myWsRes.data ?? []) as Array<{ project_id: string; sub_skill_id: string }>
+  const myAssignments = (assignRes.data ?? []) as AssignRow[]
+  // Sub-skills this engineer already has a sheet for — powers the ✓ / Start.
+  const mySubSet = new Set(myWs.map(w => `${w.project_id}::${w.sub_skill_id}`))
   const pendingAssignments = myAssignments.filter(a => !mySubSet.has(`${a.project_id}::${a.sub_skill_id}`)).length
+
+  const projIds = new Set<string>()
+  for (const r of (paRes.data ?? []) as Array<{ project_id: string }>) projIds.add(r.project_id)
+  for (const w of myWs) projIds.add(w.project_id)
+  for (const a of myAssignments) projIds.add(a.project_id)
+
+  const { data: projData } = projIds.size
+    ? await supabase.from('projects').select('id, code, name, built_up_sft').in('id', [...projIds]).not('cc_status', 'is', null).order('code')
+    : { data: [] as Array<{ id: string; code: string; name: string; built_up_sft: number | null }> }
+  const projects = (projData ?? []) as Array<{ id: string; code: string; name: string; built_up_sft: number | null }>
+  const selected = projects.find(p => p.id === selectedProject) ?? projects[0] ?? null
+
+  const pickOne = <T,>(x: T | T[] | null): T | undefined => (Array.isArray(x) ? x[0] : x) ?? undefined
 
   return (
     <div className="p-4 md:p-6 max-w-5xl mx-auto space-y-5">
       {/* Hero */}
       <div className="rounded-2xl bg-gradient-to-r from-indigo-600 to-indigo-500 text-white px-5 py-6 md:px-7 shadow-sm">
-        <h1 className="text-xl md:text-2xl font-bold">Cost Control — my work</h1>
-        <p className="text-indigo-100 text-sm mt-1">
-          Upload your working, send it for approval, and track where each sheet is in the chain.
-        </p>
+        <div className="flex items-start justify-between gap-3 flex-wrap">
+          <div>
+            <h1 className="text-xl md:text-2xl font-bold">Cost Control</h1>
+            <p className="text-indigo-100 text-sm mt-1">
+              Your projects&apos; budget and the estimates moving through approval.
+            </p>
+          </div>
+          <Link href="/cost-control/working-sheets" className="text-xs font-semibold text-white/90 hover:text-white underline underline-offset-2 whitespace-nowrap mt-1">
+            My working sheets →
+          </Link>
+        </div>
         {canWrite && (
           <div className="flex flex-wrap gap-2 mt-4">
             <Link href="/cost-control/working-sheets/new-quick"
@@ -741,83 +706,39 @@ async function EngineerHome({ userId, canWrite }: { userId: string | null; canWr
         )}
       </div>
 
-      {/* My counters — counts only, no org money */}
-      <div className="grid grid-cols-3 gap-3">
-        <Stat label="Needs my action" value={needsMyAction.length} hint="drafts + returned to me" icon={<Clock className="h-5 w-5" />} tone={needsMyAction.length > 0 ? 'amber' : 'default'} />
-        <Stat label="Awaiting approval" value={inApproval.length} hint={inApprovalAmt > 0 ? `${formatINR(inApprovalAmt)} still to be released` : 'moving through the chain'} icon={<Inbox className="h-5 w-5" />} />
-        <Stat label="Approved" value={done.length} hint={releasedAmt > 0 ? `${formatINR(releasedAmt)} released to you` : 'nothing released yet'} icon={<CheckCircle2 className="h-5 w-5" />} />
-      </div>
-
-      {/* Deadline warning — only shown when the org actually uses deadlines. */}
-      {showDeadlines && overdue > 0 && (
-        <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-800 flex items-center gap-2">
-          <AlertTriangle className="h-3.5 w-3.5 flex-shrink-0" />
-          {overdue} of your sheet{overdue === 1 ? '' : 's'} {overdue === 1 ? 'is' : 'are'} past the deadline and not yet approved.
-        </div>
+      {projects.length === 0 ? (
+        <EmptyState
+          icon={<FileText className="h-10 w-10" />}
+          title="No projects yet"
+          description="You're not on any Cost Control project yet. Once you're added, your project's budget and sub-skills show up here."
+        />
+      ) : (
+        <>
+          {/* Project switcher — engineers can be on several projects. */}
+          {projects.length > 1 && (
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-xs font-semibold text-gray-500">Project:</span>
+              {projects.map(p => (
+                <Link
+                  key={p.id}
+                  href={`/cost-control?project=${p.id}`}
+                  className={`px-2.5 py-1 rounded-lg text-xs font-semibold border ${selected?.id === p.id ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-gray-700 border-gray-200 hover:bg-gray-50'}`}
+                >
+                  {p.code}
+                </Link>
+              ))}
+            </div>
+          )}
+          {selected && (
+            <div className="space-y-2">
+              {projects.length > 1 && (
+                <h2 className="text-sm font-bold text-gray-900">{selected.code} · {selected.name}</h2>
+              )}
+              <EngineerProjectTable projectId={selected.id} />
+            </div>
+          )}
+        </>
       )}
-
-      {myErr && <QueryError message={myErr.message} what="your working sheets" />}
-
-      {/* My sheets */}
-      <Card className="overflow-hidden">
-        <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
-          <h2 className="text-sm font-bold text-gray-900">My working sheets</h2>
-          <Link href="/cost-control/working-sheets" className="text-xs font-semibold text-indigo-700 hover:underline inline-flex items-center gap-1">
-            See all <ArrowRight className="h-3 w-3" />
-          </Link>
-        </div>
-        {mine.length === 0 ? (
-          <EmptyState
-            icon={<FileText className="h-10 w-10" />}
-            title="No working sheets yet"
-            description="Upload your first working — it goes to the Project Head, then the Atm Head, then the Trustee."
-          />
-        ) : (
-          <ul className="divide-y divide-gray-100">
-            {mine.slice(0, 15).map(w => {
-              const proj = pickOne(w.projects)
-              const dis  = pickOne(w.cc_disciplines)
-              const sub  = pickOne(w.cc_sub_skills)
-              return (
-                <li key={w.id}>
-                  <Link href={`/cost-control/working-sheets/${w.id}`} className="flex items-center gap-3 px-4 py-3 hover:bg-gray-50">
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className="font-semibold text-sm text-gray-900">{w.ws_code}</span>
-                        <WSStatusPill status={w.status as WSStatus} />
-                        {(w.version_no ?? 1) > 1 && (
-                          <span className="text-[10px] font-semibold text-gray-500 bg-gray-100 rounded px-1.5 py-0.5">v{w.version_no}</span>
-                        )}
-                        {showDeadlines && w.deadline_date && (
-                          <DeadlineBadge deadlineDate={w.deadline_date} className="text-[10px] px-1.5 py-0.5"
-                            approved={['approved', 'wo_issued', 'paid'].includes(w.status)} />
-                        )}
-                      </div>
-                      <p className="text-xs text-gray-500 mt-0.5 truncate">
-                        {proj?.code ?? '—'} · {dis?.name ?? ''}{sub ? ` → ${sub.name}` : ''} · {formatDate(w.created_at)}
-                      </p>
-                      <p className="text-[11px] text-indigo-700 mt-0.5">{plainStatusLabel(w.status)}</p>
-                      {w.status === 'partially_approved' && (
-                        <p className="text-[11px] text-gray-500 mt-0.5">
-                          {formatINR(Number(w.approved_for_erp_amt ?? 0))} released · {formatINR(pending(w))} still pending
-                        </p>
-                      )}
-                      {w.status === 'returned' && w.return_reason && (
-                        <p className="text-[11px] text-rose-700 mt-0.5 truncate" title={w.return_reason}>
-                          Reason: {w.return_reason}
-                        </p>
-                      )}
-                    </div>
-                    <span className="text-sm font-semibold text-gray-900 tabular-nums whitespace-nowrap">
-                      {formatINR(Number(w.total_amount ?? 0))}
-                    </span>
-                  </Link>
-                </li>
-              )
-            })}
-          </ul>
-        )}
-      </Card>
 
       {/* Assigned to me for budget working — the sub-skills management made me
           responsible for, and whether I've started each. No amounts: a to-do,
