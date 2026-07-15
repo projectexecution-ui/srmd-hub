@@ -93,6 +93,13 @@ export default function UsersClient({
   // Pattern: email starts with anon- and ends with @srmd.local
   const isAnonymous = (u: Profile) => /^anon-/i.test(u.email) && /@srmd\.local$/i.test(u.email)
 
+  // Management vs Engineer — derived from the role, nothing extra to
+  // maintain. "Management" = the approval-chain roles (they see the
+  // confidential figures); "Engineer" = site engineers raising estimates.
+  const MANAGEMENT_ROLES = new Set<string>(['admin', 'project_head', 'head', 'founder'])
+  const sideOf = (u: Profile): 'management' | 'engineer' | 'other' =>
+    MANAGEMENT_ROLES.has(u.role) ? 'management' : u.role === 'engineer' ? 'engineer' : 'other'
+
   const filtered = users.filter(u => {
     // Status chip
     if (statusFilter === 'active' && !u.is_active) return false
@@ -110,6 +117,14 @@ export default function UsersClient({
       u.email.toLowerCase().includes(q)
     )
   })
+
+  // Group the list: Management first, then Engineers, then everyone else —
+  // alphabetical inside each group. The badge next to each name says which
+  // side a person is on at a glance.
+  const sideRank: Record<'management' | 'engineer' | 'other', number> = { management: 0, engineer: 1, other: 2 }
+  const sorted = [...filtered].sort((a, b) =>
+    sideRank[sideOf(a)] - sideRank[sideOf(b)] ||
+    (a.name ?? a.full_name ?? a.email).localeCompare(b.name ?? b.full_name ?? b.email))
 
   const activeCount = users.filter(u => u.is_active).length
   const adminCount = users.filter(u => u.role === 'admin').length
@@ -501,7 +516,7 @@ export default function UsersClient({
             </p>
           ) : (
             <div className="space-y-1">
-              {filtered.map(u => {
+              {sorted.map(u => {
                 const isSelf = u.id === currentUserId
                 const busy = busyId === u.id
                 const userOverrides = rolesFor(u.id)
@@ -553,6 +568,12 @@ export default function UsersClient({
                               <Badge variant="warning" className="text-[10px] inline-flex items-center gap-1">
                                 <Crown className="h-3 w-3" /> Portal Owner
                               </Badge>
+                            )}
+                            {sideOf(u) === 'management' && (
+                              <span className="text-[10px] font-bold text-indigo-700 bg-indigo-50 border border-indigo-200 rounded-full px-1.5 py-0.5 flex-shrink-0">Management</span>
+                            )}
+                            {sideOf(u) === 'engineer' && (
+                              <span className="text-[10px] font-bold text-green-700 bg-green-50 border border-green-200 rounded-full px-1.5 py-0.5 flex-shrink-0">Engineer</span>
                             )}
                             {isSelf && <span className="text-xs text-blue-600 font-normal">(you)</span>}
                           </p>
