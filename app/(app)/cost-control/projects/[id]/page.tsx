@@ -13,7 +13,7 @@ import { getCcSettings } from '@/lib/cost-control/settings'
 import { QueryError } from '@/components/ui/query-error'
 import { DeadlineBadge } from '@/components/cost-control/DeadlineBadge'
 import { wsStatusLabel } from '@/components/cost-control/WSStatusPill'
-import { DeadlineCell, SubSkillModeCell, DisableButton, InternalEstimateDecision } from './RowControls'
+import { DeadlineCell, SubSkillModeCell, DisableButton, InternalEstimateDecision, SubSkillAssignControl } from './RowControls'
 import { AreaChip } from './AreaChip'
 import { BphSyncButton } from './BphSyncButton'
 import { getBphMappingForProject } from '@/app/(app)/cost-control/import/bph/actions'
@@ -170,6 +170,16 @@ export default async function CostControlProjectDetailPage(
     .select('id, chain_anchor_id, version_no')
     .eq('project_id', id)
     .is('archived_at', null)
+
+  // Which engineer is responsible for each sub-skill's budget working.
+  const { data: ssaData } = await supabase
+    .from('cc_subskill_assignments')
+    .select('sub_skill_id, engineer_id')
+    .eq('project_id', id)
+  const assigneeBySub = new Map<string, string>()
+  for (const r of (ssaData ?? []) as Array<{ sub_skill_id: string; engineer_id: string }>) {
+    assigneeBySub.set(r.sub_skill_id, r.engineer_id)
+  }
 
   // Budget lines + working sheets drive every number on this page. If
   // either query broke, zeros would masquerade as "no budget yet" — stop
@@ -823,6 +833,17 @@ export default async function CostControlProjectDetailPage(
                                 </p>
                               )
                             })()}
+                            {canWrite && (
+                              <div className="mt-1">
+                                <SubSkillAssignControl
+                                  projectId={project.id}
+                                  subSkillId={s.id}
+                                  engineerId={assigneeBySub.get(s.id) ?? null}
+                                  assignedName={assigneeBySub.get(s.id) ? (profileMap.get(assigneeBySub.get(s.id)!) ?? null) : null}
+                                  engineers={engineers.map(e => ({ user_id: e.user_id, name: e.name }))}
+                                />
+                              </div>
+                            )}
                           </td>
                           <Td align="right" mono className="text-indigo-800">
                             <Money amt={estLive} />

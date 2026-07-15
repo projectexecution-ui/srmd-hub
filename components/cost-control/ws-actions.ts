@@ -206,6 +206,26 @@ export async function setInternalEstimateDecision(input: {
   return { ok: true }
 }
 
+/** Assign (or clear, with engineer_id null) the single engineer responsible
+ *  for a sub-skill's budget working. Reviewer/Admin only — re-checked in the
+ *  SECURITY DEFINER RPC. */
+export async function assignSubSkillEngineer(input: {
+  project_id: string
+  sub_skill_id: string
+  engineer_id: string | null
+}): Promise<{ ok: boolean; error?: string }> {
+  const supabase = await createClient()
+  const { error } = await supabase.rpc('cc_set_subskill_engineer', {
+    p_project: input.project_id,
+    p_sub_skill: input.sub_skill_id,
+    p_engineer: input.engineer_id,
+  })
+  if (error) return { ok: false, error: error.message }
+  revalidatePath(`/cost-control/projects/${input.project_id}`)
+  revalidatePath('/cost-control')
+  return { ok: true }
+}
+
 /** Admin, or a user the admin granted via the cc_archive_users setting, may
  *  archive / restore working sheets. Delete stays admin-only (in the RPC). */
 export async function checkCanArchiveWs(): Promise<boolean> {

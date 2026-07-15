@@ -640,6 +640,9 @@ async function EngineerHome({ userId, canWrite }: { userId: string | null; canWr
     entry_mode: string | null
     chain_anchor_id: string | null
     version_no: number | null
+    project_id: string
+    discipline_id: string
+    sub_skill_id: string
     projects: { code: string; name: string } | { code: string; name: string }[] | null
     cc_disciplines: { code: string; name: string } | { code: string; name: string }[] | null
     cc_sub_skills: { code: string; name: string } | { code: string; name: string }[] | null
@@ -649,7 +652,7 @@ async function EngineerHome({ userId, canWrite }: { userId: string | null; canWr
   const { data: myData, error: myErr } = userId
     ? await supabase
         .from('cc_ws_with_versions')
-        .select('id, ws_code, status, total_amount, approved_for_erp_amt, deadline_date, return_reason, created_at, entry_mode, chain_anchor_id, version_no, projects(code, name), cc_disciplines(code, name), cc_sub_skills(code, name)')
+        .select('id, ws_code, status, total_amount, approved_for_erp_amt, deadline_date, return_reason, created_at, entry_mode, chain_anchor_id, version_no, project_id, discipline_id, sub_skill_id, projects(code, name), cc_disciplines(code, name), cc_sub_skills(code, name)')
         .eq('engineer_id', userId)
         .is('archived_at', null)
         .neq('status', 'cancelled')
@@ -692,6 +695,25 @@ async function EngineerHome({ userId, canWrite }: { userId: string | null; canWr
     !['approved', 'wo_issued', 'paid', 'cancelled'].includes(w.status)).length : 0
 
   const pickOne = <T,>(x: T | T[] | null): T | undefined => (Array.isArray(x) ? x[0] : x) ?? undefined
+
+  // Sub-skills management has made this engineer responsible for (budget
+  // working), + whether they've already raised a sheet for each — so nothing
+  // is missed. No amounts here: this is a to-do list, not a money view.
+  type AssignRow = {
+    project_id: string
+    sub_skill_id: string
+    cc_sub_skills: { code: string; name: string; discipline_id: string } | { code: string; name: string; discipline_id: string }[] | null
+    projects: { code: string; name: string } | { code: string; name: string }[] | null
+  }
+  const { data: assignData } = userId
+    ? await supabase
+        .from('cc_subskill_assignments')
+        .select('project_id, sub_skill_id, cc_sub_skills(code, name, discipline_id), projects(code, name)')
+        .eq('engineer_id', userId)
+    : { data: [] as AssignRow[] }
+  const myAssignments = (assignData ?? []) as AssignRow[]
+  const mySubSet = new Set(allMine.map(w => `${w.project_id}::${w.sub_skill_id}`))
+  const pendingAssignments = myAssignments.filter(a => !mySubSet.has(`${a.project_id}::${a.sub_skill_id}`)).length
 
   return (
     <div className="p-4 md:p-6 max-w-5xl mx-auto space-y-5">
@@ -796,6 +818,52 @@ async function EngineerHome({ userId, canWrite }: { userId: string | null; canWr
           </ul>
         )}
       </Card>
+
+      {/* Assigned to me for budget working — the sub-skills management made me
+          responsible for, and whether I've started each. No amounts: a to-do,
+          not a money view. Sits below my sheets so it doesn't crowd the top. */}
+      {myAssignments.length > 0 && (
+        <Card className="overflow-hidden">
+          <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
+            <h2 className="text-sm font-bold text-gray-900">Assigned to me for budget working</h2>
+            <span className="text-[11px] font-semibold text-gray-500">
+              {pendingAssignments > 0 ? `${pendingAssignments} still to start` : 'all started'}
+            </span>
+          </div>
+          <ul className="divide-y divide-gray-100">
+            {myAssignments.map(a => {
+              const ss = pickOne(a.cc_sub_skills)
+              const pr = pickOne(a.projects)
+              const done = mySubSet.has(`${a.project_id}::${a.sub_skill_id}`)
+              return (
+                <li key={`${a.project_id}::${a.sub_skill_id}`} className="flex items-center gap-3 px-4 py-2.5">
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm text-gray-900 truncate">
+                      <span className="font-mono text-[11px] text-gray-400 mr-1.5">{ss?.code}</span>
+                      {ss?.name ?? 'Sub-skill'}
+                    </p>
+                    <p className="text-[11px] text-gray-500">{pr?.code ? `${pr.code}${pr.name ? ` · ${pr.name}` : ''}` : 'Project'}</p>
+                  </div>
+                  {done ? (
+                    <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-green-700 whitespace-nowrap">
+                      <CheckCircle2 className="h-3.5 w-3.5" /> Sheet raised
+                    </span>
+                  ) : canWrite ? (
+                    <Link
+                      href={`/cost-control/working-sheets/new-quick?project=${a.project_id}${ss?.discipline_id ? `&discipline=${ss.discipline_id}` : ''}&sub_skill=${a.sub_skill_id}`}
+                      className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-indigo-600 text-white hover:bg-indigo-700 whitespace-nowrap"
+                    >
+                      Start sheet <ArrowRight className="h-3 w-3" />
+                    </Link>
+                  ) : (
+                    <span className="text-[11px] text-amber-700 font-semibold whitespace-nowrap">Not started</span>
+                  )}
+                </li>
+              )
+            })}
+          </ul>
+        </Card>
+      )}
     </div>
   )
 }

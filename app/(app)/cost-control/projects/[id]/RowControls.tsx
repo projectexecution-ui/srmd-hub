@@ -6,7 +6,7 @@
 
 import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
-import { CalendarClock, Pencil, Loader2, Check, X, Ruler, EyeOff, ArrowRight } from 'lucide-react'
+import { CalendarClock, Pencil, Loader2, Check, X, Ruler, EyeOff, ArrowRight, UserRound } from 'lucide-react'
 import { confirm } from '@/components/ui/confirm-dialog'
 import {
   setDisciplineDeadline,
@@ -15,7 +15,7 @@ import {
   setDisciplineEnabled,
   setSubSkillEnabled,
 } from './actions'
-import { setInternalEstimateDecision } from '@/components/cost-control/ws-actions'
+import { setInternalEstimateDecision, assignSubSkillEngineer } from '@/components/cost-control/ws-actions'
 
 // ──────────────────────────────────────────────────────────────────────
 // DeadlineCell — used on both discipline + sub-skill rows. The currently-
@@ -551,6 +551,68 @@ export function InternalEstimateDecision({
         </>
       )}
       {err && <span className="text-[10px] text-rose-600" title={err}>!</span>}
+    </span>
+  )
+}
+
+// ──────────────────────────────────────────────────────────────────────
+// SubSkillAssignControl — pick the ONE engineer responsible for this
+// sub-skill's budget working. Management (reviewer) only. Saved straight to
+// cc_subskill_assignments via the reviewer-gated RPC; the engineer then sees
+// it in their "Assigned to me" list. This never touches Internal Estimate.
+// ──────────────────────────────────────────────────────────────────────
+export function SubSkillAssignControl({
+  projectId, subSkillId, engineerId, assignedName, engineers,
+}: {
+  projectId: string
+  subSkillId: string
+  engineerId: string | null
+  assignedName: string | null
+  engineers: Array<{ user_id: string; name: string }>
+}) {
+  const router = useRouter()
+  const [value, setValue] = useState(engineerId ?? '')
+  const [err, setErr] = useState<string | null>(null)
+  const [pending, startTransition] = useTransition()
+
+  // If the current assignee isn't in the project's engineer list (e.g. they
+  // were unassigned from the project later), keep them selectable so the row
+  // still shows who owns it.
+  const hasCurrent = !engineerId || engineers.some(e => e.user_id === engineerId)
+
+  function change(next: string) {
+    setErr(null)
+    const prev = value
+    setValue(next)
+    startTransition(async () => {
+      const r = await assignSubSkillEngineer({
+        project_id: projectId,
+        sub_skill_id: subSkillId,
+        engineer_id: next === '' ? null : next,
+      })
+      if (!r.ok) { setValue(prev); setErr(r.error ?? 'Could not save') }
+      else router.refresh()
+    })
+  }
+
+  return (
+    <span className="inline-flex items-center gap-1 text-[11px] text-gray-500">
+      <UserRound className="h-3 w-3 text-gray-400 flex-shrink-0" />
+      <select
+        value={value}
+        onChange={e => change(e.target.value)}
+        disabled={pending}
+        title="Engineer responsible for this sub-skill's budget working"
+        className="text-[11px] border border-gray-200 rounded px-1 py-0.5 bg-white text-gray-700 max-w-[150px] disabled:opacity-50"
+      >
+        <option value="">Assign engineer…</option>
+        {!hasCurrent && engineerId && (
+          <option value={engineerId}>{assignedName ?? 'Currently assigned'}</option>
+        )}
+        {engineers.map(e => <option key={e.user_id} value={e.user_id}>{e.name}</option>)}
+      </select>
+      {pending && <Loader2 className="h-3 w-3 animate-spin text-gray-400" />}
+      {err && <span className="text-rose-600" title={err}>!</span>}
     </span>
   )
 }
