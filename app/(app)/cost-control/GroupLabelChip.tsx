@@ -36,13 +36,15 @@ export function GroupLabelChip({ projectId, label, isAdmin }: {
   }
 
   if (!editing) {
+    // Pencil stays hidden until you hover the group name (or tab to it), so
+    // the band reads clean — the rename affordance only appears when wanted.
     return (
-      <span className="inline-flex items-center gap-1.5">
+      <span className="group/rename inline-flex items-center gap-1.5">
         {label}
         <button
           type="button"
           onClick={() => { setEditing(true); setDraft(label); setErr(null) }}
-          className="text-indigo-400 hover:text-indigo-700"
+          className="text-indigo-400 hover:text-indigo-700 opacity-0 group-hover/rename:opacity-100 focus:opacity-100 transition-opacity"
           title="Rename this group (Admin only). Leave blank to use the project code."
         >
           <Pencil className="h-3 w-3" />

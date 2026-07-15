@@ -22,17 +22,17 @@ import { GroupLabelChip } from './GroupLabelChip'
 import { AssignedToMePopover } from './AssignedToMePopover'
 import { CcQuickSearch } from './CcQuickSearch'
 import { coveringApproverRole } from '@/lib/cost-control/notify'
-import { MODULES } from '@/lib/modules'
+import { getModuleLabels, labelFor } from '@/lib/module-labels'
 
 export const dynamic = 'force-dynamic'
 
 // Statuses that count as "waiting in the approval chain".
 const PENDING_STATUSES = ['submitted', 'ph_approved', 'atm_approved', 'partially_approved']
 
-// The module's name comes from ONE source of truth — the module registry —
-// so the page title always matches the sidebar nav + dashboard tile. Rename
-// it in lib/modules.ts and every surface (incl. this header) follows.
-const CC_LABEL = MODULES.find(m => m.slug === 'cost-control')?.label ?? 'Cost Control'
+// The module's name comes from ONE source of truth — the editable module-label
+// map (module_labels table, defaulting to lib/modules.ts). Rename it once on
+// /admin/dashboard-modules and every surface follows: sidebar, tile, AND this
+// page's title. Resolved per-request via getModuleLabels() below.
 
 type CCProject = {
   id: string
@@ -54,6 +54,9 @@ export default async function CostControlLandingPage() {
   const ccSettings = await getCcSettings()
   // Renaming a group is admin-only (matches project rename/alias).
   const isAdmin = (await getMyProfile())?.role === 'admin'
+  // Page title = the module's editable label (admin-renamable on
+  // /admin/dashboard-modules), so it always matches the sidebar + tile.
+  const ccLabel = labelFor(await getModuleLabels(), 'cost-control')
 
   // Management (approval-chain roles + admin) gets the full financial
   // dashboard. The Billing team lands straight on their IN4 queue.
@@ -64,7 +67,7 @@ export default async function CostControlLandingPage() {
     if (ccSettings.billing_step && (await getEffectiveCcRole()) === 'billing') {
       redirect('/cost-control/billing')
     }
-    return <EngineerHome userId={user?.id ?? null} canWrite={canWrite} />
+    return <EngineerHome userId={user?.id ?? null} canWrite={canWrite} label={ccLabel} />
   }
 
   const [projectsRes, wsAllRes, myDraftsRes, approversRes, deadlinesRes, budgetRes, backupRes] = await Promise.all([
@@ -342,7 +345,7 @@ export default async function CostControlLandingPage() {
     <div className="p-4 md:p-6 max-w-7xl mx-auto space-y-4">
       <AutoBackup isAdmin={canAdmin} />
       <PageHeader
-        title={CC_LABEL}
+        title={ccLabel}
         subtitle={`SRASSK — ${ccProjects.length} project${ccProjects.length === 1 ? '' : 's'}${incompleteCount ? ` · ${incompleteCount} need setup` : ''}`}
       >
         <div className="hidden sm:block">
@@ -361,6 +364,8 @@ export default async function CostControlLandingPage() {
             <span className="inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-rose-600 text-white text-[10px] font-bold">{waitingOnMe}</span>
           </Link>
         )}
+        {/* BPH auto-sync — compact icon; full status on hover. */}
+        <BphSyncChip sync={bphSync} canWrite={canWrite} />
         <details className="relative group [&_summary::-webkit-details-marker]:hidden">
           <summary className="list-none cursor-pointer inline-flex items-center gap-1.5 h-9 px-3 rounded-md border border-gray-300 bg-white text-sm font-medium text-gray-700 hover:bg-gray-50 select-none">
             <Settings className="h-4 w-4" /> Tools
@@ -428,10 +433,6 @@ export default async function CostControlLandingPage() {
           </Button>
         )}
       </PageHeader>
-
-      {/* BPH auto-sync freshness chip — only renders when at least one
-          project is mapped. Otherwise a one-time CTA. */}
-      <BphSyncChip sync={bphSync} canWrite={canWrite} />
 
       {/* Stat strip */}
       {wsErr || draftsErr ? (
@@ -697,6 +698,10 @@ export default async function CostControlLandingPage() {
   )
 }
 
+// Compact BPH auto-sync indicator for the dashboard header. A single icon
+// button; the full status ("N projects mapped · last run …") is the hover
+// tooltip. Green when healthy, amber when a mapping errored, teal CTA when
+// nothing is mapped yet.
 function BphSyncChip({
   sync,
   canWrite,
@@ -704,50 +709,41 @@ function BphSyncChip({
   sync: { ran_at: string | null; total_links: number; ok_count: number; err_count: number }
   canWrite: boolean
 }) {
-  // No mappings yet — show a one-time CTA so the PM discovers the BPH pull.
+  // No mappings yet — a discreet "connect BPH" icon (writers only).
   if (sync.total_links === 0) {
     if (!canWrite) return null
     return (
       <Link
         href="/cost-control/import/bph"
-        className="block rounded-lg border border-teal-200 bg-teal-50 px-4 py-2.5 hover:bg-teal-100 transition-colors"
+        title="Connect your weekly BPH report — pull budget data into Cost Control. After a one-time mapping per project, it auto-syncs on every upload."
+        className="inline-flex items-center justify-center h-9 w-9 rounded-md border border-teal-200 bg-teal-50 text-teal-700 hover:bg-teal-100"
       >
-        <p className="text-sm font-semibold text-teal-900 inline-flex items-center gap-2">
-          <RefreshCw className="h-4 w-4" />
-          Connect your weekly BPH report
-        </p>
-        <p className="text-[11px] text-teal-800/80 mt-0.5">
-          Pull budget data from your /budget upload into Cost Control. After a one-time mapping per project, it auto-syncs on every BPH upload.
-        </p>
+        <RefreshCw className="h-4 w-4" />
       </Link>
     )
   }
 
-  const tone = sync.err_count > 0 ? 'amber' : 'emerald'
+  const healthy = sync.err_count === 0
   const when = sync.ran_at
     ? new Date(sync.ran_at).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })
     : 'never'
+  const title = `BPH auto-sync · ${sync.total_links} project${sync.total_links === 1 ? '' : 's'} mapped · last run ${when}`
+    + (healthy ? '' : ` · ${sync.err_count} mapping${sync.err_count === 1 ? '' : 's'} had errors — open to review`)
 
   return (
     <Link
       href="/cost-control/import/bph"
-      className={`block rounded-lg border px-4 py-2 transition-colors ${
-        tone === 'emerald' ? 'border-emerald-200 bg-emerald-50/60 hover:bg-emerald-50' : 'border-amber-200 bg-amber-50/60 hover:bg-amber-50'
+      title={title}
+      className={`relative inline-flex items-center justify-center h-9 w-9 rounded-md border ${
+        healthy
+          ? 'border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
+          : 'border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100'
       }`}
     >
-      <div className="flex items-center justify-between gap-3 flex-wrap">
-        <p className={`text-xs font-semibold inline-flex items-center gap-1.5 ${
-          tone === 'emerald' ? 'text-emerald-900' : 'text-amber-900'
-        }`}>
-          {tone === 'emerald' ? <CheckCircle2 className="h-3.5 w-3.5" /> : <AlertTriangle className="h-3.5 w-3.5" />}
-          BPH auto-sync · {sync.total_links} project{sync.total_links === 1 ? '' : 's'} mapped · last run {when}
-        </p>
-        {sync.err_count > 0 && (
-          <span className="text-[11px] text-amber-800">
-            {sync.err_count} mapping{sync.err_count === 1 ? '' : 's'} had errors — open to review
-          </span>
-        )}
-      </div>
+      {healthy ? <CheckCircle2 className="h-4 w-4" /> : <AlertTriangle className="h-4 w-4" />}
+      {!healthy && (
+        <span className="absolute -top-1 -right-1 inline-flex items-center justify-center min-w-[16px] h-[16px] px-1 rounded-full bg-amber-500 text-white text-[9px] font-bold">{sync.err_count}</span>
+      )}
     </Link>
   )
 }
@@ -759,7 +755,7 @@ function BphSyncChip({
 // pinned at the TOP (it's the first thing they need to act on); every project
 // they're on is stacked below — no switcher — so they take it all in on one
 // scrolling screen.
-async function EngineerHome({ userId, canWrite }: { userId: string | null; canWrite: boolean }) {
+async function EngineerHome({ userId, canWrite, label }: { userId: string | null; canWrite: boolean; label: string }) {
   const supabase = await createClient()
 
   // The engineer's projects (assigned to the project, or has a sheet there,
@@ -927,7 +923,7 @@ async function EngineerHome({ userId, canWrite }: { userId: string | null; canWr
   return (
     <div className="p-4 md:p-6 max-w-6xl mx-auto space-y-4">
       <PageHeader
-        title={CC_LABEL}
+        title={label}
         subtitle="Your projects' budget and the estimates moving through approval."
       >
         {canWrite && (
