@@ -308,9 +308,10 @@ export function NewWSQuickForm({ projects, projectDisciplines, projectSubSkills,
       //      (likely heading rows being counted, or wrong column picked)
       //   3. > 30% of rows have NULL rate AND NULL amount (parser confused)
       //
-      // The user can ALWAYS click "Re-parse with AI" on the WS detail
-      // page later — this gate only skips the silent auto-fire.
-      const needsAi = (() => {
+      // The AI parse is a MANAGEMENT tool — never auto-run it on an
+      // engineer's upload. Management can re-parse with AI from the WS
+      // detail page if they choose. (Also skips the silent auto-fire.)
+      const needsAi = reviewer && (() => {
         if (!projectId || !disciplineId || !subSkillId) return false
         if (local.rows.length === 0) return true
         if (local.rows.length < 3) return true
@@ -393,6 +394,9 @@ export function NewWSQuickForm({ projects, projectDisciplines, projectSubSkills,
     // Engineers must also attach a screenshot of the summary — it is shown
     // at the top of the sheet so approvers can glance the working.
     if (!reviewer && !shot) { setError('Attach a screenshot of your summary — it is required along with the Excel'); return }
+    // Comments are compulsory — the approver needs to know why the budget
+    // is required.
+    if (summaryNotes.trim().length === 0) { setError('Add a comment describing why this budget is required') ; return }
     if (!projectId || !disciplineId || !subSkillId) { setError('Pick project / discipline / sub-skill'); return }
     setSubmitting(true); setError(null)
     const supabase = createClient()
@@ -705,14 +709,15 @@ export function NewWSQuickForm({ projects, projectDisciplines, projectSubSkills,
         )}
 
         <div>
-          <Label>Notes</Label>
-          <Textarea value={summaryNotes} onChange={e => setSummaryNotes(e.target.value)} rows={2} placeholder="What's this sheet for?" className="mt-1" />
+          <Label>Comments *</Label>
+          <p className="text-xs text-gray-500 mb-1">Describe why this budget is required for.</p>
+          <Textarea value={summaryNotes} onChange={e => setSummaryNotes(e.target.value)} rows={2} placeholder="e.g. CCTV coverage for the new ICT wing — cameras, switches and cabling as per the site layout." className="mt-1" />
         </div>
       </div>
 
-      <Button type="submit" disabled={submitting || parsing || !file || !parsed || (!reviewer && !shot)}>
+      <Button type="submit" disabled={submitting || parsing || !file || !parsed || (!reviewer && !shot) || summaryNotes.trim().length === 0}>
         {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-        Save & analyse
+        {reviewer ? 'Save & analyse' : 'Save & send'}
       </Button>
     </form>
   )
