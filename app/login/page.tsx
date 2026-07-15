@@ -43,13 +43,6 @@ function LoginContent() {
     if (error) { setError(error.message); setLoading(false) }
   }
 
-  async function signInAnonymously() {
-    setLoading(true); clearMsgs()
-    const { error } = await supabase.auth.signInAnonymously()
-    if (error) { setError(error.message); setLoading(false) }
-    else router.push(redirect)
-  }
-
   async function signInWithEmail(e: React.FormEvent) {
     e.preventDefault()
     setLoading(true); clearMsgs()
@@ -109,16 +102,9 @@ function LoginContent() {
               <Button onClick={() => { clearMsgs(); setMode('signup') }} disabled={loading} size="lg" className="w-full mt-2">
                 Create an account
               </Button>
-
-              <Divider />
-
-              <Button onClick={signInAnonymously} disabled={loading} size="lg" variant="ghost" className="w-full">
-                {loading ? <Loader2 className="h-5 w-5 animate-spin" /> : null}
-                Quick sign-in (no account)
-              </Button>
-              <p className="text-xs text-gray-400 text-center mt-2">
-                Quick sign-in gives temporary admin access. Use email/Google for a permanent account.
-              </p>
+              {/* Anonymous quick sign-in removed — it minted throwaway ADMIN
+                  accounts (full access to confidential figures). Real accounts
+                  only; the admin controls roles at /admin/users. */}
             </>
           )}
 
@@ -191,15 +177,6 @@ function ErrorBox({ text }: { text: string }) {
 }
 function InfoBox({ text }: { text: string }) {
   return <div className="mb-4 p-3 rounded-xl bg-green-50 border border-green-200 text-sm text-green-700">{text}</div>
-}
-function Divider() {
-  return (
-    <div className="flex items-center gap-3 my-4">
-      <div className="flex-1 h-px bg-gray-200" />
-      <span className="text-xs text-gray-400 uppercase tracking-wide">or</span>
-      <div className="flex-1 h-px bg-gray-200" />
-    </div>
-  )
 }
 function BackLink({ onBack }: { onBack: () => void }) {
   return (
