@@ -9,7 +9,7 @@ import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { EmptyState } from '@/components/ui/empty-state'
-import { Calculator, Plus, FileText, Clock, Inbox, Upload, ClipboardList, Settings, CalendarClock, ChevronDown, Download, RefreshCw, AlertTriangle, CheckCircle2, FileSpreadsheet, Ruler, ArrowRight } from 'lucide-react'
+import { Calculator, Plus, FileText, Clock, Inbox, Upload, ClipboardList, Settings, CalendarClock, ChevronDown, Download, RefreshCw, AlertTriangle, CheckCircle2, FileSpreadsheet, Ruler, ArrowRight, Bell } from 'lucide-react'
 import { formatINR } from '@/lib/utils'
 import { DeadlineBadge } from '@/components/cost-control/DeadlineBadge'
 import { QueryError } from '@/components/ui/query-error'
@@ -20,6 +20,8 @@ import { getCcSettings } from '@/lib/cost-control/settings'
 import { getEffectiveCcRole } from '@/app/(app)/cost-control/billing/billing-actions'
 import { GroupLabelChip } from './GroupLabelChip'
 import { AssignedToMePopover } from './AssignedToMePopover'
+import { CcQuickSearch } from './CcQuickSearch'
+import { coveringApproverRole } from '@/lib/cost-control/notify'
 import { MODULES } from '@/lib/modules'
 
 export const dynamic = 'force-dynamic'
@@ -110,6 +112,14 @@ export default async function CostControlLandingPage() {
     .from('cc_ws_with_versions')
     .select('id, chain_anchor_id, version_no')
     .is('archived_at', null)
+
+  // Projects/stages this user is a NAMED approver for (Phase 2). Combined with
+  // discipline coverage below to decide what is "waiting on you" — kept in
+  // step with the /approvals inbox so the bell count and that page agree.
+  const { data: myPaRows } = user
+    ? await supabase.from('cc_project_approvers').select('project_id, role').eq('user_id', user.id)
+    : { data: [] as Array<{ project_id: string; role: string }> }
+  const myCover = new Set((myPaRows ?? []).map(r => `${r.project_id}:${r.role}`))
 
   const ccProjects = (projectsRes.data ?? []) as CCProject[]
   const incompleteCount = ccProjects.filter(p => (p.setup_progress_pct ?? 0) < 100).length
@@ -231,13 +241,16 @@ export default async function CostControlLandingPage() {
   const myDraftsCount = myDrafts.count ?? 0
 
   // "Waiting on you" split for the pending stat. A sheet waits on the
-  // current user when they actively approve its discipline, or always
-  // when they are a Cost Control admin.
+  // current user when they are the named approver for its current stage,
+  // when they actively approve its discipline, or always when they are a
+  // Cost Control admin. Same rule as the /approvals inbox.
   const { data: approverData, error: approversErr } = approversRes
   const myDiscIds = new Set(((approverData ?? []) as Array<{ discipline_id: string }>).map(r => r.discipline_id))
   const pendingSheets = engWinners.filter(w => PENDING_STATUSES.includes(w.status))
   const pendingCount = pendingSheets.length
-  const waitingOnMe = pendingSheets.filter(w => canAdmin || myDiscIds.has(w.discipline_id)).length
+  const coversStage = (w: WSRollup) =>
+    myCover.has(`${w.project_id}:${coveringApproverRole(w.status) ?? ''}`)
+  const waitingOnMe = pendingSheets.filter(w => canAdmin || myDiscIds.has(w.discipline_id) || coversStage(w)).length
   const withOthers = pendingCount - waitingOnMe
 
   type DeadlineRow = {
@@ -332,6 +345,22 @@ export default async function CostControlLandingPage() {
         title={CC_LABEL}
         subtitle={`SRASSK — ${ccProjects.length} project${ccProjects.length === 1 ? '' : 's'}${incompleteCount ? ` · ${incompleteCount} need setup` : ''}`}
       >
+        <div className="hidden sm:block">
+          <CcQuickSearch projects={ccProjects.map(p => ({ id: p.id, code: p.code, name: p.name, group: p.group_label }))} />
+        </div>
+        {/* Notification bell — how many budgets are waiting on this user right
+            now. Links straight to the approvals inbox. Hidden when nothing is
+            waiting so it never nags. */}
+        {waitingOnMe > 0 && (
+          <Link
+            href="/cost-control/approvals"
+            title={`${waitingOnMe} budget${waitingOnMe === 1 ? '' : 's'} waiting on you`}
+            className="relative inline-flex items-center gap-1.5 h-9 px-3 rounded-md border border-rose-200 bg-rose-50 text-sm font-semibold text-rose-800 hover:bg-rose-100"
+          >
+            <Bell className="h-4 w-4" />
+            <span className="inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-rose-600 text-white text-[10px] font-bold">{waitingOnMe}</span>
+          </Link>
+        )}
         <details className="relative group [&_summary::-webkit-details-marker]:hidden">
           <summary className="list-none cursor-pointer inline-flex items-center gap-1.5 h-9 px-3 rounded-md border border-gray-300 bg-white text-sm font-medium text-gray-700 hover:bg-gray-50 select-none">
             <Settings className="h-4 w-4" /> Tools

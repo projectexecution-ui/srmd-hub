@@ -7,8 +7,15 @@ import { PageHeader } from '@/components/PageHeader'
 import { Card } from '@/components/ui/card'
 import { QueryError } from '@/components/ui/query-error'
 import { WSStatusPill, type WSStatus } from '@/components/cost-control/WSStatusPill'
+import { coveringApproverRole } from '@/lib/cost-control/notify'
 import { formatINR } from '@/lib/utils'
 import { Inbox, ArrowRight, ClipboardList, Ruler } from 'lucide-react'
+
+// Whole days a sheet has been waiting since it was submitted.
+function daysWaiting(submittedAt: string | null): number {
+  if (!submittedAt) return 0
+  return Math.max(0, Math.floor((Date.now() - new Date(submittedAt).getTime()) / 86400000))
+}
 
 export const dynamic = 'force-dynamic'
 
@@ -44,13 +51,14 @@ export default async function ApprovalsInboxPage() {
   const user = await getMyUser()
   const supabase = await createClient()
 
-  // Disciplines the current user heads
-  const { data: myDisciplines, error: discErr } = await supabase
-    .from('cc_discipline_approvers')
-    .select('discipline_id')
-    .eq('approver_user_id', user?.id ?? '')
-    .eq('is_active', true)
+  // Disciplines the current user heads (legacy signal) + the projects/stages
+  // they're a named approver for (Phase 1/2). Either makes a sheet "yours".
+  const [{ data: myDisciplines, error: discErr }, { data: myPa }] = await Promise.all([
+    supabase.from('cc_discipline_approvers').select('discipline_id').eq('approver_user_id', user?.id ?? '').eq('is_active', true),
+    supabase.from('cc_project_approvers').select('project_id, role').eq('user_id', user?.id ?? ''),
+  ])
   const myDisciplineIds = (myDisciplines ?? []).map(d => d.discipline_id)
+  const myCover = new Set((myPa ?? []).map(r => `${r.project_id}:${r.role}`))
 
   // Every stage of the 3-step chain stays in the inbox until fully
   // released: submitted (→ Project Head), ph_approved (→ Atm Head),
@@ -83,8 +91,12 @@ export default async function ApprovalsInboxPage() {
 
   const rows = (pendingWS ?? []) as unknown as WSRow[]
 
-  const mine = rows.filter(r => myDisciplineIds.includes(r.discipline_id))
-  const others = rows.filter(r => !myDisciplineIds.includes(r.discipline_id))
+  // "Mine" = I'm the named approver for this project's current stage, or I
+  // head this discipline (legacy).
+  const isMine = (r: WSRow) =>
+    myCover.has(`${r.project_id}:${coveringApproverRole(r.status) ?? ''}`) || myDisciplineIds.includes(r.discipline_id)
+  const mine = rows.filter(isMine)
+  const others = rows.filter(r => !isMine(r))
 
   // Group the "other" queue by which stage each sheet is waiting on, so
   // Project Head / Atm Head / Trustee each spot their pile instantly.
@@ -191,6 +203,7 @@ function ApprovalSection({
               <th className="text-left px-3 py-2 font-medium">Project</th>
               <th className="text-left px-3 py-2 font-medium">Discipline · Sub-skill</th>
               <th className="text-right px-3 py-2 font-medium">Amount</th>
+              <th className="text-left px-3 py-2 font-medium">Waiting</th>
               <th className="text-left px-3 py-2 font-medium">Status</th>
               <th className="text-right px-3 py-2 font-medium">Action</th>
             </tr>
@@ -228,6 +241,14 @@ function ApprovalSection({
                         {formatINR(released)} of {formatINR(est)} released — {formatINR(Math.max(est - released, 0))} remaining
                       </div>
                     )}
+                  </td>
+                  <td className="px-3 py-2.5">
+                    {(() => {
+                      const d = daysWaiting(ws.submitted_at)
+                      if (d >= 3) return <span className="inline-flex items-center rounded-full bg-rose-100 text-rose-800 border border-rose-200 text-[11px] font-bold px-2 py-0.5">{d}d overdue</span>
+                      if (d > 0) return <span className="text-xs text-gray-600">{d}d</span>
+                      return <span className="text-xs text-gray-400">today</span>
+                    })()}
                   </td>
                   <td className="px-3 py-2.5">
                     <WSStatusPill status={ws.status as WSStatus} />
