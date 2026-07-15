@@ -34,12 +34,7 @@ type CCProject = {
   parent_project_id: string | null
 }
 
-export default async function CostControlLandingPage({
-  searchParams,
-}: {
-  searchParams: Promise<{ project?: string }>
-}) {
-  const sp = await searchParams
+export default async function CostControlLandingPage() {
   const perms = await requirePermission('cost-control', 'view')
   const canWrite = can(perms, 'cost-control', 'edit')
   const canAdmin = can(perms, 'cost-control', 'admin')
@@ -56,7 +51,7 @@ export default async function CostControlLandingPage({
     if (ccSettings.billing_step && (await getEffectiveCcRole()) === 'billing') {
       redirect('/cost-control/billing')
     }
-    return <EngineerHome userId={user?.id ?? null} canWrite={canWrite} selectedProject={sp.project ?? null} />
+    return <EngineerHome userId={user?.id ?? null} canWrite={canWrite} />
   }
 
   const [projectsRes, wsAllRes, myDraftsRes, approversRes, deadlinesRes, budgetRes, backupRes] = await Promise.all([
@@ -630,9 +625,11 @@ function BphSyncChip({
 // ─── Engineer home ──────────────────────────────────────────────────────
 // The engineer landing mirrors the management project page — every Category
 // and Sub-skill, with Awaiting Approval / Budget (ERP) / WO / Working Sheets
-// — but NEVER the Internal Estimate, Paid, or % Used. A project switcher
-// scopes the table; below it sits their "assigned to me" to-do list.
-async function EngineerHome({ userId, canWrite, selectedProject }: { userId: string | null; canWrite: boolean; selectedProject: string | null }) {
+// — but NEVER the Internal Estimate, Paid, or % Used. Their assigned work is
+// pinned at the TOP (it's the first thing they need to act on); every project
+// they're on is stacked below — no switcher — so they take it all in on one
+// scrolling screen.
+async function EngineerHome({ userId, canWrite }: { userId: string | null; canWrite: boolean }) {
   const supabase = await createClient()
 
   // The engineer's projects (assigned to the project, or has a sheet there,
@@ -669,7 +666,6 @@ async function EngineerHome({ userId, canWrite, selectedProject }: { userId: str
     ? await supabase.from('projects').select('id, code, name, built_up_sft').in('id', [...projIds]).not('cc_status', 'is', null).order('code')
     : { data: [] as Array<{ id: string; code: string; name: string; built_up_sft: number | null }> }
   const projects = (projData ?? []) as Array<{ id: string; code: string; name: string; built_up_sft: number | null }>
-  const selected = projects.find(p => p.id === selectedProject) ?? projects[0] ?? null
 
   const pickOne = <T,>(x: T | T[] | null): T | undefined => (Array.isArray(x) ? x[0] : x) ?? undefined
 
@@ -706,48 +702,16 @@ async function EngineerHome({ userId, canWrite, selectedProject }: { userId: str
         )}
       </div>
 
-      {projects.length === 0 ? (
-        <EmptyState
-          icon={<FileText className="h-10 w-10" />}
-          title="No projects yet"
-          description="You're not on any Cost Control project yet. Once you're added, your project's budget and sub-skills show up here."
-        />
-      ) : (
-        <>
-          {/* Project switcher — engineers can be on several projects. */}
-          {projects.length > 1 && (
-            <div className="flex items-center gap-2 flex-wrap">
-              <span className="text-xs font-semibold text-gray-500">Project:</span>
-              {projects.map(p => (
-                <Link
-                  key={p.id}
-                  href={`/cost-control?project=${p.id}`}
-                  className={`px-2.5 py-1 rounded-lg text-xs font-semibold border ${selected?.id === p.id ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-gray-700 border-gray-200 hover:bg-gray-50'}`}
-                >
-                  {p.code}
-                </Link>
-              ))}
-            </div>
-          )}
-          {selected && (
-            <div className="space-y-2">
-              {projects.length > 1 && (
-                <h2 className="text-sm font-bold text-gray-900">{selected.code} · {selected.name}</h2>
-              )}
-              <EngineerProjectTable projectId={selected.id} />
-            </div>
-          )}
-        </>
-      )}
-
-      {/* Assigned to me for budget working — the sub-skills management made me
-          responsible for, and whether I've started each. No amounts: a to-do,
-          not a money view. Sits below my sheets so it doesn't crowd the top. */}
+      {/* My budget working — assigned to me. PINNED AT THE TOP: this is the
+          engineer's to-do across EVERY project, so it's read before anything
+          else. No amounts here — a to-do, not a money view. */}
       {myAssignments.length > 0 && (
-        <Card className="overflow-hidden">
-          <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
-            <h2 className="text-sm font-bold text-gray-900">Assigned to me for budget working</h2>
-            <span className="text-[11px] font-semibold text-gray-500">
+        <Card className="overflow-hidden border-indigo-200">
+          <div className="px-4 py-3 border-b border-indigo-100 bg-indigo-50/60 flex items-center justify-between">
+            <h2 className="text-sm font-bold text-indigo-900 inline-flex items-center gap-1.5">
+              <ClipboardList className="h-4 w-4" /> My budget working — assigned to me
+            </h2>
+            <span className="text-[11px] font-semibold text-indigo-700">
               {pendingAssignments > 0 ? `${pendingAssignments} still to start` : 'all started'}
             </span>
           </div>
@@ -784,6 +748,24 @@ async function EngineerHome({ userId, canWrite, selectedProject }: { userId: str
             })}
           </ul>
         </Card>
+      )}
+
+      {/* Every project I'm on — stacked so I see them ALL on one screen, no
+          switcher hiding anything. Same layout management sees, minus the
+          Internal Estimate / Paid / % Used columns. */}
+      {projects.length === 0 ? (
+        <EmptyState
+          icon={<FileText className="h-10 w-10" />}
+          title="No projects yet"
+          description="You're not on any Cost Control project yet. Once you're added, your project's budget and sub-skills show up here."
+        />
+      ) : (
+        projects.map(p => (
+          <div key={p.id} className="space-y-2">
+            <h2 className="text-sm font-bold text-gray-900">{p.code} · {p.name}</h2>
+            <EngineerProjectTable projectId={p.id} />
+          </div>
+        ))
       )}
     </div>
   )
