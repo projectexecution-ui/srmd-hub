@@ -83,6 +83,7 @@ export interface ZohoTask {
   task_cf_0002?:      string   // RA number
   bill_type?:         string
   bill_date?:         string
+  discipline_projects?: string
   this_bill_amt?:            ZohoMoney   // claimed
   certified_payment_amount?: ZohoMoney
   paid_till_date?:           ZohoMoney

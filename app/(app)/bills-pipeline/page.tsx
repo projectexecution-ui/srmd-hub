@@ -8,6 +8,8 @@ import ZohoToast from './zoho-toast'
 import ReportTabs, { type ReportTab } from './report-tabs'
 import StuckBills, { type StuckBillRow, type ChecklistState } from './stuck-bills'
 import ProjectSettings from './project-settings'
+import Cockpit from './cockpit'
+import type { CockpitBill } from '@/lib/bills-pipeline/transform'
 
 export const dynamic = 'force-dynamic'
 
@@ -31,6 +33,7 @@ export default async function BillsPipelinePage({ searchParams }: Props) {
   let cardUrl: string | null = null
   let scorecardUrl: string | null = null
   let stuckBills: StuckBillRow[] = []
+  let cockpitBills: CockpitBill[] = []
   const checklist: Record<string, ChecklistState> = {}
 
   if (serviceKey) {
@@ -39,12 +42,13 @@ export default async function BillsPipelinePage({ searchParams }: Props) {
     const { data: settings } = await sb
       .from('app_settings')
       .select('key, value')
-      .in('key', ['bills_pipeline_last', 'zoho_bp_refresh_token', 'bills_pipeline_stuck'])
+      .in('key', ['bills_pipeline_last', 'zoho_bp_refresh_token', 'bills_pipeline_stuck', 'bills_pipeline_cockpit'])
 
     const rows = (settings ?? []) as Array<{ key: string; value: string }>
     const metaRow  = rows.find(r => r.key === 'bills_pipeline_last')
     const tokenRow = rows.find(r => r.key === 'zoho_bp_refresh_token')
     const stuckRow = rows.find(r => r.key === 'bills_pipeline_stuck')
+    const cockRow  = rows.find(r => r.key === 'bills_pipeline_cockpit')
 
     hasZohoToken = !!tokenRow?.value
 
@@ -53,6 +57,9 @@ export default async function BillsPipelinePage({ searchParams }: Props) {
     }
     if (stuckRow?.value) {
       try { stuckBills = JSON.parse(stuckRow.value) as StuckBillRow[] } catch { /* ignore */ }
+    }
+    if (cockRow?.value) {
+      try { cockpitBills = JSON.parse(cockRow.value) as CockpitBill[] } catch { /* ignore */ }
     }
 
     // Saved checklist ticks + remarks, keyed by bill id.
@@ -78,6 +85,10 @@ export default async function BillsPipelinePage({ searchParams }: Props) {
   const showConnectBanner = canAdmin && !hasZohoToken
   const asOf = (meta?.asOf as string) ?? 'latest'
   const tabs: ReportTab[] = [
+    {
+      key: 'cockpit', label: 'Cockpit', url: null, filename: '',
+      content: <Cockpit bills={cockpitBills} asOf={asOf} />,
+    },
     { key: 'card',      label: 'Weekly Card',       url: cardUrl,      filename: `sra-bills-weekly-${asOf}.png` },
     { key: 'scorecard', label: 'Project Scorecard', url: scorecardUrl, filename: `sra-project-scorecard-${asOf}.png` },
     {

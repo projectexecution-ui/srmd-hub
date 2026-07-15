@@ -10,7 +10,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient as createServiceClient, type SupabaseClient } from '@supabase/supabase-js'
 import { getMyPermissions, can } from '@/lib/auth'
 import { getZohoToken, fetchAllTasks } from '@/lib/bills-pipeline/zoho'
-import { parseBill, aggregateCard, clearedThisWeek, toStuckBill } from '@/lib/bills-pipeline/transform'
+import { parseBill, aggregateCard, clearedThisWeek, toStuckBill, toCockpitBill } from '@/lib/bills-pipeline/transform'
 import { getSelectedProjects } from '@/lib/bills-pipeline/projects'
 import { renderCard, renderScorecard } from '@/lib/bills-pipeline/render'
 import { BP_CONFIG } from '@/lib/bills-pipeline/config'
@@ -171,6 +171,17 @@ async function runPipeline(supabase: SupabaseClient): Promise<NextResponse> {
     .from('app_settings')
     .upsert({ key: 'bills_pipeline_stuck', value: JSON.stringify(stuck) }, { onConflict: 'key' })
   if (stuckErr) console.warn('[bills-pipeline] stuck-bills persist failed:', stuckErr.message)
+
+  // 8b. Persist ALL live bills (internal + at-Trust) for the read-only
+  //     Project-Head Cockpit. Pure tracking — no manual input anywhere.
+  const cockpit = bills
+    .map(b => toCockpitBill(b, cardData.projectMap))
+    .sort((a, b) => b.delay - a.delay)
+    .slice(0, 600)
+  const { error: cockErr } = await supabase
+    .from('app_settings')
+    .upsert({ key: 'bills_pipeline_cockpit', value: JSON.stringify(cockpit) }, { onConflict: 'key' })
+  if (cockErr) console.warn('[bills-pipeline] cockpit persist failed:', cockErr.message)
 
   // TODO: send PNG to WhatsApp via WABA API
   // TODO: email PNG via nodemailer

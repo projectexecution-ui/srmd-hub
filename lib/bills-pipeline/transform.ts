@@ -14,6 +14,7 @@ export interface Bill {
   billNo:      string
   raNo:        string
   billType:    string
+  disc:        string   // discipline (Civil / Electrical …)
   claimed:     number
   certified:   number
   paid:        number
@@ -62,6 +63,52 @@ export function toStuckBill(b: Bill, projectMap: Record<string, string>): StuckB
     delayDays:   b.delayDays,
     stalled:     b.stalled,
     atTrust:     b.isTrust,
+  }
+}
+
+// Lite record for EVERY live bill (internal + at-Trust), powering the
+// read-only Project-Head Cockpit. No manual input anywhere — all derived.
+export interface CockpitBill {
+  id:       string
+  prefix:   string
+  vendor:   string
+  project:  string   // site code
+  area:     string   // task-list / area
+  disc:     string
+  billNo:   string
+  raNo:     string
+  claimed:  number
+  certified: number
+  paid:     number
+  stage:    string   // "Under: " stripped, or "Submitted to Trust A/c"
+  atTrust:  boolean
+  idle:     number   // days since last movement
+  delay:    number   // days since bill date
+  age:      number   // days since it entered Zoho
+  noWO:     boolean
+  stalled:  boolean
+}
+
+export function toCockpitBill(b: Bill, projectMap: Record<string, string>): CockpitBill {
+  return {
+    id:        b.id,
+    prefix:    b.prefix,
+    vendor:    b.vendor || b.name,
+    project:   projectMap[b.projectId] ?? b.project,
+    area:      b.building,
+    disc:      b.disc,
+    billNo:    b.billNo,
+    raNo:      b.raNo,
+    claimed:   b.claimed,
+    certified: b.certified,
+    paid:      b.paid,
+    stage:     b.stage.replace(/^Under:\s*/, ''),
+    atTrust:   b.isTrust,
+    idle:      b.idleDays,
+    delay:     b.delayDays,
+    age:       b.ageDays,
+    noWO:      b.noWO,
+    stalled:   b.stalled,
   }
 }
 
@@ -230,6 +277,7 @@ export function parseBill(
     billNo:    task.bill_number ?? '',
     raNo:      task.task_cf_0002 ?? '',
     billType:  task.bill_type ?? '',
+    disc:      task.discipline_projects ?? '',
     claimed:   money(task.this_bill_amt),
     certified: money(task.certified_payment_amount),
     paid:      money(task.paid_till_date),
