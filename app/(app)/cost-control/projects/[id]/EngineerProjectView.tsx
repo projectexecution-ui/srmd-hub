@@ -6,7 +6,6 @@ import { PageHeader } from '@/components/PageHeader'
 import { QueryError } from '@/components/ui/query-error'
 import { formatINR } from '@/lib/utils'
 import { isPendingStatus } from '@/lib/cost-control/chain'
-import { Info } from 'lucide-react'
 
 // Engineer-safe project table. Deliberately a SEPARATE component from the
 // management Internal Estimate page so a confidential figure can't leak: it
@@ -128,11 +127,6 @@ export async function EngineerProjectTable({ projectId }: { projectId: string })
   return (
     <div className="space-y-4">
       {errored && <QueryError message={(pdRes.error ?? psRes.error ?? blRes.error ?? wsRes.error)?.message} what="this project's budget" />}
-
-      <div className="rounded-lg border border-indigo-100 bg-indigo-50/50 px-3 py-2 text-xs text-indigo-900 flex items-center gap-2">
-        <Info className="h-3.5 w-3.5 flex-shrink-0" />
-        Project budget (from ERP) and your sheets in the approval chain — you see the sheets you raised or are assigned to. The Internal Estimate and spend figures are management-only.
-      </div>
 
       {/* KPI strip — no Internal Estimate, no Paid. */}
       <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
