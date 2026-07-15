@@ -9,7 +9,7 @@ import { ProjectApproversPanel } from './ProjectApproversPanel'
 import { BulkAssignPanel } from './BulkAssignPanel'
 import { PageHeader } from '@/components/PageHeader'
 import { SetupProgressBanner } from '@/components/ProjectSetupWizard/SetupProgressBanner'
-import { Plus, Flame, Info, Settings } from 'lucide-react'
+import { Plus, Flame, Info, Settings, ChevronDown } from 'lucide-react'
 import { formatINR } from '@/lib/utils'
 import { getCcSettings } from '@/lib/cost-control/settings'
 import { QueryError } from '@/components/ui/query-error'
@@ -525,7 +525,9 @@ export default async function CostControlProjectDetailPage(
         )}
       </div>
 
-      {/* Title + actions */}
+      {/* Title + primary actions. Everything else (rename, alias, area,
+          approvers, engineer assignment, setup) is tucked into the collapsed
+          "Manage project" drawer below, so the page opens on the numbers. */}
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
           <PageHeader
@@ -539,13 +541,6 @@ export default async function CostControlProjectDetailPage(
           />
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <RenameProjectChip projectId={project.id} name={project.name} isAdmin={isAdmin} />
-          <ProjectAliasChip projectId={project.id} code={project.code} isAdmin={isAdmin} />
-          <AreaChip
-            projectId={project.id}
-            sft={project.built_up_sft != null ? Number(project.built_up_sft) : null}
-            canWrite={canWrite}
-          />
           {project.cc_status && (
             <span className={`inline-flex items-center px-2 py-1 rounded-full text-[10px] font-bold tracking-wide ${
               project.cc_status === 'active' ? 'bg-green-100 text-green-800' :
@@ -563,20 +558,16 @@ export default async function CostControlProjectDetailPage(
                 <Plus className="h-4 w-4" /> New Working Sheet
               </Link>
               <BphSyncButton projectId={project.id} isMapped={isBphMapped} />
-              <Link
-                href={`/cost-control/projects/${project.id}/setup`}
-                className="inline-flex items-center gap-1.5 h-9 px-3 rounded-md bg-white text-gray-700 border border-gray-300 text-sm font-semibold hover:bg-gray-50"
-                title="Re-open the setup wizard to add/remove disciplines, sub-skills or engineers"
-              >
-                <Settings className="h-4 w-4" /> Edit Setup
-              </Link>
             </>
           )}
         </div>
       </div>
 
-      {/* Internal Estimate lock + revision workflow (management only) */}
-      {reviewer && (
+      {/* Internal Estimate revision — surfaced inline ONLY while a revision is
+          actually in flight (needs an upload or a Trustee decision), so a
+          pending action is never buried. The plain "LOCKED" state and its
+          "request to revise" button live in the Manage drawer below. */}
+      {reviewer && lockState !== 'locked' && (
         <IeRevisionPanel
           projectId={project.id}
           lockState={lockState}
@@ -586,24 +577,71 @@ export default async function CostControlProjectDetailPage(
         />
       )}
 
-      {/* Per-project approvers (Phase 1 — roster only; scoping comes next). */}
-      {reviewer && (
-        <ProjectApproversPanel
-          projectId={project.id}
-          approvers={projectApprovers}
-          candidates={approverCandidates}
-          canWrite={canWrite}
-        />
-      )}
+      {/* One collapsed home for all the management/config knobs. */}
+      {(canWrite || isAdmin) && (
+        <details className="group rounded-lg border border-gray-200 bg-white [&_summary::-webkit-details-marker]:hidden">
+          <summary className="list-none cursor-pointer flex items-center justify-between gap-2 px-4 py-2.5 select-none hover:bg-gray-50/60 rounded-lg">
+            <span className="inline-flex items-center gap-2 text-sm font-semibold text-gray-700">
+              <Settings className="h-4 w-4 text-gray-400" /> Manage project
+            </span>
+            <span className="inline-flex items-center gap-2">
+              <span className="hidden sm:inline text-[11px] text-gray-400">rename · alias · area · approvers · engineers · setup</span>
+              <ChevronDown className="h-4 w-4 text-gray-400 transition-transform group-open:rotate-180" />
+            </span>
+          </summary>
+          <div className="border-t border-gray-100 px-4 py-3 space-y-3">
+            {/* Quick single-field edits */}
+            <div className="flex flex-wrap items-center gap-2">
+              <RenameProjectChip projectId={project.id} name={project.name} isAdmin={isAdmin} />
+              <ProjectAliasChip projectId={project.id} code={project.code} isAdmin={isAdmin} />
+              <AreaChip
+                projectId={project.id}
+                sft={project.built_up_sft != null ? Number(project.built_up_sft) : null}
+                canWrite={canWrite}
+              />
+              {canWrite && (
+                <Link
+                  href={`/cost-control/projects/${project.id}/setup`}
+                  className="inline-flex items-center gap-1.5 h-9 px-3 rounded-md bg-white text-gray-700 border border-gray-300 text-sm font-semibold hover:bg-gray-50"
+                  title="Re-open the setup wizard to add/remove disciplines, sub-skills or engineers"
+                >
+                  <Settings className="h-4 w-4" /> Edit Setup
+                </Link>
+              )}
+            </div>
 
-      {/* Bulk-assign engineers to sub-skills (Phase 5). */}
-      {canWrite && (
-        <BulkAssignPanel
-          projectId={project.id}
-          disciplines={disciplines.map(d => ({ id: d.id, label: `${d.code} ${d.name}` }))}
-          engineers={engineers.map(e => ({ id: e.user_id, label: e.name }))}
-          otherProjects={otherProjects}
-        />
+            {/* Internal Estimate lock + "request to revise" (locked state). */}
+            {reviewer && lockState === 'locked' && (
+              <IeRevisionPanel
+                projectId={project.id}
+                lockState={lockState}
+                revision={ieRevision}
+                canRequest={canRequestRevision}
+                canDecide={canDecideRevision}
+              />
+            )}
+
+            {/* Per-project approvers roster. */}
+            {reviewer && (
+              <ProjectApproversPanel
+                projectId={project.id}
+                approvers={projectApprovers}
+                candidates={approverCandidates}
+                canWrite={canWrite}
+              />
+            )}
+
+            {/* Bulk-assign engineers to sub-skills. */}
+            {canWrite && (
+              <BulkAssignPanel
+                projectId={project.id}
+                disciplines={disciplines.map(d => ({ id: d.id, label: `${d.code} ${d.name}` }))}
+                engineers={engineers.map(e => ({ id: e.user_id, label: e.name }))}
+                otherProjects={otherProjects}
+              />
+            )}
+          </div>
+        </details>
       )}
 
       {/* Pending-approval shortcut — covers EVERY sheet type (submitted or
