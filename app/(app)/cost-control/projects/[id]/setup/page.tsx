@@ -1,6 +1,7 @@
-import { notFound } from 'next/navigation'
+import { notFound, redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { requirePermission } from '@/lib/auth'
+import { checkIsCcReviewer } from '@/components/cost-control/ws-actions'
 import { PageHeader } from '@/components/PageHeader'
 import { Card } from '@/components/ui/card'
 import { AlertTriangle } from 'lucide-react'
@@ -33,6 +34,9 @@ export default async function ResumeProjectSetupPage(
   { params }: { params: Promise<{ id: string }> }
 ) {
   await requirePermission('cost-control', 'edit')
+  // Project setup (incl. engineer assignment) is a management action —
+  // engineers hold cost-control edit for their own sheets, not for this.
+  if (!(await checkIsCcReviewer())) redirect('/cost-control')
   const { id } = await params
   const supabase = await createClient()
 
@@ -49,9 +53,12 @@ export default async function ResumeProjectSetupPage(
   // change engineers). Just open the wizard with everything pre-seeded.
   const isComplete = (project.setup_progress_pct ?? 0) >= 100
 
-  const [parentsRes, usersRes, disciplinesRes, subSkillsRes, projDisRes, projSubRes, assignRes] = await Promise.all([
+  const [parentsRes, usersRes, overridesRes, disciplinesRes, subSkillsRes, projDisRes, projSubRes, assignRes, ssaRes, wsCountRes] = await Promise.all([
     supabase.from('projects').select('id, code, name').order('code'),
-    supabase.from('profiles').select('id, full_name, name').eq('is_active', true),
+    supabase.from('profiles').select('id, full_name, name, email, role').eq('is_active', true),
+    // Per-module role overrides — someone whose cost-control role is
+    // overridden to 'engineer' belongs in the engineer picker too.
+    supabase.from('user_module_roles').select('user_id, role').eq('module_slug', 'cost-control'),
     supabase.from('cc_disciplines').select('id, code, name').order('display_order'),
     supabase.from('cc_sub_skills').select('id, discipline_id, code, name').order('code'),
     supabase
@@ -69,15 +76,43 @@ export default async function ResumeProjectSetupPage(
       .select('user_id, assigned_disciplines')
       .eq('project_id', id)
       .eq('role', 'engineer'),
+    // Footprint for the "removing this engineer" warning: their sub-skill
+    // assignments + live sheets on THIS project.
+    supabase.from('cc_subskill_assignments').select('engineer_id').eq('project_id', id),
+    supabase.from('cc_working_sheets').select('engineer_id').eq('project_id', id).is('archived_at', null).neq('status', 'cancelled'),
   ])
 
   const tablesMissing = !!disciplinesRes.error
 
   const parentProjects: ParentProjectOption[] = (parentsRes.data ?? []) as ParentProjectOption[]
-  const users: UserOption[] = (usersRes.data ?? []).map(p => ({
+  type ProfRow = { id: string; full_name: string | null; name: string | null; email: string | null; role: string }
+  const profRows = (usersRes.data ?? []) as ProfRow[]
+  const users: UserOption[] = profRows.map(p => ({
     id: p.id,
     name: p.full_name ?? p.name ?? '(unnamed)',
+    email: p.email,
   }))
+  // Effective engineers only: base role 'engineer', or a cost-control
+  // override to 'engineer' (and an override AWAY from engineer excludes).
+  const ccOverride = new Map<string, string>()
+  for (const r of (overridesRes.data ?? []) as Array<{ user_id: string; role: string }>) {
+    ccOverride.set(r.user_id, r.role)
+  }
+  const engineerUsers: UserOption[] = profRows
+    .filter(p => (ccOverride.get(p.id) ?? p.role) === 'engineer')
+    .map(p => ({ id: p.id, name: p.full_name ?? p.name ?? '(unnamed)', email: p.email }))
+    .sort((a, b) => a.name.localeCompare(b.name))
+
+  // engineer_id → { sheets, subskills } on this project.
+  const engineerFootprint: Record<string, { sheets: number; subskills: number }> = {}
+  const bump = (uid: string | null, key: 'sheets' | 'subskills') => {
+    if (!uid) return
+    const cur = engineerFootprint[uid] ?? { sheets: 0, subskills: 0 }
+    cur[key] += 1
+    engineerFootprint[uid] = cur
+  }
+  for (const r of (ssaRes.data ?? []) as Array<{ engineer_id: string | null }>) bump(r.engineer_id, 'subskills')
+  for (const r of (wsCountRes.data ?? []) as Array<{ engineer_id: string | null }>) bump(r.engineer_id, 'sheets')
   const disciplines: DisciplineOption[] = (disciplinesRes.data ?? []).map(d => ({
     id: d.id,
     code: d.code,
@@ -135,6 +170,8 @@ export default async function ResumeProjectSetupPage(
       <ProjectSetupWizard
         parentProjects={parentProjects}
         users={users}
+        engineerUsers={engineerUsers}
+        engineerFootprint={engineerFootprint}
         disciplines={disciplines}
         subSkills={subSkills}
         initialProjectId={id}

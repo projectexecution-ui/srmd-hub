@@ -230,7 +230,23 @@ export async function assignProjectEngineers(
     if (insErr) return { ok: false, error: insErr.message }
   }
 
+  // An engineer removed from the project must not keep sub-skill
+  // responsibilities here (they'd still see those sheets). Clear each via
+  // the reviewer-gated RPC (the table has no direct write policies).
+  const kept = new Set(assignments.map(a => a.user_id))
+  const { data: ssa } = await supabase
+    .from('cc_subskill_assignments')
+    .select('sub_skill_id, engineer_id')
+    .eq('project_id', projectId)
+  for (const r of (ssa ?? []) as Array<{ sub_skill_id: string; engineer_id: string }>) {
+    if (kept.has(r.engineer_id)) continue
+    await supabase.rpc('cc_set_subskill_engineer', {
+      p_project: projectId, p_sub_skill: r.sub_skill_id, p_engineer: null,
+    })
+  }
+
   revalidatePath(`/cost-control/projects/${projectId}`)
+  revalidatePath('/cost-control')
   return { ok: true }
 }
 

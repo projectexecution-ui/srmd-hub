@@ -24,6 +24,8 @@ export interface ParentProjectOption {
 export interface UserOption {
   id: string
   name: string
+  /** Shown under the name to disambiguate similar names. */
+  email?: string | null
 }
 
 export interface DisciplineOption {
@@ -52,6 +54,12 @@ export interface DisciplineModePreset {
 interface ProjectSetupWizardProps {
   parentProjects: ParentProjectOption[]
   users: UserOption[]
+  /** Effective engineers only (role engineer, or a cost-control override) —
+   *  the ONLY people Step 4 offers. Falls back to `users` when omitted. */
+  engineerUsers?: UserOption[]
+  /** Per-engineer footprint on THIS project (sheets + sub-skill
+   *  assignments) — powers the "removing X" warning in Step 4. */
+  engineerFootprint?: Record<string, { sheets: number; subskills: number }>
   disciplines: DisciplineOption[]
   /** All sub-skills across all disciplines; wizard filters by picked disciplines in Step 3 */
   subSkills: SubSkillOption[]
@@ -78,6 +86,8 @@ type Step = 1 | 2 | 3 | 4
 export function ProjectSetupWizard({
   parentProjects,
   users,
+  engineerUsers,
+  engineerFootprint,
   disciplines,
   subSkills,
   initialProjectId,
@@ -243,7 +253,9 @@ export function ProjectSetupWizard({
 
       {step === 4 && (
         <Step4Engineers
-          users={users}
+          users={engineerUsers ?? users}
+          initialPicks={initialEngineerPicks}
+          footprint={engineerFootprint}
           disciplines={disciplines.filter(d => pickedDisciplines.has(d.id))}
           picks={engineerPicks}
           setPicks={setEngineerPicks}
@@ -663,6 +675,8 @@ function Step3SubSkills({
 
 function Step4Engineers({
   users,
+  initialPicks,
+  footprint,
   disciplines,
   picks,
   setPicks,
@@ -671,6 +685,8 @@ function Step4Engineers({
   onSkip,
 }: {
   users: UserOption[]
+  initialPicks?: Array<{ user_id: string; discipline_ids: string[] }>
+  footprint?: Record<string, { sheets: number; subskills: number }>
   disciplines: DisciplineOption[]
   picks: Map<string, Set<string>>
   setPicks: (next: Map<string, Set<string>>) => void
@@ -678,6 +694,8 @@ function Step4Engineers({
   onFinish: () => Promise<void>
   onSkip: () => void
 }) {
+  const [search, setSearch] = React.useState('')
+
   function toggleUser(userId: string) {
     const next = new Map(picks)
     if (next.has(userId)) next.delete(userId)
@@ -693,20 +711,77 @@ function Step4Engineers({
     setPicks(next)
   }
 
+  // The list arrives engineers-only and alphabetical; search narrows it.
+  const q = search.trim().toLowerCase()
+  const visible = q
+    ? users.filter(u => u.name.toLowerCase().includes(q) || (u.email ?? '').toLowerCase().includes(q))
+    : users
+
+  // Summary chip: how many picked + how many of this project's disciplines
+  // are covered by at least one engineer.
+  const pickedCount = picks.size
+  const covered = new Set<string>()
+  for (const dids of picks.values()) for (const d of dids) if (disciplines.some(x => x.id === d)) covered.add(d)
+
+  // Warn when someone who WAS assigned (and has work here) is being removed:
+  // finishing will clear their sub-skill assignments on this project.
+  const removedWithWork = (initialPicks ?? [])
+    .filter(ip => !picks.has(ip.user_id))
+    .map(ip => ({ id: ip.user_id, fp: footprint?.[ip.user_id] }))
+    .filter((x): x is { id: string; fp: { sheets: number; subskills: number } } => !!x.fp && (x.fp.sheets > 0 || x.fp.subskills > 0))
+
   return (
     <Card className="p-5">
       <h2 className="text-lg font-semibold text-gray-900 mb-1">Assign engineers</h2>
-      <p className="text-sm text-gray-500 mb-4">
+      <p className="text-sm text-gray-500 mb-1">
         Pick engineers and, for each, the disciplines they own on this project. You can leave this empty and assign later from the project page.
       </p>
+      <p className="text-xs text-gray-400 mb-4">
+        Only users with the <b>Engineer</b> role appear here. Sub-skill responsibility is assigned afterwards on the project page — from among the people you add now.
+      </p>
+
+      {users.length > 0 && (
+        <div className="mb-3 flex flex-wrap items-center gap-2">
+          <Input
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            placeholder="Search by name or email…"
+            className="max-w-xs"
+          />
+          <span className="text-xs font-semibold text-blue-700 bg-blue-50 border border-blue-200 rounded-full px-2.5 py-1">
+            {pickedCount} engineer{pickedCount === 1 ? '' : 's'} picked · covering {covered.size} of {disciplines.length} disciplines
+          </span>
+        </div>
+      )}
+
+      {removedWithWork.length > 0 && (
+        <div className="mb-3 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+          {removedWithWork.map(r => {
+            const u = users.find(x => x.id === r.id)
+            return (
+              <p key={r.id}>
+                <b>{u?.name ?? 'A removed engineer'}</b> has {r.fp.sheets} sheet{r.fp.sheets === 1 ? '' : 's'}
+                {r.fp.subskills > 0 ? ` and ${r.fp.subskills} sub-skill assignment${r.fp.subskills === 1 ? '' : 's'}` : ''} on this project.
+                Sheets stay intact; finishing setup will clear the sub-skill assignments.
+              </p>
+            )
+          })}
+        </div>
+      )}
 
       {users.length === 0 ? (
         <div className="rounded-md border border-dashed border-gray-300 bg-gray-50 p-6 text-center text-sm text-gray-500">
-          No active users in the system yet. Skip for now — invite engineers from /admin/users then come back.
+          No users have the <b>Engineer</b> role yet. Set roles at{' '}
+          <a href="/admin/users" className="text-blue-700 font-semibold hover:underline">/admin/users</a>{' '}
+          — only engineers appear in this list. You can skip and come back.
+        </div>
+      ) : visible.length === 0 ? (
+        <div className="rounded-md border border-dashed border-gray-300 bg-gray-50 p-6 text-center text-sm text-gray-500">
+          No engineer matches “{search}”.
         </div>
       ) : (
         <div className="space-y-2 max-h-[60vh] overflow-y-auto pr-1">
-          {users.map(u => {
+          {visible.map(u => {
             const on = picks.has(u.id)
             const userDisciplines = picks.get(u.id) ?? new Set<string>()
             return (
@@ -718,9 +793,12 @@ function Step4Engineers({
                     onChange={() => toggleUser(u.id)}
                     className="h-4 w-4"
                   />
-                  <span className="text-sm font-semibold text-gray-900">{u.name}</span>
+                  <span className="min-w-0">
+                    <span className="block text-sm font-semibold text-gray-900 truncate">{u.name}</span>
+                    {u.email && <span className="block text-[11px] text-gray-400 truncate">{u.email}</span>}
+                  </span>
                   {on && (
-                    <span className="ml-auto text-xs text-blue-700">
+                    <span className="ml-auto text-xs text-blue-700 whitespace-nowrap">
                       {userDisciplines.size} of {disciplines.length} disciplines
                     </span>
                   )}
@@ -752,6 +830,11 @@ function Step4Engineers({
           })}
         </div>
       )}
+
+      <p className="mt-3 text-xs text-gray-400">
+        Don&apos;t see someone? Add them (or fix their role) at{' '}
+        <a href="/admin/users" className="text-blue-700 font-semibold hover:underline">/admin/users</a>, then reopen this step.
+      </p>
 
       <div className="mt-4 flex flex-wrap justify-end gap-2">
         <Button variant="ghost" onClick={onSkip} disabled={busy}>Skip — Open Project</Button>
