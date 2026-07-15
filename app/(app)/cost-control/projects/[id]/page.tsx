@@ -4,6 +4,7 @@ import { createClient } from '@/lib/supabase/server'
 import { requirePermission, can } from '@/lib/auth'
 import { checkIsCcReviewer, checkCanDecideInternalEstimate, checkCanRequestIeRevision } from '@/components/cost-control/ws-actions'
 import { IeRevisionPanel, type IeRevision } from './IeRevisionPanel'
+import { EngineerProjectView } from './EngineerProjectView'
 import { PageHeader } from '@/components/PageHeader'
 import { SetupProgressBanner } from '@/components/ProjectSetupWizard/SetupProgressBanner'
 import { Plus, Flame, Info, Settings } from 'lucide-react'
@@ -86,14 +87,8 @@ export default async function CostControlProjectDetailPage(
     }
   }
 
-  // This page IS the project's Internal Estimate — every figure on it is a
-  // confidential management number. Internal Estimate is never shown to
-  // engineers or other non-management members, so the page is management-
-  // only: any non-reviewer is sent away, regardless of the "let engineers
-  // open projects" toggle.
-  if (!reviewer) {
-    redirect('/cost-control/working-sheets')
-  }
+  // Non-reviewers get routed away from the Internal Estimate below — see the
+  // engineer branch right after the project loads.
   // Setup / disable / deadline / BPH-sync controls are management-only even
   // when an engineer is allowed to view.
   const canWrite = can(perms, 'cost-control', 'edit') && reviewer
@@ -121,6 +116,15 @@ export default async function CostControlProjectDetailPage(
     )
   }
   if (!project) notFound()
+
+  // Engineers never see the Internal Estimate. When the admin has opened up
+  // "let engineers open projects", they get a SEPARATE, safe view (ERP
+  // budget + their own sheets, no Internal Estimate figures anywhere);
+  // otherwise they are sent to their own Working Sheets.
+  if (!reviewer) {
+    if (!ccSettings.eng_projects) redirect('/cost-control/working-sheets')
+    return <EngineerProjectView project={{ id: project.id, code: project.code, name: project.name, built_up_sft: project.built_up_sft }} />
+  }
 
   // Parent project name + pm name + everything else in parallel
   const [parentRes, pmRes, projDisRes, projSubRes, blRes, wsRes, assignRes, profilesRes] = await Promise.all([
