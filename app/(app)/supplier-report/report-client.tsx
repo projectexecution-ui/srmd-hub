@@ -18,7 +18,7 @@ import {
   CheckCircle2, AlertTriangle, ChevronRight, ChevronDown, ChevronsDownUp, ChevronsUpDown, Layers,
 } from 'lucide-react'
 import { toast } from 'sonner'
-import { formatNumber, cn } from '@/lib/utils'
+import { formatNumber, formatDateTime, cn } from '@/lib/utils'
 import { formatINR as compactINR } from '@/lib/budget-utils'
 import { confirm } from '@/components/ui/confirm-dialog'
 import {
@@ -378,7 +378,7 @@ export default function SupplierReportClient({ canDelete = false }: { canDelete?
 
           {updatedInfo.at && (
             <p className="text-[11px] text-gray-400 inline-flex items-center gap-1">
-              <Clock className="h-3 w-3" /> Last updated {new Date(updatedInfo.at).toLocaleString()}{updatedInfo.by ? ` by ${updatedInfo.by}` : ''}
+              <Clock className="h-3 w-3" /> Last updated {formatDateTime(updatedInfo.at)}{updatedInfo.by ? ` by ${updatedInfo.by}` : ''}
             </p>
           )}
 

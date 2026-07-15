@@ -5,6 +5,7 @@ import { createClient } from '@/lib/supabase/client'
 import { Card, CardContent } from '@/components/ui/card'
 import { Loader2, Check, Eye, EyeOff, Pencil } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { confirm } from '@/components/ui/confirm-dialog'
 
 interface ModuleRow {
   slug: string
@@ -29,7 +30,18 @@ export default function DashboardModulesEditor({ groups: initialGroups, canRenam
   const [error, setError] = useState<string | null>(null)
   const [editingSlug, setEditingSlug] = useState<string | null>(null)
 
-  async function toggle(slug: string) {
+  async function toggle(row: ModuleRow) {
+    const slug = row.slug
+    // Turning a module OFF hides it for the whole team — confirm first, since
+    // a stray tap could hide something like Indents or Invoices for everyone.
+    if (row.enabled) {
+      const ok = await confirm({
+        title: `Hide “${row.label}” from everyone?`,
+        message: `It will disappear from the dashboard and sidebar for the whole team. Portal Owners still see it, and you can turn it back on here anytime.`,
+        confirmLabel: 'Hide it',
+      })
+      if (!ok) return
+    }
     let nextValue: boolean | null = null
     const prev = groups
     setGroups(gs => gs.map(g => ({
@@ -139,7 +151,7 @@ export default function DashboardModulesEditor({ groups: initialGroups, canRenam
                           </span>
                         )}
                         <button
-                          onClick={() => toggle(r.slug)}
+                          onClick={() => toggle(r)}
                           disabled={isBusy}
                           title={r.enabled ? 'Click to hide from everyone' : 'Click to show to everyone'}
                           className={cn(

@@ -1,11 +1,8 @@
-import Link from 'next/link'
 import { createClient } from '@/lib/supabase/server'
 import { requirePermission, getMyProfile, isPortalOwner } from '@/lib/auth'
 import { PageHeader } from '@/components/PageHeader'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import {
-  Mail, Users, ShieldCheck, GitBranch, LayoutGrid, Wrench, ExternalLink, Info,
-} from 'lucide-react'
+import { Mail, Info } from 'lucide-react'
 import { SettingsForm } from './settings-form'
 
 export const dynamic = 'force-dynamic'
@@ -22,15 +19,6 @@ export default async function AdminSettingsPage() {
   ])
   const settings = Object.fromEntries((rows ?? []).map(r => [r.key, r.value]))
 
-  // Configuration shortcuts — visible based on what this user can manage.
-  const shortcuts = [
-    { href: '/admin/users',             icon: Users,       title: 'Users & Roles',     sub: 'Add / deactivate users, set role per user.',          show: true },
-    { href: '/admin/permissions',       icon: ShieldCheck, title: 'Permissions',       sub: 'What each role can View / Edit / Admin per module.', show: true },
-    { href: '/admin/approvals',         icon: GitBranch,   title: 'Approvals',         sub: 'Who approves what at each stage, across modules.',   show: true },
-    { href: '/admin/dashboard-modules', icon: LayoutGrid,  title: 'Dashboard Modules', sub: 'Turn modules on / off for the whole portal.',        show: portalOwner },
-    { href: '/jmr/admin/settings',      icon: Wrench,      title: 'JMR settings',      sub: 'GST %, variance tolerance, weekly report time.',     show: true },
-  ].filter(s => s.show)
-
   return (
     <div className="p-4 md:p-6 max-w-3xl mx-auto space-y-6">
       <PageHeader title="Settings" back="/admin" subtitle="Portal-wide configuration" />
@@ -39,11 +27,10 @@ export default async function AdminSettingsPage() {
       <Card>
         <CardHeader>
           <CardTitle className="text-base flex items-center gap-2">
-            <Mail className="h-4 w-4 text-gray-500" /> General
+            <Mail className="h-4 w-4 text-gray-500" /> Admin email
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-2">
-          <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Admin email</p>
           <p className="text-xs text-gray-500">
             The Gmail address that becomes admin on first sign-in. New users with other emails are created as <b>viewer</b> by default.
           </p>
@@ -53,30 +40,6 @@ export default async function AdminSettingsPage() {
             placeholder="projectexecution@construction.srmd.org"
             type="email"
           />
-        </CardContent>
-      </Card>
-
-      {/* ── Configuration shortcuts ───────────────────────── */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Other configuration</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            {shortcuts.map(s => (
-              <Link key={s.href} href={s.href}
-                className="group flex items-start gap-3 p-3 rounded-xl border border-gray-200 bg-white hover:border-blue-300 hover:shadow-sm transition-all">
-                <div className="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-blue-50 text-blue-700 flex-shrink-0">
-                  <s.icon className="h-4 w-4" />
-                </div>
-                <div className="min-w-0 flex-1">
-                  <p className="text-sm font-semibold text-gray-900 leading-tight">{s.title}</p>
-                  <p className="text-xs text-gray-500 mt-0.5 line-clamp-2">{s.sub}</p>
-                </div>
-                <ExternalLink className="h-4 w-4 text-gray-300 group-hover:text-blue-500 flex-shrink-0 mt-1" />
-              </Link>
-            ))}
-          </div>
         </CardContent>
       </Card>
 
@@ -94,13 +57,14 @@ export default async function AdminSettingsPage() {
               <span className="ml-2 text-xs text-gray-500">({profile?.role}{portalOwner ? ' · Portal Owner' : ''})</span>
             </Row>
             <Row label="Active users">{profilesCount.count ?? 0}</Row>
-            <Row label="Supabase project">
-              <span className="font-mono text-xs">hjwtjrjkmuhhbsbjsqhx</span>
-            </Row>
             <Row label="Today">
               {new Date().toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
             </Row>
           </dl>
+          <p className="text-xs text-gray-400 mt-4">
+            Manage users, permissions, approvals and module visibility from the{' '}
+            <a href="/admin" className="text-blue-600 hover:underline">Admin</a> home.
+          </p>
         </CardContent>
       </Card>
     </div>

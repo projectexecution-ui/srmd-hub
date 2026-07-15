@@ -376,7 +376,7 @@ export default function UsersClient({
   return (
     <div className="p-4 md:p-6 max-w-6xl mx-auto space-y-4">
       <PageHeader
-        title="Users & Permissions"
+        title="Users & Roles"
         back="/admin"
         subtitle="Active accounts, their roles, and per-user access controls."
       >

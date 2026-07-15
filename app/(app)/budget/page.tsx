@@ -19,7 +19,7 @@ export default function BPHReportHubPage() {
         <div className="flex items-center gap-2">
           <FileSpreadsheet className="h-4 w-4 text-teal-600" />
           <div>
-            <p className="text-sm font-semibold text-gray-900 leading-tight">IN4 BPH Report Hub</p>
+            <p className="text-sm font-semibold text-gray-900 leading-tight">Budget (IN4 BPH)</p>
             <p className="text-[11px] text-gray-500 leading-tight">Budget Performance Hub · IN4 export · server-backed</p>
           </div>
         </div>
@@ -38,7 +38,7 @@ export default function BPHReportHubPage() {
       <iframe
         src={src}
         className={`flex-1 w-full border-0 bg-white transition-opacity ${loaded ? 'opacity-100' : 'opacity-0'}`}
-        title="IN4 BPH Report Hub"
+        title="Budget (IN4 BPH)"
       />
     </div>
   )

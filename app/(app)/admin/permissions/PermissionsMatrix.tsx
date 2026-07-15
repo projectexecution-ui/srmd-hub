@@ -361,6 +361,10 @@ export default function PermissionsMatrix({ modules, roles, initial, roleLabels,
                       const k: Key = `${role}::${mod.slug}`
                       const busy = busyKey === k
                       const saved = savedKey === k
+                      // Admin is the super-role. Lock its column so nobody can
+                      // accidentally strip admin's own access and lock the
+                      // whole team out of this very screen.
+                      const locked = role === 'admin'
                       return (
                         <td key={role} className={cn(
                           'px-2 py-2 text-center',
@@ -369,13 +373,13 @@ export default function PermissionsMatrix({ modules, roles, initial, roleLabels,
                         )}>
                           <div className="inline-flex items-center gap-1 rounded-lg border border-gray-200 bg-white p-0.5">
                             {ACTIONS.map(({ key, label, icon: Icon }) => {
-                              const on = cell[key]
+                              const on = locked ? true : cell[key]
                               return (
                                 <button
                                   key={key}
-                                  onClick={() => toggle(role, mod.slug, key)}
-                                  disabled={busy}
-                                  title={`${label}: ${on ? 'allowed' : 'denied'}`}
+                                  onClick={() => { if (!locked) toggle(role, mod.slug, key) }}
+                                  disabled={busy || locked}
+                                  title={locked ? 'Admin always has full access (locked)' : `${label}: ${on ? 'allowed' : 'denied'}`}
                                   className={cn(
                                     'inline-flex items-center justify-center h-6 w-6 rounded-md transition-colors',
                                     on
@@ -383,7 +387,8 @@ export default function PermissionsMatrix({ modules, roles, initial, roleLabels,
                                         key === 'edit' ? 'bg-amber-100 text-amber-800' :
                                                           'bg-purple-100 text-purple-800'
                                       : 'text-gray-300 hover:text-gray-500 hover:bg-gray-50',
-                                    busy && 'opacity-50 cursor-wait'
+                                    busy && 'opacity-50 cursor-wait',
+                                    locked && 'cursor-default'
                                   )}
                                 >
                                   {busy ? <Loader2 className="h-3 w-3 animate-spin" /> : <Icon className="h-3 w-3" />}
