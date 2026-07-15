@@ -5,7 +5,7 @@ import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Loader2 } from 'lucide-react'
+import { Loader2, ChevronRight } from 'lucide-react'
 import type { CcSettings } from '@/lib/cost-control/settings'
 
 function Toggle({
@@ -75,7 +75,7 @@ export function CcSettingsForm({ initial, users = [] }: {
   return (
     <form onSubmit={submit} className="space-y-5 max-w-xl">
       <div className="space-y-2">
-        <p className="text-[11px] uppercase tracking-wider font-semibold text-gray-500">Features</p>
+        <p className="text-[11px] uppercase tracking-wider font-semibold text-gray-500">Everyday</p>
         <Toggle
           label="Deadlines"
           hint="Show deadline dates on working sheets and project rows. Off keeps the pages clean; the data is kept."
@@ -95,36 +95,47 @@ export function CcSettingsForm({ initial, users = [] }: {
           onChange={x => setV({ ...v, show_per_sft: x })}
         />
         <Toggle
-          label="AI review tools"
-          hint="The AI checker, bifurcation and Ask-AI panels approvers use to verify a working."
-          checked={v.ai_tools}
-          onChange={x => setV({ ...v, ai_tools: x })}
-        />
-        <Toggle
           label="Comments"
           hint="Let everyone on a working sheet write comments under it."
           checked={v.comments}
           onChange={x => setV({ ...v, comments: x })}
         />
-        <Toggle
-          label="Billing step (IN4 entry)"
-          hint="After the Trustee approves, the Billing team marks each sheet as entered in IN4. Tracking only — no money moves."
-          checked={v.billing_step}
-          onChange={x => setV({ ...v, billing_step: x })}
-        />
-        <Toggle
-          label="Trustee accept/reject on each Internal Estimate"
-          hint="Off (default) — the uploaded Internal Estimate is the baseline that engineer asks are checked against. On — Trustee/Admin must ✓/✗ each sub-skill's estimate."
-          checked={v.ie_review}
-          onChange={x => setV({ ...v, ie_review: x })}
-        />
-        <Toggle
-          label="Excel preview via Microsoft Office Online"
-          hint="Pixel-perfect Excel rendering — but each preview SENDS the file to Microsoft's servers (they may cache it). Off = the in-app viewer keeps everything inside your app."
-          checked={v.excel_microsoft}
-          onChange={x => setV({ ...v, excel_microsoft: x })}
-        />
       </div>
+
+      {/* Less-common switches, tucked away so the page isn't overwhelming. */}
+      <details className="group rounded-lg border border-gray-200 bg-gray-50/40 px-3 py-2">
+        <summary className="list-none cursor-pointer flex items-center gap-2 text-[11px] uppercase tracking-wider font-semibold text-gray-500 select-none">
+          <ChevronRight className="h-3.5 w-3.5 transition-transform group-open:rotate-90" />
+          Advanced
+          <span className="ml-1 font-normal normal-case tracking-normal text-gray-400">AI, billing step, Trustee review, Excel preview</span>
+        </summary>
+        <div className="space-y-2 mt-3">
+          <Toggle
+            label="AI review tools"
+            hint="The AI checker, bifurcation and Ask-AI panels approvers use to verify a working."
+            checked={v.ai_tools}
+            onChange={x => setV({ ...v, ai_tools: x })}
+          />
+          <Toggle
+            label="Billing step (IN4 entry)"
+            hint="After the Trustee approves, the Billing team marks each sheet as entered in IN4. Tracking only — no money moves."
+            checked={v.billing_step}
+            onChange={x => setV({ ...v, billing_step: x })}
+          />
+          <Toggle
+            label="Trustee accept/reject on each Internal Estimate"
+            hint="Off (default) — the uploaded Internal Estimate is the baseline that engineer asks are checked against. On — Trustee/Admin must ✓/✗ each sub-skill's estimate."
+            checked={v.ie_review}
+            onChange={x => setV({ ...v, ie_review: x })}
+          />
+          <Toggle
+            label="Excel preview via Microsoft Office Online"
+            hint="Pixel-perfect Excel rendering — but each preview SENDS the file to Microsoft's servers (they may cache it). Off = the in-app viewer keeps everything inside your app."
+            checked={v.excel_microsoft}
+            onChange={x => setV({ ...v, excel_microsoft: x })}
+          />
+        </div>
+      </details>
 
       <div className="space-y-2">
         <p className="text-[11px] uppercase tracking-wider font-semibold text-gray-500">What engineers can see</p>
