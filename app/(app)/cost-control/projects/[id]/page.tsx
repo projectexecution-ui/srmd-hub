@@ -1,7 +1,7 @@
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
-import { requirePermission, can } from '@/lib/auth'
+import { requirePermission, can, getMyProfile } from '@/lib/auth'
 import { checkIsCcReviewer, checkCanDecideInternalEstimate, checkCanRequestIeRevision } from '@/components/cost-control/ws-actions'
 import { IeRevisionPanel, type IeRevision } from './IeRevisionPanel'
 import { EngineerProjectView } from './EngineerProjectView'
@@ -15,6 +15,7 @@ import { DeadlineBadge } from '@/components/cost-control/DeadlineBadge'
 import { wsStatusLabel } from '@/components/cost-control/WSStatusPill'
 import { DeadlineCell, SubSkillModeCell, DisableButton, InternalEstimateDecision, SubSkillAssignControl } from './RowControls'
 import { AreaChip } from './AreaChip'
+import { RenameProjectChip } from './RenameProjectChip'
 import { BphSyncButton } from './BphSyncButton'
 import { getBphMappingForProject } from '@/app/(app)/cost-control/import/bph/actions'
 
@@ -55,6 +56,8 @@ export default async function CostControlProjectDetailPage(
   const supabase = await createClient()
   const ccSettings = await getCcSettings()
   const reviewer = await checkIsCcReviewer()
+  // Renaming a project is admin-only — the name shows on every module.
+  const isAdmin = (await getMyProfile())?.role === 'admin'
   // Only the Trustee (founder) / Admin may accept or reject the Internal
   // Estimate baseline — and only when the (off-by-default) review toggle is
   // on. Off: the uploaded estimate is simply the baseline, no manual step.
@@ -519,6 +522,7 @@ export default async function CostControlProjectDetailPage(
           />
         </div>
         <div className="flex flex-wrap items-center gap-2">
+          <RenameProjectChip projectId={project.id} name={project.name} isAdmin={isAdmin} />
           <AreaChip
             projectId={project.id}
             sft={project.built_up_sft != null ? Number(project.built_up_sft) : null}

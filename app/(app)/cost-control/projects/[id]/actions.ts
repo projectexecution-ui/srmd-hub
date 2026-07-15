@@ -6,7 +6,7 @@
 import { revalidatePath } from 'next/cache'
 import { z } from 'zod'
 import { createClient } from '@/lib/supabase/server'
-import { requirePermission } from '@/lib/auth'
+import { requirePermission, getMyProfile } from '@/lib/auth'
 
 const uuid = z.string().uuid()
 const isoDateOrNull = z
@@ -211,6 +211,41 @@ export async function setProjectArea(
     p_sft: sft,
   })
   if (error) return { ok: false, error: error.message }
+
+  revalidatePath(`/cost-control/projects/${projectId}`)
+  revalidatePath('/cost-control')
+  return { ok: true }
+}
+
+// ============================================================
+// Rename a project — ADMIN only. The name shows on every module
+// (dashboard groups, sheets, reports), so renaming is kept above
+// management level. Code stays fixed — it's baked into WS codes.
+// ============================================================
+export async function renameProject(
+  projectId: string,
+  name: string,
+): Promise<{ ok: boolean; error?: string }> {
+  const profile = await getMyProfile()
+  if (profile?.role !== 'admin') {
+    return { ok: false, error: 'Only an Admin can rename a project' }
+  }
+  if (!uuid.safeParse(projectId).success) return { ok: false, error: 'Bad project id' }
+  const trimmed = name.trim()
+  if (trimmed.length < 2 || trimmed.length > 120) {
+    return { ok: false, error: 'Name must be 2–120 characters' }
+  }
+
+  const supabase = await createClient()
+  // .select() catches a silent RLS no-op (0 rows) — report it, don't
+  // pretend the rename happened.
+  const { data, error } = await supabase
+    .from('projects')
+    .update({ name: trimmed })
+    .eq('id', projectId)
+    .select('id')
+  if (error) return { ok: false, error: error.message }
+  if (!data || data.length === 0) return { ok: false, error: 'Rename was blocked — check your permissions' }
 
   revalidatePath(`/cost-control/projects/${projectId}`)
   revalidatePath('/cost-control')
