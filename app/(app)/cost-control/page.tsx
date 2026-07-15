@@ -20,11 +20,17 @@ import { getCcSettings } from '@/lib/cost-control/settings'
 import { getEffectiveCcRole } from '@/app/(app)/cost-control/billing/billing-actions'
 import { GroupLabelChip } from './GroupLabelChip'
 import { AssignedToMePopover } from './AssignedToMePopover'
+import { MODULES } from '@/lib/modules'
 
 export const dynamic = 'force-dynamic'
 
 // Statuses that count as "waiting in the approval chain".
 const PENDING_STATUSES = ['submitted', 'ph_approved', 'atm_approved', 'partially_approved']
+
+// The module's name comes from ONE source of truth — the module registry —
+// so the page title always matches the sidebar nav + dashboard tile. Rename
+// it in lib/modules.ts and every surface (incl. this header) follows.
+const CC_LABEL = MODULES.find(m => m.slug === 'cost-control')?.label ?? 'Cost Control'
 
 type CCProject = {
   id: string
@@ -323,7 +329,7 @@ export default async function CostControlLandingPage() {
     <div className="p-4 md:p-6 max-w-7xl mx-auto space-y-4">
       <AutoBackup isAdmin={canAdmin} />
       <PageHeader
-        title="Cost Control"
+        title={CC_LABEL}
         subtitle={`SRASSK — ${ccProjects.length} project${ccProjects.length === 1 ? '' : 's'}${incompleteCount ? ` · ${incompleteCount} need setup` : ''}`}
       >
         <details className="relative group [&_summary::-webkit-details-marker]:hidden">
@@ -892,7 +898,7 @@ async function EngineerHome({ userId, canWrite }: { userId: string | null; canWr
   return (
     <div className="p-4 md:p-6 max-w-6xl mx-auto space-y-4">
       <PageHeader
-        title="Cost Control"
+        title={CC_LABEL}
         subtitle="Your projects' budget and the estimates moving through approval."
       >
         {canWrite && (
