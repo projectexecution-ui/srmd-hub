@@ -5,6 +5,7 @@ import { z } from 'zod'
 import { createClient } from '@/lib/supabase/server'
 import { getMyUser, getMyProfile, getMyPermissions, can } from '@/lib/auth'
 import { generateSmartWSCode } from './ws-code-action'
+import { notifyApprovalPending } from '@/lib/cost-control/notify'
 
 // ---------- shared authorization helpers ----------
 
@@ -534,6 +535,9 @@ export async function submitWorkingSheet(wsId: string): Promise<{ ok: boolean; e
     .eq('id', wsId)
   if (updErr) return { ok: false, error: updErr.message }
 
+  // Now waiting on the Project Head — notify them (best-effort, gated).
+  await notifyApprovalPending(wsId).catch(() => {})
+
   revalidatePath(`/cost-control/working-sheets/${wsId}`)
   revalidatePath('/cost-control/working-sheets')
   return { ok: true }
@@ -600,6 +604,9 @@ export async function signOffWorkingSheet(
     .eq('id', wsId)
     .eq('status', ws.status) // optimistic: someone else may have acted meanwhile
   if (updErr) return { ok: false, error: updErr.message }
+
+  // Sheet moved to the next stage — notify whoever it now waits on.
+  await notifyApprovalPending(wsId).catch(() => {})
 
   // Log the sign-off so the approval trail names the stage + person. The
   // checked amount rides in the comment (approval_events has no amount

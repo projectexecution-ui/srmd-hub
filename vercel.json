@@ -11,6 +11,10 @@
       "schedule": "0 20 * * *"
     },
     {
+      "path": "/api/cost-control/approval-reminders?cron=1",
+      "schedule": "15 4 * * *"
+    },
+    {
       "path": "/api/cron/bills-pipeline?cron=1",
       "schedule": "0 4 * * *"
     },
