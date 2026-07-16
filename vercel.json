@@ -11,6 +11,10 @@
       "schedule": "0 20 * * *"
     },
     {
+      "path": "/api/cost-control/in4-followup?cron=1",
+      "schedule": "0 5 */3 * *"
+    },
+    {
       "path": "/api/cron/bills-pipeline?cron=1",
       "schedule": "0 4 * * *"
     },
