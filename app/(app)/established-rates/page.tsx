@@ -20,7 +20,7 @@ export default async function EstablishedRatesPage() {
     supabase.from('est_disciplines').select('*').eq('is_archived', false).order('display_order').order('code'),
     supabase.from('est_categories').select('*').eq('is_archived', false).order('display_order').order('code'),
     supabase.from('est_subcategories').select('*').eq('is_archived', false).order('name'),
-    supabase.from('est_rates').select('*').order('rate_per_unit'),
+    supabase.from('est_rates').select('*').is('deleted_at', null).order('rate_per_unit'),
     supabase.from('est_wo_history').select('*').order('from_date', { ascending: false }),
     supabase.from('vendors').select('id, name').order('name'),
     supabase.from('jmr_contractors').select('id, name').order('name'),

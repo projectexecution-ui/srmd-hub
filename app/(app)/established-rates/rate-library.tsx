@@ -19,6 +19,7 @@ import {
 import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
 import { confirm } from '@/components/ui/confirm-dialog'
+import { recycleDelete } from '@/lib/recycle-bin'
 import { AddRateModal } from './add-rate-modal'
 
 interface Discipline   { id: string; code: string | null; name: string; display_order: number }
@@ -278,12 +279,23 @@ export function RateLibrary({
   }
 
   async function deleteRate(id: string) {
-    if (!(await confirm('Delete this rate?'))) return
+    if (!(await confirm({ title: 'Delete this rate?', message: 'It moves to the Recycle Bin — an admin can restore it anytime from Admin › Recycle Bin.', confirmLabel: 'Delete' }))) return
     setBusyRate(id)
-    const { error } = await createClient().from('est_rates').delete().eq('id', id)
+    const rate = rates.find(r => r.id === id)
+    const sub = rate ? subcategories.find(s => s.id === rate.subcategory_id) : null
+    const party = rate
+      ? (rate.vendor_id ? vendors.find(v => v.id === rate.vendor_id)?.name
+        : contractors.find(c => c.id === rate.contractor_id)?.name)
+      : null
+    const label = sub ? (sub.short_name || sub.name) : 'Rate'
+    const context = [party, rate ? `₹${rate.rate_per_unit}/${sub?.uom ?? ''}` : null].filter(Boolean).join(' · ')
+    const err = await recycleDelete(createClient(), {
+      sourceTable: 'est_rates', entityId: id, entityType: 'Established rate',
+      label, context: context || undefined, moduleSlug: 'established-rates',
+    })
     setBusyRate(null)
-    if (error) { toast.error(error.message); return }
-    toast.success('Rate deleted')
+    if (err) { toast.error(err); return }
+    toast.success('Rate moved to Recycle Bin')
     router.refresh()
   }
 

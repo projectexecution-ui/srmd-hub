@@ -1,7 +1,7 @@
 import Link from 'next/link'
 import { PageHeader } from '@/components/PageHeader'
 import { Card } from '@/components/ui/card'
-import { Users, Settings, ShieldCheck, LayoutGrid, GitBranch, Trash2, Bell } from 'lucide-react'
+import { Users, Settings, ShieldCheck, LayoutGrid, GitBranch, Trash2, Bell, RotateCcw } from 'lucide-react'
 import { getMyPermissions, can, isPortalOwner, getMyProfile } from '@/lib/auth'
 import { createClient } from '@/lib/supabase/server'
 import { isPendingAccessRequest, allowedEmailSet } from '@/lib/access-requests'
@@ -40,6 +40,7 @@ export default async function AdminHomePage() {
     { href: '/admin/permissions', slug: 'admin-permissions', icon: ShieldCheck, title: 'Permissions',   sub: 'Who can view / edit / admin / delete each module.',   show: can(perms, 'admin-permissions', 'view') },
     { href: '/admin/approvals',   slug: 'admin-approvals',   icon: GitBranch,   title: 'Approvals',     sub: 'Who approves what at each stage — across modules.', show: canEditApprovals },
     { href: '/admin/delete-requests', slug: 'admin-delete-requests', icon: Trash2, title: 'Delete Requests', sub: `Approve / reject pending deletes${pendingDeleteCount && pendingDeleteCount > 0 ? ` · ${pendingDeleteCount} waiting` : ''}.`, show: canEditApprovals, badge: pendingDeleteCount && pendingDeleteCount > 0 ? pendingDeleteCount : null },
+    { href: '/admin/recycle-bin', slug: 'admin-recycle-bin', icon: RotateCcw, title: 'Recycle Bin', sub: 'Restore anything that was deleted — kept forever.', show: canEditApprovals },
     { href: '/admin/notifications', slug: 'admin-notifications', icon: Bell, title: 'Notifications', sub: 'Decide which alerts the team gets, by channel & role.', show: canEditApprovals },
     { href: '/admin/dashboard-modules', slug: 'dashboard-modules', icon: LayoutGrid, title: 'Dashboard Modules', sub: 'Turn modules on / off for the portal.',     show: portalOwner },
     { href: '/admin/settings',    slug: 'admin-settings',    icon: Settings,    title: 'Settings',      sub: 'Admin email, etc.',                          show: can(perms, 'admin-settings', 'view') },
