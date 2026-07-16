@@ -1,7 +1,11 @@
-// Management-only: AI sanity-check of the summary screenshot an engineer
-// uploaded with a working sheet. Sends the image to Gemini (vision) and asks
-// whether a manager can trust it at a glance or should open the Excel.
-// A hint, never a gate — the Excel stays the source of truth.
+// Management-only: AI audit of the summary screenshot an engineer uploaded.
+//
+// The AI ONLY transcribes the numbers it can see (vision is good at reading,
+// unreliable at arithmetic). All the maths — row totals (qty × rate),
+// the line-item subtotal, and the grand-total chain (subtotal + escalation +
+// GST …) — is recomputed here in code, exactly. So the verdict is trustworthy
+// and self-contained: it checks the sheet's OWN internal consistency, not any
+// external number.
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { checkIsCcReviewer } from '@/components/cost-control/ws-actions'
@@ -18,17 +22,19 @@ function guessMime(name: string | null): string {
   return 'image/png'
 }
 
-interface Verdict {
-  verdict: 'looks_good' | 'check_excel'
-  confidence: 'high' | 'medium' | 'low'
-  total_seen: number | null
-  issues: string[]
-  note: string
+const inr = (n: number) => `₹${Math.round(n).toLocaleString('en-IN')}`
+
+interface Extraction {
+  readable: boolean
+  title: string | null
+  line_items: Array<{ desc: string | null; qty: number | null; rate: number | null; amount: number | null }>
+  subtotal: number | null
+  adjustments: Array<{ label: string | null; amount: number | null }>
+  grand_total: number | null
 }
 
 export async function POST(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
-  // Management only — this is a reviewer aid.
   if (!(await checkIsCcReviewer())) {
     return NextResponse.json({ ok: false, reason: 'Management only.' }, { status: 403 })
   }
@@ -36,7 +42,7 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
   const supabase = await createClient()
   const { data: ws, error } = await supabase
     .from('cc_working_sheets')
-    .select('id, total_amount, summary_image_url, summary_image_name')
+    .select('id, summary_image_url, summary_image_name')
     .eq('id', id)
     .single()
   if (error || !ws) return NextResponse.json({ ok: false, reason: 'Working sheet not found.' }, { status: 404 })
@@ -44,34 +50,92 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
     return NextResponse.json({ ok: false, reason: 'No summary screenshot was uploaded on this sheet.' }, { status: 400 })
   }
 
-  // Pull the screenshot bytes from storage → base64 for the vision model.
   const { data: blob, error: dlErr } = await supabase.storage.from('cc-sheets').download(ws.summary_image_url as string)
   if (dlErr || !blob) return NextResponse.json({ ok: false, reason: 'Could not read the screenshot.' }, { status: 500 })
   const base64 = Buffer.from(await blob.arrayBuffer()).toString('base64')
   const mimeType = blob.type || guessMime(ws.summary_image_name as string | null)
 
-  const total = Number(ws.total_amount ?? 0)
-  const totalLine = total > 0
-    ? `The sheet's recorded grand total is ₹${Math.round(total).toLocaleString('en-IN')}.`
-    : `No grand total is recorded for this sheet yet.`
+  // Step 1 — transcription only. No maths, no fixing.
+  const res = await generateJSON<Extraction>({
+    system: 'You are a meticulous data-entry clerk. Transcribe the construction cost estimate in the image to JSON EXACTLY as printed. Do NOT calculate, correct, or infer anything — copy the numbers you see. Reply ONLY with JSON.',
+    user: `Transcribe this budget summary. Strip commas / ₹ from numbers (e.g. "1,44,89,879" → 14489879). Blank cells → null.
 
-  const result = await generateJSON<Verdict>({
-    system: 'You verify "summary" screenshots uploaded alongside construction cost working sheets. Be strict but fair. Reply ONLY with the requested JSON, no prose.',
-    user: `${totalLine}
-
-Look at the attached screenshot of a budget summary and decide whether a manager can trust it at a glance, or should open the full Excel to be sure.
-
-Check:
-1. Is it a legible budget / cost summary (not blank, random, or too blurry to read)?
-2. Is a grand total clearly visible?
-${total > 0 ? `3. Does the visible grand total match ₹${Math.round(total).toLocaleString('en-IN')}? (small rounding differences are fine)` : ''}
-4. Any signs it is cut off, edited/tampered, or missing expected lines (e.g. GST, contingency)?
-
-Return JSON exactly: {"verdict":"looks_good"|"check_excel","confidence":"high"|"medium"|"low","total_seen": <number or null>,"issues": [short strings], "note": "one short sentence a manager can read"}. Use "check_excel" whenever anything is unclear or doesn't match.`,
+Return exactly:
+{
+ "readable": true or false,
+ "title": string or null,
+ "line_items": [{"desc": string, "qty": number|null, "rate": number|null, "amount": number|null}],
+ "subtotal": number|null,          // the "Total" of the line-item amounts, as printed
+ "adjustments": [{"label": string, "amount": number|null}],  // rows between the subtotal and grand total (escalation, GST, etc.) — amounts as printed
+ "grand_total": number|null        // the final / highlighted total, as printed
+}
+Only include real line items in line_items (not the Total / GST / Grand Total rows — those go in subtotal / adjustments / grand_total). readable=false only if the image is too blurry/cropped to transcribe.`,
     image: { data: base64, mimeType },
-    maxOutputTokens: 700,
+    maxOutputTokens: 2200,
   })
 
-  if (!result.ok) return NextResponse.json({ ok: false, reason: result.reason }, { status: 200 })
-  return NextResponse.json({ ok: true, ...result.data })
+  if (!res.ok) return NextResponse.json({ ok: false, reason: res.reason }, { status: 200 })
+  const ex = res.data
+  if (!ex || ex.readable === false) {
+    return NextResponse.json({ ok: true, verdict: 'unreadable', issues: [], checks: [], note: 'Could not read the screenshot clearly — please open the Excel.' })
+  }
+
+  // Step 2 — verify the maths in code (exact). Tolerance absorbs rounding.
+  const items = Array.isArray(ex.line_items) ? ex.line_items : []
+  const issues: string[] = []
+  const checks: string[] = []
+  const tol = (base: number) => Math.max(5, Math.abs(base) * 0.005) // ₹5 or 0.5%
+
+  // (a) Row maths: qty × rate vs printed amount.
+  let rowChecked = 0
+  for (const r of items) {
+    if (r.qty != null && r.rate != null && r.amount != null && r.qty !== 0 && r.rate !== 0) {
+      rowChecked++
+      const expected = r.qty * r.rate
+      if (Math.abs(expected - r.amount) > tol(r.amount)) {
+        issues.push(`${r.desc ?? 'A row'}: ${r.qty.toLocaleString('en-IN')} × ${inr(r.rate)} = ${inr(expected)}, but the sheet shows ${inr(r.amount)}`)
+      }
+    }
+  }
+  if (rowChecked > 0 && issues.length === 0) checks.push(`All ${rowChecked} row totals (qty × rate) match`)
+
+  // (b) Subtotal: sum of line amounts vs printed "Total".
+  const sumAmounts = items.reduce((s, r) => s + (r.amount ?? 0), 0)
+  if (ex.subtotal != null) {
+    if (Math.abs(sumAmounts - ex.subtotal) > tol(ex.subtotal)) {
+      issues.push(`The line items add up to ${inr(sumAmounts)}, but the Total row shows ${inr(ex.subtotal)}`)
+    } else {
+      checks.push(`Line items add up to the Total (${inr(ex.subtotal)})`)
+    }
+  }
+
+  // (c) Grand total: subtotal + adjustments vs printed grand total.
+  const base = ex.subtotal ?? sumAmounts
+  const adjustments = Array.isArray(ex.adjustments) ? ex.adjustments : []
+  const adjSum = adjustments.reduce((s, a) => s + (a.amount ?? 0), 0)
+  const computedGrand = base + adjSum
+  if (ex.grand_total != null) {
+    if (Math.abs(computedGrand - ex.grand_total) > tol(ex.grand_total)) {
+      const parts = [inr(base), ...adjustments.map(a => inr(a.amount ?? 0))].join(' + ')
+      issues.push(`Adding it up (${parts}) = ${inr(computedGrand)}, but the Grand Total shows ${inr(ex.grand_total)}`)
+    } else {
+      checks.push(`Grand total is consistent (${inr(ex.grand_total)})`)
+    }
+  }
+
+  const verdict = issues.length === 0 ? 'looks_correct' : 'has_issues'
+  const note = verdict === 'looks_correct'
+    ? `Read ${items.length} line item${items.length === 1 ? '' : 's'} — the sheet's own maths adds up.`
+    : `Found ${issues.length} thing${issues.length === 1 ? '' : 's'} worth checking against the Excel.`
+
+  return NextResponse.json({
+    ok: true,
+    verdict,
+    computed_grand_total: ex.grand_total != null ? computedGrand : null,
+    shown_grand_total: ex.grand_total,
+    rows: items.length,
+    issues,
+    checks,
+    note,
+  })
 }
