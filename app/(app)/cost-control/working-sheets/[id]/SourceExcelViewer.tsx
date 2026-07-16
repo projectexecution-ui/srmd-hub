@@ -146,19 +146,22 @@ async function parseWorkbook(buf: ArrayBuffer): Promise<SheetModel[]> {
   return models
 }
 
-export function SourceExcelViewer({ url, name, microsoft = false }: {
+export function SourceExcelViewer({ url, name, microsoft = false, reviewer = false }: {
   url: string | null
   name: string | null
   /** Render through Microsoft Office Online instead of the in-app table.
    *  Pixel-perfect, but the file is sent to Microsoft's servers. */
   microsoft?: boolean
+  /** Formula inspection (the "Show formulas" toggle + cell tint) is a
+   *  management review aid — engineers just see the values. */
+  reviewer?: boolean
 }) {
   const [sheets, setSheets] = useState<SheetModel[] | null>(null)
   const [active, setActive] = useState(0)
   const [loading, setLoading] = useState(false)
   const [open, setOpen] = useState(false)
   const [err, setErr] = useState<string | null>(null)
-  const [showFormulas, setShowFormulas] = useState(true)
+  const [showFormulas, setShowFormulas] = useState(reviewer)
 
   // Microsoft mode works on .xlsx only (it can't reach a private file with
   // no public URL, and won't render .xls reliably). We hand it the signed
@@ -217,12 +220,12 @@ export function SourceExcelViewer({ url, name, microsoft = false }: {
                       key={i}
                       rowSpan={cell.rowSpan}
                       colSpan={cell.colSpan}
-                      className={`border border-gray-200 px-2 py-1 align-top whitespace-nowrap overflow-hidden text-ellipsis ${hasFormula && !cell.bg ? 'bg-blue-50/40' : ''}`}
+                      className={`border border-gray-200 px-2 py-1 align-top whitespace-nowrap overflow-hidden text-ellipsis ${reviewer && hasFormula && !cell.bg ? 'bg-blue-50/40' : ''}`}
                       style={cell.bg ? { backgroundColor: cell.bg } : undefined}
-                      title={hasFormula ? `=${cell.formula}` : (cell.text.length > 40 ? cell.text : undefined)}
+                      title={reviewer && hasFormula ? `=${cell.formula}` : (cell.text.length > 40 ? cell.text : undefined)}
                     >
                       <span className="text-gray-800">{cell.text || (hasFormula ? ' ' : '')}</span>
-                      {showFormulas && hasFormula && (
+                      {reviewer && showFormulas && hasFormula && (
                         <span className="block text-[10px] text-blue-600 font-mono leading-tight">={cell.formula}</span>
                       )}
                     </td>
@@ -290,10 +293,12 @@ export function SourceExcelViewer({ url, name, microsoft = false }: {
                     {s.name}
                   </button>
                 ))}
-                <label className="ml-auto inline-flex items-center gap-1.5 text-xs text-gray-600">
-                  <input type="checkbox" checked={showFormulas} onChange={e => setShowFormulas(e.target.checked)} />
-                  Show formulas
-                </label>
+                {reviewer && (
+                  <label className="ml-auto inline-flex items-center gap-1.5 text-xs text-gray-600">
+                    <input type="checkbox" checked={showFormulas} onChange={e => setShowFormulas(e.target.checked)} />
+                    Show formulas
+                  </label>
+                )}
               </div>
               {renderSheet(activeSheet)}
             </>

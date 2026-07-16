@@ -302,7 +302,7 @@ export default async function WorkingSheetEditorPage(
         />
 
         {ws.source_excel_url && (
-          <SourceExcelViewer url={thumbDownloadUrl} name={ws.source_excel_name} microsoft={ccSettings.excel_microsoft} />
+          <SourceExcelViewer url={thumbDownloadUrl} name={ws.source_excel_name} microsoft={ccSettings.excel_microsoft} reviewer={reviewer} />
         )}
 
         {ccSettings.comments && <CommentsPanel wsId={ws.id} />}
@@ -396,7 +396,7 @@ export default async function WorkingSheetEditorPage(
           </div>
         )}
 
-        <SourceExcelViewer url={downloadUrl} name={ws.source_excel_name} microsoft={ccSettings.excel_microsoft} />
+        <SourceExcelViewer url={downloadUrl} name={ws.source_excel_name} microsoft={ccSettings.excel_microsoft} reviewer={reviewer} />
 
         {/* AI review tools — for the approval chain (PH / Atm Head /
             Trustee / admin), not engineers. */}

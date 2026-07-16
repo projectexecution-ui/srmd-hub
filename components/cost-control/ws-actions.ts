@@ -528,10 +528,11 @@ export async function submitWorkingSheet(wsId: string): Promise<{ ok: boolean; e
     return { ok: false, error: 'Only the sheet owner can submit it for approval' }
   }
 
-  const { error: updErr } = await supabase
-    .from('cc_working_sheets')
-    .update({ status: 'submitted', submitted_at: new Date().toISOString(), locked_at: new Date().toISOString(), locked_by: me.user.id })
-    .eq('id', wsId)
+  // Go through the SECURITY DEFINER RPC: the engineer's row-level UPDATE
+  // policy pins them to status='draft', so a direct write to 'submitted' is
+  // rejected by RLS. The RPC re-checks ownership + state and performs the
+  // transition. (See migration 20260722_cc_submit_rpc.)
+  const { error: updErr } = await supabase.rpc('cc_submit_working_sheet', { p_ws_id: wsId })
   if (updErr) return { ok: false, error: updErr.message }
 
   revalidatePath(`/cost-control/working-sheets/${wsId}`)

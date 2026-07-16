@@ -169,9 +169,9 @@ export function ExcelSummaryPanel({
             </div>
             <div className="flex items-center gap-2">
               {downloadUrl && (
-                <Button asChild size="sm" variant="outline">
+                <Button asChild size="sm" className="bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm">
                   <a href={downloadUrl} download={fileName ?? 'sheet.xlsx'}>
-                    <Download className="h-4 w-4" /> Download
+                    <Download className="h-4 w-4" /> Download Excel
                   </a>
                 </Button>
               )}
@@ -317,7 +317,10 @@ export function ExcelSummaryPanel({
         </Card>
       )}
 
-      {/* Rows table */}
+      {/* Rows table — the parser's line-by-line reading of the Excel. A
+          management review aid; engineers just upload their file + screenshot,
+          so it's hidden from them. */}
+      {reviewer && (
       <Card>
         <CardHeader>
           <CardTitle className="text-base">Parsed rows</CardTitle>
@@ -381,6 +384,7 @@ export function ExcelSummaryPanel({
           </div>
         </CardContent>
       </Card>
+      )}
     </div>
   )
 }
