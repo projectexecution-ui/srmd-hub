@@ -92,8 +92,11 @@ export default function DashboardModulesEditor({ groups: initialGroups, canRenam
       return
     }
     setSaved(slug)
-    setTimeout(() => setSaved(s => (s === slug ? null : s)), 1500)
-    router.refresh()
+    // A module name shows in the sidebar + dashboard tile, which live in the
+    // shared app layout and DON'T re-render on a client-side router.refresh().
+    // Do a full reload so the new name propagates everywhere at once — no more
+    // "I renamed it but it still says the old name" until a manual refresh.
+    window.location.reload()
   }
 
   return (
