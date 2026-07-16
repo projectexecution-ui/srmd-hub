@@ -15,7 +15,7 @@
 // Lazy-loaded: the library is a dynamic import fetched only when the
 // user opens the card (keeps it out of the route bundle).
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { FileSpreadsheet, ChevronDown, ChevronUp, Loader2, ExternalLink } from 'lucide-react'
@@ -26,6 +26,8 @@ const MAX_RENDER_COLS = 60
 interface CellModel {
   text: string
   formula: string | null
+  /** Raw numeric value (for the live SUM/AVG/COUNT on a selection). */
+  num?: number | null
   bg?: string
   rowSpan?: number
   colSpan?: number
@@ -132,6 +134,7 @@ async function parseWorkbook(buf: ArrayBuffer): Promise<SheetModel[]> {
         cells.push({
           text,
           formula: cell?.f ?? null,
+          num: typeof cell?.v === 'number' ? cell.v : null,
           bg,
           rowSpan: span?.rowSpan,
           colSpan: span?.colSpan,
@@ -162,6 +165,26 @@ export function SourceExcelViewer({ url, name, microsoft = false, reviewer = fal
   const [open, setOpen] = useState(false)
   const [err, setErr] = useState<string | null>(null)
   const [showFormulas, setShowFormulas] = useState(reviewer)
+  // Excel-style selection: click a cell (anchor) and drag to a focus cell.
+  // Coords are (row-position, col-position) into the rendered grid.
+  const [anchor, setAnchor] = useState<{ r: number; c: number } | null>(null)
+  const [focusCell, setFocusCell] = useState<{ r: number; c: number } | null>(null)
+  const [dragging, setDragging] = useState(false)
+
+  // A drag can end anywhere — release the drag on any mouse-up.
+  useEffect(() => {
+    if (!dragging) return
+    const up = () => setDragging(false)
+    window.addEventListener('mouseup', up)
+    return () => window.removeEventListener('mouseup', up)
+  }, [dragging])
+
+  const rect = anchor && focusCell
+    ? {
+        r0: Math.min(anchor.r, focusCell.r), r1: Math.max(anchor.r, focusCell.r),
+        c0: Math.min(anchor.c, focusCell.c), c1: Math.max(anchor.c, focusCell.c),
+      }
+    : null
 
   // Microsoft mode works on .xlsx only (it can't reach a private file with
   // no public URL, and won't render .xls reliably). We hand it the signed
@@ -194,7 +217,7 @@ export function SourceExcelViewer({ url, name, microsoft = false, reviewer = fal
       return <p className="text-sm text-gray-500 italic p-4">Empty sheet.</p>
     }
     return (
-      <div className="overflow-auto max-h-[70vh] border border-gray-200 rounded-lg">
+      <div className={`overflow-auto max-h-[70vh] border border-gray-200 rounded-lg ${dragging ? 'select-none' : ''}`}>
         <table className="text-xs border-collapse" style={{ tableLayout: 'fixed' }}>
           <colgroup>
             <col style={{ width: 44 }} />
@@ -209,18 +232,21 @@ export function SourceExcelViewer({ url, name, microsoft = false, reviewer = fal
             </tr>
           </thead>
           <tbody>
-            {m.rows.map(row => (
+            {m.rows.map((row, ri) => (
               <tr key={row.idx} style={row.heightPx ? { height: row.heightPx } : undefined}>
                 <td className="border border-gray-200 px-2 py-1 text-gray-400 bg-gray-50 sticky left-0 text-right">{row.idx + 1}</td>
-                {row.cells.map((cell, i) => {
+                {row.cells.map((cell, ci) => {
                   if (cell.skip) return null
                   const hasFormula = !!cell.formula
+                  const selected = !!rect && ri >= rect.r0 && ri <= rect.r1 && ci >= rect.c0 && ci <= rect.c1
                   return (
                     <td
-                      key={i}
+                      key={ci}
                       rowSpan={cell.rowSpan}
                       colSpan={cell.colSpan}
-                      className={`border border-gray-200 px-2 py-1 align-top whitespace-nowrap overflow-hidden text-ellipsis ${reviewer && hasFormula && !cell.bg ? 'bg-blue-50/40' : ''}`}
+                      onMouseDown={(e) => { e.preventDefault(); setAnchor({ r: ri, c: ci }); setFocusCell({ r: ri, c: ci }); setDragging(true) }}
+                      onMouseEnter={() => { if (dragging) setFocusCell({ r: ri, c: ci }) }}
+                      className={`border border-gray-200 px-2 py-1 align-top whitespace-nowrap overflow-hidden text-ellipsis cursor-cell ${reviewer && hasFormula && !cell.bg ? 'bg-blue-50/40' : ''} ${selected ? 'ring-2 ring-inset ring-blue-500' : ''}`}
                       style={cell.bg ? { backgroundColor: cell.bg } : undefined}
                       title={reviewer && hasFormula ? `=${cell.formula}` : (cell.text.length > 40 ? cell.text : undefined)}
                     >
@@ -245,6 +271,29 @@ export function SourceExcelViewer({ url, name, microsoft = false, reviewer = fal
   }
 
   const activeSheet = sheets?.[active]
+
+  // Live stats for the selected range (Excel status-bar style).
+  let selSum = 0, selNum = 0, selCount = 0
+  if (rect && activeSheet) {
+    for (let r = rect.r0; r <= rect.r1; r++) {
+      const row = activeSheet.rows[r]
+      if (!row) continue
+      for (let c = rect.c0; c <= rect.c1; c++) {
+        const cell = row.cells[c]
+        if (!cell || cell.skip) continue
+        if (cell.text !== '' || cell.num != null) selCount++
+        if (cell.num != null) { selSum += cell.num; selNum++ }
+      }
+    }
+  }
+  const inr = (n: number) => n.toLocaleString('en-IN', { maximumFractionDigits: 2 })
+  const activeInfo = (() => {
+    if (!focusCell || !activeSheet) return null
+    const row = activeSheet.rows[focusCell.r]
+    const cell = row?.cells[focusCell.c]
+    if (!row || !cell) return null
+    return { addr: `${colLetter(activeSheet.colIdx[focusCell.c])}${row.idx + 1}`, cell }
+  })()
 
   return (
     <Card>
@@ -304,7 +353,7 @@ export function SourceExcelViewer({ url, name, microsoft = false, reviewer = fal
                 {sheets?.map((s, i) => (
                   <button
                     key={s.name + i}
-                    onClick={() => setActive(i)}
+                    onClick={() => { setActive(i); setAnchor(null); setFocusCell(null) }}
                     className={`px-3 py-1 text-xs rounded-full border transition-colors ${active === i ? 'bg-blue-600 text-white border-blue-600' : 'bg-white border-gray-300 text-gray-700 hover:bg-gray-50'}`}
                   >
                     {s.name}
@@ -318,6 +367,30 @@ export function SourceExcelViewer({ url, name, microsoft = false, reviewer = fal
                 )}
               </div>
               {renderSheet(activeSheet)}
+
+              {/* Excel-style status bar — active cell + live SUM/AVG/COUNT of
+                  the selected range. Computed in-browser; nothing leaves the app. */}
+              <div className="flex flex-wrap items-center gap-x-4 gap-y-1 rounded-lg border border-gray-200 bg-gray-50 px-3 py-1.5 text-xs text-gray-700">
+                {activeInfo ? (
+                  <span className="inline-flex items-center gap-1.5">
+                    <span className="font-mono font-semibold text-gray-500">{activeInfo.addr}</span>
+                    <span className="text-gray-800">{activeInfo.cell.text || '(empty)'}</span>
+                    {reviewer && activeInfo.cell.formula && (
+                      <span className="font-mono text-blue-600">={activeInfo.cell.formula}</span>
+                    )}
+                  </span>
+                ) : (
+                  <span className="text-gray-400">Click a cell — drag to select a range for a live total.</span>
+                )}
+                {selNum > 0 && (
+                  <span className="inline-flex items-center gap-3 ml-auto font-medium">
+                    <span>Sum <span className="tabular-nums text-gray-900">{inr(selSum)}</span></span>
+                    <span>Avg <span className="tabular-nums text-gray-900">{inr(selSum / selNum)}</span></span>
+                    <span>Count <span className="tabular-nums text-gray-900">{selNum}</span></span>
+                    {selCount !== selNum && <span className="text-gray-400">({selCount} cells)</span>}
+                  </span>
+                )}
+              </div>
             </>
           )}
         </CardContent>
