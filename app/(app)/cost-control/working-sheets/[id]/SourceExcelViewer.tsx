@@ -18,7 +18,7 @@
 import { useState, useEffect } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { FileSpreadsheet, ChevronDown, ChevronUp, Loader2, ExternalLink } from 'lucide-react'
+import { FileSpreadsheet, ChevronDown, ChevronUp, Loader2 } from 'lucide-react'
 
 const MAX_RENDER_ROWS = 1500
 const MAX_RENDER_COLS = 60
@@ -303,27 +303,10 @@ export function SourceExcelViewer({ url, name, microsoft = false, reviewer = fal
             <FileSpreadsheet className="h-4 w-4 text-green-700" />
             Source Excel — full working
           </CardTitle>
-          <div className="flex items-center gap-2">
-            {/* On-demand pixel-perfect view in Microsoft's online viewer, for
-                reviewers. Opens in a new tab; the file is sent to Microsoft to
-                render it, so it's an explicit click, not the default. .xlsx only. */}
-            {reviewer && url && !(name ?? '').toLowerCase().endsWith('.xls') && (
-              <Button asChild size="sm" variant="outline">
-                <a
-                  href={`https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(url)}`}
-                  target="_blank"
-                  rel="noreferrer"
-                  title="Open in Microsoft Excel Online — pixel-perfect. The file is sent to Microsoft's servers to display it."
-                >
-                  <ExternalLink className="h-4 w-4" /> Excel Online
-                </a>
-              </Button>
-            )}
-            <Button size="sm" variant="outline" onClick={() => (open ? setOpen(false) : load())} disabled={loading || !url}>
-              {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : open ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-              {open ? 'Hide' : ((sheets || canUseMicrosoft) ? 'Show' : 'Open viewer')}
-            </Button>
-          </div>
+          <Button size="sm" variant="outline" onClick={() => (open ? setOpen(false) : load())} disabled={loading || !url}>
+            {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : open ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+            {open ? 'Hide' : ((sheets || canUseMicrosoft) ? 'Show' : 'Open viewer')}
+          </Button>
         </div>
       </CardHeader>
       {open && canUseMicrosoft && (
