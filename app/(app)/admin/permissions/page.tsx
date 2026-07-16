@@ -1,6 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { requirePermission, isPortalOwner, getMyProfile } from '@/lib/auth'
 import { getRoleLabels } from '@/lib/role-labels'
+import { getModuleLabels, labelFor } from '@/lib/module-labels'
 import { PageHeader } from '@/components/PageHeader'
 import { MODULES } from '@/lib/modules'
 import { type RolePermission, type Role } from '@/lib/types'
@@ -33,6 +34,10 @@ export default async function AdminPermissionsPage() {
 
   const canManageRoles = currentUserIsPortalOwner || profile?.role === 'admin'
 
+  // Module display names honour any rename done in /admin/dashboard-modules.
+  const moduleLabels = await getModuleLabels()
+  const moduleRefs = MODULES.map(m => ({ slug: m.slug, label: labelFor(moduleLabels, m.slug) }))
+
   return (
     <div className="p-4 md:p-6 max-w-7xl mx-auto space-y-4">
       <PageHeader
@@ -45,7 +50,7 @@ export default async function AdminPermissionsPage() {
         }
       />
       <PermissionsMatrix
-        modules={MODULES.map(m => ({ slug: m.slug, label: m.label }))}
+        modules={moduleRefs}
         roles={activeRoles}
         initial={(permsRes.data ?? []) as RolePermission[]}
         roleLabels={roleLabels}
@@ -54,7 +59,7 @@ export default async function AdminPermissionsPage() {
       />
 
       <DeletePermissionsMatrix
-        modules={MODULES.map(m => ({ slug: m.slug, label: m.label }))}
+        modules={moduleRefs}
         roles={activeRoles}
         roleLabels={roleLabels}
         initial={(permsRes.data ?? []).map(r => ({

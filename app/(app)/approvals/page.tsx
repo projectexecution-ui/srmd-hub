@@ -10,6 +10,7 @@ import {
 } from 'lucide-react'
 import { formatINR } from '@/lib/utils'
 import { MODULES } from '@/lib/modules'
+import { getModuleLabels, DEFAULT_MODULE_LABELS, type ModuleLabelMap } from '@/lib/module-labels'
 
 export const dynamic = 'force-dynamic'
 
@@ -50,9 +51,15 @@ const MODULE_META_OVERRIDES: Record<string, Partial<ModuleMeta>> = {
   'cost-control': { label: 'Cost Control sheets' },
 }
 
-function moduleMeta(slug: string): ModuleMeta {
+function moduleMeta(slug: string, labels: ModuleLabelMap): ModuleMeta {
   const base = REGISTRY_META[slug] ?? { label: slug, icon: Inbox, tone: 'slate' }
-  return { ...base, ...MODULE_META_OVERRIDES[slug] }
+  const merged = { ...base, ...MODULE_META_OVERRIDES[slug] }
+  // If the module was renamed via /admin/dashboard-modules (its label differs
+  // from the registry default), that custom name wins everywhere — including
+  // this inbox. Un-renamed modules keep the nicer approval-context label above.
+  const registryLabel = DEFAULT_MODULE_LABELS[slug]?.label
+  const custom = labels[slug]?.label
+  return custom && custom !== registryLabel ? { ...merged, label: custom } : merged
 }
 
 // Covers every tone the registry can assign, so no module renders unstyled.
@@ -81,7 +88,10 @@ export default async function MyApprovalsPage({
   const moduleFilter = sp.module ?? null
 
   const supabase = await createClient()
-  const { data, error: inboxError } = await supabase.rpc('my_approval_inbox')
+  const [{ data, error: inboxError }, moduleLabels] = await Promise.all([
+    supabase.rpc('my_approval_inbox'),
+    getModuleLabels(),
+  ])
   const allRows = (data ?? []) as InboxRow[]
 
   // This is an async server component — it renders once per request, so
@@ -167,7 +177,7 @@ export default async function MyApprovalsPage({
           {moduleFilter && (
             <Link href={urlFor({ module: null })}
               className="inline-flex items-center gap-1 px-2 h-7 rounded-full bg-blue-100 text-blue-800 hover:bg-blue-200">
-              {moduleMeta(moduleFilter).label}
+              {moduleMeta(moduleFilter, moduleLabels).label}
               <span className="ml-0.5 text-blue-600">×</span>
             </Link>
           )}
@@ -200,7 +210,7 @@ export default async function MyApprovalsPage({
         )
       ) : (
         moduleKeys.map(mod => {
-          const meta = moduleMeta(mod)
+          const meta = moduleMeta(mod, moduleLabels)
           const tones = TONE_CLASSES[meta.tone] ?? TONE_CLASSES['blue']
           const items = byModule.get(mod)!
           const isModuleFilter = moduleFilter === mod
