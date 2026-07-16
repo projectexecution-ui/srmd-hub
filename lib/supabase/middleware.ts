@@ -35,7 +35,15 @@ export async function updateSession(request: NextRequest) {
 
   if (!user && !isPublic) {
     const url = request.nextUrl.clone()
+    // Remember where they were headed (path + query) so login drops them right
+    // there — clicking a deep link (e.g. an email notification) never dumps you
+    // on the dashboard or makes you navigate again.
+    const dest = pathname + (request.nextUrl.search || '')
     url.pathname = '/login'
+    url.search = ''
+    if (dest && dest !== '/' && !dest.startsWith('/login')) {
+      url.searchParams.set('redirect', dest)
+    }
     return NextResponse.redirect(url)
   }
 

@@ -16,7 +16,10 @@ function LoginContent() {
   const [info, setInfo] = useState('')
   const router = useRouter()
   const searchParams = useSearchParams()
-  const redirect = searchParams.get('redirect') || '/dashboard'
+  // Only ever honour an INTERNAL path (starts with a single "/") — never an
+  // absolute or protocol-relative URL, so ?redirect= can't bounce off-site.
+  const rawRedirect = searchParams.get('redirect') || '/dashboard'
+  const redirect = rawRedirect.startsWith('/') && !rawRedirect.startsWith('//') ? rawRedirect : '/dashboard'
   const supabase = createClient()
 
   const [email, setEmail] = useState('')

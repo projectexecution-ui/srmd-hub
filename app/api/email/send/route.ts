@@ -51,7 +51,9 @@ export async function POST(req: NextRequest) {
   const tx = getTransport()
   if (!tx) return NextResponse.json({ error: 'email-not-configured' }, { status: 503 })
 
-  const origin = req.nextUrl.origin
+  // Always build links off the canonical public app URL so they open the real
+  // site / installed PWA (not a Vercel preview host the cron happened to hit).
+  const origin = (process.env.NEXT_PUBLIC_APP_URL || req.nextUrl.origin).replace(/\/$/, '')
   const link = rawUrl ? (rawUrl.startsWith('http') ? rawUrl : `${origin}${rawUrl}`) : origin
   const fromName = process.env.GMAIL_FROM_NAME || 'CT HUB'
 
