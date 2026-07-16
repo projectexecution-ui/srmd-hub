@@ -25,6 +25,10 @@ export interface RecycleDeleteInput {
   context?: string
   /** Module slug for grouping + icon in the bin UI. */
   moduleSlug?: string
+  /** Extra columns to set on the source row alongside deleted_at — e.g.
+   *  `{ is_active: false }` so operational reads that filter on is_active
+   *  exclude it without needing a deleted_at filter everywhere. */
+  alsoSet?: Record<string, unknown>
 }
 
 /** Soft-delete a row and index it in the central Recycle Bin.
@@ -35,7 +39,7 @@ export async function recycleDelete(supabase: Client, input: RecycleDeleteInput)
 
   const { error: upErr } = await supabase
     .from(input.sourceTable)
-    .update({ deleted_at: new Date().toISOString(), deleted_by: uid })
+    .update({ deleted_at: new Date().toISOString(), deleted_by: uid, ...(input.alsoSet ?? {}) })
     .eq('id', input.entityId)
   if (upErr) return upErr.message
 

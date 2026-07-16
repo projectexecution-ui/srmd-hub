@@ -11,6 +11,7 @@ import { Badge } from '@/components/ui/badge'
 import { Loader2, Plus, Trash2, Pencil, X, Check, Upload, ImageOff, ChevronDown, ChevronRight } from 'lucide-react'
 import { INVENTORY_CATEGORIES } from '@/lib/inventory-categories'
 import { confirm } from '@/components/ui/confirm-dialog'
+import { recycleDelete } from '@/lib/recycle-bin'
 
 interface Item {
   id: string
@@ -224,11 +225,15 @@ function ItemRow({ item, onEdit, onDeleted, setError }: {
   const [deleting, setDeleting] = useState(false)
 
   async function del() {
-    if (!(await confirm(`Delete item "${item.code} — ${item.name}"?`))) return
+    if (!(await confirm({ title: `Delete item "${item.code} — ${item.name}"?`, message: 'It moves to the Recycle Bin — an admin can restore it from Admin › Recycle Bin.', confirmLabel: 'Delete' }))) return
     setDeleting(true); setError(null)
-    const { error } = await createClient().from('inv_items').delete().eq('id', item.id)
+    const err = await recycleDelete(createClient(), {
+      sourceTable: 'inv_items', entityId: item.id, entityType: 'Inventory item',
+      label: `${item.code} — ${item.name}`, context: item.category ?? undefined,
+      moduleSlug: 'inventory', alsoSet: { is_active: false },
+    })
     setDeleting(false)
-    if (error) { setError(error.message); return }
+    if (err) { setError(err); return }
     onDeleted()
   }
 

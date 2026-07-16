@@ -17,6 +17,7 @@ export default async function ItemsAdminPage() {
   const { data, error } = await supabase
     .from('inv_items')
     .select('*')
+    .is('deleted_at', null)
     .order('code')
 
   return (

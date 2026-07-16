@@ -11,7 +11,7 @@ export default async function WarehousesAdminPage() {
   await requireInventorySection('inv-admin-warehouses')
   const supabase = await createClient()
   const [whRes, profilesRes] = await Promise.all([
-    supabase.from('inv_warehouses').select('*').order('code'),
+    supabase.from('inv_warehouses').select('*').is('deleted_at', null).order('code'),
     supabase.from('profiles').select('id, name, full_name, email, role').eq('is_active', true).order('name'),
   ])
 

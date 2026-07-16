@@ -8,6 +8,7 @@ import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
 import { Loader2, Plus, Trash2, Pencil, X, Check } from 'lucide-react'
 import { confirm } from '@/components/ui/confirm-dialog'
+import { recycleDelete } from '@/lib/recycle-bin'
 
 interface Warehouse {
   id: string
@@ -111,11 +112,15 @@ function WarehouseRow({ warehouse, managers, onEdit, onDeleted, setError }: {
   const manager = managers.find(m => m.id === warehouse.store_manager_id)
 
   async function del() {
-    if (!(await confirm(`Delete warehouse "${warehouse.code} — ${warehouse.name}"? Items + stock at this warehouse will be blocked from deletion if any exist.`))) return
+    if (!(await confirm({ title: `Delete warehouse "${warehouse.code} — ${warehouse.name}"?`, message: 'It moves to the Recycle Bin — an admin can restore it from Admin › Recycle Bin.', confirmLabel: 'Delete' }))) return
     setDeleting(true); setError(null)
-    const { error } = await createClient().from('inv_warehouses').delete().eq('id', warehouse.id)
+    const err = await recycleDelete(createClient(), {
+      sourceTable: 'inv_warehouses', entityId: warehouse.id, entityType: 'Warehouse',
+      label: `${warehouse.code} — ${warehouse.name}`, context: warehouse.location ?? undefined,
+      moduleSlug: 'inventory', alsoSet: { is_active: false },
+    })
     setDeleting(false)
-    if (error) { setError(error.message); return }
+    if (err) { setError(err); return }
     onDeleted()
   }
 
