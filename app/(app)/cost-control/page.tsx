@@ -21,7 +21,7 @@ import { getEffectiveCcRole } from '@/app/(app)/cost-control/billing/billing-act
 import { GroupLabelChip } from './GroupLabelChip'
 import { AssignedToMePopover } from './AssignedToMePopover'
 import { CcQuickSearch } from './CcQuickSearch'
-import { coveringApproverRole } from '@/lib/cost-control/notify'
+import { coveringApproverRole } from '@/lib/cost-control/approver-roles'
 import { getModuleLabels, labelFor } from '@/lib/module-labels'
 
 export const dynamic = 'force-dynamic'

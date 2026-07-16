@@ -64,7 +64,6 @@ export function CcSettingsForm({ initial, users = [] }: {
       // ERP visible, Internal Estimate/Paid hidden) — no keys saved for it.
       { key: 'cc_archive_users',    value: v.archive_users.join(',') },
       { key: 'cc_ie_review',        value: String(v.ie_review) },
-      { key: 'cc_notify_approvals', value: String(v.notify_approvals) },
     ]
     const { error } = await supabase.from('app_settings').upsert(rows, { onConflict: 'key' })
     if (error) { setError(error.message); setSaving(false); return }
@@ -140,12 +139,11 @@ export function CcSettingsForm({ initial, users = [] }: {
 
       <div className="space-y-2">
         <p className="text-[11px] uppercase tracking-wider font-semibold text-gray-500">Notifications</p>
-        <Toggle
-          label="Email approvers when a budget is waiting on them"
-          hint="Emails the Project Head / Atm Head / Trustee the moment a sheet reaches their stage, plus a daily reminder of what's still pending. Off by default. (Also needs the email key — RESEND_API_KEY — configured; without it this quietly does nothing.)"
-          checked={v.notify_approvals}
-          onChange={x => setV({ ...v, notify_approvals: x })}
-        />
+        <div className="rounded-md border border-gray-200 bg-gray-50/60 px-3 py-2.5 text-xs text-gray-600">
+          Approvers are emailed (via Gmail) the moment a budget reaches their stage — this is built in.
+          Turn approval emails on/off for the whole team on the{' '}
+          <a href="/settings/notifications" className="text-blue-600 hover:underline font-medium">Notifications</a> page.
+        </div>
       </div>
 
       <div className="space-y-2">

@@ -7,7 +7,7 @@ import { PageHeader } from '@/components/PageHeader'
 import { Card } from '@/components/ui/card'
 import { QueryError } from '@/components/ui/query-error'
 import { WSStatusPill, type WSStatus } from '@/components/cost-control/WSStatusPill'
-import { coveringApproverRole } from '@/lib/cost-control/notify'
+import { coveringApproverRole } from '@/lib/cost-control/approver-roles'
 import { formatINR } from '@/lib/utils'
 import { Inbox, ArrowRight, ClipboardList, Ruler } from 'lucide-react'
 

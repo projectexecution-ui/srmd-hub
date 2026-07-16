@@ -48,9 +48,6 @@ export interface CcSettings {
    *  Internal Estimate. Off (default) = the uploaded estimate is simply the
    *  baseline that engineer asks are compared against (no manual step). */
   ie_review: boolean
-  /** Email approvers when a budget is waiting on them + a daily reminder of
-   *  what's still pending. Off by default; also needs RESEND_API_KEY set. */
-  notify_approvals: boolean
 }
 
 export const CC_SETTINGS_DEFAULTS: CcSettings = {
@@ -69,7 +66,6 @@ export const CC_SETTINGS_DEFAULTS: CcSettings = {
   eng_erp: false,
   archive_users: [],
   ie_review: false,
-  notify_approvals: false,
 }
 
 /** Pure parser — exported so tests cover defaults/overrides without Supabase. */
@@ -104,7 +100,6 @@ export function parseCcSettings(map: Record<string, string | null | undefined>):
     eng_erp:           parseBool('cc_eng_erp', d.eng_erp),
     archive_users:     ((map['cc_archive_users'] ?? '').match(/[0-9a-f-]{36}/gi) ?? []),
     ie_review:         parseBool('cc_ie_review', d.ie_review),
-    notify_approvals:  parseBool('cc_notify_approvals', d.notify_approvals),
   }
 }
 
