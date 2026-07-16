@@ -640,14 +640,22 @@ export default async function CostControlLandingPage() {
                             )
                           )}
                           {pending > 0 && (
-                            <span className="inline-flex items-center text-[10px] font-bold text-amber-800 bg-amber-100 rounded-full px-2 py-0.5" title={`${pending} working sheet${pending === 1 ? '' : 's'} awaiting approval`}>
-                              {pending} pending
-                            </span>
+                            <Link
+                              href={`/cost-control/working-sheets?project=${p.id}`}
+                              className="inline-flex items-center gap-0.5 text-[10px] font-bold text-amber-800 bg-amber-100 hover:bg-amber-200 rounded-full px-2 py-0.5 transition-colors"
+                              title={`${pending} working sheet${pending === 1 ? '' : 's'} awaiting approval — click to review`}
+                            >
+                              {pending} pending →
+                            </Link>
                           )}
                           {ccSettings.show_deadlines && overdue > 0 && (
-                            <span className="inline-flex items-center text-[10px] font-bold text-rose-800 bg-rose-100 rounded-full px-2 py-0.5">
-                              {overdue} overdue
-                            </span>
+                            <Link
+                              href={`/cost-control/working-sheets?project=${p.id}`}
+                              className="inline-flex items-center gap-0.5 text-[10px] font-bold text-rose-800 bg-rose-100 hover:bg-rose-200 rounded-full px-2 py-0.5 transition-colors"
+                              title={`${overdue} sheet${overdue === 1 ? '' : 's'} past deadline — click to review`}
+                            >
+                              {overdue} overdue →
+                            </Link>
                           )}
                         </span>
                       </td>
