@@ -17,6 +17,7 @@ import { CommentsPanel } from '@/components/cost-control/CommentsPanel'
 import { WSEditor } from './WSEditor'
 import { ExcelSummaryPanel } from './ExcelSummaryPanel'
 import { SourceExcelViewer } from './SourceExcelViewer'
+import { ScreenshotAiCheck } from './ScreenshotAiCheck'
 import { EditDeadlineButton } from './EditDeadlineButton'
 import { QueryError } from '@/components/ui/query-error'
 import { formatINR } from '@/lib/utils'
@@ -196,6 +197,8 @@ export default async function WorkingSheetEditorPage(
               className="block max-w-full h-auto max-h-[75vh] mx-auto"
             />
           </a>
+          {/* Management-only AI sanity check of the screenshot (needs AI on). */}
+          {showAi && <ScreenshotAiCheck wsId={ws.id} />}
         </div>
       )
     }

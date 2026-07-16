@@ -61,7 +61,18 @@ export async function generateJSON<T = unknown>(args: {
   system: string
   user: string
   maxOutputTokens?: number
+  /** Optional image (base64, no data: prefix) for a vision prompt. Gemini
+   *  only — Groq/Cerebras here are text-only, so an image request never
+   *  falls back to them. */
+  image?: { data: string; mimeType: string }
 }): Promise<AiResult<T>> {
+  // Vision requests go to Gemini only (the other providers can't see images).
+  if (args.image) {
+    if (!process.env.GEMINI_API_KEY) {
+      return { ok: false, reason: 'Image checks need a vision model — set GEMINI_API_KEY (free, https://aistudio.google.com/apikey).' }
+    }
+    return callGeminiJSON<T>(args)
+  }
   if (process.env.GEMINI_API_KEY) {
     const r = await callGeminiJSON<T>(args)
     if (r.ok) return r
@@ -131,15 +142,17 @@ export async function embed(texts: string[]): Promise<AiResult<number[][]>> {
 
 // ---------- Gemini REST ----------
 
-async function callGeminiJSON<T>(args: { system: string; user: string; maxOutputTokens?: number }): Promise<AiResult<T>> {
+async function callGeminiJSON<T>(args: { system: string; user: string; maxOutputTokens?: number; image?: { data: string; mimeType: string } }): Promise<AiResult<T>> {
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${process.env.GEMINI_API_KEY}`
+  const parts: Array<{ text: string } | { inline_data: { mime_type: string; data: string } }> = [{ text: args.user }]
+  if (args.image) parts.push({ inline_data: { mime_type: args.image.mimeType, data: args.image.data } })
   try {
     const res = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         systemInstruction: { parts: [{ text: args.system }] },
-        contents: [{ role: 'user', parts: [{ text: args.user }] }],
+        contents: [{ role: 'user', parts }],
         generationConfig: {
           responseMimeType: 'application/json',
           temperature: 0.2,
