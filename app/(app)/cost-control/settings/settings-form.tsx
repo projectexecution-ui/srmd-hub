@@ -5,8 +5,9 @@ import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Loader2, ChevronRight } from 'lucide-react'
+import { Loader2, ChevronRight, Mail } from 'lucide-react'
 import type { CcSettings } from '@/lib/cost-control/settings'
+import { sendTestNotificationEmail } from './actions'
 
 function Toggle({
   checked, onChange, label, hint,
@@ -43,6 +44,17 @@ export function CcSettingsForm({ initial, users = [] }: {
   const [saving, setSaving] = useState(false)
   const [msg, setMsg] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [testing, setTesting] = useState(false)
+  const [testMsg, setTestMsg] = useState<string | null>(null)
+  const [testErr, setTestErr] = useState<string | null>(null)
+
+  async function sendTest() {
+    setTesting(true); setTestMsg(null); setTestErr(null)
+    const r = await sendTestNotificationEmail()
+    setTesting(false)
+    if (r.ok) setTestMsg(r.detail ?? 'Test email sent.')
+    else setTestErr(r.error ?? 'Could not send the test email.')
+  }
 
   async function submit(e: React.FormEvent) {
     e.preventDefault()
@@ -146,6 +158,19 @@ export function CcSettingsForm({ initial, users = [] }: {
           checked={v.notify_approvals}
           onChange={x => setV({ ...v, notify_approvals: x })}
         />
+        {/* End-to-end check — sends one email to the signed-in admin and reports
+            exactly what Resend says (missing key, unverified domain, or success). */}
+        <div className="rounded-md border border-gray-200 px-3 py-2.5 space-y-2">
+          <div className="flex items-center justify-between gap-3">
+            <span className="text-sm text-gray-700">Send a test email to yourself to check delivery.</span>
+            <Button type="button" size="sm" variant="outline" onClick={sendTest} disabled={testing}>
+              {testing ? <Loader2 className="h-4 w-4 animate-spin mr-1.5" /> : <Mail className="h-4 w-4 mr-1.5" />}
+              Send test email
+            </Button>
+          </div>
+          {testMsg && <p className="text-xs text-green-700">✓ {testMsg}</p>}
+          {testErr && <p className="text-xs text-red-600">{testErr}</p>}
+        </div>
       </div>
 
       <div className="space-y-2">
