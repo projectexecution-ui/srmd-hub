@@ -1,11 +1,12 @@
+import Link from 'next/link'
 import { notFound, redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
-import { requirePermission } from '@/lib/auth'
+import { requirePermission, getMyProfile } from '@/lib/auth'
 import { checkIsCcReviewer } from '@/components/cost-control/ws-actions'
 import { getRoleSides } from '@/lib/role-sides'
 import { PageHeader } from '@/components/PageHeader'
 import { Card } from '@/components/ui/card'
-import { AlertTriangle } from 'lucide-react'
+import { AlertTriangle, FileSpreadsheet } from 'lucide-react'
 import {
   ProjectSetupWizard,
   type ParentProjectOption,
@@ -14,6 +15,14 @@ import {
   type SubSkillOption,
   type DisciplineModePreset,
 } from '@/components/ProjectSetupWizard'
+import { RenameProjectChip } from '../RenameProjectChip'
+import { ProjectAliasChip } from '../ProjectAliasChip'
+import { AreaChip } from '../AreaChip'
+import { ParentProjectControl } from '../ParentProjectControl'
+import { ProjectApproversPanel } from '../ProjectApproversPanel'
+import { BulkAssignPanel } from '../BulkAssignPanel'
+import { GroupLabelChip } from '@/app/(app)/cost-control/GroupLabelChip'
+import { getBphMappingForProject } from '@/app/(app)/cost-control/import/bph/actions'
 
 export const dynamic = 'force-dynamic'
 
@@ -43,19 +52,24 @@ export default async function ResumeProjectSetupPage(
 
   const { data: project } = await supabase
     .from('projects')
-    .select('id, code, name, setup_progress_pct, cc_status')
+    .select('id, code, name, setup_progress_pct, cc_status, built_up_sft, parent_project_id, group_label')
     .eq('id', id)
     .single()
 
   if (!project) notFound()
+
+  // Config controls (details / grouping / approvers) are surfaced right here on
+  // the setup screen — one management home. Rename/alias/parent are admin-only.
+  const isAdmin = (await getMyProfile())?.role === 'admin'
+  const bphMapping = await getBphMappingForProject(id)
 
   // Used to bounce 100%-complete projects, but PMs need to be able to
   // edit setup after going active (add/remove disciplines, re-tick subs,
   // change engineers). Just open the wizard with everything pre-seeded.
   const isComplete = (project.setup_progress_pct ?? 0) >= 100
 
-  const [parentsRes, usersRes, overridesRes, disciplinesRes, subSkillsRes, projDisRes, projSubRes, assignRes, ssaRes, wsCountRes] = await Promise.all([
-    supabase.from('projects').select('id, code, name').order('code'),
+  const [parentsRes, usersRes, overridesRes, disciplinesRes, subSkillsRes, projDisRes, projSubRes, assignRes, ssaRes, wsCountRes, approverRes] = await Promise.all([
+    supabase.from('projects').select('id, code, name, parent_project_id').order('code'),
     supabase.from('profiles').select('id, full_name, name, email, role').eq('is_active', true),
     // Per-module role overrides — someone whose cost-control role is
     // overridden to 'engineer' belongs in the engineer picker too.
@@ -81,11 +95,23 @@ export default async function ResumeProjectSetupPage(
     // assignments + live sheets on THIS project.
     supabase.from('cc_subskill_assignments').select('engineer_id').eq('project_id', id),
     supabase.from('cc_working_sheets').select('engineer_id').eq('project_id', id).is('archived_at', null).neq('status', 'cancelled'),
+    supabase.from('cc_project_approvers').select('role, user_id').eq('project_id', id),
   ])
 
   const tablesMissing = !!disciplinesRes.error
 
-  const parentProjects: ParentProjectOption[] = (parentsRes.data ?? []) as ParentProjectOption[]
+  type AllProj = { id: string; code: string; name: string; parent_project_id: string | null }
+  const allProjects = (parentsRes.data ?? []) as AllProj[]
+  const parentProjects: ParentProjectOption[] = allProjects.map(p => ({ id: p.id, code: p.code, name: p.name }))
+  // Eligible parents: other top-level projects (plus the current parent, so it
+  // always shows even in odd data). Never this project or one of its children.
+  const parentOptions = allProjects
+    .filter(p => p.id !== id && (p.parent_project_id === null || p.id === project.parent_project_id) && p.parent_project_id !== id)
+    .map(p => ({ id: p.id, label: `${p.code} · ${p.name}` }))
+  const otherProjects = allProjects
+    .filter(p => p.id !== id)
+    .map(p => ({ id: p.id, label: `${p.code} · ${p.name}` }))
+
   type ProfRow = { id: string; full_name: string | null; name: string | null; email: string | null; role: string }
   const profRows = (usersRes.data ?? []) as ProfRow[]
   const users: UserOption[] = profRows.map(p => ({
@@ -138,6 +164,16 @@ export default async function ResumeProjectSetupPage(
     discipline_ids: (a.assigned_disciplines as string[] | null) ?? [],
   }))
 
+  // Config-panel inputs (approvers roster + bulk-assign options).
+  const nameById = new Map(profRows.map(p => [p.id, p.full_name ?? p.name ?? '(unnamed)']))
+  const projectApprovers = ((approverRes.data ?? []) as Array<{ role: 'project_head' | 'head' | 'founder'; user_id: string }>)
+    .map(r => ({ role: r.role, user_id: r.user_id, name: nameById.get(r.user_id) ?? '(user)' }))
+  const approverCandidates = profRows.map(p => ({ id: p.id, name: p.full_name ?? p.name ?? '(unnamed)' }))
+  const enabledDisciplines = disciplines
+    .filter(d => savedDisciplineIds.includes(d.id))
+    .map(d => ({ id: d.id, label: `${d.code} ${d.name}` }))
+  const engineerOptions = engineerUsers.map(e => ({ id: e.id, label: e.name }))
+
   // Pick the first incomplete step.
   //
   //   step1 done  := project basics row exists (always true at this point)
@@ -169,6 +205,76 @@ export default async function ResumeProjectSetupPage(
           </div>
         </Card>
       )}
+
+      {/* ── Project settings ────────────────────────────────────────────
+          Details, grouping, BPH source — the config that used to clutter the
+          project page now lives here, on the one management screen. */}
+      <Card className="p-4 space-y-4">
+        <div>
+          <h2 className="text-sm font-semibold text-gray-900 mb-2">Project details</h2>
+          <div className="flex flex-wrap items-center gap-2">
+            <RenameProjectChip projectId={id} name={project.name} isAdmin={isAdmin} />
+            <ProjectAliasChip projectId={id} code={project.code} isAdmin={isAdmin} />
+            <AreaChip projectId={id} sft={project.built_up_sft != null ? Number(project.built_up_sft) : null} canWrite />
+          </div>
+        </div>
+
+        <div className="border-t border-gray-100 pt-3 space-y-2">
+          <h2 className="text-sm font-semibold text-gray-900">Grouping</h2>
+          <p className="text-xs text-gray-500">Make this a sub-project of another, or keep it top-level.</p>
+          <ParentProjectControl
+            projectId={id}
+            currentParentId={project.parent_project_id}
+            options={parentOptions}
+            isAdmin={isAdmin}
+          />
+          <div className="pt-1">
+            <span className="text-xs text-gray-500 mr-2">Group name on the dashboard band:</span>
+            <GroupLabelChip projectId={id} label={project.group_label?.trim() || project.code} isAdmin={isAdmin} />
+          </div>
+        </div>
+
+        <div className="border-t border-gray-100 pt-3 space-y-1">
+          <h2 className="text-sm font-semibold text-gray-900 inline-flex items-center gap-1.5">
+            <FileSpreadsheet className="h-4 w-4 text-gray-400" /> Budget (BPH) source
+          </h2>
+          {bphMapping ? (
+            <p className="text-sm text-gray-700">
+              Linked to a BPH report — <span className="text-emerald-700 font-medium">auto-syncs on every BPH upload</span>.{' '}
+              <Link href={`/cost-control/import/bph?cc_project=${id}`} className="text-blue-600 hover:underline">Change or resync →</Link>
+            </p>
+          ) : (
+            <p className="text-sm text-gray-700">
+              Not linked yet.{' '}
+              <Link href={`/cost-control/import/bph?cc_project=${id}`} className="text-blue-600 hover:underline">Map to a BPH report →</Link>{' '}
+              Once mapped, Budget (ERP) numbers refresh automatically on every upload.
+            </p>
+          )}
+        </div>
+      </Card>
+
+      {/* Per-project approvers roster. */}
+      <ProjectApproversPanel
+        projectId={id}
+        approvers={projectApprovers}
+        candidates={approverCandidates}
+        canWrite
+      />
+
+      {/* Bulk-assign engineers (shortcut beyond the per-engineer wizard step). */}
+      {enabledDisciplines.length > 0 && (
+        <BulkAssignPanel
+          projectId={id}
+          disciplines={enabledDisciplines}
+          engineers={engineerOptions}
+          otherProjects={otherProjects}
+        />
+      )}
+
+      <div className="pt-1">
+        <h2 className="text-sm font-semibold text-gray-900">Disciplines, sub-skills &amp; engineers</h2>
+        <p className="text-xs text-gray-500">Pick what this project estimates and who works each area.</p>
+      </div>
 
       <ProjectSetupWizard
         parentProjects={parentProjects}

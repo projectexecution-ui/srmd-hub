@@ -254,6 +254,56 @@ export async function renameProject(
 }
 
 // ============================================================
+// Set / clear the PARENT project (grouping) — ADMIN only. Keeps the
+// hierarchy exactly one level deep: the chosen parent must itself be
+// top-level, and a project that already has sub-projects can't be demoted
+// into a child. Clearing (null) makes the project top-level again.
+// ============================================================
+export async function setProjectParent(
+  projectId: string,
+  parentId: string | null,
+): Promise<{ ok: boolean; error?: string }> {
+  const profile = await getMyProfile()
+  if (profile?.role !== 'admin') {
+    return { ok: false, error: 'Only an Admin can change a project’s parent' }
+  }
+  if (!uuid.safeParse(projectId).success) return { ok: false, error: 'Bad project id' }
+  if (parentId != null && !uuid.safeParse(parentId).success) return { ok: false, error: 'Bad parent id' }
+  if (parentId === projectId) return { ok: false, error: 'A project can’t be its own parent' }
+
+  const supabase = await createClient()
+
+  if (parentId != null) {
+    // Chosen parent must be top-level — we keep grouping one level deep.
+    const { data: par } = await supabase
+      .from('projects').select('id, parent_project_id').eq('id', parentId).maybeSingle()
+    if (!par) return { ok: false, error: 'Parent project not found' }
+    if (par.parent_project_id) {
+      return { ok: false, error: 'Pick a top-level project as the parent — that one is itself a sub-project' }
+    }
+    // This project must not already have its own sub-projects.
+    const { data: kids } = await supabase
+      .from('projects').select('id').eq('parent_project_id', projectId).limit(1)
+    if (kids && kids.length > 0) {
+      return { ok: false, error: 'This project has sub-projects — move them out first before making it a sub-project' }
+    }
+  }
+
+  const { data, error } = await supabase
+    .from('projects')
+    .update({ parent_project_id: parentId })
+    .eq('id', projectId)
+    .select('id')
+  if (error) return { ok: false, error: error.message }
+  if (!data || data.length === 0) return { ok: false, error: 'Change was blocked — check your permissions' }
+
+  revalidatePath('/cost-control')
+  revalidatePath(`/cost-control/projects/${projectId}`)
+  revalidatePath(`/cost-control/projects/${projectId}/setup`)
+  return { ok: true }
+}
+
+// ============================================================
 // Set / clear a project GROUP label — ADMIN only. Shown on the dashboard
 // group band for the PARENT project; blank → the band falls back to the
 // parent's short code. Purely a display label.

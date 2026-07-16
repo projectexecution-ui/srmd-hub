@@ -1,24 +1,19 @@
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
-import { requirePermission, can, getMyProfile } from '@/lib/auth'
+import { requirePermission, can } from '@/lib/auth'
 import { checkIsCcReviewer, checkCanDecideInternalEstimate, checkCanRequestIeRevision } from '@/components/cost-control/ws-actions'
 import { IeRevisionPanel, type IeRevision } from './IeRevisionPanel'
 import { EngineerProjectView } from './EngineerProjectView'
-import { ProjectApproversPanel } from './ProjectApproversPanel'
-import { BulkAssignPanel } from './BulkAssignPanel'
 import { PageHeader } from '@/components/PageHeader'
 import { SetupProgressBanner } from '@/components/ProjectSetupWizard/SetupProgressBanner'
-import { Plus, Flame, Info, Settings, ChevronDown } from 'lucide-react'
+import { Plus, Flame, Info, Settings } from 'lucide-react'
 import { formatINR } from '@/lib/utils'
 import { getCcSettings } from '@/lib/cost-control/settings'
 import { QueryError } from '@/components/ui/query-error'
 import { DeadlineBadge } from '@/components/cost-control/DeadlineBadge'
 import { wsStatusLabel } from '@/components/cost-control/WSStatusPill'
 import { DeadlineCell, SubSkillModeCell, DisableButton, InternalEstimateDecision, SubSkillAssignControl } from './RowControls'
-import { AreaChip } from './AreaChip'
-import { RenameProjectChip } from './RenameProjectChip'
-import { ProjectAliasChip } from './ProjectAliasChip'
 import { BphSyncButton } from './BphSyncButton'
 import { getBphMappingForProject } from '@/app/(app)/cost-control/import/bph/actions'
 
@@ -59,8 +54,6 @@ export default async function CostControlProjectDetailPage(
   const supabase = await createClient()
   const ccSettings = await getCcSettings()
   const reviewer = await checkIsCcReviewer()
-  // Renaming a project is admin-only — the name shows on every module.
-  const isAdmin = (await getMyProfile())?.role === 'admin'
   // Only the Trustee (founder) / Admin may accept or reject the Internal
   // Estimate baseline — and only when the (off-by-default) review toggle is
   // on. Off: the uploaded estimate is simply the baseline, no manual step.
@@ -442,20 +435,6 @@ export default async function CostControlProjectDetailPage(
   const pmRow: PMLite = (pmRes.data ?? null) as PMLite
   const pmName = pmRow?.full_name ?? pmRow?.name ?? null
 
-  // Per-project approvers roster (Phase 1) + candidate users + other projects
-  // (for the Phase 5 "copy assignments from another project" shortcut).
-  const [approverRes, candRes, otherProjRes] = await Promise.all([
-    supabase.from('cc_project_approvers').select('role, user_id').eq('project_id', id),
-    supabase.from('profiles').select('id, full_name, name').eq('is_active', true).order('full_name'),
-    supabase.from('projects').select('id, code, name').not('cc_status', 'is', null).neq('id', id).order('code'),
-  ])
-  const otherProjects = ((otherProjRes.data ?? []) as Array<{ id: string; code: string; name: string }>)
-    .map(p => ({ id: p.id, label: `${p.code} · ${p.name}` }))
-  const projectApprovers = ((approverRes.data ?? []) as Array<{ role: 'project_head' | 'head' | 'founder'; user_id: string }>)
-    .map(r => ({ role: r.role, user_id: r.user_id, name: profileMap.get(r.user_id) ?? '(user)' }))
-  const approverCandidates = ((candRes.data ?? []) as ProfileLite[])
-    .map(p => ({ id: p.id, name: p.full_name ?? p.name ?? '(unnamed)' }))
-
   // Is this project mapped to a BPH report? Drives the header sync button.
   const isBphMapped = !!(await getBphMappingForProject(id))
 
@@ -525,9 +504,10 @@ export default async function CostControlProjectDetailPage(
         )}
       </div>
 
-      {/* Title + primary actions. Everything else (rename, alias, area,
-          approvers, engineer assignment, setup) is tucked into the collapsed
-          "Manage project" drawer below, so the page opens on the numbers. */}
+      {/* Title + primary actions. All project configuration (rename, alias,
+          area, grouping/parent, BPH mapping, approvers, engineer assignment)
+          lives on the Settings screen behind the gear — this page stays on
+          the numbers + working sheets. */}
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
           <PageHeader
@@ -558,16 +538,22 @@ export default async function CostControlProjectDetailPage(
                 <Plus className="h-4 w-4" /> New Working Sheet
               </Link>
               <BphSyncButton projectId={project.id} isMapped={isBphMapped} />
+              <Link
+                href={`/cost-control/projects/${project.id}/setup`}
+                className="inline-flex items-center gap-1.5 h-9 px-3 rounded-md bg-white text-gray-700 border border-gray-300 text-sm font-semibold hover:bg-gray-50"
+                title="Project settings — details, grouping/parent, BPH mapping, approvers, engineers & disciplines"
+              >
+                <Settings className="h-4 w-4" /> Settings
+              </Link>
             </>
           )}
         </div>
       </div>
 
-      {/* Internal Estimate revision — surfaced inline ONLY while a revision is
-          actually in flight (needs an upload or a Trustee decision), so a
-          pending action is never buried. The plain "LOCKED" state and its
-          "request to revise" button live in the Manage drawer below. */}
-      {reviewer && lockState !== 'locked' && (
+      {/* Internal Estimate lock + revision workflow (management only). One
+          slim status bar; actions (request to revise / Trustee decision)
+          appear inline right when they're relevant. */}
+      {reviewer && (
         <IeRevisionPanel
           projectId={project.id}
           lockState={lockState}
@@ -575,73 +561,6 @@ export default async function CostControlProjectDetailPage(
           canRequest={canRequestRevision}
           canDecide={canDecideRevision}
         />
-      )}
-
-      {/* One collapsed home for all the management/config knobs. */}
-      {(canWrite || isAdmin) && (
-        <details className="group rounded-lg border border-gray-200 bg-white [&_summary::-webkit-details-marker]:hidden">
-          <summary className="list-none cursor-pointer flex items-center justify-between gap-2 px-4 py-2.5 select-none hover:bg-gray-50/60 rounded-lg">
-            <span className="inline-flex items-center gap-2 text-sm font-semibold text-gray-700">
-              <Settings className="h-4 w-4 text-gray-400" /> Manage project
-            </span>
-            <span className="inline-flex items-center gap-2">
-              <span className="hidden sm:inline text-[11px] text-gray-400">rename · alias · area · approvers · engineers · setup</span>
-              <ChevronDown className="h-4 w-4 text-gray-400 transition-transform group-open:rotate-180" />
-            </span>
-          </summary>
-          <div className="border-t border-gray-100 px-4 py-3 space-y-3">
-            {/* Quick single-field edits */}
-            <div className="flex flex-wrap items-center gap-2">
-              <RenameProjectChip projectId={project.id} name={project.name} isAdmin={isAdmin} />
-              <ProjectAliasChip projectId={project.id} code={project.code} isAdmin={isAdmin} />
-              <AreaChip
-                projectId={project.id}
-                sft={project.built_up_sft != null ? Number(project.built_up_sft) : null}
-                canWrite={canWrite}
-              />
-              {canWrite && (
-                <Link
-                  href={`/cost-control/projects/${project.id}/setup`}
-                  className="inline-flex items-center gap-1.5 h-9 px-3 rounded-md bg-white text-gray-700 border border-gray-300 text-sm font-semibold hover:bg-gray-50"
-                  title="Re-open the setup wizard to add/remove disciplines, sub-skills or engineers"
-                >
-                  <Settings className="h-4 w-4" /> Edit Setup
-                </Link>
-              )}
-            </div>
-
-            {/* Internal Estimate lock + "request to revise" (locked state). */}
-            {reviewer && lockState === 'locked' && (
-              <IeRevisionPanel
-                projectId={project.id}
-                lockState={lockState}
-                revision={ieRevision}
-                canRequest={canRequestRevision}
-                canDecide={canDecideRevision}
-              />
-            )}
-
-            {/* Per-project approvers roster. */}
-            {reviewer && (
-              <ProjectApproversPanel
-                projectId={project.id}
-                approvers={projectApprovers}
-                candidates={approverCandidates}
-                canWrite={canWrite}
-              />
-            )}
-
-            {/* Bulk-assign engineers to sub-skills. */}
-            {canWrite && (
-              <BulkAssignPanel
-                projectId={project.id}
-                disciplines={disciplines.map(d => ({ id: d.id, label: `${d.code} ${d.name}` }))}
-                engineers={engineers.map(e => ({ id: e.user_id, label: e.name }))}
-                otherProjects={otherProjects}
-              />
-            )}
-          </div>
-        </details>
       )}
 
       {/* Pending-approval shortcut — covers EVERY sheet type (submitted or
