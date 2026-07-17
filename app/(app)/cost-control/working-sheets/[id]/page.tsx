@@ -21,6 +21,9 @@ import { ScreenshotAiCheck } from './ScreenshotAiCheck'
 import { WorkingEvidence, type EvidenceFile } from './WorkingEvidence'
 import { RaiseRevisionButton } from './RaiseRevisionButton'
 import { RevisionEditor, type PriorApprovedRow, type DeltaRow } from './RevisionEditor'
+import { VersionLedgerStrip } from './VersionLedgerStrip'
+import { CumulativeBoqPanel } from './CumulativeBoqPanel'
+import { chainCumulative, matchBoqRows, summarizeMatch, normalizeKey } from '@/lib/cost-control/version-ledger'
 import { EditDeadlineButton } from './EditDeadlineButton'
 import { QueryError } from '@/components/ui/query-error'
 import { formatINR } from '@/lib/utils'
@@ -95,17 +98,30 @@ export default async function WorkingSheetEditorPage(
     if (!ssa) redirect('/cost-control/working-sheets')
   }
 
-  // Sibling versions in the same chain — drives the prev/next nav.
+  // Sibling versions in the same chain — drives the prev/next nav + the
+  // cumulative money strip (total_amount / approved_for_erp_amt / [IB] flag).
   const { data: chainSiblings } = await supabase
     .from('cc_ws_with_versions')
-    .select('id, ws_code, status, version_no, created_at, archived_at, archived_by')
+    .select('id, ws_code, status, version_no, created_at, archived_at, archived_by, total_amount, approved_for_erp_amt, summary_notes')
     .eq('chain_anchor_id', ws.chain_anchor_id)
     .order('version_no', { ascending: true })
-  type Sibling = { id: string; ws_code: string; status: WSStatus; version_no: number; created_at: string; archived_at: string | null; archived_by: string | null }
+  type Sibling = { id: string; ws_code: string; status: WSStatus; version_no: number; created_at: string; archived_at: string | null; archived_by: string | null; total_amount: number | null; approved_for_erp_amt: number | null; summary_notes: string | null }
   const siblings = (chainSiblings ?? []) as Sibling[]
   const myIdx = siblings.findIndex(s => s.id === ws.id)
   const prevSibling = myIdx > 0 ? siblings[myIdx - 1] : null
   const nextSibling = myIdx >= 0 && myIdx < siblings.length - 1 ? siblings[myIdx + 1] : null
+
+  // Cumulative money for a revision (v2+) — shared by every layout branch.
+  const chainMoney = (ccSettings.cumulative_versions && ws.version_no > 1)
+    ? chainCumulative(
+        siblings.map(s => ({
+          id: s.id, version_no: s.version_no, status: s.status as string,
+          total_amount: Number(s.total_amount ?? 0), approved_for_erp_amt: Number(s.approved_for_erp_amt ?? 0),
+          summary_notes: s.summary_notes ?? null, archived_at: s.archived_at,
+        })),
+        ws.id,
+      )
+    : null
 
   // Per-stage checked amounts + IN4 tracking + archive state live on the
   // base table (the versions view has a frozen column list on old rows) —
@@ -213,6 +229,7 @@ export default async function WorkingSheetEditorPage(
   // editable (draft / returned).
   let workingEvidencePanel: React.ReactNode = null
   let revisionAttachments: Array<{ id: string; name: string }> = []
+  let evidenceForLink: EvidenceFile[] = []
   if (ccSettings.cumulative_versions) {
     const { data: attachRows } = await supabase
       .from('cc_ws_attachments')
@@ -225,6 +242,7 @@ export default async function WorkingSheetEditorPage(
       evidence.push({ id: a.id as string, name: a.name as string, signedUrl: signed?.signedUrl ?? null })
     }
     revisionAttachments = (attachRows ?? []).map(a => ({ id: a.id as string, name: a.name as string }))
+    evidenceForLink = evidence
     const ownerEditable = canEdit && user?.id === ws.engineer_id && !frozen && (ws.status === 'draft' || ws.status === 'returned')
     workingEvidencePanel = (
       <WorkingEvidence
@@ -310,6 +328,8 @@ export default async function WorkingSheetEditorPage(
         {releaseRequestPanel}
         {summaryShotPanel}
 
+        {chainMoney && reviewer && <VersionLedgerStrip money={chainMoney} versionNo={ws.version_no} />}
+
         {ccSettings.show_deadlines && (ws.deadline_date || canEditDeadline) && (
           <div className="flex items-center gap-2 flex-wrap">
             {ws.deadline_date && (
@@ -368,26 +388,44 @@ export default async function WorkingSheetEditorPage(
       ['approved', 'partially_approved', 'wo_issued', 'paid'].includes(ws.status as string)
     const isRevisionDraft = ccSettings.cumulative_versions && ownerEditable && ws.version_no > 1
 
-    // Prior version's rows = the frozen "already approved" BOQ for the editor
-    // and (S6) the cumulative comparison.
+    // Prior version's rows = the frozen "already approved" BOQ, used by BOTH
+    // the revision editor (locked reference + change detection) and the S6
+    // cumulative view (approved-vs-new comparison).
     const compFromBreakdown = (bd: unknown, label: string): number | null => {
       const arr = bd as Array<{ label: string; value: number }> | null
       const hit = arr?.find(b => b.label === label)
       return hit ? Number(hit.value) : null
     }
+    const toBoqItem = (r: { description: string | null; unit: string | null; qty: number | null; rate: number | null; amount: number | null; rate_breakdown: unknown }) => ({
+      description: r.description ?? '', unit: r.unit ?? null,
+      qty: Number(r.qty ?? 0), rate: Number(r.rate ?? 0), amount: Number(r.amount ?? 0),
+      material: compFromBreakdown(r.rate_breakdown, 'Material'),
+      installation: compFromBreakdown(r.rate_breakdown, 'Installation'),
+      ml: compFromBreakdown(r.rate_breakdown, 'M+L'),
+    })
+
+    const showCumulative = ccSettings.cumulative_versions && ws.version_no > 1
     let priorApprovedRows: PriorApprovedRow[] = []
+    let priorItems: ReturnType<typeof toBoqItem>[] = []
     let revisionInitial: DeltaRow[] = []
-    if (isRevisionDraft && prevSibling) {
+    let matchedRows: ReturnType<typeof matchBoqRows> = []
+    let matchSummary: ReturnType<typeof summarizeMatch> | null = null
+    let workingByKey: Record<string, { url: string | null; name: string } | undefined> = {}
+
+    if (showCumulative && prevSibling) {
       const { data: priorRows } = await supabase
         .from('cc_excel_rows')
-        .select('description, unit, qty, rate, amount')
+        .select('description, unit, qty, rate, amount, rate_breakdown')
         .eq('working_sheet_id', prevSibling.id)
         .not('qty', 'is', null)
         .order('row_no')
-      priorApprovedRows = (priorRows ?? []).map(r => ({
-        description: r.description ?? '', unit: r.unit ?? null,
-        qty: Number(r.qty ?? 0), rate: Number(r.rate ?? 0), amount: Number(r.amount ?? 0),
+      priorItems = (priorRows ?? []).map(toBoqItem)
+      priorApprovedRows = priorItems.map(r => ({
+        description: r.description, unit: r.unit, qty: r.qty, rate: r.rate, amount: r.amount,
       }))
+    }
+
+    if (isRevisionDraft) {
       revisionInitial = (excelRows ?? []).filter(r => r.qty != null).map((r, i) => {
         const wref = r.working_ref as { attachment_id?: string | null; cell_note?: string | null } | null
         return {
@@ -402,6 +440,26 @@ export default async function WorkingSheetEditorPage(
           cellNote: wref?.cell_note ?? '',
         }
       })
+    }
+
+    // The read-only cumulative view (strip + table) — shown on a v2+ sheet
+    // that ISN'T currently being edited as a draft.
+    if (showCumulative && !isRevisionDraft) {
+      const currentItems = (excelRows ?? []).filter(r => r.qty != null).map(toBoqItem)
+      matchedRows = matchBoqRows(currentItems, priorItems)
+      matchSummary = summarizeMatch(matchedRows)
+      // Map each current row's working link (if any) to its cumulative row key.
+      const urlById = new Map<string, { url: string | null; name: string }>()
+      // (evidence signed URLs were built above for the working-evidence panel)
+      for (const e of revisionAttachments) urlById.set(e.id, { url: null, name: e.name })
+      for (const ev of evidenceForLink) urlById.set(ev.id, { url: ev.signedUrl, name: ev.name })
+      for (const r of excelRows ?? []) {
+        const wref = r.working_ref as { attachment_id?: string | null } | null
+        if (wref?.attachment_id && r.description) {
+          const link = urlById.get(wref.attachment_id)
+          if (link) workingByKey[normalizeKey(r.description)] = link
+        }
+      }
     }
 
     // Signed URL for downloading the original Excel
@@ -460,6 +518,9 @@ export default async function WorkingSheetEditorPage(
         {releaseRequestPanel}
         {canRaiseRevision && <RaiseRevisionButton wsId={ws.id} />}
         {summaryShotPanel}
+
+        {!isRevisionDraft && chainMoney && reviewer && <VersionLedgerStrip money={chainMoney} versionNo={ws.version_no} />}
+        {matchSummary && <CumulativeBoqPanel rows={matchedRows} summary={matchSummary} workingByKey={workingByKey} />}
 
         {ccSettings.show_deadlines && (ws.deadline_date || canEditDeadline) && (
           <div className="flex items-center gap-2 flex-wrap">
@@ -657,6 +718,8 @@ export default async function WorkingSheetEditorPage(
 
       {releaseRequestPanel}
       {summaryShotPanel}
+
+      {chainMoney && reviewer && <VersionLedgerStrip money={chainMoney} versionNo={ws.version_no} />}
 
       {/* AI review tools — approval chain only, not engineers. */}
       {showAi && <WSAskAiPanel wsId={ws.id} />}
