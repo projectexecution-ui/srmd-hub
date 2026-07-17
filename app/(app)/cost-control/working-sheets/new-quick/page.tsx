@@ -16,6 +16,7 @@ export default async function NewWorkingSheetQuickPage({
   await requirePermission('cost-control', 'edit')
   const sp = await searchParams
   const supabase = await createClient()
+  const ccSettings = await getCcSettings()
 
   // Reuse the same project / discipline / sub-skill data the regular New
   // page uses, so engineers see consistent options regardless of mode.
@@ -67,8 +68,9 @@ export default async function NewWorkingSheetQuickPage({
           defaultProjectId={sp.project}
           defaultDisciplineId={sp.discipline}
           defaultSubSkillId={sp.sub_skill}
-          canSetDeadline={(await checkCanSetDeadline()) && (await getCcSettings()).show_deadlines}
+          canSetDeadline={(await checkCanSetDeadline()) && ccSettings.show_deadlines}
           reviewer={await checkIsCcReviewer()}
+          cumulativeVersions={ccSettings.cumulative_versions}
         />
       </Card>
     </div>

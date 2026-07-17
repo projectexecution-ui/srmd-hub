@@ -1,0 +1,269 @@
+// The ONE standard BOQ template every discipline downloads to raise a budget.
+// Pure model builder (no xlsx import, so vitest covers the exact shape) + a
+// thin xlsx writer lives in boq-template-xlsx.ts — same split as the
+// excel-parse / excel-parse-adapter pair.
+//
+// Why a fixed template (design decisions, locked with Aksha):
+//   • Fixed column ORDER → the template-mode parser (S2) reads by position,
+//     never by fuzzy header matching (the source of most parse failures).
+//   • Three rate cells — Material | Installation | M+L(combined). Engineers
+//     fill EITHER Material+Installation OR the combined M+L, never both.
+//     Rate = SUM(those three) so a blank cell counts as 0 (never #VALUE!),
+//     and split-vs-composite both work without a second layout.
+//   • Rate & Amount are FORMULAS (auto-calc). We never trust them on the way
+//     back in — the parser recomputes — so tampering can't corrupt a figure.
+//   • A very-hidden `_meta` sheet carries a marker + the project/discipline/
+//     sub-skill ids so the parser can trust the file and pre-fill context.
+
+export const BOQ_TEMPLATE_MARKER = 'CTHUB-BOQ-TPL'
+export const BOQ_TEMPLATE_VERSION = 1
+export const BOQ_META_SHEET = '_meta'
+export const BOQ_SHEET = 'BOQ'
+
+/** Fixed column order. Index === column (A=0 … J=9). The parser depends on
+ *  this exact order, so changing it is a template-version bump. */
+export const BOQ_COLS = [
+  'Sr', 'Description', 'Unit', 'Qty',
+  'Material', 'Installation', 'M+L',
+  'Rate', 'Amount', 'Remarks',
+] as const
+export type BoqColName = typeof BOQ_COLS[number]
+
+/** 0-based column indices, named for readability in the writer + parser. */
+export const COL = {
+  sr: 0, description: 1, unit: 2, qty: 3,
+  material: 4, installation: 5, ml: 6,
+  rate: 7, amount: 8, remarks: 9,
+} as const
+
+/** Units accepted by the parser / offered to the engineer. LS = lump sum
+ *  (Qty 1), % for contingency-style rows. Covers every shape seen in the
+ *  ~1,600 real SRMD rows (split rates, lump sum, GST, negatives, headings). */
+export const BOQ_UNITS = [
+  'Cum', 'Sqm', 'Sft', 'Rmt', 'Rft', 'MT', 'Kg', 'Quintal',
+  'Nos', 'Set', 'Pair', 'Ltr', 'Bag', 'Roll', 'Day', 'Month',
+  'LS', 'Lot', '%',
+] as const
+
+const COL_WIDTHS = [5, 34, 8, 10, 12, 12, 11, 11, 14, 26]
+
+export interface BoqTemplateOptions {
+  projectCode?: string
+  projectName?: string
+  disciplineCode?: string
+  disciplineName?: string
+  subSkillCode?: string
+  subSkillName?: string
+  raisedBy?: string
+  /** Caller supplies the date string (client `new Date()`), keeping the
+   *  builder pure/deterministic for tests. */
+  dateText?: string
+  drawingRef?: string
+  lineTypeLabel?: string
+  /** Ids embedded in the hidden _meta sheet so the parser trusts context. */
+  projectId?: string
+  disciplineId?: string
+  subSkillId?: string
+  /** Blank item rows to lay out (default 25). */
+  blankRows?: number
+}
+
+export interface BoqCell {
+  t: 's' | 'n'
+  v?: string | number
+  f?: string   // formula body, no leading '='
+  z?: string   // number format
+}
+export interface BoqMerge { s: { r: number; c: number }; e: { r: number; c: number } }
+export interface BoqSheetModel {
+  name: string
+  /** address ("A5") → cell. */
+  cells: Record<string, BoqCell>
+  merges: BoqMerge[]
+  cols: Array<{ wch?: number; hidden?: boolean }>
+  /** '' visible · 'hidden' · 'veryHidden'. */
+  visibility: '' | 'hidden' | 'veryHidden'
+  lastRow: number
+  lastCol: number
+}
+export interface BoqTemplateModel {
+  sheets: BoqSheetModel[]
+  headerRow: number
+  itemRowStart: number
+  itemRowEnd: number
+  subtotalRow: number
+  contingencyRow: number
+  gstRow: number
+  grandTotalRow: number
+}
+
+const MONEY_FMT = '#,##0'
+const colLetter = (c: number) => String.fromCharCode(65 + c)
+const addr = (c: number, r1: number) => `${colLetter(c)}${r1}`
+
+function s(v: string): BoqCell { return { t: 's', v } }
+function n(v: number, z?: string): BoqCell { return z ? { t: 'n', v, z } : { t: 'n', v } }
+function f(formula: string, z?: string): BoqCell {
+  // A formula cell still needs a cached value (0) so a viewer that doesn't
+  // recalc shows something sane; Excel recomputes on open.
+  return z ? { t: 'n', v: 0, f: formula, z } : { t: 'n', v: 0, f: formula }
+}
+
+/** Pure builder — returns the full cell model of the standard template. */
+export function buildBoqTemplateModel(opts: BoqTemplateOptions = {}): BoqTemplateModel {
+  const blankRows = Math.max(5, opts.blankRows ?? 25)
+  const cells: Record<string, BoqCell> = {}
+  const merges: BoqMerge[] = []
+
+  const disc = [opts.disciplineCode, opts.disciplineName].filter(Boolean).join(' ')
+  const sub = [opts.subSkillCode, opts.subSkillName].filter(Boolean).join(' ')
+  const proj = [opts.projectCode, opts.projectName].filter(Boolean).join(' ')
+
+  // Row 1 — title (merged A:J)
+  cells['A1'] = s(`STANDARD BOQ${disc ? ' — ' + disc : ''}${sub ? ' · ' + sub : ''}`)
+  merges.push({ s: { r: 0, c: 0 }, e: { r: 0, c: 9 } })
+
+  // Row 2 — context line (merged)
+  const ctx = [
+    proj && `Project: ${proj}`,
+    opts.raisedBy && `Raised by: ${opts.raisedBy}`,
+    opts.dateText && `Date: ${opts.dateText}`,
+    opts.drawingRef && `Drawing: ${opts.drawingRef}`,
+    opts.lineTypeLabel && `Type: ${opts.lineTypeLabel}`,
+  ].filter(Boolean).join('  ·  ')
+  cells['A2'] = s(ctx || 'Fill the header on the site before uploading.')
+  merges.push({ s: { r: 1, c: 0 }, e: { r: 1, c: 9 } })
+
+  // Row 3 — the rule note (merged). This IS the guard: fill one side only.
+  cells['A3'] = s(
+    'Fill EITHER Material + Installation OR the combined M+L — never both. ' +
+    'Rate = Material + Installation + M+L (auto). Amount = Qty × Rate (auto). ' +
+    'Leave the grey Rate & Amount columns alone. For lump sum use Unit "LS", Qty 1. ' +
+    'For a deduction, enter a negative Qty. Units: ' + BOQ_UNITS.join(' / ') + '.',
+  )
+  merges.push({ s: { r: 2, c: 0 }, e: { r: 2, c: 9 } })
+
+  // Row 5 — header
+  const headerRow = 5
+  BOQ_COLS.forEach((name, c) => { cells[addr(c, headerRow)] = s(name) })
+
+  // Rows 6.. — blank item rows with Rate & Amount pre-seeded as formulas.
+  const itemRowStart = headerRow + 1
+  const itemRowEnd = itemRowStart + blankRows - 1
+  for (let r = itemRowStart; r <= itemRowEnd; r++) {
+    cells[addr(COL.sr, r)] = n(r - itemRowStart + 1)
+    // Rate = SUM(Material:M+L) — blank cells count as 0, never #VALUE!.
+    cells[addr(COL.rate, r)] = f(`SUM(${addr(COL.material, r)}:${addr(COL.ml, r)})`, MONEY_FMT)
+    // Amount = Qty × Rate.
+    cells[addr(COL.amount, r)] = f(`${addr(COL.qty, r)}*${addr(COL.rate, r)}`, MONEY_FMT)
+  }
+
+  // Totals ladder.
+  const subtotalRow = itemRowEnd + 1
+  const contingencyRow = subtotalRow + 1
+  const gstRow = contingencyRow + 1
+  const grandTotalRow = gstRow + 1
+  const amtCol = colLetter(COL.amount)
+  const rateCol = colLetter(COL.rate) // used to hold the % on ladder rows
+
+  cells[addr(COL.ml, subtotalRow)] = s('Subtotal')
+  cells[addr(COL.amount, subtotalRow)] =
+    f(`SUM(${amtCol}${itemRowStart}:${amtCol}${itemRowEnd})`, MONEY_FMT)
+
+  // Contingency + GST rows: the % sits in the Rate column (editable), the
+  // Amount is a formula off it. Pre-filled with SRMD's usual 5% / 18% — the
+  // engineer can change or clear the % (empty ⇒ 0, no error).
+  cells[addr(COL.description, contingencyRow)] = s('Contingency')
+  cells[addr(COL.rate, contingencyRow)] = n(5)
+  cells[addr(COL.amount, contingencyRow)] =
+    f(`ROUND(${amtCol}${subtotalRow}*${rateCol}${contingencyRow}/100,0)`, MONEY_FMT)
+
+  cells[addr(COL.description, gstRow)] = s('GST')
+  cells[addr(COL.rate, gstRow)] = n(18)
+  cells[addr(COL.amount, gstRow)] =
+    f(`ROUND((${amtCol}${subtotalRow}+${amtCol}${contingencyRow})*${rateCol}${gstRow}/100,0)`, MONEY_FMT)
+
+  cells[addr(COL.ml, grandTotalRow)] = s('GRAND TOTAL')
+  cells[addr(COL.amount, grandTotalRow)] =
+    f(`${amtCol}${subtotalRow}+${amtCol}${contingencyRow}+${amtCol}${gstRow}`, MONEY_FMT)
+
+  const boqSheet: BoqSheetModel = {
+    name: BOQ_SHEET,
+    cells,
+    merges,
+    cols: COL_WIDTHS.map(wch => ({ wch })),
+    visibility: '',
+    lastRow: grandTotalRow,
+    lastCol: 9,
+  }
+
+  const meta = buildMetaSheet(opts)
+
+  return {
+    sheets: [boqSheet, meta],
+    headerRow,
+    itemRowStart,
+    itemRowEnd,
+    subtotalRow,
+    contingencyRow,
+    gstRow,
+    grandTotalRow,
+  }
+}
+
+/** The very-hidden trust sheet the parser reads to identify a template file
+ *  and pre-fill the project/discipline/sub-skill without any guessing. */
+export function buildMetaSheet(opts: BoqTemplateOptions): BoqSheetModel {
+  const kv: Array<[string, string]> = [
+    ['marker', BOQ_TEMPLATE_MARKER],
+    ['template_version', String(BOQ_TEMPLATE_VERSION)],
+    ['project_id', opts.projectId ?? ''],
+    ['discipline_id', opts.disciplineId ?? ''],
+    ['sub_skill_id', opts.subSkillId ?? ''],
+    ['project_code', opts.projectCode ?? ''],
+    ['discipline_code', opts.disciplineCode ?? ''],
+    ['sub_skill_code', opts.subSkillCode ?? ''],
+    ['generated', opts.dateText ?? ''],
+  ]
+  const cells: Record<string, BoqCell> = {}
+  kv.forEach(([k, v], i) => {
+    cells[`A${i + 1}`] = s(k)
+    cells[`B${i + 1}`] = s(v)
+  })
+  return {
+    name: BOQ_META_SHEET,
+    cells,
+    merges: [],
+    cols: [{ wch: 18 }, { wch: 40 }],
+    visibility: 'veryHidden',
+    lastRow: kv.length,
+    lastCol: 1,
+  }
+}
+
+/** Read a _meta key/value map back out of a parsed sheet's AoA. Used by the
+ *  template-mode parser (S2) to detect + trust a template upload. */
+export function readMetaFromAoa(aoa: unknown[][]): Record<string, string> {
+  const out: Record<string, string> = {}
+  for (const row of aoa ?? []) {
+    const k = row?.[0] == null ? '' : String(row[0]).trim()
+    const v = row?.[1] == null ? '' : String(row[1]).trim()
+    if (k) out[k] = v
+  }
+  return out
+}
+
+/** True when a workbook's sheet set + _meta marks it as our standard template. */
+export function isBoqTemplateMeta(meta: Record<string, string>): boolean {
+  return meta.marker === BOQ_TEMPLATE_MARKER
+}
+
+/** Default download filename for a template. */
+export function boqTemplateFilename(opts: BoqTemplateOptions): string {
+  const parts = [
+    'BOQ',
+    opts.disciplineCode || opts.disciplineName,
+    opts.subSkillCode || opts.subSkillName,
+  ].filter(Boolean).map(p => String(p).replace(/[^\w.-]+/g, '-'))
+  return `${parts.join('_')}_template.xlsx`
+}

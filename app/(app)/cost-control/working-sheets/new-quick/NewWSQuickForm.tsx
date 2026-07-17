@@ -9,8 +9,9 @@ import { Input } from '@/components/ui/input'
 import { MoneyInput } from '@/components/ui/money-input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
-import { Loader2, Upload, Send, FileSpreadsheet, X, Sparkles, AlertTriangle, Image as ImageIcon } from 'lucide-react'
+import { Loader2, Upload, Send, FileSpreadsheet, X, Sparkles, AlertTriangle, Image as ImageIcon, Download } from 'lucide-react'
 import { formatINR } from '@/lib/utils'
+import { downloadBoqTemplate } from '@/lib/cost-control/boq-template-xlsx'
 
 interface ProjectOpt   { id: string; code: string; name: string }
 interface DRow         { id: string; code: string; name: string }
@@ -70,6 +71,9 @@ interface Props {
   /** The check route is approver-only (403 for engineers) — skip the
    *  post-upload auto-check unless the uploader is a reviewer. */
   reviewer?: boolean
+  /** cc_cumulative_versions flag — shows the standard-template download +
+   *  (later slices) the template-mode parse. OFF = today's free-form upload. */
+  cumulativeVersions?: boolean
 }
 
 type ColKind = 'description' | 'unit' | 'qty' | 'rate' | 'amount'
@@ -255,7 +259,7 @@ async function parseExcel(file: File): Promise<{ rows: ParsedRow[]; grandTotal: 
   return { rows, grandTotal, aoa }
 }
 
-export function NewWSQuickForm({ projects, projectDisciplines, projectSubSkills, defaultProjectId, defaultDisciplineId, defaultSubSkillId, canSetDeadline = false, reviewer = false }: Props) {
+export function NewWSQuickForm({ projects, projectDisciplines, projectSubSkills, defaultProjectId, defaultDisciplineId, defaultSubSkillId, canSetDeadline = false, reviewer = false, cumulativeVersions = false }: Props) {
   const router = useRouter()
   const [projectId, setProjectId]     = useState(defaultProjectId ?? projects[0]?.id ?? '')
   const [disciplineId, setDisciplineId] = useState(defaultDisciplineId ?? '')
@@ -288,6 +292,21 @@ export function NewWSQuickForm({ projects, projectDisciplines, projectSubSkills,
       .map(ps => ps.sub_skill),
     [projectSubSkills, projectId, disciplineId],
   )
+
+  const selProject    = useMemo(() => projects.find(p => p.id === projectId), [projects, projectId])
+  const selDiscipline = useMemo(() => disciplines.find(d => d.id === disciplineId), [disciplines, disciplineId])
+  const selSubSkill   = useMemo(() => subSkills.find(s => s.id === subSkillId), [subSkills, subSkillId])
+
+  function onDownloadTemplate() {
+    downloadBoqTemplate({
+      projectCode: selProject?.code,   projectName: selProject?.name,
+      disciplineCode: selDiscipline?.code, disciplineName: selDiscipline?.name,
+      subSkillCode: selSubSkill?.code, subSkillName: selSubSkill?.name,
+      lineTypeLabel: lineType === 'work' ? 'Work' : lineType === 'material' ? 'Material' : 'Combined',
+      dateText: new Date().toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }),
+      projectId, disciplineId, subSkillId,
+    })
+  }
 
   async function onFile(e: React.ChangeEvent<HTMLInputElement>) {
     const f = e.target.files?.[0]
@@ -536,6 +555,23 @@ export function NewWSQuickForm({ projects, projectDisciplines, projectSubSkills,
       </div>
 
       <div className="pt-2 border-t border-gray-100 space-y-3">
+        {cumulativeVersions && (
+          <div className="rounded-xl border border-emerald-200 bg-emerald-50/60 p-3 flex items-start gap-3">
+            <FileSpreadsheet className="h-5 w-5 text-emerald-600 mt-0.5 flex-shrink-0" />
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-semibold text-emerald-900">Use the standard BOQ template</p>
+              <p className="text-xs text-emerald-800/80 mt-0.5">
+                Download it pre-filled for this sub-skill, enter your quantities and rates (Rate &amp; Amount
+                calculate themselves), then upload it below. Standard files parse cleanly every time.
+              </p>
+            </div>
+            <Button type="button" size="sm" variant="outline"
+              className="flex-shrink-0 border-emerald-300 text-emerald-800 hover:bg-emerald-100"
+              onClick={onDownloadTemplate}>
+              <Download className="h-4 w-4 mr-1.5" /> Download template
+            </Button>
+          </div>
+        )}
         <div>
           <Label>Source Excel *</Label>
           {!file ? (
