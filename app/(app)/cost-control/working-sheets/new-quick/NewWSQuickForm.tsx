@@ -394,8 +394,13 @@ export function NewWSQuickForm({ projects, projectDisciplines, projectSubSkills,
           setParsing(false)
           return
         }
-        // Flag on, but not our template — warn, then fall through to fuzzy.
+        // Flag on but NOT our template — REJECT it. The standard template is
+        // mandatory so every BOQ is structured and its Qty is linked to a
+        // Measurement cell. No fuzzy fallback, no "gone ahead with a random
+        // sheet". The file stays shown with the download-the-template banner.
         setNotTemplate(true)
+        setParsing(false)
+        return
       }
 
       const local = await parseExcel(f)
@@ -520,11 +525,10 @@ export function NewWSQuickForm({ projects, projectDisciplines, projectSubSkills,
         setError('The rows don’t add up to your approval amount. Fix the rows or correct the amount below.'); return
       }
     }
-    // Working / measurement evidence is mandatory under the cumulative flow —
-    // require it here so it's attached with the sheet from the start (the same
-    // rule is enforced again server-side when the sheet is submitted).
-    if (cumulativeVersions && workFiles.length === 0) {
-      setError('Attach the working / measurement file(s) behind these quantities — it is required to raise a BOQ'); return
+    // Under the cumulative flow the file MUST be the standard template (its
+    // Measurement tab is the working) — a random Excel can't be raised.
+    if (cumulativeVersions && !tplActive) {
+      setError('Only the standard BOQ template can be raised. Download it, fill the BOQ + Measurement tabs, and re-upload.'); return
     }
     // Engineers must also attach a screenshot of the summary — it is shown
     // at the top of the sheet so approvers can glance the working.
@@ -642,9 +646,20 @@ export function NewWSQuickForm({ projects, projectDisciplines, projectSubSkills,
       if (rowsErr) { setError(`Row save failed: ${rowsErr.message}`); setSubmitting(false); return }
     }
 
-    // 4b. Working / measurement evidence (cumulative flow). Upload each to the
-    //     same bucket and register it in cc_ws_attachments so it shows in the
-    //     sheet's "Working & evidence" panel and satisfies the submit gate.
+    // 4a. Register the standard template itself as the working — its
+    //     Measurement tab IS the take-off. Points at the same storage object as
+    //     source_excel (no re-upload), so the sheet always has a real, linked
+    //     working and the submit gate is satisfied. No random loose file.
+    if (cumulativeVersions && tplActive) {
+      const { error: tplAttErr } = await supabase.from('cc_ws_attachments').insert({
+        working_sheet_id: ws.id, path: sourceUrl, name: file.name, kind: 'working', uploaded_by: user.id,
+      })
+      if (tplAttErr) { setError(`Working link failed: ${tplAttErr.message}`); setSubmitting(false); return }
+    }
+
+    // 4b. Extra supporting documents (optional). Upload each to the same bucket
+    //     and register it in cc_ws_attachments so it shows in the sheet's
+    //     "Working & evidence" panel.
     if (cumulativeVersions && workFiles.length > 0) {
       for (const wf of workFiles) {
         const safeWf = wf.name.replace(/[^A-Za-z0-9._-]/g, '_')
@@ -682,8 +697,8 @@ export function NewWSQuickForm({ projects, projectDisciplines, projectSubSkills,
   const missingToSend: string[] = []
   if (!file) missingToSend.push('attach the BOQ Excel')
   else if (parsing) missingToSend.push('wait for the file to finish parsing')
+  else if (cumulativeVersions && notTemplate) missingToSend.push('upload the STANDARD template — this file isn’t it')
   else if (!tplActive && !parsed) missingToSend.push('the file could not be read — re-upload it')
-  if (cumulativeVersions && workFiles.length === 0) missingToSend.push('attach the working / measurement file')
   if (!reviewer && !shot) missingToSend.push('attach the summary screenshot')
   if (summaryNotes.trim().length === 0) missingToSend.push('add a comment')
 
@@ -772,15 +787,26 @@ export function NewWSQuickForm({ projects, projectDisciplines, projectSubSkills,
           )}
         </div>
 
-        {/* Flag on but not our template → nudge to the standard file. */}
+        {/* Flag on but not our template → HARD reject. A random Excel can't be
+            raised — it must be the standard template (with its Measurement tab)
+            so every quantity is structured and traceable. */}
         {notTemplate && (
-          <div className="rounded-xl border border-amber-200 bg-amber-50/70 p-3 flex items-start gap-2">
-            <AlertTriangle className="h-4 w-4 text-amber-600 mt-0.5 flex-shrink-0" />
-            <p className="text-xs text-amber-800">
-              This isn&apos;t the standard BOQ template, so we&apos;ve parsed it the older best-effort way — rows may
-              be imperfect. For clean, error-free parsing, download the standard template above, paste your
-              figures into it, and re-upload.
-            </p>
+          <div className="rounded-xl border border-rose-300 bg-rose-50 p-3 flex items-start gap-2">
+            <AlertTriangle className="h-4 w-4 text-rose-600 mt-0.5 flex-shrink-0" />
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-semibold text-rose-800">This isn&apos;t the standard BOQ template — it can&apos;t be used</p>
+              <p className="text-xs text-rose-700 mt-0.5">
+                To raise a BOQ, the file must be the standard template (it carries a hidden marker and a
+                Measurement tab, so every quantity is structured and traceable). Download it, paste your
+                figures into the <b>BOQ</b> + <b>Measurement</b> tabs, and re-upload. Old / free-form Excels
+                aren&apos;t accepted while the cumulative flow is on.
+              </p>
+              <Button type="button" size="sm" variant="outline"
+                className="mt-2 border-rose-300 text-rose-800 hover:bg-rose-100"
+                onClick={onDownloadTemplate}>
+                <Download className="h-4 w-4 mr-1.5" /> Download the standard template
+              </Button>
+            </div>
           </div>
         )}
 
@@ -797,14 +823,15 @@ export function NewWSQuickForm({ projects, projectDisciplines, projectSubSkills,
           />
         )}
 
-        {/* Working / measurement evidence — the detailed file(s) that justify
-            these quantities. Mandatory under the cumulative flow; attached here
-            so the BOQ, its working, and the screenshot are all in one place. */}
-        {cumulativeVersions && (
+        {/* Extra supporting documents (OPTIONAL). The take-off/working is
+            already the Measurement tab inside the standard template, which we
+            register as the working automatically — so this is only for extras
+            like drawings, rate approvals or vendor quotes. */}
+        {cumulativeVersions && tplActive && (
           <div>
-            <Label>Working / measurement sheet {workFiles.length === 0 ? '*' : ''}</Label>
+            <Label>Supporting documents (optional)</Label>
             <p className="text-[11px] text-gray-500 mt-0.5">
-              The takeoff / measurement / rate-analysis file behind the quantities above (Excel, PDF or image). Required to raise a BOQ — it&apos;s frozen with this version so approvers can always trace a quantity back to its working.
+              Your take-off is already inside the template&apos;s <b>Measurement</b> tab — we keep that as the working automatically. Attach anything extra here (drawings, rate approvals, vendor quotes).
             </p>
             {workFiles.length > 0 && (
               <ul className="mt-2 divide-y divide-gray-100 rounded-xl border border-gray-200">
@@ -822,7 +849,7 @@ export function NewWSQuickForm({ projects, projectDisciplines, projectSubSkills,
             )}
             <label className="mt-2 flex items-center justify-center gap-2 border-2 border-dashed border-emerald-300 rounded-xl py-4 text-sm text-emerald-800 hover:bg-emerald-50/50 cursor-pointer">
               <Paperclip className="h-4 w-4" />
-              <span>{workFiles.length === 0 ? 'Attach working file(s) — Excel, PDF, image' : 'Add another working file'}</span>
+              <span>{workFiles.length === 0 ? 'Attach supporting document(s) — optional' : 'Add another document'}</span>
               <input type="file" multiple className="hidden" onChange={onPickWorking}
                 accept=".xls,.xlsx,.pdf,.png,.jpg,.jpeg,.csv" />
             </label>
