@@ -12,6 +12,8 @@ import { Textarea } from '@/components/ui/textarea'
 import { Loader2, Upload, Send, FileSpreadsheet, X, Sparkles, AlertTriangle, Image as ImageIcon, Download } from 'lucide-react'
 import { formatINR } from '@/lib/utils'
 import { downloadBoqTemplate } from '@/lib/cost-control/boq-template-xlsx'
+import { detectTemplate, parseTemplateSheet, evaluateItem } from '@/lib/cost-control/boq-template-parse'
+import { TemplateReviewGrid, type EditableGridRow, type GridSummary } from './TemplateReviewGrid'
 
 interface ProjectOpt   { id: string; code: string; name: string }
 interface DRow         { id: string; code: string; name: string }
@@ -282,6 +284,16 @@ export function NewWSQuickForm({ projects, projectDisciplines, projectSubSkills,
   const [submitting, setSubmitting]   = useState(false)
   const [error, setError]             = useState<string | null>(null)
 
+  // ── Standard-template mode (cc_cumulative_versions) ──────────────────────
+  // When the uploaded file carries our _meta marker we parse it strictly and
+  // show the verify-and-fix grid instead of the fuzzy preview.
+  const [tplActive, setTplActive]     = useState(false)
+  const [tplRows, setTplRows]         = useState<EditableGridRow[]>([])
+  const [tplContPct, setTplContPct]   = useState<number | null>(5)
+  const [tplGstPct, setTplGstPct]     = useState<number | null>(18)
+  const [tplSummary, setTplSummary]   = useState<GridSummary | null>(null)
+  const [notTemplate, setNotTemplate] = useState(false)
+
   const disciplines = useMemo(
     () => projectDisciplines.filter(pd => pd.project_id === projectId).map(pd => pd.discipline),
     [projectDisciplines, projectId],
@@ -312,7 +324,42 @@ export function NewWSQuickForm({ projects, projectDisciplines, projectSubSkills,
     const f = e.target.files?.[0]
     if (!f) return
     setFile(f); setError(null); setParsing(true); setParsed(null); setAiSummary(null); setAiMode(null)
+    setTplActive(false); setTplRows([]); setTplSummary(null); setNotTemplate(false)
     try {
+      // Standard-template path (flag ON): read every sheet, detect our marker,
+      // and parse strictly by column. This is the trustworthy route — no fuzzy
+      // guessing, precise per-row errors, everything recomputed.
+      if (cumulativeVersions) {
+        const buf = await f.arrayBuffer()
+        const wb = XLSX.read(buf, { type: 'array', cellFormula: true })
+        const sheets = wb.SheetNames.map(name => ({
+          name,
+          aoa: XLSX.utils.sheet_to_json<unknown[]>(wb.Sheets[name], { header: 1, defval: null }),
+        }))
+        const det = detectTemplate(sheets)
+        if (det.isTemplate) {
+          const boq = sheets.find(s => s.name === 'BOQ') ?? sheets[0]
+          const res = parseTemplateSheet(boq.aoa, det.meta)
+          const grid: EditableGridRow[] = res.rows.map((r, i) => ({
+            key: `tpl-${i}`,
+            isHeading: r.kind === 'heading',
+            description: r.description ?? '',
+            unit: r.unit ?? '',
+            qty: r.qty, material: r.material, installation: r.installation, ml: r.ml,
+            remarks: r.remarks ?? '',
+          }))
+          setTplRows(grid)
+          setTplContPct(res.ladder?.contingencyPct ?? 5)
+          setTplGstPct(res.ladder?.gstPct ?? 18)
+          setTplActive(true)
+          if (res.ladder && !summaryTotal) setSummaryTotal(String(res.ladder.grandTotal))
+          setParsing(false)
+          return
+        }
+        // Flag on, but not our template — warn, then fall through to fuzzy.
+        setNotTemplate(true)
+      }
+
       const local = await parseExcel(f)
       setParsed(local)
       if (local.grandTotal != null && !summaryTotal) setSummaryTotal(String(local.grandTotal))
@@ -389,6 +436,7 @@ export function NewWSQuickForm({ projects, projectDisciplines, projectSubSkills,
 
   function clearFile() {
     setFile(null); setParsed(null); setAiSummary(null); setAiMode(null)
+    setTplActive(false); setTplRows([]); setTplSummary(null); setNotTemplate(false)
   }
 
   function onShot(e: React.ChangeEvent<HTMLInputElement>) {
@@ -409,7 +457,19 @@ export function NewWSQuickForm({ projects, projectDisciplines, projectSubSkills,
 
   async function submit(e: React.FormEvent) {
     e.preventDefault()
-    if (!file || !parsed) { setError('Attach an Excel and wait for parsing to finish'); return }
+    if (!file) { setError('Attach an Excel and wait for parsing to finish'); return }
+    if (!tplActive && !parsed) { setError('Attach an Excel and wait for parsing to finish'); return }
+    // Template mode: block on hard row errors + reconciliation before we
+    // ever create the sheet.
+    if (tplActive) {
+      if (tplRows.filter(r => !r.isHeading).length === 0) { setError('Add at least one item row'); return }
+      if (tplSummary && tplSummary.hardErrors > 0) {
+        setError(`Fix the ${tplSummary.hardErrors} highlighted row problem${tplSummary.hardErrors > 1 ? 's' : ''} before submitting`); return
+      }
+      if (tplSummary && !tplSummary.reconciledToClaim) {
+        setError('The rows don’t add up to your approval amount. Fix the rows or correct the amount below.'); return
+      }
+    }
     // Engineers must also attach a screenshot of the summary — it is shown
     // at the top of the sheet so approvers can glance the working.
     if (!reviewer && !shot) { setError('Attach a screenshot of your summary — it is required along with the Excel'); return }
@@ -477,10 +537,30 @@ export function NewWSQuickForm({ projects, projectDisciplines, projectSubSkills,
     }).select('id').single()
     if (wsErr || !ws) { setError(`Save failed: ${wsErr?.message}`); setSubmitting(false); return }
 
-    // 4. Insert parsed rows — including the AI metadata when present.
-    if (parsed.rows.length > 0) {
-      const { error: rowsErr } = await supabase.from('cc_excel_rows').insert(
-        parsed.rows.map(r => ({
+    // 4. Insert parsed rows. Template mode builds them from the verified grid
+    //    (everything recomputed); fuzzy mode uses the parsed rows as before.
+    const rowsToInsert = tplActive
+      ? tplRows.map((r, i) => {
+          if (r.isHeading) {
+            return {
+              working_sheet_id: ws.id, row_no: i + 1, raw_label: null,
+              description: r.description || null, unit: null, qty: null, rate: null, amount: null,
+              formula_in_amount: null, rate_breakdown: null, amount_breakdown: null, ai_meta: null,
+            }
+          }
+          const ev = evaluateItem(r)
+          const breakdown: Array<{ label: string; value: number }> = []
+          if (r.material != null) breakdown.push({ label: 'Material', value: r.material })
+          if (r.installation != null) breakdown.push({ label: 'Installation', value: r.installation })
+          if (r.ml != null) breakdown.push({ label: 'M+L', value: r.ml })
+          return {
+            working_sheet_id: ws.id, row_no: i + 1, raw_label: null,
+            description: r.description || null, unit: r.unit || null, qty: r.qty,
+            rate: ev.rate, amount: ev.amount, formula_in_amount: null,
+            rate_breakdown: breakdown.length ? breakdown : null, amount_breakdown: null, ai_meta: null,
+          }
+        })
+      : (parsed?.rows ?? []).map(r => ({
           working_sheet_id: ws.id,
           row_no: r.row_no,
           raw_label: r.raw_label,
@@ -493,8 +573,9 @@ export function NewWSQuickForm({ projects, projectDisciplines, projectSubSkills,
           rate_breakdown:   r.rate_breakdown,
           amount_breakdown: r.amount_breakdown,
           ai_meta: r.ai_meta ?? null,
-        })),
-      )
+        }))
+    if (rowsToInsert.length > 0) {
+      const { error: rowsErr } = await supabase.from('cc_excel_rows').insert(rowsToInsert)
       if (rowsErr) { setError(`Row save failed: ${rowsErr.message}`); setSubmitting(false); return }
     }
 
@@ -586,7 +667,9 @@ export function NewWSQuickForm({ projects, projectDisciplines, projectSubSkills,
               <div className="min-w-0 flex-1">
                 <p className="text-sm font-medium text-gray-900 truncate">{file.name}</p>
                 <p className="text-xs text-gray-500">
-                  {parsing ? 'Parsing…' : parsed ? `${parsed.rows.length} row(s) parsed${parsed.grandTotal != null ? ` · grand total ${formatINR(parsed.grandTotal)}` : ''}` : '—'}
+                  {parsing ? 'Parsing…'
+                    : tplActive ? `Standard template · ${tplRows.filter(r => !r.isHeading).length} item(s)${tplSummary ? ` · grand total ${formatINR(tplSummary.grandTotal)}` : ''}`
+                    : parsed ? `${parsed.rows.length} row(s) parsed${parsed.grandTotal != null ? ` · grand total ${formatINR(parsed.grandTotal)}` : ''}` : '—'}
                 </p>
               </div>
               <Button type="button" size="sm" variant="ghost" onClick={clearFile}>
@@ -595,6 +678,31 @@ export function NewWSQuickForm({ projects, projectDisciplines, projectSubSkills,
             </div>
           )}
         </div>
+
+        {/* Flag on but not our template → nudge to the standard file. */}
+        {notTemplate && (
+          <div className="rounded-xl border border-amber-200 bg-amber-50/70 p-3 flex items-start gap-2">
+            <AlertTriangle className="h-4 w-4 text-amber-600 mt-0.5 flex-shrink-0" />
+            <p className="text-xs text-amber-800">
+              This isn&apos;t the standard BOQ template, so we&apos;ve parsed it the older best-effort way — rows may
+              be imperfect. For clean, error-free parsing, download the standard template above, paste your
+              figures into it, and re-upload.
+            </p>
+          </div>
+        )}
+
+        {/* Verify-and-fix grid — template mode only. */}
+        {tplActive && (
+          <TemplateReviewGrid
+            rows={tplRows}
+            onRowsChange={setTplRows}
+            contingencyPct={tplContPct}
+            gstPct={tplGstPct}
+            onPctChange={(which, v) => (which === 'cont' ? setTplContPct(v) : setTplGstPct(v))}
+            claimedTotal={summaryTotal ? Number(summaryTotal) : null}
+            onSummary={setTplSummary}
+          />
+        )}
 
         {/* Summary screenshot — compulsory for engineers. Shown full-width at
             the top of the sheet so approvers can glance the working without
