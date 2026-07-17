@@ -72,7 +72,8 @@ export default async function NewWorkingSheetPage({
     if (s) projectSubSkills.push({ project_id: r.project_id, sub_skill: s })
   }
 
-  const canSetDeadline = (await checkCanSetDeadline()) && (await getCcSettings()).show_deadlines
+  const ccSettings = await getCcSettings()
+  const canSetDeadline = (await checkCanSetDeadline()) && ccSettings.show_deadlines
 
   return (
     <div className="p-4 md:p-6 max-w-2xl mx-auto space-y-4">
@@ -114,6 +115,7 @@ export default async function NewWorkingSheetPage({
           defaultSubSkillId={sp.sub_skill}
           canSetDeadline={canSetDeadline}
           thumbruleKeys={Array.from(thumbruleKeys)}
+          cumulativeVersions={ccSettings.cumulative_versions}
         />
       </Card>
     </div>

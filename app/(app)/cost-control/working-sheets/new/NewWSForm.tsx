@@ -5,8 +5,9 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
-import { Ruler } from 'lucide-react'
+import { Ruler, FileSpreadsheet, Download } from 'lucide-react'
 import { createWorkingSheet } from '@/components/cost-control/ws-actions'
+import { downloadBoqTemplate } from '@/lib/cost-control/boq-template-xlsx'
 
 interface ProjectLite { id: string; code: string; name: string }
 interface DRow { id: string; code: string; name: string }
@@ -27,9 +28,12 @@ interface Props {
    *  user picks such a combo, we show a callout redirecting them to the
    *  dedicated thumbrule form. */
   thumbruleKeys?: string[]
+  /** cc_cumulative_versions — shows the standard-template download once a
+   *  sub-skill is picked. */
+  cumulativeVersions?: boolean
 }
 
-export function NewWSForm({ projects, projectDisciplines, projectSubSkills, defaultProjectId, defaultDisciplineId, defaultSubSkillId, canSetDeadline = false, thumbruleKeys = [] }: Props) {
+export function NewWSForm({ projects, projectDisciplines, projectSubSkills, defaultProjectId, defaultDisciplineId, defaultSubSkillId, canSetDeadline = false, thumbruleKeys = [], cumulativeVersions = false }: Props) {
   const thumbruleSet = React.useMemo(() => new Set(thumbruleKeys), [thumbruleKeys])
   const router = useRouter()
   const [projectId, setProjectId] = React.useState(defaultProjectId ?? '')
@@ -90,6 +94,20 @@ export function NewWSForm({ projects, projectDisciplines, projectSubSkills, defa
       return
     }
     router.push(`/cost-control/working-sheets/${res.id}`)
+  }
+
+  function onDownloadTemplate() {
+    const proj = projects.find(p => p.id === projectId)
+    const disc = disciplinesForProject.find(d => d.id === disciplineId)
+    const sub = subSkillsForChoice.find(s => s.id === subSkillId)
+    downloadBoqTemplate({
+      projectCode: proj?.code, projectName: proj?.name,
+      disciplineCode: disc?.code, disciplineName: disc?.name,
+      subSkillCode: sub?.code, subSkillName: sub?.name,
+      lineTypeLabel: lineType === 'work' ? 'Work' : lineType === 'material' ? 'Material' : 'Combined',
+      dateText: new Date().toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }),
+      projectId, disciplineId, subSkillId,
+    })
   }
 
   return (
@@ -160,6 +178,24 @@ export function NewWSForm({ projects, projectDisciplines, projectSubSkills, defa
           <p className="mt-1 text-xs text-amber-700">No sub-skills enabled in this discipline for this project.</p>
         )}
       </div>
+
+      {cumulativeVersions && subSkillId && (
+        <div className="rounded-xl border border-emerald-200 bg-emerald-50/60 p-3 flex items-start gap-3">
+          <FileSpreadsheet className="h-5 w-5 text-emerald-600 mt-0.5 flex-shrink-0" />
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-semibold text-emerald-900">Raising a BOQ? Use the standard template</p>
+            <p className="text-xs text-emerald-800/80 mt-0.5">
+              Download it pre-filled for this sub-skill, enter quantities &amp; rates, then attach it via
+              {' '}<b>Quick mode</b> (the green box above). Rate &amp; Amount calculate themselves and it parses cleanly.
+            </p>
+          </div>
+          <Button type="button" size="sm" variant="outline"
+            className="flex-shrink-0 border-emerald-300 text-emerald-800 hover:bg-emerald-100"
+            onClick={onDownloadTemplate}>
+            <Download className="h-4 w-4 mr-1.5" /> Download template
+          </Button>
+        </div>
+      )}
 
       <div>
         <Label htmlFor="line_type">Type</Label>
