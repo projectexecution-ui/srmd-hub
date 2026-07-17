@@ -32,23 +32,26 @@ export function isRealVersion(v: LedgerVersion): boolean {
 }
 
 export interface CumulativeMoney {
-  alreadyApproved: number   // Σ approved_for_erp_amt of real PRIOR versions
-  thisVersion: number       // this version's own ask (total_amount)
-  cumulative: number        // alreadyApproved + thisVersion
+  alreadyApproved: number   // Σ approved_for_erp_amt released by real PRIOR versions
+  cumulative: number        // THIS version's full-BOQ total (a revision restates
+                            //   the whole BOQ, cloned from the approved version)
+  thisAsk: number           // cumulative − alreadyApproved (new money requested now)
   priorCount: number        // how many prior versions contributed
 }
 
-/** Money strip: already approved (prior releases) · this ask · cumulative. */
+/** Money strip: already approved (prior releases) · this NEW ask · cumulative.
+ *  A revision carries forward the full BOQ, so this version's total_amount IS
+ *  the cumulative; the incremental ask is what's left after prior releases. */
 export function chainCumulative(siblings: LedgerVersion[], currentId: string): CumulativeMoney {
   const current = siblings.find(v => v.id === currentId)
   const curVer = current?.version_no ?? Number.POSITIVE_INFINITY
   const priors = siblings.filter(v => isRealVersion(v) && v.version_no < curVer)
   const alreadyApproved = priors.reduce((s, v) => s + (Number(v.approved_for_erp_amt) || 0), 0)
-  const thisVersion = current ? (Number(current.total_amount) || 0) : 0
+  const cumulative = current ? (Number(current.total_amount) || 0) : 0
   return {
     alreadyApproved,
-    thisVersion,
-    cumulative: alreadyApproved + thisVersion,
+    cumulative,
+    thisAsk: cumulative - alreadyApproved,
     priorCount: priors.length,
   }
 }

@@ -14,24 +14,26 @@ const v = (o: Partial<LedgerVersion> & { id: string; version_no: number }): Ledg
 })
 
 describe('chainCumulative', () => {
-  it('sums prior approved releases; this = current total; cumulative = both', () => {
+  it('cumulative = this version full total; thisAsk = cumulative − prior releases', () => {
     const sibs = [
       v({ id: 'a', version_no: 1, approved_for_erp_amt: 1_000_000, total_amount: 1_000_000 }),
-      v({ id: 'b', version_no: 2, approved_for_erp_amt: 400_000, total_amount: 400_000 }),
-      v({ id: 'c', version_no: 3, approved_for_erp_amt: 0, total_amount: 250_000, status: 'submitted' }),
+      v({ id: 'b', version_no: 2, approved_for_erp_amt: 400_000, total_amount: 1_400_000 }),
+      // v3 restates the whole BOQ at 1.65 Cr; 1.4 Cr already released.
+      v({ id: 'c', version_no: 3, approved_for_erp_amt: 0, total_amount: 1_650_000, status: 'submitted' }),
     ]
     const r = chainCumulative(sibs, 'c')
     expect(r.alreadyApproved).toBe(1_400_000)
-    expect(r.thisVersion).toBe(250_000)
     expect(r.cumulative).toBe(1_650_000)
+    expect(r.thisAsk).toBe(250_000)
     expect(r.priorCount).toBe(2)
   })
 
-  it('v1 has no priors', () => {
+  it('v1 has no priors — thisAsk equals the full total', () => {
     const sibs = [v({ id: 'a', version_no: 1, total_amount: 500_000 })]
     const r = chainCumulative(sibs, 'a')
     expect(r.alreadyApproved).toBe(0)
     expect(r.cumulative).toBe(500_000)
+    expect(r.thisAsk).toBe(500_000)
   })
 
   it('excludes [IB] baseline, cancelled and archived priors', () => {
@@ -40,10 +42,11 @@ describe('chainCumulative', () => {
       v({ id: 'x', version_no: 2, approved_for_erp_amt: 5_000, status: 'cancelled' }),
       v({ id: 'y', version_no: 3, approved_for_erp_amt: 7_000, archived_at: '2026-01-01' }),
       v({ id: 'ok', version_no: 4, approved_for_erp_amt: 100_000 }),
-      v({ id: 'cur', version_no: 5, total_amount: 20_000, status: 'submitted' }),
+      v({ id: 'cur', version_no: 5, total_amount: 120_000, status: 'submitted' }),
     ]
     const r = chainCumulative(sibs, 'cur')
     expect(r.alreadyApproved).toBe(100_000) // only 'ok'
+    expect(r.thisAsk).toBe(20_000)
     expect(r.priorCount).toBe(1)
   })
 })

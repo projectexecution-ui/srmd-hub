@@ -19,6 +19,8 @@ import { ExcelSummaryPanel } from './ExcelSummaryPanel'
 import { SourceExcelViewer } from './SourceExcelViewer'
 import { ScreenshotAiCheck } from './ScreenshotAiCheck'
 import { WorkingEvidence, type EvidenceFile } from './WorkingEvidence'
+import { RaiseRevisionButton } from './RaiseRevisionButton'
+import { RevisionEditor, type PriorApprovedRow, type DeltaRow } from './RevisionEditor'
 import { EditDeadlineButton } from './EditDeadlineButton'
 import { QueryError } from '@/components/ui/query-error'
 import { formatINR } from '@/lib/utils'
@@ -210,6 +212,7 @@ export default async function WorkingSheetEditorPage(
   // the sheet; upload/delete is offered only to the owner while it is still
   // editable (draft / returned).
   let workingEvidencePanel: React.ReactNode = null
+  let revisionAttachments: Array<{ id: string; name: string }> = []
   if (ccSettings.cumulative_versions) {
     const { data: attachRows } = await supabase
       .from('cc_ws_attachments')
@@ -221,6 +224,7 @@ export default async function WorkingSheetEditorPage(
       const { data: signed } = await supabase.storage.from('cc-sheets').createSignedUrl(a.path as string, 60 * 60)
       evidence.push({ id: a.id as string, name: a.name as string, signedUrl: signed?.signedUrl ?? null })
     }
+    revisionAttachments = (attachRows ?? []).map(a => ({ id: a.id as string, name: a.name as string }))
     const ownerEditable = canEdit && user?.id === ws.engineer_id && !frozen && (ws.status === 'draft' || ws.status === 'returned')
     workingEvidencePanel = (
       <WorkingEvidence
@@ -351,9 +355,54 @@ export default async function WorkingSheetEditorPage(
   if (ws.entry_mode === 'excel_summary') {
     const { data: excelRows } = await supabase
       .from('cc_excel_rows')
-      .select('id, row_no, description, unit, qty, rate, amount, formula_in_amount, rate_breakdown, amount_breakdown, ai_meta, flag, flag_reason, flag_severity')
+      .select('id, row_no, description, unit, qty, rate, amount, formula_in_amount, rate_breakdown, amount_breakdown, ai_meta, flag, flag_reason, flag_severity, working_ref')
       .eq('working_sheet_id', id)
       .order('row_no')
+
+    // ── Cumulative revisions (cc_cumulative_versions) ──────────────────────
+    // Approved sheet → offer "Raise revision". Draft revision (v2+) → show the
+    // in-app editor with the prior version's rows locked for reference.
+    const ownerEditable = canEdit && user?.id === ws.engineer_id && !frozen && (ws.status === 'draft' || ws.status === 'returned')
+    const canRaiseRevision = ccSettings.cumulative_versions && !frozen && !isEstimateSheet &&
+      (user?.id === ws.engineer_id || reviewer) &&
+      ['approved', 'partially_approved', 'wo_issued', 'paid'].includes(ws.status as string)
+    const isRevisionDraft = ccSettings.cumulative_versions && ownerEditable && ws.version_no > 1
+
+    // Prior version's rows = the frozen "already approved" BOQ for the editor
+    // and (S6) the cumulative comparison.
+    const compFromBreakdown = (bd: unknown, label: string): number | null => {
+      const arr = bd as Array<{ label: string; value: number }> | null
+      const hit = arr?.find(b => b.label === label)
+      return hit ? Number(hit.value) : null
+    }
+    let priorApprovedRows: PriorApprovedRow[] = []
+    let revisionInitial: DeltaRow[] = []
+    if (isRevisionDraft && prevSibling) {
+      const { data: priorRows } = await supabase
+        .from('cc_excel_rows')
+        .select('description, unit, qty, rate, amount')
+        .eq('working_sheet_id', prevSibling.id)
+        .not('qty', 'is', null)
+        .order('row_no')
+      priorApprovedRows = (priorRows ?? []).map(r => ({
+        description: r.description ?? '', unit: r.unit ?? null,
+        qty: Number(r.qty ?? 0), rate: Number(r.rate ?? 0), amount: Number(r.amount ?? 0),
+      }))
+      revisionInitial = (excelRows ?? []).filter(r => r.qty != null).map((r, i) => {
+        const wref = r.working_ref as { attachment_id?: string | null; cell_note?: string | null } | null
+        return {
+          key: `row-${r.id ?? i}`,
+          description: r.description ?? '',
+          unit: r.unit ?? 'Cum',
+          qty: r.qty != null ? Number(r.qty) : null,
+          material: compFromBreakdown(r.rate_breakdown, 'Material'),
+          installation: compFromBreakdown(r.rate_breakdown, 'Installation'),
+          ml: compFromBreakdown(r.rate_breakdown, 'M+L'),
+          workingRefId: wref?.attachment_id ?? null,
+          cellNote: wref?.cell_note ?? '',
+        }
+      })
+    }
 
     // Signed URL for downloading the original Excel
     let downloadUrl: string | null = null
@@ -409,6 +458,7 @@ export default async function WorkingSheetEditorPage(
           isAdmin={isAdmin}
         />
         {releaseRequestPanel}
+        {canRaiseRevision && <RaiseRevisionButton wsId={ws.id} />}
         {summaryShotPanel}
 
         {ccSettings.show_deadlines && (ws.deadline_date || canEditDeadline) && (
@@ -430,6 +480,16 @@ export default async function WorkingSheetEditorPage(
           </div>
         )}
 
+        {isRevisionDraft ? (
+          <RevisionEditor
+            wsId={ws.id}
+            priorApproved={priorApprovedRows}
+            initial={revisionInitial}
+            attachments={revisionAttachments}
+            canEdit={ownerEditable}
+          />
+        ) : (
+        <>
         <SourceExcelViewer url={downloadUrl} name={ws.source_excel_name} microsoft={ccSettings.excel_microsoft} reviewer={reviewer} />
 
         {/* AI review tools — for the approval chain (PH / Atm Head /
@@ -495,6 +555,8 @@ export default async function WorkingSheetEditorPage(
             flag_severity: r.flag_severity,
           }))}
         />
+        </>
+        )}
 
         {workingEvidencePanel}
 
