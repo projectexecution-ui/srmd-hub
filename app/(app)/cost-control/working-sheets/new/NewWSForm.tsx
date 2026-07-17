@@ -5,7 +5,7 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
-import { Ruler, FileSpreadsheet, Download } from 'lucide-react'
+import { Ruler, FileSpreadsheet, Download, ArrowRight } from 'lucide-react'
 import { createWorkingSheet } from '@/components/cost-control/ws-actions'
 import { downloadBoqTemplate } from '@/lib/cost-control/boq-template-xlsx'
 
@@ -110,6 +110,16 @@ export function NewWSForm({ projects, projectDisciplines, projectSubSkills, defa
     })
   }
 
+  // The upload lives in Quick mode — carry the picked project/discipline/
+  // sub-skill so the engineer lands there prefilled, ready to attach the file.
+  function goToQuickUpload() {
+    const qs = new URLSearchParams()
+    if (projectId) qs.set('project', projectId)
+    if (disciplineId) qs.set('discipline', disciplineId)
+    if (subSkillId) qs.set('sub_skill', subSkillId)
+    router.push(`/cost-control/working-sheets/new-quick${qs.size ? `?${qs}` : ''}`)
+  }
+
   return (
     <form onSubmit={submit} className="space-y-4">
       {error && <div className="rounded-md bg-red-50 border border-red-200 p-3 text-sm text-red-800">{error}</div>}
@@ -180,20 +190,30 @@ export function NewWSForm({ projects, projectDisciplines, projectSubSkills, defa
       </div>
 
       {cumulativeVersions && subSkillId && (
-        <div className="rounded-xl border border-emerald-200 bg-emerald-50/60 p-3 flex items-start gap-3">
-          <FileSpreadsheet className="h-5 w-5 text-emerald-600 mt-0.5 flex-shrink-0" />
-          <div className="min-w-0 flex-1">
-            <p className="text-sm font-semibold text-emerald-900">Raising a BOQ? Use the standard template</p>
-            <p className="text-xs text-emerald-800/80 mt-0.5">
-              Download it pre-filled for this sub-skill, enter quantities &amp; rates, then attach it via
-              {' '}<b>Quick mode</b> (the green box above). Rate &amp; Amount calculate themselves and it parses cleanly.
-            </p>
+        <div className="rounded-xl border border-emerald-200 bg-emerald-50/60 p-3 space-y-2.5">
+          <div className="flex items-start gap-3">
+            <FileSpreadsheet className="h-5 w-5 text-emerald-600 mt-0.5 flex-shrink-0" />
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-semibold text-emerald-900">Raising a BOQ? Use the standard template</p>
+              <p className="text-xs text-emerald-800/80 mt-0.5">
+                <b>1.</b> Download it (pre-filled for this sub-skill). <b>2.</b> Enter your quantities &amp; rates —
+                Rate &amp; Amount calculate themselves. <b>3.</b> Upload it in <b>Quick mode</b>, where it parses cleanly.
+                The upload box is there, not on this page.
+              </p>
+            </div>
           </div>
-          <Button type="button" size="sm" variant="outline"
-            className="flex-shrink-0 border-emerald-300 text-emerald-800 hover:bg-emerald-100"
-            onClick={onDownloadTemplate}>
-            <Download className="h-4 w-4 mr-1.5" /> Download template
-          </Button>
+          <div className="flex flex-wrap gap-2 pl-8">
+            <Button type="button" size="sm" variant="outline"
+              className="border-emerald-300 text-emerald-800 hover:bg-emerald-100"
+              onClick={onDownloadTemplate}>
+              <Download className="h-4 w-4 mr-1.5" /> Download template
+            </Button>
+            <Button type="button" size="sm"
+              className="bg-emerald-600 hover:bg-emerald-700 text-white"
+              onClick={goToQuickUpload}>
+              Upload it in Quick mode <ArrowRight className="h-4 w-4 ml-1.5" />
+            </Button>
+          </div>
         </div>
       )}
 
