@@ -44,6 +44,25 @@ export function CcSettingsForm({ initial, users = [] }: {
   const [msg, setMsg] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
 
+  // The Experimental switch saves the moment it's clicked — no separate "Save
+  // settings" step — because its whole promise is "flip it to trial, flip it
+  // off to revert instantly." Optimistic; reverts on error.
+  async function toggleCumulative(next: boolean) {
+    setV(prev => ({ ...prev, cumulative_versions: next }))
+    setMsg(null); setError(null)
+    const supabase = createClient()
+    const { error } = await supabase
+      .from('app_settings')
+      .upsert({ key: 'cc_cumulative_versions', value: String(next) }, { onConflict: 'key' })
+    if (error) {
+      setV(prev => ({ ...prev, cumulative_versions: !next }))  // revert
+      setError(`Couldn't save the switch: ${error.message}`)
+      return
+    }
+    setMsg(next ? 'Cumulative BOQ turned ON — saved.' : 'Cumulative BOQ turned OFF — saved.')
+    router.refresh()
+  }
+
   async function submit(e: React.FormEvent) {
     e.preventDefault()
     setSaving(true)
@@ -143,13 +162,17 @@ export function CcSettingsForm({ initial, users = [] }: {
         <div className="rounded-lg border border-amber-200 bg-amber-50/50 px-3 py-3 space-y-2">
           <Toggle
             label="Cumulative BOQ across versions (new)"
-            hint="Turns on the whole new way of working: a standard BOQ template every discipline downloads, a cumulative view on each revision (already approved qty/rate vs this ask, with rate changes flagged and new items grouped below), in-app revisions (no re-uploading Excel), mandatory working evidence, and a sub-skill ledger. OFF (default) keeps today's flow exactly as it is — flip it on to trial, flip it off to revert instantly. No code change either way."
+            hint="Turns on the whole new way of working: a standard BOQ template every discipline downloads, a cumulative view on each revision (already approved qty/rate vs this ask, with rate changes flagged and new items grouped below), in-app revisions (no re-uploading Excel), mandatory working evidence, and a sub-skill ledger. OFF (default) keeps today's flow exactly as it is. Saves the instant you click — flip it on to trial, flip it off to revert. No code change either way."
             checked={v.cumulative_versions}
-            onChange={x => setV({ ...v, cumulative_versions: x })}
+            onChange={toggleCumulative}
           />
-          {v.cumulative_versions && (
+          {v.cumulative_versions ? (
             <p className="text-[11px] text-amber-700 px-1">
               On — new working sheets get the standard template + cumulative tracking. Existing approved sheets are untouched; their next revision will use the new in-app editor.
+            </p>
+          ) : (
+            <p className="text-[11px] text-gray-500 px-1">
+              Off — the app behaves exactly as it does today. Saved automatically the moment you flip this switch (no need for the Save button below).
             </p>
           )}
         </div>
