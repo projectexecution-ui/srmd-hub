@@ -661,6 +661,18 @@ export function NewWSQuickForm({ projects, projectDisciplines, projectSubSkills,
     return <p className="text-sm text-gray-600">No active Cost Control projects yet — set one up first.</p>
   }
 
+  // Everything still required before the sheet can be sent. Shown under the
+  // button so a disabled Save & send is never a mystery. Template mode uses
+  // tplActive (parsed stays null there) — the old `!parsed` check wrongly
+  // disabled the button for every standard-template upload.
+  const missingToSend: string[] = []
+  if (!file) missingToSend.push('attach the BOQ Excel')
+  else if (parsing) missingToSend.push('wait for the file to finish parsing')
+  else if (!tplActive && !parsed) missingToSend.push('the file could not be read — re-upload it')
+  if (cumulativeVersions && workFiles.length === 0) missingToSend.push('attach the working / measurement file')
+  if (!reviewer && !shot) missingToSend.push('attach the summary screenshot')
+  if (summaryNotes.trim().length === 0) missingToSend.push('add a comment')
+
   return (
     <form onSubmit={submit} className="space-y-5">
       {error && <p className="text-sm text-rose-700 bg-rose-50 border border-rose-200 rounded-lg px-3 py-2">{error}</p>}
@@ -958,10 +970,17 @@ export function NewWSQuickForm({ projects, projectDisciplines, projectSubSkills,
         </div>
       </div>
 
-      <Button type="submit" disabled={submitting || parsing || !file || !parsed || (!reviewer && !shot) || summaryNotes.trim().length === 0}>
-        {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-        {reviewer ? 'Save & analyse' : 'Save & send'}
-      </Button>
+      <div className="space-y-1.5">
+        <Button type="submit" disabled={submitting || missingToSend.length > 0}>
+          {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+          {reviewer ? 'Save & analyse' : 'Save & send'}
+        </Button>
+        {missingToSend.length > 0 && (
+          <p className="text-xs text-amber-700">
+            Before you can send: {missingToSend.join(' · ')}.
+          </p>
+        )}
+      </div>
     </form>
   )
 }
