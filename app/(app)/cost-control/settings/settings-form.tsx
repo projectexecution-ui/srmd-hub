@@ -64,6 +64,7 @@ export function CcSettingsForm({ initial, users = [] }: {
       // ERP visible, Internal Estimate/Paid hidden) — no keys saved for it.
       { key: 'cc_archive_users',    value: v.archive_users.join(',') },
       { key: 'cc_ie_review',        value: String(v.ie_review) },
+      { key: 'cc_cumulative_versions', value: String(v.cumulative_versions) },
     ]
     const { error } = await supabase.from('app_settings').upsert(rows, { onConflict: 'key' })
     if (error) { setError(error.message); setSaving(false); return }
@@ -136,6 +137,23 @@ export function CcSettingsForm({ initial, users = [] }: {
           />
         </div>
       </details>
+
+      <div className="space-y-2">
+        <p className="text-[11px] uppercase tracking-wider font-semibold text-amber-600">Experimental</p>
+        <div className="rounded-lg border border-amber-200 bg-amber-50/50 px-3 py-3 space-y-2">
+          <Toggle
+            label="Cumulative BOQ across versions (new)"
+            hint="Turns on the whole new way of working: a standard BOQ template every discipline downloads, a cumulative view on each revision (already approved qty/rate vs this ask, with rate changes flagged and new items grouped below), in-app revisions (no re-uploading Excel), mandatory working evidence, and a sub-skill ledger. OFF (default) keeps today's flow exactly as it is — flip it on to trial, flip it off to revert instantly. No code change either way."
+            checked={v.cumulative_versions}
+            onChange={x => setV({ ...v, cumulative_versions: x })}
+          />
+          {v.cumulative_versions && (
+            <p className="text-[11px] text-amber-700 px-1">
+              On — new working sheets get the standard template + cumulative tracking. Existing approved sheets are untouched; their next revision will use the new in-app editor.
+            </p>
+          )}
+        </div>
+      </div>
 
       <div className="space-y-2">
         <p className="text-[11px] uppercase tracking-wider font-semibold text-gray-500">Notifications</p>

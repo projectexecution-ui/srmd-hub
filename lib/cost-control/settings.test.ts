@@ -40,4 +40,13 @@ describe('parseCcSettings', () => {
     expect(parseCcSettings({ cc_eng_estimates: 'garbage' }).eng_estimates).toBe('own')
     expect(parseCcSettings({ cc_eng_estimates: '' }).eng_estimates).toBe('own')
   })
+
+  it('cumulative_versions is OFF by default and flips only on true/1/on', () => {
+    expect(parseCcSettings({}).cumulative_versions).toBe(false)
+    expect(parseCcSettings({ cc_cumulative_versions: 'true' }).cumulative_versions).toBe(true)
+    expect(parseCcSettings({ cc_cumulative_versions: '1' }).cumulative_versions).toBe(true)
+    expect(parseCcSettings({ cc_cumulative_versions: 'on' }).cumulative_versions).toBe(true)
+    expect(parseCcSettings({ cc_cumulative_versions: 'false' }).cumulative_versions).toBe(false)
+    expect(parseCcSettings({ cc_cumulative_versions: '' }).cumulative_versions).toBe(false)
+  })
 })

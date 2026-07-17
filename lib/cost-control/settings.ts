@@ -48,6 +48,12 @@ export interface CcSettings {
    *  Internal Estimate. Off (default) = the uploaded estimate is simply the
    *  baseline that engineer asks are compared against (no manual step). */
   ie_review: boolean
+  /** EXPERIMENTAL master switch for the cumulative-versions system: standard
+   *  BOQ template, cumulative approved-vs-ask strip/table, in-app revision
+   *  editor, mandatory working evidence, sub-skill ledger, cumulative email
+   *  line. Off (default) = today's behaviour, unchanged. One switch to trial
+   *  the whole feature and revert instantly. */
+  cumulative_versions: boolean
 }
 
 export const CC_SETTINGS_DEFAULTS: CcSettings = {
@@ -66,6 +72,7 @@ export const CC_SETTINGS_DEFAULTS: CcSettings = {
   eng_erp: false,
   archive_users: [],
   ie_review: false,
+  cumulative_versions: false,
 }
 
 /** Pure parser — exported so tests cover defaults/overrides without Supabase. */
@@ -100,6 +107,7 @@ export function parseCcSettings(map: Record<string, string | null | undefined>):
     eng_erp:           parseBool('cc_eng_erp', d.eng_erp),
     archive_users:     ((map['cc_archive_users'] ?? '').match(/[0-9a-f-]{36}/gi) ?? []),
     ie_review:         parseBool('cc_ie_review', d.ie_review),
+    cumulative_versions: parseBool('cc_cumulative_versions', d.cumulative_versions),
   }
 }
 
