@@ -13,6 +13,7 @@ import { Loader2, Upload, Send, FileSpreadsheet, X, Sparkles, AlertTriangle, Ima
 import { formatINR } from '@/lib/utils'
 import { downloadBoqTemplate } from '@/lib/cost-control/boq-template-xlsx'
 import { detectTemplate, parseTemplateSheet, evaluateItem } from '@/lib/cost-control/boq-template-parse'
+import { parseSourceRef } from '@/lib/cost-control/formula-ref'
 import { TemplateReviewGrid, type EditableGridRow, type GridSummary } from './TemplateReviewGrid'
 
 interface ProjectOpt   { id: string; code: string; name: string }
@@ -47,6 +48,25 @@ interface ParsedRow {
   rate_breakdown: Breakdown[] | null
   amount_breakdown: Breakdown[] | null
   ai_meta?: AiRowMeta | null
+}
+
+/** The exact row shape inserted into cc_excel_rows — declared so the template
+ *  and fuzzy branches unify to one type for supabase.insert(). */
+type CcExcelRowInsert = {
+  working_sheet_id: string
+  row_no: number
+  raw_label: string | null
+  description: string | null
+  unit: string | null
+  qty: number | null
+  rate: number | null
+  amount: number | null
+  formula_in_amount: string | null
+  rate_breakdown: Breakdown[] | null
+  amount_breakdown: Breakdown[] | null
+  ai_meta: AiRowMeta | null
+  source_sheet: string | null
+  source_cell: string | null
 }
 
 interface AiSummary {
@@ -539,13 +559,14 @@ export function NewWSQuickForm({ projects, projectDisciplines, projectSubSkills,
 
     // 4. Insert parsed rows. Template mode builds them from the verified grid
     //    (everything recomputed); fuzzy mode uses the parsed rows as before.
-    const rowsToInsert = tplActive
-      ? tplRows.map((r, i) => {
+    const rowsToInsert: CcExcelRowInsert[] = tplActive
+      ? tplRows.map((r, i): CcExcelRowInsert => {
           if (r.isHeading) {
             return {
               working_sheet_id: ws.id, row_no: i + 1, raw_label: null,
               description: r.description || null, unit: null, qty: null, rate: null, amount: null,
               formula_in_amount: null, rate_breakdown: null, amount_breakdown: null, ai_meta: null,
+              source_sheet: null, source_cell: null,
             }
           }
           const ev = evaluateItem(r)
@@ -558,22 +579,28 @@ export function NewWSQuickForm({ projects, projectDisciplines, projectSubSkills,
             description: r.description || null, unit: r.unit || null, qty: r.qty,
             rate: ev.rate, amount: ev.amount, formula_in_amount: null,
             rate_breakdown: breakdown.length ? breakdown : null, amount_breakdown: null, ai_meta: null,
+            source_sheet: null, source_cell: null,
+          } as CcExcelRowInsert
+        })
+      : (parsed?.rows ?? []).map((r): CcExcelRowInsert => {
+          const src = cumulativeVersions ? parseSourceRef(r.formula_in_amount) : { sheet: null, cell: null }
+          return {
+            working_sheet_id: ws.id,
+            row_no: r.row_no,
+            raw_label: r.raw_label,
+            description: r.description,
+            unit: r.unit,
+            qty: r.qty,
+            rate: r.rate,
+            amount: r.amount,
+            formula_in_amount: r.formula_in_amount,
+            rate_breakdown:   r.rate_breakdown,
+            amount_breakdown: r.amount_breakdown,
+            ai_meta: r.ai_meta ?? null,
+            source_sheet: src.sheet,
+            source_cell: src.cell,
           }
         })
-      : (parsed?.rows ?? []).map(r => ({
-          working_sheet_id: ws.id,
-          row_no: r.row_no,
-          raw_label: r.raw_label,
-          description: r.description,
-          unit: r.unit,
-          qty: r.qty,
-          rate: r.rate,
-          amount: r.amount,
-          formula_in_amount: r.formula_in_amount,
-          rate_breakdown:   r.rate_breakdown,
-          amount_breakdown: r.amount_breakdown,
-          ai_meta: r.ai_meta ?? null,
-        }))
     if (rowsToInsert.length > 0) {
       const { error: rowsErr } = await supabase.from('cc_excel_rows').insert(rowsToInsert)
       if (rowsErr) { setError(`Row save failed: ${rowsErr.message}`); setSubmitting(false); return }

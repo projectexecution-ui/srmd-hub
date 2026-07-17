@@ -18,6 +18,7 @@ import { WSEditor } from './WSEditor'
 import { ExcelSummaryPanel } from './ExcelSummaryPanel'
 import { SourceExcelViewer } from './SourceExcelViewer'
 import { ScreenshotAiCheck } from './ScreenshotAiCheck'
+import { WorkingEvidence, type EvidenceFile } from './WorkingEvidence'
 import { EditDeadlineButton } from './EditDeadlineButton'
 import { QueryError } from '@/components/ui/query-error'
 import { formatINR } from '@/lib/utils'
@@ -204,6 +205,34 @@ export default async function WorkingSheetEditorPage(
     }
   }
 
+  // Working & evidence panel (cc_cumulative_versions only). Built once here and
+  // dropped into each layout branch. Files are visible to everyone who can see
+  // the sheet; upload/delete is offered only to the owner while it is still
+  // editable (draft / returned).
+  let workingEvidencePanel: React.ReactNode = null
+  if (ccSettings.cumulative_versions) {
+    const { data: attachRows } = await supabase
+      .from('cc_ws_attachments')
+      .select('id, name, path')
+      .eq('working_sheet_id', id)
+      .order('created_at', { ascending: true })
+    const evidence: EvidenceFile[] = []
+    for (const a of attachRows ?? []) {
+      const { data: signed } = await supabase.storage.from('cc-sheets').createSignedUrl(a.path as string, 60 * 60)
+      evidence.push({ id: a.id as string, name: a.name as string, signedUrl: signed?.signedUrl ?? null })
+    }
+    const ownerEditable = canEdit && user?.id === ws.engineer_id && !frozen && (ws.status === 'draft' || ws.status === 'returned')
+    workingEvidencePanel = (
+      <WorkingEvidence
+        wsId={ws.id}
+        projectId={ws.project_id}
+        canUpload={ownerEditable}
+        showRequirement={ownerEditable}
+        initial={evidence}
+      />
+    )
+  }
+
   // Back link is scoped to this WS's project + discipline + sub-skill so the
   // user returns to the same chronological timeline they came from, not the
   // unfiltered cross-project WS list.
@@ -307,6 +336,8 @@ export default async function WorkingSheetEditorPage(
         {ws.source_excel_url && (
           <SourceExcelViewer url={thumbDownloadUrl} name={ws.source_excel_name} microsoft={ccSettings.excel_microsoft} reviewer={reviewer} />
         )}
+
+        {workingEvidencePanel}
 
         {ccSettings.comments && <CommentsPanel wsId={ws.id} />}
 
@@ -464,6 +495,8 @@ export default async function WorkingSheetEditorPage(
             flag_severity: r.flag_severity,
           }))}
         />
+
+        {workingEvidencePanel}
 
         {ccSettings.comments && <CommentsPanel wsId={ws.id} />}
 
@@ -690,6 +723,8 @@ export default async function WorkingSheetEditorPage(
         wsTotal={ws.total_amount ?? 0}
       />
       )}
+
+      {workingEvidencePanel}
 
       {ccSettings.comments && <CommentsPanel wsId={ws.id} />}
 
