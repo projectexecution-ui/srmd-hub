@@ -9,7 +9,7 @@ import { Input } from '@/components/ui/input'
 import { MoneyInput } from '@/components/ui/money-input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
-import { Loader2, Upload, Send, FileSpreadsheet, X, Sparkles, AlertTriangle, Image as ImageIcon, Download } from 'lucide-react'
+import { Loader2, Upload, Send, FileSpreadsheet, X, Sparkles, AlertTriangle, Image as ImageIcon, Download, Paperclip, FileText } from 'lucide-react'
 import { formatINR } from '@/lib/utils'
 import { downloadBoqTemplate } from '@/lib/cost-control/boq-template-xlsx'
 import { detectTemplate, parseTemplateSheet, evaluateItem } from '@/lib/cost-control/boq-template-parse'
@@ -313,6 +313,10 @@ export function NewWSQuickForm({ projects, projectDisciplines, projectSubSkills,
   const [tplGstPct, setTplGstPct]     = useState<number | null>(18)
   const [tplSummary, setTplSummary]   = useState<GridSummary | null>(null)
   const [notTemplate, setNotTemplate] = useState(false)
+  // Working / measurement evidence behind the quantities (cc_cumulative_versions).
+  // Attached here so it's all in one place; at least one is required before the
+  // sheet can be sent for approval (enforced in cc_submit_working_sheet).
+  const [workFiles, setWorkFiles]     = useState<File[]>([])
 
   const disciplines = useMemo(
     () => projectDisciplines.filter(pd => pd.project_id === projectId).map(pd => pd.discipline),
@@ -459,6 +463,18 @@ export function NewWSQuickForm({ projects, projectDisciplines, projectSubSkills,
     setTplActive(false); setTplRows([]); setTplSummary(null); setNotTemplate(false)
   }
 
+  function onPickWorking(e: React.ChangeEvent<HTMLInputElement>) {
+    const picked = Array.from(e.target.files ?? [])
+    e.target.value = ''
+    const tooBig = picked.find(f => f.size > 25 * 1024 * 1024)
+    if (tooBig) { setError(`${tooBig.name} is over 25 MB`); return }
+    setError(null)
+    setWorkFiles(prev => [...prev, ...picked])
+  }
+  function removeWorking(idx: number) {
+    setWorkFiles(prev => prev.filter((_, i) => i !== idx))
+  }
+
   function onShot(e: React.ChangeEvent<HTMLInputElement>) {
     const f = e.target.files?.[0]
     if (!f) return
@@ -489,6 +505,12 @@ export function NewWSQuickForm({ projects, projectDisciplines, projectSubSkills,
       if (tplSummary && !tplSummary.reconciledToClaim) {
         setError('The rows don’t add up to your approval amount. Fix the rows or correct the amount below.'); return
       }
+    }
+    // Working / measurement evidence is mandatory under the cumulative flow —
+    // require it here so it's attached with the sheet from the start (the same
+    // rule is enforced again server-side when the sheet is submitted).
+    if (cumulativeVersions && workFiles.length === 0) {
+      setError('Attach the working / measurement file(s) behind these quantities — it is required to raise a BOQ'); return
     }
     // Engineers must also attach a screenshot of the summary — it is shown
     // at the top of the sheet so approvers can glance the working.
@@ -604,6 +626,24 @@ export function NewWSQuickForm({ projects, projectDisciplines, projectSubSkills,
     if (rowsToInsert.length > 0) {
       const { error: rowsErr } = await supabase.from('cc_excel_rows').insert(rowsToInsert)
       if (rowsErr) { setError(`Row save failed: ${rowsErr.message}`); setSubmitting(false); return }
+    }
+
+    // 4b. Working / measurement evidence (cumulative flow). Upload each to the
+    //     same bucket and register it in cc_ws_attachments so it shows in the
+    //     sheet's "Working & evidence" panel and satisfies the submit gate.
+    if (cumulativeVersions && workFiles.length > 0) {
+      for (const wf of workFiles) {
+        const safeWf = wf.name.replace(/[^A-Za-z0-9._-]/g, '_')
+        const wfPath = `${projectId}/${ts}-working-${safeWf}`
+        const { error: wfErr } = await supabase.storage.from('cc-sheets').upload(wfPath, wf, {
+          cacheControl: '3600', upsert: false, contentType: wf.type || 'application/octet-stream',
+        })
+        if (wfErr) { setError(`Working file upload failed: ${wfErr.message}`); setSubmitting(false); return }
+        const { error: attErr } = await supabase.from('cc_ws_attachments').insert({
+          working_sheet_id: ws.id, path: wfPath, name: wf.name, kind: 'working', uploaded_by: user.id,
+        })
+        if (attErr) { setError(`Working file save failed: ${attErr.message}`); setSubmitting(false); return }
+      }
     }
 
     // 5. Fire the check route (non-blocking — UI navigates anyway). The
@@ -729,6 +769,38 @@ export function NewWSQuickForm({ projects, projectDisciplines, projectSubSkills,
             claimedTotal={summaryTotal ? Number(summaryTotal) : null}
             onSummary={setTplSummary}
           />
+        )}
+
+        {/* Working / measurement evidence — the detailed file(s) that justify
+            these quantities. Mandatory under the cumulative flow; attached here
+            so the BOQ, its working, and the screenshot are all in one place. */}
+        {cumulativeVersions && (
+          <div>
+            <Label>Working / measurement sheet {workFiles.length === 0 ? '*' : ''}</Label>
+            <p className="text-[11px] text-gray-500 mt-0.5">
+              The takeoff / measurement / rate-analysis file behind the quantities above (Excel, PDF or image). Required to raise a BOQ — it&apos;s frozen with this version so approvers can always trace a quantity back to its working.
+            </p>
+            {workFiles.length > 0 && (
+              <ul className="mt-2 divide-y divide-gray-100 rounded-xl border border-gray-200">
+                {workFiles.map((wf, i) => (
+                  <li key={`${wf.name}-${i}`} className="flex items-center gap-3 px-3 py-2">
+                    <FileText className="h-4 w-4 text-emerald-600 flex-shrink-0" />
+                    <span className="text-sm text-gray-800 truncate flex-1">{wf.name}</span>
+                    <button type="button" onClick={() => removeWorking(i)}
+                      className="text-rose-600 hover:bg-rose-50 rounded p-1 flex-shrink-0" title="Remove">
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+            <label className="mt-2 flex items-center justify-center gap-2 border-2 border-dashed border-emerald-300 rounded-xl py-4 text-sm text-emerald-800 hover:bg-emerald-50/50 cursor-pointer">
+              <Paperclip className="h-4 w-4" />
+              <span>{workFiles.length === 0 ? 'Attach working file(s) — Excel, PDF, image' : 'Add another working file'}</span>
+              <input type="file" multiple className="hidden" onChange={onPickWorking}
+                accept=".xls,.xlsx,.pdf,.png,.jpg,.jpeg,.csv" />
+            </label>
+          </div>
         )}
 
         {/* Summary screenshot — compulsory for engineers. Shown full-width at
