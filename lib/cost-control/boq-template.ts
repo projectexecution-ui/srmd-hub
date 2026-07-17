@@ -19,6 +19,18 @@ export const BOQ_TEMPLATE_MARKER = 'CTHUB-BOQ-TPL'
 export const BOQ_TEMPLATE_VERSION = 1
 export const BOQ_META_SHEET = '_meta'
 export const BOQ_SHEET = 'BOQ'
+export const BOQ_MEASURE_SHEET = 'Measurement'
+
+/** Measurement (take-off) tab column indices. Each BOQ Qty cell is a live
+ *  formula into this tab's Qty column, so a quantity traces back to the exact
+ *  cell it was measured in. */
+export const MCOL = {
+  sr: 0, description: 1, nos: 2, length: 3, breadth: 4, height: 5,
+  qty: 6, unit: 7, remarks: 8,
+} as const
+export const MEASURE_COLS = [
+  'Sr', 'Description', 'Nos', 'Length', 'Breadth', 'Height / Depth', 'Qty', 'Unit', 'Remarks',
+] as const
 
 /** Fixed column order. Index === column (A=0 … J=9). The parser depends on
  *  this exact order, so changing it is a template-version bump. */
@@ -66,6 +78,10 @@ export interface BoqTemplateOptions {
   subSkillId?: string
   /** Blank item rows to lay out (default 25). */
   blankRows?: number
+  /** Include the Measurement (take-off) tab and link every BOQ Qty cell to it
+   *  (default true). The linkage is what lets the app trace a quantity back to
+   *  the exact cell it was measured in. */
+  withMeasurement?: boolean
 }
 
 export interface BoqCell {
@@ -112,6 +128,7 @@ function f(formula: string, z?: string): BoqCell {
 /** Pure builder — returns the full cell model of the standard template. */
 export function buildBoqTemplateModel(opts: BoqTemplateOptions = {}): BoqTemplateModel {
   const blankRows = Math.max(5, opts.blankRows ?? 25)
+  const withMeasurement = opts.withMeasurement !== false
   const cells: Record<string, BoqCell> = {}
   const merges: BoqMerge[] = []
 
@@ -138,6 +155,9 @@ export function buildBoqTemplateModel(opts: BoqTemplateOptions = {}): BoqTemplat
   cells['A3'] = s(
     'Fill EITHER Material + Installation OR the combined M+L — never both. ' +
     'Rate = Material + Installation + M+L (auto). Amount = Qty × Rate (auto). ' +
+    (withMeasurement
+      ? 'Do NOT type quantities here — enter your take-off on the Measurement tab; Qty pulls in automatically and stays linked. '
+      : '') +
     'Leave the grey Rate & Amount columns alone. For lump sum use Unit "LS", Qty 1. ' +
     'For a deduction, enter a negative Qty. Units: ' + BOQ_UNITS.join(' / ') + '.',
   )
@@ -150,12 +170,21 @@ export function buildBoqTemplateModel(opts: BoqTemplateOptions = {}): BoqTemplat
   // Rows 6.. — blank item rows with Rate & Amount pre-seeded as formulas.
   const itemRowStart = headerRow + 1
   const itemRowEnd = itemRowStart + blankRows - 1
+  const mCol = (c: number) => String.fromCharCode(65 + c)
   for (let r = itemRowStart; r <= itemRowEnd; r++) {
     cells[addr(COL.sr, r)] = n(r - itemRowStart + 1)
+    // Qty is LINKED to the Measurement tab's Qty column (same row), so the app
+    // can trace a quantity to the exact cell it was measured in. Blank take-off
+    // rows resolve to "" (never a hard number), so item rows stay skippable.
+    if (withMeasurement) {
+      cells[addr(COL.qty, r)] = f(`'${BOQ_MEASURE_SHEET}'!${mCol(MCOL.qty)}${r}`)
+    }
     // Rate = SUM(Material:M+L) — blank cells count as 0, never #VALUE!.
     cells[addr(COL.rate, r)] = f(`SUM(${addr(COL.material, r)}:${addr(COL.ml, r)})`, MONEY_FMT)
-    // Amount = Qty × Rate.
-    cells[addr(COL.amount, r)] = f(`${addr(COL.qty, r)}*${addr(COL.rate, r)}`, MONEY_FMT)
+    // Amount = Qty × Rate — guarded so a blank (linked "") Qty gives 0, not #VALUE!.
+    cells[addr(COL.amount, r)] = withMeasurement
+      ? f(`IF(${addr(COL.qty, r)}="",0,${addr(COL.qty, r)}*${addr(COL.rate, r)})`, MONEY_FMT)
+      : f(`${addr(COL.qty, r)}*${addr(COL.rate, r)}`, MONEY_FMT)
   }
 
   // Totals ladder.
@@ -198,9 +227,12 @@ export function buildBoqTemplateModel(opts: BoqTemplateOptions = {}): BoqTemplat
   }
 
   const meta = buildMetaSheet(opts)
+  const sheets: BoqSheetModel[] = [boqSheet]
+  if (withMeasurement) sheets.push(buildMeasurementSheet(headerRow, itemRowStart, itemRowEnd))
+  sheets.push(meta)
 
   return {
-    sheets: [boqSheet, meta],
+    sheets,
     headerRow,
     itemRowStart,
     itemRowEnd,
@@ -208,6 +240,53 @@ export function buildBoqTemplateModel(opts: BoqTemplateOptions = {}): BoqTemplat
     contingencyRow,
     gstRow,
     grandTotalRow,
+  }
+}
+
+/** The take-off tab. Each row auto-computes Qty = Nos × Length × Breadth ×
+ *  Height (blank dimensions treated as 1; a blank Nos yields "" so the linked
+ *  BOQ row stays empty). The engineer can overwrite any Qty cell with their own
+ *  value/formula for takeoffs that don't fit N×L×B×H. Header + item rows share
+ *  the BOQ's row numbers so BOQ!D{r} ↔ Measurement!G{r} line up 1:1. */
+export function buildMeasurementSheet(
+  headerRow: number, itemRowStart: number, itemRowEnd: number,
+): BoqSheetModel {
+  const cells: Record<string, BoqCell> = {}
+  const merges: BoqMerge[] = []
+  const mc = (c: number) => String.fromCharCode(65 + c)
+  const at = (c: number, r1: number) => `${mc(c)}${r1}`
+
+  cells['A1'] = s('MEASUREMENT / TAKE-OFF — enter your quantities here')
+  merges.push({ s: { r: 0, c: 0 }, e: { r: 0, c: 8 } })
+  cells['A2'] = s(
+    'One row per BOQ item (same order). Qty auto-computes = Nos × Length × Breadth × Height ' +
+    '(leave a dimension blank to skip it — e.g. count only, or area). The Qty flows into the BOQ ' +
+    'automatically and stays linked, so an approver can click any BOQ quantity and land on its cell here. ' +
+    'For a take-off that isn’t N×L×B×H, just type your own value or formula into the Qty cell.',
+  )
+  merges.push({ s: { r: 1, c: 0 }, e: { r: 1, c: 8 } })
+
+  MEASURE_COLS.forEach((name, c) => { cells[at(c, headerRow)] = s(name) })
+
+  for (let r = itemRowStart; r <= itemRowEnd; r++) {
+    cells[at(MCOL.sr, r)] = n(r - itemRowStart + 1)
+    // Qty = Nos × (L|1) × (B|1) × (H|1); blank Nos ⇒ "" so the BOQ row stays empty.
+    cells[at(MCOL.qty, r)] = f(
+      `IF(${at(MCOL.nos, r)}="","",` +
+      `${at(MCOL.nos, r)}*IF(${at(MCOL.length, r)}="",1,${at(MCOL.length, r)})` +
+      `*IF(${at(MCOL.breadth, r)}="",1,${at(MCOL.breadth, r)})` +
+      `*IF(${at(MCOL.height, r)}="",1,${at(MCOL.height, r)}))`,
+    )
+  }
+
+  return {
+    name: BOQ_MEASURE_SHEET,
+    cells,
+    merges,
+    cols: [{ wch: 5 }, { wch: 34 }, { wch: 8 }, { wch: 10 }, { wch: 10 }, { wch: 12 }, { wch: 11 }, { wch: 8 }, { wch: 26 }],
+    visibility: '',
+    lastRow: itemRowEnd,
+    lastCol: 8,
   }
 }
 

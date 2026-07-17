@@ -10,17 +10,28 @@ import {
   BOQ_TEMPLATE_MARKER,
   BOQ_SHEET,
   BOQ_META_SHEET,
+  BOQ_MEASURE_SHEET,
 } from './boq-template'
 
 describe('buildBoqTemplateModel — shape', () => {
   const m = buildBoqTemplateModel({ blankRows: 10 })
   const boq = m.sheets.find(s => s.name === BOQ_SHEET)!
 
-  it('produces exactly a visible BOQ sheet + a very-hidden _meta sheet', () => {
-    expect(m.sheets).toHaveLength(2)
+  it('produces a visible BOQ + a visible Measurement tab + a very-hidden _meta sheet', () => {
+    expect(m.sheets).toHaveLength(3)
     expect(boq.visibility).toBe('')
+    const measure = m.sheets.find(s => s.name === BOQ_MEASURE_SHEET)!
+    expect(measure.visibility).toBe('')
     const meta = m.sheets.find(s => s.name === BOQ_META_SHEET)!
     expect(meta.visibility).toBe('veryHidden')
+  })
+
+  it('withMeasurement:false drops the tab and keeps Qty empty + Amount = Qty*Rate (legacy)', () => {
+    const lm = buildBoqTemplateModel({ blankRows: 10, withMeasurement: false })
+    expect(lm.sheets).toHaveLength(2)
+    const lboq = lm.sheets.find(s => s.name === BOQ_SHEET)!
+    expect(lboq.cells[`D${lm.itemRowStart}`]).toBeUndefined()
+    expect(lboq.cells[`I${lm.itemRowStart}`]?.f).toBe(`D${lm.itemRowStart}*H${lm.itemRowStart}`)
   })
 
   it('header row carries the fixed column order A..J', () => {
@@ -30,19 +41,32 @@ describe('buildBoqTemplateModel — shape', () => {
     })
   })
 
-  it('Rate is SUM(Material:M+L) and Amount is Qty*Rate on every item row', () => {
+  it('Rate is SUM(Material:M+L) and Amount is a blank-guarded Qty*Rate on every item row', () => {
     for (let r = m.itemRowStart; r <= m.itemRowEnd; r++) {
       expect(boq.cells[`H${r}`]?.f).toBe(`SUM(E${r}:G${r})`)
-      expect(boq.cells[`I${r}`]?.f).toBe(`D${r}*H${r}`)
+      expect(boq.cells[`I${r}`]?.f).toBe(`IF(D${r}="",0,D${r}*H${r})`)
     }
   })
 
-  it('item rows leave Qty and the three rate cells truly empty (no #VALUE! seeds)', () => {
+  it('every BOQ Qty cell is a live link into the Measurement tab (same row)', () => {
     for (let r = m.itemRowStart; r <= m.itemRowEnd; r++) {
-      expect(boq.cells[`D${r}`]).toBeUndefined() // Qty
+      expect(boq.cells[`D${r}`]?.f).toBe(`'Measurement'!G${r}`)
+    }
+  })
+
+  it('item rows leave the three rate cells truly empty (no #VALUE! seeds)', () => {
+    for (let r = m.itemRowStart; r <= m.itemRowEnd; r++) {
       expect(boq.cells[`E${r}`]).toBeUndefined() // Material
       expect(boq.cells[`F${r}`]).toBeUndefined() // Installation
       expect(boq.cells[`G${r}`]).toBeUndefined() // M+L
+    }
+  })
+
+  it('Measurement tab: Qty auto-computes Nos × (L|1) × (B|1) × (H|1), blank Nos ⇒ ""', () => {
+    const measure = m.sheets.find(s => s.name === BOQ_MEASURE_SHEET)!
+    for (let r = m.itemRowStart; r <= m.itemRowEnd; r++) {
+      expect(measure.cells[`G${r}`]?.f)
+        .toBe(`IF(C${r}="","",C${r}*IF(D${r}="",1,D${r})*IF(E${r}="",1,E${r})*IF(F${r}="",1,F${r}))`)
     }
   })
 

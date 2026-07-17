@@ -8,7 +8,7 @@
 import * as React from 'react'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
-import { Plus, Trash2, AlertTriangle, CheckCircle2 } from 'lucide-react'
+import { Plus, Trash2, AlertTriangle, CheckCircle2, Link2 } from 'lucide-react'
 import { formatINR } from '@/lib/utils'
 import { evaluateItem, computeLadder, reconcileAgainstClaim } from '@/lib/cost-control/boq-template-parse'
 import { BOQ_UNITS } from '@/lib/cost-control/boq-template'
@@ -23,6 +23,10 @@ export interface EditableGridRow {
   installation: number | null
   ml: number | null
   remarks: string
+  /** Where the Qty was measured — captured from the Qty cell's formula
+   *  (e.g. Measurement!G6) so the number traces back to its take-off cell. */
+  sourceSheet?: string | null
+  sourceCell?: string | null
 }
 
 export interface GridSummary {
@@ -138,6 +142,13 @@ export function TemplateReviewGrid({
                     <td className="px-2 py-1.5">
                       <Input value={r.description} onChange={e => update(idx, { description: e.target.value })}
                         className="h-8" placeholder="e.g. RCC M25 footings" />
+                      {r.sourceCell && (
+                        <span className="mt-0.5 inline-flex items-center gap-1 text-[10px] text-emerald-700"
+                          title="Quantity is linked to this cell in the Measurement tab — click-through on the sheet page">
+                          <Link2 className="h-2.5 w-2.5" />
+                          Qty ← {r.sourceSheet ? `${r.sourceSheet}!` : ''}{r.sourceCell}
+                        </span>
+                      )}
                     </td>
                     <td className="px-2 py-1.5">
                       <select value={r.unit} onChange={e => update(idx, { unit: e.target.value })}

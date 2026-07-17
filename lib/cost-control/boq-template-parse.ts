@@ -179,7 +179,10 @@ export function parseTemplateSheet(boqAoa: unknown[][], meta: Record<string, str
     const ml = toNum(r[COL.ml])
     const remarks = cellStr(r, COL.remarks)
 
-    const hasAnyNum = qty != null || material != null || installation != null || ml != null
+    // A linked-qty template seeds unfilled Qty cells to 0 (the =Measurement!G
+    // formula caches 0 until Excel recomputes it to ""); treat qty 0 as "no
+    // quantity" so those rows read as blank, not as zero-value items.
+    const hasAnyNum = (qty != null && qty !== 0) || material != null || installation != null || ml != null
     // Truly blank row → skip silently.
     if (!desc && !hasAnyNum) continue
 

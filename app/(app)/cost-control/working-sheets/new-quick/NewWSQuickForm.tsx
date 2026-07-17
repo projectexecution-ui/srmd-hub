@@ -12,6 +12,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { Loader2, Upload, Send, FileSpreadsheet, X, Sparkles, AlertTriangle, Image as ImageIcon, Download, Paperclip, FileText } from 'lucide-react'
 import { formatINR } from '@/lib/utils'
 import { downloadBoqTemplate } from '@/lib/cost-control/boq-template-xlsx'
+import { COL as BOQ_COL } from '@/lib/cost-control/boq-template'
 import { detectTemplate, parseTemplateSheet, evaluateItem } from '@/lib/cost-control/boq-template-parse'
 import { parseSourceRef } from '@/lib/cost-control/formula-ref'
 import { TemplateReviewGrid, type EditableGridRow, type GridSummary } from './TemplateReviewGrid'
@@ -364,14 +365,27 @@ export function NewWSQuickForm({ projects, projectDisciplines, projectSubSkills,
         if (det.isTemplate) {
           const boq = sheets.find(s => s.name === 'BOQ') ?? sheets[0]
           const res = parseTemplateSheet(boq.aoa, det.meta)
-          const grid: EditableGridRow[] = res.rows.map((r, i) => ({
-            key: `tpl-${i}`,
-            isHeading: r.kind === 'heading',
-            description: r.description ?? '',
-            unit: r.unit ?? '',
-            qty: r.qty, material: r.material, installation: r.installation, ml: r.ml,
-            remarks: r.remarks ?? '',
-          }))
+          // The raw XLSX BOQ sheet still holds each Qty cell's FORMULA
+          // (=Measurement!G6). Capture it so a quantity traces back to the exact
+          // take-off cell it came from.
+          const boqXlsx = wb.Sheets[boq.name] as Record<string, { f?: string }> | undefined
+          const grid: EditableGridRow[] = res.rows.map((r, i) => {
+            let sourceSheet: string | null = null
+            let sourceCell: string | null = null
+            if (r.kind !== 'heading' && boqXlsx) {
+              const qCell = boqXlsx[XLSX.utils.encode_cell({ r: r.aoa_row_idx, c: BOQ_COL.qty })]
+              if (qCell?.f) { const ref = parseSourceRef(qCell.f); sourceSheet = ref.sheet; sourceCell = ref.cell }
+            }
+            return {
+              key: `tpl-${i}`,
+              isHeading: r.kind === 'heading',
+              description: r.description ?? '',
+              unit: r.unit ?? '',
+              qty: r.qty, material: r.material, installation: r.installation, ml: r.ml,
+              remarks: r.remarks ?? '',
+              sourceSheet, sourceCell,
+            }
+          })
           setTplRows(grid)
           setTplContPct(res.ladder?.contingencyPct ?? 5)
           setTplGstPct(res.ladder?.gstPct ?? 18)
@@ -601,7 +615,7 @@ export function NewWSQuickForm({ projects, projectDisciplines, projectSubSkills,
             description: r.description || null, unit: r.unit || null, qty: r.qty,
             rate: ev.rate, amount: ev.amount, formula_in_amount: null,
             rate_breakdown: breakdown.length ? breakdown : null, amount_breakdown: null, ai_meta: null,
-            source_sheet: null, source_cell: null,
+            source_sheet: r.sourceSheet ?? null, source_cell: r.sourceCell ?? null,
           } as CcExcelRowInsert
         })
       : (parsed?.rows ?? []).map((r): CcExcelRowInsert => {
