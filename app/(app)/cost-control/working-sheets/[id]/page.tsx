@@ -471,11 +471,9 @@ export default async function WorkingSheetEditorPage(
     const scorecardItems = (excelRows ?? []).filter(r => r.qty != null).map(toBoqItem)
     const curBasis = basisCounts(scorecardItems)
     const recTotal = Number(ws.total_amount) || 0
-    // A no-take-off row (no formula) needs a note — whether marked measured or
-    // estimate. Count the ones still missing it.
+    // Only estimate rows need a reason; count the ones still missing it.
     const estMissingReason = (excelRows ?? []).filter(r =>
-      r.qty != null &&
-      !((r as { qty_formula?: string | null }).qty_formula ?? '').trim() &&
+      (r as { qty_basis?: string | null }).qty_basis === 'estimated' &&
       !(((r as { qty_note?: string | null }).qty_note) ?? '').trim()).length
     const showScorecard = ccSettings.cumulative_versions && reviewer && curBasis.total > 0
 

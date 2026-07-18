@@ -220,6 +220,77 @@ function renderIn4Entered(d: In4EnteredData, link: string): string {
   return shell(inner)
 }
 
+// ── Indent → PO daily reminder digest (per Atm Head) ─────────────────────
+interface ProcDigestData {
+  projects?: string[]
+  needPo?: { count: number; rows: Array<{ indentNo: string; project: string; category: string; items: number; days: number }>; more: number; abandoned: number } | null
+  awaiting?: { count: number; value: number; rows: Array<{ indentNo: string; project: string; category: string; vendor: string | null; items: number; poDays: number; value: number }>; more: number } | null
+  changes?: { received: number; newPos: number; newNoPo: number } | null
+  stale?: { lastUploadAt: string } | null
+}
+
+function fmtWhen(iso: string): string {
+  try { return new Date(iso).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' }) } catch { return iso }
+}
+
+function renderProcurementDigest(d: ProcDigestData, link: string): string {
+  const need = d.needPo ?? null
+  const aw = d.awaiting ?? null
+  const changes = d.changes ?? null
+  const stale = d.stale ?? null
+
+  const projChips = (d.projects ?? []).map(p =>
+    `<span style="display:inline-block;font-size:11px;font-weight:600;color:${BRAND};background:#e8f0f8;border-radius:20px;padding:4px 10px;margin:0 5px 5px 0">${esc(p)}</span>`).join('')
+
+  const snap = `<tr><td style="padding:14px 22px 4px"><table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>
+      <td width="50%" valign="top" style="padding-right:6px"><div style="border:1px solid #f3d7d5;background:#fbeceb;border-radius:12px;padding:12px 13px">
+        <div style="font-size:11px;font-weight:600;color:${DANGER}">POs to raise</div>
+        <div style="font-size:24px;font-weight:700;color:${INK};margin-top:4px">${need?.count ?? 0}</div>
+        <div style="font-size:11px;color:${MUT};margin-top:4px">approved 2+ days, no PO${need?.abandoned ? ` · +${need.abandoned} old to clean up` : ''}</div>
+      </div></td>
+      <td width="50%" valign="top" style="padding-left:6px"><div style="border:1px solid #f0e0c2;background:${WARNBG};border-radius:12px;padding:12px 13px">
+        <div style="font-size:11px;font-weight:600;color:${WARN}">Deliveries pending</div>
+        <div style="font-size:24px;font-weight:700;color:${INK};margin-top:4px">${crL(aw?.value ?? 0)}</div>
+        <div style="font-size:11px;color:${MUT};margin-top:4px">${aw?.count ?? 0} indents · PO 1 week+</div>
+      </div></td>
+    </tr></table></td></tr>`
+
+  const changesRow = changes ? `<tr><td style="padding:12px 22px 4px">${[
+    changes.received ? chip(`✓ ${changes.received} received`, OK, OKBG) : '',
+    changes.newPos ? chip(`✓ ${changes.newPos} new PO${changes.newPos === 1 ? '' : 's'}`, OK, OKBG) : '',
+    changes.newNoPo ? chip(`🆕 ${changes.newNoPo} new no-PO`, WARN, WARNBG) : '',
+  ].join('')}</td></tr>` : ''
+
+  const needRows = (need?.rows ?? []).map(r => `<tr>
+    <td style="padding:9px 22px;border-top:1px solid ${HAIR};font-size:12.5px"><span style="font-weight:600;color:${INK}">${esc(r.indentNo)}</span><div style="font-size:11px;color:${MUT};margin-top:1px">${esc(r.project)} · ${esc(r.category)}</div></td>
+    <td align="right" valign="top" style="padding:9px 22px;border-top:1px solid ${HAIR};font-size:12.5px;color:${WARN};white-space:nowrap">${r.days}d</td>
+  </tr>`).join('')
+  const needMore = need?.more ? `<tr><td colspan="2" style="padding:8px 22px;border-top:1px solid ${HAIR};font-size:12px;color:${MUT}">+ ${need.more} more</td></tr>` : ''
+  const abandonedNote = need?.abandoned ? `<tr><td colspan="2" style="padding:10px 22px 2px"><div style="font-size:12px;line-height:1.5;color:${WARN};background:${WARNBG};border-radius:9px;padding:9px 11px">⚠ <b style="color:#6d3f06">${need.abandoned} item(s) have had no PO for 90+ days</b> — likely abandoned, worth a one-time clean-up.</div></td></tr>` : ''
+  const sectionA = need ? `
+    <tr><td style="padding:16px 22px 2px;border-top:1px solid ${HAIR}"><span style="font-size:15px;font-weight:600;color:${INK}">⏰ Raise a PO</span><div style="font-size:11.5px;color:${MUT};margin-top:2px">Indent approved <b style="color:${WARN}">2+ days ago</b>, still no PO.</div></td></tr>
+    ${need.count ? `<tr><td style="padding-top:6px"><table role="presentation" width="100%" cellpadding="0" cellspacing="0">${needRows}${needMore}</table></td></tr>` : ''}
+    ${abandonedNote}` : ''
+
+  const awRows = (aw?.rows ?? []).map(r => `<tr>
+    <td style="padding:9px 22px;border-top:1px solid ${HAIR};font-size:12.5px"><span style="font-weight:600;color:${INK}">${esc(r.indentNo)}</span><div style="font-size:11px;color:${MUT};margin-top:1px">${esc(r.project)} · ${esc(r.category)}${r.vendor ? ' · ' + esc(r.vendor) : ''}</div></td>
+    <td align="right" valign="top" style="padding:9px 8px;border-top:1px solid ${HAIR};font-size:12px;color:${DANGER};white-space:nowrap">${r.poDays}d</td>
+    <td align="right" valign="top" style="padding:9px 22px 9px 8px;border-top:1px solid ${HAIR};font-size:12.5px;font-weight:700;color:${INK};white-space:nowrap">${crL(r.value)}</td>
+  </tr>`).join('')
+  const awMore = aw?.more ? `<tr><td colspan="3" style="padding:8px 22px;border-top:1px solid ${HAIR};font-size:12px;color:${MUT}">+ ${aw.more} more</td></tr>` : ''
+  const sectionB = aw ? `
+    <tr><td style="padding:16px 22px 2px;border-top:1px solid ${HAIR}"><span style="font-size:15px;font-weight:600;color:${INK}">⏰ Chase delivery &amp; GRN</span><div style="font-size:11.5px;color:${MUT};margin-top:2px">PO placed <b style="color:${WARN}">1 week+ ago</b>, not received yet.</div></td></tr>
+    <tr><td style="padding-top:6px"><table role="presentation" width="100%" cellpadding="0" cellspacing="0">${awRows}${awMore}</table></td></tr>` : ''
+
+  const staleBanner = stale ? `<tr><td style="padding:12px 22px 0"><div style="font-size:12px;color:${WARN};background:${WARNBG};border-radius:9px;padding:9px 11px">⚠ No fresh upload since ${esc(fmtWhen(stale.lastUploadAt))} — numbers may be stale.</div></td></tr>` : ''
+
+  const inner = `
+    <tr><td style="padding:16px 22px 2px"><div style="font-size:16px;font-weight:700;color:${INK}">Good morning — your projects' follow-ups</div><div style="margin-top:8px">${projChips}</div></td></tr>
+    ${staleBanner}${snap}${changesRow}${sectionA}${sectionB}
+    <tr><td style="padding:18px 22px;border-top:1px solid ${HAIR}">${button('Open my projects', link)}</td></tr>`
+  return shell(inner, `You're the Atm Head for these projects in CT HUB · reminders are combined into this one mail · manage alerts in Settings → Notifications`)
+}
+
 // ── Generic fallback (unchanged look, all other modules) ─────────────────
 function renderGeneric(subject: string, text: string, link: string): string {
   const body = esc(text).replace(/\n/g, '<br/>')
@@ -230,15 +301,16 @@ function renderGeneric(subject: string, text: string, link: string): string {
   return shell(inner)
 }
 
-export type NotificationKind = 'approval' | 'in4_pending' | 'in4_entered' | 'generic'
+export type NotificationKind = 'approval' | 'in4_pending' | 'in4_entered' | 'procurement_digest' | 'generic'
 
 /** Map a notification `type` to a template kind. */
 export function kindFromType(type: string | null | undefined): NotificationKind {
   switch (type) {
-    case 'approval_pending': return 'approval'
-    case 'in4_pending':      return 'in4_pending'
-    case 'in4_entered':      return 'in4_entered'
-    default:                 return 'generic'
+    case 'approval_pending':    return 'approval'
+    case 'in4_pending':         return 'in4_pending'
+    case 'in4_entered':         return 'in4_entered'
+    case 'procurement_digest':  return 'procurement_digest'
+    default:                    return 'generic'
   }
 }
 
@@ -254,6 +326,7 @@ export function renderNotificationEmail(args: {
     if (kind === 'approval' && data) return renderApproval(data as ApprovalData, link)
     if (kind === 'in4_pending' && data) return renderIn4Pending(data as In4PendingData, link)
     if (kind === 'in4_entered' && data) return renderIn4Entered(data as In4EnteredData, link)
+    if (kind === 'procurement_digest' && data) return renderProcurementDigest(data as ProcDigestData, link)
   } catch {
     // fall through to generic on any shape surprise
   }

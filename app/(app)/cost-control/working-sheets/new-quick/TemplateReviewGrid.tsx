@@ -92,7 +92,9 @@ export function TemplateReviewGrid({
   const itemCount = itemRows.length
   const measuredCount = itemRows.filter(r => rowBasis(r) === 'measured').length
   const estimateCount = itemCount - measuredCount
-  const notesNeeded = itemRows.filter(r => !hasFormula(r) && !(r.qtyNote ?? '').trim()).length
+  // Only an ESTIMATE (no drawing) needs a reason — a measured-typed row is one
+  // click, no note. Keeps the busywork off diligent engineers.
+  const notesNeeded = itemRows.filter(r => rowBasis(r) === 'estimated' && !(r.qtyNote ?? '').trim()).length
 
   // Report the rolled-up summary up to the parent (for the submit gate).
   React.useEffect(() => {
@@ -222,14 +224,15 @@ export function TemplateReviewGrid({
                               <button type="button" onClick={() => update(idx, { qtyBasis: 'estimated' })}
                                 className={`px-1.5 py-0.5 ${basis === 'estimated' ? 'bg-amber-500 text-white' : 'bg-white text-gray-500'}`}>Estimate</button>
                             </span>
-                            <input
-                              value={r.qtyNote ?? ''}
-                              onChange={e => update(idx, { qtyNote: e.target.value })}
-                              placeholder={basis === 'measured'
-                                ? 'How measured? (required — e.g. counted from GA-R2)'
-                                : 'Why no take-off? (required — e.g. GK estimate, no drawing yet)'}
-                              className={`mt-1 h-7 w-full rounded-md border px-2 text-xs ${noteMissing ? 'border-amber-400 bg-amber-50/40' : 'border-gray-300'}`}
-                            />
+                            {/* Only an estimate (no drawing) needs a reason — measured is one click. */}
+                            {basis === 'estimated' && (
+                              <input
+                                value={r.qtyNote ?? ''}
+                                onChange={e => update(idx, { qtyNote: e.target.value })}
+                                placeholder="Why no take-off? (required — e.g. GK estimate, no drawing yet)"
+                                className={`mt-1 h-7 w-full rounded-md border px-2 text-xs ${noteMissing ? 'border-amber-400 bg-amber-50/40' : 'border-gray-300'}`}
+                              />
+                            )}
                           </div>
                         )
                       })()}

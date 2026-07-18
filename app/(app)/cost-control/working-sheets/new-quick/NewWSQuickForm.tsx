@@ -546,9 +546,8 @@ export function NewWSQuickForm({ projects, projectDisciplines, projectSubSkills,
     if (cumulativeVersions && !tplActive) {
       setError('Only the standard BOQ template can be raised. Download it, fill the BOQ + Measurement tabs, and re-upload.'); return
     }
-    // Engineers must also attach a screenshot of the summary — it is shown
-    // at the top of the sheet so approvers can glance the working.
-    if (!reviewer && !shot) { setError('Attach a screenshot of your summary — it is required along with the Excel'); return }
+    // Summary screenshot is optional — the structured review grid + BOQ table
+    // already give approvers the rows and take-off at a glance.
     // Comments are compulsory — the approver needs to know why the budget
     // is required.
     if (summaryNotes.trim().length === 0) { setError('Add a comment describing why this budget is required') ; return }
@@ -643,7 +642,8 @@ export function NewWSQuickForm({ projects, projectDisciplines, projectSubSkills,
             rate_breakdown: breakdown.length ? breakdown : null, amount_breakdown: null, ai_meta: null,
             source_sheet: r.sourceSheet ?? null, source_cell: r.sourceCell ?? null,
             qty_formula: r.qtyFormula ?? null, qty_basis: basis,
-            qty_note: hasF ? null : (r.qtyNote?.trim() || null),
+            // Only estimates carry a reason; a measured-typed row needs none.
+            qty_note: (!hasF && basis === 'estimated') ? (r.qtyNote?.trim() || null) : null,
           } as CcExcelRowInsert
         })
       : (parsed?.rows ?? []).map((r): CcExcelRowInsert => {
@@ -725,9 +725,8 @@ export function NewWSQuickForm({ projects, projectDisciplines, projectSubSkills,
   else if (cumulativeVersions && notTemplate) missingToSend.push('upload the STANDARD template — this file isn’t it')
   else if (!tplActive && !parsed) missingToSend.push('the file could not be read — re-upload it')
   if (tplActive && tplSummary && tplSummary.hardErrors > 0) missingToSend.push(`fix ${tplSummary.hardErrors} highlighted row problem${tplSummary.hardErrors > 1 ? 's' : ''}`)
-  if (tplActive && tplSummary && tplSummary.notesNeeded > 0) missingToSend.push(`add a note to ${tplSummary.notesNeeded} row${tplSummary.notesNeeded > 1 ? 's' : ''} (how measured / why no take-off)`)
+  if (tplActive && tplSummary && tplSummary.notesNeeded > 0) missingToSend.push(`give a reason for ${tplSummary.notesNeeded} estimate row${tplSummary.notesNeeded > 1 ? 's' : ''} (no drawing)`)
   if (tplActive && tplSummary && !tplSummary.reconciledToClaim) missingToSend.push('rows must add up to the approval amount')
-  if (!reviewer && !shot) missingToSend.push('attach the summary screenshot')
   if (summaryNotes.trim().length === 0) missingToSend.push('add a comment')
 
   return (
@@ -884,11 +883,12 @@ export function NewWSQuickForm({ projects, projectDisciplines, projectSubSkills,
           </div>
         )}
 
-        {/* Summary screenshot — compulsory for engineers. Shown full-width at
+        {/* Summary screenshot — OPTIONAL (the review grid + BOQ table already
+            give approvers the structured rows). Shown full-width at
             the top of the sheet so approvers can glance the working without
             opening the Excel. */}
         <div>
-          <Label>Summary screenshot {reviewer ? '(optional)' : '*'}</Label>
+          <Label>Summary screenshot (optional)</Label>
           {!shot ? (
             <label className="mt-1 flex flex-col items-center justify-center gap-1.5 border-2 border-dashed border-gray-300 rounded-xl px-4 py-5 text-sm text-gray-600 cursor-pointer hover:border-indigo-400 hover:bg-indigo-50/40 transition-colors">
               <ImageIcon className="h-5 w-5 text-gray-400" />

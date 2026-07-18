@@ -32,6 +32,12 @@ export const NOTIFICATION_EVENTS: NotificationEventDef[] = [
     description: 'A document is waiting for someone to approve or reject it.',
     audience: 'Eligible approvers',
   },
+  {
+    type: 'procurement_digest',
+    label: 'Indent → PO daily follow-up',
+    description: 'Weekday reminder to each Atm Head — POs to raise (2+ days) and deliveries to chase (1 week+), only their projects.',
+    audience: 'Atm Heads (per project)',
+  },
 ]
 
 /** Channels the admin policy controls. (Telegram is per-user only; web_push
