@@ -5,6 +5,7 @@ import {
   summarizeMatch,
   normalizeKey,
   isRealVersion,
+  basisCounts,
   type LedgerVersion,
   type BoqItem,
 } from './version-ledger'
@@ -159,5 +160,38 @@ describe('isRealVersion', () => {
     expect(isRealVersion(v({ id: '2', version_no: 1, status: 'cancelled' }))).toBe(false)
     expect(isRealVersion(v({ id: '3', version_no: 1, archived_at: '2026-01-01' }))).toBe(false)
     expect(isRealVersion(v({ id: '4', version_no: 1 }))).toBe(true)
+  })
+})
+
+describe('take-off basis (S10)', () => {
+  it('basisCounts treats a missing basis as measured (legacy rows)', () => {
+    const c = basisCounts([
+      { description: 'a', qty: 1, rate: 1, amount: 1, basis: 'measured' },
+      { description: 'b', qty: 1, rate: 1, amount: 1, basis: 'estimated' },
+      { description: 'c', qty: 1, rate: 1, amount: 1 }, // legacy → measured
+    ])
+    expect(c).toEqual({ measured: 2, estimated: 1, total: 3 })
+  })
+
+  it('matchBoqRows flags estimate→measured across a revision', () => {
+    const prior = [{ description: 'Pipe Penetration', qty: 14, rate: 962, amount: 13468, basis: 'estimated' as const }]
+    const current = [{ description: 'Pipe Penetration', qty: 16, rate: 962, amount: 15392, basis: 'measured' as const }]
+    const rows = matchBoqRows(current, prior)
+    expect(rows).toHaveLength(1)
+    expect(rows[0].approvedBasis).toBe('estimated')
+    expect(rows[0].newBasis).toBe('measured')
+    expect(rows[0].basisPromoted).toBe(true)
+  })
+
+  it('summarizeMatch counts measured/estimate on the current version + promotions', () => {
+    const prior = [{ description: 'X', qty: 10, rate: 100, amount: 1000, basis: 'estimated' as const }]
+    const current = [
+      { description: 'X', qty: 10, rate: 100, amount: 1000, basis: 'measured' as const },  // promoted
+      { description: 'Y new', qty: 5, rate: 50, amount: 250, basis: 'estimated' as const }, // still estimate
+    ]
+    const s = summarizeMatch(matchBoqRows(current, prior))
+    expect(s.measuredCount).toBe(1)
+    expect(s.estimateCount).toBe(1)
+    expect(s.promotedCount).toBe(1)
   })
 })

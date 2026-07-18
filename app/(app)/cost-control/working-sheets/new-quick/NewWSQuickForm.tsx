@@ -68,6 +68,9 @@ type CcExcelRowInsert = {
   ai_meta: AiRowMeta | null
   source_sheet: string | null
   source_cell: string | null
+  qty_formula: string | null
+  qty_basis: 'measured' | 'estimated' | null
+  qty_note: string | null
 }
 
 interface AiSummary {
@@ -372,10 +375,20 @@ export function NewWSQuickForm({ projects, projectDisciplines, projectSubSkills,
           const grid: EditableGridRow[] = res.rows.map((r, i) => {
             let sourceSheet: string | null = null
             let sourceCell: string | null = null
+            let qtyFormula: string | null = null
             if (r.kind !== 'heading' && boqXlsx) {
               const qCell = boqXlsx[XLSX.utils.encode_cell({ r: r.aoa_row_idx, c: BOQ_COL.qty })]
-              if (qCell?.f) { const ref = parseSourceRef(qCell.f); sourceSheet = ref.sheet; sourceCell = ref.cell }
+              if (qCell?.f) {
+                // The Qty cell IS a formula → the quantity is MEASURED (inline
+                // take-off like =946+104.5, or a link like =Measurement!G6).
+                qtyFormula = String(qCell.f)
+                const ref = parseSourceRef(qtyFormula); sourceSheet = ref.sheet; sourceCell = ref.cell
+              }
             }
+            // Basis: a formula → measured; a plain typed number → estimated
+            // (no drawing). Headings carry no basis.
+            const qtyBasis: 'measured' | 'estimated' | undefined =
+              r.kind === 'heading' ? undefined : (qtyFormula ? 'measured' : 'estimated')
             return {
               key: `tpl-${i}`,
               isHeading: r.kind === 'heading',
@@ -383,7 +396,7 @@ export function NewWSQuickForm({ projects, projectDisciplines, projectSubSkills,
               unit: r.unit ?? '',
               qty: r.qty, material: r.material, installation: r.installation, ml: r.ml,
               remarks: r.remarks ?? '',
-              sourceSheet, sourceCell,
+              sourceSheet, sourceCell, qtyFormula, qtyBasis, qtyNote: '',
             }
           })
           setTplRows(grid)
@@ -524,6 +537,9 @@ export function NewWSQuickForm({ projects, projectDisciplines, projectSubSkills,
       if (tplSummary && !tplSummary.reconciledToClaim) {
         setError('The rows don’t add up to your approval amount. Fix the rows or correct the amount below.'); return
       }
+      if (tplSummary && tplSummary.estimatesNeedingReason > 0) {
+        setError(`${tplSummary.estimatesNeedingReason} estimate row${tplSummary.estimatesNeedingReason > 1 ? 's need' : ' needs'} a one-line reason (no drawing) before you can send.`); return
+      }
     }
     // Under the cumulative flow the file MUST be the standard template (its
     // Measurement tab is the working) — a random Excel can't be raised.
@@ -607,6 +623,7 @@ export function NewWSQuickForm({ projects, projectDisciplines, projectSubSkills,
               description: r.description || null, unit: null, qty: null, rate: null, amount: null,
               formula_in_amount: null, rate_breakdown: null, amount_breakdown: null, ai_meta: null,
               source_sheet: null, source_cell: null,
+              qty_formula: null, qty_basis: null, qty_note: null,
             }
           }
           const ev = evaluateItem(r)
@@ -614,12 +631,15 @@ export function NewWSQuickForm({ projects, projectDisciplines, projectSubSkills,
           if (r.material != null) breakdown.push({ label: 'Material', value: r.material })
           if (r.installation != null) breakdown.push({ label: 'Installation', value: r.installation })
           if (r.ml != null) breakdown.push({ label: 'M+L', value: r.ml })
+          const basis = r.qtyBasis ?? (r.qtyFormula ? 'measured' : 'estimated')
           return {
             working_sheet_id: ws.id, row_no: i + 1, raw_label: null,
             description: r.description || null, unit: r.unit || null, qty: r.qty,
             rate: ev.rate, amount: ev.amount, formula_in_amount: null,
             rate_breakdown: breakdown.length ? breakdown : null, amount_breakdown: null, ai_meta: null,
             source_sheet: r.sourceSheet ?? null, source_cell: r.sourceCell ?? null,
+            qty_formula: r.qtyFormula ?? null, qty_basis: basis,
+            qty_note: basis === 'estimated' ? (r.qtyNote?.trim() || null) : null,
           } as CcExcelRowInsert
         })
       : (parsed?.rows ?? []).map((r): CcExcelRowInsert => {
@@ -639,6 +659,7 @@ export function NewWSQuickForm({ projects, projectDisciplines, projectSubSkills,
             ai_meta: r.ai_meta ?? null,
             source_sheet: src.sheet,
             source_cell: src.cell,
+            qty_formula: null, qty_basis: null, qty_note: null,
           }
         })
     if (rowsToInsert.length > 0) {
@@ -699,6 +720,9 @@ export function NewWSQuickForm({ projects, projectDisciplines, projectSubSkills,
   else if (parsing) missingToSend.push('wait for the file to finish parsing')
   else if (cumulativeVersions && notTemplate) missingToSend.push('upload the STANDARD template — this file isn’t it')
   else if (!tplActive && !parsed) missingToSend.push('the file could not be read — re-upload it')
+  if (tplActive && tplSummary && tplSummary.hardErrors > 0) missingToSend.push(`fix ${tplSummary.hardErrors} highlighted row problem${tplSummary.hardErrors > 1 ? 's' : ''}`)
+  if (tplActive && tplSummary && tplSummary.estimatesNeedingReason > 0) missingToSend.push(`give a reason for ${tplSummary.estimatesNeedingReason} estimate row${tplSummary.estimatesNeedingReason > 1 ? 's' : ''} (no drawing)`)
+  if (tplActive && tplSummary && !tplSummary.reconciledToClaim) missingToSend.push('rows must add up to the approval amount')
   if (!reviewer && !shot) missingToSend.push('attach the summary screenshot')
   if (summaryNotes.trim().length === 0) missingToSend.push('add a comment')
 

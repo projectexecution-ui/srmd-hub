@@ -375,7 +375,7 @@ export default async function WorkingSheetEditorPage(
   if (ws.entry_mode === 'excel_summary') {
     const { data: excelRows } = await supabase
       .from('cc_excel_rows')
-      .select('id, row_no, description, unit, qty, rate, amount, formula_in_amount, rate_breakdown, amount_breakdown, ai_meta, flag, flag_reason, flag_severity, working_ref')
+      .select('id, row_no, description, unit, qty, rate, amount, formula_in_amount, rate_breakdown, amount_breakdown, ai_meta, flag, flag_reason, flag_severity, working_ref, qty_basis, qty_formula, qty_note, source_sheet, source_cell')
       .eq('working_sheet_id', id)
       .order('row_no')
 
@@ -396,12 +396,13 @@ export default async function WorkingSheetEditorPage(
       const hit = arr?.find(b => b.label === label)
       return hit ? Number(hit.value) : null
     }
-    const toBoqItem = (r: { description: string | null; unit: string | null; qty: number | null; rate: number | null; amount: number | null; rate_breakdown: unknown }) => ({
+    const toBoqItem = (r: { description: string | null; unit: string | null; qty: number | null; rate: number | null; amount: number | null; rate_breakdown: unknown; qty_basis?: string | null }) => ({
       description: r.description ?? '', unit: r.unit ?? null,
       qty: Number(r.qty ?? 0), rate: Number(r.rate ?? 0), amount: Number(r.amount ?? 0),
       material: compFromBreakdown(r.rate_breakdown, 'Material'),
       installation: compFromBreakdown(r.rate_breakdown, 'Installation'),
       ml: compFromBreakdown(r.rate_breakdown, 'M+L'),
+      basis: (r.qty_basis === 'estimated' ? 'estimated' : r.qty_basis === 'measured' ? 'measured' : null) as 'measured' | 'estimated' | null,
     })
 
     const showCumulative = ccSettings.cumulative_versions && ws.version_no > 1
@@ -415,7 +416,7 @@ export default async function WorkingSheetEditorPage(
     if (showCumulative && prevSibling) {
       const { data: priorRows } = await supabase
         .from('cc_excel_rows')
-        .select('description, unit, qty, rate, amount, rate_breakdown')
+        .select('description, unit, qty, rate, amount, rate_breakdown, qty_basis')
         .eq('working_sheet_id', prevSibling.id)
         .not('qty', 'is', null)
         .order('row_no')

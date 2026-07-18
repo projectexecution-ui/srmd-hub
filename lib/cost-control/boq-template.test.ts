@@ -41,25 +41,27 @@ describe('buildBoqTemplateModel — shape', () => {
     })
   })
 
-  it('Rate is SUM(Material:M+L) and Amount is a blank-guarded Qty*Rate on every item row', () => {
+  it('Rate is SUM(Material:M+L) and Amount is Qty*Rate on every item row', () => {
     for (let r = m.itemRowStart; r <= m.itemRowEnd; r++) {
       expect(boq.cells[`H${r}`]?.f).toBe(`SUM(E${r}:G${r})`)
-      expect(boq.cells[`I${r}`]?.f).toBe(`IF(D${r}="",0,D${r}*H${r})`)
+      expect(boq.cells[`I${r}`]?.f).toBe(`D${r}*H${r}`)
     }
   })
 
-  it('every BOQ Qty cell is a live link into the Measurement tab (same row)', () => {
+  it('item rows leave Qty and the three rate cells empty — the engineer fills Qty (number / formula / link)', () => {
     for (let r = m.itemRowStart; r <= m.itemRowEnd; r++) {
-      expect(boq.cells[`D${r}`]?.f).toBe(`'Measurement'!G${r}`)
-    }
-  })
-
-  it('item rows leave the three rate cells truly empty (no #VALUE! seeds)', () => {
-    for (let r = m.itemRowStart; r <= m.itemRowEnd; r++) {
+      expect(boq.cells[`D${r}`]).toBeUndefined() // Qty
       expect(boq.cells[`E${r}`]).toBeUndefined() // Material
       expect(boq.cells[`F${r}`]).toBeUndefined() // Installation
       expect(boq.cells[`G${r}`]).toBeUndefined() // M+L
     }
+  })
+
+  it('the rule note explains the three ways to fill Qty', () => {
+    const note = String(boq.cells['A3']?.v ?? '')
+    expect(note).toMatch(/ESTIMATE/i)
+    expect(note).toMatch(/=946\+104\.5/)
+    expect(note).toMatch(/Measurement!G7/)
   })
 
   it('Measurement tab: Qty auto-computes Nos × (L|1) × (B|1) × (H|1), blank Nos ⇒ ""', () => {

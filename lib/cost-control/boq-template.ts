@@ -151,13 +151,14 @@ export function buildBoqTemplateModel(opts: BoqTemplateOptions = {}): BoqTemplat
   cells['A2'] = s(ctx || 'Fill the header on the site before uploading.')
   merges.push({ s: { r: 1, c: 0 }, e: { r: 1, c: 9 } })
 
-  // Row 3 — the rule note (merged). This IS the guard: fill one side only.
+  // Row 3 — the rule note (merged). Explains the M+L guard AND the three ways
+  // to fill Qty (the take-off basis the app captures).
   cells['A3'] = s(
     'Fill EITHER Material + Installation OR the combined M+L — never both. ' +
     'Rate = Material + Installation + M+L (auto). Amount = Qty × Rate (auto). ' +
-    (withMeasurement
-      ? 'Do NOT type quantities here — enter your take-off on the Measurement tab; Qty pulls in automatically and stays linked. '
-      : '') +
+    'QTY — fill it ONE of three ways: (1) a plain number = ESTIMATE (no drawing); ' +
+    '(2) a take-off formula e.g. =946+104.5 = MEASURED; ' +
+    (withMeasurement ? '(3) =Measurement!G7 to pull from the optional Measurement tab = MEASURED. ' : '') +
     'Leave the grey Rate & Amount columns alone. For lump sum use Unit "LS", Qty 1. ' +
     'For a deduction, enter a negative Qty. Units: ' + BOQ_UNITS.join(' / ') + '.',
   )
@@ -167,24 +168,17 @@ export function buildBoqTemplateModel(opts: BoqTemplateOptions = {}): BoqTemplat
   const headerRow = 5
   BOQ_COLS.forEach((name, c) => { cells[addr(c, headerRow)] = s(name) })
 
-  // Rows 6.. — blank item rows with Rate & Amount pre-seeded as formulas.
+  // Rows 6.. — blank item rows. Qty is left EMPTY (the engineer fills it a
+  // plain number / inline formula / =Measurement!G link); Rate & Amount are
+  // seeded formulas. A blank Qty gives Amount 0 (empty*0), never #VALUE!.
   const itemRowStart = headerRow + 1
   const itemRowEnd = itemRowStart + blankRows - 1
-  const mCol = (c: number) => String.fromCharCode(65 + c)
   for (let r = itemRowStart; r <= itemRowEnd; r++) {
     cells[addr(COL.sr, r)] = n(r - itemRowStart + 1)
-    // Qty is LINKED to the Measurement tab's Qty column (same row), so the app
-    // can trace a quantity to the exact cell it was measured in. Blank take-off
-    // rows resolve to "" (never a hard number), so item rows stay skippable.
-    if (withMeasurement) {
-      cells[addr(COL.qty, r)] = f(`'${BOQ_MEASURE_SHEET}'!${mCol(MCOL.qty)}${r}`)
-    }
     // Rate = SUM(Material:M+L) — blank cells count as 0, never #VALUE!.
     cells[addr(COL.rate, r)] = f(`SUM(${addr(COL.material, r)}:${addr(COL.ml, r)})`, MONEY_FMT)
-    // Amount = Qty × Rate — guarded so a blank (linked "") Qty gives 0, not #VALUE!.
-    cells[addr(COL.amount, r)] = withMeasurement
-      ? f(`IF(${addr(COL.qty, r)}="",0,${addr(COL.qty, r)}*${addr(COL.rate, r)})`, MONEY_FMT)
-      : f(`${addr(COL.qty, r)}*${addr(COL.rate, r)}`, MONEY_FMT)
+    // Amount = Qty × Rate.
+    cells[addr(COL.amount, r)] = f(`${addr(COL.qty, r)}*${addr(COL.rate, r)}`, MONEY_FMT)
   }
 
   // Totals ladder.
@@ -256,13 +250,13 @@ export function buildMeasurementSheet(
   const mc = (c: number) => String.fromCharCode(65 + c)
   const at = (c: number, r1: number) => `${mc(c)}${r1}`
 
-  cells['A1'] = s('MEASUREMENT / TAKE-OFF — enter your quantities here')
+  cells['A1'] = s('MEASUREMENT / TAKE-OFF (optional helper) — structure your quantities here')
   merges.push({ s: { r: 0, c: 0 }, e: { r: 0, c: 8 } })
   cells['A2'] = s(
-    'One row per BOQ item (same order). Qty auto-computes = Nos × Length × Breadth × Height ' +
-    '(leave a dimension blank to skip it — e.g. count only, or area). The Qty flows into the BOQ ' +
-    'automatically and stays linked, so an approver can click any BOQ quantity and land on its cell here. ' +
-    'For a take-off that isn’t N×L×B×H, just type your own value or formula into the Qty cell.',
+    'OPTIONAL. Use this only if you want a structured take-off. Qty auto-computes = Nos × Length × Breadth × Height ' +
+    '(leave a dimension blank to skip it — count only, or area). Then link it from the BOQ with =Measurement!G6 ' +
+    'so an approver can click that quantity and land on this cell. Otherwise just put your formula or number ' +
+    'straight in the BOQ Qty cell — you don’t have to use this tab.',
   )
   merges.push({ s: { r: 1, c: 0 }, e: { r: 1, c: 8 } })
 

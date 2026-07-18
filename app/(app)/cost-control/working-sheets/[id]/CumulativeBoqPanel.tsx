@@ -39,12 +39,22 @@ export function CumulativeBoqPanel({ rows, summary, workingByKey = {} }: Props) 
       <tr key={r.key} className={`border-t border-gray-100 ${r.dropped ? 'opacity-50' : ''} ${r.rateChanged ? 'bg-amber-50/50' : ''}`}>
         <td className="px-2 py-1.5">
           <span className={r.dropped ? 'line-through text-gray-500' : 'text-gray-900'}>{r.description}</span>
+          {r.unit && <span className="ml-2 text-[10px] text-gray-400">{r.unit}</span>}
+          {r.newBasis === 'estimated' && !r.dropped && (
+            <span className="ml-2 inline-flex items-center gap-1 text-[10px] font-bold text-amber-700 bg-amber-50 border border-amber-200 rounded px-1">
+              <AlertTriangle className="h-3 w-3" /> estimate — no drawing
+            </span>
+          )}
+          {r.basisPromoted && (
+            <span className="ml-2 inline-flex items-center gap-1 text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded px-1">
+              ✓ estimate → measured
+            </span>
+          )}
           {r.possibleDoubleClaim && (
             <span className="ml-2 inline-flex items-center gap-1 text-[10px] text-rose-700 bg-rose-50 border border-rose-200 rounded px-1">
               <AlertTriangle className="h-3 w-3" /> possible double claim
             </span>
           )}
-          {r.unit && <span className="ml-2 text-[10px] text-gray-400">{r.unit}</span>}
         </td>
         <td className="px-2 py-1.5 text-right text-gray-500"><QtyRate qty={r.approvedQty} rate={r.approvedRate} /></td>
         <td className="px-2 py-1.5 text-right font-medium text-gray-900"><QtyRate qty={r.newQty} rate={r.newRate} /></td>
@@ -86,12 +96,21 @@ export function CumulativeBoqPanel({ rows, summary, workingByKey = {} }: Props) 
 
   return (
     <div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
-      <div className="flex items-center justify-between gap-3 px-4 py-2 bg-gray-50 border-b border-gray-100">
+      <div className="flex items-center justify-between gap-3 px-4 py-2 bg-gray-50 border-b border-gray-100 flex-wrap">
         <p className="text-xs font-bold uppercase tracking-wide text-gray-600">Cumulative BOQ — approved vs this ask</p>
-        <p className="text-[11px] text-gray-500">
-          {summary.continuingCount} carried · {summary.newCount} new · {summary.rateChangedCount} rate change{summary.rateChangedCount === 1 ? '' : 's'}
-          {summary.droppedCount > 0 ? ` · ${summary.droppedCount} dropped` : ''}
-        </p>
+        <div className="flex items-center gap-3 flex-wrap">
+          <p className="inline-flex items-center gap-2 text-[11px] font-semibold">
+            <span className="inline-flex items-center gap-1 text-emerald-700"><span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />{summary.measuredCount} measured</span>
+            {summary.estimateCount > 0 && (
+              <span className="inline-flex items-center gap-1 text-amber-700"><span className="h-1.5 w-1.5 rounded-full bg-amber-500" />{summary.estimateCount} estimate{summary.estimateCount > 1 ? 's' : ''} (no drawing)</span>
+            )}
+            {summary.promotedCount > 0 && <span className="text-emerald-700">· {summary.promotedCount} → measured this version</span>}
+          </p>
+          <p className="text-[11px] text-gray-500">
+            {summary.continuingCount} carried · {summary.newCount} new · {summary.rateChangedCount} rate change{summary.rateChangedCount === 1 ? '' : 's'}
+            {summary.droppedCount > 0 ? ` · ${summary.droppedCount} dropped` : ''}
+          </p>
+        </div>
       </div>
       <div className="overflow-x-auto">
         <table className="w-full text-sm">

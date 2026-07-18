@@ -58,6 +58,8 @@ export function chainCumulative(siblings: LedgerVersion[], currentId: string): C
 
 // ── Per-line matching ──────────────────────────────────────────────────────
 
+export type QtyBasis = 'measured' | 'estimated'
+
 export interface BoqItem {
   description: string
   unit?: string | null
@@ -67,6 +69,17 @@ export interface BoqItem {
   material?: number | null
   installation?: number | null
   ml?: number | null
+  /** Take-off basis (S10): measured = qty from a formula/link; estimated =
+   *  plain number, no drawing. Undefined on legacy rows → treated as measured. */
+  basis?: QtyBasis | null
+}
+
+/** Count measured vs estimate across a BOQ (for the Trustee confidence line).
+ *  A missing basis is treated as measured (legacy, pre-take-off-capture). */
+export function basisCounts(items: BoqItem[]): { measured: number; estimated: number; total: number } {
+  let estimated = 0
+  for (const it of items) if (it.basis === 'estimated') estimated++
+  return { measured: items.length - estimated, estimated, total: items.length }
 }
 
 export type RateComponent = 'material' | 'installation' | 'ml' | 'rate'
@@ -92,6 +105,10 @@ export interface MatchedRow {
   isNew: boolean
   dropped: boolean
   possibleDoubleClaim: boolean
+  // take-off basis (S10)
+  approvedBasis: QtyBasis | null
+  newBasis: QtyBasis | null
+  basisPromoted: boolean   // estimated (prior) → measured (now)
 }
 
 /** Normalise a description into a match key: lowercase, strip punctuation,
@@ -116,18 +133,22 @@ function jaccard(a: Set<string>, b: Set<string>): number {
   return inter / (a.size + b.size - inter)
 }
 
-interface Agg { qty: number; amount: number; rate: number; unit: string | null; material: number | null; installation: number | null; ml: number | null; desc: string }
+interface Agg { qty: number; amount: number; rate: number; unit: string | null; material: number | null; installation: number | null; ml: number | null; desc: string; basis: QtyBasis }
 
 function aggregate(items: BoqItem[]): Map<string, Agg> {
   const m = new Map<string, Agg>()
   for (const it of items) {
     const key = normalizeKey(it.description)
     if (!key) continue
+    // A merged item is measured if ANY of its parts is measured (only fully
+    // un-measured items read as estimate).
+    const itBasis: QtyBasis = it.basis === 'estimated' ? 'estimated' : 'measured'
     const prev = m.get(key)
     if (prev) {
       prev.qty += Number(it.qty) || 0
       prev.amount += Number(it.amount) || 0
       prev.rate = prev.qty !== 0 ? prev.amount / prev.qty : (Number(it.rate) || prev.rate)
+      if (itBasis === 'measured') prev.basis = 'measured'
     } else {
       m.set(key, {
         qty: Number(it.qty) || 0,
@@ -138,6 +159,7 @@ function aggregate(items: BoqItem[]): Map<string, Agg> {
         installation: it.installation ?? null,
         ml: it.ml ?? null,
         desc: it.description,
+        basis: itBasis,
       })
     }
   }
@@ -184,6 +206,8 @@ export function matchBoqRows(current: BoqItem[], priorApproved: BoqItem[]): Matc
         rateOld: p.rate, rateNew: c.rate,
         rateChangeComponents: comps,
         isNew: false, dropped: false, possibleDoubleClaim: false,
+        approvedBasis: p.basis, newBasis: c.basis,
+        basisPromoted: p.basis === 'estimated' && c.basis === 'measured',
       })
     } else {
       // Brand new. Advisory: does it strongly resemble an already-approved
@@ -198,6 +222,7 @@ export function matchBoqRows(current: BoqItem[], priorApproved: BoqItem[]): Matc
         rateChanged: false, rateOld: null, rateNew: c.rate,
         rateChangeComponents: [],
         isNew: true, dropped: false, possibleDoubleClaim: dbl,
+        approvedBasis: null, newBasis: c.basis, basisPromoted: false,
       })
     }
   }
@@ -213,6 +238,7 @@ export function matchBoqRows(current: BoqItem[], priorApproved: BoqItem[]): Matc
       rateChanged: false, rateOld: p.rate, rateNew: null,
       rateChangeComponents: [],
       isNew: false, dropped: true, possibleDoubleClaim: false,
+      approvedBasis: p.basis, newBasis: null, basisPromoted: false,
     })
   }
 
@@ -227,9 +253,14 @@ export interface MatchSummary {
   droppedCount: number
   rateChangedCount: number
   doubleClaimCount: number
+  // take-off confidence across the CURRENT version's rows (S10)
+  measuredCount: number
+  estimateCount: number
+  promotedCount: number     // estimated → measured this version
 }
 
 export function summarizeMatch(rows: MatchedRow[]): MatchSummary {
+  const present = rows.filter(r => !r.dropped) // rows in the current version
   return {
     approvedTotal: rows.reduce((s, r) => s + (r.approvedAmount ?? 0), 0),
     newAskTotal: rows.reduce((s, r) => s + (r.newAmount ?? 0), 0),
@@ -238,5 +269,8 @@ export function summarizeMatch(rows: MatchedRow[]): MatchSummary {
     droppedCount: rows.filter(r => r.dropped).length,
     rateChangedCount: rows.filter(r => r.rateChanged).length,
     doubleClaimCount: rows.filter(r => r.possibleDoubleClaim).length,
+    measuredCount: present.filter(r => r.newBasis !== 'estimated').length,
+    estimateCount: present.filter(r => r.newBasis === 'estimated').length,
+    promotedCount: rows.filter(r => r.basisPromoted).length,
   }
 }
