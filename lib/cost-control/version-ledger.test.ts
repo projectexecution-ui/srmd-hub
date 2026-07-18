@@ -15,18 +15,39 @@ const v = (o: Partial<LedgerVersion> & { id: string; version_no: number }): Ledg
 })
 
 describe('chainCumulative', () => {
-  it('cumulative = this version full total; thisAsk = cumulative − prior releases', () => {
+  it('baseline = immediately-prior approved version total; thisAsk = the delta', () => {
     const sibs = [
-      v({ id: 'a', version_no: 1, approved_for_erp_amt: 1_000_000, total_amount: 1_000_000 }),
-      v({ id: 'b', version_no: 2, approved_for_erp_amt: 400_000, total_amount: 1_400_000 }),
-      // v3 restates the whole BOQ at 1.65 Cr; 1.4 Cr already released.
-      v({ id: 'c', version_no: 3, approved_for_erp_amt: 0, total_amount: 1_650_000, status: 'submitted' }),
+      v({ id: 'a', version_no: 1, total_amount: 1_000_000, status: 'approved' }),
+      v({ id: 'b', version_no: 2, total_amount: 1_400_000, status: 'approved' }),
+      // v3 restates the whole BOQ at 1.65 Cr; baseline is v2's approved total.
+      v({ id: 'c', version_no: 3, total_amount: 1_650_000, status: 'submitted' }),
     ]
     const r = chainCumulative(sibs, 'c')
-    expect(r.alreadyApproved).toBe(1_400_000)
+    expect(r.alreadyApproved).toBe(1_400_000)  // v2's total, NOT v1+v2 summed
     expect(r.cumulative).toBe(1_650_000)
     expect(r.thisAsk).toBe(250_000)
     expect(r.priorCount).toBe(2)
+  })
+
+  it('uses the approved TOTAL, not the released tranche', () => {
+    const sibs = [
+      // partially released to ERP (400k) but the whole 1.4 Cr BOQ was approved.
+      v({ id: 'b', version_no: 1, total_amount: 1_400_000, approved_for_erp_amt: 400_000, status: 'partially_approved' }),
+      v({ id: 'c', version_no: 2, total_amount: 1_650_000, status: 'submitted' }),
+    ]
+    const r = chainCumulative(sibs, 'c')
+    expect(r.alreadyApproved).toBe(1_400_000)
+    expect(r.thisAsk).toBe(250_000)
+  })
+
+  it('ignores a prior that is not yet approved (still draft/submitted)', () => {
+    const sibs = [
+      v({ id: 'a', version_no: 1, total_amount: 900_000, status: 'submitted' }),  // not approved
+      v({ id: 'b', version_no: 2, total_amount: 950_000, status: 'draft' }),
+    ]
+    const r = chainCumulative(sibs, 'b')
+    expect(r.alreadyApproved).toBe(0)
+    expect(r.thisAsk).toBe(950_000)
   })
 
   it('v1 has no priors — thisAsk equals the full total', () => {
@@ -39,16 +60,15 @@ describe('chainCumulative', () => {
 
   it('excludes [IB] baseline, cancelled and archived priors', () => {
     const sibs = [
-      v({ id: 'ib', version_no: 1, approved_for_erp_amt: 9_999, summary_notes: '[IB] baseline' }),
-      v({ id: 'x', version_no: 2, approved_for_erp_amt: 5_000, status: 'cancelled' }),
-      v({ id: 'y', version_no: 3, approved_for_erp_amt: 7_000, archived_at: '2026-01-01' }),
-      v({ id: 'ok', version_no: 4, approved_for_erp_amt: 100_000 }),
+      v({ id: 'ib', version_no: 1, total_amount: 9_999, status: 'approved', summary_notes: '[IB] baseline' }),
+      v({ id: 'x', version_no: 2, total_amount: 5_000, status: 'cancelled' }),
+      v({ id: 'y', version_no: 3, total_amount: 7_000, status: 'approved', archived_at: '2026-01-01' }),
+      v({ id: 'ok', version_no: 4, total_amount: 100_000, status: 'approved' }),
       v({ id: 'cur', version_no: 5, total_amount: 120_000, status: 'submitted' }),
     ]
     const r = chainCumulative(sibs, 'cur')
     expect(r.alreadyApproved).toBe(100_000) // only 'ok'
     expect(r.thisAsk).toBe(20_000)
-    expect(r.priorCount).toBe(1)
   })
 })
 

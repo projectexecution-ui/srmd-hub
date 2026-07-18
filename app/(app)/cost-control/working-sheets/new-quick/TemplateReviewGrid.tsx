@@ -45,8 +45,10 @@ export interface GridSummary {
   itemCount: number
   measuredCount: number
   estimateCount: number
-  /** Estimated rows whose "no drawing" reason is still blank — blocks submit. */
-  estimatesNeedingReason: number
+  /** No-take-off rows (no formula) whose note is still blank — blocks submit.
+   *  Applies whether the row is marked measured (needs "how measured") or
+   *  estimate (needs "why no drawing"). */
+  notesNeeded: number
 }
 
 interface Props {
@@ -65,6 +67,10 @@ const numOrNull = (v: string): number | null => {
   return Number.isFinite(n) ? n : null
 }
 
+/** True when the row's quantity came from a take-off formula (inline or a
+ *  Measurement link) — i.e. it's genuinely measured, not a plain number. */
+const hasFormula = (r: EditableGridRow): boolean => !!((r.qtyFormula ?? '').trim())
+
 export function TemplateReviewGrid({
   rows, onRowsChange, contingencyPct, gstPct, onPctChange, claimedTotal, onSummary,
 }: Props) {
@@ -78,28 +84,40 @@ export function TemplateReviewGrid({
   const hardErrors = evals.reduce((s, e) => s + e.errors.length, 0)
   const claim = reconcileAgainstClaim(ladder.grandTotal, claimedTotal)
 
-  // Take-off confidence: a row is measured when its Qty carries a formula
-  // (inline take-off or a Measurement link); otherwise it's an estimate that
-  // must carry a "no drawing" reason before it can be sent.
+  // Take-off confidence: a row is MEASURED if its Qty carries a formula (inline
+  // take-off or a Measurement link) OR the engineer has toggled it measured with
+  // a note; otherwise it's an ESTIMATE. Any no-formula row needs a note.
   const itemRows = rows.filter(r => !r.isHeading)
-  const isEstimate = (r: EditableGridRow) => (r.qtyBasis ?? (r.qtyFormula ? 'measured' : 'estimated')) === 'estimated'
+  const rowBasis = (r: EditableGridRow) => hasFormula(r) ? 'measured' : (r.qtyBasis ?? 'estimated')
   const itemCount = itemRows.length
-  const estimateCount = itemRows.filter(isEstimate).length
-  const measuredCount = itemCount - estimateCount
-  const estimatesNeedingReason = itemRows.filter(r => isEstimate(r) && !(r.qtyNote ?? '').trim()).length
+  const measuredCount = itemRows.filter(r => rowBasis(r) === 'measured').length
+  const estimateCount = itemCount - measuredCount
+  const notesNeeded = itemRows.filter(r => !hasFormula(r) && !(r.qtyNote ?? '').trim()).length
 
   // Report the rolled-up summary up to the parent (for the submit gate).
   React.useEffect(() => {
     onSummary({
       subtotal: ladder.subtotal, contingency: ladder.contingency, gst: ladder.gst,
       grandTotal: ladder.grandTotal, hardErrors, reconciledToClaim: claim.ok,
-      itemCount, measuredCount, estimateCount, estimatesNeedingReason,
+      itemCount, measuredCount, estimateCount, notesNeeded,
     })
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ladder.grandTotal, ladder.subtotal, ladder.contingency, ladder.gst, hardErrors, claim.ok, itemCount, measuredCount, estimateCount, estimatesNeedingReason])
+  }, [ladder.grandTotal, ladder.subtotal, ladder.contingency, ladder.gst, hardErrors, claim.ok, itemCount, measuredCount, estimateCount, notesNeeded])
 
   function update(idx: number, patch: Partial<EditableGridRow>) {
     onRowsChange(rows.map((r, i) => (i === idx ? { ...r, ...patch } : r)))
+  }
+  // Editing the qty by hand invalidates any take-off formula it was pulling
+  // from — so the provenance never lies. The row drops to a manual number and
+  // becomes an estimate (engineer can toggle it back to measured with a note).
+  function updateQty(idx: number, val: string) {
+    const qty = numOrNull(val)
+    const r = rows[idx]
+    if (hasFormula(r)) {
+      update(idx, { qty, qtyFormula: null, sourceSheet: null, sourceCell: null, qtyBasis: 'estimated' })
+    } else {
+      update(idx, { qty })
+    }
   }
   function remove(idx: number) {
     onRowsChange(rows.filter((_, i) => i !== idx))
@@ -130,9 +148,9 @@ export function TemplateReviewGrid({
               )}
             </span>
           )}
-          <span className={`text-xs font-medium ${hardErrors || estimatesNeedingReason ? 'text-rose-700' : 'text-emerald-700'}`}>
+          <span className={`text-xs font-medium ${hardErrors || notesNeeded ? 'text-rose-700' : 'text-emerald-700'}`}>
             {hardErrors ? `${hardErrors} thing${hardErrors > 1 ? 's' : ''} to fix`
-              : estimatesNeedingReason ? `${estimatesNeedingReason} estimate${estimatesNeedingReason > 1 ? 's need' : ' needs'} a reason`
+              : notesNeeded ? `${notesNeeded} row${notesNeeded > 1 ? 's need' : ' needs'} a note`
               : 'All rows look good'}
           </span>
         </div>
@@ -179,31 +197,38 @@ export function TemplateReviewGrid({
                     <td className="px-2 py-1.5">
                       <Input value={r.description} onChange={e => update(idx, { description: e.target.value })}
                         className="h-8" placeholder="e.g. RCC M25 footings" />
-                      {/* Take-off basis: measured (inline formula / Measurement
-                          link) shown green; estimate (no drawing) amber + a
-                          REQUIRED reason before the sheet can be sent. */}
+                      {/* Take-off basis. A formula-backed qty is measured (green,
+                          locked). A plain-typed qty defaults to estimate but the
+                          engineer can toggle it to Measured — either way a
+                          no-formula row needs a one-line note. */}
                       {(() => {
-                        const est = (r.qtyBasis ?? (r.qtyFormula ? 'measured' : 'estimated')) === 'estimated'
-                        if (!est) {
+                        if (hasFormula(r)) {
                           return (
                             <span className="mt-0.5 inline-flex items-center gap-1 text-[10px] text-emerald-700 font-mono"
                               title="Measured — the quantity comes from a take-off (formula or Measurement link)">
                               <Link2 className="h-2.5 w-2.5" />
                               {r.sourceCell ? `Qty ← ${r.sourceSheet ? `${r.sourceSheet}!` : ''}${r.sourceCell}`
-                                : (r.qtyFormula ? `Qty = ${r.qtyFormula.replace(/^=/, '')}` : 'measured')}
+                                : `Qty = ${(r.qtyFormula ?? '').replace(/^=/, '')}`}
                             </span>
                           )
                         }
+                        const basis = r.qtyBasis ?? 'estimated'
+                        const noteMissing = !(r.qtyNote ?? '').trim()
                         return (
                           <div className="mt-1">
-                            <span className="inline-flex items-center gap-1 text-[10px] font-bold text-amber-700 bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5">
-                              <AlertTriangle className="h-2.5 w-2.5" /> Estimate — no drawing
+                            <span className="inline-flex rounded-md border border-gray-200 overflow-hidden text-[10px] font-bold">
+                              <button type="button" onClick={() => update(idx, { qtyBasis: 'measured' })}
+                                className={`px-1.5 py-0.5 ${basis === 'measured' ? 'bg-emerald-600 text-white' : 'bg-white text-gray-500'}`}>Measured</button>
+                              <button type="button" onClick={() => update(idx, { qtyBasis: 'estimated' })}
+                                className={`px-1.5 py-0.5 ${basis === 'estimated' ? 'bg-amber-500 text-white' : 'bg-white text-gray-500'}`}>Estimate</button>
                             </span>
                             <input
                               value={r.qtyNote ?? ''}
                               onChange={e => update(idx, { qtyNote: e.target.value })}
-                              placeholder="Why no take-off? (required — e.g. count from site, GK rate)"
-                              className={`mt-1 h-7 w-full rounded-md border px-2 text-xs ${(r.qtyNote ?? '').trim() ? 'border-gray-300' : 'border-amber-400 bg-amber-50/40'}`}
+                              placeholder={basis === 'measured'
+                                ? 'How measured? (required — e.g. counted from GA-R2)'
+                                : 'Why no take-off? (required — e.g. GK estimate, no drawing yet)'}
+                              className={`mt-1 h-7 w-full rounded-md border px-2 text-xs ${noteMissing ? 'border-amber-400 bg-amber-50/40' : 'border-gray-300'}`}
                             />
                           </div>
                         )
@@ -217,7 +242,7 @@ export function TemplateReviewGrid({
                       </select>
                     </td>
                     <td className="px-2 py-1.5">
-                      <Input value={r.qty ?? ''} onChange={e => update(idx, { qty: numOrNull(e.target.value) })} className={cellCls} inputMode="decimal" />
+                      <Input value={r.qty ?? ''} onChange={e => updateQty(idx, e.target.value)} className={cellCls} inputMode="decimal" />
                     </td>
                     <td className="px-2 py-1.5">
                       <Input value={r.material ?? ''} onChange={e => update(idx, { material: numOrNull(e.target.value) })} className={cellCls} inputMode="decimal" />

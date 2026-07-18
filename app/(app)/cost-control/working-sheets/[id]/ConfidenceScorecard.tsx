@@ -10,7 +10,6 @@ import { CheckCircle2, AlertTriangle } from 'lucide-react'
 interface Props {
   measured: number
   estimate: number
-  reconciles: boolean
   total: number
   /** Rate changes vs the prior approved version (revisions only). */
   rateChanges?: number | null
@@ -18,12 +17,13 @@ interface Props {
   estimatesMissingReason?: number
 }
 
-export function ConfidenceScorecard({ measured, estimate, reconciles, total, rateChanges = null, estimatesMissingReason = 0 }: Props) {
+export function ConfidenceScorecard({ measured, estimate, total, rateChanges = null, estimatesMissingReason = 0 }: Props) {
   const items = measured + estimate
   const measPct = items > 0 ? Math.round((measured / items) * 100) : 100
   const estPct = 100 - measPct
   // Soft verdict — the reviewer decides; this only flags what to look at.
-  const concern = !reconciles || estimatesMissingReason > 0 || estPct >= 50
+  // (Reconciliation is already enforced at submit, so it's not re-checked here.)
+  const concern = estimatesMissingReason > 0 || estPct >= 50
   const ok = !concern
 
   return (
@@ -51,10 +51,6 @@ export function ConfidenceScorecard({ measured, estimate, reconciles, total, rat
           </div>
         )}
         <div className="flex items-center gap-4 text-xs flex-wrap pt-1">
-          <span className={`inline-flex items-center gap-1 ${reconciles ? 'text-emerald-700' : 'text-rose-700 font-semibold'}`}>
-            {reconciles ? <CheckCircle2 className="h-3.5 w-3.5" /> : <AlertTriangle className="h-3.5 w-3.5" />}
-            {reconciles ? 'Rows reconcile to the total' : 'Rows don’t add up to the total'}
-          </span>
           {rateChanges != null && rateChanges > 0 && (
             <span className="inline-flex items-center gap-1 text-amber-700"><AlertTriangle className="h-3.5 w-3.5" /> {rateChanges} rate change{rateChanges > 1 ? 's' : ''} vs approved</span>
           )}

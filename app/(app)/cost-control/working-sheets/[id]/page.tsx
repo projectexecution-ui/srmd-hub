@@ -464,15 +464,17 @@ export default async function WorkingSheetEditorPage(
       }
     }
 
-    // Management confidence scorecard data (S11.4) — current version's basis
-    // mix + whether the rows reconcile to the recorded total.
+    // Management confidence scorecard data (S11.4) — current version's basis mix.
+    // (Reconciliation is enforced at submit, so it's not re-checked here — a row
+    // subtotal never equals the GST-inclusive total anyway.)
     const scorecardItems = (excelRows ?? []).filter(r => r.qty != null).map(toBoqItem)
     const curBasis = basisCounts(scorecardItems)
-    const rowsSum = scorecardItems.reduce((s, r) => s + (Number(r.amount) || 0), 0)
     const recTotal = Number(ws.total_amount) || 0
-    const scorecardReconciles = recTotal === 0 ? true : Math.abs(rowsSum - recTotal) <= Math.max(1, recTotal * 0.005)
+    // A no-take-off row (no formula) needs a note — whether marked measured or
+    // estimate. Count the ones still missing it.
     const estMissingReason = (excelRows ?? []).filter(r =>
-      (r as { qty_basis?: string | null }).qty_basis === 'estimated' &&
+      r.qty != null &&
+      !((r as { qty_formula?: string | null }).qty_formula ?? '').trim() &&
       !(((r as { qty_note?: string | null }).qty_note) ?? '').trim()).length
     const showScorecard = ccSettings.cumulative_versions && reviewer && curBasis.total > 0
 
@@ -538,7 +540,6 @@ export default async function WorkingSheetEditorPage(
           <ConfidenceScorecard
             measured={curBasis.measured}
             estimate={curBasis.estimated}
-            reconciles={scorecardReconciles}
             total={recTotal}
             rateChanges={matchSummary?.rateChangedCount ?? null}
             estimatesMissingReason={estMissingReason}

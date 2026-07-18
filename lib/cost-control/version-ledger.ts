@@ -32,21 +32,31 @@ export function isRealVersion(v: LedgerVersion): boolean {
 }
 
 export interface CumulativeMoney {
-  alreadyApproved: number   // Σ approved_for_erp_amt released by real PRIOR versions
+  alreadyApproved: number   // the immediately-prior APPROVED version's total
   cumulative: number        // THIS version's full-BOQ total (a revision restates
                             //   the whole BOQ, cloned from the approved version)
   thisAsk: number           // cumulative − alreadyApproved (new money requested now)
-  priorCount: number        // how many prior versions contributed
+  priorCount: number        // how many prior versions exist
 }
 
-/** Money strip: already approved (prior releases) · this NEW ask · cumulative.
- *  A revision carries forward the full BOQ, so this version's total_amount IS
- *  the cumulative; the incremental ask is what's left after prior releases. */
+/** A version whose budget has been approved (so its total is a real baseline).
+ *  'partially_approved' counts — the whole BOQ was under approval. */
+const APPROVED_STATES = new Set(['approved', 'partially_approved', 'wo_issued', 'paid'])
+
+/** Money strip: already approved · this NEW ask · cumulative.
+ *  Each version restates the FULL BOQ (a revision clones the approved version and
+ *  grows it), so the baseline is the IMMEDIATELY-prior approved version's total —
+ *  never the sum of all priors (that would double-count the cumulative BOQ) and
+ *  not the released ERP tranche. thisAsk is the genuine new delta. */
 export function chainCumulative(siblings: LedgerVersion[], currentId: string): CumulativeMoney {
   const current = siblings.find(v => v.id === currentId)
   const curVer = current?.version_no ?? Number.POSITIVE_INFINITY
   const priors = siblings.filter(v => isRealVersion(v) && v.version_no < curVer)
-  const alreadyApproved = priors.reduce((s, v) => s + (Number(v.approved_for_erp_amt) || 0), 0)
+  const approvedPriors = priors.filter(v => APPROVED_STATES.has(v.status))
+  const baseline = approvedPriors.length
+    ? approvedPriors.reduce((a, b) => (b.version_no > a.version_no ? b : a))
+    : null
+  const alreadyApproved = baseline ? (Number(baseline.total_amount) || 0) : 0
   const cumulative = current ? (Number(current.total_amount) || 0) : 0
   return {
     alreadyApproved,

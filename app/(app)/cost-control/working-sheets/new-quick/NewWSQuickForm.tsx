@@ -537,8 +537,8 @@ export function NewWSQuickForm({ projects, projectDisciplines, projectSubSkills,
       if (tplSummary && !tplSummary.reconciledToClaim) {
         setError('The rows don’t add up to your approval amount. Fix the rows or correct the amount below.'); return
       }
-      if (tplSummary && tplSummary.estimatesNeedingReason > 0) {
-        setError(`${tplSummary.estimatesNeedingReason} estimate row${tplSummary.estimatesNeedingReason > 1 ? 's need' : ' needs'} a one-line reason (no drawing) before you can send.`); return
+      if (tplSummary && tplSummary.notesNeeded > 0) {
+        setError(`${tplSummary.notesNeeded} row${tplSummary.notesNeeded > 1 ? 's need' : ' needs'} a one-line note (how it was measured, or why there's no take-off) before you can send.`); return
       }
     }
     // Under the cumulative flow the file MUST be the standard template (its
@@ -631,7 +631,11 @@ export function NewWSQuickForm({ projects, projectDisciplines, projectSubSkills,
           if (r.material != null) breakdown.push({ label: 'Material', value: r.material })
           if (r.installation != null) breakdown.push({ label: 'Installation', value: r.installation })
           if (r.ml != null) breakdown.push({ label: 'M+L', value: r.ml })
-          const basis = r.qtyBasis ?? (r.qtyFormula ? 'measured' : 'estimated')
+          // A formula-backed qty is measured; a plain number is whatever the
+          // engineer toggled (default estimate). Any no-formula row keeps its
+          // note (the "how measured" or "why no drawing" justification).
+          const hasF = !!((r.qtyFormula ?? '').trim())
+          const basis: 'measured' | 'estimated' = hasF ? 'measured' : (r.qtyBasis ?? 'estimated')
           return {
             working_sheet_id: ws.id, row_no: i + 1, raw_label: null,
             description: r.description || null, unit: r.unit || null, qty: r.qty,
@@ -639,7 +643,7 @@ export function NewWSQuickForm({ projects, projectDisciplines, projectSubSkills,
             rate_breakdown: breakdown.length ? breakdown : null, amount_breakdown: null, ai_meta: null,
             source_sheet: r.sourceSheet ?? null, source_cell: r.sourceCell ?? null,
             qty_formula: r.qtyFormula ?? null, qty_basis: basis,
-            qty_note: basis === 'estimated' ? (r.qtyNote?.trim() || null) : null,
+            qty_note: hasF ? null : (r.qtyNote?.trim() || null),
           } as CcExcelRowInsert
         })
       : (parsed?.rows ?? []).map((r): CcExcelRowInsert => {
@@ -721,7 +725,7 @@ export function NewWSQuickForm({ projects, projectDisciplines, projectSubSkills,
   else if (cumulativeVersions && notTemplate) missingToSend.push('upload the STANDARD template — this file isn’t it')
   else if (!tplActive && !parsed) missingToSend.push('the file could not be read — re-upload it')
   if (tplActive && tplSummary && tplSummary.hardErrors > 0) missingToSend.push(`fix ${tplSummary.hardErrors} highlighted row problem${tplSummary.hardErrors > 1 ? 's' : ''}`)
-  if (tplActive && tplSummary && tplSummary.estimatesNeedingReason > 0) missingToSend.push(`give a reason for ${tplSummary.estimatesNeedingReason} estimate row${tplSummary.estimatesNeedingReason > 1 ? 's' : ''} (no drawing)`)
+  if (tplActive && tplSummary && tplSummary.notesNeeded > 0) missingToSend.push(`add a note to ${tplSummary.notesNeeded} row${tplSummary.notesNeeded > 1 ? 's' : ''} (how measured / why no take-off)`)
   if (tplActive && tplSummary && !tplSummary.reconciledToClaim) missingToSend.push('rows must add up to the approval amount')
   if (!reviewer && !shot) missingToSend.push('attach the summary screenshot')
   if (summaryNotes.trim().length === 0) missingToSend.push('add a comment')
