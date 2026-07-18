@@ -3,6 +3,8 @@ import { createClient } from '@/lib/supabase/server'
 import { getMyProfile } from '@/lib/auth'
 import { PageHeader } from '@/components/PageHeader'
 import { ProcurementProjectVisibilityEditor } from './ProcurementProjectVisibilityEditor'
+import { ProcurementNotifySettingsForm } from './ProcurementNotifySettingsForm'
+import { getProcurementNotifyConfig } from '@/lib/procurement/notify-settings'
 
 export const dynamic = 'force-dynamic'
 
@@ -15,6 +17,7 @@ export default async function ProcurementProjectVisibilityPage() {
   if (!profile || profile.role !== 'admin') redirect('/procurement-tracker')
 
   const supabase = await createClient()
+  const notifyConfig = await getProcurementNotifyConfig()
   const [
     { data: known },
     { data: users },
@@ -37,9 +40,14 @@ export default async function ProcurementProjectVisibilityPage() {
   return (
     <div className="p-4 md:p-6 max-w-4xl mx-auto space-y-4">
       <PageHeader
-        title="Procurement — Project Visibility"
+        title="Procurement — Admin"
         back="/procurement-tracker"
-        subtitle="Hide individual projects from individual users. Default is show-everything; row exists ⇒ hidden for that user. Names auto-grow from every upload."
+        subtitle="Daily follow-up email + per-user project visibility. Project names auto-grow from every upload."
+      />
+      <ProcurementNotifySettingsForm
+        initial={notifyConfig}
+        users={(users ?? []).map(u => ({ id: u.id as string, full_name: (u.full_name as string | null) ?? null, email: u.email as string, role: u.role as string }))}
+        projects={(known ?? []).map(r => r.name as string)}
       />
       <ProcurementProjectVisibilityEditor
         knownProjects={(known ?? []).map(r => ({ name: r.name as string, lastSeenAt: r.last_seen_at as string }))}

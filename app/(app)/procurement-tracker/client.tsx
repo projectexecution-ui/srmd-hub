@@ -260,7 +260,7 @@ export function ProcurementTrackerClient({ isAdmin = false }: { isAdmin?: boolea
                   title="Hide specific projects from specific users"
                 >
                   <EyeOff className="h-3 w-3" />
-                  Manage project visibility
+                  Follow-up email &amp; visibility
                 </Link>
               )}
             </div>
