@@ -1,3 +1,4 @@
+import Link from 'next/link'
 import { notFound, redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { requirePermission, can, getMyUser, getMyProfile } from '@/lib/auth'
@@ -544,6 +545,14 @@ export default async function WorkingSheetEditorPage(
             rateChanges={matchSummary?.rateChangedCount ?? null}
             estimatesMissingReason={estMissingReason}
           />
+        )}
+        {ccSettings.cumulative_versions && reviewer && ws.sub_skill_id && (
+          <Link
+            href={`/cost-control/ledger?project=${ws.project_id}&discipline=${ws.discipline_id}&sub_skill=${ws.sub_skill_id}`}
+            className="inline-flex items-center gap-1.5 text-xs font-semibold text-indigo-700 hover:underline"
+          >
+            View this sub-skill&apos;s full ledger (passbook) →
+          </Link>
         )}
         {matchSummary && <CumulativeBoqPanel rows={matchedRows} summary={matchSummary} workingByKey={workingByKey} />}
 

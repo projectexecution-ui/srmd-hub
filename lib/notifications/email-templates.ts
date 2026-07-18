@@ -75,6 +75,8 @@ interface ApprovalData {
   raised_by?: string | null
   waiting_days?: number
   estimate?: number | null    // internal estimate baseline for the sub-skill
+  already_approved?: number | null  // prior approved version's total (cumulative flow)
+  cumulative?: number | null        // full BOQ total this version
   ai?: { ok: boolean; label: string } | null
 }
 
@@ -152,6 +154,13 @@ function renderApproval(d: ApprovalData, link: string): string {
       <div style="margin-top:6px"><span style="font-size:30px;font-weight:500;color:${INK}">${inr(amount)}</span>${d.per_sft ? `<span style="font-size:13px;color:${MUT};margin-left:10px">${inr(d.per_sft)} / sft</span>` : ''}</div>
     </td></tr>
     ${chips.trim() ? `<tr><td style="padding:10px 22px 0">${chips}</td></tr>` : ''}
+    ${(d.already_approved != null && d.already_approved > 0)
+      ? `<tr><td style="padding:12px 22px 0"><table role="presentation" width="100%" style="border:1px solid ${HAIR};border-radius:8px;background:${OKBG}"><tr>
+           <td style="padding:10px 14px;font-size:12px;color:${MUT}">Already approved<br><span style="font-size:15px;font-weight:600;color:${INK}">${inr(Number(d.already_approved))}</span></td>
+           <td style="padding:10px 14px;font-size:12px;color:${MUT}">This ask (new)<br><span style="font-size:15px;font-weight:600;color:${BRAND}">${inr(amount - Number(d.already_approved))}</span></td>
+           <td style="padding:10px 14px;font-size:12px;color:${MUT}">Cumulative<br><span style="font-size:15px;font-weight:600;color:${OK}">${inr(Number(d.cumulative ?? amount))}</span></td>
+         </tr></table></td></tr>`
+      : ''}
     ${(d.estimate != null && d.estimate > 0) ? budgetBar(amount, d.estimate) : ''}
     <tr><td style="padding:16px 22px 6px">${stageTracker(d.stage_index ?? 3)}</td></tr>
     ${factGrid([

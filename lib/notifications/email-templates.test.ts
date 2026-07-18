@@ -43,6 +43,23 @@ describe('approval email', () => {
     })
     expect(over).toContain('over the internal estimate')
   })
+  it('shows the cumulative line on a revision (already approved · this ask · cumulative)', () => {
+    const rev = renderNotificationEmail({
+      kind: 'approval', subject: 'x', text: 'y', link: 'l',
+      data: { amount: 3731280, already_approved: 3537113, cumulative: 3731280, stage_index: 3 },
+    })
+    expect(rev).toContain('Already approved')
+    expect(rev).toContain('₹35,37,113')   // already approved
+    expect(rev).toContain('₹1,94,167')    // this ask = 3731280 - 3537113
+    expect(rev).toContain('₹37,31,280')   // cumulative
+  })
+  it('omits the cumulative line on a first version (no prior approved)', () => {
+    const v1 = renderNotificationEmail({
+      kind: 'approval', subject: 'x', text: 'y', link: 'l',
+      data: { amount: 3537113, already_approved: 0, stage_index: 3 },
+    })
+    expect(v1).not.toContain('Already approved')
+  })
 })
 
 describe('in4 pending digest', () => {
