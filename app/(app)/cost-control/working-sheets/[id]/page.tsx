@@ -23,7 +23,8 @@ import { RaiseRevisionButton } from './RaiseRevisionButton'
 import { RevisionEditor, type PriorApprovedRow, type DeltaRow } from './RevisionEditor'
 import { VersionLedgerStrip } from './VersionLedgerStrip'
 import { CumulativeBoqPanel } from './CumulativeBoqPanel'
-import { chainCumulative, matchBoqRows, summarizeMatch, normalizeKey } from '@/lib/cost-control/version-ledger'
+import { ConfidenceScorecard } from './ConfidenceScorecard'
+import { chainCumulative, matchBoqRows, summarizeMatch, normalizeKey, basisCounts } from '@/lib/cost-control/version-ledger'
 import { EditDeadlineButton } from './EditDeadlineButton'
 import { QueryError } from '@/components/ui/query-error'
 import { formatINR } from '@/lib/utils'
@@ -463,6 +464,18 @@ export default async function WorkingSheetEditorPage(
       }
     }
 
+    // Management confidence scorecard data (S11.4) — current version's basis
+    // mix + whether the rows reconcile to the recorded total.
+    const scorecardItems = (excelRows ?? []).filter(r => r.qty != null).map(toBoqItem)
+    const curBasis = basisCounts(scorecardItems)
+    const rowsSum = scorecardItems.reduce((s, r) => s + (Number(r.amount) || 0), 0)
+    const recTotal = Number(ws.total_amount) || 0
+    const scorecardReconciles = recTotal === 0 ? true : Math.abs(rowsSum - recTotal) <= Math.max(1, recTotal * 0.005)
+    const estMissingReason = (excelRows ?? []).filter(r =>
+      (r as { qty_basis?: string | null }).qty_basis === 'estimated' &&
+      !(((r as { qty_note?: string | null }).qty_note) ?? '').trim()).length
+    const showScorecard = ccSettings.cumulative_versions && reviewer && curBasis.total > 0
+
     // Signed URL for downloading the original Excel
     let downloadUrl: string | null = null
     if (ws.source_excel_url) {
@@ -521,6 +534,16 @@ export default async function WorkingSheetEditorPage(
         {summaryShotPanel}
 
         {!isRevisionDraft && chainMoney && reviewer && <VersionLedgerStrip money={chainMoney} versionNo={ws.version_no} />}
+        {showScorecard && !isRevisionDraft && (
+          <ConfidenceScorecard
+            measured={curBasis.measured}
+            estimate={curBasis.estimated}
+            reconciles={scorecardReconciles}
+            total={recTotal}
+            rateChanges={matchSummary?.rateChangedCount ?? null}
+            estimatesMissingReason={estMissingReason}
+          />
+        )}
         {matchSummary && <CumulativeBoqPanel rows={matchedRows} summary={matchSummary} workingByKey={workingByKey} />}
 
         {ccSettings.show_deadlines && (ws.deadline_date || canEditDeadline) && (
