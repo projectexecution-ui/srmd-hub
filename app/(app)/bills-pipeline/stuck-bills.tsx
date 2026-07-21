@@ -286,7 +286,7 @@ export default function StuckBills({
       </div>
 
       <p className="text-xs text-gray-400">
-        Delay is counted from each bill&apos;s invoice date. Ticks are saved automatically and persist across refreshes.
+        Delay is counted from the bill&apos;s Zoho entry date. Ticks are saved automatically and persist across refreshes.
         Approvals are still made in Zoho — this checklist is your verification tracker.
       </p>
     </div>

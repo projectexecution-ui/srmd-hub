@@ -60,7 +60,7 @@ export function toStuckBill(b: Bill, projectMap: Record<string, string>): StuckB
     invoiceNo:   b.billNo,
     amount:      b.claimed,
     status:      b.stage,
-    delayDays:   b.delayDays,
+    delayDays:   b.ageDays,   // days since the Zoho entry date (per PH request), not the invoice date
     stalled:     b.stalled,
     atTrust:     b.isTrust,
   }
