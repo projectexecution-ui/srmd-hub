@@ -24,7 +24,7 @@ const C = {
   WHITE: '#ffffff',
 }
 // Sequential blue ramp for the project stacked bar (largest = darkest)
-const PROJ_RAMP = ['#1f4e79', '#2f6fb0', '#4a90c2', '#7fb0d4', '#b9d3e6', '#d4e3f0']
+const PROJ_RAMP = ['#1f4e79', '#2f6fb0', '#4a90c2', '#7fb0d4', '#b9d3e6', '#d4e3f0', '#8a6d3b']
 
 const FONT_FAMILY = 'Noto Sans'
 const FONT_PATH = join(process.cwd(), 'lib', 'bills-pipeline', 'fonts', 'NotoSans.ttf')

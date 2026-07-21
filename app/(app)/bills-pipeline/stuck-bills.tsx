@@ -203,12 +203,14 @@ export default function StuckBills({
 
       {/* Table — sized to fit without a right-side scroll on desktop */}
       <div className="overflow-x-auto rounded-xl border border-gray-200">
-        <table className="w-full min-w-[940px] border-collapse text-sm">
+        <table className="w-full min-w-[1080px] border-collapse text-sm">
           <thead>
             <tr className="bg-gray-50 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
               <th className="px-2 py-2.5">#</th>
+              <th className="px-2 py-2.5">Task ID</th>
               <th className="px-2 py-2.5">Vendor</th>
               <th className="px-2 py-2.5">Project / Area</th>
+              <th className="px-2 py-2.5 whitespace-nowrap">Zoho Date</th>
               <th className="px-2 py-2.5 whitespace-nowrap">Inv Date</th>
               <th className="px-2 py-2.5">Invoice No</th>
               <th className="px-2 py-2.5 text-right">Amount</th>
@@ -226,12 +228,10 @@ export default function StuckBills({
               const ready = isReady(b.id)
               return (
                 <tr key={b.id} className={cn('border-t border-gray-100', i % 2 ? 'bg-gray-50/50' : 'bg-white', ready && 'bg-green-50/70')}>
-                  <td
-                    className="cursor-help px-2 py-2.5 text-gray-400"
-                    title={b.prefix ? `Task ID: ${b.prefix}` : undefined}
-                  >
+                  <td className="px-2 py-2.5 text-gray-400">
                     {ready ? <CheckCircle2 className="h-4 w-4 text-green-600" /> : i + 1}
                   </td>
+                  <td className="px-2 py-2.5 whitespace-nowrap font-medium text-gray-700">{b.prefix || '—'}</td>
                   <td
                     className="max-w-[180px] truncate px-2 py-2.5 font-medium text-gray-900"
                     title={b.vendor || undefined}
@@ -246,6 +246,7 @@ export default function StuckBills({
                       )}
                     </div>
                   </td>
+                  <td className="px-2 py-2.5 whitespace-nowrap text-gray-600">{fmtDate(b.zohoDate)}</td>
                   <td className="px-2 py-2.5 whitespace-nowrap text-gray-600">{fmtDate(b.invoiceDate)}</td>
                   <td className="px-2 py-2.5 whitespace-nowrap text-gray-600">{b.invoiceNo || '—'}</td>
                   <td className="px-2 py-2.5 whitespace-nowrap text-right font-semibold tabular-nums text-gray-900">₹{inr(b.amount)}</td>
