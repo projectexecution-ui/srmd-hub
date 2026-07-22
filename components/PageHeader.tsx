@@ -19,11 +19,14 @@ export function PageHeader({ title, subtitle, back, children, className }: PageH
   return (
     <div
       className={cn(
-        'mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between',
+        // sm:flex-wrap lets the action cluster drop to its own line when it
+        // can't sit beside the title, instead of crushing the title column to
+        // zero (which made short titles wrap one-letter-per-line vertically).
+        'mb-4 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-start sm:justify-between',
         className,
       )}
     >
-      <div className="min-w-0 flex-1">
+      <div className="flex-1 min-w-[12rem]">
         {back && (
           <Link
             href={back}

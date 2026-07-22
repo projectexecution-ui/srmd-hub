@@ -7,7 +7,7 @@
 // collapsing gives management the roll-up view they asked for.
 
 import { createContext, useContext, useMemo, useState, type ReactNode } from 'react'
-import { ChevronRight, ChevronDown, ListTree } from 'lucide-react'
+import { ChevronRight, ChevronDown, ListTree, Eye, EyeOff } from 'lucide-react'
 
 interface TreeCtx {
   isCollapsed: (id: string) => boolean
@@ -15,12 +15,19 @@ interface TreeCtx {
   expandAll: () => void
   collapseAll: () => void
   allCollapsed: boolean
+  hideEmpty: boolean
+  toggleHideEmpty: () => void
+  emptyCount: number
 }
 const Ctx = createContext<TreeCtx | null>(null)
 
-export function TreeProvider({ allCatIds, children }: { allCatIds: string[]; children: ReactNode }) {
+export function TreeProvider({ allCatIds, emptyCount = 0, children }: { allCatIds: string[]; emptyCount?: number; children: ReactNode }) {
   // Default: everything expanded (empty collapsed set) — today's behaviour.
   const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set())
+  // Empty sub-skills (no estimate, no WS, no budget) are hidden by DEFAULT so
+  // the table reads as "what's actually in play" — one click shows everything
+  // (needed to raise the first sheet for an untouched sub-skill).
+  const [hideEmpty, setHideEmpty] = useState(true)
   const api = useMemo<TreeCtx>(() => ({
     isCollapsed: (id) => collapsed.has(id),
     toggle: (id) => setCollapsed(prev => {
@@ -31,7 +38,10 @@ export function TreeProvider({ allCatIds, children }: { allCatIds: string[]; chi
     expandAll: () => setCollapsed(new Set()),
     collapseAll: () => setCollapsed(new Set(allCatIds)),
     allCollapsed: allCatIds.length > 0 && allCatIds.every(id => collapsed.has(id)),
-  }), [collapsed, allCatIds])
+    hideEmpty,
+    toggleHideEmpty: () => setHideEmpty(v => !v),
+    emptyCount,
+  }), [collapsed, allCatIds, hideEmpty, emptyCount])
   return <Ctx.Provider value={api}>{children}</Ctx.Provider>
 }
 
@@ -64,11 +74,31 @@ export function CatRows({ catId, children }: { catId: string; children: ReactNod
   return isCollapsed(catId) ? null : <>{children}</>
 }
 
-/** Expand-all / Collapse-all controls. */
+/** Wraps ONE sub-skill row. When "hide empty" is on, an empty sub-skill
+ *  (no estimate, no working sheet, no budget) is dropped from the table. */
+export function SubRow({ empty, children }: { empty: boolean; children: ReactNode }) {
+  const { hideEmpty } = useTree()
+  return hideEmpty && empty ? null : <>{children}</>
+}
+
+/** Expand-all / Collapse-all + Hide-empty controls. */
 export function TreeToolbar() {
-  const { expandAll, collapseAll, allCollapsed } = useTree()
+  const { expandAll, collapseAll, allCollapsed, hideEmpty, toggleHideEmpty, emptyCount } = useTree()
   return (
     <div className="inline-flex items-center gap-1 text-[11px]">
+      {emptyCount > 0 && (
+        <button
+          type="button"
+          onClick={toggleHideEmpty}
+          title={hideEmpty
+            ? `${emptyCount} empty sub-skill${emptyCount === 1 ? '' : 's'} hidden — click to show every sub-skill (needed to raise the first sheet for one)`
+            : `Hide the ${emptyCount} empty sub-skill${emptyCount === 1 ? '' : 's'} (no estimate, no sheet yet)`}
+          className={`inline-flex items-center gap-1 px-2 py-0.5 rounded border font-medium mr-1 ${hideEmpty ? 'border-blue-300 bg-blue-50 text-blue-700' : 'border-gray-200 text-gray-600 hover:bg-gray-50'}`}
+        >
+          {hideEmpty ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+          {hideEmpty ? `${emptyCount} empty hidden` : 'Showing all'}
+        </button>
+      )}
       <ListTree className="h-3.5 w-3.5 text-gray-400" />
       <button
         type="button"

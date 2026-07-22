@@ -83,6 +83,9 @@ export default async function CostControlLandingPage() {
           .select('id', { count: 'exact', head: true })
           .eq('engineer_id', user.id)
           .in('status', ['draft', 'returned'])
+          // Exclude imported Internal Estimate baselines ([IB…]) — otherwise
+          // whoever ran the import shows hundreds of "drafts" that aren't work.
+          .not('summary_notes', 'ilike', '[IB%')
       : Promise.resolve({ count: 0, error: null }),
     // Disciplines the current user actively approves — powers the
     // "waiting on you" split on the pending stat (mirrors /approvals).
@@ -461,7 +464,7 @@ export default async function CostControlLandingPage() {
           >
             <Stat label="Your drafts" value={myDraftsCount} hint="draft + returned to you" icon={<Clock className="h-5 w-5" />} />
           </Link>
-          <Stat label="Approved value" value={formatINR(approvedTotal)} hint={`${totalWS} sheet${totalWS === 1 ? '' : 's'} total`} icon={<FileText className="h-5 w-5" />} />
+          <Stat label="Released via WS" value={formatINR(approvedTotal)} hint={`approved through Working Sheets · ${totalWS} sheet${totalWS === 1 ? '' : 's'}`} icon={<FileText className="h-5 w-5" />} />
           {ccSettings.billing_step && (() => {
             const queue = engWinners.filter(w =>
               (w.status === 'approved' || w.status === 'partially_approved')

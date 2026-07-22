@@ -13,7 +13,7 @@ import { getCcSettings } from '@/lib/cost-control/settings'
 import { computeMoneyRollup, type RollupWSRow, type RollupVersionRow, type RollupBudgetLine } from '@/lib/cost-control/project-rollup'
 import { QueryError } from '@/components/ui/query-error'
 import { DeadlineBadge } from '@/components/cost-control/DeadlineBadge'
-import { TreeProvider, TreeToolbar, CatChevron, CatRows } from '@/components/cost-control/project-tree'
+import { TreeProvider, TreeToolbar, CatChevron, CatRows, SubRow } from '@/components/cost-control/project-tree'
 import { wsStatusLabel } from '@/components/cost-control/WSStatusPill'
 import { DeadlineCell, SubSkillModeCell, DisableButton, InternalEstimateDecision, SubSkillAssignControl, RowConfigMenu, RowConfigItem } from './RowControls'
 import { BphSyncButton } from './BphSyncButton'
@@ -570,7 +570,16 @@ export default async function CostControlProjectDetailPage(
       {/* THE TABLE — discipline categories + sub-skill rows. ERP columns
           (Budget vs Actual) and deadline columns follow the settings toggles.
           Categories collapse into their cumulative totals (project-tree). */}
-      <TreeProvider allCatIds={disciplines.map(d => d.id)}>
+      <TreeProvider
+        allCatIds={disciplines.map(d => d.id)}
+        emptyCount={subSkills.filter(s => {
+          if (!disciplines.some(d => d.id === s.discipline_id)) return false
+          const bl = blMap.get(`${s.discipline_id}::${s.id}`)
+          const a = wsAgg.get(`${s.discipline_id}::${s.id}`)
+          return (a?.planTotal ?? 0) === 0 && (a?.pendingAmount ?? 0) === 0 && (a?.chains.size ?? 0) === 0
+            && (bl?.budget ?? 0) === 0 && (bl?.wo ?? 0) === 0 && (bl?.paid ?? 0) === 0
+        }).length}
+      >
       <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
         <div className="flex items-center justify-between px-3 py-2 border-b border-gray-100 bg-gray-50/60">
           <span className="text-[11px] font-medium text-gray-500">Work categories — click a row to collapse; totals roll up.</span>
@@ -716,8 +725,14 @@ export default async function CostControlProjectDetailPage(
                       const effMode = subMeta.get(s.id)?.mode ?? discMeta.get(d.id)?.mode ?? 'detailed'
                       const assigneeId = assigneeBySub.get(s.id) ?? null
                       const assigneeName = assigneeId ? (profileMap.get(assigneeId) ?? null) : null
+                      // "Empty" = nothing to show at all (no estimate, no ask,
+                      // no sheet, no ERP). Hidden by default via the ▾ Hide-empty
+                      // toggle so the table isn't a wall of "—".
+                      const isEmpty = estLive === 0 && ask === 0 && wsCount === 0
+                        && (bl?.budget ?? 0) === 0 && (bl?.wo ?? 0) === 0 && (bl?.paid ?? 0) === 0
                       return (
-                        <tr key={s.id} className="border-t border-gray-100 hover:bg-gray-50/60">
+                        <SubRow key={s.id} empty={isEmpty}>
+                        <tr className="border-t border-gray-100 hover:bg-gray-50/60">
                           <td className="pl-10 pr-3 py-2 text-gray-700">
                             <span className="font-mono text-[11px] text-gray-400 mr-2">{s.code}</span>
                             <span>{s.name}</span>
@@ -876,6 +891,7 @@ export default async function CostControlProjectDetailPage(
                             </div>
                           </Td>
                         </tr>
+                        </SubRow>
                       )
                     })}
 
