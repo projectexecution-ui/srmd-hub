@@ -10,8 +10,10 @@ import { SetupProgressBanner } from '@/components/ProjectSetupWizard/SetupProgre
 import { Plus, Flame, Info, Settings, Download } from 'lucide-react'
 import { formatINR } from '@/lib/utils'
 import { getCcSettings } from '@/lib/cost-control/settings'
+import { computeMoneyRollup, type RollupWSRow, type RollupVersionRow, type RollupBudgetLine } from '@/lib/cost-control/project-rollup'
 import { QueryError } from '@/components/ui/query-error'
 import { DeadlineBadge } from '@/components/cost-control/DeadlineBadge'
+import { TreeProvider, TreeToolbar, CatChevron, CatRows } from '@/components/cost-control/project-tree'
 import { wsStatusLabel } from '@/components/cost-control/WSStatusPill'
 import { DeadlineCell, SubSkillModeCell, DisableButton, InternalEstimateDecision, SubSkillAssignControl } from './RowControls'
 import { BphSyncButton } from './BphSyncButton'
@@ -243,19 +245,22 @@ export default async function CostControlProjectDetailPage(
     })
   }
 
-  // Look up budget lines by (discipline_id, sub_skill_id) — sub_skill_id
-  // null means the category row. The same pair can carry several rows
-  // (one per line_type: work / advance / …), so SUM the amounts across
-  // them — keeping only the last row would silently drop the others.
-  const blMap = new Map<string, { budget: number; wo: number; paid: number }>()
-  for (const b of (blRes.data ?? []) as BudgetLine[]) {
-    const k = `${b.discipline_id}::${b.sub_skill_id ?? '_root'}`
-    const cur = blMap.get(k) ?? { budget: 0, wo: 0, paid: 0 }
-    cur.budget += Number(b.current_budget_amt ?? 0)
-    cur.wo     += Number(b.current_wo_committed_amt ?? 0)
-    cur.paid   += Number(b.current_paid_amt ?? 0)
-    blMap.set(k, cur)
-  }
+  // Per-sub-skill / per-category MONEY rollup — the single source of truth
+  // shared with the Master Excel export (lib/cost-control/project-rollup.ts),
+  // so the spreadsheet always matches this screen. Gives us:
+  //   • blMap    — budget / WO / paid by "disc::sub" (and "disc::_root")
+  //   • wsAgg    — Internal Estimate (planTotal) + Awaiting (pendingAmount) +
+  //                approved + chain count, [IB] baseline never mixed with the
+  //                engineer's ask, each chain collapsed to its latest version
+  //   • discAgg  — the same rolled up per discipline (root-vs-sub de-duped)
+  //   • latestEng — latest engineer sheet per chain (drives the pending list)
+  const { blMap, wsAgg, discAgg, latestEng } = computeMoneyRollup({
+    wsRows: (wsRes.data ?? []) as RollupWSRow[],
+    versionRows: (verRes.data ?? []) as RollupVersionRow[],
+    budgetLines: (blRes.data ?? []) as RollupBudgetLine[],
+    subSkills: subSkills.map(s => ({ id: s.id, discipline_id: s.discipline_id })),
+    disciplines: disciplines.map(d => ({ id: d.id })),
+  })
 
   // Trustee/Admin accept-or-reject decisions on the Internal Estimate, keyed
   // by "discipline::sub_skill". Written by cc_set_internal_estimate onto the
@@ -270,73 +275,6 @@ export default async function CostControlProjectDetailPage(
     })
   }
 
-  // Working-sheet aggregates per sub-skill.
-  //
-  // Two DIFFERENT things live in a sub-skill and must never be added
-  // together:
-  //   • the imported Internal Estimate baseline — sheets tagged "[IB…]",
-  //     the amounts management uploaded from Excel; and
-  //   • engineers' own sheets — their "ask", which runs through approval.
-  // They can even share a version chain (an engineer's ask is saved as a
-  // later version of the same sub-skill+line the [IB] baseline seeded).
-  // And every sheet keeps its OLD versions live. Summing all live rows
-  // therefore (a) counted an engineer's ask into the estimate and (b)
-  // counted a 6-times-revised sheet six times. Fix:
-  //   1. classify each live sheet as baseline ([IB]) vs engineer, then
-  //   2. within each class keep only the LATEST version of each chain.
-  // `planTotal` = the Internal Estimate baseline (latest [IB] per chain);
-  // pending/approved come from engineers' latest sheets only.
-  const chainOf = new Map<string, { anchor: string; ver: number }>()
-  for (const r of (verRes.data ?? []) as { id: string; chain_anchor_id: string | null; version_no: number | null }[]) {
-    if (r.chain_anchor_id) chainOf.set(r.id, { anchor: r.chain_anchor_id, ver: Number(r.version_no ?? 1) })
-  }
-  const liveRows = ((wsRes.data ?? []) as WSAgg[]).filter(w => w.status !== 'cancelled')
-  // Latest [IB] and latest engineer sheet per chain. Sheets with no chain
-  // info (shouldn't happen) fall back to their own id as a singleton chain.
-  const latestIB = new Map<string, { w: WSAgg; ver: number }>()
-  const latestEng = new Map<string, { w: WSAgg; ver: number }>()
-  for (const w of liveRows) {
-    const ch = chainOf.get(w.id) ?? { anchor: w.id, ver: 1 }
-    const bag = (w.summary_notes ?? '').startsWith('[IB') ? latestIB : latestEng
-    const prev = bag.get(ch.anchor)
-    if (!prev || ch.ver > prev.ver) bag.set(ch.anchor, { w, ver: ch.ver })
-  }
-
-  const wsAgg = new Map<string, { approvedTotal: number; pendingAmount: number; planTotal: number; chains: Set<string> }>()
-  const ensureAgg = (k: string) => {
-    let cur = wsAgg.get(k)
-    if (!cur) { cur = { approvedTotal: 0, pendingAmount: 0, planTotal: 0, chains: new Set<string>() }; wsAgg.set(k, cur) }
-    return cur
-  }
-  // Internal Estimate baseline = latest [IB] sheet per chain.
-  for (const { w } of latestIB.values()) {
-    const cur = ensureAgg(`${w.discipline_id}::${w.sub_skill_id}`)
-    cur.planTotal += Number(w.total_amount ?? 0)
-    cur.chains.add(chainOf.get(w.id)?.anchor ?? w.id)
-  }
-  // Engineers' latest sheets → pending / approved (never their old versions).
-  const PENDING_STATUS = new Set(['submitted', 'ph_approved', 'atm_approved'])
-  for (const { w } of latestEng.values()) {
-    const cur = ensureAgg(`${w.discipline_id}::${w.sub_skill_id}`)
-    cur.chains.add(chainOf.get(w.id)?.anchor ?? w.id)
-    const amt = Number(w.total_amount ?? 0)
-    const appr = Number(w.approved_for_erp_amt ?? 0)
-    if (w.status === 'approved' || w.status === 'wo_issued' || w.status === 'paid') {
-      cur.approvedTotal += appr > 0 ? appr : amt
-    } else if (w.status === 'partially_approved') {
-      // Some releases approved, more to come: released portion counts as
-      // approved, remainder stays pending.
-      cur.approvedTotal += appr
-      cur.pendingAmount += Math.max(amt - appr, 0)
-    } else if (PENDING_STATUS.has(w.status)) {
-      // Anywhere in the sign-off chain = still pending release. A partly
-      // released sheet re-requesting its balance keeps its released money
-      // counted as approved; only the balance stays pending.
-      cur.approvedTotal += appr
-      cur.pendingAmount += Math.max(amt - appr, 0)
-    }
-    // draft / returned / draft_blocked add nothing but the chain count.
-  }
   // Short remark per (discipline, sub-skill) — the "Remark: …" line that the
   // Internal Budget import (and any sheet notes) carry. First non-empty wins;
   // shown truncated under the sub-skill name with the full text on hover.
@@ -364,56 +302,6 @@ export default async function CostControlProjectDetailPage(
     if (w.deadline_date < todayISO) cur.overdue += 1
     if (!cur.earliest || w.deadline_date < cur.earliest) cur.earliest = w.deadline_date
     dlAgg.set(k, cur)
-  }
-
-  // Disciplines-level rollups. Budget can live at two granularities:
-  //   1. Per-sub-skill lines — the granular ones (WS approvals, or a BPH
-  //      report that has sub-skill detail rows).
-  //   2. Discipline-root line (sub_skill_id NULL) — a BPH discipline
-  //      SUMMARY row, or an Excel import that lacked sub-skill codes.
-  //
-  // CRITICAL: never add BOTH for the same discipline. A BPH report often
-  // carries a "03 Civil" summary row AND its "0301 …" detail rows; the
-  // summary is the PARENT total of the details, so counting both doubles
-  // the budget. Rule: if a discipline has ANY sub-skill budget line, use
-  // those and IGNORE its root line; only fall back to the root line when
-  // there are no sub-skill lines.
-  const discAgg = new Map<string, { budget: number; wo: number; paid: number; approvedTotal: number; estimate: number; pending: number }>()
-  for (const d of disciplines) discAgg.set(d.id, { budget: 0, wo: 0, paid: 0, approvedTotal: 0, estimate: 0, pending: 0 })
-
-  // Track which disciplines have at least one sub-skill budget line.
-  const discHasSubSkillBudget = new Set<string>()
-
-  for (const s of subSkills) {
-    const bl = blMap.get(`${s.discipline_id}::${s.id}`)
-    const a = wsAgg.get(`${s.discipline_id}::${s.id}`) ?? { approvedTotal: 0, planTotal: 0, pendingAmount: 0 }
-    const cur = discAgg.get(s.discipline_id)
-    if (cur) {
-      const subBudget = bl?.budget ?? 0
-      if (bl && (subBudget !== 0 || bl.wo !== 0 || bl.paid !== 0)) {
-        discHasSubSkillBudget.add(s.discipline_id)
-      }
-      cur.budget += subBudget
-      cur.wo    += bl?.wo ?? 0
-      cur.paid  += bl?.paid ?? 0
-      cur.approvedTotal += a.approvedTotal
-      cur.estimate += a.planTotal
-      cur.pending += a.pendingAmount
-    }
-  }
-  // Add the discipline-root line ONLY when no sub-skill budget exists for
-  // that discipline — otherwise it would double-count the summary on top
-  // of its own detail rows.
-  for (const d of disciplines) {
-    if (discHasSubSkillBudget.has(d.id)) continue
-    const blRoot = blMap.get(`${d.id}::_root`)
-    if (!blRoot) continue
-    const cur = discAgg.get(d.id)
-    if (cur) {
-      cur.budget += blRoot.budget
-      cur.wo    += blRoot.wo
-      cur.paid  += blRoot.paid
-    }
   }
 
   // Engineers
@@ -684,8 +572,14 @@ export default async function CostControlProjectDetailPage(
       )}
 
       {/* THE TABLE — discipline categories + sub-skill rows. ERP columns
-          (Budget vs Actual) and deadline columns follow the settings toggles. */}
+          (Budget vs Actual) and deadline columns follow the settings toggles.
+          Categories collapse into their cumulative totals (project-tree). */}
+      <TreeProvider allCatIds={disciplines.map(d => d.id)}>
       <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
+        <div className="flex items-center justify-between px-3 py-2 border-b border-gray-100 bg-gray-50/60">
+          <span className="text-[11px] font-medium text-gray-500">Work categories — click a row to collapse; totals roll up.</span>
+          <TreeToolbar />
+        </div>
         <div className="overflow-x-auto">
           <table className="w-full text-[13px]">
             <thead className="bg-gray-50 text-left">
@@ -740,6 +634,7 @@ export default async function CostControlProjectDetailPage(
                   <>
                     <tr key={d.id} className="border-t border-gray-200 bg-slate-50 font-semibold">
                       <td className="px-3 py-2.5">
+                        <CatChevron catId={d.id} />
                         <span className="font-mono text-[11px] text-gray-500 mr-2">{d.code}</span>
                         <span className="text-gray-900">{d.name}</span>
                         {dHot && <Flame className="inline h-3.5 w-3.5 text-orange-500 ml-2" />}
@@ -760,7 +655,11 @@ export default async function CostControlProjectDetailPage(
                           </Td>
                         </>
                       )}
-                      <Td>{/* category-level WS counts not shown */}</Td>
+                      <Td>
+                        {dWsCount > 0
+                          ? <span className="text-[11px] text-gray-500">{dWsCount} sheet{dWsCount === 1 ? '' : 's'}</span>
+                          : <span className="text-[11px] text-gray-400">—</span>}
+                      </Td>
                       {ccSettings.show_deadlines && (
                         <>
                           <Td>
@@ -795,6 +694,7 @@ export default async function CostControlProjectDetailPage(
                       </Td>
                     </tr>
 
+                    <CatRows catId={d.id}>
                     {subs.map(s => {
                       const bl = blMap.get(`${d.id}::${s.id}`)
                       const a = wsAgg.get(`${d.id}::${s.id}`)
@@ -972,6 +872,7 @@ export default async function CostControlProjectDetailPage(
                         <td colSpan={tableCols} className="pl-10 pr-3 py-2 text-xs italic text-gray-400">No sub-skills enabled for this discipline. Add via the setup wizard.</td>
                       </tr>
                     )}
+                    </CatRows>
                   </>
                 )
               })}
@@ -979,6 +880,7 @@ export default async function CostControlProjectDetailPage(
           </table>
         </div>
       </div>
+      </TreeProvider>
 
       {/* Engineers strip */}
       <div className="bg-white rounded-lg border border-gray-200 p-4">

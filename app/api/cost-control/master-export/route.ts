@@ -10,14 +10,16 @@ import * as XLSX from 'xlsx'
 import { createClient } from '@/lib/supabase/server'
 import { requirePermission } from '@/lib/auth'
 import { checkIsCcReviewer } from '@/components/cost-control/ws-actions'
+import { computeMoneyRollup, subFigures, type RollupWSRow, type RollupVersionRow, type RollupBudgetLine } from '@/lib/cost-control/project-rollup'
 
 export const dynamic = 'force-dynamic'
 
 const MONEY = '#,##0'
+const MONEY_DASH = '#,##0;-#,##0;"—"'   // zero renders as an em-dash, like the screen
+const PCT = '0%'
 const S = (v: string) => ({ t: 's', v })
 const N = (v: number, z?: string) => ({ t: 'n', v, ...(z ? { z } : {}) })
 const F = (f: string, v: number, z?: string) => ({ t: 'n', v, f, ...(z ? { z } : {}) })
-const APPROVED = new Set(['approved', 'partially_approved', 'wo_issued', 'paid'])
 
 function sheetName(base: string, used: Set<string>): string {
   let n = base.replace(/[[\]:*?/\\]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 31) || 'Sheet'
@@ -89,6 +91,30 @@ export async function GET(req: NextRequest) {
     }
   }
 
+  // Per-sub-skill / per-category MONEY rollup — the SAME computation the
+  // project home page uses (lib/cost-control/project-rollup.ts), so every
+  // figure in this workbook matches the screen exactly. Needs the raw working
+  // sheets (with discipline + approved amounts), the version chain, and the
+  // budget lines — fetched with the same filters as the page.
+  const [{ data: wsFull }, { data: verRows }, { data: blRows }] = await Promise.all([
+    supabase.from('cc_working_sheets')
+      .select('id, discipline_id, sub_skill_id, status, total_amount, approved_for_erp_amt, summary_notes, entry_mode')
+      .eq('project_id', projectId).is('archived_at', null),
+    supabase.from('cc_ws_with_versions')
+      .select('id, chain_anchor_id, version_no')
+      .eq('project_id', projectId).is('archived_at', null),
+    supabase.from('cc_budget_lines')
+      .select('discipline_id, sub_skill_id, current_budget_amt, current_wo_committed_amt, current_paid_amt')
+      .eq('project_id', projectId),
+  ])
+  const rollup = computeMoneyRollup({
+    wsRows: (wsFull ?? []) as RollupWSRow[],
+    versionRows: (verRows ?? []) as RollupVersionRow[],
+    budgetLines: (blRows ?? []) as RollupBudgetLine[],
+    subSkills: subs.map(s => ({ id: s.id, discipline_id: s.discipline_id })),
+    disciplines: discs.map(d => ({ id: d.id })),
+  })
+
   const wb = XLSX.utils.book_new()
   const used = new Set<string>()
   const masterName = sheetName(project.code || 'Master', used)
@@ -133,71 +159,107 @@ export async function GET(req: NextRequest) {
     ws['!cols'] = [{ wch: 4 }, { wch: 40 }, { wch: 7 }, { wch: 10 }, { wch: 11 }, { wch: 14 }]
     const nm = sheetName(label, used)
     XLSX.utils.book_append_sheet(wb, ws as unknown as XLSX.WorkSheet, nm)
-    return `'${nm}'!F${grandRow}`
+    return nm
   }
 
-  // Per sub-skill: link cell(s) to its bucket grand(s). Multi-bucket → sum them.
-  const subLink = new Map<string, { formula: string; total: number; versionLabel: string }>()
+  // Per sub-skill: build its BOQ drill-down tab(s) and remember the version
+  // label + the first tab's name (for a hyperlink from the summary).
+  const subMeta = new Map<string, { versionLabel: string; firstSheet: string }>()
   for (const sub of subs) {
     const buckets = bucketsBySub.get(sub.id)
     if (!buckets || buckets.length === 0) continue
-    const refs: string[] = []
     const vparts: string[] = []
-    let total = 0
+    let firstSheet = ''
     for (const b of buckets) {
       const label = buckets.length > 1 ? `${sub.code} ${sub.name} (${b.lineType ?? 'work'})` : `${sub.code} ${sub.name}`
-      refs.push(buildBucketSheet(label, b))
+      const nm = buildBucketSheet(label, b)
+      if (!firstSheet) firstSheet = nm
       vparts.push(buckets.length > 1 ? `v${b.versionNo} (${b.lineType ?? 'work'})` : `v${b.versionNo}`)
-      total += b.total
     }
-    subLink.set(sub.id, { formula: refs.join('+'), total, versionLabel: vparts.join(' · ') })
+    subMeta.set(sub.id, { versionLabel: vparts.join(' · '), firstSheet })
   }
 
-  // Master summary — EVERY enabled category and sub-skill, with a Version
-  // column and collapsible category→sub-skill grouping (Excel row outline).
+  // Master summary — EVERY enabled category and sub-skill with the SAME
+  // columns management sees on the project home page (Internal Estimate,
+  // Awaiting Approval, Budget ERP, WO/PO, Paid, % Used, Working Sheets),
+  // category subtotals + a grand total, ₹/sft, and collapsible
+  // category→sub-skill grouping (Excel row outline). Numbers come from the
+  // shared rollup, so this workbook always matches the screen.
   const m: Record<string, unknown> = {}
   const hasSft = sft > 0
-  const AMT = 'D', SFT = 'E'
+  // Column letters: A Category · B Sub-skill · C Version · D Internal Estimate ·
+  // E Awaiting Approval · F Budget (ERP) · G WO/PO · H Paid · I % Used ·
+  // J Working Sheets · K Rs/sft
+  const IE = 'D', AWAIT = 'E', BUD = 'F', WO = 'G', PAID = 'H', PCTU = 'I', WSN = 'J', SFT = 'K'
+  const lastCol = hasSft ? 'K' : 'J'
   m['A1'] = S(`INTERNAL ESTIMATE — MASTER · ${project.code} ${project.name}`)
-  const cols = ['Work Category', 'Sub Skill', 'Version', 'Amount', ...(hasSft ? ['Rs / sft'] : [])]
+  const cols = ['Work Category', 'Sub Skill', 'Version', 'Internal Estimate', 'Awaiting Approval',
+    'Budget (ERP)', 'WO / PO', 'Paid', '% Used', 'Working Sheets', ...(hasSft ? ['Rs / sft'] : [])]
   cols.forEach((h, i) => { m[String.fromCharCode(65 + i) + '3'] = S(h) })
   const rowLevels: Array<{ level?: number }> = []
   const setLevel = (r1: number, level: number) => { rowLevels[r1 - 1] = level ? { level } : {} }
+  // % Used cell = paid/budget for that row (blank when no budget). Working
+  // Sheets subtotal/grand = SUM of the child counts. Money subtotals SUM the
+  // child cells (text "—"/zero cells are ignored by SUM).
+  const pctCell = (r: number, paidVal: number, budVal: number) =>
+    F(`IF(${BUD}${r}>0,${PAID}${r}/${BUD}${r},"")`, budVal > 0 ? paidVal / budVal : 0, PCT)
   let mr = 4
-  const catSubtotalCells: string[] = []
-  let grand = 0
+  const catRows: number[] = []
+  let gIE = 0, gAwait = 0, gBud = 0, gWo = 0, gPaid = 0, gWs = 0
   for (const d of discs) {
     const dSubs = subs.filter(s => s.discipline_id === d.id).sort((a, b) => a.code.localeCompare(b.code))
     if (dSubs.length === 0) continue
     m['A' + mr] = S(`${d.code} ${d.name}`); setLevel(mr, 0); mr++    // category header
     const catStart = mr
-    let catHasAmount = false
+    const cat: Record<string, number> = { [IE]: 0, [AWAIT]: 0, [BUD]: 0, [WO]: 0, [PAID]: 0, [WSN]: 0 }
     for (const s of dSubs) {
       m['B' + mr] = S(`${s.code} ${s.name}`)
-      const link = subLink.get(s.id)
-      if (link) {
-        m['C' + mr] = S(link.versionLabel)
-        m[AMT + mr] = F(link.formula, link.total, MONEY)
-        if (hasSft) m[SFT + mr] = F(`IF(${AMT}${mr}="","",ROUND(${AMT}${mr}/${sft},0))`, Math.round(link.total / sft), MONEY)
-        grand += link.total; catHasAmount = true
-      } else {
-        m['C' + mr] = S(''); m[AMT + mr] = S('—')  // enabled but no working sheet yet
+      const meta = subMeta.get(s.id)
+      if (meta) {
+        m['C' + mr] = S(meta.versionLabel)
+        // Hyperlink the sub-skill name to its BOQ drill-down tab.
+        if (meta.firstSheet) (m['B' + mr] as { l?: unknown }).l = { Target: `#'${meta.firstSheet}'!A1`, Tooltip: 'Open BOQ detail' }
       }
+      const f = subFigures(rollup, d.id, s.id)
+      m[IE + mr] = N(f.internalEstimate, MONEY_DASH)
+      m[AWAIT + mr] = N(f.awaitingApproval, MONEY_DASH)
+      m[BUD + mr] = N(f.budget, MONEY_DASH)
+      m[WO + mr] = N(f.wo, MONEY_DASH)
+      m[PAID + mr] = N(f.paid, MONEY_DASH)
+      m[PCTU + mr] = pctCell(mr, f.paid, f.budget)
+      m[WSN + mr] = N(f.wsCount, MONEY_DASH)
+      if (hasSft) m[SFT + mr] = F(`IF(${IE}${mr}=0,"",ROUND(${IE}${mr}/${sft},0))`, f.internalEstimate ? Math.round(f.internalEstimate / sft) : 0, MONEY_DASH)
+      cat[IE] += f.internalEstimate; cat[AWAIT] += f.awaitingApproval; cat[BUD] += f.budget
+      cat[WO] += f.wo; cat[PAID] += f.paid; cat[WSN] += f.wsCount
+      gIE += f.internalEstimate; gAwait += f.awaitingApproval; gBud += f.budget
+      gWo += f.wo; gPaid += f.paid; gWs += f.wsCount
       setLevel(mr, 1)   // sub-skill detail → collapsible under its category
       mr++
     }
+    // Category subtotal row (the group summary — sits below its detail).
     m['B' + mr] = S(`${d.code} subtotal`)
-    m[AMT + mr] = catHasAmount ? F(`SUM(${AMT}${catStart}:${AMT}${mr - 1})`, dSubs.reduce((a, s) => a + (subLink.get(s.id)?.total ?? 0), 0), MONEY) : S('—')
-    if (catHasAmount) catSubtotalCells.push(`${AMT}${mr}`)
-    setLevel(mr, 0)   // subtotal = the group's summary row (below its detail)
+    for (const col of [IE, AWAIT, BUD, WO, PAID, WSN]) {
+      m[col + mr] = F(`SUM(${col}${catStart}:${col}${mr - 1})`, cat[col], MONEY_DASH)
+    }
+    m[PCTU + mr] = pctCell(mr, cat[PAID], cat[BUD])
+    if (hasSft) m[SFT + mr] = F(`IF(${IE}${mr}=0,"",ROUND(${IE}${mr}/${sft},0))`, cat[IE] ? Math.round(cat[IE] / sft) : 0, MONEY_DASH)
+    catRows.push(mr)
+    setLevel(mr, 0)
     mr += 2
   }
+  // GRAND TOTAL — sum the category subtotal rows.
   m['B' + mr] = S('GRAND TOTAL')
-  m[AMT + mr] = catSubtotalCells.length ? F(catSubtotalCells.join('+'), grand, MONEY) : N(grand, MONEY)
-  if (hasSft) m[SFT + mr] = F(`ROUND(${AMT}${mr}/${sft},0)`, sft > 0 ? Math.round(grand / sft) : 0, MONEY)
-  m['!ref'] = `A1:${hasSft ? 'E' : 'D'}${mr}`
-  m['!cols'] = [{ wch: 26 }, { wch: 36 }, { wch: 16 }, { wch: 16 }, ...(hasSft ? [{ wch: 10 }] : [])]
-  m['!merges'] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: hasSft ? 4 : 3 } }]
+  const gVals: Record<string, number> = { [IE]: gIE, [AWAIT]: gAwait, [BUD]: gBud, [WO]: gWo, [PAID]: gPaid, [WSN]: gWs }
+  for (const col of [IE, AWAIT, BUD, WO, PAID, WSN]) {
+    m[col + mr] = catRows.length
+      ? F(catRows.map(r => `${col}${r}`).join('+'), gVals[col], MONEY_DASH)
+      : N(gVals[col], MONEY_DASH)
+  }
+  m[PCTU + mr] = pctCell(mr, gPaid, gBud)
+  if (hasSft) m[SFT + mr] = F(`IF(${IE}${mr}=0,"",ROUND(${IE}${mr}/${sft},0))`, gIE ? Math.round(gIE / sft) : 0, MONEY_DASH)
+  m['!ref'] = `A1:${lastCol}${mr}`
+  m['!cols'] = [{ wch: 24 }, { wch: 34 }, { wch: 13 }, { wch: 15 }, { wch: 15 }, { wch: 14 }, { wch: 14 }, { wch: 14 }, { wch: 8 }, { wch: 11 }, ...(hasSft ? [{ wch: 9 }] : [])]
+  m['!merges'] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: hasSft ? 10 : 9 } }]
   m['!rows'] = rowLevels
   m['!outline'] = { above: false }   // subtotal (summary) sits below its detail
 

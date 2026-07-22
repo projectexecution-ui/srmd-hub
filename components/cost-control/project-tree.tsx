@@ -1,0 +1,89 @@
+'use client'
+
+// Collapsible category tree for the Internal Estimate project table.
+// The server renders the whole table; these client bits only decide which
+// category groups are open. Collapsed categories still show their cumulative
+// totals (those cells live on the always-visible category header row), so
+// collapsing gives management the roll-up view they asked for.
+
+import { createContext, useContext, useMemo, useState, type ReactNode } from 'react'
+import { ChevronRight, ChevronDown, ListTree } from 'lucide-react'
+
+interface TreeCtx {
+  isCollapsed: (id: string) => boolean
+  toggle: (id: string) => void
+  expandAll: () => void
+  collapseAll: () => void
+  allCollapsed: boolean
+}
+const Ctx = createContext<TreeCtx | null>(null)
+
+export function TreeProvider({ allCatIds, children }: { allCatIds: string[]; children: ReactNode }) {
+  // Default: everything expanded (empty collapsed set) — today's behaviour.
+  const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set())
+  const api = useMemo<TreeCtx>(() => ({
+    isCollapsed: (id) => collapsed.has(id),
+    toggle: (id) => setCollapsed(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id); else next.add(id)
+      return next
+    }),
+    expandAll: () => setCollapsed(new Set()),
+    collapseAll: () => setCollapsed(new Set(allCatIds)),
+    allCollapsed: allCatIds.length > 0 && allCatIds.every(id => collapsed.has(id)),
+  }), [collapsed, allCatIds])
+  return <Ctx.Provider value={api}>{children}</Ctx.Provider>
+}
+
+function useTree(): TreeCtx {
+  const v = useContext(Ctx)
+  if (!v) throw new Error('Tree components must be inside <TreeProvider>')
+  return v
+}
+
+/** Chevron button placed at the front of a category header row. */
+export function CatChevron({ catId }: { catId: string }) {
+  const { isCollapsed, toggle } = useTree()
+  const collapsed = isCollapsed(catId)
+  return (
+    <button
+      type="button"
+      onClick={() => toggle(catId)}
+      aria-expanded={!collapsed}
+      title={collapsed ? 'Expand' : 'Collapse'}
+      className="inline-flex items-center justify-center h-5 w-5 rounded text-gray-500 hover:bg-gray-200 hover:text-gray-800 align-middle mr-1 -ml-1"
+    >
+      {collapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+    </button>
+  )
+}
+
+/** Wraps a category's detail rows; renders them only when the category is open. */
+export function CatRows({ catId, children }: { catId: string; children: ReactNode }) {
+  const { isCollapsed } = useTree()
+  return isCollapsed(catId) ? null : <>{children}</>
+}
+
+/** Expand-all / Collapse-all controls. */
+export function TreeToolbar() {
+  const { expandAll, collapseAll, allCollapsed } = useTree()
+  return (
+    <div className="inline-flex items-center gap-1 text-[11px]">
+      <ListTree className="h-3.5 w-3.5 text-gray-400" />
+      <button
+        type="button"
+        onClick={expandAll}
+        className="px-2 py-0.5 rounded border border-gray-200 text-gray-600 hover:bg-gray-50 font-medium"
+      >
+        Expand all
+      </button>
+      <button
+        type="button"
+        onClick={collapseAll}
+        className={`px-2 py-0.5 rounded border font-medium ${allCollapsed ? 'border-blue-300 bg-blue-50 text-blue-700' : 'border-gray-200 text-gray-600 hover:bg-gray-50'}`}
+      >
+        Collapse all
+      </button>
+    </div>
+  )
+}
