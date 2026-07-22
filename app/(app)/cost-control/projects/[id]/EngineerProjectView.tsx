@@ -199,21 +199,27 @@ export async function EngineerProjectTable({ projectId }: { projectId: string })
                           <td className="px-3 py-2 text-right tabular-nums">{bl?.budget ? formatINR(bl.budget) : '—'}</td>
                           <td className="px-3 py-2 text-right tabular-nums text-gray-600">{bl?.wo ? formatINR(bl.wo) : '—'}</td>
                           <td className="px-3 py-2">
-                            {chains > 0 ? (
-                              <Link
-                                href={`/cost-control/working-sheets?project=${projectId}&discipline=${d.id}&sub_skill=${s.id}`}
-                                className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-semibold bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100"
-                              >
-                                {chains} sheet{chains === 1 ? '' : 's'}
-                              </Link>
-                            ) : (
+                            {/* Always offer "+ New" — an engineer can raise
+                                another budget request (a new version if a sheet
+                                already exists) even after one is approved. The
+                                "N sheets" link (to view them) shows alongside. */}
+                            <div className="inline-flex items-center gap-1.5">
+                              {chains > 0 && (
+                                <Link
+                                  href={`/cost-control/working-sheets?project=${projectId}&discipline=${d.id}&sub_skill=${s.id}`}
+                                  className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-semibold bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100"
+                                >
+                                  {chains} sheet{chains === 1 ? '' : 's'}
+                                </Link>
+                              )}
                               <Link
                                 href={`/cost-control/working-sheets/new-quick?project=${projectId}&discipline=${d.id}&sub_skill=${s.id}`}
                                 className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-semibold bg-indigo-50 text-indigo-700 border border-indigo-200 hover:bg-indigo-100"
+                                title={chains > 0 ? 'Raise another budget request for this sub-skill (a new version)' : 'Raise the first budget request for this sub-skill'}
                               >
-                                + Add
+                                + New
                               </Link>
-                            )}
+                            </div>
                           </td>
                         </tr>
                         </SubRow>
