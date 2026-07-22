@@ -1,9 +1,9 @@
-// Master Excel export — the single linked workbook management is used to:
-// a "Master" summary sheet (Work Category → Sub Skill → Amount, cross-linked)
-// plus one working sheet per sub-skill, all internally linked (Master pulls each
-// sub-skill's grand total via ='<sheet>'!<cell>). Mirrors the V8 NGH_B format so
-// management can keep their familiar file — generated on demand from the app.
-// Management-only. Read-only; not behind the experimental flag.
+// Master Excel export — the single linked workbook management is used to (mirrors
+// the V8 NGH_B master): a "Master" summary listing EVERY Work Category and
+// Sub-skill (whether or not it has a sheet yet), each amount a live cross-sheet
+// formula to that sub-skill's grand total (GST-inclusive), category subtotals,
+// grand total, ₹/sft; plus one working sheet per sub-skill/bucket, internally
+// linked. Management-only. Read-only; not behind the experimental flag.
 
 import { NextRequest } from 'next/server'
 import * as XLSX from 'xlsx'
@@ -14,11 +14,11 @@ import { checkIsCcReviewer } from '@/components/cost-control/ws-actions'
 export const dynamic = 'force-dynamic'
 
 const MONEY = '#,##0'
-const S = (v: string) => ({ t: 's', v }) as XLSX.CellObject
-const N = (v: number, z?: string) => ({ t: 'n', v, ...(z ? { z } : {}) }) as XLSX.CellObject
-const F = (f: string, v: number, z?: string) => ({ t: 'n', v, f, ...(z ? { z } : {}) }) as XLSX.CellObject
+const S = (v: string) => ({ t: 's', v })
+const N = (v: number, z?: string) => ({ t: 'n', v, ...(z ? { z } : {}) })
+const F = (f: string, v: number, z?: string) => ({ t: 'n', v, f, ...(z ? { z } : {}) })
+const APPROVED = new Set(['approved', 'partially_approved', 'wo_issued', 'paid'])
 
-// Excel sheet names: <=31 chars, no []:*?/\ , unique.
 function sheetName(base: string, used: Set<string>): string {
   let n = base.replace(/[[\]:*?/\\]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 31) || 'Sheet'
   let i = 2
@@ -28,12 +28,11 @@ function sheetName(base: string, used: Set<string>): string {
 }
 
 interface Row { description: string | null; unit: string | null; qty: number | null; rate: number | null; amount: number | null }
+interface Bucket { wsId: string; total: number; versionNo: number; lineType: string | null }
 
 export async function GET(req: NextRequest) {
   await requirePermission('cost-control', 'view')
-  if (!(await checkIsCcReviewer())) {
-    return new Response('Management only', { status: 403 })
-  }
+  if (!(await checkIsCcReviewer())) return new Response('Management only', { status: 403 })
   const projectId = req.nextUrl.searchParams.get('project')
   if (!projectId) return new Response('project required', { status: 400 })
 
@@ -42,10 +41,9 @@ export async function GET(req: NextRequest) {
   if (!project) return new Response('project not found', { status: 404 })
   const sft = Number(project.built_up_sft) || 0
 
-  // Enabled disciplines + sub-skills for the project.
   const [{ data: pd }, { data: ps }] = await Promise.all([
-    supabase.from('cc_project_disciplines').select('discipline_id, cc_disciplines(id, code, name, display_order)').eq('project_id', projectId).eq('is_enabled', true),
-    supabase.from('cc_project_sub_skills').select('sub_skill_id, cc_sub_skills(id, discipline_id, code, name)').eq('project_id', projectId).eq('is_enabled', true),
+    supabase.from('cc_project_disciplines').select('cc_disciplines(id, code, name, display_order)').eq('project_id', projectId).eq('is_enabled', true),
+    supabase.from('cc_project_sub_skills').select('cc_sub_skills(id, discipline_id, code, name)').eq('project_id', projectId).eq('is_enabled', true),
   ])
   type D = { id: string; code: string; name: string; display_order: number }
   type SS = { id: string; discipline_id: string; code: string; name: string }
@@ -53,32 +51,37 @@ export async function GET(req: NextRequest) {
   const subs: SS[] = (ps ?? []).map(r => (Array.isArray(r.cc_sub_skills) ? r.cc_sub_skills[0] : r.cc_sub_skills)).filter(Boolean) as SS[]
   discs.sort((a, b) => (a.display_order ?? 0) - (b.display_order ?? 0) || a.code.localeCompare(b.code))
 
-  // Latest LIVE working sheet per (discipline, sub-skill) bucket (exclude
-  // [IB] baselines, cancelled, archived). Prefer the newest version.
+  // Latest LIVE working sheet per (sub-skill, line_type) BUCKET — a sub-skill
+  // can have several buckets (work / material), each its own chain.
   const { data: wsAll } = await supabase
     .from('cc_ws_with_versions')
-    .select('id, discipline_id, sub_skill_id, line_type, version_no, status, total_amount, summary_notes, archived_at')
+    .select('id, sub_skill_id, line_type, version_no, status, total_amount, summary_notes, archived_at')
     .eq('project_id', projectId)
-  const liveBySub = new Map<string, { id: string; total: number }>()
+  const bucketsBySub = new Map<string, Bucket[]>()
+  const latestByKey = new Map<string, { versionNo: number }>()
   for (const w of (wsAll ?? [])) {
     if (!w.sub_skill_id) continue
     if ((w.summary_notes ?? '').startsWith('[IB')) continue
     if (w.status === 'cancelled' || w.archived_at) continue
-    const cur = liveBySub.get(w.sub_skill_id)
-    if (!cur || (w.version_no ?? 0) > ((wsAll ?? []).find(x => x.id === cur.id)?.version_no ?? 0)) {
-      liveBySub.set(w.sub_skill_id, { id: w.id, total: Number(w.total_amount) || 0 })
-    }
+    const key = `${w.sub_skill_id}::${w.line_type ?? ''}`
+    const v = w.version_no ?? 0
+    const seen = latestByKey.get(key)
+    if (seen && v <= seen.versionNo) continue
+    latestByKey.set(key, { versionNo: v })
+    const arr = bucketsBySub.get(w.sub_skill_id) ?? []
+    const existing = arr.findIndex(b => b.lineType === (w.line_type ?? null))
+    const bucket: Bucket = { wsId: w.id, total: Number(w.total_amount) || 0, versionNo: v, lineType: w.line_type ?? null }
+    if (existing >= 0) arr[existing] = bucket; else arr.push(bucket)
+    bucketsBySub.set(w.sub_skill_id, arr)
   }
 
-  // Rows for the chosen sheets.
-  const wsIds = [...liveBySub.values()].map(v => v.id)
+  const allWsIds = [...bucketsBySub.values()].flat().map(b => b.wsId)
   const rowsByWs = new Map<string, Row[]>()
-  if (wsIds.length) {
+  if (allWsIds.length) {
     const { data: rows } = await supabase
       .from('cc_excel_rows')
       .select('working_sheet_id, row_no, description, unit, qty, rate, amount')
-      .in('working_sheet_id', wsIds)
-      .order('row_no')
+      .in('working_sheet_id', allWsIds).order('row_no')
     for (const r of (rows ?? [])) {
       const arr = rowsByWs.get(r.working_sheet_id) ?? []
       arr.push({ description: r.description, unit: r.unit, qty: r.qty, rate: r.rate, amount: r.amount })
@@ -90,68 +93,101 @@ export async function GET(req: NextRequest) {
   const used = new Set<string>()
   const masterName = sheetName(project.code || 'Master', used)
 
-  // Build each sub-skill's sheet first so the Master can link to its grand cell.
-  const subMeta = new Map<string, { sheet: string; grandCell: string; total: number }>()
-  for (const sub of subs) {
-    const live = liveBySub.get(sub.id)
-    if (!live) continue
-    const rows = rowsByWs.get(live.id) ?? []
+  // A sub-sheet per bucket; its GRAND = the WS total_amount (GST-inclusive), with
+  // a reconciling "GST / additions" line when total ≠ Σ rows. Returns the grand
+  // cell so the Master can link to it.
+  function buildBucketSheet(label: string, b: Bucket): string {
+    const rows = rowsByWs.get(b.wsId) ?? []
     const ws: Record<string, unknown> = {}
-    ws['A1'] = S(`${sub.code} ${sub.name}`)
+    ws['A1'] = S(label)
     ;['Sr', 'Description', 'Unit', 'Qty', 'Rate', 'Amount'].forEach((h, i) => { ws[String.fromCharCode(65 + i) + '3'] = S(h) })
-    let r = 4, sub_total = 0
+    let r = 4, rowsum = 0
     rows.forEach((row, i) => {
       const amt = Number(row.amount) || 0
-      ws['A' + r] = N(i + 1)
-      ws['B' + r] = S(row.description ?? '')
-      ws['C' + r] = S(row.unit ?? '')
+      ws['A' + r] = N(i + 1); ws['B' + r] = S(row.description ?? ''); ws['C' + r] = S(row.unit ?? '')
       if (row.qty != null) ws['D' + r] = N(Number(row.qty))
       if (row.rate != null) ws['E' + r] = N(Number(row.rate), MONEY)
       ws['F' + r] = N(amt, MONEY)
-      sub_total += amt; r++
+      rowsum += amt; r++
     })
-    const grandRow = r + 1
-    ws['E' + grandRow] = S('GRAND TOTAL')
-    ws['F' + grandRow] = rows.length ? F(`SUM(F4:F${r - 1})`, sub_total, MONEY) : N(live.total, MONEY)
+    let grandRow: number
+    if (rows.length === 0) {
+      grandRow = 4
+      ws['E' + grandRow] = S('GRAND TOTAL'); ws['F' + grandRow] = N(b.total, MONEY)
+    } else {
+      const subRow = r
+      ws['E' + subRow] = S('Subtotal'); ws['F' + subRow] = F(`SUM(F4:F${r - 1})`, rowsum, MONEY)
+      const gap = b.total - rowsum
+      if (Math.abs(gap) > 1) {
+        const addRow = r + 1
+        ws['E' + addRow] = S('GST / additions'); ws['F' + addRow] = N(gap, MONEY)
+        grandRow = r + 2
+        ws['E' + grandRow] = S('GRAND TOTAL'); ws['F' + grandRow] = F(`F${subRow}+F${addRow}`, b.total, MONEY)
+      } else {
+        grandRow = r + 1
+        ws['E' + grandRow] = S('GRAND TOTAL'); ws['F' + grandRow] = F(`F${subRow}`, b.total, MONEY)
+      }
+    }
     ws['!ref'] = `A1:F${grandRow}`
     ws['!cols'] = [{ wch: 4 }, { wch: 40 }, { wch: 7 }, { wch: 10 }, { wch: 11 }, { wch: 14 }]
-    const nm = sheetName(`${sub.code} ${sub.name}`, used)
+    const nm = sheetName(label, used)
     XLSX.utils.book_append_sheet(wb, ws as unknown as XLSX.WorkSheet, nm)
-    subMeta.set(sub.id, { sheet: nm, grandCell: `F${grandRow}`, total: rows.length ? sub_total : live.total })
+    return `'${nm}'!F${grandRow}`
   }
 
-  // Master summary sheet — Category → Sub Skill → Amount (linked) → Rs/sft.
+  // Per sub-skill: link cell(s) to its bucket grand(s). Multi-bucket → sum them.
+  const subLink = new Map<string, { formula: string; total: number }>()
+  for (const sub of subs) {
+    const buckets = bucketsBySub.get(sub.id)
+    if (!buckets || buckets.length === 0) continue
+    const refs: string[] = []
+    let total = 0
+    for (const b of buckets) {
+      const label = buckets.length > 1 ? `${sub.code} ${sub.name} (${b.lineType ?? 'work'})` : `${sub.code} ${sub.name}`
+      refs.push(buildBucketSheet(label, b))
+      total += b.total
+    }
+    subLink.set(sub.id, { formula: refs.join('+'), total })
+  }
+
+  // Master summary — EVERY enabled category and sub-skill.
   const m: Record<string, unknown> = {}
   m['A1'] = S(`INTERNAL ESTIMATE — MASTER · ${project.code} ${project.name}`)
-  ;['Work Category', 'Sub Skill', 'Amount', ...(sft > 0 ? ['Rs / sft'] : [])].forEach((h, i) => { m[String.fromCharCode(65 + i) + '3'] = S(h) })
+  const cols = ['Work Category', 'Sub Skill', 'Amount', ...(sft > 0 ? ['Rs / sft'] : [])]
+  cols.forEach((h, i) => { m[String.fromCharCode(65 + i) + '3'] = S(h) })
   let mr = 4
-  const grandCells: string[] = []
+  const catSubtotalCells: string[] = []
+  let grand = 0
   for (const d of discs) {
-    const dSubs = subs.filter(s => s.discipline_id === d.id && subMeta.has(s.id))
+    const dSubs = subs.filter(s => s.discipline_id === d.id).sort((a, b) => a.code.localeCompare(b.code))
     if (dSubs.length === 0) continue
     m['A' + mr] = S(`${d.code} ${d.name}`); mr++
     const catStart = mr
+    let catHasAmount = false
     for (const s of dSubs) {
-      const meta = subMeta.get(s.id)!
       m['B' + mr] = S(`${s.code} ${s.name}`)
-      m['C' + mr] = F(`'${meta.sheet}'!${meta.grandCell}`, meta.total, MONEY)   // LIVE LINK
-      if (sft > 0) m['D' + mr] = F(`ROUND(C${mr}/${sft},0)`, Math.round(meta.total / sft), MONEY)
+      const link = subLink.get(s.id)
+      if (link) {
+        m['C' + mr] = F(link.formula, link.total, MONEY)
+        if (sft > 0) m['D' + mr] = F(`IF(C${mr}="","",ROUND(C${mr}/${sft},0))`, Math.round(link.total / sft), MONEY)
+        grand += link.total; catHasAmount = true
+      } else {
+        m['C' + mr] = S('—')  // enabled but no working sheet yet
+      }
       mr++
     }
-    // Category subtotal
     m['B' + mr] = S(`${d.code} subtotal`)
-    m['C' + mr] = F(`SUM(C${catStart}:C${mr - 1})`, dSubs.reduce((a, s) => a + (subMeta.get(s.id)?.total ?? 0), 0), MONEY)
-    grandCells.push(`C${mr}`)
+    m['C' + mr] = catHasAmount ? F(`SUM(C${catStart}:C${mr - 1})`, dSubs.reduce((a, s) => a + (subLink.get(s.id)?.total ?? 0), 0), MONEY) : S('—')
+    if (catHasAmount) catSubtotalCells.push(`C${mr}`)
     mr += 2
   }
-  const grand = discs.flatMap(d => subs.filter(s => s.discipline_id === d.id && subMeta.has(s.id))).reduce((a, s) => a + (subMeta.get(s.id)?.total ?? 0), 0)
   m['B' + mr] = S('GRAND TOTAL')
-  m['C' + mr] = grandCells.length ? F(grandCells.join('+'), grand, MONEY) : N(grand, MONEY)
+  m['C' + mr] = catSubtotalCells.length ? F(catSubtotalCells.join('+'), grand, MONEY) : N(grand, MONEY)
+  if (sft > 0) m['D' + mr] = F(`ROUND(C${mr}/${sft},0)`, sft > 0 ? Math.round(grand / sft) : 0, MONEY)
   m['!ref'] = `A1:${sft > 0 ? 'D' : 'C'}${mr}`
-  m['!cols'] = [{ wch: 26 }, { wch: 34 }, { wch: 16 }, ...(sft > 0 ? [{ wch: 10 }] : [])]
+  m['!cols'] = [{ wch: 26 }, { wch: 36 }, { wch: 16 }, ...(sft > 0 ? [{ wch: 10 }] : [])]
   m['!merges'] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: sft > 0 ? 3 : 2 } }]
 
-  // Master goes first.
   wb.SheetNames.unshift(masterName)
   wb.Sheets[masterName] = m as unknown as XLSX.WorkSheet
 
