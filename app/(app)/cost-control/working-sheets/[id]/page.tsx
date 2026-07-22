@@ -552,7 +552,10 @@ export default async function WorkingSheetEditorPage(
             View this sub-skill&apos;s full ledger (passbook) →
           </Link>
         )}
-        {matchSummary && <CumulativeBoqPanel rows={matchedRows} summary={matchSummary} workingByKey={workingByKey} />}
+        {/* Approved-vs-new-ask BOQ + cumulative totals — a management review
+            tool. Gated on reviewer to match its siblings above (strip +
+            scorecard); engineers see only their own sheet's BOQ. */}
+        {matchSummary && reviewer && <CumulativeBoqPanel rows={matchedRows} summary={matchSummary} workingByKey={workingByKey} />}
 
         {ccSettings.show_deadlines && (ws.deadline_date || canEditDeadline) && (
           <div className="flex items-center gap-2 flex-wrap">

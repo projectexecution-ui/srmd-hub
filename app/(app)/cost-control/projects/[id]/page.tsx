@@ -7,7 +7,7 @@ import { IeRevisionPanel, type IeRevision } from './IeRevisionPanel'
 import { EngineerProjectView } from './EngineerProjectView'
 import { PageHeader } from '@/components/PageHeader'
 import { SetupProgressBanner } from '@/components/ProjectSetupWizard/SetupProgressBanner'
-import { Plus, Flame, Info, Settings, Download } from 'lucide-react'
+import { Plus, Flame, Info, Settings, Download, Ruler, UserRound } from 'lucide-react'
 import { formatINR } from '@/lib/utils'
 import { getCcSettings } from '@/lib/cost-control/settings'
 import { computeMoneyRollup, type RollupWSRow, type RollupVersionRow, type RollupBudgetLine } from '@/lib/cost-control/project-rollup'
@@ -15,7 +15,7 @@ import { QueryError } from '@/components/ui/query-error'
 import { DeadlineBadge } from '@/components/cost-control/DeadlineBadge'
 import { TreeProvider, TreeToolbar, CatChevron, CatRows } from '@/components/cost-control/project-tree'
 import { wsStatusLabel } from '@/components/cost-control/WSStatusPill'
-import { DeadlineCell, SubSkillModeCell, DisableButton, InternalEstimateDecision, SubSkillAssignControl } from './RowControls'
+import { DeadlineCell, SubSkillModeCell, DisableButton, InternalEstimateDecision, SubSkillAssignControl, RowConfigMenu, RowConfigItem } from './RowControls'
 import { BphSyncButton } from './BphSyncButton'
 import { getBphMappingForProject } from '@/app/(app)/cost-control/import/bph/actions'
 
@@ -511,7 +511,7 @@ export default async function CostControlProjectDetailPage(
 
       {/* KPI strip — portfolio-level numbers for this project. The ERP
           tiles (from Budget vs Actual) hide when the toggle is off. */}
-      <div className={`grid grid-cols-2 sm:grid-cols-3 ${showErp ? 'lg:grid-cols-6' : ''} gap-3`}>
+      <div className={`grid grid-cols-2 sm:grid-cols-3 ${showErp ? 'lg:grid-cols-5' : ''} gap-3`}>
         <KPI
           label="Internal Estimate"
           value={totalEstimate > 0 ? formatINR(totalEstimate) : '—'}
@@ -561,10 +561,6 @@ export default async function CostControlProjectDetailPage(
           <KPI label="Paid to Date" value={formatINR(totalPaid)} perSft={perSft(totalPaid)}
                sub={totalBudget > 0 ? `${utilPct}% utilized` : '—'} tone="orange" />
         )}
-        <KPI label="Approved via WS" value={formatINR(totalApproved)} perSft={perSft(totalApproved)}
-             sub={totalEstimate > 0
-               ? `${Math.round((totalApproved / totalEstimate) * 100)}% of estimate`
-               : "From this app's Working Sheets"} tone="green" />
       </div>
 
       {showSetupBanner && (
@@ -714,23 +710,32 @@ export default async function CostControlProjectDetailPage(
                         ? ie.amt
                         : estLive
                       const overBy = baseline > 0 && ask > baseline ? ask - baseline : 0
+                      // Effective estimation mode + assignee, computed once and
+                      // reused in the name cell (read-only signals) + the ▾
+                      // config menu (the editable controls) + the New WS route.
+                      const effMode = subMeta.get(s.id)?.mode ?? discMeta.get(d.id)?.mode ?? 'detailed'
+                      const assigneeId = assigneeBySub.get(s.id) ?? null
+                      const assigneeName = assigneeId ? (profileMap.get(assigneeId) ?? null) : null
                       return (
                         <tr key={s.id} className="border-t border-gray-100 hover:bg-gray-50/60">
                           <td className="pl-10 pr-3 py-2 text-gray-700">
                             <span className="font-mono text-[11px] text-gray-400 mr-2">{s.code}</span>
                             <span>{s.name}</span>
                             {sHot && <Flame className="inline h-3 w-3 text-orange-500 ml-1.5" />}
-                            <span className="ml-2 inline-block align-middle">
-                              <SubSkillModeCell
-                                projectId={project.id}
-                                subSkillId={s.id}
-                                initialMode={subMeta.get(s.id)?.mode ?? null}
-                                initialRate={subMeta.get(s.id)?.rate ?? null}
-                                initialNotes={subMeta.get(s.id)?.notes ?? null}
-                                inheritedMode={discMeta.get(d.id)?.mode ?? 'detailed'}
-                                canWrite={canWrite}
-                              />
-                            </span>
+                            {/* Thumbrule is the rare exception — flag it read-only.
+                                BOQ (the default) shows no chip. The mode TOGGLE now
+                                lives in the ▾ config menu, not on the row. */}
+                            {effMode === 'thumbrule' && (
+                              <span className="ml-2 inline-flex items-center gap-0.5 text-[10px] font-semibold rounded px-1.5 py-0.5 bg-amber-50 text-amber-800 border border-amber-200 align-middle" title="Thumbrule (rate × area)">
+                                <Ruler className="h-2.5 w-2.5" /> TR
+                              </span>
+                            )}
+                            {/* Who owns it — read-only; the assign dropdown is in the ▾ menu. */}
+                            {assigneeName && (
+                              <span className="ml-2 inline-flex items-center gap-0.5 text-[11px] text-gray-500 align-middle" title="Engineer responsible for this sub-skill">
+                                <UserRound className="h-3 w-3 text-gray-400" /> {assigneeName}
+                              </span>
+                            )}
                             {(() => {
                               const remark = remarkAgg.get(`${d.id}::${s.id}`)
                               if (!remark) return null
@@ -743,17 +748,6 @@ export default async function CostControlProjectDetailPage(
                                 </p>
                               )
                             })()}
-                            {canWrite && (
-                              <div className="mt-1">
-                                <SubSkillAssignControl
-                                  projectId={project.id}
-                                  subSkillId={s.id}
-                                  engineerId={assigneeBySub.get(s.id) ?? null}
-                                  assignedName={assigneeBySub.get(s.id) ? (profileMap.get(assigneeBySub.get(s.id)!) ?? null) : null}
-                                  engineers={engineers.map(e => ({ user_id: e.user_id, name: e.name }))}
-                                />
-                              </div>
-                            )}
                           </td>
                           <Td align="right" mono className="text-indigo-800">
                             <Money amt={estLive} />
@@ -833,34 +827,52 @@ export default async function CostControlProjectDetailPage(
                             </>
                           )}
                           <Td>
-                            <div className="inline-flex items-center gap-1">
-                              {canWrite && (() => {
-                                // Route to the thumbrule form when this
-                                // sub-skill's effective mode is thumbrule
-                                // (own override, else inherited from the
-                                // discipline) — pre-filled with project +
-                                // discipline + sub-skill. Otherwise the
-                                // normal BOQ flow.
-                                const effMode = subMeta.get(s.id)?.mode ?? discMeta.get(d.id)?.mode ?? 'detailed'
-                                const href = effMode === 'thumbrule'
-                                  ? `/cost-control/working-sheets/new-thumbrule?project=${project.id}&discipline=${d.id}&sub_skill=${s.id}`
-                                  : `/cost-control/working-sheets/new?project=${project.id}&discipline=${d.id}&sub_skill=${s.id}`
-                                return (
-                                  <Link
-                                    href={href}
-                                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-semibold border border-blue-300 text-blue-700 hover:bg-blue-50"
-                                  >
-                                    <Plus className="h-3 w-3" /> New WS
-                                  </Link>
-                                )
-                              })()}
-                              <DisableButton
-                                projectId={project.id}
-                                subSkillId={s.id}
-                                label={`${s.code} ${s.name}`}
-                                attachedCount={wsCount}
-                                canWrite={canWrite}
-                              />
+                            <div className="inline-flex items-start gap-1">
+                              {canWrite && (
+                                <Link
+                                  href={effMode === 'thumbrule'
+                                    ? `/cost-control/working-sheets/new-thumbrule?project=${project.id}&discipline=${d.id}&sub_skill=${s.id}`
+                                    : `/cost-control/working-sheets/new?project=${project.id}&discipline=${d.id}&sub_skill=${s.id}`}
+                                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-semibold border border-blue-300 text-blue-700 hover:bg-blue-50"
+                                >
+                                  <Plus className="h-3 w-3" /> New WS
+                                </Link>
+                              )}
+                              {/* Config (mode · assignee · remove) tucked behind one ▾ so the
+                                  table stays KPIs + amounts, not editing widgets. */}
+                              {canWrite && (
+                                <RowConfigMenu>
+                                  <RowConfigItem label="Estimation mode">
+                                    <SubSkillModeCell
+                                      projectId={project.id}
+                                      subSkillId={s.id}
+                                      initialMode={subMeta.get(s.id)?.mode ?? null}
+                                      initialRate={subMeta.get(s.id)?.rate ?? null}
+                                      initialNotes={subMeta.get(s.id)?.notes ?? null}
+                                      inheritedMode={discMeta.get(d.id)?.mode ?? 'detailed'}
+                                      canWrite={canWrite}
+                                    />
+                                  </RowConfigItem>
+                                  <RowConfigItem label="Assigned engineer">
+                                    <SubSkillAssignControl
+                                      projectId={project.id}
+                                      subSkillId={s.id}
+                                      engineerId={assigneeId}
+                                      assignedName={assigneeName}
+                                      engineers={engineers.map(e => ({ user_id: e.user_id, name: e.name }))}
+                                    />
+                                  </RowConfigItem>
+                                  <RowConfigItem label="Remove from project">
+                                    <DisableButton
+                                      projectId={project.id}
+                                      subSkillId={s.id}
+                                      label={`${s.code} ${s.name}`}
+                                      attachedCount={wsCount}
+                                      canWrite={canWrite}
+                                    />
+                                  </RowConfigItem>
+                                </RowConfigMenu>
+                              )}
                             </div>
                           </Td>
                         </tr>
