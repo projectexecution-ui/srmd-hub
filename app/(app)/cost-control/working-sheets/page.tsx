@@ -172,7 +172,7 @@ export default async function WorkingSheetsPage({
     project_id: string
     discipline_id: string
     sub_skill_id: string
-    line_type: 'work' | 'material'
+    line_type: 'work' | 'material' | 'combined'
     break_chain: boolean
     chain_anchor_id: string
     version_no: number

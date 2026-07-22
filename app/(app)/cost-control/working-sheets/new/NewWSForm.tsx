@@ -39,7 +39,9 @@ export function NewWSForm({ projects, projectDisciplines, projectSubSkills, defa
   const [projectId, setProjectId] = React.useState(defaultProjectId ?? '')
   const [disciplineId, setDisciplineId] = React.useState(defaultDisciplineId ?? '')
   const [subSkillId, setSubSkillId] = React.useState(defaultSubSkillId ?? '')
-  const [lineType, setLineType] = React.useState<'work' | 'material' | 'combined'>('work')
+  // Combined (M+L) is the standard — almost every SRMD working is a single
+  // Material+Labour rate. Work / Material are the exceptions (split rates).
+  const [lineType, setLineType] = React.useState<'work' | 'material' | 'combined'>('combined')
   const [deadline, setDeadline] = React.useState('')
   const [deadlineNotes, setDeadlineNotes] = React.useState('')
   const [busy, setBusy] = React.useState(false)
@@ -219,11 +221,12 @@ export function NewWSForm({ projects, projectDisciplines, projectSubSkills, defa
 
       <div>
         <Label htmlFor="line_type">Type</Label>
+        <p className="text-[11px] text-gray-500 mb-1">Combined (Material + Labour) is the standard — pick Work or Material only when the rate comes separately.</p>
         <div className="mt-1 grid grid-cols-3 gap-2">
           {([
+            ['combined', 'Combined (Material + Labour)'],
             ['work', 'Work (labour / service)'],
             ['material', 'Material (procurement)'],
-            ['combined', 'Combined (Material + Labour)'],
           ] as const).map(([opt, label]) => (
             <button
               key={opt}

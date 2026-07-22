@@ -36,7 +36,8 @@ export function NewWSThumbruleForm({
   // sub-skill row's "New WS" link.
   const [disciplineId, setDisciplineId] = useState(defaultDisciplineId ?? '')
   const [subSkillId, setSubSkillId]   = useState(defaultSubSkillId ?? '')
-  const [lineType, setLineType]       = useState<'work' | 'material'>('work')
+  // Combined (M+L) is the standard; Work / Material are the split exceptions.
+  const [lineType, setLineType]       = useState<'work' | 'material' | 'combined'>('combined')
   const [area, setArea]               = useState('')
   const [rate, setRate]               = useState('')
   const [notes, setNotes]             = useState('')
@@ -155,9 +156,10 @@ export function NewWSThumbruleForm({
           </select>
         </div>
         <div>
-          <Label>Line type *</Label>
-          <select value={lineType} onChange={e => setLineType(e.target.value as 'work' | 'material')}
+          <Label>Type *</Label>
+          <select value={lineType} onChange={e => setLineType(e.target.value as 'work' | 'material' | 'combined')}
             className="mt-1 flex h-10 w-full rounded-xl border border-gray-300 bg-white px-3 py-2 text-sm">
+            <option value="combined">Combined (Material + Labour)</option>
             <option value="work">Work</option>
             <option value="material">Material</option>
           </select>
