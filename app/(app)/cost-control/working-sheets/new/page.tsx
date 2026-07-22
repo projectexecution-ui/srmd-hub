@@ -98,8 +98,8 @@ export default async function NewWorkingSheetPage({
             <FileSpreadsheet className="h-5 w-5" />
           </div>
           <div className="min-w-0 flex-1">
-            <p className="text-sm font-semibold text-gray-900">Already done quantification in Excel?</p>
-            <p className="text-xs text-gray-600">Switch to <b>Quick mode</b> — attach the .xlsx and we&apos;ll parse rows + flag rate outliers for you.</p>
+            <p className="text-sm font-semibold text-gray-900">Have your working in Excel?</p>
+            <p className="text-xs text-gray-600"><b>Raise Budget Request</b> — upload the standard template and we&apos;ll parse rows + flag rate outliers for you.</p>
           </div>
           <ChevronRight className="h-5 w-5 text-green-700 flex-shrink-0" />
         </div>

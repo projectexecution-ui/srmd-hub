@@ -299,8 +299,15 @@ export default async function WorkingSheetsPage({
       >
         {canWrite && (
           <>
-            {/* Typed sheets + thumbrule are management-only; engineers must
-                upload their working as Excel (the routes enforce this too). */}
+            {/* Raise Budget Request = upload the standard template — the only
+                accepted path, so it's the primary action for everyone. Typed
+                + Thumbrule stay as secondary management-only routes (engineers
+                are upload-only; the routes enforce this too). */}
+            <Button asChild size="sm">
+              <Link href="/cost-control/working-sheets/new-quick">
+                <FileSpreadsheet className="h-4 w-4" /> Raise Budget Request
+              </Link>
+            </Button>
             {isManagement && (
               <Button asChild size="sm" variant="outline">
                 <Link href="/cost-control/working-sheets/new-thumbrule">
@@ -308,13 +315,8 @@ export default async function WorkingSheetsPage({
                 </Link>
               </Button>
             )}
-            <Button asChild size="sm" variant={isManagement ? 'outline' : 'default'}>
-              <Link href="/cost-control/working-sheets/new-quick">
-                <FileSpreadsheet className="h-4 w-4" /> {isManagement ? 'Quick mode (Excel)' : 'Upload my working (Excel)'}
-              </Link>
-            </Button>
             {isManagement && (
-              <Button asChild size="sm">
+              <Button asChild size="sm" variant="outline">
                 <Link href="/cost-control/working-sheets/new">
                   <Plus className="h-4 w-4" /> New Working Sheet
                 </Link>
@@ -463,8 +465,8 @@ export default async function WorkingSheetsPage({
                 </Link>
                 {canWrite && (
                   <Button asChild size="sm">
-                    <Link href={isManagement ? '/cost-control/working-sheets/new' : '/cost-control/working-sheets/new-quick'}>
-                      <Plus className="h-4 w-4" /> {isManagement ? 'New Working Sheet' : 'Upload my working (Excel)'}
+                    <Link href="/cost-control/working-sheets/new-quick">
+                      <Plus className="h-4 w-4" /> Raise Budget Request
                     </Link>
                   </Button>
                 )}

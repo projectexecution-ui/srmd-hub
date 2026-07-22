@@ -56,8 +56,8 @@ export default async function NewWorkingSheetQuickPage({
   return (
     <div className="p-4 md:p-6 max-w-3xl mx-auto space-y-4">
       <PageHeader
-        title="New Working Sheet — Quick mode"
-        subtitle="Attach your Excel and fill only the summary. We'll preview rows and flag rate outliers."
+        title="Raise Budget Request"
+        subtitle="Upload the standard BOQ template — we parse the rows, flag rate outliers, and route it for approval."
         back={sp.project ? `/cost-control/projects/${sp.project}` : "/cost-control/working-sheets"}
       />
       <Card className="p-5">

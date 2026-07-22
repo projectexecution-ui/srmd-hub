@@ -494,7 +494,7 @@ export default async function WorkingSheetEditorPage(
       <div className="p-4 md:p-6 max-w-6xl mx-auto space-y-4">
         <PageHeader
           title={ws.ws_code}
-          subtitle={`${proj?.code ?? '—'} · ${dis?.code} ${dis?.name} → ${sub?.code} ${sub?.name} · Quick mode (Excel)`}
+          subtitle={`${proj?.code ?? '—'} · ${dis?.code} ${dis?.name} → ${sub?.code} ${sub?.name} · Budget Request (Excel)`}
           back={backHref}
         >
           <WSStatusPill status={ws.status as WSStatus} estimateBaseline={isEstimateSheet} />

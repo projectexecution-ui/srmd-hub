@@ -199,7 +199,7 @@ export function NewWSForm({ projects, projectDisciplines, projectSubSkills, defa
               <p className="text-sm font-semibold text-emerald-900">Raising a BOQ? Use the standard template</p>
               <p className="text-xs text-emerald-800/80 mt-0.5">
                 <b>1.</b> Download it (pre-filled for this sub-skill). <b>2.</b> Enter your quantities &amp; rates —
-                Rate &amp; Amount calculate themselves. <b>3.</b> Upload it in <b>Quick mode</b>, where it parses cleanly.
+                Rate &amp; Amount calculate themselves. <b>3.</b> <b>Raise Budget Request</b> (upload) — it parses cleanly there.
                 The upload box is there, not on this page.
               </p>
             </div>
@@ -213,7 +213,7 @@ export function NewWSForm({ projects, projectDisciplines, projectSubSkills, defa
             <Button type="button" size="sm"
               className="bg-emerald-600 hover:bg-emerald-700 text-white"
               onClick={goToQuickUpload}>
-              Upload it in Quick mode <ArrowRight className="h-4 w-4 ml-1.5" />
+              Raise Budget Request <ArrowRight className="h-4 w-4 ml-1.5" />
             </Button>
           </div>
         </div>
