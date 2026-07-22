@@ -33,18 +33,21 @@ export const MEASURE_COLS = [
 ] as const
 
 /** Fixed column order. Index === column (A=0 … J=9). The parser depends on
- *  this exact order, so changing it is a template-version bump. */
+ *  this exact order, so changing it is a template-version bump.
+ *  M+L (combined) is the STANDARD/default rate cell and comes first; Material +
+ *  Installation are the OPTIONAL split, only used when rates come separately. */
 export const BOQ_COLS = [
   'Sr', 'Description', 'Unit', 'Qty',
-  'Material', 'Installation', 'M+L',
+  'Rate (M+L)', 'Material (split)', 'Installation (split)',
   'Rate', 'Amount', 'Remarks',
 ] as const
 export type BoqColName = typeof BOQ_COLS[number]
 
-/** 0-based column indices, named for readability in the writer + parser. */
+/** 0-based column indices, named for readability in the writer + parser.
+ *  ml (the combined rate) is the default, placed right after Qty. */
 export const COL = {
   sr: 0, description: 1, unit: 2, qty: 3,
-  material: 4, installation: 5, ml: 6,
+  ml: 4, material: 5, installation: 6,
   rate: 7, amount: 8, remarks: 9,
 } as const
 
@@ -151,11 +154,11 @@ export function buildBoqTemplateModel(opts: BoqTemplateOptions = {}): BoqTemplat
   cells['A2'] = s(ctx || 'Fill the header on the site before uploading.')
   merges.push({ s: { r: 1, c: 0 }, e: { r: 1, c: 9 } })
 
-  // Row 3 — the rule note (merged). Explains the M+L guard AND the three ways
-  // to fill Qty (the take-off basis the app captures).
+  // Row 3 — the rule note (merged). M+L is the standard; split is the exception.
   cells['A3'] = s(
-    'Fill EITHER Material + Installation OR the combined M+L — never both. ' +
-    'Rate = Material + Installation + M+L (auto). Amount = Qty × Rate (auto). ' +
+    'RATE — normally just fill the combined "Rate (M+L)". Only if the rate comes ' +
+    'split do you use Material + Installation instead (then leave M+L blank) — never both. ' +
+    'Rate & Amount auto-calc. ' +
     'QTY — fill it ONE of three ways: (1) a plain number = ESTIMATE (no drawing); ' +
     '(2) a take-off formula e.g. =946+104.5 = MEASURED; ' +
     (withMeasurement ? '(3) =Measurement!G7 to pull from the optional Measurement tab = MEASURED. ' : '') +
@@ -175,8 +178,9 @@ export function buildBoqTemplateModel(opts: BoqTemplateOptions = {}): BoqTemplat
   const itemRowEnd = itemRowStart + blankRows - 1
   for (let r = itemRowStart; r <= itemRowEnd; r++) {
     cells[addr(COL.sr, r)] = n(r - itemRowStart + 1)
-    // Rate = SUM(Material:M+L) — blank cells count as 0, never #VALUE!.
-    cells[addr(COL.rate, r)] = f(`SUM(${addr(COL.material, r)}:${addr(COL.ml, r)})`, MONEY_FMT)
+    // Rate = SUM(M+L, Material, Installation) — the three rate cells (E:G),
+    // whichever side is filled. Blank cells count as 0, never #VALUE!.
+    cells[addr(COL.rate, r)] = f(`SUM(${addr(COL.ml, r)}:${addr(COL.installation, r)})`, MONEY_FMT)
     // Amount = Qty × Rate.
     cells[addr(COL.amount, r)] = f(`${addr(COL.qty, r)}*${addr(COL.rate, r)}`, MONEY_FMT)
   }

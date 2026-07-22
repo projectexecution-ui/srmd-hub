@@ -6,13 +6,16 @@ import {
 } from './boq-template-parse'
 import { BOQ_TEMPLATE_MARKER, BOQ_META_SHEET } from './boq-template'
 
-// Column order: Sr | Description | Unit | Qty | Material | Installation | M+L | Rate | Amount | Remarks
-const HEADER = ['Sr', 'Description', 'Unit', 'Qty', 'Material', 'Installation', 'M+L', 'Rate', 'Amount', 'Remarks']
+// Column order: Sr | Description | Unit | Qty | M+L | Material | Installation | Rate | Amount | Remarks
+// (M+L is the primary/combined rate; Material + Installation are the optional split.)
+const HEADER = ['Sr', 'Description', 'Unit', 'Qty', 'M+L', 'Material', 'Installation', 'Rate', 'Amount', 'Remarks']
 type Cell = string | number | null
 const item = (sr: number, desc: string, unit: Cell, qty: Cell, mat: Cell, inst: Cell, ml: Cell, remarks: Cell = null): Cell[] =>
-  [sr, desc, unit, qty, mat, inst, ml, /*rate cache*/ 99999, /*amt cache*/ 99999, remarks]
+  [sr, desc, unit, qty, ml, mat, inst, /*rate cache*/ 99999, /*amt cache*/ 99999, remarks]
 
-/** Build a template BOQ AoA with title rows, header, items, and a ladder. */
+/** Build a template BOQ AoA with title rows, header, items, and a ladder.
+ *  Ladder labels follow the writer: Subtotal / GRAND TOTAL sit in the M+L
+ *  column (COL.ml = idx 4); Contingency / GST sit in Description (idx 1). */
 function sheet(items: Cell[][], opts: { contPct?: Cell; gstPct?: Cell; statedGrand?: Cell } = {}): unknown[][] {
   const aoa: unknown[][] = [
     ['STANDARD BOQ — 03 Civil'],
@@ -22,10 +25,10 @@ function sheet(items: Cell[][], opts: { contPct?: Cell; gstPct?: Cell; statedGra
     HEADER,
     ...items,
   ]
-  aoa.push([null, null, null, null, null, null, 'Subtotal', null, 12345])
+  aoa.push([null, null, null, null, 'Subtotal', null, null, null, 12345])
   aoa.push([null, 'Contingency', null, null, null, null, null, opts.contPct ?? 5, 0])
   aoa.push([null, 'GST', null, null, null, null, null, opts.gstPct ?? 18, 0])
-  aoa.push([null, null, null, null, null, null, 'GRAND TOTAL', null, opts.statedGrand ?? null])
+  aoa.push([null, null, null, null, 'GRAND TOTAL', null, null, null, opts.statedGrand ?? null])
   return aoa
 }
 

@@ -165,9 +165,9 @@ export function TemplateReviewGrid({
               <th className="px-2 py-1.5 text-left min-w-[180px]">Description</th>
               <th className="px-2 py-1.5 text-left w-20">Unit</th>
               <th className="px-2 py-1.5 text-right w-20">Qty</th>
-              <th className="px-2 py-1.5 text-right w-24" title="Leave empty if using M+L">Material</th>
-              <th className="px-2 py-1.5 text-right w-24" title="Leave empty if using M+L">Install.</th>
-              <th className="px-2 py-1.5 text-right w-24" title="Combined — leave empty if using split">M+L</th>
+              <th className="px-2 py-1.5 text-right w-24" title="Combined rate — the standard. Fill this unless the rate comes split.">Rate (M+L)</th>
+              <th className="px-2 py-1.5 text-right w-24 text-gray-400" title="Optional split — only if Material & Installation come separately (then leave M+L blank)">Material*</th>
+              <th className="px-2 py-1.5 text-right w-24 text-gray-400" title="Optional split — only if Material & Installation come separately (then leave M+L blank)">Instl.*</th>
               <th className="px-2 py-1.5 text-right w-24">Rate</th>
               <th className="px-2 py-1.5 text-right w-28">Amount</th>
               <th className="px-2 py-1.5 w-8"></th>
@@ -248,13 +248,13 @@ export function TemplateReviewGrid({
                       <Input value={r.qty ?? ''} onChange={e => updateQty(idx, e.target.value)} className={cellCls} inputMode="decimal" />
                     </td>
                     <td className="px-2 py-1.5">
-                      <Input value={r.material ?? ''} onChange={e => update(idx, { material: numOrNull(e.target.value) })} className={cellCls} inputMode="decimal" />
+                      <Input value={r.ml ?? ''} onChange={e => update(idx, { ml: numOrNull(e.target.value) })} className={cellCls} inputMode="decimal" placeholder="rate" />
                     </td>
                     <td className="px-2 py-1.5">
-                      <Input value={r.installation ?? ''} onChange={e => update(idx, { installation: numOrNull(e.target.value) })} className={cellCls} inputMode="decimal" />
+                      <Input value={r.material ?? ''} onChange={e => update(idx, { material: numOrNull(e.target.value) })} className={`${cellCls} text-gray-500`} inputMode="decimal" />
                     </td>
                     <td className="px-2 py-1.5">
-                      <Input value={r.ml ?? ''} onChange={e => update(idx, { ml: numOrNull(e.target.value) })} className={cellCls} inputMode="decimal" />
+                      <Input value={r.installation ?? ''} onChange={e => update(idx, { installation: numOrNull(e.target.value) })} className={`${cellCls} text-gray-500`} inputMode="decimal" />
                     </td>
                     <td className="px-2 py-1.5 text-right tabular-nums text-gray-600">{formatINR(ev.rate)}</td>
                     <td className="px-2 py-1.5 text-right tabular-nums font-semibold text-gray-900">{formatINR(ev.amount)}</td>
