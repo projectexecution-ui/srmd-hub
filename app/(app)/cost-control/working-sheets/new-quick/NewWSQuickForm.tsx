@@ -9,7 +9,7 @@ import { Input } from '@/components/ui/input'
 import { MoneyInput } from '@/components/ui/money-input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
-import { Loader2, Upload, Send, FileSpreadsheet, X, Sparkles, AlertTriangle, Image as ImageIcon, Download, Paperclip, FileText } from 'lucide-react'
+import { Loader2, Upload, FileSpreadsheet, X, Sparkles, AlertTriangle, Image as ImageIcon, Download, Paperclip, FileText } from 'lucide-react'
 import { formatINR } from '@/lib/utils'
 import { downloadBoqTemplate } from '@/lib/cost-control/boq-template-xlsx'
 import { COL as BOQ_COL } from '@/lib/cost-control/boq-template'
@@ -1059,14 +1059,14 @@ export function NewWSQuickForm({ projects, projectDisciplines, projectSubSkills,
 
       <div className="space-y-1.5">
         <Button type="submit" disabled={submitting || missingToSend.length > 0}>
-          {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-          {reviewer ? 'Save & analyse' : 'Save & send'}
+          {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileSpreadsheet className="h-4 w-4" />}
+          Create Budget Request
         </Button>
-        {missingToSend.length > 0 && (
-          <p className="text-xs text-amber-700">
-            Before you can send: {missingToSend.join(' · ')}.
-          </p>
-        )}
+        <p className="text-[11px] text-gray-500">
+          {missingToSend.length > 0
+            ? <>Before you can create this: {missingToSend.join(' · ')}.</>
+            : <>Creates the sheet — you review it and send it for approval on the next screen.</>}
+        </p>
       </div>
     </form>
   )
