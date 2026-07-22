@@ -133,12 +133,17 @@ export function CumulativeBoqPanel({ rows, summary, workingByKey = {} }: Props) 
           </tbody>
           <tfoot className="border-t-2 border-gray-200 bg-gray-50">
             <tr>
-              <td className="px-2 py-2 text-right text-gray-600" colSpan={4}>Approved so far</td>
+              <td className="px-2 py-2 text-right text-gray-600" colSpan={4}>Already approved (previous version)</td>
               <td className="px-2 py-2 text-right tabular-nums text-gray-700">{formatINR(summary.approvedTotal)}</td>
               <td></td>
             </tr>
+            <tr className="bg-indigo-50/60">
+              <td className="px-2 py-2 text-right font-bold text-indigo-800" colSpan={4}>➜ New in this request (to approve now)</td>
+              <td className="px-2 py-2 text-right font-bold text-lg tabular-nums text-indigo-800">{formatINR(summary.newAskTotal - summary.approvedTotal)}</td>
+              <td></td>
+            </tr>
             <tr>
-              <td className="px-2 py-2 text-right font-semibold text-gray-800" colSpan={4}>This version total</td>
+              <td className="px-2 py-2 text-right font-semibold text-gray-800" colSpan={4}>This version total (cumulative)</td>
               <td className="px-2 py-2 text-right font-bold tabular-nums text-gray-900">{formatINR(summary.newAskTotal)}</td>
               <td></td>
             </tr>

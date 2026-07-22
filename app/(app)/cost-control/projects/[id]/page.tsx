@@ -7,7 +7,7 @@ import { IeRevisionPanel, type IeRevision } from './IeRevisionPanel'
 import { EngineerProjectView } from './EngineerProjectView'
 import { PageHeader } from '@/components/PageHeader'
 import { SetupProgressBanner } from '@/components/ProjectSetupWizard/SetupProgressBanner'
-import { Plus, Flame, Info, Settings } from 'lucide-react'
+import { Plus, Flame, Info, Settings, Download } from 'lucide-react'
 import { formatINR } from '@/lib/utils'
 import { getCcSettings } from '@/lib/cost-control/settings'
 import { QueryError } from '@/components/ui/query-error'
@@ -546,6 +546,15 @@ export default async function CostControlProjectDetailPage(
                 <Settings className="h-4 w-4" /> Settings
               </Link>
             </>
+          )}
+          {reviewer && (
+            <a
+              href={`/api/cost-control/master-export?project=${project.id}`}
+              className="inline-flex items-center gap-1.5 h-9 px-3 rounded-md bg-white text-emerald-800 border border-emerald-300 text-sm font-semibold hover:bg-emerald-50"
+              title="Download the whole Internal Estimate as one linked Master Excel — every category & sub-skill, sheets cross-linked"
+            >
+              <Download className="h-4 w-4" /> Master Excel
+            </a>
           )}
         </div>
       </div>
