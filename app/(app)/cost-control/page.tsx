@@ -19,6 +19,7 @@ import { getLastBphSync } from '@/app/(app)/cost-control/import/bph/actions'
 import { getCcSettings } from '@/lib/cost-control/settings'
 import { getEffectiveCcRole } from '@/app/(app)/cost-control/billing/billing-actions'
 import { GroupLabelChip } from './GroupLabelChip'
+import { TreeProvider, TreeToolbar, CatChevron, CatRows } from '@/components/cost-control/project-tree'
 import { AssignedToMePopover } from './AssignedToMePopover'
 import { CcQuickSearch } from './CcQuickSearch'
 import { coveringApproverRole } from '@/lib/cost-control/approver-roles'
@@ -550,7 +551,16 @@ export default async function CostControlLandingPage() {
 
       {ccProjects.length > 0 ? (
         // Tabular project overview — more data per glance than the old cards.
+        // Client groups (NGH, P2, …) collapse into their roll-up like the
+        // project detail tree.
+        <TreeProvider allCatIds={projGroups.filter(g => g.label).map(g => g.key)}>
         <Card className="overflow-hidden">
+          {projGroups.some(g => g.label) && (
+            <div className="flex items-center justify-between px-3 py-2 border-b border-gray-100 bg-gray-50/60">
+              <span className="text-[11px] font-medium text-gray-500">Projects grouped by client — click a group to collapse; totals roll up.</span>
+              <TreeToolbar />
+            </div>
+          )}
           <div className="overflow-x-auto">
             <table className="w-full text-[13px]">
               <thead className="bg-gray-50 text-left">
@@ -580,6 +590,7 @@ export default async function CostControlLandingPage() {
                     {g.label && (
                       <tr className="bg-indigo-50/80 border-t border-indigo-100">
                         <td className="px-3 py-2 font-bold text-[11px] uppercase tracking-wide text-indigo-900" colSpan={2}>
+                          <CatChevron catId={g.key} />
                           {g.key !== '_independent'
                             ? <GroupLabelChip projectId={g.key} label={g.label ?? ''} isAdmin={isAdmin} />
                             : g.label}
@@ -610,6 +621,7 @@ export default async function CostControlLandingPage() {
                         )}
                       </tr>
                     )}
+                    <CatRows catId={g.key}>
                     {g.members.map(p => {
                   const pct = p.setup_progress_pct ?? 0
                   const isIncomplete = pct < 100
@@ -688,6 +700,7 @@ export default async function CostControlLandingPage() {
                     </tr>
                   )
                     })}
+                    </CatRows>
                   </Fragment>
                   )
                 })}
@@ -695,6 +708,7 @@ export default async function CostControlLandingPage() {
             </table>
           </div>
         </Card>
+        </TreeProvider>
       ) : (
         <Card>
           <EmptyState
