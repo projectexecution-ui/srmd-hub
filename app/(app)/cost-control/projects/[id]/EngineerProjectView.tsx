@@ -6,6 +6,7 @@ import { PageHeader } from '@/components/PageHeader'
 import { QueryError } from '@/components/ui/query-error'
 import { formatINR } from '@/lib/utils'
 import { isPendingStatus } from '@/lib/cost-control/chain'
+import { TreeProvider, TreeToolbar, CatChevron, CatRows, SubRow } from '@/components/cost-control/project-tree'
 
 // Engineer-safe project table. Deliberately a SEPARATE component from the
 // management Internal Estimate page so a confidential figure can't leak: it
@@ -122,6 +123,19 @@ export async function EngineerProjectTable({ projectId }: { projectId: string })
   let totBudget = 0, totWO = 0, totPending = 0
   for (const d of disciplines) { const t = discTotal(d.id); totBudget += t.budget; totWO += t.wo; totPending += t.pending }
 
+  // A sub-skill is "empty" for the engineer only if there's nothing to act on:
+  // no sheet, no ERP, no pending money — AND it isn't assigned to them (an
+  // assigned sub-skill always shows so they can raise its first sheet).
+  const isSubEmpty = (dId: string, s: SRow) => {
+    const bl = blMap.get(`${dId}::${s.id}`)
+    const ag = wsAgg.get(`${dId}::${s.id}`)
+    return (ag?.chains ?? 0) === 0 && (ag?.pending ?? 0) === 0
+      && (bl?.budget ?? 0) === 0 && (bl?.wo ?? 0) === 0
+      && !myAssignedSubs.has(s.id)
+  }
+  let emptyCount = 0
+  for (const d of disciplines) for (const s of (subsByDisc.get(d.id) ?? [])) if (isSubEmpty(d.id, s)) emptyCount++
+
   const errored = pdRes.error || psRes.error || blRes.error || wsRes.error
 
   return (
@@ -135,7 +149,14 @@ export async function EngineerProjectTable({ projectId }: { projectId: string })
         <KPI label="Committed (WO / PO)" value={totWO > 0 ? formatINR(totWO) : '—'} tone="purple" />
       </div>
 
+      <TreeProvider allCatIds={disciplines.map(d => d.id)} emptyCount={emptyCount}>
       <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
+        {disciplines.length > 0 && (
+          <div className="flex items-center justify-between px-3 py-2 border-b border-gray-100 bg-gray-50/60">
+            <span className="text-[11px] font-medium text-gray-500">Your work by category — click a row to collapse.</span>
+            <TreeToolbar />
+          </div>
+        )}
         <div className="overflow-x-auto">
           <table className="w-full text-[13px]">
             <thead className="bg-gray-50 text-left">
@@ -155,6 +176,7 @@ export async function EngineerProjectTable({ projectId }: { projectId: string })
                   <Fragment key={d.id}>
                     <tr className="bg-gray-50/60 border-t border-gray-200">
                       <td className="px-3 py-2 font-semibold text-gray-800">
+                        <CatChevron catId={d.id} />
                         <span className="font-mono text-[11px] text-gray-400 mr-2">{d.code}</span>{d.name}
                       </td>
                       <td className="px-3 py-2 text-right tabular-nums text-amber-700">{dt.pending > 0 ? formatINR(dt.pending) : '—'}</td>
@@ -162,12 +184,14 @@ export async function EngineerProjectTable({ projectId }: { projectId: string })
                       <td className="px-3 py-2 text-right tabular-nums text-gray-600">{dt.wo > 0 ? formatINR(dt.wo) : '—'}</td>
                       <td className="px-3 py-2"></td>
                     </tr>
+                    <CatRows catId={d.id}>
                     {subs.map(s => {
                       const bl = blMap.get(`${d.id}::${s.id}`)
                       const ag = wsAgg.get(`${d.id}::${s.id}`)
                       const chains = ag?.chains ?? 0
                       return (
-                        <tr key={s.id} className="border-t border-gray-100 hover:bg-gray-50/60">
+                        <SubRow key={s.id} empty={isSubEmpty(d.id, s)}>
+                        <tr className="border-t border-gray-100 hover:bg-gray-50/60">
                           <td className="pl-9 pr-3 py-2 text-gray-700">
                             <span className="font-mono text-[11px] text-gray-400 mr-2">{s.code}</span>{s.name}
                           </td>
@@ -192,8 +216,10 @@ export async function EngineerProjectTable({ projectId }: { projectId: string })
                             )}
                           </td>
                         </tr>
+                        </SubRow>
                       )
                     })}
+                    </CatRows>
                   </Fragment>
                 )
               })}
@@ -206,6 +232,7 @@ export async function EngineerProjectTable({ projectId }: { projectId: string })
           </table>
         </div>
       </div>
+      </TreeProvider>
     </div>
   )
 }

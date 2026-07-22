@@ -975,7 +975,14 @@ async function EngineerHome({ userId, canWrite, label }: { userId: string | null
           />
         </Card>
       ) : (
+        <TreeProvider allCatIds={[...realGroups.map(g => g.key), ...(realGroups.length > 0 && soloProjects.length > 0 ? ['_independent'] : [])]}>
         <Card className="overflow-hidden">
+          {realGroups.length > 0 && (
+            <div className="flex items-center justify-between px-3 py-2 border-b border-gray-100 bg-gray-50/60">
+              <span className="text-[11px] font-medium text-gray-500">Grouped by client — click a group to collapse.</span>
+              <TreeToolbar />
+            </div>
+          )}
           <div className="overflow-x-auto">
             <table className="w-full text-[13px]">
               <thead className="bg-gray-50 text-left">
@@ -1000,6 +1007,7 @@ async function EngineerHome({ userId, canWrite, label }: { userId: string | null
                     <Fragment key={g.key}>
                       <tr className="bg-indigo-50/80 border-t border-indigo-100">
                         <td className="px-3 py-2 font-bold text-[11px] uppercase tracking-wide text-indigo-900">
+                          <CatChevron catId={g.key} />
                           {g.label}
                           <span className="ml-2 font-normal normal-case text-indigo-400">{g.members.length} project{g.members.length === 1 ? '' : 's'}</span>
                         </td>
@@ -1008,7 +1016,7 @@ async function EngineerHome({ userId, canWrite, label }: { userId: string | null
                         <td className="px-3 py-2 text-right tabular-nums text-[11px] font-semibold text-indigo-900/70">{gt.wo > 0 ? formatINR(gt.wo) : '—'}</td>
                         <td className="px-3 py-2"></td>
                       </tr>
-                      {g.members.map(p => renderProjRow(p, true))}
+                      <CatRows catId={g.key}>{g.members.map(p => renderProjRow(p, true))}</CatRows>
                     </Fragment>
                   )
                 })}
@@ -1017,18 +1025,24 @@ async function EngineerHome({ userId, canWrite, label }: { userId: string | null
                     {realGroups.length > 0 && (
                       <tr className="bg-gray-50 border-t border-gray-200">
                         <td className="px-3 py-2 font-bold text-[11px] uppercase tracking-wide text-gray-500" colSpan={5}>
+                          <CatChevron catId="_independent" />
                           Independent projects
                           <span className="ml-2 font-normal normal-case text-gray-400">{soloProjects.length} project{soloProjects.length === 1 ? '' : 's'}</span>
                         </td>
                       </tr>
                     )}
-                    {soloProjects.map(p => renderProjRow(p, false))}
+                    {realGroups.length > 0 ? (
+                      <CatRows catId="_independent">{soloProjects.map(p => renderProjRow(p, false))}</CatRows>
+                    ) : (
+                      soloProjects.map(p => renderProjRow(p, false))
+                    )}
                   </Fragment>
                 )}
               </tbody>
             </table>
           </div>
         </Card>
+        </TreeProvider>
       )}
     </div>
   )
