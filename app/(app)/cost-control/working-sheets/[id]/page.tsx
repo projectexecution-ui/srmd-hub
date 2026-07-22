@@ -778,12 +778,15 @@ export default async function WorkingSheetEditorPage(
         </div>
       )}
 
-      {/* Returned-reason — the engineer MUST see this even without the
-          management strip below. */}
-      {!reviewer && status === 'returned' && ws.return_reason && (
-        <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-800">
-          <p className="font-semibold mb-1">Returned for revision</p>
-          <p>{ws.return_reason}</p>
+      {/* Returned-reason — the engineer's #1 action item. Prominent, with the
+          reason + a clear next step (fix and re-submit from the panel below). */}
+      {!reviewer && status === 'returned' && (
+        <div className="rounded-lg border-2 border-red-300 bg-red-50 p-4 text-sm text-red-900">
+          <p className="font-bold text-red-800 text-[15px]">⛔ Returned for revision — action needed</p>
+          {ws.return_reason
+            ? <p className="mt-1.5">{ws.return_reason}</p>
+            : <p className="mt-1.5 text-red-700">The approver sent this sheet back for changes.</p>}
+          <p className="mt-2 text-xs font-medium text-red-700">Update your working and re-submit for approval from the panel below ↓</p>
         </div>
       )}
 

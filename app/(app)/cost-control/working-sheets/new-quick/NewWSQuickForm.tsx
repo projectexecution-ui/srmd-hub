@@ -290,6 +290,11 @@ export function NewWSQuickForm({ projects, projectDisciplines, projectSubSkills,
   const [projectId, setProjectId]     = useState(defaultProjectId ?? projects[0]?.id ?? '')
   const [disciplineId, setDisciplineId] = useState(defaultDisciplineId ?? '')
   const [subSkillId, setSubSkillId]   = useState(defaultSubSkillId ?? '')
+  // Opened from a sub-skill row (discipline + sub-skill pre-filled)? Collapse
+  // the picker to a one-line summary so the engineer lands straight on
+  // Download template → Upload. "Change" reopens it.
+  const cameFromRow = !!(defaultDisciplineId && defaultSubSkillId)
+  const [showContext, setShowContext] = useState(!cameFromRow)
   // Combined (M+L) is the standard — Work / Material are the split exceptions.
   const [lineType, setLineType]       = useState<'work' | 'material' | 'combined'>('combined')
   const [summaryTotal, setSummaryTotal] = useState('')
@@ -734,7 +739,19 @@ export function NewWSQuickForm({ projects, projectDisciplines, projectSubSkills,
     <form onSubmit={submit} className="space-y-5">
       {error && <p className="text-sm text-rose-700 bg-rose-50 border border-rose-200 rounded-lg px-3 py-2">{error}</p>}
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+      {!showContext && (
+        <div className="flex items-center justify-between gap-3 rounded-xl border border-gray-200 bg-gray-50 px-3 py-2.5">
+          <p className="text-sm text-gray-700 min-w-0 truncate">
+            <span className="font-semibold text-gray-900">{selProject?.code}</span>
+            <span className="text-gray-400"> · </span>{selDiscipline?.code} {selDiscipline?.name}
+            <span className="text-gray-400"> → </span>{selSubSkill?.code} {selSubSkill?.name}
+            <span className="text-gray-400"> · {lineType === 'combined' ? 'Combined (M+L)' : lineType === 'material' ? 'Material' : 'Work'}</span>
+          </p>
+          <Button type="button" size="sm" variant="ghost" className="flex-shrink-0" onClick={() => setShowContext(true)}>Change</Button>
+        </div>
+      )}
+
+      <div className={`grid grid-cols-1 md:grid-cols-2 gap-3 ${showContext ? '' : 'hidden'}`}>
         <div>
           <Label>Project *</Label>
           <select value={projectId} onChange={e => { setProjectId(e.target.value); setDisciplineId(''); setSubSkillId('') }}

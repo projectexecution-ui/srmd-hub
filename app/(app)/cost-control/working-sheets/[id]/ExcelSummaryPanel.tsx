@@ -196,7 +196,7 @@ export function ExcelSummaryPanel({
             const hasExtras = buckets.tax.count + buckets.addon.count + buckets.discount.count > 0
             return (
               <>
-                <div className={`grid grid-cols-2 ${showFlags ? 'md:grid-cols-4' : 'md:grid-cols-2'} gap-3 mt-4 text-sm`}>
+                <div className={`grid grid-cols-2 ${showFlags ? 'md:grid-cols-3' : 'md:grid-cols-2'} gap-3 mt-4 text-sm`}>
                   <Cell
                     accent
                     label="Sheet total"
@@ -208,18 +208,14 @@ export function ExcelSummaryPanel({
                     value={rows.length}
                     hint="Rows read from your sheet"
                   />
+                  {/* One review-signal card (reviewers only): rows the checker
+                      is unsure about. The old "AI check: Off/Done" card was
+                      noise — the Analysis card below already says if AI ran. */}
                   {showFlags && (
                     <Cell
                       label="Items to check"
                       value={flagSummary?.flagged_rows ?? rows.filter(r => r.flag).length}
                       hint="Rows our checker is unsure about"
-                    />
-                  )}
-                  {showFlags && (
-                    <Cell
-                      label="AI check"
-                      value={flagSummary?.ai_used ? 'Done' : 'Off'}
-                      hint={flagSummary?.ai_used ? 'AI reviewed this sheet' : 'AI was not run yet'}
                     />
                   )}
                 </div>
