@@ -53,31 +53,35 @@ export async function GET(req: NextRequest) {
   const subs: SS[] = (ps ?? []).map(r => (Array.isArray(r.cc_sub_skills) ? r.cc_sub_skills[0] : r.cc_sub_skills)).filter(Boolean) as SS[]
   discs.sort((a, b) => (a.display_order ?? 0) - (b.display_order ?? 0) || a.code.localeCompare(b.code))
 
-  // Latest LIVE working sheet per (sub-skill, line_type) BUCKET — a sub-skill
-  // can have several buckets (work / material), each its own chain.
+  // Latest LIVE working sheet per (sub-skill, line_type) BUCKET, split into the
+  // Internal Estimate baseline (the "[IB]" imports — the workings management
+  // maintains, like the V8 master) and engineers' asks. A sub-skill can have
+  // several buckets (work / material), each its own chain.
   const { data: wsAll } = await supabase
     .from('cc_ws_with_versions')
     .select('id, ws_code, sub_skill_id, line_type, version_no, status, total_amount, summary_notes, archived_at')
     .eq('project_id', projectId)
-  const bucketsBySub = new Map<string, Bucket[]>()
-  const latestByKey = new Map<string, { versionNo: number }>()
+  const ibBySub = new Map<string, Bucket[]>()   // internal-estimate workings
+  const engBySub = new Map<string, Bucket[]>()  // engineers' asks
+  const latestByKey = new Map<string, number>()
   for (const w of (wsAll ?? [])) {
     if (!w.sub_skill_id) continue
-    if ((w.summary_notes ?? '').startsWith('[IB')) continue
     if (w.status === 'cancelled' || w.archived_at) continue
-    const key = `${w.sub_skill_id}::${w.line_type ?? ''}`
+    const isIb = (w.summary_notes ?? '').startsWith('[IB')
+    const map = isIb ? ibBySub : engBySub
+    const key = `${isIb ? 'ib' : 'eng'}::${w.sub_skill_id}::${w.line_type ?? ''}`
     const v = w.version_no ?? 0
     const seen = latestByKey.get(key)
-    if (seen && v <= seen.versionNo) continue
-    latestByKey.set(key, { versionNo: v })
-    const arr = bucketsBySub.get(w.sub_skill_id) ?? []
+    if (seen != null && v <= seen) continue
+    latestByKey.set(key, v)
+    const arr = map.get(w.sub_skill_id) ?? []
     const existing = arr.findIndex(b => b.lineType === (w.line_type ?? null))
     const bucket: Bucket = { wsId: w.id, wsCode: w.ws_code, status: w.status, total: Number(w.total_amount) || 0, versionNo: v, lineType: w.line_type ?? null }
     if (existing >= 0) arr[existing] = bucket; else arr.push(bucket)
-    bucketsBySub.set(w.sub_skill_id, arr)
+    map.set(w.sub_skill_id, arr)
   }
 
-  const allWsIds = [...bucketsBySub.values()].flat().map(b => b.wsId)
+  const allWsIds = [...ibBySub.values(), ...engBySub.values()].flat().map(b => b.wsId)
   const rowsByWs = new Map<string, Row[]>()
   if (allWsIds.length) {
     const { data: rows } = await supabase
@@ -122,7 +126,7 @@ export async function GET(req: NextRequest) {
   // A sub-sheet per bucket; its GRAND = the WS total_amount (GST-inclusive), with
   // a reconciling "GST / additions" line when total ≠ Σ rows. Returns the grand
   // cell so the Master can link to it.
-  function buildBucketSheet(label: string, b: Bucket): string {
+  function buildBucketSheet(label: string, b: Bucket): { name: string; grandRef: string } {
     const rows = rowsByWs.get(b.wsId) ?? []
     const ws: Record<string, unknown> = {}
     ws['A1'] = S(label)
@@ -159,24 +163,37 @@ export async function GET(req: NextRequest) {
     ws['!cols'] = [{ wch: 4 }, { wch: 40 }, { wch: 7 }, { wch: 10 }, { wch: 11 }, { wch: 14 }]
     const nm = sheetName(label, used)
     XLSX.utils.book_append_sheet(wb, ws as unknown as XLSX.WorkSheet, nm)
-    return nm
+    return { name: nm, grandRef: `'${nm}'!F${grandRow}` }
   }
 
-  // Per sub-skill: build its BOQ drill-down tab(s) and remember the version
-  // label + the first tab's name (for a hyperlink from the summary).
-  const subMeta = new Map<string, { versionLabel: string; firstSheet: string }>()
+  // Per sub-skill: build the BOQ drill-down tab(s) for BOTH the internal-estimate
+  // working ([IB]) and the engineer's ask, and remember the version label, the
+  // internal-estimate grand cell refs (so the summary's Internal Estimate cell
+  // is a LIVE cross-sheet link to those working sheets, like the V8 master), the
+  // tab to open from the sub-skill name, and the ask tab to open from Awaiting.
+  interface SubMeta { versionLabel: string; nameLink: string; ieRefs: string[]; engLink: string }
+  const subMeta = new Map<string, SubMeta>()
+  const vlabel = (b: Bucket, many: boolean) => many ? `v${b.versionNo} (${b.lineType ?? 'work'})` : `v${b.versionNo}`
   for (const sub of subs) {
-    const buckets = bucketsBySub.get(sub.id)
-    if (!buckets || buckets.length === 0) continue
-    const vparts: string[] = []
-    let firstSheet = ''
-    for (const b of buckets) {
-      const label = buckets.length > 1 ? `${sub.code} ${sub.name} (${b.lineType ?? 'work'})` : `${sub.code} ${sub.name}`
-      const nm = buildBucketSheet(label, b)
-      if (!firstSheet) firstSheet = nm
-      vparts.push(buckets.length > 1 ? `v${b.versionNo} (${b.lineType ?? 'work'})` : `v${b.versionNo}`)
+    const ib = ibBySub.get(sub.id) ?? []
+    const eng = engBySub.get(sub.id) ?? []
+    if (ib.length === 0 && eng.length === 0) continue
+    const ieRefs: string[] = []
+    let nameLink = '', engLink = ''
+    for (const b of ib) {
+      const label = ib.length > 1 ? `${sub.code} ${sub.name} (${b.lineType ?? 'work'})` : `${sub.code} ${sub.name}`
+      const { name, grandRef } = buildBucketSheet(label, b)
+      ieRefs.push(grandRef)
+      if (!nameLink) nameLink = name
     }
-    subMeta.set(sub.id, { versionLabel: vparts.join(' · '), firstSheet })
+    for (const b of eng) {
+      const label = `${sub.code} ${sub.name} — ask${eng.length > 1 ? ` (${b.lineType ?? 'work'})` : ''}`
+      const { name } = buildBucketSheet(label, b)
+      if (!engLink) engLink = name
+      if (!nameLink) nameLink = name
+    }
+    const versionLabel = (ib.length ? ib.map(b => vlabel(b, ib.length > 1)) : eng.map(b => vlabel(b, eng.length > 1))).join(' · ')
+    subMeta.set(sub.id, { versionLabel, nameLink, ieRefs, engLink })
   }
 
   // Master summary — EVERY enabled category and sub-skill with the SAME
@@ -217,12 +234,18 @@ export async function GET(req: NextRequest) {
       const meta = subMeta.get(s.id)
       if (meta) {
         m['C' + mr] = S(meta.versionLabel)
-        // Hyperlink the sub-skill name to its BOQ drill-down tab.
-        if (meta.firstSheet) (m['B' + mr] as { l?: unknown }).l = { Target: `#'${meta.firstSheet}'!A1`, Tooltip: 'Open BOQ detail' }
+        // Hyperlink the sub-skill name to its working sheet tab.
+        if (meta.nameLink) (m['B' + mr] as { l?: unknown }).l = { Target: `#'${meta.nameLink}'!A1`, Tooltip: 'Open working sheet' }
       }
       const f = subFigures(rollup, d.id, s.id)
-      m[IE + mr] = N(f.internalEstimate, MONEY_DASH)
+      // Internal Estimate — LIVE cross-sheet link to the sub-skill's working
+      // sheet grand(s), so the workbook stays internally connected (V8 master).
+      m[IE + mr] = (meta && meta.ieRefs.length)
+        ? F(meta.ieRefs.join('+'), f.internalEstimate, MONEY_DASH)
+        : N(f.internalEstimate, MONEY_DASH)
       m[AWAIT + mr] = N(f.awaitingApproval, MONEY_DASH)
+      // Drill into the engineer's ask sheet from the Awaiting cell.
+      if (meta?.engLink) (m[AWAIT + mr] as { l?: unknown }).l = { Target: `#'${meta.engLink}'!A1`, Tooltip: 'Open the engineer working sheet' }
       m[BUD + mr] = N(f.budget, MONEY_DASH)
       m[WO + mr] = N(f.wo, MONEY_DASH)
       m[PAID + mr] = N(f.paid, MONEY_DASH)
