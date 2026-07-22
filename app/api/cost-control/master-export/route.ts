@@ -28,7 +28,7 @@ function sheetName(base: string, used: Set<string>): string {
 }
 
 interface Row { description: string | null; unit: string | null; qty: number | null; rate: number | null; amount: number | null }
-interface Bucket { wsId: string; total: number; versionNo: number; lineType: string | null }
+interface Bucket { wsId: string; wsCode: string; status: string; total: number; versionNo: number; lineType: string | null }
 
 export async function GET(req: NextRequest) {
   await requirePermission('cost-control', 'view')
@@ -55,7 +55,7 @@ export async function GET(req: NextRequest) {
   // can have several buckets (work / material), each its own chain.
   const { data: wsAll } = await supabase
     .from('cc_ws_with_versions')
-    .select('id, sub_skill_id, line_type, version_no, status, total_amount, summary_notes, archived_at')
+    .select('id, ws_code, sub_skill_id, line_type, version_no, status, total_amount, summary_notes, archived_at')
     .eq('project_id', projectId)
   const bucketsBySub = new Map<string, Bucket[]>()
   const latestByKey = new Map<string, { versionNo: number }>()
@@ -70,7 +70,7 @@ export async function GET(req: NextRequest) {
     latestByKey.set(key, { versionNo: v })
     const arr = bucketsBySub.get(w.sub_skill_id) ?? []
     const existing = arr.findIndex(b => b.lineType === (w.line_type ?? null))
-    const bucket: Bucket = { wsId: w.id, total: Number(w.total_amount) || 0, versionNo: v, lineType: w.line_type ?? null }
+    const bucket: Bucket = { wsId: w.id, wsCode: w.ws_code, status: w.status, total: Number(w.total_amount) || 0, versionNo: v, lineType: w.line_type ?? null }
     if (existing >= 0) arr[existing] = bucket; else arr.push(bucket)
     bucketsBySub.set(w.sub_skill_id, arr)
   }
@@ -100,6 +100,7 @@ export async function GET(req: NextRequest) {
     const rows = rowsByWs.get(b.wsId) ?? []
     const ws: Record<string, unknown> = {}
     ws['A1'] = S(label)
+    ws['A2'] = S(`Version ${b.versionNo} · ${b.wsCode}${b.status ? ' · ' + b.status.replace(/_/g, ' ') : ''}`)
     ;['Sr', 'Description', 'Unit', 'Qty', 'Rate', 'Amount'].forEach((h, i) => { ws[String.fromCharCode(65 + i) + '3'] = S(h) })
     let r = 4, rowsum = 0
     rows.forEach((row, i) => {
@@ -136,57 +137,69 @@ export async function GET(req: NextRequest) {
   }
 
   // Per sub-skill: link cell(s) to its bucket grand(s). Multi-bucket → sum them.
-  const subLink = new Map<string, { formula: string; total: number }>()
+  const subLink = new Map<string, { formula: string; total: number; versionLabel: string }>()
   for (const sub of subs) {
     const buckets = bucketsBySub.get(sub.id)
     if (!buckets || buckets.length === 0) continue
     const refs: string[] = []
+    const vparts: string[] = []
     let total = 0
     for (const b of buckets) {
       const label = buckets.length > 1 ? `${sub.code} ${sub.name} (${b.lineType ?? 'work'})` : `${sub.code} ${sub.name}`
       refs.push(buildBucketSheet(label, b))
+      vparts.push(buckets.length > 1 ? `v${b.versionNo} (${b.lineType ?? 'work'})` : `v${b.versionNo}`)
       total += b.total
     }
-    subLink.set(sub.id, { formula: refs.join('+'), total })
+    subLink.set(sub.id, { formula: refs.join('+'), total, versionLabel: vparts.join(' · ') })
   }
 
-  // Master summary — EVERY enabled category and sub-skill.
+  // Master summary — EVERY enabled category and sub-skill, with a Version
+  // column and collapsible category→sub-skill grouping (Excel row outline).
   const m: Record<string, unknown> = {}
+  const hasSft = sft > 0
+  const AMT = 'D', SFT = 'E'
   m['A1'] = S(`INTERNAL ESTIMATE — MASTER · ${project.code} ${project.name}`)
-  const cols = ['Work Category', 'Sub Skill', 'Amount', ...(sft > 0 ? ['Rs / sft'] : [])]
+  const cols = ['Work Category', 'Sub Skill', 'Version', 'Amount', ...(hasSft ? ['Rs / sft'] : [])]
   cols.forEach((h, i) => { m[String.fromCharCode(65 + i) + '3'] = S(h) })
+  const rowLevels: Array<{ level?: number }> = []
+  const setLevel = (r1: number, level: number) => { rowLevels[r1 - 1] = level ? { level } : {} }
   let mr = 4
   const catSubtotalCells: string[] = []
   let grand = 0
   for (const d of discs) {
     const dSubs = subs.filter(s => s.discipline_id === d.id).sort((a, b) => a.code.localeCompare(b.code))
     if (dSubs.length === 0) continue
-    m['A' + mr] = S(`${d.code} ${d.name}`); mr++
+    m['A' + mr] = S(`${d.code} ${d.name}`); setLevel(mr, 0); mr++    // category header
     const catStart = mr
     let catHasAmount = false
     for (const s of dSubs) {
       m['B' + mr] = S(`${s.code} ${s.name}`)
       const link = subLink.get(s.id)
       if (link) {
-        m['C' + mr] = F(link.formula, link.total, MONEY)
-        if (sft > 0) m['D' + mr] = F(`IF(C${mr}="","",ROUND(C${mr}/${sft},0))`, Math.round(link.total / sft), MONEY)
+        m['C' + mr] = S(link.versionLabel)
+        m[AMT + mr] = F(link.formula, link.total, MONEY)
+        if (hasSft) m[SFT + mr] = F(`IF(${AMT}${mr}="","",ROUND(${AMT}${mr}/${sft},0))`, Math.round(link.total / sft), MONEY)
         grand += link.total; catHasAmount = true
       } else {
-        m['C' + mr] = S('—')  // enabled but no working sheet yet
+        m['C' + mr] = S(''); m[AMT + mr] = S('—')  // enabled but no working sheet yet
       }
+      setLevel(mr, 1)   // sub-skill detail → collapsible under its category
       mr++
     }
     m['B' + mr] = S(`${d.code} subtotal`)
-    m['C' + mr] = catHasAmount ? F(`SUM(C${catStart}:C${mr - 1})`, dSubs.reduce((a, s) => a + (subLink.get(s.id)?.total ?? 0), 0), MONEY) : S('—')
-    if (catHasAmount) catSubtotalCells.push(`C${mr}`)
+    m[AMT + mr] = catHasAmount ? F(`SUM(${AMT}${catStart}:${AMT}${mr - 1})`, dSubs.reduce((a, s) => a + (subLink.get(s.id)?.total ?? 0), 0), MONEY) : S('—')
+    if (catHasAmount) catSubtotalCells.push(`${AMT}${mr}`)
+    setLevel(mr, 0)   // subtotal = the group's summary row (below its detail)
     mr += 2
   }
   m['B' + mr] = S('GRAND TOTAL')
-  m['C' + mr] = catSubtotalCells.length ? F(catSubtotalCells.join('+'), grand, MONEY) : N(grand, MONEY)
-  if (sft > 0) m['D' + mr] = F(`ROUND(C${mr}/${sft},0)`, sft > 0 ? Math.round(grand / sft) : 0, MONEY)
-  m['!ref'] = `A1:${sft > 0 ? 'D' : 'C'}${mr}`
-  m['!cols'] = [{ wch: 26 }, { wch: 36 }, { wch: 16 }, ...(sft > 0 ? [{ wch: 10 }] : [])]
-  m['!merges'] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: sft > 0 ? 3 : 2 } }]
+  m[AMT + mr] = catSubtotalCells.length ? F(catSubtotalCells.join('+'), grand, MONEY) : N(grand, MONEY)
+  if (hasSft) m[SFT + mr] = F(`ROUND(${AMT}${mr}/${sft},0)`, sft > 0 ? Math.round(grand / sft) : 0, MONEY)
+  m['!ref'] = `A1:${hasSft ? 'E' : 'D'}${mr}`
+  m['!cols'] = [{ wch: 26 }, { wch: 36 }, { wch: 16 }, { wch: 16 }, ...(hasSft ? [{ wch: 10 }] : [])]
+  m['!merges'] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: hasSft ? 4 : 3 } }]
+  m['!rows'] = rowLevels
+  m['!outline'] = { above: false }   // subtotal (summary) sits below its detail
 
   wb.SheetNames.unshift(masterName)
   wb.Sheets[masterName] = m as unknown as XLSX.WorkSheet
