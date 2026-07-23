@@ -220,20 +220,18 @@ export function RevisionEditor({ wsId, priorApproved, initial, attachments, canE
                 <th className="px-2 py-1.5 text-right w-24">Install.</th>
                 <th className="px-2 py-1.5 text-right w-24">M+L</th>
                 <th className="px-2 py-1.5 text-right w-24">Amount</th>
-                <th className="px-2 py-1.5 text-left w-24">Working</th>
                 <th className="px-2 py-1.5 w-8"></th>
               </tr>
             </thead>
             <tbody>
               {rows.length === 0 && (
-                <tr><td colSpan={9} className="px-4 py-6 text-center text-sm text-gray-500">
+                <tr><td colSpan={8} className="px-4 py-6 text-center text-sm text-gray-500">
                   No changes yet. Click &quot;Add item&quot; for a new line or a changed quantity.
                 </td></tr>
               )}
               {rows.map((r, idx) => {
                 const ev = evals[idx]
                 const prior = priorMap.get(normalizeKey(r.description))
-                const needsLink = rowNeedsLink(r)
                 return (
                   <React.Fragment key={r.key}>
                     <tr className={`border-t border-gray-100 ${ev.errors.length ? 'bg-rose-50/40' : ''}`}>
@@ -258,19 +256,6 @@ export function RevisionEditor({ wsId, priorApproved, initial, attachments, canE
                       <td className="px-2 py-1.5"><Input value={r.installation ?? ''} onChange={e => update(idx, { installation: numOrNull(e.target.value) })} className={cellCls} inputMode="decimal" disabled={!canEdit} /></td>
                       <td className="px-2 py-1.5"><Input value={r.ml ?? ''} onChange={e => update(idx, { ml: numOrNull(e.target.value) })} className={cellCls} inputMode="decimal" disabled={!canEdit} /></td>
                       <td className="px-2 py-1.5 text-right tabular-nums font-semibold text-gray-900">{formatINR(ev.amount)}</td>
-                      <td className="px-2 py-1.5">
-                        {/* Backed by the ONE revision working set in the header —
-                            just a status chip here, no per-row dropdown. */}
-                        {needsLink ? (
-                          defaultWorkingId ? (
-                            <span className="inline-flex items-center gap-1 text-[11px] font-medium text-emerald-700">✓ linked</span>
-                          ) : (
-                            <span className="inline-flex items-center gap-1 text-[11px] font-medium text-rose-700"><AlertTriangle className="h-3 w-3" /> set working ↑</span>
-                          )
-                        ) : (
-                          <span className="text-[11px] text-gray-400">unchanged</span>
-                        )}
-                      </td>
                       <td className="px-2 py-1.5 text-center">
                         {canEdit && (
                           <button type="button" onClick={() => remove(idx)} className="text-rose-600 hover:bg-rose-50 rounded p-1"><Trash2 className="h-4 w-4" /></button>
@@ -278,7 +263,7 @@ export function RevisionEditor({ wsId, priorApproved, initial, attachments, canE
                       </td>
                     </tr>
                     {ev.errors.length > 0 && (
-                      <tr className="bg-rose-50/40"><td></td><td colSpan={8} className="px-2 pb-1.5">
+                      <tr className="bg-rose-50/40"><td></td><td colSpan={7} className="px-2 pb-1.5">
                         {ev.errors.map((e, i) => (
                           <span key={i} className="inline-flex items-center gap-1 text-[11px] text-rose-700 mr-3"><AlertTriangle className="h-3 w-3" /> {e}</span>
                         ))}
@@ -292,7 +277,7 @@ export function RevisionEditor({ wsId, priorApproved, initial, attachments, canE
               <tr>
                 <td colSpan={6} className="px-2 py-2 text-right font-semibold text-gray-700">This version total (full BOQ)</td>
                 <td className="px-2 py-2 text-right font-bold text-lg tabular-nums text-gray-900">{formatINR(deltaTotal)}</td>
-                <td colSpan={2}></td>
+                <td></td>
               </tr>
             </tfoot>
           </table>
