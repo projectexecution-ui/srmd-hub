@@ -12,13 +12,15 @@ import type { WSStatus } from '@/components/cost-control/WSStatusPill'
 import { formatINR } from '@/lib/utils'
 
 export function ThumbruleSummaryPanel({
-  wsId, status, ctx, totalAmount, approvedSoFar, summaryNotes, pastApproved, showPastApproved = true, signOffCfg,
+  wsId, status, ctx, totalAmount, approvedSoFar, chainReleasedSoFar, summaryNotes, pastApproved, showPastApproved = true, signOffCfg,
 }: {
   wsId: string
   status: WSStatus
   ctx: WSApprovalContext
   totalAmount: number
   approvedSoFar: number
+  /** Chain-wide released-so-far — forwarded to the Trustee release balance. */
+  chainReleasedSoFar?: number
   summaryNotes: string | null
   pastApproved: number
   /** Big historical numbers are management-only. */
@@ -65,6 +67,7 @@ export function ThumbruleSummaryPanel({
             ctx={ctx}
             totalAmount={totalAmount}
             approvedSoFar={approvedSoFar}
+            chainReleasedSoFar={chainReleasedSoFar}
             submitDisabled={!totalAmount || totalAmount <= 0}
           />
         </div>

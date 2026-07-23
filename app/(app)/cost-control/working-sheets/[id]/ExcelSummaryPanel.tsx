@@ -52,11 +52,13 @@ interface FlagSummary {
 }
 
 export function ExcelSummaryPanel({
-  wsId, status, ctx, reviewer, aiEnabled = true, signOffCfg, totalAmount, approvedSoFar, fileName, downloadUrl, summaryTotal, summaryNotes, flagSummary, lastCheckedAt, rows, grandTotal,
+  wsId, status, ctx, reviewer, aiEnabled = true, signOffCfg, totalAmount, approvedSoFar, chainReleasedSoFar, fileName, downloadUrl, summaryTotal, summaryNotes, flagSummary, lastCheckedAt, rows, grandTotal,
 }: {
   wsId: string
   status: WSStatus
   ctx: WSApprovalContext
+  /** Chain-wide released-so-far — forwarded to the Trustee release balance. */
+  chainReleasedSoFar?: number
   /** AI cross-check chrome (re-check, flags, AI narrative) is for
    *  reviewers (Project Head / Atm Head / Trustee / admin) only —
    *  engineers just upload and submit. */
@@ -282,6 +284,7 @@ export function ExcelSummaryPanel({
               ctx={ctx}
               totalAmount={totalAmount}
               approvedSoFar={approvedSoFar}
+              chainReleasedSoFar={chainReleasedSoFar}
               submitDisabled={!summaryTotal || summaryTotal <= 0}
             />
           </div>

@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   chainCumulative,
+  chainReleasedSoFar,
   matchBoqRows,
   summarizeMatch,
   normalizeKey,
@@ -69,6 +70,80 @@ describe('chainCumulative', () => {
     const r = chainCumulative(sibs, 'cur')
     expect(r.alreadyApproved).toBe(100_000) // only 'ok'
     expect(r.thisAsk).toBe(20_000)
+  })
+})
+
+describe('chainReleasedSoFar (Trustee release baseline)', () => {
+  it('is 0 when nothing has ever been released', () => {
+    const sibs = [
+      v({ id: 'a', version_no: 1, total_amount: 500_000, status: 'submitted' }),
+      v({ id: 'b', version_no: 2, total_amount: 600_000, status: 'atm_approved' }),
+    ]
+    expect(chainReleasedSoFar(sibs)).toBe(0)
+  })
+
+  it('FULL prior release → baseline = the prior version full total', () => {
+    // v8 fully released ₹9,95,600; v9 pending. Balance = 10,50,600 − 9,95,600.
+    const sibs = [
+      v({ id: 'v8', version_no: 8, total_amount: 995_600, approved_for_erp_amt: 995_600, status: 'approved' }),
+      v({ id: 'v9', version_no: 9, total_amount: 1_050_600, approved_for_erp_amt: 0, status: 'atm_approved' }),
+    ]
+    expect(chainReleasedSoFar(sibs)).toBe(995_600)
+    const m = chainCumulative(sibs, 'v9')
+    expect(m.balanceToRelease).toBe(55_000)
+  })
+
+  it('PARTIAL prior release → baseline = the amount ACTUALLY released, carrying the remainder forward', () => {
+    // v8 total ₹9,95,600 but only ₹9,40,000 released (₹55,600 held back);
+    // v9 cumulative ₹10,50,600. Balance = 10,50,600 − 9,40,000 = 1,10,600
+    // = the un-released ₹55,600 of v8 + the ₹55,000 new scope of v9.
+    const sibs = [
+      v({ id: 'v8', version_no: 8, total_amount: 995_600, approved_for_erp_amt: 940_000, status: 'partially_approved' }),
+      v({ id: 'v9', version_no: 9, total_amount: 1_050_600, approved_for_erp_amt: 0, status: 'atm_approved' }),
+    ]
+    expect(chainReleasedSoFar(sibs)).toBe(940_000)
+    const m = chainCumulative(sibs, 'v9')
+    expect(m.releasedSoFar).toBe(940_000)
+    expect(m.balanceToRelease).toBe(110_600)
+  })
+
+  it('is monotonic — takes the MAX across the chain, not the latest row', () => {
+    // Rows out of order, and an earlier version released more than a later one.
+    const sibs = [
+      v({ id: 'v3', version_no: 3, approved_for_erp_amt: 300_000, status: 'partially_approved' }),
+      v({ id: 'v1', version_no: 1, approved_for_erp_amt: 620_000, status: 'approved' }),
+      v({ id: 'v2', version_no: 2, approved_for_erp_amt: 500_000, status: 'approved' }),
+    ]
+    expect(chainReleasedSoFar(sibs)).toBe(620_000)
+  })
+
+  it('current version already partly released on ITSELF → its own tranche is the baseline', () => {
+    // Single-version sheet, partially released ₹5,00,000 of ₹6,51,920.50.
+    const sibs = [
+      v({ id: 'only', version_no: 1, total_amount: 651_920.5, approved_for_erp_amt: 500_000, status: 'partially_approved' }),
+    ]
+    expect(chainReleasedSoFar(sibs)).toBe(500_000)
+    const m = chainCumulative(sibs, 'only')
+    expect(m.balanceToRelease).toBeCloseTo(151_920.5, 2)
+  })
+
+  it('scope reduced in a revision never claws back money already out — balance floors at 0', () => {
+    const sibs = [
+      v({ id: 'v1', version_no: 1, total_amount: 996_000, approved_for_erp_amt: 996_000, status: 'approved' }),
+      v({ id: 'v2', version_no: 2, total_amount: 900_000, approved_for_erp_amt: 0, status: 'atm_approved' }),
+    ]
+    expect(chainReleasedSoFar(sibs)).toBe(996_000)
+    expect(chainCumulative(sibs, 'v2').balanceToRelease).toBe(0)
+  })
+
+  it('excludes [IB] baseline, cancelled and archived versions', () => {
+    const sibs = [
+      v({ id: 'ib', version_no: 1, approved_for_erp_amt: 9_000_000, status: 'approved', summary_notes: '[IB] baseline' }),
+      v({ id: 'x', version_no: 2, approved_for_erp_amt: 8_000_000, status: 'cancelled' }),
+      v({ id: 'y', version_no: 3, approved_for_erp_amt: 7_000_000, status: 'approved', archived_at: '2026-01-01' }),
+      v({ id: 'ok', version_no: 4, approved_for_erp_amt: 100_000, status: 'approved' }),
+    ]
+    expect(chainReleasedSoFar(sibs)).toBe(100_000)
   })
 })
 

@@ -42,17 +42,30 @@ interface Attachment {
 }
 
 export function ApproveTrancheButton({
-  wsId, totalAmount, approvedSoFar, compact = false,
+  wsId, totalAmount, approvedSoFar, chainReleasedSoFar, compact = false,
 }: {
   wsId: string
   totalAmount: number
   approvedSoFar: number
+  /** Money already released into ERP across the WHOLE version chain (max
+   *  approved_for_erp_amt over live versions). On a revision the earlier
+   *  versions may have released more than THIS sheet's own tranche, so the
+   *  balance the Trustee can release now must net against the chain total,
+   *  not the sheet's own approved_for_erp_amt. Falls back to approvedSoFar
+   *  (identical for v1 / a standalone sheet). The cc_approve_release RPC
+   *  computes the same chain baseline server-side — this only mirrors it. */
+  chainReleasedSoFar?: number
   compact?: boolean
 }) {
   const router = useRouter()
   const supabase = createClient()
   const [open, setOpen] = useState(false)
-  const remaining = Math.max(totalAmount - approvedSoFar, 0)
+  // The release baseline is the chain's released-so-far when we have it.
+  const releaseBaseline = chainReleasedSoFar ?? approvedSoFar
+  // True when EARLIER versions have released more than this sheet itself — the
+  // note + "(all versions)" caption only make sense then.
+  const chainHasPriorRelease = releaseBaseline > approvedSoFar + 0.5
+  const remaining = Math.max(totalAmount - releaseBaseline, 0)
   const [amount, setAmount] = useState<string>(String(remaining))
   const [comment, setComment] = useState('')
   const [attachments, setAttachments] = useState<Attachment[]>([])
@@ -202,10 +215,20 @@ export function ApproveTrancheButton({
         <span className="text-emerald-900 font-semibold">Trustee release into ERP</span>
       </div>
       <div className="grid grid-cols-3 gap-2 text-xs">
-        <Stat label="Estimate" value={formatINR(totalAmount)} />
-        <Stat label="Already released" value={formatINR(approvedSoFar)} tone="green" />
-        <Stat label="Remaining" value={formatINR(remaining)} tone="amber" />
+        <Stat label="This version" value={formatINR(totalAmount)} />
+        <Stat
+          label={chainHasPriorRelease ? 'Released so far (all versions)' : 'Released so far'}
+          value={formatINR(releaseBaseline)}
+          tone="green"
+        />
+        <Stat label="Balance to release" value={formatINR(remaining)} tone="amber" />
       </div>
+      {chainHasPriorRelease && (
+        <p className="text-[11px] text-gray-600 bg-white border border-gray-200 rounded px-2 py-1.5">
+          {formatINR(releaseBaseline)} has already been released on earlier versions of this budget.
+          You&apos;re releasing the <b>balance</b> — this version&apos;s total {formatINR(totalAmount)} minus what&apos;s already out.
+        </p>
+      )}
       <div>
         <label className="text-[11px] font-semibold text-gray-700">Release amount (₹)</label>
         <MoneyInput

@@ -47,13 +47,17 @@ const DEFAULT_SIGNOFF_CFG: SignOffCfg = {
 }
 
 export function WSApprovalActions({
-  wsId, status, ctx, totalAmount, approvedSoFar, submitDisabled = false, onBeforeSubmit, signOffCfg,
+  wsId, status, ctx, totalAmount, approvedSoFar, chainReleasedSoFar, submitDisabled = false, onBeforeSubmit, signOffCfg,
 }: {
   wsId: string
   status: string
   ctx: WSApprovalContext
   totalAmount: number
   approvedSoFar: number
+  /** Chain-wide released-so-far (max approved_for_erp_amt over the version
+   *  chain) — the Trustee release balance nets against this, not the sheet's
+   *  own tranche. Passed straight through to ApproveTrancheButton. */
+  chainReleasedSoFar?: number
   /** Extra client-side condition (e.g. no items yet / zero total). */
   submitDisabled?: boolean
   /** Runs before submit — e.g. the BOQ editor flushes unsaved rows. */
@@ -293,6 +297,7 @@ export function WSApprovalActions({
           wsId={wsId}
           totalAmount={totalAmount}
           approvedSoFar={approvedSoFar}
+          chainReleasedSoFar={chainReleasedSoFar}
           compact
         />
       )}

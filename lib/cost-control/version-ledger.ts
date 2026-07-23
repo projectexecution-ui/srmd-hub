@@ -37,11 +37,42 @@ export interface CumulativeMoney {
                             //   the whole BOQ, cloned from the approved version)
   thisAsk: number           // cumulative − alreadyApproved (new money requested now)
   priorCount: number        // how many prior versions exist
+  releasedSoFar: number     // money actually pushed to ERP across the WHOLE chain
+                            //   so far (see chainReleasedSoFar) — the release baseline
+  balanceToRelease: number  // cumulative − releasedSoFar (what the Trustee can still
+                            //   release now; never negative)
 }
 
 /** A version whose budget has been approved (so its total is a real baseline).
  *  'partially_approved' counts — the whole BOQ was under approval. */
 const APPROVED_STATES = new Set(['approved', 'partially_approved', 'wo_issued', 'paid'])
+
+/** Money physically released into ERP across the WHOLE version chain so far.
+ *
+ *  Each release writes the running chain-cumulative back onto the version it was
+ *  released against (see the cc_approve_release RPC), so a later version always
+ *  carries an approved_for_erp_amt ≥ every earlier one. The chain's released-so-far
+ *  is therefore the MAX approved_for_erp_amt across its live versions:
+ *   • full prior release  → max = that version's full total
+ *   • PARTIAL prior release → max = the partial amount actually released (e.g. a
+ *     v8 that released ₹9,40,000 of ₹9,95,600 leaves released-so-far = ₹9,40,000,
+ *     so v9's balance = v9 total − ₹9,40,000, correctly carrying the un-released
+ *     ₹55,600 forward)
+ *   • scope reduced in a revision → max still holds the higher earlier release, so
+ *     the balance floors at 0 (money already out is never clawed back here)
+ *
+ *  MAX (not the latest version's value) keeps it monotonic and safe even if the
+ *  rows arrive out of order. [IB…] baselines, cancelled and archived versions are
+ *  excluded — they never released real money. */
+export function chainReleasedSoFar(siblings: LedgerVersion[]): number {
+  let max = 0
+  for (const v of siblings) {
+    if (!isRealVersion(v)) continue
+    const a = Number(v.approved_for_erp_amt) || 0
+    if (a > max) max = a
+  }
+  return max
+}
 
 /** Money strip: already approved · this NEW ask · cumulative.
  *  Each version restates the FULL BOQ (a revision clones the approved version and
@@ -58,11 +89,14 @@ export function chainCumulative(siblings: LedgerVersion[], currentId: string): C
     : null
   const alreadyApproved = baseline ? (Number(baseline.total_amount) || 0) : 0
   const cumulative = current ? (Number(current.total_amount) || 0) : 0
+  const releasedSoFar = chainReleasedSoFar(siblings)
   return {
     alreadyApproved,
     cumulative,
     thisAsk: cumulative - alreadyApproved,
     priorCount: priors.length,
+    releasedSoFar,
+    balanceToRelease: Math.max(cumulative - releasedSoFar, 0),
   }
 }
 

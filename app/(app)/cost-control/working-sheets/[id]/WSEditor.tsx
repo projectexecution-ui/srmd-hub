@@ -44,13 +44,15 @@ interface Props {
   pastItems?: PastItem[]
   wsTotal: number
   approvedSoFar?: number
+  /** Chain-wide released-so-far — forwarded to the Trustee release balance. */
+  chainReleasedSoFar?: number
   signOffCfg?: SignOffCfg
 }
 
 const UOM_OPTIONS = ['Sft', 'Sqm', 'Rm', 'Mt', 'Cum', 'Nos', 'MT', 'Kg', 'Ltr', 'Ls']
 const GST_OPTIONS = [0, 5, 12, 18, 28]
 
-export function WSEditor({ wsId, status, canEdit, ctx, vendors, initialItems, pastItems = [], wsTotal, approvedSoFar = 0, signOffCfg }: Props) {
+export function WSEditor({ wsId, status, canEdit, ctx, vendors, initialItems, pastItems = [], wsTotal, approvedSoFar = 0, chainReleasedSoFar, signOffCfg }: Props) {
   const router = useRouter()
   const [items, setItems] = React.useState<WSItem[]>(initialItems)
   const [error, setError] = React.useState<string | null>(null)
@@ -323,6 +325,7 @@ export function WSEditor({ wsId, status, canEdit, ctx, vendors, initialItems, pa
           ctx={ctx}
           totalAmount={displayTotal}
           approvedSoFar={approvedSoFar}
+          chainReleasedSoFar={chainReleasedSoFar}
           submitDisabled={items.length === 0 || displayTotal <= 0}
           onBeforeSubmit={flushNewRows}
         />
