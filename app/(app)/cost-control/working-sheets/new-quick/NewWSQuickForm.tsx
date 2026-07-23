@@ -1,5 +1,5 @@
 'use client'
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import * as XLSX from 'xlsx'
 import { createClient } from '@/lib/supabase/client'
@@ -327,6 +327,15 @@ export function NewWSQuickForm({ projects, projectDisciplines, projectSubSkills,
   // Attached here so it's all in one place; at least one is required before the
   // sheet can be sent for approval (enforced in cc_submit_working_sheet).
   const [workFiles, setWorkFiles]     = useState<File[]>([])
+
+  // In template mode the approval amount IS the BOQ's recomputed grand total —
+  // keep them locked together so the "Estimate Amount for approval" can never
+  // drift from what the review grid shows (the earlier prefill used the parser's
+  // ladder, which could differ from the grid's default %, showing a stale total).
+  const gridGrand = tplActive ? (tplSummary?.grandTotal ?? null) : null
+  useEffect(() => {
+    if (gridGrand != null) setSummaryTotal(String(Math.round(gridGrand)))
+  }, [gridGrand])
 
   const disciplines = useMemo(
     () => projectDisciplines.filter(pd => pd.project_id === projectId).map(pd => pd.discipline),
@@ -1012,12 +1021,17 @@ export function NewWSQuickForm({ projects, projectDisciplines, projectSubSkills,
           <div>
             <Label>Estimate Amount for approval (₹)</Label>
             <MoneyInput value={summaryTotal}
-              onChange={setSummaryTotal} placeholder="auto-filled from Excel" className="mt-1" />
-            {(() => {
-              // Cross-check: this number is what gets approved, so warn
-              // when it disagrees with what the parsed rows add up to
-              // (classic miss: the pre-tax TOTAL picked instead of the
-              // GST-inclusive Grand Total).
+              onChange={setSummaryTotal} placeholder="auto-filled from Excel"
+              readOnly={tplActive}
+              className={`mt-1 ${tplActive ? 'bg-gray-50 text-gray-700' : ''}`} />
+            {tplActive ? (
+              <p className="text-[11px] text-gray-500 mt-1">
+                Locked to your BOQ&apos;s grand total (the verified figure in the grid above) — change a row to change it.
+              </p>
+            ) : (() => {
+              // Fuzzy mode only: warn when the typed total disagrees with what
+              // the parsed rows add up to (classic miss: the pre-tax TOTAL
+              // picked instead of the GST-inclusive Grand Total).
               const rowsSum = (parsed?.rows ?? []).reduce((s, r) => s + (r.amount ?? 0), 0)
               const typed = Number(summaryTotal) || 0
               if (rowsSum > 0 && typed > 0 && Math.abs(rowsSum - typed) > rowsSum * 0.02) {
