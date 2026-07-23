@@ -53,6 +53,58 @@ export default async function NewWorkingSheetQuickPage({
     if (s) projectSubSkills.push({ project_id: r.project_id, sub_skill: s })
   }
 
+  // Raising from a sub-skill that already has sheets? Pull the LATEST live
+  // version's BOQ so the downloaded template is pre-filled as the next version
+  // (engineer edits deltas → identical descriptions → clean v-to-v matching).
+  type SeedRow = { description: string; unit: string | null; qty: number | null; qtyFormula: string | null; material: number | null; installation: number | null; ml: number | null }
+  let priorVersion:
+    | { versionNo: number; wsCode: string; lineType: 'work' | 'material' | 'combined' | null; rows: SeedRow[] }
+    | null = null
+  if (sp.project && sp.discipline && sp.sub_skill) {
+    const { data: chainRows } = await supabase
+      .from('cc_ws_with_versions')
+      .select('id, ws_code, version_no, line_type, status, summary_notes, archived_at, created_at')
+      .eq('project_id', sp.project)
+      .eq('discipline_id', sp.discipline)
+      .eq('sub_skill_id', sp.sub_skill)
+    const live = (chainRows ?? []).filter(w =>
+      !(w.summary_notes ?? '').startsWith('[IB') && w.status !== 'cancelled' && !w.archived_at,
+    )
+    live.sort((a, b) => (b.version_no ?? 0) - (a.version_no ?? 0) || String(b.created_at).localeCompare(String(a.created_at)))
+    const latest = live[0]
+    if (latest) {
+      const { data: pr } = await supabase
+        .from('cc_excel_rows')
+        .select('description, unit, qty, rate, rate_breakdown, qty_formula, row_no')
+        .eq('working_sheet_id', latest.id)
+        .order('row_no')
+      const rows: SeedRow[] = (pr ?? [])
+        .filter(r => (r.description ?? '').trim())
+        .map(r => {
+          const bd = (r.rate_breakdown ?? []) as Array<{ label: string; value: number }>
+          const material = bd.find(b => /material/i.test(b.label))?.value ?? null
+          const installation = bd.find(b => /install/i.test(b.label))?.value ?? null
+          const mlBd = bd.find(b => /m\s*\+\s*l|combined/i.test(b.label))?.value ?? null
+          const ml = mlBd ?? (material == null && installation == null && r.rate != null ? Number(r.rate) : null)
+          return {
+            description: String(r.description ?? ''),
+            unit: r.unit ?? null,
+            qty: r.qty != null ? Number(r.qty) : null,
+            qtyFormula: (r as { qty_formula?: string | null }).qty_formula ?? null,
+            material, installation, ml,
+          }
+        })
+      if (rows.length > 0) {
+        priorVersion = {
+          versionNo: latest.version_no ?? 1,
+          wsCode: latest.ws_code,
+          lineType: (latest.line_type as 'work' | 'material' | 'combined' | null) ?? null,
+          rows,
+        }
+      }
+    }
+  }
+
   return (
     <div className="p-4 md:p-6 max-w-6xl mx-auto space-y-4">
       <PageHeader
@@ -71,6 +123,7 @@ export default async function NewWorkingSheetQuickPage({
           canSetDeadline={(await checkCanSetDeadline()) && ccSettings.show_deadlines}
           reviewer={await checkIsCcReviewer()}
           cumulativeVersions={ccSettings.cumulative_versions}
+          priorVersion={priorVersion}
         />
       </Card>
     </div>

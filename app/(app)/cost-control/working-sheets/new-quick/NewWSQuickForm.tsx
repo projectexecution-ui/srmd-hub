@@ -100,6 +100,15 @@ interface Props {
   /** cc_cumulative_versions flag — shows the standard-template download +
    *  (later slices) the template-mode parse. OFF = today's free-form upload. */
   cumulativeVersions?: boolean
+  /** Prior version's BOQ (when raising from a sub-skill that already has
+   *  sheets) — the template download is pre-filled with it as the next
+   *  version, so the engineer edits deltas and the v-to-v match stays clean. */
+  priorVersion?: {
+    versionNo: number
+    wsCode: string
+    lineType: 'work' | 'material' | 'combined' | null
+    rows: Array<{ description: string; unit: string | null; qty: number | null; qtyFormula: string | null; material: number | null; installation: number | null; ml: number | null }>
+  } | null
 }
 
 type ColKind = 'description' | 'unit' | 'qty' | 'rate' | 'amount'
@@ -285,7 +294,7 @@ async function parseExcel(file: File): Promise<{ rows: ParsedRow[]; grandTotal: 
   return { rows, grandTotal, aoa }
 }
 
-export function NewWSQuickForm({ projects, projectDisciplines, projectSubSkills, defaultProjectId, defaultDisciplineId, defaultSubSkillId, canSetDeadline = false, reviewer = false, cumulativeVersions = false }: Props) {
+export function NewWSQuickForm({ projects, projectDisciplines, projectSubSkills, defaultProjectId, defaultDisciplineId, defaultSubSkillId, canSetDeadline = false, reviewer = false, cumulativeVersions = false, priorVersion = null }: Props) {
   const router = useRouter()
   const [projectId, setProjectId]     = useState(defaultProjectId ?? projects[0]?.id ?? '')
   const [disciplineId, setDisciplineId] = useState(defaultDisciplineId ?? '')
@@ -296,7 +305,9 @@ export function NewWSQuickForm({ projects, projectDisciplines, projectSubSkills,
   const cameFromRow = !!(defaultDisciplineId && defaultSubSkillId)
   const [showContext, setShowContext] = useState(!cameFromRow)
   // Combined (M+L) is the standard — Work / Material are the split exceptions.
-  const [lineType, setLineType]       = useState<'work' | 'material' | 'combined'>('combined')
+  // Continue the prior version's Type (keeps it in the same chain); else the
+  // Combined (M+L) standard.
+  const [lineType, setLineType]       = useState<'work' | 'material' | 'combined'>(priorVersion?.lineType ?? 'combined')
   const [summaryTotal, setSummaryTotal] = useState('')
   const [summaryNotes, setSummaryNotes] = useState('')
   const [deadline, setDeadline] = useState('')
@@ -360,6 +371,9 @@ export function NewWSQuickForm({ projects, projectDisciplines, projectSubSkills,
       lineTypeLabel: lineType === 'work' ? 'Work' : lineType === 'material' ? 'Material' : 'Combined',
       dateText: new Date().toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }),
       projectId, disciplineId, subSkillId,
+      // When a prior version exists, pre-fill it and stamp the next version #.
+      seedRows: priorVersion?.rows,
+      versionNo: priorVersion ? priorVersion.versionNo + 1 : undefined,
     })
   }
 
@@ -802,16 +816,29 @@ export function NewWSQuickForm({ projects, projectDisciplines, projectSubSkills,
           <div className="rounded-xl border border-emerald-200 bg-emerald-50/60 p-3 flex items-start gap-3">
             <FileSpreadsheet className="h-5 w-5 text-emerald-600 mt-0.5 flex-shrink-0" />
             <div className="min-w-0 flex-1">
-              <p className="text-sm font-semibold text-emerald-900">Use the standard BOQ template</p>
-              <p className="text-xs text-emerald-800/80 mt-0.5">
-                Download it pre-filled for this sub-skill, enter your quantities and rates (Rate &amp; Amount
-                calculate themselves), then upload it below. Standard files parse cleanly every time.
-              </p>
+              {priorVersion ? (
+                <>
+                  <p className="text-sm font-semibold text-emerald-900">
+                    Download the Version {priorVersion.versionNo + 1} template — pre-filled with {priorVersion.wsCode} (v{priorVersion.versionNo})
+                  </p>
+                  <p className="text-xs text-emerald-800/80 mt-0.5">
+                    The last version&apos;s {priorVersion.rows.length} row{priorVersion.rows.length === 1 ? '' : 's'} are already in it. Change only what&apos;s new, add extra rows at the bottom, then upload — it continues the same chain, so the approver sees exactly what changed since v{priorVersion.versionNo}.
+                  </p>
+                </>
+              ) : (
+                <>
+                  <p className="text-sm font-semibold text-emerald-900">Use the standard BOQ template</p>
+                  <p className="text-xs text-emerald-800/80 mt-0.5">
+                    Download it pre-filled for this sub-skill, enter your quantities and rates (Rate &amp; Amount
+                    calculate themselves), then upload it below. Standard files parse cleanly every time.
+                  </p>
+                </>
+              )}
             </div>
             <Button type="button" size="sm" variant="outline"
               className="flex-shrink-0 border-emerald-300 text-emerald-800 hover:bg-emerald-100"
               onClick={onDownloadTemplate}>
-              <Download className="h-4 w-4 mr-1.5" /> Download template
+              <Download className="h-4 w-4 mr-1.5" /> {priorVersion ? `Download v${priorVersion.versionNo + 1} template` : 'Download template'}
             </Button>
           </div>
         )}

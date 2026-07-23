@@ -85,6 +85,26 @@ export interface BoqTemplateOptions {
    *  (default true). The linkage is what lets the app trace a quantity back to
    *  the exact cell it was measured in. */
   withMeasurement?: boolean
+  /** When raising the NEXT version of a sub-skill, pre-fill the BOQ with the
+   *  previous version's rows so the engineer edits only what changed — and the
+   *  descriptions stay identical, so the v-to-v cumulative match is clean. */
+  seedRows?: BoqSeedRow[]
+  /** The version number this template will become (previous + 1), stamped in
+   *  the title so the engineer knows it's a revision, not a fresh sheet. */
+  versionNo?: number
+}
+
+/** A prior-version row used to pre-fill the next-version template. */
+export interface BoqSeedRow {
+  description: string
+  unit?: string | null
+  qty?: number | null
+  /** The prior Qty take-off formula (e.g. "946+104.5" or "Measurement!G6"),
+   *  restored into the Qty cell so the row stays MEASURED, not re-estimated. */
+  qtyFormula?: string | null
+  material?: number | null
+  installation?: number | null
+  ml?: number | null
 }
 
 export interface BoqCell {
@@ -130,7 +150,10 @@ function f(formula: string, z?: string): BoqCell {
 
 /** Pure builder — returns the full cell model of the standard template. */
 export function buildBoqTemplateModel(opts: BoqTemplateOptions = {}): BoqTemplateModel {
-  const blankRows = Math.max(5, opts.blankRows ?? 25)
+  const seed = opts.seedRows ?? []
+  // Enough rows for the seeded prior version + spare lines to add new items
+  // (the seed floor only applies when we're actually pre-filling).
+  const blankRows = Math.max(5, opts.blankRows ?? 25, seed.length > 0 ? seed.length + 8 : 0)
   const withMeasurement = opts.withMeasurement !== false
   const cells: Record<string, BoqCell> = {}
   const merges: BoqMerge[] = []
@@ -140,7 +163,7 @@ export function buildBoqTemplateModel(opts: BoqTemplateOptions = {}): BoqTemplat
   const proj = [opts.projectCode, opts.projectName].filter(Boolean).join(' ')
 
   // Row 1 — title (merged A:J)
-  cells['A1'] = s(`STANDARD BOQ${disc ? ' — ' + disc : ''}${sub ? ' · ' + sub : ''}`)
+  cells['A1'] = s(`STANDARD BOQ${disc ? ' — ' + disc : ''}${sub ? ' · ' + sub : ''}${opts.versionNo ? ` · Version ${opts.versionNo}` : ''}`)
   merges.push({ s: { r: 0, c: 0 }, e: { r: 0, c: 9 } })
 
   // Row 2 — context line (merged)
@@ -150,6 +173,7 @@ export function buildBoqTemplateModel(opts: BoqTemplateOptions = {}): BoqTemplat
     opts.dateText && `Date: ${opts.dateText}`,
     opts.drawingRef && `Drawing: ${opts.drawingRef}`,
     opts.lineTypeLabel && `Type: ${opts.lineTypeLabel}`,
+    seed.length > 0 && `Pre-filled from the previous version — edit only what changed, add new rows below`,
   ].filter(Boolean).join('  ·  ')
   cells['A2'] = s(ctx || 'Fill the header on the site before uploading.')
   merges.push({ s: { r: 1, c: 0 }, e: { r: 1, c: 9 } })
@@ -177,7 +201,27 @@ export function buildBoqTemplateModel(opts: BoqTemplateOptions = {}): BoqTemplat
   const itemRowStart = headerRow + 1
   const itemRowEnd = itemRowStart + blankRows - 1
   for (let r = itemRowStart; r <= itemRowEnd; r++) {
-    cells[addr(COL.sr, r)] = n(r - itemRowStart + 1)
+    const i = r - itemRowStart
+    cells[addr(COL.sr, r)] = n(i + 1)
+    // Pre-fill from the previous version's row when seeding a next-version
+    // template — description/unit/qty + whichever rate side was used.
+    const sd = seed[i]
+    if (sd) {
+      cells[addr(COL.description, r)] = s(sd.description ?? '')
+      if (sd.unit) cells[addr(COL.unit, r)] = s(sd.unit)
+      // Qty: restore the take-off formula (stays MEASURED) if we had one,
+      // else the plain number.
+      const qf = (sd.qtyFormula ?? '').trim().replace(/^=/, '')
+      if (qf) cells[addr(COL.qty, r)] = f(qf)
+      else if (sd.qty != null) cells[addr(COL.qty, r)] = n(sd.qty)
+      // Rate: keep the split if the prior row was split, else the combined M+L.
+      if (sd.material != null || sd.installation != null) {
+        if (sd.material != null) cells[addr(COL.material, r)] = n(sd.material, MONEY_FMT)
+        if (sd.installation != null) cells[addr(COL.installation, r)] = n(sd.installation, MONEY_FMT)
+      } else if (sd.ml != null) {
+        cells[addr(COL.ml, r)] = n(sd.ml, MONEY_FMT)
+      }
+    }
     // Rate = SUM(M+L, Material, Installation) — the three rate cells (E:G),
     // whichever side is filled. Blank cells count as 0, never #VALUE!.
     cells[addr(COL.rate, r)] = f(`SUM(${addr(COL.ml, r)}:${addr(COL.installation, r)})`, MONEY_FMT)
