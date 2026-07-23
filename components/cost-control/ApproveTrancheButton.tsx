@@ -59,7 +59,6 @@ export function ApproveTrancheButton({
   const [uploading, setUploading] = useState(false)
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState<string | null>(null)
-  const [requiresRemarks, setRequiresRemarks] = useState(false)
   const [requiresAttachment, setRequiresAttachment] = useState(false)
 
   // The sheet's REAL current stage: a sheet with releases already against
@@ -74,13 +73,12 @@ export function ApproveTrancheButton({
       // honour the strictest requirements across both possible rules.
       const { data } = await supabase
         .from('approval_rules')
-        .select('requires_remarks, requires_attachment')
+        .select('requires_attachment')
         .eq('module_slug', MODULE_SLUG)
         .eq('doc_type', DOC_TYPE)
         .eq('from_stage', fromStage)
         .in('to_stage', ['partially_approved', 'approved'])
         .eq('is_active', true)
-      setRequiresRemarks((data ?? []).some(r => r.requires_remarks))
       setRequiresAttachment((data ?? []).some(r => r.requires_attachment))
     })()
   }, [open, supabase, fromStage])
@@ -141,7 +139,9 @@ export function ApproveTrancheButton({
       trancheAmount = num
     }
 
-    if (requiresRemarks && !comment.trim()) { setErr('A comment is required for this approval.'); setBusy(false); return }
+    // Comment is mandatory at every approval stage (not just when the rule
+    // flags it) — the Trustee's release note is read by the whole team.
+    if (!comment.trim()) { setErr('A comment is required for this release.'); setBusy(false); return }
     if (requiresAttachment && attachments.length === 0) { setErr('An attachment is required for this approval.'); setBusy(false); return }
 
     const r = await approveWorkingSheet(wsId, trancheArg)
@@ -222,7 +222,7 @@ export function ApproveTrancheButton({
       <div>
         <label className="text-[11px] font-semibold text-gray-700 flex items-center gap-1">
           <MessageSquare className="h-3 w-3" />
-          Comment {requiresRemarks && <span className="text-rose-600">*</span>}
+          Comment <span className="text-rose-600">*</span>
         </label>
         <Textarea
           value={comment}

@@ -23,6 +23,7 @@ import {
   submitWorkingSheet, signOffWorkingSheet, returnWorkingSheet,
   type WSApprovalContext,
 } from '@/components/cost-control/ws-actions'
+import { addWsComment } from '@/components/cost-control/comment-actions'
 import { ApproveTrancheButton } from '@/components/cost-control/ApproveTrancheButton'
 import { MoneyInput } from '@/components/ui/money-input'
 
@@ -66,6 +67,7 @@ export function WSApprovalActions({
   const [signOffOpen, setSignOffOpen] = useState(false)
   const [checkedRaw, setCheckedRaw] = useState('')
   const [signOffComment, setSignOffComment] = useState('')
+  const [submitComment, setSubmitComment] = useState('')
   const [err, setErr] = useState<string | null>(null)
 
   const cfg = signOffCfg ?? DEFAULT_SIGNOFF_CFG
@@ -74,13 +76,22 @@ export function WSApprovalActions({
   const isCancelled = status === 'cancelled'
 
   async function doSubmit() {
+    // Comment is mandatory when sending for approval — the approver reads it.
+    if (submitComment.trim().length < 3) {
+      setErr('Add a short note for the approver before sending (why this budget is needed).')
+      return
+    }
     setBusy(true); setErr(null)
     if (onBeforeSubmit) {
       try { await onBeforeSubmit() } catch { /* row-level errors surface in the editor */ }
     }
+    // Record the note on the sheet's comment thread, then submit.
+    const c = await addWsComment(wsId, submitComment.trim())
+    if (!c.ok) { setBusy(false); setErr(c.error ?? 'Could not save your note'); return }
     const r = await submitWorkingSheet(wsId)
     setBusy(false)
     if (!r.ok) { setErr(r.error ?? 'Submit failed'); return }
+    setSubmitComment('')
     toast.success('Sent for approval — the Project Head will check it next')
     router.refresh()
   }
@@ -89,6 +100,11 @@ export function WSApprovalActions({
     const amt = Number(checkedRaw)
     if (!Number.isFinite(amt) || amt <= 0) {
       setErr('Type the amount you checked before signing off')
+      return
+    }
+    // Comment is mandatory at every approval stage.
+    if (signOffComment.trim().length < 3) {
+      setErr('Add a note on what you checked before signing off')
       return
     }
     setBusy(true); setErr(null)
@@ -182,6 +198,21 @@ export function WSApprovalActions({
 
       {err && <p className="text-sm text-rose-700 bg-rose-50 border border-rose-200 rounded-lg px-3 py-2">{err}</p>}
 
+      {/* Mandatory note when sending for approval — the approver reads this. */}
+      {ctx.canSubmit && (
+        <div className="space-y-1">
+          <label className="text-xs font-semibold text-gray-700">Note for the approver <span className="text-rose-600">*</span></label>
+          <textarea
+            value={submitComment}
+            onChange={e => setSubmitComment(e.target.value)}
+            rows={2}
+            disabled={busy}
+            className="w-full rounded-md border border-gray-300 bg-white p-2 text-sm"
+            placeholder="Required — why this budget is needed / what changed since the last version."
+          />
+        </div>
+      )}
+
       {/* ── Actions ── */}
       <div className="flex flex-wrap items-center gap-2">
         {ctx.canSubmit && (
@@ -232,12 +263,13 @@ export function WSApprovalActions({
           <p className="text-[11px] text-emerald-800/80">
             Type the amount you have checked — it is not pre-filled on purpose.
           </p>
+          <label className="text-xs font-semibold text-emerald-900 block">Note on your check <span className="text-rose-600">*</span></label>
           <textarea
             value={signOffComment}
             onChange={e => setSignOffComment(e.target.value)}
             rows={2}
             className="w-full rounded-md border border-emerald-200 bg-white p-2 text-sm"
-            placeholder="Optional note for the trail — e.g. verified rates against the Q1 vendor quotes"
+            placeholder="Required — e.g. verified rates against the Q1 vendor quotes"
           />
           <div className="flex justify-end gap-2">
             <Button variant="ghost" size="sm" onClick={() => { setSignOffOpen(false); setCheckedRaw(''); setSignOffComment('') }} disabled={busy}>
