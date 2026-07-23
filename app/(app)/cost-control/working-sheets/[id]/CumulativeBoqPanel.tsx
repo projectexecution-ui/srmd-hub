@@ -35,8 +35,11 @@ export function CumulativeBoqPanel({ rows, summary, workingByKey = {} }: Props) 
 
   const renderRow = (r: MatchedRow) => {
     const link = workingByKey[r.key]
+    const qtyChanged = r.qtyDelta != null && r.qtyDelta !== 0
+    // Highlight ANY row where qty or rate moved — that's what the approver checks.
+    const changed = (r.rateChanged || qtyChanged) && !r.isNew && !r.dropped
     return (
-      <tr key={r.key} className={`border-t border-gray-100 ${r.dropped ? 'opacity-50' : ''} ${r.rateChanged ? 'bg-amber-50/50' : ''}`}>
+      <tr key={r.key} className={`border-t border-gray-100 ${r.dropped ? 'opacity-50' : ''} ${changed ? 'bg-amber-50/50' : ''}`}>
         <td className="px-2 py-1.5">
           <span className={r.dropped ? 'line-through text-gray-500' : 'text-gray-900'}>{r.description}</span>
           {r.unit && <span className="ml-2 text-[10px] text-gray-400">{r.unit}</span>}
@@ -59,17 +62,27 @@ export function CumulativeBoqPanel({ rows, summary, workingByKey = {} }: Props) 
         <td className="px-2 py-1.5 text-right text-gray-500"><QtyRate qty={r.approvedQty} rate={r.approvedRate} /></td>
         <td className="px-2 py-1.5 text-right font-medium text-gray-900"><QtyRate qty={r.newQty} rate={r.newRate} /></td>
         <td className="px-2 py-1.5 text-right">
-          {r.rateChanged ? (
-            <span className="text-[11px] text-amber-800">
-              {formatINR(r.rateOld ?? 0)} → {formatINR(r.rateNew ?? 0)}
-              <span className="block text-[10px] text-amber-600">
-                {r.rateChangeComponents.map(c => COMP_LABEL[c] ?? c).join(', ')} changed
-              </span>
-            </span>
-          ) : r.qtyDelta != null && r.qtyDelta !== 0 ? (
-            <span className={`text-[11px] ${r.qtyDelta > 0 ? 'text-amber-800' : 'text-emerald-700'} tabular-nums`}>
-              {r.qtyDelta > 0 ? '+' : ''}{r.qtyDelta} qty
-            </span>
+          {/* Show BOTH a rate move and a qty move when both happen — the
+              approver must see each clearly (old → new). */}
+          {r.isNew ? (
+            <span className="text-[11px] font-semibold text-emerald-700">new item</span>
+          ) : r.rateChanged || qtyChanged ? (
+            <div className="space-y-0.5">
+              {r.rateChanged && (
+                <span className="block text-[11px] font-semibold text-amber-800 tabular-nums">
+                  Rate {formatINR(r.rateOld ?? 0)} → {formatINR(r.rateNew ?? 0)}
+                  <span className="block text-[10px] font-normal text-amber-600">
+                    {r.rateChangeComponents.map(c => COMP_LABEL[c] ?? c).join(', ')} changed
+                  </span>
+                </span>
+              )}
+              {qtyChanged && (
+                <span className={`block text-[11px] font-semibold tabular-nums ${r.qtyDelta! > 0 ? 'text-amber-800' : 'text-emerald-700'}`}>
+                  Qty {r.approvedQty ?? '—'} → {r.newQty ?? '—'}{' '}
+                  <span className="font-normal">({r.qtyDelta! > 0 ? '+' : ''}{r.qtyDelta})</span>
+                </span>
+              )}
+            </div>
           ) : (
             <span className="text-[11px] text-gray-400">unchanged</span>
           )}
