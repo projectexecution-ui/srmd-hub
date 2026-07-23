@@ -17,6 +17,7 @@ import { evaluateItem } from '@/lib/cost-control/boq-template-parse'
 import { BOQ_UNITS } from '@/lib/cost-control/boq-template'
 import { saveRevisionRows, type RevisionRowInput } from './version-actions'
 import { submitWorkingSheet } from '@/components/cost-control/ws-actions'
+import { addWsComment } from '@/components/cost-control/comment-actions'
 
 export interface PriorApprovedRow {
   description: string
@@ -65,6 +66,8 @@ export function RevisionEditor({ wsId, priorApproved, initial, attachments, canE
   const [defaultWorkingId, setDefaultWorkingId] = React.useState<string | null>(
     initial.find(r => r.workingRefId)?.workingRefId ?? attachments[0]?.id ?? null,
   )
+  // Mandatory note the approver reads — required to submit (not to save draft).
+  const [submitComment, setSubmitComment] = React.useState('')
 
   const priorMap = React.useMemo(() => {
     const m = new Map<string, PriorApprovedRow>()
@@ -133,12 +136,17 @@ export function RevisionEditor({ wsId, priorApproved, initial, attachments, canE
   async function submit() {
     if (rows.filter(r => r.description.trim()).length === 0) { setError('Add at least one item'); return }
     if (hardErrors > 0) { setError(`Fix ${hardErrors} problem${hardErrors > 1 ? 's' : ''} first — including linking every changed/new row to a working file`); return }
+    // Comment is mandatory when sending for approval (every stage requires one).
+    if (submitComment.trim().length < 3) { setError('Add a short note for the approver (what changed in this revision) before sending.'); return }
     setBusy('submit'); setError(null); setMsg(null)
     const saved = await saveRevisionRows(wsId, toPayload())
     if (!saved.ok) { setBusy(null); setError(saved.error); return }
+    const c = await addWsComment(wsId, submitComment.trim())
+    if (!c.ok) { setBusy(null); setError(c.error ?? 'Could not save your note'); return }
     const sub = await submitWorkingSheet(wsId)
     setBusy(null)
     if (!sub.ok) { setError(sub.error ?? 'Submit failed'); return }
+    setSubmitComment('')
     router.refresh()
   }
 
@@ -295,6 +303,16 @@ export function RevisionEditor({ wsId, priorApproved, initial, attachments, canE
                 <AlertTriangle className="h-3.5 w-3.5" /> Pick the working file for this revision (top of the grid) — it backs all {unlinked} changed/new row{unlinked > 1 ? 's' : ''}.
               </p>
             )}
+            <div>
+              <label className="text-xs font-semibold text-gray-700">Note for the approver <span className="text-rose-600">*</span></label>
+              <textarea
+                value={submitComment}
+                onChange={e => setSubmitComment(e.target.value)}
+                rows={2}
+                className="mt-1 w-full rounded-md border border-gray-300 bg-white p-2 text-sm"
+                placeholder="Required to submit — what changed in this revision and why (the approver reads this)."
+              />
+            </div>
             <div className="flex items-center gap-2">
               <Button type="button" variant="outline" size="sm" onClick={addRow}>
                 <Plus className="h-3.5 w-3.5 mr-1" /> Add item
