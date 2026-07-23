@@ -389,7 +389,12 @@ export default async function WorkingSheetEditorPage(
     const canRaiseRevision = ccSettings.cumulative_versions && !frozen && !isEstimateSheet &&
       (user?.id === ws.engineer_id || reviewer) &&
       ['approved', 'partially_approved', 'wo_issued', 'paid'].includes(ws.status as string)
-    const isRevisionDraft = ccSettings.cumulative_versions && ownerEditable && ws.version_no > 1
+    // The in-app free-typing editor is now ONLY a fallback for legacy revision
+    // drafts (cloned by the old raiseNextVersion, which left source_excel_url
+    // null). Every new version is raised via the pre-filled template UPLOAD, so
+    // an uploaded v2+ (has source_excel_url) renders the normal Excel/cumulative
+    // view + take-off guardrails — NOT the editor.
+    const isRevisionDraft = ccSettings.cumulative_versions && ownerEditable && ws.version_no > 1 && !ws.source_excel_url
 
     // Prior version's rows = the frozen "already approved" BOQ, used by BOTH
     // the revision editor (locked reference + change detection) and the S6
@@ -532,7 +537,7 @@ export default async function WorkingSheetEditorPage(
           isAdmin={isAdmin}
         />
         {releaseRequestPanel}
-        {canRaiseRevision && <RaiseRevisionButton wsId={ws.id} />}
+        {canRaiseRevision && <RaiseRevisionButton projectId={ws.project_id} disciplineId={ws.discipline_id} subSkillId={ws.sub_skill_id} />}
         {summaryShotPanel}
 
         {!isRevisionDraft && chainMoney && reviewer && <VersionLedgerStrip money={chainMoney} versionNo={ws.version_no} />}
