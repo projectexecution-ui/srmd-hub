@@ -11,6 +11,7 @@ import { WSStatusPill, type WSStatus } from '@/components/cost-control/WSStatusP
 import { DeadlineBadge } from '@/components/cost-control/DeadlineBadge'
 import { AiBifurcationPanel } from '@/components/cost-control/AiBifurcationPanel'
 import { WSAskAiPanel } from '@/components/cost-control/WSAskAiPanel'
+import { AiToolsDisclosure } from './AiToolsDisclosure'
 import { VersionChainBar } from './VersionChainBar'
 import { ThumbruleSummaryPanel } from './ThumbruleSummaryPanel'
 import { ApprovalTimeline } from '@/components/cost-control/ApprovalTimeline'
@@ -589,35 +590,39 @@ export default async function WorkingSheetEditorPage(
         <SourceExcelViewer url={downloadUrl} name={ws.source_excel_name} microsoft={ccSettings.excel_microsoft} reviewer={reviewer} />
 
         {/* AI review tools — for the approval chain (PH / Atm Head /
-            Trustee / admin), not engineers. */}
-        {showAi && <WSAskAiPanel wsId={ws.id} />}
-
-        {showAi && <AiBifurcationPanel
-          wsId={ws.id}
-          canEdit={canEdit && (user?.id === ws.engineer_id || isAdmin)}
-          aiParseMeta={ws.ai_parse_meta as {
-            text?: string | null
-            model?: string
-            rows_in?: number
-            rows_out?: number
-            suggestions_count?: number
-            rate_concerns_count?: number
-            totals_by_category?: Partial<Record<'material' | 'labour' | 'material_and_labour' | 'equipment', number>>
-            split_totals?: Partial<Record<'material' | 'labour' | 'equipment', number>>
-            run_at?: string
-          } | null}
-          rows={(excelRows ?? []).map(r => ({
-            row_no: r.row_no,
-            amount: r.amount != null ? Number(r.amount) : null,
-            ai_meta: r.ai_meta as {
-              category?: 'material' | 'labour' | 'material_and_labour' | 'equipment' | null
-              material_value?: number | null
-              labour_value?: number | null
-              suggested_sub_skill_id?: string | null
-              rate_concern?: string | null
-            } | null,
-          }))}
-        />}
+            Trustee / admin), not engineers. Tucked behind a right-aligned
+            "AI tools" toggle so they don't sit expanded in the middle. */}
+        {showAi && (
+          <AiToolsDisclosure>
+            <WSAskAiPanel wsId={ws.id} />
+            <AiBifurcationPanel
+              wsId={ws.id}
+              canEdit={canEdit && (user?.id === ws.engineer_id || isAdmin)}
+              aiParseMeta={ws.ai_parse_meta as {
+                text?: string | null
+                model?: string
+                rows_in?: number
+                rows_out?: number
+                suggestions_count?: number
+                rate_concerns_count?: number
+                totals_by_category?: Partial<Record<'material' | 'labour' | 'material_and_labour' | 'equipment', number>>
+                split_totals?: Partial<Record<'material' | 'labour' | 'equipment', number>>
+                run_at?: string
+              } | null}
+              rows={(excelRows ?? []).map(r => ({
+                row_no: r.row_no,
+                amount: r.amount != null ? Number(r.amount) : null,
+                ai_meta: r.ai_meta as {
+                  category?: 'material' | 'labour' | 'material_and_labour' | 'equipment' | null
+                  material_value?: number | null
+                  labour_value?: number | null
+                  suggested_sub_skill_id?: string | null
+                  rate_concern?: string | null
+                } | null,
+              }))}
+            />
+          </AiToolsDisclosure>
+        )}
 
         <ExcelSummaryPanel
           signOffCfg={signOffCfg}
@@ -649,7 +654,12 @@ export default async function WorkingSheetEditorPage(
             flag: r.flag,
             flag_reason: r.flag_reason,
             flag_severity: r.flag_severity,
+            qty_formula: (r as { qty_formula?: string | null }).qty_formula ?? null,
+            qty_basis: (r as { qty_basis?: string | null }).qty_basis ?? null,
+            source_sheet: (r as { source_sheet?: string | null }).source_sheet ?? null,
+            source_cell: (r as { source_cell?: string | null }).source_cell ?? null,
           }))}
+          grandTotal={ws.summary_total != null ? Number(ws.summary_total) : Number(ws.total_amount ?? 0)}
         />
         </>
         )}
@@ -756,8 +766,13 @@ export default async function WorkingSheetEditorPage(
 
       {chainMoney && reviewer && <VersionLedgerStrip money={chainMoney} versionNo={ws.version_no} />}
 
-      {/* AI review tools — approval chain only, not engineers. */}
-      {showAi && <WSAskAiPanel wsId={ws.id} />}
+      {/* AI review tools — approval chain only, not engineers. Tucked behind
+          a right-aligned toggle so it doesn't sit in the middle of the flow. */}
+      {showAi && (
+        <AiToolsDisclosure>
+          <WSAskAiPanel wsId={ws.id} />
+        </AiToolsDisclosure>
+      )}
 
       {ccSettings.show_deadlines && (ws.deadline_date || canEditDeadline) && (
         <div className="flex items-center gap-2 flex-wrap">

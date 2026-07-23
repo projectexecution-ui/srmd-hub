@@ -33,6 +33,12 @@ interface Row {
   flag: string | null
   flag_reason: string | null
   flag_severity: string | null
+  /** Take-off provenance (standard-template uploads): the Qty cell's formula
+   *  and whether it was measured (formula/link) or a plain estimate. */
+  qty_formula?: string | null
+  qty_basis?: string | null
+  source_sheet?: string | null
+  source_cell?: string | null
 }
 
 interface FlagSummary {
@@ -46,7 +52,7 @@ interface FlagSummary {
 }
 
 export function ExcelSummaryPanel({
-  wsId, status, ctx, reviewer, aiEnabled = true, signOffCfg, totalAmount, approvedSoFar, fileName, downloadUrl, summaryTotal, summaryNotes, flagSummary, lastCheckedAt, rows,
+  wsId, status, ctx, reviewer, aiEnabled = true, signOffCfg, totalAmount, approvedSoFar, fileName, downloadUrl, summaryTotal, summaryNotes, flagSummary, lastCheckedAt, rows, grandTotal,
 }: {
   wsId: string
   status: WSStatus
@@ -68,6 +74,8 @@ export function ExcelSummaryPanel({
   flagSummary: FlagSummary | null
   lastCheckedAt: string | null
   rows: Row[]
+  /** The sheet's grand total (GST-inclusive) — shown in the BOQ footer. */
+  grandTotal?: number
 }) {
   const router = useRouter()
   const [rechecking, setRechecking] = useState(false)
@@ -319,7 +327,10 @@ export function ExcelSummaryPanel({
       {reviewer && (
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Parsed rows</CardTitle>
+          <CardTitle className="text-base">Verified BOQ — recomputed from your sheet</CardTitle>
+          <p className="text-xs text-gray-500 mt-0.5">
+            Every row re-read from the uploaded template and recomputed (Rate = M+L, Amount = Qty × Rate). The take-off under each row shows how the quantity was measured. This is the line-by-line the approver checks — it totals to the sheet&apos;s grand total below.
+          </p>
         </CardHeader>
         <CardContent>
           <div className="overflow-x-auto">
@@ -327,7 +338,7 @@ export function ExcelSummaryPanel({
               <thead className="bg-gray-50 text-left text-xs uppercase tracking-wide text-gray-500">
                 <tr>
                   <th className="px-2 py-2 w-10">#</th>
-                  <th className="px-2 py-2">Description</th>
+                  <th className="px-2 py-2">Description &amp; take-off</th>
                   <th className="px-2 py-2">Unit</th>
                   <th className="px-2 py-2 text-right">Qty</th>
                   <th className="px-2 py-2 text-right">Rate</th>
@@ -338,16 +349,24 @@ export function ExcelSummaryPanel({
               <tbody>
                 {rows.map(r => (
                   <tr key={r.id} className={`border-t border-gray-100 ${showFlags && flaggedRowIds.has(r.id) ? rowTintBySeverity(r.flag_severity) : ''}`}>
-                    <td className="px-2 py-2 text-gray-400">{r.row_no}</td>
-                    <td className="px-2 py-2 text-gray-800 max-w-md">
+                    <td className="px-2 py-2 text-gray-400 align-top">{r.row_no}</td>
+                    <td className="px-2 py-2 text-gray-800 max-w-md align-top">
                       <p className="truncate" title={r.description ?? ''}>{r.description ?? '—'}</p>
+                      {/* Take-off: how the quantity was arrived at (standard template). */}
+                      {r.source_cell
+                        ? <p className="text-[11px] text-emerald-700 font-mono truncate">🔗 {r.source_sheet ? `${r.source_sheet}!` : ''}{r.source_cell}</p>
+                        : r.qty_formula
+                          ? <p className="text-[11px] text-emerald-700 font-mono truncate" title={r.qty_formula}>Qty = {r.qty_formula}</p>
+                          : r.qty_basis === 'estimated'
+                            ? <p className="text-[11px] font-semibold text-amber-700">Estimate — no drawing</p>
+                            : null}
                       {r.formula_in_amount && (
                         <p className="text-[11px] text-gray-400 truncate font-mono">= {r.formula_in_amount}</p>
                       )}
                     </td>
-                    <td className="px-2 py-2 text-gray-600">{r.unit ?? ''}</td>
-                    <td className="px-2 py-2 text-right tabular-nums">{r.qty != null ? r.qty.toLocaleString('en-IN') : ''}</td>
-                    <td className="px-2 py-2 text-right tabular-nums">
+                    <td className="px-2 py-2 text-gray-600 align-top">{r.unit ?? ''}</td>
+                    <td className="px-2 py-2 text-right tabular-nums align-top">{r.qty != null ? r.qty.toLocaleString('en-IN') : ''}</td>
+                    <td className="px-2 py-2 text-right tabular-nums align-top">
                       {r.rate != null ? formatINR(r.rate) : ''}
                       {r.rate_breakdown && r.rate_breakdown.length > 0 && (
                         <div className="text-[10px] text-gray-400 font-normal">
@@ -355,7 +374,7 @@ export function ExcelSummaryPanel({
                         </div>
                       )}
                     </td>
-                    <td className="px-2 py-2 text-right tabular-nums">
+                    <td className="px-2 py-2 text-right tabular-nums align-top">
                       {r.amount != null ? formatINR(r.amount) : ''}
                       {r.amount_breakdown && r.amount_breakdown.length > 0 && (
                         <div className="text-[10px] text-gray-400 font-normal">
@@ -364,7 +383,7 @@ export function ExcelSummaryPanel({
                       )}
                     </td>
                     {showFlags && (
-                      <td className="px-2 py-2 max-w-xs">
+                      <td className="px-2 py-2 max-w-xs align-top">
                         {r.flag ? (
                           <div className="space-y-0.5">
                             <Badge className={flagClass(r.flag)}>{flagIcon(r.flag)}{flagLabel(r.flag)}</Badge>
@@ -376,6 +395,34 @@ export function ExcelSummaryPanel({
                   </tr>
                 ))}
               </tbody>
+              {/* Totals footer — rows sum, the GST/additions gap, and the
+                  grand total (the figure that actually gets approved). */}
+              {(() => {
+                const rowsSum = rows.reduce((s, r) => s + (r.amount ?? 0), 0)
+                const gt = grandTotal ?? summaryTotal ?? rowsSum
+                const gap = gt - rowsSum
+                return (
+                  <tfoot>
+                    <tr className="border-t-2 border-gray-200 font-medium text-gray-700">
+                      <td className="px-2 py-2" colSpan={5}>Rows total</td>
+                      <td className="px-2 py-2 text-right tabular-nums">{formatINR(rowsSum)}</td>
+                      {showFlags && <td />}
+                    </tr>
+                    {Math.abs(gap) > 1 && (
+                      <tr className="text-gray-500 text-xs">
+                        <td className="px-2 py-1" colSpan={5}>GST / additions</td>
+                        <td className="px-2 py-1 text-right tabular-nums">{gap >= 0 ? '+' : ''}{formatINR(gap)}</td>
+                        {showFlags && <td />}
+                      </tr>
+                    )}
+                    <tr className="border-t border-gray-200 font-bold text-emerald-900">
+                      <td className="px-2 py-2" colSpan={5}>Grand total (the approved figure)</td>
+                      <td className="px-2 py-2 text-right tabular-nums">{formatINR(gt)}</td>
+                      {showFlags && <td />}
+                    </tr>
+                  </tfoot>
+                )
+              })()}
             </table>
           </div>
         </CardContent>
