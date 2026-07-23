@@ -420,10 +420,10 @@ export default async function CostControlProjectDetailPage(
           {canWrite && (
             <>
               <Link
-                href={`/cost-control/working-sheets/new?project=${project.id}`}
+                href={`/cost-control/working-sheets/new-quick?project=${project.id}`}
                 className="inline-flex items-center gap-1.5 h-9 px-3 rounded-md bg-blue-600 text-white text-sm font-semibold hover:bg-blue-700"
               >
-                <Plus className="h-4 w-4" /> New Working Sheet
+                <Plus className="h-4 w-4" /> Raise Budget Request
               </Link>
               <BphSyncButton projectId={project.id} isMapped={isBphMapped} />
               <Link
@@ -847,7 +847,7 @@ export default async function CostControlProjectDetailPage(
                                 <Link
                                   href={effMode === 'thumbrule'
                                     ? `/cost-control/working-sheets/new-thumbrule?project=${project.id}&discipline=${d.id}&sub_skill=${s.id}`
-                                    : `/cost-control/working-sheets/new?project=${project.id}&discipline=${d.id}&sub_skill=${s.id}`}
+                                    : `/cost-control/working-sheets/new-quick?project=${project.id}&discipline=${d.id}&sub_skill=${s.id}`}
                                   className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-semibold border border-blue-300 text-blue-700 hover:bg-blue-50"
                                 >
                                   <Plus className="h-3 w-3" /> New WS
