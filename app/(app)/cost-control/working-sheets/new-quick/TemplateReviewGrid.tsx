@@ -163,7 +163,7 @@ export function TemplateReviewGrid({
             <tr>
               <th className="px-2 py-1.5 text-left w-8">#</th>
               <th className="px-2 py-1.5 text-left min-w-[180px]">Description</th>
-              <th className="px-2 py-1.5 text-left w-20">Unit</th>
+              <th className="px-2 py-1.5 text-left w-28">Unit</th>
               <th className="px-2 py-1.5 text-right w-20">Qty</th>
               <th className="px-2 py-1.5 text-right w-24" title="Combined rate — the standard. Fill this unless the rate comes split.">Rate (M+L)</th>
               <th className="px-2 py-1.5 text-right w-24 text-gray-400" title="Optional split — only if Material & Installation come separately (then leave M+L blank)">Material*</th>
@@ -239,7 +239,7 @@ export function TemplateReviewGrid({
                     </td>
                     <td className="px-2 py-1.5">
                       <select value={r.unit} onChange={e => update(idx, { unit: e.target.value })}
-                        className="h-8 w-full rounded-md border border-gray-300 bg-white px-1 text-sm">
+                        className="h-8 w-full rounded-md border border-gray-300 bg-white pl-2 pr-1 text-sm">
                         {!BOQ_UNITS.includes(r.unit as typeof BOQ_UNITS[number]) && r.unit && <option value={r.unit}>{r.unit}</option>}
                         {BOQ_UNITS.map(u => <option key={u} value={u}>{u}</option>)}
                       </select>

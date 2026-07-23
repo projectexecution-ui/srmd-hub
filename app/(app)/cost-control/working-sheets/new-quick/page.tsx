@@ -54,7 +54,7 @@ export default async function NewWorkingSheetQuickPage({
   }
 
   return (
-    <div className="p-4 md:p-6 max-w-3xl mx-auto space-y-4">
+    <div className="p-4 md:p-6 max-w-6xl mx-auto space-y-4">
       <PageHeader
         title="Raise Budget Request"
         subtitle="Upload the standard BOQ template — we parse the rows, flag rate outliers, and route it for approval."
