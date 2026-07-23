@@ -309,6 +309,7 @@ export default async function WorkingSheetEditorPage(
           title={ws.ws_code}
           subtitle={`${proj?.code ?? '—'} · ${dis?.code} ${dis?.name} → ${sub?.code} ${sub?.name} · Thumbrule estimate`}
           back={backHref}
+          backMode="history"
         >
           <WSStatusPill status={ws.status as WSStatus} estimateBaseline={isEstimateSheet} />
           {ccSettings.billing_step && extraCols?.in4_entered_at && (
@@ -518,6 +519,7 @@ export default async function WorkingSheetEditorPage(
           title={ws.ws_code}
           subtitle={`${proj?.code ?? '—'} · ${dis?.code} ${dis?.name} → ${sub?.code} ${sub?.name} · Budget Request (Excel)`}
           back={backHref}
+          backMode="history"
         >
           <WSStatusPill status={ws.status as WSStatus} estimateBaseline={isEstimateSheet} />
           {ccSettings.billing_step && extraCols?.in4_entered_at && (
@@ -764,6 +766,7 @@ export default async function WorkingSheetEditorPage(
         title={ws.ws_code}
         subtitle={`${proj?.code ?? '—'} · ${dis?.code} ${dis?.name} → ${sub?.code} ${sub?.name} · ${ws.line_type === 'material' ? 'Material' : ws.line_type === 'combined' ? 'Material + Labour' : 'Work'}${ws.entry_mode === 'thumbrule' ? ' · Thumbrule estimate' : ''}`}
         back={backHref}
+        backMode="history"
       >
         <WSStatusPill status={status} estimateBaseline={isEstimateSheet} />
         {ccSettings.billing_step && extraCols?.in4_entered_at && (
