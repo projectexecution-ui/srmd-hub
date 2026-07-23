@@ -59,6 +59,12 @@ export function RevisionEditor({ wsId, priorApproved, initial, attachments, canE
   const [busy, setBusy] = React.useState<null | 'save' | 'submit'>(null)
   const [error, setError] = React.useState<string | null>(null)
   const [msg, setMsg] = React.useState<string | null>(null)
+  // ONE working file backs the whole revision (engineers upload a single
+  // working / Measurement sheet) — far cleaner than a dropdown on every row.
+  // Seeded from any per-row link that came in, else the first attachment.
+  const [defaultWorkingId, setDefaultWorkingId] = React.useState<string | null>(
+    initial.find(r => r.workingRefId)?.workingRefId ?? attachments[0]?.id ?? null,
+  )
 
   const priorMap = React.useMemo(() => {
     const m = new Map<string, PriorApprovedRow>()
@@ -93,9 +99,10 @@ export function RevisionEditor({ wsId, priorApproved, initial, attachments, canE
   const deltaTotal = evals.reduce((s, e) => s + e.amount, 0)
   const hardErrors = rows.reduce((n, r, i) => {
     const e = evals[i]
-    return n + e.errors.length + (rowNeedsLink(r) && !r.workingRefId ? 1 : 0)
+    // Every changed/new row must be backed by the one revision working file.
+    return n + e.errors.length + (rowNeedsLink(r) && !defaultWorkingId ? 1 : 0)
   }, 0)
-  const unlinked = rows.filter(r => rowNeedsLink(r) && !r.workingRefId).length
+  const unlinked = defaultWorkingId ? 0 : rows.filter(rowNeedsLink).length
 
   function toPayload(): RevisionRowInput[] {
     return rows.map(r => ({
@@ -105,8 +112,9 @@ export function RevisionEditor({ wsId, priorApproved, initial, attachments, canE
       material: r.material,
       installation: r.installation,
       ml: r.ml,
-      working_ref: r.workingRefId || r.cellNote
-        ? { attachment_id: r.workingRefId, cell_note: r.cellNote.trim() || null }
+      // Changed/new rows are all backed by the single revision working file.
+      working_ref: rowNeedsLink(r) && defaultWorkingId
+        ? { attachment_id: defaultWorkingId, cell_note: r.cellNote.trim() || null }
         : null,
     }))
   }
@@ -173,11 +181,29 @@ export function RevisionEditor({ wsId, priorApproved, initial, attachments, canE
 
       {/* Editable delta grid */}
       <div className="rounded-xl border border-gray-200 overflow-hidden">
-        <div className="flex items-center justify-between px-3 py-2 bg-emerald-50 border-b border-emerald-200">
+        <div className="flex items-center justify-between gap-3 flex-wrap px-3 py-2 bg-emerald-50 border-b border-emerald-200">
           <span className="text-sm font-semibold text-emerald-900">This revision — changed &amp; new items only</span>
-          <span className={`text-xs font-medium ${hardErrors ? 'text-rose-700' : 'text-emerald-700'}`}>
-            {hardErrors ? `${hardErrors} to fix` : 'Ready'}
-          </span>
+          <div className="flex items-center gap-3">
+            {/* ONE working file for the whole revision — set here, not per row. */}
+            {attachments.length > 0 && (
+              <span className="inline-flex items-center gap-1.5 text-xs text-emerald-900">
+                <Paperclip className="h-3.5 w-3.5" />
+                Working:
+                {attachments.length === 1 ? (
+                  <span className="font-medium max-w-[200px] truncate" title={attachments[0].name}>{attachments[0].name}</span>
+                ) : (
+                  <select value={defaultWorkingId ?? ''} onChange={e => setDefaultWorkingId(e.target.value || null)} disabled={!canEdit}
+                    className={`h-7 rounded-md border px-1.5 text-xs max-w-[200px] ${defaultWorkingId ? 'border-emerald-300 bg-white' : 'border-rose-300 bg-rose-50'}`}>
+                    <option value="">— pick a working file —</option>
+                    {attachments.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+                  </select>
+                )}
+              </span>
+            )}
+            <span className={`text-xs font-medium ${hardErrors ? 'text-rose-700' : 'text-emerald-700'}`}>
+              {hardErrors ? `${hardErrors} to fix` : 'Ready'}
+            </span>
+          </div>
         </div>
 
         {error && <p className="px-3 py-2 text-xs text-rose-700 bg-rose-50 border-b border-rose-200">{error}</p>}
@@ -194,7 +220,7 @@ export function RevisionEditor({ wsId, priorApproved, initial, attachments, canE
                 <th className="px-2 py-1.5 text-right w-24">Install.</th>
                 <th className="px-2 py-1.5 text-right w-24">M+L</th>
                 <th className="px-2 py-1.5 text-right w-24">Amount</th>
-                <th className="px-2 py-1.5 text-left w-44">Working link</th>
+                <th className="px-2 py-1.5 text-left w-24">Working</th>
                 <th className="px-2 py-1.5 w-8"></th>
               </tr>
             </thead>
@@ -233,13 +259,14 @@ export function RevisionEditor({ wsId, priorApproved, initial, attachments, canE
                       <td className="px-2 py-1.5"><Input value={r.ml ?? ''} onChange={e => update(idx, { ml: numOrNull(e.target.value) })} className={cellCls} inputMode="decimal" disabled={!canEdit} /></td>
                       <td className="px-2 py-1.5 text-right tabular-nums font-semibold text-gray-900">{formatINR(ev.amount)}</td>
                       <td className="px-2 py-1.5">
+                        {/* Backed by the ONE revision working set in the header —
+                            just a status chip here, no per-row dropdown. */}
                         {needsLink ? (
-                          <select value={r.workingRefId ?? ''} onChange={e => update(idx, { workingRefId: e.target.value || null })}
-                            className={`h-8 w-full rounded-md border px-1 text-sm ${r.workingRefId ? 'border-gray-300' : 'border-rose-300 bg-rose-50'}`}
-                            disabled={!canEdit}>
-                            <option value="">— link a working file —</option>
-                            {attachments.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
-                          </select>
+                          defaultWorkingId ? (
+                            <span className="inline-flex items-center gap-1 text-[11px] font-medium text-emerald-700">✓ linked</span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 text-[11px] font-medium text-rose-700"><AlertTriangle className="h-3 w-3" /> set working ↑</span>
+                          )
                         ) : (
                           <span className="text-[11px] text-gray-400">unchanged</span>
                         )}
@@ -275,12 +302,12 @@ export function RevisionEditor({ wsId, priorApproved, initial, attachments, canE
           <div className="px-3 py-3 border-t border-gray-100 space-y-2">
             {attachments.length === 0 && (
               <p className="inline-flex items-center gap-1.5 text-xs text-amber-700">
-                <Paperclip className="h-3.5 w-3.5" /> Upload a working file in &quot;Working &amp; evidence&quot; above so you can link each changed row.
+                <Paperclip className="h-3.5 w-3.5" /> Upload a working file in &quot;Working &amp; evidence&quot; above — it backs this revision&apos;s changed rows.
               </p>
             )}
             {unlinked > 0 && attachments.length > 0 && (
               <p className="inline-flex items-center gap-1.5 text-xs text-rose-700">
-                <AlertTriangle className="h-3.5 w-3.5" /> {unlinked} changed/new row{unlinked > 1 ? 's' : ''} still need a working link.
+                <AlertTriangle className="h-3.5 w-3.5" /> Pick the working file for this revision (top of the grid) — it backs all {unlinked} changed/new row{unlinked > 1 ? 's' : ''}.
               </p>
             )}
             <div className="flex items-center gap-2">
