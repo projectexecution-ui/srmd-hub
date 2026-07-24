@@ -1,7 +1,6 @@
 import { Fragment } from 'react'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/server'
-import { getMyUser } from '@/lib/auth'
 import { PageHeader } from '@/components/PageHeader'
 import { QueryError } from '@/components/ui/query-error'
 import { formatINR } from '@/lib/utils'
@@ -19,9 +18,8 @@ type SRow = { id: string; discipline_id: string; code: string; name: string }
 
 export async function EngineerProjectTable({ projectId }: { projectId: string }) {
   const supabase = await createClient()
-  const user = await getMyUser()
 
-  const [pdRes, psRes, blRes, wsRes, ssaRes] = await Promise.all([
+  const [pdRes, psRes, blRes, wsRes] = await Promise.all([
     supabase
       .from('cc_project_disciplines')
       .select('discipline_id, cc_disciplines(id, code, name, display_order)')
@@ -40,22 +38,14 @@ export async function EngineerProjectTable({ projectId }: { projectId: string })
       .eq('project_id', projectId),
     // Working sheets for Awaiting-Approval + sheet counts. summary_notes lets
     // us drop the [IB] Internal Estimate baseline; chain fields let us count
-    // each revision chain once; engineer_id scopes to the viewer's sheets.
+    // each revision chain once. Role-based access = every non-[IB] sheet in
+    // the project is visible (no per-sub-skill assignment scoping).
     supabase
       .from('cc_ws_with_versions')
       .select('discipline_id, sub_skill_id, engineer_id, status, total_amount, approved_for_erp_amt, chain_anchor_id, version_no, summary_notes')
       .eq('project_id', projectId)
       .is('archived_at', null),
-    // Sub-skills assigned to the viewer here — those sheets are visible too.
-    user
-      ? supabase
-          .from('cc_subskill_assignments')
-          .select('sub_skill_id')
-          .eq('project_id', projectId)
-          .eq('engineer_id', user.id)
-      : Promise.resolve({ data: [] as Array<{ sub_skill_id: string }>, error: null }),
   ])
-  const myAssignedSubs = new Set(((ssaRes.data ?? []) as Array<{ sub_skill_id: string }>).map(r => r.sub_skill_id))
 
   const disciplines: DRow[] = ((pdRes.data ?? []) as Array<{ cc_disciplines: DRow | DRow[] | null }>)
     .map(r => (Array.isArray(r.cc_disciplines) ? r.cc_disciplines[0] : r.cc_disciplines))
@@ -78,15 +68,14 @@ export async function EngineerProjectTable({ projectId }: { projectId: string })
     blMap.set(k, cur)
   }
 
-  // Awaiting-approval + sheet count per (discipline, sub-skill): only sheets
-  // the viewer may see (their own, or in a sub-skill assigned to them) —
-  // never the [IB] baseline — collapsed to each chain's latest version.
+  // Awaiting-approval + sheet count per (discipline, sub-skill): every sheet
+  // in the project except the confidential [IB] baseline — collapsed to each
+  // chain's latest version.
   type WSV = { discipline_id: string; sub_skill_id: string; engineer_id: string | null; status: string; total_amount: number | null; approved_for_erp_amt: number | null; chain_anchor_id: string; version_no: number | null; summary_notes: string | null }
   const latestByChain = new Map<string, WSV>()
   for (const w of (wsRes.data ?? []) as WSV[]) {
     if ((w.summary_notes ?? '').startsWith('[IB')) continue   // never expose the Internal Estimate baseline
     if (w.status === 'cancelled') continue
-    if (w.engineer_id !== user?.id && !myAssignedSubs.has(w.sub_skill_id)) continue // not mine, not assigned to me
     const prev = latestByChain.get(w.chain_anchor_id)
     if (!prev || (w.version_no ?? 1) > (prev.version_no ?? 1)) latestByChain.set(w.chain_anchor_id, w)
   }
@@ -123,18 +112,11 @@ export async function EngineerProjectTable({ projectId }: { projectId: string })
   let totBudget = 0, totWO = 0, totPending = 0
   for (const d of disciplines) { const t = discTotal(d.id); totBudget += t.budget; totWO += t.wo; totPending += t.pending }
 
-  // A sub-skill is "empty" for the engineer only if there's nothing to act on:
-  // no sheet, no ERP, no pending money — AND it isn't assigned to them (an
-  // assigned sub-skill always shows so they can raise its first sheet).
-  const isSubEmpty = (dId: string, s: SRow) => {
-    const bl = blMap.get(`${dId}::${s.id}`)
-    const ag = wsAgg.get(`${dId}::${s.id}`)
-    return (ag?.chains ?? 0) === 0 && (ag?.pending ?? 0) === 0
-      && (bl?.budget ?? 0) === 0 && (bl?.wo ?? 0) === 0
-      && !myAssignedSubs.has(s.id)
-  }
-  let emptyCount = 0
-  for (const d of disciplines) for (const s of (subsByDisc.get(d.id) ?? [])) if (isSubEmpty(d.id, s)) emptyCount++
+  // Engineers CREATE budgets, so every sub-skill stays visible — they must be
+  // able to raise the first request for ANY sub-skill, not only ones that
+  // already have activity. Nothing is hidden as "empty".
+  const isSubEmpty = (_dId: string, _s: SRow) => false
+  const emptyCount = 0
 
   const errored = pdRes.error || psRes.error || blRes.error || wsRes.error
 

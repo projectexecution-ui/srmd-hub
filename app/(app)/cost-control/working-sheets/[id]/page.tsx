@@ -86,20 +86,10 @@ export default async function WorkingSheetEditorPage(
     redirect('/cost-control/working-sheets')
   }
 
-  // An engineer may open a sheet only if THEY created it, or the sub-skill
-  // is assigned to them for budget working — same rule as the list.
-  if (!reviewer && ws.engineer_id !== user?.id) {
-    const { data: ssa } = user
-      ? await supabase
-          .from('cc_subskill_assignments')
-          .select('id')
-          .eq('engineer_id', user.id)
-          .eq('project_id', ws.project_id)
-          .eq('sub_skill_id', ws.sub_skill_id)
-          .maybeSingle()
-      : { data: null }
-    if (!ssa) redirect('/cost-control/working-sheets')
-  }
+  // Cost Control access is role-based: any engineer (a cost-control editor)
+  // may open any non-[IB] sheet — the [IB] Internal Estimate redirect above
+  // is the only confidentiality gate. (Sub-skill assignment is no longer
+  // required to work in a project.)
 
   // Sibling versions in the same chain — drives the prev/next nav + the
   // cumulative money strip (total_amount / approved_for_erp_amt / [IB] flag).

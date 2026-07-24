@@ -791,10 +791,7 @@ async function EngineerHome({ userId, canWrite, label }: { userId: string | null
     cc_sub_skills: { code: string; name: string; discipline_id: string } | { code: string; name: string; discipline_id: string }[] | null
     projects: { code: string; name: string } | { code: string; name: string }[] | null
   }
-  const [paRes, myWsRes, assignRes] = await Promise.all([
-    userId
-      ? supabase.from('project_assignments').select('project_id').eq('user_id', userId).eq('role', 'engineer')
-      : Promise.resolve({ data: [] as Array<{ project_id: string }> }),
+  const [myWsRes, assignRes] = await Promise.all([
     userId
       ? supabase.from('cc_working_sheets').select('project_id, sub_skill_id').eq('engineer_id', userId).is('archived_at', null).neq('status', 'cancelled')
       : Promise.resolve({ data: [] as Array<{ project_id: string; sub_skill_id: string }> }),
@@ -808,16 +805,17 @@ async function EngineerHome({ userId, canWrite, label }: { userId: string | null
   const mySubSet = new Set(myWs.map(w => `${w.project_id}::${w.sub_skill_id}`))
   const pendingAssignments = myAssignments.filter(a => !mySubSet.has(`${a.project_id}::${a.sub_skill_id}`)).length
 
-  const projIds = new Set<string>()
-  for (const r of (paRes.data ?? []) as Array<{ project_id: string }>) projIds.add(r.project_id)
-  for (const w of myWs) projIds.add(w.project_id)
-  for (const a of myAssignments) projIds.add(a.project_id)
-
   type EProj = { id: string; code: string; name: string; built_up_sft: number | null; parent_project_id: string | null; group_label: string | null }
-  const { data: projData } = projIds.size
-    ? await supabase.from('projects').select('id, code, name, built_up_sft, parent_project_id, group_label').in('id', [...projIds]).not('cc_status', 'is', null).order('code')
-    : { data: [] as EProj[] }
+  // Role-based access: an engineer can raise a budget in ANY cost-control
+  // project, so the home lists them all — not just projects they're assigned
+  // to or already have a sheet in.
+  const { data: projData } = await supabase
+    .from('projects')
+    .select('id, code, name, built_up_sft, parent_project_id, group_label')
+    .not('cc_status', 'is', null)
+    .order('code')
   const projects = (projData ?? []) as EProj[]
+  const projIds = new Set<string>(projects.map(p => p.id))
 
   // Per-project ERP budget (Budget + WO) for the project cards. Same
   // summary-vs-detail dedup as management: per (project, discipline), if any

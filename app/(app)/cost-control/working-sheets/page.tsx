@@ -136,23 +136,10 @@ export default async function WorkingSheetsPage({
   // [IB…] Internal Estimate baseline. (engineer_id is not a safe [IB]
   // signal — the import attributed those to a real user — so the TS filter
   // below also drops them by the summary-notes tag.)
-  let myAssignedPairs = new Set<string>()
-  if (!isManagement && me) {
-    const { data: ssa } = await supabase
-      .from('cc_subskill_assignments')
-      .select('project_id, sub_skill_id')
-      .eq('engineer_id', me.id)
-    const pairs = (ssa ?? []) as Array<{ project_id: string; sub_skill_id: string }>
-    myAssignedPairs = new Set(pairs.map(a => `${a.project_id}::${a.sub_skill_id}`))
-    const subIds = [...new Set(pairs.map(a => a.sub_skill_id))]
-    if (subIds.length) {
-      // Own sheets OR sheets in an assigned sub-skill; exact (project,
-      // sub-skill) pairing is re-checked in TS below.
-      q = q.or(`engineer_id.eq.${me.id},sub_skill_id.in.(${subIds.join(',')})`)
-    } else {
-      q = q.eq('engineer_id', me.id)
-    }
-  }
+  // Role-based access: an engineer sees every sheet in Cost Control EXCEPT
+  // the confidential [IB…] Internal Estimate baselines (dropped in the TS
+  // filter below — null-safe, unlike a SQL ilike). Sub-skill assignment no
+  // longer scopes what an engineer can see.
 
   const [wsRes, projectsRes, profilesRes] = await Promise.all([
     q,
@@ -188,13 +175,9 @@ export default async function WorkingSheetsPage({
   const { data: wsData, error: wsError } = wsRes
   let rows = (wsData ?? []) as WSRow[]
   if (!isManagement) {
-    // Defence in depth: an engineer only ever sees their OWN sheets or those
-    // in a sub-skill assigned to them (exact project+sub-skill pair) — and
-    // never an [IB…] baseline sheet, whatever the query returned.
-    rows = rows.filter(r =>
-      !(r.summary_notes ?? '').startsWith('[IB') &&
-      (r.engineer_id === me?.id || myAssignedPairs.has(`${r.project_id}::${r.sub_skill_id}`)),
-    )
+    // Engineers see every sheet EXCEPT the confidential [IB…] Internal
+    // Estimate baselines. Never leak those, whatever the query returned.
+    rows = rows.filter(r => !(r.summary_notes ?? '').startsWith('[IB'))
   }
   const projects = projectsRes.data ?? []
   type ProfileLite = { id: string; full_name: string | null; name: string | null }
