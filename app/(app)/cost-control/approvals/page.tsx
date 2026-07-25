@@ -7,9 +7,9 @@ import { PageHeader } from '@/components/PageHeader'
 import { Card } from '@/components/ui/card'
 import { QueryError } from '@/components/ui/query-error'
 import { WSStatusPill, type WSStatus } from '@/components/cost-control/WSStatusPill'
-import { coveringApproverRole } from '@/lib/cost-control/approver-roles'
+import { isWaitingOnMe, type MyApprovalContext } from '@/lib/cost-control/my-approvals'
 import { formatINR } from '@/lib/utils'
-import { Inbox, ArrowRight, ClipboardList, Ruler } from 'lucide-react'
+import { Inbox, ArrowRight, Ruler, ChevronDown } from 'lucide-react'
 
 // Whole days a sheet has been waiting since it was submitted.
 function daysWaiting(submittedAt: string | null): number {
@@ -46,23 +46,12 @@ function pickFirst<T>(v: T | T[] | null): T | null {
 export default async function ApprovalsInboxPage() {
   await requirePermission('cost-control', 'view')
   // Management only — this page carries project-level financials.
-  if (!(await checkIsCcReviewer())) redirect("/cost-control")
+  if (!(await checkIsCcReviewer())) redirect('/cost-control')
 
   const user = await getMyUser()
   const supabase = await createClient()
 
-  // Disciplines the current user heads (legacy signal) + the projects/stages
-  // they're a named approver for (Phase 1/2). Either makes a sheet "yours".
-  const [{ data: myDisciplines, error: discErr }, { data: myPa }] = await Promise.all([
-    supabase.from('cc_discipline_approvers').select('discipline_id').eq('approver_user_id', user?.id ?? '').eq('is_active', true),
-    supabase.from('cc_project_approvers').select('project_id, role').eq('user_id', user?.id ?? ''),
-  ])
-  const myDisciplineIds = (myDisciplines ?? []).map(d => d.discipline_id)
-  const myCover = new Set((myPa ?? []).map(r => `${r.project_id}:${r.role}`))
-
-  // Every stage of the 3-step chain stays in the inbox until fully
-  // released: submitted (→ Project Head), ph_approved (→ Atm Head),
-  // atm_approved + partially_approved (→ Trustee).
+  // Every stage of the 3-step chain stays pending until fully released.
   const { data: pendingWS, error: wsErr } = await supabase
     .from('cc_working_sheets')
     .select(
@@ -75,103 +64,124 @@ export default async function ApprovalsInboxPage() {
     .is('archived_at', null)
     .order('submitted_at', { ascending: true })
 
-  const queryErr = wsErr ?? discErr
+  const rows = (pendingWS ?? []) as unknown as WSRow[]
+  const pendingProjectIds = [...new Set(rows.map(r => r.project_id))]
+
+  // Everything needed to answer "is this waiting on ME?" — my effective role,
+  // the disciplines I head, and the named-approver map for the pending
+  // projects (mine + which project/stage pairs have ANY named approver).
+  const [{ data: prof }, { data: eff }, { data: myDisc, error: discErr }, { data: approvers, error: apprErr }] =
+    await Promise.all([
+      supabase.from('profiles').select('role').eq('id', user?.id ?? '').maybeSingle(),
+      supabase.rpc('effective_user_role', { p_user_id: user?.id ?? '', p_module_slug: 'cost-control' }),
+      supabase.from('cc_discipline_approvers').select('discipline_id').eq('approver_user_id', user?.id ?? '').eq('is_active', true),
+      pendingProjectIds.length
+        ? supabase.from('cc_project_approvers').select('project_id, role, user_id').in('project_id', pendingProjectIds)
+        : Promise.resolve({ data: [] as Array<{ project_id: string; role: string; user_id: string }>, error: null }),
+    ])
+
+  const queryErr = wsErr ?? discErr ?? apprErr
   if (queryErr) {
     return (
       <div className="p-4 md:p-6 max-w-6xl mx-auto space-y-4">
-        <PageHeader
-          title="Approvals"
-          subtitle="Working sheets waiting for a decision"
-          back="/cost-control"
-        />
+        <PageHeader title="My Approvals" subtitle="Working sheets waiting for your decision" back="/cost-control" />
         <QueryError message={queryErr.message} what="the approvals inbox" />
       </div>
     )
   }
 
-  const rows = (pendingWS ?? []) as unknown as WSRow[]
+  const approverRows = (approvers ?? []) as Array<{ project_id: string; role: string; user_id: string }>
+  const ctx: MyApprovalContext = {
+    isAdmin: (prof?.role as string | null) === 'admin',
+    effectiveRole: (eff as string | null) ?? (prof?.role as string | null) ?? null,
+    myDisciplineIds: new Set((myDisc ?? []).map(d => d.discipline_id as string)),
+    myNamedCover: new Set(approverRows.filter(a => a.user_id === user?.id).map(a => `${a.project_id}:${a.role}`)),
+    projectRolesWithNamedApprover: new Set(approverRows.map(a => `${a.project_id}:${a.role}`)),
+  }
 
-  // "Mine" = I'm the named approver for this project's current stage, or I
-  // head this discipline (legacy).
-  const isMine = (r: WSRow) =>
-    myCover.has(`${r.project_id}:${coveringApproverRole(r.status) ?? ''}`) || myDisciplineIds.includes(r.discipline_id)
-  const mine = rows.filter(isMine)
-  const others = rows.filter(r => !isMine(r))
+  const mine = rows.filter(r => isWaitingOnMe(r, ctx))
+  const others = rows.filter(r => !isWaitingOnMe(r, ctx))
 
-  // Group the "other" queue by which stage each sheet is waiting on, so
-  // Project Head / Atm Head / Trustee each spot their pile instantly.
-  const awaitingPH      = others.filter(r => r.status === 'submitted')
-  const awaitingAtm     = others.filter(r => r.status === 'ph_approved')
-  const awaitingTrustee = others.filter(r => r.status === 'atm_approved' || r.status === 'partially_approved')
+  const pendingValue = (list: WSRow[]) =>
+    list.reduce((a, r) => a + Math.max(Number(r.total_amount ?? 0) - Number(r.approved_for_erp_amt ?? 0), 0), 0)
 
-  // Total pending value (across all) — for partially approved sheets only
-  // the unreleased remainder is still pending.
-  const totalPendingValue = rows.reduce(
-    (a, r) => a + Math.max(Number(r.total_amount ?? 0) - Number(r.approved_for_erp_amt ?? 0), 0),
-    0,
-  )
+  // My queue, split by the stage it's waiting on (a person usually sits at one
+  // stage; an admin sees all three).
+  const mineByStage = {
+    ph:  mine.filter(r => r.status === 'submitted'),
+    atm: mine.filter(r => r.status === 'ph_approved'),
+    tru: mine.filter(r => r.status === 'atm_approved' || r.status === 'partially_approved'),
+  }
+  const othersByStage = {
+    ph:  others.filter(r => r.status === 'submitted'),
+    atm: others.filter(r => r.status === 'ph_approved'),
+    tru: others.filter(r => r.status === 'atm_approved' || r.status === 'partially_approved'),
+  }
+  const hasThumbruleMine = mine.length > 0
 
   return (
     <div className="p-4 md:p-6 max-w-6xl mx-auto space-y-4">
       <PageHeader
-        title="Approvals"
-        subtitle={`${rows.length} working sheet${rows.length === 1 ? '' : 's'} pending · ${formatINR(totalPendingValue)} pending value`}
+        title="My Approvals"
+        subtitle={
+          mine.length > 0
+            ? `${mine.length} waiting on you · ${formatINR(pendingValue(mine))} to decide`
+            : 'Nothing waiting on you right now'
+        }
         back="/cost-control"
       />
 
-      {/* Quick-link to bulk approval for thumbrule rows — saves PMs the
-          one-at-a-time click when a project has many quick estimates. */}
-      <Link
-        href="/cost-control/approvals/thumbrule"
-        className="block rounded-lg border border-amber-200 bg-amber-50/50 px-4 py-2.5 hover:bg-amber-50/80 transition-colors"
-      >
-        <div className="flex items-center justify-between gap-3">
-          <div className="inline-flex items-center gap-2">
-            <Ruler className="h-4 w-4 text-amber-700" />
-            <span className="text-sm font-semibold text-amber-900">Bulk approve Thumbrule sheets</span>
-            <span className="text-xs text-amber-700">— review rate × area on one page, approve in one click</span>
+      {hasThumbruleMine && (
+        <Link
+          href="/cost-control/approvals/thumbrule"
+          className="block rounded-lg border border-amber-200 bg-amber-50/50 px-4 py-2.5 hover:bg-amber-50/80 transition-colors"
+        >
+          <div className="flex items-center justify-between gap-3">
+            <div className="inline-flex items-center gap-2">
+              <Ruler className="h-4 w-4 text-amber-700" />
+              <span className="text-sm font-semibold text-amber-900">Bulk approve Thumbrule sheets</span>
+              <span className="text-xs text-amber-700">— review rate × area on one page, approve in one click</span>
+            </div>
+            <ArrowRight className="h-4 w-4 text-amber-700" />
           </div>
-          <ArrowRight className="h-4 w-4 text-amber-700" />
-        </div>
-      </Link>
-
-      {mine.length > 0 && (
-        <ApprovalSection
-          title="For your review"
-          subtitle="WS in disciplines you head"
-          rows={mine}
-          highlight
-        />
+        </Link>
       )}
 
-      {/* Stage queues — one section per approver in the chain */}
-      <ApprovalSection
-        title="Awaiting Project Head"
-        subtitle="Stage 1 of 3 — first sign-off"
-        rows={awaitingPH}
-      />
-      <ApprovalSection
-        title="Awaiting Atm Head"
-        subtitle="Stage 2 of 3 — signed off by the Project Head"
-        rows={awaitingAtm}
-      />
-      <ApprovalSection
-        title="Awaiting Trustee"
-        subtitle="Stage 3 of 3 — release into ERP (part or full)"
-        rows={awaitingTrustee}
-      />
-
-      {rows.length === 0 && (
+      {/* ── MY queue ── */}
+      {mine.length > 0 ? (
+        <>
+          <ApprovalSection title="Awaiting your sign-off — Project Head" subtitle="Stage 1 of 3" rows={mineByStage.ph} highlight />
+          <ApprovalSection title="Awaiting your sign-off — Atm Head" subtitle="Stage 2 of 3" rows={mineByStage.atm} highlight />
+          <ApprovalSection title="Awaiting your release — Trustee" subtitle="Stage 3 of 3 — release into ERP" rows={mineByStage.tru} highlight />
+        </>
+      ) : (
         <Card className="p-10 text-center text-gray-500 text-sm">
           <Inbox className="h-8 w-8 mx-auto text-gray-300 mb-2" />
-          <div>Nothing pending. Engineers submit working sheets to land them here.</div>
-          <Link
-            href="/cost-control/working-sheets"
-            className="inline-block mt-2 text-blue-700 hover:underline text-sm"
-          >
+          <div>Nothing is waiting on you right now.</div>
+          <Link href="/cost-control/working-sheets" className="inline-block mt-2 text-blue-700 hover:underline text-sm">
             Browse all working sheets →
           </Link>
         </Card>
+      )}
+
+      {/* ── The rest of the team's pending, collapsed so it doesn't distract ── */}
+      {others.length > 0 && (
+        <details className="rounded-lg border border-gray-200 bg-white group">
+          <summary className="flex items-center justify-between gap-3 px-4 py-3 cursor-pointer list-none select-none hover:bg-gray-50">
+            <span className="text-sm font-semibold text-gray-700">
+              Rest of the team&apos;s pending
+              <span className="ml-2 text-xs font-normal text-gray-500">
+                {others.length} sheet{others.length === 1 ? '' : 's'} · {formatINR(pendingValue(others))} — waiting on others
+              </span>
+            </span>
+            <ChevronDown className="h-4 w-4 text-gray-400 transition-transform group-open:rotate-180" />
+          </summary>
+          <div className="border-t border-gray-100 p-3 space-y-3">
+            <ApprovalSection title="Awaiting Project Head" subtitle="Stage 1 of 3" rows={othersByStage.ph} />
+            <ApprovalSection title="Awaiting Atm Head" subtitle="Stage 2 of 3" rows={othersByStage.atm} />
+            <ApprovalSection title="Awaiting Trustee" subtitle="Stage 3 of 3" rows={othersByStage.tru} />
+          </div>
+        </details>
       )}
     </div>
   )
@@ -216,23 +226,18 @@ function ApprovalSection({
               const est = Number(ws.total_amount ?? 0)
               const released = Number(ws.approved_for_erp_amt ?? 0)
               const partial = ws.status === 'partially_approved' && released > 0
+              // ?from=approvals surfaces the "Back to My Approvals" link on the sheet.
+              const href = `/cost-control/working-sheets/${ws.id}?from=approvals`
               return (
                 <tr key={ws.id} className="hover:bg-gray-50">
                   <td className="px-4 py-2.5 font-mono text-xs text-gray-700">
-                    <Link
-                      href={`/cost-control/working-sheets/${ws.id}`}
-                      className="hover:text-blue-700"
-                    >
-                      {ws.ws_code}
-                    </Link>
+                    <Link href={href} className="hover:text-blue-700">{ws.ws_code}</Link>
                   </td>
                   <td className="px-3 py-2.5 font-medium text-gray-900">
-                    {proj?.name ?? '—'}{' '}
-                    <span className="text-xs font-mono text-gray-500">{proj?.code}</span>
+                    {proj?.name ?? '—'} <span className="text-xs font-mono text-gray-500">{proj?.code}</span>
                   </td>
                   <td className="px-3 py-2.5 text-gray-700">
-                    <span className="text-xs text-gray-500 font-mono">{disc?.code}</span> {disc?.name} ·{' '}
-                    {sub?.name}
+                    <span className="text-xs text-gray-500 font-mono">{disc?.code}</span> {disc?.name} · {sub?.name}
                   </td>
                   <td className="px-3 py-2.5 text-right font-semibold text-gray-900">
                     {formatINR(ws.total_amount)}
@@ -254,10 +259,7 @@ function ApprovalSection({
                     <WSStatusPill status={ws.status as WSStatus} />
                   </td>
                   <td className="px-3 py-2.5 text-right">
-                    <Link
-                      href={`/cost-control/working-sheets/${ws.id}`}
-                      className="inline-flex items-center gap-1 text-blue-700 hover:text-blue-900 text-sm font-medium"
-                    >
+                    <Link href={href} className="inline-flex items-center gap-1 text-blue-700 hover:text-blue-900 text-sm font-medium">
                       Review <ArrowRight className="h-3.5 w-3.5" />
                     </Link>
                   </td>
@@ -267,12 +269,6 @@ function ApprovalSection({
           </tbody>
         </table>
       </div>
-      {rows.length === 0 && (
-        <div className="px-5 py-8 text-center text-gray-500 text-sm">
-          <ClipboardList className="h-6 w-6 mx-auto text-gray-300 mb-1" />
-          Nothing in this queue.
-        </div>
-      )}
     </Card>
   )
 }

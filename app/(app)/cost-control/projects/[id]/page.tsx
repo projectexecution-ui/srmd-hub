@@ -14,6 +14,7 @@ import { computeMoneyRollup, type RollupWSRow, type RollupVersionRow, type Rollu
 import { QueryError } from '@/components/ui/query-error'
 import { DeadlineBadge } from '@/components/cost-control/DeadlineBadge'
 import { TreeProvider, TreeToolbar, CatChevron, CatRows, SubRow } from '@/components/cost-control/project-tree'
+import { FocusScroll } from '@/components/cost-control/FocusScroll'
 import { wsStatusLabel } from '@/components/cost-control/WSStatusPill'
 import { DeadlineCell, SubSkillModeCell, DisableButton, InternalEstimateDecision, SubSkillAssignControl, RowConfigMenu, RowConfigItem } from './RowControls'
 import { BphSyncButton } from './BphSyncButton'
@@ -48,10 +49,17 @@ interface WSAgg {
 }
 
 export default async function CostControlProjectDetailPage(
-  { params }: { params: Promise<{ id: string }> }
+  { params, searchParams }: {
+    params: Promise<{ id: string }>
+    searchParams: Promise<{ focus_disc?: string; focus_sub?: string }>
+  }
 ) {
   const perms = await requirePermission('cost-control', 'view')
   const { id } = await params
+  // Deep-link from an approval review: open ONLY this category, highlight this
+  // sub-skill, keep everything else collapsed so the reviewer isn't lost in a
+  // wall of rows.
+  const { focus_disc: focusDisc, focus_sub: focusSub } = await searchParams
 
   const supabase = await createClient()
   const ccSettings = await getCcSettings()
@@ -572,6 +580,16 @@ export default async function CostControlProjectDetailPage(
           Categories collapse into their cumulative totals (project-tree). */}
       <TreeProvider
         allCatIds={disciplines.map(d => d.id)}
+        // Declutter by default: management lands on rolled-up categories (expand
+        // what you need). A deep-link from an approval opens ONLY its category.
+        initialCollapsedIds={
+          focusDisc
+            ? disciplines.filter(d => d.id !== focusDisc).map(d => d.id)
+            : disciplines.map(d => d.id)
+        }
+        // In focus mode show every sub-skill in the opened category so the
+        // targeted one is guaranteed visible (even if it has no activity yet).
+        initialHideEmpty={!focusSub}
         emptyCount={subSkills.filter(s => {
           if (!disciplines.some(d => d.id === s.discipline_id)) return false
           const bl = blMap.get(`${s.discipline_id}::${s.id}`)
@@ -580,6 +598,7 @@ export default async function CostControlProjectDetailPage(
             && (bl?.budget ?? 0) === 0 && (bl?.wo ?? 0) === 0 && (bl?.paid ?? 0) === 0
         }).length}
       >
+      {focusSub && <FocusScroll targetId={`sub-${focusSub}`} />}
       <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
         <div className="flex items-center justify-between px-3 py-2 border-b border-gray-100 bg-gray-50/60">
           <span className="text-[11px] font-medium text-gray-500">Work categories — click a row to collapse; totals roll up.</span>
@@ -730,9 +749,10 @@ export default async function CostControlProjectDetailPage(
                       // toggle so the table isn't a wall of "—".
                       const isEmpty = estLive === 0 && ask === 0 && wsCount === 0
                         && (bl?.budget ?? 0) === 0 && (bl?.wo ?? 0) === 0 && (bl?.paid ?? 0) === 0
+                      const isFocus = focusSub === s.id
                       return (
                         <SubRow key={s.id} empty={isEmpty}>
-                        <tr className="border-t border-gray-100 hover:bg-gray-50/60">
+                        <tr id={`sub-${s.id}`} className={`border-t border-gray-100 hover:bg-gray-50/60 ${isFocus ? 'bg-amber-100/70 ring-2 ring-inset ring-amber-400' : ''}`}>
                           <td className="pl-10 pr-3 py-2 text-gray-700">
                             <span className="font-mono text-[11px] text-gray-400 mr-2">{s.code}</span>
                             <span>{s.name}</span>

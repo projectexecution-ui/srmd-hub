@@ -21,13 +21,23 @@ interface TreeCtx {
 }
 const Ctx = createContext<TreeCtx | null>(null)
 
-export function TreeProvider({ allCatIds, emptyCount = 0, children }: { allCatIds: string[]; emptyCount?: number; children: ReactNode }) {
-  // Default: everything expanded (empty collapsed set) — today's behaviour.
-  const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set())
+export function TreeProvider({ allCatIds, emptyCount = 0, initialCollapsedIds, initialHideEmpty = true, children }: {
+  allCatIds: string[]
+  emptyCount?: number
+  /** Categories collapsed on first render. Pass allCatIds to open rolled-up
+   *  (management declutter), or all-but-one to focus a single category
+   *  (deep-link from an approval). Omit for the legacy all-expanded default. */
+  initialCollapsedIds?: string[]
+  /** Start with empty sub-skills shown (e.g. a deep-link that must reveal a
+   *  specific, possibly-empty sub-skill). Defaults to hidden. */
+  initialHideEmpty?: boolean
+  children: ReactNode
+}) {
+  const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set(initialCollapsedIds ?? []))
   // Empty sub-skills (no estimate, no WS, no budget) are hidden by DEFAULT so
   // the table reads as "what's actually in play" — one click shows everything
   // (needed to raise the first sheet for an untouched sub-skill).
-  const [hideEmpty, setHideEmpty] = useState(true)
+  const [hideEmpty, setHideEmpty] = useState(initialHideEmpty)
   const api = useMemo<TreeCtx>(() => ({
     isCollapsed: (id) => collapsed.has(id),
     toggle: (id) => setCollapsed(prev => {

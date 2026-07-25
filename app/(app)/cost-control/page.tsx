@@ -446,17 +446,17 @@ export default async function CostControlLandingPage() {
           <Stat label="Projects" value={ccProjects.length} hint={incompleteCount ? `${incompleteCount} need setup` : 'all set up'} icon={<Calculator className="h-5 w-5" />} />
           <Link href="/cost-control/approvals" className="block">
             <Stat
-              label="Pending approvals"
-              value={pendingCount}
+              label="My Approvals"
+              value={waitingOnMe}
               hint={
-                pendingCount === 0
-                  ? 'all clear'
-                  : approversErr && !canAdmin
-                    ? "couldn't check whose turn — open to review"
-                    : `${waitingOnMe} waiting on you · ${withOthers} with others`
+                approversErr && !canAdmin
+                  ? "couldn't check whose turn — open to review"
+                  : waitingOnMe === 0
+                    ? (withOthers > 0 ? `all clear · ${withOthers} with the team` : 'all clear')
+                    : (withOthers > 0 ? `waiting on you · ${withOthers} with the team` : 'all waiting on you')
               }
               icon={<Inbox className="h-5 w-5" />}
-              tone={pendingCount > 0 ? 'amber' : 'default'}
+              tone={waitingOnMe > 0 ? 'amber' : 'default'}
             />
           </Link>
           <Link

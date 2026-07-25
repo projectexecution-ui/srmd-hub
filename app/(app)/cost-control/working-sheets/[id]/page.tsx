@@ -1,4 +1,5 @@
 import Link from 'next/link'
+import { Inbox, FolderTree } from 'lucide-react'
 import { notFound, redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { requirePermission, can, getMyUser, getMyProfile } from '@/lib/auth'
@@ -39,11 +40,17 @@ interface SRow { code: string; name: string }
 interface PRow { code: string; name: string }
 
 export default async function WorkingSheetEditorPage(
-  { params }: { params: Promise<{ id: string }> }
+  { params, searchParams }: {
+    params: Promise<{ id: string }>
+    searchParams: Promise<{ from?: string }>
+  }
 ) {
   const perms = await requirePermission('cost-control', 'view')
   const canEdit = can(perms, 'cost-control', 'edit')
   const { id } = await params
+  // Where the reviewer came from — 'approvals' shows a "Back to My Approvals"
+  // link alongside the "Open in Project Internal Estimate" deep-link.
+  const { from: cameFrom } = await searchParams
   const supabase = await createClient()
   const [user, profile] = await Promise.all([getMyUser(), getMyProfile()])
   const isAdmin = profile?.role === 'admin'
@@ -275,6 +282,34 @@ export default async function WorkingSheetEditorPage(
     return s ? `/cost-control/working-sheets?${s}` : '/cost-control/working-sheets'
   })()
 
+  // Reviewer navigation: back to the personal approvals queue, and a deep-link
+  // that opens THIS sub-skill inside the project's Internal Estimate (only its
+  // category expanded + the sub-skill highlighted) for a full-project check.
+  const projFocusHref = ws.project_id
+    ? `/cost-control/projects/${ws.project_id}?focus_disc=${ws.discipline_id ?? ''}${ws.sub_skill_id ? `&focus_sub=${ws.sub_skill_id}` : ''}`
+    : null
+  const reviewNav = (cameFrom === 'approvals' || (reviewer && projFocusHref)) ? (
+    <div className="flex flex-wrap items-center gap-2">
+      {cameFrom === 'approvals' && (
+        <Link
+          href="/cost-control/approvals"
+          className="inline-flex items-center gap-1.5 rounded-md border border-indigo-200 bg-indigo-50 px-2.5 py-1 text-xs font-semibold text-indigo-700 hover:bg-indigo-100"
+        >
+          <Inbox className="h-3.5 w-3.5" /> Back to My Approvals
+        </Link>
+      )}
+      {reviewer && projFocusHref && (
+        <Link
+          href={projFocusHref}
+          className="inline-flex items-center gap-1.5 rounded-md border border-gray-200 bg-white px-2.5 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-50"
+          title="See this sub-skill inside the full project Internal Estimate"
+        >
+          <FolderTree className="h-3.5 w-3.5" /> Open in Project Internal Estimate
+        </Link>
+      )}
+    </div>
+  ) : null
+
   // Thumbrule mode: a single rate × area figure — no line items. Render
   // a read-only summary + the same submit/approve/return actions, NOT the
   // line-item editor (which would wrongly invite "Add row").
@@ -308,6 +343,8 @@ export default async function WorkingSheetEditorPage(
             </span>
           )}
         </PageHeader>
+
+        {reviewNav}
 
         <VersionChainBar
           wsId={ws.id}
@@ -518,6 +555,8 @@ export default async function WorkingSheetEditorPage(
             </span>
           )}
         </PageHeader>
+
+        {reviewNav}
 
         <VersionChainBar
           wsId={ws.id}
@@ -765,6 +804,8 @@ export default async function WorkingSheetEditorPage(
           </span>
         )}
       </PageHeader>
+
+      {reviewNav}
 
       <VersionChainBar
         wsId={ws.id}
