@@ -12,9 +12,17 @@
 // CT Hub project, and vice versa. Manage from /cost-control/import/bph.
 
 import { z } from 'zod'
+import type { SupabaseClient } from '@supabase/supabase-js'
 import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
 import { requirePermission, getMyUser, getMyPermissions, can } from '@/lib/auth'
+
+// The unattended paths (the twice-daily cron) pass a service-role client +
+// actorId so the same pull logic runs with no user session (skipping the
+// per-request auth gates). Typed back to the server-client shape so the
+// queries below stay type-checked.
+type CcClient = Awaited<ReturnType<typeof createClient>>
+interface ServiceOpts { client?: SupabaseClient; actorId?: string | null }
 import { generateJSON, hasAiProvider } from '@/lib/ai'
 import { formatINR } from '@/lib/utils'
 
@@ -213,13 +221,13 @@ export async function previewBphImport(
   input: z.infer<typeof previewSchema>,
   // useAi:false = code matches only. The unsupervised auto-pull uses it so
   // AI never guesses a mapping without a human looking at the preview.
-  opts?: { useAi?: boolean },
+  opts?: { useAi?: boolean } & ServiceOpts,
 ): Promise<BphPreview> {
-  await requirePermission('cost-control', 'edit')
+  if (!opts?.client) await requirePermission('cost-control', 'edit')
   const parsed = previewSchema.safeParse(input)
   if (!parsed.success) return { ok: false, error: 'Invalid input' }
 
-  const supabase = await createClient()
+  const supabase = (opts?.client ?? await createClient()) as CcClient
   const [{ data: stateRow }, { data: ccProject }, { data: disciplines }, { data: subSkills }, { data: enDisc }, { data: enSub }] = await Promise.all([
     supabase.from('budget_hub_state').select('state').eq('id', 'global').single(),
     supabase.from('projects').select('id, code, name').eq('id', parsed.data.cc_project_id).single(),
@@ -363,13 +371,13 @@ export interface CommitOutcome {
 
 export async function commitBphImport(
   input: z.infer<typeof commitSchema>,
-  opts?: { useAi?: boolean },
+  opts?: { useAi?: boolean } & ServiceOpts,
 ): Promise<CommitOutcome | { ok: false; error: string }> {
-  await requirePermission('cost-control', 'edit')
+  if (!opts?.client) await requirePermission('cost-control', 'edit')
   const parsed = commitSchema.safeParse(input)
   if (!parsed.success) return { ok: false, error: 'Invalid input' }
 
-  const supabase = await createClient()
+  const supabase = (opts?.client ?? await createClient()) as CcClient
 
   let toImport: CommitRow[]
   // Money-carrying rows we couldn't place. Only known when WE run the match
@@ -445,7 +453,7 @@ export async function commitBphImport(
     // useAi:false so it only ever writes exact/normalised code matches.
     const preview = await previewBphImport(
       { bph_project_id: parsed.data.bph_project_id, cc_project_id: parsed.data.cc_project_id },
-      { useAi: opts?.useAi ?? true },
+      { useAi: opts?.useAi ?? true, client: opts?.client },
     )
     if (!preview.ok) return preview
     toImport = preview.rows
@@ -466,7 +474,8 @@ export async function commitBphImport(
       .map(r => r.head)
   }
 
-  const me = await getMyUser()
+  // Actor for audit columns — the signed-in user, or the cron's actorId (null).
+  const me = opts?.client ? ({ id: opts.actorId ?? null } as { id: string | null }) : await getMyUser()
 
   // Keys this pull carries (attempted, not just succeeded — a transient
   // write error must not make the next pull think the line vanished and
@@ -745,23 +754,24 @@ export interface MappedPullOutcome {
   error?: string
 }
 
-export async function runAllMappedPulls(): Promise<{ ok: true; outcomes: MappedPullOutcome[]; ran_at: string }> {
-  // Soft permission gate. This is called from the /budget save hook, which
-  // any signed-in user with budget access can trigger — but only users
-  // with cost-control EDIT should be able to write CC budget lines or
-  // audit events. We check softly (no redirect) and no-op for everyone
-  // else, so a non-CC user saving the BPH report doesn't pollute Cost
-  // Control data or its audit trail. (commitBphImport also hard-gates,
-  // but it uses redirect() which must NOT run inside the per-link
-  // try/catch below — hence the early return here.)
-  const perms = await getMyPermissions()
-  if (!can(perms, 'cost-control', 'edit')) {
-    return { ok: true, outcomes: [], ran_at: new Date().toISOString() }
+export async function runAllMappedPulls(
+  // Pass { client, actorId } for the unattended cron (service role, no user).
+  opts?: ServiceOpts,
+): Promise<{ ok: true; outcomes: MappedPullOutcome[]; ran_at: string }> {
+  // Soft permission gate for the user-triggered path (/budget save hook):
+  // only cost-control EDIT users may write CC budget lines / audit events,
+  // so a non-CC user saving the BPH report doesn't pollute Cost Control.
+  // The cron path (opts.client set) is service-role + trusted → skip the gate.
+  if (!opts?.client) {
+    const perms = await getMyPermissions()
+    if (!can(perms, 'cost-control', 'edit')) {
+      return { ok: true, outcomes: [], ran_at: new Date().toISOString() }
+    }
   }
 
   // Best-effort: each pull catches its own error so one bad mapping
   // doesn't take down the whole sync.
-  const supabase = await createClient()
+  const supabase = (opts?.client ?? await createClient()) as CcClient
   const { data: links } = await supabase
     .from('cc_bph_project_links')
     .select('bph_project_id, cc_project_id')
@@ -775,7 +785,7 @@ export async function runAllMappedPulls(): Promise<{ ok: true; outcomes: MappedP
       const r = await commitBphImport({
         bph_project_id: link.bph_project_id,
         cc_project_id: link.cc_project_id,
-      }, { useAi: false })
+      }, { useAi: false, client: opts?.client, actorId: opts?.actorId })
       if (r.ok) {
         outcomes.push({
           bph_project_id: link.bph_project_id,

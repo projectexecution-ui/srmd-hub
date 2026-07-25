@@ -752,23 +752,30 @@ function BphSyncChip({
   const when = sync.ran_at
     ? new Date(sync.ran_at).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })
     : 'never'
-  const title = `BPH auto-sync · ${sync.total_links} project${sync.total_links === 1 ? '' : 's'} mapped · last run ${when}`
-    + (healthy ? '' : ` · ${sync.err_count} mapping${sync.err_count === 1 ? '' : 's'} had errors — open to review`)
 
+  // Healthy → a VERY quiet grey line ("BPH synced · <when>"): a low-key
+  // reassurance that the ERP figures auto-sync (twice a day + on every upload)
+  // without drawing the eye. Errors stay amber with a count — those want a look.
+  if (healthy) {
+    return (
+      <Link
+        href="/cost-control/import/bph"
+        title={`BPH reports auto-synced · ${sync.total_links} project${sync.total_links === 1 ? '' : 's'} mapped · last run ${when} · refreshes twice a day and on every upload`}
+        className="inline-flex items-center gap-1 text-[11px] font-medium text-gray-400 hover:text-gray-600 whitespace-nowrap"
+      >
+        <CheckCircle2 className="h-3 w-3 text-emerald-400" />
+        BPH synced<span className="hidden md:inline text-gray-300"> · {when}</span>
+      </Link>
+    )
+  }
   return (
     <Link
       href="/cost-control/import/bph"
-      title={title}
-      className={`relative inline-flex items-center justify-center h-9 w-9 rounded-md border ${
-        healthy
-          ? 'border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
-          : 'border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100'
-      }`}
+      title={`BPH auto-sync · ${sync.total_links} mapped · last run ${when} · ${sync.err_count} mapping${sync.err_count === 1 ? '' : 's'} had errors — open to review`}
+      className="relative inline-flex items-center justify-center h-9 w-9 rounded-md border border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100"
     >
-      {healthy ? <CheckCircle2 className="h-4 w-4" /> : <AlertTriangle className="h-4 w-4" />}
-      {!healthy && (
-        <span className="absolute -top-1 -right-1 inline-flex items-center justify-center min-w-[16px] h-[16px] px-1 rounded-full bg-amber-500 text-white text-[9px] font-bold">{sync.err_count}</span>
-      )}
+      <AlertTriangle className="h-4 w-4" />
+      <span className="absolute -top-1 -right-1 inline-flex items-center justify-center min-w-[16px] h-[16px] px-1 rounded-full bg-amber-500 text-white text-[9px] font-bold">{sync.err_count}</span>
     </Link>
   )
 }

@@ -25,6 +25,14 @@
     {
       "path": "/api/cron/bills-pipeline?cron=1&slot=pm",
       "schedule": "0 13 * * *"
+    },
+    {
+      "path": "/api/cron/bph-sync?cron=1",
+      "schedule": "0 6 * * *"
+    },
+    {
+      "path": "/api/cron/bph-sync?cron=1",
+      "schedule": "0 15 * * *"
     }
   ]
 }
