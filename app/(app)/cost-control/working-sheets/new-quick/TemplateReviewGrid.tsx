@@ -88,13 +88,17 @@ export function TemplateReviewGrid({
   // take-off or a Measurement link) OR the engineer has toggled it measured with
   // a note; otherwise it's an ESTIMATE. Any no-formula row needs a note.
   const itemRows = rows.filter(r => !r.isHeading)
-  const rowBasis = (r: EditableGridRow) => hasFormula(r) ? 'measured' : (r.qtyBasis ?? 'estimated')
+  // Basis is DERIVED from the Qty cell, never a manual toggle: a formula/link
+  // is measured, anything else is an estimate (needs a reason). So a plain
+  // number can't be passed off as measured to dodge the reason.
+  const rowBasis = (r: EditableGridRow) => hasFormula(r) ? 'measured' : 'estimated'
   const itemCount = itemRows.length
   const measuredCount = itemRows.filter(r => rowBasis(r) === 'measured').length
   const estimateCount = itemCount - measuredCount
-  // Only an ESTIMATE (no drawing) needs a reason — a measured-typed row is one
-  // click, no note. Keeps the busywork off diligent engineers.
-  const notesNeeded = itemRows.filter(r => rowBasis(r) === 'estimated' && !(r.qtyNote ?? '').trim()).length
+  // The estimate reason (note on a no-drawing row) is OPTIONAL — never block
+  // submit on a missing note. Management still sees the estimate count and can
+  // return the sheet if they want a reason.
+  const notesNeeded = 0
 
   // Report the rolled-up summary up to the parent (for the submit gate).
   React.useEffect(() => {
@@ -199,10 +203,13 @@ export function TemplateReviewGrid({
                     <td className="px-2 py-1.5">
                       <Input value={r.description} onChange={e => update(idx, { description: e.target.value })}
                         className="h-8" placeholder="e.g. RCC M25 footings" />
-                      {/* Take-off basis. A formula-backed qty is measured (green,
-                          locked). A plain-typed qty defaults to estimate but the
-                          engineer can toggle it to Measured — either way a
-                          no-formula row needs a one-line note. */}
+                      {/* Take-off basis is DERIVED from the Qty cell, not a
+                          toggle: a formula / Measurement-tab link = measured; a
+                          plain number = estimate (no drawing) and needs a
+                          one-line reason. There is deliberately NO "mark
+                          measured" button — the formula is the only honest
+                          signal, so a plain number can't be passed off as
+                          measured to skip the reason. */}
                       {(() => {
                         if (hasFormula(r)) {
                           return (
@@ -214,25 +221,18 @@ export function TemplateReviewGrid({
                             </span>
                           )
                         }
-                        const basis = r.qtyBasis ?? 'estimated'
-                        const noteMissing = !(r.qtyNote ?? '').trim()
                         return (
                           <div className="mt-1">
-                            <span className="inline-flex rounded-md border border-gray-200 overflow-hidden text-[10px] font-bold">
-                              <button type="button" onClick={() => update(idx, { qtyBasis: 'measured' })}
-                                className={`px-1.5 py-0.5 ${basis === 'measured' ? 'bg-emerald-600 text-white' : 'bg-white text-gray-500'}`}>Measured</button>
-                              <button type="button" onClick={() => update(idx, { qtyBasis: 'estimated' })}
-                                className={`px-1.5 py-0.5 ${basis === 'estimated' ? 'bg-amber-500 text-white' : 'bg-white text-gray-500'}`}>Estimate</button>
+                            <span className="inline-flex items-center gap-1 rounded px-1 py-0.5 text-[10px] font-bold text-amber-700 bg-amber-50 border border-amber-200"
+                              title="No take-off formula, so this quantity is an estimate. To mark it measured, put the take-off formula or a Measurement-tab link in the Qty cell.">
+                              <AlertTriangle className="h-2.5 w-2.5" /> Estimate — no drawing
                             </span>
-                            {/* Only an estimate (no drawing) needs a reason — measured is one click. */}
-                            {basis === 'estimated' && (
-                              <input
-                                value={r.qtyNote ?? ''}
-                                onChange={e => update(idx, { qtyNote: e.target.value })}
-                                placeholder="Why no take-off? (required — e.g. GK estimate, no drawing yet)"
-                                className={`mt-1 h-7 w-full rounded-md border px-2 text-xs ${noteMissing ? 'border-amber-400 bg-amber-50/40' : 'border-gray-300'}`}
-                              />
-                            )}
+                            <input
+                              value={r.qtyNote ?? ''}
+                              onChange={e => update(idx, { qtyNote: e.target.value })}
+                              placeholder="Optional note — e.g. GK estimate, no drawing yet"
+                              className="mt-1 h-7 w-full rounded-md border border-gray-300 px-2 text-xs"
+                            />
                           </div>
                         )
                       })()}

@@ -566,9 +566,7 @@ export function NewWSQuickForm({ projects, projectDisciplines, projectSubSkills,
       if (tplSummary && !tplSummary.reconciledToClaim) {
         setError('The rows don’t add up to your approval amount. Fix the rows or correct the amount below.'); return
       }
-      if (tplSummary && tplSummary.notesNeeded > 0) {
-        setError(`${tplSummary.notesNeeded} row${tplSummary.notesNeeded > 1 ? 's need' : ' needs'} a one-line note (how it was measured, or why there's no take-off) before you can send.`); return
-      }
+      // Estimate reason is optional — not a submit gate.
     }
     // Under the cumulative flow the file MUST be the standard template (its
     // Measurement tab is the working) — a random Excel can't be raised.
@@ -659,11 +657,11 @@ export function NewWSQuickForm({ projects, projectDisciplines, projectSubSkills,
           if (r.material != null) breakdown.push({ label: 'Material', value: r.material })
           if (r.installation != null) breakdown.push({ label: 'Installation', value: r.installation })
           if (r.ml != null) breakdown.push({ label: 'M+L', value: r.ml })
-          // A formula-backed qty is measured; a plain number is whatever the
-          // engineer toggled (default estimate). Any no-formula row keeps its
-          // note (the "how measured" or "why no drawing" justification).
+          // Basis is derived from the Qty cell only: a formula/link is measured,
+          // a plain number is an estimate. No manual toggle — never trust a
+          // stray qtyBasis. The estimate reason (qty_note) is optional.
           const hasF = !!((r.qtyFormula ?? '').trim())
-          const basis: 'measured' | 'estimated' = hasF ? 'measured' : (r.qtyBasis ?? 'estimated')
+          const basis: 'measured' | 'estimated' = hasF ? 'measured' : 'estimated'
           return {
             working_sheet_id: ws.id, row_no: i + 1, raw_label: null,
             description: r.description || null, unit: r.unit || null, qty: r.qty,
