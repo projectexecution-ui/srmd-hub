@@ -211,7 +211,7 @@ export function ProjectSetupWizard({
 
   return (
     <div className="space-y-4">
-      <StepRail step={step} />
+      <StepRail step={step} onGo={setStep} />
       {error && (
         <Card className="border-red-200 bg-red-50 p-3 text-sm text-red-800">{error}</Card>
       )}
@@ -272,7 +272,7 @@ export function ProjectSetupWizard({
 // Step rail (1 / 2 / 3 / 4)
 // ============================================================
 
-function StepRail({ step }: { step: Step }) {
+function StepRail({ step, onGo }: { step: Step; onGo: (n: Step) => void }) {
   const items: Array<{ n: Step; label: string }> = [
     { n: 1, label: 'Basics' },
     { n: 2, label: 'Disciplines' },
@@ -284,20 +284,29 @@ function StepRail({ step }: { step: Step }) {
       {items.map((it, i) => {
         const done = it.n < step
         const current = it.n === step
+        // You can click any step you've already reached to jump back and edit
+        // it (e.g. Engineers → Sub-skills). Moving FORWARD stays via each step's
+        // "Continue" button so its data is saved on the way — so future steps
+        // aren't clickable here.
+        const clickable = it.n <= step
         return (
           <React.Fragment key={it.n}>
-            <div
-              className={`flex items-center gap-2 rounded-full px-3 py-1 text-xs font-semibold ${
+            <button
+              type="button"
+              onClick={() => { if (clickable) onGo(it.n) }}
+              disabled={!clickable}
+              title={clickable ? `Go to ${it.label}` : 'Finish the current step to continue'}
+              className={`flex items-center gap-2 rounded-full px-3 py-1 text-xs font-semibold transition-colors ${
                 current
                   ? 'bg-blue-600 text-white'
                   : done
-                    ? 'bg-green-100 text-green-800'
-                    : 'bg-gray-100 text-gray-500'
+                    ? 'bg-green-100 text-green-800 hover:bg-green-200 cursor-pointer'
+                    : 'bg-gray-100 text-gray-400 cursor-not-allowed'
               }`}
             >
               {done ? <CheckCircle2 className="h-3.5 w-3.5" /> : <Circle className="h-3.5 w-3.5" />}
               {it.n}. {it.label}
-            </div>
+            </button>
             {i < items.length - 1 && <div className="h-px w-4 bg-gray-200" />}
           </React.Fragment>
         )
