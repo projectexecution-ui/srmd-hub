@@ -274,10 +274,8 @@ export default async function WorkingSheetsPage({
   return (
     <div className="p-4 md:p-6 max-w-7xl mx-auto">
       <PageHeader
-        title={canSeeOthers ? 'Working Sheets' : 'My Working Sheets'}
-        subtitle={canSeeOthers
-          ? `${rows.length} sheet${rows.length === 1 ? '' : 's'} · ${formatINR(total)}`
-          : `${rows.length} of your sheet${rows.length === 1 ? '' : 's'} · ${formatINR(total)}`}
+        title="Working Sheets"
+        subtitle={`${rows.length} sheet${rows.length === 1 ? '' : 's'} · ${formatINR(total)}`}
         back={sp.project ? `/cost-control/projects/${sp.project}` : '/cost-control'}
       >
         {canWrite && (

@@ -816,7 +816,7 @@ async function EngineerHome({ userId, canWrite, label }: { userId: string | null
   // Role-based access: an engineer can raise a budget in ANY cost-control
   // project, so the home lists them all — not just projects they're assigned
   // to or already have a sheet in.
-  const { data: projData } = await supabase
+  const { data: projData, error: projErr } = await supabase
     .from('projects')
     .select('id, code, name, built_up_sft, parent_project_id, group_label')
     .not('cc_status', 'is', null)
@@ -973,11 +973,15 @@ async function EngineerHome({ userId, canWrite, label }: { userId: string | null
 
       {projects.length === 0 ? (
         <Card>
-          <EmptyState
-            icon={<Calculator className="h-10 w-10" />}
-            title="No projects yet"
-            description="You're not on any Cost Control project yet. Once you're added, your projects show up here to open."
-          />
+          {projErr ? (
+            <QueryError message={projErr.message} what="your Cost Control projects" />
+          ) : (
+            <EmptyState
+              icon={<Calculator className="h-10 w-10" />}
+              title="No projects yet"
+              description="No Cost Control projects have been set up yet — once a project is created it shows up here to open."
+            />
+          )}
         </Card>
       ) : (
         <TreeProvider allCatIds={[...realGroups.map(g => g.key), ...(realGroups.length > 0 && soloProjects.length > 0 ? ['_independent'] : [])]}>

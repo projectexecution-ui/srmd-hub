@@ -45,6 +45,34 @@ describe('computeMoneyRollup — baseline vs engineer', () => {
     expect(f.awaitingApproval).toBe(600_000)
   })
 
+  it('carries chain released-so-far forward when an in-flight revision supersedes a released prior', () => {
+    // v1 fully released ₹9,95,600; v2 is a fresh revision (draft) on the same
+    // chain, own approved amt 0. The released money must NOT vanish.
+    const wsRows = [
+      ws({ id: 'v1', status: 'approved', total_amount: 995_600, approved_for_erp_amt: 995_600 }),
+      ws({ id: 'v2', status: 'draft', total_amount: 1_050_600, approved_for_erp_amt: 0 }),
+    ]
+    const versionRows = [ver('v1', 'v1', 1), ver('v2', 'v1', 2)]
+    const r = computeMoneyRollup({ wsRows, versionRows, budgetLines: [], subSkills: [{ id: S1, discipline_id: D }], disciplines: [{ id: D }] })
+    const f = subFigures(r, D, S1)
+    expect(f.approvedViaWs).toBe(995_600)  // NOT 0 — prior release carried forward
+    expect(f.awaitingApproval).toBe(0)     // a draft isn't an active ask yet
+    expect(f.wsCount).toBe(1)
+  })
+
+  it('pending revision over a partial prior nets the balance against chain-released', () => {
+    // v1 partially released ₹9,40,000; v2 (atm_approved) cumulative ₹10,50,600.
+    const wsRows = [
+      ws({ id: 'v1', status: 'partially_approved', total_amount: 995_600, approved_for_erp_amt: 940_000 }),
+      ws({ id: 'v2', status: 'atm_approved', total_amount: 1_050_600, approved_for_erp_amt: 0 }),
+    ]
+    const versionRows = [ver('v1', 'v1', 1), ver('v2', 'v1', 2)]
+    const r = computeMoneyRollup({ wsRows, versionRows, budgetLines: [], subSkills: [{ id: S1, discipline_id: D }], disciplines: [{ id: D }] })
+    const f = subFigures(r, D, S1)
+    expect(f.approvedViaWs).toBe(940_000)          // chain released so far
+    expect(f.awaitingApproval).toBe(110_600)       // 10,50,600 − 9,40,000
+  })
+
   it('drops cancelled sheets entirely', () => {
     const wsRows = [ws({ id: 'x', status: 'cancelled', total_amount: 999 })]
     const r = computeMoneyRollup({ wsRows, versionRows: [ver('x', 'x', 1)], budgetLines: [], subSkills: [{ id: S1, discipline_id: D }], disciplines: [{ id: D }] })

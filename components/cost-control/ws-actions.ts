@@ -595,12 +595,19 @@ export async function signOffWorkingSheet(
     ? { ph_checked_amt: checkedAmt, ph_checked_at: now, ph_checked_by: me.user.id }
     : { atm_checked_amt: checkedAmt, atm_checked_at: now, atm_checked_by: me.user.id }
 
-  const { error: updErr } = await supabase
+  const { data: updRows, error: updErr } = await supabase
     .from('cc_working_sheets')
     .update({ status: toStage, ...checkedCols })
     .eq('id', wsId)
     .eq('status', ws.status) // optimistic: someone else may have acted meanwhile
+    .select('id')
   if (updErr) return { ok: false, error: updErr.message }
+  // A 0-row update means RLS filtered the row out (not an authorized approver
+  // for this sheet) OR someone else already moved it. Fail LOUDLY — never fall
+  // through to log a phantom "approved" event while the sheet stays put.
+  if (!updRows || updRows.length === 0) {
+    return { ok: false, error: 'Could not sign off — the sheet may have already moved, or this stage is not assigned to you. No change was made.' }
+  }
 
   // Log the sign-off so the approval trail names the stage + person. The
   // checked amount rides in the comment (approval_events has no amount
@@ -727,7 +734,7 @@ export async function returnWorkingSheet(wsId: string, reason: string): Promise<
     return { ok: false, error: 'This stage is assigned to a specific approver for this project — it is not with you.' }
   }
 
-  const { error: updErr } = await supabase
+  const { data: retRows, error: updErr } = await supabase
     .from('cc_working_sheets')
     .update({
       status: 'returned',
@@ -738,7 +745,13 @@ export async function returnWorkingSheet(wsId: string, reason: string): Promise<
       locked_by: null,
     })
     .eq('id', wsId)
+    .select('id')
   if (updErr) return { ok: false, error: updErr.message }
+  // 0 rows = RLS filtered it out (not an authorized approver here) or it
+  // already moved. Fail loudly rather than logging a phantom return event.
+  if (!retRows || retRows.length === 0) {
+    return { ok: false, error: 'Could not return the sheet — it may have already moved, or this stage is not assigned to you. No change was made.' }
+  }
 
   await supabase.from('cc_budget_events').insert({
     project_id: ws.project_id,

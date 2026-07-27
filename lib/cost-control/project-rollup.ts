@@ -97,11 +97,23 @@ export function computeMoneyRollup(input: {
   // fall back to their own id as a singleton chain.
   const latestIB = new Map<string, { w: RollupWSRow; ver: number }>()
   const latestEng = new Map<string, { w: RollupWSRow; ver: number }>()
+  // Money physically released so far per ENGINEER chain = MAX
+  // approved_for_erp_amt over its live versions (monotonic — each release
+  // writes the running chain-cumulative back). Carried forward so an in-flight
+  // revision (a draft/pending v(N+1) whose own approved amt is still 0) does
+  // NOT erase the release already made on the prior version. Mirrors the
+  // release engine (cc_approve_release / chainReleasedSoFar).
+  const releasedByChain = new Map<string, number>()
   for (const w of liveRows) {
     const ch = chainOf.get(w.id) ?? { anchor: w.id, ver: 1 }
-    const bag = (w.summary_notes ?? '').startsWith('[IB') ? latestIB : latestEng
+    const isIB = (w.summary_notes ?? '').startsWith('[IB')
+    const bag = isIB ? latestIB : latestEng
     const prev = bag.get(ch.anchor)
     if (!prev || ch.ver > prev.ver) bag.set(ch.anchor, { w, ver: ch.ver })
+    if (!isIB) {
+      const appr = Number(w.approved_for_erp_amt ?? 0)
+      if (appr > (releasedByChain.get(ch.anchor) ?? 0)) releasedByChain.set(ch.anchor, appr)
+    }
   }
 
   const wsAgg = new Map<string, SubAgg>()
@@ -119,21 +131,26 @@ export function computeMoneyRollup(input: {
   // Engineers' latest sheets → pending / approved (never their old versions).
   for (const { w } of latestEng.values()) {
     const cur = ensureAgg(`${w.discipline_id}::${w.sub_skill_id}`)
-    cur.chains.add(chainOf.get(w.id)?.anchor ?? w.id)
+    const anchor = chainOf.get(w.id)?.anchor ?? w.id
+    cur.chains.add(anchor)
     const amt = Number(w.total_amount ?? 0)
-    const appr = Number(w.approved_for_erp_amt ?? 0)
+    // Released across the WHOLE chain (not just this version's own field), so a
+    // fresh revision over an already-released prior version keeps that money as
+    // "approved" instead of dropping it to zero.
+    const released = Math.max(releasedByChain.get(anchor) ?? 0, Number(w.approved_for_erp_amt ?? 0))
     if (w.status === 'approved' || w.status === 'wo_issued' || w.status === 'paid') {
-      cur.approvedTotal += appr > 0 ? appr : amt
-    } else if (w.status === 'partially_approved') {
-      // Some releases approved, more to come: released portion counts as
-      // approved, remainder stays pending.
-      cur.approvedTotal += appr
-      cur.pendingAmount += Math.max(amt - appr, 0)
-    } else if (PENDING_STATUS.has(w.status)) {
-      cur.approvedTotal += appr
-      cur.pendingAmount += Math.max(amt - appr, 0)
+      // Fully approved: the whole latest total is approved; legacy sheets
+      // approved without a tracked release amount fall back to the total.
+      cur.approvedTotal += released > 0 ? Math.max(released, amt) : amt
+    } else if (w.status === 'partially_approved' || PENDING_STATUS.has(w.status)) {
+      // Released portion counts as approved; the rest of the current ask pends.
+      cur.approvedTotal += released
+      cur.pendingAmount += Math.max(amt - released, 0)
+    } else {
+      // draft / returned / draft_blocked: no current ask, but money already
+      // released on an earlier version stays counted as approved.
+      cur.approvedTotal += released
     }
-    // draft / returned / draft_blocked add nothing but the chain count.
   }
 
   // Discipline rollups. Budget can live at two granularities: per-sub-skill

@@ -11,6 +11,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { getMyPermissions, can } from '@/lib/auth'
+import { checkIsCcReviewer } from '@/components/cost-control/ws-actions'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -28,10 +29,17 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   const supabase = await createClient()
   const { data: ws, error: wsError } = await supabase
     .from('cc_working_sheets')
-    .select('source_excel_url, source_excel_name')
+    .select('source_excel_url, source_excel_name, summary_notes')
     .eq('id', id)
     .single()
   if (wsError || !ws?.source_excel_url) {
+    return failed()
+  }
+  // The [IB…] Internal Estimate baseline's source budget Excel is confidential
+  // — management only. Same gate as the WS detail page, which redirects a
+  // non-reviewer off an [IB] sheet. Without this, an engineer holding an [IB]
+  // sheet's id could pull the file straight from this endpoint.
+  if ((ws.summary_notes ?? '').startsWith('[IB') && !(await checkIsCcReviewer())) {
     return failed()
   }
   const { data: signed, error } = await supabase.storage
