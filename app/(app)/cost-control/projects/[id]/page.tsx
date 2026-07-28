@@ -373,9 +373,9 @@ export default async function CostControlProjectDetailPage(
       ? `₹${Math.round(amt / sft).toLocaleString('en-IN')}/sft`
       : null
   // Visible column count for empty-state rows (name + Internal Estimate +
-  // Awaiting Approval + Working Sheets + actions, plus the toggleable ERP
-  // and deadline groups).
-  const tableCols = 5 + (showErp ? 4 : 0) + (ccSettings.show_deadlines ? 2 : 0)
+  // Awaiting Approval + Released via WS + Working Sheets + actions, plus the
+  // toggleable ERP and deadline groups).
+  const tableCols = 6 + (showErp ? 4 : 0) + (ccSettings.show_deadlines ? 2 : 0)
 
   const Money = ({ amt, dash = '—' }: { amt: number; dash?: string }) => {
     if (!(amt > 0)) return <>{dash}</>
@@ -617,6 +617,7 @@ export default async function CostControlProjectDetailPage(
                 <Th className="min-w-[280px]">Work Category / Sub-skill</Th>
                 <Th align="right" className="w-32">Internal Estimate</Th>
                 <Th align="right" className="w-32">Awaiting Approval</Th>
+                <Th align="right" className="w-32">Released via WS</Th>
                 {showErp && (
                   <>
                     <Th align="right">Budget (ERP)</Th>
@@ -674,6 +675,9 @@ export default async function CostControlProjectDetailPage(
                       </Td>
                       <Td align="right" mono className="text-amber-700">
                         <Money amt={dAgg.pending} />
+                      </Td>
+                      <Td align="right" mono className="text-emerald-700">
+                        <Money amt={dAgg.approvedTotal} />
                       </Td>
                       {showErp && (
                         <>
@@ -736,6 +740,7 @@ export default async function CostControlProjectDetailPage(
                       const ie = ieMap.get(`${d.id}::${s.id}`)
                       const estLive = a?.planTotal ?? 0
                       const ask = a?.pendingAmount ?? 0
+                      const released = a?.approvedTotal ?? 0
                       // estLive is now the Internal Estimate baseline alone
                       // (the latest [IB] upload) — no longer mixed with the
                       // engineer's ask — so compare the ask straight against
@@ -814,6 +819,9 @@ export default async function CostControlProjectDetailPage(
                                 ▲ over by {formatINR(overBy)}
                               </span>
                             )}
+                          </Td>
+                          <Td align="right" mono className="text-emerald-700">
+                            <Money amt={released} />
                           </Td>
                           {showErp && (
                             <>
