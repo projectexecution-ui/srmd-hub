@@ -11,7 +11,6 @@ import {
   createProjectBasics,
   setProjectDisciplines,
   setProjectSubSkills,
-  assignProjectEngineers,
   finalizeProjectSetup,
 } from './actions'
 
@@ -54,12 +53,6 @@ export interface DisciplineModePreset {
 interface ProjectSetupWizardProps {
   parentProjects: ParentProjectOption[]
   users: UserOption[]
-  /** Effective engineers only (role engineer, or a cost-control override) —
-   *  the ONLY people Step 4 offers. Falls back to `users` when omitted. */
-  engineerUsers?: UserOption[]
-  /** Per-engineer footprint on THIS project (sheets + sub-skill
-   *  assignments) — powers the "removing X" warning in Step 4. */
-  engineerFootprint?: Record<string, { sheets: number; subskills: number }>
   disciplines: DisciplineOption[]
   /** All sub-skills across all disciplines; wizard filters by picked disciplines in Step 3 */
   subSkills: SubSkillOption[]
@@ -67,14 +60,13 @@ interface ProjectSetupWizardProps {
   // Step 1 entirely — the project basics row already exists. The wizard
   // opens on the first incomplete step.
   initialProjectId?: string
-  initialStep?: 1 | 2 | 3 | 4
+  initialStep?: 1 | 2 | 3
   initialPickedDisciplines?: string[]
   initialDisciplineModes?: DisciplineModePreset[]
   initialPickedSubSkills?: string[]
-  initialEngineerPicks?: Array<{ user_id: string; discipline_ids: string[] }>
 }
 
-type Step = 1 | 2 | 3 | 4
+type Step = 1 | 2 | 3
 
 /**
  * Shared Project Setup Wizard. Used by Cost Control today; reusable by any
@@ -86,8 +78,6 @@ type Step = 1 | 2 | 3 | 4
 export function ProjectSetupWizard({
   parentProjects,
   users,
-  engineerUsers,
-  engineerFootprint,
   disciplines,
   subSkills,
   initialProjectId,
@@ -95,7 +85,6 @@ export function ProjectSetupWizard({
   initialPickedDisciplines,
   initialDisciplineModes,
   initialPickedSubSkills,
-  initialEngineerPicks,
 }: ProjectSetupWizardProps) {
   const router = useRouter()
   // When resuming, seed step from the saved state. Default to step 1 for
@@ -124,11 +113,6 @@ export function ProjectSetupWizard({
   // pre-tick all sub-skills under picked disciplines).
   const [pickedSubSkills, setPickedSubSkills] = React.useState<Set<string>>(
     new Set(initialPickedSubSkills ?? []),
-  )
-
-  // Step 4 — engineer assignments: userId → set of disciplineIds
-  const [engineerPicks, setEngineerPicks] = React.useState<Map<string, Set<string>>>(
-    new Map((initialEngineerPicks ?? []).map(e => [e.user_id, new Set(e.discipline_ids)])),
   )
 
   async function handleStep1(formData: FormData) {
@@ -178,25 +162,9 @@ export function ProjectSetupWizard({
     setBusy(true)
     setError(null)
     const res = await setProjectSubSkills(projectId, Array.from(pickedSubSkills))
-    setBusy(false)
-    if (!res.ok) {
-      setError(res.error ?? 'Failed to save sub-skills')
-      return
-    }
-    setStep(4)
-  }
-
-  async function handleStep4() {
-    if (!projectId) return
-    setBusy(true)
-    setError(null)
-    const assignments = Array.from(engineerPicks.entries())
-      .filter(([, dids]) => dids.size > 0)
-      .map(([user_id, dids]) => ({ user_id, discipline_ids: Array.from(dids) }))
-    const res = await assignProjectEngineers(projectId, assignments)
     if (!res.ok) {
       setBusy(false)
-      setError(res.error ?? 'Failed to save engineer assignments')
+      setError(res.error ?? 'Failed to save sub-skills')
       return
     }
     await finalizeProjectSetup(projectId)
@@ -250,26 +218,12 @@ export function ProjectSetupWizard({
           onSkip={handleSkipToProject}
         />
       )}
-
-      {step === 4 && (
-        <Step4Engineers
-          users={engineerUsers ?? users}
-          initialPicks={initialEngineerPicks}
-          footprint={engineerFootprint}
-          disciplines={disciplines.filter(d => pickedDisciplines.has(d.id))}
-          picks={engineerPicks}
-          setPicks={setEngineerPicks}
-          busy={busy}
-          onFinish={handleStep4}
-          onSkip={handleSkipToProject}
-        />
-      )}
     </div>
   )
 }
 
 // ============================================================
-// Step rail (1 / 2 / 3 / 4)
+// Step rail (1 / 2 / 3)
 // ============================================================
 
 function StepRail({ step, onGo }: { step: Step; onGo: (n: Step) => void }) {
@@ -277,7 +231,6 @@ function StepRail({ step, onGo }: { step: Step; onGo: (n: Step) => void }) {
     { n: 1, label: 'Basics' },
     { n: 2, label: 'Disciplines' },
     { n: 3, label: 'Sub-skills' },
-    { n: 4, label: 'Engineers' },
   ]
   return (
     <div className="flex items-center gap-2 overflow-x-auto pb-2">
@@ -285,9 +238,9 @@ function StepRail({ step, onGo }: { step: Step; onGo: (n: Step) => void }) {
         const done = it.n < step
         const current = it.n === step
         // You can click any step you've already reached to jump back and edit
-        // it (e.g. Engineers → Sub-skills). Moving FORWARD stays via each step's
-        // "Continue" button so its data is saved on the way — so future steps
-        // aren't clickable here.
+        // it (e.g. Sub-skills → Disciplines). Moving FORWARD stays via each
+        // step's "Continue" button so its data is saved on the way — so future
+        // steps aren't clickable here.
         const clickable = it.n <= step
         return (
           <React.Fragment key={it.n}>
@@ -671,184 +624,7 @@ function Step3SubSkills({
       <div className="mt-4 flex flex-wrap justify-end gap-2">
         <Button variant="ghost" onClick={onSkip} disabled={busy}>Skip — Configure As I Go</Button>
         <Button onClick={onContinue} disabled={busy}>
-          {busy ? 'Saving…' : 'Save and Continue →'}
-        </Button>
-      </div>
-    </Card>
-  )
-}
-
-// ============================================================
-// Step 4 — Engineer assignments
-// ============================================================
-
-function Step4Engineers({
-  users,
-  initialPicks,
-  footprint,
-  disciplines,
-  picks,
-  setPicks,
-  busy,
-  onFinish,
-  onSkip,
-}: {
-  users: UserOption[]
-  initialPicks?: Array<{ user_id: string; discipline_ids: string[] }>
-  footprint?: Record<string, { sheets: number; subskills: number }>
-  disciplines: DisciplineOption[]
-  picks: Map<string, Set<string>>
-  setPicks: (next: Map<string, Set<string>>) => void
-  busy: boolean
-  onFinish: () => Promise<void>
-  onSkip: () => void
-}) {
-  const [search, setSearch] = React.useState('')
-
-  function toggleUser(userId: string) {
-    const next = new Map(picks)
-    if (next.has(userId)) next.delete(userId)
-    else next.set(userId, new Set())
-    setPicks(next)
-  }
-  function toggleDiscipline(userId: string, disciplineId: string) {
-    const next = new Map(picks)
-    const set = new Set(next.get(userId) ?? [])
-    if (set.has(disciplineId)) set.delete(disciplineId)
-    else set.add(disciplineId)
-    next.set(userId, set)
-    setPicks(next)
-  }
-
-  // The list arrives engineers-only and alphabetical; search narrows it.
-  const q = search.trim().toLowerCase()
-  const visible = q
-    ? users.filter(u => u.name.toLowerCase().includes(q) || (u.email ?? '').toLowerCase().includes(q))
-    : users
-
-  // Summary chip: how many picked + how many of this project's disciplines
-  // are covered by at least one engineer.
-  const pickedCount = picks.size
-  const covered = new Set<string>()
-  for (const dids of picks.values()) for (const d of dids) if (disciplines.some(x => x.id === d)) covered.add(d)
-
-  // Warn when someone who WAS assigned (and has work here) is being removed:
-  // finishing will clear their sub-skill assignments on this project.
-  const removedWithWork = (initialPicks ?? [])
-    .filter(ip => !picks.has(ip.user_id))
-    .map(ip => ({ id: ip.user_id, fp: footprint?.[ip.user_id] }))
-    .filter((x): x is { id: string; fp: { sheets: number; subskills: number } } => !!x.fp && (x.fp.sheets > 0 || x.fp.subskills > 0))
-
-  return (
-    <Card className="p-5">
-      <h2 className="text-lg font-semibold text-gray-900 mb-1">Assign engineers</h2>
-      <p className="text-sm text-gray-500 mb-1">
-        Pick engineers and, for each, the disciplines they own on this project. You can leave this empty and assign later from the project page.
-      </p>
-      <p className="text-xs text-gray-400 mb-4">
-        Only users with the <b>Engineer</b> role appear here. Sub-skill responsibility is assigned afterwards on the project page — from among the people you add now.
-      </p>
-
-      {users.length > 0 && (
-        <div className="mb-3 flex flex-wrap items-center gap-2">
-          <Input
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-            placeholder="Search by name or email…"
-            className="max-w-xs"
-          />
-          <span className="text-xs font-semibold text-blue-700 bg-blue-50 border border-blue-200 rounded-full px-2.5 py-1">
-            {pickedCount} engineer{pickedCount === 1 ? '' : 's'} picked · covering {covered.size} of {disciplines.length} disciplines
-          </span>
-        </div>
-      )}
-
-      {removedWithWork.length > 0 && (
-        <div className="mb-3 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900">
-          {removedWithWork.map(r => {
-            const u = users.find(x => x.id === r.id)
-            return (
-              <p key={r.id}>
-                <b>{u?.name ?? 'A removed engineer'}</b> has {r.fp.sheets} sheet{r.fp.sheets === 1 ? '' : 's'}
-                {r.fp.subskills > 0 ? ` and ${r.fp.subskills} sub-skill assignment${r.fp.subskills === 1 ? '' : 's'}` : ''} on this project.
-                Sheets stay intact; finishing setup will clear the sub-skill assignments.
-              </p>
-            )
-          })}
-        </div>
-      )}
-
-      {users.length === 0 ? (
-        <div className="rounded-md border border-dashed border-gray-300 bg-gray-50 p-6 text-center text-sm text-gray-500">
-          No users have the <b>Engineer</b> role yet. Set roles at{' '}
-          <a href="/admin/users" className="text-blue-700 font-semibold hover:underline">/admin/users</a>{' '}
-          — only engineers appear in this list. You can skip and come back.
-        </div>
-      ) : visible.length === 0 ? (
-        <div className="rounded-md border border-dashed border-gray-300 bg-gray-50 p-6 text-center text-sm text-gray-500">
-          No engineer matches “{search}”.
-        </div>
-      ) : (
-        <div className="space-y-2 max-h-[60vh] overflow-y-auto pr-1">
-          {visible.map(u => {
-            const on = picks.has(u.id)
-            const userDisciplines = picks.get(u.id) ?? new Set<string>()
-            return (
-              <div key={u.id} className={`rounded-md border ${on ? 'border-blue-200 bg-blue-50/40' : 'border-gray-200 bg-white'}`}>
-                <label className="flex items-center gap-2 px-3 py-2 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={on}
-                    onChange={() => toggleUser(u.id)}
-                    className="h-4 w-4"
-                  />
-                  <span className="min-w-0">
-                    <span className="block text-sm font-semibold text-gray-900 truncate">{u.name}</span>
-                    {u.email && <span className="block text-[11px] text-gray-400 truncate">{u.email}</span>}
-                  </span>
-                  {on && (
-                    <span className="ml-auto text-xs text-blue-700 whitespace-nowrap">
-                      {userDisciplines.size} of {disciplines.length} disciplines
-                    </span>
-                  )}
-                </label>
-                {on && disciplines.length > 0 && (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-1 px-3 pb-3 pt-1 border-t border-blue-100">
-                    {disciplines.map(d => {
-                      const dOn = userDisciplines.has(d.id)
-                      return (
-                        <label
-                          key={d.id}
-                          className={`flex items-center gap-2 rounded-md px-2 py-1 text-xs cursor-pointer ${dOn ? 'bg-blue-100 text-blue-900' : 'text-gray-700 hover:bg-gray-50'}`}
-                        >
-                          <input
-                            type="checkbox"
-                            checked={dOn}
-                            onChange={() => toggleDiscipline(u.id, d.id)}
-                            className="h-3.5 w-3.5"
-                          />
-                          <span className="font-mono text-[10px] text-gray-500">{d.code}</span>
-                          <span className="truncate">{d.name}</span>
-                        </label>
-                      )
-                    })}
-                  </div>
-                )}
-              </div>
-            )
-          })}
-        </div>
-      )}
-
-      <p className="mt-3 text-xs text-gray-400">
-        Don&apos;t see someone? Add them (or fix their role) at{' '}
-        <a href="/admin/users" className="text-blue-700 font-semibold hover:underline">/admin/users</a>, then reopen this step.
-      </p>
-
-      <div className="mt-4 flex flex-wrap justify-end gap-2">
-        <Button variant="ghost" onClick={onSkip} disabled={busy}>Skip — Open Project</Button>
-        <Button onClick={onFinish} disabled={busy}>
-          {busy ? 'Finishing…' : 'Finish Setup & Open Project'}
+          {busy ? 'Finishing…' : 'Finish setup'}
         </Button>
       </div>
     </Card>

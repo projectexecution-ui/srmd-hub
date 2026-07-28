@@ -20,7 +20,6 @@ import { getCcSettings } from '@/lib/cost-control/settings'
 import { getEffectiveCcRole } from '@/app/(app)/cost-control/billing/billing-actions'
 import { GroupLabelChip } from './GroupLabelChip'
 import { TreeProvider, TreeToolbar, CatChevron, CatRows } from '@/components/cost-control/project-tree'
-import { AssignedToMePopover } from './AssignedToMePopover'
 import { CcQuickSearch } from './CcQuickSearch'
 import { coveringApproverRole } from '@/lib/cost-control/approver-roles'
 import { getModuleLabels, labelFor } from '@/lib/module-labels'
@@ -792,27 +791,12 @@ function BphSyncChip({
 async function EngineerHome({ userId, canWrite, label }: { userId: string | null; canWrite: boolean; label: string }) {
   const supabase = await createClient()
 
-  // The engineer's projects (assigned to the project, or has a sheet there,
-  // or a sub-skill assigned to them), + their sub-skill to-do list.
-  type AssignRow = {
-    project_id: string
-    sub_skill_id: string
-    cc_sub_skills: { code: string; name: string; discipline_id: string } | { code: string; name: string; discipline_id: string }[] | null
-    projects: { code: string; name: string } | { code: string; name: string }[] | null
-  }
-  const [myWsRes, assignRes] = await Promise.all([
-    userId
-      ? supabase.from('cc_working_sheets').select('project_id, sub_skill_id').eq('engineer_id', userId).is('archived_at', null).neq('status', 'cancelled')
-      : Promise.resolve({ data: [] as Array<{ project_id: string; sub_skill_id: string }> }),
-    userId
-      ? supabase.from('cc_subskill_assignments').select('project_id, sub_skill_id, cc_sub_skills(code, name, discipline_id), projects(code, name)').eq('engineer_id', userId)
-      : Promise.resolve({ data: [] as AssignRow[] }),
-  ])
+  // The engineer's own working sheets — used to show how many sheets they
+  // have per project ("My work" column).
+  const myWsRes = userId
+    ? await supabase.from('cc_working_sheets').select('project_id, sub_skill_id').eq('engineer_id', userId).is('archived_at', null).neq('status', 'cancelled')
+    : { data: [] as Array<{ project_id: string; sub_skill_id: string }> }
   const myWs = (myWsRes.data ?? []) as Array<{ project_id: string; sub_skill_id: string }>
-  const myAssignments = (assignRes.data ?? []) as AssignRow[]
-  // Sub-skills this engineer already has a sheet for — powers the ✓ / Start.
-  const mySubSet = new Set(myWs.map(w => `${w.project_id}::${w.sub_skill_id}`))
-  const pendingAssignments = myAssignments.filter(a => !mySubSet.has(`${a.project_id}::${a.sub_skill_id}`)).length
 
   type EProj = { id: string; code: string; name: string; built_up_sft: number | null; parent_project_id: string | null; group_label: string | null }
   // Role-based access: an engineer can raise a budget in ANY cost-control
@@ -854,35 +838,9 @@ async function EngineerHome({ userId, canWrite, label }: { userId: string | null
     }
   }
 
-  // Per-project: how many sub-skills are assigned to me + how many I still
-  // haven't started, and how many of my own sheets sit in the project.
-  const assignedByProj = new Map<string, { total: number; toStart: number }>()
-  for (const a of myAssignments) {
-    const cur = assignedByProj.get(a.project_id) ?? { total: 0, toStart: 0 }
-    cur.total += 1
-    if (!mySubSet.has(`${a.project_id}::${a.sub_skill_id}`)) cur.toStart += 1
-    assignedByProj.set(a.project_id, cur)
-  }
+  // Per-project: how many of my own sheets sit in the project.
   const mySheetsByProj = new Map<string, number>()
   for (const w of myWs) mySheetsByProj.set(w.project_id, (mySheetsByProj.get(w.project_id) ?? 0) + 1)
-
-  const pickOne = <T,>(x: T | T[] | null): T | undefined => (Array.isArray(x) ? x[0] : x) ?? undefined
-
-  // Flat list of my assigned sub-skills for the collapsible header popover.
-  const assignedItems = myAssignments.map(a => {
-    const ss = pickOne(a.cc_sub_skills)
-    const pr = pickOne(a.projects)
-    return {
-      projectId: a.project_id,
-      subSkillId: a.sub_skill_id,
-      disciplineId: ss?.discipline_id ?? null,
-      subCode: ss?.code ?? null,
-      subName: ss?.name ?? null,
-      projectCode: pr?.code ?? null,
-      projectName: pr?.name ?? null,
-      done: mySubSet.has(`${a.project_id}::${a.sub_skill_id}`),
-    }
-  })
 
   // Group my projects by parent (mirrors the management dashboard). A parent
   // I'm not assigned to still labels the band — fetch those labels too.
@@ -925,7 +883,6 @@ async function EngineerHome({ userId, canWrite, label }: { userId: string | null
   // One project row — reused for grouped members + independents.
   const renderProjRow = (p: EProj, indent: boolean) => {
     const bud = budgetByProj.get(p.id)
-    const asg = assignedByProj.get(p.id)
     const sheets = mySheetsByProj.get(p.id) ?? 0
     const sft = Number(p.built_up_sft ?? 0)
     return (
@@ -940,9 +897,7 @@ async function EngineerHome({ userId, canWrite, label }: { userId: string | null
         <td className="px-3 py-2.5 text-right tabular-nums font-semibold text-gray-900">{bud?.budget ? formatINR(bud.budget) : '—'}</td>
         <td className="px-3 py-2.5 text-right tabular-nums text-gray-600">{bud?.wo ? formatINR(bud.wo) : '—'}</td>
         <td className="px-3 py-2.5">
-          {asg && asg.toStart > 0 ? (
-            <span className="inline-flex items-center text-[10px] font-bold text-amber-800 bg-amber-100 rounded-full px-2 py-0.5">{asg.toStart} to start</span>
-          ) : sheets > 0 ? (
+          {sheets > 0 ? (
             <span className="text-[11px] text-gray-500">{sheets} sheet{sheets === 1 ? '' : 's'}</span>
           ) : (
             <span className="text-[11px] text-gray-400">—</span>
@@ -970,7 +925,6 @@ async function EngineerHome({ userId, canWrite, label }: { userId: string | null
             <FileText className="h-4 w-4" /> My working sheets
           </Link>
         </Button>
-        <AssignedToMePopover items={assignedItems} canWrite={canWrite} pendingCount={pendingAssignments} />
       </PageHeader>
 
       {projects.length === 0 ? (

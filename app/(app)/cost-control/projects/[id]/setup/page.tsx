@@ -3,7 +3,6 @@ import { notFound, redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { requirePermission, getMyProfile } from '@/lib/auth'
 import { checkIsCcReviewer } from '@/components/cost-control/ws-actions'
-import { getRoleSides } from '@/lib/role-sides'
 import { PageHeader } from '@/components/PageHeader'
 import { Card } from '@/components/ui/card'
 import { AlertTriangle, FileSpreadsheet } from 'lucide-react'
@@ -20,7 +19,6 @@ import { ProjectAliasChip } from '../ProjectAliasChip'
 import { AreaChip } from '../AreaChip'
 import { ParentProjectControl } from '../ParentProjectControl'
 import { ProjectApproversPanel } from '../ProjectApproversPanel'
-import { BulkAssignPanel } from '../BulkAssignPanel'
 import { GroupLabelChip } from '@/app/(app)/cost-control/GroupLabelChip'
 import { getBphMappingForProject } from '@/app/(app)/cost-control/import/bph/actions'
 import { getCcSettings } from '@/lib/cost-control/settings'
@@ -45,8 +43,8 @@ export default async function ResumeProjectSetupPage(
   { params }: { params: Promise<{ id: string }> }
 ) {
   await requirePermission('cost-control', 'edit')
-  // Project setup (incl. engineer assignment) is a management action —
-  // engineers hold cost-control edit for their own sheets, not for this.
+  // Project setup is a management action — engineers hold cost-control edit
+  // for their own sheets, not for this.
   if (!(await checkIsCcReviewer())) redirect('/cost-control')
   const { id } = await params
   const supabase = await createClient()
@@ -66,16 +64,13 @@ export default async function ResumeProjectSetupPage(
   const bphMapping = ccSettings.bph_sync ? await getBphMappingForProject(id) : null
 
   // Used to bounce 100%-complete projects, but PMs need to be able to
-  // edit setup after going active (add/remove disciplines, re-tick subs,
-  // change engineers). Just open the wizard with everything pre-seeded.
+  // edit setup after going active (add/remove disciplines, re-tick subs).
+  // Just open the wizard with everything pre-seeded.
   const isComplete = (project.setup_progress_pct ?? 0) >= 100
 
-  const [parentsRes, usersRes, overridesRes, disciplinesRes, subSkillsRes, projDisRes, projSubRes, assignRes, ssaRes, wsCountRes, approverRes] = await Promise.all([
+  const [parentsRes, usersRes, disciplinesRes, subSkillsRes, projDisRes, projSubRes, approverRes] = await Promise.all([
     supabase.from('projects').select('id, code, name, parent_project_id').order('code'),
     supabase.from('profiles').select('id, full_name, name, email, role').eq('is_active', true),
-    // Per-module role overrides — someone whose cost-control role is
-    // overridden to 'engineer' belongs in the engineer picker too.
-    supabase.from('user_module_roles').select('user_id, role').eq('module_slug', 'cost-control'),
     supabase.from('cc_disciplines').select('id, code, name').order('display_order'),
     supabase.from('cc_sub_skills').select('id, discipline_id, code, name').order('code'),
     supabase
@@ -88,15 +83,6 @@ export default async function ResumeProjectSetupPage(
       .select('sub_skill_id')
       .eq('project_id', id)
       .eq('is_enabled', true),
-    supabase
-      .from('project_assignments')
-      .select('user_id, assigned_disciplines')
-      .eq('project_id', id)
-      .eq('role', 'engineer'),
-    // Footprint for the "removing this engineer" warning: their sub-skill
-    // assignments + live sheets on THIS project.
-    supabase.from('cc_subskill_assignments').select('engineer_id').eq('project_id', id),
-    supabase.from('cc_working_sheets').select('engineer_id').eq('project_id', id).is('archived_at', null).neq('status', 'cancelled'),
     supabase.from('cc_project_approvers').select('role, user_id').eq('project_id', id),
   ])
 
@@ -110,9 +96,6 @@ export default async function ResumeProjectSetupPage(
   const parentOptions = allProjects
     .filter(p => p.id !== id && (p.parent_project_id === null || p.id === project.parent_project_id) && p.parent_project_id !== id)
     .map(p => ({ id: p.id, label: `${p.code} · ${p.name}` }))
-  const otherProjects = allProjects
-    .filter(p => p.id !== id)
-    .map(p => ({ id: p.id, label: `${p.code} · ${p.name}` }))
 
   type ProfRow = { id: string; full_name: string | null; name: string | null; email: string | null; role: string }
   const profRows = (usersRes.data ?? []) as ProfRow[]
@@ -121,29 +104,6 @@ export default async function ResumeProjectSetupPage(
     name: p.full_name ?? p.name ?? '(unnamed)',
     email: p.email,
   }))
-  // Effective engineers only: the admin decides WHICH roles count as
-  // "Engineer" (Role sides on /admin/users); a cost-control override is
-  // honoured in both directions.
-  const engineerRoles = new Set<string>((await getRoleSides()).engineer)
-  const ccOverride = new Map<string, string>()
-  for (const r of (overridesRes.data ?? []) as Array<{ user_id: string; role: string }>) {
-    ccOverride.set(r.user_id, r.role)
-  }
-  const engineerUsers: UserOption[] = profRows
-    .filter(p => engineerRoles.has(ccOverride.get(p.id) ?? p.role))
-    .map(p => ({ id: p.id, name: p.full_name ?? p.name ?? '(unnamed)', email: p.email }))
-    .sort((a, b) => a.name.localeCompare(b.name))
-
-  // engineer_id → { sheets, subskills } on this project.
-  const engineerFootprint: Record<string, { sheets: number; subskills: number }> = {}
-  const bump = (uid: string | null, key: 'sheets' | 'subskills') => {
-    if (!uid) return
-    const cur = engineerFootprint[uid] ?? { sheets: 0, subskills: 0 }
-    cur[key] += 1
-    engineerFootprint[uid] = cur
-  }
-  for (const r of (ssaRes.data ?? []) as Array<{ engineer_id: string | null }>) bump(r.engineer_id, 'subskills')
-  for (const r of (wsCountRes.data ?? []) as Array<{ engineer_id: string | null }>) bump(r.engineer_id, 'sheets')
   const disciplines: DisciplineOption[] = (disciplinesRes.data ?? []).map(d => ({
     id: d.id,
     code: d.code,
@@ -161,40 +121,30 @@ export default async function ResumeProjectSetupPage(
     notes: r.thumbrule_notes ?? '',
   }))
   const savedSubSkillIds = (projSubRes.data ?? []).map(r => r.sub_skill_id as string)
-  const savedEngineerPicks = (assignRes.data ?? []).map(a => ({
-    user_id: a.user_id as string,
-    discipline_ids: (a.assigned_disciplines as string[] | null) ?? [],
-  }))
 
-  // Config-panel inputs (approvers roster + bulk-assign options).
+  // Config-panel inputs (approvers roster).
   const nameById = new Map(profRows.map(p => [p.id, p.full_name ?? p.name ?? '(unnamed)']))
   const projectApprovers = ((approverRes.data ?? []) as Array<{ role: 'project_head' | 'head' | 'founder'; user_id: string }>)
     .map(r => ({ role: r.role, user_id: r.user_id, name: nameById.get(r.user_id) ?? '(user)' }))
   const approverCandidates = profRows.map(p => ({ id: p.id, name: p.full_name ?? p.name ?? '(unnamed)' }))
-  const enabledDisciplines = disciplines
-    .filter(d => savedDisciplineIds.includes(d.id))
-    .map(d => ({ id: d.id, label: `${d.code} ${d.name}` }))
-  const engineerOptions = engineerUsers.map(e => ({ id: e.id, label: e.name }))
 
   // Pick the first incomplete step.
   //
   //   step1 done  := project basics row exists (always true at this point)
   //   step2 done  := at least one discipline saved
   //   step3 done  := at least one sub-skill saved
-  //   step4 done  := at least one engineer assigned with non-empty disciplines
   //
   // We open the wizard at the first NOT-done step so PMs don't re-tick
   // what's already saved. Always at least Step 2 (basics never resumes).
-  let initialStep: 1 | 2 | 3 | 4 = 2
+  let initialStep: 1 | 2 | 3 = 2
   if (savedDisciplineIds.length > 0) initialStep = 3
-  if (savedSubSkillIds.length > 0)    initialStep = 4
 
   return (
     <div className="p-4 md:p-6 max-w-3xl mx-auto space-y-4">
       <PageHeader
         title={isComplete ? `Edit setup — ${project.name}` : `Finish setup — ${project.name}`}
         subtitle={isComplete
-          ? 'Add/remove disciplines, sub-skills or engineers. Existing working sheets stay intact.'
+          ? 'Add/remove disciplines or sub-skills. Existing working sheets stay intact.'
           : `${project.setup_progress_pct ?? 0}% complete. Resuming from where you left off.`}
         back={`/cost-control/projects/${id}`}
       />
@@ -265,26 +215,14 @@ export default async function ResumeProjectSetupPage(
         canWrite
       />
 
-      {/* Bulk-assign engineers (shortcut beyond the per-engineer wizard step). */}
-      {enabledDisciplines.length > 0 && (
-        <BulkAssignPanel
-          projectId={id}
-          disciplines={enabledDisciplines}
-          engineers={engineerOptions}
-          otherProjects={otherProjects}
-        />
-      )}
-
       <div className="pt-1">
-        <h2 className="text-sm font-semibold text-gray-900">Disciplines, sub-skills &amp; engineers</h2>
-        <p className="text-xs text-gray-500">Pick what this project estimates and who works each area.</p>
+        <h2 className="text-sm font-semibold text-gray-900">Disciplines &amp; sub-skills</h2>
+        <p className="text-xs text-gray-500">Pick what this project estimates.</p>
       </div>
 
       <ProjectSetupWizard
         parentProjects={parentProjects}
         users={users}
-        engineerUsers={engineerUsers}
-        engineerFootprint={engineerFootprint}
         disciplines={disciplines}
         subSkills={subSkills}
         initialProjectId={id}
@@ -292,7 +230,6 @@ export default async function ResumeProjectSetupPage(
         initialPickedDisciplines={savedDisciplineIds}
         initialDisciplineModes={savedDisciplineModes}
         initialPickedSubSkills={savedSubSkillIds}
-        initialEngineerPicks={savedEngineerPicks}
       />
     </div>
   )

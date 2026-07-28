@@ -7,7 +7,7 @@ import { IeRevisionPanel, type IeRevision } from './IeRevisionPanel'
 import { EngineerProjectView } from './EngineerProjectView'
 import { PageHeader } from '@/components/PageHeader'
 import { SetupProgressBanner } from '@/components/ProjectSetupWizard/SetupProgressBanner'
-import { Plus, Flame, Info, Settings, Download, Ruler, UserRound } from 'lucide-react'
+import { Plus, Flame, Info, Settings, Download, Ruler } from 'lucide-react'
 import { formatINR } from '@/lib/utils'
 import { getCcSettings } from '@/lib/cost-control/settings'
 import { computeMoneyRollup, type RollupWSRow, type RollupVersionRow, type RollupBudgetLine } from '@/lib/cost-control/project-rollup'
@@ -16,7 +16,7 @@ import { DeadlineBadge } from '@/components/cost-control/DeadlineBadge'
 import { TreeProvider, TreeToolbar, CatChevron, CatRows, SubRow } from '@/components/cost-control/project-tree'
 import { FocusScroll } from '@/components/cost-control/FocusScroll'
 import { wsStatusLabel } from '@/components/cost-control/WSStatusPill'
-import { DeadlineCell, SubSkillModeCell, DisableButton, InternalEstimateDecision, SubSkillAssignControl, RowConfigMenu, RowConfigItem } from './RowControls'
+import { DeadlineCell, SubSkillModeCell, DisableButton, InternalEstimateDecision, RowConfigMenu, RowConfigItem } from './RowControls'
 import { BphSyncButton } from './BphSyncButton'
 import { getBphMappingForProject } from '@/app/(app)/cost-control/import/bph/actions'
 
@@ -178,16 +178,6 @@ export default async function CostControlProjectDetailPage(
     .select('id, chain_anchor_id, version_no')
     .eq('project_id', id)
     .is('archived_at', null)
-
-  // Which engineer is responsible for each sub-skill's budget working.
-  const { data: ssaData } = await supabase
-    .from('cc_subskill_assignments')
-    .select('sub_skill_id, engineer_id')
-    .eq('project_id', id)
-  const assigneeBySub = new Map<string, string>()
-  for (const r of (ssaData ?? []) as Array<{ sub_skill_id: string; engineer_id: string }>) {
-    assigneeBySub.set(r.sub_skill_id, r.engineer_id)
-  }
 
   // Budget lines + working sheets drive every number on this page. If
   // either query broke, zeros would masquerade as "no budget yet" — stop
@@ -749,12 +739,10 @@ export default async function CostControlProjectDetailPage(
                         ? ie.amt
                         : estLive
                       const overBy = baseline > 0 && ask > baseline ? ask - baseline : 0
-                      // Effective estimation mode + assignee, computed once and
-                      // reused in the name cell (read-only signals) + the ▾
-                      // config menu (the editable controls) + the New WS route.
+                      // Effective estimation mode, computed once and reused in
+                      // the name cell (read-only signal) + the ▾ config menu
+                      // (the editable controls) + the New WS route.
                       const effMode = subMeta.get(s.id)?.mode ?? discMeta.get(d.id)?.mode ?? 'detailed'
-                      const assigneeId = assigneeBySub.get(s.id) ?? null
-                      const assigneeName = assigneeId ? (profileMap.get(assigneeId) ?? null) : null
                       // "Empty" = nothing to show at all (no estimate, no ask,
                       // no sheet, no ERP). Hidden by default via the ▾ Hide-empty
                       // toggle so the table isn't a wall of "—".
@@ -774,12 +762,6 @@ export default async function CostControlProjectDetailPage(
                             {effMode === 'thumbrule' && (
                               <span className="ml-2 inline-flex items-center gap-0.5 text-[10px] font-semibold rounded px-1.5 py-0.5 bg-amber-50 text-amber-800 border border-amber-200 align-middle" title="Thumbrule (rate × area)">
                                 <Ruler className="h-2.5 w-2.5" /> TR
-                              </span>
-                            )}
-                            {/* Who owns it — read-only; the assign dropdown is in the ▾ menu. */}
-                            {assigneeName && (
-                              <span className="ml-2 inline-flex items-center gap-0.5 text-[11px] text-gray-500 align-middle" title="Engineer responsible for this sub-skill">
-                                <UserRound className="h-3 w-3 text-gray-400" /> {assigneeName}
                               </span>
                             )}
                             {(() => {
@@ -887,7 +869,7 @@ export default async function CostControlProjectDetailPage(
                                   <Plus className="h-3 w-3" /> New WS
                                 </Link>
                               )}
-                              {/* Config (mode · assignee · remove) tucked behind one ▾ so the
+                              {/* Config (mode · remove) tucked behind one ▾ so the
                                   table stays KPIs + amounts, not editing widgets. */}
                               {canWrite && (
                                 <RowConfigMenu>
@@ -900,15 +882,6 @@ export default async function CostControlProjectDetailPage(
                                       initialNotes={subMeta.get(s.id)?.notes ?? null}
                                       inheritedMode={discMeta.get(d.id)?.mode ?? 'detailed'}
                                       canWrite={canWrite}
-                                    />
-                                  </RowConfigItem>
-                                  <RowConfigItem label="Assigned engineer">
-                                    <SubSkillAssignControl
-                                      projectId={project.id}
-                                      subSkillId={s.id}
-                                      engineerId={assigneeId}
-                                      assignedName={assigneeName}
-                                      engineers={engineers.map(e => ({ user_id: e.user_id, name: e.name }))}
                                     />
                                   </RowConfigItem>
                                   <RowConfigItem label="Remove from project">

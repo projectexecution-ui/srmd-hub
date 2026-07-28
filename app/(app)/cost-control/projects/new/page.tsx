@@ -2,7 +2,6 @@ import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { requirePermission } from '@/lib/auth'
 import { checkIsCcReviewer } from '@/components/cost-control/ws-actions'
-import { getRoleSides } from '@/lib/role-sides'
 import { PageHeader } from '@/components/PageHeader'
 import { Card } from '@/components/ui/card'
 import { AlertTriangle } from 'lucide-react'
@@ -29,10 +28,9 @@ export default async function NewCostControlProjectPage() {
   if (!(await checkIsCcReviewer())) redirect('/cost-control')
   const supabase = await createClient()
 
-  const [parentsRes, usersRes, overridesRes, disciplinesRes, subSkillsRes] = await Promise.all([
+  const [parentsRes, usersRes, disciplinesRes, subSkillsRes] = await Promise.all([
     supabase.from('projects').select('id, code, name').order('code'),
     supabase.from('profiles').select('id, full_name, name, email, role').eq('is_active', true),
-    supabase.from('user_module_roles').select('user_id, role').eq('module_slug', 'cost-control'),
     supabase.from('cc_disciplines').select('id, code, name').order('display_order'),
     supabase.from('cc_sub_skills').select('id, discipline_id, code, name').order('code'),
   ])
@@ -47,18 +45,6 @@ export default async function NewCostControlProjectPage() {
     name: p.full_name ?? p.name ?? '(unnamed)',
     email: p.email,
   }))
-  // Effective engineers only: the admin decides WHICH roles count as
-  // "Engineer" (Role sides on /admin/users); a cost-control override is
-  // honoured in both directions.
-  const engineerRoles = new Set<string>((await getRoleSides()).engineer)
-  const ccOverride = new Map<string, string>()
-  for (const r of (overridesRes.data ?? []) as Array<{ user_id: string; role: string }>) {
-    ccOverride.set(r.user_id, r.role)
-  }
-  const engineerUsers: UserOption[] = profRows
-    .filter(p => engineerRoles.has(ccOverride.get(p.id) ?? p.role))
-    .map(p => ({ id: p.id, name: p.full_name ?? p.name ?? '(unnamed)', email: p.email }))
-    .sort((a, b) => a.name.localeCompare(b.name))
   const disciplines: DisciplineOption[] = (disciplinesRes.data ?? []).map(d => ({
     id: d.id,
     code: d.code,
@@ -93,7 +79,6 @@ export default async function NewCostControlProjectPage() {
       <ProjectSetupWizard
         parentProjects={parentProjects}
         users={users}
-        engineerUsers={engineerUsers}
         disciplines={disciplines}
         subSkills={subSkills}
       />
