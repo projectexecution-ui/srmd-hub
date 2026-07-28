@@ -23,6 +23,7 @@ import { ProjectApproversPanel } from '../ProjectApproversPanel'
 import { BulkAssignPanel } from '../BulkAssignPanel'
 import { GroupLabelChip } from '@/app/(app)/cost-control/GroupLabelChip'
 import { getBphMappingForProject } from '@/app/(app)/cost-control/import/bph/actions'
+import { getCcSettings } from '@/lib/cost-control/settings'
 
 export const dynamic = 'force-dynamic'
 
@@ -61,7 +62,8 @@ export default async function ResumeProjectSetupPage(
   // Config controls (details / grouping / approvers) are surfaced right here on
   // the setup screen — one management home. Rename/alias/parent are admin-only.
   const isAdmin = (await getMyProfile())?.role === 'admin'
-  const bphMapping = await getBphMappingForProject(id)
+  const ccSettings = await getCcSettings()
+  const bphMapping = ccSettings.bph_sync ? await getBphMappingForProject(id) : null
 
   // Used to bounce 100%-complete projects, but PMs need to be able to
   // edit setup after going active (add/remove disciplines, re-tick subs,
@@ -234,23 +236,25 @@ export default async function ResumeProjectSetupPage(
           </div>
         </div>
 
-        <div className="border-t border-gray-100 pt-3 space-y-1">
-          <h2 className="text-sm font-semibold text-gray-900 inline-flex items-center gap-1.5">
-            <FileSpreadsheet className="h-4 w-4 text-gray-400" /> Budget (BPH) source
-          </h2>
-          {bphMapping ? (
-            <p className="text-sm text-gray-700">
-              Linked to a BPH report — <span className="text-emerald-700 font-medium">auto-syncs on every BPH upload</span>.{' '}
-              <Link href={`/cost-control/import/bph?cc_project=${id}`} className="text-blue-600 hover:underline">Change or resync →</Link>
-            </p>
-          ) : (
-            <p className="text-sm text-gray-700">
-              Not linked yet.{' '}
-              <Link href={`/cost-control/import/bph?cc_project=${id}`} className="text-blue-600 hover:underline">Map to a BPH report →</Link>{' '}
-              Once mapped, Budget (ERP) numbers refresh automatically on every upload.
-            </p>
-          )}
-        </div>
+        {ccSettings.bph_sync && (
+          <div className="border-t border-gray-100 pt-3 space-y-1">
+            <h2 className="text-sm font-semibold text-gray-900 inline-flex items-center gap-1.5">
+              <FileSpreadsheet className="h-4 w-4 text-gray-400" /> Budget (BPH) source
+            </h2>
+            {bphMapping ? (
+              <p className="text-sm text-gray-700">
+                Linked to a BPH report — <span className="text-emerald-700 font-medium">auto-syncs on every BPH upload</span>.{' '}
+                <Link href={`/cost-control/import/bph?cc_project=${id}`} className="text-blue-600 hover:underline">Change or resync →</Link>
+              </p>
+            ) : (
+              <p className="text-sm text-gray-700">
+                Not linked yet.{' '}
+                <Link href={`/cost-control/import/bph?cc_project=${id}`} className="text-blue-600 hover:underline">Map to a BPH report →</Link>{' '}
+                Once mapped, Budget (ERP) numbers refresh automatically on every upload.
+              </p>
+            )}
+          </div>
+        )}
       </Card>
 
       {/* Per-project approvers roster. */}

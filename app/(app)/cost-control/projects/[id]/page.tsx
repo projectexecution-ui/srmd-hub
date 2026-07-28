@@ -332,7 +332,8 @@ export default async function CostControlProjectDetailPage(
   const pmName = pmRow?.full_name ?? pmRow?.name ?? null
 
   // Is this project mapped to a BPH report? Drives the header sync button.
-  const isBphMapped = !!(await getBphMappingForProject(id))
+  // Only when the BPH sync feature is switched on in Settings.
+  const isBphMapped = ccSettings.bph_sync ? !!(await getBphMappingForProject(id)) : false
 
   const setupPct = project.setup_progress_pct ?? 0
   const showSetupBanner = setupPct < 100 && project.cc_status === 'setup_incomplete'
@@ -433,7 +434,7 @@ export default async function CostControlProjectDetailPage(
               >
                 <Plus className="h-4 w-4" /> Raise Budget Request
               </Link>
-              <BphSyncButton projectId={project.id} isMapped={isBphMapped} />
+              {ccSettings.bph_sync && <BphSyncButton projectId={project.id} isMapped={isBphMapped} />}
               <Link
                 href={`/cost-control/projects/${project.id}/setup`}
                 className="inline-flex items-center gap-1.5 h-9 px-3 rounded-md bg-white text-gray-700 border border-gray-300 text-sm font-semibold hover:bg-gray-50"
@@ -548,13 +549,18 @@ export default async function CostControlProjectDetailPage(
                     : `${disciplines.length} disciplines`)
                 : (
                     <span className="text-[11px] text-gray-500">
-                      Fills when Heads approve releases.{' '}
-                      <Link
-                        href={`/cost-control/import/bph?cc_project=${project.id}`}
-                        className="text-teal-700 hover:underline font-medium"
-                      >
-                        Or pull from your BPH report →
-                      </Link>
+                      Fills when Heads approve releases.
+                      {ccSettings.bph_sync && (
+                        <>
+                          {' '}
+                          <Link
+                            href={`/cost-control/import/bph?cc_project=${project.id}`}
+                            className="text-teal-700 hover:underline font-medium"
+                          >
+                            Or pull from your BPH report →
+                          </Link>
+                        </>
+                      )}
                     </span>
                   )
             }

@@ -1,6 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import { requirePermission, can } from '@/lib/auth'
+import { getCcSettings } from '@/lib/cost-control/settings'
 import { checkIsCcReviewer } from '@/components/cost-control/ws-actions'
 import { PageHeader } from '@/components/PageHeader'
 import { Card } from '@/components/ui/card'
@@ -22,6 +23,7 @@ export default async function CostControlImportPage({
   if (!(await checkIsCcReviewer())) redirect("/cost-control")
 
   const canImport = can(perms, 'cost-control', 'edit')
+  const ccSettings = await getCcSettings()
   const supabase = await createClient()
   const sp = await searchParams
 
@@ -42,25 +44,27 @@ export default async function CostControlImportPage({
         back="/cost-control"
       />
 
-      {/* Highlight the BPH path — most PMs already upload weekly to /budget,
-          so this is usually the better option than re-uploading the Excel. */}
-      <Link
-        href="/cost-control/import/bph"
-        className="block rounded-lg border border-teal-300 bg-teal-50 px-4 py-3 hover:bg-teal-100 transition-colors"
-      >
-        <div className="flex items-center justify-between gap-3">
-          <div>
-            <p className="text-sm font-bold text-teal-900 inline-flex items-center gap-2">
-              <FileSpreadsheet className="h-4 w-4" />
-              Already uploaded to BPH this week? Pull from there instead.
-            </p>
-            <p className="text-xs text-teal-800/90 mt-0.5">
-              Reuse your weekly /budget upload. Map BPH project → CT Hub project, click commit. No double-upload.
-            </p>
+      {/* The BPH path — hidden unless the BPH sync feature is switched on in
+          Settings (cc_bph_sync). */}
+      {ccSettings.bph_sync && (
+        <Link
+          href="/cost-control/import/bph"
+          className="block rounded-lg border border-teal-300 bg-teal-50 px-4 py-3 hover:bg-teal-100 transition-colors"
+        >
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <p className="text-sm font-bold text-teal-900 inline-flex items-center gap-2">
+                <FileSpreadsheet className="h-4 w-4" />
+                Already uploaded to BPH this week? Pull from there instead.
+              </p>
+              <p className="text-xs text-teal-800/90 mt-0.5">
+                Reuse your weekly /budget upload. Map BPH project → CT Hub project, click commit. No double-upload.
+              </p>
+            </div>
+            <ArrowRight className="h-4 w-4 text-teal-700" />
           </div>
-          <ArrowRight className="h-4 w-4 text-teal-700" />
-        </div>
-      </Link>
+        </Link>
+      )}
 
       {canImport ? (
         <ImportClient

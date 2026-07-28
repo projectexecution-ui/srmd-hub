@@ -276,8 +276,9 @@ export default async function CostControlLandingPage() {
   const upcomingDeadlines = (deadlineData ?? []) as DeadlineRow[]
   const overdueCount = upcomingDeadlines.filter(d => d.deadline_date < todayStr).length
 
-  // BPH auto-sync freshness — read-only, doesn't trigger a pull
-  const bphSync = await getLastBphSync()
+  // BPH auto-sync freshness — read-only, doesn't trigger a pull. Only when the
+  // BPH sync feature is switched on in Settings.
+  const bphSync = ccSettings.bph_sync ? await getLastBphSync() : null
 
   // Last auto-backup marker for the Tools menu. Newer backups store a plain
   // ISO timestamp; older ones stored JSON {at: ...} — accept both.
@@ -368,8 +369,9 @@ export default async function CostControlLandingPage() {
             <span className="inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-rose-600 text-white text-[10px] font-bold">{waitingOnMe}</span>
           </Link>
         )}
-        {/* BPH auto-sync — compact icon; full status on hover. */}
-        <BphSyncChip sync={bphSync} canWrite={canWrite} />
+        {/* BPH auto-sync — compact icon; full status on hover. Hidden unless
+            the feature is switched on in Settings. */}
+        {bphSync && <BphSyncChip sync={bphSync} canWrite={canWrite} />}
         <details className="relative group [&_summary::-webkit-details-marker]:hidden">
           <summary className="list-none cursor-pointer inline-flex items-center gap-1.5 h-9 px-3 rounded-md border border-gray-300 bg-white text-sm font-medium text-gray-700 hover:bg-gray-50 select-none">
             <Settings className="h-4 w-4" /> Tools

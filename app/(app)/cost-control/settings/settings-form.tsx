@@ -84,6 +84,7 @@ export function CcSettingsForm({ initial, users = [] }: {
       { key: 'cc_archive_users',    value: v.archive_users.join(',') },
       { key: 'cc_ie_review',        value: String(v.ie_review) },
       { key: 'cc_cumulative_versions', value: String(v.cumulative_versions) },
+      { key: 'cc_bph_sync',         value: String(v.bph_sync) },
     ]
     const { error } = await supabase.from('app_settings').upsert(rows, { onConflict: 'key' })
     if (error) { setError(error.message); setSaving(false); return }
@@ -153,6 +154,12 @@ export function CcSettingsForm({ initial, users = [] }: {
             hint="Pixel-perfect Excel rendering — but each preview SENDS the file to Microsoft's servers (they may cache it). Off = the in-app viewer keeps everything inside your app."
             checked={v.excel_microsoft}
             onChange={x => setV({ ...v, excel_microsoft: x })}
+          />
+          <Toggle
+            label="BPH auto-sync (IN4 report → ERP figures)"
+            hint="Off (default) — the 'Sync from BPH' button, the dashboard sync chip and the Map/Import entry points are hidden, and NO automatic pull runs (neither the twice-daily job nor the on-upload pull), so the IN4/BPH report never touches your Budget (ERP) figures. Turn on when you trust the report to auto-fill Budget/WO/Paid. Figures already pulled are left as-is."
+            checked={v.bph_sync}
+            onChange={x => setV({ ...v, bph_sync: x })}
           />
         </div>
       </details>

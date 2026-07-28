@@ -772,6 +772,15 @@ export async function runAllMappedPulls(
   // Best-effort: each pull catches its own error so one bad mapping
   // doesn't take down the whole sync.
   const supabase = (opts?.client ?? await createClient()) as CcClient
+
+  // Respect the BPH auto-sync toggle (Settings → cc_bph_sync). Off (default) =
+  // no automatic pull runs at all — neither the twice-daily cron nor the
+  // on-upload auto-pull — so the IN4/BPH report never touches CC budgets.
+  const { data: flagRow } = await supabase
+    .from('app_settings').select('value').eq('key', 'cc_bph_sync').maybeSingle()
+  const bphOn = ['true', '1', 'on'].includes(String(flagRow?.value ?? '').trim().toLowerCase())
+  if (!bphOn) return { ok: true, outcomes: [], ran_at: new Date().toISOString() }
+
   const { data: links } = await supabase
     .from('cc_bph_project_links')
     .select('bph_project_id, cc_project_id')

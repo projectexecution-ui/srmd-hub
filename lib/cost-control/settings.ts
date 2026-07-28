@@ -54,6 +54,13 @@ export interface CcSettings {
    *  line. Off (default) = today's behaviour, unchanged. One switch to trial
    *  the whole feature and revert instantly. */
   cumulative_versions: boolean
+  /** BPH → Cost Control auto-sync. Off (default) = the "Sync from BPH" button,
+   *  the dashboard sync chip and the map/import entry points are hidden AND no
+   *  automatic pull runs (neither the twice-daily cron nor the on-upload
+   *  auto-pull), so the IN4/BPH report never touches the CC budget figures.
+   *  Turn on to re-enable the whole BPH sync feature. Existing pulled figures
+   *  are left as-is either way. */
+  bph_sync: boolean
 }
 
 export const CC_SETTINGS_DEFAULTS: CcSettings = {
@@ -73,6 +80,7 @@ export const CC_SETTINGS_DEFAULTS: CcSettings = {
   archive_users: [],
   ie_review: false,
   cumulative_versions: false,
+  bph_sync: false,
 }
 
 /** Pure parser — exported so tests cover defaults/overrides without Supabase. */
@@ -108,6 +116,7 @@ export function parseCcSettings(map: Record<string, string | null | undefined>):
     archive_users:     ((map['cc_archive_users'] ?? '').match(/[0-9a-f-]{36}/gi) ?? []),
     ie_review:         parseBool('cc_ie_review', d.ie_review),
     cumulative_versions: parseBool('cc_cumulative_versions', d.cumulative_versions),
+    bph_sync:          parseBool('cc_bph_sync', d.bph_sync),
   }
 }
 
