@@ -87,8 +87,11 @@ interface AiSummary {
 
 interface Props {
   projects: ProjectOpt[]
-  projectDisciplines: Array<{ project_id: string; discipline: DRow }>
-  projectSubSkills: Array<{ project_id: string; sub_skill: SRow }>
+  /** FULL catalogue — the dropdowns offer every (non-archived) discipline and
+   *  sub-skill, not just the project's enabled set. Whatever is picked is
+   *  auto-enabled for the project on submit. */
+  allDisciplines: DRow[]
+  allSubSkills: SRow[]
   defaultProjectId?: string
   /** Prefill discipline + sub-skill when arriving from a sub-skill row. */
   defaultDisciplineId?: string
@@ -294,7 +297,7 @@ async function parseExcel(file: File): Promise<{ rows: ParsedRow[]; grandTotal: 
   return { rows, grandTotal, aoa }
 }
 
-export function NewWSQuickForm({ projects, projectDisciplines, projectSubSkills, defaultProjectId, defaultDisciplineId, defaultSubSkillId, canSetDeadline = false, reviewer = false, cumulativeVersions = false, priorVersion = null }: Props) {
+export function NewWSQuickForm({ projects, allDisciplines, allSubSkills, defaultProjectId, defaultDisciplineId, defaultSubSkillId, canSetDeadline = false, reviewer = false, cumulativeVersions = false, priorVersion = null }: Props) {
   const router = useRouter()
   const [projectId, setProjectId]     = useState(defaultProjectId ?? projects[0]?.id ?? '')
   const [disciplineId, setDisciplineId] = useState(defaultDisciplineId ?? '')
@@ -348,15 +351,12 @@ export function NewWSQuickForm({ projects, projectDisciplines, projectSubSkills,
     if (gridGrand != null) setSummaryTotal(String(Math.round(gridGrand)))
   }, [gridGrand])
 
-  const disciplines = useMemo(
-    () => projectDisciplines.filter(pd => pd.project_id === projectId).map(pd => pd.discipline),
-    [projectDisciplines, projectId],
-  )
+  // Full catalogue: every discipline, and every sub-skill under the picked
+  // discipline. Not scoped to the project — the picked pair is enabled on submit.
+  const disciplines = allDisciplines
   const subSkills = useMemo(
-    () => projectSubSkills
-      .filter(ps => ps.project_id === projectId && ps.sub_skill.discipline_id === disciplineId)
-      .map(ps => ps.sub_skill),
-    [projectSubSkills, projectId, disciplineId],
+    () => allSubSkills.filter(s => s.discipline_id === disciplineId),
+    [allSubSkills, disciplineId],
   )
 
   const selProject    = useMemo(() => projects.find(p => p.id === projectId), [projects, projectId])
@@ -583,6 +583,14 @@ export function NewWSQuickForm({ projects, projectDisciplines, projectSubSkills,
     const supabase = createClient()
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) { setError('Not signed in'); setSubmitting(false); return }
+
+    // Auto-enable the picked discipline + sub-skill for this project so the
+    // sheet (and its sub-skill) show up on the project's Internal Estimate —
+    // no separate setup step. Best-effort: never block the request on it.
+    const { error: scopeErr } = await supabase.rpc('cc_ensure_project_scope', {
+      p_project: projectId, p_discipline: disciplineId, p_sub_skill: subSkillId,
+    })
+    if (scopeErr) console.warn('[new-quick] auto-enable scope failed:', scopeErr.message)
 
     // 1. Upload the Excel
     const ts = Date.now()
