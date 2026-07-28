@@ -9,6 +9,7 @@ import { Input } from '@/components/ui/input'
 import { MoneyInput } from '@/components/ui/money-input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
+import { SearchableSelect } from '@/components/ui/searchable-select'
 import { Loader2, Upload, FileSpreadsheet, X, Sparkles, AlertTriangle, Image as ImageIcon, Download, Paperclip, FileText } from 'lucide-react'
 import { formatINR } from '@/lib/utils'
 import { downloadBoqTemplate } from '@/lib/cost-control/boq-template-xlsx'
@@ -783,10 +784,13 @@ export function NewWSQuickForm({ projects, allDisciplines, allSubSkills, default
       <div className={`grid grid-cols-1 md:grid-cols-2 gap-3 ${showContext ? '' : 'hidden'}`}>
         <div>
           <Label>Project *</Label>
-          <select value={projectId} onChange={e => { setProjectId(e.target.value); setDisciplineId(''); setSubSkillId('') }}
-            required className="mt-1 flex h-10 w-full rounded-xl border border-gray-300 bg-white px-3 py-2 text-sm">
-            {projects.map(p => <option key={p.id} value={p.id}>{p.code} — {p.name}</option>)}
-          </select>
+          <SearchableSelect
+            value={projectId}
+            onChange={pid => { setProjectId(pid); setDisciplineId(''); setSubSkillId('') }}
+            options={projects.map(p => ({ id: p.id, label: `${p.code} — ${p.name}` }))}
+            placeholder="Select a project"
+            required
+          />
         </div>
         <div>
           <Label>Type *</Label>
@@ -799,21 +803,25 @@ export function NewWSQuickForm({ projects, allDisciplines, allSubSkills, default
         </div>
         <div>
           <Label>Discipline *</Label>
-          <select value={disciplineId} onChange={e => { setDisciplineId(e.target.value); setSubSkillId('') }}
-            required disabled={disciplines.length === 0}
-            className="mt-1 flex h-10 w-full rounded-xl border border-gray-300 bg-white px-3 py-2 text-sm">
-            <option value="">— Select —</option>
-            {disciplines.map(d => <option key={d.id} value={d.id}>{d.code} — {d.name}</option>)}
-          </select>
+          <SearchableSelect
+            value={disciplineId}
+            onChange={did => { setDisciplineId(did); setSubSkillId('') }}
+            options={disciplines.map(d => ({ id: d.id, label: `${d.code} — ${d.name}` }))}
+            disabled={disciplines.length === 0}
+            placeholder="— Select —"
+            required
+          />
         </div>
         <div>
           <Label>Sub-skill *</Label>
-          <select value={subSkillId} onChange={e => setSubSkillId(e.target.value)}
-            required disabled={subSkills.length === 0}
-            className="mt-1 flex h-10 w-full rounded-xl border border-gray-300 bg-white px-3 py-2 text-sm">
-            <option value="">— Select —</option>
-            {subSkills.map(s => <option key={s.id} value={s.id}>{s.code} — {s.name}</option>)}
-          </select>
+          <SearchableSelect
+            value={subSkillId}
+            onChange={setSubSkillId}
+            options={subSkills.map(s => ({ id: s.id, label: `${s.code} — ${s.name}` }))}
+            disabled={subSkills.length === 0}
+            placeholder={disciplineId ? '— Select —' : 'Pick a discipline first'}
+            required
+          />
         </div>
       </div>
 
