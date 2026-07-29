@@ -794,9 +794,9 @@ async function EngineerHome({ userId, canWrite, label }: { userId: string | null
   // The engineer's own working sheets — used to show how many sheets they
   // have per project ("My work" column).
   const myWsRes = userId
-    ? await supabase.from('cc_working_sheets').select('project_id, sub_skill_id').eq('engineer_id', userId).is('archived_at', null).neq('status', 'cancelled')
-    : { data: [] as Array<{ project_id: string; sub_skill_id: string }> }
-  const myWs = (myWsRes.data ?? []) as Array<{ project_id: string; sub_skill_id: string }>
+    ? await supabase.from('cc_working_sheets').select('project_id, sub_skill_id, status').eq('engineer_id', userId).is('archived_at', null).neq('status', 'cancelled')
+    : { data: [] as Array<{ project_id: string; sub_skill_id: string; status: string }> }
+  const myWs = (myWsRes.data ?? []) as Array<{ project_id: string; sub_skill_id: string; status: string }>
 
   type EProj = { id: string; code: string; name: string; built_up_sft: number | null; parent_project_id: string | null; group_label: string | null }
   // Role-based access: an engineer can raise a budget in ANY cost-control
@@ -838,9 +838,48 @@ async function EngineerHome({ userId, canWrite, label }: { userId: string | null
     }
   }
 
-  // Per-project: how many of my own sheets sit in the project.
+  // Per-project: how many of my own sheets sit in the project, split by where
+  // each one stands so the engineer is kept updated on their requests:
+  //   approved  = money moving (approved / partly released / WO / paid)
+  //   awaiting  = still in the approval chain (submitted → PH → Atm → Trustee)
+  //   returned  = sent back to me for changes (needs action)
+  //   draft     = raised but not yet sent for approval
+  type WStat = { approved: number; awaiting: number; returned: number; draft: number }
+  const emptyStat = (): WStat => ({ approved: 0, awaiting: 0, returned: 0, draft: 0 })
+  const AWAITING_ST = new Set(['submitted', 'ph_approved', 'atm_approved'])
+  const APPROVED_ST = new Set(['approved', 'partially_approved', 'wo_issued', 'paid'])
+  const bucketStatus = (into: WStat, status: string) => {
+    if (status === 'returned') into.returned++
+    else if (status === 'draft') into.draft++
+    else if (AWAITING_ST.has(status)) into.awaiting++
+    else if (APPROVED_ST.has(status)) into.approved++
+  }
   const mySheetsByProj = new Map<string, number>()
-  for (const w of myWs) mySheetsByProj.set(w.project_id, (mySheetsByProj.get(w.project_id) ?? 0) + 1)
+  const statusByProj = new Map<string, WStat>()
+  for (const w of myWs) {
+    mySheetsByProj.set(w.project_id, (mySheetsByProj.get(w.project_id) ?? 0) + 1)
+    const c = statusByProj.get(w.project_id) ?? emptyStat()
+    bucketStatus(c, w.status)
+    statusByProj.set(w.project_id, c)
+  }
+
+  // Status chips for the "My work" column — shows only the non-zero buckets so
+  // the engineer sees at a glance what's approved vs still awaiting. Reused for
+  // a single project row and a group's rolled-up total.
+  const workChips = (st: WStat) => {
+    const total = st.approved + st.awaiting + st.returned + st.draft
+    if (total === 0) return <span className="text-[11px] text-gray-400">—</span>
+    const chip = (n: number, label: string, cls: string) =>
+      n > 0 ? <span className={`inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-semibold border ${cls}`}>{n} {label}</span> : null
+    return (
+      <div className="flex flex-wrap items-center gap-1">
+        {chip(st.approved, 'approved', 'bg-emerald-50 text-emerald-700 border-emerald-200')}
+        {chip(st.awaiting, 'awaiting', 'bg-amber-50 text-amber-700 border-amber-200')}
+        {chip(st.returned, 'returned', 'bg-rose-50 text-rose-700 border-rose-200')}
+        {chip(st.draft, 'draft', 'bg-gray-100 text-gray-600 border-gray-200')}
+      </div>
+    )
+  }
 
   // Group my projects by parent (mirrors the management dashboard). A parent
   // I'm not assigned to still labels the band — fetch those labels too.
@@ -897,11 +936,7 @@ async function EngineerHome({ userId, canWrite, label }: { userId: string | null
         <td className="px-3 py-2.5 text-right tabular-nums font-semibold text-gray-900">{bud?.budget ? formatINR(bud.budget) : '—'}</td>
         <td className="px-3 py-2.5 text-right tabular-nums text-gray-600">{bud?.wo ? formatINR(bud.wo) : '—'}</td>
         <td className="px-3 py-2.5">
-          {sheets > 0 ? (
-            <span className="text-[11px] text-gray-500">{sheets} sheet{sheets === 1 ? '' : 's'}</span>
-          ) : (
-            <span className="text-[11px] text-gray-400">—</span>
-          )}
+          {sheets > 0 ? workChips(statusByProj.get(p.id) ?? emptyStat()) : <span className="text-[11px] text-gray-400">—</span>}
         </td>
       </tr>
     )
@@ -966,8 +1001,10 @@ async function EngineerHome({ userId, canWrite, label }: { userId: string | null
                     t.sft += Number(p.built_up_sft ?? 0)
                     t.budget += bud?.budget ?? 0
                     t.wo += bud?.wo ?? 0
+                    const s = statusByProj.get(p.id)
+                    if (s) { t.st.approved += s.approved; t.st.awaiting += s.awaiting; t.st.returned += s.returned; t.st.draft += s.draft }
                     return t
-                  }, { sft: 0, budget: 0, wo: 0 })
+                  }, { sft: 0, budget: 0, wo: 0, st: emptyStat() })
                   return (
                     <Fragment key={g.key}>
                       <tr className="bg-indigo-50/80 border-t border-indigo-100">
@@ -979,7 +1016,7 @@ async function EngineerHome({ userId, canWrite, label }: { userId: string | null
                         <td className="px-3 py-2 text-right tabular-nums text-[11px] font-semibold text-indigo-900/70">{gt.sft > 0 ? gt.sft.toLocaleString('en-IN') : '—'}</td>
                         <td className="px-3 py-2 text-right tabular-nums text-[11px] font-bold text-indigo-900">{gt.budget > 0 ? formatINR(gt.budget) : '—'}</td>
                         <td className="px-3 py-2 text-right tabular-nums text-[11px] font-semibold text-indigo-900/70">{gt.wo > 0 ? formatINR(gt.wo) : '—'}</td>
-                        <td className="px-3 py-2"></td>
+                        <td className="px-3 py-2">{workChips(gt.st)}</td>
                       </tr>
                       <CatRows catId={g.key}>{g.members.map(p => renderProjRow(p, true))}</CatRows>
                     </Fragment>
