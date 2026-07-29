@@ -59,7 +59,7 @@ const STAGE_OF: Partial<Record<WSStatus, number>> = {
 export default async function WorkingSheetsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ project?: string; status?: string; engineer?: string; discipline?: string; sub_skill?: string; auto?: string; dl?: string }>
+  searchParams: Promise<{ project?: string; status?: string; engineer?: string; discipline?: string; sub_skill?: string; auto?: string; dl?: string; baselines?: string }>
 }) {
   const perms = await requirePermission('cost-control', 'view')
   const canWrite = can(perms, 'cost-control', 'edit')
@@ -215,11 +215,22 @@ export default async function WorkingSheetsPage({
     arr.push(r)
     groups.set(key, arr)
   }
-  // Actionable statuses first; the imported baseline group sits at the end.
-  const GROUP_ORDER: string[] = [...STATUS_ORDER, 'estimate']
+  // The imported Internal Estimate baselines ([IB…]) are HIDDEN by default —
+  // they're the baseline, not budget requests, so a long list of them just
+  // confuses management. A "Show baselines" toggle (?baselines=1) reveals the
+  // group at the end when someone actually needs it.
+  const showBaselines = sp.baselines === '1'
+  const baselineCount = groups.get('estimate')?.length ?? 0
+  const GROUP_ORDER: string[] = showBaselines ? [...STATUS_ORDER, 'estimate'] : [...STATUS_ORDER]
   const orderedGroups = GROUP_ORDER
     .map(s => ({ status: s, rows: groups.get(s) ?? [] }))
     .filter(g => g.rows.length > 0)
+  // Preserve the current filters when toggling baselines on/off.
+  const baseParams = new URLSearchParams()
+  for (const [k, v] of Object.entries(sp)) if (v && k !== 'baselines') baseParams.set(k, String(v))
+  const withBaselines = new URLSearchParams(baseParams); withBaselines.set('baselines', '1')
+  const showBaselinesHref = `/cost-control/working-sheets${withBaselines.toString() ? `?${withBaselines}` : ''}`
+  const hideBaselinesHref = `/cost-control/working-sheets${baseParams.toString() ? `?${baseParams}` : ''}`
 
   // Labels for the "scoped" banner. Prefer the joined data on the first row;
   // fall back to a small lookup when the scoped filter has zero matches.
@@ -591,6 +602,19 @@ export default async function WorkingSheetsPage({
         </Card>
       ) : (
         <div className="space-y-4">
+          {baselineCount > 0 && (
+            <div className="flex justify-end">
+              {showBaselines ? (
+                <Link href={hideBaselinesHref} className="inline-flex items-center gap-1 text-xs font-medium text-gray-600 hover:text-gray-900 border border-gray-200 rounded-md px-2.5 py-1 bg-white">
+                  Hide Internal Estimate baselines
+                </Link>
+              ) : (
+                <Link href={showBaselinesHref} className="inline-flex items-center gap-1 text-xs font-medium text-indigo-700 hover:text-indigo-900 border border-indigo-200 rounded-md px-2.5 py-1 bg-indigo-50/60">
+                  Show {baselineCount} Internal Estimate baseline{baselineCount === 1 ? '' : 's'}
+                </Link>
+              )}
+            </div>
+          )}
           {orderedGroups.map(g => {
             const sum = g.rows.reduce((s, r) => s + Number(r.total_amount ?? 0), 0)
             const apprSum = g.rows.reduce((s, r) => s + Number(r.approved_for_erp_amt ?? 0), 0)
