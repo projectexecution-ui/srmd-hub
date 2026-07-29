@@ -5,6 +5,7 @@ import { createClient } from '@/lib/supabase/server'
 import { requirePermission, can, getMyUser, getMyProfile } from '@/lib/auth'
 import { getWSApprovalContext, checkIsCcReviewer, checkCanSetDeadline, checkCanArchiveWs } from '@/components/cost-control/ws-actions'
 import { ArchiveControls } from './ArchiveControls'
+import { DeleteDraftButton } from './DeleteDraftButton'
 import { RequestReleaseButton } from './RequestReleaseButton'
 import { PageHeader } from '@/components/PageHeader'
 import { Card } from '@/components/ui/card'
@@ -162,6 +163,10 @@ export default async function WorkingSheetEditorPage(
   // submit/sign-off/release/return actions.
   const isArchived = !!extraCols?.archived_at
   const frozen = isArchived || estimateLocked
+  // The owner engineer (or an admin) can delete their own DRAFT — e.g. raised in
+  // the wrong sub-category. Draft-only, never an [IB] baseline or an archived one.
+  const canDeleteDraft = ws.status === 'draft' && !isEstimateSheet && !isArchived
+    && (user?.id === ws.engineer_id || isAdmin)
   const ctx = frozen
     ? { ...rawCtx, canSubmit: false, nextSignOff: null, canRelease: false, canReturn: false }
     : rawCtx
@@ -371,6 +376,9 @@ export default async function WorkingSheetEditorPage(
           canArchive={canArchive}
           isAdmin={isAdmin}
         />
+        {canDeleteDraft && (
+          <DeleteDraftButton wsId={ws.id} wsCode={ws.ws_code} projectId={ws.project_id} />
+        )}
         {releaseRequestPanel}
         {summaryShotPanel}
 
@@ -583,6 +591,9 @@ export default async function WorkingSheetEditorPage(
           canArchive={canArchive}
           isAdmin={isAdmin}
         />
+        {canDeleteDraft && (
+          <DeleteDraftButton wsId={ws.id} wsCode={ws.ws_code} projectId={ws.project_id} />
+        )}
         {releaseRequestPanel}
         {canRaiseRevision && <RaiseRevisionButton projectId={ws.project_id} disciplineId={ws.discipline_id} subSkillId={ws.sub_skill_id} />}
         {summaryShotPanel}

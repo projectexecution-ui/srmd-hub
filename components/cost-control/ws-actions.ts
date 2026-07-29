@@ -253,6 +253,29 @@ export async function requestBalanceRelease(
   return { ok: true }
 }
 
+/** The engineer who OWNS a draft (or an admin) can delete it — e.g. it was
+ *  raised in the wrong sub-category. Draft-only; the RPC re-checks owner +
+ *  status. Best-effort cleans up the uploaded files from storage after. */
+export async function deleteDraftWorkingSheet(wsId: string): Promise<{ ok: boolean; error?: string }> {
+  const supabase = await createClient()
+  // Grab storage paths BEFORE the delete (children cascade away with the row).
+  const [wsRes, attRes] = await Promise.all([
+    supabase.from('cc_working_sheets').select('source_excel_url, summary_image_url').eq('id', wsId).maybeSingle(),
+    supabase.from('cc_ws_attachments').select('path').eq('working_sheet_id', wsId),
+  ])
+  const { error } = await supabase.rpc('cc_delete_draft', { p_ws: wsId })
+  if (error) return { ok: false, error: error.message }
+  // Orphaned files are harmless, so removal is best-effort — the row is gone.
+  const paths = [
+    wsRes.data?.source_excel_url, wsRes.data?.summary_image_url,
+    ...((attRes.data ?? []).map(a => (a as { path: string }).path)),
+  ].filter((p): p is string => !!p)
+  if (paths.length) { try { await supabase.storage.from('cc-sheets').remove(paths) } catch { /* ignore */ } }
+  revalidatePath('/cost-control/working-sheets')
+  revalidatePath('/cost-control')
+  return { ok: true }
+}
+
 /** Admin, or a user the admin granted via the cc_archive_users setting, may
  *  archive / restore working sheets. Delete stays admin-only (in the RPC). */
 export async function checkCanArchiveWs(): Promise<boolean> {
