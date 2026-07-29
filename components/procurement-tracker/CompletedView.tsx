@@ -288,22 +288,22 @@ export function CompletedView({
         )}
 
         {/* Controls */}
-        <div className="flex flex-wrap items-center gap-3 pt-3">
-          <div className="inline-flex bg-stone-100 rounded-lg p-0.5">
+        <div className="flex flex-col sm:flex-row sm:flex-wrap sm:items-center gap-2 sm:gap-3 pt-3">
+          <div className="flex w-full sm:w-auto sm:inline-flex bg-stone-100 rounded-lg p-0.5">
             <button onClick={() => setGroupBy('vendor')}
-              className={`inline-flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-md transition-colors ${
+              className={`flex-1 sm:flex-none inline-flex items-center justify-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-md transition-colors ${
                 groupBy === 'vendor' ? 'bg-white text-stone-900 shadow-sm' : 'text-stone-500 hover:text-stone-800'
               }`}>
-              <Users className="h-3 w-3" /> By vendor
+              <Users className="h-3 w-3 flex-shrink-0" /> By vendor
             </button>
             <button onClick={() => setGroupBy('project')}
-              className={`inline-flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-md transition-colors ${
+              className={`flex-1 sm:flex-none inline-flex items-center justify-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-md transition-colors ${
                 groupBy === 'project' ? 'bg-white text-stone-900 shadow-sm' : 'text-stone-500 hover:text-stone-800'
               }`}>
-              <Layers className="h-3 w-3" /> By project
+              <Layers className="h-3 w-3 flex-shrink-0" /> By project
             </button>
             <button onClick={() => setGroupBy('none')}
-              className={`inline-flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-md transition-colors ${
+              className={`flex-1 sm:flex-none inline-flex items-center justify-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-md transition-colors ${
                 groupBy === 'none' ? 'bg-white text-stone-900 shadow-sm' : 'text-stone-500 hover:text-stone-800'
               }`}>
               Flat list
@@ -322,7 +322,7 @@ export function CompletedView({
           </div>
 
           {groups.length > 1 && (
-            <div className="inline-flex gap-1 ml-auto">
+            <div className="flex w-full sm:w-auto sm:ml-auto gap-1 justify-end">
               <button
                 onClick={() => setCollapsed(new Set(groups.map(g => g.key)))}
                 className="text-[11px] font-medium px-2 py-1 rounded-md bg-stone-100 text-stone-600 hover:bg-stone-200 inline-flex items-center gap-1"

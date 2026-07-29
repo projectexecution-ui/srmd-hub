@@ -266,24 +266,24 @@ export function PendingReceiptsView({
           </div>
         )}
 
-        <div className="flex flex-wrap items-center gap-3">
-          {/* Group-by toggle */}
-          <div className="inline-flex bg-stone-100 rounded-lg p-0.5">
+        <div className="flex flex-col sm:flex-row sm:flex-wrap sm:items-center gap-2 sm:gap-3">
+          {/* Group-by toggle — full-width equal split on mobile */}
+          <div className="flex w-full sm:w-auto sm:inline-flex bg-stone-100 rounded-lg p-0.5">
             <button
               onClick={() => setGroupBy('supplier')}
-              className={`inline-flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-md transition-colors ${
+              className={`flex-1 sm:flex-none inline-flex items-center justify-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-md transition-colors ${
                 groupBy === 'supplier' ? 'bg-white text-stone-900 shadow-sm' : 'text-stone-500 hover:text-stone-800'
               }`}
             >
-              <Users className="h-3 w-3" /> Group by supplier
+              <Users className="h-3 w-3 flex-shrink-0" /> <span className="sm:hidden">Supplier</span><span className="hidden sm:inline">Group by supplier</span>
             </button>
             <button
               onClick={() => setGroupBy('indent')}
-              className={`inline-flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-md transition-colors ${
+              className={`flex-1 sm:flex-none inline-flex items-center justify-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-md transition-colors ${
                 groupBy === 'indent' ? 'bg-white text-stone-900 shadow-sm' : 'text-stone-500 hover:text-stone-800'
               }`}
             >
-              <ClipboardList className="h-3 w-3" /> Group by indent
+              <ClipboardList className="h-3 w-3 flex-shrink-0" /> <span className="sm:hidden">Indent</span><span className="hidden sm:inline">Group by indent</span>
             </button>
           </div>
 
@@ -312,7 +312,7 @@ export function PendingReceiptsView({
           {/* Collapse-all / Expand-all — only useful when there are
               multiple groups; hide otherwise. */}
           {groups.length > 1 && (
-            <div className="inline-flex gap-1 ml-auto">
+            <div className="flex w-full sm:w-auto sm:ml-auto gap-1 justify-end">
               <button
                 onClick={() => setCollapsed(new Set(groups.map(g => g.key)))}
                 className="text-[11px] font-medium px-2 py-1 rounded-md bg-stone-100 text-stone-600 hover:bg-stone-200 inline-flex items-center gap-1"
