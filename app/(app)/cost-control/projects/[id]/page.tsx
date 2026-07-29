@@ -990,16 +990,18 @@ export default async function CostControlProjectDetailPage(
             return (
               <div key={d.id}>
                 <div className="flex items-center justify-between gap-2 px-4 py-2 bg-slate-50 border-t border-gray-200">
-                  <p className="text-[13px] font-semibold text-gray-900 min-w-0">
-                    <span className="font-mono text-[11px] text-gray-500 mr-1.5">{d.code}</span>{d.name}
-                  </p>
+                  <span className="flex items-center min-w-0 text-[13px] font-semibold text-gray-900">
+                    <CatChevron catId={d.id} />
+                    <span className="font-mono text-[11px] text-gray-500 mr-1.5">{d.code}</span>
+                    <span className="truncate">{d.name}</span>
+                  </span>
                   <p className="text-[11px] text-gray-500 flex-shrink-0 whitespace-nowrap">
                     Est <span className="font-semibold text-indigo-800"><Money amt={dAgg.estimate} /></span>
                     <span className="mx-1">·</span>
                     Rel <span className="font-semibold text-emerald-700"><Money amt={dAgg.approvedTotal} /></span>
                   </p>
                 </div>
-                {cards}
+                <CatRows catId={d.id}>{cards}</CatRows>
               </div>
             )
           })}

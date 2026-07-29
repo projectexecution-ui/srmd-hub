@@ -717,9 +717,11 @@ export default async function CostControlLandingPage() {
                 <div key={g.key}>
                   {g.label && (
                     <div className="flex items-center justify-between gap-2 px-4 py-2 bg-indigo-50/80">
-                      <p className="text-[12px] font-bold uppercase tracking-wide text-indigo-900 min-w-0">
-                        {g.label}<span className="ml-1.5 font-normal normal-case text-indigo-400">· {g.members.length}</span>
-                      </p>
+                      <span className="flex items-center min-w-0 text-[12px] font-bold uppercase tracking-wide text-indigo-900">
+                        <CatChevron catId={g.key} />
+                        <span className="truncate">{g.label}</span>
+                        <span className="ml-1.5 font-normal normal-case text-indigo-400 whitespace-nowrap">· {g.members.length}</span>
+                      </span>
                       <p className="text-[11px] text-indigo-900/70 flex-shrink-0 whitespace-nowrap">
                         Est <span className="font-semibold">{gt.estimate > 0 ? formatINR(gt.estimate) : '—'}</span>
                         <span className="mx-1">·</span>
@@ -727,6 +729,7 @@ export default async function CostControlLandingPage() {
                       </p>
                     </div>
                   )}
+                  <CatRows catId={g.key}>
                   {g.members.map(p => {
                     const pct = p.setup_progress_pct ?? 0
                     const isIncomplete = pct < 100
@@ -770,6 +773,7 @@ export default async function CostControlLandingPage() {
                       </div>
                     )
                   })}
+                  </CatRows>
                 </div>
               )
             })}
@@ -1221,21 +1225,23 @@ async function EngineerHome({ userId, canWrite, label }: { userId: string | null
               return (
                 <div key={g.key}>
                   <div className="flex items-center justify-between gap-2 px-4 py-2 bg-indigo-50/80">
-                    <p className="text-[12px] font-bold uppercase tracking-wide text-indigo-900 min-w-0">
-                      {g.label}<span className="ml-1.5 font-normal normal-case text-indigo-400">· {g.members.length}</span>
-                    </p>
+                    <span className="flex items-center min-w-0 text-[12px] font-bold uppercase tracking-wide text-indigo-900">
+                      <CatChevron catId={g.key} />
+                      <span className="truncate">{g.label}</span>
+                      <span className="ml-1.5 font-normal normal-case text-indigo-400 whitespace-nowrap">· {g.members.length}</span>
+                    </span>
                     <div className="flex-shrink-0">{workChips(gt)}</div>
                   </div>
-                  {g.members.map(renderProjCard)}
+                  <CatRows catId={g.key}>{g.members.map(renderProjCard)}</CatRows>
                 </div>
               )
             })}
             {soloProjects.length > 0 && (
               <div>
                 {realGroups.length > 0 && (
-                  <p className="px-4 py-2 bg-gray-50 text-[12px] font-bold uppercase tracking-wide text-gray-500">Independent projects</p>
+                  <p className="px-4 py-2 bg-gray-50 text-[12px] font-bold uppercase tracking-wide text-gray-500 flex items-center"><CatChevron catId="_independent" />Independent projects</p>
                 )}
-                {soloProjects.map(renderProjCard)}
+                <CatRows catId="_independent">{soloProjects.map(renderProjCard)}</CatRows>
               </div>
             )}
           </div>

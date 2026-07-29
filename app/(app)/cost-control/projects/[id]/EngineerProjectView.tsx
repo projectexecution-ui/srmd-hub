@@ -257,10 +257,14 @@ export async function EngineerProjectTable({ projectId }: { projectId: string })
             return (
               <div key={d.id}>
                 <div className="px-4 py-2 bg-gray-50/60 flex items-center justify-between gap-2">
-                  <p className="text-[12px] font-semibold text-gray-800 min-w-0"><span className="font-mono text-[11px] text-gray-400 mr-1.5">{d.code}</span>{d.name}</p>
+                  <span className="flex items-center min-w-0 text-[12px] font-semibold text-gray-800">
+                    <CatChevron catId={d.id} />
+                    <span className="font-mono text-[11px] text-gray-400 mr-1.5">{d.code}</span>
+                    <span className="truncate">{d.name}</span>
+                  </span>
                   {dt.pending > 0 && <span className="text-[11px] text-amber-700 flex-shrink-0 whitespace-nowrap">Awaiting {formatINR(dt.pending)}</span>}
                 </div>
-                {cards}
+                <CatRows catId={d.id}>{cards}</CatRows>
               </div>
             )
           })}
