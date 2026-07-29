@@ -60,6 +60,27 @@ describe('approval email', () => {
     })
     expect(v1).not.toContain('Already approved')
   })
+  it('shows the note (and who wrote it) when present', () => {
+    const withNote = renderNotificationEmail({
+      kind: 'approval', subject: 'x', text: 'y', link: 'l',
+      data: { amount: 100, stage_index: 3, note: 'Cabling for the new ICT wing as per site layout', note_by: 'Ambrish' },
+    })
+    expect(withNote).toContain('Cabling for the new ICT wing as per site layout')
+    expect(withNote).toContain('Ambrish')
+  })
+  it('escapes note content and omits the block when absent', () => {
+    const evil = renderNotificationEmail({
+      kind: 'approval', subject: 'x', text: 'y', link: 'l',
+      data: { amount: 100, stage_index: 3, note: '<script>alert(1)</script>' },
+    })
+    expect(evil).toContain('&lt;script&gt;')
+    expect(evil).not.toContain('<script>alert(1)</script>')
+    const none = renderNotificationEmail({
+      kind: 'approval', subject: 'x', text: 'y', link: 'l',
+      data: { amount: 100, stage_index: 3 },
+    })
+    expect(none).not.toContain('Cabling for')
+  })
 })
 
 describe('in4 pending digest', () => {

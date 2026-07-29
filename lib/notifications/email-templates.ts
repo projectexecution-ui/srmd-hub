@@ -77,6 +77,8 @@ interface ApprovalData {
   estimate?: number | null    // internal estimate baseline for the sub-skill
   already_approved?: number | null  // prior approved version's total (cumulative flow)
   cumulative?: number | null        // full BOQ total this version
+  note?: string | null        // the note that came with this action (why the budget is needed / what changed)
+  note_by?: string | null     // who wrote that note
   ai?: { ok: boolean; label: string } | null
 }
 
@@ -145,6 +147,18 @@ function renderApproval(d: ApprovalData, link: string): string {
       : '',
   ].join('')
 
+  // The note that came with the action (submit / sign-off) — so the approver
+  // sees WHY the budget is needed / what changed, without opening the app.
+  const noteText = d.note ? String(d.note).trim() : ''
+  const noteBlock = noteText
+    ? `<tr><td style="padding:12px 22px 0">
+        <div style="border-left:3px solid ${BRAND};background:#f4f8fc;border-radius:0 8px 8px 0;padding:9px 13px">
+          <div style="font-size:11px;color:${MUT};text-transform:uppercase;letter-spacing:.04em">Note${d.note_by ? ' · ' + esc(String(d.note_by)) : ''}</div>
+          <div style="font-size:13px;line-height:1.55;color:${INK};margin-top:3px">${esc(noteText).replace(/\n/g, '<br/>')}</div>
+        </div>
+      </td></tr>`
+    : ''
+
   const inner = `
     <tr><td style="padding:18px 22px 4px">
       <table role="presentation" width="100%"><tr>
@@ -161,6 +175,7 @@ function renderApproval(d: ApprovalData, link: string): string {
            <td style="padding:10px 14px;font-size:12px;color:${MUT}">Cumulative<br><span style="font-size:15px;font-weight:600;color:${OK}">${inr(Number(d.cumulative ?? amount))}</span></td>
          </tr></table></td></tr>`
       : ''}
+    ${noteBlock}
     ${(d.estimate != null && d.estimate > 0) ? budgetBar(amount, d.estimate) : ''}
     <tr><td style="padding:16px 22px 6px">${stageTracker(d.stage_index ?? 3)}</td></tr>
     ${factGrid([
