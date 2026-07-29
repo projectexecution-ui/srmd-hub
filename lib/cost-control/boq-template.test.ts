@@ -11,6 +11,7 @@ import {
   BOQ_SHEET,
   BOQ_META_SHEET,
   BOQ_MEASURE_SHEET,
+  BOQ_MEASURE_REF,
 } from './boq-template'
 
 describe('buildBoqTemplateModel — shape', () => {
@@ -61,7 +62,12 @@ describe('buildBoqTemplateModel — shape', () => {
     const note = String(boq.cells['A3']?.v ?? '')
     expect(note).toMatch(/ESTIMATE/i)
     expect(note).toMatch(/=946\+104\.5/)
-    expect(note).toMatch(/Measurement!G7/)
+    expect(note).toContain(`${BOQ_MEASURE_REF}!G7`) // quoted 'Working Sheet'!G7
+  })
+
+  it('the take-off tab is named "Working Sheet" and formula refs to it are quoted', () => {
+    expect(BOQ_MEASURE_SHEET).toBe('Working Sheet')
+    expect(BOQ_MEASURE_REF).toBe(`'Working Sheet'`)
   })
 
   it('Measurement tab: Qty auto-computes Nos × (L|1) × (B|1) × (H|1), blank Nos ⇒ ""', () => {
@@ -116,9 +122,10 @@ describe('next-version seed — carry-forward without clearing data', () => {
   const measure = m.sheets.find(s => s.name === BOQ_MEASURE_SHEET)!
   const r0 = m.itemRowStart
 
-  it('a Measurement-linked qty re-points at its own row AND the value is seeded into the tab (was cleared before)', () => {
-    // BOQ Qty links to the Measurement tab on THIS row (not the stale row 6).
-    expect(boq.cells[`D${r0}`]?.f).toBe(`${BOQ_MEASURE_SHEET}!G${r0}`)
+  it('a legacy Measurement link is migrated to a quoted Working-Sheet ref on its own row AND the value is seeded (was cleared before)', () => {
+    // Seed used the OLD "=Measurement!G6"; output re-points at THIS row using
+    // the current quoted tab name — proving old files still carry forward.
+    expect(boq.cells[`D${r0}`]?.f).toBe(`${BOQ_MEASURE_REF}!G${r0}`)
     // The carried value + description now live in the Measurement tab, so the
     // link resolves instead of coming through blank.
     expect(measure.cells[`G${r0}`]?.v).toBe(42)
@@ -126,7 +133,18 @@ describe('next-version seed — carry-forward without clearing data', () => {
     expect(measure.cells[`B${r0}`]?.v).toBe('RCC footing')
   })
 
-  it('an inline take-off formula is restored verbatim (no Measurement dependency)', () => {
+  it('a new-style quoted Working-Sheet link is also detected + carried forward', () => {
+    const nm = buildBoqTemplateModel({
+      seedRows: [{ description: 'Slab', unit: 'Cum', qty: 30, qtyFormula: `='Working Sheet'!G6` }],
+      versionNo: 3,
+    })
+    const nboq = nm.sheets.find(s => s.name === BOQ_SHEET)!
+    const nmeasure = nm.sheets.find(s => s.name === BOQ_MEASURE_SHEET)!
+    expect(nboq.cells[`D${nm.itemRowStart}`]?.f).toBe(`${BOQ_MEASURE_REF}!G${nm.itemRowStart}`)
+    expect(nmeasure.cells[`G${nm.itemRowStart}`]?.v).toBe(30)
+  })
+
+  it('an inline take-off formula is restored verbatim (no Working-Sheet dependency)', () => {
     expect(boq.cells[`D${r0 + 1}`]?.f).toBe('(146.2*1.1)*4')
     // Its Measurement row stays the blank auto-compute helper.
     expect(measure.cells[`G${r0 + 1}`]?.f).toContain('IF(')

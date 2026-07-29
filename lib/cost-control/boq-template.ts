@@ -19,7 +19,12 @@ export const BOQ_TEMPLATE_MARKER = 'CTHUB-BOQ-TPL'
 export const BOQ_TEMPLATE_VERSION = 1
 export const BOQ_META_SHEET = '_meta'
 export const BOQ_SHEET = 'BOQ'
-export const BOQ_MEASURE_SHEET = 'Measurement'
+// The take-off tab is labelled "Working Sheet" (Aksha's wording). The space
+// means every formula that references it MUST quote the name: 'Working Sheet'!G6.
+export const BOQ_MEASURE_SHEET = 'Working Sheet'
+/** The sheet name as it must appear inside a formula (quoted, because of the
+ *  space). Use this everywhere a cross-sheet reference to the tab is built. */
+export const BOQ_MEASURE_REF = `'${BOQ_MEASURE_SHEET}'`
 
 /** Measurement (take-off) tab column indices. Each BOQ Qty cell is a live
  *  formula into this tab's Qty column, so a quantity traces back to the exact
@@ -62,10 +67,12 @@ export const BOQ_UNITS = [
 
 const COL_WIDTHS = [5, 34, 8, 10, 12, 12, 11, 11, 14, 26]
 
-/** Matches a Qty take-off that pulls from the Measurement tab (=Measurement!G6,
- *  ='Measurement'!G6). Such a link must be re-pointed + its value re-seeded when
- *  a next version is pre-filled, or the quantity comes through blank. */
-const MEASURE_REF = /measurement'?\s*!/i
+/** Matches a Qty take-off that pulls from the take-off tab. Accepts BOTH the
+ *  current name ('Working Sheet'!G6) and the legacy one (Measurement!G6) so a
+ *  v2 raised off an OLD file is still recognised and re-pointed at the new tab.
+ *  Such a link must be re-pointed + its value re-seeded when a next version is
+ *  pre-filled, or the quantity comes through blank. */
+const MEASURE_REF = /(working\s*sheet|measurement)'?\s*!/i
 
 export interface BoqTemplateOptions {
   projectCode?: string
@@ -190,7 +197,7 @@ export function buildBoqTemplateModel(opts: BoqTemplateOptions = {}): BoqTemplat
     'Rate & Amount auto-calc. ' +
     'QTY — fill it ONE of three ways: (1) a plain number = ESTIMATE (no drawing); ' +
     '(2) a take-off formula e.g. =946+104.5 = MEASURED; ' +
-    (withMeasurement ? '(3) =Measurement!G7 to pull from the optional Measurement tab = MEASURED. ' : '') +
+    (withMeasurement ? `(3) =${BOQ_MEASURE_REF}!G7 to pull from the optional Working Sheet tab = MEASURED. ` : '') +
     'Leave the grey Rate & Amount columns alone. For lump sum use Unit "LS", Qty 1. ' +
     'For a deduction, enter a negative Qty. Units: ' + BOQ_UNITS.join(' / ') + '.',
   )
@@ -222,7 +229,7 @@ export function buildBoqTemplateModel(opts: BoqTemplateOptions = {}): BoqTemplat
       //  • otherwise the plain number.
       const qf = (sd.qtyFormula ?? '').trim().replace(/^=/, '')
       if (qf && withMeasurement && MEASURE_REF.test(qf)) {
-        cells[addr(COL.qty, r)] = f(`${BOQ_MEASURE_SHEET}!${colLetter(MCOL.qty)}${r}`)
+        cells[addr(COL.qty, r)] = f(`${BOQ_MEASURE_REF}!${colLetter(MCOL.qty)}${r}`)
       } else if (qf && !MEASURE_REF.test(qf)) {
         cells[addr(COL.qty, r)] = f(qf)
       } else if (sd.qty != null) {
@@ -313,11 +320,11 @@ export function buildMeasurementSheet(
   const mc = (c: number) => String.fromCharCode(65 + c)
   const at = (c: number, r1: number) => `${mc(c)}${r1}`
 
-  cells['A1'] = s('MEASUREMENT / TAKE-OFF (optional helper) — structure your quantities here')
+  cells['A1'] = s('WORKING SHEET / TAKE-OFF (optional helper) — structure your quantities here')
   merges.push({ s: { r: 0, c: 0 }, e: { r: 0, c: 8 } })
   cells['A2'] = s(
     'OPTIONAL. Use this only if you want a structured take-off. Qty auto-computes = Nos × Length × Breadth × Height ' +
-    '(leave a dimension blank to skip it — count only, or area). Then link it from the BOQ with =Measurement!G6 ' +
+    `(leave a dimension blank to skip it — count only, or area). Then link it from the BOQ with =${BOQ_MEASURE_REF}!G6 ` +
     'so an approver can click that quantity and land on this cell. Otherwise just put your formula or number ' +
     'straight in the BOQ Qty cell — you don’t have to use this tab.',
   )

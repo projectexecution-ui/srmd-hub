@@ -570,9 +570,9 @@ export function NewWSQuickForm({ projects, allDisciplines, allSubSkills, default
       // Estimate reason is optional — not a submit gate.
     }
     // Under the cumulative flow the file MUST be the standard template (its
-    // Measurement tab is the working) — a random Excel can't be raised.
+    // Working Sheet tab is the take-off) — a random Excel can't be raised.
     if (cumulativeVersions && !tplActive) {
-      setError('Only the standard BOQ template can be raised. Download it, fill the BOQ + Measurement tabs, and re-upload.'); return
+      setError('Only the standard BOQ template can be raised. Download it, fill the BOQ + Working Sheet tabs, and re-upload.'); return
     }
     // Summary screenshot is optional — the structured review grid + BOQ table
     // already give approvers the rows and take-off at a glance.
@@ -892,8 +892,8 @@ export function NewWSQuickForm({ projects, allDisciplines, allSubSkills, default
               <p className="text-sm font-semibold text-rose-800">This isn&apos;t the standard BOQ template — it can&apos;t be used</p>
               <p className="text-xs text-rose-700 mt-0.5">
                 To raise a BOQ, the file must be the standard template (it carries a hidden marker and a
-                Measurement tab, so every quantity is structured and traceable). Download it, paste your
-                figures into the <b>BOQ</b> + <b>Measurement</b> tabs, and re-upload. Old / free-form Excels
+                Working Sheet tab, so every quantity is structured and traceable). Download it, paste your
+                figures into the <b>BOQ</b> + <b>Working Sheet</b> tabs, and re-upload. Old / free-form Excels
                 aren&apos;t accepted while the cumulative flow is on.
               </p>
               <Button type="button" size="sm" variant="outline"
@@ -919,14 +919,14 @@ export function NewWSQuickForm({ projects, allDisciplines, allSubSkills, default
         )}
 
         {/* Extra supporting documents (OPTIONAL). The take-off/working is
-            already the Measurement tab inside the standard template, which we
+            already the Working Sheet tab inside the standard template, which we
             register as the working automatically — so this is only for extras
             like drawings, rate approvals or vendor quotes. */}
         {cumulativeVersions && tplActive && (
           <div>
             <Label>Supporting documents (optional)</Label>
             <p className="text-[11px] text-gray-500 mt-0.5">
-              Your take-off is already inside the template&apos;s <b>Measurement</b> tab — we keep that as the working automatically. Attach anything extra here (drawings, rate approvals, vendor quotes).
+              Your take-off is already inside the template&apos;s <b>Working Sheet</b> tab — we keep that as the working automatically. Attach anything extra here (drawings, rate approvals, vendor quotes).
             </p>
             {workFiles.length > 0 && (
               <ul className="mt-2 divide-y divide-gray-100 rounded-xl border border-gray-200">

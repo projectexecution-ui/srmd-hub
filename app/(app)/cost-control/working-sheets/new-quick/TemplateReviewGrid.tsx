@@ -214,7 +214,7 @@ export function TemplateReviewGrid({
                         if (hasFormula(r)) {
                           return (
                             <span className="mt-0.5 inline-flex items-center gap-1 text-[10px] text-emerald-700 font-mono"
-                              title="Measured — the quantity comes from a take-off (formula or Measurement link)">
+                              title="Measured — the quantity comes from a take-off (formula or Working Sheet link)">
                               <Link2 className="h-2.5 w-2.5" />
                               {r.sourceCell ? `Qty ← ${r.sourceSheet ? `${r.sourceSheet}!` : ''}${r.sourceCell}`
                                 : `Qty = ${(r.qtyFormula ?? '').replace(/^=/, '')}`}
@@ -224,7 +224,7 @@ export function TemplateReviewGrid({
                         return (
                           <div className="mt-1">
                             <span className="inline-flex items-center gap-1 rounded px-1 py-0.5 text-[10px] font-bold text-amber-700 bg-amber-50 border border-amber-200"
-                              title="No take-off formula, so this quantity is an estimate. To mark it measured, put the take-off formula or a Measurement-tab link in the Qty cell.">
+                              title="No take-off formula, so this quantity is an estimate. To mark it measured, put the take-off formula or a Working Sheet link in the Qty cell.">
                               <AlertTriangle className="h-2.5 w-2.5" /> Estimate — no drawing
                             </span>
                             <input
