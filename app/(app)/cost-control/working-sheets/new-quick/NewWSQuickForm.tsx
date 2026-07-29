@@ -313,7 +313,6 @@ export function NewWSQuickForm({ projects, allDisciplines, allSubSkills, default
   // Combined (M+L) standard.
   const [lineType, setLineType]       = useState<'work' | 'material' | 'combined'>(priorVersion?.lineType ?? 'combined')
   const [summaryTotal, setSummaryTotal] = useState('')
-  const [summaryNotes, setSummaryNotes] = useState('')
   const [deadline, setDeadline] = useState('')
   const [deadlineNotes, setDeadlineNotes] = useState('')
   const [file, setFile]               = useState<File | null>(null)
@@ -576,9 +575,8 @@ export function NewWSQuickForm({ projects, allDisciplines, allSubSkills, default
     }
     // Summary screenshot is optional — the structured review grid + BOQ table
     // already give approvers the rows and take-off at a glance.
-    // Comments are compulsory — the approver needs to know why the budget
-    // is required.
-    if (summaryNotes.trim().length === 0) { setError('Add a comment describing why this budget is required') ; return }
+    // No comment is collected here: the mandatory justification is captured once,
+    // at "Send for approval" (WSApprovalActions), so it isn't asked for twice.
     if (!projectId || !disciplineId || !subSkillId) { setError('Pick project / discipline / sub-skill'); return }
     setSubmitting(true); setError(null)
     const supabase = createClient()
@@ -641,7 +639,7 @@ export function NewWSQuickForm({ projects, allDisciplines, allSubSkills, default
       summary_image_url: shotPath,
       summary_image_name: shot?.name ?? null,
       summary_total: Number(summaryTotal) || null,
-      summary_notes: summaryNotes.trim() || null,
+      summary_notes: null, // justification now lives on the approval note (see doSubmit)
       deadline_date:  deadline || null,
       deadline_notes: deadlineNotes.trim() || null,
       ai_parse_meta: aiMode === 'ai' && aiSummary ? aiSummary : null,
@@ -763,7 +761,6 @@ export function NewWSQuickForm({ projects, allDisciplines, allSubSkills, default
   if (tplActive && tplSummary && tplSummary.hardErrors > 0) missingToSend.push(`fix ${tplSummary.hardErrors} highlighted row problem${tplSummary.hardErrors > 1 ? 's' : ''}`)
   if (tplActive && tplSummary && tplSummary.notesNeeded > 0) missingToSend.push(`give a reason for ${tplSummary.notesNeeded} estimate row${tplSummary.notesNeeded > 1 ? 's' : ''} (no drawing)`)
   if (tplActive && tplSummary && !tplSummary.reconciledToClaim) missingToSend.push('rows must add up to the approval amount')
-  if (summaryNotes.trim().length === 0) missingToSend.push('add a comment')
 
   return (
     <form onSubmit={submit} className="space-y-5">
@@ -1105,11 +1102,6 @@ export function NewWSQuickForm({ projects, allDisciplines, allSubSkills, default
           </p>
         )}
 
-        <div>
-          <Label>Comments *</Label>
-          <p className="text-xs text-gray-500 mb-1">Describe why this budget is required for.</p>
-          <Textarea value={summaryNotes} onChange={e => setSummaryNotes(e.target.value)} rows={2} placeholder="e.g. CCTV coverage for the new ICT wing — cameras, switches and cabling as per the site layout." className="mt-1" />
-        </div>
       </div>
 
       <div className="space-y-1.5">

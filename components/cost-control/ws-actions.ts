@@ -236,9 +236,16 @@ export async function assignSubSkillEngineer(input: {
 /** Owner engineer asks the chain to release the balance of a partly
  *  released sheet. The RPC re-checks ownership + status and flips the sheet
  *  back to 'submitted' so it walks the SAME PH → Atm → Trustee chain. */
-export async function requestBalanceRelease(wsId: string): Promise<{ ok: boolean; error?: string }> {
+export async function requestBalanceRelease(
+  wsId: string, note: string,
+): Promise<{ ok: boolean; error?: string }> {
+  const trimmed = (note ?? '').trim()
+  // Mandatory — the approver needs to know why the balance is being asked for
+  // now. Recorded on the approval timeline (p_note) AND posted to the comment
+  // thread by the caller, so it shows on the engineer's page.
+  if (trimmed.length < 3) return { ok: false, error: 'Add a short note on why the balance is needed' }
   const supabase = await createClient()
-  const { error } = await supabase.rpc('cc_request_release', { p_ws: wsId, p_note: null })
+  const { error } = await supabase.rpc('cc_request_release', { p_ws: wsId, p_note: trimmed })
   if (error) return { ok: false, error: error.message }
   revalidatePath(`/cost-control/working-sheets/${wsId}`)
   revalidatePath('/cost-control/working-sheets')
