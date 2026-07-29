@@ -17,6 +17,7 @@ import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
 import { MoneyInput } from '@/components/ui/money-input'
 import { Textarea } from '@/components/ui/textarea'
+import { confirm } from '@/components/ui/confirm-dialog'
 import { Check, Loader2, Wallet, Paperclip, MessageSquare, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
@@ -141,21 +142,33 @@ export function ApproveTrancheButton({
   }
 
   async function submit(useAll: boolean) {
-    setBusy(true); setErr(null)
+    setErr(null)
     let trancheArg: number | null = null
     let trancheAmount: number = remaining
     if (!useAll) {
       const num = Number(amount)
-      if (!Number.isFinite(num) || num <= 0) { setErr('Enter an amount greater than zero'); setBusy(false); return }
-      if (num > remaining + 0.5) { setErr(`Release ${formatINR(num)} exceeds remaining ${formatINR(remaining)}`); setBusy(false); return }
+      if (!Number.isFinite(num) || num <= 0) { setErr('Enter an amount greater than zero'); return }
       trancheArg = num
       trancheAmount = num
+      // Rounding UP above the asked amount is allowed (e.g. 9,90,000 → 10,00,000)
+      // — warn + confirm, never a hard block. The extra is recorded on the sheet.
+      if (num > remaining + 0.5) {
+        const ok = await confirm({
+          title: 'Release more than the asked amount?',
+          message: `You're releasing ${formatINR(num)} — that is ${formatINR(num - remaining)} ABOVE the asked ${formatINR(remaining)}. This is allowed (e.g. rounding up), and the extra is recorded against this sheet. Proceed?`,
+          confirmLabel: 'Yes, release this amount',
+          danger: true,
+        })
+        if (!ok) return
+      }
     }
 
     // Comment is mandatory at every approval stage (not just when the rule
     // flags it) — the Trustee's release note is read by the whole team.
-    if (!comment.trim()) { setErr('A comment is required for this release.'); setBusy(false); return }
-    if (requiresAttachment && attachments.length === 0) { setErr('An attachment is required for this approval.'); setBusy(false); return }
+    if (!comment.trim()) { setErr('A comment is required for this release.'); return }
+    if (requiresAttachment && attachments.length === 0) { setErr('An attachment is required for this approval.'); return }
+
+    setBusy(true)
 
     const r = await approveWorkingSheet(wsId, trancheArg)
     if (!r.ok) { setErr(r.error ?? 'Approve failed'); setBusy(false); return }
@@ -237,6 +250,11 @@ export function ApproveTrancheButton({
           placeholder={String(remaining)}
           className="mt-1 font-mono"
         />
+        {Number(amount) > remaining + 0.5 && (
+          <p className="text-[11px] font-semibold text-amber-800 bg-amber-50 border border-amber-200 rounded px-2 py-1 mt-1">
+            ⚠ {formatINR(Number(amount) - remaining)} above the asked {formatINR(remaining)} — allowed (e.g. rounding up); you&apos;ll confirm before it goes.
+          </p>
+        )}
         <p className="text-[11px] text-gray-500 mt-1">
           Enter the amount being released now. The sheet stays open at &quot;partly released&quot; until the full estimate is reached.
         </p>
