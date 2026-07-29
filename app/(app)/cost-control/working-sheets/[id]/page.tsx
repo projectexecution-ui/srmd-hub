@@ -608,7 +608,7 @@ export default async function WorkingSheetEditorPage(
         {/* Approved-vs-new-ask BOQ + cumulative totals — a management review
             tool. Gated on reviewer to match its siblings above (strip +
             scorecard); engineers see only their own sheet's BOQ. */}
-        {matchSummary && reviewer && <CumulativeBoqPanel rows={matchedRows} summary={matchSummary} workingByKey={workingByKey} />}
+        {matchSummary && reviewer && <CumulativeBoqPanel rows={matchedRows} summary={matchSummary} workingByKey={workingByKey} grandTotal={chainMoney?.cumulative} priorGrandTotal={chainMoney?.alreadyApproved} />}
 
         {ccSettings.show_deadlines && (ws.deadline_date || canEditDeadline) && (
           <div className="flex items-center gap-2 flex-wrap">

@@ -227,7 +227,12 @@ export function WSApprovalActions({
         )}
         {signOffLabel && (
           <Button
-            onClick={() => { setSignOffOpen(o => !o); setErr(null) }}
+            onClick={() => {
+              // Pre-fill with the amount to approve (grand total, incl. GST) so
+              // the approver just confirms; still editable if they checked less.
+              if (!signOffOpen) setCheckedRaw(String(Math.round(totalAmount)))
+              setSignOffOpen(o => !o); setErr(null)
+            }}
             disabled={busy}
             size="lg"
             variant="success"
@@ -249,9 +254,9 @@ export function WSApprovalActions({
         )}
       </div>
 
-      {/* Sign-off panel — the approver must TYPE the amount they checked.
-          Deliberately NOT pre-filled: a consciously typed figure is the
-          whole point of the checked-amount step. */}
+      {/* Sign-off panel — pre-filled with the amount to approve (the grand
+          total incl. GST) so approval is one click; the approver can still
+          overwrite it if they checked a different figure. */}
       {signOffOpen && signOffLabel && (
         <div className="rounded-lg border border-emerald-200 bg-emerald-50/60 p-3 space-y-2">
           <label className="text-xs font-semibold text-emerald-900">
@@ -265,7 +270,7 @@ export function WSApprovalActions({
             autoFocus
           />
           <p className="text-[11px] text-emerald-800/80">
-            Type the amount you have checked — it is not pre-filled on purpose.
+            Pre-filled with the amount to approve (incl. GST). Change it only if you checked a different figure.
           </p>
           <label className="text-xs font-semibold text-emerald-900 block">Note on your check <span className="text-rose-600">*</span></label>
           <textarea

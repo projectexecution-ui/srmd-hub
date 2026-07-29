@@ -17,6 +17,13 @@ interface Props {
   summary: MatchSummary
   /** row.key → { url, name } of the working file the row is linked to. */
   workingByKey?: Record<string, { url: string | null; name: string } | undefined>
+  /** This version's GRAND total incl. GST + contingency (= ws.total_amount).
+   *  The BOQ row amounts sum to the pre-GST subtotal only, so the footer needs
+   *  this to show the real "amount to approve" (kept in sync with v1 + the
+   *  cumulative strip). Falls back to the row subtotal when not supplied. */
+  grandTotal?: number
+  /** The previous approved version's grand total incl. GST (= its total_amount). */
+  priorGrandTotal?: number
 }
 
 function QtyRate({ qty, rate }: { qty: number | null; rate: number | null }) {
@@ -28,10 +35,20 @@ function QtyRate({ qty, rate }: { qty: number | null; rate: number | null }) {
   )
 }
 
-export function CumulativeBoqPanel({ rows, summary, workingByKey = {} }: Props) {
+export function CumulativeBoqPanel({ rows, summary, workingByKey = {}, grandTotal, priorGrandTotal }: Props) {
   const continuing = rows.filter(r => !r.isNew && !r.dropped)
   const fresh = rows.filter(r => r.isNew)
   const dropped = rows.filter(r => r.dropped)
+
+  // The BOQ row amounts sum to the pre-GST subtotal. Everything the approver
+  // acts on must be the GRAND total (incl. GST + contingency), matching v1 and
+  // the cumulative strip. Grand totals come in from the version chain; if
+  // absent we fall back to the subtotal so the panel still renders.
+  const subtotal = summary.newAskTotal
+  const gt = grandTotal ?? subtotal                 // this version, incl. GST
+  const pgt = priorGrandTotal ?? summary.approvedTotal // prev approved, incl. GST
+  const taxes = Math.max(gt - subtotal, 0)          // GST + contingency
+  const newAsk = gt - pgt                            // new money this version, incl. GST
 
   const renderRow = (r: MatchedRow) => {
     const link = workingByKey[r.key]
@@ -145,19 +162,36 @@ export function CumulativeBoqPanel({ rows, summary, workingByKey = {} }: Props) 
             {dropped.map(renderRow)}
           </tbody>
           <tfoot className="border-t-2 border-gray-200 bg-gray-50">
+            {/* Breakdown of THIS version — the exact components so the approver
+                sees what makes up the amount (not just an added-up number). */}
             <tr>
-              <td className="px-2 py-2 text-right text-gray-600" colSpan={4}>Already approved (previous version)</td>
-              <td className="px-2 py-2 text-right tabular-nums text-gray-700">{formatINR(summary.approvedTotal)}</td>
+              <td className="px-2 py-1.5 text-right text-gray-500" colSpan={4}>Subtotal (BOQ items)</td>
+              <td className="px-2 py-1.5 text-right tabular-nums text-gray-600">{formatINR(subtotal)}</td>
               <td></td>
+            </tr>
+            {taxes > 0.5 && (
+              <tr>
+                <td className="px-2 py-1.5 text-right text-gray-500" colSpan={4}>+ GST &amp; contingency</td>
+                <td className="px-2 py-1.5 text-right tabular-nums text-gray-600">{formatINR(taxes)}</td>
+                <td></td>
+              </tr>
+            )}
+            <tr>
+              <td className="px-2 py-2 text-right font-semibold text-gray-800" colSpan={4}>This version total (incl. GST)</td>
+              <td className="px-2 py-2 text-right font-bold tabular-nums text-gray-900">{formatINR(gt)}</td>
+              <td></td>
+            </tr>
+            {/* Cumulative comparison — all figures incl. GST. */}
+            <tr>
+              <td className="px-2 py-2 text-right text-gray-600 border-t border-gray-200" colSpan={4}>Already approved (previous version, incl. GST)</td>
+              <td className="px-2 py-2 text-right tabular-nums text-gray-700 border-t border-gray-200">{formatINR(pgt)}</td>
+              <td className="border-t border-gray-200"></td>
             </tr>
             <tr className="bg-indigo-50/60">
-              <td className="px-2 py-2 text-right font-bold text-indigo-800" colSpan={4}>➜ New in this request (to approve now)</td>
-              <td className="px-2 py-2 text-right font-bold text-lg tabular-nums text-indigo-800">{formatINR(summary.newAskTotal - summary.approvedTotal)}</td>
-              <td></td>
-            </tr>
-            <tr>
-              <td className="px-2 py-2 text-right font-semibold text-gray-800" colSpan={4}>This version total (cumulative)</td>
-              <td className="px-2 py-2 text-right font-bold tabular-nums text-gray-900">{formatINR(summary.newAskTotal)}</td>
+              <td className="px-2 py-2 text-right font-bold text-indigo-800" colSpan={4}>➜ New in this request (to approve now, incl. GST)</td>
+              <td className="px-2 py-2 text-right font-bold text-lg tabular-nums text-indigo-800">
+                {newAsk < 0 ? `−${formatINR(Math.abs(newAsk))}` : formatINR(newAsk)}
+              </td>
               <td></td>
             </tr>
           </tfoot>
