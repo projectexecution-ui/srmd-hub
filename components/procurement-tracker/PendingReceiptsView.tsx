@@ -18,6 +18,7 @@ import { Download, Users, ClipboardList, AlertTriangle, FileSpreadsheet, Search,
 import { cn } from '@/lib/utils'
 import { ChangeBadge } from './ChangeBadge'
 import { SourceInspector } from './SourceInspector'
+import { CardField } from './CardField'
 
 type GroupKey = 'supplier' | 'indent'
 // Exact age bands (a line sits in exactly one) — so clicking a card shows
@@ -287,14 +288,14 @@ export function PendingReceiptsView({
           </div>
 
           {/* Supplier search — narrows the cards + list to matching vendors */}
-          <div className="relative">
+          <div className="relative w-full sm:w-auto">
             <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-stone-400 pointer-events-none" />
             <input
               type="text"
               value={supplierQuery}
               onChange={e => setSupplierQuery(e.target.value)}
               placeholder="Search supplier…"
-              className="pl-8 pr-7 h-8 w-52 max-w-full rounded-lg border border-stone-200 bg-white text-xs text-stone-700 placeholder:text-stone-400 focus:outline-none focus:ring-2 focus:ring-amber-200 focus:border-amber-300"
+              className="pl-8 pr-7 h-8 w-full sm:w-52 rounded-lg border border-stone-200 bg-white text-xs text-stone-700 placeholder:text-stone-400 focus:outline-none focus:ring-2 focus:ring-amber-200 focus:border-amber-300"
             />
             {supplierQuery && (
               <button
@@ -392,7 +393,9 @@ export function PendingReceiptsView({
 
                 {/* Lines — hidden when collapsed */}
                 {!isCollapsed && (
-                <div className="overflow-x-auto">
+                <>
+                {/* Desktop: full table */}
+                <div className="hidden md:block overflow-x-auto">
                   <table className="w-full text-sm">
                     <thead className="bg-white border-b border-stone-100">
                       <tr>
@@ -511,6 +514,46 @@ export function PendingReceiptsView({
                     </tbody>
                   </table>
                 </div>
+
+                {/* Mobile: stacked cards (no horizontal scroll) */}
+                <div className="md:hidden divide-y divide-stone-100">
+                  {g.lines.map(ln => {
+                    const po = ln.pos[0]
+                    const iAge = indentAge(ln)
+                    const pAge = poAge(ln)
+                    return (
+                      <div key={ln.id} className="p-3">
+                        <div className="flex items-start gap-2">
+                          <ChangeBadge id={ln.id} newLineIds={newLineIds} changedLineIds={changedLineIds} />
+                          <div className="min-w-0 flex-1">
+                            <p className="text-sm text-stone-800 line-clamp-2" title={ln.material}>{ln.material}</p>
+                            <p className="text-[11px] text-stone-500 mt-0.5 truncate">
+                              {groupBy === 'supplier'
+                                ? ln.indentNo.replace('IND/SRASSK/', '').replace('IND/SRET/', '')
+                                : (ln.supplier || '—')}
+                              {ln.block ? ` · ${ln.block}` : ''}
+                            </p>
+                          </div>
+                          <button type="button" onClick={() => setInspectingLine(ln)}
+                            className="text-stone-400 hover:text-orange-700 flex-shrink-0 -m-1 p-1" aria-label="Inspect source rows">
+                            <Search className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+                        <div className="mt-2.5 grid grid-cols-3 gap-x-3 gap-y-2">
+                          <CardField label="Since indent" className={ageClass(iAge)}>{formatAgeFriendly(iAge).short}</CardField>
+                          <CardField label="Since PO" className={ageClass(pAge)}>{formatAgeFriendly(pAge).short}</CardField>
+                          <CardField label="PO" className="text-stone-500 font-mono text-[11px]">
+                            {po?.poNo ? po.poNo.replace('DRAFT-PO/', '').replace('PO/SRASSK/', '').replace('PO/SRET/', '') : '—'}
+                          </CardField>
+                          <CardField label="Ordered" className="text-stone-700">{ln.orderedQty.toLocaleString('en-IN')} {ln.uom}</CardField>
+                          <CardField label="Pending" className="text-amber-700 font-bold">{ln.pendingQty.toLocaleString('en-IN')}</CardField>
+                          <CardField label="Value" className="text-stone-800 font-semibold">{ln.pendingValue > 0 ? fmtINR(ln.pendingValue) : '—'}</CardField>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+                </>
                 )}
               </div>
             )

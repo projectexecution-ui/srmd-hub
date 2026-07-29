@@ -16,6 +16,7 @@ import { Download, ClipboardList, Layers, AlertTriangle, FileSpreadsheet, CheckC
 import { cn } from '@/lib/utils'
 import { ChangeBadge } from './ChangeBadge'
 import { SourceInspector } from './SourceInspector'
+import { CardField } from './CardField'
 
 type GroupKey = 'indent' | 'block'
 type AgeFilter = 'all' | 'lt7' | '7to14' | '14to30' | '30plus'
@@ -270,14 +271,14 @@ export function IndentsNeedingPoView({
           </div>
 
           {/* Search — match material / indent / block (no supplier yet) */}
-          <div className="relative">
+          <div className="relative w-full sm:w-auto">
             <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-stone-400 pointer-events-none" />
             <input
               type="text"
               value={searchQuery}
               onChange={e => setSearchQuery(e.target.value)}
               placeholder="Search material or indent…"
-              className="pl-8 pr-7 h-8 w-52 max-w-full rounded-lg border border-stone-200 bg-white text-xs text-stone-700 placeholder:text-stone-400 focus:outline-none focus:ring-2 focus:ring-amber-200 focus:border-amber-300"
+              className="pl-8 pr-7 h-8 w-full sm:w-52 rounded-lg border border-stone-200 bg-white text-xs text-stone-700 placeholder:text-stone-400 focus:outline-none focus:ring-2 focus:ring-amber-200 focus:border-amber-300"
             />
             {searchQuery && (
               <button
@@ -370,7 +371,9 @@ export function IndentsNeedingPoView({
 
                 {/* Lines — hidden when collapsed */}
                 {!isCollapsed && (
-                <div className="overflow-x-auto">
+                <>
+                {/* Desktop: full table */}
+                <div className="hidden md:block overflow-x-auto">
                   <table className="w-full text-sm">
                     <thead className="bg-white border-b border-stone-100">
                       <tr>
@@ -428,6 +431,37 @@ export function IndentsNeedingPoView({
                     </tbody>
                   </table>
                 </div>
+
+                {/* Mobile: stacked cards (no horizontal scroll) */}
+                <div className="md:hidden divide-y divide-stone-100">
+                  {g.lines.map(ln => {
+                    const age = ageDays(ln)
+                    return (
+                      <div key={ln.id} className="p-3">
+                        <div className="flex items-start gap-2">
+                          <ChangeBadge id={ln.id} newLineIds={newLineIds} changedLineIds={changedLineIds} />
+                          <div className="min-w-0 flex-1">
+                            <p className="text-sm text-stone-800 line-clamp-2" title={ln.material}>{ln.material}</p>
+                            <p className="text-[11px] text-stone-500 mt-0.5 truncate">
+                              {groupBy === 'block'
+                                ? ln.indentNo.replace('IND/SRASSK/', '').replace('IND/SRET/', '')
+                                : (ln.block || '—')}
+                            </p>
+                          </div>
+                          <button type="button" onClick={() => setInspectingLine(ln)}
+                            className="text-stone-400 hover:text-orange-700 flex-shrink-0 -m-1 p-1" aria-label="Inspect source rows">
+                            <Search className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+                        <div className="mt-2.5 grid grid-cols-2 gap-x-3">
+                          <CardField label="Qty needed" className="text-amber-700 font-bold">{ln.indentQty.toLocaleString('en-IN')} {ln.uom}</CardField>
+                          <CardField label="Days waiting" className={ageClass(age)}>{formatAgeFriendly(age).short}</CardField>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+                </>
                 )}
               </div>
             )

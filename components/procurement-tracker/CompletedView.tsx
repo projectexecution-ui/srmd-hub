@@ -17,6 +17,7 @@ import type { LineRecord } from '@/lib/procurement'
 import { daysBetween } from '@/lib/procurement/shared'
 import { Download, Search, Users, Layers, CheckCircle2, FileSpreadsheet, AlertTriangle, ChevronDown, ChevronRight } from 'lucide-react'
 import { SourceInspector } from './SourceInspector'
+import { CardField } from './CardField'
 
 type GroupKey = 'vendor' | 'project' | 'none'
 
@@ -309,14 +310,14 @@ export function CompletedView({
             </button>
           </div>
 
-          <div className="relative">
+          <div className="relative w-full sm:w-auto">
             <Search className="h-3.5 w-3.5 text-stone-400 absolute left-2 top-1/2 -translate-y-1/2 pointer-events-none" />
             <input
               type="text"
               value={search}
               onChange={e => setSearch(e.target.value)}
               placeholder="Search material / vendor / indent…"
-              className="text-sm bg-white border border-stone-300 rounded-lg pl-7 pr-3 py-1 focus:outline-none focus:ring-2 focus:ring-orange-300 min-w-[240px]"
+              className="text-sm bg-white border border-stone-300 rounded-lg pl-7 pr-3 py-1 focus:outline-none focus:ring-2 focus:ring-orange-300 w-full sm:w-auto sm:min-w-[240px]"
             />
           </div>
 
@@ -384,7 +385,9 @@ export function CompletedView({
                   </button>
                 </div>
                 {!isCollapsed && (
-                <div className="overflow-x-auto">
+                <>
+                {/* Desktop: full table */}
+                <div className="hidden md:block overflow-x-auto">
                   <table className="w-full text-sm">
                     <thead className="bg-white border-b border-stone-100">
                       <tr>
@@ -449,6 +452,42 @@ export function CompletedView({
                     </tbody>
                   </table>
                 </div>
+
+                {/* Mobile: stacked cards (no horizontal scroll) */}
+                <div className="md:hidden divide-y divide-stone-100">
+                  {[...g.lines]
+                    .sort((a, b) => (totalCycle(b) ?? 0) - (totalCycle(a) ?? 0))
+                    .map(ln => {
+                      const proc = procurementLag(ln)
+                      const deliv = deliveryLag(ln)
+                      const total = totalCycle(ln)
+                      return (
+                        <div key={ln.id} className="p-3">
+                          <div className="flex items-start gap-2">
+                            <div className="min-w-0 flex-1">
+                              <p className="text-sm text-stone-800 line-clamp-2" title={ln.material}>{ln.material}</p>
+                              <p className="text-[11px] text-stone-500 mt-0.5 truncate">
+                                {groupBy !== 'vendor' && ln.supplier ? `${ln.supplier} · ` : ''}
+                                {ln.indentNo.replace('IND/SRASSK/', '').replace('IND/SRET/', '')}{ln.block ? ` · ${ln.block}` : ''}
+                              </p>
+                            </div>
+                            <button type="button" onClick={() => setInspectingLine(ln)}
+                              className="text-stone-400 hover:text-orange-700 flex-shrink-0 -m-1 p-1" aria-label="Show source Excel rows">
+                              <Search className="h-3.5 w-3.5" />
+                            </button>
+                          </div>
+                          <div className="mt-2.5 grid grid-cols-3 gap-x-3 gap-y-2">
+                            <CardField label="Proc lag" className={lagClass(proc)}>{proc != null ? `${proc}d` : '—'}</CardField>
+                            <CardField label="Deliv lag" className={lagClass(deliv)}>{deliv != null ? `${deliv}d` : '—'}</CardField>
+                            <CardField label="Total" className={lagClass(total)}>{total != null ? `${total}d` : '—'}</CardField>
+                            <CardField label="Qty" className="text-stone-700">{ln.receivedQty.toLocaleString('en-IN')} {ln.uom}</CardField>
+                            <CardField label="Value" className="text-stone-800 font-semibold">{ln.grnValue > 0 ? fmtINR(ln.grnValue) : '—'}</CardField>
+                          </div>
+                        </div>
+                      )
+                    })}
+                </div>
+                </>
                 )}
               </div>
             )
