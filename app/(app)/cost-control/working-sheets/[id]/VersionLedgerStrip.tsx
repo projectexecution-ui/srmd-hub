@@ -14,7 +14,7 @@ export function VersionLedgerStrip({ money, versionNo }: { money: CumulativeMone
         </p>
         <span className="text-[11px] text-indigo-700/60">{money.priorCount} earlier version{money.priorCount === 1 ? '' : 's'}</span>
       </div>
-      <div className="grid grid-cols-3 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         <div>
           <span className="block text-[11px] uppercase tracking-wide text-gray-500">Already approved</span>
           <p className="font-bold text-gray-800 tabular-nums">{formatINR(money.alreadyApproved)}</p>

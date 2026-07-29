@@ -376,7 +376,7 @@ export default async function CostControlLandingPage() {
             <Settings className="h-4 w-4" /> Tools
             <ChevronDown className="h-3.5 w-3.5 transition-transform group-open:rotate-180" />
           </summary>
-          <div className="absolute right-0 top-[calc(100%+4px)] z-20 w-64 bg-white border border-gray-200 rounded-lg shadow-lg p-1.5">
+          <div className="absolute right-0 top-[calc(100%+4px)] z-20 w-64 max-w-[calc(100vw-2rem)] bg-white border border-gray-200 rounded-lg shadow-lg p-1.5">
             {canWrite && (
               <Link href="/cost-control/import" className="flex items-start gap-2.5 px-2.5 py-2 rounded-md hover:bg-gray-50">
                 <Upload className="h-4 w-4 text-gray-500 mt-0.5 flex-shrink-0" />

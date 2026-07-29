@@ -161,7 +161,7 @@ export function WSApprovalActions({
                       {stepDone ? <CheckCircle2 className="h-4 w-4" /> : i + 1}
                     </span>
                     <span className={cn(
-                      'text-[10px] font-semibold whitespace-nowrap',
+                      'text-[9px] sm:text-[10px] font-semibold whitespace-nowrap',
                       stepDone ? 'text-indigo-800' : current ? 'text-indigo-700' : 'text-gray-400',
                     )}>
                       {step}
@@ -220,7 +220,7 @@ export function WSApprovalActions({
       {/* ── Actions ── */}
       <div className="flex flex-wrap items-center gap-2">
         {ctx.canSubmit && (
-          <Button onClick={doSubmit} disabled={busy || submitDisabled} size="lg" className="font-semibold">
+          <Button onClick={doSubmit} disabled={busy || submitDisabled} size="lg" className="w-full sm:w-auto font-semibold">
             {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
             Send for approval
           </Button>
@@ -236,7 +236,7 @@ export function WSApprovalActions({
             disabled={busy}
             size="lg"
             variant="success"
-            className="font-semibold"
+            className="w-full sm:w-auto font-semibold"
           >
             {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <PenLine className="h-4 w-4" />}
             {signOffLabel}

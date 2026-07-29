@@ -214,7 +214,7 @@ export function ApproveTrancheButton({
         <Wallet className="h-3.5 w-3.5 text-emerald-700" />
         <span className="text-emerald-900 font-semibold">Trustee release into ERP</span>
       </div>
-      <div className="grid grid-cols-3 gap-2 text-xs">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs">
         <Stat label="This version" value={formatINR(totalAmount)} />
         <Stat
           label={chainHasPriorRelease ? 'Released so far (all versions)' : 'Released so far'}

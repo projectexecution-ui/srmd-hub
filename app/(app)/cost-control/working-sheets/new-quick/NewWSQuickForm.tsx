@@ -999,7 +999,7 @@ export function NewWSQuickForm({ projects, allDisciplines, allSubSkills, default
                 </span>
               )}
             </p>
-            <div className="max-h-64 overflow-y-auto">
+            <div className="max-h-64 overflow-y-auto overflow-x-auto">
               <table className="min-w-full text-xs">
                 <thead className="bg-gray-50 text-left text-gray-500">
                   <tr>
@@ -1105,7 +1105,7 @@ export function NewWSQuickForm({ projects, allDisciplines, allSubSkills, default
       </div>
 
       <div className="space-y-1.5">
-        <Button type="submit" disabled={submitting || missingToSend.length > 0}>
+        <Button type="submit" disabled={submitting || missingToSend.length > 0} className="w-full sm:w-auto">
           {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileSpreadsheet className="h-4 w-4" />}
           Create Budget Request
         </Button>
