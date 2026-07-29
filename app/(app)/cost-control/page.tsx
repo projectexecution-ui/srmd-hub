@@ -859,10 +859,19 @@ async function EngineerHome({ userId, canWrite, label }: { userId: string | null
 
   // The engineer's own working sheets — used to show how many sheets they
   // have per project ("My work" column).
+  type MyWsRow = {
+    id: string; ws_code: string; project_id: string; sub_skill_id: string; status: string
+    return_reason: string | null; created_at: string
+    projects: { code: string; name: string } | { code: string; name: string }[] | null
+    cc_sub_skills: { name: string } | { name: string }[] | null
+  }
   const myWsRes = userId
-    ? await supabase.from('cc_working_sheets').select('project_id, sub_skill_id, status').eq('engineer_id', userId).is('archived_at', null).neq('status', 'cancelled')
-    : { data: [] as Array<{ project_id: string; sub_skill_id: string; status: string }> }
-  const myWs = (myWsRes.data ?? []) as Array<{ project_id: string; sub_skill_id: string; status: string }>
+    ? await supabase.from('cc_working_sheets')
+        .select('id, ws_code, project_id, sub_skill_id, status, return_reason, created_at, projects(code, name), cc_sub_skills(name)')
+        .eq('engineer_id', userId).is('archived_at', null).neq('status', 'cancelled')
+        .order('created_at', { ascending: false })
+    : { data: [] as MyWsRow[] }
+  const myWs = (myWsRes.data ?? []) as MyWsRow[]
 
   type EProj = { id: string; code: string; name: string; built_up_sft: number | null; parent_project_id: string | null; group_label: string | null }
   // Role-based access: an engineer can raise a budget in ANY cost-control
@@ -928,6 +937,20 @@ async function EngineerHome({ userId, canWrite, label }: { userId: string | null
     bucketStatus(c, w.status)
     statusByProj.set(w.project_id, c)
   }
+
+  // "My Work" action strip + attention lists — the engineer's own queue.
+  const pickOne = <T,>(v: T | T[] | null | undefined): T | null =>
+    Array.isArray(v) ? (v[0] ?? null) : (v ?? null)
+  const draftSheets = myWs.filter(w => w.status === 'draft')
+  const returnedSheets = myWs.filter(w => w.status === 'returned')
+  const myAwaitingCount = myWs.filter(w => AWAITING_ST.has(w.status)).length
+  const myApprovedCount = myWs.filter(w => APPROVED_ST.has(w.status)).length
+  const workStat = (label: string, count: number, cls: string) => (
+    <Link href="/cost-control/working-sheets" className={`rounded-xl border p-3 hover:shadow-sm transition-shadow ${cls}`}>
+      <p className="text-2xl font-bold tabular-nums leading-none">{count}</p>
+      <p className="text-[11px] font-medium mt-1">{label}</p>
+    </Link>
+  )
 
   // Status chips for the "My work" column — shows only the non-zero buckets so
   // the engineer sees at a glance what's approved vs still awaiting. Reused for
@@ -1051,6 +1074,59 @@ async function EngineerHome({ userId, canWrite, label }: { userId: string | null
           </Link>
         </Button>
       </PageHeader>
+
+      {/* My Work — the engineer's own queue at a glance (clickable). */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+        {workStat('Drafts', draftSheets.length, 'border-gray-200 bg-white text-gray-700')}
+        {workStat('Awaiting approval', myAwaitingCount, 'border-amber-200 bg-amber-50 text-amber-800')}
+        {workStat('Returned to you', returnedSheets.length, 'border-rose-200 bg-rose-50 text-rose-800')}
+        {workStat('Approved', myApprovedCount, 'border-emerald-200 bg-emerald-50 text-emerald-800')}
+      </div>
+
+      {/* Needs your attention — returns to fix + drafts to finish. */}
+      {(returnedSheets.length > 0 || draftSheets.length > 0) && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+          {returnedSheets.length > 0 && (
+            <Card className="p-0 overflow-hidden border-rose-200">
+              <div className="px-4 py-2.5 bg-rose-50 border-b border-rose-100">
+                <h2 className="text-sm font-semibold text-rose-900">Returned to you — needs changes</h2>
+                <p className="text-xs text-rose-700/80 mt-0.5">Fix what the approver flagged, then send again.</p>
+              </div>
+              <div className="divide-y divide-gray-100">
+                {returnedSheets.map(w => {
+                  const sub = pickOne(w.cc_sub_skills); const proj = pickOne(w.projects)
+                  return (
+                    <Link key={w.id} href={`/cost-control/working-sheets/${w.id}`} className="block px-4 py-2.5 hover:bg-gray-50">
+                      <p className="text-sm font-medium text-gray-900">{sub?.name ?? w.ws_code} <span className="text-xs font-normal text-gray-400">{proj?.code}</span></p>
+                      {w.return_reason && <p className="text-xs text-rose-700 mt-0.5 line-clamp-2">&ldquo;{w.return_reason}&rdquo;</p>}
+                      <span className="text-[11px] font-semibold text-rose-700">Fix &amp; resend →</span>
+                    </Link>
+                  )
+                })}
+              </div>
+            </Card>
+          )}
+          {draftSheets.length > 0 && (
+            <Card className="p-0 overflow-hidden">
+              <div className="px-4 py-2.5 bg-gray-50 border-b border-gray-100">
+                <h2 className="text-sm font-semibold text-gray-900">Drafts — not sent yet</h2>
+                <p className="text-xs text-gray-500 mt-0.5">Finish these and send them for approval.</p>
+              </div>
+              <div className="divide-y divide-gray-100">
+                {draftSheets.map(w => {
+                  const sub = pickOne(w.cc_sub_skills); const proj = pickOne(w.projects)
+                  return (
+                    <Link key={w.id} href={`/cost-control/working-sheets/${w.id}`} className="block px-4 py-2.5 hover:bg-gray-50">
+                      <p className="text-sm font-medium text-gray-900">{sub?.name ?? w.ws_code} <span className="text-xs font-normal text-gray-400">{proj?.code}</span></p>
+                      <span className="text-[11px] font-semibold text-blue-700">Finish &amp; send →</span>
+                    </Link>
+                  )
+                })}
+              </div>
+            </Card>
+          )}
+        </div>
+      )}
 
       {projects.length === 0 ? (
         <Card>
