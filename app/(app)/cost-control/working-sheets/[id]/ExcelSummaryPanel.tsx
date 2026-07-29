@@ -336,7 +336,7 @@ export function ExcelSummaryPanel({
           </p>
         </CardHeader>
         <CardContent>
-          <div className="overflow-x-auto">
+          <div className="overflow-x-auto hidden md:block">
             <table className="min-w-full text-sm">
               <thead className="bg-gray-50 text-left text-xs uppercase tracking-wide text-gray-500">
                 <tr>
@@ -427,6 +427,54 @@ export function ExcelSummaryPanel({
                 )
               })()}
             </table>
+          </div>
+
+          {/* Mobile: the same verified BOQ as stacked cards — the table above is
+              far too wide for a phone (descriptions truncate, amounts scroll off). */}
+          <div className="md:hidden divide-y divide-gray-100">
+            {rows.map(r => (
+              <div key={r.id} className={`py-3 ${showFlags && flaggedRowIds.has(r.id) ? rowTintBySeverity(r.flag_severity) : ''}`}>
+                <div className="flex items-start gap-2">
+                  <span className="text-[11px] text-gray-400 tabular-nums mt-0.5 flex-shrink-0">{r.row_no}</span>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm text-gray-900">{r.description ?? '—'}</p>
+                    {r.source_cell
+                      ? <p className="text-[11px] text-emerald-700 font-mono break-all">🔗 {r.source_sheet ? `${r.source_sheet}!` : ''}{r.source_cell}</p>
+                      : r.qty_formula
+                        ? <p className="text-[11px] text-emerald-700 font-mono break-all">Qty = {r.qty_formula}</p>
+                        : r.qty_basis === 'estimated'
+                          ? <p className="text-[11px] font-semibold text-amber-700">Estimate — no drawing</p>
+                          : null}
+                  </div>
+                </div>
+                <div className="mt-2 grid grid-cols-4 gap-1 text-center">
+                  <div><p className="text-[10px] uppercase tracking-wide text-gray-400">Qty</p><p className="text-xs tabular-nums text-gray-800">{r.qty != null ? r.qty.toLocaleString('en-IN') : '—'}</p></div>
+                  <div><p className="text-[10px] uppercase tracking-wide text-gray-400">Unit</p><p className="text-xs text-gray-800">{r.unit ?? '—'}</p></div>
+                  <div><p className="text-[10px] uppercase tracking-wide text-gray-400">Rate</p><p className="text-xs tabular-nums text-gray-800">{r.rate != null ? formatINR(r.rate) : '—'}</p></div>
+                  <div><p className="text-[10px] uppercase tracking-wide text-gray-400">Amount</p><p className="text-xs font-semibold tabular-nums text-gray-900">{r.amount != null ? formatINR(r.amount) : '—'}</p></div>
+                </div>
+                {showFlags && r.flag && (
+                  <div className="mt-1.5">
+                    <Badge className={flagClass(r.flag)}>{flagIcon(r.flag)}{flagLabel(r.flag)}</Badge>
+                    {r.flag_reason && <p className="text-[11px] text-gray-600 mt-0.5">{r.flag_reason}</p>}
+                  </div>
+                )}
+              </div>
+            ))}
+            {(() => {
+              const rowsSum = rows.reduce((s, r) => s + (r.amount ?? 0), 0)
+              const gt = grandTotal ?? summaryTotal ?? rowsSum
+              const gap = gt - rowsSum
+              return (
+                <div className="pt-3 space-y-1 text-sm">
+                  <div className="flex justify-between text-gray-700"><span>Rows total</span><span className="tabular-nums">{formatINR(rowsSum)}</span></div>
+                  {Math.abs(gap) > 1 && (
+                    <div className="flex justify-between text-gray-500 text-xs"><span>GST / additions</span><span className="tabular-nums">{gap >= 0 ? '+' : ''}{formatINR(gap)}</span></div>
+                  )}
+                  <div className="flex justify-between font-bold text-emerald-900 border-t border-gray-200 pt-1.5"><span>Grand total (approved figure)</span><span className="tabular-nums">{formatINR(gt)}</span></div>
+                </div>
+              )
+            })()}
           </div>
         </CardContent>
       </Card>

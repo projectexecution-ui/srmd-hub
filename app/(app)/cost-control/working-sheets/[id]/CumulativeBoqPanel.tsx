@@ -124,6 +124,54 @@ export function CumulativeBoqPanel({ rows, summary, workingByKey = {}, grandTota
     </tr>
   )
 
+  // Mobile card for one row (the table is too wide for a phone).
+  const renderCard = (r: MatchedRow) => {
+    const link = workingByKey[r.key]
+    const qtyChanged = r.qtyDelta != null && r.qtyDelta !== 0
+    const changed = (r.rateChanged || qtyChanged) && !r.isNew && !r.dropped
+    return (
+      <div key={r.key} className={`px-4 py-3 ${r.dropped ? 'opacity-60' : ''} ${changed ? 'bg-amber-50/40' : ''}`}>
+        <div className="flex items-start justify-between gap-2">
+          <p className="text-sm min-w-0">
+            <span className={r.dropped ? 'line-through text-gray-500' : 'text-gray-900'}>{r.description}</span>
+            {r.unit && <span className="ml-1.5 text-[10px] text-gray-400">{r.unit}</span>}
+          </p>
+          <span className="text-sm font-semibold tabular-nums flex-shrink-0 text-gray-900">
+            {r.newAmount != null ? formatINR(r.newAmount) : <span className="text-gray-300">dropped</span>}
+          </span>
+        </div>
+        {(r.isNew || (r.newBasis === 'estimated' && !r.dropped) || r.basisPromoted || r.possibleDoubleClaim) && (
+          <div className="mt-1 flex flex-wrap gap-1">
+            {r.isNew && <span className="text-[10px] font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded px-1">new item</span>}
+            {r.newBasis === 'estimated' && !r.dropped && <span className="inline-flex items-center gap-1 text-[10px] font-bold text-amber-700 bg-amber-50 border border-amber-200 rounded px-1"><AlertTriangle className="h-3 w-3" /> estimate</span>}
+            {r.basisPromoted && <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded px-1">✓ est → measured</span>}
+            {r.possibleDoubleClaim && <span className="inline-flex items-center gap-1 text-[10px] text-rose-700 bg-rose-50 border border-rose-200 rounded px-1"><AlertTriangle className="h-3 w-3" /> double claim?</span>}
+          </div>
+        )}
+        {!r.isNew && !r.dropped && (
+          <div className="mt-1.5 flex items-center justify-between text-[11px]">
+            <span className="text-gray-500">Approved {r.approvedQty ?? '—'} @ {r.approvedRate != null ? formatINR(r.approvedRate) : '—'}</span>
+            <span className="text-gray-800 font-medium">Now {r.newQty ?? '—'} @ {r.newRate != null ? formatINR(r.newRate) : '—'}</span>
+          </div>
+        )}
+        {r.rateChanged && (
+          <p className="mt-0.5 text-[11px] font-semibold text-amber-800">
+            Rate {formatINR(r.rateOld ?? 0)} → {formatINR(r.rateNew ?? 0)}
+            <span className="font-normal text-amber-600"> ({r.rateChangeComponents.map(c => COMP_LABEL[c] ?? c).join(', ')})</span>
+          </p>
+        )}
+        {qtyChanged && (
+          <p className={`mt-0.5 text-[11px] font-semibold ${r.qtyDelta! > 0 ? 'text-amber-800' : 'text-emerald-700'}`}>
+            Qty {r.approvedQty ?? '—'} → {r.newQty ?? '—'} ({r.qtyDelta! > 0 ? '+' : ''}{r.qtyDelta})
+          </p>
+        )}
+        {link?.url && (
+          <a href={link.url} target="_blank" rel="noreferrer" className="mt-1 inline-flex items-center gap-1 text-[11px] text-indigo-600"><Paperclip className="h-3 w-3" /> working file</a>
+        )}
+      </div>
+    )
+  }
+
   return (
     <div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
       <div className="flex items-center justify-between gap-3 px-4 py-2 bg-gray-50 border-b border-gray-100 flex-wrap">
@@ -142,7 +190,7 @@ export function CumulativeBoqPanel({ rows, summary, workingByKey = {}, grandTota
           </p>
         </div>
       </div>
-      <div className="overflow-x-auto">
+      <div className="overflow-x-auto hidden md:block">
         <table className="w-full text-sm">
           <thead className="text-[11px] uppercase tracking-wide text-gray-500 border-b border-gray-100">
             <tr>
@@ -196,6 +244,25 @@ export function CumulativeBoqPanel({ rows, summary, workingByKey = {}, grandTota
             </tr>
           </tfoot>
         </table>
+      </div>
+
+      {/* Mobile: stacked cards (the panel top bar above already carries the
+          measured/estimate + counts summary). */}
+      <div className="md:hidden">
+        <div className="divide-y divide-gray-100">
+          {continuing.map(renderCard)}
+          {fresh.length > 0 && <p className="px-4 pt-3 pb-1 text-[10px] font-bold uppercase tracking-wide text-emerald-700">Newly added in this version</p>}
+          {fresh.map(renderCard)}
+          {dropped.length > 0 && <p className="px-4 pt-3 pb-1 text-[10px] font-bold uppercase tracking-wide text-gray-400">Dropped from the approved BOQ</p>}
+          {dropped.map(renderCard)}
+        </div>
+        <div className="px-4 py-3 bg-gray-50 border-t border-gray-200 space-y-1 text-sm">
+          <div className="flex justify-between text-gray-500 text-xs"><span>Subtotal (BOQ items)</span><span className="tabular-nums">{formatINR(subtotal)}</span></div>
+          {taxes > 0.5 && <div className="flex justify-between text-gray-500 text-xs"><span>+ GST &amp; contingency</span><span className="tabular-nums">{formatINR(taxes)}</span></div>}
+          <div className="flex justify-between font-semibold text-gray-900"><span>This version total (incl. GST)</span><span className="tabular-nums">{formatINR(gt)}</span></div>
+          <div className="flex justify-between text-gray-600 text-xs border-t border-gray-200 pt-1"><span>Already approved (prev version)</span><span className="tabular-nums">{formatINR(pgt)}</span></div>
+          <div className="flex justify-between font-bold text-indigo-800"><span>➜ New to approve now (incl. GST)</span><span className="tabular-nums">{newAsk < 0 ? `−${formatINR(Math.abs(newAsk))}` : formatINR(newAsk)}</span></div>
+        </div>
       </div>
     </div>
   )
