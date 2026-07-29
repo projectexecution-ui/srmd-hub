@@ -102,6 +102,48 @@ describe('buildBoqTemplateModel — shape', () => {
   })
 })
 
+describe('next-version seed — carry-forward without clearing data', () => {
+  const seed = [
+    // Measured via the Measurement tab — the case that used to clear on v2.
+    { description: 'RCC footing', unit: 'Cum', qty: 42, qtyFormula: '=Measurement!G6' },
+    // Self-contained inline take-off formula.
+    { description: 'Brickwork', unit: 'Cum', qty: 18, qtyFormula: '=(146.2*1.1)*4' },
+    // Plain number (estimate, no drawing).
+    { description: 'Lift package', unit: 'LS', qty: 1, qtyFormula: null },
+  ]
+  const m = buildBoqTemplateModel({ seedRows: seed, versionNo: 2 })
+  const boq = m.sheets.find(s => s.name === BOQ_SHEET)!
+  const measure = m.sheets.find(s => s.name === BOQ_MEASURE_SHEET)!
+  const r0 = m.itemRowStart
+
+  it('a Measurement-linked qty re-points at its own row AND the value is seeded into the tab (was cleared before)', () => {
+    // BOQ Qty links to the Measurement tab on THIS row (not the stale row 6).
+    expect(boq.cells[`D${r0}`]?.f).toBe(`${BOQ_MEASURE_SHEET}!G${r0}`)
+    // The carried value + description now live in the Measurement tab, so the
+    // link resolves instead of coming through blank.
+    expect(measure.cells[`G${r0}`]?.v).toBe(42)
+    expect(measure.cells[`G${r0}`]?.f).toBeUndefined() // a value, not the N×L×B×H formula
+    expect(measure.cells[`B${r0}`]?.v).toBe('RCC footing')
+  })
+
+  it('an inline take-off formula is restored verbatim (no Measurement dependency)', () => {
+    expect(boq.cells[`D${r0 + 1}`]?.f).toBe('(146.2*1.1)*4')
+    // Its Measurement row stays the blank auto-compute helper.
+    expect(measure.cells[`G${r0 + 1}`]?.f).toContain('IF(')
+  })
+
+  it('a plain-number qty carries forward as a number', () => {
+    expect(boq.cells[`D${r0 + 2}`]?.v).toBe(1)
+    expect(boq.cells[`D${r0 + 2}`]?.f).toBeUndefined()
+  })
+
+  it('descriptions + units carry forward and the title is stamped as Version 2', () => {
+    expect(boq.cells[`B${r0}`]?.v).toBe('RCC footing')
+    expect(boq.cells[`C${r0}`]?.v).toBe('Cum')
+    expect(String(boq.cells['A1']?.v)).toMatch(/Version 2/)
+  })
+})
+
 describe('meta sheet round-trip', () => {
   it('embeds the marker + ids and reads back via AoA', () => {
     const meta = buildMetaSheet({

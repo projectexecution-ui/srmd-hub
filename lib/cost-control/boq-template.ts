@@ -62,6 +62,11 @@ export const BOQ_UNITS = [
 
 const COL_WIDTHS = [5, 34, 8, 10, 12, 12, 11, 11, 14, 26]
 
+/** Matches a Qty take-off that pulls from the Measurement tab (=Measurement!G6,
+ *  ='Measurement'!G6). Such a link must be re-pointed + its value re-seeded when
+ *  a next version is pre-filled, or the quantity comes through blank. */
+const MEASURE_REF = /measurement'?\s*!/i
+
 export interface BoqTemplateOptions {
   projectCode?: string
   projectName?: string
@@ -209,11 +214,20 @@ export function buildBoqTemplateModel(opts: BoqTemplateOptions = {}): BoqTemplat
     if (sd) {
       cells[addr(COL.description, r)] = s(sd.description ?? '')
       if (sd.unit) cells[addr(COL.unit, r)] = s(sd.unit)
-      // Qty: restore the take-off formula (stays MEASURED) if we had one,
-      // else the plain number.
+      // Qty carry-forward (stays MEASURED wherever it was):
+      //  • a Measurement-tab link (=Measurement!G6) → re-point it at THIS row and
+      //    seed the carried value into the Measurement tab below, so it never
+      //    dangles (fixes "v2 clears the Measurement data").
+      //  • a self-contained inline take-off formula (=946+104.5) → restore as-is.
+      //  • otherwise the plain number.
       const qf = (sd.qtyFormula ?? '').trim().replace(/^=/, '')
-      if (qf) cells[addr(COL.qty, r)] = f(qf)
-      else if (sd.qty != null) cells[addr(COL.qty, r)] = n(sd.qty)
+      if (qf && withMeasurement && MEASURE_REF.test(qf)) {
+        cells[addr(COL.qty, r)] = f(`${BOQ_MEASURE_SHEET}!${colLetter(MCOL.qty)}${r}`)
+      } else if (qf && !MEASURE_REF.test(qf)) {
+        cells[addr(COL.qty, r)] = f(qf)
+      } else if (sd.qty != null) {
+        cells[addr(COL.qty, r)] = n(sd.qty)
+      }
       // Rate: keep the split if the prior row was split, else the combined M+L.
       if (sd.material != null || sd.installation != null) {
         if (sd.material != null) cells[addr(COL.material, r)] = n(sd.material, MONEY_FMT)
@@ -270,7 +284,7 @@ export function buildBoqTemplateModel(opts: BoqTemplateOptions = {}): BoqTemplat
 
   const meta = buildMetaSheet(opts)
   const sheets: BoqSheetModel[] = [boqSheet]
-  if (withMeasurement) sheets.push(buildMeasurementSheet(headerRow, itemRowStart, itemRowEnd))
+  if (withMeasurement) sheets.push(buildMeasurementSheet(headerRow, itemRowStart, itemRowEnd, seed))
   sheets.push(meta)
 
   return {
@@ -292,6 +306,7 @@ export function buildBoqTemplateModel(opts: BoqTemplateOptions = {}): BoqTemplat
  *  the BOQ's row numbers so BOQ!D{r} ↔ Measurement!G{r} line up 1:1. */
 export function buildMeasurementSheet(
   headerRow: number, itemRowStart: number, itemRowEnd: number,
+  seed: BoqSeedRow[] = [],
 ): BoqSheetModel {
   const cells: Record<string, BoqCell> = {}
   const merges: BoqMerge[] = []
@@ -312,13 +327,25 @@ export function buildMeasurementSheet(
 
   for (let r = itemRowStart; r <= itemRowEnd; r++) {
     cells[at(MCOL.sr, r)] = n(r - itemRowStart + 1)
-    // Qty = Nos × (L|1) × (B|1) × (H|1); blank Nos ⇒ "" so the BOQ row stays empty.
-    cells[at(MCOL.qty, r)] = f(
-      `IF(${at(MCOL.nos, r)}="","",` +
-      `${at(MCOL.nos, r)}*IF(${at(MCOL.length, r)}="",1,${at(MCOL.length, r)})` +
-      `*IF(${at(MCOL.breadth, r)}="",1,${at(MCOL.breadth, r)})` +
-      `*IF(${at(MCOL.height, r)}="",1,${at(MCOL.height, r)}))`,
-    )
+    const sd = seed[r - itemRowStart]
+    if (sd && MEASURE_REF.test(sd.qtyFormula ?? '')) {
+      // Carry-forward: the prior version pulled this quantity from the
+      // Measurement tab, so restore its measured value (+ description) here so
+      // the BOQ's =Measurement!G{r} link resolves instead of coming through
+      // blank. The dimension breakdown (Nos/L/B/H) isn't stored per version —
+      // those stay empty and can be re-measured; the total carries through.
+      if (sd.description) cells[at(MCOL.description, r)] = s(sd.description)
+      if (sd.qty != null) cells[at(MCOL.qty, r)] = n(sd.qty)
+    } else {
+      // Blank helper row: Qty = Nos × (L|1) × (B|1) × (H|1); blank Nos ⇒ "" so
+      // the linked BOQ row stays empty.
+      cells[at(MCOL.qty, r)] = f(
+        `IF(${at(MCOL.nos, r)}="","",` +
+        `${at(MCOL.nos, r)}*IF(${at(MCOL.length, r)}="",1,${at(MCOL.length, r)})` +
+        `*IF(${at(MCOL.breadth, r)}="",1,${at(MCOL.breadth, r)})` +
+        `*IF(${at(MCOL.height, r)}="",1,${at(MCOL.height, r)}))`,
+      )
+    }
   }
 
   return {
