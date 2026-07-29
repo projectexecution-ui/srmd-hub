@@ -139,7 +139,7 @@ export async function EngineerProjectTable({ projectId }: { projectId: string })
             <TreeToolbar />
           </div>
         )}
-        <div className="overflow-x-auto">
+        <div className="overflow-x-auto hidden md:block">
           <table className="w-full text-[13px]">
             <thead className="bg-gray-50 text-left">
               <tr>
@@ -220,6 +220,50 @@ export async function EngineerProjectTable({ projectId }: { projectId: string })
               )}
             </tbody>
           </table>
+        </div>
+
+        {/* Mobile: your work as cards per sub-skill. */}
+        <div className="md:hidden divide-y divide-gray-100">
+          {disciplines.length === 0 && (
+            <p className="px-4 py-8 text-center text-sm text-gray-400">No disciplines set up on this project yet.</p>
+          )}
+          {disciplines.map(d => {
+            const dt = discTotal(d.id)
+            const subs = subsByDisc.get(d.id) ?? []
+            const cards = subs.filter(s => !isSubEmpty(d.id, s)).map(s => {
+              const bl = blMap.get(`${d.id}::${s.id}`)
+              const ag = wsAgg.get(`${d.id}::${s.id}`)
+              const chains = ag?.chains ?? 0
+              return (
+                <div key={s.id} className="px-4 py-3">
+                  <div className="flex items-start justify-between gap-2">
+                    <p className="text-sm text-gray-900 min-w-0"><span className="font-mono text-[11px] text-gray-400 mr-1.5">{s.code}</span>{s.name}</p>
+                    <div className="flex items-center gap-1.5 flex-shrink-0">
+                      {chains > 0 && (
+                        <Link href={`/cost-control/working-sheets?project=${projectId}&discipline=${d.id}&sub_skill=${s.id}`} className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-semibold bg-blue-50 text-blue-700 border border-blue-200">{chains} sheet{chains === 1 ? '' : 's'}</Link>
+                      )}
+                      <Link href={`/cost-control/working-sheets/new-quick?project=${projectId}&discipline=${d.id}&sub_skill=${s.id}`} className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-semibold bg-indigo-50 text-indigo-700 border border-indigo-200">+ New</Link>
+                    </div>
+                  </div>
+                  <div className="mt-1.5 flex items-center gap-4 text-[11px] text-gray-500">
+                    <span>Awaiting <span className="font-semibold text-amber-700">{ag?.pending ? formatINR(ag.pending) : '—'}</span></span>
+                    <span>Budget <span className="font-semibold text-gray-800">{bl?.budget ? formatINR(bl.budget) : '—'}</span></span>
+                    <span>WO <span className="font-semibold text-gray-600">{bl?.wo ? formatINR(bl.wo) : '—'}</span></span>
+                  </div>
+                </div>
+              )
+            })
+            if (cards.length === 0) return null
+            return (
+              <div key={d.id}>
+                <div className="px-4 py-2 bg-gray-50/60 flex items-center justify-between gap-2">
+                  <p className="text-[12px] font-semibold text-gray-800 min-w-0"><span className="font-mono text-[11px] text-gray-400 mr-1.5">{d.code}</span>{d.name}</p>
+                  {dt.pending > 0 && <span className="text-[11px] text-amber-700 flex-shrink-0 whitespace-nowrap">Awaiting {formatINR(dt.pending)}</span>}
+                </div>
+                {cards}
+              </div>
+            )
+          })}
         </div>
       </div>
       </TreeProvider>

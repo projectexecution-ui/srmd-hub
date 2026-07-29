@@ -466,7 +466,7 @@ export default async function WorkingSheetsPage({
               )}
             </div>
           </div>
-          <div className="overflow-x-auto">
+          <div className="overflow-x-auto hidden md:block">
             <table className="w-full text-sm">
               <thead className="bg-gray-50 text-left text-xs uppercase tracking-wide text-gray-500">
                 <tr>
@@ -550,6 +550,44 @@ export default async function WorkingSheetsPage({
               </tfoot>
             </table>
           </div>
+
+          {/* Mobile: the approval timeline as cards, cumulative carried down. */}
+          <div className="md:hidden divide-y divide-gray-100">
+            {(() => {
+              let cumApproved = 0
+              let cumEstimate = 0
+              return rows.map(w => {
+                const est = Number(w.total_amount ?? 0)
+                const appr = Number(w.approved_for_erp_amt ?? 0)
+                cumApproved += appr
+                cumEstimate += est
+                const pct = cumEstimate > 0 ? Math.round((cumApproved / cumEstimate) * 100) : 0
+                return (
+                  <Link key={w.id} href={`/cost-control/working-sheets/${w.id}`} className="block px-4 py-3 hover:bg-gray-50">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <p className="font-mono text-xs font-semibold text-blue-700">{w.ws_code}</p>
+                        <p className="text-[11px] text-gray-500 mt-0.5">{formatDate(w.created_at)} · {profileMap.get(w.engineer_id) ?? '—'}</p>
+                      </div>
+                      <div className="flex items-center gap-1.5 flex-shrink-0">
+                        <VersionBadge versionNo={w.version_no} chainSize={w.chain_size} breakChain={w.break_chain} compact />
+                        <WSStatusPill status={w.status} estimateBaseline={(w.summary_notes ?? '').startsWith('[IB')} />
+                      </div>
+                    </div>
+                    <div className="mt-2 grid grid-cols-3 gap-2 text-center">
+                      <div><p className="text-[10px] uppercase text-gray-400">Estimate</p><p className="text-xs font-semibold tabular-nums text-gray-900">{formatINR(est)}</p></div>
+                      <div><p className="text-[10px] uppercase text-gray-400">Approved</p><p className={`text-xs font-semibold tabular-nums ${appr >= est ? 'text-emerald-700' : appr > 0 ? 'text-amber-700' : 'text-gray-400'}`}>{appr > 0 ? formatINR(appr) : '—'}</p></div>
+                      <div><p className="text-[10px] uppercase text-gray-400">Cumulative</p><p className="text-xs font-semibold tabular-nums text-emerald-800">{formatINR(cumApproved)}<span className="block text-[10px] font-normal text-gray-400">{pct}%</span></p></div>
+                    </div>
+                  </Link>
+                )
+              })
+            })()}
+            <div className="px-4 py-3 bg-slate-50 border-t-2 border-gray-300 flex items-center justify-between">
+              <span className="text-xs font-semibold uppercase text-gray-600">Sub-skill totals</span>
+              <span className="text-sm tabular-nums"><span className="font-bold text-gray-900">{formatINR(kpis.estimateTotal)}</span> · <span className="font-bold text-emerald-800">{formatINR(kpis.approvedToDate)}</span></span>
+            </div>
+          </div>
         </Card>
       ) : (
         <div className="space-y-4">
@@ -584,7 +622,7 @@ export default async function WorkingSheetsPage({
                     )}
                   </div>
                 </div>
-                <div className="overflow-x-auto">
+                <div className="overflow-x-auto hidden md:block">
                   <table className="w-full text-sm">
                     <thead className="bg-gray-50 text-left text-xs uppercase tracking-wide text-gray-500">
                       <tr>
@@ -683,6 +721,57 @@ export default async function WorkingSheetsPage({
                       })}
                     </tbody>
                   </table>
+                </div>
+
+                {/* Mobile: each sheet as a tappable card. */}
+                <div className="md:hidden divide-y divide-gray-100">
+                  {g.rows.map(w => {
+                    const proj = Array.isArray(w.projects) ? w.projects[0] : w.projects
+                    const sub = Array.isArray(w.cc_sub_skills) ? w.cc_sub_skills[0] : w.cc_sub_skills
+                    const appr = Number(w.approved_for_erp_amt ?? 0)
+                    const est = Number(w.total_amount ?? 0)
+                    const pct = est > 0 ? Math.round((appr / est) * 100) : 0
+                    const engName = profileMap.get(w.engineer_id)
+                    const revLabel = (w.chain_size ?? 1) > 1 ? `Rev ${w.version_no} of ${w.chain_size}` : null
+                    return (
+                      <Link key={w.id} href={`/cost-control/working-sheets/${w.id}`} className="block px-4 py-3 hover:bg-gray-50">
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="min-w-0">
+                            <p className="font-semibold text-gray-900">{sub?.name ?? 'Working sheet'}</p>
+                            <p className="text-[11px] text-gray-400 mt-0.5">
+                              <span className="font-mono">{w.ws_code}</span>
+                              {revLabel && <> · {revLabel}</>}
+                              {!scoped && proj?.code && <> · {proj.code}</>}
+                              {engName && <> · by {engName}</>}
+                            </p>
+                          </div>
+                          <span className="text-right flex-shrink-0">
+                            <span className="block font-semibold text-gray-900 tabular-nums">{formatINR(est)}</span>
+                            <span className="block text-[10px] text-gray-400">{formatDate(w.created_at)}</span>
+                          </span>
+                        </div>
+                        <p className="mt-1.5 text-xs">
+                          {appr <= 0
+                            ? <span className="text-gray-400">Not released yet</span>
+                            : appr >= est
+                              ? <span className="text-emerald-700 font-semibold">{formatINR(appr)} released</span>
+                              : <span className="text-amber-700 font-semibold">{formatINR(appr)} released ({pct}%) · <span className="text-rose-600">{formatINR(est - appr)} to come</span></span>}
+                        </p>
+                        {(w.archived_at || (showDeadlines && w.deadline_date)) && (
+                          <div className="mt-1 flex items-center gap-2 flex-wrap">
+                            {w.archived_at && <span className="text-[10px] font-bold text-gray-600 bg-gray-100 border border-gray-300 rounded-full px-1.5 py-0.5">Archived</span>}
+                            {showDeadlines && w.deadline_date && (
+                              <DeadlineBadge
+                                deadlineDate={w.deadline_date}
+                                approved={w.status === 'approved' || w.status === 'wo_issued' || w.status === 'paid'}
+                                className="text-[10px] px-2 py-0.5"
+                              />
+                            )}
+                          </div>
+                        )}
+                      </Link>
+                    )
+                  })}
                 </div>
               </Card>
             )

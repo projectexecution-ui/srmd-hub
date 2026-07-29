@@ -205,7 +205,7 @@ function ApprovalSection({
         <h2 className="text-sm font-semibold text-gray-900">{title}</h2>
         <p className="text-xs text-gray-500 mt-0.5">{subtitle}</p>
       </div>
-      <div className="overflow-x-auto">
+      <div className="overflow-x-auto hidden md:block">
         <table className="w-full text-sm">
           <thead className="bg-gray-50 text-xs uppercase tracking-wide text-gray-500">
             <tr>
@@ -268,6 +268,44 @@ function ApprovalSection({
             })}
           </tbody>
         </table>
+      </div>
+
+      {/* Mobile: each pending sheet as a tappable card (approvers act on a phone). */}
+      <div className="md:hidden divide-y divide-gray-100">
+        {rows.map(ws => {
+          const proj = pickFirst(ws.projects)
+          const disc = pickFirst(ws.cc_disciplines)
+          const sub = pickFirst(ws.cc_sub_skills)
+          const est = Number(ws.total_amount ?? 0)
+          const released = Number(ws.approved_for_erp_amt ?? 0)
+          const partial = ws.status === 'partially_approved' && released > 0
+          const href = `/cost-control/working-sheets/${ws.id}?from=approvals`
+          const d = daysWaiting(ws.submitted_at)
+          return (
+            <Link key={ws.id} href={href} className="block px-4 py-3 hover:bg-gray-50">
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <p className="font-medium text-gray-900">{proj?.name ?? '—'} <span className="text-xs font-mono text-gray-500">{proj?.code}</span></p>
+                  <p className="text-xs text-gray-600 mt-0.5"><span className="font-mono text-gray-400">{disc?.code}</span> {disc?.name} · {sub?.name}</p>
+                  <p className="text-[11px] font-mono text-gray-400 mt-0.5">{ws.ws_code}</p>
+                </div>
+                <span className="text-right font-semibold text-gray-900 flex-shrink-0 tabular-nums">{formatINR(ws.total_amount)}</span>
+              </div>
+              {partial && (
+                <p className="text-[11px] text-amber-700 mt-1">{formatINR(released)} of {formatINR(est)} released — {formatINR(Math.max(est - released, 0))} remaining</p>
+              )}
+              <div className="mt-2 flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <WSStatusPill status={ws.status as WSStatus} />
+                  {d >= 3
+                    ? <span className="inline-flex items-center rounded-full bg-rose-100 text-rose-800 border border-rose-200 text-[11px] font-bold px-2 py-0.5">{d}d overdue</span>
+                    : d > 0 ? <span className="text-xs text-gray-500">{d}d waiting</span> : <span className="text-xs text-gray-400">today</span>}
+                </div>
+                <span className="inline-flex items-center gap-1 text-blue-700 text-sm font-medium flex-shrink-0">Review <ArrowRight className="h-3.5 w-3.5" /></span>
+              </div>
+            </Link>
+          )
+        })}
       </div>
     </Card>
   )

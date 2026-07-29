@@ -562,7 +562,7 @@ export default async function CostControlLandingPage() {
               <TreeToolbar />
             </div>
           )}
-          <div className="overflow-x-auto">
+          <div className="overflow-x-auto hidden md:block">
             <table className="w-full text-[13px]">
               <thead className="bg-gray-50 text-left">
                 <tr>
@@ -707,6 +707,72 @@ export default async function CostControlLandingPage() {
                 })}
               </tbody>
             </table>
+          </div>
+
+          {/* Mobile: projects as cards — the table is too wide for a phone. */}
+          <div className="md:hidden divide-y divide-gray-100">
+            {projGroups.map(g => {
+              const gt = groupTotals(g.members)
+              return (
+                <div key={g.key}>
+                  {g.label && (
+                    <div className="flex items-center justify-between gap-2 px-4 py-2 bg-indigo-50/80">
+                      <p className="text-[12px] font-bold uppercase tracking-wide text-indigo-900 min-w-0">
+                        {g.label}<span className="ml-1.5 font-normal normal-case text-indigo-400">· {g.members.length}</span>
+                      </p>
+                      <p className="text-[11px] text-indigo-900/70 flex-shrink-0 whitespace-nowrap">
+                        Est <span className="font-semibold">{gt.estimate > 0 ? formatINR(gt.estimate) : '—'}</span>
+                        <span className="mx-1">·</span>
+                        Appr <span className="font-semibold text-emerald-800">{gt.approved > 0 ? formatINR(gt.approved) : '—'}</span>
+                      </p>
+                    </div>
+                  )}
+                  {g.members.map(p => {
+                    const pct = p.setup_progress_pct ?? 0
+                    const isIncomplete = pct < 100
+                    const wsHere = wsByProject.get(p.id) ?? 0
+                    const bud = budgetByProj.get(p.id) ?? { budget: 0, committed: 0, paid: 0 }
+                    const estimate = estimateByProj.get(p.id) ?? 0
+                    const approvedHere = approvedByProj.get(p.id) ?? 0
+                    const pending = pendingByProj.get(p.id) ?? 0
+                    const overdue = overdueByProj.get(p.id) ?? 0
+                    return (
+                      <div key={p.id} className="px-4 py-3">
+                        <div className="flex items-start justify-between gap-2">
+                          <Link href={`/cost-control/projects/${p.id}`} className="min-w-0">
+                            <span className="font-mono text-[11px] font-bold text-indigo-700 mr-1.5">{p.code}</span>
+                            <span className="font-semibold text-gray-900">{p.name}</span>
+                          </Link>
+                          <span className="flex-shrink-0 text-[11px] text-gray-400 whitespace-nowrap">
+                            {wsHere || 0} WS{p.built_up_sft != null ? ` · ${p.built_up_sft.toLocaleString('en-IN')} sft` : ''}
+                          </span>
+                        </div>
+                        <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                          {isIncomplete
+                            ? <span className="text-[10px] font-bold text-amber-800 bg-amber-100 rounded-full px-2 py-0.5">Setup {pct}%</span>
+                            : p.cc_status && <Badge variant={p.cc_status === 'active' ? 'success' : 'secondary'}>{p.cc_status.replace('_', ' ')}</Badge>}
+                          {pending > 0 && <Link href={`/cost-control/working-sheets?project=${p.id}`} className="text-[10px] font-bold text-amber-800 bg-amber-100 rounded-full px-2 py-0.5">{pending} pending →</Link>}
+                          {ccSettings.show_deadlines && overdue > 0 && <Link href={`/cost-control/working-sheets?project=${p.id}`} className="text-[10px] font-bold text-rose-800 bg-rose-100 rounded-full px-2 py-0.5">{overdue} overdue →</Link>}
+                        </div>
+                        <div className="mt-2 grid grid-cols-2 gap-2 text-center">
+                          <div className="rounded-lg bg-indigo-50/60 py-1.5">
+                            <p className="text-[10px] uppercase tracking-wide text-gray-500">Internal Estimate</p>
+                            <p className="text-[13px] font-semibold text-indigo-800 tabular-nums">{estimate > 0 ? formatINR(estimate) : '—'}</p>
+                          </div>
+                          <div className="rounded-lg bg-emerald-50/60 py-1.5">
+                            <p className="text-[10px] uppercase tracking-wide text-gray-500">Approved via WS</p>
+                            <p className="text-[13px] font-semibold text-emerald-700 tabular-nums">{approvedHere > 0 ? formatINR(approvedHere) : '—'}</p>
+                          </div>
+                        </div>
+                        {ccSettings.show_erp_columns && (bud.budget > 0 || bud.paid > 0) && (
+                          <p className="mt-1.5 text-[11px] text-gray-500">Budget {bud.budget > 0 ? formatINR(bud.budget) : '—'} · Paid {bud.paid > 0 ? formatINR(bud.paid) : '—'}</p>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+              )
+            })}
           </div>
         </Card>
         </TreeProvider>
@@ -942,6 +1008,30 @@ async function EngineerHome({ userId, canWrite, label }: { userId: string | null
     )
   }
 
+  // Mobile card for one project (the table is too wide for a phone).
+  const renderProjCard = (p: EProj) => {
+    const bud = budgetByProj.get(p.id)
+    const sheets = mySheetsByProj.get(p.id) ?? 0
+    const sft = Number(p.built_up_sft ?? 0)
+    return (
+      <div key={p.id} className="px-4 py-3">
+        <div className="flex items-start justify-between gap-2">
+          <Link href={`/cost-control/projects/${p.id}`} className="min-w-0">
+            <span className="font-mono text-[11px] font-bold text-indigo-700 mr-1.5">{p.code}</span>
+            <span className="font-semibold text-gray-900">{p.name}</span>
+          </Link>
+          {sft > 0 && <span className="flex-shrink-0 text-[11px] text-gray-400 whitespace-nowrap">{sft.toLocaleString('en-IN')} sft</span>}
+        </div>
+        <div className="mt-2">
+          {sheets > 0 ? workChips(statusByProj.get(p.id) ?? emptyStat()) : <span className="text-[11px] text-gray-400">No requests yet</span>}
+        </div>
+        {(bud?.budget || bud?.wo) && (
+          <p className="mt-1.5 text-[11px] text-gray-500">Budget {bud?.budget ? formatINR(bud.budget) : '—'} · WO {bud?.wo ? formatINR(bud.wo) : '—'}</p>
+        )}
+      </div>
+    )
+  }
+
   return (
     <div className="p-4 md:p-6 max-w-6xl mx-auto space-y-4">
       <PageHeader
@@ -983,7 +1073,7 @@ async function EngineerHome({ userId, canWrite, label }: { userId: string | null
               <TreeToolbar />
             </div>
           )}
-          <div className="overflow-x-auto">
+          <div className="overflow-x-auto hidden md:block">
             <table className="w-full text-[13px]">
               <thead className="bg-gray-50 text-left">
                 <tr>
@@ -1042,6 +1132,36 @@ async function EngineerHome({ userId, canWrite, label }: { userId: string | null
                 )}
               </tbody>
             </table>
+          </div>
+
+          {/* Mobile: my projects as cards with request-status chips. */}
+          <div className="md:hidden divide-y divide-gray-100">
+            {realGroups.map(g => {
+              const gt = g.members.reduce((t, p) => {
+                const s = statusByProj.get(p.id)
+                if (s) { t.approved += s.approved; t.awaiting += s.awaiting; t.returned += s.returned; t.draft += s.draft }
+                return t
+              }, emptyStat())
+              return (
+                <div key={g.key}>
+                  <div className="flex items-center justify-between gap-2 px-4 py-2 bg-indigo-50/80">
+                    <p className="text-[12px] font-bold uppercase tracking-wide text-indigo-900 min-w-0">
+                      {g.label}<span className="ml-1.5 font-normal normal-case text-indigo-400">· {g.members.length}</span>
+                    </p>
+                    <div className="flex-shrink-0">{workChips(gt)}</div>
+                  </div>
+                  {g.members.map(renderProjCard)}
+                </div>
+              )
+            })}
+            {soloProjects.length > 0 && (
+              <div>
+                {realGroups.length > 0 && (
+                  <p className="px-4 py-2 bg-gray-50 text-[12px] font-bold uppercase tracking-wide text-gray-500">Independent projects</p>
+                )}
+                {soloProjects.map(renderProjCard)}
+              </div>
+            )}
           </div>
         </Card>
         </TreeProvider>
