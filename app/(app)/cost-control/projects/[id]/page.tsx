@@ -600,7 +600,7 @@ export default async function CostControlProjectDetailPage(
           <span className="text-[11px] font-medium text-gray-500">Work categories — click a row to collapse; totals roll up.</span>
           <TreeToolbar />
         </div>
-        <div className="overflow-x-auto">
+        <div className="overflow-x-auto hidden md:block">
           <table className="w-full text-[13px]">
             <thead className="bg-gray-50 text-left">
               <tr>
@@ -913,6 +913,96 @@ export default async function CostControlProjectDetailPage(
               })}
             </tbody>
           </table>
+        </div>
+
+        {/* Mobile: the same Internal Estimate as stacked cards — the table above
+            is far too wide for a phone. Read + navigate; heavy editing (mode,
+            deadlines, IE decision, remove) stays on the desktop table. */}
+        <div className="md:hidden divide-y divide-gray-100">
+          {disciplines.length === 0 && (
+            <p className="px-4 py-8 text-center text-sm text-gray-500">No disciplines enabled yet. Open the setup wizard to pick them.</p>
+          )}
+          {disciplines.map(d => {
+            const dAgg = discAgg.get(d.id) ?? { budget: 0, wo: 0, paid: 0, approvedTotal: 0, estimate: 0, pending: 0 }
+            const subs = subSkills.filter(s => s.discipline_id === d.id)
+            const cards = subs.map(s => {
+              const a = wsAgg.get(`${d.id}::${s.id}`)
+              const bl = blMap.get(`${d.id}::${s.id}`)
+              const ie = ieMap.get(`${d.id}::${s.id}`)
+              const estLive = a?.planTotal ?? 0
+              const ask = a?.pendingAmount ?? 0
+              const released = a?.approvedTotal ?? 0
+              const wsCount = a?.chains.size ?? 0
+              const baseline = ie?.decision === 'accepted' && ie.amt != null ? ie.amt : estLive
+              const overBy = baseline > 0 && ask > baseline ? ask - baseline : 0
+              const isEmpty = estLive === 0 && ask === 0 && wsCount === 0
+                && (bl?.budget ?? 0) === 0 && (bl?.wo ?? 0) === 0 && (bl?.paid ?? 0) === 0
+              if (isEmpty) return null
+              const effMode = subMeta.get(s.id)?.mode ?? discMeta.get(d.id)?.mode ?? 'detailed'
+              return (
+                <div key={s.id} className="px-4 py-3">
+                  <div className="flex items-start justify-between gap-2">
+                    <p className="text-sm text-gray-900 min-w-0">
+                      <span className="font-mono text-[11px] text-gray-400 mr-1.5">{s.code}</span>{s.name}
+                    </p>
+                    {wsCount > 0 && (
+                      <Link
+                        href={`/cost-control/working-sheets?project=${project.id}&discipline=${d.id}&sub_skill=${s.id}`}
+                        className="flex-shrink-0 inline-flex items-center gap-1 px-2 py-1 rounded text-[11px] font-semibold bg-blue-50 text-blue-700 border border-blue-200"
+                      >
+                        {wsCount} sheet{wsCount === 1 ? '' : 's'}
+                      </Link>
+                    )}
+                  </div>
+                  <div className="mt-2 grid grid-cols-3 gap-2 text-center">
+                    <div className="rounded-lg bg-indigo-50/60 py-1.5">
+                      <p className="text-[10px] uppercase tracking-wide text-gray-500">Estimate</p>
+                      <p className="text-[13px] font-semibold text-indigo-800 tabular-nums"><Money amt={estLive} /></p>
+                    </div>
+                    <div className={`rounded-lg py-1.5 ${overBy > 0 ? 'bg-rose-50' : 'bg-amber-50/60'}`}>
+                      <p className="text-[10px] uppercase tracking-wide text-gray-500">Awaiting</p>
+                      <p className={`text-[13px] font-semibold tabular-nums ${overBy > 0 ? 'text-rose-700' : 'text-amber-700'}`}><Money amt={ask} /></p>
+                    </div>
+                    <div className="rounded-lg bg-emerald-50/60 py-1.5">
+                      <p className="text-[10px] uppercase tracking-wide text-gray-500">Released</p>
+                      <p className="text-[13px] font-semibold text-emerald-700 tabular-nums"><Money amt={released} /></p>
+                    </div>
+                  </div>
+                  {overBy > 0 && (
+                    <p className="mt-1 text-[10px] font-bold text-rose-600">▲ over the Internal Estimate by {formatINR(overBy)}</p>
+                  )}
+                  {canWrite && (
+                    <div className="mt-2">
+                      <Link
+                        href={effMode === 'thumbrule'
+                          ? `/cost-control/working-sheets/new-thumbrule?project=${project.id}&discipline=${d.id}&sub_skill=${s.id}`
+                          : `/cost-control/working-sheets/new-quick?project=${project.id}&discipline=${d.id}&sub_skill=${s.id}`}
+                        className="inline-flex items-center gap-1 px-2.5 py-1 rounded text-[11px] font-semibold border border-blue-300 text-blue-700"
+                      >
+                        <Plus className="h-3 w-3" /> New WS
+                      </Link>
+                    </div>
+                  )}
+                </div>
+              )
+            }).filter(Boolean)
+            if (cards.length === 0) return null
+            return (
+              <div key={d.id}>
+                <div className="flex items-center justify-between gap-2 px-4 py-2 bg-slate-50 border-t border-gray-200">
+                  <p className="text-[13px] font-semibold text-gray-900 min-w-0">
+                    <span className="font-mono text-[11px] text-gray-500 mr-1.5">{d.code}</span>{d.name}
+                  </p>
+                  <p className="text-[11px] text-gray-500 flex-shrink-0 whitespace-nowrap">
+                    Est <span className="font-semibold text-indigo-800"><Money amt={dAgg.estimate} /></span>
+                    <span className="mx-1">·</span>
+                    Rel <span className="font-semibold text-emerald-700"><Money amt={dAgg.approvedTotal} /></span>
+                  </p>
+                </div>
+                {cards}
+              </div>
+            )
+          })}
         </div>
       </div>
       </TreeProvider>
