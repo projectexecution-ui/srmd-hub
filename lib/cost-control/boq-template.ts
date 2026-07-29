@@ -380,11 +380,28 @@ export function isBoqTemplateMeta(meta: Record<string, string>): boolean {
 }
 
 /** Default download filename for a template. */
+// Download filename: carry enough to tell one downloaded template from another
+// at a glance — project, discipline, sub-skill, version and date — because a
+// user downloads many of these across projects/versions over time and generic
+// names collide. Shape: BOQ_<project>_<discipline>_<sub-skill>_v<N>_<date>.xlsx
 export function boqTemplateFilename(opts: BoqTemplateOptions): string {
+  // Trim, turn anything filesystem-unfriendly (spaces, slashes, ·, —) into a
+  // single dash, and drop leading/trailing dashes.
+  const clean = (v?: string | number) =>
+    v == null ? '' : String(v).trim().replace(/[^\w.-]+/g, '-').replace(/^-+|-+$/g, '')
+
+  const project    = opts.projectName || opts.projectCode
+  const discipline = [opts.disciplineCode, opts.disciplineName].filter(Boolean).join(' ')
+  const subSkill   = [opts.subSkillCode, opts.subSkillName].filter(Boolean).join(' ')
+
   const parts = [
     'BOQ',
-    opts.disciplineCode || opts.disciplineName,
-    opts.subSkillCode || opts.subSkillName,
-  ].filter(Boolean).map(p => String(p).replace(/[^\w.-]+/g, '-'))
-  return `${parts.join('_')}_template.xlsx`
+    project,
+    discipline,
+    subSkill,
+    `v${opts.versionNo ?? 1}`, // a fresh upload becomes v1; a re-raise stamps v(N+1)
+    opts.dateText,             // e.g. "29 Jul 2026" → "29-Jul-2026"
+  ].map(clean).filter(Boolean)
+
+  return `${parts.join('_')}.xlsx`
 }

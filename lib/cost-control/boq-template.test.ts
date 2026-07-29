@@ -139,10 +139,27 @@ describe('context header + filename', () => {
     expect(ctx).toContain('2-Jun-2026')
   })
 
-  it('filename is discipline/sub-skill scoped and filesystem-safe', () => {
-    const fn = boqTemplateFilename({ disciplineCode: '03 Civil', subSkillCode: '301/A' })
+  it('filename carries project, discipline, sub-skill, version + date and is filesystem-safe', () => {
+    const fn = boqTemplateFilename({
+      projectName: 'NGH A',
+      disciplineCode: '03', disciplineName: 'Civil',
+      subSkillCode: '301/A', subSkillName: 'Footings',
+      versionNo: 2,
+      dateText: '29 Jul 2026',
+    })
     expect(fn).toMatch(/^BOQ_/)
-    expect(fn.endsWith('_template.xlsx')).toBe(true)
-    expect(fn).not.toMatch(/[/\\]/)
+    expect(fn).toContain('NGH-A')        // exact project name
+    expect(fn).toContain('03-Civil')     // discipline code + name
+    expect(fn).toContain('301-A')        // sub-skill (slash sanitized)
+    expect(fn).toContain('_v2_')         // version stamp
+    expect(fn).toContain('29-Jul-2026')  // download date
+    expect(fn.endsWith('.xlsx')).toBe(true)
+    expect(fn).not.toMatch(/[/\\]/)      // filesystem-safe: no slashes
+  })
+
+  it('filename defaults to v1 when no prior version is given', () => {
+    const fn = boqTemplateFilename({ projectName: 'VINAY', subSkillName: 'Plumbing' })
+    expect(fn).toContain('_v1')
+    expect(fn.endsWith('.xlsx')).toBe(true)
   })
 })
