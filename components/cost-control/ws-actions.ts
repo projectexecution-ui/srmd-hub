@@ -162,6 +162,11 @@ export async function checkIsCcReviewer(): Promise<boolean> {
   ])
   const role = (eff as string | null) ?? me.profile?.role ?? null
   if (!role) return false
+  // Coordinator = setup/admin + full visibility, but is deliberately NOT in the
+  // approval matrix (so it can never approve/release — every approve button is
+  // matrix-driven and the DB trigger backstops it). Grant reviewer VISIBILITY
+  // explicitly here so a Coordinator sees all sheets + confidential figures.
+  if (role === 'coordinator') return true
   return (rules ?? []).some(r => r.approver_role === role || r.override_role === role)
 }
 

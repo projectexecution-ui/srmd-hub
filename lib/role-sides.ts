@@ -17,7 +17,7 @@ export interface RoleSides {
 }
 
 export const DEFAULT_ROLE_SIDES: RoleSides = {
-  management: ['admin', 'project_head', 'head', 'founder'],
+  management: ['admin', 'project_head', 'head', 'founder', 'coordinator'],
   engineer: ['engineer'],
 }
 

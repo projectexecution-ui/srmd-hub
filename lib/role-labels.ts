@@ -29,6 +29,7 @@ export const DEFAULT_ROLE_LABELS: RoleLabelMap = {
   backoffice:         { label: 'Backoffice',         description: 'Inventory: marks requests "available", reserves stock. Pairs with Storekeeper.' },
   store_manager:      { label: 'Storekeeper',        description: 'Inventory: warehouse staff. Marks "available", issues material, logs receipts + damage.' },
   billing:            { label: 'Billing (IN4 Entry)', description: 'Enters approved Working Sheet amounts into the IN4 ERP. Sees the Cost Control billing queue; cannot edit or approve sheets.' },
+  coordinator:        { label: 'Coordinator (setup)',  description: 'Cost Control setup & data — create projects, manage disciplines, sync BPH, full visibility. Cannot approve or release money.' },
   // Below: kept in DB enum + type for backward compat, but not surfaced in
   // /admin/permissions matrix. Use `head` instead of `hop`. No backup role
   // — the storekeeper covers when backoffice is unavailable.

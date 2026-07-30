@@ -17,6 +17,7 @@ export type Role =
   | 'backoffice'         // inventory: marks requests "available"
   | 'store_manager'      // inventory: storekeeper — issues material; can also mark "available"
   | 'billing'            // billing team: enters approved Cost Control amounts into IN4 ERP (read-only otherwise)
+  | 'coordinator'        // Cost Control setup/admin + full visibility, but CANNOT approve/release money (not in the approval matrix)
   | 'backoffice_backup'  // LEGACY — kept for DB enum compat, not surfaced in UI
   | 'hop'                // LEGACY — superseded by `head` (Atm Head)
 
@@ -25,7 +26,7 @@ export type Role =
 // but the workflow now uses `head` for Atm Head and `backoffice`/`store_manager`
 // for the availability-check stage.
 export const ALL_ROLES: Role[] = [
-  'admin', 'founder', 'head', 'project_head', 'uploader', 'engineer', 'backoffice', 'store_manager',
+  'admin', 'founder', 'head', 'project_head', 'coordinator', 'uploader', 'engineer', 'backoffice', 'store_manager',
   'billing', 'site_staff', 'viewer', 'contractor',
 ]
 

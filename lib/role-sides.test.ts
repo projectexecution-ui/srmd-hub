@@ -1,5 +1,21 @@
 import { describe, it, expect } from 'vitest'
 import { parseRoleSides, DEFAULT_ROLE_SIDES } from './role-sides'
+import { ALL_ROLES } from './types'
+import { DEFAULT_ROLE_LABELS } from './role-labels'
+
+describe('coordinator role', () => {
+  // Coordinator = Cost Control setup/admin + full visibility, but NEVER an
+  // approver (the money block is that it is absent from the approval matrix).
+  it('is a registered role with a label', () => {
+    expect(ALL_ROLES).toContain('coordinator')
+    expect(DEFAULT_ROLE_LABELS.coordinator.label).toBeTruthy()
+    expect(DEFAULT_ROLE_LABELS.coordinator.description.toLowerCase()).toContain('cannot approve')
+  })
+  it('sits on the management side by default (setup/back-office)', () => {
+    expect(DEFAULT_ROLE_SIDES.management).toContain('coordinator')
+    expect(DEFAULT_ROLE_SIDES.engineer).not.toContain('coordinator')
+  })
+})
 
 describe('parseRoleSides', () => {
   it('returns defaults when no keys are set', () => {
