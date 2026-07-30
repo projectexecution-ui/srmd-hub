@@ -37,6 +37,8 @@ type Filter = { kind: 'all' } | { kind: 'pending' } | { kind: 'trust' } | { kind
 export default function Cockpit({ bills, asOf }: { bills: CockpitBill[]; asOf: string }) {
   const [project, setProject] = useState<string>('ALL')
   const [mode, setMode] = useState<'value' | 'count'>('value')
+  // Rank/emphasis lens for the follow-up lists: by ₹ amount or by days waiting.
+  const [rank, setRank] = useState<'amt' | 'days'>('amt')
   const [filter, setFilter] = useState<Filter>({ kind: 'all' })
   const [open, setOpen] = useState<CockpitBill | null>(null)
 
@@ -67,10 +69,17 @@ export default function Cockpit({ bills, asOf }: { bills: CockpitBill[]; asOf: s
   }, [filter, internal, trust, stalled, scoped])
 
   const push = useMemo(() => {
-    return [...pushBase]
-      .map(b => ({ b, sc: b.claimed * (1 + b.idle / 20) * (b.idle > 21 ? 1.8 : 1) * (b.noWO ? 1.4 : 1) }))
-      .sort((x, y) => y.sc - x.sc).slice(0, 12).map(o => o.b)
-  }, [pushBase])
+    const arr = [...pushBase]
+    if (rank === 'days') {
+      // Oldest-waiting first (then biggest ₹ as tie-break).
+      arr.sort((a, b) => (b.idle - a.idle) || (b.claimed - a.claimed))
+    } else {
+      // ₹ weighted by age + stalled/no-WO penalties.
+      const sc = (b: CockpitBill) => b.claimed * (1 + b.idle / 20) * (b.idle > 21 ? 1.8 : 1) * (b.noWO ? 1.4 : 1)
+      arr.sort((a, b) => sc(b) - sc(a))
+    }
+    return arr.slice(0, 12)
+  }, [pushBase, rank])
 
   // Rot funnel — dynamic stages present among live bills
   const funnel = useMemo(() => {
@@ -98,9 +107,9 @@ export default function Cockpit({ bills, asOf }: { bills: CockpitBill[]; asOf: s
       stage, bills: g.length, val: sum(g),
       oldest: g.reduce((m, b) => Math.max(m, b.idle), 0),
       stall: g.filter(b => b.idle > 21).length,
-    })).sort((a, b) => b.val - a.val)
-    return { rows, max: Math.max(...rows.map(r => r.val), 1) }
-  }, [internal])
+    })).sort((a, b) => (rank === 'days' ? (b.oldest - a.oldest) : (b.val - a.val)))
+    return { rows, max: Math.max(...rows.map(r => r.val), 1), maxOldest: Math.max(...rows.map(r => r.oldest), 1) }
+  }, [internal, rank])
 
   const dispStage = (s: string) => s.replace('Submitted to Trust A/c', 'At Trust A/c')
   const briefStalledVal = cr(sum(stalled))
@@ -123,6 +132,15 @@ export default function Cockpit({ bills, asOf }: { bills: CockpitBill[]; asOf: s
             <button key={m} onClick={() => setMode(m)}
               className={cn('px-3 py-1 text-[13px] font-bold', mode === m ? 'bg-amber-500 text-amber-950' : 'bg-white text-gray-500')}>
               {m === 'value' ? '₹ Value' : '＃ Count'}
+            </button>
+          ))}
+        </div>
+        {/* Rank the follow-up lists by ₹ amount or by days waiting. */}
+        <div className="inline-flex overflow-hidden rounded-full border border-gray-300">
+          {(['amt', 'days'] as const).map(r => (
+            <button key={r} onClick={() => setRank(r)}
+              className={cn('px-3 py-1 text-[13px] font-bold', rank === r ? 'bg-slate-800 text-white' : 'bg-white text-gray-500')}>
+              {r === 'amt' ? 'By Amt' : 'By Days'}
             </button>
           ))}
         </div>
@@ -163,7 +181,7 @@ export default function Cockpit({ bills, asOf }: { bills: CockpitBill[]; asOf: s
         <div className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
           <div className="flex items-baseline gap-2 px-4 pb-2 pt-3.5">
             <h2 className="m-0 text-base font-bold">Push today</h2>
-            <span className="ml-auto text-xs text-gray-400">{push.length} to push · ranked by ₹ × age</span>
+            <span className="ml-auto text-xs text-gray-400">{push.length} to push · {rank === 'days' ? 'ranked by days waiting' : 'ranked by ₹ × age'}</span>
           </div>
           <div className="px-2 pb-3">
             {push.length === 0 && <div className="p-5 text-center text-sm text-gray-500">Nothing to push in this slice.</div>}
@@ -175,14 +193,24 @@ export default function Cockpit({ bills, asOf }: { bills: CockpitBill[]; asOf: s
                   <span className="block truncate text-[14px] font-semibold text-gray-900">{b.vendor}</span>
                   <span className="mt-0.5 flex flex-wrap items-center gap-1.5 text-[12px] text-gray-500">
                     <span className="rounded bg-slate-800 px-1.5 py-px text-[11px] font-bold text-white">{b.project}</span>
+                    <span className="rounded border border-gray-300 bg-white px-1.5 py-px text-[11px] font-semibold text-gray-700">Inv {b.billNo || '—'}</span>
                     {b.area} · {dispStage(b.stage)}
                     {b.noWO && <span className="rounded-full bg-amber-100 px-1.5 py-px text-[11px] font-bold text-amber-800">No WO</span>}
                     {b.idle > 21 && <span className="rounded-full bg-red-100 px-1.5 py-px text-[11px] font-bold text-red-700">Stalled {b.idle}d</span>}
                   </span>
                 </span>
                 <span className="text-right">
-                  <span className="block text-[14px] font-bold tabular-nums text-gray-900">₹{inr(b.claimed)}</span>
-                  <span className={cn('block text-[12px] tabular-nums', b.idle > 21 ? 'text-red-600' : 'text-gray-500')}>{b.idle}d idle</span>
+                  {rank === 'days' ? (
+                    <>
+                      <span className={cn('block text-[14px] font-bold tabular-nums', b.idle > 21 ? 'text-red-600' : 'text-gray-900')}>{b.idle}d idle</span>
+                      <span className="block text-[12px] tabular-nums text-gray-500">₹{inr(b.claimed)}</span>
+                    </>
+                  ) : (
+                    <>
+                      <span className="block text-[14px] font-bold tabular-nums text-gray-900">₹{inr(b.claimed)}</span>
+                      <span className={cn('block text-[12px] tabular-nums', b.idle > 21 ? 'text-red-600' : 'text-gray-500')}>{b.idle}d idle</span>
+                    </>
+                  )}
                 </span>
               </button>
             ))}
@@ -193,7 +221,7 @@ export default function Cockpit({ bills, asOf }: { bills: CockpitBill[]; asOf: s
         <div className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
           <div className="flex items-baseline gap-2 px-4 pb-2 pt-3.5">
             <h2 className="m-0 text-base font-bold">Whose desk is choking it</h2>
-            <span className="ml-auto text-xs text-gray-400">by ₹ held</span>
+            <span className="ml-auto text-xs text-gray-400">{rank === 'days' ? 'by days waiting' : 'by ₹ held'}</span>
           </div>
           <div className="px-2 pb-3">
             {desks.rows.length === 0 && <div className="p-5 text-center text-sm text-gray-500">Nothing pending with CT.</div>}
@@ -205,12 +233,16 @@ export default function Cockpit({ bills, asOf }: { bills: CockpitBill[]; asOf: s
                   <span className="min-w-0">
                     <span className="block truncate text-[13px] font-semibold text-gray-800">{dispStage(r.stage)}</span>
                     <span className="mt-1 block h-1.5 overflow-hidden rounded bg-gray-100">
-                      <span className="block h-full rounded" style={{ width: `${Math.round(r.val / desks.max * 100)}%`, background: col }} />
+                      <span className="block h-full rounded" style={{ width: `${Math.round((rank === 'days' ? r.oldest / desks.maxOldest : r.val / desks.max) * 100)}%`, background: col }} />
                     </span>
                   </span>
                   <span className="text-right">
-                    <span className="block text-[13px] font-bold tabular-nums">{mode === 'value' ? cr(r.val) : r.bills}</span>
-                    <span className="block text-[11.5px] text-gray-500 tabular-nums">{r.bills} bills · oldest {r.oldest}d{r.stall ? ` · ${r.stall} stalled` : ''}</span>
+                    <span className="block text-[13px] font-bold tabular-nums">{rank === 'days' ? `${r.oldest}d` : (mode === 'value' ? cr(r.val) : r.bills)}</span>
+                    <span className="block text-[11.5px] text-gray-500 tabular-nums">
+                      {rank === 'days'
+                        ? `${r.bills} bills · ${cr(r.val)}${r.stall ? ` · ${r.stall} stalled` : ''}`
+                        : `${r.bills} bills · oldest ${r.oldest}d${r.stall ? ` · ${r.stall} stalled` : ''}`}
+                    </span>
                   </span>
                 </button>
               )
