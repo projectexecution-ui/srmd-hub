@@ -332,7 +332,6 @@ export default async function CostControlLandingPage() {
     // Only label the leftovers when there ARE real groups to separate from.
     projGroups.push({ key: '_independent', label: projGroups.length > 0 ? 'Independent projects' : null, members: independents })
   }
-  const isChildProject = (p: CCProject) => !!p.parent_project_id && projById.has(p.parent_project_id)
   // Rollup across a group's members for the header band.
   const groupTotals = (members: CCProject[]) => members.reduce((t, p) => {
     const bud = budgetByProj.get(p.id) ?? { budget: 0, committed: 0, paid: 0 }
@@ -636,7 +635,7 @@ export default async function CostControlLandingPage() {
                   const hot = paidPct > 95
                   return (
                     <tr key={p.id} className="border-t border-gray-100 hover:bg-gray-50/70">
-                      <td className={`px-3 py-2.5 ${isChildProject(p) ? 'pl-8' : ''}`}>
+                      <td className={`px-3 py-2.5 ${g.label ? 'pl-8' : ''}`}>
                         <Link href={`/cost-control/projects/${p.id}`} className="block">
                           <span className="font-mono text-[11px] font-bold text-indigo-700 mr-2">{p.code}</span>
                           <span className="font-semibold text-gray-900 hover:underline">{p.name}</span>
