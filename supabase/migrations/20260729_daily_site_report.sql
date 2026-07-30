@@ -111,6 +111,27 @@ do $$ begin
     for each row execute function public.set_updated_at();
 exception when duplicate_object then null; end $$;
 
+-- Freeze ownership + project on update. The UPDATE RLS policy lets the owner
+-- (or admin) edit a report to advance its status ladder, but must not let
+-- anyone re-attribute it to another project or change created_by via a direct
+-- PostgREST PATCH. This trigger silently preserves both columns, so such an
+-- attempt is a no-op instead of an assignment-boundary bypass.
+create or replace function public.dsr_freeze_immutable()
+returns trigger
+language plpgsql
+set search_path = public
+as $$
+begin
+  new.project_id := old.project_id;
+  new.created_by := old.created_by;
+  return new;
+end $$;
+
+drop trigger if exists dsr_reports_freeze_immutable on public.dsr_reports;
+create trigger dsr_reports_freeze_immutable
+  before update on public.dsr_reports
+  for each row execute function public.dsr_freeze_immutable();
+
 -- ------------------------------------------------------------
 -- 5. Helper functions
 -- ------------------------------------------------------------

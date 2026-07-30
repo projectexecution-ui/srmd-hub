@@ -5,7 +5,6 @@ import { PageHeader } from '@/components/PageHeader'
 import { Button } from '@/components/ui/button'
 import { QueryError } from '@/components/ui/query-error'
 import { Plus } from 'lucide-react'
-import { todayISO } from '@/lib/jmr/format'
 import { SmartChecklist, type ChecklistRow } from './SmartChecklist'
 import type { DsrTracking, Project, Vendor } from '@/lib/types'
 
@@ -122,7 +121,7 @@ export default async function DailySiteReportPage() {
       ) : (
         <SmartChecklist
           rows={rows}
-          today={todayISO()}
+          today={new Date(Date.now() + 5.5 * 3600 * 1000).toISOString().slice(0, 10)}
           canTrack={canTrack}
           isHead={isHead}
           myProjectIds={myProjectIds}
