@@ -379,3 +379,101 @@ export async function svgToPng(svg: string): Promise<Buffer> {
 export async function renderCard(data: CardData): Promise<Buffer> {
   return svgToPng(buildSvg(data))
 }
+
+// ─── "Push today" share card (one-click Copy image → WhatsApp) ────────────────
+export interface PushCardRow {
+  vendor: string
+  project: string
+  area: string
+  stage: string
+  billNo: string
+  claimed: number
+  age: number       // days since Zoho entry (the delay)
+  idle: number      // days since last movement (for the Stalled badge)
+  noWO: boolean
+  stalled: boolean
+}
+export interface PushCardInput {
+  scope: string
+  rank: 'amt' | 'days'
+  asOf: string
+  generatedAt: string
+  rows: PushCardRow[]
+}
+
+export function buildPushSvg(d: PushCardInput): string {
+  const P: string[] = []
+  const H_HEAD = 112, ROW = 76, H_FOOT = 72
+  const rows = d.rows.slice(0, 20)
+  const totalH = H_HEAD + Math.max(rows.length, 1) * ROW + H_FOOT
+
+  P.push(rect(0, 0, W, totalH, C.BG))
+  // Header
+  P.push(rect(0, 0, W, H_HEAD, C.NAVY))
+  P.push(rect(PAD, 34, 5, 46, C.GOLD, 2))
+  P.push(text(PAD + 20, 60, 'PUSH TODAY', { fill: C.WHITE, size: 34, weight: 700, spacing: 0.5 }))
+  P.push(text(PAD + 20, 90, `${d.scope} · ${d.rank === 'days' ? 'ranked by days waiting (since Zoho entry)' : 'ranked by ₹ × age'}`, { fill: C.GOLD, size: 17, weight: 500 }))
+  P.push(text(W - PAD, 56, `As on ${fmtDate(d.asOf)}`, { fill: '#c7d2e0', size: 18, weight: 500, anchor: 'end' }))
+  P.push(text(W - PAD, 84, `${rows.length} to push`, { fill: C.FAINT, size: 15, anchor: 'end' }))
+
+  let y = H_HEAD
+  if (rows.length === 0) {
+    P.push(text(W / 2, y + 42, 'Nothing to push in this slice.', { fill: C.MUT, size: 18, anchor: 'middle' }))
+    y += ROW
+  } else {
+    rows.forEach((r, i) => {
+      if (i % 2 === 1) P.push(rect(0, y, W, ROW, C.PANEL))
+      P.push(line(0, y + ROW, W, y + ROW, C.LINE, 1))
+      P.push(text(PAD, y + 30, String(i + 1), { fill: C.FAINT, size: 15, weight: 700 }))
+      P.push(text(PAD + 30, y + 30, clip(r.vendor || '(unnamed)', 40), { fill: C.INK, size: 19, weight: 700 }))
+      // Meta chips: project · invoice no · flags · area/stage
+      let x = PAD + 30
+      const cy = y + 44
+      P.push(rect(x, cy, 52, 24, C.NAVY, 5))
+      P.push(text(x + 26, cy + 16, r.project, { fill: C.WHITE, size: 12, weight: 700, anchor: 'middle' }))
+      x += 60
+      const inv = `Inv ${r.billNo || '—'}`
+      const invW = Math.round(16 + inv.length * 7.2)
+      P.push(rect(x, cy, invW, 24, '#eef2f7', 5))
+      P.push(text(x + 8, cy + 16, inv, { fill: '#334155', size: 12.5, weight: 600 }))
+      x += invW + 8
+      if (r.noWO) {
+        P.push(rect(x, cy, 62, 24, '#fbe6d4', 5))
+        P.push(text(x + 31, cy + 16, 'No WO', { fill: C.ORANGE, size: 12, weight: 700, anchor: 'middle' }))
+        x += 70
+      }
+      if (r.stalled) {
+        const st = `Stalled ${r.idle}d`
+        const stW = Math.round(16 + st.length * 7)
+        P.push(rect(x, cy, stW, 24, '#fde8e6', 5))
+        P.push(text(x + 8, cy + 16, st, { fill: C.RED, size: 12, weight: 700 }))
+        x += stW + 8
+      }
+      P.push(text(x, cy + 16, clip(`${r.area}${r.area ? ' · ' : ''}${(r.stage || '').replace(/^Under:\s*/, '')}`, 38), { fill: C.MUT, size: 13 }))
+      // Right column — primary metric follows the rank lens.
+      const days = `${r.age}d old`
+      const amt = '₹' + inr(r.claimed)
+      if (d.rank === 'days') {
+        P.push(text(W - PAD, y + 30, days, { fill: r.stalled ? C.RED : C.INK, size: 19, weight: 700, anchor: 'end' }))
+        P.push(text(W - PAD, y + 54, amt, { fill: C.MUT, size: 14, anchor: 'end' }))
+      } else {
+        P.push(text(W - PAD, y + 30, amt, { fill: C.INK, size: 19, weight: 700, anchor: 'end' }))
+        P.push(text(W - PAD, y + 54, days, { fill: r.stalled ? C.RED : C.MUT, size: 14, anchor: 'end' }))
+      }
+      y += ROW
+    })
+  }
+  // Footer
+  P.push(rect(0, y, W, H_FOOT, C.NAVY))
+  P.push(text(PAD, y + 30, 'SRMD Construction Technology Hub', { fill: '#c7d2e0', size: 16, weight: 600 }))
+  P.push(text(PAD, y + 52, 'Push list — follow up with the desk holder', { fill: C.FAINT, size: 14 }))
+  const gen = new Date(d.generatedAt).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', dateStyle: 'medium', timeStyle: 'short' })
+  P.push(text(W - PAD, y + 44, gen, { fill: C.FAINT, size: 14, anchor: 'end' }))
+  y += H_FOOT
+
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${y}" viewBox="0 0 ${W} ${y}">${P.join('')}</svg>`
+}
+
+export async function renderPushCard(d: PushCardInput): Promise<Buffer> {
+  return svgToPng(buildPushSvg(d))
+}

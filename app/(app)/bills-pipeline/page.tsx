@@ -1,5 +1,5 @@
 import { createClient as createServiceClient } from '@supabase/supabase-js'
-import { requirePermission, can } from '@/lib/auth'
+import { requirePermission, can, getMyProfile, getMyUser } from '@/lib/auth'
 import { PageHeader } from '@/components/PageHeader'
 import { Button } from '@/components/ui/button'
 import { Link2, AlertTriangle } from 'lucide-react'
@@ -21,6 +21,13 @@ export default async function BillsPipelinePage({ searchParams }: Props) {
   const perms    = await requirePermission('bills-pipeline', 'view')
   const canEdit  = can(perms, 'bills-pipeline', 'edit')
   const canAdmin = can(perms, 'bills-pipeline', 'admin')
+
+  // Auto-scope the cockpit to a management viewer's own sites, following the
+  // Internal Estimate approver roster (cc_project_approvers). Admins see all.
+  const profile = await getMyProfile()
+  const me = await getMyUser()
+  const isAdmin = profile?.role === 'admin'
+  let myCodes: string[] = []
 
   const sp = await searchParams
 
@@ -80,6 +87,23 @@ export default async function BillsPipelinePage({ searchParams }: Props) {
     }
     cardUrl      = await sign(meta?.file)
     scorecardUrl = await sign(meta?.scorecardFile)
+
+    // Resolve the viewer's own site codes from their Internal Estimate approver
+    // rows. cc_project_approvers holds Supabase project ids (sub-project
+    // granularity like "NGH A" / "VV Infra"); the cockpit groups by the parent
+    // site code, so normalise to the first token ("NGH A" -> "NGH").
+    if (!isAdmin && me) {
+      const { data: appr } = await sb
+        .from('cc_project_approvers')
+        .select('project_id')
+        .eq('user_id', me.id)
+      const ids = [...new Set((appr ?? []).map(r => r.project_id as string))]
+      if (ids.length) {
+        const { data: projs } = await sb.from('projects').select('code').in('id', ids)
+        const norm = (code: string) => (code || '').split(' ')[0].trim().toUpperCase()
+        myCodes = [...new Set((projs ?? []).map(p => norm(p.code as string)).filter(Boolean))]
+      }
+    }
   }
 
   const showConnectBanner = canAdmin && !hasZohoToken
@@ -87,7 +111,7 @@ export default async function BillsPipelinePage({ searchParams }: Props) {
   const tabs: ReportTab[] = [
     {
       key: 'cockpit', label: 'Cockpit', url: null, filename: '',
-      content: <Cockpit bills={cockpitBills} asOf={asOf} />,
+      content: <Cockpit bills={cockpitBills} asOf={asOf} myCodes={myCodes} />,
     },
     { key: 'card',      label: 'Weekly Card',       url: cardUrl,      filename: `sra-bills-weekly-${asOf}.png` },
     { key: 'scorecard', label: 'Project Scorecard', url: scorecardUrl, filename: `sra-project-scorecard-${asOf}.png` },

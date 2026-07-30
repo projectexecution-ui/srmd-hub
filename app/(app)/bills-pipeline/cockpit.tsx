@@ -1,6 +1,8 @@
 'use client'
 
 import { useMemo, useState } from 'react'
+import { Camera, Loader2 } from 'lucide-react'
+import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
 import type { CockpitBill } from '@/lib/bills-pipeline/transform'
 
@@ -34,16 +36,30 @@ function stageRank(stage: string, atTrust: boolean): number {
 
 type Filter = { kind: 'all' } | { kind: 'pending' } | { kind: 'trust' } | { kind: 'stalled' } | { kind: 'stage'; stage: string }
 
-export default function Cockpit({ bills, asOf }: { bills: CockpitBill[]; asOf: string }) {
+export default function Cockpit({ bills, asOf, myCodes = [] }: { bills: CockpitBill[]; asOf: string; myCodes?: string[] }) {
+  // Does the viewer have Internal-Estimate-assigned sites present in the data?
+  const scopeAvailable = useMemo(
+    () => myCodes.length > 0 && bills.some(b => myCodes.includes((b.project || '').toUpperCase())),
+    [bills, myCodes],
+  )
   const [project, setProject] = useState<string>('ALL')
   const [mode, setMode] = useState<'value' | 'count'>('value')
   // Rank/emphasis lens for the follow-up lists: by ₹ amount or by days waiting.
   const [rank, setRank] = useState<'amt' | 'days'>('amt')
+  // Site scope: default to the viewer's own sites when they have any.
+  const [siteScope, setSiteScope] = useState<'mine' | 'all'>(scopeAvailable ? 'mine' : 'all')
   const [filter, setFilter] = useState<Filter>({ kind: 'all' })
   const [open, setOpen] = useState<CockpitBill | null>(null)
+  const [imgBusy, setImgBusy] = useState(false)
 
-  const projects = useMemo(() => [...new Set(bills.map(b => b.project).filter(Boolean))].sort(), [bills])
-  const scoped = useMemo(() => bills.filter(b => project === 'ALL' || b.project === project), [bills, project])
+  const baseBills = useMemo(
+    () => (siteScope === 'mine' && scopeAvailable
+      ? bills.filter(b => myCodes.includes((b.project || '').toUpperCase()))
+      : bills),
+    [bills, siteScope, scopeAvailable, myCodes],
+  )
+  const projects = useMemo(() => [...new Set(baseBills.map(b => b.project).filter(Boolean))].sort(), [baseBills])
+  const scoped = useMemo(() => baseBills.filter(b => project === 'ALL' || b.project === project), [baseBills, project])
 
   const internal = useMemo(() => scoped.filter(b => !b.atTrust), [scoped])
   const trust = useMemo(() => scoped.filter(b => b.atTrust), [scoped])
@@ -115,10 +131,60 @@ export default function Cockpit({ bills, asOf }: { bills: CockpitBill[]; asOf: s
   const briefStalledVal = cr(sum(stalled))
   const noWoCount = internal.filter(b => b.noWO).length
 
+  // One-click: render the current Push-today list to a PNG and copy it to the
+  // clipboard (paste into WhatsApp). Falls back to a download where the
+  // Clipboard image API isn't available.
+  async function copyPushImage() {
+    if (imgBusy) return
+    setImgBusy(true)
+    try {
+      const res = await fetch('/api/bills-pipeline/push-card', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          scope: project === 'ALL' ? 'All sites' : project,
+          rank,
+          asOf,
+          rows: push.map(b => ({
+            vendor: b.vendor, project: b.project, area: b.area, stage: b.stage,
+            billNo: b.billNo, claimed: b.claimed, age: b.age, idle: b.idle,
+            noWO: b.noWO, stalled: b.stalled,
+          })),
+        }),
+      })
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      const blob = await res.blob()
+      try {
+        await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })])
+        toast.success('Copied — paste into WhatsApp')
+      } catch {
+        const url = URL.createObjectURL(blob)
+        const a = document.createElement('a')
+        a.href = url; a.download = 'push-today.png'; a.click()
+        URL.revokeObjectURL(url)
+        toast.message('Image downloaded — attach it in WhatsApp')
+      }
+    } catch (e) {
+      toast.error(`Couldn't make the image — ${e instanceof Error ? e.message : 'try again'}`)
+    } finally {
+      setImgBusy(false)
+    }
+  }
+
   return (
     <div className="space-y-4">
       {/* Controls */}
       <div className="flex flex-wrap items-center gap-2">
+        {scopeAvailable && (
+          <div className="inline-flex overflow-hidden rounded-full border border-gray-300">
+            {(['mine', 'all'] as const).map(s => (
+              <button key={s} onClick={() => { setSiteScope(s); setProject('ALL') }}
+                className={cn('px-3 py-1 text-[13px] font-bold', siteScope === s ? 'bg-slate-800 text-white' : 'bg-white text-gray-500')}>
+                {s === 'mine' ? 'My sites' : 'All sites'}
+              </button>
+            ))}
+          </div>
+        )}
         <span className="text-xs font-bold uppercase tracking-wide text-gray-400">Site</span>
         {['ALL', ...projects].map(p => (
           <button key={p} onClick={() => setProject(p)}
@@ -179,9 +245,17 @@ export default function Cockpit({ bills, asOf }: { bills: CockpitBill[]; asOf: s
       <div className="grid gap-4 lg:grid-cols-[1.15fr_.85fr]">
         {/* Push Today */}
         <div className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
-          <div className="flex items-baseline gap-2 px-4 pb-2 pt-3.5">
+          <div className="flex items-center gap-2 px-4 pb-2 pt-3.5">
             <h2 className="m-0 text-base font-bold">Push today</h2>
-            <span className="ml-auto text-xs text-gray-400">{push.length} to push · {rank === 'days' ? 'ranked by days waiting' : 'ranked by ₹ × age'}</span>
+            <span className="text-xs text-gray-400">{push.length} to push · {rank === 'days' ? 'ranked by days waiting' : 'ranked by ₹ × age'}</span>
+            <button
+              onClick={copyPushImage}
+              disabled={imgBusy || push.length === 0}
+              title="Copy this list as an image to paste into WhatsApp"
+              className="ml-auto inline-flex items-center gap-1.5 rounded-full border border-gray-300 px-2.5 py-1 text-xs font-semibold text-gray-600 transition hover:border-slate-800 hover:text-slate-800 disabled:cursor-not-allowed disabled:opacity-50">
+              {imgBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Camera className="h-3.5 w-3.5" />}
+              Copy image
+            </button>
           </div>
           <div className="px-2 pb-3">
             {push.length === 0 && <div className="p-5 text-center text-sm text-gray-500">Nothing to push in this slice.</div>}
