@@ -384,7 +384,7 @@ export default async function CostControlProjectDetailPage(
     <div className="p-4 md:p-6 max-w-7xl mx-auto space-y-4">
       {/* Breadcrumb */}
       <div className="flex items-center gap-2 text-xs">
-        <Link href="/cost-control" className="text-blue-600 hover:underline">← Cost Control</Link>
+        <Link href="/cost-control" className="text-blue-600 hover:underline">← {ccLabel}</Link>
         {parent && (
           <>
             <span className="text-gray-300">/</span>
