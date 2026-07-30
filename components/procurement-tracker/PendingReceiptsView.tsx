@@ -112,6 +112,7 @@ export function PendingReceiptsView({
   changedLineIds,
   chaseNotes,
   onNoteSaved,
+  onDropped,
 }: {
   lines: LineRecord[]
   projectName: string
@@ -123,6 +124,8 @@ export function PendingReceiptsView({
   chaseNotes?: Map<string, ChaseNote>
   /** Called with the fresh note after the detail sheet saves one. */
   onNoteSaved?: (n: ChaseNote) => void
+  /** Called after an item is dropped/restored in the detail sheet. */
+  onDropped?: () => void
 }) {
   const [groupBy, setGroupBy] = useState<GroupKey>('supplier')
   const [ageFilter, setAgeFilter] = useState<AgeFilter>('all')
@@ -680,6 +683,7 @@ export function PendingReceiptsView({
         onClose={() => setInspectingLine(null)}
         note={inspectingLine ? chaseNotes?.get(inspectingLine.indentNo) : undefined}
         onNoteSaved={onNoteSaved}
+        onToggleDrop={onDropped}
       />
     </div>
   )

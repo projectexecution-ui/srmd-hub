@@ -19,6 +19,10 @@ import { DiffBanner } from '@/components/procurement-tracker/DiffBanner'
 import { ProjectFilterStrip } from '@/components/procurement-tracker/ProjectFilterStrip'
 import { buildTrackerSummaryPdf } from '@/lib/procurement/pdf'
 import type { ChaseNote } from '@/lib/procurement/chase-notes'
+import type { DroppedLine } from '@/lib/procurement/dropped'
+import { dropKey } from '@/lib/procurement/dropped'
+import { TodaysChaseList } from '@/components/procurement-tracker/TodaysChaseList'
+import { DroppedItemsPanel } from '@/components/procurement-tracker/DroppedItemsPanel'
 import Link from 'next/link'
 import { Upload, FileSpreadsheet, Loader2, PackageX, ClipboardList, EyeOff, CheckCircle2, Clock, FileText } from 'lucide-react'
 
@@ -117,6 +121,17 @@ export function ProcurementTrackerClient({ isAdmin = false }: { isAdmin?: boolea
       return next
     })
   }, [])
+
+  // "Not ordering" list (team-shared). Keys are content-based (indent¦block¦material).
+  const [droppedList, setDroppedList] = useState<DroppedLine[]>([])
+  const droppedKeys = useMemo(() => new Set(droppedList.map(d => d.lineKey)), [droppedList])
+  const refreshDropped = useCallback(() => {
+    fetch('/api/procurement-tracker/dropped')
+      .then(r => r.ok ? r.json() : { dropped: [] })
+      .then(json => { if (Array.isArray(json?.dropped)) setDroppedList(json.dropped as DroppedLine[]) })
+      .catch(() => { /* swallow */ })
+  }, [])
+  useEffect(() => { refreshDropped() }, [refreshDropped])
 
   // Hydrate from the shared org-wide server state on mount (same
   // pattern as Budget vs Actual). Any user landing on the page sees
@@ -217,12 +232,22 @@ export function ProcurementTrackerClient({ isAdmin = false }: { isAdmin?: boolea
   const hiddenInUploadCount = (data?.projects.length ?? 0) - visibleProjects.length
 
   // Filter lines by selected project. "__all__" = aggregate across every VISIBLE project.
+  // Items marked "not ordering" are dropped here, so they vanish from every
+  // list + count (they only reappear in the manage-dropped panel).
   const linesForActiveProject = useMemo<LineRecord[]>(() => {
     if (!data) return []
-    if (selectedProject === '__all__') return visibleProjects.flatMap(p => p.lines)
-    const proj = visibleProjects.find(p => p.projectName === selectedProject)
-    return proj?.lines ?? []
-  }, [data, selectedProject, visibleProjects])
+    const base = selectedProject === '__all__'
+      ? visibleProjects.flatMap(p => p.lines)
+      : (visibleProjects.find(p => p.projectName === selectedProject)?.lines ?? [])
+    return droppedKeys.size === 0 ? base : base.filter(l => !droppedKeys.has(dropKey(l)))
+  }, [data, selectedProject, visibleProjects, droppedKeys])
+
+  // Every visible line across ALL projects (dropped removed) — feeds the
+  // cross-project "Today's chase list".
+  const allVisibleLines = useMemo<LineRecord[]>(() => {
+    const base = visibleProjects.flatMap(p => p.lines)
+    return droppedKeys.size === 0 ? base : base.filter(l => !droppedKeys.has(dropKey(l)))
+  }, [visibleProjects, droppedKeys])
 
   const pendingCount = useMemo(
     () => linesForActiveProject.filter(l => l.pendingQty > 0).length,
@@ -405,6 +430,14 @@ export function ProcurementTrackerClient({ isAdmin = false }: { isAdmin?: boolea
               <DiffBanner diff={diff} />
             )}
 
+            {/* Today's chase list — cross-project, what to call about first */}
+            <TodaysChaseList
+              lines={allVisibleLines}
+              chaseNotes={chaseNotes}
+              onNoteSaved={onNoteSaved}
+              onDropped={refreshDropped}
+            />
+
             {/* Project filter — smarter strip: insight ribbon, search,
                 active/cleared split, richer chips. Admin-hidden projects
                 are stripped from `visibleProjects` upstream. */}
@@ -499,6 +532,7 @@ export function ProcurementTrackerClient({ isAdmin = false }: { isAdmin?: boolea
                 changedLineIds={diff?.changedLineIds}
                 chaseNotes={chaseNotes}
                 onNoteSaved={onNoteSaved}
+                onDropped={refreshDropped}
               />
             )}
             {view === 'needs-po' && (
@@ -509,6 +543,7 @@ export function ProcurementTrackerClient({ isAdmin = false }: { isAdmin?: boolea
                 changedLineIds={diff?.changedLineIds}
                 chaseNotes={chaseNotes}
                 onNoteSaved={onNoteSaved}
+                onDropped={refreshDropped}
               />
             )}
             {view === 'completed' && (
@@ -517,6 +552,9 @@ export function ProcurementTrackerClient({ isAdmin = false }: { isAdmin?: boolea
                 projectName={activeProjectLabel}
               />
             )}
+
+            {/* Manage the "not ordering" list — restore anything hidden */}
+            <DroppedItemsPanel dropped={droppedList} onChanged={refreshDropped} />
           </div>
         )}
       </div>

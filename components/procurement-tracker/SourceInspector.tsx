@@ -6,10 +6,11 @@
 
 import { useEffect, useState } from 'react'
 import type { LineRecord, SourceRow } from '@/lib/procurement'
-import { X, FileSpreadsheet, Tag, MessageSquare, PhoneCall, Loader2, Check } from 'lucide-react'
+import { X, FileSpreadsheet, Tag, MessageSquare, PhoneCall, Loader2, Check, Ban, RotateCcw } from 'lucide-react'
 import { toast } from 'sonner'
 import type { ChaseNote } from '@/lib/procurement/chase-notes'
 import { chasedLabel } from '@/lib/procurement/chase-notes'
+import { dropKey } from '@/lib/procurement/dropped'
 
 const ROLE_STYLES: Record<SourceRow['role'], { label: string; bg: string; text: string }> = {
   indent:   { label: 'Indent',   bg: 'bg-red-50',     text: 'text-red-800' },
@@ -30,6 +31,8 @@ export function SourceInspector({
   onClose,
   note,
   onNoteSaved,
+  dropped,
+  onToggleDrop,
 }: {
   line: LineRecord | null
   onClose: () => void
@@ -37,10 +40,16 @@ export function SourceInspector({
   note?: ChaseNote
   /** When provided, the chase-note editor is shown; called with the fresh note after a save. */
   onNoteSaved?: (n: ChaseNote) => void
+  /** Whether this line is currently marked "not ordering". */
+  dropped?: boolean
+  /** When provided, the drop/restore control is shown; called with the new dropped state after a toggle. */
+  onToggleDrop?: (dropped: boolean) => void
 }) {
   const [draft, setDraft] = useState('')
   const [current, setCurrent] = useState<ChaseNote | null>(null)
   const [saving, setSaving] = useState<null | 'note' | 'chase'>(null)
+  const [isDropped, setIsDropped] = useState(false)
+  const [dropBusy, setDropBusy] = useState(false)
 
   // Close on Escape
   useEffect(() => {
@@ -55,6 +64,36 @@ export function SourceInspector({
     setCurrent(note ?? null)
     setDraft(note?.note ?? '')
   }, [line?.indentNo, note])
+  useEffect(() => { setIsDropped(!!dropped) }, [line?.id, dropped])
+
+  async function toggleDrop() {
+    if (!line) return
+    const next = !isDropped
+    setDropBusy(true)
+    try {
+      const res = next
+        ? await fetch('/api/procurement-tracker/dropped', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ lineKey: dropKey(line), indentNo: line.indentNo, material: line.material, block: line.block }),
+          })
+        : await fetch('/api/procurement-tracker/dropped', {
+            method: 'DELETE',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ lineKey: dropKey(line) }),
+          })
+      const json = await res.json().catch(() => ({}))
+      if (!res.ok || json.error) { toast.error(json.error || 'Could not update.'); return }
+      setIsDropped(next)
+      onToggleDrop?.(next)
+      toast.success(next ? 'Marked “not ordering” — hidden from lists' : 'Restored to the list')
+      if (next) onClose()
+    } catch {
+      toast.error('Network error — not updated.')
+    } finally {
+      setDropBusy(false)
+    }
+  }
 
   async function save(markChased: boolean) {
     if (!line) return
@@ -153,6 +192,28 @@ export function SourceInspector({
                   <span className="text-[10px] text-stone-400 ml-auto">by {current.updatedByName}</span>
                 )}
               </div>
+            </div>
+          )}
+
+          {/* Not-ordering (drop / restore) */}
+          {onToggleDrop && (
+            <div className="px-5 py-2.5 border-b border-stone-100 flex items-center justify-between gap-2">
+              <span className="text-[11px] text-stone-500 min-w-0">
+                {isDropped ? 'Hidden from lists as “not ordering”.' : 'Not going to order this item?'}
+              </span>
+              <button
+                type="button"
+                onClick={toggleDrop}
+                disabled={dropBusy}
+                className={`inline-flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg flex-shrink-0 disabled:opacity-50 ${
+                  isDropped
+                    ? 'text-emerald-700 bg-white border border-emerald-200 hover:border-emerald-300'
+                    : 'text-stone-600 bg-white border border-stone-200 hover:border-stone-300'
+                }`}
+              >
+                {dropBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : isDropped ? <RotateCcw className="h-3.5 w-3.5" /> : <Ban className="h-3.5 w-3.5" />}
+                {isDropped ? 'Restore to list' : 'Mark not ordering'}
+              </button>
             </div>
           )}
 
