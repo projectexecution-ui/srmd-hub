@@ -395,3 +395,66 @@ export interface JmrSettings {
   weekly_report_hour_ist: number
   weekly_report_recipients: string[]
 }
+
+// ============================================================
+// Daily Site Report module (material / supplier deliveries)
+// ============================================================
+
+export type DsrAttachmentKind = 'material' | 'bill'
+
+export interface DsrReport {
+  id: string
+  project_id: string
+  vendor_id: string | null
+  /** Free-text supplier name when no vendor is linked (CHECK: one is present). */
+  supplier_name_text: string | null
+  material_description: string
+  quantity: number | null
+  unit: string | null
+  amount: number | null
+  bill_number: string
+  bill_date: string | null
+  received_on: string
+  /** REQUIRED stamped-bill photo (object key in the `site-reports` bucket). */
+  stamped_bill_path: string
+  // Status ladder — each flag carries a matching *_on date.
+  checked_against_bill: boolean
+  checked_against_bill_on: string | null
+  bill_submitted_to_ct: boolean
+  bill_submitted_to_ct_on: string | null
+  payment_started: boolean
+  payment_started_on: string | null
+  grn_done: boolean
+  grn_done_on: string | null
+  paid: boolean
+  paid_on: string | null
+  notes: string | null
+  created_by: string
+  created_at: string | null
+  updated_at: string | null
+  // Optional joins
+  projects?: Project | null
+  vendors?: Vendor | null
+  dsr_attachments?: DsrAttachment[]
+  dsr_tracking?: DsrTracking | null
+}
+
+export interface DsrAttachment {
+  id: string
+  report_id: string
+  path: string
+  name: string | null
+  kind: DsrAttachmentKind
+  uploaded_by: string | null
+  created_at: string | null
+}
+
+/** Atm-Head follow-up state, kept separate from the engineer's report row. */
+export interface DsrTracking {
+  report_id: string
+  head_note: string | null
+  follow_up_on: string | null
+  flagged: boolean
+  updated_by: string | null
+  updated_at: string | null
+}

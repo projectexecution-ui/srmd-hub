@@ -7,6 +7,7 @@ import {
   Truck, Building2, Upload, Users, Settings, ShieldCheck,
   ExternalLink, Wrench, Calculator, FileSpreadsheet,
   Boxes, Inbox, GitCompareArrows, Tags, FlaskConical, ListTree, Mail, Activity, ListChecks,
+  ClipboardCheck,
 } from 'lucide-react'
 import type { PermissionMap } from './types'
 
@@ -38,6 +39,7 @@ export const MODULES: ModuleTile[] = [
   // The slugs `jmr-bills` and `jmr-admin` still exist in role_permissions and
   // continue to gate the sub-routes; they're just not shown as separate tiles.
   { slug: 'jmr',              label: 'JMR / Machinery',  description: 'Site machinery hours, JMR matrix, bills',     href: '/jmr',            icon: Wrench,        tone: 'orange' },
+  { slug: 'daily-site-report',label: 'Daily Site Report',description: 'Site material/supplier deliveries — received → bill with CT → GRN → paid, with a smart checklist for the Atm Head', href: '/daily-site-report', icon: ClipboardCheck, tone: 'teal' },
   { slug: 'inventory',        label: 'Inventory',        description: 'Stock, item master, requests & issue chain',  href: '/inventory',      icon: Boxes,         tone: 'green' },
   { slug: 'comparison',       label: 'Comparison Maker', description: 'Compare vendor quotations side-by-side — L1, L2, missing items', href: '/comparisons', icon: GitCompareArrows, tone: 'purple' },
   { slug: 'established-rates',label: 'Established Rates',description: 'Master rate catalogue — Discipline → Category → Sub-category, multi-vendor with L1 highlight', href: '/established-rates', icon: Tags, tone: 'teal' },
