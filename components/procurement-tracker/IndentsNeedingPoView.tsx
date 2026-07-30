@@ -130,6 +130,25 @@ export function IndentsNeedingPoView({
     return lines.filter(ln => ln.status === 'no_po')
   }, [lines])
 
+  // Per-indent progress — how many of the indent's items already have a PO.
+  // Drives the "X of Y items in this indent already ordered" line so a lone
+  // no-PO straggler doesn't look like the whole (mostly-done) indent is wrong.
+  const indentProgress = useMemo(() => {
+    const m = new Map<string, { total: number; ordered: number }>()
+    for (const ln of lines) {
+      const e = m.get(ln.indentNo) ?? { total: 0, ordered: 0 }
+      e.total++
+      if (ln.pos && ln.pos.length > 0) e.ordered++
+      m.set(ln.indentNo, e)
+    }
+    return m
+  }, [lines])
+  function indentContext(indentNo: string): string | null {
+    const p = indentProgress.get(indentNo)
+    if (!p || p.ordered === 0) return null
+    return `${p.ordered} of ${p.total} item${p.total === 1 ? '' : 's'} in this indent already ordered`
+  }
+
   // Search narrows the whole view. No-PO lines have no supplier yet, so we
   // match material / indent no / block — what you'd actually look up here.
   const searched = useMemo(() => {
@@ -511,6 +530,9 @@ export function IndentsNeedingPoView({
                                 <ChangeBadge id={ln.id} newLineIds={newLineIds} changedLineIds={changedLineIds} />
                                 <div className="flex-1 min-w-0">
                                   <span className="line-clamp-2" title={ln.material}><Highlight text={ln.material} query={searchQuery} /></span>
+                                  {indentContext(ln.indentNo) && (
+                                    <span className="block text-[11px] text-stone-400 mt-0.5">{indentContext(ln.indentNo)}</span>
+                                  )}
                                   <ChaseChip note={chaseNotes?.get(ln.indentNo)} className="mt-1" />
                                 </div>
                                 <button
@@ -563,6 +585,9 @@ export function IndentsNeedingPoView({
                                 : ln.indentNo.replace('IND/SRASSK/', '').replace('IND/SRET/', '')}
                               {groupBy === 'none' && ln.block ? ` · ${ln.block}` : ''}
                             </p>
+                            {indentContext(ln.indentNo) && (
+                              <p className="text-[11px] text-stone-400 mt-0.5">{indentContext(ln.indentNo)}</p>
+                            )}
                             <ChaseChip note={chaseNotes?.get(ln.indentNo)} className="mt-1" />
                           </div>
                           <ChevronRight className="h-4 w-4 text-stone-300 flex-shrink-0 mt-0.5" />

@@ -156,6 +156,25 @@ export function PendingReceiptsView({
     return lines.filter(ln => ln.pendingQty > 0)
   }, [lines])
 
+  // Per-indent progress — how many of the indent's items are already fully
+  // received. Drives the "X of Y items in this indent received" line so a lone
+  // outstanding item doesn't look like a mostly-delivered indent is wrong.
+  const indentProgress = useMemo(() => {
+    const m = new Map<string, { total: number; received: number }>()
+    for (const ln of lines) {
+      const e = m.get(ln.indentNo) ?? { total: 0, received: 0 }
+      e.total++
+      if (ln.status === 'received') e.received++
+      m.set(ln.indentNo, e)
+    }
+    return m
+  }, [lines])
+  function indentContext(indentNo: string): string | null {
+    const p = indentProgress.get(indentNo)
+    if (!p || p.received === 0) return null
+    return `${p.received} of ${p.total} item${p.total === 1 ? '' : 's'} in this indent received`
+  }
+
   // Supplier search narrows the WHOLE view — overview cards + the list.
   const searched = useMemo(() => {
     const q = supplierQuery.trim().toLowerCase()
@@ -537,6 +556,9 @@ export function PendingReceiptsView({
                                 </button>
                               </div>
                               <span className="text-[10px] text-stone-400 inline-flex items-center gap-1.5">{ln.block}<ChaseChip note={chaseNotes?.get(ln.indentNo)} /></span>
+                              {indentContext(ln.indentNo) && (
+                                <span className="block text-[11px] text-stone-400 mt-0.5">{indentContext(ln.indentNo)}</span>
+                              )}
                             </td>
                             <td className="px-4 py-2 font-mono text-[11px] text-stone-500 whitespace-nowrap" title={po?.poNo}>
                               {po?.poNo ? (
@@ -622,6 +644,9 @@ export function PendingReceiptsView({
                               {groupBy === 'none' ? ` · ${ln.indentNo.replace('IND/SRASSK/', '').replace('IND/SRET/', '')}` : ''}
                               {ln.block ? ` · ${ln.block}` : ''}
                             </p>
+                            {indentContext(ln.indentNo) && (
+                              <p className="text-[11px] text-stone-400 mt-0.5">{indentContext(ln.indentNo)}</p>
+                            )}
                             <ChaseChip note={chaseNotes?.get(ln.indentNo)} className="mt-1" />
                           </div>
                           <button type="button" onClick={() => setInspectingLine(ln)}
