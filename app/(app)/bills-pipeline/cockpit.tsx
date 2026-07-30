@@ -47,7 +47,7 @@ export default function Cockpit({ bills, asOf }: { bills: CockpitBill[]; asOf: s
 
   const internal = useMemo(() => scoped.filter(b => !b.atTrust), [scoped])
   const trust = useMemo(() => scoped.filter(b => b.atTrust), [scoped])
-  const stalled = useMemo(() => internal.filter(b => b.idle > 21), [internal])
+  const stalled = useMemo(() => internal.filter(b => b.stalled), [internal])
 
   const fnum = (a: CockpitBill[]) => (mode === 'value' ? cr(sum(a)) : String(a.length))
 
@@ -71,11 +71,11 @@ export default function Cockpit({ bills, asOf }: { bills: CockpitBill[]; asOf: s
   const push = useMemo(() => {
     const arr = [...pushBase]
     if (rank === 'days') {
-      // Oldest-waiting first (then biggest ₹ as tie-break).
-      arr.sort((a, b) => (b.idle - a.idle) || (b.claimed - a.claimed))
+      // Longest delay first = oldest since Zoho entry (then biggest ₹ as tie-break).
+      arr.sort((a, b) => (b.age - a.age) || (b.claimed - a.claimed))
     } else {
-      // ₹ weighted by age + stalled/no-WO penalties.
-      const sc = (b: CockpitBill) => b.claimed * (1 + b.idle / 20) * (b.idle > 21 ? 1.8 : 1) * (b.noWO ? 1.4 : 1)
+      // ₹ weighted by delay (days since Zoho entry) + stalled/no-WO penalties.
+      const sc = (b: CockpitBill) => b.claimed * (1 + b.age / 20) * (b.stalled ? 1.8 : 1) * (b.noWO ? 1.4 : 1)
       arr.sort((a, b) => sc(b) - sc(a))
     }
     return arr.slice(0, 12)
@@ -90,8 +90,8 @@ export default function Cockpit({ bills, asOf }: { bills: CockpitBill[]; asOf: s
     }
     const segs = [...map.entries()].map(([stage, group]) => ({
       stage, group, val: sum(group),
-      md: median(group.map(b => b.idle)),
-      oldest: group.reduce((m, b) => Math.max(m, b.idle), 0),
+      md: median(group.map(b => b.age)),
+      oldest: group.reduce((m, b) => Math.max(m, b.age), 0),
       atTrust: group[0]?.atTrust ?? false,
     }))
     segs.sort((a, b) => stageRank(a.stage, a.atTrust) - stageRank(b.stage, b.atTrust))
@@ -105,8 +105,8 @@ export default function Cockpit({ bills, asOf }: { bills: CockpitBill[]; asOf: s
     for (const b of internal) { const arr = map.get(b.stage) ?? []; arr.push(b); map.set(b.stage, arr) }
     const rows = [...map.entries()].map(([stage, g]) => ({
       stage, bills: g.length, val: sum(g),
-      oldest: g.reduce((m, b) => Math.max(m, b.idle), 0),
-      stall: g.filter(b => b.idle > 21).length,
+      oldest: g.reduce((m, b) => Math.max(m, b.age), 0),
+      stall: g.filter(b => b.stalled).length,
     })).sort((a, b) => (rank === 'days' ? (b.oldest - a.oldest) : (b.val - a.val)))
     return { rows, max: Math.max(...rows.map(r => r.val), 1), maxOldest: Math.max(...rows.map(r => r.oldest), 1) }
   }, [internal, rank])
@@ -196,19 +196,19 @@ export default function Cockpit({ bills, asOf }: { bills: CockpitBill[]; asOf: s
                     <span className="rounded border border-gray-300 bg-white px-1.5 py-px text-[11px] font-semibold text-gray-700">Inv {b.billNo || '—'}</span>
                     {b.area} · {dispStage(b.stage)}
                     {b.noWO && <span className="rounded-full bg-amber-100 px-1.5 py-px text-[11px] font-bold text-amber-800">No WO</span>}
-                    {b.idle > 21 && <span className="rounded-full bg-red-100 px-1.5 py-px text-[11px] font-bold text-red-700">Stalled {b.idle}d</span>}
+                    {b.stalled && <span className="rounded-full bg-red-100 px-1.5 py-px text-[11px] font-bold text-red-700" title="Days since last movement">Stalled {b.idle}d</span>}
                   </span>
                 </span>
                 <span className="text-right">
                   {rank === 'days' ? (
                     <>
-                      <span className={cn('block text-[14px] font-bold tabular-nums', b.idle > 21 ? 'text-red-600' : 'text-gray-900')}>{b.idle}d idle</span>
+                      <span className={cn('block text-[14px] font-bold tabular-nums', b.stalled ? 'text-red-600' : 'text-gray-900')}>{b.age}d old</span>
                       <span className="block text-[12px] tabular-nums text-gray-500">₹{inr(b.claimed)}</span>
                     </>
                   ) : (
                     <>
                       <span className="block text-[14px] font-bold tabular-nums text-gray-900">₹{inr(b.claimed)}</span>
-                      <span className={cn('block text-[12px] tabular-nums', b.idle > 21 ? 'text-red-600' : 'text-gray-500')}>{b.idle}d idle</span>
+                      <span className={cn('block text-[12px] tabular-nums', b.stalled ? 'text-red-600' : 'text-gray-500')}>{b.age}d old</span>
                     </>
                   )}
                 </span>
@@ -337,7 +337,7 @@ function Journey({ bill, onClose }: { bill: CockpitBill; onClose: () => void }) 
                 </div>
                 <div className="mt-1.5 text-[11px] font-semibold leading-tight text-gray-800">{n.label}</div>
                 <div className={cn('mt-1 inline-block rounded px-1.5 text-[9px] font-bold', n.sys === 'IN4' ? 'bg-green-100 text-green-700' : 'bg-blue-100 text-blue-700')}>{n.sys}</div>
-                {n.cur && <div className="mt-1 text-[10px] text-gray-500">{bill.idle}d here</div>}
+                {n.cur && <div className="mt-1 text-[10px] text-gray-500">{bill.idle}d at this stage · {bill.age}d since Zoho entry</div>}
               </div>
             ))}
           </div>
