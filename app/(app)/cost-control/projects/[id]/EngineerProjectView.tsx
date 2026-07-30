@@ -6,6 +6,7 @@ import { QueryError } from '@/components/ui/query-error'
 import { formatINR } from '@/lib/utils'
 import { isPendingStatus } from '@/lib/cost-control/chain'
 import { TreeProvider, TreeToolbar, CatChevron, CatRows, SubRow } from '@/components/cost-control/project-tree'
+import { getModuleLabels, labelFor } from '@/lib/module-labels'
 
 // Engineer-safe project table. Deliberately a SEPARATE component from the
 // management Internal Estimate page so a confidential figure can't leak: it
@@ -278,10 +279,11 @@ export async function EngineerProjectTable({ projectId }: { projectId: string })
 // Page wrapper for the engineer project-detail route (/cost-control/projects/[id]).
 export async function EngineerProjectView({ project }: { project: ProjectLite }) {
   const sft = Number(project.built_up_sft ?? 0)
+  const ccLabel = labelFor(await getModuleLabels(), 'cost-control')
   return (
     <div className="p-4 md:p-6 max-w-6xl mx-auto space-y-4">
       <div className="flex items-center gap-2 text-xs">
-        <Link href="/cost-control" className="text-blue-600 hover:underline">← Cost Control</Link>
+        <Link href="/cost-control" className="text-blue-600 hover:underline">← {ccLabel}</Link>
       </div>
       <PageHeader
         title={project.name}

@@ -6,6 +6,7 @@ import { checkIsCcReviewer, checkCanDecideInternalEstimate, checkCanRequestIeRev
 import { IeRevisionPanel, type IeRevision } from './IeRevisionPanel'
 import { EngineerProjectView } from './EngineerProjectView'
 import { PageHeader } from '@/components/PageHeader'
+import { getModuleLabels, labelFor } from '@/lib/module-labels'
 import { SetupProgressBanner } from '@/components/ProjectSetupWizard/SetupProgressBanner'
 import { Plus, Flame, Info, Settings, Download, Ruler } from 'lucide-react'
 import { formatINR } from '@/lib/utils'
@@ -56,6 +57,7 @@ export default async function CostControlProjectDetailPage(
 ) {
   const perms = await requirePermission('cost-control', 'view')
   const { id } = await params
+  const ccLabel = labelFor(await getModuleLabels(), 'cost-control') // configurable module name (e.g. "Internal Estimate")
   // Deep-link from an approval review: open ONLY this category, highlight this
   // sub-skill, keep everything else collapsed so the reviewer isn't lost in a
   // wall of rows.
@@ -118,7 +120,7 @@ export default async function CostControlProjectDetailPage(
     return (
       <div className="p-4 md:p-6 max-w-7xl mx-auto space-y-4">
         <div className="flex items-center gap-2 text-xs">
-          <Link href="/cost-control" className="text-blue-600 hover:underline">← Cost Control</Link>
+          <Link href="/cost-control" className="text-blue-600 hover:underline">← {ccLabel}</Link>
         </div>
         <QueryError message={projectErr.message} what="this project" />
       </div>
@@ -186,7 +188,7 @@ export default async function CostControlProjectDetailPage(
     return (
       <div className="p-4 md:p-6 max-w-7xl mx-auto space-y-4">
         <div className="flex items-center gap-2 text-xs">
-          <Link href="/cost-control" className="text-blue-600 hover:underline">← Cost Control</Link>
+          <Link href="/cost-control" className="text-blue-600 hover:underline">← {ccLabel}</Link>
         </div>
         <PageHeader title={project.name} subtitle={project.code} className="mb-0" />
         {blRes.error && <QueryError message={blRes.error.message} what="this project's budget lines" />}
