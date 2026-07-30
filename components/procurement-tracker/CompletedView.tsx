@@ -379,9 +379,10 @@ export function CompletedView({
                   </button>
                   <button
                     onClick={() => downloadCsv(`${safe(g.label)}-completed-${new Date().toISOString().slice(0, 10)}.csv`, g.lines)}
-                    className="inline-flex items-center gap-1 text-[11px] font-medium text-stone-600 hover:text-stone-900 bg-white border border-stone-200 hover:border-stone-300 px-2 py-1 rounded-md flex-shrink-0"
+                    className="inline-flex items-center justify-center gap-1 text-[11px] font-medium text-stone-600 hover:text-stone-900 bg-white border border-stone-200 hover:border-stone-300 h-8 w-8 sm:w-auto sm:px-2 rounded-md flex-shrink-0"
+                    title={`Download just ${g.label}`}
                   >
-                    <Download className="h-3 w-3" /> CSV
+                    <Download className="h-3.5 w-3.5" /> <span className="hidden sm:inline">CSV</span>
                   </button>
                 </div>
                 {!isCollapsed && (
@@ -462,7 +463,8 @@ export function CompletedView({
                       const deliv = deliveryLag(ln)
                       const total = totalCycle(ln)
                       return (
-                        <div key={ln.id} className="p-3">
+                        <div key={ln.id} onClick={() => setInspectingLine(ln)}
+                          className="p-3 cursor-pointer active:bg-stone-50">
                           <div className="flex items-start gap-2">
                             <div className="min-w-0 flex-1">
                               <p className="text-sm text-stone-800 line-clamp-2" title={ln.material}>{ln.material}</p>
@@ -471,10 +473,7 @@ export function CompletedView({
                                 {ln.indentNo.replace('IND/SRASSK/', '').replace('IND/SRET/', '')}{ln.block ? ` · ${ln.block}` : ''}
                               </p>
                             </div>
-                            <button type="button" onClick={() => setInspectingLine(ln)}
-                              className="text-stone-400 hover:text-orange-700 flex-shrink-0 -m-1 p-1" aria-label="Show source Excel rows">
-                              <Search className="h-3.5 w-3.5" />
-                            </button>
+                            <ChevronRight className="h-4 w-4 text-stone-300 flex-shrink-0 mt-0.5" />
                           </div>
                           <div className="mt-2.5 grid grid-cols-3 gap-x-3 gap-y-2">
                             <CardField label="Proc lag" className={lagClass(proc)}>{proc != null ? `${proc}d` : '—'}</CardField>

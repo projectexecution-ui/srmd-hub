@@ -12,13 +12,20 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { LineRecord } from '@/lib/procurement'
 import { formatAgeFriendly } from '@/lib/procurement/shared'
-import { Download, ClipboardList, Layers, AlertTriangle, FileSpreadsheet, CheckCircle2, Search, ChevronDown, ChevronRight, X } from 'lucide-react'
+import { Download, ClipboardList, Layers, AlertTriangle, FileSpreadsheet, CheckCircle2, Search, ChevronDown, ChevronRight, X, Share2, Flame, ListOrdered } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { toast } from 'sonner'
 import { ChangeBadge } from './ChangeBadge'
 import { SourceInspector } from './SourceInspector'
 import { CardField } from './CardField'
+import { Highlight } from './Highlight'
+import { ChaseChip } from './ChaseChip'
+import type { ChaseNote } from '@/lib/procurement/chase-notes'
+import { buildNeedsPoShareText, shareOrCopy } from '@/lib/procurement/share'
 
-type GroupKey = 'indent' | 'block'
+const ABANDONED_DAYS = 90
+
+type GroupKey = 'indent' | 'block' | 'none'
 type AgeFilter = 'all' | 'lt7' | '7to14' | '14to30' | '30plus'
 
 const GROUP_KEY_STORAGE = 'ct-procurement-needspo-groupby'
@@ -80,6 +87,8 @@ export function IndentsNeedingPoView({
   projectName,
   newLineIds,
   changedLineIds,
+  chaseNotes,
+  onNoteSaved,
 }: {
   lines: LineRecord[]
   projectName: string
@@ -87,10 +96,16 @@ export function IndentsNeedingPoView({
   newLineIds?: Set<string>
   /** Line ids that existed before but have changed. Renders the amber Updated pill. */
   changedLineIds?: Set<string>
+  /** Per-indent chase notes, keyed by indent number. */
+  chaseNotes?: Map<string, ChaseNote>
+  /** Called with the fresh note after the detail sheet saves one. */
+  onNoteSaved?: (n: ChaseNote) => void
 }) {
   const [groupBy, setGroupBy] = useState<GroupKey>('indent')
   const [ageFilter, setAgeFilter] = useState<AgeFilter>('all')
   const [searchQuery, setSearchQuery] = useState('')
+  // Hide 90+ day no-PO items (almost always abandoned) from the default view.
+  const [hideOld, setHideOld] = useState(true)
   const [inspectingLine, setInspectingLine] = useState<LineRecord | null>(null)
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
   const toggleCollapsed = (key: string) => setCollapsed(prev => {
@@ -103,7 +118,7 @@ export function IndentsNeedingPoView({
   useEffect(() => {
     try {
       const v = localStorage.getItem(GROUP_KEY_STORAGE)
-      if (v === 'indent' || v === 'block') setGroupBy(v)
+      if (v === 'indent' || v === 'block' || v === 'none') setGroupBy(v)
     } catch { /* ignore */ }
   }, [])
   useEffect(() => {
@@ -128,18 +143,27 @@ export function IndentsNeedingPoView({
   }, [needsPo, searchQuery])
 
   // Each card is an exact age band, so the filter matches the label exactly.
+  // In the default "All" view we hide 90+ day items (almost always abandoned)
+  // unless the user turns that off; picking a specific band always shows it.
   const filtered = useMemo(() => {
-    if (ageFilter === 'all') return searched
-    return searched.filter(ln => {
-      const a = ageDays(ln) ?? 0
-      if (ageFilter === 'lt7') return a < 7
-      if (ageFilter === '7to14') return a >= 7 && a < 14
-      if (ageFilter === '14to30') return a >= 14 && a < 30
-      return a >= 30
-    })
-  }, [searched, ageFilter])
+    if (ageFilter !== 'all') {
+      return searched.filter(ln => {
+        const a = ageDays(ln) ?? 0
+        if (ageFilter === 'lt7') return a < 7
+        if (ageFilter === '7to14') return a >= 7 && a < 14
+        if (ageFilter === '14to30') return a >= 14 && a < 30
+        return a >= 30
+      })
+    }
+    return hideOld ? searched.filter(ln => (ageDays(ln) ?? 0) < ABANDONED_DAYS) : searched
+  }, [searched, ageFilter, hideOld])
 
   const groups = useMemo(() => {
+    // Flat list — one group, no grouping, oldest waiting first.
+    if (groupBy === 'none') {
+      const all = [...filtered].sort((a, b) => (ageDays(b) ?? 0) - (ageDays(a) ?? 0))
+      return [{ key: '__all__', label: `All ${all.length} line${all.length === 1 ? '' : 's'} waiting`, subLabel: '', lines: all }]
+    }
     const map = new Map<string, { key: string; label: string; subLabel: string; lines: LineRecord[] }>()
     for (const ln of filtered) {
       const key = groupBy === 'indent' ? ln.indentNo : (ln.block || '— Unknown block —')
@@ -177,6 +201,21 @@ export function IndentsNeedingPoView({
     }
     return out
   }, [searched])
+
+  const abandonedCount = useMemo(
+    () => searched.filter(l => (ageDays(l) ?? 0) >= ABANDONED_DAYS).length,
+    [searched],
+  )
+  // "Chase first" — oldest still-waiting indents across the current filter.
+  const chaseFirst = useMemo(
+    () => [...filtered].sort((a, b) => (ageDays(b) ?? 0) - (ageDays(a) ?? 0)).slice(0, 5),
+    [filtered],
+  )
+  async function shareGroup(label: string, groupLines: LineRecord[]) {
+    const res = await shareOrCopy(`Needs PO — ${label}`, buildNeedsPoShareText(label, groupLines))
+    if (res === 'copied') toast.success('List copied — paste into WhatsApp / email')
+    else if (res === 'failed') toast.error('Could not share on this device')
+  }
 
   if (lines.length === 0) {
     return (
@@ -223,7 +262,7 @@ export function IndentsNeedingPoView({
             <div className="text-[10px] uppercase tracking-wider text-stone-500 font-semibold mb-1.5">
               Aging by indent age — click to filter
             </div>
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2">
+            <div className="flex gap-2 overflow-x-auto pb-1 -mx-1 px-1 sm:mx-0 sm:px-0 sm:grid sm:grid-cols-3 lg:grid-cols-5">
               {AGING_CARDS.map(c => {
                 const count = buckets[c.key]
                 const active = ageFilter === c.key
@@ -233,7 +272,7 @@ export function IndentsNeedingPoView({
                     type="button"
                     onClick={() => setAgeFilter(c.key)}
                     className={cn(
-                      'text-left rounded-lg border px-3 py-2 transition-all',
+                      'text-left rounded-lg border px-3 py-2 transition-all min-w-[128px] flex-shrink-0 sm:min-w-0 sm:flex-shrink',
                       c.cls,
                       active ? `ring-2 ring-offset-1 ${c.ring}` : 'hover:shadow-sm',
                     )}
@@ -267,6 +306,15 @@ export function IndentsNeedingPoView({
               }`}
             >
               <Layers className="h-3 w-3 flex-shrink-0" /> <span className="sm:hidden">Block</span><span className="hidden sm:inline">Group by block</span>
+            </button>
+            <button
+              onClick={() => setGroupBy('none')}
+              className={`flex-1 sm:flex-none inline-flex items-center justify-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-md transition-colors ${
+                groupBy === 'none' ? 'bg-white text-stone-900 shadow-sm' : 'text-stone-500 hover:text-stone-800'
+              }`}
+              title="One flat list, oldest waiting first"
+            >
+              <ListOrdered className="h-3 w-3 flex-shrink-0" /> Flat
             </button>
           </div>
 
@@ -313,6 +361,56 @@ export function IndentsNeedingPoView({
         </div>
       </div>
 
+      {/* Active filters + the abandoned-items toggle */}
+      {(ageFilter !== 'all' || searchQuery || (abandonedCount > 0 && ageFilter === 'all')) && (
+        <div className="flex flex-wrap items-center gap-1.5">
+          {(ageFilter !== 'all' || searchQuery) && <span className="text-[10px] uppercase tracking-wider text-stone-400 font-semibold">Filters</span>}
+          {ageFilter !== 'all' && (
+            <button onClick={() => setAgeFilter('all')} className="inline-flex items-center gap-1 text-[11px] font-medium bg-amber-100 text-amber-800 rounded-full pl-2.5 pr-1.5 py-1">
+              {AGING_CARDS.find(a => a.key === ageFilter)?.label}<X className="h-3 w-3" />
+            </button>
+          )}
+          {searchQuery && (
+            <span className="inline-flex items-center gap-1.5">
+              <button onClick={() => setSearchQuery('')} className="inline-flex items-center gap-1 text-[11px] font-medium bg-stone-100 text-stone-700 rounded-full pl-2.5 pr-1.5 py-1">
+                “{searchQuery}”<X className="h-3 w-3" />
+              </button>
+              <span className="text-[11px] text-stone-500 font-medium">{totalLines} match{totalLines === 1 ? '' : 'es'}</span>
+            </span>
+          )}
+          {(ageFilter !== 'all' || searchQuery) && (
+            <button onClick={() => { setAgeFilter('all'); setSearchQuery('') }} className="text-[11px] font-medium text-stone-500 hover:text-stone-800 underline ml-1">Clear all</button>
+          )}
+          {ageFilter === 'all' && abandonedCount > 0 && (
+            <button
+              onClick={() => setHideOld(v => !v)}
+              className={cn('inline-flex items-center gap-1 text-[11px] font-medium rounded-full px-2.5 py-1 ml-auto',
+                hideOld ? 'bg-stone-100 text-stone-600 hover:bg-stone-200' : 'bg-red-100 text-red-800')}
+              title="Items with no PO for 90+ days are almost always abandoned"
+            >
+              {hideOld ? `Show ${abandonedCount} likely-abandoned (90+ days)` : `Hide ${abandonedCount} likely-abandoned`}
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* Chase first — the 5 oldest still waiting, across the current filter */}
+      {chaseFirst.length >= 3 && (
+        <div className="bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-200 rounded-xl p-3">
+          <div className="text-[10px] uppercase tracking-wider text-amber-800 font-bold mb-1 inline-flex items-center gap-1"><Flame className="h-3 w-3" /> Chase first — oldest waiting</div>
+          <div className="flex flex-col divide-y divide-amber-100/70">
+            {chaseFirst.map(ln => (
+              <button key={ln.id} type="button" onClick={() => setInspectingLine(ln)}
+                className="flex items-center gap-2 text-left text-xs py-1.5 hover:bg-white/50 rounded px-1">
+                <span className="font-mono text-[11px] text-stone-600 w-[92px] flex-shrink-0 truncate">{ln.indentNo.replace('IND/SRASSK/', '').replace('IND/SRET/', '')}</span>
+                <span className="text-stone-700 truncate flex-1" title={ln.material}>{ln.material}</span>
+                <span className={cn('text-[11px] tabular-nums flex-shrink-0 w-10 text-right', ageClass(ageDays(ln)))}>{ageDays(ln) ?? '—'}d</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
       {filtered.length === 0 ? (
         <div className="bg-white rounded-xl border border-stone-200 p-10 text-center">
           <AlertTriangle className="h-7 w-7 text-emerald-500 mx-auto mb-2" />
@@ -331,7 +429,8 @@ export function IndentsNeedingPoView({
               if (a == null) return mx
               return mx == null ? a : Math.max(mx, a)
             }, null)
-            const isCollapsed = collapsed.has(g.key)
+            // While searching, force every group open so matches are visible.
+            const isCollapsed = searchQuery ? false : collapsed.has(g.key)
             return (
               <div key={g.key} className="bg-white rounded-xl border border-stone-200 overflow-hidden">
                 {/* Group header — click anywhere except the CSV button to toggle */}
@@ -360,13 +459,22 @@ export function IndentsNeedingPoView({
                       </div>
                     </div>
                   </button>
-                  <button
-                    onClick={() => downloadCsv(`${safe(g.label)}-needs-po-${new Date().toISOString().slice(0, 10)}.csv`, g.lines)}
-                    className="inline-flex items-center gap-1 text-[11px] font-medium text-stone-600 hover:text-stone-900 bg-white border border-stone-200 hover:border-stone-300 px-2 py-1 rounded-md flex-shrink-0"
-                    title={`Download just ${g.label}`}
-                  >
-                    <Download className="h-3 w-3" /> CSV
-                  </button>
+                  <div className="flex items-center gap-1 flex-shrink-0">
+                    <button
+                      onClick={() => shareGroup(g.label, g.lines)}
+                      className="inline-flex items-center justify-center gap-1 text-[11px] font-medium text-emerald-700 hover:text-emerald-900 bg-white border border-emerald-200 hover:border-emerald-300 h-8 w-8 sm:w-auto sm:px-2 rounded-md"
+                      title={`Share ${g.label} list on WhatsApp / email`}
+                    >
+                      <Share2 className="h-3.5 w-3.5" /> <span className="hidden sm:inline">Share</span>
+                    </button>
+                    <button
+                      onClick={() => downloadCsv(`${safe(g.label)}-needs-po-${new Date().toISOString().slice(0, 10)}.csv`, g.lines)}
+                      className="inline-flex items-center justify-center gap-1 text-[11px] font-medium text-stone-600 hover:text-stone-900 bg-white border border-stone-200 hover:border-stone-300 h-8 w-8 sm:w-auto sm:px-2 rounded-md"
+                      title={`Download just ${g.label}`}
+                    >
+                      <Download className="h-3.5 w-3.5" /> <span className="hidden sm:inline">CSV</span>
+                    </button>
+                  </div>
                 </div>
 
                 {/* Lines — hidden when collapsed */}
@@ -377,9 +485,9 @@ export function IndentsNeedingPoView({
                   <table className="w-full text-sm">
                     <thead className="bg-white border-b border-stone-100">
                       <tr>
-                        {groupBy === 'block' && <th className="text-left px-4 py-2 text-[10px] font-medium text-stone-500 uppercase tracking-wide">Indent</th>}
+                        {groupBy !== 'indent' && <th className="text-left px-4 py-2 text-[10px] font-medium text-stone-500 uppercase tracking-wide">Indent</th>}
                         <th className="text-left px-4 py-2 text-[10px] font-medium text-stone-500 uppercase tracking-wide">Material</th>
-                        {groupBy === 'indent' && <th className="text-left px-4 py-2 text-[10px] font-medium text-stone-500 uppercase tracking-wide">Block</th>}
+                        {groupBy !== 'block' && <th className="text-left px-4 py-2 text-[10px] font-medium text-stone-500 uppercase tracking-wide">Block</th>}
                         <th className="text-right px-4 py-2 text-[10px] font-medium text-stone-500 uppercase tracking-wide">Qty needed</th>
                         <th className="text-right px-4 py-2 text-[10px] font-medium text-stone-500 uppercase tracking-wide">Days waiting</th>
                       </tr>
@@ -390,15 +498,18 @@ export function IndentsNeedingPoView({
                         const fmt = formatAgeFriendly(age)
                         return (
                           <tr key={ln.id} className="hover:bg-stone-50">
-                            {groupBy === 'block' && (
+                            {groupBy !== 'indent' && (
                               <td className="px-4 py-2 font-mono text-[11px] text-stone-700 whitespace-nowrap" title={ln.indentNo}>
-                                {ln.indentNo.replace('IND/SRASSK/', '').replace('IND/SRET/', '')}
+                                <Highlight text={ln.indentNo.replace('IND/SRASSK/', '').replace('IND/SRET/', '')} query={searchQuery} />
                               </td>
                             )}
                             <td className="px-4 py-2 text-xs text-stone-800 max-w-[320px]">
                               <div className="flex items-start gap-1.5">
                                 <ChangeBadge id={ln.id} newLineIds={newLineIds} changedLineIds={changedLineIds} />
-                                <span className="line-clamp-2 flex-1" title={ln.material}>{ln.material}</span>
+                                <div className="flex-1 min-w-0">
+                                  <span className="line-clamp-2" title={ln.material}><Highlight text={ln.material} query={searchQuery} /></span>
+                                  <ChaseChip note={chaseNotes?.get(ln.indentNo)} className="mt-1" />
+                                </div>
                                 <button
                                   type="button"
                                   onClick={() => setInspectingLine(ln)}
@@ -410,8 +521,8 @@ export function IndentsNeedingPoView({
                                 </button>
                               </div>
                             </td>
-                            {groupBy === 'indent' && (
-                              <td className="px-4 py-2 text-[11px] text-stone-500">{ln.block || '—'}</td>
+                            {groupBy !== 'block' && (
+                              <td className="px-4 py-2 text-[11px] text-stone-500"><Highlight text={ln.block || '—'} query={searchQuery} /></td>
                             )}
                             <td className="px-4 py-2 text-right text-xs tabular-nums font-bold text-amber-700">
                               {ln.indentQty.toLocaleString('en-IN')} <span className="text-stone-400 text-[10px] font-normal">{ln.uom}</span>
@@ -437,21 +548,21 @@ export function IndentsNeedingPoView({
                   {g.lines.map(ln => {
                     const age = ageDays(ln)
                     return (
-                      <div key={ln.id} className="p-3">
+                      <div key={ln.id} onClick={() => setInspectingLine(ln)}
+                        className="p-3 cursor-pointer active:bg-stone-50">
                         <div className="flex items-start gap-2">
                           <ChangeBadge id={ln.id} newLineIds={newLineIds} changedLineIds={changedLineIds} />
                           <div className="min-w-0 flex-1">
-                            <p className="text-sm text-stone-800 line-clamp-2" title={ln.material}>{ln.material}</p>
+                            <p className="text-sm text-stone-800 line-clamp-2" title={ln.material}><Highlight text={ln.material} query={searchQuery} /></p>
                             <p className="text-[11px] text-stone-500 mt-0.5 truncate">
-                              {groupBy === 'block'
-                                ? ln.indentNo.replace('IND/SRASSK/', '').replace('IND/SRET/', '')
-                                : (ln.block || '—')}
+                              {groupBy === 'indent'
+                                ? (ln.block || '—')
+                                : ln.indentNo.replace('IND/SRASSK/', '').replace('IND/SRET/', '')}
+                              {groupBy === 'none' && ln.block ? ` · ${ln.block}` : ''}
                             </p>
+                            <ChaseChip note={chaseNotes?.get(ln.indentNo)} className="mt-1" />
                           </div>
-                          <button type="button" onClick={() => setInspectingLine(ln)}
-                            className="text-stone-400 hover:text-orange-700 flex-shrink-0 -m-1 p-1" aria-label="Inspect source rows">
-                            <Search className="h-3.5 w-3.5" />
-                          </button>
+                          <ChevronRight className="h-4 w-4 text-stone-300 flex-shrink-0 mt-0.5" />
                         </div>
                         <div className="mt-2.5 grid grid-cols-2 gap-x-3">
                           <CardField label="Qty needed" className="text-amber-700 font-bold">{ln.indentQty.toLocaleString('en-IN')} {ln.uom}</CardField>
@@ -468,7 +579,12 @@ export function IndentsNeedingPoView({
           })}
         </div>
       )}
-      <SourceInspector line={inspectingLine} onClose={() => setInspectingLine(null)} />
+      <SourceInspector
+        line={inspectingLine}
+        onClose={() => setInspectingLine(null)}
+        note={inspectingLine ? chaseNotes?.get(inspectingLine.indentNo) : undefined}
+        onNoteSaved={onNoteSaved}
+      />
     </div>
   )
 }

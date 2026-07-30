@@ -127,9 +127,36 @@ export function ProjectFilterStrip({
         </span>
       </div>
 
-      {/* Search */}
+      {/* Mobile: a single dropdown instead of a wall of chips */}
+      <div className="sm:hidden relative">
+        <select
+          value={selectedProject}
+          onChange={e => onSelect(e.target.value)}
+          className="w-full h-10 pl-3 pr-9 rounded-lg border border-orange-200 bg-white text-sm font-medium text-stone-800 appearance-none focus:outline-none focus:border-orange-400"
+          aria-label="Filter by project"
+        >
+          <option value="__all__">All projects · {totals.totalPending} pending</option>
+          {active.length > 0 && (
+            <optgroup label="Needs attention">
+              {active.map(c => (
+                <option key={c.name} value={c.name}>
+                  {c.name} · {c.pending} pending{c.needsPo > 0 ? `, ${c.needsPo} no-PO` : ''}
+                </option>
+              ))}
+            </optgroup>
+          )}
+          {cleared.length > 0 && (
+            <optgroup label="Cleared">
+              {cleared.map(c => <option key={c.name} value={c.name}>{c.name} ✓</option>)}
+            </optgroup>
+          )}
+        </select>
+        <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-stone-400 pointer-events-none" />
+      </div>
+
+      {/* Search (desktop) */}
       {showSearch && (
-        <div className="relative">
+        <div className="relative hidden sm:block">
           <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-stone-400" />
           <input
             type="text"
@@ -151,8 +178,8 @@ export function ProjectFilterStrip({
         </div>
       )}
 
-      {/* Chips */}
-      <div className="flex flex-wrap gap-1.5">
+      {/* Chips (desktop) */}
+      <div className="hidden sm:flex flex-wrap gap-1.5">
         {/* "All projects" anchor — always first, ignores search */}
         <AllChip
           pending={totals.totalPending}
@@ -183,7 +210,7 @@ export function ProjectFilterStrip({
 
       {/* No matches at all for the search */}
       {q && active.length === 0 && cleared.length === 0 && (
-        <p className="text-xs text-stone-400 italic px-1">No projects match “{query}”.</p>
+        <p className="hidden sm:block text-xs text-stone-400 italic px-1">No projects match “{query}”.</p>
       )}
 
       {/* Cleared toggle — only when not searching and there are cleared projects */}
@@ -191,7 +218,7 @@ export function ProjectFilterStrip({
         <button
           type="button"
           onClick={() => setShowCleared(s => !s)}
-          className="inline-flex items-center gap-1 text-[11px] font-medium text-stone-500 hover:text-orange-700 transition-colors"
+          className="hidden sm:inline-flex items-center gap-1 text-[11px] font-medium text-stone-500 hover:text-orange-700 transition-colors"
         >
           <ChevronDown className={`h-3.5 w-3.5 transition-transform ${showCleared ? 'rotate-180' : ''}`} />
           {showCleared

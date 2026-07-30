@@ -17,8 +17,10 @@ import { IndentsNeedingPoView } from '@/components/procurement-tracker/IndentsNe
 import { CompletedView } from '@/components/procurement-tracker/CompletedView'
 import { DiffBanner } from '@/components/procurement-tracker/DiffBanner'
 import { ProjectFilterStrip } from '@/components/procurement-tracker/ProjectFilterStrip'
+import { buildTrackerSummaryPdf } from '@/lib/procurement/pdf'
+import type { ChaseNote } from '@/lib/procurement/chase-notes'
 import Link from 'next/link'
-import { Upload, FileSpreadsheet, Loader2, PackageX, ClipboardList, EyeOff, CheckCircle2 } from 'lucide-react'
+import { Upload, FileSpreadsheet, Loader2, PackageX, ClipboardList, EyeOff, CheckCircle2, Clock, FileText } from 'lucide-react'
 
 type AnalyseResponse = ParseResult & {
   success: boolean
@@ -71,6 +73,9 @@ export function ProcurementTrackerClient({ isAdmin = false }: { isAdmin?: boolea
    */
   const [hiddenProjects, setHiddenProjects] = useState<Set<string>>(new Set())
   const [savedByName, setSavedByName] = useState<string | null>(null)
+  // Per-indent chase notes (team-shared). Fetched once on mount; refreshed
+  // in place after any save from the detail sheet.
+  const [chaseNotes, setChaseNotes] = useState<Map<string, ChaseNote>>(new Map())
   // Tracks the initial /api/procurement-tracker/state hydration call so we
   // don't flash the empty-state Card for ~3s before the saved data arrives.
   // Starts `true`; flips to `false` once the fetch resolves (success or fail).
@@ -90,6 +95,27 @@ export function ProcurementTrackerClient({ isAdmin = false }: { isAdmin?: boolea
         if (Array.isArray(json?.hidden)) setHiddenProjects(new Set(json.hidden))
       })
       .catch(() => { /* swallow */ })
+  }, [])
+
+  // Fetch the team-shared chase notes once on mount. Best-effort.
+  useEffect(() => {
+    fetch('/api/procurement-tracker/chase-notes')
+      .then(r => r.ok ? r.json() : { notes: [] })
+      .then(json => {
+        if (Array.isArray(json?.notes)) {
+          setChaseNotes(new Map((json.notes as ChaseNote[]).map(n => [n.indentNo, n])))
+        }
+      })
+      .catch(() => { /* swallow */ })
+  }, [])
+
+  // Merge one freshly-saved note back into the map (called by the detail sheet).
+  const onNoteSaved = useCallback((n: ChaseNote) => {
+    setChaseNotes(prev => {
+      const next = new Map(prev)
+      next.set(n.indentNo, n)
+      return next
+    })
   }, [])
 
   // Hydrate from the shared org-wide server state on mount (same
@@ -210,6 +236,29 @@ export function ProcurementTrackerClient({ isAdmin = false }: { isAdmin?: boolea
     () => linesForActiveProject.filter(l => l.status === 'received' && l.pos.length > 0 && l.grns.length > 0).length,
     [linesForActiveProject],
   )
+  // 30+ day items drive the red "overdue" marker on the tab badges.
+  const pendingOverdue = useMemo(
+    () => linesForActiveProject.filter(l => l.pendingQty > 0 && (l.indentAgeDays ?? 0) >= 30).length,
+    [linesForActiveProject],
+  )
+  const needsPoOverdue = useMemo(
+    () => linesForActiveProject.filter(l => l.status === 'no_po' && (l.indentAgeDays ?? 0) >= 30).length,
+    [linesForActiveProject],
+  )
+
+  // Data freshness — surfaced above the tabs so nobody acts on stale numbers.
+  const freshness = useMemo(() => {
+    if (!savedAt) return null
+    const ms = Date.parse(savedAt)
+    if (Number.isNaN(ms)) return null
+    // eslint-disable-next-line react-hooks/purity
+    const ageMs = Date.now() - ms
+    const days = Math.floor(ageMs / 86_400_000)
+    return {
+      stale: ageMs > 36 * 3_600_000,
+      label: days <= 0 ? 'today' : days === 1 ? '1 day ago' : `${days} days ago`,
+    }
+  }, [savedAt])
 
   const activeProjectLabel = selectedProject === '__all__'
     ? (data?.fileName?.replace(/\.xlsx?$/, '') ?? 'All projects')
@@ -267,16 +316,33 @@ export function ProcurementTrackerClient({ isAdmin = false }: { isAdmin?: boolea
           </div>
           {/* Right cluster: always-on Upload icon + (when present) savedAt info */}
           <div className="flex flex-col items-end gap-1.5">
-            <button
-              type="button"
-              onClick={() => fileInputRef.current?.click()}
-              disabled={isLoading}
-              title="Upload IN4 'Indent to Issue / Purchase Order Report' (.xlsx) — or drop the file anywhere on this page"
-              className="inline-flex items-center gap-1.5 h-8 px-2.5 rounded-lg border border-orange-300 bg-white text-xs font-medium text-stone-700 hover:border-orange-700 hover:text-orange-700 hover:bg-orange-50 disabled:opacity-60 disabled:cursor-not-allowed transition-colors shadow-sm"
-            >
-              {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
-              <span className="hidden sm:inline">{isLoading ? 'Uploading…' : 'Upload'}</span>
-            </button>
+            <div className="flex items-center gap-1.5">
+              {data && linesForActiveProject.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => buildTrackerSummaryPdf(
+                    linesForActiveProject,
+                    activeProjectLabel,
+                    savedAt ? formatSavedAt(savedAt) : '—',
+                  )}
+                  title="Download a one-page follow-up summary (PDF) — headline numbers + what to chase first"
+                  className="inline-flex items-center gap-1.5 h-8 px-2.5 rounded-lg border border-stone-300 bg-white text-xs font-medium text-stone-700 hover:border-stone-500 hover:text-stone-900 hover:bg-stone-50 transition-colors shadow-sm"
+                >
+                  <FileText className="h-4 w-4" />
+                  <span className="hidden sm:inline">PDF</span>
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={isLoading}
+                title="Upload IN4 'Indent to Issue / Purchase Order Report' (.xlsx) — or drop the file anywhere on this page"
+                className="inline-flex items-center gap-1.5 h-8 px-2.5 rounded-lg border border-orange-300 bg-white text-xs font-medium text-stone-700 hover:border-orange-700 hover:text-orange-700 hover:bg-orange-50 disabled:opacity-60 disabled:cursor-not-allowed transition-colors shadow-sm"
+              >
+                {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
+                <span className="hidden sm:inline">{isLoading ? 'Uploading…' : 'Upload'}</span>
+              </button>
+            </div>
             {savedAt && (
               <div className="text-right text-[11px] text-stone-500">
                 {data?.fileName && <div className="text-stone-700 font-medium">{data.fileName}</div>}
@@ -352,8 +418,23 @@ export function ProcurementTrackerClient({ isAdmin = false }: { isAdmin?: boolea
               />
             )}
 
-            {/* The toggle — the entire page hinges on this */}
-            <div className="grid grid-cols-3 gap-2 bg-white rounded-xl border border-orange-200 p-1">
+            {/* Data freshness — scrolls away; amber when stale */}
+            {freshness && (
+              <div className={`flex items-center gap-2 text-xs rounded-lg px-3 py-1.5 border ${
+                freshness.stale ? 'bg-amber-50 border-amber-200 text-amber-800' : 'bg-stone-50 border-stone-200 text-stone-500'
+              }`}>
+                <Clock className="h-3.5 w-3.5 flex-shrink-0" />
+                <span className="min-w-0">
+                  Data as of <b className="text-stone-700">{savedAt ? formatSavedAt(savedAt) : '—'}</b> · updated {freshness.label}
+                  {freshness.stale && <span className="font-medium"> — may be stale, ask for a fresh upload</span>}
+                </span>
+              </div>
+            )}
+
+            {/* The toggle — the entire page hinges on this. Sticky so it stays
+                reachable on long lists (below the mobile top-nav; top on desktop). */}
+            <div className="sticky top-14 md:top-0 z-20 -mx-4 md:-mx-6 px-4 md:px-6 py-2 bg-orange-50/90 supports-[backdrop-filter]:bg-orange-50/70 backdrop-blur">
+            <div className="grid grid-cols-3 gap-2 bg-white rounded-xl border border-orange-200 p-1 shadow-sm">
               <button
                 onClick={() => setView('pending')}
                 className={`flex items-center justify-center gap-2 px-2 py-3 rounded-lg text-sm font-semibold transition-colors ${
@@ -365,10 +446,10 @@ export function ProcurementTrackerClient({ isAdmin = false }: { isAdmin?: boolea
                 <PackageX className={`h-4 w-4 ${view === 'pending' ? '' : 'text-amber-600'}`} />
                 <span className="hidden sm:inline">Pending receipts</span>
                 <span className="sm:hidden">Pending</span>
-                <span className={`text-[11px] font-bold rounded-full px-2 py-0.5 ${
-                  view === 'pending' ? 'bg-white/20 text-white' : 'bg-amber-100 text-amber-800'
-                }`}>
-                  {pendingCount}
+                <span className={`text-[11px] font-bold rounded-full px-2 py-0.5 whitespace-nowrap ${
+                  view === 'pending' ? 'bg-white/20 text-white' : pendingOverdue > 0 ? 'bg-red-100 text-red-800' : 'bg-amber-100 text-amber-800'
+                }`} title={pendingOverdue > 0 ? `${pendingOverdue} item(s) 30+ days overdue` : undefined}>
+                  {pendingCount}{view !== 'pending' && pendingOverdue > 0 ? ` · ${pendingOverdue}!` : ''}
                 </span>
               </button>
               <button
@@ -382,10 +463,10 @@ export function ProcurementTrackerClient({ isAdmin = false }: { isAdmin?: boolea
                 <ClipboardList className={`h-4 w-4 ${view === 'needs-po' ? '' : 'text-red-600'}`} />
                 <span className="hidden sm:inline">Needing PO</span>
                 <span className="sm:hidden">No PO</span>
-                <span className={`text-[11px] font-bold rounded-full px-2 py-0.5 ${
-                  view === 'needs-po' ? 'bg-white/20 text-white' : 'bg-red-100 text-red-800'
-                }`}>
-                  {needsPoCount}
+                <span className={`text-[11px] font-bold rounded-full px-2 py-0.5 whitespace-nowrap ${
+                  view === 'needs-po' ? 'bg-white/20 text-white' : needsPoOverdue > 0 ? 'bg-red-100 text-red-800' : 'bg-red-50 text-red-700'
+                }`} title={needsPoOverdue > 0 ? `${needsPoOverdue} item(s) 30+ days overdue` : undefined}>
+                  {needsPoCount}{view !== 'needs-po' && needsPoOverdue > 0 ? ` · ${needsPoOverdue}!` : ''}
                 </span>
               </button>
               <button
@@ -407,6 +488,7 @@ export function ProcurementTrackerClient({ isAdmin = false }: { isAdmin?: boolea
                 </span>
               </button>
             </div>
+            </div>
 
             {/* Active view */}
             {view === 'pending' && (
@@ -415,6 +497,8 @@ export function ProcurementTrackerClient({ isAdmin = false }: { isAdmin?: boolea
                 projectName={activeProjectLabel}
                 newLineIds={diff?.newLineIds}
                 changedLineIds={diff?.changedLineIds}
+                chaseNotes={chaseNotes}
+                onNoteSaved={onNoteSaved}
               />
             )}
             {view === 'needs-po' && (
@@ -423,6 +507,8 @@ export function ProcurementTrackerClient({ isAdmin = false }: { isAdmin?: boolea
                 projectName={activeProjectLabel}
                 newLineIds={diff?.newLineIds}
                 changedLineIds={diff?.changedLineIds}
+                chaseNotes={chaseNotes}
+                onNoteSaved={onNoteSaved}
               />
             )}
             {view === 'completed' && (
