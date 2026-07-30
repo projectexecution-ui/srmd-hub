@@ -245,6 +245,9 @@ export function IndentsNeedingPoView({
             <p className="text-xs text-stone-500 mt-0.5">
               <b className="text-stone-800">{totalLines}</b> material line{totalLines === 1 ? '' : 's'} waiting on purchase team
               {' · '}across <b className="text-stone-800">{uniqueIndents}</b> indent{uniqueIndents === 1 ? '' : 's'}
+              {ageFilter === 'all' && hideOld && abandonedCount > 0 && (
+                <span className="text-stone-400"> · {abandonedCount} over 90 days hidden</span>
+              )}
             </p>
           </div>
           <button
