@@ -21,7 +21,6 @@ import { buildTrackerSummaryPdf } from '@/lib/procurement/pdf'
 import type { ChaseNote } from '@/lib/procurement/chase-notes'
 import type { DroppedLine } from '@/lib/procurement/dropped'
 import { dropKey } from '@/lib/procurement/dropped'
-import { TodaysChaseList } from '@/components/procurement-tracker/TodaysChaseList'
 import { DroppedItemsPanel } from '@/components/procurement-tracker/DroppedItemsPanel'
 import Link from 'next/link'
 import { Upload, FileSpreadsheet, Loader2, PackageX, ClipboardList, EyeOff, CheckCircle2, Clock, FileText } from 'lucide-react'
@@ -242,13 +241,6 @@ export function ProcurementTrackerClient({ isAdmin = false }: { isAdmin?: boolea
     return droppedKeys.size === 0 ? base : base.filter(l => !droppedKeys.has(dropKey(l)))
   }, [data, selectedProject, visibleProjects, droppedKeys])
 
-  // Every visible line across ALL projects (dropped removed) — feeds the
-  // cross-project "Today's chase list".
-  const allVisibleLines = useMemo<LineRecord[]>(() => {
-    const base = visibleProjects.flatMap(p => p.lines)
-    return droppedKeys.size === 0 ? base : base.filter(l => !droppedKeys.has(dropKey(l)))
-  }, [visibleProjects, droppedKeys])
-
   const pendingCount = useMemo(
     () => linesForActiveProject.filter(l => l.pendingQty > 0).length,
     [linesForActiveProject],
@@ -429,14 +421,6 @@ export function ProcurementTrackerClient({ isAdmin = false }: { isAdmin?: boolea
             {diff && (diff.newLineIds.size > 0 || diff.changedLineIds.size > 0) && (
               <DiffBanner diff={diff} />
             )}
-
-            {/* Today's chase list — cross-project, what to call about first */}
-            <TodaysChaseList
-              lines={allVisibleLines}
-              chaseNotes={chaseNotes}
-              onNoteSaved={onNoteSaved}
-              onDropped={refreshDropped}
-            />
 
             {/* Project filter — smarter strip: insight ribbon, search,
                 active/cleared split, richer chips. Admin-hidden projects
