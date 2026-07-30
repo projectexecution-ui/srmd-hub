@@ -11,6 +11,8 @@ const nextConfig: NextConfig = {
   // the route's serverless bundle (Vercel has no system fonts to fall back on).
   outputFileTracingIncludes: {
     '/api/cron/bills-pipeline': ['./lib/bills-pipeline/fonts/**'],
+    // The daily-site-report digest card reuses the same resvg renderer + TTF.
+    '/api/daily-site-report/digest': ['./lib/bills-pipeline/fonts/**'],
   },
   images: {
     remotePatterns: [
