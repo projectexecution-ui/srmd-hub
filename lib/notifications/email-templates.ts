@@ -306,6 +306,55 @@ function renderProcurementDigest(d: ProcDigestData, link: string): string {
   return shell(inner, `You're the Atm Head for these projects in CT HUB · reminders are combined into this one mail · manage alerts in Settings → Notifications`)
 }
 
+// ── Engineer daily digest (cc_engineer_digest) ───────────────────────────
+interface EngineerDigestData {
+  returned?: number
+  drafts?: number
+  awaiting?: number
+  awaiting_amount?: number | null
+  oldest_awaiting_days?: number
+  returned_items?: Array<{ label: string; reason?: string }> | null
+  draft_items?: Array<{ label: string }> | null
+}
+
+function renderEngineerDigest(d: EngineerDigestData, link: string): string {
+  const returned = d.returned ?? 0
+  const drafts = d.drafts ?? 0
+  const awaiting = d.awaiting ?? 0
+  const chips = [
+    returned > 0 ? chip(`${returned} returned`, DANGER, '#fceceb') : '',
+    drafts > 0 ? chip(`${drafts} draft${drafts === 1 ? '' : 's'} to send`, INK, '#eef0f2') : '',
+    awaiting > 0 ? chip(`${awaiting} awaiting approval`, WARN, WARNBG) : '',
+  ].join('')
+
+  const rItems = (d.returned_items ?? []) as Array<{ label: string; reason?: string }>
+  const dItems = (d.draft_items ?? []) as Array<{ label: string }>
+
+  const returnedBlock = rItems.length ? `
+    <tr><td style="padding:16px 22px 2px;border-top:1px solid ${HAIR}"><div style="font-size:13px;font-weight:600;color:${DANGER}">↩ Returned to you — fix &amp; resend</div></td></tr>
+    ${rItems.map(it => `<tr><td style="padding:6px 22px"><div style="font-size:13px;color:${INK}">${esc(it.label)}</div>${it.reason ? `<div style="font-size:12px;color:${MUT};margin-top:1px">&ldquo;${esc(it.reason)}&rdquo;</div>` : ''}</td></tr>`).join('')}` : ''
+
+  const draftsBlock = dItems.length ? `
+    <tr><td style="padding:16px 22px 2px;border-top:1px solid ${HAIR}"><div style="font-size:13px;font-weight:600;color:${INK}">✎ Drafts — not sent yet</div></td></tr>
+    ${dItems.map(it => `<tr><td style="padding:6px 22px"><div style="font-size:13px;color:${INK}">${esc(it.label)}</div></td></tr>`).join('')}` : ''
+
+  const awaitingLine = awaiting > 0
+    ? `<tr><td style="padding:14px 22px 0"><div style="font-size:12px;color:${MUT}">${awaiting} awaiting approval${d.oldest_awaiting_days ? ` · oldest waiting ${d.oldest_awaiting_days} day${d.oldest_awaiting_days === 1 ? '' : 's'}` : ''}${d.awaiting_amount ? ` · ${crL(Number(d.awaiting_amount))}` : ''}</div></td></tr>`
+    : ''
+
+  const inner = `
+    <tr><td style="padding:18px 22px 4px">
+      <div style="font-size:18px;font-weight:600;color:${INK}">Your budget requests</div>
+      <div style="font-size:12px;color:${MUT};margin-top:2px">A quick daily summary of what needs you.</div>
+    </td></tr>
+    ${chips.trim() ? `<tr><td style="padding:10px 22px 0">${chips}</td></tr>` : ''}
+    ${returnedBlock}
+    ${draftsBlock}
+    ${awaitingLine}
+    <tr><td style="padding:18px 22px;border-top:1px solid ${HAIR}">${button('Open Internal Estimate', link)}</td></tr>`
+  return shell(inner, `You're on Internal Estimate in CT HUB · manage alerts in Settings → Notifications`)
+}
+
 // ── Generic fallback (unchanged look, all other modules) ─────────────────
 function renderGeneric(subject: string, text: string, link: string): string {
   const body = esc(text).replace(/\n/g, '<br/>')
@@ -316,7 +365,7 @@ function renderGeneric(subject: string, text: string, link: string): string {
   return shell(inner)
 }
 
-export type NotificationKind = 'approval' | 'in4_pending' | 'in4_entered' | 'procurement_digest' | 'generic'
+export type NotificationKind = 'approval' | 'in4_pending' | 'in4_entered' | 'procurement_digest' | 'engineer_digest' | 'generic'
 
 /** Map a notification `type` to a template kind. */
 export function kindFromType(type: string | null | undefined): NotificationKind {
@@ -325,6 +374,7 @@ export function kindFromType(type: string | null | undefined): NotificationKind 
     case 'in4_pending':         return 'in4_pending'
     case 'in4_entered':         return 'in4_entered'
     case 'procurement_digest':  return 'procurement_digest'
+    case 'cc_engineer_digest':  return 'engineer_digest'
     default:                    return 'generic'
   }
 }
@@ -342,6 +392,7 @@ export function renderNotificationEmail(args: {
     if (kind === 'in4_pending' && data) return renderIn4Pending(data as In4PendingData, link)
     if (kind === 'in4_entered' && data) return renderIn4Entered(data as In4EnteredData, link)
     if (kind === 'procurement_digest' && data) return renderProcurementDigest(data as ProcDigestData, link)
+    if (kind === 'engineer_digest' && data) return renderEngineerDigest(data as EngineerDigestData, link)
   } catch {
     // fall through to generic on any shape surprise
   }

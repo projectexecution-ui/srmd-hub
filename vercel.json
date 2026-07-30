@@ -37,6 +37,10 @@
     {
       "path": "/api/cron/daily-site-report?cron=1",
       "schedule": "0 13 * * *"
+    },
+    {
+      "path": "/api/cron/engineer-digest?cron=1",
+      "schedule": "0 3 * * *"
     }
   ]
 }

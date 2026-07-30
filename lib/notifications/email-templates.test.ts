@@ -98,6 +98,27 @@ describe('in4 pending digest', () => {
   })
 })
 
+describe('engineer daily digest', () => {
+  it('maps the type + renders returned / drafts / awaiting + CTA', () => {
+    expect(kindFromType('cc_engineer_digest')).toBe('engineer_digest')
+    const html = renderNotificationEmail({
+      kind: 'engineer_digest', subject: 'x', text: 'y', link: 'https://h/cost-control',
+      data: {
+        returned: 1, drafts: 2, awaiting: 3, awaiting_amount: 5000000, oldest_awaiting_days: 4,
+        returned_items: [{ label: 'NGH B · Waterproofing', reason: 'Rate looks high' }],
+        draft_items: [{ label: 'NGH A · Flooring' }, { label: 'P2 · Plumbing' }],
+      },
+    })
+    expect(html).toContain('Returned to you')
+    expect(html).toContain('NGH B · Waterproofing')
+    expect(html).toContain('Rate looks high')
+    expect(html).toContain('NGH A · Flooring')
+    expect(html).toContain('awaiting approval')
+    expect(html).toContain('Open Internal Estimate')
+    expect(html).toContain('https://h/cost-control')
+  })
+})
+
 describe('generic fallback', () => {
   it('is used for unknown kinds / missing data', () => {
     const html = renderNotificationEmail({ kind: 'generic', subject: 'New access request', text: 'Someone asked', link: 'l' })
