@@ -4,9 +4,10 @@ import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { Loader2, Check, ChevronDown, ChevronRight, Mail, Send, Users } from 'lucide-react'
+import { Loader2, Check, ChevronDown, ChevronRight, Mail, Send, Users, MailCheck } from 'lucide-react'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
+import { confirm } from '@/components/ui/confirm-dialog'
 import type { ProcurementNotifyConfig, NotifyFrequency } from '@/lib/procurement/notify-settings'
 
 interface UserOpt { id: string; full_name: string | null; email: string; role: string }
@@ -32,6 +33,7 @@ export function ProcurementNotifySettingsForm({
   const [saving, setSaving] = useState(false)
   const [savedAt, setSavedAt] = useState(false)
   const [testing, setTesting] = useState(false)
+  const [sendingHeads, setSendingHeads] = useState(false)
 
   const nameOf = (u: UserOpt) => u.full_name || u.email
   const assignedUsers = useMemo(() => users.filter(u => (assign[u.id]?.length ?? 0) > 0), [users, assign])
@@ -76,6 +78,32 @@ export function ProcurementNotifySettingsForm({
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Network error')
     } finally { setTesting(false) }
+  }
+
+  async function sendToHeads() {
+    if (assignedUsers.length === 0) { toast.error('No head has any project assigned yet.'); return }
+    const names = assignedUsers.map(nameOf).join(', ')
+    const ok = await confirm({
+      title: 'Send the follow-up email now?',
+      message: `This emails the digest right now to: ${names}. Each head only sees their own projects. Continue?`,
+      confirmLabel: 'Send now',
+      danger: false,
+    })
+    if (!ok) return
+    setSendingHeads(true)
+    try {
+      const res = await fetch('/api/cron/procurement-digest', {
+        method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ toHeads: true }),
+      })
+      const j = await res.json()
+      if (!res.ok || j.ok === false) { toast.error(j.reason || j.error || 'Could not send'); return }
+      const sentTo: string[] = j.sentTo ?? []
+      const skipped: string[] = j.skipped ?? []
+      if (sentTo.length > 0) toast.success(`Sent to ${sentTo.join(', ')}${skipped.length ? ` · nothing to report for ${skipped.join(', ')}` : ''}`)
+      else toast.message(`Nothing to report right now for ${skipped.join(', ') || 'any head'} — no email sent.`)
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Network error')
+    } finally { setSendingHeads(false) }
   }
 
   return (
@@ -193,6 +221,12 @@ export function ProcurementNotifySettingsForm({
         <Button variant="outline" onClick={sendTest} disabled={testing} title="Send yourself a preview of the digest right now">
           {testing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
           Send me a test
+        </Button>
+        <Button variant="outline" onClick={sendToHeads} disabled={sendingHeads || assignedUsers.length === 0}
+          className="border-emerald-300 text-emerald-800 hover:bg-emerald-50"
+          title="Email the digest to the assigned heads right now">
+          {sendingHeads ? <Loader2 className="h-4 w-4 animate-spin" /> : <MailCheck className="h-4 w-4" />}
+          Send to the heads now
         </Button>
         {!enabled && <span className="text-xs text-gray-400">Currently off — no emails go out until you turn it on and Save.</span>}
       </div>

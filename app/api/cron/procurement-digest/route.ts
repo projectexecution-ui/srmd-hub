@@ -121,9 +121,34 @@ export async function POST(req: Request) {
   const uid = userData?.user?.id
   if (!uid) return NextResponse.json({ ok: false, reason: 'No session' }, { status: 401 })
 
-  const body = await req.json().catch(() => ({} as { headId?: string }))
+  const body = await req.json().catch(() => ({} as { headId?: string; toHeads?: boolean }))
   const supabase = session as unknown as Client
   const cfg = await readConfig(supabase)
+
+  // ── "Send to the heads now": push each assigned head their real scoped
+  //     digest on demand (same as the daily cron, minus the day/dedup gates).
+  if (body.toHeads) {
+    const { current, baseline } = await loadState(supabase)
+    if (!current) return NextResponse.json({ ok: false, reason: 'No tracker data uploaded yet.' })
+    const heads = Object.entries(cfg.assignments).filter(([, projs]) => projs.length > 0)
+    if (heads.length === 0) {
+      return NextResponse.json({ ok: false, reason: 'No head → projects mapping set yet — assign at least one head to a project first.' })
+    }
+    const nowMs = Date.now()
+    const ids = heads.map(([uid]) => uid)
+    const { data: profs } = await supabase.from('profiles').select('id, full_name, email').in('id', ids)
+    const nameById = new Map((profs ?? []).map(p => [p.id as string, (p.full_name as string) || (p.email as string)]))
+    const sentTo: string[] = []
+    const skipped: string[] = []
+    for (const [uid, projects] of heads) {
+      const digest = buildHeadDigest(current, baseline, cfg, nowMs, projects)
+      const who = nameById.get(uid) ?? uid
+      if (!digest) { skipped.push(who); continue }
+      const err = await notify(supabase, uid, digest)
+      if (err) skipped.push(who); else sentTo.push(who)
+    }
+    return NextResponse.json({ ok: true, mode: 'heads', sent: sentTo.length, sentTo, skipped })
+  }
 
   // Scope: a specific head's projects, else every assigned project combined.
   const projects = body.headId && cfg.assignments[body.headId]
