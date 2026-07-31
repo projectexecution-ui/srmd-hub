@@ -26,8 +26,9 @@ function median(xs: number[]): number {
 function rotColor(md: number): string {
   return md > 21 ? '#c0392b' : md > 7 ? '#c68a1a' : '#2e7d54'
 }
-// Order stages internal-first, Trust last.
-const STAGE_ORDER = ['Site Head', 'CT Billing', 'CT Head', 'CT Disc Head']
+// Order stages internal-first, Trust last. "ATMs" = the Atm (Atmarpit) approval
+// desk, which sits after the CT checks and before Trust Accounts.
+const STAGE_ORDER = ['Site Head', 'CT Billing', 'CT Head', 'CT Disc Head', 'ATMs']
 function stageRank(stage: string, atTrust: boolean): number {
   if (atTrust) return 90
   const i = STAGE_ORDER.findIndex(s => stage.toLowerCase().includes(s.toLowerCase()))
@@ -48,6 +49,9 @@ export default function Cockpit({ bills, asOf, myCodes = [] }: { bills: CockpitB
   const [rank, setRank] = useState<'amt' | 'days'>('amt')
   // Site scope: default to the viewer's own sites when they have any.
   const [siteScope, setSiteScope] = useState<'mine' | 'all'>(scopeAvailable ? 'mine' : 'all')
+  // The "No WO" flag reads noisy at early stages (WO often attached later), so
+  // it's off by default and shown on demand.
+  const [showNoWO, setShowNoWO] = useState(false)
   const [filter, setFilter] = useState<Filter>({ kind: 'all' })
   const [open, setOpen] = useState<CockpitBill | null>(null)
   const [imgBusy, setImgBusy] = useState(false)
@@ -148,7 +152,7 @@ export default function Cockpit({ bills, asOf, myCodes = [] }: { bills: CockpitB
           rows: push.map(b => ({
             vendor: b.vendor, project: b.project, area: b.area, stage: b.stage,
             billNo: b.billNo, claimed: b.claimed, age: b.age, idle: b.idle,
-            noWO: b.noWO, stalled: b.stalled,
+            noWO: showNoWO && b.noWO, stalled: b.stalled,
           })),
         }),
       })
@@ -210,6 +214,10 @@ export default function Cockpit({ bills, asOf, myCodes = [] }: { bills: CockpitB
             </button>
           ))}
         </div>
+        <label className="flex items-center gap-1.5 text-[13px] text-gray-600" title="Show the 'No WO' flag (off by default — it reads noisy while a WO is still being attached)">
+          <input type="checkbox" checked={showNoWO} onChange={e => setShowNoWO(e.target.checked)} className="h-4 w-4 accent-amber-500" />
+          No WO
+        </label>
         <span className="ml-auto text-[12.5px] text-gray-500">
           {project === 'ALL' ? 'All sites' : project}
           {filter.kind !== 'all' && <> › <b className="text-gray-700">{filter.kind === 'stage' ? dispStage(filter.stage) : filter.kind}</b></>}
@@ -223,7 +231,7 @@ export default function Cockpit({ bills, asOf, myCodes = [] }: { bills: CockpitB
         <div>
           <div className="text-[11px] font-bold uppercase tracking-wider text-gray-400">Morning briefing</div>
           <p className="m-0 text-[14.5px] text-gray-800">
-            <b>{stalled.length} bills stalled &gt; 21 days ({briefStalledVal})</b> · {internal.length} pending with CT · {trust.length} at Trust · {noWoCount} missing a WO. Tap any number to see the exact bills.
+            <b>{stalled.length} bills stalled &gt; 21 days ({briefStalledVal})</b> · {internal.length} pending with CT · {trust.length} at Trust{showNoWO ? ` · ${noWoCount} missing a WO` : ''}. Tap any number to see the exact bills.
           </p>
         </div>
       </div>
@@ -269,7 +277,7 @@ export default function Cockpit({ bills, asOf, myCodes = [] }: { bills: CockpitB
                     <span className="rounded bg-slate-800 px-1.5 py-px text-[11px] font-bold text-white">{b.project}</span>
                     <span className="rounded border border-gray-300 bg-white px-1.5 py-px text-[11px] font-semibold text-gray-700">Inv {b.billNo || '—'}</span>
                     {b.area} · {dispStage(b.stage)}
-                    {b.noWO && <span className="rounded-full bg-amber-100 px-1.5 py-px text-[11px] font-bold text-amber-800">No WO</span>}
+                    {showNoWO && b.noWO && <span className="rounded-full bg-amber-100 px-1.5 py-px text-[11px] font-bold text-amber-800">No WO</span>}
                     {b.stalled && <span className="rounded-full bg-red-100 px-1.5 py-px text-[11px] font-bold text-red-700" title="Days since last movement">Stalled {b.idle}d</span>}
                   </span>
                 </span>
@@ -364,15 +372,15 @@ export default function Cockpit({ bills, asOf, myCodes = [] }: { bills: CockpitB
       </p>
 
       {/* Journey modal */}
-      {open && <Journey bill={open} onClose={() => setOpen(null)} />}
+      {open && <Journey bill={open} onClose={() => setOpen(null)} showNoWO={showNoWO} />}
     </div>
   )
 }
 
 // ── Per-bill journey (Zoho portion live; IN4 tail shown as pending sync) ──────
-function Journey({ bill, onClose }: { bill: CockpitBill; onClose: () => void }) {
-  const zohoStages = ['Site Head', 'CT Billing', 'CT Head', 'CT Disc Head', 'Submitted to Trust A/c']
-  const curIdx = bill.atTrust ? 4 : Math.max(0, zohoStages.findIndex(s => bill.stage.toLowerCase().includes(s.toLowerCase())))
+function Journey({ bill, onClose, showNoWO }: { bill: CockpitBill; onClose: () => void; showNoWO: boolean }) {
+  const zohoStages = ['Site Head', 'CT Billing', 'CT Head', 'CT Disc Head', 'ATMs', 'Submitted to Trust A/c']
+  const curIdx = bill.atTrust ? zohoStages.length - 1 : Math.max(0, zohoStages.findIndex(s => bill.stage.toLowerCase().includes(s.toLowerCase())))
   const nodes = [...zohoStages.map((s, i) => ({ label: s.replace('Submitted to Trust A/c', 'Submitted to Trust'), sys: 'Zoho', done: i < curIdx, cur: i === curIdx, pending: false })),
     { label: 'Entered in IN4', sys: 'IN4', done: false, cur: false, pending: true },
     { label: 'Paid', sys: 'IN4', done: false, cur: false, pending: true }]
@@ -385,7 +393,7 @@ function Journey({ bill, onClose }: { bill: CockpitBill; onClose: () => void }) 
             <p className="mt-1 text-[13px] text-gray-500">
               <span className="rounded bg-slate-800 px-1.5 py-px text-[11px] font-bold text-white">{bill.project}</span>{' '}
               {bill.area}{bill.disc ? ` · ${bill.disc}` : ''} · Bill {bill.billNo || '—'} · {bill.raNo || ''} · {bill.prefix}
-              {bill.noWO && <span className="ml-1 font-bold text-red-600">· No WO</span>}
+              {showNoWO && bill.noWO && <span className="ml-1 font-bold text-red-600">· No WO</span>}
             </p>
           </div>
           <button onClick={onClose} className="ml-auto h-8 w-8 rounded-lg bg-gray-100 text-lg">×</button>
