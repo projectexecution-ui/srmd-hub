@@ -1,6 +1,5 @@
 'use client'
 import { useState } from 'react'
-import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { Card, CardContent } from '@/components/ui/card'
 import { Loader2, Check, Eye, EyeOff, Pencil } from 'lucide-react'
@@ -23,7 +22,6 @@ interface Props {
 }
 
 export default function DashboardModulesEditor({ groups: initialGroups, canRename = false }: Props) {
-  const router = useRouter()
   const [groups, setGroups] = useState(initialGroups)
   const [busy, setBusy] = useState<string | null>(null)
   const [saved, setSaved] = useState<string | null>(null)
@@ -37,7 +35,7 @@ export default function DashboardModulesEditor({ groups: initialGroups, canRenam
     if (row.enabled) {
       const ok = await confirm({
         title: `Hide “${row.label}” from everyone?`,
-        message: `It will disappear from the dashboard and sidebar for the whole team. Portal Owners still see it, and you can turn it back on here anytime.`,
+        message: `It will disappear from the dashboard and sidebar for the whole team — including you. You can turn it back on from this page anytime.`,
         confirmLabel: 'Hide it',
       })
       if (!ok) return
@@ -64,9 +62,13 @@ export default function DashboardModulesEditor({ groups: initialGroups, canRenam
       setError(`${slug}: ${error.message}`)
       return
     }
-    setSaved(slug)
-    setTimeout(() => setSaved(s => (s === slug ? null : s)), 1500)
-    router.refresh()
+    // The sidebar + dashboard tiles read module_visibility from the shared app
+    // layout, which does NOT reliably re-render on a client-side router.refresh()
+    // (the same reason renameLabel below does a full reload). A hard reload
+    // guarantees every surface — sidebar, dashboard tiles, and page gating —
+    // re-reads the new on/off state, so a module you switch off is reliably
+    // off everywhere at once, not "sometimes still there until I refresh".
+    window.location.reload()
   }
 
   async function renameLabel(slug: string, nextLabel: string, nextDescription: string) {
