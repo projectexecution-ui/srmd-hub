@@ -342,6 +342,23 @@ export default async function CostControlProjectDetailPage(
   const pendingTotal = Array.from(wsAgg.values()).reduce((s, v) => s + v.pendingAmount, 0)
   const pendingThumbruleCount = pendingSheets.filter(w => w.entry_mode === 'thumbrule').length
 
+  // Click-through for the "Awaiting Approval" figures: which awaiting sheets
+  // sit under each sub-skill (and rolled up per discipline). One awaiting sheet
+  // → jump straight to it to approve; several → the sub-skill's sheet list.
+  const awaitingBySub = new Map<string, string[]>()
+  const awaitingByDisc = new Map<string, string[]>()
+  for (const w of pendingSheets) {
+    if (!w.discipline_id || !w.sub_skill_id) continue
+    const sk = `${w.discipline_id}::${w.sub_skill_id}`
+    if (!awaitingBySub.has(sk)) awaitingBySub.set(sk, [])
+    awaitingBySub.get(sk)!.push(w.id)
+    if (!awaitingByDisc.has(w.discipline_id)) awaitingByDisc.set(w.discipline_id, [])
+    awaitingByDisc.get(w.discipline_id)!.push(w.id)
+  }
+  // One awaiting sheet → that sheet (approve it); 2+ → the filtered list; none → not a link.
+  const awaitingHref = (ids: string[], listHref: string): string | null =>
+    ids.length === 0 ? null : ids.length === 1 ? `/cost-control/working-sheets/${ids[0]}` : listHref
+
   // Portfolio rollup (across all sub-skills on this project)
   const totalBudget = Array.from(discAgg.values()).reduce((s, v) => s + v.budget, 0)
   const totalWO = Array.from(discAgg.values()).reduce((s, v) => s + v.wo, 0)
@@ -666,7 +683,12 @@ export default async function CostControlProjectDetailPage(
                         <Money amt={dAgg.estimate} />
                       </Td>
                       <Td align="right" mono className="text-amber-700">
-                        <Money amt={dAgg.pending} />
+                        {(() => {
+                          const href = awaitingHref(awaitingByDisc.get(d.id) ?? [], `/cost-control/working-sheets?project=${project.id}&discipline=${d.id}`)
+                          return href
+                            ? <Link href={href} className="inline-block rounded px-1 -mx-1 hover:bg-amber-50 hover:underline decoration-amber-400 underline-offset-2" title="Open the sheet(s) awaiting approval"><Money amt={dAgg.pending} /></Link>
+                            : <Money amt={dAgg.pending} />
+                        })()}
                       </Td>
                       <Td align="right" mono className="text-emerald-700">
                         <Money amt={dAgg.approvedTotal} />
@@ -796,13 +818,25 @@ export default async function CostControlProjectDetailPage(
                             )}
                           </Td>
                           <Td align="right" mono className={overBy > 0 ? 'text-rose-700 font-semibold' : 'text-amber-700'}>
-                            <Money amt={ask} />
-                            {overBy > 0 && (
-                              <span className="block text-[10px] font-bold text-rose-600 leading-tight"
-                                title={`Engineer is asking ${formatINR(overBy)} above the Internal Estimate`}>
-                                ▲ over by {formatINR(overBy)}
-                              </span>
-                            )}
+                            {(() => {
+                              const ids = awaitingBySub.get(`${d.id}::${s.id}`) ?? []
+                              const href = awaitingHref(ids, `/cost-control/working-sheets?project=${project.id}&discipline=${d.id}&sub_skill=${s.id}`)
+                              const body = (
+                                <>
+                                  <Money amt={ask} />
+                                  {overBy > 0 && (
+                                    <span className="block text-[10px] font-bold text-rose-600 leading-tight"
+                                      title={`Engineer is asking ${formatINR(overBy)} above the Internal Estimate`}>
+                                      ▲ over by {formatINR(overBy)}
+                                    </span>
+                                  )}
+                                </>
+                              )
+                              return href
+                                ? <Link href={href} className="inline-block rounded px-1 -mx-1 hover:bg-amber-50 hover:underline decoration-amber-400 underline-offset-2"
+                                    title={ids.length === 1 ? 'Open this sheet to approve' : `${ids.length} sheets awaiting — open the sub-skill’s list`}>{body}</Link>
+                                : body
+                            })()}
                           </Td>
                           <Td align="right" mono className="text-emerald-700">
                             <Money amt={released} />
@@ -961,10 +995,18 @@ export default async function CostControlProjectDetailPage(
                       <p className="text-[10px] uppercase tracking-wide text-gray-500">Estimate</p>
                       <p className="text-[13px] font-semibold text-indigo-800 tabular-nums"><Money amt={estLive} /></p>
                     </div>
-                    <div className={`rounded-lg py-1.5 ${overBy > 0 ? 'bg-rose-50' : 'bg-amber-50/60'}`}>
-                      <p className="text-[10px] uppercase tracking-wide text-gray-500">Awaiting</p>
-                      <p className={`text-[13px] font-semibold tabular-nums ${overBy > 0 ? 'text-rose-700' : 'text-amber-700'}`}><Money amt={ask} /></p>
-                    </div>
+                    {(() => {
+                      const ids = awaitingBySub.get(`${d.id}::${s.id}`) ?? []
+                      const href = awaitingHref(ids, `/cost-control/working-sheets?project=${project.id}&discipline=${d.id}&sub_skill=${s.id}`)
+                      const cls = `block rounded-lg py-1.5 ${overBy > 0 ? 'bg-rose-50' : 'bg-amber-50/60'}`
+                      const body = (
+                        <>
+                          <p className="text-[10px] uppercase tracking-wide text-gray-500">Awaiting{href ? ' ›' : ''}</p>
+                          <p className={`text-[13px] font-semibold tabular-nums ${overBy > 0 ? 'text-rose-700' : 'text-amber-700'}`}><Money amt={ask} /></p>
+                        </>
+                      )
+                      return href ? <Link href={href} className={cls}>{body}</Link> : <div className={cls}>{body}</div>
+                    })()}
                     <div className="rounded-lg bg-emerald-50/60 py-1.5">
                       <p className="text-[10px] uppercase tracking-wide text-gray-500">Released</p>
                       <p className="text-[13px] font-semibold text-emerald-700 tabular-nums"><Money amt={released} /></p>
