@@ -26,9 +26,9 @@ function median(xs: number[]): number {
 function rotColor(md: number): string {
   return md > 21 ? '#c0392b' : md > 7 ? '#c68a1a' : '#2e7d54'
 }
-// Order stages internal-first, Trust last. "ATMs" = the Atm (Atmarpit) approval
-// desk, which sits after the CT checks and before Trust Accounts.
-const STAGE_ORDER = ['Site Head', 'CT Billing', 'CT Head', 'CT Disc Head', 'ATMs']
+// Internal checking flow order (Trust last, rank 90). Per PH, the real order is
+// Site Head -> CT Disc Head -> CT Head -> ATMs (Atm Head) -> CT Billing -> Trust.
+const STAGE_ORDER = ['Site Head', 'CT Disc Head', 'CT Head', 'ATMs', 'CT Billing']
 function stageRank(stage: string, atTrust: boolean): number {
   if (atTrust) return 90
   const i = STAGE_ORDER.findIndex(s => stage.toLowerCase().includes(s.toLowerCase()))
@@ -379,7 +379,7 @@ export default function Cockpit({ bills, asOf, myCodes = [] }: { bills: CockpitB
 
 // ── Per-bill journey (Zoho portion live; IN4 tail shown as pending sync) ──────
 function Journey({ bill, onClose, showNoWO }: { bill: CockpitBill; onClose: () => void; showNoWO: boolean }) {
-  const zohoStages = ['Site Head', 'CT Billing', 'CT Head', 'CT Disc Head', 'ATMs', 'Submitted to Trust A/c']
+  const zohoStages = ['Site Head', 'CT Disc Head', 'CT Head', 'ATMs', 'CT Billing', 'Submitted to Trust A/c']
   const curIdx = bill.atTrust ? zohoStages.length - 1 : Math.max(0, zohoStages.findIndex(s => bill.stage.toLowerCase().includes(s.toLowerCase())))
   const nodes = [...zohoStages.map((s, i) => ({ label: s.replace('Submitted to Trust A/c', 'Submitted to Trust'), sys: 'Zoho', done: i < curIdx, cur: i === curIdx, pending: false })),
     { label: 'Entered in IN4', sys: 'IN4', done: false, cur: false, pending: true },
