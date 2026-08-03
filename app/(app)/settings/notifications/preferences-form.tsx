@@ -15,7 +15,6 @@ import { cn } from '@/lib/utils'
 interface Prefs {
   in_app: boolean
   email: boolean
-  email_address: string
   telegram: boolean
   telegram_chat_id: string
   web_push: boolean
@@ -47,7 +46,6 @@ export function NotificationPreferencesForm({
         user_id: userId,
         in_app: p.in_app,
         email: p.email,
-        email_address: p.email_address || null,
         telegram: p.telegram,
         telegram_chat_id: p.telegram_chat_id || null,
         web_push: p.web_push,
@@ -76,21 +74,11 @@ export function NotificationPreferencesForm({
       <ChannelRow
         icon={Mail}
         title="Email"
-        description="A short summary email for each notification — opt for the digest if you prefer one a day."
+        description="A short summary email for each alert, sent to your login email. Opt for the digest if you prefer one a day."
         enabled={p.email}
         onToggle={v => set('email', v)}
         live
-      >
-        {p.email && (
-          <Input
-            type="email"
-            value={p.email_address}
-            onChange={e => set('email_address', e.target.value)}
-            placeholder="you@example.com"
-            className="mt-2"
-          />
-        )}
-      </ChannelRow>
+      />
 
       <ChannelRow
         icon={Send}
