@@ -2,35 +2,25 @@
 // "Needs you now" list only covers things waiting on you to APPROVE; an
 // engineer's own drafts-to-send and returned-to-fix don't appear there. This
 // strip surfaces those as one-tap shortcuts. Renders nothing when the person
-// has no working sheets of their own (e.g. pure approvers), so it never adds
-// noise. Gated by the caller on cost-control view permission.
+// has no such work, so it never adds noise for pure approvers.
+//
+// Sync component — data is fetched in the page and passed in (same pattern as
+// NeedsYouNow), so it never blocks or breaks the home render.
 
 import Link from 'next/link'
-import { createClient } from '@/lib/supabase/server'
-import { getMyUser } from '@/lib/auth'
 
-const AWAITING = new Set(['submitted', 'ph_approved', 'atm_approved', 'partially_approved'])
+export interface CcWorkCounts {
+  returned: number
+  drafts: number
+  awaiting: number
+}
 
-export async function CostControlSnapshot() {
-  const user = await getMyUser()
-  if (!user) return null
-  const supabase = await createClient()
-  const { data, error } = await supabase
-    .from('cc_working_sheets')
-    .select('status, summary_notes')
-    .eq('engineer_id', user.id)
-    .is('archived_at', null)
-  if (error || !data) return null
-
-  const rows = (data as { status: string; summary_notes: string | null }[])
-    .filter(r => !(r.summary_notes ?? '').startsWith('[IB')) // exclude Internal Estimate baselines
-  const returned = rows.filter(r => r.status === 'returned').length
-  const drafts = rows.filter(r => r.status === 'draft').length
-  const awaiting = rows.filter(r => AWAITING.has(r.status)).length
+export function CostControlSnapshot({ counts }: { counts: CcWorkCounts }) {
+  const { returned, drafts, awaiting } = counts
   if (returned + drafts + awaiting === 0) return null
 
   const tiles = [
-    { show: returned > 0, n: returned, label: returned === 1 ? 'Returned to fix' : 'Returned to fix', tone: 'rose',
+    { show: returned > 0, n: returned, label: 'Returned to fix', tone: 'rose',
       href: '/cost-control/working-sheets?status=returned', cta: 'Fix & resend →' },
     { show: drafts > 0, n: drafts, label: drafts === 1 ? 'Draft to send' : 'Drafts to send', tone: 'amber',
       href: '/cost-control/working-sheets?status=draft', cta: 'Send for approval →' },

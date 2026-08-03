@@ -36,6 +36,24 @@ export default async function DashboardPage() {
   const { data: inboxData, error: inboxError } = await supabase.rpc('my_approval_inbox')
   const inbox = (inboxData ?? []) as InboxItem[]
 
+  // Engineer's own budget work (drafts / returned / awaiting) for the "Your
+  // budget work" strip — a cheap status-only read of their own sheets. These
+  // aren't approvals so they never show in the inbox above.
+  const ccWork = { returned: 0, drafts: 0, awaiting: 0 }
+  if (showCC) {
+    const { data: ccRows } = await supabase
+      .from('cc_working_sheets')
+      .select('status, summary_notes')
+      .eq('engineer_id', profile.id)
+      .is('archived_at', null)
+    for (const r of (ccRows ?? []) as { status: string; summary_notes: string | null }[]) {
+      if ((r.summary_notes ?? '').startsWith('[IB')) continue
+      if (r.status === 'returned') ccWork.returned++
+      else if (r.status === 'draft') ccWork.drafts++
+      else if (['submitted', 'ph_approved', 'atm_approved', 'partially_approved'].includes(r.status)) ccWork.awaiting++
+    }
+  }
+
   // Counts (lightweight, head:true) — only fetch what we'll render
   const [indents, pos, grns, invoices, recentIndents, recentPos] = await Promise.all([
     showIndents  ? supabase.from('indents').select('id', { count: 'exact', head: true })         : Promise.resolve({ count: 0 }),
@@ -77,7 +95,7 @@ export default async function DashboardPage() {
 
       {/* Your budget work — an engineer's own drafts/returns/awaiting (things
           that don't appear in the approval inbox). Self-hides when there's none. */}
-      {showCC && <CostControlSnapshot />}
+      {showCC && <CostControlSnapshot counts={ccWork} />}
 
       {/* Stat strip — each pill is independently gated by perms + module visibility */}
       {showKpiStrip && (
