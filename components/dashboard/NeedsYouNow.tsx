@@ -32,6 +32,21 @@ const MOD_EMOJI: Record<string, string> = {
 
 const MAX_SHOWN = 6
 
+// Human phrasing for the stage an item is heading to — raw stage codes like
+// "approved" read as broken English ("waiting on approved").
+const NEXT_STAGE_LABEL: Record<string, string> = {
+  approved: 'final approval',
+  partially_approved: 'a partial release',
+  ph_approved: 'Project Head sign-off',
+  atm_approved: 'Atm Head sign-off',
+  submitted: 'submission',
+  returned: 'revision',
+  deadline_set: 'a deadline',
+}
+function stageLabel(s: string): string {
+  return NEXT_STAGE_LABEL[s] ?? s.replace(/_/g, ' ')
+}
+
 function ageDays(iso: string, now: number): number {
   const t = Date.parse(iso)
   if (Number.isNaN(t)) return 0
@@ -110,7 +125,7 @@ export function NeedsYouNow({
                   </p>
                   <p className="text-xs text-gray-500 truncate">
                     {labelFor(moduleLabels, r.module_slug)}
-                    {r.next_stage ? ` — waiting on ${r.next_stage.replace(/_/g, ' ')}` : ''}
+                    {r.next_stage ? ` — waiting for ${stageLabel(r.next_stage)}` : ''}
                   </p>
                 </div>
                 <div className="flex flex-col items-end gap-1 flex-shrink-0">
