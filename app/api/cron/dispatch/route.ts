@@ -31,6 +31,7 @@ function morningJobs(): string[] {
     ...(every3rdDay ? ['/api/cost-control/in4-followup?cron=1'] : []),
     '/api/cron/procurement-digest?cron=1', // self-gates weekday + once/day
     '/api/cron/engineer-digest?cron=1',
+    '/api/cron/notification-digest?cron=1', // bundles "Daily"-mode alerts into one push/email
     '/api/cron/daily-site-report?cron=1',
     '/api/cron/bills-pipeline?cron=1',
     '/api/cron/bph-sync?cron=1',

@@ -4,7 +4,7 @@ import { createClient } from '@/lib/supabase/client'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { PageHeader } from '@/components/PageHeader'
 import { Badge } from '@/components/ui/badge'
-import { Bell, Mail, Smartphone, Lock, Info, Loader2, ChevronDown, ChevronRight, Users2, Globe } from 'lucide-react'
+import { Bell, Mail, Smartphone, Lock, Clock, Info, Loader2, ChevronDown, ChevronRight, Users2, Globe } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { Role } from '@/lib/types'
 import type { RoleLabelMap } from '@/lib/role-labels'
@@ -24,10 +24,18 @@ const CHANNEL_ICON: Record<string, React.ReactNode> = {
 // be switched off here. (Individuals still can't silence these either.)
 const PINNED_EVENTS = new Set(['approval_pending'])
 
+export interface NotificationScheduleRow { scope: string; scope_key: string; event_type: string; mode: string }
+const TIMING_MODES = [
+  { key: 'instant', label: 'Instant' },
+  { key: 'daily', label: 'Daily digest' },
+  { key: 'off', label: 'Off' },
+] as const
+
 export default function NotificationRulesClient({
-  initialRules, roles, roleLabels, currentUserId,
+  initialRules, initialSchedules = [], roles, roleLabels, currentUserId,
 }: {
   initialRules: NotificationRuleRow[]
+  initialSchedules?: NotificationScheduleRow[]
   roles: Role[]
   roleLabels: RoleLabelMap
   currentUserId: string
@@ -38,9 +46,28 @@ export default function NotificationRulesClient({
     for (const r of initialRules) m[keyOf(r.scope, r.scope_key, r.event_type, r.channel)] = r.enabled
     return m
   })
+  const [schedules, setSchedules] = useState<Record<string, string>>(() => {
+    const m: Record<string, string> = {}
+    for (const s of initialSchedules) m[`${s.scope}|${s.scope_key}|${s.event_type}`] = s.mode
+    return m
+  })
   const [busy, setBusy] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [openRole, setOpenRole] = useState<Role | null>(null)
+
+  // ── delivery timing (per type, org-wide) ──────────
+  const globalMode = (event: string) => schedules[`global||${event}`] ?? 'instant'
+  async function setMode(event: string, mode: string) {
+    const k = `mode:${event}`
+    setBusy(k); setError(null)
+    const { error } = await supabase.from('notification_schedule').upsert(
+      { scope: 'global', scope_key: '', event_type: event, mode, updated_by: currentUserId, updated_at: new Date().toISOString() },
+      { onConflict: 'scope,scope_key,event_type' },
+    )
+    setBusy(null)
+    if (error) { setError(error.message); return }
+    setSchedules(p => ({ ...p, [`global||${event}`]: mode }))
+  }
 
   // ── value resolution ──────────────────────────────
   const globalVal = (event: string, channel: string) => {
@@ -142,6 +169,58 @@ export default function NotificationRulesClient({
         </CardContent>
       </Card>
 
+      {/* ── Delivery timing ─────────────────────────── */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-base">
+            <Clock className="h-5 w-5 text-blue-600" />
+            When each alert is delivered
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <p className="text-xs text-gray-500 mb-3">
+            <b>Instant</b> = sent the moment it happens. <b>Daily digest</b> = held and bundled into one
+            email/phone summary each morning (the bell still shows it live). <b>Off</b> = no email/phone
+            (still visible in the bell). Approvals are always Instant.
+          </p>
+          <div className="divide-y divide-gray-100">
+            {NOTIFICATION_EVENTS.map(e => {
+              const locked = PINNED_EVENTS.has(e.type)
+              const cur = locked ? 'instant' : globalMode(e.type)
+              const rowBusy = busy === `mode:${e.type}`
+              return (
+                <div key={e.type} className="flex items-center justify-between gap-3 py-2.5">
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium text-gray-900 flex items-center gap-1.5">
+                      {e.label}
+                      {locked && <span className="inline-flex items-center gap-0.5 text-[9px] font-semibold uppercase tracking-wide text-blue-700 bg-blue-50 border border-blue-200 rounded px-1 py-0.5"><Lock className="h-2.5 w-2.5" /> Instant</span>}
+                    </p>
+                  </div>
+                  <div className={cn('inline-flex rounded-lg border border-gray-200 overflow-hidden flex-shrink-0', rowBusy && 'opacity-60')}>
+                    {TIMING_MODES.map(m => (
+                      <button
+                        key={m.key}
+                        type="button"
+                        disabled={locked || rowBusy}
+                        aria-pressed={cur === m.key}
+                        onClick={() => { if (!locked) setMode(e.type, m.key) }}
+                        className={cn(
+                          'text-xs font-semibold px-3 py-1.5 border-r border-gray-200 last:border-r-0 transition-colors',
+                          cur === m.key ? 'bg-blue-600 text-white' : 'bg-white text-gray-500 hover:bg-gray-50',
+                          (locked || rowBusy) && 'cursor-not-allowed',
+                        )}
+                      >
+                        {m.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </CardContent>
+      </Card>
+
       {/* ── Per-role overrides ──────────────────────── */}
       <Card>
         <CardHeader>
@@ -222,7 +301,10 @@ function RuleGrid({
 }) {
   return (
     <div className="overflow-x-auto">
-      <div className="min-w-[20rem] grid grid-cols-[1fr_auto_auto] gap-x-5 gap-y-3 items-center">
+      <div
+        className="min-w-[20rem] grid gap-x-5 gap-y-3 items-center"
+        style={{ gridTemplateColumns: `minmax(11rem,1fr) ${'auto '.repeat(NOTIFICATION_CHANNELS.length).trim()}` }}
+      >
         {/* header */}
         <div />
         {NOTIFICATION_CHANNELS.map(c => (

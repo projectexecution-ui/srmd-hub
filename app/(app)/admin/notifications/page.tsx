@@ -3,7 +3,7 @@ import { createClient } from '@/lib/supabase/server'
 import { getMyProfile, isPortalOwner } from '@/lib/auth'
 import { getRoleLabels } from '@/lib/role-labels'
 import { ALL_ROLES } from '@/lib/types'
-import NotificationRulesClient from './NotificationRulesClient'
+import NotificationRulesClient, { type NotificationScheduleRow } from './NotificationRulesClient'
 import SelfManageAdmin, { type SelfManageUser } from './SelfManageAdmin'
 
 export const dynamic = 'force-dynamic'
@@ -26,8 +26,9 @@ export default async function AdminNotificationsPage() {
   if (!(portalOwner || profile?.role === 'admin')) redirect('/admin')
 
   const supabase = await createClient()
-  const [{ data: rules }, { data: userRows }, { data: grantRows }] = await Promise.all([
+  const [{ data: rules }, { data: schedules }, { data: userRows }, { data: grantRows }] = await Promise.all([
     supabase.from('notification_rules').select('scope, scope_key, event_type, channel, enabled'),
+    supabase.from('notification_schedule').select('scope, scope_key, event_type, mode'),
     supabase.from('profiles').select('id, full_name, name, email, role').eq('is_active', true),
     supabase.from('notification_self_manage').select('user_id'),
   ])
@@ -44,6 +45,7 @@ export default async function AdminNotificationsPage() {
     <div className="space-y-4">
       <NotificationRulesClient
         initialRules={(rules ?? []) as NotificationRuleRow[]}
+        initialSchedules={(schedules ?? []) as NotificationScheduleRow[]}
         roles={ALL_ROLES}
         roleLabels={roleLabels}
         currentUserId={profile!.id}
