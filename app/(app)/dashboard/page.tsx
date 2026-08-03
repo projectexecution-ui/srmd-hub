@@ -10,6 +10,7 @@ import { formatDate, formatINR } from '@/lib/utils'
 import { ClipboardList, FileText, PackageCheck, Receipt } from 'lucide-react'
 import { getMyProfile, getMyPermissions, getDisabledModuleSlugs } from '@/lib/auth'
 import { getModuleLabels } from '@/lib/module-labels'
+import { NeedsYouNow, type InboxItem } from '@/components/dashboard/NeedsYouNow'
 
 export const dynamic = 'force-dynamic'
 
@@ -27,6 +28,11 @@ export default async function DashboardPage() {
   const showGrns     = canShow('grns')
   const showInvoices = canShow('invoices')
   const supabase = await createClient()
+
+  // "Needs you now" — every item across all modules waiting on THIS person's
+  // action. One RPC, already permission-scoped; drives the top of the home.
+  const { data: inboxData, error: inboxError } = await supabase.rpc('my_approval_inbox')
+  const inbox = (inboxData ?? []) as InboxItem[]
 
   // Counts (lightweight, head:true) — only fetch what we'll render
   const [indents, pos, grns, invoices, recentIndents, recentPos] = await Promise.all([
@@ -63,6 +69,9 @@ export default async function DashboardPage() {
           {new Date().toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
         </p>
       </div>
+
+      {/* Needs you now — the actionable heart of the home, above everything else */}
+      <NeedsYouNow items={inbox} moduleLabels={moduleLabels} error={!!inboxError} />
 
       {/* Stat strip — each pill is independently gated by perms + module visibility */}
       {showKpiStrip && (
