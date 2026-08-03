@@ -11,7 +11,6 @@ import { Input } from '@/components/ui/input'
 import { Card } from '@/components/ui/card'
 import { Bell, Mail, Send, Smartphone, Check, Loader2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { EnablePushButton } from '@/components/push/EnablePushButton'
 
 interface Prefs {
   in_app: boolean
@@ -120,7 +119,11 @@ export function NotificationPreferencesForm({
         enabled={p.web_push}
         onToggle={v => set('web_push', v)}
       >
-        <EnablePushButton onSubscribedChange={v => set('web_push', v)} />
+        {p.web_push && (
+          <p className="mt-2 text-[11px] text-gray-500">
+            Switch this on for a specific phone/laptop in the <b>Phone notifications</b> section at the top of this page.
+          </p>
+        )}
       </ChannelRow>
 
       <Card className="p-4 flex items-start gap-3">
