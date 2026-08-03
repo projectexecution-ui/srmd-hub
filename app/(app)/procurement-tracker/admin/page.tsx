@@ -22,6 +22,7 @@ export default async function ProcurementProjectVisibilityPage() {
     { data: known },
     { data: users },
     { data: hidden },
+    { data: stateRow },
   ] = await Promise.all([
     supabase
       .from('procurement_known_projects')
@@ -35,7 +36,29 @@ export default async function ProcurementProjectVisibilityPage() {
     supabase
       .from('procurement_user_project_visibility')
       .select('user_id, project_name'),
+    supabase
+      .from('procurement_tracker_state')
+      .select('state')
+      .eq('id', 'global')
+      .maybeSingle(),
   ])
+
+  // Merge the auto-grown registry with the projects in the CURRENT upload, so
+  // the settings list always reflects live data even if the registry missed a
+  // project on some past upload. Registry's last_seen_at wins; live-only
+  // projects fall back to the upload's savedAt.
+  const state = (stateRow?.state ?? null) as { savedAt?: string; projects?: Array<{ projectName?: string }> } | null
+  const savedAt = state?.savedAt ?? new Date().toISOString()
+  const byName = new Map<string, string>()
+  for (const r of (known ?? []) as Array<{ name: string; last_seen_at: string }>) {
+    if (r.name) byName.set(r.name, r.last_seen_at)
+  }
+  for (const p of state?.projects ?? []) {
+    const n = (p?.projectName ?? '').trim()
+    if (n && !byName.has(n)) byName.set(n, savedAt)
+  }
+  const mergedProjects = Array.from(byName, ([name, lastSeenAt]) => ({ name, lastSeenAt }))
+    .sort((a, b) => a.name.localeCompare(b.name))
 
   return (
     <div className="p-4 md:p-6 max-w-4xl mx-auto space-y-4">
@@ -47,10 +70,10 @@ export default async function ProcurementProjectVisibilityPage() {
       <ProcurementNotifySettingsForm
         initial={notifyConfig}
         users={(users ?? []).map(u => ({ id: u.id as string, full_name: (u.full_name as string | null) ?? null, email: u.email as string, role: u.role as string }))}
-        projects={(known ?? []).map(r => r.name as string)}
+        projects={mergedProjects.map(p => p.name)}
       />
       <ProcurementProjectVisibilityEditor
-        knownProjects={(known ?? []).map(r => ({ name: r.name as string, lastSeenAt: r.last_seen_at as string }))}
+        knownProjects={mergedProjects}
         users={users ?? []}
         initialHiddenRows={(hidden ?? []).map(r => ({ userId: r.user_id as string, projectName: r.project_name as string }))}
       />
