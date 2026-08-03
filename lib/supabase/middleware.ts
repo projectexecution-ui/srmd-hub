@@ -32,7 +32,19 @@ export async function updateSession(request: NextRequest) {
   // authenticate with the NOTIFY_INTERNAL_SECRET header, so they must skip the
   // login redirect here. (/api/push/subscribe stays gated — it's called by the
   // signed-in user's own browser, which carries the session cookie.)
-  const publicRoutes = ['/login', '/auth/callback', '/api/email/send', '/api/push/send']
+  //
+  // Scheduled-job (cron) endpoints likewise carry NO login cookie — Vercel Cron
+  // calls them with only an `Authorization: Bearer CRON_SECRET` header, and the
+  // dispatcher fans out to them server-to-server the same way. Without these in
+  // the allowlist the proxy bounced every cron call to /login, so NOTHING
+  // scheduled ever ran. Each route still enforces CRON_SECRET itself.
+  const publicRoutes = [
+    '/login', '/auth/callback', '/api/email/send', '/api/push/send',
+    '/api/cron',                      // dispatcher + all fan-out jobs under /api/cron/*
+    '/api/jmr/weekly-report',         // cron
+    '/api/cost-control/backup',       // cron
+    '/api/cost-control/in4-followup', // cron
+  ]
   const isPublic = publicRoutes.some(r => pathname.startsWith(r))
 
   if (!user && !isPublic) {
