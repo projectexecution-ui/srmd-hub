@@ -4,7 +4,7 @@ import { createClient } from '@/lib/supabase/client'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { PageHeader } from '@/components/PageHeader'
 import { Badge } from '@/components/ui/badge'
-import { Bell, Mail, Info, Loader2, ChevronDown, ChevronRight, Users2, Globe } from 'lucide-react'
+import { Bell, Mail, Smartphone, Lock, Info, Loader2, ChevronDown, ChevronRight, Users2, Globe } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { Role } from '@/lib/types'
 import type { RoleLabelMap } from '@/lib/role-labels'
@@ -17,7 +17,12 @@ const keyOf = (scope: string, scopeKey: string, event: string, channel: string) 
 const CHANNEL_ICON: Record<string, React.ReactNode> = {
   in_app: <Bell className="h-3.5 w-3.5" />,
   email: <Mail className="h-3.5 w-3.5" />,
+  web_push: <Smartphone className="h-3.5 w-3.5" />,
 }
+
+// Approvals moving through the chain must always notify — locked on, can't
+// be switched off here. (Individuals still can't silence these either.)
+const PINNED_EVENTS = new Set(['approval_pending'])
 
 export default function NotificationRulesClient({
   initialRules, roles, roleLabels, currentUserId,
@@ -243,20 +248,28 @@ function RuleRow({
   busy: string | null
   busyKeyFor: (event: string, channel: string) => string
 }) {
+  const locked = PINNED_EVENTS.has(event.type)
   return (
     <>
       <div className="min-w-0 py-1">
-        <p className="text-sm font-medium text-gray-900">{event.label}</p>
+        <p className="text-sm font-medium text-gray-900 flex items-center gap-1.5">
+          {event.label}
+          {locked && (
+            <span className="inline-flex items-center gap-0.5 text-[9px] font-semibold uppercase tracking-wide text-blue-700 bg-blue-50 border border-blue-200 rounded px-1 py-0.5" title="Approvals always notify — this can't be turned off">
+              <Lock className="h-2.5 w-2.5" /> Always on
+            </span>
+          )}
+        </p>
         <p className="text-[11px] text-gray-500 leading-tight">{event.description}</p>
         <p className="text-[10px] text-gray-400 mt-0.5">→ {event.audience}</p>
       </div>
       {NOTIFICATION_CHANNELS.map(c => {
-        const on = value(event.type, c.key)
+        const on = locked ? true : value(event.type, c.key)
         const k = busyKeyFor(event.type, c.key)
         const isBusy = busy === k
         return (
           <div key={c.key} className="flex items-center justify-center">
-            <Switch on={on} busy={isBusy} onClick={() => onToggle(event.type, c.key, !on)} />
+            <Switch on={on} busy={isBusy} locked={locked} onClick={() => { if (!locked) onToggle(event.type, c.key, !on) }} />
           </div>
         )
       })}
@@ -264,18 +277,20 @@ function RuleRow({
   )
 }
 
-function Switch({ on, busy, onClick }: { on: boolean; busy: boolean; onClick: () => void }) {
+function Switch({ on, busy, onClick, locked = false }: { on: boolean; busy: boolean; onClick: () => void; locked?: boolean }) {
   return (
     <button
       type="button"
       role="switch"
       aria-checked={on}
-      disabled={busy}
+      disabled={busy || locked}
       onClick={onClick}
+      title={locked ? "Approvals always notify — can't be turned off" : undefined}
       className={cn(
         'relative inline-flex h-6 w-11 items-center rounded-full transition-colors flex-shrink-0',
         on ? 'bg-blue-600' : 'bg-gray-300',
         busy && 'opacity-60',
+        locked && 'opacity-70 cursor-not-allowed',
       )}
     >
       {busy ? (

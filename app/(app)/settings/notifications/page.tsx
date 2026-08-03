@@ -11,6 +11,7 @@ import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/server'
 import { getMyUser, getMyProfile } from '@/lib/auth'
+import { canManageOwnNotifications } from '@/lib/notifications/self-manage'
 import { PageHeader } from '@/components/PageHeader'
 import { Card } from '@/components/ui/card'
 import { NotificationPreferencesForm } from './preferences-form'
@@ -32,6 +33,24 @@ export default async function NotificationSettingsPage() {
   const user = await getMyUser()
   if (!user) redirect('/login')
   const profile = await getMyProfile()
+
+  // Notifications are the admin's to set unless they've delegated self-management
+  // to this person. If not delegated, explain that plainly (no silent lockout).
+  if (!(await canManageOwnNotifications())) {
+    return (
+      <div className="p-4 md:p-6 max-w-2xl mx-auto space-y-6">
+        <PageHeader title="Notifications" subtitle="How you're told about things waiting on you." />
+        <Card className="p-5 bg-blue-50 border-blue-200 text-sm text-blue-900">
+          <p className="font-semibold mb-1">Your notifications are managed for you.</p>
+          <p>
+            Your administrator sets which alerts you receive so nothing important is missed.
+            If you&apos;d like to fine-tune your own notifications, ask your admin to switch on
+            <b> &ldquo;Let this person manage their own notifications&rdquo;</b> for you.
+          </p>
+        </Card>
+      </div>
+    )
+  }
 
   const supabase = await createClient()
   const { data } = await supabase

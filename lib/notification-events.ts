@@ -45,12 +45,14 @@ export const NOTIFICATION_EVENTS: NotificationEventDef[] = [
 export const NOTIFICATION_CHANNELS = [
   { key: 'in_app', label: 'In-app', help: 'The bell inside CT HUB.' },
   { key: 'email', label: 'Email', help: 'Sent to the user’s email.' },
+  { key: 'web_push', label: 'Phone', help: 'Push notification on the phone/desktop, even when CT HUB is closed.' },
 ] as const
 
 export type NotificationChannelKey = (typeof NOTIFICATION_CHANNELS)[number]['key']
 
 /** Built-in fallback when no rule exists anywhere — must match the SQL
- *  notification_allowed() default (in-app + email on, push off). */
-export function builtInDefault(channel: string): boolean {
-  return channel !== 'web_push'
+ *  notification_allowed() default (all channels on; phone push is still gated
+ *  per-user by the Web-push preference + a registered device). */
+export function builtInDefault(_channel: string): boolean {
+  return true
 }
