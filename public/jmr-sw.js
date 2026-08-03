@@ -67,3 +67,33 @@ self.addEventListener('fetch', event => {
     )
   }
 })
+
+// ── Web Push (CT HUB notifications on phone/desktop) ─────────────────────────
+// The /api/push/send route posts a JSON payload { title, body, url }. Show it as
+// a system notification; a tap focuses an open CT HUB tab or opens the deep link.
+self.addEventListener('push', event => {
+  let data = {}
+  try { data = event.data ? event.data.json() : {} } catch (e) { data = {} }
+  const title = data.title || 'CT HUB'
+  const options = {
+    body: data.body || '',
+    data: { url: data.url || '/' },
+    tag: data.tag || undefined,   // same tag replaces an older notice instead of stacking
+    renotify: !!data.tag,
+  }
+  event.waitUntil(self.registration.showNotification(title, options))
+})
+
+self.addEventListener('notificationclick', event => {
+  event.notification.close()
+  const target = (event.notification.data && event.notification.data.url) || '/'
+  event.waitUntil(
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(clients => {
+      for (const c of clients) {
+        // Reuse an already-open CT HUB window if there is one.
+        if ('focus' in c) { try { c.navigate(target) } catch (e) {} return c.focus() }
+      }
+      if (self.clients.openWindow) return self.clients.openWindow(target)
+    })
+  )
+})
