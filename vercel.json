@@ -3,52 +3,12 @@
   "regions": ["bom1"],
   "crons": [
     {
-      "path": "/api/jmr/weekly-report?cron=1",
+      "path": "/api/cron/dispatch?cron=1&slot=am",
       "schedule": "30 3 * * *"
     },
     {
-      "path": "/api/cost-control/backup?cron=1",
-      "schedule": "0 20 * * *"
-    },
-    {
-      "path": "/api/cost-control/in4-followup?cron=1",
-      "schedule": "0 5 */3 * *"
-    },
-    {
-      "path": "/api/cron/procurement-digest?cron=1",
-      "schedule": "30 3 * * *"
-    },
-    {
-      "path": "/api/cron/bills-pipeline?cron=1",
-      "schedule": "0 4 * * *"
-    },
-    {
-      "path": "/api/cron/bills-pipeline?cron=1&slot=mid",
-      "schedule": "0 7 * * *"
-    },
-    {
-      "path": "/api/cron/bills-pipeline?cron=1&slot=aft",
-      "schedule": "0 10 * * *"
-    },
-    {
-      "path": "/api/cron/bills-pipeline?cron=1&slot=pm",
-      "schedule": "0 13 * * *"
-    },
-    {
-      "path": "/api/cron/bph-sync?cron=1",
-      "schedule": "0 6 * * *"
-    },
-    {
-      "path": "/api/cron/bph-sync?cron=1",
-      "schedule": "0 15 * * *"
-    },
-    {
-      "path": "/api/cron/daily-site-report?cron=1",
-      "schedule": "0 13 * * *"
-    },
-    {
-      "path": "/api/cron/engineer-digest?cron=1",
-      "schedule": "0 3 * * *"
+      "path": "/api/cron/dispatch?cron=1&slot=pm",
+      "schedule": "30 9 * * *"
     }
   ]
 }
