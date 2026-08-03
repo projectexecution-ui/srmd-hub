@@ -11,6 +11,7 @@ import { ClipboardList, FileText, PackageCheck, Receipt } from 'lucide-react'
 import { getMyProfile, getMyPermissions, getDisabledModuleSlugs } from '@/lib/auth'
 import { getModuleLabels } from '@/lib/module-labels'
 import { NeedsYouNow, type InboxItem } from '@/components/dashboard/NeedsYouNow'
+import { CostControlSnapshot } from '@/components/dashboard/CostControlSnapshot'
 
 export const dynamic = 'force-dynamic'
 
@@ -23,6 +24,7 @@ export default async function DashboardPage() {
   ])
   if (!profile) redirect('/login')
   const canShow = (slug: string) => !!permissions[slug]?.view && !disabledSlugs.has(slug)
+  const showCC       = canShow('cost-control')
   const showIndents  = canShow('indents')
   const showPos      = canShow('pos')
   const showGrns     = canShow('grns')
@@ -72,6 +74,10 @@ export default async function DashboardPage() {
 
       {/* Needs you now — the actionable heart of the home, above everything else */}
       <NeedsYouNow items={inbox} moduleLabels={moduleLabels} error={!!inboxError} />
+
+      {/* Your budget work — an engineer's own drafts/returns/awaiting (things
+          that don't appear in the approval inbox). Self-hides when there's none. */}
+      {showCC && <CostControlSnapshot />}
 
       {/* Stat strip — each pill is independently gated by perms + module visibility */}
       {showKpiStrip && (
