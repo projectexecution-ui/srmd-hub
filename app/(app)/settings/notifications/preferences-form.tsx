@@ -1,22 +1,19 @@
 'use client'
-// One form, four toggles. The Web Push toggle on its own is not enough
-// to start sending — it just records "I want this". A separate Enable on
-// this device button (Phase 2) registers the actual browser endpoint via
-// PushManager.subscribe and saves it to public.push_subscriptions.
+// Per-user channel preferences: In-app bell, Email, and a daily-digest
+// toggle. Phone push is handled by the standalone "Enable on this device"
+// card on the settings page (registers the device); Telegram/custom email
+// were removed as unused/confusing.
 
 import { useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 import { Card } from '@/components/ui/card'
-import { Bell, Mail, Send, Check, Loader2 } from 'lucide-react'
+import { Bell, Mail, Check, Loader2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 interface Prefs {
   in_app: boolean
   email: boolean
-  telegram: boolean
-  telegram_chat_id: string
   web_push: boolean
   digest_only: boolean
 }
@@ -46,8 +43,6 @@ export function NotificationPreferencesForm({
         user_id: userId,
         in_app: p.in_app,
         email: p.email,
-        telegram: p.telegram,
-        telegram_chat_id: p.telegram_chat_id || null,
         web_push: p.web_push,
         digest_only: p.digest_only,
         updated_at: new Date().toISOString(),
@@ -79,27 +74,6 @@ export function NotificationPreferencesForm({
         onToggle={v => set('email', v)}
         live
       />
-
-      <ChannelRow
-        icon={Send}
-        title="Telegram"
-        description="Get a ping on Telegram. We&apos;ll share a /start link to bind your chat once the bot is enabled."
-        enabled={p.telegram}
-        onToggle={v => set('telegram', v)}
-      >
-        {p.telegram && (
-          <div className="mt-2 space-y-1">
-            <Input
-              value={p.telegram_chat_id}
-              onChange={e => set('telegram_chat_id', e.target.value)}
-              placeholder="Telegram chat id (set this by talking to the bot)"
-            />
-            <p className="text-[11px] text-gray-500">
-              You&apos;ll get a /start link to bind this automatically when the Telegram bot goes live.
-            </p>
-          </div>
-        )}
-      </ChannelRow>
 
       <Card className="p-4 flex items-start gap-3">
         <input

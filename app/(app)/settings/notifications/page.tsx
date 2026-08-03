@@ -85,8 +85,6 @@ export default async function NotificationSettingsPage() {
             initial={{
               in_app: initial.in_app,
               email: initial.email,
-              telegram: initial.telegram,
-              telegram_chat_id: initial.telegram_chat_id ?? '',
               web_push: initial.web_push,
               digest_only: initial.digest_only,
             }}
