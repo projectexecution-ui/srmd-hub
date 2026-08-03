@@ -17,7 +17,7 @@ interface CommentRow {
 }
 
 function fmtWhen(ts: string): string {
-  return new Date(ts).toLocaleString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+  return new Date(ts).toLocaleString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata' })
 }
 
 export async function CommentsPanel({ wsId }: { wsId: string }) {

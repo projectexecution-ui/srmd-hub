@@ -369,7 +369,7 @@ export function NewWSQuickForm({ projects, allDisciplines, allSubSkills, default
       disciplineCode: selDiscipline?.code, disciplineName: selDiscipline?.name,
       subSkillCode: selSubSkill?.code, subSkillName: selSubSkill?.name,
       lineTypeLabel: lineType === 'work' ? 'Work' : lineType === 'material' ? 'Material' : 'Combined',
-      dateText: new Date().toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }),
+      dateText: new Date().toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'Asia/Kolkata' }),
       projectId, disciplineId, subSkillId,
       // When a prior version exists, pre-fill it and stamp the next version #.
       seedRows: priorVersion?.rows,

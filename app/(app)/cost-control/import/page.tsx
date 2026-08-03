@@ -122,7 +122,7 @@ export default async function CostControlImportPage({
                       </Badge>
                     </td>
                     <td className="px-3 py-2 text-gray-500 text-xs">
-                      {imp.created_at ? new Date(imp.created_at).toLocaleString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—'}
+                      {imp.created_at ? new Date(imp.created_at).toLocaleString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata' }) : '—'}
                     </td>
                   </tr>
                 )

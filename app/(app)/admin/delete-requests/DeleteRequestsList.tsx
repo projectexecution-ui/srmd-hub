@@ -148,7 +148,7 @@ export default function DeleteRequestsList({ initial, profiles }: {
                       {r.doc_label || `${r.doc_table} · ${r.doc_id.slice(0, 8)}`}
                     </p>
                     <p className="text-xs text-gray-500">
-                      {r.module_slug} · requested by {nameFor(r.requested_by)} · {new Date(r.created_at).toLocaleDateString('en-IN')}
+                      {r.module_slug} · requested by {nameFor(r.requested_by)} · {new Date(r.created_at).toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata' })}
                     </p>
                     {r.decision_reason && (
                       <p className="text-xs text-gray-600 mt-0.5 italic">&ldquo;{r.decision_reason}&rdquo;</p>
@@ -166,7 +166,7 @@ export default function DeleteRequestsList({ initial, profiles }: {
                       {r.status === 'approved' && <Trash2 className="h-3 w-3 mr-0.5 inline" />}
                       {r.status}
                     </Badge>
-                    {r.decided_at && <span className="text-[10px] text-gray-400">{new Date(r.decided_at).toLocaleDateString('en-IN')}</span>}
+                    {r.decided_at && <span className="text-[10px] text-gray-400">{new Date(r.decided_at).toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata' })}</span>}
                     {r.decided_by && <span className="text-[10px] text-gray-400">by {nameFor(r.decided_by)}</span>}
                   </div>
                 </div>

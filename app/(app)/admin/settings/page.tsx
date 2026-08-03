@@ -58,7 +58,7 @@ export default async function AdminSettingsPage() {
             </Row>
             <Row label="Active users">{profilesCount.count ?? 0}</Row>
             <Row label="Today">
-              {new Date().toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
+              {new Date().toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Asia/Kolkata' })}
             </Row>
           </dl>
           <p className="text-xs text-gray-400 mt-4">

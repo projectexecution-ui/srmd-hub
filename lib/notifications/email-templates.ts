@@ -245,7 +245,8 @@ interface ProcDigestData {
 }
 
 function fmtWhen(iso: string): string {
-  try { return new Date(iso).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' }) } catch { return iso }
+  // Emails are always rendered server-side (UTC), so pin IST explicitly.
+  try { return new Date(iso).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Asia/Kolkata' }) } catch { return iso }
 }
 
 function renderProcurementDigest(d: ProcDigestData, link: string): string {

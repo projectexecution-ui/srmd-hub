@@ -155,7 +155,7 @@ export default async function SubSkillLedgerPage({
                       {e.ref && <span className="ml-1.5 text-xs font-mono text-amber-700">{e.ref}</span>}
                     </p>
                     <p className="text-[11px] text-gray-400">
-                      {new Date(e.at).toLocaleString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                      {new Date(e.at).toLocaleString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata' })}
                       {' · '}
                       <Link href={`/cost-control/working-sheets/${e.wsId}`} className="text-blue-600 hover:underline">v{e.version} · {e.wsCode}</Link>
                     </p>

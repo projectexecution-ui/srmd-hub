@@ -538,7 +538,7 @@ function ItemRow({
               <p className="tabular-nums font-semibold text-gray-900">{fmtINR(latest.rate_per_unit)}</p>
               {latest.valid_from && (
                 <p className="text-[10px] text-gray-400 leading-tight">
-                  {new Date(latest.valid_from).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: '2-digit' })}
+                  {new Date(latest.valid_from).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: '2-digit', timeZone: 'Asia/Kolkata' })}
                 </p>
               )}
             </>
@@ -564,7 +564,7 @@ function ItemRow({
           ) : <span className="text-gray-300 text-xs">—</span>}
         </td>
         <td className="px-2 py-2 align-top text-[11px] text-gray-500 hidden md:table-cell">
-          {latestUpdated ? new Date(latestUpdated).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: '2-digit' }) : '—'}
+          {latestUpdated ? new Date(latestUpdated).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: '2-digit', timeZone: 'Asia/Kolkata' }) : '—'}
         </td>
         <td className="px-2 py-2 align-top text-right">
           {canEdit && (

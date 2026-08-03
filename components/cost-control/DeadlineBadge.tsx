@@ -35,7 +35,7 @@ export function DeadlineBadge({
   if (approved) {
     tone = 'bg-emerald-50 text-emerald-800 border-emerald-200'
     Icon = CalendarCheck
-    label = `Deadline ${deadline.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}`
+    label = `Deadline ${deadline.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', timeZone: 'Asia/Kolkata' })}`
   } else if (days < 0) {
     tone = 'bg-rose-50 text-rose-800 border-rose-300'
     Icon = AlertTriangle
@@ -54,8 +54,8 @@ export function DeadlineBadge({
     label = `${days}d left`
   }
 
-  const dateLong  = deadline.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })
-  const dateShort = deadline.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: '2-digit' })
+  const dateLong  = deadline.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'Asia/Kolkata' })
+  const dateShort = deadline.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: '2-digit', timeZone: 'Asia/Kolkata' })
 
   if (compact) {
     // Tight single-line variant. Just the date + a short urgency suffix

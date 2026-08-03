@@ -5,7 +5,7 @@
 // branches (line-item / excel / thumbrule).
 
 import { createClient } from '@/lib/supabase/server'
-import { formatINR, personName, formatDuration } from '@/lib/utils'
+import { formatINR, personName, formatDuration, formatDateTime } from '@/lib/utils'
 import {
   FilePlus2, Send, CheckCircle2, RotateCcw, Wallet, Paperclip, CircleDot, Clock,
 } from 'lucide-react'
@@ -48,10 +48,6 @@ type TLItem = {
   comment?: string | null
   amount?: number | null
   attachments?: Array<{ name?: string; url?: string }> | null
-}
-
-function fmtWhen(ts: string): string {
-  return new Date(ts).toLocaleString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
 }
 
 export async function ApprovalTimeline({ wsId }: { wsId: string }) {
@@ -195,7 +191,7 @@ export async function ApprovalTimeline({ wsId }: { wsId: string }) {
                       {it.title}
                       {it.amount != null && <span className="ml-2 font-bold text-emerald-700 tabular-nums">{formatINR(it.amount)}</span>}
                     </p>
-                    <time className="text-[11px] text-gray-400 whitespace-nowrap">{fmtWhen(it.ts)}</time>
+                    <time className="text-[11px] text-gray-400 whitespace-nowrap">{formatDateTime(it.ts)}</time>
                   </div>
                   <div className="flex items-center gap-2 flex-wrap">
                     <p className="text-xs text-gray-500">{it.who ?? '—'}</p>

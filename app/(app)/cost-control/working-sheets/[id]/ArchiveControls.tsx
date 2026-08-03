@@ -40,7 +40,7 @@ export function ArchiveControls({
           <Archive className="h-4 w-4 text-gray-500" />
           <span>
             <b>Archived</b> by {archivedByName ?? 'unknown'} on{' '}
-            {new Date(archivedAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+            {new Date(archivedAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'Asia/Kolkata' })}
             <span className="text-gray-500"> — hidden from all lists and totals.</span>
           </span>
         </p>

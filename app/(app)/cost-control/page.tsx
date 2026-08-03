@@ -292,7 +292,7 @@ export default async function CostControlLandingPage() {
     } catch { /* plain ISO string — use as-is */ }
     const dt = at ? new Date(at) : null
     if (dt && !Number.isNaN(dt.getTime())) {
-      lastBackup = dt.toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })
+      lastBackup = dt.toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata' })
     }
   }
   const lastBackupLine = backupErr
@@ -820,7 +820,7 @@ function BphSyncChip({
 
   const healthy = sync.err_count === 0
   const when = sync.ran_at
-    ? new Date(sync.ran_at).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })
+    ? new Date(sync.ran_at).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata' })
     : 'never'
 
   // Healthy → a VERY quiet grey line ("BPH synced · <when>"): a low-key

@@ -167,7 +167,7 @@ export function DeadlineCell({
 
 function DeadlineChip({ date, inherited, source }: { date: string; inherited?: boolean; source?: 'ws' | 'disc' }) {
   const d = new Date(date + 'T00:00:00')
-  const formatted = d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: '2-digit' })
+  const formatted = d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: '2-digit', timeZone: 'Asia/Kolkata' })
   // Days remaining for at-a-glance urgency colouring.
   const today = new Date()
   const ms = Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()) - Date.UTC(today.getFullYear(), today.getMonth(), today.getDate())

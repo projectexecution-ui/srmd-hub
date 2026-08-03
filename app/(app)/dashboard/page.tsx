@@ -66,7 +66,7 @@ export default async function DashboardPage() {
       <div>
         <h1 className="text-2xl font-bold text-gray-900">Good {greeting}, {profile.name || profile.full_name?.split(' ')[0] || 'there'}</h1>
         <p className="text-gray-500 text-sm">
-          {new Date().toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
+          {new Date().toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Asia/Kolkata' })}
         </p>
       </div>
 

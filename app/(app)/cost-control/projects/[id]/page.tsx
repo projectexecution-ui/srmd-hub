@@ -421,7 +421,7 @@ export default async function CostControlProjectDetailPage(
             subtitle={[
               project.code,
               pmName ? `Owner: ${pmName}` : null,
-              project.start_date ? `Started ${new Date(project.start_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}` : null,
+              project.start_date ? `Started ${new Date(project.start_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'Asia/Kolkata' })}` : null,
             ].filter(Boolean).join(' · ')}
             className="mb-0"
           />

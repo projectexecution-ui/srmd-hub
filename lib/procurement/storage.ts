@@ -85,6 +85,6 @@ export function computeDiff(
 export function formatSavedAt(iso: string): string {
   try {
     const d = new Date(iso)
-    return d.toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' })
+    return d.toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Asia/Kolkata' })
   } catch { return iso }
 }

@@ -107,7 +107,7 @@ export function NewWSForm({ projects, projectDisciplines, projectSubSkills, defa
       disciplineCode: disc?.code, disciplineName: disc?.name,
       subSkillCode: sub?.code, subSkillName: sub?.name,
       lineTypeLabel: lineType === 'work' ? 'Work' : lineType === 'material' ? 'Material' : 'Combined',
-      dateText: new Date().toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }),
+      dateText: new Date().toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'Asia/Kolkata' }),
       projectId, disciplineId, subSkillId,
     })
   }

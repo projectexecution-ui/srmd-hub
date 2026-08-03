@@ -62,7 +62,7 @@ export default function PrintClient({ result }: { result: ComposeResult }) {
     .filter(x => x.u > 100)
     .sort((a, b) => b.u - a.u)
     .slice(0, 5)
-  const generated = new Date().toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' })
+  const generated = new Date().toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Asia/Kolkata' })
 
   return (
     <div className="bg-gray-100 min-h-screen">

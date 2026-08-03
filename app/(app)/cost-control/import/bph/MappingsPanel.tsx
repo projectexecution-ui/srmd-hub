@@ -69,7 +69,7 @@ function MappingItem({ m }: { m: MappingRow }) {
   }
 
   const when = m.last_pulled_at
-    ? new Date(m.last_pulled_at).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })
+    ? new Date(m.last_pulled_at).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata' })
     : 'never'
 
   return (

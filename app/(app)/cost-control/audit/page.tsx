@@ -318,7 +318,7 @@ export default async function AuditLogPage({
                     {ev.kind === 'excel_import' && <FileSpreadsheet className="h-3.5 w-3.5" />}
                   </td>
                   <td className="px-3 py-2 text-gray-600 text-xs whitespace-nowrap">
-                    {new Date(ev.ts).toLocaleString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                    {new Date(ev.ts).toLocaleString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata' })}
                   </td>
                   <td className="px-3 py-2 text-gray-900">
                     <Badge

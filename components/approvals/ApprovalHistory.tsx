@@ -82,7 +82,7 @@ export async function ApprovalHistory({
                   <code className="text-[10px] bg-gray-100 px-1 rounded">{ev.to_stage}</code>
                 </span>
                 <span className="text-gray-400 text-xs ml-auto">
-                  {new Date(ev.created_at).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' })}
+                  {new Date(ev.created_at).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Asia/Kolkata' })}
                 </span>
               </div>
 

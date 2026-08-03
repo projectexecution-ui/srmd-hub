@@ -5,10 +5,18 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
 }
 
+// Standard India time zone for ALL date/time display across the app. The DB
+// stores timestamps in UTC; the server runs in UTC too, so without pinning
+// this every server-rendered time (audit trails, emails, pages) would show
+// ~5.5h behind actual IST. Always format dates through the helpers below (or
+// pass this constant to Intl) — never call toLocale*/DateTimeFormat on a date
+// without it.
+export const APP_TIME_ZONE = 'Asia/Kolkata'
+
 export function formatDate(date: string | Date | null | undefined): string {
   if (!date) return '--'
   return new Date(date).toLocaleDateString('en-IN', {
-    day: '2-digit', month: 'short', year: 'numeric',
+    day: '2-digit', month: 'short', year: 'numeric', timeZone: APP_TIME_ZONE,
   })
 }
 
@@ -16,7 +24,7 @@ export function formatDateTime(date: string | Date | null | undefined): string {
   if (!date) return '--'
   return new Date(date).toLocaleString('en-IN', {
     day: '2-digit', month: 'short', year: 'numeric',
-    hour: '2-digit', minute: '2-digit', hour12: true,
+    hour: '2-digit', minute: '2-digit', hour12: true, timeZone: APP_TIME_ZONE,
   })
 }
 
