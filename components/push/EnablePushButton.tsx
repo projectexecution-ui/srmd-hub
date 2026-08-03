@@ -21,7 +21,7 @@ function urlBase64ToUint8Array(base64String: string): Uint8Array {
 
 type State = 'checking' | 'unsupported' | 'not-configured' | 'denied' | 'enabled' | 'disabled' | 'working'
 
-export function EnablePushButton() {
+export function EnablePushButton({ onSubscribedChange }: { onSubscribedChange?: (subscribed: boolean) => void } = {}) {
   const [state, setState] = useState<State>('checking')
   const [err, setErr] = useState<string | null>(null)
 
@@ -60,6 +60,7 @@ export function EnablePushButton() {
         throw new Error(b?.error || `HTTP ${res.status}`)
       }
       setState('enabled')
+      onSubscribedChange?.(true)
     } catch (e) {
       setErr(e instanceof Error ? e.message : 'Could not enable notifications')
       setState('disabled')
@@ -81,6 +82,7 @@ export function EnablePushButton() {
       }
     } finally {
       setState('disabled')
+      onSubscribedChange?.(false)
     }
   }
 

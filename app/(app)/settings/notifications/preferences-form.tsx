@@ -120,7 +120,7 @@ export function NotificationPreferencesForm({
         enabled={p.web_push}
         onToggle={v => set('web_push', v)}
       >
-        {p.web_push && <EnablePushButton />}
+        <EnablePushButton onSubscribedChange={v => set('web_push', v)} />
       </ChannelRow>
 
       <Card className="p-4 flex items-start gap-3">
