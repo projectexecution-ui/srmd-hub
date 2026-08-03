@@ -64,8 +64,7 @@ export default async function NotificationSettingsPage() {
           <div className="min-w-0 flex-1">
             <h3 className="text-sm font-semibold text-gray-900">Phone notifications</h3>
             <p className="text-xs text-gray-500 mt-0.5">
-              Get alerts on this phone or laptop even when CT HUB isn&apos;t open. Do this once on each device.
-              <span className="block mt-0.5">iPhone: tap Share → <b>Add to Home Screen</b> first, then open CT HUB from that icon.</span>
+              Get alerts on this phone or laptop even when CT HUB isn&apos;t open.
             </p>
             <EnablePushButton />
           </div>
@@ -75,7 +74,7 @@ export default async function NotificationSettingsPage() {
       {canManage ? (
         <>
           <Card className="p-5 bg-blue-50 border-blue-200 text-sm text-blue-900">
-            <p><b>In-app</b> alerts show in your bell. Choose your channels and timing below.</p>
+            <p><b>In-app</b> alerts show in your bell. Choose your channels below.</p>
             <p className="mt-2 text-xs text-blue-800">
               Want to see what&apos;s waiting on you?{' '}
               <Link href="/approvals" className="underline font-medium">Open My Approvals →</Link>

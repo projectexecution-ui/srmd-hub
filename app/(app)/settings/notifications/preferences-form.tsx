@@ -9,7 +9,7 @@ import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Card } from '@/components/ui/card'
-import { Bell, Mail, Send, Smartphone, Check, Loader2 } from 'lucide-react'
+import { Bell, Mail, Send, Check, Loader2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 interface Prefs {
@@ -79,6 +79,7 @@ export function NotificationPreferencesForm({
         description="A short summary email for each notification — opt for the digest if you prefer one a day."
         enabled={p.email}
         onToggle={v => set('email', v)}
+        live
       >
         {p.email && (
           <Input
@@ -109,20 +110,6 @@ export function NotificationPreferencesForm({
               You&apos;ll get a /start link to bind this automatically when the Telegram bot goes live.
             </p>
           </div>
-        )}
-      </ChannelRow>
-
-      <ChannelRow
-        icon={Smartphone}
-        title="Web push"
-        description="Push notification on your phone or laptop even when CT HUB isn&apos;t open."
-        enabled={p.web_push}
-        onToggle={v => set('web_push', v)}
-      >
-        {p.web_push && (
-          <p className="mt-2 text-[11px] text-gray-500">
-            Switch this on for a specific phone/laptop in the <b>Phone notifications</b> section at the top of this page.
-          </p>
         )}
       </ChannelRow>
 
