@@ -38,6 +38,12 @@ export const NOTIFICATION_EVENTS: NotificationEventDef[] = [
     description: 'Weekday reminder to each Atm Head — POs to raise (2+ days) and deliveries to chase (1 week+), only their projects.',
     audience: 'Atm Heads (per project)',
   },
+  {
+    type: 'cc_estimate_approved',
+    label: 'Budget approved by Trustee → chase IN4',
+    description: 'When the Trustee approves/releases a working sheet, the project’s Atm Head is told so they can follow up with the IN4 team to enter it.',
+    audience: 'Atm Heads (per project)',
+  },
 ]
 
 /** Channels the admin policy controls. (Telegram is per-user only; web_push
