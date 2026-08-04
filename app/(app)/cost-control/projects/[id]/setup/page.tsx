@@ -69,7 +69,8 @@ export default async function ResumeProjectSetupPage(
   const isComplete = (project.setup_progress_pct ?? 0) >= 100
 
   const [parentsRes, usersRes, disciplinesRes, subSkillsRes, projDisRes, projSubRes, approverRes] = await Promise.all([
-    supabase.from('projects').select('id, code, name, parent_project_id').order('code'),
+    // Parent picker = TOP-LEVEL projects only (a sub-project can't be a parent).
+    supabase.from('projects').select('id, code, name, parent_project_id').is('parent_project_id', null).order('code'),
     supabase.from('profiles').select('id, full_name, name, email, role').eq('is_active', true),
     supabase.from('cc_disciplines').select('id, code, name').order('display_order'),
     supabase.from('cc_sub_skills').select('id, discipline_id, code, name').order('code'),
