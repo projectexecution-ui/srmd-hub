@@ -822,11 +822,32 @@ function BphSyncChip({
   const when = sync.ran_at
     ? new Date(sync.ran_at).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata' })
     : 'never'
+  // The BPH report is a WEEKLY manual export from IN4 (no auto-fetch is
+  // possible), so the real risk is forgetting to upload it and letting the ERP
+  // figures go silently stale. Past a week, turn the quiet line into an amber,
+  // one-tap "upload this week's report" nudge (writers only) that links
+  // straight to the Budget upload page.
+  const STALE_DAYS = 7
+  const ageDays = sync.ran_at
+    ? Math.floor((Date.now() - Date.parse(sync.ran_at)) / 86_400_000)
+    : Infinity
 
-  // Healthy → a VERY quiet grey line ("BPH synced · <when>"): a low-key
-  // reassurance that the ERP figures auto-sync (twice a day + on every upload)
-  // without drawing the eye. Errors stay amber with a count — those want a look.
   if (healthy) {
+    if (canWrite && ageDays >= STALE_DAYS) {
+      return (
+        <Link
+          href="/budget"
+          title={`Cost Control's ERP figures last refreshed ${when} — ${ageDays} days ago. Export this week's BPH report from IN4 and upload it on the Budget page; all ${sync.total_links} mapped projects then re-sync automatically.`}
+          className="inline-flex items-center gap-1.5 h-9 px-3 rounded-md border border-amber-300 bg-amber-50 text-sm font-semibold text-amber-800 hover:bg-amber-100 whitespace-nowrap"
+        >
+          <RefreshCw className="h-4 w-4" />
+          BPH {ageDays}d old<span className="hidden sm:inline"> — upload this week&apos;s</span>
+        </Link>
+      )
+    }
+    // Fresh → a VERY quiet grey line ("BPH synced · <when>"): low-key
+    // reassurance that the ERP figures auto-sync (twice a day + on every
+    // upload) without drawing the eye. Errors stay amber with a count.
     return (
       <Link
         href="/cost-control/import/bph"
