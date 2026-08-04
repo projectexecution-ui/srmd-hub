@@ -36,7 +36,10 @@ export default async function BillingQueuePage() {
 
   const [profile, effRole] = await Promise.all([getMyProfile(), getEffectiveCcRole()])
   const isAdmin = profile?.role === 'admin'
-  if (!isAdmin && effRole !== 'billing') redirect('/cost-control')
+  // IN4 entry is done by the Billing role OR the Coordinator (SRASSK's IN4
+  // person). Both are pure tracking — no money moves here. Everyone else is
+  // sent back to the Cost Control home.
+  if (!isAdmin && effRole !== 'billing' && effRole !== 'coordinator') redirect('/cost-control')
 
   const supabase = await createClient()
   const { data, error } = await supabase

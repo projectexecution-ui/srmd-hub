@@ -477,7 +477,7 @@ export default async function CostControlLandingPage() {
                 <Stat
                   label="IN4 entry queue"
                   value={queue.length}
-                  hint="released sheets awaiting IN4 entry by Billing"
+                  hint="released sheets awaiting IN4 entry"
                   icon={<ClipboardList className="h-5 w-5" />}
                   tone="amber"
                 />
