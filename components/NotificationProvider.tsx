@@ -25,6 +25,7 @@ interface NotificationContextValue {
   unread: number
   markAllRead: () => Promise<void>
   markOneRead: (id: string) => Promise<void>
+  clearAll: () => Promise<void>
 }
 
 const Ctx = createContext<NotificationContextValue | null>(null)
@@ -124,10 +125,25 @@ export function NotificationProvider({
     }
   }
 
+  // Empty the bell entirely. The rows are just pointers — anything still
+  // waiting on the user lives in My Approvals / the module — so clearing is
+  // safe and reversible only in the sense that new alerts keep arriving.
+  // Goes through the SECURITY DEFINER RPC (no DELETE RLS policy exists).
+  async function clearAll() {
+    if (!userId || items.length === 0) return
+    const snapshot = items
+    setItems([])
+    const { error } = await supabase.rpc('notifications_clear_all')
+    if (error) {
+      console.error('[notifications] clearAll failed', error)
+      setItems(snapshot)
+    }
+  }
+
   const value = useMemo<NotificationContextValue>(
-    () => ({ items, loading, unread, markAllRead, markOneRead }),
-    // markAllRead / markOneRead close over `items` + `supabase`; we rely
-    // on items + unread changing identity to re-bind them.
+    () => ({ items, loading, unread, markAllRead, markOneRead, clearAll }),
+    // markAllRead / markOneRead / clearAll close over `items` + `supabase`; we
+    // rely on items + unread changing identity to re-bind them.
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [items, loading, unread],
   )
@@ -139,7 +155,7 @@ export function useNotifications(): NotificationContextValue {
   const v = useContext(Ctx)
   if (!v) {
     // Safe default when used outside the provider (e.g. on /login).
-    return { items: [], loading: false, unread: 0, markAllRead: async () => {}, markOneRead: async () => {} }
+    return { items: [], loading: false, unread: 0, markAllRead: async () => {}, markOneRead: async () => {}, clearAll: async () => {} }
   }
   return v
 }

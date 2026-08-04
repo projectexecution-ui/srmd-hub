@@ -45,10 +45,17 @@ const JOBS_PM: string[] = [
   '/api/cron/bph-sync?cron=1',
 ]
 
-function baseUrl(req: Request): string {
-  try { return new URL(req.url).origin } catch { /* fall through */ }
+// Fan out over the PUBLIC production domain — never `req.url`'s origin.
+// Vercel SSO Deployment Protection is ON (Standard: all_except_custom_domains),
+// so every per-deploy *.vercel.app URL is walled behind Vercel's auth. Under a
+// cron, `req.url` resolves to that protected deploy URL, so internal fetches to
+// it were 401'd BEFORE reaching the handler — the entry dispatch returned 200
+// but every fanned-out job silently no-op'd (no digests, no cron backups ever).
+// The production alias (VERCEL_PROJECT_PRODUCTION_URL, e.g. ct-hub.vercel.app)
+// is the exempt/public domain, so target it.
+function baseUrl(): string {
   const prod = process.env.VERCEL_PROJECT_PRODUCTION_URL
-  return prod ? `https://${prod}` : 'https://ct-hub.vercel.app'
+  return `https://${prod || 'ct-hub.vercel.app'}`
 }
 
 async function runJob(base: string, path: string, secret: string) {
@@ -74,7 +81,7 @@ export async function GET(req: Request) {
 
   const slot = new URL(req.url).searchParams.get('slot') === 'pm' ? 'pm' : 'am'
   const jobs = slot === 'pm' ? JOBS_PM : morningJobs()
-  const base = baseUrl(req)
+  const base = baseUrl()
 
   // Fire them all in parallel; one failing job never blocks the others.
   const results = await Promise.all(jobs.map(p => runJob(base, p, CRON_SECRET)))

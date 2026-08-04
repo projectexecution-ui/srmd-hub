@@ -7,8 +7,9 @@
 
 import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
-import { Bell, CheckCheck, Settings as SettingsIcon } from 'lucide-react'
+import { Bell, CheckCheck, Trash2, Settings as SettingsIcon } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { confirm } from '@/components/ui/confirm-dialog'
 import { useNotifications, type NotificationRow } from '@/components/NotificationProvider'
 
 // `align` controls which way the dropdown opens:
@@ -18,7 +19,7 @@ import { useNotifications, type NotificationRow } from '@/components/Notificatio
 //     Correct for the desktop sidebar bell, where 'right' would push the
 //     ~320px panel off the left screen edge and clip its text.
 export default function NotificationBell({ align = 'right' }: { align?: 'left' | 'right' }) {
-  const { items, loading, unread, markAllRead, markOneRead } = useNotifications()
+  const { items, loading, unread, markAllRead, markOneRead, clearAll } = useNotifications()
   const [open, setOpen] = useState(false)
   const panelRef = useRef<HTMLDivElement>(null)
   const buttonRef = useRef<HTMLButtonElement>(null)
@@ -76,6 +77,23 @@ export default function NotificationBell({ align = 'right' }: { align?: 'left' |
                 className="p-1.5 rounded-md text-gray-500 hover:text-gray-900 hover:bg-gray-100 disabled:opacity-40 disabled:hover:bg-transparent"
               >
                 <CheckCheck className="h-4 w-4" />
+              </button>
+              <button
+                onClick={async () => {
+                  if (await confirm({
+                    title: 'Clear all notifications?',
+                    message: 'This empties your bell. Anything still waiting on you stays in My Approvals and the modules.',
+                    confirmLabel: 'Clear all',
+                  })) {
+                    setOpen(false)
+                    await clearAll()
+                  }
+                }}
+                disabled={items.length === 0}
+                title="Clear all"
+                className="p-1.5 rounded-md text-gray-500 hover:text-rose-600 hover:bg-rose-50 disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-gray-500"
+              >
+                <Trash2 className="h-4 w-4" />
               </button>
               <Link
                 href="/settings/notifications"
