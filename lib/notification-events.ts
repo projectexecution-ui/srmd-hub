@@ -44,6 +44,12 @@ export const NOTIFICATION_EVENTS: NotificationEventDef[] = [
     description: 'When the Trustee approves/releases a working sheet, the IN4-entry person is told to key it into IN4 and mark it done.',
     audience: 'IN4-entry team (Billing / Coordinator)',
   },
+  {
+    type: 'email_health',
+    label: 'Email delivery problem',
+    description: 'Bell-only alert to admins when emails could not be delivered after retries (so a broken email channel can still report itself).',
+    audience: 'Admins',
+  },
 ]
 
 /** Channels the admin policy controls. (Telegram is per-user only; web_push

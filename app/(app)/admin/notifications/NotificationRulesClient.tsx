@@ -25,9 +25,11 @@ const CHANNEL_ICON: Record<string, React.ReactNode> = {
 const PINNED_EVENTS = new Set(['approval_pending'])
 
 export interface NotificationScheduleRow { scope: string; scope_key: string; event_type: string; mode: string }
+// "Daily digest" was removed 2026-08-04 — it deferred emails (including ones
+// that were already daily summaries) and they got stuck unsent. Everything is
+// Instant now; per-event muting is Off. On/off per channel lives in the grid above.
 const TIMING_MODES = [
   { key: 'instant', label: 'Instant' },
-  { key: 'daily', label: 'Daily digest' },
   { key: 'off', label: 'Off' },
 ] as const
 
@@ -179,9 +181,8 @@ export default function NotificationRulesClient({
         </CardHeader>
         <CardContent>
           <p className="text-xs text-gray-500 mb-3">
-            <b>Instant</b> = sent the moment it happens. <b>Daily digest</b> = held and bundled into one
-            email/phone summary each morning (the bell still shows it live). <b>Off</b> = no email/phone
-            (still visible in the bell). Approvals are always Instant.
+            <b>Instant</b> = sent the moment it happens. <b>Off</b> = no email/phone for this alert
+            (it still shows in the bell). Approvals are always Instant.
           </p>
           <div className="divide-y divide-gray-100">
             {NOTIFICATION_EVENTS.map(e => {

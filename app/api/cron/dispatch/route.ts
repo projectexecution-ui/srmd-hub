@@ -31,7 +31,7 @@ function morningJobs(): string[] {
     ...(every3rdDay ? ['/api/cost-control/in4-followup?cron=1'] : []),
     '/api/cron/procurement-digest?cron=1', // self-gates weekday + once/day
     '/api/cron/engineer-digest?cron=1',
-    '/api/cron/notification-digest?cron=1', // bundles "Daily"-mode alerts into one push/email
+    '/api/cron/email-retry?cron=1',        // re-dispatch stuck/failed emails + dead-letter + alert
     '/api/cron/daily-site-report?cron=1',
     '/api/cron/bills-pipeline?cron=1',
     '/api/cron/bph-sync?cron=1',
@@ -43,6 +43,7 @@ function morningJobs(): string[] {
 const JOBS_PM: string[] = [
   '/api/cron/bills-pipeline?cron=1&slot=pm',
   '/api/cron/bph-sync?cron=1',
+  '/api/cron/email-retry?cron=1',          // 2nd retry pass so stuck emails don't wait a full day
 ]
 
 // Fan out over the PUBLIC production domain — never `req.url`'s origin.
