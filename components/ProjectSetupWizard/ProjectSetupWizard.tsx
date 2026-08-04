@@ -272,6 +272,21 @@ function StepRail({ step, onGo }: { step: Step; onGo: (n: Step) => void }) {
 // Step 1 — Basics
 // ============================================================
 
+// Derive a short code from the project name's word initials:
+// "Admin Block Ground Floor" → "ABGF", "Admin Block 1st Floor" → "AB1F".
+// Teams pick these exact codes by hand, so the field just fills itself in.
+function deriveCode(name: string): string {
+  return name
+    .trim()
+    .split(/[\s\-_/.,]+/)
+    .filter(Boolean)
+    .map(w => w[0])
+    .join('')
+    .replace(/[^a-zA-Z0-9]/g, '')
+    .toUpperCase()
+    .slice(0, 12)
+}
+
 function Step1Basics({
   parentProjects,
   users,
@@ -285,44 +300,98 @@ function Step1Basics({
   fieldErrors: Record<string, string[]>
   onSubmit: (fd: FormData) => Promise<void>
 }) {
-  function err(name: string) {
-    const e = fieldErrors[name]
+  // Main vs sub — the one choice people kept getting lost on. Make it an
+  // explicit, up-front pick instead of a quiet "optional parent" dropdown.
+  const [isSub, setIsSub] = React.useState(false)
+  const [name, setName] = React.useState('')
+  const [codeText, setCodeText] = React.useState('')
+  const [codeEdited, setCodeEdited] = React.useState(false)
+  const [parentId, setParentId] = React.useState('')
+
+  // Auto-fill the code from the name until the user overrides it.
+  const codeValue = codeEdited ? codeText : deriveCode(name)
+  const parent = parentProjects.find(p => p.id === parentId) ?? null
+
+  function err(field: string) {
+    const e = fieldErrors[field]
     return e && e.length > 0 ? <p className="mt-1 text-xs text-red-600">{e[0]}</p> : null
   }
+
   return (
     <Card className="p-5">
       <h2 className="text-lg font-semibold text-gray-900 mb-1">Project basics</h2>
       <p className="text-sm text-gray-500 mb-4">Takes ~30 seconds. You can finish the rest later.</p>
 
+      {/* The main/sub choice, up front and obvious. */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-5">
+        <TypeChoice
+          active={!isSub}
+          title="Main project"
+          hint="A top-level project — e.g. Admin Block"
+          onClick={() => { setIsSub(false); setParentId('') }}
+          disabled={busy}
+        />
+        <TypeChoice
+          active={isSub}
+          title="Sub-project"
+          hint="A part of an existing project — e.g. its Ground Floor"
+          onClick={() => setIsSub(true)}
+          disabled={busy}
+        />
+      </div>
+
       <form
         action={onSubmit}
         className="grid grid-cols-1 md:grid-cols-2 gap-4"
       >
+        {isSub && (
+          <div className="md:col-span-2">
+            <Label htmlFor="parent_project_id">Part of which project? *</Label>
+            <select
+              id="parent_project_id"
+              name="parent_project_id"
+              required
+              value={parentId}
+              onChange={e => setParentId(e.target.value)}
+              className="flex h-10 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm"
+              disabled={busy}
+            >
+              <option value="">— choose the parent project —</option>
+              {parentProjects.map(p => (
+                <option key={p.id} value={p.id}>{p.code} · {p.name}</option>
+              ))}
+            </select>
+            <p className="mt-1 text-xs text-gray-500">
+              It shows grouped under {parent ? <b>{parent.name}</b> : 'this project'} on the Internal Estimate.
+            </p>
+          </div>
+        )}
+
         <div className="md:col-span-2">
-          <Label htmlFor="name">Project name *</Label>
-          <Input id="name" name="name" required placeholder="e.g. NGH D" disabled={busy} />
+          <Label htmlFor="name">{isSub ? 'Sub-project name *' : 'Project name *'}</Label>
+          <Input
+            id="name" name="name" required disabled={busy}
+            value={name} onChange={e => setName(e.target.value)}
+            placeholder={isSub ? 'e.g. Admin Block Ground Floor' : 'e.g. Admin Block'}
+          />
+          <p className="mt-1 text-xs text-gray-500">
+            {isSub
+              ? 'Keep the parent name in front so lists stay clear — e.g. “Admin Block Ground Floor”, “Admin Block 1st Floor”.'
+              : 'The building or scope this project covers.'}
+          </p>
           {err('name')}
         </div>
 
         <div>
           <Label htmlFor="code">Short code *</Label>
-          <Input id="code" name="code" required placeholder="NGH-D" disabled={busy} />
+          <Input
+            id="code" name="code" required disabled={busy}
+            value={codeValue}
+            onChange={e => { setCodeText(e.target.value.toUpperCase()); setCodeEdited(true) }}
+            placeholder="auto from name"
+          />
+          <p className="mt-1 text-xs text-gray-500">Fills in from the name — edit if you like. Must be unique.</p>
           {err('code')}
-        </div>
-
-        <div>
-          <Label htmlFor="parent_project_id">Parent project (optional)</Label>
-          <select
-            id="parent_project_id"
-            name="parent_project_id"
-            className="flex h-10 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm"
-            disabled={busy}
-          >
-            <option value="">— top-level —</option>
-            {parentProjects.map(p => (
-              <option key={p.id} value={p.id}>{p.code} · {p.name}</option>
-            ))}
-          </select>
         </div>
 
         <div>
@@ -357,11 +426,38 @@ function Step1Basics({
 
         <div className="md:col-span-2 flex justify-end">
           <Button type="submit" disabled={busy}>
-            {busy ? 'Creating…' : 'Create Project'}
+            {busy ? 'Creating…' : (isSub ? 'Create sub-project' : 'Create project')}
           </Button>
         </div>
       </form>
     </Card>
+  )
+}
+
+function TypeChoice({
+  active, title, hint, onClick, disabled,
+}: {
+  active: boolean
+  title: string
+  hint: string
+  onClick: () => void
+  disabled?: boolean
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      className={`rounded-lg border p-3 text-left transition-colors disabled:opacity-60 ${
+        active ? 'border-blue-500 bg-blue-50 ring-1 ring-blue-500' : 'border-gray-200 bg-white hover:bg-gray-50'
+      }`}
+    >
+      <div className="flex items-center gap-2">
+        <span className={`h-3.5 w-3.5 rounded-full border-2 flex-shrink-0 ${active ? 'border-blue-600 bg-blue-600' : 'border-gray-300'}`} />
+        <span className="text-sm font-semibold text-gray-900">{title}</span>
+      </div>
+      <p className="text-xs text-gray-500 mt-1 ml-5">{hint}</p>
+    </button>
   )
 }
 
