@@ -9,7 +9,7 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { Mail, Smartphone, CheckCircle2, AlertTriangle, XCircle, Clock, RefreshCw, Loader2 } from 'lucide-react'
+import { Mail, Smartphone, CheckCircle2, AlertTriangle, XCircle, Clock, RefreshCw, Loader2, Send } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 export interface ChannelHealth {
@@ -25,6 +25,7 @@ export interface DeliveryHealth {
 export function EmailHealthStrip({ health }: { health: DeliveryHealth }) {
   const router = useRouter()
   const [running, setRunning] = useState(false)
+  const [testing, setTesting] = useState(false)
   const [result, setResult] = useState<string | null>(null)
 
   async function runRetry() {
@@ -33,7 +34,7 @@ export function EmailHealthStrip({ health }: { health: DeliveryHealth }) {
       const res = await fetch('/api/cron/email-retry', { method: 'POST' })
       const body = await res.json().catch(() => ({}))
       if (res.ok) {
-        setResult(`Retried ${body.retried ?? 0}${body.dead ? ` · ${body.dead} gave up` : ''}.`)
+        setResult(body.retried ? `Retried ${body.retried}${body.dead ? ` · ${body.dead} gave up` : ''}.` : 'Nothing to retry — all delivered.')
         router.refresh()
       } else {
         setResult(body.reason || 'Could not run the sweep.')
@@ -45,6 +46,20 @@ export function EmailHealthStrip({ health }: { health: DeliveryHealth }) {
     }
   }
 
+  async function sendTest() {
+    setTesting(true); setResult(null)
+    try {
+      const res = await fetch('/api/notifications/test', { method: 'POST' })
+      const body = await res.json().catch(() => ({}))
+      setResult(res.ok ? 'Test sent — check your email inbox + phone.' : (body.reason || 'Could not send the test.'))
+      if (res.ok) router.refresh()
+    } catch {
+      setResult('Could not send the test.')
+    } finally {
+      setTesting(false)
+    }
+  }
+
   return (
     <Card className="max-w-4xl mx-auto p-5">
       <div className="flex items-center justify-between gap-3 mb-4">
@@ -53,8 +68,12 @@ export function EmailHealthStrip({ health }: { health: DeliveryHealth }) {
           <p className="text-xs text-gray-500">Email &amp; phone, over the last 7 days</p>
         </div>
         <div className="flex items-center gap-2 flex-shrink-0">
-          {result && <span className="text-xs text-gray-500 hidden sm:inline">{result}</span>}
-          <Button variant="outline" onClick={runRetry} disabled={running} className="h-8">
+          {result && <span className="text-xs text-gray-600 hidden sm:inline">{result}</span>}
+          <Button variant="outline" onClick={sendTest} disabled={testing || running} className="h-8" title="Send yourself a live test alert (bell + email + phone)">
+            {testing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
+            <span className="ml-1.5">Send test to me</span>
+          </Button>
+          <Button variant="outline" onClick={runRetry} disabled={running || testing} className="h-8" title="Re-attempt any failed or stuck deliveries">
             {running ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
             <span className="ml-1.5">Run retry now</span>
           </Button>
