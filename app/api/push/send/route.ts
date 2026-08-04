@@ -51,30 +51,52 @@ export async function POST(req: NextRequest) {
     .from('notifications').select('user_id, title, body, url').eq('id', del.notification_id).single()
   if (!n) return NextResponse.json({ error: 'notification-not-found' }, { status: 404 })
 
+  // Write the true outcome back to the delivery row (like email), so 'sent'
+  // means a device actually took it. 'skipped' = no live device (retrying won't
+  // help); 'failed' = a transient error worth a retry.
+  const mark = (status: 'sent' | 'failed' | 'skipped', error?: string) =>
+    svc.from('notification_deliveries').update(
+      status === 'sent'
+        ? { status, sent_at: new Date().toISOString(), error: null }
+        : { status, error: error ?? null },
+    ).eq('id', deliveryId)
+
   const { data: subs } = await svc
     .from('push_subscriptions').select('id, endpoint, p256dh, auth').eq('user_id', n.user_id)
-  if (!subs || subs.length === 0) return NextResponse.json({ ok: true, sent: 0 })
+  if (!subs || subs.length === 0) {
+    await mark('skipped', 'no registered device')
+    return NextResponse.json({ ok: true, sent: 0 })
+  }
 
   const origin = (process.env.NEXT_PUBLIC_APP_URL || 'https://ct-hub.vercel.app').replace(/\/$/, '')
   const rawUrl = (n.url as string | null) ?? null
   const url = rawUrl ? (rawUrl.startsWith('http') ? rawUrl : origin + rawUrl) : origin
   const payload = JSON.stringify({ title: n.title || 'CT HUB', body: n.body || '', url })
 
-  let sent = 0, pruned = 0
+  let sent = 0, pruned = 0, failedTransient = 0, lastError = ''
   await Promise.all((subs as Array<{ id: string; endpoint: string; p256dh: string; auth: string }>).map(async s => {
     try {
       await webpush.sendNotification({ endpoint: s.endpoint, keys: { p256dh: s.p256dh, auth: s.auth } }, payload)
       sent++
     } catch (e) {
       // 404 / 410 Gone → the browser dropped this subscription; prune it so we
-      // stop trying. Other errors are transient and left alone.
+      // stop trying. Other errors are transient and worth a retry.
       const code = (e as { statusCode?: number })?.statusCode
       if (code === 404 || code === 410) {
         await svc.from('push_subscriptions').delete().eq('id', s.id)
         pruned++
+      } else {
+        failedTransient++
+        lastError = e instanceof Error ? e.message : String(e)
       }
     }
   }))
 
-  return NextResponse.json({ ok: true, sent, pruned })
+  // Any device took it → sent. None took it but a transient error → failed
+  // (retry). Otherwise every sub was dead/pruned → skipped (retry won't help).
+  if (sent > 0) await mark('sent')
+  else if (failedTransient > 0) await mark('failed', lastError.slice(0, 300))
+  else await mark('skipped', 'all devices unsubscribed')
+
+  return NextResponse.json({ ok: true, sent, pruned, failed: failedTransient })
 }

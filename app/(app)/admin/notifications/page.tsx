@@ -5,7 +5,7 @@ import { getRoleLabels } from '@/lib/role-labels'
 import { ALL_ROLES } from '@/lib/types'
 import NotificationRulesClient, { type NotificationScheduleRow } from './NotificationRulesClient'
 import SelfManageAdmin, { type SelfManageUser } from './SelfManageAdmin'
-import { EmailHealthStrip, type EmailHealth } from './EmailHealthStrip'
+import { EmailHealthStrip, type DeliveryHealth } from './EmailHealthStrip'
 
 export const dynamic = 'force-dynamic'
 
@@ -34,7 +34,11 @@ export default async function AdminNotificationsPage() {
     supabase.from('notification_self_manage').select('user_id'),
     supabase.rpc('email_delivery_health'),
   ])
-  const health = (healthData as EmailHealth | null) ?? { counts: {}, stuck: 0, recent: [] }
+  // Build defensively: tolerate the pre-migration flat shape (no email/push
+  // keys) so the strip never crashes in the deploy→migration window.
+  const emptyChannel = { counts: {}, stuck: 0, recent: [] }
+  const raw = (healthData ?? null) as Partial<DeliveryHealth> | null
+  const health: DeliveryHealth = { email: raw?.email ?? emptyChannel, push: raw?.push ?? emptyChannel }
 
   // Non-admin active people (admins always self-manage, so they're not listed).
   const granted = new Set((grantRows ?? []).map(g => (g as { user_id: string }).user_id))
