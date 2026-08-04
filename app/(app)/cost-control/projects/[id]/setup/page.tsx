@@ -100,11 +100,15 @@ export default async function ResumeProjectSetupPage(
 
   type ProfRow = { id: string; full_name: string | null; name: string | null; email: string | null; role: string }
   const profRows = (usersRes.data ?? []) as ProfRow[]
-  const users: UserOption[] = profRows.map(p => ({
-    id: p.id,
-    name: p.full_name ?? p.name ?? '(unnamed)',
-    email: p.email,
-  }))
+  // Only Atm Heads (role='head') for the wizard's sign-off head picker. The full
+  // roster (profRows) still feeds the approver config panel below.
+  const atmHeads: UserOption[] = profRows
+    .filter(p => p.role === 'head')
+    .map(p => ({
+      id: p.id,
+      name: p.full_name ?? p.name ?? '(unnamed)',
+      email: p.email,
+    }))
   const disciplines: DisciplineOption[] = (disciplinesRes.data ?? []).map(d => ({
     id: d.id,
     code: d.code,
@@ -223,7 +227,7 @@ export default async function ResumeProjectSetupPage(
 
       <ProjectSetupWizard
         parentProjects={parentProjects}
-        users={users}
+        atmHeads={atmHeads}
         disciplines={disciplines}
         subSkills={subSkills}
         initialProjectId={id}

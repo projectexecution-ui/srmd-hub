@@ -33,7 +33,8 @@ export default async function NewCostControlProjectPage() {
     // parent (the Internal Estimate groups one level deep). Filtering here keeps
     // the "Part of which project?" picker showing just AB, NGH, P2… not their subs.
     supabase.from('projects').select('id, code, name').is('parent_project_id', null).order('code'),
-    supabase.from('profiles').select('id, full_name, name, email, role').eq('is_active', true),
+    // Only Atm Heads (role='head') are offered as the project's sign-off head.
+    supabase.from('profiles').select('id, full_name, name, email, role').eq('is_active', true).eq('role', 'head'),
     supabase.from('cc_disciplines').select('id, code, name').order('display_order'),
     supabase.from('cc_sub_skills').select('id, discipline_id, code, name').order('code'),
   ])
@@ -43,7 +44,7 @@ export default async function NewCostControlProjectPage() {
   const parentProjects: ParentProjectOption[] = (parentsRes.data ?? []) as ParentProjectOption[]
   type ProfRow = { id: string; full_name: string | null; name: string | null; email: string | null; role: string }
   const profRows = (usersRes.data ?? []) as ProfRow[]
-  const users: UserOption[] = profRows.map(p => ({
+  const atmHeads: UserOption[] = profRows.map(p => ({
     id: p.id,
     name: p.full_name ?? p.name ?? '(unnamed)',
     email: p.email,
@@ -81,7 +82,7 @@ export default async function NewCostControlProjectPage() {
 
       <ProjectSetupWizard
         parentProjects={parentProjects}
-        users={users}
+        atmHeads={atmHeads}
         disciplines={disciplines}
         subSkills={subSkills}
       />

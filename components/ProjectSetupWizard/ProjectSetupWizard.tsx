@@ -52,7 +52,8 @@ export interface DisciplineModePreset {
 
 interface ProjectSetupWizardProps {
   parentProjects: ParentProjectOption[]
-  users: UserOption[]
+  /** Atm Heads only (role='head') — candidates for the project's sign-off head(s). */
+  atmHeads: UserOption[]
   disciplines: DisciplineOption[]
   /** All sub-skills across all disciplines; wizard filters by picked disciplines in Step 3 */
   subSkills: SubSkillOption[]
@@ -77,7 +78,7 @@ type Step = 1 | 2 | 3
  */
 export function ProjectSetupWizard({
   parentProjects,
-  users,
+  atmHeads,
   disciplines,
   subSkills,
   initialProjectId,
@@ -187,7 +188,7 @@ export function ProjectSetupWizard({
       {step === 1 && (
         <Step1Basics
           parentProjects={parentProjects}
-          users={users}
+          atmHeads={atmHeads}
           busy={busy}
           fieldErrors={fieldErrors}
           onSubmit={handleStep1}
@@ -289,13 +290,13 @@ function deriveCode(name: string): string {
 
 function Step1Basics({
   parentProjects,
-  users,
+  atmHeads,
   busy,
   fieldErrors,
   onSubmit,
 }: {
   parentProjects: ParentProjectOption[]
-  users: UserOption[]
+  atmHeads: UserOption[]
   busy: boolean
   fieldErrors: Record<string, string[]>
   onSubmit: (fd: FormData) => Promise<void>
@@ -307,6 +308,16 @@ function Step1Basics({
   const [codeText, setCodeText] = React.useState('')
   const [codeEdited, setCodeEdited] = React.useState(false)
   const [parentId, setParentId] = React.useState('')
+  // Atm Head(s) — one or two people who sign off this project's budgets.
+  const [pickedHeads, setPickedHeads] = React.useState<Set<string>>(new Set())
+  function toggleHead(id: string) {
+    setPickedHeads(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
 
   // Auto-fill the code from the name until the user overrides it.
   const codeValue = codeEdited ? codeText : deriveCode(name)
@@ -399,19 +410,36 @@ function Step1Basics({
           <Input id="built_up_sft" name="built_up_sft" type="number" placeholder="e.g. 12000" disabled={busy} />
         </div>
 
-        <div>
-          <Label htmlFor="pm_user_id">Project Manager</Label>
-          <select
-            id="pm_user_id"
-            name="pm_user_id"
-            className="flex h-10 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm"
-            disabled={busy}
-          >
-            <option value="">— assign later —</option>
-            {users.map(u => (
-              <option key={u.id} value={u.id}>{u.name}</option>
-            ))}
-          </select>
+        <div className="md:col-span-2">
+          <Label>Atm Head <span className="font-normal text-gray-400">(sign-off)</span></Label>
+          {atmHeads.length === 0 ? (
+            <p className="text-xs text-gray-500 mt-1">No Atm Heads found — you can assign them later from the project page.</p>
+          ) : (
+            <div className="flex flex-wrap gap-2 mt-1">
+              {atmHeads.map(h => {
+                const on = pickedHeads.has(h.id)
+                return (
+                  <button
+                    key={h.id}
+                    type="button"
+                    onClick={() => toggleHead(h.id)}
+                    disabled={busy}
+                    className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-sm transition-colors disabled:opacity-60 ${
+                      on ? 'border-blue-500 bg-blue-100 text-blue-900 font-semibold' : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-50'
+                    }`}
+                  >
+                    {on && <CheckCircle2 className="h-3.5 w-3.5" />}
+                    {h.name}
+                  </button>
+                )
+              })}
+            </div>
+          )}
+          <p className="mt-1 text-xs text-gray-500">Who signs off this project&apos;s budgets. Pick one — or two if it&apos;s shared.</p>
+          {/* Hidden inputs carry the picked heads into the form submit. */}
+          {Array.from(pickedHeads).map(id => (
+            <input key={id} type="hidden" name="atm_head_ids" value={id} />
+          ))}
         </div>
 
         <div>

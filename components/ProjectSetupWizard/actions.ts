@@ -33,12 +33,21 @@ export async function createProjectBasics(formData: FormData): Promise<CreatePro
   const user = await getMyUser()
   if (!user) return { ok: false, error: 'Not signed in' }
 
+  // Atm Head(s) for the project — one or two people who sign off its budgets.
+  // They become role='head' rows in cc_project_approvers (below) and drive the
+  // approval chain + IN4 alerts. Replaces the old single "Project Manager" field.
+  const atmHeadIds = (formData.getAll('atm_head_ids') as string[])
+    .map(s => (s ?? '').trim())
+    .filter(s => z.string().uuid().safeParse(s).success)
+
   const parsed = basicsSchema.safeParse({
     name: formData.get('name'),
     code: formData.get('code'),
     parent_project_id: (formData.get('parent_project_id') as string) || null,
     built_up_sft: formData.get('built_up_sft') || null,
-    pm_user_id: (formData.get('pm_user_id') as string) || null,
+    // Keep pm_user_id pointing at the first Atm Head so any "PM" display stays
+    // populated after the relabel.
+    pm_user_id: atmHeadIds[0] ?? null,
     start_date: (formData.get('start_date') as string) || null,
     target_completion: (formData.get('target_completion') as string) || null,
   })
@@ -74,6 +83,17 @@ export async function createProjectBasics(formData: FormData): Promise<CreatePro
       }
     }
     return { ok: false, error: error?.message ?? 'Could not create project' }
+  }
+
+  // Assign the picked Atm Head(s) as project approvers (role='head'). Goes
+  // through the reviewer-gated SECURITY DEFINER RPC. Best-effort: the project
+  // already exists, so a failed assignment is fixable from the project page and
+  // must not block setup.
+  for (const hid of atmHeadIds) {
+    const { error: apErr } = await supabase.rpc('cc_set_project_approver', {
+      p_project: data.id, p_role: 'head', p_user: hid, p_add: true,
+    })
+    if (apErr) console.warn('[new-project] assign Atm Head failed:', apErr.message)
   }
 
   revalidatePath('/cost-control')
