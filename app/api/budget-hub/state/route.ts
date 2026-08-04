@@ -7,6 +7,7 @@
 
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { createClient as createServiceClient } from '@supabase/supabase-js'
 
 const STATE_ID = 'global'
 // Cap a single payload at 8 MB so a runaway Excel paste can't poison the DB.
@@ -123,7 +124,20 @@ export async function PUT(req: Request) {
   let autoSync: { ran_at: string; ok_count: number; err_count: number; outcomes: unknown[] } | null = null
   try {
     const { runAllMappedPulls } = await import('@/app/(app)/cost-control/import/bph/actions')
-    const r = await runAllMappedPulls()
+    // Run the mapped-link sync with ELEVATED rights so the Internal Estimate
+    // refreshes no matter WHO uploaded the BPH report — Parimal (Coordinator),
+    // an `uploader`-role person, anyone. Without this the pull uses the
+    // uploader's session and is skipped for non-cost-control-edit users (and
+    // RLS would block their writes), so their uploads only synced on the
+    // twice-daily cron. The saved BPH↔CT link is the authorization (a CC admin
+    // set it up); the pull is code-match-only, idempotent, and gated by the
+    // cc_bph_sync setting. actorId attributes the audit events to the uploader.
+    // Falls back to the caller's session if the service key is ever missing.
+    const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+    const svc = serviceKey
+      ? createServiceClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, serviceKey, { auth: { persistSession: false } })
+      : null
+    const r = await runAllMappedPulls(svc ? { client: svc, actorId: user.id } : undefined)
     autoSync = {
       ran_at: r.ran_at,
       ok_count: r.outcomes.filter(o => o.ok).length,
