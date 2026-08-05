@@ -19,6 +19,7 @@ import { ProjectAliasChip } from '../ProjectAliasChip'
 import { AreaChip } from '../AreaChip'
 import { ParentProjectControl } from '../ParentProjectControl'
 import { ProjectApproversPanel } from '../ProjectApproversPanel'
+import { ProjectArchiveControls } from '../ProjectArchiveControls'
 import { GroupLabelChip } from '@/app/(app)/cost-control/GroupLabelChip'
 import { getBphMappingForProject } from '@/app/(app)/cost-control/import/bph/actions'
 import { getCcSettings } from '@/lib/cost-control/settings'
@@ -51,7 +52,7 @@ export default async function ResumeProjectSetupPage(
 
   const { data: project } = await supabase
     .from('projects')
-    .select('id, code, name, setup_progress_pct, cc_status, built_up_sft, parent_project_id, group_label')
+    .select('id, code, name, setup_progress_pct, cc_status, built_up_sft, parent_project_id, group_label, archived_at')
     .eq('id', id)
     .single()
 
@@ -70,7 +71,7 @@ export default async function ResumeProjectSetupPage(
 
   const [parentsRes, usersRes, disciplinesRes, subSkillsRes, projDisRes, projSubRes, approverRes] = await Promise.all([
     // Parent picker = TOP-LEVEL projects only (a sub-project can't be a parent).
-    supabase.from('projects').select('id, code, name, parent_project_id').is('parent_project_id', null).order('code'),
+    supabase.from('projects').select('id, code, name, parent_project_id').is('parent_project_id', null).is('archived_at', null).order('code'),
     supabase.from('profiles').select('id, full_name, name, email, role').eq('is_active', true),
     supabase.from('cc_disciplines').select('id, code, name').order('display_order'),
     supabase.from('cc_sub_skills').select('id, discipline_id, code, name').order('code'),
@@ -218,6 +219,15 @@ export default async function ResumeProjectSetupPage(
         approvers={projectApprovers}
         candidates={approverCandidates}
         canWrite
+      />
+
+      {/* Archive (soft) / restore / delete. Coordinators archive a mistaken
+          project; only an admin restores or permanently deletes. */}
+      <ProjectArchiveControls
+        projectId={id}
+        projectName={project.name}
+        isArchived={!!(project as { archived_at?: string | null }).archived_at}
+        canDelete={isAdmin}
       />
 
       <div className="pt-1">

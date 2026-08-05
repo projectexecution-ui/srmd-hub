@@ -32,7 +32,7 @@ export default async function NewCostControlProjectPage() {
     // Only TOP-LEVEL projects can be a parent — a sub-project can't itself be a
     // parent (the Internal Estimate groups one level deep). Filtering here keeps
     // the "Part of which project?" picker showing just AB, NGH, P2… not their subs.
-    supabase.from('projects').select('id, code, name').is('parent_project_id', null).order('code'),
+    supabase.from('projects').select('id, code, name').is('parent_project_id', null).is('archived_at', null).order('code'),
     // Only Atm Heads (role='head') are offered as the project's sign-off head.
     supabase.from('profiles').select('id, full_name, name, email, role').eq('is_active', true).eq('role', 'head'),
     supabase.from('cc_disciplines').select('id, code, name').order('display_order'),

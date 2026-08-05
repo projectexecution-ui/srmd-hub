@@ -13,7 +13,7 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
-import { getMyPermissions, can } from '@/lib/auth'
+import { getMyPermissions, can, getMyProfile, isPortalOwner } from '@/lib/auth'
 
 // Tables that reference public.projects via project_id (or parent_project_id).
 // Keep this list in sync with the schema. invoices has no direct project_id —
@@ -82,8 +82,10 @@ export async function GET(_req: NextRequest, ctx: { params: Promise<{ id: string
 }
 
 export async function DELETE(_req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
-  const perms = await getMyPermissions()
-  if (!can(perms, 'projects', 'edit')) return new NextResponse('Forbidden', { status: 403 })
+  // Permanent delete is admin / portal-owner only — Coordinators & uploaders can
+  // Archive a project (soft, reversible), but only an admin removes it for good.
+  const [profile, po] = await Promise.all([getMyProfile(), isPortalOwner()])
+  if (!(po || profile?.role === 'admin')) return new NextResponse('Forbidden — admin only', { status: 403 })
   const { id } = await ctx.params
   const deps = await countDeps(id)
   const blocking = deps.filter(d => d.count > 0)

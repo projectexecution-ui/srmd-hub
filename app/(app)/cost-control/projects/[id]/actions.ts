@@ -428,6 +428,25 @@ export async function setProjectApprover(input: {
 }
 
 // ============================================================
+// Archive (soft) / restore a project. Archive = a Coordinator can tuck away a
+// mistaken project; restore = admin only. Permanent delete stays on the
+// /api/projects/[id] endpoint (admin-gated). The RPC enforces the roles.
+// ============================================================
+export async function setProjectArchived(
+  projectId: string,
+  archived: boolean,
+): Promise<{ ok: boolean; error?: string }> {
+  if (!uuid.safeParse(projectId).success) return { ok: false, error: 'Bad id' }
+  const supabase = await createClient()
+  const { error } = await supabase.rpc('project_set_archived', { p_project: projectId, p_archived: archived })
+  if (error) return { ok: false, error: error.message }
+  revalidatePath('/cost-control')
+  revalidatePath(`/cost-control/projects/${projectId}`)
+  revalidatePath(`/cost-control/projects/${projectId}/setup`)
+  return { ok: true }
+}
+
+// ============================================================
 // Change the project ALIAS (the short `code` badge) — ADMIN only.
 // It's the short label shown everywhere + the prefix on NEW Working-Sheet
 // codes. Existing sheet codes are stored strings and keep their old prefix

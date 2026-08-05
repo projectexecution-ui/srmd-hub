@@ -75,6 +75,7 @@ export default async function CostControlLandingPage() {
       .from('projects')
       .select('id, code, name, cc_status, setup_progress_pct, built_up_sft, parent_project_id, group_label')
       .not('cc_status', 'is', null)
+      .is('archived_at', null)
       .order('code'),
     supabase.from('cc_working_sheets').select('id, status, total_amount, approved_for_erp_amt, project_id, discipline_id, deadline_date, in4_entered_at, summary_notes').is('archived_at', null),
     user
@@ -344,9 +345,36 @@ export default async function CostControlLandingPage() {
     return t
   }, { sft: 0, ws: 0, estimate: 0, approved: 0, budget: 0, paid: 0 })
 
+  // Archived projects (soft-archived from a project's Settings). Hidden from the
+  // active list above; only an admin sees the discovery list + can restore/delete.
+  let archivedProjects: Array<{ id: string; code: string; name: string }> = []
+  if (isAdmin) {
+    const { data: arch } = await supabase
+      .from('projects').select('id, code, name')
+      .not('archived_at', 'is', null).order('code')
+    archivedProjects = (arch ?? []) as Array<{ id: string; code: string; name: string }>
+  }
+
   return (
     <div className="p-4 md:p-6 max-w-7xl mx-auto space-y-4">
       <AutoBackup isAdmin={canAdmin} />
+      {isAdmin && archivedProjects.length > 0 && (
+        <details className="rounded-xl border border-amber-200 bg-amber-50/50 px-4 py-2">
+          <summary className="cursor-pointer text-sm font-semibold text-amber-900 select-none">
+            Archived projects ({archivedProjects.length})
+          </summary>
+          <p className="text-xs text-amber-800/80 mt-1 mb-2">Hidden from the active list. Open one to restore it or delete it permanently.</p>
+          <ul className="space-y-1">
+            {archivedProjects.map(ap => (
+              <li key={ap.id}>
+                <Link href={`/cost-control/projects/${ap.id}/setup`} className="text-sm text-blue-700 hover:underline">
+                  {ap.code} · {ap.name}
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
       <PageHeader
         title={ccLabel}
         subtitle={`SRASSK — ${ccProjects.length} project${ccProjects.length === 1 ? '' : 's'}${incompleteCount ? ` · ${incompleteCount} need setup` : ''}`}
