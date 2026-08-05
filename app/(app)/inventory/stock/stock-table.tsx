@@ -134,35 +134,40 @@ function ReorderCell({ row, canEdit }: { row: StockRow; canEdit: boolean }) {
   const [val, setVal] = useState(row.min_threshold != null ? String(row.min_threshold) : '')
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
+  const [err, setErr] = useState<string | null>(null)
 
   async function save() {
     const n = Number(val)
-    if (!Number.isFinite(n) || n < 0) return
+    if (!Number.isFinite(n) || n < 0) { setErr('Enter 0 or more'); return }
     if (n === (row.min_threshold ?? 0)) return
-    setSaving(true); setSaved(false)
+    setSaving(true); setSaved(false); setErr(null)
     const supabase = createClient()
     const { error } = await supabase.rpc('inv_rpc_set_reorder', {
       p_warehouse_id: row.warehouse_id, p_item_id: row.item_id, p_min: n,
     })
     setSaving(false)
-    if (!error) { setSaved(true); setTimeout(() => setSaved(false), 1500) }
+    if (error) { setErr(error.message); return }
+    setSaved(true); setTimeout(() => setSaved(false), 1500)
   }
 
   if (!canEdit) {
     return <span className="tabular-nums text-gray-400">{row.min_threshold != null ? Number(row.min_threshold).toLocaleString('en-IN') : '—'}</span>
   }
   return (
-    <div className="flex items-center gap-1 justify-end">
-      <input
-        type="number" min={0} value={val}
-        onChange={e => setVal(e.target.value)}
-        onBlur={save}
-        onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }}
-        className="w-16 h-10 rounded border border-gray-200 px-1.5 text-right text-sm tabular-nums"
-        placeholder="—"
-      />
-      {saving && <Loader2 className="h-3 w-3 animate-spin text-gray-400" />}
-      {saved && <Check className="h-3 w-3 text-green-600" />}
+    <div className="flex flex-col items-end gap-0.5">
+      <div className="flex items-center gap-1 justify-end">
+        <input
+          type="number" min={0} value={val}
+          onChange={e => setVal(e.target.value)}
+          onBlur={save}
+          onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }}
+          className={`w-16 h-10 rounded border px-1.5 text-right text-sm tabular-nums ${err ? 'border-rose-300' : 'border-gray-200'}`}
+          placeholder="—"
+        />
+        {saving && <Loader2 className="h-3 w-3 animate-spin text-gray-400" />}
+        {saved && <Check className="h-3 w-3 text-green-600" />}
+      </div>
+      {err && <span className="text-[10px] text-rose-600 max-w-[8rem] text-right leading-tight">{err}</span>}
     </div>
   )
 }

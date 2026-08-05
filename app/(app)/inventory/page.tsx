@@ -36,6 +36,15 @@ export default async function InventoryLandingPage() {
   const supabase = await createClient()
   const myUid = user?.id ?? null
 
+  // Warehouses this user keeps (store_manager_id). Anyone named a store's keeper
+  // gets the storekeeper tiles + can issue, whatever their base role. Admins too.
+  const { data: keptWh } = myUid
+    ? await supabase.from('inv_warehouses').select('id').eq('store_manager_id', myUid)
+    : { data: [] }
+  const myWarehouseIds = (keptWh ?? []).map(w => w.id as string)
+  const canStore = myWarehouseIds.length > 0 || role === 'store_manager' || canAdmin
+  const NIL_UUID = '00000000-0000-0000-0000-000000000000'
+
   const [
     hopCount,
     storeCount,
@@ -48,9 +57,11 @@ export default async function InventoryLandingPage() {
     (approvalsActive && (role === 'head' || role === 'hop' || canAdmin))
       ? supabase.from('inv_requests').select('id', { count: 'exact', head: true }).eq('status', PENDING_HOP).then(r => r.count ?? 0)
       : Promise.resolve(null),
-    // Store queue (ready to issue)
-    (role === 'store_manager' || canAdmin)
-      ? supabase.from('inv_requests').select('id', { count: 'exact', head: true }).in('status', TO_ISSUE).then(r => r.count ?? 0)
+    // Store queue (ready to issue) — the keeper's own store(s); admin sees all.
+    canStore
+      ? (canAdmin
+          ? supabase.from('inv_requests').select('id', { count: 'exact', head: true }).in('status', TO_ISSUE).then(r => r.count ?? 0)
+          : supabase.from('inv_requests').select('id', { count: 'exact', head: true }).in('status', TO_ISSUE).in('warehouse_id', myWarehouseIds.length > 0 ? myWarehouseIds : [NIL_UUID]).then(r => r.count ?? 0))
       : Promise.resolve(null),
     // My requests awaiting receipt confirmation (engineer only)
     myUid
@@ -72,18 +83,19 @@ export default async function InventoryLandingPage() {
     // Outstanding returnable lines (engineer's own; admins see all)
     (myUid || canAdmin)
       ? supabase.from('inv_request_items')
-          .select('id, requested_qty, returned_good_qty, returned_damaged_qty, inv_requests!inner(engineer_id, status)', { count: 'exact', head: false })
+          .select('id, issued_qty, returned_good_qty, returned_damaged_qty, inv_requests!inner(engineer_id, status)', { count: 'exact', head: false })
           .eq('is_returnable', true)
           .in('inv_requests.status', ['ISSUED', 'EMERGENCY_ISSUED', 'CLOSED'])
           .then(r => {
             const rows = (r.data ?? []) as Array<{
-              id: string; requested_qty: number; returned_good_qty: number; returned_damaged_qty: number;
+              id: string; issued_qty: number; returned_good_qty: number; returned_damaged_qty: number;
               inv_requests: { engineer_id: string; status: string } | Array<{ engineer_id: string; status: string }>
             }>
             return rows.filter(row => {
               const req = Array.isArray(row.inv_requests) ? row.inv_requests[0] : row.inv_requests
               if (!canAdmin && req?.engineer_id !== myUid) return false
-              const outstanding = Number(row.requested_qty) - Number(row.returned_good_qty) - Number(row.returned_damaged_qty)
+              // Only what was actually handed over can be returned.
+              const outstanding = Number(row.issued_qty) - Number(row.returned_good_qty) - Number(row.returned_damaged_qty)
               return outstanding > 0
             }).length
           })
@@ -109,10 +121,10 @@ export default async function InventoryLandingPage() {
       badge: myAwaitingReceiptCount + myRejectedCount, badgeStyle: (myRejectedCount > 0 ? 'rose' : 'emerald') as BadgeStyle },
     { slug: 'inv-inbox-hop',        href: '/inventory/inbox/hop',        title: 'Approvals',      subtitle: 'Requests to OK', icon: ShieldCheck, show: approvalsActive && (role === 'head' || role === 'hop' || canAdmin),
       badge: hopCount, badgeStyle: 'amber' as BadgeStyle },
-    { slug: 'inv-inbox-store',      href: '/inventory/inbox/store',      title: 'To issue',       subtitle: 'Hand over material', icon: Truck,     show: role === 'store_manager' || canAdmin,
+    { slug: 'inv-inbox-store',      href: '/inventory/inbox/store',      title: 'To issue',       subtitle: 'Hand over material', icon: Truck,     show: canStore,
       badge: storeCount, badgeStyle: 'blue' as BadgeStyle },
-    { slug: 'inv-receipt',          href: '/inventory/receipt',          title: 'Stock receipt',  subtitle: 'Record vendor delivery', icon: PackagePlus,   show: role === 'store_manager' || canAdmin },
-    { slug: 'inv-stock-ops',        href: '/inventory/stock-ops',        title: 'Stock corrections', subtitle: 'Count · transfer · damage', icon: Wrench,   show: role === 'store_manager' || canAdmin },
+    { slug: 'inv-receipt',          href: '/inventory/receipt',          title: 'Stock receipt',  subtitle: 'Record vendor delivery', icon: PackagePlus,   show: canStore },
+    { slug: 'inv-stock-ops',        href: '/inventory/stock-ops',        title: 'Stock corrections', subtitle: 'Count · transfer · damage', icon: Wrench,   show: canStore },
     { slug: 'inv-returns',          href: '/inventory/returns/new',      title: 'Returns',        subtitle: 'Log returnable items', icon: Undo2,         show: canEdit || canAdmin,
       badge: myOutstandingReturnsCount, badgeStyle: 'amber' as BadgeStyle },
   ] as Section[]).filter(s => s.show)

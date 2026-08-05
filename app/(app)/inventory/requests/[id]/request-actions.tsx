@@ -26,7 +26,7 @@ interface Line {
 }
 
 export function RequestActions({
-  requestId, status, role, lines, currentUserId, engineerId, alreadyAcknowledged,
+  requestId, status, role, lines, currentUserId, engineerId, isKeeper = false, alreadyAcknowledged,
 }: {
   requestId: string
   status: string
@@ -34,6 +34,7 @@ export function RequestActions({
   lines: Line[]
   currentUserId: string | null
   engineerId: string
+  isKeeper?: boolean
   alreadyAcknowledged: boolean
 }) {
   const router = useRouter()
@@ -175,7 +176,7 @@ export function RequestActions({
 
   // ─── Store issue ──────────────────────────────────────────────
   function storePanel() {
-    if (!isStore && !isAdmin) return null
+    if (!isStore && !isAdmin && !isKeeper) return null
     if (status !== 'APPROVED' && status !== 'EMERGENCY_ISSUED') return null
     return (
       <Card>

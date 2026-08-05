@@ -70,7 +70,9 @@ export function RequestsBrowser({ rows, capped }: { rows: Row[]; capped: boolean
         Showing <b>{filtered.length}</b> of {rows.length}{capped ? ' (latest 300 — narrow the search for older ones)' : ''}
       </p>
 
-      {filtered.length === 0 ? (
+      {rows.length === 0 ? (
+        <Card className="p-8 text-center text-sm text-gray-500">No requests yet.</Card>
+      ) : filtered.length === 0 ? (
         <Card className="p-8 text-center text-sm text-gray-500">Nothing matches your search.</Card>
       ) : (
         <Card className="divide-y divide-gray-100">

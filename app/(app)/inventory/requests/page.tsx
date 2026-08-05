@@ -18,7 +18,7 @@ export default async function MyRequestsPage() {
 
   // Engineers see only their own. Approval roles + admin see everything.
   const role = profile?.role
-  const seeAll = role === 'admin' || role === 'backoffice' || role === 'backoffice_backup' || role === 'hop' || role === 'store_manager'
+  const seeAll = role === 'admin' || role === 'head' || role === 'hop' || role === 'backoffice' || role === 'backoffice_backup' || role === 'store_manager'
 
   let query = supabase
     .from('inv_requests')

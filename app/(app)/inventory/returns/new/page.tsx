@@ -13,7 +13,7 @@ export default async function NewReturnPage() {
 
   // Engineers see only their own issued requests; admins / store / etc see all.
   const role = profile?.role
-  const seeAll = role === 'admin' || role === 'store_manager'
+  const seeAll = role === 'admin' || role === 'head' || role === 'store_manager'
 
   let query = supabase
     .from('inv_requests')

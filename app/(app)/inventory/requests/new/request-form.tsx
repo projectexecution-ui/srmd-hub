@@ -17,10 +17,11 @@ type LineDraft = {
   item_id: string
   requested_qty: string
   remarks: string
+  is_returnable: boolean
 }
 
 function newLine(): LineDraft {
-  return { tempId: crypto.randomUUID(), item_id: '', requested_qty: '', remarks: '' }
+  return { tempId: crypto.randomUUID(), item_id: '', requested_qty: '', remarks: '', is_returnable: false }
 }
 
 interface InitialDraft {
@@ -72,6 +73,7 @@ export function RequestForm({ projects, warehouses, items, projectStores = {}, s
           item_id: l.item_id,
           requested_qty: String(l.requested_qty),
           remarks: l.remarks ?? '',
+          is_returnable: false,
         }))
       : [newLine()],
   )
@@ -93,6 +95,7 @@ export function RequestForm({ projects, warehouses, items, projectStores = {}, s
         item_id: l.item_id,
         requested_qty: Number(l.requested_qty),
         remarks: l.remarks.trim() || null,
+        is_returnable: l.is_returnable,
       }))
       .filter(l => l.item_id && Number.isFinite(l.requested_qty) && l.requested_qty > 0)
 
@@ -167,7 +170,6 @@ export function RequestForm({ projects, warehouses, items, projectStores = {}, s
             className="mt-1 flex h-10 w-full rounded-xl border border-gray-300 bg-white px-3 py-2 text-sm">
             <option value="normal">Normal</option>
             <option value="urgent">Urgent</option>
-            <option value="emergency">Emergency</option>
           </select>
         </div>
         <div>
@@ -211,6 +213,10 @@ export function RequestForm({ projects, warehouses, items, projectStores = {}, s
                     {avail == null ? 'not stocked at this store' : `${avail.toLocaleString('en-IN')} on hand`}
                   </p>
                 )}
+                <label className="mt-1 inline-flex items-center gap-1 text-[11px] text-gray-600">
+                  <input type="checkbox" checked={l.is_returnable} onChange={e => update(l.tempId, { is_returnable: e.target.checked })} />
+                  Returnable (tool/formwork — must come back)
+                </label>
               </div>
               <div className="col-span-4 md:col-span-2">
                 <Input value={l.remarks} onChange={e => update(l.tempId, { remarks: e.target.value })} placeholder="remarks" />

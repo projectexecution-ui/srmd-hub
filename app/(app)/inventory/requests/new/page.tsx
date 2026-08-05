@@ -1,5 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
-import { requirePermission, getMyUser } from '@/lib/auth'
+import { requirePermission, getMyUser, getMyProfile } from '@/lib/auth'
 import { PageHeader } from '@/components/PageHeader'
 import { Card } from '@/components/ui/card'
 import { RequestForm } from './request-form'
@@ -10,7 +10,8 @@ export default async function NewRequestPage({
   searchParams,
 }: { searchParams: Promise<{ from?: string }> }) {
   await requirePermission('inventory', 'edit', '/inventory')
-  const user = await getMyUser()
+  const [user, profile] = await Promise.all([getMyUser(), getMyProfile()])
+  const isAdmin = profile?.role === 'admin'
   const supabase = await createClient()
   const { from: fromId } = await searchParams
 
@@ -62,8 +63,8 @@ export default async function NewRequestPage({
       .select('request_no, project_id, warehouse_id, urgency, purpose, required_by_date, engineer_id, status, inv_request_items(item_id, requested_qty, remarks)')
       .eq('id', fromId)
       .single()
-    // Only allow re-raise if the current user owns it OR is admin.
-    if (src && (src.engineer_id === user?.id || true /* admin RLS-side */)) {
+    // Only allow re-raise prefill if the current user owns it OR is admin.
+    if (src && (src.engineer_id === user?.id || isAdmin)) {
       initialDraft = {
         projectId:    src.project_id ?? undefined,
         warehouseId:  src.warehouse_id ?? undefined,

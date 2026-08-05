@@ -25,7 +25,7 @@ export default async function RequestDetailPage({
     .select(`
       *,
       projects(code, name),
-      inv_warehouses(code, name),
+      inv_warehouses(code, name, store_manager_id),
       inv_request_items(*, inv_items(code, name, unit, image_url)),
       inv_request_status_log(*)
     `)
@@ -57,6 +57,9 @@ export default async function RequestDetailPage({
 
   const proj = Array.isArray(req.projects) ? req.projects[0] : req.projects
   const wh   = Array.isArray(req.inv_warehouses) ? req.inv_warehouses[0] : req.inv_warehouses
+  // Is the current user the keeper of this request's store? Then they can issue,
+  // whatever their base role.
+  const isKeeper = !!(user?.id && (wh as { store_manager_id?: string | null } | null)?.store_manager_id === user.id)
 
   type Line = {
     id: string
@@ -174,6 +177,7 @@ export default async function RequestDetailPage({
         role={role}
         currentUserId={user?.id ?? null}
         engineerId={req.engineer_id}
+        isKeeper={isKeeper}
         alreadyAcknowledged={!!req.engineer_acknowledged_at}
         lines={lines.map(l => {
           const it = Array.isArray(l.inv_items) ? l.inv_items[0] : l.inv_items

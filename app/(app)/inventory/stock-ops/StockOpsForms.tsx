@@ -32,6 +32,7 @@ export function StockOpsForms({ warehouses, items }: { warehouses: WhOpt[]; item
   const item = items.find(i => i.id === itemId)
 
   async function run() {
+    if (mode === 'transfer' && wh === wh2) { setError('Pick two different stores'); return }
     setBusy(true); setError(null); setOk(null)
     const n = Number(qty)
     const supabase = createClient()
@@ -79,6 +80,7 @@ export function StockOpsForms({ warehouses, items }: { warehouses: WhOpt[]; item
           <select value={wh2} onChange={e => setWh2(e.target.value)} className="mt-1 h-10 w-full rounded-xl border border-gray-300 bg-white px-3 text-sm">
             {warehouses.map(w => <option key={w.id} value={w.id}>{w.code} — {w.name}</option>)}
           </select>
+          {warehouses.length < 2 && <p className="text-[11px] text-amber-600 mt-1">You need at least two stores to transfer.</p>}
         </div>
       )}
       <div>
@@ -100,7 +102,7 @@ export function StockOpsForms({ warehouses, items }: { warehouses: WhOpt[]; item
 
       {error && <p className="text-sm text-rose-600">{error}</p>}
       {ok && <p className="text-sm text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2">{ok}</p>}
-      <Button onClick={run} disabled={busy || !itemId || !qty}>
+      <Button onClick={run} disabled={busy || !itemId || !qty || (mode === 'transfer' && (wh === wh2 || warehouses.length < 2))}>
         {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
         {mode === 'adjust' ? 'Correct stock' : mode === 'transfer' ? 'Transfer stock' : 'Record write-off'}
       </Button>
