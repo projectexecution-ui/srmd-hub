@@ -5,7 +5,7 @@ import { PageHeader } from '@/components/PageHeader'
 import { Card } from '@/components/ui/card'
 import {
   Boxes, ClipboardList, Inbox, Truck, FileText, Undo2,
-  Building2, Tag, PackagePlus, ShieldCheck,
+  Building2, Tag, PackagePlus, ShieldCheck, SlidersHorizontal,
 } from 'lucide-react'
 import type { Role } from '@/lib/types'
 
@@ -117,8 +117,9 @@ export default async function InventoryLandingPage() {
   ] as Section[]).filter(s => s.show && isEnabled(s.slug))
 
   const adminSections: Section[] = [
-    { slug: 'inv-admin-warehouses', href: '/inventory/admin/warehouses', title: 'Warehouses',  icon: Building2, show: canAdmin },
-    { slug: 'inv-admin-items',      href: '/inventory/admin/items',      title: 'Item master', icon: Tag,       show: canAdmin },
+    { slug: 'inv-admin-warehouses', href: '/inventory/admin/warehouses', title: 'Warehouses',  icon: Building2,         show: canAdmin },
+    { slug: 'inv-admin-items',      href: '/inventory/admin/items',      title: 'Item master', icon: Tag,               show: canAdmin },
+    { slug: 'inv-admin-settings',   href: '/inventory/admin/settings',   title: 'Settings',    icon: SlidersHorizontal, show: canAdmin },
   ].filter(s => s.show && isEnabled(s.slug))
 
   // Top callout — the SINGLE most urgent thing waiting on this user.
@@ -173,7 +174,8 @@ export default async function InventoryLandingPage() {
                     <h3 className="text-sm font-semibold text-gray-900 leading-tight">{s.title}</h3>
                     <p className="text-[11px] text-gray-500 leading-tight mt-0.5">
                       {s.slug === 'inv-admin-items'      ? 'Add / edit materials catalogue' :
-                       s.slug === 'inv-admin-warehouses' ? 'Add / edit physical stores' : ''}
+                       s.slug === 'inv-admin-warehouses' ? 'Add / edit physical stores' :
+                       s.slug === 'inv-admin-settings'   ? 'Approval flow & options' : ''}
                     </p>
                   </div>
                 </Card>

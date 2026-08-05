@@ -88,6 +88,7 @@ export const INVENTORY_SECTIONS: InventorySection[] = [
   { slug: 'inv-returns',           label: 'Log a return',        description: 'Return surplus / damaged material' },
   { slug: 'inv-admin-warehouses',  label: 'Warehouses (admin)',  description: 'Master list of physical stores' },
   { slug: 'inv-admin-items',       label: 'Item master (admin)', description: 'Catalogue of materials' },
+  { slug: 'inv-admin-settings',    label: 'Settings (admin)',    description: 'Approval flow & module options' },
 ]
 
 // Tone → Tailwind classes. Kept here so JIT picks them up.

@@ -1,0 +1,104 @@
+'use client'
+// The approval dial. One choice, saved the instant it's clicked (like the Cost
+// Control experimental switch) — no separate Save step. Aksha changes it
+// himself whenever he wants; it takes effect for everyone on the next page load.
+
+import { useState } from 'react'
+import { useRouter } from 'next/navigation'
+import { createClient } from '@/lib/supabase/client'
+import { Loader2, Check, Zap, ShieldCheck } from 'lucide-react'
+import type { InvSettings, InvApprovalMode } from '@/lib/inventory/settings'
+
+const MODES: Array<{
+  value: InvApprovalMode
+  label: string
+  hint: string
+  icon: React.ComponentType<{ className?: string }>
+}> = [
+  {
+    value: 'off',
+    label: 'Storekeeper issues directly',
+    hint: 'Fastest. When material is in stock, the storekeeper hands it over on the spot — no management approval. (A shortfall still becomes a purchase.) You still see everything through live stock and reports.',
+    icon: Zap,
+  },
+  {
+    value: 'always',
+    label: 'One Atm Head approval first',
+    hint: "Every request needs the project's Atm Head to OK it before the storekeeper can issue. More control — and still fast, because everyone is notified the moment it reaches them.",
+    icon: ShieldCheck,
+  },
+]
+
+export function InvSettingsForm({ initial }: { initial: InvSettings }) {
+  const router = useRouter()
+  const [mode, setMode] = useState<InvApprovalMode>(initial.approval_mode)
+  const [saving, setSaving] = useState(false)
+  const [msg, setMsg] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
+
+  async function save(next: InvApprovalMode) {
+    if (next === mode) return
+    const prev = mode
+    setMode(next); setSaving(true); setMsg(null); setError(null)
+    const supabase = createClient()
+    const { error } = await supabase
+      .from('app_settings')
+      .upsert({ key: 'inv_approval_mode', value: next }, { onConflict: 'key' })
+    setSaving(false)
+    if (error) {
+      setMode(prev) // revert
+      setError(`Couldn't save: ${error.message}`)
+      return
+    }
+    setMsg(next === 'off'
+      ? 'Saved — the storekeeper now issues in-stock material directly.'
+      : 'Saved — every request now needs one Atm Head approval before issue.')
+    router.refresh()
+  }
+
+  return (
+    <div className="space-y-4 max-w-xl">
+      <div>
+        <p className="text-[11px] uppercase tracking-wider font-semibold text-gray-500 mb-1">Approval before a storekeeper issues material</p>
+        <p className="text-xs text-gray-500 mb-3">Pick one. It saves the moment you click and applies to everyone.</p>
+        <div className="space-y-2">
+          {MODES.map(m => {
+            const on = mode === m.value
+            return (
+              <button
+                key={m.value}
+                type="button"
+                onClick={() => save(m.value)}
+                disabled={saving}
+                className={`flex w-full items-start justify-between gap-3 rounded-lg border px-3 py-3 text-left transition-colors disabled:opacity-60 ${on ? 'border-green-500 bg-green-50/60 ring-1 ring-green-500' : 'border-gray-200 hover:bg-gray-50'}`}
+              >
+                <span className="flex items-start gap-3 min-w-0">
+                  <span className={`inline-flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg ${on ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
+                    <m.icon className="h-5 w-5" />
+                  </span>
+                  <span className="min-w-0">
+                    <span className="block text-sm font-semibold text-gray-900">{m.label}</span>
+                    <span className="block text-xs text-gray-500 mt-0.5">{m.hint}</span>
+                  </span>
+                </span>
+                <span className={`mt-1 inline-flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full border ${on ? 'bg-green-600 border-green-600 text-white' : 'border-gray-300'}`}>
+                  {on && <Check className="h-3.5 w-3.5" />}
+                </span>
+              </button>
+            )
+          })}
+        </div>
+      </div>
+
+      <div className="rounded-md border border-gray-200 bg-gray-50/60 px-3 py-2.5 text-xs text-gray-600">
+        Coming later: <b>approve only above a ₹ value</b> (small asks flow free, big ones need a nod). That needs prices on your items first — ask me to add item rates when you want it.
+      </div>
+
+      <div className="min-h-[1.25rem]">
+        {saving && <p className="text-sm text-gray-500 flex items-center gap-1.5"><Loader2 className="h-4 w-4 animate-spin" /> Saving…</p>}
+        {error && <p className="text-sm text-red-600">{error}</p>}
+        {msg && !saving && <p className="text-sm text-green-600">{msg}</p>}
+      </div>
+    </div>
+  )
+}
