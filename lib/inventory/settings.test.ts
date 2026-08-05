@@ -2,14 +2,22 @@ import { describe, it, expect } from 'vitest'
 import { parseInvSettings, INV_SETTINGS_DEFAULTS } from './settings'
 
 describe('parseInvSettings', () => {
-  it('defaults to one Atm Head approval (always) when unset', () => {
-    expect(parseInvSettings({})).toEqual({ approval_mode: 'always' })
+  it('defaults when unset', () => {
+    expect(parseInvSettings({})).toEqual({
+      approval_mode: 'always', allow_item_requests: true, low_stock_alerts: true, require_purpose: false,
+    })
     expect(INV_SETTINGS_DEFAULTS.approval_mode).toBe('always')
   })
 
-  it('reads a valid override', () => {
-    expect(parseInvSettings({ inv_approval_mode: 'off' })).toEqual({ approval_mode: 'off' })
-    expect(parseInvSettings({ inv_approval_mode: 'always' })).toEqual({ approval_mode: 'always' })
+  it('reads a valid approval_mode override', () => {
+    expect(parseInvSettings({ inv_approval_mode: 'off' }).approval_mode).toBe('off')
+    expect(parseInvSettings({ inv_approval_mode: 'always' }).approval_mode).toBe('always')
+  })
+
+  it('reads the boolean toggles', () => {
+    expect(parseInvSettings({ inv_allow_item_requests: 'false' }).allow_item_requests).toBe(false)
+    expect(parseInvSettings({ inv_low_stock_alerts: 'off' }).low_stock_alerts).toBe(false)
+    expect(parseInvSettings({ inv_require_purpose: 'true' }).require_purpose).toBe(true)
   })
 
   it('falls back to the default on blank / null / unknown values', () => {

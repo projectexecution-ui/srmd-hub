@@ -17,18 +17,37 @@ export type InvApprovalMode = 'off' | 'always'
 
 export interface InvSettings {
   approval_mode: InvApprovalMode
+  /** Let engineers/storekeepers propose new items (admin approves). */
+  allow_item_requests: boolean
+  /** Run the daily low-stock nudge to storekeepers. */
+  low_stock_alerts: boolean
+  /** Require the Purpose field when raising a request. */
+  require_purpose: boolean
 }
 
 export const INV_SETTINGS_DEFAULTS: InvSettings = {
   approval_mode: 'always',
+  allow_item_requests: true,
+  low_stock_alerts: true,
+  require_purpose: false,
 }
 
 /** Pure parser — exported so tests cover defaults/overrides without Supabase. */
 export function parseInvSettings(map: Record<string, string | null | undefined>): InvSettings {
   const d = INV_SETTINGS_DEFAULTS
+  const bool = (k: string, fallback: boolean): boolean => {
+    const v = map[k]
+    if (v == null || v === '') return fallback
+    return v === 'true' || v === '1' || v === 'on'
+  }
   const raw = (map['inv_approval_mode'] ?? '').trim()
   const approval_mode: InvApprovalMode = raw === 'off' || raw === 'always' ? raw : d.approval_mode
-  return { approval_mode }
+  return {
+    approval_mode,
+    allow_item_requests: bool('inv_allow_item_requests', d.allow_item_requests),
+    low_stock_alerts:    bool('inv_low_stock_alerts', d.low_stock_alerts),
+    require_purpose:     bool('inv_require_purpose', d.require_purpose),
+  }
 }
 
 export const getInvSettings = cache(async (): Promise<InvSettings> => {

@@ -29,12 +29,51 @@ const MODES: Array<{
   },
 ]
 
+const TOGGLES: Array<{ key: 'allow_item_requests' | 'low_stock_alerts' | 'require_purpose'; settingKey: string; label: string; hint: string }> = [
+  { key: 'allow_item_requests', settingKey: 'inv_allow_item_requests', label: 'Let staff request new items',
+    hint: 'Engineers/storekeepers can propose an item that isn’t in the catalogue; an admin approves it before it can be used.' },
+  { key: 'low_stock_alerts', settingKey: 'inv_low_stock_alerts', label: 'Daily low-stock alerts',
+    hint: 'Each morning, nudge every store’s keeper about items that have dropped to their reorder level.' },
+  { key: 'require_purpose', settingKey: 'inv_require_purpose', label: 'Require a purpose on every request',
+    hint: 'Engineers must say what the material is for before they can send a request.' },
+]
+
+function Toggle({ checked, onChange, label, hint, busy }: { checked: boolean; onChange: (v: boolean) => void; label: string; hint: string; busy: boolean }) {
+  return (
+    <button type="button" onClick={() => onChange(!checked)} disabled={busy}
+      className="flex w-full items-start justify-between gap-4 rounded-lg border border-gray-200 px-3 py-3 text-left hover:bg-gray-50 disabled:opacity-60">
+      <span className="min-w-0">
+        <span className="block text-sm font-semibold text-gray-900">{label}</span>
+        <span className="block text-xs text-gray-500 mt-0.5">{hint}</span>
+      </span>
+      <span className={`relative mt-1 inline-flex h-5 w-9 flex-shrink-0 rounded-full transition-colors ${checked ? 'bg-green-600' : 'bg-gray-300'}`} aria-hidden>
+        <span className="absolute top-0.5 left-0.5 h-4 w-4 rounded-full bg-white shadow transition-transform" style={{ transform: checked ? 'translateX(16px)' : 'translateX(0)' }} />
+      </span>
+    </button>
+  )
+}
+
 export function InvSettingsForm({ initial }: { initial: InvSettings }) {
   const router = useRouter()
   const [mode, setMode] = useState<InvApprovalMode>(initial.approval_mode)
+  const [toggles, setToggles] = useState({
+    allow_item_requests: initial.allow_item_requests,
+    low_stock_alerts: initial.low_stock_alerts,
+    require_purpose: initial.require_purpose,
+  })
   const [saving, setSaving] = useState(false)
   const [msg, setMsg] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+
+  async function saveToggle(key: 'allow_item_requests' | 'low_stock_alerts' | 'require_purpose', settingKey: string, next: boolean) {
+    const prev = toggles[key]
+    setToggles(t => ({ ...t, [key]: next })); setSaving(true); setMsg(null); setError(null)
+    const supabase = createClient()
+    const { error } = await supabase.from('app_settings').upsert({ key: settingKey, value: String(next) }, { onConflict: 'key' })
+    setSaving(false)
+    if (error) { setToggles(t => ({ ...t, [key]: prev })); setError(`Couldn't save: ${error.message}`); return }
+    setMsg('Saved.'); router.refresh()
+  }
 
   async function save(next: InvApprovalMode) {
     if (next === mode) return
@@ -92,6 +131,16 @@ export function InvSettingsForm({ initial }: { initial: InvSettings }) {
 
       <div className="rounded-md border border-gray-200 bg-gray-50/60 px-3 py-2.5 text-xs text-gray-600">
         Coming later: <b>approve only above a ₹ value</b> (small asks flow free, big ones need a nod). That needs prices on your items first — ask me to add item rates when you want it.
+      </div>
+
+      <div>
+        <p className="text-[11px] uppercase tracking-wider font-semibold text-gray-500 mb-2">Options</p>
+        <div className="space-y-2">
+          {TOGGLES.map(t => (
+            <Toggle key={t.key} label={t.label} hint={t.hint} busy={saving}
+              checked={toggles[t.key]} onChange={v => saveToggle(t.key, t.settingKey, v)} />
+          ))}
+        </div>
       </div>
 
       <div className="min-h-[1.25rem]">

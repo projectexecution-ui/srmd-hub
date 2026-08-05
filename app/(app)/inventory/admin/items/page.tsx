@@ -1,24 +1,28 @@
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/server'
-import { requirePermission, requireInventorySection } from '@/lib/auth'
+import { requirePermission } from '@/lib/auth'
 import { PageHeader } from '@/components/PageHeader'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { QueryError } from '@/components/ui/query-error'
 import { Upload } from 'lucide-react'
 import { ItemList } from './item-list'
+import { PendingItemsReview } from './PendingItemsReview'
 
 export const dynamic = 'force-dynamic'
 
 export default async function ItemsAdminPage() {
   await requirePermission('inventory', 'admin', '/inventory')
-  await requireInventorySection('inv-admin-items')
   const supabase = await createClient()
   const { data, error } = await supabase
     .from('inv_items')
     .select('*')
     .is('deleted_at', null)
     .order('code')
+
+  const all = data ?? []
+  const pending = all.filter(i => (i as { approval_status?: string }).approval_status === 'pending')
+  const catalogue = all.filter(i => (i as { approval_status?: string }).approval_status !== 'pending')
 
   return (
     <div className="p-4 md:p-6 max-w-6xl mx-auto space-y-4">
@@ -32,9 +36,12 @@ export default async function ItemsAdminPage() {
       {error ? (
         <QueryError what="the item master" message={error.message} />
       ) : (
-        <Card className="p-5">
-          <ItemList items={data ?? []} />
-        </Card>
+        <>
+          <PendingItemsReview items={pending as never} />
+          <Card className="p-5">
+            <ItemList items={catalogue} />
+          </Card>
+        </>
       )}
     </div>
   )

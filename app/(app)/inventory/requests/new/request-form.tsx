@@ -34,7 +34,7 @@ interface InitialDraft {
   sourceRequestNo?: string
 }
 
-export function RequestForm({ projects, warehouses, items, projectStores = {}, stockByWh = {}, initialDraft }: {
+export function RequestForm({ projects, warehouses, items, projectStores = {}, stockByWh = {}, allowRequestNew = false, requirePurpose = false, initialDraft }: {
   projects: Opt[]
   warehouses: Opt[]
   items: PickerItem[]
@@ -42,6 +42,8 @@ export function RequestForm({ projects, warehouses, items, projectStores = {}, s
   projectStores?: Record<string, string>
   /** warehouse_id → { item_id → available_qty }. Shows the engineer what's on hand. */
   stockByWh?: Record<string, Record<string, number>>
+  allowRequestNew?: boolean
+  requirePurpose?: boolean
   initialDraft?: InitialDraft
 }) {
   const router = useRouter()
@@ -63,6 +65,16 @@ export function RequestForm({ projects, warehouses, items, projectStores = {}, s
   // instead of a dropdown (no "which warehouse?" decision for the engineer).
   const mappedWarehouseId = projectStores[projectId]
   const mappedWarehouse = mappedWarehouseId ? warehouses.find(w => w.id === mappedWarehouseId) : undefined
+
+  // Live stock at the selected store → the item picker shows what's on hand.
+  const stockForWh = stockByWh[warehouseId] ?? {}
+  const storeLabel = warehouses.find(w => w.id === warehouseId)?.name
+
+  async function proposeItem(p: { name: string; unit: string; category: string }) {
+    const supabase = createClient()
+    const { error } = await supabase.rpc('inv_rpc_propose_item', { p_name: p.name, p_unit: p.unit, p_category: p.category || null })
+    return error ? { ok: false, error: error.message } : { ok: true }
+  }
   const [urgency, setUrgency]       = useState(initialDraft?.urgency ?? 'normal')
   const [purpose, setPurpose]       = useState(initialDraft?.purpose ?? '')
   const [requiredBy, setRequiredBy] = useState(initialDraft?.requiredBy ?? '')
@@ -101,6 +113,11 @@ export function RequestForm({ projects, warehouses, items, projectStores = {}, s
 
     if (validLines.length === 0) {
       setError('Add at least one item with a positive qty')
+      setBusy(false)
+      return
+    }
+    if (requirePurpose && !purpose.trim()) {
+      setError('Please add a purpose for this request')
       setBusy(false)
       return
     }
@@ -200,6 +217,10 @@ export function RequestForm({ projects, warehouses, items, projectStores = {}, s
                   items={items}
                   value={l.item_id}
                   onChange={(id) => update(l.tempId, { item_id: id })}
+                  stockByItem={stockForWh}
+                  storeLabel={storeLabel}
+                  allowRequestNew={allowRequestNew}
+                  onProposeItem={proposeItem}
                 />
               </div>
               <div className="col-span-6 md:col-span-3">

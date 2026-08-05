@@ -1,5 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
 import { requirePermission, getMyUser, getMyProfile } from '@/lib/auth'
+import { getInvSettings } from '@/lib/inventory/settings'
 import { PageHeader } from '@/components/PageHeader'
 import { Card } from '@/components/ui/card'
 import { RequestForm } from './request-form'
@@ -10,7 +11,7 @@ export default async function NewRequestPage({
   searchParams,
 }: { searchParams: Promise<{ from?: string }> }) {
   await requirePermission('inventory', 'edit', '/inventory')
-  const [user, profile] = await Promise.all([getMyUser(), getMyProfile()])
+  const [user, profile, invSettings] = await Promise.all([getMyUser(), getMyProfile(), getInvSettings()])
   const isAdmin = profile?.role === 'admin'
   const supabase = await createClient()
   const { from: fromId } = await searchParams
@@ -97,6 +98,8 @@ export default async function NewRequestPage({
           items={itemsRes.data ?? []}
           projectStores={projectStores}
           stockByWh={stockByWh}
+          allowRequestNew={invSettings.allow_item_requests}
+          requirePurpose={invSettings.require_purpose}
           initialDraft={initialDraft}
         />
       </Card>
