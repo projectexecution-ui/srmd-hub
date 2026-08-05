@@ -18,12 +18,18 @@ export default async function NewRequestPage({
   // Engineer's projects (from inv_engineer_projects). Fall back to all
   // projects if no assignment exists yet — keeps the form usable before
   // the engineer-project mapping is set up.
-  const [assignedRes, projectsRes, whRes, itemsRes] = await Promise.all([
+  const [assignedRes, projectsRes, whRes, itemsRes, setupRes] = await Promise.all([
     supabase.from('inv_engineer_projects').select('project_id, projects(id, code, name)').eq('engineer_id', user?.id ?? ''),
     supabase.from('projects').select('id, code, name').order('code'),
     supabase.from('inv_warehouses').select('id, code, name').eq('is_active', true).order('code'),
     supabase.from('inv_items').select('id, code, name, unit, category, image_url').eq('is_active', true).order('code'),
+    // "My store" routing: each project's site store (inv_project_setup). When a
+    // project is mapped, the request auto-targets that warehouse — no manual pick.
+    supabase.from('inv_project_setup').select('project_id, primary_warehouse_id'),
   ])
+
+  const projectStores: Record<string, string> = {}
+  for (const s of setupRes.data ?? []) projectStores[s.project_id as string] = s.primary_warehouse_id as string
 
   const assigned = (assignedRes.data ?? [])
     .map(r => Array.isArray(r.projects) ? r.projects[0] : r.projects)
@@ -80,6 +86,7 @@ export default async function NewRequestPage({
           projects={projects}
           warehouses={whRes.data ?? []}
           items={itemsRes.data ?? []}
+          projectStores={projectStores}
           initialDraft={initialDraft}
         />
       </Card>

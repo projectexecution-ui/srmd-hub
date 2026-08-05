@@ -5,7 +5,7 @@ import { PageHeader } from '@/components/PageHeader'
 import { Card } from '@/components/ui/card'
 import {
   Boxes, ClipboardList, Inbox, Truck, FileText, Undo2,
-  Building2, Tag, PackagePlus, ShieldCheck, SlidersHorizontal,
+  Building2, Tag, PackagePlus, ShieldCheck, SlidersHorizontal, Store,
 } from 'lucide-react'
 import type { Role } from '@/lib/types'
 
@@ -116,9 +116,10 @@ export default async function InventoryLandingPage() {
   ] as Section[]).filter(s => s.show)
 
   const adminSections: Section[] = [
-    { slug: 'inv-admin-warehouses', href: '/inventory/admin/warehouses', title: 'Warehouses',  icon: Building2,         show: canAdmin },
-    { slug: 'inv-admin-items',      href: '/inventory/admin/items',      title: 'Item master', icon: Tag,               show: canAdmin },
-    { slug: 'inv-admin-settings',   href: '/inventory/admin/settings',   title: 'Settings',    icon: SlidersHorizontal, show: canAdmin },
+    { slug: 'inv-admin-warehouses', href: '/inventory/admin/warehouses', title: 'Warehouses',    icon: Building2,         show: canAdmin },
+    { slug: 'inv-admin-projects',   href: '/inventory/admin/projects',   title: 'Project stores', icon: Store,            show: canAdmin },
+    { slug: 'inv-admin-items',      href: '/inventory/admin/items',      title: 'Item master',   icon: Tag,               show: canAdmin },
+    { slug: 'inv-admin-settings',   href: '/inventory/admin/settings',   title: 'Settings',      icon: SlidersHorizontal, show: canAdmin },
   ].filter(s => s.show)
 
   // Top callout — the SINGLE most urgent thing waiting on this user.
@@ -174,6 +175,7 @@ export default async function InventoryLandingPage() {
                     <p className="text-[11px] text-gray-500 leading-tight mt-0.5">
                       {s.slug === 'inv-admin-items'      ? 'Add / edit materials catalogue' :
                        s.slug === 'inv-admin-warehouses' ? 'Add / edit physical stores' :
+                       s.slug === 'inv-admin-projects'   ? "Each project's store + Atm Head" :
                        s.slug === 'inv-admin-settings'   ? 'Approval flow & options' : ''}
                     </p>
                   </div>

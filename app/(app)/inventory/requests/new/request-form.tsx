@@ -7,7 +7,7 @@ import { Input } from '@/components/ui/input'
 import { MoneyInput } from '@/components/ui/money-input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
-import { Loader2, Plus, Trash2, Send } from 'lucide-react'
+import { Loader2, Plus, Trash2, Send, Store } from 'lucide-react'
 import { ItemPicker, type PickerItem } from '@/components/inventory/ItemPicker'
 
 interface Opt { id: string; code: string; name: string }
@@ -33,15 +33,33 @@ interface InitialDraft {
   sourceRequestNo?: string
 }
 
-export function RequestForm({ projects, warehouses, items, initialDraft }: {
+export function RequestForm({ projects, warehouses, items, projectStores = {}, initialDraft }: {
   projects: Opt[]
   warehouses: Opt[]
   items: PickerItem[]
+  /** project_id → its site store (warehouse_id), from inv_project_setup. */
+  projectStores?: Record<string, string>
   initialDraft?: InitialDraft
 }) {
   const router = useRouter()
-  const [projectId, setProjectId]   = useState(initialDraft?.projectId ?? projects[0]?.id ?? '')
-  const [warehouseId, setWarehouseId] = useState(initialDraft?.warehouseId ?? warehouses[0]?.id ?? '')
+  const firstProject = initialDraft?.projectId ?? projects[0]?.id ?? ''
+  const [projectId, setProjectId]   = useState(firstProject)
+  const [warehouseId, setWarehouseId] = useState(
+    initialDraft?.warehouseId ?? projectStores[firstProject] ?? warehouses[0]?.id ?? '',
+  )
+
+  // When the engineer switches project, jump the warehouse to that project's
+  // site store (if one is mapped). Their site store follows the project.
+  function onProjectChange(nextProject: string) {
+    setProjectId(nextProject)
+    const mapped = projectStores[nextProject]
+    if (mapped) setWarehouseId(mapped)
+  }
+
+  // The chosen project's mapped store, if any → we show it as a fixed chip
+  // instead of a dropdown (no "which warehouse?" decision for the engineer).
+  const mappedWarehouseId = projectStores[projectId]
+  const mappedWarehouse = mappedWarehouseId ? warehouses.find(w => w.id === mappedWarehouseId) : undefined
   const [urgency, setUrgency]       = useState(initialDraft?.urgency ?? 'normal')
   const [purpose, setPurpose]       = useState(initialDraft?.purpose ?? '')
   const [requiredBy, setRequiredBy] = useState(initialDraft?.requiredBy ?? '')
@@ -135,17 +153,26 @@ export function RequestForm({ projects, warehouses, items, initialDraft }: {
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
         <div>
           <Label>Project *</Label>
-          <select value={projectId} onChange={e => setProjectId(e.target.value)} required
+          <select value={projectId} onChange={e => onProjectChange(e.target.value)} required
             className="mt-1 flex h-10 w-full rounded-xl border border-gray-300 bg-white px-3 py-2 text-sm">
             {projects.map(p => <option key={p.id} value={p.id}>{p.code} — {p.name}</option>)}
           </select>
         </div>
         <div>
           <Label>Issuing warehouse *</Label>
-          <select value={warehouseId} onChange={e => setWarehouseId(e.target.value)} required
-            className="mt-1 flex h-10 w-full rounded-xl border border-gray-300 bg-white px-3 py-2 text-sm">
-            {warehouses.map(w => <option key={w.id} value={w.id}>{w.code} — {w.name}</option>)}
-          </select>
+          {mappedWarehouse ? (
+            // This project has a site store — the request goes there. No pick.
+            <div className="mt-1 flex h-10 w-full items-center gap-2 rounded-xl border border-green-200 bg-green-50/60 px-3 text-sm text-gray-800">
+              <Store className="h-4 w-4 text-green-600 flex-shrink-0" />
+              <span className="truncate"><b>{mappedWarehouse.code}</b> — {mappedWarehouse.name}</span>
+              <span className="ml-auto text-[11px] text-green-700 whitespace-nowrap">your site store</span>
+            </div>
+          ) : (
+            <select value={warehouseId} onChange={e => setWarehouseId(e.target.value)} required
+              className="mt-1 flex h-10 w-full rounded-xl border border-gray-300 bg-white px-3 py-2 text-sm">
+              {warehouses.map(w => <option key={w.id} value={w.id}>{w.code} — {w.name}</option>)}
+            </select>
+          )}
         </div>
       </div>
 
