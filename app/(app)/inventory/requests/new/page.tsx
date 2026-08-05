@@ -1,5 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
-import { requirePermission, requireInventorySection, getMyUser } from '@/lib/auth'
+import { requirePermission, getMyUser } from '@/lib/auth'
 import { PageHeader } from '@/components/PageHeader'
 import { Card } from '@/components/ui/card'
 import { RequestForm } from './request-form'
@@ -10,7 +10,6 @@ export default async function NewRequestPage({
   searchParams,
 }: { searchParams: Promise<{ from?: string }> }) {
   await requirePermission('inventory', 'edit', '/inventory')
-  await requireInventorySection('inv-request-new')
   const user = await getMyUser()
   const supabase = await createClient()
   const { from: fromId } = await searchParams

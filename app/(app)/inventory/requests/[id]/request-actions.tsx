@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { MoneyInput } from '@/components/ui/money-input'
 import { Textarea } from '@/components/ui/textarea'
-import { Loader2, Check, X, AlertTriangle, Truck, Undo2, PackageCheck } from 'lucide-react'
+import { Loader2, Check, X, Truck, Undo2, PackageCheck } from 'lucide-react'
 import type { Role } from '@/lib/types'
 
 interface Line {
@@ -42,19 +42,12 @@ export function RequestActions({
   const supabase = createClient()
 
   const isAdmin       = role === 'admin'
-  const isBackoffice  = role === 'backoffice' || role === 'backoffice_backup'
   const isStore       = role === 'store_manager'
   // Atm Head = `head` canonically. Legacy `hop` still works for backward compat.
   const isAtmHead     = role === 'head' || role === 'hop'
   const isRequesting  = currentUserId != null && currentUserId === engineerId
 
-  // Either Backoffice or Storekeeper can do the availability check.
-  const canDoCheck    = isBackoffice || isStore || isAdmin
-
-  // Editable approved/issued qtys + returnable flags
-  const [approvedQty, setApprovedQty] = useState<Record<string, string>>(
-    Object.fromEntries(lines.map(l => [l.id, String(l.approved_qty ?? l.requested_qty)])),
-  )
+  // Editable issued qtys + returnable flags
   const [issuedQty, setIssuedQty] = useState<Record<string, string>>(
     Object.fromEntries(lines.map(l => [l.id, String(l.approved_qty ?? 0)])),
   )
@@ -100,56 +93,6 @@ export function RequestActions({
       router.refresh()
     }
     return true
-  }
-
-  // ─── Availability check (Backoffice OR Storekeeper) ────────────
-  function checkPanel() {
-    if (status !== 'PENDING_BACKOFFICE') return null
-    if (!canDoCheck) return null
-    return (
-      <Card>
-        <CardHeader><CardTitle className="text-base">Availability check</CardTitle></CardHeader>
-        <CardContent className="space-y-3">
-          <p className="text-xs text-gray-500">
-            Confirm whether the requested items are available — either backoffice or storekeeper can do this step.
-            Edit qty per line if you can only partially fulfil, then mark available.
-          </p>
-          <div className="space-y-1">
-            {lines.map(l => (
-              <div key={l.id} className="grid grid-cols-1 md:grid-cols-12 gap-2 md:items-center text-sm border-b border-gray-100 md:border-0 pb-2 md:pb-0 last:border-0">
-                <div className="md:col-span-7 min-w-0">
-                  <div className="text-gray-800 truncate">{l.item_label}</div>
-                  <div className="text-xs text-gray-500">req {l.requested_qty} {l.unit} · avail {l.available_qty} {l.unit}</div>
-                </div>
-                <div className="md:col-span-4 flex items-center gap-2">
-                  <div className="flex-1"><MoneyInput
-                    value={approvedQty[l.id] ?? ''}
-                    onChange={(v) => setApprovedQty(s => ({ ...s, [l.id]: v }))} /></div>
-                  <span className="text-xs text-gray-500 md:hidden">{l.unit}</span>
-                </div>
-                <span className="hidden md:inline md:col-span-1 text-xs text-gray-500">{l.unit}</span>
-              </div>
-            ))}
-          </div>
-          <Textarea value={remarks} onChange={e => setRemarks(e.target.value)} rows={2} placeholder="Remarks (optional for available, required for not-available)" />
-          <div className="flex flex-wrap gap-2">
-            <Button onClick={async () => {
-              const items = lines.map(l => ({ request_item_id: l.id, approved_qty: Number(approvedQty[l.id]) }))
-              if (items.some(i => !Number.isFinite(i.approved_qty) || i.approved_qty < 0)) { setErr('Enter a valid qty for every line'); return }
-              await rpc('inv_rpc_backoffice_approve', { p_request_id: requestId, p_approved_items: items, p_remarks: remarks.trim() || null }, 'Marked available. Stock reserved. Sent to Atm Head.', '/inventory/inbox/backoffice')
-            }} disabled={busy} className="bg-emerald-600 hover:bg-emerald-700">
-              <Check className="h-4 w-4" /> Mark available & send to Atm Head
-            </Button>
-            <Button onClick={async () => {
-              if (!remarks.trim()) { setErr('Reason required when marking not-available'); return }
-              await rpc('inv_rpc_backoffice_reject', { p_request_id: requestId, p_remarks: remarks.trim() }, 'Not available — engineer notified.', '/inventory/inbox/backoffice')
-            }} disabled={busy} variant="outline" className="text-rose-700 border-rose-200 hover:bg-rose-50">
-              <X className="h-4 w-4" /> Not available
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
-    )
   }
 
   // ─── Atm Head approval (with per-line returnable flag) ─────────
@@ -223,23 +166,6 @@ export function RequestActions({
       )
     }
 
-    if (status === 'PENDING_BACKOFFICE' && isAtmHead) {
-      return (
-        <Card className="border-rose-200 bg-rose-50/40">
-          <CardHeader><CardTitle className="text-base text-rose-800 inline-flex items-center gap-1.5"><AlertTriangle className="h-4 w-4" /> Atm Head emergency bypass</CardTitle></CardHeader>
-          <CardContent className="space-y-3">
-            <p className="text-sm text-rose-700">Skips the availability check. Reserves stock at requested qty and routes straight to Store. Logged in the audit trail.</p>
-            <Textarea value={remarks} onChange={e => setRemarks(e.target.value)} rows={2} placeholder="Reason for bypass (required)" />
-            <Button onClick={async () => {
-              if (!remarks.trim()) { setErr('Bypass reason is required'); return }
-              await rpc('inv_rpc_hop_emergency_authorize', { p_request_id: requestId, p_remarks: remarks.trim() }, 'Emergency authorised. Store can issue.', '/inventory/inbox/hop')
-            }} disabled={busy} className="bg-rose-600 hover:bg-rose-700">
-              <AlertTriangle className="h-4 w-4" /> Authorise emergency
-            </Button>
-          </CardContent>
-        </Card>
-      )
-    }
     return null
   }
 
@@ -375,7 +301,7 @@ export function RequestActions({
     )
   }
 
-  const anyPanel = checkPanel() || atmHeadPanel() || storePanel() || receiptPanel() || returnPanel()
+  const anyPanel = atmHeadPanel() || storePanel() || receiptPanel() || returnPanel()
   if (!anyPanel) return null
 
   return (
@@ -383,7 +309,6 @@ export function RequestActions({
       {err && <p className="text-sm text-rose-700 bg-rose-50 border border-rose-200 rounded-lg px-3 py-2">{err}</p>}
       {msg && <p className="text-sm text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2">{msg}</p>}
       {busy && <p className="text-sm text-gray-500 inline-flex items-center gap-1.5"><Loader2 className="h-4 w-4 animate-spin" /> Working…</p>}
-      {checkPanel()}
       {atmHeadPanel()}
       {storePanel()}
       {receiptPanel()}

@@ -1,24 +1,9 @@
-import { createClient } from '@/lib/supabase/server'
-import { requirePermission, requireInventorySection } from '@/lib/auth'
-import { PageHeader } from '@/components/PageHeader'
-import { RequestList } from '@/components/inventory/RequestList'
+import { redirect } from 'next/navigation'
 
-export const dynamic = 'force-dynamic'
-
-export default async function BackofficeInboxPage() {
-  await requirePermission('inventory', 'view')
-  await requireInventorySection('inv-inbox-backoffice')
-  const supabase = await createClient()
-  const { data, error } = await supabase
-    .from('inv_requests')
-    .select('id, request_no, status, urgency, purpose, created_at, projects(code, name), inv_warehouses(code)')
-    .eq('status', 'PENDING_BACKOFFICE')
-    .order('created_at')
-
-  return (
-    <div className="p-4 md:p-6 max-w-5xl mx-auto space-y-4">
-      <PageHeader title="Availability check" back="/inventory" subtitle="Requests pending availability check (Backoffice or Storekeeper)" />
-      <RequestList rows={data ?? []} error={error?.message} emptyText="Nothing pending. Engineers haven't raised anything new." />
-    </div>
-  )
+// The separate "availability check" (backoffice) step was removed — the
+// storekeeper already sees live stock, so a request now goes straight to the
+// Atm Head (or the store). This route is kept only so an old bookmark lands
+// somewhere sensible instead of 404ing.
+export default async function BackofficeInboxRedirect() {
+  redirect('/inventory')
 }

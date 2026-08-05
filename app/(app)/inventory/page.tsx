@@ -1,6 +1,7 @@
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/server'
 import { requirePermission, can, getMyProfile, getMyUser } from '@/lib/auth'
+import { getInvSettings } from '@/lib/inventory/settings'
 import { PageHeader } from '@/components/PageHeader'
 import { Card } from '@/components/ui/card'
 import {
@@ -20,10 +21,14 @@ const REJECTED            = ['REJECTED_BACKOFFICE', 'REJECTED_HOP']
 
 export default async function InventoryLandingPage() {
   const perms = await requirePermission('inventory', 'view')
-  const [profile, user] = await Promise.all([getMyProfile(), getMyUser()])
+  const [profile, user, invSettings] = await Promise.all([getMyProfile(), getMyUser(), getInvSettings()])
   const role: Role | null = profile?.role ?? null
   const canEdit  = can(perms, 'inventory', 'edit')
   const canAdmin = can(perms, 'inventory', 'admin')
+  // When the approval dial is 'off', there is no Atm Head step — a request goes
+  // straight to the storekeeper. So the Approvals tile/queue only makes sense in
+  // 'always' mode; hide it otherwise so heads don't stare at an always-empty box.
+  const approvalsActive = invSettings.approval_mode === 'always'
 
   // ─── Live counts for every tile so the user knows what's queued
   //     where without opening each inbox. Each `count` is null when
@@ -38,8 +43,8 @@ export default async function InventoryLandingPage() {
     myRejectedCount,
     myOutstandingReturnsCount,
   ] = await Promise.all([
-    // Atm Head queue
-    (role === 'head' || role === 'hop' || canAdmin)
+    // Atm Head queue (only when the dial actually routes through approval)
+    (approvalsActive && (role === 'head' || role === 'hop' || canAdmin))
       ? supabase.from('inv_requests').select('id', { count: 'exact', head: true }).eq('status', PENDING_HOP).then(r => r.count ?? 0)
       : Promise.resolve(null),
     // Store queue (ready to issue)
@@ -98,7 +103,7 @@ export default async function InventoryLandingPage() {
     { slug: 'inv-request-new',      href: '/inventory/requests/new',     title: 'Raise request',  subtitle: 'New material need',  icon: ClipboardList, show: role === 'engineer' || canEdit || canAdmin },
     { slug: 'inv-requests',         href: '/inventory/requests',         title: 'My requests',    subtitle: 'Everything I raised', icon: FileText,     show: true,
       badge: myAwaitingReceiptCount + myRejectedCount, badgeStyle: (myRejectedCount > 0 ? 'rose' : 'emerald') as BadgeStyle },
-    { slug: 'inv-inbox-hop',        href: '/inventory/inbox/hop',        title: 'Approvals',      subtitle: 'Requests to OK', icon: ShieldCheck, show: role === 'head' || role === 'hop' || canAdmin,
+    { slug: 'inv-inbox-hop',        href: '/inventory/inbox/hop',        title: 'Approvals',      subtitle: 'Requests to OK', icon: ShieldCheck, show: approvalsActive && (role === 'head' || role === 'hop' || canAdmin),
       badge: hopCount, badgeStyle: 'amber' as BadgeStyle },
     { slug: 'inv-inbox-store',      href: '/inventory/inbox/store',      title: 'To issue',       subtitle: 'Hand over material', icon: Truck,     show: role === 'store_manager' || canAdmin,
       badge: storeCount, badgeStyle: 'blue' as BadgeStyle },
@@ -124,7 +129,7 @@ export default async function InventoryLandingPage() {
 
   return (
     <div className="p-4 md:p-6 max-w-5xl mx-auto space-y-6">
-      <PageHeader title="Inventory" subtitle="Request material, approve, issue, return — the full chain." />
+      <PageHeader title="Inventory" subtitle="Request material, issue it from the store, track it." />
 
       {calloutQueue && (
         <Card className="p-4 bg-amber-50 border-amber-200 text-sm flex items-center justify-between">
