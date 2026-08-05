@@ -6,7 +6,7 @@ import { PageHeader } from '@/components/PageHeader'
 import { Card } from '@/components/ui/card'
 import {
   Boxes, ClipboardList, Truck, FileText, Undo2,
-  Building2, Tag, PackagePlus, ShieldCheck, SlidersHorizontal, Store, Wrench, Users,
+  Building2, Tag, PackagePlus, ShieldCheck, SlidersHorizontal, Store, Wrench, Users, FileBarChart,
 } from 'lucide-react'
 import type { Role } from '@/lib/types'
 
@@ -52,6 +52,8 @@ export default async function InventoryLandingPage() {
     myRejectedCount,
     myOutstandingReturnsCount,
     lowStockCount,
+    itemCount,
+    myOpenCount,
   ] = await Promise.all([
     // Atm Head queue (only when the dial actually routes through approval)
     (approvalsActive && (role === 'head' || role === 'hop' || canAdmin))
@@ -102,31 +104,59 @@ export default async function InventoryLandingPage() {
       : Promise.resolve(0),
     // Low-stock items across all stores — badges the Stock tile.
     supabase.from('inv_stock_available').select('id', { count: 'exact', head: true }).eq('is_low_stock', true).then(r => r.count ?? 0),
+    // Total live catalogue size — the Stock tile's headline stat.
+    supabase.from('inv_items').select('id', { count: 'exact', head: true }).is('deleted_at', null).eq('is_active', true).then(r => r.count ?? 0),
+    // My open requests (anything I raised that isn't finished/cancelled) — the
+    // "My requests" tile's at-a-glance stat.
+    myUid
+      ? supabase.from('inv_requests')
+          .select('id', { count: 'exact', head: true })
+          .eq('engineer_id', myUid)
+          .not('status', 'in', '(CLOSED,CANCELLED_BY_ENGINEER)')
+          .then(r => r.count ?? 0)
+      : Promise.resolve(0),
   ])
 
-  // ─── Section tiles — show what's enabled + relevant; badge with
-  //     live count when queue applies. ──────────────────────────────
+  // ─── Section tiles — each carries a LIVE one-line stat so the landing
+  //     reads like a status board (not just buttons); an accent fires only
+  //     when something is actually waiting on this user, so it never gets
+  //     noisy. Pure-action tiles stay quiet. ─────────────────────────────
   type BadgeStyle = 'amber' | 'rose' | 'emerald' | 'blue'
+  type Accent = 'danger' | 'warning' | 'none'
   type Section = {
     slug: string; href: string; title: string; subtitle?: string
     icon: React.ComponentType<{ className?: string }>; show: boolean
     badge?: number | null
     badgeStyle?: BadgeStyle
+    stat?: string          // live status line (overrides subtitle when present)
+    accent?: Accent        // colours the icon + edge when action is pending
   }
+  const nf = (n: number) => n.toLocaleString('en-IN')
+  const openReqStat = myOpenCount > 0
+    ? `${nf(myOpenCount)} open${myRejectedCount > 0 ? ` · ${nf(myRejectedCount)} rejected` : ''}`
+    : undefined
   const main: Section[] = ([
-    { slug: 'inv-stock',            href: '/inventory/stock',            title: 'Stock',          subtitle: 'Live warehouse levels', icon: Boxes,         show: true,
-      badge: lowStockCount, badgeStyle: 'rose' as BadgeStyle },
+    { slug: 'inv-stock',            href: '/inventory/stock',            title: 'Stock',          icon: Boxes,         show: true,
+      stat: `${nf(itemCount)} items${lowStockCount > 0 ? ` · ${nf(lowStockCount)} low` : ''}`,
+      subtitle: 'Live warehouse levels',
+      badge: lowStockCount, badgeStyle: 'rose', accent: lowStockCount > 0 ? 'danger' : 'none' },
     { slug: 'inv-request-new',      href: '/inventory/requests/new',     title: 'Raise request',  subtitle: 'New material need',  icon: ClipboardList, show: role === 'engineer' || canEdit || canAdmin },
-    { slug: 'inv-requests',         href: '/inventory/requests',         title: 'My requests',    subtitle: 'Everything I raised', icon: FileText,     show: true,
-      badge: myAwaitingReceiptCount + myRejectedCount, badgeStyle: (myRejectedCount > 0 ? 'rose' : 'emerald') as BadgeStyle },
-    { slug: 'inv-inbox-hop',        href: '/inventory/inbox/hop',        title: 'Approvals',      subtitle: 'Requests to OK', icon: ShieldCheck, show: approvalsActive && (role === 'head' || role === 'hop' || canAdmin),
-      badge: hopCount, badgeStyle: 'amber' as BadgeStyle },
-    { slug: 'inv-inbox-store',      href: '/inventory/inbox/store',      title: 'To issue',       subtitle: 'Hand over material', icon: Truck,     show: canStore,
-      badge: storeCount, badgeStyle: 'blue' as BadgeStyle },
+    { slug: 'inv-requests',         href: '/inventory/requests',         title: 'My requests',    icon: FileText,     show: true,
+      stat: openReqStat, subtitle: 'Everything I raised',
+      badge: myAwaitingReceiptCount + myRejectedCount, badgeStyle: (myRejectedCount > 0 ? 'rose' : 'emerald'),
+      accent: myRejectedCount > 0 ? 'danger' : (myAwaitingReceiptCount > 0 ? 'warning' : 'none') },
+    { slug: 'inv-inbox-hop',        href: '/inventory/inbox/hop',        title: 'Approvals',      icon: ShieldCheck, show: approvalsActive && (role === 'head' || role === 'hop' || canAdmin),
+      stat: (hopCount ?? 0) > 0 ? `${nf(hopCount ?? 0)} to approve` : undefined, subtitle: 'Requests to OK',
+      badge: hopCount, badgeStyle: 'amber', accent: (hopCount ?? 0) > 0 ? 'warning' : 'none' },
+    { slug: 'inv-inbox-store',      href: '/inventory/inbox/store',      title: 'To issue',       icon: Truck,     show: canStore,
+      stat: (storeCount ?? 0) > 0 ? `${nf(storeCount ?? 0)} waiting on you` : undefined, subtitle: 'Hand over material',
+      badge: storeCount, badgeStyle: 'blue', accent: (storeCount ?? 0) > 0 ? 'warning' : 'none' },
     { slug: 'inv-receipt',          href: '/inventory/receipt',          title: 'Stock receipt',  subtitle: 'Record vendor delivery', icon: PackagePlus,   show: canStore },
     { slug: 'inv-stock-ops',        href: '/inventory/stock-ops',        title: 'Stock corrections', subtitle: 'Count · transfer · damage', icon: Wrench,   show: canStore },
-    { slug: 'inv-returns',          href: '/inventory/returns/new',      title: 'Returns',        subtitle: 'Log returnable items', icon: Undo2,         show: canEdit || canAdmin,
-      badge: myOutstandingReturnsCount, badgeStyle: 'amber' as BadgeStyle },
+    { slug: 'inv-reports',          href: '/inventory/reports',          title: 'Reports',        subtitle: 'Daily movement · catalogue', icon: FileBarChart, show: canStore || canAdmin },
+    { slug: 'inv-returns',          href: '/inventory/returns/new',      title: 'Returns',        icon: Undo2,         show: canEdit || canAdmin,
+      stat: myOutstandingReturnsCount > 0 ? `${nf(myOutstandingReturnsCount)} to return` : undefined, subtitle: 'Log returnable items',
+      badge: myOutstandingReturnsCount, badgeStyle: 'amber', accent: myOutstandingReturnsCount > 0 ? 'warning' : 'none' },
   ] as Section[]).filter(s => s.show)
 
   const adminSections: Section[] = [
@@ -211,30 +241,42 @@ const BADGE_STYLES = {
   blue:    'bg-blue-100 text-blue-900 border-blue-200',
 } as const
 
+// Icon-chip + left-edge + stat colour, keyed to whether the tile needs
+// attention. 'none' keeps the calm green module look; 'warning'/'danger'
+// light up only when a real queue is waiting.
+const ACCENT_STYLES = {
+  none:    { chip: 'bg-green-50 text-green-700', edge: 'border-l-transparent', stat: 'text-gray-500' },
+  warning: { chip: 'bg-amber-50 text-amber-700', edge: 'border-l-amber-400',  stat: 'text-amber-700 font-medium' },
+  danger:  { chip: 'bg-rose-50 text-rose-700',   edge: 'border-l-rose-400',   stat: 'text-rose-700 font-medium' },
+} as const
+
 function Tile({ section }: {
   section: {
-    href: string; title: string; subtitle?: string
+    href: string; title: string; subtitle?: string; stat?: string
     icon: React.ComponentType<{ className?: string }>
     badge?: number | null
     badgeStyle?: keyof typeof BADGE_STYLES
+    accent?: keyof typeof ACCENT_STYLES
   }
 }) {
-  const { href, title, subtitle, icon: Icon, badge, badgeStyle = 'amber' } = section
+  const { href, title, subtitle, stat, icon: Icon, badge, badgeStyle = 'amber', accent = 'none' } = section
   const showBadge = typeof badge === 'number' && badge > 0
+  const a = ACCENT_STYLES[accent]
+  const line = stat ?? subtitle
   return (
-    <Link href={href}>
-      <Card className="p-4 h-full hover:shadow-md hover:-translate-y-0.5 transition-all flex flex-col items-start gap-2 relative">
+    <Link href={href} className="group">
+      <Card className={`relative h-full p-4 pl-[15px] flex flex-col items-start gap-3 border-l-[3px] ${a.edge} transition-all hover:shadow-md hover:-translate-y-0.5`}>
         {showBadge && (
-          <span className={`absolute top-2 right-2 inline-flex items-center justify-center min-w-[1.5rem] h-5 px-1.5 rounded-full border text-[11px] font-bold tabular-nums ${BADGE_STYLES[badgeStyle]}`}>
+          <span className={`absolute top-2.5 right-2.5 inline-flex items-center justify-center min-w-[1.5rem] h-5 px-1.5 rounded-full border text-[11px] font-bold tabular-nums ${BADGE_STYLES[badgeStyle]}`}>
             {badge! > 99 ? '99+' : badge}
           </span>
         )}
-        <div className="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-green-50 text-green-700">
-          <Icon className="h-5 w-5" />
+        <div className={`inline-flex h-11 w-11 items-center justify-center rounded-xl transition-colors ${a.chip}`}>
+          <Icon className="h-[22px] w-[22px]" />
         </div>
-        <div className="min-w-0">
+        <div className="min-w-0 w-full">
           <h3 className="text-sm font-semibold text-gray-900 leading-tight">{title}</h3>
-          {subtitle && <p className="text-[11px] text-gray-500 leading-tight mt-0.5">{subtitle}</p>}
+          {line && <p className={`text-xs leading-tight mt-1 tabular-nums truncate ${stat ? a.stat : 'text-gray-500'}`}>{line}</p>}
         </div>
       </Card>
     </Link>
