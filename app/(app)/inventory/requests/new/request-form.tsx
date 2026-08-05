@@ -101,40 +101,22 @@ export function RequestForm({ projects, warehouses, items, projectStores = {}, i
     }
 
     const supabase = createClient()
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) { setError('Not signed in'); setBusy(false); return }
-
-    const { data: reqRow, error: reqErr } = await supabase
-      .from('inv_requests')
-      .insert({
-        engineer_id: user.id,
-        project_id: projectId,
-        warehouse_id: warehouseId,
-        status: 'PENDING_BACKOFFICE',
-        urgency,
-        purpose: purpose.trim() || null,
-        required_by_date: requiredBy || null,
-      })
-      .select('id')
-      .single()
-    if (reqErr || !reqRow) { setError(reqErr?.message ?? 'Failed to create request'); setBusy(false); return }
-
-    const { error: linesErr } = await supabase.from('inv_request_items').insert(
-      validLines.map(l => ({ ...l, request_id: reqRow.id })),
-    )
-    if (linesErr) {
-      setError(`Lines failed: ${linesErr.message}`); setBusy(false); return
-    }
-
-    await supabase.from('inv_request_status_log').insert({
-      request_id: reqRow.id,
-      from_status: 'DRAFT',
-      to_status: 'PENDING_BACKOFFICE',
-      actor_id: user.id,
-      remarks: 'Submitted by engineer',
+    // One atomic RPC: creates the request + lines + audit, applies the approval
+    // dial (Atm Head first / straight to store / self-service issue), and never
+    // orphans a half-written request the way the old 3-insert path could.
+    const { data, error: rpcErr } = await supabase.rpc('inv_rpc_create_request', {
+      p_project: projectId,
+      p_warehouse: warehouseId,
+      p_urgency: urgency,
+      p_purpose: purpose.trim() || null,
+      p_required_by: requiredBy || null,
+      p_lines: validLines,
     })
+    if (rpcErr) { setError(rpcErr.message); setBusy(false); return }
+    const requestId = (data as { request_id?: string } | null)?.request_id
+    if (!requestId) { setError('Could not create the request. Please try again.'); setBusy(false); return }
 
-    router.push(`/inventory/requests/${reqRow.id}`)
+    router.push(`/inventory/requests/${requestId}`)
     router.refresh()
   }
 

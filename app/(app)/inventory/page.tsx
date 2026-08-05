@@ -4,7 +4,7 @@ import { requirePermission, can, getMyProfile, getMyUser } from '@/lib/auth'
 import { PageHeader } from '@/components/PageHeader'
 import { Card } from '@/components/ui/card'
 import {
-  Boxes, ClipboardList, Inbox, Truck, FileText, Undo2,
+  Boxes, ClipboardList, Truck, FileText, Undo2,
   Building2, Tag, PackagePlus, ShieldCheck, SlidersHorizontal, Store,
 } from 'lucide-react'
 import type { Role } from '@/lib/types'
@@ -13,7 +13,6 @@ export const dynamic = 'force-dynamic'
 
 // Statuses by stage — single source of truth so the counts on tiles
 // match exactly what the inbox pages show when you click them.
-const PENDING_BACKOFFICE = 'PENDING_BACKOFFICE'
 const PENDING_HOP        = 'PENDING_HOP'
 const TO_ISSUE           = ['APPROVED', 'EMERGENCY_ISSUED']
 const ENGINEER_ACTIONABLE = ['ISSUED', 'EMERGENCY_ISSUED']  // need receipt confirmation
@@ -33,17 +32,12 @@ export default async function InventoryLandingPage() {
   const myUid = user?.id ?? null
 
   const [
-    backofficeCount,
     hopCount,
     storeCount,
     myAwaitingReceiptCount,
     myRejectedCount,
     myOutstandingReturnsCount,
   ] = await Promise.all([
-    // Backoffice / storekeeper queue
-    (role === 'backoffice' || role === 'backoffice_backup' || role === 'store_manager' || canAdmin)
-      ? supabase.from('inv_requests').select('id', { count: 'exact', head: true }).eq('status', PENDING_BACKOFFICE).then(r => r.count ?? 0)
-      : Promise.resolve(null),
     // Atm Head queue
     (role === 'head' || role === 'hop' || canAdmin)
       ? supabase.from('inv_requests').select('id', { count: 'exact', head: true }).eq('status', PENDING_HOP).then(r => r.count ?? 0)
@@ -104,11 +98,9 @@ export default async function InventoryLandingPage() {
     { slug: 'inv-request-new',      href: '/inventory/requests/new',     title: 'Raise request',  subtitle: 'New material need',  icon: ClipboardList, show: role === 'engineer' || canEdit || canAdmin },
     { slug: 'inv-requests',         href: '/inventory/requests',         title: 'My requests',    subtitle: 'Everything I raised', icon: FileText,     show: true,
       badge: myAwaitingReceiptCount + myRejectedCount, badgeStyle: (myRejectedCount > 0 ? 'rose' : 'emerald') as BadgeStyle },
-    { slug: 'inv-inbox-backoffice', href: '/inventory/inbox/backoffice', title: 'Availability check', subtitle: 'Backoffice + Store', icon: Inbox,    show: role === 'backoffice' || role === 'backoffice_backup' || role === 'store_manager' || canAdmin,
-      badge: backofficeCount, badgeStyle: 'amber' as BadgeStyle },
-    { slug: 'inv-inbox-hop',        href: '/inventory/inbox/hop',        title: 'Atm Head approval', subtitle: 'Final + emergency bypass', icon: ShieldCheck, show: role === 'head' || role === 'hop' || canAdmin,
+    { slug: 'inv-inbox-hop',        href: '/inventory/inbox/hop',        title: 'Approvals',      subtitle: 'Requests to OK', icon: ShieldCheck, show: role === 'head' || role === 'hop' || canAdmin,
       badge: hopCount, badgeStyle: 'amber' as BadgeStyle },
-    { slug: 'inv-inbox-store',      href: '/inventory/inbox/store',      title: 'To issue',       subtitle: 'Approved requests', icon: Truck,         show: role === 'store_manager' || canAdmin,
+    { slug: 'inv-inbox-store',      href: '/inventory/inbox/store',      title: 'To issue',       subtitle: 'Hand over material', icon: Truck,     show: role === 'store_manager' || canAdmin,
       badge: storeCount, badgeStyle: 'blue' as BadgeStyle },
     { slug: 'inv-receipt',          href: '/inventory/receipt',          title: 'Stock receipt',  subtitle: 'Record vendor delivery', icon: PackagePlus,   show: role === 'store_manager' || canAdmin },
     { slug: 'inv-returns',          href: '/inventory/returns/new',      title: 'Returns',        subtitle: 'Log returnable items', icon: Undo2,         show: canEdit || canAdmin,
@@ -124,8 +116,7 @@ export default async function InventoryLandingPage() {
 
   // Top callout — the SINGLE most urgent thing waiting on this user.
   const calloutQueue: { count: number; href: string; label: string } | null = (() => {
-    if (hopCount && hopCount > 0)                  return { count: hopCount,        href: '/inventory/inbox/hop',        label: 'Atm Head approval' }
-    if (backofficeCount && backofficeCount > 0)    return { count: backofficeCount, href: '/inventory/inbox/backoffice', label: 'Availability check' }
+    if (hopCount && hopCount > 0)                  return { count: hopCount,        href: '/inventory/inbox/hop',        label: 'Approvals' }
     if (storeCount && storeCount > 0)              return { count: storeCount,      href: '/inventory/inbox/store',      label: 'To issue' }
     if (myAwaitingReceiptCount > 0)                return { count: myAwaitingReceiptCount, href: '/inventory/requests', label: 'Confirm receipt' }
     return null
