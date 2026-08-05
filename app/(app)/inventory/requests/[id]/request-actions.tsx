@@ -11,6 +11,9 @@ import { confirm } from '@/components/ui/confirm-dialog'
 import { Loader2, Check, X, Truck, Undo2, PackageCheck, Ban } from 'lucide-react'
 import type { Role } from '@/lib/types'
 
+// Standard quantity display — Indian grouping, no trailing decimals.
+const fmtQty = (n: number) => Number(n).toLocaleString('en-IN')
+
 interface Line {
   id: string
   item_id: string
@@ -138,7 +141,7 @@ export function RequestActions({
                 <div key={l.id} className="grid grid-cols-1 md:grid-cols-12 gap-2 md:items-center text-sm border-b border-gray-100 md:border-0 pb-2 md:pb-0 last:border-0">
                   <div className="md:col-span-8 min-w-0">
                     <div className="text-gray-800 truncate">{l.item_label}</div>
-                    <div className="text-xs text-gray-500">approved {l.approved_qty ?? 0} {l.unit}</div>
+                    <div className="text-xs text-gray-500">approved {fmtQty(l.approved_qty ?? 0)} {l.unit}</div>
                   </div>
                   <label className="md:col-span-4 inline-flex items-center gap-2 text-sm text-gray-700">
                     <input
@@ -191,9 +194,9 @@ export function RequestActions({
                 <div className="md:col-span-7 min-w-0">
                   <div className="text-gray-800 truncate">{l.item_label}</div>
                   <div className="text-xs text-gray-500">
-                    approved {l.approved_qty ?? 0} {l.unit}
-                    {l.issued_qty > 0 && <span> · already issued {l.issued_qty}</span>}
-                    {remaining > 0 && <span className="text-blue-700"> · to hand over {remaining}</span>}
+                    approved {fmtQty(l.approved_qty ?? 0)} {l.unit}
+                    {l.issued_qty > 0 && <span> · already issued {fmtQty(l.issued_qty)}</span>}
+                    {remaining > 0 && <span className="text-blue-700"> · to hand over {fmtQty(remaining)}</span>}
                     {l.is_returnable && <span className="ml-2 text-amber-700 font-semibold">· returnable</span>}
                   </div>
                 </div>
@@ -239,7 +242,7 @@ export function RequestActions({
             <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
               <b>To return at project end:</b>
               <ul className="list-disc pl-5 mt-1 space-y-0.5">
-                {returnables.map(l => <li key={l.id}>{l.item_label} ({l.issued_qty} {l.unit})</li>)}
+                {returnables.map(l => <li key={l.id}>{l.item_label} ({fmtQty(l.issued_qty)} {l.unit})</li>)}
               </ul>
             </div>
           )}
@@ -274,7 +277,7 @@ export function RequestActions({
                 <option value="">— Select line —</option>
                 {returnable.map(l => {
                   const outstanding = l.issued_qty - l.returned_good_qty - l.returned_damaged_qty
-                  return <option key={l.id} value={l.id}>{l.item_label} (outstanding {outstanding} {l.unit})</option>
+                  return <option key={l.id} value={l.id}>{l.item_label} (outstanding {fmtQty(outstanding)} {l.unit})</option>
                 })}
               </select>
             </div>
