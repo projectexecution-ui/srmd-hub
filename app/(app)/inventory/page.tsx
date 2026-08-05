@@ -153,7 +153,10 @@ export default async function InventoryLandingPage() {
       badge: storeCount, badgeStyle: 'blue', accent: (storeCount ?? 0) > 0 ? 'warning' : 'none' },
     { slug: 'inv-receipt',          href: '/inventory/receipt',          title: 'Stock receipt',  subtitle: 'Record vendor delivery', icon: PackagePlus,   show: canStore },
     { slug: 'inv-stock-ops',        href: '/inventory/stock-ops',        title: 'Stock corrections', subtitle: 'Count · transfer · damage', icon: Wrench,   show: canStore },
-    { slug: 'inv-reports',          href: '/inventory/reports',          title: 'Reports',        subtitle: 'Daily movement · catalogue', icon: FileBarChart, show: canStore || canAdmin },
+    // Reports are management-facing: storekeepers + admin, and also view-only
+    // management (Founder/Viewer) — the reports are built for them. Hidden from
+    // engineers/heads (canEdit && not a keeper), who don't need it.
+    { slug: 'inv-reports',          href: '/inventory/reports',          title: 'Reports',        subtitle: 'Daily movement · catalogue', icon: FileBarChart, show: canStore || canAdmin || !canEdit },
     { slug: 'inv-returns',          href: '/inventory/returns/new',      title: 'Returns',        icon: Undo2,         show: canEdit || canAdmin,
       stat: myOutstandingReturnsCount > 0 ? `${nf(myOutstandingReturnsCount)} to return` : undefined, subtitle: 'Log returnable items',
       badge: myOutstandingReturnsCount, badgeStyle: 'amber', accent: myOutstandingReturnsCount > 0 ? 'warning' : 'none' },
