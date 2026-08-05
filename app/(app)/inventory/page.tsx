@@ -6,7 +6,7 @@ import { PageHeader } from '@/components/PageHeader'
 import { Card } from '@/components/ui/card'
 import {
   Boxes, ClipboardList, Truck, FileText, Undo2,
-  Building2, Tag, PackagePlus, ShieldCheck, SlidersHorizontal, Store,
+  Building2, Tag, PackagePlus, ShieldCheck, SlidersHorizontal, Store, Wrench,
 } from 'lucide-react'
 import type { Role } from '@/lib/types'
 
@@ -108,6 +108,7 @@ export default async function InventoryLandingPage() {
     { slug: 'inv-inbox-store',      href: '/inventory/inbox/store',      title: 'To issue',       subtitle: 'Hand over material', icon: Truck,     show: role === 'store_manager' || canAdmin,
       badge: storeCount, badgeStyle: 'blue' as BadgeStyle },
     { slug: 'inv-receipt',          href: '/inventory/receipt',          title: 'Stock receipt',  subtitle: 'Record vendor delivery', icon: PackagePlus,   show: role === 'store_manager' || canAdmin },
+    { slug: 'inv-stock-ops',        href: '/inventory/stock-ops',        title: 'Stock corrections', subtitle: 'Count · transfer · damage', icon: Wrench,   show: role === 'store_manager' || canAdmin },
     { slug: 'inv-returns',          href: '/inventory/returns/new',      title: 'Returns',        subtitle: 'Log returnable items', icon: Undo2,         show: canEdit || canAdmin,
       badge: myOutstandingReturnsCount, badgeStyle: 'amber' as BadgeStyle },
   ] as Section[]).filter(s => s.show)
