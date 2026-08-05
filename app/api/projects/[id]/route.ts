@@ -1,46 +1,50 @@
-// Project delete endpoint with a dependency safety check.
+// Project delete endpoint with a "real work" safety check.
 //
-// GET  /api/projects/{id} → returns counts of dependent rows.
-// DELETE /api/projects/{id} → re-checks deps server-side, then hard-deletes
-//   only if every counted table is empty. Otherwise returns 409 with the
-//   blocking counts.
+// GET  /api/projects/{id} → returns counts of the blocking tables.
+// DELETE /api/projects/{id} → admin only; refuses if the project has any REAL
+//   work in another module, otherwise hard-deletes it.
 //
-// We DO NOT cascade-delete dependent data. Old indents / POs / invoices /
-// JMR entries / cost-control rows / etc. carry historical FK links and
-// blowing them away would destroy reporting in other modules. If you want
-// to retire a project that has history, "Archive" it (status='archived')
-// from the project form instead.
+// We deliberately DON'T block on setup scaffolding. A project accumulates
+// ticked disciplines / sub-skills, approver rows, BPH-synced budget lines,
+// discipline assignments, floors, etc. — none of which is human work product,
+// and all of which Postgres CASCADE-deletes with the project (see the FK graph:
+// cc_project_disciplines / cc_project_sub_skills / cc_project_approvers /
+// cc_budget_lines / cc_budget_events … are all ON DELETE CASCADE). So a project
+// created by mistake can be removed cleanly even after setup was started.
+//
+// What we DO protect is real, human-created history in other modules — indents,
+// POs, invoices, contractor/JMR bills, JMR daily entries, Daily Site Reports,
+// inventory requests, engineer working sheets, and sub-projects. If any exist we
+// refuse and name them (the admin must handle those deliberately, not nuke them).
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { getMyPermissions, can, getMyProfile, isPortalOwner } from '@/lib/auth'
 
-// Tables that reference public.projects via project_id (or parent_project_id).
-// Keep this list in sync with the schema. invoices has no direct project_id —
-// it's linked via purchase_orders.po_id, handled below as a special case.
-const DEP_TABLES: Array<{
+// Tables whose presence = real work worth protecting. Everything else that
+// references projects cascades or set-nulls automatically and never blocks.
+// invoices has no direct project_id — linked via purchase_orders, special-cased.
+const BLOCK_TABLES: Array<{
   table: string
   column: string
   label: string
   module: string
 }> = [
-  { table: 'projects',                 column: 'parent_project_id', label: 'Sub-projects',          module: 'Projects'        },
-  { table: 'indents',                  column: 'project_id',        label: 'Indents',               module: 'Indent → PO'     },
-  { table: 'purchase_orders',          column: 'project_id',        label: 'Purchase Orders',       module: 'Indent → PO'     },
-  { table: 'jmr_daily_entries',        column: 'project_id',        label: 'JMR daily entries',     module: 'JMR'             },
-  { table: 'jmr_bills',                column: 'project_id',        label: 'JMR bills',             module: 'JMR'             },
-  { table: 'jmr_rate_cards',           column: 'project_id',        label: 'JMR rate cards',        module: 'JMR'             },
-  { table: 'jmr_user_project_access',  column: 'project_id',        label: 'JMR user assignments',  module: 'JMR'             },
-  { table: 'cc_working_sheets',        column: 'project_id',        label: 'Cost Control sheets',   module: 'Cost Control'    },
-  { table: 'cc_budget_lines',          column: 'project_id',        label: 'Cost Control budgets',  module: 'Cost Control'    },
-  { table: 'cc_project_disciplines',   column: 'project_id',        label: 'CC project disciplines',module: 'Cost Control'    },
-  { table: 'cc_project_sub_skills',    column: 'project_id',        label: 'CC project sub-skills', module: 'Cost Control'    },
+  { table: 'projects',            column: 'parent_project_id', label: 'Sub-projects',        module: 'Projects'          },
+  { table: 'indents',             column: 'project_id',        label: 'Indents',             module: 'Indent → PO'       },
+  { table: 'purchase_orders',     column: 'project_id',        label: 'Purchase Orders',     module: 'Indent → PO'       },
+  { table: 'cc_working_sheets',   column: 'project_id',        label: 'Cost Control sheets', module: 'Cost Control'      },
+  { table: 'cc_bills',            column: 'project_id',        label: 'Contractor bills',    module: 'Bills'             },
+  { table: 'jmr_daily_entries',   column: 'project_id',        label: 'JMR daily entries',   module: 'JMR'               },
+  { table: 'jmr_bills',           column: 'project_id',        label: 'JMR bills',           module: 'JMR'               },
+  { table: 'dsr_reports',         column: 'project_id',        label: 'Daily Site Reports',  module: 'Daily Site Report' },
+  { table: 'inv_requests',        column: 'project_id',        label: 'Inventory requests',  module: 'Inventory'         },
 ]
 
-async function countDeps(projectId: string) {
+async function countBlocking(projectId: string) {
   const supabase = await createClient()
   const direct = await Promise.all(
-    DEP_TABLES.map(async d => {
+    BLOCK_TABLES.map(async d => {
       const { count } = await supabase
         .from(d.table)
         .select('*', { count: 'exact', head: true })
@@ -50,7 +54,6 @@ async function countDeps(projectId: string) {
   )
 
   // Invoices have no project_id of their own — they hang off purchase_orders.
-  // Count via an inner join.
   const { count: invoiceCount } = await supabase
     .from('invoices')
     .select('id, purchase_orders!inner(project_id)', { count: 'exact', head: true })
@@ -58,13 +61,7 @@ async function countDeps(projectId: string) {
 
   return [
     ...direct,
-    {
-      table: 'invoices',
-      column: 'po_id',
-      label: 'Invoices',
-      module: 'Invoices',
-      count: invoiceCount ?? 0,
-    },
+    { table: 'invoices', column: 'po_id', label: 'Invoices', module: 'Invoices', count: invoiceCount ?? 0 },
   ]
 }
 
@@ -72,13 +69,9 @@ export async function GET(_req: NextRequest, ctx: { params: Promise<{ id: string
   const perms = await getMyPermissions()
   if (!can(perms, 'projects', 'view')) return new NextResponse('Forbidden', { status: 403 })
   const { id } = await ctx.params
-  const deps = await countDeps(id)
+  const deps = await countBlocking(id)
   const blocking = deps.filter(d => d.count > 0)
-  return NextResponse.json({
-    deps,
-    canDelete: blocking.length === 0,
-    blocking,
-  })
+  return NextResponse.json({ deps, canDelete: blocking.length === 0, blocking })
 }
 
 export async function DELETE(_req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
@@ -87,21 +80,37 @@ export async function DELETE(_req: NextRequest, ctx: { params: Promise<{ id: str
   const [profile, po] = await Promise.all([getMyProfile(), isPortalOwner()])
   if (!(po || profile?.role === 'admin')) return new NextResponse('Forbidden — admin only', { status: 403 })
   const { id } = await ctx.params
-  const deps = await countDeps(id)
+
+  const deps = await countBlocking(id)
   const blocking = deps.filter(d => d.count > 0)
   if (blocking.length > 0) {
     return NextResponse.json(
       {
-        error: 'Project has dependent data',
+        error: 'Project has real work in other modules',
         blocking,
-        hint: 'Archive the project instead (set status=archived in the edit form), or remove the dependent rows first.',
+        hint: 'Handle those records first (or keep the project Archived). Setup like disciplines & sub-skills is cleared automatically.',
       },
       { status: 409 }
     )
   }
+
+  // Clean project (setup scaffolding only): delete it. Postgres CASCADE removes
+  // the disciplines / sub-skills / approvers / budget lines with it.
   const supabase = await createClient()
   const { error } = await supabase.from('projects').delete().eq('id', id)
   if (error) {
+    // A leftover FK from some module we don't pre-check (e.g. a JMR rate-change
+    // log): surface it as a clean "still linked" refusal, not a 500.
+    if (error.code === '23503') {
+      return NextResponse.json(
+        {
+          error: 'Project still has linked records in another module',
+          hint: 'Keep it Archived, or clear those records first.',
+          detail: error.message,
+        },
+        { status: 409 }
+      )
+    }
     return NextResponse.json({ error: error.message }, { status: 500 })
   }
   return NextResponse.json({ ok: true })

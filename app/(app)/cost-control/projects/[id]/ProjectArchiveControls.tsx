@@ -46,7 +46,7 @@ export function ProjectArchiveControls({
   async function del() {
     if (!(await confirm({
       title: 'Delete permanently?',
-      message: `"${projectName}" will be permanently removed — this cannot be undone. (Blocked automatically if it still has any indents, POs, sheets or other data.)`,
+      message: `"${projectName}" will be permanently removed — this cannot be undone. Setup like disciplines & sub-skills is cleared automatically; it's only blocked if the project has real work (indents, POs, bills, JMR entries or engineer sheets).`,
       confirmLabel: 'Delete forever',
       danger: true,
     }))) return
@@ -55,7 +55,16 @@ export function ProjectArchiveControls({
       const res = await fetch(`/api/projects/${projectId}`, { method: 'DELETE' })
       const body = await res.json().catch(() => ({}))
       if (!res.ok) {
-        setError(body.error || 'Could not delete this project.')
+        // Name exactly what's blocking, so it's clear what to handle first.
+        const blocking = Array.isArray(body.blocking)
+          ? body.blocking.filter((b: { count?: number }) => (b.count ?? 0) > 0)
+          : []
+        const msg = blocking.length
+          ? `Can't delete — this project has real work: ${blocking
+              .map((b: { label: string; count: number }) => `${b.label} (${b.count})`)
+              .join(', ')}. Handle those first, or keep it archived.`
+          : (body.error || 'Could not delete this project.')
+        setError(msg)
         setBusy(null)
         return
       }
