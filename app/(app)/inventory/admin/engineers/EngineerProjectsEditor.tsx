@@ -66,7 +66,7 @@ export function EngineerProjectsEditor({
                 const key = `${e.id}:${p.id}`
                 return (
                   <button key={p.id} type="button" onClick={() => toggle(e.id, p.id)} disabled={busy === key}
-                    className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs transition-colors ${on ? 'border-green-500 bg-green-50 text-green-800' : 'border-gray-200 text-gray-600 hover:bg-gray-50'}`}>
+                    className={`inline-flex items-center gap-1 rounded-full border px-3 py-2 text-sm transition-colors ${on ? 'border-green-500 bg-green-50 text-green-800' : 'border-gray-200 text-gray-600 hover:bg-gray-50'}`}>
                     {busy === key ? <Loader2 className="h-3 w-3 animate-spin" /> : on ? <Check className="h-3 w-3" /> : null}
                     {p.code}
                   </button>

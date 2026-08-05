@@ -138,7 +138,7 @@ export default async function InventoryLandingPage() {
       <PageHeader title="Inventory" subtitle="Request material, issue it from the store, track it." />
 
       {calloutQueue && (
-        <Card className="p-4 bg-amber-50 border-amber-200 text-sm flex items-center justify-between">
+        <Card className="p-4 bg-amber-50 border-amber-200 text-sm flex flex-col sm:flex-row sm:items-center justify-between gap-2">
           <span className="text-amber-900">
             <b>{calloutQueue.count}</b> request{calloutQueue.count === 1 ? '' : 's'} waiting on you in <b>{calloutQueue.label}</b>.
           </span>

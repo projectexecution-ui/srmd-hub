@@ -72,10 +72,10 @@ export function StockTable({ warehouses, selectedWarehouse, rows, canEdit = fals
       ) : filtered.length === 0 ? (
         <p className="text-sm text-gray-500 italic py-4">No items in stock for this filter.</p>
       ) : (
-        <div className="overflow-x-auto">
-          <table className="min-w-full text-sm">
+        <div className="overflow-x-auto -mx-1">
+          <table className="min-w-[760px] text-sm">
             <thead className="bg-gray-50">
-              <tr className="text-left text-xs uppercase tracking-wide text-gray-500">
+              <tr className="text-left text-xs uppercase tracking-wide text-gray-500 whitespace-nowrap">
                 <th className="px-2 py-2 w-14"></th>
                 <th className="px-2 py-2">Item</th>
                 <th className="px-2 py-2 text-right">Physical</th>
@@ -158,7 +158,7 @@ function ReorderCell({ row, canEdit }: { row: StockRow; canEdit: boolean }) {
         onChange={e => setVal(e.target.value)}
         onBlur={save}
         onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }}
-        className="w-16 h-8 rounded border border-gray-200 px-1.5 text-right text-sm tabular-nums"
+        className="w-16 h-10 rounded border border-gray-200 px-1.5 text-right text-sm tabular-nums"
         placeholder="—"
       />
       {saving && <Loader2 className="h-3 w-3 animate-spin text-gray-400" />}

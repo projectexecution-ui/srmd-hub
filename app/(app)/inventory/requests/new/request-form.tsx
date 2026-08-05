@@ -212,12 +212,12 @@ export function RequestForm({ projects, warehouses, items, projectStores = {}, s
                   </p>
                 )}
               </div>
-              <div className="col-span-5 md:col-span-2">
+              <div className="col-span-4 md:col-span-2">
                 <Input value={l.remarks} onChange={e => update(l.tempId, { remarks: e.target.value })} placeholder="remarks" />
               </div>
-              <div className="col-span-1 flex justify-end">
-                <Button type="button" variant="ghost" size="sm" onClick={() => remove(l.tempId)}
-                  className="text-rose-600 hover:bg-rose-50">
+              <div className="col-span-2 md:col-span-1 flex justify-end">
+                <Button type="button" variant="ghost" size="icon" onClick={() => remove(l.tempId)}
+                  className="h-10 w-10 text-rose-600 hover:bg-rose-50">
                   <Trash2 className="h-4 w-4" />
                 </Button>
               </div>

@@ -57,10 +57,10 @@ export function StockOpsForms({ warehouses, items }: { warehouses: WhOpt[]; item
 
   return (
     <div className="space-y-4">
-      <div className="flex gap-2">
+      <div className="flex flex-col sm:flex-row gap-2">
         {MODES.map(m => (
           <button key={m.key} type="button" onClick={() => { setMode(m.key); setError(null); setOk(null) }}
-            className={`flex-1 rounded-lg border px-3 py-2 text-sm font-medium inline-flex items-center justify-center gap-1.5 ${mode === m.key ? 'border-green-500 bg-green-50 text-green-800' : 'border-gray-200 text-gray-600 hover:bg-gray-50'}`}>
+            className={`flex-1 rounded-lg border px-3 py-2.5 text-sm font-medium inline-flex items-center justify-center gap-1.5 ${mode === m.key ? 'border-green-500 bg-green-50 text-green-800' : 'border-gray-200 text-gray-600 hover:bg-gray-50'}`}>
             <m.icon className="h-4 w-4" /> {m.label}
           </button>
         ))}

@@ -63,7 +63,7 @@ export function ProjectStoresEditor({
     void persist(projectId, next)
   }
 
-  const selectCls = 'h-9 w-full rounded-lg border border-gray-300 bg-white px-2 text-sm'
+  const selectCls = 'h-10 w-full rounded-lg border border-gray-300 bg-white px-2 text-sm'
 
   return (
     <div>
@@ -97,7 +97,7 @@ export function ProjectStoresEditor({
                   <p className="text-[11px] text-amber-600 mt-0.5">This store has no keeper yet — set one on the Warehouses page.</p>
                 )}
               </div>
-              <div className="grid grid-cols-2 gap-2 md:w-[26rem]">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 md:w-[26rem]">
                 <label className="block">
                   <span className="sr-only">Store</span>
                   <span className="flex items-center gap-1 text-[10px] uppercase tracking-wide text-gray-400 mb-0.5"><Store className="h-3 w-3" /> Store</span>

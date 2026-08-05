@@ -118,9 +118,9 @@ export default async function RequestDetailPage({
         </CardHeader>
         <CardContent>
           <div className="overflow-x-auto">
-            <table className="min-w-full text-sm">
+            <table className="min-w-[640px] text-sm">
               <thead className="bg-gray-50">
-                <tr className="text-left text-xs uppercase tracking-wide text-gray-500">
+                <tr className="text-left text-xs uppercase tracking-wide text-gray-500 whitespace-nowrap">
                   <th className="px-2 py-2">Item</th>
                   <th className="px-2 py-2 text-right">Requested</th>
                   <th className="px-2 py-2 text-right">Approved</th>
