@@ -5,7 +5,7 @@ import { PageHeader } from '@/components/PageHeader'
 import { Card } from '@/components/ui/card'
 import { QueryError } from '@/components/ui/query-error'
 import { FileText, ArrowRight, LogIn, LogOut, ArrowLeftRight } from 'lucide-react'
-import { istDateStr, istShiftDate, istDayRange } from '@/lib/inventory/day-window'
+import { istDateStr, istDayRange } from '@/lib/inventory/day-window'
 import { CatalogueActions, type CatalogueClientRow } from './CatalogueActions'
 
 export const dynamic = 'force-dynamic'
@@ -18,8 +18,10 @@ export default async function InventoryReportsPage() {
   await requirePermission('inventory', 'view')
   const supabase = await createClient()
 
-  const yDate = istShiftDate(istDateStr(), -1)
-  const { startUtc, endUtc, label: yLabel } = istDayRange(yDate)
+  // The in-app card is LIVE (today so far). Only the scheduled email reports
+  // yesterday (sent the next morning).
+  const today = istDateStr()
+  const { startUtc, endUtc, label: todayLabel } = istDayRange(today)
 
   const [itemsRes, stockRes, movesRes] = await Promise.all([
     supabase.from('inv_items')
@@ -54,9 +56,9 @@ export default async function InventoryReportsPage() {
   }))
 
   const moves = movesRes.data ?? []
-  const yEntries = moves.filter(m => ENTRY.has(m.movement_type as string)).length
-  const yExits = moves.filter(m => EXIT.has(m.movement_type as string)).length
-  const yTransfers = moves.filter(m => TRANSFER.has(m.movement_type as string)).length
+  const entriesToday = moves.filter(m => ENTRY.has(m.movement_type as string)).length
+  const exitsToday = moves.filter(m => EXIT.has(m.movement_type as string)).length
+  const transfersToday = moves.filter(m => TRANSFER.has(m.movement_type as string)).length
 
   return (
     <div className="p-4 md:p-6 max-w-5xl mx-auto space-y-6">
@@ -71,17 +73,17 @@ export default async function InventoryReportsPage() {
             <h2 className="text-base font-semibold text-gray-900">Daily movement report</h2>
             <p className="text-sm text-gray-500 mt-0.5">Entry, exit and transfers for a day — one click, and it can be emailed to management every morning.</p>
           </div>
-          <Link href={`/inventory/reports/daily?date=${yDate}`}
+          <Link href="/inventory/reports/daily"
             className="inline-flex items-center gap-1.5 text-sm font-semibold text-blue-700 hover:underline whitespace-nowrap">
             Open report <ArrowRight className="h-4 w-4" />
           </Link>
         </div>
         <div className="grid grid-cols-3 gap-3">
-          <MiniStat icon={LogIn} tone="emerald" label="Entries" value={yEntries} />
-          <MiniStat icon={LogOut} tone="rose" label="Exits" value={yExits} />
-          <MiniStat icon={ArrowLeftRight} tone="blue" label="Transfers" value={yTransfers} />
+          <MiniStat icon={LogIn} tone="emerald" label="Entries" value={entriesToday} />
+          <MiniStat icon={LogOut} tone="rose" label="Exits" value={exitsToday} />
+          <MiniStat icon={ArrowLeftRight} tone="blue" label="Transfers" value={transfersToday} />
         </div>
-        <p className="text-xs text-gray-400">Yesterday · {yLabel}</p>
+        <p className="text-xs text-gray-400">Today · {todayLabel} · live so far · the emailed report covers the previous day.</p>
       </Card>
 
       {/* Catalogue */}

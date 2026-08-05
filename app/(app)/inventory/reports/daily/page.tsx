@@ -22,12 +22,14 @@ export default async function DailyMovementPage({ searchParams }: { searchParams
 
   const sp = await searchParams
   const today = istDateStr()
-  const date = /^\d{4}-\d{2}-\d{2}$/.test(sp.date ?? '') ? sp.date! : istShiftDate(today, -1)
+  // Default to TODAY (live). Yesterday is only what the morning email reports.
+  const date = /^\d{4}-\d{2}-\d{2}$/.test(sp.date ?? '') ? sp.date! : today
   const { startUtc, endUtc, label } = istDayRange(date)
   const prev = istShiftDate(date, -1)
   const next = istShiftDate(date, 1)
   const isToday = date === today
   const isFuture = date > today
+  const rel = isToday ? 'Today · ' : (date === istShiftDate(today, -1) ? 'Yesterday · ' : '')
 
   const { data: moves, error } = await supabase
     .from('inv_stock_movements')
@@ -83,7 +85,7 @@ export default async function DailyMovementPage({ searchParams }: { searchParams
               Next <ChevronRight className="h-4 w-4" />
             </Link>
           )}
-          <span className="ml-2 text-sm font-semibold text-gray-900">{label}</span>
+          <span className="ml-2 text-sm font-semibold text-gray-900">{rel}{label}</span>
         </div>
         <form className="flex items-center gap-2">
           <input type="date" name="date" defaultValue={date} max={today}
