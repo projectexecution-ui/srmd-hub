@@ -3,45 +3,48 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { MoneyInput } from '@/components/ui/money-input'
+import { QtyInput } from '@/components/inventory/QtyInput'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
-import { Loader2, PackagePlus } from 'lucide-react'
+import { Loader2, PackagePlus, Plus, Trash2 } from 'lucide-react'
 import { ItemPicker, type PickerItem } from '@/components/inventory/ItemPicker'
 
 interface WhOpt { id: string; code: string; name: string }
+type Line = { tempId: string; item_id: string; qty: string }
+function newLine(): Line { return { tempId: crypto.randomUUID(), item_id: '', qty: '' } }
 
 export function ReceiptForm({ warehouses, items }: { warehouses: WhOpt[]; items: PickerItem[] }) {
   const router = useRouter()
   const [warehouseId, setWarehouseId] = useState(warehouses[0]?.id ?? '')
-  const [itemId, setItemId]           = useState('')
-  const [qty, setQty]                 = useState('')
-  const [remarks, setRemarks]         = useState('')
-  const [busy, setBusy]               = useState(false)
-  const [error, setError]             = useState<string | null>(null)
-  const [success, setSuccess]         = useState<string | null>(null)
+  const [remarks, setRemarks] = useState('')
+  const [lines, setLines] = useState<Line[]>([newLine()])
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [success, setSuccess] = useState<string | null>(null)
 
-  const item = items.find(i => i.id === itemId)
+  function update(id: string, patch: Partial<Line>) { setLines(rs => rs.map(r => r.tempId === id ? { ...r, ...patch } : r)) }
+  function add() { setLines(rs => [...rs, newLine()]) }
+  function remove(id: string) { setLines(rs => rs.filter(r => r.tempId !== id)) }
 
   async function submit(e: React.FormEvent) {
     e.preventDefault()
     setBusy(true); setError(null); setSuccess(null)
-    const qtyNum = Number(qty)
-    if (!Number.isFinite(qtyNum) || qtyNum <= 0) {
-      setError('Enter a positive quantity'); setBusy(false); return
-    }
+    const valid = lines
+      .map(l => ({ item_id: l.item_id, qty: Number(l.qty) }))
+      .filter(l => l.item_id && Number.isFinite(l.qty) && l.qty > 0)
+    if (valid.length === 0) { setError('Add at least one item with a positive quantity'); setBusy(false); return }
+
     const supabase = createClient()
-    const { error: rpcErr } = await supabase.rpc('inv_rpc_stock_receipt', {
+    const { data, error: rpcErr } = await supabase.rpc('inv_rpc_stock_receipt_bulk', {
       p_warehouse_id: warehouseId,
-      p_item_id: itemId,
-      p_qty: qtyNum,
+      p_lines: valid,
       p_remarks: remarks.trim() || null,
     })
     setBusy(false)
     if (rpcErr) { setError(rpcErr.message); return }
-    setSuccess(`Recorded ${qtyNum} ${item?.unit ?? ''} of ${item?.code} into ${warehouses.find(w => w.id === warehouseId)?.code}.`)
-    setQty(''); setRemarks(''); setItemId('')
+    const n = (data as { lines?: number } | null)?.lines ?? valid.length
+    setSuccess(`Recorded ${n} item${n === 1 ? '' : 's'} into ${warehouses.find(w => w.id === warehouseId)?.code ?? 'the store'}.`)
+    setLines([newLine()]); setRemarks('')
     router.refresh()
   }
 
@@ -57,40 +60,49 @@ export function ReceiptForm({ warehouses, items }: { warehouses: WhOpt[]; items:
     <form onSubmit={submit} className="space-y-4">
       {error && <p className="text-sm text-rose-600">{error}</p>}
       {success && (
-        <p className="text-sm text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2">
-          {success}
-        </p>
+        <p className="text-sm text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2">{success}</p>
       )}
 
       <div>
-        <Label>Warehouse *</Label>
+        <Label>Receive into warehouse *</Label>
         <select value={warehouseId} onChange={e => setWarehouseId(e.target.value)} required
           className="mt-1 flex h-10 w-full rounded-xl border border-gray-300 bg-white px-3 py-2 text-sm">
           {warehouses.map(w => <option key={w.id} value={w.id}>{w.code} — {w.name}</option>)}
         </select>
       </div>
 
-      <div>
-        <Label>Item *</Label>
-        <div className="mt-1">
-          <ItemPicker items={items} value={itemId} onChange={setItemId} />
+      <div className="space-y-2">
+        <div className="flex items-center justify-between">
+          <Label>Items received</Label>
+          <Button type="button" size="sm" variant="outline" onClick={add}><Plus className="h-4 w-4" /> Add row</Button>
         </div>
+        {lines.map(l => {
+          const item = items.find(i => i.id === l.item_id)
+          return (
+            <div key={l.tempId} className="grid grid-cols-12 gap-2 items-center">
+              <div className="col-span-12 md:col-span-7">
+                <ItemPicker items={items} value={l.item_id} onChange={id => update(l.tempId, { item_id: id })} />
+              </div>
+              <div className="col-span-10 md:col-span-4 flex items-center gap-1">
+                <QtyInput value={l.qty} onChange={v => update(l.tempId, { qty: v })} placeholder="qty" />
+                <span className="text-xs text-gray-500 w-12">{item?.unit ?? ''}</span>
+              </div>
+              <div className="col-span-2 md:col-span-1 flex justify-end">
+                <Button type="button" variant="ghost" size="sm" onClick={() => remove(l.tempId)} className="text-rose-600 hover:bg-rose-50">
+                  <Trash2 className="h-4 w-4" />
+                </Button>
+              </div>
+            </div>
+          )
+        })}
       </div>
 
       <div>
-        <Label>Quantity *</Label>
-        <div className="mt-1 flex gap-2">
-          <MoneyInput value={qty} onChange={setQty} required placeholder="e.g. 100" />
-          <span className="inline-flex items-center text-sm text-gray-500 w-12">{item?.unit ?? ''}</span>
-        </div>
-      </div>
-
-      <div>
-        <Label>Remarks</Label>
+        <Label>Delivery note / vendor (remarks)</Label>
         <Textarea value={remarks} onChange={e => setRemarks(e.target.value)} rows={2} className="mt-1" placeholder="DC / invoice no, vendor, etc." />
       </div>
 
-      <Button type="submit" disabled={busy || !itemId || !qty}>
+      <Button type="submit" disabled={busy}>
         {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <PackagePlus className="h-4 w-4" />}
         Record receipt
       </Button>

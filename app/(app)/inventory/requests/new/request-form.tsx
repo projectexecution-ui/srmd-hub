@@ -4,7 +4,7 @@ import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { MoneyInput } from '@/components/ui/money-input'
+import { QtyInput } from '@/components/inventory/QtyInput'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Loader2, Plus, Trash2, Send, Store } from 'lucide-react'
@@ -33,12 +33,14 @@ interface InitialDraft {
   sourceRequestNo?: string
 }
 
-export function RequestForm({ projects, warehouses, items, projectStores = {}, initialDraft }: {
+export function RequestForm({ projects, warehouses, items, projectStores = {}, stockByWh = {}, initialDraft }: {
   projects: Opt[]
   warehouses: Opt[]
   items: PickerItem[]
   /** project_id → its site store (warehouse_id), from inv_project_setup. */
   projectStores?: Record<string, string>
+  /** warehouse_id → { item_id → available_qty }. Shows the engineer what's on hand. */
+  stockByWh?: Record<string, Record<string, number>>
   initialDraft?: InitialDraft
 }) {
   const router = useRouter()
@@ -188,8 +190,9 @@ export function RequestForm({ projects, warehouses, items, projectStores = {}, i
         </div>
         {lines.map((l) => {
           const item = items.find(i => i.id === l.item_id)
+          const avail = warehouseId ? stockByWh[warehouseId]?.[l.item_id] : undefined
           return (
-            <div key={l.tempId} className="grid grid-cols-12 gap-2 items-center">
+            <div key={l.tempId} className="grid grid-cols-12 gap-2 items-start">
               <div className="col-span-12 md:col-span-6">
                 <ItemPicker
                   items={items}
@@ -199,10 +202,15 @@ export function RequestForm({ projects, warehouses, items, projectStores = {}, i
               </div>
               <div className="col-span-6 md:col-span-3">
                 <div className="flex items-center gap-1">
-                  <MoneyInput value={l.requested_qty}
+                  <QtyInput value={l.requested_qty}
                     onChange={(v) => update(l.tempId, { requested_qty: v })} placeholder="qty" />
                   <span className="text-xs text-gray-500 w-12">{item?.unit ?? ''}</span>
                 </div>
+                {l.item_id && (
+                  <p className={`text-[11px] mt-0.5 ${avail == null ? 'text-gray-400' : avail <= 0 ? 'text-rose-600' : 'text-gray-500'}`}>
+                    {avail == null ? 'not stocked at this store' : `${avail.toLocaleString('en-IN')} on hand`}
+                  </p>
+                )}
               </div>
               <div className="col-span-5 md:col-span-2">
                 <Input value={l.remarks} onChange={e => update(l.tempId, { remarks: e.target.value })} placeholder="remarks" />

@@ -5,9 +5,10 @@ import { createClient } from '@/lib/supabase/client'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { MoneyInput } from '@/components/ui/money-input'
+import { QtyInput } from '@/components/inventory/QtyInput'
 import { Textarea } from '@/components/ui/textarea'
-import { Loader2, Check, X, Truck, Undo2, PackageCheck } from 'lucide-react'
+import { confirm } from '@/components/ui/confirm-dialog'
+import { Loader2, Check, X, Truck, Undo2, PackageCheck, Ban } from 'lucide-react'
 import type { Role } from '@/lib/types'
 
 interface Line {
@@ -55,6 +56,7 @@ export function RequestActions({
     Object.fromEntries(lines.map(l => [l.id, !!l.is_returnable])),
   )
   const [remarks, setRemarks] = useState('')
+  const [cancelReason, setCancelReason] = useState('')
 
   // Return form state
   const [returnLineId, setReturnLineId] = useState('')
@@ -186,7 +188,7 @@ export function RequestActions({
                   <div className="text-xs text-gray-500">approved {l.approved_qty ?? 0} {l.unit}{l.is_returnable && <span className="ml-2 text-amber-700 font-semibold">· returnable</span>}</div>
                 </div>
                 <div className="md:col-span-4 flex items-center gap-2">
-                  <div className="flex-1"><MoneyInput
+                  <div className="flex-1"><QtyInput
                     value={issuedQty[l.id] ?? ''}
                     onChange={(v) => setIssuedQty(s => ({ ...s, [l.id]: v }))} /></div>
                   <span className="text-xs text-gray-500 md:hidden">{l.unit}</span>
@@ -267,7 +269,7 @@ export function RequestActions({
             </div>
             <div>
               <p className="text-xs text-gray-500 mb-1">Qty</p>
-              <MoneyInput value={returnQty} onChange={setReturnQty} />
+              <QtyInput value={returnQty} onChange={setReturnQty} />
             </div>
             <div>
               <p className="text-xs text-gray-500 mb-1">Condition</p>
@@ -301,7 +303,38 @@ export function RequestActions({
     )
   }
 
-  const anyPanel = atmHeadPanel() || storePanel() || receiptPanel() || returnPanel()
+  // ─── Requester (or admin): cancel a mistaken request before it's issued ──
+  function cancelPanel() {
+    if (!isRequesting && !isAdmin) return null
+    if (!['PENDING_HOP', 'APPROVED', 'EMERGENCY_ISSUED'].includes(status)) return null
+    return (
+      <Card className="border-gray-200">
+        <CardHeader><CardTitle className="text-base">Cancel this request</CardTitle></CardHeader>
+        <CardContent className="space-y-3">
+          <p className="text-xs text-gray-500">Raised by mistake or no longer needed? Withdraw it before it&apos;s issued. This can&apos;t be undone.</p>
+          <Textarea value={cancelReason} onChange={e => setCancelReason(e.target.value)} rows={2} placeholder="Reason (optional)" />
+          <Button
+            onClick={async () => {
+              if (!(await confirm({
+                title: 'Cancel this request?',
+                message: 'It will be withdrawn and can’t be un-cancelled.',
+                confirmLabel: 'Cancel request',
+                danger: true,
+              }))) return
+              await rpc('inv_rpc_cancel_request', { p_request_id: requestId, p_reason: cancelReason.trim() || null }, 'Request cancelled.', '/inventory/requests')
+            }}
+            disabled={busy}
+            variant="outline"
+            className="text-rose-700 border-rose-200 hover:bg-rose-50"
+          >
+            <Ban className="h-4 w-4" /> Cancel request
+          </Button>
+        </CardContent>
+      </Card>
+    )
+  }
+
+  const anyPanel = atmHeadPanel() || storePanel() || receiptPanel() || returnPanel() || cancelPanel()
   if (!anyPanel) return null
 
   return (
@@ -313,6 +346,7 @@ export function RequestActions({
       {storePanel()}
       {receiptPanel()}
       {returnPanel()}
+      {cancelPanel()}
     </div>
   )
 }

@@ -17,7 +17,7 @@ export default async function NewRequestPage({
   // Engineer's projects (from inv_engineer_projects). Fall back to all
   // projects if no assignment exists yet — keeps the form usable before
   // the engineer-project mapping is set up.
-  const [assignedRes, projectsRes, whRes, itemsRes, setupRes] = await Promise.all([
+  const [assignedRes, projectsRes, whRes, itemsRes, setupRes, stockRes] = await Promise.all([
     supabase.from('inv_engineer_projects').select('project_id, projects(id, code, name)').eq('engineer_id', user?.id ?? ''),
     supabase.from('projects').select('id, code, name').order('code'),
     supabase.from('inv_warehouses').select('id, code, name').eq('is_active', true).order('code'),
@@ -25,10 +25,19 @@ export default async function NewRequestPage({
     // "My store" routing: each project's site store (inv_project_setup). When a
     // project is mapped, the request auto-targets that warehouse — no manual pick.
     supabase.from('inv_project_setup').select('project_id, primary_warehouse_id'),
+    // Live availability per warehouse per item, so the engineer sees what's on
+    // hand while requesting (don't ask for 200 when there are 5).
+    supabase.from('inv_stock_available').select('warehouse_id, item_id, available_qty'),
   ])
 
   const projectStores: Record<string, string> = {}
   for (const s of setupRes.data ?? []) projectStores[s.project_id as string] = s.primary_warehouse_id as string
+
+  const stockByWh: Record<string, Record<string, number>> = {}
+  for (const s of stockRes.data ?? []) {
+    const wh = s.warehouse_id as string
+    ;(stockByWh[wh] ??= {})[s.item_id as string] = Number(s.available_qty)
+  }
 
   const assigned = (assignedRes.data ?? [])
     .map(r => Array.isArray(r.projects) ? r.projects[0] : r.projects)
@@ -86,6 +95,7 @@ export default async function NewRequestPage({
           warehouses={whRes.data ?? []}
           items={itemsRes.data ?? []}
           projectStores={projectStores}
+          stockByWh={stockByWh}
           initialDraft={initialDraft}
         />
       </Card>
