@@ -23,6 +23,10 @@ export interface InvSettings {
   low_stock_alerts: boolean
   /** Require the Purpose field when raising a request. */
   require_purpose: boolean
+  /** Email management yesterday's Entry/Exit/Transfer summary each morning. */
+  daily_report: boolean
+  /** Extra recipients (comma-separated emails) beyond admins for that report. */
+  daily_report_emails: string[]
 }
 
 export const INV_SETTINGS_DEFAULTS: InvSettings = {
@@ -30,6 +34,8 @@ export const INV_SETTINGS_DEFAULTS: InvSettings = {
   allow_item_requests: true,
   low_stock_alerts: true,
   require_purpose: false,
+  daily_report: false,
+  daily_report_emails: [],
 }
 
 /** Pure parser — exported so tests cover defaults/overrides without Supabase. */
@@ -42,11 +48,15 @@ export function parseInvSettings(map: Record<string, string | null | undefined>)
   }
   const raw = (map['inv_approval_mode'] ?? '').trim()
   const approval_mode: InvApprovalMode = raw === 'off' || raw === 'always' ? raw : d.approval_mode
+  const emails = (map['inv_daily_report_emails'] ?? '')
+    .split(/[,;\s]+/).map(s => s.trim()).filter(s => s.includes('@'))
   return {
     approval_mode,
     allow_item_requests: bool('inv_allow_item_requests', d.allow_item_requests),
     low_stock_alerts:    bool('inv_low_stock_alerts', d.low_stock_alerts),
     require_purpose:     bool('inv_require_purpose', d.require_purpose),
+    daily_report:        bool('inv_daily_report', d.daily_report),
+    daily_report_emails: emails,
   }
 }
 

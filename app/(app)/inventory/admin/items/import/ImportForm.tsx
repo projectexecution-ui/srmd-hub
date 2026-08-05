@@ -46,6 +46,7 @@ interface ParsedRow {
   unit: string
   description: string | null
   category: string | null
+  subcategory: string | null
   image_url: string | null
   hsn_code: string | null
   qty: number          // 0 when not provided / non-numeric
@@ -59,7 +60,7 @@ interface ParsedRow {
   ai_category?: string | null
 }
 
-type ColKind = 'code' | 'name' | 'unit' | 'description' | 'category' | 'image_url' | 'hsn_code' | 'qty'
+type ColKind = 'code' | 'name' | 'unit' | 'description' | 'category' | 'subcategory' | 'image_url' | 'hsn_code' | 'qty'
 
 // Case-insensitive header aliases. First match wins per kind.
 // Includes Odoo product.template export headers.
@@ -75,6 +76,7 @@ const HEADER_ALIASES: Record<ColKind, RegExp[]> = {
   unit:        [/^unit$/i, /^uom$/i, /^u\.o\.m\.?$/i, /^of[ _-]*meas/i],
   description: [/^description$/i, /^remarks?$/i, /^notes?$/i],
   category:    [/^category$/i, /^product[ _-]*category$/i, /^group$/i, /^class$/i],
+  subcategory: [/^sub[ _-]*category$/i, /^subcategory$/i, /^sub[ _-]*cat$/i, /^sub[ _-]*group$/i],
   image_url:   [/^image[ _-]*url$/i, /^photo[ _-]*url$/i, /^picture[ _-]*url$/i],
   hsn_code:    [/^hsn$/i, /^hsn[ _-]*code$/i],
   qty:         [
@@ -107,7 +109,7 @@ function detectColumns(headerRow: unknown[]): {
   ignored: { label: string; reason: string }[]
 } {
   const cols: Record<ColKind, number> = {
-    code: -1, name: -1, unit: -1, description: -1, category: -1, image_url: -1, hsn_code: -1, qty: -1,
+    code: -1, name: -1, unit: -1, description: -1, category: -1, subcategory: -1, image_url: -1, hsn_code: -1, qty: -1,
   }
   const ignored: { label: string; reason: string }[] = []
   const usedKinds = new Set<ColKind>()
@@ -177,7 +179,7 @@ async function parseExcel(file: File, existingCodes: Set<string>): Promise<{
 
   let headerIdx = -1
   let cols: Record<ColKind, number> = {
-    code: -1, name: -1, unit: -1, description: -1, category: -1, image_url: -1, hsn_code: -1, qty: -1,
+    code: -1, name: -1, unit: -1, description: -1, category: -1, subcategory: -1, image_url: -1, hsn_code: -1, qty: -1,
   }
   let ignored: { label: string; reason: string }[] = []
   for (let i = 0; i < Math.min(aoa.length, 25); i++) {
@@ -189,7 +191,7 @@ async function parseExcel(file: File, existingCodes: Set<string>): Promise<{
   if (headerIdx < 0) {
     return {
       rows: [{
-        row_no: 0, code: '', name: '', unit: '', description: null, category: null,
+        row_no: 0, code: '', name: '', unit: '', description: null, category: null, subcategory: null,
         image_url: null, hsn_code: null, qty: 0,
         status: 'error',
         reason: 'Could not find a header row with at least Name + Unit. Download the template if unsure.',
@@ -215,6 +217,7 @@ async function parseExcel(file: File, existingCodes: Set<string>): Promise<{
     const unit    = cellStr(cols.unit !== -1 ? r[cols.unit] : null)
     const description = cols.description !== -1 ? cellStr(r[cols.description]) : ''
     const category    = cols.category !== -1 ? cellStr(r[cols.category]) : ''
+    const subcategory = cols.subcategory !== -1 ? cellStr(r[cols.subcategory]) : ''
     const image_url   = cols.image_url !== -1 ? cellStr(r[cols.image_url]) : ''
     const hsn_code    = cols.hsn_code !== -1 ? cellStr(r[cols.hsn_code]) : ''
     const qty         = cols.qty !== -1 ? cellNum(r[cols.qty]) : 0
@@ -249,6 +252,7 @@ async function parseExcel(file: File, existingCodes: Set<string>): Promise<{
       unit,
       description: description || null,
       category: category || null,
+      subcategory: subcategory || null,
       image_url: imageClean || null,
       hsn_code: hsn_code || null,
       qty: Math.max(0, qty),
@@ -259,11 +263,11 @@ async function parseExcel(file: File, existingCodes: Set<string>): Promise<{
 }
 
 function buildTemplate(): Blob {
-  const headers = ['code', 'name', 'unit', 'category', 'description', 'hsn_code', 'image_url', 'qty']
-  const example = ['CEM-OPC53', 'OPC 53 Grade Cement', 'bags', 'Cement', '53-grade ordinary portland', '25232990', '', 100]
+  const headers = ['code', 'name', 'unit', 'category', 'subcategory', 'description', 'hsn_code', 'image_url', 'qty']
+  const example = ['CEM-OPC53', 'OPC 53 Grade Cement', 'bags', 'Cement', 'Grey cement', '53-grade ordinary portland', '25232990', '', 100]
   const ws = XLSX.utils.aoa_to_sheet([headers, example])
   ws['!cols'] = [
-    { wch: 14 }, { wch: 36 }, { wch: 8 }, { wch: 14 }, { wch: 32 }, { wch: 12 }, { wch: 40 }, { wch: 8 },
+    { wch: 14 }, { wch: 36 }, { wch: 8 }, { wch: 14 }, { wch: 14 }, { wch: 32 }, { wch: 12 }, { wch: 40 }, { wch: 8 },
   ]
   const wb = XLSX.utils.book_new()
   XLSX.utils.book_append_sheet(wb, ws, 'items')
@@ -394,6 +398,7 @@ export function ImportForm({
       // AI-suggested category wins when the user opted in AND we have one
       // for this row; otherwise the file's value (or null) stands.
       category: useAiCategories && r.ai_category ? r.ai_category : r.category,
+      subcategory: r.subcategory,
       image_url: r.image_url,
       hsn_code: r.hsn_code,
       is_active: true,

@@ -5,8 +5,15 @@ describe('parseInvSettings', () => {
   it('defaults when unset', () => {
     expect(parseInvSettings({})).toEqual({
       approval_mode: 'always', allow_item_requests: true, low_stock_alerts: true, require_purpose: false,
+      daily_report: false, daily_report_emails: [],
     })
     expect(INV_SETTINGS_DEFAULTS.approval_mode).toBe('always')
+  })
+
+  it('reads the daily-report toggle and recipient list', () => {
+    expect(parseInvSettings({ inv_daily_report: 'true' }).daily_report).toBe(true)
+    expect(parseInvSettings({ inv_daily_report_emails: 'a@b.com, c@d.com ; x' }).daily_report_emails)
+      .toEqual(['a@b.com', 'c@d.com'])
   })
 
   it('reads a valid approval_mode override', () => {

@@ -20,6 +20,7 @@ interface Item {
   description: string | null
   unit: string
   category: string | null
+  subcategory: string | null
   image_url: string | null
   hsn_code: string | null
   is_active: boolean
@@ -280,6 +281,7 @@ function ItemForm({ initial, onCancel, onSaved, setBusy, setError, busy }: {
   const [description, setDescription] = useState(initial?.description ?? '')
   const [unit, setUnit]               = useState(initial?.unit ?? 'nos')
   const [category, setCategory]       = useState(initial?.category ?? INVENTORY_CATEGORIES[0])
+  const [subcategory, setSubcategory] = useState(initial?.subcategory ?? '')
   const [hsnCode, setHsnCode]         = useState(initial?.hsn_code ?? '')
   const [isActive, setIsActive]       = useState(initial?.is_active ?? true)
   const [imageUrl, setImageUrl]       = useState(initial?.image_url ?? '')
@@ -309,6 +311,7 @@ function ItemForm({ initial, onCancel, onSaved, setBusy, setError, busy }: {
       description: description.trim() || null,
       unit: unit.trim(),
       category: category.trim() || null,
+      subcategory: subcategory.trim() || null,
       hsn_code: hsnCode.trim() || null,
       image_url: imageUrl || null,
       is_active: isActive,
@@ -373,13 +376,19 @@ function ItemForm({ initial, onCancel, onSaved, setBusy, setError, busy }: {
           </select>
         </div>
         <div>
+          <Label>Sub-category</Label>
+          <Input value={subcategory} onChange={e => setSubcategory(e.target.value)} placeholder="e.g. Switchgear" className="mt-1" />
+        </div>
+      </div>
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+        <div>
           <Label>HSN code</Label>
           <Input value={hsnCode} onChange={e => setHsnCode(e.target.value)} placeholder="optional" className="mt-1" />
         </div>
-      </div>
-      <div>
-        <Label>Description</Label>
-        <Textarea value={description ?? ''} onChange={e => setDescription(e.target.value)} rows={2} className="mt-1" />
+        <div className="md:col-span-2">
+          <Label>Short description</Label>
+          <Textarea value={description ?? ''} onChange={e => setDescription(e.target.value)} rows={2} className="mt-1" placeholder="Brief spec / notes shown on the catalogue" />
+        </div>
       </div>
       <label className="inline-flex items-center gap-2 text-sm">
         <input type="checkbox" checked={isActive} onChange={e => setIsActive(e.target.checked)} />
