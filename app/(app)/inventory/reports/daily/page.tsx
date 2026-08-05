@@ -7,7 +7,8 @@ import { QueryError } from '@/components/ui/query-error'
 import { ChevronLeft, ChevronRight, LogIn, LogOut, ArrowLeftRight, PackageSearch } from 'lucide-react'
 import { istDateStr, istShiftDate, istDayRange } from '@/lib/inventory/day-window'
 import {
-  bucketMovements, istTime, movementDetail, type MovementLine, type TransferLine,
+  bucketMovements, summarizeDigest, istTime, movementDetail,
+  type MovementLine, type TransferLine, type DigestSummary,
 } from '@/lib/inventory/daily-movement'
 import { fetchDayRawMovements } from '@/lib/inventory/fetch-movements'
 import { DailyReportActions } from './DailyReportActions'
@@ -33,6 +34,7 @@ export default async function DailyMovementPage({ searchParams }: { searchParams
 
   const { rows, error } = await fetchDayRawMovements(supabase, date)
   const report = bucketMovements(rows)
+  const digest = summarizeDigest(report)
   const nothing = report.entries.length + report.exits.length + report.transfers.length + report.adjustments.length === 0
 
   return (
@@ -65,6 +67,9 @@ export default async function DailyMovementPage({ searchParams }: { searchParams
 
       {error && <QueryError what="the day's movements" message={error.message} />}
 
+      {/* Exceptions first — the few things worth a manager's eye */}
+      <AttentionStrip digest={digest} />
+
       {/* KPI strip */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <Kpi icon={LogIn} tone="emerald" label="Entries" value={report.kpi.entries} />
@@ -87,6 +92,49 @@ export default async function DailyMovementPage({ searchParams }: { searchParams
           )}
         </div>
       )}
+    </div>
+  )
+}
+
+// Exception-first: the few movements a manager should actually eyeball —
+// emergencies, damage write-offs, and stock corrections — before the volume.
+function AttentionStrip({ digest }: { digest: DigestSummary }) {
+  const { emergencies, damage, corrections } = digest
+  if (emergencies.length + damage.length + corrections.length === 0) return null
+  return (
+    <div className="rounded-xl border border-amber-200 bg-amber-50/70 p-3 sm:p-4">
+      <p className="text-[11px] font-bold uppercase tracking-wide text-amber-800 mb-2">Needs attention</p>
+      <div className="grid gap-3 sm:grid-cols-3">
+        <ExcGroup title="Emergency issues" tone="rose" lines={emergencies} />
+        <ExcGroup title="Damage / write-offs" tone="amber" lines={damage} />
+        <ExcGroup title="Stock corrections" tone="violet" lines={corrections} />
+      </div>
+    </div>
+  )
+}
+
+function ExcGroup({ title, tone, lines }: { title: string; tone: 'rose' | 'amber' | 'violet'; lines: MovementLine[] }) {
+  if (lines.length === 0) return null
+  const tones = { rose: 'text-rose-700', amber: 'text-amber-700', violet: 'text-violet-700' } as const
+  const cap = 6
+  const shown = lines.slice(0, cap)
+  const more = lines.length - shown.length
+  return (
+    <div>
+      <p className={`text-xs font-semibold ${tones[tone]} mb-1`}>{title} · {lines.length}</p>
+      <ul className="space-y-1">
+        {shown.map((l, i) => {
+          const d = movementDetail(l)
+          return (
+            <li key={i} className="text-[11px] text-gray-700 leading-snug">
+              <span className="font-medium text-gray-900">{l.itemName}</span> — {nf(l.qty)} {l.unit}
+              <span className="text-gray-500"> · {l.store}</span>
+              {d && <span className="text-gray-500"> · {d}</span>}
+            </li>
+          )
+        })}
+        {more > 0 && <li className="text-[11px] text-gray-400 italic">+ {more} more</li>}
+      </ul>
     </div>
   )
 }

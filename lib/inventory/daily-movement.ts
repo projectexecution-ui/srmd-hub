@@ -26,6 +26,7 @@ export interface RawMovement {
 
 export interface MovementLine {
   type: string          // human label
+  rawType: string       // raw movement_type (issue/receipt/damage/adjustment…)
   itemCode: string
   itemName: string
   qty: number
@@ -107,6 +108,7 @@ export function bucketMovements(rows: RawMovement[]): DailyMovementReport {
   const adjustments: MovementLine[] = []
   const toLine = (m: RawMovement): MovementLine => ({
     type: MOVEMENT_LABEL[m.movement_type] ?? m.movement_type,
+    rawType: m.movement_type,
     itemCode: m.item_code, itemName: m.item_name, qty: Number(m.qty || 0), unit: m.unit,
     store: m.store_name || m.store_code || '—', actor: m.actor_name || 'Someone',
     remarks: m.remarks, at: m.created_at,
@@ -155,6 +157,63 @@ export function bucketMovements(rows: RawMovement[]): DailyMovementReport {
   }
 }
 
+// ── Digest summary — roll it up so a huge day still fits one screen ─────────
+export interface DigestSummary {
+  byProject: { project: string; count: number }[]
+  topItems: { item: string; unit: string; count: number; qty: number }[]
+  entryCount: number
+  entryTopItems: { item: string; unit: string; qty: number }[]
+  transferCount: number
+  transferTop: { item: string; from: string; to: string; qty: number; unit: string }[]
+  emergencies: MovementLine[]   // exceptions — always shown, never truncated by top-N
+  damage: MovementLine[]
+  corrections: MovementLine[]
+}
+
+export function summarizeDigest(report: DailyMovementReport): DigestSummary {
+  const issues = report.exits.filter(l => l.rawType === 'issue')
+  const damage = report.exits.filter(l => l.rawType === 'damage')
+
+  const projMap = new Map<string, number>()
+  for (const l of issues) {
+    const k = l.project || 'Unassigned'
+    projMap.set(k, (projMap.get(k) ?? 0) + 1)
+  }
+  const byProject = [...projMap.entries()]
+    .map(([project, count]) => ({ project, count }))
+    .sort((a, b) => b.count - a.count)
+
+  const itemMap = new Map<string, { item: string; unit: string; count: number; qty: number }>()
+  for (const l of issues) {
+    const k = `${l.itemName}|${l.unit}`
+    const cur = itemMap.get(k) ?? { item: l.itemName, unit: l.unit, count: 0, qty: 0 }
+    cur.count += 1; cur.qty += l.qty
+    itemMap.set(k, cur)
+  }
+  const topItems = [...itemMap.values()].sort((a, b) => b.count - a.count || b.qty - a.qty)
+
+  const entMap = new Map<string, { item: string; unit: string; qty: number }>()
+  for (const l of report.entries) {
+    const k = `${l.itemName}|${l.unit}`
+    const cur = entMap.get(k) ?? { item: l.itemName, unit: l.unit, qty: 0 }
+    cur.qty += l.qty; entMap.set(k, cur)
+  }
+  const entryTopItems = [...entMap.values()].sort((a, b) => b.qty - a.qty)
+
+  const transferTop = [...report.transfers]
+    .sort((a, b) => b.qty - a.qty)
+    .map(t => ({ item: t.itemName, from: t.fromStore, to: t.toStore, qty: t.qty, unit: t.unit }))
+
+  const emergencies = [...report.exits, ...report.entries].filter(l => l.isEmergency)
+
+  return {
+    byProject, topItems,
+    entryCount: report.entries.length, entryTopItems,
+    transferCount: report.transfers.length, transferTop,
+    emergencies, damage, corrections: report.adjustments,
+  }
+}
+
 // ── Email HTML (inline styles for mail clients) ─────────────────────────────
 function tableHtml(title: string, headColor: string, cols: string[], rows: string[][]): string {
   if (rows.length === 0) return ''
@@ -171,36 +230,77 @@ function tableHtml(title: string, headColor: string, cols: string[], rows: strin
 
 const esc = (s: string) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
 
-export function renderDailyEmailHtml(report: DailyMovementReport, dayLabel: string): string {
+const TOP_N = 6   // roll-ups cap; the tail collapses to "+N more"
+
+// A management DIGEST — exceptions first, then roll-ups (top-N), then a link to
+// the full log. Fixed length regardless of the day's volume: no row dump.
+export function renderDailyEmailHtml(report: DailyMovementReport, dayLabel: string, opts: { url?: string } = {}): string {
+  const s = summarizeDigest(report)
+  const anything = report.kpi.entries + report.kpi.exits + report.kpi.transfers + report.adjustments.length
+
   const kpiCard = (label: string, value: number, color: string) =>
     `<td style="padding:0 6px"><div style="background:#f9fafb;border:1px solid #eef0f2;border-radius:8px;padding:10px 12px">`
-    + `<div style="font-size:11px;color:#6b7280;text-transform:uppercase;letter-spacing:.03em">${label}</div>`
+    + `<div style="font-size:11px;color:#6b7280;text-transform:uppercase;letter-spacing:.03em">${esc(label)}</div>`
     + `<div style="font-size:20px;font-weight:700;color:${color};margin-top:2px">${nf(value)}</div></div></td>`
 
-  const itemCell = (l: MovementLine) =>
-    esc(l.itemName) + (l.isEmergency ? ' <span style="color:#dc2626;font-size:9px;font-weight:700">EMERGENCY</span>' : '')
+  // Exceptions — shown FIRST, capped but never hidden by top-N ranking.
+  const emgLine = (l: MovementLine) => `${esc(l.itemName)} — ${nf(l.qty)} ${esc(l.unit)}`
+    + (l.project ? ` → ${esc(l.project)}` : ` · ${esc(l.store)}`)
+    + (l.requestedBy ? ` · req by ${esc(l.requestedBy)}` : '')
+    + (l.reference ? ` · ${esc(l.reference)}` : '')
+  const noteLine = (l: MovementLine) => `${esc(l.itemName)} — ${nf(l.qty)} ${esc(l.unit)} · ${esc(l.store)}`
+    + (l.remarks ? ` · ${esc(l.remarks)}` : '')
+  const excGroup = (title: string, color: string, lines: string[]) => {
+    if (lines.length === 0) return ''
+    const shown = lines.slice(0, TOP_N)
+    const more = lines.length - shown.length
+    return `<div style="font-size:12px;font-weight:700;color:${color};margin:8px 0 3px">${esc(title)} · ${lines.length}</div>`
+      + shown.map(t => `<div style="font-size:12px;color:#374151;line-height:1.55">${t}</div>`).join('')
+      + (more > 0 ? `<div style="font-size:11px;color:#9ca3af;font-style:italic">+ ${more} more</div>` : '')
+  }
+  const excInner =
+    excGroup('⚠ Emergency issues', '#b91c1c', s.emergencies.map(emgLine))
+    + excGroup('Damage / write-offs', '#b45309', s.damage.map(noteLine))
+    + excGroup('Stock corrections', '#7c3aed', s.corrections.map(noteLine))
+  const excBox = excInner
+    ? `<div style="background:#fff7ed;border:1px solid #fed7aa;border-radius:8px;padding:10px 12px;margin:4px 0 4px">`
+      + `<div style="font-size:11px;font-weight:700;color:#9a3412;text-transform:uppercase;letter-spacing:.04em">Needs attention</div>`
+      + excInner + `</div>`
+    : ''
 
-  const entriesTbl = tableHtml('Entries — into store', '#16a34a',
-    ['Item', 'Source / details', 'Store', 'By', 'Qty'],
-    report.entries.map(l => [itemCell(l), esc(movementDetail(l) || l.type), esc(l.store), esc(l.actor), `${nf(l.qty)} ${esc(l.unit)}`]))
-  const exitsTbl = tableHtml('Exits — out of store', '#dc2626',
-    ['Item', 'For — project · purpose · request', 'Store', 'By', 'Qty'],
-    report.exits.map(l => [itemCell(l), esc(movementDetail(l) || '—'), esc(l.store), esc(l.actor), `${nf(l.qty)} ${esc(l.unit)}`]))
-  const transfersTbl = tableHtml('Transfers — store to store', '#2563eb',
-    ['Item', 'From', 'To', 'By', 'Qty'],
-    report.transfers.map(t => [esc(t.itemName), esc(t.fromStore), esc(t.toStore), esc(t.actor), `${nf(t.qty)} ${esc(t.unit)}`]))
-  const adjTbl = tableHtml('Stock corrections', '#7c3aed',
-    ['Item', 'Note', 'Store', 'By', 'Qty'],
-    report.adjustments.map(l => [esc(l.itemName), esc(movementDetail(l) || '—'), esc(l.store), esc(l.actor), `${nf(l.qty)} ${esc(l.unit)}`]))
+  // Roll-ups (ranked by count — coherent across mixed units).
+  const moreRow = (n: number, noun: string): string[][] => n > 0 ? [[`+ ${n} more ${noun}`, '']] : []
+  const byProjectTbl = tableHtml('Exits — by project', '#dc2626', ['Project', 'Issues'],
+    [...s.byProject.slice(0, TOP_N).map(p => [esc(p.project), nf(p.count)]),
+     ...moreRow(Math.max(0, s.byProject.length - TOP_N), 'projects')])
+  const topItemsTbl = tableHtml('Most-issued items', '#111827', ['Item', 'Times', 'Total qty'],
+    [...s.topItems.slice(0, TOP_N).map(t => [esc(t.item), nf(t.count), `${nf(t.qty)} ${esc(t.unit)}`]),
+     ...moreRow(Math.max(0, s.topItems.length - TOP_N), 'items')])
 
-  const anything = report.entries.length + report.exits.length + report.transfers.length + report.adjustments.length
+  const entTop = s.entryTopItems.slice(0, 3).map(t => `${esc(t.item)} ${nf(t.qty)} ${esc(t.unit)}`).join(' · ')
+  const trTop = s.transferTop.slice(0, 3).map(t => `${esc(t.item)} ${nf(t.qty)} ${esc(t.unit)} ${esc(t.from)}→${esc(t.to)}`).join(' · ')
+  const twoUp = `<table style="width:100%;border-collapse:separate;border-spacing:8px 0;margin:16px -8px 0"><tr>`
+    + `<td style="width:50%;vertical-align:top">`
+    + `<div style="font-size:12px;font-weight:700;color:#16a34a;margin:0 0 4px">Entries · ${nf(s.entryCount)}</div>`
+    + `<div style="font-size:11px;color:#4b5563;line-height:1.55">${entTop || '—'}</div></td>`
+    + `<td style="width:50%;vertical-align:top">`
+    + `<div style="font-size:12px;font-weight:700;color:#2563eb;margin:0 0 4px">Transfers · ${nf(s.transferCount)}</div>`
+    + `<div style="font-size:11px;color:#4b5563;line-height:1.55">${trTop || '—'}</div></td>`
+    + `</tr></table>`
+
+  const link = opts.url
+    ? `<div style="margin:18px 0 4px;padding-top:14px;border-top:1px solid #eee;text-align:center">`
+      + `<a href="${esc(opts.url)}" style="display:inline-block;background:#111827;color:#fff;text-decoration:none;font-size:13px;font-weight:600;padding:9px 18px;border-radius:8px">Open the full day's log →</a>`
+      + `<div style="font-size:11px;color:#9ca3af;margin-top:8px">Every row — ${nf(report.kpi.exits)} exits · ${nf(report.kpi.entries)} entries · ${nf(report.kpi.transfers)} transfers — is in CT HUB.</div></div>`
+    : ''
+
   const bodyInner = anything === 0
     ? `<p style="font-size:13px;color:#6b7280;margin:18px 0">No stock movement was recorded on this day.</p>`
-    : entriesTbl + exitsTbl + transfersTbl + adjTbl
+    : excBox + byProjectTbl + topItemsTbl + twoUp + link
 
-  return `<div style="font-family:Arial,Helvetica,sans-serif;background:#f4f6f9;padding:20px"><div style="max-width:720px;margin:0 auto;background:#fff;border-radius:12px;padding:22px 24px">`
+  return `<div style="font-family:Arial,Helvetica,sans-serif;background:#f4f6f9;padding:20px"><div style="max-width:640px;margin:0 auto;background:#fff;border-radius:12px;padding:22px 24px">`
     + `<p style="font-size:16px;font-weight:700;color:#111827;margin:0 0 2px">Inventory — daily movement</p>`
-    + `<p style="font-size:13px;color:#6b7280;margin:0 0 16px">${esc(dayLabel)}</p>`
+    + `<p style="font-size:13px;color:#6b7280;margin:0 0 14px">${esc(dayLabel)} · ${nf(report.kpi.storesTouched)} stores</p>`
     + `<table style="width:100%;border-collapse:separate;border-spacing:0;margin:0 -6px 4px"><tr>`
     + kpiCard('Entries', report.kpi.entries, '#16a34a')
     + kpiCard('Exits', report.kpi.exits, '#dc2626')

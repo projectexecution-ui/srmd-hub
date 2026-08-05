@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { bucketMovements, movementDetail, type RawMovement } from './daily-movement'
+import { bucketMovements, summarizeDigest, movementDetail, type RawMovement } from './daily-movement'
 
 const base = {
   remarks: null, item_id: 'i1', warehouse_id: 'w1',
@@ -48,6 +48,25 @@ describe('bucketMovements', () => {
     expect(d).toContain('Xyz')
     expect(d).toContain('req by Ravi')
     expect(d).toContain('REQ-1')
+  })
+
+  it('summarizeDigest rolls up issues by project/item and isolates exceptions', () => {
+    const s = summarizeDigest(bucketMovements([
+      mv({ movement_type: 'issue', qty: 10, project: 'AB — Admin Block', item_id: 'i1', item_name: 'Cement' }),
+      mv({ movement_type: 'issue', qty: 5, project: 'AB — Admin Block', item_id: 'i1', item_name: 'Cement' }),
+      mv({ movement_type: 'issue', qty: 2, project: 'Site B', item_id: 'i2', item_name: 'TMT', unit: 'kg' }),
+      mv({ movement_type: 'issue', qty: 1, is_emergency: true, project: 'Site B', item_id: 'i3', item_name: 'Tape' }),
+      mv({ movement_type: 'damage', qty: 3, item_id: 'i4', item_name: 'Glass', remarks: 'broken' }),
+      mv({ movement_type: 'adjustment', qty: 7, item_id: 'i5', item_name: 'Wire', remarks: 'count fix' }),
+    ]))
+    // Most-issued item ranks by number of issues, not quantity.
+    expect(s.topItems[0].item).toBe('Cement')
+    expect(s.topItems[0].count).toBe(2)
+    // Exceptions are isolated (and damage is NOT counted as an issue).
+    expect(s.emergencies).toHaveLength(1)
+    expect(s.damage).toHaveLength(1)
+    expect(s.corrections).toHaveLength(1)
+    expect(s.byProject.some(p => p.project === 'AB — Admin Block' && p.count === 2)).toBe(true)
   })
 
   it('movementDetail falls back to the remark when there is no request context', () => {

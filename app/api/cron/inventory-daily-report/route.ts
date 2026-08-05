@@ -32,7 +32,7 @@ async function buildYesterday(supabase: Client) {
   const { label } = istDayRange(date)
   const { rows } = await fetchDayRawMovements(supabase, date)
   const report = bucketMovements(rows)
-  const html = renderDailyEmailHtml(report, label)
+  const html = renderDailyEmailHtml(report, label, { url: `${baseUrl()}/inventory/reports/daily?date=${date}` })
   const moved = report.entries.length + report.exits.length + report.transfers.length + report.adjustments.length
   return { report, html, label, date, moved }
 }
