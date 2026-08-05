@@ -7,13 +7,13 @@ import { QueryError } from '@/components/ui/query-error'
 import { ChevronLeft, ChevronRight, LogIn, LogOut, ArrowLeftRight, PackageSearch } from 'lucide-react'
 import { istDateStr, istShiftDate, istDayRange } from '@/lib/inventory/day-window'
 import {
-  bucketMovements, istTime, type RawMovement, type MovementLine, type TransferLine,
+  bucketMovements, istTime, movementDetail, type MovementLine, type TransferLine,
 } from '@/lib/inventory/daily-movement'
+import { fetchDayRawMovements } from '@/lib/inventory/fetch-movements'
 import { DailyReportActions } from './DailyReportActions'
 
 export const dynamic = 'force-dynamic'
 
-const one = <T,>(v: T | T[] | null): T | null => (Array.isArray(v) ? (v[0] ?? null) : v)
 const nf = (n: number) => Number(n || 0).toLocaleString('en-IN')
 
 export default async function DailyMovementPage({ searchParams }: { searchParams: Promise<{ date?: string }> }) {
@@ -24,45 +24,14 @@ export default async function DailyMovementPage({ searchParams }: { searchParams
   const today = istDateStr()
   // Default to TODAY (live). Yesterday is only what the morning email reports.
   const date = /^\d{4}-\d{2}-\d{2}$/.test(sp.date ?? '') ? sp.date! : today
-  const { startUtc, endUtc, label } = istDayRange(date)
+  const { label } = istDayRange(date)
   const prev = istShiftDate(date, -1)
   const next = istShiftDate(date, 1)
   const isToday = date === today
   const isFuture = date > today
   const rel = isToday ? 'Today · ' : (date === istShiftDate(today, -1) ? 'Yesterday · ' : '')
 
-  const { data: moves, error } = await supabase
-    .from('inv_stock_movements')
-    .select('movement_type, qty, remarks, created_at, item_id, warehouse_id, actor_id, inv_items(code, name, unit), inv_warehouses(code, name)')
-    .gte('created_at', startUtc).lt('created_at', endUtc)
-    .order('created_at')
-
-  // Resolve actor display names in one round-trip.
-  const actorIds = [...new Set((moves ?? []).map(m => m.actor_id as string | null).filter(Boolean) as string[])]
-  const { data: actors } = actorIds.length
-    ? await supabase.from('profiles').select('id, full_name, name').in('id', actorIds)
-    : { data: [] as Array<{ id: string; full_name: string | null; name: string | null }> }
-  const nameById = new Map((actors ?? []).map(a => [a.id as string, (a.full_name ?? a.name ?? 'Someone') as string]))
-
-  const rows: RawMovement[] = (moves ?? []).map(m => {
-    const it = one(m.inv_items as never) as { code?: string; name?: string; unit?: string } | null
-    const wh = one(m.inv_warehouses as never) as { code?: string; name?: string } | null
-    return {
-      movement_type: m.movement_type as string,
-      qty: Number(m.qty || 0),
-      remarks: (m.remarks as string) ?? null,
-      created_at: m.created_at as string,
-      item_id: m.item_id as string,
-      warehouse_id: m.warehouse_id as string,
-      item_code: it?.code ?? '',
-      item_name: it?.name ?? 'Item',
-      unit: it?.unit ?? '',
-      store_code: wh?.code ?? '',
-      store_name: wh?.name ?? '',
-      actor_name: (m.actor_id ? nameById.get(m.actor_id as string) : null) ?? 'Someone',
-    }
-  })
-
+  const { rows, error } = await fetchDayRawMovements(supabase, date)
   const report = bucketMovements(rows)
   const nothing = report.entries.length + report.exits.length + report.transfers.length + report.adjustments.length === 0
 
@@ -114,7 +83,7 @@ export default async function DailyMovementPage({ searchParams }: { searchParams
           <MoveSection title="Exits — out of store" tone="rose" lines={report.exits} />
           <TransferSection lines={report.transfers} />
           {report.adjustments.length > 0 && (
-            <MoveSection title="Stock corrections" tone="violet" lines={report.adjustments} showNote />
+            <MoveSection title="Stock corrections" tone="violet" lines={report.adjustments} />
           )}
         </div>
       )}
@@ -152,8 +121,8 @@ const HEAD_TONE = {
   violet: 'text-violet-800 bg-violet-50',
 } as const
 
-function MoveSection({ title, tone, lines, showNote }: {
-  title: string; tone: keyof typeof HEAD_TONE; lines: MovementLine[]; showNote?: boolean
+function MoveSection({ title, tone, lines }: {
+  title: string; tone: keyof typeof HEAD_TONE; lines: MovementLine[]
 }) {
   if (lines.length === 0) return null
   return (
@@ -165,30 +134,35 @@ function MoveSection({ title, tone, lines, showNote }: {
         <table className="w-full text-sm">
           <thead>
             <tr className="bg-gray-50 text-gray-500 text-xs">
-              <th className="text-left font-medium px-3 py-2">Item</th>
+              <th className="text-left font-medium px-3 py-2">Item &amp; details</th>
               <th className="text-left font-medium px-3 py-2">Type</th>
               <th className="text-left font-medium px-3 py-2">Store</th>
-              {showNote && <th className="text-left font-medium px-3 py-2">Note</th>}
               <th className="text-left font-medium px-3 py-2">By</th>
               <th className="text-right font-medium px-3 py-2">Qty</th>
               <th className="text-right font-medium px-3 py-2 whitespace-nowrap">Time</th>
             </tr>
           </thead>
           <tbody>
-            {lines.map((l, i) => (
-              <tr key={i} className="border-t border-gray-100">
-                <td className="px-3 py-2">
-                  <span className="font-medium text-gray-900">{l.itemName}</span>
-                  {l.itemCode && <span className="ml-1.5 font-mono text-[11px] text-gray-400">{l.itemCode}</span>}
-                </td>
-                <td className="px-3 py-2 text-gray-600">{l.type}</td>
-                <td className="px-3 py-2 text-gray-600">{l.store}</td>
-                {showNote && <td className="px-3 py-2 text-gray-500">{l.remarks || '—'}</td>}
-                <td className="px-3 py-2 text-gray-600">{l.actor}</td>
-                <td className="px-3 py-2 text-right font-semibold tabular-nums whitespace-nowrap">{nf(l.qty)} {l.unit}</td>
-                <td className="px-3 py-2 text-right text-gray-400 tabular-nums whitespace-nowrap">{istTime(l.at)}</td>
-              </tr>
-            ))}
+            {lines.map((l, i) => {
+              const detail = movementDetail(l)
+              return (
+                <tr key={i} className="border-t border-gray-100 align-top">
+                  <td className="px-3 py-2 max-w-sm">
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <span className="font-medium text-gray-900">{l.itemName}</span>
+                      {l.itemCode && <span className="font-mono text-[11px] text-gray-400">{l.itemCode}</span>}
+                      {l.isEmergency && <span className="text-[10px] font-semibold uppercase tracking-wide text-rose-700 bg-rose-100 rounded px-1.5 py-0.5">emergency</span>}
+                    </div>
+                    {detail && <div className="text-[11px] text-gray-500 mt-0.5 leading-snug">{detail}</div>}
+                  </td>
+                  <td className="px-3 py-2 text-gray-600 whitespace-nowrap">{l.type}</td>
+                  <td className="px-3 py-2 text-gray-600">{l.store}</td>
+                  <td className="px-3 py-2 text-gray-600">{l.actor}</td>
+                  <td className="px-3 py-2 text-right font-semibold tabular-nums whitespace-nowrap">{nf(l.qty)} {l.unit}</td>
+                  <td className="px-3 py-2 text-right text-gray-400 tabular-nums whitespace-nowrap">{istTime(l.at)}</td>
+                </tr>
+              )
+            })}
           </tbody>
         </table>
       </div>
@@ -217,10 +191,13 @@ function TransferSection({ lines }: { lines: TransferLine[] }) {
           </thead>
           <tbody>
             {lines.map((t, i) => (
-              <tr key={i} className="border-t border-gray-100">
+              <tr key={i} className="border-t border-gray-100 align-top">
                 <td className="px-3 py-2">
-                  <span className="font-medium text-gray-900">{t.itemName}</span>
-                  {t.itemCode && <span className="ml-1.5 font-mono text-[11px] text-gray-400">{t.itemCode}</span>}
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <span className="font-medium text-gray-900">{t.itemName}</span>
+                    {t.itemCode && <span className="font-mono text-[11px] text-gray-400">{t.itemCode}</span>}
+                  </div>
+                  {t.remarks && <div className="text-[11px] text-gray-500 mt-0.5 leading-snug">{t.remarks}</div>}
                 </td>
                 <td className="px-3 py-2 text-gray-600">{t.fromStore}</td>
                 <td className="px-3 py-2 text-gray-600">{t.toStore}</td>

@@ -5,7 +5,7 @@ import autoTable from 'jspdf-autotable'
 import { Button } from '@/components/ui/button'
 import { FileDown, Loader2 } from 'lucide-react'
 import { formatDateTime } from '@/lib/utils'
-import { istTime, type DailyMovementReport } from '@/lib/inventory/daily-movement'
+import { istTime, movementDetail, type DailyMovementReport } from '@/lib/inventory/daily-movement'
 
 const nf = (n: number) => Number(n || 0).toLocaleString('en-IN')
 
@@ -61,14 +61,15 @@ function build(report: DailyMovementReport, dayLabel: string): jsPDF {
     y = (doc.lastAutoTable?.finalY ?? y) + 18
   }
 
-  section('Entries — into store', [22, 163, 74], ['Item', 'Type', 'Store', 'By', 'Qty', 'Time'],
-    report.entries.map(l => [l.itemName, l.type, l.store, l.actor, `${nf(l.qty)} ${l.unit}`, istTime(l.at)]))
-  section('Exits — out of store', [220, 38, 38], ['Item', 'Type', 'Store', 'By', 'Qty', 'Time'],
-    report.exits.map(l => [l.itemName, l.type, l.store, l.actor, `${nf(l.qty)} ${l.unit}`, istTime(l.at)]))
+  const withEmg = (l: { isEmergency?: boolean }) => (l.isEmergency ? ' · EMERGENCY' : '')
+  section('Entries — into store', [22, 163, 74], ['Item', 'Source', 'Store', 'By', 'Qty', 'Time'],
+    report.entries.map(l => [l.itemName, movementDetail(l) || l.type, l.store, l.actor, `${nf(l.qty)} ${l.unit}`, istTime(l.at)]))
+  section('Exits — out of store', [220, 38, 38], ['Item', 'For (project · purpose · request)', 'Store', 'By', 'Qty', 'Time'],
+    report.exits.map(l => [l.itemName, (movementDetail(l) || '—') + withEmg(l), l.store, l.actor, `${nf(l.qty)} ${l.unit}`, istTime(l.at)]))
   section('Transfers — store to store', [37, 99, 235], ['Item', 'From', 'To', 'By', 'Qty', 'Time'],
     report.transfers.map(t => [t.itemName, t.fromStore, t.toStore, t.actor, `${nf(t.qty)} ${t.unit}`, istTime(t.at)]))
-  section('Stock corrections', [124, 58, 237], ['Item', 'Store', 'By', 'Note', 'Qty', 'Time'],
-    report.adjustments.map(l => [l.itemName, l.store, l.actor, l.remarks || '—', `${nf(l.qty)} ${l.unit}`, istTime(l.at)]))
+  section('Stock corrections', [124, 58, 237], ['Item', 'Note', 'Store', 'By', 'Qty', 'Time'],
+    report.adjustments.map(l => [l.itemName, movementDetail(l) || '—', l.store, l.actor, `${nf(l.qty)} ${l.unit}`, istTime(l.at)]))
 
   const pages = doc.getNumberOfPages()
   for (let p = 1; p <= pages; p++) {

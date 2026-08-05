@@ -16,6 +16,12 @@ export interface RawMovement {
   store_code: string
   store_name: string
   actor_name: string
+  // Request context (issues/returns are linked to a request via ref_id).
+  project?: string | null       // "AB — Admin Block"
+  requested_by?: string | null  // engineer who raised the request
+  purpose?: string | null
+  reference?: string | null      // request number
+  is_emergency?: boolean
 }
 
 export interface MovementLine {
@@ -28,6 +34,11 @@ export interface MovementLine {
   actor: string
   remarks: string | null
   at: string            // ISO
+  project?: string | null
+  requestedBy?: string | null
+  purpose?: string | null
+  reference?: string | null
+  isEmergency?: boolean
 }
 
 export interface TransferLine {
@@ -39,6 +50,7 @@ export interface TransferLine {
   toStore: string
   actor: string
   at: string
+  remarks?: string | null
 }
 
 export interface DailyMovementReport {
@@ -76,6 +88,19 @@ export function istTime(iso: string): string {
   })
 }
 
+// The one-line "accurate details" for a movement: for a request-linked issue/
+// return it's the project + purpose + who asked + request no; otherwise the
+// movement's own remark (vendor note, damage reason, opening-balance note…).
+export function movementDetail(l: MovementLine): string {
+  const parts: string[] = []
+  if (l.project) parts.push(l.project)
+  if (l.purpose) parts.push(`“${l.purpose}”`)
+  if (l.requestedBy) parts.push(`req by ${l.requestedBy}`)
+  if (l.reference) parts.push(l.reference)
+  if (parts.length === 0 && l.remarks) parts.push(l.remarks)
+  return parts.join(' · ')
+}
+
 export function bucketMovements(rows: RawMovement[]): DailyMovementReport {
   const entries: MovementLine[] = []
   const exits: MovementLine[] = []
@@ -85,6 +110,8 @@ export function bucketMovements(rows: RawMovement[]): DailyMovementReport {
     itemCode: m.item_code, itemName: m.item_name, qty: Number(m.qty || 0), unit: m.unit,
     store: m.store_name || m.store_code || '—', actor: m.actor_name || 'Someone',
     remarks: m.remarks, at: m.created_at,
+    project: m.project ?? null, requestedBy: m.requested_by ?? null,
+    purpose: m.purpose ?? null, reference: m.reference ?? null, isEmergency: m.is_emergency ?? false,
   })
 
   // Pair transfer_out ↔ transfer_in from the same transaction. inv_rpc_stock_transfer
@@ -112,7 +139,7 @@ export function bucketMovements(rows: RawMovement[]): DailyMovementReport {
       itemCode: any.item_code, itemName: any.item_name, qty: Number(any.qty || 0), unit: any.unit,
       fromStore: out ? (out.store_name || out.store_code) : '—',
       toStore: inn ? (inn.store_name || inn.store_code) : '—',
-      actor: any.actor_name || 'Someone', at: any.created_at,
+      actor: any.actor_name || 'Someone', at: any.created_at, remarks: any.remarks,
     })
   }
 
@@ -134,7 +161,7 @@ function tableHtml(title: string, headColor: string, cols: string[], rows: strin
   const th = cols.map(c => `<th style="text-align:left;padding:6px 8px;font-size:11px;color:#fff;font-weight:600">${c}</th>`).join('')
   const body = rows.map((r, i) => {
     const bg = i % 2 ? '#fafafa' : '#ffffff'
-    const tds = r.map((c, j) => `<td style="padding:6px 8px;font-size:12px;color:#1f2937;border-bottom:1px solid #eee;${j >= cols.length - 2 ? 'text-align:right;white-space:nowrap' : ''}">${c}</td>`).join('')
+    const tds = r.map((c, j) => `<td style="padding:6px 8px;font-size:12px;color:#1f2937;border-bottom:1px solid #eee;${j === cols.length - 1 ? 'text-align:right;white-space:nowrap' : ''}">${c}</td>`).join('')
     return `<tr style="background:${bg}">${tds}</tr>`
   }).join('')
   return `<p style="font-size:14px;font-weight:700;color:#111827;margin:20px 0 6px">${title}</p>`
@@ -150,18 +177,21 @@ export function renderDailyEmailHtml(report: DailyMovementReport, dayLabel: stri
     + `<div style="font-size:11px;color:#6b7280;text-transform:uppercase;letter-spacing:.03em">${label}</div>`
     + `<div style="font-size:20px;font-weight:700;color:${color};margin-top:2px">${nf(value)}</div></div></td>`
 
+  const itemCell = (l: MovementLine) =>
+    esc(l.itemName) + (l.isEmergency ? ' <span style="color:#dc2626;font-size:9px;font-weight:700">EMERGENCY</span>' : '')
+
   const entriesTbl = tableHtml('Entries — into store', '#16a34a',
-    ['Item', 'Type', 'Store', 'By', 'Qty'],
-    report.entries.map(l => [esc(l.itemName), esc(l.type), esc(l.store), esc(l.actor), `${nf(l.qty)} ${esc(l.unit)}`]))
+    ['Item', 'Source / details', 'Store', 'By', 'Qty'],
+    report.entries.map(l => [itemCell(l), esc(movementDetail(l) || l.type), esc(l.store), esc(l.actor), `${nf(l.qty)} ${esc(l.unit)}`]))
   const exitsTbl = tableHtml('Exits — out of store', '#dc2626',
-    ['Item', 'Type', 'Store', 'By', 'Qty'],
-    report.exits.map(l => [esc(l.itemName), esc(l.type), esc(l.store), esc(l.actor), `${nf(l.qty)} ${esc(l.unit)}`]))
+    ['Item', 'For — project · purpose · request', 'Store', 'By', 'Qty'],
+    report.exits.map(l => [itemCell(l), esc(movementDetail(l) || '—'), esc(l.store), esc(l.actor), `${nf(l.qty)} ${esc(l.unit)}`]))
   const transfersTbl = tableHtml('Transfers — store to store', '#2563eb',
     ['Item', 'From', 'To', 'By', 'Qty'],
     report.transfers.map(t => [esc(t.itemName), esc(t.fromStore), esc(t.toStore), esc(t.actor), `${nf(t.qty)} ${esc(t.unit)}`]))
   const adjTbl = tableHtml('Stock corrections', '#7c3aed',
-    ['Item', 'Store', 'By', 'Note', 'Qty'],
-    report.adjustments.map(l => [esc(l.itemName), esc(l.store), esc(l.actor), esc(l.remarks || '—'), `${nf(l.qty)} ${esc(l.unit)}`]))
+    ['Item', 'Note', 'Store', 'By', 'Qty'],
+    report.adjustments.map(l => [esc(l.itemName), esc(movementDetail(l) || '—'), esc(l.store), esc(l.actor), `${nf(l.qty)} ${esc(l.unit)}`]))
 
   const anything = report.entries.length + report.exits.length + report.transfers.length + report.adjustments.length
   const bodyInner = anything === 0

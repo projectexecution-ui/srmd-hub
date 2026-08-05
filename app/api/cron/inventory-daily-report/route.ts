@@ -13,7 +13,8 @@ import { createClient as createServiceClient, type SupabaseClient } from '@supab
 import { createClient } from '@/lib/supabase/server'
 import { getMyPermissions, can } from '@/lib/auth'
 import { istDateStr, istShiftDate, istDayRange } from '@/lib/inventory/day-window'
-import { bucketMovements, renderDailyEmailHtml, type RawMovement } from '@/lib/inventory/daily-movement'
+import { bucketMovements, renderDailyEmailHtml } from '@/lib/inventory/daily-movement'
+import { fetchDayRawMovements } from '@/lib/inventory/fetch-movements'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -22,47 +23,14 @@ export const maxDuration = 60
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Client = SupabaseClient<any, any, any>
 
-const one = <T,>(v: T | T[] | null): T | null => (Array.isArray(v) ? (v[0] ?? null) : v)
-
 function baseUrl(): string {
   return `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL || 'ct-hub.vercel.app'}`
 }
 
 async function buildYesterday(supabase: Client) {
   const date = istShiftDate(istDateStr(), -1)
-  const { startUtc, endUtc, label } = istDayRange(date)
-
-  const { data: moves } = await supabase
-    .from('inv_stock_movements')
-    .select('movement_type, qty, remarks, created_at, item_id, warehouse_id, actor_id, inv_items(code, name, unit), inv_warehouses(code, name)')
-    .gte('created_at', startUtc).lt('created_at', endUtc)
-    .order('created_at')
-
-  const actorIds = [...new Set((moves ?? []).map(m => m.actor_id as string | null).filter(Boolean) as string[])]
-  const { data: actors } = actorIds.length
-    ? await supabase.from('profiles').select('id, full_name, name').in('id', actorIds)
-    : { data: [] as Array<{ id: string; full_name: string | null; name: string | null }> }
-  const nameById = new Map((actors ?? []).map(a => [a.id as string, (a.full_name ?? a.name ?? 'Someone') as string]))
-
-  const rows: RawMovement[] = (moves ?? []).map(m => {
-    const it = one(m.inv_items as never) as { code?: string; name?: string; unit?: string } | null
-    const wh = one(m.inv_warehouses as never) as { code?: string; name?: string } | null
-    return {
-      movement_type: m.movement_type as string,
-      qty: Number(m.qty || 0),
-      remarks: (m.remarks as string) ?? null,
-      created_at: m.created_at as string,
-      item_id: m.item_id as string,
-      warehouse_id: m.warehouse_id as string,
-      item_code: it?.code ?? '',
-      item_name: it?.name ?? 'Item',
-      unit: it?.unit ?? '',
-      store_code: wh?.code ?? '',
-      store_name: wh?.name ?? '',
-      actor_name: (m.actor_id ? nameById.get(m.actor_id as string) : null) ?? 'Someone',
-    }
-  })
-
+  const { label } = istDayRange(date)
+  const { rows } = await fetchDayRawMovements(supabase, date)
   const report = bucketMovements(rows)
   const html = renderDailyEmailHtml(report, label)
   const moved = report.entries.length + report.exits.length + report.transfers.length + report.adjustments.length

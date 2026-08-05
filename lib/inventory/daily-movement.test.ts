@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { bucketMovements, type RawMovement } from './daily-movement'
+import { bucketMovements, movementDetail, type RawMovement } from './daily-movement'
 
 const base = {
   remarks: null, item_id: 'i1', warehouse_id: 'w1',
@@ -34,6 +34,25 @@ describe('bucketMovements', () => {
     // A paired transfer must NOT also land in entries/exits.
     expect(r.kpi.entries).toBe(0)
     expect(r.kpi.exits).toBe(0)
+  })
+
+  it('carries request context into exit lines and renders movementDetail', () => {
+    const r = bucketMovements([
+      mv({ movement_type: 'issue', qty: 5, project: 'AB — Admin Block', purpose: 'Xyz', requested_by: 'Ravi', reference: 'REQ-1', is_emergency: true }),
+    ])
+    const line = r.exits[0]
+    expect(line.project).toBe('AB — Admin Block')
+    expect(line.isEmergency).toBe(true)
+    const d = movementDetail(line)
+    expect(d).toContain('AB — Admin Block')
+    expect(d).toContain('Xyz')
+    expect(d).toContain('req by Ravi')
+    expect(d).toContain('REQ-1')
+  })
+
+  it('movementDetail falls back to the remark when there is no request context', () => {
+    const r = bucketMovements([mv({ movement_type: 'receipt', qty: 10, remarks: 'From ABC Traders' })])
+    expect(movementDetail(r.entries[0])).toBe('From ABC Traders')
   })
 
   it('keeps adjustments separate and counts items/stores touched', () => {
