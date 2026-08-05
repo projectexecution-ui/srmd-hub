@@ -1,5 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
-import { requirePermission } from '@/lib/auth'
+import { requirePermission, can } from '@/lib/auth'
 import { PageHeader } from '@/components/PageHeader'
 import { Card } from '@/components/ui/card'
 import { QueryError } from '@/components/ui/query-error'
@@ -10,7 +10,8 @@ export const dynamic = 'force-dynamic'
 export default async function StockPage({
   searchParams,
 }: { searchParams: Promise<{ warehouse?: string }> }) {
-  await requirePermission('inventory', 'view')
+  const perms = await requirePermission('inventory', 'view')
+  const canEdit = can(perms, 'inventory', 'edit')
   const sp = await searchParams
   const supabase = await createClient()
 
@@ -32,7 +33,7 @@ export default async function StockPage({
       <Card className="p-5">
         {stockRes.error
           ? <QueryError what="stock" message={stockRes.error.message} />
-          : <StockTable warehouses={warehouses} selectedWarehouse={selectedWarehouse} rows={rows} />}
+          : <StockTable warehouses={warehouses} selectedWarehouse={selectedWarehouse} rows={rows} canEdit={canEdit} />}
       </Card>
     </div>
   )

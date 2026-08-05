@@ -2,9 +2,10 @@
 import { useMemo, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Image from 'next/image'
+import { createClient } from '@/lib/supabase/client'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
-import { ImageOff, AlertTriangle } from 'lucide-react'
+import { ImageOff, AlertTriangle, Loader2, Check } from 'lucide-react'
 
 interface Warehouse { id: string; code: string; name: string }
 interface StockRow {
@@ -24,10 +25,11 @@ interface StockRow {
   is_low_stock: boolean
 }
 
-export function StockTable({ warehouses, selectedWarehouse, rows }: {
+export function StockTable({ warehouses, selectedWarehouse, rows, canEdit = false }: {
   warehouses: Warehouse[]
   selectedWarehouse: string | null
   rows: StockRow[]
+  canEdit?: boolean
 }) {
   const router = useRouter()
   const sp = useSearchParams()
@@ -80,6 +82,7 @@ export function StockTable({ warehouses, selectedWarehouse, rows }: {
                 <th className="px-2 py-2 text-right">Reserved</th>
                 <th className="px-2 py-2 text-right">Damaged</th>
                 <th className="px-2 py-2 text-right">Available</th>
+                <th className="px-2 py-2 text-right">Reorder at</th>
                 <th className="px-2 py-2"></th>
               </tr>
             </thead>
@@ -106,6 +109,7 @@ export function StockTable({ warehouses, selectedWarehouse, rows }: {
                   <td className="px-2 py-2 text-right tabular-nums text-amber-700">{Number(r.reserved_qty).toLocaleString('en-IN')}</td>
                   <td className="px-2 py-2 text-right tabular-nums text-rose-700">{Number(r.damaged_qty).toLocaleString('en-IN')}</td>
                   <td className="px-2 py-2 text-right tabular-nums font-semibold text-gray-900">{Number(r.available_qty).toLocaleString('en-IN')}</td>
+                  <td className="px-2 py-2 text-right"><ReorderCell row={r} canEdit={canEdit} /></td>
                   <td className="px-2 py-2">
                     {r.is_low_stock && (
                       <Badge className="bg-rose-100 text-rose-800 inline-flex items-center gap-1 text-[10px]">
@@ -119,6 +123,46 @@ export function StockTable({ warehouses, selectedWarehouse, rows }: {
           </table>
         </div>
       )}
+    </div>
+  )
+}
+
+// Inline reorder-level editor. Editors set the "reorder at" number per item per
+// store; when available drops to/below it the row is flagged low + the daily
+// digest nudges the keeper.
+function ReorderCell({ row, canEdit }: { row: StockRow; canEdit: boolean }) {
+  const [val, setVal] = useState(row.min_threshold != null ? String(row.min_threshold) : '')
+  const [saving, setSaving] = useState(false)
+  const [saved, setSaved] = useState(false)
+
+  async function save() {
+    const n = Number(val)
+    if (!Number.isFinite(n) || n < 0) return
+    if (n === (row.min_threshold ?? 0)) return
+    setSaving(true); setSaved(false)
+    const supabase = createClient()
+    const { error } = await supabase.rpc('inv_rpc_set_reorder', {
+      p_warehouse_id: row.warehouse_id, p_item_id: row.item_id, p_min: n,
+    })
+    setSaving(false)
+    if (!error) { setSaved(true); setTimeout(() => setSaved(false), 1500) }
+  }
+
+  if (!canEdit) {
+    return <span className="tabular-nums text-gray-400">{row.min_threshold != null ? Number(row.min_threshold).toLocaleString('en-IN') : '—'}</span>
+  }
+  return (
+    <div className="flex items-center gap-1 justify-end">
+      <input
+        type="number" min={0} value={val}
+        onChange={e => setVal(e.target.value)}
+        onBlur={save}
+        onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }}
+        className="w-16 h-8 rounded border border-gray-200 px-1.5 text-right text-sm tabular-nums"
+        placeholder="—"
+      />
+      {saving && <Loader2 className="h-3 w-3 animate-spin text-gray-400" />}
+      {saved && <Check className="h-3 w-3 text-green-600" />}
     </div>
   )
 }

@@ -42,6 +42,7 @@ export default async function InventoryLandingPage() {
     myAwaitingReceiptCount,
     myRejectedCount,
     myOutstandingReturnsCount,
+    lowStockCount,
   ] = await Promise.all([
     // Atm Head queue (only when the dial actually routes through approval)
     (approvalsActive && (role === 'head' || role === 'hop' || canAdmin))
@@ -87,6 +88,8 @@ export default async function InventoryLandingPage() {
             }).length
           })
       : Promise.resolve(0),
+    // Low-stock items across all stores — badges the Stock tile.
+    supabase.from('inv_stock_available').select('id', { count: 'exact', head: true }).eq('is_low_stock', true).then(r => r.count ?? 0),
   ])
 
   // ─── Section tiles — show what's enabled + relevant; badge with
@@ -99,7 +102,8 @@ export default async function InventoryLandingPage() {
     badgeStyle?: BadgeStyle
   }
   const main: Section[] = ([
-    { slug: 'inv-stock',            href: '/inventory/stock',            title: 'Stock',          subtitle: 'Live warehouse levels', icon: Boxes,         show: true },
+    { slug: 'inv-stock',            href: '/inventory/stock',            title: 'Stock',          subtitle: 'Live warehouse levels', icon: Boxes,         show: true,
+      badge: lowStockCount, badgeStyle: 'rose' as BadgeStyle },
     { slug: 'inv-request-new',      href: '/inventory/requests/new',     title: 'Raise request',  subtitle: 'New material need',  icon: ClipboardList, show: role === 'engineer' || canEdit || canAdmin },
     { slug: 'inv-requests',         href: '/inventory/requests',         title: 'My requests',    subtitle: 'Everything I raised', icon: FileText,     show: true,
       badge: myAwaitingReceiptCount + myRejectedCount, badgeStyle: (myRejectedCount > 0 ? 'rose' : 'emerald') as BadgeStyle },

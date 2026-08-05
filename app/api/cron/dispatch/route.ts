@@ -33,6 +33,7 @@ function morningJobs(): string[] {
     '/api/cron/engineer-digest?cron=1',
     '/api/cron/email-retry?cron=1',        // re-dispatch stuck/failed emails + dead-letter + alert
     '/api/cron/daily-site-report?cron=1',
+    '/api/cron/inventory-low-stock?cron=1', // nudge storekeepers about low stock
     '/api/cron/bills-pipeline?cron=1',
     '/api/cron/bills-digest?cron=1',       // per-project bills cards → each Atm Head (uses the snapshot above)
     '/api/cron/bph-sync?cron=1',
