@@ -15,7 +15,7 @@ import { createClient as createServiceClient, type SupabaseClient } from '@supab
 import { createClient } from '@/lib/supabase/server'
 import { getMyPermissions, can } from '@/lib/auth'
 import { parseBillsDigestConfig, type BillsDigestConfig } from '@/lib/bills-pipeline/digest-settings'
-import { renderProjectStuckCard, type DigestBill } from '@/lib/bills-pipeline/project-card'
+import { renderProjectPushCard, type DigestBill } from '@/lib/bills-pipeline/project-card'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -26,7 +26,7 @@ type Client = SupabaseClient<any, any, any>
 
 interface StuckBill {
   prefix: string; vendor: string; status: string; project: string
-  delayDays: number; invoiceNo?: string | null
+  delayDays: number; invoiceNo?: string | null; amount?: number | null; tasklist?: string | null
 }
 
 function baseUrl(): string {
@@ -34,7 +34,8 @@ function baseUrl(): string {
   return `https://${prod || 'ct-hub.vercel.app'}`
 }
 const toDigestBill = (b: StuckBill): DigestBill => ({
-  prefix: b.prefix, vendor: b.vendor, status: b.status, delayDays: b.delayDays, invoiceNo: b.invoiceNo,
+  prefix: b.prefix, vendor: b.vendor, status: b.status, project: b.project,
+  delayDays: b.delayDays, invoiceNo: b.invoiceNo, amount: b.amount, tasklist: b.tasklist,
 })
 
 async function readConfig(supabase: Client): Promise<BillsDigestConfig> {
@@ -42,14 +43,19 @@ async function readConfig(supabase: Client): Promise<BillsDigestConfig> {
   return parseBillsDigestConfig((data ?? []) as Array<{ key: string; value: string }>)
 }
 
-async function readStuck(supabase: Client): Promise<{ byProject: Map<string, StuckBill[]>; asOf: string }> {
+async function readStuck(supabase: Client): Promise<{ byProject: Map<string, StuckBill[]>; asOf: string; generatedAt: string }> {
   const { data } = await supabase.from('app_settings').select('key, value')
     .in('key', ['bills_pipeline_stuck', 'bills_pipeline_last'])
   const rows = new Map((data ?? []).map(r => [r.key as string, r.value as string]))
   let stuck: StuckBill[] = []
   try { stuck = JSON.parse(rows.get('bills_pipeline_stuck') ?? '[]') } catch { /* ignore */ }
   let asOf = ''
-  try { asOf = JSON.parse(rows.get('bills_pipeline_last') ?? '{}').asOf ?? '' } catch { /* ignore */ }
+  let generatedAt = new Date().toISOString()
+  try {
+    const meta = JSON.parse(rows.get('bills_pipeline_last') ?? '{}')
+    asOf = meta.asOf ?? ''
+    if (meta.generatedAt) generatedAt = meta.generatedAt
+  } catch { /* ignore */ }
   const byProject = new Map<string, StuckBill[]>()
   for (const b of stuck) {
     if (!b?.project) continue
@@ -57,16 +63,16 @@ async function readStuck(supabase: Client): Promise<{ byProject: Map<string, Stu
     arr.push(b)
     byProject.set(b.project, arr)
   }
-  return { byProject, asOf }
+  return { byProject, asOf, generatedAt }
 }
 
 /** Render each needed project card ONCE → base64, reused across recipients. */
-async function renderCards(codes: string[], byProject: Map<string, StuckBill[]>, asOf: string): Promise<Map<string, string>> {
+async function renderCards(codes: string[], byProject: Map<string, StuckBill[]>, asOf: string, generatedAt: string): Promise<Map<string, string>> {
   const out = new Map<string, string>()
   for (const code of codes) {
     const bills = byProject.get(code) ?? []
     if (bills.length === 0) continue  // nothing stuck → no card
-    const buf = await renderProjectStuckCard(code, bills.map(toDigestBill), asOf || '—')
+    const buf = await renderProjectPushCard(code, bills.map(toDigestBill), asOf || new Date().toISOString().slice(0, 10), generatedAt)
     out.set(code, buf.toString('base64'))
   }
   return out
@@ -108,7 +114,7 @@ async function sendDigest(to: string, subject: string, codes: string[], cards: M
 }
 
 async function runAll(supabase: Client, cfg: BillsDigestConfig) {
-  const { byProject, asOf } = await readStuck(supabase)
+  const { byProject, asOf, generatedAt } = await readStuck(supabase)
   const headIds = Object.keys(cfg.assignments)
   const allCodes = [...new Set(Object.values(cfg.assignments).flat())]
   const ids = [...new Set([...headIds, ...cfg.cc])]
@@ -121,7 +127,7 @@ async function runAll(supabase: Client, cfg: BillsDigestConfig) {
       nameById.set(p.id as string, (p.full_name as string) || (p.email as string) || 'user')
     }
   }
-  const cards = await renderCards(allCodes, byProject, asOf)
+  const cards = await renderCards(allCodes, byProject, asOf, generatedAt)
 
   const sentTo: string[] = []
   const skipped: string[] = []
@@ -184,10 +190,10 @@ export async function POST(req: Request) {
   const { data: prof } = await supabase.from('profiles').select('email').eq('id', user.id).maybeSingle()
   const email = (prof?.email as string) || ''
   if (!email) return NextResponse.json({ ok: false, reason: 'Your profile has no email.' })
-  const { byProject, asOf } = await readStuck(supabase)
+  const { byProject, asOf, generatedAt } = await readStuck(supabase)
   const codes = [...new Set(Object.values(cfg.assignments).flat())]
   const useCodes = codes.length ? codes : [...byProject.keys()]
-  const cards = await renderCards(useCodes, byProject, asOf)
+  const cards = await renderCards(useCodes, byProject, asOf, generatedAt)
   const err = await sendDigest(email, 'Daily bills status — test', useCodes, cards, asOf)
   if (err === 'empty') return NextResponse.json({ ok: true, sent: 0, reason: 'No bills stuck with CT right now — nothing to send.' })
   if (err) return NextResponse.json({ ok: false, error: err }, { status: 500 })
