@@ -13,6 +13,7 @@
 
 import { z } from 'zod'
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { createClient as createServiceClient } from '@supabase/supabase-js'
 import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
 import { requirePermission, getMyUser, getMyPermissions, can } from '@/lib/auth'
@@ -23,6 +24,26 @@ import { requirePermission, getMyUser, getMyPermissions, can } from '@/lib/auth'
 // queries below stay type-checked.
 type CcClient = Awaited<ReturnType<typeof createClient>>
 interface ServiceOpts { client?: SupabaseClient; actorId?: string | null }
+
+// The client that PERFORMS the writes (cc_budget_lines / cc_budget_events).
+//   - cron / on-upload auto-pull → opts.client is the service-role client already.
+//   - interactive map-commit / "Sync now" → opts.client is absent, so the caller
+//     is the signed-in user. Coordinators & uploaders (Parimal) legitimately run
+//     the BPH map, but do NOT satisfy the cc_budget_lines row-security policy, so
+//     writing as them fails "new row violates RLS". After the cost-control-edit
+//     permission gate in each caller, elevate to the service role for the writes —
+//     the saved mapping + that gate ARE the authorization. Falls back to the
+//     session client if the service key is ever unset (then RLS still applies).
+async function bphWriteClient(opts?: ServiceOpts): Promise<CcClient> {
+  if (opts?.client) return opts.client as CcClient
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY
+  if (key) {
+    return createServiceClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, key, {
+      auth: { persistSession: false },
+    }) as unknown as CcClient
+  }
+  return (await createClient()) as CcClient
+}
 import { generateJSON, hasAiProvider } from '@/lib/ai'
 import { formatINR } from '@/lib/utils'
 
@@ -377,7 +398,9 @@ export async function commitBphImport(
   const parsed = commitSchema.safeParse(input)
   if (!parsed.success) return { ok: false, error: 'Invalid input' }
 
-  const supabase = (opts?.client ?? await createClient()) as CcClient
+  // Write elevated on the interactive path (see bphWriteClient) so a Coordinator
+  // running the map isn't blocked by cc_budget_lines row-security.
+  const supabase = await bphWriteClient(opts)
 
   let toImport: CommitRow[]
   // Money-carrying rows we couldn't place. Only known when WE run the match
@@ -453,7 +476,7 @@ export async function commitBphImport(
     // useAi:false so it only ever writes exact/normalised code matches.
     const preview = await previewBphImport(
       { bph_project_id: parsed.data.bph_project_id, cc_project_id: parsed.data.cc_project_id },
-      { useAi: opts?.useAi ?? true, client: opts?.client },
+      { useAi: opts?.useAi ?? true, client: opts?.client ?? supabase },
     )
     if (!preview.ok) return preview
     toImport = preview.rows
