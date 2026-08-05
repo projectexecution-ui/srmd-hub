@@ -13,7 +13,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import nodemailer, { type Transporter } from 'nodemailer'
 import { createClient as createServiceClient } from '@supabase/supabase-js'
-import { renderNotificationEmail, kindFromType, type NotificationKind } from '@/lib/notifications/email-templates'
+import { renderNotificationEmail, kindFromType } from '@/lib/notifications/email-templates'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -59,6 +59,11 @@ export async function POST(req: NextRequest) {
     data?: Record<string, unknown> | null
     // The notification_deliveries row this send is for — we write the outcome back.
     deliveryId?: string | null
+    // Pre-rendered HTML (used verbatim instead of the notification template) +
+    // inline image attachments (cid) — used by the Bills digest, which embeds
+    // one card image per project. Both optional; absent → unchanged behaviour.
+    html?: string | null
+    attachments?: Array<{ filename?: string; cid?: string; contentBase64?: string; contentType?: string }> | null
   } | null = null
   try { payload = await req.json() } catch { return NextResponse.json({ error: 'bad-json' }, { status: 400 }) }
   const deliveryId = payload?.deliveryId ? String(payload.deliveryId) : ''
@@ -78,8 +83,21 @@ export async function POST(req: NextRequest) {
   const link = rawUrl ? (rawUrl.startsWith('http') ? rawUrl : `${origin}${rawUrl}`) : origin
   const fromName = process.env.GMAIL_FROM_NAME || 'CT HUB'
 
-  const kind: NotificationKind = kindFromType(payload?.type)
-  const html = renderNotificationEmail({ kind, subject, text, link, data: payload?.data ?? null })
+  // Use caller-supplied HTML verbatim when provided (Bills digest), else render
+  // the standard notification template.
+  const html = payload?.html && payload.html.trim()
+    ? payload.html
+    : renderNotificationEmail({ kind: kindFromType(payload?.type), subject, text, link, data: payload?.data ?? null })
+
+  // Inline image attachments (cid) — decode base64 to Buffers for nodemailer.
+  const attachments = (payload?.attachments ?? [])
+    .filter(a => a && a.contentBase64)
+    .map(a => ({
+      filename: a.filename || 'image.png',
+      content: Buffer.from(String(a.contentBase64), 'base64'),
+      cid: a.cid || undefined,
+      contentType: a.contentType || 'image/png',
+    }))
 
   try {
     await tx.sendMail({
@@ -88,6 +106,7 @@ export async function POST(req: NextRequest) {
       subject,
       text: text + (rawUrl ? `\n\nOpen CT HUB: ${link}` : ''),
       html,
+      ...(attachments.length ? { attachments } : {}),
     })
     await markDelivery(deliveryId, 'sent')
     return NextResponse.json({ ok: true })

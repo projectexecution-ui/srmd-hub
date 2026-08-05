@@ -2,7 +2,7 @@ import { createClient as createServiceClient } from '@supabase/supabase-js'
 import { requirePermission, can, getMyProfile, getMyUser } from '@/lib/auth'
 import { PageHeader } from '@/components/PageHeader'
 import { Button } from '@/components/ui/button'
-import { Link2, AlertTriangle } from 'lucide-react'
+import { Link2, AlertTriangle, Mail } from 'lucide-react'
 import RefreshButton from './refresh-button'
 import ZohoToast from './zoho-toast'
 import ReportTabs, { type ReportTab } from './report-tabs'
@@ -130,6 +130,12 @@ export default async function BillsPipelinePage({ searchParams }: Props) {
         subtitle="Weekly SRA contractor bills — management reports"
       >
         <div className="flex items-center gap-2">
+          {isAdmin && (
+            <a href="/bills-pipeline/digest-settings"
+              className="inline-flex items-center gap-1 text-xs font-medium text-rose-700 hover:text-rose-900 hover:underline">
+              <Mail className="h-3.5 w-3.5" /> Daily email
+            </a>
+          )}
           {canAdmin && <ProjectSettings />}
           {canEdit && <RefreshButton />}
         </div>
