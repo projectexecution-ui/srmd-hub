@@ -6,7 +6,7 @@ import { PageHeader } from '@/components/PageHeader'
 import { Card } from '@/components/ui/card'
 import {
   Boxes, ClipboardList, Truck, FileText, Undo2,
-  Building2, Tag, PackagePlus, ShieldCheck, SlidersHorizontal, Store, Wrench,
+  Building2, Tag, PackagePlus, ShieldCheck, SlidersHorizontal, Store, Wrench, Users,
 } from 'lucide-react'
 import type { Role } from '@/lib/types'
 
@@ -120,6 +120,7 @@ export default async function InventoryLandingPage() {
   const adminSections: Section[] = [
     { slug: 'inv-admin-warehouses', href: '/inventory/admin/warehouses', title: 'Warehouses',    icon: Building2,         show: canAdmin },
     { slug: 'inv-admin-projects',   href: '/inventory/admin/projects',   title: 'Project stores', icon: Store,            show: canAdmin },
+    { slug: 'inv-admin-engineers',  href: '/inventory/admin/engineers',  title: 'Engineer projects', icon: Users,         show: canAdmin },
     { slug: 'inv-admin-items',      href: '/inventory/admin/items',      title: 'Item master',   icon: Tag,               show: canAdmin },
     { slug: 'inv-admin-settings',   href: '/inventory/admin/settings',   title: 'Settings',      icon: SlidersHorizontal, show: canAdmin },
   ].filter(s => s.show)
@@ -177,6 +178,7 @@ export default async function InventoryLandingPage() {
                       {s.slug === 'inv-admin-items'      ? 'Add / edit materials catalogue' :
                        s.slug === 'inv-admin-warehouses' ? 'Add / edit physical stores' :
                        s.slug === 'inv-admin-projects'   ? "Each project's store + Atm Head" :
+                       s.slug === 'inv-admin-engineers'  ? 'Assign engineers to sites' :
                        s.slug === 'inv-admin-settings'   ? 'Approval flow & options' : ''}
                     </p>
                   </div>

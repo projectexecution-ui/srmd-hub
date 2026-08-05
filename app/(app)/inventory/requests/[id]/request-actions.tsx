@@ -50,7 +50,9 @@ export function RequestActions({
 
   // Editable issued qtys + returnable flags
   const [issuedQty, setIssuedQty] = useState<Record<string, string>>(
-    Object.fromEntries(lines.map(l => [l.id, String(l.approved_qty ?? 0)])),
+    // Default to what's still to hand over (approved − already issued), so
+    // partial issues in rounds are natural.
+    Object.fromEntries(lines.map(l => [l.id, String(Math.max((l.approved_qty ?? 0) - l.issued_qty, 0))])),
   )
   const [returnable, setReturnable] = useState<Record<string, boolean>>(
     Object.fromEntries(lines.map(l => [l.id, !!l.is_returnable])),
@@ -179,13 +181,20 @@ export function RequestActions({
       <Card>
         <CardHeader><CardTitle className="text-base">Store issue</CardTitle></CardHeader>
         <CardContent className="space-y-3">
-          <p className="text-xs text-gray-500">Enter the actual qty being handed over (cannot exceed approved). Issuing deducts stock and releases the reservation.</p>
+          <p className="text-xs text-gray-500">Enter the qty being handed over now (cannot exceed approved). You can issue in parts — if you hand over less than approved, the request stays open for the rest.</p>
           <div className="space-y-1">
-            {lines.map(l => (
+            {lines.map(l => {
+              const remaining = Math.max((l.approved_qty ?? 0) - l.issued_qty, 0)
+              return (
               <div key={l.id} className="grid grid-cols-1 md:grid-cols-12 gap-2 md:items-center text-sm border-b border-gray-100 md:border-0 pb-2 md:pb-0 last:border-0">
                 <div className="md:col-span-7 min-w-0">
                   <div className="text-gray-800 truncate">{l.item_label}</div>
-                  <div className="text-xs text-gray-500">approved {l.approved_qty ?? 0} {l.unit}{l.is_returnable && <span className="ml-2 text-amber-700 font-semibold">· returnable</span>}</div>
+                  <div className="text-xs text-gray-500">
+                    approved {l.approved_qty ?? 0} {l.unit}
+                    {l.issued_qty > 0 && <span> · already issued {l.issued_qty}</span>}
+                    {remaining > 0 && <span className="text-blue-700"> · to hand over {remaining}</span>}
+                    {l.is_returnable && <span className="ml-2 text-amber-700 font-semibold">· returnable</span>}
+                  </div>
                 </div>
                 <div className="md:col-span-4 flex items-center gap-2">
                   <div className="flex-1"><QtyInput
@@ -195,13 +204,14 @@ export function RequestActions({
                 </div>
                 <span className="hidden md:inline md:col-span-1 text-xs text-gray-500">{l.unit}</span>
               </div>
-            ))}
+              )
+            })}
           </div>
           <Textarea value={remarks} onChange={e => setRemarks(e.target.value)} rows={2} placeholder="Remarks (optional)" />
           <Button onClick={async () => {
             const items = lines.map(l => ({ request_item_id: l.id, issued_qty: Number(issuedQty[l.id]) }))
             if (items.some(i => !Number.isFinite(i.issued_qty) || i.issued_qty < 0)) { setErr('Enter a valid issued qty for every line'); return }
-            await rpc('inv_rpc_store_issue', { p_request_id: requestId, p_issued_items: items, p_remarks: remarks.trim() || null }, 'Issued. Engineer will be asked to confirm receipt.', '/inventory/inbox/store')
+            await rpc('inv_rpc_store_issue', { p_request_id: requestId, p_issued_items: items, p_remarks: remarks.trim() || null }, 'Handed over. Any shortfall stays open for the rest.', '/inventory/inbox/store')
           }} disabled={busy} className="bg-blue-600 hover:bg-blue-700">
             <Truck className="h-4 w-4" /> Issue
           </Button>
