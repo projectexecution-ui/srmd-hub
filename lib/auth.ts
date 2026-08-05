@@ -110,12 +110,12 @@ export async function requirePortalOwner(redirectTo = '/dashboard') {
   if (!(await isPortalOwner())) redirect(redirectTo)
 }
 
-/** Page guard for inventory sub-sections. Slug is one of the values in
- *  INVENTORY_SECTIONS. Portal Owner bypasses the check (so they can
- *  always manage). Everyone else gets redirected when the section has
- *  been turned off via /admin/dashboard-modules. */
-export async function requireInventorySection(slug: string, redirectTo = '/inventory') {
-  if (await isPortalOwner()) return
-  const disabled = await getDisabledModuleSlugs()
-  if (disabled.has(slug)) redirect(redirectTo)
+/** @deprecated Inventory sub-sections are now shown purely by ROLE (see the
+ *  Inventory landing) — there is no separate per-section on/off switch, because
+ *  it was redundant with roles and, when toggled off, hid the whole module from
+ *  the people who needed it. Retained as a no-op so existing call sites keep
+ *  compiling; the calls are removed as the inventory screens are leaned.
+ *  Access is still enforced by requirePermission('inventory', …) on every page. */
+export async function requireInventorySection(_slug: string, _redirectTo = '/inventory') {
+  return
 }

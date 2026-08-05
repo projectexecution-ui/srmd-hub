@@ -2,7 +2,7 @@ import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { isPortalOwner, getMyProfile } from '@/lib/auth'
 import { PageHeader } from '@/components/PageHeader'
-import { MODULES, INVENTORY_SECTIONS } from '@/lib/modules'
+import { MODULES } from '@/lib/modules'
 import { getModuleLabels, labelFor, descriptionFor } from '@/lib/module-labels'
 import DashboardModulesEditor from './DashboardModulesEditor'
 
@@ -30,12 +30,6 @@ export default async function DashboardModulesPage() {
     description: descriptionFor(labels, m.slug),
     enabled: enabledFor(m.slug),
   }))
-  const inventorySections = INVENTORY_SECTIONS.map(s => ({
-    slug: s.slug,
-    label: labelFor(labels, s.slug) || s.label,
-    description: descriptionFor(labels, s.slug) || s.description,
-    enabled: enabledFor(s.slug),
-  }))
 
   // Portal Owner is gated by the redirect above; admin also gets to rename
   // (server-side RPC also enforces this — defence in depth).
@@ -51,8 +45,7 @@ export default async function DashboardModulesPage() {
       <DashboardModulesEditor
         canRename={canRename}
         groups={[
-          { title: 'Modules',            rows: modules },
-          { title: 'Inventory sections', rows: inventorySections },
+          { title: 'Modules', rows: modules },
         ]}
       />
     </div>

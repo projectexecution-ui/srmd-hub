@@ -1,6 +1,6 @@
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/server'
-import { requirePermission, can, getMyProfile, getMyUser, getDisabledModuleSlugs } from '@/lib/auth'
+import { requirePermission, can, getMyProfile, getMyUser } from '@/lib/auth'
 import { PageHeader } from '@/components/PageHeader'
 import { Card } from '@/components/ui/card'
 import {
@@ -21,11 +21,10 @@ const REJECTED            = ['REJECTED_BACKOFFICE', 'REJECTED_HOP']
 
 export default async function InventoryLandingPage() {
   const perms = await requirePermission('inventory', 'view')
-  const [profile, user, disabledSlugs] = await Promise.all([getMyProfile(), getMyUser(), getDisabledModuleSlugs()])
+  const [profile, user] = await Promise.all([getMyProfile(), getMyUser()])
   const role: Role | null = profile?.role ?? null
   const canEdit  = can(perms, 'inventory', 'edit')
   const canAdmin = can(perms, 'inventory', 'admin')
-  const isEnabled = (slug: string) => !disabledSlugs.has(slug)
 
   // ─── Live counts for every tile so the user knows what's queued
   //     where without opening each inbox. Each `count` is null when
@@ -114,13 +113,13 @@ export default async function InventoryLandingPage() {
     { slug: 'inv-receipt',          href: '/inventory/receipt',          title: 'Stock receipt',  subtitle: 'Record vendor delivery', icon: PackagePlus,   show: role === 'store_manager' || canAdmin },
     { slug: 'inv-returns',          href: '/inventory/returns/new',      title: 'Returns',        subtitle: 'Log returnable items', icon: Undo2,         show: canEdit || canAdmin,
       badge: myOutstandingReturnsCount, badgeStyle: 'amber' as BadgeStyle },
-  ] as Section[]).filter(s => s.show && isEnabled(s.slug))
+  ] as Section[]).filter(s => s.show)
 
   const adminSections: Section[] = [
     { slug: 'inv-admin-warehouses', href: '/inventory/admin/warehouses', title: 'Warehouses',  icon: Building2,         show: canAdmin },
     { slug: 'inv-admin-items',      href: '/inventory/admin/items',      title: 'Item master', icon: Tag,               show: canAdmin },
     { slug: 'inv-admin-settings',   href: '/inventory/admin/settings',   title: 'Settings',    icon: SlidersHorizontal, show: canAdmin },
-  ].filter(s => s.show && isEnabled(s.slug))
+  ].filter(s => s.show)
 
   // Top callout — the SINGLE most urgent thing waiting on this user.
   const calloutQueue: { count: number; href: string; label: string } | null = (() => {
