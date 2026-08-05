@@ -1,5 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
-import { requirePermission, requireInventorySection, getMyUser, getMyProfile } from '@/lib/auth'
+import { requirePermission, getMyUser, getMyProfile } from '@/lib/auth'
 import { PageHeader } from '@/components/PageHeader'
 import { Card } from '@/components/ui/card'
 import { RequestList } from '@/components/inventory/RequestList'
@@ -8,7 +8,6 @@ export const dynamic = 'force-dynamic'
 
 export default async function NewReturnPage() {
   await requirePermission('inventory', 'edit', '/inventory')
-  await requireInventorySection('inv-returns')
   const [user, profile] = await Promise.all([getMyUser(), getMyProfile()])
   const supabase = await createClient()
 
@@ -24,7 +23,7 @@ export default async function NewReturnPage() {
     .limit(100)
   if (!seeAll && user?.id) query = query.eq('engineer_id', user.id)
 
-  const { data } = await query
+  const { data, error } = await query
 
   return (
     <div className="p-4 md:p-6 max-w-5xl mx-auto space-y-4">
@@ -36,7 +35,7 @@ export default async function NewReturnPage() {
       <Card className="p-4 bg-blue-50 border-blue-200 text-sm text-blue-900">
         Open any of the issued requests below and use the <b>Log a return</b> panel at the bottom of the page.
       </Card>
-      <RequestList rows={data ?? []} emptyText="No issued requests yet." />
+      <RequestList rows={data ?? []} error={error?.message} emptyText="No issued requests yet." />
     </div>
   )
 }

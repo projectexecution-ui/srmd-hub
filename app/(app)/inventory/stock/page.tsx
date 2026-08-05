@@ -1,7 +1,8 @@
 import { createClient } from '@/lib/supabase/server'
-import { requirePermission, requireInventorySection } from '@/lib/auth'
+import { requirePermission } from '@/lib/auth'
 import { PageHeader } from '@/components/PageHeader'
 import { Card } from '@/components/ui/card'
+import { QueryError } from '@/components/ui/query-error'
 import { StockTable } from './stock-table'
 
 export const dynamic = 'force-dynamic'
@@ -10,7 +11,6 @@ export default async function StockPage({
   searchParams,
 }: { searchParams: Promise<{ warehouse?: string }> }) {
   await requirePermission('inventory', 'view')
-  await requireInventorySection('inv-stock')
   const sp = await searchParams
   const supabase = await createClient()
 
@@ -30,11 +30,9 @@ export default async function StockPage({
     <div className="p-4 md:p-6 max-w-6xl mx-auto space-y-4">
       <PageHeader title="Stock" back="/inventory" subtitle="Available quantity per item per warehouse" />
       <Card className="p-5">
-        <StockTable
-          warehouses={warehouses}
-          selectedWarehouse={selectedWarehouse}
-          rows={rows}
-        />
+        {stockRes.error
+          ? <QueryError what="stock" message={stockRes.error.message} />
+          : <StockTable warehouses={warehouses} selectedWarehouse={selectedWarehouse} rows={rows} />}
       </Card>
     </div>
   )

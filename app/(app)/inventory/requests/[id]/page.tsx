@@ -5,7 +5,7 @@ import { requirePermission, getMyProfile, getMyUser } from '@/lib/auth'
 import { PageHeader } from '@/components/PageHeader'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { RequestStatusPill } from '@/components/inventory/RequestStatusPill'
-import { formatDate } from '@/lib/utils'
+import { formatDate, formatDateTime } from '@/lib/utils'
 import { RequestActions } from './request-actions'
 import { RefreshCw } from 'lucide-react'
 
@@ -41,6 +41,18 @@ export default async function RequestDetailPage({
     : { data: [] }
   const availByItem = new Map<string, number>(
     (stock ?? []).map(s => [s.item_id, Number(s.available_qty)]),
+  )
+
+  // Names for the history timeline (who did each step).
+  const logActorIds = Array.from(new Set(
+    ((req.inv_request_status_log ?? []) as Array<{ actor_id: string | null }>)
+      .map(l => l.actor_id).filter(Boolean),
+  )) as string[]
+  const { data: actorRows } = logActorIds.length > 0
+    ? await supabase.from('profiles').select('id, full_name, name').in('id', logActorIds)
+    : { data: [] }
+  const actorName = new Map<string, string>(
+    (actorRows ?? []).map(a => [a.id as string, (a.full_name ?? a.name ?? 'Someone') as string]),
   )
 
   const proj = Array.isArray(req.projects) ? req.projects[0] : req.projects
@@ -113,6 +125,7 @@ export default async function RequestDetailPage({
                   <th className="px-2 py-2 text-right">Requested</th>
                   <th className="px-2 py-2 text-right">Approved</th>
                   <th className="px-2 py-2 text-right">Issued</th>
+                  <th className="px-2 py-2 text-right">Returned</th>
                   <th className="px-2 py-2 text-right">Available</th>
                   <th className="px-2 py-2 text-center">Returnable</th>
                 </tr>
@@ -131,6 +144,14 @@ export default async function RequestDetailPage({
                       <td className="px-2 py-2 text-right tabular-nums">{Number(l.requested_qty).toLocaleString('en-IN')} {it?.unit}</td>
                       <td className="px-2 py-2 text-right tabular-nums">{l.approved_qty != null ? Number(l.approved_qty).toLocaleString('en-IN') : '—'}</td>
                       <td className="px-2 py-2 text-right tabular-nums">{Number(l.issued_qty).toLocaleString('en-IN')}</td>
+                      <td className="px-2 py-2 text-right tabular-nums">
+                        {(() => {
+                          const ret = Number(l.returned_good_qty) + Number(l.returned_damaged_qty)
+                          return ret > 0
+                            ? <span className="text-amber-700">{ret.toLocaleString('en-IN')}{Number(l.returned_damaged_qty) > 0 ? ` (${Number(l.returned_damaged_qty).toLocaleString('en-IN')} dmg)` : ''}</span>
+                            : <span className="text-gray-300">—</span>
+                        })()}
+                      </td>
                       <td className="px-2 py-2 text-right tabular-nums text-gray-500">{Number(avail).toLocaleString('en-IN')}</td>
                       <td className="px-2 py-2 text-center">
                         {l.is_returnable
@@ -185,12 +206,13 @@ export default async function RequestDetailPage({
               {(req.inv_request_status_log ?? [])
                 .slice()
                 .sort((a: { action_at: string }, b: { action_at: string }) => new Date(a.action_at).getTime() - new Date(b.action_at).getTime())
-                .map((e: { id: string; from_status: string | null; to_status: string; action_at: string; remarks: string | null }) => (
+                .map((e: { id: string; from_status: string | null; to_status: string; action_at: string; remarks: string | null; actor_id: string | null }) => (
                 <li key={e.id} className="flex items-start gap-2">
-                  <span className="text-gray-400 text-xs mt-0.5 w-28 flex-shrink-0">{formatDate(e.action_at)}</span>
+                  <span className="text-gray-400 text-xs mt-0.5 w-36 flex-shrink-0">{formatDateTime(e.action_at)}</span>
                   <div className="min-w-0">
                     <p className="text-gray-800">
                       {e.from_status ? <span className="text-gray-500">{e.from_status} →</span> : null} <b>{e.to_status}</b>
+                      {e.actor_id && <span className="text-gray-500"> · by {actorName.get(e.actor_id) ?? 'Someone'}</span>}
                     </p>
                     {e.remarks && <p className="text-xs text-gray-600 mt-0.5">{e.remarks}</p>}
                   </div>
