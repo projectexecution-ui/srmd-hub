@@ -14,7 +14,7 @@ import { NextResponse } from 'next/server'
 import { createClient as createServiceClient, type SupabaseClient } from '@supabase/supabase-js'
 import { createClient } from '@/lib/supabase/server'
 import { getMyPermissions, can } from '@/lib/auth'
-import { parseBillsDigestConfig, type BillsDigestConfig } from '@/lib/bills-pipeline/digest-settings'
+import { parseBillsDigestConfig, stageAllowed, type BillsDigestConfig } from '@/lib/bills-pipeline/digest-settings'
 import { renderProjectPushCard, type DigestBill } from '@/lib/bills-pipeline/project-card'
 
 export const runtime = 'nodejs'
@@ -66,24 +66,35 @@ async function readStuck(supabase: Client): Promise<{ byProject: Map<string, Stu
   return { byProject, asOf, generatedAt }
 }
 
-/** Render each needed project card ONCE → base64, reused across recipients. */
-async function renderCards(codes: string[], byProject: Map<string, StuckBill[]>, asOf: string, generatedAt: string): Promise<Map<string, string>> {
-  const out = new Map<string, string>()
-  for (const code of codes) {
-    const bills = byProject.get(code) ?? []
-    if (bills.length === 0) continue  // nothing stuck → no card
-    const buf = await renderProjectPushCard(code, bills.map(toDigestBill), asOf || new Date().toISOString().slice(0, 10), generatedAt)
-    out.set(code, buf.toString('base64'))
-  }
-  return out
+// Snapshot + render context shared across recipients within one run. Cards are
+// cached by (project code + the exact stage set) so heads that share a filter
+// (e.g. everyone on the Site-Head default) reuse the same rendered image.
+interface RenderCtx {
+  byProject: Map<string, StuckBill[]>
+  asOf: string
+  generatedAt: string
+  cache: Map<string, string>   // `${code}|${stageKey}` -> base64 ('' = empty, no card)
+}
+function stageKey(picked: string[] | undefined): string {
+  return picked && picked.length ? [...picked].sort().join('~') : '__siteHead__'
+}
+/** base64 of the card for one project filtered to `picked` stages, or null if empty. */
+async function cardFor(ctx: RenderCtx, code: string, picked: string[] | undefined): Promise<string | null> {
+  const key = `${code}|${stageKey(picked)}`
+  if (ctx.cache.has(key)) { const v = ctx.cache.get(key)!; return v || null }
+  const bills = (ctx.byProject.get(code) ?? []).filter(b => stageAllowed(b.status, picked))
+  if (bills.length === 0) { ctx.cache.set(key, ''); return null }
+  const buf = await renderProjectPushCard(code, bills.map(toDigestBill), ctx.asOf || new Date().toISOString().slice(0, 10), ctx.generatedAt)
+  const b64 = buf.toString('base64')
+  ctx.cache.set(key, b64)
+  return b64
 }
 
-async function sendDigest(to: string, subject: string, codes: string[], cards: Map<string, string>, asOf: string): Promise<string | null> {
+/** Assemble each recipient's own cards (already stage-filtered) into one email. */
+async function sendDigest(to: string, subject: string, cards: Array<{ code: string; b64: string }>, asOf: string): Promise<string | null> {
   const attachments: Array<{ filename: string; cid: string; contentBase64: string }> = []
   const blocks: string[] = []
-  for (const code of codes) {
-    const b64 = cards.get(code)
-    if (!b64) continue
+  for (const { code, b64 } of cards) {
     const cid = `proj-${code}`
     attachments.push({ filename: `${code}.png`, cid, contentBase64: b64 })
     blocks.push(`<div style="margin:0 0 22px"><img src="cid:${cid}" alt="${code}" style="display:block;width:100%;max-width:680px;border:1px solid #e6ebf1;border-radius:10px"/></div>`)
@@ -113,8 +124,19 @@ async function sendDigest(to: string, subject: string, codes: string[], cards: M
   }
 }
 
+/** Build one recipient's stage-filtered cards for the given project codes. */
+async function cardsForRecipient(ctx: RenderCtx, codes: string[], picked: string[] | undefined): Promise<Array<{ code: string; b64: string }>> {
+  const out: Array<{ code: string; b64: string }> = []
+  for (const code of codes) {
+    const b64 = await cardFor(ctx, code, picked)
+    if (b64) out.push({ code, b64 })
+  }
+  return out
+}
+
 async function runAll(supabase: Client, cfg: BillsDigestConfig) {
   const { byProject, asOf, generatedAt } = await readStuck(supabase)
+  const ctx: RenderCtx = { byProject, asOf, generatedAt, cache: new Map() }
   const headIds = Object.keys(cfg.assignments)
   const allCodes = [...new Set(Object.values(cfg.assignments).flat())]
   const ids = [...new Set([...headIds, ...cfg.cc])]
@@ -127,7 +149,6 @@ async function runAll(supabase: Client, cfg: BillsDigestConfig) {
       nameById.set(p.id as string, (p.full_name as string) || (p.email as string) || 'user')
     }
   }
-  const cards = await renderCards(allCodes, byProject, asOf, generatedAt)
 
   const sentTo: string[] = []
   const skipped: string[] = []
@@ -135,14 +156,16 @@ async function runAll(supabase: Client, cfg: BillsDigestConfig) {
     const email = emailById.get(uid)
     const who = nameById.get(uid) ?? uid
     if (!email) { skipped.push(who); continue }
-    const err = await sendDigest(email, 'Daily bills status — your projects', codes, cards, asOf)
+    const cards = await cardsForRecipient(ctx, codes, cfg.stages[uid])
+    const err = await sendDigest(email, 'Daily bills status — your projects', cards, asOf)
     if (err) skipped.push(who); else sentTo.push(who)
   }
   for (const uid of cfg.cc) {
     const email = emailById.get(uid)
     const who = nameById.get(uid) ?? uid
     if (!email) continue
-    const err = await sendDigest(email, 'Daily bills status — all projects', allCodes, cards, asOf)
+    const cards = await cardsForRecipient(ctx, allCodes, cfg.stages[uid])
+    const err = await sendDigest(email, 'Daily bills status — all projects', cards, asOf)
     if (err) skipped.push(`${who} (cc)`); else sentTo.push(`${who} (cc)`)
   }
   return { sentTo, skipped }
@@ -191,10 +214,11 @@ export async function POST(req: Request) {
   const email = (prof?.email as string) || ''
   if (!email) return NextResponse.json({ ok: false, reason: 'Your profile has no email.' })
   const { byProject, asOf, generatedAt } = await readStuck(supabase)
+  const ctx: RenderCtx = { byProject, asOf, generatedAt, cache: new Map() }
   const codes = [...new Set(Object.values(cfg.assignments).flat())]
   const useCodes = codes.length ? codes : [...byProject.keys()]
-  const cards = await renderCards(useCodes, byProject, asOf, generatedAt)
-  const err = await sendDigest(email, 'Daily bills status — test', useCodes, cards, asOf)
+  const cards = await cardsForRecipient(ctx, useCodes, cfg.stages[user.id])
+  const err = await sendDigest(email, 'Daily bills status — test', cards, asOf)
   if (err === 'empty') return NextResponse.json({ ok: true, sent: 0, reason: 'No bills stuck with CT right now — nothing to send.' })
   if (err) return NextResponse.json({ ok: false, error: err }, { status: 500 })
   return NextResponse.json({ ok: true, sent: 1, to: 'you' })

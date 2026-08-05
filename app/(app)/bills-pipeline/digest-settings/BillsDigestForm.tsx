@@ -12,13 +12,16 @@ import type { BillsDigestConfig } from '@/lib/bills-pipeline/digest-settings'
 
 interface UserOpt { id: string; full_name: string | null; email: string; role: string }
 
+const stageLabel = (s: string) => s.replace(/^Under:\s*/i, '')
+
 export function BillsDigestForm({
-  initial, users, projectCodes,
-}: { initial: BillsDigestConfig; users: UserOpt[]; projectCodes: string[] }) {
+  initial, users, projectCodes, availableStages,
+}: { initial: BillsDigestConfig; users: UserOpt[]; projectCodes: string[]; availableStages: string[] }) {
   const router = useRouter()
   const [enabled, setEnabled] = useState(initial.enabled)
   const [assign, setAssign] = useState<Record<string, string[]>>(initial.assignments)
   const [cc, setCc] = useState<string[]>(initial.cc)
+  const [stages, setStages] = useState<Record<string, string[]>>(initial.stages)
   const [expanded, setExpanded] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const [savedAt, setSavedAt] = useState(false)
@@ -39,15 +42,25 @@ export function BillsDigestForm({
   function toggleCc(uid: string) {
     setCc(c => c.includes(uid) ? c.filter(x => x !== uid) : [...c, uid])
   }
+  function toggleStage(uid: string, stage: string) {
+    setStages(s => {
+      const cur = new Set(s[uid] ?? [])
+      if (cur.has(stage)) cur.delete(stage); else cur.add(stage)
+      return { ...s, [uid]: [...cur] }
+    })
+  }
 
   async function save() {
     setSaving(true)
     const clean: Record<string, string[]> = {}
     for (const [uid, codes] of Object.entries(assign)) if (codes.length) clean[uid] = codes
+    const cleanStages: Record<string, string[]> = {}
+    for (const [uid, ss] of Object.entries(stages)) if (ss.length) cleanStages[uid] = ss
     const rows = [
       { key: 'bills_digest_enabled', value: String(enabled) },
       { key: 'bills_digest_assignments', value: JSON.stringify(clean) },
       { key: 'bills_digest_cc', value: JSON.stringify(cc) },
+      { key: 'bills_digest_stages', value: JSON.stringify(cleanStages) },
     ]
     const { error } = await createClient().from('app_settings').upsert(rows, { onConflict: 'key' })
     setSaving(false)
@@ -137,21 +150,40 @@ export function BillsDigestForm({
                   </span>
                 </button>
                 {open && (
-                  <div className="px-3 pb-3 pt-1 flex flex-wrap gap-x-4 gap-y-1 bg-gray-50/60">
-                    {projectCodes.map(code => (
-                      <label key={code} className="inline-flex items-center gap-1.5 text-xs text-gray-700 cursor-pointer py-0.5">
-                        <input type="checkbox" checked={mine.includes(code)} onChange={() => toggleProject(u.id, code)}
-                          className="h-4 w-4 rounded border-gray-300 text-rose-600 focus:ring-rose-500" />
-                        <span className="font-mono">{code}</span>
-                      </label>
-                    ))}
+                  <div className="px-3 pb-3 pt-1 bg-gray-50/60 space-y-2">
+                    <div>
+                      <p className="text-[10px] uppercase tracking-wide text-gray-400 font-semibold mb-1">Projects</p>
+                      <div className="flex flex-wrap gap-x-4 gap-y-1">
+                        {projectCodes.map(code => (
+                          <label key={code} className="inline-flex items-center gap-1.5 text-xs text-gray-700 cursor-pointer py-0.5">
+                            <input type="checkbox" checked={mine.includes(code)} onChange={() => toggleProject(u.id, code)}
+                              className="h-4 w-4 rounded border-gray-300 text-rose-600 focus:ring-rose-500" />
+                            <span className="font-mono">{code}</span>
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                    <div>
+                      <p className="text-[10px] uppercase tracking-wide text-gray-400 font-semibold mb-1">
+                        Desk-stages to include {(stages[u.id]?.length ?? 0) === 0 && <span className="text-gray-400 normal-case font-normal">· default: Site Head only</span>}
+                      </p>
+                      <div className="flex flex-wrap gap-x-4 gap-y-1">
+                        {availableStages.map(st => (
+                          <label key={st} className="inline-flex items-center gap-1.5 text-xs text-gray-700 cursor-pointer py-0.5">
+                            <input type="checkbox" checked={(stages[u.id] ?? []).includes(st)} onChange={() => toggleStage(u.id, st)}
+                              className="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500" />
+                            {stageLabel(st)}
+                          </label>
+                        ))}
+                      </div>
+                    </div>
                   </div>
                 )}
               </div>
             )
           })}
         </div>
-        <p className="text-[11px] text-gray-400 mt-1.5">Project codes are the billing codes (NGH, RU, P2…). Tick a code under two heads to co-head it.</p>
+        <p className="text-[11px] text-gray-400 mt-1.5">Expand a person to pick their <b>projects</b> and which <b>desk-stages</b> they get (leave stages blank = Site Head only). A CC person below gets every assigned project, filtered to their own stages.</p>
       </div>
 
       {/* Management CC */}
