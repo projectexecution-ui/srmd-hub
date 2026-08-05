@@ -20,6 +20,10 @@ export interface InboxItem {
   amount: number | null
   urgency: string | null
   created_at: string
+  /** What the item is FOR — CC sub-skill / indent sub-project (null for others). */
+  work_label: string | null
+  /** Who raised/owns it (null where not resolved). */
+  raised_by: string | null
 }
 
 type ModuleLabels = Parameters<typeof labelFor>[0]
@@ -46,6 +50,9 @@ const NEXT_STAGE_LABEL: Record<string, string> = {
 function stageLabel(s: string): string {
   return NEXT_STAGE_LABEL[s] ?? s.replace(/_/g, ' ')
 }
+function capitalize(s: string): string {
+  return s ? s.charAt(0).toUpperCase() + s.slice(1) : s
+}
 
 function ageDays(iso: string, now: number): number {
   const t = Date.parse(iso)
@@ -63,6 +70,7 @@ export function NeedsYouNow({
   const now = Date.now()
   const total = items.length
   const urgent = items.filter(r => r.urgency === 'urgent' || r.urgency === 'emergency' || ageDays(r.created_at, now) >= 2)
+  const totalAmount = items.reduce((s, r) => s + (r.amount ?? 0), 0)
 
   // If the inbox failed we must say so — an empty list would otherwise look
   // identical to "all caught up" and someone misses an approval.
@@ -99,6 +107,9 @@ export function NeedsYouNow({
           {urgent.length > 0 && (
             <span className="text-xs font-semibold text-rose-700 bg-rose-100 rounded-full px-2 py-0.5">{urgent.length} urgent</span>
           )}
+          {totalAmount > 0 && (
+            <span className="text-xs font-medium text-gray-500 hidden sm:inline truncate">· {formatINR(totalAmount)} waiting</span>
+          )}
         </div>
         <Link href="/approvals" className="text-xs font-semibold text-blue-700 hover:underline flex-shrink-0 inline-flex items-center gap-1">
           View all <ArrowRight className="h-3 w-3" />
@@ -110,7 +121,16 @@ export function NeedsYouNow({
           const age = ageDays(r.created_at, now)
           const late = r.urgency === 'urgent' || r.urgency === 'emergency' || age >= 2
           const emoji = MOD_EMOJI[r.module_slug] ?? '•'
-          const proj = r.project_code ? `${r.project_code}${r.project_name ? ' · ' + r.project_name : ''}` : (r.project_name ?? '')
+          const modLabel = labelFor(moduleLabels, r.module_slug)
+          // Dedupe "NGH A · NGH A" → "NGH A".
+          const proj = r.project_code && r.project_name && r.project_code !== r.project_name
+            ? `${r.project_code} · ${r.project_name}`
+            : (r.project_code || r.project_name || '')
+          // Headline = the work it's FOR when we know it, else the doc no.
+          const headline = r.work_label || r.doc_no || modLabel
+          // Meta = module · project · who raised it · (doc no when a work headline bumped it).
+          const meta = [modLabel, proj || null, r.raised_by ? `by ${r.raised_by}` : null,
+                        (r.work_label && r.doc_no) ? r.doc_no : null].filter(Boolean).join(' · ')
           return (
             <li key={`${r.doc_id ?? r.doc_url}-${i}`}>
               <Link
@@ -119,16 +139,15 @@ export function NeedsYouNow({
               >
                 <span className={`h-9 w-9 rounded-xl flex items-center justify-center text-base flex-shrink-0 ${late ? 'bg-rose-50' : 'bg-blue-50'}`}>{emoji}</span>
                 <div className="min-w-0 flex-1">
-                  <p className="text-sm font-semibold text-gray-900 truncate">
-                    {r.doc_no || labelFor(moduleLabels, r.module_slug)}
-                    {proj && <span className="font-normal text-gray-500"> · {proj}</span>}
-                  </p>
-                  <p className="text-xs text-gray-500 truncate">
-                    {labelFor(moduleLabels, r.module_slug)}
-                    {r.next_stage ? ` — waiting for ${stageLabel(r.next_stage)}` : ''}
-                  </p>
+                  <p className="text-sm font-semibold text-gray-900 truncate">{headline}</p>
+                  <p className="text-xs text-gray-500 truncate">{meta}</p>
                 </div>
-                <div className="flex flex-col items-end gap-1 flex-shrink-0">
+                {r.next_stage && (
+                  <span className={`hidden md:inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-semibold flex-shrink-0 ${late ? 'bg-rose-50 text-rose-700' : 'bg-amber-50 text-amber-800'}`}>
+                    <ArrowRight className="h-3 w-3" />{capitalize(stageLabel(r.next_stage))}
+                  </span>
+                )}
+                <div className="flex flex-col items-end gap-1 flex-shrink-0 w-[84px] text-right">
                   {r.amount != null && r.amount > 0 && (
                     <span className="text-sm font-bold text-gray-900 tabular-nums">{formatINR(r.amount)}</span>
                   )}
