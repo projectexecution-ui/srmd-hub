@@ -3,6 +3,7 @@
 import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
 import { getMyUser } from '@/lib/auth'
+import { DEFAULT_TEMPLATE } from '@/lib/schedule/template'
 
 async function currentUid(): Promise<string | null> {
   const u = await getMyUser()
@@ -92,6 +93,34 @@ export async function deleteSchedItem(id: string, projectId: string): Promise<{ 
   if (error) return { error: error.message }
   revalidatePath(`/schedule/${projectId}`)
   return { ok: true }
+}
+
+/** Populate a project's schedule from the standard template. Skips items that
+ *  already exist (by trade+name), so it's safe to run more than once. */
+export async function applyTemplate(projectId: string): Promise<{ ok?: true; added?: number; error?: string }> {
+  const sb = await createClient()
+  const me = await currentUid()
+  const { data: existing } = await sb.from('sched_items').select('trade, name, seq').eq('project_id', projectId)
+  const have = new Set(((existing ?? []) as Array<{ trade: string; name: string }>)
+    .map(r => `${r.trade.toLowerCase()}|${r.name.toLowerCase()}`))
+  let seq = ((existing ?? []) as Array<{ seq: number }>).reduce((m, r) => Math.max(m, r.seq ?? 0), 0)
+
+  const rows: Array<Record<string, unknown>> = []
+  for (const g of DEFAULT_TEMPLATE) {
+    for (const it of g.items) {
+      if (have.has(`${g.trade.toLowerCase()}|${it.name.toLowerCase()}`)) continue
+      seq += 1
+      rows.push({
+        project_id: projectId, trade: g.trade, name: it.name,
+        sub: it.sub ?? null, uom: it.uom, seq, created_by: me,
+      })
+    }
+  }
+  if (!rows.length) return { ok: true, added: 0 }
+  const { error } = await sb.from('sched_items').insert(rows)
+  if (error) return { error: error.message }
+  revalidatePath(`/schedule/${projectId}`)
+  return { ok: true, added: rows.length }
 }
 
 /** Set an item×location floor status (upsert by hand — the unique is on lower(location)). */

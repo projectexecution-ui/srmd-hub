@@ -21,6 +21,9 @@ export interface SchedItem {
   locked_at: string | null
   state: SchedState
   pct: number
+  qty: number | null
+  uom: string | null
+  qty_done: number | null
   wo_issued: boolean
   wo_number: string | null
   wo_issued_on: string | null

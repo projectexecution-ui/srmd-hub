@@ -12,7 +12,8 @@ import { ChevronLeft, Plus, CalendarClock, Trash2, User } from 'lucide-react'
 import { deriveStatus, workBackDeadlines, STATUS_META } from '@/lib/schedule/formula'
 import type { DisplayStatus, SchedItem } from '@/lib/schedule/types'
 import type { ProjectScheduleData } from '@/lib/schedule/data'
-import { addSchedItem, updateSchedItem, setWoIssued, moveSchedDate, deleteSchedItem } from '../actions'
+import { addSchedItem, updateSchedItem, setWoIssued, moveSchedDate, deleteSchedItem, applyTemplate } from '../actions'
+import { TEMPLATE_ITEM_COUNT } from '@/lib/schedule/template'
 
 const TONE: Record<'ok' | 'soon' | 'late' | 'calm', string> = {
   ok: 'text-emerald-700 bg-emerald-50',
@@ -116,7 +117,12 @@ export function ScheduleClient({ data, canEdit, meId }: { data: ProjectScheduleD
             <User className="h-3.5 w-3.5" /> My items
           </label>
         )}
-        {canEdit && <Button size="sm" onClick={() => setShowAdd(v => !v)} className="ml-auto bg-indigo-600 hover:bg-indigo-700"><Plus className="h-4 w-4" /> Add work item</Button>}
+        {canEdit && (
+          <div className="ml-auto flex gap-2">
+            <Button size="sm" variant="outline" disabled={pending} onClick={() => run(() => applyTemplate(project.id), 'Template items added')}>+ From template</Button>
+            <Button size="sm" onClick={() => setShowAdd(v => !v)} className="bg-indigo-600 hover:bg-indigo-700"><Plus className="h-4 w-4" /> Add work item</Button>
+          </div>
+        )}
       </div>
 
       {canEdit && showAdd && <AddItemForm projectId={project.id} pending={pending} onAdd={(input) => run(() => addSchedItem(input), 'Added')} onClose={() => setShowAdd(false)} />}
@@ -124,8 +130,13 @@ export function ScheduleClient({ data, canEdit, meId }: { data: ProjectScheduleD
       {items.length === 0 ? (
         <Card className="p-8 text-center space-y-3">
           <CalendarClock className="h-8 w-8 mx-auto text-indigo-400" />
-          <p className="text-gray-600">No work items yet. {canEdit ? 'Add your first item to start the schedule.' : 'The schedule hasn’t been set up yet.'}</p>
-          {canEdit && !showAdd && <Button onClick={() => setShowAdd(true)} className="bg-indigo-600 hover:bg-indigo-700"><Plus className="h-4 w-4" /> Add work item</Button>}
+          <p className="text-gray-600">No work items yet.{canEdit ? ' Start from the standard template, then just type the quantity for each — or add items manually.' : ' The schedule hasn’t been set up yet.'}</p>
+          {canEdit && (
+            <div className="flex flex-col sm:flex-row gap-2 justify-center pt-1">
+              <Button disabled={pending} onClick={() => run(() => applyTemplate(project.id), 'Template applied — now add the quantities')} className="bg-indigo-600 hover:bg-indigo-700">Start from template ({TEMPLATE_ITEM_COUNT} items)</Button>
+              <Button variant="outline" onClick={() => setShowAdd(true)}><Plus className="h-4 w-4" /> Add manually</Button>
+            </div>
+          )}
         </Card>
       ) : view === 'board' ? (
         <div className="space-y-4">
@@ -150,6 +161,7 @@ export function ScheduleClient({ data, canEdit, meId }: { data: ProjectScheduleD
             <thead>
               <tr className="text-left text-[11px] uppercase tracking-wide text-gray-500 border-b">
                 <th className="px-3 py-2">Work</th>
+                <th className="px-3 py-2">Qty</th>
                 <th className="px-3 py-2">Site start → finish</th>
                 <th className="px-3 py-2">WO</th>
                 <th className="px-3 py-2">%</th>
@@ -233,7 +245,7 @@ function TradeGroup({ trade, rows, canEdit, projectId, run }: {
   return (
     <>
       <tr className="bg-slate-50 border-y">
-        <td colSpan={canEdit ? 6 : 5} className="px-3 py-2">
+        <td colSpan={canEdit ? 7 : 6} className="px-3 py-2">
           <span className="font-bold text-gray-800 text-xs">{trade}</span>
           <span className="ml-2 text-[11px] font-mono text-indigo-600 font-semibold">{pct}%</span>
           <span className="ml-2 text-[11px] text-gray-400">{rows.length} item{rows.length === 1 ? '' : 's'}</span>
@@ -255,6 +267,11 @@ function ItemRow({ row, canEdit, projectId, run }: {
       <td className="px-3 py-2">
         <div className="font-medium text-gray-900 leading-tight">{item.name}</div>
         {item.sub && <div className="text-[11px] text-gray-500">{item.sub}</div>}
+      </td>
+      <td className="px-3 py-2">
+        {canEdit
+          ? <span className="inline-flex items-center gap-1"><input type="number" step="0.001" defaultValue={item.qty ?? ''} placeholder="—" className="w-20 text-xs border rounded px-1.5 py-1 font-mono" onBlur={e => { const raw = e.target.value.trim(); const v = raw === '' ? null : Number(raw); if (v !== item.qty) run(() => updateSchedItem(item.id, projectId, { qty: v }), 'Qty updated') }} />{item.uom && <span className="text-[10px] text-gray-400 font-mono">{item.uom}</span>}</span>
+          : <span className="text-xs font-mono text-gray-700">{item.qty != null ? `${item.qty}${item.uom ? ' ' + item.uom : ''}` : '—'}</span>}
       </td>
       <td className="px-3 py-2">
         {canEdit ? (
