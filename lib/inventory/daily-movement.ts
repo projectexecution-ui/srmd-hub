@@ -89,15 +89,25 @@ export function istTime(iso: string): string {
   })
 }
 
+// A compact request locator for the report: "REQ-2026-00060" → "#60". The
+// project is already shown on the line, so only the running number is needed —
+// keeps the detail line from getting clumsy. Works for any format (takes the
+// last segment, drops leading zeros).
+export function shortRef(ref: string): string {
+  const seg = ref.split(/[-/]/).pop() || ref
+  const n = seg.replace(/^0+/, '') || seg
+  return `#${n}`
+}
+
 // The one-line "accurate details" for a movement: for a request-linked issue/
-// return it's the project + purpose + who asked + request no; otherwise the
-// movement's own remark (vendor note, damage reason, opening-balance note…).
+// return it's the project + purpose + who asked + a short request locator;
+// otherwise the movement's own remark (vendor note, damage reason, …).
 export function movementDetail(l: MovementLine): string {
   const parts: string[] = []
   if (l.project) parts.push(l.project)
   if (l.purpose) parts.push(`“${l.purpose}”`)
   if (l.requestedBy) parts.push(`req by ${l.requestedBy}`)
-  if (l.reference) parts.push(l.reference)
+  if (l.reference) parts.push(shortRef(l.reference))
   if (parts.length === 0 && l.remarks) parts.push(l.remarks)
   return parts.join(' · ')
 }

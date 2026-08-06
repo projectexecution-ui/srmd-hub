@@ -47,7 +47,7 @@ describe('bucketMovements', () => {
     expect(d).toContain('AB — Admin Block')
     expect(d).toContain('Xyz')
     expect(d).toContain('req by Ravi')
-    expect(d).toContain('REQ-1')
+    expect(d).toContain('#1') // REQ-1 → compact locator
   })
 
   it('summarizeDigest rolls up issues by project/item and isolates exceptions', () => {
