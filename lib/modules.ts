@@ -40,7 +40,7 @@ export const MODULES: ModuleTile[] = [
   // continue to gate the sub-routes; they're just not shown as separate tiles.
   { slug: 'jmr',              label: 'JMR / Machinery',  description: 'Site machinery hours, JMR matrix, bills',     href: '/jmr',            icon: Wrench,        tone: 'orange' },
   { slug: 'daily-site-report',label: 'Daily Site Report',description: 'Site material/supplier deliveries — received → bill with CT → GRN → paid, with a smart checklist for the Atm Head', href: '/daily-site-report', icon: ClipboardCheck, tone: 'teal' },
-  { slug: 'schedule',         label: 'Schedule & WOs',   description: 'Per-project schedule — plan vs actual, Work-Order deadlines, drawings & floor-by-floor progress; macro for management, micro for engineers', href: '/schedule', icon: CalendarClock, tone: 'indigo', comingSoon: true },
+  { slug: 'schedule',         label: 'Schedule & WOs',   description: 'Per-project schedule — plan vs actual, Work-Order deadlines, drawings & floor-by-floor progress; macro for management, micro for engineers', href: '/schedule', icon: CalendarClock, tone: 'indigo' },
   { slug: 'inventory',        label: 'Inventory',        description: 'Stock, item master, requests & issue chain',  href: '/inventory',      icon: Boxes,         tone: 'green' },
   { slug: 'comparison',       label: 'Comparison Maker', description: 'Compare vendor quotations side-by-side — L1, L2, missing items', href: '/comparisons', icon: GitCompareArrows, tone: 'purple' },
   { slug: 'established-rates',label: 'Established Rates',description: 'Master rate catalogue — Discipline → Category → Sub-category, multi-vendor with L1 highlight', href: '/established-rates', icon: Tags, tone: 'teal' },
