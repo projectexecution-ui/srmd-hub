@@ -11,7 +11,9 @@
 --   founder   — view + edit (approver in the demo flow)
 --   engineer  — view + edit (raiser in the demo flow)
 -- Other roles get nothing — they won't see the tile.
--- Safe to re-run; on conflict the existing row is updated.
+-- Safe to re-run; seeds a default ONLY when the row is absent — it must never
+-- override a manual grant an admin set in /admin/permissions (do nothing, not
+-- do update), otherwise re-applying this migration silently reverts the matrix.
 
 insert into public.role_permissions (role, module_slug, can_view, can_edit, can_admin)
 values
@@ -19,8 +21,4 @@ values
   ('head',     'blueprint-demo', true, true, false),
   ('founder',  'blueprint-demo', true, true, false),
   ('engineer', 'blueprint-demo', true, true, false)
-on conflict (role, module_slug) do update
-  set can_view  = excluded.can_view,
-      can_edit  = excluded.can_edit,
-      can_admin = excluded.can_admin,
-      updated_at = now();
+on conflict (role, module_slug) do nothing;

@@ -12,11 +12,9 @@ drop policy if exists "bp_objects_select" on storage.objects;
 create policy "bp_objects_select" on storage.objects
   for select to authenticated using (bucket_id = 'bills-pipeline');
 
--- Admin only for now — expand via /admin/permissions when ready to share
+-- Admin only for now — expand via /admin/permissions when ready to share.
+-- do nothing (not do update): a re-run must never clobber a manual grant.
 insert into public.role_permissions (role, module_slug, can_view, can_edit, can_admin)
 values
   ('admin', 'bills-pipeline', true, true, true)
-on conflict (role, module_slug) do update
-  set can_view = excluded.can_view,
-      can_edit  = excluded.can_edit,
-      can_admin = excluded.can_admin;
+on conflict (role, module_slug) do nothing;

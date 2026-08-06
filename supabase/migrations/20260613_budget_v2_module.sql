@@ -34,7 +34,7 @@ create policy bv2_alias_write on public.budget_v2_alias for all to authenticated
   with check (exists (select 1 from public.profiles p where p.id=auth.uid() and (p.role='admin'::public.user_role or p.is_portal_owner)));
 
 -- Preview gate: only the admin role sees the module until granted to others.
+-- do nothing (not do update): a re-run must never clobber a manual grant.
 insert into public.role_permissions (role, module_slug, can_view, can_edit, can_admin)
 values ('admin','budget-vs-actual-v2', true, true, true)
-on conflict (role, module_slug) do update
-  set can_view=true, can_edit=true, can_admin=true;
+on conflict (role, module_slug) do nothing;
