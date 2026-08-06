@@ -1,128 +1,130 @@
-// Standard tower work-item template — applied at setup so a project's schedule
-// is pre-populated by trade; the PM then only fills in the quantity per item.
-// Modelled on the SRMD NGH progress report's trades + items, with default units.
+// Standard tower work-item template — mirrors the SRMD NGH Zoho WBS
+// (11 disciplines → sub-system items). Floors are tracked as matrix columns,
+// so each sub-system is ONE row here, not duplicated per floor. Setup applies
+// these; progress is a tap per floor in the Floors view.
 
-export interface TemplateItem {
-  name: string
-  uom: string        // default unit of measure (so setup only needs the number)
-  sub?: string
-}
-export interface TemplateTrade {
-  trade: string
-  items: TemplateItem[]
-}
+export interface TemplateItem { name: string; uom: string; sub?: string }
+export interface TemplateTrade { trade: string; items: TemplateItem[] }
 
 export const DEFAULT_TEMPLATE: TemplateTrade[] = [
   {
-    trade: 'Substructure',
+    trade: 'Civil',
     items: [
-      { name: 'Excavation', uom: 'Cum' },
-      { name: 'PCC', uom: 'Cum' },
-      { name: 'Footings & Raft', uom: 'Cum' },
-      { name: 'Plinth beams', uom: 'Rmt' },
-    ],
-  },
-  {
-    trade: 'RCC / Structure',
-    items: [
-      { name: 'Columns', uom: 'Cum' },
-      { name: 'Beams & Slabs', uom: 'Cum' },
-      { name: 'Staircase', uom: 'Cum' },
-    ],
-  },
-  {
-    trade: 'Masonry & Plaster',
-    items: [
-      { name: 'Brick / Block work', uom: 'Cum' },
-      { name: 'Internal Plaster', uom: 'Sqm' },
       { name: 'External Plaster', uom: 'Sqm' },
-      { name: 'Window Sills', uom: 'Rmt' },
-      { name: 'Toilet Window Sills', uom: 'Rmt' },
+      { name: 'Slab', uom: 'Cum' },
+      { name: 'Brick Work', uom: 'Cum' },
+      { name: 'Internal Plaster', uom: 'Sqm' },
+      { name: 'Window Sill', uom: 'Rmt' },
+      { name: 'Expansion Joint', uom: 'Sqm' },
     ],
   },
   {
     trade: 'Waterproofing',
     items: [
-      { name: 'Toilets WP', uom: 'Sqm' },
-      { name: 'Terrace WP', uom: 'Sqm' },
-      { name: 'Sunk slab WP', uom: 'Sqm' },
+      { name: 'Bath & Toilets', uom: 'Nos' },
+      { name: 'Balconies', uom: 'Nos' },
+      { name: 'Terraces', uom: 'Nos' },
+      { name: 'Windows', uom: 'Nos' },
+      { name: 'OHT / UGT', uom: 'Nos' },
+      { name: 'Lift Pits', uom: 'Nos' },
     ],
   },
   {
     trade: 'Plumbing & Drainage',
     items: [
-      { name: 'Water supply (suspended)', uom: 'Rmt' },
-      { name: 'Drain line', uom: 'Rmt' },
-      { name: 'Toilet plumbing', uom: 'Nos' },
-      { name: 'Rain water drain', uom: 'Rmt' },
-    ],
-  },
-  {
-    trade: 'Electrical',
-    items: [
-      { name: 'Walls - Zari (chasing)', uom: 'Points' },
-      { name: 'Conduiting & Wiring', uom: 'Points' },
-      { name: 'Ceiling pipe fitting', uom: 'Points' },
-      { name: 'Concealed metal boxes', uom: 'Nos' },
-      { name: 'DB fixing', uom: 'Nos' },
-      { name: 'Panel installation', uom: 'Nos' },
+      { name: 'External Chambers', uom: 'Nos' },
+      { name: 'Water Supply', uom: 'Rmt' },
+      { name: 'Sewage', uom: 'Rmt' },
+      { name: 'SW/CP Fittings', uom: 'Nos' },
     ],
   },
   {
     trade: 'Fire Fighting',
     items: [
-      { name: 'FF - Sprinkler', uom: 'Nos' },
-      { name: 'FF - Hydrant', uom: 'Nos' },
-      { name: 'FF - FAPA', uom: 'Points' },
+      { name: 'Pump Room', uom: 'Nos' },
+      { name: 'Sprinklers', uom: 'Nos' },
+      { name: 'Hydrants', uom: 'Rmt' },
+      { name: 'FAPA', uom: 'Nos' },
+      { name: 'Fire Extinguishers', uom: 'Nos' },
+    ],
+  },
+  {
+    trade: 'Electrical',
+    items: [
+      { name: 'Earthing & Lightning Arrestor', uom: 'Nos' },
+      { name: 'DBs', uom: 'Nos' },
+      { name: 'Cabling', uom: 'Rmt' },
+      { name: 'Point Wiring & Switch/Sockets', uom: 'Rmt' },
+      { name: 'Light Fitting', uom: 'Nos' },
+      { name: 'Appliances', uom: 'Nos' },
+      { name: 'UPS', uom: 'Nos' },
+      { name: 'Panels', uom: 'Nos' },
     ],
   },
   {
     trade: 'Mechanical / HVAC',
     items: [
-      { name: 'Internal brackets & piping', uom: 'Rmt' },
-      { name: 'PNG', uom: 'Rmt' },
-      { name: 'Toilet exhaust', uom: 'Nos' },
+      { name: 'Lifts', uom: 'Nos' },
+      { name: 'HVAC ACs', uom: 'Nos' },
+      { name: 'HVAC VRV', uom: 'Nos' },
+      { name: 'MS Fabrication', uom: 'Nos' },
+      { name: 'Kitchen Exhaust', uom: 'Nos' },
     ],
   },
   {
-    trade: 'ICT Works',
+    trade: 'ICT',
     items: [
-      { name: 'Cabling', uom: 'Rmt' },
-      { name: 'Device installation', uom: 'Nos' },
+      { name: 'Internet Cabling', uom: 'Rmt' },
+      { name: 'Tel Cabling', uom: 'Rmt' },
+      { name: 'CCTV Cabling', uom: 'Rmt' },
+      { name: 'Door Access Control', uom: 'Nos' },
+      { name: 'Device Fittings', uom: 'Nos' },
+      { name: 'TVs / Projectors', uom: 'Nos' },
     ],
   },
   {
-    trade: 'Finishing',
+    trade: 'External Facade',
     items: [
-      { name: 'Flooring', uom: 'Sqm' },
-      { name: 'Skirting', uom: 'Rmt' },
-      { name: 'DADO', uom: 'Sqm' },
-      { name: 'Doors', uom: 'Nos' },
+      { name: 'GRC Jali', uom: 'Sqm' },
+    ],
+  },
+  {
+    trade: 'Finishes',
+    items: [
+      { name: 'External Paint', uom: 'Sqm' },
       { name: 'Windows', uom: 'Nos' },
-      { name: 'False ceiling', uom: 'Sqm' },
-      { name: 'Internal putty', uom: 'Sqm' },
+      { name: 'Door Frame', uom: 'Nos' },
+      { name: 'Door Shutters', uom: 'Nos' },
+      { name: 'Wooden Doors', uom: 'Nos' },
+      { name: 'Fire Doors', uom: 'Nos' },
+      { name: 'Flooring', uom: 'Sqm' },
+      { name: 'Wall Finishes', uom: 'Sqm' },
+      { name: 'DADO', uom: 'Sqm' },
+      { name: 'Ceiling', uom: 'Sqm' },
+      { name: 'False Ceiling - Gypsum', uom: 'Sqm' },
+      { name: 'False Ceiling - Calcium Silicate', uom: 'Sqm' },
+      { name: 'False Ceiling - 2x2', uom: 'Sqm' },
+      { name: 'Internal Partitions', uom: 'Sqm' },
+      { name: 'Kitchen & Toilet Platform', uom: 'Nos' },
+      { name: 'Internal Putty', uom: 'Sqm' },
       { name: 'Internal painting', uom: 'Sqm' },
-      { name: 'Internal gypsum', uom: 'Sqm' },
+      { name: 'Railings', uom: 'Rmt' },
+      { name: 'Mirrors', uom: 'Nos' },
+      { name: 'White Goods', uom: 'Nos' },
     ],
   },
   {
-    trade: 'Fittings',
+    trade: 'Interiors',
     items: [
-      { name: 'Light / fan / geyser fittings', uom: 'Nos' },
-      { name: 'Partitions', uom: 'Sqm' },
+      { name: 'Fixed Furniture', uom: 'Nos' },
+      { name: 'Loose Furniture', uom: 'Nos' },
     ],
   },
   {
-    trade: 'Lift',
+    trade: 'Cleaning',
     items: [
-      { name: 'Lift brickwork', uom: 'Cum' },
-      { name: 'Lift installation', uom: 'Nos' },
-    ],
-  },
-  {
-    trade: 'Furniture',
-    items: [
-      { name: 'Furniture', uom: 'Lot' },
+      { name: 'General Cleaning', uom: 'Nos' },
+      { name: 'Deep Cleaning', uom: 'Nos' },
     ],
   },
 ]
