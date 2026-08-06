@@ -15,7 +15,7 @@ import { createClient } from '@/lib/supabase/client'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Loader2, Check, Plus, Trash2, X, ArrowRight, Pencil, ChevronDown, ChevronRight, MessageSquare, Paperclip, Search, IndianRupee, ShieldCheck, UserPlus, Box } from 'lucide-react'
+import { Loader2, Check, Plus, Trash2, X, ArrowRight, Pencil, ChevronDown, ChevronRight, MessageSquare, Paperclip, Search, IndianRupee, ShieldCheck, UserPlus, Box, FileText, CornerUpLeft, Settings2 } from 'lucide-react'
 import { confirm } from '@/components/ui/confirm-dialog'
 import { cn } from '@/lib/utils'
 import { MoneyInput } from '@/components/ui/money-input'
@@ -104,6 +104,92 @@ function flowOrder(modRules: Rule[]): Rule[] {
     .map(x => x.r)
 }
 
+// ── The "signature chain" — the human summary of a module ─────────────────────
+// The 31 rows on cost-control are really just a 3-signature chain plus Admin's
+// safety net and a few "send back" moves. This reduces the rules to that chain:
+// the ordered list of non-Admin approvers, each shown by the main step they own.
+// Admin (approves everything) and switched-off rows are surfaced separately.
+
+const isReturnStage = (s: string) => /return|reject|declin/i.test(s)
+const isPartialStage = (s: string) => /partial/i.test(s)
+const isDeadlineStage = (s: string) => /deadline/i.test(s)
+
+interface ChainStep {
+  approver: string
+  from: string
+  to: string
+  cap: number | null
+  canReturn: boolean
+  canPartial: boolean
+  setsDeadline: boolean
+}
+
+// Same topological ranking as flowOrder, exposed as a lookup so the chain can
+// tell which moves go "forward" vs "back".
+function stageRank(modRules: Rule[]): (s: string) => number {
+  const indeg = new Map<string, number>()
+  const adj = new Map<string, Set<string>>()
+  const discovery: string[] = []
+  const seen = new Set<string>()
+  const touch = (s: string) => { if (!seen.has(s)) { seen.add(s); discovery.push(s); indeg.set(s, 0); adj.set(s, new Set()) } }
+  for (const r of modRules) { touch(r.from_stage); touch(r.to_stage) }
+  for (const r of modRules) {
+    if (r.from_stage === r.to_stage) continue
+    const dests = adj.get(r.from_stage)!
+    if (!dests.has(r.to_stage)) { dests.add(r.to_stage); indeg.set(r.to_stage, (indeg.get(r.to_stage) ?? 0) + 1) }
+  }
+  const rank = new Map<string, number>()
+  let next = 0
+  const queue = discovery.filter(s => (indeg.get(s) ?? 0) === 0)
+  while (queue.length) {
+    queue.sort((a, b) => discovery.indexOf(a) - discovery.indexOf(b))
+    const s = queue.shift()!
+    if (rank.has(s)) continue
+    rank.set(s, next++)
+    for (const nb of adj.get(s) ?? []) {
+      indeg.set(nb, (indeg.get(nb) ?? 0) - 1)
+      if ((indeg.get(nb) ?? 0) <= 0 && !rank.has(nb)) queue.push(nb)
+    }
+  }
+  for (const s of discovery) if (!rank.has(s)) rank.set(s, next++)
+  return (s: string) => rank.get(s) ?? 9999
+}
+
+function deriveChain(modRules: Rule[]): ChainStep[] {
+  const rank = stageRank(modRules)
+  const active = modRules.filter(r => r.is_active && r.approver_role !== 'admin')
+  const byApprover = new Map<string, Rule[]>()
+  for (const r of active) {
+    if (!byApprover.has(r.approver_role)) byApprover.set(r.approver_role, [])
+    byApprover.get(r.approver_role)!.push(r)
+  }
+  const steps: ChainStep[] = []
+  for (const [approver, rs] of byApprover) {
+    // "Forward" = carries the document on to a later stage — not a send-back,
+    // a self-loop, or a side-action like setting a deadline.
+    const fwd = rs.filter(r =>
+      r.to_stage !== r.from_stage &&
+      !isReturnStage(r.to_stage) &&
+      !isDeadlineStage(r.to_stage) &&
+      r.from_stage !== 'any' &&
+      rank(r.to_stage) > rank(r.from_stage))
+    if (fwd.length === 0) continue // this role only sends back / sets deadlines → not a chain step
+    // Their primary move: earliest starting stage, reaching furthest.
+    const primary = [...fwd].sort((a, b) =>
+      (rank(a.from_stage) - rank(b.from_stage)) || (rank(b.to_stage) - rank(a.to_stage)))[0]
+    steps.push({
+      approver,
+      from: primary.from_stage,
+      to: primary.to_stage,
+      cap: primary.amount_cap_max,
+      canReturn: rs.some(r => isReturnStage(r.to_stage)),
+      canPartial: rs.some(r => isPartialStage(r.to_stage) && r.to_stage !== r.from_stage),
+      setsDeadline: rs.some(r => isDeadlineStage(r.to_stage)),
+    })
+  }
+  return steps.sort((a, b) => rank(a.from) - rank(b.from))
+}
+
 export default function ApprovalsMatrix({ initial, roles, roleLabels, moduleLabels }: Props) {
   const router = useRouter()
   const [rules, setRules] = useState<Rule[]>(initial)
@@ -114,6 +200,9 @@ export default function ApprovalsMatrix({ initial, roles, roleLabels, moduleLabe
   const [error, setError] = useState<string | null>(null)
   const [q, setQ] = useState('')
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
+  // module_slugs whose detailed step editor is expanded (default: chain view only)
+  const [advanced, setAdvanced] = useState<Set<string>>(new Set())
+  const toggleAdvanced = (slug: string) => setAdvanced(a => { const n = new Set(a); if (n.has(slug)) n.delete(slug); else n.add(slug); return n })
 
   const groups = useMemo(() => {
     const m = new Map<string, Rule[]>()
@@ -246,12 +335,16 @@ export default function ApprovalsMatrix({ initial, roles, roleLabels, moduleLabe
         const knownStages = stagesForModule(modSlug)
         const ordered = flowOrder(modRules)
         const onCount = modRules.filter(r => r.is_active).length
+        const offCount = modRules.length - onCount
         const open = searching || !collapsed.has(modSlug)
         const meta = moduleMetaMap.get(modSlug)
         const tone = meta ? TILE_TONES[meta.tone] : TILE_TONES.slate
         const Icon = meta?.icon ?? Box
         const rail = orderedStages(ordered)
         const lanes = groupByFromStage(ordered)
+        const chain = deriveChain(modRules)
+        const adv = advanced.has(modSlug)
+        const sigLabel = chain.length === 0 ? 'Admin only' : `${chain.length} signature${chain.length === 1 ? '' : 's'}`
         return (
           <Card key={modSlug} className="overflow-hidden">
             <div className="flex items-center gap-2 px-4 py-3 border-b border-gray-100">
@@ -260,16 +353,31 @@ export default function ApprovalsMatrix({ initial, roles, roleLabels, moduleLabe
                 <span className={cn('inline-flex h-8 w-8 items-center justify-center rounded-lg flex-shrink-0', tone.bg, tone.ic)}><Icon className="h-4 w-4" /></span>
                 <span className="min-w-0">
                   <span className="block font-bold text-gray-900 leading-tight truncate">{moduleLabels[modSlug] ?? prettyStage(modSlug)}</span>
-                  <span className="block text-[11px] text-gray-400">{modRules.length} step{modRules.length === 1 ? '' : 's'} · <b className={onCount > 0 ? 'text-emerald-700' : 'text-gray-400'}>{onCount} on</b></span>
+                  <span className="block text-[11px] text-gray-400"><b className="text-gray-500">{sigLabel}</b> before it&rsquo;s approved</span>
                 </span>
               </button>
-              <Button size="sm" variant="outline" onClick={() => { setAddingFor(modSlug); setEditingId(null); setCollapsed(c => { const n = new Set(c); n.delete(modSlug); return n }) }}>
-                <Plus className="h-4 w-4" /> Add step
-              </Button>
             </div>
 
             {open && (
               <CardContent className="pt-4">
+                {!searching && <ChainView steps={chain} offCount={offCount} roleLabels={roleLabels} />}
+
+                <div className={cn(!searching && 'mt-4 pt-3 border-t border-gray-100')}>
+                  {!searching && (
+                    <button type="button" onClick={() => toggleAdvanced(modSlug)}
+                      className="inline-flex items-center gap-1.5 text-xs font-semibold text-gray-500 hover:text-gray-800">
+                      {adv ? <ChevronDown className="h-3.5 w-3.5" /> : <Settings2 className="h-3.5 w-3.5" />}
+                      {adv ? 'Hide the detailed steps' : 'Edit / see all steps'}
+                    </button>
+                  )}
+
+                  {(adv || searching) && (
+                    <div className={cn(!searching && 'mt-3')}>
+                      <div className="mb-2 flex justify-end">
+                        <Button size="sm" variant="outline" onClick={() => { setAddingFor(modSlug); setEditingId(null); setAdvanced(a => { const n = new Set(a); n.add(modSlug); return n }); setCollapsed(c => { const n = new Set(c); n.delete(modSlug); return n }) }}>
+                          <Plus className="h-4 w-4" /> Add step
+                        </Button>
+                      </div>
                 {rail.length > 1 && (
                   <div className="flex items-center gap-1.5 overflow-x-auto pb-3 mb-1 border-b border-dashed border-gray-100">
                     <span className="text-[10px] font-bold uppercase tracking-wider text-gray-300 mr-1 flex-shrink-0">Flow</span>
@@ -318,6 +426,9 @@ export default function ApprovalsMatrix({ initial, roles, roleLabels, moduleLabe
                       onSave={(v) => createRule(modSlug, v)} onCancel={() => setAddingFor(null)} />
                   </div>
                 )}
+                    </div>
+                  )}
+                </div>
               </CardContent>
             )}
           </Card>
@@ -383,6 +494,74 @@ function ApproverChip({ role, labels }: { role: string; labels: RoleLabelMap }) 
     <span className="inline-flex items-center gap-1 rounded-md bg-gray-100 border border-gray-200 px-2 py-0.5 text-xs font-semibold text-gray-800 uppercase">
       <ShieldCheck className="h-3 w-3 text-gray-500" /> {fmtRole(role, labels)}
     </span>
+  )
+}
+
+// The plain-language summary of a module: a numbered signature chain that reads
+// Submitted → 1st signer → 2nd signer → … → Approved. Derived from the live
+// rules — it changes nothing; the detailed editor is one click away.
+const CHAIN_TONES = [
+  { bg: 'bg-indigo-50', tx: 'text-indigo-700', rg: 'text-indigo-600' },
+  { bg: 'bg-teal-50', tx: 'text-teal-700', rg: 'text-teal-600' },
+  { bg: 'bg-violet-50', tx: 'text-violet-700', rg: 'text-violet-600' },
+  { bg: 'bg-sky-50', tx: 'text-sky-700', rg: 'text-sky-600' },
+  { bg: 'bg-rose-50', tx: 'text-rose-700', rg: 'text-rose-600' },
+  { bg: 'bg-amber-50', tx: 'text-amber-700', rg: 'text-amber-600' },
+]
+function Connector() {
+  return <div className="ml-[13px] my-0.5 h-3.5 w-px bg-gray-200" />
+}
+function ChainView({ steps, offCount, roleLabels }: { steps: ChainStep[]; offCount: number; roleLabels: RoleLabelMap }) {
+  return (
+    <div>
+      {steps.length === 0 ? (
+        <p className="text-sm text-gray-500 py-1">
+          Only <b>you (Admin)</b> approve this — nobody else is set up to sign off yet.
+        </p>
+      ) : (
+        <>
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-blue-50 border border-blue-100 px-3 py-1 text-[12.5px] font-semibold text-blue-700">
+            <FileText className="h-3.5 w-3.5" /> Submitted
+          </span>
+          <Connector />
+          {steps.map((st, i) => {
+            const tone = CHAIN_TONES[i % CHAIN_TONES.length]
+            const last = i === steps.length - 1
+            const extras: React.ReactNode[] = []
+            if (st.cap != null) extras.push(<span key="cap" className="text-amber-700">up to ₹{Number(st.cap).toLocaleString('en-IN')}</span>)
+            if (st.canPartial) extras.push(<span key="p">can partly approve</span>)
+            if (st.setsDeadline) extras.push(<span key="d">sets the deadline</span>)
+            if (st.canReturn) extras.push(<span key="r" className="inline-flex items-center gap-0.5"><CornerUpLeft className="h-3 w-3" />can send back</span>)
+            return (
+              <div key={st.approver + i}>
+                <div className="flex items-start gap-3">
+                  <span className={cn('mt-px inline-flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full text-[13px] font-bold', tone.bg, tone.tx)}>{i + 1}</span>
+                  <div className="min-w-0">
+                    <div className="text-[13.5px] font-bold uppercase tracking-tight text-gray-900">
+                      {fmtRole(st.approver, roleLabels)}
+                      <span className="ml-2 text-[11px] font-medium normal-case tracking-normal text-gray-400">{last ? 'final sign-off' : i === 0 ? 'first sign-off' : 'next sign-off'}</span>
+                    </div>
+                    {extras.length > 0 && (
+                      <div className="mt-0.5 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-[11.5px] text-gray-500">
+                        {extras.map((e, k) => <span key={k} className="inline-flex items-center">{k > 0 && <span className="mr-1.5 text-gray-300">·</span>}{e}</span>)}
+                      </div>
+                    )}
+                  </div>
+                </div>
+                <Connector />
+              </div>
+            )
+          })}
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 border border-emerald-100 px-3 py-1 text-[12.5px] font-semibold text-emerald-700">
+            <Check className="h-3.5 w-3.5" /> Approved
+          </span>
+        </>
+      )}
+      <div className="mt-3.5 flex items-start gap-2 rounded-lg bg-amber-50/70 border border-amber-100 px-3 py-2 text-[12px] leading-relaxed text-amber-800">
+        <ShieldCheck className="h-4 w-4 flex-shrink-0 mt-px text-amber-500" />
+        <span><b>You (Admin)</b> can approve or skip any step, so nothing ever gets stuck.{offCount > 0 && <> · <b>{offCount}</b> switched-off shortcut{offCount === 1 ? '' : 's'} not in use.</>}</span>
+      </div>
+    </div>
   )
 }
 

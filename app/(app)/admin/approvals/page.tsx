@@ -61,12 +61,11 @@ export default async function AdminApprovalsPage() {
       />
       <Card className="p-4 bg-blue-50 border-blue-200 text-sm text-blue-900 space-y-1">
         <p>
-          An <b>approval step</b> answers one question: <b>when a document reaches a stage, which role is allowed to move it forward?</b>
+          Each module below shows its <b>approval chain</b> — <b>who signs off, in order</b>, before a document is finally approved.
         </p>
         <p className="text-blue-800">
-          Example — <i>when an Indent is <b>Submitted</b>, the <b>Atm Head</b> can move it to <b>Verify</b>.</i>{' '}
-          <b>Admin can always approve everything</b>, so no one ever gets stuck. Keep it to one step per row; the extra options
-          (₹ limits, required notes/files, a backup approver) stay hidden until you flip <b>“Show advanced options”</b>.
+          <b>You (Admin) can approve anything</b>, so nothing ever gets stuck. To change who signs where — add a signer, set a ₹ limit,
+          or turn a step off — open <b>“Edit / see all steps”</b> on any module.
         </p>
       </Card>
       <ApprovalsMatrix
