@@ -9,7 +9,7 @@ import { Eye, Pencil, ShieldCheck, Trash2, Loader2, Check, Plus, X, Sparkles, Bo
 import { confirm } from '@/components/ui/confirm-dialog'
 import { cn } from '@/lib/utils'
 import { TILE_TONES } from '@/lib/modules'
-import { groupModules, moduleMetaMap } from './groups'
+import { groupModules, moduleMetaMap, groupRoles, sortRolesByCategory } from './groups'
 import type { Role, PermAction } from '@/lib/types'
 import type { RoleLabelMap } from '@/lib/role-labels'
 
@@ -98,6 +98,8 @@ export default function PermissionsMatrix({ modules, roles, initial, roleLabels,
   const [hoverSlug, setHoverSlug] = useState<string | null>(null)
 
   const grouped = useMemo(() => groupModules(modules), [modules])
+  // Category-ordered roles so the matrix columns + legend cluster by category.
+  const orderedRoles = useMemo(() => sortRolesByCategory(visibleRoles), [visibleRoles])
 
   async function addRole(e: React.FormEvent) {
     e.preventDefault()
@@ -310,7 +312,7 @@ export default function PermissionsMatrix({ modules, roles, initial, roleLabels,
               <thead>
                 <tr>
                   <th className="sticky left-0 top-0 z-30 bg-gray-50 border-b border-gray-200 px-3 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wide text-gray-500 min-w-[220px]">Module</th>
-                  {visibleRoles.map(role => {
+                  {orderedRoles.map(role => {
                     const rl = labels[role]
                     const busy = labelBusy === role
                     const saved = labelSaved === role
@@ -347,7 +349,7 @@ export default function PermissionsMatrix({ modules, roles, initial, roleLabels,
               <tbody>
                 {grouped.map(group => (
                   <GroupRows key={group.title} title={group.title} mods={group.mods} colCount={colCount}
-                    visibleRoles={visibleRoles} labels={labels} moduleMeta={moduleMetaMap} getCell={getCell}
+                    visibleRoles={orderedRoles} labels={labels} moduleMeta={moduleMetaMap} getCell={getCell}
                     busyKey={busyKey} savedKey={savedKey} hoverRole={hoverRole} hoverSlug={hoverSlug}
                     setHoverRole={setHoverRole} setHoverSlug={setHoverSlug} toggle={toggle}
                     cycleDelete={cycleDelete} setApprover={setApprover} />
@@ -358,18 +360,28 @@ export default function PermissionsMatrix({ modules, roles, initial, roleLabels,
         </CardContent>
       </Card>
 
-      {/* Legend — role descriptions (editable) */}
+      {/* Roles — grouped by category to make setup easier. Descriptions also
+          show on hover of each role column header in the matrix above. */}
       <Card>
         <CardContent className="pt-5">
           <div className="flex items-center justify-between mb-3">
-            <h3 className="text-sm font-semibold text-gray-900">Roles</h3>
-            {currentUserIsPortalOwner && <span className="text-[11px] text-gray-400">Hover a role to rename it or edit its description — updates everywhere.</span>}
+            <h3 className="text-sm font-semibold text-gray-900">Roles by category</h3>
+            <span className="text-[11px] text-gray-400">
+              {currentUserIsPortalOwner ? 'Hover a role to rename it or edit its description — updates everywhere.' : 'Hover a role column above to see its description.'}
+            </span>
           </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
-            {visibleRoles.map(r => (
-              <LegendRole key={r} label={labels[r]?.label || r} description={labels[r]?.description || ''} canEdit={currentUserIsPortalOwner}
-                busy={labelBusy === r} saved={labelSaved === r} onSave={(label, desc) => commitRoleMeta(r, label, desc)}
-                onAi={(name) => fetchAiDescription(name, roleContext(r))} onError={setError} />
+          <div className="space-y-4">
+            {groupRoles(orderedRoles).map(g => (
+              <div key={g.title}>
+                <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400 mb-1.5">{g.title}</p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+                  {g.roles.map(r => (
+                    <LegendRole key={r} label={labels[r]?.label || r} description={labels[r]?.description || ''} canEdit={currentUserIsPortalOwner}
+                      busy={labelBusy === r} saved={labelSaved === r} onSave={(label, desc) => commitRoleMeta(r, label, desc)}
+                      onAi={(name) => fetchAiDescription(name, roleContext(r))} onError={setError} />
+                  ))}
+                </div>
+              </div>
             ))}
           </div>
         </CardContent>
@@ -523,7 +535,7 @@ function LegendRole({ label, description, canEdit, busy, saved, onSave, onAi, on
   return (
     <div className={cn('group flex items-start gap-1.5 rounded-md px-1.5 py-1 border border-gray-100 bg-white', saved && 'bg-green-50 border-green-200')}>
       <div className="flex-1 min-w-0">
-        <b className="text-gray-800">{label}:</b>{' '}
+        <b className="text-gray-800 uppercase">{label}:</b>{' '}
         <span className="text-gray-500">{description || '—'}</span>
       </div>
       {canEdit && (
