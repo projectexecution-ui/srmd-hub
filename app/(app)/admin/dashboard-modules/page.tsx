@@ -4,6 +4,7 @@ import { isPortalOwner, getMyProfile } from '@/lib/auth'
 import { PageHeader } from '@/components/PageHeader'
 import { MODULES } from '@/lib/modules'
 import { getModuleLabels, labelFor, descriptionFor } from '@/lib/module-labels'
+import { MODULE_GROUPS } from '../permissions/groups'
 import DashboardModulesEditor from './DashboardModulesEditor'
 
 export const dynamic = 'force-dynamic'
@@ -31,6 +32,19 @@ export default async function DashboardModulesPage() {
     enabled: enabledFor(m.slug),
   }))
 
+  // Group into the same sections as the Permissions matrix so the two admin
+  // screens read the same way. Any slug not listed lands in "Other".
+  const bySlug = new Map(modules.map(m => [m.slug, m]))
+  const used = new Set<string>()
+  const groups: { title: string; rows: typeof modules }[] = []
+  for (const g of MODULE_GROUPS) {
+    const rows = g.slugs.map(s => bySlug.get(s)).filter(Boolean) as typeof modules
+    rows.forEach(r => used.add(r.slug))
+    if (rows.length) groups.push({ title: g.title, rows })
+  }
+  const others = modules.filter(m => !used.has(m.slug))
+  if (others.length) groups.push({ title: 'Other', rows: others })
+
   // Portal Owner is gated by the redirect above; admin also gets to rename
   // (server-side RPC also enforces this — defence in depth).
   const canRename = !!profile?.is_portal_owner || profile?.role === 'admin'
@@ -42,12 +56,7 @@ export default async function DashboardModulesPage() {
         back="/admin"
         subtitle="Turn modules on / off for everyone. Click ✏️ next to a name to rename it."
       />
-      <DashboardModulesEditor
-        canRename={canRename}
-        groups={[
-          { title: 'Modules', rows: modules },
-        ]}
-      />
+      <DashboardModulesEditor canRename={canRename} groups={groups} />
     </div>
   )
 }

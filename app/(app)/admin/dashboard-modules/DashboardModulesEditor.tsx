@@ -1,10 +1,12 @@
 'use client'
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { Card, CardContent } from '@/components/ui/card'
-import { Loader2, Check, Eye, EyeOff, Pencil } from 'lucide-react'
+import { Loader2, Check, Eye, EyeOff, Pencil, Search, ChevronDown, ChevronRight, Box } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { confirm } from '@/components/ui/confirm-dialog'
+import { TILE_TONES } from '@/lib/modules'
+import { moduleMetaMap } from '../permissions/groups'
 
 interface ModuleRow {
   slug: string
@@ -27,6 +29,26 @@ export default function DashboardModulesEditor({ groups: initialGroups, canRenam
   const [saved, setSaved] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [editingSlug, setEditingSlug] = useState<string | null>(null)
+  const [q, setQ] = useState('')
+  // Groups collapsed by default so the screen opens as a short, calm summary;
+  // open a group to toggle its modules. Search overrides collapse.
+  const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set(initialGroups.map(g => g.title)))
+
+  const allRows = groups.flatMap(g => g.rows)
+  const totalOn = allRows.filter(r => r.enabled).length
+  const searching = q.trim() !== ''
+
+  const shown = useMemo(() => {
+    if (!searching) return groups
+    const s = q.trim().toLowerCase()
+    return groups
+      .map(g => ({ title: g.title, rows: g.rows.filter(r => r.label.toLowerCase().includes(s) || r.slug.toLowerCase().includes(s) || r.description.toLowerCase().includes(s)) }))
+      .filter(g => g.rows.length > 0)
+  }, [groups, q, searching])
+
+  const allOpen = groups.length > 0 && groups.every(g => !collapsed.has(g.title))
+  const toggleCollapse = (t: string) => setCollapsed(s => { const n = new Set(s); if (n.has(t)) n.delete(t); else n.add(t); return n })
+  const setAll = (open: boolean) => setCollapsed(open ? new Set() : new Set(groups.map(g => g.title)))
 
   async function toggle(row: ModuleRow) {
     const slug = row.slug
@@ -106,87 +128,94 @@ export default function DashboardModulesEditor({ groups: initialGroups, canRenam
       {error && (
         <div className="p-3 rounded-xl bg-red-50 border border-red-200 text-sm text-red-700">{error}</div>
       )}
-      {groups.map(g => {
-        const visibleCount = g.rows.filter(r => r.enabled).length
+
+      {/* Summary + search */}
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="text-sm text-gray-600"><b className="tabular-nums text-gray-900">{totalOn}</b> of {allRows.length} modules on</span>
+        <div className="relative ml-auto w-full sm:w-auto sm:min-w-[220px]">
+          <Search className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+          <input value={q} onChange={e => setQ(e.target.value)} placeholder="Search modules…"
+            className="h-9 w-full rounded-lg border border-gray-300 bg-white pl-8 pr-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-200" />
+        </div>
+        {!searching && groups.length > 0 && (
+          <button type="button" onClick={() => setAll(!allOpen)} className="text-xs font-medium text-blue-600 hover:underline whitespace-nowrap">
+            {allOpen ? 'Collapse all' : 'Expand all'}
+          </button>
+        )}
+      </div>
+
+      {shown.length === 0 ? (
+        <div className="rounded-xl border border-dashed border-gray-200 p-8 text-center text-sm text-gray-500">No modules match “{q}”.</div>
+      ) : shown.map(g => {
+        const onCount = g.rows.filter(r => r.enabled).length
+        const open = searching || !collapsed.has(g.title)
         return (
-          <Card key={g.title}>
-            <CardContent className="pt-5">
-              <div className="flex items-baseline justify-between mb-3">
-                <h3 className="text-sm font-bold uppercase tracking-wide text-gray-700">{g.title}</h3>
-                <span className="text-xs text-gray-500"><b>{visibleCount}</b> of {g.rows.length} visible</span>
-              </div>
-              <ul className="divide-y divide-gray-100">
-                {g.rows.map(r => {
-                  const isBusy = busy === r.slug
-                  const isSaved = saved === r.slug
-                  return (
-                    <li key={r.slug} className="flex items-center justify-between gap-3 py-3">
-                      <div className="min-w-0 flex-1">
-                        {editingSlug === r.slug && canRename ? (
-                          <LabelEditor
-                            initialLabel={r.label}
-                            initialDescription={r.description}
-                            onCancel={() => setEditingSlug(null)}
-                            onSave={(lbl, desc) => renameLabel(r.slug, lbl, desc)}
-                          />
-                        ) : (
-                          <>
-                            <div className="flex items-center gap-2">
-                              <span className="font-medium text-gray-900">{r.label}</span>
-                              <span className="text-[11px] font-mono text-gray-400">{r.slug}</span>
-                              {canRename && (
-                                <button
-                                  type="button"
-                                  onClick={() => setEditingSlug(r.slug)}
-                                  className="text-gray-300 hover:text-blue-600"
-                                  title="Rename module"
-                                >
-                                  <Pencil className="h-3 w-3" />
-                                </button>
-                              )}
-                            </div>
-                            <p className="text-xs text-gray-500 mt-0.5 line-clamp-1">{r.description}</p>
-                          </>
-                        )}
-                      </div>
-                      <div className="flex items-center gap-2 flex-shrink-0">
-                        {isSaved && (
-                          <span className="text-[11px] text-green-700 font-semibold inline-flex items-center gap-0.5">
-                            <Check className="h-3 w-3" /> saved
-                          </span>
-                        )}
-                        <button
-                          onClick={() => toggle(r)}
-                          disabled={isBusy}
-                          title={r.enabled ? 'Click to hide from everyone' : 'Click to show to everyone'}
-                          className={cn(
-                            'relative inline-flex h-7 w-12 items-center rounded-full transition-colors',
-                            r.enabled ? 'bg-green-500' : 'bg-gray-300',
-                            isBusy && 'opacity-60 cursor-wait',
-                          )}
-                        >
-                          <span
-                            className={cn(
-                              'inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform',
-                              r.enabled ? 'translate-x-6' : 'translate-x-1',
-                            )}
-                          />
-                          {isBusy && (
-                            <Loader2 className="absolute right-1 h-3 w-3 animate-spin text-white" />
-                          )}
-                        </button>
-                        <span className={cn(
-                          'inline-flex items-center gap-1 text-[11px] font-semibold uppercase tracking-wide w-12 justify-end',
-                          r.enabled ? 'text-green-700' : 'text-gray-400',
-                        )}>
-                          {r.enabled ? <><Eye className="h-3 w-3" /> On</> : <><EyeOff className="h-3 w-3" /> Off</>}
+          <Card key={g.title} className="overflow-hidden">
+            <button type="button" onClick={() => { if (!searching) toggleCollapse(g.title) }}
+              className="flex w-full items-center gap-2 px-5 py-3 text-left hover:bg-gray-50">
+              {!searching && (open ? <ChevronDown className="h-4 w-4 text-gray-400" /> : <ChevronRight className="h-4 w-4 text-gray-400" />)}
+              <h3 className="text-sm font-bold uppercase tracking-wide text-gray-700">{g.title}</h3>
+              <span className="ml-auto text-xs text-gray-500">
+                <b className={onCount > 0 ? 'text-green-700' : 'text-gray-400'}>{onCount}</b> of {g.rows.length} on
+              </span>
+            </button>
+            {open && (
+              <CardContent className="pt-0 pb-2">
+                <ul className="divide-y divide-gray-100">
+                  {g.rows.map(r => {
+                    const isBusy = busy === r.slug
+                    const isSaved = saved === r.slug
+                    const meta = moduleMetaMap.get(r.slug)
+                    const tone = meta ? TILE_TONES[meta.tone] : TILE_TONES.slate
+                    const Icon = meta?.icon ?? Box
+                    return (
+                      <li key={r.slug} className="flex items-center gap-3 py-3">
+                        <span className={cn('inline-flex h-8 w-8 items-center justify-center rounded-lg flex-shrink-0', tone.bg, tone.ic, !r.enabled && 'opacity-50')}>
+                          <Icon className="h-4 w-4" />
                         </span>
-                      </div>
-                    </li>
-                  )
-                })}
-              </ul>
-            </CardContent>
+                        <div className="min-w-0 flex-1">
+                          {editingSlug === r.slug && canRename ? (
+                            <LabelEditor
+                              initialLabel={r.label}
+                              initialDescription={r.description}
+                              onCancel={() => setEditingSlug(null)}
+                              onSave={(lbl, desc) => renameLabel(r.slug, lbl, desc)}
+                            />
+                          ) : (
+                            <>
+                              <div className="flex items-center gap-2">
+                                <span className={cn('font-medium', r.enabled ? 'text-gray-900' : 'text-gray-400')}>{r.label}</span>
+                                <span className="text-[11px] font-mono text-gray-400">{r.slug}</span>
+                                {canRename && (
+                                  <button type="button" onClick={() => setEditingSlug(r.slug)} className="text-gray-300 hover:text-blue-600" title="Rename module">
+                                    <Pencil className="h-3 w-3" />
+                                  </button>
+                                )}
+                              </div>
+                              <p className="text-xs text-gray-500 mt-0.5 line-clamp-1">{r.description}</p>
+                            </>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-2 flex-shrink-0">
+                          {isSaved && (
+                            <span className="text-[11px] text-green-700 font-semibold inline-flex items-center gap-0.5"><Check className="h-3 w-3" /> saved</span>
+                          )}
+                          <button onClick={() => toggle(r)} disabled={isBusy}
+                            title={r.enabled ? 'Click to hide from everyone' : 'Click to show to everyone'}
+                            className={cn('relative inline-flex h-7 w-12 items-center rounded-full transition-colors', r.enabled ? 'bg-green-500' : 'bg-gray-300', isBusy && 'opacity-60 cursor-wait')}>
+                            <span className={cn('inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform', r.enabled ? 'translate-x-6' : 'translate-x-1')} />
+                            {isBusy && <Loader2 className="absolute right-1 h-3 w-3 animate-spin text-white" />}
+                          </button>
+                          <span className={cn('inline-flex items-center gap-1 text-[11px] font-semibold uppercase tracking-wide w-12 justify-end', r.enabled ? 'text-green-700' : 'text-gray-400')}>
+                            {r.enabled ? <><Eye className="h-3 w-3" /> On</> : <><EyeOff className="h-3 w-3" /> Off</>}
+                          </span>
+                        </div>
+                      </li>
+                    )
+                  })}
+                </ul>
+              </CardContent>
+            )}
           </Card>
         )
       })}
