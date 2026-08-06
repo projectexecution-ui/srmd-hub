@@ -1,14 +1,14 @@
 'use client'
 import { useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import Image from 'next/image'
 import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Badge } from '@/components/ui/badge'
-import { Loader2, Plus, Trash2, Pencil, X, Check, Upload, ImageOff, ChevronDown, ChevronRight } from 'lucide-react'
+import { ItemThumb } from '@/components/inventory/ItemThumb'
+import { Loader2, Plus, Trash2, Pencil, X, Check, Upload, ChevronDown, ChevronRight } from 'lucide-react'
 import { INVENTORY_CATEGORIES } from '@/lib/inventory-categories'
 import { confirm } from '@/components/ui/confirm-dialog'
 import { recycleDelete } from '@/lib/recycle-bin'
@@ -242,11 +242,7 @@ function ItemRow({ item, onEdit, onDeleted, setError }: {
   return (
     <div className="flex items-center gap-3 p-3 border border-gray-200 rounded-xl bg-white">
       <div className="h-14 w-14 flex-shrink-0 rounded-lg border border-gray-100 bg-gray-50 overflow-hidden flex items-center justify-center">
-        {item.image_url ? (
-          <Image src={item.image_url} alt={item.name} width={56} height={56} className="object-cover h-full w-full" unoptimized />
-        ) : (
-          <ImageOff className="h-5 w-5 text-gray-300" />
-        )}
+        <ItemThumb item={item} size={56} />
       </div>
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2 flex-wrap">
@@ -329,11 +325,7 @@ function ItemForm({ initial, onCancel, onSaved, setBusy, setError, busy }: {
     <form onSubmit={save} className="p-4 border border-blue-200 bg-blue-50/30 rounded-xl space-y-3">
       <div className="flex items-start gap-4">
         <div className="h-24 w-24 flex-shrink-0 rounded-lg border border-gray-200 bg-white overflow-hidden flex items-center justify-center">
-          {imageUrl ? (
-            <Image src={imageUrl} alt="preview" width={96} height={96} className="object-cover h-full w-full" unoptimized />
-          ) : (
-            <ImageOff className="h-6 w-6 text-gray-300" />
-          )}
+          <ItemThumb item={{ name: name || code || 'New item', code, category, image_url: imageUrl || null }} size={96} />
         </div>
         <div className="flex-1">
           <Label>Image</Label>

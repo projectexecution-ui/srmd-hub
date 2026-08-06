@@ -1,11 +1,12 @@
 'use client'
 import { useMemo, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
-import Image from 'next/image'
 import { createClient } from '@/lib/supabase/client'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
-import { ImageOff, AlertTriangle, Loader2, Check } from 'lucide-react'
+import { ItemThumb } from '@/components/inventory/ItemThumb'
+import { cn } from '@/lib/utils'
+import { AlertTriangle, Loader2, Check } from 'lucide-react'
 
 interface Warehouse { id: string; code: string; name: string }
 interface StockRow {
@@ -72,8 +73,41 @@ export function StockTable({ warehouses, selectedWarehouse, rows, canEdit = fals
       ) : filtered.length === 0 ? (
         <p className="text-sm text-gray-500 italic py-4">No items in stock for this filter.</p>
       ) : (
-        <div className="overflow-x-auto -mx-1">
-          <table className="min-w-[760px] text-sm">
+        <>
+          {/* Mobile: one card per item, with Available made the hero number */}
+          <div className="space-y-2 md:hidden">
+            {filtered.map(r => (
+              <div key={r.id} className={cn('rounded-xl border bg-white p-3', r.is_low_stock ? 'border-rose-200' : 'border-gray-200')}>
+                <div className="flex items-start gap-3">
+                  <span className="h-10 w-10 flex-shrink-0 overflow-hidden rounded-md border border-gray-100 bg-gray-50 flex items-center justify-center">
+                    <ItemThumb item={{ name: r.item_name, code: r.item_code, category: r.category, image_url: r.image_url }} size={40} />
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <p className="font-mono text-[11px] font-bold text-blue-700 leading-tight">{r.item_code}</p>
+                    <p className="text-sm font-medium text-gray-900 leading-tight">{r.item_name}</p>
+                    <p className="text-[11px] text-gray-500">{r.unit}{r.category ? ` · ${r.category}` : ''}</p>
+                  </div>
+                  <div className="flex-shrink-0 text-right">
+                    <p className="text-[10px] uppercase tracking-wide text-gray-400">Available</p>
+                    <p className={cn('text-lg font-bold tabular-nums', r.is_low_stock ? 'text-rose-700' : 'text-gray-900')}>{Number(r.available_qty).toLocaleString('en-IN')}</p>
+                    {r.is_low_stock && (
+                      <Badge className="mt-0.5 inline-flex items-center gap-1 bg-rose-100 text-[10px] text-rose-800"><AlertTriangle className="h-3 w-3" /> low</Badge>
+                    )}
+                  </div>
+                </div>
+                <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 border-t border-gray-100 pt-2 text-[11px] text-gray-500">
+                  <span>Physical <b className="tabular-nums text-gray-700">{Number(r.physical_qty).toLocaleString('en-IN')}</b></span>
+                  <span>Reserved <b className="tabular-nums text-amber-700">{Number(r.reserved_qty).toLocaleString('en-IN')}</b></span>
+                  <span>Damaged <b className="tabular-nums text-rose-700">{Number(r.damaged_qty).toLocaleString('en-IN')}</b></span>
+                  <span className="inline-flex items-center gap-1">Reorder <ReorderCell row={r} canEdit={canEdit} /></span>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* Desktop: full table */}
+          <div className="hidden overflow-x-auto -mx-1 md:block">
+            <table className="min-w-[760px] text-sm">
             <thead className="bg-gray-50">
               <tr className="text-left text-xs uppercase tracking-wide text-gray-500 whitespace-nowrap">
                 <th className="px-2 py-2 w-14"></th>
@@ -91,11 +125,7 @@ export function StockTable({ warehouses, selectedWarehouse, rows, canEdit = fals
                 <tr key={r.id} className="border-t border-gray-100 hover:bg-gray-50">
                   <td className="px-2 py-2">
                     <div className="h-9 w-9 rounded-md border border-gray-200 bg-gray-50 overflow-hidden flex items-center justify-center">
-                      {r.image_url ? (
-                        <Image src={r.image_url} alt={r.item_name} width={36} height={36} className="object-cover h-full w-full" unoptimized />
-                      ) : (
-                        <ImageOff className="h-4 w-4 text-gray-300" />
-                      )}
+                      <ItemThumb item={{ name: r.item_name, code: r.item_code, category: r.category, image_url: r.image_url }} size={36} />
                     </div>
                   </td>
                   <td className="px-2 py-2">
@@ -121,7 +151,8 @@ export function StockTable({ warehouses, selectedWarehouse, rows, canEdit = fals
               ))}
             </tbody>
           </table>
-        </div>
+          </div>
+        </>
       )}
     </div>
   )

@@ -132,7 +132,36 @@ export default async function RequestDetailPage({
           <CardTitle className="text-base">Items</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="overflow-x-auto">
+          {/* Mobile: one card per line */}
+          <div className="space-y-2 md:hidden">
+            {lines.map(l => {
+              const it = Array.isArray(l.inv_items) ? l.inv_items[0] : l.inv_items
+              const avail = availByItem.get(l.item_id) ?? 0
+              const ret = Number(l.returned_good_qty) + Number(l.returned_damaged_qty)
+              return (
+                <div key={l.id} className="rounded-xl border border-gray-200 bg-white p-3">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <span className="font-mono text-[11px] font-bold text-blue-700">{it?.code}</span>
+                      <p className="text-sm font-medium leading-tight text-gray-900">{it?.name}</p>
+                      {l.remarks && <p className="mt-0.5 text-xs text-gray-500">{l.remarks}</p>}
+                    </div>
+                    {l.is_returnable && <span className="flex-shrink-0 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-800">Returnable</span>}
+                  </div>
+                  <div className="mt-2 grid grid-cols-3 gap-x-3 gap-y-1.5 border-t border-gray-100 pt-2">
+                    <LineStat label="Requested" value={`${Number(l.requested_qty).toLocaleString('en-IN')} ${it?.unit ?? ''}`} />
+                    <LineStat label="Approved" value={l.approved_qty != null ? Number(l.approved_qty).toLocaleString('en-IN') : '—'} />
+                    <LineStat label="Issued" value={Number(l.issued_qty).toLocaleString('en-IN')} />
+                    <LineStat label="Returned" value={ret > 0 ? `${ret.toLocaleString('en-IN')}${Number(l.returned_damaged_qty) > 0 ? ` (${Number(l.returned_damaged_qty).toLocaleString('en-IN')} dmg)` : ''}` : '—'} />
+                    <LineStat label="Available" value={stockErr ? '—' : Number(avail).toLocaleString('en-IN')} />
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+
+          {/* Desktop: full table */}
+          <div className="hidden overflow-x-auto md:block">
             <table className="min-w-[640px] text-sm">
               <thead className="bg-gray-50">
                 <tr className="text-left text-xs uppercase tracking-wide text-gray-500 whitespace-nowrap">
@@ -247,6 +276,15 @@ function Meta({ label, value }: { label: string; value: string }) {
     <div>
       <p className="text-[11px] uppercase tracking-wide text-gray-500">{label}</p>
       <p className="text-gray-800 font-medium capitalize">{value}</p>
+    </div>
+  )
+}
+
+function LineStat({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <p className="text-[10px] uppercase tracking-wide text-gray-400">{label}</p>
+      <p className="tabular-nums font-medium text-gray-800">{value}</p>
     </div>
   )
 }
