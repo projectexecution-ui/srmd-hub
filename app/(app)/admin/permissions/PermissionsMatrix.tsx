@@ -100,6 +100,9 @@ export default function PermissionsMatrix({ modules, roles, initial, roleLabels,
   const grouped = useMemo(() => groupModules(modules), [modules])
   // Category-ordered roles so the matrix columns + legend cluster by category.
   const orderedRoles = useMemo(() => sortRolesByCategory(visibleRoles), [visibleRoles])
+  const roleGroups = useMemo(() => groupRoles(orderedRoles), [orderedRoles])
+  // The first role of each category (after the first) gets a divider border.
+  const catStart = useMemo(() => new Set(roleGroups.slice(1).map(g => g.roles[0] as string)), [roleGroups])
 
   async function addRole(e: React.FormEvent) {
     e.preventDefault()
@@ -310,6 +313,16 @@ export default function PermissionsMatrix({ modules, roles, initial, roleLabels,
           <div className="overflow-auto max-h-[72vh] rounded-xl border border-gray-200" onMouseLeave={() => { setHoverRole(null); setHoverSlug(null) }}>
             <table className="min-w-full border-separate border-spacing-0 text-sm">
               <thead>
+                {/* Category band — spans each group's role columns (scrolls away; the role row below stays pinned). */}
+                <tr>
+                  <th className="sticky left-0 z-20 bg-gray-50 border-b border-gray-200" />
+                  {roleGroups.map((g, gi) => (
+                    <th key={g.title} colSpan={g.roles.length}
+                      className={cn('bg-gray-50 border-b border-gray-200 px-2 py-1 text-center text-[10px] font-bold uppercase tracking-wider text-slate-400', gi > 0 && 'border-l-2 border-l-slate-200')}>
+                      {g.title}
+                    </th>
+                  ))}
+                </tr>
                 <tr>
                   <th className="sticky left-0 top-0 z-30 bg-gray-50 border-b border-gray-200 px-3 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wide text-gray-500 min-w-[220px]">Module</th>
                   {orderedRoles.map(role => {
@@ -319,7 +332,7 @@ export default function PermissionsMatrix({ modules, roles, initial, roleLabels,
                     const delBusy = delBusyRole === role
                     const hot = hoverRole === role
                     return (
-                      <th key={role} className={cn('sticky top-0 z-20 border-b border-gray-200 px-2 py-2 text-center align-bottom relative min-w-[132px] transition-colors', hot ? 'bg-indigo-50' : 'bg-gray-50')} title={rl?.description}>
+                      <th key={role} className={cn('sticky top-0 z-20 border-b border-gray-200 px-2 py-2 text-center align-bottom relative min-w-[132px] transition-colors', hot ? 'bg-indigo-50' : 'bg-gray-50', catStart.has(role) && 'border-l-2 border-l-slate-200')} title={rl?.description}>
                         {canManageRoles && role !== ('admin' as Role) && (
                           <button type="button" onClick={() => deactivateRole(role)} disabled={delBusy} title="Deactivate this role"
                             className="absolute top-0.5 right-0.5 h-4 w-4 inline-flex items-center justify-center rounded-full text-gray-300 hover:text-rose-600 hover:bg-rose-50">
@@ -349,7 +362,7 @@ export default function PermissionsMatrix({ modules, roles, initial, roleLabels,
               <tbody>
                 {grouped.map(group => (
                   <GroupRows key={group.title} title={group.title} mods={group.mods} colCount={colCount}
-                    visibleRoles={orderedRoles} labels={labels} moduleMeta={moduleMetaMap} getCell={getCell}
+                    visibleRoles={orderedRoles} catStart={catStart} labels={labels} moduleMeta={moduleMetaMap} getCell={getCell}
                     busyKey={busyKey} savedKey={savedKey} hoverRole={hoverRole} hoverSlug={hoverSlug}
                     setHoverRole={setHoverRole} setHoverSlug={setHoverSlug} toggle={toggle}
                     cycleDelete={cycleDelete} setApprover={setApprover} />
@@ -391,11 +404,12 @@ export default function PermissionsMatrix({ modules, roles, initial, roleLabels,
 }
 
 // ─── Grouped module rows ───────────────────────────────────────────────
-function GroupRows({ title, mods, colCount, visibleRoles, labels, moduleMeta, getCell, busyKey, savedKey, hoverRole, hoverSlug, setHoverRole, setHoverSlug, toggle, cycleDelete, setApprover }: {
+function GroupRows({ title, mods, colCount, visibleRoles, catStart, labels, moduleMeta, getCell, busyKey, savedKey, hoverRole, hoverSlug, setHoverRole, setHoverSlug, toggle, cycleDelete, setApprover }: {
   title: string
   mods: ModuleRef[]
   colCount: number
   visibleRoles: Role[]
+  catStart: Set<string>
   labels: RoleLabelMap
   moduleMeta: Map<string, { icon: React.ComponentType<{ className?: string }>; tone: keyof typeof TILE_TONES }>
   getCell: (role: Role, slug: string) => CellState
@@ -438,7 +452,7 @@ function GroupRows({ title, mods, colCount, visibleRoles, labels, moduleMeta, ge
               const tint = colHot || rowHot ? 'bg-indigo-50/50'
                 : level === 'admin' ? 'bg-purple-50/50' : level === 'edit' ? 'bg-amber-50/40' : level === 'view' ? 'bg-blue-50/40' : ''
               return (
-                <td key={role} className={cn('border-b border-gray-100 px-2 py-1.5 text-center transition-colors', tint, saved && 'ring-1 ring-inset ring-green-300')}
+                <td key={role} className={cn('border-b border-gray-100 px-2 py-1.5 text-center transition-colors', tint, catStart.has(role) && 'border-l-2 border-l-slate-200', saved && 'ring-1 ring-inset ring-green-300')}
                   onMouseEnter={() => { setHoverRole(role); setHoverSlug(mod.slug) }}>
                   <div className="inline-flex overflow-hidden rounded-md border border-gray-200 divide-x divide-gray-200 bg-white align-middle">
                     {ACTIONS.map(({ key, label, icon: I, on }) => {
