@@ -16,7 +16,6 @@ export const dynamic = 'force-dynamic'
 // match exactly what the inbox pages show when you click them.
 const PENDING_HOP        = 'PENDING_HOP'
 const TO_ISSUE           = ['APPROVED', 'EMERGENCY_ISSUED']
-const ENGINEER_ACTIONABLE = ['ISSUED', 'EMERGENCY_ISSUED']  // need receipt confirmation
 const REJECTED            = ['REJECTED_BACKOFFICE', 'REJECTED_HOP']
 
 export default async function InventoryLandingPage() {
@@ -48,7 +47,7 @@ export default async function InventoryLandingPage() {
   const [
     hopCount,
     storeCount,
-    myAwaitingReceiptCount,
+    gatePassPendingCount,
     myRejectedCount,
     myOutstandingReturnsCount,
     lowStockCount,
@@ -65,14 +64,13 @@ export default async function InventoryLandingPage() {
           ? supabase.from('inv_requests').select('id', { count: 'exact', head: true }).in('status', TO_ISSUE).then(r => r.count ?? 0)
           : supabase.from('inv_requests').select('id', { count: 'exact', head: true }).in('status', TO_ISSUE).in('warehouse_id', myWarehouseIds.length > 0 ? myWarehouseIds : [NIL_UUID]).then(r => r.count ?? 0))
       : Promise.resolve(null),
-    // My requests awaiting receipt confirmation (engineer only)
-    myUid
-      ? supabase.from('inv_requests')
-          .select('id', { count: 'exact', head: true })
-          .eq('engineer_id', myUid)
-          .in('status', ENGINEER_ACTIONABLE)
-          .is('engineer_acknowledged_at', null)
-          .then(r => r.count ?? 0)
+    // Issued requests still awaiting the signed gate pass (keeper's stores;
+    // admin sees all). This is the keeper's follow-up queue now that the gate
+    // pass — not an engineer tap — closes a request.
+    canStore
+      ? (canAdmin
+          ? supabase.from('inv_requests').select('id', { count: 'exact', head: true }).eq('status', 'ISSUED').is('engineer_acknowledged_at', null).then(r => r.count ?? 0)
+          : supabase.from('inv_requests').select('id', { count: 'exact', head: true }).eq('status', 'ISSUED').is('engineer_acknowledged_at', null).in('warehouse_id', myWarehouseIds.length > 0 ? myWarehouseIds : [NIL_UUID]).then(r => r.count ?? 0))
       : Promise.resolve(0),
     // My rejected requests (engineer only)
     myUid
@@ -143,14 +141,16 @@ export default async function InventoryLandingPage() {
     { slug: 'inv-request-new',      href: '/inventory/requests/new',     title: 'Raise request',  subtitle: 'New material need',  icon: ClipboardList, show: role === 'engineer' || canEdit || canAdmin },
     { slug: 'inv-requests',         href: '/inventory/requests',         title: 'My requests',    icon: FileText,     show: true,
       stat: openReqStat, subtitle: 'Everything I raised',
-      badge: myAwaitingReceiptCount + myRejectedCount, badgeStyle: (myRejectedCount > 0 ? 'rose' : 'emerald'),
-      accent: myRejectedCount > 0 ? 'danger' : (myAwaitingReceiptCount > 0 ? 'warning' : 'none') },
+      badge: myRejectedCount, badgeStyle: 'rose',
+      accent: myRejectedCount > 0 ? 'danger' : 'none' },
     { slug: 'inv-inbox-hop',        href: '/inventory/inbox/hop',        title: 'Approvals',      icon: ShieldCheck, show: approvalsActive && (role === 'head' || role === 'hop' || canAdmin),
       stat: (hopCount ?? 0) > 0 ? `${nf(hopCount ?? 0)} to approve` : undefined, subtitle: 'Requests to OK',
       badge: hopCount, badgeStyle: 'amber', accent: (hopCount ?? 0) > 0 ? 'warning' : 'none' },
     { slug: 'inv-inbox-store',      href: '/inventory/inbox/store',      title: 'To issue',       icon: Truck,     show: canStore,
-      stat: (storeCount ?? 0) > 0 ? `${nf(storeCount ?? 0)} waiting on you` : undefined, subtitle: 'Hand over material',
-      badge: storeCount, badgeStyle: 'blue', accent: (storeCount ?? 0) > 0 ? 'warning' : 'none' },
+      stat: [ (storeCount ?? 0) > 0 ? `${nf(storeCount ?? 0)} to issue` : null, gatePassPendingCount > 0 ? `${nf(gatePassPendingCount)} gate pass` : null ].filter(Boolean).join(' · ') || undefined,
+      subtitle: 'Hand over · upload gate pass',
+      badge: (storeCount ?? 0) + gatePassPendingCount, badgeStyle: 'blue',
+      accent: ((storeCount ?? 0) > 0 || gatePassPendingCount > 0) ? 'warning' : 'none' },
     { slug: 'inv-receipt',          href: '/inventory/receipt',          title: 'Stock receipt',  subtitle: 'Record vendor delivery', icon: PackagePlus,   show: canStore },
     { slug: 'inv-stock-ops',        href: '/inventory/stock-ops',        title: 'Stock corrections', subtitle: 'Count · transfer · damage', icon: Wrench,   show: canStore },
     // Reports are management-facing: storekeepers + admin, and also view-only
@@ -174,7 +174,7 @@ export default async function InventoryLandingPage() {
   const calloutQueue: { count: number; href: string; label: string } | null = (() => {
     if (hopCount && hopCount > 0)                  return { count: hopCount,        href: '/inventory/inbox/hop',        label: 'Approvals' }
     if (storeCount && storeCount > 0)              return { count: storeCount,      href: '/inventory/inbox/store',      label: 'To issue' }
-    if (myAwaitingReceiptCount > 0)                return { count: myAwaitingReceiptCount, href: '/inventory/requests', label: 'Confirm receipt' }
+    if (gatePassPendingCount > 0)                  return { count: gatePassPendingCount, href: '/inventory/inbox/store', label: 'Gate pass pending' }
     return null
   })()
 

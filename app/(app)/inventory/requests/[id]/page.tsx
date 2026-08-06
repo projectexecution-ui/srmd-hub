@@ -28,7 +28,8 @@ export default async function RequestDetailPage({
       projects(code, name),
       inv_warehouses(code, name, store_manager_id),
       inv_request_items(*, inv_items(code, name, unit, image_url)),
-      inv_request_status_log(*)
+      inv_request_status_log(*),
+      inv_gate_passes(id, path, created_at)
     `)
     .eq('id', id)
     .single()
@@ -84,6 +85,18 @@ export default async function RequestDetailPage({
     inv_items: { code: string; name: string; unit: string; image_url: string | null } | Array<{ code: string; name: string; unit: string; image_url: string | null }> | null
   }
   const lines: Line[] = (req.inv_request_items ?? []) as Line[]
+
+  // Signed gate-pass copies — proof the engineer received the material.
+  const gatePasses = (req.inv_gate_passes ?? []) as Array<{ id: string; path: string; created_at: string }>
+  let gpDocs: Array<{ id: string; url: string; created_at: string; isPdf: boolean }> = []
+  if (gatePasses.length > 0) {
+    const { data: signed } = await supabase.storage.from('inv-gate-passes').createSignedUrls(gatePasses.map(g => g.path), 3600)
+    const urlByPath = new Map<string, string>()
+    for (const s of signed ?? []) if (s.path && s.signedUrl) urlByPath.set(s.path, s.signedUrl)
+    gpDocs = gatePasses
+      .map(g => ({ id: g.id, url: urlByPath.get(g.path) ?? '', created_at: g.created_at, isPdf: g.path.toLowerCase().endsWith('.pdf') }))
+      .filter(d => d.url)
+  }
 
   return (
     <div className="p-4 md:p-6 max-w-4xl mx-auto space-y-4">
@@ -237,6 +250,32 @@ export default async function RequestDetailPage({
           }
         })}
       />
+
+      {/* Signed gate pass — proof of receipt on file */}
+      {gpDocs.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Signed gate pass</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {gpDocs.map(d => (
+              <div key={d.id}>
+                {d.isPdf ? (
+                  <a href={d.url} target="_blank" rel="noopener noreferrer" className="text-sm font-medium text-blue-700 underline underline-offset-2">
+                    View signed gate pass (PDF) · {formatDateTime(d.created_at)}
+                  </a>
+                ) : (
+                  <figure>
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={d.url} alt="Signed gate pass" className="max-h-96 rounded border border-gray-200" />
+                    <figcaption className="mt-1 text-xs text-gray-500">Received &amp; signed · uploaded {formatDateTime(d.created_at)}</figcaption>
+                  </figure>
+                )}
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+      )}
 
       {/* Audit log */}
       <Card>

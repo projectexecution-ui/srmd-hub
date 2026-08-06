@@ -8,7 +8,8 @@ import { Input } from '@/components/ui/input'
 import { QtyInput } from '@/components/inventory/QtyInput'
 import { Textarea } from '@/components/ui/textarea'
 import { confirm } from '@/components/ui/confirm-dialog'
-import { Loader2, Check, X, Truck, Undo2, PackageCheck, Ban } from 'lucide-react'
+import { compressImage } from '@/lib/img/compress'
+import { Loader2, Check, X, Truck, Undo2, FileCheck2, Camera, Ban } from 'lucide-react'
 import type { Role } from '@/lib/types'
 
 // Standard quantity display — Indian grouping, no trailing decimals.
@@ -70,6 +71,7 @@ export function RequestActions({
   )
   const [remarks, setRemarks] = useState('')
   const [cancelReason, setCancelReason] = useState('')
+  const [gpFile, setGpFile] = useState<File | null>(null)
 
   // Return form state
   const [returnLineId, setReturnLineId] = useState('')
@@ -234,34 +236,62 @@ export function RequestActions({
     )
   }
 
-  // ─── Engineer receipt acknowledgement ─────────────────────────
-  function receiptPanel() {
+  // ─── Store keeper: upload the engineer-signed gate pass ───────
+  // The signed gate pass IS the proof of receipt, so recording it closes the
+  // request — the engineer no longer needs a separate in-app confirmation.
+  async function uploadGatePass() {
+    if (!gpFile) { setErr('Attach the signed gate pass first'); return }
+    setBusy(true); setErr(null); setMsg(null)
+    try {
+      const file = await compressImage(gpFile)
+      const ext = file.type === 'application/pdf' ? 'pdf' : 'jpg'
+      const path = `${requestId}/${crypto.randomUUID()}.${ext}`
+      const { error: upErr } = await supabase.storage.from('inv-gate-passes')
+        .upload(path, file, { cacheControl: '3600', contentType: file.type || 'image/jpeg' })
+      if (upErr) { setBusy(false); setErr(`Upload failed: ${upErr.message}`); return }
+      const { error } = await supabase.rpc('inv_rpc_record_gate_pass', {
+        p_request_id: requestId, p_path: path, p_notes: remarks.trim() || null,
+      })
+      if (error) { setBusy(false); setErr(error.message); return }
+      setMsg('Gate pass saved — receipt confirmed.')
+      setTimeout(() => router.push('/inventory/inbox/store'), 700)
+    } catch (e) {
+      setBusy(false); setErr(e instanceof Error ? e.message : 'Could not save the gate pass')
+    }
+  }
+
+  function gatePassPanel() {
+    if (!isKeeper && !isAdmin) return null
     if (status !== 'ISSUED' && status !== 'EMERGENCY_ISSUED') return null
     if (alreadyAcknowledged) return null
-    if (!isRequesting && !isAdmin) return null
     const returnables = lines.filter(l => l.is_returnable)
     return (
-      <Card className="border-emerald-200 bg-emerald-50/30">
-        <CardHeader><CardTitle className="text-base inline-flex items-center gap-1.5"><PackageCheck className="h-4 w-4 text-emerald-700" /> Confirm receipt</CardTitle></CardHeader>
+      <Card className="border-teal-200 bg-teal-50/30">
+        <CardHeader><CardTitle className="text-base inline-flex items-center gap-1.5"><FileCheck2 className="h-4 w-4 text-teal-700" /> Signed gate pass</CardTitle></CardHeader>
         <CardContent className="space-y-3">
           <p className="text-sm text-gray-700">
-            Confirm that you received the items issued against this request. Once confirmed, the request closes
-            {returnables.length > 0 ? <> — but <b>{returnables.length}</b> line{returnables.length === 1 ? '' : 's'} flagged as returnable stays open until you log the return at project end.</> : '.'}
+            Photograph the gate pass the engineer signed when collecting these items. Uploading it confirms receipt and closes the request
+            {returnables.length > 0 ? <> — the <b>{returnables.length}</b> returnable line{returnables.length === 1 ? '' : 's'} stay tracked until returned.</> : '.'}
           </p>
           {returnables.length > 0 && (
             <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
-              <b>To return at project end:</b>
+              <b>Returnable — must come back at project end:</b>
               <ul className="list-disc pl-5 mt-1 space-y-0.5">
                 {returnables.map(l => <li key={l.id}>{l.item_label} ({fmtQty(l.issued_qty)} {l.unit})</li>)}
               </ul>
             </div>
           )}
+          <label className="block cursor-pointer">
+            <div className={`flex flex-col items-center justify-center rounded-lg border-2 border-dashed px-3 py-5 ${gpFile ? 'border-teal-400 bg-teal-50' : 'border-teal-300 hover:border-teal-400'}`}>
+              <Camera className={`mb-1 h-5 w-5 ${gpFile ? 'text-teal-600' : 'text-teal-400'}`} />
+              <span className="text-sm font-medium text-teal-900">{gpFile ? gpFile.name : 'Photograph the signed gate pass'}</span>
+            </div>
+            <input type="file" accept="image/jpeg,image/png,application/pdf" capture="environment" className="sr-only"
+              onChange={e => setGpFile(e.target.files?.[0] ?? null)} />
+          </label>
           <Textarea value={remarks} onChange={e => setRemarks(e.target.value)} rows={2} placeholder="Notes (optional)" />
-          <Button onClick={() => rpc('inv_rpc_engineer_acknowledge', { p_request_id: requestId, p_notes: remarks.trim() || null },
-            returnables.length > 0 ? 'Receipt confirmed. Returnable items still tracked.' : 'Receipt confirmed. Request closed.',
-            returnables.length > 0 ? '' : '/inventory/requests',
-          )} disabled={busy} className="bg-emerald-600 hover:bg-emerald-700">
-            <PackageCheck className="h-4 w-4" /> Confirm receipt
+          <Button onClick={uploadGatePass} disabled={busy || !gpFile} className="bg-teal-600 hover:bg-teal-700">
+            <FileCheck2 className="h-4 w-4" /> Save gate pass &amp; confirm receipt
           </Button>
         </CardContent>
       </Card>
@@ -360,7 +390,7 @@ export function RequestActions({
     )
   }
 
-  const anyPanel = atmHeadPanel() || storePanel() || receiptPanel() || returnPanel() || cancelPanel()
+  const anyPanel = atmHeadPanel() || storePanel() || gatePassPanel() || returnPanel() || cancelPanel()
   if (!anyPanel) return null
 
   return (
@@ -370,7 +400,7 @@ export function RequestActions({
       {busy && <p className="text-sm text-gray-500 inline-flex items-center gap-1.5"><Loader2 className="h-4 w-4 animate-spin" /> Working…</p>}
       {atmHeadPanel()}
       {storePanel()}
-      {receiptPanel()}
+      {gatePassPanel()}
       {returnPanel()}
       {cancelPanel()}
     </div>

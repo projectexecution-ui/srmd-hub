@@ -46,16 +46,46 @@ export default async function StoreInboxPage() {
     error = res.error?.message
   }
 
+  // Issued requests still waiting for the signed gate pass (= not yet receipted).
+  let gpRows: InvReqRow[] = []
+  let gpError: string | undefined
+  if (seesAll || myWarehouseIds.length > 0) {
+    let gq = supabase
+      .from('inv_requests')
+      .select('id, request_no, status, urgency, purpose, created_at, projects(code, name), inv_warehouses(code)')
+      .eq('status', 'ISSUED')
+      .is('engineer_acknowledged_at', null)
+      .order('created_at')
+    if (!seesAll) gq = gq.in('warehouse_id', myWarehouseIds)
+    const res2 = await gq
+    gpRows = (res2.data ?? []) as InvReqRow[]
+    gpError = res2.error?.message
+  }
+
   const emptyText = !seesAll && myWarehouseIds.length === 0
     ? "You're not set as the keeper of any store yet — ask your admin to assign you on the Warehouses page."
     : 'Nothing to issue right now.'
 
   return (
-    <div className="p-4 md:p-6 max-w-5xl mx-auto space-y-4">
-      <PageHeader title="Store inbox" back="/inventory" subtitle="Approved requests ready to be issued from your store" />
-      {keeperError
-        ? <QueryError what="your stores" message={keeperError} />
-        : <RequestList rows={rows as never} error={error} emptyText={emptyText} />}
+    <div className="p-4 md:p-6 max-w-5xl mx-auto space-y-6">
+      <PageHeader title="Store inbox" back="/inventory" subtitle="Issue approved requests, then upload the signed gate pass" />
+      {keeperError ? (
+        <QueryError what="your stores" message={keeperError} />
+      ) : (
+        <>
+          <section className="space-y-2">
+            <h2 className="text-sm font-semibold text-gray-700">To issue</h2>
+            <RequestList rows={rows as never} error={error} emptyText={emptyText} />
+          </section>
+          {(seesAll || myWarehouseIds.length > 0) && (
+            <section className="space-y-2">
+              <h2 className="text-sm font-semibold text-gray-700">Awaiting signed gate pass</h2>
+              <p className="text-xs text-gray-500">Already issued — open each one and upload the engineer-signed gate pass to close it.</p>
+              <RequestList rows={gpRows as never} error={gpError} emptyText="Nothing waiting for a gate pass." />
+            </section>
+          )}
+        </>
+      )}
     </div>
   )
 }
