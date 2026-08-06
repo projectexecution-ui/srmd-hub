@@ -15,10 +15,12 @@ import { createClient } from '@/lib/supabase/client'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Loader2, Check, Plus, Trash2, X, ArrowRight, Pencil, ChevronDown, ChevronRight, MessageSquare, Paperclip } from 'lucide-react'
+import { Loader2, Check, Plus, Trash2, X, ArrowRight, Pencil, ChevronDown, ChevronRight, MessageSquare, Paperclip, Search, IndianRupee, ShieldCheck, UserPlus, Box } from 'lucide-react'
 import { confirm } from '@/components/ui/confirm-dialog'
 import { cn } from '@/lib/utils'
 import { MoneyInput } from '@/components/ui/money-input'
+import { TILE_TONES } from '@/lib/modules'
+import { moduleMetaMap } from '../permissions/groups'
 import type { RoleLabelMap } from '@/lib/role-labels'
 
 const HIDDEN_MODULES = new Set(['blueprint-demo'])
@@ -110,6 +112,8 @@ export default function ApprovalsMatrix({ initial, roles, roleLabels, moduleLabe
   const [addingFor, setAddingFor] = useState<string | null>(null)
   const [busyId, setBusyId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [q, setQ] = useState('')
+  const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
 
   const groups = useMemo(() => {
     const m = new Map<string, Rule[]>()
@@ -201,6 +205,18 @@ export default function ApprovalsMatrix({ initial, roles, roleLabels, moduleLabe
     router.refresh()
   }
 
+  const searching = q.trim() !== ''
+  const s = q.trim().toLowerCase()
+  const match = (r: Rule, slug: string) =>
+    [(moduleLabels[slug] ?? slug), slug, prettyStage(r.from_stage), prettyStage(r.to_stage), fmtRole(r.approver_role, roleLabels), fmtRole(r.override_role, roleLabels)]
+      .join(' ').toLowerCase().includes(s)
+  const shownGroups: [string, Rule[]][] = searching
+    ? groups.map(([slug, rs]) => [slug, rs.filter(r => match(r, slug))] as [string, Rule[]]).filter(([, rs]) => rs.length > 0)
+    : groups
+  const allOpen = groups.length > 0 && groups.every(([slug]) => !collapsed.has(slug))
+  const toggleCollapse = (slug: string) => setCollapsed(c => { const n = new Set(c); if (n.has(slug)) n.delete(slug); else n.add(slug); return n })
+  const setAll = (open: boolean) => setCollapsed(open ? new Set() : new Set(groups.map(([slug]) => slug)))
+
   return (
     <div className="space-y-4">
       {error && (
@@ -210,78 +226,109 @@ export default function ApprovalsMatrix({ initial, roles, roleLabels, moduleLabe
         </div>
       )}
 
-      {groups.map(([modSlug, modRules]) => {
+      {groups.length > 0 && (
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="relative w-full sm:w-auto sm:min-w-[240px]">
+            <Search className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+            <Input value={q} onChange={e => setQ(e.target.value)} placeholder="Search steps, stages, roles…" className="pl-8" />
+          </div>
+          {!searching && (
+            <button type="button" onClick={() => setAll(!allOpen)} className="ml-auto text-xs font-medium text-blue-600 hover:underline whitespace-nowrap">
+              {allOpen ? 'Collapse all' : 'Expand all'}
+            </button>
+          )}
+        </div>
+      )}
+
+      {shownGroups.length === 0 ? (
+        <Card><CardContent className="py-8 text-center text-sm text-gray-500">{searching ? `No steps match “${q}”.` : 'No approval steps configured.'}</CardContent></Card>
+      ) : shownGroups.map(([modSlug, modRules]) => {
         const knownStages = stagesForModule(modSlug)
         const ordered = flowOrder(modRules)
+        const onCount = modRules.filter(r => r.is_active).length
+        const open = searching || !collapsed.has(modSlug)
+        const meta = moduleMetaMap.get(modSlug)
+        const tone = meta ? TILE_TONES[meta.tone] : TILE_TONES.slate
+        const Icon = meta?.icon ?? Box
+        const rail = orderedStages(ordered)
+        const lanes = groupByFromStage(ordered)
         return (
-          <Card key={modSlug}>
-            <CardContent className="pt-5">
-              <div className="flex items-center justify-between mb-1">
-                <h2 className="text-base font-bold text-gray-900">{moduleLabels[modSlug] ?? prettyStage(modSlug)}</h2>
-                <Button size="sm" variant="outline"
-                  onClick={() => { setAddingFor(modSlug); setEditingId(null) }}>
-                  <Plus className="h-4 w-4" /> Add step
-                </Button>
-              </div>
+          <Card key={modSlug} className="overflow-hidden">
+            <div className="flex items-center gap-2 px-4 py-3 border-b border-gray-100">
+              <button type="button" onClick={() => { if (!searching) toggleCollapse(modSlug) }} className="flex flex-1 items-center gap-2.5 text-left min-w-0">
+                {!searching && (open ? <ChevronDown className="h-4 w-4 text-gray-400 flex-shrink-0" /> : <ChevronRight className="h-4 w-4 text-gray-400 flex-shrink-0" />)}
+                <span className={cn('inline-flex h-8 w-8 items-center justify-center rounded-lg flex-shrink-0', tone.bg, tone.ic)}><Icon className="h-4 w-4" /></span>
+                <span className="min-w-0">
+                  <span className="block font-bold text-gray-900 leading-tight truncate">{moduleLabels[modSlug] ?? prettyStage(modSlug)}</span>
+                  <span className="block text-[11px] text-gray-400">{modRules.length} step{modRules.length === 1 ? '' : 's'} · <b className={onCount > 0 ? 'text-emerald-700' : 'text-gray-400'}>{onCount} on</b></span>
+                </span>
+              </button>
+              <Button size="sm" variant="outline" onClick={() => { setAddingFor(modSlug); setEditingId(null); setCollapsed(c => { const n = new Set(c); n.delete(modSlug); return n }) }}>
+                <Plus className="h-4 w-4" /> Add step
+              </Button>
+            </div>
 
-              <div>
+            {open && (
+              <CardContent className="pt-4">
+                {rail.length > 1 && (
+                  <div className="flex items-center gap-1.5 overflow-x-auto pb-3 mb-1 border-b border-dashed border-gray-100">
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-gray-300 mr-1 flex-shrink-0">Flow</span>
+                    {rail.map((st, i) => (
+                      <span key={st} className="inline-flex items-center gap-1.5 flex-shrink-0">
+                        {i > 0 && <ArrowRight className="h-3.5 w-3.5 text-gray-300" />}
+                        <StageBadge value={st} />
+                      </span>
+                    ))}
+                  </div>
+                )}
+
                 {ordered.length === 0 && addingFor !== modSlug && (
                   <p className="py-3 text-sm text-gray-400 italic">No steps yet. Click “Add step”.</p>
                 )}
 
-                {ordered.map(r => (
-                  editingId === r.id ? (
-                    <EditorRow
-                      key={r.id}
-                      mode="edit"
-                      initial={{
-                        from_stage: r.from_stage, to_stage: r.to_stage,
-                        approver_role: r.approver_role, override_role: r.override_role ?? '',
-                        amount_cap_max: r.amount_cap_max == null ? '' : String(r.amount_cap_max),
-                        requires_remarks: !!r.requires_remarks, requires_attachment: !!r.requires_attachment,
-                      }}
-                      roles={roles} roleLabels={roleLabels} knownStages={knownStages}
-                      busy={busyId === r.id}
-                      onSave={(v) => saveEdit(r.id, v)}
-                      onCancel={() => setEditingId(null)}
-                    />
-                  ) : (
-                    <ViewRow
-                      key={r.id}
-                      rule={r}
-                      roleLabels={roleLabels}
-                      busy={busyId === r.id}
-                      onEdit={() => { setEditingId(r.id); setAddingFor(null) }}
-                      onToggle={(next) => toggleActive(r.id, next)}
-                      onRemove={() => remove(r.id)}
-                    />
-                  )
+                {lanes.map(lane => (
+                  <div key={lane.stage} className="mt-3 first:mt-1">
+                    <div className="flex items-center gap-2 px-1 py-1">
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-gray-400">When at</span>
+                      <StageBadge value={lane.stage} />
+                      <span className="text-[11px] text-gray-300">· {lane.rules.length}</span>
+                    </div>
+                    <div className="pl-1">
+                      {lane.rules.map(r => (
+                        editingId === r.id ? (
+                          <EditorRow key={r.id} mode="edit"
+                            initial={{ from_stage: r.from_stage, to_stage: r.to_stage, approver_role: r.approver_role, override_role: r.override_role ?? '', amount_cap_max: r.amount_cap_max == null ? '' : String(r.amount_cap_max), requires_remarks: !!r.requires_remarks, requires_attachment: !!r.requires_attachment }}
+                            roles={roles} roleLabels={roleLabels} knownStages={knownStages} busy={busyId === r.id}
+                            onSave={(v) => saveEdit(r.id, v)} onCancel={() => setEditingId(null)} />
+                        ) : (
+                          <ViewRow key={r.id} rule={r} roleLabels={roleLabels} busy={busyId === r.id}
+                            onEdit={() => { setEditingId(r.id); setAddingFor(null) }}
+                            onToggle={(next) => toggleActive(r.id, next)} onRemove={() => remove(r.id)} />
+                        )
+                      ))}
+                    </div>
+                  </div>
                 ))}
 
                 {addingFor === modSlug && (
-                  <EditorRow
-                    mode="new"
-                    initial={{ from_stage: '', to_stage: '', approver_role: '', override_role: '', amount_cap_max: '', requires_remarks: false, requires_attachment: false }}
-                    roles={roles} roleLabels={roleLabels} knownStages={knownStages}
-                    busy={busyId === 'new'}
-                    onSave={(v) => createRule(modSlug, v)}
-                    onCancel={() => setAddingFor(null)}
-                  />
+                  <div className="mt-3">
+                    <EditorRow mode="new"
+                      initial={{ from_stage: '', to_stage: '', approver_role: '', override_role: '', amount_cap_max: '', requires_remarks: false, requires_attachment: false }}
+                      roles={roles} roleLabels={roleLabels} knownStages={knownStages} busy={busyId === 'new'}
+                      onSave={(v) => createRule(modSlug, v)} onCancel={() => setAddingFor(null)} />
+                  </div>
                 )}
-              </div>
-            </CardContent>
+              </CardContent>
+            )}
           </Card>
         )
       })}
-
-      {groups.length === 0 && (
-        <Card><CardContent className="py-8 text-center text-sm text-gray-500">No approval steps configured.</CardContent></Card>
-      )}
     </div>
   )
 }
 
-// ─── One rule as a plain-English line ──────────────────────────────────
+// ─── One rule row — the lane above shows the "from" stage, so the row leads
+//     with where it can move to + who approves. ──────────────────────────
 function ViewRow({ rule, roleLabels, busy, onEdit, onToggle, onRemove }: {
   rule: Rule
   roleLabels: RoleLabelMap
@@ -290,39 +337,22 @@ function ViewRow({ rule, roleLabels, busy, onEdit, onToggle, onRemove }: {
   onToggle: (next: boolean) => void
   onRemove: () => void
 }) {
-  const extras: string[] = []
-  if (rule.amount_cap_max != null) extras.push(`only when ₹ ${Number(rule.amount_cap_max).toLocaleString('en-IN')} or less`)
-  if (rule.requires_remarks) extras.push('needs a note')
-  if (rule.requires_attachment) extras.push('needs a file')
   return (
-    <div className={cn('flex items-center gap-3 py-3 border-t border-gray-100 first:border-t-0', !rule.is_active && 'opacity-50')}>
-      <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-1.5 flex-wrap text-sm">
-          <StageChip value={rule.from_stage} />
-          <ArrowRight className="h-3.5 w-3.5 text-gray-400" />
-          <StageChip value={rule.to_stage} tone="green" />
-          <span className="text-gray-500">— approved by</span>
-          <span className="font-semibold text-gray-900">{fmtRole(rule.approver_role, roleLabels)}</span>
-          {rule.override_role && <span className="text-gray-400">or {fmtRole(rule.override_role, roleLabels)}</span>}
-        </div>
-        {extras.length > 0 && (
-          <p className="text-[11px] text-gray-400 mt-1 pl-1">{extras.join(' · ')}</p>
+    <div className={cn('flex items-center gap-2.5 rounded-lg px-2 -mx-2 py-2 border-t border-gray-100 first:border-t-0 hover:bg-gray-50/60 transition-colors', !rule.is_active && 'opacity-55')}>
+      <ArrowRight className="h-3.5 w-3.5 text-gray-300 flex-shrink-0" />
+      <div className="flex-1 min-w-0 flex items-center gap-1.5 flex-wrap text-sm">
+        <StageBadge value={rule.to_stage} />
+        <span className="text-[11px] text-gray-400">by</span>
+        <ApproverChip role={rule.approver_role} labels={roleLabels} />
+        {rule.override_role && (
+          <span className="inline-flex items-center gap-1 rounded-md bg-blue-50 border border-blue-100 px-1.5 py-0.5 text-[10px] font-medium text-blue-700 uppercase" title="Backup approver">
+            <UserPlus className="h-3 w-3" /> {fmtRole(rule.override_role, roleLabels)}
+          </span>
         )}
+        <ConditionBadges rule={rule} />
       </div>
-
       {busy && <Loader2 className="h-4 w-4 animate-spin text-gray-400 flex-shrink-0" />}
-
-      {/* On / Off pill */}
-      <button
-        type="button"
-        onClick={() => onToggle(!rule.is_active)}
-        className={cn('text-[11px] font-semibold px-2.5 py-1 rounded-full border flex-shrink-0 transition-colors',
-          rule.is_active ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-gray-100 text-gray-500 border-gray-200')}
-        title={rule.is_active ? 'On — click to turn off' : 'Off — click to turn on'}
-      >
-        {rule.is_active ? 'On' : 'Off'}
-      </button>
-
+      <ToggleSwitch on={rule.is_active} onClick={() => onToggle(!rule.is_active)} />
       <button type="button" onClick={onEdit} title="Edit this step"
         className="h-7 w-7 inline-flex items-center justify-center rounded-md text-gray-400 hover:text-blue-700 hover:bg-blue-50 flex-shrink-0">
         <Pencil className="h-3.5 w-3.5" />
@@ -335,14 +365,69 @@ function ViewRow({ rule, roleLabels, busy, onEdit, onToggle, onRemove }: {
   )
 }
 
-function StageChip({ value, tone = 'gray' }: { value: string; tone?: 'gray' | 'green' }) {
+function ConditionBadges({ rule }: { rule: Rule }) {
+  const badges: React.ReactNode[] = []
+  if (rule.amount_cap_max != null) badges.push(
+    <span key="cap" className="inline-flex items-center gap-0.5 rounded-full bg-amber-50 border border-amber-200 px-1.5 py-0.5 text-[10px] font-medium text-amber-800" title="Only when the amount is at or below this">
+      <IndianRupee className="h-2.5 w-2.5" />≤ {Number(rule.amount_cap_max).toLocaleString('en-IN')}
+    </span>)
+  if (rule.requires_remarks) badges.push(
+    <span key="note" className="inline-flex items-center gap-1 rounded-full bg-slate-50 border border-slate-200 px-1.5 py-0.5 text-[10px] text-slate-600" title="Approver must leave a note"><MessageSquare className="h-2.5 w-2.5" /> note</span>)
+  if (rule.requires_attachment) badges.push(
+    <span key="file" className="inline-flex items-center gap-1 rounded-full bg-slate-50 border border-slate-200 px-1.5 py-0.5 text-[10px] text-slate-600" title="Approver must attach a file"><Paperclip className="h-2.5 w-2.5" /> file</span>)
+  return <>{badges}</>
+}
+
+function ApproverChip({ role, labels }: { role: string; labels: RoleLabelMap }) {
   return (
-    <span className={cn('inline-block text-xs font-medium px-2 py-0.5 rounded-md border whitespace-nowrap',
-      tone === 'green' ? 'bg-emerald-50 text-emerald-800 border-emerald-200' : 'bg-gray-50 text-gray-700 border-gray-200')}
-      title={value}>
+    <span className="inline-flex items-center gap-1 rounded-md bg-gray-100 border border-gray-200 px-2 py-0.5 text-xs font-semibold text-gray-800 uppercase">
+      <ShieldCheck className="h-3 w-3 text-gray-500" /> {fmtRole(role, labels)}
+    </span>
+  )
+}
+
+function ToggleSwitch({ on, onClick }: { on: boolean; onClick: () => void }) {
+  return (
+    <button type="button" onClick={onClick} role="switch" aria-checked={on}
+      title={on ? 'On — click to turn off' : 'Off — click to turn on'}
+      className={cn('relative inline-flex h-5 w-9 items-center rounded-full transition-colors flex-shrink-0', on ? 'bg-emerald-500' : 'bg-gray-300')}>
+      <span className={cn('inline-block h-4 w-4 rounded-full bg-white shadow transition-transform', on ? 'translate-x-4' : 'translate-x-0.5')} />
+    </button>
+  )
+}
+
+const STAGE_TONE_CLS: Record<'slate' | 'blue' | 'green' | 'amber' | 'rose', string> = {
+  slate: 'bg-slate-100 text-slate-700 border-slate-200',
+  blue:  'bg-blue-50 text-blue-700 border-blue-200',
+  green: 'bg-emerald-50 text-emerald-800 border-emerald-200',
+  amber: 'bg-amber-50 text-amber-800 border-amber-200',
+  rose:  'bg-rose-50 text-rose-700 border-rose-200',
+}
+function stageTone(s: string): keyof typeof STAGE_TONE_CLS {
+  const t = (s || '').toLowerCase()
+  if (/reject|cancel|declin/.test(t)) return 'rose'
+  if (/partial/.test(t)) return 'amber'
+  if (/approv|final|issu|paid|releas|complet|closed|done/.test(t)) return 'green'
+  if (/submit|pending|review|verify|check|deadline/.test(t)) return 'blue'
+  return 'slate'
+}
+function StageBadge({ value }: { value: string }) {
+  return (
+    <span className={cn('inline-block text-xs font-medium px-2 py-0.5 rounded-md border whitespace-nowrap', STAGE_TONE_CLS[stageTone(value)])} title={value}>
       {prettyStage(value)}
     </span>
   )
+}
+
+function orderedStages(ordered: Rule[]): string[] {
+  const set = new Set<string>(); const out: string[] = []
+  for (const r of ordered) for (const st of [r.from_stage, r.to_stage]) if (st && !set.has(st)) { set.add(st); out.push(st) }
+  return out
+}
+function groupByFromStage(ordered: Rule[]): { stage: string; rules: Rule[] }[] {
+  const m = new Map<string, Rule[]>()
+  for (const r of ordered) { if (!m.has(r.from_stage)) m.set(r.from_stage, []); m.get(r.from_stage)!.push(r) }
+  return [...m.entries()].map(([stage, rules]) => ({ stage, rules }))
 }
 
 // ─── Inline editor (used for both edit + new) ──────────────────────────
