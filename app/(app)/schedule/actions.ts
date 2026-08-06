@@ -4,6 +4,9 @@ import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
 import { getMyUser } from '@/lib/auth'
 import { DEFAULT_TEMPLATE } from '@/lib/schedule/template'
+import { progressFromFloors } from '@/lib/schedule/formula'
+import { floorsSettingKey } from '@/lib/schedule/floors'
+import type { FloorStatus } from '@/lib/schedule/types'
 
 async function currentUid(): Promise<string | null> {
   const u = await getMyUser()
@@ -123,10 +126,12 @@ export async function applyTemplate(projectId: string): Promise<{ ok?: true; add
   return { ok: true, added: rows.length }
 }
 
-/** Set an item×location floor status (upsert by hand — the unique is on lower(location)). */
+/** Set an item×location floor status (upsert by hand — the unique is on lower(location)).
+ *  One tap also re-syncs the item's overall % + state from the floor matrix, so the
+ *  Board rings, Table fill and rollups all move from the same action. */
 export async function setFloorStatus(input: {
   itemId: string; projectId: string; location: string; floorId?: string | null
-  status: 'not_started' | 'wip' | 'done' | 'na'
+  status: FloorStatus
 }): Promise<{ ok?: true; error?: string }> {
   const sb = await createClient()
   const me = await currentUid()
@@ -144,6 +149,33 @@ export async function setFloorStatus(input: {
     })
     if (error) return { error: error.message }
   }
+
+  // Re-derive the item's % from all its floor cells and sync pct + state.
+  const { data: cells } = await sb.from('sched_progress').select('status').eq('item_id', input.itemId)
+  const statuses = ((cells ?? []) as Array<{ status: FloorStatus }>).map(c => c.status)
+  if (statuses.length) {
+    const pct = progressFromFloors(statuses)
+    const { data: cur } = await sb.from('sched_items').select('state').eq('id', input.itemId).maybeSingle()
+    const state = (cur?.state as string) === 'on_hold'
+      ? 'on_hold'
+      : pct >= 100 ? 'done' : pct > 0 ? 'in_progress' : 'planned'
+    await sb.from('sched_items').update({ pct, state }).eq('id', input.itemId)
+  }
+
   revalidatePath(`/schedule/${input.projectId}`)
+  return { ok: true }
+}
+
+/** Save the floor/location column list for a project's progress matrix. */
+export async function setScheduleFloors(
+  projectId: string, floors: string[],
+): Promise<{ ok?: true; error?: string }> {
+  const clean = Array.from(new Set(floors.map(f => f.trim()).filter(Boolean)))
+  if (!clean.length) return { error: 'Add at least one floor / location.' }
+  const sb = await createClient()
+  const { error } = await sb.from('app_settings')
+    .upsert({ key: floorsSettingKey(projectId), value: JSON.stringify(clean) }, { onConflict: 'key' })
+  if (error) return { error: error.message }
+  revalidatePath(`/schedule/${projectId}`)
   return { ok: true }
 }

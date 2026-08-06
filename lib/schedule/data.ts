@@ -5,6 +5,7 @@ import { cache } from 'react'
 import { createClient } from '@/lib/supabase/server'
 import { APP_TIME_ZONE } from '@/lib/utils'
 import { DEFAULT_LEADS } from './formula'
+import { DEFAULT_FLOORS, floorsSettingKey, parseFloors } from './floors'
 import type { LeadDays, SchedItem, SchedProgress, SchedDrawing } from './types'
 
 /** Today as an IST calendar date ("YYYY-MM-DD"). */
@@ -61,6 +62,22 @@ export async function getAiAssistProjects(): Promise<string[]> {
   } catch { return [] }
 }
 
+/** The floor/location columns for the progress matrix. Prefers the per-project
+ *  saved list, then seeded project_floors, then the standard tower default. */
+export async function getScheduleFloors(
+  projectId: string,
+  seeded?: Array<{ name: string }>,
+): Promise<string[]> {
+  const sb = await createClient()
+  const { data } = await sb.from('app_settings').select('value')
+    .eq('key', floorsSettingKey(projectId)).maybeSingle()
+  const saved = parseFloors(data?.value as string | undefined)
+  if (saved) return saved
+  const fromSeed = (seeded ?? []).map(f => f.name.trim()).filter(Boolean)
+  if (fromSeed.length) return Array.from(new Set(fromSeed))
+  return DEFAULT_FLOORS
+}
+
 export interface ProjectScheduleData {
   project: {
     id: string; code: string | null; name: string; status: string | null
@@ -70,6 +87,7 @@ export interface ProjectScheduleData {
   progress: SchedProgress[]
   drawings: SchedDrawing[]
   floors: Array<{ id: string; name: string; sequence: number }>
+  floorNames: string[]
   leads: LeadDays
   today: string
   aiAssist: boolean
@@ -97,12 +115,16 @@ export async function getProjectSchedule(projectId: string): Promise<ProjectSche
     progress = (pr ?? []) as SchedProgress[]
   }
 
+  const floorRows = (floors ?? []) as Array<{ id: string; name: string; sequence: number }>
+  const floorNames = await getScheduleFloors(projectId, floorRows)
+
   return {
     project: project as ProjectScheduleData['project'],
     items: (items ?? []) as SchedItem[],
     progress,
     drawings: (drawings ?? []) as SchedDrawing[],
-    floors: (floors ?? []) as Array<{ id: string; name: string; sequence: number }>,
+    floors: floorRows,
+    floorNames,
     leads,
     today: todayISO(),
     aiAssist: aiProjects.includes(projectId),

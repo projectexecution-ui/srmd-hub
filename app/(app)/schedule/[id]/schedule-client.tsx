@@ -10,10 +10,10 @@ import { Button } from '@/components/ui/button'
 import { confirm } from '@/components/ui/confirm-dialog'
 import { ChevronLeft, Plus, CalendarClock, Trash2, User, Pencil } from 'lucide-react'
 import { deriveStatus, daysBetween, addDays, STATUS_META } from '@/lib/schedule/formula'
-import type { DisplayStatus, SchedItem, LeadDays } from '@/lib/schedule/types'
+import type { DisplayStatus, SchedItem, LeadDays, FloorStatus } from '@/lib/schedule/types'
 import type { ProjectScheduleData } from '@/lib/schedule/data'
 import { TEMPLATE_ITEM_COUNT } from '@/lib/schedule/template'
-import { addSchedItem, updateSchedItem, setWoIssued, moveSchedDate, deleteSchedItem, applyTemplate } from '../actions'
+import { addSchedItem, updateSchedItem, setWoIssued, moveSchedDate, deleteSchedItem, applyTemplate, setFloorStatus, setScheduleFloors } from '../actions'
 
 type Row = {
   item: SchedItem
@@ -98,12 +98,19 @@ function MiniBar({ row, axisStart, axisEnd, today }: { row: Row; axisStart: stri
 export function ScheduleClient({ data, canEdit, meId }: { data: ProjectScheduleData; canEdit: boolean; meId: string | null }) {
   const router = useRouter()
   const [pending, start] = useTransition()
-  const [view, setView] = useState<'board' | 'table'>('board')
+  const [view, setView] = useState<'board' | 'table' | 'floors'>('board')
   const [mineOnly, setMineOnly] = useState(false)
   const [showAdd, setShowAdd] = useState(false)
   const [expanded, setExpanded] = useState<string | null>(null)
 
-  const { project, items, drawings, leads, today } = data
+  const { project, items, drawings, leads, today, floorNames, progress } = data
+
+  // (itemId|location) → floor status, for the progress matrix
+  const cellStatus = useMemo(() => {
+    const m = new Map<string, FloorStatus>()
+    for (const p of progress) m.set(`${p.item_id}|${p.location.trim().toLowerCase()}`, p.status)
+    return m
+  }, [progress])
 
   const blockedByDrawing = useMemo(() => {
     const set = new Set<string>()
@@ -175,6 +182,7 @@ export function ScheduleClient({ data, canEdit, meId }: { data: ProjectScheduleD
         <div className="inline-flex rounded-lg border bg-slate-50 p-1">
           <button onClick={() => setView('board')} className={cn('px-3 py-1.5 text-sm rounded-md transition', view === 'board' ? 'bg-white text-indigo-700 font-semibold shadow-sm' : 'text-gray-500 hover:text-gray-700')}>🗂️ Board</button>
           <button onClick={() => setView('table')} className={cn('px-3 py-1.5 text-sm rounded-md transition', view === 'table' ? 'bg-white text-indigo-700 font-semibold shadow-sm' : 'text-gray-500 hover:text-gray-700')}>📋 Table</button>
+          <button onClick={() => setView('floors')} className={cn('px-3 py-1.5 text-sm rounded-md transition', view === 'floors' ? 'bg-white text-indigo-700 font-semibold shadow-sm' : 'text-gray-500 hover:text-gray-700')}>🏢 Floors</button>
         </div>
         {meId && (
           <label className="inline-flex items-center gap-2 text-sm text-gray-600 cursor-pointer select-none">
@@ -241,7 +249,7 @@ export function ScheduleClient({ data, canEdit, meId }: { data: ProjectScheduleD
                 </div>
               )}
             </div>
-          ) : (
+          ) : view === 'table' ? (
             <Card className="overflow-x-auto">
               <table className="min-w-full text-sm">
                 <thead>
@@ -284,6 +292,13 @@ export function ScheduleClient({ data, canEdit, meId }: { data: ProjectScheduleD
                 </tbody>
               </table>
             </Card>
+          ) : (
+            <FloorMatrix
+              byTrade={byTrade} floorNames={floorNames} cellStatus={cellStatus}
+              canEdit={canEdit} pending={pending}
+              onCycle={(itemId, floor, next) => run(() => setFloorStatus({ itemId, projectId: project.id, location: floor, status: next }))}
+              onSaveFloors={(floors) => run(() => setScheduleFloors(project.id, floors), 'Floors updated')}
+            />
           )}
         </>
       )}
@@ -408,6 +423,99 @@ function TableRow({ row, canEdit, projectId, axisStart, axisEnd, today, expanded
         </tr>
       )}
     </>
+  )
+}
+
+const FLOOR_CELL: Record<FloorStatus, { label: string; cls: string; title: string }> = {
+  not_started: { label: '', cls: 'bg-slate-50 text-slate-300 hover:bg-slate-100', title: 'Not started' },
+  wip: { label: '◐', cls: 'bg-amber-100 text-amber-700 hover:bg-amber-200', title: 'In progress' },
+  done: { label: '✓', cls: 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200', title: 'Done' },
+  na: { label: '–', cls: 'bg-slate-100 text-slate-400 hover:bg-slate-200', title: 'Not applicable' },
+}
+const NEXT_FLOOR: Record<FloorStatus, FloorStatus> = { not_started: 'wip', wip: 'done', done: 'na', na: 'not_started' }
+
+/** The item × floor progress matrix — the engineer's daily tap-to-update screen. */
+function FloorMatrix({ byTrade, floorNames, cellStatus, canEdit, pending, onCycle, onSaveFloors }: {
+  byTrade: { trade: string; rows: Row[] }[]
+  floorNames: string[]
+  cellStatus: Map<string, FloorStatus>
+  canEdit: boolean
+  pending: boolean
+  onCycle: (itemId: string, floor: string, next: FloorStatus) => void
+  onSaveFloors: (floors: string[]) => void
+}) {
+  const [editing, setEditing] = useState(false)
+  const [text, setText] = useState(floorNames.join(', '))
+  const lookup = (itemId: string, floor: string): FloorStatus =>
+    cellStatus.get(`${itemId}|${floor.trim().toLowerCase()}`) ?? 'not_started'
+
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center gap-2 flex-wrap">
+        <p className="text-xs text-gray-500">
+          Tap a cell to advance: blank → <span className="text-amber-700 font-semibold">◐ WIP</span> → <span className="text-emerald-700 font-semibold">✓ done</span> → <span className="text-gray-400">– N/A</span>. Each tap updates the item’s % everywhere.
+        </p>
+        {canEdit && (
+          <button onClick={() => { setText(floorNames.join(', ')); setEditing(v => !v) }} className="ml-auto text-xs text-indigo-600 hover:underline whitespace-nowrap">Edit floors</button>
+        )}
+      </div>
+
+      {editing && canEdit && (
+        <Card className="p-3 border-indigo-200 space-y-2">
+          <label className="text-[11px] font-semibold text-gray-600 block">Floors / locations — comma-separated, top to bottom
+            <input value={text} onChange={e => setText(e.target.value)} className="mt-1 w-full border rounded px-2 py-1.5 text-sm font-mono" />
+          </label>
+          <div className="flex gap-2">
+            <Button size="sm" disabled={pending} className="bg-indigo-600 hover:bg-indigo-700" onClick={() => { onSaveFloors(text.split(',').map(s => s.trim()).filter(Boolean)); setEditing(false) }}>Save floors</Button>
+            <Button size="sm" variant="ghost" onClick={() => setEditing(false)}>Cancel</Button>
+          </div>
+        </Card>
+      )}
+
+      <Card className="overflow-x-auto">
+        <table className="text-sm border-separate border-spacing-0">
+          <thead>
+            <tr>
+              <th className="sticky left-0 z-10 bg-slate-50 border-b px-3 py-2.5 text-left text-[10px] uppercase tracking-wide text-gray-500 min-w-[180px]">Work</th>
+              {floorNames.map(f => (
+                <th key={f} className="border-b border-l px-2 py-2.5 text-[10px] font-semibold text-gray-500 whitespace-nowrap min-w-[46px] text-center">{f}</th>
+              ))}
+              <th className="border-b border-l px-2 py-2.5 text-[10px] uppercase tracking-wide text-gray-500 text-center min-w-[44px]">%</th>
+            </tr>
+          </thead>
+          <tbody>
+            {byTrade.map(g => (
+              <FragmentGroup key={g.trade}>
+                <tr>
+                  <td colSpan={floorNames.length + 2} className="sticky left-0 bg-slate-50 border-y px-3 py-1.5 text-xs font-bold text-gray-800">{g.trade}</td>
+                </tr>
+                {g.rows.map(r => (
+                  <tr key={r.item.id} className="hover:bg-slate-50/40">
+                    <td className="sticky left-0 z-10 bg-white border-b px-3 py-1.5 min-w-[180px]">
+                      <div className="font-medium text-gray-900 text-[13px] leading-tight truncate max-w-[220px]">{r.item.name}</div>
+                      {r.item.sub && <div className="text-[10px] text-gray-400 truncate max-w-[220px]">{r.item.sub}</div>}
+                    </td>
+                    {floorNames.map(f => {
+                      const st = lookup(r.item.id, f)
+                      const meta = FLOOR_CELL[st]
+                      return (
+                        <td key={f} className="border-b border-l p-0 text-center">
+                          {canEdit
+                            ? <button title={meta.title} disabled={pending} onClick={() => onCycle(r.item.id, f, NEXT_FLOOR[st])}
+                                className={cn('w-full h-9 text-sm font-semibold transition', meta.cls)}>{meta.label}</button>
+                            : <span className={cn('flex items-center justify-center w-full h-9 text-sm', meta.cls)}>{meta.label}</span>}
+                        </td>
+                      )
+                    })}
+                    <td className="border-b border-l px-2 text-center font-mono text-[11px] font-semibold text-indigo-600">{r.item.pct}</td>
+                  </tr>
+                ))}
+              </FragmentGroup>
+            ))}
+          </tbody>
+        </table>
+      </Card>
+    </div>
   )
 }
 
