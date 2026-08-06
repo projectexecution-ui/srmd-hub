@@ -9,44 +9,61 @@ import { istTime, movementDetail, type DailyMovementReport } from '@/lib/invento
 
 const nf = (n: number) => Number(n || 0).toLocaleString('en-IN')
 
+// Shared catalogue brand palette (keep the two inventory PDFs visually a set).
+const NAVY: [number, number, number] = [15, 42, 74]
+const GOLD: [number, number, number] = [200, 162, 74]
+const INK: [number, number, number] = [31, 41, 55]
+const MUTE: [number, number, number] = [107, 114, 128]
+
 function build(report: DailyMovementReport, dayLabel: string): jsPDF {
   const doc = new jsPDF({ orientation: 'portrait', format: 'a4', unit: 'pt' })
   const pageW = doc.internal.pageSize.getWidth()
   const pageH = doc.internal.pageSize.getHeight()
   const marginX = 36
-  let y = 44
 
-  doc.setFont('helvetica', 'bold'); doc.setFontSize(16); doc.setTextColor(17, 24, 39)
-  doc.text('Inventory — daily movement', marginX, y)
-  y += 15
-  doc.setFont('helvetica', 'normal'); doc.setFontSize(9.5); doc.setTextColor(107, 114, 128)
-  doc.text(dayLabel, marginX, y)
+  // ── Masthead (matches the Material Catalogue) ──
+  doc.setFillColor(...NAVY); doc.rect(0, 0, pageW, 76, 'F')
+  doc.setFillColor(...GOLD); doc.rect(0, 76, pageW, 3, 'F')
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(18); doc.setTextColor(255, 255, 255)
+  doc.text('Inventory — Daily Movement', marginX, 38)
+  doc.setFont('helvetica', 'normal'); doc.setFontSize(9.5); doc.setTextColor(206, 214, 224)
+  doc.text(dayLabel, marginX, 56)
   const stamp = `Generated ${formatDateTime(new Date())}`
-  doc.text(stamp, pageW - marginX - doc.getTextWidth(stamp), y)
-  y += 16
+  doc.setFontSize(8.5)
+  doc.text(stamp, pageW - marginX - doc.getTextWidth(stamp), 56)
+  const tag = `${nf(report.kpi.entries)} in · ${nf(report.kpi.exits)} out · ${nf(report.kpi.transfers)} moved`
+  doc.setTextColor(...GOLD); doc.setFont('helvetica', 'bold'); doc.setFontSize(9)
+  doc.text(tag, marginX, 70)
 
-  const kpis = [
-    ['Entries', nf(report.kpi.entries)], ['Exits', nf(report.kpi.exits)],
-    ['Transfers', nf(report.kpi.transfers)], ['Items', nf(report.kpi.itemsTouched)],
+  let y = 76 + 3 + 22
+
+  const kpis: Array<[string, string, [number, number, number]]> = [
+    ['Entries', nf(report.kpi.entries), [22, 101, 52]],
+    ['Exits', nf(report.kpi.exits), [190, 24, 60]],
+    ['Transfers', nf(report.kpi.transfers), [37, 99, 235]],
+    ['Items', nf(report.kpi.itemsTouched), INK],
   ]
   const gap = 10
   const cardW = (pageW - marginX * 2 - gap * 3) / 4
-  kpis.forEach(([label, value], i) => {
+  kpis.forEach(([label, value, tone], i) => {
     const x = marginX + i * (cardW + gap)
     doc.setDrawColor(229, 231, 235); doc.setFillColor(249, 250, 251)
-    doc.roundedRect(x, y, cardW, 38, 5, 5, 'FD')
-    doc.setFont('helvetica', 'normal'); doc.setFontSize(7.5); doc.setTextColor(107, 114, 128)
-    doc.text(label.toUpperCase(), x + 8, y + 14)
-    doc.setFont('helvetica', 'bold'); doc.setFontSize(14); doc.setTextColor(17, 24, 39)
-    doc.text(value, x + 8, y + 31)
+    doc.roundedRect(x, y, cardW, 44, 5, 5, 'FD')
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(7.5); doc.setTextColor(...MUTE)
+    doc.text(label.toUpperCase(), x + 9, y + 15)
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(15); doc.setTextColor(...tone)
+    doc.text(value, x + 9, y + 35)
   })
-  y += 38 + 16
+  y += 44 + 18
 
   const section = (title: string, rgb: [number, number, number], head: string[], body: (string)[][]) => {
     if (body.length === 0) return
     if (y > pageH - 90) { doc.addPage(); y = 44 }
+    // Coloured left-rule + title (colour stays semantic: in / out / move).
+    doc.setFillColor(rgb[0], rgb[1], rgb[2])
+    doc.roundedRect(marginX, y - 9, 3.5, 12, 1, 1, 'F')
     doc.setFont('helvetica', 'bold'); doc.setFontSize(11); doc.setTextColor(rgb[0], rgb[1], rgb[2])
-    doc.text(`${title}  (${body.length})`, marginX, y)
+    doc.text(`${title}  (${body.length})`, marginX + 9, y)
     autoTable(doc, {
       startY: y + 6,
       head: [head],
@@ -74,8 +91,10 @@ function build(report: DailyMovementReport, dayLabel: string): jsPDF {
   const pages = doc.getNumberOfPages()
   for (let p = 1; p <= pages; p++) {
     doc.setPage(p)
-    doc.setFont('helvetica', 'normal'); doc.setFontSize(7); doc.setTextColor(156, 163, 175)
-    doc.text(`CT HUB · Inventory daily movement · page ${p} of ${pages}`, marginX, pageH - 18)
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(7); doc.setTextColor(...MUTE)
+    doc.text('CT HUB · Inventory daily movement', marginX, pageH - 18)
+    const rt = `Page ${p} of ${pages}`
+    doc.text(rt, pageW - marginX - doc.getTextWidth(rt), pageH - 18)
   }
   return doc
 }

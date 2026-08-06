@@ -7,6 +7,7 @@ import { QueryError } from '@/components/ui/query-error'
 import { FileText, ArrowRight, LogIn, LogOut, ArrowLeftRight } from 'lucide-react'
 import { istDateStr, istDayRange } from '@/lib/inventory/day-window'
 import { CatalogueActions, type CatalogueClientRow } from './CatalogueActions'
+import type { StoreQty, WarehouseInfo } from '@/lib/inventory/catalogue-report'
 
 export const dynamic = 'force-dynamic'
 
@@ -23,37 +24,68 @@ export default async function InventoryReportsPage() {
   const today = istDateStr()
   const { startUtc, endUtc, label: todayLabel } = istDayRange(today)
 
-  const [itemsRes, stockRes, movesRes] = await Promise.all([
+  const [itemsRes, stockRes, whRes, movesRes] = await Promise.all([
     supabase.from('inv_items')
       .select('id, code, name, description, unit, category, subcategory, hsn_code, image_url')
       .is('deleted_at', null).eq('is_active', true)
       .order('category').order('subcategory').order('code'),
-    supabase.from('inv_stock').select('item_id, physical_qty'),
+    // Per-store split (physical + low flag) so the report can show WHERE stock sits.
+    supabase.from('inv_stock_available')
+      .select('item_id, warehouse_id, physical_qty, min_threshold, is_low_stock'),
+    supabase.from('inv_warehouses').select('id, code, name').order('code'),
     supabase.from('inv_stock_movements')
       .select('movement_type')
       .gte('created_at', startUtc).lt('created_at', endUtc),
   ])
 
-  const error = itemsRes.error || stockRes.error || movesRes.error
+  const error = itemsRes.error || stockRes.error || whRes.error || movesRes.error
 
-  // in-hand per item = physical qty summed across every store.
-  const stockByItem = new Map<string, number>()
+  // Short, human store label: first word of the name ("Central Store" → "Central").
+  const shortStore = (name: string) => (name || '').trim().split(/\s+/)[0] || name
+  const whById = new Map<string, { code: string; label: string }>()
+  const warehouses: WarehouseInfo[] = (whRes.data ?? []).map(w => {
+    const info = { code: w.code as string, label: shortStore(w.name as string) }
+    whById.set(w.id as string, info)
+    return info
+  })
+
+  // Per-item: physical qty across stores + low/out flags + the store breakdown.
+  type Agg = { total: number; low: boolean; stores: Map<string, number> }
+  const byItem = new Map<string, Agg>()
   for (const s of stockRes.data ?? []) {
     const id = s.item_id as string
-    stockByItem.set(id, (stockByItem.get(id) ?? 0) + Number(s.physical_qty || 0))
+    const qty = Number(s.physical_qty || 0)
+    const agg = byItem.get(id) ?? { total: 0, low: false, stores: new Map() }
+    agg.total += qty
+    if (s.is_low_stock) agg.low = true
+    if (qty > 0) agg.stores.set(s.warehouse_id as string, (agg.stores.get(s.warehouse_id as string) ?? 0) + qty)
+    byItem.set(id, agg)
   }
 
-  const rows: CatalogueClientRow[] = (itemsRes.data ?? []).map(it => ({
-    code: it.code,
-    name: it.name,
-    description: it.description,
-    unit: it.unit,
-    category: it.category,
-    subcategory: it.subcategory,
-    hsn_code: it.hsn_code,
-    image_url: it.image_url,
-    in_hand: stockByItem.get(it.id as string) ?? 0,
-  }))
+  const rows: CatalogueClientRow[] = (itemsRes.data ?? []).map(it => {
+    const agg = byItem.get(it.id as string)
+    const total = agg?.total ?? 0
+    const stores: StoreQty[] = agg
+      ? [...agg.stores.entries()].map(([whId, qty]) => {
+          const info = whById.get(whId)
+          return { code: info?.code ?? whId, label: info?.label ?? 'Store', qty }
+        })
+      : []
+    return {
+      code: it.code,
+      name: it.name,
+      description: it.description,
+      unit: it.unit,
+      category: it.category,
+      subcategory: it.subcategory,
+      hsn_code: it.hsn_code,
+      image_url: it.image_url,
+      in_hand: total,
+      stores,
+      low: total > 0 && !!agg?.low,
+      out: total <= 0,
+    }
+  })
 
   const moves = movesRes.data ?? []
   const entriesToday = moves.filter(m => ENTRY.has(m.movement_type as string)).length
@@ -99,9 +131,9 @@ export default async function InventoryReportsPage() {
             </p>
           </div>
         </div>
-        <CatalogueActions rows={rows} generatedAtLabel="" />
+        <CatalogueActions rows={rows} warehouses={warehouses} />
         <p className="text-xs text-gray-400">
-          {error ? '—' : rows.length.toLocaleString('en-IN')} live items · in-hand summed across all stores. Items without a photo show a coloured monogram.
+          {error ? '—' : rows.length.toLocaleString('en-IN')} live items · in-hand summed across all stores. Filter by category, store or stock level, then export. Items without a photo show a coloured monogram.
         </p>
       </Card>
     </div>
