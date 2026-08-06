@@ -4,7 +4,7 @@
 import { cache } from 'react'
 import { createClient } from '@/lib/supabase/server'
 import { APP_TIME_ZONE } from '@/lib/utils'
-import { DEFAULT_LEADS } from './formula'
+import { DEFAULT_LEADS, addDays } from './formula'
 import { DEFAULT_FLOORS, floorsSettingKey, parseFloors } from './floors'
 import type { LeadDays, SchedItem, SchedProgress, SchedDrawing } from './types'
 
@@ -21,21 +21,39 @@ export interface SchedProject {
   name: string
   status: string | null
   item_count: number
+  pct: number        // overall % done (active items) — the management snapshot
+  attention: number  // items with a WO deadline already passed and no WO
 }
 
-/** Projects for the picker, with a schedule item count. */
+/** Projects for the picker, with a schedule item count + progress + a red-flag
+ *  count, so the picker doubles as a management portfolio landing. */
 export const getScheduleProjects = cache(async (): Promise<SchedProject[]> => {
   const sb = await createClient()
-  const [{ data: projects }, { data: items }] = await Promise.all([
+  const [{ data: projects }, { data: items }, leads] = await Promise.all([
     sb.from('projects').select('id, code, name, status').order('code', { ascending: true }),
-    sb.from('sched_items').select('project_id'),
+    sb.from('sched_items').select('project_id, pct, state, plan_start, wo_issued'),
+    getLeadDays(),
   ])
-  const counts = new Map<string, number>()
-  for (const r of (items ?? []) as Array<{ project_id: string }>) {
-    counts.set(r.project_id, (counts.get(r.project_id) ?? 0) + 1)
+  const today = todayISO()
+  type Agg = { count: number; sum: number; active: number; attention: number }
+  const agg = new Map<string, Agg>()
+  for (const r of (items ?? []) as Array<{ project_id: string; pct: number | null; state: string; plan_start: string | null; wo_issued: boolean }>) {
+    const a = agg.get(r.project_id) ?? { count: 0, sum: 0, active: 0, attention: 0 }
+    a.count += 1
+    if (r.state !== 'on_hold') { a.active += 1; a.sum += r.pct ?? 0 }
+    if (!r.wo_issued && r.plan_start && addDays(r.plan_start, -leads.procurement) < today) a.attention += 1
+    agg.set(r.project_id, a)
   }
   return ((projects ?? []) as Array<{ id: string; code: string | null; name: string; status: string | null }>)
-    .map(p => ({ ...p, item_count: counts.get(p.id) ?? 0 }))
+    .map(p => {
+      const a = agg.get(p.id)
+      return {
+        ...p,
+        item_count: a?.count ?? 0,
+        pct: a && a.active ? Math.round(a.sum / a.active) : 0,
+        attention: a?.attention ?? 0,
+      }
+    })
 })
 
 export async function getLeadDays(): Promise<LeadDays> {

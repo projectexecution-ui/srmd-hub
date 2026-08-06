@@ -5,20 +5,35 @@ import { createClient } from '@/lib/supabase/client'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Eye, Pencil, ShieldCheck, Loader2, Check, Plus, X, Sparkles, Box } from 'lucide-react'
+import { Eye, Pencil, ShieldCheck, Trash2, Loader2, Check, Plus, X, Sparkles, Box } from 'lucide-react'
 import { confirm } from '@/components/ui/confirm-dialog'
 import { cn } from '@/lib/utils'
 import { TILE_TONES } from '@/lib/modules'
 import { groupModules, moduleMetaMap } from './groups'
-import type { Role, RolePermission, PermAction } from '@/lib/types'
+import type { Role, PermAction } from '@/lib/types'
 import type { RoleLabelMap } from '@/lib/role-labels'
 
 interface ModuleRef { slug: string; label: string }
 
+// Delete rule per role×module: no delete / immediate / needs an approver.
+type Mode = 'none' | 'direct' | 'request'
+
+// A permission row incl. the delete columns (RolePermission itself doesn't
+// carry delete_mode/approver).
+export type PermRow = {
+  role: Role
+  module_slug: string
+  can_view: boolean
+  can_edit: boolean
+  can_admin: boolean
+  delete_mode?: Mode | null
+  delete_approver_role?: string | null
+}
+
 interface Props {
   modules: ModuleRef[]
   roles: readonly Role[]
-  initial: RolePermission[]
+  initial: PermRow[]
   roleLabels: RoleLabelMap
   currentUserIsPortalOwner: boolean
   canManageRoles?: boolean
@@ -27,7 +42,7 @@ interface Props {
 }
 
 type Key = `${string}::${string}` // `${role}::${slug}`
-type CellState = { view: boolean; edit: boolean; admin: boolean }
+type CellState = { view: boolean; edit: boolean; admin: boolean; del: Mode; approver: string | null }
 
 const ACTIONS: { key: PermAction; label: string; icon: React.ComponentType<{ className?: string }>; on: string }[] = [
   { key: 'view',  label: 'View',  icon: Eye,         on: 'bg-blue-100 text-blue-700' },
@@ -51,7 +66,10 @@ export default function PermissionsMatrix({ modules, roles, initial, roleLabels,
   const initialMap = useMemo<Record<Key, CellState>>(() => {
     const m: Record<Key, CellState> = {}
     for (const r of initial) {
-      m[`${r.role}::${r.module_slug}`] = { view: !!r.can_view, edit: !!r.can_edit, admin: !!r.can_admin }
+      m[`${r.role}::${r.module_slug}`] = {
+        view: !!r.can_view, edit: !!r.can_edit, admin: !!r.can_admin,
+        del: (r.delete_mode ?? 'none') as Mode, approver: r.delete_approver_role ?? null,
+      }
     }
     return m
   }, [initial])
@@ -143,7 +161,7 @@ export default function PermissionsMatrix({ modules, roles, initial, roleLabels,
   }
 
   function getCell(role: Role, slug: string): CellState {
-    return state[`${role}::${slug}`] ?? { view: false, edit: false, admin: false }
+    return state[`${role}::${slug}`] ?? { view: false, edit: false, admin: false, del: 'none', approver: null }
   }
 
   function roleContext(role: Role): string {
@@ -191,6 +209,34 @@ export default function PermissionsMatrix({ modules, roles, initial, roleLabels,
     setTimeout(() => setSavedKey(k => (k === key ? null : k)), 1500)
   }
 
+  // Delete rule — cycles none → direct → request; only delete_* columns are
+  // written, so it never touches the view/edit/admin flags on the same row.
+  async function persistDelete(role: Role, slug: string, patch: { del?: Mode; approver?: string | null }) {
+    const key: Key = `${role}::${slug}`
+    const current = getCell(role, slug)
+    const next: CellState = {
+      ...current,
+      del: patch.del ?? current.del,
+      approver: 'approver' in patch ? (patch.approver ?? null) : current.approver,
+    }
+    setState(s => ({ ...s, [key]: next }))
+    setBusyKey(key); setError(null)
+    const { error } = await createClient()
+      .from('role_permissions')
+      .upsert({ role, module_slug: slug, delete_mode: next.del, delete_approver_role: next.approver, updated_at: new Date().toISOString() }, { onConflict: 'role,module_slug' })
+    setBusyKey(null)
+    if (error) { setError(`${role} / ${slug}: ${error.message}`); setState(s => ({ ...s, [key]: current })); return }
+    setSavedKey(key)
+    setTimeout(() => setSavedKey(k => (k === key ? null : k)), 1500)
+  }
+  function cycleDelete(role: Role, slug: string) {
+    const cur = getCell(role, slug).del
+    const nextMode: Mode = cur === 'none' ? 'direct' : cur === 'direct' ? 'request' : 'none'
+    const approver = nextMode === 'request' ? (getCell(role, slug).approver ?? 'admin') : null
+    persistDelete(role, slug, { del: nextMode, approver })
+  }
+  const setApprover = (role: Role, slug: string, approver: string | null) => persistDelete(role, slug, { approver })
+
   const colCount = visibleRoles.length + 1
 
   return (
@@ -213,10 +259,14 @@ export default function PermissionsMatrix({ modules, roles, initial, roleLabels,
                   {a.label}
                 </span>
               ))}
+              <span className="inline-flex items-center gap-1">
+                <span className="inline-flex h-4 w-4 items-center justify-center rounded bg-emerald-100 text-emerald-700"><Trash2 className="h-2.5 w-2.5" /></span>
+                Delete
+              </span>
             </div>
           </div>
           <p className="text-xs text-gray-500 -mt-1">
-            Click any cell to toggle — saves instantly. <b>Edit</b> auto-grants <b>View</b>; <b>Admin</b> auto-grants <b>View + Edit</b>; removing <b>View</b> clears the row. Admin has full access always.
+            Click a cell to toggle — saves instantly. <b>Edit</b> auto-grants <b>View</b>; <b>Admin</b> auto-grants <b>View + Edit</b>; removing <b>View</b> clears the row. The <b>Delete</b> button cycles none → direct → needs-approval (pick an approver). Admin has full access always.
           </p>
 
           {canManageRoles && (
@@ -267,7 +317,7 @@ export default function PermissionsMatrix({ modules, roles, initial, roleLabels,
                     const delBusy = delBusyRole === role
                     const hot = hoverRole === role
                     return (
-                      <th key={role} className={cn('sticky top-0 z-20 border-b border-gray-200 px-2 py-2 text-center align-bottom relative min-w-[104px] transition-colors', hot ? 'bg-indigo-50' : 'bg-gray-50')} title={rl?.description}>
+                      <th key={role} className={cn('sticky top-0 z-20 border-b border-gray-200 px-2 py-2 text-center align-bottom relative min-w-[132px] transition-colors', hot ? 'bg-indigo-50' : 'bg-gray-50')} title={rl?.description}>
                         {canManageRoles && role !== ('admin' as Role) && (
                           <button type="button" onClick={() => deactivateRole(role)} disabled={delBusy} title="Deactivate this role"
                             className="absolute top-0.5 right-0.5 h-4 w-4 inline-flex items-center justify-center rounded-full text-gray-300 hover:text-rose-600 hover:bg-rose-50">
@@ -297,9 +347,10 @@ export default function PermissionsMatrix({ modules, roles, initial, roleLabels,
               <tbody>
                 {grouped.map(group => (
                   <GroupRows key={group.title} title={group.title} mods={group.mods} colCount={colCount}
-                    visibleRoles={visibleRoles} moduleMeta={moduleMetaMap} getCell={getCell}
+                    visibleRoles={visibleRoles} labels={labels} moduleMeta={moduleMetaMap} getCell={getCell}
                     busyKey={busyKey} savedKey={savedKey} hoverRole={hoverRole} hoverSlug={hoverSlug}
-                    setHoverRole={setHoverRole} setHoverSlug={setHoverSlug} toggle={toggle} />
+                    setHoverRole={setHoverRole} setHoverSlug={setHoverSlug} toggle={toggle}
+                    cycleDelete={cycleDelete} setApprover={setApprover} />
                 ))}
               </tbody>
             </table>
@@ -328,17 +379,20 @@ export default function PermissionsMatrix({ modules, roles, initial, roleLabels,
 }
 
 // ─── Grouped module rows ───────────────────────────────────────────────
-function GroupRows({ title, mods, colCount, visibleRoles, moduleMeta, getCell, busyKey, savedKey, hoverRole, hoverSlug, setHoverRole, setHoverSlug, toggle }: {
+function GroupRows({ title, mods, colCount, visibleRoles, labels, moduleMeta, getCell, busyKey, savedKey, hoverRole, hoverSlug, setHoverRole, setHoverSlug, toggle, cycleDelete, setApprover }: {
   title: string
   mods: ModuleRef[]
   colCount: number
   visibleRoles: Role[]
+  labels: RoleLabelMap
   moduleMeta: Map<string, { icon: React.ComponentType<{ className?: string }>; tone: keyof typeof TILE_TONES }>
   getCell: (role: Role, slug: string) => CellState
   busyKey: Key | null; savedKey: Key | null
   hoverRole: Role | null; hoverSlug: string | null
   setHoverRole: (r: Role | null) => void; setHoverSlug: (s: string | null) => void
   toggle: (role: Role, slug: string, action: PermAction) => void
+  cycleDelete: (role: Role, slug: string) => void
+  setApprover: (role: Role, slug: string, approver: string | null) => void
 }) {
   return (
     <>
@@ -374,7 +428,7 @@ function GroupRows({ title, mods, colCount, visibleRoles, moduleMeta, getCell, b
               return (
                 <td key={role} className={cn('border-b border-gray-100 px-2 py-1.5 text-center transition-colors', tint, saved && 'ring-1 ring-inset ring-green-300')}
                   onMouseEnter={() => { setHoverRole(role); setHoverSlug(mod.slug) }}>
-                  <div className="inline-flex overflow-hidden rounded-md border border-gray-200 divide-x divide-gray-200 bg-white">
+                  <div className="inline-flex overflow-hidden rounded-md border border-gray-200 divide-x divide-gray-200 bg-white align-middle">
                     {ACTIONS.map(({ key, label, icon: I, on }) => {
                       const active = locked ? true : cell[key]
                       return (
@@ -385,7 +439,31 @@ function GroupRows({ title, mods, colCount, visibleRoles, moduleMeta, getCell, b
                         </button>
                       )
                     })}
+                    {(() => {
+                      const del: Mode = locked ? 'direct' : cell.del
+                      const dCls = del === 'direct' ? 'bg-emerald-100 text-emerald-700'
+                        : del === 'request' ? 'bg-amber-100 text-amber-800'
+                        : 'text-gray-300 hover:text-gray-500 hover:bg-gray-50'
+                      const dTitle = locked ? 'Admin always deletes directly'
+                        : `Delete: ${del === 'none' ? 'not allowed' : del === 'direct' ? 'direct' : 'needs approval'} — click to cycle`
+                      return (
+                        <button onClick={() => { if (!locked) cycleDelete(role, mod.slug) }} disabled={busy || locked} title={dTitle}
+                          className={cn('inline-flex h-6 w-6 items-center justify-center transition-colors', dCls, busy && 'opacity-50 cursor-wait', locked && 'cursor-default')}>
+                          <Trash2 className="h-3 w-3" />
+                        </button>
+                      )
+                    })()}
                   </div>
+                  {cell.del === 'request' && !locked && (
+                    <div className="mt-1">
+                      <select value={cell.approver ?? ''} onChange={e => setApprover(role, mod.slug, e.target.value || null)} disabled={busy}
+                        title="Who approves a delete request"
+                        className="h-6 max-w-[104px] rounded-md border border-amber-300 bg-amber-50 px-1 text-[10px] text-amber-900">
+                        <option value="">approver…</option>
+                        {visibleRoles.map(r => <option key={r} value={r as string}>{labels[r]?.label || r}</option>)}
+                      </select>
+                    </div>
+                  )}
                 </td>
               )
             })}

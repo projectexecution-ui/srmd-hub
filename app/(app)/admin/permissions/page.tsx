@@ -4,8 +4,9 @@ import { getRoleLabels } from '@/lib/role-labels'
 import { getModuleLabels, labelFor } from '@/lib/module-labels'
 import { PageHeader } from '@/components/PageHeader'
 import { MODULES } from '@/lib/modules'
-import { type RolePermission, type Role } from '@/lib/types'
+import { type Role } from '@/lib/types'
 import PermissionsBoard from './PermissionsBoard'
+import type { PermRow } from './PermissionsMatrix'
 
 export const dynamic = 'force-dynamic'
 
@@ -54,13 +55,7 @@ export default async function AdminPermissionsPage() {
         roleLabels={roleLabels}
         currentUserIsPortalOwner={currentUserIsPortalOwner}
         canManageRoles={canManageRoles}
-        accessInitial={(permsRes.data ?? []) as RolePermission[]}
-        deleteInitial={(permsRes.data ?? []).map(r => ({
-          role: r.role as Role,
-          module_slug: r.module_slug,
-          delete_mode: (r.delete_mode ?? 'none') as 'none' | 'direct' | 'request',
-          delete_approver_role: r.delete_approver_role ?? null,
-        }))}
+        accessInitial={(permsRes.data ?? []) as unknown as PermRow[]}
       />
     </div>
   )

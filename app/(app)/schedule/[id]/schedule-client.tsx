@@ -9,7 +9,7 @@ import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { confirm } from '@/components/ui/confirm-dialog'
 import { ChevronLeft, Plus, CalendarClock, Trash2, User, Pencil } from 'lucide-react'
-import { deriveStatus, daysBetween, addDays, STATUS_META } from '@/lib/schedule/formula'
+import { deriveStatus, daysBetween, addDays, STATUS_META, progressFromFloors } from '@/lib/schedule/formula'
 import type { DisplayStatus, SchedItem, LeadDays, FloorStatus } from '@/lib/schedule/types'
 import type { ProjectScheduleData } from '@/lib/schedule/data'
 import { TEMPLATE_ITEM_COUNT } from '@/lib/schedule/template'
@@ -98,7 +98,7 @@ function MiniBar({ row, axisStart, axisEnd, today }: { row: Row; axisStart: stri
 export function ScheduleClient({ data, canEdit, meId }: { data: ProjectScheduleData; canEdit: boolean; meId: string | null }) {
   const router = useRouter()
   const [pending, start] = useTransition()
-  const [view, setView] = useState<'board' | 'table' | 'floors'>('board')
+  const [view, setView] = useState<'overview' | 'board' | 'table' | 'floors'>('overview')
   const [mineOnly, setMineOnly] = useState(false)
   const [showAdd, setShowAdd] = useState(false)
   const [expanded, setExpanded] = useState<string | null>(null)
@@ -168,6 +168,21 @@ export function ScheduleClient({ data, canEdit, meId }: { data: ProjectScheduleD
     return groups
   }, [rows])
 
+  // Overview breakdowns
+  const tradeStats = useMemo(() => byTrade.map(g => {
+    const active = g.rows.filter(r => r.item.state !== 'on_hold')
+    const pct = active.length ? Math.round(active.reduce((s, r) => s + r.item.pct, 0) / active.length) : 0
+    const need = g.rows.filter(r => NEEDS_ATTENTION.includes(r.status)).length
+    return { trade: g.trade, pct, need, count: g.rows.length }
+  }), [byTrade])
+
+  const floorStats = useMemo(() => floorNames.map(f => {
+    const cells = progress.filter(p => p.location.trim().toLowerCase() === f.trim().toLowerCase())
+    const pct = progressFromFloors(cells.map(c => c.status))
+    return { floor: f, pct, tracked: cells.filter(c => c.status !== 'na').length }
+  }), [floorNames, progress])
+  const anyFloorTracked = floorStats.some(f => f.tracked > 0)
+
   return (
     <div className="p-4 md:p-6 max-w-5xl mx-auto space-y-4">
       {/* header */}
@@ -179,7 +194,8 @@ export function ScheduleClient({ data, canEdit, meId }: { data: ProjectScheduleD
 
       {/* controls */}
       <div className="flex items-center gap-2 flex-wrap">
-        <div className="inline-flex rounded-lg border bg-slate-50 p-1">
+        <div className="inline-flex rounded-lg border bg-slate-50 p-1 flex-wrap">
+          <button onClick={() => setView('overview')} className={cn('px-3 py-1.5 text-sm rounded-md transition', view === 'overview' ? 'bg-white text-indigo-700 font-semibold shadow-sm' : 'text-gray-500 hover:text-gray-700')}>📊 Overview</button>
           <button onClick={() => setView('board')} className={cn('px-3 py-1.5 text-sm rounded-md transition', view === 'board' ? 'bg-white text-indigo-700 font-semibold shadow-sm' : 'text-gray-500 hover:text-gray-700')}>🗂️ Board</button>
           <button onClick={() => setView('table')} className={cn('px-3 py-1.5 text-sm rounded-md transition', view === 'table' ? 'bg-white text-indigo-700 font-semibold shadow-sm' : 'text-gray-500 hover:text-gray-700')}>📋 Table</button>
           <button onClick={() => setView('floors')} className={cn('px-3 py-1.5 text-sm rounded-md transition', view === 'floors' ? 'bg-white text-indigo-700 font-semibold shadow-sm' : 'text-gray-500 hover:text-gray-700')}>🏢 Floors</button>
@@ -230,7 +246,9 @@ export function ScheduleClient({ data, canEdit, meId }: { data: ProjectScheduleD
             </div>
           </Card>
 
-          {view === 'board' ? (
+          {view === 'overview' ? (
+            <Overview floorStats={floorStats} anyFloorTracked={anyFloorTracked} tradeStats={tradeStats} attention={attention} drawings={drawings} onGoFloors={() => setView('floors')} />
+          ) : view === 'board' ? (
             <div className="space-y-4">
               {attention.length > 0 && (
                 <div>
@@ -316,6 +334,94 @@ function Chip({ tone, label }: { tone: 'ok' | 'soon' | 'late' | 'calm'; label: s
   return <span className={cn('inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold', TONE[tone])}>
     <span className="h-1.5 w-1.5 rounded-full" style={{ background: HEX[tone] }} />{label}
   </span>
+}
+
+function Bar({ pct, tone = 'indigo' }: { pct: number; tone?: 'indigo' | 'ok' | 'late' }) {
+  const bg = tone === 'late' ? '#e11d48' : tone === 'ok' ? '#0d9488' : '#4f46e5'
+  return (
+    <div className="flex-1 h-5 rounded bg-slate-100 overflow-hidden">
+      <div className="h-full rounded" style={{ width: `${Math.max(pct === 0 ? 0 : 2, pct)}%`, background: bg }} />
+    </div>
+  )
+}
+
+/** The plain management snapshot: overall (in the hero above) + by floor, by
+ *  trade, and what needs attention. Read-only, everyone sees the same thing. */
+function Overview({ floorStats, anyFloorTracked, tradeStats, attention, drawings, onGoFloors }: {
+  floorStats: { floor: string; pct: number; tracked: number }[]
+  anyFloorTracked: boolean
+  tradeStats: { trade: string; pct: number; need: number; count: number }[]
+  attention: Row[]
+  drawings: ProjectScheduleData['drawings']
+  onGoFloors: () => void
+}) {
+  const topAttention = attention.slice(0, 6)
+  const gfc = drawings.filter(d => d.status === 'gfc').length
+  const blocking = drawings.filter(d => d.blocking && d.status !== 'gfc').length
+  return (
+    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+      <Card className="p-4">
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="text-sm font-bold text-gray-800">By floor</h3>
+          <span className="text-[11px] text-gray-400">done across all trades</span>
+        </div>
+        {anyFloorTracked ? (
+          <div className="space-y-1.5">
+            {floorStats.map(f => (
+              <div key={f.floor} className="flex items-center gap-2">
+                <span className="w-16 text-[11px] text-right text-gray-500 truncate">{f.floor}</span>
+                <Bar pct={f.pct} tone={f.pct >= 100 ? 'ok' : 'indigo'} />
+                <span className="w-9 text-[11px] font-mono text-right text-gray-700">{f.pct}%</span>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="text-center py-6 text-xs text-gray-500">
+            Floor progress fills in as the site marks the{' '}
+            <button onClick={onGoFloors} className="text-indigo-600 hover:underline">Floors</button> tab.
+          </div>
+        )}
+      </Card>
+
+      <Card className="p-4">
+        <h3 className="text-sm font-bold text-gray-800 mb-3">By trade</h3>
+        <div className="space-y-1.5">
+          {tradeStats.map(t => (
+            <div key={t.trade} className="flex items-center gap-2">
+              <span className="w-24 text-[11px] text-right text-gray-500 truncate">{t.trade}</span>
+              <Bar pct={t.pct} tone={t.need > 0 ? 'late' : t.pct >= 100 ? 'ok' : 'indigo'} />
+              <span className="w-9 text-[11px] font-mono text-right text-gray-700">{t.pct}%</span>
+            </div>
+          ))}
+        </div>
+      </Card>
+
+      <Card className="p-4 lg:col-span-2">
+        <h3 className="text-sm font-bold text-gray-800 mb-3">Needs attention</h3>
+        {topAttention.length === 0 ? (
+          <p className="text-sm text-emerald-700">Nothing needs attention — on track.</p>
+        ) : (
+          <ul className="divide-y">
+            {topAttention.map(r => (
+              <li key={r.item.id} className="flex items-center gap-3 py-2">
+                <StatusChip status={r.status} />
+                <span className="min-w-0 flex-1 truncate text-sm text-gray-800">{r.item.name}<span className="text-gray-400"> · {r.item.trade}</span></span>
+                <span className="text-xs text-gray-500 whitespace-nowrap">{whyLabel(r)}</span>
+              </li>
+            ))}
+            {attention.length > topAttention.length && (
+              <li className="pt-2 text-[11px] text-gray-400">+{attention.length - topAttention.length} more</li>
+            )}
+          </ul>
+        )}
+        {drawings.length > 0 && (
+          <p className="mt-3 pt-3 border-t text-xs text-gray-500">
+            Drawings: {gfc} GFC{blocking > 0 ? ` · ${blocking} blocking work` : ''} · {drawings.length} total
+          </p>
+        )}
+      </Card>
+    </div>
+  )
 }
 
 function BoardCard({ row, canEdit, onWo }: { row: Row; canEdit: boolean; onWo: () => void }) {
