@@ -8,7 +8,7 @@ import { cn, formatDate } from '@/lib/utils'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { confirm } from '@/components/ui/confirm-dialog'
-import { ChevronLeft, Plus, CalendarClock, Trash2, User } from 'lucide-react'
+import { ChevronLeft, ChevronRight, ChevronDown, Plus, CalendarClock, Trash2, User } from 'lucide-react'
 import { deriveStatus, workBackDeadlines, STATUS_META } from '@/lib/schedule/formula'
 import type { DisplayStatus, SchedItem } from '@/lib/schedule/types'
 import type { ProjectScheduleData } from '@/lib/schedule/data'
@@ -34,6 +34,9 @@ export function ScheduleClient({ data, canEdit, meId }: { data: ProjectScheduleD
   const [view, setView] = useState<'board' | 'table'>('board')
   const [mineOnly, setMineOnly] = useState(false)
   const [showAdd, setShowAdd] = useState(false)
+  // Table tree view: which trade groups are expanded. Collapsed by default so
+  // the table opens as a rolled-up, trade-level summary; expand a trade to drill in.
+  const [expanded, setExpanded] = useState<Set<string>>(new Set())
 
   const { project, items, drawings, leads, today } = data
 
@@ -85,6 +88,11 @@ export function ScheduleClient({ data, canEdit, meId }: { data: ProjectScheduleD
     return groups
   }, [rows])
 
+  const allTrades = byTrade.map(g => g.trade)
+  const allOpen = allTrades.length > 0 && allTrades.every(t => expanded.has(t))
+  const toggleTrade = (t: string) => setExpanded(s => { const n = new Set(s); if (n.has(t)) n.delete(t); else n.add(t); return n })
+  const setAllTrades = (open: boolean) => setExpanded(open ? new Set(allTrades) : new Set())
+
   return (
     <div className="p-4 md:p-6 max-w-5xl mx-auto space-y-4">
       {/* header */}
@@ -116,6 +124,11 @@ export function ScheduleClient({ data, canEdit, meId }: { data: ProjectScheduleD
             <input type="checkbox" checked={mineOnly} onChange={e => setMineOnly(e.target.checked)} className="h-4 w-4 rounded border-gray-300 text-indigo-600" />
             <User className="h-3.5 w-3.5" /> My items
           </label>
+        )}
+        {view === 'table' && byTrade.length > 0 && (
+          <button type="button" onClick={() => setAllTrades(!allOpen)} className="text-xs font-medium text-indigo-600 hover:underline">
+            {allOpen ? 'Collapse all' : 'Expand all'}
+          </button>
         )}
         {canEdit && (
           <div className="ml-auto flex gap-2">
@@ -171,7 +184,8 @@ export function ScheduleClient({ data, canEdit, meId }: { data: ProjectScheduleD
             </thead>
             <tbody>
               {byTrade.map(g => (
-                <TradeGroup key={g.trade} trade={g.trade} rows={g.rows} canEdit={canEdit} projectId={project.id} run={run} />
+                <TradeGroup key={g.trade} trade={g.trade} rows={g.rows} canEdit={canEdit} projectId={project.id} run={run}
+                  expanded={expanded.has(g.trade)} onToggle={() => toggleTrade(g.trade)} />
               ))}
             </tbody>
           </table>
@@ -232,26 +246,36 @@ function BoardCard({ row, canEdit, today, onWo }: {
   )
 }
 
-function TradeGroup({ trade, rows, canEdit, projectId, run }: {
+function TradeGroup({ trade, rows, canEdit, projectId, run, expanded, onToggle }: {
   trade: string
   rows: Array<{ item: SchedItem; status: DisplayStatus; woBy: string | null }>
   canEdit: boolean; projectId: string
+  expanded: boolean; onToggle: () => void
   run: (fn: () => Promise<{ ok?: true; error?: string }>, okMsg?: string) => void
 }) {
   const pct = (() => {
     const a = rows.filter(r => r.item.state !== 'on_hold')
     return a.length ? Math.round(a.reduce((s, r) => s + r.item.pct, 0) / a.length) : 0
   })()
+  const attn = rows.filter(r => NEEDS_ATTENTION.includes(r.status)).length
   return (
     <>
-      <tr className="bg-slate-50 border-y">
+      <tr className="bg-slate-50 border-y cursor-pointer hover:bg-slate-100" onClick={onToggle}>
         <td colSpan={canEdit ? 7 : 6} className="px-3 py-2">
-          <span className="font-bold text-gray-800 text-xs">{trade}</span>
-          <span className="ml-2 text-[11px] font-mono text-indigo-600 font-semibold">{pct}%</span>
-          <span className="ml-2 text-[11px] text-gray-400">{rows.length} item{rows.length === 1 ? '' : 's'}</span>
+          <span className="inline-flex items-center gap-1.5">
+            {expanded ? <ChevronDown className="h-3.5 w-3.5 text-gray-400" /> : <ChevronRight className="h-3.5 w-3.5 text-gray-400" />}
+            <span className="font-bold text-gray-800 text-xs">{trade}</span>
+            <span className="ml-1 text-[11px] font-mono text-indigo-600 font-semibold">{pct}%</span>
+            <span className="ml-1 text-[11px] text-gray-400">{rows.length} item{rows.length === 1 ? '' : 's'}</span>
+            {attn > 0 && (
+              <span className="ml-1 inline-flex items-center gap-1 text-[11px] font-semibold text-rose-600">
+                <span className="h-1.5 w-1.5 rounded-full bg-rose-500" />{attn}
+              </span>
+            )}
+          </span>
         </td>
       </tr>
-      {rows.map(r => <ItemRow key={r.item.id} row={r} canEdit={canEdit} projectId={projectId} run={run} />)}
+      {expanded && rows.map(r => <ItemRow key={r.item.id} row={r} canEdit={canEdit} projectId={projectId} run={run} />)}
     </>
   )
 }
