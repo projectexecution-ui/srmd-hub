@@ -69,34 +69,34 @@ export function StockOpsForms({ warehouses, items }: { warehouses: WhOpt[]; item
       <p className="text-xs text-gray-500">{activeHint}</p>
 
       <div>
-        <Label>{mode === 'transfer' ? 'From store *' : 'Store *'}</Label>
-        <select value={wh} onChange={e => setWh(e.target.value)} className="mt-1 h-10 w-full rounded-xl border border-gray-300 bg-white px-3 text-sm">
+        <Label htmlFor="op-store">{mode === 'transfer' ? 'From store *' : 'Store *'}</Label>
+        <select id="op-store" value={wh} onChange={e => setWh(e.target.value)} className="mt-1 h-10 w-full rounded-xl border border-gray-300 bg-white px-3 text-sm">
           {warehouses.map(w => <option key={w.id} value={w.id}>{w.code} — {w.name}</option>)}
         </select>
       </div>
       {mode === 'transfer' && (
         <div>
-          <Label>To store *</Label>
-          <select value={wh2} onChange={e => setWh2(e.target.value)} className="mt-1 h-10 w-full rounded-xl border border-gray-300 bg-white px-3 text-sm">
+          <Label htmlFor="op-wh2">To store *</Label>
+          <select id="op-wh2" value={wh2} onChange={e => setWh2(e.target.value)} className="mt-1 h-10 w-full rounded-xl border border-gray-300 bg-white px-3 text-sm">
             {warehouses.map(w => <option key={w.id} value={w.id}>{w.code} — {w.name}</option>)}
           </select>
           {warehouses.length < 2 && <p className="text-[11px] text-amber-600 mt-1">You need at least two stores to transfer.</p>}
         </div>
       )}
       <div>
-        <Label>Item *</Label>
-        <div className="mt-1"><ItemPicker items={items} value={itemId} onChange={setItemId} /></div>
+        <Label htmlFor="op-item">Item *</Label>
+        <div className="mt-1"><ItemPicker id="op-item" items={items} value={itemId} onChange={setItemId} /></div>
       </div>
       <div>
-        <Label>{mode === 'adjust' ? 'New counted quantity *' : 'Quantity *'}</Label>
+        <Label htmlFor="op-qty">{mode === 'adjust' ? 'New counted quantity *' : 'Quantity *'}</Label>
         <div className="mt-1 flex gap-2">
-          <QtyInput value={qty} onChange={setQty} placeholder={mode === 'adjust' ? 'counted on-hand' : 'qty'} />
+          <QtyInput id="op-qty" value={qty} onChange={setQty} placeholder={mode === 'adjust' ? 'counted on-hand' : 'qty'} />
           <span className="inline-flex items-center text-sm text-gray-500 w-12">{item?.unit ?? ''}</span>
         </div>
       </div>
       <div>
-        <Label>{mode === 'transfer' ? 'Remarks' : 'Reason *'}</Label>
-        <Textarea value={reason} onChange={e => setReason(e.target.value)} rows={2} className="mt-1"
+        <Label htmlFor="op-reason">{mode === 'transfer' ? 'Remarks' : 'Reason *'}</Label>
+        <Textarea id="op-reason" value={reason} onChange={e => setReason(e.target.value)} rows={2} className="mt-1"
           placeholder={mode === 'adjust' ? 'why the count differs' : mode === 'damage' ? 'what got damaged' : 'optional note'} />
       </div>
 

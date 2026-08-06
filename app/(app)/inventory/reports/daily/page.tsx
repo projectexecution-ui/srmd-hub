@@ -59,38 +59,43 @@ export default async function DailyMovementPage({ searchParams }: { searchParams
           <span className="ml-2 text-sm font-semibold text-gray-900">{rel}{label}</span>
         </div>
         <form className="flex items-center gap-2">
-          <input type="date" name="date" defaultValue={date} max={today}
+          <label htmlFor="date" className="sr-only">Report date</label>
+          <input type="date" id="date" name="date" defaultValue={date} max={today}
             className="h-9 rounded-lg border border-gray-200 bg-white px-2 text-sm" />
           <button type="submit" className="h-9 px-3 rounded-lg border border-gray-200 bg-white text-sm hover:bg-gray-50">Go</button>
         </form>
       </div>
 
-      {error && <QueryError what="the day's movements" message={error.message} />}
-
-      {/* Exceptions first — the few things worth a manager's eye */}
-      <AttentionStrip digest={digest} />
-
-      {/* KPI strip */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <Kpi icon={LogIn} tone="emerald" label="Entries" value={report.kpi.entries} />
-        <Kpi icon={LogOut} tone="rose" label="Exits" value={report.kpi.exits} />
-        <Kpi icon={ArrowLeftRight} tone="blue" label="Transfers" value={report.kpi.transfers} />
-        <Kpi icon={PackageSearch} tone="gray" label="Items touched" value={report.kpi.itemsTouched} />
-      </div>
-
-      {nothing ? (
-        <Card className="p-8 text-center text-sm text-gray-500">
-          No stock movement was recorded on {label}.
-        </Card>
+      {error ? (
+        <QueryError what="the day's movements" message={error.message} />
       ) : (
-        <div className="space-y-5">
-          <MoveSection title="Entries — into store" tone="emerald" lines={report.entries} />
-          <MoveSection title="Exits — out of store" tone="rose" lines={report.exits} />
-          <TransferSection lines={report.transfers} />
-          {report.adjustments.length > 0 && (
-            <MoveSection title="Stock corrections" tone="violet" lines={report.adjustments} />
+        <>
+          {/* Exceptions first — the few things worth a manager's eye */}
+          <AttentionStrip digest={digest} />
+
+          {/* KPI strip */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <Kpi icon={LogIn} tone="emerald" label="Entries" value={report.kpi.entries} />
+            <Kpi icon={LogOut} tone="rose" label="Exits" value={report.kpi.exits} />
+            <Kpi icon={ArrowLeftRight} tone="blue" label="Transfers" value={report.kpi.transfers} />
+            <Kpi icon={PackageSearch} tone="gray" label="Items touched" value={report.kpi.itemsTouched} />
+          </div>
+
+          {nothing ? (
+            <Card className="p-8 text-center text-sm text-gray-500">
+              No stock movement was recorded on {label}.
+            </Card>
+          ) : (
+            <div className="space-y-5">
+              <MoveSection title="Entries — into store" tone="emerald" lines={report.entries} />
+              <MoveSection title="Exits — out of store" tone="rose" lines={report.exits} />
+              <TransferSection lines={report.transfers} />
+              {report.adjustments.length > 0 && (
+                <MoveSection title="Stock corrections" tone="violet" lines={report.adjustments} />
+              )}
+            </div>
           )}
-        </div>
+        </>
       )}
     </div>
   )

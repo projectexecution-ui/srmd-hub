@@ -70,11 +70,11 @@ export function CatalogueActions({ rows }: { rows: CatalogueClientRow[]; generat
 
   return (
     <div className="flex flex-wrap gap-2">
-      <Button size="sm" onClick={pdf} disabled={disabled}>
+      <Button onClick={pdf} disabled={disabled}>
         {busy === 'pdf' ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileDown className="h-4 w-4" />}
         Download PDF
       </Button>
-      <Button size="sm" variant="outline" onClick={xlsx} disabled={disabled}>
+      <Button variant="outline" onClick={xlsx} disabled={disabled}>
         {busy === 'xlsx' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sheet className="h-4 w-4" />}
         Download Excel
       </Button>

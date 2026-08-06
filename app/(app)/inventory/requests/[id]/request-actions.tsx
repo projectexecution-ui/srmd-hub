@@ -1,5 +1,5 @@
 'use client'
-import { useState } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -46,6 +46,13 @@ export function RequestActions({
   const [msg, setMsg] = useState<string | null>(null)
   const supabase = createClient()
 
+  // Keep the status banner visible: it sits above long panels, so after a
+  // bottom-of-panel tap it can be off-screen. Scroll it into view when set.
+  const bannerRef = useRef<HTMLParagraphElement | null>(null)
+  useEffect(() => {
+    if (err || msg) bannerRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+  }, [err, msg])
+
   const isAdmin       = role === 'admin'
   const isStore       = role === 'store_manager'
   // Atm Head = `head` canonically. Legacy `hop` still works for backward compat.
@@ -90,14 +97,16 @@ export function RequestActions({
   ) {
     setBusy(true); setErr(null); setMsg(null)
     const { error } = await supabase.rpc(name, params)
-    setBusy(false)
-    if (error) { setErr(error.message); return false }
+    if (error) { setBusy(false); setErr(error.message); return false }
     setMsg(successMsg)
     if (redirectTo) {
       // Small delay so the success banner is visible before
-      // the navigation kicks in — feels less abrupt.
+      // the navigation kicks in — feels less abrupt. Keep the
+      // buttons disabled (busy stays true) through this window so a
+      // second tap can't re-fire the RPC and double-issue/approve.
       setTimeout(() => router.push(redirectTo), 700)
     } else {
+      setBusy(false)
       router.refresh()
     }
     return true
@@ -127,11 +136,11 @@ export function RequestActions({
               </span>
               <div className="flex gap-1.5">
                 <button type="button" onClick={tickAll}
-                  className="text-xs font-medium px-2.5 py-1 rounded-md border border-gray-200 bg-white hover:bg-gray-50 inline-flex items-center gap-1">
+                  className="text-xs font-medium px-2.5 py-2 min-h-[40px] rounded-md border border-gray-200 bg-white hover:bg-gray-50 inline-flex items-center gap-1">
                   <Check className="h-3 w-3" /> {allTicked ? 'All ticked' : 'Select all'}
                 </button>
                 <button type="button" onClick={clearAll}
-                  className="text-xs font-medium px-2.5 py-1 rounded-md border border-gray-200 bg-white hover:bg-gray-50 inline-flex items-center gap-1">
+                  className="text-xs font-medium px-2.5 py-2 min-h-[40px] rounded-md border border-gray-200 bg-white hover:bg-gray-50 inline-flex items-center gap-1">
                   <X className="h-3 w-3" /> Clear all
                 </button>
               </div>
@@ -146,6 +155,7 @@ export function RequestActions({
                   <label className="md:col-span-4 inline-flex items-center gap-2 text-sm text-gray-700">
                     <input
                       type="checkbox"
+                      className="h-5 w-5"
                       checked={returnable[l.id] ?? false}
                       onChange={e => setReturnable(s => ({ ...s, [l.id]: e.target.checked }))}
                     />
@@ -273,6 +283,7 @@ export function RequestActions({
             <div>
               <p className="text-xs text-gray-500 mb-1">Item</p>
               <select value={returnLineId} onChange={e => setReturnLineId(e.target.value)}
+                aria-label="Item to return"
                 className="h-10 w-full rounded-xl border border-gray-300 bg-white px-3 text-sm">
                 <option value="">— Select line —</option>
                 {returnable.map(l => {
@@ -288,6 +299,7 @@ export function RequestActions({
             <div>
               <p className="text-xs text-gray-500 mb-1">Condition</p>
               <select value={returnCondition} onChange={e => setReturnCondition(e.target.value as 'good' | 'damaged')}
+                aria-label="Condition"
                 className="h-10 w-full rounded-xl border border-gray-300 bg-white px-3 text-sm">
                 <option value="good">Good (back to usable)</option>
                 <option value="damaged">Damaged (flagged)</option>
@@ -353,8 +365,8 @@ export function RequestActions({
 
   return (
     <div className="space-y-4">
-      {err && <p className="text-sm text-rose-700 bg-rose-50 border border-rose-200 rounded-lg px-3 py-2">{err}</p>}
-      {msg && <p className="text-sm text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2">{msg}</p>}
+      {err && <p ref={bannerRef} role="alert" className="text-sm text-rose-700 bg-rose-50 border border-rose-200 rounded-lg px-3 py-2">{err}</p>}
+      {msg && <p ref={bannerRef} role="alert" className="text-sm text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2">{msg}</p>}
       {busy && <p className="text-sm text-gray-500 inline-flex items-center gap-1.5"><Loader2 className="h-4 w-4 animate-spin" /> Working…</p>}
       {atmHeadPanel()}
       {storePanel()}

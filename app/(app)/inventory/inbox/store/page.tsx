@@ -2,6 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import { requirePermission, can, getMyUser, isPortalOwner } from '@/lib/auth'
 import { PageHeader } from '@/components/PageHeader'
 import { RequestList } from '@/components/inventory/RequestList'
+import { QueryError } from '@/components/ui/query-error'
 
 export const dynamic = 'force-dynamic'
 
@@ -21,11 +22,13 @@ export default async function StoreInboxPage() {
   const seesAll = portalOwner || can(perms, 'inventory', 'admin')
 
   let myWarehouseIds: string[] = []
+  let keeperError: string | undefined
   if (!seesAll) {
-    const { data: whs } = await supabase
+    const { data: whs, error } = await supabase
       .from('inv_warehouses')
       .select('id')
       .eq('store_manager_id', user?.id ?? '')
+    keeperError = error?.message
     myWarehouseIds = (whs ?? []).map(w => w.id as string)
   }
 
@@ -50,7 +53,9 @@ export default async function StoreInboxPage() {
   return (
     <div className="p-4 md:p-6 max-w-5xl mx-auto space-y-4">
       <PageHeader title="Store inbox" back="/inventory" subtitle="Approved requests ready to be issued from your store" />
-      <RequestList rows={rows as never} error={error} emptyText={emptyText} />
+      {keeperError
+        ? <QueryError what="your stores" message={keeperError} />
+        : <RequestList rows={rows as never} error={error} emptyText={emptyText} />}
     </div>
   )
 }

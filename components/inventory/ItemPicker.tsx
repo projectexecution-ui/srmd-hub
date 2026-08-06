@@ -33,6 +33,8 @@ interface Props {
   disabled?: boolean
   className?: string
   placeholder?: string
+  /** id for the trigger button, so an external <Label htmlFor> can target it. */
+  id?: string
   /** item_id → available qty at the currently-selected store. Enables stock mode. */
   stockByItem?: Record<string, number>
   storeLabel?: string
@@ -69,7 +71,7 @@ function Thumb({ it, size }: { it: PickerItem; size: number }) {
 }
 
 export function ItemPicker({
-  items, value, onChange, disabled, className, placeholder,
+  items, value, onChange, disabled, className, placeholder, id,
   stockByItem, storeLabel, allowRequestNew, onProposeItem,
 }: Props) {
   const stockMode = !!stockByItem
@@ -129,6 +131,7 @@ export function ItemPicker({
     <>
       <button
         type="button"
+        id={id}
         onClick={() => !disabled && setOpen(true)}
         disabled={disabled}
         className={cn(
@@ -156,7 +159,7 @@ export function ItemPicker({
       {open && !disabled && (
         <div
           className="fixed inset-0 z-50 flex items-end md:items-center justify-center bg-black/40 p-2 md:p-4"
-          role="dialog" aria-modal="true"
+          role="dialog" aria-modal="true" aria-label="Select item"
           onClick={() => setOpen(false)}
         >
           <div className="bg-white rounded-2xl shadow-xl w-full max-w-3xl max-h-[90vh] flex flex-col overflow-hidden"
@@ -167,20 +170,21 @@ export function ItemPicker({
                 ref={searchRef} type="search" value={q}
                 onChange={e => setQ(e.target.value)}
                 placeholder="Search by code, name or category…"
+                aria-label="Search items"
                 className="flex-1 outline-none text-sm placeholder-gray-400"
               />
-              <button onClick={() => setOpen(false)} className="text-gray-400 hover:text-gray-700 p-1"><X className="h-4 w-4" /></button>
+              <button onClick={() => setOpen(false)} aria-label="Close" className="inline-flex items-center justify-center h-10 w-10 -mr-2 text-gray-400 hover:text-gray-700"><X className="h-4 w-4" /></button>
             </div>
 
             {/* Stock scope toggle */}
             {stockMode && (
               <div className="flex items-center gap-2 px-4 pt-3">
                 <button type="button" onClick={() => setInStoreOnly(true)}
-                  className={cn('text-xs font-medium px-3 h-8 rounded-full', inStoreOnly ? 'bg-emerald-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200')}>
+                  className={cn('inline-flex items-center text-xs font-medium px-3 h-10 rounded-full', inStoreOnly ? 'bg-emerald-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200')}>
                   In {storeLabel ?? 'this store'} ({inStoreCount})
                 </button>
                 <button type="button" onClick={() => setInStoreOnly(false)}
-                  className={cn('text-xs font-medium px-3 h-8 rounded-full', !inStoreOnly ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200')}>
+                  className={cn('inline-flex items-center text-xs font-medium px-3 h-10 rounded-full', !inStoreOnly ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200')}>
                   All catalogue ({items.length})
                 </button>
               </div>
@@ -191,7 +195,7 @@ export function ItemPicker({
               <div className="flex gap-1.5 min-w-min">
                 {categories.map(c => (
                   <button key={c} type="button" onClick={() => setActiveCategory(c)}
-                    className={cn('inline-flex items-center text-xs font-medium px-3 h-8 rounded-full whitespace-nowrap',
+                    className={cn('inline-flex items-center text-xs font-medium px-3 h-10 rounded-full whitespace-nowrap',
                       activeCategory === c ? 'bg-gray-800 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200')}>
                     {c}
                   </button>
@@ -302,17 +306,17 @@ function ProposeNewItem({
       <p className="text-sm font-semibold text-gray-900">Request a new item</p>
       <p className="text-xs text-gray-500">Not in the catalogue? Add the details — an admin approves it, then everyone can use it.</p>
       <div>
-        <label className="text-xs text-gray-500">Item name *</label>
-        <input value={name} onChange={e => setName(e.target.value)} className="mt-1 h-10 w-full rounded-xl border border-gray-300 px-3 text-sm" placeholder="e.g. 110mm PVC Bend" />
+        <label htmlFor="propose-item-name" className="text-xs text-gray-500">Item name *</label>
+        <input id="propose-item-name" value={name} onChange={e => setName(e.target.value)} className="mt-1 h-10 w-full rounded-xl border border-gray-300 px-3 text-sm" placeholder="e.g. 110mm PVC Bend" />
       </div>
       <div className="grid grid-cols-2 gap-2">
         <div>
-          <label className="text-xs text-gray-500">Unit</label>
-          <input value={unit} onChange={e => setUnit(e.target.value)} className="mt-1 h-10 w-full rounded-xl border border-gray-300 px-3 text-sm" placeholder="nos / kg / m" />
+          <label htmlFor="propose-item-unit" className="text-xs text-gray-500">Unit</label>
+          <input id="propose-item-unit" value={unit} onChange={e => setUnit(e.target.value)} className="mt-1 h-10 w-full rounded-xl border border-gray-300 px-3 text-sm" placeholder="nos / kg / m" />
         </div>
         <div>
-          <label className="text-xs text-gray-500">Category</label>
-          <input value={category} onChange={e => setCategory(e.target.value)} list="inv-cat-suggest" className="mt-1 h-10 w-full rounded-xl border border-gray-300 px-3 text-sm" placeholder="Plumbing" />
+          <label htmlFor="propose-item-category" className="text-xs text-gray-500">Category</label>
+          <input id="propose-item-category" value={category} onChange={e => setCategory(e.target.value)} list="inv-cat-suggest" className="mt-1 h-10 w-full rounded-xl border border-gray-300 px-3 text-sm" placeholder="Plumbing" />
           <datalist id="inv-cat-suggest">{categories.map(c => <option key={c} value={c} />)}</datalist>
         </div>
       </div>

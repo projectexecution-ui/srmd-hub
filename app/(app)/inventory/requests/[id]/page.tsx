@@ -4,6 +4,7 @@ import { createClient } from '@/lib/supabase/server'
 import { requirePermission, getMyProfile, getMyUser } from '@/lib/auth'
 import { PageHeader } from '@/components/PageHeader'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { QueryError } from '@/components/ui/query-error'
 import { RequestStatusPill } from '@/components/inventory/RequestStatusPill'
 import { formatDate, formatDateTime } from '@/lib/utils'
 import { RequestActions } from './request-actions'
@@ -20,7 +21,7 @@ export default async function RequestDetailPage({
   const role = profile?.role ?? null
   const supabase = await createClient()
 
-  const { data: req } = await supabase
+  const { data: req, error: reqErr } = await supabase
     .from('inv_requests')
     .select(`
       *,
@@ -32,13 +33,21 @@ export default async function RequestDetailPage({
     .eq('id', id)
     .single()
 
+  if (reqErr) {
+    return (
+      <div className="p-4 md:p-6 max-w-4xl mx-auto space-y-4">
+        <PageHeader title="Request" back="/inventory/requests" />
+        <QueryError what="this request" message={reqErr.message} />
+      </div>
+    )
+  }
   if (!req) notFound()
 
   // Compute available qty per item for this warehouse (used in approval UI)
   const itemIds = (req.inv_request_items ?? []).map((ri: { item_id: string }) => ri.item_id)
-  const { data: stock } = itemIds.length > 0
+  const { data: stock, error: stockErr } = itemIds.length > 0
     ? await supabase.from('inv_stock_available').select('item_id, available_qty').eq('warehouse_id', req.warehouse_id).in('item_id', itemIds)
-    : { data: [] }
+    : { data: [], error: null }
   const availByItem = new Map<string, number>(
     (stock ?? []).map(s => [s.item_id, Number(s.available_qty)]),
   )
@@ -48,9 +57,10 @@ export default async function RequestDetailPage({
     ((req.inv_request_status_log ?? []) as Array<{ actor_id: string | null }>)
       .map(l => l.actor_id).filter(Boolean),
   )) as string[]
-  const { data: actorRows } = logActorIds.length > 0
+  const { data: actorRows, error: actorErr } = logActorIds.length > 0
     ? await supabase.from('profiles').select('id, full_name, name').in('id', logActorIds)
-    : { data: [] }
+    : { data: [], error: null }
+  const auxErr = stockErr ?? actorErr
   const actorName = new Map<string, string>(
     (actorRows ?? []).map(a => [a.id as string, (a.full_name ?? a.name ?? 'Someone') as string]),
   )
@@ -80,6 +90,8 @@ export default async function RequestDetailPage({
       <PageHeader title={req.request_no} back="/inventory/requests">
         <RequestStatusPill status={req.status} />
       </PageHeader>
+
+      {auxErr && <QueryError what="availability & history details" message={auxErr.message} />}
 
       {/* Re-raise banner: shown when the request was rejected and the
           current user owns it (or is admin). One click opens the
@@ -155,7 +167,7 @@ export default async function RequestDetailPage({
                             : <span className="text-gray-300">—</span>
                         })()}
                       </td>
-                      <td className="px-2 py-2 text-right tabular-nums text-gray-500">{Number(avail).toLocaleString('en-IN')}</td>
+                      <td className="px-2 py-2 text-right tabular-nums text-gray-500">{stockErr ? '—' : Number(avail).toLocaleString('en-IN')}</td>
                       <td className="px-2 py-2 text-center">
                         {l.is_returnable
                           ? <span className="inline-flex items-center text-amber-700 text-xs font-semibold">●</span>

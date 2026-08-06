@@ -6,16 +6,18 @@
 import { Input } from '@/components/ui/input'
 
 export function QtyInput({
-  value, onChange, placeholder = 'qty', className, disabled,
+  value, onChange, placeholder = 'qty', className, disabled, id,
 }: {
   value: string
   onChange: (v: string) => void
   placeholder?: string
   className?: string
   disabled?: boolean
+  id?: string
 }) {
   return (
     <Input
+      id={id}
       type="number"
       inputMode="decimal"
       min={0}

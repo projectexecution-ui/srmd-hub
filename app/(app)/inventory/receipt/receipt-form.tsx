@@ -58,14 +58,14 @@ export function ReceiptForm({ warehouses, items }: { warehouses: WhOpt[]; items:
 
   return (
     <form onSubmit={submit} className="space-y-4">
-      {error && <p className="text-sm text-rose-600">{error}</p>}
+      {error && <p role="alert" className="text-sm text-rose-600">{error}</p>}
       {success && (
-        <p className="text-sm text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2">{success}</p>
+        <p role="alert" className="text-sm text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2">{success}</p>
       )}
 
       <div>
-        <Label>Receive into warehouse *</Label>
-        <select value={warehouseId} onChange={e => setWarehouseId(e.target.value)} required
+        <Label htmlFor="rcpt-wh">Receive into warehouse *</Label>
+        <select id="rcpt-wh" value={warehouseId} onChange={e => setWarehouseId(e.target.value)} required
           className="mt-1 flex h-10 w-full rounded-xl border border-gray-300 bg-white px-3 py-2 text-sm">
           {warehouses.map(w => <option key={w.id} value={w.id}>{w.code} — {w.name}</option>)}
         </select>
@@ -74,7 +74,7 @@ export function ReceiptForm({ warehouses, items }: { warehouses: WhOpt[]; items:
       <div className="space-y-2">
         <div className="flex items-center justify-between">
           <Label>Items received</Label>
-          <Button type="button" size="sm" variant="outline" onClick={add}><Plus className="h-4 w-4" /> Add row</Button>
+          <Button type="button" variant="outline" onClick={add}><Plus className="h-4 w-4" /> Add row</Button>
         </div>
         {lines.map(l => {
           const item = items.find(i => i.id === l.item_id)
@@ -98,8 +98,8 @@ export function ReceiptForm({ warehouses, items }: { warehouses: WhOpt[]; items:
       </div>
 
       <div>
-        <Label>Delivery note / vendor (remarks)</Label>
-        <Textarea value={remarks} onChange={e => setRemarks(e.target.value)} rows={2} className="mt-1" placeholder="DC / invoice no, vendor, etc." />
+        <Label htmlFor="rcpt-remarks">Delivery note / vendor (remarks)</Label>
+        <Textarea id="rcpt-remarks" value={remarks} onChange={e => setRemarks(e.target.value)} rows={2} className="mt-1" placeholder="DC / invoice no, vendor, etc." />
       </div>
 
       <Button type="submit" disabled={busy}>

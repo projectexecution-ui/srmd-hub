@@ -43,7 +43,7 @@ const TOGGLES: Array<{ key: ToggleKey; settingKey: string; label: string; hint: 
 
 function Toggle({ checked, onChange, label, hint, busy }: { checked: boolean; onChange: (v: boolean) => void; label: string; hint: string; busy: boolean }) {
   return (
-    <button type="button" onClick={() => onChange(!checked)} disabled={busy}
+    <button type="button" role="switch" aria-checked={checked} onClick={() => onChange(!checked)} disabled={busy}
       className="flex w-full items-start justify-between gap-4 rounded-lg border border-gray-200 px-3 py-3 text-left hover:bg-gray-50 disabled:opacity-60">
       <span className="min-w-0">
         <span className="block text-sm font-semibold text-gray-900">{label}</span>
@@ -172,10 +172,10 @@ export function InvSettingsForm({ initial }: { initial: InvSettings }) {
         </div>
         {toggles.daily_report && (
           <div className="mt-2 rounded-lg border border-gray-200 bg-gray-50/60 px-3 py-3 space-y-2">
-            <label className="block text-xs font-semibold text-gray-700">Extra report recipients (optional)</label>
+            <label htmlFor="inv-report-emails" className="block text-xs font-semibold text-gray-700">Extra report recipients (optional)</label>
             <p className="text-xs text-gray-500">All admins get it automatically. Add other emails, comma-separated.</p>
             <div className="flex flex-col sm:flex-row gap-2">
-              <input value={emails} onChange={e => setEmails(e.target.value)} onBlur={saveEmails}
+              <input id="inv-report-emails" inputMode="email" value={emails} onChange={e => setEmails(e.target.value)} onBlur={saveEmails}
                 placeholder="owner@example.com, manager@example.com"
                 className="flex-1 h-9 rounded-lg border border-gray-300 bg-white px-3 text-sm" />
               <button type="button" onClick={sendTest} disabled={testing}

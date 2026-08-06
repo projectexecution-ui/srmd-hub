@@ -156,14 +156,14 @@ export function RequestForm({ projects, warehouses, items, projectStores = {}, s
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
         <div>
-          <Label>Project *</Label>
-          <select value={projectId} onChange={e => onProjectChange(e.target.value)} required
+          <Label htmlFor="req-project">Project *</Label>
+          <select id="req-project" value={projectId} onChange={e => onProjectChange(e.target.value)} required
             className="mt-1 flex h-10 w-full rounded-xl border border-gray-300 bg-white px-3 py-2 text-sm">
             {projects.map(p => <option key={p.id} value={p.id}>{p.code} — {p.name}</option>)}
           </select>
         </div>
         <div>
-          <Label>Issuing warehouse *</Label>
+          <Label htmlFor="req-warehouse">Issuing warehouse *</Label>
           {mappedWarehouse ? (
             // This project has a site store — the request goes there. No pick.
             <div className="mt-1 flex h-10 w-full items-center gap-2 rounded-xl border border-green-200 bg-green-50/60 px-3 text-sm text-gray-800">
@@ -172,7 +172,7 @@ export function RequestForm({ projects, warehouses, items, projectStores = {}, s
               <span className="ml-auto text-[11px] text-green-700 whitespace-nowrap">your site store</span>
             </div>
           ) : (
-            <select value={warehouseId} onChange={e => setWarehouseId(e.target.value)} required
+            <select id="req-warehouse" value={warehouseId} onChange={e => setWarehouseId(e.target.value)} required
               className="mt-1 flex h-10 w-full rounded-xl border border-gray-300 bg-white px-3 py-2 text-sm">
               {warehouses.map(w => <option key={w.id} value={w.id}>{w.code} — {w.name}</option>)}
             </select>
@@ -182,22 +182,22 @@ export function RequestForm({ projects, warehouses, items, projectStores = {}, s
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
         <div>
-          <Label>Urgency *</Label>
-          <select value={urgency} onChange={e => setUrgency(e.target.value)}
+          <Label htmlFor="req-urgency">Urgency *</Label>
+          <select id="req-urgency" value={urgency} onChange={e => setUrgency(e.target.value)}
             className="mt-1 flex h-10 w-full rounded-xl border border-gray-300 bg-white px-3 py-2 text-sm">
             <option value="normal">Normal</option>
             <option value="urgent">Urgent</option>
           </select>
         </div>
         <div>
-          <Label>Required by</Label>
-          <Input type="date" value={requiredBy} onChange={e => setRequiredBy(e.target.value)} className="mt-1" />
+          <Label htmlFor="req-required-by">Required by</Label>
+          <Input id="req-required-by" type="date" value={requiredBy} onChange={e => setRequiredBy(e.target.value)} className="mt-1" />
         </div>
       </div>
 
       <div>
-        <Label>Purpose</Label>
-        <Textarea value={purpose} onChange={e => setPurpose(e.target.value)} rows={2} className="mt-1" placeholder="What's it for?" />
+        <Label htmlFor="req-purpose">{`Purpose${requirePurpose ? " *" : ""}`}</Label>
+        <Textarea id="req-purpose" value={purpose} onChange={e => setPurpose(e.target.value)} rows={2} className="mt-1" placeholder="What's it for?" required={requirePurpose} />
       </div>
 
       <div className="space-y-2 pt-2 border-t border-gray-100">
@@ -239,7 +239,7 @@ export function RequestForm({ projects, warehouses, items, projectStores = {}, s
                   Returnable (tool/formwork — must come back)
                 </label>
               </div>
-              <div className="col-span-4 md:col-span-2">
+              <div className="col-span-12 md:col-span-2">
                 <Input value={l.remarks} onChange={e => update(l.tempId, { remarks: e.target.value })} placeholder="remarks" />
               </div>
               <div className="col-span-2 md:col-span-1 flex justify-end">

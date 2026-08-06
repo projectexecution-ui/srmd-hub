@@ -78,10 +78,10 @@ export default async function InventoryReportsPage() {
             Open report <ArrowRight className="h-4 w-4" />
           </Link>
         </div>
-        <div className="grid grid-cols-3 gap-3">
-          <MiniStat icon={LogIn} tone="emerald" label="Entries" value={entriesToday} />
-          <MiniStat icon={LogOut} tone="rose" label="Exits" value={exitsToday} />
-          <MiniStat icon={ArrowLeftRight} tone="blue" label="Transfers" value={transfersToday} />
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <MiniStat icon={LogIn} tone="emerald" label="Entries" value={error ? null : entriesToday} />
+          <MiniStat icon={LogOut} tone="rose" label="Exits" value={error ? null : exitsToday} />
+          <MiniStat icon={ArrowLeftRight} tone="blue" label="Transfers" value={error ? null : transfersToday} />
         </div>
         <p className="text-xs text-gray-400">Today · {todayLabel} · live so far · the emailed report covers the previous day.</p>
       </Card>
@@ -101,7 +101,7 @@ export default async function InventoryReportsPage() {
         </div>
         <CatalogueActions rows={rows} generatedAtLabel="" />
         <p className="text-xs text-gray-400">
-          {rows.length.toLocaleString('en-IN')} live items · in-hand summed across all stores. Items without a photo show a coloured monogram.
+          {error ? '—' : rows.length.toLocaleString('en-IN')} live items · in-hand summed across all stores. Items without a photo show a coloured monogram.
         </p>
       </Card>
     </div>
@@ -112,7 +112,7 @@ function MiniStat({ icon: Icon, tone, label, value }: {
   icon: React.ComponentType<{ className?: string }>
   tone: 'emerald' | 'rose' | 'blue'
   label: string
-  value: number
+  value: number | null
 }) {
   const tones = {
     emerald: 'bg-emerald-50 text-emerald-700',
@@ -125,7 +125,7 @@ function MiniStat({ icon: Icon, tone, label, value }: {
         <Icon className="h-4 w-4" />
       </div>
       <div className="min-w-0">
-        <p className="text-lg font-bold text-gray-900 tabular-nums leading-none">{value.toLocaleString('en-IN')}</p>
+        <p className="text-lg font-bold text-gray-900 tabular-nums leading-none">{value === null ? '—' : value.toLocaleString('en-IN')}</p>
         <p className="text-[11px] text-gray-500 mt-0.5">{label}</p>
       </div>
     </div>

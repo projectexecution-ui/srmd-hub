@@ -713,7 +713,7 @@ export function ImportForm({
           )}
 
           <div className="border border-gray-200 rounded-xl overflow-hidden">
-            <div className="max-h-[60vh] overflow-y-auto">
+            <div className="max-h-[60vh] overflow-auto">
               <table className="min-w-full text-xs">
                 <thead className="bg-gray-50 sticky top-0">
                   <tr className="text-left text-gray-500">
@@ -788,7 +788,7 @@ export function ImportForm({
                         {qtyColumnPresent && (
                           <td className="px-2 py-1.5 text-right tabular-nums">
                             <span className={willLandQty ? 'text-emerald-700 font-semibold' : 'text-gray-500'}>
-                              {r.qty || '—'}
+                              {r.qty != null ? Number(r.qty).toLocaleString("en-IN") : '—'}
                             </span>
                           </td>
                         )}

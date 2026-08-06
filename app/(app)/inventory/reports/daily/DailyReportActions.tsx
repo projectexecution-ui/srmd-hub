@@ -86,7 +86,7 @@ export function DailyReportActions({ report, dayLabel, date }: {
   const [busy, setBusy] = useState(false)
   const empty = report.entries.length + report.exits.length + report.transfers.length + report.adjustments.length === 0
   return (
-    <Button size="sm" variant="outline" disabled={busy || empty}
+    <Button variant="outline" disabled={busy || empty}
       onClick={() => { setBusy(true); try { build(report, dayLabel).save(`Daily-Movement_${date}.pdf`) } finally { setBusy(false) } }}>
       {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileDown className="h-4 w-4" />}
       PDF

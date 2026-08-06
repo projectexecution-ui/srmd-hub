@@ -51,6 +51,8 @@ export function RequestsBrowser({ rows, capped }: { rows: Row[]; capped: boolean
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
           <input
+            type="search"
+            aria-label="Search requests"
             value={q}
             onChange={e => setQ(e.target.value)}
             placeholder="Search request no, project, purpose…"
@@ -58,6 +60,7 @@ export function RequestsBrowser({ rows, capped }: { rows: Row[]; capped: boolean
           />
         </div>
         <select
+          aria-label="Filter by status"
           value={statusKey}
           onChange={e => setStatusKey(e.target.value)}
           className="h-10 rounded-xl border border-gray-300 bg-white px-3 text-sm"

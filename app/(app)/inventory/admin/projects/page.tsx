@@ -3,6 +3,7 @@ import { requirePermission } from '@/lib/auth'
 import { createClient } from '@/lib/supabase/server'
 import { PageHeader } from '@/components/PageHeader'
 import { Card } from '@/components/ui/card'
+import { QueryError } from '@/components/ui/query-error'
 import { ProjectStoresEditor, type ProjSetup } from './ProjectStoresEditor'
 
 export const dynamic = 'force-dynamic'
@@ -17,6 +18,18 @@ export default async function ProjectStoresPage() {
     supabase.from('profiles').select('id, full_name, name').eq('is_active', true).eq('role', 'head').order('full_name'),
     supabase.from('inv_project_setup').select('project_id, primary_warehouse_id, hop_id'),
   ])
+
+  const err = projRes.error ?? whRes.error ?? headRes.error ?? setupRes.error
+  if (err) {
+    return (
+      <div className="p-4 md:p-6 max-w-4xl mx-auto space-y-4">
+        <PageHeader title="Project stores" back="/inventory" />
+        <Card className="p-5">
+          <QueryError what="project stores" message={err.message} />
+        </Card>
+      </div>
+    )
+  }
 
   const projects = (projRes.data ?? []).map(p => ({ id: p.id as string, code: p.code as string, name: p.name as string }))
   const warehouses = (whRes.data ?? []).map(w => ({

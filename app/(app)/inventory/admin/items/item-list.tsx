@@ -97,6 +97,7 @@ export function ItemList({ items: initial }: { items: Item[] }) {
 
       <div className="flex flex-col md:flex-row gap-2 md:items-center md:justify-between">
         <Input
+          type="search"
           placeholder="Search by code, name or category…"
           value={q}
           onChange={e => setQ(e.target.value)}
@@ -207,7 +208,7 @@ function CategoryChip({ label, count, active, onClick }: {
     <button
       type="button"
       onClick={onClick}
-      className={`inline-flex items-center gap-1 text-xs font-medium px-3 h-7 rounded-full whitespace-nowrap ${
+      className={`inline-flex items-center gap-1 text-xs font-medium px-3 h-9 rounded-full whitespace-nowrap ${
         active ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
       }`}
     >
@@ -258,8 +259,8 @@ function ItemRow({ item, onEdit, onDeleted, setError }: {
         </p>
       </div>
       <div className="flex items-center gap-1 flex-shrink-0">
-        <Button size="sm" variant="outline" onClick={onEdit}><Pencil className="h-4 w-4" /></Button>
-        <Button size="sm" variant="outline" onClick={del} disabled={deleting}
+        <Button size="sm" variant="outline" onClick={onEdit} aria-label={`Edit ${item.code}`}><Pencil className="h-4 w-4" /></Button>
+        <Button size="sm" variant="outline" onClick={del} disabled={deleting} aria-label={`Delete ${item.code}`}
           className="text-rose-700 hover:bg-rose-50 border-rose-200">
           {deleting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
         </Button>

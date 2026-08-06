@@ -2,6 +2,7 @@ import { requirePermission } from '@/lib/auth'
 import { createClient } from '@/lib/supabase/server'
 import { PageHeader } from '@/components/PageHeader'
 import { Card } from '@/components/ui/card'
+import { QueryError } from '@/components/ui/query-error'
 import { EngineerProjectsEditor } from './EngineerProjectsEditor'
 
 export const dynamic = 'force-dynamic'
@@ -16,6 +17,8 @@ export default async function EngineerProjectsPage() {
     supabase.from('inv_engineer_projects').select('engineer_id, project_id'),
   ])
 
+  const err = engRes.error ?? projRes.error ?? mapRes.error
+
   const engineers = (engRes.data ?? []).map(e => ({ id: e.id as string, name: (e.full_name ?? e.name ?? '(unnamed)') as string }))
   const projects = (projRes.data ?? []).map(p => ({ id: p.id as string, code: p.code as string, name: p.name as string }))
   const initial: Record<string, string[]> = {}
@@ -29,7 +32,9 @@ export default async function EngineerProjectsPage() {
         subtitle="Assign each engineer to their site(s) so they only pick from their own projects when raising a request."
       />
       <Card className="p-4">
-        <EngineerProjectsEditor engineers={engineers} projects={projects} initial={initial} />
+        {err
+          ? <QueryError what="engineer assignments" message={err.message} />
+          : <EngineerProjectsEditor engineers={engineers} projects={projects} initial={initial} />}
       </Card>
     </div>
   )

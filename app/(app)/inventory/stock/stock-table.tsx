@@ -55,14 +55,14 @@ export function StockTable({ warehouses, selectedWarehouse, rows, canEdit = fals
   return (
     <div className="space-y-4">
       <div className="flex flex-col md:flex-row gap-2 md:items-center">
-        <select value={selectedWarehouse ?? ''} onChange={e => onChangeWh(e.target.value)}
+        <select aria-label="Warehouse" value={selectedWarehouse ?? ''} onChange={e => onChangeWh(e.target.value)}
           className="h-10 rounded-xl border border-gray-300 bg-white px-3 text-sm min-w-[14rem]">
           {warehouses.length === 0 && <option value="">No warehouses</option>}
           {warehouses.map(w => <option key={w.id} value={w.id}>{w.code} — {w.name}</option>)}
         </select>
-        <Input value={q} onChange={e => setQ(e.target.value)} placeholder="Search item code or name…" className="md:max-w-sm" />
-        <label className="inline-flex items-center gap-1.5 text-sm text-gray-700">
-          <input type="checkbox" checked={onlyLow} onChange={e => setOnlyLow(e.target.checked)} />
+        <Input type="search" value={q} onChange={e => setQ(e.target.value)} placeholder="Search item code or name…" className="md:max-w-sm" />
+        <label className="inline-flex items-center gap-1.5 py-2 min-h-10 text-sm text-gray-700">
+          <input type="checkbox" checked={onlyLow} onChange={e => setOnlyLow(e.target.checked)} className="h-4 w-4" />
           Only low-stock
         </label>
       </div>
@@ -157,6 +157,7 @@ function ReorderCell({ row, canEdit }: { row: StockRow; canEdit: boolean }) {
     <div className="flex flex-col items-end gap-0.5">
       <div className="flex items-center gap-1 justify-end">
         <input
+          aria-label={`Reorder level for ${row.item_name}`}
           type="number" min={0} value={val}
           onChange={e => setVal(e.target.value)}
           onBlur={save}

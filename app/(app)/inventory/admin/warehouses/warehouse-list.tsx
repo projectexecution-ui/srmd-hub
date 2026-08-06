@@ -137,8 +137,8 @@ function WarehouseRow({ warehouse, managers, onEdit, onDeleted, setError }: {
         </p>
       </div>
       <div className="flex items-center gap-1 flex-shrink-0">
-        <Button size="sm" variant="outline" onClick={onEdit}><Pencil className="h-4 w-4" /></Button>
-        <Button size="sm" variant="outline" onClick={del} disabled={deleting}
+        <Button size="sm" variant="outline" onClick={onEdit} aria-label={`Edit ${warehouse.code}`}><Pencil className="h-4 w-4" /></Button>
+        <Button size="sm" variant="outline" onClick={del} disabled={deleting} aria-label={`Delete ${warehouse.code}`}
           className="text-rose-700 hover:bg-rose-50 border-rose-200">
           {deleting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
         </Button>
