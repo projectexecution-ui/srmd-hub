@@ -6,6 +6,7 @@
 import Link from 'next/link'
 import { formatINR } from '@/lib/utils'
 import { labelFor } from '@/lib/module-labels'
+import { inboxActionLabel } from '@/lib/approvals/inbox-action'
 import { CheckCircle2, ArrowRight, Clock, Bell } from 'lucide-react'
 
 export interface InboxItem {
@@ -35,24 +36,6 @@ const MOD_EMOJI: Record<string, string> = {
 }
 
 const MAX_SHOWN = 6
-
-// Human phrasing for the stage an item is heading to — raw stage codes like
-// "approved" read as broken English ("waiting on approved").
-const NEXT_STAGE_LABEL: Record<string, string> = {
-  approved: 'final approval',
-  partially_approved: 'a partial release',
-  ph_approved: 'Project Head sign-off',
-  atm_approved: 'Atm Head sign-off',
-  submitted: 'submission',
-  returned: 'revision',
-  deadline_set: 'a deadline',
-}
-function stageLabel(s: string): string {
-  return NEXT_STAGE_LABEL[s] ?? s.replace(/_/g, ' ')
-}
-function capitalize(s: string): string {
-  return s ? s.charAt(0).toUpperCase() + s.slice(1) : s
-}
 
 function ageDays(iso: string, now: number): number {
   const t = Date.parse(iso)
@@ -143,8 +126,9 @@ export function NeedsYouNow({
                   <p className="text-xs text-gray-500 truncate">{meta}</p>
                 </div>
                 {r.next_stage && (
-                  <span className={`hidden md:inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-semibold flex-shrink-0 ${late ? 'bg-rose-50 text-rose-700' : 'bg-amber-50 text-amber-800'}`}>
-                    <ArrowRight className="h-3 w-3" />{capitalize(stageLabel(r.next_stage))}
+                  <span className={`hidden md:inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-semibold flex-shrink-0 ${late ? 'bg-rose-50 text-rose-700' : 'bg-amber-50 text-amber-800'}`}
+                    title="What this item needs from you">
+                    {inboxActionLabel(r.next_stage)}
                   </span>
                 )}
                 <div className="flex flex-col items-end gap-1 flex-shrink-0 w-[84px] text-right">

@@ -5,10 +5,11 @@ import { PageHeader } from '@/components/PageHeader'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import {
-  Inbox, Calendar, Building2, ArrowRight, FileText,
+  Inbox, Calendar, Building2, FileText,
   AlertTriangle, CheckCheck, Clock,
 } from 'lucide-react'
 import { formatINR } from '@/lib/utils'
+import { inboxActionLabel } from '@/lib/approvals/inbox-action'
 import { MODULES } from '@/lib/modules'
 import { getModuleLabels, DEFAULT_MODULE_LABELS, type ModuleLabelMap } from '@/lib/module-labels'
 
@@ -270,10 +271,8 @@ export default async function MyApprovalsPage({
                               {formatINR(r.amount)}
                             </span>
                           )}
-                          <span className="text-[10px] uppercase tracking-wide text-gray-400 inline-flex items-center gap-1">
-                            <code className="bg-gray-100 px-1 py-0.5 rounded">{r.from_stage}</code>
-                            <ArrowRight className="h-3 w-3" />
-                            <code className="bg-blue-50 text-blue-700 px-1 py-0.5 rounded">{r.next_stage ?? '?'}</code>
+                          <span className="inline-flex items-center rounded-full bg-amber-50 text-amber-800 px-2.5 py-1 text-[11px] font-semibold" title="What this item needs from you">
+                            {inboxActionLabel(r.next_stage)}
                           </span>
                         </div>
                       </Link>
