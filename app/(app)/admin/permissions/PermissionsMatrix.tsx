@@ -8,7 +8,8 @@ import { Input } from '@/components/ui/input'
 import { Eye, Pencil, ShieldCheck, Loader2, Check, Plus, X, Sparkles, Box } from 'lucide-react'
 import { confirm } from '@/components/ui/confirm-dialog'
 import { cn } from '@/lib/utils'
-import { MODULES, TILE_TONES } from '@/lib/modules'
+import { TILE_TONES } from '@/lib/modules'
+import { groupModules, moduleMetaMap } from './groups'
 import type { Role, RolePermission, PermAction } from '@/lib/types'
 import type { RoleLabelMap } from '@/lib/role-labels'
 
@@ -21,6 +22,8 @@ interface Props {
   roleLabels: RoleLabelMap
   currentUserIsPortalOwner: boolean
   canManageRoles?: boolean
+  /** Full module count for the "N/M" header even when the list is filtered. */
+  totalModules?: number
 }
 
 type Key = `${string}::${string}` // `${role}::${slug}`
@@ -30,17 +33,6 @@ const ACTIONS: { key: PermAction; label: string; icon: React.ComponentType<{ cla
   { key: 'view',  label: 'View',  icon: Eye,         on: 'bg-blue-100 text-blue-700' },
   { key: 'edit',  label: 'Edit',  icon: Pencil,      on: 'bg-amber-100 text-amber-800' },
   { key: 'admin', label: 'Admin', icon: ShieldCheck, on: 'bg-purple-100 text-purple-800' },
-]
-
-// Professional grouping so a long module list scans in sections. Any slug not
-// listed here lands in "Other" — nothing is ever hidden.
-const MODULE_GROUPS: { title: string; slugs: string[] }[] = [
-  { title: 'Inbox & approvals', slugs: ['approvals', 'ecc'] },
-  { title: 'Procurement', slugs: ['indents', 'pos', 'grns', 'invoices', 'payments', 'vendors', 'procurement-tracker', 'comparison', 'established-rates'] },
-  { title: 'Cost & bills', slugs: ['cost-control', 'budget-vs-actual', 'budget-vs-actual-v2', 'bills-pipeline', 'stuck-bills', 'contractor-report', 'supplier-report'] },
-  { title: 'Site & field', slugs: ['schedule', 'daily-site-report', 'jmr', 'inventory', 'projects', 'attendance'] },
-  { title: 'Data & tools', slugs: ['uploads', 'blueprint-demo'] },
-  { title: 'Admin', slugs: ['admin-users', 'admin-settings', 'admin-permissions'] },
 ]
 
 async function fetchAiDescription(roleName: string, context: string): Promise<string> {
@@ -54,7 +46,7 @@ async function fetchAiDescription(roleName: string, context: string): Promise<st
   return (json?.description as string) || ''
 }
 
-export default function PermissionsMatrix({ modules, roles, initial, roleLabels, currentUserIsPortalOwner, canManageRoles = false }: Props) {
+export default function PermissionsMatrix({ modules, roles, initial, roleLabels, currentUserIsPortalOwner, canManageRoles = false, totalModules }: Props) {
   const router = useRouter()
   const initialMap = useMemo<Record<Key, CellState>>(() => {
     const m: Record<Key, CellState> = {}
@@ -87,25 +79,7 @@ export default function PermissionsMatrix({ modules, roles, initial, roleLabels,
   const [hoverRole, setHoverRole] = useState<Role | null>(null)
   const [hoverSlug, setHoverSlug] = useState<string | null>(null)
 
-  const moduleMeta = useMemo(() => {
-    const m = new Map<string, { icon: React.ComponentType<{ className?: string }>; tone: keyof typeof TILE_TONES }>()
-    for (const mod of MODULES) m.set(mod.slug, { icon: mod.icon, tone: mod.tone })
-    return m
-  }, [])
-
-  const grouped = useMemo(() => {
-    const bySlug = new Map(modules.map(m => [m.slug, m]))
-    const used = new Set<string>()
-    const out: { title: string; mods: ModuleRef[] }[] = []
-    for (const g of MODULE_GROUPS) {
-      const mods = g.slugs.map(s => bySlug.get(s)).filter(Boolean) as ModuleRef[]
-      mods.forEach(m => used.add(m.slug))
-      if (mods.length) out.push({ title: g.title, mods })
-    }
-    const others = modules.filter(m => !used.has(m.slug))
-    if (others.length) out.push({ title: 'Other', mods: others })
-    return out
-  }, [modules])
+  const grouped = useMemo(() => groupModules(modules), [modules])
 
   async function addRole(e: React.FormEvent) {
     e.preventDefault()
@@ -183,7 +157,13 @@ export default function PermissionsMatrix({ modules, roles, initial, roleLabels,
     return parts.slice(0, 14).join(', ')
   }
 
-  const roleModuleCount = (role: Role) => modules.reduce((n, m) => n + (role === ('admin' as Role) || getCell(role, m.slug).view ? 1 : 0), 0)
+  // Count from live state (not the possibly-filtered `modules`) so search
+  // doesn't shrink the denominator or the tally.
+  const totalMods = totalModules ?? modules.length
+  const roleModuleCount = (role: Role) =>
+    role === ('admin' as Role)
+      ? totalMods
+      : Object.entries(state).filter(([k, v]) => k.startsWith(`${role}::`) && v.view).length
 
   async function toggle(role: Role, slug: string, action: PermAction) {
     const key: Key = `${role}::${slug}`
@@ -275,11 +255,11 @@ export default function PermissionsMatrix({ modules, roles, initial, roleLabels,
           )}
 
           {/* Matrix */}
-          <div className="overflow-x-auto rounded-xl border border-gray-200" onMouseLeave={() => { setHoverRole(null); setHoverSlug(null) }}>
+          <div className="overflow-auto max-h-[72vh] rounded-xl border border-gray-200" onMouseLeave={() => { setHoverRole(null); setHoverSlug(null) }}>
             <table className="min-w-full border-separate border-spacing-0 text-sm">
               <thead>
                 <tr>
-                  <th className="sticky left-0 z-20 bg-gray-50 border-b border-gray-200 px-3 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wide text-gray-500 min-w-[220px]">Module</th>
+                  <th className="sticky left-0 top-0 z-30 bg-gray-50 border-b border-gray-200 px-3 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wide text-gray-500 min-w-[220px]">Module</th>
                   {visibleRoles.map(role => {
                     const rl = labels[role]
                     const busy = labelBusy === role
@@ -287,7 +267,7 @@ export default function PermissionsMatrix({ modules, roles, initial, roleLabels,
                     const delBusy = delBusyRole === role
                     const hot = hoverRole === role
                     return (
-                      <th key={role} className={cn('border-b border-gray-200 px-2 py-2 text-center align-bottom relative min-w-[104px] transition-colors', hot ? 'bg-indigo-50' : 'bg-gray-50')} title={rl?.description}>
+                      <th key={role} className={cn('sticky top-0 z-20 border-b border-gray-200 px-2 py-2 text-center align-bottom relative min-w-[104px] transition-colors', hot ? 'bg-indigo-50' : 'bg-gray-50')} title={rl?.description}>
                         {canManageRoles && role !== ('admin' as Role) && (
                           <button type="button" onClick={() => deactivateRole(role)} disabled={delBusy} title="Deactivate this role"
                             className="absolute top-0.5 right-0.5 h-4 w-4 inline-flex items-center justify-center rounded-full text-gray-300 hover:text-rose-600 hover:bg-rose-50">
@@ -305,7 +285,7 @@ export default function PermissionsMatrix({ modules, roles, initial, roleLabels,
                           <div className="text-[11px] font-bold uppercase tracking-wide text-gray-700 leading-tight">{rl?.label || role}</div>
                         )}
                         <div className="mt-1 flex items-center justify-center gap-1 text-[10px] text-gray-400">
-                          {role === ('admin' as Role) ? <span className="text-purple-500 font-semibold">full</span> : <span className="tabular-nums">{roleModuleCount(role)}/{modules.length}</span>}
+                          {role === ('admin' as Role) ? <span className="text-purple-500 font-semibold">full</span> : <span className="tabular-nums">{roleModuleCount(role)}/{totalMods}</span>}
                           {busy && <Loader2 className="h-3 w-3 animate-spin text-blue-600" />}
                           {saved && <Check className="h-3 w-3 text-green-600" />}
                         </div>
@@ -317,7 +297,7 @@ export default function PermissionsMatrix({ modules, roles, initial, roleLabels,
               <tbody>
                 {grouped.map(group => (
                   <GroupRows key={group.title} title={group.title} mods={group.mods} colCount={colCount}
-                    visibleRoles={visibleRoles} moduleMeta={moduleMeta} getCell={getCell}
+                    visibleRoles={visibleRoles} moduleMeta={moduleMetaMap} getCell={getCell}
                     busyKey={busyKey} savedKey={savedKey} hoverRole={hoverRole} hoverSlug={hoverSlug}
                     setHoverRole={setHoverRole} setHoverSlug={setHoverSlug} toggle={toggle} />
                 ))}

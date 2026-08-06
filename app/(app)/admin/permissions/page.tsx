@@ -5,8 +5,7 @@ import { getModuleLabels, labelFor } from '@/lib/module-labels'
 import { PageHeader } from '@/components/PageHeader'
 import { MODULES } from '@/lib/modules'
 import { type RolePermission, type Role } from '@/lib/types'
-import PermissionsMatrix from './PermissionsMatrix'
-import DeletePermissionsMatrix from './DeletePermissionsMatrix'
+import PermissionsBoard from './PermissionsBoard'
 
 export const dynamic = 'force-dynamic'
 
@@ -49,20 +48,14 @@ export default async function AdminPermissionsPage() {
             : 'Who can do what in each module — toggle any cell and it saves instantly.'
         }
       />
-      <PermissionsMatrix
+      <PermissionsBoard
         modules={moduleRefs}
         roles={activeRoles}
-        initial={(permsRes.data ?? []) as RolePermission[]}
         roleLabels={roleLabels}
         currentUserIsPortalOwner={currentUserIsPortalOwner}
         canManageRoles={canManageRoles}
-      />
-
-      <DeletePermissionsMatrix
-        modules={moduleRefs}
-        roles={activeRoles}
-        roleLabels={roleLabels}
-        initial={(permsRes.data ?? []).map(r => ({
+        accessInitial={(permsRes.data ?? []) as RolePermission[]}
+        deleteInitial={(permsRes.data ?? []).map(r => ({
           role: r.role as Role,
           module_slug: r.module_slug,
           delete_mode: (r.delete_mode ?? 'none') as 'none' | 'direct' | 'request',
