@@ -6,6 +6,7 @@ import { ALL_ROLES } from '@/lib/types'
 import NotificationRulesClient, { type NotificationScheduleRow } from './NotificationRulesClient'
 import SelfManageAdmin, { type SelfManageUser } from './SelfManageAdmin'
 import { EmailHealthStrip, type DeliveryHealth } from './EmailHealthStrip'
+import { CronHealthStrip } from './CronHealthStrip'
 
 export const dynamic = 'force-dynamic'
 
@@ -27,13 +28,17 @@ export default async function AdminNotificationsPage() {
   if (!(portalOwner || profile?.role === 'admin')) redirect('/admin')
 
   const supabase = await createClient()
-  const [{ data: rules }, { data: schedules }, { data: userRows }, { data: grantRows }, { data: healthData }] = await Promise.all([
+  const [{ data: rules }, { data: schedules }, { data: userRows }, { data: grantRows }, { data: healthData }, { data: cronRows }] = await Promise.all([
     supabase.from('notification_rules').select('scope, scope_key, event_type, channel, enabled'),
     supabase.from('notification_schedule').select('scope, scope_key, event_type, mode'),
     supabase.from('profiles').select('id, full_name, name, email, role').eq('is_active', true),
     supabase.from('notification_self_manage').select('user_id'),
     supabase.rpc('email_delivery_health'),
+    supabase.from('app_settings').select('key, value').in('key', ['cron_heartbeat_am', 'cron_heartbeat_pm']),
   ])
+  const cronBy = new Map(((cronRows ?? []) as { key: string; value: string }[]).map(r => [r.key, r.value]))
+  const cronAmAt = cronBy.get('cron_heartbeat_am') ?? null
+  const cronPmAt = cronBy.get('cron_heartbeat_pm') ?? null
   // Build defensively: tolerate the pre-migration flat shape (no email/push
   // keys) so the strip never crashes in the deploy→migration window.
   const emptyChannel = { counts: {}, stuck: 0, recent: [] }
@@ -51,6 +56,7 @@ export default async function AdminNotificationsPage() {
   return (
     <div className="space-y-4">
       <div className="pt-2"><EmailHealthStrip health={health} /></div>
+      <CronHealthStrip amAt={cronAmAt} pmAt={cronPmAt} nowMs={Date.now()} />
       <NotificationRulesClient
         initialRules={(rules ?? []) as NotificationRuleRow[]}
         initialSchedules={(schedules ?? []) as NotificationScheduleRow[]}

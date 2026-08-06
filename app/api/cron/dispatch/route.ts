@@ -1,63 +1,40 @@
 // ── Single cron dispatcher ─────────────────────────────────────────────────
-// Vercel's Hobby (free) plan allows only 2 cron jobs, each once/day. The app
-// has many scheduled jobs, so instead of one Vercel cron per job (which
-// silently drops everything past the 2nd), we register just TWO Vercel crons
-// that both hit THIS endpoint, and this endpoint fans out to every job.
+// Vercel's Hobby (free) plan allows only 2 cron jobs, each once/day, and they
+// are BEST-EFFORT — a slot can be delayed or skipped. So we register just TWO
+// Vercel crons that both hit THIS endpoint, and this endpoint fans out.
 //
-//   ?slot=am  (09:00 IST) → the full morning batch (digests, backups, reports)
-//   ?slot=pm  (15:00 IST) → the afternoon refreshers (things that liked to run
-//                            more than once a day; on the free plan they get 2×)
+//   ?slot=am  (09:00 IST)   ?slot=pm  (15:00 IST)
 //
-// IMPORTANT (until the account is on Vercel Pro): do NOT add new entries to
-// vercel.json "crons". Add the new job's path to JOBS_AM (or JOBS_PM) below.
-// Each target route already authenticates with Bearer CRON_SECRET, so we just
-// call it with the same header. Frequencies finer than 2×/day can't be honored
-// on the free plan — that's a plan limit, not a code one.
+// Robustness (see lib/cron/schedule.ts): every "daily" job is ATTEMPTED in BOTH
+// slots but a shared ledger (app_settings.cron_ledger, keyed by IST date) makes
+// it RUN at most once/day — so a skipped 09:00 self-heals at 15:00, a failed
+// job retries next slot, and nothing double-sends. Each run also stamps a
+// heartbeat (cron_heartbeat_am/pm) so a miss is visible on Admin → Notifications.
+//
+// IMPORTANT (until Vercel Pro): do NOT add new entries to vercel.json "crons".
+// Add the job to the CRON_JOBS registry in lib/cron/schedule.ts instead.
 
 import { NextResponse } from 'next/server'
+import { createClient as createServiceClient } from '@supabase/supabase-js'
+import { plannedJobs, stampLedger, legacyJobs, istDateOf, isEveryThirdDay, type Slot } from '@/lib/cron/schedule'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
 
-// Morning batch — everything runs once here.
-// in4-followup wants an every-3-days cadence; it has no internal guard, so we
-// gate it here by day-count so it doesn't turn into a daily email.
-function morningJobs(): string[] {
-  const every3rdDay = Math.floor(Date.now() / 86_400_000) % 3 === 0
-  return [
-    '/api/jmr/weekly-report?cron=1',      // self-decides the weekly day
-    '/api/cost-control/backup?cron=1',
-    ...(every3rdDay ? ['/api/cost-control/in4-followup?cron=1'] : []),
-    '/api/cron/procurement-digest?cron=1', // self-gates weekday + once/day
-    '/api/cron/engineer-digest?cron=1',
-    '/api/cron/email-retry?cron=1',        // re-dispatch stuck/failed emails + dead-letter + alert
-    '/api/cron/daily-site-report?cron=1',
-    '/api/cron/inventory-low-stock?cron=1', // nudge storekeepers about low stock
-    '/api/cron/inventory-daily-report?cron=1', // yesterday's entry/exit/transfer → management (self-gates)
-    '/api/cron/bills-pipeline?cron=1',
-    '/api/cron/bills-digest?cron=1',       // per-project bills cards → each Atm Head (uses the snapshot above)
-    '/api/cron/bph-sync?cron=1',
-  ]
+const LEDGER_KEY = 'cron_ledger'
+
+function serviceClient() {
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL
+  if (!key || !url) return null
+  return createServiceClient(url, key, { auth: { persistSession: false } })
 }
 
-// Afternoon refreshers — jobs that used to run several times a day. On the free
-// plan they get a 2nd run here (2×/day total).
-const JOBS_PM: string[] = [
-  '/api/cron/bills-pipeline?cron=1&slot=pm',
-  '/api/cron/bph-sync?cron=1',
-  '/api/cron/email-retry?cron=1',          // 2nd retry pass so stuck emails don't wait a full day
-  '/api/cron/cc-approval-digest?cron=1',   // ~EOD: budgets the Trustee approved → Project Head + raising engineer
-]
-
-// Fan out over the PUBLIC production domain — never `req.url`'s origin.
-// Vercel SSO Deployment Protection is ON (Standard: all_except_custom_domains),
-// so every per-deploy *.vercel.app URL is walled behind Vercel's auth. Under a
-// cron, `req.url` resolves to that protected deploy URL, so internal fetches to
-// it were 401'd BEFORE reaching the handler — the entry dispatch returned 200
-// but every fanned-out job silently no-op'd (no digests, no cron backups ever).
-// The production alias (VERCEL_PROJECT_PRODUCTION_URL, e.g. ct-hub.vercel.app)
-// is the exempt/public domain, so target it.
+// Fan out over the PUBLIC production domain — never `req.url`'s origin. Vercel
+// SSO Deployment Protection walls per-deploy *.vercel.app URLs behind auth, so a
+// cron hitting `req.url` would 401 every internal fetch. The production alias is
+// the exempt/public domain.
 function baseUrl(): string {
   const prod = process.env.VERCEL_PROJECT_PRODUCTION_URL
   return `https://${prod || 'ct-hub.vercel.app'}`
@@ -84,13 +61,53 @@ export async function GET(req: Request) {
     return NextResponse.json({ ok: false, reason: 'Unauthorized' }, { status: 401 })
   }
 
-  const slot = new URL(req.url).searchParams.get('slot') === 'pm' ? 'pm' : 'am'
-  const jobs = slot === 'pm' ? JOBS_PM : morningJobs()
+  const slot: Slot = new URL(req.url).searchParams.get('slot') === 'pm' ? 'pm' : 'am'
   const base = baseUrl()
+  const nowMs = Date.now()
+  const istDate = istDateOf(nowMs)
+  const every3 = isEveryThirdDay(nowMs)
+  const supa = serviceClient()
 
-  // Fire them all in parallel; one failing job never blocks the others.
-  const results = await Promise.all(jobs.map(p => runJob(base, p, CRON_SECRET)))
+  // Read today's ledger. If we can't (no service key / read error), FALL OPEN to
+  // the legacy per-slot lists so behaviour equals the old am=full / pm=subset
+  // split — never "run every daily job in both slots" (which would double-send).
+  // app_settings.value is TEXT, so the ledger is a JSON string.
+  let ledger: Record<string, string> | null = null
+  if (supa) {
+    const { data, error } = await supa.from('app_settings').select('value').eq('key', LEDGER_KEY).maybeSingle()
+    if (!error) {
+      ledger = {}
+      const raw = data?.value
+      if (typeof raw === 'string' && raw.trim()) {
+        try {
+          const p = JSON.parse(raw)
+          if (p && typeof p === 'object' && !Array.isArray(p)) ledger = p as Record<string, string>
+        } catch { /* corrupt ledger → treat as empty (runs + re-stamps today) */ }
+      }
+    }
+  }
+
+  let results: Array<{ path: string; status: number; ok: boolean; key?: string; policy?: 'daily' | 'each'; body?: unknown; error?: string }>
+  let mode: 'ledger' | 'legacy'
+
+  if (ledger) {
+    mode = 'ledger'
+    const planned = plannedJobs(slot, ledger, istDate, every3)
+    results = await Promise.all(planned.map(async j => ({ ...(await runJob(base, j.path, CRON_SECRET)), key: j.key, policy: j.policy })))
+    // Persist: stamp daily successes + the heartbeat. Fail-open (best effort).
+    const nextLedger = stampLedger(ledger, results.map(r => ({ key: r.key!, policy: r.policy!, ok: r.ok })), istDate)
+    try {
+      await supa!.from('app_settings').upsert([
+        { key: LEDGER_KEY, value: JSON.stringify(nextLedger) },
+        { key: `cron_heartbeat_${slot}`, value: new Date(nowMs).toISOString() },
+      ], { onConflict: 'key' })
+    } catch { /* ledger/heartbeat persistence is best-effort — never fail the run over it */ }
+  } else {
+    mode = 'legacy'
+    const jobs = legacyJobs(slot, every3)
+    results = await Promise.all(jobs.map(p => runJob(base, p, CRON_SECRET)))
+  }
+
   const okCount = results.filter(r => r.ok).length
-
-  return NextResponse.json({ ok: true, slot, ran: results.length, ok_count: okCount, results })
+  return NextResponse.json({ ok: true, slot, mode, ran: results.length, ok_count: okCount, results })
 }
