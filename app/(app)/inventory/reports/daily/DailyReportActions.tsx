@@ -5,7 +5,7 @@ import autoTable from 'jspdf-autotable'
 import { Button } from '@/components/ui/button'
 import { FileDown, Loader2 } from 'lucide-react'
 import { formatDateTime } from '@/lib/utils'
-import { istTime, movementDetail, type DailyMovementReport } from '@/lib/inventory/daily-movement'
+import { istTime, movementDetail, summarizeFlows, type DailyMovementReport } from '@/lib/inventory/daily-movement'
 
 const nf = (n: number) => Number(n || 0).toLocaleString('en-IN')
 
@@ -54,7 +54,41 @@ function build(report: DailyMovementReport, dayLabel: string): jsPDF {
     doc.setFont('helvetica', 'bold'); doc.setFontSize(15); doc.setTextColor(...tone)
     doc.text(value, x + 9, y + 35)
   })
-  y += 44 + 18
+  y += 44 + 16
+
+  // ── Highlight: where material went (store → site) ──
+  const flow = summarizeFlows(report)
+  if (flow.routes.length) {
+    doc.setFillColor(...NAVY)
+    doc.roundedRect(marginX, y, pageW - marginX * 2, 22, 4, 4, 'F')
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(10.5); doc.setTextColor(255, 255, 255)
+    doc.text('Where material went today', marginX + 10, y + 14.5)
+    const summary = `${nf(flow.destinations)} ${flow.destinations === 1 ? 'site' : 'sites'} · from ${nf(flow.sources)} ${flow.sources === 1 ? 'store' : 'stores'}`
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(8.5); doc.setTextColor(...GOLD)
+    doc.text(summary, pageW - marginX - 10 - doc.getTextWidth(summary), y + 14.5)
+    y += 22
+
+    autoTable(doc, {
+      startY: y,
+      head: [['From (store)', '', 'To (site)', 'Lines', 'Items']],
+      body: flow.routes.map(r => [r.from, '→', r.to, nf(r.lines), nf(r.items)]),
+      margin: { left: marginX, right: marginX },
+      styles: { font: 'helvetica', fontSize: 9, cellPadding: 4, textColor: INK },
+      headStyles: { fillColor: [237, 242, 249], textColor: NAVY, fontSize: 7.5, fontStyle: 'bold' },
+      alternateRowStyles: { fillColor: [250, 250, 249] },
+      columnStyles: {
+        0: { cellWidth: 'auto', fontStyle: 'bold' },
+        1: { cellWidth: 16, halign: 'center', textColor: GOLD, fontStyle: 'bold' },
+        2: { cellWidth: 'auto', fontStyle: 'bold', textColor: NAVY },
+        3: { cellWidth: 52, halign: 'right' },
+        4: { cellWidth: 52, halign: 'right' },
+      },
+    })
+    // @ts-expect-error lastAutoTable is attached at runtime
+    y = (doc.lastAutoTable?.finalY ?? y) + 18
+  } else {
+    y += 2
+  }
 
   const section = (title: string, rgb: [number, number, number], head: string[], body: (string)[][]) => {
     if (body.length === 0) return
@@ -79,12 +113,13 @@ function build(report: DailyMovementReport, dayLabel: string): jsPDF {
   }
 
   const withEmg = (l: { isEmergency?: boolean }) => (l.isEmergency ? ' · EMERGENCY' : '')
+  // Exits (material to sites) lead — that's what management reads first.
+  section('Exits — issued to site', [220, 38, 38], ['Item', 'To site (project · purpose · request)', 'From store', 'By', 'Qty', 'Time'],
+    report.exits.map(l => [l.itemName, (movementDetail(l) || '—') + withEmg(l), l.store, l.actor, `${nf(l.qty)} ${l.unit}`, istTime(l.at)]))
+  section('Transfers — store to site', [37, 99, 235], ['Item', 'From', 'To', 'By', 'Qty', 'Time'],
+    report.transfers.map(t => [t.itemName, t.fromStore, t.toStore, t.actor, `${nf(t.qty)} ${t.unit}`, istTime(t.at)]))
   section('Entries — into store', [22, 163, 74], ['Item', 'Source', 'Store', 'By', 'Qty', 'Time'],
     report.entries.map(l => [l.itemName, movementDetail(l) || l.type, l.store, l.actor, `${nf(l.qty)} ${l.unit}`, istTime(l.at)]))
-  section('Exits — out of store', [220, 38, 38], ['Item', 'For (project · purpose · request)', 'Store', 'By', 'Qty', 'Time'],
-    report.exits.map(l => [l.itemName, (movementDetail(l) || '—') + withEmg(l), l.store, l.actor, `${nf(l.qty)} ${l.unit}`, istTime(l.at)]))
-  section('Transfers — store to store', [37, 99, 235], ['Item', 'From', 'To', 'By', 'Qty', 'Time'],
-    report.transfers.map(t => [t.itemName, t.fromStore, t.toStore, t.actor, `${nf(t.qty)} ${t.unit}`, istTime(t.at)]))
   section('Stock corrections', [124, 58, 237], ['Item', 'Note', 'Store', 'By', 'Qty', 'Time'],
     report.adjustments.map(l => [l.itemName, movementDetail(l) || '—', l.store, l.actor, `${nf(l.qty)} ${l.unit}`, istTime(l.at)]))
 

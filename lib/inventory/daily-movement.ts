@@ -167,6 +167,56 @@ export function bucketMovements(rows: RawMovement[]): DailyMovementReport {
   }
 }
 
+// ── Flow summary — "where did material go today?" ───────────────────────────
+// The one thing management cares about most: from which store material left and
+// which SITE it reached. Unifies the two ways stock leaves a store —
+//   • issues  → store (from) → project/site (to)
+//   • transfers → store (from) → store (to, often a site store)
+// — into store→site routes, ranked by how much moved on each route.
+export interface FlowRoute {
+  from: string
+  to: string
+  lines: number      // number of movement lines on this route
+  items: number      // distinct items on this route
+  kinds: string      // "issued" / "transferred" / "issued · transferred"
+}
+export interface FlowSummary {
+  routes: FlowRoute[]      // sorted, busiest route first
+  destinations: number     // distinct sites that received material
+  sources: number          // distinct stores that sent material
+  totalLines: number
+}
+
+export function summarizeFlows(report: DailyMovementReport): FlowSummary {
+  const map = new Map<string, { from: string; to: string; lines: number; items: Set<string>; kinds: Set<string> }>()
+  const add = (from: string, to: string, itemCode: string, kind: string) => {
+    const f = from || '—', t = to || '—'
+    const k = `${f}|||${t}`
+    const cur = map.get(k) ?? { from: f, to: t, lines: 0, items: new Set<string>(), kinds: new Set<string>() }
+    cur.lines += 1; cur.items.add(itemCode || ''); cur.kinds.add(kind)
+    map.set(k, cur)
+  }
+  for (const l of report.exits) {
+    if (l.rawType !== 'issue') continue        // damage/write-offs aren't "to a site"
+    add(l.store, l.project || 'Unassigned site', l.itemCode, 'issued')
+  }
+  for (const t of report.transfers) {
+    add(t.fromStore, t.toStore, t.itemCode, 'transferred')
+  }
+  const routes = [...map.values()]
+    .map(r => ({
+      from: r.from, to: r.to, lines: r.lines, items: r.items.size,
+      kinds: [...r.kinds].join(' · '),
+    }))
+    .sort((a, b) => b.lines - a.lines || b.items - a.items || a.to.localeCompare(b.to))
+  return {
+    routes,
+    destinations: new Set(routes.map(r => r.to)).size,
+    sources: new Set(routes.map(r => r.from)).size,
+    totalLines: routes.reduce((s, r) => s + r.lines, 0),
+  }
+}
+
 // ── Digest summary — roll it up so a huge day still fits one screen ─────────
 export interface DigestSummary {
   byProject: { project: string; count: number }[]
@@ -233,7 +283,7 @@ function tableHtml(title: string, headColor: string, cols: string[], rows: strin
     const tds = r.map((c, j) => `<td style="padding:6px 8px;font-size:12px;color:#1f2937;border-bottom:1px solid #eee;${j === cols.length - 1 ? 'text-align:right;white-space:nowrap' : ''}">${c}</td>`).join('')
     return `<tr style="background:${bg}">${tds}</tr>`
   }).join('')
-  return `<p style="font-size:14px;font-weight:700;color:#111827;margin:20px 0 6px">${title}</p>`
+  return (title ? `<p style="font-size:14px;font-weight:700;color:#111827;margin:20px 0 6px">${title}</p>` : '')
     + `<table style="width:100%;border-collapse:collapse;border:1px solid #eee;border-radius:8px;overflow:hidden">`
     + `<thead><tr style="background:${headColor}">${th}</tr></thead><tbody>${body}</tbody></table>`
 }
@@ -246,6 +296,7 @@ const TOP_N = 6   // roll-ups cap; the tail collapses to "+N more"
 // the full log. Fixed length regardless of the day's volume: no row dump.
 export function renderDailyEmailHtml(report: DailyMovementReport, dayLabel: string, opts: { url?: string } = {}): string {
   const s = summarizeDigest(report)
+  const flow = summarizeFlows(report)
   const anything = report.kpi.entries + report.kpi.exits + report.kpi.transfers + report.adjustments.length
 
   const kpiCard = (label: string, value: number, color: string) =>
@@ -280,9 +331,14 @@ export function renderDailyEmailHtml(report: DailyMovementReport, dayLabel: stri
 
   // Roll-ups (ranked by count — coherent across mixed units).
   const moreRow = (n: number, noun: string): string[][] => n > 0 ? [[`+ ${n} more ${noun}`, '']] : []
-  const byProjectTbl = tableHtml('Exits — by project', '#dc2626', ['Project', 'Issues'],
-    [...s.byProject.slice(0, TOP_N).map(p => [esc(p.project), nf(p.count)]),
-     ...moreRow(Math.max(0, s.byProject.length - TOP_N), 'projects')])
+  // Headline for management: where material went — store → site, busiest first.
+  const flowTbl = flow.routes.length
+    ? `<p style="font-size:14px;font-weight:700;color:#0f2a4a;margin:20px 0 2px">Where material went — store → site</p>`
+      + `<p style="font-size:11px;color:#6b7280;margin:0 0 6px">${nf(flow.destinations)} ${flow.destinations === 1 ? 'site' : 'sites'} · from ${nf(flow.sources)} ${flow.sources === 1 ? 'store' : 'stores'}</p>`
+      + tableHtml('', '#0f2a4a', ['From (store)', 'To (site)', 'Lines', 'Items'],
+        [...flow.routes.slice(0, TOP_N).map(r => [esc(r.from), `→ ${esc(r.to)}`, nf(r.lines), nf(r.items)]),
+         ...moreRow(Math.max(0, flow.routes.length - TOP_N), 'routes')])
+    : ''
   const topItemsTbl = tableHtml('Most-issued items', '#111827', ['Item', 'Times', 'Total qty'],
     [...s.topItems.slice(0, TOP_N).map(t => [esc(t.item), nf(t.count), `${nf(t.qty)} ${esc(t.unit)}`]),
      ...moreRow(Math.max(0, s.topItems.length - TOP_N), 'items')])
@@ -306,7 +362,7 @@ export function renderDailyEmailHtml(report: DailyMovementReport, dayLabel: stri
 
   const bodyInner = anything === 0
     ? `<p style="font-size:13px;color:#6b7280;margin:18px 0">No stock movement was recorded on this day.</p>`
-    : excBox + byProjectTbl + topItemsTbl + twoUp + link
+    : excBox + flowTbl + topItemsTbl + twoUp + link
 
   return `<div style="font-family:Arial,Helvetica,sans-serif;background:#f4f6f9;padding:20px"><div style="max-width:640px;margin:0 auto;background:#fff;border-radius:12px;padding:22px 24px">`
     + `<p style="font-size:16px;font-weight:700;color:#111827;margin:0 0 2px">Inventory — daily movement</p>`

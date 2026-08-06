@@ -7,8 +7,8 @@ import { QueryError } from '@/components/ui/query-error'
 import { ChevronLeft, ChevronRight, LogIn, LogOut, ArrowLeftRight, PackageSearch } from 'lucide-react'
 import { istDateStr, istShiftDate, istDayRange } from '@/lib/inventory/day-window'
 import {
-  bucketMovements, summarizeDigest, istTime, movementDetail,
-  type MovementLine, type TransferLine, type DigestSummary,
+  bucketMovements, summarizeDigest, summarizeFlows, istTime, movementDetail,
+  type MovementLine, type TransferLine, type DigestSummary, type FlowSummary,
 } from '@/lib/inventory/daily-movement'
 import { fetchDayRawMovements } from '@/lib/inventory/fetch-movements'
 import { DailyReportActions } from './DailyReportActions'
@@ -35,6 +35,7 @@ export default async function DailyMovementPage({ searchParams }: { searchParams
   const { rows, error } = await fetchDayRawMovements(supabase, date)
   const report = bucketMovements(rows)
   const digest = summarizeDigest(report)
+  const flow = summarizeFlows(report)
   const nothing = report.entries.length + report.exits.length + report.transfers.length + report.adjustments.length === 0
 
   return (
@@ -81,15 +82,18 @@ export default async function DailyMovementPage({ searchParams }: { searchParams
             <Kpi icon={PackageSearch} tone="gray" label="Items touched" value={report.kpi.itemsTouched} />
           </div>
 
+          {/* Headline for management: where material went (store → site) */}
+          <FlowBand flow={flow} />
+
           {nothing ? (
             <Card className="p-8 text-center text-sm text-gray-500">
               No stock movement was recorded on {label}.
             </Card>
           ) : (
             <div className="space-y-5">
-              <MoveSection title="Entries — into store" tone="emerald" lines={report.entries} />
-              <MoveSection title="Exits — out of store" tone="rose" lines={report.exits} />
+              <MoveSection title="Exits — issued to site" tone="rose" lines={report.exits} />
               <TransferSection lines={report.transfers} />
+              <MoveSection title="Entries — into store" tone="emerald" lines={report.entries} />
               {report.adjustments.length > 0 && (
                 <MoveSection title="Stock corrections" tone="violet" lines={report.adjustments} />
               )}
@@ -140,6 +144,39 @@ function ExcGroup({ title, tone, lines }: { title: string; tone: 'rose' | 'amber
         })}
         {more > 0 && <li className="text-[11px] text-gray-400 italic">+ {more} more</li>}
       </ul>
+    </div>
+  )
+}
+
+// The management headline: which SITE received material today, and from which
+// store. Ranked busiest-route first; the whole point of the report at a glance.
+function FlowBand({ flow }: { flow: FlowSummary }) {
+  if (flow.routes.length === 0) return null
+  const shown = flow.routes.slice(0, 8)
+  const more = flow.routes.length - shown.length
+  return (
+    <div className="rounded-xl border overflow-hidden" style={{ borderColor: '#1e3a5f33' }}>
+      <div className="flex items-center justify-between gap-2 px-4 py-2.5" style={{ background: '#0f2a4a' }}>
+        <p className="text-sm font-semibold text-white">Where material went today</p>
+        <p className="text-xs font-medium" style={{ color: '#c8a24a' }}>
+          {nf(flow.destinations)} {flow.destinations === 1 ? 'site' : 'sites'} · from {nf(flow.sources)} {flow.sources === 1 ? 'store' : 'stores'}
+        </p>
+      </div>
+      <div className="divide-y divide-gray-100 bg-white">
+        {shown.map((r, i) => (
+          <div key={i} className="flex items-center gap-2 px-4 py-2.5 text-sm">
+            <span className="font-medium text-gray-800 truncate">{r.from}</span>
+            <span className="font-bold flex-shrink-0" style={{ color: '#c8a24a' }}>→</span>
+            <span className="font-semibold truncate" style={{ color: '#0f2a4a' }}>{r.to}</span>
+            <span className="ml-auto flex-shrink-0 text-xs text-gray-500 tabular-nums">
+              {nf(r.lines)} {r.lines === 1 ? 'line' : 'lines'} · {nf(r.items)} {r.items === 1 ? 'item' : 'items'}
+            </span>
+          </div>
+        ))}
+        {more > 0 && (
+          <div className="px-4 py-2 text-xs italic text-gray-400">+ {more} more {more === 1 ? 'route' : 'routes'}</div>
+        )}
+      </div>
     </div>
   )
 }
