@@ -356,6 +356,48 @@ function renderEngineerDigest(d: EngineerDigestData, link: string): string {
   return shell(inner, `You're on Internal Estimate in CT HUB · manage alerts in Settings → Notifications`)
 }
 
+// ── Budget approved by Trustee — instant, to the Atm Head ────────────────
+interface ApprovedData { project?: string; work?: string; amount?: number; per_sft?: number | null; decision?: string }
+
+function renderApproved(d: ApprovedData, link: string): string {
+  const partial = d.decision === 'partially_approved'
+  const inner = `
+    <tr><td style="padding:18px 22px;border-left:3px solid ${OK}">
+      <div style="font-size:12px;font-weight:500;color:${OK}">✓ ${partial ? 'Partially released' : 'Approved'} by the Trustee</div>
+      <div style="margin-top:8px"><span style="font-size:26px;font-weight:500;color:${INK}">${inr(Number(d.amount ?? 0))}</span>${d.per_sft ? `<span style="font-size:13px;color:${MUT};margin-left:9px">${inr(d.per_sft)} / sft</span>` : ''}</div>
+      <div style="font-size:15px;color:${INK};margin-top:6px">${esc(d.work ?? '')}${d.project ? ` · ${esc(d.project)}` : ''}</div>
+      <div style="font-size:13px;color:${MUT};margin-top:6px;line-height:1.6">It will be entered in IN4 shortly, then the Work Order can proceed.</div>
+      <div style="margin-top:15px">${button('View working sheet', link)}</div>
+    </td></tr>`
+  return shell(inner, `You're the Atm Head on this project in CT HUB · manage alerts in Settings → Notifications`)
+}
+
+// ── Budgets approved — daily digest, to Project Head + raising engineer ───
+interface ApprovedDigestData {
+  count?: number
+  total?: number
+  items?: Array<{ label: string; amount: number; decision?: string }>
+  more?: number
+}
+
+function renderApprovedDigest(d: ApprovedDigestData, link: string): string {
+  const items = d.items ?? []
+  const rows = items.map(it => `<tr>
+    <td style="padding:10px 22px;font-size:13px;border-top:1px solid ${HAIR}">${esc(it.label)}${it.decision === 'partially_approved' ? ` <span style="font-size:11px;color:${WARN}">(partial)</span>` : ''}</td>
+    <td align="right" style="padding:10px 22px;font-size:13px;font-weight:600;border-top:1px solid ${HAIR}">${inr(it.amount)}</td>
+  </tr>`).join('')
+  const moreRow = d.more && d.more > 0 ? `<tr><td style="padding:10px 22px;font-size:13px;border-top:1px solid ${HAIR};color:${MUT}">+ ${d.more} more</td><td></td></tr>` : ''
+  const count = d.count ?? items.length
+  const inner = `
+    <tr><td style="padding:16px 22px 4px">
+      <div style="font-size:11px;font-weight:600;color:${OK};text-transform:uppercase;letter-spacing:.04em">Approved by the Trustee</div>
+      <div style="font-size:18px;font-weight:600;color:${INK};margin-top:4px">${count} budget${count === 1 ? '' : 's'} approved${d.total ? ` · ${crL(Number(d.total))}` : ''}</div>
+    </td></tr>
+    <tr><td style="padding-top:10px"><table role="presentation" width="100%" cellpadding="0" cellspacing="0">${rows}${moreRow}</table></td></tr>
+    <tr><td style="padding:16px 22px;border-top:1px solid ${HAIR}">${button('Open Internal Estimate', link)}</td></tr>`
+  return shell(inner, `A once-a-day summary of budgets the Trustee approved · manage alerts in Settings → Notifications`)
+}
+
 // ── Generic fallback (unchanged look, all other modules) ─────────────────
 function renderGeneric(subject: string, text: string, link: string): string {
   const body = esc(text).replace(/\n/g, '<br/>')
@@ -366,17 +408,19 @@ function renderGeneric(subject: string, text: string, link: string): string {
   return shell(inner)
 }
 
-export type NotificationKind = 'approval' | 'in4_pending' | 'in4_entered' | 'procurement_digest' | 'engineer_digest' | 'generic'
+export type NotificationKind = 'approval' | 'in4_pending' | 'in4_entered' | 'procurement_digest' | 'engineer_digest' | 'cc_approved' | 'cc_approved_digest' | 'generic'
 
 /** Map a notification `type` to a template kind. */
 export function kindFromType(type: string | null | undefined): NotificationKind {
   switch (type) {
-    case 'approval_pending':    return 'approval'
-    case 'in4_pending':         return 'in4_pending'
-    case 'in4_entered':         return 'in4_entered'
-    case 'procurement_digest':  return 'procurement_digest'
-    case 'cc_engineer_digest':  return 'engineer_digest'
-    default:                    return 'generic'
+    case 'approval_pending':          return 'approval'
+    case 'in4_pending':               return 'in4_pending'
+    case 'in4_entered':               return 'in4_entered'
+    case 'procurement_digest':        return 'procurement_digest'
+    case 'cc_engineer_digest':        return 'engineer_digest'
+    case 'cc_budget_approved':        return 'cc_approved'
+    case 'cc_budget_approved_digest': return 'cc_approved_digest'
+    default:                          return 'generic'
   }
 }
 
@@ -394,6 +438,8 @@ export function renderNotificationEmail(args: {
     if (kind === 'in4_entered' && data) return renderIn4Entered(data as In4EnteredData, link)
     if (kind === 'procurement_digest' && data) return renderProcurementDigest(data as ProcDigestData, link)
     if (kind === 'engineer_digest' && data) return renderEngineerDigest(data as EngineerDigestData, link)
+    if (kind === 'cc_approved' && data) return renderApproved(data as ApprovedData, link)
+    if (kind === 'cc_approved_digest' && data) return renderApprovedDigest(data as ApprovedDigestData, link)
   } catch {
     // fall through to generic on any shape surprise
   }

@@ -47,6 +47,7 @@ const JOBS_PM: string[] = [
   '/api/cron/bills-pipeline?cron=1&slot=pm',
   '/api/cron/bph-sync?cron=1',
   '/api/cron/email-retry?cron=1',          // 2nd retry pass so stuck emails don't wait a full day
+  '/api/cron/cc-approval-digest?cron=1',   // ~EOD: budgets the Trustee approved → Project Head + raising engineer
 ]
 
 // Fan out over the PUBLIC production domain — never `req.url`'s origin.

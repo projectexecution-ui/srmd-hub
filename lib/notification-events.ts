@@ -45,6 +45,18 @@ export const NOTIFICATION_EVENTS: NotificationEventDef[] = [
     audience: 'IN4-entry team (Billing / Coordinator)',
   },
   {
+    type: 'cc_budget_approved',
+    label: 'Budget approved by Trustee (Atm Head, instant)',
+    description: 'The moment the Trustee approves/releases a working sheet, its Atm Head is told it went through.',
+    audience: 'Atm Head (per project)',
+  },
+  {
+    type: 'cc_budget_approved_digest',
+    label: 'Daily: budgets approved by Trustee',
+    description: 'A once-a-day summary of the budgets the Trustee approved, to the Project Head and the engineer who raised each.',
+    audience: 'Project Head & raising engineer',
+  },
+  {
     type: 'email_health',
     label: 'Notification delivery problem',
     description: 'Bell-only alert to admins when email or phone-push alerts could not be delivered after retries (so a broken channel can still report itself).',

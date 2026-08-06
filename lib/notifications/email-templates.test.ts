@@ -119,6 +119,50 @@ describe('engineer daily digest', () => {
   })
 })
 
+describe('budget approved by Trustee (Atm Head, instant)', () => {
+  it('maps the type + renders a green approved card with amount, work and CTA', () => {
+    expect(kindFromType('cc_budget_approved')).toBe('cc_approved')
+    const html = renderNotificationEmail({
+      kind: 'cc_approved', subject: 'x', text: 'y', link: 'https://h/ws/9',
+      data: { amount: 200000, per_sft: 1450, project: 'P2 A01', work: 'ICT Expense', decision: 'approved' },
+    })
+    expect(html).toContain('Approved by the Trustee')
+    expect(html).toContain('₹2,00,000')
+    expect(html).toContain('ICT Expense')
+    expect(html).toContain('P2 A01')
+    expect(html).toContain('View working sheet')
+    expect(html).toContain('https://h/ws/9')
+  })
+  it('says "Partially released" when the decision is partial', () => {
+    const html = renderNotificationEmail({
+      kind: 'cc_approved', subject: 'x', text: 'y', link: 'l',
+      data: { amount: 100000, work: 'HVAC', decision: 'partially_approved' },
+    })
+    expect(html).toContain('Partially released by the Trustee')
+  })
+})
+
+describe('budgets approved daily digest (PH + engineer)', () => {
+  it('maps the type + lists each approved budget with the total + CTA', () => {
+    expect(kindFromType('cc_budget_approved_digest')).toBe('cc_approved_digest')
+    const html = renderNotificationEmail({
+      kind: 'cc_approved_digest', subject: 'x', text: 'y', link: 'https://h/cost-control',
+      data: {
+        count: 2, total: 750000, more: 0,
+        items: [
+          { label: 'P2 A01 · Contractor Cost', amount: 750000, decision: 'approved' },
+          { label: 'P2 A01 · Deep Cleaning', amount: 35000, decision: 'partially_approved' },
+        ],
+      },
+    })
+    expect(html).toContain('2 budgets approved')
+    expect(html).toContain('P2 A01 · Contractor Cost')
+    expect(html).toContain('(partial)')
+    expect(html).toContain('Open Internal Estimate')
+    expect(html).toContain('https://h/cost-control')
+  })
+})
+
 describe('generic fallback', () => {
   it('is used for unknown kinds / missing data', () => {
     const html = renderNotificationEmail({ kind: 'generic', subject: 'New access request', text: 'Someone asked', link: 'l' })
