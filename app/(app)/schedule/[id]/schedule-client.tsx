@@ -8,20 +8,14 @@ import { cn, formatDate } from '@/lib/utils'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { confirm } from '@/components/ui/confirm-dialog'
-import { ChevronLeft, Plus, CalendarClock, Trash2, User, Pencil } from 'lucide-react'
-import { deriveStatus, daysBetween, addDays, STATUS_META, progressFromFloors } from '@/lib/schedule/formula'
-import type { DisplayStatus, SchedItem, LeadDays, FloorStatus } from '@/lib/schedule/types'
+import { ChevronLeft, ChevronRight, Plus, CalendarClock, Trash2, User, Wrench, Check } from 'lucide-react'
+import { deriveStatus, daysBetween, addDays, STATUS_META, expectedPct } from '@/lib/schedule/formula'
+import type { DisplayStatus, SchedItem, FloorStatus } from '@/lib/schedule/types'
 import type { ProjectScheduleData } from '@/lib/schedule/data'
 import { TEMPLATE_ITEM_COUNT } from '@/lib/schedule/template'
-import { addSchedItem, updateSchedItem, setWoIssued, moveSchedDate, deleteSchedItem, applyTemplate, setFloorStatus, setScheduleFloors } from '../actions'
+import { addSchedItem, updateSchedItem, setWoIssued, moveSchedDate, deleteSchedItem, applyTemplate, setFloorStatus, setScheduleFloors, bulkAssignSchedItems } from '../actions'
 
-type Row = {
-  item: SchedItem
-  status: DisplayStatus
-  woBy: string | null
-  behindDays: number
-  woLateDays: number
-}
+type Row = { item: SchedItem; status: DisplayStatus; woBy: string | null; behindDays: number; woLateDays: number }
 
 const TONE: Record<'ok' | 'soon' | 'late' | 'calm', string> = {
   ok: 'text-emerald-700 bg-emerald-50',
@@ -29,83 +23,133 @@ const TONE: Record<'ok' | 'soon' | 'late' | 'calm', string> = {
   late: 'text-rose-700 bg-rose-50',
   calm: 'text-slate-600 bg-slate-100',
 }
-const HEX: Record<'ok' | 'soon' | 'late' | 'calm', string> = {
-  ok: '#0d9488', soon: '#d97706', late: '#e11d48', calm: '#94a3b8',
-}
+const HEX: Record<'ok' | 'soon' | 'late' | 'calm', string> = { ok: '#0d9488', soon: '#d97706', late: '#e11d48', calm: '#94a3b8' }
 const NEEDS_ATTENTION: DisplayStatus[] = ['wo_overdue', 'blocked', 'behind', 'wo_soon']
-
-function toneOf(s: DisplayStatus) { return STATUS_META[s].tone }
+const toneOf = (s: DisplayStatus) => STATUS_META[s].tone
 
 function whyLabel(row: Row): string {
   const { item, status, woBy, behindDays, woLateDays } = row
   switch (status) {
-    case 'done': return 'complete'
+    case 'done': return 'Complete'
     case 'in_progress': return `${item.pct}% · on track`
-    case 'behind': return `${behindDays}d behind`
-    case 'wo_overdue': return `WO ${woLateDays}d late`
-    case 'wo_soon': return woBy ? `raise WO by ${formatDate(woBy)}` : 'raise WO'
-    case 'blocked': return 'blocked — drawing'
-    case 'on_hold': return 'on hold'
-    default: return item.plan_start ? `starts ${formatDate(item.plan_start)}` : 'not scheduled'
+    case 'behind': return `${behindDays}d behind schedule`
+    case 'wo_overdue': return `WO ${woLateDays}d overdue`
+    case 'wo_soon': return woBy ? `Raise WO by ${formatDate(woBy)}` : 'Raise WO soon'
+    case 'blocked': return 'Blocked — drawing pending'
+    case 'on_hold': return 'On hold'
+    default: return item.plan_start ? `Starts ${formatDate(item.plan_start)}` : 'Not scheduled'
   }
 }
 
 function StatusChip({ status }: { status: DisplayStatus }) {
   const meta = STATUS_META[status]
-  return <span className={cn('inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold', TONE[meta.tone])}>{meta.label}</span>
+  return <span className={cn('inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold', TONE[meta.tone])}>{meta.label}</span>
 }
 
 function Ring({ pct, color, size = 44 }: { pct: number; color: string; size?: number }) {
   const inner = size - 12
   return (
     <span className="relative grid place-items-center flex-shrink-0"
-      style={{ width: size, height: size, borderRadius: '50%', background: `conic-gradient(${pct > 0 ? color : '#e5ebf0'} ${pct}%, #e5ebf0 0)` }}>
+      style={{ width: size, height: size, borderRadius: '50%', background: `conic-gradient(${pct > 0 ? color : '#e5ebf0'} ${pct}%, #e9eef3 0)` }}>
       <span className="absolute rounded-full bg-white" style={{ width: inner, height: inner }} />
-      <span className="relative font-mono font-bold" style={{ fontSize: Math.round(size * 0.27), color: pct > 0 ? '#152230' : '#94a3b8' }}>{pct}</span>
+      <span className="relative font-mono font-bold text-slate-800" style={{ fontSize: Math.round(size * 0.28), color: pct > 0 ? '#0f172a' : '#94a3b8' }}>{pct}</span>
     </span>
   )
 }
 
-/** The little "schedule picture": plan window + progress fill + ◆ WO + ┊ today. */
-function MiniBar({ row, axisStart, axisEnd, today }: { row: Row; axisStart: string; axisEnd: string; today: string }) {
-  const { item, status, woBy } = row
-  const total = Math.max(1, daysBetween(axisStart, axisEnd))
-  const x = (iso: string) => Math.max(0, Math.min(100, (daysBetween(axisStart, iso) / total) * 100))
-  const tone = toneOf(status)
-  const col = HEX[tone]
-  const hasWin = !!(item.plan_start && item.plan_end)
+function Chip({ tone, label }: { tone: 'ok' | 'soon' | 'late' | 'calm'; label: string }) {
+  return <span className={cn('inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold', TONE[tone])}>
+    <span className="h-1.5 w-1.5 rounded-full" style={{ background: HEX[tone] }} />{label}
+  </span>
+}
+
+/** slim progress bar, colour = status tone. `marker` = "planned by today" tick. */
+function ProgressBar({ pct, tone, width = 'w-28', marker }: { pct: number; tone: 'ok' | 'soon' | 'late' | 'calm'; width?: string; marker?: number | null }) {
   return (
-    <div className="w-[150px]">
-      <div className="text-[10px] font-mono font-semibold mb-1 truncate" style={{ color: col }}>{whyLabel(row)}</div>
-      <div className="relative h-3">
-        <div className="absolute left-0 right-0 top-1 h-1.5 rounded bg-slate-200" />
-        {hasWin && (
-          <div className="absolute top-1 h-1.5 rounded overflow-hidden"
-            style={{ left: `${x(item.plan_start!)}%`, width: `${Math.max(2, x(item.plan_end!) - x(item.plan_start!))}%`, background: tone === 'calm' ? '#e2e8f0' : '#cdeaf0' }}>
-            {item.pct > 0 && <div className="absolute left-0 top-0 bottom-0" style={{ width: `${item.pct}%`, background: col }} />}
-          </div>
-        )}
-        {woBy && (
-          <div className="absolute top-0.5 h-2 w-2 rounded-sm" title="WO deadline"
-            style={{ left: `${x(woBy)}%`, transform: 'translateX(-50%) rotate(45deg)', background: item.wo_issued ? '#0d9488' : (woBy < today ? '#e11d48' : '#94a3b8') }} />
-        )}
-        <div className="absolute -top-1 bottom-0 border-l-2 border-dashed border-cyan-600" style={{ left: `${x(today)}%` }} title="today" />
+    <div className={cn('relative h-2 rounded-full bg-slate-100 overflow-hidden', width)}>
+      <div className="h-full rounded-full" style={{ width: `${Math.max(pct === 0 ? 0 : 4, pct)}%`, background: HEX[tone] }} />
+      {marker != null && marker > 0 && marker < 100 && (
+        <div className="absolute inset-y-0 w-0.5 bg-slate-500" style={{ left: `${marker}%` }} title="planned by today" />
+      )}
+    </div>
+  )
+}
+
+/** Plain-language plan-vs-actual: actual fill + a lighter "should be by today"
+ *  fill behind it, and a one-word verdict. No Gantt, no chart. */
+function PlanVsActual({ actual, planned }: { actual: number; planned: number }) {
+  const gap = planned - actual
+  const tone: 'ok' | 'soon' | 'late' = gap > 10 ? 'late' : gap > 3 ? 'soon' : 'ok'
+  const label = gap > 3 ? `${Math.round(gap)}% behind plan` : (actual - planned > 5 ? 'Ahead of plan' : 'On track')
+  return (
+    <div className="mt-2 max-w-sm">
+      <div className="relative h-2.5 rounded-full bg-slate-100 overflow-hidden">
+        <div className="absolute inset-y-0 left-0 bg-slate-300" style={{ width: `${planned}%` }} title="planned by today" />
+        <div className="absolute inset-y-0 left-0 rounded-r-full" style={{ width: `${actual}%`, background: HEX[tone] }} title="done now" />
+      </div>
+      <div className="flex items-center justify-between text-[11px] mt-1">
+        <span className="text-slate-500">Now <b className="text-slate-700">{actual}%</b></span>
+        <span className={cn('font-semibold', tone === 'late' ? 'text-rose-600' : tone === 'soon' ? 'text-amber-600' : 'text-emerald-600')}>{label}</span>
+        <span className="text-slate-400">Plan {planned}%</span>
       </div>
     </div>
   )
 }
 
+/** the "schedule picture" for the item detail: plan window + fill + ◆ WO + ┊ today */
+function ScheduleBar({ row, axisStart, axisEnd, today }: { row: Row; axisStart: string; axisEnd: string; today: string }) {
+  const { item, status, woBy } = row
+  const total = Math.max(1, daysBetween(axisStart, axisEnd))
+  const x = (iso: string) => Math.max(0, Math.min(100, (daysBetween(axisStart, iso) / total) * 100))
+  const col = HEX[toneOf(status)]
+  const hasWin = !!(item.plan_start && item.plan_end)
+  return (
+    <div className="relative h-4 w-full">
+      <div className="absolute left-0 right-0 top-1.5 h-1.5 rounded bg-slate-200" />
+      {hasWin && (
+        <div className="absolute top-1.5 h-1.5 rounded overflow-hidden"
+          style={{ left: `${x(item.plan_start!)}%`, width: `${Math.max(2, x(item.plan_end!) - x(item.plan_start!))}%`, background: '#cdeaf0' }}>
+          {item.pct > 0 && <div className="absolute inset-y-0 left-0" style={{ width: `${item.pct}%`, background: col }} />}
+        </div>
+      )}
+      {woBy && (
+        <div className="absolute top-1 h-2 w-2 rounded-sm" title="WO deadline"
+          style={{ left: `${x(woBy)}%`, transform: 'translateX(-50%) rotate(45deg)', background: item.wo_issued ? '#0d9488' : (woBy < today ? '#e11d48' : '#94a3b8') }} />
+      )}
+      <div className="absolute -top-0.5 bottom-0 border-l-2 border-dashed border-cyan-500" style={{ left: `${x(today)}%` }} title="today" />
+    </div>
+  )
+}
+
+/** WO status pill for the row (not a button — the row click opens detail). */
+function WoStatus({ row }: { row: Row }) {
+  const { item, status, woBy } = row
+  if (item.wo_issued) return <span className="text-xs font-mono text-emerald-700 font-semibold whitespace-nowrap">✓ {item.wo_number || 'WO'}</span>
+  if (status === 'wo_overdue') return <span className="text-xs font-semibold text-rose-600 whitespace-nowrap">WO overdue</span>
+  if (status === 'wo_soon') return <span className="text-xs font-semibold text-amber-600 whitespace-nowrap">Raise WO</span>
+  if (woBy) return <span className="text-xs text-slate-400 whitespace-nowrap">WO {formatDate(woBy)}</span>
+  return <span className="text-xs text-slate-300">—</span>
+}
+
+const FLOOR_CELL: Record<FloorStatus, { label: string; cls: string; title: string }> = {
+  not_started: { label: '', cls: 'bg-white text-slate-300 border-slate-200 hover:border-slate-300', title: 'Not started' },
+  wip: { label: '◐', cls: 'bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100', title: 'In progress' },
+  done: { label: '✓', cls: 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100', title: 'Done' },
+  na: { label: '–', cls: 'bg-slate-50 text-slate-300 border-slate-200', title: 'Not applicable' },
+}
+const NEXT_FLOOR: Record<FloorStatus, FloorStatus> = { not_started: 'wip', wip: 'done', done: 'na', na: 'not_started' }
+
 export function ScheduleClient({ data, canEdit, meId }: { data: ProjectScheduleData; canEdit: boolean; meId: string | null }) {
   const router = useRouter()
   const [pending, start] = useTransition()
-  const [view, setView] = useState<'overview' | 'board' | 'table' | 'floors'>('overview')
   const [mineOnly, setMineOnly] = useState(false)
   const [showAdd, setShowAdd] = useState(false)
-  const [expanded, setExpanded] = useState<string | null>(null)
+  const [openTrades, setOpenTrades] = useState<Set<string>>(new Set())
+  const [openItem, setOpenItem] = useState<string | null>(null)
+  const [showAssign, setShowAssign] = useState(false)
 
-  const { project, items, drawings, leads, today, floorNames, progress } = data
+  const { project, items, drawings, leads, today, floorNames, progress, people, vendors } = data
 
-  // (itemId|location) → floor status, for the progress matrix
   const cellStatus = useMemo(() => {
     const m = new Map<string, FloorStatus>()
     for (const p of progress) m.set(`${p.item_id}|${p.location.trim().toLowerCase()}`, p.status)
@@ -126,7 +170,6 @@ export function ScheduleClient({ data, canEdit, meId }: { data: ProjectScheduleD
     return list.map(item => ({ item, ...deriveStatus(item, today, { leads, drawingBlocked: blockedByDrawing.has(item.id) }) }))
   }, [items, mineOnly, meId, today, leads, blockedByDrawing])
 
-  // shared axis for all mini-bars (project min plan_start → max plan_end, incl. today)
   const [axisStart, axisEnd] = useMemo(() => {
     const ds: string[] = []
     for (const i of items) { if (i.plan_start) ds.push(i.plan_start); if (i.plan_end) ds.push(i.plan_end) }
@@ -139,12 +182,30 @@ export function ScheduleClient({ data, canEdit, meId }: { data: ProjectScheduleD
   const overall = useMemo(() => {
     const active = items.filter(i => i.state !== 'on_hold')
     const pct = active.length ? Math.round(active.reduce((s, i) => s + i.pct, 0) / active.length) : 0
-    const overdue = rows.filter(r => r.status === 'wo_overdue' || r.status === 'blocked').length
-    const soon = rows.filter(r => r.status === 'wo_soon').length
+    const needWo = rows.filter(r => r.status === 'wo_overdue' || r.status === 'wo_soon' || r.status === 'blocked').length
     const behind = rows.filter(r => r.status === 'behind').length
     const done = items.filter(i => i.state === 'done' || i.pct >= 100).length
-    return { pct, overdue, soon, behind, done, count: items.length }
-  }, [items, rows])
+    // plan vs actual — only over scheduled (dated) work
+    const dated = active.filter(i => i.plan_start && i.plan_end)
+    const actualScheduled = dated.length ? Math.round(dated.reduce((s, i) => s + i.pct, 0) / dated.length) : 0
+    const plannedScheduled = dated.length ? Math.round(dated.reduce((s, i) => s + expectedPct(i, today), 0) / dated.length) : 0
+    return { pct, needWo, behind, done, count: items.length, datedCount: dated.length, actualScheduled, plannedScheduled }
+  }, [items, rows, today])
+
+  const byTrade = useMemo(() => {
+    const groups: { trade: string; rows: Row[]; pct: number; need: number }[] = []
+    for (const r of rows) {
+      let g = groups.find(x => x.trade === r.item.trade)
+      if (!g) { g = { trade: r.item.trade, rows: [], pct: 0, need: 0 }; groups.push(g) }
+      g.rows.push(r)
+    }
+    for (const g of groups) {
+      const active = g.rows.filter(r => r.item.state !== 'on_hold')
+      g.pct = active.length ? Math.round(active.reduce((s, r) => s + r.item.pct, 0) / active.length) : 0
+      g.need = g.rows.filter(r => NEEDS_ATTENTION.includes(r.status)).length
+    }
+    return groups
+  }, [rows])
 
   function run(fn: () => Promise<{ ok?: true; error?: string }>, okMsg?: string) {
     start(async () => {
@@ -153,475 +214,358 @@ export function ScheduleClient({ data, canEdit, meId }: { data: ProjectScheduleD
       else { if (okMsg) toast.success(okMsg); router.refresh() }
     })
   }
-  const markWo = (id: string) => run(() => setWoIssued({ id, projectId: project.id, issued: true, issuedOn: today }), 'WO marked issued')
-
-  const attention = rows.filter(r => NEEDS_ATTENTION.includes(r.status))
-  const rest = rows.filter(r => !NEEDS_ATTENTION.includes(r.status))
-
-  const byTrade = useMemo(() => {
-    const groups: { trade: string; rows: Row[] }[] = []
-    for (const r of rows) {
-      let g = groups.find(x => x.trade === r.item.trade)
-      if (!g) { g = { trade: r.item.trade, rows: [] }; groups.push(g) }
-      g.rows.push(r)
-    }
-    return groups
-  }, [rows])
-
-  // Overview breakdowns
-  const tradeStats = useMemo(() => byTrade.map(g => {
-    const active = g.rows.filter(r => r.item.state !== 'on_hold')
-    const pct = active.length ? Math.round(active.reduce((s, r) => s + r.item.pct, 0) / active.length) : 0
-    const need = g.rows.filter(r => NEEDS_ATTENTION.includes(r.status)).length
-    return { trade: g.trade, pct, need, count: g.rows.length }
-  }), [byTrade])
-
-  const floorStats = useMemo(() => floorNames.map(f => {
-    const cells = progress.filter(p => p.location.trim().toLowerCase() === f.trim().toLowerCase())
-    const pct = progressFromFloors(cells.map(c => c.status))
-    return { floor: f, pct, tracked: cells.filter(c => c.status !== 'na').length }
-  }), [floorNames, progress])
-  const anyFloorTracked = floorStats.some(f => f.tracked > 0)
+  const toggleTrade = (t: string) => setOpenTrades(s => { const n = new Set(s); n.has(t) ? n.delete(t) : n.add(t); return n })
+  const allOpen = openTrades.size === byTrade.length && byTrade.length > 0
 
   return (
-    <div className="p-4 md:p-6 max-w-5xl mx-auto space-y-4">
+    <div className="p-4 md:p-6 max-w-4xl mx-auto space-y-4">
       {/* header */}
       <div className="flex items-center gap-2 flex-wrap">
         <Button asChild size="sm" variant="ghost"><Link href="/schedule"><ChevronLeft className="h-4 w-4" /> Projects</Link></Button>
-        <h1 className="text-lg md:text-xl font-bold text-gray-900">{project.code ? `${project.code} — ` : ''}{project.name}</h1>
-        <span className="ml-auto text-xs text-gray-400 font-mono">as of {formatDate(today)}</span>
+        <h1 className="text-lg md:text-xl font-bold text-slate-900">{project.code ? `${project.code} — ` : ''}{project.name}</h1>
+        <span className="ml-auto text-xs text-slate-400 font-mono">as of {formatDate(today)}</span>
       </div>
-
-      {/* controls */}
-      <div className="flex items-center gap-2 flex-wrap">
-        <div className="inline-flex rounded-lg border bg-slate-50 p-1 flex-wrap">
-          <button onClick={() => setView('overview')} className={cn('px-3 py-1.5 text-sm rounded-md transition', view === 'overview' ? 'bg-white text-indigo-700 font-semibold shadow-sm' : 'text-gray-500 hover:text-gray-700')}>📊 Overview</button>
-          <button onClick={() => setView('board')} className={cn('px-3 py-1.5 text-sm rounded-md transition', view === 'board' ? 'bg-white text-indigo-700 font-semibold shadow-sm' : 'text-gray-500 hover:text-gray-700')}>🗂️ Board</button>
-          <button onClick={() => setView('table')} className={cn('px-3 py-1.5 text-sm rounded-md transition', view === 'table' ? 'bg-white text-indigo-700 font-semibold shadow-sm' : 'text-gray-500 hover:text-gray-700')}>📋 Table</button>
-          <button onClick={() => setView('floors')} className={cn('px-3 py-1.5 text-sm rounded-md transition', view === 'floors' ? 'bg-white text-indigo-700 font-semibold shadow-sm' : 'text-gray-500 hover:text-gray-700')}>🏢 Floors</button>
-        </div>
-        {meId && (
-          <label className="inline-flex items-center gap-2 text-sm text-gray-600 cursor-pointer select-none">
-            <input type="checkbox" checked={mineOnly} onChange={e => setMineOnly(e.target.checked)} className="h-4 w-4 rounded border-gray-300 text-indigo-600" />
-            <User className="h-3.5 w-3.5" /> My items
-          </label>
-        )}
-        {canEdit && items.length > 0 && (
-          <div className="ml-auto flex gap-2">
-            <Button size="sm" variant="outline" disabled={pending} onClick={() => run(() => applyTemplate(project.id), 'Template items added')}>+ From template</Button>
-            <Button size="sm" onClick={() => setShowAdd(v => !v)} className="bg-indigo-600 hover:bg-indigo-700"><Plus className="h-4 w-4" /> Add item</Button>
-          </div>
-        )}
-      </div>
-
-      {canEdit && showAdd && <AddItemForm projectId={project.id} pending={pending} onAdd={(input) => { run(() => addSchedItem(input), 'Added') }} onClose={() => setShowAdd(false)} />}
 
       {items.length === 0 ? (
-        <Card className="p-8 text-center space-y-3">
+        <Card className="p-8 text-center space-y-3 shadow-sm">
           <CalendarClock className="h-8 w-8 mx-auto text-indigo-400" />
-          <p className="text-gray-600 max-w-md mx-auto">No work items yet.{canEdit ? ' Start from the standard template, then just type the quantity for each — or add items manually.' : ' The schedule hasn’t been set up yet.'}</p>
+          <p className="text-slate-600 max-w-md mx-auto">No work items yet.{canEdit ? ' Start from the standard template — then just tick off progress floor by floor.' : ' The schedule hasn’t been set up yet.'}</p>
           {canEdit && (
             <div className="flex flex-col sm:flex-row gap-2 justify-center pt-1">
-              <Button disabled={pending} onClick={() => run(() => applyTemplate(project.id), 'Template applied — now add the quantities')} className="bg-indigo-600 hover:bg-indigo-700">Start from template ({TEMPLATE_ITEM_COUNT} items)</Button>
+              <Button disabled={pending} onClick={() => run(() => applyTemplate(project.id), 'Template applied')} className="bg-indigo-600 hover:bg-indigo-700">Start from template ({TEMPLATE_ITEM_COUNT} items)</Button>
               <Button variant="outline" onClick={() => setShowAdd(true)}><Plus className="h-4 w-4" /> Add manually</Button>
             </div>
           )}
         </Card>
       ) : (
         <>
-          {/* hero rollup */}
-          <Card className="p-4 flex items-center gap-4 flex-wrap">
-            <Ring pct={overall.pct} color="#4f46e5" size={62} />
+          {/* summary — the management snapshot, always on top */}
+          <Card className="p-5 flex items-center gap-5 flex-wrap shadow-sm">
+            <Ring pct={overall.pct} color="#4f46e5" size={64} />
             <div className="min-w-[180px] flex-1">
-              <div className="text-sm font-semibold text-gray-900">
-                {overall.pct}% done · {overall.count} work item{overall.count === 1 ? '' : 's'}
-              </div>
+              <div className="text-[15px] font-semibold text-slate-900">{overall.pct}% complete · {overall.count} work item{overall.count === 1 ? '' : 's'}</div>
+              {overall.datedCount > 0
+                ? <PlanVsActual actual={overall.actualScheduled} planned={overall.plannedScheduled} />
+                : <div className="text-[11px] text-slate-400 mt-1">Add site-start + finish dates to track plan vs actual.</div>}
               <div className="flex flex-wrap gap-2 mt-2">
-                {overall.overdue > 0 && <Chip tone="late" label={`${overall.overdue} WO/drawing overdue`} />}
-                {overall.behind > 0 && <Chip tone="late" label={`${overall.behind} behind`} />}
-                {overall.soon > 0 && <Chip tone="soon" label={`${overall.soon} WO due soon`} />}
+                {overall.needWo > 0 && <Chip tone="late" label={`${overall.needWo} need Work Order`} />}
+                {overall.behind > 0 && <Chip tone="soon" label={`${overall.behind} behind`} />}
                 {overall.done > 0 && <Chip tone="ok" label={`${overall.done} done`} />}
-                {overall.overdue === 0 && overall.behind === 0 && overall.soon === 0 && <Chip tone="ok" label="on track" />}
               </div>
             </div>
           </Card>
 
-          {view === 'overview' ? (
-            <Overview floorStats={floorStats} anyFloorTracked={anyFloorTracked} tradeStats={tradeStats} attention={attention} drawings={drawings} onGoFloors={() => setView('floors')} />
-          ) : view === 'board' ? (
-            <div className="space-y-4">
-              {attention.length > 0 && (
-                <div>
-                  <p className="text-xs font-bold uppercase tracking-wide text-rose-600 mb-2">⚑ Needs attention · {attention.length}</p>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                    {attention.map(r => <BoardCard key={r.item.id} row={r} canEdit={canEdit} onWo={() => markWo(r.item.id)} />)}
-                  </div>
-                </div>
-              )}
-              {rest.length > 0 && (
-                <div>
-                  <p className="text-xs font-bold uppercase tracking-wide text-gray-400 mb-2">Running &amp; upcoming · {rest.length}</p>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                    {rest.map(r => <BoardCard key={r.item.id} row={r} canEdit={canEdit} onWo={() => markWo(r.item.id)} />)}
-                  </div>
-                </div>
-              )}
-            </div>
-          ) : view === 'table' ? (
-            <Card className="overflow-x-auto">
-              <table className="min-w-full text-sm">
-                <thead>
-                  <tr className="text-left text-[10px] uppercase tracking-wide text-gray-500 border-b bg-slate-50/60">
-                    <th className="px-3 py-2.5">Work</th>
-                    <th className="px-3 py-2.5">Qty</th>
-                    <th className="px-3 py-2.5">Schedule</th>
-                    <th className="px-3 py-2.5">WO</th>
-                    <th className="px-3 py-2.5">Status</th>
-                    {canEdit && <th className="px-3 py-2.5"></th>}
-                  </tr>
-                </thead>
-                <tbody>
-                  {byTrade.map(g => {
-                    const active = g.rows.filter(r => r.item.state !== 'on_hold')
-                    const tp = active.length ? Math.round(active.reduce((s, r) => s + r.item.pct, 0) / active.length) : 0
-                    const od = g.rows.filter(r => r.status === 'wo_overdue' || r.status === 'blocked' || r.status === 'behind').length
-                    return (
-                      <FragmentGroup key={g.trade}>
-                        <tr className="bg-slate-50 border-y">
-                          <td colSpan={canEdit ? 6 : 5} className="px-3 py-2">
-                            <span className="font-bold text-gray-800 text-xs">{g.trade}</span>
-                            <span className="ml-2 text-[11px] font-mono text-indigo-600 font-semibold">{tp}%</span>
-                            <span className="ml-2 text-[11px] text-gray-400">{g.rows.length} item{g.rows.length === 1 ? '' : 's'}</span>
-                            {od > 0 && <span className="ml-2 text-[11px] font-semibold text-rose-600">{od} need action</span>}
-                          </td>
-                        </tr>
-                        {g.rows.map(r => (
-                          <TableRow
-                            key={r.item.id} row={r} canEdit={canEdit} projectId={project.id}
-                            axisStart={axisStart} axisEnd={axisEnd} today={today}
-                            expanded={expanded === r.item.id}
-                            onToggle={() => setExpanded(expanded === r.item.id ? null : r.item.id)}
-                            run={run} onWo={() => markWo(r.item.id)}
-                          />
-                        ))}
-                      </FragmentGroup>
-                    )
-                  })}
-                </tbody>
-              </table>
-            </Card>
-          ) : (
-            <FloorMatrix
-              byTrade={byTrade} floorNames={floorNames} cellStatus={cellStatus}
-              canEdit={canEdit} pending={pending}
-              onCycle={(itemId, floor, next) => run(() => setFloorStatus({ itemId, projectId: project.id, location: floor, status: next }))}
-              onSaveFloors={(floors) => run(() => setScheduleFloors(project.id, floors), 'Floors updated')}
-            />
+          {/* WO action list — raise from here, no need to read every line */}
+          <WoDuePanel rows={rows} canEdit={canEdit} projectId={project.id} today={today} leadDays={leads.procurement} run={run} />
+
+          {/* controls */}
+          <div className="flex items-center gap-3 flex-wrap text-sm">
+            <button onClick={() => setOpenTrades(allOpen ? new Set() : new Set(byTrade.map(g => g.trade)))}
+              className="text-indigo-600 hover:underline font-medium">{allOpen ? 'Collapse all' : 'Expand all'}</button>
+            {meId && (
+              <label className="inline-flex items-center gap-2 text-slate-600 cursor-pointer select-none">
+                <input type="checkbox" checked={mineOnly} onChange={e => setMineOnly(e.target.checked)} className="h-4 w-4 rounded border-slate-300 text-indigo-600" />
+                <User className="h-3.5 w-3.5" /> My items
+              </label>
+            )}
+            {canEdit && (
+              <div className="ml-auto flex gap-2">
+                <Button size="sm" variant="outline" onClick={() => setShowAssign(v => !v)}>👷 Assign team</Button>
+                <Button size="sm" variant="outline" disabled={pending} onClick={() => run(() => applyTemplate(project.id), 'Template items added')}>+ Template</Button>
+                <Button size="sm" onClick={() => setShowAdd(v => !v)} className="bg-indigo-600 hover:bg-indigo-700"><Plus className="h-4 w-4" /> Add item</Button>
+              </div>
+            )}
+          </div>
+
+          {canEdit && showAssign && (
+            <AssignPanel items={items} people={people} vendors={vendors} projectId={project.id} pending={pending} run={run} onClose={() => setShowAssign(false)} />
           )}
+          {canEdit && showAdd && <AddItemForm projectId={project.id} pending={pending} onAdd={(input) => run(() => addSchedItem(input), 'Added')} onClose={() => setShowAdd(false)} />}
+
+          {/* the one list — grouped + collapsed by trade */}
+          <Card className="shadow-sm divide-y divide-slate-100 overflow-hidden">
+            {byTrade.map(g => {
+              const open = openTrades.has(g.trade)
+              return (
+                <div key={g.trade}>
+                  <button onClick={() => toggleTrade(g.trade)}
+                    className={cn('w-full flex items-center gap-3 px-4 py-3 text-left transition hover:bg-slate-50', g.need > 0 && 'border-l-[3px] border-rose-400')}>
+                    <ChevronRight className={cn('h-4 w-4 text-slate-400 transition-transform flex-shrink-0', open && 'rotate-90')} />
+                    <span className="font-semibold text-slate-800 flex-1 min-w-0 truncate">{g.trade}</span>
+                    {g.need > 0 && <span className="text-[11px] font-semibold text-rose-600 whitespace-nowrap">{g.need} need action</span>}
+                    <ProgressBar pct={g.pct} tone={g.need > 0 ? 'late' : g.pct >= 100 ? 'ok' : 'calm'} width="w-20 sm:w-28" />
+                    <span className="text-xs font-mono font-semibold text-slate-600 w-9 text-right">{g.pct}%</span>
+                    <span className="text-[11px] text-slate-400 w-12 text-right hidden sm:inline">{g.rows.length} item{g.rows.length === 1 ? '' : 's'}</span>
+                  </button>
+
+                  {open && (
+                    <div className="bg-slate-50/40">
+                      {g.rows.map(r => (
+                        <ItemRow key={r.item.id} row={r} canEdit={canEdit} projectId={project.id}
+                          open={openItem === r.item.id} onToggle={() => setOpenItem(openItem === r.item.id ? null : r.item.id)}
+                          axisStart={axisStart} axisEnd={axisEnd} today={today}
+                          floorNames={floorNames} cellStatus={cellStatus} pending={pending} run={run} />
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )
+            })}
+          </Card>
+
+          <p className="text-[11px] text-slate-400 font-mono">
+            Work Order deadline = site start − {leads.procurement} days · dates move freely (reason logged) · no amounts — only whether the WO is issued.
+          </p>
         </>
       )}
-
-      <p className="text-[11px] text-gray-400 font-mono">
-        WO deadline auto-computed: site-start − {leads.procurement}d · dates move freely (reason logged) · no amounts — just WO issued or not.
-      </p>
     </div>
   )
 }
 
-function FragmentGroup({ children }: { children: React.ReactNode }) { return <>{children}</> }
-
-function Chip({ tone, label }: { tone: 'ok' | 'soon' | 'late' | 'calm'; label: string }) {
-  return <span className={cn('inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold', TONE[tone])}>
-    <span className="h-1.5 w-1.5 rounded-full" style={{ background: HEX[tone] }} />{label}
-  </span>
-}
-
-function Bar({ pct, tone = 'indigo' }: { pct: number; tone?: 'indigo' | 'ok' | 'late' }) {
-  const bg = tone === 'late' ? '#e11d48' : tone === 'ok' ? '#0d9488' : '#4f46e5'
-  return (
-    <div className="flex-1 h-5 rounded bg-slate-100 overflow-hidden">
-      <div className="h-full rounded" style={{ width: `${Math.max(pct === 0 ? 0 : 2, pct)}%`, background: bg }} />
-    </div>
-  )
-}
-
-/** The plain management snapshot: overall (in the hero above) + by floor, by
- *  trade, and what needs attention. Read-only, everyone sees the same thing. */
-function Overview({ floorStats, anyFloorTracked, tradeStats, attention, drawings, onGoFloors }: {
-  floorStats: { floor: string; pct: number; tracked: number }[]
-  anyFloorTracked: boolean
-  tradeStats: { trade: string; pct: number; need: number; count: number }[]
-  attention: Row[]
-  drawings: ProjectScheduleData['drawings']
-  onGoFloors: () => void
+/** The Work-Order to-do: only items whose WO is overdue or due soon, most urgent
+ *  first, each raisable inline — so nobody scans every line to find what's due. */
+function WoDuePanel({ rows, canEdit, projectId, today, leadDays, run }: {
+  rows: Row[]; canEdit: boolean; projectId: string; today: string; leadDays: number
+  run: (fn: () => Promise<{ ok?: true; error?: string }>, okMsg?: string) => void
 }) {
-  const topAttention = attention.slice(0, 6)
-  const gfc = drawings.filter(d => d.status === 'gfc').length
-  const blocking = drawings.filter(d => d.blocking && d.status !== 'gfc').length
+  const due = rows
+    .filter(r => !r.item.wo_issued && (r.status === 'wo_overdue' || r.status === 'wo_soon'))
+    .sort((a, b) => {
+      const aov = a.status === 'wo_overdue', bov = b.status === 'wo_overdue'
+      if (aov !== bov) return aov ? -1 : 1
+      if (aov) return b.woLateDays - a.woLateDays
+      return (a.woBy ?? '').localeCompare(b.woBy ?? '')
+    })
+
+  if (!due.length) {
+    return (
+      <Card className="p-4 shadow-sm flex items-center gap-2 text-sm text-emerald-700">
+        <Check className="h-4 w-4" /> All Work Orders raised — nothing due.
+      </Card>
+    )
+  }
+  const overdue = due.filter(r => r.status === 'wo_overdue').length
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-      <Card className="p-4">
-        <div className="flex items-center justify-between mb-3">
-          <h3 className="text-sm font-bold text-gray-800">By floor</h3>
-          <span className="text-[11px] text-gray-400">done across all trades</span>
-        </div>
-        {anyFloorTracked ? (
-          <div className="space-y-1.5">
-            {floorStats.map(f => (
-              <div key={f.floor} className="flex items-center gap-2">
-                <span className="w-16 text-[11px] text-right text-gray-500 truncate">{f.floor}</span>
-                <Bar pct={f.pct} tone={f.pct >= 100 ? 'ok' : 'indigo'} />
-                <span className="w-9 text-[11px] font-mono text-right text-gray-700">{f.pct}%</span>
-              </div>
-            ))}
-          </div>
-        ) : (
-          <div className="text-center py-6 text-xs text-gray-500">
-            Floor progress fills in as the site marks the{' '}
-            <button onClick={onGoFloors} className="text-indigo-600 hover:underline">Floors</button> tab.
-          </div>
-        )}
-      </Card>
-
-      <Card className="p-4">
-        <h3 className="text-sm font-bold text-gray-800 mb-3">By trade</h3>
-        <div className="space-y-1.5">
-          {tradeStats.map(t => (
-            <div key={t.trade} className="flex items-center gap-2">
-              <span className="w-24 text-[11px] text-right text-gray-500 truncate">{t.trade}</span>
-              <Bar pct={t.pct} tone={t.need > 0 ? 'late' : t.pct >= 100 ? 'ok' : 'indigo'} />
-              <span className="w-9 text-[11px] font-mono text-right text-gray-700">{t.pct}%</span>
-            </div>
-          ))}
-        </div>
-      </Card>
-
-      <Card className="p-4 lg:col-span-2">
-        <h3 className="text-sm font-bold text-gray-800 mb-3">Needs attention</h3>
-        {topAttention.length === 0 ? (
-          <p className="text-sm text-emerald-700">Nothing needs attention — on track.</p>
-        ) : (
-          <ul className="divide-y">
-            {topAttention.map(r => (
-              <li key={r.item.id} className="flex items-center gap-3 py-2">
-                <StatusChip status={r.status} />
-                <span className="min-w-0 flex-1 truncate text-sm text-gray-800">{r.item.name}<span className="text-gray-400"> · {r.item.trade}</span></span>
-                <span className="text-xs text-gray-500 whitespace-nowrap">{whyLabel(r)}</span>
-              </li>
-            ))}
-            {attention.length > topAttention.length && (
-              <li className="pt-2 text-[11px] text-gray-400">+{attention.length - topAttention.length} more</li>
-            )}
-          </ul>
-        )}
-        {drawings.length > 0 && (
-          <p className="mt-3 pt-3 border-t text-xs text-gray-500">
-            Drawings: {gfc} GFC{blocking > 0 ? ` · ${blocking} blocking work` : ''} · {drawings.length} total
-          </p>
-        )}
-      </Card>
-    </div>
-  )
-}
-
-function BoardCard({ row, canEdit, onWo }: { row: Row; canEdit: boolean; onWo: () => void }) {
-  const { item, status } = row
-  const col = HEX[toneOf(status)]
-  const sub = [item.trade, item.sub].filter(Boolean).join(' · ')
-  return (
-    <Card className="p-4 border-l-4" style={{ borderLeftColor: col }}>
-      <div className="flex items-center gap-3">
-        <Ring pct={item.pct} color={col} />
-        <div className="min-w-0 flex-1">
-          <div className="font-semibold text-gray-900 leading-tight truncate">{item.name}</div>
-          <div className="text-[11px] text-gray-500 font-mono truncate">{sub}</div>
-        </div>
+    <Card className="p-0 shadow-sm overflow-hidden border-l-4 border-rose-400">
+      <div className="px-4 py-3 border-b border-slate-100 bg-rose-50/40 flex items-center justify-between gap-2 flex-wrap">
+        <h3 className="font-bold text-slate-800 text-sm inline-flex items-center gap-1.5"><Wrench className="h-4 w-4 text-rose-500" /> Work Orders to raise · {due.length}</h3>
+        <span className="text-[11px] text-slate-500">{overdue > 0 ? `${overdue} overdue` : 'due soon'} · deadline = site start − {leadDays}d</span>
       </div>
-      <div className="mt-3 flex items-center justify-between gap-2">
-        <StatusChip status={status} />
-        <span className="text-xs text-gray-600 truncate">{whyLabel(row)}</span>
-      </div>
-      {canEdit && !item.wo_issued && (status === 'wo_overdue' || status === 'wo_soon') && (
-        <Button size="sm" variant="outline" className="mt-3 w-full" onClick={onWo}>Mark WO issued</Button>
-      )}
-      {item.wo_issued && <div className="mt-3 text-[11px] font-mono text-emerald-700">✓ {item.wo_number || 'WO issued'}{item.wo_issued_on ? ` · ${formatDate(item.wo_issued_on)}` : ''}</div>}
+      <ul className="divide-y divide-slate-100">
+        {due.map(r => <WoDueRow key={r.item.id} row={r} canEdit={canEdit} projectId={projectId} today={today} run={run} />)}
+      </ul>
     </Card>
   )
 }
 
-function TableRow({ row, canEdit, projectId, axisStart, axisEnd, today, expanded, onToggle, run, onWo }: {
-  row: Row; canEdit: boolean; projectId: string
-  axisStart: string; axisEnd: string; today: string
-  expanded: boolean; onToggle: () => void
+function WoDueRow({ row, canEdit, projectId, today, run }: {
+  row: Row; canEdit: boolean; projectId: string; today: string
   run: (fn: () => Promise<{ ok?: true; error?: string }>, okMsg?: string) => void
-  onWo: () => void
 }) {
-  const { item, status, woBy } = row
-  const rowTint = (status === 'wo_overdue' || status === 'blocked') ? 'bg-rose-50/50'
-    : (status === 'behind' || status === 'wo_soon') ? 'bg-amber-50/40' : ''
+  const [editing, setEditing] = useState(false)
+  const [wo, setWo] = useState('')
+  const overdue = row.status === 'wo_overdue'
+  const urgency = overdue ? `${row.woLateDays}d overdue` : row.woBy ? `by ${formatDate(row.woBy)}` : 'soon'
   return (
-    <>
-      <tr className={cn('border-b hover:bg-slate-50/60', rowTint)}>
-        <td className="px-3 py-2.5">
-          <div className="font-medium text-gray-900 leading-tight">{item.name}</div>
-          {item.sub && <div className="text-[11px] text-gray-500">{item.sub}</div>}
-        </td>
-        <td className="px-3 py-2.5">
-          {canEdit
-            ? <span className="inline-flex items-center gap-1">
-                <input type="number" step="0.001" defaultValue={item.qty ?? ''} placeholder="—" className="w-20 text-xs border rounded px-1.5 py-1 font-mono"
-                  onBlur={e => { const raw = e.target.value.trim(); const v = raw === '' ? null : Number(raw); if (v !== item.qty) run(() => updateSchedItem(item.id, projectId, { qty: v }), 'Qty updated') }} />
-                {item.uom && <span className="text-[10px] text-gray-400 font-mono">{item.uom}</span>}
+    <li className="flex items-center gap-3 px-4 py-2.5">
+      <span className={cn('inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-bold whitespace-nowrap', overdue ? 'bg-rose-100 text-rose-700' : 'bg-amber-100 text-amber-700')}>{urgency}</span>
+      <span className="flex-1 min-w-0">
+        <span className="block text-sm font-medium text-slate-800 truncate">{row.item.name}</span>
+        <span className="block text-[11px] text-slate-500 truncate">
+          {row.item.trade}
+          {row.item.contractor ? ` · 🏗️ ${row.item.contractor}` : ''}
+          {row.item.owner_name ? ` · 👷 ${row.item.owner_name}` : ''}
+        </span>
+      </span>
+      {canEdit && (editing ? (
+        <span className="flex items-center gap-1">
+          <input value={wo} onChange={e => setWo(e.target.value)} placeholder="WO no. (optional)" autoFocus
+            className="w-32 text-xs border rounded-lg px-2 py-1.5 font-mono" />
+          <Button size="sm" className="bg-indigo-600 hover:bg-indigo-700"
+            onClick={() => run(() => setWoIssued({ id: row.item.id, projectId, issued: true, woNumber: wo || null, issuedOn: today }), 'WO marked issued')}>Save</Button>
+        </span>
+      ) : (
+        <Button size="sm" variant="outline" onClick={() => setEditing(true)}>Mark issued</Button>
+      ))}
+    </li>
+  )
+}
+
+function ItemRow({ row, canEdit, projectId, open, onToggle, axisStart, axisEnd, today, floorNames, cellStatus, pending, run }: {
+  row: Row; canEdit: boolean; projectId: string; open: boolean; onToggle: () => void
+  axisStart: string; axisEnd: string; today: string
+  floorNames: string[]; cellStatus: Map<string, FloorStatus>; pending: boolean
+  run: (fn: () => Promise<{ ok?: true; error?: string }>, okMsg?: string) => void
+}) {
+  const { item, status } = row
+  const tone = toneOf(status)
+  return (
+    <div className="border-t border-slate-100 first:border-t-0">
+      <button onClick={onToggle} className="w-full flex items-center gap-3 pl-11 pr-4 py-2.5 text-left hover:bg-white transition">
+        <span className="flex-1 min-w-0">
+          <span className="block font-medium text-slate-800 text-sm truncate">{item.name}</span>
+          <span className="block text-[11px] text-slate-500 truncate">{whyLabel(row)}{item.owner_name ? ` · 👷 ${item.owner_name}` : ''}</span>
+        </span>
+        <ProgressBar pct={item.pct} tone={tone} width="w-16 sm:w-24"
+          marker={item.plan_start && item.plan_end ? expectedPct(item, today) : null} />
+        <span className="w-20 text-right hidden sm:block"><WoStatus row={row} /></span>
+        <span className="text-xs font-mono font-semibold text-slate-600 w-9 text-right">{item.pct}%</span>
+        <ChevronRight className={cn('h-4 w-4 text-slate-300 transition-transform flex-shrink-0', open && 'rotate-90')} />
+      </button>
+
+      {open && (
+        <div className="pl-11 pr-4 pb-4 pt-1 space-y-4 bg-white">
+          {/* schedule picture */}
+          <div>
+            <div className="flex items-center justify-between mb-1.5">
+              <StatusChip status={status} />
+              <span className="text-[11px] text-slate-400 font-mono">
+                {item.plan_start ? formatDate(item.plan_start) : '—'} → {item.plan_end ? formatDate(item.plan_end) : '—'}
               </span>
-            : <span className="text-xs font-mono text-gray-700">{item.qty != null ? `${item.qty}${item.uom ? ' ' + item.uom : ''}` : '—'}</span>}
-        </td>
-        <td className="px-3 py-2.5"><MiniBar row={row} axisStart={axisStart} axisEnd={axisEnd} today={today} /></td>
-        <td className="px-3 py-2.5 whitespace-nowrap">
-          {item.wo_issued
-            ? <span className="text-xs font-mono text-emerald-700 font-semibold">✓ {item.wo_number || 'issued'}</span>
-            : woBy
-              ? (canEdit
-                ? <button className="text-xs font-mono text-indigo-600 hover:underline" onClick={onWo}>mark issued</button>
-                : <span className="text-xs font-mono text-gray-500">by {formatDate(woBy)}</span>)
-              : <span className="text-xs text-gray-400">—</span>}
-        </td>
-        <td className="px-3 py-2.5"><StatusChip status={status} /></td>
-        {canEdit && (
-          <td className="px-3 py-2.5 text-right">
-            <button className="text-gray-400 hover:text-indigo-600 p-1" title="Edit" onClick={onToggle}><Pencil className="h-4 w-4" /></button>
-          </td>
-        )}
-      </tr>
-      {canEdit && expanded && (
-        <tr className="bg-slate-50/70 border-b">
-          <td colSpan={6} className="px-3 py-3">
-            <div className="flex flex-wrap items-end gap-4">
-              <label className="text-[11px] font-semibold text-gray-600">Site start
-                <input type="date" defaultValue={item.plan_start ?? ''} className="mt-1 block text-xs border rounded px-2 py-1 font-mono"
-                  onChange={e => run(() => moveSchedDate({ id: item.id, projectId, field: 'plan_start', from: item.plan_start, to: e.target.value || null }), 'Start date moved')} />
+            </div>
+            <ScheduleBar row={row} axisStart={axisStart} axisEnd={axisEnd} today={today} />
+          </div>
+
+          {/* floors */}
+          {floorNames.length > 0 && (
+            <div>
+              <div className="text-[11px] font-semibold text-slate-500 mb-1.5">Floors — tap to advance: blank → <span className="text-amber-700">◐</span> → <span className="text-emerald-700">✓</span> → <span className="text-slate-400">– N/A</span></div>
+              <div className="flex flex-wrap gap-1.5">
+                {floorNames.map(f => {
+                  const st = cellStatus.get(`${item.id}|${f.trim().toLowerCase()}`) ?? 'not_started'
+                  const meta = FLOOR_CELL[st]
+                  return (
+                    <button key={f} disabled={!canEdit || pending} title={meta.title}
+                      onClick={() => run(() => setFloorStatus({ itemId: item.id, projectId, location: f, status: NEXT_FLOOR[st] }))}
+                      className={cn('inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-medium transition disabled:opacity-60', meta.cls)}>
+                      <span className="w-3 text-center">{meta.label}</span>{f}
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* who's responsible + who executes */}
+          {canEdit ? (
+            <div className="flex flex-wrap gap-3">
+              <label className="text-[11px] font-semibold text-slate-500">👷 Responsible engineer
+                <input defaultValue={item.owner_name ?? ''} placeholder="name" className="mt-1 block w-40 text-xs border rounded-lg px-2 py-1.5"
+                  onBlur={e => { const v = e.target.value.trim() || null; if (v !== item.owner_name) run(() => updateSchedItem(item.id, projectId, { owner_name: v }), 'Saved') }} />
               </label>
-              <label className="text-[11px] font-semibold text-gray-600">Finish
-                <input type="date" defaultValue={item.plan_end ?? ''} className="mt-1 block text-xs border rounded px-2 py-1 font-mono"
-                  onChange={e => run(() => moveSchedDate({ id: item.id, projectId, field: 'plan_end', from: item.plan_end, to: e.target.value || null }), 'Finish date moved')} />
+              <label className="text-[11px] font-semibold text-slate-500">🏗️ Contractor
+                <input defaultValue={item.contractor ?? ''} placeholder="agency" className="mt-1 block w-40 text-xs border rounded-lg px-2 py-1.5"
+                  onBlur={e => { const v = e.target.value.trim() || null; if (v !== item.contractor) run(() => updateSchedItem(item.id, projectId, { contractor: v }), 'Saved') }} />
               </label>
-              <label className="text-[11px] font-semibold text-gray-600">% done
-                <input type="number" min={0} max={100} defaultValue={item.pct} className="mt-1 block w-16 text-xs border rounded px-2 py-1 font-mono"
+              <label className="text-[11px] font-semibold text-slate-500">✔ Approver
+                <input defaultValue={item.approver_name ?? ''} placeholder="name" className="mt-1 block w-40 text-xs border rounded-lg px-2 py-1.5"
+                  onBlur={e => { const v = e.target.value.trim() || null; if (v !== item.approver_name) run(() => updateSchedItem(item.id, projectId, { approver_name: v }), 'Saved') }} />
+              </label>
+            </div>
+          ) : (item.owner_name || item.contractor || item.approver_name) ? (
+            <div className="flex flex-wrap gap-4 text-xs text-slate-600">
+              {item.owner_name && <span>👷 {item.owner_name}</span>}
+              {item.contractor && <span>🏗️ {item.contractor}</span>}
+              {item.approver_name && <span>✔ {item.approver_name}</span>}
+            </div>
+          ) : null}
+
+          {/* controls */}
+          {canEdit && (
+            <div className="flex flex-wrap items-end gap-3 pt-1">
+              <label className="text-[11px] font-semibold text-slate-500">Site start
+                <input type="date" defaultValue={item.plan_start ?? ''} className="mt-1 block text-xs border rounded-lg px-2 py-1.5 font-mono"
+                  onChange={e => run(() => moveSchedDate({ id: item.id, projectId, field: 'plan_start', from: item.plan_start, to: e.target.value || null }), 'Start moved')} />
+              </label>
+              <label className="text-[11px] font-semibold text-slate-500">Finish
+                <input type="date" defaultValue={item.plan_end ?? ''} className="mt-1 block text-xs border rounded-lg px-2 py-1.5 font-mono"
+                  onChange={e => run(() => moveSchedDate({ id: item.id, projectId, field: 'plan_end', from: item.plan_end, to: e.target.value || null }), 'Finish moved')} />
+              </label>
+              <label className="text-[11px] font-semibold text-slate-500">% done
+                <input type="number" min={0} max={100} defaultValue={item.pct} className="mt-1 block w-16 text-xs border rounded-lg px-2 py-1.5 font-mono"
                   onBlur={e => { const v = Math.max(0, Math.min(100, Number(e.target.value) || 0)); if (v !== item.pct) run(() => updateSchedItem(item.id, projectId, { pct: v, state: v >= 100 ? 'done' : v > 0 ? 'in_progress' : item.state }), 'Progress updated') }} />
               </label>
               {item.wo_issued
                 ? <Button size="sm" variant="outline" onClick={() => run(() => setWoIssued({ id: item.id, projectId, issued: false }), 'WO cleared')}>Clear WO</Button>
-                : <Button size="sm" variant="outline" onClick={onWo}>Mark WO issued</Button>}
-              <label className="text-[11px] font-semibold text-gray-600">Status
-                <select defaultValue={item.state} className="mt-1 block text-xs border rounded px-2 py-1"
-                  onChange={e => run(() => updateSchedItem(item.id, projectId, { state: e.target.value }), 'Status updated')}>
-                  <option value="planned">Planned</option>
-                  <option value="in_progress">In progress</option>
-                  <option value="done">Done</option>
-                  <option value="on_hold">On hold</option>
-                </select>
-              </label>
-              <button className="ml-auto inline-flex items-center gap-1 text-rose-600 text-xs hover:underline"
+                : <Button size="sm" variant="outline" onClick={() => run(() => setWoIssued({ id: item.id, projectId, issued: true, issuedOn: today }), 'WO marked issued')}>Mark WO issued</Button>}
+              <button className="ml-auto inline-flex items-center gap-1 text-rose-600 text-xs hover:underline self-center"
                 onClick={async () => { if (await confirm({ title: 'Delete work item?', message: `Remove "${item.name}"?`, confirmLabel: 'Delete', danger: true })) run(() => deleteSchedItem(item.id, projectId), 'Deleted') }}>
                 <Trash2 className="h-3.5 w-3.5" /> Delete
               </button>
             </div>
-          </td>
-        </tr>
+          )}
+        </div>
       )}
-    </>
+    </div>
   )
 }
 
-const FLOOR_CELL: Record<FloorStatus, { label: string; cls: string; title: string }> = {
-  not_started: { label: '', cls: 'bg-slate-50 text-slate-300 hover:bg-slate-100', title: 'Not started' },
-  wip: { label: '◐', cls: 'bg-amber-100 text-amber-700 hover:bg-amber-200', title: 'In progress' },
-  done: { label: '✓', cls: 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200', title: 'Done' },
-  na: { label: '–', cls: 'bg-slate-100 text-slate-400 hover:bg-slate-200', title: 'Not applicable' },
-}
-const NEXT_FLOOR: Record<FloorStatus, FloorStatus> = { not_started: 'wip', wip: 'done', done: 'na', na: 'not_started' }
-
-/** The item × floor progress matrix — the engineer's daily tap-to-update screen. */
-function FloorMatrix({ byTrade, floorNames, cellStatus, canEdit, pending, onCycle, onSaveFloors }: {
-  byTrade: { trade: string; rows: Row[] }[]
-  floorNames: string[]
-  cellStatus: Map<string, FloorStatus>
-  canEdit: boolean
-  pending: boolean
-  onCycle: (itemId: string, floor: string, next: FloorStatus) => void
-  onSaveFloors: (floors: string[]) => void
+/** Bulk assignment — set contractor / engineer / approver once per trade (or
+ *  for all trades), instead of item by item. */
+function AssignPanel({ items, people, vendors, projectId, pending, run, onClose }: {
+  items: SchedItem[]; people: string[]; vendors: string[]; projectId: string; pending: boolean
+  run: (fn: () => Promise<{ ok?: true; count?: number; error?: string }>, okMsg?: string) => void
+  onClose: () => void
 }) {
-  const [editing, setEditing] = useState(false)
-  const [text, setText] = useState(floorNames.join(', '))
-  const lookup = (itemId: string, floor: string): FloorStatus =>
-    cellStatus.get(`${itemId}|${floor.trim().toLowerCase()}`) ?? 'not_started'
+  const trades = useMemo(() => {
+    const order: string[] = []
+    const map = new Map<string, SchedItem[]>()
+    for (const it of items) { if (!map.has(it.trade)) { map.set(it.trade, []); order.push(it.trade) } map.get(it.trade)!.push(it) }
+    return order.map(t => ({ trade: t, items: map.get(t)! }))
+  }, [items])
+  const allIds = items.map(i => i.id)
+  const common = (list: SchedItem[], key: 'owner_name' | 'contractor' | 'approver_name') => {
+    const set = new Set(list.map(i => i[key] ?? '')); return set.size === 1 ? [...set][0] : ''
+  }
+  const setTrade = (trade: string, field: 'ownerName' | 'contractor' | 'approverName', value: string, label: string, n: number) =>
+    run(() => bulkAssignSchedItems({ projectId, trade, [field]: value || null }), `${label} set for ${n} ${trade} item${n === 1 ? '' : 's'}`)
+  const setAll = (field: 'ownerName' | 'contractor' | 'approverName', value: string, label: string) =>
+    run(() => bulkAssignSchedItems({ projectId, itemIds: allIds, [field]: value || null }), `${label} set for all ${allIds.length} items`)
+
+  const Cell = ({ list, def, onSet }: { list: string; def: string; onSet: (v: string) => void }) => (
+    <input list={list} defaultValue={def} placeholder="—"
+      className="w-full text-xs border rounded-lg px-2 py-1.5 bg-white"
+      onBlur={e => { const v = e.target.value.trim(); if (v !== def) onSet(v) }} />
+  )
 
   return (
-    <div className="space-y-2">
-      <div className="flex items-center gap-2 flex-wrap">
-        <p className="text-xs text-gray-500">
-          Tap a cell to advance: blank → <span className="text-amber-700 font-semibold">◐ WIP</span> → <span className="text-emerald-700 font-semibold">✓ done</span> → <span className="text-gray-400">– N/A</span>. Each tap updates the item’s % everywhere.
-        </p>
-        {canEdit && (
-          <button onClick={() => { setText(floorNames.join(', ')); setEditing(v => !v) }} className="ml-auto text-xs text-indigo-600 hover:underline whitespace-nowrap">Edit floors</button>
-        )}
+    <Card className="p-4 shadow-sm space-y-3 border-indigo-200">
+      <datalist id="dl-vendors">{vendors.map(v => <option key={v} value={v} />)}</datalist>
+      <datalist id="dl-people">{people.map(p => <option key={p} value={p} />)}</datalist>
+      <div className="flex items-center justify-between">
+        <h3 className="font-bold text-slate-800 text-sm">Assign team &amp; contractors</h3>
+        <button onClick={onClose} className="text-xs text-indigo-600 hover:underline">Done</button>
       </div>
-
-      {editing && canEdit && (
-        <Card className="p-3 border-indigo-200 space-y-2">
-          <label className="text-[11px] font-semibold text-gray-600 block">Floors / locations — comma-separated, top to bottom
-            <input value={text} onChange={e => setText(e.target.value)} className="mt-1 w-full border rounded px-2 py-1.5 text-sm font-mono" />
-          </label>
-          <div className="flex gap-2">
-            <Button size="sm" disabled={pending} className="bg-indigo-600 hover:bg-indigo-700" onClick={() => { onSaveFloors(text.split(',').map(s => s.trim()).filter(Boolean)); setEditing(false) }}>Save floors</Button>
-            <Button size="sm" variant="ghost" onClick={() => setEditing(false)}>Cancel</Button>
-          </div>
-        </Card>
-      )}
-
-      <Card className="overflow-x-auto">
-        <table className="text-sm border-separate border-spacing-0">
+      <p className="text-[11px] text-slate-500">Set once per trade — it applies to <b>every item</b> in that trade. Pick from your vendors / team, or type a new name. Use the top row to set all trades at once.</p>
+      <div className="overflow-x-auto">
+        <table className="w-full text-xs border-separate border-spacing-0">
           <thead>
-            <tr>
-              <th className="sticky left-0 z-10 bg-slate-50 border-b px-3 py-2.5 text-left text-[10px] uppercase tracking-wide text-gray-500 min-w-[180px]">Work</th>
-              {floorNames.map(f => (
-                <th key={f} className="border-b border-l px-2 py-2.5 text-[10px] font-semibold text-gray-500 whitespace-nowrap min-w-[46px] text-center">{f}</th>
-              ))}
-              <th className="border-b border-l px-2 py-2.5 text-[10px] uppercase tracking-wide text-gray-500 text-center min-w-[44px]">%</th>
+            <tr className="text-left text-[10px] uppercase tracking-wide text-slate-500">
+              <th className="py-1.5 pr-3 min-w-[130px]">Trade</th>
+              <th className="py-1.5 px-2 min-w-[150px]">🏗️ Contractor</th>
+              <th className="py-1.5 px-2 min-w-[140px]">👷 Engineer</th>
+              <th className="py-1.5 px-2 min-w-[140px]">✔ Approver</th>
             </tr>
           </thead>
           <tbody>
-            {byTrade.map(g => (
-              <FragmentGroup key={g.trade}>
-                <tr>
-                  <td colSpan={floorNames.length + 2} className="sticky left-0 bg-slate-50 border-y px-3 py-1.5 text-xs font-bold text-gray-800">{g.trade}</td>
-                </tr>
-                {g.rows.map(r => (
-                  <tr key={r.item.id} className="hover:bg-slate-50/40">
-                    <td className="sticky left-0 z-10 bg-white border-b px-3 py-1.5 min-w-[180px]">
-                      <div className="font-medium text-gray-900 text-[13px] leading-tight truncate max-w-[220px]">{r.item.name}</div>
-                      {r.item.sub && <div className="text-[10px] text-gray-400 truncate max-w-[220px]">{r.item.sub}</div>}
-                    </td>
-                    {floorNames.map(f => {
-                      const st = lookup(r.item.id, f)
-                      const meta = FLOOR_CELL[st]
-                      return (
-                        <td key={f} className="border-b border-l p-0 text-center">
-                          {canEdit
-                            ? <button title={meta.title} disabled={pending} onClick={() => onCycle(r.item.id, f, NEXT_FLOOR[st])}
-                                className={cn('w-full h-9 text-sm font-semibold transition', meta.cls)}>{meta.label}</button>
-                            : <span className={cn('flex items-center justify-center w-full h-9 text-sm', meta.cls)}>{meta.label}</span>}
-                        </td>
-                      )
-                    })}
-                    <td className="border-b border-l px-2 text-center font-mono text-[11px] font-semibold text-indigo-600">{r.item.pct}</td>
-                  </tr>
-                ))}
-              </FragmentGroup>
+            <tr className="bg-indigo-50/50">
+              <td className="py-1.5 pr-3 font-semibold text-indigo-800">All trades →</td>
+              <td className="py-1 px-2"><Cell list="dl-vendors" def="" onSet={v => setAll('contractor', v, 'Contractor')} /></td>
+              <td className="py-1 px-2"><Cell list="dl-people" def="" onSet={v => setAll('ownerName', v, 'Engineer')} /></td>
+              <td className="py-1 px-2"><Cell list="dl-people" def="" onSet={v => setAll('approverName', v, 'Approver')} /></td>
+            </tr>
+            {trades.map(g => (
+              <tr key={g.trade} className="border-t border-slate-100">
+                <td className="py-1.5 pr-3 text-slate-700">{g.trade} <span className="text-slate-400">({g.items.length})</span></td>
+                <td className="py-1 px-2"><Cell list="dl-vendors" def={common(g.items, 'contractor')} onSet={v => setTrade(g.trade, 'contractor', v, 'Contractor', g.items.length)} /></td>
+                <td className="py-1 px-2"><Cell list="dl-people" def={common(g.items, 'owner_name')} onSet={v => setTrade(g.trade, 'ownerName', v, 'Engineer', g.items.length)} /></td>
+                <td className="py-1 px-2"><Cell list="dl-people" def={common(g.items, 'approver_name')} onSet={v => setTrade(g.trade, 'approverName', v, 'Approver', g.items.length)} /></td>
+              </tr>
             ))}
           </tbody>
         </table>
-      </Card>
-    </div>
+      </div>
+    </Card>
   )
 }
 
@@ -632,23 +576,19 @@ function AddItemForm({ projectId, pending, onAdd, onClose }: {
 }) {
   const [trade, setTrade] = useState('')
   const [name, setName] = useState('')
-  const [sub, setSub] = useState('')
   const [planStart, setPlanStart] = useState('')
   const [planEnd, setPlanEnd] = useState('')
   return (
-    <Card className="p-4 space-y-3 border-indigo-200">
+    <Card className="p-4 space-y-3 border-indigo-200 shadow-sm">
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        <label className="text-xs font-semibold text-gray-600">Trade<input value={trade} onChange={e => setTrade(e.target.value)} placeholder="Civil Works" className="mt-1 w-full border rounded px-2 py-1.5 text-sm font-normal" /></label>
-        <label className="text-xs font-semibold text-gray-600">Work item<input value={name} onChange={e => setName(e.target.value)} placeholder="RCC — Raft & footings" className="mt-1 w-full border rounded px-2 py-1.5 text-sm font-normal" /></label>
-        <label className="text-xs font-semibold text-gray-600">Sub-category (optional)<input value={sub} onChange={e => setSub(e.target.value)} className="mt-1 w-full border rounded px-2 py-1.5 text-sm font-normal" /></label>
-        <div className="grid grid-cols-2 gap-2">
-          <label className="text-xs font-semibold text-gray-600">Site start<input type="date" value={planStart} onChange={e => setPlanStart(e.target.value)} className="mt-1 w-full border rounded px-2 py-1.5 text-sm font-normal font-mono" /></label>
-          <label className="text-xs font-semibold text-gray-600">Finish<input type="date" value={planEnd} onChange={e => setPlanEnd(e.target.value)} className="mt-1 w-full border rounded px-2 py-1.5 text-sm font-normal font-mono" /></label>
-        </div>
+        <label className="text-xs font-semibold text-slate-600">Trade<input value={trade} onChange={e => setTrade(e.target.value)} placeholder="Civil" className="mt-1 w-full border rounded-lg px-2 py-1.5 text-sm font-normal" /></label>
+        <label className="text-xs font-semibold text-slate-600">Work item<input value={name} onChange={e => setName(e.target.value)} placeholder="Internal Plaster" className="mt-1 w-full border rounded-lg px-2 py-1.5 text-sm font-normal" /></label>
+        <label className="text-xs font-semibold text-slate-600">Site start<input type="date" value={planStart} onChange={e => setPlanStart(e.target.value)} className="mt-1 w-full border rounded-lg px-2 py-1.5 text-sm font-mono" /></label>
+        <label className="text-xs font-semibold text-slate-600">Finish<input type="date" value={planEnd} onChange={e => setPlanEnd(e.target.value)} className="mt-1 w-full border rounded-lg px-2 py-1.5 text-sm font-mono" /></label>
       </div>
       <div className="flex gap-2">
         <Button size="sm" disabled={pending || !trade.trim() || !name.trim()} className="bg-indigo-600 hover:bg-indigo-700"
-          onClick={() => { onAdd({ projectId, trade, name, sub: sub || null, planStart: planStart || null, planEnd: planEnd || null }); setTrade(''); setName(''); setSub(''); setPlanStart(''); setPlanEnd('') }}>Add</Button>
+          onClick={() => { onAdd({ projectId, trade, name, planStart: planStart || null, planEnd: planEnd || null }); setTrade(''); setName(''); setPlanStart(''); setPlanEnd('') }}>Add</Button>
         <Button size="sm" variant="ghost" onClick={onClose}>Close</Button>
       </div>
     </Card>

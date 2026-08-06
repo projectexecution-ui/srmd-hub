@@ -106,6 +106,8 @@ export interface ProjectScheduleData {
   drawings: SchedDrawing[]
   floors: Array<{ id: string; name: string; sequence: number }>
   floorNames: string[]
+  people: string[]     // active team names — for engineer/approver dropdowns
+  vendors: string[]    // vendor/contractor names — for the contractor dropdown
   leads: LeadDays
   today: string
   aiAssist: boolean
@@ -118,13 +120,25 @@ export async function getProjectSchedule(projectId: string): Promise<ProjectSche
     .eq('id', projectId).maybeSingle()
   if (!project) return null
 
-  const [{ data: items }, { data: floors }, { data: drawings }, leads, aiProjects] = await Promise.all([
+  const [{ data: items }, { data: floors }, { data: drawings }, { data: profiles }, { data: vendorRows }, leads, aiProjects] = await Promise.all([
     sb.from('sched_items').select('*').eq('project_id', projectId).order('seq', { ascending: true }),
     sb.from('project_floors').select('id, name, sequence').eq('project_id', projectId).order('sequence', { ascending: true }),
     sb.from('sched_drawings').select('*').eq('project_id', projectId),
+    sb.from('profiles').select('full_name, name, email, is_active'),
+    sb.from('vendors').select('name').order('name', { ascending: true }),
     getLeadDays(),
     getAiAssistProjects(),
   ])
+
+  const people = Array.from(new Set(
+    ((profiles ?? []) as Array<{ full_name: string | null; name: string | null; email: string | null; is_active: boolean | null }>)
+      .filter(p => p.is_active !== false)
+      .map(p => (p.full_name || p.name || p.email || '').trim())
+      .filter(Boolean),
+  )).sort((a, b) => a.localeCompare(b))
+  const vendors = Array.from(new Set(
+    ((vendorRows ?? []) as Array<{ name: string | null }>).map(v => (v.name || '').trim()).filter(Boolean),
+  ))
 
   const itemIds = ((items ?? []) as SchedItem[]).map(i => i.id)
   let progress: SchedProgress[] = []
@@ -143,6 +157,8 @@ export async function getProjectSchedule(projectId: string): Promise<ProjectSche
     drawings: (drawings ?? []) as SchedDrawing[],
     floors: floorRows,
     floorNames,
+    people,
+    vendors,
     leads,
     today: todayISO(),
     aiAssist: aiProjects.includes(projectId),

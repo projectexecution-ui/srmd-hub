@@ -98,6 +98,35 @@ export async function deleteSchedItem(id: string, projectId: string): Promise<{ 
   return { ok: true }
 }
 
+/** Bulk-assign engineer / contractor / approver to many items at once — by
+ *  trade (every item in it) or an explicit id list. Only the provided fields
+ *  are written, so setting a contractor doesn't wipe the engineer. */
+export async function bulkAssignSchedItems(input: {
+  projectId: string
+  trade?: string | null
+  itemIds?: string[]
+  ownerName?: string | null
+  contractor?: string | null
+  approverName?: string | null
+}): Promise<{ ok?: true; count?: number; error?: string }> {
+  const patch: Record<string, unknown> = {}
+  if (input.ownerName !== undefined) patch.owner_name = input.ownerName
+  if (input.contractor !== undefined) patch.contractor = input.contractor
+  if (input.approverName !== undefined) patch.approver_name = input.approverName
+  if (!Object.keys(patch).length) return { error: 'Nothing to assign.' }
+
+  const sb = await createClient()
+  let q = sb.from('sched_items').update(patch).eq('project_id', input.projectId).select('id')
+  if (input.itemIds?.length) q = q.in('id', input.itemIds)
+  else if (input.trade) q = q.eq('trade', input.trade)
+  else return { error: 'Choose a trade or items to assign.' }
+
+  const { data, error } = await q
+  if (error) return { error: error.message }
+  revalidatePath(`/schedule/${input.projectId}`)
+  return { ok: true, count: (data ?? []).length }
+}
+
 /** Populate a project's schedule from the standard template. Skips items that
  *  already exist (by trade+name), so it's safe to run more than once. */
 export async function applyTemplate(projectId: string): Promise<{ ok?: true; added?: number; error?: string }> {

@@ -28,6 +28,9 @@ export interface SchedItem {
   wo_number: string | null
   wo_issued_on: string | null
   owner_user_id: string | null
+  owner_name: string | null      // responsible engineer (Zoho "Owner")
+  contractor: string | null      // agency executing the work / raising WO to
+  approver_name: string | null   // who signs off (Zoho "Approver")
   notes: string | null
   created_by: string | null
   created_at: string
