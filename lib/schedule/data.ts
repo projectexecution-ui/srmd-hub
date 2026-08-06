@@ -5,7 +5,7 @@ import { cache } from 'react'
 import { createClient } from '@/lib/supabase/server'
 import { APP_TIME_ZONE } from '@/lib/utils'
 import { DEFAULT_LEADS, addDays } from './formula'
-import { DEFAULT_FLOORS, floorsSettingKey, parseFloors } from './floors'
+import { DEFAULT_FLOORS, floorsSettingKey, parseFloors, sortFloors } from './floors'
 import type { LeadDays, SchedItem, SchedProgress, SchedDrawing } from './types'
 
 /** Today as an IST calendar date ("YYYY-MM-DD"). */
@@ -89,10 +89,10 @@ export async function getScheduleFloors(
   const sb = await createClient()
   const { data } = await sb.from('app_settings').select('value')
     .eq('key', floorsSettingKey(projectId)).maybeSingle()
-  const saved = parseFloors(data?.value as string | undefined)
+  const saved = parseFloors(data?.value as string | undefined)   // already sorted
   if (saved) return saved
   const fromSeed = (seeded ?? []).map(f => f.name.trim()).filter(Boolean)
-  if (fromSeed.length) return Array.from(new Set(fromSeed))
+  if (fromSeed.length) return sortFloors(Array.from(new Set(fromSeed)))
   return DEFAULT_FLOORS
 }
 
