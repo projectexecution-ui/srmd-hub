@@ -229,11 +229,22 @@ export function RequestForm({ projects, warehouses, items, projectStores = {}, s
                     onChange={(v) => update(l.tempId, { requested_qty: v })} placeholder="qty" />
                   <span className="text-xs text-gray-500 w-12">{item?.unit ?? ''}</span>
                 </div>
-                {l.item_id && (
-                  <p className={`text-[11px] mt-0.5 ${avail == null ? 'text-gray-400' : avail <= 0 ? 'text-rose-600' : 'text-gray-500'}`}>
-                    {avail == null ? 'not stocked at this store' : `${avail.toLocaleString('en-IN')} on hand`}
-                  </p>
-                )}
+                {l.item_id && (() => {
+                  const want = Number(l.requested_qty)
+                  const over = avail != null && Number.isFinite(want) && want > 0 && want > avail
+                  return (
+                    <>
+                      <p className={`text-[11px] mt-0.5 ${avail == null ? 'text-gray-400' : avail <= 0 ? 'text-rose-600' : 'text-gray-500'}`}>
+                        {avail == null ? 'not stocked at this store' : `${avail.toLocaleString('en-IN')} on hand`}
+                      </p>
+                      {over && (
+                        <p className="text-[11px] mt-0.5 text-amber-700 leading-snug">
+                          More than the {avail!.toLocaleString('en-IN')} on hand — the store can only issue what&apos;s in stock; the rest waits until it&apos;s received.
+                        </p>
+                      )}
+                    </>
+                  )
+                })()}
                 <label className="mt-1 inline-flex items-center gap-1 text-[11px] text-gray-600">
                   <input type="checkbox" checked={l.is_returnable} onChange={e => update(l.tempId, { is_returnable: e.target.checked })} />
                   Returnable (tool/formwork — must come back)
