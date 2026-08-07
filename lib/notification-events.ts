@@ -57,6 +57,12 @@ export const NOTIFICATION_EVENTS: NotificationEventDef[] = [
     audience: 'Project Head & raising engineer',
   },
   {
+    type: 'jmr_entry_submitted',
+    label: 'JMR entry submitted (to review)',
+    description: 'The moment an engineer submits a daily JMR entry, the approvers (admin/head) are pinged that there’s something to review. Email is off by default for this one to avoid inbox flooding — in-app + phone push stay on; turn email on here if you want it.',
+    audience: 'Approvers (admin & head)',
+  },
+  {
     type: 'jmr_entry_approved',
     label: 'JMR entry approved',
     description: 'When a Head/PM approves a daily JMR entry, the engineer who logged it is told (with the approver’s note).',

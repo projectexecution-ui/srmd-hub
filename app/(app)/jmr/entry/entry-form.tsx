@@ -148,7 +148,7 @@ export function EntryForm({ userName, projects, contractors, items }: Props) {
 
     // 2. Insert entry
     const user = (await supabase.auth.getUser()).data.user
-    const { error: insErr } = await supabase.from('jmr_daily_entries').insert({
+    const { data: inserted, error: insErr } = await supabase.from('jmr_daily_entries').insert({
       project_id: projectId,
       sub_project_id: subProjectId || null,
       contractor_id: contractorId,
@@ -163,8 +163,19 @@ export function EntryForm({ userName, projects, contractors, items }: Props) {
       log_sheet_photo_url: photoUrl,
       logged_by_user_id: user?.id ?? null,
       status: 'submitted',
-    })
+    }).select('id').single()
     if (insErr) { setError(insErr.message); setSaving(false); return }
+
+    // 3. Ping the approvers instantly that there's an entry to review.
+    //    Fire-and-forget — the submit already succeeded; a notify hiccup must
+    //    never block or fail the engineer's save.
+    if (inserted?.id) {
+      void fetch('/api/jmr/entries/notify-submit', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ entryId: inserted.id }),
+      }).catch(() => {})
+    }
 
     // Reset form (keep project/sub-project/contractor for fast follow-up logging)
     setItemId(''); setStartTime(''); setEndTime(''); setQty('')
