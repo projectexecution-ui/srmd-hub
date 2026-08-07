@@ -6,7 +6,7 @@ import { PageHeader } from '@/components/PageHeader'
 import { Card } from '@/components/ui/card'
 import {
   Boxes, ClipboardList, Truck, FileText, Undo2,
-  Building2, Tag, PackagePlus, ShieldCheck, SlidersHorizontal, Store, Wrench, Users, FileBarChart,
+  Building2, Tag, PackagePlus, ShieldCheck, SlidersHorizontal, Store, Wrench, Users, FileBarChart, ClipboardCheck,
 } from 'lucide-react'
 import type { Role } from '@/lib/types'
 
@@ -151,6 +151,7 @@ export default async function InventoryLandingPage() {
       subtitle: 'Hand over · upload gate pass',
       badge: (storeCount ?? 0) + gatePassPendingCount, badgeStyle: 'blue',
       accent: ((storeCount ?? 0) > 0 || gatePassPendingCount > 0) ? 'warning' : 'none' },
+    { slug: 'inv-site-stock',       href: '/inventory/site-stock',       title: 'Site stock check', subtitle: 'Weekly count of what’s on site', icon: ClipboardCheck, show: true },
     { slug: 'inv-receipt',          href: '/inventory/receipt',          title: 'Stock receipt',  subtitle: 'Record vendor delivery', icon: PackagePlus,   show: canStore },
     { slug: 'inv-stock-ops',        href: '/inventory/stock-ops',        title: 'Stock corrections', subtitle: 'Count · transfer · damage', icon: Wrench,   show: canStore },
     // Reports are management-facing: storekeepers + admin, and also view-only
