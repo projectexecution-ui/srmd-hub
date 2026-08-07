@@ -49,8 +49,9 @@ export default async function InventoryReportsPage() {
     return info
   })
 
-  // Per-item: physical qty across stores + low/out flags + the store breakdown.
-  type Agg = { total: number; low: boolean; stores: Map<string, number> }
+  // Per-item: physical qty across stores + low/out flags + the store breakdown
+  // (each store carries its OWN low flag so a store-filtered report is precise).
+  type Agg = { total: number; low: boolean; stores: Map<string, { qty: number; low: boolean }> }
   const byItem = new Map<string, Agg>()
   for (const s of stockRes.data ?? []) {
     const id = s.item_id as string
@@ -58,7 +59,12 @@ export default async function InventoryReportsPage() {
     const agg = byItem.get(id) ?? { total: 0, low: false, stores: new Map() }
     agg.total += qty
     if (s.is_low_stock) agg.low = true
-    if (qty > 0) agg.stores.set(s.warehouse_id as string, (agg.stores.get(s.warehouse_id as string) ?? 0) + qty)
+    if (qty > 0) {
+      const cur = agg.stores.get(s.warehouse_id as string) ?? { qty: 0, low: false }
+      cur.qty += qty
+      if (s.is_low_stock) cur.low = true
+      agg.stores.set(s.warehouse_id as string, cur)
+    }
     byItem.set(id, agg)
   }
 
@@ -66,9 +72,9 @@ export default async function InventoryReportsPage() {
     const agg = byItem.get(it.id as string)
     const total = agg?.total ?? 0
     const stores: StoreQty[] = agg
-      ? [...agg.stores.entries()].map(([whId, qty]) => {
+      ? [...agg.stores.entries()].map(([whId, v]) => {
           const info = whById.get(whId)
-          return { code: info?.code ?? whId, label: info?.label ?? 'Store', qty }
+          return { code: info?.code ?? whId, label: info?.label ?? 'Store', qty: v.qty, low: v.low }
         })
       : []
     return {

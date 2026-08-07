@@ -53,7 +53,7 @@ export default async function StoreInboxPage() {
     let gq = supabase
       .from('inv_requests')
       .select('id, request_no, status, urgency, purpose, created_at, projects(code, name), inv_warehouses(code)')
-      .eq('status', 'ISSUED')
+      .in('status', ['ISSUED', 'EMERGENCY_ISSUED'])
       .is('engineer_acknowledged_at', null)
       .order('created_at')
     if (!seesAll) gq = gq.in('warehouse_id', myWarehouseIds)

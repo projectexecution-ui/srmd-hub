@@ -64,7 +64,8 @@ export function CatalogueActions({ rows, warehouses }: {
         .map(r => {
           const s = r.stores.find(x => x.code === store)
           if (!s || s.qty <= 0) return null
-          return { ...r, in_hand: s.qty, stores: [s], out: s.qty <= 0, low: r.low && r.in_hand === s.qty }
+          // Re-scope to this store: its own qty, its own low flag.
+          return { ...r, in_hand: s.qty, stores: [s], out: s.qty <= 0, low: s.low }
         })
         .filter((r): r is CatalogueClientRow => r !== null)
     }

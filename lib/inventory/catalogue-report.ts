@@ -18,6 +18,7 @@ export interface StoreQty {
   code: string     // warehouse code (stable key)
   label: string    // short, human store name e.g. "Yunus", "Central"
   qty: number      // physical qty of this item in this store
+  low: boolean     // this store's own reorder flag for the item
 }
 
 export interface CatalogueRow {
