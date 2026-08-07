@@ -3,13 +3,14 @@
 // Body: { ids: string[], action: 'approve' | 'flag', remarks?: string }
 //
 // - Approve: status → 'pm_approved', sets approved_by_user_id + approved_at.
-//            If `remarks` is provided, appends `[OK: <remarks>]` to
-//            work_description so the engineer sees the approver's note
-//            on /jmr/my. Remarks are optional for approve.
-// - Flag:    status → 'flagged',    sets approved_by_user_id + approved_at,
-//            appends `[FLAG: <remarks>]` to work_description so the engineer
-//            sees the reason on /jmr/my (no new schema column needed).
-//            Remarks are REQUIRED for flag.
+//            If `remarks` is provided, they are stored in `review_remarks`
+//            (the approver's note) so the engineer sees it on /jmr/my without
+//            touching their own work_description. Remarks optional on approve.
+// - Flag:    status → 'flagged', sets approved_by_user_id + approved_at, and
+//            stores the reason in `review_remarks`. Remarks REQUIRED for flag.
+//
+// The approver note lives in its own column, distinct from the engineer's
+// work_description, so neither field mutates the other.
 //
 // Authorisation: RLS already restricts UPDATE on jmr_daily_entries to
 // admin / head; non-privileged callers will simply get 0 rows updated.
@@ -44,7 +45,10 @@ export async function POST(req: NextRequest) {
   if (body.action !== 'approve' && body.action !== 'flag') {
     return NextResponse.json({ error: 'action must be approve or flag' }, { status: 400 })
   }
-  if (body.action === 'flag' && !body.remarks?.trim()) {
+
+  const isFlag = body.action === 'flag'
+  const remarks = body.remarks?.trim() || null
+  if (isFlag && !remarks) {
     return NextResponse.json({ error: 'Flagging requires remarks' }, { status: 400 })
   }
 
@@ -52,55 +56,23 @@ export async function POST(req: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Not signed in' }, { status: 401 })
 
-  // For both approve+remarks and flag we need to read existing work_description
-  // to append the tag. Approve without remarks is the simple bulk-update path.
-  if (body.action === 'approve' && !body.remarks?.trim()) {
-    // Plain approve — no remarks to append, single bulk UPDATE.
-    const { data, error } = await supabase
-      .from('jmr_daily_entries')
-      .update({
-        status: 'pm_approved',
-        approved_by_user_id: user.id,
-        approved_at: new Date().toISOString(),
-      })
-      .in('id', body.ids)
-      .eq('status', 'submitted') // only re-affect entries still in the inbox
-      .select('id')
-
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
-    return NextResponse.json({ updated: data?.length ?? 0, action: 'approve' })
+  // Single bulk UPDATE — the approver note goes to its own column. A plain
+  // approve (no remarks, e.g. the bulk "Approve selected" button) leaves
+  // review_remarks null; a per-row note or a flag reason is written through.
+  const patch: Record<string, unknown> = {
+    status: isFlag ? 'flagged' : 'pm_approved',
+    approved_by_user_id: user.id,
+    approved_at: new Date().toISOString(),
   }
+  if (remarks) patch.review_remarks = remarks
 
-  // Approve-with-remarks OR flag — both append a bracketed tag to work_description.
-  const isFlag = body.action === 'flag'
-  const tagPrefix = isFlag ? 'FLAG' : 'OK'
-  const tag = `[${tagPrefix}: ${body.remarks!.trim()}]`
-
-  const { data: existing, error: fetchErr } = await supabase
+  const { data, error } = await supabase
     .from('jmr_daily_entries')
-    .select('id, work_description, status')
+    .update(patch)
     .in('id', body.ids)
-    .eq('status', 'submitted')
+    .eq('status', 'submitted') // only re-affect entries still in the inbox
+    .select('id')
 
-  if (fetchErr) return NextResponse.json({ error: fetchErr.message }, { status: 500 })
-  if (!existing || existing.length === 0) {
-    return NextResponse.json({ updated: 0, action: body.action })
-  }
-
-  let updated = 0
-  for (const row of existing) {
-    const desc = (row.work_description as string | null) ?? ''
-    const next = desc ? `${desc}\n${tag}` : tag
-    const { error: upErr } = await supabase
-      .from('jmr_daily_entries')
-      .update({
-        status: isFlag ? 'flagged' : 'pm_approved',
-        approved_by_user_id: user.id,
-        approved_at: new Date().toISOString(),
-        work_description: next,
-      })
-      .eq('id', row.id as string)
-    if (!upErr) updated++
-  }
-  return NextResponse.json({ updated, action: body.action })
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  return NextResponse.json({ updated: data?.length ?? 0, action: body.action })
 }

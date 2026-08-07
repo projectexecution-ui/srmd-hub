@@ -297,11 +297,16 @@ export function EntriesPendingApproval({ initial }: { initial: PendingEntry[] })
                               size="sm"
                               variant="ghost"
                               onClick={() => (isOpen ? closeNote(r.id) : openNote(r.id))}
-                              className={`h-7 px-2 ${isOpen ? 'text-blue-700 bg-blue-50' : 'text-gray-500'}`}
-                              title={isOpen ? 'Hide note' : 'Add note (optional on approve, required on flag)'}
-                              aria-label={isOpen ? 'Hide note' : 'Add note'}
+                              className={`h-7 px-2 gap-1 ${
+                                isOpen || noteVal.trim()
+                                  ? 'text-blue-700 bg-blue-50'
+                                  : 'text-gray-500'
+                              }`}
+                              title={isOpen ? 'Hide note' : 'Add a comment (optional on approve, required on flag)'}
+                              aria-label={isOpen ? 'Hide note' : 'Add a comment'}
                             >
                               <MessageSquare className="h-3.5 w-3.5" />
+                              <span className="text-xs">{noteVal.trim() ? 'Note ✓' : 'Note'}</span>
                             </Button>
                           </div>
                         </div>

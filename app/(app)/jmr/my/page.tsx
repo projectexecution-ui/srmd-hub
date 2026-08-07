@@ -39,7 +39,7 @@ export default async function MyJmrPage() {
   const { data: entries } = await supabase
     .from('jmr_daily_entries')
     .select(`
-      id, entry_date, status, quantity, amount, rate_snapshot, created_at, work_description, log_sheet_photo_url,
+      id, entry_date, status, quantity, amount, rate_snapshot, created_at, work_description, review_remarks, log_sheet_photo_url,
       jmr_items ( name, unit ),
       jmr_contractors ( name ),
       projects!jmr_daily_entries_project_id_fkey ( code, name ),
@@ -59,6 +59,7 @@ export default async function MyJmrPage() {
     rate_snapshot: number | string
     created_at: string
     work_description: string | null
+    review_remarks: string | null
     log_sheet_photo_url: string | null
     jmr_items: Item
     jmr_contractors: Contractor
@@ -217,8 +218,22 @@ export default async function MyJmrPage() {
                               <span className="text-gray-400"> @ {formatINR(Number(r.rate_snapshot))}</span>
                             </p>
                             {r.work_description && (
-                              <p className={`text-xs mt-1 ${isFlagged ? 'text-rose-700' : 'text-gray-500'}`}>
+                              <p className="text-xs mt-1 text-gray-500">
                                 {r.work_description}
+                              </p>
+                            )}
+                            {r.review_remarks && (
+                              <p
+                                className={`text-xs mt-1 rounded-md px-2 py-1 ${
+                                  isFlagged
+                                    ? 'bg-rose-50 text-rose-700 ring-1 ring-rose-100'
+                                    : 'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-100'
+                                }`}
+                              >
+                                <span className="font-semibold">
+                                  {isFlagged ? 'Flagged: ' : 'Approver note: '}
+                                </span>
+                                {r.review_remarks}
                               </p>
                             )}
                           </div>
