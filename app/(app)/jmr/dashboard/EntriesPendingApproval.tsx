@@ -311,45 +311,48 @@ export function EntriesPendingApproval({ initial }: { initial: PendingEntry[] })
                             <span className="text-gray-400"> @ {formatINR(r.rate_snapshot)}</span>
                           </p>
                         </div>
-                        <div className="text-right flex-shrink-0">
-                          <p className="font-semibold text-emerald-700">{formatINR(r.amount)}</p>
-                          <div className="mt-1 flex items-center justify-end gap-1.5">
-                            <Button
-                              size="sm"
-                              onClick={() => approveRow(r.id)}
-                              disabled={busy}
-                              className="bg-emerald-600 hover:bg-emerald-700 h-7 px-2"
-                              title={noteVal.trim() ? 'Approve with this comment' : 'Add a comment first, then approve'}
-                            >
-                              <Check className="h-3.5 w-3.5" />
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={() => flagRow(r.id)}
-                              disabled={busy}
-                              className="text-rose-700 border-rose-200 hover:bg-rose-50 h-7 px-2"
-                              title="Flag — note required"
-                            >
-                              <AlertTriangle className="h-3.5 w-3.5" />
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              onClick={() => (isOpen ? closeNote(r.id) : openNote(r.id))}
-                              className={`h-7 px-2 gap-1 ${
-                                isOpen || noteVal.trim()
-                                  ? 'text-blue-700 bg-blue-50'
-                                  : 'text-gray-500'
-                              }`}
-                              title={isOpen ? 'Hide note' : 'Add a comment (optional on approve, required on flag)'}
-                              aria-label={isOpen ? 'Hide note' : 'Add a comment'}
-                            >
-                              <MessageSquare className="h-3.5 w-3.5" />
-                              <span className="text-xs">{noteVal.trim() ? 'Note ✓' : 'Note'}</span>
-                            </Button>
-                          </div>
-                        </div>
+                        <p className="font-semibold text-emerald-700 flex-shrink-0 whitespace-nowrap">{formatINR(r.amount)}</p>
+                      </div>
+
+                      {/* Action row — full width below the content so it never
+                          crushes the details on a narrow phone screen. */}
+                      <div className="mt-2 flex items-center justify-end gap-1.5">
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => (isOpen ? closeNote(r.id) : openNote(r.id))}
+                          className={`h-8 px-2.5 gap-1 mr-auto ${
+                            isOpen || noteVal.trim()
+                              ? 'text-blue-700 bg-blue-50'
+                              : 'text-gray-500'
+                          }`}
+                          title={isOpen ? 'Hide note' : 'Add a comment (required to approve or flag)'}
+                          aria-label={isOpen ? 'Hide note' : 'Add a comment'}
+                        >
+                          <MessageSquare className="h-3.5 w-3.5" />
+                          <span className="text-xs">{noteVal.trim() ? 'Note ✓' : 'Note'}</span>
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => flagRow(r.id)}
+                          disabled={busy}
+                          className="text-rose-700 border-rose-200 hover:bg-rose-50 h-8 px-3 gap-1"
+                          title="Flag — comment required"
+                        >
+                          <AlertTriangle className="h-3.5 w-3.5" />
+                          <span className="text-xs">Flag</span>
+                        </Button>
+                        <Button
+                          size="sm"
+                          onClick={() => approveRow(r.id)}
+                          disabled={busy}
+                          className="bg-emerald-600 hover:bg-emerald-700 h-8 px-3 gap-1"
+                          title={noteVal.trim() ? 'Approve with this comment' : 'Add a comment first, then approve'}
+                        >
+                          <Check className="h-3.5 w-3.5" />
+                          <span className="text-xs">Approve</span>
+                        </Button>
                       </div>
 
                       {/* Inline note panel */}

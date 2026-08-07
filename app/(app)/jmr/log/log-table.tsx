@@ -1,7 +1,7 @@
 'use client'
 import { useMemo, useState } from 'react'
 import { Card } from '@/components/ui/card'
-import { Search, ImageIcon, User, ShieldCheck } from 'lucide-react'
+import { Search, ImageIcon, User, ShieldCheck, CalendarDays } from 'lucide-react'
 import { JmrEntryStatusPill } from '@/components/jmr/JmrEntryStatusPill'
 import { formatINR, formatDateIN } from '@/lib/jmr/format'
 import { formatDateTime } from '@/lib/utils'
@@ -106,7 +106,79 @@ export function JmrLogTable({ entries }: { entries: LogEntry[] }) {
           No entries match — adjust the filter or search.
         </Card>
       ) : (
-        <Card className="overflow-hidden">
+        <>
+          {/* Mobile: one card per entry (no horizontal scroll) */}
+          <div className="space-y-2 md:hidden">
+            {rows.map(r => {
+              const isFlagged = r.status === 'flagged'
+              return (
+                <Card key={r.id} className="p-3">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <div className="font-medium text-gray-900">{r.item_name}</div>
+                      <div className="text-[11px] text-gray-500 truncate">{r.project_label} · {r.contractor_name}</div>
+                    </div>
+                    <JmrEntryStatusPill status={r.status} className="flex-shrink-0" />
+                  </div>
+
+                  <div className="mt-1.5 flex items-center justify-between text-xs">
+                    <span className="text-gray-600">
+                      <span className="font-mono">{r.quantity}</span> {r.unit}
+                      <span className="text-gray-400"> @ {formatINR(r.rate_snapshot)}</span>
+                    </span>
+                    <span className="font-semibold text-emerald-700">{formatINR(r.amount)}</span>
+                  </div>
+
+                  {r.work_description && (
+                    <div className="text-[11px] text-gray-500 italic mt-1">“{r.work_description}”</div>
+                  )}
+
+                  <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[11px] text-gray-500">
+                    <span className="inline-flex items-center gap-1">
+                      <CalendarDays className="h-3 w-3" /> {formatDateIN(r.entry_date)}
+                    </span>
+                    <span className="inline-flex items-center gap-1">
+                      <User className="h-3 w-3" /> {r.logged_by}
+                    </span>
+                    {r.photo_url && (
+                      <a
+                        href={r.photo_url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inline-flex items-center gap-1 font-medium text-blue-700"
+                      >
+                        <ImageIcon className="h-3 w-3" /> Log sheet
+                      </a>
+                    )}
+                  </div>
+
+                  {r.approved_by ? (
+                    <div className="mt-1 flex items-center gap-1 text-[11px] text-gray-500">
+                      <ShieldCheck className="h-3 w-3" /> {r.approved_by}
+                      {r.approved_at && <span className="text-gray-400">· {formatDateTime(r.approved_at)}</span>}
+                    </div>
+                  ) : (
+                    <div className="mt-1 text-[11px] text-gray-400">not reviewed yet</div>
+                  )}
+
+                  {r.review_remarks && (
+                    <div
+                      className={`mt-1 rounded-md px-2 py-1 text-[11px] ${
+                        isFlagged
+                          ? 'bg-rose-50 text-rose-700 ring-1 ring-rose-100'
+                          : 'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-100'
+                      }`}
+                    >
+                      {r.review_remarks}
+                    </div>
+                  )}
+                </Card>
+              )
+            })}
+          </div>
+
+          {/* Desktop: full audit table */}
+          <Card className="overflow-hidden hidden md:block">
           <div className="overflow-x-auto">
             <table className="w-full text-sm min-w-[880px]">
               <thead className="bg-gray-50 text-[11px] uppercase tracking-wide text-gray-500">
@@ -197,7 +269,8 @@ export function JmrLogTable({ entries }: { entries: LogEntry[] }) {
               </tbody>
             </table>
           </div>
-        </Card>
+          </Card>
+        </>
       )}
     </div>
   )
