@@ -3,7 +3,7 @@ import type { ComponentType } from 'react'
 import { PageHeader } from '@/components/PageHeader'
 import { Card } from '@/components/ui/card'
 import {
-  Users, ShieldCheck, LayoutGrid, GitBranch, Trash2, Bell, RotateCcw, Mail,
+  Users, ShieldCheck, LayoutGrid, GitBranch, Trash2, Bell, RotateCcw,
   UserPlus, CalendarDays, UserCog, CircleCheck, AlertTriangle,
 } from 'lucide-react'
 import { getMyPermissions, can, isPortalOwner, getMyProfile } from '@/lib/auth'
@@ -11,7 +11,7 @@ import { createClient } from '@/lib/supabase/server'
 import { isPendingAccessRequest, allowedEmailSet } from '@/lib/access-requests'
 import { MODULES } from '@/lib/modules'
 import { cn } from '@/lib/utils'
-import { SettingsForm } from './settings/settings-form'
+import { AdminEmailRow } from './AdminEmailRow'
 
 export const dynamic = 'force-dynamic'
 
@@ -166,24 +166,8 @@ export default async function AdminHomePage() {
             </div>
           ))}
 
-          {/* The one real portal-wide setting, folded in from the old Settings page. */}
-          {canSettings && (
-            <div>
-              <h2 className="text-[11px] font-bold uppercase tracking-wider text-gray-400 mt-5 mb-2 px-1">System · one setting</h2>
-              <Card className="p-4">
-                <div className="flex items-center gap-2 mb-1">
-                  <span className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-slate-100 text-slate-600"><Mail className="h-4 w-4" /></span>
-                  <div>
-                    <h3 className="font-semibold text-gray-900 text-sm leading-tight">Admin email</h3>
-                    <p className="text-[11px] text-gray-500">The Gmail that becomes admin on first sign-in · others start as <b>viewer</b>.</p>
-                  </div>
-                </div>
-                <div className="mt-2">
-                  <SettingsForm settingKey="admin_email" initialValue={adminEmail} placeholder="projectexecution@construction.srmd.org" type="email" />
-                </div>
-              </Card>
-            </div>
-          )}
+          {/* The one real portal-wide setting — a quiet read-only line, edit on click. */}
+          {canSettings && <AdminEmailRow email={adminEmail} />}
         </div>
       )}
     </div>
