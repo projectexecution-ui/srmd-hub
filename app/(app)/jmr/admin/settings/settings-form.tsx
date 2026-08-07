@@ -1,29 +1,52 @@
 'use client'
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Loader2, Mail } from 'lucide-react'
+import { Loader2, Mail, X, Search } from 'lucide-react'
 import type { JmrSettings } from '@/lib/types'
 
 const DAYS = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday']
 
-export function SettingsForm({ initial }: { initial: JmrSettings }) {
+export interface RecipientUser {
+  email: string
+  name: string
+  role: string
+}
+
+export function SettingsForm({ initial, users }: { initial: JmrSettings; users: RecipientUser[] }) {
   const router = useRouter()
-  const [v, setV] = useState({
-    gst_rate_pct: initial.gst_rate_pct.toString(),
-    weekly_report_day: initial.weekly_report_day,
-    weekly_report_recipients: initial.weekly_report_recipients.join(', '),
-  })
+  const [gst, setGst] = useState(initial.gst_rate_pct.toString())
+  const [day, setDay] = useState(initial.weekly_report_day)
+  // Selected recipients as a set of email addresses (chosen from `users`).
+  const [selected, setSelected] = useState<Set<string>>(new Set(initial.weekly_report_recipients))
+  const [q, setQ] = useState('')
   const [saving, setSaving] = useState(false)
   const [msg, setMsg] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
 
-  const recipientList = v.weekly_report_recipients.split(',').map(s => s.trim()).filter(Boolean)
-  const reportOn = recipientList.length > 0
-  const dayLabel = v.weekly_report_day.charAt(0).toUpperCase() + v.weekly_report_day.slice(1)
+  const usersByEmail = useMemo(() => new Map(users.map(u => [u.email, u])), [users])
+  const recipients = useMemo(() => Array.from(selected), [selected])
+  const reportOn = recipients.length > 0
+  const dayLabel = day.charAt(0).toUpperCase() + day.slice(1)
+
+  const filtered = useMemo(() => {
+    const n = q.trim().toLowerCase()
+    if (!n) return users
+    return users.filter(u =>
+      u.name.toLowerCase().includes(n) || u.email.toLowerCase().includes(n) || u.role.toLowerCase().includes(n),
+    )
+  }, [users, q])
+
+  function toggle(email: string) {
+    setSelected(prev => {
+      const next = new Set(prev)
+      if (next.has(email)) next.delete(email); else next.add(email)
+      return next
+    })
+  }
 
   async function submit(e: React.FormEvent) {
     e.preventDefault()
@@ -31,9 +54,9 @@ export function SettingsForm({ initial }: { initial: JmrSettings }) {
     setMsg(null); setError(null)
     const supabase = createClient()
     const rows = [
-      { key: 'jmr_gst_rate_pct',             value: v.gst_rate_pct },
-      { key: 'jmr_weekly_report_day',        value: v.weekly_report_day },
-      { key: 'jmr_weekly_report_recipients', value: JSON.stringify(recipientList) },
+      { key: 'jmr_gst_rate_pct',             value: gst },
+      { key: 'jmr_weekly_report_day',        value: day },
+      { key: 'jmr_weekly_report_recipients', value: JSON.stringify(recipients) },
     ]
     const { error } = await supabase.from('app_settings').upsert(rows, { onConflict: 'key' })
     if (error) { setError(error.message); setSaving(false); return }
@@ -49,8 +72,8 @@ export function SettingsForm({ initial }: { initial: JmrSettings }) {
         <Label>GST rate %</Label>
         <Input
           type="number" step="0.01" min="0"
-          value={v.gst_rate_pct}
-          onChange={e => setV({ ...v, gst_rate_pct: e.target.value })}
+          value={gst}
+          onChange={e => setGst(e.target.value)}
           className="mt-1"
         />
         <p className="text-xs text-gray-500 mt-1">
@@ -58,7 +81,7 @@ export function SettingsForm({ initial }: { initial: JmrSettings }) {
         </p>
       </div>
 
-      {/* Weekly report — recipients act as the on/off switch */}
+      {/* Weekly report — recipients (picked from the user list) are the switch */}
       <div className="rounded-xl border border-gray-200 p-4 space-y-3">
         <div className="flex items-start justify-between gap-3">
           <div>
@@ -66,8 +89,8 @@ export function SettingsForm({ initial }: { initial: JmrSettings }) {
               <Mail className="h-4 w-4 text-gray-500" /> Weekly report (auto-email)
             </h3>
             <p className="text-xs text-gray-500 mt-0.5">
-              A PDF of the week&apos;s logged spend, emailed automatically. Add recipients to switch it
-              on — clear the box to switch it off.
+              A PDF of the week&apos;s logged spend, emailed automatically. Pick who gets it from your
+              team — select nobody to keep it off.
             </p>
           </div>
           <span className={`flex-shrink-0 text-[11px] font-semibold px-2 py-0.5 rounded-full ${reportOn ? 'bg-emerald-50 text-emerald-700' : 'bg-gray-100 text-gray-500'}`}>
@@ -78,8 +101,8 @@ export function SettingsForm({ initial }: { initial: JmrSettings }) {
         <div className="max-w-[240px]">
           <Label>Send every</Label>
           <select
-            value={v.weekly_report_day}
-            onChange={e => setV({ ...v, weekly_report_day: e.target.value })}
+            value={day}
+            onChange={e => setDay(e.target.value)}
             className="mt-1 flex h-10 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm"
           >
             {DAYS.map(d => (
@@ -89,17 +112,67 @@ export function SettingsForm({ initial }: { initial: JmrSettings }) {
         </div>
 
         <div>
-          <Label>Recipients (comma-separated emails)</Label>
-          <Input
-            value={v.weekly_report_recipients}
-            onChange={e => setV({ ...v, weekly_report_recipients: e.target.value })}
-            placeholder="construction@srmd.org, pm@srmd.org"
-            className="mt-1"
-          />
-          <p className="text-xs mt-1 text-gray-500">
+          <Label>Recipients — choose from your team</Label>
+
+          {/* Selected chips */}
+          {recipients.length > 0 && (
+            <div className="flex flex-wrap gap-1.5 mt-1.5">
+              {recipients.map(email => {
+                const u = usersByEmail.get(email)
+                return (
+                  <span key={email} className="inline-flex items-center gap-1 bg-blue-50 text-blue-700 ring-1 ring-blue-100 rounded-full pl-2.5 pr-1 py-0.5 text-xs">
+                    {u?.name ?? email}
+                    <button
+                      type="button"
+                      onClick={() => toggle(email)}
+                      className="hover:bg-blue-100 rounded-full p-0.5"
+                      aria-label={`Remove ${u?.name ?? email}`}
+                    >
+                      <X className="h-3 w-3" />
+                    </button>
+                  </span>
+                )
+              })}
+            </div>
+          )}
+
+          {/* Search + checklist of users */}
+          <div className="relative mt-2">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+            <input
+              value={q}
+              onChange={e => setQ(e.target.value)}
+              placeholder="Search a name, email or role…"
+              className="w-full rounded-lg border border-gray-300 bg-white pl-9 pr-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-200"
+            />
+          </div>
+          <div className="mt-1.5 max-h-56 overflow-y-auto rounded-lg border border-gray-200 divide-y divide-gray-100">
+            {filtered.length === 0 ? (
+              <p className="px-3 py-3 text-xs text-gray-400">No users match “{q}”.</p>
+            ) : (
+              filtered.map(u => (
+                <label key={u.email} className="flex items-center gap-2.5 px-3 py-2 cursor-pointer hover:bg-gray-50">
+                  <input
+                    type="checkbox"
+                    checked={selected.has(u.email)}
+                    onChange={() => toggle(u.email)}
+                    className="h-4 w-4 flex-shrink-0"
+                  />
+                  <span className="min-w-0">
+                    <span className="block text-sm text-gray-900 truncate">{u.name}</span>
+                    <span className="block text-[11px] text-gray-500 truncate">
+                      {u.email}{u.role ? ` · ${u.role}` : ''}
+                    </span>
+                  </span>
+                </label>
+              ))
+            )}
+          </div>
+
+          <p className="text-xs mt-1.5 text-gray-500">
             {reportOn
-              ? `On — the report emails to ${recipientList.length} recipient${recipientList.length === 1 ? '' : 's'} every ${dayLabel} morning.`
-              : 'Off — no recipients set, so no report is sent.'}
+              ? `On — the report emails to ${recipients.length} recipient${recipients.length === 1 ? '' : 's'} every ${dayLabel} morning.`
+              : 'Off — nobody selected, so no report is sent.'}
           </p>
         </div>
       </div>
