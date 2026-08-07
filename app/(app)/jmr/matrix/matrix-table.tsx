@@ -25,7 +25,7 @@ export function MatrixTable({ data }: { data: MatrixData }) {
         <thead>
           <tr>
             <th rowSpan={2} className="px-2 py-2 border border-gray-300 bg-gray-50 text-left font-bold sticky left-0 z-20">Sr.</th>
-            <th rowSpan={2} className="px-2 py-2 border border-gray-300 bg-amber-100 text-left font-bold min-w-[200px]">Item Description</th>
+            <th rowSpan={2} className="px-2 py-2 border border-gray-300 bg-gray-100 text-left font-bold min-w-[200px]">Item Description</th>
             <th rowSpan={2} className="px-2 py-2 border border-gray-300 bg-gray-50 font-bold">Unit</th>
             <th rowSpan={2} className="px-2 py-2 border border-gray-300 bg-gray-50 text-right font-bold">Rate</th>
             {subProjects.map((sp, i) => {
@@ -36,7 +36,7 @@ export function MatrixTable({ data }: { data: MatrixData }) {
                 </th>
               )
             })}
-            <th rowSpan={2} className="px-2 py-2 border border-gray-300 bg-amber-200 text-right font-bold">Total</th>
+            <th rowSpan={2} className="px-2 py-2 border border-gray-300 bg-gray-100 text-right font-bold">Total</th>
           </tr>
           <tr>
             {subProjects.map((sp, i) => {
@@ -95,9 +95,9 @@ export function MatrixTable({ data }: { data: MatrixData }) {
             </td>
             <td className="px-2 py-2 border border-gray-300 text-right font-semibold">{formatNumberIN(data.gstAmount)}</td>
           </tr>
-          <tr className="font-bold bg-amber-200 text-amber-950">
-            <td colSpan={4 + subProjects.length * 2} className="px-2 py-2 border border-gray-300 text-right uppercase">Grand Total</td>
-            <td className="px-2 py-2 border border-gray-300 text-right">{formatINR(data.grandTotal)}</td>
+          <tr className="font-bold bg-gray-900 text-white">
+            <td colSpan={4 + subProjects.length * 2} className="px-2 py-2 border border-gray-700 text-right uppercase tracking-wide">Grand Total</td>
+            <td className="px-2 py-2 border border-gray-700 text-right">{formatINR(data.grandTotal)}</td>
           </tr>
         </tbody>
       </table>
@@ -151,7 +151,7 @@ function ItemRow({ row, idx, subProjects, showPeriod }: {
           </>
         )
       })}
-      <td className="px-2 py-1.5 border border-gray-300 text-right font-semibold bg-amber-50">
+      <td className="px-2 py-1.5 border border-gray-300 text-right font-semibold bg-gray-50">
         {formatNumberIN(row.total.amount)}
       </td>
     </tr>
