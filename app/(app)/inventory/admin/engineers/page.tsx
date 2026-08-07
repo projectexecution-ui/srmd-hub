@@ -14,7 +14,7 @@ export default async function EngineerProjectsPage() {
   const [engRes, projRes, mapRes] = await Promise.all([
     supabase.from('profiles').select('id, full_name, name').eq('is_active', true).eq('role', 'engineer').order('full_name'),
     supabase.from('projects').select('id, code, name').is('archived_at', null).order('code'),
-    supabase.from('inv_engineer_projects').select('engineer_id, project_id'),
+    supabase.from('inv_engineer_projects').select('engineer_id, project_id, is_primary'),
   ])
 
   const err = engRes.error ?? projRes.error ?? mapRes.error
@@ -22,7 +22,11 @@ export default async function EngineerProjectsPage() {
   const engineers = (engRes.data ?? []).map(e => ({ id: e.id as string, name: (e.full_name ?? e.name ?? '(unnamed)') as string }))
   const projects = (projRes.data ?? []).map(p => ({ id: p.id as string, code: p.code as string, name: p.name as string }))
   const initial: Record<string, string[]> = {}
-  for (const r of mapRes.data ?? []) (initial[r.engineer_id as string] ??= []).push(r.project_id as string)
+  const owners: Record<string, string> = {} // project_id → owner engineer_id (is_primary)
+  for (const r of mapRes.data ?? []) {
+    (initial[r.engineer_id as string] ??= []).push(r.project_id as string)
+    if (r.is_primary) owners[r.project_id as string] = r.engineer_id as string
+  }
 
   return (
     <div className="p-4 md:p-6 max-w-3xl mx-auto space-y-4">
@@ -34,7 +38,7 @@ export default async function EngineerProjectsPage() {
       <Card className="p-4">
         {err
           ? <QueryError what="engineer assignments" message={err.message} />
-          : <EngineerProjectsEditor engineers={engineers} projects={projects} initial={initial} />}
+          : <EngineerProjectsEditor engineers={engineers} projects={projects} initial={initial} owners={owners} />}
       </Card>
     </div>
   )

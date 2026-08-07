@@ -18,6 +18,8 @@ type Row = {
   last_week_start: string | null
   last_created_at: string | null
   last_variances: number
+  owner_name: string | null
+  assigned_names: string | null
 }
 
 export default async function SiteStockPage() {
@@ -70,6 +72,13 @@ export default async function SiteStockPage() {
                         {nf(r.items_on_site)} item{r.items_on_site === 1 ? '' : 's'} on site
                         {r.last_created_at && <span> · last checked {formatDate(r.last_created_at)}</span>}
                         {!r.last_created_at && <span> · never checked</span>}
+                      </p>
+                      <p className="text-[11px] mt-0.5">
+                        {r.owner_name
+                          ? <span className="text-gray-600">Owner: <span className="font-medium text-gray-800">{r.owner_name}</span></span>
+                          : r.assigned_names
+                            ? <span className="text-gray-500">Assigned: {r.assigned_names}</span>
+                            : <span className="text-amber-700">No engineer assigned — set an owner</span>}
                       </p>
                     </div>
                     {hasVariance ? (

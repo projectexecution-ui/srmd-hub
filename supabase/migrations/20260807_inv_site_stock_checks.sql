@@ -206,3 +206,28 @@ begin
   return v_out;
 end $$;
 grant execute on function public.inv_rpc_custody_projects() to authenticated;
+
+-- ── Accountability: one owner (is_primary) per site + owner names in landing ──
+create or replace function public.inv_rpc_set_site_owner(p_project uuid, p_engineer uuid)
+returns jsonb language plpgsql security definer set search_path = public as $$
+declare v_actor uuid := auth.uid(); v_admin boolean;
+begin
+  if v_actor is null then raise exception 'Not signed in'; end if;
+  select (public.inv_custody_is_mgmt()
+          or exists (select 1 from public.role_permissions rp, public.profiles p
+                     where p.id = v_actor and rp.role = p.role
+                       and rp.module_slug='inventory' and rp.can_admin = true)) into v_admin;
+  if not v_admin then raise exception 'Only an inventory admin can set the site owner'; end if;
+  update public.inv_engineer_projects set is_primary = false where project_id = p_project;
+  if p_engineer is not null then
+    update public.inv_engineer_projects set is_primary = true
+      where project_id = p_project and engineer_id = p_engineer;
+    if not found then
+      insert into public.inv_engineer_projects(engineer_id, project_id, is_primary)
+      values (p_engineer, p_project, true);
+    end if;
+  end if;
+  return jsonb_build_object('status','ok');
+end $$;
+grant execute on function public.inv_rpc_set_site_owner(uuid, uuid) to authenticated;
+-- inv_rpc_custody_projects re-created with owner_name + assigned_names (see live DB).
