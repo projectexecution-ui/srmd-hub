@@ -179,7 +179,7 @@ export function ScheduleClient({ data, canEdit, meId }: { data: ProjectScheduleD
   }, [items, floorNames, doneStamp]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const week = <MyWeek promises={promises} lastWeek={lastWeek} rowById={rowById} cellOf={cellOf} canEdit={canEdit} projectId={project.id} pending={pending} run={run} />
-  const pulse = <SitePulse rows={rows} promises={promises} lastWeek={lastWeek} floorNames={floorNames} cellOf={cellOf} overall={overall} today={today} drawings={drawings} ready={ready} />
+  const pulse = <SitePulse rows={rows} promises={promises} lastWeek={lastWeek} floorNames={floorNames} cellOf={cellOf} overall={overall} today={today} drawings={drawings} ready={ready} derivedMap={derivedMap} doneAt={doneAt} />
 
   return (
     <div className="p-4 md:p-6 max-w-3xl lg:max-w-[1400px] mx-auto space-y-4">
@@ -191,7 +191,7 @@ export function ScheduleClient({ data, canEdit, meId }: { data: ProjectScheduleD
 
       {/* tabs are a phone thing — the desktop cockpit shows everything at once */}
       <div className="lg:hidden sticky top-0 z-30 flex rounded-xl border bg-slate-100 p-1 shadow-sm">
-        {([['week', '📋 My Week'], ['pulse', '📊 Site Pulse'], ['plan', '🗂️ Plan Room']] as const).map(([k, label]) => (
+        {([['week', 'My Week'], ['pulse', 'Site Pulse'], ['plan', 'Plan Room']] as const).map(([k, label]) => (
           <button key={k} onClick={() => setTab(k)}
             className={cn('flex-1 py-2 text-[13px] font-bold rounded-lg transition', tab === k ? 'bg-white text-indigo-700 shadow-sm' : 'text-slate-500 hover:text-slate-700')}>
             {label}
@@ -416,13 +416,16 @@ function MyWeek({ promises, lastWeek, rowById, cellOf, canEdit, projectId, pendi
 
 /* ============================== ② SITE PULSE ============================== */
 
-function SitePulse({ rows, promises, lastWeek, floorNames, cellOf, overall, today, drawings, ready }: {
+function SitePulse({ rows, promises, lastWeek, floorNames, cellOf, overall, today, drawings, ready, derivedMap, doneAt }: {
   rows: Row[]; promises: SchedPromise[]; lastWeek: { kept: number; total: number } | null
   floorNames: string[]; cellOf: (i: string, f: string) => FloorStatus
   overall: { pct: number; count: number; datedCount: number; actualScheduled: number; plannedScheduled: number }
   today: string; drawings: ProjectScheduleData['drawings']
   ready: ReturnType<typeof readyFloors>
+  derivedMap: Map<string, DerivedPlan>; doneAt: (itemId: string, floor: string) => string | null
 }) {
+  const [openMap, setOpenMap] = useState<Set<string>>(new Set())
+  const toggleMap = (t: string) => setOpenMap(s => { const n = new Set(s); if (n.has(t)) n.delete(t); else n.add(t); return n })
   const kept = promises.filter(p => p.status === 'done').length
   const ppc = promises.length ? Math.round(kept / promises.length * 100) : (lastWeek && lastWeek.total ? Math.round(lastWeek.kept / lastWeek.total * 100) : null)
 
@@ -457,25 +460,62 @@ function SitePulse({ rows, promises, lastWeek, floorNames, cellOf, overall, toda
       </Card>
 
       <Card className="p-4 shadow-sm overflow-x-auto">
-        <div className="text-sm font-bold text-slate-800 mb-2">Building fill — trade × floor</div>
-        <div className="grid gap-[3px]" style={{ gridTemplateColumns: `96px repeat(${floorNames.length}, minmax(26px,1fr))`, minWidth: 96 + floorNames.length * 30 }}>
+        <div className="flex items-baseline justify-between gap-2 mb-2">
+          <div className="text-sm font-bold text-slate-800">Building map — trade × floor</div>
+          <div className="text-[10.5px] text-slate-400">tap a trade for its items · hover a cell for dates</div>
+        </div>
+        <div className="grid gap-[3px]" style={{ gridTemplateColumns: `150px repeat(${floorNames.length}, minmax(28px,1fr)) 130px`, minWidth: 280 + floorNames.length * 32 }}>
           <div />
           {floorNames.map(f => <div key={f} className="text-[9px] text-slate-400 text-center truncate">{f.replace(' Floor', '')}</div>)}
-          {trades.map(g => (
-            <FragmentGroup key={g.trade}>
-              <div className="text-[10px] text-slate-500 flex items-center justify-end pr-1.5 truncate">{g.trade}</div>
-              {floorNames.map(f => {
-                const cs = g.rows.map(r => cellOf(r.item.id, f)).filter(c => c !== 'na')
-                let bg = '#f8fafc', border = '1px solid #eef2f6'
-                if (cs.length) {
-                  const sc = cs.reduce((a, c) => a + (c === 'done' ? 1 : c === 'wip' ? 0.5 : 0), 0) / cs.length
-                  bg = sc === 0 ? '#e9edf3' : sc >= 0.99 ? '#0d9488' : sc >= 0.5 ? '#5bbfae' : '#f5c56b'
-                  border = 'none'
-                }
-                return <div key={f} className="h-5 rounded" style={{ background: bg, border }} />
-              })}
-            </FragmentGroup>
-          ))}
+          <div className="text-[9px] text-slate-400 pl-2">Contractor · ends</div>
+          {trades.map(g => {
+            const open = openMap.has(g.trade)
+            const contractors = Array.from(new Set(g.rows.map(r => r.item.contractor).filter(Boolean))) as string[]
+            const ends = g.rows.map(r => derivedMap.get(r.item.id)?.end ?? r.item.plan_end).filter(Boolean).sort() as string[]
+            const tradeEnd = ends.length === g.rows.length && ends.length > 0 ? ends[ends.length - 1] : null
+            const cellTip = (label: string, id: string, f: string) => {
+              const st = cellOf(id, f)
+              if (st === 'na') return `${label} · ${f}: not applicable`
+              if (st === 'done') { const d = doneAt(id, f); return `${label} · ${f}: done${d ? ' ' + formatDate(d.slice(0, 10)) : ''}` }
+              const w = derivedMap.get(id)?.floors[f]
+              return `${label} · ${f}: ${st === 'wip' ? 'in progress' : 'not started'}${w ? ` · planned ${formatDate(w.start)} → ${formatDate(w.end)}` : ''}`
+            }
+            return (
+              <FragmentGroup key={g.trade}>
+                <button onClick={() => toggleMap(g.trade)} className="flex items-center gap-1 text-[10.5px] font-semibold text-slate-600 hover:text-indigo-700 justify-end pr-1.5 truncate text-right">
+                  <ChevronRight className={cn('h-3 w-3 flex-shrink-0 transition-transform', open && 'rotate-90')} />{g.trade}
+                </button>
+                {floorNames.map(f => {
+                  const cs = g.rows.map(r => cellOf(r.item.id, f)).filter(c => c !== 'na')
+                  let bg = '#f8fafc', border = '1px solid #eef2f6'
+                  if (cs.length) {
+                    const sc = cs.reduce((a, c) => a + (c === 'done' ? 1 : c === 'wip' ? 0.5 : 0), 0) / cs.length
+                    bg = sc === 0 ? '#e9edf3' : sc >= 0.99 ? '#0d9488' : sc >= 0.5 ? '#5bbfae' : '#f5c56b'
+                    border = 'none'
+                  }
+                  return <div key={f} className="h-6 rounded" style={{ background: bg, border }} title={`${g.trade} · ${f.replace(' Floor', '')}`} />
+                })}
+                <div className="text-[9.5px] text-slate-500 pl-2 truncate self-center" title={contractors.join(', ')}>
+                  {contractors.length ? contractors[0] + (contractors.length > 1 ? ` +${contractors.length - 1}` : '') : '—'}
+                  {tradeEnd ? <span className="text-indigo-600 font-mono"> · {formatDate(tradeEnd)}</span> : ''}
+                </div>
+                {open && g.rows.map(r => (
+                  <FragmentGroup key={r.item.id}>
+                    <div className="text-[10px] text-slate-400 flex items-center justify-end pr-1.5 truncate">{r.item.name}</div>
+                    {floorNames.map(f => {
+                      const st = cellOf(r.item.id, f)
+                      const bg = st === 'na' ? '#f8fafc' : st === 'done' ? '#0d9488' : st === 'wip' ? '#f5c56b' : '#e9edf3'
+                      return <div key={f} className="h-4 rounded-sm" title={cellTip(r.item.name, r.item.id, f)}
+                        style={{ background: bg, border: st === 'na' ? '1px solid #eef2f6' : 'none' }} />
+                    })}
+                    <div className="text-[9px] text-slate-400 pl-2 truncate self-center font-mono">
+                      {(derivedMap.get(r.item.id)?.end ?? r.item.plan_end) ? formatDate((derivedMap.get(r.item.id)?.end ?? r.item.plan_end)!) : ''}
+                    </div>
+                  </FragmentGroup>
+                ))}
+              </FragmentGroup>
+            )
+          })}
         </div>
         <div className="flex gap-4 mt-2.5 text-[10.5px] text-slate-500 flex-wrap">
           <span><i className="inline-block w-2.5 h-2.5 rounded-sm align-[-1px] mr-1" style={{ background: '#0d9488' }} />done</span>
