@@ -5,38 +5,35 @@ import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Loader2 } from 'lucide-react'
+import { Loader2, Mail } from 'lucide-react'
 import type { JmrSettings } from '@/lib/types'
+
+const DAYS = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday']
 
 export function SettingsForm({ initial }: { initial: JmrSettings }) {
   const router = useRouter()
   const [v, setV] = useState({
     gst_rate_pct: initial.gst_rate_pct.toString(),
-    variance_tolerance_pct: initial.variance_tolerance_pct.toString(),
-    variance_tolerance_min_hours: initial.variance_tolerance_min_hours.toString(),
-    entry_edit_window_hours: initial.entry_edit_window_hours.toString(),
     weekly_report_day: initial.weekly_report_day,
-    weekly_report_hour_ist: initial.weekly_report_hour_ist.toString(),
     weekly_report_recipients: initial.weekly_report_recipients.join(', '),
   })
   const [saving, setSaving] = useState(false)
   const [msg, setMsg] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
 
+  const recipientList = v.weekly_report_recipients.split(',').map(s => s.trim()).filter(Boolean)
+  const reportOn = recipientList.length > 0
+  const dayLabel = v.weekly_report_day.charAt(0).toUpperCase() + v.weekly_report_day.slice(1)
+
   async function submit(e: React.FormEvent) {
     e.preventDefault()
     setSaving(true)
     setMsg(null); setError(null)
     const supabase = createClient()
-    const recipients = v.weekly_report_recipients.split(',').map(s => s.trim()).filter(Boolean)
     const rows = [
-      { key: 'jmr_gst_rate_pct',                value: v.gst_rate_pct },
-      { key: 'jmr_variance_tolerance_pct',      value: v.variance_tolerance_pct },
-      { key: 'jmr_variance_tolerance_min_hours',value: v.variance_tolerance_min_hours },
-      { key: 'jmr_entry_edit_window_hours',     value: v.entry_edit_window_hours },
-      { key: 'jmr_weekly_report_day',           value: v.weekly_report_day },
-      { key: 'jmr_weekly_report_hour_ist',      value: v.weekly_report_hour_ist },
-      { key: 'jmr_weekly_report_recipients',    value: JSON.stringify(recipients) },
+      { key: 'jmr_gst_rate_pct',             value: v.gst_rate_pct },
+      { key: 'jmr_weekly_report_day',        value: v.weekly_report_day },
+      { key: 'jmr_weekly_report_recipients', value: JSON.stringify(recipientList) },
     ]
     const { error } = await supabase.from('app_settings').upsert(rows, { onConflict: 'key' })
     if (error) { setError(error.message); setSaving(false); return }
@@ -46,57 +43,65 @@ export function SettingsForm({ initial }: { initial: JmrSettings }) {
   }
 
   return (
-    <form onSubmit={submit} className="space-y-4 max-w-xl">
-      <div className="grid grid-cols-2 gap-4">
-        <div>
-          <Label>GST rate %</Label>
-          <Input type="number" step="0.01" min="0" value={v.gst_rate_pct} onChange={e => setV({ ...v, gst_rate_pct: e.target.value })} className="mt-1" />
-        </div>
-        <div>
-          <Label>Entry edit window (hours)</Label>
-          <Input type="number" min="0" value={v.entry_edit_window_hours} onChange={e => setV({ ...v, entry_edit_window_hours: e.target.value })} className="mt-1" />
-        </div>
+    <form onSubmit={submit} className="space-y-5 max-w-xl">
+      {/* GST — the one setting that shapes every SPEND number */}
+      <div className="max-w-[240px]">
+        <Label>GST rate %</Label>
+        <Input
+          type="number" step="0.01" min="0"
+          value={v.gst_rate_pct}
+          onChange={e => setV({ ...v, gst_rate_pct: e.target.value })}
+          className="mt-1"
+        />
+        <p className="text-xs text-gray-500 mt-1">
+          Added on top of logged cost for the GST-inclusive SPEND totals on the Dashboard &amp; Matrix.
+        </p>
       </div>
-      <div className="grid grid-cols-2 gap-4">
-        <div>
-          <Label>Variance tolerance %</Label>
-          <Input type="number" step="0.1" min="0" value={v.variance_tolerance_pct} onChange={e => setV({ ...v, variance_tolerance_pct: e.target.value })} className="mt-1" />
+
+      {/* Weekly report — recipients act as the on/off switch */}
+      <div className="rounded-xl border border-gray-200 p-4 space-y-3">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <h3 className="text-sm font-semibold text-gray-900 flex items-center gap-1.5">
+              <Mail className="h-4 w-4 text-gray-500" /> Weekly report (auto-email)
+            </h3>
+            <p className="text-xs text-gray-500 mt-0.5">
+              A PDF of the week&apos;s logged spend, emailed automatically. Add recipients to switch it
+              on — clear the box to switch it off.
+            </p>
+          </div>
+          <span className={`flex-shrink-0 text-[11px] font-semibold px-2 py-0.5 rounded-full ${reportOn ? 'bg-emerald-50 text-emerald-700' : 'bg-gray-100 text-gray-500'}`}>
+            {reportOn ? 'On' : 'Off'}
+          </span>
         </div>
-        <div>
-          <Label>Variance min hours</Label>
-          <Input type="number" step="0.1" min="0" value={v.variance_tolerance_min_hours} onChange={e => setV({ ...v, variance_tolerance_min_hours: e.target.value })} className="mt-1" />
-        </div>
-      </div>
-      <div className="grid grid-cols-2 gap-4">
-        <div>
-          <Label>Weekly report — day</Label>
+
+        <div className="max-w-[240px]">
+          <Label>Send every</Label>
           <select
             value={v.weekly_report_day}
             onChange={e => setV({ ...v, weekly_report_day: e.target.value })}
             className="mt-1 flex h-10 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm"
           >
-            <option value="monday">Monday</option>
-            <option value="tuesday">Tuesday</option>
-            <option value="wednesday">Wednesday</option>
-            <option value="thursday">Thursday</option>
-            <option value="friday">Friday</option>
-            <option value="saturday">Saturday</option>
-            <option value="sunday">Sunday</option>
+            {DAYS.map(d => (
+              <option key={d} value={d}>{d.charAt(0).toUpperCase() + d.slice(1)}</option>
+            ))}
           </select>
         </div>
+
         <div>
-          <Label>Weekly report — hour (IST, 0–23)</Label>
-          <Input type="number" min="0" max="23" value={v.weekly_report_hour_ist} onChange={e => setV({ ...v, weekly_report_hour_ist: e.target.value })} className="mt-1" />
+          <Label>Recipients (comma-separated emails)</Label>
+          <Input
+            value={v.weekly_report_recipients}
+            onChange={e => setV({ ...v, weekly_report_recipients: e.target.value })}
+            placeholder="construction@srmd.org, pm@srmd.org"
+            className="mt-1"
+          />
+          <p className="text-xs mt-1 text-gray-500">
+            {reportOn
+              ? `On — the report emails to ${recipientList.length} recipient${recipientList.length === 1 ? '' : 's'} every ${dayLabel} morning.`
+              : 'Off — no recipients set, so no report is sent.'}
+          </p>
         </div>
-      </div>
-      <div>
-        <Label>Weekly report recipients (comma-separated emails)</Label>
-        <Input
-          value={v.weekly_report_recipients}
-          onChange={e => setV({ ...v, weekly_report_recipients: e.target.value })}
-          placeholder="construction@srmd.org, pm@srmd.org"
-          className="mt-1"
-        />
       </div>
 
       {error && <p className="text-sm text-red-600">{error}</p>}

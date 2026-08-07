@@ -345,11 +345,7 @@ export interface JmrDailyEntry {
 
 export interface JmrSettings {
   gst_rate_pct: number
-  variance_tolerance_pct: number
-  variance_tolerance_min_hours: number
-  entry_edit_window_hours: number
   weekly_report_day: string
-  weekly_report_hour_ist: number
   weekly_report_recipients: string[]
 }
 

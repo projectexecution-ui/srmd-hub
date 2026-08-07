@@ -7,11 +7,7 @@ import type { JmrSettings } from '@/lib/types'
 
 const DEFAULTS: JmrSettings = {
   gst_rate_pct: 18,
-  variance_tolerance_pct: 5,
-  variance_tolerance_min_hours: 4,
-  entry_edit_window_hours: 12,
   weekly_report_day: 'monday',
-  weekly_report_hour_ist: 9,
   weekly_report_recipients: [],
 }
 
@@ -37,23 +33,8 @@ export const getJmrSettings = cache(async (): Promise<JmrSettings> => {
   }
 
   return {
-    gst_rate_pct:                 parseNum('jmr_gst_rate_pct', DEFAULTS.gst_rate_pct),
-    variance_tolerance_pct:       parseNum('jmr_variance_tolerance_pct', DEFAULTS.variance_tolerance_pct),
-    variance_tolerance_min_hours: parseNum('jmr_variance_tolerance_min_hours', DEFAULTS.variance_tolerance_min_hours),
-    entry_edit_window_hours:      parseNum('jmr_entry_edit_window_hours', DEFAULTS.entry_edit_window_hours),
-    weekly_report_day:            map['jmr_weekly_report_day'] ?? DEFAULTS.weekly_report_day,
-    weekly_report_hour_ist:       parseNum('jmr_weekly_report_hour_ist', DEFAULTS.weekly_report_hour_ist),
-    weekly_report_recipients:     parseArr('jmr_weekly_report_recipients'),
+    gst_rate_pct:             parseNum('jmr_gst_rate_pct', DEFAULTS.gst_rate_pct),
+    weekly_report_day:        map['jmr_weekly_report_day'] ?? DEFAULTS.weekly_report_day,
+    weekly_report_recipients: parseArr('jmr_weekly_report_recipients'),
   }
 })
-
-export function isVarianceFlagged(
-  billed: number, jmr: number, settings: JmrSettings, unit: string
-): boolean {
-  const diff = Math.abs(billed - jmr)
-  const pct = jmr > 0 ? (diff / jmr) * 100 : (diff > 0 ? 100 : 0)
-  const pctOver = pct > settings.variance_tolerance_pct
-  const hrsOver = unit === 'hr' && diff > settings.variance_tolerance_min_hours
-  // Spec: ">5% or 4hr, whichever HIGHER" — i.e. only flag if BOTH thresholds are breached.
-  return pctOver && hrsOver || (unit !== 'hr' && pctOver)
-}

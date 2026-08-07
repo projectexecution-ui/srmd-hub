@@ -11,7 +11,7 @@ export default async function JmrSettingsPage() {
   return (
     <Card className="p-4">
       <h2 className="text-lg font-bold mb-1">Settings</h2>
-      <p className="text-xs text-gray-500 mb-4">GST rate, variance tolerance, weekly report schedule & recipients.</p>
+      <p className="text-xs text-gray-500 mb-4">GST rate and the weekly report (day &amp; recipients).</p>
       <SettingsForm initial={settings} />
     </Card>
   )
