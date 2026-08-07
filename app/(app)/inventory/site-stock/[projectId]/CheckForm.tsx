@@ -28,6 +28,7 @@ export function CheckForm({ projectId, weekStart, items }: {
   const [actual, setActual] = useState<Record<string, string>>(
     Object.fromEntries(items.map(it => [it.itemId, String(prefill(it))])),
   )
+  const [reason, setReason] = useState<Record<string, string>>({})
   const set = (id: string, v: string) => setActual(s => ({ ...s, [id]: v }))
   const bump = (id: string, d: number) => setActual(s => {
     const n = Math.max(0, (Number(s[id] ?? '0') || 0) + d)
@@ -49,18 +50,26 @@ export function CheckForm({ projectId, weekStart, items }: {
     return [...m.entries()].sort((a, b) => a[0].localeCompare(b[0]))
   }, [active])
 
-  // Live review summary — how many lines need a second look.
-  const flags = items.reduce((n, it) => {
+  // A line needs a written reason when it's over what was sent, or a returnable
+  // is short — i.e. anything that doesn't match the ledger.
+  const needsReason = (it: CustodyPrefillItem) => {
     const k = classifyLine(it.expected, Number(actual[it.itemId] ?? '0') || 0, it.isReturnable).kind
-    return n + (k === 'missing' || k === 'phantom' ? 1 : 0)
-  }, 0)
+    return k === 'missing' || k === 'phantom'
+  }
+  const flags = items.filter(needsReason).length
 
   async function submit() {
+    // Gate: every flagged line must carry a reason before it saves.
+    const unexplained = items.filter(it => needsReason(it) && !(reason[it.itemId] ?? '').trim())
+    if (unexplained.length > 0) {
+      setErr(`Add a quick reason for ${unexplained.length} flagged item${unexplained.length === 1 ? '' : 's'} (highlighted below) before submitting.`)
+      return
+    }
     setBusy(true); setErr(null)
     const payload = items.map(it => ({
       item_id: it.itemId,
       actual_qty: Number(actual[it.itemId] ?? '0') || 0,
-      remarks: null,
+      remarks: (reason[it.itemId] ?? '').trim() || null,
     }))
     const { error } = await supabase.rpc('inv_rpc_submit_stock_check', {
       p_project: projectId, p_week_start: weekStart, p_items: payload, p_note: note.trim() || null,
@@ -85,7 +94,8 @@ export function CheckForm({ projectId, weekStart, items }: {
           </div>
           <p className="text-xs text-gray-500">Tools/formwork — should all still be at site. Confirm, or fix if some are missing.</p>
           <div className="space-y-2">
-            {returnables.map(it => <ItemCard key={it.itemId} it={it} value={actual[it.itemId] ?? ''} onSet={v => set(it.itemId, v)} onBump={d => bump(it.itemId, d)} />)}
+            {returnables.map(it => <ItemCard key={it.itemId} it={it} value={actual[it.itemId] ?? ''} onSet={v => set(it.itemId, v)} onBump={d => bump(it.itemId, d)}
+                reason={reason[it.itemId] ?? ''} onReason={v => setReason(s => ({ ...s, [it.itemId]: v }))} />)}
           </div>
         </section>
       )}
@@ -103,7 +113,8 @@ export function CheckForm({ projectId, weekStart, items }: {
         {byCategory.map(([cat, list]) => (
           <div key={cat} className="space-y-2">
             <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-400 mt-3">{cat}</p>
-            {list.map(it => <ItemCard key={it.itemId} it={it} value={actual[it.itemId] ?? ''} onSet={v => set(it.itemId, v)} onBump={d => bump(it.itemId, d)} />)}
+            {list.map(it => <ItemCard key={it.itemId} it={it} value={actual[it.itemId] ?? ''} onSet={v => set(it.itemId, v)} onBump={d => bump(it.itemId, d)}
+                reason={reason[it.itemId] ?? ''} onReason={v => setReason(s => ({ ...s, [it.itemId]: v }))} />)}
           </div>
         ))}
 
@@ -116,7 +127,8 @@ export function CheckForm({ projectId, weekStart, items }: {
             </button>
             {showFinished && (
               <div className="mt-2 space-y-2">
-                {finished.map(it => <ItemCard key={it.itemId} it={it} value={actual[it.itemId] ?? ''} onSet={v => set(it.itemId, v)} onBump={d => bump(it.itemId, d)} />)}
+                {finished.map(it => <ItemCard key={it.itemId} it={it} value={actual[it.itemId] ?? ''} onSet={v => set(it.itemId, v)} onBump={d => bump(it.itemId, d)}
+                reason={reason[it.itemId] ?? ''} onReason={v => setReason(s => ({ ...s, [it.itemId]: v }))} />)}
               </div>
             )}
           </div>
@@ -145,14 +157,21 @@ export function CheckForm({ projectId, weekStart, items }: {
   )
 }
 
-function ItemCard({ it, value, onSet, onBump }: {
+function ItemCard({ it, value, onSet, onBump, reason, onReason }: {
   it: CustodyPrefillItem
   value: string
   onSet: (v: string) => void
   onBump: (d: number) => void
+  reason: string
+  onReason: (v: string) => void
 }) {
   const actualNum = Number(value ?? '0') || 0
   const c = classifyLine(it.expected, actualNum, it.isReturnable)
+  const needsReason = c.kind === 'missing' || c.kind === 'phantom'
+  const reasonPrompt = c.kind === 'phantom'
+    ? 'More than we sent — where did it come from? (direct to site, another site, found extra)'
+    : 'Some missing — what happened? (broke, moved to another site, etc.)'
+  const missingReason = needsReason && !reason.trim()
 
   const chip = (() => {
     if (c.kind === 'missing') return { text: `${nf(c.shortfall)} missing`, cls: 'text-rose-700 bg-rose-50 border-rose-200' }
@@ -161,8 +180,14 @@ function ItemCard({ it, value, onSet, onBump }: {
     return { text: it.isReturnable ? 'All present' : 'Full', cls: 'text-emerald-700 bg-emerald-50 border-emerald-200' }
   })()
 
+  const cardCls = c.kind === 'missing'
+    ? 'border-rose-200 bg-rose-50/40'
+    : c.kind === 'phantom'
+      ? 'border-amber-200 bg-amber-50/40'
+      : 'border-gray-100'
+
   return (
-    <div className="rounded-xl border border-gray-100 p-3">
+    <div className={`rounded-xl border p-3 ${cardCls}`}>
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
           <p className="text-sm text-gray-900 leading-snug">{it.name}</p>
@@ -175,16 +200,31 @@ function ItemCard({ it, value, onSet, onBump }: {
       <div className="mt-2.5 flex items-center gap-2">
         <span className="text-[11px] text-gray-400 mr-auto">On site now</span>
         <button type="button" aria-label="Decrease" onClick={() => onBump(-1)}
-          className="h-10 w-10 rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50 inline-flex items-center justify-center active:scale-95">
+          className="h-10 w-10 rounded-lg border border-gray-200 bg-white text-gray-600 hover:bg-gray-50 inline-flex items-center justify-center active:scale-95">
           <Minus className="h-4 w-4" />
         </button>
         <div className="w-24"><QtyInput value={value} onChange={onSet} placeholder="0" className="text-center text-base font-semibold" /></div>
         <button type="button" aria-label="Increase" onClick={() => onBump(1)}
-          className="h-10 w-10 rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50 inline-flex items-center justify-center active:scale-95">
+          className="h-10 w-10 rounded-lg border border-gray-200 bg-white text-gray-600 hover:bg-gray-50 inline-flex items-center justify-center active:scale-95">
           <Plus className="h-4 w-4" />
         </button>
         <span className="text-xs text-gray-500 w-12 whitespace-nowrap">{it.unit}</span>
       </div>
+
+      {needsReason && (
+        <div className="mt-2.5">
+          <input
+            value={reason}
+            onChange={e => onReason(e.target.value)}
+            placeholder={reasonPrompt}
+            aria-label="Reason for the difference"
+            className={`w-full h-10 rounded-lg border bg-white px-3 text-sm placeholder:text-gray-400 focus:outline-none focus:ring-2 ${
+              missingReason ? 'border-rose-300 focus:ring-rose-500/40' : 'border-gray-200 focus:ring-blue-500/40'
+            }`}
+          />
+          {missingReason && <p className="mt-1 text-[11px] text-rose-600">A reason is needed before you can submit.</p>}
+        </div>
+      )}
     </div>
   )
 }
