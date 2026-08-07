@@ -520,7 +520,7 @@ function SitePulse({ rows, promises, lastWeek, floorNames, cellOf, overall, toda
           <div className="text-sm font-bold text-slate-800">Building map — trade × floor</div>
           <div className="text-[10.5px] text-slate-400">tap a trade for its items · hover a cell for dates</div>
         </div>
-        <div className="grid gap-[3px]" style={{ gridTemplateColumns: `150px repeat(${floorNames.length}, minmax(28px,1fr)) 130px`, minWidth: 280 + floorNames.length * 32 }}>
+        <div className="grid gap-[3px]" style={{ gridTemplateColumns: `150px repeat(${floorNames.length}, minmax(46px,1fr)) 130px`, minWidth: 280 + floorNames.length * 48 }}>
           <div />
           {floorNames.map(f => <div key={f} className="text-[9px] text-slate-400 text-center truncate">{f.replace(' Floor', '')}</div>)}
           <div className="text-[9px] text-slate-400 pl-2">Contractor · ends</div>
@@ -557,12 +557,27 @@ function SitePulse({ rows, promises, lastWeek, floorNames, cellOf, overall, toda
                 </div>
                 {open && g.rows.map(r => (
                   <FragmentGroup key={r.item.id}>
-                    <div className="text-[10px] text-slate-400 flex items-center justify-end pr-1.5 truncate">{r.item.name}</div>
+                    <div className="flex items-center justify-end gap-1.5 pr-1.5 truncate border-r-2 border-indigo-200">
+                      <span className="text-[10px] font-semibold text-slate-600 truncate">{r.item.name}</span>
+                      <span className="h-1.5 w-1.5 rounded-full flex-shrink-0" style={{ background: HEX[toneOf(r.status)] }} />
+                    </div>
                     {floorNames.map(f => {
                       const st = cellOf(r.item.id, f)
-                      const bg = st === 'na' ? '#f8fafc' : st === 'done' ? '#0d9488' : st === 'wip' ? '#f5c56b' : '#e9edf3'
-                      return <div key={f} className="h-4 rounded-sm" title={cellTip(r.item.name, r.item.id, f)}
-                        style={{ background: bg, border: st === 'na' ? '1px solid #eef2f6' : 'none' }} />
+                      const bg = st === 'na' ? '#f8fafc' : st === 'done' ? '#0d9488' : st === 'wip' ? '#f5c56b' : '#eef2f7'
+                      // the date INSIDE the box: done = tick date · wip = finishes-by · upcoming = starts-on
+                      let txt = '', col = '#94a3b8'
+                      if (st === 'done') { const d = doneAt(r.item.id, f); txt = d ? `${+d.slice(8, 10)}/${+d.slice(5, 7)}` : '✓'; col = '#ffffff' }
+                      else if (st !== 'na') {
+                        const w = derivedMap.get(r.item.id)?.floors[f]
+                        if (w) { txt = st === 'wip' ? `${+w.end.slice(8, 10)}/${+w.end.slice(5, 7)}` : `${+w.start.slice(8, 10)}/${+w.start.slice(5, 7)}`; col = st === 'wip' ? '#78350f' : '#94a3b8' }
+                      }
+                      return (
+                        <div key={f} className="h-6 rounded-md flex items-center justify-center font-mono text-[9px] font-semibold"
+                          title={cellTip(r.item.name, r.item.id, f)}
+                          style={{ background: bg, color: col, border: st === 'na' ? '1px solid #eef2f6' : 'none' }}>
+                          {txt}
+                        </div>
+                      )
                     })}
                     <div className="text-[9px] text-slate-400 pl-2 truncate self-center font-mono">
                       {(derivedMap.get(r.item.id)?.end ?? r.item.plan_end) ? formatDate((derivedMap.get(r.item.id)?.end ?? r.item.plan_end)!) : ''}
@@ -578,6 +593,7 @@ function SitePulse({ rows, promises, lastWeek, floorNames, cellOf, overall, toda
           <span><i className="inline-block w-2.5 h-2.5 rounded-sm align-[-1px] mr-1" style={{ background: '#f5c56b' }} />in progress</span>
           <span><i className="inline-block w-2.5 h-2.5 rounded-sm align-[-1px] mr-1" style={{ background: '#e9edf3' }} />not started</span>
           <span><i className="inline-block w-2.5 h-2.5 rounded-sm align-[-1px] mr-1 border border-slate-200" style={{ background: '#f8fafc' }} />N/A</span>
+          <span className="text-slate-400">date in box (d/m): green = done on · amber = finishes by · grey = starts on</span>
         </div>
       </Card>
 
