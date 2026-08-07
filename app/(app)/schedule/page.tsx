@@ -29,23 +29,42 @@ export default async function ScheduleHomePage() {
             </h3>
             <span className="text-[11px] text-slate-500">{overdue > 0 ? `${overdue} overdue` : 'next 2 weeks'}{wo.issuedRecent.length > 0 ? ` · ${wo.issuedRecent.length} issued in last 14 days` : ''}</span>
           </div>
-          {wo.due.length > 0 && (
-            <ul className="divide-y divide-slate-100">
-              {wo.due.slice(0, 10).map(d => (
-                <li key={`${d.projectId}|${d.itemName}`}>
-                  <Link href={`/schedule/${d.projectId}`} className="flex items-center gap-3 px-4 py-2.5 hover:bg-slate-50 transition">
-                    <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-bold whitespace-nowrap ${d.daysLate > 0 ? 'bg-rose-100 text-rose-700' : 'bg-amber-100 text-amber-700'}`}>
-                      {d.daysLate > 0 ? `${d.daysLate}d overdue` : `by ${formatDate(d.woBy)}`}
+          {/* one collapsed row per PROJECT — 20 projects stay 20 calm rows; expand for its WOs */}
+          {(() => {
+            const groups = new Map<string, typeof wo.due>()
+            for (const d of wo.due) { if (!groups.has(d.projectId)) groups.set(d.projectId, []); groups.get(d.projectId)!.push(d) }
+            const sorted = [...groups.entries()].sort((a, b) => b[1][0].daysLate - a[1][0].daysLate)
+            return sorted.map(([pid, list]) => {
+              const worst = list[0]
+              return (
+                <details key={pid} className="border-t border-slate-100 group">
+                  <summary className="flex items-center gap-3 px-4 py-2.5 cursor-pointer hover:bg-slate-50 transition list-none [&::-webkit-details-marker]:hidden">
+                    <ChevronRight className="h-4 w-4 text-slate-400 transition-transform group-open:rotate-90 flex-shrink-0" />
+                    <span className="inline-flex rounded-md bg-indigo-50 text-indigo-700 text-[11px] font-bold px-1.5 py-0.5 whitespace-nowrap">{worst.projectCode}</span>
+                    <span className="flex-1 min-w-0 truncate text-sm font-semibold text-slate-800">{list.length} WO{list.length === 1 ? '' : 's'} pending</span>
+                    <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-bold whitespace-nowrap ${worst.daysLate > 0 ? 'bg-rose-100 text-rose-700' : 'bg-amber-100 text-amber-700'}`}>
+                      {worst.daysLate > 0 ? `worst ${worst.daysLate}d overdue` : `next by ${formatDate(worst.woBy)}`}
                     </span>
-                    <span className="inline-flex rounded-md bg-indigo-50 text-indigo-700 text-[11px] font-bold px-1.5 py-0.5 whitespace-nowrap">{d.projectCode}</span>
-                    <span className="flex-1 min-w-0 truncate text-sm text-slate-800">{d.itemName}<span className="text-slate-400"> · {d.trade}{d.contractor ? ` · 🏗️ ${d.contractor}` : ''}</span></span>
-                    <ChevronRight className="h-4 w-4 text-slate-300 flex-shrink-0" />
-                  </Link>
-                </li>
-              ))}
-              {wo.due.length > 10 && <li className="px-4 py-2 text-[11px] text-slate-400">+{wo.due.length - 10} more inside their projects</li>}
-            </ul>
-          )}
+                  </summary>
+                  <ul className="bg-slate-50/50 divide-y divide-slate-100">
+                    {list.slice(0, 6).map(d => (
+                      <li key={d.itemName} className="flex items-center gap-3 pl-11 pr-4 py-2">
+                        <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10.5px] font-bold whitespace-nowrap ${d.daysLate > 0 ? 'bg-rose-100 text-rose-700' : 'bg-amber-100 text-amber-700'}`}>
+                          {d.daysLate > 0 ? `${d.daysLate}d overdue` : `by ${formatDate(d.woBy)}`}
+                        </span>
+                        <span className="flex-1 min-w-0 truncate text-[13px] text-slate-700">{d.itemName}<span className="text-slate-400"> · {d.trade}{d.contractor ? ` · 🏗️ ${d.contractor}` : ''}</span></span>
+                      </li>
+                    ))}
+                    <li className="pl-11 pr-4 py-2">
+                      <Link href={`/schedule/${pid}`} className="text-[12px] font-semibold text-indigo-600 hover:underline">
+                        {list.length > 6 ? `All ${list.length} in ${worst.projectCode} →` : `Open ${worst.projectCode} →`}
+                      </Link>
+                    </li>
+                  </ul>
+                </details>
+              )
+            })
+          })()}
         </Card>
       )}
 
