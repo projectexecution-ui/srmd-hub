@@ -2,12 +2,13 @@
 //
 // Body: { ids: string[], action: 'approve' | 'flag', remarks?: string }
 //
-// - Approve: status → 'pm_approved', sets approved_by_user_id + approved_at.
-//            If `remarks` is provided, they are stored in `review_remarks`
-//            (the approver's note) so the engineer sees it on /jmr/my without
-//            touching their own work_description. Remarks optional on approve.
+// - Approve: status → 'pm_approved', sets approved_by_user_id + approved_at,
+//            stores the reviewer's comment in `review_remarks`.
 // - Flag:    status → 'flagged', sets approved_by_user_id + approved_at, and
-//            stores the reason in `review_remarks`. Remarks REQUIRED for flag.
+//            stores the reason in `review_remarks`.
+//
+// A comment is REQUIRED for both approve and flag — every review leaves an
+// auditable note against the entry.
 //
 // The approver note lives in its own column, distinct from the engineer's
 // work_description, so neither field mutates the other.
@@ -48,23 +49,25 @@ export async function POST(req: NextRequest) {
 
   const isFlag = body.action === 'flag'
   const remarks = body.remarks?.trim() || null
-  if (isFlag && !remarks) {
-    return NextResponse.json({ error: 'Flagging requires remarks' }, { status: 400 })
+  if (!remarks) {
+    return NextResponse.json(
+      { error: isFlag ? 'A comment is required when flagging.' : 'A comment is required to approve.' },
+      { status: 400 },
+    )
   }
 
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Not signed in' }, { status: 401 })
 
-  // Single bulk UPDATE — the approver note goes to its own column. A plain
-  // approve (no remarks, e.g. the bulk "Approve selected" button) leaves
-  // review_remarks null; a per-row note or a flag reason is written through.
+  // Single bulk UPDATE — the reviewer's comment goes to its own column,
+  // required for every approve/flag so each entry keeps an auditable note.
   const patch: Record<string, unknown> = {
     status: isFlag ? 'flagged' : 'pm_approved',
     approved_by_user_id: user.id,
     approved_at: new Date().toISOString(),
+    review_remarks: remarks,
   }
-  if (remarks) patch.review_remarks = remarks
 
   const { data, error } = await supabase
     .from('jmr_daily_entries')

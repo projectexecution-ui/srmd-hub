@@ -31,6 +31,9 @@ export function EntriesPendingApproval({ initial }: { initial: PendingEntry[] })
   // Per-row remarks textarea state. Keyed by entry id; presence in the
   // map = "note panel is open". Value = current textarea content.
   const [noteOpen, setNoteOpen] = useState<Record<string, string>>({})
+  // Shared note for the bulk "Approve selected" action — one comment applied
+  // to every ticked entry. Required (a comment is compulsory on every review).
+  const [bulkNote, setBulkNote] = useState('')
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState<string | null>(null)
   const [, startTransition] = useTransition()
@@ -122,20 +125,33 @@ export function EntriesPendingApproval({ initial }: { initial: PendingEntry[] })
 
   async function approveRow(id: string) {
     const note = noteOpen[id]?.trim()
-    await call('approve', [id], note || undefined)
+    if (!note) {
+      // A comment is compulsory. Open the note panel so the PM can type one.
+      openNote(id, noteOpen[id] ?? '')
+      setErr('Add an approval comment first — a note is required to approve.')
+      return
+    }
+    await call('approve', [id], note)
   }
   async function flagRow(id: string) {
     const note = noteOpen[id]?.trim()
     if (!note) {
       // Force the note panel open if not already, so the PM can type a reason.
       openNote(id, noteOpen[id] ?? '')
-      setErr('Remarks required when flagging — add a note.')
+      setErr('Add a comment first — a note is required to flag.')
       return
     }
     await call('flag', [id], note)
   }
   async function approveSelected() {
-    if (selected.size > 0) await call('approve', Array.from(selected))
+    if (selected.size === 0) return
+    const note = bulkNote.trim()
+    if (!note) {
+      setErr('Add an approval comment — it applies to all selected entries.')
+      return
+    }
+    const ok = await call('approve', Array.from(selected), note)
+    if (ok) setBulkNote('')
   }
 
   if (rows.length === 0) {
@@ -165,13 +181,37 @@ export function EntriesPendingApproval({ initial }: { initial: PendingEntry[] })
         <Button
           size="sm"
           onClick={approveSelected}
-          disabled={selected.size === 0 || busy}
+          disabled={selected.size === 0 || busy || !bulkNote.trim()}
           className="bg-emerald-600 hover:bg-emerald-700"
+          title={
+            selected.size === 0
+              ? 'Tick entries to approve together'
+              : !bulkNote.trim()
+                ? 'Add an approval comment first'
+                : `Approve ${selected.size} with this comment`
+          }
         >
           {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
           Approve {selected.size > 0 ? `${selected.size} selected` : ''}
         </Button>
       </div>
+
+      {/* Shared comment for the bulk approve — required, applies to all ticked
+          entries. Shown only when a selection exists so it stays out of the way. */}
+      {selected.size > 0 && (
+        <div className="px-4 py-2.5 bg-emerald-50/50 border-b border-emerald-100">
+          <label className="text-[11px] font-semibold text-emerald-800 uppercase tracking-wide">
+            Approval comment · applies to {selected.size} selected <span className="text-rose-600">*</span>
+          </label>
+          <Textarea
+            value={bulkNote}
+            onChange={e => setBulkNote(e.target.value)}
+            placeholder="Required — e.g. verified against log sheets, rates OK. Use the per-row Note for entry-specific remarks."
+            rows={2}
+            className="text-xs mt-1 bg-white"
+          />
+        </div>
+      )}
 
       {err && (
         <p className="px-4 py-2 text-xs text-rose-700 bg-rose-50 border-b border-rose-200">
@@ -279,7 +319,7 @@ export function EntriesPendingApproval({ initial }: { initial: PendingEntry[] })
                               onClick={() => approveRow(r.id)}
                               disabled={busy}
                               className="bg-emerald-600 hover:bg-emerald-700 h-7 px-2"
-                              title={isOpen && noteVal.trim() ? 'Approve with note' : 'Approve'}
+                              title={noteVal.trim() ? 'Approve with this comment' : 'Add a comment first, then approve'}
                             >
                               <Check className="h-3.5 w-3.5" />
                             </Button>
@@ -319,7 +359,7 @@ export function EntriesPendingApproval({ initial }: { initial: PendingEntry[] })
                             autoFocus
                             value={noteVal}
                             onChange={e => setNote(r.id, e.target.value)}
-                            placeholder="Optional note on approve — required on flag (e.g. hours look high, check meter reading)"
+                            placeholder="Required — why you're approving or flagging (e.g. verified log sheet / hours look high)"
                             rows={2}
                             className="text-xs"
                           />

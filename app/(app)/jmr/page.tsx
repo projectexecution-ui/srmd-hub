@@ -3,7 +3,7 @@ import { createClient } from '@/lib/supabase/server'
 import { requirePermission, can, getMyProfile } from '@/lib/auth'
 import {
   Wrench, ClipboardCheck, BarChart3, Settings, Grid, User,
-  Plus, ArrowRight, Clock, AlertTriangle, CalendarDays,
+  Plus, ArrowRight, Clock, AlertTriangle, CalendarDays, History,
 } from 'lucide-react'
 
 export const dynamic = 'force-dynamic'
@@ -34,6 +34,7 @@ export default async function JMRPage() {
   const tiles = [
     { slug: 'my',        label: 'My JMR',        href: '/jmr/my',        icon: User,           tone: 'bg-indigo-50 text-indigo-600', accent: 'text-indigo-600', desc: 'Your entries · pending approval · flagged', badge: myFlagged > 0 ? { text: `${myFlagged} flagged`, cls: 'bg-rose-50 text-rose-600' } : null, show: can(perms, 'jmr', 'view') },
     { slug: 'matrix',    label: 'JMR Matrix',    href: '/jmr/matrix',    icon: Grid,           accent: 'text-emerald-600', tone: 'bg-emerald-50 text-emerald-600', desc: 'Equipment & manpower summary, sub-project × item', badge: null, show: can(perms, 'jmr', 'view') },
+    { slug: 'log',       label: 'JMR Log',       href: '/jmr/log',       icon: History,        accent: 'text-cyan-600', tone: 'bg-cyan-50 text-cyan-600', desc: 'Full history & audit trail — who logged & reviewed, when', badge: null, show: can(perms, 'jmr', 'view') },
     { slug: 'dashboard', label: 'JMR Dashboard', href: '/jmr/dashboard', icon: BarChart3,      accent: 'text-purple-600', tone: 'bg-purple-50 text-purple-600', desc: 'Logged spend + entries awaiting approval', badge: isApprover && pending > 0 ? { text: `${pending} to review`, cls: 'bg-amber-50 text-amber-600' } : null, show: can(perms, 'jmr', 'view') && isApprover },
     { slug: 'admin',     label: 'JMR Admin',     href: '/jmr/admin',     icon: Settings,       accent: 'text-slate-600', tone: 'bg-slate-100 text-slate-600', desc: 'Items, rate cards, contractors, settings', badge: null, show: can(perms, 'jmr-admin', 'view') },
   ].filter(t => t.show)

@@ -107,7 +107,7 @@ export default async function JmrDashboardPage() {
         <div className="flex items-baseline justify-between mb-2">
           <h2 className="text-sm font-bold text-gray-800">Entries awaiting approval</h2>
           {pending.length > 0 && (
-            <p className="text-xs text-gray-500">Click ✓ to approve, ⚠ to flag</p>
+            <p className="text-xs text-gray-500">Add a comment, then ✓ approve or ⚠ flag</p>
           )}
         </div>
         <EntriesPendingApproval initial={pending} />
