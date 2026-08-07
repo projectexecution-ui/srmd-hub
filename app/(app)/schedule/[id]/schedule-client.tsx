@@ -254,32 +254,67 @@ function ActionCentre({ rows, ready, canEdit, projectId, today, leadDays, run }:
   if (total === 0) {
     return <Card className="p-3.5 shadow-sm flex items-center gap-2 text-sm text-emerald-700"><Check className="h-4 w-4" /> Nothing needs action — all clear.</Card>
   }
+  // one WO goes to ONE contractor per trade — so group the paperwork by trade
+  const woTrades: { trade: string; list: Row[] }[] = []
+  for (const r of wodue) {
+    let g = woTrades.find(x => x.trade === r.item.trade)
+    if (!g) { g = { trade: r.item.trade, list: [] }; woTrades.push(g) }
+    g.list.push(r)
+  }
+  // estimate-noise guard: if nearly everything is hugely overdue, the anchor date is the story
+  const noisy = wodue.length > 15 && wodue.filter(r => r.woLateDays > 60).length / wodue.length > 0.8
   return (
     <Card className="p-0 shadow-sm overflow-hidden border-l-4 border-rose-400">
-      <div className="px-4 py-2.5 border-b border-slate-100 bg-rose-50/40 flex items-center justify-between">
-        <h3 className="font-bold text-slate-800 text-sm inline-flex items-center gap-1.5"><Wrench className="h-4 w-4 text-rose-500" /> Action centre · {total}</h3>
-        <span className="text-[11px] text-slate-500">WO deadline = site start − {leadDays}d</span>
+      <div className="px-4 py-2.5 border-b border-slate-100 bg-rose-50/40 flex items-center justify-between gap-2 flex-wrap">
+        <h3 className="font-bold text-slate-800 text-sm inline-flex items-center gap-1.5"><Wrench className="h-4 w-4 text-rose-500" /> Action centre</h3>
+        <span className="text-[11px] text-slate-500">{woTrades.length} trades need WOs · {blocked.length} stuck · {ready.length} ready</span>
       </div>
+      {noisy && (
+        <p className="px-4 py-2 text-[11px] text-amber-800 bg-amber-50 border-b border-amber-100">
+          Most deadlines trace back to the Slab start date (currently an estimate) — set the real date in Plan Room → Civil → Slab and this list cleans itself up.
+        </p>
+      )}
       <ul className="divide-y divide-slate-100">
-        {wodue.map(r => <WoDueRow key={r.item.id} row={r} canEdit={canEdit} projectId={projectId} today={today} run={run} />)}
-        {blocked.map(r => (
+        {ready.slice(0, 3).map(r => (
+          <li key={`${r.item.id}|${r.floor}`} className="flex items-center gap-3 px-4 py-2.5 bg-emerald-50/30">
+            <span className="inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-bold bg-emerald-100 text-emerald-700 whitespace-nowrap">start now</span>
+            <span className="flex-1 min-w-0 truncate text-sm text-slate-800">{r.item.name} — {r.floor}</span>
+            <span className="text-[11px] text-slate-400 whitespace-nowrap">after {r.predName}</span>
+          </li>
+        ))}
+        {ready.length > 3 && <li className="px-4 py-1.5 text-[11px] text-slate-400">+{ready.length - 3} more ready floors</li>}
+        {blocked.slice(0, 3).map(r => (
           <li key={r.item.id} className="flex items-center gap-3 px-4 py-2.5">
             <span className={cn('inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-bold whitespace-nowrap', r.status === 'blocked' ? 'bg-rose-100 text-rose-700' : 'bg-amber-100 text-amber-700')}>
               {r.status === 'blocked' ? 'blocked' : `${r.behindDays}d behind`}
             </span>
             <span className="flex-1 min-w-0 truncate text-sm text-slate-800">{r.item.name}<span className="text-slate-400"> · {r.item.trade}</span></span>
-            <span className="text-xs text-slate-500 whitespace-nowrap">{whyLabel(r)}</span>
           </li>
         ))}
-        {ready.slice(0, 5).map(r => (
-          <li key={`${r.item.id}|${r.floor}`} className="flex items-center gap-3 px-4 py-2.5 bg-emerald-50/30">
-            <span className="inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-bold bg-emerald-100 text-emerald-700 whitespace-nowrap">start now</span>
-            <span className="flex-1 min-w-0 truncate text-sm text-slate-800">{r.item.name} — {r.floor}</span>
-            <span className="text-[11px] text-slate-400 whitespace-nowrap">after {r.predName} · since {formatDate(r.readyFrom)}</span>
-          </li>
-        ))}
-        {ready.length > 5 && <li className="px-4 py-2 text-[11px] text-slate-400">+{ready.length - 5} more ready floors</li>}
+        {woTrades.map(g => {
+          const worst = g.list[0]
+          const contractor = g.list.map(r => r.item.contractor).find(Boolean)
+          return (
+            <li key={g.trade}>
+              <details className="group">
+                <summary className="flex items-center gap-3 px-4 py-2.5 cursor-pointer hover:bg-slate-50 list-none [&::-webkit-details-marker]:hidden">
+                  <ChevronRight className="h-3.5 w-3.5 text-slate-400 transition-transform group-open:rotate-90 flex-shrink-0" />
+                  <span className={cn('inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-bold whitespace-nowrap', worst.woLateDays > 0 ? 'bg-rose-100 text-rose-700' : 'bg-amber-100 text-amber-700')}>
+                    {worst.woLateDays > 0 ? `${worst.woLateDays}d overdue` : `by ${formatDate(worst.woBy!)}`}
+                  </span>
+                  <span className="flex-1 min-w-0 truncate text-sm font-semibold text-slate-800">{g.trade}
+                    <span className="font-normal text-slate-400"> · {g.list.length} WO{g.list.length === 1 ? '' : 's'}{contractor ? ` · ${contractor}` : ''}</span>
+                  </span>
+                </summary>
+                <ul className="bg-slate-50/60 divide-y divide-slate-100">
+                  {g.list.map(r => <WoDueRow key={r.item.id} row={r} canEdit={canEdit} projectId={projectId} today={today} run={run} />)}
+                </ul>
+              </details>
+            </li>
+          )
+        })}
       </ul>
+      <p className="px-4 py-2 text-[10.5px] text-slate-400 border-t border-slate-100">WO deadline = site start − {leadDays}d · full history in the WO register</p>
     </Card>
   )
 }
