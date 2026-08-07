@@ -22,3 +22,14 @@ body {
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
+
+/* Print / save-as-PDF — used by the Schedule map's PDF chip so a manager gets
+   a clean one-page report: no app chrome, colours preserved, nothing clipped. */
+@media print {
+  @page { size: A4 landscape; margin: 10mm; }
+  nav, aside, header button, .print\:hidden { display: none !important; }
+  body { background: #fff !important; }
+  main { overflow: visible !important; }
+  .overflow-x-auto { overflow: visible !important; }
+  * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+}

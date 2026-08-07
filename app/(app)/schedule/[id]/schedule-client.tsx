@@ -8,7 +8,7 @@ import { cn, formatDate } from '@/lib/utils'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { confirm } from '@/components/ui/confirm-dialog'
-import { ChevronLeft, ChevronRight, Plus, CalendarClock, Trash2, Wrench, Check } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Plus, CalendarClock, Trash2, Wrench, Check, FileDown, Share2 } from 'lucide-react'
 import { deriveStatus, daysBetween, addDays, STATUS_META, expectedPct } from '@/lib/schedule/formula'
 import { deriveSchedule, readyFloors, actualCycleDays, type DerivedPlan } from '@/lib/schedule/sequence'
 import type { DisplayStatus, SchedItem, FloorStatus, SchedPromise } from '@/lib/schedule/types'
@@ -205,7 +205,7 @@ export function ScheduleClient({ data, canEdit, meId }: { data: ProjectScheduleD
   }, [items, paceById])
 
   const week = <MyWeek promises={promises} lastWeek={lastWeek} rowById={rowById} cellOf={cellOf} canEdit={canEdit} projectId={project.id} pending={pending} run={run} />
-  const pulse = <SitePulse rows={rows} promises={promises} lastWeek={lastWeek} floorNames={floorNames} cellOf={cellOf} overall={overall} today={today} drawings={drawings} ready={ready} derivedMap={derivedMap} doneAt={doneAt} />
+  const pulse = <SitePulse rows={rows} promises={promises} lastWeek={lastWeek} floorNames={floorNames} cellOf={cellOf} overall={overall} today={today} drawings={drawings} ready={ready} derivedMap={derivedMap} doneAt={doneAt} projectLabel={`${project.code ? project.code + ' — ' : ''}${project.name}`} />
 
   return (
     <div className="p-4 md:p-6 max-w-3xl lg:max-w-[1400px] mx-auto space-y-4">
@@ -572,15 +572,17 @@ function MyWeek({ promises, lastWeek, rowById, cellOf, canEdit, projectId, pendi
 
 /* ============================== ② SITE PULSE ============================== */
 
-function SitePulse({ rows, promises, lastWeek, floorNames, cellOf, overall, today, drawings, ready, derivedMap, doneAt }: {
+function SitePulse({ rows, promises, lastWeek, floorNames, cellOf, overall, today, drawings, ready, derivedMap, doneAt, projectLabel }: {
   rows: Row[]; promises: SchedPromise[]; lastWeek: { kept: number; total: number } | null
   floorNames: string[]; cellOf: (i: string, f: string) => FloorStatus
   overall: { pct: number; count: number; datedCount: number; actualScheduled: number; plannedScheduled: number }
   today: string; drawings: ProjectScheduleData['drawings']
   ready: ReturnType<typeof readyFloors>
   derivedMap: Map<string, DerivedPlan>; doneAt: (itemId: string, floor: string) => string | null
+  projectLabel: string
 }) {
   const [openMap, setOpenMap] = useState<Set<string>>(new Set())
+  const [phase, setPhase] = useState<string | null>(null)
   const toggleMap = (t: string) => setOpenMap(s => { const n = new Set(s); if (n.has(t)) n.delete(t); else n.add(t); return n })
   // the "live front" — highest floor with work in progress, else the last done one
   const todayCol = useMemo(() => {
@@ -600,9 +602,14 @@ function SitePulse({ rows, promises, lastWeek, floorNames, cellOf, overall, toda
   const trades = useMemo(() => {
     const order: string[] = []
     const map = new Map<string, Row[]>()
-    for (const r of rows) { if (!map.has(r.item.trade)) { map.set(r.item.trade, []); order.push(r.item.trade) } map.get(r.item.trade)!.push(r) }
+    const keep = phase ? PHASES.find(p => p.name === phase)?.trades ?? [] : null
+    for (const r of rows) {
+      if (keep && !keep.some(t => r.item.trade.toLowerCase().startsWith(t))) continue
+      if (!map.has(r.item.trade)) { map.set(r.item.trade, []); order.push(r.item.trade) }
+      map.get(r.item.trade)!.push(r)
+    }
     return order.map(t => ({ trade: t, rows: map.get(t)! }))
-  }, [rows])
+  }, [rows, phase])
 
   const gfc = drawings.filter(d => d.status === 'gfc').length
   const comingUp = rows.filter(r => r.item.plan_start && r.item.plan_start > today && daysBetween(today, r.item.plan_start) <= 42)
@@ -627,23 +634,57 @@ function SitePulse({ rows, promises, lastWeek, floorNames, cellOf, overall, toda
       </Card>
 
       <Card className="p-4 shadow-sm overflow-x-auto">
-        <div className="flex items-baseline justify-between gap-2 mb-2">
+        <div className="flex items-baseline justify-between gap-2 mb-2 flex-wrap">
           <div className="text-sm font-bold text-slate-800">Building map — trade × floor</div>
-          <div className="text-[10.5px] text-slate-400">tap a trade for its items · hover a cell for dates</div>
+          <div className="flex items-center gap-3">
+            {todayCol >= 0 && (
+              <span className="inline-flex items-center gap-1.5 text-[10.5px] font-semibold text-indigo-600">
+                <span className="h-2.5 w-2.5 rounded-sm bg-indigo-100 border-2 border-indigo-500" />
+                work front: {floorNames[todayCol]?.replace(' Floor', '')}
+              </span>
+            )}
+            <button onClick={() => setOpenMap(openMap.size === trades.length ? new Set() : new Set(trades.map(t => t.trade)))}
+              className="text-[11px] font-semibold text-indigo-600 hover:underline">
+              {openMap.size === trades.length ? 'Collapse all' : 'Expand all'}
+            </button>
+            <button onClick={() => window.print()} title="Print / save as PDF to share with management"
+              className="inline-flex items-center gap-1 rounded-full border border-slate-200 px-2.5 py-1 text-[10.5px] font-semibold text-slate-600 hover:bg-slate-50 hover:border-slate-300 print:hidden">
+              <FileDown className="h-3 w-3" /> PDF
+            </button>
+            <button title="Copy a WhatsApp-ready summary"
+              onClick={() => {
+                const lines = trades.map(g => {
+                  const active = g.rows.filter(r => r.item.state !== 'on_hold')
+                  const pct = active.length ? Math.round(active.reduce((s, r) => s + r.item.pct, 0) / active.length) : 0
+                  const issued = g.rows.filter(r => r.item.wo_issued).length
+                  const ends = g.rows.map(r => derivedMap.get(r.item.id)?.end ?? r.item.plan_end).filter(Boolean).sort() as string[]
+                  return `• ${g.trade}: ${pct}% · WO ${issued}/${g.rows.length}${ends.length ? ` · ends ${formatDate(ends[ends.length - 1])}` : ''}`
+                })
+                const txt = [`*${projectLabel}* — progress ${overall.pct}% (as of ${formatDate(today)})`, ...lines].join('\n')
+                navigator.clipboard?.writeText(txt).then(() => toast.success('Summary copied — paste into WhatsApp'))
+              }}
+              className="inline-flex items-center gap-1 rounded-full border border-slate-200 px-2.5 py-1 text-[10.5px] font-semibold text-slate-600 hover:bg-slate-50 hover:border-slate-300 print:hidden">
+              <Share2 className="h-3 w-3" /> Share
+            </button>
+          </div>
         </div>
-        {/* phase band — the tower's story, not 11 equal rows */}
+        {/* phase band — clickable filter; the tower's story, not 11 equal rows */}
         <div className="flex gap-1.5 mb-3 flex-wrap">
           {PHASES.map(ph => {
             const rs = rows.filter(r => ph.trades.some(t => r.item.trade.toLowerCase().startsWith(t)))
             if (!rs.length) return null
             const pct = Math.round(rs.reduce((s, r) => s + r.item.pct, 0) / rs.length)
+            const on = phase === ph.name
             return (
-              <span key={ph.name} className={cn('inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[10.5px] font-bold',
-                pct > 0 ? 'bg-indigo-50 text-indigo-700' : 'bg-slate-100 text-slate-500')}>
+              <button key={ph.name} onClick={() => setPhase(on ? null : ph.name)}
+                title={on ? 'Show all phases' : `Show only ${ph.name}`}
+                className={cn('inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-[10.5px] font-bold transition',
+                  on ? 'bg-indigo-600 text-white shadow-sm' : pct > 0 ? 'bg-indigo-50 text-indigo-700 hover:bg-indigo-100' : 'bg-slate-100 text-slate-500 hover:bg-slate-200')}>
                 {ph.name} <span className="font-mono">{pct}%</span>
-              </span>
+              </button>
             )
           })}
+          {phase && <button onClick={() => setPhase(null)} className="text-[10.5px] font-semibold text-slate-400 hover:text-slate-600 px-1">clear</button>}
         </div>
         <div className="grid gap-[3px]" style={{ gridTemplateColumns: `150px repeat(${floorNames.length}, minmax(46px,1fr)) 130px`, minWidth: 280 + floorNames.length * 48 }}>
           <div />
@@ -663,7 +704,9 @@ function SitePulse({ rows, promises, lastWeek, floorNames, cellOf, overall, toda
             }
             return (
               <FragmentGroup key={g.trade}>
-                <button onClick={() => toggleMap(g.trade)} className="flex items-center gap-1 text-[10.5px] font-semibold text-slate-600 hover:text-indigo-700 justify-end pr-1.5 truncate text-right">
+                <button onClick={() => toggleMap(g.trade)}
+                  className={cn('flex items-center gap-1.5 text-[11px] font-bold justify-end pr-2 pl-2 py-1 truncate text-right rounded-md transition',
+                    open ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-700 hover:bg-slate-200')}>
                   <ChevronRight className={cn('h-3 w-3 flex-shrink-0 transition-transform', open && 'rotate-90')} />{g.trade}
                 </button>
                 {floorNames.map((f, fi) => {
@@ -674,31 +717,30 @@ function SitePulse({ rows, promises, lastWeek, floorNames, cellOf, overall, toda
                     bg = sc === 0 ? '#eef2f7' : sc >= 0.99 ? '#0f9b8e' : sc >= 0.5 ? '#5bbfae' : '#e8a33d'
                     border = 'none'
                   }
-                  return <div key={f} className={cn('h-6 rounded-md', fi === todayCol && 'ring-2 ring-indigo-500 ring-offset-1')}
-                    style={{ background: bg, border }} title={`${g.trade} · ${f.replace(' Floor', '')}`} />
+                  return <div key={f} className={cn('h-6 rounded-md', fi === todayCol && 'ring-1 ring-indigo-300')}
+                    style={{ background: bg, border }} title={`${g.trade} · ${f.replace(' Floor', '')}${fi === todayCol ? ' · work front' : ''}`} />
                 })}
                 <div className="text-[9.5px] text-slate-500 pl-2 truncate self-center flex items-center gap-1.5" title={contractors.join(', ')}>
                   {(() => {
                     const issued = g.rows.filter(r => r.item.wo_issued).length
                     const full = issued === g.rows.length, part = issued > 0 && !full
                     return (
-                      <span className="inline-flex items-center gap-1 text-slate-500 flex-shrink-0" title={`Work Orders: ${issued} of ${g.rows.length} issued`}>
-                        <span className="h-3.5 w-3.5 rounded-full grid place-items-center text-[7.5px] font-bold text-white flex-shrink-0"
-                          style={{ background: full ? '#0f9b8e' : part ? '#e8a33d' : '#dbe2ea', color: full || part ? '#fff' : '#8b98a8' }}>
-                          {full ? '✓' : part ? '◐' : '○'}
-                        </span>
-                        <span className="font-mono text-[8.5px] font-bold">{issued}/{g.rows.length}</span>
+                      <span className={cn('inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 flex-shrink-0 font-bold',
+                        full ? 'bg-emerald-500 text-white' : part ? 'bg-amber-400 text-amber-950' : 'bg-rose-500 text-white')}
+                        title={`Work Orders: ${issued} of ${g.rows.length} issued`}>
+                        <span className="text-[8px]">{full ? '✓' : part ? '◐' : '!'}</span>
+                        <span className="font-mono text-[9px]">{issued}/{g.rows.length}</span>
                       </span>
                     )
                   })()}
                   <span className="truncate">{contractors.length ? contractors[0] + (contractors.length > 1 ? ` +${contractors.length - 1}` : '') : '—'}</span>
-                  {tradeEnd ? <span className="text-indigo-600 font-mono whitespace-nowrap">· {formatDate(tradeEnd)}</span> : ''}
+                  {tradeEnd ? <span className="text-indigo-700 bg-indigo-50 rounded px-1.5 py-0.5 font-mono font-bold whitespace-nowrap text-[9.5px]">{formatDate(tradeEnd)}</span> : ''}
                 </div>
                 {open && g.rows.map(r => (
                   <FragmentGroup key={r.item.id}>
-                    <div className="flex items-center justify-end gap-1.5 pr-1.5 truncate border-r-2 border-indigo-200">
-                      <span className="text-[10px] font-semibold text-slate-600 truncate">{r.item.name}</span>
-                      <span className="h-1.5 w-1.5 rounded-full flex-shrink-0" style={{ background: HEX[toneOf(r.status)] }} />
+                    <div className="flex items-center justify-end gap-1.5 pr-2 pl-2 py-0.5 truncate rounded-md bg-slate-50 border-r-[3px] border-indigo-400">
+                      <span className="text-[10px] font-semibold text-slate-700 truncate">{r.item.name}</span>
+                      <span className="h-2 w-2 rounded-full flex-shrink-0 ring-2 ring-white" style={{ background: HEX[toneOf(r.status)] }} />
                     </div>
                     {floorNames.map(f => {
                       const st = cellOf(r.item.id, f)
@@ -711,18 +753,23 @@ function SitePulse({ rows, promises, lastWeek, floorNames, cellOf, overall, toda
                         if (w) { txt = st === 'wip' ? `${+w.end.slice(8, 10)}/${+w.end.slice(5, 7)}` : `${+w.start.slice(8, 10)}/${+w.start.slice(5, 7)}`; col = st === 'wip' ? '#78350f' : '#94a3b8' }
                       }
                       return (
-                        <div key={f} className="h-6 rounded-md flex items-center justify-center font-mono text-[9px] font-semibold"
+                        <div key={f} className={cn('h-6 rounded-md flex items-center justify-center font-mono text-[9px] font-bold',
+                          floorNames.indexOf(f) === todayCol && 'ring-1 ring-indigo-300')}
                           title={cellTip(r.item.name, r.item.id, f)}
                           style={{ background: bg, color: col, border: st === 'na' ? '1px solid #eef2f6' : 'none' }}>
                           {txt}
                         </div>
                       )
                     })}
-                    <div className="text-[9px] text-slate-400 pl-2 truncate self-center font-mono flex items-center gap-1">
-                      <span className={cn('font-sans font-bold', r.item.wo_issued ? 'text-emerald-600' : 'text-rose-400')} title={r.item.wo_issued ? `WO issued${r.item.wo_number ? ' · ' + r.item.wo_number : ''}` : 'WO pending'}>
-                        {r.item.wo_issued ? '✓' : '○'}
+                    <div className="pl-2 truncate self-center flex items-center gap-1.5">
+                      <span className={cn('inline-grid place-items-center h-4 w-4 rounded-full text-[8px] font-bold flex-shrink-0',
+                        r.item.wo_issued ? 'bg-emerald-500 text-white' : 'bg-rose-100 text-rose-600 ring-1 ring-rose-300')}
+                        title={r.item.wo_issued ? `WO issued${r.item.wo_number ? ' · ' + r.item.wo_number : ''}` : 'WO pending'}>
+                        {r.item.wo_issued ? '✓' : '!'}
                       </span>
-                      {(derivedMap.get(r.item.id)?.end ?? r.item.plan_end) ? formatDate((derivedMap.get(r.item.id)?.end ?? r.item.plan_end)!) : ''}
+                      {(derivedMap.get(r.item.id)?.end ?? r.item.plan_end)
+                        ? <span className="font-mono text-[9px] font-bold text-indigo-700">{formatDate((derivedMap.get(r.item.id)?.end ?? r.item.plan_end)!)}</span>
+                        : null}
                     </div>
                   </FragmentGroup>
                 ))}
