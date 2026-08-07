@@ -137,6 +137,34 @@ export async function addPromise(input: {
   return { ok: true }
 }
 
+/** Raise every pending Work Order for a whole trade at once (one WO really
+ *  goes to one contractor per trade). Only touches not-yet-issued items. */
+export async function bulkIssueWo(input: {
+  projectId: string; trade: string; woNumber?: string | null; issuedOn: string
+}): Promise<{ ok?: true; count?: number; error?: string }> {
+  const sb = await createClient()
+  const { data, error } = await sb.from('sched_items')
+    .update({ wo_issued: true, wo_number: input.woNumber?.trim() || null, wo_issued_on: input.issuedOn })
+    .eq('project_id', input.projectId).eq('trade', input.trade).eq('wo_issued', false)
+    .select('id')
+  if (error) return { error: error.message }
+  revalidatePath(`/schedule/${input.projectId}`)
+  return { ok: true, count: (data ?? []).length }
+}
+
+/** Undo a bulk raise — clears the WO flag for items issued on that date. */
+export async function bulkClearWo(input: {
+  projectId: string; trade: string; issuedOn: string
+}): Promise<{ ok?: true; error?: string }> {
+  const sb = await createClient()
+  const { error } = await sb.from('sched_items')
+    .update({ wo_issued: false, wo_number: null, wo_issued_on: null })
+    .eq('project_id', input.projectId).eq('trade', input.trade).eq('wo_issued_on', input.issuedOn)
+  if (error) return { error: error.message }
+  revalidatePath(`/schedule/${input.projectId}`)
+  return { ok: true }
+}
+
 /** Bulk-assign engineer / contractor / approver to many items at once — by
  *  trade (every item in it) or an explicit id list. Only the provided fields
  *  are written, so setting a contractor doesn't wipe the engineer. */

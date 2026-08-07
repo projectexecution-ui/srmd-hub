@@ -14,7 +14,7 @@ import { deriveSchedule, readyFloors, actualCycleDays, type DerivedPlan } from '
 import type { DisplayStatus, SchedItem, FloorStatus, SchedPromise } from '@/lib/schedule/types'
 import type { ProjectScheduleData } from '@/lib/schedule/data'
 import { TEMPLATE_ITEM_COUNT } from '@/lib/schedule/template'
-import { addSchedItem, updateSchedItem, setWoIssued, moveSchedDate, deleteSchedItem, applyTemplate, setFloorStatus, setScheduleFloors, bulkAssignSchedItems, setPromiseStatus, addPromise, setSequence } from '../actions'
+import { addSchedItem, updateSchedItem, setWoIssued, moveSchedDate, deleteSchedItem, applyTemplate, setFloorStatus, setScheduleFloors, bulkAssignSchedItems, setPromiseStatus, addPromise, setSequence, bulkIssueWo, bulkClearWo } from '../actions'
 
 type Row = { item: SchedItem; status: DisplayStatus; woBy: string | null; behindDays: number; woLateDays: number }
 type Runner = (fn: () => Promise<{ ok?: true; error?: string }>, okMsg?: string, undo?: () => Promise<{ ok?: true; error?: string }>) => void
@@ -90,6 +90,14 @@ function PlanVsActual({ actual, planned }: { actual: number; planned: number }) 
     </div>
   )
 }
+
+/** The tower's story: which trades belong to which build phase. */
+const PHASES: { name: string; trades: string[] }[] = [
+  { name: 'Structure', trades: ['civil', 'waterproofing'] },
+  { name: 'Services', trades: ['plumbing', 'electrical', 'fire', 'mechanical', 'ict'] },
+  { name: 'Finishes', trades: ['finishes', 'external facade'] },
+  { name: 'Handover', trades: ['interiors', 'cleaning'] },
+]
 
 const FLOOR_META: Record<FloorStatus, { sym: string; chip: string; label: string }> = {
   not_started: { sym: '', chip: 'bg-white text-slate-300 border-slate-200', label: 'Not started' },
@@ -179,6 +187,23 @@ export function ScheduleClient({ data, canEdit, meId }: { data: ProjectScheduleD
     return m
   }, [items, floorNames, doneStamp]) // eslint-disable-line react-hooks/exhaustive-deps
 
+  // hero inputs: how many TRADES are waiting on WOs, and the worst pace slip
+  const wodueTradeCount = useMemo(() => new Set(rows
+    .filter(r => !r.item.wo_issued && (r.status === 'wo_overdue' || r.status === 'wo_soon'))
+    .map(r => r.item.trade)).size, [rows])
+  const actCount = useMemo(() =>
+    wodueTradeCount + ready.length + rows.filter(r => r.status === 'blocked' || r.status === 'behind').length,
+    [wodueTradeCount, ready, rows])
+  const heroPace = useMemo(() => {
+    let worst: { plan: number; actual: number } | null = null
+    for (const it of items) {
+      const actual = paceById.get(it.id)
+      if (actual == null || !it.cycle_days) continue
+      if (!worst || actual - it.cycle_days > worst.actual - worst.plan) worst = { plan: it.cycle_days, actual }
+    }
+    return worst
+  }, [items, paceById])
+
   const week = <MyWeek promises={promises} lastWeek={lastWeek} rowById={rowById} cellOf={cellOf} canEdit={canEdit} projectId={project.id} pending={pending} run={run} />
   const pulse = <SitePulse rows={rows} promises={promises} lastWeek={lastWeek} floorNames={floorNames} cellOf={cellOf} overall={overall} today={today} drawings={drawings} ready={ready} derivedMap={derivedMap} doneAt={doneAt} />
 
@@ -189,14 +214,26 @@ export function ScheduleClient({ data, canEdit, meId }: { data: ProjectScheduleD
         <h1 className="text-lg md:text-xl font-bold text-slate-900">{project.code ? `${project.code} — ` : ''}{project.name}</h1>
         {/* desktop page switch — keeps each page one screen tall */}
         <div className="hidden lg:inline-flex ml-3 rounded-lg border bg-slate-100 p-0.5">
-          {(([['act', 'Act now'], ['week', 'My Week'], ['map', 'Map'], ['plan', 'Plan Room']]) as const).map(([k, label]) => (
+          {(([
+            ['act', 'Act now', actCount, actCount > 0 ? 'red' : ''],
+            ['week', 'My Week', promises.length ? `${promises.filter(p => p.status === 'done').length}/${promises.length}` : 0, ''],
+            ['map', 'Map', 0, ''],
+            ['plan', 'Plan Room', 0, ''],
+          ]) as const).map(([k, label, badge, tone]) => (
             <button key={k} onClick={() => setDeskTab(k)}
-              className={cn('px-3.5 py-1.5 text-xs font-bold rounded-md transition', deskTab === k ? 'bg-white text-indigo-700 shadow-sm' : 'text-slate-500 hover:text-slate-700')}>
+              className={cn('inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-bold rounded-md transition', deskTab === k ? 'bg-white text-indigo-700 shadow-sm' : 'text-slate-500 hover:text-slate-700')}>
               {label}
+              {badge !== 0 && <span className={cn('rounded-full px-1.5 py-px text-[9.5px] font-extrabold',
+                tone === 'red' ? 'bg-rose-100 text-rose-700' : 'bg-slate-100 text-slate-500')}>{badge}</span>}
             </button>
           ))}
         </div>
-        <span className="ml-auto text-xs text-slate-400 font-mono">week of {formatDate(weekStart)}</span>
+        {/* state strip — the verdict follows you across tabs */}
+        <span className="ml-auto flex items-center gap-2">
+          {wodueTradeCount > 0 && <span className="inline-flex rounded-full px-2 py-0.5 text-[10.5px] font-bold bg-rose-50 text-rose-700">{wodueTradeCount} need WO</span>}
+          {ready.length > 0 && <span className="inline-flex rounded-full px-2 py-0.5 text-[10.5px] font-bold bg-emerald-50 text-emerald-700">{ready.length} ready</span>}
+          <span className="text-xs text-slate-400 font-mono">week of {formatDate(weekStart)}</span>
+        </span>
       </div>
 
       {/* tabs are a phone thing — the desktop cockpit shows everything at once */}
@@ -224,7 +261,10 @@ export function ScheduleClient({ data, canEdit, meId }: { data: ProjectScheduleD
           </div>
 
           {/* DESKTOP pages — one purpose per tab, each a single screen */}
-          <div className={cn('max-w-2xl', deskTab === 'act' ? 'hidden lg:block' : 'hidden')}>
+          <div className={cn('max-w-3xl space-y-3', deskTab === 'act' ? 'hidden lg:block' : 'hidden')}>
+            <HeroVerdict overall={overall} wodueTrades={wodueTradeCount} ready={ready.length}
+              promises={{ kept: promises.filter(p => p.status === 'done').length, total: promises.length }}
+              pace={heroPace} today={today} />
             <ActionCentre rows={rows} ready={ready} canEdit={canEdit} projectId={project.id} today={today} leadDays={leads.procurement} run={run} />
           </div>
           <div className={cn('max-w-2xl', deskTab === 'week' ? 'hidden lg:block' : 'hidden')}>
@@ -243,6 +283,46 @@ export function ScheduleClient({ data, canEdit, meId }: { data: ProjectScheduleD
           </div>
         </>
       )}
+    </div>
+  )
+}
+
+/** Hero verdict — the page answers "how are we doing" before any row is read. */
+function HeroVerdict({ overall, wodueTrades, ready, promises, pace, today }: {
+  overall: { pct: number; count: number; datedCount: number; actualScheduled: number; plannedScheduled: number }
+  wodueTrades: number; ready: number; promises: { kept: number; total: number }
+  pace: { plan: number; actual: number } | null; today: string
+}) {
+  const gap = overall.plannedScheduled - overall.actualScheduled
+  const behind = overall.datedCount > 0 && gap > 3
+  const verdict = wodueTrades > 0
+    ? <>Waiting on paperwork — <span className="text-rose-600">{wodueTrades} trade{wodueTrades === 1 ? '' : 's'} need Work Orders</span></>
+    : behind ? <>Behind plan — <span className="text-amber-600">{Math.round(gap)}% short of where we should be</span></>
+      : <>On track — <span className="text-emerald-600">nothing blocking</span></>
+  const sub = ready > 0
+    ? `${ready} floor${ready === 1 ? '' : 's'} can start today · ${overall.pct}% of the tower complete`
+    : `${overall.pct}% of the tower complete`
+  return (
+    <Card className="p-4 shadow-sm flex items-center gap-4 flex-wrap">
+      <Ring pct={overall.pct} color="#4f46e5" size={64} />
+      <div className="min-w-[220px] flex-1">
+        <div className="text-[15px] font-bold text-slate-900 leading-snug">{verdict}</div>
+        <div className="text-xs text-slate-500 mt-0.5">{sub}</div>
+      </div>
+      <div className="flex gap-2 flex-wrap">
+        <KpiTile value={wodueTrades} label="WO due" tone={wodueTrades > 0 ? 'late' : 'ok'} />
+        <KpiTile value={ready} label="ready" tone={ready > 0 ? 'ok' : 'calm'} />
+        <KpiTile value={`${promises.kept}/${promises.total}`} label="promises" tone="calm" />
+        {pace && <KpiTile value={`${pace.actual}d`} label="pace/floor" tone={pace.actual > pace.plan ? 'soon' : 'ok'} />}
+      </div>
+    </Card>
+  )
+}
+function KpiTile({ value, label, tone }: { value: number | string; label: string; tone: 'ok' | 'soon' | 'late' | 'calm' }) {
+  return (
+    <div className="border rounded-xl px-3 py-2 text-center min-w-[76px] bg-white">
+      <div className="text-lg font-extrabold font-mono leading-tight" style={{ color: tone === 'calm' ? '#334155' : HEX[tone] }}>{value}</div>
+      <div className="text-[9.5px] font-bold uppercase tracking-wide text-slate-400">{label}</div>
     </div>
   )
 }
@@ -313,6 +393,17 @@ function ActionCentre({ rows, ready, canEdit, projectId, today, leadDays, run }:
                   <span className="flex-1 min-w-0 truncate text-sm font-semibold text-slate-800">{g.trade}
                     <span className="font-normal text-slate-400"> · {g.list.length} WO{g.list.length === 1 ? '' : 's'}{contractor ? ` · ${contractor}` : ''}</span>
                   </span>
+                  {canEdit && (
+                    <Button size="sm" className="bg-indigo-600 hover:bg-indigo-700 flex-shrink-0"
+                      onClick={e => {
+                        e.preventDefault(); e.stopPropagation()
+                        run(() => bulkIssueWo({ projectId, trade: g.trade, issuedOn: today }),
+                          `${g.list.length} ${g.trade} WO${g.list.length === 1 ? '' : 's'} marked issued`,
+                          () => bulkClearWo({ projectId, trade: g.trade, issuedOn: today }))
+                      }}>
+                      Raise all {g.list.length}
+                    </Button>
+                  )}
                 </summary>
                 <ul className="bg-slate-50/60 divide-y divide-slate-100">
                   {g.list.map(r => <WoDueRow key={r.item.id} row={r} canEdit={canEdit} projectId={projectId} today={today} run={run} />)}
@@ -491,6 +582,18 @@ function SitePulse({ rows, promises, lastWeek, floorNames, cellOf, overall, toda
 }) {
   const [openMap, setOpenMap] = useState<Set<string>>(new Set())
   const toggleMap = (t: string) => setOpenMap(s => { const n = new Set(s); if (n.has(t)) n.delete(t); else n.add(t); return n })
+  // the "live front" — highest floor with work in progress, else the last done one
+  const todayCol = useMemo(() => {
+    let wip = -1, done = -1
+    floorNames.forEach((f, i) => {
+      for (const r of rows) {
+        const st = cellOf(r.item.id, f)
+        if (st === 'wip') wip = i
+        else if (st === 'done' && done < i) done = i
+      }
+    })
+    return wip >= 0 ? wip : done
+  }, [floorNames, rows]) // eslint-disable-line react-hooks/exhaustive-deps
   const kept = promises.filter(p => p.status === 'done').length
   const ppc = promises.length ? Math.round(kept / promises.length * 100) : (lastWeek && lastWeek.total ? Math.round(lastWeek.kept / lastWeek.total * 100) : null)
 
@@ -528,10 +631,24 @@ function SitePulse({ rows, promises, lastWeek, floorNames, cellOf, overall, toda
           <div className="text-sm font-bold text-slate-800">Building map — trade × floor</div>
           <div className="text-[10.5px] text-slate-400">tap a trade for its items · hover a cell for dates</div>
         </div>
+        {/* phase band — the tower's story, not 11 equal rows */}
+        <div className="flex gap-1.5 mb-3 flex-wrap">
+          {PHASES.map(ph => {
+            const rs = rows.filter(r => ph.trades.some(t => r.item.trade.toLowerCase().startsWith(t)))
+            if (!rs.length) return null
+            const pct = Math.round(rs.reduce((s, r) => s + r.item.pct, 0) / rs.length)
+            return (
+              <span key={ph.name} className={cn('inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[10.5px] font-bold',
+                pct > 0 ? 'bg-indigo-50 text-indigo-700' : 'bg-slate-100 text-slate-500')}>
+                {ph.name} <span className="font-mono">{pct}%</span>
+              </span>
+            )
+          })}
+        </div>
         <div className="grid gap-[3px]" style={{ gridTemplateColumns: `150px repeat(${floorNames.length}, minmax(46px,1fr)) 130px`, minWidth: 280 + floorNames.length * 48 }}>
           <div />
-          {floorNames.map(f => <div key={f} className="text-[9px] text-slate-400 text-center truncate">{f.replace(' Floor', '')}</div>)}
-          <div className="text-[9px] text-slate-400 pl-2">Contractor · ends</div>
+          {floorNames.map((f, i) => <div key={f} className={cn('text-[9px] text-center truncate', i === todayCol ? 'text-indigo-600 font-bold' : 'text-slate-400')}>{f.replace(' Floor', '')}</div>)}
+          <div className="text-[9px] text-slate-400 pl-2">WO · contractor · ends</div>
           {trades.map(g => {
             const open = openMap.has(g.trade)
             const contractors = Array.from(new Set(g.rows.map(r => r.item.contractor).filter(Boolean))) as string[]
@@ -549,22 +666,30 @@ function SitePulse({ rows, promises, lastWeek, floorNames, cellOf, overall, toda
                 <button onClick={() => toggleMap(g.trade)} className="flex items-center gap-1 text-[10.5px] font-semibold text-slate-600 hover:text-indigo-700 justify-end pr-1.5 truncate text-right">
                   <ChevronRight className={cn('h-3 w-3 flex-shrink-0 transition-transform', open && 'rotate-90')} />{g.trade}
                 </button>
-                {floorNames.map(f => {
+                {floorNames.map((f, fi) => {
                   const cs = g.rows.map(r => cellOf(r.item.id, f)).filter(c => c !== 'na')
-                  let bg = '#f8fafc', border = '1px solid #eef2f6'
+                  let bg = '#fafbfc', border = '1px dashed #eaeff5'
                   if (cs.length) {
                     const sc = cs.reduce((a, c) => a + (c === 'done' ? 1 : c === 'wip' ? 0.5 : 0), 0) / cs.length
-                    bg = sc === 0 ? '#e9edf3' : sc >= 0.99 ? '#0d9488' : sc >= 0.5 ? '#5bbfae' : '#f5c56b'
+                    bg = sc === 0 ? '#eef2f7' : sc >= 0.99 ? '#0f9b8e' : sc >= 0.5 ? '#5bbfae' : '#e8a33d'
                     border = 'none'
                   }
-                  return <div key={f} className="h-6 rounded" style={{ background: bg, border }} title={`${g.trade} · ${f.replace(' Floor', '')}`} />
+                  return <div key={f} className={cn('h-6 rounded-md', fi === todayCol && 'ring-2 ring-indigo-500 ring-offset-1')}
+                    style={{ background: bg, border }} title={`${g.trade} · ${f.replace(' Floor', '')}`} />
                 })}
                 <div className="text-[9.5px] text-slate-500 pl-2 truncate self-center flex items-center gap-1.5" title={contractors.join(', ')}>
                   {(() => {
                     const issued = g.rows.filter(r => r.item.wo_issued).length
-                    const cls = issued === g.rows.length ? 'bg-emerald-100 text-emerald-700' : issued > 0 ? 'bg-amber-100 text-amber-700' : 'bg-rose-100 text-rose-600'
-                    const label = issued === g.rows.length ? 'WO ✓' : issued > 0 ? `WO ${issued}/${g.rows.length}` : 'WO —'
-                    return <span className={cn('inline-flex rounded px-1 py-px text-[8.5px] font-bold whitespace-nowrap', cls)} title={`Work Orders: ${issued} of ${g.rows.length} issued`}>{label}</span>
+                    const full = issued === g.rows.length, part = issued > 0 && !full
+                    return (
+                      <span className="inline-flex items-center gap-1 text-slate-500 flex-shrink-0" title={`Work Orders: ${issued} of ${g.rows.length} issued`}>
+                        <span className="h-3.5 w-3.5 rounded-full grid place-items-center text-[7.5px] font-bold text-white flex-shrink-0"
+                          style={{ background: full ? '#0f9b8e' : part ? '#e8a33d' : '#dbe2ea', color: full || part ? '#fff' : '#8b98a8' }}>
+                          {full ? '✓' : part ? '◐' : '○'}
+                        </span>
+                        <span className="font-mono text-[8.5px] font-bold">{issued}/{g.rows.length}</span>
+                      </span>
+                    )
                   })()}
                   <span className="truncate">{contractors.length ? contractors[0] + (contractors.length > 1 ? ` +${contractors.length - 1}` : '') : '—'}</span>
                   {tradeEnd ? <span className="text-indigo-600 font-mono whitespace-nowrap">· {formatDate(tradeEnd)}</span> : ''}
