@@ -149,15 +149,19 @@ export function ScheduleClient({ data, canEdit, meId }: { data: ProjectScheduleD
     return { pct, count: items.length, datedCount: dated.length, actualScheduled, plannedScheduled }
   }, [items, today])
 
+  const week = <MyWeek promises={promises} lastWeek={lastWeek} rowById={rowById} cellOf={cellOf} canEdit={canEdit} projectId={project.id} pending={pending} run={run} />
+  const pulse = <SitePulse rows={rows} promises={promises} lastWeek={lastWeek} floorNames={floorNames} cellOf={cellOf} overall={overall} today={today} drawings={drawings} />
+
   return (
-    <div className="p-4 md:p-6 max-w-3xl mx-auto space-y-4">
+    <div className="p-4 md:p-6 max-w-3xl lg:max-w-[1400px] mx-auto space-y-4">
       <div className="flex items-center gap-2 flex-wrap">
         <Button asChild size="sm" variant="ghost"><Link href="/schedule"><ChevronLeft className="h-4 w-4" /> Projects</Link></Button>
         <h1 className="text-lg md:text-xl font-bold text-slate-900">{project.code ? `${project.code} — ` : ''}{project.name}</h1>
         <span className="ml-auto text-xs text-slate-400 font-mono">week of {formatDate(weekStart)}</span>
       </div>
 
-      <div className="sticky top-0 z-30 flex rounded-xl border bg-slate-100 p-1 shadow-sm">
+      {/* tabs are a phone thing — the desktop cockpit shows everything at once */}
+      <div className="lg:hidden sticky top-0 z-30 flex rounded-xl border bg-slate-100 p-1 shadow-sm">
         {([['week', '📋 My Week'], ['pulse', '📊 Site Pulse'], ['plan', '🗂️ Plan Room']] as const).map(([k, label]) => (
           <button key={k} onClick={() => setTab(k)}
             className={cn('flex-1 py-2 text-[13px] font-bold rounded-lg transition', tab === k ? 'bg-white text-indigo-700 shadow-sm' : 'text-slate-500 hover:text-slate-700')}>
@@ -172,15 +176,59 @@ export function ScheduleClient({ data, canEdit, meId }: { data: ProjectScheduleD
           <p className="text-slate-600 max-w-md mx-auto">No work items yet.{canEdit ? ' Start from the standard template.' : ''}</p>
           {canEdit && <Button disabled={pending} onClick={() => run(() => applyTemplate(project.id), 'Template applied')} className="bg-indigo-600 hover:bg-indigo-700">Start from template ({TEMPLATE_ITEM_COUNT} items)</Button>}
         </Card>
-      ) : tab === 'week' ? (
-        <MyWeek promises={promises} lastWeek={lastWeek} rowById={rowById} cellOf={cellOf} canEdit={canEdit} projectId={project.id} pending={pending} run={run} />
-      ) : tab === 'pulse' ? (
-        <SitePulse rows={rows} promises={promises} lastWeek={lastWeek} floorNames={floorNames} cellOf={cellOf} overall={overall} today={today} drawings={drawings} />
       ) : (
-        <PlanRoom rows={rows} floorNames={floorNames} cellOf={cellOf} canEdit={canEdit} project={project} people={people} vendors={vendors}
-          promises={promises} weekStart={weekStart} today={today} leads={leads} pending={pending} run={run} items={items} />
+        <>
+          {/* MOBILE: one tab at a time */}
+          <div className="lg:hidden">
+            {tab === 'week' && week}
+            {tab === 'pulse' && pulse}
+          </div>
+
+          {/* DESKTOP cockpit: act on the left, see on the right */}
+          <div className="hidden lg:grid grid-cols-2 gap-4 items-start">
+            <div className="space-y-3">
+              <p className="text-[11px] font-bold uppercase tracking-wide text-slate-400">Act — this week</p>
+              <WoPanel rows={rows} canEdit={canEdit} projectId={project.id} today={today} leadDays={leads.procurement} run={run} />
+              {week}
+            </div>
+            <div className="space-y-3">
+              <p className="text-[11px] font-bold uppercase tracking-wide text-slate-400">See — site pulse</p>
+              {pulse}
+            </div>
+          </div>
+
+          {/* PLAN list: third tab on mobile, full-width section on desktop */}
+          <div className={cn(tab === 'plan' ? 'block' : 'hidden', 'lg:block')}>
+            <p className="hidden lg:block text-[11px] font-bold uppercase tracking-wide text-slate-400 mb-3 mt-2">Plan Room — all trades</p>
+            <PlanRoom rows={rows} floorNames={floorNames} cellOf={cellOf} canEdit={canEdit} project={project} people={people} vendors={vendors}
+              promises={promises} weekStart={weekStart} today={today} leads={leads} pending={pending} run={run} items={items} />
+          </div>
+        </>
       )}
     </div>
+  )
+}
+
+/* ==================== WO panel (cockpit-left / mobile Plan tab) ==================== */
+
+function WoPanel({ rows, canEdit, projectId, today, leadDays, run }: {
+  rows: Row[]; canEdit: boolean; projectId: string; today: string; leadDays: number; run: Runner
+}) {
+  const wodue = rows.filter(r => !r.item.wo_issued && (r.status === 'wo_overdue' || r.status === 'wo_soon'))
+    .sort((a, b) => b.woLateDays - a.woLateDays)
+  if (wodue.length === 0) {
+    return <Card className="p-3.5 shadow-sm flex items-center gap-2 text-sm text-emerald-700"><Check className="h-4 w-4" /> No Work Orders due right now.</Card>
+  }
+  return (
+    <Card className="p-0 shadow-sm overflow-hidden border-l-4 border-rose-400">
+      <div className="px-4 py-2.5 border-b border-slate-100 bg-rose-50/40 flex items-center justify-between">
+        <h3 className="font-bold text-slate-800 text-sm inline-flex items-center gap-1.5"><Wrench className="h-4 w-4 text-rose-500" /> Work Orders to raise · {wodue.length}</h3>
+        <span className="text-[11px] text-slate-500">site start − {leadDays}d</span>
+      </div>
+      <ul className="divide-y divide-slate-100">
+        {wodue.map(r => <WoDueRow key={r.item.id} row={r} canEdit={canEdit} projectId={projectId} today={today} run={run} />)}
+      </ul>
+    </Card>
   )
 }
 
@@ -224,19 +272,20 @@ function MyWeek({ promises, lastWeek, rowById, cellOf, canEdit, projectId, pendi
   const total = promises.length
   return (
     <div className="space-y-3">
-      {lastWeek && (
-        <Card className="p-4 flex items-center gap-4 shadow-sm">
-          <span className="text-2xl font-extrabold font-mono text-indigo-700">{lastWeek.kept}/{lastWeek.total}</span>
-          <div className="flex-1 text-xs text-slate-500">promises kept last week ({lastWeek.total ? Math.round(lastWeek.kept / lastWeek.total * 100) : 0}%)
-            <div className="h-2 mt-1.5 rounded-full bg-slate-100 overflow-hidden"><div className="h-full bg-indigo-600 rounded-full" style={{ width: `${lastWeek.total ? lastWeek.kept / lastWeek.total * 100 : 0}%` }} /></div>
+      {/* one compact strip: this week + last week side by side */}
+      <Card className="p-3.5 shadow-sm flex items-center gap-4 divide-x divide-slate-100">
+        <div className="flex items-center gap-3 flex-1 min-w-0">
+          <span className="text-xl font-extrabold font-mono text-indigo-700 whitespace-nowrap">{kept}/{total}</span>
+          <div className="flex-1 min-w-0 text-[11px] text-slate-500">this week{promises[0]?.owner_name ? ` · ${promises[0].owner_name}` : ''}
+            <div className="h-1.5 mt-1 rounded-full bg-slate-100 overflow-hidden"><div className="h-full bg-indigo-600 rounded-full transition-all" style={{ width: `${total ? kept / total * 100 : 0}%` }} /></div>
           </div>
-        </Card>
-      )}
-      <Card className="p-4 flex items-center gap-4 shadow-sm bg-indigo-50/30">
-        <span className="text-2xl font-extrabold font-mono text-indigo-700">{kept}/{total}</span>
-        <div className="flex-1 text-xs text-slate-500">this week{promises[0]?.owner_name ? ` — ${promises[0].owner_name}` : ''}
-          <div className="h-2 mt-1.5 rounded-full bg-slate-100 overflow-hidden"><div className="h-full bg-indigo-600 rounded-full transition-all" style={{ width: `${total ? kept / total * 100 : 0}%` }} /></div>
         </div>
+        {lastWeek && (
+          <div className="pl-4 text-right whitespace-nowrap">
+            <div className="text-sm font-extrabold font-mono text-slate-600">{lastWeek.kept}/{lastWeek.total}</div>
+            <div className="text-[10px] text-slate-400">last week ({lastWeek.total ? Math.round(lastWeek.kept / lastWeek.total * 100) : 0}%)</div>
+          </div>
+        )}
       </Card>
 
       {total === 0 ? (
@@ -419,25 +468,12 @@ function PlanRoom({ rows, floorNames, cellOf, canEdit, project, people, vendors,
   const allOpen = openTrades.size === byTrade.length && byTrade.length > 0
   const toggleTrade = (t: string) => setOpenTrades(s => { const n = new Set(s); if (n.has(t)) n.delete(t); else n.add(t); return n })
 
-  const wodue = rows.filter(r => !r.item.wo_issued && (r.status === 'wo_overdue' || r.status === 'wo_soon'))
-    .sort((a, b) => b.woLateDays - a.woLateDays)
-
   return (
     <div className="space-y-3">
-      {wodue.length > 0 && (
-        <Card className="p-0 shadow-sm overflow-hidden border-l-4 border-rose-400">
-          <div className="px-4 py-2.5 border-b border-slate-100 bg-rose-50/40 flex items-center justify-between">
-            <h3 className="font-bold text-slate-800 text-sm inline-flex items-center gap-1.5"><Wrench className="h-4 w-4 text-rose-500" /> Work Orders to raise · {wodue.length}</h3>
-            <span className="text-[11px] text-slate-500">deadline = site start − {leads.procurement}d</span>
-          </div>
-          <ul className="divide-y divide-slate-100">
-            {wodue.map(r => <WoDueRow key={r.item.id} row={r} canEdit={canEdit} projectId={project.id} today={today} run={run} />)}
-          </ul>
-        </Card>
-      )}
-      {wodue.length === 0 && (
-        <Card className="p-3.5 shadow-sm flex items-center gap-2 text-sm text-emerald-700"><Check className="h-4 w-4" /> No Work Orders due right now.</Card>
-      )}
+      {/* on desktop the WO panel lives in the cockpit's left column */}
+      <div className="lg:hidden">
+        <WoPanel rows={rows} canEdit={canEdit} projectId={project.id} today={today} leadDays={leads.procurement} run={run} />
+      </div>
 
       <div className="flex items-center gap-3 flex-wrap text-sm">
         <button onClick={() => setOpenTrades(allOpen ? new Set() : new Set(byTrade.map(g => g.trade)))} className="text-indigo-600 hover:underline font-medium">{allOpen ? 'Collapse all' : 'Expand all'}</button>
