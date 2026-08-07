@@ -217,7 +217,7 @@ export function ScheduleClient({ data, canEdit, meId }: { data: ProjectScheduleD
           <div className="hidden lg:grid grid-cols-2 gap-4 items-start">
             <div className="space-y-3">
               <p className="text-[11px] font-bold uppercase tracking-wide text-slate-400">Act — this week</p>
-              <WoPanel rows={rows} canEdit={canEdit} projectId={project.id} today={today} leadDays={leads.procurement} run={run} />
+              <ActionCentre rows={rows} ready={ready} canEdit={canEdit} projectId={project.id} today={today} leadDays={leads.procurement} run={run} />
               {week}
             </div>
             <div className="space-y-3">
@@ -231,7 +231,7 @@ export function ScheduleClient({ data, canEdit, meId }: { data: ProjectScheduleD
             <p className="hidden lg:block text-[11px] font-bold uppercase tracking-wide text-slate-400 mb-3 mt-2">Plan Room — all trades</p>
             <PlanRoom rows={rows} floorNames={floorNames} cellOf={cellOf} canEdit={canEdit} project={project} people={people} vendors={vendors}
               promises={promises} weekStart={weekStart} today={today} leads={leads} pending={pending} run={run} items={items}
-              derivedMap={derivedMap} paceById={paceById} />
+              derivedMap={derivedMap} paceById={paceById} ready={ready} />
           </div>
         </>
       )}
@@ -239,24 +239,46 @@ export function ScheduleClient({ data, canEdit, meId }: { data: ProjectScheduleD
   )
 }
 
-/* ==================== WO panel (cockpit-left / mobile Plan tab) ==================== */
+/* ==================== Action Centre — ONE "act here" panel ====================
+   Merges what were three cards (WOs to raise · needs-you · ready-to-start)
+   into a single prioritised to-do: raise WO → unblock → start now. */
 
-function WoPanel({ rows, canEdit, projectId, today, leadDays, run }: {
-  rows: Row[]; canEdit: boolean; projectId: string; today: string; leadDays: number; run: Runner
+function ActionCentre({ rows, ready, canEdit, projectId, today, leadDays, run }: {
+  rows: Row[]; ready: ReturnType<typeof readyFloors>
+  canEdit: boolean; projectId: string; today: string; leadDays: number; run: Runner
 }) {
   const wodue = rows.filter(r => !r.item.wo_issued && (r.status === 'wo_overdue' || r.status === 'wo_soon'))
     .sort((a, b) => b.woLateDays - a.woLateDays)
-  if (wodue.length === 0) {
-    return <Card className="p-3.5 shadow-sm flex items-center gap-2 text-sm text-emerald-700"><Check className="h-4 w-4" /> No Work Orders due right now.</Card>
+  const blocked = rows.filter(r => r.status === 'blocked' || r.status === 'behind')
+  const total = wodue.length + blocked.length + ready.length
+  if (total === 0) {
+    return <Card className="p-3.5 shadow-sm flex items-center gap-2 text-sm text-emerald-700"><Check className="h-4 w-4" /> Nothing needs action — all clear.</Card>
   }
   return (
     <Card className="p-0 shadow-sm overflow-hidden border-l-4 border-rose-400">
       <div className="px-4 py-2.5 border-b border-slate-100 bg-rose-50/40 flex items-center justify-between">
-        <h3 className="font-bold text-slate-800 text-sm inline-flex items-center gap-1.5"><Wrench className="h-4 w-4 text-rose-500" /> Work Orders to raise · {wodue.length}</h3>
-        <span className="text-[11px] text-slate-500">site start − {leadDays}d</span>
+        <h3 className="font-bold text-slate-800 text-sm inline-flex items-center gap-1.5"><Wrench className="h-4 w-4 text-rose-500" /> Action centre · {total}</h3>
+        <span className="text-[11px] text-slate-500">WO deadline = site start − {leadDays}d</span>
       </div>
       <ul className="divide-y divide-slate-100">
         {wodue.map(r => <WoDueRow key={r.item.id} row={r} canEdit={canEdit} projectId={projectId} today={today} run={run} />)}
+        {blocked.map(r => (
+          <li key={r.item.id} className="flex items-center gap-3 px-4 py-2.5">
+            <span className={cn('inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-bold whitespace-nowrap', r.status === 'blocked' ? 'bg-rose-100 text-rose-700' : 'bg-amber-100 text-amber-700')}>
+              {r.status === 'blocked' ? 'blocked' : `${r.behindDays}d behind`}
+            </span>
+            <span className="flex-1 min-w-0 truncate text-sm text-slate-800">{r.item.name}<span className="text-slate-400"> · {r.item.trade}</span></span>
+            <span className="text-xs text-slate-500 whitespace-nowrap">{whyLabel(r)}</span>
+          </li>
+        ))}
+        {ready.slice(0, 5).map(r => (
+          <li key={`${r.item.id}|${r.floor}`} className="flex items-center gap-3 px-4 py-2.5 bg-emerald-50/30">
+            <span className="inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-bold bg-emerald-100 text-emerald-700 whitespace-nowrap">start now</span>
+            <span className="flex-1 min-w-0 truncate text-sm text-slate-800">{r.item.name} — {r.floor}</span>
+            <span className="text-[11px] text-slate-400 whitespace-nowrap">after {r.predName} · since {formatDate(r.readyFrom)}</span>
+          </li>
+        ))}
+        {ready.length > 5 && <li className="px-4 py-2 text-[11px] text-slate-400">+{ready.length - 5} more ready floors</li>}
       </ul>
     </Card>
   )
@@ -436,7 +458,6 @@ function SitePulse({ rows, promises, lastWeek, floorNames, cellOf, overall, toda
     return order.map(t => ({ trade: t, rows: map.get(t)! }))
   }, [rows])
 
-  const needs = rows.filter(r => NEEDS_ATTENTION.includes(r.status)).slice(0, 6)
   const gfc = drawings.filter(d => d.status === 'gfc').length
   const comingUp = rows.filter(r => r.item.plan_start && r.item.plan_start > today && daysBetween(today, r.item.plan_start) <= 42)
     .sort((a, b) => (a.item.plan_start ?? '').localeCompare(b.item.plan_start ?? '')).slice(0, 6)
@@ -525,41 +546,10 @@ function SitePulse({ rows, promises, lastWeek, floorNames, cellOf, overall, toda
         </div>
       </Card>
 
-      <Card className="p-4 shadow-sm">
-        <div className="text-sm font-bold text-slate-800 mb-1">Needs you {needs.length > 0 && `· ${needs.length}`}</div>
-        {needs.length === 0 ? <p className="text-sm text-emerald-700 mt-1">Nothing needs attention.</p> : (
-          <ul className="divide-y divide-slate-100">
-            {needs.map(r => (
-              <li key={r.item.id} className="flex items-center gap-3 py-2">
-                <StatusChip status={r.status} />
-                <span className="min-w-0 flex-1 truncate text-sm text-slate-800">{r.item.name}<span className="text-slate-400"> · {r.item.trade}</span></span>
-                <span className="text-xs text-slate-500 whitespace-nowrap">{whyLabel(r)}</span>
-              </li>
-            ))}
-          </ul>
-        )}
-        {drawings.length > 0 && <p className="mt-2 pt-2 border-t text-xs text-slate-500">Drawings: {gfc} GFC · {drawings.length} total</p>}
-      </Card>
-
-      {ready.length > 0 && (
-        <Card className="p-4 shadow-sm border-l-4 border-emerald-400">
-          <div className="text-sm font-bold text-slate-800 mb-1">Ready to start · {ready.length}</div>
-          <p className="text-[11px] text-slate-400 mb-1">The floor before is done and the gap has passed — these can begin today.</p>
-          <ul className="divide-y divide-slate-100">
-            {ready.slice(0, 6).map(r => (
-              <li key={`${r.item.id}|${r.floor}`} className="flex items-center gap-3 py-2">
-                <span className="text-[10px] font-bold rounded-full px-2 py-0.5 bg-emerald-50 text-emerald-700 whitespace-nowrap">since {formatDate(r.readyFrom)}</span>
-                <span className="min-w-0 flex-1 truncate text-sm text-slate-800">{r.item.name} — {r.floor}</span>
-                <span className="text-[11px] text-slate-400 whitespace-nowrap">after {r.predName}</span>
-              </li>
-            ))}
-            {ready.length > 6 && <li className="pt-2 text-[11px] text-slate-400">+{ready.length - 6} more</li>}
-          </ul>
-        </Card>
-      )}
-
+      {/* Needs-you + Ready-to-start now live in the Action Centre (cockpit left / Plan tab) */}
       <Card className="p-4 shadow-sm">
         <div className="text-sm font-bold text-slate-800 mb-1">Coming up — next 6 weeks</div>
+        {drawings.length > 0 && <p className="text-[11px] text-slate-400 mb-1">Drawings: {gfc} GFC · {drawings.length} total</p>}
         {comingUp.length === 0 ? (
           <p className="text-xs text-slate-400 mt-1">No dated starts in the next 6 weeks — set site dates in the Plan Room and the look-ahead fills in.</p>
         ) : (
@@ -583,12 +573,13 @@ function SitePulse({ rows, promises, lastWeek, floorNames, cellOf, overall, toda
 
 /* ============================== ③ PLAN ROOM ============================== */
 
-function PlanRoom({ rows, floorNames, cellOf, canEdit, project, people, vendors, promises, weekStart, today, leads, pending, run, items, derivedMap, paceById }: {
+function PlanRoom({ rows, floorNames, cellOf, canEdit, project, people, vendors, promises, weekStart, today, leads, pending, run, items, derivedMap, paceById, ready }: {
   rows: Row[]; floorNames: string[]; cellOf: (i: string, f: string) => FloorStatus
   canEdit: boolean; project: ProjectScheduleData['project']
   people: string[]; vendors: string[]; promises: SchedPromise[]; weekStart: string; today: string
   leads: ProjectScheduleData['leads']; pending: boolean; run: Runner; items: SchedItem[]
   derivedMap: Map<string, DerivedPlan>; paceById: Map<string, number>
+  ready: ReturnType<typeof readyFloors>
 }) {
   const [openTrades, setOpenTrades] = useState<Set<string>>(new Set())
   const [openItem, setOpenItem] = useState<string | null>(null)
@@ -616,9 +607,9 @@ function PlanRoom({ rows, floorNames, cellOf, canEdit, project, people, vendors,
 
   return (
     <div className="space-y-3">
-      {/* on desktop the WO panel lives in the cockpit's left column */}
+      {/* on desktop the Action Centre lives in the cockpit's left column */}
       <div className="lg:hidden">
-        <WoPanel rows={rows} canEdit={canEdit} projectId={project.id} today={today} leadDays={leads.procurement} run={run} />
+        <ActionCentre rows={rows} ready={ready} canEdit={canEdit} projectId={project.id} today={today} leadDays={leads.procurement} run={run} />
       </div>
 
       <WoRegister rows={rows} />
