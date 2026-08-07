@@ -75,13 +75,22 @@ export default function DashboardModulesEditor({ groups: initialGroups, canRenam
     if (nextValue === null) return
     setBusy(slug); setError(null)
     const supabase = createClient()
-    const { error } = await supabase
+    // Select the row back so we can CONFIRM the write actually landed. If RLS
+    // silently filters the write (no permission), Supabase returns no error and
+    // no rows — without this check the toggle would reload as if it "worked".
+    const { data, error } = await supabase
       .from('module_visibility')
       .upsert({ slug, enabled: nextValue }, { onConflict: 'slug' })
+      .select('enabled')
+      .maybeSingle()
     setBusy(null)
-    if (error) {
+    if (error || !data || data.enabled !== nextValue) {
       setGroups(prev)
-      setError(`${slug}: ${error.message}`)
+      setError(
+        error
+          ? `${slug}: ${error.message}`
+          : `Couldn't save “${row.label}”. You may not have permission to change modules — sign in as an Admin or Portal Owner.`,
+      )
       return
     }
     // The sidebar + dashboard tiles read module_visibility from the shared app
