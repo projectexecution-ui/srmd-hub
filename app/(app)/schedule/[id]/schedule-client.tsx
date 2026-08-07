@@ -262,6 +262,63 @@ function WoPanel({ rows, canEdit, projectId, today, leadDays, run }: {
   )
 }
 
+/** WO register — the history: when each Work Order was planned (derived
+ *  work-back) vs when it was actually issued, with the early/late delta. */
+function WoRegister({ rows }: { rows: Row[] }) {
+  const [open, setOpen] = useState(false)
+  const issued = rows.filter(r => r.item.wo_issued)
+    .sort((a, b) => (b.item.wo_issued_on ?? '').localeCompare(a.item.wo_issued_on ?? ''))
+  const pending = rows.filter(r => !r.item.wo_issued && r.woBy && r.item.pct < 100 && r.item.state !== 'on_hold')
+    .sort((a, b) => (a.woBy ?? '').localeCompare(b.woBy ?? ''))
+  if (!issued.length && !pending.length) return null
+  const late = issued.filter(r => r.item.wo_issued_on && r.woBy && r.item.wo_issued_on > r.woBy).length
+  return (
+    <Card className="p-0 shadow-sm overflow-hidden">
+      <button onClick={() => setOpen(v => !v)} className="w-full flex items-center gap-2 px-4 py-3 text-left hover:bg-slate-50 transition">
+        <ChevronRight className={cn('h-4 w-4 text-slate-400 transition-transform', open && 'rotate-90')} />
+        <span className="font-bold text-slate-800 text-sm">WO register — planned vs issued</span>
+        <span className="ml-auto text-[11px] text-slate-500">{issued.length} issued{late > 0 ? ` (${late} late)` : ''} · {pending.length} pending</span>
+      </button>
+      {open && (
+        <div className="border-t border-slate-100 overflow-x-auto">
+          <table className="w-full text-xs">
+            <thead><tr className="text-left text-[10px] uppercase tracking-wide text-slate-400 bg-slate-50">
+              <th className="px-4 py-2">Work</th><th className="px-2 py-2">Planned by</th><th className="px-2 py-2">Issued on</th><th className="px-2 py-2">Result</th><th className="px-2 py-2">WO no.</th>
+            </tr></thead>
+            <tbody className="divide-y divide-slate-100">
+              {pending.map(r => (
+                <tr key={r.item.id}>
+                  <td className="px-4 py-2 font-medium text-slate-800">{r.item.name} <span className="text-slate-400">· {r.item.trade}</span></td>
+                  <td className="px-2 py-2 font-mono">{formatDate(r.woBy!)}</td>
+                  <td className="px-2 py-2 text-slate-300">—</td>
+                  <td className="px-2 py-2">{r.woLateDays > 0
+                    ? <span className="font-semibold text-rose-600">{r.woLateDays}d overdue</span>
+                    : <span className="text-slate-500">pending</span>}</td>
+                  <td className="px-2 py-2 text-slate-300">—</td>
+                </tr>
+              ))}
+              {issued.map(r => {
+                const delta = r.item.wo_issued_on && r.woBy ? daysBetween(r.woBy, r.item.wo_issued_on) : null
+                return (
+                  <tr key={r.item.id} className="bg-emerald-50/20">
+                    <td className="px-4 py-2 font-medium text-slate-800">{r.item.name} <span className="text-slate-400">· {r.item.trade}</span></td>
+                    <td className="px-2 py-2 font-mono">{r.woBy ? formatDate(r.woBy) : '—'}</td>
+                    <td className="px-2 py-2 font-mono text-emerald-700">{r.item.wo_issued_on ? formatDate(r.item.wo_issued_on) : '✓'}</td>
+                    <td className="px-2 py-2">{delta == null ? <span className="text-slate-400">issued</span>
+                      : delta > 0 ? <span className="font-semibold text-rose-600">{delta}d late</span>
+                      : <span className="font-semibold text-emerald-700">{delta === 0 ? 'on time' : `${-delta}d early`}</span>}</td>
+                    <td className="px-2 py-2 font-mono">{r.item.wo_number ?? '—'}</td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </Card>
+  )
+}
+
 /* ============================== ① MY WEEK ============================== */
 
 function HoldTick({ done, blocked, onDone }: { done: boolean; blocked: boolean; onDone: () => void }) {
@@ -523,6 +580,8 @@ function PlanRoom({ rows, floorNames, cellOf, canEdit, project, people, vendors,
       <div className="lg:hidden">
         <WoPanel rows={rows} canEdit={canEdit} projectId={project.id} today={today} leadDays={leads.procurement} run={run} />
       </div>
+
+      <WoRegister rows={rows} />
 
       <div className="flex items-center gap-3 flex-wrap text-sm">
         <button onClick={() => setOpenTrades(allOpen ? new Set() : new Set(byTrade.map(g => g.trade)))} className="text-indigo-600 hover:underline font-medium">{allOpen ? 'Collapse all' : 'Expand all'}</button>

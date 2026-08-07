@@ -4,7 +4,8 @@
 import { cache } from 'react'
 import { createClient } from '@/lib/supabase/server'
 import { APP_TIME_ZONE } from '@/lib/utils'
-import { DEFAULT_LEADS, addDays } from './formula'
+import { DEFAULT_LEADS, addDays, daysBetween, workBackDeadlines } from './formula'
+import { deriveSchedule } from './sequence'
 import { DEFAULT_FLOORS, floorsSettingKey, parseFloors, sortFloors } from './floors'
 import type { LeadDays, SchedItem, SchedProgress, SchedDrawing, SchedPromise } from './types'
 
@@ -104,6 +105,80 @@ export async function getScheduleFloors(
   if (fromSeed.length) return sortFloors(Array.from(new Set(fromSeed)))
   return DEFAULT_FLOORS
 }
+
+export interface PortfolioWoRow {
+  projectId: string
+  projectCode: string
+  itemName: string
+  trade: string
+  contractor: string | null
+  woBy: string          // planned "raise by" date (derived work-back)
+  daysLate: number      // >0 = overdue by N days
+}
+export interface PortfolioWoIssued {
+  projectId: string; projectCode: string; itemName: string
+  woNumber: string | null; issuedOn: string
+}
+export interface PortfolioWo {
+  due: PortfolioWoRow[]           // not issued, due within 14d or overdue — most urgent first
+  issuedRecent: PortfolioWoIssued[]  // issued in the last 14 days
+}
+
+/** Cross-project WO watch for the Schedule home page: every pending Work
+ *  Order due soon/overdue (using each project's derived dates), plus the
+ *  recently issued ones. */
+export async function getPortfolioWo(): Promise<PortfolioWo> {
+  const sb = await createClient()
+  const today = todayISO()
+  const [{ data: projects }, { data: items }, { data: prog }, { data: floorRows }, leads] = await Promise.all([
+    sb.from('projects').select('id, code, name'),
+    sb.from('sched_items').select('*'),
+    sb.from('sched_progress').select('item_id, location, status'),
+    sb.from('app_settings').select('key, value').like('key', 'sched_floors_%'),
+    getLeadDays(),
+  ])
+  const codeOf = new Map(((projects ?? []) as Array<{ id: string; code: string | null; name: string }>)
+    .map(p => [p.id, p.code || p.name]))
+  const floorsOf = new Map(((floorRows ?? []) as Array<{ key: string; value: string }>)
+    .map(r => [r.key.replace('sched_floors_', ''), parseFloors(r.value) ?? DEFAULT_FLOORS]))
+  const cellMap = new Map<string, FloorStatusLite>()
+  for (const p of (prog ?? []) as Array<{ item_id: string; location: string; status: FloorStatusLite }>) {
+    cellMap.set(`${p.item_id}|${p.location.trim().toLowerCase()}`, p.status)
+  }
+  const byProject = new Map<string, SchedItem[]>()
+  for (const it of (items ?? []) as SchedItem[]) {
+    if (!byProject.has(it.project_id)) byProject.set(it.project_id, [])
+    byProject.get(it.project_id)!.push(it)
+  }
+
+  const due: PortfolioWoRow[] = []
+  const issuedRecent: PortfolioWoIssued[] = []
+  const cutoffIssued = addDays(today, -14)
+  for (const [pid, list] of byProject) {
+    const floors = floorsOf.get(pid) ?? DEFAULT_FLOORS
+    const cellOf = (id: string, f: string) => cellMap.get(`${id}|${f.trim().toLowerCase()}`) ?? 'not_started'
+    const derived = deriveSchedule(list, floors, cellOf)
+    for (const it of list) {
+      if (it.state === 'on_hold') continue
+      if (it.wo_issued) {
+        if (it.wo_issued_on && it.wo_issued_on >= cutoffIssued) {
+          issuedRecent.push({ projectId: pid, projectCode: codeOf.get(pid) ?? '?', itemName: it.name, woNumber: it.wo_number, issuedOn: it.wo_issued_on })
+        }
+        continue
+      }
+      if (it.pct >= 100 || it.state === 'done') continue
+      const start = derived.get(it.id)?.start ?? it.plan_start
+      const woBy = workBackDeadlines(start, leads).woBy
+      if (!woBy) continue
+      const late = daysBetween(woBy, today)   // >0 = overdue
+      if (late >= -14) due.push({ projectId: pid, projectCode: codeOf.get(pid) ?? '?', itemName: it.name, trade: it.trade, contractor: it.contractor, woBy, daysLate: late })
+    }
+  }
+  due.sort((a, b) => b.daysLate - a.daysLate)
+  issuedRecent.sort((a, b) => b.issuedOn.localeCompare(a.issuedOn))
+  return { due, issuedRecent }
+}
+type FloorStatusLite = 'not_started' | 'wip' | 'done' | 'na'
 
 export interface ProjectScheduleData {
   project: {
