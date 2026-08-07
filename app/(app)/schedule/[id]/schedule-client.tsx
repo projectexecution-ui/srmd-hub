@@ -104,7 +104,7 @@ export function ScheduleClient({ data, canEdit, meId }: { data: ProjectScheduleD
   const router = useRouter()
   const [pending, start] = useTransition()
   const [tab, setTab] = useState<'week' | 'pulse' | 'plan'>('week')
-  const [deskTab, setDeskTab] = useState<'site' | 'plan'>('site')
+  const [deskTab, setDeskTab] = useState<'act' | 'week' | 'map' | 'plan'>('act')
 
   const { project, items, drawings, leads, today, floorNames, progress, people, vendors, promises, lastWeek, weekStart } = data
 
@@ -189,7 +189,7 @@ export function ScheduleClient({ data, canEdit, meId }: { data: ProjectScheduleD
         <h1 className="text-lg md:text-xl font-bold text-slate-900">{project.code ? `${project.code} — ` : ''}{project.name}</h1>
         {/* desktop page switch — keeps each page one screen tall */}
         <div className="hidden lg:inline-flex ml-3 rounded-lg border bg-slate-100 p-0.5">
-          {(([['site', 'Site'], ['plan', 'Plan Room']]) as const).map(([k, label]) => (
+          {(([['act', 'Act now'], ['week', 'My Week'], ['map', 'Map'], ['plan', 'Plan Room']]) as const).map(([k, label]) => (
             <button key={k} onClick={() => setDeskTab(k)}
               className={cn('px-3.5 py-1.5 text-xs font-bold rounded-md transition', deskTab === k ? 'bg-white text-indigo-700 shadow-sm' : 'text-slate-500 hover:text-slate-700')}>
               {label}
@@ -223,17 +223,15 @@ export function ScheduleClient({ data, canEdit, meId }: { data: ProjectScheduleD
             {tab === 'pulse' && pulse}
           </div>
 
-          {/* DESKTOP cockpit: act on the left, see on the right (Site page) */}
-          <div className={cn('grid-cols-2 gap-4 items-start', deskTab === 'site' ? 'hidden lg:grid' : 'hidden')}>
-            <div className="space-y-3">
-              <p className="text-[11px] font-bold uppercase tracking-wide text-slate-400">Act — this week</p>
-              <ActionCentre rows={rows} ready={ready} canEdit={canEdit} projectId={project.id} today={today} leadDays={leads.procurement} run={run} />
-              {week}
-            </div>
-            <div className="space-y-3">
-              <p className="text-[11px] font-bold uppercase tracking-wide text-slate-400">See — site pulse</p>
-              {pulse}
-            </div>
+          {/* DESKTOP pages — one purpose per tab, each a single screen */}
+          <div className={cn('max-w-2xl', deskTab === 'act' ? 'hidden lg:block' : 'hidden')}>
+            <ActionCentre rows={rows} ready={ready} canEdit={canEdit} projectId={project.id} today={today} leadDays={leads.procurement} run={run} />
+          </div>
+          <div className={cn('max-w-2xl', deskTab === 'week' ? 'hidden lg:block' : 'hidden')}>
+            {week}
+          </div>
+          <div className={cn(deskTab === 'map' ? 'hidden lg:block' : 'hidden')}>
+            {pulse}
           </div>
 
           {/* PLAN: third tab on mobile, its own page on desktop */}
