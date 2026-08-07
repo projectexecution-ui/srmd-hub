@@ -20,7 +20,7 @@ describe('plannedJobs — daily jobs run once/day across both slots', () => {
     expect(keys).toContain('engineer-digest')
     expect(keys).toContain('bph-sync')      // each-slot
     expect(keys).not.toContain('in4-followup') // not an every-3rd day
-    expect(keys).not.toContain('cc-approval-digest') // pm-only
+    expect(keys).toContain('cc-approval-digest') // rides the reliable morning batch now
   })
 
   it('pm SKIPS daily jobs already stamped for today, but re-runs each-slot jobs', () => {
@@ -31,7 +31,7 @@ describe('plannedJobs — daily jobs run once/day across both slots', () => {
     expect(keys).not.toContain('engineer-digest')
     expect(keys).toContain('bph-sync')               // each-slot always
     expect(keys).toContain('email-retry')
-    expect(keys).toContain('cc-approval-digest')      // pm-only daily, not yet done
+    expect(keys).toContain('cc-approval-digest')      // daily, not yet stamped → pm still attempts it
   })
 
   it('pm RE-RUNS a daily job that was NOT stamped (am was skipped) — self-heal', () => {

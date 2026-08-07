@@ -38,9 +38,10 @@ export const CRON_JOBS: CronJob[] = [
   { key: 'inventory-low-stock',   policy: 'daily', am: '/api/cron/inventory-low-stock?cron=1', pm: '/api/cron/inventory-low-stock?cron=1' },
   { key: 'inventory-daily-report',policy: 'daily', am: '/api/cron/inventory-daily-report?cron=1', pm: '/api/cron/inventory-daily-report?cron=1' },
   { key: 'bills-digest',          policy: 'daily', am: '/api/cron/bills-digest?cron=1',        pm: '/api/cron/bills-digest?cron=1' },
-  // cc-approval-digest is pm-only by design (an ~EOD summary); its own
-  // approval_events.mgmt_digest_at guard heals a skipped pm on the next pm.
-  { key: 'cc-approval-digest',    policy: 'daily',                                             pm: '/api/cron/cc-approval-digest?cron=1' },
+  // cc-approval-digest rides BOTH slots so the reliable MORNING batch always
+  // sends it (the afternoon slot is best-effort on Vercel's free plan and can be
+  // skipped). Its own approval_events.mgmt_digest_at guard prevents any double-send.
+  { key: 'cc-approval-digest',    policy: 'daily', am: '/api/cron/cc-approval-digest?cron=1',  pm: '/api/cron/cc-approval-digest?cron=1' },
   // ── Each-slot jobs (intentionally run at both 09:00 and 15:00) ────────────
   { key: 'bills-pipeline',        policy: 'each',  am: '/api/cron/bills-pipeline?cron=1',      pm: '/api/cron/bills-pipeline?cron=1&slot=pm' },
   { key: 'bph-sync',              policy: 'each',  am: '/api/cron/bph-sync?cron=1',            pm: '/api/cron/bph-sync?cron=1' },
@@ -112,6 +113,7 @@ export function legacyJobs(slot: Slot, everyThirdDay: boolean): string[] {
     '/api/cron/inventory-daily-report?cron=1',
     '/api/cron/bills-pipeline?cron=1',
     '/api/cron/bills-digest?cron=1',
+    '/api/cron/cc-approval-digest?cron=1',
     '/api/cron/bph-sync?cron=1',
   ]
 }
