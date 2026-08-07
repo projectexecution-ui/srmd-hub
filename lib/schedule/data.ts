@@ -6,7 +6,16 @@ import { createClient } from '@/lib/supabase/server'
 import { APP_TIME_ZONE } from '@/lib/utils'
 import { DEFAULT_LEADS, addDays } from './formula'
 import { DEFAULT_FLOORS, floorsSettingKey, parseFloors, sortFloors } from './floors'
-import type { LeadDays, SchedItem, SchedProgress, SchedDrawing } from './types'
+import type { LeadDays, SchedItem, SchedProgress, SchedDrawing, SchedPromise } from './types'
+
+/** Monday of the week containing the given IST date ("YYYY-MM-DD"). */
+export function weekStartISO(iso: string): string {
+  const [y, m, d] = iso.split('-').map(Number)
+  const dt = new Date(Date.UTC(y, m - 1, d))
+  const day = dt.getUTCDay() // 0 Sun .. 6 Sat
+  const back = day === 0 ? 6 : day - 1
+  return addDays(iso, -back)
+}
 
 /** Today as an IST calendar date ("YYYY-MM-DD"). */
 export function todayISO(): string {
@@ -108,6 +117,9 @@ export interface ProjectScheduleData {
   floorNames: string[]
   people: string[]     // active team names — for engineer/approver dropdowns
   vendors: string[]    // vendor/contractor names — for the contractor dropdown
+  promises: SchedPromise[]              // this week's promise list
+  lastWeek: { kept: number; total: number } | null  // last week's PPC inputs
+  weekStart: string                     // Monday of the current IST week
   leads: LeadDays
   today: string
   aiAssist: boolean
@@ -150,6 +162,18 @@ export async function getProjectSchedule(projectId: string): Promise<ProjectSche
   const floorRows = (floors ?? []) as Array<{ id: string; name: string; sequence: number }>
   const floorNames = await getScheduleFloors(projectId, floorRows)
 
+  const today = todayISO()
+  const monday = weekStartISO(today)
+  const prevMonday = addDays(monday, -7)
+  const [{ data: promiseRows }, { data: lastRows }] = await Promise.all([
+    sb.from('sched_promises').select('*').eq('project_id', projectId).eq('week_start', monday).order('created_at', { ascending: true }),
+    sb.from('sched_promises').select('status').eq('project_id', projectId).eq('week_start', prevMonday),
+  ])
+  const last = (lastRows ?? []) as Array<{ status: string }>
+  const lastWeek = last.length
+    ? { kept: last.filter(r => r.status === 'done').length, total: last.length }
+    : null
+
   return {
     project: project as ProjectScheduleData['project'],
     items: (items ?? []) as SchedItem[],
@@ -159,8 +183,11 @@ export async function getProjectSchedule(projectId: string): Promise<ProjectSche
     floorNames,
     people,
     vendors,
+    promises: (promiseRows ?? []) as SchedPromise[],
+    lastWeek,
+    weekStart: monday,
     leads,
-    today: todayISO(),
+    today,
     aiAssist: aiProjects.includes(projectId),
   }
 }

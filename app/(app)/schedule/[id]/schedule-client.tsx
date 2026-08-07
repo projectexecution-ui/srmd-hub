@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useState, useTransition } from 'react'
+import { useMemo, useRef, useState, useTransition } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
@@ -8,14 +8,15 @@ import { cn, formatDate } from '@/lib/utils'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { confirm } from '@/components/ui/confirm-dialog'
-import { ChevronLeft, ChevronRight, Plus, CalendarClock, Trash2, User, Wrench, Check } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Plus, CalendarClock, Trash2, Wrench, Check } from 'lucide-react'
 import { deriveStatus, daysBetween, addDays, STATUS_META, expectedPct } from '@/lib/schedule/formula'
-import type { DisplayStatus, SchedItem, FloorStatus } from '@/lib/schedule/types'
+import type { DisplayStatus, SchedItem, FloorStatus, SchedPromise } from '@/lib/schedule/types'
 import type { ProjectScheduleData } from '@/lib/schedule/data'
 import { TEMPLATE_ITEM_COUNT } from '@/lib/schedule/template'
-import { addSchedItem, updateSchedItem, setWoIssued, moveSchedDate, deleteSchedItem, applyTemplate, setFloorStatus, setScheduleFloors, bulkAssignSchedItems } from '../actions'
+import { addSchedItem, updateSchedItem, setWoIssued, moveSchedDate, deleteSchedItem, applyTemplate, setFloorStatus, setScheduleFloors, bulkAssignSchedItems, setPromiseStatus, addPromise } from '../actions'
 
 type Row = { item: SchedItem; status: DisplayStatus; woBy: string | null; behindDays: number; woLateDays: number }
+type Runner = (fn: () => Promise<{ ok?: true; error?: string }>, okMsg?: string, undo?: () => Promise<{ ok?: true; error?: string }>) => void
 
 const TONE: Record<'ok' | 'soon' | 'late' | 'calm', string> = {
   ok: 'text-emerald-700 bg-emerald-50',
@@ -45,25 +46,21 @@ function StatusChip({ status }: { status: DisplayStatus }) {
   const meta = STATUS_META[status]
   return <span className={cn('inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold', TONE[meta.tone])}>{meta.label}</span>
 }
-
+function Chip({ tone, label }: { tone: 'ok' | 'soon' | 'late' | 'calm'; label: string }) {
+  return <span className={cn('inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold', TONE[tone])}>
+    <span className="h-1.5 w-1.5 rounded-full" style={{ background: HEX[tone] }} />{label}
+  </span>
+}
 function Ring({ pct, color, size = 44 }: { pct: number; color: string; size?: number }) {
   const inner = size - 12
   return (
     <span className="relative grid place-items-center flex-shrink-0"
       style={{ width: size, height: size, borderRadius: '50%', background: `conic-gradient(${pct > 0 ? color : '#e5ebf0'} ${pct}%, #e9eef3 0)` }}>
       <span className="absolute rounded-full bg-white" style={{ width: inner, height: inner }} />
-      <span className="relative font-mono font-bold text-slate-800" style={{ fontSize: Math.round(size * 0.28), color: pct > 0 ? '#0f172a' : '#94a3b8' }}>{pct}</span>
+      <span className="relative font-mono font-bold" style={{ fontSize: Math.round(size * 0.28), color: pct > 0 ? '#0f172a' : '#94a3b8' }}>{pct}</span>
     </span>
   )
 }
-
-function Chip({ tone, label }: { tone: 'ok' | 'soon' | 'late' | 'calm'; label: string }) {
-  return <span className={cn('inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold', TONE[tone])}>
-    <span className="h-1.5 w-1.5 rounded-full" style={{ background: HEX[tone] }} />{label}
-  </span>
-}
-
-/** slim progress bar, colour = status tone. `marker` = "planned by today" tick. */
 function ProgressBar({ pct, tone, width = 'w-28', marker }: { pct: number; tone: 'ok' | 'soon' | 'late' | 'calm'; width?: string; marker?: number | null }) {
   return (
     <div className={cn('relative h-2 rounded-full bg-slate-100 overflow-hidden', width)}>
@@ -74,9 +71,6 @@ function ProgressBar({ pct, tone, width = 'w-28', marker }: { pct: number; tone:
     </div>
   )
 }
-
-/** Plain-language plan-vs-actual: actual fill + a lighter "should be by today"
- *  fill behind it, and a one-word verdict. No Gantt, no chart. */
 function PlanVsActual({ actual, planned }: { actual: number; planned: number }) {
   const gap = planned - actual
   const tone: 'ok' | 'soon' | 'late' = gap > 10 ? 'late' : gap > 3 ? 'soon' : 'ok'
@@ -96,65 +90,29 @@ function PlanVsActual({ actual, planned }: { actual: number; planned: number }) 
   )
 }
 
-/** the "schedule picture" for the item detail: plan window + fill + ◆ WO + ┊ today */
-function ScheduleBar({ row, axisStart, axisEnd, today }: { row: Row; axisStart: string; axisEnd: string; today: string }) {
-  const { item, status, woBy } = row
-  const total = Math.max(1, daysBetween(axisStart, axisEnd))
-  const x = (iso: string) => Math.max(0, Math.min(100, (daysBetween(axisStart, iso) / total) * 100))
-  const col = HEX[toneOf(status)]
-  const hasWin = !!(item.plan_start && item.plan_end)
-  return (
-    <div className="relative h-4 w-full">
-      <div className="absolute left-0 right-0 top-1.5 h-1.5 rounded bg-slate-200" />
-      {hasWin && (
-        <div className="absolute top-1.5 h-1.5 rounded overflow-hidden"
-          style={{ left: `${x(item.plan_start!)}%`, width: `${Math.max(2, x(item.plan_end!) - x(item.plan_start!))}%`, background: '#cdeaf0' }}>
-          {item.pct > 0 && <div className="absolute inset-y-0 left-0" style={{ width: `${item.pct}%`, background: col }} />}
-        </div>
-      )}
-      {woBy && (
-        <div className="absolute top-1 h-2 w-2 rounded-sm" title="WO deadline"
-          style={{ left: `${x(woBy)}%`, transform: 'translateX(-50%) rotate(45deg)', background: item.wo_issued ? '#0d9488' : (woBy < today ? '#e11d48' : '#94a3b8') }} />
-      )}
-      <div className="absolute -top-0.5 bottom-0 border-l-2 border-dashed border-cyan-500" style={{ left: `${x(today)}%` }} title="today" />
-    </div>
-  )
+const FLOOR_META: Record<FloorStatus, { sym: string; chip: string; label: string }> = {
+  not_started: { sym: '', chip: 'bg-white text-slate-300 border-slate-200', label: 'Not started' },
+  wip: { sym: '◐', chip: 'bg-amber-50 text-amber-700 border-amber-200', label: 'In progress' },
+  done: { sym: '✓', chip: 'bg-emerald-50 text-emerald-700 border-emerald-200', label: 'Done' },
+  na: { sym: '–', chip: 'bg-slate-50 text-slate-300 border-slate-200', label: 'Not applicable' },
 }
 
-/** WO status pill for the row (not a button — the row click opens detail). */
-function WoStatus({ row }: { row: Row }) {
-  const { item, status, woBy } = row
-  if (item.wo_issued) return <span className="text-xs font-mono text-emerald-700 font-semibold whitespace-nowrap">✓ {item.wo_number || 'WO'}</span>
-  if (status === 'wo_overdue') return <span className="text-xs font-semibold text-rose-600 whitespace-nowrap">WO overdue</span>
-  if (status === 'wo_soon') return <span className="text-xs font-semibold text-amber-600 whitespace-nowrap">Raise WO</span>
-  if (woBy) return <span className="text-xs text-slate-400 whitespace-nowrap">WO {formatDate(woBy)}</span>
-  return <span className="text-xs text-slate-300">—</span>
-}
-
-const FLOOR_CELL: Record<FloorStatus, { label: string; cls: string; title: string }> = {
-  not_started: { label: '', cls: 'bg-white text-slate-300 border-slate-200 hover:border-slate-300', title: 'Not started' },
-  wip: { label: '◐', cls: 'bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100', title: 'In progress' },
-  done: { label: '✓', cls: 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100', title: 'Done' },
-  na: { label: '–', cls: 'bg-slate-50 text-slate-300 border-slate-200', title: 'Not applicable' },
-}
-const NEXT_FLOOR: Record<FloorStatus, FloorStatus> = { not_started: 'wip', wip: 'done', done: 'na', na: 'not_started' }
+/* ============================== root ============================== */
 
 export function ScheduleClient({ data, canEdit, meId }: { data: ProjectScheduleData; canEdit: boolean; meId: string | null }) {
   const router = useRouter()
   const [pending, start] = useTransition()
-  const [mineOnly, setMineOnly] = useState(false)
-  const [showAdd, setShowAdd] = useState(false)
-  const [openTrades, setOpenTrades] = useState<Set<string>>(new Set())
-  const [openItem, setOpenItem] = useState<string | null>(null)
-  const [showAssign, setShowAssign] = useState(false)
+  const [tab, setTab] = useState<'week' | 'pulse' | 'plan'>('week')
 
-  const { project, items, drawings, leads, today, floorNames, progress, people, vendors } = data
+  const { project, items, drawings, leads, today, floorNames, progress, people, vendors, promises, lastWeek, weekStart } = data
 
   const cellStatus = useMemo(() => {
     const m = new Map<string, FloorStatus>()
     for (const p of progress) m.set(`${p.item_id}|${p.location.trim().toLowerCase()}`, p.status)
     return m
   }, [progress])
+  const cellOf = (itemId: string, floor: string): FloorStatus =>
+    cellStatus.get(`${itemId}|${floor.trim().toLowerCase()}`) ?? 'not_started'
 
   const blockedByDrawing = useMemo(() => {
     const set = new Set<string>()
@@ -165,32 +123,283 @@ export function ScheduleClient({ data, canEdit, meId }: { data: ProjectScheduleD
     return set
   }, [drawings, today])
 
-  const rows: Row[] = useMemo(() => {
-    const list = mineOnly && meId ? items.filter(i => i.owner_user_id === meId) : items
-    return list.map(item => ({ item, ...deriveStatus(item, today, { leads, drawingBlocked: blockedByDrawing.has(item.id) }) }))
-  }, [items, mineOnly, meId, today, leads, blockedByDrawing])
+  const rows: Row[] = useMemo(() =>
+    items.map(item => ({ item, ...deriveStatus(item, today, { leads, drawingBlocked: blockedByDrawing.has(item.id) }) })),
+    [items, today, leads, blockedByDrawing])
+  const rowById = useMemo(() => new Map(rows.map(r => [r.item.id, r])), [rows])
 
-  const [axisStart, axisEnd] = useMemo(() => {
-    const ds: string[] = []
-    for (const i of items) { if (i.plan_start) ds.push(i.plan_start); if (i.plan_end) ds.push(i.plan_end) }
-    ds.push(today)
-    if (ds.length <= 1) return [addDays(today, -30), addDays(today, 120)] as const
-    ds.sort()
-    return [ds[0], ds[ds.length - 1]] as const
-  }, [items, today])
+  const run: Runner = (fn, okMsg, undo) => {
+    start(async () => {
+      const res = await fn()
+      if (res?.error) { toast.error(res.error); return }
+      if (okMsg) {
+        if (undo) toast.success(okMsg, { duration: 6000, action: { label: 'Undo', onClick: () => start(async () => { const r = await undo(); if (r?.error) toast.error(r.error); else { toast.success('Undone'); router.refresh() } }) } })
+        else toast.success(okMsg)
+      }
+      router.refresh()
+    })
+  }
 
   const overall = useMemo(() => {
     const active = items.filter(i => i.state !== 'on_hold')
     const pct = active.length ? Math.round(active.reduce((s, i) => s + i.pct, 0) / active.length) : 0
-    const needWo = rows.filter(r => r.status === 'wo_overdue' || r.status === 'wo_soon' || r.status === 'blocked').length
-    const behind = rows.filter(r => r.status === 'behind').length
-    const done = items.filter(i => i.state === 'done' || i.pct >= 100).length
-    // plan vs actual — only over scheduled (dated) work
     const dated = active.filter(i => i.plan_start && i.plan_end)
     const actualScheduled = dated.length ? Math.round(dated.reduce((s, i) => s + i.pct, 0) / dated.length) : 0
     const plannedScheduled = dated.length ? Math.round(dated.reduce((s, i) => s + expectedPct(i, today), 0) / dated.length) : 0
-    return { pct, needWo, behind, done, count: items.length, datedCount: dated.length, actualScheduled, plannedScheduled }
-  }, [items, rows, today])
+    return { pct, count: items.length, datedCount: dated.length, actualScheduled, plannedScheduled }
+  }, [items, today])
+
+  return (
+    <div className="p-4 md:p-6 max-w-3xl mx-auto space-y-4">
+      <div className="flex items-center gap-2 flex-wrap">
+        <Button asChild size="sm" variant="ghost"><Link href="/schedule"><ChevronLeft className="h-4 w-4" /> Projects</Link></Button>
+        <h1 className="text-lg md:text-xl font-bold text-slate-900">{project.code ? `${project.code} — ` : ''}{project.name}</h1>
+        <span className="ml-auto text-xs text-slate-400 font-mono">week of {formatDate(weekStart)}</span>
+      </div>
+
+      <div className="sticky top-0 z-30 flex rounded-xl border bg-slate-100 p-1 shadow-sm">
+        {([['week', '📋 My Week'], ['pulse', '📊 Site Pulse'], ['plan', '🗂️ Plan Room']] as const).map(([k, label]) => (
+          <button key={k} onClick={() => setTab(k)}
+            className={cn('flex-1 py-2 text-[13px] font-bold rounded-lg transition', tab === k ? 'bg-white text-indigo-700 shadow-sm' : 'text-slate-500 hover:text-slate-700')}>
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {items.length === 0 ? (
+        <Card className="p-8 text-center space-y-3 shadow-sm">
+          <CalendarClock className="h-8 w-8 mx-auto text-indigo-400" />
+          <p className="text-slate-600 max-w-md mx-auto">No work items yet.{canEdit ? ' Start from the standard template.' : ''}</p>
+          {canEdit && <Button disabled={pending} onClick={() => run(() => applyTemplate(project.id), 'Template applied')} className="bg-indigo-600 hover:bg-indigo-700">Start from template ({TEMPLATE_ITEM_COUNT} items)</Button>}
+        </Card>
+      ) : tab === 'week' ? (
+        <MyWeek promises={promises} lastWeek={lastWeek} rowById={rowById} cellOf={cellOf} canEdit={canEdit} projectId={project.id} pending={pending} run={run} />
+      ) : tab === 'pulse' ? (
+        <SitePulse rows={rows} promises={promises} lastWeek={lastWeek} floorNames={floorNames} cellOf={cellOf} overall={overall} today={today} drawings={drawings} />
+      ) : (
+        <PlanRoom rows={rows} floorNames={floorNames} cellOf={cellOf} canEdit={canEdit} project={project} people={people} vendors={vendors}
+          promises={promises} weekStart={weekStart} today={today} leads={leads} pending={pending} run={run} items={items} />
+      )}
+    </div>
+  )
+}
+
+/* ============================== ① MY WEEK ============================== */
+
+function HoldTick({ done, blocked, onDone }: { done: boolean; blocked: boolean; onDone: () => void }) {
+  const ref = useRef<HTMLButtonElement>(null)
+  const raf = useRef<number | null>(null)
+  const HOLD = 550
+  const cancel = () => { if (raf.current) cancelAnimationFrame(raf.current); raf.current = null; if (ref.current) ref.current.style.background = '' }
+  const startHold = () => {
+    if (done || blocked) return
+    const t0 = performance.now()
+    const tick = (ts: number) => {
+      const p = Math.min(1, (ts - t0) / HOLD)
+      if (ref.current) ref.current.style.background = `conic-gradient(#0d9488 ${p * 360}deg, #fff 0deg)`
+      if (p >= 1) { cancel(); onDone(); return }
+      raf.current = requestAnimationFrame(tick)
+    }
+    raf.current = requestAnimationFrame(tick)
+  }
+  return (
+    <button ref={ref} disabled={blocked}
+      onPointerDown={e => { e.preventDefault(); startHold() }} onPointerUp={cancel} onPointerLeave={cancel} onContextMenu={e => e.preventDefault()}
+      className={cn('h-11 w-11 rounded-xl border-2 grid place-items-center text-lg font-extrabold flex-shrink-0 select-none touch-none transition-colors',
+        done ? 'bg-emerald-50 border-emerald-500 text-emerald-600'
+          : blocked ? 'bg-slate-100 border-slate-200 text-slate-300 cursor-not-allowed'
+            : 'bg-white border-slate-300 text-slate-300')}
+      title={done ? 'Done' : blocked ? 'Blocked' : 'Press and hold to mark done'}>
+      {done ? '✓' : blocked ? '✗' : ''}
+    </button>
+  )
+}
+
+function MyWeek({ promises, lastWeek, rowById, cellOf, canEdit, projectId, pending, run }: {
+  promises: SchedPromise[]; lastWeek: { kept: number; total: number } | null
+  rowById: Map<string, Row>; cellOf: (i: string, f: string) => FloorStatus
+  canEdit: boolean; projectId: string; pending: boolean; run: Runner
+}) {
+  const kept = promises.filter(p => p.status === 'done').length
+  const total = promises.length
+  return (
+    <div className="space-y-3">
+      {lastWeek && (
+        <Card className="p-4 flex items-center gap-4 shadow-sm">
+          <span className="text-2xl font-extrabold font-mono text-indigo-700">{lastWeek.kept}/{lastWeek.total}</span>
+          <div className="flex-1 text-xs text-slate-500">promises kept last week ({lastWeek.total ? Math.round(lastWeek.kept / lastWeek.total * 100) : 0}%)
+            <div className="h-2 mt-1.5 rounded-full bg-slate-100 overflow-hidden"><div className="h-full bg-indigo-600 rounded-full" style={{ width: `${lastWeek.total ? lastWeek.kept / lastWeek.total * 100 : 0}%` }} /></div>
+          </div>
+        </Card>
+      )}
+      <Card className="p-4 flex items-center gap-4 shadow-sm bg-indigo-50/30">
+        <span className="text-2xl font-extrabold font-mono text-indigo-700">{kept}/{total}</span>
+        <div className="flex-1 text-xs text-slate-500">this week{promises[0]?.owner_name ? ` — ${promises[0].owner_name}` : ''}
+          <div className="h-2 mt-1.5 rounded-full bg-slate-100 overflow-hidden"><div className="h-full bg-indigo-600 rounded-full transition-all" style={{ width: `${total ? kept / total * 100 : 0}%` }} /></div>
+        </div>
+      </Card>
+
+      {total === 0 ? (
+        <Card className="p-8 text-center text-sm text-slate-500 shadow-sm">No promises this week yet — add them from the <b>Plan Room</b> (open an item → “+ this week”).</Card>
+      ) : (
+        <>
+          <p className="text-[11px] font-bold uppercase tracking-wide text-slate-400 px-1">Hold ✓ when done — a brush does nothing</p>
+          <Card className="shadow-sm divide-y divide-slate-100">
+            {promises.map(p => {
+              const row = rowById.get(p.item_id)
+              const blocked = row ? row.status === 'blocked' : false
+              const woOk = row?.item.wo_issued
+              const done = p.status === 'done'
+              const prevCell = cellOf(p.item_id, p.location)
+              return (
+                <div key={p.id} className={cn('flex items-center gap-3 px-4 py-3', done && 'opacity-70')}>
+                  {canEdit
+                    ? <HoldTick done={done} blocked={blocked} onDone={() =>
+                        run(() => setPromiseStatus({ id: p.id, projectId, itemId: p.item_id, location: p.location, status: 'done' }),
+                          `✓ ${row?.item.name ?? 'Item'} — ${p.location} done`,
+                          () => setPromiseStatus({ id: p.id, projectId, itemId: p.item_id, location: p.location, status: 'open', prevCell }))} />
+                    : <span className={cn('h-11 w-11 rounded-xl border-2 grid place-items-center text-lg font-extrabold', done ? 'bg-emerald-50 border-emerald-500 text-emerald-600' : 'border-slate-200 text-slate-300')}>{done ? '✓' : ''}</span>}
+                  <div className="min-w-0 flex-1">
+                    <div className={cn('text-sm font-semibold text-slate-800 leading-tight', done && 'line-through text-slate-400')}>{row?.item.name ?? '—'} — {p.location}</div>
+                    <div className="text-[11px] text-slate-400 truncate">{row?.item.trade}{row?.item.contractor ? ` · ${row.item.contractor}` : ''}</div>
+                    <div className="flex gap-1.5 mt-1 flex-wrap">
+                      <span className={cn('inline-flex rounded-full px-2 py-0.5 text-[10px] font-bold', woOk ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-600')}>📄 {woOk ? 'WO ✓' : 'WO pending'}</span>
+                      {blocked && <span className="inline-flex rounded-full px-2 py-0.5 text-[10px] font-bold bg-rose-50 text-rose-600">📐 Drawing pending</span>}
+                    </div>
+                  </div>
+                </div>
+              )
+            })}
+          </Card>
+          <p className="text-[11px] text-slate-400 text-center">Hold ~½ second · every change offers <b>Undo</b> for 6 s · ticking also fills the floor map</p>
+        </>
+      )}
+    </div>
+  )
+}
+
+/* ============================== ② SITE PULSE ============================== */
+
+function SitePulse({ rows, promises, lastWeek, floorNames, cellOf, overall, today, drawings }: {
+  rows: Row[]; promises: SchedPromise[]; lastWeek: { kept: number; total: number } | null
+  floorNames: string[]; cellOf: (i: string, f: string) => FloorStatus
+  overall: { pct: number; count: number; datedCount: number; actualScheduled: number; plannedScheduled: number }
+  today: string; drawings: ProjectScheduleData['drawings']
+}) {
+  const kept = promises.filter(p => p.status === 'done').length
+  const ppc = promises.length ? Math.round(kept / promises.length * 100) : (lastWeek && lastWeek.total ? Math.round(lastWeek.kept / lastWeek.total * 100) : null)
+
+  const trades = useMemo(() => {
+    const order: string[] = []
+    const map = new Map<string, Row[]>()
+    for (const r of rows) { if (!map.has(r.item.trade)) { map.set(r.item.trade, []); order.push(r.item.trade) } map.get(r.item.trade)!.push(r) }
+    return order.map(t => ({ trade: t, rows: map.get(t)! }))
+  }, [rows])
+
+  const needs = rows.filter(r => NEEDS_ATTENTION.includes(r.status)).slice(0, 6)
+  const gfc = drawings.filter(d => d.status === 'gfc').length
+  const comingUp = rows.filter(r => r.item.plan_start && r.item.plan_start > today && daysBetween(today, r.item.plan_start) <= 42)
+    .sort((a, b) => (a.item.plan_start ?? '').localeCompare(b.item.plan_start ?? '')).slice(0, 6)
+
+  return (
+    <div className="space-y-3">
+      <Card className="p-4 flex items-center gap-4 flex-wrap shadow-sm">
+        <Ring pct={overall.pct} color="#4f46e5" size={62} />
+        <div className="min-w-[180px] flex-1">
+          <div className="text-[15px] font-semibold text-slate-900">{overall.pct}% complete · {overall.count} work items</div>
+          {overall.datedCount > 0
+            ? <PlanVsActual actual={overall.actualScheduled} planned={overall.plannedScheduled} />
+            : <div className="text-[11px] text-slate-400 mt-1">Set site dates in the Plan Room to track plan vs actual.</div>}
+        </div>
+        {ppc != null && (
+          <div className="text-center px-3">
+            <div className="text-2xl font-extrabold font-mono" style={{ color: ppc >= 70 ? '#0d9488' : ppc >= 50 ? '#d97706' : '#e11d48' }}>{ppc}%</div>
+            <div className="text-[10px] text-slate-400 font-semibold uppercase tracking-wide">promises kept</div>
+          </div>
+        )}
+      </Card>
+
+      <Card className="p-4 shadow-sm overflow-x-auto">
+        <div className="text-sm font-bold text-slate-800 mb-2">Building fill — trade × floor</div>
+        <div className="grid gap-[3px]" style={{ gridTemplateColumns: `96px repeat(${floorNames.length}, minmax(26px,1fr))`, minWidth: 96 + floorNames.length * 30 }}>
+          <div />
+          {floorNames.map(f => <div key={f} className="text-[9px] text-slate-400 text-center truncate">{f.replace(' Floor', '')}</div>)}
+          {trades.map(g => (
+            <FragmentGroup key={g.trade}>
+              <div className="text-[10px] text-slate-500 flex items-center justify-end pr-1.5 truncate">{g.trade}</div>
+              {floorNames.map(f => {
+                const cs = g.rows.map(r => cellOf(r.item.id, f)).filter(c => c !== 'na')
+                let bg = '#f8fafc', border = '1px solid #eef2f6'
+                if (cs.length) {
+                  const sc = cs.reduce((a, c) => a + (c === 'done' ? 1 : c === 'wip' ? 0.5 : 0), 0) / cs.length
+                  bg = sc === 0 ? '#e9edf3' : sc >= 0.99 ? '#0d9488' : sc >= 0.5 ? '#5bbfae' : '#f5c56b'
+                  border = 'none'
+                }
+                return <div key={f} className="h-5 rounded" style={{ background: bg, border }} />
+              })}
+            </FragmentGroup>
+          ))}
+        </div>
+        <div className="flex gap-4 mt-2.5 text-[10.5px] text-slate-500 flex-wrap">
+          <span><i className="inline-block w-2.5 h-2.5 rounded-sm align-[-1px] mr-1" style={{ background: '#0d9488' }} />done</span>
+          <span><i className="inline-block w-2.5 h-2.5 rounded-sm align-[-1px] mr-1" style={{ background: '#f5c56b' }} />in progress</span>
+          <span><i className="inline-block w-2.5 h-2.5 rounded-sm align-[-1px] mr-1" style={{ background: '#e9edf3' }} />not started</span>
+          <span><i className="inline-block w-2.5 h-2.5 rounded-sm align-[-1px] mr-1 border border-slate-200" style={{ background: '#f8fafc' }} />N/A</span>
+        </div>
+      </Card>
+
+      <Card className="p-4 shadow-sm">
+        <div className="text-sm font-bold text-slate-800 mb-1">Needs you {needs.length > 0 && `· ${needs.length}`}</div>
+        {needs.length === 0 ? <p className="text-sm text-emerald-700 mt-1">Nothing needs attention.</p> : (
+          <ul className="divide-y divide-slate-100">
+            {needs.map(r => (
+              <li key={r.item.id} className="flex items-center gap-3 py-2">
+                <StatusChip status={r.status} />
+                <span className="min-w-0 flex-1 truncate text-sm text-slate-800">{r.item.name}<span className="text-slate-400"> · {r.item.trade}</span></span>
+                <span className="text-xs text-slate-500 whitespace-nowrap">{whyLabel(r)}</span>
+              </li>
+            ))}
+          </ul>
+        )}
+        {drawings.length > 0 && <p className="mt-2 pt-2 border-t text-xs text-slate-500">Drawings: {gfc} GFC · {drawings.length} total</p>}
+      </Card>
+
+      <Card className="p-4 shadow-sm">
+        <div className="text-sm font-bold text-slate-800 mb-1">Coming up — next 6 weeks</div>
+        {comingUp.length === 0 ? (
+          <p className="text-xs text-slate-400 mt-1">No dated starts in the next 6 weeks — set site dates in the Plan Room and the look-ahead fills in.</p>
+        ) : (
+          <ul className="divide-y divide-slate-100">
+            {comingUp.map(r => (
+              <li key={r.item.id} className="flex items-center gap-3 py-2">
+                <span className="text-xs font-mono text-slate-500 whitespace-nowrap">{formatDate(r.item.plan_start!)}</span>
+                <span className="min-w-0 flex-1 truncate text-sm text-slate-800">{r.item.name}<span className="text-slate-400"> · {r.item.trade}</span></span>
+                {r.item.wo_issued
+                  ? <span className="text-[10px] font-bold rounded-full px-2 py-0.5 bg-emerald-50 text-emerald-700">all clear</span>
+                  : <span className="text-[10px] font-bold rounded-full px-2 py-0.5 bg-rose-50 text-rose-600">📄 WO not raised</span>}
+              </li>
+            ))}
+          </ul>
+        )}
+      </Card>
+      <p className="text-[11px] text-slate-400 text-center">Read-only — management just reads. Engineers update in My Week; planning lives in the Plan Room.</p>
+    </div>
+  )
+}
+
+/* ============================== ③ PLAN ROOM ============================== */
+
+function PlanRoom({ rows, floorNames, cellOf, canEdit, project, people, vendors, promises, weekStart, today, leads, pending, run, items }: {
+  rows: Row[]; floorNames: string[]; cellOf: (i: string, f: string) => FloorStatus
+  canEdit: boolean; project: ProjectScheduleData['project']
+  people: string[]; vendors: string[]; promises: SchedPromise[]; weekStart: string; today: string
+  leads: ProjectScheduleData['leads']; pending: boolean; run: Runner; items: SchedItem[]
+}) {
+  const [openTrades, setOpenTrades] = useState<Set<string>>(new Set())
+  const [openItem, setOpenItem] = useState<string | null>(null)
+  const [showAdd, setShowAdd] = useState(false)
+  const [showAssign, setShowAssign] = useState(false)
+  const [picker, setPicker] = useState<{ item: SchedItem; floor: string; prev: FloorStatus } | null>(null)
 
   const byTrade = useMemo(() => {
     const groups: { trade: string; rows: Row[]; pct: number; need: number }[] = []
@@ -206,273 +415,138 @@ export function ScheduleClient({ data, canEdit, meId }: { data: ProjectScheduleD
     }
     return groups
   }, [rows])
-
-  function run(fn: () => Promise<{ ok?: true; error?: string }>, okMsg?: string) {
-    start(async () => {
-      const res = await fn()
-      if (res?.error) toast.error(res.error)
-      else { if (okMsg) toast.success(okMsg); router.refresh() }
-    })
-  }
-  const toggleTrade = (t: string) => setOpenTrades(s => { const n = new Set(s); n.has(t) ? n.delete(t) : n.add(t); return n })
+  const promised = useMemo(() => new Set(promises.map(p => `${p.item_id}|${p.location.trim().toLowerCase()}`)), [promises])
   const allOpen = openTrades.size === byTrade.length && byTrade.length > 0
+  const toggleTrade = (t: string) => setOpenTrades(s => { const n = new Set(s); if (n.has(t)) n.delete(t); else n.add(t); return n })
+
+  const wodue = rows.filter(r => !r.item.wo_issued && (r.status === 'wo_overdue' || r.status === 'wo_soon'))
+    .sort((a, b) => b.woLateDays - a.woLateDays)
 
   return (
-    <div className="p-4 md:p-6 max-w-4xl mx-auto space-y-4">
-      {/* header */}
-      <div className="flex items-center gap-2 flex-wrap">
-        <Button asChild size="sm" variant="ghost"><Link href="/schedule"><ChevronLeft className="h-4 w-4" /> Projects</Link></Button>
-        <h1 className="text-lg md:text-xl font-bold text-slate-900">{project.code ? `${project.code} — ` : ''}{project.name}</h1>
-        <span className="ml-auto text-xs text-slate-400 font-mono">as of {formatDate(today)}</span>
+    <div className="space-y-3">
+      {wodue.length > 0 && (
+        <Card className="p-0 shadow-sm overflow-hidden border-l-4 border-rose-400">
+          <div className="px-4 py-2.5 border-b border-slate-100 bg-rose-50/40 flex items-center justify-between">
+            <h3 className="font-bold text-slate-800 text-sm inline-flex items-center gap-1.5"><Wrench className="h-4 w-4 text-rose-500" /> Work Orders to raise · {wodue.length}</h3>
+            <span className="text-[11px] text-slate-500">deadline = site start − {leads.procurement}d</span>
+          </div>
+          <ul className="divide-y divide-slate-100">
+            {wodue.map(r => <WoDueRow key={r.item.id} row={r} canEdit={canEdit} projectId={project.id} today={today} run={run} />)}
+          </ul>
+        </Card>
+      )}
+      {wodue.length === 0 && (
+        <Card className="p-3.5 shadow-sm flex items-center gap-2 text-sm text-emerald-700"><Check className="h-4 w-4" /> No Work Orders due right now.</Card>
+      )}
+
+      <div className="flex items-center gap-3 flex-wrap text-sm">
+        <button onClick={() => setOpenTrades(allOpen ? new Set() : new Set(byTrade.map(g => g.trade)))} className="text-indigo-600 hover:underline font-medium">{allOpen ? 'Collapse all' : 'Expand all'}</button>
+        {canEdit && (
+          <div className="ml-auto flex gap-2">
+            <Button size="sm" variant="outline" onClick={() => setShowAssign(v => !v)}>👷 Assign team</Button>
+            <Button size="sm" variant="outline" disabled={pending} onClick={() => run(() => applyTemplate(project.id), 'Template items added')}>+ Template</Button>
+            <Button size="sm" onClick={() => setShowAdd(v => !v)} className="bg-indigo-600 hover:bg-indigo-700"><Plus className="h-4 w-4" /> Add</Button>
+          </div>
+        )}
       </div>
 
-      {items.length === 0 ? (
-        <Card className="p-8 text-center space-y-3 shadow-sm">
-          <CalendarClock className="h-8 w-8 mx-auto text-indigo-400" />
-          <p className="text-slate-600 max-w-md mx-auto">No work items yet.{canEdit ? ' Start from the standard template — then just tick off progress floor by floor.' : ' The schedule hasn’t been set up yet.'}</p>
-          {canEdit && (
-            <div className="flex flex-col sm:flex-row gap-2 justify-center pt-1">
-              <Button disabled={pending} onClick={() => run(() => applyTemplate(project.id), 'Template applied')} className="bg-indigo-600 hover:bg-indigo-700">Start from template ({TEMPLATE_ITEM_COUNT} items)</Button>
-              <Button variant="outline" onClick={() => setShowAdd(true)}><Plus className="h-4 w-4" /> Add manually</Button>
-            </div>
-          )}
-        </Card>
-      ) : (
-        <>
-          {/* summary — the management snapshot, always on top */}
-          <Card className="p-5 flex items-center gap-5 flex-wrap shadow-sm">
-            <Ring pct={overall.pct} color="#4f46e5" size={64} />
-            <div className="min-w-[180px] flex-1">
-              <div className="text-[15px] font-semibold text-slate-900">{overall.pct}% complete · {overall.count} work item{overall.count === 1 ? '' : 's'}</div>
-              {overall.datedCount > 0
-                ? <PlanVsActual actual={overall.actualScheduled} planned={overall.plannedScheduled} />
-                : <div className="text-[11px] text-slate-400 mt-1">Add site-start + finish dates to track plan vs actual.</div>}
-              <div className="flex flex-wrap gap-2 mt-2">
-                {overall.needWo > 0 && <Chip tone="late" label={`${overall.needWo} need Work Order`} />}
-                {overall.behind > 0 && <Chip tone="soon" label={`${overall.behind} behind`} />}
-                {overall.done > 0 && <Chip tone="ok" label={`${overall.done} done`} />}
-              </div>
-            </div>
-          </Card>
+      {canEdit && showAssign && <AssignPanel items={items} people={people} vendors={vendors} projectId={project.id} run={run} onClose={() => setShowAssign(false)} />}
+      {canEdit && showAdd && <AddItemForm projectId={project.id} pending={pending} onAdd={(input) => run(() => addSchedItem(input), 'Added')} onClose={() => setShowAdd(false)} />}
 
-          {/* WO action list — raise from here, no need to read every line */}
-          <WoDuePanel rows={rows} canEdit={canEdit} projectId={project.id} today={today} leadDays={leads.procurement} run={run} />
-
-          {/* controls */}
-          <div className="flex items-center gap-3 flex-wrap text-sm">
-            <button onClick={() => setOpenTrades(allOpen ? new Set() : new Set(byTrade.map(g => g.trade)))}
-              className="text-indigo-600 hover:underline font-medium">{allOpen ? 'Collapse all' : 'Expand all'}</button>
-            {meId && (
-              <label className="inline-flex items-center gap-2 text-slate-600 cursor-pointer select-none">
-                <input type="checkbox" checked={mineOnly} onChange={e => setMineOnly(e.target.checked)} className="h-4 w-4 rounded border-slate-300 text-indigo-600" />
-                <User className="h-3.5 w-3.5" /> My items
-              </label>
-            )}
-            {canEdit && (
-              <div className="ml-auto flex gap-2">
-                <Button size="sm" variant="outline" onClick={() => setShowAssign(v => !v)}>👷 Assign team</Button>
-                <Button size="sm" variant="outline" disabled={pending} onClick={() => run(() => applyTemplate(project.id), 'Template items added')}>+ Template</Button>
-                <Button size="sm" onClick={() => setShowAdd(v => !v)} className="bg-indigo-600 hover:bg-indigo-700"><Plus className="h-4 w-4" /> Add item</Button>
-              </div>
-            )}
-          </div>
-
-          {canEdit && showAssign && (
-            <AssignPanel items={items} people={people} vendors={vendors} projectId={project.id} pending={pending} run={run} onClose={() => setShowAssign(false)} />
-          )}
-          {canEdit && showAdd && <AddItemForm projectId={project.id} pending={pending} onAdd={(input) => run(() => addSchedItem(input), 'Added')} onClose={() => setShowAdd(false)} />}
-
-          {/* the one list — grouped + collapsed by trade */}
-          <Card className="shadow-sm divide-y divide-slate-100 overflow-hidden">
-            {byTrade.map(g => {
-              const open = openTrades.has(g.trade)
-              return (
-                <div key={g.trade}>
-                  <button onClick={() => toggleTrade(g.trade)}
-                    className={cn('w-full flex items-center gap-3 px-4 py-3 text-left transition hover:bg-slate-50', g.need > 0 && 'border-l-[3px] border-rose-400')}>
-                    <ChevronRight className={cn('h-4 w-4 text-slate-400 transition-transform flex-shrink-0', open && 'rotate-90')} />
-                    <span className="font-semibold text-slate-800 flex-1 min-w-0 truncate">{g.trade}</span>
-                    {g.need > 0 && <span className="text-[11px] font-semibold text-rose-600 whitespace-nowrap">{g.need} need action</span>}
-                    <ProgressBar pct={g.pct} tone={g.need > 0 ? 'late' : g.pct >= 100 ? 'ok' : 'calm'} width="w-20 sm:w-28" />
-                    <span className="text-xs font-mono font-semibold text-slate-600 w-9 text-right">{g.pct}%</span>
-                    <span className="text-[11px] text-slate-400 w-12 text-right hidden sm:inline">{g.rows.length} item{g.rows.length === 1 ? '' : 's'}</span>
-                  </button>
-
-                  {open && (
-                    <div className="bg-slate-50/40">
-                      {g.rows.map(r => (
-                        <ItemRow key={r.item.id} row={r} canEdit={canEdit} projectId={project.id}
-                          open={openItem === r.item.id} onToggle={() => setOpenItem(openItem === r.item.id ? null : r.item.id)}
-                          axisStart={axisStart} axisEnd={axisEnd} today={today}
-                          floorNames={floorNames} cellStatus={cellStatus} pending={pending} run={run} />
-                      ))}
-                    </div>
-                  )}
+      <Card className="shadow-sm divide-y divide-slate-100 overflow-hidden">
+        {byTrade.map(g => {
+          const open = openTrades.has(g.trade)
+          return (
+            <div key={g.trade}>
+              <button onClick={() => toggleTrade(g.trade)}
+                className={cn('w-full flex items-center gap-3 px-4 py-3 text-left transition hover:bg-slate-50', g.need > 0 && 'border-l-[3px] border-rose-400')}>
+                <ChevronRight className={cn('h-4 w-4 text-slate-400 transition-transform flex-shrink-0', open && 'rotate-90')} />
+                <span className="font-semibold text-slate-800 flex-1 min-w-0 truncate">{g.trade}</span>
+                {g.need > 0 && <span className="text-[11px] font-semibold text-rose-600 whitespace-nowrap">{g.need} need action</span>}
+                <ProgressBar pct={g.pct} tone={g.need > 0 ? 'late' : g.pct >= 100 ? 'ok' : 'calm'} width="w-16 sm:w-24" />
+                <span className="text-xs font-mono font-semibold text-slate-600 w-9 text-right">{g.pct}%</span>
+              </button>
+              {open && (
+                <div className="bg-slate-50/40">
+                  {g.rows.map(r => (
+                    <PlanItem key={r.item.id} row={r} floorNames={floorNames} cellOf={cellOf} promised={promised}
+                      open={openItem === r.item.id} onToggle={() => setOpenItem(openItem === r.item.id ? null : r.item.id)}
+                      canEdit={canEdit} projectId={project.id} weekStart={weekStart} today={today} run={run}
+                      onPick={(floor) => canEdit && setPicker({ item: r.item, floor, prev: cellOf(r.item.id, floor) })} />
+                  ))}
                 </div>
-              )
-            })}
-          </Card>
+              )}
+            </div>
+          )
+        })}
+      </Card>
 
-          <p className="text-[11px] text-slate-400 font-mono">
-            Work Order deadline = site start − {leads.procurement} days · dates move freely (reason logged) · no amounts — only whether the WO is issued.
-          </p>
-        </>
+      <p className="text-[11px] text-slate-400 font-mono">WO deadline = site start − {leads.procurement}d · dates move freely (reason logged) · no amounts.</p>
+
+      {picker && (
+        <div className="fixed inset-0 z-50 bg-slate-900/40 grid place-items-end justify-items-center" onClick={e => { if (e.target === e.currentTarget) setPicker(null) }}>
+          <div className="w-full max-w-3xl bg-white rounded-t-2xl p-5 pb-8">
+            <div className="text-sm font-bold text-slate-800">{picker.item.name}</div>
+            <div className="text-[11px] text-slate-400 mb-3">{picker.item.trade} · {picker.floor} — choose status (a tap never cycles)</div>
+            <div className="grid grid-cols-4 gap-2">
+              {(['not_started', 'wip', 'done', 'na'] as FloorStatus[]).map(s => (
+                <button key={s}
+                  onClick={() => {
+                    const { item, floor, prev } = picker
+                    setPicker(null)
+                    if (s === prev) return
+                    run(() => setFloorStatus({ itemId: item.id, projectId: project.id, location: floor, status: s }),
+                      `${item.name} · ${floor} → ${FLOOR_META[s].label}`,
+                      () => setFloorStatus({ itemId: item.id, projectId: project.id, location: floor, status: prev }))
+                  }}
+                  className={cn('rounded-xl border-2 py-3.5 text-xs font-bold text-center', picker.prev === s ? 'border-indigo-400 bg-indigo-50/40' : 'border-slate-200 hover:border-slate-300')}>
+                  <span className="block text-lg mb-0.5">{FLOOR_META[s].sym || '·'}</span>{FLOOR_META[s].label}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
       )}
     </div>
   )
 }
 
-/** The Work-Order to-do: only items whose WO is overdue or due soon, most urgent
- *  first, each raisable inline — so nobody scans every line to find what's due. */
-function WoDuePanel({ rows, canEdit, projectId, today, leadDays, run }: {
-  rows: Row[]; canEdit: boolean; projectId: string; today: string; leadDays: number
-  run: (fn: () => Promise<{ ok?: true; error?: string }>, okMsg?: string) => void
-}) {
-  const due = rows
-    .filter(r => !r.item.wo_issued && (r.status === 'wo_overdue' || r.status === 'wo_soon'))
-    .sort((a, b) => {
-      const aov = a.status === 'wo_overdue', bov = b.status === 'wo_overdue'
-      if (aov !== bov) return aov ? -1 : 1
-      if (aov) return b.woLateDays - a.woLateDays
-      return (a.woBy ?? '').localeCompare(b.woBy ?? '')
-    })
-
-  if (!due.length) {
-    return (
-      <Card className="p-4 shadow-sm flex items-center gap-2 text-sm text-emerald-700">
-        <Check className="h-4 w-4" /> All Work Orders raised — nothing due.
-      </Card>
-    )
-  }
-  const overdue = due.filter(r => r.status === 'wo_overdue').length
-  return (
-    <Card className="p-0 shadow-sm overflow-hidden border-l-4 border-rose-400">
-      <div className="px-4 py-3 border-b border-slate-100 bg-rose-50/40 flex items-center justify-between gap-2 flex-wrap">
-        <h3 className="font-bold text-slate-800 text-sm inline-flex items-center gap-1.5"><Wrench className="h-4 w-4 text-rose-500" /> Work Orders to raise · {due.length}</h3>
-        <span className="text-[11px] text-slate-500">{overdue > 0 ? `${overdue} overdue` : 'due soon'} · deadline = site start − {leadDays}d</span>
-      </div>
-      <ul className="divide-y divide-slate-100">
-        {due.map(r => <WoDueRow key={r.item.id} row={r} canEdit={canEdit} projectId={projectId} today={today} run={run} />)}
-      </ul>
-    </Card>
-  )
-}
-
-function WoDueRow({ row, canEdit, projectId, today, run }: {
-  row: Row; canEdit: boolean; projectId: string; today: string
-  run: (fn: () => Promise<{ ok?: true; error?: string }>, okMsg?: string) => void
-}) {
-  const [editing, setEditing] = useState(false)
-  const [wo, setWo] = useState('')
-  const overdue = row.status === 'wo_overdue'
-  const urgency = overdue ? `${row.woLateDays}d overdue` : row.woBy ? `by ${formatDate(row.woBy)}` : 'soon'
-  return (
-    <li className="flex items-center gap-3 px-4 py-2.5">
-      <span className={cn('inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-bold whitespace-nowrap', overdue ? 'bg-rose-100 text-rose-700' : 'bg-amber-100 text-amber-700')}>{urgency}</span>
-      <span className="flex-1 min-w-0">
-        <span className="block text-sm font-medium text-slate-800 truncate">{row.item.name}</span>
-        <span className="block text-[11px] text-slate-500 truncate">
-          {row.item.trade}
-          {row.item.contractor ? ` · 🏗️ ${row.item.contractor}` : ''}
-          {row.item.owner_name ? ` · 👷 ${row.item.owner_name}` : ''}
-        </span>
-      </span>
-      {canEdit && (editing ? (
-        <span className="flex items-center gap-1">
-          <input value={wo} onChange={e => setWo(e.target.value)} placeholder="WO no. (optional)" autoFocus
-            className="w-32 text-xs border rounded-lg px-2 py-1.5 font-mono" />
-          <Button size="sm" className="bg-indigo-600 hover:bg-indigo-700"
-            onClick={() => run(() => setWoIssued({ id: row.item.id, projectId, issued: true, woNumber: wo || null, issuedOn: today }), 'WO marked issued')}>Save</Button>
-        </span>
-      ) : (
-        <Button size="sm" variant="outline" onClick={() => setEditing(true)}>Mark issued</Button>
-      ))}
-    </li>
-  )
-}
-
-function ItemRow({ row, canEdit, projectId, open, onToggle, axisStart, axisEnd, today, floorNames, cellStatus, pending, run }: {
-  row: Row; canEdit: boolean; projectId: string; open: boolean; onToggle: () => void
-  axisStart: string; axisEnd: string; today: string
-  floorNames: string[]; cellStatus: Map<string, FloorStatus>; pending: boolean
-  run: (fn: () => Promise<{ ok?: true; error?: string }>, okMsg?: string) => void
+function PlanItem({ row, floorNames, cellOf, promised, open, onToggle, canEdit, projectId, weekStart, today, run, onPick }: {
+  row: Row; floorNames: string[]; cellOf: (i: string, f: string) => FloorStatus
+  promised: Set<string>; open: boolean; onToggle: () => void
+  canEdit: boolean; projectId: string; weekStart: string; today: string; run: Runner
+  onPick: (floor: string) => void
 }) {
   const { item, status } = row
-  const tone = toneOf(status)
   return (
     <div className="border-t border-slate-100 first:border-t-0">
-      <button onClick={onToggle} className="w-full flex items-center gap-3 pl-11 pr-4 py-2.5 text-left hover:bg-white transition">
+      <button onClick={onToggle} className="w-full flex items-center gap-3 pl-10 pr-4 py-2.5 text-left hover:bg-white transition">
         <span className="flex-1 min-w-0">
           <span className="block font-medium text-slate-800 text-sm truncate">{item.name}</span>
-          <span className="block text-[11px] text-slate-500 truncate">{whyLabel(row)}{item.owner_name ? ` · 👷 ${item.owner_name}` : ''}</span>
+          <span className="block text-[11px] text-slate-500 truncate">{whyLabel(row)}{item.contractor ? ` · 🏗️ ${item.contractor}` : ''}{item.owner_name ? ` · 👷 ${item.owner_name}` : ''}</span>
         </span>
-        <ProgressBar pct={item.pct} tone={tone} width="w-16 sm:w-24"
-          marker={item.plan_start && item.plan_end ? expectedPct(item, today) : null} />
-        <span className="w-20 text-right hidden sm:block"><WoStatus row={row} /></span>
+        <ProgressBar pct={item.pct} tone={toneOf(status)} width="w-14 sm:w-24" marker={item.plan_start && item.plan_end ? expectedPct(item, today) : null} />
         <span className="text-xs font-mono font-semibold text-slate-600 w-9 text-right">{item.pct}%</span>
         <ChevronRight className={cn('h-4 w-4 text-slate-300 transition-transform flex-shrink-0', open && 'rotate-90')} />
       </button>
-
       {open && (
-        <div className="pl-11 pr-4 pb-4 pt-1 space-y-4 bg-white">
-          {/* schedule picture */}
-          <div>
-            <div className="flex items-center justify-between mb-1.5">
-              <StatusChip status={status} />
-              <span className="text-[11px] text-slate-400 font-mono">
-                {item.plan_start ? formatDate(item.plan_start) : '—'} → {item.plan_end ? formatDate(item.plan_end) : '—'}
-              </span>
-            </div>
-            <ScheduleBar row={row} axisStart={axisStart} axisEnd={axisEnd} today={today} />
+        <div className="pl-10 pr-4 pb-4 pt-1 space-y-3 bg-white">
+          <div className="flex flex-wrap gap-1.5">
+            {floorNames.map(f => {
+              const st = cellOf(item.id, f)
+              const m = FLOOR_META[st]
+              const isPromised = promised.has(`${item.id}|${f.trim().toLowerCase()}`)
+              return (
+                <button key={f} disabled={!canEdit} onClick={() => onPick(f)}
+                  className={cn('relative inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-2 text-xs font-medium transition disabled:opacity-70', m.chip, canEdit && 'hover:border-slate-400')}>
+                  <span className="w-3 text-center">{m.sym}</span>{f}
+                  {isPromised && <span className="absolute -top-1.5 -right-1.5 text-[9px] bg-indigo-600 text-white rounded-full px-1 font-bold" title="promised this week">W</span>}
+                </button>
+              )
+            })}
           </div>
-
-          {/* floors */}
-          {floorNames.length > 0 && (
-            <div>
-              <div className="text-[11px] font-semibold text-slate-500 mb-1.5">Floors — tap to advance: blank → <span className="text-amber-700">◐</span> → <span className="text-emerald-700">✓</span> → <span className="text-slate-400">– N/A</span></div>
-              <div className="flex flex-wrap gap-1.5">
-                {floorNames.map(f => {
-                  const st = cellStatus.get(`${item.id}|${f.trim().toLowerCase()}`) ?? 'not_started'
-                  const meta = FLOOR_CELL[st]
-                  return (
-                    <button key={f} disabled={!canEdit || pending} title={meta.title}
-                      onClick={() => run(() => setFloorStatus({ itemId: item.id, projectId, location: f, status: NEXT_FLOOR[st] }))}
-                      className={cn('inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-medium transition disabled:opacity-60', meta.cls)}>
-                      <span className="w-3 text-center">{meta.label}</span>{f}
-                    </button>
-                  )
-                })}
-              </div>
-            </div>
-          )}
-
-          {/* who's responsible + who executes */}
-          {canEdit ? (
-            <div className="flex flex-wrap gap-3">
-              <label className="text-[11px] font-semibold text-slate-500">👷 Responsible engineer
-                <input defaultValue={item.owner_name ?? ''} placeholder="name" className="mt-1 block w-40 text-xs border rounded-lg px-2 py-1.5"
-                  onBlur={e => { const v = e.target.value.trim() || null; if (v !== item.owner_name) run(() => updateSchedItem(item.id, projectId, { owner_name: v }), 'Saved') }} />
-              </label>
-              <label className="text-[11px] font-semibold text-slate-500">🏗️ Contractor
-                <input defaultValue={item.contractor ?? ''} placeholder="agency" className="mt-1 block w-40 text-xs border rounded-lg px-2 py-1.5"
-                  onBlur={e => { const v = e.target.value.trim() || null; if (v !== item.contractor) run(() => updateSchedItem(item.id, projectId, { contractor: v }), 'Saved') }} />
-              </label>
-              <label className="text-[11px] font-semibold text-slate-500">✔ Approver
-                <input defaultValue={item.approver_name ?? ''} placeholder="name" className="mt-1 block w-40 text-xs border rounded-lg px-2 py-1.5"
-                  onBlur={e => { const v = e.target.value.trim() || null; if (v !== item.approver_name) run(() => updateSchedItem(item.id, projectId, { approver_name: v }), 'Saved') }} />
-              </label>
-            </div>
-          ) : (item.owner_name || item.contractor || item.approver_name) ? (
-            <div className="flex flex-wrap gap-4 text-xs text-slate-600">
-              {item.owner_name && <span>👷 {item.owner_name}</span>}
-              {item.contractor && <span>🏗️ {item.contractor}</span>}
-              {item.approver_name && <span>✔ {item.approver_name}</span>}
-            </div>
-          ) : null}
-
-          {/* controls */}
           {canEdit && (
-            <div className="flex flex-wrap items-end gap-3 pt-1">
+            <div className="flex flex-wrap items-end gap-3">
               <label className="text-[11px] font-semibold text-slate-500">Site start
                 <input type="date" defaultValue={item.plan_start ?? ''} className="mt-1 block text-xs border rounded-lg px-2 py-1.5 font-mono"
                   onChange={e => run(() => moveSchedDate({ id: item.id, projectId, field: 'plan_start', from: item.plan_start, to: e.target.value || null }), 'Start moved')} />
@@ -481,13 +555,10 @@ function ItemRow({ row, canEdit, projectId, open, onToggle, axisStart, axisEnd, 
                 <input type="date" defaultValue={item.plan_end ?? ''} className="mt-1 block text-xs border rounded-lg px-2 py-1.5 font-mono"
                   onChange={e => run(() => moveSchedDate({ id: item.id, projectId, field: 'plan_end', from: item.plan_end, to: e.target.value || null }), 'Finish moved')} />
               </label>
-              <label className="text-[11px] font-semibold text-slate-500">% done
-                <input type="number" min={0} max={100} defaultValue={item.pct} className="mt-1 block w-16 text-xs border rounded-lg px-2 py-1.5 font-mono"
-                  onBlur={e => { const v = Math.max(0, Math.min(100, Number(e.target.value) || 0)); if (v !== item.pct) run(() => updateSchedItem(item.id, projectId, { pct: v, state: v >= 100 ? 'done' : v > 0 ? 'in_progress' : item.state }), 'Progress updated') }} />
-              </label>
               {item.wo_issued
                 ? <Button size="sm" variant="outline" onClick={() => run(() => setWoIssued({ id: item.id, projectId, issued: false }), 'WO cleared')}>Clear WO</Button>
                 : <Button size="sm" variant="outline" onClick={() => run(() => setWoIssued({ id: item.id, projectId, issued: true, issuedOn: today }), 'WO marked issued')}>Mark WO issued</Button>}
+              <PromisePicker item={item} floorNames={floorNames} cellOf={cellOf} promised={promised} projectId={projectId} weekStart={weekStart} run={run} />
               <button className="ml-auto inline-flex items-center gap-1 text-rose-600 text-xs hover:underline self-center"
                 onClick={async () => { if (await confirm({ title: 'Delete work item?', message: `Remove "${item.name}"?`, confirmLabel: 'Delete', danger: true })) run(() => deleteSchedItem(item.id, projectId), 'Deleted') }}>
                 <Trash2 className="h-3.5 w-3.5" /> Delete
@@ -500,12 +571,64 @@ function ItemRow({ row, canEdit, projectId, open, onToggle, axisStart, axisEnd, 
   )
 }
 
-/** Bulk assignment — set contractor / engineer / approver once per trade (or
- *  for all trades), instead of item by item. */
-function AssignPanel({ items, people, vendors, projectId, pending, run, onClose }: {
-  items: SchedItem[]; people: string[]; vendors: string[]; projectId: string; pending: boolean
-  run: (fn: () => Promise<{ ok?: true; count?: number; error?: string }>, okMsg?: string) => void
-  onClose: () => void
+/** "+ this week" — promise a floor of this item for the current week. */
+function PromisePicker({ item, floorNames, cellOf, promised, projectId, weekStart, run }: {
+  item: SchedItem; floorNames: string[]; cellOf: (i: string, f: string) => FloorStatus
+  promised: Set<string>; projectId: string; weekStart: string; run: Runner
+}) {
+  const [open, setOpen] = useState(false)
+  const candidates = floorNames.filter(f => {
+    const st = cellOf(item.id, f)
+    return st !== 'done' && st !== 'na' && !promised.has(`${item.id}|${f.trim().toLowerCase()}`)
+  })
+  if (!candidates.length) return null
+  return (
+    <span className="relative">
+      <Button size="sm" variant="outline" onClick={() => setOpen(v => !v)}>+ this week</Button>
+      {open && (
+        <span className="absolute z-40 bottom-full mb-1 left-0 bg-white border rounded-xl shadow-lg p-2 flex gap-1.5 flex-wrap w-64">
+          {candidates.map(f => (
+            <button key={f} className="text-xs border rounded-lg px-2.5 py-1.5 hover:bg-indigo-50 hover:border-indigo-300 font-medium"
+              onClick={() => { setOpen(false); run(() => addPromise({ projectId, itemId: item.id, location: f, weekStart, ownerName: item.owner_name }), `${item.name} · ${f} promised this week`) }}>
+              {f}
+            </button>
+          ))}
+        </span>
+      )}
+    </span>
+  )
+}
+
+function WoDueRow({ row, canEdit, projectId, today, run }: {
+  row: Row; canEdit: boolean; projectId: string; today: string; run: Runner
+}) {
+  const [editing, setEditing] = useState(false)
+  const [wo, setWo] = useState('')
+  const overdue = row.status === 'wo_overdue'
+  const urgency = overdue ? `${row.woLateDays}d overdue` : row.woBy ? `by ${formatDate(row.woBy)}` : 'soon'
+  return (
+    <li className="flex items-center gap-3 px-4 py-2.5">
+      <span className={cn('inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-bold whitespace-nowrap', overdue ? 'bg-rose-100 text-rose-700' : 'bg-amber-100 text-amber-700')}>{urgency}</span>
+      <span className="flex-1 min-w-0">
+        <span className="block text-sm font-medium text-slate-800 truncate">{row.item.name}</span>
+        <span className="block text-[11px] text-slate-500 truncate">{row.item.trade}{row.item.contractor ? ` · 🏗️ ${row.item.contractor}` : ''}{row.item.owner_name ? ` · 👷 ${row.item.owner_name}` : ''}</span>
+      </span>
+      {canEdit && (editing ? (
+        <span className="flex items-center gap-1">
+          <input value={wo} onChange={e => setWo(e.target.value)} placeholder="WO no. (optional)" autoFocus className="w-32 text-xs border rounded-lg px-2 py-1.5 font-mono" />
+          <Button size="sm" className="bg-indigo-600 hover:bg-indigo-700"
+            onClick={() => run(() => setWoIssued({ id: row.item.id, projectId, issued: true, woNumber: wo || null, issuedOn: today }), 'WO marked issued')}>Save</Button>
+        </span>
+      ) : (
+        <Button size="sm" variant="outline" onClick={() => setEditing(true)}>Mark issued</Button>
+      ))}
+    </li>
+  )
+}
+
+function AssignPanel({ items, people, vendors, projectId, run, onClose }: {
+  items: SchedItem[]; people: string[]; vendors: string[]; projectId: string
+  run: Runner; onClose: () => void
 }) {
   const trades = useMemo(() => {
     const order: string[] = []
@@ -521,13 +644,10 @@ function AssignPanel({ items, people, vendors, projectId, pending, run, onClose 
     run(() => bulkAssignSchedItems({ projectId, trade, [field]: value || null }), `${label} set for ${n} ${trade} item${n === 1 ? '' : 's'}`)
   const setAll = (field: 'ownerName' | 'contractor' | 'approverName', value: string, label: string) =>
     run(() => bulkAssignSchedItems({ projectId, itemIds: allIds, [field]: value || null }), `${label} set for all ${allIds.length} items`)
-
   const Cell = ({ list, def, onSet }: { list: string; def: string; onSet: (v: string) => void }) => (
-    <input list={list} defaultValue={def} placeholder="—"
-      className="w-full text-xs border rounded-lg px-2 py-1.5 bg-white"
+    <input list={list} defaultValue={def} placeholder="—" className="w-full text-xs border rounded-lg px-2 py-1.5 bg-white"
       onBlur={e => { const v = e.target.value.trim(); if (v !== def) onSet(v) }} />
   )
-
   return (
     <Card className="p-4 shadow-sm space-y-3 border-indigo-200">
       <datalist id="dl-vendors">{vendors.map(v => <option key={v} value={v} />)}</datalist>
@@ -536,17 +656,13 @@ function AssignPanel({ items, people, vendors, projectId, pending, run, onClose 
         <h3 className="font-bold text-slate-800 text-sm">Assign team &amp; contractors</h3>
         <button onClick={onClose} className="text-xs text-indigo-600 hover:underline">Done</button>
       </div>
-      <p className="text-[11px] text-slate-500">Set once per trade — it applies to <b>every item</b> in that trade. Pick from your vendors / team, or type a new name. Use the top row to set all trades at once.</p>
+      <p className="text-[11px] text-slate-500">Set once per trade — applies to every item in it. Top row = all trades at once.</p>
       <div className="overflow-x-auto">
         <table className="w-full text-xs border-separate border-spacing-0">
-          <thead>
-            <tr className="text-left text-[10px] uppercase tracking-wide text-slate-500">
-              <th className="py-1.5 pr-3 min-w-[130px]">Trade</th>
-              <th className="py-1.5 px-2 min-w-[150px]">🏗️ Contractor</th>
-              <th className="py-1.5 px-2 min-w-[140px]">👷 Engineer</th>
-              <th className="py-1.5 px-2 min-w-[140px]">✔ Approver</th>
-            </tr>
-          </thead>
+          <thead><tr className="text-left text-[10px] uppercase tracking-wide text-slate-500">
+            <th className="py-1.5 pr-3 min-w-[120px]">Trade</th><th className="py-1.5 px-2 min-w-[150px]">🏗️ Contractor</th>
+            <th className="py-1.5 px-2 min-w-[140px]">👷 Engineer</th><th className="py-1.5 px-2 min-w-[140px]">✔ Approver</th>
+          </tr></thead>
           <tbody>
             <tr className="bg-indigo-50/50">
               <td className="py-1.5 pr-3 font-semibold text-indigo-800">All trades →</td>
@@ -571,7 +687,7 @@ function AssignPanel({ items, people, vendors, projectId, pending, run, onClose 
 
 function AddItemForm({ projectId, pending, onAdd, onClose }: {
   projectId: string; pending: boolean
-  onAdd: (input: { projectId: string; trade: string; name: string; sub?: string | null; planStart?: string | null; planEnd?: string | null }) => void
+  onAdd: (input: { projectId: string; trade: string; name: string; planStart?: string | null; planEnd?: string | null }) => void
   onClose: () => void
 }) {
   const [trade, setTrade] = useState('')
@@ -594,3 +710,5 @@ function AddItemForm({ projectId, pending, onAdd, onClose }: {
     </Card>
   )
 }
+
+function FragmentGroup({ children }: { children: React.ReactNode }) { return <>{children}</> }

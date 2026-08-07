@@ -98,6 +98,45 @@ export async function deleteSchedItem(id: string, projectId: string): Promise<{ 
   return { ok: true }
 }
 
+/** Tick a weekly promise. Marking it done also sets that floor cell done (one
+ *  source of truth); re-opening restores the cell to `prevCell` for Undo. */
+export async function setPromiseStatus(input: {
+  id: string; projectId: string; itemId: string; location: string
+  status: 'open' | 'done' | 'not_done'
+  prevCell?: FloorStatus | null
+}): Promise<{ ok?: true; error?: string }> {
+  const sb = await createClient()
+  const { error } = await sb.from('sched_promises').update({
+    status: input.status,
+    done_at: input.status === 'done' ? new Date().toISOString() : null,
+  }).eq('id', input.id)
+  if (error) return { error: error.message }
+
+  if (input.status === 'done') {
+    return setFloorStatus({ itemId: input.itemId, projectId: input.projectId, location: input.location, status: 'done' })
+  }
+  if (input.status === 'open' && input.prevCell) {
+    return setFloorStatus({ itemId: input.itemId, projectId: input.projectId, location: input.location, status: input.prevCell })
+  }
+  revalidatePath(`/schedule/${input.projectId}`)
+  return { ok: true }
+}
+
+/** Add an item×floor promise to the current week (Plan Room). */
+export async function addPromise(input: {
+  projectId: string; itemId: string; location: string; weekStart: string; ownerName?: string | null
+}): Promise<{ ok?: true; error?: string }> {
+  const sb = await createClient()
+  const me = await currentUid()
+  const { error } = await sb.from('sched_promises').insert({
+    project_id: input.projectId, item_id: input.itemId, location: input.location,
+    week_start: input.weekStart, owner_name: input.ownerName || null, created_by: me,
+  })
+  if (error) return { error: error.message.includes('duplicate') ? 'Already promised this week.' : error.message }
+  revalidatePath(`/schedule/${input.projectId}`)
+  return { ok: true }
+}
+
 /** Bulk-assign engineer / contractor / approver to many items at once — by
  *  trade (every item in it) or an explicit id list. Only the provided fields
  *  are written, so setting a contractor doesn't wipe the engineer. */

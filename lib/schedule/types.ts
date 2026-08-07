@@ -37,6 +37,20 @@ export interface SchedItem {
   updated_at: string
 }
 
+/** A weekly promise: "this item on this floor WILL be finished this week". */
+export interface SchedPromise {
+  id: string
+  project_id: string
+  item_id: string
+  location: string
+  week_start: string
+  status: 'open' | 'done' | 'not_done'
+  done_at: string | null
+  owner_name: string | null
+  created_by: string | null
+  created_at: string
+}
+
 export interface SchedProgress {
   id: string
   item_id: string
