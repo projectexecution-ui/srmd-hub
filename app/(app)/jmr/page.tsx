@@ -1,7 +1,7 @@
 import Link from 'next/link'
 import { PageHeader } from '@/components/PageHeader'
 import { Card, CardContent } from '@/components/ui/card'
-import { Wrench, ClipboardCheck, Receipt, BarChart3, Settings, Grid, User } from 'lucide-react'
+import { Wrench, ClipboardCheck, BarChart3, Settings, Grid, User } from 'lucide-react'
 import { requirePermission, can, getMyProfile } from '@/lib/auth'
 
 export const dynamic = 'force-dynamic'
@@ -25,27 +25,15 @@ export default async function JMRPage() {
       show: can(perms, 'jmr', 'view'),
     },
     {
-      slug: 'bill', label: 'New Bill', href: '/jmr/bill',
-      icon: Receipt, tone: 'bg-rose-50 text-rose-700',
-      desc: 'Submit a contractor bill with photo + qty',
-      show: can(perms, 'jmr-bills', 'edit'),
-    },
-    {
       slug: 'matrix', label: 'JMR Matrix', href: '/jmr/matrix',
       icon: Grid, tone: 'bg-emerald-50 text-emerald-700',
       desc: 'Equipment & manpower summary, sub-project × item',
       show: can(perms, 'jmr', 'view'),
     },
     {
-      slug: 'bills', label: 'Bills Review', href: '/jmr/bills',
-      icon: Receipt, tone: 'bg-amber-50 text-amber-700',
-      desc: 'Review, approve, mark paid',
-      show: can(perms, 'jmr-bills', 'view') && (role === 'admin' || role === 'head' || role === 'founder'),
-    },
-    {
-      slug: 'dashboard', label: 'PM Dashboard', href: '/jmr/dashboard',
+      slug: 'dashboard', label: 'JMR Dashboard', href: '/jmr/dashboard',
       icon: BarChart3, tone: 'bg-purple-50 text-purple-700',
-      desc: 'Spend · Billed · Paid + alerts',
+      desc: 'Logged spend + entries awaiting approval',
       show: can(perms, 'jmr', 'view') && (role === 'admin' || role === 'head' || role === 'founder'),
     },
     {
@@ -60,7 +48,7 @@ export default async function JMRPage() {
     <div className="p-4 md:p-6 max-w-5xl mx-auto">
       <PageHeader
         title="JMR / Machinery"
-        subtitle="Site machinery hours, bills, and JMR reports"
+        subtitle="Site machinery hours, entries, and approvals"
       />
       <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
         {tiles.map(t => (

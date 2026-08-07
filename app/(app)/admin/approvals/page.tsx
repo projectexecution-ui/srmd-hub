@@ -15,7 +15,6 @@ export const dynamic = 'force-dynamic'
 const MODULE_LABELS: Record<string, string> = {
   'indents':      'Indents',
   'jmr':          'JMR — Daily entries',
-  'jmr-bills':    'JMR — Contractor bills',
   'inventory':    'Inventory — Material requests',
   'cost-control': 'Cost Control — Working sheets',
 }

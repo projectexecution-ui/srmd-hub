@@ -36,7 +36,6 @@ const BLOCK_TABLES: Array<{
   { table: 'cc_working_sheets',   column: 'project_id',        label: 'Cost Control sheets', module: 'Cost Control'      },
   { table: 'cc_bills',            column: 'project_id',        label: 'Contractor bills',    module: 'Bills'             },
   { table: 'jmr_daily_entries',   column: 'project_id',        label: 'JMR daily entries',   module: 'JMR'               },
-  { table: 'jmr_bills',           column: 'project_id',        label: 'JMR bills',           module: 'JMR'               },
   { table: 'dsr_reports',         column: 'project_id',        label: 'Daily Site Reports',  module: 'Daily Site Report' },
   { table: 'inv_requests',        column: 'project_id',        label: 'Inventory requests',  module: 'Inventory'         },
 ]

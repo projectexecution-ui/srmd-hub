@@ -5,7 +5,7 @@ import { PageHeader } from '@/components/PageHeader'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import {
-  Inbox, Calendar, Building2, FileText,
+  Inbox, Calendar, Building2,
   AlertTriangle, CheckCheck, Clock,
 } from 'lucide-react'
 import { formatINR } from '@/lib/utils'
@@ -48,7 +48,6 @@ const REGISTRY_META: Record<string, ModuleMeta> = Object.fromEntries(
 const MODULE_META_OVERRIDES: Record<string, Partial<ModuleMeta>> = {
   inventory:      { label: 'Inventory requests' },
   jmr:            { label: 'JMR — daily entries' },
-  'jmr-bills':    { label: 'JMR — contractor bills', icon: FileText, tone: 'amber' }, // sub-slug, not in registry
   'cost-control': { label: 'Cost Control sheets' },
 }
 

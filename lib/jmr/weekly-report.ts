@@ -5,7 +5,7 @@
 import { jsPDF } from 'jspdf'
 import autoTable from 'jspdf-autotable'
 import { getDashboardSnapshot } from './dashboard'
-import { formatINR, formatINRShort, formatDateIN } from './format'
+import { formatINRShort, formatDateIN } from './format'
 
 export async function buildExecOnePagerPdf(): Promise<Uint8Array> {
   const snap = await getDashboardSnapshot()
@@ -24,62 +24,23 @@ export async function buildExecOnePagerPdf(): Promise<Uint8Array> {
 
   doc.setTextColor(17, 24, 39)
 
-  // 3 metric tiles
+  // SPEND tile (single — Bills removed)
   let y = 84
-  const tileW = (doc.internal.pageSize.getWidth() - 80 - 32) / 3
-  const drawTile = (x: number, label: string, big: string, sub: string, fill: [number, number, number]) => {
-    doc.setFillColor(fill[0], fill[1], fill[2])
-    doc.roundedRect(x, y, tileW, 64, 6, 6, 'F')
-    doc.setFontSize(8)
-    doc.setFont('helvetica', 'bold')
-    doc.text(label, x + 12, y + 18)
-    doc.setFontSize(18)
-    doc.text(big, x + 12, y + 40)
-    doc.setFontSize(8)
-    doc.setFont('helvetica', 'normal')
-    doc.text(sub, x + 12, y + 56)
-  }
-  drawTile(40, 'SPEND (JMR)', formatINRShort(snap.totals.earned), 'machinery + manpower · incl. GST', [220, 252, 231])
-  drawTile(40 + tileW + 16, 'BILLED', formatINRShort(snap.totals.billed), `${snap.billsAwaitingAction.length} bills awaiting`, [219, 234, 254])
-  drawTile(40 + (tileW + 16) * 2, 'PAID', formatINRShort(snap.totals.paid), `${formatINRShort(snap.totals.pendingRelease)} pending`, [254, 243, 199])
-
-  y += 84
-
-  // Top 3 alerts
-  doc.setFontSize(10)
+  const w = doc.internal.pageSize.getWidth()
+  doc.setFillColor(220, 252, 231)
+  doc.roundedRect(40, y, w - 80, 64, 6, 6, 'F')
+  doc.setFontSize(8)
   doc.setFont('helvetica', 'bold')
-  doc.text('Top alerts', 40, y); y += 10
-  doc.setFont('helvetica', 'normal')
-  doc.setFontSize(9)
+  doc.text('SPEND (JMR) — machinery + manpower · incl. GST', 52, y + 20)
+  doc.setFontSize(20)
+  doc.text(formatINRShort(snap.totals.spend), 52, y + 46)
+  y += 88
 
-  const alerts: string[] = []
-  if (snap.totals.unbilled > 0) {
-    alerts.push(`Unbilled liability: ${formatINRShort(snap.totals.unbilled)}${snap.oldestGap ? ` · oldest gap ${snap.oldestGap.days}d (${snap.oldestGap.contractorName})` : ''}`)
-  }
-  if (snap.totals.pendingRelease > 0) {
-    alerts.push(`Approved but not paid: ${formatINRShort(snap.totals.pendingRelease)}`)
-  }
-  const flaggedBills = snap.billsAwaitingAction.filter(b => b.variance_flag).length
-  if (flaggedBills > 0) {
-    alerts.push(`${flaggedBills} bill${flaggedBills > 1 ? 's' : ''} flagged for variance`)
-  }
-  if (alerts.length === 0) alerts.push('No major alerts.')
-  alerts.slice(0, 3).forEach((a) => { doc.text(`• ${a}`, 50, y); y += 14 })
-
-  y += 8
-
-  // Contractor table
+  // Contractor table — logged spend
   autoTable(doc, {
     startY: y,
-    head: [['Contractor', 'Spend', 'Billed', 'Paid', 'Unbilled', 'Unpaid']],
-    body: snap.perContractor.slice(0, 12).map(c => [
-      c.name,
-      formatINRShort(c.earned),
-      formatINRShort(c.billed),
-      formatINRShort(c.paid),
-      formatINRShort(c.unbilled),
-      formatINRShort(c.unpaid),
-    ]),
+    head: [['Contractor', 'Logged spend']],
+    body: snap.perContractor.slice(0, 12).map(c => [c.name, formatINRShort(c.spend)]),
     theme: 'grid',
     styles: { fontSize: 8, cellPadding: 4 },
     headStyles: { fillColor: [243, 244, 246], textColor: [17, 24, 39] },

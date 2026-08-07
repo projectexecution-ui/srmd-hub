@@ -271,7 +271,6 @@ export interface Upload {
 export type JmrItemCategory = 'equipment' | 'manpower'
 export type JmrItemUnit = 'hr' | 'day' | 'nos' | 'cu_m'
 export type JmrEntryStatus = 'submitted' | 'pm_approved' | 'flagged'
-export type JmrBillStatus = 'submitted' | 'pm_review' | 'approved' | 'paid' | 'rejected'
 
 export interface JmrContractor {
   id: string
@@ -342,49 +341,6 @@ export interface JmrDailyEntry {
   jmr_items?: JmrItem | null
   projects?: Project | null
   sub_project?: Project | null
-}
-
-export interface JmrBill {
-  id: string
-  bill_number: string
-  contractor_id: string
-  project_id: string
-  bill_date: string
-  period_from: string
-  period_to: string
-  subtotal: number
-  gst_rate: number
-  gst_amount: number
-  total_amount: number
-  bill_photo_url: string | null
-  status: JmrBillStatus
-  variance_flag: boolean
-  variance_notes: string | null
-  submitted_by_user_id: string | null
-  approved_by_user_id: string | null
-  approved_at: string | null
-  paid_on: string | null
-  payment_ref: string | null
-  created_at: string | null
-  updated_at: string | null
-  jmr_contractors?: JmrContractor | null
-  projects?: Project | null
-  jmr_bill_line_items?: JmrBillLineItem[]
-}
-
-export interface JmrBillLineItem {
-  id: string
-  bill_id: string
-  item_id: string
-  sub_project_id: string | null
-  billed_quantity: number
-  jmr_quantity: number
-  rate: number
-  amount: number
-  variance: number
-  variance_pct: number | null
-  created_at: string | null
-  jmr_items?: JmrItem | null
 }
 
 export interface JmrSettings {

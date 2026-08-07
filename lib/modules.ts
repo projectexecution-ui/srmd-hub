@@ -34,10 +34,10 @@ export const MODULES: ModuleTile[] = [
   { slug: 'payments',         label: 'Payments',         description: 'Payments against invoices',                   href: '/payments',       icon: Wallet,        tone: 'teal',   comingSoon: true },
   { slug: 'vendors',          label: 'Vendors',          description: 'Vendor master',                               href: '/vendors',        icon: Truck,         tone: 'purple' },
   { slug: 'projects',         label: 'Projects',         description: 'Site / project master',                       href: '/projects',       icon: Building2,     tone: 'slate' },
-  // Single JMR tile only. Sub-sections (Bills, Admin, Matrix, Dashboard, Entry)
+  // Single JMR tile only. Sub-sections (Admin, Matrix, Dashboard, Entry)
   // live inside /jmr's own landing — no need to duplicate them on the hub.
-  // The slugs `jmr-bills` and `jmr-admin` still exist in role_permissions and
-  // continue to gate the sub-routes; they're just not shown as separate tiles.
+  // The slug `jmr-admin` still exists in role_permissions and gates the admin
+  // sub-routes; it's just not shown as a separate tile. (Bills feature removed.)
   { slug: 'jmr',              label: 'JMR / Machinery',  description: 'Site machinery hours, JMR matrix, bills',     href: '/jmr',            icon: Wrench,        tone: 'orange' },
   { slug: 'daily-site-report',label: 'Daily Site Report',description: 'Site material/supplier deliveries — received → bill with CT → GRN → paid, with a smart checklist for the Atm Head', href: '/daily-site-report', icon: ClipboardCheck, tone: 'teal' },
   { slug: 'schedule',         label: 'Schedule & WOs',   description: 'Per-project schedule — plan vs actual, Work-Order deadlines, drawings & floor-by-floor progress; macro for management, micro for engineers', href: '/schedule', icon: CalendarClock, tone: 'indigo' },
