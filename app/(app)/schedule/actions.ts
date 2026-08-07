@@ -3,7 +3,7 @@
 import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
 import { getMyUser } from '@/lib/auth'
-import { DEFAULT_TEMPLATE } from '@/lib/schedule/template'
+import { DEFAULT_TEMPLATE, templateSequenceDefaults } from '@/lib/schedule/template'
 import { progressFromFloors } from '@/lib/schedule/formula'
 import { floorsSettingKey } from '@/lib/schedule/floors'
 import type { FloorStatus } from '@/lib/schedule/types'
@@ -184,14 +184,49 @@ export async function applyTemplate(projectId: string): Promise<{ ok?: true; add
       rows.push({
         project_id: projectId, trade: g.trade, name: it.name,
         sub: it.sub ?? null, uom: it.uom, seq, created_by: me,
+        cycle_days: it.cycle ?? null, gap_days: it.gap ?? 0,
       })
     }
   }
-  if (!rows.length) return { ok: true, added: 0 }
-  const { error } = await sb.from('sched_items').insert(rows)
-  if (error) return { error: error.message }
+  if (rows.length) {
+    const { error } = await sb.from('sched_items').insert(rows)
+    if (error) return { error: error.message }
+  }
+
+  // Second pass: wire the "follows" chain by name (needs all rows to exist).
+  const { data: all } = await sb.from('sched_items')
+    .select('id, trade, name, follows_item_id').eq('project_id', projectId)
+  const byKey = new Map(((all ?? []) as Array<{ id: string; trade: string; name: string; follows_item_id: string | null }>)
+    .map(r => [`${r.trade}|${r.name}`.toLowerCase(), r]))
+  const defaults = templateSequenceDefaults()
+  for (const [key, def] of defaults) {
+    if (!def.follows) continue
+    const row = byKey.get(key)
+    const pred = byKey.get(`${def.follows[0]}|${def.follows[1]}`.toLowerCase())
+    if (!row || !pred || row.follows_item_id) continue   // never overwrite a manual chain
+    await sb.from('sched_items').update({ follows_item_id: pred.id }).eq('id', row.id)
+  }
+
   revalidatePath(`/schedule/${projectId}`)
   return { ok: true, added: rows.length }
+}
+
+/** The one-sentence sequence editor: "starts after <item> + <gap> days,
+ *  <cycle> days per floor". follows=null clears the chain (own dates). */
+export async function setSequence(input: {
+  id: string; projectId: string
+  followsItemId: string | null; gapDays: number; cycleDays: number | null
+}): Promise<{ ok?: true; error?: string }> {
+  if (input.followsItemId === input.id) return { error: 'An item cannot follow itself.' }
+  const sb = await createClient()
+  const { error } = await sb.from('sched_items').update({
+    follows_item_id: input.followsItemId,
+    gap_days: Math.max(0, Math.round(input.gapDays || 0)),
+    cycle_days: input.cycleDays && input.cycleDays > 0 ? Math.round(input.cycleDays) : null,
+  }).eq('id', input.id)
+  if (error) return { error: error.message }
+  revalidatePath(`/schedule/${input.projectId}`)
+  return { ok: true }
 }
 
 /** Set an item×location floor status (upsert by hand — the unique is on lower(location)).

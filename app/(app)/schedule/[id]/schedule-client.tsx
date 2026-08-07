@@ -10,10 +10,11 @@ import { Button } from '@/components/ui/button'
 import { confirm } from '@/components/ui/confirm-dialog'
 import { ChevronLeft, ChevronRight, Plus, CalendarClock, Trash2, Wrench, Check } from 'lucide-react'
 import { deriveStatus, daysBetween, addDays, STATUS_META, expectedPct } from '@/lib/schedule/formula'
+import { deriveSchedule, readyFloors, actualCycleDays, type DerivedPlan } from '@/lib/schedule/sequence'
 import type { DisplayStatus, SchedItem, FloorStatus, SchedPromise } from '@/lib/schedule/types'
 import type { ProjectScheduleData } from '@/lib/schedule/data'
 import { TEMPLATE_ITEM_COUNT } from '@/lib/schedule/template'
-import { addSchedItem, updateSchedItem, setWoIssued, moveSchedDate, deleteSchedItem, applyTemplate, setFloorStatus, setScheduleFloors, bulkAssignSchedItems, setPromiseStatus, addPromise } from '../actions'
+import { addSchedItem, updateSchedItem, setWoIssued, moveSchedDate, deleteSchedItem, applyTemplate, setFloorStatus, setScheduleFloors, bulkAssignSchedItems, setPromiseStatus, addPromise, setSequence } from '../actions'
 
 type Row = { item: SchedItem; status: DisplayStatus; woBy: string | null; behindDays: number; woLateDays: number }
 type Runner = (fn: () => Promise<{ ok?: true; error?: string }>, okMsg?: string, undo?: () => Promise<{ ok?: true; error?: string }>) => void
@@ -114,6 +115,22 @@ export function ScheduleClient({ data, canEdit, meId }: { data: ProjectScheduleD
   const cellOf = (itemId: string, floor: string): FloorStatus =>
     cellStatus.get(`${itemId}|${floor.trim().toLowerCase()}`) ?? 'not_started'
 
+  // when each floor was ticked done (drives readiness + actual pace)
+  const doneStamp = useMemo(() => {
+    const m = new Map<string, string>()
+    for (const p of progress) if (p.status === 'done') m.set(`${p.item_id}|${p.location.trim().toLowerCase()}`, p.updated_at)
+    return m
+  }, [progress])
+  const doneAt = (itemId: string, floor: string) => doneStamp.get(`${itemId}|${floor.trim().toLowerCase()}`) ?? null
+
+  // sequencing: derive every item's plan (floor windows + start/end) from the chain
+  const derivedMap = useMemo(() => deriveSchedule(items, floorNames, cellOf), [items, floorNames, cellStatus]) // eslint-disable-line react-hooks/exhaustive-deps
+  const effItems = useMemo(() => items.map(it => {
+    const d = derivedMap.get(it.id)
+    return d?.derived ? { ...it, plan_start: d.start, plan_end: d.end } : it
+  }), [items, derivedMap])
+  const ready = useMemo(() => readyFloors(items, floorNames, cellOf, doneAt, today), [items, floorNames, cellStatus, doneStamp, today]) // eslint-disable-line react-hooks/exhaustive-deps
+
   const blockedByDrawing = useMemo(() => {
     const set = new Set<string>()
     for (const d of drawings) {
@@ -124,8 +141,8 @@ export function ScheduleClient({ data, canEdit, meId }: { data: ProjectScheduleD
   }, [drawings, today])
 
   const rows: Row[] = useMemo(() =>
-    items.map(item => ({ item, ...deriveStatus(item, today, { leads, drawingBlocked: blockedByDrawing.has(item.id) }) })),
-    [items, today, leads, blockedByDrawing])
+    effItems.map(item => ({ item, ...deriveStatus(item, today, { leads, drawingBlocked: blockedByDrawing.has(item.id) }) })),
+    [effItems, today, leads, blockedByDrawing])
   const rowById = useMemo(() => new Map(rows.map(r => [r.item.id, r])), [rows])
 
   const run: Runner = (fn, okMsg, undo) => {
@@ -141,16 +158,28 @@ export function ScheduleClient({ data, canEdit, meId }: { data: ProjectScheduleD
   }
 
   const overall = useMemo(() => {
-    const active = items.filter(i => i.state !== 'on_hold')
+    const active = effItems.filter(i => i.state !== 'on_hold')
     const pct = active.length ? Math.round(active.reduce((s, i) => s + i.pct, 0) / active.length) : 0
     const dated = active.filter(i => i.plan_start && i.plan_end)
     const actualScheduled = dated.length ? Math.round(dated.reduce((s, i) => s + i.pct, 0) / dated.length) : 0
     const plannedScheduled = dated.length ? Math.round(dated.reduce((s, i) => s + expectedPct(i, today), 0) / dated.length) : 0
-    return { pct, count: items.length, datedCount: dated.length, actualScheduled, plannedScheduled }
-  }, [items, today])
+    return { pct, count: effItems.length, datedCount: dated.length, actualScheduled, plannedScheduled }
+  }, [effItems, today])
+
+  // actual pace per item (days/floor) from real tick dates
+  const paceById = useMemo(() => {
+    const m = new Map<string, number>()
+    for (const it of items) {
+      const stamps: string[] = []
+      for (const f of floorNames) { const d = doneAt(it.id, f); if (d) stamps.push(d) }
+      const pace = actualCycleDays(stamps)
+      if (pace != null && pace > 0) m.set(it.id, pace)
+    }
+    return m
+  }, [items, floorNames, doneStamp]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const week = <MyWeek promises={promises} lastWeek={lastWeek} rowById={rowById} cellOf={cellOf} canEdit={canEdit} projectId={project.id} pending={pending} run={run} />
-  const pulse = <SitePulse rows={rows} promises={promises} lastWeek={lastWeek} floorNames={floorNames} cellOf={cellOf} overall={overall} today={today} drawings={drawings} />
+  const pulse = <SitePulse rows={rows} promises={promises} lastWeek={lastWeek} floorNames={floorNames} cellOf={cellOf} overall={overall} today={today} drawings={drawings} ready={ready} />
 
   return (
     <div className="p-4 md:p-6 max-w-3xl lg:max-w-[1400px] mx-auto space-y-4">
@@ -201,7 +230,8 @@ export function ScheduleClient({ data, canEdit, meId }: { data: ProjectScheduleD
           <div className={cn(tab === 'plan' ? 'block' : 'hidden', 'lg:block')}>
             <p className="hidden lg:block text-[11px] font-bold uppercase tracking-wide text-slate-400 mb-3 mt-2">Plan Room — all trades</p>
             <PlanRoom rows={rows} floorNames={floorNames} cellOf={cellOf} canEdit={canEdit} project={project} people={people} vendors={vendors}
-              promises={promises} weekStart={weekStart} today={today} leads={leads} pending={pending} run={run} items={items} />
+              promises={promises} weekStart={weekStart} today={today} leads={leads} pending={pending} run={run} items={items}
+              derivedMap={derivedMap} paceById={paceById} />
           </div>
         </>
       )}
@@ -329,11 +359,12 @@ function MyWeek({ promises, lastWeek, rowById, cellOf, canEdit, projectId, pendi
 
 /* ============================== ② SITE PULSE ============================== */
 
-function SitePulse({ rows, promises, lastWeek, floorNames, cellOf, overall, today, drawings }: {
+function SitePulse({ rows, promises, lastWeek, floorNames, cellOf, overall, today, drawings, ready }: {
   rows: Row[]; promises: SchedPromise[]; lastWeek: { kept: number; total: number } | null
   floorNames: string[]; cellOf: (i: string, f: string) => FloorStatus
   overall: { pct: number; count: number; datedCount: number; actualScheduled: number; plannedScheduled: number }
   today: string; drawings: ProjectScheduleData['drawings']
+  ready: ReturnType<typeof readyFloors>
 }) {
   const kept = promises.filter(p => p.status === 'done').length
   const ppc = promises.length ? Math.round(kept / promises.length * 100) : (lastWeek && lastWeek.total ? Math.round(lastWeek.kept / lastWeek.total * 100) : null)
@@ -413,6 +444,23 @@ function SitePulse({ rows, promises, lastWeek, floorNames, cellOf, overall, toda
         {drawings.length > 0 && <p className="mt-2 pt-2 border-t text-xs text-slate-500">Drawings: {gfc} GFC · {drawings.length} total</p>}
       </Card>
 
+      {ready.length > 0 && (
+        <Card className="p-4 shadow-sm border-l-4 border-emerald-400">
+          <div className="text-sm font-bold text-slate-800 mb-1">Ready to start · {ready.length}</div>
+          <p className="text-[11px] text-slate-400 mb-1">The floor before is done and the gap has passed — these can begin today.</p>
+          <ul className="divide-y divide-slate-100">
+            {ready.slice(0, 6).map(r => (
+              <li key={`${r.item.id}|${r.floor}`} className="flex items-center gap-3 py-2">
+                <span className="text-[10px] font-bold rounded-full px-2 py-0.5 bg-emerald-50 text-emerald-700 whitespace-nowrap">since {formatDate(r.readyFrom)}</span>
+                <span className="min-w-0 flex-1 truncate text-sm text-slate-800">{r.item.name} — {r.floor}</span>
+                <span className="text-[11px] text-slate-400 whitespace-nowrap">after {r.predName}</span>
+              </li>
+            ))}
+            {ready.length > 6 && <li className="pt-2 text-[11px] text-slate-400">+{ready.length - 6} more</li>}
+          </ul>
+        </Card>
+      )}
+
       <Card className="p-4 shadow-sm">
         <div className="text-sm font-bold text-slate-800 mb-1">Coming up — next 6 weeks</div>
         {comingUp.length === 0 ? (
@@ -438,11 +486,12 @@ function SitePulse({ rows, promises, lastWeek, floorNames, cellOf, overall, toda
 
 /* ============================== ③ PLAN ROOM ============================== */
 
-function PlanRoom({ rows, floorNames, cellOf, canEdit, project, people, vendors, promises, weekStart, today, leads, pending, run, items }: {
+function PlanRoom({ rows, floorNames, cellOf, canEdit, project, people, vendors, promises, weekStart, today, leads, pending, run, items, derivedMap, paceById }: {
   rows: Row[]; floorNames: string[]; cellOf: (i: string, f: string) => FloorStatus
   canEdit: boolean; project: ProjectScheduleData['project']
   people: string[]; vendors: string[]; promises: SchedPromise[]; weekStart: string; today: string
   leads: ProjectScheduleData['leads']; pending: boolean; run: Runner; items: SchedItem[]
+  derivedMap: Map<string, DerivedPlan>; paceById: Map<string, number>
 }) {
   const [openTrades, setOpenTrades] = useState<Set<string>>(new Set())
   const [openItem, setOpenItem] = useState<string | null>(null)
@@ -508,6 +557,7 @@ function PlanRoom({ rows, floorNames, cellOf, canEdit, project, people, vendors,
                     <PlanItem key={r.item.id} row={r} floorNames={floorNames} cellOf={cellOf} promised={promised}
                       open={openItem === r.item.id} onToggle={() => setOpenItem(openItem === r.item.id ? null : r.item.id)}
                       canEdit={canEdit} projectId={project.id} weekStart={weekStart} today={today} run={run}
+                      allItems={items} derived={derivedMap.get(r.item.id)} pace={paceById.get(r.item.id) ?? null}
                       onPick={(floor) => canEdit && setPicker({ item: r.item, floor, prev: cellOf(r.item.id, floor) })} />
                   ))}
                 </div>
@@ -547,19 +597,24 @@ function PlanRoom({ rows, floorNames, cellOf, canEdit, project, people, vendors,
   )
 }
 
-function PlanItem({ row, floorNames, cellOf, promised, open, onToggle, canEdit, projectId, weekStart, today, run, onPick }: {
+function PlanItem({ row, floorNames, cellOf, promised, open, onToggle, canEdit, projectId, weekStart, today, run, onPick, allItems, derived, pace }: {
   row: Row; floorNames: string[]; cellOf: (i: string, f: string) => FloorStatus
   promised: Set<string>; open: boolean; onToggle: () => void
   canEdit: boolean; projectId: string; weekStart: string; today: string; run: Runner
   onPick: (floor: string) => void
+  allItems: SchedItem[]; derived: DerivedPlan | undefined; pace: number | null
 }) {
   const { item, status } = row
+  const pred = item.follows_item_id ? allItems.find(i => i.id === item.follows_item_id) : null
+  const paceNote = pace != null && item.cycle_days
+    ? (pace > item.cycle_days ? ` · 🐢 ${pace}d/floor (plan ${item.cycle_days})` : ` · ⚡ ${pace}d/floor`)
+    : ''
   return (
     <div className="border-t border-slate-100 first:border-t-0">
       <button onClick={onToggle} className="w-full flex items-center gap-3 pl-10 pr-4 py-2.5 text-left hover:bg-white transition">
         <span className="flex-1 min-w-0">
           <span className="block font-medium text-slate-800 text-sm truncate">{item.name}</span>
-          <span className="block text-[11px] text-slate-500 truncate">{whyLabel(row)}{item.contractor ? ` · 🏗️ ${item.contractor}` : ''}{item.owner_name ? ` · 👷 ${item.owner_name}` : ''}</span>
+          <span className="block text-[11px] text-slate-500 truncate">{whyLabel(row)}{paceNote}{item.contractor ? ` · 🏗️ ${item.contractor}` : ''}{item.owner_name ? ` · 👷 ${item.owner_name}` : ''}</span>
         </span>
         <ProgressBar pct={item.pct} tone={toneOf(status)} width="w-14 sm:w-24" marker={item.plan_start && item.plan_end ? expectedPct(item, today) : null} />
         <span className="text-xs font-mono font-semibold text-slate-600 w-9 text-right">{item.pct}%</span>
@@ -572,8 +627,10 @@ function PlanItem({ row, floorNames, cellOf, promised, open, onToggle, canEdit, 
               const st = cellOf(item.id, f)
               const m = FLOOR_META[st]
               const isPromised = promised.has(`${item.id}|${f.trim().toLowerCase()}`)
+              const win = derived?.floors[f]
               return (
                 <button key={f} disabled={!canEdit} onClick={() => onPick(f)}
+                  title={win ? `planned ${formatDate(win.start)} → ${formatDate(win.end)}` : undefined}
                   className={cn('relative inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-2 text-xs font-medium transition disabled:opacity-70', m.chip, canEdit && 'hover:border-slate-400')}>
                   <span className="w-3 text-center">{m.sym}</span>{f}
                   {isPromised && <span className="absolute -top-1.5 -right-1.5 text-[9px] bg-indigo-600 text-white rounded-full px-1 font-bold" title="promised this week">W</span>}
@@ -581,16 +638,44 @@ function PlanItem({ row, floorNames, cellOf, promised, open, onToggle, canEdit, 
               )
             })}
           </div>
+
+          {/* the one-sentence sequence — no MSP vocabulary */}
+          {canEdit && (
+            <div className="flex flex-wrap items-center gap-2 text-xs text-slate-600 bg-slate-50 rounded-lg px-3 py-2">
+              <span className="font-semibold">Starts</span>
+              <select defaultValue={item.follows_item_id ?? ''} className="border rounded-lg px-2 py-1.5 text-xs bg-white max-w-[210px]"
+                onChange={e => run(() => setSequence({ id: item.id, projectId, followsItemId: e.target.value || null, gapDays: item.gap_days, cycleDays: item.cycle_days }), 'Sequence updated')}>
+                <option value="">on its own date</option>
+                {allItems.filter(i => i.id !== item.id).map(i => (
+                  <option key={i.id} value={i.id}>after {i.name} ({i.trade})</option>
+                ))}
+              </select>
+              {item.follows_item_id ? (
+                <>
+                  <span>+</span>
+                  <input type="number" min={0} defaultValue={item.gap_days} className="w-14 border rounded-lg px-2 py-1.5 text-xs font-mono"
+                    onBlur={e => { const v = Math.max(0, Number(e.target.value) || 0); if (v !== item.gap_days) run(() => setSequence({ id: item.id, projectId, followsItemId: item.follows_item_id, gapDays: v, cycleDays: item.cycle_days }), 'Gap updated') }} />
+                  <span>days gap</span>
+                </>
+              ) : (
+                <input type="date" defaultValue={item.plan_start ?? ''} className="border rounded-lg px-2 py-1.5 text-xs font-mono"
+                  onChange={e => run(() => moveSchedDate({ id: item.id, projectId, field: 'plan_start', from: item.plan_start, to: e.target.value || null }), 'Start set')} />
+              )}
+              <span>·</span>
+              <input type="number" min={1} defaultValue={item.cycle_days ?? ''} placeholder="—" className="w-14 border rounded-lg px-2 py-1.5 text-xs font-mono"
+                onBlur={e => { const v = Number(e.target.value) || null; if (v !== item.cycle_days) run(() => setSequence({ id: item.id, projectId, followsItemId: item.follows_item_id, gapDays: item.gap_days, cycleDays: v }), 'Cycle updated') }} />
+              <span>days/floor</span>
+              {derived?.derived && derived.start && derived.end && (
+                <span className="ml-auto text-[11px] text-indigo-600 font-mono whitespace-nowrap">→ {formatDate(derived.start)} – {formatDate(derived.end)} (auto)</span>
+              )}
+            </div>
+          )}
+          {!canEdit && pred && (
+            <p className="text-[11px] text-slate-500">Starts after <b>{pred.name}</b>{item.gap_days ? ` + ${item.gap_days} days` : ''}{item.cycle_days ? ` · ${item.cycle_days} days/floor` : ''}</p>
+          )}
+
           {canEdit && (
             <div className="flex flex-wrap items-end gap-3">
-              <label className="text-[11px] font-semibold text-slate-500">Site start
-                <input type="date" defaultValue={item.plan_start ?? ''} className="mt-1 block text-xs border rounded-lg px-2 py-1.5 font-mono"
-                  onChange={e => run(() => moveSchedDate({ id: item.id, projectId, field: 'plan_start', from: item.plan_start, to: e.target.value || null }), 'Start moved')} />
-              </label>
-              <label className="text-[11px] font-semibold text-slate-500">Finish
-                <input type="date" defaultValue={item.plan_end ?? ''} className="mt-1 block text-xs border rounded-lg px-2 py-1.5 font-mono"
-                  onChange={e => run(() => moveSchedDate({ id: item.id, projectId, field: 'plan_end', from: item.plan_end, to: e.target.value || null }), 'Finish moved')} />
-              </label>
               {item.wo_issued
                 ? <Button size="sm" variant="outline" onClick={() => run(() => setWoIssued({ id: item.id, projectId, issued: false }), 'WO cleared')}>Clear WO</Button>
                 : <Button size="sm" variant="outline" onClick={() => run(() => setWoIssued({ id: item.id, projectId, issued: true, issuedOn: today }), 'WO marked issued')}>Mark WO issued</Button>}
@@ -697,21 +782,19 @@ function AssignPanel({ items, people, vendors, projectId, run, onClose }: {
         <table className="w-full text-xs border-separate border-spacing-0">
           <thead><tr className="text-left text-[10px] uppercase tracking-wide text-slate-500">
             <th className="py-1.5 pr-3 min-w-[120px]">Trade</th><th className="py-1.5 px-2 min-w-[150px]">🏗️ Contractor</th>
-            <th className="py-1.5 px-2 min-w-[140px]">👷 Engineer</th><th className="py-1.5 px-2 min-w-[140px]">✔ Approver</th>
+            <th className="py-1.5 px-2 min-w-[140px]">👷 Engineer</th>
           </tr></thead>
           <tbody>
             <tr className="bg-indigo-50/50">
               <td className="py-1.5 pr-3 font-semibold text-indigo-800">All trades →</td>
               <td className="py-1 px-2"><Cell list="dl-vendors" def="" onSet={v => setAll('contractor', v, 'Contractor')} /></td>
               <td className="py-1 px-2"><Cell list="dl-people" def="" onSet={v => setAll('ownerName', v, 'Engineer')} /></td>
-              <td className="py-1 px-2"><Cell list="dl-people" def="" onSet={v => setAll('approverName', v, 'Approver')} /></td>
             </tr>
             {trades.map(g => (
               <tr key={g.trade} className="border-t border-slate-100">
                 <td className="py-1.5 pr-3 text-slate-700">{g.trade} <span className="text-slate-400">({g.items.length})</span></td>
                 <td className="py-1 px-2"><Cell list="dl-vendors" def={common(g.items, 'contractor')} onSet={v => setTrade(g.trade, 'contractor', v, 'Contractor', g.items.length)} /></td>
                 <td className="py-1 px-2"><Cell list="dl-people" def={common(g.items, 'owner_name')} onSet={v => setTrade(g.trade, 'ownerName', v, 'Engineer', g.items.length)} /></td>
-                <td className="py-1 px-2"><Cell list="dl-people" def={common(g.items, 'approver_name')} onSet={v => setTrade(g.trade, 'approverName', v, 'Approver', g.items.length)} /></td>
               </tr>
             ))}
           </tbody>

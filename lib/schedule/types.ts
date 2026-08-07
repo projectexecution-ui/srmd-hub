@@ -30,7 +30,10 @@ export interface SchedItem {
   owner_user_id: string | null
   owner_name: string | null      // responsible engineer (Zoho "Owner")
   contractor: string | null      // agency executing the work / raising WO to
-  approver_name: string | null   // who signs off (Zoho "Approver")
+  approver_name: string | null   // kept in DB; hidden from UI for now
+  follows_item_id: string | null // "starts after <item>" (same project)
+  gap_days: number               // + N days gap (curing / deshuttering)
+  cycle_days: number | null      // days per floor; windows derive from this
   notes: string | null
   created_by: string | null
   created_at: string
