@@ -34,13 +34,10 @@ export function JmrPWAInit() {
     }
   }, [])
 
-  if (online && pendingCount === 0) {
-    return (
-      <div className="fixed top-3 right-3 z-50 inline-flex items-center gap-1 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-full px-2.5 py-1 text-xs font-medium shadow-sm">
-        <Wifi className="h-3.5 w-3.5" /> Online
-      </div>
-    )
-  }
+  // When everything's normal (online, nothing queued) show nothing — the badge
+  // only surfaces when there's something to act on: offline, or entries waiting
+  // to sync. No permanent "Online" pill cluttering the corner.
+  if (online && pendingCount === 0) return null
   return (
     <div className={`fixed top-3 right-3 z-50 inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium shadow-sm border ${online ? 'bg-amber-50 text-amber-800 border-amber-200' : 'bg-rose-50 text-rose-800 border-rose-200'}`}>
       {online ? <Wifi className="h-3.5 w-3.5" /> : <WifiOff className="h-3.5 w-3.5" />}

@@ -56,19 +56,19 @@ export default async function JMRPage() {
       {canLog && (
         <Link
           href="/jmr/entry"
-          className="group block rounded-2xl bg-gradient-to-br from-blue-600 to-indigo-700 text-white p-5 mb-4 shadow-sm hover:shadow-lg hover:-translate-y-0.5 transition-all"
+          className="group block rounded-2xl bg-gradient-to-br from-blue-600 to-indigo-700 text-white p-4 sm:p-5 mb-4 shadow-sm hover:shadow-lg hover:-translate-y-0.5 transition-all"
         >
-          <div className="flex items-center justify-between gap-4">
-            <div className="flex items-center gap-3.5 min-w-0">
-              <span className="h-12 w-12 rounded-2xl bg-white/15 grid place-items-center flex-shrink-0">
-                <ClipboardCheck className="h-6 w-6" />
+          <div className="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4">
+            <div className="flex items-center gap-3 sm:gap-3.5 min-w-0">
+              <span className="h-11 w-11 sm:h-12 sm:w-12 rounded-2xl bg-white/15 grid place-items-center flex-shrink-0">
+                <ClipboardCheck className="h-5 w-5 sm:h-6 sm:w-6" />
               </span>
               <div className="min-w-0">
-                <p className="text-lg font-bold leading-tight">Log today&apos;s machinery &amp; manpower</p>
-                <p className="text-sm text-white/80 mt-0.5">Pick project → contractor → item → hours, attach the signed log sheet.</p>
+                <p className="text-base sm:text-lg font-bold leading-tight">Log today&apos;s machinery &amp; manpower</p>
+                <p className="text-xs sm:text-sm text-white/80 mt-0.5">Pick project → contractor → item → hours, attach the signed log sheet.</p>
               </div>
             </div>
-            <span className="inline-flex items-center gap-1.5 bg-white text-blue-700 font-semibold text-sm px-4 py-2 rounded-xl flex-shrink-0 group-hover:gap-2.5 transition-all">
+            <span className="inline-flex items-center justify-center gap-1.5 bg-white text-blue-700 font-semibold text-sm px-4 py-2.5 sm:py-2 rounded-xl w-full sm:w-auto sm:ml-auto flex-shrink-0 group-hover:gap-2.5 transition-all">
               <Plus className="h-4 w-4" /> New entry
             </span>
           </div>
