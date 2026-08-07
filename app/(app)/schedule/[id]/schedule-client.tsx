@@ -104,6 +104,7 @@ export function ScheduleClient({ data, canEdit, meId }: { data: ProjectScheduleD
   const router = useRouter()
   const [pending, start] = useTransition()
   const [tab, setTab] = useState<'week' | 'pulse' | 'plan'>('week')
+  const [deskTab, setDeskTab] = useState<'site' | 'plan'>('site')
 
   const { project, items, drawings, leads, today, floorNames, progress, people, vendors, promises, lastWeek, weekStart } = data
 
@@ -186,6 +187,15 @@ export function ScheduleClient({ data, canEdit, meId }: { data: ProjectScheduleD
       <div className="flex items-center gap-2 flex-wrap">
         <Button asChild size="sm" variant="ghost"><Link href="/schedule"><ChevronLeft className="h-4 w-4" /> Projects</Link></Button>
         <h1 className="text-lg md:text-xl font-bold text-slate-900">{project.code ? `${project.code} — ` : ''}{project.name}</h1>
+        {/* desktop page switch — keeps each page one screen tall */}
+        <div className="hidden lg:inline-flex ml-3 rounded-lg border bg-slate-100 p-0.5">
+          {(([['site', 'Site'], ['plan', 'Plan Room']]) as const).map(([k, label]) => (
+            <button key={k} onClick={() => setDeskTab(k)}
+              className={cn('px-3.5 py-1.5 text-xs font-bold rounded-md transition', deskTab === k ? 'bg-white text-indigo-700 shadow-sm' : 'text-slate-500 hover:text-slate-700')}>
+              {label}
+            </button>
+          ))}
+        </div>
         <span className="ml-auto text-xs text-slate-400 font-mono">week of {formatDate(weekStart)}</span>
       </div>
 
@@ -213,8 +223,8 @@ export function ScheduleClient({ data, canEdit, meId }: { data: ProjectScheduleD
             {tab === 'pulse' && pulse}
           </div>
 
-          {/* DESKTOP cockpit: act on the left, see on the right */}
-          <div className="hidden lg:grid grid-cols-2 gap-4 items-start">
+          {/* DESKTOP cockpit: act on the left, see on the right (Site page) */}
+          <div className={cn('grid-cols-2 gap-4 items-start', deskTab === 'site' ? 'hidden lg:grid' : 'hidden')}>
             <div className="space-y-3">
               <p className="text-[11px] font-bold uppercase tracking-wide text-slate-400">Act — this week</p>
               <ActionCentre rows={rows} ready={ready} canEdit={canEdit} projectId={project.id} today={today} leadDays={leads.procurement} run={run} />
@@ -226,8 +236,8 @@ export function ScheduleClient({ data, canEdit, meId }: { data: ProjectScheduleD
             </div>
           </div>
 
-          {/* PLAN list: third tab on mobile, full-width section on desktop */}
-          <div className={cn(tab === 'plan' ? 'block' : 'hidden', 'lg:block')}>
+          {/* PLAN: third tab on mobile, its own page on desktop */}
+          <div className={cn(tab === 'plan' ? 'block' : 'hidden', deskTab === 'plan' ? 'lg:block' : 'lg:hidden')}>
             <p className="hidden lg:block text-[11px] font-bold uppercase tracking-wide text-slate-400 mb-3 mt-2">Plan Room — all trades</p>
             <PlanRoom rows={rows} floorNames={floorNames} cellOf={cellOf} canEdit={canEdit} project={project} people={people} vendors={vendors}
               promises={promises} weekStart={weekStart} today={today} leads={leads} pending={pending} run={run} items={items}
@@ -551,9 +561,15 @@ function SitePulse({ rows, promises, lastWeek, floorNames, cellOf, overall, toda
                   }
                   return <div key={f} className="h-6 rounded" style={{ background: bg, border }} title={`${g.trade} · ${f.replace(' Floor', '')}`} />
                 })}
-                <div className="text-[9.5px] text-slate-500 pl-2 truncate self-center" title={contractors.join(', ')}>
-                  {contractors.length ? contractors[0] + (contractors.length > 1 ? ` +${contractors.length - 1}` : '') : '—'}
-                  {tradeEnd ? <span className="text-indigo-600 font-mono"> · {formatDate(tradeEnd)}</span> : ''}
+                <div className="text-[9.5px] text-slate-500 pl-2 truncate self-center flex items-center gap-1.5" title={contractors.join(', ')}>
+                  {(() => {
+                    const issued = g.rows.filter(r => r.item.wo_issued).length
+                    const cls = issued === g.rows.length ? 'bg-emerald-100 text-emerald-700' : issued > 0 ? 'bg-amber-100 text-amber-700' : 'bg-rose-100 text-rose-600'
+                    const label = issued === g.rows.length ? 'WO ✓' : issued > 0 ? `WO ${issued}/${g.rows.length}` : 'WO —'
+                    return <span className={cn('inline-flex rounded px-1 py-px text-[8.5px] font-bold whitespace-nowrap', cls)} title={`Work Orders: ${issued} of ${g.rows.length} issued`}>{label}</span>
+                  })()}
+                  <span className="truncate">{contractors.length ? contractors[0] + (contractors.length > 1 ? ` +${contractors.length - 1}` : '') : '—'}</span>
+                  {tradeEnd ? <span className="text-indigo-600 font-mono whitespace-nowrap">· {formatDate(tradeEnd)}</span> : ''}
                 </div>
                 {open && g.rows.map(r => (
                   <FragmentGroup key={r.item.id}>
@@ -579,7 +595,10 @@ function SitePulse({ rows, promises, lastWeek, floorNames, cellOf, overall, toda
                         </div>
                       )
                     })}
-                    <div className="text-[9px] text-slate-400 pl-2 truncate self-center font-mono">
+                    <div className="text-[9px] text-slate-400 pl-2 truncate self-center font-mono flex items-center gap-1">
+                      <span className={cn('font-sans font-bold', r.item.wo_issued ? 'text-emerald-600' : 'text-rose-400')} title={r.item.wo_issued ? `WO issued${r.item.wo_number ? ' · ' + r.item.wo_number : ''}` : 'WO pending'}>
+                        {r.item.wo_issued ? '✓' : '○'}
+                      </span>
                       {(derivedMap.get(r.item.id)?.end ?? r.item.plan_end) ? formatDate((derivedMap.get(r.item.id)?.end ?? r.item.plan_end)!) : ''}
                     </div>
                   </FragmentGroup>
