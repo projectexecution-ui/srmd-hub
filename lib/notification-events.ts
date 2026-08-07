@@ -33,6 +33,12 @@ export const NOTIFICATION_EVENTS: NotificationEventDef[] = [
     audience: 'Eligible approvers',
   },
   {
+    type: 'sched_promise_nudge',
+    label: 'Schedule — weekly promise nudge',
+    description: 'Monday "your week\'s promises" plan ping + evening reminder of still-open promises, to each responsible engineer.',
+    audience: 'Promise owners (engineers)',
+  },
+  {
     type: 'procurement_digest',
     label: 'Indent → PO daily follow-up',
     description: 'Weekday reminder to each Atm Head — POs to raise (2+ days) and deliveries to chase (1 week+), only their projects.',

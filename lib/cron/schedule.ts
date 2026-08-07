@@ -45,6 +45,8 @@ export const CRON_JOBS: CronJob[] = [
   { key: 'bills-pipeline',        policy: 'each',  am: '/api/cron/bills-pipeline?cron=1',      pm: '/api/cron/bills-pipeline?cron=1&slot=pm' },
   { key: 'bph-sync',              policy: 'each',  am: '/api/cron/bph-sync?cron=1',            pm: '/api/cron/bph-sync?cron=1' },
   { key: 'email-retry',           policy: 'each',  am: '/api/cron/email-retry?cron=1',         pm: '/api/cron/email-retry?cron=1' },
+  // am = Monday week-plan ping (route self-gates to Mondays); pm = evening open-promises reminder
+  { key: 'schedule-nudge',        policy: 'each',  am: '/api/cron/schedule-nudge?cron=1',      pm: '/api/cron/schedule-nudge?cron=1&slot=pm' },
 ]
 
 /** IST calendar date (YYYY-MM-DD) for a given epoch ms — the ledger key. */
