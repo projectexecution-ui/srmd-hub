@@ -57,6 +57,18 @@ export const NOTIFICATION_EVENTS: NotificationEventDef[] = [
     audience: 'Project Head & raising engineer',
   },
   {
+    type: 'jmr_entry_approved',
+    label: 'JMR entry approved',
+    description: 'When a Head/PM approves a daily JMR entry, the engineer who logged it is told (with the approver’s note).',
+    audience: 'The engineer who logged it',
+  },
+  {
+    type: 'jmr_entry_flagged',
+    label: 'JMR entry flagged',
+    description: 'When a Head/PM flags a daily JMR entry, the engineer who logged it is told the reason so they can fix or re-log.',
+    audience: 'The engineer who logged it',
+  },
+  {
     type: 'email_health',
     label: 'Notification delivery problem',
     description: 'Bell-only alert to admins when email or phone-push alerts could not be delivered after retries (so a broken channel can still report itself).',

@@ -13,11 +13,16 @@
 // The approver note lives in its own column, distinct from the engineer's
 // work_description, so neither field mutates the other.
 //
+// After a successful review, the engineer who logged each entry is notified
+// (in-app bell + their chosen channels via notify_user) — grouped into one
+// message per person, and never firing for entries you reviewed of your own.
+//
 // Authorisation: RLS already restricts UPDATE on jmr_daily_entries to
 // admin / head; non-privileged callers will simply get 0 rows updated.
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { getMyPermissions, can } from '@/lib/auth'
+import { formatDateIN } from '@/lib/jmr/format'
 
 interface Body {
   ids: string[]
@@ -74,8 +79,61 @@ export async function POST(req: NextRequest) {
     .update(patch)
     .in('id', body.ids)
     .eq('status', 'submitted') // only re-affect entries still in the inbox
-    .select('id')
+    .select('id, logged_by_user_id, entry_date, jmr_items(name)')
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
-  return NextResponse.json({ updated: data?.length ?? 0, action: body.action })
+
+  const rows = (data ?? []) as Array<{
+    id: string
+    logged_by_user_id: string | null
+    entry_date: string
+    jmr_items: { name: string } | { name: string }[] | null
+  }>
+
+  // ── Notify each engineer whose entries were just reviewed ───────────────
+  // One grouped message per person; skip entries you reviewed of your own.
+  // notify_user is SECURITY DEFINER, so it posts to the engineer's inbox and
+  // rides their channel prefs + the /admin/notifications policy. A notify
+  // failure never fails the approval itself (the DB write already landed).
+  const byEngineer = new Map<string, typeof rows>()
+  for (const r of rows) {
+    const uid = r.logged_by_user_id
+    if (!uid || uid === user.id) continue
+    const arr = byEngineer.get(uid) ?? []
+    arr.push(r)
+    byEngineer.set(uid, arr)
+  }
+
+  const notifyErrors: string[] = []
+  for (const [engineerId, mine] of byEngineer) {
+    const n = mine.length
+    const first = mine[0]!
+    const itemName = Array.isArray(first.jmr_items) ? first.jmr_items[0]?.name : first.jmr_items?.name
+    const dateHuman = formatDateIN(first.entry_date)
+    const title = isFlag
+      ? (n === 1 ? `JMR flagged · ${itemName ?? dateHuman}` : `${n} JMR entries flagged`)
+      : (n === 1 ? `JMR approved · ${itemName ?? dateHuman}` : `${n} JMR entries approved`)
+    const lead = isFlag
+      ? (n === 1 ? `Your ${dateHuman} entry needs a re-check.` : `${n} of your entries were flagged.`)
+      : (n === 1 ? `Your ${dateHuman} entry was approved.` : `${n} of your entries were approved.`)
+    const { error: nerr } = await supabase.rpc('notify_user', {
+      p_user_id: engineerId,
+      p_type: isFlag ? 'jmr_entry_flagged' : 'jmr_entry_approved',
+      p_title: title,
+      p_body: `${lead} ${isFlag ? 'Reason' : 'Note'}: ${remarks}`,
+      p_url: '/jmr/my',
+      p_module_slug: 'jmr',
+      p_doc_table: 'jmr_daily_entries',
+      p_doc_id: n === 1 ? first.id : null,
+      p_data: { action: body.action, count: n, ids: mine.map(m => m.id), remarks },
+    })
+    if (nerr) notifyErrors.push(`${engineerId}: ${nerr.message}`)
+  }
+
+  return NextResponse.json({
+    updated: rows.length,
+    action: body.action,
+    notified: byEngineer.size,
+    ...(notifyErrors.length ? { notifyErrors } : {}),
+  })
 }
