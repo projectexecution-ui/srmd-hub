@@ -23,13 +23,20 @@ body {
   overflow: hidden;
 }
 
-/* Print / save-as-PDF — used by the Schedule map's PDF chip so a manager gets
-   a clean one-page report: no app chrome, colours preserved, nothing clipped. */
+/* Print / save-as-PDF — the Schedule map's PDF chip prints ONLY the dedicated
+   .print-report block, so the output never depends on screen width (paper is
+   narrow => the app would otherwise render its mobile layout) or which tab is
+   open. Classic visibility pattern: hide everything, reveal the report. */
 @media print {
-  @page { size: A4 landscape; margin: 10mm; }
-  nav, aside, header button, .print\:hidden { display: none !important; }
+  @page { size: A4 landscape; margin: 8mm; }
   body { background: #fff !important; }
-  main { overflow: visible !important; }
-  .overflow-x-auto { overflow: visible !important; }
+  body * { visibility: hidden !important; }
+  .print-report, .print-report * { visibility: visible !important; }
+  .print-report {
+    display: block !important;
+    position: absolute !important;
+    left: 0; top: 0; width: 100%;
+    margin: 0; padding: 0;
+  }
   * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
 }

@@ -204,12 +204,26 @@ export function ScheduleClient({ data, canEdit, meId }: { data: ProjectScheduleD
     return worst
   }, [items, paceById])
 
+  // trades, grouped once — used by the print report (all trades, always)
+  const allTrades = useMemo(() => {
+    const order: string[] = []
+    const map = new Map<string, Row[]>()
+    for (const r of rows) { if (!map.has(r.item.trade)) { map.set(r.item.trade, []); order.push(r.item.trade) } map.get(r.item.trade)!.push(r) }
+    return order.map(t => ({ trade: t, rows: map.get(t)! }))
+  }, [rows])
+  const projectLabel = `${project.code ? project.code + ' — ' : ''}${project.name}`
+
   const week = <MyWeek promises={promises} lastWeek={lastWeek} rowById={rowById} cellOf={cellOf} canEdit={canEdit} projectId={project.id} pending={pending} run={run} />
   const pulse = <SitePulse rows={rows} promises={promises} lastWeek={lastWeek} floorNames={floorNames} cellOf={cellOf} overall={overall} today={today} drawings={drawings} ready={ready} derivedMap={derivedMap} doneAt={doneAt} projectLabel={`${project.code ? project.code + ' — ' : ''}${project.name}`} />
 
   return (
     <div className="p-4 md:p-6 max-w-3xl lg:max-w-[1400px] mx-auto space-y-4">
-      <div className="flex items-center gap-2 flex-wrap">
+      {items.length > 0 && (
+        <PrintReport projectLabel={projectLabel} today={today} overall={overall} trades={allTrades}
+          floorNames={floorNames} cellOf={cellOf} derivedMap={derivedMap} doneAt={doneAt}
+          promises={promises} lastWeek={lastWeek} />
+      )}
+      <div className="flex items-center gap-2 flex-wrap print:hidden">
         <Button asChild size="sm" variant="ghost"><Link href="/schedule"><ChevronLeft className="h-4 w-4" /> Projects</Link></Button>
         <h1 className="text-lg md:text-xl font-bold text-slate-900">{project.code ? `${project.code} — ` : ''}{project.name}</h1>
         {/* desktop page switch — keeps each page one screen tall */}
@@ -283,6 +297,99 @@ export function ScheduleClient({ data, canEdit, meId }: { data: ProjectScheduleD
           </div>
         </>
       )}
+    </div>
+  )
+}
+
+/** The printable report. Always in the DOM but invisible on screen; print CSS
+ *  shows ONLY this, so the PDF never depends on the screen width or which tab
+ *  happens to be open. One clean landscape page for management. */
+function PrintReport({ projectLabel, today, overall, trades, floorNames, cellOf, derivedMap, doneAt, promises, lastWeek }: {
+  projectLabel: string; today: string
+  overall: { pct: number; count: number; actualScheduled: number; plannedScheduled: number; datedCount: number }
+  trades: { trade: string; rows: Row[] }[]
+  floorNames: string[]; cellOf: (i: string, f: string) => FloorStatus
+  derivedMap: Map<string, DerivedPlan>; doneAt: (i: string, f: string) => string | null
+  promises: SchedPromise[]; lastWeek: { kept: number; total: number } | null
+}) {
+  const kept = promises.filter(p => p.status === 'done').length
+  const cellBg = (st: FloorStatus) => st === 'done' ? '#0f9b8e' : st === 'wip' ? '#e8a33d' : st === 'na' ? '#fafbfc' : '#eef2f7'
+  return (
+    <div className="print-report hidden print:block" style={{ fontFamily: 'ui-sans-serif, system-ui, sans-serif', color: '#0f172a' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', borderBottom: '2px solid #4f46e5', paddingBottom: 6, marginBottom: 10 }}>
+        <div>
+          <div style={{ fontSize: 16, fontWeight: 800 }}>{projectLabel} — Progress report</div>
+          <div style={{ fontSize: 9, color: '#64748b' }}>Generated {formatDate(today)} · CT HUB</div>
+        </div>
+        <div style={{ display: 'flex', gap: 14, fontSize: 9 }}>
+          <span><b style={{ fontSize: 14, color: '#4f46e5' }}>{overall.pct}%</b> complete</span>
+          <span><b style={{ fontSize: 14 }}>{overall.count}</b> work items</span>
+          {overall.datedCount > 0 && <span><b style={{ fontSize: 14, color: overall.plannedScheduled - overall.actualScheduled > 3 ? '#e11d48' : '#0f9b8e' }}>
+            {overall.plannedScheduled - overall.actualScheduled > 3 ? `${Math.round(overall.plannedScheduled - overall.actualScheduled)}% behind` : 'On track'}</b></span>}
+          <span><b style={{ fontSize: 14 }}>{kept}/{promises.length}</b> promises{lastWeek ? ` (last wk ${lastWeek.kept}/${lastWeek.total})` : ''}</span>
+        </div>
+      </div>
+      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 8 }}>
+        <thead>
+          <tr style={{ background: '#f1f5f9' }}>
+            <th style={{ textAlign: 'left', padding: '3px 5px', width: 130 }}>Trade / item</th>
+            {floorNames.map(f => <th key={f} style={{ padding: '3px 2px', width: 42 }}>{f.replace(' Floor', '')}</th>)}
+            <th style={{ padding: '3px 5px', width: 46 }}>%</th>
+            <th style={{ padding: '3px 5px', width: 44 }}>WO</th>
+            <th style={{ textAlign: 'left', padding: '3px 5px', width: 90 }}>Contractor</th>
+            <th style={{ padding: '3px 5px', width: 58 }}>Ends</th>
+          </tr>
+        </thead>
+        <tbody>
+          {trades.map(g => {
+            const active = g.rows.filter(r => r.item.state !== 'on_hold')
+            const pct = active.length ? Math.round(active.reduce((s, r) => s + r.item.pct, 0) / active.length) : 0
+            const issued = g.rows.filter(r => r.item.wo_issued).length
+            const contractor = g.rows.map(r => r.item.contractor).find(Boolean)
+            const ends = g.rows.map(r => derivedMap.get(r.item.id)?.end ?? r.item.plan_end).filter(Boolean).sort() as string[]
+            return (
+              <FragmentGroup key={g.trade}>
+                <tr style={{ background: '#e8ecf3', fontWeight: 800 }}>
+                  <td style={{ padding: '3px 5px' }}>{g.trade}</td>
+                  {floorNames.map(f => {
+                    const cs = g.rows.map(r => cellOf(r.item.id, f)).filter(c => c !== 'na')
+                    const sc = cs.length ? cs.reduce((a, c) => a + (c === 'done' ? 1 : c === 'wip' ? 0.5 : 0), 0) / cs.length : -1
+                    const bg = sc < 0 ? '#fafbfc' : sc === 0 ? '#eef2f7' : sc >= 0.99 ? '#0f9b8e' : sc >= 0.5 ? '#5bbfae' : '#e8a33d'
+                    return <td key={f} style={{ background: bg, border: '1px solid #fff' }} />
+                  })}
+                  <td style={{ textAlign: 'center', color: '#4f46e5' }}>{pct}%</td>
+                  <td style={{ textAlign: 'center', color: issued === g.rows.length ? '#0f766e' : issued ? '#b45309' : '#be123c' }}>{issued}/{g.rows.length}</td>
+                  <td style={{ padding: '3px 5px', fontWeight: 400 }}>{contractor ?? '—'}</td>
+                  <td style={{ textAlign: 'center' }}>{ends.length === g.rows.length && ends.length ? formatDate(ends[ends.length - 1]) : '—'}</td>
+                </tr>
+                {g.rows.map(r => (
+                  <tr key={r.item.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                    <td style={{ padding: '2px 5px 2px 14px', color: '#475569' }}>{r.item.name}</td>
+                    {floorNames.map(f => {
+                      const st = cellOf(r.item.id, f)
+                      let txt = ''
+                      if (st === 'done') { const d = doneAt(r.item.id, f); txt = d ? `${+d.slice(8, 10)}/${+d.slice(5, 7)}` : '✓' }
+                      else if (st !== 'na') { const w = derivedMap.get(r.item.id)?.floors[f]; if (w) txt = st === 'wip' ? `${+w.end.slice(8, 10)}/${+w.end.slice(5, 7)}` : `${+w.start.slice(8, 10)}/${+w.start.slice(5, 7)}` }
+                      return <td key={f} style={{ background: cellBg(st), color: st === 'done' ? '#fff' : '#64748b', textAlign: 'center', fontSize: 7, border: '1px solid #fff' }}>{txt}</td>
+                    })}
+                    <td style={{ textAlign: 'center' }}>{r.item.pct}%</td>
+                    <td style={{ textAlign: 'center', color: r.item.wo_issued ? '#0f766e' : '#be123c' }}>{r.item.wo_issued ? '✓' : '—'}</td>
+                    <td style={{ padding: '2px 5px', color: '#64748b' }}>{r.item.contractor ?? ''}</td>
+                    <td style={{ textAlign: 'center', color: '#4f46e5' }}>{(derivedMap.get(r.item.id)?.end ?? r.item.plan_end) ? formatDate((derivedMap.get(r.item.id)?.end ?? r.item.plan_end)!) : ''}</td>
+                  </tr>
+                ))}
+              </FragmentGroup>
+            )
+          })}
+        </tbody>
+      </table>
+      <div style={{ marginTop: 8, fontSize: 7.5, color: '#64748b' }}>
+        <span style={{ background: '#0f9b8e', color: '#fff', padding: '1px 5px', marginRight: 6 }}>done</span>
+        <span style={{ background: '#e8a33d', padding: '1px 5px', marginRight: 6 }}>in progress</span>
+        <span style={{ background: '#eef2f7', padding: '1px 5px', marginRight: 6 }}>not started</span>
+        <span style={{ border: '1px solid #e2e8f0', padding: '1px 5px', marginRight: 10 }}>N/A</span>
+        dates in cells are d/m — green = completed on · amber = finishes by · grey = starts on
+      </div>
     </div>
   )
 }
