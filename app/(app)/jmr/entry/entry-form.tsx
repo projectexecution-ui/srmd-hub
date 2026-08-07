@@ -8,7 +8,7 @@ import { MoneyInput } from '@/components/ui/money-input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Card } from '@/components/ui/card'
-import { Lock, Camera, Loader2 } from 'lucide-react'
+import { Lock, Camera, Loader2, Truck, Users, Check, ArrowRight } from 'lucide-react'
 import { resolveRate } from '@/lib/jmr/rates'
 import { formatINR, todayISO } from '@/lib/jmr/format'
 import { format as fmt } from 'date-fns'
@@ -47,6 +47,7 @@ export function EntryForm({ userName, projects, contractors, items }: Props) {
   const [rate, setRate] = useState<number | null>(null)
   const [description, setDescription] = useState('')
   const [photoFile, setPhotoFile] = useState<File | null>(null)
+  const [photoPreview, setPhotoPreview] = useState<string | null>(null)
   // Entry date — defaults to today, but the engineer can back-date when
   // catching up on a missed day. Future dates are blocked at the input.
   const [entryDate, setEntryDate] = useState(todayISO())
@@ -90,6 +91,14 @@ export function EntryForm({ userName, projects, contractors, items }: Props) {
   useEffect(() => {
     if (itemId && !filteredItems.find(i => i.id === itemId)) setItemId('')
   }, [filteredItems, itemId])
+
+  // Live thumbnail preview of the picked log-sheet photo (revoked on change).
+  useEffect(() => {
+    if (!photoFile) { setPhotoPreview(null); return }
+    const url = URL.createObjectURL(photoFile)
+    setPhotoPreview(url)
+    return () => URL.revokeObjectURL(url)
+  }, [photoFile])
 
   // Convert "HH:MM" → decimal hours (e.g. "08:30" → 8.5). Empty → null.
   function timeToHours(t: string): number | null {
@@ -165,12 +174,12 @@ export function EntryForm({ userName, projects, contractors, items }: Props) {
   }
 
   return (
-    <Card className="p-4 mb-4">
-      <div className="mb-3">
-        <h2 className="text-base font-bold text-gray-900">Log machine hours</h2>
+    <Card className="p-5 mb-4 rounded-2xl shadow-sm ring-1 ring-gray-200/70">
+      <div className="mb-4">
+        <h2 className="text-base font-bold text-gray-900">Log the day</h2>
         <p className="text-xs text-gray-500 mt-0.5">{userName} · {fmt(new Date(entryDate), 'd MMM yy')}</p>
       </div>
-      <form onSubmit={submit} className="space-y-3">
+      <form onSubmit={submit} className="space-y-3.5">
         <div>
           <Label>Entry date</Label>
           <Input
@@ -203,8 +212,8 @@ export function EntryForm({ userName, projects, contractors, items }: Props) {
         <div>
           <Label>Category</Label>
           <div className="grid grid-cols-2 gap-2 mt-1">
-            <CategoryButton active={category === 'equipment'} onClick={() => setCategory('equipment')}>Equipment</CategoryButton>
-            <CategoryButton active={category === 'manpower'} onClick={() => setCategory('manpower')}>Manpower</CategoryButton>
+            <CategoryButton active={category === 'equipment'} onClick={() => setCategory('equipment')}><Truck className="h-4 w-4" /> Equipment</CategoryButton>
+            <CategoryButton active={category === 'manpower'} onClick={() => setCategory('manpower')}><Users className="h-4 w-4" /> Manpower</CategoryButton>
           </div>
         </div>
         <div>
@@ -222,7 +231,7 @@ export function EntryForm({ userName, projects, contractors, items }: Props) {
           </Select>
         </div>
         {rate != null && selectedItem && (
-          <div className="flex items-center justify-between bg-blue-50 border border-blue-100 rounded-md px-3 py-2 text-sm">
+          <div className="flex items-center justify-between bg-blue-50 ring-1 ring-blue-100 rounded-xl px-3 py-2 text-sm">
             <span className="text-blue-900 inline-flex items-center gap-1.5">
               <Lock className="h-3.5 w-3.5" /> Auto rate
             </span>
@@ -257,14 +266,15 @@ export function EntryForm({ userName, projects, contractors, items }: Props) {
           </div>
         ) : null}
         {(effectiveQty != null || earned != null) && (
-          <div className="flex items-center justify-between bg-gray-50 rounded-md px-3 py-2 text-sm">
+          <div className="flex items-center justify-between bg-gradient-to-br from-emerald-50 to-white ring-1 ring-emerald-200/70 rounded-xl px-4 py-3">
             <div>
-              <p className="text-xs text-gray-500">{isHourly ? 'Hours' : 'Qty'}</p>
-              <p className="font-bold text-gray-900">{effectiveQty ?? '—'}{isHourly ? ' hr' : ''}</p>
+              <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-500">{isHourly ? 'Hours' : 'Qty'}</p>
+              <p className="text-lg font-bold text-gray-900">{effectiveQty ?? '—'}{isHourly ? ' hr' : ''}</p>
             </div>
+            <ArrowRight className="h-4 w-4 text-gray-300" />
             <div className="text-right">
-              <p className="text-xs text-gray-500">Value</p>
-              <p className="font-bold text-emerald-700">{earned != null ? formatINR(earned) : '—'}</p>
+              <p className="text-[11px] font-semibold uppercase tracking-wide text-emerald-700/70">Value</p>
+              <p className="text-lg font-bold text-emerald-700">{earned != null ? formatINR(earned) : '—'}</p>
             </div>
           </div>
         )}
@@ -275,11 +285,22 @@ export function EntryForm({ userName, projects, contractors, items }: Props) {
         <div>
           <label className="block">
             <span className="sr-only">Photo of signed log sheet</span>
-            <div className={`flex flex-col items-center justify-center border-2 border-dashed rounded-md px-3 py-5 cursor-pointer ${photoFile ? 'border-emerald-300 bg-emerald-50' : 'border-gray-300 hover:border-gray-400'}`}>
-              <Camera className="h-5 w-5 text-gray-500 mb-1" />
-              <span className="text-sm text-gray-700">{photoFile ? photoFile.name : 'Photo of signed log sheet'}</span>
-              <span className="text-[10px] text-gray-500 mt-0.5">required</span>
-            </div>
+            {photoPreview ? (
+              <div className="flex items-center gap-3 rounded-xl ring-1 ring-emerald-300 bg-emerald-50 p-2.5 cursor-pointer">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={photoPreview} alt="Log sheet preview" className="h-14 w-14 rounded-lg object-cover ring-1 ring-emerald-200 flex-shrink-0" />
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-medium text-emerald-800 inline-flex items-center gap-1"><Check className="h-3.5 w-3.5" /> Log sheet attached</p>
+                  <p className="text-[11px] text-emerald-700/70 truncate">{photoFile?.name} · tap to change</p>
+                </div>
+              </div>
+            ) : (
+              <div className="flex flex-col items-center justify-center border-2 border-dashed rounded-xl px-3 py-6 cursor-pointer border-gray-300 hover:border-blue-400 hover:bg-blue-50/40 transition-colors">
+                <span className="h-10 w-10 rounded-full bg-gray-100 grid place-items-center mb-2"><Camera className="h-5 w-5 text-gray-500" /></span>
+                <span className="text-sm font-medium text-gray-700">Photo of signed log sheet</span>
+                <span className="text-[11px] text-rose-500 mt-0.5">required · tap to take or upload</span>
+              </div>
+            )}
             <input
               type="file" accept="image/jpeg,image/png" capture="environment"
               className="sr-only"
@@ -288,9 +309,9 @@ export function EntryForm({ userName, projects, contractors, items }: Props) {
           </label>
         </div>
         {error && <p className="text-sm text-red-600">{error}</p>}
-        <Button type="submit" disabled={!canSubmit} className="w-full">
-          {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-          Submit entry
+        <Button type="submit" disabled={!canSubmit} className="w-full h-11">
+          {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
+          Submit entry{earned != null ? ` · ${formatINR(earned)}` : ''}
         </Button>
       </form>
     </Card>
@@ -304,7 +325,7 @@ function Select({ value, onChange, children, required }: {
     <select
       value={value} required={required}
       onChange={e => onChange(e.target.value)}
-      className="mt-1 flex h-10 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+      className="mt-1 flex h-10 w-full rounded-xl border border-gray-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
     >
       {children}
     </select>
@@ -315,7 +336,7 @@ function CategoryButton({ active, onClick, children }: { active: boolean; onClic
   return (
     <button
       type="button" onClick={onClick}
-      className={`h-10 rounded-md text-sm font-medium border transition-colors ${active ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'}`}
+      className={`h-10 rounded-xl text-sm font-medium border transition-all inline-flex items-center justify-center gap-1.5 ${active ? 'bg-blue-600 text-white border-blue-600 shadow-sm' : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-50'}`}
     >
       {children}
     </button>
