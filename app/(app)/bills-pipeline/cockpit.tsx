@@ -47,6 +47,9 @@ export default function Cockpit({ bills, asOf, myCodes = [] }: { bills: CockpitB
   const [mode, setMode] = useState<'value' | 'count'>('value')
   // Rank/emphasis lens for the follow-up lists: by ₹ amount or by days waiting.
   const [rank, setRank] = useState<'amt' | 'days'>('amt')
+  // Which "days" the day figures mean: since it entered Zoho, or since it last
+  // moved (i.e. how long it's been sitting pending in its CURRENT stage).
+  const [dayBasis, setDayBasis] = useState<'entry' | 'stage'>('entry')
   // Site scope: default to the viewer's own sites when they have any.
   const [siteScope, setSiteScope] = useState<'mine' | 'all'>(scopeAvailable ? 'mine' : 'all')
   // The "No WO" flag reads noisy at early stages (WO often attached later), so
@@ -70,6 +73,9 @@ export default function Cockpit({ bills, asOf, myCodes = [] }: { bills: CockpitB
   const stalled = useMemo(() => internal.filter(b => b.stalled), [internal])
 
   const fnum = (a: CockpitBill[]) => (mode === 'value' ? cr(sum(a)) : String(a.length))
+  // The day figure for the chosen basis: since Zoho entry, or days in current stage.
+  const dv = (b: CockpitBill) => (dayBasis === 'stage' ? b.idle : b.age)
+  const dayWord = dayBasis === 'stage' ? 'in stage' : 'old'
 
   // KPI tiles
   const kpis = [
@@ -91,15 +97,16 @@ export default function Cockpit({ bills, asOf, myCodes = [] }: { bills: CockpitB
   const push = useMemo(() => {
     const arr = [...pushBase]
     if (rank === 'days') {
-      // Longest delay first = oldest since Zoho entry (then biggest ₹ as tie-break).
-      arr.sort((a, b) => (b.age - a.age) || (b.claimed - a.claimed))
+      // Longest wait first on the chosen basis (then biggest ₹ as tie-break).
+      arr.sort((a, b) => (dv(b) - dv(a)) || (b.claimed - a.claimed))
     } else {
-      // ₹ weighted by delay (days since Zoho entry) + stalled/no-WO penalties.
-      const sc = (b: CockpitBill) => b.claimed * (1 + b.age / 20) * (b.stalled ? 1.8 : 1) * (b.noWO ? 1.4 : 1)
+      // ₹ weighted by wait (chosen basis) + stalled/no-WO penalties.
+      const sc = (b: CockpitBill) => b.claimed * (1 + dv(b) / 20) * (b.stalled ? 1.8 : 1) * (b.noWO ? 1.4 : 1)
       arr.sort((a, b) => sc(b) - sc(a))
     }
     return arr.slice(0, 12)
-  }, [pushBase, rank])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pushBase, rank, dayBasis])
 
   // Rot funnel — dynamic stages present among live bills
   const funnel = useMemo(() => {
@@ -110,14 +117,15 @@ export default function Cockpit({ bills, asOf, myCodes = [] }: { bills: CockpitB
     }
     const segs = [...map.entries()].map(([stage, group]) => ({
       stage, group, val: sum(group),
-      md: median(group.map(b => b.age)),
-      oldest: group.reduce((m, b) => Math.max(m, b.age), 0),
+      md: median(group.map(b => dv(b))),
+      oldest: group.reduce((m, b) => Math.max(m, dv(b)), 0),
       atTrust: group[0]?.atTrust ?? false,
     }))
     segs.sort((a, b) => stageRank(a.stage, a.atTrust) - stageRank(b.stage, b.atTrust))
     const max = Math.max(...segs.map(s => s.val), 1)
     return { segs, max }
-  }, [scoped])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scoped, dayBasis])
 
   // Whose desk (internal, grouped by stage)
   const desks = useMemo(() => {
@@ -125,11 +133,12 @@ export default function Cockpit({ bills, asOf, myCodes = [] }: { bills: CockpitB
     for (const b of internal) { const arr = map.get(b.stage) ?? []; arr.push(b); map.set(b.stage, arr) }
     const rows = [...map.entries()].map(([stage, g]) => ({
       stage, bills: g.length, val: sum(g),
-      oldest: g.reduce((m, b) => Math.max(m, b.age), 0),
+      oldest: g.reduce((m, b) => Math.max(m, dv(b)), 0),
       stall: g.filter(b => b.stalled).length,
     })).sort((a, b) => (rank === 'days' ? (b.oldest - a.oldest) : (b.val - a.val)))
     return { rows, max: Math.max(...rows.map(r => r.val), 1), maxOldest: Math.max(...rows.map(r => r.oldest), 1) }
-  }, [internal, rank])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [internal, rank, dayBasis])
 
   const dispStage = (s: string) => s.replace('Submitted to Trust A/c', 'At Trust A/c')
   const briefStalledVal = cr(sum(stalled))
@@ -214,6 +223,15 @@ export default function Cockpit({ bills, asOf, myCodes = [] }: { bills: CockpitB
             </button>
           ))}
         </div>
+        {/* Which "days" the figures mean: since Zoho entry, or days in current stage. */}
+        <div className="inline-flex overflow-hidden rounded-full border border-gray-300" title="Days since it entered Zoho, or days sitting pending in its current stage">
+          {(['entry', 'stage'] as const).map(d => (
+            <button key={d} onClick={() => setDayBasis(d)}
+              className={cn('px-3 py-1 text-[13px] font-bold', dayBasis === d ? 'bg-amber-500 text-amber-950' : 'bg-white text-gray-500')}>
+              {d === 'entry' ? 'Since entry' : 'In stage'}
+            </button>
+          ))}
+        </div>
         <label className="flex items-center gap-1.5 text-[13px] text-gray-600" title="Show the 'No WO' flag (off by default — it reads noisy while a WO is still being attached)">
           <input type="checkbox" checked={showNoWO} onChange={e => setShowNoWO(e.target.checked)} className="h-4 w-4 accent-amber-500" />
           No WO
@@ -255,7 +273,7 @@ export default function Cockpit({ bills, asOf, myCodes = [] }: { bills: CockpitB
         <div className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
           <div className="flex items-center gap-2 px-4 pb-2 pt-3.5">
             <h2 className="m-0 text-base font-bold">Push today</h2>
-            <span className="text-xs text-gray-400">{push.length} to push · {rank === 'days' ? 'ranked by days waiting' : 'ranked by ₹ × age'}</span>
+            <span className="text-xs text-gray-400">{push.length} to push · {rank === 'days' ? `ranked by days ${dayBasis === 'stage' ? 'in stage' : 'since entry'}` : 'ranked by ₹ × wait'}</span>
             <button
               onClick={copyPushImage}
               disabled={imgBusy || push.length === 0}
@@ -284,13 +302,13 @@ export default function Cockpit({ bills, asOf, myCodes = [] }: { bills: CockpitB
                 <span className="text-right">
                   {rank === 'days' ? (
                     <>
-                      <span className={cn('block text-[14px] font-bold tabular-nums', b.stalled ? 'text-red-600' : 'text-gray-900')}>{b.age}d old</span>
+                      <span className={cn('block text-[14px] font-bold tabular-nums', b.stalled ? 'text-red-600' : 'text-gray-900')}>{dv(b)}d {dayWord}</span>
                       <span className="block text-[12px] tabular-nums text-gray-500">₹{inr(b.claimed)}</span>
                     </>
                   ) : (
                     <>
                       <span className="block text-[14px] font-bold tabular-nums text-gray-900">₹{inr(b.claimed)}</span>
-                      <span className={cn('block text-[12px] tabular-nums', b.stalled ? 'text-red-600' : 'text-gray-500')}>{b.age}d old</span>
+                      <span className={cn('block text-[12px] tabular-nums', b.stalled ? 'text-red-600' : 'text-gray-500')}>{dv(b)}d {dayWord}</span>
                     </>
                   )}
                 </span>
