@@ -368,7 +368,7 @@ function PrintReport({ projectLabel, today, overall, trades, floorNames, cellOf,
                     {floorNames.map(f => {
                       const st = cellOf(r.item.id, f)
                       let txt = ''
-                      if (st === 'done') { const d = doneAt(r.item.id, f); txt = d ? `${+d.slice(8, 10)}/${+d.slice(5, 7)}` : '✓' }
+                      if (st === 'done') { txt = '✓' }
                       else if (st !== 'na') { const w = derivedMap.get(r.item.id)?.floors[f]; if (w) txt = st === 'wip' ? `${+w.end.slice(8, 10)}/${+w.end.slice(5, 7)}` : `${+w.start.slice(8, 10)}/${+w.start.slice(5, 7)}` }
                       return <td key={f} style={{ background: cellBg(st), color: st === 'done' ? '#fff' : '#64748b', textAlign: 'center', fontSize: 7, border: '1px solid #fff' }}>{txt}</td>
                     })}
@@ -388,7 +388,7 @@ function PrintReport({ projectLabel, today, overall, trades, floorNames, cellOf,
         <span style={{ background: '#e8a33d', padding: '1px 5px', marginRight: 6 }}>in progress</span>
         <span style={{ background: '#eef2f7', padding: '1px 5px', marginRight: 6 }}>not started</span>
         <span style={{ border: '1px solid #e2e8f0', padding: '1px 5px', marginRight: 10 }}>N/A</span>
-        dates in cells are d/m — green = completed on · amber = finishes by · grey = starts on
+        in the cells: ✓ = finished · amber date = finishes by · grey date = starts on (d/m)
       </div>
     </div>
   )
@@ -809,7 +809,7 @@ function SitePulse({ rows, promises, lastWeek, floorNames, cellOf, overall, toda
             const cellTip = (label: string, id: string, f: string) => {
               const st = cellOf(id, f)
               if (st === 'na') return `${label} · ${f}: not applicable`
-              if (st === 'done') { const d = doneAt(id, f); return `${label} · ${f}: done${d ? ' ' + formatDate(d.slice(0, 10)) : ''}` }
+              if (st === 'done') { const d = doneAt(id, f); return `${label} · ${f}: done${d ? ` · marked ${formatDate(d.slice(0, 10))}` : ''}` }
               const w = derivedMap.get(id)?.floors[f]
               return `${label} · ${f}: ${st === 'wip' ? 'in progress' : 'not started'}${w ? ` · planned ${formatDate(w.start)} → ${formatDate(w.end)}` : ''}`
             }
@@ -851,21 +851,24 @@ function SitePulse({ rows, promises, lastWeek, floorNames, cellOf, overall, toda
                   <FragmentGroup key={r.item.id}>
                     <div className="flex items-center justify-end gap-1.5 pr-2 pl-2 py-0.5 truncate rounded-md bg-slate-50 border-r-[3px] border-indigo-400">
                       <span className="text-[10px] font-semibold text-slate-700 truncate">{r.item.name}</span>
-                      <span className="h-2 w-2 rounded-full flex-shrink-0 ring-2 ring-white" style={{ background: HEX[toneOf(r.status)] }} />
+                      <span className="h-2 w-2 rounded-full flex-shrink-0 ring-2 ring-white" title={STATUS_META[r.status].label}
+                        style={{ background: r.item.pct >= 100 || r.item.state === 'done' ? HEX.ok : HEX[toneOf(r.status)] }} />
                     </div>
                     {floorNames.map(f => {
                       const st = cellOf(r.item.id, f)
                       const bg = st === 'na' ? '#f8fafc' : st === 'done' ? '#0d9488' : st === 'wip' ? '#f5c56b' : '#eef2f7'
                       // the date INSIDE the box: done = tick date · wip = finishes-by · upcoming = starts-on
+                      // done → a tick (the stored date is when it was RECORDED, not
+                      // necessarily finished, so it lives in the tooltip, not the grid);
+                      // upcoming/wip → the planned date, which differs per floor and is useful.
                       let txt = '', col = '#94a3b8'
-                      if (st === 'done') { const d = doneAt(r.item.id, f); txt = d ? `${+d.slice(8, 10)}/${+d.slice(5, 7)}` : '✓'; col = '#ffffff' }
+                      if (st === 'done') { txt = '✓'; col = '#ffffff' }
                       else if (st !== 'na') {
                         const w = derivedMap.get(r.item.id)?.floors[f]
                         if (w) { txt = st === 'wip' ? `${+w.end.slice(8, 10)}/${+w.end.slice(5, 7)}` : `${+w.start.slice(8, 10)}/${+w.start.slice(5, 7)}`; col = st === 'wip' ? '#78350f' : '#94a3b8' }
                       }
                       return (
-                        <div key={f} className={cn('h-6 rounded-md flex items-center justify-center font-mono text-[9px] font-bold',
-                          floorNames.indexOf(f) === todayCol && 'ring-1 ring-indigo-300')}
+                        <div key={f} className="h-6 rounded-md flex items-center justify-center font-mono text-[9px] font-bold"
                           title={cellTip(r.item.name, r.item.id, f)}
                           style={{ background: bg, color: col, border: st === 'na' ? '1px solid #eef2f6' : 'none' }}>
                           {txt}
@@ -874,9 +877,12 @@ function SitePulse({ rows, promises, lastWeek, floorNames, cellOf, overall, toda
                     })}
                     <div className="pl-2 truncate self-center flex items-center gap-1.5">
                       <span className={cn('inline-grid place-items-center h-4 w-4 rounded-full text-[8px] font-bold flex-shrink-0',
-                        r.item.wo_issued ? 'bg-emerald-500 text-white' : 'bg-rose-100 text-rose-600 ring-1 ring-rose-300')}
-                        title={r.item.wo_issued ? `WO issued${r.item.wo_number ? ' · ' + r.item.wo_number : ''}` : 'WO pending'}>
-                        {r.item.wo_issued ? '✓' : '!'}
+                        r.item.wo_issued ? 'bg-emerald-500 text-white'
+                          : r.status === 'wo_overdue' ? 'bg-rose-500 text-white'
+                            : 'bg-slate-100 text-slate-400 ring-1 ring-slate-200')}
+                        title={r.item.wo_issued ? `WO issued${r.item.wo_number ? ' · ' + r.item.wo_number : ''}`
+                          : r.status === 'wo_overdue' ? `WO overdue by ${r.woLateDays} days` : 'WO not raised yet'}>
+                        {r.item.wo_issued ? '✓' : r.status === 'wo_overdue' ? '!' : '○'}
                       </span>
                       {(derivedMap.get(r.item.id)?.end ?? r.item.plan_end)
                         ? <span className="font-mono text-[9px] font-bold text-indigo-700">{formatDate((derivedMap.get(r.item.id)?.end ?? r.item.plan_end)!)}</span>
@@ -893,7 +899,7 @@ function SitePulse({ rows, promises, lastWeek, floorNames, cellOf, overall, toda
           <span><i className="inline-block w-2.5 h-2.5 rounded-sm align-[-1px] mr-1" style={{ background: '#f5c56b' }} />in progress</span>
           <span><i className="inline-block w-2.5 h-2.5 rounded-sm align-[-1px] mr-1" style={{ background: '#e9edf3' }} />not started</span>
           <span><i className="inline-block w-2.5 h-2.5 rounded-sm align-[-1px] mr-1 border border-slate-200" style={{ background: '#f8fafc' }} />N/A</span>
-          <span className="text-slate-400">date in box (d/m): green = done on · amber = finishes by · grey = starts on</span>
+          <span className="text-slate-400">in the box: ✓ = finished (hover for when it was marked) · amber date = finishes by · grey date = starts on</span>
         </div>
       </Card>
 
