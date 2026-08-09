@@ -30,6 +30,7 @@ export interface SchedProject {
   code: string | null
   name: string
   status: string | null
+  parent_project_id: string | null
   item_count: number
   pct: number        // overall % done (active items) — the management snapshot
   attention: number  // items with a WO deadline already passed and no WO
@@ -40,7 +41,7 @@ export interface SchedProject {
 export const getScheduleProjects = cache(async (): Promise<SchedProject[]> => {
   const sb = await createClient()
   const [{ data: projects }, { data: items }, leads] = await Promise.all([
-    sb.from('projects').select('id, code, name, status').order('code', { ascending: true }),
+    sb.from('projects').select('id, code, name, status, parent_project_id').order('code', { ascending: true }),
     sb.from('sched_items').select('project_id, pct, state, plan_start, wo_issued'),
     getLeadDays(),
   ])
@@ -54,7 +55,7 @@ export const getScheduleProjects = cache(async (): Promise<SchedProject[]> => {
     if (!r.wo_issued && r.plan_start && addDays(r.plan_start, -leads.procurement) < today) a.attention += 1
     agg.set(r.project_id, a)
   }
-  return ((projects ?? []) as Array<{ id: string; code: string | null; name: string; status: string | null }>)
+  return ((projects ?? []) as Array<{ id: string; code: string | null; name: string; status: string | null; parent_project_id: string | null }>)
     .map(p => {
       const a = agg.get(p.id)
       return {
