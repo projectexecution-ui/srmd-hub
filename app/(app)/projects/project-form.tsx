@@ -1,5 +1,5 @@
 'use client'
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
@@ -52,6 +52,7 @@ export function ProjectForm({ initial, initialFloors, projectId }: Props) {
     status: initial?.status ?? 'active',
     location: initial?.location ?? '',
     project_type: initial?.project_type ?? 'individual',
+    parent_project_id: initial?.parent_project_id ?? '',
     plot_area_sft:      strOrNum(initial?.plot_area_sft),
     built_up_sft:       strOrNum(initial?.built_up_sft),
     carpet_sft:         strOrNum(initial?.carpet_sft),
@@ -59,6 +60,16 @@ export function ProjectForm({ initial, initialFloors, projectId }: Props) {
     fsi_permitted:      strOrNum(initial?.fsi_permitted),
     fsi_consumed:       strOrNum(initial?.fsi_consumed),
   })
+
+  // Candidate parents: every top-level project except this one. Without this
+  // the form could only ever create top-level projects, so sub-projects (NGH A
+  // under NGH) had to be re-parented later — which is how the hierarchy drifted.
+  const [parents, setParents] = useState<Array<{ id: string; code: string | null; name: string }>>([])
+  useEffect(() => {
+    const sb = createClient()
+    sb.from('projects').select('id, code, name, parent_project_id').is('parent_project_id', null).order('code')
+      .then(({ data }) => setParents(((data ?? []) as Array<{ id: string; code: string | null; name: string }>).filter(r => r.id !== projectId)))
+  }, [projectId])
 
   const [floors, setFloors] = useState<FloorRow[]>(
     (initialFloors ?? [])
@@ -97,6 +108,7 @@ export function ProjectForm({ initial, initialFloors, projectId }: Props) {
       status: p.status,
       location: p.location || null,
       project_type: p.project_type,
+      parent_project_id: p.parent_project_id || null,
       plot_area_sft:      numField(p.plot_area_sft),
       built_up_sft:       numField(p.built_up_sft),
       carpet_sft:         numField(p.carpet_sft),
@@ -191,6 +203,23 @@ export function ProjectForm({ initial, initialFloors, projectId }: Props) {
               <option value="group">Group (parent of sub-projects)</option>
             </select>
           </div>
+        </div>
+        <div>
+          <Label>Part of</Label>
+          <select
+            value={p.parent_project_id}
+            onChange={e => setP({ ...p, parent_project_id: e.target.value })}
+            className="mt-1 flex h-10 w-full rounded-xl border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-600"
+          >
+            <option value="">Top-level project (not under anything)</option>
+            {parents.map(par => (
+              <option key={par.id} value={par.id}>Sub-project of {par.code ? `${par.code} — ` : ''}{par.name}</option>
+            ))}
+          </select>
+          <p className="text-xs text-gray-400 mt-0.5">
+            Pick the parent if this is a building/phase inside a bigger project — e.g. <b>NGH A</b> is a sub-project of <b>NGH</b>.
+            Sub-projects appear nested under their parent everywhere (Schedule, Cost Control, dashboards).
+          </p>
         </div>
         <div>
           <Label>Description</Label>
