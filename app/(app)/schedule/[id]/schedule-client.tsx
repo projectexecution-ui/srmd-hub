@@ -191,9 +191,13 @@ export function ScheduleClient({ data, canEdit, meId }: { data: ProjectScheduleD
   const wodueTradeCount = useMemo(() => new Set(rows
     .filter(r => !r.item.wo_issued && (r.status === 'wo_overdue' || r.status === 'wo_soon'))
     .map(r => r.item.trade)).size, [rows])
+  // "ready" counts DISTINCT ITEMS, not every item×floor combination — one trade
+  // finishing unlocks dozens of floors, which inflated the badge to 100+ and made
+  // it meaningless. Items are what a person actually starts.
+  const readyItems = useMemo(() => new Set(ready.map(r => r.item.id)).size, [ready])
   const actCount = useMemo(() =>
-    wodueTradeCount + ready.length + rows.filter(r => r.status === 'blocked' || r.status === 'behind').length,
-    [wodueTradeCount, ready, rows])
+    wodueTradeCount + readyItems + rows.filter(r => r.status === 'blocked' || r.status === 'behind').length,
+    [wodueTradeCount, readyItems, rows])
   const heroPace = useMemo(() => {
     let worst: { plan: number; actual: number } | null = null
     for (const it of items) {
@@ -245,7 +249,7 @@ export function ScheduleClient({ data, canEdit, meId }: { data: ProjectScheduleD
         {/* state strip — the verdict follows you across tabs */}
         <span className="ml-auto flex items-center gap-2">
           {wodueTradeCount > 0 && <span className="inline-flex rounded-full px-2 py-0.5 text-[10.5px] font-bold bg-rose-50 text-rose-700">{wodueTradeCount} need WO</span>}
-          {ready.length > 0 && <span className="inline-flex rounded-full px-2 py-0.5 text-[10.5px] font-bold bg-emerald-50 text-emerald-700">{ready.length} ready</span>}
+          {readyItems > 0 && <span className="inline-flex rounded-full px-2 py-0.5 text-[10.5px] font-bold bg-emerald-50 text-emerald-700" title={`${readyItems} work items can start (${ready.length} item×floor combinations)`}>{readyItems} can start</span>}
           <span className="text-xs text-slate-400 font-mono">week of {formatDate(weekStart)}</span>
         </span>
       </div>
@@ -276,7 +280,7 @@ export function ScheduleClient({ data, canEdit, meId }: { data: ProjectScheduleD
 
           {/* DESKTOP pages — one purpose per tab, each a single screen */}
           <div className={cn('max-w-3xl space-y-3', deskTab === 'act' ? 'hidden lg:block' : 'hidden')}>
-            <HeroVerdict overall={overall} wodueTrades={wodueTradeCount} ready={ready.length}
+            <HeroVerdict overall={overall} wodueTrades={wodueTradeCount} ready={readyItems}
               promises={{ kept: promises.filter(p => p.status === 'done').length, total: promises.length }}
               pace={heroPace} today={today} />
             <ActionCentre rows={rows} ready={ready} canEdit={canEdit} projectId={project.id} today={today} leadDays={leads.procurement} run={run} />
@@ -353,8 +357,13 @@ function PrintReport({ projectLabel, today, overall, trades, floorNames, cellOf,
                   <td style={{ padding: '3px 5px' }}>{g.trade}</td>
                   {floorNames.map(f => {
                     const cs = g.rows.map(r => cellOf(r.item.id, f)).filter(c => c !== 'na')
-                    const sc = cs.length ? cs.reduce((a, c) => a + (c === 'done' ? 1 : c === 'wip' ? 0.5 : 0), 0) / cs.length : -1
-                    const bg = sc < 0 ? '#fafbfc' : sc === 0 ? '#eef2f7' : sc >= 0.99 ? '#0f9b8e' : sc >= 0.5 ? '#5bbfae' : '#e8a33d'
+                    const doneN = cs.filter(c => c === 'done').length
+                    const wipN = cs.filter(c => c === 'wip').length
+                    // green only when every item on that floor is finished
+                    const bg = !cs.length ? '#fafbfc'
+                      : doneN === cs.length ? '#0f9b8e'
+                        : doneN === 0 && wipN === 0 ? '#eef2f7'
+                          : `linear-gradient(90deg, #0f9b8e ${(doneN / cs.length) * 100}%, ${wipN ? '#e8a33d' : '#dbe3ec'} ${(doneN / cs.length) * 100}%)`
                     return <td key={f} style={{ background: bg, border: '1px solid #fff' }} />
                   })}
                   <td style={{ textAlign: 'center', color: '#4f46e5' }}>{pct}%</td>
@@ -822,14 +831,20 @@ function SitePulse({ rows, promises, lastWeek, floorNames, cellOf, overall, toda
                 </button>
                 {floorNames.map((f, fi) => {
                   const cs = g.rows.map(r => cellOf(r.item.id, f)).filter(c => c !== 'na')
-                  let bg = '#fafbfc', border = '1px dashed #eaeff5'
+                  let bg = '#fafbfc', border = '1px dashed #eaeff5', tip = 'not applicable'
                   if (cs.length) {
-                    const sc = cs.reduce((a, c) => a + (c === 'done' ? 1 : c === 'wip' ? 0.5 : 0), 0) / cs.length
-                    bg = sc === 0 ? '#eef2f7' : sc >= 0.99 ? '#0f9b8e' : sc >= 0.5 ? '#5bbfae' : '#e8a33d'
+                    const doneN = cs.filter(c => c === 'done').length
+                    const wipN = cs.filter(c => c === 'wip').length
+                    const sc = doneN / cs.length            // green ONLY for genuinely finished
+                    // teal fills the finished share, the rest stays amber (work left) or grey (untouched)
+                    bg = doneN === cs.length ? '#0f9b8e'
+                      : doneN === 0 && wipN === 0 ? '#eef2f7'
+                        : `linear-gradient(90deg, #0f9b8e ${sc * 100}%, ${wipN ? '#e8a33d' : '#dbe3ec'} ${sc * 100}%)`
                     border = 'none'
+                    tip = doneN === cs.length ? `all ${cs.length} done` : `${doneN} of ${cs.length} done${wipN ? `, ${wipN} in progress` : ''}`
                   }
                   return <div key={f} className="h-6 rounded-md"
-                    style={{ background: bg, border }} title={`${g.trade} · ${f.replace(' Floor', '')}${fi === todayCol ? ' · work front' : ''}`} />
+                    style={{ background: bg, border }} title={`${g.trade} · ${f.replace(' Floor', '')} — ${tip}${fi === todayCol ? ' · work front' : ''}`} />
                 })}
                 <div className="text-[9.5px] text-slate-500 pl-2 truncate self-center flex items-center gap-1.5" title={contractors.join(', ')}>
                   {(() => {
@@ -895,8 +910,8 @@ function SitePulse({ rows, promises, lastWeek, floorNames, cellOf, overall, toda
           })}
         </div>
         <div className="flex gap-4 mt-2.5 text-[10.5px] text-slate-500 flex-wrap">
-          <span><i className="inline-block w-2.5 h-2.5 rounded-sm align-[-1px] mr-1" style={{ background: '#0d9488' }} />done</span>
-          <span><i className="inline-block w-2.5 h-2.5 rounded-sm align-[-1px] mr-1" style={{ background: '#f5c56b' }} />in progress</span>
+          <span><i className="inline-block w-2.5 h-2.5 rounded-sm align-[-1px] mr-1" style={{ background: '#0f9b8e' }} />all done</span>
+          <span><i className="inline-block w-4 h-2.5 rounded-sm align-[-1px] mr-1" style={{ background: 'linear-gradient(90deg,#0f9b8e 50%,#e8a33d 50%)' }} />part done (green = the finished share)</span>
           <span><i className="inline-block w-2.5 h-2.5 rounded-sm align-[-1px] mr-1" style={{ background: '#e9edf3' }} />not started</span>
           <span><i className="inline-block w-2.5 h-2.5 rounded-sm align-[-1px] mr-1 border border-slate-200" style={{ background: '#f8fafc' }} />N/A</span>
           <span className="text-slate-400">in the box: ✓ = finished (hover for when it was marked) · amber date = finishes by · grey date = starts on</span>
