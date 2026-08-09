@@ -795,7 +795,11 @@ function SitePulse({ rows, promises, lastWeek, floorNames, cellOf, overall, toda
         </div>
         <div className="grid gap-[3px]" style={{ gridTemplateColumns: `150px repeat(${floorNames.length}, minmax(46px,1fr)) 130px`, minWidth: 280 + floorNames.length * 48 }}>
           <div />
-          {floorNames.map((f, i) => <div key={f} className={cn('text-[9px] text-center truncate', i === todayCol ? 'text-indigo-600 font-bold' : 'text-slate-400')}>{f.replace(' Floor', '')}</div>)}
+          {floorNames.map((f, i) => i === todayCol
+            ? <div key={f} className="text-[9px] text-center truncate rounded-md bg-indigo-600 text-white font-bold px-1 py-0.5" title="work front — the floor work is on right now">
+                {f.replace(' Floor', '')}
+              </div>
+            : <div key={f} className="text-[9px] text-center truncate text-slate-400 py-0.5">{f.replace(' Floor', '')}</div>)}
           <div className="text-[9px] text-slate-400 pl-2">WO · contractor · ends</div>
           {trades.map(g => {
             const open = openMap.has(g.trade)
@@ -824,7 +828,7 @@ function SitePulse({ rows, promises, lastWeek, floorNames, cellOf, overall, toda
                     bg = sc === 0 ? '#eef2f7' : sc >= 0.99 ? '#0f9b8e' : sc >= 0.5 ? '#5bbfae' : '#e8a33d'
                     border = 'none'
                   }
-                  return <div key={f} className={cn('h-6 rounded-md', fi === todayCol && 'ring-1 ring-indigo-300')}
+                  return <div key={f} className="h-6 rounded-md"
                     style={{ background: bg, border }} title={`${g.trade} · ${f.replace(' Floor', '')}${fi === todayCol ? ' · work front' : ''}`} />
                 })}
                 <div className="text-[9.5px] text-slate-500 pl-2 truncate self-center flex items-center gap-1.5" title={contractors.join(', ')}>
