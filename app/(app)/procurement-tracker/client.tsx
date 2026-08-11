@@ -18,6 +18,7 @@ import { CompletedView } from '@/components/procurement-tracker/CompletedView'
 import { DiffBanner } from '@/components/procurement-tracker/DiffBanner'
 import { ProjectFilterStrip } from '@/components/procurement-tracker/ProjectFilterStrip'
 import { UniversalSearch } from '@/components/procurement-tracker/UniversalSearch'
+import { DataHealth } from '@/components/procurement-tracker/DataHealth'
 import { buildTrackerSummaryPdf } from '@/lib/procurement/pdf'
 import type { ChaseNote } from '@/lib/procurement/chase-notes'
 import type { DroppedLine } from '@/lib/procurement/dropped'
@@ -434,6 +435,9 @@ export function ProcurementTrackerClient({ isAdmin = false }: { isAdmin?: boolea
           <div className="space-y-4">
             {/* Universal search — find any item across every project & status */}
             <UniversalSearch lines={allVisibleLines} onPick={handleSearchPick} />
+
+            {/* Data health — self-report what IN4 didn't hand over cleanly */}
+            <DataHealth lines={allVisibleLines} onPick={handleSearchPick} />
 
             {/* What changed since last upload */}
             {diff && (diff.newLineIds.size > 0 || diff.changedLineIds.size > 0) && (
