@@ -7,7 +7,7 @@ import {
   Truck, Building2, Upload, Users, Settings, ShieldCheck,
   ExternalLink, Wrench, Calculator, FileSpreadsheet,
   Boxes, Inbox, GitCompareArrows, Tags, FlaskConical, ListTree, Mail, Activity, ListChecks,
-  ClipboardCheck, CalendarClock,
+  ClipboardCheck, CalendarClock, ReceiptText,
 } from 'lucide-react'
 import type { PermissionMap } from './types'
 
@@ -52,6 +52,7 @@ export const MODULES: ModuleTile[] = [
   { slug: 'supplier-report',  label: 'Supplier Report',    description: 'Upload IN4 “All Purchase Payments Report” → Category × Supplier summary, in-app view + Excel/PDF export', href: '/supplier-report', icon: FileSpreadsheet, tone: 'green' },
   { slug: 'budget-vs-actual-v2', label: 'Budget vs Actual V2', description: 'Consolidated tree — budget + contractor + supplier in one snapshot, with ₹/sft and open/closed status', href: '/budget-vs-actual-v2', icon: ListTree, tone: 'teal' },
   { slug: 'cost-control',     label: 'Cost Control',           description: 'Working Sheets, budgets & approvals (SRASSK)',                 href: '/cost-control',        icon: Calculator,      tone: 'indigo' },
+  { slug: 'bills-booking',    label: 'Bills Booking',          description: 'Contractor (WO) & vendor (PO) bills — entry → Site Head → CT → Atm → Trust → paid, all in one platform', href: '/bills-booking', icon: ReceiptText, tone: 'indigo' },
   { slug: 'bills-pipeline',   label: 'Bills Pipeline',         description: 'Weekly SRA contractor bills command card — stalls, push list, pipeline bars', href: '/bills-pipeline', icon: Activity, tone: 'rose' },
   { slug: 'stuck-bills',      label: 'Bills Checklist',        description: 'Contractor bills pending with CT — verify documents before approval', href: '/stuck-bills', icon: ListChecks, tone: 'amber' },
   // Smart-Blueprint sandbox — proves the SLA + aging-dashboard UX in
