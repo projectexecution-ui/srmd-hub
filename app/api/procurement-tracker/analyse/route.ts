@@ -50,6 +50,13 @@ export async function POST(req: NextRequest) {
     const buffer = await file.arrayBuffer()
     const result = parseProcurementReport(buffer)
 
+    // Route each report to its own slot so the two IN4 exports coexist and get
+    // merged at read time (see lib/procurement/merge):
+    //   • banded  = PURCHINDENT_TO_ISSUE_RPT → 'global' (the Needs-PO source)
+    //   • flat    = PUR_PurchaseOrderReport  → 'po'     (accurate + priced)
+    // Uploading the PO report therefore NEVER overwrites the indent report.
+    const slotId = result.format === 'flat' ? 'po' : 'global'
+
     // Build the persisted state shape from the parse result.
     const allLines: LineRecord[] = result.projects.flatMap(p => p.lines)
     const allIndents = result.projects.flatMap(p => p.indents)
@@ -100,7 +107,7 @@ export async function POST(req: NextRequest) {
     const { data: prevRow } = await supabase
       .from('procurement_tracker_state')
       .select('state, version, updated_at, updated_by')
-      .eq('id', 'global')
+      .eq('id', slotId)
       .maybeSingle()
     const prevState = (prevRow?.state ?? null) as StoredStateShape | null
     const prevVersion = prevRow?.version ?? 0
@@ -119,7 +126,7 @@ export async function POST(req: NextRequest) {
     if (prevState) {
       try {
         await supabase.from('procurement_tracker_state_history').insert({
-          state_id: 'global',
+          state_id: slotId,
           state: prevState,
           version: prevVersion,
           snapshot_by: user?.id ?? null,
@@ -134,7 +141,7 @@ export async function POST(req: NextRequest) {
     const { error: writeError } = await supabase
       .from('procurement_tracker_state')
       .upsert({
-        id: 'global',
+        id: slotId,
         state: nextState,
         version: prevVersion + 1,
         updated_at: savedAt,

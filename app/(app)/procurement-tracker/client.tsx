@@ -10,7 +10,8 @@
 
 import { useState, useCallback, useRef, useMemo, useEffect } from 'react'
 import { Card } from '@/components/ui/card'
-import type { ParseResult, LineRecord, SnapshotDiff } from '@/lib/procurement'
+import type { ParseResult, LineRecord, SnapshotDiff, ProjectSummary } from '@/lib/procurement'
+import { mergeReports } from '@/lib/procurement/merge'
 import { formatSavedAt } from '@/lib/procurement/storage'
 import { PendingReceiptsView } from '@/components/procurement-tracker/PendingReceiptsView'
 import { IndentsNeedingPoView } from '@/components/procurement-tracker/IndentsNeedingPoView'
@@ -62,22 +63,45 @@ function hydrateDiff(wire: NonNullable<AnalyseResponse['diff']>): SnapshotDiff {
 
 type View = 'pending' | 'needs-po' | 'completed'
 
+// One uploaded IN4 report (parsed projects + metadata), as returned per slot
+// by /api/procurement-tracker/state.
+type ReportSlot = {
+  projects: ProjectSummary[]
+  fileName: string
+  format: 'banded' | 'flat'
+  savedAt: string
+  savedByName: string | null
+} | null
+
+function toSlot(x: { state?: { projects: ProjectSummary[]; fileName: string; format: 'banded' | 'flat'; savedAt: string }; updatedByName?: string | null } | null | undefined): ReportSlot {
+  if (!x?.state) return null
+  return {
+    projects: x.state.projects,
+    fileName: x.state.fileName,
+    format: x.state.format,
+    savedAt: x.state.savedAt,
+    savedByName: x.updatedByName ?? null,
+  }
+}
+
 export function ProcurementTrackerClient({ isAdmin = false }: { isAdmin?: boolean }) {
   const [isDragging, setIsDragging] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [data, setData] = useState<AnalyseResponse | null>(null)
+  // Two IN4 report slots, merged into one view (see lib/procurement/merge):
+  //   indentSlot = Indent-to-Issue report (Needs-PO source)
+  //   poSlot     = PO report (accurate + priced)
+  const [indentSlot, setIndentSlot] = useState<ReportSlot>(null)
+  const [poSlot, setPoSlot] = useState<ReportSlot>(null)
   const [selectedProject, setSelectedProject] = useState<string>('__all__')
   const [view, setView] = useState<View>('pending')
   const [diff, setDiff] = useState<SnapshotDiff | null>(null)
-  const [savedAt, setSavedAt] = useState<string | null>(null)
   /**
    * Projects that the Admin has hidden for the current signed-in
    * user via /admin/procurement-projects. Drives a filter applied
    * before chips and lines are rendered. Fetched once on mount.
    */
   const [hiddenProjects, setHiddenProjects] = useState<Set<string>>(new Set())
-  const [savedByName, setSavedByName] = useState<string | null>(null)
   // Per-indent chase notes (team-shared). Fetched once on mount; refreshed
   // in place after any save from the detail sheet.
   const [chaseNotes, setChaseNotes] = useState<Map<string, ChaseNote>>(new Map())
@@ -134,32 +158,22 @@ export function ProcurementTrackerClient({ isAdmin = false }: { isAdmin?: boolea
   }, [])
   useEffect(() => { refreshDropped() }, [refreshDropped])
 
-  // Hydrate from the shared org-wide server state on mount (same
-  // pattern as Budget vs Actual). Any user landing on the page sees
-  // the latest upload without re-uploading themselves.
-  useEffect(() => {
-    fetch('/api/procurement-tracker/state')
-      .then(r => r.ok ? r.json() : null)
-      .then(json => {
-        if (!json?.state) return
-        const s = json.state
-        setData({
-          success: true,
-          fileName: s.fileName,
-          format: s.format,
-          projects: s.projects,
-        } as AnalyseResponse)
-        setSavedAt(s.savedAt)
-        setSavedByName(json.updatedByName ?? null)
-        setSelectedProject('__all__')
-        setView('pending')
-      })
-      .catch(() => { /* swallow */ })
-      .finally(() => setIsHydrating(false))
+  // Pull BOTH report slots from the shared org-wide state. Any user landing
+  // on the page sees the latest of each without re-uploading.
+  const refetchState = useCallback(async () => {
+    try {
+      const res = await fetch('/api/procurement-tracker/state')
+      if (!res.ok) return
+      const json = await res.json()
+      setIndentSlot(toSlot(json.indent))
+      setPoSlot(toSlot(json.po))
+    } catch { /* swallow */ }
   }, [])
 
+  useEffect(() => { refetchState().finally(() => setIsHydrating(false)) }, [refetchState])
+
   const handleFile = useCallback(async (file: File) => {
-    setIsLoading(true); setError(null); setData(null); setDiff(null)
+    setIsLoading(true); setError(null); setDiff(null)
     const formData = new FormData()
     formData.append('file', file)
     try {
@@ -169,20 +183,39 @@ export function ProcurementTrackerClient({ isAdmin = false }: { isAdmin?: boolea
         setError(json.error || 'Something went wrong.')
         return
       }
-      setData(json)
+      // Diff is computed server-side against the prior persisted state.
+      setDiff(json.diff ? hydrateDiff(json.diff) : null)
       setSelectedProject('__all__')
       setView('pending')
-      // Diff is now computed server-side against the prior persisted
-      // state and returned alongside the parsed projects.
-      setDiff(json.diff ? hydrateDiff(json.diff) : null)
-      setSavedAt(new Date().toISOString())
-      setSavedByName(null) // refreshed by mount fetch on next load
+      // Auto-routed to its slot ('global' or 'po') by format; pull both back
+      // so the merged view reflects this upload AND the other report.
+      await refetchState()
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Network error. Please try again.')
     } finally {
       setIsLoading(false)
     }
-  }, [])
+  }, [refetchState])
+
+  // The merged, priced view: PO report drives everything it covers, the
+  // Indent-to-Issue report fills the Needs-PO gap. Never loses data.
+  const data = useMemo<AnalyseResponse | null>(() => {
+    const merged = mergeReports(poSlot?.projects, indentSlot?.projects)
+    if (merged.length === 0) return null
+    return {
+      success: true,
+      fileName: [indentSlot?.fileName, poSlot?.fileName].filter(Boolean).join('  +  ') || 'procurement',
+      format: poSlot ? 'flat' : 'banded',
+      projects: merged,
+    } as AnalyseResponse
+  }, [indentSlot, poSlot])
+
+  // Freshness/header metadata derived from whichever slot is newer.
+  const newerSlot = useMemo<ReportSlot>(() => {
+    if (indentSlot && poSlot) return indentSlot.savedAt >= poSlot.savedAt ? indentSlot : poSlot
+    return indentSlot ?? poSlot
+  }, [indentSlot, poSlot])
+  const savedAt = newerSlot?.savedAt ?? null
 
   const onDrop = useCallback(
     (e: React.DragEvent) => {
@@ -376,12 +409,17 @@ export function ProcurementTrackerClient({ isAdmin = false }: { isAdmin?: boolea
                 <span className="hidden sm:inline">{isLoading ? 'Uploading…' : 'Upload'}</span>
               </button>
             </div>
-            {savedAt && (
-              <div className="text-right text-[11px] text-stone-500">
-                {data?.fileName && <div className="text-stone-700 font-medium">{data.fileName}</div>}
-                <div>
-                  Saved {formatSavedAt(savedAt)}
-                  {savedByName && <> by <span className="text-stone-600">{savedByName}</span></>}
+            {(indentSlot || poSlot) && (
+              <div className="text-right text-[11px] leading-tight space-y-0.5">
+                <div className={indentSlot ? 'text-stone-600' : 'text-stone-400'}>
+                  {indentSlot
+                    ? <>Indent report · <span className="text-stone-500">{formatSavedAt(indentSlot.savedAt)}</span></>
+                    : 'Indent report · not uploaded'}
+                </div>
+                <div className={poSlot ? 'text-emerald-700 font-medium' : 'text-amber-600'}>
+                  {poSlot
+                    ? <>PO report (priced) · <span className="text-stone-500 font-normal">{formatSavedAt(poSlot.savedAt)}</span></>
+                    : 'PO report · add it for real ₹ + quantities'}
                 </div>
               </div>
             )}
