@@ -18,6 +18,7 @@ export interface WorklistCheck {
   abstract_sheet: boolean
   po_wo: boolean
   drawing: boolean
+  note?: string | null
 }
 
 const DOCS: Array<{ key: keyof WorklistCheck; label: string }> = [
@@ -108,6 +109,7 @@ export function buildStuckWorklist(
       + `<span style="display:inline-block;background:${NAVY};color:#fff;border-radius:5px;padding:1px 6px;font-size:10.5px;font-weight:700">${esc(b.project)}</span> `
       + `Inv ${esc(b.invoiceNo) || '—'} · ${b.delayDays}d ${stall}</div>`
       + `<div style="margin-top:7px"><span style="font-size:11px;color:${MUTE};margin-right:4px">${need}</span>${docChips(c, onlyMissing)}</div>`
+      + (c.note ? `<div style="margin-top:5px;font-size:11.5px;color:#374151"><b style="color:${MUTE}">Note:</b> ${esc(c.note)}</div>` : '')
       + `</div>`
   }
 

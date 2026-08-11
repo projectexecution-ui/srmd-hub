@@ -28,7 +28,7 @@ type Client = ReturnType<typeof createServiceClient<any, any, any>>
 async function loadWorklist(sb: Client) {
   const [{ data: settings }, { data: checkRows }] = await Promise.all([
     sb.from('app_settings').select('key, value').in('key', ['bills_pipeline_stuck', 'bills_pipeline_last', 'bills_worklist_to']),
-    sb.from('bp_bill_checklist').select('bill_id, ms_sheet, abstract_sheet, po_wo, drawing'),
+    sb.from('bp_bill_checklist').select('bill_id, ms_sheet, abstract_sheet, po_wo, drawing, note'),
   ])
   const map = new Map((settings ?? []).map(r => [r.key as string, r.value as string]))
   let bills: WorklistBill[] = []
@@ -39,6 +39,7 @@ async function loadWorklist(sb: Client) {
   for (const c of checkRows ?? []) {
     checks[c.bill_id as string] = {
       ms_sheet: !!c.ms_sheet, abstract_sheet: !!c.abstract_sheet, po_wo: !!c.po_wo, drawing: !!c.drawing,
+      note: (c.note as string | null) ?? null,
     }
   }
   const to = (map.get('bills_worklist_to') ?? 'mayank.srmd@gmail.com')

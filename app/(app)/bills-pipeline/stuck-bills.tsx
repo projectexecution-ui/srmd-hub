@@ -129,10 +129,11 @@ export default function StuckBills({
     rows.sort((a, b) => {
       if (sortBy === 'amount') return (b.amount || 0) - (a.amount || 0)
       if (sortBy === 'days') return (b.delayDays || 0) - (a.delayDays || 0)
+      // 'nearly' intentionally reorders as ticks land — it's the opt-in view.
       if (sortBy === 'nearly') return (ticksOf(b.id) - ticksOf(a.id)) || (score(b) - score(a))
-      // priority: ready-to-push first (Mayank's queue), then ₹ × age
-      const ar = ticksOf(a.id) === 4 ? 1 : 0, br = ticksOf(b.id) === 4 ? 1 : 0
-      return (br - ar) || (score(b) - score(a))
+      // priority: ₹ × days-waiting. Kept independent of the checklist so rows
+      // don't jump while Milan is ticking — the Ready tile/callout is the queue.
+      return score(b) - score(a)
     })
     return rows
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -255,7 +256,7 @@ export default function StuckBills({
           <ArrowDownWideNarrow className="h-4 w-4 text-gray-400" />
           <select value={sortBy} onChange={e => setSortBy(e.target.value as typeof sortBy)}
             className="h-9 rounded-md border border-gray-300 bg-white px-2 text-sm text-gray-700 outline-none focus:border-indigo-400">
-            <option value="priority">Priority (ready first)</option>
+            <option value="priority">Priority (₹ × wait)</option>
             <option value="amount">Biggest ₹</option>
             <option value="days">Longest wait</option>
             <option value="nearly">Nearly done</option>
