@@ -2,11 +2,28 @@
 
 import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
-import { getMyUser } from '@/lib/auth'
+import { getMyUser, getMyPermissions, can } from '@/lib/auth'
 import { DEFAULT_TEMPLATE, templateSequenceDefaults } from '@/lib/schedule/template'
 import { progressFromFloors } from '@/lib/schedule/formula'
 import { floorsSettingKey } from '@/lib/schedule/floors'
+import { getScheduleFloors } from '@/lib/schedule/data'
 import type { FloorStatus } from '@/lib/schedule/types'
+
+/** The permissions-matrix gate. RLS only checks hardcoded ROLE names
+ *  (sched_can_write/sched_can_build), so without this an admin revoking
+ *  `schedule` edit at /admin/permissions — or blocking one user via
+ *  user_module_blocks — changed nothing: the UI hid the buttons but every
+ *  server action still ran. `admin` = the build-level actions (add/delete
+ *  items, apply template) to mirror sched_can_build(). */
+async function gate(action: 'edit' | 'admin' = 'edit'): Promise<string | null> {
+  const perms = await getMyPermissions()
+  if (!can(perms, 'schedule', action)) {
+    return action === 'admin'
+      ? 'You can update progress but not add or remove work items — ask a project head.'
+      : 'You do not have permission to edit this schedule.'
+  }
+  return null
+}
 
 async function currentUid(): Promise<string | null> {
   const u = await getMyUser()
@@ -22,6 +39,7 @@ export async function addSchedItem(input: {
   planEnd?: string | null
   ownerUserId?: string | null
 }): Promise<{ ok?: true; error?: string }> {
+  const denied = await gate('admin'); if (denied) return { error: denied }
   const trade = input.trade.trim()
   const name = input.name.trim()
   if (!trade || !name) return { error: 'Trade and work name are required.' }
@@ -48,15 +66,23 @@ export async function addSchedItem(input: {
   return { ok: true }
 }
 
-/** Generic item patch (pct, state, wo_issued/number/on, owner, notes, sub, name, trade). */
-export async function updateSchedItem(
+/** Internal item patch. NOT exported: as a server action it was a reachable
+ *  mass-assignment hole — caller-supplied `patch` with no column allowlist and
+ *  filtered on `id` alone, so any signed-in user could rewrite pct/state/
+ *  baseline/locked_at on ANY project's items. Now private and project-scoped;
+ *  every caller goes through a purpose-built action that gates first. */
+async function patchSchedItem(
   id: string,
   projectId: string,
   patch: Record<string, unknown>,
 ): Promise<{ ok?: true; error?: string }> {
   const sb = await createClient()
-  const { error } = await sb.from('sched_items').update(patch).eq('id', id)
+  const { data, error } = await sb.from('sched_items')
+    .update(patch).eq('id', id).eq('project_id', projectId).select('id')
   if (error) return { error: error.message }
+  // PostgREST returns 200 + zero rows when an RLS USING clause filters the row
+  // out, so a blocked write used to report success ("Deleted" with nothing gone).
+  if (!data?.length) return { error: 'That change was not saved — you may not have permission for this project.' }
   revalidatePath(`/schedule/${projectId}`)
   return { ok: true }
 }
@@ -65,7 +91,8 @@ export async function updateSchedItem(
 export async function setWoIssued(input: {
   id: string; projectId: string; issued: boolean; woNumber?: string | null; issuedOn?: string | null
 }): Promise<{ ok?: true; error?: string }> {
-  return updateSchedItem(input.id, input.projectId, {
+  const denied = await gate(); if (denied) return { error: denied }
+  return patchSchedItem(input.id, input.projectId, {
     wo_issued: input.issued,
     wo_number: input.issued ? (input.woNumber?.trim() || null) : null,
     wo_issued_on: input.issued ? (input.issuedOn || null) : null,
@@ -77,10 +104,13 @@ export async function moveSchedDate(input: {
   id: string; projectId: string; field: 'plan_start' | 'plan_end'
   from: string | null; to: string | null; reason?: string | null
 }): Promise<{ ok?: true; error?: string }> {
+  const denied = await gate(); if (denied) return { error: denied }
   const sb = await createClient()
   const me = await currentUid()
-  const { error } = await sb.from('sched_items').update({ [input.field]: input.to || null }).eq('id', input.id)
+  const { data: moved, error } = await sb.from('sched_items')
+    .update({ [input.field]: input.to || null }).eq('id', input.id).eq('project_id', input.projectId).select('id')
   if (error) return { error: error.message }
+  if (!moved?.length) return { error: 'Date not saved — you may not have permission for this project.' }
   await sb.from('sched_date_changes').insert({
     item_id: input.id, field: input.field,
     from_date: input.from, to_date: input.to || null,
@@ -90,12 +120,22 @@ export async function moveSchedDate(input: {
   return { ok: true }
 }
 
-export async function deleteSchedItem(id: string, projectId: string): Promise<{ ok?: true; error?: string }> {
+export async function deleteSchedItem(id: string, projectId: string): Promise<{ ok?: true; warning?: string; error?: string }> {
+  const denied = await gate('admin'); if (denied) return { error: denied }
   const sb = await createClient()
-  const { error } = await sb.from('sched_items').delete().eq('id', id)
+  // Warn about successors before the row goes: follows_item_id is ON DELETE SET
+  // NULL, so anything chained behind this silently loses its derived dates.
+  const { data: followers } = await sb.from('sched_items')
+    .select('name').eq('project_id', projectId).eq('follows_item_id', id)
+  const { data, error } = await sb.from('sched_items')
+    .delete().eq('id', id).eq('project_id', projectId).select('id')
   if (error) return { error: error.message }
+  if (!data?.length) return { error: 'Not deleted — you may not have permission to remove work items.' }
   revalidatePath(`/schedule/${projectId}`)
-  return { ok: true }
+  const names = ((followers ?? []) as Array<{ name: string }>).map(f => f.name)
+  return names.length
+    ? { ok: true, warning: `${names.slice(0, 3).join(', ')}${names.length > 3 ? ` +${names.length - 3}` : ''} followed it — set their sequence again.` }
+    : { ok: true }
 }
 
 /** Tick a weekly promise. Marking it done also sets that floor cell done (one
@@ -105,6 +145,7 @@ export async function setPromiseStatus(input: {
   status: 'open' | 'done' | 'not_done'
   prevCell?: FloorStatus | null
 }): Promise<{ ok?: true; error?: string }> {
+  const denied = await gate(); if (denied) return { error: denied }
   const sb = await createClient()
   const { error } = await sb.from('sched_promises').update({
     status: input.status,
@@ -126,6 +167,7 @@ export async function setPromiseStatus(input: {
 export async function addPromise(input: {
   projectId: string; itemId: string; location: string; weekStart: string; ownerName?: string | null
 }): Promise<{ ok?: true; error?: string }> {
+  const denied = await gate(); if (denied) return { error: denied }
   const sb = await createClient()
   const me = await currentUid()
   const { error } = await sb.from('sched_promises').insert({
@@ -140,26 +182,33 @@ export async function addPromise(input: {
 /** Raise every pending Work Order for a whole trade at once (one WO really
  *  goes to one contractor per trade). Only touches not-yet-issued items. */
 export async function bulkIssueWo(input: {
-  projectId: string; trade: string; woNumber?: string | null; issuedOn: string
+  projectId: string; itemIds: string[]; woNumber?: string | null; issuedOn: string
 }): Promise<{ ok?: true; count?: number; error?: string }> {
+  const denied = await gate(); if (denied) return { error: denied }
+  if (!input.itemIds?.length) return { error: 'Nothing to raise.' }
   const sb = await createClient()
+  // scoped to the EXACT items the button offered — not every un-issued item in
+  // the trade (that swept up work scheduled a year out).
   const { data, error } = await sb.from('sched_items')
     .update({ wo_issued: true, wo_number: input.woNumber?.trim() || null, wo_issued_on: input.issuedOn })
-    .eq('project_id', input.projectId).eq('trade', input.trade).eq('wo_issued', false)
+    .eq('project_id', input.projectId).in('id', input.itemIds).eq('wo_issued', false)
     .select('id')
   if (error) return { error: error.message }
   revalidatePath(`/schedule/${input.projectId}`)
   return { ok: true, count: (data ?? []).length }
 }
 
-/** Undo a bulk raise — clears the WO flag for items issued on that date. */
+/** Undo a bulk raise — clears ONLY the items that raise actually changed, so a
+ *  WO raised separately (with its own number) is never wiped. */
 export async function bulkClearWo(input: {
-  projectId: string; trade: string; issuedOn: string
+  projectId: string; itemIds: string[]
 }): Promise<{ ok?: true; error?: string }> {
+  const denied = await gate(); if (denied) return { error: denied }
+  if (!input.itemIds?.length) return { ok: true }
   const sb = await createClient()
   const { error } = await sb.from('sched_items')
     .update({ wo_issued: false, wo_number: null, wo_issued_on: null })
-    .eq('project_id', input.projectId).eq('trade', input.trade).eq('wo_issued_on', input.issuedOn)
+    .eq('project_id', input.projectId).in('id', input.itemIds)
   if (error) return { error: error.message }
   revalidatePath(`/schedule/${input.projectId}`)
   return { ok: true }
@@ -176,6 +225,7 @@ export async function bulkAssignSchedItems(input: {
   contractor?: string | null
   approverName?: string | null
 }): Promise<{ ok?: true; count?: number; error?: string }> {
+  const denied = await gate(); if (denied) return { error: denied }
   const patch: Record<string, unknown> = {}
   if (input.ownerName !== undefined) patch.owner_name = input.ownerName
   if (input.contractor !== undefined) patch.contractor = input.contractor
@@ -197,6 +247,7 @@ export async function bulkAssignSchedItems(input: {
 /** Populate a project's schedule from the standard template. Skips items that
  *  already exist (by trade+name), so it's safe to run more than once. */
 export async function applyTemplate(projectId: string): Promise<{ ok?: true; added?: number; error?: string }> {
+  const denied = await gate('admin'); if (denied) return { error: denied }
   const sb = await createClient()
   const me = await currentUid()
   const { data: existing } = await sb.from('sched_items').select('trade, name, seq').eq('project_id', projectId)
@@ -245,6 +296,7 @@ export async function setSequence(input: {
   id: string; projectId: string
   followsItemId: string | null; gapDays: number; cycleDays: number | null
 }): Promise<{ ok?: true; error?: string }> {
+  const denied = await gate(); if (denied) return { error: denied }
   if (input.followsItemId === input.id) return { error: 'An item cannot follow itself.' }
   const sb = await createClient()
   const { error } = await sb.from('sched_items').update({
@@ -264,6 +316,7 @@ export async function setFloorStatus(input: {
   itemId: string; projectId: string; location: string; floorId?: string | null
   status: FloorStatus
 }): Promise<{ ok?: true; error?: string }> {
+  const denied = await gate(); if (denied) return { error: denied }
   const sb = await createClient()
   const me = await currentUid()
   const { data: existing } = await sb.from('sched_progress')
@@ -281,9 +334,17 @@ export async function setFloorStatus(input: {
     if (error) return { error: error.message }
   }
 
-  // Re-derive the item's % from all its floor cells and sync pct + state.
-  const { data: cells } = await sb.from('sched_progress').select('status').eq('item_id', input.itemId)
-  const statuses = ((cells ?? []) as Array<{ status: FloorStatus }>).map(c => c.status)
+  // Re-derive the item's % across EVERY floor of the project — not just the
+  // floors that happen to have a row. Cells are created lazily (one per tap), so
+  // dividing by existing rows made the first tick read 100% "done".
+  const { data: cells } = await sb.from('sched_progress')
+    .select('location, status').eq('item_id', input.itemId)
+  const have = new Map(((cells ?? []) as Array<{ location: string; status: FloorStatus }>)
+    .map(c => [c.location.trim().toLowerCase(), c.status]))
+  const { data: seeded } = await sb.from('project_floors')
+    .select('name').eq('project_id', input.projectId).order('sequence')
+  const floors = await getScheduleFloors(input.projectId, (seeded ?? []) as Array<{ name: string }>)
+  const statuses = floors.map(f => have.get(f.trim().toLowerCase()) ?? 'not_started') as FloorStatus[]
   if (statuses.length) {
     const pct = progressFromFloors(statuses)
     const { data: cur } = await sb.from('sched_items').select('state').eq('id', input.itemId).maybeSingle()
@@ -301,6 +362,7 @@ export async function setFloorStatus(input: {
 export async function setScheduleFloors(
   projectId: string, floors: string[],
 ): Promise<{ ok?: true; error?: string }> {
+  const denied = await gate('admin'); if (denied) return { error: denied }
   const clean = Array.from(new Set(floors.map(f => f.trim()).filter(Boolean)))
   if (!clean.length) return { error: 'Add at least one floor / location.' }
   const sb = await createClient()

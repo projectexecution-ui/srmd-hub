@@ -14,7 +14,7 @@ import { deriveSchedule, readyFloors, actualCycleDays, type DerivedPlan } from '
 import type { DisplayStatus, SchedItem, FloorStatus, SchedPromise } from '@/lib/schedule/types'
 import type { ProjectScheduleData } from '@/lib/schedule/data'
 import { TEMPLATE_ITEM_COUNT } from '@/lib/schedule/template'
-import { addSchedItem, updateSchedItem, setWoIssued, moveSchedDate, deleteSchedItem, applyTemplate, setFloorStatus, setScheduleFloors, bulkAssignSchedItems, setPromiseStatus, addPromise, setSequence, bulkIssueWo, bulkClearWo } from '../actions'
+import { addSchedItem, setWoIssued, moveSchedDate, deleteSchedItem, applyTemplate, setFloorStatus, setScheduleFloors, bulkAssignSchedItems, setPromiseStatus, addPromise, setSequence, bulkIssueWo, bulkClearWo } from '../actions'
 
 type Row = { item: SchedItem; status: DisplayStatus; woBy: string | null; behindDays: number; woLateDays: number }
 type Runner = (fn: () => Promise<{ ok?: true; error?: string }>, okMsg?: string, undo?: () => Promise<{ ok?: true; error?: string }>) => void
@@ -513,9 +513,10 @@ function ActionCentre({ rows, ready, canEdit, projectId, today, leadDays, run }:
                     <Button size="sm" className="bg-indigo-600 hover:bg-indigo-700 flex-shrink-0"
                       onClick={e => {
                         e.preventDefault(); e.stopPropagation()
-                        run(() => bulkIssueWo({ projectId, trade: g.trade, issuedOn: today }),
-                          `${g.list.length} ${g.trade} WO${g.list.length === 1 ? '' : 's'} marked issued`,
-                          () => bulkClearWo({ projectId, trade: g.trade, issuedOn: today }))
+                        const ids = g.list.map(r => r.item.id)
+                        run(() => bulkIssueWo({ projectId, itemIds: ids, issuedOn: today }),
+                          `${ids.length} ${g.trade} WO${ids.length === 1 ? '' : 's'} marked issued`,
+                          () => bulkClearWo({ projectId, itemIds: ids }))
                       }}>
                       Raise all {g.list.length}
                     </Button>
