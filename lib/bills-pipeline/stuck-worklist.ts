@@ -106,7 +106,7 @@ export function buildStuckWorklist(
       + `<span style="float:right;font-weight:800;font-size:13.5px">₹${inr(b.amount)}</span></div>`
       + `<div style="font-size:11.5px;color:${MUTE};margin-top:2px">`
       + `<span style="display:inline-block;background:${NAVY};color:#fff;border-radius:5px;padding:1px 6px;font-size:10.5px;font-weight:700">${esc(b.project)}</span> `
-      + `Inv ${esc(b.invoiceNo) || '—'} · ${esc(b.status.replace(/^Under:\s*/, ''))} · ${b.delayDays}d ${stall}</div>`
+      + `Inv ${esc(b.invoiceNo) || '—'} · ${b.delayDays}d ${stall}</div>`
       + `<div style="margin-top:7px"><span style="font-size:11px;color:${MUTE};margin-right:4px">${need}</span>${docChips(c, onlyMissing)}</div>`
       + `</div>`
   }
@@ -146,10 +146,11 @@ export function buildStuckWorklist(
   const html = `<div style="background:#eef1f5;padding:24px 12px;font-family:Arial,Helvetica,sans-serif;color:${INK}">`
     + `<div style="max-width:640px;margin:0 auto;background:#fff;border-radius:14px;overflow:hidden">`
     + `<div style="background:${NAVY};color:#fff;padding:20px 22px 16px"><div style="font-size:19px;font-weight:700">Bills verification — daily worklist</div>`
-    + `<div style="font-size:12.5px;color:#c6d2e0;margin-top:4px">${esc(opts.dateLabel)} · CT Head desk${opts.asOf ? ` · as of ${esc(opts.asOf)}` : ''}</div></div>`
+    + `<div style="font-size:12.5px;color:#c6d2e0;margin-top:4px">${esc(opts.dateLabel)}${opts.asOf ? ` · as of ${esc(opts.asOf)}` : ''}</div>`
+    + `<div style="display:inline-block;margin-top:10px;background:${GOLD};color:${NAVY};font-size:12px;font-weight:800;border-radius:6px;padding:3px 10px">Stage: Under CT Head · all ${total} bills below</div></div>`
     + `<div style="height:3px;background:${GOLD}"></div>`
     + `<div style="padding:18px 22px">`
-    + `<p style="font-size:14px;margin:0 0 14px">Good morning, Mayank bhai — here&apos;s the CT Head desk, prioritised so the biggest, oldest money moves first.</p>`
+    + `<p style="font-size:14px;margin:0 0 14px">Good morning, Mayank bhai — every bill below is sitting at <b>your CT Head desk</b>, waiting on you. Prioritised so the biggest, oldest money moves first.</p>`
     + `<table style="width:100%;border-collapse:separate;border-spacing:0;margin:0 -4px"><tr>`
     + kpi(String(total), 'To verify') + kpi(String(ready), 'Ready', '#0f6e56')
     + kpi(String(oneAway.length), 'One doc away', '#b45309') + kpi(String(stalled), 'Stalled >21d', RED)
