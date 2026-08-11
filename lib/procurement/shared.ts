@@ -19,6 +19,7 @@ const PROJECT_CODE_TO_NAME: Record<string, string> = {
   P2I:   'P2 Infra',
   P2RH:  'P2 Row Houses',
   RU:    'Raj Uphaar',
+  CVR:   'CV Renovation',
   SQ:    'Staff Facilities Block',
   SRAH:  'SR Animal Hospital',
   WH:    'Warehouse',
@@ -58,21 +59,55 @@ export function projectFromIndentNo(indentNo: string): string | null {
   return PROJECT_CODE_TO_NAME[code] ?? code
 }
 
+/**
+ * Turn an IN4 sub-project / cost-centre string into a short block label.
+ *
+ * IMPORTANT: the NGH sub-block rules ("Common", "Infra Work", "Design")
+ * only apply when the row is ACTUALLY a New Guest House row. Previously
+ * those bare word-matches ran globally and hijacked other projects — e.g.
+ * Raj Uphaar's own "Raj Uphaar - Common Expenses" cost-centre was stamped
+ * "NGH – Common" (≈1,000 rows). The IN4 sub-project always leads with the
+ * real project name, so we branch on that first.
+ */
 export function simplifyBlock(sp: string): string {
   if (!sp) return ''
-  if (sp.includes('New Guest House B')) return 'NGH – Block B'
-  if (sp.includes('New Guest House A')) return 'NGH – Block A'
-  if (sp.includes('New Guest House C')) return 'NGH – Block C'
-  if (sp.includes('Infra Work')) return 'NGH – Infra'
-  if (sp.includes('Design')) return 'NGH – Design'
-  if (sp.includes('Common')) return 'NGH – Common'
+
+  // New Guest House — its blocks/cost-centres.
+  if (sp.includes('New Guest House') || sp.includes('NGH')) {
+    if (sp.includes('New Guest House B')) return 'NGH – Block B'
+    if (sp.includes('New Guest House A')) return 'NGH – Block A'
+    if (sp.includes('New Guest House C')) return 'NGH – Block C'
+    if (sp.includes('Infra Work')) return 'NGH – Infra'
+    if (sp.includes('Design')) return 'NGH – Design'
+    if (sp.includes('Common')) return 'NGH – Common'
+    return 'NGH'
+  }
+
   if (sp.includes('SRAH')) return 'SRAH'
-  if (sp.includes('Raj Uphaar') || sp.includes('RU')) return 'Raj Uphaar'
+
+  // Raj Uphaar — keep its own cost-centre granularity.
+  if (sp.includes('Raj Uphaar') || sp.includes('RU -') || sp.includes('/RU/')) {
+    if (sp.includes('Common')) return 'RU – Common'
+    if (sp.includes('Infra')) return 'RU – Infra'
+    if (sp.includes('Design')) return 'RU – Design'
+    return 'Raj Uphaar'
+  }
+
   if (sp.includes('Admin Block')) return 'Admin Block'
   if (sp.includes('Prem Parking')) return 'Prem Parking'
   if (sp.includes('CFB')) return 'CFB'
   if (sp.includes('Staff Facilities')) return 'Staff Facilities'
   return sp.slice(0, 28)
+}
+
+/**
+ * Drop the leading `IND/<org>/` from an indent number so the project code,
+ * year and running number lead (e.g. `IND/SRET/RU/2023-24/13` → `RU/2023-24/13`).
+ * Generic across every org segment (SRET, SRASSK, SRJT, …) so display stays
+ * consistent everywhere — use this instead of hard-coded .replace() chains.
+ */
+export function shortIndent(no: string): string {
+  return String(no || '').replace(/^IND\/[A-Z0-9]+\//, '')
 }
 
 export function extractDiscipline(material: string): string {

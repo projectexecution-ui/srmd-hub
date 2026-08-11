@@ -17,6 +17,7 @@ import { IndentsNeedingPoView } from '@/components/procurement-tracker/IndentsNe
 import { CompletedView } from '@/components/procurement-tracker/CompletedView'
 import { DiffBanner } from '@/components/procurement-tracker/DiffBanner'
 import { ProjectFilterStrip } from '@/components/procurement-tracker/ProjectFilterStrip'
+import { UniversalSearch } from '@/components/procurement-tracker/UniversalSearch'
 import { buildTrackerSummaryPdf } from '@/lib/procurement/pdf'
 import type { ChaseNote } from '@/lib/procurement/chase-notes'
 import type { DroppedLine } from '@/lib/procurement/dropped'
@@ -241,6 +242,20 @@ export function ProcurementTrackerClient({ isAdmin = false }: { isAdmin?: boolea
     return droppedKeys.size === 0 ? base : base.filter(l => !droppedKeys.has(dropKey(l)))
   }, [data, selectedProject, visibleProjects, droppedKeys])
 
+  // Every visible line across ALL projects (minus "not ordering") — the pool
+  // the universal search box looks through, independent of the active project.
+  const allVisibleLines = useMemo<LineRecord[]>(() => {
+    const base = visibleProjects.flatMap(p => p.lines)
+    return droppedKeys.size === 0 ? base : base.filter(l => !droppedKeys.has(dropKey(l)))
+  }, [visibleProjects, droppedKeys])
+
+  // Jump from a search hit to where it lives: its project + the matching view.
+  const handleSearchPick = useCallback((line: LineRecord) => {
+    setSelectedProject(line.project)
+    setView(line.status === 'no_po' ? 'needs-po' : line.status === 'received' ? 'completed' : 'pending')
+    if (typeof window !== 'undefined') window.scrollTo({ top: 0, behavior: 'smooth' })
+  }, [])
+
   const pendingCount = useMemo(
     () => linesForActiveProject.filter(l => l.pendingQty > 0).length,
     [linesForActiveProject],
@@ -417,6 +432,9 @@ export function ProcurementTrackerClient({ isAdmin = false }: { isAdmin?: boolea
 
         {data && (
           <div className="space-y-4">
+            {/* Universal search — find any item across every project & status */}
+            <UniversalSearch lines={allVisibleLines} onPick={handleSearchPick} />
+
             {/* What changed since last upload */}
             {diff && (diff.newLineIds.size > 0 || diff.changedLineIds.size > 0) && (
               <DiffBanner diff={diff} />

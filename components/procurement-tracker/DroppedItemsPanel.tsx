@@ -5,10 +5,9 @@
 
 import { useState } from 'react'
 import type { DroppedLine } from '@/lib/procurement/dropped'
+import { shortIndent } from '@/lib/procurement/shared'
 import { Ban, RotateCcw, ChevronDown, ChevronRight, Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
-
-const shortIndent = (no: string) => no.replace('IND/SRASSK/', '').replace('IND/SRET/', '').replace('IND/SRJT/', '')
 
 export function DroppedItemsPanel({
   dropped,

@@ -14,7 +14,7 @@
 
 import { useMemo, useState } from 'react'
 import type { LineRecord } from '@/lib/procurement'
-import { daysBetween } from '@/lib/procurement/shared'
+import { daysBetween, shortIndent } from '@/lib/procurement/shared'
 import { Download, Search, Users, Layers, CheckCircle2, FileSpreadsheet, AlertTriangle, ChevronDown, ChevronRight } from 'lucide-react'
 import { SourceInspector } from './SourceInspector'
 import { CardField } from './CardField'
@@ -425,7 +425,7 @@ export function CompletedView({
                                     <Search className="h-3 w-3" />
                                   </button>
                                 </div>
-                                <span className="text-[10px] text-stone-400">{ln.indentNo.replace('IND/SRASSK/', '').replace('IND/SRET/', '')} · {ln.block}</span>
+                                <span className="text-[10px] text-stone-400">{shortIndent(ln.indentNo)} · {ln.block}</span>
                               </td>
                               <td className="px-4 py-2 text-[10px] text-stone-500 whitespace-nowrap font-mono">
                                 <div>{ln.indentDate || '—'}</div>
@@ -470,7 +470,7 @@ export function CompletedView({
                               <p className="text-sm text-stone-800 line-clamp-2" title={ln.material}>{ln.material}</p>
                               <p className="text-[11px] text-stone-500 mt-0.5 truncate">
                                 {groupBy !== 'vendor' && ln.supplier ? `${ln.supplier} · ` : ''}
-                                {ln.indentNo.replace('IND/SRASSK/', '').replace('IND/SRET/', '')}{ln.block ? ` · ${ln.block}` : ''}
+                                {shortIndent(ln.indentNo)}{ln.block ? ` · ${ln.block}` : ''}
                               </p>
                             </div>
                             <ChevronRight className="h-4 w-4 text-stone-300 flex-shrink-0 mt-0.5" />

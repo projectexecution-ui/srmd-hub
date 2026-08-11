@@ -11,7 +11,7 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import type { LineRecord } from '@/lib/procurement'
-import { formatAgeFriendly } from '@/lib/procurement/shared'
+import { formatAgeFriendly, shortIndent } from '@/lib/procurement/shared'
 import { Download, ClipboardList, Layers, AlertTriangle, FileSpreadsheet, CheckCircle2, Search, ChevronDown, ChevronRight, X, Share2, Flame, ListOrdered } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
@@ -190,7 +190,7 @@ export function IndentsNeedingPoView({
     for (const ln of filtered) {
       const key = groupBy === 'indent' ? ln.indentNo : (ln.block || '— Unknown block —')
       const label = groupBy === 'indent'
-        ? ln.indentNo.replace('IND/SRASSK/', '').replace('IND/SRET/', '')
+        ? shortIndent(ln.indentNo)
         : (ln.block || '— Unknown block —')
       const subLabel = groupBy === 'indent' ? `${ln.block} · ${ln.indentDate}` : ''
       let g = map.get(key)
@@ -427,7 +427,7 @@ export function IndentsNeedingPoView({
             {chaseFirst.map(ln => (
               <button key={ln.id} type="button" onClick={() => setInspectingLine(ln)}
                 className="flex items-center gap-2 text-left text-xs py-1.5 hover:bg-white/50 rounded px-1">
-                <span className="font-mono text-[11px] text-stone-600 w-[92px] flex-shrink-0 truncate">{ln.indentNo.replace('IND/SRASSK/', '').replace('IND/SRET/', '')}</span>
+                <span className="font-mono text-[11px] text-stone-600 w-[92px] flex-shrink-0 truncate">{shortIndent(ln.indentNo)}</span>
                 <span className="text-stone-700 truncate flex-1" title={ln.material}>{ln.material}</span>
                 <span className={cn('text-[11px] tabular-nums flex-shrink-0 w-10 text-right', ageClass(ageDays(ln)))}>{ageDays(ln) ?? '—'}d</span>
               </button>
@@ -525,7 +525,7 @@ export function IndentsNeedingPoView({
                           <tr key={ln.id} className="hover:bg-stone-50">
                             {groupBy !== 'indent' && (
                               <td className="px-4 py-2 font-mono text-[11px] text-stone-700 whitespace-nowrap" title={ln.indentNo}>
-                                <Highlight text={ln.indentNo.replace('IND/SRASSK/', '').replace('IND/SRET/', '')} query={searchQuery} />
+                                <Highlight text={shortIndent(ln.indentNo)} query={searchQuery} />
                               </td>
                             )}
                             <td className="px-4 py-2 text-xs text-stone-800 max-w-[320px]">
@@ -585,7 +585,7 @@ export function IndentsNeedingPoView({
                             <p className="text-[11px] text-stone-500 mt-0.5 truncate">
                               {groupBy === 'indent'
                                 ? (ln.block || '—')
-                                : ln.indentNo.replace('IND/SRASSK/', '').replace('IND/SRET/', '')}
+                                : shortIndent(ln.indentNo)}
                               {groupBy === 'none' && ln.block ? ` · ${ln.block}` : ''}
                             </p>
                             {indentContext(ln.indentNo) && (

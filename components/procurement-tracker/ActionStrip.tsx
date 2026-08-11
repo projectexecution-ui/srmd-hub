@@ -1,5 +1,6 @@
 'use client'
 import type { ProjectSummary, IndentStatus } from '@/lib/procurement'
+import { shortIndent } from '@/lib/procurement/shared'
 import { AlertTriangle, PackageX, UserX, FileText } from 'lucide-react'
 
 function fmtINR(n: number) {
@@ -51,7 +52,7 @@ export function ActionStrip({ summary, onJumpToIndent, onJumpToPending }: Props)
             <AlertTriangle className="h-3 w-3 text-red-500" /> Oldest pending PO
           </p>
           <p className="text-sm font-bold text-stone-800 truncate" title={oldest.indentNo}>
-            {oldest.indentNo.replace('IND/SRASSK/', '').replace('IND/SRET/', '')}
+            {shortIndent(oldest.indentNo)}
           </p>
           <p className="text-xs text-stone-500 mt-0.5">
             {oldest.worstAgeDays != null ? `${oldest.worstAgeDays}d old · ` : ''}{oldest.block || oldest.subProject}
