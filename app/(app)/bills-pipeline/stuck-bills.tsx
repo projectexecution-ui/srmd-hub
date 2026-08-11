@@ -96,6 +96,25 @@ export default function StuckBills({
   const projects = useMemo(() => [...new Set(bills.map(b => b.project).filter(Boolean))].sort(), [bills])
   const statuses = useMemo(() => [...new Set(bills.map(b => b.status).filter(Boolean))].sort(), [bills])
 
+  // Bills matching every active filter EXCEPT the project one — so the project
+  // dropdown can show how many bills each project would yield right now.
+  const projectCounts = useMemo(() => {
+    const q = query.trim().toLowerCase()
+    const base = bills.filter(b => {
+      if (statusFilter && b.status !== statusFilter) return false
+      if (seg === 'ready' && ticksOf(b.id) !== 4) return false
+      if (seg === 'oneaway' && ticksOf(b.id) !== 3) return false
+      if (seg === 'notstarted' && ticksOf(b.id) !== 0) return false
+      if (seg === 'stalled' && !b.stalled) return false
+      if (q && ![b.vendor, b.invoiceNo, b.project, b.tasklist, b.prefix, b.status].some(v => (v ?? '').toLowerCase().includes(q))) return false
+      return true
+    })
+    const m = new Map<string, number>()
+    for (const b of base) m.set(b.project, (m.get(b.project) ?? 0) + 1)
+    return { map: m, total: base.length }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [bills, query, statusFilter, seg, checks])
+
   // Scoreboard — counts + ₹ over ALL bills, so the tiles stay stable while filtering.
   const board = useMemo(() => {
     const val = (arr: StuckBillRow[]) => arr.reduce((s, b) => s + (b.amount || 0), 0)
@@ -241,8 +260,8 @@ export default function StuckBills({
           onChange={e => setProjectFilter(e.target.value)}
           className="h-9 rounded-md border border-gray-300 bg-white px-2 text-sm text-gray-700 outline-none focus:border-indigo-400"
         >
-          <option value="">All projects</option>
-          {projects.map(p => <option key={p} value={p}>{p}</option>)}
+          <option value="">All projects ({projectCounts.total})</option>
+          {projects.map(p => <option key={p} value={p}>{p} ({projectCounts.map.get(p) ?? 0})</option>)}
         </select>
         <select
           value={statusFilter}
