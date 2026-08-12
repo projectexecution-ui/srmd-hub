@@ -8,6 +8,7 @@
 // itself hasn't run in over a day — that's the real "nothing ran today" signal.
 
 import { Clock, CheckCircle2, AlertTriangle, MinusCircle } from 'lucide-react'
+import { CronRunNowButton } from './CronRunNowButton'
 
 const STALE_HOURS = 26 // one full cycle + a margin
 
@@ -81,6 +82,7 @@ export function CronHealthStrip({ amAt, pmAt, nowMs }: { amAt: string | null; pm
             Both batches ran. Every daily job is attempted morning and afternoon but runs once a day, so a skipped slot self-heals automatically.
           </p>
         )}
+        <CronRunNowButton />
       </div>
     </div>
   )
