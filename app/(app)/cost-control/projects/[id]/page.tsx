@@ -977,78 +977,82 @@ export default async function CostControlProjectDetailPage(
               if (isEmpty) return null
               const effMode = subMeta.get(s.id)?.mode ?? discMeta.get(d.id)?.mode ?? 'detailed'
               return (
-                <div key={s.id} className="px-4 py-3">
-                  <div className="flex items-start justify-between gap-2">
+                <div key={s.id} className="mx-3 my-2 rounded-xl border border-gray-200 bg-white p-3.5">
+                  {/* Name + sheets chip */}
+                  <div className="flex items-start justify-between gap-2 mb-0.5">
                     <p className="text-sm text-gray-900 min-w-0">
                       <span className="font-mono text-[11px] text-gray-400 mr-1.5">{s.code}</span>{s.name}
                     </p>
                     {wsCount > 0 && (
                       <Link
                         href={`/cost-control/working-sheets?project=${project.id}&discipline=${d.id}&sub_skill=${s.id}`}
-                        className="flex-shrink-0 inline-flex items-center gap-1 px-2 py-1 rounded text-[11px] font-semibold bg-blue-50 text-blue-700 border border-blue-200"
+                        className="flex-shrink-0 inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-semibold bg-blue-50 text-blue-700 border border-blue-200"
                       >
                         {wsCount} sheet{wsCount === 1 ? '' : 's'}
                       </Link>
                     )}
                   </div>
-                  <div className="mt-2 grid grid-cols-3 gap-2 text-center">
-                    <div className="rounded-lg bg-indigo-50/60 py-1.5">
-                      <p className="text-[10px] uppercase tracking-wide text-gray-500">Estimate</p>
-                      <p className="text-[13px] font-semibold text-indigo-800 tabular-nums"><Money amt={estLive} /></p>
-                    </div>
-                    {(() => {
-                      const ids = awaitingBySub.get(`${d.id}::${s.id}`) ?? []
-                      const href = awaitingHref(ids, `/cost-control/working-sheets?project=${project.id}&discipline=${d.id}&sub_skill=${s.id}`)
-                      const cls = `block rounded-lg py-1.5 ${overBy > 0 ? 'bg-rose-50' : 'bg-amber-50/60'}`
-                      const body = (
-                        <>
-                          <p className="text-[10px] uppercase tracking-wide text-gray-500">Awaiting{href ? ' ›' : ''}</p>
-                          <p className={`text-[13px] font-semibold tabular-nums ${overBy > 0 ? 'text-rose-700' : 'text-amber-700'}`}><Money amt={ask} /></p>
-                        </>
-                      )
-                      return href ? <Link href={href} className={cls}>{body}</Link> : <div className={cls}>{body}</div>
-                    })()}
-                    <div className="rounded-lg bg-emerald-50/60 py-1.5">
-                      <p className="text-[10px] uppercase tracking-wide text-gray-500">Released</p>
-                      <p className="text-[13px] font-semibold text-emerald-700 tabular-nums"><Money amt={released} /></p>
-                    </div>
+
+                  {/* Money read top-to-bottom, one line at a time — calmer than
+                      three competing tiles. Estimate anchors; Awaiting is the
+                      highlighted action; Released is the outcome. */}
+                  <div className="flex items-center justify-between gap-3 py-1.5 border-t border-gray-100">
+                    <span className="text-[13px] text-gray-600">Estimate</span>
+                    <span className="text-[14px] font-semibold tabular-nums text-indigo-800 text-right"><Money amt={estLive} /></span>
                   </div>
-                  {/* ERP group — Budget / WO / Paid / % Used. The wide desktop
-                      table hides these columns on a phone; this compact grid
-                      brings them (and their ₹/sft) back so a manager reviewing
-                      on mobile sees the full picture. */}
-                  {showErp && ((bl?.budget ?? 0) > 0 || (bl?.wo ?? 0) > 0 || (bl?.paid ?? 0) > 0) && (
-                    <div className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1.5 rounded-lg border border-gray-100 bg-gray-50/70 px-3 py-2 text-[11px]">
-                      <div className="flex items-start justify-between gap-2">
-                        <span className="text-gray-500">Budget (ERP)</span>
-                        <span className="font-semibold text-gray-900 tabular-nums text-right"><Money amt={bl?.budget ?? 0} /></span>
-                      </div>
-                      <div className="flex items-start justify-between gap-2">
-                        <span className="text-gray-500">WO / PO</span>
-                        <span className="font-semibold text-gray-700 tabular-nums text-right"><Money amt={bl?.wo ?? 0} /></span>
-                      </div>
-                      <div className="flex items-start justify-between gap-2">
-                        <span className="text-gray-500">Paid</span>
-                        <span className="font-semibold text-gray-700 tabular-nums text-right"><Money amt={bl?.paid ?? 0} /></span>
-                      </div>
-                      <div className="flex items-start justify-between gap-2">
-                        <span className="text-gray-500">% Used</span>
-                        <span className={`font-semibold tabular-nums ${sPct > 95 ? 'text-red-600' : sPct > 80 ? 'text-amber-700' : sPct > 0 ? 'text-green-700' : 'text-gray-400'}`}>
-                          {bl && bl.budget > 0 ? `${sPct.toFixed(0)}%` : '—'}
-                        </span>
-                      </div>
+                  {ask > 0 && (() => {
+                    const ids = awaitingBySub.get(`${d.id}::${s.id}`) ?? []
+                    const href = awaitingHref(ids, `/cost-control/working-sheets?project=${project.id}&discipline=${d.id}&sub_skill=${s.id}`)
+                    const cls = `flex items-center justify-between gap-3 -mx-1 my-1 px-2 py-1.5 rounded-lg ${overBy > 0 ? 'bg-rose-50' : 'bg-amber-50'}`
+                    const body = (
+                      <>
+                        <span className={`text-[13px] font-semibold ${overBy > 0 ? 'text-rose-800' : 'text-amber-800'}`}>Awaiting your approval{href ? ' ›' : ''}</span>
+                        <span className={`text-[14px] font-semibold tabular-nums text-right ${overBy > 0 ? 'text-rose-700' : 'text-amber-800'}`}><Money amt={ask} /></span>
+                      </>
+                    )
+                    return href ? <Link href={href} className={cls}>{body}</Link> : <div className={cls}>{body}</div>
+                  })()}
+                  {overBy > 0 && (
+                    <p className="text-[10px] font-semibold text-rose-600 mb-0.5">▲ over the Internal Estimate by {formatINR(overBy)}</p>
+                  )}
+                  {released > 0 && (
+                    <div className="flex items-center justify-between gap-3 py-1.5 border-t border-gray-100">
+                      <span className="text-[13px] text-gray-600">Released</span>
+                      <span className="text-[14px] font-semibold tabular-nums text-emerald-700 text-right"><Money amt={released} /></span>
                     </div>
                   )}
-                  {overBy > 0 && (
-                    <p className="mt-1 text-[10px] font-bold text-rose-600">▲ over the Internal Estimate by {formatINR(overBy)}</p>
+
+                  {/* Actuals (ERP) — one slim strip: % used headline + a bar +
+                      the three amounts in a quiet caption. Replaces the old
+                      four-cell grid that crowded the card. ERP-toggle-gated. */}
+                  {showErp && ((bl?.budget ?? 0) > 0 || (bl?.wo ?? 0) > 0 || (bl?.paid ?? 0) > 0) && (
+                    <div className="mt-2.5 pt-2.5 border-t border-gray-100">
+                      <div className="flex items-center justify-between gap-2 mb-1.5">
+                        <span className="text-[10px] uppercase tracking-wider text-gray-400">Actuals (ERP)</span>
+                        {bl && bl.budget > 0
+                          ? <span className={`text-[11px] font-semibold tabular-nums ${sPct > 95 ? 'text-red-600' : sPct > 80 ? 'text-amber-700' : 'text-emerald-700'}`}>{sPct.toFixed(0)}% used</span>
+                          : <span className="text-[11px] text-gray-400">No budget yet</span>}
+                      </div>
+                      {bl && bl.budget > 0 && (
+                        <div className="h-1.5 rounded-full bg-gray-100 overflow-hidden">
+                          <div className={`h-full rounded-full ${sPct > 95 ? 'bg-red-500' : sPct > 80 ? 'bg-amber-500' : 'bg-emerald-500'}`} style={{ width: `${Math.min(sPct, 100)}%` }} />
+                        </div>
+                      )}
+                      <p className="mt-1.5 text-[11px] text-gray-500 tabular-nums leading-snug">
+                        Budget {formatINR(bl?.budget ?? 0)}
+                        {(bl?.wo ?? 0) > 0 && <> · WO {formatINR(bl?.wo ?? 0)}</>}
+                        {(bl?.paid ?? 0) > 0 && <> · Paid {formatINR(bl?.paid ?? 0)}</>}
+                      </p>
+                    </div>
                   )}
+
                   {canWrite && (
-                    <div className="mt-2">
+                    <div className="mt-3">
                       <Link
                         href={effMode === 'thumbrule'
                           ? `/cost-control/working-sheets/new-thumbrule?project=${project.id}&discipline=${d.id}&sub_skill=${s.id}`
                           : `/cost-control/working-sheets/new-quick?project=${project.id}&discipline=${d.id}&sub_skill=${s.id}`}
-                        className="inline-flex items-center gap-1 px-2.5 py-1 rounded text-[11px] font-semibold border border-blue-300 text-blue-700"
+                        className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-semibold border border-blue-300 text-blue-700"
                       >
                         <Plus className="h-3 w-3" /> New WS
                       </Link>
@@ -1066,19 +1070,19 @@ export default async function CostControlProjectDetailPage(
                     <span className="font-mono text-[11px] text-gray-500 mr-1.5">{d.code}</span>
                     <span className="truncate">{d.name}</span>
                   </span>
-                  <p className="text-[11px] text-gray-500 flex-shrink-0 text-right leading-tight">
-                    Est <span className="font-semibold text-indigo-800"><Money amt={dAgg.estimate} /></span>
-                    <span className="mx-1">·</span>
-                    Rel <span className="font-semibold text-emerald-700"><Money amt={dAgg.approvedTotal} /></span>
-                    {showErp && (
+                  <p className="text-[11px] text-gray-500 flex-shrink-0 text-right leading-tight tabular-nums">
+                    Est <span className="font-semibold text-indigo-800">{dAgg.estimate > 0 ? formatINR(dAgg.estimate) : '—'}</span>
+                    <span className="mx-1 text-gray-300">·</span>
+                    Rel <span className="font-semibold text-emerald-700">{dAgg.approvedTotal > 0 ? formatINR(dAgg.approvedTotal) : '—'}</span>
+                    {showErp && dAgg.budget > 0 && (
                       <>
-                        <span className="mx-1">·</span>
-                        Bud <span className="font-semibold text-gray-800"><Money amt={dAgg.budget} /></span>
+                        <span className="mx-1 text-gray-300">·</span>
+                        Bud <span className="font-semibold text-gray-800">{formatINR(dAgg.budget)}</span>
                       </>
                     )}
                   </p>
                 </div>
-                <CatRows catId={d.id}>{cards}</CatRows>
+                <div className="bg-gray-50/60"><CatRows catId={d.id}>{cards}</CatRows></div>
               </div>
             )
           })}
