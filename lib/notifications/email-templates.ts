@@ -398,6 +398,27 @@ function renderApprovedDigest(d: ApprovedDigestData, link: string): string {
   return shell(inner, `A once-a-day summary of budgets the Trustee approved · manage alerts in Settings → Notifications`)
 }
 
+// ── @mention in a comment ────────────────────────────────────────────────
+interface MentionData { author?: string; module?: string; context?: string; comment?: string }
+
+function renderMention(d: MentionData, link: string): string {
+  const comment = (d.comment ?? '').trim()
+  const inner = `
+    <tr><td style="padding:18px 22px 4px">
+      <div style="font-size:11px;font-weight:600;color:${BRAND};text-transform:uppercase;letter-spacing:.04em">Comment · you were mentioned</div>
+      <div style="font-size:18px;font-weight:600;color:${INK};margin-top:5px">${esc(d.author ?? 'Someone')} mentioned you</div>
+      <div style="margin-top:8px">${[
+        d.module ? chip(d.module, BRAND, '#e8f0f8') : '',
+        d.context ? chip(d.context, MUT, '#eef0f2') : '',
+      ].join('')}</div>
+    </td></tr>
+    ${comment ? `<tr><td style="padding:8px 22px 0">
+        <div style="border-left:3px solid ${BRAND};background:#f4f8fc;border-radius:0 8px 8px 0;padding:11px 14px;font-size:14px;line-height:1.55;color:${INK}">${esc(comment).replace(/\n/g, '<br/>')}</div>
+      </td></tr>` : ''}
+    <tr><td style="padding:16px 22px 18px">${button('View comment', link)}</td></tr>`
+  return shell(inner, `You were tagged with @ in a comment · manage alerts in Settings → Notifications`)
+}
+
 // ── Generic fallback (unchanged look, all other modules) ─────────────────
 function renderGeneric(subject: string, text: string, link: string): string {
   const body = esc(text).replace(/\n/g, '<br/>')
@@ -408,7 +429,7 @@ function renderGeneric(subject: string, text: string, link: string): string {
   return shell(inner)
 }
 
-export type NotificationKind = 'approval' | 'in4_pending' | 'in4_entered' | 'procurement_digest' | 'engineer_digest' | 'cc_approved' | 'cc_approved_digest' | 'generic'
+export type NotificationKind = 'approval' | 'in4_pending' | 'in4_entered' | 'procurement_digest' | 'engineer_digest' | 'cc_approved' | 'cc_approved_digest' | 'mention' | 'generic'
 
 /** Map a notification `type` to a template kind. */
 export function kindFromType(type: string | null | undefined): NotificationKind {
@@ -420,6 +441,7 @@ export function kindFromType(type: string | null | undefined): NotificationKind 
     case 'cc_engineer_digest':        return 'engineer_digest'
     case 'cc_budget_approved':        return 'cc_approved'
     case 'cc_budget_approved_digest': return 'cc_approved_digest'
+    case 'comment_mention':           return 'mention'
     default:                          return 'generic'
   }
 }
@@ -440,6 +462,7 @@ export function renderNotificationEmail(args: {
     if (kind === 'engineer_digest' && data) return renderEngineerDigest(data as EngineerDigestData, link)
     if (kind === 'cc_approved' && data) return renderApproved(data as ApprovedData, link)
     if (kind === 'cc_approved_digest' && data) return renderApprovedDigest(data as ApprovedDigestData, link)
+    if (kind === 'mention' && data) return renderMention(data as MentionData, link)
   } catch {
     // fall through to generic on any shape surprise
   }

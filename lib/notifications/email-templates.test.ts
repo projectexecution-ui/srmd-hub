@@ -163,6 +163,22 @@ describe('budgets approved daily digest (PH + engineer)', () => {
   })
 })
 
+describe('@mention email', () => {
+  it('maps the type + shows who tagged you, where, the comment, and a CTA', () => {
+    expect(kindFromType('comment_mention')).toBe('mention')
+    const html = renderNotificationEmail({
+      kind: 'mention', subject: 'x', text: 'y', link: 'https://h/cost-control/working-sheets/9',
+      data: { author: 'Akshay', module: 'Internal Estimate', context: 'NGH A · 3901 Contractor cost', comment: 'Please enter this in IN4 today' },
+    })
+    expect(html).toContain('Akshay mentioned you')
+    expect(html).toContain('Internal Estimate')
+    expect(html).toContain('NGH A · 3901 Contractor cost')
+    expect(html).toContain('Please enter this in IN4 today')
+    expect(html).toContain('View comment')
+    expect(html).toContain('https://h/cost-control/working-sheets/9')
+  })
+})
+
 describe('generic fallback', () => {
   it('is used for unknown kinds / missing data', () => {
     const html = renderNotificationEmail({ kind: 'generic', subject: 'New access request', text: 'Someone asked', link: 'l' })

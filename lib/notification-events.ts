@@ -81,6 +81,12 @@ export const NOTIFICATION_EVENTS: NotificationEventDef[] = [
     audience: 'The engineer who logged it',
   },
   {
+    type: 'comment_mention',
+    label: 'You were @mentioned in a comment',
+    description: 'When someone tags you with @ in a comment (any module), you get the comment and a link straight to it.',
+    audience: 'The tagged person',
+  },
+  {
     type: 'email_health',
     label: 'Notification delivery problem',
     description: 'Bell-only alert to admins when email or phone-push alerts could not be delivered after retries (so a broken channel can still report itself).',

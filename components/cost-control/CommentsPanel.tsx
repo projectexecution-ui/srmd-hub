@@ -8,6 +8,7 @@ import { getRoleLabels } from '@/lib/role-labels'
 import type { Role } from '@/lib/types'
 import { MessageSquare } from 'lucide-react'
 import { AddCommentForm } from './AddCommentForm'
+import { MentionText } from '@/components/mentions/MentionText'
 
 interface CommentRow {
   id: string
@@ -29,6 +30,11 @@ export async function CommentsPanel({ wsId }: { wsId: string }) {
     .eq('ws_id', wsId)
     .order('created_at', { ascending: true })
   const comments = (data ?? []) as CommentRow[]
+
+  // Active users, so @mentions render highlighted in the thread.
+  const { data: activeUsers } = await supabase
+    .from('profiles').select('id, full_name, name, email').eq('is_active', true).limit(500)
+  const mentionUsers = (activeUsers ?? []).map(p => ({ id: p.id as string, name: personName(p.full_name, p.name, p.email) }))
 
   // Resolve author names + role chips in one pass.
   const ids = Array.from(new Set(comments.map(c => c.author_id).filter((x): x is string => !!x)))
@@ -75,7 +81,7 @@ export async function CommentsPanel({ wsId }: { wsId: string }) {
                     </p>
                     <time className="text-[10px] text-gray-400 whitespace-nowrap">{fmtWhen(c.created_at)}</time>
                   </div>
-                  <p className="mt-1 text-sm text-gray-700 whitespace-pre-line break-words">{c.body}</p>
+                  <p className="mt-1 text-sm text-gray-700 whitespace-pre-line break-words"><MentionText text={c.body} users={mentionUsers} /></p>
                 </li>
               )
             })}
