@@ -14,7 +14,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { LineRecord } from '@/lib/procurement'
 import { formatAgeFriendly } from '@/lib/procurement/shared'
-import { Download, Users, ClipboardList, AlertTriangle, FileSpreadsheet, Search, ChevronDown, ChevronRight, X, Share2, Flame, ListOrdered } from 'lucide-react'
+import { Download, Users, ClipboardList, FileSpreadsheet, Search, ChevronDown, ChevronRight, X, Share2, Flame, ListOrdered, CheckCircle2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
 import { ChangeBadge } from './ChangeBadge'
@@ -432,7 +432,9 @@ export function PendingReceiptsView({
 
       {filtered.length === 0 ? (
         <div className="bg-white rounded-xl border border-stone-200 p-10 text-center">
-          <AlertTriangle className="h-7 w-7 text-emerald-500 mx-auto mb-2" />
+          {supplierQuery
+            ? <Search className="h-7 w-7 text-stone-400 mx-auto mb-2" />
+            : <CheckCircle2 className="h-7 w-7 text-emerald-500 mx-auto mb-2" />}
           <p className="text-stone-700 font-medium">
             {supplierQuery ? `No suppliers match “${supplierQuery}”.` : 'All clear in this filter.'}
           </p>
