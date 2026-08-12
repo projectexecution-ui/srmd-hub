@@ -4,6 +4,7 @@ import { getMyProfile } from '@/lib/auth'
 import { PageHeader } from '@/components/PageHeader'
 import { ProcurementProjectVisibilityEditor } from './ProcurementProjectVisibilityEditor'
 import { ProcurementNotifySettingsForm } from './ProcurementNotifySettingsForm'
+import { ClosedProjectsEditor } from './ClosedProjectsEditor'
 import { getProcurementNotifyConfig } from '@/lib/procurement/notify-settings'
 
 export const dynamic = 'force-dynamic'
@@ -23,6 +24,7 @@ export default async function ProcurementProjectVisibilityPage() {
     { data: users },
     { data: hidden },
     { data: stateRow },
+    { data: closedRow },
   ] = await Promise.all([
     supabase
       .from('procurement_known_projects')
@@ -41,7 +43,18 @@ export default async function ProcurementProjectVisibilityPage() {
       .select('state')
       .eq('id', 'global')
       .maybeSingle(),
+    supabase
+      .from('app_settings')
+      .select('value')
+      .eq('key', 'procurement_closed_projects')
+      .maybeSingle(),
   ])
+
+  let closedProjects: string[] = []
+  try {
+    const parsed = JSON.parse((closedRow?.value as string | null) ?? '[]')
+    if (Array.isArray(parsed)) closedProjects = parsed.filter((x): x is string => typeof x === 'string')
+  } catch { /* malformed — treat as none */ }
 
   // Merge the auto-grown registry with the projects in the CURRENT upload, so
   // the settings list always reflects live data even if the registry missed a
@@ -71,6 +84,10 @@ export default async function ProcurementProjectVisibilityPage() {
         initial={notifyConfig}
         users={(users ?? []).map(u => ({ id: u.id as string, full_name: (u.full_name as string | null) ?? null, email: u.email as string, role: u.role as string }))}
         projects={mergedProjects.map(p => p.name)}
+      />
+      <ClosedProjectsEditor
+        allProjects={mergedProjects.map(p => p.name)}
+        initialClosed={closedProjects}
       />
       <ProcurementProjectVisibilityEditor
         knownProjects={mergedProjects}
