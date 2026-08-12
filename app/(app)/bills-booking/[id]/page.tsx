@@ -47,16 +47,33 @@ export default async function BillDetailPage({ params }: { params: Promise<{ id:
         <StagePill stage={bill.current_stage as BbStage} />
       </PageHeader>
 
+      {/* WO status banners */}
+      {bill.wo_pending && (
+        <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+          <b>No WO/PO issued</b> — this bill is to be <b>regularised</b>; a work order needs to be raised.
+        </div>
+      )}
+      {bill.amendment_flag && (
+        <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">
+          <b>WO budget short — IN4 amendment needed.</b> Paid-so-far + this bill exceeds the {bill.order_type} value; raise the amendment in IN4 before payment.
+        </div>
+      )}
+
       {/* Facts */}
       <Card className="p-4">
         <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm sm:grid-cols-3">
           <Fact k="Bill type" v={bill.bill_type || '—'} />
+          <Fact k="Category" v={bill.bill_category || '—'} />
+          <Fact k="Dept" v={bill.ct_other_dept || '—'} />
           <Fact k="Work" v={bill.work || '—'} />
           <Fact k="Bill no" v={bill.bill_no || '—'} />
           <Fact k="RA no" v={bill.ra_no || '—'} />
-          <Fact k="Claimed" v={money(bill.claimed_amount)} />
+          <Fact k={`${bill.order_type} value`} v={money(bill.wo_value)} />
+          <Fact k="Paid till date" v={money(bill.paid_till_date)} />
+          <Fact k="This bill" v={money(bill.claimed_amount)} />
           <Fact k="Certified" v={money(bill.certified_amount)} />
           <Fact k="Net payable" v={money(bill.net_amount)} strong={bill.net_amount != null} />
+          <Fact k="Abstract no (IN4)" v={bill.abstract_no_in4 || '—'} />
           <Fact k="Trust" v={bill.trust || '—'} />
           <Fact k="Bill date" v={bill.bill_date || '—'} />
           <Fact k="Project" v={project ? `${project.code} — ${project.name}` : '—'} />
