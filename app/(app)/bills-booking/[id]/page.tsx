@@ -42,14 +42,15 @@ export default async function BillDetailPage({ params }: { params: Promise<{ id:
   const curIdx = stageIndex(bill.current_stage as BbStage)
   const evs = (events ?? []) as Ev[]
 
-  // Who currently holds this bill (resolved desk owner).
-  let ownerName: string | null = null
-  const { data: ownerId } = await supabase.rpc('bb_desk_owner', {
-    p_stage: bill.current_stage, p_project: bill.project_id, p_discipline: bill.discipline,
+  // Who currently holds this bill (all members of the current desk).
+  let ownerNames: string[] = []
+  const { data: memberIds } = await supabase.rpc('bb_stage_members', {
+    p_stage: bill.current_stage, p_project: bill.project_id, p_disc: bill.discipline,
   })
-  if (ownerId) {
-    const { data: op } = await supabase.from('profiles').select('full_name, email').eq('id', ownerId as string).maybeSingle()
-    ownerName = op?.full_name || op?.email || null
+  const ids = (memberIds ?? []) as string[]
+  if (ids.length) {
+    const { data: mp } = await supabase.from('profiles').select('id, full_name, email').in('id', ids)
+    ownerNames = (mp ?? []).map(p => (p.full_name || p.email) as string).filter(Boolean)
   }
 
   // Timeline (events ascending) + who moved each.
@@ -142,15 +143,17 @@ export default async function BillDetailPage({ params }: { params: Promise<{ id:
       {/* Documents */}
       <Documents billId={bill.id as string} docs={docs} canEdit={canEdit} />
 
-      {/* Current owner */}
+      {/* Current desk members */}
       <p className="px-1 text-sm text-gray-500">
-        {ownerName
-          ? <>With <span className="font-semibold text-gray-800">{ownerName}</span> at the {stageDef(bill.current_stage as BbStage).label} desk.</>
-          : <>No owner set for the {stageDef(bill.current_stage as BbStage).label} desk — anyone with access can move it. <span className="text-gray-400">Assign it in Desks settings.</span></>}
+        {ownerNames.length
+          ? <>With <span className="font-semibold text-gray-800">{ownerNames.join(', ')}</span> at the {stageDef(bill.current_stage as BbStage).label} desk.</>
+          : <>No one is assigned to the {stageDef(bill.current_stage as BbStage).label} desk — anyone with access can move it. <span className="text-gray-400">Assign it in Desks.</span></>}
       </p>
 
       {/* Move actions */}
-      {canEdit && <MoveActions billId={bill.id as string} stage={bill.current_stage as BbStage} netAmount={bill.net_amount as number | null} claimed={bill.claimed_amount as number} />}
+      {canEdit && <MoveActions billId={bill.id as string} stage={bill.current_stage as BbStage}
+        netAmount={bill.net_amount as number | null} claimed={bill.claimed_amount as number}
+        preHoldStage={(bill.pre_hold_stage as BbStage | null) ?? null} />}
 
       {/* Audit trail */}
       <Card className="p-4">
