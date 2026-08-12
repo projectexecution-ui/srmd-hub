@@ -583,9 +583,9 @@ export function PendingReceiptsView({
                                   {po.inferred && (
                                     <span
                                       className="text-[9px] font-bold uppercase tracking-wider px-1 py-0.5 rounded bg-indigo-100 text-indigo-800 border border-indigo-200"
-                                      title="IN4 export dropped this PO's details on this row but the same PO appears on another material in the same indent. Inferred — verify in IN4."
+                                      title="IN4 left this row's PO blank, but the same PO is listed on another item in this indent — so we linked it here. Assumed: please double-check in IN4."
                                     >
-                                      Inferred
+                                      Assumed
                                     </span>
                                   )}
                                   <span>
@@ -668,6 +668,11 @@ export function PendingReceiptsView({
                           <CardField label="Since PO" className={ageClass(pAge)}>{formatAgeFriendly(pAge).short}</CardField>
                           <CardField label="PO" className="text-stone-500 font-mono text-[11px]">
                             {po?.poNo ? po.poNo.replace('DRAFT-PO/', '').replace('PO/SRASSK/', '').replace('PO/SRET/', '') : '—'}
+                            {po?.inferred && (
+                              <span className="ml-1 not-italic font-sans text-[10px] font-semibold text-indigo-700" title="Assumed — IN4 didn't state this PO on this row; verify in IN4.">
+                                (assumed)
+                              </span>
+                            )}
                           </CardField>
                           <CardField label="Ordered" className="text-stone-700">{ln.orderedQty.toLocaleString('en-IN')} {ln.uom}</CardField>
                           <CardField label="Pending" className="text-amber-700 font-bold">{ln.pendingQty.toLocaleString('en-IN')}</CardField>
