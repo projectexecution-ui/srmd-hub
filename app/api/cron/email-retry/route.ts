@@ -26,7 +26,9 @@ export async function GET(req: Request) {
   })
   const { data, error } = await supabase.rpc('email_retry_sweep')
   if (error) return NextResponse.json({ ok: false, reason: error.message }, { status: 500 })
-  return NextResponse.json({ ok: true, ...(data ?? {}) })
+  // Telegram uses the same stuck/failed retry model — sweep it in the same pass.
+  const { data: tg } = await supabase.rpc('telegram_retry_sweep')
+  return NextResponse.json({ ok: true, ...(data ?? {}), telegram: tg ?? null })
 }
 
 // Manual trigger for a cost-control admin.
@@ -38,5 +40,6 @@ export async function POST() {
   const supabase = await createClient()
   const { data, error } = await supabase.rpc('email_retry_sweep')
   if (error) return NextResponse.json({ ok: false, reason: error.message }, { status: 500 })
-  return NextResponse.json({ ok: true, ...(data ?? {}) })
+  const { data: tg } = await supabase.rpc('telegram_retry_sweep')
+  return NextResponse.json({ ok: true, ...(data ?? {}), telegram: tg ?? null })
 }

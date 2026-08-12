@@ -8,10 +8,13 @@ import Link from 'next/link'
 import { createClient } from '@/lib/supabase/server'
 import { getMyUser, getMyProfile } from '@/lib/auth'
 import { canManageOwnNotifications } from '@/lib/notifications/self-manage'
+import { getRoleSides } from '@/lib/role-sides'
+import type { Role } from '@/lib/types'
 import { PageHeader } from '@/components/PageHeader'
 import { Card } from '@/components/ui/card'
 import { Smartphone } from 'lucide-react'
 import { NotificationPreferencesForm } from './preferences-form'
+import { TelegramConnect } from './TelegramConnect'
 import { EnablePushButton } from '@/components/push/EnablePushButton'
 
 export const dynamic = 'force-dynamic'
@@ -23,6 +26,7 @@ interface PrefRow {
   email_address: string | null
   telegram: boolean
   telegram_chat_id: string | null
+  telegram_linked_at: string | null
   web_push: boolean
   digest_only: boolean
 }
@@ -31,7 +35,11 @@ export default async function NotificationSettingsPage() {
   const user = await getMyUser()
   if (!user) redirect('/login')
   const profile = await getMyProfile()
-  const canManage = await canManageOwnNotifications()
+  const [canManage, roleSides] = await Promise.all([canManageOwnNotifications(), getRoleSides()])
+  // Telegram is offered to management-side roles only (admin decides sides at
+  // /admin/users); admins additionally get the one-click bot setup.
+  const isManagement = profile ? roleSides.management.includes(profile.role as Role) : false
+  const isAdmin = profile?.role === 'admin'
 
   const supabase = await createClient()
   const { data } = await supabase
@@ -47,6 +55,7 @@ export default async function NotificationSettingsPage() {
     email_address: profile?.email ?? user.email ?? '',
     telegram: false,
     telegram_chat_id: '',
+    telegram_linked_at: null,
     web_push: false,
     digest_only: false,
   }
@@ -70,6 +79,16 @@ export default async function NotificationSettingsPage() {
           </div>
         </div>
       </Card>
+
+      {/* Telegram — management-side roles only. Connecting flips the channel
+          on itself, so it doesn't depend on the self-manage grant below. */}
+      {isManagement && (
+        <TelegramConnect
+          connected={!!initial.telegram_chat_id}
+          linkedAt={initial.telegram_linked_at}
+          isAdmin={isAdmin}
+        />
+      )}
 
       {canManage ? (
         <>
