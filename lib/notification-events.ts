@@ -51,6 +51,12 @@ export const NOTIFICATION_EVENTS: NotificationEventDef[] = [
     audience: 'IN4-entry team (Billing / Coordinator)',
   },
   {
+    type: 'cc_ws_returned',
+    label: 'Working sheet returned to engineer',
+    description: 'When an approver sends a Cost Control working sheet back for changes, the engineer who raised it is told, with the return reason and a link to fix it.',
+    audience: 'The engineer who raised the sheet',
+  },
+  {
     type: 'cc_budget_approved',
     label: 'Budget approved by Trustee (Atm Head, instant)',
     description: 'The moment the Trustee approves/releases a working sheet, its Atm Head is told it went through.',

@@ -748,7 +748,7 @@ export async function returnWorkingSheet(wsId: string, reason: string): Promise<
   const supabase = await createClient()
   const { data: ws, error } = await supabase
     .from('cc_working_sheets')
-    .select('id, status, engineer_id, project_id, total_amount')
+    .select('id, status, engineer_id, project_id, total_amount, ws_code')
     .eq('id', wsId)
     .single()
   if (error || !ws) return { ok: false, error: 'Working Sheet not found' }
@@ -811,6 +811,23 @@ export async function returnWorkingSheet(wsId: string, reason: string): Promise<
     p_attachments: [],
     p_amount:      null,
   })
+
+  // Tell the engineer their sheet was sent back — with the reason — so they can
+  // act on it (they were NOT being notified before). notify_user is SECURITY
+  // DEFINER, so it posts to the engineer's inbox + rides their channel prefs.
+  // Best-effort: a notify hiccup must never fail the return itself.
+  if (ws.engineer_id && ws.engineer_id !== me.user.id) {
+    await supabase.rpc('notify_user', {
+      p_user_id: ws.engineer_id,
+      p_type: 'cc_ws_returned',
+      p_title: `Working sheet returned${ws.ws_code ? ` · ${ws.ws_code}` : ''}`,
+      p_body: `Your working sheet was sent back for changes. Reason: ${reason.trim()}`,
+      p_url: `/cost-control/working-sheets/${wsId}`,
+      p_module_slug: 'cost-control',
+      p_doc_table: 'cc_working_sheets',
+      p_doc_id: wsId,
+    })
+  }
 
   revalidatePath(`/cost-control/working-sheets/${wsId}`)
   revalidatePath('/cost-control/working-sheets')
