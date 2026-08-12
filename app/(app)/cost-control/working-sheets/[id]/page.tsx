@@ -898,7 +898,10 @@ export default async function WorkingSheetEditorPage(
           committed, paid are big numbers engineers don't see). */}
       {reviewer && (
       <Card className="p-4 bg-blue-50/50 border-blue-100">
-        <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-sm">
+        {/* 2-up grid on a phone (was a single flex-wrap row that squashed the
+            Internal Estimate / ERP Budget / Committed / Paid figures together);
+            reflows to an inline row on desktop. */}
+        <div className="grid grid-cols-2 gap-x-6 gap-y-3 sm:flex sm:flex-wrap sm:items-center text-sm">
           <div>
             <span className="text-xs uppercase tracking-wide text-blue-700/70">Internal Estimate</span>
             <p className="font-bold text-indigo-900">{estimate > 0 ? formatINR(estimate) : '—'}</p>
@@ -923,7 +926,7 @@ export default async function WorkingSheetEditorPage(
               </div>
             </>
           )}
-          <div className="ml-auto">
+          <div className="sm:ml-auto">
             <span className="text-xs uppercase tracking-wide text-blue-700/70">This WS</span>
             <p className="font-bold text-blue-900">{formatINR(ws.total_amount ?? 0)}</p>
           </div>

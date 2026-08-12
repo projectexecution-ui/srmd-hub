@@ -971,6 +971,7 @@ export default async function CostControlProjectDetailPage(
               const wsCount = a?.chains.size ?? 0
               const baseline = ie?.decision === 'accepted' && ie.amt != null ? ie.amt : estLive
               const overBy = baseline > 0 && ask > baseline ? ask - baseline : 0
+              const sPct = bl && bl.budget > 0 ? (bl.paid / bl.budget) * 100 : 0
               const isEmpty = estLive === 0 && ask === 0 && wsCount === 0
                 && (bl?.budget ?? 0) === 0 && (bl?.wo ?? 0) === 0 && (bl?.paid ?? 0) === 0
               if (isEmpty) return null
@@ -1012,6 +1013,32 @@ export default async function CostControlProjectDetailPage(
                       <p className="text-[13px] font-semibold text-emerald-700 tabular-nums"><Money amt={released} /></p>
                     </div>
                   </div>
+                  {/* ERP group — Budget / WO / Paid / % Used. The wide desktop
+                      table hides these columns on a phone; this compact grid
+                      brings them (and their ₹/sft) back so a manager reviewing
+                      on mobile sees the full picture. */}
+                  {showErp && ((bl?.budget ?? 0) > 0 || (bl?.wo ?? 0) > 0 || (bl?.paid ?? 0) > 0) && (
+                    <div className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1.5 rounded-lg border border-gray-100 bg-gray-50/70 px-3 py-2 text-[11px]">
+                      <div className="flex items-start justify-between gap-2">
+                        <span className="text-gray-500">Budget (ERP)</span>
+                        <span className="font-semibold text-gray-900 tabular-nums text-right"><Money amt={bl?.budget ?? 0} /></span>
+                      </div>
+                      <div className="flex items-start justify-between gap-2">
+                        <span className="text-gray-500">WO / PO</span>
+                        <span className="font-semibold text-gray-700 tabular-nums text-right"><Money amt={bl?.wo ?? 0} /></span>
+                      </div>
+                      <div className="flex items-start justify-between gap-2">
+                        <span className="text-gray-500">Paid</span>
+                        <span className="font-semibold text-gray-700 tabular-nums text-right"><Money amt={bl?.paid ?? 0} /></span>
+                      </div>
+                      <div className="flex items-start justify-between gap-2">
+                        <span className="text-gray-500">% Used</span>
+                        <span className={`font-semibold tabular-nums ${sPct > 95 ? 'text-red-600' : sPct > 80 ? 'text-amber-700' : sPct > 0 ? 'text-green-700' : 'text-gray-400'}`}>
+                          {bl && bl.budget > 0 ? `${sPct.toFixed(0)}%` : '—'}
+                        </span>
+                      </div>
+                    </div>
+                  )}
                   {overBy > 0 && (
                     <p className="mt-1 text-[10px] font-bold text-rose-600">▲ over the Internal Estimate by {formatINR(overBy)}</p>
                   )}
@@ -1039,10 +1066,16 @@ export default async function CostControlProjectDetailPage(
                     <span className="font-mono text-[11px] text-gray-500 mr-1.5">{d.code}</span>
                     <span className="truncate">{d.name}</span>
                   </span>
-                  <p className="text-[11px] text-gray-500 flex-shrink-0 whitespace-nowrap">
+                  <p className="text-[11px] text-gray-500 flex-shrink-0 text-right leading-tight">
                     Est <span className="font-semibold text-indigo-800"><Money amt={dAgg.estimate} /></span>
                     <span className="mx-1">·</span>
                     Rel <span className="font-semibold text-emerald-700"><Money amt={dAgg.approvedTotal} /></span>
+                    {showErp && (
+                      <>
+                        <span className="mx-1">·</span>
+                        Bud <span className="font-semibold text-gray-800"><Money amt={dAgg.budget} /></span>
+                      </>
+                    )}
                   </p>
                 </div>
                 <CatRows catId={d.id}>{cards}</CatRows>
