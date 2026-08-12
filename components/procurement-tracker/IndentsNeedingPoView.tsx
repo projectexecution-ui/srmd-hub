@@ -23,8 +23,6 @@ import { ChaseChip } from './ChaseChip'
 import type { ChaseNote } from '@/lib/procurement/chase-notes'
 import { buildNeedsPoShareText, shareOrCopy } from '@/lib/procurement/share'
 
-const ABANDONED_DAYS = 90
-
 type GroupKey = 'indent' | 'block' | 'none'
 type AgeFilter = 'all' | 'lt7' | '7to14' | '14to30' | '30plus'
 
@@ -107,8 +105,6 @@ export function IndentsNeedingPoView({
   const [groupBy, setGroupBy] = useState<GroupKey>('indent')
   const [ageFilter, setAgeFilter] = useState<AgeFilter>('all')
   const [searchQuery, setSearchQuery] = useState('')
-  // Hide 90+ day no-PO items (almost always abandoned) from the default view.
-  const [hideOld, setHideOld] = useState(true)
   const [inspectingLine, setInspectingLine] = useState<LineRecord | null>(null)
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
   const toggleCollapsed = (key: string) => setCollapsed(prev => {
@@ -165,8 +161,7 @@ export function IndentsNeedingPoView({
   }, [needsPo, searchQuery])
 
   // Each card is an exact age band, so the filter matches the label exactly.
-  // In the default "All" view we hide 90+ day items (almost always abandoned)
-  // unless the user turns that off; picking a specific band always shows it.
+  // The default "All" view shows every no-PO line — nothing is hidden.
   const filtered = useMemo(() => {
     if (ageFilter !== 'all') {
       return searched.filter(ln => {
@@ -177,8 +172,8 @@ export function IndentsNeedingPoView({
         return a >= 30
       })
     }
-    return hideOld ? searched.filter(ln => (ageDays(ln) ?? 0) < ABANDONED_DAYS) : searched
-  }, [searched, ageFilter, hideOld])
+    return searched
+  }, [searched, ageFilter])
 
   const groups = useMemo(() => {
     // Flat list — one group, no grouping, oldest waiting first.
@@ -224,10 +219,6 @@ export function IndentsNeedingPoView({
     return out
   }, [searched])
 
-  const abandonedCount = useMemo(
-    () => searched.filter(l => (ageDays(l) ?? 0) >= ABANDONED_DAYS).length,
-    [searched],
-  )
   // "Chase first" — oldest still-waiting indents across the current filter.
   const chaseFirst = useMemo(
     () => [...filtered].sort((a, b) => (ageDays(b) ?? 0) - (ageDays(a) ?? 0)).slice(0, 5),
@@ -267,9 +258,6 @@ export function IndentsNeedingPoView({
             <p className="text-xs text-stone-500 mt-0.5">
               <b className="text-stone-800">{totalLines}</b> material line{totalLines === 1 ? '' : 's'} waiting on purchase team
               {' · '}across <b className="text-stone-800">{uniqueIndents}</b> indent{uniqueIndents === 1 ? '' : 's'}
-              {ageFilter === 'all' && hideOld && abandonedCount > 0 && (
-                <span className="text-stone-400"> · {abandonedCount} over 90 days hidden</span>
-              )}
             </p>
           </div>
           <button
@@ -386,8 +374,8 @@ export function IndentsNeedingPoView({
         </div>
       </div>
 
-      {/* Active filters + the abandoned-items toggle */}
-      {(ageFilter !== 'all' || searchQuery || (abandonedCount > 0 && ageFilter === 'all')) && (
+      {/* Active filters */}
+      {(ageFilter !== 'all' || searchQuery) && (
         <div className="flex flex-wrap items-center gap-1.5">
           {(ageFilter !== 'all' || searchQuery) && <span className="text-[10px] uppercase tracking-wider text-stone-400 font-semibold">Filters</span>}
           {ageFilter !== 'all' && (
@@ -405,16 +393,6 @@ export function IndentsNeedingPoView({
           )}
           {(ageFilter !== 'all' || searchQuery) && (
             <button onClick={() => { setAgeFilter('all'); setSearchQuery('') }} className="text-[11px] font-medium text-stone-500 hover:text-stone-800 underline ml-1">Clear all</button>
-          )}
-          {ageFilter === 'all' && abandonedCount > 0 && (
-            <button
-              onClick={() => setHideOld(v => !v)}
-              className={cn('inline-flex items-center gap-1 text-[11px] font-medium rounded-full px-2.5 py-1 ml-auto',
-                hideOld ? 'bg-stone-100 text-stone-600 hover:bg-stone-200' : 'bg-red-100 text-red-800')}
-              title="Items with no PO for 90+ days are almost always abandoned"
-            >
-              {hideOld ? `Show ${abandonedCount} likely-abandoned (90+ days)` : `Hide ${abandonedCount} likely-abandoned`}
-            </button>
           )}
         </div>
       )}
