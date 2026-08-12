@@ -24,3 +24,26 @@ export function chasedLabel(iso: string | null | undefined): string | null {
   if (d == null) return null
   return d <= 0 ? 'today' : d === 1 ? '1 day ago' : `${d} days ago`
 }
+
+/** Compact form: "today" / "5d". */
+export function chasedLabelShort(iso: string | null | undefined): string | null {
+  const d = daysSince(iso)
+  if (d == null) return null
+  return d <= 0 ? 'today' : `${d}d`
+}
+
+/**
+ * How fresh the last follow-up is, so the UI can nudge a re-chase instead of
+ * flashing a reassuring green tick on a week-old follow-up:
+ *   recent = followed up in the last 3 days   (green — handled)
+ *   aging  = 4–7 days ago                      (amber — keep an eye)
+ *   stale  = over a week ago                   (rose — follow up again)
+ */
+export type ChaseTier = 'recent' | 'aging' | 'stale'
+export function chaseTier(iso: string | null | undefined): ChaseTier | null {
+  const d = daysSince(iso)
+  if (d == null) return null
+  if (d <= 3) return 'recent'
+  if (d <= 7) return 'aging'
+  return 'stale'
+}
