@@ -8,9 +8,10 @@ export const dynamic = 'force-dynamic'
 export default async function NewBillPage() {
   await requirePermission('bills-booking', 'edit')
   const supabase = await createClient()
-  const [{ data: projects }, { data: vendors }] = await Promise.all([
+  const [{ data: projects }, { data: vendors }, { data: disciplines }] = await Promise.all([
     supabase.from('projects').select('id, code, name').is('archived_at', null).order('code'),
     supabase.from('vendors').select('id, name').order('name'),
+    supabase.from('cc_disciplines').select('id, name, display_order').eq('is_archived', false).order('display_order'),
   ])
 
   return (
@@ -19,6 +20,7 @@ export default async function NewBillPage() {
       <BillForm
         projects={(projects ?? []).map(p => ({ id: p.id as string, code: p.code as string, name: p.name as string }))}
         vendors={(vendors ?? []).map(v => ({ id: v.id as string, name: v.name as string }))}
+        disciplines={(disciplines ?? []).map(d => ({ id: d.id as string, name: d.name as string }))}
       />
     </div>
   )

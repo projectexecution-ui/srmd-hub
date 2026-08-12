@@ -11,7 +11,7 @@ import { Loader2, Send } from 'lucide-react'
 
 type Opt = { id: string; code?: string; name: string }
 
-export function BillForm({ projects, vendors }: { projects: Opt[]; vendors: Opt[] }) {
+export function BillForm({ projects, vendors, disciplines }: { projects: Opt[]; vendors: Opt[]; disciplines: Opt[] }) {
   const router = useRouter()
   const supabase = createClient()
   const [busy, setBusy] = useState(false)
@@ -25,7 +25,7 @@ export function BillForm({ projects, vendors }: { projects: Opt[]; vendors: Opt[
   const [projectId, setProjectId] = useState(projects[0]?.id ?? '')
   const [vendorId, setVendorId] = useState('')
   const [vendorText, setVendorText] = useState('')
-  const [discipline, setDiscipline] = useState('')
+  const [disciplineId, setDisciplineId] = useState('')
   const [work, setWork] = useState('')
   const [billNo, setBillNo] = useState('')
   const [raNo, setRaNo] = useState('')
@@ -49,7 +49,9 @@ export function BillForm({ projects, vendors }: { projects: Opt[]; vendors: Opt[
         order_type: orderType, bill_type: billType, bill_category: billCategory.trim() || null,
         ct_other_dept: ctDept || null, order_no: orderNo.trim(), project_id: projectId,
         vendor_id: vendorId || null, vendor_text: vendorText.trim() || null,
-        discipline: discipline || null, work: work.trim() || null,
+        discipline_id: disciplineId || null,
+        discipline: disciplines.find(d => d.id === disciplineId)?.name || null,
+        work: work.trim() || null,
         bill_no: billNo.trim() || null, ra_no: raNo.trim() || null,
         bill_date: billDate || null, claimed_amount: Number(claimed) || 0, trust: trust.trim() || null,
         wo_value: noWO ? null : (Number(woValue) || null), paid_till_date: Number(paidTill) || 0,
@@ -116,11 +118,10 @@ export function BillForm({ projects, vendors }: { projects: Opt[]; vendors: Opt[
           </select>
         </div>
         <div>
-          <Label htmlFor="disc">Discipline</Label>
-          <select id="disc" value={discipline} onChange={e => setDiscipline(e.target.value)} className={sel}>
-            <option value="">—</option>
-            <option value="Civil">Civil</option>
-            <option value="MEP">MEP</option>
+          <Label htmlFor="disc">Category (Internal Estimate)</Label>
+          <select id="disc" value={disciplineId} onChange={e => setDisciplineId(e.target.value)} className={sel}>
+            <option value="">— select —</option>
+            {disciplines.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
           </select>
         </div>
       </div>
