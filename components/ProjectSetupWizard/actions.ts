@@ -60,6 +60,17 @@ export async function createProjectBasics(formData: FormData): Promise<CreatePro
     }
   }
 
+  // Every project must open WITH its Atm Head. Without one, approval mails fall
+  // back to blasting EVERY Atm Head (the reason "Admin Block Ground Floor" pinged
+  // the wrong people). Required at creation so a project is never born unassigned.
+  if (atmHeadIds.length === 0) {
+    return {
+      ok: false,
+      error: 'Pick the Atm Head who signs off this project — it’s required so the project opens with its approver set.',
+      fieldErrors: { atm_head_ids: ['Pick at least one Atm Head'] },
+    }
+  }
+
   const supabase = await createClient()
 
   // setup_progress_pct = 20 after step 1 (basics done, 4 steps total).

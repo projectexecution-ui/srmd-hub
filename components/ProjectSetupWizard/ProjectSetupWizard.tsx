@@ -411,9 +411,9 @@ function Step1Basics({
         </div>
 
         <div className="md:col-span-2">
-          <Label>Atm Head <span className="font-normal text-gray-400">(sign-off)</span></Label>
+          <Label>Atm Head <span className="text-red-600">*</span> <span className="font-normal text-gray-400">(sign-off)</span></Label>
           {atmHeads.length === 0 ? (
-            <p className="text-xs text-gray-500 mt-1">No Atm Heads found — you can assign them later from the project page.</p>
+            <p className="text-xs text-amber-700 mt-1">No Atm Heads found — add an Atm Head user first (Admin → Users), then create the project. Every project must have one.</p>
           ) : (
             <div className="flex flex-wrap gap-2 mt-1">
               {atmHeads.map(h => {
@@ -435,7 +435,8 @@ function Step1Basics({
               })}
             </div>
           )}
-          <p className="mt-1 text-xs text-gray-500">Who signs off this project&apos;s budgets. Pick one — or two if it&apos;s shared.</p>
+          <p className="mt-1 text-xs text-gray-500">Who signs off this project&apos;s budgets — <b>required</b>. Pick one, or two if it&apos;s shared. This is why the project&apos;s approval mails reach the right person.</p>
+          {err('atm_head_ids')}
           {/* Hidden inputs carry the picked heads into the form submit. */}
           {Array.from(pickedHeads).map(id => (
             <input key={id} type="hidden" name="atm_head_ids" value={id} />
@@ -452,8 +453,11 @@ function Step1Basics({
           <Input id="target_completion" name="target_completion" type="date" disabled={busy} />
         </div>
 
-        <div className="md:col-span-2 flex justify-end">
-          <Button type="submit" disabled={busy}>
+        <div className="md:col-span-2 flex items-center justify-end gap-3">
+          {pickedHeads.size === 0 && (
+            <span className="text-xs text-gray-400">Pick an Atm Head to continue</span>
+          )}
+          <Button type="submit" disabled={busy || pickedHeads.size === 0}>
             {busy ? 'Creating…' : (isSub ? 'Create sub-project' : 'Create project')}
           </Button>
         </div>
