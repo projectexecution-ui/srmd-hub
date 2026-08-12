@@ -84,7 +84,7 @@ function toSlot(x: { state?: { projects: ProjectSummary[]; fileName: string; for
   }
 }
 
-export function ProcurementTrackerClient({ isAdmin = false }: { isAdmin?: boolean }) {
+export function ProcurementTrackerClient({ isAdmin = false, closedProjects = [] }: { isAdmin?: boolean; closedProjects?: string[] }) {
   const [isDragging, setIsDragging] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -492,6 +492,7 @@ export function ProcurementTrackerClient({ isAdmin = false }: { isAdmin?: boolea
                 onSelect={setSelectedProject}
                 format={data.format}
                 hiddenInUploadCount={hiddenInUploadCount}
+                closedProjects={closedProjects}
               />
             )}
 

@@ -35,6 +35,7 @@ interface ProjChip {
   needsPo: number       // line records with no PO yet
   pendingValue: number  // ₹ still pending receipt
   active: boolean
+  closed: boolean       // marked closed by the team → always in Cleared
 }
 
 export function ProjectFilterStrip({
@@ -43,30 +44,37 @@ export function ProjectFilterStrip({
   onSelect,
   format,
   hiddenInUploadCount,
+  closedProjects = [],
 }: {
   projects: ProjectSummary[]
   selectedProject: string
   onSelect: (name: string) => void
   format: 'flat' | 'banded'
   hiddenInUploadCount: number
+  closedProjects?: string[]
 }) {
   const [query, setQuery] = useState('')
   const [showCleared, setShowCleared] = useState(false)
 
-  // Derive a richer per-project record once.
+  const closedSet = useMemo(() => new Set(closedProjects), [closedProjects])
+
+  // Derive a richer per-project record once. A "closed" project is forced into
+  // the Cleared bucket even if IN4 still shows a few stray pending items.
   const chips = useMemo<ProjChip[]>(() => {
     return projects.map(p => {
       const needsPo = p.lines.filter(l => l.status === 'no_po').length
       const pending = p.pendingLineCount
+      const closed = closedSet.has(p.projectName)
       return {
         name: p.projectName,
         pending,
         needsPo,
         pendingValue: p.pendingValue,
-        active: pending > 0 || needsPo > 0,
+        active: !closed && (pending > 0 || needsPo > 0),
+        closed,
       }
     })
-  }, [projects])
+  }, [projects, closedSet])
 
   const totals = useMemo(() => {
     const activeCount = chips.filter(c => c.active).length
@@ -147,7 +155,7 @@ export function ProjectFilterStrip({
           )}
           {cleared.length > 0 && (
             <optgroup label="Cleared">
-              {cleared.map(c => <option key={c.name} value={c.name}>{c.name} ✓</option>)}
+              {cleared.map(c => <option key={c.name} value={c.name}>{c.name} {c.closed ? '(closed)' : '✓'}</option>)}
             </optgroup>
           )}
         </select>
@@ -268,17 +276,20 @@ function AllChip({
 function Chip({
   chip, selected, onClick,
 }: { chip: ProjChip; selected: boolean; onClick: () => void }) {
-  const { name, pending, needsPo, pendingValue, active } = chip
+  const { name, pending, needsPo, pendingValue, active, closed } = chip
   return (
     <button
       type="button"
       onClick={onClick}
       title={
-        active
-          ? `${name}\n${pending} pending receipt${pending === 1 ? '' : 's'}` +
-            (needsPo > 0 ? ` · ${needsPo} still need a PO` : '') +
-            (pendingValue > 0 ? ` · ${inrCompact(pendingValue)} pending value` : '')
-          : `${name} — fully cleared`
+        closed
+          ? `${name} — marked closed` +
+            (pending > 0 || needsPo > 0 ? ` · ${pending} pending, ${needsPo} no-PO still showing in IN4` : '')
+          : active
+            ? `${name}\n${pending} pending receipt${pending === 1 ? '' : 's'}` +
+              (needsPo > 0 ? ` · ${needsPo} still need a PO` : '') +
+              (pendingValue > 0 ? ` · ${inrCompact(pendingValue)} pending value` : '')
+            : `${name} — fully cleared`
       }
       className={`group text-xs font-medium px-3 py-1.5 rounded-lg transition-colors inline-flex items-center gap-1.5 max-w-full ${
         selected
@@ -300,28 +311,38 @@ function Chip({
       )}
 
       <span className="inline-flex items-center gap-1 flex-shrink-0">
-        {pending > 0 && (
-          <span
-            className={`text-[10px] font-bold rounded-full px-1.5 py-0.5 leading-none inline-flex items-center gap-0.5 ${
-              selected ? 'bg-white/20 text-white' : 'bg-amber-100 text-amber-800'
-            }`}
-          >
-            <PackageX className="h-2.5 w-2.5" />
-            {pending}
+        {closed ? (
+          <span className={`text-[9px] font-semibold uppercase tracking-wide rounded px-1.5 py-0.5 leading-none ${
+            selected ? 'bg-white/20 text-white' : 'bg-stone-200 text-stone-500'
+          }`}>
+            closed
           </span>
-        )}
-        {needsPo > 0 && (
-          <span
-            className={`text-[10px] font-bold rounded-full px-1.5 py-0.5 leading-none inline-flex items-center gap-0.5 ${
-              selected ? 'bg-white/20 text-white' : 'bg-red-100 text-red-800'
-            }`}
-          >
-            <ClipboardList className="h-2.5 w-2.5" />
-            {needsPo}
-          </span>
-        )}
-        {!active && (
-          <CheckCircle2 className={`h-3.5 w-3.5 ${selected ? 'text-white' : 'text-emerald-500'}`} />
+        ) : (
+          <>
+            {pending > 0 && (
+              <span
+                className={`text-[10px] font-bold rounded-full px-1.5 py-0.5 leading-none inline-flex items-center gap-0.5 ${
+                  selected ? 'bg-white/20 text-white' : 'bg-amber-100 text-amber-800'
+                }`}
+              >
+                <PackageX className="h-2.5 w-2.5" />
+                {pending}
+              </span>
+            )}
+            {needsPo > 0 && (
+              <span
+                className={`text-[10px] font-bold rounded-full px-1.5 py-0.5 leading-none inline-flex items-center gap-0.5 ${
+                  selected ? 'bg-white/20 text-white' : 'bg-red-100 text-red-800'
+                }`}
+              >
+                <ClipboardList className="h-2.5 w-2.5" />
+                {needsPo}
+              </span>
+            )}
+            {!active && (
+              <CheckCircle2 className={`h-3.5 w-3.5 ${selected ? 'text-white' : 'text-emerald-500'}`} />
+            )}
+          </>
         )}
       </span>
     </button>
