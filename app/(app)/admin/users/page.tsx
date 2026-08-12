@@ -38,6 +38,13 @@ export default async function AdminUsersPage() {
     (approvalRuleRows ?? []).flatMap(r => [r.approver_role, r.override_role]).filter((x): x is string => !!x),
   ))
 
+  // UPPERCASE every role NAME (label) to match the Permissions Matrix standard —
+  // "ATM HEAD", "CT HEAD", "SITE ENG", … no more mixed casing. Descriptions and
+  // everything else are untouched. One place, so all dropdowns/badges stay in sync.
+  const roleLabelsUpper = Object.fromEntries(
+    Object.entries(roleLabels).map(([r, v]) => [r, { ...v, label: (v.label ?? r).toUpperCase() }]),
+  ) as typeof roleLabels
+
   return (
     <UsersClient
       initialUsers={users ?? []}
@@ -46,7 +53,7 @@ export default async function AdminUsersPage() {
       initialModuleBlocks={moduleBlocks ?? []}
       currentUserId={user!.id}
       currentUserIsPortalOwner={currentUserIsPortalOwner}
-      roleLabels={roleLabels}
+      roleLabels={roleLabelsUpper}
       adminEmail={(adminEmailRow?.value as string | null) ?? null}
       roleSides={roleSides}
       approvalRoles={approvalRoles}
