@@ -38,7 +38,7 @@ interface AiRowMeta {
   model: string
 }
 
-interface ParsedRow {
+export interface ParsedRow {
   row_no: number
   raw_label: string | null
   description: string | null
@@ -164,7 +164,7 @@ function toNum(v: unknown): number | null {
   return Number.isFinite(n) ? n : null
 }
 
-async function parseExcel(file: File): Promise<{ rows: ParsedRow[]; grandTotal: number | null; aoa: unknown[][] }> {
+export async function parseExcel(file: File): Promise<{ rows: ParsedRow[]; grandTotal: number | null; aoa: unknown[][] }> {
   const buf = await file.arrayBuffer()
   const wb = XLSX.read(buf, { type: 'array', cellFormula: true })
   // Heuristic: pick the first non-empty sheet

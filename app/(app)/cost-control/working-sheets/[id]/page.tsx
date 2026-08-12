@@ -21,6 +21,7 @@ import { CommentsPanel } from '@/components/cost-control/CommentsPanel'
 import { WSEditor } from './WSEditor'
 import { ExcelSummaryPanel } from './ExcelSummaryPanel'
 import { SourceExcelViewer } from './SourceExcelViewer'
+import { ReplaceExcelButton } from './ReplaceExcelButton'
 import { ScreenshotAiCheck } from './ScreenshotAiCheck'
 import { WorkingEvidence, type EvidenceFile } from './WorkingEvidence'
 import { RaiseRevisionButton } from './RaiseRevisionButton'
@@ -274,6 +275,22 @@ export default async function WorkingSheetEditorPage(
       />
     )
   }
+
+  // Replace-Excel — shown ONLY to the owning engineer of a RETURNED Excel
+  // sheet. Built once and dropped into whichever layout branch renders it.
+  // Lets them upload a corrected Excel; the swap is atomic + scoped to this
+  // sheet only (older versions untouched — see cc_replace_ws_excel).
+  const canReplaceExcel = canEdit && user?.id === ws.engineer_id && !frozen
+    && ws.status === 'returned' && !!ws.source_excel_url && !!ws.project_id
+  const replaceExcelPanel = canReplaceExcel
+    ? (
+      <ReplaceExcelButton
+        wsId={ws.id}
+        projectId={ws.project_id as string}
+        currentFileName={(ws.source_excel_name as string | null) ?? null}
+      />
+    )
+    : null
 
   // Back link is scoped to this WS's project + discipline + sub-skill so the
   // user returns to the same chronological timeline they came from, not the
@@ -650,6 +667,8 @@ export default async function WorkingSheetEditorPage(
           />
         ) : (
         <>
+        {/* Upload the corrected Excel (returned Excel sheet, owner only) */}
+        {replaceExcelPanel}
         <SourceExcelViewer url={downloadUrl} name={ws.source_excel_name} microsoft={ccSettings.excel_microsoft} reviewer={reviewer} />
 
         {/* AI review tools — for the approval chain (PH / Atm Head /
@@ -871,6 +890,9 @@ export default async function WorkingSheetEditorPage(
           <p className="mt-2 text-xs font-medium text-red-700">Update your working and re-submit for approval from the panel below ↓</p>
         </div>
       )}
+
+      {/* Upload the corrected Excel (returned Excel sheet, owner only) */}
+      {replaceExcelPanel}
 
       {/* Past-spend strip — MANAGEMENT ONLY (Internal Estimate, ERP budget,
           committed, paid are big numbers engineers don't see). */}
