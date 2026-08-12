@@ -203,10 +203,13 @@ function DisciplineForm({
 
     setBusy(true); setError(null)
     const supabase = createClient()
+    // display_order is NOT NULL (defaults to 0). Blank must become 0, never null —
+    // an explicit null is rejected by the constraint and the add silently fails.
+    const parsedOrder = displayOrder.trim() === '' ? 0 : Number(displayOrder)
     const payload = {
       code: code.trim(),
       name: name.trim(),
-      display_order: displayOrder.trim() === '' ? null : Number(displayOrder),
+      display_order: Number.isFinite(parsedOrder) ? parsedOrder : 0,
     }
     const res = initial
       ? await supabase.from('cc_disciplines').update(payload).eq('id', initial.id).select('id, code, name, display_order, is_archived').single()
