@@ -4,7 +4,7 @@ import { requirePermission, getMyPermissions, can } from '@/lib/auth'
 import { PageHeader } from '@/components/PageHeader'
 import { QueryError } from '@/components/ui/query-error'
 import { EmptyState } from '@/components/ui/empty-state'
-import { Plus, ReceiptText, AlertTriangle, Clock } from 'lucide-react'
+import { Plus, ReceiptText, AlertTriangle, Clock, Users } from 'lucide-react'
 import { PIPELINE, slaFor, isTerminal, type BbStage } from '@/lib/bills-booking/stages'
 import { BillingTree, type TrustNode, type Leaf } from './BillingTree'
 
@@ -28,7 +28,9 @@ type Row = {
 
 export default async function BillsBookingPage() {
   await requirePermission('bills-booking', 'view')
-  const canEdit = can(await getMyPermissions(), 'bills-booking', 'edit')
+  const perms = await getMyPermissions()
+  const canEdit = can(perms, 'bills-booking', 'edit')
+  const canAdmin = can(perms, 'bills-booking', 'admin')
   const supabase = await createClient()
 
   const [{ data: billData, error }, { data: projData }] = await Promise.all([
@@ -112,11 +114,18 @@ export default async function BillsBookingPage() {
   return (
     <div className="p-4 md:p-6 max-w-5xl mx-auto space-y-4">
       <PageHeader title="Bills Booking" back="/" subtitle="Contractor & vendor bills — by trust, project and sub-project.">
-        {canEdit && (
-          <Link href="/bills-booking/new" className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-600 px-3 py-2 text-sm font-semibold text-white hover:bg-indigo-700">
-            <Plus className="h-4 w-4" /> New bill
-          </Link>
-        )}
+        <div className="flex items-center gap-2">
+          {canAdmin && (
+            <Link href="/bills-booking/admin" className="inline-flex items-center gap-1.5 rounded-lg border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50">
+              <Users className="h-4 w-4" /> Desks
+            </Link>
+          )}
+          {canEdit && (
+            <Link href="/bills-booking/new" className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-600 px-3 py-2 text-sm font-semibold text-white hover:bg-indigo-700">
+              <Plus className="h-4 w-4" /> New bill
+            </Link>
+          )}
+        </div>
       </PageHeader>
 
       {error ? (

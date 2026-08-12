@@ -42,6 +42,16 @@ export default async function BillDetailPage({ params }: { params: Promise<{ id:
   const curIdx = stageIndex(bill.current_stage as BbStage)
   const evs = (events ?? []) as Ev[]
 
+  // Who currently holds this bill (resolved desk owner).
+  let ownerName: string | null = null
+  const { data: ownerId } = await supabase.rpc('bb_desk_owner', {
+    p_stage: bill.current_stage, p_project: bill.project_id, p_discipline: bill.discipline,
+  })
+  if (ownerId) {
+    const { data: op } = await supabase.from('profiles').select('full_name, email').eq('id', ownerId as string).maybeSingle()
+    ownerName = op?.full_name || op?.email || null
+  }
+
   // Timeline (events ascending) + who moved each.
   const asc: RawEvent[] = [...evs].reverse().map(e => {
     const w = one(e.profiles)
@@ -131,6 +141,13 @@ export default async function BillDetailPage({ params }: { params: Promise<{ id:
 
       {/* Documents */}
       <Documents billId={bill.id as string} docs={docs} canEdit={canEdit} />
+
+      {/* Current owner */}
+      <p className="px-1 text-sm text-gray-500">
+        {ownerName
+          ? <>With <span className="font-semibold text-gray-800">{ownerName}</span> at the {stageDef(bill.current_stage as BbStage).label} desk.</>
+          : <>No owner set for the {stageDef(bill.current_stage as BbStage).label} desk — anyone with access can move it. <span className="text-gray-400">Assign it in Desks settings.</span></>}
+      </p>
 
       {/* Move actions */}
       {canEdit && <MoveActions billId={bill.id as string} stage={bill.current_stage as BbStage} netAmount={bill.net_amount as number | null} claimed={bill.claimed_amount as number} />}
