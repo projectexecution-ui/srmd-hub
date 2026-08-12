@@ -48,15 +48,19 @@ function fmtINR(n: number) {
   return `₹${n.toLocaleString('en-IN')}`
 }
 
-// PRIMARY age = days since the INDENT was raised — that's the clock
-// that matters to a project manager chasing a supplier. PO age is
-// secondary context: "yes, indent is 230d old, but PO is only 30d
-// old so the supplier isn't really late."
+// PRIMARY age for a pending receipt = days since the PO was raised — the
+// honest "is the supplier actually late?" clock. Indent age (how long ago the
+// site first asked) is kept as SECONDARY context, shown alongside, but it must
+// NOT drive the red "overdue" colour: a fresh PO on an old indent isn't the
+// vendor's fault. Falls back to indent age only when there's no PO date.
 function indentAge(ln: LineRecord): number | null {
   return ln.indentAgeDays
 }
 function poAge(ln: LineRecord): number | null {
   return ln.oldestPoAgeDays
+}
+function primaryAge(ln: LineRecord): number | null {
+  return poAge(ln) ?? indentAge(ln)
 }
 
 function ageClass(age: number | null) {
@@ -189,7 +193,7 @@ export function PendingReceiptsView({
   const filtered = useMemo(() => {
     if (ageFilter === 'all') return searched
     return searched.filter(ln => {
-      const a = indentAge(ln) ?? 0
+      const a = primaryAge(ln) ?? 0
       if (ageFilter === 'lt7') return a < 7
       if (ageFilter === '7to14') return a >= 7 && a < 14
       if (ageFilter === '14to30') return a >= 14 && a < 30
@@ -197,12 +201,12 @@ export function PendingReceiptsView({
     })
   }, [searched, ageFilter])
 
-  // Group + sort by INDENT age (oldest indent first within each group)
-  // so the longest-outstanding requests bubble up.
+  // Group + sort by PO age (longest-waiting-since-PO first within each group)
+  // so the deliveries the vendor is most overdue on bubble up.
   const groups = useMemo(() => {
     // Flat list — one group, no grouping, biggest ₹ then oldest first.
     if (groupBy === 'none') {
-      const all = [...filtered].sort((a, b) => (b.pendingValue - a.pendingValue) || ((indentAge(b) ?? 0) - (indentAge(a) ?? 0)))
+      const all = [...filtered].sort((a, b) => (b.pendingValue - a.pendingValue) || ((primaryAge(b) ?? 0) - (primaryAge(a) ?? 0)))
       return [{ key: '__all__', label: `All ${all.length} pending line${all.length === 1 ? '' : 's'}`, lines: all }]
     }
     const map = new Map<string, { key: string; label: string; lines: LineRecord[] }>()
@@ -214,7 +218,7 @@ export function PendingReceiptsView({
       g.lines.push(ln)
     }
     for (const g of map.values()) {
-      g.lines.sort((a, b) => (indentAge(b) ?? 0) - (indentAge(a) ?? 0))
+      g.lines.sort((a, b) => (primaryAge(b) ?? 0) - (primaryAge(a) ?? 0))
     }
     // Sort groups by total pending value desc
     return Array.from(map.values()).sort((a, b) =>
@@ -233,7 +237,7 @@ export function PendingReceiptsView({
     const mk = () => ({ count: 0, value: 0 })
     const out = { all: mk(), lt7: mk(), '7to14': mk(), '14to30': mk(), '30plus': mk() }
     for (const ln of searched) {
-      const a = indentAge(ln) ?? 0
+      const a = primaryAge(ln) ?? 0
       out.all.count++; out.all.value += ln.pendingValue
       const b: 'lt7' | '7to14' | '14to30' | '30plus' = a < 7 ? 'lt7' : a < 14 ? '7to14' : a < 30 ? '14to30' : '30plus'
       out[b].count++; out[b].value += ln.pendingValue
@@ -243,7 +247,7 @@ export function PendingReceiptsView({
 
   // "Chase first" — biggest ₹, then oldest — across the current filter.
   const chaseFirst = useMemo(
-    () => [...filtered].sort((a, b) => (b.pendingValue - a.pendingValue) || ((indentAge(b) ?? 0) - (indentAge(a) ?? 0))).slice(0, 5),
+    () => [...filtered].sort((a, b) => (b.pendingValue - a.pendingValue) || ((primaryAge(b) ?? 0) - (primaryAge(a) ?? 0))).slice(0, 5),
     [filtered],
   )
 
@@ -288,7 +292,7 @@ export function PendingReceiptsView({
         {searched.length > 0 && (
           <div className="mb-3">
             <div className="text-[10px] uppercase tracking-wider text-stone-500 font-semibold mb-1.5">
-              Aging by indent age — click to filter
+              Waiting since PO — click to filter
             </div>
             <div className="flex gap-2 overflow-x-auto pb-1 -mx-1 px-1 sm:mx-0 sm:px-0 sm:grid sm:grid-cols-3 lg:grid-cols-5">
               {AGING_CARDS.map(c => {
@@ -423,7 +427,7 @@ export function PendingReceiptsView({
                 <span className="font-bold text-stone-800 tabular-nums w-[68px] flex-shrink-0">{ln.pendingValue > 0 ? fmtINR(ln.pendingValue) : '—'}</span>
                 <span className="text-stone-700 truncate flex-1" title={ln.material}>{ln.material}</span>
                 <span className="hidden sm:inline text-[11px] text-stone-500 truncate max-w-[140px] flex-shrink-0">{ln.supplier || ln.indentNo.replace('IND/SRASSK/', '').replace('IND/SRET/', '')}</span>
-                <span className={cn('text-[11px] tabular-nums flex-shrink-0 w-10 text-right', ageClass(indentAge(ln)))}>{indentAge(ln) ?? '—'}d</span>
+                <span className={cn('text-[11px] tabular-nums flex-shrink-0 w-10 text-right', ageClass(primaryAge(ln)))} title="days since PO">{primaryAge(ln) ?? '—'}d</span>
               </button>
             ))}
           </div>
@@ -446,11 +450,11 @@ export function PendingReceiptsView({
         <div className="space-y-3">
           {groups.map(g => {
             const groupPendingValue = g.lines.reduce((s, l) => s + l.pendingValue, 0)
-            // "Oldest" in the group header = oldest indent age — same
-            // anchor as the table sort + aging buckets, so the user
-            // sees one consistent clock per group.
+            // "Oldest" in the group header = oldest PO age — same clock as the
+            // table sort + aging buckets, so the user sees one consistent
+            // "days waiting since PO" per group.
             const oldestAge = g.lines.reduce<number | null>((mx, l) => {
-              const a = indentAge(l)
+              const a = primaryAge(l)
               if (a == null) return mx
               return mx == null ? a : Math.max(mx, a)
             }, null)

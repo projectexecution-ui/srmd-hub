@@ -1,26 +1,29 @@
 'use client'
 import type { IndentStatus, LineStatus } from '@/lib/procurement-tracker'
 
+// Plain-English labels (no "GRN" jargon). GRN = Goods Receipt Note = the
+// material was received on site; we say "Received" / "Awaiting delivery" so
+// anyone reads it at a glance, not only the purchase team.
 const INDENT_CONFIG: Record<IndentStatus, { label: string; className: string }> = {
   'PO Done & GRN Received': {
-    label: 'GRN Done',
+    label: 'Received',
     className: 'bg-emerald-50 text-emerald-700 border border-emerald-200',
   },
   'PO Raised – GRN Pending': {
-    label: 'GRN Pending',
+    label: 'Awaiting delivery',
     className: 'bg-amber-50 text-amber-700 border border-amber-200',
   },
   'Indent Only – No PO': {
-    label: 'No PO Yet',
+    label: 'No PO yet',
     className: 'bg-red-50 text-red-700 border border-red-200',
   },
 }
 
 const LINE_CONFIG: Record<LineStatus, { label: string; className: string }> = {
-  received: { label: 'Received',      className: 'bg-emerald-50 text-emerald-700 border border-emerald-200' },
-  partial:  { label: 'Partial GRN',   className: 'bg-amber-50 text-amber-700 border border-amber-200' },
-  pending:  { label: 'PO – No GRN',   className: 'bg-orange-50 text-orange-700 border border-orange-200' },
-  no_po:    { label: 'No PO',         className: 'bg-red-50 text-red-700 border border-red-200' },
+  received: { label: 'Received',          className: 'bg-emerald-50 text-emerald-700 border border-emerald-200' },
+  partial:  { label: 'Part received',     className: 'bg-amber-50 text-amber-700 border border-amber-200' },
+  pending:  { label: 'Awaiting delivery', className: 'bg-orange-50 text-orange-700 border border-orange-200' },
+  no_po:    { label: 'No PO yet',         className: 'bg-red-50 text-red-700 border border-red-200' },
 }
 
 export function StatusBadge({ status }: { status: IndentStatus }) {
