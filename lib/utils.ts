@@ -88,7 +88,10 @@ export function personName(
   email: string | null | undefined,
 ): string {
   const local = email ? email.split('@')[0].trim().toLowerCase() : ''
-  const candidates = [full_name, name].map(s => (s ?? '').trim()).filter(Boolean)
+  // Prefer the editable `name` (what an admin renames on Users & Roles) over the
+  // Google-supplied `full_name`, so a rename actually shows everywhere. Both still
+  // skip a value that's just the email prefix.
+  const candidates = [name, full_name].map(s => (s ?? '').trim()).filter(Boolean)
   const real = candidates.find(c => c.toLowerCase() !== local)
   return real ?? candidates[0] ?? (email ? email.split('@')[0] : '—')
 }
