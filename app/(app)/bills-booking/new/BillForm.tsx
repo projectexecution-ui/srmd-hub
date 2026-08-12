@@ -18,6 +18,7 @@ export function BillForm({ projects, vendors }: { projects: Opt[]; vendors: Opt[
   const [err, setErr] = useState<string | null>(null)
 
   const [orderType, setOrderType] = useState<'WO' | 'PO'>('WO')
+  const [billType, setBillType] = useState('Running')
   const [orderNo, setOrderNo] = useState('')
   const [projectId, setProjectId] = useState(projects[0]?.id ?? '')
   const [vendorId, setVendorId] = useState('')
@@ -36,7 +37,7 @@ export function BillForm({ projects, vendors }: { projects: Opt[]; vendors: Opt[
     setBusy(true); setErr(null)
     const { data, error } = await supabase.rpc('bb_rpc_create_bill', {
       p: {
-        order_type: orderType, order_no: orderNo.trim(), project_id: projectId,
+        order_type: orderType, bill_type: billType, order_no: orderNo.trim(), project_id: projectId,
         vendor_id: vendorId || null, vendor_text: vendorText.trim() || null,
         discipline: discipline || null, work: work.trim() || null,
         bill_no: billNo.trim() || null, ra_no: raNo.trim() || null,
@@ -70,6 +71,13 @@ export function BillForm({ projects, vendors }: { projects: Opt[]; vendors: Opt[
           <Label htmlFor="ono">{orderType} number</Label>
           <Input id="ono" value={orderNo} onChange={e => setOrderNo(e.target.value)} placeholder="WO/SRASSK/…" />
         </div>
+      </div>
+
+      <div>
+        <Label htmlFor="btype">Bill type</Label>
+        <select id="btype" value={billType} onChange={e => setBillType(e.target.value)} className={sel}>
+          {['Running', 'Advance', 'Full & Final', 'Petty Cash', 'Misc'].map(t => <option key={t} value={t}>{t}</option>)}
+        </select>
       </div>
 
       <div className="grid grid-cols-2 gap-3">

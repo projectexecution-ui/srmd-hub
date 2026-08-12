@@ -50,6 +50,7 @@ export default async function BillDetailPage({ params }: { params: Promise<{ id:
       {/* Facts */}
       <Card className="p-4">
         <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm sm:grid-cols-3">
+          <Fact k="Bill type" v={bill.bill_type || '—'} />
           <Fact k="Work" v={bill.work || '—'} />
           <Fact k="Bill no" v={bill.bill_no || '—'} />
           <Fact k="RA no" v={bill.ra_no || '—'} />
