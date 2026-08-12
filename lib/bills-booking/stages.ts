@@ -53,3 +53,13 @@ export function prevStage(k: BbStage): BbStage | undefined {
   return i > 0 ? PIPELINE[i - 1].key : undefined
 }
 export const isTerminal = (k: BbStage) => k === 'paid' || k === 'rejected'
+
+// Days a bill should sit at each desk before it's "late" (SLA). Tune later /
+// make configurable. Off-pipeline stages have no SLA.
+export const SLA_DAYS: Partial<Record<BbStage, number>> = {
+  submitted: 1, site_head: 2, disc_head: 2, ct_head: 3,
+  atm_approval: 2, ct_billing: 2, atm_in4: 2, trust: 7,
+}
+export function slaFor(k: BbStage): number | undefined {
+  return SLA_DAYS[k]
+}

@@ -6,6 +6,9 @@ import { Card } from '@/components/ui/card'
 import { PIPELINE, stageDef, stageIndex, type BbStage } from '@/lib/bills-booking/stages'
 import { StagePill } from '../StagePill'
 import { MoveActions } from './MoveActions'
+import { StatusTimeline } from './StatusTimeline'
+import { Documents, type DocRow } from './Documents'
+import { buildTimeline, type RawEvent } from '@/lib/bills-booking/timeline'
 import { formatDateTime } from '@/lib/utils'
 
 export const dynamic = 'force-dynamic'
@@ -23,13 +26,14 @@ export default async function BillDetailPage({ params }: { params: Promise<{ id:
   const { id } = await params
   const supabase = await createClient()
 
-  const [{ data: bill }, { data: events }] = await Promise.all([
+  const [{ data: bill }, { data: events }, { data: docRows }] = await Promise.all([
     supabase.from('bb_bills')
       .select('*, projects(code, name), vendors(name)')
       .eq('id', id).maybeSingle(),
     supabase.from('bb_bill_events')
       .select('id, from_stage, to_stage, action, comment, amount_snapshot, created_at, profiles(full_name, email)')
       .eq('bill_id', id).order('created_at', { ascending: false }),
+    supabase.from('bb_bill_docs').select('id, path, name, kind').eq('bill_id', id).order('created_at'),
   ])
   if (!bill) notFound()
 
@@ -37,6 +41,25 @@ export default async function BillDetailPage({ params }: { params: Promise<{ id:
   const vendor = one(bill.vendors as { name: string } | null)?.name || bill.vendor_text || '—'
   const curIdx = stageIndex(bill.current_stage as BbStage)
   const evs = (events ?? []) as Ev[]
+
+  // Timeline (events ascending) + who moved each.
+  const asc: RawEvent[] = [...evs].reverse().map(e => {
+    const w = one(e.profiles)
+    return { from_stage: e.from_stage, to_stage: e.to_stage, created_at: e.created_at, actor: w?.full_name || w?.email || null }
+  })
+  const segs = buildTimeline(asc, bill.current_stage as BbStage, Date.now())
+
+  // Documents + signed URLs.
+  const paths = (docRows ?? []).map(d => d.path as string)
+  const urlMap = new Map<string, string>()
+  if (paths.length) {
+    const { data: signed } = await supabase.storage.from('bills-booking').createSignedUrls(paths, 3600)
+    for (const s of signed ?? []) if (s.path && s.signedUrl) urlMap.set(s.path, s.signedUrl)
+  }
+  const docs: DocRow[] = (docRows ?? []).map(d => ({
+    id: d.id as string, name: d.name as string | null, kind: d.kind as string | null,
+    url: urlMap.get(d.path as string) ?? null, isImage: /\.(jpe?g|png)$/i.test(d.path as string),
+  }))
 
   const money = (n: number | null | undefined) => (n == null ? '—' : '₹' + Number(n).toLocaleString('en-IN'))
 
@@ -101,6 +124,12 @@ export default async function BillDetailPage({ params }: { params: Promise<{ id:
           })}
         </div>
       </Card>
+
+      {/* Time at each desk (SLA) */}
+      <StatusTimeline segs={segs} />
+
+      {/* Documents */}
+      <Documents billId={bill.id as string} docs={docs} canEdit={canEdit} />
 
       {/* Move actions */}
       {canEdit && <MoveActions billId={bill.id as string} stage={bill.current_stage as BbStage} netAmount={bill.net_amount as number | null} claimed={bill.claimed_amount as number} />}
