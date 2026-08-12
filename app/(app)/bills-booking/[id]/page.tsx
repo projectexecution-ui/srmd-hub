@@ -58,7 +58,8 @@ export default async function BillDetailPage({ params }: { params: Promise<{ id:
   }
   const docs: DocRow[] = (docRows ?? []).map(d => ({
     id: d.id as string, name: d.name as string | null, kind: d.kind as string | null,
-    url: urlMap.get(d.path as string) ?? null, isImage: /\.(jpe?g|png)$/i.test(d.path as string),
+    url: urlMap.get(d.path as string) ?? null,
+    ext: (String(d.path).split('.').pop() || '').toLowerCase(),
   }))
 
   const money = (n: number | null | undefined) => (n == null ? '—' : '₹' + Number(n).toLocaleString('en-IN'))
