@@ -40,6 +40,11 @@ export async function updateSession(request: NextRequest) {
   // scheduled ever ran. Each route still enforces CRON_SECRET itself.
   const publicRoutes = [
     '/login', '/auth/callback', '/api/email/send', '/api/push/send',
+    // Telegram: the bot webhook is called by Telegram's servers (verified by a
+    // secret-token header) and /api/telegram/send by the database (pg_net, via
+    // the NOTIFY_INTERNAL_SECRET header) — neither carries a login cookie, so
+    // they must skip the redirect. /api/telegram/setup enforces admin itself.
+    '/api/telegram',
     '/api/cron',                      // dispatcher + all fan-out jobs under /api/cron/*
     '/api/jmr/weekly-report',         // cron
     '/api/cost-control/backup',       // cron
