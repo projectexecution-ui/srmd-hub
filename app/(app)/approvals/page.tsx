@@ -6,7 +6,7 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import {
   Inbox, Calendar, Building2,
-  AlertTriangle, CheckCheck, Clock,
+  AlertTriangle, CheckCheck, Clock, ArrowRight,
 } from 'lucide-react'
 import { formatINR } from '@/lib/utils'
 import { inboxActionLabel } from '@/lib/approvals/inbox-action'
@@ -231,7 +231,8 @@ export default async function MyApprovalsPage({
                   <Badge variant="default" className="text-xs">{items.length}</Badge>
                 </div>
 
-                <ul className="divide-y divide-gray-100 -mx-1">
+                {/* Desktop: compact divided rows (doc info left · amount + action right). */}
+                <ul className="divide-y divide-gray-100 -mx-1 hidden md:block">
                   {items.map(r => (
                     <li key={`${r.doc_table}:${r.doc_id}`}>
                       <Link
@@ -272,6 +273,53 @@ export default async function MyApprovalsPage({
                           )}
                           <span className="inline-flex items-center rounded-full bg-amber-50 text-amber-800 px-2.5 py-1 text-[11px] font-semibold" title="What this item needs from you">
                             {inboxActionLabel(r.next_stage)}
+                          </span>
+                        </div>
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+
+                {/* Mobile: each item a tappable card — amount stands out top-right,
+                    and the action you owe is a clear CTA pill below (≥44px targets). */}
+                <ul className="divide-y divide-gray-100 -mx-1 md:hidden">
+                  {items.map(r => (
+                    <li key={`m:${r.doc_table}:${r.doc_id}`}>
+                      <Link href={r.doc_url} className="block px-1 py-3 hover:bg-gray-50 rounded-lg">
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="font-mono text-xs font-bold text-blue-700">{r.doc_no ?? '—'}</span>
+                              {r.urgency && r.urgency !== 'normal' && (
+                                <Badge className={r.urgency === 'emergency' ? 'bg-rose-100 text-rose-800 text-[10px]' : 'bg-amber-100 text-amber-800 text-[10px]'}>
+                                  {r.urgency}
+                                </Badge>
+                              )}
+                              {isOverdue(r, now) && (
+                                <Badge className="bg-rose-100 text-rose-800 text-[10px] inline-flex items-center gap-0.5">
+                                  <Clock className="h-3 w-3" /> overdue
+                                </Badge>
+                              )}
+                            </div>
+                            <p className="text-xs text-gray-600 mt-1 flex items-start gap-1.5">
+                              <Building2 className="h-3 w-3 mt-0.5 flex-shrink-0 text-gray-400" />
+                              <span className="min-w-0">{r.project_code ?? '—'}{r.project_name ? ` · ${r.project_name}` : ''}</span>
+                            </p>
+                            <p className="text-[11px] text-gray-400 mt-0.5 inline-flex items-center gap-1">
+                              <Calendar className="h-3 w-3" />
+                              {formatDateAgo(r.doc_date ?? r.created_at, now)}
+                            </p>
+                          </div>
+                          {r.amount != null && (
+                            <span className="text-sm font-bold text-gray-900 tabular-nums flex-shrink-0">
+                              {formatINR(r.amount)}
+                            </span>
+                          )}
+                        </div>
+                        <div className="mt-2.5 flex justify-end">
+                          <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 text-amber-800 px-3 py-1.5 text-xs font-semibold">
+                            {inboxActionLabel(r.next_stage)}
+                            <ArrowRight className="h-3.5 w-3.5" />
                           </span>
                         </div>
                       </Link>
