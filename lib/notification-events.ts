@@ -69,6 +69,12 @@ export const NOTIFICATION_EVENTS: NotificationEventDef[] = [
     audience: 'Project Head & raising engineer',
   },
   {
+    type: 'cc_approval_reminders',
+    label: 'Daily: budget waiting for approval (reminder)',
+    description: 'Each morning, reminds the current approver (Project Head / Atm Head / Trustee) of budgets still waiting on their sign-off since a previous day — not on the day it was raised. If a budget is stuck 3+ days, it also copies the next level up + management. Arrives as a Telegram card.',
+    audience: 'The pending approver (+ escalation to the next level & management)',
+  },
+  {
     type: 'jmr_entry_submitted',
     label: 'JMR entry submitted (to review)',
     description: 'The moment an engineer submits a daily JMR entry, the approvers (admin/head) are pinged that there’s something to review. Email is off by default for this one to avoid inbox flooding — in-app + phone push stay on; turn email on here if you want it.',

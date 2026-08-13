@@ -43,6 +43,10 @@ export const CRON_JOBS: CronJob[] = [
   // sends it (the afternoon slot is best-effort on Vercel's free plan and can be
   // skipped). Its own approval_events.mgmt_digest_at guard prevents any double-send.
   { key: 'cc-approval-digest',    policy: 'daily', am: '/api/cron/cc-approval-digest?cron=1',  pm: '/api/cron/cc-approval-digest?cron=1' },
+  // Morning reminder to whoever a budget is waiting on (aged since a previous
+  // day); escalates items stuck 3+ days. Rides both slots; its own IST-date
+  // "aged since a previous day" gate + the ledger prevent a double-send.
+  { key: 'cc-approval-reminders', policy: 'daily', am: '/api/cron/cc-approval-reminders?cron=1', pm: '/api/cron/cc-approval-reminders?cron=1' },
   // ── Each-slot jobs (intentionally run at both 09:00 and 15:00) ────────────
   { key: 'bills-pipeline',        policy: 'each',  am: '/api/cron/bills-pipeline?cron=1',      pm: '/api/cron/bills-pipeline?cron=1&slot=pm' },
   { key: 'bph-sync',              policy: 'each',  am: '/api/cron/bph-sync?cron=1',            pm: '/api/cron/bph-sync?cron=1' },
@@ -115,6 +119,7 @@ export function legacyJobs(slot: Slot, everyThirdDay: boolean): string[] {
     '/api/cron/bills-pipeline?cron=1',
     '/api/cron/bills-digest?cron=1',
     '/api/cron/cc-approval-digest?cron=1',
+    '/api/cron/cc-approval-reminders?cron=1',
     '/api/cron/bph-sync?cron=1',
   ]
 }
