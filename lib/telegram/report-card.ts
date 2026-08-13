@@ -6,6 +6,7 @@
 import { Resvg } from '@resvg/resvg-js'
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
+import type { CardSpec, CardTone } from '@/lib/telegram/card-spec'
 
 const FONT_FAMILY = 'Noto Sans'
 // Reuse the font already bundled for the Bills pipeline cards.
@@ -106,6 +107,138 @@ export async function renderReportCard(opts: { title: string; body: string; date
   P.push(text(W - PAD, fy + 56, 'Confidential · management', { fill: C.FAINT, size: 20, anchor: 'end' }))
 
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${totalH}" viewBox="0 0 ${W} ${totalH}">${P.join('')}</svg>`
+  const hasFont = existsSync(FONT_PATH)
+  const resvg = new Resvg(svg, {
+    font: { loadSystemFonts: !hasFont, fontFiles: hasFont ? [FONT_PATH] : [], defaultFontFamily: FONT_FAMILY },
+    fitTo: { mode: 'width', value: W },
+  })
+  return Buffer.from(resvg.render().asPng())
+}
+
+// ── Rich card (CardSpec) — mirrors the HTML email layout ────────────────────
+// Same visual language as lib/notifications/email-templates.ts: brand header,
+// project chips, colored stat tiles, sectioned lists with bold main + muted sub
+// + colored right value, and warning banners. Light theme to match the mail.
+
+const E = {
+  BRAND: '#185FA5', INK: '#111827', MUT: '#6b7280', HAIR: '#e5e7eb',
+  OK: '#0f6e56', OKBG: '#e1f5ee', OKBD: '#bfe6d8',
+  WARN: '#854f0b', WARNBG: '#faeeda', WARNBD: '#f0e0c2',
+  DANGER: '#a32d2d', DANGERBG: '#fbeceb', DANGERBD: '#f3d7d5',
+  BRANDBG: '#e8f0f8', BRANDBD: '#cfe0f0',
+  NEUTBG: '#f3f4f6', NEUTBD: '#e5e7eb',
+  WHITE: '#ffffff',
+}
+function tone(t: CardTone | undefined) {
+  switch (t) {
+    case 'danger': return { fg: E.DANGER, bg: E.DANGERBG, bd: E.DANGERBD }
+    case 'warn':   return { fg: E.WARN,   bg: E.WARNBG,   bd: E.WARNBD }
+    case 'ok':     return { fg: E.OK,     bg: E.OKBG,     bd: E.OKBD }
+    case 'brand':  return { fg: E.BRAND,  bg: E.BRANDBG,  bd: E.BRANDBD }
+    default:       return { fg: E.INK,    bg: E.NEUTBG,   bd: E.NEUTBD }
+  }
+}
+function rrect(x: number, y: number, w: number, h: number, fill: string, o: { stroke?: string; rx?: number } = {}): string {
+  const st = o.stroke ? ` stroke="${o.stroke}" stroke-width="1.5"` : ''
+  return `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="${o.rx ?? 12}" fill="${fill}"${st}/>`
+}
+// Approximate character budget for a width at a given font size (Noto ~0.53em avg).
+function clipPx(s: string, maxPx: number, size: number): string {
+  const max = Math.max(4, Math.floor(maxPx / (size * 0.53)))
+  const t = sanitize(s)
+  return t.length > max ? t.slice(0, max - 1).trimEnd() + '…' : t
+}
+
+export async function renderCardSpec(spec: CardSpec): Promise<Buffer> {
+  const P: string[] = []
+  const CW = W - PAD * 2
+  let y = 0
+
+  // Header
+  P.push(rrect(PAD, 40, 46, 46, E.BRAND, { rx: 9 }))
+  P.push(text(PAD + 23, 72, 'CT', { fill: E.WHITE, size: 22, weight: 700, anchor: 'middle' }))
+  P.push(text(PAD + 62, 71, `CT HUB · ${sanitize(spec.brand || 'Report')}`, { fill: E.MUT, size: 24, weight: 500 }))
+  if (spec.dateLabel) P.push(text(W - PAD, 71, spec.dateLabel, { fill: E.MUT, size: 22, anchor: 'end' }))
+  y = 108
+  P.push(`<line x1="0" y1="${y}" x2="${W}" y2="${y}" stroke="${E.HAIR}" stroke-width="2"/>`)
+  y += 46
+
+  // Title (wrap)
+  for (const tl of wrap(spec.title, 38)) { P.push(text(PAD, y, tl, { fill: E.INK, size: 38, weight: 700 })); y += 50 }
+  y += 6
+
+  // Project chips
+  if (spec.chips && spec.chips.length) {
+    let cx = PAD
+    const chipH = 40, gap = 10
+    for (const c of spec.chips) {
+      const label = sanitize(c)
+      const cw = Math.min(CW, label.length * 13 + 34)
+      if (cx + cw > W - PAD) { cx = PAD; y += chipH + gap }
+      P.push(rrect(cx, y, cw, chipH, E.BRANDBG, { rx: 20 }))
+      P.push(text(cx + 17, y + 27, clipPx(label, cw - 24, 20), { fill: E.BRAND, size: 20, weight: 500 }))
+      cx += cw + gap
+    }
+    y += chipH + 20
+  }
+
+  // Stat tiles (up to 2 across)
+  if (spec.stats && spec.stats.length) {
+    const n = Math.min(spec.stats.length, 2)
+    const gap = 20
+    const tw = n === 2 ? (CW - gap) / 2 : CW
+    const th = 148
+    spec.stats.slice(0, 2).forEach((s, i) => {
+      const tc = tone(s.tone)
+      const x = PAD + i * (tw + gap)
+      P.push(rrect(x, y, tw, th, tc.bg, { stroke: tc.bd, rx: 14 }))
+      P.push(text(x + 24, y + 40, clipPx(s.label, tw - 48, 22), { fill: tc.fg, size: 22, weight: 600 }))
+      P.push(text(x + 24, y + 98, clipPx(s.value, tw - 48, 48), { fill: E.INK, size: 48, weight: 700 }))
+      if (s.sub) P.push(text(x + 24, y + 128, clipPx(s.sub, tw - 48, 20), { fill: E.MUT, size: 20 }))
+    })
+    y += th + 26
+  }
+
+  // Sections
+  for (const sec of spec.sections ?? []) {
+    P.push(`<line x1="${PAD}" y1="${y}" x2="${W - PAD}" y2="${y}" stroke="${E.HAIR}" stroke-width="2"/>`)
+    y += 40
+    P.push(text(PAD, y, clipPx(sec.heading, CW, 30), { fill: E.INK, size: 30, weight: 700 }))
+    y += sec.sub ? 30 : 14
+    if (sec.sub) { P.push(text(PAD, y, clipPx(sec.sub, CW, 22), { fill: E.MUT, size: 22 })); y += 22 }
+    y += 8
+
+    for (const r of sec.rows ?? []) {
+      const rowH = r.sub ? 74 : 52
+      P.push(`<line x1="${PAD}" y1="${y}" x2="${W - PAD}" y2="${y}" stroke="${E.HAIR}" stroke-width="1.5"/>`)
+      const rightW = r.right ? 240 : 0
+      P.push(text(PAD, y + 34, clipPx(r.main, CW - rightW - 16, 27), { fill: E.INK, size: 27, weight: 600 }))
+      if (r.sub) P.push(text(PAD, y + 62, clipPx(r.sub, CW - 16, 21), { fill: E.MUT, size: 21 }))
+      if (r.right) P.push(text(W - PAD, y + 34, sanitize(r.right), { fill: tone(r.rightTone).fg, size: 26, weight: 600, anchor: 'end' }))
+      y += rowH
+    }
+    if (sec.more && sec.more > 0) { P.push(text(PAD, y + 30, `+ ${sec.more} more`, { fill: E.MUT, size: 22 })); y += 42 }
+    if (sec.banner) {
+      const bc = tone(sec.banner.tone)
+      const lines = wrap(sec.banner.text, 62)
+      const bh = 20 + lines.length * 32
+      P.push(rrect(PAD, y, CW, bh, bc.bg, { stroke: bc.bd, rx: 10 }))
+      let by = y + 34
+      for (const ln of lines) { P.push(text(PAD + 18, by, clipPx(ln, CW - 36, 22), { fill: bc.fg, size: 22 })); by += 32 }
+      y += bh + 12
+    }
+    y += 12
+  }
+
+  // Footer
+  y += 8
+  P.push(`<line x1="0" y1="${y}" x2="${W}" y2="${y}" stroke="${E.HAIR}" stroke-width="2"/>`)
+  y += 40
+  P.push(text(PAD, y, clipPx(spec.footer || 'CT HUB · Construction Tracking', CW, 20), { fill: '#94a3b8', size: 20 }))
+  y += 34
+
+  const totalH = y
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${totalH}" viewBox="0 0 ${W} ${totalH}"><rect x="0" y="0" width="${W}" height="${totalH}" fill="${E.WHITE}"/>${P.join('')}</svg>`
   const hasFont = existsSync(FONT_PATH)
   const resvg = new Resvg(svg, {
     font: { loadSystemFonts: !hasFont, fontFiles: hasFont ? [FONT_PATH] : [], defaultFontFamily: FONT_FAMILY },

@@ -13,7 +13,8 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient as createServiceClient } from '@supabase/supabase-js'
-import { renderReportCard, shouldRenderCard } from '@/lib/telegram/report-card'
+import { renderReportCard, renderCardSpec, shouldRenderCard } from '@/lib/telegram/report-card'
+import type { CardSpec } from '@/lib/telegram/card-spec'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -61,6 +62,11 @@ export async function POST(req: NextRequest) {
     text?: string
     url?: string | null
     type?: string | null
+    // Full-detail text (report generators put the complete, project-grouped
+    // breakdown here so the image carries the same detail as the email).
+    cardText?: string | null
+    // A structured spec that renders a rich card mirroring the HTML email.
+    cardSpec?: CardSpec | null
     deliveryId?: string | null
   } | null = null
   try { payload = await req.json() } catch { return NextResponse.json({ error: 'bad-json' }, { status: 400 }) }
@@ -74,6 +80,9 @@ export async function POST(req: NextRequest) {
 
   const title = String(payload?.title ?? 'CT HUB').slice(0, 300)
   const body = String(payload?.text ?? '').slice(0, 3500)
+  const cardText = payload?.cardText ? String(payload.cardText).slice(0, 6000) : ''
+  // Reports carry the full breakdown in cardText; quick alerts have only body.
+  const effectiveBody = cardText.trim() ? cardText : body
   const rawUrl = payload?.url ? String(payload.url) : null
   const origin = (process.env.NEXT_PUBLIC_APP_URL || req.nextUrl.origin).replace(/\/$/, '')
   const link = rawUrl ? (rawUrl.startsWith('http') ? rawUrl : `${origin}${rawUrl}`) : origin
@@ -81,13 +90,13 @@ export async function POST(req: NextRequest) {
 
   // ── Text message (quick alerts + the fallback if a card can't render) ──
   async function sendText(): Promise<NextResponse> {
-    const messageHtml = `<b>${esc(title)}</b>${body ? `\n${esc(body)}` : ''}`
+    const messageHtml = `<b>${esc(title)}</b>${effectiveBody ? `\n${esc(effectiveBody)}` : ''}`
     try {
       const resp = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          chat_id: chatId, text: messageHtml, parse_mode: 'HTML',
+          chat_id: chatId, text: messageHtml.slice(0, 4000), parse_mode: 'HTML',
           disable_web_page_preview: true, reply_markup: openButton,
         }),
       })
@@ -104,29 +113,36 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  // ── Image card (reports/digests) → forwards to WhatsApp as a picture ──
-  if (shouldRenderCard(payload?.type)) {
-    try {
-      const dateLabel = new Date().toLocaleDateString('en-IN', {
-        timeZone: 'Asia/Kolkata', day: '2-digit', month: 'short', year: 'numeric',
-      })
-      const png = await renderReportCard({ title, body, dateLabel })
-      const form = new FormData()
-      form.append('chat_id', chatId)
-      form.append('caption', title.slice(0, 1000))
-      form.append('reply_markup', JSON.stringify(openButton))
-      form.append('photo', new Blob([new Uint8Array(png)], { type: 'image/png' }), 'report.png')
-      const resp = await fetch(`https://api.telegram.org/bot${token}/sendPhoto`, { method: 'POST', body: form })
-      const j = await resp.json().catch(() => ({})) as { ok?: boolean; description?: string }
-      if (j.ok) { await markDelivery(deliveryId, 'sent'); return NextResponse.json({ ok: true, mode: 'card' }) }
-      const desc = j.description || 'telegram sendPhoto failed'
-      if (isPermanent(desc)) { await markDelivery(deliveryId, 'skipped', desc); return NextResponse.json({ error: desc }, { status: 200 }) }
-      // Transient / rendering-agnostic failure → fall back to a text send.
-      return await sendText()
-    } catch {
-      // Rendering blew up (font/native issue) → never lose the report; send text.
-      return await sendText()
-    }
+  // ── Upload a rendered PNG as a photo (falls back to text on a soft error) ──
+  async function sendPhoto(png: Buffer): Promise<NextResponse> {
+    const form = new FormData()
+    form.append('chat_id', chatId)
+    form.append('caption', title.slice(0, 1000))
+    form.append('reply_markup', JSON.stringify(openButton))
+    form.append('photo', new Blob([new Uint8Array(png)], { type: 'image/png' }), 'report.png')
+    const resp = await fetch(`https://api.telegram.org/bot${token}/sendPhoto`, { method: 'POST', body: form })
+    const j = await resp.json().catch(() => ({})) as { ok?: boolean; description?: string }
+    if (j.ok) { await markDelivery(deliveryId, 'sent'); return NextResponse.json({ ok: true, mode: 'card' }) }
+    const desc = j.description || 'telegram sendPhoto failed'
+    if (isPermanent(desc)) { await markDelivery(deliveryId, 'skipped', desc); return NextResponse.json({ error: desc }, { status: 200 }) }
+    return await sendText()
+  }
+
+  const dateLabel = new Date().toLocaleDateString('en-IN', {
+    timeZone: 'Asia/Kolkata', day: '2-digit', month: 'short', year: 'numeric',
+  })
+
+  // ── Rich card — the report generator provided a card_spec (mirrors the
+  //     email). Falls back to the simple card / text if rendering ever fails. ──
+  if (payload?.cardSpec) {
+    try { return await sendPhoto(await renderCardSpec({ ...payload.cardSpec, dateLabel: payload.cardSpec.dateLabel ?? dateLabel })) }
+    catch { /* fall through to the simple card / text */ }
+  }
+
+  // ── Simple card (a report/digest by type, without a spec) ──
+  if (payload?.cardSpec || shouldRenderCard(payload?.type)) {
+    try { return await sendPhoto(await renderReportCard({ title, body: effectiveBody, dateLabel })) }
+    catch { return await sendText() }
   }
 
   return await sendText()

@@ -13,7 +13,7 @@ import { createClient as createServiceClient, type SupabaseClient } from '@supab
 import { createClient } from '@/lib/supabase/server'
 import { getMyPermissions, can } from '@/lib/auth'
 import { parseProcurementNotifyConfig, type ProcurementNotifyConfig } from '@/lib/procurement/notify-settings'
-import { buildHeadDigest, digestSubject, digestText } from '@/lib/procurement/digest'
+import { buildHeadDigest, digestSubject, digestText, digestFullText, digestCardSpec } from '@/lib/procurement/digest'
 import type { StoredSnapshot } from '@/lib/procurement/types'
 
 export const runtime = 'nodejs'
@@ -55,7 +55,9 @@ async function notify(supabase: Client, userId: string, digest: ReturnType<typeo
     p_body: digestText(digest),
     p_url: '/procurement-tracker',
     p_module_slug: 'procurement-tracker',
-    p_data: digest,
+    // digest fields drive the HTML email (unchanged); report_text + card_spec
+    // are extra keys the Telegram sender uses for the full-detail image card.
+    p_data: { ...digest, report_text: digestFullText(digest), card_spec: digestCardSpec(digest) },
   })
   return error ? error.message : null
 }

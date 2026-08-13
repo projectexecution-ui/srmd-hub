@@ -10,6 +10,7 @@
 import type { StoredSnapshot, LineRecord, IndentRollup } from './types'
 import { categoryLabel } from './item-subtype'
 import type { ProcurementNotifyConfig } from './notify-settings'
+import type { CardSpec } from '@/lib/telegram/card-spec'
 
 export interface NeedPoRow {
   indentNo: string
@@ -20,6 +21,7 @@ export interface NeedPoRow {
 }
 export interface AwaitRow {
   indentNo: string
+  poNo: string | null     // the PO raised against this indent (shortened; "+N" if several)
   project: string
   category: string
   vendor: string | null
@@ -124,15 +126,19 @@ export function buildHeadDigest(
       l.pendingQty > 0 && (l.status === 'pending' || l.status === 'partial') && poAge(l) >= cfg.grnSlaDays)
     const rowsAll = groupByIndent(
       pend,
-      (no, g) => ({
-        indentNo: shortIndent(no),
-        project: g[0].project,
-        category: categoryLabel(dominantDiscipline(g), g.map(x => x.material)),
-        vendor: (g.find(x => x.supplier)?.supplier) || null,
-        items: g.length,
-        poDays: Math.max(...g.map(poAge)),
-        value: g.reduce((s, x) => s + (x.pendingValue || 0), 0),
-      }),
+      (no, g) => {
+        const poNos = [...new Set(g.flatMap(x => (x.pos ?? []).map(pp => pp.poNo)).filter(Boolean))]
+        return {
+          indentNo: shortIndent(no),
+          poNo: poNos.length ? shortIndent(poNos[0]) + (poNos.length > 1 ? ` +${poNos.length - 1}` : '') : null,
+          project: g[0].project,
+          category: categoryLabel(dominantDiscipline(g), g.map(x => x.material)),
+          vendor: (g.find(x => x.supplier)?.supplier) || null,
+          items: g.length,
+          poDays: Math.max(...g.map(poAge)),
+          value: g.reduce((s, x) => s + (x.pendingValue || 0), 0),
+        }
+      },
       r => r.value,
     )
     if (rowsAll.length > 0) {
@@ -212,4 +218,113 @@ export function digestText(d: ProcurementDigest): string {
   if (d.stale) l.push(`Note: no fresh upload since ${new Date(d.stale.lastUploadAt).toLocaleString('en-IN')} — numbers may be stale.`)
   l.push('Open the Indent → PO Tracker for the full list.')
   return l.join('\n')
+}
+
+// Full-detail text — the same rows the HTML email shows, GROUPED BY PROJECT.
+// Fed to the Telegram image card (via notify_user data.report_text) so the
+// shareable picture carries the complete breakdown, not just the summary. The
+// email is unaffected — it still renders its own HTML card from the data.
+export function digestFullText(d: ProcurementDigest): string {
+  const out: string[] = []
+  const groupByProject = <T extends { project: string }>(rows: T[]): Map<string, T[]> => {
+    const m = new Map<string, T[]>()
+    for (const r of rows) { const a = m.get(r.project) ?? []; a.push(r); m.set(r.project, a) }
+    return m
+  }
+  const plural = (n: number) => (n === 1 ? '' : 's')
+
+  if (d.needPo && d.needPo.count > 0) {
+    out.push('POs TO RAISE — approved 2+ days, no PO:')
+    for (const [proj, rows] of groupByProject(d.needPo.rows)) {
+      out.push(proj)
+      for (const r of rows) out.push(`- ${r.indentNo} · ${r.category} · ${r.items} item${plural(r.items)} · ${r.days}d`)
+    }
+    const extra: string[] = []
+    if (d.needPo.more > 0) extra.push(`+${d.needPo.more} more`)
+    if (d.needPo.abandoned > 0) extra.push(`${d.needPo.abandoned} at 90+ days (likely abandoned)`)
+    if (extra.length) out.push(extra.join(' · '))
+    out.push('')
+  }
+
+  if (d.awaiting && d.awaiting.count > 0) {
+    out.push(`DELIVERIES TO CHASE — ordered 1 week+, not received (${inrShort(d.awaiting.value)}):`)
+    for (const [proj, rows] of groupByProject(d.awaiting.rows)) {
+      out.push(proj)
+      for (const r of rows) {
+        out.push(`- ${r.indentNo}${r.poNo ? ' · PO ' + r.poNo : ''} · ${r.category}${r.vendor ? ' · ' + r.vendor : ''} · ${r.items} item${plural(r.items)} · ${r.poDays}d · ${inrShort(r.value)}`)
+      }
+    }
+    if (d.awaiting.more > 0) out.push(`+${d.awaiting.more} more`)
+    out.push('')
+  }
+
+  if (d.changes) out.push(`Since last upload: ${d.changes.received} received · ${d.changes.newPos} new POs · ${d.changes.newNoPo} new no-PO.`)
+  if (d.stale) out.push(`Note: no fresh upload since ${new Date(d.stale.lastUploadAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })} — numbers may be stale.`)
+  out.push('Open the Indent → PO Tracker for the full list.')
+  return out.join('\n').trim()
+}
+
+// The rich Telegram image spec — mirrors the HTML email (renderProcurementDigest):
+// two colored stat tiles + a "Raise a PO" and a "Chase delivery & GRN" section,
+// each a list of the same rows the mail shows. Fed via notify_user data.card_spec.
+export function digestCardSpec(d: ProcurementDigest): CardSpec {
+  const stats: NonNullable<CardSpec['stats']> = []
+  if (d.needPo) stats.push({
+    label: 'POs to raise', value: String(d.needPo.count),
+    sub: `approved 2+ days, no PO${d.needPo.abandoned ? ` · +${d.needPo.abandoned} old` : ''}`,
+    tone: 'danger',
+  })
+  if (d.awaiting) stats.push({
+    label: 'Deliveries pending', value: inrShort(d.awaiting.value),
+    sub: `${d.awaiting.count} indent${d.awaiting.count === 1 ? '' : 's'} · PO 1 week+`,
+    tone: 'warn',
+  })
+
+  const sections: NonNullable<CardSpec['sections']> = []
+  if (d.needPo && d.needPo.count > 0) {
+    sections.push({
+      heading: 'Raise a PO',
+      sub: 'Indent approved 2+ days ago, still no PO.',
+      rows: d.needPo.rows.map(r => ({
+        main: r.indentNo, sub: `${r.project} · ${r.category}`, right: `${r.days}d`, rightTone: 'warn' as const,
+      })),
+      more: d.needPo.more,
+      banner: d.needPo.abandoned
+        ? { text: `${d.needPo.abandoned} item(s) have had no PO for 90+ days — likely abandoned, worth a one-time clean-up.`, tone: 'warn' as const }
+        : undefined,
+    })
+  }
+  if (d.awaiting && d.awaiting.count > 0) {
+    sections.push({
+      heading: 'Chase delivery & GRN',
+      sub: 'PO placed 1 week+ ago, not received yet.',
+      rows: d.awaiting.rows.map(r => ({
+        main: r.indentNo,
+        sub: `${r.poNo ? 'PO ' + r.poNo + ' · ' : ''}${r.project} · ${r.category}${r.vendor ? ' · ' + r.vendor : ''}`,
+        right: `${r.poDays}d · ${inrShort(r.value)}`, rightTone: 'danger' as const,
+      })),
+      more: d.awaiting.more,
+    })
+  }
+  if (d.changes) {
+    sections.push({
+      heading: 'Since last upload',
+      rows: [{ main: `${d.changes.received} received · ${d.changes.newPos} new PO${d.changes.newPos === 1 ? '' : 's'} · ${d.changes.newNoPo} new no-PO` }],
+    })
+  }
+  if (d.stale) {
+    sections.push({
+      heading: 'Heads up',
+      banner: { text: `No fresh upload since ${new Date(d.stale.lastUploadAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })} — numbers may be stale.`, tone: 'warn' },
+    })
+  }
+
+  return {
+    brand: 'Indent → PO',
+    title: 'Good morning — your projects’ follow-ups',
+    chips: d.projects,
+    stats,
+    sections,
+    footer: 'CT HUB · reminders combined into one · Confidential',
+  }
 }
