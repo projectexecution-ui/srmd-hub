@@ -7,7 +7,7 @@ import {
   Truck, Building2, Upload, Users, Settings, ShieldCheck,
   ExternalLink, Wrench, Calculator, FileSpreadsheet,
   Boxes, Inbox, GitCompareArrows, Tags, FlaskConical, ListTree, Mail, Activity, ListChecks,
-  ClipboardCheck, CalendarClock, ReceiptText,
+  ClipboardCheck, CalendarClock, ReceiptText, Warehouse,
 } from 'lucide-react'
 import type { PermissionMap } from './types'
 
@@ -42,6 +42,10 @@ export const MODULES: ModuleTile[] = [
   { slug: 'daily-site-report',label: 'Daily Site Report',description: 'Site material/supplier deliveries — received → bill with CT → GRN → paid, with a smart checklist for the Atm Head', href: '/daily-site-report', icon: ClipboardCheck, tone: 'teal' },
   { slug: 'schedule',         label: 'Schedule & WOs',   description: 'Per-project schedule — plan vs actual, Work-Order deadlines, drawings & floor-by-floor progress; macro for management, micro for engineers', href: '/schedule', icon: CalendarClock, tone: 'indigo' },
   { slug: 'inventory',        label: 'Inventory',        description: 'Stock, item master, requests & issue chain',  href: '/inventory',      icon: Boxes,         tone: 'green' },
+  // Warehouse V2 — the HOD's main-gate material in-out register. A separate
+  // module from `inventory` on purpose: its own items, locations, stock and
+  // ledger, so the never-adopted request/issue chain above is left untouched.
+  { slug: 'warehouse',        label: 'Warehouse V2',     description: 'Main-gate material in-out register — challan vs received, PO balances, store-to-store moves, physical count and the control reports', href: '/warehouse', icon: Warehouse, tone: 'green' },
   { slug: 'comparison',       label: 'Comparison Maker', description: 'Compare vendor quotations side-by-side — L1, L2, missing items', href: '/comparisons', icon: GitCompareArrows, tone: 'purple' },
   { slug: 'established-rates',label: 'Established Rates',description: 'Master rate catalogue — Discipline → Category → Sub-category, multi-vendor with L1 highlight', href: '/established-rates', icon: Tags, tone: 'teal' },
   { slug: 'attendance',       label: 'Attendance',       description: 'Open the SiteAttend app',                     href: process.env.NEXT_PUBLIC_ATTENDANCE_URL || 'https://siteattend.vercel.app', external: true, icon: ExternalLink, tone: 'rose' },
