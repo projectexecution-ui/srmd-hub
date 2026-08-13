@@ -276,6 +276,18 @@ export async function parseExcel(file: File): Promise<{ rows: ParsedRow[]; grand
       if (cell && cell.f) formulaInAmount = String(cell.f)
     }
 
+    // Skip empty template placeholder rows. The standard BOQ template ships
+    // numbered blank rows (Sr 7, 8, 9 … with no description and ₹0); storing
+    // them just clutters the verified BOQ. Drop any row that has neither a real
+    // description (blank, or a bare serial number) nor any money.
+    const descText = (desc ?? '').trim()
+    const isBlankPlaceholder =
+      (descText === '' || /^\d+$/.test(descText))
+      && (amount == null || amount === 0)
+      && (qty == null || qty === 0)
+      && (rate == null || rate === 0)
+    if (isBlankPlaceholder) continue
+
     rows.push({
       row_no: rows.length + 1,
       raw_label: label,

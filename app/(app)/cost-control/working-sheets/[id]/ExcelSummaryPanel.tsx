@@ -85,17 +85,21 @@ export function ExcelSummaryPanel({
   // AI/flag chrome renders only for reviewers AND when the toggle is on.
   const showFlags = reviewer && aiEnabled
 
-  // The uploaded BOQ template ships with empty numbered placeholder rows
-  // (Sr 7, 8, 9 … with no description and ₹0). They add nothing to the verified
-  // read, so drop any row that has neither a real description nor any money —
-  // the totals are untouched (these lines were ₹0) and the real items,
-  // subtotals and GST all stay.
+  // Clean the verified BOQ down to real lines:
+  //  1) empty numbered placeholder rows the template ships (Sr 7,8,9… — blank or
+  //     a bare serial number, ₹0) add nothing; and
+  //  2) the pure aggregate rows — the SUM subtotal and the grand-total line —
+  //     carry a formula but no description; the footer already shows both, so
+  //     they'd only read as odd "= SUM(...)" lines and double-count "Rows total".
+  // Items, Contingency and GST (all have real descriptions) stay.
   const visibleRows = rows.filter(r => {
+    const descTrim = (r.description ?? '').trim()
     const noMoney = (r.amount == null || r.amount === 0)
       && (r.qty == null || r.qty === 0)
       && (r.rate == null || r.rate === 0)
-    const noDesc = !r.description || /^\d+$/.test(r.description.trim())
-    return !(noMoney && noDesc)
+    if (noMoney && (descTrim === '' || /^\d+$/.test(descTrim))) return false
+    if (descTrim === '' && r.formula_in_amount) return false
+    return true
   })
 
   async function recheck() {
@@ -414,7 +418,7 @@ export function ExcelSummaryPanel({
               {/* Totals footer — rows sum, the GST/additions gap, and the
                   grand total (the figure that actually gets approved). */}
               {(() => {
-                const rowsSum = rows.reduce((s, r) => s + (r.amount ?? 0), 0)
+                const rowsSum = visibleRows.reduce((s, r) => s + (r.amount ?? 0), 0)
                 const gt = grandTotal ?? summaryTotal ?? rowsSum
                 const gap = gt - rowsSum
                 return (
@@ -475,7 +479,7 @@ export function ExcelSummaryPanel({
               </div>
             ))}
             {(() => {
-              const rowsSum = rows.reduce((s, r) => s + (r.amount ?? 0), 0)
+              const rowsSum = visibleRows.reduce((s, r) => s + (r.amount ?? 0), 0)
               const gt = grandTotal ?? summaryTotal ?? rowsSum
               const gap = gt - rowsSum
               return (
