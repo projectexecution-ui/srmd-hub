@@ -55,6 +55,12 @@ export type WhPo = {
   lines: WhPoLine[]
 }
 
+export type StockRow = {
+  itemId: string; itemName: string; unit: string
+  locationId: string; locationName: string; siteName: string
+  qty: number; damagedQty: number; minQty: number | null
+}
+
 export type WhLists = {
   entity: string[]
   unit: string[]

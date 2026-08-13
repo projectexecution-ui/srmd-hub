@@ -8,6 +8,7 @@ import { savePo } from '../actions'
 import type { TrackerPoSummary, TrackerPoLine } from '@/lib/warehouse/po-import'
 import type { WhItem } from '@/lib/warehouse/types'
 import { Search, Loader2, Check, HelpCircle } from 'lucide-react'
+import { formatQty, formatINR } from '@/lib/warehouse/format'
 
 type Picked = {
   poNo: string; vendor: string | null; poDate: string | null; project: string | null
@@ -176,7 +177,7 @@ export function PoImportClient({
                         <div className="font-semibold text-slate-800">{l.sourceText}</div>
                         <div className="text-[11px] text-slate-500">
                           {l.uom}{l.discipline ? ` · ${l.discipline}` : ''}
-                          {l.receivedQty > 0 && <> · IN4 shows {fmt(l.receivedQty)} already received</>}
+                          {l.receivedQty > 0 && <> · IN4 shows {formatQty(l.receivedQty)} already received</>}
                         </div>
                       </td>
                       <td className="px-3 py-2 align-top">
@@ -220,7 +221,7 @@ export function PoImportClient({
                             setQty(s => ({ ...s, [l.sourceText]: Number(e.target.value.replace(/[^\d.]/g, '')) || 0 }))} />
                       </td>
                       <td className="px-3 py-2 align-top text-right tabular-nums text-slate-600">
-                        {l.rate ? fmt(l.rate) : '—'}
+                        {l.rate ? formatINR(l.rate) : "—"}
                       </td>
                     </tr>
                   )
@@ -260,6 +261,3 @@ function seed(picked: Picked | null): Record<string, string> {
   return out
 }
 
-function fmt(n: number): string {
-  return Number(n.toFixed(2)).toLocaleString('en-IN')
-}

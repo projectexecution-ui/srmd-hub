@@ -3,7 +3,7 @@
 import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
 import { getMyUser, getMyPermissions, can } from '@/lib/auth'
-import { getLocationTree, getPostableSpots } from '@/lib/warehouse/data'
+import { getLocationTree, getPostableSpots, one } from '@/lib/warehouse/data'
 import { aliasKey } from '@/lib/warehouse/match'
 import type { GateInInput } from '@/lib/warehouse/types'
 
@@ -110,6 +110,191 @@ export async function savePo(input: {
   revalidatePath('/warehouse/po')
   revalidatePath('/warehouse/in')
   return { ok: true, poNo: po.po_no, lines: byItem.size, learned }
+}
+
+export type GateOutInput = {
+  destType: 'site' | 'store'
+  fromLocationId: string
+  toLocationId: string | null
+  projectId: string | null
+  entity: string | null
+  engineerId: string | null
+  isReturnable: boolean
+  returnDueDate: string | null
+  vehicleNo: string | null
+  remarks: string | null
+  lines: Array<{ itemId: string; qty: number; rate: number | null }>
+}
+
+/** Record material leaving a store — EITHER consumed at a site OR moved to
+ *  another store. One action, because on screen the two look identical; the
+ *  difference is that a site issue reduces total stock and charges a project,
+ *  while a move only relocates and charges nothing. The database CHECK on
+ *  wh_gate_out enforces the shape; this enforces the stock effect. (#8) */
+export async function saveGateOut(input: GateOutInput): Promise<SaveResult> {
+  const denied = await gate('edit')
+  if (denied) return { ok: false, error: denied }
+
+  const lines = input.lines.filter(l => l.itemId && l.qty > 0)
+  if (lines.length === 0) return { ok: false, error: 'Add at least one item with a quantity.' }
+  if (!input.fromLocationId) return { ok: false, error: 'Pick the store it is going out of.' }
+  if (input.destType === 'site' && !input.projectId) {
+    return { ok: false, error: 'A site issue must say which project it is for — that is what gets charged.' }
+  }
+  if (input.destType === 'store') {
+    if (!input.toLocationId) return { ok: false, error: 'Pick the store it is going to.' }
+    if (input.toLocationId === input.fromLocationId) {
+      return { ok: false, error: 'The two stores are the same — nothing would move.' }
+    }
+  }
+
+  const sb = await createClient()
+  const me = await getMyUser()
+
+  const sites = await getLocationTree()
+  const { ids } = await getPostableSpots(sites)
+  if (!ids.includes(input.fromLocationId)) {
+    const spot = sites.flatMap(s => s.spots).find(s => s.id === input.fromLocationId)
+    return {
+      ok: false,
+      error: `You are not the keeper of ${spot?.name ?? 'that store'}, so you cannot issue from it. `
+        + 'Ask its keeper, or have an admin assign you to it in Settings.',
+    }
+  }
+
+  // Never let stock go negative — that is a data error, not a business event.
+  const { data: have } = await sb
+    .from('wh_stock')
+    .select('item_id, qty, wh_items(name, unit)')
+    .eq('location_id', input.fromLocationId)
+    .in('item_id', lines.map(l => l.itemId))
+  const stock = new Map((have ?? []).map(r => [r.item_id, r]))
+  for (const l of lines) {
+    const s = stock.get(l.itemId)
+    const item = s ? one(s.wh_items) : null
+    const available = s ? Number(s.qty) : 0
+    if (l.qty > available) {
+      return {
+        ok: false,
+        error: `Only ${available} ${item?.unit ?? ''} of ${item?.name ?? 'that item'} is in this store — `
+          + `you are trying to take ${l.qty}. Check the store, or record the missing IN entry first.`,
+      }
+    }
+  }
+
+  const register = input.destType === 'site' ? 'out' : 'move'
+  const { data: entryNo, error: noErr } = await sb.rpc('fn_wh_next_no', { p_register: register })
+  if (noErr || !entryNo) return { ok: false, error: noErr?.message ?? 'Could not allocate an entry number.' }
+
+  const { data: header, error: hErr } = await sb
+    .from('wh_gate_out')
+    .insert({
+      entry_no: entryNo,
+      dest_type: input.destType,
+      from_location_id: input.fromLocationId,
+      // The CHECK constraint refuses a move that names a project or an
+      // engineer, so these are nulled rather than passed through blindly.
+      to_location_id: input.destType === 'store' ? input.toLocationId : null,
+      project_id: input.destType === 'site' ? input.projectId : null,
+      entity: input.entity,
+      engineer_id: input.destType === 'site' ? input.engineerId : null,
+      is_returnable: input.destType === 'site' ? input.isReturnable : false,
+      return_due_date: input.destType === 'site' && input.isReturnable ? input.returnDueDate : null,
+      vehicle_no: input.vehicleNo,
+      remarks: input.remarks,
+      created_by: me?.id ?? null,
+    })
+    .select('id, entry_no')
+    .single()
+  if (hErr || !header) return { ok: false, error: hErr?.message ?? 'Could not save the entry.' }
+
+  const { error: lErr } = await sb.from('wh_gate_out_lines').insert(
+    lines.map(l => ({ gate_out_id: header.id, item_id: l.itemId, qty: l.qty, rate: l.rate })),
+  )
+  if (lErr) {
+    await sb.from('wh_gate_out').delete().eq('id', header.id)
+    return { ok: false, error: lErr.message }
+  }
+
+  const moveErr = await applyOutStock(header.id, input, lines, me?.id ?? null)
+  if (moveErr) return { ok: false, error: moveErr }
+
+  revalidatePath('/warehouse')
+  revalidatePath('/warehouse/out')
+  revalidatePath('/warehouse/stock')
+  return { ok: true, entryNo: header.entry_no }
+}
+
+/** A site issue takes stock away. A store move takes it from one shelf and puts
+ *  the same quantity on another, so the total never changes — which is what
+ *  makes moves safe to allow at all. */
+async function applyOutStock(
+  outId: string,
+  input: GateOutInput,
+  lines: GateOutInput['lines'],
+  actorId: string | null,
+): Promise<string | null> {
+  const sb = await createClient()
+  const toStore = input.destType === 'store' && input.toLocationId
+
+  const movements = lines.flatMap(l => {
+    const base = { item_id: l.itemId, qty: l.qty, rate: l.rate, ref_table: 'wh_gate_out', ref_id: outId, actor_id: actorId }
+    return toStore
+      ? [{ ...base, location_id: input.fromLocationId, kind: 'move_out' },
+         { ...base, location_id: input.toLocationId!, kind: 'move_in' }]
+      : [{ ...base, location_id: input.fromLocationId, kind: 'issue' }]
+  })
+  const { error } = await sb.from('wh_movements').insert(movements)
+  if (error) return `Entry saved but the stock ledger failed: ${error.message}`
+
+  for (const l of lines) {
+    const { data: from } = await sb.from('wh_stock').select('id, qty')
+      .eq('item_id', l.itemId).eq('location_id', input.fromLocationId).maybeSingle()
+    if (from) {
+      const { error: e } = await sb.from('wh_stock')
+        .update({ qty: Number(from.qty) - l.qty, last_moved_at: new Date().toISOString() })
+        .eq('id', from.id)
+      if (e) return `Stock update failed: ${e.message}`
+    }
+
+    if (toStore) {
+      const { data: to } = await sb.from('wh_stock').select('id, qty')
+        .eq('item_id', l.itemId).eq('location_id', input.toLocationId!).maybeSingle()
+      const { error: e } = to
+        ? await sb.from('wh_stock')
+            .update({ qty: Number(to.qty) + l.qty, last_moved_at: new Date().toISOString() })
+            .eq('id', to.id)
+        : await sb.from('wh_stock').insert({
+            item_id: l.itemId, location_id: input.toLocationId!, qty: l.qty,
+            last_moved_at: new Date().toISOString(),
+          })
+      if (e) return `Receiving store update failed: ${e.message}`
+    }
+  }
+  return null
+}
+
+/** The engineer confirms at site what he actually received. The gate signature
+ *  only covers handover — he cannot count 11 lines at the barrier. (#12) */
+export async function confirmReceipt(outId: string): Promise<{ ok: boolean; error?: string }> {
+  const denied = await gate('edit')
+  if (denied) return { ok: false, error: denied }
+  const sb = await createClient()
+  const me = await getMyUser()
+  const { data, error } = await sb
+    .from('wh_gate_out')
+    .update({ confirmed_by: me?.id ?? null, confirmed_at: new Date().toISOString() })
+    .eq('id', outId)
+    .is('confirmed_at', null)
+    .select('id')
+  if (error) return { ok: false, error: error.message }
+  // RLS filtering a row out of an UPDATE returns 200 with zero rows and no
+  // error, so an empty result must be treated as a refusal, not a success.
+  if (!data || data.length === 0) {
+    return { ok: false, error: 'Already confirmed, or you do not have access to this entry.' }
+  }
+  revalidatePath('/warehouse/out')
+  return { ok: true }
 }
 
 /** IN4 writes dates like "Apr 22, 2023". */

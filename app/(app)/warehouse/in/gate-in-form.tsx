@@ -8,6 +8,7 @@ import { saveGateIn } from '../actions'
 import { verdictFor } from '@/lib/warehouse/types'
 import type { GateInOptions, GateInLineInput } from '@/lib/warehouse/types'
 import { Plus, Trash2, Loader2 } from 'lucide-react'
+import { formatQty } from '@/lib/warehouse/format'
 
 type Row = GateInLineInput & { key: number }
 
@@ -52,7 +53,7 @@ export function GateInForm({
     if (!po) return options.items.map(i => ({ id: i.id, label: i.name, unit: i.unit, poLineId: null as string | null, pending: null as number | null, rate: i.lastRate, done: false }))
     return po.lines.map(l => ({
       id: l.itemId,
-      label: l.done ? `${l.itemName} · fully received ✓` : `${l.itemName} · ${fmt(l.pending)} ${l.unit} pending`,
+      label: l.done ? `${l.itemName} · fully received ✓` : `${l.itemName} · ${formatQty(l.pending)} ${l.unit} pending`,
       unit: l.unit, poLineId: l.lineId, pending: l.pending, rate: l.rate, done: l.done,
     }))
   }, [po, options.items])
@@ -175,13 +176,13 @@ export function GateInForm({
                   return (
                     <tr key={l.lineId} className={l.done ? 'text-slate-400' : 'text-slate-700'}>
                       <td className="border border-slate-200 px-1.5 py-1">{l.itemName}</td>
-                      <td className="border border-slate-200 px-1.5 py-1 text-right tabular-nums">{fmt(l.ordered)}</td>
-                      <td className="border border-slate-200 px-1.5 py-1 text-right tabular-nums">{fmt(l.received)}</td>
+                      <td className="border border-slate-200 px-1.5 py-1 text-right tabular-nums">{formatQty(l.ordered)}</td>
+                      <td className="border border-slate-200 px-1.5 py-1 text-right tabular-nums">{formatQty(l.received)}</td>
                       <td className="border border-slate-200 px-1.5 py-1 text-right tabular-nums font-bold">
-                        {l.done ? '0 ✓' : fmt(l.pending)}
+                        {l.done ? '0 ✓' : formatQty(l.pending)}
                         {after !== null && onTruck!.receivedQty > 0 && (
                           <span className={after < 0 ? 'text-rose-600' : 'text-emerald-700'}>
-                            {' → '}{after < 0 ? `−${fmt(-after)} over` : fmt(after)}
+                            {' → '}{after < 0 ? `−${formatQty(-after)} over` : formatQty(after)}
                           </span>
                         )}
                       </td>
@@ -320,10 +321,10 @@ export function GateInForm({
                       ? 'bg-rose-50 text-rose-800 border border-rose-200'
                       : 'bg-emerald-50 text-emerald-800 border border-emerald-200'}`}>
                     <b>This challan:</b>{' '}
-                    {v.shortQty > 0 && <>short by {fmt(v.shortQty)} against the challan — recorded against the supplier. </>}
-                    {v.damagedQty > 0 && <>{fmt(v.damagedQty)} damaged, booked as damaged not good stock. </>}
+                    {v.shortQty > 0 && <>short by {formatQty(v.shortQty)} against the challan — recorded against the supplier. </>}
+                    {v.damagedQty > 0 && <>{formatQty(v.damagedQty)} damaged, booked as damaged not good stock. </>}
                     {v.shortQty <= 0 && v.damagedQty <= 0 && <>full quantity received, nothing damaged. </>}
-                    Good stock: <b>{fmt(v.goodQty)}</b>
+                    Good stock: <b>{formatQty(v.goodQty)}</b>
                   </div>
                   {poLine && (
                     <div className={`rounded-lg px-2.5 py-1.5 text-[11.5px] font-semibold ${
@@ -332,10 +333,10 @@ export function GateInForm({
                         : 'bg-emerald-50 text-emerald-800 border border-emerald-200'}`}>
                       <b>This PO:</b>{' '}
                       {v.poOverBy
-                        ? <>{fmt(v.poOverBy)} more than ordered. It still saves — we never block a truck — but it goes on the over-receipt report.</>
+                        ? <>{formatQty(v.poOverBy)} more than ordered. It still saves — we never block a truck — but it goes on the over-receipt report.</>
                         : v.poCompletes
-                          ? <>this truck completes it, {fmt(poLine.ordered)} of {fmt(poLine.ordered)} received. The PO closes.</>
-                          : <>part delivery — {fmt(poLine.received)} + {fmt(row.receivedQty)} of {fmt(poLine.ordered)}. <b>{fmt(v.poPendingAfter ?? 0)} still to come</b>, nothing wrong here.</>}
+                          ? <>this truck completes it, {formatQty(poLine.ordered)} of {formatQty(poLine.ordered)} received. The PO closes.</>
+                          : <>part delivery — {formatQty(poLine.received)} + {formatQty(row.receivedQty)} of {formatQty(poLine.ordered)}. <b>{formatQty(v.poPendingAfter ?? 0)} still to come</b>, nothing wrong here.</>}
                     </div>
                   )}
                 </div>
@@ -391,9 +392,6 @@ export function GateInForm({
 function num(s: string): number {
   const n = Number(s.replace(/[^\d.]/g, ''))
   return Number.isFinite(n) ? n : 0
-}
-function fmt(n: number): string {
-  return Number(n.toFixed(3)).toLocaleString('en-IN')
 }
 function statusLabel(s: string): string {
   return s === 'partly_received' ? 'Partly received'

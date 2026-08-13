@@ -1,6 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
 import { getMyUser, getMyPermissions, can } from '@/lib/auth'
-import type { GateInOptions, WhItem, WhPo, WhPoLine, WhSite, WhSpot, WhLists } from './types'
+import type { GateInOptions, WhItem, WhPo, WhPoLine, WhSite, WhSpot, WhLists, StockRow } from './types'
 
 /** PostgREST embeds a to-one relation as an object at runtime, but the generated
  *  types describe it as an array. This normalises both shapes so callers can
@@ -207,6 +207,56 @@ export async function peekNextEntryNo(register: 'in' | 'out' | 'move' | 'count')
   const d = new Date(today + 'T00:00:00')
   const stamp = `${String(d.getDate()).padStart(2, '0')}${d.toLocaleString('en-GB', { month: 'short' })}${String(d.getFullYear()).slice(2)}`
   return `${prefix}: ${stamp}/${next}`
+}
+
+/** Every stock line with its item and location resolved. Small enough to hold
+ *  in one page at gate volumes, and it lets the OUT form filter by store
+ *  without a round trip per selection. */
+export async function getStockRows(): Promise<StockRow[]> {
+  const sb = await createClient()
+  const [{ data: stock }, sites] = await Promise.all([
+    sb.from('wh_stock').select('item_id, location_id, qty, damaged_qty, min_qty, wh_items(name, unit)'),
+    getLocationTree(),
+  ])
+  const spot = new Map(sites.flatMap(s => s.spots).map(sp => [sp.id, sp]))
+  return (stock ?? []).flatMap(r => {
+    const sp = spot.get(r.location_id)
+    const item = one(r.wh_items)
+    if (!sp || !item) return []
+    return [{
+      itemId: r.item_id, itemName: item.name, unit: item.unit,
+      locationId: r.location_id, locationName: sp.name, siteName: sp.siteName,
+      qty: Number(r.qty), damagedQty: Number(r.damaged_qty),
+      minQty: r.min_qty == null ? null : Number(r.min_qty),
+    }]
+  }).sort((a, b) => a.itemName.localeCompare(b.itemName))
+}
+
+/** People an issue can be handed to. */
+export async function getReceivers(): Promise<Array<{ id: string; name: string }>> {
+  const sb = await createClient()
+  const { data } = await sb
+    .from('profiles')
+    .select('id, full_name, email, role')
+    .order('full_name')
+  return (data ?? []).map(p => ({ id: p.id, name: p.full_name || p.email || 'Unnamed' }))
+}
+
+/** Recent OUT entries — both site issues and store moves. */
+export async function getRecentOuts(limit = 15) {
+  const sb = await createClient()
+  const { data, error } = await sb
+    .from('wh_gate_out')
+    .select(`id, entry_no, entry_date, dest_type, is_returnable, return_due_date, entity, confirmed_at,
+             from_loc:wh_locations!wh_gate_out_from_location_id_fkey(name),
+             to_loc:wh_locations!wh_gate_out_to_location_id_fkey(name),
+             projects(name),
+             wh_gate_out_lines(id, qty, rate, returned_qty, wh_items(name, unit))`)
+    .is('deleted_at', null)
+    .order('entry_date', { ascending: false })
+    .order('created_at', { ascending: false })
+    .limit(limit)
+  return { rows: data ?? [], error }
 }
 
 /** Recent IN entries for the register list under the form. */

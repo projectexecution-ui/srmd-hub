@@ -5,6 +5,7 @@ import { Card } from '@/components/ui/card'
 import { QueryError } from '@/components/ui/query-error'
 import { getGateInOptions, getRecentIns, one } from '@/lib/warehouse/data'
 import { formatDate } from '@/lib/utils'
+import { formatQty } from '@/lib/warehouse/format'
 import { GateInForm } from './gate-in-form'
 import { ChevronLeft } from 'lucide-react'
 
@@ -76,20 +77,20 @@ export default async function GateInPage() {
                     <div key={l.id} className="flex items-baseline gap-2 text-[12px]">
                       <span className="flex-1 min-w-0 truncate text-slate-700">{one(l.wh_items)?.name ?? '—'}</span>
                       <span className="tabular-nums font-semibold text-slate-800">
-                        {Number(l.good_qty)} {one(l.wh_items)?.unit}
+                        {formatQty(l.good_qty)} {one(l.wh_items)?.unit}
                       </span>
                       {Number(l.short_qty) > 0 && (
-                        <span className="tabular-nums text-[11px] font-bold text-rose-600">short {Number(l.short_qty)}</span>
+                        <span className="tabular-nums text-[11px] font-bold text-rose-600">short {formatQty(l.short_qty)}</span>
                       )}
                       {Number(l.damaged_qty) > 0 && (
-                        <span className="tabular-nums text-[11px] font-bold text-amber-700">dmg {Number(l.damaged_qty)}</span>
+                        <span className="tabular-nums text-[11px] font-bold text-amber-700">dmg {formatQty(l.damaged_qty)}</span>
                       )}
                     </div>
                   ))}
                   {(short > 0 || damaged > 0) && (
                     <p className="text-[11px] text-rose-700 pt-1 border-t border-slate-100 mt-1.5">
-                      {short > 0 && <>Short by {short} against the challan — reported to procurement. </>}
-                      {damaged > 0 && <>{damaged} damaged, booked as damaged not good stock.</>}
+                      {short > 0 && <>Short by {formatQty(short)} against the challan — reported to procurement. </>}
+                      {damaged > 0 && <>{formatQty(damaged)} damaged, booked as damaged not good stock.</>}
                     </p>
                   )}
                 </div>
