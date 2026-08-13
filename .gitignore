@@ -4,9 +4,13 @@ node_modules/
 .pnp.*
 
 # next.js
-.next/
-out/
-build/
+# Anchored to the repo root on purpose: a bare "out/" or "build/" matches a
+# directory of that name at ANY depth, which silently swallowed the whole
+# app/(app)/warehouse/out route — it was committed, pushed and reported as
+# shipped while never actually reaching the repo.
+/.next/
+/out/
+/build/
 
 # typescript
 *.tsbuildinfo

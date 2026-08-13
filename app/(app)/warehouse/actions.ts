@@ -115,10 +115,12 @@ export async function savePo(input: {
 }
 
 export type GateOutInput = {
-  destType: 'site' | 'store'
+  destType: 'site' | 'store' | 'vendor'
   fromLocationId: string
   toLocationId: string | null
   projectId: string | null
+  /** Who it went back to, for a vendor return. */
+  party: string | null
   entity: string | null
   engineerId: string | null
   isReturnable: boolean
@@ -128,11 +130,13 @@ export type GateOutInput = {
   lines: Array<{ itemId: string; qty: number; rate: number | null }>
 }
 
-/** Record material leaving a store — EITHER consumed at a site OR moved to
- *  another store. One action, because on screen the two look identical; the
- *  difference is that a site issue reduces total stock and charges a project,
- *  while a move only relocates and charges nothing. The database CHECK on
- *  wh_gate_out enforces the shape; this enforces the stock effect. (#8) */
+/** Record material leaving a store — consumed at a site, moved to another
+ *  store, or handed back to the vendor who brought it. One action, because on
+ *  screen all three look identical; what differs is the consequence. A site
+ *  issue reduces total stock and charges a project; a move only relocates and
+ *  charges nothing; a vendor return takes his own material off our books
+ *  without charging anyone. The database CHECK on wh_gate_out enforces the
+ *  shape; this enforces the stock effect. (#8) */
 export async function saveGateOut(input: GateOutInput): Promise<SaveResult> {
   const denied = await gate('edit')
   if (denied) return { ok: false, error: denied }
@@ -148,6 +152,9 @@ export async function saveGateOut(input: GateOutInput): Promise<SaveResult> {
     if (input.toLocationId === input.fromLocationId) {
       return { ok: false, error: 'The two stores are the same — nothing would move.' }
     }
+  }
+  if (input.destType === 'vendor' && !input.party?.trim()) {
+    return { ok: false, error: 'Say who it is going back to — the name is what matches it to the material he brought in.' }
   }
 
   const sb = await createClient()
@@ -184,7 +191,10 @@ export async function saveGateOut(input: GateOutInput): Promise<SaveResult> {
     }
   }
 
-  const register = input.destType === 'site' ? 'out' : 'move'
+  // A store move gets its own series because it never leaves the campus.
+  // Everything that actually goes out of the gate — a site issue or a vendor
+  // taking his material back — belongs in the one OUT sequence. (#1)
+  const register = input.destType === 'store' ? 'move' : 'out'
   const { data: entryNo, error: noErr } = await sb.rpc('fn_wh_next_no', { p_register: register })
   if (noErr || !entryNo) return { ok: false, error: noErr?.message ?? 'Could not allocate an entry number.' }
 
@@ -197,7 +207,8 @@ export async function saveGateOut(input: GateOutInput): Promise<SaveResult> {
       // The CHECK constraint refuses a move that names a project or an
       // engineer, so these are nulled rather than passed through blindly.
       to_location_id: input.destType === 'store' ? input.toLocationId : null,
-      project_id: input.destType === 'site' ? input.projectId : null,
+      project_id: input.destType === 'store' ? null : input.projectId,
+      party: input.destType === 'vendor' ? input.party!.trim() : null,
       entity: input.entity,
       engineer_id: input.destType === 'site' ? input.engineerId : null,
       is_returnable: input.destType === 'site' ? input.isReturnable : false,
@@ -229,7 +240,8 @@ export async function saveGateOut(input: GateOutInput): Promise<SaveResult> {
 
 /** A site issue takes stock away. A store move takes it from one shelf and puts
  *  the same quantity on another, so the total never changes — which is what
- *  makes moves safe to allow at all. */
+ *  makes moves safe to allow at all. A vendor return also takes stock away, but
+ *  under its own ledger kind so it never reads as site consumption. */
 async function applyOutStock(
   outId: string,
   input: GateOutInput,
@@ -238,13 +250,14 @@ async function applyOutStock(
 ): Promise<string | null> {
   const sb = await createClient()
   const toStore = input.destType === 'store' && input.toLocationId
+  const outKind = input.destType === 'vendor' ? 'vendor_out' : 'issue'
 
   const movements = lines.flatMap(l => {
     const base = { item_id: l.itemId, qty: l.qty, rate: l.rate, ref_table: 'wh_gate_out', ref_id: outId, actor_id: actorId }
     return toStore
       ? [{ ...base, location_id: input.fromLocationId, kind: 'move_out' },
          { ...base, location_id: input.toLocationId!, kind: 'move_in' }]
-      : [{ ...base, location_id: input.fromLocationId, kind: 'issue' }]
+      : [{ ...base, location_id: input.fromLocationId, kind: outKind }]
   })
   const { error } = await sb.from('wh_movements').insert(movements)
   if (error) return `Entry saved but the stock ledger failed: ${error.message}`

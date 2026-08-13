@@ -243,12 +243,24 @@ export async function getReceivers(): Promise<Array<{ id: string; name: string }
   return (data ?? []).map(p => ({ id: p.id, name: p.full_name || p.email || 'Unnamed' }))
 }
 
-/** Recent OUT entries — both site issues and store moves. */
+/** Parties who have brought their own material in, so a vendor return can be
+ *  matched to its IN by picking the same name instead of retyping it. */
+export async function getVendorNames(): Promise<string[]> {
+  const sb = await createClient()
+  const { data } = await sb
+    .from('wh_gate_in')
+    .select('party')
+    .eq('owner', 'vendor')
+    .is('deleted_at', null)
+  return [...new Set((data ?? []).map(r => r.party).filter(Boolean))].sort((a, b) => a.localeCompare(b))
+}
+
+/** Recent OUT entries — site issues, store moves and vendor returns. */
 export async function getRecentOuts(limit = 15) {
   const sb = await createClient()
   const { data, error } = await sb
     .from('wh_gate_out')
-    .select(`id, entry_no, entry_date, dest_type, is_returnable, return_due_date, entity, confirmed_at,
+    .select(`id, entry_no, entry_date, dest_type, is_returnable, return_due_date, entity, confirmed_at, party,
              from_loc:wh_locations!wh_gate_out_from_location_id_fkey(name),
              to_loc:wh_locations!wh_gate_out_to_location_id_fkey(name),
              projects(name),
