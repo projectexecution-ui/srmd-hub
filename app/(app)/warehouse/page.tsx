@@ -12,8 +12,8 @@ const LANES = [
   { href: '/warehouse/po',       icon: FileText,         label: 'Purchase Orders', blurb: 'Pull a PO from IN4 so the gate screen can show what is still to come' },
   { href: '/warehouse/out',      icon: ArrowUpFromLine,  label: 'OUT to site',    blurb: 'Issue to a site for use, or move stock to another store' },
   { href: '/warehouse/count',    icon: ClipboardList,    label: 'Physical count', blurb: 'Walk a store and count what is actually there — the difference is named, witnessed and approved' },
-  { href: '/warehouse/stock',    icon: Boxes,            label: 'Stock',          blurb: 'What lies where, as on a date',                            soon: true },
-  { href: '/warehouse/reports',  icon: BarChart3,        label: 'Reports',        blurb: 'Registers, PO pending, vendor balance, exceptions',        soon: true },
+  { href: '/warehouse/stock',    icon: Boxes,            label: 'Stock',          blurb: 'What lies where, as on a date — In, Out, transfers and count corrections per store' },
+  { href: '/warehouse/reports',  icon: BarChart3,        label: 'Registers & reports', blurb: 'Vendor IN · Vendor OUT · SRM IN · SRM OUT · Total Stock' },
   { href: '/warehouse/settings', icon: Settings2,        label: 'Settings',       blurb: 'Your lists, who works where, the control switches',        soon: true },
 ]
 

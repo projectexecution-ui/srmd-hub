@@ -1,0 +1,199 @@
+/** The ledger, and what it adds up to.
+ *
+ *  `wh_stock.qty` is only ever "now". Every question worth asking is about a
+ *  date — what was in hand on 31 March, what came in last month, what a store
+ *  held before the count corrected it — and the only honest answer comes from
+ *  folding the movements up to that date. So this file owns ONE definition of
+ *  what each movement kind does to stock, and both the stock screen and the
+ *  registers read it. Two definitions would eventually disagree, and then the
+ *  register stops being evidence.
+ */
+
+export type MovementKind =
+  | 'in' | 'damage' | 'issue' | 'move_out' | 'move_in' | 'return' | 'adjust' | 'vendor_out'
+
+export type LedgerRow = {
+  itemId: string
+  locationId: string
+  kind: MovementKind
+  /** Signed for `adjust` (a count can correct either way); positive otherwise. */
+  qty: number
+  /** IST date, yyyy-mm-dd. */
+  day: string
+  rate: number | null
+}
+
+/** What each kind does to GOOD stock.
+ *
+ *  `damage` is deliberately 0: broken material is tracked in its own bucket and
+ *  must never be counted as good stock, which is the whole reason it is
+ *  recorded separately at the gate. (#10) */
+export function stockEffect(kind: MovementKind, qty: number): number {
+  switch (kind) {
+    case 'in':
+    case 'move_in':
+    case 'return':
+      return qty
+    case 'issue':
+    case 'move_out':
+    case 'vendor_out':
+      return -qty
+    // A count correction already carries its own sign.
+    case 'adjust':
+      return qty
+    case 'damage':
+      return 0
+  }
+}
+
+/** The columns the HOD's register shows per item per store. They are kept
+ *  apart rather than netted: "in 500, out 180, transferred +100" tells a story
+ *  that a single figure of 420 does not. */
+export type StockCell = {
+  itemId: string
+  locationId: string
+  inQty: number
+  outQty: number
+  /** Net of move_in − move_out. Signed: negative means this store gave it away. */
+  transferQty: number
+  /** Net of count corrections. Signed. */
+  adjustQty: number
+  damagedQty: number
+  /** in − out + transfer + adjust. */
+  inHand: number
+  /** Vendor material that went back out, kept out of `outQty` so site
+   *  consumption is never overstated. */
+  vendorOutQty: number
+}
+
+function emptyCell(itemId: string, locationId: string): StockCell {
+  return {
+    itemId, locationId,
+    inQty: 0, outQty: 0, transferQty: 0, adjustQty: 0, damagedQty: 0, vendorOutQty: 0, inHand: 0,
+  }
+}
+
+/** Fold the ledger into one cell per item per store, counting only movements up
+ *  to and including `asOn`. */
+export function foldLedger(rows: LedgerRow[], asOn?: string): StockCell[] {
+  const cells = new Map<string, StockCell>()
+  for (const r of rows) {
+    if (asOn && r.day > asOn) continue
+    const key = `${r.itemId}|${r.locationId}`
+    let c = cells.get(key)
+    if (!c) { c = emptyCell(r.itemId, r.locationId); cells.set(key, c) }
+
+    switch (r.kind) {
+      case 'in':
+      case 'return':
+        c.inQty += r.qty; break
+      case 'issue':
+        c.outQty += r.qty; break
+      case 'vendor_out':
+        c.vendorOutQty += r.qty; break
+      case 'move_in':
+        c.transferQty += r.qty; break
+      case 'move_out':
+        c.transferQty -= r.qty; break
+      case 'adjust':
+        c.adjustQty += r.qty; break
+      case 'damage':
+        c.damagedQty += r.qty; break
+    }
+    c.inHand += stockEffect(r.kind, r.qty)
+  }
+  return [...cells.values()]
+}
+
+/** Is this line worth a warning? `nil` beats `low` — an empty shelf is not a
+ *  "running low" problem, it is a stopped-work problem. */
+export function stockFlag(inHand: number, minQty: number | null): 'nil' | 'low' | null {
+  if (inHand <= 0) return 'nil'
+  if (minQty != null && minQty > 0 && inHand <= minQty) return 'low'
+  return null
+}
+
+export type StockLine = StockCell & {
+  itemName: string
+  unit: string
+  category: string | null
+  discipline: string | null
+  locationName: string
+  siteName: string
+  minQty: number | null
+  rate: number | null
+  /** inHand × rate. Indicative only — it is the last rate seen, not a valuation. */
+  value: number
+  flag: 'nil' | 'low' | null
+}
+
+export type StockGroup = {
+  locationId: string
+  locationName: string
+  siteName: string
+  lines: StockLine[]
+  value: number
+}
+
+/** Group the lines the way the register is read: store by store, item by item,
+ *  with a value subtotal per store. */
+export function groupByLocation(lines: StockLine[]): StockGroup[] {
+  const groups = new Map<string, StockGroup>()
+  for (const l of lines) {
+    let g = groups.get(l.locationId)
+    if (!g) {
+      g = { locationId: l.locationId, locationName: l.locationName, siteName: l.siteName, lines: [], value: 0 }
+      groups.set(l.locationId, g)
+    }
+    g.lines.push(l)
+    g.value += l.value
+  }
+  const out = [...groups.values()]
+  for (const g of out) g.lines.sort((a, b) => a.itemName.localeCompare(b.itemName))
+  return out.sort((a, b) =>
+    a.siteName.localeCompare(b.siteName) || a.locationName.localeCompare(b.locationName))
+}
+
+export type StockTotals = {
+  items: number
+  locations: number
+  value: number
+  low: number
+  nil: number
+  /** Shortage found by approved counts, as a positive number. */
+  countShortQty: number
+  countShortValue: number
+  /** True when some line has no rate, so `value` understates. */
+  valuePartial: boolean
+}
+
+export function stockTotals(lines: StockLine[]): StockTotals {
+  const t: StockTotals = {
+    items: 0, locations: 0, value: 0, low: 0, nil: 0,
+    countShortQty: 0, countShortValue: 0, valuePartial: false,
+  }
+  const locs = new Set<string>()
+  const items = new Set<string>()
+  for (const l of lines) {
+    locs.add(l.locationId)
+    // An item in three stores is one item, counted once.
+    if (l.inHand > 0) items.add(l.itemId)
+    t.value += l.value
+    if (l.flag === 'low') t.low++
+    if (l.flag === 'nil') t.nil++
+    if (l.inHand > 0 && l.rate == null) t.valuePartial = true
+    if (l.adjustQty < 0) {
+      t.countShortQty += -l.adjustQty
+      if (l.rate) t.countShortValue += -l.adjustQty * l.rate
+    }
+  }
+  t.items = items.size
+  t.locations = locs.size
+  return t
+}
+
+/** Today in IST, as yyyy-mm-dd — the register's day boundary is the site's day,
+ *  not UTC's. A truck at 11pm belongs to today. */
+export function todayIST(): string {
+  return new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' })
+}
