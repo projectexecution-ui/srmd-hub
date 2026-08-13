@@ -3,12 +3,13 @@ import { requirePermission } from '@/lib/auth'
 import { PageHeader } from '@/components/PageHeader'
 import { Card } from '@/components/ui/card'
 import { createClient } from '@/lib/supabase/server'
-import { ArrowDownToLine, ArrowUpFromLine, ClipboardList, Boxes, BarChart3, Settings2, ChevronRight } from 'lucide-react'
+import { ArrowDownToLine, ArrowUpFromLine, ClipboardList, Boxes, BarChart3, Settings2, ChevronRight, FileText } from 'lucide-react'
 
 export const dynamic = 'force-dynamic'
 
 const LANES = [
   { href: '/warehouse/in',       icon: ArrowDownToLine,  label: 'Gate IN',        blurb: 'Record a truck arriving — challan vs received, damage, PO balance' },
+  { href: '/warehouse/po',       icon: FileText,         label: 'Purchase Orders', blurb: 'Pull a PO from IN4 so the gate screen can show what is still to come' },
   { href: '/warehouse/out',      icon: ArrowUpFromLine,  label: 'OUT to site',    blurb: 'Issue to a site for use, or move stock to another store',  soon: true },
   { href: '/warehouse/count',    icon: ClipboardList,    label: 'Physical count', blurb: 'Walk a store and count what is actually there',            soon: true },
   { href: '/warehouse/stock',    icon: Boxes,            label: 'Stock',          blurb: 'What lies where, as on a date',                            soon: true },

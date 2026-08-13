@@ -4,6 +4,7 @@ import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
 import { getMyUser, getMyPermissions, can } from '@/lib/auth'
 import { getLocationTree, getPostableSpots } from '@/lib/warehouse/data'
+import { aliasKey } from '@/lib/warehouse/match'
 import type { GateInInput } from '@/lib/warehouse/types'
 
 /** The permissions-matrix gate. RLS checks the same thing, but a policy that
@@ -20,6 +21,103 @@ async function gate(action: 'edit' | 'admin' = 'edit'): Promise<string | null> {
 }
 
 export type SaveResult = { ok: true; entryNo: string } | { ok: false; error: string }
+export type PoResult = { ok: true; poNo: string; lines: number; learned: number } | { ok: false; error: string }
+
+/** Create a PO in Warehouse V2 from confirmed lines.
+ *
+ *  The header comes from the Indent → PO Tracker (IN4) or is typed; the item on
+ *  each line is whatever the user confirmed, because IN4's generic material
+ *  names match our item master only 1.3% of the time. Each confirmation is
+ *  stored as an alias so the same material links itself next time. */
+export async function savePo(input: {
+  poNo: string
+  poDate: string | null
+  vendor: string | null
+  entity: string | null
+  projectId: string | null
+  indentNo: string | null
+  source: 'manual' | 'tracker'
+  lines: Array<{ itemId: string; orderedQty: number; rate: number | null; sourceText: string | null }>
+}): Promise<PoResult> {
+  const denied = await gate('edit')
+  if (denied) return { ok: false, error: denied }
+
+  const poNo = input.poNo.trim()
+  if (!poNo) return { ok: false, error: 'A PO number is needed.' }
+
+  const lines = input.lines.filter(l => l.itemId && l.orderedQty > 0)
+  if (lines.length === 0) {
+    return { ok: false, error: 'Confirm at least one line — pick the item it refers to and give the ordered quantity.' }
+  }
+  // One PO cannot order the same item twice; the tracker repeats a material per
+  // indent, so collapse rather than letting the unique index throw.
+  const byItem = new Map<string, { itemId: string; orderedQty: number; rate: number | null; sourceText: string | null }>()
+  for (const l of lines) {
+    const cur = byItem.get(l.itemId)
+    if (cur) { cur.orderedQty += l.orderedQty; continue }
+    byItem.set(l.itemId, { ...l })
+  }
+
+  const sb = await createClient()
+  const me = await getMyUser()
+
+  const { data: dupe } = await sb.from('wh_po').select('id').eq('po_no', poNo).maybeSingle()
+  if (dupe) return { ok: false, error: `${poNo} is already in Warehouse V2. Open it to change its lines.` }
+
+  const { data: po, error: pErr } = await sb
+    .from('wh_po')
+    .insert({
+      po_no: poNo,
+      po_date: isoOrNull(input.poDate),
+      vendor: input.vendor,
+      entity: input.entity,
+      project_id: input.projectId,
+      indent_no: input.indentNo,
+      source: input.source,
+      created_by: me?.id ?? null,
+    })
+    .select('id, po_no')
+    .single()
+  if (pErr || !po) return { ok: false, error: pErr?.message ?? 'Could not create the PO.' }
+
+  const { error: lErr } = await sb.from('wh_po_lines').insert(
+    [...byItem.values()].map(l => ({
+      po_id: po.id, item_id: l.itemId, ordered_qty: l.orderedQty, rate: l.rate, source_text: l.sourceText,
+    })),
+  )
+  if (lErr) {
+    await sb.from('wh_po').delete().eq('id', po.id)   // never leave a PO with no lines
+    return { ok: false, error: lErr.message }
+  }
+
+  // Remember every confirmation. DO NOTHING on conflict: an existing alias was
+  // set deliberately and must not be silently rewritten by a later import.
+  const learn = [...byItem.values()]
+    .filter(l => l.sourceText?.trim())
+    .map(l => ({
+      alias_key: aliasKey(l.sourceText!), source_text: l.sourceText!.trim(),
+      item_id: l.itemId, source: input.source, created_by: me?.id ?? null,
+    }))
+  let learned = 0
+  if (learn.length > 0) {
+    const { data: ins } = await sb
+      .from('wh_item_aliases')
+      .upsert(learn, { onConflict: 'alias_key', ignoreDuplicates: true })
+      .select('id')
+    learned = ins?.length ?? 0
+  }
+
+  revalidatePath('/warehouse/po')
+  revalidatePath('/warehouse/in')
+  return { ok: true, poNo: po.po_no, lines: byItem.size, learned }
+}
+
+/** IN4 writes dates like "Apr 22, 2023". */
+function isoOrNull(s: string | null): string | null {
+  if (!s) return null
+  const t = Date.parse(s)
+  return Number.isNaN(t) ? null : new Date(t).toISOString().slice(0, 10)
+}
 
 /** Record one Gate IN entry (one challan / one truck), then move the stock.
  *
