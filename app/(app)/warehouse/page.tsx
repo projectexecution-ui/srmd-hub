@@ -14,7 +14,7 @@ const LANES = [
   { href: '/warehouse/count',    icon: ClipboardList,    label: 'Physical count', blurb: 'Walk a store and count what is actually there — the difference is named, witnessed and approved' },
   { href: '/warehouse/stock',    icon: Boxes,            label: 'Stock',          blurb: 'What lies where, as on a date — In, Out, transfers and count corrections per store' },
   { href: '/warehouse/reports',  icon: BarChart3,        label: 'Registers & reports', blurb: 'Vendor IN · Vendor OUT · SRM IN · SRM OUT · Total Stock' },
-  { href: '/warehouse/settings', icon: Settings2,        label: 'Settings',       blurb: 'Your lists, who works where, the control switches',        soon: true },
+  { href: '/warehouse/settings', icon: Settings2,        label: 'Settings',       blurb: 'The rules for your stores, your lists, and who works where' },
 ]
 
 export default async function WarehouseHomePage() {
@@ -49,28 +49,26 @@ export default async function WarehouseHomePage() {
         ))}
       </div>
 
+      {/* Every lane is live now, so there is no "next" state left to render. */}
       <div className="grid sm:grid-cols-2 gap-3">
         {LANES.map(lane => {
           const Icon = lane.icon
-          const body = (
-            <Card className={`p-4 shadow-sm h-full flex items-start gap-3 ${lane.soon ? 'opacity-55' : 'hover:border-emerald-300 hover:shadow transition'}`}>
-              <span className="rounded-lg bg-emerald-50 p-2 flex-shrink-0">
-                <Icon className="h-5 w-5 text-emerald-600" />
-              </span>
-              <span className="min-w-0 flex-1">
-                <span className="font-bold text-slate-800 text-sm flex items-center gap-1.5">
-                  {lane.label}
-                  {lane.soon
-                    ? <span className="text-[9.5px] font-extrabold uppercase tracking-wide bg-slate-100 text-slate-500 rounded-full px-2 py-0.5">next</span>
-                    : <ChevronRight className="h-3.5 w-3.5 text-slate-400" />}
+          return (
+            <Link key={lane.href} href={lane.href} className="block">
+              <Card className="p-4 shadow-sm h-full flex items-start gap-3 hover:border-emerald-300 hover:shadow transition">
+                <span className="rounded-lg bg-emerald-50 p-2 flex-shrink-0">
+                  <Icon className="h-5 w-5 text-emerald-600" />
                 </span>
-                <span className="block text-[11.5px] text-slate-500 mt-1 leading-snug">{lane.blurb}</span>
-              </span>
-            </Card>
+                <span className="min-w-0 flex-1">
+                  <span className="font-bold text-slate-800 text-sm flex items-center gap-1.5">
+                    {lane.label}
+                    <ChevronRight className="h-3.5 w-3.5 text-slate-400" />
+                  </span>
+                  <span className="block text-[11.5px] text-slate-500 mt-1 leading-snug">{lane.blurb}</span>
+                </span>
+              </Card>
+            </Link>
           )
-          return lane.soon
-            ? <div key={lane.href}>{body}</div>
-            : <Link key={lane.href} href={lane.href} className="block">{body}</Link>
         })}
       </div>
     </div>

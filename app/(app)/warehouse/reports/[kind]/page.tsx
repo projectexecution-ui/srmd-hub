@@ -1,9 +1,10 @@
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
-import { requirePermission, getMyPermissions, getMyProfile, can } from '@/lib/auth'
+import { requirePermission } from '@/lib/auth'
 import { PageHeader } from '@/components/PageHeader'
 import { QueryError } from '@/components/ui/query-error'
 import { getRegister } from '@/lib/warehouse/report-data'
+import { getShowValues } from '@/lib/warehouse/data'
 import { REGISTER_META } from '@/lib/warehouse/registers'
 import type { GroupBy, RegisterKind } from '@/lib/warehouse/registers'
 import { todayIST } from '@/lib/warehouse/ledger'
@@ -34,8 +35,7 @@ export default async function RegisterPage({
   const kind = raw as RegisterKind
   const meta = REGISTER_META[kind]
 
-  const [perms, profile] = await Promise.all([getMyPermissions(), getMyProfile()])
-  const showValues = can(perms, 'warehouse', 'admin') || !isValuesHiddenRole(profile?.role)
+  const showValues = await getShowValues()
 
   const today = todayIST()
   const from = sp.from || monthStart(today)
@@ -69,8 +69,3 @@ export default async function RegisterPage({
   )
 }
 
-/** Roles that see quantities but never money. Read from the module setting once
- *  Settings ships (S8). */
-function isValuesHiddenRole(role: string | null | undefined): boolean {
-  return role === 'security' || role === 'site_staff' || role === 'contractor'
-}

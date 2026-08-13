@@ -19,6 +19,7 @@ const SCOPES: CountScope[] = ['spot_top', 'location', 'full']
 
 export function CountStart({
   sites, postableSpotIds, scopingOff, itemsPerStore, witnesses, canEdit, nextCountNo,
+  blindDefault, witnessRequired,
 }: {
   sites: WhSite[]
   postableSpotIds: string[]
@@ -27,6 +28,9 @@ export function CountStart({
   witnesses: Array<{ id: string; name: string }>
   canEdit: boolean
   nextCountNo: string
+  /** The Settings default. Still changeable per count. */
+  blindDefault: boolean
+  witnessRequired: boolean
 }) {
   const router = useRouter()
   const [pending, start] = useTransition()
@@ -34,7 +38,7 @@ export function CountStart({
   const [locationId, setLocationId] = useState('')
   const [scope, setScope] = useState<CountScope>('location')
   const [witnessId, setWitnessId] = useState('')
-  const [blind, setBlind] = useState(true)
+  const [blind, setBlind] = useState(blindDefault)
 
   const postable = new Set(postableSpotIds)
   const held = itemsPerStore[locationId] ?? 0
@@ -123,7 +127,10 @@ export function CountStart({
             {witnesses.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
           </select>
           <p className="text-[11px] text-slate-500 mt-1">
-            Needed before you can submit — a keeper counting his own store alone is checking himself.
+            {witnessRequired
+              ? 'Needed before you can submit — a keeper counting his own store alone is checking himself.'
+              : 'Not compulsory at the moment, but a count with a witness is the one nobody argues with. '
+                + 'An admin can make it compulsory again in Settings.'}
           </p>
         </div>
 

@@ -1,5 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
-import { getMyUser, getMyPermissions, can } from '@/lib/auth'
+import { getMyUser, getMyPermissions, getMyProfile, can } from '@/lib/auth'
+import { showValuesFor, isOn } from './settings'
+import type { SettingValues } from './settings'
 import type { GateInOptions, WhItem, WhPo, WhPoLine, WhSite, WhSpot, WhLists, StockRow } from './types'
 import type { CountLine } from './count'
 
@@ -9,6 +11,22 @@ import type { CountLine } from './count'
 export function one<T>(v: T | T[] | null | undefined): T | null {
   if (v == null) return null
   return Array.isArray(v) ? (v[0] ?? null) : v
+}
+
+/** Every wh_* setting, in one read. Screens and actions both go through this so
+ *  a rule is never read two different ways. */
+export async function getSettings(): Promise<SettingValues> {
+  const sb = await createClient()
+  const { data } = await sb.from('app_settings').select('key, value').like('key', 'wh_%')
+  const out: SettingValues = {}
+  for (const r of data ?? []) out[r.key] = r.value ?? ''
+  return out
+}
+
+/** Does the signed-in person see rates and ₹? One definition for the module. */
+export async function getShowValues(): Promise<boolean> {
+  const [values, profile, perms] = await Promise.all([getSettings(), getMyProfile(), getMyPermissions()])
+  return showValuesFor(values, profile?.role, can(perms, 'warehouse', 'admin'))
 }
 
 /** Storage locations as a two-level tree: site → spot. */
@@ -42,20 +60,17 @@ export async function getLocationTree(): Promise<WhSite[]> {
  *
  *  Everyone with `view` still SEES stock everywhere; only writing is scoped. */
 export async function getPostableSpots(sites: WhSite[]): Promise<{ ids: string[]; scopingOff: boolean }> {
-  const [me, perms, sb] = await Promise.all([getMyUser(), getMyPermissions(), createClient()])
+  const [me, perms] = await Promise.all([getMyUser(), getMyPermissions()])
   const allSpots = sites.flatMap(s => s.spots)
 
   // Admins and Atm Heads are not tied to one store.
   if (can(perms, 'warehouse', 'admin')) return { ids: allSpots.map(s => s.id), scopingOff: true }
 
-  const { data } = await sb
-    .from('app_settings')
-    .select('value')
-    .eq('key', 'wh_any_keeper_any_store')
-    .maybeSingle()
   // Default OFF: a keeper posts only where he actually stands.
-  const anyStore = String(data?.value ?? 'false') === 'true'
-  if (anyStore) return { ids: allSpots.map(s => s.id), scopingOff: true }
+  const values = await getSettings()
+  if (isOn(values, 'wh_any_keeper_any_store')) {
+    return { ids: allSpots.map(s => s.id), scopingOff: true }
+  }
 
   const mine = allSpots.filter(s => s.keeperId && s.keeperId === me?.id)
   // A store with no keeper assigned yet is open — otherwise a fresh install

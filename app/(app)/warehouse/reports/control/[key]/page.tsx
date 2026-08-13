@@ -1,9 +1,10 @@
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
-import { requirePermission, getMyPermissions, getMyProfile, can } from '@/lib/auth'
+import { requirePermission } from '@/lib/auth'
 import { PageHeader } from '@/components/PageHeader'
 import { QueryError } from '@/components/ui/query-error'
 import { getControlReport } from '@/lib/warehouse/exception-data'
+import { getShowValues } from '@/lib/warehouse/data'
 import { reportMeta } from '@/lib/warehouse/exceptions'
 import type { ReportKey } from '@/lib/warehouse/exceptions'
 import { todayIST } from '@/lib/warehouse/ledger'
@@ -29,8 +30,7 @@ export default async function ControlReportPage({
   const meta = reportMeta(key)
   if (!meta) notFound()
 
-  const [perms, profile] = await Promise.all([getMyPermissions(), getMyProfile()])
-  const showValues = can(perms, 'warehouse', 'admin') || !isValuesHiddenRole(profile?.role)
+  const showValues = await getShowValues()
 
   const today = todayIST()
   // A position-as-at-today report ignores the period entirely, so it is not
@@ -62,8 +62,3 @@ export default async function ControlReportPage({
   )
 }
 
-/** Roles that see quantities but never money. Read from the module setting once
- *  Settings ships (S8). */
-function isValuesHiddenRole(role: string | null | undefined): boolean {
-  return role === 'security' || role === 'site_staff' || role === 'contractor'
-}

@@ -1,8 +1,8 @@
 import Link from 'next/link'
-import { requirePermission, getMyPermissions, getMyProfile, can } from '@/lib/auth'
+import { requirePermission, getMyPermissions, can } from '@/lib/auth'
 import { PageHeader } from '@/components/PageHeader'
 import { QueryError } from '@/components/ui/query-error'
-import { getLocationTree } from '@/lib/warehouse/data'
+import { getLocationTree, getShowValues } from '@/lib/warehouse/data'
 import { getStockView, getDisciplines } from '@/lib/warehouse/report-data'
 import { todayIST } from '@/lib/warehouse/ledger'
 import { StockClient } from './stock-client'
@@ -17,10 +17,10 @@ export default async function StockPage({
 }) {
   const sp = await searchParams
   await requirePermission('warehouse', 'view')
-  const [perms, profile] = await Promise.all([getMyPermissions(), getMyProfile()])
+  const perms = await getMyPermissions()
   const canEdit = can(perms, 'warehouse', 'edit')
   // The guard sees quantities, never value. (#22)
-  const showValues = can(perms, 'warehouse', 'admin') || !isValuesHiddenRole(profile?.role)
+  const showValues = await getShowValues()
 
   // A future date would silently show today's figures and read as a forecast.
   const today = todayIST()
@@ -61,8 +61,3 @@ export default async function StockPage({
   )
 }
 
-/** Roles that see quantities but never money. Read from the module setting once
- *  Settings ships (S8). */
-function isValuesHiddenRole(role: string | null | undefined): boolean {
-  return role === 'security' || role === 'site_staff' || role === 'contractor'
-}

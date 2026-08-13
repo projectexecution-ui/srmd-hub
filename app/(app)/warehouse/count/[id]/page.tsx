@@ -1,9 +1,9 @@
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
-import { requirePermission, getMyPermissions, getMyProfile, getMyUser, can } from '@/lib/auth'
+import { requirePermission, getMyPermissions, getMyUser, can } from '@/lib/auth'
 import { PageHeader } from '@/components/PageHeader'
 import { QueryError } from '@/components/ui/query-error'
-import { getCount, getItems, getLists, one } from '@/lib/warehouse/data'
+import { getCount, getItems, getLists, getShowValues, one } from '@/lib/warehouse/data'
 import { SCOPE_LABEL } from '@/lib/warehouse/count'
 import type { CountScope } from '@/lib/warehouse/count'
 import { CountSheet } from './count-sheet'
@@ -14,12 +14,13 @@ export const dynamic = 'force-dynamic'
 export default async function CountPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
   await requirePermission('warehouse', 'view')
-  const [perms, profile, me] = await Promise.all([getMyPermissions(), getMyProfile(), getMyUser()])
+  const [perms, me] = await Promise.all([getMyPermissions(), getMyUser()])
   const canEdit = can(perms, 'warehouse', 'edit')
   const canApprove = can(perms, 'warehouse', 'admin')
   // Same rule as the gate register: quantities for everyone, money only for
   // those who are meant to see it. (#22)
-  const showValues = canApprove || !isValuesHiddenRole(profile?.role)
+  // One definition for the whole module, driven by the Settings switch.
+  const showValues = await getShowValues()
 
   const { count, lines, error } = await getCount(id)
   if (error) {
@@ -72,8 +73,3 @@ export default async function CountPage({ params }: { params: Promise<{ id: stri
   )
 }
 
-/** Roles that see quantities but never money. Read from the module setting once
- *  Settings ships (S8). */
-function isValuesHiddenRole(role: string | null | undefined): boolean {
-  return role === 'security' || role === 'site_staff' || role === 'contractor'
-}

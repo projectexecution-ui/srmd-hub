@@ -3,12 +3,47 @@
 import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
 import { getMyUser, getMyPermissions, can } from '@/lib/auth'
-import { getLocationTree, getPostableSpots, getCount, one } from '@/lib/warehouse/data'
+import { getLocationTree, getPostableSpots, getCount, getSettings, one } from '@/lib/warehouse/data'
+import { settingDef, periodLockBlocker, isOn } from '@/lib/warehouse/settings'
+import { todayIST } from '@/lib/warehouse/ledger'
 import { in4Key, planIn4Items, FALLBACK_UOM } from '@/lib/warehouse/in4-items'
 import { buildSheet, submitBlocker, adjustments } from '@/lib/warehouse/count'
 import type { GateInInput } from '@/lib/warehouse/types'
 import type { In4ItemSpec } from '@/lib/warehouse/in4-items'
 import type { CountScope, SheetSource } from '@/lib/warehouse/count'
+
+/** The two rules from Settings that refuse a write, checked in one place so
+ *  every entry path applies them the same way.
+ *
+ *  `entryDate` is the business date on the entry; `locationId` is the store it
+ *  affects. Returns the sentence to show, or null to go ahead. */
+async function settingsBlocker(
+  entryDate: string,
+  locationId: string | null,
+): Promise<string | null> {
+  const values = await getSettings()
+
+  const locked = periodLockBlocker(values, entryDate)
+  if (locked) return locked
+
+  // A count freezes its store: the sheet's book quantities were frozen when the
+  // count started, so anything moving in between shows up as a difference that
+  // is nobody's fault.
+  if (locationId && isOn(values, 'wh_freeze_during_count')) {
+    const sb = await createClient()
+    const { data } = await sb
+      .from('wh_counts')
+      .select('count_no')
+      .eq('location_id', locationId)
+      .eq('status', 'counting')
+      .limit(1)
+    if (data && data.length > 0) {
+      return `${data[0].count_no} is being counted in this store right now, so nothing can move in or out of it `
+        + 'until that count is submitted. Finish or discard the count first.'
+    }
+  }
+  return null
+}
 
 /** The permissions-matrix gate. RLS checks the same thing, but a policy that
  *  filters a row out of an UPDATE returns 200 with zero rows and no error — so
@@ -304,6 +339,13 @@ export async function saveGateOut(input: GateOutInput): Promise<SaveResult> {
     }
   }
 
+  // Both ends of a move matter: putting stock INTO a store that is being
+  // counted moves the number under the counter's feet just as much.
+  for (const loc of [input.fromLocationId, input.destType === 'store' ? input.toLocationId : null]) {
+    const blocked = await settingsBlocker(todayIST(), loc)
+    if (blocked) return { ok: false, error: blocked }
+  }
+
   // A store move gets its own series because it never leaves the campus.
   // Everything that actually goes out of the gate — a site issue or a vendor
   // taking his material back — belongs in the one OUT sequence. (#1)
@@ -455,6 +497,12 @@ export async function startCount(input: {
   if (input.witnessId && input.witnessId === me?.id) {
     return { ok: false, error: 'The witness has to be someone else — counting your own store alone is checking yourself.' }
   }
+
+  // The lock applies: an approved count corrects stock, so it must not be able
+  // to reach back into a closed month. The freeze does not — a count IS the
+  // freeze, and "one open count per store" below is what stops two at once.
+  const lockErr = periodLockBlocker(await getSettings(), todayIST())
+  if (lockErr) return { ok: false, error: lockErr }
 
   const sites = await getLocationTree()
   const { ids } = await getPostableSpots(sites)
@@ -650,7 +698,9 @@ export async function submitCount(countId: string): Promise<{ ok: boolean; error
 
   // The same rule the screen shows, enforced again here: the screen can be
   // bypassed, and a half-walked sheet approved as fact is worse than no count.
-  const blocker = submitBlocker(lines, count.witness_id)
+  const values = await getSettings()
+  const needWitness = isOn(values, 'wh_count_requires_witness')
+  const blocker = submitBlocker(lines, needWitness ? count.witness_id : 'not-required')
   if (blocker) return { ok: false, error: blocker }
 
   const { data, error: uErr } = await sb
@@ -736,9 +786,14 @@ export async function approveCount(countId: string): Promise<{ ok: boolean; erro
   if (count.counted_by && me?.id === count.counted_by) {
     return { ok: false, error: 'You counted this store yourself — someone else has to approve it.' }
   }
-  if (!count.witness_id) {
+  const values = await getSettings()
+  // The database CHECK also refuses an approved count with no witness, so this
+  // setting being off has to relax the constraint too — see the migration.
+  if (isOn(values, 'wh_count_requires_witness') && !count.witness_id) {
     return { ok: false, error: 'This count has no witness recorded, so it cannot be approved. Reject it and count again with a witness.' }
   }
+  const lockErr = periodLockBlocker(values, todayIST())
+  if (lockErr) return { ok: false, error: lockErr }
 
   // Stamp the approval FIRST and only from `submitted`, so two approvers
   // clicking together cannot both go on to post the same corrections.
@@ -840,6 +895,119 @@ export async function rejectCount(countId: string, reason: string): Promise<{ ok
   return { ok: true }
 }
 
+// ===========================================================================
+// Settings (S8). Every change is recorded — who, when, and what it was before —
+// so a switch can never be quietly turned off.
+// ===========================================================================
+
+export async function saveSetting(
+  key: string,
+  value: string,
+): Promise<{ ok: boolean; error?: string }> {
+  const denied = await gate('admin')
+  if (denied) return { ok: false, error: denied }
+
+  const def = settingDef(key)
+  if (!def) return { ok: false, error: 'That is not a setting this module has.' }
+  if (def.kind === 'toggle' && value !== 'true' && value !== 'false') {
+    return { ok: false, error: 'A switch is either on or off.' }
+  }
+  if (def.kind === 'date' && value && !/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    return { ok: false, error: 'Give a real date, or clear it.' }
+  }
+
+  const sb = await createClient()
+  const me = await getMyUser()
+
+  const { data: before } = await sb.from('app_settings').select('value').eq('key', key).maybeSingle()
+  const oldValue = before?.value ?? null
+  if (oldValue === value) return { ok: true }          // nothing to record
+
+  const { error } = await sb
+    .from('app_settings')
+    .upsert({ key, value, updated_at: new Date().toISOString() }, { onConflict: 'key' })
+  if (error) return { ok: false, error: error.message }
+
+  // Written after the change lands, so the history can never claim a change
+  // that did not happen.
+  const { error: logErr } = await sb.from('wh_setting_changes').insert({
+    key, old_value: oldValue, new_value: value, actor_id: me?.id ?? null,
+  })
+  if (logErr) {
+    return {
+      ok: false,
+      error: `The setting was changed but it could not be recorded in the history: ${logErr.message}. Tell your admin.`,
+    }
+  }
+
+  // A setting can change what any screen in the module shows or refuses.
+  revalidatePath('/warehouse', 'layout')
+  return { ok: true }
+}
+
+/** Add a value to one of the admin's own lists (units, categories, and so on). */
+export async function addListValue(
+  kind: string,
+  value: string,
+): Promise<{ ok: boolean; error?: string }> {
+  const denied = await gate('admin')
+  if (denied) return { ok: false, error: denied }
+  const v = value.trim()
+  if (!v) return { ok: false, error: 'Type the value first.' }
+
+  const sb = await createClient()
+  const { error } = await sb.from('wh_lists').insert({ kind, value: v })
+  if (error) {
+    return {
+      ok: false,
+      error: error.code === '23505' || /duplicate/i.test(error.message)
+        ? `“${v}” is already on that list.`
+        : error.message,
+    }
+  }
+  revalidatePath('/warehouse/settings')
+  return { ok: true }
+}
+
+/** Take a value off a list without deleting history.
+ *
+ *  Deactivated rather than removed: entries already recorded against it must
+ *  keep reading correctly, and a unit is locked to its items for ever. */
+export async function setListValueActive(
+  id: string,
+  isActive: boolean,
+): Promise<{ ok: boolean; error?: string }> {
+  const denied = await gate('admin')
+  if (denied) return { ok: false, error: denied }
+
+  const sb = await createClient()
+  const { data, error } = await sb
+    .from('wh_lists').update({ is_active: isActive }).eq('id', id).select('id')
+  if (error) return { ok: false, error: error.message }
+  if (!data || data.length === 0) return { ok: false, error: 'That list value no longer exists.' }
+  revalidatePath('/warehouse/settings')
+  return { ok: true }
+}
+
+/** Who may post entries in a store. Roles say WHAT a person may do; this says
+ *  WHERE, which the module-wide role matrix cannot express. */
+export async function setStoreKeeper(
+  locationId: string,
+  keeperId: string | null,
+): Promise<{ ok: boolean; error?: string }> {
+  const denied = await gate('admin')
+  if (denied) return { ok: false, error: denied }
+
+  const sb = await createClient()
+  const { data, error } = await sb
+    .from('wh_locations').update({ keeper_id: keeperId }).eq('id', locationId).select('id')
+  if (error) return { ok: false, error: error.message }
+  if (!data || data.length === 0) return { ok: false, error: 'That store no longer exists.' }
+  revalidatePath('/warehouse/settings')
+  revalidatePath('/warehouse', 'layout')
+  return { ok: true }
+}
+
 /** IN4 writes dates like "Apr 22, 2023". */
 function isoOrNull(s: string | null): string | null {
   if (!s) return null
@@ -894,6 +1062,9 @@ export async function saveGateIn(input: GateInInput): Promise<SaveResult> {
         + 'Ask its keeper, or have an admin assign you to it in Settings.',
     }
   }
+
+  const blocked = await settingsBlocker(todayIST(), input.locationId)
+  if (blocked) return { ok: false, error: blocked }
 
   // Burn a number only now that the entry is definitely being written — a gap
   // in the series is supposed to mean an unrecorded truck, not an abandoned

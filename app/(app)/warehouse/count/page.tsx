@@ -5,10 +5,11 @@ import { Card } from '@/components/ui/card'
 import { QueryError } from '@/components/ui/query-error'
 import {
   getLocationTree, getPostableSpots, getStockRows, getReceivers,
-  getRecentCounts, peekNextEntryNo, one,
+  getRecentCounts, peekNextEntryNo, getSettings, one,
 } from '@/lib/warehouse/data'
 import { formatDate } from '@/lib/utils'
 import { SCOPE_LABEL } from '@/lib/warehouse/count'
+import { isOn } from '@/lib/warehouse/settings'
 import type { CountScope } from '@/lib/warehouse/count'
 import { CountStart } from './count-start'
 import { ChevronLeft, ChevronRight } from 'lucide-react'
@@ -32,12 +33,13 @@ export default async function CountListPage() {
   const canEdit = can(perms, 'warehouse', 'edit')
 
   const sites = await getLocationTree()
-  const [scoping, stock, receivers, recent, nextNo] = await Promise.all([
+  const [scoping, stock, receivers, recent, nextNo, settings] = await Promise.all([
     getPostableSpots(sites),
     getStockRows(),
     getReceivers(),
     getRecentCounts(),
     peekNextEntryNo('count'),
+    getSettings(),
   ])
 
   // How much a count of each store would be, shown before he commits to walking
@@ -75,6 +77,8 @@ export default async function CountListPage() {
           witnesses={receivers.filter(r => r.id !== me?.id)}
           canEdit={canEdit}
           nextCountNo={nextNo}
+          blindDefault={isOn(settings, 'wh_blind_count_default')}
+          witnessRequired={isOn(settings, 'wh_count_requires_witness')}
         />
 
         <div className="space-y-3 min-w-0">

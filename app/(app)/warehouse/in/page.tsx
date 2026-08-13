@@ -1,9 +1,9 @@
 import Link from 'next/link'
-import { requirePermission, getMyPermissions, getMyProfile, can } from '@/lib/auth'
+import { requirePermission, getMyPermissions, can } from '@/lib/auth'
 import { PageHeader } from '@/components/PageHeader'
 import { Card } from '@/components/ui/card'
 import { QueryError } from '@/components/ui/query-error'
-import { getGateInOptions, getRecentIns, one } from '@/lib/warehouse/data'
+import { getGateInOptions, getRecentIns, getShowValues, one } from '@/lib/warehouse/data'
 import { formatDate } from '@/lib/utils'
 import { formatQty } from '@/lib/warehouse/format'
 import { GateInForm } from './gate-in-form'
@@ -13,12 +13,13 @@ export const dynamic = 'force-dynamic'
 
 export default async function GateInPage() {
   await requirePermission('warehouse', 'view')
-  const [perms, profile] = await Promise.all([getMyPermissions(), getMyProfile()])
+  const perms = await getMyPermissions()
   const canEdit = can(perms, 'warehouse', 'edit')
   // The guard records trucks; he has no business seeing what they cost. The
   // permissions matrix controls screens, not columns — so values are gated
   // here. (#22)
-  const showValues = can(perms, 'warehouse', 'admin') || !isValuesHiddenRole(profile?.role)
+  // One definition for the whole module, driven by the Settings switch. (#22)
+  const showValues = await getShowValues()
 
   const [options, recent] = await Promise.all([getGateInOptions(), getRecentIns()])
 
@@ -121,9 +122,3 @@ export default async function GateInPage() {
   )
 }
 
-/** Roles that see quantities but never money. Read from the module setting once
- *  Settings ships (S8); until then Security is hidden by default because that
- *  was the whole reason the role exists. */
-function isValuesHiddenRole(role: string | null | undefined): boolean {
-  return role === 'security' || role === 'site_staff' || role === 'contractor'
-}
