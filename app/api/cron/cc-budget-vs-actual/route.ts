@@ -1,13 +1,18 @@
-// Weekly "Budget vs Actual — portfolio" report to management. Fired by the cron
-// dispatcher; self-gates to Monday IST (BPH refreshes weekly, so a daily send
-// would repeat the same numbers). Calls cc_budget_vs_actual_report(), which
-// builds one rich card (per-project ERP budget vs actual + % used) and sends it
-// to every CC-management/reviewer. POST lets a cost-control admin preview it to
-// their own Telegram on demand (onlyMe).
+// Weekly "Budget vs Actual" report to management — now mirrors the Budget vs
+// Actual V2 tree (Group -> Project, Budget / Spent / Outstanding + ₹/sft).
+//
+// The tree is composed in TypeScript (loadBudgetV2 -> composeBudgetV2) so the
+// card is byte-identical to what the /budget-vs-actual-v2 page shows; the card
+// is then handed to cc_budget_vs_actual_report(), a thin confidentiality-gated
+// fan-out to every CC management/reviewer. Fired by the cron dispatcher; self-
+// gates to Monday IST (the BPH source refreshes weekly). POST lets a cost-control
+// admin preview it to their own Telegram on demand (onlyMe).
 
 import { NextResponse } from 'next/server'
 import { createClient as createServiceClient } from '@supabase/supabase-js'
 import { getMyUser, getMyPermissions, can } from '@/lib/auth'
+import { loadBudgetV2 } from '@/lib/budget-v2-load'
+import { buildBudgetV2Report } from '@/lib/budget-v2-report'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -17,6 +22,26 @@ function serviceClient() {
   return createServiceClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!, {
     auth: { persistSession: false },
   })
+}
+
+// Build the V2 tree card and fan it out via the RPC. `onlyUser` limits delivery
+// to a single recipient (admin preview). Returns the count sent (0 if there's
+// nothing budgeted to report).
+async function sendReport(onlyUser: string | null): Promise<{ ok: true; sent: number; reason?: string } | { ok: false; reason: string }> {
+  const svc = serviceClient()
+  const { result, freshness } = await loadBudgetV2(svc)
+  const report = buildBudgetV2Report(result, freshness, Date.now())
+  if (!report) return { ok: true, sent: 0, reason: 'no-budget-data' }
+
+  const { data, error } = await svc.rpc('cc_budget_vs_actual_report', {
+    p_title: report.title,
+    p_body: report.body,
+    p_card_spec: report.cardSpec,
+    p_report_text: report.reportText,
+    p_only_user: onlyUser,
+  })
+  if (error) return { ok: false, reason: error.message }
+  return { ok: true, sent: (data as number) ?? 0 }
 }
 
 export async function GET(req: Request) {
@@ -31,9 +56,8 @@ export async function GET(req: Request) {
   const istDow = new Date(Date.now() + 5.5 * 3600 * 1000).getUTCDay()
   if (istDow !== 1) return NextResponse.json({ ok: true, skipped: 'not-monday' })
 
-  const { data, error } = await serviceClient().rpc('cc_budget_vs_actual_report')
-  if (error) return NextResponse.json({ ok: false, reason: error.message }, { status: 500 })
-  return NextResponse.json({ ok: true, sent: data ?? 0 })
+  const res = await sendReport(null)
+  return NextResponse.json(res, { status: res.ok ? 200 : 500 })
 }
 
 // Admin on-demand preview. `onlyMe: true` sends only to the calling admin.
@@ -51,7 +75,6 @@ export async function POST(req: Request) {
     const me = await getMyUser()
     onlyUser = me?.id ?? null
   }
-  const { data, error } = await serviceClient().rpc('cc_budget_vs_actual_report', { p_only_user: onlyUser })
-  if (error) return NextResponse.json({ ok: false, reason: error.message }, { status: 500 })
-  return NextResponse.json({ ok: true, sent: data ?? 0 })
+  const res = await sendReport(onlyUser)
+  return NextResponse.json(res, { status: res.ok ? 200 : 500 })
 }

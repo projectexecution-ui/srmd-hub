@@ -76,8 +76,8 @@ export const NOTIFICATION_EVENTS: NotificationEventDef[] = [
   },
   {
     type: 'cc_budget_vs_actual_report',
-    label: 'Weekly: Budget vs Actual (portfolio)',
-    description: 'A Monday-morning portfolio card to management — every budgeted project’s ERP budget vs actual paid + % used (and ₹/sft), with a warning when the BPH numbers are 7+ days stale. Confidential — goes to Cost Control management/reviewers only. Arrives as a Telegram card.',
+    label: 'Weekly: Budget vs Actual (portfolio tree)',
+    description: 'A Monday-morning portfolio card to management, mirroring the Budget vs Actual V2 tree — projects grouped by block, each showing Budget · Spent · Outstanding + ₹/sft, with a warning when a source is 14+ days stale. Confidential — goes to Cost Control management/reviewers only. Arrives as a Telegram card.',
     audience: 'Management (Cost Control reviewers)',
   },
   {
