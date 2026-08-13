@@ -4,6 +4,7 @@ import { PageHeader } from '@/components/PageHeader'
 import { Card } from '@/components/ui/card'
 import { REGISTER_META } from '@/lib/warehouse/registers'
 import type { RegisterKind } from '@/lib/warehouse/registers'
+import { CONTROL_REPORTS, DEFERRED_REPORTS } from '@/lib/warehouse/exceptions'
 import { ChevronLeft, ChevronRight, Boxes } from 'lucide-react'
 
 export const dynamic = 'force-dynamic'
@@ -12,25 +13,6 @@ const MINDMAP: Array<{ kind: RegisterKind }> = [
   { kind: 'vendor-in' }, { kind: 'vendor-out' }, { kind: 'srm-in' }, { kind: 'srm-out' },
 ]
 
-/** The reports the review added on top of the mindmap. Listed here rather than
- *  hidden, so it is clear what is coming and what is not built yet — a menu that
- *  only shows finished things makes the rest look forgotten. (S7) */
-const REVIEW_REPORTS = [
-  ['Physical count & variance', 'Book vs counted, shortage value, signed off'],
-  ['Vendor material balance', 'Brought vs taken back per vendor — warns if he takes more'],
-  ['Shortage & damage', 'Challan vs received, damaged quantity, by supplier'],
-  ['No-PO exceptions', 'Emergency entries per month per site'],
-  ['Dead stock ageing', 'No movement in 60 / 90 / 180 days'],
-  ['Returnables outstanding', '"Scaffolding out 47 days, not returned"'],
-  ['Entity vs project', 'Cross-entity consumption needing settlement'],
-  ['Rate variance', 'Same item, different rate across entities'],
-  ['Issued vs estimate', 'Consumption against Internal Estimate, per discipline'],
-  ['Entry number gaps', 'Missing IN / OUT numbers — an unrecorded movement'],
-  ['Edit history', 'Every correction, who and when'],
-  ['Stock as on period-end', 'Frozen figure for accounts'],
-  ['PO-wise pending', 'Ordered · received · pending · days since last delivery'],
-  ['Over-receipt', 'More delivered than ordered, awaiting settlement'],
-]
 
 export default async function ReportsPage() {
   await requirePermission('warehouse', 'view')
@@ -88,22 +70,52 @@ export default async function ReportsPage() {
 
       <div>
         <h3 className="text-[11px] font-extrabold uppercase tracking-wider text-slate-400 mb-2">
-          Control reports — next
+          Control reports
         </h3>
-        <Card className="p-0 shadow-sm overflow-hidden opacity-90">
-          <div className="divide-y divide-slate-50">
-            {REVIEW_REPORTS.map(([title, blurb]) => (
-              <div key={title} className="px-3 py-2 flex items-baseline gap-2">
-                <span className="text-[12.5px] font-semibold text-slate-600">{title}</span>
-                <span className="text-[11.5px] text-slate-400 truncate">{blurb}</span>
+        <p className="text-[11.5px] text-slate-500 mb-2 px-0.5">
+          The registers list what happened. These go looking for what is <b>wrong</b> — and each one is
+          written so that coming back empty reads as good news, not a broken screen.
+        </p>
+        <div className="grid sm:grid-cols-2 gap-3">
+          {CONTROL_REPORTS.map(r => (
+            <Link key={r.key} href={`/warehouse/reports/control/${r.key}`} className="block">
+              <Card className="p-4 shadow-sm h-full hover:border-emerald-300 hover:shadow transition">
+                <div className="flex items-center gap-1.5">
+                  <span className="font-bold text-slate-800 text-sm">{r.title}</span>
+                  {!r.usesPeriod && (
+                    <span className="text-[9px] font-extrabold uppercase tracking-wide bg-slate-100 text-slate-500 rounded-full px-1.5 py-0.5">
+                      as at today
+                    </span>
+                  )}
+                  <ChevronRight className="h-3.5 w-3.5 text-slate-400 ml-auto flex-shrink-0" />
+                </div>
+                <p className="text-[11.5px] text-slate-500 mt-1 leading-snug">{r.blurb}</p>
+                <p className="text-[11px] text-slate-400 mt-1.5 italic">{r.question}</p>
+              </Card>
+            </Link>
+          ))}
+        </div>
+      </div>
+
+      {/* Not built, and the reason why. A menu that quietly loses an item is how
+          a requirement gets forgotten. */}
+      <div>
+        <h3 className="text-[11px] font-extrabold uppercase tracking-wider text-slate-400 mb-2">
+          Not built yet — and why
+        </h3>
+        <Card className="p-0 shadow-sm overflow-hidden">
+          <div className="divide-y divide-slate-100">
+            {DEFERRED_REPORTS.map(d => (
+              <div key={d.title} className="px-3 py-2.5">
+                <div className="flex items-baseline gap-2 flex-wrap">
+                  <span className="text-[12.5px] font-bold text-slate-600">{d.title}</span>
+                  <span className="text-[11.5px] text-slate-400">{d.blurb}</span>
+                </div>
+                <p className="text-[11px] text-slate-500 mt-1 leading-snug">{d.why}</p>
               </div>
             ))}
           </div>
         </Card>
-        <p className="text-[11px] text-slate-500 mt-1.5 px-1">
-          These are the exception reports the design review added — the ones that go looking for what is wrong
-          rather than listing what happened. They are the next stage of the build, not part of this one.
-        </p>
       </div>
     </div>
   )
