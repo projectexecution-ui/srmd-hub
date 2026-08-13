@@ -10,7 +10,7 @@ export function MentionText({ text, users }: { text: string; users: MentionUser[
     <>
       {segs.map((s, i) =>
         s.type === 'mention'
-          ? <span key={i} className="font-semibold text-blue-700 bg-blue-50 rounded px-0.5">{s.value}</span>
+          ? <span key={i} className="font-semibold text-blue-700 underline decoration-blue-400 decoration-2 underline-offset-2 bg-blue-50 rounded px-0.5">{s.value}</span>
           : <span key={i}>{s.value}</span>,
       )}
     </>
