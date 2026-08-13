@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useState, useTransition } from 'react'
+import { useMemo, useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
 import { Card } from '@/components/ui/card'
@@ -82,14 +82,18 @@ function WalkingSheet(props: Parameters<typeof CountSheet>[0]) {
 
   // An item added mid-walk arrives as a fresh server render. Merge it in rather
   // than remounting, so a found item does not throw away where he had got to.
+  // Adjusted during render (not in an effect) so there is no second pass: the
+  // locally-held line wins for anything already on the sheet, and a genuinely
+  // new line is taken from the server.
   const idsSig = props.lines.map(l => l.id).join(',')
-  useEffect(() => {
+  const [seenSig, setSeenSig] = useState(idsSig)
+  if (seenSig !== idsSig) {
+    setSeenSig(idsSig)
     setRows(prev => {
       const mine = new Map(prev.map(r => [r.id, r]))
       return props.lines.map(l => mine.get(l.id) ?? l)
     })
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [idsSig])
+  }
 
   /** Load a line into the editor. */
   function goTo(i: number, ph: Phase = 'count', source: CountLine[] = rows) {
