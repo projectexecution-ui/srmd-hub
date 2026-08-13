@@ -8,7 +8,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { cn } from '@/lib/utils'
-import { mentionIdsInText, mentionToken, type MentionUser } from '@/lib/mentions/parse'
+import { mentionIdsInText, mentionToken, splitMentions, type MentionUser } from '@/lib/mentions/parse'
 
 let cache: MentionUser[] | null = null
 let inflight: Promise<MentionUser[]> | null = null
@@ -35,6 +35,7 @@ interface Props {
 
 export function MentionTextarea({ value, onChange, placeholder, rows = 2, maxLength, disabled, className }: Props) {
   const ref = useRef<HTMLTextAreaElement>(null)
+  const overlayRef = useRef<HTMLDivElement>(null)
   const [users, setUsers] = useState<MentionUser[]>(cache ?? [])
   const [menuOpen, setMenuOpen] = useState(false)
   const [query, setQuery] = useState('')
@@ -64,6 +65,18 @@ export function MentionTextarea({ value, onChange, placeholder, rows = 2, maxLen
     onChange(text, mentionIdsInText(text, users))
   }
 
+  // Character ranges [start, end) of every complete "@Name" in the text, so a
+  // whole mention can be treated as one unit (highlight + one-press delete).
+  function mentionRanges(text: string): Array<[number, number]> {
+    const ranges: Array<[number, number]> = []
+    let pos = 0
+    for (const s of splitMentions(text, users)) {
+      if (s.type === 'mention') ranges.push([pos, pos + s.value.length])
+      pos += s.value.length
+    }
+    return ranges
+  }
+
   function handleChange(e: React.ChangeEvent<HTMLTextAreaElement>) {
     const text = e.target.value
     emit(text)
@@ -87,7 +100,38 @@ export function MentionTextarea({ value, onChange, placeholder, rows = 2, maxLen
     })
   }
 
+  // Delete a whole "@Name" in one keystroke instead of letter-by-letter.
+  function tryAtomicDelete(e: React.KeyboardEvent<HTMLTextAreaElement>): boolean {
+    const el = ref.current
+    if (!el || (e.key !== 'Backspace' && e.key !== 'Delete')) return false
+    const start = el.selectionStart ?? 0
+    const end = el.selectionEnd ?? 0
+    if (start !== end) return false // a range is selected → let the browser handle it
+    const ranges = mentionRanges(value)
+    let hit: [number, number] | undefined
+    if (e.key === 'Backspace') {
+      // caret right after "@Name"
+      hit = ranges.find(([, b]) => b === start)
+      // caret right after "@Name " (the inserted token's trailing space) → take both
+      if (!hit && value[start - 1] === ' ') {
+        const r = ranges.find(([, b]) => b === start - 1)
+        if (r) hit = [r[0], start]
+      }
+    } else {
+      // Delete: caret right before "@Name"
+      hit = ranges.find(([a]) => a === start)
+    }
+    if (!hit) return false
+    e.preventDefault()
+    const next = value.slice(0, hit[0]) + value.slice(hit[1])
+    setMenuOpen(false); setAtPos(null)
+    emit(next)
+    requestAnimationFrame(() => { el.focus(); el.setSelectionRange(hit![0], hit![0]) })
+    return true
+  }
+
   function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
+    if (tryAtomicDelete(e)) return
     if (!menuOpen || matches.length === 0) return
     if (e.key === 'ArrowDown') { e.preventDefault(); setHi(h => (h + 1) % matches.length) }
     else if (e.key === 'ArrowUp') { e.preventDefault(); setHi(h => (h - 1 + matches.length) % matches.length) }
@@ -95,8 +139,26 @@ export function MentionTextarea({ value, onChange, placeholder, rows = 2, maxLen
     else if (e.key === 'Escape') { setMenuOpen(false); setAtPos(null) }
   }
 
+  // Shared box metrics so the highlight overlay lines up exactly under the
+  // textarea's characters (same font, padding, border width, wrapping).
+  const boxClass = cn('w-full rounded-md border p-2 text-sm', className)
+
   return (
     <div className="relative">
+      {/* Highlight layer behind the (transparent-text) textarea: the same text,
+          with each "@Name" tinted, so a mention reads as one coloured chunk. */}
+      <div
+        ref={overlayRef}
+        aria-hidden
+        className={cn(boxClass, 'pointer-events-none absolute inset-0 overflow-hidden whitespace-pre-wrap break-words border-transparent bg-white text-gray-900')}
+      >
+        {splitMentions(value, users).map((s, i) =>
+          s.type === 'mention'
+            ? <span key={i} className="rounded bg-blue-100 text-blue-800">{s.value}</span>
+            : <span key={i}>{s.value}</span>,
+        )}
+        {value.endsWith('\n') ? ' ' : ''}
+      </div>
       <textarea
         ref={ref}
         value={value}
@@ -104,11 +166,12 @@ export function MentionTextarea({ value, onChange, placeholder, rows = 2, maxLen
         onKeyDown={handleKeyDown}
         onBlur={() => setTimeout(() => setMenuOpen(false), 120)}
         onClick={e => refreshTrigger(value, e.currentTarget.selectionStart ?? value.length)}
+        onScroll={e => { if (overlayRef.current) overlayRef.current.scrollTop = e.currentTarget.scrollTop }}
         rows={rows}
         maxLength={maxLength}
         disabled={disabled}
         placeholder={placeholder}
-        className={cn('w-full rounded-md border border-gray-200 bg-white p-2 text-sm', className)}
+        className={cn(boxClass, 'relative border-gray-200 bg-transparent text-transparent caret-gray-900 placeholder:text-gray-400')}
       />
       {menuOpen && matches.length > 0 && (
         <ul className="absolute z-20 left-0 right-0 mt-1 max-h-56 overflow-auto rounded-lg border border-gray-200 bg-white shadow-lg py-1">
