@@ -15,6 +15,7 @@ import { getMyPermissions, can } from '@/lib/auth'
 import { parseProcurementNotifyConfig, type ProcurementNotifyConfig } from '@/lib/procurement/notify-settings'
 import { buildHeadDigest, digestSubject, digestText, digestFullText, digestCardSpec } from '@/lib/procurement/digest'
 import type { StoredSnapshot } from '@/lib/procurement/types'
+import { personName } from '@/lib/utils'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -46,7 +47,7 @@ async function loadState(supabase: Client): Promise<{ current: StoredSnapshot | 
   return { current, baseline }
 }
 
-async function notify(supabase: Client, userId: string, digest: ReturnType<typeof buildHeadDigest>): Promise<string | null> {
+async function notify(supabase: Client, userId: string, digest: ReturnType<typeof buildHeadDigest>, recipientName: string | null): Promise<string | null> {
   if (!digest) return 'empty'
   const { error } = await supabase.rpc('notify_user', {
     p_user_id: userId,
@@ -57,9 +58,18 @@ async function notify(supabase: Client, userId: string, digest: ReturnType<typeo
     p_module_slug: 'procurement-tracker',
     // digest fields drive the HTML email (unchanged); report_text + card_spec
     // are extra keys the Telegram sender uses for the full-detail image card.
-    p_data: { ...digest, report_text: digestFullText(digest), card_spec: digestCardSpec(digest) },
+    // The Atm Head's name goes on the card so the recipient knows it's theirs.
+    p_data: { ...digest, report_text: digestFullText(digest), card_spec: digestCardSpec(digest, recipientName) },
   })
   return error ? error.message : null
+}
+
+/** Display name per user id (personName precedence: editable name → full_name). */
+async function namesFor(supabase: Client, ids: string[]): Promise<Map<string, string>> {
+  if (ids.length === 0) return new Map()
+  const { data } = await supabase.from('profiles').select('id, full_name, name, email').in('id', ids)
+  return new Map((data ?? []).map((p: { id: string; full_name: string | null; name: string | null; email: string | null }) =>
+    [p.id, personName(p.full_name, p.name, p.email)]))
 }
 
 // ── GET: the daily cron ────────────────────────────────────────────────────
@@ -97,12 +107,13 @@ export async function GET(req: Request) {
   }
 
   const heads = Object.entries(cfg.assignments).filter(([, projs]) => projs.length > 0)
+  const nameById = await namesFor(supabase, heads.map(([uid]) => uid))
   let sent = 0
   const detail: Array<{ uid: string; sent?: boolean; skipped?: string; error?: string }> = []
   for (const [uid, projects] of heads) {
     const digest = buildHeadDigest(current, baseline, cfg, nowMs, projects)
     if (!digest) { detail.push({ uid, skipped: 'empty' }); continue }
-    const err = await notify(supabase, uid, digest)
+    const err = await notify(supabase, uid, digest, nameById.get(uid) ?? null)
     if (err) detail.push({ uid, error: err })
     else { sent++; detail.push({ uid, sent: true }) }
   }
@@ -137,16 +148,14 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: false, reason: 'No head → projects mapping set yet — assign at least one head to a project first.' })
     }
     const nowMs = Date.now()
-    const ids = heads.map(([uid]) => uid)
-    const { data: profs } = await supabase.from('profiles').select('id, full_name, email').in('id', ids)
-    const nameById = new Map((profs ?? []).map(p => [p.id as string, (p.full_name as string) || (p.email as string)]))
+    const nameById = await namesFor(supabase, heads.map(([uid]) => uid))
     const sentTo: string[] = []
     const skipped: string[] = []
     for (const [uid, projects] of heads) {
       const digest = buildHeadDigest(current, baseline, cfg, nowMs, projects)
       const who = nameById.get(uid) ?? uid
       if (!digest) { skipped.push(who); continue }
-      const err = await notify(supabase, uid, digest)
+      const err = await notify(supabase, uid, digest, nameById.get(uid) ?? null)
       if (err) skipped.push(who); else sentTo.push(who)
     }
     return NextResponse.json({ ok: true, mode: 'heads', sent: sentTo.length, sentTo, skipped })
@@ -166,7 +175,8 @@ export async function POST(req: Request) {
   const digest = buildHeadDigest(current, baseline, cfg, Date.now(), projects)
   if (!digest) return NextResponse.json({ ok: true, sent: 0, reason: 'Nothing to report for those projects right now.' })
 
-  const err = await notify(supabase, uid, digest)
+  const callerName = (await namesFor(supabase, [uid])).get(uid) ?? null
+  const err = await notify(supabase, uid, digest, callerName)
   if (err) return NextResponse.json({ ok: false, error: err }, { status: 500 })
   return NextResponse.json({ ok: true, sent: 1, to: 'you', projects })
 }

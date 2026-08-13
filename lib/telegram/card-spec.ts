@@ -32,6 +32,7 @@ export interface CardSection {
 export interface CardSpec {
   brand?: string        // header label after "CT HUB ·" (e.g. "Indent → PO")
   title: string
+  subtitle?: string     // muted line under the title (e.g. "Atm Head — your follow-ups")
   chips?: string[]      // e.g. project names
   stats?: CardStat[]    // up to 2 big tiles
   sections?: CardSection[]

@@ -165,6 +165,7 @@ export async function renderCardSpec(spec: CardSpec): Promise<Buffer> {
 
   // Title (wrap)
   for (const tl of wrap(spec.title, 38)) { P.push(text(PAD, y, tl, { fill: E.INK, size: 38, weight: 700 })); y += 50 }
+  if (spec.subtitle) { y += 2; P.push(text(PAD, y, clipPx(spec.subtitle, CW, 25), { fill: E.MUT, size: 25 })); y += 30 }
   y += 6
 
   // Project chips

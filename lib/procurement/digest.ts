@@ -267,7 +267,7 @@ export function digestFullText(d: ProcurementDigest): string {
 // The rich Telegram image spec — mirrors the HTML email (renderProcurementDigest):
 // two colored stat tiles + a "Raise a PO" and a "Chase delivery & GRN" section,
 // each a list of the same rows the mail shows. Fed via notify_user data.card_spec.
-export function digestCardSpec(d: ProcurementDigest): CardSpec {
+export function digestCardSpec(d: ProcurementDigest, recipientName?: string | null): CardSpec {
   const stats: NonNullable<CardSpec['stats']> = []
   if (d.needPo) stats.push({
     label: 'POs to raise', value: String(d.needPo.count),
@@ -321,7 +321,8 @@ export function digestCardSpec(d: ProcurementDigest): CardSpec {
 
   return {
     brand: 'Indent → PO',
-    title: 'Good morning — your projects’ follow-ups',
+    title: recipientName ? `Good morning, ${recipientName}` : 'Good morning — your projects’ follow-ups',
+    subtitle: `Atm Head${recipientName ? ' · your projects’ follow-ups' : ''}`,
     chips: d.projects,
     stats,
     sections,
