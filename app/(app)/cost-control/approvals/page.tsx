@@ -10,7 +10,7 @@ import { WSStatusPill, type WSStatus } from '@/components/cost-control/WSStatusP
 import { isWaitingOnMe, type MyApprovalContext } from '@/lib/cost-control/my-approvals'
 import { getCcSettings } from '@/lib/cost-control/settings'
 import { formatINR } from '@/lib/utils'
-import { Inbox, ArrowRight, Ruler, ChevronDown, ArrowUpRight, ArrowDownRight } from 'lucide-react'
+import { Inbox, ArrowRight, Ruler, ChevronDown, ArrowUpRight, ArrowDownRight, PlusCircle } from 'lucide-react'
 
 // Whole days a sheet has been waiting since it was submitted.
 function daysWaiting(submittedAt: string | null): number {
@@ -62,6 +62,9 @@ interface WSEnrichment {
     budgetPerSft: string | null; paidPerSft: string | null
     woPct: number | null; paidPct: number | null
   } | null
+  // ERP columns are on, but this sheet's (project, discipline, sub-skill) has no
+  // BPH-synced budget line yet → this ask would be a brand-new ERP budget.
+  erpNew: boolean
   prev: { total: number; ver: number; deltaPct: number | null } | null
 }
 
@@ -189,7 +192,7 @@ export default async function ApprovalsInboxPage() {
       }
     }
 
-    enrich.set(ws.id, { perSftEst: perSft(est, sft), erp, prev })
+    enrich.set(ws.id, { perSftEst: perSft(est, sft), erp, erpNew: ccSettings.show_erp_columns && !erp, prev })
   }
 
   const approverRows = (approvers ?? []) as Array<{ project_id: string; role: string; user_id: string }>
@@ -362,13 +365,17 @@ function ApprovalSection({
                   </td>
                   <td className="px-3 py-2.5 text-gray-700">
                     <div><span className="text-xs text-gray-500 font-mono">{disc?.code}</span> {disc?.name} · {sub?.name}</div>
-                    {ex?.erp && (
+                    {ex?.erp ? (
                       <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[11px] text-gray-500">
                         <span>Budget <span className="font-medium text-gray-700 tabular-nums">{formatINR(ex.erp.budget)}</span></span>
                         <span>WO <span className="font-medium text-gray-700 tabular-nums">{formatINR(ex.erp.wo)}</span>{ex.erp.woPct != null ? ` · ${ex.erp.woPct}%` : ''}</span>
                         <span>Paid <span className="font-medium text-gray-700 tabular-nums">{formatINR(ex.erp.paid)}</span>{ex.erp.paidPct != null ? ` · ${ex.erp.paidPct}% used` : ''}</span>
                       </div>
-                    )}
+                    ) : ex?.erpNew ? (
+                      <div className="mt-1 inline-flex items-center gap-1 text-[11px] text-blue-700" title="No BPH/ERP budget for this sub-skill yet — approving sets a new one">
+                        <PlusCircle className="h-3 w-3" /> New budget — not in ERP yet
+                      </div>
+                    ) : null}
                   </td>
                   <td className="px-3 py-2.5 text-right">
                     <div className="font-semibold text-gray-900 tabular-nums">{formatINR(ws.total_amount)}</div>
@@ -457,6 +464,12 @@ function ApprovalSection({
                     <div className="h-full bg-blue-500" style={{ width: `${Math.min(ex.erp.paidPct, 100)}%` }} />
                   </div>
                   <p className="text-[10px] text-gray-400 mt-0.5">{ex.erp.paidPct}% of budget paid</p>
+                </div>
+              )}
+              {ex?.erpNew && (
+                <div className="mt-2.5 flex items-center gap-1.5 rounded-lg bg-blue-50 border border-blue-100 px-3 py-2 text-[11px] text-blue-800">
+                  <PlusCircle className="h-3.5 w-3.5 flex-shrink-0" />
+                  <span>New budget — no ERP / BPH figure for this sub-skill yet</span>
                 </div>
               )}
 

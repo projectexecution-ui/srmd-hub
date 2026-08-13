@@ -85,6 +85,19 @@ export function ExcelSummaryPanel({
   // AI/flag chrome renders only for reviewers AND when the toggle is on.
   const showFlags = reviewer && aiEnabled
 
+  // The uploaded BOQ template ships with empty numbered placeholder rows
+  // (Sr 7, 8, 9 … with no description and ₹0). They add nothing to the verified
+  // read, so drop any row that has neither a real description nor any money —
+  // the totals are untouched (these lines were ₹0) and the real items,
+  // subtotals and GST all stay.
+  const visibleRows = rows.filter(r => {
+    const noMoney = (r.amount == null || r.amount === 0)
+      && (r.qty == null || r.qty === 0)
+      && (r.rate == null || r.rate === 0)
+    const noDesc = !r.description || /^\d+$/.test(r.description.trim())
+    return !(noMoney && noDesc)
+  })
+
   async function recheck() {
     setRechecking(true); setErr(null)
     try {
@@ -350,7 +363,7 @@ export function ExcelSummaryPanel({
                 </tr>
               </thead>
               <tbody>
-                {rows.map(r => (
+                {visibleRows.map(r => (
                   <tr key={r.id} className={`border-t border-gray-100 ${showFlags && flaggedRowIds.has(r.id) ? rowTintBySeverity(r.flag_severity) : ''}`}>
                     <td className="px-2 py-2 text-gray-400 align-top">{r.row_no}</td>
                     <td className="px-2 py-2 text-gray-800 max-w-md align-top">
@@ -432,7 +445,7 @@ export function ExcelSummaryPanel({
           {/* Mobile: the same verified BOQ as stacked cards — the table above is
               far too wide for a phone (descriptions truncate, amounts scroll off). */}
           <div className="md:hidden divide-y divide-gray-100">
-            {rows.map(r => (
+            {visibleRows.map(r => (
               <div key={r.id} className={`py-3 ${showFlags && flaggedRowIds.has(r.id) ? rowTintBySeverity(r.flag_severity) : ''}`}>
                 <div className="flex items-start gap-2">
                   <span className="text-[11px] text-gray-400 tabular-nums mt-0.5 flex-shrink-0">{r.row_no}</span>
