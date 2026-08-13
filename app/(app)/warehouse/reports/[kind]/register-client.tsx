@@ -120,6 +120,13 @@ export function RegisterClient({
           ? [
               { header: 'Short', cell: (r: RegisterRow) => r.shortQty ? formatQty(r.shortQty) : '—', raw: (r: RegisterRow) => r.shortQty ?? 0, align: 'right' as const },
               { header: 'Damaged', cell: (r: RegisterRow) => r.damagedQty ? formatQty(r.damagedQty) : '—', raw: (r: RegisterRow) => r.damagedQty ?? 0, align: 'right' as const },
+              {
+                header: 'Differs from IN4',
+                cell: (r: RegisterRow) => r.differsFromPo
+                  ? `IN4: ${r.orderedText ?? '—'}${r.differNote ? ` · ${r.differNote}` : ''}`
+                  : '',
+                width: 30,
+              },
             ]
           : []),
         { header: 'Project', cell: r => r.projectName ?? '—', width: 20 },
@@ -146,10 +153,10 @@ export function RegisterClient({
         grand ? 'TOTAL' : 'Subtotal',
         `${lines} ${lines === 1 ? 'line' : 'lines'}`,
       ]
-      if (isIn) cols.push('')
-      cols.push('', '')                                     // party, item
+      if (isIn) cols.push('')                                // PO
+      cols.push('', '')                                      // party, item
       cols.push('')                                          // qty (per-unit, shown in the notes)
-      if (isIn) cols.push('', '')                            // short, damaged
+      if (isIn) cols.push('', '', '')                        // short, damaged, differs-from-IN4
       cols.push('', '', '')                                  // project, discipline, store
       if (showValues) cols.push('', partial ? `${formatINR(amount)} +` : formatINR(amount))
       return cols
@@ -223,6 +230,16 @@ export function RegisterClient({
         )}
       </div>
 
+      {/* The one exception on this register that somebody must actually go and
+          fix: IN4 says one thing, the truck brought another. */}
+      {isIn && shown.some(r => r.differsFromPo) && (
+        <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-[12.5px] text-amber-900">
+          <b>{shown.filter(r => r.differsFromPo).length} {shown.filter(r => r.differsFromPo).length === 1 ? 'line was' : 'lines were'} not
+          what IN4 ordered.</b> Recorded at the gate as what actually came — needs correcting in IN4 and
+          checking against the bill.
+        </div>
+      )}
+
       {isIn && (totals.shortQty > 0 || totals.damagedQty > 0) && (
         <div className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-[12.5px] text-rose-900">
           {totals.shortQty > 0 && (
@@ -289,7 +306,15 @@ export function RegisterClient({
                     <td className="px-2 py-1.5 font-mono text-[11px] text-slate-600 whitespace-nowrap">{r.entryNo}</td>
                     {isIn && <td className="px-2 py-1.5 font-mono text-[11px] text-slate-500">{r.poNo ?? '—'}</td>}
                     <td className="px-2 py-1.5 text-slate-700">{r.party ?? '—'}</td>
-                    <td className="px-2 py-1.5 text-slate-800">{r.itemName}</td>
+                    <td className="px-2 py-1.5 text-slate-800">
+                      {r.itemName}
+                      {r.differsFromPo && (
+                        <span className="block text-[10.5px] text-amber-800 mt-0.5">
+                          not what IN4 ordered{r.orderedText ? <> — IN4 said <i>{r.orderedText}</i></> : ''}
+                          {r.differNote ? ` · ${r.differNote}` : ''}
+                        </span>
+                      )}
+                    </td>
                     <td className="px-2 py-1.5 text-right tabular-nums font-semibold text-slate-900 whitespace-nowrap">
                       {formatQty(r.qty)} <span className="font-normal text-slate-400">{r.unit}</span>
                     </td>

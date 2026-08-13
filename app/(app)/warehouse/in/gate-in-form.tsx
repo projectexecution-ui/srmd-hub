@@ -4,7 +4,8 @@ import { useMemo, useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
 import { Card } from '@/components/ui/card'
-import { saveGateIn } from '../actions'
+import { SearchableSelect } from '@/components/ui/searchable-select'
+import { saveGateIn, createItem } from '../actions'
 import { verdictFor } from '@/lib/warehouse/types'
 import type { GateInOptions, GateInLineInput } from '@/lib/warehouse/types'
 import { Plus, Trash2, Loader2 } from 'lucide-react'
@@ -47,8 +48,9 @@ export function GateInForm({
   const po = options.pos.find(p => p.id === poId) ?? null
   const itemById = useMemo(() => new Map(options.items.map(i => [i.id, i])), [options.items])
 
-  /** With a PO picked, only its still-pending lines can be received. Without
-   *  one, the whole item master is available. */
+  /** With a PO picked, the choice is WHICH ORDERED LINE this truck is against —
+   *  the item on it is IN4's, and is not up for interpretation here. Without a
+   *  PO, the whole item list is available. */
   const selectableItems = useMemo(() => {
     if (!po) return options.items.map(i => ({ id: i.id, label: i.name, unit: i.unit, poLineId: null as string | null, pending: null as number | null, rate: i.lastRate, done: false }))
     return po.lines.map(l => ({
@@ -58,12 +60,15 @@ export function GateInForm({
     }))
   }, [po, options.items])
 
-  const spots = options.sites.flatMap(s => s.spots)
   const postable = new Set(options.postableSpotIds)
 
   function patch(key: number, next: Partial<Row>) {
     setRows(rs => rs.map(r => (r.key === key ? { ...r, ...next } : r)))
   }
+
+  /** The item the PO line names, whatever the truck actually brought. */
+  const poItemOf = (row: Row) =>
+    po?.lines.find(l => l.lineId === row.poLineId)?.itemId ?? row.itemId
 
   function pickItem(key: number, itemId: string) {
     const sel = selectableItems.find(s => s.id === itemId)
@@ -74,6 +79,9 @@ export function GateInForm({
       // A rate that came off the PO is trustworthy. A remembered "last rate"
       // is a convenience — flagged so it can be reviewed. (#4)
       rateSource: sel?.poLineId ? 'po' : sel?.rate ? 'last' : null,
+      // Changing which ordered line this is starts the comparison again.
+      differsFromPo: false,
+      differNote: null,
     })
   }
 
@@ -261,18 +269,83 @@ export function GateInForm({
                 )}
               </div>
 
-              <select className={inputCls} value={row.itemId} onChange={e => pickItem(row.key, e.target.value)}>
-                <option value="">Pick an item…</option>
+              <select className={inputCls} value={row.poLineId ? poItemOf(row) : row.itemId}
+                onChange={e => pickItem(row.key, e.target.value)}>
+                <option value="">{po ? 'Which ordered line came?' : 'Pick an item…'}</option>
                 {selectableItems.map(s => (
                   <option key={s.id} value={s.id} disabled={s.done}>{s.label}</option>
                 ))}
               </select>
 
+              {/* IN4 is the base for what was ordered. What actually turned up
+                  is the gate's call, so the two are shown together and the
+                  difference is recorded rather than argued about. */}
+              {poLine && (
+                <div className={`rounded-lg border px-2.5 py-2 space-y-1.5 ${
+                  row.differsFromPo ? 'border-amber-300 bg-amber-50' : 'border-slate-200 bg-slate-50/70'}`}>
+                  <div className="flex items-start gap-2">
+                    <span className="min-w-0 flex-1">
+                      <span className="block text-[10px] font-extrabold uppercase tracking-wider text-slate-400">
+                        IN4 ordered
+                      </span>
+                      <span className="block text-[12px] font-semibold text-slate-800 break-words">
+                        {poLine.sourceText || poLine.itemName}
+                      </span>
+                    </span>
+                    {!row.differsFromPo && (
+                      <button type="button"
+                        onClick={() => patch(row.key, { differsFromPo: true, differNote: '' })}
+                        className="flex-shrink-0 rounded-lg border-2 border-slate-200 bg-white px-2.5 py-1.5 min-h-[36px] text-[11.5px] font-bold text-slate-600 hover:border-amber-300 hover:text-amber-800">
+                        Not what came?
+                      </button>
+                    )}
+                  </div>
+
+                  {row.differsFromPo && (
+                    <div className="space-y-2 pt-1">
+                      <p className="text-[11.5px] font-semibold text-amber-900">
+                        Record what actually came. The order still counts against this PO line — the difference is
+                        flagged for procurement to fix in IN4 and against the bill.
+                      </p>
+                      <div>
+                        <label className={labelCls} htmlFor={`came-${row.key}`}>What actually came</label>
+                        <SearchableSelect
+                          id={`came-${row.key}`}
+                          value={row.itemId}
+                          onChange={id => patch(row.key, { itemId: id })}
+                          options={options.items.map(i => ({ id: i.id, label: i.name, hint: i.unit }))}
+                          placeholder="Search the item list…"
+                          emptyText="No item matches — add it below"
+                        />
+                      </div>
+                      <NewItemInline
+                        units={options.lists.unit}
+                        onCreated={(id) => patch(row.key, { itemId: id })}
+                      />
+                      <div>
+                        <label className={labelCls} htmlFor={`note-${row.key}`}>What is different</label>
+                        <input id={`note-${row.key}`} className={inputCls} value={row.differNote ?? ''}
+                          onChange={e => patch(row.key, { differNote: e.target.value })}
+                          placeholder="e.g. IN4 says 8mm, the truck brought 10mm" />
+                      </div>
+                      <button type="button"
+                        onClick={() => patch(row.key, {
+                          differsFromPo: false, differNote: null, itemId: poItemOf(row),
+                        })}
+                        className="text-[11.5px] font-semibold text-slate-500 hover:text-slate-700 min-h-[32px]">
+                        Never mind — it matches the PO
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+
               <div className="grid grid-cols-3 gap-2">
                 <div>
                   <label className={labelCls}>Unit · locked</label>
-                  <input className={lockCls + ' font-mono'} value={sel?.unit ?? item?.unit ?? ''} readOnly
-                    title="The unit comes from the item master and cannot be changed here" />
+                  <input className={lockCls + ' font-mono'}
+                    value={(row.differsFromPo ? item?.unit : sel?.unit ?? item?.unit) ?? ''} readOnly
+                    title="The unit belongs to the item and cannot be changed here" />
                 </div>
                 <div>
                   <label className={labelCls}>Challan qty</label>
@@ -386,6 +459,63 @@ export function GateInForm({
         </p>
       </div>
     </Card>
+  )
+}
+
+/** Add an item without leaving the gate screen.
+ *
+ *  When IN4 named the wrong material, the right one may not be on the books at
+ *  all. A keeper who cannot record the truck standing in front of him writes it
+ *  on paper instead, and the register loses the entry entirely. */
+function NewItemInline({ units, onCreated }: { units: string[]; onCreated: (id: string) => void }) {
+  const [open, setOpen] = useState(false)
+  const [name, setName] = useState('')
+  const [unit, setUnit] = useState(units[0] ?? 'Nos')
+  const [busy, start] = useTransition()
+
+  if (!open) {
+    return (
+      <button type="button" onClick={() => setOpen(true)}
+        className="text-[11.5px] font-bold text-slate-500 hover:text-emerald-700 min-h-[32px] inline-flex items-center gap-1">
+        <Plus className="h-3 w-3" /> It is not on the list — add it
+      </button>
+    )
+  }
+
+  return (
+    <div className="rounded-lg border-2 border-dashed border-slate-300 p-2 space-y-2">
+      <div className="grid grid-cols-[1fr_auto] gap-2">
+        <div>
+          <label className={labelCls} htmlFor="new-item-name">New item name</label>
+          <input id="new-item-name" className={inputCls} value={name} autoFocus
+            onChange={e => setName(e.target.value)} placeholder="As written on the challan" />
+        </div>
+        <div>
+          <label className={labelCls} htmlFor="new-item-unit">Unit</label>
+          <select id="new-item-unit" className={inputCls} value={unit} onChange={e => setUnit(e.target.value)}>
+            {(units.length ? units : ['Nos', 'Bag', 'MT', 'Kg']).map(u => <option key={u} value={u}>{u}</option>)}
+          </select>
+        </div>
+      </div>
+      <p className="text-[11px] text-slate-500">The unit is locked to the item once saved, so get it right now.</p>
+      <div className="grid grid-cols-2 gap-2">
+        <button type="button" onClick={() => { setOpen(false); setName('') }}
+          className="rounded-lg border-2 border-slate-200 py-2 min-h-[36px] text-[12px] font-bold text-slate-600">
+          Cancel
+        </button>
+        <button type="button" disabled={busy || !name.trim()}
+          onClick={() => start(async () => {
+            const res = await createItem({ name, unit })
+            if (!res.ok) { toast.error(res.error); return }
+            toast.success(`Added ${res.name}`)
+            onCreated(res.id)
+            setOpen(false); setName('')
+          })}
+          className="rounded-lg bg-emerald-600 hover:bg-emerald-700 py-2 min-h-[36px] text-[12px] font-bold text-white disabled:opacity-50 inline-flex items-center justify-center gap-1.5">
+          {busy && <Loader2 className="h-3.5 w-3.5 animate-spin" />} Add item
+        </button>
+      </div>
+    </div>
   )
 }
 

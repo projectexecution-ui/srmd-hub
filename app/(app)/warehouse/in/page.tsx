@@ -73,24 +73,42 @@ export default async function GateInPage() {
                   </span>
                 </div>
                 <div className="px-3 py-2 space-y-1">
-                  {lines.map(l => (
-                    <div key={l.id} className="flex items-baseline gap-2 text-[12px]">
-                      <span className="flex-1 min-w-0 truncate text-slate-700">{one(l.wh_items)?.name ?? '—'}</span>
-                      <span className="tabular-nums font-semibold text-slate-800">
-                        {formatQty(l.good_qty)} {one(l.wh_items)?.unit}
-                      </span>
-                      {Number(l.short_qty) > 0 && (
-                        <span className="tabular-nums text-[11px] font-bold text-rose-600">short {formatQty(l.short_qty)}</span>
-                      )}
-                      {Number(l.damaged_qty) > 0 && (
-                        <span className="tabular-nums text-[11px] font-bold text-amber-700">dmg {formatQty(l.damaged_qty)}</span>
+                  {lines.map(l => {
+                    const ordered = one(l.po_line)
+                    return (
+                    <div key={l.id}>
+                      <div className="flex items-baseline gap-2 text-[12px]">
+                        <span className="flex-1 min-w-0 truncate text-slate-700">{one(l.wh_items)?.name ?? '—'}</span>
+                        <span className="tabular-nums font-semibold text-slate-800">
+                          {formatQty(l.good_qty)} {one(l.wh_items)?.unit}
+                        </span>
+                        {Number(l.short_qty) > 0 && (
+                          <span className="tabular-nums text-[11px] font-bold text-rose-600">short {formatQty(l.short_qty)}</span>
+                        )}
+                        {Number(l.damaged_qty) > 0 && (
+                          <span className="tabular-nums text-[11px] font-bold text-amber-700">dmg {formatQty(l.damaged_qty)}</span>
+                        )}
+                      </div>
+                      {/* What IN4 ordered vs what actually turned up. Flagged at
+                          the gate, kept on the entry for procurement + billing. */}
+                      {l.differs_from_po && (
+                        <div className="mt-0.5 rounded-md bg-amber-50 border border-amber-200 px-2 py-1 text-[11px] text-amber-900">
+                          <b>Not what IN4 ordered.</b>{' '}
+                          {ordered && <>IN4 said <i>{ordered.source_text || one(ordered.wh_items)?.name}</i>. </>}
+                          {l.differ_note}
+                        </div>
                       )}
                     </div>
-                  ))}
+                  )})}
                   {(short > 0 || damaged > 0) && (
                     <p className="text-[11px] text-rose-700 pt-1 border-t border-slate-100 mt-1.5">
                       {short > 0 && <>Short by {formatQty(short)} against the challan — reported to procurement. </>}
                       {damaged > 0 && <>{formatQty(damaged)} damaged, booked as damaged not good stock.</>}
+                    </p>
+                  )}
+                  {lines.some(l => l.differs_from_po) && (
+                    <p className="text-[11px] text-amber-800 pt-1 border-t border-slate-100 mt-1.5">
+                      Some of this did not match what IN4 ordered — needs fixing in IN4 and checking against the bill.
                     </p>
                   )}
                 </div>

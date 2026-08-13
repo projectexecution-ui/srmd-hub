@@ -41,6 +41,10 @@ export type WhPoLine = {
   pending: number
   rate: number | null
   done: boolean
+  /** What IN4 called this material, in IN4's own words. Shown at the gate so
+   *  the keeper compares the truck against what was actually ordered, not
+   *  against a tidied-up version of it. */
+  sourceText: string | null
 }
 
 export type WhPo = {
@@ -92,6 +96,11 @@ export type GateInLineInput = {
   damagedQty: number
   rate: number | null
   rateSource: 'po' | 'typed' | 'last' | null
+  /** What arrived is not the item the PO names. We follow IN4 as the base, so
+   *  when IN4 is wrong the person at the gate corrects it and says so — the
+   *  entry carries the flag for procurement and billing to reconcile. */
+  differsFromPo?: boolean
+  differNote?: string | null
 }
 
 export type GateInInput = {

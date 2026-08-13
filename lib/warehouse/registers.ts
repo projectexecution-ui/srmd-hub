@@ -40,6 +40,13 @@ export type RegisterRow = {
   damagedQty?: number
   /** IN only, and only when it came against a PO. */
   poNo?: string | null
+  /** IN only: what arrived is not the material IN4 ordered. Recorded at the gate
+   *  by whoever looked at the truck; this is what procurement and billing act
+   *  on, so it travels with the register rather than living only on the entry. */
+  differsFromPo?: boolean
+  differNote?: string | null
+  /** What IN4 ordered, in IN4's own words, when it differs. */
+  orderedText?: string | null
   /** Vendor OUT only: kept for the "matched to its IN" note. */
   engineerName?: string | null
   remarks?: string | null

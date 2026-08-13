@@ -169,7 +169,9 @@ async function getInRegister(
       .select(`id, entry_no, entry_date, party, entity, remarks, po_no_text,
                wh_po(po_no), projects(name), wh_locations(name),
                wh_gate_in_lines(id, received_qty, damaged_qty, good_qty, short_qty, rate,
-                                wh_items(id, name, unit, discipline))`)
+                                differs_from_po, differ_note,
+                                wh_items(id, name, unit, discipline),
+                                po_line:wh_po_lines(source_text, wh_items(name)))`)
       .eq('owner', owner)
       .is('deleted_at', null)
       .order('entry_date', { ascending: false })
@@ -199,6 +201,11 @@ async function getInRegister(
         shortQty: Math.max(0, Number(l.short_qty)),
         damagedQty: Number(l.damaged_qty),
         poNo: one(e.wh_po)?.po_no ?? e.po_no_text ?? null,
+        differsFromPo: l.differs_from_po ?? false,
+        differNote: l.differ_note ?? null,
+        orderedText: l.differs_from_po
+          ? (one(l.po_line)?.source_text ?? one(one(l.po_line)?.wh_items)?.name ?? null)
+          : null,
         remarks: e.remarks,
       })
     }
@@ -286,7 +293,9 @@ type InRow = {
   wh_gate_in_lines: Array<{
     id: string; received_qty: string; damaged_qty: string; good_qty: string
     short_qty: string; rate: string | null
+    differs_from_po: boolean | null; differ_note: string | null
     wh_items: Embedded<{ id: string; name: string; unit: string; discipline: string | null }>
+    po_line: Embedded<{ source_text: string | null; wh_items: Embedded<{ name: string }> }>
   }> | null
 }
 

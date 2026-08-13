@@ -87,7 +87,7 @@ export async function getOpenPos(): Promise<WhPo[]> {
   const sb = await createClient()
   const { data: pos } = await sb
     .from('wh_po')
-    .select('id, po_no, kind, vendor, entity, status, wh_po_lines(id, item_id, ordered_qty, rate, wh_items(name, unit))')
+    .select('id, po_no, kind, vendor, entity, status, wh_po_lines(id, item_id, ordered_qty, rate, source_text, wh_items(name, unit))')
     .is('deleted_at', null)
     .in('status', ['open', 'partly_received'])
     .order('po_date', { ascending: false })
@@ -142,6 +142,7 @@ export async function getOpenPos(): Promise<WhPo[]> {
         pending: pending > 0 ? pending : 0,
         rate: l.rate,
         done: pending <= 0,
+        sourceText: l.source_text ?? null,
       }
     }),
   }))
@@ -334,7 +335,10 @@ export async function getRecentIns(limit = 15) {
     .from('wh_gate_in')
     .select(`id, entry_no, entry_date, party, owner, entity, po_no_text, no_po_reason,
              wh_locations(name), wh_po(po_no),
-             wh_gate_in_lines(id, challan_qty, received_qty, damaged_qty, short_qty, good_qty, rate, wh_items(name, unit))`)
+             wh_gate_in_lines(id, challan_qty, received_qty, damaged_qty, short_qty, good_qty, rate,
+                              differs_from_po, differ_note,
+                              wh_items(name, unit),
+                              po_line:wh_po_lines(source_text, wh_items(name)))`)
     .is('deleted_at', null)
     .order('entry_date', { ascending: false })
     .order('created_at', { ascending: false })

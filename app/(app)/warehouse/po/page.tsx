@@ -3,8 +3,7 @@ import { requirePermission, getMyPermissions, can } from '@/lib/auth'
 import { PageHeader } from '@/components/PageHeader'
 import { Card } from '@/components/ui/card'
 import { createClient } from '@/lib/supabase/server'
-import { searchTrackerPos, getTrackerPo, getAliasCount } from '@/lib/warehouse/po-import'
-import { getItems, one } from '@/lib/warehouse/data'
+import { searchTrackerPos, getTrackerPo } from '@/lib/warehouse/po-import'
 import { formatDate } from '@/lib/utils'
 import { PoImportClient } from './po-import-client'
 import { ChevronLeft } from 'lucide-react'
@@ -20,11 +19,9 @@ export default async function PoPage({
   const { q = '', po } = await searchParams
   const sb = await createClient()
 
-  const [available, picked, items, aliasCount, mineRes, projectsRes] = await Promise.all([
+  const [available, picked, mineRes, projectsRes] = await Promise.all([
     searchTrackerPos(q),
     po ? getTrackerPo(po) : Promise.resolve(null),
-    getItems(),
-    getAliasCount(),
     sb.from('wh_po')
       .select('id, po_no, po_date, vendor, entity, status, source, wh_po_lines(id, ordered_qty)')
       .is('deleted_at', null).order('created_at', { ascending: false }).limit(20),
@@ -40,22 +37,21 @@ export default async function PoPage({
       </Link>
       <PageHeader
         title="Purchase Orders"
-        subtitle="Pull a PO out of the Indent → PO Tracker — vendor, date and ordered quantities come from IN4. You only confirm which item each material is, once."
+        subtitle="Pull a PO out of the Indent → PO Tracker. Vendor, date, materials, units and ordered quantities all come from IN4 as they are — nothing to map or confirm."
       />
 
       <div className="rounded-xl border border-sky-200 bg-sky-50 p-3 text-[12.5px] text-sky-900">
-        IN4 writes material names generically (<i>&ldquo;TEPLON TAPE&rdquo;</i>) while our master is
-        specific (<i>&ldquo;TEPLON TAPE (YELLOW)&rdquo;</i>) — only about 1 in 70 match by text, so the
-        item on each line needs one human confirmation. Every confirmation is remembered, so the next
-        PO carrying that material links itself.
-        {aliasCount > 0 && <> <b>{aliasCount} material{aliasCount === 1 ? '' : 's'} learned so far.</b></>}
+        <b>IN4 is the base.</b> The material name IN4 uses <i>is</i> the item here, with IN4&apos;s own unit —
+        no guessing which of our items it might mean. A material IN4 has never sent before simply becomes
+        a new item on import. If what actually arrives at the gate is not what IN4 says, the storekeeper
+        or the guard records what really came and the line is <b>flagged as different from IN4 and the
+        bill</b>, for procurement to settle afterwards.
       </div>
 
       <PoImportClient
         q={q}
         available={available}
         picked={picked}
-        items={items}
         projects={(projectsRes.data ?? []) as Array<{ id: string; name: string }>}
         canEdit={canEdit}
       />

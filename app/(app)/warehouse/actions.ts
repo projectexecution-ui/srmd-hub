@@ -4,9 +4,10 @@ import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
 import { getMyUser, getMyPermissions, can } from '@/lib/auth'
 import { getLocationTree, getPostableSpots, getCount, one } from '@/lib/warehouse/data'
-import { aliasKey } from '@/lib/warehouse/match'
+import { in4Key, planIn4Items, FALLBACK_UOM } from '@/lib/warehouse/in4-items'
 import { buildSheet, submitBlocker, adjustments } from '@/lib/warehouse/count'
 import type { GateInInput } from '@/lib/warehouse/types'
+import type { In4ItemSpec } from '@/lib/warehouse/in4-items'
 import type { CountScope, SheetSource } from '@/lib/warehouse/count'
 
 /** The permissions-matrix gate. RLS checks the same thing, but a policy that
@@ -23,14 +24,17 @@ async function gate(action: 'edit' | 'admin' = 'edit'): Promise<string | null> {
 }
 
 export type SaveResult = { ok: true; entryNo: string } | { ok: false; error: string }
-export type PoResult = { ok: true; poNo: string; lines: number; learned: number } | { ok: false; error: string }
+export type PoResult =
+  | { ok: true; poNo: string; lines: number; itemsCreated: number; skipped: number }
+  | { ok: false; error: string }
 
-/** Create a PO in Warehouse V2 from confirmed lines.
+/** Import a PO exactly as IN4 has it.
  *
- *  The header comes from the Indent → PO Tracker (IN4) or is typed; the item on
- *  each line is whatever the user confirmed, because IN4's generic material
- *  names match our item master only 1.3% of the time. Each confirmation is
- *  stored as an alias so the same material links itself next time. */
+ *  No mapping and no confirmation: IN4's material name IS the item. If we have
+ *  never received that material before, the item is created here carrying IN4's
+ *  own name and UOM; if we have, the same name resolves to the same item. What
+ *  actually turns up at the gate is a different question, and it is answered at
+ *  the gate by the person looking at the truck. */
 export async function savePo(input: {
   poNo: string
   poDate: string | null
@@ -39,7 +43,14 @@ export async function savePo(input: {
   projectId: string | null
   indentNo: string | null
   source: 'manual' | 'tracker'
-  lines: Array<{ itemId: string; orderedQty: number; rate: number | null; sourceText: string | null }>
+  lines: Array<{
+    /** IN4's material name — the item's identity. */
+    material: string
+    uom: string | null
+    orderedQty: number
+    rate: number | null
+    discipline: string | null
+  }>
 }): Promise<PoResult> {
   const denied = await gate('edit')
   if (denied) return { ok: false, error: denied }
@@ -47,24 +58,39 @@ export async function savePo(input: {
   const poNo = input.poNo.trim()
   if (!poNo) return { ok: false, error: 'A PO number is needed.' }
 
-  const lines = input.lines.filter(l => l.itemId && l.orderedQty > 0)
-  if (lines.length === 0) {
-    return { ok: false, error: 'Confirm at least one line — pick the item it refers to and give the ordered quantity.' }
-  }
-  // One PO cannot order the same item twice; the tracker repeats a material per
-  // indent, so collapse rather than letting the unique index throw.
-  const byItem = new Map<string, { itemId: string; orderedQty: number; rate: number | null; sourceText: string | null }>()
-  for (const l of lines) {
-    const cur = byItem.get(l.itemId)
-    if (cur) { cur.orderedQty += l.orderedQty; continue }
-    byItem.set(l.itemId, { ...l })
+  const usable = input.lines.filter(l => l.material?.trim() && l.orderedQty > 0)
+  const skipped = input.lines.length - usable.length
+  if (usable.length === 0) {
+    return {
+      ok: false,
+      error: 'Nothing on this PO can be imported — every line is missing either a material name or an ordered quantity in IN4.',
+    }
   }
 
   const sb = await createClient()
   const me = await getMyUser()
 
   const { data: dupe } = await sb.from('wh_po').select('id').eq('po_no', poNo).maybeSingle()
-  if (dupe) return { ok: false, error: `${poNo} is already in Warehouse V2. Open it to change its lines.` }
+  if (dupe) return { ok: false, error: `${poNo} is already in Warehouse V2. Open it to see its lines.` }
+
+  // One item per distinct IN4 name; the tracker repeats a material once per
+  // indent, so the quantities add up onto one line.
+  const plan = planIn4Items(usable)
+  const totals = new Map<string, { orderedQty: number; rate: number | null }>()
+  for (const l of usable) {
+    const key = in4Key(l.material)
+    if (!key) continue
+    const cur = totals.get(key)
+    if (cur) {
+      cur.orderedQty += l.orderedQty
+      if (!cur.rate && l.rate) cur.rate = l.rate
+      continue
+    }
+    totals.set(key, { orderedQty: l.orderedQty, rate: l.rate })
+  }
+
+  const items = await ensureIn4Items(plan.wanted, me?.id ?? null)
+  if (!items.ok) return { ok: false, error: items.error }
 
   const { data: po, error: pErr } = await sb
     .from('wh_po')
@@ -82,36 +108,123 @@ export async function savePo(input: {
     .single()
   if (pErr || !po) return { ok: false, error: pErr?.message ?? 'Could not create the PO.' }
 
-  const { error: lErr } = await sb.from('wh_po_lines').insert(
-    [...byItem.values()].map(l => ({
-      po_id: po.id, item_id: l.itemId, ordered_qty: l.orderedQty, rate: l.rate, source_text: l.sourceText,
-    })),
-  )
+  const rows = [...totals.entries()].flatMap(([key, t]) => {
+    const itemId = items.byKey.get(key)
+    if (!itemId) return []
+    return [{
+      po_id: po.id,
+      item_id: itemId,
+      ordered_qty: t.orderedQty,
+      rate: t.rate,
+      // IN4's own words, kept on the line so the gate can show the keeper
+      // exactly what was ordered rather than a tidied-up version of it.
+      source_text: plan.wanted.get(key)?.name ?? null,
+    }]
+  })
+
+  const { error: lErr } = await sb.from('wh_po_lines').insert(rows)
   if (lErr) {
     await sb.from('wh_po').delete().eq('id', po.id)   // never leave a PO with no lines
     return { ok: false, error: lErr.message }
   }
 
-  // Remember every confirmation. DO NOTHING on conflict: an existing alias was
-  // set deliberately and must not be silently rewritten by a later import.
-  const learn = [...byItem.values()]
-    .filter(l => l.sourceText?.trim())
-    .map(l => ({
-      alias_key: aliasKey(l.sourceText!), source_text: l.sourceText!.trim(),
-      item_id: l.itemId, source: input.source, created_by: me?.id ?? null,
-    }))
-  let learned = 0
-  if (learn.length > 0) {
-    const { data: ins } = await sb
-      .from('wh_item_aliases')
-      .upsert(learn, { onConflict: 'alias_key', ignoreDuplicates: true })
-      .select('id')
-    learned = ins?.length ?? 0
-  }
-
   revalidatePath('/warehouse/po')
   revalidatePath('/warehouse/in')
-  return { ok: true, poNo: po.po_no, lines: byItem.size, learned }
+  return { ok: true, poNo: po.po_no, lines: rows.length, itemsCreated: items.created, skipped }
+}
+
+/** Find or create one item per IN4 material name.
+ *
+ *  Creating rather than matching is the whole point: an item we have never
+ *  received before is not a problem to be solved by guessing, it is simply a new
+ *  item. The unit comes from IN4's UOM and is LOCKED to the item afterwards
+ *  (#11) — if IN4 later sends a different UOM for the same name we keep ours and
+ *  the difference is reported, because changing a live item's unit would
+ *  re-scale its whole stock history. */
+async function ensureIn4Items(
+  wanted: Map<string, In4ItemSpec>,
+  actorId: string | null,
+): Promise<{ ok: true; byKey: Map<string, string>; created: number } | { ok: false; error: string }> {
+  const sb = await createClient()
+  const byKey = new Map<string, string>()
+
+  const { data: existing, error } = await sb
+    .from('wh_items')
+    .select('id, in4_name, unit')
+    .not('in4_name', 'is', null)
+    .is('deleted_at', null)
+  if (error) return { ok: false, error: `Could not read the item list: ${error.message}` }
+
+  for (const row of existing ?? []) {
+    if (row.in4_name) byKey.set(in4Key(row.in4_name), row.id)
+  }
+
+  const toCreate = [...wanted.entries()].filter(([key]) => !byKey.has(key))
+  if (toCreate.length === 0) return { ok: true, byKey, created: 0 }
+
+  const { data: made, error: cErr } = await sb
+    .from('wh_items')
+    .insert(toCreate.map(([, spec]) => ({
+      name: spec.name,
+      // wh_items.unit is NOT NULL and locked to the item, so a missing UOM
+      // cannot be left blank — it is defaulted and shows on the import summary.
+      unit: spec.uom ?? FALLBACK_UOM,
+      discipline: spec.discipline,
+      source: 'in4',
+      in4_name: spec.name,
+      in4_uom: spec.uom,
+      created_by: actorId,
+    })))
+    .select('id, in4_name')
+  if (cErr) return { ok: false, error: `Could not add the items IN4 named: ${cErr.message}` }
+
+  for (const row of made ?? []) {
+    if (row.in4_name) byKey.set(in4Key(row.in4_name), row.id)
+  }
+  return { ok: true, byKey, created: made?.length ?? 0 }
+}
+
+/** Add an item on the spot.
+ *
+ *  Needed at the gate: when what arrived is not what the PO says, the right item
+ *  may not exist anywhere yet — and a keeper who cannot record the truck in
+ *  front of him will write it on paper instead. Created as a plain manual item,
+ *  never as an IN4 one, because IN4 did not name it. */
+export async function createItem(input: {
+  name: string
+  unit: string
+  discipline?: string | null
+}): Promise<{ ok: true; id: string; name: string } | { ok: false; error: string }> {
+  const denied = await gate('edit')
+  if (denied) return { ok: false, error: denied }
+
+  const name = input.name.trim()
+  const unit = input.unit.trim()
+  if (!name) return { ok: false, error: 'Give the item a name.' }
+  if (!unit) return { ok: false, error: 'Give the unit it is counted in — it is locked to the item afterwards.' }
+
+  const sb = await createClient()
+  const me = await getMyUser()
+
+  // Same name already on the books? Reuse it rather than making a twin: two
+  // items with the same name split that material's stock in half for ever.
+  const { data: existing } = await sb
+    .from('wh_items')
+    .select('id, name')
+    .ilike('name', name)
+    .is('deleted_at', null)
+    .limit(1)
+  if (existing && existing.length > 0) return { ok: true, id: existing[0].id, name: existing[0].name }
+
+  const { data, error } = await sb
+    .from('wh_items')
+    .insert({ name, unit, discipline: input.discipline ?? null, source: 'manual', created_by: me?.id ?? null })
+    .select('id, name')
+    .single()
+  if (error || !data) return { ok: false, error: error?.message ?? 'Could not add the item.' }
+
+  revalidatePath('/warehouse/in')
+  return { ok: true, id: data.id, name: data.name }
 }
 
 export type GateOutInput = {
@@ -756,6 +869,15 @@ export async function saveGateIn(input: GateInInput): Promise<SaveResult> {
     if (l.damagedQty > l.receivedQty) {
       return { ok: false, error: 'Damaged quantity cannot be more than what was received.' }
     }
+    // A flagged difference with no explanation is just noise on a report — the
+    // DB refuses it too, but this says why in a sentence.
+    if (l.differsFromPo && !l.differNote?.trim()) {
+      return {
+        ok: false,
+        error: 'You have marked an item as not what the PO says. Add a short note on what actually came, '
+          + 'so procurement can fix it in IN4 and against the bill.',
+      }
+    }
   }
 
   const sb = await createClient()
@@ -807,12 +929,17 @@ export async function saveGateIn(input: GateInInput): Promise<SaveResult> {
     lines.map(l => ({
       gate_in_id: header.id,
       item_id: l.itemId,
+      // The PO line stays attached even when the item differs: the truck DID
+      // come against that order, so its balance must still come down. The flag
+      // is what tells procurement and billing to reconcile the difference.
       po_line_id: l.poLineId ?? null,
       challan_qty: l.challanQty,
       received_qty: l.receivedQty,
       damaged_qty: l.damagedQty,
       rate: l.rate,
       rate_source: l.rateSource,
+      differs_from_po: l.differsFromPo ?? false,
+      differ_note: l.differsFromPo ? l.differNote!.trim() : null,
     })),
   )
   if (lErr) {

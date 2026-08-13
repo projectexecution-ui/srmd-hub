@@ -1,15 +1,14 @@
 import { cache } from 'react'
 import { createClient } from '@/lib/supabase/server'
-import { aliasKey, suggestItems, type Suggestion } from './match'
-import { getItems } from './data'
+import { in4Key, planIn4Items, cleanUom } from './in4-items'
 
 /** Reading POs out of the Indent → PO Tracker.
  *
- *  The tracker is refreshed by Aksha's weekly IN4 upload and already holds
- *  1,195 PO numbers with supplier, date, ordered qty and UOM — so a PO HEADER
- *  imports perfectly. The LINES carry IN4's generic material names, which match
- *  our item master only 1.3% of the time, so each line gets a suggestion for a
- *  human to confirm once; the confirmed pairing is then remembered as an alias. */
+ *  The tracker is refreshed by Aksha's weekly IN4 upload and holds 1,195 PO
+ *  numbers with supplier, date, ordered qty, UOM and rate. All of it imports
+ *  as-is: IN4's material name IS the item (see in4-items.ts), so there is
+ *  nothing to map, confirm or guess. What actually turns up at the gate is a
+ *  separate question, answered at the gate. */
 
 type TrackerPoRef = { poNo?: string; poDate?: string; supplier?: string; rate?: number; qty?: number; draft?: boolean }
 type TrackerLine = {
@@ -27,16 +26,19 @@ export type TrackerPoSummary = {
   imported: boolean
 }
 
+/** One PO line, exactly as IN4 sent it. */
 export type TrackerPoLine = {
-  sourceText: string
+  /** IN4's material name, trimmed and otherwise untouched. */
+  material: string
   uom: string | null
   orderedQty: number
   receivedQty: number
   rate: number | null
   discipline: string | null
-  /** Set when this material has been confirmed before — no thinking needed. */
-  aliasItemId: string | null
-  suggestions: Suggestion[]
+  /** Do we already hold an item for this IN4 name, or will importing create one? */
+  itemExists: boolean
+  /** The unit we already hold, when it disagrees with the UOM IN4 sent. */
+  ourUnit: string | null
 }
 
 const readTracker = cache(async (): Promise<TrackerLine[]> => {
@@ -90,48 +92,78 @@ export async function searchTrackerPos(q = '', limit = 25): Promise<TrackerPoSum
   return list.map(p => ({ ...p, imported: have.has(p.poNo) }))
 }
 
-/** One PO's lines, each with an alias hit or ranked suggestions. */
-export async function getTrackerPo(poNo: string): Promise<{
-  poNo: string; vendor: string | null; poDate: string | null; project: string | null
-  indentNos: string[]; alreadyImported: boolean; lines: TrackerPoLine[]
-} | null> {
-  const [lines, items, sb] = await Promise.all([readTracker(), getItems(), createClient()])
+export type TrackerPo = {
+  poNo: string
+  vendor: string | null
+  poDate: string | null
+  project: string | null
+  indentNos: string[]
+  alreadyImported: boolean
+  lines: TrackerPoLine[]
+  /** Items this import would create, because IN4 has named material we have
+   *  never received before. Not a problem — just worth seeing first. */
+  newItems: number
+  /** IN4 sent the same material with two different UOMs on this PO. */
+  uomConflicts: Array<{ name: string; kept: string | null; alsoSeen: string }>
+  /** Lines IN4 sent with no material name — they cannot be imported. */
+  unnamed: number
+}
+
+/** One PO, ready to import as-is. */
+export async function getTrackerPo(poNo: string): Promise<TrackerPo | null> {
+  const [lines, sb] = await Promise.all([readTracker(), createClient()])
 
   const mine = lines.filter(l => (l.pos ?? []).some(p => p.poNo === poNo && !p.draft))
   if (mine.length === 0) return null
 
   const first = (mine[0].pos ?? []).find(p => p.poNo === poNo)
-  const keys = [...new Set(mine.map(l => aliasKey(l.material ?? '')).filter(Boolean))]
-  const [{ data: aliases }, { data: existing }] = await Promise.all([
-    sb.from('wh_item_aliases').select('alias_key, item_id').in('alias_key', keys.length ? keys : ['']),
-    sb.from('wh_po').select('id').eq('po_no', poNo).maybeSingle(),
-  ])
-  const aliasMap = new Map((aliases ?? []).map(a => [a.alias_key, a.item_id]))
+  const plan = planIn4Items(mine)
 
   // The tracker repeats a material once per indent; the PO ordered one total.
   const merged = new Map<string, TrackerPoLine>()
   for (const l of mine) {
-    const text = (l.material ?? '').trim()
-    if (!text) continue
-    const key = aliasKey(text)
+    const material = (l.material ?? '').trim()
+    const key = in4Key(material)
+    if (!key) continue
     const ref = (l.pos ?? []).find(p => p.poNo === poNo)
     const cur = merged.get(key)
     if (cur) {
       cur.orderedQty += Number(l.orderedQty ?? 0)
       cur.receivedQty += Number(l.receivedQty ?? 0)
+      if (!cur.rate && ref?.rate) cur.rate = Number(ref.rate)
       continue
     }
     merged.set(key, {
-      sourceText: text,
-      uom: l.uom ?? null,
+      material: plan.wanted.get(key)?.name ?? material,
+      uom: plan.wanted.get(key)?.uom ?? cleanUom(l.uom),
       orderedQty: Number(l.orderedQty ?? 0),
       receivedQty: Number(l.receivedQty ?? 0),
       rate: ref?.rate ? Number(ref.rate) : null,
-      discipline: l.discipline ?? null,
-      aliasItemId: aliasMap.get(key) ?? null,
-      suggestions: aliasMap.has(key) ? [] : suggestItems(text, items),
+      discipline: plan.wanted.get(key)?.discipline ?? null,
+      itemExists: false,
+      ourUnit: null,
     })
   }
+
+  // Which of these IN4 names we already hold an item for.
+  const keys = [...merged.keys()]
+  const { data: existing } = keys.length
+    ? await sb.from('wh_items').select('id, in4_name, unit').not('in4_name', 'is', null).is('deleted_at', null)
+    : { data: [] as Array<{ id: string; in4_name: string | null; unit: string }> }
+  const have = new Map(
+    (existing ?? [])
+      .filter(r => r.in4_name)
+      .map(r => [in4Key(r.in4_name!), r.unit]),
+  )
+  for (const [key, line] of merged) {
+    const ourUnit = have.get(key)
+    if (ourUnit) {
+      line.itemExists = true
+      line.ourUnit = line.uom && ourUnit !== line.uom ? ourUnit : null
+    }
+  }
+
+  const { data: alreadyPo } = await sb.from('wh_po').select('id').eq('po_no', poNo).maybeSingle()
 
   return {
     poNo,
@@ -139,14 +171,10 @@ export async function getTrackerPo(poNo: string): Promise<{
     poDate: first?.poDate ?? null,
     project: mine[0].project ?? null,
     indentNos: [...new Set(mine.map(l => l.indentNo).filter(Boolean) as string[])],
-    alreadyImported: !!existing,
+    alreadyImported: !!alreadyPo,
     lines: [...merged.values()].sort((a, b) => b.orderedQty - a.orderedQty),
+    newItems: [...merged.values()].filter(l => !l.itemExists).length,
+    uomConflicts: plan.uomConflicts,
+    unnamed: plan.unnamed,
   }
-}
-
-/** Aliases already learned, for the Settings screen later. */
-export async function getAliasCount(): Promise<number> {
-  const sb = await createClient()
-  const { count } = await sb.from('wh_item_aliases').select('id', { count: 'exact', head: true })
-  return count ?? 0
 }
