@@ -75,6 +75,12 @@ export const NOTIFICATION_EVENTS: NotificationEventDef[] = [
     audience: 'The pending approver (+ escalation to the next level & management)',
   },
   {
+    type: 'cc_budget_vs_actual_report',
+    label: 'Weekly: Budget vs Actual (portfolio)',
+    description: 'A Monday-morning portfolio card to management — every budgeted project’s ERP budget vs actual paid + % used (and ₹/sft), with a warning when the BPH numbers are 7+ days stale. Confidential — goes to Cost Control management/reviewers only. Arrives as a Telegram card.',
+    audience: 'Management (Cost Control reviewers)',
+  },
+  {
     type: 'jmr_entry_submitted',
     label: 'JMR entry submitted (to review)',
     description: 'The moment an engineer submits a daily JMR entry, the approvers (admin/head) are pinged that there’s something to review. Email is off by default for this one to avoid inbox flooding — in-app + phone push stay on; turn email on here if you want it.',

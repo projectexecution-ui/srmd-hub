@@ -47,6 +47,9 @@ export const CRON_JOBS: CronJob[] = [
   // day); escalates items stuck 3+ days. Rides both slots; its own IST-date
   // "aged since a previous day" gate + the ledger prevent a double-send.
   { key: 'cc-approval-reminders', policy: 'daily', am: '/api/cron/cc-approval-reminders?cron=1', pm: '/api/cron/cc-approval-reminders?cron=1' },
+  // Weekly portfolio Budget-vs-Actual card to management; the route self-gates
+  // to Monday IST (BPH data refreshes weekly), so most days it no-ops.
+  { key: 'cc-budget-vs-actual',   policy: 'daily', am: '/api/cron/cc-budget-vs-actual?cron=1',   pm: '/api/cron/cc-budget-vs-actual?cron=1' },
   // ── Each-slot jobs (intentionally run at both 09:00 and 15:00) ────────────
   { key: 'bills-pipeline',        policy: 'each',  am: '/api/cron/bills-pipeline?cron=1',      pm: '/api/cron/bills-pipeline?cron=1&slot=pm' },
   { key: 'bph-sync',              policy: 'each',  am: '/api/cron/bph-sync?cron=1',            pm: '/api/cron/bph-sync?cron=1' },
@@ -120,6 +123,7 @@ export function legacyJobs(slot: Slot, everyThirdDay: boolean): string[] {
     '/api/cron/bills-digest?cron=1',
     '/api/cron/cc-approval-digest?cron=1',
     '/api/cron/cc-approval-reminders?cron=1',
+    '/api/cron/cc-budget-vs-actual?cron=1',
     '/api/cron/bph-sync?cron=1',
   ]
 }
