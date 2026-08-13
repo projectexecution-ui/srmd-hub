@@ -1,6 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { getMyUser, getMyPermissions, can } from '@/lib/auth'
 import type { GateInOptions, WhItem, WhPo, WhPoLine, WhSite, WhSpot, WhLists, StockRow } from './types'
+import type { CountLine } from './count'
 
 /** PostgREST embeds a to-one relation as an object at runtime, but the generated
  *  types describe it as an array. This normalises both shapes so callers can
@@ -255,6 +256,61 @@ export async function getRecentOuts(limit = 15) {
     .is('deleted_at', null)
     .order('entry_date', { ascending: false })
     .order('created_at', { ascending: false })
+    .limit(limit)
+  return { rows: data ?? [], error }
+}
+
+/** One count with its sheet, resolved for the walking screen. */
+export async function getCount(id: string) {
+  const sb = await createClient()
+  const { data, error } = await sb
+    .from('wh_counts')
+    .select(`id, count_no, location_id, scope, status, blind, started_at, submitted_at,
+             approved_at, reject_reason, counted_by, witness_id,
+             counter:profiles!wh_counts_counted_by_fkey(full_name, email),
+             witness:profiles!wh_counts_witness_id_fkey(full_name, email),
+             approver:profiles!wh_counts_approved_by_fkey(full_name, email),
+             wh_locations(name, parent_id),
+             wh_count_lines(id, item_id, seq, book_qty, counted_qty, skipped, skip_reason,
+                            reason, remark, photo_url, wh_items(name, unit, last_rate))`)
+    .eq('id', id)
+    .maybeSingle()
+  if (error || !data) return { count: null, lines: [] as CountLine[], error }
+
+  const lines = (data.wh_count_lines ?? [])
+    .map((l): CountLine => {
+      const item = one(l.wh_items)
+      return {
+        id: l.id,
+        itemId: l.item_id,
+        itemName: item?.name ?? '—',
+        unit: item?.unit ?? '',
+        seq: l.seq,
+        bookQty: Number(l.book_qty),
+        countedQty: l.counted_qty == null ? null : Number(l.counted_qty),
+        skipped: l.skipped,
+        skipReason: l.skip_reason,
+        reason: l.reason,
+        remark: l.remark,
+        rate: item?.last_rate == null ? null : Number(item.last_rate),
+      }
+    })
+    .sort((a, b) => a.seq - b.seq || a.itemName.localeCompare(b.itemName))
+
+  return { count: data, lines, error: null }
+}
+
+/** Counts for the register list — open ones first, because an abandoned count
+ *  left half-walked is the thing most worth seeing. */
+export async function getRecentCounts(limit = 20) {
+  const sb = await createClient()
+  const { data, error } = await sb
+    .from('wh_counts')
+    .select(`id, count_no, scope, status, blind, started_at, submitted_at, approved_at,
+             counter:profiles!wh_counts_counted_by_fkey(full_name, email),
+             wh_locations(name),
+             wh_count_lines(id, book_qty, counted_qty, skipped)`)
+    .order('started_at', { ascending: false })
     .limit(limit)
   return { rows: data ?? [], error }
 }

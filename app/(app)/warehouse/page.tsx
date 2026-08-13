@@ -10,8 +10,8 @@ export const dynamic = 'force-dynamic'
 const LANES = [
   { href: '/warehouse/in',       icon: ArrowDownToLine,  label: 'Gate IN',        blurb: 'Record a truck arriving — challan vs received, damage, PO balance' },
   { href: '/warehouse/po',       icon: FileText,         label: 'Purchase Orders', blurb: 'Pull a PO from IN4 so the gate screen can show what is still to come' },
-  { href: '/warehouse/out',      icon: ArrowUpFromLine,  label: 'OUT to site',    blurb: 'Issue to a site for use, or move stock to another store',  soon: true },
-  { href: '/warehouse/count',    icon: ClipboardList,    label: 'Physical count', blurb: 'Walk a store and count what is actually there',            soon: true },
+  { href: '/warehouse/out',      icon: ArrowUpFromLine,  label: 'OUT to site',    blurb: 'Issue to a site for use, or move stock to another store' },
+  { href: '/warehouse/count',    icon: ClipboardList,    label: 'Physical count', blurb: 'Walk a store and count what is actually there — the difference is named, witnessed and approved' },
   { href: '/warehouse/stock',    icon: Boxes,            label: 'Stock',          blurb: 'What lies where, as on a date',                            soon: true },
   { href: '/warehouse/reports',  icon: BarChart3,        label: 'Reports',        blurb: 'Registers, PO pending, vendor balance, exceptions',        soon: true },
   { href: '/warehouse/settings', icon: Settings2,        label: 'Settings',       blurb: 'Your lists, who works where, the control switches',        soon: true },
