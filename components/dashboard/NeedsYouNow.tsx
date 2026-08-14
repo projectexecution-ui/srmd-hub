@@ -146,18 +146,19 @@ export function NeedsYouNow({
               </div>
             </div>
 
-            <div className="px-4 py-2 space-y-3">
+            <div className="pb-1">
               {proj.disciplines.map(disc => (
                 <div key={disc.disciplineId}>
-                  <div className="flex items-baseline justify-between gap-2 mb-1 px-0.5">
-                    <span className="text-xs font-bold text-gray-500 truncate">
-                      {disc.name ?? '—'} <span className="text-[9px] uppercase tracking-wide text-gray-400">sub-discipline</span>
+                  <div className="flex items-baseline justify-between gap-2 px-4 py-1.5 bg-gray-100/70 border-y border-gray-200">
+                    <span className="text-[11px] font-bold text-gray-700 uppercase tracking-wide truncate inline-flex items-center gap-2">
+                      <span className="h-2.5 w-2.5 rounded-sm bg-gray-400 flex-shrink-0" />
+                      {disc.name ?? '—'}
                     </span>
-                    <span className="text-[11px] text-gray-500 tabular-nums whitespace-nowrap">
+                    <span className="text-[11px] text-gray-500 tabular-nums whitespace-nowrap normal-case">
                       approved <b className="text-gray-800">{formatINR(disc.before)}</b> → <b className="text-emerald-700">{formatINR(disc.after)}</b>
                     </span>
                   </div>
-                  <div className="divide-y divide-gray-100">
+                  <div className="divide-y divide-gray-100 px-4">
                     {disc.items.map(it => {
                       const late = isLate(it.urgency, it.createdAt, now)
                       const age = ageDays(it.createdAt, now)

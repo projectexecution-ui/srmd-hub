@@ -387,10 +387,13 @@ export default async function ApprovalsInboxPage({
                   const discInc = ditems.reduce((s, r) => s + increment(r), 0)
                   return (
                     <div key={did}>
-                      <div className="flex items-baseline justify-between gap-2 mb-2 px-0.5">
-                        <span className="text-xs font-bold text-gray-500 truncate">{disc?.name ?? '—'}</span>
+                      <div className="flex items-baseline justify-between gap-2 mb-2 px-3 py-1.5 rounded-lg bg-gray-100/70 border border-gray-200">
+                        <span className="text-[11px] font-bold text-gray-700 uppercase tracking-wide truncate inline-flex items-center gap-2">
+                          <span className="h-2.5 w-2.5 rounded-sm bg-gray-400 flex-shrink-0" />
+                          {disc?.name ?? '—'}
+                        </span>
                         {haveApproved && (
-                          <span className="text-[11px] text-gray-500 tabular-nums whitespace-nowrap">
+                          <span className="text-[11px] text-gray-500 tabular-nums whitespace-nowrap normal-case">
                             approved <b className="text-gray-800">{formatINR(discBefore)}</b> → <b className="text-emerald-700">{formatINR(discBefore + discInc)}</b>
                           </span>
                         )}
