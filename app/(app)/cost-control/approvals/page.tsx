@@ -249,6 +249,7 @@ export default async function ApprovalsInboxPage({
 
   const approvedByProject = new Map<string, number>()
   const approvedByDisc = new Map<string, number>()  // key `${project}::${discipline}`
+  const approvedBySub = new Map<string, number>()   // key `${project}::${discipline}::${sub_skill}`
   {
     const byProj = new Map<string, RollupSheetRow[]>()
     for (const s of (allSheetRows ?? []) as RollupSheetRow[]) {
@@ -258,9 +259,11 @@ export default async function ApprovalsInboxPage({
     for (const [pid, sheets] of byProj) {
       const roll = computeMoneyRollup({ wsRows: sheets, versionRows: sheets, budgetLines: [], subSkills: [], disciplines: [] })
       let total = 0
+      // wsAgg is keyed `${discipline}::${sub_skill}` within a project.
       for (const [key, agg] of roll.wsAgg) {
         const disc = key.slice(0, key.indexOf('::'))
         approvedByDisc.set(`${pid}::${disc}`, (approvedByDisc.get(`${pid}::${disc}`) ?? 0) + agg.approvedTotal)
+        approvedBySub.set(`${pid}::${key}`, (approvedBySub.get(`${pid}::${key}`) ?? 0) + agg.approvedTotal)
         total += agg.approvedTotal
       }
       approvedByProject.set(pid, total)
@@ -397,6 +400,7 @@ export default async function ApprovalsInboxPage({
                           const sub = pickFirst(ws.cc_sub_skills)
                           const ex = enrich.get(ws.id)
                           const inc = increment(ws)
+                          const subBefore = approvedBySub.get(`${pid}::${ws.discipline_id}::${ws.sub_skill_id}`) ?? 0
                           const mineFlag = isWaitingOnMe(ws, ctx)
                           const href = `/cost-control/working-sheets/${ws.id}?from=approvals`
                           const d = daysWaiting(ws.submitted_at)
@@ -423,13 +427,18 @@ export default async function ApprovalsInboxPage({
 
                               {haveApproved && (
                                 <div className={`mt-2.5 rounded-lg border px-3 py-2 text-xs tabular-nums ${tone.ba}`}>
+                                  <p className="text-[10px] uppercase tracking-wide opacity-60 mb-1">Approved so far → after this</p>
                                   <div className="flex justify-between gap-2">
-                                    <span className="opacity-80">{disc?.name ?? 'Discipline'}</span>
-                                    <span><b>{formatINR(discBefore)}</b> → <b className="text-emerald-700">{formatINR(discBefore + inc)}</b></span>
+                                    <span className="opacity-80 truncate">{sub?.name ?? disc?.name ?? 'This line'}</span>
+                                    <span className="flex-shrink-0"><b>{formatINR(subBefore)}</b> → <b className="text-emerald-700">{formatINR(subBefore + inc)}</b></span>
+                                  </div>
+                                  <div className="flex justify-between gap-2 mt-1">
+                                    <span className="opacity-80 truncate">{disc?.name ?? 'Discipline'} <span className="opacity-60">(discipline)</span></span>
+                                    <span className="flex-shrink-0"><b>{formatINR(discBefore)}</b> → <b className="text-emerald-700">{formatINR(discBefore + inc)}</b></span>
                                   </div>
                                   <div className="flex justify-between gap-2 mt-1 pt-1 border-t border-black/5">
                                     <span className="opacity-80">Project total</span>
-                                    <span><b>{formatINR(projBefore)}</b> → <b className="text-emerald-700">{formatINR(projBefore + inc)}</b></span>
+                                    <span className="flex-shrink-0"><b>{formatINR(projBefore)}</b> → <b className="text-emerald-700">{formatINR(projBefore + inc)}</b></span>
                                   </div>
                                 </div>
                               )}
