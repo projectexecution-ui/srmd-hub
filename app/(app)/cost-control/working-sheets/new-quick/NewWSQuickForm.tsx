@@ -276,17 +276,26 @@ export async function parseExcel(file: File): Promise<{ rows: ParsedRow[]; grand
       if (cell && cell.f) formulaInAmount = String(cell.f)
     }
 
-    // Skip empty template placeholder rows. The standard BOQ template ships
-    // numbered blank rows (Sr 7, 8, 9 … with no description and ₹0); storing
-    // them just clutters the verified BOQ. Drop any row that has neither a real
-    // description (blank, or a bare serial number) nor any money.
+    // Skip rows the template ships but that must NOT become line items:
+    //  1) empty numbered placeholder rows (Sr 7,8,9… — blank/serial desc, ₹0); and
+    //  2) formula-only aggregate rows with NO description — a SUM subtotal
+    //     (e.g. SUM(I6:I30)) or the grand total (e.g. I31+I32+I33). The
+    //     grand-total detector above only fires when the row has a text
+    //     description ("Grand Total"); this standard template leaves them blank,
+    //     so summing them as line items TRIPLED the sheet total on re-upload.
+    //     Drop them here — the grand total is recomputed from the real item +
+    //     add-on rows below.
     const descText = (desc ?? '').trim()
-    const isBlankPlaceholder =
-      (descText === '' || /^\d+$/.test(descText))
+    const blankDesc = descText === '' || /^\d+$/.test(descText)
+    const isBlankPlaceholder = blankDesc
       && (amount == null || amount === 0)
       && (qty == null || qty === 0)
       && (rate == null || rate === 0)
-    if (isBlankPlaceholder) continue
+    const isAggregateRow = blankDesc && amount != null && amount !== 0
+      && qty == null && rate == null
+      && formulaInAmount != null
+      && (/\bSUM\s*\(/i.test(formulaInAmount) || /^[=\s]*[A-Za-z]+\d+(\s*\+\s*[A-Za-z]+\d+)+\s*$/.test(formulaInAmount))
+    if (isBlankPlaceholder || isAggregateRow) continue
 
     rows.push({
       row_no: rows.length + 1,
