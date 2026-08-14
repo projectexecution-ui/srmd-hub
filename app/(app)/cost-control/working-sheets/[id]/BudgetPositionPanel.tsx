@@ -2,8 +2,8 @@
 // the sign-off. For this sheet's sub-skill, its discipline, and the whole
 // project, it shows the budget ALREADY APPROVED so far → what it BECOMES once
 // this sheet is signed off. Reuses the same money rollup as the project /
-// approvals pages, so the figures always match. No Internal Estimate here —
-// only approved amounts.
+// approvals pages so the figures always match. No Internal Estimate here —
+// only approved amounts. One component → renders the same on web and mobile.
 
 import { createClient } from '@/lib/supabase/server'
 import { computeMoneyRollup, type RollupWSRow, type RollupVersionRow } from '@/lib/cost-control/project-rollup'
@@ -49,28 +49,34 @@ export async function BudgetPositionPanel({
   const inc = Math.max(0, Number(totalAmount ?? 0) - Number(approvedForErp ?? 0))
 
   const rows = [
-    { key: 'line', label: subName ?? discName ?? 'This line', tag: 'this line', before: subApproved },
-    { key: 'disc', label: discName ?? '—', tag: 'discipline', before: discApproved },
-    { key: 'proj', label: projName ?? '—', tag: 'project total', before: projApproved },
+    { key: 'line', label: subName ?? discName ?? 'This line', tag: 'this line', before: subApproved, lead: true },
+    { key: 'disc', label: discName ?? '—', tag: 'discipline', before: discApproved, lead: false },
+    { key: 'proj', label: projName ?? '—', tag: 'project total', before: projApproved, lead: false },
   ]
 
   return (
-    <div className="rounded-xl border border-teal-200 bg-teal-50/40 overflow-hidden">
-      <div className="px-4 py-2.5 border-b border-teal-100 flex items-center gap-2 flex-wrap">
-        <span className="text-sm font-semibold text-gray-800">Budget position</span>
-        <span className="text-xs text-gray-500">approved so far → after you approve</span>
+    <div className="rounded-xl border border-gray-200 bg-white overflow-hidden shadow-sm">
+      <div className="px-4 py-3 border-b border-gray-100 bg-gray-50/70">
+        <div className="flex items-center gap-2">
+          <span className="text-sm font-semibold text-gray-900">Budget position</span>
+          <span className="text-[9px] font-bold uppercase tracking-wide text-emerald-700 bg-emerald-50 border border-emerald-100 rounded px-1.5 py-0.5">new</span>
+        </div>
+        <p className="text-xs text-gray-500 mt-0.5">Approved so far → after you approve</p>
       </div>
-      <div className="divide-y divide-teal-100/70">
+      <div className="divide-y divide-gray-100">
         {rows.map(r => (
-          <div key={r.key} className="flex items-center justify-between gap-3 px-4 py-2.5">
-            <span className="min-w-0 truncate text-sm text-gray-800">
-              {r.label} <span className="text-[10px] uppercase tracking-wide text-gray-400">{r.tag}</span>
-            </span>
-            <span className="flex-shrink-0 whitespace-nowrap text-sm tabular-nums">
-              <span className="text-gray-500">{formatINR(r.before)}</span>
-              <span className="mx-1 text-gray-400">→</span>
-              <span className="font-bold text-emerald-700">{formatINR(r.before + inc)}</span>
-            </span>
+          <div key={r.key} className={`flex items-center justify-between gap-4 px-4 py-3 ${r.lead ? 'bg-emerald-50/30' : ''}`}>
+            <div className="min-w-0 flex-1">
+              <p className={`truncate ${r.lead ? 'text-sm font-semibold text-gray-900' : 'text-[13px] font-medium text-gray-700'}`}>{r.label}</p>
+              <p className="text-[11px] text-gray-400 mt-0.5">{r.tag}</p>
+            </div>
+            <div className="flex-shrink-0 text-right leading-tight">
+              <div className="tabular-nums whitespace-nowrap">
+                <span className="text-xs text-gray-500">{formatINR(r.before)}</span>
+                <span className="mx-1 text-gray-300">→</span>
+                <span className="text-sm font-bold text-emerald-700">{formatINR(r.before + inc)}</span>
+              </div>
+            </div>
           </div>
         ))}
       </div>
