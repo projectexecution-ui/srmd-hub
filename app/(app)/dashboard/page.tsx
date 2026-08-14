@@ -11,6 +11,7 @@ import { ClipboardList, FileText, PackageCheck, Receipt } from 'lucide-react'
 import { getMyProfile, getMyPermissions, getDisabledModuleSlugs } from '@/lib/auth'
 import { getModuleLabels } from '@/lib/module-labels'
 import { NeedsYouNow, type InboxItem } from '@/components/dashboard/NeedsYouNow'
+import { getHomeBudgetGroups } from '@/lib/cost-control/my-budget-approvals'
 import { CostControlSnapshot } from '@/components/dashboard/CostControlSnapshot'
 
 export const dynamic = 'force-dynamic'
@@ -35,6 +36,18 @@ export default async function DashboardPage() {
   // action. One RPC, already permission-scoped; drives the top of the home.
   const { data: inboxData, error: inboxError } = await supabase.rpc('my_approval_inbox')
   const inbox = (inboxData ?? []) as InboxItem[]
+
+  // Cost Control budget approvals are grouped by project → sub-discipline (with
+  // approved-so-far → after, like My Approvals); everything else stays a simple
+  // list. The RPC already scoped to "waiting on me", so we just enrich + group.
+  const ccRefs = inbox
+    .filter(i => i.module_slug === 'cost-control' && i.doc_id)
+    .map(i => ({ docId: i.doc_id as string, docUrl: i.doc_url, urgency: i.urgency, createdAt: i.created_at }))
+  const budgetProjects = ccRefs.length ? await getHomeBudgetGroups(supabase, ccRefs) : []
+  const groupedIds = new Set(budgetProjects.flatMap(p => p.disciplines.flatMap(d => d.items.map(it => it.id))))
+  // Anything not folded into a project group (non-CC, or a CC item whose sheet
+  // couldn't be read) stays in the simple list so nothing silently disappears.
+  const otherInbox = inbox.filter(i => !(i.doc_id && groupedIds.has(i.doc_id)))
 
   // Engineer's own budget work (drafts / returned / awaiting) for the "Your
   // budget work" strip — a cheap status-only read of their own sheets. These
@@ -91,7 +104,7 @@ export default async function DashboardPage() {
       </div>
 
       {/* Needs you now — the actionable heart of the home, above everything else */}
-      <NeedsYouNow items={inbox} moduleLabels={moduleLabels} error={!!inboxError} />
+      <NeedsYouNow budgetProjects={budgetProjects} otherItems={otherInbox} totalCount={inbox.length} moduleLabels={moduleLabels} error={!!inboxError} />
 
       {/* Your budget work — an engineer's own drafts/returns/awaiting (things
           that don't appear in the approval inbox). Self-hides when there's none. */}
