@@ -105,6 +105,7 @@ export function SettingsClient({
                   <KeeperMap sites={sites} people={people} itemsPerStore={itemsPerStore} canAdmin={canAdmin} />
                 )}
                 {sec.key === 'lists' && <Lists lists={lists} itemCount={itemCount} canAdmin={canAdmin} />}
+                {sec.key === 'sync' && <SyncLink />}
                 {sec.key === 'from-hub' && <FromHub />}
 
                 {pending.length > 0 && (
@@ -436,6 +437,26 @@ function Lists({ lists, itemCount, canAdmin }: { lists: ListRow[]; itemCount: nu
           item on import.
         </p>
       </div>
+    </div>
+  )
+}
+
+function SyncLink() {
+  return (
+    <div className="space-y-2">
+      <p className="text-[12px] text-slate-600 leading-snug">
+        The Indent → PO Tracker upload your team already does every week carries more item names, units and
+        trades than any other source we have — plus every issued purchase order with its rates. This brings
+        the ones you choose into the warehouse.
+      </p>
+      <p className="text-[11.5px] text-slate-500 leading-snug">
+        <b>Nothing is written until you say so.</b> The next screen is a preview: what would be added, what is
+        left alone, and why. Your stores are never touched — the upload has no store in it.
+      </p>
+      <Link href="/warehouse/settings/sync"
+        className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 px-3 py-2 min-h-[40px] text-[12.5px] font-bold text-white">
+        See what would come across <ChevronRight className="h-3.5 w-3.5" />
+      </Link>
     </div>
   )
 }

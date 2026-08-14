@@ -23,7 +23,7 @@ export type SettingKey =
 
 export type SectionKey =
   | 'arrives' | 'goes-out' | 'counting' | 'pos' | 'closing'
-  | 'who-can' | 'who-where' | 'lists' | 'from-hub'
+  | 'who-can' | 'who-where' | 'lists' | 'sync' | 'from-hub'
 
 export type SettingDef = {
   key: SettingKey
@@ -157,6 +157,7 @@ export const SECTIONS: Array<{
   { key: 'who-can',   icon: '👥', title: 'Who can do what',                  subtitle: 'Shown here · actually set in Admin ▸ Permissions' },
   { key: 'who-where', icon: '🔐', title: 'Who works where',                  subtitle: 'Which store — the gap the role matrix cannot cover' },
   { key: 'lists',     icon: '📝', title: 'Your lists',                       subtitle: 'The words the system uses — you maintain these, never a developer' },
+  { key: 'sync',      icon: '🔄', title: 'Bring across from IN4',            subtitle: 'Items, units, trades and purchase orders out of the weekly upload' },
   { key: 'from-hub',  icon: '🏛️', title: 'Comes from the hub',               subtitle: 'Already built and shared — nothing to set up here' },
 ]
 
