@@ -196,8 +196,12 @@ export function ExcelSummaryPanel({
             </div>
             <div className="flex items-center gap-2">
               {downloadUrl && (
+                // Go through our own same-origin route (it sets
+                // Content-Disposition: attachment), NOT the raw cross-origin
+                // storage URL — phones ignore the `download` attribute on a
+                // cross-origin link and just preview the file instead of saving.
                 <Button asChild size="sm" className="bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm">
-                  <a href={downloadUrl} download={fileName ?? 'sheet.xlsx'}>
+                  <a href={`/api/cost-control/working-sheets/${wsId}/download`}>
                     <Download className="h-4 w-4" /> Download Excel
                   </a>
                 </Button>
