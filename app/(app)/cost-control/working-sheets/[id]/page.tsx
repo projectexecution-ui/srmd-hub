@@ -29,6 +29,7 @@ import { RevisionEditor, type PriorApprovedRow, type DeltaRow } from './Revision
 import { VersionLedgerStrip } from './VersionLedgerStrip'
 import { CumulativeBoqPanel } from './CumulativeBoqPanel'
 import { ConfidenceScorecard } from './ConfidenceScorecard'
+import { BudgetPositionPanel } from './BudgetPositionPanel'
 import { chainCumulative, chainReleasedSoFar, matchBoqRows, summarizeMatch, normalizeKey, basisCounts } from '@/lib/cost-control/version-ledger'
 import { EditDeadlineButton } from './EditDeadlineButton'
 import { QueryError } from '@/components/ui/query-error'
@@ -332,6 +333,27 @@ export default async function WorkingSheetEditorPage(
     </div>
   ) : null
 
+  // Budget position — reviewers only, on a still-pending sheet, shown right by
+  // the sign-off: what's approved so far under this sub-skill / discipline /
+  // project → what it becomes after this approval.
+  const isPendingApproval = ['submitted', 'ph_approved', 'atm_approved', 'partially_approved'].includes(ws.status)
+  const wsProj = (Array.isArray(ws.projects) ? ws.projects[0] : ws.projects) as PRow | null
+  const wsDisc = (Array.isArray(ws.cc_disciplines) ? ws.cc_disciplines[0] : ws.cc_disciplines) as DRow | null
+  const wsSub = (Array.isArray(ws.cc_sub_skills) ? ws.cc_sub_skills[0] : ws.cc_sub_skills) as SRow | null
+  const reviewPanel = reviewer && isPendingApproval && ws.project_id ? (
+    <BudgetPositionPanel
+      projectId={ws.project_id}
+      disciplineId={ws.discipline_id}
+      subSkillId={ws.sub_skill_id}
+      totalAmount={Number(ws.total_amount ?? 0)}
+      approvedForErp={ws.approved_for_erp_amt}
+      subName={wsSub?.name ?? null}
+      discName={wsDisc?.name ?? null}
+      projName={wsProj?.name ?? wsProj?.code ?? null}
+    />
+  ) : null
+  const reviewTop = <>{reviewNav}{reviewPanel}</>
+
   // Thumbrule mode: a single rate × area figure — no line items. Render
   // a read-only summary + the same submit/approve/return actions, NOT the
   // line-item editor (which would wrongly invite "Add row").
@@ -366,7 +388,7 @@ export default async function WorkingSheetEditorPage(
           )}
         </PageHeader>
 
-        {reviewNav}
+        {reviewTop}
 
         <VersionChainBar
           wsId={ws.id}
@@ -581,7 +603,7 @@ export default async function WorkingSheetEditorPage(
           )}
         </PageHeader>
 
-        {reviewNav}
+        {reviewTop}
 
         <VersionChainBar
           wsId={ws.id}
@@ -835,7 +857,7 @@ export default async function WorkingSheetEditorPage(
         )}
       </PageHeader>
 
-      {reviewNav}
+      {reviewTop}
 
       <VersionChainBar
         wsId={ws.id}
