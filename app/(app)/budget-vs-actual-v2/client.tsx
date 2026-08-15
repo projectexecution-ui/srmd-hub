@@ -755,9 +755,9 @@ function ProjectCard({ p, open, toggle, forceOpen, groupAvgSft, isAdmin, onStatu
           )}
           <div className="flex-1" />
           <Cell value={p.budget} area={p.area} size="lg" />
-          <Cell value={p.approved || null} area={p.area} size="lg" cls="text-blue-800" showSft={false} />
+          <Cell value={p.approved || null} area={p.area} size="lg" cls="text-blue-800" />
           <Cell value={p.spent} area={p.area} cls={paidCls(p.spent, p.budget, true)} size="lg" />
-          <Cell value={p.budget ? balance : null} area={p.area} cls={balanceCls(balance)} size="lg" showSft={false} />
+          <Cell value={p.budget ? balance : null} area={p.area} cls={balanceCls(balance)} size="lg" />
         </div>
         {u != null && c && (
           <div className="mt-2 h-[5px] rounded-full bg-gray-100 overflow-hidden">
@@ -819,9 +819,9 @@ function CategoryBlock({ cat, project, idx, open, toggle, forceOpen }: {
         {u != null && <UtilChip u={u} />}
         <div className="flex-1" />
         <Cell value={cat.budget || null} area={project.area} size="lg" />
-        <Cell value={cat.approved || null} area={project.area} size="lg" cls="text-blue-800" showSft={false} />
+        <Cell value={cat.approved || null} area={project.area} size="lg" cls="text-blue-800" />
         <Cell value={cat.spent || null} area={project.area} cls={paidCls(cat.spent, cat.budget, true)} size="lg" />
-        <Cell value={cat.budget ? balance : null} area={project.area} cls={balanceCls(balance)} size="lg" showSft={false} />
+        <Cell value={cat.budget ? balance : null} area={project.area} cls={balanceCls(balance)} size="lg" />
       </div>
 
       {isOpen && cat.subcats.length > 0 && (
@@ -848,10 +848,10 @@ function CategoryBlock({ cat, project, idx, open, toggle, forceOpen }: {
                 {sc.code && <span className="font-mono text-[11px] text-gray-400 flex-shrink-0">{sc.code}</span>}
                 <span className="text-[12px] text-gray-600 truncate">{sc.label}</span>
                 <div className="flex-1" />
-                <Cell value={sc.budget || null} area={project.area} showSft={false} />
-                <Cell value={sc.approved || null} area={project.area} showSft={false} cls="text-blue-700" />
-                <Cell value={sc.spent || null} area={project.area} showSft={false} />
-                <Cell value={sc.budget ? scBal : null} area={project.area} showSft={false} cls={balanceCls(scBal)} />
+                <Cell value={sc.budget || null} area={project.area} />
+                <Cell value={sc.approved || null} area={project.area} cls="text-blue-700" />
+                <Cell value={sc.spent || null} area={project.area} />
+                <Cell value={sc.budget ? scBal : null} area={project.area} cls={balanceCls(scBal)} />
               </div>
             )
           })}

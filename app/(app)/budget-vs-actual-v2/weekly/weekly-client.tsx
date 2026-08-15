@@ -135,9 +135,10 @@ export default function WeeklyClient({ result, freshness, delta, prevSnapshotWee
                     return (
                       <tr className="proj" key={p.name}>
                         <td className="l">{p.name}{p.status === 'closed' ? ' · closed' : ''}{p.area ? <span style={{ color: '#9ca3af', fontWeight: 400 }}> · {p.area.toLocaleString('en-IN')} sft</span> : null}{manual && <span className="manual">{p.isExtra ? 'manual' : 'adj'}</span>}</td>
-                        <td>{fmtINR(p.budget)}{perSft(p.budget, p.area) && <div className="sft">{perSft(p.budget, p.area)}</div>}</td><td className="appr">{fmtINR(p.approved)}</td>
+                        <td>{fmtINR(p.budget)}{perSft(p.budget, p.area) && <div className="sft">{perSft(p.budget, p.area)}</div>}</td>
+                        <td className="appr">{fmtINR(p.approved)}{perSft(p.approved, p.area) && <div className="sft">{perSft(p.approved, p.area)}</div>}</td>
                         <td className={toneClass(u)}>{fmtINR(p.spent)}{perSft(p.spent, p.area) && <div className="sft">{perSft(p.spent, p.area)}</div>}</td>
-                        <td className={p.budget - p.spent < 0 ? 'neg' : ''}>{fmtINR(p.budget - p.spent)}</td>
+                        <td className={p.budget - p.spent < 0 ? 'neg' : ''}>{fmtINR(p.budget - p.spent)}{perSft(p.budget - p.spent, p.area) && <div className="sft">{perSft(p.budget - p.spent, p.area)}</div>}</td>
                         <td className={toneClass(u)}>{u != null ? `${u}%` : '—'}</td>
                         <td className={!delta.hasBaseline ? 'flat' : dp > 0 ? 'up' : dp < 0 ? 'down' : 'flat'}>{delta.hasBaseline ? fmtDelta(dp) : '—'}</td>
                       </tr>
@@ -148,8 +149,10 @@ export default function WeeklyClient({ result, freshness, delta, prevSnapshotWee
             })}
             <tr className="total">
               <td className="l">TOTAL</td>
-              <td>{fmtINR(t.budget)}{perSft(t.budget, t.area) && <div className="sft">{perSft(t.budget, t.area)}</div>}</td><td className="appr">{fmtINR(t.approved)}</td>
-              <td>{fmtINR(t.spent)}{perSft(t.spent, t.area) && <div className="sft">{perSft(t.spent, t.area)}</div>}</td><td className={balance < 0 ? 'neg' : ''}>{fmtINR(balance)}</td>
+              <td>{fmtINR(t.budget)}{perSft(t.budget, t.area) && <div className="sft">{perSft(t.budget, t.area)}</div>}</td>
+              <td className="appr">{fmtINR(t.approved)}{perSft(t.approved, t.area) && <div className="sft">{perSft(t.approved, t.area)}</div>}</td>
+              <td>{fmtINR(t.spent)}{perSft(t.spent, t.area) && <div className="sft">{perSft(t.spent, t.area)}</div>}</td>
+              <td className={balance < 0 ? 'neg' : ''}>{fmtINR(balance)}{perSft(balance, t.area) && <div className="sft">{perSft(balance, t.area)}</div>}</td>
               <td>{usedPct}%</td>
               <td className={!delta.hasBaseline ? 'flat' : delta.overall.paid > 0 ? 'up' : delta.overall.paid < 0 ? 'down' : 'flat'}>{delta.hasBaseline ? fmtDelta(delta.overall.paid) : '—'}</td>
             </tr>
