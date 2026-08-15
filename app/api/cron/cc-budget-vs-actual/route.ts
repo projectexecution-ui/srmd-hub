@@ -81,7 +81,26 @@ export async function GET(req: Request) {
   return NextResponse.json(res, { status: res.ok ? 200 : 500 })
 }
 
-// Admin on-demand preview. `onlyMe: true` sends only to the calling admin.
+// Build the real card and post it ONLY to the registered management group (no
+// DM fan-out) — the "send a test to the group" button.
+async function sendToGroupOnly(): Promise<{ ok: true; group: string } | { ok: false; reason: string }> {
+  const svc = serviceClient()
+  const { result, freshness, delta } = await loadBudgetV2(svc)
+  const report = buildBudgetV2Report(result, freshness, Date.now(), delta)
+  if (!report) return { ok: false, reason: 'Nothing budgeted to report yet.' }
+  const g = await broadcastReportToGroup(svc, {
+    type: 'cc_budget_vs_actual_report',
+    title: report.title, body: report.body, cardSpec: report.cardSpec, cardText: report.reportText, url: '/cost-control',
+  })
+  if ('skipped' in g) {
+    return { ok: false, reason: g.skipped === 'no-group' ? 'No reports group is connected yet.' : `Not sent (${g.skipped}).` }
+  }
+  if (!g.ok) return { ok: false, reason: g.error }
+  return { ok: true, group: g.mode }
+}
+
+// Admin on-demand. `onlyMe` DMs the caller a preview; `group` posts a test card
+// to the registered management group (no DMs).
 export async function POST(req: Request) {
   const perms = await getMyPermissions()
   if (!can(perms, 'cost-control', 'admin')) {
@@ -90,7 +109,13 @@ export async function POST(req: Request) {
   if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
     return NextResponse.json({ ok: false, reason: 'Missing SUPABASE_SERVICE_ROLE_KEY' }, { status: 503 })
   }
-  const body = await req.json().catch(() => ({} as { onlyMe?: boolean }))
+  const body = await req.json().catch(() => ({} as { onlyMe?: boolean; group?: boolean }))
+
+  if (body?.group) {
+    const res = await sendToGroupOnly()
+    return NextResponse.json(res, { status: res.ok ? 200 : 500 })
+  }
+
   let onlyUser: string | null = null
   if (body?.onlyMe) {
     const me = await getMyUser()

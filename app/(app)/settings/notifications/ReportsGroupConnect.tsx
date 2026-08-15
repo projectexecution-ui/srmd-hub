@@ -9,7 +9,7 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { Users, Check, Loader2, Unplug } from 'lucide-react'
+import { Users, Check, Loader2, Unplug, Send } from 'lucide-react'
 import { formatDateTime } from '@/lib/utils'
 import { disconnectReportsGroup } from './telegram-actions'
 
@@ -21,14 +21,29 @@ export function ReportsGroupConnect({
 }) {
   const router = useRouter()
   const [busy, setBusy] = useState(false)
+  const [testBusy, setTestBusy] = useState(false)
+  const [msg, setMsg] = useState<string | null>(null)
   const [err, setErr] = useState<string | null>(null)
 
   async function disconnect() {
-    setBusy(true); setErr(null)
+    setBusy(true); setErr(null); setMsg(null)
     const r = await disconnectReportsGroup()
     setBusy(false)
     if (!r.ok) { setErr(r.error ?? 'Could not disconnect'); return }
     router.refresh()
+  }
+
+  async function sendTest() {
+    setTestBusy(true); setErr(null); setMsg(null)
+    try {
+      const res = await fetch('/api/cron/cc-budget-vs-actual', {
+        method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ group: true }),
+      })
+      const j = await res.json()
+      if (res.ok && j.ok) setMsg('Sent — check the group in Telegram.')
+      else setErr(j.reason ?? 'Could not send the test card.')
+    } catch { setErr('Could not send the test card.') }
+    setTestBusy(false)
   }
 
   const botTag = botUsername ? `@${botUsername}` : 'the CT Hub bot'
@@ -59,7 +74,11 @@ export function ReportsGroupConnect({
               <span className="text-xs text-gray-600">
                 Connected to <b>{group.title}</b>{group.at ? ` on ${formatDateTime(group.at)}` : ''}. Everyone in that group sees these reports — keep it management-only.
               </span>
-              <Button variant="outline" size="sm" onClick={disconnect} disabled={busy}
+              <Button variant="outline" size="sm" onClick={sendTest} disabled={testBusy || busy}>
+                {testBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+                Send a test card
+              </Button>
+              <Button variant="outline" size="sm" onClick={disconnect} disabled={busy || testBusy}
                 className="text-rose-700 border-rose-300 hover:bg-rose-50">
                 {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Unplug className="h-4 w-4" />}
                 Disconnect
@@ -80,6 +99,7 @@ export function ReportsGroupConnect({
             </div>
           )}
 
+          {msg && <p className="text-xs text-green-700 mt-2">{msg}</p>}
           {err && <p className="text-xs text-red-600 mt-2">{err}</p>}
         </div>
       </div>
