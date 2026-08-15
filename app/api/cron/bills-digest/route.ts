@@ -16,6 +16,7 @@ import { createClient } from '@/lib/supabase/server'
 import { getMyPermissions, can } from '@/lib/auth'
 import { parseBillsDigestConfig, stageAllowed, type BillsDigestConfig } from '@/lib/bills-pipeline/digest-settings'
 import { renderProjectPushCard, type DigestBill } from '@/lib/bills-pipeline/project-card'
+import { sendCardsToChat } from '@/lib/telegram/dm'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -41,6 +42,16 @@ const toDigestBill = (b: StuckBill): DigestBill => ({
 async function readConfig(supabase: Client): Promise<BillsDigestConfig> {
   const { data } = await supabase.from('app_settings').select('key, value').like('key', 'bills_digest_%')
   return parseBillsDigestConfig((data ?? []) as Array<{ key: string; value: string }>)
+}
+
+/** user id → Telegram chat id, for recipients who have connected Telegram. */
+async function telegramChats(supabase: Client, ids: string[]): Promise<Map<string, string>> {
+  const m = new Map<string, string>()
+  if (ids.length === 0) return m
+  const { data } = await supabase.from('notification_preferences')
+    .select('user_id, telegram, telegram_chat_id').in('user_id', ids)
+  for (const r of data ?? []) if (r.telegram && r.telegram_chat_id) m.set(r.user_id as string, r.telegram_chat_id as string)
+  return m
 }
 
 async function readStuck(supabase: Client): Promise<{ byProject: Map<string, StuckBill[]>; asOf: string; generatedAt: string }> {
@@ -149,9 +160,14 @@ async function runAll(supabase: Client, cfg: BillsDigestConfig) {
       nameById.set(p.id as string, (p.full_name as string) || (p.email as string) || 'user')
     }
   }
+  // Telegram DM (pic) mirrors the email — for whichever recipients have connected
+  // their own Telegram. Same cards, sent straight to their chat.
+  const tgById = await telegramChats(supabase, ids)
+  const token = process.env.TELEGRAM_BOT_TOKEN
 
   const sentTo: string[] = []
   const skipped: string[] = []
+  const tgSent: string[] = []
   for (const [uid, codes] of Object.entries(cfg.assignments)) {
     const email = emailById.get(uid)
     const who = nameById.get(uid) ?? uid
@@ -159,6 +175,10 @@ async function runAll(supabase: Client, cfg: BillsDigestConfig) {
     const cards = await cardsForRecipient(ctx, codes, cfg.stages[uid])
     const err = await sendDigest(email, 'Daily bills status — your projects', cards, asOf)
     if (err) skipped.push(who); else sentTo.push(who)
+    if (token && cards.length && tgById.has(uid)) {
+      const r = await sendCardsToChat(token, tgById.get(uid)!, cards, `Daily bills status — your projects${asOf ? ` · as of ${asOf}` : ''}`)
+      if ('ok' in r && r.ok) tgSent.push(who)
+    }
   }
   for (const uid of cfg.cc) {
     const email = emailById.get(uid)
@@ -167,8 +187,12 @@ async function runAll(supabase: Client, cfg: BillsDigestConfig) {
     const cards = await cardsForRecipient(ctx, allCodes, cfg.stages[uid])
     const err = await sendDigest(email, 'Daily bills status — all projects', cards, asOf)
     if (err) skipped.push(`${who} (cc)`); else sentTo.push(`${who} (cc)`)
+    if (token && cards.length && tgById.has(uid)) {
+      const r = await sendCardsToChat(token, tgById.get(uid)!, cards, `Daily bills status — all projects${asOf ? ` · as of ${asOf}` : ''}`)
+      if ('ok' in r && r.ok) tgSent.push(`${who} (cc)`)
+    }
   }
-  return { sentTo, skipped }
+  return { sentTo, skipped, tgSent }
 }
 
 export async function GET(req: Request) {
@@ -221,5 +245,13 @@ export async function POST(req: Request) {
   const err = await sendDigest(email, 'Daily bills status — test', cards, asOf)
   if (err === 'empty') return NextResponse.json({ ok: true, sent: 0, reason: 'No bills stuck with CT right now — nothing to send.' })
   if (err) return NextResponse.json({ ok: false, error: err }, { status: 500 })
-  return NextResponse.json({ ok: true, sent: 1, to: 'you' })
+  // Mirror to the caller's Telegram DM if they've connected it.
+  let telegram = false
+  const token = process.env.TELEGRAM_BOT_TOKEN
+  const tgMap = await telegramChats(supabase, [user.id])
+  if (token && cards.length && tgMap.has(user.id)) {
+    const r = await sendCardsToChat(token, tgMap.get(user.id)!, cards, `Daily bills status — test${asOf ? ` · as of ${asOf}` : ''}`)
+    telegram = 'ok' in r && r.ok
+  }
+  return NextResponse.json({ ok: true, sent: 1, to: 'you', telegram })
 }
