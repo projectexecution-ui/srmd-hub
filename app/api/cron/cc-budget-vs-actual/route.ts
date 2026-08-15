@@ -13,7 +13,8 @@ import { createClient as createServiceClient } from '@supabase/supabase-js'
 import { getMyUser, getMyPermissions, can } from '@/lib/auth'
 import { loadBudgetV2 } from '@/lib/budget-v2-load'
 import { buildBudgetV2Report } from '@/lib/budget-v2-report'
-import { broadcastReportToGroup } from '@/lib/telegram/group'
+import { buildWeeklyOnePagerPdf, buildWeeklyDetailPdf } from '@/lib/budget-v2-pdf'
+import { sendPdfToGroup } from '@/lib/telegram/group'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -25,17 +26,41 @@ function serviceClient() {
   })
 }
 
-// Build the V2 tree card and fan it out via the RPC. `onlyUser` limits delivery
-// to a single recipient (admin preview). `toGroup` also posts the same card to
-// the shared management Telegram group (the weekly cron, not the admin preview).
-// Returns the count sent (0 if there's nothing budgeted to report).
+// Build the 3 weekly PDFs (one-pager, by category, by sub-category) and post
+// them to the reports group. Same loadBudgetV2 result as the tree/print pages,
+// so the numbers can't drift.
+async function sendPdfsToGroup(
+  svc: ReturnType<typeof serviceClient>,
+  loaded: Awaited<ReturnType<typeof loadBudgetV2>>,
+): Promise<{ sent: number; noGroup: boolean; errors: string[] }> {
+  const { result, freshness, delta, prevSnapshotWeek, prev } = loaded
+  const base = { result, freshness, delta, prevSnapshotWeek }
+  const tag = new Date(Date.now() + 5.5 * 3600 * 1000).toISOString().slice(0, 10)
+  const files = [
+    { name: `Budget-vs-Actual_One-pager_${tag}.pdf`, caption: 'Weekly Budget vs Actual — one-pager', pdf: buildWeeklyOnePagerPdf(base) },
+    { name: `Budget-vs-Actual_By-Category_${tag}.pdf`, caption: 'Weekly Budget vs Actual — by category', pdf: buildWeeklyDetailPdf({ ...base, prev }, 'category') },
+    { name: `Budget-vs-Actual_By-Sub-category_${tag}.pdf`, caption: 'Weekly Budget vs Actual — by sub-category', pdf: buildWeeklyDetailPdf({ ...base, prev }, 'subcategory') },
+  ]
+  let sent = 0, noGroup = false
+  const errors: string[] = []
+  for (const f of files) {
+    const r = await sendPdfToGroup(svc, { filename: f.name, pdf: f.pdf, caption: f.caption })
+    if ('skipped' in r) { if (r.skipped === 'no-group') noGroup = true; else errors.push(r.skipped) }
+    else if (r.ok) sent++
+    else errors.push(r.error)
+  }
+  return { sent, noGroup, errors }
+}
+
+// Notify management (in-app + email + DM) via the RPC, and — when `toGroup` — post
+// the 3 weekly PDFs to the reports group (the weekly cron, not the admin preview).
 async function sendReport(
   onlyUser: string | null,
   toGroup: boolean,
 ): Promise<{ ok: true; sent: number; reason?: string; group?: string } | { ok: false; reason: string }> {
   const svc = serviceClient()
-  const { result, freshness, delta } = await loadBudgetV2(svc)
-  const report = buildBudgetV2Report(result, freshness, Date.now(), delta)
+  const loaded = await loadBudgetV2(svc)
+  const report = buildBudgetV2Report(loaded.result, loaded.freshness, Date.now(), loaded.delta)
   if (!report) return { ok: true, sent: 0, reason: 'no-budget-data' }
 
   const { data, error } = await svc.rpc('cc_budget_vs_actual_report', {
@@ -46,21 +71,12 @@ async function sendReport(
     p_only_user: onlyUser,
   })
   if (error) return { ok: false, reason: error.message }
-  // Δ baseline comes automatically from the previous upload in budget_hub_state_history
-  // (see loadBudgetV2) — nothing to capture here.
 
-  // Broadcast the identical card to the management group, if one is registered.
+  // Post the 3 PDF reports to the management group, if one is registered.
   let group: string | undefined
   if (toGroup) {
-    const g = await broadcastReportToGroup(svc, {
-      type: 'cc_budget_vs_actual_report',
-      title: report.title,
-      body: report.body,
-      cardSpec: report.cardSpec,
-      cardText: report.reportText,
-      url: '/cost-control',
-    })
-    group = 'skipped' in g ? `skipped:${g.skipped}` : g.ok ? `sent:${g.mode}` : `error:${g.error}`
+    const g = await sendPdfsToGroup(svc, loaded)
+    group = g.noGroup ? 'no-group' : `pdfs:${g.sent}/3${g.errors.length ? ` err:${g.errors.join('|')}` : ''}`
   }
   return { ok: true, sent: (data as number) ?? 0, group }
 }
@@ -81,22 +97,16 @@ export async function GET(req: Request) {
   return NextResponse.json(res, { status: res.ok ? 200 : 500 })
 }
 
-// Build the real card and post it ONLY to the registered management group (no
-// DM fan-out) — the "send a test to the group" button.
-async function sendToGroupOnly(): Promise<{ ok: true; group: string } | { ok: false; reason: string }> {
+// Post the 3 real PDF reports ONLY to the registered management group (no DM
+// fan-out) — the "send a test to the group" button.
+async function sendToGroupOnly(): Promise<{ ok: true; sent: number } | { ok: false; reason: string }> {
   const svc = serviceClient()
-  const { result, freshness, delta } = await loadBudgetV2(svc)
-  const report = buildBudgetV2Report(result, freshness, Date.now(), delta)
-  if (!report) return { ok: false, reason: 'Nothing budgeted to report yet.' }
-  const g = await broadcastReportToGroup(svc, {
-    type: 'cc_budget_vs_actual_report',
-    title: report.title, body: report.body, cardSpec: report.cardSpec, cardText: report.reportText, url: '/cost-control',
-  })
-  if ('skipped' in g) {
-    return { ok: false, reason: g.skipped === 'no-group' ? 'No reports group is connected yet.' : `Not sent (${g.skipped}).` }
-  }
-  if (!g.ok) return { ok: false, reason: g.error }
-  return { ok: true, group: g.mode }
+  const loaded = await loadBudgetV2(svc)
+  if (loaded.result.groups.length === 0) return { ok: false, reason: 'Nothing budgeted to report yet.' }
+  const g = await sendPdfsToGroup(svc, loaded)
+  if (g.noGroup) return { ok: false, reason: 'No reports group is connected yet.' }
+  if (g.sent === 0) return { ok: false, reason: g.errors[0] ? `Telegram: ${g.errors[0]}` : 'Nothing sent.' }
+  return { ok: true, sent: g.sent }
 }
 
 // Admin on-demand. `onlyMe` DMs the caller a preview; `group` posts a test card

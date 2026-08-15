@@ -10,10 +10,11 @@ import type { CardSpec } from '@/lib/telegram/card-spec'
 // Report types allowed to broadcast to the group. Keep this tight — the group
 // is a notice board, not an inbox. Add a type here to send it to the group too.
 export const TELEGRAM_GROUP_BROADCAST_TYPES = new Set<string>([
-  'cc_budget_vs_actual_report',
   // Each Atm Head's daily Indent -> PO follow-up card, posted named so the group
   // can tell them apart (few heads, so it stays readable).
   'procurement_digest',
+  // NOTE: Budget vs Actual does NOT use this PNG path — it posts 3 PDF files to
+  // the group via sendPdfToGroup() (see the cc-budget-vs-actual cron).
 ])
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -22,6 +23,33 @@ async function groupChatId(supabase: any): Promise<string | null> {
     .from('app_settings').select('value').eq('key', 'telegram_reports_group_chat_id').maybeSingle()
   const id = (data?.value ?? '').toString().trim()
   return id || null
+}
+
+/** True if a reports group is registered (used to short-circuit report builds). */
+export async function hasReportsGroup(supabase: any): Promise<boolean> {
+  return (await groupChatId(supabase)) != null
+}
+
+/** Post a PDF (or any file) to the reports group via the Bot API sendDocument. */
+export async function sendPdfToGroup(
+  supabase: any,
+  opts: { filename: string; pdf: Uint8Array; caption?: string },
+): Promise<{ ok: true } | { skipped: string } | { ok: false; error: string }> {
+  const token = process.env.TELEGRAM_BOT_TOKEN
+  if (!token) return { skipped: 'no-token' }
+  const chatId = await groupChatId(supabase)
+  if (!chatId) return { skipped: 'no-group' }
+  try {
+    const form = new FormData()
+    form.append('chat_id', chatId)
+    if (opts.caption) form.append('caption', opts.caption.slice(0, 1000))
+    form.append('document', new Blob([new Uint8Array(opts.pdf)], { type: 'application/pdf' }), opts.filename)
+    const resp = await fetch(`https://api.telegram.org/bot${token}/sendDocument`, { method: 'POST', body: form })
+    const j = (await resp.json().catch(() => ({}))) as { ok?: boolean; description?: string }
+    return j.ok ? { ok: true } : { ok: false, error: j.description || 'sendDocument failed' }
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : 'sendDocument-failed' }
+  }
 }
 
 export interface GroupBroadcast {

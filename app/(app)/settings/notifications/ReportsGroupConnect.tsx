@@ -43,7 +43,7 @@ export function ReportsGroupConnect({
       const j = await res.json()
       if (res.ok && j.ok) {
         setMsg(kind === 'budget'
-          ? 'Sent the Budget vs Actual card — check the group in Telegram.'
+          ? `Sent ${j.sent ?? 3} Budget vs Actual PDF${j.sent === 1 ? '' : 's'} to the group — check Telegram.`
           : `Sent ${j.sent ?? ''} Indent → PO card${j.sent === 1 ? '' : 's'} to the group — check Telegram.`)
       } else setErr(j.reason ?? 'Could not send the test card.')
     } catch { setErr('Could not send the test card.') }
@@ -68,9 +68,9 @@ export function ReportsGroupConnect({
             )}
           </div>
           <p className="text-xs text-gray-500 mt-0.5">
-            Send the curated broadcast cards — the <b>weekly Budget vs Actual</b> and each Atm Head&apos;s
-            daily <b>Indent → PO</b> card (named) — to a shared management group everyone can see. Approvals
-            and @mentions still go only to each person&apos;s own DM.
+            Send the curated broadcasts — the <b>weekly Budget vs Actual</b> (3 PDF reports) and each Atm
+            Head&apos;s daily <b>Indent → PO</b> card (named) — to a shared management group everyone can see.
+            Approvals and @mentions still go only to each person&apos;s own DM.
           </p>
 
           {group ? (
