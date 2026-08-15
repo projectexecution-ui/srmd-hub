@@ -1073,6 +1073,16 @@ export async function saveGateIn(input: GateInInput): Promise<SaveResult> {
   if (!input.poId && !input.poNoText?.trim() && !input.noPoReason?.trim()) {
     return { ok: false, error: 'No PO on this entry — give a short reason, it goes on the monthly no-PO report.' }
   }
+  // With a PO or without one. The photograph of the signed, stamped bill is the
+  // only independent record that this handover happened, and it is what a
+  // shortage gets argued from months later.
+  if ((input.photoUrls?.length ?? 0) === 0) {
+    return {
+      ok: false,
+      error: 'Photograph the bill before saving. It must carry the receiver’s signature and stamp, '
+        + 'and the delivery person’s signature — that photo is the only proof of the handover we keep.',
+    }
+  }
   for (const l of lines) {
     if (l.damagedQty > l.receivedQty) {
       return { ok: false, error: 'Damaged quantity cannot be more than what was received.' }

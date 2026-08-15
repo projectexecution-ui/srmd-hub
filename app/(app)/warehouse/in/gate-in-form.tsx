@@ -416,8 +416,22 @@ export function GateInForm({
 
         {/* The bill that came with the truck. Two or three pages is normal, so
             this takes a list and keeps them in page order. */}
-        <div>
-          <label className={labelCls}>Photo of the bill</label>
+        <div className={`rounded-lg border-2 p-2.5 ${
+          bills.length === 0 ? 'border-amber-300 bg-amber-50/60' : 'border-emerald-200 bg-emerald-50/40'}`}>
+          <label className={labelCls}>
+            Photo of the bill · <span className="text-rose-600">required</span>
+          </label>
+          {/* Not a filing formality — what makes the photo worth anything is the
+              two signatures and the stamp on it. Said before he shoots, not
+              after. */}
+          <p className="text-[11.5px] text-slate-700 mb-2 leading-snug">
+            Before you photograph it, check the bill carries:
+            <span className="block mt-0.5">• the <b>receiver&apos;s signature and stamp</b></span>
+            <span className="block">• the <b>delivery person&apos;s signature</b></span>
+            <span className="block mt-0.5 text-slate-500">
+              This photo is the only record that both sides agreed what came off the truck.
+            </span>
+          </p>
           {bills.length > 0 && (
             <div className="flex flex-wrap gap-2 mb-2">
               {bills.map((b, i) => (
@@ -449,10 +463,15 @@ export function GateInForm({
             <input type="file" accept="image/*,application/pdf" multiple capture="environment"
               className="sr-only" onChange={e => addBills(e.target.files)} />
           </label>
-          <p className="text-[11px] text-slate-500 mt-1">
+          <p className="text-[11px] mt-1">
             {bills.length === 0
-              ? 'Optional, but it is the only copy of the supplier’s own paperwork we keep. Add each page.'
-              : `${bills.length} ${bills.length === 1 ? 'page' : 'pages'} attached — they save with the entry.`}
+              ? <span className="text-amber-800 font-semibold">
+                  Nothing attached yet — the entry cannot be saved without it. Add every page.
+                </span>
+              : <span className="text-emerald-800">
+                  {bills.length} {bills.length === 1 ? 'page' : 'pages'} attached — they save with the entry.
+                  {bills.length === 1 && ' If the bill runs to more than one page, add the rest.'}
+                </span>}
           </p>
         </div>
 
@@ -725,10 +744,18 @@ export function GateInForm({
           <input className={inputCls} value={remarks} onChange={e => setRemarks(e.target.value)} />
         </div>
 
-        <button type="button" disabled={!canEdit || pending} onClick={submit}
-          className="w-full rounded-lg bg-emerald-600 py-2.5 text-sm font-bold text-white disabled:opacity-50 inline-flex items-center justify-center gap-2 hover:bg-emerald-700 transition">
+        {/* Blocked, but never silently — it says what is missing. */}
+        {bills.length === 0 && (
+          <p className="text-[12px] font-semibold text-amber-900 bg-amber-50 border border-amber-200 rounded-lg px-2.5 py-2">
+            The signed and stamped bill has to be photographed before this can be saved — with a PO or
+            without one.
+          </p>
+        )}
+
+        <button type="button" disabled={!canEdit || pending || bills.length === 0} onClick={submit}
+          className="w-full rounded-lg bg-emerald-600 py-2.5 min-h-[44px] text-sm font-bold text-white disabled:opacity-50 inline-flex items-center justify-center gap-2 hover:bg-emerald-700 transition">
           {pending && <Loader2 className="h-4 w-4 animate-spin" />}
-          {uploading ? `Saving the bill — page ${bills.length > 1 ? '1 of ' + bills.length : '1'}…`
+          {uploading ? `Saving the bill — ${bills.length} ${bills.length === 1 ? 'page' : 'pages'}…`
             : pending ? 'Saving…' : 'Save IN entry'}
         </button>
         <p className="text-[11px] text-slate-400">

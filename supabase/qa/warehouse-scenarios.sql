@@ -47,8 +47,8 @@ begin
     values (v_po, steel, 100, 68000, 'TMT BARS 8MM') returning id into pl_s;
 
   -- S01 · a normal truck
-  insert into wh_gate_in (entry_no, owner, po_id, party, location_id, created_by)
-    values (fn_wh_next_no('in'),'srm',v_po,'Ultratech',st1,keeper) returning id into g;
+  insert into wh_gate_in (entry_no, owner, po_id, party, location_id, photo_urls, created_by)
+    values (fn_wh_next_no('in'),'srm',v_po,'Ultratech',st1,array['qa/bill-p1.jpg'],keeper) returning id into g;
   insert into wh_gate_in_lines (gate_in_id,item_id,po_line_id,challan_qty,received_qty,damaged_qty,rate,rate_source)
     values (g,cement,pl_c,500,500,0,392,'po');
   insert into wh_movements (item_id,location_id,kind,qty,rate,ref_table,ref_id,actor_id)
@@ -91,11 +91,21 @@ begin
 
   -- S06 · no PO and no reason
   begin
-    insert into wh_gate_in (entry_no,owner,party,location_id,created_by)
-      values (fn_wh_next_no('in'),'srm','Local Hardware',st1,keeper);
+    insert into wh_gate_in (entry_no,owner,party,location_id,photo_urls,created_by)
+      values (fn_wh_next_no('in'),'srm','Local Hardware',st1,array['qa/bill-p1.jpg'],keeper);
     perform ok('S06','Emergency entry with no PO and no reason given','refused','ACCEPTED', false);
   exception when check_violation then
     perform ok('S06','Emergency entry with no PO and no reason given','refused','refused by the database', true);
+  end;
+
+  -- S06b · an entry with no photographed bill
+  begin
+    insert into wh_gate_in (entry_no,owner,po_id,party,location_id,created_by)
+      values (fn_wh_next_no('in'),'srm',v_po,'Ultratech',st1,keeper);
+    perform ok('S06b','An entry saved without photographing the bill','refused','ACCEPTED', false);
+  exception when check_violation then
+    perform ok('S06b','An entry saved without photographing the bill','refused, with a PO or without',
+      'refused by the database', true);
   end;
 
   -- S07 · IN4 mismatch flagged with no explanation
