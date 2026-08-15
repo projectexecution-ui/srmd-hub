@@ -313,10 +313,16 @@ export interface ReportBill {
   paymentDate: string   // completed_on (paid only)
 }
 
-// Keep only at-Trust + recently-paid bills. Paid older than `paidWindowDays`
-// are dropped so the dataset stays small (the daily report shows recent pays).
+// IST calendar day (YYYY-MM-DD) — the daily report is scoped by IST date.
+function istDay(d: Date): string {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit', day: '2-digit' }).format(d)
+}
+
+// Report dataset = ALL bills currently at Trust (the pending pile) + bills PAID
+// TODAY (IST). "Payments Done" is a daily list, so older pays are excluded — only
+// what Zoho marked Payment Done today shows up.
 export function parseReportBill(
-  task: ZohoTask, projectCode: string, now: Date, paidWindowDays = 45,
+  task: ZohoTask, projectCode: string, now: Date,
 ): ReportBill | null {
   const stage   = normalizeStage(task.status?.name ?? '')
   const paid    = task.status?.is_closed_type === true || stage === BP_CONFIG.DONE_STAGE
@@ -324,8 +330,10 @@ export function parseReportBill(
   if (!paid && !isTrust) return null
 
   if (paid) {
-    const done = task.completed_on ? new Date(task.completed_on).getTime() : NaN
-    if (!Number.isFinite(done) || done < now.getTime() - paidWindowDays * 86_400_000) return null
+    if (!task.completed_on) return null
+    const done = new Date(task.completed_on)
+    if (Number.isNaN(done.getTime())) return null
+    if (istDay(done) !== istDay(now)) return null   // only today's payments
   }
 
   const vendorRaw = task.vendor_from_module_2?.value ?? ''
