@@ -6,7 +6,7 @@ import { toast } from 'sonner'
 import { Card } from '@/components/ui/card'
 import { SearchableSelect } from '@/components/ui/searchable-select'
 import { confirm } from '@/components/ui/confirm-dialog'
-import { saveCountLine, addFoundItem, submitCount, approveCount, rejectCount, abandonCount } from '../../actions'
+import { saveCountLine, addFoundItem, submitCount, approveCount, rejectCount, abandonCount, createItem } from '../../actions'
 import { summarize, submitBlocker, hasDiff, diffOf, isReached } from '@/lib/warehouse/count'
 import type { CountLine } from '@/lib/warehouse/count'
 import { formatQty, formatINR } from '@/lib/warehouse/format'
@@ -35,6 +35,7 @@ export function CountSheet(props: {
   blind: boolean
   lines: CountLine[]
   reasons: string[]
+  units: string[]
   items: Array<{ id: string; name: string; unit: string }>
   counterName: string | null
   witnessName: string | null
@@ -512,15 +513,23 @@ function WalkingSheet(props: Parameters<typeof CountSheet>[0]) {
             value={found}
             onChange={setFound}
             options={notOnSheet.map(i => ({ id: i.id, label: i.name, hint: i.unit }))}
-            placeholder="Search the item master…"
-            emptyText="No item matches — an admin adds new items in Settings"
+            placeholder="Search the item list…"
+            emptyText="Nothing matches — add it as a new item below"
           />
           <button type="button" onClick={addFound} disabled={!found || saving}
             className="w-full rounded-lg border-2 border-dashed border-slate-300 py-2 min-h-[44px] text-[12.5px] font-bold text-slate-500 hover:border-violet-300 hover:text-violet-700 disabled:opacity-50 inline-flex items-center justify-center gap-1.5">
             <Plus className="h-3.5 w-3.5" /> Add it to this count
           </button>
+
+          {/* Old material that never came through a PO is often not in the item
+              list at all — which is exactly the stock a first count is for.
+              Sending him to Settings mid-count, standing in the godown, is how a
+              count gets abandoned. */}
+          <NewCountItem units={props.units} saving={saving} onCreated={id => setFound(id)} />
+
           <p className="text-[11px] text-slate-500">
-            Material lying in the store that the book has no record of is the missed gate entry this count exists to find.
+            Material lying in the store that the book has no record of is the missed gate entry this count exists
+            to find — and on a first count of an old store, it is <b>all</b> of it.
           </p>
         </Card>
       )}
@@ -689,6 +698,67 @@ function ClosedSheet(props: Parameters<typeof CountSheet>[0]) {
 }
 
 // ===========================================================================
+
+/** Add an item to the master without leaving the count.
+ *
+ *  Needed most on a first count: material that has sat in a store for years and
+ *  never came through a purchase order is not in the item list, because nothing
+ *  ever put it there. */
+function NewCountItem({
+  units, saving, onCreated,
+}: { units: string[]; saving: boolean; onCreated: (id: string) => void }) {
+  const [open, setOpen] = useState(false)
+  const [name, setName] = useState('')
+  const [unit, setUnit] = useState(units[0] ?? 'Nos')
+  const [busy, start] = useTransition()
+
+  if (!open) {
+    return (
+      <button type="button" onClick={() => setOpen(true)}
+        className="text-[11.5px] font-bold text-slate-500 hover:text-violet-700 min-h-[32px] inline-flex items-center gap-1">
+        <Plus className="h-3 w-3" /> It is not on the list at all — add it
+      </button>
+    )
+  }
+
+  return (
+    <div className="rounded-lg border-2 border-dashed border-slate-300 p-2 space-y-2">
+      <div className="grid grid-cols-[1fr_auto] gap-2">
+        <div>
+          <label className={labelCls} htmlFor="new-count-item">What is it</label>
+          <input id="new-count-item" className={inputCls} value={name} autoFocus
+            onChange={e => setName(e.target.value)} placeholder="Name it the way the store calls it" />
+        </div>
+        <div>
+          <label className={labelCls} htmlFor="new-count-unit">Counted in</label>
+          <select id="new-count-unit" className={inputCls} value={unit} onChange={e => setUnit(e.target.value)}>
+            {(units.length ? units : ['Nos', 'Bag', 'MT', 'Kg']).map(u => <option key={u} value={u}>{u}</option>)}
+          </select>
+        </div>
+      </div>
+      <p className="text-[11px] text-slate-500">
+        The unit locks to the item once stock is recorded against it, so get it right now.
+      </p>
+      <div className="grid grid-cols-2 gap-2">
+        <button type="button" onClick={() => { setOpen(false); setName('') }}
+          className="rounded-lg border-2 border-slate-200 py-2 min-h-[36px] text-[12px] font-bold text-slate-600">
+          Cancel
+        </button>
+        <button type="button" disabled={busy || saving || !name.trim()}
+          onClick={() => start(async () => {
+            const res = await createItem({ name, unit })
+            if (!res.ok) { toast.error(res.error); return }
+            toast.success(`Added ${res.name} — now add it to the count`)
+            onCreated(res.id)
+            setOpen(false); setName('')
+          })}
+          className="rounded-lg bg-violet-700 hover:bg-violet-800 py-2 min-h-[36px] text-[12px] font-bold text-white disabled:opacity-50 inline-flex items-center justify-center gap-1.5">
+          {busy && <Loader2 className="h-3.5 w-3.5 animate-spin" />} Create item
+        </button>
+      </div>
+    </div>
+  )
+}
 
 function Stepper({ phase, counted, total }: { phase: Phase; counted: number; total: number }) {
   const steps: Array<{ key: Phase; label: string }> = [

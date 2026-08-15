@@ -58,6 +58,7 @@ export default async function CountPage({ params }: { params: Promise<{ id: stri
         blind={count.blind}
         lines={lines}
         reasons={lists.countReason}
+        units={lists.unit}
         items={items.map(i => ({ id: i.id, name: i.name, unit: i.unit }))}
         counterName={counter?.full_name || counter?.email || null}
         witnessName={witness?.full_name || witness?.email || null}
