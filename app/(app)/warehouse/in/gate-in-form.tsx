@@ -8,10 +8,15 @@ import { SearchableSelect } from '@/components/ui/searchable-select'
 import { saveGateIn, createItem, loadPoBalance } from '../actions'
 import { verdictFor } from '@/lib/warehouse/types'
 import type { GateInOptions, GateInLineInput, WhPo } from '@/lib/warehouse/types'
-import { Plus, Trash2, Loader2 } from 'lucide-react'
+import { Plus, Trash2, Loader2, Camera, FileText } from 'lucide-react'
 import { formatQty } from '@/lib/warehouse/format'
+import { compressImage } from '@/lib/img/compress'
+import { createClient } from '@/lib/supabase/client'
 
 type Row = GateInLineInput & { key: number }
+
+/** One page of the supplier bill, held in the browser until the entry saves. */
+type BillPage = { id: string; file: File; preview: string | null }
 
 const inputCls =
   'w-full rounded-lg border border-slate-300 px-2.5 py-2 text-sm bg-white ' +
@@ -29,6 +34,7 @@ export function GateInForm({
   options, canEdit, showValues,
 }: { options: GateInOptions; canEdit: boolean; showValues: boolean }) {
   const router = useRouter()
+  const supabase = createClient()
   const [pending, start] = useTransition()
   const [, startBalance] = useTransition()
 
@@ -50,6 +56,69 @@ export function GateInForm({
    *  the page — there are over a thousand open POs. */
   const [po, setPo] = useState<WhPo | null>(null)
   const [poLoading, setPoLoading] = useState(false)
+
+  /** Pages of the supplier's bill, held until the entry saves. */
+  const [bills, setBills] = useState<BillPage[]>([])
+  const [uploading, setUploading] = useState(false)
+
+  function addBills(list: FileList | null) {
+    if (!list || list.length === 0) return
+    const added: BillPage[] = []
+    for (const file of Array.from(list)) {
+      if (file.size > 10 * 1024 * 1024 && file.type === 'application/pdf') {
+        toast.error(`${file.name} is over 10MB — photograph the pages instead of attaching a big PDF.`)
+        continue
+      }
+      added.push({
+        id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+        file,
+        // A PDF has no thumbnail; it shows as a document tile instead.
+        preview: file.type.startsWith('image/') ? URL.createObjectURL(file) : null,
+      })
+    }
+    if (added.length > 0) setBills(bs => [...bs, ...added])
+  }
+
+  function removeBill(id: string) {
+    setBills(bs => {
+      const gone = bs.find(b => b.id === id)
+      if (gone?.preview) URL.revokeObjectURL(gone.preview)
+      return bs.filter(b => b.id !== id)
+    })
+  }
+
+  /** Upload every page, in the order he added them, and hand back the paths.
+   *
+   *  Photographs first go through the same downscale the site reports use —
+   *  a phone camera produces 4MB a page, and three of those at a gate on a
+   *  patchy connection is a minute of waiting. */
+  async function uploadBills(): Promise<string[] | null> {
+    if (bills.length === 0) return []
+    setUploading(true)
+    const paths: string[] = []
+    try {
+      const stamp = new Date().toISOString().slice(0, 10)
+      for (const [i, page] of bills.entries()) {
+        const file = page.file.type.startsWith('image/') ? await compressImage(page.file) : page.file
+        const ext = file.type === 'application/pdf' ? 'pdf' : 'jpg'
+        const path = `${stamp}/${crypto.randomUUID()}-p${i + 1}.${ext}`
+        const { error } = await supabase.storage.from('wh-bills')
+          .upload(path, file, { cacheControl: '3600', contentType: file.type || 'image/jpeg' })
+        if (error) {
+          toast.error(`Could not save page ${i + 1} of the bill: ${error.message}`)
+          setUploading(false)
+          return null
+        }
+        paths.push(path)
+      }
+      setUploading(false)
+      return paths
+    } catch (e) {
+      setUploading(false)
+      toast.error(e instanceof Error ? e.message : 'Could not save the bill')
+      return null
+    }
+  }
   const itemById = useMemo(() => new Map(options.items.map(i => [i.id, i])), [options.items])
 
   /** Picking a PO fills in everything the order already knows. IN4 has the
@@ -148,7 +217,14 @@ export function GateInForm({
 
   function submit() {
     start(async () => {
+      // The bill goes up FIRST. If it fails the entry is not written, so a
+      // keeper is never left thinking the paperwork was captured when it was
+      // not — he can retry with the truck still at the barrier.
+      const photoUrls = await uploadBills()
+      if (photoUrls === null) return
+
       const res = await saveGateIn({
+        photoUrls,
         owner,
         poId: poId || null,
         poNoText: null,
@@ -167,6 +243,8 @@ export function GateInForm({
       if (!res.ok) { toast.error(res.error); return }
       toast.success(`Saved ${res.entryNo}`)
       setRows([blankRow()])
+      for (const b of bills) if (b.preview) URL.revokeObjectURL(b.preview)
+      setBills([])
       setParty(''); setVehicleNo(''); setDriverMobile(''); setChallanNo(''); setRemarks('')
       setNoPoReason('')
       router.refresh()
@@ -332,8 +410,50 @@ export function GateInForm({
         </div>
 
         <div>
-          <label className={labelCls}>Challan no</label>
-          <input className={inputCls + ' font-mono'} value={challanNo} onChange={e => setChallanNo(e.target.value)} />
+          <label className={labelCls} htmlFor="challan-no">Challan no</label>
+          <input id="challan-no" className={inputCls + ' font-mono'} value={challanNo} onChange={e => setChallanNo(e.target.value)} />
+        </div>
+
+        {/* The bill that came with the truck. Two or three pages is normal, so
+            this takes a list and keeps them in page order. */}
+        <div>
+          <label className={labelCls}>Photo of the bill</label>
+          {bills.length > 0 && (
+            <div className="flex flex-wrap gap-2 mb-2">
+              {bills.map((b, i) => (
+                <div key={b.id} className="relative">
+                  {b.preview ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={b.preview} alt={`Bill page ${i + 1}`}
+                      className="h-20 w-16 object-cover rounded-lg border border-slate-200" />
+                  ) : (
+                    <div className="h-20 w-16 rounded-lg border border-slate-200 bg-slate-50 flex items-center justify-center">
+                      <FileText className="h-5 w-5 text-slate-400" />
+                    </div>
+                  )}
+                  <span className="absolute bottom-0 left-0 right-0 bg-slate-900/70 text-white text-[9.5px] font-bold text-center rounded-b-lg py-0.5">
+                    Page {i + 1}
+                  </span>
+                  <button type="button" onClick={() => removeBill(b.id)}
+                    aria-label={`Remove page ${i + 1}`}
+                    className="absolute -top-1.5 -right-1.5 h-6 w-6 rounded-full bg-white border border-slate-300 text-slate-500 hover:text-rose-600 flex items-center justify-center shadow-sm">
+                    <Trash2 className="h-3 w-3" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+          <label className="w-full rounded-lg border-2 border-dashed border-slate-300 py-2 min-h-[44px] text-[12.5px] font-bold text-slate-500 hover:border-emerald-300 hover:text-emerald-700 inline-flex items-center justify-center gap-1.5 cursor-pointer">
+            <Camera className="h-3.5 w-3.5" />
+            {bills.length === 0 ? 'Photograph the bill' : 'Add another page'}
+            <input type="file" accept="image/*,application/pdf" multiple capture="environment"
+              className="sr-only" onChange={e => addBills(e.target.files)} />
+          </label>
+          <p className="text-[11px] text-slate-500 mt-1">
+            {bills.length === 0
+              ? 'Optional, but it is the only copy of the supplier’s own paperwork we keep. Add each page.'
+              : `${bills.length} ${bills.length === 1 ? 'page' : 'pages'} attached — they save with the entry.`}
+          </p>
         </div>
 
         <hr className="border-slate-100" />
@@ -608,7 +728,8 @@ export function GateInForm({
         <button type="button" disabled={!canEdit || pending} onClick={submit}
           className="w-full rounded-lg bg-emerald-600 py-2.5 text-sm font-bold text-white disabled:opacity-50 inline-flex items-center justify-center gap-2 hover:bg-emerald-700 transition">
           {pending && <Loader2 className="h-4 w-4 animate-spin" />}
-          {pending ? 'Saving…' : 'Save IN entry'}
+          {uploading ? `Saving the bill — page ${bills.length > 1 ? '1 of ' + bills.length : '1'}…`
+            : pending ? 'Saving…' : 'Save IN entry'}
         </button>
         <p className="text-[11px] text-slate-400">
           Entry numbers run in strict order, so a missing number shows up on the gap report.

@@ -7,7 +7,7 @@ import { getGateInOptions, getRecentIns, getShowValues, one } from '@/lib/wareho
 import { formatDate } from '@/lib/utils'
 import { formatQty } from '@/lib/warehouse/format'
 import { GateInForm } from './gate-in-form'
-import { ChevronLeft } from 'lucide-react'
+import { ChevronLeft, Paperclip } from 'lucide-react'
 
 export const dynamic = 'force-dynamic'
 
@@ -105,6 +105,13 @@ export default async function GateInPage() {
                     <p className="text-[11px] text-rose-700 pt-1 border-t border-slate-100 mt-1.5">
                       {short > 0 && <>Short by {formatQty(short)} against the challan — reported to procurement. </>}
                       {damaged > 0 && <>{formatQty(damaged)} damaged, booked as damaged not good stock.</>}
+                    </p>
+                  )}
+                  {(r.photo_urls?.length ?? 0) > 0 && (
+                    <p className="text-[11px] text-slate-500 pt-1 border-t border-slate-100 mt-1.5 inline-flex items-center gap-1">
+                      <Paperclip className="h-3 w-3" />
+                      Supplier&apos;s bill attached — {r.photo_urls.length}{' '}
+                      {r.photo_urls.length === 1 ? 'page' : 'pages'}
                     </p>
                   )}
                   {lines.some(l => l.differs_from_po) && (

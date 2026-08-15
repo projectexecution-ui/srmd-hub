@@ -380,6 +380,7 @@ export async function getRecentIns(limit = 15) {
   const { data, error } = await sb
     .from('wh_gate_in')
     .select(`id, entry_no, entry_date, party, owner, entity, po_no_text, no_po_reason,
+             photo_urls,
              wh_locations(name), wh_po(po_no),
              wh_gate_in_lines(id, challan_qty, received_qty, damaged_qty, short_qty, good_qty, rate,
                               differs_from_po, differ_note,

@@ -136,6 +136,9 @@ export type GateInInput = {
   challanNo: string | null
   challanDate: string | null
   remarks: string | null
+  /** Storage paths of the supplier's bill, in page order. A bill is often two
+   *  or three pages, so this is a list rather than one image. */
+  photoUrls?: string[]
   lines: GateInLineInput[]
 }
 

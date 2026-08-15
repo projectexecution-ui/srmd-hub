@@ -1130,6 +1130,8 @@ export async function saveGateIn(input: GateInInput): Promise<SaveResult> {
       challan_no: input.challanNo,
       challan_date: input.challanDate || null,
       remarks: input.remarks,
+      // Pages of the supplier's bill, already uploaded to the private bucket.
+      photo_urls: input.photoUrls ?? [],
       created_by: me?.id ?? null,
     })
     .select('id, entry_no')
