@@ -29,6 +29,9 @@ export default async function BillInspectPage() {
   let trustTask: Row | null = null
   let paidTask: Row | null = null
   const stagesSeen = new Set<string>()
+  const billTypeCounts: Record<string, number> = {}
+  const accountFromAbstract: Record<string, number> = {}
+  let trustTotal = 0, trustWithAbstract = 0
   let err: string | null = null
 
   try {
@@ -42,6 +45,18 @@ export default async function BillInspectPage() {
         const closed = (t.is_completed === true) || ((t.status as { is_closed_type?: boolean })?.is_closed_type === true) || stage === BP_CONFIG.DONE_STAGE
         if (!trustTask && stage === BP_CONFIG.TRUST_STAGE) trustTask = t
         if (!paidTask && closed) paidTask = t
+        // aggregates
+        const bt = String(t.bill_type ?? '(none)')
+        billTypeCounts[bt] = (billTypeCounts[bt] ?? 0) + 1
+        if (stage === BP_CONFIG.TRUST_STAGE) {
+          trustTotal++
+          const abs = String(t.abstract_number_of_in4 ?? '')
+          if (abs && abs !== 'null') {
+            trustWithAbstract++
+            const seg = (abs.split('/')[1] ?? '(?)').toUpperCase()
+            accountFromAbstract[seg] = (accountFromAbstract[seg] ?? 0) + 1
+          }
+        }
       }
     }
     // Persist so it can be read back precisely (deleted after review).
@@ -50,6 +65,10 @@ export default async function BillInspectPage() {
       value: JSON.stringify({
         at: BP_CONFIG.DONE_STAGE, // marker only
         stagesSeen: [...stagesSeen],
+        billTypeCounts,
+        trustTotal,
+        trustWithAbstract,
+        accountFromAbstract,
         trustKeys: trustTask ? Object.keys(trustTask).sort() : [],
         paidKeys: paidTask ? Object.keys(paidTask).sort() : [],
         trust: trustTask ?? null,
