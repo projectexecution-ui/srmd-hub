@@ -9,9 +9,10 @@ export default async function DailyReportPage() {
   await requirePermission('bills-pipeline', 'view')
   const supabase = await createClient()
 
-  const [{ data: snap }, { data: entryRows }] = await Promise.all([
+  const [{ data: snap }, { data: entryRows }, { data: mapRow }] = await Promise.all([
     supabase.from('app_settings').select('value').eq('key', 'bills_pipeline_report').maybeSingle(),
-    supabase.from('bp_bill_trustdesk').select('bill_id, submission_date, courier_date, remark, account, is_adjust_advance'),
+    supabase.from('bp_bill_trustdesk').select('bill_id, submission_date, courier_date, remark, is_adjust_advance'),
+    supabase.from('app_settings').select('value').eq('key', 'bills_pipeline_trust_map').maybeSingle(),
   ])
 
   let bills: ReportBillLite[] = []
@@ -24,13 +25,15 @@ export default async function DailyReportPage() {
     } catch { /* ignore malformed snapshot */ }
   }
 
+  let initialTrustMap: Record<string, string> = {}
+  if (mapRow?.value) { try { initialTrustMap = JSON.parse(mapRow.value as string) as Record<string, string> } catch { initialTrustMap = {} } }
+
   const initialEntries: Record<string, TrustdeskEntry> = {}
   for (const r of (entryRows ?? []) as Array<Record<string, unknown>>) {
     initialEntries[r.bill_id as string] = {
       submission_date: (r.submission_date as string | null) ?? null,
       courier_date: (r.courier_date as string | null) ?? null,
       remark: (r.remark as string | null) ?? null,
-      account: (r.account as string | null) ?? null,
       is_adjust_advance: !!r.is_adjust_advance,
     }
   }
@@ -48,7 +51,7 @@ export default async function DailyReportPage() {
           at-Trust + recently-paid bills from Zoho, then come back here.
         </div>
       ) : (
-        <DailyReportClient bills={bills} initialEntries={initialEntries} asOf={asOf} />
+        <DailyReportClient bills={bills} initialEntries={initialEntries} initialTrustMap={initialTrustMap} asOf={asOf} />
       )}
     </div>
   )

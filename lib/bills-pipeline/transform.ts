@@ -297,24 +297,15 @@ export function parseBill(
 // ─── Daily Bills Report dataset ───────────────────────────────────────────────
 // The auto Daily Bills Report cares about bills SUBMITTED TO TRUST (COP under
 // process) and PAID (Payment Done) — the opposite of the internal card. The
-// paying trust account (SRET / SRAH / SRASSK / SRA) is parsed from the IN4 GRN
-// reference's 2nd segment, e.g. "GRN/SRASSK/NGH/…".
-
-const KNOWN_ACCOUNTS = new Set(['SRET', 'SRAH', 'SRASSK', 'SRA', 'SRJT'])
-
-export function accountFromAbstract(abstract: string | undefined | null): string {
-  const s = (abstract ?? '').trim()
-  if (!s) return ''
-  const seg = (s.split('/')[1] ?? '').trim().toUpperCase()
-  return KNOWN_ACCOUNTS.has(seg) ? seg : (seg || '')
-}
+// paying trust (SRET / SRAH / SRASSK / SRA) is NOT derived here — it comes from
+// an admin-set project → trust map, so every bill's account is explicit and
+// under our control (see the trust-map picker on the report page).
 
 export interface ReportBill {
   id:          string
   section:     'paid' | 'trust'
-  account:     string   // SRET / SRAH / SRASSK / SRA ('' when the IN4 ref is missing)
   vendor:      string
-  area:        string   // task-list name — the report's "Project Name" column
+  area:        string   // task-list name — the report's "Project Name" column, and the trust-map key
   projectCode: string   // billing project short code
   invoiceNo:   string
   amount:      number
@@ -343,7 +334,6 @@ export function parseReportBill(
   return {
     id:          task.id,
     section:     paid ? 'paid' : 'trust',
-    account:     accountFromAbstract(task.abstract_number_of_in4),
     vendor:      vendor || cleanText(task.name),
     area:        task.tasklist?.name ?? '',
     projectCode,
