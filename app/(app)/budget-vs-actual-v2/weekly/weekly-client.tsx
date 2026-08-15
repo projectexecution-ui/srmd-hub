@@ -10,13 +10,12 @@ import { ArrowLeft, Printer } from 'lucide-react'
 import type { ComposeResult, DeltaResult } from '@/lib/budget-v2'
 import type { BudgetV2Freshness } from '@/lib/budget-v2-load'
 
+// ≥ ₹1 Cr → compact crore; under ₹1 Cr → actual amount, Indian-grouped, "/-".
 function fmtINR(v: number): string {
   if (!isFinite(v) || v === 0) return '₹0'
   const a = Math.abs(v), s = v < 0 ? '−' : ''
   if (a >= 1e7) return `${s}₹${(a / 1e7).toFixed(2)} Cr`
-  if (a >= 1e5) return `${s}₹${(a / 1e5).toFixed(2)} L`
-  if (a >= 1e3) return `${s}₹${(a / 1e3).toFixed(1)} K`
-  return `${s}₹${Math.round(a).toLocaleString('en-IN')}`
+  return `${s}₹${Math.round(a).toLocaleString('en-IN')}/-`
 }
 function fmtDelta(v: number): string { return v === 0 ? '—' : (v > 0 ? '+' : '−') + fmtINR(Math.abs(v)) }
 function perSft(amt: number, area: number | null | undefined): string {
@@ -106,8 +105,8 @@ export default function WeeklyClient({ result, freshness, delta, prevSnapshotWee
           <div className="kpi"><div className="l">Paid to date</div><div className="n" style={{ color: '#1f6f3d' }}>{fmtINR(t.spent)}</div><div className="d">{usedPct}% of budget{t.area > 0 ? ` · avg ${perSft(t.spent, t.area)}` : ''}</div></div>
           <div className="kpi"><div className="l">{balance < 0 ? 'Over budget' : 'Balance left'}</div><div className="n" style={balance < 0 ? { color: '#a3282d' } : undefined}>{fmtINR(Math.abs(balance))}</div></div>
           <div className="kpi"><div className="l">Paid this week</div>
-            <div className="n" style={{ color: delta.hasBaseline ? (delta.overall.paid >= 0 ? '#166534' : '#9a3412') : '#9ca3af' }}>{delta.hasBaseline ? fmtDelta(delta.overall.paid) : '— baseline'}</div>
-            <div className="d">{delta.hasBaseline ? `since ${asOf(prevSnapshotWeek)}` : 'set from this week'}</div>
+            <div className="n" style={{ color: delta.hasBaseline ? (delta.overall.paid >= 0 ? '#166534' : '#9a3412') : '#9ca3af' }}>{delta.hasBaseline ? fmtDelta(delta.overall.paid) : '— first upload'}</div>
+            <div className="d">{delta.hasBaseline ? `vs upload of ${asOf(prevSnapshotWeek)}` : 'no earlier upload'}</div>
           </div>
         </div>
 
@@ -159,7 +158,7 @@ export default function WeeklyClient({ result, freshness, delta, prevSnapshotWee
 
         {!delta.hasBaseline && (
           <div className="callout">
-            <b>First week — Δ is the baseline.</b> The “change vs last week” column fills in from next week once this week’s numbers are saved as the baseline (Budget vs Actual V2 → “Save this week”, or the Monday auto-report).
+            <b>First upload — nothing to compare against yet.</b> The “Δ Paid (wk)” column fills in automatically once a second budget report is uploaded — it compares the latest upload against the previous one.
           </div>
         )}
 

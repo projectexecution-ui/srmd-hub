@@ -8,14 +8,13 @@ import Link from 'next/link'
 import { ArrowLeft, Printer } from 'lucide-react'
 import type { ComposeResult, ProjectNode, CatNode } from '@/lib/budget-v2'
 
+// ≥ ₹1 Cr → compact crore; under ₹1 Cr → actual amount, Indian-grouped, "/-".
 function fmtINR(v: number): string {
   if (!isFinite(v) || v === 0) return '₹0'
   const a = Math.abs(v)
   const sign = v < 0 ? '−' : ''
   if (a >= 1e7) return `${sign}₹${(a / 1e7).toFixed(2)} Cr`
-  if (a >= 1e5) return `${sign}₹${(a / 1e5).toFixed(2)} L`
-  if (a >= 1e3) return `${sign}₹${(a / 1e3).toFixed(1)} K`
-  return `${sign}₹${Math.round(a).toLocaleString('en-IN')}`
+  return `${sign}₹${Math.round(a).toLocaleString('en-IN')}/-`
 }
 function utilPct(spent: number, budget: number): number | null {
   if (!budget || budget <= 0) return null
@@ -35,7 +34,7 @@ function projectSentence(p: ProjectNode, groupAvgSft: number | null): string {
     else if (u >= 85) bits.push(`has used ${u}% of its budget`)
     else bits.push(`has used ${u}% of its budget so far`)
   }
-  if (balance > 0) bits.push(`₹${(balance / 1e5).toFixed(1)} L of budget is still unspent`)
+  if (balance > 0) bits.push(`${fmtINR(balance)} of budget is still unspent`)
   if (p.area && p.area > 0 && groupAvgSft && groupAvgSft > 0) {
     const mySft = p.spent / p.area
     const d = Math.round(((mySft - groupAvgSft) / groupAvgSft) * 100)

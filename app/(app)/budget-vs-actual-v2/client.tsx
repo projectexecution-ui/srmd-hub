@@ -23,19 +23,20 @@ import {
   ChevronRight, ChevronsUpDown, ChevronsDownUp, Building2, Folder,
   Sparkles, Loader2, Layers, Search, X, ListTree,
   Wallet, TrendingUp, Scale, FileCheck2, UploadCloud, Printer, Clock, Plus, Pencil, Check, HelpCircle,
-  ArrowUp, ArrowDown, Save, PencilLine,
+  ArrowUp, ArrowDown, PencilLine,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { snapshotOf, type ComposeResult, type CatNode, type ProjectNode, type GroupNode, type DeltaResult, type Delta } from '@/lib/budget-v2'
+import type { ComposeResult, CatNode, ProjectNode, GroupNode, DeltaResult, Delta } from '@/lib/budget-v2'
 
 // ─── formatting helpers ──────────────────────────────────────────────────────
+// ≥ ₹1 Cr → compact crore (₹1.46 Cr). Under ₹1 Cr → the actual amount, Indian-
+// grouped with a trailing "/-" (e.g. ₹89,00,000/-), per HOD preference.
 function fmtINR(v: number): string {
   if (!isFinite(v) || v === 0) return '₹0'
+  const sign = v < 0 ? '−' : ''
   const a = Math.abs(v)
-  if (a >= 1e7) return `${v < 0 ? '−' : ''}₹${(Math.abs(v) / 1e7).toFixed(2)} Cr`
-  if (a >= 1e5) return `${v < 0 ? '−' : ''}₹${(Math.abs(v) / 1e5).toFixed(2)} L`
-  if (a >= 1e3) return `${v < 0 ? '−' : ''}₹${(Math.abs(v) / 1e3).toFixed(1)} K`
-  return `${v < 0 ? '−' : ''}₹${Math.round(Math.abs(v)).toLocaleString('en-IN')}`
+  if (a >= 1e7) return `${sign}₹${(a / 1e7).toFixed(2)} Cr`
+  return `${sign}₹${Math.round(a).toLocaleString('en-IN')}/-`
 }
 function perSft(v: number, area: number | null): string {
   if (!area || area <= 0 || !isFinite(v) || v === 0) return ''
@@ -244,20 +245,6 @@ export default function BudgetV2Client({
     router.refresh()
   }
 
-  // Admin only — capture this week's numbers so next week shows the change.
-  async function saveSnapshot() {
-    setBusy('snap'); setError(null)
-    const totals = snapshotOf(result)
-    const weekEnding = new Date(Date.now() + 5.5 * 3600 * 1000).toISOString().slice(0, 10) // IST date
-    const { error } = await supabase.from('budget_v2_weekly_snapshot').upsert(
-      { week_ending: weekEnding, totals, captured_by: currentUserId, captured_at: new Date().toISOString() },
-      { onConflict: 'week_ending' },
-    )
-    setBusy(null)
-    if (error) { setError(error.message); return }
-    router.refresh()
-  }
-
   // ── KPIs + computed watchlist (pure maths from the budget report) ──
   const t = result.totals
   const spentPct = t.budget > 0 ? Math.round((t.spent / t.budget) * 100) : 0
@@ -316,9 +303,8 @@ export default function BudgetV2Client({
         <Metric icon={<Scale className="h-4 w-4" />} tone={balance < 0 ? 'rose' : 'amber'} label={balance < 0 ? 'Over budget' : 'Balance left'} value={fmtINR(Math.abs(balance))} />
       </div>
 
-      {/* ── This week's movement (vs last snapshot) + capture button ── */}
-      <MovementStrip delta={delta} prevSnapshotWeek={prevSnapshotWeek} isAdmin={isAdmin}
-        onSave={saveSnapshot} busy={busy === 'snap'} />
+      {/* ── This week's movement (vs the previous upload) ── */}
+      <MovementStrip delta={delta} prevSnapshotWeek={prevSnapshotWeek} />
 
       {/* ── How this report is built — the hierarchy skeleton (always visible) ── */}
       <StructureMap />
@@ -586,8 +572,8 @@ function manualTitle(p: ProjectNode): string {
   return `Manually adjusted${p.manualNote ? ` — ${p.manualNote}` : ''}${bits.length ? ` (uploaded: ${bits.join(', ')})` : ''}`
 }
 
-function MovementStrip({ delta, prevSnapshotWeek, isAdmin, onSave, busy }: {
-  delta: DeltaResult; prevSnapshotWeek: string | null; isAdmin: boolean; onSave: () => void; busy: boolean
+function MovementStrip({ delta, prevSnapshotWeek }: {
+  delta: DeltaResult; prevSnapshotWeek: string | null
 }) {
   const d = delta.overall
   const anyMove = d.paid !== 0 || d.approved !== 0 || d.budget !== 0
@@ -596,19 +582,13 @@ function MovementStrip({ delta, prevSnapshotWeek, isAdmin, onSave, busy }: {
       <TrendingUp className="h-4 w-4 text-emerald-600 flex-shrink-0" />
       {delta.hasBaseline ? (
         <div className="flex items-center gap-2 flex-wrap">
-          <span className="text-[12px] font-semibold text-gray-700">Since {fmtSnapDate(prevSnapshotWeek)}:</span>
+          <span className="text-[12px] font-semibold text-gray-700">Since previous upload ({fmtSnapDate(prevSnapshotWeek)}):</span>
           <DeltaChip label="paid" v={d.paid} />
           {d.approved !== 0 && <DeltaChip label="approved" v={d.approved} muted />}
-          {!anyMove && <span className="text-[11px] text-gray-400">no change yet</span>}
+          {!anyMove && <span className="text-[11px] text-gray-400">no change since last upload</span>}
         </div>
       ) : (
-        <span className="text-[12px] text-gray-500">No weekly baseline yet — save this week’s numbers to start tracking week-over-week change.</span>
-      )}
-      <div className="flex-1" />
-      {isAdmin && (
-        <Button size="sm" variant="outline" onClick={onSave} disabled={busy} title="Store this week’s numbers as the baseline for next week’s change">
-          {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />} Save this week
-        </Button>
+        <span className="text-[12px] text-gray-500">No earlier upload to compare against yet — the change vs last week appears once a second budget report is uploaded.</span>
       )}
     </div>
   )

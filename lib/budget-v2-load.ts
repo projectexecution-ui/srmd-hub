@@ -7,8 +7,11 @@
 // top of that, an admin can hand-add projects (extras with numbers) or flag a
 // correction (budget_v2_override) — both shown as "manually adjusted".
 //
-// It also loads the most recent weekly snapshot and returns the week-over-week
-// delta (current tree − last snapshot) so the page/report can show what moved.
+// Week-over-week Δ is computed EXACTLY against the PREVIOUS UPLOAD: the last
+// budget_hub_state_history version from an earlier IST day. Both sides are run
+// through the same overrides/extras, so manual entries (e.g. Raj Uphaar) cancel
+// out and the Δ reflects only what the two IN4 uploads actually moved. No manual
+// snapshot to remember.
 //
 // Accepts any Supabase client (server client on the page, service client in the
 // cron) — it only needs `.from(...).select(...)`.
@@ -16,7 +19,7 @@
 import {
   composeBudgetV2, snapshotOf, deltaVs,
   type StatusMap, type AreaOverrideMap, type ExtraProject, type OverrideMap,
-  type ComposeResult, type SnapshotTotals, type DeltaResult,
+  type ComposeResult, type DeltaResult,
 } from '@/lib/budget-v2'
 
 export interface BudgetV2Freshness {
@@ -26,11 +29,13 @@ export interface BudgetV2Freshness {
 export interface BudgetV2LoadResult {
   result: ComposeResult
   freshness: BudgetV2Freshness
-  /** week-over-week movement vs the latest weekly snapshot (0s if none yet). */
+  /** week-over-week movement vs the previous upload (0s if there's no earlier one). */
   delta: DeltaResult
-  /** the week_ending of the snapshot the delta compares against (null = none). */
+  /** the IST date of the previous upload the Δ compares against (null = none). */
   prevSnapshotWeek: string | null
 }
+
+const istDateOf = (iso: string): string => new Date(Date.parse(iso) + 5.5 * 3_600_000).toISOString().slice(0, 10)
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 export async function loadBudgetV2(supabase: any): Promise<BudgetV2LoadResult> {
@@ -39,7 +44,7 @@ export async function loadBudgetV2(supabase: any): Promise<BudgetV2LoadResult> {
     { data: statusRows },
     { data: areaRows }, { data: extraRows }, { data: overrideRows },
     { data: budHistRows },
-    { data: snapRows },
+    { data: histMeta },
   ] = await Promise.all([
     supabase.from('budget_hub_state').select('state').eq('id', 'global').maybeSingle(),
     supabase.from('budget_v2_project_status').select('project_name, status'),
@@ -47,7 +52,8 @@ export async function loadBudgetV2(supabase: any): Promise<BudgetV2LoadResult> {
     supabase.from('budget_v2_extra_project').select('name, group_name, area_sft, notes, budget, approved, paid'),
     supabase.from('budget_v2_override').select('project_name, budget, approved, paid, note, updated_at'),
     supabase.from('budget_hub_state').select('updated_at').eq('id', 'global').maybeSingle(),
-    supabase.from('budget_v2_weekly_snapshot').select('week_ending, totals').order('week_ending', { ascending: false }).limit(1),
+    // Metadata only (no big state blobs) so we can pick the previous upload cheaply.
+    supabase.from('budget_hub_state_history').select('version, snapshot_at').eq('state_id', 'global').order('version', { ascending: false }).limit(100),
   ])
 
   const budgetProjects = ((bud?.state as any)?.projects ?? []) as any[]
@@ -67,27 +73,30 @@ export async function loadBudgetV2(supabase: any): Promise<BudgetV2LoadResult> {
 
   const result = composeBudgetV2(budgetProjects, statusMap, areaOverrides, extras, overrides)
 
-  const prevSnap: SnapshotTotals | null = (snapRows && snapRows[0]?.totals) ? (snapRows[0].totals as SnapshotTotals) : null
-  const delta = deltaVs(result, prevSnap)
-  const prevSnapshotWeek: string | null = (snapRows && snapRows[0]?.week_ending) ? snapRows[0].week_ending : null
+  // Baseline = the previous UPLOAD: the newest history version from an earlier
+  // IST day than the current one (collapses same-day re-saves into one upload).
+  let delta = deltaVs(result, null)
+  let prevSnapshotWeek: string | null = null
+  const meta = (histMeta ?? []) as { version: number; snapshot_at: string }[]
+  if (meta.length) {
+    const curDate = istDateOf(meta[0].snapshot_at)
+    const prevMeta = meta.find(m => istDateOf(m.snapshot_at) < curDate)
+    if (prevMeta) {
+      const { data: prevRow } = await supabase.from('budget_hub_state_history')
+        .select('state').eq('state_id', 'global').eq('version', prevMeta.version).maybeSingle()
+      const prevProjects = ((prevRow?.state as any)?.projects ?? []) as any[]
+      if (prevProjects.length) {
+        // Same overrides/extras on both sides → manual entries cancel; Δ = real upload movement.
+        const prevResult = composeBudgetV2(prevProjects, statusMap, areaOverrides, extras, overrides)
+        delta = deltaVs(result, snapshotOf(prevResult))
+        prevSnapshotWeek = istDateOf(prevMeta.snapshot_at)
+      }
+    }
+  }
 
   const freshness: BudgetV2Freshness = {
     budget: (budHistRows as { updated_at?: string } | null)?.updated_at ?? null,
   }
 
   return { result, freshness, delta, prevSnapshotWeek }
-}
-
-/** Take (or refresh) the snapshot for a given ISO week-ending date. Idempotent —
- *  upsert on week_ending. Used by the weekly cron AND the "save snapshot" button. */
-/* eslint-disable @typescript-eslint/no-explicit-any */
-export async function captureWeeklySnapshot(
-  supabase: any, result: ComposeResult, weekEnding: string, capturedBy: string | null,
-): Promise<{ ok: boolean; error?: string }> {
-  const totals = snapshotOf(result)
-  const { error } = await supabase.from('budget_v2_weekly_snapshot').upsert(
-    { week_ending: weekEnding, totals, captured_by: capturedBy, captured_at: new Date().toISOString() },
-    { onConflict: 'week_ending' },
-  )
-  return error ? { ok: false, error: error.message } : { ok: true }
 }

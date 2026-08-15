@@ -19,14 +19,13 @@ export interface BudgetV2Report {
 }
 
 // Same compact ₹ as app/(app)/budget-vs-actual-v2/client.tsx fmtINR.
+// ≥ ₹1 Cr → compact crore; under ₹1 Cr → actual amount, Indian-grouped, "/-".
 function fmtINR(v: number): string {
   if (!isFinite(v) || v === 0) return '₹0'
   const a = Math.abs(v)
   const sign = v < 0 ? '-' : ''
   if (a >= 1e7) return `${sign}₹${(a / 1e7).toFixed(2)} Cr`
-  if (a >= 1e5) return `${sign}₹${(a / 1e5).toFixed(2)} L`
-  if (a >= 1e3) return `${sign}₹${(a / 1e3).toFixed(1)} K`
-  return `${sign}₹${Math.round(a).toLocaleString('en-IN')}`
+  return `${sign}₹${Math.round(a).toLocaleString('en-IN')}/-`
 }
 function perSft(v: number, area: number | null): string {
   if (!area || area <= 0 || !isFinite(v) || v === 0) return ''

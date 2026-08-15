@@ -29,7 +29,7 @@ describe('buildBudgetV2Report', () => {
 
     // Header stats: total budget 1500, paid 1150 = 77%.
     expect(rep.title).toBe('Budget vs Actual — 2 projects')
-    expect(rep.cardSpec.stats![0].value).toBe('₹1.5 K')
+    expect(rep.cardSpec.stats![0].value).toBe('₹1,500/-')
     expect(rep.cardSpec.stats![1].label).toContain('77%')
 
     // One section for the NGH group, empty placeholder project excluded.
@@ -38,9 +38,9 @@ describe('buildBudgetV2Report', () => {
     expect(sec.rows!.map(r => r.main)).toEqual(['NGH A', 'NGH B · closed'])
 
     // Row detail carries Budget + Paid + Balance + ₹/sft; overspent row is danger-toned.
-    expect(sec.rows![0].sub).toContain('Budget ₹1.0 K')
-    expect(sec.rows![0].sub).toContain('Paid ₹600')
-    expect(sec.rows![0].sub).toContain('Bal ₹400')
+    expect(sec.rows![0].sub).toContain('Budget ₹1,000/-')
+    expect(sec.rows![0].sub).toContain('Paid ₹600/-')
+    expect(sec.rows![0].sub).toContain('Bal ₹400/-')
     expect(sec.rows![0].sub).toContain('₹6/sft')
     expect(sec.rows![0].right).toBe('60%')
     expect(sec.rows![1].right).toBe('110%')
