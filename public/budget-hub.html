@@ -2111,9 +2111,18 @@ function extractIN4Rows(raw, headerIdx, map) {
     // just not visually split out from Contractor.
     const isMaterial = /\(M\)/.test(chTrim);
     const key = catNum + '||' + currentSubProject + '||' + (isMaterial ? 'M' : 'C');
-    const entry = { head: chTrim, budget: b, actual: smartActual, woApproved: typeof w === 'number' ? w : 0, catNum };
+    const wVal = typeof w === 'number' ? w : 0;
     const existing = byKey.get(key);
-    if (!existing || b > existing.budget) byKey.set(key, entry);
+    if (!existing) {
+      byKey.set(key, { head: chTrim, budget: b, actual: smartActual, woApproved: wVal, catNum });
+    } else {
+      // (A) Asset, (L) Labour and untagged Contractor all share the 'C' bucket —
+      // they are DIFFERENT cost components and must be SUMMED. The old
+      // keep-the-bigger-budget dropped the smaller ones (e.g. an (A) Asset line)
+      // from the category total. No byte-identical duplicate lines exist in the
+      // IN4 export, so summing never double-counts.
+      existing.budget += b; existing.actual += smartActual; existing.woApproved += wVal;
+    }
   }
   const byCat = new Map();
   for (const entry of byKey.values()) {
@@ -2171,9 +2180,10 @@ function extractIN4SubRows(raw, headerIdx, map) {
     const existing = bySub.get(dedupKey);
     if (!existing) {
       bySub.set(dedupKey, { head: cleanName, budget: b, actual: smartActual, woApproved, subNum, catNum: currentCatNum });
-    } else if (b > existing.budget) {
-      // Duplicate within same flavour — keep the bigger budget entry
-      bySub.set(dedupKey, { head: cleanName, budget: b, actual: smartActual, woApproved, subNum, catNum: currentCatNum });
+    } else {
+      // Sum sibling components in the same bucket (Asset / Labour / Contractor)
+      // rather than keeping only the largest, so no sub-item amount is dropped.
+      existing.budget += b; existing.actual += smartActual; existing.woApproved += woApproved;
     }
   }
   // Now merge (M) and non-(M) variants under the same subNum so the user sees one bar per sub-category
