@@ -75,7 +75,9 @@ export function BillsDigestForm({
       const res = await fetch('/api/cron/bills-digest', { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' })
       const j = await res.json()
       if (!res.ok || j.ok === false) { toast.error(j.reason || j.error || 'Could not send test'); return }
-      if (j.sent) toast.success('Test sent to your email — check your inbox in a minute.')
+      if (j.sent) toast.success(j.telegram
+        ? 'Test sent to your email + Telegram — check both.'
+        : 'Test sent to your email — check your inbox in a minute. (Connect Telegram to also get it there.)')
       else toast.message(j.reason || 'Nothing to report right now, so no email was sent.')
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Network error')
