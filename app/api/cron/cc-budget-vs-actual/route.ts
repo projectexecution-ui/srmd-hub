@@ -13,6 +13,7 @@ import { createClient as createServiceClient } from '@supabase/supabase-js'
 import { getMyUser, getMyPermissions, can } from '@/lib/auth'
 import { loadBudgetV2 } from '@/lib/budget-v2-load'
 import { buildBudgetV2Report } from '@/lib/budget-v2-report'
+import { broadcastReportToGroup } from '@/lib/telegram/group'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -25,9 +26,13 @@ function serviceClient() {
 }
 
 // Build the V2 tree card and fan it out via the RPC. `onlyUser` limits delivery
-// to a single recipient (admin preview). Returns the count sent (0 if there's
-// nothing budgeted to report).
-async function sendReport(onlyUser: string | null): Promise<{ ok: true; sent: number; reason?: string } | { ok: false; reason: string }> {
+// to a single recipient (admin preview). `toGroup` also posts the same card to
+// the shared management Telegram group (the weekly cron, not the admin preview).
+// Returns the count sent (0 if there's nothing budgeted to report).
+async function sendReport(
+  onlyUser: string | null,
+  toGroup: boolean,
+): Promise<{ ok: true; sent: number; reason?: string; group?: string } | { ok: false; reason: string }> {
   const svc = serviceClient()
   const { result, freshness, delta } = await loadBudgetV2(svc)
   const report = buildBudgetV2Report(result, freshness, Date.now(), delta)
@@ -43,7 +48,21 @@ async function sendReport(onlyUser: string | null): Promise<{ ok: true; sent: nu
   if (error) return { ok: false, reason: error.message }
   // Δ baseline comes automatically from the previous upload in budget_hub_state_history
   // (see loadBudgetV2) — nothing to capture here.
-  return { ok: true, sent: (data as number) ?? 0 }
+
+  // Broadcast the identical card to the management group, if one is registered.
+  let group: string | undefined
+  if (toGroup) {
+    const g = await broadcastReportToGroup(svc, {
+      type: 'cc_budget_vs_actual_report',
+      title: report.title,
+      body: report.body,
+      cardSpec: report.cardSpec,
+      cardText: report.reportText,
+      url: '/cost-control',
+    })
+    group = 'skipped' in g ? `skipped:${g.skipped}` : g.ok ? `sent:${g.mode}` : `error:${g.error}`
+  }
+  return { ok: true, sent: (data as number) ?? 0, group }
 }
 
 export async function GET(req: Request) {
@@ -58,7 +77,7 @@ export async function GET(req: Request) {
   const istDow = new Date(Date.now() + 5.5 * 3600 * 1000).getUTCDay()
   if (istDow !== 1) return NextResponse.json({ ok: true, skipped: 'not-monday' })
 
-  const res = await sendReport(null)
+  const res = await sendReport(null, true)
   return NextResponse.json(res, { status: res.ok ? 200 : 500 })
 }
 
@@ -77,6 +96,7 @@ export async function POST(req: Request) {
     const me = await getMyUser()
     onlyUser = me?.id ?? null
   }
-  const res = await sendReport(onlyUser)
+  // Admin preview stays a DM to the caller — never touches the group.
+  const res = await sendReport(onlyUser, false)
   return NextResponse.json(res, { status: res.ok ? 200 : 500 })
 }

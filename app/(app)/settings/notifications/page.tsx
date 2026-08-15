@@ -15,6 +15,8 @@ import { Card } from '@/components/ui/card'
 import { Smartphone } from 'lucide-react'
 import { NotificationPreferencesForm } from './preferences-form'
 import { TelegramConnect } from './TelegramConnect'
+import { ReportsGroupConnect } from './ReportsGroupConnect'
+import { reportsGroupStatus } from './telegram-actions'
 import { EnablePushButton } from '@/components/push/EnablePushButton'
 
 export const dynamic = 'force-dynamic'
@@ -60,6 +62,9 @@ export default async function NotificationSettingsPage() {
     digest_only: false,
   }
 
+  // Reports-group status (admin only — the shared management broadcast channel).
+  const groupStatus = isAdmin ? await reportsGroupStatus() : null
+
   return (
     <div className="p-4 md:p-6 max-w-2xl mx-auto space-y-6">
       <PageHeader title="Notifications" subtitle="How you're told about things waiting on you." />
@@ -88,6 +93,11 @@ export default async function NotificationSettingsPage() {
           linkedAt={initial.telegram_linked_at}
           isAdmin={isAdmin}
         />
+      )}
+
+      {/* Reports group — admin only; the shared management broadcast channel. */}
+      {isAdmin && groupStatus?.ok && (
+        <ReportsGroupConnect group={groupStatus.group} botUsername={groupStatus.botUsername} />
       )}
 
       {canManage ? (

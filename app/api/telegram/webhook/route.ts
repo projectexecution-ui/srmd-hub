@@ -30,11 +30,20 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: false }, { status: 401 })
   }
 
-  let update: { message?: { text?: string; chat?: { id?: number | string } } } | null = null
+  let update: {
+    message?: {
+      text?: string
+      chat?: { id?: number | string; type?: string; title?: string }
+      from?: { id?: number | string }
+    }
+  } | null = null
   try { update = await req.json() } catch { return NextResponse.json({ ok: true }) }
 
   const msg = update?.message
   const chatId = msg?.chat?.id
+  const chatType = msg?.chat?.type ?? 'private'
+  const chatTitle = msg?.chat?.title ?? ''
+  const fromId = msg?.from?.id
   const text = (msg?.text ?? '').trim()
   if (chatId == null || !text) return NextResponse.json({ ok: true })
 
@@ -43,6 +52,35 @@ export async function POST(req: NextRequest) {
   const svc = url && key ? createServiceClient(url, key, { auth: { persistSession: false } }) : null
 
   const connectHint = 'Open CT Hub → Settings → Notifications → Connect Telegram to link your account.'
+
+  // ── Group chat: register/unregister this group as the reports channel. The
+  //     bot must be a group admin to receive these commands. Authorised by the
+  //     sender's Telegram id (only management can link Telegram). ──
+  if (chatType === 'group' || chatType === 'supergroup') {
+    if (text.startsWith('/reportshere')) {
+      if (!svc || fromId == null) { await reply(token, chatId, 'Setup is incomplete — please try again shortly.'); return NextResponse.json({ ok: true }) }
+      const { data: who, error } = await svc.rpc('telegram_register_reports_group', {
+        p_chat_id: String(chatId), p_title: chatTitle, p_from_id: String(fromId),
+      })
+      if (error || !who) {
+        await reply(token, chatId, 'Only a CT Hub management member who has connected Telegram can set this up. Connect your own account first (CT Hub → Settings → Notifications), then type /reportshere here again.')
+      } else {
+        await reply(token, chatId, `✅ Done — this group will now receive CT Hub broadcast reports (like the weekly Budget vs Actual card). Set up by ${who}. Type /stop here to turn it off.`)
+      }
+      return NextResponse.json({ ok: true })
+    }
+    if (text.startsWith('/stop')) {
+      if (svc && fromId != null) {
+        const { data: done } = await svc.rpc('telegram_unregister_reports_group_by_chat', {
+          p_chat_id: String(chatId), p_from_id: String(fromId),
+        })
+        if (done) await reply(token, chatId, 'Turned off — this group will no longer receive CT Hub reports.')
+      }
+      return NextResponse.json({ ok: true })
+    }
+    // Ignore ordinary group chatter silently — never spam the group.
+    return NextResponse.json({ ok: true })
+  }
 
   if (text.startsWith('/start')) {
     const code = text.split(/\s+/)[1] ?? ''

@@ -34,3 +34,25 @@ export async function unlinkTelegram(): Promise<{ ok: boolean; error?: string }>
   if (error) return { ok: false, error: error.message }
   return { ok: true }
 }
+
+// ── Reports group (admin) — the shared management channel for broadcast cards ──
+
+export async function reportsGroupStatus(): Promise<
+  { ok: true; group: { title: string; at: string | null } | null; botUsername: string | null } | { ok: false; error: string }
+> {
+  const supabase = await createClient()
+  const { data, error } = await supabase.rpc('telegram_reports_group_info')
+  if (error) return { ok: false, error: error.message }
+  const info = data as { chatId?: string | null; title?: string | null; at?: string | null } | null
+  const group = info?.chatId ? { title: info.title || 'Telegram group', at: info.at ?? null } : null
+  const token = process.env.TELEGRAM_BOT_TOKEN
+  const username = token ? await botUsername(token) : null
+  return { ok: true, group, botUsername: username }
+}
+
+export async function disconnectReportsGroup(): Promise<{ ok: boolean; error?: string }> {
+  const supabase = await createClient()
+  const { error } = await supabase.rpc('telegram_unregister_reports_group')
+  if (error) return { ok: false, error: error.message }
+  return { ok: true }
+}
