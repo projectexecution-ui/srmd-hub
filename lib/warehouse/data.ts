@@ -2,7 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import { getMyUser, getMyPermissions, getMyProfile, can } from '@/lib/auth'
 import { showValuesFor, isOn } from './settings'
 import type { SettingValues } from './settings'
-import type { GateInOptions, WhItem, WhPo, WhPoLine, WhSite, WhSpot, WhLists, StockRow } from './types'
+import type { GateInOptions, WhItem, WhPo, WhPoHead, WhPoLine, WhSite, WhSpot, WhLists, StockRow } from './types'
 import type { CountLine } from './count'
 
 /** PostgREST embeds a to-one relation as an object at runtime, but the generated
@@ -93,74 +93,104 @@ export async function getItems(): Promise<WhItem[]> {
   }))
 }
 
-/** Open POs with a per-line running balance.
+/** Every open PO, but only enough of each to find it in a list.
  *
- *  `pending` = ordered − received-so-far. A PO of 5,000 bags arriving in ten
- *  trucks is the NORMAL case, so the PO is never consumed by one entry. This is
- *  a completely different number from the challan shortage. (#21 vs #9) */
-export async function getOpenPos(): Promise<WhPo[]> {
+ *  Deliberately WITHOUT lines. There are 1,223 open POs carrying 4,067 lines
+ *  between them; sending all of that to a phone at a gate was half a megabyte of
+ *  JSON to render one dropdown. The lines come from getPoBalance() for the one
+ *  PO he actually picks. */
+export async function getOpenPoHeads(): Promise<{ heads: WhPoHead[]; error?: string }> {
   const sb = await createClient()
-  const { data: pos } = await sb
+  const { data, error } = await sb
     .from('wh_po')
-    .select('id, po_no, kind, vendor, entity, status, wh_po_lines(id, item_id, ordered_qty, rate, source_text, wh_items(name, unit))')
+    .select('id, po_no, vendor, entity, status, po_date, project_id, projects(name)')
     .is('deleted_at', null)
     .in('status', ['open', 'partly_received'])
     .order('po_date', { ascending: false })
+  if (error) return { heads: [], error: error.message }
 
-  const rows = pos ?? []
-  if (rows.length === 0) return []
+  return {
+    heads: (data ?? []).map<WhPoHead>(p => ({
+      id: p.id,
+      poNo: p.po_no,
+      vendor: p.vendor,
+      entity: p.entity,
+      projectId: p.project_id,
+      projectName: one(p.projects)?.name ?? null,
+      status: p.status,
+      poDate: p.po_date,
+    })),
+  }
+}
 
-  // One round trip for every received quantity, rather than a query per line.
-  const lineIds = rows.flatMap(p => (p.wh_po_lines ?? []).map((l: { id: string }) => l.id))
+/** One PO with its per-line running balance.
+ *
+ *  `pending` = ordered − received-so-far. A PO of 5,000 bags arriving in ten
+ *  trucks is the NORMAL case, so the PO is never consumed by one entry. This is
+ *  a completely different number from the challan shortage. (#21 vs #9)
+ *
+ *  Scoped to ONE purchase order on purpose. Fetching every received quantity in
+ *  one go meant an `in(...)` over all 4,067 line ids — a 150,000-character URL
+ *  that PostgREST refuses outright. The failure was silent, too: the error was
+ *  never read, so every line would simply have reported its full ordered
+ *  quantity as still pending once real receipts existed. */
+export async function getPoBalance(poId: string): Promise<{ po: WhPo | null; error?: string }> {
+  const sb = await createClient()
+  const { data: p, error } = await sb
+    .from('wh_po')
+    .select('id, po_no, kind, vendor, entity, status, project_id, wh_po_lines(id, item_id, ordered_qty, rate, source_text, wh_items(name, unit))')
+    .eq('id', poId)
+    .is('deleted_at', null)
+    .maybeSingle()
+  if (error) return { po: null, error: error.message }
+  if (!p) return { po: null }
+
+  const lineIds = (p.wh_po_lines ?? []).map((l: { id: string }) => l.id)
   const received = new Map<string, number>()
-  const deliveries = new Map<string, Set<string>>()
+  const deliveries = new Set<string>()
   if (lineIds.length > 0) {
-    const { data: got } = await sb
+    const { data: got, error: gErr } = await sb
       .from('wh_gate_in_lines')
       .select('po_line_id, received_qty, gate_in_id')
       .in('po_line_id', lineIds)
+    if (gErr) return { po: null, error: `Could not read what has already arrived: ${gErr.message}` }
     for (const g of got ?? []) {
       if (!g.po_line_id) continue
       received.set(g.po_line_id, (received.get(g.po_line_id) ?? 0) + Number(g.received_qty))
-    }
-    // deliveries-per-PO, so the form can say "delivery 8 of this PO"
-    const lineToPo = new Map<string, string>()
-    for (const p of rows) for (const l of p.wh_po_lines ?? []) lineToPo.set(l.id, p.id)
-    for (const g of got ?? []) {
-      const poId = g.po_line_id ? lineToPo.get(g.po_line_id) : undefined
-      if (!poId) continue
-      if (!deliveries.has(poId)) deliveries.set(poId, new Set())
-      deliveries.get(poId)!.add(g.gate_in_id)
+      deliveries.add(g.gate_in_id)
     }
   }
 
-  return rows.map<WhPo>(p => ({
-    id: p.id,
-    poNo: p.po_no,
-    kind: p.kind,
-    vendor: p.vendor,
-    entity: p.entity,
-    status: p.status,
-    deliveries: deliveries.get(p.id)?.size ?? 0,
-    lines: (p.wh_po_lines ?? []).map((l): WhPoLine => {
-      const ordered = Number(l.ordered_qty)
-      const got = received.get(l.id) ?? 0
-      const pending = ordered - got
-      const item = one(l.wh_items)
-      return {
-        lineId: l.id,
-        itemId: l.item_id,
-        itemName: item?.name ?? '—',
-        unit: item?.unit ?? '',
-        ordered,
-        received: got,
-        pending: pending > 0 ? pending : 0,
-        rate: l.rate,
-        done: pending <= 0,
-        sourceText: l.source_text ?? null,
-      }
-    }),
-  }))
+  return {
+    po: {
+      id: p.id,
+      poNo: p.po_no,
+      kind: p.kind,
+      vendor: p.vendor,
+      entity: p.entity,
+      status: p.status,
+      projectId: p.project_id,
+      deliveries: deliveries.size,
+      lines: (p.wh_po_lines ?? []).map((l): WhPoLine => {
+        const ordered = Number(l.ordered_qty)
+        const got = received.get(l.id) ?? 0
+        const pending = ordered - got
+        const item = one(l.wh_items)
+        return {
+          lineId: l.id,
+          itemId: l.item_id,
+          itemName: item?.name ?? '—',
+          unit: item?.unit ?? '',
+          ordered,
+          received: got,
+          pending: pending > 0 ? pending : 0,
+          rate: l.rate,
+          done: pending <= 0,
+          sourceText: l.source_text ?? null,
+        }
+      }),
+    },
+  }
 }
 
 export async function getLists(): Promise<WhLists> {
@@ -185,10 +215,10 @@ export async function getLists(): Promise<WhLists> {
 export async function getGateInOptions(): Promise<GateInOptions> {
   const sb = await createClient()
   const sites = await getLocationTree()
-  const [{ ids, scopingOff }, items, pos, lists, projectsRes, nextNo] = await Promise.all([
+  const [{ ids, scopingOff }, items, poRes, lists, projectsRes, nextNo] = await Promise.all([
     getPostableSpots(sites),
     getItems(),
-    getOpenPos(),
+    getOpenPoHeads(),
     getLists(),
     sb.from('projects').select('id, name').order('name'),
     peekNextEntryNo('in'),
@@ -198,7 +228,8 @@ export async function getGateInOptions(): Promise<GateInOptions> {
     postableSpotIds: ids,
     scopingOff,
     items,
-    pos,
+    poHeads: poRes.heads,
+    poError: poRes.error ?? null,
     lists,
     projects: (projectsRes.data ?? []) as Array<{ id: string; name: string }>,
     nextEntryNo: nextNo,

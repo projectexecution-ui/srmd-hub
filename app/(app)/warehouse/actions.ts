@@ -3,7 +3,7 @@
 import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
 import { getMyUser, getMyPermissions, can } from '@/lib/auth'
-import { getLocationTree, getPostableSpots, getCount, getSettings, one } from '@/lib/warehouse/data'
+import { getLocationTree, getPostableSpots, getCount, getSettings, getPoBalance, one } from '@/lib/warehouse/data'
 import { settingDef, periodLockBlocker, isOn } from '@/lib/warehouse/settings'
 import { todayIST } from '@/lib/warehouse/ledger'
 import { in4Key, planIn4Items, FALLBACK_UOM } from '@/lib/warehouse/in4-items'
@@ -58,6 +58,20 @@ async function gate(action: 'edit' | 'admin' = 'edit'): Promise<string | null> {
       : 'You do not have permission to record warehouse entries.'
   }
   return null
+}
+
+/** The balance of ONE purchase order, fetched when the keeper picks it.
+ *
+ *  Not sent with the page: 1,223 open POs carrying 4,067 lines is half a
+ *  megabyte of JSON for a dropdown, and the query that computed every balance at
+ *  once needed a 150,000-character URL that PostgREST rejects. */
+export async function loadPoBalance(poId: string) {
+  const denied = await gate('edit')
+  if (denied) return { ok: false as const, error: denied }
+  if (!poId) return { ok: true as const, po: null }
+  const { po, error } = await getPoBalance(poId)
+  if (error) return { ok: false as const, error }
+  return { ok: true as const, po }
 }
 
 export type SaveResult = { ok: true; entryNo: string } | { ok: false; error: string }

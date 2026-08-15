@@ -57,6 +57,22 @@ export type WhPo = {
   /** How many gate entries have already landed against this PO. */
   deliveries: number
   lines: WhPoLine[]
+  /** Everything the gate can fill in for him once he picks this PO. */
+  projectId: string | null
+}
+
+/** Just enough to find a PO in a list of a thousand. The lines are fetched only
+ *  for the one he actually picks — sending every line of every open PO to a
+ *  phone at a gate was half a megabyte of JSON nobody reads. */
+export type WhPoHead = {
+  id: string
+  poNo: string
+  vendor: string | null
+  entity: string | null
+  projectId: string | null
+  projectName: string | null
+  status: 'open' | 'partly_received' | 'fully_received' | 'short_closed'
+  poDate: string | null
 }
 
 export type StockRow = {
@@ -82,7 +98,9 @@ export type GateInOptions = {
    *  admin/head, so the UI can explain why everything is open. */
   scopingOff: boolean
   items: WhItem[]
-  pos: WhPo[]
+  /** The picker list. One PO's lines are fetched when he picks it. */
+  poHeads: WhPoHead[]
+  poError: string | null
   lists: WhLists
   projects: Array<{ id: string; name: string }>
   nextEntryNo: string

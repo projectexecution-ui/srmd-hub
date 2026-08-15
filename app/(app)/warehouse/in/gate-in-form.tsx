@@ -5,9 +5,9 @@ import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
 import { Card } from '@/components/ui/card'
 import { SearchableSelect } from '@/components/ui/searchable-select'
-import { saveGateIn, createItem } from '../actions'
+import { saveGateIn, createItem, loadPoBalance } from '../actions'
 import { verdictFor } from '@/lib/warehouse/types'
-import type { GateInOptions, GateInLineInput } from '@/lib/warehouse/types'
+import type { GateInOptions, GateInLineInput, WhPo } from '@/lib/warehouse/types'
 import { Plus, Trash2, Loader2 } from 'lucide-react'
 import { formatQty } from '@/lib/warehouse/format'
 
@@ -30,6 +30,7 @@ export function GateInForm({
 }: { options: GateInOptions; canEdit: boolean; showValues: boolean }) {
   const router = useRouter()
   const [pending, start] = useTransition()
+  const [, startBalance] = useTransition()
 
   const [owner, setOwner] = useState<'srm' | 'vendor'>('srm')
   const [poId, setPoId] = useState('')
@@ -45,8 +46,38 @@ export function GateInForm({
   const [remarks, setRemarks] = useState('')
   const [rows, setRows] = useState<Row[]>([blankRow()])
 
-  const po = options.pos.find(p => p.id === poId) ?? null
+  /** The picked PO's balance, fetched when he picks it rather than shipped with
+   *  the page — there are over a thousand open POs. */
+  const [po, setPo] = useState<WhPo | null>(null)
+  const [poLoading, setPoLoading] = useState(false)
   const itemById = useMemo(() => new Map(options.items.map(i => [i.id, i])), [options.items])
+
+  /** Picking a PO fills in everything the order already knows. IN4 has the
+   *  supplier, who is paying and often the project; making the guard retype them
+   *  off a screen that is already showing them is how they end up wrong. */
+  function pickPo(id: string) {
+    setPoId(id)
+    setRows([blankRow()])
+    setPo(null)
+    const head = options.poHeads.find(h => h.id === id)
+    if (head) {
+      setParty(head.vendor ?? '')
+      setEntity(head.entity ?? '')
+      if (head.projectId) setProjectId(head.projectId)
+    } else {
+      // "No PO (emergency)" — clear what the last PO filled in, so nothing is
+      // silently carried over onto an entry it does not belong to.
+      setParty(''); setEntity(''); setProjectId('')
+    }
+    if (!id) return
+    setPoLoading(true)
+    startBalance(async () => {
+      const res = await loadPoBalance(id)
+      setPoLoading(false)
+      if (!res.ok) { toast.error(res.error); return }
+      setPo(res.po)
+    })
+  }
 
   /** With a PO picked, the choice is WHICH ORDERED LINE this truck is against —
    *  the item on it is IN4's, and is not up for interpretation here. Without a
@@ -133,18 +164,38 @@ export function GateInForm({
         </div>
 
         <div>
-          <label className={labelCls}>PO / WO</label>
-          <select className={inputCls} value={poId} onChange={e => { setPoId(e.target.value); setRows([blankRow()]) }}>
-            <option value="">No PO (emergency)</option>
-            {options.pos.map(p => (
-              <option key={p.id} value={p.id}>
-                {p.poNo} · {p.vendor ?? '—'}{p.entity ? ` · ${p.entity}` : ''}
-              </option>
-            ))}
-          </select>
-          {options.pos.length === 0 && (
+          <label className={labelCls} htmlFor="po-pick">PO / WO</label>
+          {/* Searchable: there are over a thousand open orders, and he knows the
+              PO number or the supplier, not its position in a list. */}
+          <SearchableSelect
+            id="po-pick"
+            value={poId}
+            onChange={pickPo}
+            options={[
+              { id: '', label: 'No PO (emergency)', hint: 'nothing was ordered for this' },
+              ...options.poHeads.map(p => ({
+                id: p.id,
+                label: p.poNo,
+                hint: [p.vendor, p.entity, p.projectName].filter(Boolean).join(' · '),
+              })),
+            ]}
+            placeholder="Type a PO number or supplier…"
+            emptyText="No open order matches"
+          />
+          {options.poError && (
+            <p className="text-[11px] text-rose-700 mt-1">
+              Couldn&apos;t load the orders: {options.poError}
+            </p>
+          )}
+          {!options.poError && options.poHeads.length === 0 && (
             <p className="text-[11px] text-slate-500 mt-1">
               No open POs yet — entries can still be recorded without one.
+            </p>
+          )}
+          {poId && (
+            <p className="text-[11px] text-emerald-700 mt-1">
+              Supplier, who paid{options.poHeads.find(h => h.id === poId)?.projectId ? ' and project' : ''} filled in
+              from the order — change anything that is different.
             </p>
           )}
         </div>
@@ -162,6 +213,11 @@ export function GateInForm({
 
         {/* The PO's running balance, so the guard sees what is still due BEFORE
             he types. Completed lines are greyed. */}
+        {poLoading && (
+          <div className="rounded-lg bg-slate-50 border border-slate-200 p-2.5 text-[11.5px] text-slate-500 inline-flex items-center gap-2 w-full">
+            <Loader2 className="h-3.5 w-3.5 animate-spin" /> Fetching what is still due on this order…
+          </div>
+        )}
         {po && (
           <div className="rounded-lg bg-slate-50 border border-slate-200 p-2.5">
             <div className="text-[11px] font-extrabold text-slate-700 mb-1.5">
@@ -269,13 +325,27 @@ export function GateInForm({
                 )}
               </div>
 
-              <select className={inputCls} value={row.poLineId ? poItemOf(row) : row.itemId}
-                onChange={e => pickItem(row.key, e.target.value)}>
-                <option value="">{po ? 'Which ordered line came?' : 'Pick an item…'}</option>
-                {selectableItems.map(s => (
-                  <option key={s.id} value={s.id} disabled={s.done}>{s.label}</option>
-                ))}
-              </select>
+              {/* With a PO the choice is short and specific, so a plain list is
+                  right. Without one it is the whole 2,800-item master, which
+                  needs searching. */}
+              {po ? (
+                <select className={inputCls} value={row.poLineId ? poItemOf(row) : row.itemId}
+                  onChange={e => pickItem(row.key, e.target.value)}>
+                  <option value="">Which ordered line came?</option>
+                  {selectableItems.map(s => (
+                    <option key={s.id} value={s.id} disabled={s.done}>{s.label}</option>
+                  ))}
+                </select>
+              ) : (
+                <SearchableSelect
+                  value={row.itemId}
+                  onChange={id => pickItem(row.key, id)}
+                  options={selectableItems.map(s => ({ id: s.id, label: s.label, hint: s.unit }))}
+                  placeholder={poLoading ? 'Loading the order…' : 'Search the item list…'}
+                  disabled={poLoading}
+                  emptyText="No item matches — add it below"
+                />
+              )}
 
               {/* IN4 is the base for what was ordered. What actually turned up
                   is the gate's call, so the two are shown together and the
