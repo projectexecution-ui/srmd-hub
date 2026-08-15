@@ -11,7 +11,7 @@
 import { NextResponse } from 'next/server'
 import { createClient as createServiceClient } from '@supabase/supabase-js'
 import { getMyUser, getMyPermissions, can } from '@/lib/auth'
-import { loadBudgetV2 } from '@/lib/budget-v2-load'
+import { loadBudgetV2, captureWeeklySnapshot } from '@/lib/budget-v2-load'
 import { buildBudgetV2Report } from '@/lib/budget-v2-report'
 
 export const runtime = 'nodejs'
@@ -29,8 +29,8 @@ function serviceClient() {
 // nothing budgeted to report).
 async function sendReport(onlyUser: string | null): Promise<{ ok: true; sent: number; reason?: string } | { ok: false; reason: string }> {
   const svc = serviceClient()
-  const { result, freshness } = await loadBudgetV2(svc)
-  const report = buildBudgetV2Report(result, freshness, Date.now())
+  const { result, freshness, delta } = await loadBudgetV2(svc)
+  const report = buildBudgetV2Report(result, freshness, Date.now(), delta)
   if (!report) return { ok: true, sent: 0, reason: 'no-budget-data' }
 
   const { data, error } = await svc.rpc('cc_budget_vs_actual_report', {
@@ -41,6 +41,15 @@ async function sendReport(onlyUser: string | null): Promise<{ ok: true; sent: nu
     p_only_user: onlyUser,
   })
   if (error) return { ok: false, reason: error.message }
+
+  // Capture this week's numbers AFTER computing the (vs-last-week) card, so next
+  // week's report has a fresh baseline to diff against. Only on the real weekly
+  // run (not an admin's onlyMe preview), and best-effort — a snapshot failure
+  // must not fail the send.
+  if (!onlyUser) {
+    const weekEnding = new Date(Date.now() + 5.5 * 3600 * 1000).toISOString().slice(0, 10) // IST date
+    await captureWeeklySnapshot(svc, result, weekEnding, null).catch(() => {})
+  }
   return { ok: true, sent: (data as number) ?? 0 }
 }
 

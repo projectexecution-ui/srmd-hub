@@ -1,6 +1,8 @@
 'use client'
 // V2 Board view — plain-English, one project per A4 page, designed for
 // "Ctrl+P → Save as PDF" so the HOD gets a board paper, not a dashboard.
+// Single source: every number is from the uploaded budget report (Budget,
+// WO/PO Approved, Paid; Balance = Budget − Paid).
 
 import Link from 'next/link'
 import { ArrowLeft, Printer } from 'lucide-react'
@@ -9,10 +11,11 @@ import type { ComposeResult, ProjectNode, CatNode } from '@/lib/budget-v2'
 function fmtINR(v: number): string {
   if (!isFinite(v) || v === 0) return '₹0'
   const a = Math.abs(v)
-  if (a >= 1e7) return `₹${(v / 1e7).toFixed(2)} Cr`
-  if (a >= 1e5) return `₹${(v / 1e5).toFixed(2)} L`
-  if (a >= 1e3) return `₹${(v / 1e3).toFixed(1)} K`
-  return `₹${Math.round(v).toLocaleString('en-IN')}`
+  const sign = v < 0 ? '−' : ''
+  if (a >= 1e7) return `${sign}₹${(a / 1e7).toFixed(2)} Cr`
+  if (a >= 1e5) return `${sign}₹${(a / 1e5).toFixed(2)} L`
+  if (a >= 1e3) return `${sign}₹${(a / 1e3).toFixed(1)} K`
+  return `${sign}₹${Math.round(a).toLocaleString('en-IN')}`
 }
 function utilPct(spent: number, budget: number): number | null {
   if (!budget || budget <= 0) return null
@@ -25,13 +28,14 @@ function inrPerSft(amt: number, area: number | null): string {
 
 function projectSentence(p: ProjectNode, groupAvgSft: number | null): string {
   const u = utilPct(p.spent, p.budget)
+  const balance = p.budget - p.spent
   const bits: string[] = []
   if (u != null) {
     if (u > 100) bits.push(`is ${u - 100}% over budget`)
     else if (u >= 85) bits.push(`has used ${u}% of its budget`)
     else bits.push(`has used ${u}% of its budget so far`)
   }
-  if (p.outstanding > 0) bits.push(`₹${(p.outstanding / 1e5).toFixed(1)} L is still outstanding to vendors`)
+  if (balance > 0) bits.push(`₹${(balance / 1e5).toFixed(1)} L of budget is still unspent`)
   if (p.area && p.area > 0 && groupAvgSft && groupAvgSft > 0) {
     const mySft = p.spent / p.area
     const d = Math.round(((mySft - groupAvgSft) / groupAvgSft) * 100)
@@ -51,12 +55,13 @@ export default function PrintClient({ result }: { result: ComposeResult }) {
     projects: g.projects, // already sorted open→closed, alpha within
     avgSft: groupAvgSft(g.projects),
     budget: g.budget,
+    approved: g.approved,
     spent: g.spent,
-    outstanding: g.outstanding,
   }))
   const allProjects = orderedGroups.flatMap(g =>
     g.projects.map(p => ({ p, groupName: g.name, groupAvgSft: g.avgSft })))
   const t = result.totals
+  const balance = t.budget - t.spent
   const overruns = allProjects
     .map(({ p, groupName }) => ({ p, groupName, u: utilPct(p.spent, p.budget) ?? 0 }))
     .filter(x => x.u > 100)
@@ -115,18 +120,18 @@ export default function PrintClient({ result }: { result: ComposeResult }) {
 
         <div className="grid grid-cols-2 gap-3 mt-6">
           <div className="kpi"><div className="kpi-label">Total budget</div><div className="kpi-value">{fmtINR(t.budget)}</div></div>
-          <div className="kpi"><div className="kpi-label">Spent so far</div><div className="kpi-value">{fmtINR(t.spent)}</div>
+          <div className="kpi"><div className="kpi-label">Paid so far</div><div className="kpi-value">{fmtINR(t.spent)}</div>
             <div className="kpi-sub">{t.budget > 0 ? `${Math.round(t.spent / t.budget * 100)}% of budget` : ''}</div></div>
-          <div className="kpi"><div className="kpi-label">Outstanding to vendors</div><div className="kpi-value">{fmtINR(t.outstanding)}</div></div>
-          <div className="kpi"><div className="kpi-label">Average ₹ per sft spent</div><div className="kpi-value">{t.area > 0 ? `₹${Math.round(t.spent / t.area).toLocaleString('en-IN')}` : '—'}</div>
-            <div className="kpi-sub">across {Math.round(t.area).toLocaleString('en-IN')} sft</div></div>
+          <div className="kpi"><div className="kpi-label">WO/PO approved</div><div className="kpi-value">{fmtINR(t.approved)}</div></div>
+          <div className="kpi"><div className="kpi-label">{balance < 0 ? 'Over budget' : 'Balance left'}</div><div className={`kpi-value ${balance < 0 ? 'over' : ''}`}>{fmtINR(Math.abs(balance))}</div>
+            <div className="kpi-sub">{t.area > 0 ? `avg ₹${Math.round(t.spent / t.area).toLocaleString('en-IN')}/sft paid` : ''}</div></div>
         </div>
 
         <h2 className="h2 mt-7">Where we stand — in a sentence</h2>
         <p className="lead">
-          The portfolio has spent <b>{fmtINR(t.spent)}</b> of a <b>{fmtINR(t.budget)}</b> budget
-          ({t.budget > 0 ? Math.round(t.spent / t.budget * 100) : 0}%), with <b>{fmtINR(t.outstanding)}</b> still
-          outstanding to vendors. {overruns.length === 0
+          The portfolio has paid <b>{fmtINR(t.spent)}</b> of a <b>{fmtINR(t.budget)}</b> budget
+          ({t.budget > 0 ? Math.round(t.spent / t.budget * 100) : 0}%), leaving <b>{fmtINR(Math.abs(balance))}</b> {balance < 0 ? 'over budget' : 'unspent'}.
+          {' '}{overruns.length === 0
             ? 'No project is currently over its budget.'
             : <>Projects already over budget: <b>{overruns.map(x => x.p.name).join(', ')}</b>.</>}
         </p>
@@ -135,7 +140,7 @@ export default function PrintClient({ result }: { result: ComposeResult }) {
           <>
             <h2 className="h2 mt-6">Top overruns to discuss</h2>
             <table className="tbl">
-              <thead><tr><th>Project</th><th>Group</th><th className="right">Budget</th><th className="right">Spent</th><th className="right">% used</th></tr></thead>
+              <thead><tr><th>Project</th><th>Group</th><th className="right">Budget</th><th className="right">Paid</th><th className="right">% used</th></tr></thead>
               <tbody>
                 {overruns.map(({ p, groupName, u }) => (
                   <tr key={p.name}>
@@ -153,7 +158,7 @@ export default function PrintClient({ result }: { result: ComposeResult }) {
 
         <h2 className="h2 mt-7">Contents</h2>
         <table className="tbl">
-          <thead><tr><th>Group</th><th>Projects</th><th className="right">Budget</th><th className="right">Spent</th></tr></thead>
+          <thead><tr><th>Group</th><th>Projects</th><th className="right">Budget</th><th className="right">Paid</th></tr></thead>
           <tbody>
             {orderedGroups.map(g => (
               <tr key={g.name}>
@@ -176,11 +181,12 @@ export default function PrintClient({ result }: { result: ComposeResult }) {
           <div className="page" style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
             <div className="text-xs uppercase tracking-wider text-gray-400">{g.isStandalone ? 'Section' : 'Project Group'}</div>
             <h1 className="h1 mt-1" style={{ fontSize: 28 }}>{g.name}</h1>
-            <p className="muted mt-2">{g.projects.length} project{g.projects.length === 1 ? '' : 's'} · budget {fmtINR(g.budget)} · spent {fmtINR(g.spent)}{g.budget > 0 ? ` (${Math.round(g.spent / g.budget * 100)}%)` : ''}{g.outstanding > 0 ? ` · outstanding ${fmtINR(g.outstanding)}` : ''}</p>
+            <p className="muted mt-2">{g.projects.length} project{g.projects.length === 1 ? '' : 's'} · budget {fmtINR(g.budget)} · paid {fmtINR(g.spent)}{g.budget > 0 ? ` (${Math.round(g.spent / g.budget * 100)}%)` : ''} · balance {fmtINR(g.budget - g.spent)}</p>
             <div className="grid grid-cols-2 gap-3 mt-6">
               {g.projects.map(p => {
                 const u = utilPct(p.spent, p.budget)
                 const ctone = u == null ? '' : (u > 100 ? 'over' : (u >= 85 ? 'warn' : 'ok'))
+                const pbal = p.budget - p.spent
                 return (
                   <div key={p.name} className="kpi">
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -188,7 +194,7 @@ export default function PrintClient({ result }: { result: ComposeResult }) {
                       <span className={`pill ${p.status === 'open' ? 'pill-open' : 'pill-closed'}`}>{p.status}</span>
                     </div>
                     <div className={`kpi-value ${ctone}`} style={{ fontSize: 16 }}>{fmtINR(p.spent)} <span style={{ fontSize: 11, color: '#9ca3af', fontWeight: 400 }}>of {fmtINR(p.budget)}</span></div>
-                    <div className="kpi-sub">{u != null ? `${u}% used` : ''}{p.outstanding > 0 ? ` · ${fmtINR(p.outstanding)} outstanding` : ''}</div>
+                    <div className="kpi-sub">{u != null ? `${u}% used` : ''}{p.budget > 0 ? ` · ${fmtINR(pbal)} ${pbal < 0 ? 'over' : 'left'}` : ''}</div>
                   </div>
                 )
               })}
@@ -200,6 +206,7 @@ export default function PrintClient({ result }: { result: ComposeResult }) {
           {g.projects.map(p => {
             const u = utilPct(p.spent, p.budget)
             const tone = u == null ? '' : (u > 100 ? 'over' : (u >= 85 ? 'warn' : 'ok'))
+            const pbal = p.budget - p.spent
             const cats = topCategories(p)
             return (
               <div className="page" key={p.name}>
@@ -213,16 +220,16 @@ export default function PrintClient({ result }: { result: ComposeResult }) {
 
                 <div className="grid grid-cols-2 gap-3 mt-5">
                   <div className="kpi"><div className="kpi-label">Budget</div><div className="kpi-value">{fmtINR(p.budget)}</div><div className="kpi-sub">{inrPerSft(p.budget, p.area)}</div></div>
-                  <div className="kpi"><div className="kpi-label">Spent so far</div><div className={`kpi-value ${tone}`}>{fmtINR(p.spent)}</div><div className="kpi-sub">{u != null ? `${u}% of budget · ` : ''}{inrPerSft(p.spent, p.area)}</div></div>
-                  <div className="kpi"><div className="kpi-label">Outstanding</div><div className="kpi-value warn">{fmtINR(p.outstanding)}</div><div className="kpi-sub">{inrPerSft(p.outstanding, p.area)}</div></div>
-                  <div className="kpi"><div className="kpi-label">Categories tracked</div><div className="kpi-value">{p.categories.length}</div><div className="kpi-sub">{p.categories.filter(c => c.hasBudget && utilPct(c.spent, c.budget)! > 100).length} over budget</div></div>
+                  <div className="kpi"><div className="kpi-label">Paid so far</div><div className={`kpi-value ${tone}`}>{fmtINR(p.spent)}</div><div className="kpi-sub">{u != null ? `${u}% of budget · ` : ''}{inrPerSft(p.spent, p.area)}</div></div>
+                  <div className="kpi"><div className="kpi-label">WO/PO approved</div><div className="kpi-value">{fmtINR(p.approved)}</div></div>
+                  <div className="kpi"><div className="kpi-label">{pbal < 0 ? 'Over budget' : 'Balance left'}</div><div className={`kpi-value ${pbal < 0 ? 'over' : ''}`}>{fmtINR(Math.abs(pbal))}</div><div className="kpi-sub">{p.categories.filter(c => c.hasBudget && utilPct(c.spent, c.budget)! > 100).length} categor{p.categories.filter(c => c.hasBudget && utilPct(c.spent, c.budget)! > 100).length === 1 ? 'y' : 'ies'} over budget</div></div>
                 </div>
 
                 {cats.length > 0 && (
                   <>
                     <h2 className="h2 mt-6">Top categories by spend</h2>
                     <table className="tbl">
-                      <thead><tr><th>Category</th><th className="right">Budget</th><th className="right">Spent</th><th className="right">₹/sft spent</th><th className="right">% used</th></tr></thead>
+                      <thead><tr><th>Category</th><th className="right">Budget</th><th className="right">Approved</th><th className="right">Paid</th><th className="right">% used</th></tr></thead>
                       <tbody>
                         {cats.map(c => {
                           const cu = c.hasBudget ? utilPct(c.spent, c.budget) : null
@@ -231,8 +238,8 @@ export default function PrintClient({ result }: { result: ComposeResult }) {
                             <tr key={c.code + c.label}>
                               <td>{c.code ? `${c.code} ` : ''}{c.label}</td>
                               <td className="right">{c.hasBudget ? fmtINR(c.budget) : '—'}</td>
+                              <td className="right">{fmtINR(c.approved)}</td>
                               <td className={`right ${ctone}`}>{c.hasBudget ? fmtINR(c.spent) : '—'}</td>
-                              <td className="right">{inrPerSft(c.spent, p.area)}</td>
                               <td className={`right ${ctone}`}>{cu != null ? `${cu}%` : '—'}</td>
                             </tr>
                           )
@@ -242,7 +249,7 @@ export default function PrintClient({ result }: { result: ComposeResult }) {
                   </>
                 )}
 
-                <p className="muted mt-6">For party-by-party detail (contractors &amp; suppliers), open this project in the V2 tree.</p>
+                <p className="muted mt-6">Figures read straight from the uploaded budget report. Balance = Budget − Paid.</p>
               </div>
             )
           })}

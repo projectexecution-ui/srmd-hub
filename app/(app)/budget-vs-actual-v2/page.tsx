@@ -13,8 +13,7 @@ export default async function BudgetV2Page() {
 
   // Shared loader (also used by the weekly Telegram report) so the page and the
   // report are composed from exactly the same tree.
-  const { result, freshness } = await loadBudgetV2(supabase)
-  const budgetProjectNames = result.groups.flatMap(g => g.projects.map(p => p.name)).sort((a, b) => a.localeCompare(b))
+  const { result, freshness, delta, prevSnapshotWeek } = await loadBudgetV2(supabase)
   // Existing group names (real BPH groups + any V2-extra group) for the
   // Add-project dropdown.
   const knownGroupNames = Array.from(new Set(result.groups.map(g => g.name).filter(n => n !== '— Ungrouped'))).sort()
@@ -22,11 +21,12 @@ export default async function BudgetV2Page() {
   return (
     <BudgetV2Client
       result={result}
-      budgetProjectNames={budgetProjectNames}
       knownGroupNames={knownGroupNames}
       currentUserId={user!.id}
       isAdmin={isAdmin}
       freshness={freshness}
+      delta={delta}
+      prevSnapshotWeek={prevSnapshotWeek}
     />
   )
 }

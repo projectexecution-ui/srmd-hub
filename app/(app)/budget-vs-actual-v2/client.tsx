@@ -1,13 +1,15 @@
 'use client'
-// Budget vs Actual V2 — modern preview client. Read-only over the 3 source
-// modules; writes only the per-project status + the confirmed alias map.
+// Budget vs Actual V2 — single-source preview client. Read-only over the BPH
+// (budget) blob; writes only the per-project status, area override, and V2-extra
+// placeholders. Every number — Budget, WO/PO Approved, Paid, Balance, Used% —
+// comes straight from the uploaded budget report. No contractor/supplier overlay,
+// no alias matching (that made the "Actual" untrue).
 //
 // HOD requirements baked in: one snapshot tree (Group → Project → Category →
-// Sub-Category → Party), ₹/sft under every amount, IN4-style Open/Closed with
-// open on top, groups alphabetical, expandable/collapsible everywhere.
-// "Modern" layer: live tree search, status filter chips, expand/collapse all,
-// computed watchlist (top overruns + biggest outstanding), per-category
-// utilisation bars, indent guide lines.
+// Sub-Category), ₹/sft under the money amounts, IN4-style Open/Closed with open
+// on top, groups alphabetical, expandable/collapsible everywhere. "Modern" layer:
+// live tree search, status filter chips, expand/collapse all, computed watchlist
+// (categories over budget), per-project utilisation bars, indent guide lines.
 
 import { useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
@@ -19,20 +21,21 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import {
   ChevronRight, ChevronsUpDown, ChevronsDownUp, Building2, Folder,
-  User, Users, Sparkles, Loader2, Layers, AlertTriangle, ListTree, Search, X,
-  Wallet, TrendingUp, Hourglass, Ruler, UploadCloud, Printer, Clock, Plus, Pencil, Check, Ban,
+  Sparkles, Loader2, Layers, Search, X, ListTree,
+  Wallet, TrendingUp, Scale, FileCheck2, UploadCloud, Printer, Clock, Plus, Pencil, Check, HelpCircle,
+  ArrowUp, ArrowDown, Save, PencilLine,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import type { ComposeResult, CatNode, ProjectNode, GroupNode, UnmatchedProject, UnmatchedLine } from '@/lib/budget-v2'
+import { snapshotOf, type ComposeResult, type CatNode, type ProjectNode, type GroupNode, type DeltaResult, type Delta } from '@/lib/budget-v2'
 
 // ─── formatting helpers ──────────────────────────────────────────────────────
 function fmtINR(v: number): string {
   if (!isFinite(v) || v === 0) return '₹0'
   const a = Math.abs(v)
-  if (a >= 1e7) return `₹${(v / 1e7).toFixed(2)} Cr`
-  if (a >= 1e5) return `₹${(v / 1e5).toFixed(2)} L`
-  if (a >= 1e3) return `₹${(v / 1e3).toFixed(1)} K`
-  return `₹${Math.round(v).toLocaleString('en-IN')}`
+  if (a >= 1e7) return `${v < 0 ? '−' : ''}₹${(Math.abs(v) / 1e7).toFixed(2)} Cr`
+  if (a >= 1e5) return `${v < 0 ? '−' : ''}₹${(Math.abs(v) / 1e5).toFixed(2)} L`
+  if (a >= 1e3) return `${v < 0 ? '−' : ''}₹${(Math.abs(v) / 1e3).toFixed(1)} K`
+  return `${v < 0 ? '−' : ''}₹${Math.round(Math.abs(v)).toLocaleString('en-IN')}`
 }
 function perSft(v: number, area: number | null): string {
   if (!area || area <= 0 || !isFinite(v) || v === 0) return ''
@@ -49,28 +52,30 @@ function utilColors(u: number) {
 }
 function sumBy<T>(arr: T[], f: (t: T) => number): number { return arr.reduce((s, t) => s + f(t), 0) }
 
-function Cell({ value, area, dash, cls, subCls, dashCls, size = 'md' }: {
+function Cell({ value, area, dash, cls, subCls, dashCls, size = 'md', showSft = true }: {
   value: number | null; area: number | null; dash?: boolean
-  /** colour class for the amount (e.g. emerald for healthy spend, rose for over) */
+  /** colour class for the amount */
   cls?: string
   /** colour class for the ₹/sft pill */
   subCls?: string
   dashCls?: string
   /** Visual size — 'lg' for project/category header rows, 'md' default for sub-rows. */
   size?: 'md' | 'lg'
+  /** Show the ₹/sft pill under the amount (off for Approved/Balance to declutter). */
+  showSft?: boolean
 }) {
   const isLg = size === 'lg'
-  const widthCls = isLg ? 'w-[108px]' : 'w-[100px]'
-  const amtCls = isLg ? 'text-[15.5px] font-semibold' : 'text-[14px]'
+  const widthCls = isLg ? 'w-[100px]' : 'w-[92px]'
+  const amtCls = isLg ? 'text-[15px] font-semibold' : 'text-[13.5px]'
   if (value == null || dash) return <div className={cn(widthCls, 'text-right flex-shrink-0')}><span className={cn('text-sm', dashCls ?? 'text-gray-300')}>—</span></div>
-  const sft = perSft(value, area)
+  const sft = showSft ? perSft(value, area) : ''
   return (
     <div className={cn(widthCls, 'text-right flex-shrink-0')}>
       <div className={cn(amtCls, 'tabular-nums leading-tight', cls ?? 'text-gray-900')}>{fmtINR(value)}</div>
       {sft && (
         <div className="mt-1 flex justify-end">
           <span className={cn(
-            'inline-flex items-baseline gap-0.5 text-[11.5px] tabular-nums px-1.5 py-0.5 rounded-md bg-gray-100/80 border border-gray-200/60',
+            'inline-flex items-baseline gap-0.5 text-[11px] tabular-nums px-1.5 py-0.5 rounded-md bg-gray-100/80 border border-gray-200/60',
             subCls ?? 'text-gray-500',
           )}>
             <span className="text-[9.5px] opacity-70">₹</span>
@@ -86,19 +91,22 @@ function UtilChip({ u }: { u: number }) {
   const c = utilColors(u)
   return <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-full flex-shrink-0" style={{ background: c.bg, color: c.fg }}>{u > 100 ? `${u}% over` : `${u}%`}</span>
 }
-function SourceTag({ source }: { source: 'contractor' | 'supplier' }) {
-  return (
-    <span className="text-[9px] px-1.5 py-0.5 rounded flex-shrink-0"
-      style={source === 'contractor' ? { background: '#EEEDFE', color: '#3C3489' } : { background: '#E6F1FB', color: '#0C447C' }}>
-      {source}
-    </span>
-  )
+
+// Colour for a Paid amount given how much of budget it's used.
+function paidCls(spent: number, budget: number, light: boolean): string {
+  const u = utilPct(spent, budget)
+  if (u != null && u > 100) return light ? 'text-rose-700 font-medium' : 'text-rose-300 font-medium'
+  return light ? 'text-emerald-700 font-medium' : 'text-emerald-300 font-medium'
+}
+// Colour for a Balance (Budget − Paid): negative = overspent = rose.
+function balanceCls(balance: number): string {
+  return balance < 0 ? 'text-rose-700 font-semibold' : 'text-gray-700 font-medium'
 }
 
 // ─── main client ─────────────────────────────────────────────────────────────
 type StatusFilter = 'all' | 'open' | 'closed'
 
-interface Freshness { budget: string | null; contractor: string | null; supplier: string | null }
+interface Freshness { budget: string | null }
 
 function fmtAge(iso: string | null): { text: string; stale: boolean } {
   if (!iso) return { text: 'no upload yet', stale: true }
@@ -114,14 +122,15 @@ function fmtAge(iso: string | null): { text: string; stale: boolean } {
 }
 
 export default function BudgetV2Client({
-  result, budgetProjectNames, knownGroupNames, currentUserId, isAdmin, freshness,
+  result, knownGroupNames, currentUserId, isAdmin, freshness, delta, prevSnapshotWeek,
 }: {
   result: ComposeResult
-  budgetProjectNames: string[]
   knownGroupNames: string[]
   currentUserId: string
   isAdmin: boolean
   freshness: Freshness
+  delta: DeltaResult
+  prevSnapshotWeek: string | null
 }) {
   const router = useRouter()
   const supabase = createClient()
@@ -130,6 +139,7 @@ export default function BudgetV2Client({
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
   const [busy, setBusy] = useState<string | null>(null)
   const [addProjectOpen, setAddProjectOpen] = useState(false)
+  const [helpOpen, setHelpOpen] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const toggle = (k: string) => setOpen(p => { const n = new Set(p); n.has(k) ? n.delete(k) : n.add(k); return n })
 
@@ -148,8 +158,7 @@ export default function BudgetV2Client({
         .map(c => {
           if (match(c.label) || match(c.code)) return c
           const subcats = c.subcats.filter(sc => match(sc.label) || match(sc.code))
-          const parties = c.parties.filter(pt => match(pt.name))
-          return (subcats.length || parties.length) ? { ...c, subcats, parties } : null
+          return subcats.length ? { ...c, subcats } : null
         })
         .filter((c): c is CatNode => c !== null)
       return cats.length ? { ...p, categories: cats } : null
@@ -166,7 +175,7 @@ export default function BudgetV2Client({
     const keys = new Set<string>()
     for (const g of visGroups) for (const p of g.projects) {
       keys.add(`proj:${p.name}`)
-      p.categories.forEach((c, i) => { keys.add(`cat:${p.name}:${c.code}:${i}`); keys.add(`cat:${p.name}:${c.code}:${i}:parties`) })
+      p.categories.forEach((c, i) => { keys.add(`cat:${p.name}:${c.code}:${i}`) })
     }
     setOpen(keys)
   }
@@ -197,12 +206,12 @@ export default function BudgetV2Client({
     router.refresh()
   }
 
-  // Admin only — V2 extra project (placeholder; doesn't touch BPH).
-  async function addExtraProject(name: string, group_name: string | null, area_sft: number | null) {
+  // Admin only — V2 extra project (hand-added; may carry hand-keyed numbers).
+  async function addExtraProject(name: string, group_name: string | null, area_sft: number | null, nums: { budget: number | null; approved: number | null; paid: number | null }) {
     if (!name.trim()) { setError('Project name is required'); return }
     setBusy(`addp:${name}`); setError(null)
     const { error } = await supabase.from('budget_v2_extra_project').upsert(
-      { name: name.trim(), group_name: group_name?.trim() || null, area_sft, updated_by: currentUserId, updated_at: new Date().toISOString() },
+      { name: name.trim(), group_name: group_name?.trim() || null, area_sft, budget: nums.budget, approved: nums.approved, paid: nums.paid, updated_by: currentUserId, updated_at: new Date().toISOString() },
       { onConflict: 'name' },
     )
     setBusy(null)
@@ -210,29 +219,67 @@ export default function BudgetV2Client({
     router.refresh()
   }
 
-  // ── KPIs + computed watchlist (no AI call needed — pure maths) ──
+  // Admin only — flagged manual override (BPH project) or hand-keyed numbers
+  // (extra project). Writes to budget_v2_override / budget_v2_extra_project.
+  async function saveNumbers(projectName: string, isExtra: boolean, vals: { budget: number | null; approved: number | null; paid: number | null; note: string | null }) {
+    setBusy(`num:${projectName}`); setError(null)
+    let err: { message: string } | null = null
+    if (isExtra) {
+      const { error } = await supabase.from('budget_v2_extra_project')
+        .update({ budget: vals.budget, approved: vals.approved, paid: vals.paid, updated_by: currentUserId, updated_at: new Date().toISOString() })
+        .eq('name', projectName)
+      err = error
+    } else if (vals.budget == null && vals.approved == null && vals.paid == null) {
+      const { error } = await supabase.from('budget_v2_override').delete().eq('project_name', projectName)
+      err = error
+    } else {
+      const { error } = await supabase.from('budget_v2_override').upsert(
+        { project_name: projectName, budget: vals.budget, approved: vals.approved, paid: vals.paid, note: vals.note, updated_by: currentUserId, updated_at: new Date().toISOString() },
+        { onConflict: 'project_name' },
+      )
+      err = error
+    }
+    setBusy(null)
+    if (err) { setError(err.message); return }
+    router.refresh()
+  }
+
+  // Admin only — capture this week's numbers so next week shows the change.
+  async function saveSnapshot() {
+    setBusy('snap'); setError(null)
+    const totals = snapshotOf(result)
+    const weekEnding = new Date(Date.now() + 5.5 * 3600 * 1000).toISOString().slice(0, 10) // IST date
+    const { error } = await supabase.from('budget_v2_weekly_snapshot').upsert(
+      { week_ending: weekEnding, totals, captured_by: currentUserId, captured_at: new Date().toISOString() },
+      { onConflict: 'week_ending' },
+    )
+    setBusy(null)
+    if (error) { setError(error.message); return }
+    router.refresh()
+  }
+
+  // ── KPIs + computed watchlist (pure maths from the budget report) ──
   const t = result.totals
   const spentPct = t.budget > 0 ? Math.round((t.spent / t.budget) * 100) : 0
-  const avgSft = t.area > 0 ? Math.round(t.spent / t.area) : 0
+  const balance = t.budget - t.spent
   const allProjects = result.groups.flatMap(g => g.projects)
   const overruns = allProjects
     .flatMap(p => p.categories.filter(c => c.hasBudget).map(c => ({ proj: p.name, cat: c.label, u: utilPct(c.spent, c.budget) ?? 0 })))
     .filter(x => x.u > 100)
     .sort((a, b) => b.u - a.u)
-  const topOut = [...allProjects].sort((a, b) => b.outstanding - a.outstanding)[0]
-  const needsMapping = result.unmatchedProjects.length + result.unmatchedLines.length
-  const groupNames = result.groups.map(g => g.name).filter(n => n !== '— Ungrouped')
-  const projectsByGroup: Record<string, string[]> = {}
-  for (const g of result.groups) projectsByGroup[g.name] = g.projects.map(p => p.name)
 
   return (
     <div className="p-4 md:p-6 max-w-5xl mx-auto space-y-4">
       <PageHeader title="Budget vs Actual V2" back="/dashboard"
-        subtitle="One snapshot — budget, contractor & supplier payments in a single tree, with ₹/sft.">
+        subtitle="One snapshot from the budget report — Budget, WO/PO Approved, Paid, Balance & ₹/sft.">
         <div className="flex items-center gap-1.5 flex-wrap">
           <Link href="/budget-vs-actual-v2/upload"
             className="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-lg border border-gray-200 bg-white hover:bg-gray-50 text-gray-800">
             <UploadCloud className="h-3.5 w-3.5" /> Upload
+          </Link>
+          <Link href="/budget-vs-actual-v2/weekly"
+            className="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-lg border border-gray-200 bg-white hover:bg-gray-50 text-gray-800">
+            <Printer className="h-3.5 w-3.5" /> Weekly PDF
           </Link>
           <Link href="/budget-vs-actual-v2/print"
             className="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-lg border border-gray-200 bg-white hover:bg-gray-50 text-gray-800">
@@ -242,41 +289,42 @@ export default function BudgetV2Client({
         </div>
       </PageHeader>
 
-      {/* Freshness strip — at-a-glance: which source data is stale */}
-      <div className="grid grid-cols-3 gap-2.5">
-        {([
-          { key: 'budget', label: 'Budget (BPH)', at: freshness.budget },
-          { key: 'contractor', label: 'Contractor', at: freshness.contractor },
-          { key: 'supplier', label: 'Supplier', at: freshness.supplier },
-        ] as const).map(s => {
-          const { text, stale } = fmtAge(s.at)
-          return (
-            <Link key={s.key} href="/budget-vs-actual-v2/upload"
-              className={cn('rounded-xl border px-3 py-2.5 flex items-center gap-2.5 hover:shadow-sm transition-shadow',
-                stale ? 'border-amber-200 bg-amber-50/40' : 'border-gray-200 bg-white')}>
-              <div className={cn('h-7 w-7 rounded-lg flex items-center justify-center flex-shrink-0',
-                stale ? 'bg-amber-100 text-amber-700' : 'bg-gray-100 text-gray-500')}>
-                <Clock className="h-3.5 w-3.5" />
-              </div>
-              <div className="min-w-0 flex-1">
-                <div className="text-[10px] uppercase tracking-wide text-gray-500">{s.label}</div>
-                <div className={cn('text-[13px] font-medium tabular-nums', stale ? 'text-amber-800' : 'text-gray-900')}>{text}</div>
-              </div>
-              <UploadCloud className="h-4 w-4 text-gray-300 flex-shrink-0" />
-            </Link>
-          )
-        })}
-      </div>
+      {/* Freshness — the budget report is the single source; flag it when stale */}
+      <Link href="/budget-vs-actual-v2/upload"
+        className={cn('rounded-xl border px-3 py-2.5 flex items-center gap-2.5 hover:shadow-sm transition-shadow',
+          fmtAge(freshness.budget).stale ? 'border-amber-200 bg-amber-50/40' : 'border-gray-200 bg-white')}>
+        <div className={cn('h-7 w-7 rounded-lg flex items-center justify-center flex-shrink-0',
+          fmtAge(freshness.budget).stale ? 'bg-amber-100 text-amber-700' : 'bg-gray-100 text-gray-500')}>
+          <Clock className="h-3.5 w-3.5" />
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="text-[10px] uppercase tracking-wide text-gray-500">Budget report (BPH) — the source for every number here</div>
+          <div className={cn('text-[13px] font-medium tabular-nums', fmtAge(freshness.budget).stale ? 'text-amber-800' : 'text-gray-900')}>
+            uploaded {fmtAge(freshness.budget).text}
+          </div>
+        </div>
+        <UploadCloud className="h-4 w-4 text-gray-300 flex-shrink-0" />
+      </Link>
 
       {error && <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-sm text-rose-700">{error}</div>}
 
       {/* ── KPI strip ── */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5">
         <Metric icon={<Wallet className="h-4 w-4" />} tone="slate" label="Total budget" value={fmtINR(t.budget)} />
-        <Metric icon={<TrendingUp className="h-4 w-4" />} tone={spentPct > 100 ? 'rose' : 'emerald'} label={`Spent · ${spentPct}% of budget`} value={fmtINR(t.spent)} />
-        <Metric icon={<Hourglass className="h-4 w-4" />} tone="amber" label="Outstanding" value={fmtINR(t.outstanding)} />
-        <Metric icon={<Ruler className="h-4 w-4" />} tone="blue" label="Avg ₹/sft spent" value={avgSft > 0 ? `₹${avgSft.toLocaleString('en-IN')}` : '—'} />
+        <Metric icon={<FileCheck2 className="h-4 w-4" />} tone="blue" label="WO/PO approved" value={fmtINR(t.approved)} />
+        <Metric icon={<TrendingUp className="h-4 w-4" />} tone={spentPct > 100 ? 'rose' : 'emerald'} label={`Paid · ${spentPct}% of budget`} value={fmtINR(t.spent)} />
+        <Metric icon={<Scale className="h-4 w-4" />} tone={balance < 0 ? 'rose' : 'amber'} label={balance < 0 ? 'Over budget' : 'Balance left'} value={fmtINR(Math.abs(balance))} />
       </div>
+
+      {/* ── This week's movement (vs last snapshot) + capture button ── */}
+      <MovementStrip delta={delta} prevSnapshotWeek={prevSnapshotWeek} isAdmin={isAdmin}
+        onSave={saveSnapshot} busy={busy === 'snap'} />
+
+      {/* ── How this report is built — the hierarchy skeleton (always visible) ── */}
+      <StructureMap />
+
+      {/* ── How to read this — collapsed by default ── */}
+      <HelpPanel open={helpOpen} onToggle={() => setHelpOpen(o => !o)} />
 
       {/* ── Watchlist (computed) ── */}
       <div className="flex items-start gap-2.5 bg-white border border-gray-200 rounded-2xl px-3.5 py-3">
@@ -284,21 +332,14 @@ export default function BudgetV2Client({
         <div className="flex items-center gap-1.5 flex-wrap">
           <span className="text-[12px] font-semibold text-gray-700 mr-0.5">Watchlist</span>
           {overruns.length === 0 && <span className="text-[11px] px-2 py-1 rounded-full" style={{ background: '#EAF3DE', color: '#27500A' }}>All categories within budget</span>}
-          {overruns.slice(0, 3).map((o, i) => (
+          {overruns.slice(0, 4).map((o, i) => (
             <button key={i} type="button" onClick={() => setQuery(o.cat)}
               className="text-[11px] px-2 py-1 rounded-full hover:opacity-80" style={{ background: '#FCEBEB', color: '#A32D2D' }}
               title={`${o.proj} · ${o.cat} is at ${o.u}% of budget — click to focus`}>
               {o.proj} · {o.cat} {o.u}%
             </button>
           ))}
-          {overruns.length > 3 && <span className="text-[11px] text-gray-400">+{overruns.length - 3} more</span>}
-          {topOut && topOut.outstanding > 0 && (
-            <button type="button" onClick={() => setQuery(topOut.name)}
-              className="text-[11px] px-2 py-1 rounded-full hover:opacity-80" style={{ background: '#FAEEDA', color: '#854F0B' }}
-              title="Largest outstanding — click to focus">
-              Most outstanding: {topOut.name} {fmtINR(topOut.outstanding)}
-            </button>
-          )}
+          {overruns.length > 4 && <span className="text-[11px] text-gray-400">+{overruns.length - 4} more</span>}
         </div>
       </div>
 
@@ -307,7 +348,7 @@ export default function BudgetV2Client({
         <div className="relative flex-1 min-w-[200px]">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400 pointer-events-none" />
           <Input value={query} onChange={e => setQuery(e.target.value)}
-            placeholder="Search project, category or party…" className="pl-9 pr-8" />
+            placeholder="Search project or category…" className="pl-9 pr-8" />
           {query && (
             <button type="button" onClick={() => setQuery('')} aria-label="Clear search"
               className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-700">
@@ -342,22 +383,8 @@ export default function BudgetV2Client({
       {isAdmin && addProjectOpen && (
         <AddProjectInline
           knownGroupNames={knownGroupNames}
-          onSubmit={async (name, gname, area) => { await addExtraProject(name, gname, area); setAddProjectOpen(false) }}
+          onSubmit={async (name, gname, area, nums) => { await addExtraProject(name, gname, area, nums); setAddProjectOpen(false) }}
           onCancel={() => setAddProjectOpen(false)}
-        />
-      )}
-
-      {needsMapping > 0 && (
-        <MappingPanel
-          unmatchedProjects={result.unmatchedProjects}
-          unmatchedLines={result.unmatchedLines}
-          groupNames={groupNames}
-          projectNames={budgetProjectNames}
-          projectsByGroup={projectsByGroup}
-          currentUserId={currentUserId}
-          isAdmin={isAdmin}
-          onError={setError}
-          onSaved={() => router.refresh()}
         />
       )}
 
@@ -383,7 +410,7 @@ export default function BudgetV2Client({
                 <span className="text-[11px] text-gray-400 flex-shrink-0">{g.projects.length} project{g.projects.length === 1 ? '' : 's'}</span>
               </div>
               <span className="text-[11px] text-gray-400 flex-shrink-0 tabular-nums">
-                budget {fmtINR(gBudget)} · spent {fmtINR(gSpent)}{gu != null ? ` · ${gu}%` : ''}{gAvgSft != null ? ` · avg ₹${Math.round(gAvgSft).toLocaleString('en-IN')}/sft` : ''}
+                budget {fmtINR(gBudget)} · paid {fmtINR(gSpent)}{gu != null ? ` · ${gu}%` : ''}{gAvgSft != null ? ` · avg ₹${Math.round(gAvgSft).toLocaleString('en-IN')}/sft` : ''}
               </span>
             </div>
             {gu != null && (
@@ -391,21 +418,24 @@ export default function BudgetV2Client({
                 <div className="h-full rounded-full" style={{ width: `${Math.min(gu, 100)}%`, background: utilColors(gu).bar }} />
               </div>
             )}
-            {/* Horizontal scroll on narrow screens so the 3 amount columns never wrap/overflow */}
+            {/* Horizontal scroll on narrow screens so the 4 amount columns never wrap/overflow */}
             <div className="overflow-x-auto">
-              <div className="min-w-[720px]">
+              <div className="min-w-[760px]">
                 <div className="flex items-center gap-2 px-4 mb-1">
-                  <div className="flex-1 text-[10.5px] uppercase tracking-wide text-gray-400">Project · category · party</div>
-                  <div className="w-[108px] text-right text-[10.5px] uppercase tracking-wide text-gray-400">Budget</div>
-                  <div className="w-[108px] text-right text-[10.5px] uppercase tracking-wide text-gray-400">Spent</div>
-                  <div className="w-[108px] text-right text-[10.5px] uppercase tracking-wide text-gray-400">Outstanding</div>
+                  <div className="flex-1 text-[10.5px] uppercase tracking-wide text-gray-400">Project · category</div>
+                  <div className="w-[100px] text-right text-[10.5px] uppercase tracking-wide text-gray-400">Budget</div>
+                  <div className="w-[100px] text-right text-[10.5px] uppercase tracking-wide text-gray-400">WO/PO Appr.</div>
+                  <div className="w-[100px] text-right text-[10.5px] uppercase tracking-wide text-gray-400">Paid</div>
+                  <div className="w-[100px] text-right text-[10.5px] uppercase tracking-wide text-gray-400">Balance</div>
                 </div>
                 <div className="space-y-2.5">
                   {g.projects.map(p => (
                     <ProjectCard key={p.name} p={p} open={open} toggle={toggle} forceOpen={searching}
                       groupAvgSft={gAvgSft} isAdmin={isAdmin}
                       onStatus={setStatus} statusBusy={busy === `st:${p.name}`}
-                      onArea={setArea} areaBusy={busy === `ar:${p.name}`} />
+                      onArea={setArea} areaBusy={busy === `ar:${p.name}`}
+                      pdelta={delta.byProject[p.name]} hasBaseline={delta.hasBaseline}
+                      onSaveNumbers={saveNumbers} numbersBusy={busy === `num:${p.name}`} />
                   ))}
                 </div>
               </div>
@@ -415,10 +445,94 @@ export default function BudgetV2Client({
       })}
 
       <p className="text-[11px] text-gray-400 px-1 leading-relaxed">
-        ₹/sft under every amount · open on top, closed dimmed · status saved per project, survives re-uploads.
-        Inside a category, <b className="font-medium">Budget breakdown</b> (by work item) and <b className="font-medium">Paid to</b> (by
-        contractor/supplier) are two views of the same category total — each reconciles to the category, they don’t add to each other.
+        Every figure is read straight from the uploaded budget report. New here? Tap <b className="font-medium">“How to read this”</b> at the top.
       </p>
+    </div>
+  )
+}
+
+// ─── How this report is built — the tree skeleton, always visible ────────────
+function StructureMap() {
+  const levels = [
+    { depth: 0, icon: <Layers className="h-3.5 w-3.5" />, name: 'Group', what: 'trust / cluster', eg: 'NGH · P2 Step Terrace · VV', tone: '#0f2a4a' },
+    { depth: 1, icon: <Building2 className="h-3.5 w-3.5" />, name: 'Project', what: 'building / sub-project', eg: 'NGH A · A01 Building · SRAH', tone: '#12447e' },
+    { depth: 2, icon: <Folder className="h-3.5 w-3.5" />, name: 'Category', what: 'work head', eg: 'Civil · Earthworks · Finishes', tone: '#854F0B' },
+    { depth: 3, icon: <ChevronRight className="h-3 w-3" />, name: 'Work item', what: 'sub-line', eg: 'RCC · Excavation · Plaster', tone: '#27500A' },
+  ]
+  return (
+    <div className="bg-white border border-gray-200 rounded-2xl px-3.5 py-3">
+      <div className="flex items-center gap-2 mb-2.5">
+        <ListTree className="h-4 w-4 text-teal-600 flex-shrink-0" />
+        <span className="text-[12.5px] font-semibold text-gray-700">How this report is built</span>
+        <span className="text-[11px] text-gray-400">the budget report, as a tree</span>
+      </div>
+      <div className="space-y-0">
+        {levels.map((l, i) => (
+          <div key={l.name} className="flex items-center gap-2 py-1.5" style={{ paddingLeft: l.depth * 18 }}>
+            {l.depth > 0 && <span className="text-gray-300 -ml-3 flex-shrink-0">└</span>}
+            <span className="inline-flex items-center justify-center h-6 w-6 rounded-lg flex-shrink-0"
+              style={{ background: `${l.tone}14`, color: l.tone }}>{l.icon}</span>
+            <span className="text-[13px] font-semibold text-gray-900 flex-shrink-0">{l.name}</span>
+            <span className="text-[11.5px] text-gray-500 flex-shrink-0">{l.what}</span>
+            <span className="text-[11px] text-gray-400 truncate hidden sm:inline">e.g. {l.eg}</span>
+            {i === 0 && <span className="ml-auto text-[10px] font-medium text-gray-400 hidden md:inline flex-shrink-0">tap any row in the tree to open the next level ↓</span>}
+          </div>
+        ))}
+      </div>
+      <div className="mt-2.5 pt-2.5 border-t border-gray-100 text-[11.5px] text-gray-500 leading-relaxed">
+        Every level totals <b className="font-medium text-gray-700">Budget</b> · <b className="font-medium" style={{ color: '#0C447C' }}>WO/PO Approved</b> · <b className="font-medium" style={{ color: '#27500A' }}>Paid</b> · <b className="font-medium text-gray-700">Balance</b> · <b className="font-medium text-gray-700">Used%</b> — so a group total is just the sum of its projects, a project the sum of its categories, and so on down to each work item.
+      </div>
+    </div>
+  )
+}
+
+// ─── How to read this — collapsible basic instructions ───────────────────────
+function HelpPanel({ open, onToggle }: { open: boolean; onToggle: () => void }) {
+  return (
+    <div className="bg-white border border-gray-200 rounded-2xl overflow-hidden">
+      <button
+        type="button"
+        onClick={onToggle}
+        aria-expanded={open}
+        className="w-full flex items-center gap-2 px-3.5 py-2.5 hover:bg-gray-50/70 transition-colors text-left"
+      >
+        <HelpCircle className="h-4 w-4 text-blue-600 flex-shrink-0" />
+        <span className="text-[12.5px] font-semibold text-gray-700">How to read this</span>
+        <span className="text-[11px] text-gray-400">tree · columns · numbers · ₹/sft · colours</span>
+        <div className="flex-1" />
+        <ChevronRight className={cn('h-4 w-4 text-gray-400 flex-shrink-0 transition-transform', open && 'rotate-90')} />
+      </button>
+      {open && (
+        <div className="border-t border-gray-100 px-4 py-3 space-y-3 text-[12.5px] text-gray-600 leading-relaxed">
+          <div>
+            <div className="text-[11px] uppercase tracking-wide font-semibold text-gray-500 mb-1">The tree</div>
+            Tap a <b className="font-medium text-gray-800">project</b> to open its categories, and a <b className="font-medium text-gray-800">category</b> to see its work-item breakdown.
+            Use <b className="font-medium text-gray-800">Expand all / Collapse all</b> above. Open projects sit on top; closed ones are dimmed.
+          </div>
+          <div>
+            <div className="text-[11px] uppercase tracking-wide font-semibold text-gray-500 mb-1">The five columns</div>
+            <ul className="space-y-1">
+              <li><b className="font-medium text-gray-800">Budget</b> — sanctioned amount for that line.</li>
+              <li><b className="font-medium" style={{ color: '#0C447C' }}>WO/PO Approved</b> — value committed through work orders / purchase orders (may be less than budget).</li>
+              <li><b className="font-medium" style={{ color: '#27500A' }}>Paid</b> — actually released so far (the “Actual”), straight from the budget report’s own Paid column.</li>
+              <li><b className="font-medium text-gray-800">Balance</b> — Budget − Paid (what’s left; red if overspent).</li>
+              <li><b className="font-medium text-gray-800">Used%</b> — Paid ÷ Budget, shown as the little pill + bar.</li>
+            </ul>
+          </div>
+          <div>
+            <div className="text-[11px] uppercase tracking-wide font-semibold text-gray-500 mb-1">Numbers &amp; ₹/sft</div>
+            Amounts are Indian-style: <b className="font-medium text-gray-800">₹ Cr</b> = crore, <b className="font-medium text-gray-800">₹ L</b> = lakh, <b className="font-medium text-gray-800">₹ K</b> = thousand
+            (e.g. ₹1.5 Cr, ₹12,34,567). The small <b className="font-medium text-gray-800">₹…/sft</b> pill under Budget &amp; Paid is that amount ÷ the project’s built-up area —
+            tap the <b className="font-medium text-gray-800">sft</b> next to a project name to set or edit the area (admin).
+          </div>
+          <div className="flex flex-wrap gap-x-4 gap-y-1.5 pt-0.5">
+            <span className="text-[11px] uppercase tracking-wide font-semibold text-gray-500 w-full">Colours</span>
+            <span className="inline-flex items-center gap-1.5 text-[12px]"><span className="inline-block w-2.5 h-2.5 rounded-sm" style={{ background: '#639922' }} /> under 85% used</span>
+            <span className="inline-flex items-center gap-1.5 text-[12px]"><span className="inline-block w-2.5 h-2.5 rounded-sm" style={{ background: '#EF9F27' }} /> 85–100%</span>
+            <span className="inline-flex items-center gap-1.5 text-[12px]"><span className="inline-block w-2.5 h-2.5 rounded-sm" style={{ background: '#E24B4A' }} /> over budget</span>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
@@ -439,8 +553,119 @@ function Metric({ icon, tone, label, value }: { icon: React.ReactNode; tone: 'sl
   )
 }
 
-// ─── project card — dark header band (Contractor-Report style) ──────────────
-function ProjectCard({ p, open, toggle, forceOpen, groupAvgSft, isAdmin, onStatus, statusBusy, onArea, areaBusy }: {
+// ─── week-over-week + manual-override helpers ────────────────────────────────
+function fmtSigned(v: number): string {
+  if (v === 0) return '₹0'
+  return (v > 0 ? '+' : '−') + fmtINR(Math.abs(v))
+}
+function fmtSnapDate(iso: string | null): string {
+  if (!iso) return 'last snapshot'
+  const t = Date.parse(iso + 'T00:00:00')
+  if (!isFinite(t)) return iso
+  return new Date(t).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })
+}
+function DeltaChip({ label, v, muted }: { label: string; v: number; muted?: boolean }) {
+  const up = v > 0
+  const color = muted ? '#6b7280' : up ? '#166534' : '#9a3412'
+  const bg = muted ? '#f3f4f6' : up ? '#dcfce7' : '#ffedd5'
+  return (
+    <span className="inline-flex items-center gap-0.5 text-[10.5px] font-semibold px-1.5 py-0.5 rounded-full tabular-nums" style={{ color, background: bg }}>
+      {up ? <ArrowUp className="h-2.5 w-2.5" /> : <ArrowDown className="h-2.5 w-2.5" />}
+      {fmtSigned(v)} {label}
+    </span>
+  )
+}
+function manualTitle(p: ProjectNode): string {
+  if (p.isExtra) return `Hand-entered project (not in the IN4 upload)${p.manualNote ? ` — ${p.manualNote}` : ''}`
+  const bits: string[] = []
+  if (p.uploaded) {
+    if (p.manual?.budget) bits.push(`Budget was ${fmtINR(p.uploaded.budget)}`)
+    if (p.manual?.approved) bits.push(`Approved was ${fmtINR(p.uploaded.approved)}`)
+    if (p.manual?.spent) bits.push(`Paid was ${fmtINR(p.uploaded.spent)}`)
+  }
+  return `Manually adjusted${p.manualNote ? ` — ${p.manualNote}` : ''}${bits.length ? ` (uploaded: ${bits.join(', ')})` : ''}`
+}
+
+function MovementStrip({ delta, prevSnapshotWeek, isAdmin, onSave, busy }: {
+  delta: DeltaResult; prevSnapshotWeek: string | null; isAdmin: boolean; onSave: () => void; busy: boolean
+}) {
+  const d = delta.overall
+  const anyMove = d.paid !== 0 || d.approved !== 0 || d.budget !== 0
+  return (
+    <div className="flex items-center gap-2.5 bg-white border border-gray-200 rounded-2xl px-3.5 py-2.5 flex-wrap">
+      <TrendingUp className="h-4 w-4 text-emerald-600 flex-shrink-0" />
+      {delta.hasBaseline ? (
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="text-[12px] font-semibold text-gray-700">Since {fmtSnapDate(prevSnapshotWeek)}:</span>
+          <DeltaChip label="paid" v={d.paid} />
+          {d.approved !== 0 && <DeltaChip label="approved" v={d.approved} muted />}
+          {!anyMove && <span className="text-[11px] text-gray-400">no change yet</span>}
+        </div>
+      ) : (
+        <span className="text-[12px] text-gray-500">No weekly baseline yet — save this week’s numbers to start tracking week-over-week change.</span>
+      )}
+      <div className="flex-1" />
+      {isAdmin && (
+        <Button size="sm" variant="outline" onClick={onSave} disabled={busy} title="Store this week’s numbers as the baseline for next week’s change">
+          {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />} Save this week
+        </Button>
+      )}
+    </div>
+  )
+}
+
+function NumberEditor({ p, busy, onSave, onCancel }: {
+  p: ProjectNode; busy: boolean
+  onSave: (vals: { budget: number | null; approved: number | null; paid: number | null; note: string | null }) => void
+  onCancel: () => void
+}) {
+  const seed = (v: number, manual?: boolean) => (p.isExtra || manual) ? (v ? String(v) : '') : ''
+  const [budget, setBudget] = useState(seed(p.budget, p.manual?.budget))
+  const [approved, setApproved] = useState(seed(p.approved, p.manual?.approved))
+  const [paid, setPaid] = useState(seed(p.spent, p.manual?.spent))
+  const [note, setNote] = useState(p.manualNote ?? '')
+  const parse = (s: string): number | null => { const t = s.trim(); if (t === '') return null; const n = Number(t.replace(/,/g, '')); return isFinite(n) ? n : null }
+  const preview = (s: string) => { const n = parse(s); return n == null ? '' : fmtINR(n) }
+  const field = (label: string, val: string, set: (s: string) => void, color?: string) => (
+    <label className="flex flex-col gap-1">
+      <span className="text-[10px] uppercase tracking-wide text-gray-500" style={color ? { color } : undefined}>{label} (₹)</span>
+      <input type="text" inputMode="numeric" value={val} onChange={e => set(e.target.value)}
+        placeholder={p.isExtra ? 'e.g. 101522855' : 'blank = keep uploaded'}
+        className="h-9 rounded-lg border border-gray-300 bg-white px-2.5 text-sm tabular-nums focus:outline-none focus:ring-2 focus:ring-amber-200" />
+      {preview(val) && <span className="text-[10.5px] text-gray-400 tabular-nums">= {preview(val)}</span>}
+    </label>
+  )
+  return (
+    <div className="border-t border-amber-200 bg-amber-50/50 px-3.5 py-3 space-y-2.5">
+      <div className="text-[11px] text-amber-800 leading-relaxed">
+        {p.isExtra
+          ? 'Hand-entered project — key its figures in full ₹ (like the Excel). Shown with a “manual entry” flag.'
+          : 'Correct a figure in full ₹. Leave a box blank to keep the uploaded value. The uploaded value stays underneath and the cell is flagged “adjusted”.'}
+      </div>
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+        {field('Budget', budget, setBudget)}
+        {field('WO/PO Approved', approved, setApproved, '#0C447C')}
+        {field('Paid', paid, setPaid, '#27500A')}
+      </div>
+      <input type="text" value={note} onChange={e => setNote(e.target.value)} placeholder="Note (why adjusted) — optional"
+        className="w-full h-9 rounded-lg border border-gray-300 bg-white px-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-amber-200" />
+      <div className="flex items-center gap-2">
+        <Button size="sm" onClick={() => onSave({ budget: parse(budget), approved: parse(approved), paid: parse(paid), note: note.trim() || null })} disabled={busy}>
+          {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />} Save
+        </Button>
+        <Button size="sm" variant="ghost" onClick={onCancel} disabled={busy}>Cancel</Button>
+        {!p.isExtra && (p.manual?.budget || p.manual?.approved || p.manual?.spent) && (
+          <Button size="sm" variant="ghost" className="text-rose-600" onClick={() => onSave({ budget: null, approved: null, paid: null, note: null })} disabled={busy}>
+            Clear override
+          </Button>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// ─── project card ───────────────────────────────────────────────────────────
+function ProjectCard({ p, open, toggle, forceOpen, groupAvgSft, isAdmin, onStatus, statusBusy, onArea, areaBusy, pdelta, hasBaseline, onSaveNumbers, numbersBusy }: {
   p: ProjectNode
   open: Set<string>
   toggle: (k: string) => void
@@ -451,26 +676,31 @@ function ProjectCard({ p, open, toggle, forceOpen, groupAvgSft, isAdmin, onStatu
   statusBusy: boolean
   onArea: (name: string, area_sft: number | null) => void
   areaBusy: boolean
+  pdelta?: Delta
+  hasBaseline: boolean
+  onSaveNumbers: (name: string, isExtra: boolean, vals: { budget: number | null; approved: number | null; paid: number | null; note: string | null }) => void
+  numbersBusy: boolean
 }) {
   const [editingArea, setEditingArea] = useState(false)
   const [areaDraft, setAreaDraft] = useState<string>(p.area ? String(p.area) : '')
+  const [editingNumbers, setEditingNumbers] = useState(false)
   const pk = `proj:${p.name}`
   const isOpen = forceOpen || open.has(pk)
   const u = utilPct(p.spent, p.budget)
   const c = u != null ? utilColors(u) : null
   const mySft = p.area && p.area > 0 ? p.spent / p.area : null
+  const balance = p.budget - p.spent
+  const isManual = !!(p.manual && (p.manual.budget || p.manual.approved || p.manual.spent))
 
-  // "₹719/sft spent · 11% above group avg" caption
+  // "11% of budget used · ₹719/sft paid · 11% above group avg · ▲ ₹X paid this week"
   let caption = ''
   if (u != null) caption += `${u}% of budget used`
-  if (mySft != null) caption += `${caption ? ' · ' : ''}₹${Math.round(mySft).toLocaleString('en-IN')}/sft spent`
+  if (mySft != null) caption += `${caption ? ' · ' : ''}₹${Math.round(mySft).toLocaleString('en-IN')}/sft paid`
   if (mySft != null && groupAvgSft != null && groupAvgSft > 0) {
     const d = Math.round(((mySft - groupAvgSft) / groupAvgSft) * 100)
     caption += Math.abs(d) < 1 ? ' · at group avg' : ` · ${Math.abs(d)}% ${d > 0 ? 'above' : 'below'} group avg`
   }
 
-  const spentCls = u != null && u > 100 ? 'text-rose-300 font-medium' : 'text-emerald-300 font-medium'
-  const spentLight = u != null && u > 100 ? 'text-rose-700 font-medium' : 'text-emerald-700 font-medium'
   return (
     <div className={cn('border border-gray-200 rounded-2xl overflow-hidden bg-white transition-shadow hover:shadow-sm', p.status === 'closed' && 'opacity-55')}>
       <div className="px-3 py-2.5 cursor-pointer hover:bg-gray-50/70 transition-colors" onClick={() => toggle(pk)}>
@@ -528,18 +758,43 @@ function ProjectCard({ p, open, toggle, forceOpen, groupAvgSft, isAdmin, onStatu
             </span>
           )}
           {u != null && <UtilChip u={u} />}
+          {isManual && (
+            <span className="inline-flex items-center gap-1 text-[9.5px] font-semibold px-1.5 py-0.5 rounded-full flex-shrink-0"
+              style={{ background: '#FEF3C7', color: '#92400E' }}
+              title={manualTitle(p)}>
+              <PencilLine className="h-2.5 w-2.5" /> {p.isExtra ? 'manual entry' : 'adjusted'}
+            </span>
+          )}
+          {isAdmin && (
+            <button type="button" onClick={e => { e.stopPropagation(); setEditingNumbers(v => !v) }}
+              disabled={numbersBusy}
+              className="text-[10px] font-medium px-1.5 py-0.5 rounded-md text-gray-500 hover:bg-gray-100 flex-shrink-0 inline-flex items-center gap-1"
+              title={p.isExtra ? 'Edit this project’s numbers' : 'Manually correct Budget / Approved / Paid (flagged)'}>
+              {numbersBusy ? <Loader2 className="h-3 w-3 animate-spin" /> : <Pencil className="h-3 w-3" />} ₹
+            </button>
+          )}
           <div className="flex-1" />
           <Cell value={p.budget} area={p.area} size="lg" />
-          <Cell value={p.spent} area={p.area} cls={spentLight} size="lg" />
-          <Cell value={p.outstanding || null} area={p.area} cls="text-amber-700 font-semibold" size="lg" />
+          <Cell value={p.approved || null} area={p.area} size="lg" cls="text-blue-800" showSft={false} />
+          <Cell value={p.spent} area={p.area} cls={paidCls(p.spent, p.budget, true)} size="lg" />
+          <Cell value={p.budget ? balance : null} area={p.area} cls={balanceCls(balance)} size="lg" showSft={false} />
         </div>
         {u != null && c && (
           <div className="mt-2 h-[5px] rounded-full bg-gray-100 overflow-hidden">
             <div className="h-full rounded-full transition-[width]" style={{ width: `${Math.min(u, 100)}%`, background: c.bar }} />
           </div>
         )}
-        {caption && <div className="mt-1.5 text-[11px] text-gray-500">{caption}</div>}
+        <div className="mt-1.5 flex items-center gap-2 flex-wrap">
+          {caption && <span className="text-[11px] text-gray-500">{caption}</span>}
+          {hasBaseline && pdelta && pdelta.paid !== 0 && <DeltaChip label="paid" v={pdelta.paid} />}
+          {hasBaseline && pdelta && pdelta.approved !== 0 && <DeltaChip label="approved" v={pdelta.approved} muted />}
+        </div>
       </div>
+      {isAdmin && editingNumbers && (
+        <NumberEditor p={p} busy={numbersBusy}
+          onSave={vals => { onSaveNumbers(p.name, !!p.isExtra, vals); setEditingNumbers(false) }}
+          onCancel={() => setEditingNumbers(false)} />
+      )}
 
       {isOpen && (
         <div className="border-t border-gray-100">
@@ -559,13 +814,13 @@ function CategoryBlock({ cat, project, idx, open, toggle, forceOpen }: {
 }) {
   const ck = `cat:${project.name}:${cat.code}:${idx}`
   const isOpen = forceOpen || open.has(ck)
-  const u = cat.hasBudget ? utilPct(cat.spent, cat.budget) : null
-  const hasChildren = cat.subcats.length > 0 || cat.parties.length > 0
-  const spentCls = u != null && u > 100 ? 'text-rose-600 font-medium' : 'text-emerald-700 font-medium'
+  const u = utilPct(cat.spent, cat.budget)
+  const hasChildren = cat.subcats.length > 0
+  const balance = cat.budget - cat.spent
   // BPH exports many empty placeholder sub-rows (IN4 stores the full work-item
   // checklist even when nothing's been spent on most of them). They drown the
   // real numbers, so hide zero-only rows by default; user can reveal.
-  const subcatsWithValue = cat.subcats.filter(sc => sc.budget !== 0 || sc.spent !== 0)
+  const subcatsWithValue = cat.subcats.filter(sc => sc.budget !== 0 || sc.spent !== 0 || sc.approved !== 0)
   const hiddenCount = cat.subcats.length - subcatsWithValue.length
   const showAllKey = ck + ':allsubs'
   const showAll = forceOpen || open.has(showAllKey)
@@ -581,320 +836,73 @@ function CategoryBlock({ cat, project, idx, open, toggle, forceOpen }: {
         <Folder className={cn('h-3.5 w-3.5 flex-shrink-0', isOpen ? 'text-gray-600' : 'text-gray-400')} />
         {cat.code && <span className="font-mono text-[10px] text-gray-500 bg-white border border-gray-200 rounded px-1 py-px flex-shrink-0">{cat.code}</span>}
         <span className={cn('text-[13px] truncate', isOpen ? 'font-semibold text-gray-900' : 'font-medium text-gray-800')}>{cat.label}</span>
-        {!cat.hasBudget && <span className="text-[9px] px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-100 flex-shrink-0">payments only</span>}
         {u != null && <UtilChip u={u} />}
         <div className="flex-1" />
-        <Cell value={cat.hasBudget ? cat.budget : null} area={project.area} dash={!cat.hasBudget} size="lg" />
-        <Cell value={cat.hasBudget ? cat.spent : null} area={project.area} dash={!cat.hasBudget} cls={spentCls} size="lg" />
-        <Cell value={cat.outstanding || null} area={project.area} cls="text-amber-700 font-semibold" size="lg" />
+        <Cell value={cat.budget || null} area={project.area} size="lg" />
+        <Cell value={cat.approved || null} area={project.area} size="lg" cls="text-blue-800" showSft={false} />
+        <Cell value={cat.spent || null} area={project.area} cls={paidCls(cat.spent, cat.budget, true)} size="lg" />
+        <Cell value={cat.budget ? balance : null} area={project.area} cls={balanceCls(balance)} size="lg" showSft={false} />
       </div>
 
-      {isOpen && (
+      {isOpen && cat.subcats.length > 0 && (
         <div className="ml-[37px] border-l-2 border-gray-100">
-          {cat.subcats.length > 0 && (
-            <div className="pl-4 pt-2 pb-1 flex items-center justify-between gap-2 border-b border-gray-100">
-              <span className="text-[10px] uppercase tracking-[0.08em] font-semibold text-gray-500">
-                Budget breakdown <span className="font-normal tracking-normal normal-case text-gray-400">· by work item</span>
-              </span>
-              {hiddenCount > 0 && (
-                <button
-                  type="button"
-                  onClick={() => toggle(showAllKey)}
-                  className="text-[10px] font-medium px-2 py-0.5 rounded-md text-gray-500 hover:text-gray-800 hover:bg-gray-100"
-                  title={showAll ? 'Hide empty work-items' : `Show ${hiddenCount} empty work-items in the BPH template`}
-                >
-                  {showAll ? `Hide ${hiddenCount} empty` : `Show all (${hiddenCount} empty hidden)`}
-                </button>
-              )}
-            </div>
-          )}
-          {shownSubcats.map((sc, j) => (
-            <div key={'sc' + j} className={cn('flex items-center gap-2 pr-3 pl-4 py-1.5 hover:bg-gray-50/60', j > 0 && 'border-t border-gray-50')}>
-              {sc.code && <span className="font-mono text-[11px] text-gray-400 flex-shrink-0">{sc.code}</span>}
-              <span className="text-[12px] text-gray-600 truncate">{sc.label}</span>
-              <div className="flex-1" />
-              <Cell value={sc.budget} area={project.area} />
-              <Cell value={sc.spent} area={project.area} />
-              <Cell value={null} area={project.area} dash />
-            </div>
-          ))}
-          {cat.parties.length > 0 && (() => {
-            const pkk = ck + ':parties'
-            const pOpen = forceOpen || open.has(pkk)
-            const paidSum = cat.parties.reduce((s, p) => s + p.paid, 0)
-            const outSum = cat.parties.reduce((s, p) => s + p.outstanding, 0)
-            const conN = cat.parties.filter(p => p.source === 'contractor').length
-            const supN = cat.parties.length - conN
+          <div className="pl-4 pt-2 pb-1 flex items-center justify-between gap-2 border-b border-gray-100">
+            <span className="text-[10px] uppercase tracking-[0.08em] font-semibold text-gray-500">
+              Budget breakdown <span className="font-normal tracking-normal normal-case text-gray-400">· by work item</span>
+            </span>
+            {hiddenCount > 0 && (
+              <button
+                type="button"
+                onClick={() => toggle(showAllKey)}
+                className="text-[10px] font-medium px-2 py-0.5 rounded-md text-gray-500 hover:text-gray-800 hover:bg-gray-100"
+                title={showAll ? 'Hide empty work-items' : `Show ${hiddenCount} empty work-items in the BPH template`}
+              >
+                {showAll ? `Hide ${hiddenCount} empty` : `Show all (${hiddenCount} empty hidden)`}
+              </button>
+            )}
+          </div>
+          {shownSubcats.map((sc, j) => {
+            const scBal = sc.budget - sc.spent
             return (
-              <>
-                {/* Paid-to banner — emphasised section header inside a category */}
-                <div className={cn('flex items-center gap-2.5 pr-3 pl-4 py-2 cursor-pointer transition-colors border-t border-gray-100',
-                  pOpen ? 'bg-violet-50/40 hover:bg-violet-50/60' : 'bg-gray-50/40 hover:bg-gray-100/50')}
-                  onClick={() => toggle(pkk)}>
-                  <ChevronRight className={cn('h-3.5 w-3.5 flex-shrink-0 transition-transform', pOpen ? 'text-violet-500 rotate-90' : 'text-gray-400')} />
-                  {/* avatar-stack chip */}
-                  <div className="flex items-center -space-x-1 flex-shrink-0">
-                    {conN > 0 && (
-                      <span className="h-5 w-5 rounded-full bg-violet-100 text-violet-700 border border-white inline-flex items-center justify-center" title={`${conN} contractor${conN === 1 ? '' : 's'}`}>
-                        <Users className="h-2.5 w-2.5" />
-                      </span>
-                    )}
-                    {supN > 0 && (
-                      <span className="h-5 w-5 rounded-full bg-blue-100 text-blue-700 border border-white inline-flex items-center justify-center" title={`${supN} supplier${supN === 1 ? '' : 's'}`}>
-                        <User className="h-2.5 w-2.5" />
-                      </span>
-                    )}
-                  </div>
-                  <span className="text-[10px] uppercase tracking-[0.08em] font-semibold text-gray-500 flex-shrink-0">Paid to</span>
-                  <span className="text-[12px] text-gray-700 truncate">
-                    {conN > 0 && <span className="text-violet-700 font-medium">{conN} contractor{conN === 1 ? '' : 's'}</span>}
-                    {conN > 0 && supN > 0 && <span className="text-gray-300 mx-1">·</span>}
-                    {supN > 0 && <span className="text-blue-700 font-medium">{supN} supplier{supN === 1 ? '' : 's'}</span>}
-                    {conN === 0 && supN === 0 && 'parties'}
-                  </span>
-                  <span className="text-[10px] text-gray-400 flex-shrink-0 hidden sm:inline">{pOpen ? 'tap to hide' : 'tap to expand'}</span>
-                  <div className="flex-1" />
-                  <Cell value={null} area={project.area} dash size="lg" />
-                  <Cell value={paidSum || null} area={project.area} cls="text-gray-900 font-semibold" size="lg" />
-                  <Cell value={outSum || null} area={project.area} cls="text-amber-700 font-semibold" size="lg" />
-                </div>
-                {pOpen && cat.parties.map((pt, j) => (
-                  <div key={'pt' + j} className={cn('flex items-center gap-2 pr-3 pl-9 py-1.5 hover:bg-gray-50/60', j > 0 && 'border-t border-gray-50')}>
-                    <span className={cn('h-4 w-4 rounded-full inline-flex items-center justify-center flex-shrink-0',
-                      pt.source === 'contractor' ? 'bg-violet-100 text-violet-700' : 'bg-blue-100 text-blue-700')}>
-                      {pt.source === 'contractor' ? <Users className="h-2 w-2" /> : <User className="h-2 w-2" />}
-                    </span>
-                    <span className="text-[12px] text-gray-700 truncate">{pt.name}</span>
-                    <SourceTag source={pt.source} />
-                    <div className="flex-1" />
-                    <Cell value={null} area={project.area} dash />
-                    <Cell value={pt.paid} area={project.area} />
-                    <Cell value={pt.outstanding || null} area={project.area} cls="text-amber-600" />
-                  </div>
-                ))}
-              </>
+              <div key={'sc' + j} className={cn('flex items-center gap-2 pr-3 pl-4 py-1.5 hover:bg-gray-50/60', j > 0 && 'border-t border-gray-50')}>
+                {sc.code && <span className="font-mono text-[11px] text-gray-400 flex-shrink-0">{sc.code}</span>}
+                <span className="text-[12px] text-gray-600 truncate">{sc.label}</span>
+                <div className="flex-1" />
+                <Cell value={sc.budget || null} area={project.area} showSft={false} />
+                <Cell value={sc.approved || null} area={project.area} showSft={false} cls="text-blue-700" />
+                <Cell value={sc.spent || null} area={project.area} showSft={false} />
+                <Cell value={sc.budget ? scBal : null} area={project.area} showSft={false} cls={balanceCls(scBal)} />
+              </div>
             )
-          })()}
+          })}
         </div>
       )}
     </div>
   )
 }
 
-// ─── AI-assisted mapping panel (project-level + leftover lines) ──────────────
-function MappingPanel({ unmatchedProjects, unmatchedLines, groupNames, projectNames, projectsByGroup, currentUserId, isAdmin, onError, onSaved }: {
-  unmatchedProjects: UnmatchedProject[]
-  unmatchedLines: UnmatchedLine[]
-  groupNames: string[]
-  projectNames: string[]
-  projectsByGroup: Record<string, string[]>
-  currentUserId: string
-  isAdmin: boolean
-  onError: (m: string) => void
-  onSaved: () => void
-}) {
-  const supabase = createClient()
-  const [picks, setPicks] = useState<Record<string, string>>({})
-  const [aiBusy, setAiBusy] = useState(false)
-  const [saveBusy, setSaveBusy] = useState(false)
-  const [dropBusy, setDropBusy] = useState<string | null>(null)
-  // Collapsed by default once any picks are made or once the user dismisses —
-  // keeps a long mapping list out of the way while still one click to reopen.
-  const [collapsed, setCollapsed] = useState(false)
-  const pk = (source: string, name: string) => `${source}::${name}`
-  const totalToMap = unmatchedProjects.length + unmatchedLines.length
-
-  // One-click DROP: persist this payment as intentionally ignored (alias row
-  // with budget_project = null + confirmed = true). Next render it disappears
-  // from the unmatched list — without going through the dropdown.
-  async function dropOne(source: string, name: string) {
-    if (!isAdmin) return
-    setDropBusy(pk(source, name)); onError('')
-    const { error } = await supabase.from('budget_v2_alias').upsert(
-      { source, payment_name: name, budget_project: null, confirmed: true, updated_by: currentUserId, updated_at: new Date().toISOString() },
-      { onConflict: 'source,payment_name' },
-    )
-    setDropBusy(null)
-    if (error) { onError(error.message); return }
-    onSaved()
-  }
-
-  async function autoMap() {
-    setAiBusy(true); onError('')
-    try {
-      const res = await fetch('/api/budget-v2/suggest-aliases', {
-        method: 'POST', headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          payments: unmatchedProjects.map(u => ({ source: u.source, name: u.projectName })),
-          budgetProjects: [...groupNames, ...projectNames],
-        }),
-      })
-      const json = await res.json()
-      if (!res.ok) throw new Error(json?.error || 'AI failed')
-      const next: Record<string, string> = {}
-      for (const s of json.suggestions ?? []) if (s.budget_project) next[pk(s.source, s.name)] = s.budget_project
-      setPicks(p => ({ ...next, ...p }))
-    } catch (e) { onError(e instanceof Error ? e.message : 'AI failed') }
-    finally { setAiBusy(false) }
-  }
-
-  async function save() {
-    const rows: { source: string; payment_name: string; budget_project: string | null; confirmed: boolean; updated_by: string; updated_at: string }[] = []
-    const push = (source: string, name: string) => {
-      const v = picks[pk(source, name)]
-      if (!v) return
-      rows.push({ source, payment_name: name, budget_project: v === '__ignore__' ? null : v, confirmed: true, updated_by: currentUserId, updated_at: new Date().toISOString() })
-    }
-    unmatchedProjects.forEach(u => push(u.source, u.projectName))
-    unmatchedLines.forEach(u => push(u.source, u.subprojectName))
-    if (rows.length === 0) { onError('Pick at least one match (or “ignore”) first.'); return }
-    setSaveBusy(true); onError('')
-    const { error } = await supabase.from('budget_v2_alias').upsert(rows, { onConflict: 'source,payment_name' })
-    setSaveBusy(false)
-    if (error) { onError(error.message); return }
-    onSaved()
-  }
-
-  return (
-    <Card className="border-amber-300 bg-amber-50/40">
-      <CardContent className="pt-4 space-y-3">
-        <div className="flex items-center justify-between gap-2 flex-wrap">
-          <button
-            type="button"
-            onClick={() => setCollapsed(c => !c)}
-            className="flex items-center gap-2 text-left hover:opacity-80"
-            aria-expanded={!collapsed}
-            aria-controls="bv2-mapping-body"
-            title={collapsed ? 'Show mapping list' : 'Hide mapping list'}
-          >
-            <ChevronRight className={cn('h-4 w-4 text-amber-700 flex-shrink-0 transition-transform', !collapsed && 'rotate-90')} />
-            <AlertTriangle className="h-4 w-4 text-amber-600 flex-shrink-0" />
-            <span className="font-semibold text-sm text-amber-900">Match payments to budget projects</span>
-            <span className="text-[11px] font-medium px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-800 border border-amber-200">
-              {totalToMap} to map
-            </span>
-          </button>
-          <div className="flex items-center gap-1.5">
-            {unmatchedProjects.length > 0 && (
-              <Button size="sm" variant="outline" onClick={autoMap} disabled={aiBusy} className="text-violet-700 border-violet-200 hover:bg-violet-50">
-                {aiBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />} Auto-map with AI
-              </Button>
-            )}
-            <button
-              type="button"
-              onClick={() => setCollapsed(c => !c)}
-              className="text-[11px] font-medium px-2 py-1 rounded-md text-amber-800 hover:bg-amber-100/60"
-            >
-              {collapsed ? 'Show' : 'Hide'}
-            </button>
-          </div>
-        </div>
-
-        {!collapsed && (
-          <div id="bv2-mapping-body" className="space-y-3">
-            {unmatchedProjects.length > 0 && (
-              <div>
-                <p className="text-[11px] text-amber-800 mb-1">
-                  Map each <b>payment project</b> to a budget <b>group</b> (the A/B/C blocks sort themselves out) — tap <b>Auto-map</b>, glance, save.
-                </p>
-                <div className="divide-y divide-amber-200">
-                  {unmatchedProjects.map(u => (
-                    <div key={pk(u.source, u.projectName)} className="flex items-center gap-2 py-2 flex-wrap">
-                      <SourceTag source={u.source} />
-                      <span className="text-[13px] text-gray-800 flex-1 min-w-[150px] truncate" title={u.projectName}>{u.projectName}</span>
-                      <span className="text-[11px] text-gray-400 flex-shrink-0">{u.subCount} line{u.subCount === 1 ? '' : 's'} · {fmtINR(u.paid)}</span>
-                      <ChevronRight className="h-3.5 w-3.5 text-gray-300 flex-shrink-0" />
-                      <select value={picks[pk(u.source, u.projectName)] ?? ''}
-                        onChange={e => setPicks(p => ({ ...p, [pk(u.source, u.projectName)]: e.target.value }))}
-                        className="h-8 rounded-lg border border-gray-300 bg-white px-2 text-xs max-w-[190px]">
-                        <option value="">— pick a group / project —</option>
-                        {groupNames.length > 0 && <optgroup label="Groups">{groupNames.map(g => <option key={'g' + g} value={g}>{g} (group)</option>)}</optgroup>}
-                        <optgroup label="Projects">{projectNames.map(p => <option key={'p' + p} value={p}>{p}</option>)}</optgroup>
-                        <option value="__ignore__">— ignore this —</option>
-                      </select>
-                      {isAdmin && (
-                        <button
-                          type="button"
-                          onClick={() => dropOne(u.source, u.projectName)}
-                          disabled={dropBusy === pk(u.source, u.projectName)}
-                          className="inline-flex items-center gap-1 text-[11px] font-medium px-2 py-1 rounded-md text-rose-700 border border-rose-200 hover:bg-rose-50"
-                          title="Don't map this — keep its payments out of the tree"
-                        >
-                          {dropBusy === pk(u.source, u.projectName) ? <Loader2 className="h-3 w-3 animate-spin" /> : <Ban className="h-3 w-3" />}
-                          Drop
-                        </button>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {unmatchedLines.length > 0 && (
-              <div className="pt-1">
-                <p className="text-[11px] text-amber-800 mb-1">
-                  These few lines are inside a mapped group but couldn’t auto-pick a block — place them once:
-                </p>
-                <div className="divide-y divide-amber-200">
-                  {unmatchedLines.map(u => (
-                    <div key={pk(u.source, u.subprojectName)} className="flex items-center gap-2 py-2 flex-wrap">
-                      <SourceTag source={u.source} />
-                      <span className="text-[13px] text-gray-800 flex-1 min-w-[150px] truncate" title={u.subprojectName}>{u.subprojectName}</span>
-                      <span className="text-[10px] text-gray-400 flex-shrink-0">{u.group}</span>
-                      <ChevronRight className="h-3.5 w-3.5 text-gray-300 flex-shrink-0" />
-                      <select value={picks[pk(u.source, u.subprojectName)] ?? ''}
-                        onChange={e => setPicks(p => ({ ...p, [pk(u.source, u.subprojectName)]: e.target.value }))}
-                        className="h-8 rounded-lg border border-gray-300 bg-white px-2 text-xs max-w-[190px]">
-                        <option value="">— pick project in {u.group} —</option>
-                        {(projectsByGroup[u.group] ?? []).map(p => <option key={p} value={p}>{p}</option>)}
-                        <option value="__ignore__">— ignore this —</option>
-                      </select>
-                      {isAdmin && (
-                        <button
-                          type="button"
-                          onClick={() => dropOne(u.source, u.subprojectName)}
-                          disabled={dropBusy === pk(u.source, u.subprojectName)}
-                          className="inline-flex items-center gap-1 text-[11px] font-medium px-2 py-1 rounded-md text-rose-700 border border-rose-200 hover:bg-rose-50"
-                          title="Don't map this line — keep its payments out of the tree"
-                        >
-                          {dropBusy === pk(u.source, u.subprojectName) ? <Loader2 className="h-3 w-3 animate-spin" /> : <Ban className="h-3 w-3" />}
-                          Drop
-                        </button>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            <Button size="sm" onClick={save} disabled={saveBusy}>
-              {saveBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <ListTree className="h-4 w-4" />} Save & merge
-            </Button>
-          </div>
-        )}
-      </CardContent>
-    </Card>
-  )
-}
-
-// ─── Admin-only: inline form to add a V2 project (placeholder) ──────────────
+// ─── Admin-only: inline form to add a V2 project (with optional numbers) ─────
 function AddProjectInline({ knownGroupNames, onSubmit, onCancel }: {
   knownGroupNames: string[]
-  onSubmit: (name: string, group: string | null, area: number | null) => Promise<void>
+  onSubmit: (name: string, group: string | null, area: number | null, nums: { budget: number | null; approved: number | null; paid: number | null }) => Promise<void>
   onCancel: () => void
 }) {
   const [name, setName] = useState('')
   const [group, setGroup] = useState<string>('')   // '' = standalone, '__new__' = type-in
   const [newGroup, setNewGroup] = useState('')
   const [area, setArea] = useState('')
+  const [budget, setBudget] = useState('')
+  const [approved, setApproved] = useState('')
+  const [paid, setPaid] = useState('')
   const [busy, setBusy] = useState(false)
+  const parse = (s: string): number | null => { const t = s.trim(); if (t === '') return null; const n = Number(t.replace(/,/g, '')); return isFinite(n) ? n : null }
 
   async function go() {
     if (!name.trim()) return
     setBusy(true)
     const g = group === '__new__' ? (newGroup.trim() || null) : (group || null)
     const a = area.trim() === '' ? null : Number(area)
-    try { await onSubmit(name, g, isFinite(a as number) ? (a as number) : null) }
+    try { await onSubmit(name, g, isFinite(a as number) ? (a as number) : null, { budget: parse(budget), approved: parse(approved), paid: parse(paid) }) }
     finally { setBusy(false) }
   }
 
@@ -903,11 +911,11 @@ function AddProjectInline({ knownGroupNames, onSubmit, onCancel }: {
       <CardContent className="pt-4 space-y-3">
         <div className="flex items-center gap-2">
           <Plus className="h-4 w-4 text-emerald-700" />
-          <span className="text-sm font-semibold text-emerald-900">New project</span>
-          <span className="text-[11px] text-emerald-800">— placeholder; appears in the tree alongside BPH projects</span>
+          <span className="text-sm font-semibold text-emerald-900">Add a project</span>
+          <span className="text-[11px] text-emerald-800">— hand-add one that isn’t in the IN4 upload (e.g. Raj Uphaar); key its numbers in full ₹</span>
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-          <Input value={name} onChange={e => setName(e.target.value)} placeholder="Project name (e.g. NGH D)" />
+          <Input value={name} onChange={e => setName(e.target.value)} placeholder="Project name (e.g. Raj Uphaar)" />
           <select value={group} onChange={e => setGroup(e.target.value)}
             className="h-10 rounded-xl border border-gray-300 bg-white px-3 text-sm">
             <option value="">— Standalone (no group) —</option>
@@ -917,8 +925,13 @@ function AddProjectInline({ knownGroupNames, onSubmit, onCancel }: {
           <Input type="number" min={0} value={area} onChange={e => setArea(e.target.value)} placeholder="Built-up area (sft, optional)" />
         </div>
         {group === '__new__' && (
-          <Input value={newGroup} onChange={e => setNewGroup(e.target.value)} placeholder="New group name (e.g. Phase 3)" />
+          <Input value={newGroup} onChange={e => setNewGroup(e.target.value)} placeholder="New group name (e.g. Raj Uphaar)" />
         )}
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+          <Input type="text" inputMode="numeric" value={budget} onChange={e => setBudget(e.target.value)} placeholder="Budget ₹ (e.g. 1015228556)" />
+          <Input type="text" inputMode="numeric" value={approved} onChange={e => setApproved(e.target.value)} placeholder="WO/PO Approved ₹" />
+          <Input type="text" inputMode="numeric" value={paid} onChange={e => setPaid(e.target.value)} placeholder="Paid ₹" />
+        </div>
         <div className="flex items-center gap-2">
           <Button size="sm" onClick={go} disabled={busy || !name.trim() || (group === '__new__' && !newGroup.trim())}>
             {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />} Add project
