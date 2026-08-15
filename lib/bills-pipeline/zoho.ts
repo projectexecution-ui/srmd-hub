@@ -84,6 +84,9 @@ export interface ZohoTask {
   bill_type?:         string
   bill_date?:         string
   discipline_projects?: string
+  // IN4 GRN reference, e.g. "GRN/SRASSK/NGH/2026-27/1/1479" — the 2nd segment
+  // is the paying trust account (SRET / SRAH / SRASSK / SRA).
+  abstract_number_of_in4?: string
   this_bill_amt?:            ZohoMoney   // claimed
   certified_payment_amount?: ZohoMoney
   paid_till_date?:           ZohoMoney

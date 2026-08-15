@@ -10,7 +10,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient as createServiceClient, type SupabaseClient } from '@supabase/supabase-js'
 import { getMyPermissions, can } from '@/lib/auth'
 import { getZohoToken, fetchAllTasks } from '@/lib/bills-pipeline/zoho'
-import { parseBill, aggregateCard, clearedThisWeek, toStuckBill, toCockpitBill } from '@/lib/bills-pipeline/transform'
+import { parseBill, aggregateCard, clearedThisWeek, toStuckBill, toCockpitBill, parseReportBill } from '@/lib/bills-pipeline/transform'
 import { getSelectedProjects } from '@/lib/bills-pipeline/projects'
 import { renderCard, renderScorecard } from '@/lib/bills-pipeline/render'
 import { BP_CONFIG } from '@/lib/bills-pipeline/config'
@@ -182,6 +182,21 @@ async function runPipeline(supabase: SupabaseClient): Promise<NextResponse> {
     .from('app_settings')
     .upsert({ key: 'bills_pipeline_cockpit', value: JSON.stringify(cockpit) }, { onConflict: 'key' })
   if (cockErr) console.warn('[bills-pipeline] cockpit persist failed:', cockErr.message)
+
+  // 8c. Persist the at-Trust + recently-paid bills for the auto Daily Bills
+  //     Report (COP Under Process + Payments Done, split per trust account).
+  const reportBills = projectResults.flatMap(({ project, tasks }) =>
+    tasks
+      .map(t => parseReportBill(t, project, now))
+      .filter((b): b is NonNullable<typeof b> => b !== null),
+  )
+  const { error: repErr } = await supabase
+    .from('app_settings')
+    .upsert({
+      key: 'bills_pipeline_report',
+      value: JSON.stringify({ asOf, generatedAt: isoNow, bills: reportBills }),
+    }, { onConflict: 'key' })
+  if (repErr) console.warn('[bills-pipeline] report persist failed:', repErr.message)
 
   // TODO: send PNG to WhatsApp via WABA API
   // TODO: email PNG via nodemailer

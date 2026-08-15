@@ -294,6 +294,66 @@ export function parseBill(
   }
 }
 
+// ─── Daily Bills Report dataset ───────────────────────────────────────────────
+// The auto Daily Bills Report cares about bills SUBMITTED TO TRUST (COP under
+// process) and PAID (Payment Done) — the opposite of the internal card. The
+// paying trust account (SRET / SRAH / SRASSK / SRA) is parsed from the IN4 GRN
+// reference's 2nd segment, e.g. "GRN/SRASSK/NGH/…".
+
+const KNOWN_ACCOUNTS = new Set(['SRET', 'SRAH', 'SRASSK', 'SRA', 'SRJT'])
+
+export function accountFromAbstract(abstract: string | undefined | null): string {
+  const s = (abstract ?? '').trim()
+  if (!s) return ''
+  const seg = (s.split('/')[1] ?? '').trim().toUpperCase()
+  return KNOWN_ACCOUNTS.has(seg) ? seg : (seg || '')
+}
+
+export interface ReportBill {
+  id:          string
+  section:     'paid' | 'trust'
+  account:     string   // SRET / SRAH / SRASSK / SRA ('' when the IN4 ref is missing)
+  vendor:      string
+  area:        string   // task-list name — the report's "Project Name" column
+  projectCode: string   // billing project short code
+  invoiceNo:   string
+  amount:      number
+  billDate:    string
+  paymentDate: string   // completed_on (paid only)
+}
+
+// Keep only at-Trust + recently-paid bills. Paid older than `paidWindowDays`
+// are dropped so the dataset stays small (the daily report shows recent pays).
+export function parseReportBill(
+  task: ZohoTask, projectCode: string, now: Date, paidWindowDays = 45,
+): ReportBill | null {
+  const stage   = normalizeStage(task.status?.name ?? '')
+  const paid    = task.status?.is_closed_type === true || stage === BP_CONFIG.DONE_STAGE
+  const isTrust = stage === BP_CONFIG.TRUST_STAGE
+  if (!paid && !isTrust) return null
+
+  if (paid) {
+    const done = task.completed_on ? new Date(task.completed_on).getTime() : NaN
+    if (!Number.isFinite(done) || done < now.getTime() - paidWindowDays * 86_400_000) return null
+  }
+
+  const vendorRaw = task.vendor_from_module_2?.value ?? ''
+  const vendor = /not created/i.test(vendorRaw) ? '' : vendorRaw
+
+  return {
+    id:          task.id,
+    section:     paid ? 'paid' : 'trust',
+    account:     accountFromAbstract(task.abstract_number_of_in4),
+    vendor:      vendor || cleanText(task.name),
+    area:        task.tasklist?.name ?? '',
+    projectCode,
+    invoiceNo:   task.bill_number ?? '',
+    amount:      money(task.this_bill_amt),
+    billDate:    task.bill_date ?? '',
+    paymentDate: task.completed_on ?? '',
+  }
+}
+
 // ─── deriveReason ────────────────────────────────────────────────────────────
 
 export function deriveReason(comments: string[]): string {
