@@ -85,6 +85,8 @@ export default function WeeklyDetailClient({ result, prev, delta, freshness, pre
 
       <style>{`
         @page { size: A4 portrait; margin: 11mm; }
+        /* keep the subtle row tints when the browser prints to PDF */
+        .wrap, .page, table, tr, td, th { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
         .page { width: 190mm; min-height: 273mm; margin: 12px auto; background:#fff; border:1px solid #e5e7eb; border-radius:10px; padding:14mm 12mm; box-shadow:0 2px 12px rgba(0,0,0,.06); }
         @media print { body{background:#fff} .no-print{display:none!important} .page{margin:0 auto;box-shadow:none;border:none;border-radius:0;width:auto;min-height:0;padding:0;page-break-after:always} .page:last-child{page-break-after:auto} tr{page-break-inside:avoid} }
         .eyebrow { font-size:10px; letter-spacing:.08em; text-transform:uppercase; color:#b8863b; font-weight:700; }
@@ -105,11 +107,12 @@ export default function WeeklyDetailClient({ result, prev, delta, freshness, pre
         tbody td.l { text-align:left; }
         tr.grp td { background:#eef2f7; font-weight:800; border-top:1px solid #dbe2ea; } tr.grp td.l { color:#0f2a4a; }
         tr.proj td.l { padding-left:20px; } tr.total td { background:#e2e8f2; font-weight:800; border-top:2px solid #0f2a4a; } tr.total td.l { color:#0f2a4a; }
-        tr.cat td { font-weight:600; }
-        tr.sub td.l { padding-left:26px; color:#4b5563; font-weight:400; font-size:10px; }
-        tr.sub td { color:#4b5563; }
+        /* subtle row-type differentiators (print-safe via print-color-adjust above) */
+        tr.cat td { font-weight:600; background:rgba(15,42,74,0.06); }
+        tr.sub td { color:#4b5563; background:rgba(15,42,74,0.02); }
+        tr.sub td.l { padding-left:26px; font-weight:400; font-size:10px; }
         .code { font-family:ui-monospace,monospace; font-size:9px; color:#9ca3af; margin-right:5px; }
-        .sft { font-size:9px; color:#9ca3af; font-weight:600; }
+        .sft { display:block; font-size:8.5px; color:#9ca3af; font-weight:600; margin-top:1px; }
         .appr{color:#0d447c} .ok{color:#1f6f3d;font-weight:700} .warn{color:#8a5a0b;font-weight:700} .over{color:#a3282d;font-weight:700} .neg{color:#a3282d;font-weight:800}
         .up{color:#166534;font-weight:700} .down{color:#9a3412;font-weight:700} .flat{color:#9ca3af}
         .empty { font-size:11px; color:#9ca3af; font-style:italic; margin-top:12px; }
@@ -144,9 +147,10 @@ export default function WeeklyDetailClient({ result, prev, delta, freshness, pre
                       return (
                         <tr className="proj" key={p.name}>
                           <td className="l">{p.name}{p.status === 'closed' ? ' · closed' : ''}</td>
-                          <td>{fmtINR(p.budget)}</td><td className="appr">{fmtINR(p.approved)}</td>
-                          <td className={toneClass(u)}>{fmtINR(p.spent)}</td>
-                          <td className={p.budget - p.spent < 0 ? 'neg' : ''}>{fmtINR(p.budget - p.spent)}</td>
+                          <td>{fmtINR(p.budget)}{perSft(p.budget, p.area) && <span className="sft">{perSft(p.budget, p.area)}</span>}</td>
+                          <td className="appr">{fmtINR(p.approved)}{perSft(p.approved, p.area) && <span className="sft">{perSft(p.approved, p.area)}</span>}</td>
+                          <td className={toneClass(u)}>{fmtINR(p.spent)}{perSft(p.spent, p.area) && <span className="sft">{perSft(p.spent, p.area)}</span>}</td>
+                          <td className={p.budget - p.spent < 0 ? 'neg' : ''}>{fmtINR(p.budget - p.spent)}{perSft(p.budget - p.spent, p.area) && <span className="sft">{perSft(p.budget - p.spent, p.area)}</span>}</td>
                           <td className={toneClass(u)}>{u != null ? `${u}%` : '—'}</td>
                           <td className={deltaClass(projDelta(p.name))}>{fmtDelta(projDelta(p.name))}</td>
                         </tr>
@@ -189,9 +193,9 @@ export default function WeeklyDetailClient({ result, prev, delta, freshness, pre
 
             <div className="kpis">
               <div className="kpi"><div className="l">Budget</div><div className="n">{fmtINR(p.budget)}</div><div className="d">{perSft(p.budget, p.area)}</div></div>
-              <div className="kpi"><div className="l">WO/PO Approved</div><div className="n" style={{ color: '#0d447c' }}>{fmtINR(p.approved)}</div></div>
+              <div className="kpi"><div className="l">WO/PO Approved</div><div className="n" style={{ color: '#0d447c' }}>{fmtINR(p.approved)}</div><div className="d">{perSft(p.approved, p.area)}</div></div>
               <div className="kpi"><div className="l">Paid · {u ?? 0}%</div><div className="n" style={{ color: '#1f6f3d' }}>{fmtINR(p.spent)}</div><div className="d">{perSft(p.spent, p.area)}</div></div>
-              <div className="kpi"><div className="l">{bal < 0 ? 'Over budget' : 'Balance'}{pd != null && pd !== 0 ? ` · wk ${fmtDelta(pd)}` : ''}</div><div className="n" style={bal < 0 ? { color: '#a3282d' } : undefined}>{fmtINR(Math.abs(bal))}</div></div>
+              <div className="kpi"><div className="l">{bal < 0 ? 'Over budget' : 'Balance'}{pd != null && pd !== 0 ? ` · wk ${fmtDelta(pd)}` : ''}</div><div className="n" style={bal < 0 ? { color: '#a3282d' } : undefined}>{fmtINR(Math.abs(bal))}</div><div className="d">{perSft(Math.abs(bal), p.area)}</div></div>
             </div>
 
             {cats.length === 0 ? (
@@ -212,9 +216,10 @@ export default function WeeklyDetailClient({ result, prev, delta, freshness, pre
                       <Fragment key={c.code + ':' + ci}>
                         <tr className="cat">
                           <td className="l">{c.code && <span className="code">{c.code}</span>}{c.label}</td>
-                          <td>{fmtINR(c.budget)}</td><td className="appr">{fmtINR(c.approved)}</td>
-                          <td className={toneClass(cu)}>{fmtINR(c.spent)}{perSft(c.spent, p.area) && <span className="sft"> · {perSft(c.spent, p.area)}</span>}</td>
-                          <td className={cbal < 0 ? 'neg' : ''}>{fmtINR(cbal)}</td>
+                          <td>{fmtINR(c.budget)}{perSft(c.budget, p.area) && <span className="sft">{perSft(c.budget, p.area)}</span>}</td>
+                          <td className="appr">{fmtINR(c.approved)}{perSft(c.approved, p.area) && <span className="sft">{perSft(c.approved, p.area)}</span>}</td>
+                          <td className={toneClass(cu)}>{fmtINR(c.spent)}{perSft(c.spent, p.area) && <span className="sft">{perSft(c.spent, p.area)}</span>}</td>
+                          <td className={cbal < 0 ? 'neg' : ''}>{fmtINR(cbal)}{perSft(cbal, p.area) && <span className="sft">{perSft(cbal, p.area)}</span>}</td>
                           <td className={toneClass(cu)}>{cu != null ? `${cu}%` : '—'}</td>
                           <td className={deltaClass(cd)}>{fmtDelta(cd)}</td>
                         </tr>
@@ -225,9 +230,10 @@ export default function WeeklyDetailClient({ result, prev, delta, freshness, pre
                           return (
                             <tr className="sub" key={'s' + ci + '_' + si}>
                               <td className="l">{sc.code && <span className="code">{sc.code}</span>}{sc.label}</td>
-                              <td>{fmtINR(sc.budget)}</td><td className="appr">{fmtINR(sc.approved)}</td>
-                              <td className={toneClass(su)}>{fmtINR(sc.spent)}</td>
-                              <td className={sbal < 0 ? 'neg' : ''}>{fmtINR(sbal)}</td>
+                              <td>{fmtINR(sc.budget)}{perSft(sc.budget, p.area) && <span className="sft">{perSft(sc.budget, p.area)}</span>}</td>
+                              <td className="appr">{fmtINR(sc.approved)}{perSft(sc.approved, p.area) && <span className="sft">{perSft(sc.approved, p.area)}</span>}</td>
+                              <td className={toneClass(su)}>{fmtINR(sc.spent)}{perSft(sc.spent, p.area) && <span className="sft">{perSft(sc.spent, p.area)}</span>}</td>
+                              <td className={sbal < 0 ? 'neg' : ''}>{fmtINR(sbal)}{perSft(sbal, p.area) && <span className="sft">{perSft(sbal, p.area)}</span>}</td>
                               <td className={toneClass(su)}>{su != null ? `${su}%` : '—'}</td>
                               <td className={deltaClass(sd)}>{fmtDelta(sd)}</td>
                             </tr>
@@ -238,8 +244,10 @@ export default function WeeklyDetailClient({ result, prev, delta, freshness, pre
                   })}
                   <tr className="total">
                     <td className="l">TOTAL · {p.name}</td>
-                    <td>{fmtINR(p.budget)}</td><td className="appr">{fmtINR(p.approved)}</td>
-                    <td>{fmtINR(p.spent)}</td><td className={bal < 0 ? 'neg' : ''}>{fmtINR(bal)}</td>
+                    <td>{fmtINR(p.budget)}{perSft(p.budget, p.area) && <span className="sft">{perSft(p.budget, p.area)}</span>}</td>
+                    <td className="appr">{fmtINR(p.approved)}{perSft(p.approved, p.area) && <span className="sft">{perSft(p.approved, p.area)}</span>}</td>
+                    <td>{fmtINR(p.spent)}{perSft(p.spent, p.area) && <span className="sft">{perSft(p.spent, p.area)}</span>}</td>
+                    <td className={bal < 0 ? 'neg' : ''}>{fmtINR(bal)}{perSft(bal, p.area) && <span className="sft">{perSft(bal, p.area)}</span>}</td>
                     <td>{u ?? 0}%</td>
                     <td className={deltaClass(pd)}>{fmtDelta(pd)}</td>
                   </tr>
