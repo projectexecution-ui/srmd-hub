@@ -33,6 +33,9 @@ export interface BudgetV2LoadResult {
   delta: DeltaResult
   /** the IST date of the previous upload the Δ compares against (null = none). */
   prevSnapshotWeek: string | null
+  /** the previous upload's full composed tree — lets the detail PDFs compute Δ
+   *  at category & sub-category level (null when there's no earlier upload). */
+  prev: ComposeResult | null
 }
 
 const istDateOf = (iso: string): string => new Date(Date.parse(iso) + 5.5 * 3_600_000).toISOString().slice(0, 10)
@@ -77,6 +80,7 @@ export async function loadBudgetV2(supabase: any): Promise<BudgetV2LoadResult> {
   // IST day than the current one (collapses same-day re-saves into one upload).
   let delta = deltaVs(result, null)
   let prevSnapshotWeek: string | null = null
+  let prev: ComposeResult | null = null
   const meta = (histMeta ?? []) as { version: number; snapshot_at: string }[]
   if (meta.length) {
     const curDate = istDateOf(meta[0].snapshot_at)
@@ -87,8 +91,8 @@ export async function loadBudgetV2(supabase: any): Promise<BudgetV2LoadResult> {
       const prevProjects = ((prevRow?.state as any)?.projects ?? []) as any[]
       if (prevProjects.length) {
         // Same overrides/extras on both sides → manual entries cancel; Δ = real upload movement.
-        const prevResult = composeBudgetV2(prevProjects, statusMap, areaOverrides, extras, overrides)
-        delta = deltaVs(result, snapshotOf(prevResult))
+        prev = composeBudgetV2(prevProjects, statusMap, areaOverrides, extras, overrides)
+        delta = deltaVs(result, snapshotOf(prev))
         prevSnapshotWeek = istDateOf(prevMeta.snapshot_at)
       }
     }
@@ -98,5 +102,5 @@ export async function loadBudgetV2(supabase: any): Promise<BudgetV2LoadResult> {
     budget: (budHistRows as { updated_at?: string } | null)?.updated_at ?? null,
   }
 
-  return { result, freshness, delta, prevSnapshotWeek }
+  return { result, freshness, delta, prevSnapshotWeek, prev }
 }

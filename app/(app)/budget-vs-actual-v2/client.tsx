@@ -23,7 +23,7 @@ import {
   ChevronRight, ChevronsUpDown, ChevronsDownUp, Building2, Folder,
   Sparkles, Loader2, Layers, Search, X, ListTree,
   Wallet, TrendingUp, Scale, FileCheck2, UploadCloud, Printer, Clock, Plus, Pencil, Check, HelpCircle,
-  ArrowUp, ArrowDown, PencilLine,
+  ArrowUp, ArrowDown, PencilLine, FolderTree,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { ComposeResult, CatNode, ProjectNode, GroupNode, DeltaResult, Delta } from '@/lib/budget-v2'
@@ -265,8 +265,19 @@ export default function BudgetV2Client({
             <UploadCloud className="h-3.5 w-3.5" /> Upload
           </Link>
           <Link href="/budget-vs-actual-v2/weekly"
-            className="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-lg border border-gray-200 bg-white hover:bg-gray-50 text-gray-800">
+            className="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-lg border border-gray-200 bg-white hover:bg-gray-50 text-gray-800"
+            title="Weekly one-pager — one line per project">
             <Printer className="h-3.5 w-3.5" /> Weekly PDF
+          </Link>
+          <Link href="/budget-vs-actual-v2/weekly-category"
+            className="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-lg border border-gray-200 bg-white hover:bg-gray-50 text-gray-800"
+            title="Weekly PDF broken down by category — one project per page">
+            <FolderTree className="h-3.5 w-3.5" /> By Category
+          </Link>
+          <Link href="/budget-vs-actual-v2/weekly-subcategory"
+            className="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-lg border border-gray-200 bg-white hover:bg-gray-50 text-gray-800"
+            title="Weekly PDF broken down by category & sub-category — one project per page">
+            <ListTree className="h-3.5 w-3.5" /> By Sub-category
           </Link>
           <Link href="/budget-vs-actual-v2/print"
             className="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-lg border border-gray-200 bg-white hover:bg-gray-50 text-gray-800">

@@ -1,0 +1,13 @@
+import { createClient } from '@/lib/supabase/server'
+import { requirePermission } from '@/lib/auth'
+import { loadBudgetV2 } from '@/lib/budget-v2-load'
+import WeeklyDetailClient from '../weekly-detail-client'
+
+export const dynamic = 'force-dynamic'
+
+export default async function BudgetV2WeeklySubcategoryPage() {
+  await requirePermission('budget-vs-actual-v2', 'view')
+  const supabase = await createClient()
+  const { result, freshness, delta, prevSnapshotWeek, prev } = await loadBudgetV2(supabase)
+  return <WeeklyDetailClient result={result} prev={prev} delta={delta} freshness={freshness} prevSnapshotWeek={prevSnapshotWeek} mode="subcategory" />
+}
