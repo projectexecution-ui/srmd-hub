@@ -311,6 +311,7 @@ export interface ReportBill {
   amount:      number
   billDate:    string
   paymentDate: string   // completed_on (paid only)
+  submittedOn: string   // last_modified_time — proxy for "moved to Submitted-to-Trust" moment (trust only)
 }
 
 // IST calendar day (YYYY-MM-DD) — the daily report is scoped by IST date.
@@ -349,6 +350,7 @@ export function parseReportBill(
     amount:      money(task.this_bill_amt),
     billDate:    task.bill_date ?? '',
     paymentDate: task.completed_on ?? '',
+    submittedOn: task.last_modified_time ?? '',
   }
 }
 

@@ -190,13 +190,18 @@ async function runPipeline(supabase: SupabaseClient): Promise<NextResponse> {
       .map(t => parseReportBill(t, project, now))
       .filter((b): b is NonNullable<typeof b> => b !== null),
   )
+  // IST calendar day — the daily report is scoped by IST date (paid = today IST).
+  const istToday = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(now)
+  const reportPayload = JSON.stringify({ asOf: istToday, generatedAt: isoNow, bills: reportBills })
+  // "latest" pointer (default view) + a per-date copy so the calendar can look back.
   const { error: repErr } = await supabase
     .from('app_settings')
-    .upsert({
-      key: 'bills_pipeline_report',
-      value: JSON.stringify({ asOf, generatedAt: isoNow, bills: reportBills }),
-    }, { onConflict: 'key' })
+    .upsert({ key: 'bills_pipeline_report', value: reportPayload }, { onConflict: 'key' })
   if (repErr) console.warn('[bills-pipeline] report persist failed:', repErr.message)
+  const { error: repDayErr } = await supabase
+    .from('app_settings')
+    .upsert({ key: `bills_pipeline_report_${istToday}`, value: reportPayload }, { onConflict: 'key' })
+  if (repDayErr) console.warn('[bills-pipeline] dated report persist failed:', repDayErr.message)
 
   // TODO: send PNG to WhatsApp via WABA API
   // TODO: email PNG via nodemailer
