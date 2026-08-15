@@ -114,7 +114,9 @@ export function GateInForm({
     if (!po) return options.items.map(i => ({ id: i.id, label: i.name, unit: i.unit, poLineId: null as string | null, pending: null as number | null, rate: i.lastRate, done: false }))
     return po.lines.map(l => ({
       id: l.itemId,
-      label: l.done ? `${l.itemName} · fully received ✓` : `${l.itemName} · ${formatQty(l.pending)} ${l.unit} pending`,
+      label: l.done
+        ? `${l.itemName} · all ${formatQty(l.ordered)} ${l.unit} already received`
+        : `${l.itemName} · ${formatQty(l.pending)} ${l.unit} pending`,
       unit: l.unit, poLineId: l.lineId, pending: l.pending, rate: l.rate, done: l.done,
     }))
   }, [po, options.items])
@@ -356,15 +358,46 @@ export function GateInForm({
               {/* With a PO the choice is short and specific, so a plain list is
                   right. Without one it is the whole 2,800-item master, which
                   needs searching. */}
-              {po ? (
-                <select className={inputCls} value={row.poLineId ? poItemOf(row) : row.itemId}
-                  onChange={e => pickItem(row.key, e.target.value)}>
-                  <option value="">Which ordered line came?</option>
-                  {selectableItems.map(s => (
-                    <option key={s.id} value={s.id} disabled={s.done}>{s.label}</option>
-                  ))}
-                </select>
-              ) : (
+              {po ? (() => {
+                // A line already sitting on another row of THIS entry is not on
+                // offer again — with every pending line laid out up front, an
+                // unfiltered list is just an invitation to record the same
+                // delivery twice.
+                const usedElsewhere = new Set(
+                  rows.filter(r => r.key !== row.key && r.poLineId).map(r => r.poLineId as string))
+                const free = selectableItems.filter(s => !s.poLineId || !usedElsewhere.has(s.poLineId))
+                const stillDue = free.filter(s => !s.done)
+                // Fully received lines stay SELECTABLE, in their own group. A
+                // truck is never turned away — if more arrives against a
+                // completed line that is an over-receipt to be recorded and
+                // settled, not something to be blocked at the barrier. (#21)
+                const complete = free.filter(s => s.done)
+                return (
+                  <>
+                    <select className={inputCls} value={row.poLineId ? poItemOf(row) : row.itemId}
+                      onChange={e => pickItem(row.key, e.target.value)}>
+                      <option value="">
+                        {stillDue.length > 0 ? 'Which ordered line came?' : 'Nothing left pending on this order'}
+                      </option>
+                      {stillDue.length > 0 && (
+                        <optgroup label="Still to come">
+                          {stillDue.map(s => <option key={s.id} value={s.id}>{s.label}</option>)}
+                        </optgroup>
+                      )}
+                      {complete.length > 0 && (
+                        <optgroup label="Already received in full — pick only if MORE has come">
+                          {complete.map(s => <option key={s.id} value={s.id}>{s.label}</option>)}
+                        </optgroup>
+                      )}
+                    </select>
+                    {stillDue.length === 0 && complete.length === 0 && (
+                      <p className="text-[11px] text-slate-500 mt-1">
+                        Every line on this order is already on this entry. Remove a row to put it back on the list.
+                      </p>
+                    )}
+                  </>
+                )
+              })() : (
                 <SearchableSelect
                   value={row.itemId}
                   onChange={id => pickItem(row.key, id)}
@@ -518,7 +551,8 @@ export function GateInForm({
 
         <div className="grid grid-cols-[1fr_auto] gap-2">
           <button type="button" onClick={() => setRows(rs => [...rs, blankRow()])}
-            className="rounded-lg border-2 border-dashed border-slate-300 py-2 min-h-[40px] text-[12.5px] font-bold text-slate-500 hover:border-emerald-300 hover:text-emerald-700 inline-flex items-center justify-center gap-1.5">
+            disabled={po ? po.lines.length <= rows.filter(r => r.poLineId).length : false}
+            className="rounded-lg border-2 border-dashed border-slate-300 py-2 min-h-[40px] text-[12.5px] font-bold text-slate-500 hover:border-emerald-300 hover:text-emerald-700 disabled:opacity-40 disabled:hover:border-slate-300 disabled:hover:text-slate-500 inline-flex items-center justify-center gap-1.5">
             <Plus className="h-3.5 w-3.5" /> Add another item {po ? 'from this PO' : ''}
           </button>
           {rows.length > 1 && (
@@ -530,6 +564,13 @@ export function GateInForm({
             </button>
           )}
         </div>
+        {/* Never a dead button with no explanation. */}
+        {po && po.lines.length <= rows.filter(r => r.poLineId).length && (
+          <p className="text-[11px] text-slate-500 -mt-1">
+            Every line on this order is already on this entry, so there is nothing more to add from it.
+            Remove a row to put that line back on the list.
+          </p>
+        )}
         {po && rows.length > 1 && rows.every(r => r.receivedQty === 0) && (
           <p className="text-[11px] text-slate-500 -mt-1">
             Every item still pending on this order is listed with its rate. Type what actually came off the
