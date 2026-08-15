@@ -6,6 +6,9 @@ import type {
 import { computeDiff } from '@/lib/procurement/storage'
 import { requirePermission } from '@/lib/auth'
 import { createClient } from '@/lib/supabase/server'
+import { getSettings } from '@/lib/warehouse/data'
+import { isOn } from '@/lib/warehouse/settings'
+import { runIn4Sync } from '@/lib/warehouse/in4-sync-apply'
 
 export const runtime = 'nodejs'
 // 60s ceiling — bigger Excels can take longer once the state JSONB
@@ -180,10 +183,45 @@ export async function POST(req: NextRequest) {
       console.warn('[procurement] known-projects upsert failed:', e)
     }
 
+    // Feed the warehouse from the same upload. Anything IN4 has named that the
+    // gate does not know about yet — new material, new units and trades, newly
+    // issued purchase orders with their rates — comes across here, so nobody has
+    // to remember a second step.
+    //
+    // Wrapped so it can never break an upload: the tracker's own job is already
+    // done and saved by this point, and a warehouse problem must not look like a
+    // failed upload. It is additive and re-runnable, so the next upload simply
+    // picks up whatever this one missed.
+    let warehouse: { added?: string; error?: string } | null = null
+    try {
+      const values = await getSettings()
+      if (isOn(values, 'wh_auto_sync_on_upload')) {
+        const res = await runIn4Sync(['items', 'units', 'disciplines', 'pos'], user?.id ?? null)
+        if (res.ok) {
+          const bits = [
+            res.itemsCreated ? `${res.itemsCreated} items` : '',
+            res.itemsAdopted ? `${res.itemsAdopted} items linked` : '',
+            res.unitsCreated ? `${res.unitsCreated} units` : '',
+            res.disciplinesCreated ? `${res.disciplinesCreated} trades` : '',
+            res.posCreated ? `${res.posCreated} POs (${res.poLinesCreated} lines)` : '',
+          ].filter(Boolean)
+          warehouse = { added: bits.length ? bits.join(', ') : 'nothing new' }
+          console.log('[procurement] warehouse sync:', warehouse.added)
+        } else {
+          warehouse = { error: res.error }
+          console.error('[procurement] warehouse sync failed:', res.error)
+        }
+      }
+    } catch (e) {
+      warehouse = { error: e instanceof Error ? e.message : 'Warehouse sync failed' }
+      console.error('[procurement] warehouse sync threw:', e)
+    }
+
     return NextResponse.json({
       success: true,
       fileName: file.name,
       format: result.format,
+      warehouse,
       projects: result.projects,
       diff: diff ? {
         prevSavedAt: diff.prevSavedAt,

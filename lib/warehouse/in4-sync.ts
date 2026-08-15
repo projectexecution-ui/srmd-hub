@@ -120,6 +120,21 @@ const UNIT_SYNONYMS: Array<{ label: string; members: string[] }> = [
   { label: 'tonne',  members: ['MT', 'Ton.'] },
 ]
 
+/** The trade for an item IN4 has filed under more than one.
+ *
+ *  Most lines wins; a tie goes to the alphabetically first. Deterministic on
+ *  purpose — the answer must not depend on which row the database handed back
+ *  first, or the same upload would produce a different trade list twice running. */
+export function pickDiscipline(votes: Map<string, number> | undefined): string | null {
+  if (!votes || votes.size === 0) return null
+  let best: string | null = null
+  let bestN = -1
+  for (const [d, n] of [...votes.entries()].sort((a, b) => a[0].localeCompare(b[0]))) {
+    if (n > bestN) { best = d; bestN = n }
+  }
+  return best
+}
+
 /** A PO number we can actually import: real, issued, and named by IN4. */
 export function isRealPo(p: SyncLine['pos'][number]): boolean {
   if (!p.poNo || !p.poNo.trim()) return false
@@ -138,20 +153,36 @@ export function entityFromIndent(indentNo: string | null | undefined): string | 
 export function plan(lines: SyncLine[], have: SyncExisting): SyncPlan {
   // ---------------------------------------------------------------- items
   const wanted = new Map<string, { name: string; uom: string | null; discipline: string | null }>()
+  // IN4 gives the SAME material different trades on different lines — "1 1/4
+  // Gland" is Electrical Works on one indent and Infra Works on another, which
+  // is not a mistake, it is one material used by two trades. Taking whichever
+  // line happened to be read first made the sync non-deterministic: run it twice
+  // and an item could change trade, and the trade list itself could differ.
+  // So the trade is decided by weight of evidence — most lines wins, ties broken
+  // alphabetically — which gives the same answer whatever order the rows arrive.
+  const disciplineVotes = new Map<string, Map<string, number>>()
   let unnamedLines = 0
   for (const l of lines) {
     const name = in4Name(l.material ?? '')
     const key = in4Key(name)
     if (!name || !key) { unnamedLines++; continue }
     const uom = cleanUom(l.uom)
+    const disc = l.discipline?.trim() || null
+    if (disc) {
+      if (!disciplineVotes.has(key)) disciplineVotes.set(key, new Map())
+      const v = disciplineVotes.get(key)!
+      v.set(disc, (v.get(disc) ?? 0) + 1)
+    }
     const cur = wanted.get(key)
     if (!cur) {
-      wanted.set(key, { name, uom, discipline: l.discipline?.trim() || null })
+      wanted.set(key, { name, uom, discipline: null })
       continue
     }
     // The PO slot carries no UOM at all, so a later line often supplies it.
     if (!cur.uom && uom) cur.uom = uom
-    if (!cur.discipline && l.discipline?.trim()) cur.discipline = l.discipline.trim()
+  }
+  for (const [key, spec] of wanted) {
+    spec.discipline = pickDiscipline(disciplineVotes.get(key))
   }
 
   // An item we already typed by hand under the same name should be LINKED, not
@@ -269,9 +300,8 @@ export function plan(lines: SyncLine[], have: SyncExisting): SyncPlan {
   skippedInferred = seenInferred.size
 
   const posCreate: PlannedPo[] = []
-  let skippedEmpty = 0
   for (const [poNo, acc] of byPo) {
-    if (acc.lines.size === 0) { skippedEmpty++; continue }
+    if (acc.lines.size === 0) continue
     // Matched on the NAME only, and only exactly.
     //
     // The indent number carries a project CODE (IND/SRASSK/NGH/…) and projects
@@ -303,11 +333,21 @@ export function plan(lines: SyncLine[], have: SyncExisting): SyncPlan {
   posCreate.sort((a, b) => (Date.parse(b.poDate ?? '') || 0) - (Date.parse(a.poDate ?? '') || 0)
     || a.poNo.localeCompare(b.poNo))
 
-  // Every PO number the tracker holds that we already have.
+  // Every real PO number the tracker holds, so nothing can fall between the
+  // counters. A PO that is neither imported already, nor draft, nor inferred,
+  // nor in the plan, had a number but nothing usable under it — every line
+  // carried a zero quantity. That used to vanish silently; on the live data it
+  // was 72 orders, which is exactly the kind of number that has to be on screen
+  // rather than discovered later.
   const allRealPoNos = new Set<string>()
   for (const l of lines) for (const p of l.pos ?? []) if (isRealPo(p)) allRealPoNos.add(p.poNo!.trim())
   let alreadyImported = 0
-  for (const no of allRealPoNos) if (have.poNos.has(no)) alreadyImported++
+  const planned = new Set(posCreate.map(x => x.poNo))
+  let skippedEmpty = 0
+  for (const no of allRealPoNos) {
+    if (have.poNos.has(no)) { alreadyImported++; continue }
+    if (!planned.has(no)) skippedEmpty++
+  }
 
   return {
     items: { create, adopt, alreadyThere, unitConflicts, noUom },

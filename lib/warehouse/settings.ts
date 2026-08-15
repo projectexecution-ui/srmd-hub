@@ -20,6 +20,7 @@ export type SettingKey =
   | 'wh_period_lock_date'
   | 'wh_values_hidden_roles'
   | 'wh_any_keeper_any_store'
+  | 'wh_auto_sync_on_upload'
 
 export type SectionKey =
   | 'arrives' | 'goes-out' | 'counting' | 'pos' | 'closing'
@@ -128,6 +129,20 @@ export const SETTINGS: SettingDef[] = [
     recommended: true,
     fallback: 'security,site_staff,contractor',
     enforcedAt: 'Every screen and every export in the module',
+  },
+  {
+    key: 'wh_auto_sync_on_upload',
+    section: 'sync',
+    kind: 'toggle',
+    label: 'Bring new items and purchase orders across automatically on every IN4 upload',
+    onEffect: 'The moment somebody uploads an IN4 report on the Indent → PO Tracker, any material and any '
+      + 'issued purchase order the warehouse does not already have is added — so the gate always knows what '
+      + 'is on order without anybody remembering to press a button.',
+    offEffect: 'Nothing comes across until an admin opens Bring across from IN4 and applies it by hand. '
+      + 'The screen still shows exactly what is waiting.',
+    recommended: true,
+    fallback: 'true',
+    enforcedAt: 'The IN4 upload on the Indent → PO Tracker',
   },
   {
     key: 'wh_any_keeper_any_store',

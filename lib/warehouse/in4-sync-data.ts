@@ -29,7 +29,11 @@ const num = (v: unknown): number | null => {
  *  and the PO slot is often the only one carrying a rate. */
 export async function readTrackerLines(): Promise<{ lines: SyncLine[]; slots: string[]; error?: string }> {
   const sb = await createClient()
-  const { data, error } = await sb.from('procurement_tracker_state').select('id, state')
+  // Ordered so the slots are always read in the same sequence. Without it the
+  // database may hand them back either way round, and anything that takes the
+  // FIRST value it sees for an item (its unit) could differ between two runs
+  // over identical data.
+  const { data, error } = await sb.from('procurement_tracker_state').select('id, state').order('id')
   if (error) return { lines: [], slots: [], error: error.message }
 
   const lines: SyncLine[] = []

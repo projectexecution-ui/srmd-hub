@@ -70,7 +70,6 @@ export function SyncClient({
         res.unitsCreated ? `${res.unitsCreated} units` : '',
         res.disciplinesCreated ? `${res.disciplinesCreated} trades` : '',
         res.posCreated ? `${res.posCreated} POs (${res.poLinesCreated} lines)` : '',
-        res.ratesSet ? `${res.ratesSet} rates` : '',
       ].filter(Boolean)
       toast.success(bits.length ? `Done — ${bits.join(', ')}.` : 'Nothing needed bringing across.')
       for (const s of res.skipped) toast.info(s)

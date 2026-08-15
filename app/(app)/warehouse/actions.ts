@@ -7,7 +7,7 @@ import { getLocationTree, getPostableSpots, getCount, getSettings, one } from '@
 import { settingDef, periodLockBlocker, isOn } from '@/lib/warehouse/settings'
 import { todayIST } from '@/lib/warehouse/ledger'
 import { in4Key, planIn4Items, FALLBACK_UOM } from '@/lib/warehouse/in4-items'
-import { getSyncPreview, readExisting } from '@/lib/warehouse/in4-sync-data'
+import { runIn4Sync } from '@/lib/warehouse/in4-sync-apply'
 import type { SyncGroup } from '@/lib/warehouse/in4-sync'
 import { buildSheet, submitBlocker, adjustments } from '@/lib/warehouse/count'
 import type { GateInInput } from '@/lib/warehouse/types'
@@ -1016,156 +1016,22 @@ export async function setStoreKeeper(
 // after seeing exactly what would come across.
 // ===========================================================================
 
-export type SyncResult =
-  | {
-      ok: true
-      itemsCreated: number; itemsAdopted: number
-      unitsCreated: number; disciplinesCreated: number
-      posCreated: number; poLinesCreated: number; ratesSet: number
-      skipped: string[]
-    }
-  | { ok: false; error: string }
+export type { SyncOutcome } from '@/lib/warehouse/in4-sync-apply'
 
-export async function applyIn4Sync(groups: SyncGroup[]): Promise<SyncResult> {
+/** Bring the chosen groups across from the IN4 uploads.
+ *
+ *  The preview screen is the safety: this only runs on what an admin ticked
+ *  after seeing exactly what would happen. The writing itself lives in
+ *  runIn4Sync so the automatic run on upload uses the identical code path. */
+export async function applyIn4Sync(groups: SyncGroup[]) {
   const denied = await gate('admin')
-  if (denied) return { ok: false, error: denied }
-  if (groups.length === 0) return { ok: false, error: 'Tick at least one thing to bring across.' }
+  if (denied) return { ok: false as const, error: denied }
+  if (groups.length === 0) return { ok: false as const, error: 'Tick at least one thing to bring across.' }
 
-  const sb = await createClient()
   const me = await getMyUser()
-  const preview = await getSyncPreview()
-  if (preview.error) return { ok: false, error: `Could not read the uploads: ${preview.error}` }
-
-  const p = preview.plan
-  const want = new Set(groups)
-  const skipped: string[] = []
-  let itemsCreated = 0, itemsAdopted = 0, unitsCreated = 0, disciplinesCreated = 0
-  let posCreated = 0, poLinesCreated = 0, ratesSet = 0
-
-  // Items must exist before any PO can reference them, so they run first even if
-  // only POs were ticked — otherwise a PO line would have nothing to point at.
-  const needItems = want.has('items') || want.has('pos')
-  if (want.has('pos') && !want.has('items') && (p.items.create.length > 0 || p.items.adopt.length > 0)) {
-    skipped.push(
-      `${p.items.create.length + p.items.adopt.length} items had to be added anyway — a PO line has to point at an item.`,
-    )
-  }
-
-  /** in4Key → item id, for the PO lines. */
-  const itemIdByKey = new Map<string, string>()
-  const { have } = await readExisting()
-  for (const [k, v] of have.byIn4Key) itemIdByKey.set(k, v.id)
-
-  if (needItems) {
-    // Adopt first: linking an item we already had is what stops a second copy
-    // of it existing and splitting its stock in two.
-    for (const a of p.items.adopt) {
-      const { data, error } = await sb
-        .from('wh_items')
-        .update({ in4_name: a.name, in4_uom: a.unit, source: 'in4', discipline: a.discipline })
-        .eq('id', a.adoptItemId!)
-        .is('in4_name', null)          // never overwrite a link that already exists
-        .select('id')
-      if (error) return { ok: false, error: `Could not link an existing item: ${error.message}` }
-      if (data && data.length > 0) { itemsAdopted++; itemIdByKey.set(a.key, a.adoptItemId!) }
-      else itemIdByKey.set(a.key, a.adoptItemId!)
-    }
-
-    // Created in batches: 2,300 single inserts would take minutes and a failure
-    // halfway would leave no way to tell what had landed.
-    const CHUNK = 200
-    for (let i = 0; i < p.items.create.length; i += CHUNK) {
-      const batch = p.items.create.slice(i, i + CHUNK)
-      const { data, error } = await sb
-        .from('wh_items')
-        .insert(batch.map(it => ({
-          name: it.name,
-          unit: it.unit,
-          discipline: it.discipline,
-          source: 'in4',
-          in4_name: it.name,
-          in4_uom: it.unitDefaulted ? null : it.unit,
-          created_by: me?.id ?? null,
-        })))
-        .select('id, in4_name')
-      if (error) return { ok: false, error: `Could not add the items: ${error.message}` }
-      for (const row of data ?? []) {
-        if (row.in4_name) itemIdByKey.set(in4Key(row.in4_name), row.id)
-      }
-      itemsCreated += data?.length ?? 0
-    }
-  }
-
-  if (want.has('units') && p.units.create.length > 0) {
-    const { data, error } = await sb
-      .from('wh_lists')
-      .upsert(p.units.create.map(v => ({ kind: 'unit', value: v })), { onConflict: 'kind,value', ignoreDuplicates: true })
-      .select('id')
-    if (error) return { ok: false, error: `Could not add the units: ${error.message}` }
-    unitsCreated = data?.length ?? 0
-  }
-
-  if (want.has('disciplines') && p.disciplines.create.length > 0) {
-    const { data, error } = await sb
-      .from('wh_lists')
-      .upsert(p.disciplines.create.map(v => ({ kind: 'discipline', value: v })), { onConflict: 'kind,value', ignoreDuplicates: true })
-      .select('id')
-    if (error) return { ok: false, error: `Could not add the trades: ${error.message}` }
-    disciplinesCreated = data?.length ?? 0
-  }
-
-  if (want.has('pos')) {
-    for (const po of p.pos.create) {
-      const lines = po.lines
-        .map(l => ({ itemId: itemIdByKey.get(l.itemKey), qty: l.qty, rate: l.rate }))
-        .filter((l): l is { itemId: string; qty: number; rate: number | null } => Boolean(l.itemId))
-      if (lines.length === 0) continue
-
-      const { data: header, error: hErr } = await sb
-        .from('wh_po')
-        .insert({
-          po_no: po.poNo,
-          po_date: isoOrNull(po.poDate),
-          vendor: po.vendor,
-          entity: po.entity,
-          project_id: po.projectId,
-          indent_no: po.indentNo,
-          source: 'tracker',
-          created_by: me?.id ?? null,
-        })
-        .select('id')
-        .single()
-      // A PO number that appeared between the preview and now is not an error.
-      if (hErr) {
-        if (/duplicate|unique/i.test(hErr.message)) continue
-        return { ok: false, error: `Could not add ${po.poNo}: ${hErr.message}` }
-      }
-
-      const { error: lErr } = await sb.from('wh_po_lines').insert(
-        lines.map(l => ({ po_id: header.id, item_id: l.itemId, ordered_qty: l.qty, rate: l.rate })),
-      )
-      if (lErr) {
-        await sb.from('wh_po').delete().eq('id', header.id)   // never a PO with no lines
-        return { ok: false, error: `Could not add the lines of ${po.poNo}: ${lErr.message}` }
-      }
-      posCreated++
-      poLinesCreated += lines.length
-
-      // The rate the gate will offer next time this material arrives.
-      for (const l of lines) {
-        if (l.rate && l.rate > 0) {
-          await sb.from('wh_items').update({ last_rate: l.rate }).eq('id', l.itemId)
-          ratesSet++
-        }
-      }
-    }
-  }
-
-  revalidatePath('/warehouse', 'layout')
-  return {
-    ok: true, itemsCreated, itemsAdopted, unitsCreated, disciplinesCreated,
-    posCreated, poLinesCreated, ratesSet, skipped,
-  }
+  const res = await runIn4Sync(groups, me?.id ?? null)
+  if (res.ok) revalidatePath('/warehouse', 'layout')
+  return res
 }
 
 /** IN4 writes dates like "Apr 22, 2023". */

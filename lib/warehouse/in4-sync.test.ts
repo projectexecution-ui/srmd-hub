@@ -123,6 +123,30 @@ describe('items', () => {
 })
 
 describe('units and trades', () => {
+  it('settles a material IN4 files under TWO trades by weight of evidence', () => {
+    // Real data: "1 1/4 Gland" is Electrical Works on most indents and Infra
+    // Works on others. Taking whichever line was read first made the whole sync
+    // non-deterministic.
+    const p = plan([
+      line({ material: 'Gland', discipline: '16 Infra Works' }),
+      line({ material: 'Gland', discipline: '07 Electrical Works' }),
+      line({ material: 'Gland', discipline: '07 Electrical Works' }),
+    ], empty())
+    expect(p.items.create[0].discipline).toBe('07 Electrical Works')
+    expect(p.disciplines.create).toEqual(['07 Electrical Works'])
+  })
+
+  it('gives the same trade whatever order the rows arrive in', () => {
+    const rows = [
+      line({ material: 'Gland', discipline: '16 Infra Works' }),
+      line({ material: 'Gland', discipline: '07 Electrical Works' }),
+    ]
+    const forward = plan(rows, empty()).items.create[0].discipline
+    const backward = plan([...rows].reverse(), empty()).items.create[0].discipline
+    expect(forward).toBe(backward)          // a dead tie breaks alphabetically
+    expect(forward).toBe('07 Electrical Works')
+  })
+
   it('adds only the units IN4 actually uses, and only the missing ones', () => {
     const have = empty()
     have.units.add('Nos')
@@ -210,6 +234,29 @@ describe('purchase orders', () => {
     expect(p.pos.create.map(x => x.poNo)).toEqual(['PO/OK/4'])
     expect(p.pos.skippedDraft).toBe(2)
     expect(p.pos.skippedInferred).toBe(1)
+  })
+
+  it('counts a PO whose every line has no quantity, instead of dropping it silently', () => {
+    // On the live data this was 72 real orders that appeared in none of the
+    // counters — neither imported, nor draft, nor inferred, just gone.
+    const p = plan([
+      line({ material: 'A', pos: [po({ poNo: 'PO-EMPTY', qty: 0 })] }),
+      line({ material: 'B', pos: [po({ poNo: 'PO-GOOD', qty: 10 })] }),
+    ], empty())
+    expect(p.pos.create.map(x => x.poNo)).toEqual(['PO-GOOD'])
+    expect(p.pos.skippedEmpty).toBe(1)
+    expect(p.pos.skippedDraft).toBe(0)
+    expect(p.pos.skippedInferred).toBe(0)
+  })
+
+  it('every real PO number is accounted for in exactly one bucket', () => {
+    const p = plan([
+      line({ material: 'A', pos: [po({ poNo: 'PO-IN' })] }),
+      line({ material: 'B', pos: [po({ poNo: 'PO-NEW', qty: 5 })] }),
+      line({ material: 'C', pos: [po({ poNo: 'PO-ZERO', qty: 0 })] }),
+    ], (() => { const h = empty(); h.poNos.add('PO-IN'); return h })())
+    const total = p.pos.create.length + p.pos.alreadyImported + p.pos.skippedEmpty
+    expect(total).toBe(3)
   })
 
   it('drops a line with no quantity rather than importing a zero', () => {
