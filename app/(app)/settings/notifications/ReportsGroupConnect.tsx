@@ -21,7 +21,7 @@ export function ReportsGroupConnect({
 }) {
   const router = useRouter()
   const [busy, setBusy] = useState(false)
-  const [testBusy, setTestBusy] = useState(false)
+  const [testBusy, setTestBusy] = useState<'budget' | 'procurement' | null>(null)
   const [msg, setMsg] = useState<string | null>(null)
   const [err, setErr] = useState<string | null>(null)
 
@@ -33,17 +33,21 @@ export function ReportsGroupConnect({
     router.refresh()
   }
 
-  async function sendTest() {
-    setTestBusy(true); setErr(null); setMsg(null)
+  async function sendTest(kind: 'budget' | 'procurement') {
+    setTestBusy(kind); setErr(null); setMsg(null)
     try {
-      const res = await fetch('/api/cron/cc-budget-vs-actual', {
+      const endpoint = kind === 'budget' ? '/api/cron/cc-budget-vs-actual' : '/api/cron/procurement-digest'
+      const res = await fetch(endpoint, {
         method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ group: true }),
       })
       const j = await res.json()
-      if (res.ok && j.ok) setMsg('Sent — check the group in Telegram.')
-      else setErr(j.reason ?? 'Could not send the test card.')
+      if (res.ok && j.ok) {
+        setMsg(kind === 'budget'
+          ? 'Sent the Budget vs Actual card — check the group in Telegram.'
+          : `Sent ${j.sent ?? ''} Indent → PO card${j.sent === 1 ? '' : 's'} to the group — check Telegram.`)
+      } else setErr(j.reason ?? 'Could not send the test card.')
     } catch { setErr('Could not send the test card.') }
-    setTestBusy(false)
+    setTestBusy(null)
   }
 
   const botTag = botUsername ? `@${botUsername}` : 'the CT Hub bot'
@@ -64,9 +68,9 @@ export function ReportsGroupConnect({
             )}
           </div>
           <p className="text-xs text-gray-500 mt-0.5">
-            Send the curated broadcast cards (like the <b>weekly Budget vs Actual</b>) to a shared
-            management group — a notice board everyone can see. Approvals and @mentions still go only
-            to each person&apos;s own DM.
+            Send the curated broadcast cards — the <b>weekly Budget vs Actual</b> and each Atm Head&apos;s
+            daily <b>Indent → PO</b> card (named) — to a shared management group everyone can see. Approvals
+            and @mentions still go only to each person&apos;s own DM.
           </p>
 
           {group ? (
@@ -74,11 +78,15 @@ export function ReportsGroupConnect({
               <span className="text-xs text-gray-600">
                 Connected to <b>{group.title}</b>{group.at ? ` on ${formatDateTime(group.at)}` : ''}. Everyone in that group sees these reports — keep it management-only.
               </span>
-              <Button variant="outline" size="sm" onClick={sendTest} disabled={testBusy || busy}>
-                {testBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-                Send a test card
+              <Button variant="outline" size="sm" onClick={() => sendTest('budget')} disabled={!!testBusy || busy}>
+                {testBusy === 'budget' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+                Test: Budget vs Actual
               </Button>
-              <Button variant="outline" size="sm" onClick={disconnect} disabled={busy || testBusy}
+              <Button variant="outline" size="sm" onClick={() => sendTest('procurement')} disabled={!!testBusy || busy}>
+                {testBusy === 'procurement' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+                Test: Indent → PO
+              </Button>
+              <Button variant="outline" size="sm" onClick={disconnect} disabled={busy || !!testBusy}
                 className="text-rose-700 border-rose-300 hover:bg-rose-50">
                 {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Unplug className="h-4 w-4" />}
                 Disconnect

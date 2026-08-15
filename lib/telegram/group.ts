@@ -11,6 +11,9 @@ import type { CardSpec } from '@/lib/telegram/card-spec'
 // is a notice board, not an inbox. Add a type here to send it to the group too.
 export const TELEGRAM_GROUP_BROADCAST_TYPES = new Set<string>([
   'cc_budget_vs_actual_report',
+  // Each Atm Head's daily Indent -> PO follow-up card, posted named so the group
+  // can tell them apart (few heads, so it stays readable).
+  'procurement_digest',
 ])
 
 /* eslint-disable @typescript-eslint/no-explicit-any */

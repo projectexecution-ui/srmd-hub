@@ -16,6 +16,7 @@ import { parseProcurementNotifyConfig, type ProcurementNotifyConfig } from '@/li
 import { buildHeadDigest, digestSubject, digestText, digestFullText, digestCardSpec } from '@/lib/procurement/digest'
 import type { StoredSnapshot } from '@/lib/procurement/types'
 import { personName } from '@/lib/utils'
+import { broadcastReportToGroup } from '@/lib/telegram/group'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -62,6 +63,19 @@ async function notify(supabase: Client, userId: string, digest: ReturnType<typeo
     p_data: { ...digest, report_text: digestFullText(digest), card_spec: digestCardSpec(digest, recipientName) },
   })
   return error ? error.message : null
+}
+
+/** Post one Atm Head's card to the shared management group, NAMED so the few
+ *  heads' cards are distinguishable at a glance. No-ops if no group is set. */
+async function toGroup(supabase: Client, digest: NonNullable<ReturnType<typeof buildHeadDigest>>, name: string | null) {
+  return broadcastReportToGroup(supabase, {
+    type: 'procurement_digest',
+    title: `Indent → PO reminders${name ? ` (${name})` : ''}`,
+    body: digestText(digest),
+    cardSpec: digestCardSpec(digest, name),
+    cardText: digestFullText(digest),
+    url: '/procurement-tracker',
+  })
 }
 
 /** Display name per user id (personName precedence: editable name → full_name). */
@@ -116,6 +130,8 @@ export async function GET(req: Request) {
     const err = await notify(supabase, uid, digest, nameById.get(uid) ?? null)
     if (err) detail.push({ uid, error: err })
     else { sent++; detail.push({ uid, sent: true }) }
+    // Also post this head's card to the shared management group (named), if set.
+    await toGroup(supabase, digest, nameById.get(uid) ?? null)
   }
   await supabase.from('app_settings').upsert(
     { key: 'procurement_notify_last_sent_at', value: new Date().toISOString() }, { onConflict: 'key' })
@@ -134,9 +150,38 @@ export async function POST(req: Request) {
   const uid = userData?.user?.id
   if (!uid) return NextResponse.json({ ok: false, reason: 'No session' }, { status: 401 })
 
-  const body = await req.json().catch(() => ({} as { headId?: string; toHeads?: boolean }))
+  const body = await req.json().catch(() => ({} as { headId?: string; toHeads?: boolean; group?: boolean }))
   const supabase = session as unknown as Client
   const cfg = await readConfig(supabase)
+
+  // ── "Send a test to the group": post each head's real card to the shared
+  //     management group only (no DMs). Uses a service client so the group id +
+  //     tracker state read reliably regardless of the caller's RLS. ──
+  if (body.group) {
+    const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+    if (!serviceKey) return NextResponse.json({ ok: false, reason: 'No service key' }, { status: 503 })
+    const svc = createServiceClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, serviceKey, { auth: { persistSession: false } }) as unknown as Client
+    const { current, baseline } = await loadState(svc)
+    if (!current) return NextResponse.json({ ok: false, reason: 'No tracker data uploaded yet.' })
+    const heads = Object.entries(cfg.assignments).filter(([, projs]) => projs.length > 0)
+    if (heads.length === 0) return NextResponse.json({ ok: false, reason: 'No head → projects mapping set yet — assign a head to a project first.' })
+    const nameById = await namesFor(svc, heads.map(([uid]) => uid))
+    const nowMs = Date.now()
+    const sentTo: string[] = []; const skipped: string[] = []
+    for (const [uid, projects] of heads) {
+      const digest = buildHeadDigest(current, baseline, cfg, nowMs, projects)
+      const who = nameById.get(uid) ?? uid
+      if (!digest) { skipped.push(`${who} (nothing to report)`); continue }
+      const g = await toGroup(svc, digest, nameById.get(uid) ?? null)
+      if ('skipped' in g) skipped.push(`${who} (${g.skipped})`)
+      else if (g.ok) sentTo.push(who)
+      else skipped.push(`${who} (${g.error})`)
+    }
+    const reason = sentTo.length === 0
+      ? (skipped.some(s => s.includes('no-group')) ? 'No reports group is connected yet.' : 'No head has anything to report right now.')
+      : undefined
+    return NextResponse.json({ ok: sentTo.length > 0, mode: 'group', sent: sentTo.length, sentTo, skipped, reason })
+  }
 
   // ── "Send to the heads now": push each assigned head their real scoped
   //     digest on demand (same as the daily cron, minus the day/dedup gates).
