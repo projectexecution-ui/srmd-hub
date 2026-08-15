@@ -76,6 +76,34 @@ export function GateInForm({
       setPoLoading(false)
       if (!res.ok) { toast.error(res.error); return }
       setPo(res.po)
+
+      // Lay the order out ready to fill in. Everything the PO already knows —
+      // which materials, and what each costs — is put on screen, because making
+      // him pick seven items out of a list the order has already named is work
+      // the computer should have done.
+      //
+      // The QUANTITIES stay blank on purpose. What was ordered is not what
+      // arrived; typing what came off the truck IS the job, and a pre-filled
+      // quantity is one careless tap away from recording a delivery that never
+      // happened.
+      const pending = (res.po?.lines ?? []).filter(l => !l.done)
+      setRows(pending.length === 0 ? [blankRow()] : pending.map(l => {
+        const fallback = itemById.get(l.itemId)?.lastRate ?? null
+        const rate = l.rate ?? fallback
+        return {
+          key: ++seq,
+          itemId: l.itemId,
+          poLineId: l.lineId,
+          challanQty: 0,
+          receivedQty: 0,
+          damagedQty: 0,
+          rate,
+          // A rate off the PO is trustworthy and locked. The 1.7% of lines IN4
+          // priced at nothing fall back to the last rate we paid, which is
+          // editable and flagged so it gets a second look. (#4)
+          rateSource: l.rate ? 'po' : rate ? 'last' : null,
+        }
+      }))
     })
   }
 
@@ -488,10 +516,27 @@ export function GateInForm({
           )
         })}
 
-        <button type="button" onClick={() => setRows(rs => [...rs, blankRow()])}
-          className="w-full rounded-lg border-2 border-dashed border-slate-300 py-2 text-[12.5px] font-bold text-slate-500 hover:border-emerald-300 hover:text-emerald-700 inline-flex items-center justify-center gap-1.5">
-          <Plus className="h-3.5 w-3.5" /> Add another item {po ? 'from this PO' : ''}
-        </button>
+        <div className="grid grid-cols-[1fr_auto] gap-2">
+          <button type="button" onClick={() => setRows(rs => [...rs, blankRow()])}
+            className="rounded-lg border-2 border-dashed border-slate-300 py-2 min-h-[40px] text-[12.5px] font-bold text-slate-500 hover:border-emerald-300 hover:text-emerald-700 inline-flex items-center justify-center gap-1.5">
+            <Plus className="h-3.5 w-3.5" /> Add another item {po ? 'from this PO' : ''}
+          </button>
+          {rows.length > 1 && (
+            // A truck often brings two of the seven things ordered. Clearing the
+            // list is quicker than deleting five rows one at a time.
+            <button type="button" onClick={() => setRows([blankRow()])}
+              className="rounded-lg border-2 border-slate-200 px-3 py-2 min-h-[40px] text-[12.5px] font-bold text-slate-500 hover:border-rose-300 hover:text-rose-700">
+              Clear the list
+            </button>
+          )}
+        </div>
+        {po && rows.length > 1 && rows.every(r => r.receivedQty === 0) && (
+          <p className="text-[11px] text-slate-500 -mt-1">
+            Every item still pending on this order is listed with its rate. Type what actually came off the
+            truck and remove the rest — quantities are left blank on purpose, because what was ordered is not
+            what arrived.
+          </p>
+        )}
 
         <div>
           <label className={labelCls}>Into which store</label>
