@@ -272,7 +272,15 @@ export async function POST(req: Request) {
     if (Object.keys(cfg.assignments).length === 0) {
       return NextResponse.json({ ok: false, reason: 'No head → projects assigned yet.' })
     }
-    const r = await runAll(supabase, cfg)
+    // Fan out with a SERVICE client, not the caller's session: notification_preferences
+    // is RLS'd to `user_id = auth.uid()`, so a session client can't read OTHER heads'
+    // telegram_chat_id → their Telegram would be silently skipped (email still sent).
+    // The caller is already gated by the can-edit check above. Matches the GET cron.
+    const svcKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+    const runner: Client = svcKey
+      ? (createServiceClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, svcKey, { auth: { persistSession: false } }) as unknown as Client)
+      : supabase
+    const r = await runAll(runner, cfg)
     return NextResponse.json({ ok: true, mode: 'heads', ...r })
   }
 
