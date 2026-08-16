@@ -13,7 +13,18 @@ describe('the setting catalogue', () => {
   it('puts every setting in a section that exists', () => {
     const sections = new Set(SECTIONS.map(s => s.key))
     for (const s of SETTINGS) expect(sections.has(s.section)).toBe(true)
-    for (const n of NOT_BUILT) expect(sections.has(n.section)).toBe(true)
+  })
+
+  it('keeps the page short — four sections, and every rule in one of them', () => {
+    // It was ten sections for nine settings, three of which existed only to
+    // hold "not built" notes. Aksha: "too much of Brain to be used."
+    expect(SECTIONS).toHaveLength(4)
+    expect(SETTINGS.every(s => s.section === 'rules')).toBe(true)
+  })
+
+  it('still lists what is NOT built, so a reader can tell the real switches apart', () => {
+    expect(NOT_BUILT.length).toBeGreaterThan(0)
+    for (const n of NOT_BUILT) expect(n.why.length).toBeGreaterThan(40)
   })
 
   it('says what happens when a switch is OFF, not just on', () => {
@@ -34,7 +45,7 @@ describe('the setting catalogue', () => {
   })
 
   it('finds a setting by key and refuses one that does not exist', () => {
-    expect(settingDef('wh_freeze_during_count')?.section).toBe('counting')
+    expect(settingDef('wh_freeze_during_count')?.section).toBe('rules')
     expect(settingDef('wh_make_tea')).toBeNull()
   })
 })

@@ -22,9 +22,14 @@ export type SettingKey =
   | 'wh_any_keeper_any_store'
   | 'wh_auto_sync_on_upload'
 
-export type SectionKey =
-  | 'arrives' | 'goes-out' | 'counting' | 'pos' | 'closing'
-  | 'who-can' | 'who-where' | 'lists' | 'sync' | 'from-hub'
+/** Four sections, not ten.
+ *
+ *  There were ten, and only nine real settings between them — three sections
+ *  existed almost entirely to hold "not built yet" notes, which is a lot of
+ *  screen for things that do nothing. Aksha: "there is lot of Settings which is
+ *  too much of Brain to be used." So: every rule in ONE list, the two things
+ *  you maintain, and one place for everything owned elsewhere. */
+export type SectionKey = 'rules' | 'who-where' | 'lists' | 'elsewhere'
 
 export type SettingDef = {
   key: SettingKey
@@ -45,7 +50,7 @@ export type SettingDef = {
 export const SETTINGS: SettingDef[] = [
   {
     key: 'wh_warn_over_receipt',
-    section: 'arrives',
+    section: 'rules',
     kind: 'toggle',
     label: 'Warn at the gate if more arrives than was ordered',
     onEffect: '5,100 bags against a 5,000 order shows a warning while the entry is being typed. '
@@ -58,7 +63,7 @@ export const SETTINGS: SettingDef[] = [
   },
   {
     key: 'wh_blind_count_default',
-    section: 'counting',
+    section: 'rules',
     kind: 'toggle',
     label: 'Hide the book quantity while he counts',
     onEffect: 'A new count starts with the book figure hidden, so the counter cannot see "320" until he has '
@@ -71,7 +76,7 @@ export const SETTINGS: SettingDef[] = [
   },
   {
     key: 'wh_count_requires_witness',
-    section: 'counting',
+    section: 'rules',
     kind: 'toggle',
     label: 'Two people must sign every count',
     onEffect: 'A count cannot be submitted or approved without a witness named besides the counter. '
@@ -84,7 +89,7 @@ export const SETTINGS: SettingDef[] = [
   },
   {
     key: 'wh_freeze_during_count',
-    section: 'counting',
+    section: 'rules',
     kind: 'toggle',
     label: 'Stop material moving while a count is on',
     onEffect: 'No IN or OUT entry can be posted in a store that has a count open. Otherwise the number keeps '
@@ -97,7 +102,7 @@ export const SETTINGS: SettingDef[] = [
   },
   {
     key: 'wh_period_lock_on',
-    section: 'closing',
+    section: 'rules',
     kind: 'toggle',
     label: 'Lock old months once the accounts are closed',
     onEffect: 'Nobody can add or change an entry dated on or before the locked date, so "stock as on 31 March" '
@@ -109,7 +114,7 @@ export const SETTINGS: SettingDef[] = [
   },
   {
     key: 'wh_period_lock_date',
-    section: 'closing',
+    section: 'rules',
     kind: 'date',
     label: 'Locked up to and including',
     onEffect: 'Entries dated on or before this date are refused while the lock is on.',
@@ -119,7 +124,7 @@ export const SETTINGS: SettingDef[] = [
   },
   {
     key: 'wh_values_hidden_roles',
-    section: 'who-can',
+    section: 'rules',
     kind: 'roles',
     label: 'Hide rates and values from these roles',
     onEffect: 'The permissions matrix decides which SCREENS a role opens; it cannot do columns. This does the '
@@ -132,7 +137,7 @@ export const SETTINGS: SettingDef[] = [
   },
   {
     key: 'wh_auto_sync_on_upload',
-    section: 'sync',
+    section: 'rules',
     kind: 'toggle',
     label: 'Bring new items and purchase orders across automatically on every IN4 upload',
     onEffect: 'The moment somebody uploads an IN4 report on the Indent → PO Tracker, any material and any '
@@ -146,7 +151,7 @@ export const SETTINGS: SettingDef[] = [
   },
   {
     key: 'wh_any_keeper_any_store',
-    section: 'who-where',
+    section: 'rules',
     kind: 'toggle',
     label: 'Let any keeper post in any store',
     onEffect: 'Anyone with the Storekeeper role can post entries anywhere. Convenient when someone is on leave, '
@@ -164,59 +169,50 @@ export const SECTIONS: Array<{
   title: string
   subtitle: string
 }> = [
-  { key: 'arrives',   icon: '🚚', title: 'When material arrives',            subtitle: 'What the guard is warned about at the gate' },
-  { key: 'goes-out',  icon: '🏗️', title: 'When material goes out to a site', subtitle: 'What the store checks before handing over' },
-  { key: 'counting',  icon: '📋', title: 'Counting the stock',               subtitle: 'The rules that decide whether a count means anything' },
-  { key: 'pos',       icon: '📄', title: 'Purchase orders',                  subtitle: 'Part deliveries and abandoned orders' },
-  { key: 'closing',   icon: '🔒', title: 'Closing the accounts',             subtitle: 'Keeping a closed month closed' },
-  { key: 'who-can',   icon: '👥', title: 'Who can do what',                  subtitle: 'Shown here · actually set in Admin ▸ Permissions' },
-  { key: 'who-where', icon: '🔐', title: 'Stores and who keeps them',        subtitle: 'Add a store, rename one, retire one — and say who may post in it' },
-  { key: 'lists',     icon: '📝', title: 'Your lists',                       subtitle: 'The words the system uses — you maintain these, never a developer' },
-  { key: 'sync',      icon: '🔄', title: 'Bring across from IN4',            subtitle: 'Items, units, trades and purchase orders out of the weekly upload' },
-  { key: 'from-hub',  icon: '🏛️', title: 'Comes from the hub',               subtitle: 'Already built and shared — nothing to set up here' },
+  { key: 'rules',     icon: '📏', title: 'The rules',            subtitle: 'What the system warns about, refuses, or hides — nine switches' },
+  { key: 'who-where', icon: '🏬', title: 'Stores and keepers',    subtitle: 'Add a store, rename one, retire one, and say who may post in it' },
+  { key: 'lists',     icon: '📝', title: 'Your lists',            subtitle: 'The words the system uses — you maintain these, never a developer' },
+  { key: 'elsewhere', icon: '🏛️', title: 'Set up elsewhere',      subtitle: 'Roles, people, notifications and the IN4 sync — owned by the hub, linked from here' },
 ]
 
-/** Rules from the design review that are NOT built, and why — shown in their own
- *  section rather than as switches that store a value and change nothing. */
-export const NOT_BUILT: Array<{ section: SectionKey; label: string; why: string }> = [
+/** Rules from the design review that are NOT built, and why.
+ *
+ *  One block at the very bottom, not a footnote inside four different sections.
+ *  They are still listed — a switch that stores a value and changes nothing is
+ *  worse than no switch, and silently dropping the list would leave no way to
+ *  tell which rules are real — but they are not the first thing anybody reads. */
+export const NOT_BUILT: Array<{ label: string; why: string }> = [
   {
-    section: 'goes-out',
     label: 'Make the store wait for approval before giving material',
     why: 'There is no approval step on an OUT entry to switch on — the engineer signs and takes it. '
       + 'Adding one is a change to the OUT flow, not a setting.',
   },
   {
-    section: 'goes-out',
     label: 'Warn if a site draws more than it estimated',
     why: 'Needs each warehouse item tied to a Cost Control estimate line. Nothing links them yet — the same '
       + 'gap that keeps the "Issued vs estimate" report unbuilt.',
   },
   {
-    section: 'goes-out',
     label: 'Warn at the gate if one trust’s material goes to another trust’s project',
     why: 'The report exists — Entity vs project, under Control reports. Warning at the moment of issue needs '
       + 'each project to carry its own entity, and the projects list does not have one.',
   },
   {
-    section: 'goes-out',
     label: 'Chase material that is supposed to come back',
     why: 'The Returnables outstanding report is live and shows exactly this. Sending it out on a schedule is a '
       + 'new job on the cron dispatcher, which is its own build rather than a switch.',
   },
   {
-    section: 'counting',
     label: 'Remind us to count',
     why: 'Same reason: a monthly spot-check and quarterly full-count reminder is a scheduled job, not a rule '
       + 'this module applies while somebody is using it.',
   },
   {
-    section: 'pos',
     label: 'Only the Atm Head can close a part-delivered order',
     why: 'Nothing can short-close a PO yet — the status exists in the database but no screen sets it. '
       + 'The authority question only arises once the action does.',
   },
   {
-    section: 'pos',
     label: 'Send a weekly list of orders with nothing delivered',
     why: 'The PO-wise pending report already flags everything with nothing arriving for 7+ days. '
       + 'Mailing it every Monday is a scheduled job.',

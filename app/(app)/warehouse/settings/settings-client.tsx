@@ -58,28 +58,27 @@ export function SettingsClient({
   const [open, setOpen] = useState<string | null>(null)
 
   const bySection = (key: string) => SETTINGS.filter(s => s.section === key)
-  const notBuilt = (key: string) => NOT_BUILT.filter(n => n.section === key)
 
   return (
     <div className="space-y-3">
       <p className="text-[11.5px] text-slate-500 px-0.5">
-        Sections stay closed so this is not a wall of switches — open only the one you came for.
+        Four sections, closed until you need them. Each switch shows what is happening
+        <b> right now</b> — press “What if I change it?” for the other side.
         <span className="ml-1.5 inline-flex items-center gap-1 text-emerald-700 font-semibold">
           <ShieldCheck className="h-3 w-3" /> Recommended
         </span>{' '}
-        marks the settings that protect you; leave those alone unless you have a reason.
+        means leave it alone unless you have a reason.
       </p>
 
       {SECTIONS.map(sec => {
         const live = bySection(sec.key)
-        const pending = notBuilt(sec.key)
         const isOpenNow = open === sec.key
+        // The header says the STATE, not the size: "6 of 9 on" answers the
+        // question you opened the section to ask.
         const count = sec.key === 'lists' ? `${Object.keys(LIST_META).length} lists`
-          : sec.key === 'who-can' ? '6 roles · 1 setting'
           : sec.key === 'who-where' ? `${sites.filter(s => s.active).length} sites · ${sites.flatMap(s => s.children).filter(c => c.active).length} stores`
-          : sec.key === 'from-hub' ? `${HUB_SCREENS.length} screens`
-          : live.length === 0 ? `${pending.length} not built`
-          : `${live.length} ${live.length === 1 ? 'setting' : 'settings'}${pending.length ? ` · ${pending.length} not built` : ''}`
+          : sec.key === 'elsewhere' ? `${HUB_SCREENS.length} screens`
+          : `${live.filter(d => d.kind === 'toggle' && isOn(values, d.key)).length} of ${live.filter(d => d.kind === 'toggle').length} on`
 
         return (
           <Card key={sec.key} className="p-0 shadow-sm overflow-hidden">
@@ -101,37 +100,18 @@ export function SettingsClient({
                   <SettingRow key={def.key} def={def} values={values} canAdmin={canAdmin} />
                 ))}
 
-                {sec.key === 'who-can' && <RolesTable />}
                 {sec.key === 'who-where' && (
                   <StoreMap sites={sites} people={people} itemsPerStore={itemsPerStore} canAdmin={canAdmin} />
                 )}
                 {sec.key === 'lists' && <Lists lists={lists} itemCount={itemCount} canAdmin={canAdmin} />}
-                {sec.key === 'sync' && <SyncLink />}
-                {sec.key === 'from-hub' && <FromHub />}
-
-                {pending.length > 0 && (
-                  <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-3 space-y-2">
-                    <p className="text-[11px] font-extrabold uppercase tracking-wider text-slate-400">
-                      Asked for in the review, not built yet
-                    </p>
-                    {pending.map(n => (
-                      <div key={n.label}>
-                        <p className="text-[12.5px] font-semibold text-slate-600">{n.label}</p>
-                        <p className="text-[11.5px] text-slate-500 leading-snug">{n.why}</p>
-                      </div>
-                    ))}
-                    <p className="text-[11px] text-slate-400 leading-snug pt-1 border-t border-slate-200">
-                      These are listed rather than shown as switches: a toggle that stores a value and changes
-                      nothing is worse than no toggle, because there is no way to tell which ones are real.
-                    </p>
-                  </div>
-                )}
+                {sec.key === 'elsewhere' && <><SyncLink /><RolesTable /><FromHub /></>}
               </div>
             )}
           </Card>
         )
       })}
 
+      <NotBuilt />
       <History history={history} />
     </div>
   )
@@ -144,6 +124,7 @@ function SettingRow({ def, values, canAdmin }: { def: SettingDef; values: Settin
   const [busy, start] = useTransition()
   const on = isOn(values, def.key)
   const raw = rawValue(values, def.key)
+  const [why, setWhy] = useState(false)
 
   function save(value: string) {
     start(async () => {
@@ -155,7 +136,7 @@ function SettingRow({ def, values, canAdmin }: { def: SettingDef; values: Settin
   }
 
   return (
-    <div className="rounded-xl border border-slate-200 p-3">
+    <div className="rounded-xl border border-slate-200 p-2.5">
       <div className="flex items-start gap-3">
         <div className="min-w-0 flex-1">
           <p className="text-[13px] font-bold text-slate-800 flex items-center gap-1.5 flex-wrap">
@@ -166,13 +147,29 @@ function SettingRow({ def, values, canAdmin }: { def: SettingDef; values: Settin
               </span>
             )}
           </p>
-          <p className="text-[11.5px] text-slate-600 mt-1 leading-snug">
-            <b className="text-slate-800">{def.kind === 'toggle' ? 'On:' : 'Set:'}</b> {def.onEffect}
+          {/* One line, describing the state you are ACTUALLY in. Showing both
+              the on and the off paragraph for all nine settings was the wall of
+              reading Aksha objected to — and the off case is the hypothetical,
+              which is exactly the half you do not need while scanning. */}
+          <p className="text-[11.5px] text-slate-600 mt-0.5 leading-snug">
+            {def.kind === 'toggle'
+              ? (on ? def.onEffect : def.offEffect)
+              : raw ? def.onEffect : def.offEffect}
           </p>
-          <p className="text-[11.5px] text-slate-500 mt-1 leading-snug">
-            <b className="text-slate-700">{def.kind === 'toggle' ? 'Off:' : 'Not set:'}</b> {def.offEffect}
-          </p>
-          <p className="text-[10.5px] text-slate-400 mt-1.5">Applied: {def.enforcedAt}</p>
+
+          {why && (
+            <div className="mt-1.5 rounded-lg bg-slate-50 border border-slate-200 px-2.5 py-2 space-y-1">
+              <p className="text-[11.5px] text-slate-600 leading-snug">
+                <b className="text-slate-800">{def.kind === 'toggle' ? 'Turned off:' : 'Not set:'}</b>{' '}
+                {def.kind === 'toggle' ? (on ? def.offEffect : def.onEffect) : def.onEffect}
+              </p>
+              <p className="text-[10.5px] text-slate-400">Applied: {def.enforcedAt}</p>
+            </div>
+          )}
+          <button type="button" onClick={() => setWhy(v => !v)}
+            className="mt-1 text-[10.5px] font-bold uppercase tracking-wider text-slate-400 hover:text-slate-600">
+            {why ? 'Less' : 'What if I change it?'}
+          </button>
         </div>
 
         {def.kind === 'toggle' && (
@@ -367,7 +364,7 @@ function Lists({ lists, itemCount, canAdmin }: { lists: ListRow[]; itemCount: nu
         )
       })}
 
-      <div className="rounded-xl border border-slate-200 p-3">
+      <div className="rounded-xl border border-slate-200 p-2.5">
         <p className="text-[12.5px] font-bold text-slate-800">Shared with the rest of the hub</p>
         <p className="text-[11.5px] text-slate-500 mt-0.5">
           <b>Storage locations</b> are set up above, under Stores and who keeps them. <b>Projects</b> and{' '}
@@ -465,6 +462,42 @@ function History({ history }: { history: HistoryRow[] }) {
           <p className="text-[11px] text-slate-400 mt-2 pt-2 border-t border-slate-100">
             Recorded so a switch can never be quietly turned off.
           </p>
+        </div>
+      )}
+    </Card>
+  )
+}
+
+/** The rules that were asked for and are not built.
+ *
+ *  Still listed — a switch that stores a value and changes nothing is worse
+ *  than no switch, and dropping the list would leave no way to tell which
+ *  rules are real. But one collapsed block at the bottom, not a footnote
+ *  repeated inside four sections. */
+function NotBuilt() {
+  const [open, setOpen] = useState(false)
+  return (
+    <Card className="p-0 shadow-sm overflow-hidden">
+      <button type="button" onClick={() => setOpen(v => !v)} aria-expanded={open}
+        className="w-full px-4 py-3 min-h-[52px] flex items-center gap-3 text-left hover:bg-slate-50">
+        <span className="text-base leading-none">🚧</span>
+        <span className="min-w-0 flex-1">
+          <span className="block text-[13px] font-bold text-slate-700">Asked for, not built yet</span>
+          <span className="block text-[11.5px] text-slate-500 mt-0.5">
+            Listed rather than shown as switches that would do nothing
+          </span>
+        </span>
+        <span className="text-[10.5px] font-bold text-slate-400">{NOT_BUILT.length}</span>
+        <ChevronRight className={`h-4 w-4 text-slate-400 flex-shrink-0 transition ${open ? 'rotate-90' : ''}`} />
+      </button>
+      {open && (
+        <div className="border-t border-slate-100 p-4 space-y-2.5">
+          {NOT_BUILT.map(n => (
+            <div key={n.label}>
+              <p className="text-[12.5px] font-semibold text-slate-700">{n.label}</p>
+              <p className="text-[11.5px] text-slate-500 leading-snug">{n.why}</p>
+            </div>
+          ))}
         </div>
       )}
     </Card>
