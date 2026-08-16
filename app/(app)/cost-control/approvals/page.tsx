@@ -10,6 +10,8 @@ import { isWaitingOnMe, type MyApprovalContext } from '@/lib/cost-control/my-app
 import { getCcSettings } from '@/lib/cost-control/settings'
 import { computeMoneyRollup, type RollupWSRow, type RollupVersionRow } from '@/lib/cost-control/project-rollup'
 import { formatINR } from '@/lib/utils'
+import { getReturnedToEngineer } from '@/lib/cost-control/returned-to-engineer'
+import { ReturnedToEngineer } from '@/components/dashboard/ReturnedToEngineer'
 import { Inbox, ArrowRight, Ruler, ArrowUpRight, ArrowDownRight, Download } from 'lucide-react'
 
 // Whole days a sheet has been waiting since it was submitted.
@@ -37,6 +39,8 @@ interface WSRow {
   project_id: string
   chain_anchor_id: string | null
   version_no: number | null
+  entry_mode: string | null
+  summary_notes: string | null
   projects: PRow | PRow[] | null
   cc_disciplines: DRow | DRow[] | null
   cc_sub_skills: SRow | SRow[] | null
@@ -119,7 +123,7 @@ export default async function ApprovalsInboxPage({
   const { data: pendingWS, error: wsErr } = await supabase
     .from('cc_ws_with_versions')
     .select(
-      `id, ws_code, status, total_amount, approved_for_erp_amt, submitted_at, engineer_id, discipline_id, sub_skill_id, project_id, chain_anchor_id, version_no,
+      `id, ws_code, status, total_amount, approved_for_erp_amt, submitted_at, engineer_id, discipline_id, sub_skill_id, project_id, chain_anchor_id, version_no, entry_mode, summary_notes,
        projects(code, name, built_up_sft),
        cc_disciplines(code, name),
        cc_sub_skills(code, name)`,
@@ -282,7 +286,19 @@ export default async function ApprovalsInboxPage({
   }
   projOrder.sort((a, b) => pendingValue(byProject.get(b) ?? []) - pendingValue(byProject.get(a) ?? []))
 
-  const hasThumbruleMine = mine.length > 0
+  // Bulk-approve is a rate x area shortcut, and it belongs to ONE case: the
+  // Internal Estimate baseline the Atm Head uploads for internal figures. It was
+  // gated on `mine.length > 0` — i.e. on having anything at all pending — so it
+  // sat above ordinary line-item budgets offering to bulk-approve sheets that
+  // have line items to scrutinise.
+  const hasThumbruleMine = mine.some(
+    r => r.entry_mode === 'thumbrule' && (r.summary_notes ?? '').startsWith('[IB'),
+  )
+
+  // What this person sent back and is still waiting on. Not part of the queue
+  // above — it is nobody's to approve — but this is the page he opens to see
+  // where his budgets stand, so the chasing list belongs here too.
+  const returned = await getReturnedToEngineer()
 
   return (
     <div className="p-4 md:p-6 max-w-4xl mx-auto space-y-4">
@@ -327,6 +343,10 @@ export default async function ApprovalsInboxPage({
           </div>
         </Link>
       )}
+
+      {/* Sent back and still with the engineer — same lane as the dashboard, so
+          the two never tell a different story. Self-hides when empty. */}
+      <ReturnedToEngineer items={returned.items} />
 
       {projOrder.length === 0 ? (
         <Card className="p-10 text-center text-gray-500 text-sm">
