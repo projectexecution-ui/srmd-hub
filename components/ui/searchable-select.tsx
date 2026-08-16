@@ -101,7 +101,7 @@ export function SearchableSelect({
               className="h-9 w-full bg-transparent text-sm outline-none placeholder:text-gray-400"
             />
           </div>
-          <ul className="max-h-60 overflow-auto py-1">
+          <ul className="max-h-72 overflow-auto py-1">
             {filtered.length === 0 && (
               <li className="px-3 py-2 text-sm text-gray-400">{emptyText}</li>
             )}
@@ -115,7 +115,15 @@ export function SearchableSelect({
                     i === active ? 'bg-blue-50' : ''
                   } ${o.id === value ? 'font-semibold text-blue-800' : 'text-gray-700'}`}
                 >
-                  <span className="truncate">{o.label}</span>
+                  {/* The hint has always been searchable but was never shown, so
+                      a list of near-identical codes gave the reader nothing to
+                      tell them apart. It is the second line now. */}
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate">{o.label}</span>
+                    {o.hint && (
+                      <span className="block truncate text-xs font-normal text-gray-500">{o.hint}</span>
+                    )}
+                  </span>
                   {o.id === value && <Check className="h-3.5 w-3.5 flex-shrink-0 text-blue-600" />}
                 </button>
               </li>

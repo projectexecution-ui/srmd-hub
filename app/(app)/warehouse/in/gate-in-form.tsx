@@ -296,7 +296,8 @@ export function GateInForm({
               ...options.poHeads.map(p => ({
                 id: p.id,
                 label: p.poNo,
-                hint: [p.vendor, p.entity, p.projectName].filter(Boolean).join(' · '),
+                hint: [p.vendor || '— supplier not named —', p.entity, p.projectName]
+                  .filter(Boolean).join(' · '),
               })),
             ]}
             placeholder="Type a PO number or supplier…"
