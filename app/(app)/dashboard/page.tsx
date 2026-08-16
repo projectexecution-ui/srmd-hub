@@ -13,6 +13,8 @@ import { getModuleLabels } from '@/lib/module-labels'
 import { NeedsYouNow, type InboxItem } from '@/components/dashboard/NeedsYouNow'
 import { getHomeBudgetGroups } from '@/lib/cost-control/my-budget-approvals'
 import { CostControlSnapshot } from '@/components/dashboard/CostControlSnapshot'
+import { ReturnedToEngineer } from '@/components/dashboard/ReturnedToEngineer'
+import { getReturnedToEngineer } from '@/lib/cost-control/returned-to-engineer'
 
 export const dynamic = 'force-dynamic'
 
@@ -48,6 +50,11 @@ export default async function DashboardPage() {
   // Anything not folded into a project group (non-CC, or a CC item whose sheet
   // couldn't be read) stays in the simple list so nothing silently disappears.
   const otherInbox = inbox.filter(i => !(i.doc_id && groupedIds.has(i.doc_id)))
+
+  // Budgets this person returned that are still with the engineer. Kept out of
+  // the inbox above on purpose — they are not his to approve — but he is the
+  // one who has to chase them, so they get their own quieter lane.
+  const returned = showCC ? await getReturnedToEngineer() : { items: [] }
 
   // Engineer's own budget work (drafts / returned / awaiting) for the "Your
   // budget work" strip — a cheap status-only read of their own sheets. These
@@ -105,6 +112,10 @@ export default async function DashboardPage() {
 
       {/* Needs you now — the actionable heart of the home, above everything else */}
       <NeedsYouNow budgetProjects={budgetProjects} otherItems={otherInbox} totalCount={inbox.length} moduleLabels={moduleLabels} error={!!inboxError} />
+
+      {/* Returned budgets — NOT the approver's to act on, so deliberately below
+          "Needs you now" and quieter. A chasing list, so the loop gets closed. */}
+      {showCC && <ReturnedToEngineer items={returned.items} />}
 
       {/* Your budget work — an engineer's own drafts/returns/awaiting (things
           that don't appear in the approval inbox). Self-hides when there's none. */}
