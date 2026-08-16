@@ -6,6 +6,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { Card } from '@/components/ui/card'
 import { formatDate } from '@/lib/utils'
 import { formatQty, formatINR } from '@/lib/warehouse/format'
+import { groupByCategory, groupByLocation } from '@/lib/warehouse/ledger'
 import { exportXlsx, exportPdf } from '@/lib/warehouse/export'
 import type { ExportSpec } from '@/lib/warehouse/export'
 import type { StockGroup, StockLine, StockTotals } from '@/lib/warehouse/ledger'
@@ -40,6 +41,9 @@ export function StockClient({
   const params = useSearchParams()
   const [q, setQ] = useState('')
   const [onlyFlagged, setOnlyFlagged] = useState(false)
+  // Category first, the way the old module read. Somebody standing IN a store
+  // switches to By store.
+  const [groupBy, setGroupBy] = useState<'category' | 'store'>('category')
 
   function setParam(key: string, value: string) {
     const next = new URLSearchParams(params.toString())
@@ -49,18 +53,41 @@ export function StockClient({
 
   /** Search and the low/nil filter are client-side: the rows are already here,
    *  and a round trip per keystroke would make the screen feel broken. */
-  const shown = useMemo(() => {
+  const visibleLines = useMemo(() => {
     const needle = q.trim().toLowerCase()
-    return groups
-      .map(g => ({
-        ...g,
-        lines: g.lines.filter(l =>
-          (!needle || l.itemName.toLowerCase().includes(needle))
-          && (!onlyFlagged || l.flag !== null)),
-      }))
-      .filter(g => g.lines.length > 0)
-      .map(g => ({ ...g, value: g.lines.reduce((s, l) => s + l.value, 0) }))
+    return groups.flatMap(g => g.lines).filter(l =>
+      (!needle || l.itemName.toLowerCase().includes(needle))
+      && (!onlyFlagged || l.flag !== null))
   }, [groups, q, onlyFlagged])
+
+  /** The same stock read two ways.
+   *
+   *  BY CATEGORY is the default, the way the old module showed it: "how much
+   *  electrical do we hold" is a question about the material, and the store is
+   *  a detail of the answer rather than its heading. BY STORE is what somebody
+   *  standing in one store wants. Both are one fold over the same lines, so
+   *  nothing can disagree between them. */
+  const shown = useMemo(() => {
+    if (groupBy === 'category') {
+      return groupByCategory(visibleLines).map(g => ({
+        key: g.category,
+        eyebrow: 'Category',
+        title: g.category,
+        note: `${g.lines.length} ${g.lines.length === 1 ? 'item' : 'items'}`
+          + (g.locations > 1 ? ` · across ${g.locations} stores` : ''),
+        lines: g.lines,
+        value: g.value,
+      }))
+    }
+    return groupByLocation(visibleLines).map(g => ({
+      key: g.locationId,
+      eyebrow: g.siteName,
+      title: g.locationName,
+      note: `${g.lines.length} ${g.lines.length === 1 ? 'item' : 'items'}`,
+      lines: g.lines,
+      value: g.value,
+    }))
+  }, [visibleLines, groupBy])
 
   const shownLines = shown.flatMap(g => g.lines)
   const shownValue = shownLines.reduce((s, l) => s + l.value, 0)
@@ -107,7 +134,7 @@ export function StockClient({
           : []),
       ],
       groups: shown.map(g => ({
-        label: `${g.siteName} — ${g.locationName}`,
+        label: groupBy === 'category' ? g.title : `${g.eyebrow} — ${g.title}`,
         rows: g.lines,
         footer: [
           `${g.lines.length} ${g.lines.length === 1 ? 'item' : 'items'}`,
@@ -116,7 +143,7 @@ export function StockClient({
         ],
       })),
       total: [
-        `${shownLines.length} lines · ${shown.length} ${shown.length === 1 ? 'store' : 'stores'}`,
+        `${shownLines.length} lines · ${shown.length} ${groupBy === 'category' ? (shown.length === 1 ? 'category' : 'categories') : (shown.length === 1 ? 'store' : 'stores')}`,
         '', '', '', '', '', '', '', '',
         ...(showValues ? [formatINR(shownValue)] : []),
       ],
@@ -166,6 +193,19 @@ export function StockClient({
         </div>
 
         <div className="flex items-center gap-2 flex-wrap mt-2.5 pt-2.5 border-t border-slate-100">
+          {/* How the register reads. Category is the default because that is
+              the question stock usually gets asked — "how much electrical do
+              we hold" — and it is how the old module showed it. */}
+          <span className="inline-flex rounded-lg border-2 border-slate-200 overflow-hidden">
+            {(['category', 'store'] as const).map(g => (
+              <button key={g} type="button" onClick={() => setGroupBy(g)}
+                aria-pressed={groupBy === g}
+                className={`px-3 py-1.5 min-h-[36px] text-[12px] font-bold transition ${
+                  groupBy === g ? 'bg-slate-700 text-white' : 'bg-white text-slate-600 hover:bg-slate-50'}`}>
+                {g === 'category' ? 'By category' : 'By store'}
+              </button>
+            ))}
+          </span>
           <button type="button" onClick={() => setOnlyFlagged(v => !v)}
             aria-pressed={onlyFlagged}
             className={`rounded-full border-2 px-3 py-1.5 min-h-[36px] text-[12px] font-bold transition ${
@@ -238,13 +278,11 @@ export function StockClient({
       )}
 
       {shown.map(g => (
-        <Card key={g.locationId} className="p-0 shadow-sm overflow-hidden">
+        <Card key={g.key} className="p-0 shadow-sm overflow-hidden">
           <div className="px-3 py-2 bg-slate-50/70 border-b border-slate-100 flex items-baseline gap-2 flex-wrap">
-            <span className="text-[11px] font-extrabold uppercase tracking-wider text-slate-400">{g.siteName}</span>
-            <span className="text-[13px] font-bold text-slate-800">{g.locationName}</span>
-            <span className="text-[11.5px] text-slate-500">
-              {g.lines.length} {g.lines.length === 1 ? 'item' : 'items'}
-            </span>
+            <span className="text-[11px] font-extrabold uppercase tracking-wider text-slate-400">{g.eyebrow}</span>
+            <span className="text-[13px] font-bold text-slate-800">{g.title}</span>
+            <span className="text-[11.5px] text-slate-500">{g.note}</span>
             {showValues && (
               <span className="ml-auto text-[12.5px] font-bold tabular-nums text-slate-700">{formatINR(g.value)}</span>
             )}
@@ -332,7 +370,7 @@ export function StockClient({
               Total — {isFiltered ? 'matching lines' : 'all locations'}
             </span>
             <span className="text-[11.5px] text-slate-500">
-              {shownLines.length} lines across {shown.length} stores
+              {shownLines.length} lines across {shown.length} {groupBy === 'category' ? 'categories' : 'stores'}
             </span>
             {showValues && (
               <span className="ml-auto text-[15px] font-extrabold tabular-nums text-slate-900">{formatINR(shownValue)}</span>

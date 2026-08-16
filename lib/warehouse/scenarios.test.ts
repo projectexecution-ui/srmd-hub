@@ -16,8 +16,8 @@ import { describe, expect, it } from 'vitest'
 import { periodLockBlocker, showValuesFor } from './settings'
 import { submitBlocker, summarize } from './count'
 import type { CountLine } from './count'
-import { stockEffect, foldLedger, stockFlag } from './ledger'
-import type { LedgerRow, MovementKind } from './ledger'
+import { stockEffect, foldLedger, stockFlag, groupOf, groupByCategory, groupByLocation } from './ledger'
+import type { LedgerRow, MovementKind, StockLine } from './ledger'
 import {
   ageBucket, poPending, rateSpread, outstandingReturnables, seriesGaps, RATE_SPREAD_FLOOR,
 } from './exceptions'
@@ -138,6 +138,48 @@ describe('QA scenarios — rules enforced in code', () => {
       'site consumption stays 100, but stock falls by both',
       'out (site) ' + c.outQty + ', vendor out ' + c.vendorOutQty + ', in hand ' + c.inHand,
       c.outQty === 100 && c.vendorOutQty === 150 && c.inHand === 150)
+  })
+
+  it('S41 stock groups by category, falling back to the trade', () => {
+    // The two came from different places: the items carried over from the old
+    // module have a category, the ones IN4 named have a trade. Neither alone
+    // covers the master, so the fallback is what avoids a huge "uncategorised".
+    const rows = [
+      { category: 'Electrical', discipline: null },
+      { category: null, discipline: '08 Plumbing Works' },
+      { category: null, discipline: null },
+    ]
+    rec('S41', 'One item from the old module, one from IN4, one with neither',
+      'category first, then trade, then a named fallback',
+      rows.map(groupOf).join(' / '),
+      groupOf(rows[0]) === 'Electrical'
+        && groupOf(rows[1]) === '08 Plumbing Works'
+        && groupOf(rows[2]) === 'Not categorised')
+  })
+
+  it('S42 the same stock totals the same whichever way it is grouped', () => {
+    const line = (o: Partial<StockLine> & { itemId: string }): StockLine => ({
+      itemId: o.itemId, locationId: 'A', inQty: 0, outQty: 0, transferQty: 0, adjustQty: 0,
+      damagedQty: 0, vendorOutQty: 0, inHand: 10, itemName: o.itemId, unit: 'Nos',
+      category: null, discipline: null, locationName: 'Store A', siteName: 'Site',
+      minQty: null, rate: 5, value: 50, flag: null, ...o,
+    })
+    const lines = [
+      line({ itemId: 'a', category: 'Electrical', locationId: 'A', locationName: 'Store A' }),
+      line({ itemId: 'b', category: 'Electrical', locationId: 'B', locationName: 'Store B' }),
+      line({ itemId: 'c', category: 'Plumbing', locationId: 'A', locationName: 'Store A' }),
+    ]
+    const byCat = groupByCategory(lines)
+    const byLoc = groupByLocation(lines)
+    const catValue = byCat.reduce((s, g) => s + g.value, 0)
+    const locValue = byLoc.reduce((s, g) => s + g.value, 0)
+    const elec = byCat.find(g => g.category === 'Electrical')!
+    rec('S42', 'The same three lines read by category and by store',
+      'same total either way, and a category spanning two stores says so',
+      `by category ${byCat.length} groups ₹${catValue}, by store ${byLoc.length} groups ₹${locValue}, `
+        + `Electrical across ${elec.locations} stores`,
+      catValue === locValue && catValue === 150 && byCat.length === 2 && byLoc.length === 2
+        && elec.locations === 2)
   })
 
   it('S27 idle stock lands in the worst bucket it qualifies for', () => {

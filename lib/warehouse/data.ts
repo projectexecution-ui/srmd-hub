@@ -83,13 +83,13 @@ export async function getItems(): Promise<WhItem[]> {
   const sb = await createClient()
   const { data } = await sb
     .from('wh_items')
-    .select('id, code, name, unit, category, last_rate')
+    .select('id, code, name, unit, category, discipline, last_rate')
     .is('deleted_at', null)
     .eq('is_active', true)
     .order('name')
   return (data ?? []).map(r => ({
     id: r.id, code: r.code, name: r.name, unit: r.unit,
-    category: r.category, lastRate: r.last_rate,
+    category: r.category, discipline: r.discipline, lastRate: r.last_rate,
   }))
 }
 

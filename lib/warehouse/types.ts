@@ -26,6 +26,7 @@ export type WhItem = {
   /** Locked to the item. One wrong unit poisons an item's stock forever. */
   unit: string
   category: string | null
+  discipline: string | null
   lastRate: number | null
 }
 

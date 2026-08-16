@@ -180,13 +180,25 @@ export function GateInForm({
    *  the item on it is IN4's, and is not up for interpretation here. Without a
    *  PO, the whole item list is available. */
   const selectableItems = useMemo(() => {
-    if (!po) return options.items.map(i => ({ id: i.id, label: i.name, unit: i.unit, poLineId: null as string | null, pending: null as number | null, rate: i.lastRate, done: false }))
+    if (!po) {
+      // Ordered by what the material IS, and the group travels in the hint so
+      // typing "plumbing" narrows to plumbing. With 2,803 items, a flat
+      // alphabetical list is a scroll, not a search.
+      return [...options.items]
+        .map(i => ({
+          id: i.id, label: i.name, unit: i.unit,
+          group: i.category?.trim() || i.discipline?.trim() || 'Not categorised',
+          poLineId: null as string | null, pending: null as number | null,
+          rate: i.lastRate, done: false,
+        }))
+        .sort((a, b) => a.group.localeCompare(b.group) || a.label.localeCompare(b.label))
+    }
     return po.lines.map(l => ({
       id: l.itemId,
       label: l.done
         ? `${l.itemName} · all ${formatQty(l.ordered)} ${l.unit} already received`
         : `${l.itemName} · ${formatQty(l.pending)} ${l.unit} pending`,
-      unit: l.unit, poLineId: l.lineId, pending: l.pending, rate: l.rate, done: l.done,
+      unit: l.unit, group: '', poLineId: l.lineId, pending: l.pending, rate: l.rate, done: l.done,
     }))
   }, [po, options.items])
 
@@ -540,7 +552,7 @@ export function GateInForm({
                 <SearchableSelect
                   value={row.itemId}
                   onChange={id => pickItem(row.key, id)}
-                  options={selectableItems.map(s => ({ id: s.id, label: s.label, hint: s.unit }))}
+                  options={selectableItems.map(s => ({ id: s.id, label: s.label, hint: [s.group, s.unit].filter(Boolean).join(' · ') }))}
                   placeholder={poLoading ? 'Loading the order…' : 'Search the item list…'}
                   disabled={poLoading}
                   emptyText="No item matches — add it below"
@@ -583,7 +595,12 @@ export function GateInForm({
                           id={`came-${row.key}`}
                           value={row.itemId}
                           onChange={id => patch(row.key, { itemId: id })}
-                          options={options.items.map(i => ({ id: i.id, label: i.name, hint: i.unit }))}
+                          options={[...options.items]
+                            .map(i => ({
+                              id: i.id, label: i.name,
+                              hint: [i.category?.trim() || i.discipline?.trim(), i.unit].filter(Boolean).join(' · '),
+                            }))
+                            .sort((a, b) => a.hint.localeCompare(b.hint) || a.label.localeCompare(b.label))}
                           placeholder="Search the item list…"
                           emptyText="No item matches — add it below"
                         />

@@ -154,6 +154,50 @@ export function groupByLocation(lines: StockLine[]): StockGroup[] {
     a.siteName.localeCompare(b.siteName) || a.locationName.localeCompare(b.locationName))
 }
 
+/** What an item is grouped under when the register is read by category.
+ *
+ *  Category first, trade second. The two came from different places — the 514
+ *  items carried over from the old module have a category, and the 2,289 that
+ *  arrived from IN4 have a trade instead — so neither alone covers the master.
+ *  Together they cover all of it, which is why this falls back rather than
+ *  showing a large "uncategorised" pile that helps nobody. */
+export function groupOf(line: { category: string | null; discipline: string | null }): string {
+  return line.category?.trim() || line.discipline?.trim() || 'Not categorised'
+}
+
+export type StockCategoryGroup = {
+  category: string
+  lines: StockLine[]
+  value: number
+  /** How many different stores this category is spread across. */
+  locations: number
+}
+
+/** Group the way the old module showed it: by what the material IS, not where
+ *  it happens to be sitting. "How much electrical do we hold" is a question
+ *  about the category; the store is the answer's detail, not its heading. */
+export function groupByCategory(lines: StockLine[]): StockCategoryGroup[] {
+  const groups = new Map<string, StockCategoryGroup & { locs: Set<string> }>()
+  for (const l of lines) {
+    const key = groupOf(l)
+    let g = groups.get(key)
+    if (!g) {
+      g = { category: key, lines: [], value: 0, locations: 0, locs: new Set() }
+      groups.set(key, g)
+    }
+    g.lines.push(l)
+    g.value += l.value
+    g.locs.add(l.locationId)
+  }
+  const out = [...groups.values()].map(g => {
+    g.locations = g.locs.size
+    g.lines.sort((a, b) => a.itemName.localeCompare(b.itemName))
+    return g as StockCategoryGroup
+  })
+  // Biggest category first — that is the one somebody came to look at.
+  return out.sort((a, b) => b.lines.length - a.lines.length || a.category.localeCompare(b.category))
+}
+
 export type StockTotals = {
   items: number
   locations: number
