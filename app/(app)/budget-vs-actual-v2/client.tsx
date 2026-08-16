@@ -140,7 +140,18 @@ export default function BudgetV2Client({
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
   const [busy, setBusy] = useState<string | null>(null)
   const [addProjectOpen, setAddProjectOpen] = useState(false)
-  const [helpOpen, setHelpOpen] = useState(true)
+  // Closed by default, and the choice is remembered — the guide is for the
+  // first visit, not every visit. Reading localStorage in the initialiser (not
+  // an effect) avoids the panel flashing open on every load.
+  const [helpOpen, setHelpOpen] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return false
+    return window.localStorage.getItem('bva2_help_open') === '1'
+  })
+  const toggleHelp = () => setHelpOpen(o => {
+    const next = !o
+    try { window.localStorage.setItem('bva2_help_open', next ? '1' : '0') } catch { /* private mode */ }
+    return next
+  })
   const [error, setError] = useState<string | null>(null)
   const toggle = (k: string) => setOpen(p => { const n = new Set(p); n.has(k) ? n.delete(k) : n.add(k); return n })
 
@@ -264,25 +275,36 @@ export default function BudgetV2Client({
             className="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-lg border border-gray-200 bg-white hover:bg-gray-50 text-gray-800">
             <UploadCloud className="h-3.5 w-3.5" /> Upload
           </Link>
-          <Link href="/budget-vs-actual-v2/weekly"
-            className="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-lg border border-gray-200 bg-white hover:bg-gray-50 text-gray-800"
-            title="Weekly one-pager — one line per project">
-            <Printer className="h-3.5 w-3.5" /> Weekly PDF
-          </Link>
-          <Link href="/budget-vs-actual-v2/weekly-category"
-            className="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-lg border border-gray-200 bg-white hover:bg-gray-50 text-gray-800"
-            title="Weekly PDF broken down by category — one project per page">
-            <FolderTree className="h-3.5 w-3.5" /> By Category
-          </Link>
-          <Link href="/budget-vs-actual-v2/weekly-subcategory"
-            className="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-lg border border-gray-200 bg-white hover:bg-gray-50 text-gray-800"
-            title="Weekly PDF broken down by category & sub-category — one project per page">
-            <ListTree className="h-3.5 w-3.5" /> By Sub-category
-          </Link>
-          <Link href="/budget-vs-actual-v2/print"
-            className="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-lg border border-gray-200 bg-white hover:bg-gray-50 text-gray-800">
-            <Printer className="h-3.5 w-3.5" /> Board view
-          </Link>
+          {/* Four print/export variants used to sit here as four separate
+              chips. On a phone that wrapped into a wall of buttons above the
+              numbers, and they are all the same intent — take this away as
+              paper. One control, opened only when you actually want to print. */}
+          <details className="relative group">
+            <summary className="list-none cursor-pointer inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 min-h-[34px] rounded-lg border border-gray-200 bg-white hover:bg-gray-50 text-gray-800 select-none">
+              <Printer className="h-3.5 w-3.5" /> Print / Export
+              <ChevronRight className="h-3.5 w-3.5 text-gray-400 transition-transform group-open:rotate-90" />
+            </summary>
+            <div className="absolute right-0 z-20 mt-1 w-[248px] rounded-xl border border-gray-200 bg-white shadow-lg overflow-hidden">
+              {[
+                { href: '/budget-vs-actual-v2/weekly',             icon: Printer,    label: 'Weekly PDF',      hint: 'One line per project' },
+                { href: '/budget-vs-actual-v2/weekly-category',    icon: FolderTree, label: 'By Category',     hint: 'One project per page' },
+                { href: '/budget-vs-actual-v2/weekly-subcategory', icon: ListTree,   label: 'By Sub-category', hint: 'Category & sub-category' },
+                { href: '/budget-vs-actual-v2/print',              icon: Printer,    label: 'Board view',      hint: 'Full snapshot to print' },
+              ].map(o => {
+                const Icon = o.icon
+                return (
+                  <Link key={o.href} href={o.href}
+                    className="flex items-start gap-2 px-3 py-2.5 min-h-[44px] hover:bg-gray-50 border-b border-gray-50 last:border-0">
+                    <Icon className="h-3.5 w-3.5 text-gray-500 mt-0.5 flex-shrink-0" />
+                    <span className="min-w-0">
+                      <span className="block text-[12.5px] font-medium text-gray-800">{o.label}</span>
+                      <span className="block text-[11px] text-gray-500">{o.hint}</span>
+                    </span>
+                  </Link>
+                )
+              })}
+            </div>
+          </details>
           <span className="text-[11px] font-semibold px-2 py-1 rounded-full bg-amber-50 text-amber-800 border border-amber-200">Preview · admin only</span>
         </div>
       </PageHeader>
@@ -317,11 +339,12 @@ export default function BudgetV2Client({
       {/* ── This week's movement (vs the previous upload) ── */}
       <MovementStrip delta={delta} prevSnapshotWeek={prevSnapshotWeek} />
 
-      {/* ── How this report is built — the hierarchy skeleton (always visible) ── */}
-      <StructureMap />
-
-      {/* ── How to read this — collapsed by default ── */}
-      <HelpPanel open={helpOpen} onToggle={() => setHelpOpen(o => !o)} />
+      {/* ── How to read this — one collapsed panel, holding BOTH the hierarchy
+             skeleton and the column/colour guide. They used to sit open above
+             the data: two full cards of instructions before a single figure,
+             which on a phone meant scrolling past the entire explanation every
+             visit. Learn it once, then it stays out of the way. ── */}
+      <HelpPanel open={helpOpen} onToggle={toggleHelp} />
 
       {/* ── Watchlist (computed) ── */}
       <div className="flex items-start gap-2.5 bg-white border border-gray-200 rounded-2xl px-3.5 py-3">
@@ -457,11 +480,12 @@ function StructureMap() {
     { depth: 3, icon: <ChevronRight className="h-3 w-3" />, name: 'Work item', what: 'sub-line', eg: 'RCC · Excavation · Plaster', tone: '#27500A' },
   ]
   return (
-    <div className="bg-white border border-gray-200 rounded-2xl px-3.5 py-3">
+    // Nested inside the help panel now, so no card of its own — a bordered box
+    // inside a bordered box just reads as clutter.
+    <div className="rounded-xl bg-gray-50/70 px-3 py-2.5">
       <div className="flex items-center gap-2 mb-2.5">
         <ListTree className="h-4 w-4 text-teal-600 flex-shrink-0" />
-        <span className="text-[12.5px] font-semibold text-gray-700">How this report is built</span>
-        <span className="text-[11px] text-gray-400">the budget report, as a tree</span>
+        <span className="text-[11px] uppercase tracking-wide font-semibold text-gray-500">How this report is built</span>
       </div>
       <div className="space-y-0">
         {levels.map((l, i) => (
@@ -501,6 +525,7 @@ function HelpPanel({ open, onToggle }: { open: boolean; onToggle: () => void }) 
       </button>
       {open && (
         <div className="border-t border-gray-100 px-4 py-3 space-y-3 text-[12.5px] text-gray-600 leading-relaxed">
+          <StructureMap />
           <div>
             <div className="text-[11px] uppercase tracking-wide font-semibold text-gray-500 mb-1">The tree</div>
             Tap a <b className="font-medium text-gray-800">project</b> to open its categories, and a <b className="font-medium text-gray-800">category</b> to see its work-item breakdown.
