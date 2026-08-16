@@ -81,7 +81,7 @@ export function BillsDigestForm({
       if (j.telegram) bits.push('Telegram')
       if (bits.length) {
         const tail = !j.connected ? ' · connect Telegram in Settings → Notifications to also get it there'
-          : (!j.telegram ? ' · Telegram send failed' : '')
+          : (!j.telegram ? ` · Telegram failed: ${j.telegramErr || 'send failed'}` : '')
         toast.success(`Test sent to your ${bits.join(' + ')}${tail}`)
       } else {
         toast.error(j.emailErr ? `Email failed: ${j.emailErr}` : 'Could not send the test.')
@@ -107,8 +107,15 @@ export function BillsDigestForm({
       if (!res.ok || j.ok === false) { toast.error(j.reason || j.error || 'Could not send'); return }
       const sentTo: string[] = j.sentTo ?? []
       const skipped: string[] = j.skipped ?? []
-      if (sentTo.length) toast.success(`Sent to ${sentTo.join(', ')}${skipped.length ? ` · skipped ${skipped.join(', ')}` : ''}`)
-      else toast.message('Nothing to send right now (no bills stuck for those projects).')
+      const tgSent: string[] = j.tgSent ?? []
+      const tgFailed: string[] = j.tgFailed ?? []
+      if (sentTo.length) {
+        const parts = [`Emailed ${sentTo.join(', ')}`]
+        if (tgSent.length) parts.push(`Telegram → ${tgSent.join(', ')}`)
+        if (tgFailed.length) parts.push(`Telegram failed: ${tgFailed.join(', ')}`)
+        if (skipped.length) parts.push(`skipped ${skipped.join(', ')}`)
+        toast.success(parts.join(' · '))
+      } else toast.message('Nothing to send right now (no bills stuck for those projects).')
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Network error')
     } finally { setSendingHeads(false) }

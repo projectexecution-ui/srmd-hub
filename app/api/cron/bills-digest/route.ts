@@ -169,6 +169,7 @@ async function runAll(supabase: Client, cfg: BillsDigestConfig) {
   const sentTo: string[] = []
   const skipped: string[] = []
   const tgSent: string[] = []
+  const tgFailed: string[] = []
   for (const [uid, codes] of Object.entries(cfg.assignments)) {
     const email = emailById.get(uid)
     const who = nameById.get(uid) ?? uid
@@ -179,6 +180,7 @@ async function runAll(supabase: Client, cfg: BillsDigestConfig) {
     if (token && cards.length && tgById.has(uid)) {
       const r = await sendCardsToChat(token, tgById.get(uid)!, cards, `Daily bills status — your projects${asOf ? ` · as of ${asOf}` : ''}`)
       if ('ok' in r && r.ok) tgSent.push(who)
+      else if ('error' in r) tgFailed.push(`${who} (${r.error})`)
     }
   }
   for (const uid of cfg.cc) {
@@ -191,9 +193,10 @@ async function runAll(supabase: Client, cfg: BillsDigestConfig) {
     if (token && cards.length && tgById.has(uid)) {
       const r = await sendCardsToChat(token, tgById.get(uid)!, cards, `Daily bills status — all projects${asOf ? ` · as of ${asOf}` : ''}`)
       if ('ok' in r && r.ok) tgSent.push(`${who} (cc)`)
+      else if ('error' in r) tgFailed.push(`${who} (cc) (${r.error})`)
     }
   }
-  return { sentTo, skipped, tgSent }
+  return { sentTo, skipped, tgSent, tgFailed }
 }
 
 export async function GET(req: Request) {
@@ -297,7 +300,7 @@ export async function POST(req: Request) {
   const useCodes = codes.length ? codes : [...byProject.keys()]
   const cards = await cardsForRecipient(ctx, useCodes, cfg.stages[user.id])
 
-  let emailOk = false; let emailErr: string | null = null; let telegram = false
+  let emailOk = false; let emailErr: string | null = null; let telegram = false; let telegramErr: string | null = null
 
   if (cards.length) {
     const err = await sendDigest(email, 'Daily bills status — test', cards, asOf)
@@ -305,6 +308,7 @@ export async function POST(req: Request) {
     if (token && chat) {
       const r = await sendCardsToChat(token, chat, cards, `Daily bills status — test${asOf ? ` · as of ${asOf}` : ''}`)
       telegram = 'ok' in r && r.ok
+      if (!telegram) telegramErr = ('error' in r ? r.error : 'skipped' in r ? r.skipped : 'send failed')
     }
   } else {
     // Quiet day — nothing stuck. Still send a short note to BOTH channels so the
@@ -338,5 +342,5 @@ export async function POST(req: Request) {
     }
   }
 
-  return NextResponse.json({ ok: emailOk || telegram, sent: 1, to: 'you', email: emailOk, emailErr, telegram, connected: !!chat })
+  return NextResponse.json({ ok: emailOk || telegram, sent: 1, to: 'you', email: emailOk, emailErr, telegram, telegramErr, connected: !!chat })
 }

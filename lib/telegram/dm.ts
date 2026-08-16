@@ -1,20 +1,19 @@
 // Direct Telegram DM image push, for reports that render their own PNG cards and
 // deliver them themselves (bypassing notify_user, whose queue can't carry
 // images) — e.g. the daily bills digest, which emails inline PNGs. Sends the
-// same cards to a connected recipient's personal Telegram chat: one photo, or a
-// media-group album for several (chunked to Telegram's 10-per-group limit).
+// same cards to a connected recipient's personal Telegram chat.
+//
+// Each card is sent as its OWN sendPhoto (the proven-reliable primitive the
+// /api/telegram/send route uses), NOT a sendMediaGroup album — albums were
+// failing silently with no fallback, so connected heads got the email but no
+// Telegram. If a photo is rejected (e.g. an oversized render), we retry the
+// same bytes as a sendDocument, which has no photo dimension/processing limits.
 
 interface Card { code: string; b64: string }
 
-function chunk<T>(arr: T[], n: number): T[][] {
-  const out: T[][] = []
-  for (let i = 0; i < arr.length; i += n) out.push(arr.slice(i, i + n))
-  return out
-}
-
 /**
  * Push rendered PNG cards (base64) to one Telegram chat. Best-effort — returns a
- * result the caller can log, never throws. `caption` rides the first photo only.
+ * result the caller can log, never throws. `caption` rides the first card only.
  */
 export async function sendCardsToChat(
   token: string,
@@ -26,35 +25,44 @@ export async function sendCardsToChat(
   if (!chatId) return { skipped: 'no-chat' }
   if (cards.length === 0) return { skipped: 'empty' }
   const api = (m: string) => `https://api.telegram.org/bot${token}/${m}`
-  try {
-    // Single card → a plain photo with the caption.
-    if (cards.length === 1) {
-      const form = new FormData()
-      form.append('chat_id', chatId)
-      form.append('caption', caption.slice(0, 1000))
-      form.append('photo', new Blob([Buffer.from(cards[0].b64, 'base64')], { type: 'image/png' }), `${cards[0].code}.png`)
-      const r = await fetch(api('sendPhoto'), { method: 'POST', body: form })
-      const j = (await r.json().catch(() => ({}))) as { ok?: boolean; description?: string }
-      return j.ok ? { ok: true, photos: 1 } : { ok: false, error: j.description || 'sendPhoto failed' }
+
+  // Send one card: try as a photo (inline preview); on failure retry the same
+  // bytes as a document (bypasses Telegram's photo dimension/processing limits).
+  async function sendOne(card: Card, cap: string): Promise<{ ok: true } | { ok: false; error: string }> {
+    // Match the working /api/telegram/send blob construction: a fresh Uint8Array,
+    // not a raw Node Buffer (undici can mishandle Buffer-backed Blobs).
+    const bytes = new Uint8Array(Buffer.from(card.b64, 'base64'))
+    const filename = `${card.code || 'card'}.png`
+    try {
+      const photo = new FormData()
+      photo.append('chat_id', chatId)
+      if (cap) photo.append('caption', cap.slice(0, 1000))
+      photo.append('photo', new Blob([bytes], { type: 'image/png' }), filename)
+      const pr = await fetch(api('sendPhoto'), { method: 'POST', body: photo })
+      const pj = (await pr.json().catch(() => ({}))) as { ok?: boolean; description?: string }
+      if (pj.ok) return { ok: true }
+
+      // Photo rejected — retry as a document (still shows a preview in Telegram).
+      const doc = new FormData()
+      doc.append('chat_id', chatId)
+      if (cap) doc.append('caption', cap.slice(0, 1000))
+      doc.append('document', new Blob([bytes], { type: 'image/png' }), filename)
+      const dr = await fetch(api('sendDocument'), { method: 'POST', body: doc })
+      const dj = (await dr.json().catch(() => ({}))) as { ok?: boolean; description?: string }
+      if (dj.ok) return { ok: true }
+      return { ok: false, error: dj.description || pj.description || 'sendPhoto/sendDocument failed' }
+    } catch (e) {
+      return { ok: false, error: e instanceof Error ? e.message : 'dm-send-failed' }
     }
-    // Several cards → album(s) of up to 10, caption on the very first photo.
-    let sent = 0; let firstChunk = true
-    for (const group of chunk(cards, 10)) {
-      const form = new FormData()
-      form.append('chat_id', chatId)
-      const media = group.map((c, i) => ({
-        type: 'photo', media: `attach://f${i}`,
-        ...(firstChunk && i === 0 ? { caption: caption.slice(0, 1000) } : {}),
-      }))
-      form.append('media', JSON.stringify(media))
-      group.forEach((c, i) => form.append(`f${i}`, new Blob([Buffer.from(c.b64, 'base64')], { type: 'image/png' }), `${c.code}.png`))
-      const r = await fetch(api('sendMediaGroup'), { method: 'POST', body: form })
-      const j = (await r.json().catch(() => ({}))) as { ok?: boolean; description?: string }
-      if (!j.ok) return { ok: false, error: j.description || 'sendMediaGroup failed' }
-      sent += group.length; firstChunk = false
-    }
-    return { ok: true, photos: sent }
-  } catch (e) {
-    return { ok: false, error: e instanceof Error ? e.message : 'dm-send-failed' }
   }
+
+  let sent = 0
+  let lastErr = ''
+  for (let i = 0; i < cards.length; i++) {
+    const res = await sendOne(cards[i], i === 0 ? caption : '')
+    if (res.ok) sent++
+    else lastErr = res.error
+  }
+  if (sent === 0) return { ok: false, error: lastErr || 'all sends failed' }
+  return { ok: true, photos: sent }
 }
