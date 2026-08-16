@@ -37,6 +37,8 @@ function stageRank(stage: string, atTrust: boolean): number {
 
 type Filter = { kind: 'all' } | { kind: 'pending' } | { kind: 'trust' } | { kind: 'stalled' } | { kind: 'stage'; stage: string }
 
+const PUSH_CAP = 12   // "Push today" shows the top-priority N by default; a Show-all toggle reveals the rest
+
 export default function Cockpit({ bills, asOf, myCodes = [] }: { bills: CockpitBill[]; asOf: string; myCodes?: string[] }) {
   // Does the viewer have Internal-Estimate-assigned sites present in the data?
   const scopeAvailable = useMemo(
@@ -58,6 +60,7 @@ export default function Cockpit({ bills, asOf, myCodes = [] }: { bills: CockpitB
   const [filter, setFilter] = useState<Filter>({ kind: 'all' })
   const [open, setOpen] = useState<CockpitBill | null>(null)
   const [imgBusy, setImgBusy] = useState(false)
+  const [showAllPush, setShowAllPush] = useState(false)
 
   const baseBills = useMemo(
     () => (siteScope === 'mine' && scopeAvailable
@@ -104,9 +107,9 @@ export default function Cockpit({ bills, asOf, myCodes = [] }: { bills: CockpitB
       const sc = (b: CockpitBill) => b.claimed * (1 + dv(b) / 20) * (b.stalled ? 1.8 : 1) * (b.noWO ? 1.4 : 1)
       arr.sort((a, b) => sc(b) - sc(a))
     }
-    return arr.slice(0, 12)
+    return showAllPush ? arr : arr.slice(0, PUSH_CAP)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pushBase, rank, dayBasis])
+  }, [pushBase, rank, dayBasis, showAllPush])
 
   // Rot funnel — dynamic stages present among live bills
   const funnel = useMemo(() => {
@@ -273,7 +276,7 @@ export default function Cockpit({ bills, asOf, myCodes = [] }: { bills: CockpitB
         <div className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
           <div className="flex items-center gap-2 px-4 pb-2 pt-3.5">
             <h2 className="m-0 text-base font-bold">Push today</h2>
-            <span className="text-xs text-gray-400">{push.length} to push · {rank === 'days' ? `ranked by days ${dayBasis === 'stage' ? 'in stage' : 'since entry'}` : 'ranked by ₹ × wait'}</span>
+            <span className="text-xs text-gray-400">{pushBase.length > push.length ? `Top ${push.length} of ${pushBase.length}` : `${push.length} to push`} · {rank === 'days' ? `ranked by days ${dayBasis === 'stage' ? 'in stage' : 'since entry'}` : 'ranked by ₹ × wait'}</span>
             <button
               onClick={copyPushImage}
               disabled={imgBusy || push.length === 0}
@@ -314,6 +317,13 @@ export default function Cockpit({ bills, asOf, myCodes = [] }: { bills: CockpitB
                 </span>
               </button>
             ))}
+            {pushBase.length > PUSH_CAP && (
+              <button
+                onClick={() => setShowAllPush(v => !v)}
+                className="mt-1 w-full rounded-lg px-2 py-2 text-center text-xs font-semibold text-slate-700 hover:bg-gray-50">
+                {showAllPush ? `Show top ${PUSH_CAP} only` : `Show all ${pushBase.length} →`}
+              </button>
+            )}
           </div>
         </div>
 
