@@ -272,11 +272,37 @@ export type ItemRow = {
   movements: number
 }
 
+/** How many items sit in each category. Drives the filter chips, and it is a
+ *  cheap aggregate rather than counting 2,803 rows on the client. */
+export async function getCategoryCounts(
+  includeRetired = false,
+): Promise<{ counts: Array<{ category: string; n: number }>; total: number; error?: string }> {
+  const sb = await createClient()
+  let q = sb.from('wh_items').select('category')
+  if (!includeRetired) q = q.is('deleted_at', null)
+  const { data, error } = await q
+  if (error) return { counts: [], total: 0, error: error.message }
+
+  const map = new Map<string, number>()
+  for (const r of data ?? []) {
+    const k = r.category?.trim() || 'Not categorised'
+    map.set(k, (map.get(k) ?? 0) + 1)
+  }
+  return {
+    total: data?.length ?? 0,
+    // Biggest first — the chip row is scanned left to right and the big
+    // families are the ones anybody is actually looking for.
+    counts: [...map.entries()]
+      .map(([category, n]) => ({ category, n }))
+      .sort((a, b) => b.n - a.n || a.category.localeCompare(b.category)),
+  }
+}
+
 /** The master, searched server-side. 2,803 items is too many to ship to a
  *  phone, and an item screen is always opened looking for one thing. */
 export async function searchItems(
   q: string,
-  opts: { includeRetired?: boolean; limit?: number } = {},
+  opts: { includeRetired?: boolean; limit?: number; category?: string } = {},
 ): Promise<{ rows: ItemRow[]; total: number; error?: string }> {
   const sb = await createClient()
   const limit = opts.limit ?? 60
@@ -285,7 +311,9 @@ export async function searchItems(
     .select('id, name, unit, category, discipline, code, source, is_active, deleted_at, last_rate',
       { count: 'exact' })
   if (!opts.includeRetired) query = query.is('deleted_at', null)
-  if (q.trim()) query = query.ilike('name', `%${q.trim()}%`)
+  if (opts.category === 'Not categorised') query = query.is('category', null)
+  else if (opts.category) query = query.eq('category', opts.category)
+  if (q.trim()) query = query.or(`name.ilike.%${q.trim()}%,code.ilike.%${q.trim()}%`)
 
   const { data, error, count } = await query.order('name').limit(limit)
   if (error) return { rows: [], total: 0, error: error.message }

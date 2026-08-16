@@ -9,11 +9,13 @@ import { periodLockBlocker, isOn } from './settings'
 /** The permissions-matrix gate. RLS checks the same thing, but a policy that
  *  filters a row out of an UPDATE returns 200 with zero rows and no error — so
  *  every action checks here first and gives a sentence a human can act on. */
-export async function gate(action: 'edit' | 'admin' = 'edit'): Promise<string | null> {
+export async function gate(action: 'view' | 'edit' | 'admin' = 'edit'): Promise<string | null> {
   const perms = await getMyPermissions()
   if (!can(perms, 'warehouse', action)) {
     return action === 'admin'
       ? 'Only an admin or Atm Head can do this — ask them to approve it.'
+      : action === 'view'
+      ? 'You do not have access to the warehouse.'
       : 'You do not have permission to record warehouse entries.'
   }
   return null

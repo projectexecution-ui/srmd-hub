@@ -3,7 +3,7 @@ import { requirePermission } from '@/lib/auth'
 import { PageHeader } from '@/components/PageHeader'
 import { Card } from '@/components/ui/card'
 import { createClient } from '@/lib/supabase/server'
-import { ArrowDownToLine, ArrowUpFromLine, ClipboardList, Boxes, BarChart3, Settings2, ChevronRight, FileText, ScrollText, Package } from 'lucide-react'
+import { ArrowDownToLine, ArrowUpFromLine, ClipboardList, Boxes, BarChart3, Settings2, ChevronRight, FileText, ScrollText, Package, CalendarDays } from 'lucide-react'
 
 export const dynamic = 'force-dynamic'
 
@@ -15,7 +15,8 @@ const LANES = [
   { href: '/warehouse/stock',    icon: Boxes,            label: 'Stock',          blurb: 'What lies where, as on a date — In, Out, transfers and count corrections per store' },
   { href: '/warehouse/reports',  icon: BarChart3,        label: 'Registers & reports', blurb: 'Vendor IN · Vendor OUT · SRM IN · SRM OUT · Total Stock' },
   { href: '/warehouse/entries',  icon: ScrollText,       label: 'Gate register',  blurb: 'Every entry recorded — open one to void it if it was recorded wrong, or book returnable material back in' },
-  { href: '/warehouse/items',    icon: Package,          label: 'Item master',    blurb: 'Fix a name, a unit or a category — and fold a duplicate into the row that should have had it' },
+  { href: '/warehouse/items',    icon: Package,          label: 'Item Master',    blurb: 'The catalogue by category — fix a name, a unit or a category, and download the register as PDF or Excel' },
+  { href: '/warehouse/daily',    icon: CalendarDays,     label: 'Daily movement', blurb: 'What moved today — in, out, across the yard and corrected, with where each load went' },
   { href: '/warehouse/settings', icon: Settings2,        label: 'Settings',       blurb: 'Add or retire a store, set your lists, and say who keeps what' },
 ]
 
