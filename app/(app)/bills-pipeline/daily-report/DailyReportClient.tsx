@@ -506,7 +506,8 @@ function SectionTable({
   const th: CSSProperties = { padding: '6px 8px', textAlign: 'left', border: GRID, background: headBg, fontWeight: 700, color: '#1e293b' }
   const thR: CSSProperties = { ...th, textAlign: 'right' }
   const td: CSSProperties = { padding: '5px 8px', border: GRID }
-  const tdR: CSSProperties = { ...td, textAlign: 'right', fontVariantNumeric: 'tabular-nums', fontWeight: 600 }
+  const tdR: CSSProperties = { ...td, textAlign: 'right', fontVariantNumeric: 'tabular-nums', fontWeight: 600, whiteSpace: 'nowrap' }
+  const tdNoWrap: CSSProperties = { ...td, whiteSpace: 'nowrap' }
   const rowBg = (hl: string | null): string =>
     hl === 'red' ? '#fecaca' : hl === 'yellow' ? '#fde68a' : bodyBg
   return (
@@ -542,9 +543,9 @@ function SectionTable({
                   <td style={{ ...td, color: '#475569' }}>{b.area}</td>
                   <td style={{ ...td, color: '#475569' }}>{b.invoiceNo}</td>
                   <td style={tdR}>{formatINR(b.amount)}</td>
-                  <td style={td}>{kind === 'paid' ? fmtDate(b.paymentDate) : fmtDate(effDate(b, acct))}</td>
+                  <td style={tdNoWrap}>{kind === 'paid' ? fmtDate(b.paymentDate) : fmtDate(effDate(b, acct))}</td>
                   {showDays && <td style={{ ...tdR, fontWeight: 400, color: days != null && days >= 7 ? '#b91c1c' : '#475569' }}>{days == null ? '—' : `${days}d`}</td>}
-                  <td style={{ ...td, color: '#475569' }}>{entryOf(b.id).remark || ''}</td>
+                  <td style={{ ...tdNoWrap, color: '#475569' }}>{entryOf(b.id).remark || ''}</td>
                 </tr>
               )
             })}
@@ -590,7 +591,7 @@ function CleanTable({
 
 function SummaryPill({ label, n, amt, hex }: { label: string; n: number; amt: number; hex: string }) {
   return (
-    <div style={{ flex: 1, border: '1px solid #e2e8f0', borderLeft: `3px solid ${hex}`, borderRadius: 8, padding: '8px 12px', background: '#fff' }}>
+    <div style={{ flex: '1 1 150px', border: '1px solid #e2e8f0', borderLeft: `3px solid ${hex}`, borderRadius: 8, padding: '8px 12px', background: '#fff' }}>
       <div style={{ fontSize: 10, color: '#64748b', fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.4 }}>{label}</div>
       <div style={{ fontSize: 15, fontWeight: 800, marginTop: 2 }}>{formatINR(amt)}</div>
       <div style={{ fontSize: 10, color: '#94a3b8' }}>{n} bill{n === 1 ? '' : 's'}</div>
@@ -623,10 +624,14 @@ function FullReportDoc({
           <div style={{ fontSize: 10, color: '#94a3b8', marginTop: 2 }}>Auto-generated from Zoho</div>
         </div>
       </div>
-      <div style={{ display: 'flex', gap: 12, padding: '12px 24px', borderBottom: '1px solid #e2e8f0', background: '#f8fafc' }}>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, padding: '12px 24px', borderBottom: '1px solid #e2e8f0', background: '#f8fafc' }}>
         <SummaryPill label="Paid today" n={paid.length} amt={totals.paidValue} hex="#475569" />
-        <SummaryPill label="At Trust (COP)" n={totals.trustCount} amt={totals.trustValue} hex="#4f46e5" />
-        {totals.adjCount > 0 && <SummaryPill label="Adjust" n={totals.adjCount} amt={totals.adjValue} hex="#7c3aed" />}
+        {copByAcct.map(([acct, rows]) => (
+          <SummaryPill key={`kpi-${acct}`} label={acct === '—' ? 'Trust not set' : `${acct} A/c`} n={rows.length} amt={rows.reduce((s, b) => s + b.amount, 0)} hex={ACCT_HEX[acct] ?? '#64748b'} />
+        ))}
+        {adjByAcct.map(([acct, rows]) => (
+          <SummaryPill key={`kpi-adj-${acct}`} label={`Adjust ${acct === '—' ? '' : acct}`.trim()} n={rows.length} amt={rows.reduce((s, b) => s + b.amount, 0)} hex="#7c3aed" />
+        ))}
       </div>
       <div style={{ padding: '2px 24px 8px' }}>
         <SectionTable title="Payments Done" acct="" rows={paid} kind="paid" entryOf={entryOf} effDate={effDate} emptyNote="No payments done today" />
