@@ -31,6 +31,9 @@ export type RegisterRow = {
   itemName: string
   unit: string
   discipline: string | null
+  /** What the material IS. Category where the item has one, trade otherwise —
+   *  the two masters carry different fields and only together cover everything. */
+  category: string | null
   qty: number
   rate: number | null
   /** qty × rate, or null when no rate is known — never silently zero. */
@@ -90,12 +93,22 @@ export type RegisterGroup = {
   totals: RegisterTotals
 }
 
-export type GroupBy = 'party' | 'project' | 'discipline' | 'entity' | 'store' | 'item' | 'none'
+export type GroupBy = 'party' | 'project' | 'category' | 'entity' | 'store' | 'item' | 'none'
+
+/** What to call this material's family, on screen and in every export. Same
+ *  fallback the stock screen uses, so one item never reads as two things. */
+export function categoryOf(r: { category: string | null; discipline: string | null }): string {
+  return r.category?.trim() || r.discipline?.trim() || 'Not categorised'
+}
 
 const GROUP_VALUE: Record<Exclude<GroupBy, 'none'>, (r: RegisterRow) => string> = {
   party:      r => r.party ?? '— not named —',
   project:    r => r.projectName ?? '— no project —',
-  discipline: r => r.discipline ?? '— no discipline —',
+  // One "Category" rather than a category option AND a trade option: the items
+  // carried over from the old module have a category and the ones IN4 named
+  // have a trade, so either alone would leave most of the register in a
+  // "— none —" bucket. Falls back the same way the stock screen does.
+  category:   categoryOf,
   entity:     r => r.entity ?? '— no entity —',
   store:      r => r.storeName,
   item:       r => r.itemName,
@@ -189,28 +202,28 @@ export const REGISTER_META: Record<RegisterKind, {
     title: 'Vendor IN',
     blurb: 'What each vendor brought — his own material, never our stock',
     question: 'Whose material is standing on our site, and since when?',
-    groupOptions: ['party', 'project', 'item', 'store', 'none'],
+    groupOptions: ['party', 'category', 'project', 'item', 'store', 'none'],
     defaultGroup: 'party',
   },
   'vendor-out': {
     title: 'Vendor OUT',
     blurb: 'What went back, matched by name to what he brought in',
     question: 'Has he taken back more than he ever brought?',
-    groupOptions: ['party', 'item', 'project', 'store', 'none'],
+    groupOptions: ['party', 'category', 'item', 'project', 'store', 'none'],
     defaultGroup: 'party',
   },
   'srm-in': {
     title: 'SRM IN',
-    blurb: 'Purchases received — quantity, rate, amount, by discipline',
+    blurb: 'Purchases received — quantity, rate, amount, by category',
     question: 'What did we buy and take in this period, and what did it cost?',
-    groupOptions: ['discipline', 'party', 'entity', 'project', 'store', 'item', 'none'],
-    defaultGroup: 'discipline',
+    groupOptions: ['category', 'party', 'entity', 'project', 'store', 'item', 'none'],
+    defaultGroup: 'category',
   },
   'srm-out': {
     title: 'SRM OUT',
     blurb: 'Issued to sites for use — by project',
     question: 'Which project consumed what?',
-    groupOptions: ['project', 'discipline', 'entity', 'item', 'store', 'none'],
+    groupOptions: ['project', 'category', 'entity', 'item', 'store', 'none'],
     defaultGroup: 'project',
   },
 }
@@ -218,7 +231,7 @@ export const REGISTER_META: Record<RegisterKind, {
 export const GROUP_LABEL: Record<GroupBy, string> = {
   party: 'Vendor / supplier',
   project: 'Project',
-  discipline: 'Discipline',
+  category: 'Category / trade',
   entity: 'Paid by',
   store: 'Store',
   item: 'Item',

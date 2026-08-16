@@ -1,7 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { one } from './data'
 import { getStockView } from './report-data'
-import { todayIST } from './ledger'
+import { todayIST, groupOf } from './ledger'
 import { formatDate, formatNumber } from '@/lib/utils'
 import { formatQty, formatINR } from './format'
 import {
@@ -11,6 +11,13 @@ import {
 import type {
   Cell, ReportKey, ReportView, RateObservation, ReturnableLine, PoLineState, EntitySpend,
 } from './exceptions'
+
+/** What family this material belongs to. Category where the item carries one,
+ *  the IN4 trade otherwise — the same fallback the stock screen and the
+ *  registers use, so an item never reads as two different things. */
+function catOf(i: { category?: string | null; discipline?: string | null } | null | undefined): string {
+  return i?.category?.trim() || i?.discipline?.trim() || 'Not categorised'
+}
 
 /** One entry point. Every control report is loaded the same way and returns the
  *  same shape, so the screen and the export never need to know which one it is. */
@@ -86,7 +93,7 @@ async function countVariance(ctx: Ctx): Promise<ReportView> {
              approver:profiles!wh_counts_approved_by_fkey(full_name, email),
              wh_locations(name),
              wh_count_lines(id, book_qty, counted_qty, skipped, reason, diff,
-                            wh_items(name, unit, last_rate))`)
+                            wh_items(name, unit, category, discipline, last_rate))`)
     .order('started_at', { ascending: false })
   if (error) return shell(ctx, { error: error.message })
 
@@ -110,6 +117,7 @@ async function countVariance(ctx: Ctx): Promise<ReportView> {
       else excessQty += diff
       return [
         cell(item?.name ?? '—'),
+        cell(catOf(item)),
         cell(formatQty(l.book_qty), Number(l.book_qty)),
         cell(formatQty(l.counted_qty), Number(l.counted_qty)),
         cell(`${diff < 0 ? '−' : '+'}${formatQty(Math.abs(diff))} ${item?.unit ?? ''}`, diff,
@@ -131,7 +139,8 @@ async function countVariance(ctx: Ctx): Promise<ReportView> {
 
   return shell(ctx, {
     columns: [
-      { header: 'Item', width: 32 }, { header: 'Book', align: 'right' },
+      { header: 'Item', width: 32 }, { header: 'Category', width: 18 },
+      { header: 'Book', align: 'right' },
       { header: 'Counted', align: 'right' }, { header: 'Difference', align: 'right' },
       { header: 'Reason', width: 22 },
       ...(ctx.showValues ? [{ header: 'Value', align: 'right' as const }] : []),
@@ -250,13 +259,13 @@ async function shortageDamage(ctx: Ctx): Promise<ReportView> {
     .from('wh_gate_in')
     .select(`id, entry_no, entry_date, party, owner,
              wh_gate_in_lines(id, challan_qty, received_qty, damaged_qty, short_qty, rate,
-                              wh_items(name, unit))`)
+                              wh_items(name, unit, category, discipline))`)
     .is('deleted_at', null)
     .order('entry_date', { ascending: false })
   if (error) return shell(ctx, { error: error.message })
 
   type Finding = { party: string; entryNo: string; day: string; itemName: string; unit: string
-                   short: number; damaged: number; value: number | null }
+                   category: string; short: number; damaged: number; value: number | null }
   const findings: Finding[] = []
   for (const e of period((data ?? []).map(e => ({ ...e, day: e.entry_date })), ctx)) {
     for (const l of e.wh_gate_in_lines ?? []) {
@@ -267,7 +276,7 @@ async function shortageDamage(ctx: Ctx): Promise<ReportView> {
       const rate = l.rate == null ? null : Number(l.rate)
       findings.push({
         party: e.party || '— not named —', entryNo: e.entry_no, day: e.entry_date,
-        itemName: it?.name ?? '—', unit: it?.unit ?? '',
+        itemName: it?.name ?? '—', unit: it?.unit ?? '', category: catOf(it),
         short, damaged, value: rate == null ? null : (short + damaged) * rate,
       })
     }
@@ -287,13 +296,13 @@ async function shortageDamage(ctx: Ctx): Promise<ReportView> {
     .map(([party, fs]) => ({
       label: `${party} — ${fs.length} ${fs.length === 1 ? 'line' : 'lines'}`,
       rows: fs.map(f => [
-        cell(formatDate(f.day)), cell(f.entryNo), cell(f.itemName),
+        cell(formatDate(f.day)), cell(f.entryNo), cell(f.itemName), cell(f.category),
         cell(f.short ? `${formatQty(f.short)} ${f.unit}` : '—', f.short, f.short ? 'bad' : undefined),
         cell(f.damaged ? `${formatQty(f.damaged)} ${f.unit}` : '—', f.damaged, f.damaged ? 'warn' : undefined),
         ...(ctx.showValues ? [MONEY(f.value)] : []),
       ]),
       footer: [
-        cell(`${fs.length} lines`), cell(''), cell(''),
+        cell(`${fs.length} lines`), cell(''), cell(''), cell(''),
         cell(formatQty(fs.reduce((s, f) => s + f.short, 0)), null, 'bad'),
         cell(formatQty(fs.reduce((s, f) => s + f.damaged, 0)), null, 'warn'),
         ...(ctx.showValues ? [MONEY(fs.reduce((s, f) => s + (f.value ?? 0), 0))] : []),
@@ -303,7 +312,7 @@ async function shortageDamage(ctx: Ctx): Promise<ReportView> {
   return shell(ctx, {
     columns: [
       { header: 'Date' }, { header: 'Entry', width: 18 }, { header: 'Item', width: 30 },
-      { header: 'Short', align: 'right' }, { header: 'Damaged', align: 'right' },
+      { header: 'Category', width: 18 }, { header: 'Short', align: 'right' }, { header: 'Damaged', align: 'right' },
       ...(ctx.showValues ? [{ header: 'Value at risk', align: 'right' as const, width: 16 }] : []),
     ],
     groups,
@@ -499,14 +508,14 @@ async function deadStock(ctx: Ctx): Promise<ReportView> {
     return {
       label: `Not moved in ${b}+ days — ${fs.length} ${fs.length === 1 ? 'line' : 'lines'}`,
       rows: fs.map(f => [
-        cell(f.l.itemName), cell(`${f.l.siteName} — ${f.l.locationName}`),
+        cell(f.l.itemName), cell(groupOf(f.l)), cell(`${f.l.siteName} — ${f.l.locationName}`),
         cell(`${formatQty(f.l.inHand)} ${f.l.unit}`, f.l.inHand),
         cell(f.lastDay ? formatDate(f.lastDay) : 'never', null, f.lastDay ? undefined : 'bad'),
         cell(`${formatNumber(f.idle, 0)} days`, f.idle, b === 180 ? 'bad' : 'warn'),
         ...(ctx.showValues ? [MONEY(f.l.rate == null ? null : f.l.value)] : []),
       ]),
       footer: [
-        cell(`${fs.length} lines`), cell(''), cell(''), cell(''), cell(''),
+        cell(`${fs.length} lines`), cell(''), cell(''), cell(''), cell(''), cell(''),
         ...(ctx.showValues ? [MONEY(fs.reduce((s, f) => s + f.l.value, 0))] : []),
       ],
     }
@@ -516,7 +525,8 @@ async function deadStock(ctx: Ctx): Promise<ReportView> {
 
   return shell(ctx, {
     columns: [
-      { header: 'Item', width: 32 }, { header: 'Where', width: 26 },
+      { header: 'Item', width: 32 }, { header: 'Category', width: 18 },
+      { header: 'Where', width: 26 },
       { header: 'In hand', align: 'right' }, { header: 'Last moved' },
       { header: 'Idle', align: 'right' },
       ...(ctx.showValues ? [{ header: 'Value', align: 'right' as const }] : []),
@@ -752,18 +762,18 @@ async function rateVarianceReport(ctx: Ctx): Promise<ReportView> {
   const sb = await createClient()
   const { data, error } = await sb
     .from('wh_gate_in_lines')
-    .select(`rate, wh_items(id, name, unit),
+    .select(`rate, wh_items(id, name, unit, category, discipline),
              entry:wh_gate_in(entry_date, entity, party, deleted_at)`)
     .not('rate', 'is', null)
   if (error) return shell(ctx, { error: error.message })
 
-  const byItem = new Map<string, { name: string; unit: string; obs: RateObservation[] }>()
+  const byItem = new Map<string, { name: string; unit: string; category: string; obs: RateObservation[] }>()
   for (const l of data ?? []) {
     const e = one(l.entry); const it = one(l.wh_items)
     if (!e || e.deleted_at || !it) continue
     if (ctx.from && e.entry_date < ctx.from) continue
     if (ctx.to && e.entry_date > ctx.to) continue
-    if (!byItem.has(it.id)) byItem.set(it.id, { name: it.name, unit: it.unit, obs: [] })
+    if (!byItem.has(it.id)) byItem.set(it.id, { name: it.name, unit: it.unit, category: catOf(it), obs: [] })
     byItem.get(it.id)!.obs.push({
       entity: e.entity, party: e.party, rate: Number(l.rate), day: e.entry_date,
     })
@@ -776,7 +786,8 @@ async function rateVarianceReport(ctx: Ctx): Promise<ReportView> {
 
   return shell(ctx, {
     columns: [
-      { header: 'Item', width: 32 }, { header: 'Cheapest', align: 'right' },
+      { header: 'Item', width: 32 }, { header: 'Category', width: 18 },
+      { header: 'Cheapest', align: 'right' },
       { header: 'Paid by / supplier', width: 26 }, { header: 'Dearest', align: 'right' },
       { header: 'Paid by / supplier ', width: 26 }, { header: 'Gap', align: 'right' },
       { header: 'Gap %', align: 'right' }, { header: 'Times taken in', align: 'right' },
@@ -787,6 +798,7 @@ async function rateVarianceReport(ctx: Ctx): Promise<ReportView> {
         const s = f.spread!
         return [
           cell(f.name),
+          cell(f.category),
           cell(formatINR(s.low), s.low, 'good'),
           cell([s.cheapest.entity, s.cheapest.party].filter(Boolean).join(' · ') || '—'),
           cell(formatINR(s.high), s.high, 'bad'),

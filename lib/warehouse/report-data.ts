@@ -170,7 +170,7 @@ async function getInRegister(
                wh_po(po_no), projects(name), wh_locations(name),
                wh_gate_in_lines(id, received_qty, damaged_qty, good_qty, short_qty, rate,
                                 differs_from_po, differ_note,
-                                wh_items(id, name, unit, discipline),
+                                wh_items(id, name, unit, category, discipline),
                                 po_line:wh_po_lines(source_text, wh_items(name)))`)
       .eq('owner', owner)
       .is('deleted_at', null)
@@ -196,7 +196,8 @@ async function getInRegister(
         entryId: e.id, entryNo: e.entry_no, day: e.entry_date,
         party: e.party, projectName: one(e.projects)?.name ?? null, entity: e.entity,
         storeName: one(e.wh_locations)?.name ?? '—',
-        itemId: item.id, itemName: item.name, unit: item.unit, discipline: item.discipline,
+        itemId: item.id, itemName: item.name, unit: item.unit,
+        category: item.category, discipline: item.discipline,
         qty, rate, amount: rate == null ? null : qty * rate,
         shortQty: Math.max(0, Number(l.short_qty)),
         damagedQty: Number(l.damaged_qty),
@@ -225,7 +226,7 @@ async function getOutRegister(
       .select(`id, entry_no, entry_date, party, entity, remarks, is_returnable, return_due_date,
                projects(name), from_loc:wh_locations!wh_gate_out_from_location_id_fkey(name),
                engineer:profiles!wh_gate_out_engineer_id_fkey(full_name, email),
-               wh_gate_out_lines(id, qty, rate, returned_qty, wh_items(id, name, unit, discipline))`)
+               wh_gate_out_lines(id, qty, rate, returned_qty, wh_items(id, name, unit, category, discipline))`)
       .eq('dest_type', dest)
       .is('deleted_at', null)
       .order('entry_date', { ascending: false })
@@ -249,7 +250,8 @@ async function getOutRegister(
         entryId: e.id, entryNo: e.entry_no, day: e.entry_date,
         party: e.party, projectName: one(e.projects)?.name ?? null, entity: e.entity,
         storeName: one(e.from_loc)?.name ?? '—',
-        itemId: item.id, itemName: item.name, unit: item.unit, discipline: item.discipline,
+        itemId: item.id, itemName: item.name, unit: item.unit,
+        category: item.category, discipline: item.discipline,
         qty, rate, amount: rate == null ? null : qty * rate,
         engineerName: eng?.full_name || eng?.email || null,
         remarks: e.remarks,
@@ -294,7 +296,7 @@ type InRow = {
     id: string; received_qty: string; damaged_qty: string; good_qty: string
     short_qty: string; rate: string | null
     differs_from_po: boolean | null; differ_note: string | null
-    wh_items: Embedded<{ id: string; name: string; unit: string; discipline: string | null }>
+    wh_items: Embedded<{ id: string; name: string; unit: string; category: string | null; discipline: string | null }>
     po_line: Embedded<{ source_text: string | null; wh_items: Embedded<{ name: string }> }>
   }> | null
 }
@@ -308,6 +310,6 @@ type OutRow = {
   engineer: Embedded<{ full_name: string | null; email: string | null }>
   wh_gate_out_lines: Array<{
     id: string; qty: string; rate: string | null; returned_qty: string
-    wh_items: Embedded<{ id: string; name: string; unit: string; discipline: string | null }>
+    wh_items: Embedded<{ id: string; name: string; unit: string; category: string | null; discipline: string | null }>
   }> | null
 }

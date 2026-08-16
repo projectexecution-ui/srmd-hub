@@ -6,7 +6,7 @@ const row = (over: Partial<RegisterRow> & { itemName: string }): RegisterRow => 
   entryId: 'e1', entryNo: 'In: 10Aug26/001', day: '2026-08-10',
   party: 'Ultratech Cement', projectName: 'NGH A', entity: 'SRASSK',
   storeName: 'NGH Open Area', itemId: over.itemName, unit: 'Bag',
-  discipline: 'Civil', qty: 100, rate: 392, amount: 39200,
+  discipline: 'Civil', category: null, qty: 100, rate: 392, amount: 39200,
   ...over,
 })
 
@@ -60,13 +60,13 @@ describe('groupRows', () => {
   ]
 
   it('puts the biggest group first — a register is read to find where the money went', () => {
-    const g = groupRows(rows, 'discipline')
+    const g = groupRows(rows, 'category')
     expect(g.map(x => x.label)).toEqual(['Civil', 'Electrical'])
     expect(g[0].totals.amount).toBe(39200 + 355500)
   })
 
   it('sorts inside a group newest first', () => {
-    const g = groupRows(rows, 'discipline')
+    const g = groupRows(rows, 'category')
     expect(g[0].rows.map(r => r.day)).toEqual(['2026-08-11', '2026-08-10'])
   })
 
@@ -84,7 +84,7 @@ describe('groupRows', () => {
 
   it('does not mutate the rows it was given', () => {
     const original = [...rows]
-    groupRows(rows, 'discipline')
+    groupRows(rows, 'category')
     expect(rows).toEqual(original)
   })
 })

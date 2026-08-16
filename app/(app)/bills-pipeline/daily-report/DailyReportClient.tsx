@@ -57,7 +57,6 @@ function daysSince(iso: string | null | undefined): number | null {
   if (Number.isNaN(t)) return null
   return Math.max(0, Math.floor((Date.now() - t) / 86_400_000))
 }
-const inrNum = (n: number) => formatINR(n).replace(/₹\s?/, '')   // PDF font has no ₹ glyph
 
 export function DailyReportClient({
   bills, initialEntries, initialTrustMap, asOf, availableDates, selectedDate,
@@ -172,63 +171,20 @@ export function DailyReportClient({
   async function downloadPdf() {
     setPdfBusy(true)
     try {
+      const node = document.getElementById('clean-full')
+      if (!node) throw new Error('report node missing')
+      const dataUrl = await toPng(node, { backgroundColor: '#ffffff', pixelRatio: 2, cacheBust: true })
+      const dims = await new Promise<{ w: number; h: number }>((res, rej) => {
+        const im = new window.Image()
+        im.onload = () => res({ w: im.naturalWidth, h: im.naturalHeight })
+        im.onerror = rej
+        im.src = dataUrl
+      })
       const { default: JsPDF } = await import('jspdf')
-      const autoTable = (await import('jspdf-autotable')).default
-      const doc = new JsPDF({ unit: 'pt', format: 'a4' })
-      const pageW = doc.internal.pageSize.getWidth()
-      const pageH = doc.internal.pageSize.getHeight()
-      const M = 28
-
-      doc.setFontSize(15); doc.setFont('helvetica', 'bold')
-      doc.text('Daily Bills Report', M, 40)
-      doc.setFontSize(9); doc.setFont('helvetica', 'normal'); doc.setTextColor(110)
-      doc.text(dateLabel || 'today', pageW - M, 40, { align: 'right' }); doc.setTextColor(0)
-      let y = 58
-
-      type Sec = { title: string; acct: string; kind: 'paid' | 'trust'; rows: ReportBillLite[] }
-      const sections: Sec[] = [
-        { title: 'Payments Done', acct: '', kind: 'paid' as const, rows: paid },
-        ...copByAcct.map(([acct, rows]) => ({ title: 'COP Under Process', acct, kind: 'trust' as const, rows })),
-        ...adjByAcct.map(([acct, rows]) => ({ title: 'Adjust Against Advance', acct, kind: 'trust' as const, rows })),
-      ].filter(s => s.rows.length > 0)
-
-      for (const s of sections) {
-        const isCourier = COURIER_ACCTS.has(s.acct)
-        const dateHdr = s.kind === 'paid' ? 'Paid on' : (isCourier ? 'Courier' : 'Submission')
-        const head = [['#', 'Party', 'Project', 'Invoice', 'Amount (Rs)', dateHdr, 'Remark']]
-        const hlArr = s.rows.map(b => entryOf(b.id).highlight)
-        const body = s.rows.map((b, i) => [
-          String(i + 1), b.vendor || '—', b.area, b.invoiceNo, inrNum(b.amount),
-          s.kind === 'paid' ? fmtDate(b.paymentDate) : fmtDate(effDate(b, s.acct)),
-          entryOf(b.id).remark || '',
-        ])
-        const total = s.rows.reduce((sum, b) => sum + b.amount, 0)
-        const foot = [[{ content: `Total · ${s.rows.length} bill${s.rows.length === 1 ? '' : 's'}`, colSpan: 4 }, inrNum(total), '', '']]
-
-        if (y > pageH - 90) { doc.addPage(); y = 44 }
-        doc.setFontSize(11); doc.setFont('helvetica', 'bold'); doc.setTextColor(15, 23, 42)
-        doc.text(`${s.title}${s.acct && s.acct !== '—' ? ` — ${s.acct} A/c` : ''}`, M, y)
-        y += 6
-
-        autoTable(doc, {
-          startY: y + 2,
-          head, body, foot,
-          styles: { fontSize: 8, cellPadding: 3, overflow: 'linebreak', lineColor: [230, 235, 242], lineWidth: 0.5 },
-          headStyles: { fillColor: [241, 245, 249], textColor: [30, 41, 59], fontStyle: 'bold' },
-          footStyles: { fillColor: [248, 250, 252], textColor: [15, 23, 42], fontStyle: 'bold' },
-          columnStyles: { 0: { cellWidth: 22, textColor: [148, 163, 184] }, 4: { halign: 'right' } },
-          margin: { left: M, right: M },
-          didParseCell: (d) => {
-            if (d.section === 'body') {
-              const hl = hlArr[d.row.index]
-              if (hl === 'red') d.cell.styles.fillColor = [254, 226, 226]
-              else if (hl === 'yellow') d.cell.styles.fillColor = [254, 243, 199]
-            }
-          },
-        })
-        // @ts-expect-error lastAutoTable is added by the plugin
-        y = (doc.lastAutoTable?.finalY ?? y) + 20
-      }
+      const pdfW = 595.28                       // A4 width (pt)
+      const pdfH = (pdfW * dims.h) / dims.w      // ONE continuous page — never breaks
+      const doc = new JsPDF({ unit: 'pt', format: [pdfW, pdfH] })
+      doc.addImage(dataUrl, 'PNG', 0, 0, pdfW, pdfH)
       doc.save(`Daily Bills Report ${dateLabel || 'today'}.pdf`)
       toast.success('PDF ready')
     } catch {
@@ -353,6 +309,7 @@ export function DailyReportClient({
         {adjByAcct.map(([acct, rows]) => (
           <CleanTable key={`c-adj-${acct}`} id={`clean-sec-adj-${acct}`} title="Adjust Against Advance" acct={acct} dateLabel={dateLabel} rows={rows} kind="trust" entryOf={entryOf} effDate={effDate} />
         ))}
+        <FullReportDoc id="clean-full" dateLabel={dateLabel} paid={paid} copByAcct={copByAcct} adjByAcct={adjByAcct} totals={totals} entryOf={entryOf} effDate={effDate} />
       </div>
     </div>
   )
@@ -510,7 +467,80 @@ function TrustMapCard({
   )
 }
 
-// Off-screen clean table captured as a PNG for WhatsApp (one date column, highlight fills).
+// ── Off-screen "clean" renders captured as PNG (per-trust) / PDF (full day) ──
+const ACCT_HEX: Record<string, string> = { SRET: '#4f46e5', SRAH: '#0891b2', SRASSK: '#db2777', SRA: '#d97706', '—': '#e11d48' }
+
+// One section: heading with a trust-colour chip + count/total, then a clean table.
+function SectionTable({
+  title, acct, rows, kind, entryOf, effDate, emptyNote,
+}: {
+  title: string
+  acct: string
+  rows: ReportBillLite[]
+  kind: 'paid' | 'trust'
+  entryOf: (id: string) => TrustdeskEntry
+  effDate: (b: ReportBillLite, acct: string) => string
+  emptyNote?: string
+}) {
+  const hex = kind === 'paid' ? '#059669' : (ACCT_HEX[acct] ?? '#64748b')
+  const dateHdr = kind === 'paid' ? 'Paid on' : (COURIER_ACCTS.has(acct) ? 'Courier' : 'Submission')
+  const total = rows.reduce((s, b) => s + b.amount, 0)
+  const th: CSSProperties = { padding: '6px 8px', textAlign: 'left', borderBottom: `2px solid ${hex}`, fontWeight: 700, color: '#334155' }
+  const thR: CSSProperties = { ...th, textAlign: 'right' }
+  const td: CSSProperties = { padding: '5px 8px', borderBottom: '1px solid #eef2f7' }
+  const tdR: CSSProperties = { ...td, textAlign: 'right', fontVariantNumeric: 'tabular-nums', fontWeight: 600 }
+  const rowBg = (hl: string | null): CSSProperties | undefined =>
+    hl === 'red' ? { background: '#fee2e2' } : hl === 'yellow' ? { background: '#fef3c7' } : undefined
+  return (
+    <div style={{ marginTop: 16 }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span style={{ width: 12, height: 12, borderRadius: 3, background: hex, display: 'inline-block' }} />
+          <span style={{ fontSize: 14, fontWeight: 800 }}>{title}{acct && acct !== '—' ? ` — ${acct} A/c` : (acct === '—' ? ' — Trust not set' : '')}</span>
+        </div>
+        <span style={{ fontSize: 11.5, color: '#64748b', fontWeight: 600 }}>{rows.length} bill{rows.length === 1 ? '' : 's'} · {formatINR(total)}</span>
+      </div>
+      {rows.length === 0 ? (
+        <div style={{ padding: '10px 8px', fontSize: 12, color: '#94a3b8', fontStyle: 'italic', background: '#f8fafc', borderRadius: 6 }}>{emptyNote || 'No records'}</div>
+      ) : (
+        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+          <thead><tr style={{ background: '#f8fafc' }}>
+            <th style={{ ...th, width: 26 }}>#</th>
+            <th style={th}>Party</th>
+            <th style={th}>Project</th>
+            <th style={th}>Invoice</th>
+            <th style={thR}>Amount (₹)</th>
+            <th style={th}>{dateHdr}</th>
+            <th style={th}>Remark</th>
+          </tr></thead>
+          <tbody>
+            {rows.map((b, i) => {
+              const bg = rowBg(entryOf(b.id).highlight) ?? (i % 2 ? { background: '#fbfcfe' } : undefined)
+              return (
+                <tr key={b.id} style={bg}>
+                  <td style={{ ...td, color: '#94a3b8' }}>{i + 1}</td>
+                  <td style={td}>{b.vendor || '—'}</td>
+                  <td style={{ ...td, color: '#475569' }}>{b.area}</td>
+                  <td style={{ ...td, color: '#475569' }}>{b.invoiceNo}</td>
+                  <td style={tdR}>{formatINR(b.amount)}</td>
+                  <td style={td}>{kind === 'paid' ? fmtDate(b.paymentDate) : fmtDate(effDate(b, acct))}</td>
+                  <td style={{ ...td, color: '#475569' }}>{entryOf(b.id).remark || ''}</td>
+                </tr>
+              )
+            })}
+            <tr style={{ background: '#eef2f7', fontWeight: 800 }}>
+              <td style={{ ...td, borderBottom: 'none' }} colSpan={4}>Total · {rows.length} bill{rows.length === 1 ? '' : 's'}</td>
+              <td style={{ ...tdR, borderBottom: 'none' }}>{formatINR(total)}</td>
+              <td style={{ ...td, borderBottom: 'none' }} colSpan={2}></td>
+            </tr>
+          </tbody>
+        </table>
+      )}
+    </div>
+  )
+}
+
+// Per-trust card → "Copy image" (PNG to clipboard).
 function CleanTable({
   id, title, acct, dateLabel, rows, kind, entryOf, effDate,
 }: {
@@ -523,55 +553,71 @@ function CleanTable({
   entryOf: (id: string) => TrustdeskEntry
   effDate: (b: ReportBillLite, acct: string) => string
 }) {
-  const dateHdr = kind === 'paid' ? 'Paid on' : (COURIER_ACCTS.has(acct) ? 'Courier' : 'Submission')
-  const total = rows.reduce((s, b) => s + b.amount, 0)
-  const th: CSSProperties = { padding: '6px 8px', textAlign: 'left', borderBottom: '2px solid #cbd5e1', fontWeight: 700 }
-  const thR: CSSProperties = { ...th, textAlign: 'right' }
-  const td: CSSProperties = { padding: '5px 8px', borderBottom: '1px solid #eef2f7' }
-  const tdR: CSSProperties = { ...td, textAlign: 'right', fontVariantNumeric: 'tabular-nums', fontWeight: 600 }
-  const rowBg = (hl: string | null): CSSProperties | undefined =>
-    hl === 'red' ? { background: '#fee2e2' } : hl === 'yellow' ? { background: '#fef3c7' } : undefined
   return (
-    <div id={id} style={{ width: '820px', background: '#fff', padding: '18px 20px', fontFamily: 'Arial, sans-serif', color: '#0f172a' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 8 }}>
-        <div style={{ fontSize: 17, fontWeight: 800 }}>
-          {title}{acct && acct !== '—' ? <span style={{ color: '#475569' }}> — {acct} A/c</span> : ''}
+    <div id={id} style={{ width: '820px', background: '#fff', padding: '18px 22px', fontFamily: 'Arial, sans-serif', color: '#0f172a' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', borderBottom: '2px solid #0f172a', paddingBottom: 8 }}>
+        <div>
+          <div style={{ fontSize: 16, fontWeight: 800 }}>Daily Bills Report</div>
+          <div style={{ fontSize: 10, color: '#64748b' }}>SRMD Construction · Trust Accounts</div>
         </div>
-        <div style={{ fontSize: 12, color: '#64748b' }}>{dateLabel}</div>
+        <div style={{ fontSize: 13, fontWeight: 700, color: '#334155' }}>{dateLabel}</div>
       </div>
-      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
-        <thead><tr style={{ background: '#f1f5f9' }}>
-          <th style={{ ...th, width: 28 }}>#</th>
-          <th style={th}>Party</th>
-          <th style={th}>Project</th>
-          <th style={th}>Invoice</th>
-          <th style={thR}>Amount (₹)</th>
-          <th style={th}>{dateHdr}</th>
-          <th style={th}>Remark</th>
-        </tr></thead>
-        <tbody>
-          {rows.map((b, i) => {
-            const bg = rowBg(entryOf(b.id).highlight) ?? (i % 2 ? { background: '#fafcff' } : undefined)
-            return (
-              <tr key={b.id} style={bg}>
-                <td style={{ ...td, color: '#94a3b8' }}>{i + 1}</td>
-                <td style={td}>{b.vendor || '—'}</td>
-                <td style={{ ...td, color: '#475569' }}>{b.area}</td>
-                <td style={{ ...td, color: '#475569' }}>{b.invoiceNo}</td>
-                <td style={tdR}>{formatINR(b.amount)}</td>
-                <td style={td}>{kind === 'paid' ? fmtDate(b.paymentDate) : fmtDate(effDate(b, acct))}</td>
-                <td style={{ ...td, color: '#475569' }}>{entryOf(b.id).remark || ''}</td>
-              </tr>
-            )
-          })}
-          <tr style={{ background: '#f8fafc', fontWeight: 800 }}>
-            <td style={td} colSpan={4}>Total · {rows.length} bill{rows.length === 1 ? '' : 's'}</td>
-            <td style={tdR}>{formatINR(total)}</td>
-            <td style={td} colSpan={2}></td>
-          </tr>
-        </tbody>
-      </table>
-      <div style={{ fontSize: 10, color: '#94a3b8', marginTop: 10 }}>SRMD Construction · Daily Bills Report · auto-generated</div>
+      <SectionTable title={title} acct={acct} rows={rows} kind={kind} entryOf={entryOf} effDate={effDate} emptyNote={kind === 'paid' ? 'No payments done today' : 'No bills'} />
+      <div style={{ fontSize: 10, color: '#94a3b8', marginTop: 12 }}>Auto-generated from Zoho · CT Hub</div>
+    </div>
+  )
+}
+
+function SummaryPill({ label, n, amt, hex }: { label: string; n: number; amt: number; hex: string }) {
+  return (
+    <div style={{ flex: 1, border: '1px solid #e2e8f0', borderLeft: `3px solid ${hex}`, borderRadius: 8, padding: '8px 12px', background: '#fff' }}>
+      <div style={{ fontSize: 10, color: '#64748b', fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.4 }}>{label}</div>
+      <div style={{ fontSize: 15, fontWeight: 800, marginTop: 2 }}>{formatINR(amt)}</div>
+      <div style={{ fontSize: 10, color: '#94a3b8' }}>{n} bill{n === 1 ? '' : 's'}</div>
+    </div>
+  )
+}
+
+// Full day → single continuous PDF. Payments Done is always first.
+function FullReportDoc({
+  id, dateLabel, paid, copByAcct, adjByAcct, totals, entryOf, effDate,
+}: {
+  id: string
+  dateLabel: string
+  paid: ReportBillLite[]
+  copByAcct: Array<[string, ReportBillLite[]]>
+  adjByAcct: Array<[string, ReportBillLite[]]>
+  totals: { paidValue: number; trustValue: number; trustCount: number; adjValue: number; adjCount: number }
+  entryOf: (id: string) => TrustdeskEntry
+  effDate: (b: ReportBillLite, acct: string) => string
+}) {
+  return (
+    <div id={id} style={{ width: '820px', background: '#fff', fontFamily: 'Arial, sans-serif', color: '#0f172a' }}>
+      <div style={{ background: '#0f172a', color: '#fff', padding: '18px 24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div>
+          <div style={{ fontSize: 22, fontWeight: 800, letterSpacing: 0.3 }}>Daily Bills Report</div>
+          <div style={{ fontSize: 11.5, color: '#cbd5e1', marginTop: 3 }}>SRMD Construction · Trust Accounts</div>
+        </div>
+        <div style={{ textAlign: 'right' }}>
+          <div style={{ fontSize: 17, fontWeight: 700 }}>{dateLabel}</div>
+          <div style={{ fontSize: 10, color: '#94a3b8', marginTop: 2 }}>Auto-generated from Zoho</div>
+        </div>
+      </div>
+      <div style={{ display: 'flex', gap: 12, padding: '12px 24px', borderBottom: '1px solid #e2e8f0', background: '#f8fafc' }}>
+        <SummaryPill label="Paid today" n={paid.length} amt={totals.paidValue} hex="#059669" />
+        <SummaryPill label="At Trust (COP)" n={totals.trustCount} amt={totals.trustValue} hex="#4f46e5" />
+        {totals.adjCount > 0 && <SummaryPill label="Adjust" n={totals.adjCount} amt={totals.adjValue} hex="#d97706" />}
+      </div>
+      <div style={{ padding: '2px 24px 8px' }}>
+        <SectionTable title="Payments Done" acct="" rows={paid} kind="paid" entryOf={entryOf} effDate={effDate} emptyNote="No payments done today" />
+        {copByAcct.map(([acct, rows]) => (
+          <SectionTable key={`f-cop-${acct}`} title="COP Under Process" acct={acct} rows={rows} kind="trust" entryOf={entryOf} effDate={effDate} />
+        ))}
+        {adjByAcct.map(([acct, rows]) => (
+          <SectionTable key={`f-adj-${acct}`} title="Adjust Against Advance" acct={acct} rows={rows} kind="trust" entryOf={entryOf} effDate={effDate} />
+        ))}
+      </div>
+      <div style={{ padding: '12px 24px', borderTop: '1px solid #e2e8f0', fontSize: 10, color: '#94a3b8' }}>Generated by CT Hub · figures pulled from Zoho Projects · {dateLabel}</div>
     </div>
   )
 }

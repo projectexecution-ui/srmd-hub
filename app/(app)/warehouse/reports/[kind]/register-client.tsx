@@ -9,7 +9,7 @@ import { formatQty, formatINR } from '@/lib/warehouse/format'
 import { exportXlsx, exportPdf } from '@/lib/warehouse/export'
 import type { ExportSpec } from '@/lib/warehouse/export'
 import {
-  REGISTER_META, GROUP_LABEL, groupRows, registerTotals,
+  REGISTER_META, GROUP_LABEL, groupRows, registerTotals, categoryOf,
 } from '@/lib/warehouse/registers'
 import type { GroupBy, RegisterKind, RegisterRow } from '@/lib/warehouse/registers'
 import { FileDown, FileSpreadsheet, Search } from 'lucide-react'
@@ -115,6 +115,7 @@ export function RegisterClient({
         ...(isIn ? [{ header: 'PO', cell: (r: RegisterRow) => r.poNo ?? '—', width: 16 }] : []),
         { header: isVendor ? 'Party' : 'Supplier', cell: r => r.party ?? '—', width: 22 },
         { header: 'Item', cell: r => r.itemName, width: 30 },
+        { header: 'Category', cell: r => categoryOf(r), width: 18 },
         { header: 'Qty', cell: r => `${formatQty(r.qty)} ${r.unit}`, raw: r => r.qty, align: 'right' },
         ...(isIn
           ? [
@@ -130,7 +131,6 @@ export function RegisterClient({
             ]
           : []),
         { header: 'Project', cell: r => r.projectName ?? '—', width: 20 },
-        { header: 'Discipline', cell: r => r.discipline ?? '—', width: 14 },
         { header: 'Store', cell: r => r.storeName, width: 20 },
         ...(showValues
           ? [
@@ -154,10 +154,10 @@ export function RegisterClient({
         `${lines} ${lines === 1 ? 'line' : 'lines'}`,
       ]
       if (isIn) cols.push('')                                // PO
-      cols.push('', '')                                      // party, item
+      cols.push('', '', '')                                  // party, item, category
       cols.push('')                                          // qty (per-unit, shown in the notes)
       if (isIn) cols.push('', '', '')                        // short, damaged, differs-from-IN4
-      cols.push('', '', '')                                  // project, discipline, store
+      cols.push('', '')                                      // project, store
       if (showValues) cols.push('', partial ? `${formatINR(amount)} +` : formatINR(amount))
       return cols
     }
@@ -291,6 +291,7 @@ export function RegisterClient({
                   {isIn && <th className="text-left px-2 py-1.5">PO</th>}
                   <th className="text-left px-2 py-1.5">{isVendor ? 'Party' : 'Supplier'}</th>
                   <th className="text-left px-2 py-1.5">Item</th>
+                  {group !== 'category' && <th className="text-left px-2 py-1.5">Category</th>}
                   <th className="text-right px-2 py-1.5">Qty</th>
                   {isIn && <th className="text-right px-2 py-1.5">Short</th>}
                   {isIn && <th className="text-right px-2 py-1.5">Dmg</th>}
@@ -315,6 +316,9 @@ export function RegisterClient({
                         </span>
                       )}
                     </td>
+                    {group !== 'category' && (
+                      <td className="px-2 py-1.5 text-slate-500">{categoryOf(r)}</td>
+                    )}
                     <td className="px-2 py-1.5 text-right tabular-nums font-semibold text-slate-900 whitespace-nowrap">
                       {formatQty(r.qty)} <span className="font-normal text-slate-400">{r.unit}</span>
                     </td>
