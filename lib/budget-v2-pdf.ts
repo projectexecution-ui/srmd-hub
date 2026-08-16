@@ -290,6 +290,20 @@ export function buildWeeklyDetailPdf(input: WeeklyDetailInput, mode: 'category' 
     .filter(x => (!onlyProject || x.p.name === onlyProject)
               && (!onlyGroup || x.group === onlyGroup))
   const showSummary = projects.length > 1
+
+  // The summary must describe THIS file, not the portfolio. Filtering only the
+  // page loop above left a group's PDF opening with every project in the
+  // company — the one thing a forwardable per-group file must not do.
+  const visibleNames = new Set(projects.map(x => x.p.name))
+  const visibleGroups = groups
+    .map(g => ({ ...g, projects: g.projects.filter(p => visibleNames.has(p.name)) }))
+    .filter(g => g.projects.length > 0)
+  const sumOf = (ps: { budget: number; approved: number; spent: number }[]) =>
+    ps.reduce((a, p) => ({ budget: a.budget + p.budget, approved: a.approved + p.approved, spent: a.spent + p.spent }),
+              { budget: 0, approved: 0, spent: 0 })
+  // Totals for the visible set only — `result.totals` is always the whole portfolio.
+  const vt = sumOf(projects.map(x => x.p))
+  const vUsedPct = pct(vt.spent, vt.budget) ?? 0
   const kind = isSub ? 'Sub-category' : 'Category'
 
   const norm = (s: string) => (s || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim()
@@ -312,20 +326,27 @@ export function buildWeeklyDetailPdf(input: WeeklyDetailInput, mode: 'category' 
   if (showSummary) {
     page()
     doc.setFontSize(9); doc.setTextColor(...C.gold); doc.text('SRMD · CONSTRUCTION', M, 40)
-    doc.setFontSize(16); doc.setTextColor(...C.ink); doc.text(`Weekly Budget vs Actual — by ${kind}`, M, 60)
+    // Name the group on a group file — otherwise every one of them is titled
+    // "Weekly Budget vs Actual" and they are indistinguishable once forwarded.
+    doc.setFontSize(16); doc.setTextColor(...C.ink)
+    doc.text(onlyGroup ? `${onlyGroup} — Budget vs Actual` : `Weekly Budget vs Actual — by ${kind}`, M, 60)
     doc.setFontSize(9); doc.setTextColor(...C.mut)
     doc.text(`Summary · as on ${asOf(freshness.budget)} · ${projects.length} projects · confidential — management`, M, 75)
     const rows: Row[] = []
-    for (const g of groups) {
-      const gu = pct(g.spent, g.budget)
+    for (const g of visibleGroups) {
+      // Aggregates come from the VISIBLE projects, not the group's stored
+      // totals — otherwise a filtered file shows a roll-up bigger than the
+      // rows printed under it.
+      const ga = sumOf(g.projects)
+      const gu = pct(ga.spent, ga.budget)
       const gd = g.projects.reduce((s, p) => s + (projDelta(p.name) ?? 0), 0)
-      rows.push({ type: 'grp', cols: [{ t: `${g.name} · ${g.projects.length}` }, money(g.budget), money(g.approved, C.appr), money(g.spent, toneColor(gu)), money(g.budget - g.spent, g.budget - g.spent < 0 ? C.over : undefined), { t: gu != null ? `${gu}%` : '—', color: toneColor(gu) }, delta.hasBaseline ? deltaCell(gd) : { t: '—', color: C.faint }] })
+      rows.push({ type: 'grp', cols: [{ t: `${g.name} · ${g.projects.length}` }, money(ga.budget), money(ga.approved, C.appr), money(ga.spent, toneColor(gu)), money(ga.budget - ga.spent, ga.budget - ga.spent < 0 ? C.over : undefined), { t: gu != null ? `${gu}%` : '—', color: toneColor(gu) }, delta.hasBaseline ? deltaCell(gd) : { t: '—', color: C.faint }] })
       for (const p of g.projects) {
         const u = pct(p.spent, p.budget)
         rows.push({ type: 'proj', cols: [{ t: `${p.name}${p.status === 'closed' ? ' · closed' : ''}` }, money(p.budget, undefined, perSft(p.budget, p.area)), money(p.approved, C.appr, perSft(p.approved, p.area)), money(p.spent, toneColor(u), perSft(p.spent, p.area)), money(p.budget - p.spent, p.budget - p.spent < 0 ? C.over : undefined, perSft(p.budget - p.spent, p.area)), { t: u != null ? `${u}%` : '—', color: toneColor(u) }, deltaCell(projDelta(p.name))] })
       }
     }
-    rows.push({ type: 'total', cols: [{ t: 'TOTAL' }, money(t.budget), money(t.approved, C.appr), money(t.spent), money(t.budget - t.spent, t.budget - t.spent < 0 ? C.over : undefined), { t: `${usedPct}%` }, delta.hasBaseline ? deltaCell(delta.overall.paid) : { t: '—', color: C.faint }] })
+    rows.push({ type: 'total', cols: [{ t: 'TOTAL' }, money(vt.budget), money(vt.approved, C.appr), money(vt.spent), money(vt.budget - vt.spent, vt.budget - vt.spent < 0 ? C.over : undefined), { t: `${vUsedPct}%` }, delta.hasBaseline ? deltaCell(projects.reduce((s, x) => s + (projDelta(x.p.name) ?? 0), 0)) : { t: '—', color: C.faint }] })
     const y = renderRows(doc, rows, ['Project', ...HEAD_MONEY], 88, M)
     doc.setFontSize(8); doc.setTextColor(...C.mut)
     doc.text(`Δ Paid = change vs the previous upload${prevSnapshotWeek ? ` (${asOf(prevSnapshotWeek)})` : ''}. Each project follows on its own page.`, M, y + 18)
