@@ -75,15 +75,32 @@ function deltaCell(v: number | null): Cell {
 // Shared table renderer: builds an autoTable with per-row-type fills, per-cell
 // text colours, and the small grey ₹/sft sub-line under money cells. Returns
 // the finalY so the caller can place a footer.
-function renderRows(doc: jsPDF, rows: Row[], head: string[], startY: number, M: number): number {
+/** `squeeze` (0.55–1) shrinks type and padding so a long table still lands on
+ *  ONE page. autoTable would otherwise paginate happily, which on a per-project
+ *  page splits that project across two sheets — the sub-category report is long
+ *  enough that projects like NGH B and SRAH were being cut in half. */
+const SUBLINE_MIN = 0.8
+/** Height one row occupies at a given squeeze — the sub-line's 20pt minimum
+ *  above SUBLINE_MIN, plain type-plus-padding below it. */
+export function rowHeightAt(s: number): number {
+  return s > SUBLINE_MIN ? 20 * s : 8 * s * 1.15 + 2 * Math.max(1, 3 * s) + 1
+}
+/** Largest squeeze (<=1) at which `rows` still fit in `avail` points. */
+export function squeezeToFit(rows: number, avail: number): number {
+  for (let s = 1; s >= 0.4; s -= 0.01) if (rows * rowHeightAt(s) <= avail) return s
+  return 0.4
+}
+function renderRows(doc: jsPDF, rows: Row[], head: string[], startY: number, M: number, squeeze = 1): number {
+  const s = Math.min(1, Math.max(0.4, squeeze))
+  const pad = Math.max(1, 3 * s)
   autoTable(doc, {
     startY,
     margin: { left: M, right: M },
     head: [head],
     body: rows.map(r => r.cols.map(c => c.t)),
     theme: 'plain',
-    styles: { font: 'Noto', fontStyle: 'normal', fontSize: 8, cellPadding: { top: 3, bottom: 3, left: 6, right: 6 }, textColor: C.ink, lineColor: [241, 243, 245], lineWidth: { bottom: 0.5 }, overflow: 'linebreak' },
-    headStyles: { fillColor: C.headBg, textColor: C.faint, fontSize: 6.8, halign: 'right', cellPadding: { top: 5, bottom: 5, left: 6, right: 6 } },
+    styles: { font: 'Noto', fontStyle: 'normal', fontSize: 8 * s, cellPadding: { top: pad, bottom: pad, left: 6, right: 6 }, textColor: C.ink, lineColor: [241, 243, 245], lineWidth: { bottom: 0.5 }, overflow: 'linebreak' },
+    headStyles: { fillColor: C.headBg, textColor: C.faint, fontSize: 6.8 * s, halign: 'right', cellPadding: { top: 5 * s, bottom: 5 * s, left: 6, right: 6 } },
     columnStyles: { 0: { halign: 'left', cellWidth: 'auto' }, 1: { halign: 'right' }, 2: { halign: 'right' }, 3: { halign: 'right' }, 4: { halign: 'right' }, 5: { halign: 'right', cellWidth: 34 }, 6: { halign: 'right' } },
     didParseCell: (d) => {
       if (d.section === 'head') { if (d.column.index === 0) d.cell.styles.halign = 'left'; return }
@@ -93,18 +110,21 @@ function renderRows(doc: jsPDF, rows: Row[], head: string[], startY: number, M: 
       if (r.type === 'grp') { d.cell.styles.fillColor = C.grpBg; if (d.column.index === 0) d.cell.styles.textColor = C.navy }
       else if (r.type === 'total') { d.cell.styles.fillColor = C.totalBg; if (d.column.index === 0) d.cell.styles.textColor = C.navy }
       else if (r.type === 'cat') { d.cell.styles.fillColor = C.catBg }
-      else if (r.type === 'sub') { if (!cell.color) d.cell.styles.textColor = C.subInk; d.cell.styles.fillColor = C.subBg; d.cell.styles.fontSize = 7.5 }
+      else if (r.type === 'sub') { if (!cell.color) d.cell.styles.textColor = C.subInk; d.cell.styles.fillColor = C.subBg; d.cell.styles.fontSize = 7.5 * s }
       // indent the left label column by row depth
       if (d.column.index === 0) {
-        const pad = r.type === 'proj' ? 18 : r.type === 'sub' ? 24 : 6
-        d.cell.styles.cellPadding = { top: 3, bottom: 3, left: pad, right: 6 }
+        const lpad = r.type === 'proj' ? 18 : r.type === 'sub' ? 24 : 6
+        d.cell.styles.cellPadding = { top: pad, bottom: pad, left: lpad, right: 6 }
       }
-      if (r.type !== 'grp' && cell.sub) d.cell.styles.minCellHeight = 20
+      // The ₹/sft sub-line forces a 20pt row. Past a mild squeeze it is the
+      // thing stopping the project fitting, so it is dropped rather than let
+      // the page overflow — the figure is still on the summary page.
+      if (r.type !== 'grp' && cell.sub && s > SUBLINE_MIN) d.cell.styles.minCellHeight = 20 * s
     },
     didDrawCell: (d) => {
       if (d.section !== 'body') return
       const r = rows[d.row.index]; const cell = r.cols[d.column.index]
-      if (r.type !== 'grp' && cell.sub) {
+      if (r.type !== 'grp' && cell.sub && s > SUBLINE_MIN) {
         doc.setFont('Noto', 'normal'); doc.setFontSize(5.6); doc.setTextColor(...C.faint)
         doc.text(cell.sub, d.cell.x + d.cell.width - 6, d.cell.y + d.cell.height - 4.5, { align: 'right' })
       }
@@ -399,7 +419,16 @@ export function buildWeeklyDetailPdf(input: WeeklyDetailInput, mode: 'category' 
         }
       }
       rows.push({ type: 'total', cols: [{ t: `TOTAL · ${p.name}` }, money(p.budget), money(p.approved, C.appr), money(p.spent), money(bal, bal < 0 ? C.over : undefined), { t: `${u}%` }, deltaCell(projDelta(p.name))] })
-      const fy = renderRows(doc, rows, [isSub ? 'Category / work-item' : 'Category', ...HEAD_MONEY], startY, M)
+      // Keep the project on ONE page. A category page has a handful of rows and
+      // never needs this; the sub-category page expands every work-item, and a
+      // project like NGH B or SRAH ran past the bottom and continued overleaf.
+      // Work out how many rows the space actually holds and shrink to suit,
+      // rather than letting autoTable spill onto a second sheet.
+      const avail = doc.internal.pageSize.getHeight() - startY - 46   // 46 = footer + margin
+      const fy = renderRows(
+        doc, rows, [isSub ? 'Category / work-item' : 'Category', ...HEAD_MONEY], startY, M,
+        squeezeToFit(rows.length, avail),
+      )
       footer(doc, M, fy + 20, `Balance = Budget − Paid · Δ Paid vs previous upload${prevSnapshotWeek ? ` (${asOf(prevSnapshotWeek)})` : ''}`)
     }
   }
