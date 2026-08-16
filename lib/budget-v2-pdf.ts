@@ -129,7 +129,46 @@ export interface WeeklyPdfInput {
   delta: DeltaResult
   prevSnapshotWeek: string | null
 }
-export interface WeeklyDetailInput extends WeeklyPdfInput { prev: ComposeResult | null }
+export interface WeeklyDetailInput extends WeeklyPdfInput {
+  prev: ComposeResult | null
+  /** Restrict the report to ONE project (by name) — the per-project weekly. */
+  onlyProject?: string
+}
+
+/** A filename that says what the file is without opening it.
+ *
+ *  Telegram shows the name and little else, so a folder of "report-3.pdf" is
+ *  useless. Week first so a year of them sorts chronologically, then project,
+ *  then the two numbers you would open it to check anyway.
+ *  e.g. 2026-W34_NGH-A_Bud-9.57Cr_Used-64pc.pdf */
+export function projectPdfFilename(
+  p: { name: string; budget: number; spent: number },
+  asOfISO: string | null,
+): string {
+  const d = asOfISO ? new Date(asOfISO) : new Date()
+  const safe = (s: string) => s.normalize('NFKD').replace(/[^\w\s-]/g, '').trim().replace(/\s+/g, '-').slice(0, 40)
+  const used = p.budget > 0 ? Math.round((p.spent / p.budget) * 100) : null
+  return [
+    `${d.getUTCFullYear()}-W${String(isoWeek(d)).padStart(2, '0')}`,
+    safe(p.name),
+    `Bud-${crShort(p.budget)}`,
+    used == null ? 'Used-na' : `Used-${used}pc`,
+  ].join('_') + '.pdf'
+}
+
+function isoWeek(d: Date): number {
+  const t = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()))
+  t.setUTCDate(t.getUTCDate() + 4 - (t.getUTCDay() || 7))
+  return Math.ceil(((t.getTime() - Date.UTC(t.getUTCFullYear(), 0, 1)) / 86400000 + 1) / 7)
+}
+
+/** Compact Indian magnitude for a filename — 9.57Cr, 81.34L, 4500. */
+function crShort(n: number): string {
+  const a = Math.abs(n)
+  if (a >= 1e7) return `${(n / 1e7).toFixed(2).replace(/\.00$/, '')}Cr`
+  if (a >= 1e5) return `${(n / 1e5).toFixed(2).replace(/\.00$/, '')}L`
+  return String(Math.round(n))
+}
 
 function displayGroups(result: ComposeResult) {
   return result.groups.map(g => ({ ...g, name: g.name === '— Ungrouped' ? 'Standalone projects' : g.name }))
@@ -208,12 +247,18 @@ export function buildWeeklyOnePagerPdf(input: WeeklyPdfInput): Uint8Array {
 
 // ── Reports 2 & 3: detail, one project per page ──────────────────────────────
 export function buildWeeklyDetailPdf(input: WeeklyDetailInput, mode: 'category' | 'subcategory'): Uint8Array {
-  const { result, prev, delta, freshness, prevSnapshotWeek } = input
+  const { result, prev, delta, freshness, prevSnapshotWeek, onlyProject } = input
   const isSub = mode === 'subcategory'
   const t = result.totals
   const usedPct = pct(t.spent, t.budget) ?? 0
   const groups = displayGroups(result)
-  const projects = groups.flatMap(g => g.projects.map(p => ({ p, group: g.name })))
+  // `onlyProject` narrows this to a single project, which is what makes a
+  // one-file-per-project weekly possible. Nothing else changes: showSummary
+  // already falls away at one project, so the result is exactly the page this
+  // project would have had inside the merged report — on its own.
+  const projects = groups
+    .flatMap(g => g.projects.map(p => ({ p, group: g.name })))
+    .filter(x => !onlyProject || x.p.name === onlyProject)
   const showSummary = projects.length > 1
   const kind = isSub ? 'Sub-category' : 'Category'
 

@@ -13,7 +13,7 @@ import { createClient as createServiceClient } from '@supabase/supabase-js'
 import { getMyUser, getMyPermissions, can } from '@/lib/auth'
 import { loadBudgetV2 } from '@/lib/budget-v2-load'
 import { buildBudgetV2Report } from '@/lib/budget-v2-report'
-import { buildWeeklyOnePagerPdf, buildWeeklyDetailPdf } from '@/lib/budget-v2-pdf'
+import { buildWeeklyOnePagerPdf, buildWeeklyDetailPdf, projectPdfFilename } from '@/lib/budget-v2-pdf'
 import { sendPdfToGroup } from '@/lib/telegram/group'
 
 export const runtime = 'nodejs'
@@ -32,7 +32,7 @@ function serviceClient() {
 async function sendPdfsToGroup(
   svc: ReturnType<typeof serviceClient>,
   loaded: Awaited<ReturnType<typeof loadBudgetV2>>,
-): Promise<{ sent: number; noGroup: boolean; errors: string[] }> {
+): Promise<{ sent: number; total: number; noGroup: boolean; errors: string[] }> {
   const { result, freshness, delta, prevSnapshotWeek, prev } = loaded
   const base = { result, freshness, delta, prevSnapshotWeek }
   const tag = new Date(Date.now() + 5.5 * 3600 * 1000).toISOString().slice(0, 10)
@@ -41,6 +41,22 @@ async function sendPdfsToGroup(
     { name: `Budget-vs-Actual_By-Category_${tag}.pdf`, caption: 'Weekly Budget vs Actual — by category', pdf: buildWeeklyDetailPdf({ ...base, prev }, 'category') },
     { name: `Budget-vs-Actual_By-Sub-category_${tag}.pdf`, caption: 'Weekly Budget vs Actual — by sub-category', pdf: buildWeeklyDetailPdf({ ...base, prev }, 'subcategory') },
   ]
+
+  // ...then one single-page, category-wise file PER PROJECT. The merged reports
+  // above are for reading the portfolio; these are for forwarding — an Atm Head
+  // can send one project's page on without also sending everyone else's numbers.
+  // Filtering to one project drops the summary page automatically, so each file
+  // is exactly that project's page, standing alone.
+  for (const g of result.groups) {
+    for (const p of g.projects) {
+      if (p.budget === 0 && p.spent === 0) continue      // nothing to report yet
+      files.push({
+        name: projectPdfFilename(p, freshness.budget),
+        caption: `${p.name} — Budget vs Actual, week to ${tag}`,
+        pdf: buildWeeklyDetailPdf({ ...base, prev, onlyProject: p.name }, 'category'),
+      })
+    }
+  }
   let sent = 0, noGroup = false
   const errors: string[] = []
   for (const f of files) {
@@ -49,7 +65,7 @@ async function sendPdfsToGroup(
     else if (r.ok) sent++
     else errors.push(r.error)
   }
-  return { sent, noGroup, errors }
+  return { sent, total: files.length, noGroup, errors }
 }
 
 // Notify management (in-app + email + DM) via the RPC, and — when `toGroup` — post
@@ -76,7 +92,7 @@ async function sendReport(
   let group: string | undefined
   if (toGroup) {
     const g = await sendPdfsToGroup(svc, loaded)
-    group = g.noGroup ? 'no-group' : `pdfs:${g.sent}/3${g.errors.length ? ` err:${g.errors.join('|')}` : ''}`
+    group = g.noGroup ? 'no-group' : `pdfs:${g.sent}/${g.total}${g.errors.length ? ` err:${g.errors.join("|")}` : ""}`
   }
   return { ok: true, sent: (data as number) ?? 0, group }
 }
