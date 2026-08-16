@@ -38,6 +38,7 @@ export async function POST(req: NextRequest) {
   if ('remark' in body) row.remark = typeof body.remark === 'string' && body.remark ? body.remark.slice(0, 200) : null
   if ('account' in body) row.account = typeof body.account === 'string' && body.account ? body.account.toUpperCase().slice(0, 12) : null
   if (typeof body.is_adjust_advance === 'boolean') row.is_adjust_advance = body.is_adjust_advance
+  if ('highlight' in body) row.highlight = body.highlight === 'red' || body.highlight === 'yellow' ? body.highlight : null
 
   const supabase = await createClient()
   const { error } = await supabase

@@ -10,37 +10,35 @@ export interface ReportBillLite {
   id: string
   section: 'paid' | 'trust'
   vendor: string
-  area: string               // task-list name = the "Project", and the trust-map key
+  area: string
   projectCode: string
   invoiceNo: string
   amount: number
   billDate: string
   paymentDate: string
-  submittedOn?: string       // moment it moved to Submitted-to-Trust (auto default for submission date)
+  submittedOn?: string       // moment it moved to Submitted-to-Trust (auto date default)
 }
 export interface TrustdeskEntry {
   submission_date: string | null
   courier_date: string | null
   remark: string | null
   is_adjust_advance: boolean
+  highlight: string | null   // '' | 'red' | 'yellow'
 }
 
 const REMARK_OPTIONS = [
-  'Cheque Received',
-  'Under A/c -Process',
-  'Online Payment',
-  'Adjust Against Advance',
-  'Adjust Against Advance (By Purchase Dep.)',
-  'Hold Amount Release',
+  'Cheque Received', 'Under A/c -Process', 'Online Payment',
+  'Adjust Against Advance', 'Adjust Against Advance (By Purchase Dep.)', 'Hold Amount Release',
 ]
 const ACCOUNTS = ['SRET', 'SRAH', 'SRASSK', 'SRA']
-const COURIER_ACCTS = new Set(['SRET'])   // courier date column shows only for these trusts
+const COURIER_ACCTS = new Set(['SRET'])   // these trusts use a Courier date instead of Submission date
 const ACCT_TONE: Record<string, string> = {
   SRET: 'bg-indigo-50 text-indigo-700 border-indigo-200',
   SRAH: 'bg-cyan-50 text-cyan-700 border-cyan-200',
   SRASSK: 'bg-pink-50 text-pink-700 border-pink-200',
   SRA: 'bg-amber-50 text-amber-700 border-amber-200',
 }
+const HL_ROW: Record<string, string> = { red: 'bg-red-50', yellow: 'bg-amber-50' }
 
 function fmtDate(iso: string | null | undefined): string {
   if (!iso) return ''
@@ -59,6 +57,7 @@ function daysSince(iso: string | null | undefined): number | null {
   if (Number.isNaN(t)) return null
   return Math.max(0, Math.floor((Date.now() - t) / 86_400_000))
 }
+const inrNum = (n: number) => formatINR(n).replace(/₹\s?/, '')   // PDF font has no ₹ glyph
 
 export function DailyReportClient({
   bills, initialEntries, initialTrustMap, asOf, availableDates, selectedDate,
@@ -75,24 +74,25 @@ export function DailyReportClient({
   const [trustMap, setTrustMap] = useState<Record<string, string>>(initialTrustMap)
   const [q, setQ] = useState('')
   const [busyImg, setBusyImg] = useState<string | null>(null)
+  const [pdfBusy, setPdfBusy] = useState(false)
 
   const todayInput = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(new Date())
 
   function entryOf(id: string): TrustdeskEntry {
-    return entries[id] ?? { submission_date: null, courier_date: null, remark: null, is_adjust_advance: false }
+    return entries[id] ?? { submission_date: null, courier_date: null, remark: null, is_adjust_advance: false, highlight: null }
   }
-  // Submission/courier auto-default to the "submitted to trust" moment; editable.
   const effSub = (b: ReportBillLite) => entryOf(b.id).submission_date ?? toDateInput(b.submittedOn)
   const effCourier = (b: ReportBillLite) => entryOf(b.id).courier_date ?? toDateInput(b.submittedOn)
+  // The one date each trust cares about: SRET → courier, everyone else → submission.
+  const effDate = (b: ReportBillLite, acct: string) => (COURIER_ACCTS.has(acct) ? effCourier(b) : effSub(b))
 
   async function save(id: string, patch: Partial<TrustdeskEntry>) {
     setEntries(prev => ({ ...prev, [id]: { ...entryOf(id), ...patch } }))
     await fetch('/api/bills-pipeline/trustdesk', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ billId: id, ...patch }),
-    }).catch(() => { /* keep optimistic value; next save retries */ })
+    }).catch(() => {})
   }
-
   async function saveTrust(area: string, trust: string) {
     setTrustMap(prev => { const next = { ...prev }; if (trust) next[area] = trust; else delete next[area]; return next })
     await fetch('/api/bills-pipeline/trust-map', {
@@ -113,9 +113,11 @@ export function DailyReportClient({
   const { paid, copByAcct, adjByAcct, totals } = useMemo(() => {
     const needle = q.trim().toLowerCase()
     const hit = (b: ReportBillLite) => !needle || `${b.vendor} ${b.area} ${b.invoiceNo}`.toLowerCase().includes(needle)
-    const subKey = (b: ReportBillLite) => entryOf(b.id).submission_date ?? (b.submittedOn ?? '').slice(0, 10)
-    const byDateDesc = (a: ReportBillLite, b: ReportBillLite) => subKey(b).localeCompare(subKey(a))
-
+    const dateKey = (b: ReportBillLite, acct: string) => {
+      const e = entryOf(b.id)
+      const raw = (COURIER_ACCTS.has(acct) ? e.courier_date : e.submission_date) ?? (b.submittedOn ?? '').slice(0, 10)
+      return raw
+    }
     const paid = bills.filter(b => b.section === 'paid' && hit(b)).sort((a, b) => (b.paymentDate || '').localeCompare(a.paymentDate || ''))
     const trust = bills.filter(b => b.section === 'trust' && hit(b))
     const cop = trust.filter(b => !entryOf(b.id).is_adjust_advance)
@@ -123,7 +125,7 @@ export function DailyReportClient({
     const group = (arr: ReportBillLite[]) => {
       const m = new Map<string, ReportBillLite[]>()
       for (const b of arr) { const a = acctOf(b) || '—'; const g = m.get(a) ?? []; g.push(b); m.set(a, g) }
-      for (const g of m.values()) g.sort(byDateDesc)   // dates descending (latest first)
+      for (const [acct, g] of m) g.sort((a, b) => dateKey(b, acct).localeCompare(dateKey(a, acct)))   // date descending
       return [...m.entries()].sort((x, y) => {
         const ix = ACCOUNTS.indexOf(x[0]); const iy = ACCOUNTS.indexOf(y[0])
         return (ix < 0 ? 99 : ix) - (iy < 0 ? 99 : iy)
@@ -141,6 +143,7 @@ export function DailyReportClient({
   }, [bills, entries, trustMap, q])
 
   const inputCls = 'w-full rounded border border-gray-200 px-1.5 py-1 text-xs bg-white focus:border-blue-400 focus:outline-none'
+  const dateLabel = fmtDate(asOf || selectedDate)
 
   async function copyImage(cleanId: string, label: string) {
     const node = document.getElementById(cleanId)
@@ -166,38 +169,103 @@ export function DailyReportClient({
     } finally { setBusyImg(null) }
   }
 
+  async function downloadPdf() {
+    setPdfBusy(true)
+    try {
+      const { default: JsPDF } = await import('jspdf')
+      const autoTable = (await import('jspdf-autotable')).default
+      const doc = new JsPDF({ unit: 'pt', format: 'a4' })
+      const pageW = doc.internal.pageSize.getWidth()
+      const pageH = doc.internal.pageSize.getHeight()
+      const M = 28
+
+      doc.setFontSize(15); doc.setFont('helvetica', 'bold')
+      doc.text('Daily Bills Report', M, 40)
+      doc.setFontSize(9); doc.setFont('helvetica', 'normal'); doc.setTextColor(110)
+      doc.text(dateLabel || 'today', pageW - M, 40, { align: 'right' }); doc.setTextColor(0)
+      let y = 58
+
+      type Sec = { title: string; acct: string; kind: 'paid' | 'trust'; rows: ReportBillLite[] }
+      const sections: Sec[] = [
+        { title: 'Payments Done', acct: '', kind: 'paid' as const, rows: paid },
+        ...copByAcct.map(([acct, rows]) => ({ title: 'COP Under Process', acct, kind: 'trust' as const, rows })),
+        ...adjByAcct.map(([acct, rows]) => ({ title: 'Adjust Against Advance', acct, kind: 'trust' as const, rows })),
+      ].filter(s => s.rows.length > 0)
+
+      for (const s of sections) {
+        const isCourier = COURIER_ACCTS.has(s.acct)
+        const dateHdr = s.kind === 'paid' ? 'Paid on' : (isCourier ? 'Courier' : 'Submission')
+        const head = [['#', 'Party', 'Project', 'Invoice', 'Amount (Rs)', dateHdr, 'Remark']]
+        const hlArr = s.rows.map(b => entryOf(b.id).highlight)
+        const body = s.rows.map((b, i) => [
+          String(i + 1), b.vendor || '—', b.area, b.invoiceNo, inrNum(b.amount),
+          s.kind === 'paid' ? fmtDate(b.paymentDate) : fmtDate(effDate(b, s.acct)),
+          entryOf(b.id).remark || '',
+        ])
+        const total = s.rows.reduce((sum, b) => sum + b.amount, 0)
+        const foot = [[{ content: `Total · ${s.rows.length} bill${s.rows.length === 1 ? '' : 's'}`, colSpan: 4 }, inrNum(total), '', '']]
+
+        if (y > pageH - 90) { doc.addPage(); y = 44 }
+        doc.setFontSize(11); doc.setFont('helvetica', 'bold'); doc.setTextColor(15, 23, 42)
+        doc.text(`${s.title}${s.acct && s.acct !== '—' ? ` — ${s.acct} A/c` : ''}`, M, y)
+        y += 6
+
+        autoTable(doc, {
+          startY: y + 2,
+          head, body, foot,
+          styles: { fontSize: 8, cellPadding: 3, overflow: 'linebreak', lineColor: [230, 235, 242], lineWidth: 0.5 },
+          headStyles: { fillColor: [241, 245, 249], textColor: [30, 41, 59], fontStyle: 'bold' },
+          footStyles: { fillColor: [248, 250, 252], textColor: [15, 23, 42], fontStyle: 'bold' },
+          columnStyles: { 0: { cellWidth: 22, textColor: [148, 163, 184] }, 4: { halign: 'right' } },
+          margin: { left: M, right: M },
+          didParseCell: (d) => {
+            if (d.section === 'body') {
+              const hl = hlArr[d.row.index]
+              if (hl === 'red') d.cell.styles.fillColor = [254, 226, 226]
+              else if (hl === 'yellow') d.cell.styles.fillColor = [254, 243, 199]
+            }
+          },
+        })
+        // @ts-expect-error lastAutoTable is added by the plugin
+        y = (doc.lastAutoTable?.finalY ?? y) + 20
+      }
+      doc.save(`Daily Bills Report ${dateLabel || 'today'}.pdf`)
+      toast.success('PDF ready')
+    } catch {
+      toast.error('Could not create PDF')
+    } finally { setPdfBusy(false) }
+  }
+
   function jump(id: string) { document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' }) }
   const chips = [
     { id: 'sec-paid', label: '💸 Paid', n: paid.length, tone: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
     ...copByAcct.map(([a, rows]) => ({ id: `sec-cop-${a}`, label: a === '—' ? 'COP · unset' : `COP ${a}`, n: rows.length, tone: a === '—' ? 'bg-rose-50 text-rose-600 border-rose-200' : (ACCT_TONE[a] ?? 'bg-gray-50 text-gray-600 border-gray-200') })),
     ...adjByAcct.map(([a, rows]) => ({ id: `sec-adj-${a}`, label: a === '—' ? 'Adj · unset' : `Adj ${a}`, n: rows.length, tone: 'bg-amber-50 text-amber-700 border-amber-200' })),
   ]
-  const dateLabel = fmtDate(asOf || selectedDate)
 
   return (
     <div className="space-y-5">
-      {/* Sticky toolbar: date look-back + search + jump chips */}
+      {/* Sticky toolbar: date look-back + PDF + search + jump chips */}
       <div className="sticky top-14 md:top-0 z-20 -mx-4 md:-mx-6 px-4 md:px-6 py-2.5 bg-white/95 backdrop-blur border-b border-gray-200 space-y-2">
         <div className="flex items-center gap-2 flex-wrap">
           <label className="flex items-center gap-1.5 text-xs text-gray-500 shrink-0">
             📅
-            <input
-              type="date" value={selectedDate} max={todayInput}
+            <input type="date" value={selectedDate} max={todayInput}
               onChange={e => router.push(e.target.value ? `?date=${e.target.value}` : '?')}
               className="rounded-lg border border-gray-200 px-2 py-1.5 text-sm bg-white focus:border-blue-400 focus:outline-none"
-              title="Look back at a past day's report"
-            />
+              title="Look back at a past day's report" />
           </label>
           {selectedDate !== todayInput && (
             <button onClick={() => router.push('?')} className="text-xs text-blue-600 hover:underline shrink-0">latest</button>
           )}
-          <div className="relative flex-1 min-w-[160px]">
+          <button onClick={downloadPdf} disabled={pdfBusy}
+            className="inline-flex items-center gap-1 rounded-lg border border-rose-200 bg-rose-50 px-2.5 py-1.5 text-xs font-semibold text-rose-700 hover:bg-rose-100 disabled:opacity-50 shrink-0">
+            {pdfBusy ? '…' : '📄'} PDF (all)
+          </button>
+          <div className="relative flex-1 min-w-[150px]">
             <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 text-sm">🔍</span>
-            <input
-              value={q} onChange={e => setQ(e.target.value)}
-              placeholder="Search vendor / project / invoice…"
-              className="w-full rounded-lg border border-gray-200 pl-8 pr-8 py-1.5 text-sm bg-white focus:border-blue-400 focus:outline-none"
-            />
+            <input value={q} onChange={e => setQ(e.target.value)} placeholder="Search vendor / project / invoice…"
+              className="w-full rounded-lg border border-gray-200 pl-8 pr-8 py-1.5 text-sm bg-white focus:border-blue-400 focus:outline-none" />
             {q && <button onClick={() => setQ('')} className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-700 text-sm" aria-label="Clear">✕</button>}
           </div>
         </div>
@@ -214,7 +282,6 @@ export function DailyReportClient({
         <p className="text-xs text-gray-500 -mt-2">Filtered by &ldquo;<b>{q}</b>&rdquo; — {paid.length + totals.trustCount + totals.adjCount} match{paid.length + totals.trustCount + totals.adjCount === 1 ? '' : 'es'}. <button onClick={() => setQ('')} className="text-blue-600 hover:underline">show all</button></p>
       )}
 
-      {/* Project → Trust map */}
       <TrustMapCard projects={trustProjects} trustMap={trustMap} saveTrust={saveTrust} unassignedCount={unassigned.length} />
 
       {/* Payments Done */}
@@ -230,7 +297,7 @@ export function DailyReportClient({
           <div className="p-4 text-center text-sm text-gray-400 italic">{q ? 'No matches' : 'No payments done today'}</div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="min-w-[680px] w-full text-xs">
+            <table className="min-w-[720px] w-full text-xs">
               <thead className="text-gray-500 bg-white"><tr>
                 <th className="text-left px-3 py-2 font-medium w-8">#</th>
                 <th className="text-left px-3 py-2 font-medium">Vendor</th>
@@ -238,50 +305,53 @@ export function DailyReportClient({
                 <th className="text-left px-3 py-2 font-medium">Invoice</th>
                 <th className="text-right px-3 py-2 font-medium">Amount</th>
                 <th className="text-left px-3 py-2 font-medium">Paid on</th>
-                <th className="text-left px-3 py-2 font-medium w-52">Remark ✎</th>
+                <th className="text-left px-3 py-2 font-medium w-48">Remark ✎</th>
+                <th className="text-center px-3 py-2 font-medium w-14">Flag</th>
               </tr></thead>
               <tbody className="divide-y divide-gray-50">
-                {paid.map((b, i) => (
-                  <tr key={b.id} className="hover:bg-gray-50/60">
-                    <td className="px-3 py-1.5 text-gray-400 tabular-nums">{i + 1}</td>
-                    <td className="px-3 py-1.5 text-gray-800">{b.vendor || '—'}</td>
-                    <td className="px-3 py-1.5 text-gray-600">{b.area}</td>
-                    <td className="px-3 py-1.5 font-mono text-gray-600">{b.invoiceNo}</td>
-                    <td className="px-3 py-1.5 text-right font-semibold tabular-nums text-gray-900">{formatINR(b.amount)}</td>
-                    <td className="px-3 py-1.5 text-gray-600 tabular-nums">{fmtDate(b.paymentDate)}</td>
-                    <td className="px-3 py-1.5"><RemarkSelect value={entryOf(b.id).remark} onChange={v => save(b.id, { remark: v })} inputCls={inputCls} /></td>
-                  </tr>
-                ))}
+                {paid.map((b, i) => {
+                  const e = entryOf(b.id)
+                  return (
+                    <tr key={b.id} className={HL_ROW[e.highlight ?? ''] ?? 'hover:bg-gray-50/60'}>
+                      <td className="px-3 py-1.5 text-gray-400 tabular-nums">{i + 1}</td>
+                      <td className="px-3 py-1.5 text-gray-800">{b.vendor || '—'}</td>
+                      <td className="px-3 py-1.5 text-gray-600">{b.area}</td>
+                      <td className="px-3 py-1.5 font-mono text-gray-600">{b.invoiceNo}</td>
+                      <td className="px-3 py-1.5 text-right font-semibold tabular-nums text-gray-900">{formatINR(b.amount)}</td>
+                      <td className="px-3 py-1.5 text-gray-600 tabular-nums">{fmtDate(b.paymentDate)}</td>
+                      <td className="px-3 py-1.5"><RemarkSelect value={e.remark} onChange={v => save(b.id, { remark: v })} inputCls={inputCls} /></td>
+                      <td className="px-3 py-1.5"><HighlightDots value={e.highlight} onChange={h => save(b.id, { highlight: h })} /></td>
+                    </tr>
+                  )
+                })}
               </tbody>
             </table>
           </div>
         )}
       </section>
 
-      {/* COP Under Process — per trust */}
       {copByAcct.map(([acct, rows]) => (
         <TrustSection key={`cop-${acct}`} idPrefix="sec-cop" title="COP Under Process" acct={acct} rows={rows}
-          entryOf={entryOf} save={save} effSub={effSub} effCourier={effCourier} inputCls={inputCls}
+          entryOf={entryOf} save={save} effDate={effDate} inputCls={inputCls}
           onCopy={() => copyImage(`clean-sec-cop-${acct}`, `COP ${acct === '—' ? '' : acct} ${dateLabel}`)} busy={busyImg === `clean-sec-cop-${acct}`} />
       ))}
 
-      {/* Adjust Against Advance — per trust */}
       {adjByAcct.map(([acct, rows]) => (
         <TrustSection key={`adj-${acct}`} idPrefix="sec-adj" title="Adjust Against Advance" acct={acct} rows={rows}
-          entryOf={entryOf} save={save} effSub={effSub} effCourier={effCourier} inputCls={inputCls}
+          entryOf={entryOf} save={save} effDate={effDate} inputCls={inputCls}
           onCopy={() => copyImage(`clean-sec-adj-${acct}`, `Adjust ${acct === '—' ? '' : acct} ${dateLabel}`)} busy={busyImg === `clean-sec-adj-${acct}`} />
       ))}
 
-      <p className="text-xs text-gray-400">Set each project&apos;s trust once at the top. Submission date auto-fills from when the bill reached Trust — edit if needed. Courier date shows for SRET only. Tick <b>Adj</b> to move a bill to Adjust-against-advance. Use <b>📋 Copy image</b> on any trust to share a clean table on WhatsApp. Report for {dateLabel || 'today'} — hit Refresh on Bills Pipeline to re-pull from Zoho.</p>
+      <p className="text-xs text-gray-400">Set each project&apos;s trust once at the top. Date auto-fills from when the bill reached Trust (SRET shows Courier date, others Submission) — edit if needed. Tick <b>Adj</b> to move a bill to Adjust-against-advance; use <b>Flag</b> to mark a row red/yellow. Share a trust with <b>📋 Copy image</b>, or the whole day with <b>📄 PDF</b>. Report for {dateLabel || 'today'} — hit Refresh on Bills Pipeline to re-pull from Zoho.</p>
 
       {/* ── Hidden clean tables used only for "Copy image" ── */}
       <div aria-hidden style={{ position: 'fixed', left: '-10000px', top: 0, pointerEvents: 'none' }}>
-        <CleanTable id="clean-sec-paid" title="Payments Done" acct="" dateLabel={dateLabel} rows={paid} kind="paid" entryOf={entryOf} effSub={effSub} effCourier={effCourier} />
+        <CleanTable id="clean-sec-paid" title="Payments Done" acct="" dateLabel={dateLabel} rows={paid} kind="paid" entryOf={entryOf} effDate={effDate} />
         {copByAcct.map(([acct, rows]) => (
-          <CleanTable key={`c-cop-${acct}`} id={`clean-sec-cop-${acct}`} title="COP Under Process" acct={acct} dateLabel={dateLabel} rows={rows} kind="trust" entryOf={entryOf} effSub={effSub} effCourier={effCourier} />
+          <CleanTable key={`c-cop-${acct}`} id={`clean-sec-cop-${acct}`} title="COP Under Process" acct={acct} dateLabel={dateLabel} rows={rows} kind="trust" entryOf={entryOf} effDate={effDate} />
         ))}
         {adjByAcct.map(([acct, rows]) => (
-          <CleanTable key={`c-adj-${acct}`} id={`clean-sec-adj-${acct}`} title="Adjust Against Advance" acct={acct} dateLabel={dateLabel} rows={rows} kind="trust" entryOf={entryOf} effSub={effSub} effCourier={effCourier} />
+          <CleanTable key={`c-adj-${acct}`} id={`clean-sec-adj-${acct}`} title="Adjust Against Advance" acct={acct} dateLabel={dateLabel} rows={rows} kind="trust" entryOf={entryOf} effDate={effDate} />
         ))}
       </div>
     </div>
@@ -297,6 +367,20 @@ function CopyBtn({ onClick, busy, disabled }: { onClick: () => void; busy: boole
   )
 }
 
+function HighlightDots({ value, onChange }: { value: string | null; onChange: (v: string | null) => void }) {
+  const dot = (color: 'red' | 'yellow') => {
+    const on = value === color
+    const base = color === 'red'
+      ? (on ? 'bg-red-500 border-red-500 ring-2 ring-offset-1 ring-red-300' : 'bg-red-200 border-red-300')
+      : (on ? 'bg-amber-400 border-amber-400 ring-2 ring-offset-1 ring-amber-300' : 'bg-amber-100 border-amber-300')
+    return (
+      <button type="button" title={on ? `Clear ${color}` : `Flag ${color}`} onClick={() => onChange(on ? null : color)}
+        className={`h-3.5 w-3.5 rounded-full border ${base}`} />
+    )
+  }
+  return <div className="flex items-center justify-center gap-1.5">{dot('red')}{dot('yellow')}</div>
+}
+
 function RemarkSelect({ value, onChange, inputCls }: { value: string | null; onChange: (v: string) => void; inputCls: string }) {
   const custom = value && !REMARK_OPTIONS.includes(value)
   return (
@@ -309,7 +393,7 @@ function RemarkSelect({ value, onChange, inputCls }: { value: string | null; onC
 }
 
 function TrustSection({
-  idPrefix, title, acct, rows, entryOf, save, effSub, effCourier, inputCls, onCopy, busy,
+  idPrefix, title, acct, rows, entryOf, save, effDate, inputCls, onCopy, busy,
 }: {
   idPrefix: string
   title: string
@@ -317,13 +401,13 @@ function TrustSection({
   rows: ReportBillLite[]
   entryOf: (id: string) => TrustdeskEntry
   save: (id: string, patch: Partial<TrustdeskEntry>) => void
-  effSub: (b: ReportBillLite) => string
-  effCourier: (b: ReportBillLite) => string
+  effDate: (b: ReportBillLite, acct: string) => string
   inputCls: string
   onCopy: () => void
   busy: boolean
 }) {
-  const showCourier = COURIER_ACCTS.has(acct)
+  const isCourier = COURIER_ACCTS.has(acct)
+  const dateHdr = isCourier ? 'Courier ✎' : 'Submission ✎'
   const total = rows.reduce((s, b) => s + b.amount, 0)
   const badge = acct === '—'
     ? <span className="inline-block text-[10px] font-bold uppercase tracking-wide rounded px-1.5 py-0.5 border bg-rose-50 text-rose-600 border-rose-200">Trust not set</span>
@@ -341,37 +425,41 @@ function TrustSection({
         <div className="px-4 py-1.5 text-[11px] text-rose-600 bg-rose-50/60 border-b border-rose-100">Set these projects&apos; trust in the card above to file them under a trust.</div>
       )}
       <div className="overflow-x-auto">
-        <table className={`${showCourier ? 'min-w-[860px]' : 'min-w-[760px]'} w-full text-xs`}>
+        <table className="min-w-[820px] w-full text-xs">
           <thead className="text-gray-500 bg-white"><tr>
             <th className="text-left px-3 py-2 font-medium w-8">#</th>
             <th className="text-left px-3 py-2 font-medium">Vendor</th>
             <th className="text-left px-3 py-2 font-medium">Project</th>
             <th className="text-left px-3 py-2 font-medium">Invoice</th>
             <th className="text-right px-3 py-2 font-medium">Amount</th>
-            <th className="text-left px-3 py-2 font-medium w-28">Submission ✎</th>
-            {showCourier && <th className="text-left px-3 py-2 font-medium w-28">Courier ✎</th>}
+            <th className="text-left px-3 py-2 font-medium w-28">{dateHdr}</th>
             <th className="text-left px-3 py-2 font-medium w-12">Age</th>
             <th className="text-left px-3 py-2 font-medium w-48">Remark ✎</th>
-            <th className="text-center px-3 py-2 font-medium w-14">Adj</th>
+            <th className="text-center px-3 py-2 font-medium w-12">Adj</th>
+            <th className="text-center px-3 py-2 font-medium w-14">Flag</th>
           </tr></thead>
           <tbody className="divide-y divide-gray-50">
             {rows.map((b, i) => {
               const e = entryOf(b.id)
-              const age = daysSince(effSub(b))
+              const d = effDate(b, acct)
+              const age = daysSince(d)
               return (
-                <tr key={b.id} className="hover:bg-gray-50/60">
+                <tr key={b.id} className={HL_ROW[e.highlight ?? ''] ?? 'hover:bg-gray-50/60'}>
                   <td className="px-3 py-1.5 text-gray-400 tabular-nums">{i + 1}</td>
                   <td className="px-3 py-1.5 text-gray-800">{b.vendor || '—'}</td>
                   <td className="px-3 py-1.5 text-gray-600">{b.area}</td>
                   <td className="px-3 py-1.5 font-mono text-gray-600">{b.invoiceNo}</td>
                   <td className="px-3 py-1.5 text-right font-semibold tabular-nums text-gray-900">{formatINR(b.amount)}</td>
-                  <td className="px-3 py-1.5"><input type="date" className={inputCls} value={effSub(b)} onChange={ev => save(b.id, { submission_date: ev.target.value || null })} /></td>
-                  {showCourier && <td className="px-3 py-1.5"><input type="date" className={inputCls} value={effCourier(b)} onChange={ev => save(b.id, { courier_date: ev.target.value || null })} /></td>}
+                  <td className="px-3 py-1.5">
+                    <input type="date" className={inputCls} value={d}
+                      onChange={ev => save(b.id, isCourier ? { courier_date: ev.target.value || null } : { submission_date: ev.target.value || null })} />
+                  </td>
                   <td className="px-3 py-1.5 tabular-nums text-gray-600">{age == null ? '—' : `${age}d`}</td>
                   <td className="px-3 py-1.5"><RemarkSelect value={e.remark} onChange={v => save(b.id, { remark: v })} inputCls={inputCls} /></td>
                   <td className="px-3 py-1.5 text-center">
                     <input type="checkbox" checked={e.is_adjust_advance} onChange={ev => save(b.id, { is_adjust_advance: ev.target.checked })} className="h-4 w-4 accent-amber-600" title="Move to Adjust-against-advance" />
                   </td>
+                  <td className="px-3 py-1.5"><HighlightDots value={e.highlight} onChange={h => save(b.id, { highlight: h })} /></td>
                 </tr>
               )
             })}
@@ -422,9 +510,9 @@ function TrustMapCard({
   )
 }
 
-// Clean, read-only table rendered off-screen and captured as a PNG for WhatsApp.
+// Off-screen clean table captured as a PNG for WhatsApp (one date column, highlight fills).
 function CleanTable({
-  id, title, acct, dateLabel, rows, kind, entryOf, effSub, effCourier,
+  id, title, acct, dateLabel, rows, kind, entryOf, effDate,
 }: {
   id: string
   title: string
@@ -433,15 +521,16 @@ function CleanTable({
   rows: ReportBillLite[]
   kind: 'paid' | 'trust'
   entryOf: (id: string) => TrustdeskEntry
-  effSub: (b: ReportBillLite) => string
-  effCourier: (b: ReportBillLite) => string
+  effDate: (b: ReportBillLite, acct: string) => string
 }) {
-  const showCourier = kind === 'trust' && COURIER_ACCTS.has(acct)
+  const dateHdr = kind === 'paid' ? 'Paid on' : (COURIER_ACCTS.has(acct) ? 'Courier' : 'Submission')
   const total = rows.reduce((s, b) => s + b.amount, 0)
   const th: CSSProperties = { padding: '6px 8px', textAlign: 'left', borderBottom: '2px solid #cbd5e1', fontWeight: 700 }
   const thR: CSSProperties = { ...th, textAlign: 'right' }
   const td: CSSProperties = { padding: '5px 8px', borderBottom: '1px solid #eef2f7' }
   const tdR: CSSProperties = { ...td, textAlign: 'right', fontVariantNumeric: 'tabular-nums', fontWeight: 600 }
+  const rowBg = (hl: string | null): CSSProperties | undefined =>
+    hl === 'red' ? { background: '#fee2e2' } : hl === 'yellow' ? { background: '#fef3c7' } : undefined
   return (
     <div id={id} style={{ width: '820px', background: '#fff', padding: '18px 20px', fontFamily: 'Arial, sans-serif', color: '#0f172a' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 8 }}>
@@ -457,29 +546,28 @@ function CleanTable({
           <th style={th}>Project</th>
           <th style={th}>Invoice</th>
           <th style={thR}>Amount (₹)</th>
-          {kind === 'trust' && <th style={th}>Submission</th>}
-          {showCourier && <th style={th}>Courier</th>}
-          {kind === 'paid' && <th style={th}>Paid on</th>}
+          <th style={th}>{dateHdr}</th>
           <th style={th}>Remark</th>
         </tr></thead>
         <tbody>
-          {rows.map((b, i) => (
-            <tr key={b.id} style={i % 2 ? { background: '#fafcff' } : undefined}>
-              <td style={{ ...td, color: '#94a3b8' }}>{i + 1}</td>
-              <td style={td}>{b.vendor || '—'}</td>
-              <td style={{ ...td, color: '#475569' }}>{b.area}</td>
-              <td style={{ ...td, color: '#475569' }}>{b.invoiceNo}</td>
-              <td style={tdR}>{formatINR(b.amount)}</td>
-              {kind === 'trust' && <td style={td}>{fmtDate(effSub(b))}</td>}
-              {showCourier && <td style={td}>{fmtDate(effCourier(b))}</td>}
-              {kind === 'paid' && <td style={td}>{fmtDate(b.paymentDate)}</td>}
-              <td style={{ ...td, color: '#475569' }}>{entryOf(b.id).remark || ''}</td>
-            </tr>
-          ))}
+          {rows.map((b, i) => {
+            const bg = rowBg(entryOf(b.id).highlight) ?? (i % 2 ? { background: '#fafcff' } : undefined)
+            return (
+              <tr key={b.id} style={bg}>
+                <td style={{ ...td, color: '#94a3b8' }}>{i + 1}</td>
+                <td style={td}>{b.vendor || '—'}</td>
+                <td style={{ ...td, color: '#475569' }}>{b.area}</td>
+                <td style={{ ...td, color: '#475569' }}>{b.invoiceNo}</td>
+                <td style={tdR}>{formatINR(b.amount)}</td>
+                <td style={td}>{kind === 'paid' ? fmtDate(b.paymentDate) : fmtDate(effDate(b, acct))}</td>
+                <td style={{ ...td, color: '#475569' }}>{entryOf(b.id).remark || ''}</td>
+              </tr>
+            )
+          })}
           <tr style={{ background: '#f8fafc', fontWeight: 800 }}>
             <td style={td} colSpan={4}>Total · {rows.length} bill{rows.length === 1 ? '' : 's'}</td>
             <td style={tdR}>{formatINR(total)}</td>
-            <td style={td} colSpan={(kind === 'trust' ? 1 : 1) + (showCourier ? 1 : 0) + 1}></td>
+            <td style={td} colSpan={2}></td>
           </tr>
         </tbody>
       </table>

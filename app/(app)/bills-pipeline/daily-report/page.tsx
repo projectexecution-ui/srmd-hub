@@ -34,7 +34,7 @@ export default async function DailyReportPage({
 
   const [{ data: snap }, { data: entryRows }, { data: mapRow }] = await Promise.all([
     supabase.from('app_settings').select('value').eq('key', snapKey).maybeSingle(),
-    supabase.from('bp_bill_trustdesk').select('bill_id, submission_date, courier_date, remark, is_adjust_advance'),
+    supabase.from('bp_bill_trustdesk').select('bill_id, submission_date, courier_date, remark, is_adjust_advance, highlight'),
     supabase.from('app_settings').select('value').eq('key', 'bills_pipeline_trust_map').maybeSingle(),
   ])
 
@@ -59,6 +59,7 @@ export default async function DailyReportPage({
       courier_date: (r.courier_date as string | null) ?? null,
       remark: (r.remark as string | null) ?? null,
       is_adjust_advance: !!r.is_adjust_advance,
+      highlight: (r.highlight as string | null) ?? null,
     }
   }
 
