@@ -344,10 +344,6 @@ export default async function ApprovalsInboxPage({
         </Link>
       )}
 
-      {/* Sent back and still with the engineer — same lane as the dashboard, so
-          the two never tell a different story. Self-hides when empty. */}
-      <ReturnedToEngineer items={returned.items} />
-
       {projOrder.length === 0 ? (
         <Card className="p-10 text-center text-gray-500 text-sm">
           <Inbox className="h-8 w-8 mx-auto text-gray-300 mb-2" />
@@ -492,6 +488,11 @@ export default async function ApprovalsInboxPage({
           )
         })
       )}
+
+      {/* Below the queue on purpose: what you must approve comes first, what you
+          sent back comes after. Same lane and same data as the dashboard, so the
+          two can never tell a different story. Self-hides when empty. */}
+      <ReturnedToEngineer items={returned.items} />
     </div>
   )
 }
