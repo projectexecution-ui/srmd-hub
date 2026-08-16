@@ -277,11 +277,17 @@ export async function POST(req: Request) {
   //     true channel test. Ignores the on/off preference and still sends on a
   //     quiet day (a short "nothing pending" note), so pressing it always
   //     exercises both channels. ──
-  const { data: prof } = await supabase.from('profiles').select('email').eq('id', user.id).maybeSingle()
+  // Read email + Telegram chat via a SERVICE client so they're found reliably
+  // (same path the working "Test Telegram" button uses).
+  const svcKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+  const svc: Client = svcKey
+    ? (createServiceClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, svcKey, { auth: { persistSession: false } }) as unknown as Client)
+    : supabase
+  const { data: prof } = await svc.from('profiles').select('email').eq('id', user.id).maybeSingle()
   const email = (prof?.email as string) || ''
   if (!email) return NextResponse.json({ ok: false, reason: 'Your profile has no email.' })
   // chat id regardless of the on/off preference — a test should reach it anyway.
-  const { data: pref } = await supabase.from('notification_preferences').select('telegram_chat_id').eq('user_id', user.id).maybeSingle()
+  const { data: pref } = await svc.from('notification_preferences').select('telegram_chat_id').eq('user_id', user.id).maybeSingle()
   const chat = (pref?.telegram_chat_id as string | null) || null
   const token = process.env.TELEGRAM_BOT_TOKEN
 

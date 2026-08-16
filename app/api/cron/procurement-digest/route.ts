@@ -16,6 +16,8 @@ import { parseProcurementNotifyConfig, type ProcurementNotifyConfig } from '@/li
 import { buildHeadDigest, digestSubject, digestText, digestFullText, digestCardSpec } from '@/lib/procurement/digest'
 import type { StoredSnapshot } from '@/lib/procurement/types'
 import { personName } from '@/lib/utils'
+import { sendCardsToChat } from '@/lib/telegram/dm'
+import { renderCardSpec } from '@/lib/telegram/report-card'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -225,10 +227,16 @@ export async function POST(req: Request) {
   if (!current) return NextResponse.json({ ok: false, reason: 'No tracker data uploaded yet.' })
   const digest = buildHeadDigest(current, baseline, cfg, Date.now(), projects)
 
-  const { data: prof } = await supabase.from('profiles').select('email').eq('id', uid).maybeSingle()
+  // Read the caller's email + Telegram chat via a SERVICE client so it's found
+  // reliably (same path the working "Test Telegram" button uses).
+  const svcKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+  const svc: Client = svcKey
+    ? (createServiceClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, svcKey, { auth: { persistSession: false } }) as unknown as Client)
+    : supabase
+  const { data: prof } = await svc.from('profiles').select('email').eq('id', uid).maybeSingle()
   const email = (prof?.email as string) || ''
   // chat id regardless of the on/off preference — a test should reach it anyway.
-  const { data: pref } = await supabase.from('notification_preferences').select('telegram_chat_id').eq('user_id', uid).maybeSingle()
+  const { data: pref } = await svc.from('notification_preferences').select('telegram_chat_id').eq('user_id', uid).maybeSingle()
   const chat = (pref?.telegram_chat_id as string | null) || null
 
   const bodyText = digest ? digestFullText(digest)
@@ -258,18 +266,25 @@ export async function POST(req: Request) {
     }
   }
 
-  // Telegram (direct, if connected — again ignoring the on/off preference).
+  // Telegram (direct, if connected — ignoring the on/off preference). Sends the
+  // SAME rich report card as the daily digest when there's content, else a note.
   let telegramOk = false
   const token = process.env.TELEGRAM_BOT_TOKEN
   if (chat && token) {
     try {
-      const text = `🔔 CT HUB — Indent → PO test\n\n${bodyText}`
-      const r = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
-        method: 'POST', headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ chat_id: chat, text, disable_web_page_preview: true }),
-      })
-      const j = await r.json().catch(() => ({})) as { ok?: boolean }
-      telegramOk = !!j.ok
+      if (digest) {
+        const callerName = (await namesFor(svc, [uid])).get(uid) ?? null
+        const png = await renderCardSpec(digestCardSpec(digest, callerName))
+        const r = await sendCardsToChat(token, chat, [{ code: 'indent-po', b64: png.toString('base64') }], subject)
+        telegramOk = 'ok' in r && r.ok
+      } else {
+        const r = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+          method: 'POST', headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ chat_id: chat, text: `🔔 CT HUB — Indent → PO test\n\n${bodyText}`, disable_web_page_preview: true }),
+        })
+        const j = await r.json().catch(() => ({})) as { ok?: boolean }
+        telegramOk = !!j.ok
+      }
     } catch { /* leave telegramOk false */ }
   }
 
