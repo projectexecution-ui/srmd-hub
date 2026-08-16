@@ -201,6 +201,11 @@ export function DailyReportClient({
 
   return (
     <div className="space-y-5">
+      {/* Remark suggestions — used by every Remark input; typing a new one is allowed. */}
+      <datalist id="bp-remark-options">
+        {REMARK_OPTIONS.map(o => <option key={o} value={o} />)}
+      </datalist>
+
       {/* Sticky toolbar: date look-back + PDF + search + jump chips */}
       <div className="sticky top-14 md:top-0 z-20 -mx-4 md:-mx-6 px-4 md:px-6 py-2.5 bg-white/95 backdrop-blur border-b border-gray-200 space-y-2">
         <div className="flex items-center gap-2 flex-wrap">
@@ -338,14 +343,17 @@ function HighlightDots({ value, onChange }: { value: string | null; onChange: (v
   return <div className="flex items-center justify-center gap-1.5">{dot('red')}{dot('yellow')}</div>
 }
 
+// Pick a common remark from the list OR type a brand-new one. Saves on blur / Enter.
 function RemarkSelect({ value, onChange, inputCls }: { value: string | null; onChange: (v: string) => void; inputCls: string }) {
-  const custom = value && !REMARK_OPTIONS.includes(value)
   return (
-    <select className={inputCls} value={custom ? '__custom' : (value ?? '')} onChange={e => onChange(e.target.value === '__custom' ? (value ?? '') : e.target.value)}>
-      <option value="">— pick —</option>
-      {REMARK_OPTIONS.map(o => <option key={o} value={o}>{o}</option>)}
-      {custom && <option value="__custom">{value}</option>}
-    </select>
+    <input
+      list="bp-remark-options"
+      className={inputCls}
+      defaultValue={value ?? ''}
+      placeholder="Pick or type…"
+      onBlur={e => { const v = e.target.value.trim(); if (v !== (value ?? '')) onChange(v) }}
+      onKeyDown={e => { if (e.key === 'Enter') e.currentTarget.blur() }}
+    />
   )
 }
 
