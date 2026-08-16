@@ -4,7 +4,7 @@ import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { Loader2, Check, Mail, Send, MailCheck, Users, ChevronDown, ChevronRight } from 'lucide-react'
+import { Loader2, Check, Mail, Send, MailCheck, Users, ChevronDown, ChevronRight, MessageCircle } from 'lucide-react'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
 import { confirm } from '@/components/ui/confirm-dialog'
@@ -27,6 +27,7 @@ export function BillsDigestForm({
   const [savedAt, setSavedAt] = useState(false)
   const [testing, setTesting] = useState(false)
   const [sendingHeads, setSendingHeads] = useState(false)
+  const [tgTesting, setTgTesting] = useState(false)
 
   const nameOf = (u: UserOpt) => u.full_name || u.email
   const assignedUsers = useMemo(() => users.filter(u => (assign[u.id]?.length ?? 0) > 0), [users, assign])
@@ -74,11 +75,17 @@ export function BillsDigestForm({
     try {
       const res = await fetch('/api/cron/bills-digest', { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' })
       const j = await res.json()
-      if (!res.ok || j.ok === false) { toast.error(j.reason || j.error || 'Could not send test'); return }
-      if (j.sent) toast.success(j.telegram
-        ? 'Test sent to your email + Telegram — check both.'
-        : 'Test sent to your email — check your inbox in a minute. (Connect Telegram to also get it there.)')
-      else toast.message(j.reason || 'Nothing to report right now, so no email was sent.')
+      if (!res.ok || j.ok === false) { toast.error(j.reason || j.emailErr || j.error || 'Could not send test'); return }
+      const bits: string[] = []
+      if (j.email) bits.push('email')
+      if (j.telegram) bits.push('Telegram')
+      if (bits.length) {
+        const tail = !j.connected ? ' · connect Telegram in Settings → Notifications to also get it there'
+          : (!j.telegram ? ' · Telegram send failed' : '')
+        toast.success(`Test sent to your ${bits.join(' + ')}${tail}`)
+      } else {
+        toast.error(j.emailErr ? `Email failed: ${j.emailErr}` : 'Could not send the test.')
+      }
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Network error')
     } finally { setTesting(false) }
@@ -105,6 +112,33 @@ export function BillsDigestForm({
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Network error')
     } finally { setSendingHeads(false) }
+  }
+
+  async function testTelegram() {
+    if (assignedUsers.length === 0) { toast.error('Assign at least one head to a project first.'); return }
+    setTgTesting(true)
+    try {
+      const res = await fetch('/api/cron/bills-digest', {
+        method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ telegramTest: true, to: 'heads' }),
+      })
+      const j = await res.json()
+      if (!res.ok || j.ok === false) { toast.error(j.reason || j.error || 'Could not send Telegram test'); return }
+      const connected: string[] = j.connected ?? []
+      const notConnected: string[] = j.notConnected ?? []
+      const failed: string[] = j.failed ?? []
+      if (connected.length > 0) {
+        const parts = [`Telegram test delivered to ${connected.join(', ')}`]
+        if (notConnected.length) parts.push(`not connected: ${notConnected.join(', ')}`)
+        if (failed.length) parts.push(`failed: ${failed.join(', ')}`)
+        toast.success(parts.join(' · '))
+      } else if (notConnected.length > 0) {
+        toast.message(`No head has connected Telegram yet: ${notConnected.join(', ')}. Ask them to link it at Settings → Notifications.`)
+      } else {
+        toast.error(failed.length ? `All sends failed — ${failed[0]}` : 'Nobody to test.')
+      }
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Network error')
+    } finally { setTgTesting(false) }
   }
 
   return (
@@ -217,8 +251,17 @@ export function BillsDigestForm({
           {sendingHeads ? <Loader2 className="h-4 w-4 animate-spin" /> : <MailCheck className="h-4 w-4" />}
           Send to the heads now
         </Button>
-        {!enabled && <span className="text-xs text-gray-400">Currently off — no daily emails go out until you turn it on and Save.</span>}
+        <Button variant="outline" onClick={testTelegram} disabled={tgTesting || assignedUsers.length === 0}
+          className="border-sky-300 text-sky-800 hover:bg-sky-50"
+          title="Send a quick Telegram test to each assigned head's DM to see who's connected">
+          {tgTesting ? <Loader2 className="h-4 w-4 animate-spin" /> : <MessageCircle className="h-4 w-4" />}
+          Test Telegram
+        </Button>
+        {!enabled && <span className="text-xs text-gray-400">Currently off — nothing goes out until you turn it on and Save.</span>}
       </div>
+      <p className="text-[11px] text-gray-400 -mt-3">
+        The digest reaches each head by <b className="font-medium text-gray-600">email</b> and, if they’ve linked it, <b className="font-medium text-gray-600">Telegram DM</b> (Settings → Notifications). <b className="font-medium text-gray-600">Test Telegram</b> pings the assigned heads’ DMs so you can see who’s connected anytime.
+      </p>
     </Card>
   )
 }

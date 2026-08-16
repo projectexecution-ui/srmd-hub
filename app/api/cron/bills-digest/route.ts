@@ -17,6 +17,7 @@ import { getMyPermissions, can } from '@/lib/auth'
 import { parseBillsDigestConfig, stageAllowed, type BillsDigestConfig } from '@/lib/bills-pipeline/digest-settings'
 import { renderProjectPushCard, type DigestBill } from '@/lib/bills-pipeline/project-card'
 import { sendCardsToChat } from '@/lib/telegram/dm'
+import { personName } from '@/lib/utils'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -221,9 +222,48 @@ export async function POST(req: Request) {
   }
   const { data: { user } } = await session.auth.getUser()
   if (!user) return NextResponse.json({ ok: false, reason: 'No session' }, { status: 401 })
-  const body = await req.json().catch(() => ({} as { toHeads?: boolean }))
+  const body = await req.json().catch(() => ({} as { toHeads?: boolean; telegramTest?: boolean; to?: 'me' | 'heads' }))
   const supabase = session as unknown as Client
   const cfg = await readConfig(supabase)
+
+  // ── "Test Telegram": ping each assigned head's connected Telegram DM (or the
+  //     caller's own, to==='me') so an admin can see who's reachable on Telegram. ──
+  if (body.telegramTest) {
+    const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+    if (!serviceKey) return NextResponse.json({ ok: false, reason: 'No service key' }, { status: 503 })
+    const token = process.env.TELEGRAM_BOT_TOKEN
+    if (!token) return NextResponse.json({ ok: false, reason: 'Telegram bot is not configured on the server (TELEGRAM_BOT_TOKEN).' }, { status: 503 })
+    const svc = createServiceClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, serviceKey, { auth: { persistSession: false } }) as unknown as Client
+
+    let targetIds: string[]
+    if (body.to === 'me') targetIds = [user.id]
+    else {
+      targetIds = Object.entries(cfg.assignments).filter(([, codes]) => (codes as string[]).length > 0).map(([id]) => id)
+      if (targetIds.length === 0) return NextResponse.json({ ok: false, reason: 'No head → projects assigned yet — assign a head to a project first.' })
+    }
+    const { data: profs } = await svc.from('profiles').select('id, full_name, name, email').in('id', targetIds)
+    const nameById = new Map((profs ?? []).map((p: { id: string; full_name: string | null; name: string | null; email: string | null }) =>
+      [p.id, personName(p.full_name, p.name, p.email)]))
+    const chatById = await telegramChats(svc, targetIds)
+    const connected: string[] = []; const notConnected: string[] = []; const failed: string[] = []
+    for (const id of targetIds) {
+      const who = nameById.get(id) ?? id
+      const chat = chatById.get(id)
+      if (!chat) { notConnected.push(who); continue }
+      const text = `🔔 CT HUB — Bills Pipeline test\n\nHi ${who}, your Telegram is connected. Your daily "bills still with CT" digest for your projects will arrive here.\n\nThis is only a test — no action needed.`
+      try {
+        const r = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+          method: 'POST', headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ chat_id: chat, text, disable_web_page_preview: true }),
+        })
+        const j = (await r.json().catch(() => ({}))) as { ok?: boolean; description?: string }
+        if (j.ok) connected.push(who); else failed.push(`${who} (${j.description || 'send failed'})`)
+      } catch (e) {
+        failed.push(`${who} (${e instanceof Error ? e.message : 'network error'})`)
+      }
+    }
+    return NextResponse.json({ ok: true, mode: 'telegramTest', connected, notConnected, failed })
+  }
 
   if (body.toHeads) {
     if (Object.keys(cfg.assignments).length === 0) {
@@ -233,25 +273,64 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: true, mode: 'heads', ...r })
   }
 
-  // Test to self: every assigned project (or all projects that have stuck bills).
+  // ── "Send me a test": fire BOTH email + Telegram to the caller, always — a
+  //     true channel test. Ignores the on/off preference and still sends on a
+  //     quiet day (a short "nothing pending" note), so pressing it always
+  //     exercises both channels. ──
   const { data: prof } = await supabase.from('profiles').select('email').eq('id', user.id).maybeSingle()
   const email = (prof?.email as string) || ''
   if (!email) return NextResponse.json({ ok: false, reason: 'Your profile has no email.' })
+  // chat id regardless of the on/off preference — a test should reach it anyway.
+  const { data: pref } = await supabase.from('notification_preferences').select('telegram_chat_id').eq('user_id', user.id).maybeSingle()
+  const chat = (pref?.telegram_chat_id as string | null) || null
+  const token = process.env.TELEGRAM_BOT_TOKEN
+
   const { byProject, asOf, generatedAt } = await readStuck(supabase)
   const ctx: RenderCtx = { byProject, asOf, generatedAt, cache: new Map() }
   const codes = [...new Set(Object.values(cfg.assignments).flat())]
   const useCodes = codes.length ? codes : [...byProject.keys()]
   const cards = await cardsForRecipient(ctx, useCodes, cfg.stages[user.id])
-  const err = await sendDigest(email, 'Daily bills status — test', cards, asOf)
-  if (err === 'empty') return NextResponse.json({ ok: true, sent: 0, reason: 'No bills stuck with CT right now — nothing to send.' })
-  if (err) return NextResponse.json({ ok: false, error: err }, { status: 500 })
-  // Mirror to the caller's Telegram DM if they've connected it.
-  let telegram = false
-  const token = process.env.TELEGRAM_BOT_TOKEN
-  const tgMap = await telegramChats(supabase, [user.id])
-  if (token && cards.length && tgMap.has(user.id)) {
-    const r = await sendCardsToChat(token, tgMap.get(user.id)!, cards, `Daily bills status — test${asOf ? ` · as of ${asOf}` : ''}`)
-    telegram = 'ok' in r && r.ok
+
+  let emailOk = false; let emailErr: string | null = null; let telegram = false
+
+  if (cards.length) {
+    const err = await sendDigest(email, 'Daily bills status — test', cards, asOf)
+    emailOk = err === null; if (!emailOk) emailErr = err
+    if (token && chat) {
+      const r = await sendCardsToChat(token, chat, cards, `Daily bills status — test${asOf ? ` · as of ${asOf}` : ''}`)
+      telegram = 'ok' in r && r.ok
+    }
+  } else {
+    // Quiet day — nothing stuck. Still send a short note to BOTH channels so the
+    // test proves they work.
+    const note = 'No bills are stuck with CT right now — this is a channel test. Email and Telegram are both working.'
+    const secret = process.env.NOTIFY_INTERNAL_SECRET
+    if (!secret) emailErr = 'no-internal-secret'
+    else {
+      try {
+        const html = `<div style="font-family:Arial,Helvetica,sans-serif;background:#f4f6f9;padding:20px"><div style="max-width:640px;margin:0 auto;background:#fff;border:1px solid #e6ebf1;border-radius:10px;padding:18px 20px">`
+          + `<p style="font-size:15px;font-weight:700;color:#1f2d3d;margin:0 0 6px">Daily bills status — test</p>`
+          + `<p style="font-size:13px;color:#334155;margin:0">${note}</p>`
+          + `<p style="font-size:11px;color:#94a3b8;margin:14px 0 0">via CT HUB · Bills Pipeline</p></div></div>`
+        const res = await fetch(`${baseUrl()}/api/email/send`, {
+          method: 'POST', headers: { 'content-type': 'application/json', 'x-internal-secret': secret },
+          body: JSON.stringify({ to: email, subject: 'Bills Pipeline — test (nothing pending)', url: '/bills-pipeline', html, text: note }),
+        })
+        const j = await res.json().catch(() => ({})) as { ok?: boolean; error?: string }
+        emailOk = res.ok && j.ok !== false; if (!emailOk) emailErr = j.error || `status ${res.status}`
+      } catch (e) { emailErr = e instanceof Error ? e.message : String(e) }
+    }
+    if (token && chat) {
+      try {
+        const r = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+          method: 'POST', headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ chat_id: chat, text: `🔔 CT HUB — Bills Pipeline test\n\n${note}`, disable_web_page_preview: true }),
+        })
+        const j = await r.json().catch(() => ({})) as { ok?: boolean }
+        telegram = !!j.ok
+      } catch { /* leave telegram false */ }
+    }
   }
-  return NextResponse.json({ ok: true, sent: 1, to: 'you', telegram })
+
+  return NextResponse.json({ ok: emailOk || telegram, sent: 1, to: 'you', email: emailOk, emailErr, telegram, connected: !!chat })
 }

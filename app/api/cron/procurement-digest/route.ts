@@ -23,6 +23,12 @@ export const dynamic = 'force-dynamic'
 const IST = 5.5 * 3600 * 1000
 const HOUR = 3600 * 1000
 
+function baseUrl(): string {
+  const prod = process.env.VERCEL_PROJECT_PRODUCTION_URL
+  return `https://${prod || 'ct-hub.vercel.app'}`
+}
+const escHtml = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Client = SupabaseClient<any, any, any>
 
@@ -204,7 +210,10 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: true, mode: 'heads', sent: sentTo.length, sentTo, skipped })
   }
 
-  // Scope: a specific head's projects, else every assigned project combined.
+  // ── Default "Send me a test": fire BOTH email + Telegram to the caller,
+  //     directly and unconditionally — a true channel test. It ignores the
+  //     personal on/off preference and still sends on a quiet day, so pressing
+  //     it always exercises both channels. ──
   const projects = body.headId && cfg.assignments[body.headId]
     ? cfg.assignments[body.headId]
     : [...new Set(Object.values(cfg.assignments).flat())]
@@ -214,12 +223,55 @@ export async function POST(req: Request) {
 
   const { current, baseline } = await loadState(supabase)
   if (!current) return NextResponse.json({ ok: false, reason: 'No tracker data uploaded yet.' })
-
   const digest = buildHeadDigest(current, baseline, cfg, Date.now(), projects)
-  if (!digest) return NextResponse.json({ ok: true, sent: 0, reason: 'Nothing to report for those projects right now.' })
 
-  const callerName = (await namesFor(supabase, [uid])).get(uid) ?? null
-  const err = await notify(supabase, uid, digest, callerName)
-  if (err) return NextResponse.json({ ok: false, error: err }, { status: 500 })
-  return NextResponse.json({ ok: true, sent: 1, to: 'you', projects })
+  const { data: prof } = await supabase.from('profiles').select('email').eq('id', uid).maybeSingle()
+  const email = (prof?.email as string) || ''
+  // chat id regardless of the on/off preference — a test should reach it anyway.
+  const { data: pref } = await supabase.from('notification_preferences').select('telegram_chat_id').eq('user_id', uid).maybeSingle()
+  const chat = (pref?.telegram_chat_id as string | null) || null
+
+  const bodyText = digest ? digestFullText(digest)
+    : 'No pending items for your projects right now — this is a channel test. Email and Telegram are both working.'
+  const subject = digest ? `${digestSubject(digest)} — test` : 'Indent → PO — test (nothing pending)'
+
+  // Email (direct, via the internal send route so it never depends on prefs).
+  let emailOk = false; let emailErr: string | null = null
+  if (!email) { emailErr = 'no-email' }
+  else {
+    const secret = process.env.NOTIFY_INTERNAL_SECRET
+    if (!secret) emailErr = 'no-internal-secret'
+    else {
+      try {
+        const html = `<div style="font-family:Arial,Helvetica,sans-serif;background:#f4f6f9;padding:20px"><div style="max-width:640px;margin:0 auto;background:#fff;border:1px solid #e6ebf1;border-radius:10px;padding:18px 20px">`
+          + `<p style="font-size:15px;font-weight:700;color:#1f2d3d;margin:0 0 4px">Indent → PO — test</p>`
+          + `<p style="font-size:12px;color:#64748b;margin:0 0 14px">Your projects: ${escHtml(projects.join(', '))}</p>`
+          + `<pre style="font-family:inherit;font-size:13px;color:#334155;white-space:pre-wrap;margin:0">${escHtml(bodyText)}</pre>`
+          + `<p style="font-size:11px;color:#94a3b8;margin:14px 0 0">via CT HUB · Indent → PO</p></div></div>`
+        const res = await fetch(`${baseUrl()}/api/email/send`, {
+          method: 'POST', headers: { 'content-type': 'application/json', 'x-internal-secret': secret },
+          body: JSON.stringify({ to: email, subject, url: '/procurement-tracker', html, text: bodyText }),
+        })
+        const j = await res.json().catch(() => ({})) as { ok?: boolean; error?: string }
+        emailOk = res.ok && j.ok !== false; if (!emailOk) emailErr = j.error || `status ${res.status}`
+      } catch (e) { emailErr = e instanceof Error ? e.message : String(e) }
+    }
+  }
+
+  // Telegram (direct, if connected — again ignoring the on/off preference).
+  let telegramOk = false
+  const token = process.env.TELEGRAM_BOT_TOKEN
+  if (chat && token) {
+    try {
+      const text = `🔔 CT HUB — Indent → PO test\n\n${bodyText}`
+      const r = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ chat_id: chat, text, disable_web_page_preview: true }),
+      })
+      const j = await r.json().catch(() => ({})) as { ok?: boolean }
+      telegramOk = !!j.ok
+    } catch { /* leave telegramOk false */ }
+  }
+
+  return NextResponse.json({ ok: emailOk || telegramOk, sent: 1, to: 'you', email: emailOk, emailErr, telegram: telegramOk, connected: !!chat })
 }
