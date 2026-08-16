@@ -168,19 +168,29 @@ export async function POST(req: Request) {
     const nameById = await namesFor(svc, heads.map(([uid]) => uid))
     const nowMs = Date.now()
     const sentTo: string[] = []; const skipped: string[] = []
+    let built = 0                 // heads that HAD something to report
+    let noGroup = false
+    const sendErrors: string[] = []
     for (const [uid, projects] of heads) {
       const digest = buildHeadDigest(current, baseline, cfg, nowMs, projects)
       const who = nameById.get(uid) ?? uid
       if (!digest) { skipped.push(`${who} (nothing to report)`); continue }
+      built++
       const g = await toGroup(svc, digest, nameById.get(uid) ?? null)
-      if ('skipped' in g) skipped.push(`${who} (${g.skipped})`)
+      if ('skipped' in g) { if (g.skipped === 'no-group') noGroup = true; else sendErrors.push(`${who}: ${g.skipped}`); skipped.push(`${who} (${g.skipped})`) }
       else if (g.ok) sentTo.push(who)
-      else skipped.push(`${who} (${g.error})`)
+      else { sendErrors.push(`${who}: ${g.error}`); skipped.push(`${who} (${g.error})`) }
     }
-    const reason = sentTo.length === 0
-      ? (skipped.some(s => s.includes('no-group')) ? 'No reports group is connected yet.' : 'No head has anything to report right now.')
-      : undefined
-    return NextResponse.json({ ok: sentTo.length > 0, mode: 'group', sent: sentTo.length, sentTo, skipped, reason })
+    // Distinguish a genuinely quiet day (nothing built) from a send FAILURE
+    // (built cards but Telegram rejected them — usually the bot isn't a group
+    // admin, so it can't post files/photos).
+    let reason: string | undefined
+    if (sentTo.length === 0) {
+      if (noGroup) reason = 'No reports group is connected yet.'
+      else if (built === 0) reason = 'No head has anything to report right now.'
+      else reason = `Couldn't post to the group — ${sendErrors[0] ?? 'send failed'}. Make sure the CT Hub bot is an ADMIN of the group (needed to post files/photos).`
+    }
+    return NextResponse.json({ ok: sentTo.length > 0, mode: 'group', built, sent: sentTo.length, sentTo, skipped, reason })
   }
 
   // ── "Send to the heads now": push each assigned head their real scoped
