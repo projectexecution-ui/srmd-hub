@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Camera, Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
@@ -61,6 +61,28 @@ export default function Cockpit({ bills, asOf, myCodes = [] }: { bills: CockpitB
   const [open, setOpen] = useState<CockpitBill | null>(null)
   const [imgBusy, setImgBusy] = useState(false)
   const [showAllPush, setShowAllPush] = useState(false)
+
+  // Remember the toolbar view per browser so the Cockpit reopens exactly as you left it.
+  const firstPersist = useRef(true)
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem('bp_cockpit_view_v1')
+      if (!raw) return
+      const v = JSON.parse(raw) as Record<string, unknown>
+      if (typeof v.project === 'string') setProject(v.project)
+      if (v.mode === 'value' || v.mode === 'count') setMode(v.mode)
+      if (v.rank === 'amt' || v.rank === 'days') setRank(v.rank)
+      if (v.dayBasis === 'entry' || v.dayBasis === 'stage') setDayBasis(v.dayBasis)
+      if (v.siteScope === 'mine' || v.siteScope === 'all') setSiteScope(v.siteScope)
+      if (typeof v.showNoWO === 'boolean') setShowNoWO(v.showNoWO)
+    } catch { /* ignore bad/absent saved view */ }
+  }, [])
+  useEffect(() => {
+    if (firstPersist.current) { firstPersist.current = false; return }  // don't clobber saved before hydrate
+    try {
+      localStorage.setItem('bp_cockpit_view_v1', JSON.stringify({ project, mode, rank, dayBasis, siteScope, showNoWO }))
+    } catch { /* storage full / blocked — ignore */ }
+  }, [project, mode, rank, dayBasis, siteScope, showNoWO])
 
   const baseBills = useMemo(
     () => (siteScope === 'mine' && scopeAvailable
