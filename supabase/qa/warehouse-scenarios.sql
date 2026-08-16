@@ -240,3 +240,101 @@ end $$;
 
 select * from r order by id;
 rollback;
+
+-- ===========================================================================
+-- S43–S46 · The four corrections (2026-08-16)
+--
+-- Run against production inside a transaction that is rolled back. These
+-- exercise the DATABASE side of what admin-actions.ts does; the refusals
+-- themselves are unit-tested in lib/warehouse/corrections.test.ts.
+-- ===========================================================================
+begin;
+
+-- S43 · Voiding an IN nets the ledger back to zero on BOTH buckets.
+--       Good stock reverses as `void`; damaged reverses as negative `damage`,
+--       because damage has no effect on good stock and inverting that effect
+--       would post nothing at all.
+create temp table s43(k text primary key, v uuid);
+insert into s43 values ('loc', (select id from wh_locations where parent_id is not null limit 1));
+insert into s43 values ('it',  (select id from wh_items where deleted_at is null limit 1));
+insert into wh_gate_in (entry_no, entry_date, owner, party, location_id, photo_urls, no_po_reason)
+values ('QA-VOID-1', current_date, 'srm', 'QA Supplier', (select v from s43 where k='loc'),
+        array['x.jpg'], 'QA test');
+insert into s43 values ('in', (select id from wh_gate_in where entry_no='QA-VOID-1'));
+insert into wh_gate_in_lines (gate_in_id, item_id, challan_qty, received_qty, damaged_qty)
+values ((select v from s43 where k='in'), (select v from s43 where k='it'), 100, 100, 5);
+insert into wh_movements (item_id, location_id, kind, qty, ref_table, ref_id) values
+  ((select v from s43 where k='it'), (select v from s43 where k='loc'), 'in',     95, 'wh_gate_in', (select v from s43 where k='in')),
+  ((select v from s43 where k='it'), (select v from s43 where k='loc'), 'damage',  5, 'wh_gate_in', (select v from s43 where k='in'));
+-- the reversal
+insert into wh_movements (item_id, location_id, kind, qty, ref_table, ref_id, remarks) values
+  ((select v from s43 where k='it'), (select v from s43 where k='loc'), 'void',   -95, 'wh_gate_in', (select v from s43 where k='in'), 'Void of QA-VOID-1: wrong store'),
+  ((select v from s43 where k='it'), (select v from s43 where k='loc'), 'damage',  -5, 'wh_gate_in', (select v from s43 where k='in'), 'Void of QA-VOID-1: wrong store');
+update wh_gate_in set deleted_at = now(), void_reason = 'wrong store' where entry_no = 'QA-VOID-1';
+
+select 'S43 void nets to zero' step,
+  sum(case when kind in ('in','return','move_in') then qty
+           when kind in ('issue','move_out','vendor_out') then -qty
+           when kind in ('adjust','void') then qty else 0 end) as good_effect,   -- expect 0
+  sum(case when kind = 'damage' then qty else 0 end) as damaged_effect           -- expect 0
+from wh_movements
+where ref_table = 'wh_gate_in' and ref_id = (select v from s43 where k='in');
+
+-- S44 · A voided receipt hands its quantity back to the purchase order, so a
+--       mistyped entry can never close an order against material that never came.
+select 'S44 voided entries excluded from PO received' step,
+  count(*) filter (where e.deleted_at is not null) as voided_lines_ignored
+from wh_gate_in_lines l join wh_gate_in e on e.id = l.gate_in_id
+where l.po_line_id is not null;
+
+-- S45 · A partial return: 200 out, 50 already back, 80 more → 70 still out.
+create temp table s45(k text primary key, v uuid);
+insert into s45 values ('loc', (select id from wh_locations where parent_id is not null limit 1));
+insert into s45 values ('it',  (select id from wh_items where deleted_at is null limit 1));
+insert into wh_gate_out (entry_no, entry_date, dest_type, from_location_id, project_id, is_returnable)
+values ('QA-RET-1', current_date, 'site', (select v from s45 where k='loc'),
+        (select id from projects limit 1), true);
+insert into s45 values ('out', (select id from wh_gate_out where entry_no='QA-RET-1'));
+insert into wh_gate_out_lines (gate_out_id, item_id, qty, returned_qty)
+values ((select v from s45 where k='out'), (select v from s45 where k='it'), 200, 50);
+insert into wh_movements (item_id, location_id, kind, qty, ref_table, ref_id, remarks)
+values ((select v from s45 where k='it'), (select v from s45 where k='loc'), 'return', 80,
+        'wh_gate_out', (select v from s45 where k='out'), 'Returned against QA-RET-1');
+update wh_gate_out_lines set returned_qty = returned_qty + 80
+where gate_out_id = (select v from s45 where k='out');
+
+select 'S45 partial return' step,
+  qty as went_out, returned_qty as back, qty - returned_qty as still_out   -- expect 200 / 130 / 70
+from wh_gate_out_lines where gate_out_id = (select v from s45 where k='out');
+
+-- S46 · Merging two items adds their stock in the SAME store rather than
+--       failing on the unique (item, location) index, and the loser keeps
+--       pointing at what it became.
+create temp table s46(k text primary key, v uuid);
+insert into s46 values ('loc', (select id from wh_locations where parent_id is not null limit 1));
+insert into wh_items (name, unit, source) values ('QA Merge Loser','Bag','manual'), ('QA Merge Keeper','Bag','manual');
+insert into s46 values ('a', (select id from wh_items where name='QA Merge Loser'));
+insert into s46 values ('b', (select id from wh_items where name='QA Merge Keeper'));
+insert into wh_stock (item_id, location_id, qty) values
+  ((select v from s46 where k='a'), (select v from s46 where k='loc'), 30),
+  ((select v from s46 where k='b'), (select v from s46 where k='loc'), 12);
+insert into wh_movements (item_id, location_id, kind, qty)
+values ((select v from s46 where k='a'), (select v from s46 where k='loc'), 'in', 30);
+
+update wh_stock set qty = qty + 30
+  where item_id = (select v from s46 where k='b') and location_id = (select v from s46 where k='loc');
+delete from wh_stock
+  where item_id = (select v from s46 where k='a') and location_id = (select v from s46 where k='loc');
+update wh_movements set item_id = (select v from s46 where k='b')
+  where item_id = (select v from s46 where k='a');
+update wh_items set merged_into = (select v from s46 where k='b'), is_active = false, deleted_at = now()
+  where id = (select v from s46 where k='a');
+
+select 'S46 merge' step,
+  (select qty from wh_stock where item_id = (select v from s46 where k='b')
+     and location_id = (select v from s46 where k='loc')) as keeper_qty,          -- expect 42
+  (select count(*) from wh_stock where item_id = (select v from s46 where k='a')) as loser_rows,  -- expect 0
+  (select merged_into is not null and not is_active
+     from wh_items where id = (select v from s46 where k='a')) as loser_retired;  -- expect true
+
+rollback;

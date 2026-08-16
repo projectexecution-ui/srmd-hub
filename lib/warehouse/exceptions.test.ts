@@ -237,12 +237,16 @@ describe('the report catalogue', () => {
     }
   })
   it('says WHY each deferred report is deferred, so it is not silently dropped', () => {
-    expect(DEFERRED_REPORTS).toHaveLength(3)
+    expect(DEFERRED_REPORTS).toHaveLength(2)
     for (const d of DEFERRED_REPORTS) expect(d.why.length).toBeGreaterThan(40)
   })
-  it('covers the 14 from the review — 12 built plus 3 deferred, with 1 added since', () => {
+  it('covers the 14 from the review — 13 built plus 2 deferred, with 2 added since', () => {
     // "Differs from IN4" came out of following IN4's item as the base.
+    // "Voided entries" moved from deferred to built once voiding existed: the
+    // reason it was deferred — "nothing can be edited yet" — stopped being true.
     expect(CONTROL_REPORTS.length + DEFERRED_REPORTS.length).toBe(15)
     expect(CONTROL_REPORTS.some(r => r.key === 'differs-from-in4')).toBe(true)
+    expect(CONTROL_REPORTS.some(r => r.key === 'voided')).toBe(true)
+    expect(DEFERRED_REPORTS.some(d => d.title === 'Edit history')).toBe(false)
   })
 })

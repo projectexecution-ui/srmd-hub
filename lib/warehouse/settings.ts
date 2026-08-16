@@ -170,7 +170,7 @@ export const SECTIONS: Array<{
   { key: 'pos',       icon: '📄', title: 'Purchase orders',                  subtitle: 'Part deliveries and abandoned orders' },
   { key: 'closing',   icon: '🔒', title: 'Closing the accounts',             subtitle: 'Keeping a closed month closed' },
   { key: 'who-can',   icon: '👥', title: 'Who can do what',                  subtitle: 'Shown here · actually set in Admin ▸ Permissions' },
-  { key: 'who-where', icon: '🔐', title: 'Who works where',                  subtitle: 'Which store — the gap the role matrix cannot cover' },
+  { key: 'who-where', icon: '🔐', title: 'Stores and who keeps them',        subtitle: 'Add a store, rename one, retire one — and say who may post in it' },
   { key: 'lists',     icon: '📝', title: 'Your lists',                       subtitle: 'The words the system uses — you maintain these, never a developer' },
   { key: 'sync',      icon: '🔄', title: 'Bring across from IN4',            subtitle: 'Items, units, trades and purchase orders out of the weekly upload' },
   { key: 'from-hub',  icon: '🏛️', title: 'Comes from the hub',               subtitle: 'Already built and shared — nothing to set up here' },

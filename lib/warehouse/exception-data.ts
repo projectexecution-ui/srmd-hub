@@ -42,6 +42,7 @@ export async function getControlReport(
     case 'rate-variance':     return rateVarianceReport(ctx)
     case 'entity-settlement': return entitySettlement(ctx)
     case 'number-gaps':       return numberGaps(ctx)
+    case 'voided':            return voidedEntries(ctx)
   }
 }
 
@@ -953,4 +954,116 @@ function monthLabel(ym: string): string {
   const [y, m] = ym.split('-').map(Number)
   return new Date(Date.UTC(y, (m || 1) - 1, 1))
     .toLocaleDateString('en-GB', { month: 'long', year: 'numeric', timeZone: 'UTC' })
+}
+
+// ===========================================================================
+// 13 · Voided entries
+//
+// The counterpart to Entry number gaps. That report asks whether a truck came
+// in without being written down; this one asks the opposite — what was written
+// down and then taken back out. A void is a legitimate correction, but a store
+// where they are frequent, or where the reasons are one word, is a store worth
+// looking at.
+// ===========================================================================
+async function voidedEntries(ctx: Ctx): Promise<ReportView> {
+  const sb = await createClient()
+  const [inRes, outRes] = await Promise.all([
+    sb.from('wh_gate_in')
+      .select(`entry_no, entry_date, party, void_reason, deleted_at,
+               wh_locations(name),
+               voider:profiles!wh_gate_in_deleted_by_fkey(full_name, email),
+               wh_gate_in_lines(received_qty)`)
+      .not('deleted_at', 'is', null),
+    sb.from('wh_gate_out')
+      .select(`entry_no, entry_date, dest_type, party, void_reason, deleted_at,
+               from:wh_locations!wh_gate_out_from_location_id_fkey(name),
+               projects(name),
+               voider:profiles!wh_gate_out_deleted_by_fkey(full_name, email),
+               wh_gate_out_lines(qty)`)
+      .not('deleted_at', 'is', null),
+  ])
+  if (inRes.error) return shell(ctx, { error: inRes.error.message })
+  if (outRes.error) return shell(ctx, { error: outRes.error.message })
+
+  type Void = {
+    day: string; entryNo: string; direction: 'IN' | 'OUT'
+    who: string; store: string; lines: number; qty: number
+    reason: string | null; voidedBy: string | null
+  }
+  const rows: Void[] = []
+  for (const e of inRes.data ?? []) {
+    const lines = e.wh_gate_in_lines ?? []
+    rows.push({
+      day: e.entry_date, entryNo: e.entry_no, direction: 'IN',
+      who: e.party || '— not named —', store: one(e.wh_locations)?.name ?? '—',
+      lines: lines.length, qty: lines.reduce((s, l) => s + Number(l.received_qty), 0),
+      reason: e.void_reason, voidedBy: personName(one(e.voider)),
+    })
+  }
+  for (const e of outRes.data ?? []) {
+    const lines = e.wh_gate_out_lines ?? []
+    rows.push({
+      day: e.entry_date, entryNo: e.entry_no, direction: 'OUT',
+      who: e.dest_type === 'site' ? (one(e.projects)?.name ?? 'a site') : (e.party || 'another store'),
+      store: one(e.from)?.name ?? '—',
+      lines: lines.length, qty: lines.reduce((s, l) => s + Number(l.qty), 0),
+      reason: e.void_reason, voidedBy: personName(one(e.voider)),
+    })
+  }
+
+  const inWindow = period(rows, ctx).sort((a, b) => b.day.localeCompare(a.day))
+
+  // Grouped by store, because "which store keeps unwriting its entries" is the
+  // question this gets opened for.
+  const byStore = new Map<string, Void[]>()
+  for (const r of inWindow) {
+    if (!byStore.has(r.store)) byStore.set(r.store, [])
+    byStore.get(r.store)!.push(r)
+  }
+  const groups = [...byStore.entries()]
+    .sort((a, b) => b[1].length - a[1].length || a[0].localeCompare(b[0]))
+    .map(([store, rs]) => ({
+      label: `${store} — ${rs.length} ${rs.length === 1 ? 'entry' : 'entries'} voided`,
+      rows: rs.map(r => [
+        cell(formatDate(r.day)),
+        cell(r.entryNo),
+        cell(r.direction, null, r.direction === 'IN' ? undefined : 'warn'),
+        cell(r.who),
+        cell(`${formatQty(r.qty)} across ${r.lines} ${r.lines === 1 ? 'item' : 'items'}`, r.qty),
+        cell(r.reason || 'no reason recorded', null, r.reason ? undefined : 'bad'),
+        cell(r.voidedBy ?? '—'),
+      ]),
+    }))
+
+  const noReason = inWindow.filter(r => !r.reason?.trim()).length
+  return shell(ctx, {
+    columns: [
+      { header: 'Date' }, { header: 'Entry', width: 18 }, { header: 'Way' },
+      { header: 'Party / project', width: 24 },
+      { header: 'What it said', width: 24 },
+      { header: 'Why it was voided', width: 34 },
+      { header: 'Voided by', width: 20 },
+    ],
+    groups,
+    kpis: [
+      { label: 'entries voided', value: String(inWindow.length),
+        tone: inWindow.length ? 'warn' : undefined },
+      { label: 'stores affected', value: String(byStore.size) },
+      ...(noReason > 0
+        ? [{ label: 'with no reason given', value: String(noReason), tone: 'bad' as const,
+             hint: 'these predate the reason being compulsory' }]
+        : []),
+    ],
+    caveats: [
+      'A void reverses what the entry did to stock; both the entry and its reversal stay in the ledger.',
+      'The entry number is never reused — a void is not the same as an entry that was never written.',
+      'Voiding is normal. A store with many of them, or with one-word reasons, is what this report is for.',
+    ],
+    emptyGood: 'Nothing has been voided in this period.',
+  })
+}
+
+function personName(p: unknown): string | null {
+  const o = p as { full_name?: string | null; email?: string | null } | null
+  return o ? (o.full_name || o.email || null) : null
 }

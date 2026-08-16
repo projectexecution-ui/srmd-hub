@@ -5,6 +5,7 @@ import { createClient } from '@/lib/supabase/server'
 import { getMyUser, getMyPermissions, can } from '@/lib/auth'
 import { getLocationTree, getPostableSpots, getCount, getSettings, getPoBalance, one } from '@/lib/warehouse/data'
 import { settingDef, periodLockBlocker, isOn } from '@/lib/warehouse/settings'
+import { gate, settingsBlocker } from '@/lib/warehouse/guards'
 import { todayIST } from '@/lib/warehouse/ledger'
 import { in4Key, planIn4Items, FALLBACK_UOM } from '@/lib/warehouse/in4-items'
 import { runIn4Sync } from '@/lib/warehouse/in4-sync-apply'
@@ -13,52 +14,6 @@ import { buildSheet, submitBlocker, adjustments } from '@/lib/warehouse/count'
 import type { GateInInput } from '@/lib/warehouse/types'
 import type { In4ItemSpec } from '@/lib/warehouse/in4-items'
 import type { CountScope, SheetSource } from '@/lib/warehouse/count'
-
-/** The two rules from Settings that refuse a write, checked in one place so
- *  every entry path applies them the same way.
- *
- *  `entryDate` is the business date on the entry; `locationId` is the store it
- *  affects. Returns the sentence to show, or null to go ahead. */
-async function settingsBlocker(
-  entryDate: string,
-  locationId: string | null,
-): Promise<string | null> {
-  const values = await getSettings()
-
-  const locked = periodLockBlocker(values, entryDate)
-  if (locked) return locked
-
-  // A count freezes its store: the sheet's book quantities were frozen when the
-  // count started, so anything moving in between shows up as a difference that
-  // is nobody's fault.
-  if (locationId && isOn(values, 'wh_freeze_during_count')) {
-    const sb = await createClient()
-    const { data } = await sb
-      .from('wh_counts')
-      .select('count_no')
-      .eq('location_id', locationId)
-      .eq('status', 'counting')
-      .limit(1)
-    if (data && data.length > 0) {
-      return `${data[0].count_no} is being counted in this store right now, so nothing can move in or out of it `
-        + 'until that count is submitted. Finish or discard the count first.'
-    }
-  }
-  return null
-}
-
-/** The permissions-matrix gate. RLS checks the same thing, but a policy that
- *  filters a row out of an UPDATE returns 200 with zero rows and no error — so
- *  every action checks here first and gives a sentence a human can act on. */
-async function gate(action: 'edit' | 'admin' = 'edit'): Promise<string | null> {
-  const perms = await getMyPermissions()
-  if (!can(perms, 'warehouse', action)) {
-    return action === 'admin'
-      ? 'Only an admin or Atm Head can do this — ask them to approve it.'
-      : 'You do not have permission to record warehouse entries.'
-  }
-  return null
-}
 
 /** The balance of ONE purchase order, fetched when the keeper picks it.
  *
@@ -1262,12 +1217,15 @@ async function refreshPoStatus(poId: string | null): Promise<void> {
 
   const { data: got } = await sb
     .from('wh_gate_in_lines')
-    .select('po_line_id, received_qty')
+    .select('po_line_id, received_qty, entry:wh_gate_in(deleted_at)')
     .in('po_line_id', poLines.map(l => l.id))
 
   const received = new Map<string, number>()
   for (const g of got ?? []) {
     if (!g.po_line_id) continue
+    // Voided entries do not count towards the order. Without this a void would
+    // leave the PO showing "fully received" against material that never came.
+    if (one(g.entry)?.deleted_at) continue
     received.set(g.po_line_id, (received.get(g.po_line_id) ?? 0) + Number(g.received_qty))
   }
   const anyReceived = [...received.values()].some(v => v > 0)

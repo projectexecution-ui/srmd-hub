@@ -3,7 +3,7 @@ import { requirePermission } from '@/lib/auth'
 import { PageHeader } from '@/components/PageHeader'
 import { Card } from '@/components/ui/card'
 import { createClient } from '@/lib/supabase/server'
-import { ArrowDownToLine, ArrowUpFromLine, ClipboardList, Boxes, BarChart3, Settings2, ChevronRight, FileText } from 'lucide-react'
+import { ArrowDownToLine, ArrowUpFromLine, ClipboardList, Boxes, BarChart3, Settings2, ChevronRight, FileText, ScrollText, Package } from 'lucide-react'
 
 export const dynamic = 'force-dynamic'
 
@@ -14,7 +14,9 @@ const LANES = [
   { href: '/warehouse/count',    icon: ClipboardList,    label: 'Physical count', blurb: 'Walk a store and count what is actually there — the difference is named, witnessed and approved' },
   { href: '/warehouse/stock',    icon: Boxes,            label: 'Stock',          blurb: 'What lies where, as on a date — In, Out, transfers and count corrections per store' },
   { href: '/warehouse/reports',  icon: BarChart3,        label: 'Registers & reports', blurb: 'Vendor IN · Vendor OUT · SRM IN · SRM OUT · Total Stock' },
-  { href: '/warehouse/settings', icon: Settings2,        label: 'Settings',       blurb: 'The rules for your stores, your lists, and who works where' },
+  { href: '/warehouse/entries',  icon: ScrollText,       label: 'Gate register',  blurb: 'Every entry recorded — open one to void it if it was recorded wrong, or book returnable material back in' },
+  { href: '/warehouse/items',    icon: Package,          label: 'Item master',    blurb: 'Fix a name, a unit or a category — and fold a duplicate into the row that should have had it' },
+  { href: '/warehouse/settings', icon: Settings2,        label: 'Settings',       blurb: 'Add or retire a store, set your lists, and say who keeps what' },
 ]
 
 export default async function WarehouseHomePage() {

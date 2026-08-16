@@ -4,7 +4,8 @@ import { PageHeader } from '@/components/PageHeader'
 import { Card } from '@/components/ui/card'
 import { QueryError } from '@/components/ui/query-error'
 import { createClient } from '@/lib/supabase/server'
-import { getSettings, getLocationTree, getReceivers } from '@/lib/warehouse/data'
+import { getSettings, getReceivers } from '@/lib/warehouse/data'
+import { getAllLocations } from '@/lib/warehouse/admin-data'
 import { SettingsClient } from './settings-client'
 import { ChevronLeft } from 'lucide-react'
 
@@ -16,9 +17,9 @@ export default async function WarehouseSettingsPage() {
   const canAdmin = can(perms, 'warehouse', 'admin')
   const sb = await createClient()
 
-  const [values, sites, people, listsRes, historyRes, itemsRes] = await Promise.all([
+  const [values, locations, people, listsRes, historyRes, itemsRes] = await Promise.all([
     getSettings(),
-    getLocationTree(),
+    getAllLocations(),
     getReceivers(),
     sb.from('wh_lists').select('id, kind, value, is_active, sort').order('kind').order('sort').order('value'),
     sb.from('wh_setting_changes')
@@ -46,6 +47,7 @@ export default async function WarehouseSettingsPage() {
       />
 
       {listsRes.error && <QueryError message={listsRes.error.message} what="your lists" />}
+      {locations.error && <QueryError message={locations.error} what="your stores" />}
 
       {!canAdmin && (
         <Card className="p-3 shadow-sm text-[12.5px] text-amber-900 bg-amber-50 border-amber-200">
@@ -56,7 +58,7 @@ export default async function WarehouseSettingsPage() {
 
       <SettingsClient
         values={values}
-        sites={sites}
+        sites={locations.sites}
         people={people}
         lists={listsRes.data ?? []}
         history={historyRes.data ?? []}

@@ -105,7 +105,7 @@ describe('stockFlag', () => {
 const line = (over: Partial<StockLine> & { itemId: string; locationId: string }): StockLine => ({
   itemName: over.itemId, unit: 'Bag', category: null, discipline: null,
   locationName: over.locationId, siteName: 'NGH',
-  inQty: 0, outQty: 0, transferQty: 0, adjustQty: 0, damagedQty: 0, vendorOutQty: 0,
+  inQty: 0, outQty: 0, transferQty: 0, adjustQty: 0, voidQty: 0, damagedQty: 0, vendorOutQty: 0,
   inHand: 0, minQty: null, rate: null, value: 0, flag: null,
   ...over,
 })

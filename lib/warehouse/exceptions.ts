@@ -263,6 +263,7 @@ export type ReportKey =
   | 'count-variance' | 'vendor-balance' | 'shortage-damage' | 'no-po'
   | 'dead-stock' | 'returnables' | 'entity-settlement' | 'rate-variance'
   | 'number-gaps' | 'po-pending' | 'over-receipt' | 'differs-from-in4'
+  | 'voided'
 
 export type ReportMeta = {
   key: ReportKey
@@ -362,6 +363,13 @@ export const CONTROL_REPORTS: ReportMeta[] = [
     question: 'Did a truck come in or go out without being written down?',
     usesPeriod: true,
   },
+  {
+    key: 'voided',
+    title: 'Voided entries',
+    blurb: 'Every entry undone — what it said, who undid it, and why',
+    question: 'What has been taken back out of the register, and does the reason hold up?',
+    usesPeriod: true,
+  },
 ]
 
 export function reportMeta(key: string): ReportMeta | null {
@@ -377,12 +385,6 @@ export const DEFERRED_REPORTS: Array<{ title: string; blurb: string; why: string
     blurb: 'Consumption against the Internal Estimate, per discipline',
     why: 'Needs each warehouse item tied to a Cost Control estimate line. Nothing links them yet, '
       + 'and the Internal Estimate is management-confidential, so it cannot be shown on a storekeeper screen.',
-  },
-  {
-    title: 'Edit history',
-    blurb: 'Every correction to an entry — who and when',
-    why: 'Nothing in this module can be edited yet, so there are no corrections to list. '
-      + 'Count corrections, the one thing that does change stock after the fact, are in Physical count & variance.',
   },
   {
     title: 'Stock as on period-end',

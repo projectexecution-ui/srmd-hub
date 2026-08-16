@@ -10,7 +10,7 @@
  */
 
 export type MovementKind =
-  | 'in' | 'damage' | 'issue' | 'move_out' | 'move_in' | 'return' | 'adjust' | 'vendor_out'
+  | 'in' | 'damage' | 'issue' | 'move_out' | 'move_in' | 'return' | 'adjust' | 'vendor_out' | 'void'
 
 export type LedgerRow = {
   itemId: string
@@ -38,8 +38,10 @@ export function stockEffect(kind: MovementKind, qty: number): number {
     case 'move_out':
     case 'vendor_out':
       return -qty
-    // A count correction already carries its own sign.
+    // A count correction already carries its own sign, and so does the
+    // reversal of a voided entry.
     case 'adjust':
+    case 'void':
       return qty
     case 'damage':
       return 0
@@ -58,6 +60,10 @@ export type StockCell = {
   transferQty: number
   /** Net of count corrections. Signed. */
   adjustQty: number
+  /** Net of voided entries reversed back out. Signed, and kept apart from
+   *  `adjustQty` so a keeper's typo never reads as a count finding material
+   *  missing — the two mean entirely different things to whoever reads it. */
+  voidQty: number
   damagedQty: number
   /** in − out + transfer + adjust. */
   inHand: number
@@ -69,7 +75,8 @@ export type StockCell = {
 function emptyCell(itemId: string, locationId: string): StockCell {
   return {
     itemId, locationId,
-    inQty: 0, outQty: 0, transferQty: 0, adjustQty: 0, damagedQty: 0, vendorOutQty: 0, inHand: 0,
+    inQty: 0, outQty: 0, transferQty: 0, adjustQty: 0, voidQty: 0,
+    damagedQty: 0, vendorOutQty: 0, inHand: 0,
   }
 }
 
@@ -97,6 +104,8 @@ export function foldLedger(rows: LedgerRow[], asOn?: string): StockCell[] {
         c.transferQty -= r.qty; break
       case 'adjust':
         c.adjustQty += r.qty; break
+      case 'void':
+        c.voidQty += r.qty; break
       case 'damage':
         c.damagedQty += r.qty; break
     }

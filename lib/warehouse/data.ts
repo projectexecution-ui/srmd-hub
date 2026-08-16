@@ -151,11 +151,14 @@ export async function getPoBalance(poId: string): Promise<{ po: WhPo | null; err
   if (lineIds.length > 0) {
     const { data: got, error: gErr } = await sb
       .from('wh_gate_in_lines')
-      .select('po_line_id, received_qty, gate_in_id')
+      .select('po_line_id, received_qty, gate_in_id, entry:wh_gate_in(deleted_at)')
       .in('po_line_id', lineIds)
     if (gErr) return { po: null, error: `Could not read what has already arrived: ${gErr.message}` }
     for (const g of got ?? []) {
       if (!g.po_line_id) continue
+      // A voided entry never happened, so its quantity must come back off the
+      // PO balance — otherwise a mistyped receipt closes the order for good.
+      if (one(g.entry)?.deleted_at) continue
       received.set(g.po_line_id, (received.get(g.po_line_id) ?? 0) + Number(g.received_qty))
       deliveries.add(g.gate_in_id)
     }

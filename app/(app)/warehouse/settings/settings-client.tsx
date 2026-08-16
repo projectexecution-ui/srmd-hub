@@ -5,13 +5,14 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { toast } from 'sonner'
 import { Card } from '@/components/ui/card'
-import { saveSetting, addListValue, setListValueActive, setStoreKeeper } from '../actions'
+import { saveSetting, addListValue, setListValueActive } from '../actions'
+import { StoreMap } from './store-map'
 import {
   SETTINGS, SECTIONS, NOT_BUILT, VALUE_HIDEABLE_ROLES,
   isOn, rawValue, valuesHiddenRoles,
 } from '@/lib/warehouse/settings'
 import type { SettingDef, SettingValues } from '@/lib/warehouse/settings'
-import type { WhSite } from '@/lib/warehouse/types'
+import type { AdminLocation } from '@/lib/warehouse/admin-data'
 import { formatDateTime } from '@/lib/utils'
 import { ChevronRight, Loader2, Lock, ShieldCheck, Plus, X, Info } from 'lucide-react'
 
@@ -46,7 +47,7 @@ export function SettingsClient({
   values, sites, people, lists, history, itemsPerStore, itemCount, canAdmin,
 }: {
   values: SettingValues
-  sites: WhSite[]
+  sites: AdminLocation[]
   people: Array<{ id: string; name: string }>
   lists: ListRow[]
   history: HistoryRow[]
@@ -75,7 +76,7 @@ export function SettingsClient({
         const isOpenNow = open === sec.key
         const count = sec.key === 'lists' ? `${Object.keys(LIST_META).length} lists`
           : sec.key === 'who-can' ? '6 roles · 1 setting'
-          : sec.key === 'who-where' ? `${sites.flatMap(s => s.spots).length} stores`
+          : sec.key === 'who-where' ? `${sites.filter(s => s.active).length} sites · ${sites.flatMap(s => s.children).filter(c => c.active).length} stores`
           : sec.key === 'from-hub' ? `${HUB_SCREENS.length} screens`
           : live.length === 0 ? `${pending.length} not built`
           : `${live.length} ${live.length === 1 ? 'setting' : 'settings'}${pending.length ? ` · ${pending.length} not built` : ''}`
@@ -102,7 +103,7 @@ export function SettingsClient({
 
                 {sec.key === 'who-can' && <RolesTable />}
                 {sec.key === 'who-where' && (
-                  <KeeperMap sites={sites} people={people} itemsPerStore={itemsPerStore} canAdmin={canAdmin} />
+                  <StoreMap sites={sites} people={people} itemsPerStore={itemsPerStore} canAdmin={canAdmin} />
                 )}
                 {sec.key === 'lists' && <Lists lists={lists} itemCount={itemCount} canAdmin={canAdmin} />}
                 {sec.key === 'sync' && <SyncLink />}
@@ -277,68 +278,6 @@ function RolesTable() {
   )
 }
 
-function KeeperMap({
-  sites, people, itemsPerStore, canAdmin,
-}: {
-  sites: WhSite[]
-  people: Array<{ id: string; name: string }>
-  itemsPerStore: Record<string, number>
-  canAdmin: boolean
-}) {
-  const router = useRouter()
-  const [busy, start] = useTransition()
-
-  return (
-    <div className="space-y-2">
-      <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-[12px] text-amber-900">
-        <b>Why this exists:</b> the role matrix is module-wide. Give Storekeeper edit on Warehouse and every keeper
-        could post against every store. Roles say <i>what</i> a person may do; this says <i>where</i>.
-      </div>
-      <div className="space-y-2">
-        {sites.map(site => (
-          <div key={site.id}>
-            <p className="text-[11px] font-extrabold uppercase tracking-wider text-slate-400 mb-1">{site.name}</p>
-            <div className="space-y-1.5">
-              {site.spots.map(sp => (
-                <div key={sp.id} className="grid grid-cols-[1fr_auto] sm:grid-cols-[1fr_200px] gap-2 items-center">
-                  <div className="min-w-0">
-                    <p className="text-[12.5px] font-semibold text-slate-800 truncate">{sp.name}</p>
-                    <p className="text-[11px] text-slate-500">
-                      {itemsPerStore[sp.id] ? `${itemsPerStore[sp.id]} items in stock` : 'nothing in stock'}
-                    </p>
-                  </div>
-                  <select className={inputCls} value={sp.keeperId ?? ''} disabled={!canAdmin || busy}
-                    aria-label={`Keeper for ${sp.name}`}
-                    onChange={e => start(async () => {
-                      const res = await setStoreKeeper(sp.id, e.target.value || null)
-                      if (!res.ok) { toast.error(res.error ?? 'Could not save that.'); return }
-                      toast.success('Saved')
-                      router.refresh()
-                    })}>
-                    <option value="">— nobody yet (open to all keepers) —</option>
-                    {people.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-                  </select>
-                </div>
-              ))}
-              {site.spots.length === 0 && (
-                <p className="text-[11.5px] text-slate-500">No stores under this site yet.</p>
-              )}
-            </div>
-          </div>
-        ))}
-      </div>
-      <p className="text-[11px] text-slate-500">
-        A store with nobody assigned stays open to every keeper — otherwise a fresh site would let nobody post
-        anything and the module would look broken. He still <b>sees</b> stock everywhere either way.
-      </p>
-      <p className="text-[11px] text-slate-500">
-        Atm Head → sites is the same map the procurement reminder already uses, kept in one place for the whole
-        hub rather than copied here.
-      </p>
-    </div>
-  )
-}
-
 function Lists({ lists, itemCount, canAdmin }: { lists: ListRow[]; itemCount: number; canAdmin: boolean }) {
   const router = useRouter()
   const [busy, start] = useTransition()
@@ -431,11 +370,15 @@ function Lists({ lists, itemCount, canAdmin }: { lists: ListRow[]; itemCount: nu
       <div className="rounded-xl border border-slate-200 p-3">
         <p className="text-[12.5px] font-bold text-slate-800">Shared with the rest of the hub</p>
         <p className="text-[11.5px] text-slate-500 mt-0.5">
-          <b>Storage locations</b> are set up above, under Who works where. <b>Projects</b> and <b>vendors</b> are the
-          hub&apos;s own lists — set up once and used by every module, never a second copy here.
+          <b>Storage locations</b> are set up above, under Stores and who keeps them. <b>Projects</b> and{' '}
+          <b>vendors</b> are the hub&apos;s own lists — set up once and used by every module, never a second copy here.
           The <b>item master</b> holds {itemCount} items and grows by itself: a material IN4 names on a PO becomes an
           item on import.
         </p>
+        <Link href="/warehouse/items"
+          className="inline-flex items-center gap-1 text-[12px] font-bold text-emerald-700 hover:underline min-h-[36px]">
+          Open the item master <ChevronRight className="h-3.5 w-3.5" />
+        </Link>
       </div>
     </div>
   )
