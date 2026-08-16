@@ -131,9 +131,18 @@ export interface WeeklyPdfInput {
 }
 export interface WeeklyDetailInput extends WeeklyPdfInput {
   prev: ComposeResult | null
-  /** Restrict the report to ONE project (by name) — the per-project weekly. */
+  /** Restrict the report to ONE project (by name) — a standalone project's file. */
   onlyProject?: string
+  /** Restrict to one GROUP — its projects share a file, one page each. */
+  onlyGroup?: string
 }
+
+/** displayGroups() renames the ungrouped bucket; callers filtering by group
+ *  name must use the same label or they silently match nothing. */
+export function displayGroupName(name: string): string {
+  return name === '— Ungrouped' ? 'Standalone projects' : name
+}
+export const UNGROUPED = '— Ungrouped'
 
 /** A filename that says what the file is without opening it.
  *
@@ -152,6 +161,25 @@ export function projectPdfFilename(
     `${d.getUTCFullYear()}-W${String(isoWeek(d)).padStart(2, '0')}`,
     safe(p.name),
     `Bud-${crShort(p.budget)}`,
+    used == null ? 'Used-na' : `Used-${used}pc`,
+  ].join('_') + '.pdf'
+}
+
+/** Same idea for a group's file, but carrying the project count so you can see
+ *  what is inside without opening it.
+ *  e.g. 2026-W33_NGH_5-projects_Bud-45.2Cr_Used-58pc.pdf */
+export function groupPdfFilename(
+  g: { name: string; budget: number; spent: number; projects: unknown[] },
+  asOfISO: string | null,
+): string {
+  const d = asOfISO ? new Date(asOfISO) : new Date()
+  const safe = (s: string) => s.normalize('NFKD').replace(/[^\w\s-]/g, '').trim().replace(/\s+/g, '-').slice(0, 40)
+  const used = g.budget > 0 ? Math.round((g.spent / g.budget) * 100) : null
+  return [
+    `${d.getUTCFullYear()}-W${String(isoWeek(d)).padStart(2, '0')}`,
+    safe(g.name),
+    `${g.projects.length}-projects`,
+    `Bud-${crShort(g.budget)}`,
     used == null ? 'Used-na' : `Used-${used}pc`,
   ].join('_') + '.pdf'
 }
@@ -247,18 +275,20 @@ export function buildWeeklyOnePagerPdf(input: WeeklyPdfInput): Uint8Array {
 
 // ── Reports 2 & 3: detail, one project per page ──────────────────────────────
 export function buildWeeklyDetailPdf(input: WeeklyDetailInput, mode: 'category' | 'subcategory'): Uint8Array {
-  const { result, prev, delta, freshness, prevSnapshotWeek, onlyProject } = input
+  const { result, prev, delta, freshness, prevSnapshotWeek, onlyProject, onlyGroup } = input
   const isSub = mode === 'subcategory'
   const t = result.totals
   const usedPct = pct(t.spent, t.budget) ?? 0
   const groups = displayGroups(result)
-  // `onlyProject` narrows this to a single project, which is what makes a
-  // one-file-per-project weekly possible. Nothing else changes: showSummary
-  // already falls away at one project, so the result is exactly the page this
-  // project would have had inside the merged report — on its own.
+  // Two ways to narrow, which is what keeps the weekly to a handful of files:
+  //   onlyGroup   — a group's projects share ONE file, a page each (+ a group
+  //                 summary, since showSummary survives at 2+ projects)
+  //   onlyProject — a standalone project gets its own file, summary dropped
+  // Neither changes how a page is drawn; they only decide which pages exist.
   const projects = groups
     .flatMap(g => g.projects.map(p => ({ p, group: g.name })))
-    .filter(x => !onlyProject || x.p.name === onlyProject)
+    .filter(x => (!onlyProject || x.p.name === onlyProject)
+              && (!onlyGroup || x.group === onlyGroup))
   const showSummary = projects.length > 1
   const kind = isSub ? 'Sub-category' : 'Category'
 

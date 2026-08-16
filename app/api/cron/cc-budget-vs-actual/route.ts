@@ -13,7 +13,7 @@ import { createClient as createServiceClient } from '@supabase/supabase-js'
 import { getMyUser, getMyPermissions, can } from '@/lib/auth'
 import { loadBudgetV2 } from '@/lib/budget-v2-load'
 import { buildBudgetV2Report } from '@/lib/budget-v2-report'
-import { buildWeeklyOnePagerPdf, buildWeeklyDetailPdf, projectPdfFilename } from '@/lib/budget-v2-pdf'
+import { buildWeeklyOnePagerPdf, buildWeeklyDetailPdf, projectPdfFilename, groupPdfFilename, displayGroupName, UNGROUPED } from '@/lib/budget-v2-pdf'
 import { sendPdfToGroup } from '@/lib/telegram/group'
 
 export const runtime = 'nodejs'
@@ -42,14 +42,32 @@ async function sendPdfsToGroup(
     { name: `Budget-vs-Actual_By-Sub-category_${tag}.pdf`, caption: 'Weekly Budget vs Actual — by sub-category', pdf: buildWeeklyDetailPdf({ ...base, prev }, 'subcategory') },
   ]
 
-  // ...then one single-page, category-wise file PER PROJECT. The merged reports
-  // above are for reading the portfolio; these are for forwarding — an Atm Head
-  // can send one project's page on without also sending everyone else's numbers.
-  // Filtering to one project drops the summary page automatically, so each file
-  // is exactly that project's page, standing alone.
+  // ...then the forwardable files. The merged reports above are for reading the
+  // portfolio; these are for passing on — an Atm Head can forward his own site
+  // without also forwarding everyone else's numbers.
+  //
+  // A GROUP travels as one file, one page per sub-project (plus a group summary,
+  // which survives because the group has 2+ projects). A standalone project gets
+  // its own file. That keeps the weekly to a handful of attachments instead of
+  // one per project.
+  const worthReporting = (x: { budget: number; spent: number }) => x.budget !== 0 || x.spent !== 0
+
   for (const g of result.groups) {
-    for (const p of g.projects) {
-      if (p.budget === 0 && p.spent === 0) continue      // nothing to report yet
+    const live = g.projects.filter(worthReporting)
+    if (live.length === 0) continue
+
+    // Ungrouped is not a real group — those are individual projects.
+    const isRealGroup = g.name !== UNGROUPED && live.length > 1
+    if (isRealGroup) {
+      files.push({
+        name: groupPdfFilename({ ...g, projects: live }, freshness.budget),
+        caption: `${displayGroupName(g.name)} — Budget vs Actual · ${live.length} projects, week to ${tag}`,
+        pdf: buildWeeklyDetailPdf({ ...base, prev, onlyGroup: displayGroupName(g.name) }, 'category'),
+      })
+      continue
+    }
+
+    for (const p of live) {
       files.push({
         name: projectPdfFilename(p, freshness.budget),
         caption: `${p.name} — Budget vs Actual, week to ${tag}`,
