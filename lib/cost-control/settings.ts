@@ -61,6 +61,12 @@ export interface CcSettings {
    *  Turn on to re-enable the whole BPH sync feature. Existing pulled figures
    *  are left as-is either way. */
   bph_sync: boolean
+  /** Let approvers act on a budget from Telegram (Approve / Return buttons on
+   *  the approval card in their DM). Off (default) = Telegram is notify-only,
+   *  every approval happens in the app. When on, the approve still runs through
+   *  the exact same approval engine (can_approve + the RPCs); it's just a second
+   *  doorway. Gated per-recipient by who has connected Telegram. */
+  telegram_approvals: boolean
 }
 
 export const CC_SETTINGS_DEFAULTS: CcSettings = {
@@ -81,6 +87,7 @@ export const CC_SETTINGS_DEFAULTS: CcSettings = {
   ie_review: false,
   cumulative_versions: false,
   bph_sync: false,
+  telegram_approvals: false,
 }
 
 /** Pure parser — exported so tests cover defaults/overrides without Supabase. */
@@ -117,6 +124,7 @@ export function parseCcSettings(map: Record<string, string | null | undefined>):
     ie_review:         parseBool('cc_ie_review', d.ie_review),
     cumulative_versions: parseBool('cc_cumulative_versions', d.cumulative_versions),
     bph_sync:          parseBool('cc_bph_sync', d.bph_sync),
+    telegram_approvals: parseBool('cc_telegram_approvals', d.telegram_approvals),
   }
 }
 

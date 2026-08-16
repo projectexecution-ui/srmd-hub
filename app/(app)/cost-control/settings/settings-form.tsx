@@ -63,6 +63,24 @@ export function CcSettingsForm({ initial, users = [] }: {
     router.refresh()
   }
 
+  // Telegram approvals — saves the instant it's clicked (a gate you flip on to
+  // trial, off to revert). Default OFF; Telegram stays notify-only until on.
+  async function toggleTelegramApprovals(next: boolean) {
+    setV(prev => ({ ...prev, telegram_approvals: next }))
+    setMsg(null); setError(null)
+    const supabase = createClient()
+    const { error } = await supabase
+      .from('app_settings')
+      .upsert({ key: 'cc_telegram_approvals', value: String(next) }, { onConflict: 'key' })
+    if (error) {
+      setV(prev => ({ ...prev, telegram_approvals: !next }))  // revert
+      setError(`Couldn't save the switch: ${error.message}`)
+      return
+    }
+    setMsg(next ? 'Telegram approvals turned ON — saved.' : 'Telegram approvals turned OFF — saved.')
+    router.refresh()
+  }
+
   async function submit(e: React.FormEvent) {
     e.preventDefault()
     setSaving(true)
@@ -191,6 +209,17 @@ export function CcSettingsForm({ initial, users = [] }: {
           Approvers are emailed (via Gmail) the moment a budget reaches their stage — this is built in.
           Turn approval emails on/off for the whole team on the{' '}
           <a href="/settings/notifications" className="text-blue-600 hover:underline font-medium">Notifications</a> page.
+        </div>
+        <div className="rounded-lg border border-sky-200 bg-sky-50/50 px-3 py-3 space-y-2">
+          <Toggle
+            label="Approve budgets from Telegram"
+            hint="When on, an approver who has connected Telegram gets Approve / Return buttons on the budget card in their DM — the approval still runs through the exact same checks as the app, it's just a second doorway. OFF (default) = Telegram is notify-only; every approval happens in the app."
+            checked={v.telegram_approvals}
+            onChange={toggleTelegramApprovals}
+          />
+          <p className="text-[11px] px-1 text-sky-800">
+            Only people who have connected their own Telegram (Settings → Notifications) can approve there, and only when it&apos;s their turn in the chain. Saves the instant you flip it.
+          </p>
         </div>
       </div>
 
