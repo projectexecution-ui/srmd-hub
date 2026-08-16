@@ -8,7 +8,7 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { Send, Check, Loader2, RefreshCcw, Unplug, Settings2 } from 'lucide-react'
+import { Send, Check, Loader2, RefreshCcw, Unplug, Settings2, Copy } from 'lucide-react'
 import { formatDateTime } from '@/lib/utils'
 import { startTelegramLink, unlinkTelegram } from './telegram-actions'
 
@@ -23,15 +23,23 @@ export function TelegramConnect({
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState<string | null>(null)
   const [opened, setOpened] = useState(false)
+  const [link, setLink] = useState<string | null>(null)
+  const [copied, setCopied] = useState(false)
   const [setupMsg, setSetupMsg] = useState<string | null>(null)
 
   async function connect() {
-    setBusy(true); setErr(null); setSetupMsg(null)
+    setBusy(true); setErr(null); setSetupMsg(null); setCopied(false)
     const r = await startTelegramLink()
     setBusy(false)
     if (!r.ok) { setErr(r.error); return }
+    setLink(r.link)
     setOpened(true)
     window.open(r.link, '_blank', 'noopener,noreferrer')
+  }
+
+  async function copyLink() {
+    if (!link) return
+    try { await navigator.clipboard.writeText(link); setCopied(true); setTimeout(() => setCopied(false), 2000) } catch { /* clipboard blocked */ }
   }
 
   async function disconnect() {
@@ -72,6 +80,11 @@ export function TelegramConnect({
             Get your CT Hub reports and alerts as Telegram messages — approvals, procurement follow-ups,
             bills, the daily site report, and more. Turn on <b>Digest only</b> above for one daily summary instead.
           </p>
+          {!connected && (
+            <p className="text-xs text-gray-500 mt-1">
+              <b>No code to type.</b> Tap <b>Connect Telegram</b> → Telegram opens → tap <b>Start</b> there → come back and refresh.
+            </p>
+          )}
 
           {connected ? (
             <div className="mt-3 flex flex-wrap items-center gap-3">
@@ -91,11 +104,24 @@ export function TelegramConnect({
                 Connect Telegram
               </Button>
               {opened && (
-                <div className="rounded-lg border border-sky-200 bg-sky-50/70 px-3 py-2 text-xs text-sky-900">
-                  Telegram opened in a new tab — tap <b>Start</b> in the chat, then come back and refresh.
-                  <button onClick={() => router.refresh()} className="ml-2 inline-flex items-center gap-1 font-semibold text-sky-700 hover:underline">
-                    <RefreshCcw className="h-3 w-3" /> Refresh
-                  </button>
+                <div className="rounded-lg border border-sky-200 bg-sky-50/70 px-3 py-2 text-xs text-sky-900 space-y-1.5">
+                  <div>
+                    Telegram opened in a new tab — tap <b>Start</b> in the chat, then come back and refresh.
+                    <button onClick={() => router.refresh()} className="ml-2 inline-flex items-center gap-1 font-semibold text-sky-700 hover:underline">
+                      <RefreshCcw className="h-3 w-3" /> Refresh
+                    </button>
+                  </div>
+                  {link && (
+                    <div className="text-[11px] text-sky-800">
+                      Didn’t open? Copy this link and paste it into Telegram (or open it on your phone), then tap <b>Start</b>:
+                      <div className="mt-1 flex items-center gap-1.5">
+                        <code className="flex-1 min-w-0 truncate rounded bg-white/70 border border-sky-200 px-1.5 py-1 text-sky-900">{link}</code>
+                        <button onClick={copyLink} className="inline-flex items-center gap-1 font-semibold text-sky-700 hover:underline flex-shrink-0">
+                          {copied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}{copied ? 'Copied' : 'Copy'}
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
