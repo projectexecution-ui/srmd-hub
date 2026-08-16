@@ -371,7 +371,7 @@ function TrustSection({
     : <span className={`inline-block text-[10px] font-bold uppercase tracking-wide rounded px-1.5 py-0.5 border ${ACCT_TONE[acct] ?? 'bg-gray-50 text-gray-600 border-gray-200'}`}>Submitted to {acct} A/c</span>
   return (
     <section id={`${idPrefix}-${acct}`} className="scroll-mt-32 md:scroll-mt-20 rounded-xl border border-gray-200 bg-white overflow-hidden">
-      <div className="px-4 py-2.5 bg-gray-50 border-b border-gray-100 flex items-center justify-between gap-2 flex-wrap">
+      <div className="px-4 py-2.5 border-b border-gray-100 flex items-center justify-between gap-2 flex-wrap" style={{ backgroundColor: ACCT_HEAD[acct] ?? '#f8fafc' }}>
         <h2 className="text-sm font-bold text-gray-800 inline-flex items-center gap-2">{title} {badge}</h2>
         <div className="flex items-center gap-3">
           <span className="text-xs text-gray-500 tabular-nums">{rows.length} · {formatINR(total)}</span>
@@ -469,6 +469,10 @@ function TrustMapCard({
 
 // ── Off-screen "clean" renders captured as PNG (per-trust) / PDF (full day) ──
 const ACCT_HEX: Record<string, string> = { SRET: '#4f46e5', SRAH: '#0891b2', SRASSK: '#db2777', SRA: '#d97706', '—': '#e11d48' }
+// per-trust shades — header (light) + body wash (very light) so trusts differ at a glance
+const ACCT_HEAD: Record<string, string> = { SRET: '#e0e7ff', SRAH: '#cffafe', SRASSK: '#fce7f3', SRA: '#fef3c7', '—': '#ffe4e6' }
+const ACCT_BODY: Record<string, string> = { SRET: '#f4f6ff', SRAH: '#f0feff', SRASSK: '#fdf4f9', SRA: '#fffdf4', '—': '#fff5f6' }
+const GRID = '1px solid #c7d0dc'   // visible grid lines for image + PDF
 
 // One section: heading with a trust-colour chip + count/total, then a clean table.
 function SectionTable({
@@ -483,14 +487,17 @@ function SectionTable({
   emptyNote?: string
 }) {
   const hex = kind === 'paid' ? '#059669' : (ACCT_HEX[acct] ?? '#64748b')
+  const headBg = kind === 'paid' ? '#d1fae5' : (ACCT_HEAD[acct] ?? '#e2e8f0')
+  const bodyBg = kind === 'paid' ? '#f2fdf7' : (ACCT_BODY[acct] ?? '#f8fafc')
   const dateHdr = kind === 'paid' ? 'Paid on' : (COURIER_ACCTS.has(acct) ? 'Courier' : 'Submission')
+  const showDays = kind === 'trust'
   const total = rows.reduce((s, b) => s + b.amount, 0)
-  const th: CSSProperties = { padding: '6px 8px', textAlign: 'left', borderBottom: `2px solid ${hex}`, fontWeight: 700, color: '#334155' }
+  const th: CSSProperties = { padding: '6px 8px', textAlign: 'left', border: GRID, background: headBg, fontWeight: 700, color: '#1e293b' }
   const thR: CSSProperties = { ...th, textAlign: 'right' }
-  const td: CSSProperties = { padding: '5px 8px', borderBottom: '1px solid #eef2f7' }
+  const td: CSSProperties = { padding: '5px 8px', border: GRID }
   const tdR: CSSProperties = { ...td, textAlign: 'right', fontVariantNumeric: 'tabular-nums', fontWeight: 600 }
-  const rowBg = (hl: string | null): CSSProperties | undefined =>
-    hl === 'red' ? { background: '#fee2e2' } : hl === 'yellow' ? { background: '#fef3c7' } : undefined
+  const rowBg = (hl: string | null): string =>
+    hl === 'red' ? '#fecaca' : hl === 'yellow' ? '#fde68a' : bodyBg
   return (
     <div style={{ marginTop: 16 }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
@@ -501,37 +508,39 @@ function SectionTable({
         <span style={{ fontSize: 11.5, color: '#64748b', fontWeight: 600 }}>{rows.length} bill{rows.length === 1 ? '' : 's'} · {formatINR(total)}</span>
       </div>
       {rows.length === 0 ? (
-        <div style={{ padding: '10px 8px', fontSize: 12, color: '#94a3b8', fontStyle: 'italic', background: '#f8fafc', borderRadius: 6 }}>{emptyNote || 'No records'}</div>
+        <div style={{ padding: '10px 8px', fontSize: 12, color: '#94a3b8', fontStyle: 'italic', background: bodyBg, border: GRID, borderRadius: 4 }}>{emptyNote || 'No records'}</div>
       ) : (
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
-          <thead><tr style={{ background: '#f8fafc' }}>
+          <thead><tr>
             <th style={{ ...th, width: 26 }}>#</th>
             <th style={th}>Party</th>
             <th style={th}>Project</th>
             <th style={th}>Invoice</th>
             <th style={thR}>Amount (₹)</th>
             <th style={th}>{dateHdr}</th>
+            {showDays && <th style={{ ...th, width: 46, textAlign: 'right' }}>Days</th>}
             <th style={th}>Remark</th>
           </tr></thead>
           <tbody>
             {rows.map((b, i) => {
-              const bg = rowBg(entryOf(b.id).highlight) ?? (i % 2 ? { background: '#fbfcfe' } : undefined)
+              const days = showDays ? daysSince(effDate(b, acct)) : null
               return (
-                <tr key={b.id} style={bg}>
+                <tr key={b.id} style={{ background: rowBg(entryOf(b.id).highlight) }}>
                   <td style={{ ...td, color: '#94a3b8' }}>{i + 1}</td>
                   <td style={td}>{b.vendor || '—'}</td>
                   <td style={{ ...td, color: '#475569' }}>{b.area}</td>
                   <td style={{ ...td, color: '#475569' }}>{b.invoiceNo}</td>
                   <td style={tdR}>{formatINR(b.amount)}</td>
                   <td style={td}>{kind === 'paid' ? fmtDate(b.paymentDate) : fmtDate(effDate(b, acct))}</td>
+                  {showDays && <td style={{ ...tdR, fontWeight: 400, color: days != null && days >= 7 ? '#b91c1c' : '#475569' }}>{days == null ? '—' : `${days}d`}</td>}
                   <td style={{ ...td, color: '#475569' }}>{entryOf(b.id).remark || ''}</td>
                 </tr>
               )
             })}
-            <tr style={{ background: '#eef2f7', fontWeight: 800 }}>
-              <td style={{ ...td, borderBottom: 'none' }} colSpan={4}>Total · {rows.length} bill{rows.length === 1 ? '' : 's'}</td>
-              <td style={{ ...tdR, borderBottom: 'none' }}>{formatINR(total)}</td>
-              <td style={{ ...td, borderBottom: 'none' }} colSpan={2}></td>
+            <tr style={{ background: headBg, fontWeight: 800 }}>
+              <td style={td} colSpan={4}>Total · {rows.length} bill{rows.length === 1 ? '' : 's'}</td>
+              <td style={tdR}>{formatINR(total)}</td>
+              <td style={td} colSpan={showDays ? 3 : 2}></td>
             </tr>
           </tbody>
         </table>
