@@ -16,7 +16,6 @@ import { parseProcurementNotifyConfig, type ProcurementNotifyConfig } from '@/li
 import { buildHeadDigest, digestSubject, digestText, digestFullText, digestCardSpec } from '@/lib/procurement/digest'
 import type { StoredSnapshot } from '@/lib/procurement/types'
 import { personName } from '@/lib/utils'
-import { broadcastReportToGroup } from '@/lib/telegram/group'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -63,19 +62,6 @@ async function notify(supabase: Client, userId: string, digest: ReturnType<typeo
     p_data: { ...digest, report_text: digestFullText(digest), card_spec: digestCardSpec(digest, recipientName) },
   })
   return error ? error.message : null
-}
-
-/** Post one Atm Head's card to the shared management group, NAMED so the few
- *  heads' cards are distinguishable at a glance. No-ops if no group is set. */
-async function toGroup(supabase: Client, digest: NonNullable<ReturnType<typeof buildHeadDigest>>, name: string | null) {
-  return broadcastReportToGroup(supabase, {
-    type: 'procurement_digest',
-    title: `Indent → PO reminders${name ? ` (${name})` : ''}`,
-    body: digestText(digest),
-    cardSpec: digestCardSpec(digest, name),
-    cardText: digestFullText(digest),
-    url: '/procurement-tracker',
-  })
 }
 
 /** Display name per user id (personName precedence: editable name → full_name). */
@@ -130,8 +116,6 @@ export async function GET(req: Request) {
     const err = await notify(supabase, uid, digest, nameById.get(uid) ?? null)
     if (err) detail.push({ uid, error: err })
     else { sent++; detail.push({ uid, sent: true }) }
-    // Also post this head's card to the shared management group (named), if set.
-    await toGroup(supabase, digest, nameById.get(uid) ?? null)
   }
   await supabase.from('app_settings').upsert(
     { key: 'procurement_notify_last_sent_at', value: new Date().toISOString() }, { onConflict: 'key' })
@@ -150,47 +134,51 @@ export async function POST(req: Request) {
   const uid = userData?.user?.id
   if (!uid) return NextResponse.json({ ok: false, reason: 'No session' }, { status: 401 })
 
-  const body = await req.json().catch(() => ({} as { headId?: string; toHeads?: boolean; group?: boolean }))
+  const body = await req.json().catch(() => ({} as { headId?: string; toHeads?: boolean; telegramTest?: boolean; to?: 'me' | 'heads' }))
   const supabase = session as unknown as Client
   const cfg = await readConfig(supabase)
 
-  // ── "Send a test to the group": post each head's real card to the shared
-  //     management group only (no DMs). Uses a service client so the group id +
-  //     tracker state read reliably regardless of the caller's RLS. ──
-  if (body.group) {
+  // ── "Test Telegram": ping each assigned head's connected Telegram DM (or the
+  //     caller's own, to==='me') with a short connectivity check — so an admin can
+  //     see who is actually reachable on Telegram before relying on it. ──
+  if (body.telegramTest) {
     const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
     if (!serviceKey) return NextResponse.json({ ok: false, reason: 'No service key' }, { status: 503 })
+    const token = process.env.TELEGRAM_BOT_TOKEN
+    if (!token) return NextResponse.json({ ok: false, reason: 'Telegram bot is not configured on the server (TELEGRAM_BOT_TOKEN).' }, { status: 503 })
     const svc = createServiceClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, serviceKey, { auth: { persistSession: false } }) as unknown as Client
-    const { current, baseline } = await loadState(svc)
-    if (!current) return NextResponse.json({ ok: false, reason: 'No tracker data uploaded yet.' })
-    const heads = Object.entries(cfg.assignments).filter(([, projs]) => projs.length > 0)
-    if (heads.length === 0) return NextResponse.json({ ok: false, reason: 'No head → projects mapping set yet — assign a head to a project first.' })
-    const nameById = await namesFor(svc, heads.map(([uid]) => uid))
-    const nowMs = Date.now()
-    const sentTo: string[] = []; const skipped: string[] = []
-    let built = 0                 // heads that HAD something to report
-    let noGroup = false
-    const sendErrors: string[] = []
-    for (const [uid, projects] of heads) {
-      const digest = buildHeadDigest(current, baseline, cfg, nowMs, projects)
-      const who = nameById.get(uid) ?? uid
-      if (!digest) { skipped.push(`${who} (nothing to report)`); continue }
-      built++
-      const g = await toGroup(svc, digest, nameById.get(uid) ?? null)
-      if ('skipped' in g) { if (g.skipped === 'no-group') noGroup = true; else sendErrors.push(`${who}: ${g.skipped}`); skipped.push(`${who} (${g.skipped})`) }
-      else if (g.ok) sentTo.push(who)
-      else { sendErrors.push(`${who}: ${g.error}`); skipped.push(`${who} (${g.error})`) }
+
+    let targetIds: string[]
+    if (body.to === 'me') targetIds = [uid]
+    else {
+      targetIds = Object.entries(cfg.assignments).filter(([, projs]) => projs.length > 0).map(([id]) => id)
+      if (targetIds.length === 0) return NextResponse.json({ ok: false, reason: 'No head → projects mapping set yet — assign a head to a project first.' })
     }
-    // Distinguish a genuinely quiet day (nothing built) from a send FAILURE
-    // (built cards but Telegram rejected them — usually the bot isn't a group
-    // admin, so it can't post files/photos).
-    let reason: string | undefined
-    if (sentTo.length === 0) {
-      if (noGroup) reason = 'No reports group is connected yet.'
-      else if (built === 0) reason = 'No head has anything to report right now.'
-      else reason = `Couldn't post to the group — ${sendErrors[0] ?? 'send failed'}. Make sure the CT Hub bot is an ADMIN of the group (needed to post files/photos).`
+    const nameById = await namesFor(svc, targetIds)
+    const { data: prefs } = await svc.from('notification_preferences')
+      .select('user_id, telegram, telegram_chat_id').in('user_id', targetIds)
+    const chatById = new Map<string, string>()
+    for (const r of (prefs ?? []) as Array<{ user_id: string; telegram: boolean | null; telegram_chat_id: string | null }>) {
+      if (r.telegram && r.telegram_chat_id) chatById.set(r.user_id, r.telegram_chat_id)
     }
-    return NextResponse.json({ ok: sentTo.length > 0, mode: 'group', built, sent: sentTo.length, sentTo, skipped, reason })
+    const connected: string[] = []; const notConnected: string[] = []; const failed: string[] = []
+    for (const id of targetIds) {
+      const who = nameById.get(id) ?? id
+      const chat = chatById.get(id)
+      if (!chat) { notConnected.push(who); continue }
+      const text = `🔔 CT HUB — Indent → PO test\n\nHi ${who}, your Telegram is connected. Your weekday follow-up reminders (POs to raise · deliveries to chase) for your projects will arrive here.\n\nThis is only a test — no action needed.`
+      try {
+        const r = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+          method: 'POST', headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ chat_id: chat, text, disable_web_page_preview: true }),
+        })
+        const j = (await r.json().catch(() => ({}))) as { ok?: boolean; description?: string }
+        if (j.ok) connected.push(who); else failed.push(`${who} (${j.description || 'send failed'})`)
+      } catch (e) {
+        failed.push(`${who} (${e instanceof Error ? e.message : 'network error'})`)
+      }
+    }
+    return NextResponse.json({ ok: true, mode: 'telegramTest', connected, notConnected, failed })
   }
 
   // ── "Send to the heads now": push each assigned head their real scoped
