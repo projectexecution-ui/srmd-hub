@@ -73,17 +73,10 @@ export function ProcurementNotifySettingsForm({
     try {
       const res = await fetch('/api/cron/procurement-digest', { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' })
       const j = await res.json()
-      if (!res.ok || j.ok === false) { toast.error(j.reason || j.emailErr || j.error || 'Could not send test'); return }
-      const bits: string[] = []
-      if (j.email) bits.push('email')
-      if (j.telegram) bits.push('Telegram')
-      if (bits.length) {
-        const tail = !j.connected ? ' · connect Telegram in Settings → Notifications to also get it there'
-          : (!j.telegram ? ' · Telegram send failed' : '')
-        toast.success(`Test sent to your ${bits.join(' + ')}${tail}`)
-      } else {
-        toast.error(j.emailErr ? `Email failed: ${j.emailErr}` : 'Could not send the test.')
-      }
+      if (!res.ok || j.ok === false) { toast.error(j.reason || j.error || 'Could not send test'); return }
+      if (!j.connected) toast.success('Test sent to your email. Connect your Telegram in Settings → Notifications to also get it there.')
+      else if (!j.telegramOn) toast.success('Test sent to your email. Your Telegram is OFF in Settings → Notifications — turn it on to get it there.')
+      else toast.success('Test sent — it will arrive in your email and Telegram in a few seconds.')
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Network error')
     } finally { setTesting(false) }
