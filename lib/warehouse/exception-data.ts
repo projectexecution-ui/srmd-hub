@@ -12,11 +12,11 @@ import type {
   Cell, ReportKey, ReportView, RateObservation, ReturnableLine, PoLineState, EntitySpend,
 } from './exceptions'
 
-/** What family this material belongs to. Category where the item carries one,
- *  the IN4 trade otherwise — the same fallback the stock screen and the
- *  registers use, so an item never reads as two different things. */
-function catOf(i: { category?: string | null; discipline?: string | null } | null | undefined): string {
-  return i?.category?.trim() || i?.discipline?.trim() || 'Not categorised'
+/** What family this material belongs to — the same one word the stock screen
+ *  and the registers use, so an item never reads as two different things.
+ *  Never IN4's discipline: that is a budget head, not a material family. */
+function catOf(i: { category?: string | null } | null | undefined): string {
+  return i?.category?.trim() || 'Not categorised'
 }
 
 /** One entry point. Every control report is loaded the same way and returns the

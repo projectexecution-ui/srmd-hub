@@ -187,7 +187,7 @@ export function GateInForm({
       return [...options.items]
         .map(i => ({
           id: i.id, label: i.name, unit: i.unit,
-          group: i.category?.trim() || i.discipline?.trim() || 'Not categorised',
+          group: i.category?.trim() || 'Not categorised',
           poLineId: null as string | null, pending: null as number | null,
           rate: i.lastRate, done: false,
         }))
@@ -599,7 +599,7 @@ export function GateInForm({
                           options={[...options.items]
                             .map(i => ({
                               id: i.id, label: i.name,
-                              hint: [i.category?.trim() || i.discipline?.trim(), i.unit].filter(Boolean).join(' · '),
+                              hint: [i.category?.trim(), i.unit].filter(Boolean).join(' · '),
                             }))
                             .sort((a, b) => a.hint.localeCompare(b.hint) || a.label.localeCompare(b.label))}
                           placeholder="Search the item list…"

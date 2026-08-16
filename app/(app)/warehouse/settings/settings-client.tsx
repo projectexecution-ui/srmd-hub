@@ -32,7 +32,7 @@ const LIST_META: Record<string, { label: string; what: string }> = {
   delivery_mode: { label: 'Delivery modes', what: 'How it reached us — truck, tempo, tractor, by hand' },
   entity:        { label: 'Who paid (entity)', what: 'SRMD Org Stock, SRASSK, SRET, SRJT, SRST' },
   count_reason:  { label: 'Count difference reasons', what: 'Why a count does not tally — wastage, breakage, not traced' },
-  discipline:    { label: 'Trades (discipline)', what: 'Comes from the item master, which takes it from IN4' },
+  discipline:    { label: 'IN4 budget heads', what: 'IN4’s cost codes, kept for provenance only — nothing groups or reports by these. Material families are the categories above' },
 }
 
 const HUB_SCREENS: Array<[string, string, string]> = [

@@ -199,7 +199,9 @@ async function ensureIn4Items(
 export async function createItem(input: {
   name: string
   unit: string
-  discipline?: string | null
+  /** What kind of material it is. Not the IN4 budget head — that is a cost
+   *  code, and an item created at the gate has no budget head anyway. */
+  category?: string | null
 }): Promise<{ ok: true; id: string; name: string } | { ok: false; error: string }> {
   const denied = await gate('edit')
   if (denied) return { ok: false, error: denied }
@@ -224,7 +226,7 @@ export async function createItem(input: {
 
   const { data, error } = await sb
     .from('wh_items')
-    .insert({ name, unit, discipline: input.discipline ?? null, source: 'manual', created_by: me?.id ?? null })
+    .insert({ name, unit, category: input.category?.trim() || null, source: 'manual', created_by: me?.id ?? null })
     .select('id, name')
     .single()
   if (error || !data) return { ok: false, error: error?.message ?? 'Could not add the item.' }

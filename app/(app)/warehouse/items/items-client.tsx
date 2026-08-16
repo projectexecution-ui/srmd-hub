@@ -91,9 +91,9 @@ export function ItemsClient({
                 </span>
                 <span className="block text-[11px] text-slate-500 truncate">
                   {r.unit}
-                  {r.category || r.discipline ? ` · ${r.category ?? r.discipline}` : ''}
+                  {r.category ? ` · ${r.category}` : ''}
                   {r.lastRate != null ? ` · last ${formatINR(r.lastRate)}` : ''}
-                  {r.source === 'in4' ? ' · from IN4' : ''}
+                  {r.source === 'in4' ? ` · IN4${r.discipline ? ` (${r.discipline})` : ''}` : ''}
                 </span>
               </span>
               {r.stockQty > 0 && (
@@ -167,7 +167,7 @@ function ItemPanel({
           <label className={labelCls} htmlFor={`c-${item.id}`}>Category</label>
           <input id={`c-${item.id}`} className={inputCls} value={category} disabled={!canAdmin}
             list={`cats-${item.id}`} onChange={e => setCategory(e.target.value)}
-            placeholder={item.discipline ? `${item.discipline} (trade, from IN4)` : 'Uncategorised'} />
+            placeholder="Not categorised" />
           <datalist id={`cats-${item.id}`}>
             {categories.map(c => <option key={c} value={c} />)}
           </datalist>

@@ -163,15 +163,15 @@ export function groupByLocation(lines: StockLine[]): StockGroup[] {
     a.siteName.localeCompare(b.siteName) || a.locationName.localeCompare(b.locationName))
 }
 
-/** What an item is grouped under when the register is read by category.
+/** What an item is grouped under when stock is read by category.
  *
  *  Category first, trade second. The two came from different places — the 514
  *  items carried over from the old module have a category, and the 2,289 that
  *  arrived from IN4 have a trade instead — so neither alone covers the master.
  *  Together they cover all of it, which is why this falls back rather than
  *  showing a large "uncategorised" pile that helps nobody. */
-export function groupOf(line: { category: string | null; discipline: string | null }): string {
-  return line.category?.trim() || line.discipline?.trim() || 'Not categorised'
+export function groupOf(line: { category: string | null }): string {
+  return line.category?.trim() || 'Not categorised'
 }
 
 export type StockCategoryGroup = {

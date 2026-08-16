@@ -6,7 +6,7 @@ const row = (over: Partial<RegisterRow> & { itemName: string }): RegisterRow => 
   entryId: 'e1', entryNo: 'In: 10Aug26/001', day: '2026-08-10',
   party: 'Ultratech Cement', projectName: 'NGH A', entity: 'SRASSK',
   storeName: 'NGH Open Area', itemId: over.itemName, unit: 'Bag',
-  discipline: 'Civil', category: null, qty: 100, rate: 392, amount: 39200,
+  discipline: '03 Civil', category: 'Civil', qty: 100, rate: 392, amount: 39200,
   ...over,
 })
 
@@ -53,10 +53,13 @@ describe('registerTotals', () => {
 })
 
 describe('groupRows', () => {
+  // Grouping reads the CATEGORY. The budget heads here disagree with the
+  // material on purpose — that is the whole reason the trade stopped grouping
+  // anything: cement bought under "Site Prelims" is still Civil.
   const rows = [
-    row({ itemName: 'cement', discipline: 'Civil', amount: 39200, day: '2026-08-10' }),
-    row({ itemName: 'wire', discipline: 'Electrical', amount: 5000, day: '2026-08-12' }),
-    row({ itemName: 'steel', discipline: 'Civil', amount: 355500, day: '2026-08-11' }),
+    row({ itemName: 'cement', category: 'Civil', discipline: '01 Site Pre', amount: 39200, day: '2026-08-10' }),
+    row({ itemName: 'wire', category: 'Electrical', discipline: '19 Site Admin', amount: 5000, day: '2026-08-12' }),
+    row({ itemName: 'steel', category: 'Civil', discipline: '56 Mock Up Expense', amount: 355500, day: '2026-08-11' }),
   ]
 
   it('puts the biggest group first — a register is read to find where the money went', () => {

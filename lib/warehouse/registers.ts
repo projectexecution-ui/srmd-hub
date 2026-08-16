@@ -30,9 +30,10 @@ export type RegisterRow = {
   itemId: string
   itemName: string
   unit: string
+  /** IN4's budget head. Carried so the item still points back at IN4, but it
+   *  never groups or labels anything — it is a cost code, not a material. */
   discipline: string | null
-  /** What the material IS. Category where the item has one, trade otherwise —
-   *  the two masters carry different fields and only together cover everything. */
+  /** What the material IS. Every item now has one. */
   category: string | null
   qty: number
   rate: number | null
@@ -95,19 +96,19 @@ export type RegisterGroup = {
 
 export type GroupBy = 'party' | 'project' | 'category' | 'entity' | 'store' | 'item' | 'none'
 
-/** What to call this material's family, on screen and in every export. Same
- *  fallback the stock screen uses, so one item never reads as two things. */
-export function categoryOf(r: { category: string | null; discipline: string | null }): string {
-  return r.category?.trim() || r.discipline?.trim() || 'Not categorised'
+/** What to call this material's family, on screen and in every export. The
+ *  same one word the stock screen uses, so one item never reads as two things. */
+export function categoryOf(r: { category: string | null }): string {
+  return r.category?.trim() || 'Not categorised'
 }
 
 const GROUP_VALUE: Record<Exclude<GroupBy, 'none'>, (r: RegisterRow) => string> = {
   party:      r => r.party ?? '— not named —',
   project:    r => r.projectName ?? '— no project —',
-  // One "Category" rather than a category option AND a trade option: the items
-  // carried over from the old module have a category and the ones IN4 named
-  // have a trade, so either alone would leave most of the register in a
-  // "— none —" bucket. Falls back the same way the stock screen does.
+  // Category only. IN4's "discipline" is its BUDGET HEAD — "07 Electrical
+  // Works", "19 Site Admin", "56 Mock Up Expense" — which is a cost code, not
+  // a kind of material, and grouping a store by it was wrong. Every item now
+  // carries a real category, read and assigned one at a time.
   category:   categoryOf,
   entity:     r => r.entity ?? '— no entity —',
   store:      r => r.storeName,

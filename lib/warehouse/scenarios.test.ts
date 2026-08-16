@@ -140,20 +140,21 @@ describe('QA scenarios — rules enforced in code', () => {
       c.outQty === 100 && c.vendorOutQty === 150 && c.inHand === 150)
   })
 
-  it('S41 stock groups by category, falling back to the trade', () => {
-    // The two came from different places: the items carried over from the old
-    // module have a category, the ones IN4 named have a trade. Neither alone
-    // covers the master, so the fallback is what avoids a huge "uncategorised".
+  it('S41 stock groups by CATEGORY ONLY — never by the IN4 budget head', () => {
+    // The trade used to be a fallback, because the IN4 items had no category.
+    // All 2,288 of them were read and given one (2026-08-16), and the fallback
+    // came out: "07 Electrical Works" and "56 Mock Up Expense" are cost codes,
+    // not kinds of material, and a store grouped by them reads as nonsense.
     const rows = [
-      { category: 'Electrical', discipline: null },
-      { category: null, discipline: '08 Plumbing Works' },
-      { category: null, discipline: null },
+      { category: 'Electrical', discipline: '07 Electrical Works' },
+      { category: 'Plumbing',   discipline: '19 Site Admin' },
+      { category: null,         discipline: '56 Mock Up Expense' },
     ]
-    rec('S41', 'One item from the old module, one from IN4, one with neither',
-      'category first, then trade, then a named fallback',
+    rec('S41', 'Three items whose budget head disagrees with the material',
+      'the category wins every time; a missing one is named, never filled from the trade',
       rows.map(groupOf).join(' / '),
       groupOf(rows[0]) === 'Electrical'
-        && groupOf(rows[1]) === '08 Plumbing Works'
+        && groupOf(rows[1]) === 'Plumbing'
         && groupOf(rows[2]) === 'Not categorised')
   })
 
