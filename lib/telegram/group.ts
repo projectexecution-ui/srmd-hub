@@ -10,11 +10,9 @@ import type { CardSpec } from '@/lib/telegram/card-spec'
 // Report types allowed to broadcast to the group. Keep this tight — the group
 // is a notice board, not an inbox. Add a type here to send it to the group too.
 export const TELEGRAM_GROUP_BROADCAST_TYPES = new Set<string>([
-  // Each Atm Head's daily Indent -> PO follow-up card, posted named so the group
-  // can tell them apart (few heads, so it stays readable).
-  'procurement_digest',
-  // NOTE: Budget vs Actual does NOT use this PNG path — it posts 3 PDF files to
-  // the group via sendPdfToGroup() (see the cc-budget-vs-actual cron).
+  // (empty) — nothing uses the PNG-card group path right now:
+  //   • Budget vs Actual posts 3 PDF files via sendPdfToGroup() (cc-budget cron).
+  //   • Indent → PO is a per-person DM report — it does NOT go to the group.
 ])
 
 /* eslint-disable @typescript-eslint/no-explicit-any */

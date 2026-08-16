@@ -21,7 +21,7 @@ export function ReportsGroupConnect({
 }) {
   const router = useRouter()
   const [busy, setBusy] = useState(false)
-  const [testBusy, setTestBusy] = useState<'budget' | 'procurement' | null>(null)
+  const [testBusy, setTestBusy] = useState(false)
   const [msg, setMsg] = useState<string | null>(null)
   const [err, setErr] = useState<string | null>(null)
 
@@ -33,21 +33,19 @@ export function ReportsGroupConnect({
     router.refresh()
   }
 
-  async function sendTest(kind: 'budget' | 'procurement') {
-    setTestBusy(kind); setErr(null); setMsg(null)
+  // Only the weekly Budget vs Actual PDFs go to the group. Indent → PO is a
+  // per-person DM report, so it is intentionally not tested/sent here.
+  async function sendTest() {
+    setTestBusy(true); setErr(null); setMsg(null)
     try {
-      const endpoint = kind === 'budget' ? '/api/cron/cc-budget-vs-actual' : '/api/cron/procurement-digest'
-      const res = await fetch(endpoint, {
+      const res = await fetch('/api/cron/cc-budget-vs-actual', {
         method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ group: true }),
       })
       const j = await res.json()
-      if (res.ok && j.ok) {
-        setMsg(kind === 'budget'
-          ? `Sent ${j.sent ?? 3} Budget vs Actual PDF${j.sent === 1 ? '' : 's'} to the group — check Telegram.`
-          : `Sent ${j.sent ?? ''} Indent → PO card${j.sent === 1 ? '' : 's'} to the group — check Telegram.`)
-      } else setErr(j.reason ?? 'Could not send the test card.')
-    } catch { setErr('Could not send the test card.') }
-    setTestBusy(null)
+      if (res.ok && j.ok) setMsg(`Sent ${j.sent ?? 3} Budget vs Actual PDF${j.sent === 1 ? '' : 's'} to the group — check Telegram.`)
+      else setErr(j.reason ?? 'Could not send the test.')
+    } catch { setErr('Could not send the test.') }
+    setTestBusy(false)
   }
 
   const botTag = botUsername ? `@${botUsername}` : 'the CT Hub bot'
@@ -68,9 +66,9 @@ export function ReportsGroupConnect({
             )}
           </div>
           <p className="text-xs text-gray-500 mt-0.5">
-            Send the curated broadcasts — the <b>weekly Budget vs Actual</b> (3 PDF reports) and each Atm
-            Head&apos;s daily <b>Indent → PO</b> card (named) — to a shared management group everyone can see.
-            Approvals and @mentions still go only to each person&apos;s own DM.
+            Send the <b>weekly Budget vs Actual</b> (3 PDF reports) to a shared management group everyone can
+            see. Everything else — approvals, @mentions and each Atm Head&apos;s daily <b>Indent → PO</b>
+            follow-up — stays in each person&apos;s own DM.
           </p>
 
           {group ? (
@@ -78,15 +76,11 @@ export function ReportsGroupConnect({
               <span className="text-xs text-gray-600">
                 Connected to <b>{group.title}</b>{group.at ? ` on ${formatDateTime(group.at)}` : ''}. Everyone in that group sees these reports — keep it management-only.
               </span>
-              <Button variant="outline" size="sm" onClick={() => sendTest('budget')} disabled={!!testBusy || busy}>
-                {testBusy === 'budget' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+              <Button variant="outline" size="sm" onClick={sendTest} disabled={testBusy || busy}>
+                {testBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
                 Test: Budget vs Actual
               </Button>
-              <Button variant="outline" size="sm" onClick={() => sendTest('procurement')} disabled={!!testBusy || busy}>
-                {testBusy === 'procurement' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-                Test: Indent → PO
-              </Button>
-              <Button variant="outline" size="sm" onClick={disconnect} disabled={busy || !!testBusy}
+              <Button variant="outline" size="sm" onClick={disconnect} disabled={busy || testBusy}
                 className="text-rose-700 border-rose-300 hover:bg-rose-50">
                 {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Unplug className="h-4 w-4" />}
                 Disconnect
