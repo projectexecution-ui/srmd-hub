@@ -35,8 +35,8 @@ const COURIER_ACCTS = new Set(['SRET'])   // these trusts use a Courier date ins
 const ACCT_TONE: Record<string, string> = {
   SRET: 'bg-indigo-50 text-indigo-700 border-indigo-200',
   SRAH: 'bg-cyan-50 text-cyan-700 border-cyan-200',
-  SRASSK: 'bg-pink-50 text-pink-700 border-pink-200',
-  SRA: 'bg-amber-50 text-amber-700 border-amber-200',
+  SRASSK: 'bg-violet-50 text-violet-700 border-violet-200',
+  SRA: 'bg-sky-50 text-sky-700 border-sky-200',
 }
 const HL_ROW: Record<string, string> = { red: 'bg-red-50', yellow: 'bg-amber-50' }
 
@@ -194,9 +194,9 @@ export function DailyReportClient({
 
   function jump(id: string) { document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' }) }
   const chips = [
-    { id: 'sec-paid', label: '💸 Paid', n: paid.length, tone: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
-    ...copByAcct.map(([a, rows]) => ({ id: `sec-cop-${a}`, label: a === '—' ? 'COP · unset' : `COP ${a}`, n: rows.length, tone: a === '—' ? 'bg-rose-50 text-rose-600 border-rose-200' : (ACCT_TONE[a] ?? 'bg-gray-50 text-gray-600 border-gray-200') })),
-    ...adjByAcct.map(([a, rows]) => ({ id: `sec-adj-${a}`, label: a === '—' ? 'Adj · unset' : `Adj ${a}`, n: rows.length, tone: 'bg-amber-50 text-amber-700 border-amber-200' })),
+    { id: 'sec-paid', label: '💸 Paid', n: paid.length, tone: 'bg-slate-100 text-slate-700 border-slate-200' },
+    ...copByAcct.map(([a, rows]) => ({ id: `sec-cop-${a}`, label: a === '—' ? 'COP · unset' : `COP ${a}`, n: rows.length, tone: ACCT_TONE[a] ?? 'bg-slate-100 text-slate-700 border-slate-200' })),
+    ...adjByAcct.map(([a, rows]) => ({ id: `sec-adj-${a}`, label: a === '—' ? 'Adj · unset' : `Adj ${a}`, n: rows.length, tone: ACCT_TONE[a] ?? 'bg-slate-100 text-slate-700 border-slate-200' })),
   ]
 
   return (
@@ -468,10 +468,13 @@ function TrustMapCard({
 }
 
 // ── Off-screen "clean" renders captured as PNG (per-trust) / PDF (full day) ──
-const ACCT_HEX: Record<string, string> = { SRET: '#4f46e5', SRAH: '#0891b2', SRASSK: '#db2777', SRA: '#d97706', '—': '#e11d48' }
+// Calm, neutral hues only (indigo / cyan / violet / sky / slate) — deliberately
+// NO red, pink, green or amber, so trust shades never compete with the red/yellow
+// row flags or the red ≥7-day delay.
+const ACCT_HEX: Record<string, string> = { SRET: '#4f46e5', SRAH: '#0891b2', SRASSK: '#7c3aed', SRA: '#0284c7', '—': '#64748b' }
 // per-trust shades — header (light) + body wash (very light) so trusts differ at a glance
-const ACCT_HEAD: Record<string, string> = { SRET: '#e0e7ff', SRAH: '#cffafe', SRASSK: '#fce7f3', SRA: '#fef3c7', '—': '#ffe4e6' }
-const ACCT_BODY: Record<string, string> = { SRET: '#f4f6ff', SRAH: '#f0feff', SRASSK: '#fdf4f9', SRA: '#fffdf4', '—': '#fff5f6' }
+const ACCT_HEAD: Record<string, string> = { SRET: '#e0e7ff', SRAH: '#cffafe', SRASSK: '#ede9fe', SRA: '#e0f2fe', '—': '#e2e8f0' }
+const ACCT_BODY: Record<string, string> = { SRET: '#f4f6ff', SRAH: '#ecfdff', SRASSK: '#f6f4ff', SRA: '#f0f9ff', '—': '#f6f8fb' }
 const GRID = '1px solid #c7d0dc'   // visible grid lines for image + PDF
 
 // One section: heading with a trust-colour chip + count/total, then a clean table.
@@ -486,9 +489,9 @@ function SectionTable({
   effDate: (b: ReportBillLite, acct: string) => string
   emptyNote?: string
 }) {
-  const hex = kind === 'paid' ? '#059669' : (ACCT_HEX[acct] ?? '#64748b')
-  const headBg = kind === 'paid' ? '#d1fae5' : (ACCT_HEAD[acct] ?? '#e2e8f0')
-  const bodyBg = kind === 'paid' ? '#f2fdf7' : (ACCT_BODY[acct] ?? '#f8fafc')
+  const hex = kind === 'paid' ? '#475569' : (ACCT_HEX[acct] ?? '#64748b')
+  const headBg = kind === 'paid' ? '#e8edf3' : (ACCT_HEAD[acct] ?? '#e2e8f0')
+  const bodyBg = kind === 'paid' ? '#f7f9fc' : (ACCT_BODY[acct] ?? '#f8fafc')
   const dateHdr = kind === 'paid' ? 'Paid on' : (COURIER_ACCTS.has(acct) ? 'Courier' : 'Submission')
   const showDays = kind === 'trust'
   const total = rows.reduce((s, b) => s + b.amount, 0)
@@ -613,9 +616,9 @@ function FullReportDoc({
         </div>
       </div>
       <div style={{ display: 'flex', gap: 12, padding: '12px 24px', borderBottom: '1px solid #e2e8f0', background: '#f8fafc' }}>
-        <SummaryPill label="Paid today" n={paid.length} amt={totals.paidValue} hex="#059669" />
+        <SummaryPill label="Paid today" n={paid.length} amt={totals.paidValue} hex="#475569" />
         <SummaryPill label="At Trust (COP)" n={totals.trustCount} amt={totals.trustValue} hex="#4f46e5" />
-        {totals.adjCount > 0 && <SummaryPill label="Adjust" n={totals.adjCount} amt={totals.adjValue} hex="#d97706" />}
+        {totals.adjCount > 0 && <SummaryPill label="Adjust" n={totals.adjCount} amt={totals.adjValue} hex="#7c3aed" />}
       </div>
       <div style={{ padding: '2px 24px 8px' }}>
         <SectionTable title="Payments Done" acct="" rows={paid} kind="paid" entryOf={entryOf} effDate={effDate} emptyNote="No payments done today" />
