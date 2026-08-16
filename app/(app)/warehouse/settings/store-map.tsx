@@ -162,6 +162,12 @@ function LocationRow({
   )
 }
 
+/** Tap a name to make them the keeper; tap again to unassign.
+ *
+ *  Chips rather than a dropdown, copying the Engineer-projects screen in V1.
+ *  Who keeps which store is a map you read across all the stores at once, and
+ *  a column of collapsed dropdowns hides exactly that — you cannot see that
+ *  one person holds four stores without opening four of them. */
 function KeeperPicker({
   spot, people, canAdmin,
 }: {
@@ -171,18 +177,38 @@ function KeeperPicker({
 }) {
   const router = useRouter()
   const [busy, start] = useTransition()
+
+  function pick(id: string | null) {
+    start(async () => {
+      const res = await setStoreKeeper(spot.id, id)
+      if (!res.ok) { toast.error(res.error ?? 'Could not save that.'); return }
+      toast.success(id ? 'Keeper set' : 'Left open to all keepers')
+      router.refresh()
+    })
+  }
+
   return (
-    <select className={`${inputCls} text-[12.5px]`} value={spot.keeperId ?? ''} disabled={!canAdmin || busy}
-      aria-label={`Keeper for ${spot.name}`}
-      onChange={e => start(async () => {
-        const res = await setStoreKeeper(spot.id, e.target.value || null)
-        if (!res.ok) { toast.error(res.error ?? 'Could not save that.'); return }
-        toast.success('Saved')
-        router.refresh()
-      })}>
-      <option value="">— nobody yet (open to all keepers) —</option>
-      {people.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-    </select>
+    <div className="flex flex-wrap gap-1.5 pb-1">
+      {people.map(p => {
+        const on = spot.keeperId === p.id
+        return (
+          <button key={p.id} type="button" disabled={!canAdmin || busy}
+            aria-pressed={on} aria-label={`${on ? 'Unassign' : 'Assign'} ${p.name} from ${spot.name}`}
+            onClick={() => pick(on ? null : p.id)}
+            className={`inline-flex items-center gap-1 rounded-full px-2.5 h-8 text-[11.5px] font-semibold
+                        border-2 disabled:opacity-50 ${
+              on ? 'border-emerald-400 bg-emerald-50 text-emerald-800'
+                 : 'border-slate-200 text-slate-500 hover:border-slate-300'}`}>
+            {on && <Check className="h-3 w-3" />}{p.name}
+          </button>
+        )
+      })}
+      {spot.keeperId == null && (
+        <span className="inline-flex items-center text-[11px] text-slate-400 px-1 h-8">
+          nobody yet — open to all keepers
+        </span>
+      )}
+    </div>
   )
 }
 
