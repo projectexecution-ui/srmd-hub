@@ -51,7 +51,9 @@ export async function POST() {
       body: JSON.stringify({
         url: webhookUrl,
         secret_token: secret,
-        allowed_updates: ['message'],
+        // 'callback_query' is REQUIRED for the budget-approval buttons — Telegram
+        // silently drops button taps for any update type not listed here.
+        allowed_updates: ['message', 'callback_query'],
         drop_pending_updates: true,
       }),
     })
