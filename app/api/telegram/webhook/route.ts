@@ -7,6 +7,7 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient as createServiceClient } from '@supabase/supabase-js'
+import { handleApprovalCallback, handleApprovalAmountReply } from '@/lib/telegram/cc-approval-webhook'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -36,8 +37,26 @@ export async function POST(req: NextRequest) {
       chat?: { id?: number | string; type?: string; title?: string }
       from?: { id?: number | string }
     }
+    callback_query?: {
+      id: string
+      data?: string
+      from?: { id?: number | string }
+      message?: { message_id?: number; chat?: { id?: number | string } }
+    }
   } | null = null
   try { update = await req.json() } catch { return NextResponse.json({ ok: true }) }
+
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY
+  const svc = url && key ? createServiceClient(url, key, { auth: { persistSession: false } }) : null
+
+  // ── Inline-button taps (budget approvals) arrive as callback_query, not a
+  //     message. Handle + ack them before the message path. ──
+  const cbq = update?.callback_query
+  if (cbq) {
+    if (svc) { try { await handleApprovalCallback(svc, token, cbq) } catch { /* always ack 200 */ } }
+    return NextResponse.json({ ok: true })
+  }
 
   const msg = update?.message
   const chatId = msg?.chat?.id
@@ -46,10 +65,6 @@ export async function POST(req: NextRequest) {
   const fromId = msg?.from?.id
   const text = (msg?.text ?? '').trim()
   if (chatId == null || !text) return NextResponse.json({ ok: true })
-
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY
-  const svc = url && key ? createServiceClient(url, key, { auth: { persistSession: false } }) : null
 
   const connectHint = 'Open CT Hub → Settings → Notifications → Connect Telegram to link your account.'
 
@@ -101,6 +116,14 @@ export async function POST(req: NextRequest) {
     if (svc) await svc.rpc('telegram_unlink_by_chat', { p_chat_id: String(chatId) })
     await reply(token, chatId, 'Turned off — you won\'t get CT Hub reports here anymore. Reconnect anytime from CT Hub → Settings → Notifications.')
     return NextResponse.json({ ok: true })
+  }
+
+  // A plain reply may be the typed checked-amount answering an "Approve" tap.
+  if (svc && fromId != null) {
+    try {
+      const consumed = await handleApprovalAmountReply(svc, token, chatId, fromId, text)
+      if (consumed) return NextResponse.json({ ok: true })
+    } catch { /* fall through to the generic hint */ }
   }
 
   await reply(token, chatId, `CT Hub bot. ${connectHint}`)

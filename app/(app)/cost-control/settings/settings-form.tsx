@@ -7,6 +7,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Loader2, ChevronRight } from 'lucide-react'
 import type { CcSettings } from '@/lib/cost-control/settings'
+import { sendMyApprovalTest } from './approval-test-action'
 
 function Toggle({
   checked, onChange, label, hint,
@@ -43,6 +44,24 @@ export function CcSettingsForm({ initial, users = [] }: {
   const [saving, setSaving] = useState(false)
   const [msg, setMsg] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [testing, setTesting] = useState(false)
+  const [testMsg, setTestMsg] = useState<string | null>(null)
+
+  // Dry-run: push my own pending approval cards to my Telegram as TEST cards
+  // (buttons validate but change nothing) so I can see + tap before it's live.
+  async function handleSendApprovalTest() {
+    setTesting(true); setTestMsg(null)
+    try {
+      const r = await sendMyApprovalTest()
+      setTestMsg(r.ok
+        ? `Sent ${r.sent} test card${r.sent === 1 ? '' : 's'} to your Telegram — open it and tap the buttons.`
+        : (r.error ?? 'Could not send the test.'))
+    } catch (e) {
+      setTestMsg(e instanceof Error ? e.message : 'Could not send the test.')
+    } finally {
+      setTesting(false)
+    }
+  }
 
   // The Experimental switch saves the moment it's clicked — no separate "Save
   // settings" step — because its whole promise is "flip it to trial, flip it
@@ -220,6 +239,18 @@ export function CcSettingsForm({ initial, users = [] }: {
           <p className="text-[11px] px-1 text-sky-800">
             Only people who have connected their own Telegram (Settings → Notifications) can approve there, and only when it&apos;s their turn in the chain. Saves the instant you flip it.
           </p>
+          {v.telegram_approvals && (
+            <div className="pt-1 border-t border-sky-200/70 space-y-1.5">
+              <div className="flex items-center gap-2">
+                <Button type="button" variant="outline" size="sm" onClick={handleSendApprovalTest} disabled={testing}>
+                  {testing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
+                  Send me a test card
+                </Button>
+                <span className="text-[11px] text-sky-700">Safe dry-run to your own Telegram — the buttons change nothing.</span>
+              </div>
+              {testMsg && <p className="text-[11px] px-1 text-sky-900">{testMsg}</p>}
+            </div>
+          )}
         </div>
       </div>
 
