@@ -3,7 +3,7 @@ import { requirePermission, getMyPermissions, can } from '@/lib/auth'
 import { PageHeader } from '@/components/PageHeader'
 import { QueryError } from '@/components/ui/query-error'
 import { getLocationTree, getShowValues } from '@/lib/warehouse/data'
-import { getStockView, getDisciplines } from '@/lib/warehouse/report-data'
+import { getStockView, getStockCategories } from '@/lib/warehouse/report-data'
 import { todayIST } from '@/lib/warehouse/ledger'
 import { StockClient } from './stock-client'
 import { ChevronLeft } from 'lucide-react'
@@ -13,7 +13,7 @@ export const dynamic = 'force-dynamic'
 export default async function StockPage({
   searchParams,
 }: {
-  searchParams: Promise<{ asOn?: string; loc?: string; disc?: string }>
+  searchParams: Promise<{ asOn?: string; loc?: string; cat?: string }>
 }) {
   const sp = await searchParams
   await requirePermission('warehouse', 'view')
@@ -26,10 +26,10 @@ export default async function StockPage({
   const today = todayIST()
   const asOn = sp.asOn && sp.asOn <= today ? sp.asOn : today
 
-  const [sites, disciplines, view] = await Promise.all([
+  const [sites, categories, view] = await Promise.all([
     getLocationTree(),
-    getDisciplines(),
-    getStockView({ asOn, locationId: sp.loc || null, discipline: sp.disc || null }),
+    getStockCategories(),
+    getStockView({ asOn, locationId: sp.loc || null, category: sp.cat || null }),
   ])
 
   return (
@@ -50,9 +50,9 @@ export default async function StockPage({
         groups={view.groups}
         totals={view.totals}
         sites={sites}
-        disciplines={disciplines}
+        categories={categories}
         selectedLocation={sp.loc || ''}
-        selectedDiscipline={sp.disc || ''}
+        selectedCategory={sp.cat || ''}
         showValues={showValues}
         canEdit={canEdit}
         failed={Boolean(view.error)}

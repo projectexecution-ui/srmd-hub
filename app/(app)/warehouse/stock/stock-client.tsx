@@ -22,17 +22,17 @@ const btnCls =
   'hover:border-emerald-300 hover:text-emerald-700 inline-flex items-center justify-center gap-1.5 disabled:opacity-50'
 
 export function StockClient({
-  asOn, today, groups, totals, sites, disciplines,
-  selectedLocation, selectedDiscipline, showValues, canEdit, failed,
+  asOn, today, groups, totals, sites, categories,
+  selectedLocation, selectedCategory, showValues, canEdit, failed,
 }: {
   asOn: string
   today: string
   groups: StockGroup[]
   totals: StockTotals
   sites: WhSite[]
-  disciplines: string[]
+  categories: string[]
   selectedLocation: string
-  selectedDiscipline: string
+  selectedCategory: string
   showValues: boolean
   canEdit: boolean
   failed: boolean
@@ -91,14 +91,14 @@ export function StockClient({
 
   const shownLines = shown.flatMap(g => g.lines)
   const shownValue = shownLines.reduce((s, l) => s + l.value, 0)
-  const isFiltered = Boolean(q.trim() || onlyFlagged || selectedLocation || selectedDiscipline)
+  const isFiltered = Boolean(q.trim() || onlyFlagged || selectedLocation || selectedCategory)
 
   const asOnLabel = asOn === today ? `Today, ${formatDate(asOn)}` : `As on ${formatDate(asOn)}`
 
   function spec(): ExportSpec<StockLine> {
     const notes = [
       selectedLocation ? `Store: ${locName(sites, selectedLocation)}` : 'All storage locations',
-      selectedDiscipline ? `Discipline: ${selectedDiscipline}` : 'All disciplines',
+      selectedCategory ? `Category: ${selectedCategory}` : 'All categories',
       onlyFlagged ? 'Only items that are low or nil' : '',
       q.trim() ? `Item search: "${q.trim()}"` : '',
     ].filter(Boolean)
@@ -175,11 +175,11 @@ export function StockClient({
             </select>
           </div>
           <div>
-            <label className={labelCls} htmlFor="stock-disc">Discipline</label>
-            <select id="stock-disc" className={inputCls} value={selectedDiscipline}
-              onChange={e => setParam('disc', e.target.value)}>
-              <option value="">All disciplines</option>
-              {disciplines.map(d => <option key={d} value={d}>{d}</option>)}
+            <label className={labelCls} htmlFor="stock-cat">Category</label>
+            <select id="stock-cat" className={inputCls} value={selectedCategory}
+              onChange={e => setParam('cat', e.target.value)}>
+              <option value="">All categories</option>
+              {categories.map(c => <option key={c} value={c}>{c}</option>)}
             </select>
           </div>
           <div>

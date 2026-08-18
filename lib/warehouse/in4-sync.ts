@@ -389,9 +389,13 @@ export const GROUP_META: Array<{
   },
   {
     key: 'disciplines',
-    title: 'Trades',
-    what: 'The trade each material belongs to',
-    safety: 'Only adds to your Trades list. This is what the registers and reports group by.',
+    title: 'IN4 budget heads',
+    what: 'The cost code IN4 files each material under — "07 Electrical Works", "19 Site Admin"',
+    // This used to claim the registers group by these. They do not, and have not
+    // since every item was given a real category: a budget head is a cost code,
+    // not a kind of material. Kept for provenance back to IN4, nothing more.
+    safety: 'Kept only so an item can be traced back to its IN4 line. Nothing on any screen '
+      + 'groups or reports by these — material families are the categories.',
   },
   {
     key: 'pos',

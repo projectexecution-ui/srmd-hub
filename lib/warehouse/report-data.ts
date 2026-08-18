@@ -78,7 +78,7 @@ export type StockView = {
 export async function getStockView(opts: {
   asOn?: string
   locationId?: string | null
-  discipline?: string | null
+  category?: string | null
 } = {}): Promise<StockView> {
   const asOn = opts.asOn || todayIST()
   const sb = await createClient()
@@ -123,7 +123,7 @@ export async function getStockView(opts: {
     const spot = spots.get(c.locationId)
     if (!item || !spot) return []
     if (opts.locationId && c.locationId !== opts.locationId) return []
-    if (opts.discipline && item.discipline !== opts.discipline) return []
+    if (opts.category && item.category !== opts.category) return []
     const minQty = mins.get(`${c.itemId}|${c.locationId}`) ?? null
     const rate = item.last_rate == null ? null : Number(item.last_rate)
     return [{
@@ -274,14 +274,19 @@ export async function getVendorMovements(from: string | null, to: string | null)
 }
 
 /** Disciplines that actually appear on items, for the stock filter. */
-export async function getDisciplines(): Promise<string[]> {
+/** The material families to filter stock by.
+ *
+ *  Categories, never IN4's discipline. The discipline is IN4's BUDGET HEAD —
+ *  "07 Electrical Works", "19 Site Admin", "56 Mock Up Expense" — a cost code,
+ *  not a kind of material, and filtering a store by it was wrong. */
+export async function getStockCategories(): Promise<string[]> {
   const sb = await createClient()
   const { data } = await sb
     .from('wh_items')
-    .select('discipline')
+    .select('category')
     .is('deleted_at', null)
-    .not('discipline', 'is', null)
-  return [...new Set((data ?? []).map(r => r.discipline as string))].sort((a, b) => a.localeCompare(b))
+    .not('category', 'is', null)
+  return [...new Set((data ?? []).map(r => r.category as string))].sort((a, b) => a.localeCompare(b))
 }
 
 type Embedded<T> = T | T[] | null
