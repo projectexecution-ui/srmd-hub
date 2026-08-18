@@ -24,6 +24,8 @@ import { SourceExcelViewer } from './SourceExcelViewer'
 import { ReplaceExcelButton } from './ReplaceExcelButton'
 import { ScreenshotAiCheck } from './ScreenshotAiCheck'
 import { WorkingEvidence, type EvidenceFile } from './WorkingEvidence'
+import { ApprovalRecords, type RecordFile } from './ApprovalRecords'
+import { createClient as createServiceClient } from '@supabase/supabase-js'
 import { RaiseRevisionButton } from './RaiseRevisionButton'
 import { RevisionEditor, type PriorApprovedRow, type DeltaRow } from './RevisionEditor'
 import { VersionLedgerStrip } from './VersionLedgerStrip'
@@ -257,6 +259,7 @@ export default async function WorkingSheetEditorPage(
       .from('cc_ws_attachments')
       .select('id, name, path')
       .eq('working_sheet_id', id)
+      .eq('kind', 'working')
       .order('created_at', { ascending: true })
     const evidence: EvidenceFile[] = []
     for (const a of attachRows ?? []) {
@@ -275,6 +278,35 @@ export default async function WorkingSheetEditorPage(
         initial={evidence}
       />
     )
+  }
+
+  // Approval records — the approver's own supporting files, attachable EVEN after
+  // the sheet is submitted (unlike the owner-only WorkingEvidence). Always built
+  // (independent of the cumulative_versions flag); shows for reviewers, or for
+  // anyone if records already exist. Signed URLs minted with the service role so
+  // an Atm Head (approver, not a cc-edit member) can still open them.
+  let approvalRecordsPanel: React.ReactNode = null
+  {
+    const svcKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+    const admin = svcKey
+      ? createServiceClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, svcKey, { auth: { persistSession: false } })
+      : supabase
+    const { data: recRows } = await admin
+      .from('cc_ws_attachments')
+      .select('id, name, path')
+      .eq('working_sheet_id', id)
+      .eq('kind', 'approval_record')
+      .order('created_at', { ascending: true })
+    const records: RecordFile[] = []
+    for (const a of recRows ?? []) {
+      const { data: signed } = await admin.storage.from('cc-sheets').createSignedUrl(a.path as string, 60 * 60)
+      records.push({ id: a.id as string, name: a.name as string, signedUrl: signed?.signedUrl ?? null })
+    }
+    if (reviewer || records.length > 0) {
+      approvalRecordsPanel = (
+        <ApprovalRecords wsId={ws.id} canManage={reviewer} initial={records} />
+      )
+    }
   }
 
   // Replace-Excel — shown ONLY to the owning engineer of a RETURNED Excel
@@ -456,6 +488,7 @@ export default async function WorkingSheetEditorPage(
         )}
 
         {workingEvidencePanel}
+        {approvalRecordsPanel}
 
         {ccSettings.comments && <CommentsPanel wsId={ws.id} />}
 
@@ -770,6 +803,7 @@ export default async function WorkingSheetEditorPage(
         )}
 
         {workingEvidencePanel}
+        {approvalRecordsPanel}
 
         {ccSettings.comments && <CommentsPanel wsId={ws.id} />}
 
@@ -1018,6 +1052,7 @@ export default async function WorkingSheetEditorPage(
       )}
 
       {workingEvidencePanel}
+      {approvalRecordsPanel}
 
       {ccSettings.comments && <CommentsPanel wsId={ws.id} />}
 

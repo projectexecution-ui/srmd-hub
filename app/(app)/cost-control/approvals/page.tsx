@@ -22,7 +22,7 @@ function daysWaiting(submittedAt: string | null): number {
 
 export const dynamic = 'force-dynamic'
 
-interface PRow { code: string; name: string; built_up_sft: number | null }
+interface PRow { code: string; name: string; built_up_sft: number | null; parent_project_id: string | null }
 interface DRow { code: string; name: string }
 interface SRow { code: string; name: string }
 
@@ -124,7 +124,7 @@ export default async function ApprovalsInboxPage({
     .from('cc_ws_with_versions')
     .select(
       `id, ws_code, status, total_amount, approved_for_erp_amt, submitted_at, engineer_id, discipline_id, sub_skill_id, project_id, chain_anchor_id, version_no, entry_mode, summary_notes,
-       projects(code, name, built_up_sft),
+       projects(code, name, built_up_sft, parent_project_id),
        cc_disciplines(code, name),
        cc_sub_skills(code, name)`,
     )
@@ -134,6 +134,18 @@ export default async function ApprovalsInboxPage({
 
   const rows = (pendingWS ?? []) as unknown as WSRow[]
   const pendingProjectIds = [...new Set(rows.map(r => r.project_id))]
+
+  // Parent ("main") project names, so a sub-project card can show
+  // "Main Project › Sub Project". Only the projects that actually have a parent.
+  const parentIds = [
+    ...new Set(rows.map(r => pickFirst(r.projects)?.parent_project_id).filter((v): v is string => !!v)),
+  ]
+  const { data: parentRows } = parentIds.length
+    ? await supabase.from('projects').select('id, code, name').in('id', parentIds)
+    : { data: [] as Array<{ id: string; code: string; name: string }> }
+  const parentMap = new Map(
+    (parentRows ?? []).map(p => [p.id as string, { code: p.code as string, name: p.name as string }]),
+  )
   // Chains we must fetch prior versions for = only the pending sheets that are
   // themselves a revision (v2+). v1 sheets have no "previous" to compare to.
   const revAnchors = [
@@ -359,6 +371,7 @@ export default async function ApprovalsInboxPage({
           const items = byProject.get(pid) ?? []
           const proj = pickFirst(items[0].projects)
           const code = proj?.code ?? ''
+          const parent = proj?.parent_project_id ? parentMap.get(proj.parent_project_id) : null
           const tone = toneFor(code || pid)
           const projBefore = approvedByProject.get(pid) ?? 0
           const projInc = items.reduce((s, r) => s + increment(r), 0)
@@ -377,7 +390,14 @@ export default async function ApprovalsInboxPage({
                 <div className="flex items-start justify-between gap-3 flex-wrap">
                   <div className="flex items-center gap-2 min-w-0">
                     <span className={`inline-flex h-7 w-7 items-center justify-center rounded-lg text-sm flex-shrink-0 ${tone.avatar}`}>🏢</span>
-                    <span className="font-bold text-gray-900 truncate">{proj?.name ?? '—'}</span>
+                    <span className="min-w-0 truncate">
+                      {parent && (
+                        <span className="text-gray-500 font-medium">
+                          {parent.name} <span className="text-gray-300">›</span>{' '}
+                        </span>
+                      )}
+                      <span className="font-bold text-gray-900">{proj?.name ?? '—'}</span>
+                    </span>
                     {code && <span className={`font-mono text-[11px] rounded px-1.5 py-0.5 flex-shrink-0 ${tone.code}`}>{code}</span>}
                   </div>
                   <span className="inline-flex items-center rounded-full bg-amber-50 text-amber-800 border border-amber-200 text-[11px] font-semibold px-2.5 py-0.5 whitespace-nowrap">
