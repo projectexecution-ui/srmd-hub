@@ -24,6 +24,16 @@ export default async function CostControlSettingsPage() {
     role: (p.role ?? '') as string,
   }))
 
+  // Teammates who have connected Telegram — the ones we can send a test approval
+  // card to (for rolling the feature out to approvers one by one).
+  const { data: connRows } = await supabase
+    .from('notification_preferences')
+    .select('user_id')
+    .eq('telegram', true)
+    .not('telegram_chat_id', 'is', null)
+  const connectedIds = new Set((connRows ?? []).map(r => r.user_id as string))
+  const connectedUsers = users.filter(u => connectedIds.has(u.id))
+
   return (
     <div className="p-4 md:p-6 max-w-3xl mx-auto space-y-4">
       <PageHeader
@@ -32,7 +42,7 @@ export default async function CostControlSettingsPage() {
         back="/cost-control"
       />
       <Card className="p-5">
-        <CcSettingsForm initial={settings} users={users} />
+        <CcSettingsForm initial={settings} users={users} connectedUsers={connectedUsers} />
       </Card>
     </div>
   )

@@ -7,7 +7,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Loader2, ChevronRight } from 'lucide-react'
 import type { CcSettings } from '@/lib/cost-control/settings'
-import { sendMyApprovalTest } from './approval-test-action'
+import { sendMyApprovalTest, sendApprovalTestToUser } from './approval-test-action'
 
 function Toggle({
   checked, onChange, label, hint,
@@ -35,9 +35,10 @@ function Toggle({
   )
 }
 
-export function CcSettingsForm({ initial, users = [] }: {
+export function CcSettingsForm({ initial, users = [], connectedUsers = [] }: {
   initial: CcSettings
   users?: Array<{ id: string; name: string; role: string }>
+  connectedUsers?: Array<{ id: string; name: string; role: string }>
 }) {
   const router = useRouter()
   const [v, setV] = useState({ ...initial })
@@ -46,6 +47,27 @@ export function CcSettingsForm({ initial, users = [] }: {
   const [error, setError] = useState<string | null>(null)
   const [testing, setTesting] = useState(false)
   const [testMsg, setTestMsg] = useState<string | null>(null)
+  const [teammate, setTeammate] = useState('')
+  const [sendingTo, setSendingTo] = useState(false)
+  const [teammateMsg, setTeammateMsg] = useState<string | null>(null)
+
+  // Admin: send a safe test card to a specific connected teammate (rolling the
+  // feature out to approvers one at a time).
+  async function handleSendToTeammate() {
+    if (!teammate) { setTeammateMsg('Pick a teammate first.'); return }
+    setSendingTo(true); setTeammateMsg(null)
+    try {
+      const r = await sendApprovalTestToUser(teammate)
+      const name = connectedUsers.find(u => u.id === teammate)?.name ?? 'them'
+      setTeammateMsg(r.ok
+        ? `Test card sent to ${name} — ask them to open Telegram and tap the buttons.`
+        : (r.error ?? 'Could not send the test.'))
+    } catch (e) {
+      setTeammateMsg(e instanceof Error ? e.message : 'Could not send the test.')
+    } finally {
+      setSendingTo(false)
+    }
+  }
 
   // Dry-run: push my own pending approval cards to my Telegram as TEST cards
   // (buttons validate but change nothing) so I can see + tap before it's live.
@@ -249,6 +271,27 @@ export function CcSettingsForm({ initial, users = [] }: {
                 <span className="text-[11px] text-sky-700">Safe dry-run to your own Telegram — the buttons change nothing.</span>
               </div>
               {testMsg && <p className="text-[11px] px-1 text-sky-900">{testMsg}</p>}
+
+              {connectedUsers.length > 0 && (
+                <div className="pt-2 mt-1 border-t border-sky-200/70 space-y-1.5">
+                  <p className="text-[11px] font-semibold text-sky-900">Send a test card to a teammate (e.g. an Atm Head)</p>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <select
+                      value={teammate}
+                      onChange={e => setTeammate(e.target.value)}
+                      className="text-xs border border-sky-200 rounded px-2 py-1.5 bg-white text-gray-800 min-w-[11rem]"
+                    >
+                      <option value="">Choose a connected teammate…</option>
+                      {connectedUsers.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+                    </select>
+                    <Button type="button" variant="outline" size="sm" onClick={handleSendToTeammate} disabled={sendingTo || !teammate}>
+                      {sendingTo ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
+                      Send
+                    </Button>
+                  </div>
+                  {teammateMsg && <p className="text-[11px] px-1 text-sky-900">{teammateMsg}</p>}
+                </div>
+              )}
             </div>
           )}
         </div>

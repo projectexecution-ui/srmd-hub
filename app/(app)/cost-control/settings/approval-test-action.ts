@@ -8,7 +8,7 @@
 
 import { createClient as createServiceClient } from '@supabase/supabase-js'
 import { createClient } from '@/lib/supabase/server'
-import { getMyUser } from '@/lib/auth'
+import { getMyUser, getMyPermissions, can } from '@/lib/auth'
 import { getCcSettings } from '@/lib/cost-control/settings'
 import { loadApprovalCardInput } from '@/lib/cost-control/approval-card-data'
 import { sendApprovalToChat } from '@/lib/telegram/cc-approval-send'
@@ -103,4 +103,71 @@ export async function sendMyApprovalTest(): Promise<{ ok: boolean; error?: strin
   }
   // Cards were found but none went out — surface the real reason.
   return { ok: false, error: `Found ${tried} budget${tried === 1 ? '' : 's'} but the Telegram send failed: ${lastError ?? 'unknown error'}` }
+}
+
+/**
+ * Admin-only: send a SAFE test approval card to a specific connected teammate
+ * (e.g. an Atm Head), so they can see the card + tap the buttons on their own
+ * phone before any real budget reaches them. Buttons are test verbs — nothing is
+ * approved. Picks the most recent pending non-[IB] sheet regardless of stage.
+ */
+export async function sendApprovalTestToUser(
+  targetUserId: string,
+): Promise<{ ok: boolean; error?: string; sent?: number }> {
+  const perms = await getMyPermissions()
+  if (!can(perms, 'cost-control', 'admin')) return { ok: false, error: 'Only a Cost Control admin can send test cards to others.' }
+  if (!targetUserId) return { ok: false, error: 'Pick a teammate first.' }
+
+  const supabase = await createClient()
+  const { data: pref } = await supabase
+    .from('notification_preferences')
+    .select('telegram, telegram_chat_id')
+    .eq('user_id', targetUserId)
+    .maybeSingle()
+  const chatId = pref?.telegram_chat_id as string | null
+  if (!chatId || pref?.telegram === false) {
+    return { ok: false, error: 'That teammate has not connected their Telegram yet.' }
+  }
+
+  const token = process.env.TELEGRAM_BOT_TOKEN
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY
+  if (!token || !url || !key) return { ok: false, error: 'Telegram is not fully configured on the server yet.' }
+  const svc = createServiceClient(url, key, { auth: { persistSession: false } })
+
+  const ccSettings = await getCcSettings()
+  const { data: cands } = await svc
+    .from('cc_working_sheets')
+    .select('id, submitted_at')
+    .in('status', ['submitted', 'ph_approved', 'atm_approved', 'partially_approved'])
+    .is('archived_at', null)
+    .order('submitted_at', { ascending: false })
+    .limit(8)
+
+  let sent = 0
+  let tried = 0
+  let lastError: string | null = null
+  for (const c of cands ?? []) {
+    if (sent >= 1) break
+    let data
+    try {
+      data = await loadApprovalCardInput(svc, c.id as string, ccSettings)
+    } catch (e) {
+      lastError = e instanceof Error ? e.message : 'card build failed'
+      continue
+    }
+    if (!data || data.isIB) continue
+    tried++
+    try {
+      const res = await sendApprovalToChat(svc, token, chatId, data, { dryRun: true, attach: false })
+      if (res.ok) sent++
+      else lastError = res.error ?? 'send failed'
+    } catch (e) {
+      lastError = e instanceof Error ? e.message : 'send threw'
+    }
+  }
+
+  if (sent > 0) return { ok: true, sent }
+  if (tried === 0) return { ok: false, error: 'No budgets are available to preview right now.' }
+  return { ok: false, error: `Telegram send failed: ${lastError ?? 'unknown error'}` }
 }
