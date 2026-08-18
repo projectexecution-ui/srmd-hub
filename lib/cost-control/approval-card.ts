@@ -59,7 +59,9 @@ function stageChain(stage: ApprovalStage): string {
   // Which link is pending: submitted→PH, ph_approved→Atm, atm/partial→Trustee.
   const activeIdx = stage === 'submitted' ? 0 : stage === 'ph_approved' ? 1 : 2
   const labels = ['Project Head', 'Atm Head', 'Trustee']
-  return labels.map((l, i) => (i === activeIdx ? `» ${l} «` : i < activeIdx ? `${l} ✓` : l)).join('  ·  ')
+  // "signed" (not a ✓ glyph — the bundled Noto Sans base has no checkmark, so it
+  // would render as a tofu box in the PNG card).
+  return labels.map((l, i) => (i === activeIdx ? `» ${l} «` : i < activeIdx ? `${l} signed` : l)).join('  ·  ')
 }
 
 export function buildApprovalCardSpec(i: ApprovalCardInput): CardSpec {
