@@ -69,17 +69,38 @@ export async function sendMyApprovalTest(): Promise<{ ok: boolean; error?: strin
     .order('submitted_at', { ascending: true })
     .limit(8)
 
+  // One card keeps the request well within the serverless time budget (render +
+  // send + attachment downloads). It's a look-and-feel + plumbing test, not a
+  // dump of every pending sheet.
   let sent = 0
+  let tried = 0
+  let lastError: string | null = null
   for (const c of cands ?? []) {
-    if (sent >= 3) break
-    const data = await loadApprovalCardInput(svc, c.id as string, ccSettings)
+    if (sent >= 1) break
+    let data
+    try {
+      data = await loadApprovalCardInput(svc, c.id as string, ccSettings)
+    } catch (e) {
+      lastError = e instanceof Error ? e.message : 'card build failed'
+      continue
+    }
     if (!data || data.isIB) continue
-    const res = await sendApprovalToChat(svc, token, chatId, data, { dryRun: true, attach: true })
-    if (res.ok) sent++
+    tried++
+    try {
+      // attach:false — keep the test fast + reliable; the real approver cards
+      // carry the working Excel + evidence.
+      const res = await sendApprovalToChat(svc, token, chatId, data, { dryRun: true, attach: false })
+      if (res.ok) sent++
+      else lastError = res.error ?? 'send failed'
+    } catch (e) {
+      lastError = e instanceof Error ? e.message : 'send threw'
+    }
   }
 
-  if (sent === 0) {
+  if (sent > 0) return { ok: true, sent }
+  if (tried === 0) {
     return { ok: false, error: 'No budgets are waiting at your stage right now, so there was nothing to preview.' }
   }
-  return { ok: true, sent }
+  // Cards were found but none went out — surface the real reason.
+  return { ok: false, error: `Found ${tried} budget${tried === 1 ? '' : 's'} but the Telegram send failed: ${lastError ?? 'unknown error'}` }
 }

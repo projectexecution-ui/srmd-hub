@@ -98,6 +98,24 @@ async function tgSendPhoto(
   }
 }
 
+const inr = (n: number) => '₹' + Math.round(Number(n) || 0).toLocaleString('en-IN')
+
+// Last-resort text message carrying the same buttons — used if the image send
+// fails, so the approver still gets an actionable message rather than nothing.
+async function tgSendText(token: string, chatId: string, text: string, keyboard: object): Promise<{ ok: boolean; error?: string }> {
+  try {
+    const r = await fetch(api(token, 'sendMessage'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ chat_id: chatId, text, disable_web_page_preview: true, reply_markup: keyboard }),
+    })
+    const j = (await r.json().catch(() => ({}))) as { ok?: boolean; description?: string }
+    return j.ok ? { ok: true } : { ok: false, error: j.description || 'sendMessage failed' }
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : 'sendMessage-failed' }
+  }
+}
+
 async function tgSendDocument(
   token: string, chatId: string, bytes: Uint8Array, filename: string, caption: string, mime: string,
 ): Promise<boolean> {
@@ -125,14 +143,35 @@ export async function sendApprovalToChat(
   data: ApprovalCardData,
   opts: { attach?: boolean; dryRun?: boolean } = {},
 ): Promise<{ ok: boolean; error?: string }> {
-  const spec = buildApprovalCardSpec(data.input)
-  if (opts.dryRun) spec.subtitle = `DRY RUN (test to your own chat) · ${spec.subtitle ?? ''}`.slice(0, 120)
-  const png = await renderCardSpec(spec)
-
   const caption = opts.dryRun ? `Budget approval (TEST) · ${data.wsCode}` : `Budget approval · ${data.wsCode}`
   const keyboard = approvalKeyboard(data.status, data.wsId, opts.dryRun === true)
-  const res = await tgSendPhoto(token, chatId, png, caption, keyboard, `${data.wsCode}.png`)
-  if (!res.ok) return res
+
+  // The text fallback (used if the image fails to render or send) — same
+  // numbers, same buttons, so the approver can always act.
+  const p = data.input
+  const fallbackText = [
+    `${caption}`,
+    `${p.project.code}${p.project.name && p.project.name !== p.project.code ? ' · ' + p.project.name : ''} · ${p.work}`,
+    `Amount ${inr(data.amount)} · waiting ${p.daysWaiting}d`,
+    `Waiting on: ${p.nextActionLabel}${p.raisedBy ? ` · raised by ${p.raisedBy}` : ''}`,
+  ].join('\n')
+
+  let res: { ok: boolean; error?: string }
+  try {
+    const spec = buildApprovalCardSpec(data.input)
+    if (opts.dryRun) spec.subtitle = `DRY RUN (test to your own chat) · ${spec.subtitle ?? ''}`.slice(0, 120)
+    const png = await renderCardSpec(spec)
+    res = await tgSendPhoto(token, chatId, png, caption, keyboard, `${data.wsCode}.png`)
+  } catch (e) {
+    res = { ok: false, error: e instanceof Error ? e.message : 'render-failed' }
+  }
+  // If the image path failed for any reason, send the text card so something
+  // actionable always lands.
+  if (!res.ok) {
+    const t = await tgSendText(token, chatId, fallbackText, keyboard)
+    if (!t.ok) return { ok: false, error: res.error || t.error }
+    return { ok: true }
+  }
 
   if (opts.attach !== false) {
     // Fetch the working files from the cc-sheets bucket and forward them so the
