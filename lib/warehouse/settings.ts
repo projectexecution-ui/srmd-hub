@@ -132,7 +132,7 @@ export const SETTINGS: SettingDef[] = [
     offEffect: 'Everyone who can open a screen sees what the material cost. A guard needs to record a truck; '
       + 'he does not need to know its value.',
     recommended: true,
-    fallback: 'security,site_staff,contractor',
+    fallback: 'security,viewer,engineer',
     enforcedAt: 'Every screen and every export in the module',
   },
   {
@@ -285,10 +285,23 @@ export function periodLockBlocker(values: SettingValues, entryDate: string): str
 /** The roles offered as choices for "hide rates and values". Kept to the ones
  *  that plausibly stand at a gate or on a site — offering every role in the hub
  *  would make the list unreadable. */
-export const VALUE_HIDEABLE_ROLES: Array<{ id: string; label: string }> = [
-  { id: 'security', label: 'Security guard' },
-  { id: 'site_staff', label: 'Site staff' },
-  { id: 'contractor', label: 'Contractor' },
-  { id: 'engineer', label: 'Site engineer' },
-  { id: 'store_manager', label: 'Storekeeper' },
-]
+/** One role that can be told not to see money, as the Settings screen needs it.
+ *
+ *  This used to be a hardcoded list of five, and it went stale without anyone
+ *  noticing: it offered `site_staff` and `security`, which nobody held, and
+ *  `contractor`, which cannot open the module at all. So a switch marked
+ *  Recommended was hiding money from precisely nobody while every one of the
+ *  forty people with access read every rate.
+ *
+ *  The list is now built from the roles that ACTUALLY exist, each carrying how
+ *  many people hold it and whether it can open the warehouse — so the choice
+ *  shows its own consequence instead of being a guess about role names. */
+export type HideableRole = {
+  id: string
+  label: string
+  /** How many people hold this role right now. */
+  people: number
+  /** False when the role has no warehouse access, so hiding money from it
+   *  would change nothing — worth saying rather than letting it look done. */
+  hasAccess: boolean
+}

@@ -3,7 +3,10 @@
 import { createClient } from '@/lib/supabase/server'
 import { one } from './data'
 import { outstandingOf } from './corrections'
+import { getRoleLabels } from '@/lib/role-labels'
+import { ALL_ROLES } from '@/lib/types'
 import type { ReturnableOutLine } from './corrections'
+import type { HideableRole } from './settings'
 
 // ===========================================================================
 // Stores and sites
@@ -339,4 +342,45 @@ export async function searchItems(
       movements: 0,
     })),
   }
+}
+
+// ===========================================================================
+// Roles that can be told not to see money
+// ===========================================================================
+
+/** Every assignable role except admin, with how many people hold it and
+ *  whether it can open the warehouse at all.
+ *
+ *  Built from live data on purpose. The list this replaces was hardcoded, and
+ *  it went stale silently — it offered two roles nobody held and one that
+ *  cannot open the module, so a switch marked Recommended was protecting
+ *  nobody while all forty people with access read every rate. A list derived
+ *  from the roles that exist cannot drift like that. */
+export async function getHideableRoles(): Promise<HideableRole[]> {
+  const sb = await createClient()
+  const [labels, counts, perms] = await Promise.all([
+    getRoleLabels(),
+    sb.from('profiles').select('role'),
+    sb.from('role_permissions').select('role, can_view').eq('module_slug', 'warehouse'),
+  ])
+
+  const people = new Map<string, number>()
+  for (const p of counts.data ?? []) {
+    if (!p.role) continue
+    people.set(p.role, (people.get(p.role) ?? 0) + 1)
+  }
+  const canView = new Map((perms.data ?? []).map(r => [r.role as string, r.can_view as boolean]))
+
+  return ALL_ROLES
+    // An admin always sees values — offering the chip would be a lie.
+    .filter(r => r !== 'admin')
+    .map(r => ({
+      id: r,
+      label: labels[r]?.label ?? r,
+      people: people.get(r) ?? 0,
+      hasAccess: canView.get(r) === true,
+    }))
+    // The roles with real people first: hiding money from 27 viewers is a
+    // decision, hiding it from a role nobody holds is housekeeping.
+    .sort((a, b) => b.people - a.people || a.label.localeCompare(b.label))
 }

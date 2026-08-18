@@ -73,10 +73,16 @@ describe('reading values', () => {
 })
 
 describe('valuesHiddenRoles / showValuesFor', () => {
-  it('hides money from the default roles', () => {
-    expect(valuesHiddenRoles({})).toEqual(['security', 'site_staff', 'contractor'])
+  it('hides money from the default roles — ones people actually hold', () => {
+    // The old default was security + site_staff + contractor. Nobody held the
+    // first two and a contractor cannot open the module, so a switch marked
+    // Recommended protected nobody while all 40 people with access read every
+    // rate. Now: the 27 viewers, the 2 engineers, and security for the day a
+    // gate guard exists.
+    expect(valuesHiddenRoles({})).toEqual(['security', 'viewer', 'engineer'])
+    expect(showValuesFor({}, 'viewer', false)).toBe(false)
+    expect(showValuesFor({}, 'engineer', false)).toBe(false)
     expect(showValuesFor({}, 'security', false)).toBe(false)
-    expect(showValuesFor({}, 'contractor', false)).toBe(false)
   })
 
   it('shows money to everyone else', () => {

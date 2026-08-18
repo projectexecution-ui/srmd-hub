@@ -5,7 +5,7 @@ import { Card } from '@/components/ui/card'
 import { QueryError } from '@/components/ui/query-error'
 import { createClient } from '@/lib/supabase/server'
 import { getSettings, getReceivers } from '@/lib/warehouse/data'
-import { getAllLocations } from '@/lib/warehouse/admin-data'
+import { getAllLocations, getHideableRoles } from '@/lib/warehouse/admin-data'
 import { SettingsClient } from './settings-client'
 import { ChevronLeft } from 'lucide-react'
 
@@ -17,10 +17,11 @@ export default async function WarehouseSettingsPage() {
   const canAdmin = can(perms, 'warehouse', 'admin')
   const sb = await createClient()
 
-  const [values, locations, people, listsRes, historyRes, itemsRes] = await Promise.all([
+  const [values, locations, people, hideableRoles, listsRes, historyRes, itemsRes] = await Promise.all([
     getSettings(),
     getAllLocations(),
     getReceivers(),
+    getHideableRoles(),
     sb.from('wh_lists').select('id, kind, value, is_active, sort').order('kind').order('sort').order('value'),
     sb.from('wh_setting_changes')
       .select('id, key, old_value, new_value, changed_at, profiles(full_name, email)')
@@ -64,6 +65,7 @@ export default async function WarehouseSettingsPage() {
         history={historyRes.data ?? []}
         itemsPerStore={itemsPerStore}
         itemCount={itemsRes.count ?? 0}
+        hideableRoles={hideableRoles}
         canAdmin={canAdmin}
       />
     </div>

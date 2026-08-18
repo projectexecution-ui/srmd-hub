@@ -8,13 +8,13 @@ import { Card } from '@/components/ui/card'
 import { saveSetting, addListValue, setListValueActive } from '../actions'
 import { StoreMap } from './store-map'
 import {
-  SETTINGS, SECTIONS, NOT_BUILT, VALUE_HIDEABLE_ROLES,
+  SETTINGS, SECTIONS, NOT_BUILT,
   isOn, rawValue, valuesHiddenRoles,
 } from '@/lib/warehouse/settings'
-import type { SettingDef, SettingValues } from '@/lib/warehouse/settings'
+import type { SettingDef, SettingValues, HideableRole } from '@/lib/warehouse/settings'
 import type { AdminLocation } from '@/lib/warehouse/admin-data'
 import { formatDateTime } from '@/lib/utils'
-import { ChevronRight, Loader2, Lock, ShieldCheck, Plus, X, Info } from 'lucide-react'
+import { ChevronRight, Loader2, Lock, ShieldCheck, Plus, X, Info, EyeOff } from 'lucide-react'
 
 const inputCls =
   'w-full rounded-lg border border-slate-300 px-2.5 py-2 text-sm bg-white min-h-[40px] ' +
@@ -44,9 +44,10 @@ const HUB_SCREENS: Array<[string, string, string]> = [
 ]
 
 export function SettingsClient({
-  values, sites, people, lists, history, itemsPerStore, itemCount, canAdmin,
+  values, sites, people, lists, history, itemsPerStore, itemCount, hideableRoles, canAdmin,
 }: {
   values: SettingValues
+  hideableRoles: HideableRole[]
   sites: AdminLocation[]
   people: Array<{ id: string; name: string }>
   lists: ListRow[]
@@ -97,7 +98,8 @@ export function SettingsClient({
             {isOpenNow && (
               <div className="border-t border-slate-100 p-4 space-y-3">
                 {live.map(def => (
-                  <SettingRow key={def.key} def={def} values={values} canAdmin={canAdmin} />
+                  <SettingRow key={def.key} def={def} values={values}
+                    hideableRoles={hideableRoles} canAdmin={canAdmin} />
                 ))}
 
                 {sec.key === 'who-where' && (
@@ -119,7 +121,9 @@ export function SettingsClient({
 
 // ---------------------------------------------------------------------------
 
-function SettingRow({ def, values, canAdmin }: { def: SettingDef; values: SettingValues; canAdmin: boolean }) {
+function SettingRow({ def, values, hideableRoles, canAdmin }: {
+  def: SettingDef; values: SettingValues; hideableRoles: HideableRole[]; canAdmin: boolean
+}) {
   const router = useRouter()
   const [busy, start] = useTransition()
   const on = isOn(values, def.key)
@@ -201,26 +205,50 @@ function SettingRow({ def, values, canAdmin }: { def: SettingDef; values: Settin
       )}
 
       {def.kind === 'roles' && (
-        <div className="mt-2 flex flex-wrap gap-1.5">
-          {VALUE_HIDEABLE_ROLES.map(r => {
-            const hidden = valuesHiddenRoles(values).includes(r.id)
-            return (
-              <button key={r.id} type="button" aria-pressed={hidden} disabled={!canAdmin || busy}
-                onClick={() => {
-                  const next = hidden
-                    ? valuesHiddenRoles(values).filter(x => x !== r.id)
-                    : [...valuesHiddenRoles(values), r.id]
-                  save(next.join(','))
-                }}
-                className={`rounded-full border-2 px-3 py-1.5 min-h-[36px] text-[12px] font-bold transition disabled:opacity-50 ${
-                  hidden ? 'border-slate-700 bg-slate-700 text-white' : 'border-slate-200 bg-white text-slate-600 hover:border-slate-400'}`}>
-                {r.label}
-              </button>
-            )
-          })}
-          <p className="w-full text-[11px] text-slate-500 mt-1">
-            Tapped roles see quantities only — no rate, no ₹, and no value column anywhere, including the exports.
-            An admin always sees values.
+        <div className="mt-2 space-y-2">
+          <div className="flex flex-wrap gap-1.5">
+            {hideableRoles.map(r => {
+              const hidden = valuesHiddenRoles(values).includes(r.id)
+              return (
+                <button key={r.id} type="button" aria-pressed={hidden} disabled={!canAdmin || busy}
+                  aria-label={`${hidden ? 'Show' : 'Hide'} rates and values for ${r.label}`}
+                  onClick={() => {
+                    const next = hidden
+                      ? valuesHiddenRoles(values).filter(x => x !== r.id)
+                      : [...valuesHiddenRoles(values), r.id]
+                    save(next.join(','))
+                  }}
+                  className={`rounded-full border-2 px-3 py-1.5 min-h-[38px] text-[12px] font-bold transition
+                              disabled:opacity-50 inline-flex items-center gap-1.5 ${
+                    hidden ? 'border-slate-700 bg-slate-700 text-white'
+                           : 'border-slate-200 bg-white text-slate-600 hover:border-slate-400'}`}>
+                  {hidden && <EyeOff className="h-3 w-3" />}
+                  {r.label}
+                  {/* The people count is the point: it turns "hide from Viewer"
+                      into "hide from 27 people", which is the actual decision. */}
+                  <span className={hidden ? 'text-slate-300 font-normal' : 'text-slate-400 font-normal'}>
+                    {r.people}
+                  </span>
+                </button>
+              )
+            })}
+          </div>
+
+          {/* A role with no warehouse access cannot be shown a rate in the first
+              place. Saying so stops a tapped chip from looking like protection
+              it is not providing — which is exactly how this drifted before. */}
+          {hideableRoles.some(r => valuesHiddenRoles(values).includes(r.id) && !r.hasAccess) && (
+            <p className="text-[11px] text-amber-900 bg-amber-50 border border-amber-200 rounded-lg px-2.5 py-1.5">
+              {hideableRoles.filter(r => valuesHiddenRoles(values).includes(r.id) && !r.hasAccess)
+                .map(r => r.label).join(', ')} cannot open the warehouse at all, so hiding values
+              from them changes nothing. Harmless, but it is not protection.
+            </p>
+          )}
+
+          <p className="text-[11px] text-slate-500">
+            Tapped roles see quantities only — no rate, no ₹, and no value column anywhere,
+            including the Excel and PDF exports. The number on each chip is how many people hold
+            that role today. <b>An admin always sees values</b>, which is why Admin is not offered.
           </p>
         </div>
       )}
