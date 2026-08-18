@@ -18,6 +18,7 @@ export type Role =
   | 'store_manager'      // inventory: storekeeper — issues material; can also mark "available"
   | 'billing'            // billing team: enters approved Cost Control amounts into IN4 ERP (read-only otherwise)
   | 'coordinator'        // Cost Control setup/admin + full visibility, but CANNOT approve/release money (not in the approval matrix)
+  | 'security'           // Gate guard — records material in and out at the barrier, sees no rates
   | 'backoffice_backup'  // LEGACY — kept for DB enum compat, not surfaced in UI
   | 'hop'                // LEGACY — superseded by `head` (Atm Head)
 
@@ -25,9 +26,16 @@ export type Role =
 // are intentionally omitted — they're kept in the enum for backward compat
 // but the workflow now uses `head` for Atm Head and `backoffice`/`store_manager`
 // for the availability-check stage.
+//
+// EVERY role picker in the app reads this list — /admin/users, the permissions
+// matrix, and the per-user override panel. A role missing from here is
+// unassignable no matter what the database says, which is exactly what had
+// happened to `security`: the enum had it, role_labels described it, the
+// warehouse matrix already granted it view+edit, and it appeared in no dropdown
+// anywhere. So no gate guard could ever be created.
 export const ALL_ROLES: Role[] = [
-  'admin', 'founder', 'head', 'project_head', 'coordinator', 'uploader', 'engineer', 'backoffice', 'store_manager',
-  'billing', 'site_staff', 'viewer', 'contractor',
+  'admin', 'founder', 'head', 'project_head', 'coordinator', 'uploader', 'engineer', 'backoffice',
+  'store_manager', 'security', 'billing', 'site_staff', 'viewer', 'contractor',
 ]
 
 export type PermAction = 'view' | 'edit' | 'admin'
