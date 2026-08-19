@@ -3,7 +3,9 @@ import { requirePermission } from '@/lib/auth'
 import { PageHeader } from '@/components/PageHeader'
 import { Card } from '@/components/ui/card'
 import { createClient } from '@/lib/supabase/server'
-import { ArrowDownToLine, ArrowUpFromLine, ClipboardList, Boxes, BarChart3, Settings2, ChevronRight, FileText, ScrollText, Package, CalendarDays, ClipboardCheck } from 'lucide-react'
+import { getSettings } from '@/lib/warehouse/data'
+import { isOn } from '@/lib/warehouse/settings'
+import { ArrowDownToLine, ArrowUpFromLine, ClipboardList, Boxes, BarChart3, Settings2, ChevronRight, FileText, ScrollText, Package, CalendarDays, ClipboardCheck, Send } from 'lucide-react'
 
 export const dynamic = 'force-dynamic'
 
@@ -25,13 +27,15 @@ export default async function WarehouseHomePage() {
   await requirePermission('warehouse', 'view')
   const sb = await createClient()
 
-  const [items, spots, todayIn] = await Promise.all([
+  const [values, items, spots, todayIn] = await Promise.all([
+    getSettings(),
     sb.from('wh_items').select('id', { count: 'exact', head: true }).is('deleted_at', null),
     sb.from('wh_locations').select('id', { count: 'exact', head: true }).not('parent_id', 'is', null).is('deleted_at', null),
     sb.from('wh_gate_in').select('id', { count: 'exact', head: true })
       .eq('entry_date', new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' }))
       .is('deleted_at', null),
   ])
+  const requestsOn = isOn(values, 'wh_requests_on')
 
   return (
     <div className="p-4 md:p-6 max-w-4xl mx-auto space-y-4">
@@ -39,6 +43,27 @@ export default async function WarehouseHomePage() {
         title="Warehouse V2"
         subtitle="The main-gate material in-out register. Every truck in, every issue out, and the reports that show what went missing."
       />
+
+      {/* The one thing an engineer comes here to do. A tile in a list of eleven
+          is a hunt; this is the action, at the top, before the counters. Hidden
+          rather than greyed when requests are off — a button that cannot work is
+          worse than no button. */}
+      {requestsOn && (
+        <Link href="/warehouse/requests/new"
+          className="flex items-center gap-3 rounded-2xl bg-indigo-600 px-4 py-3.5 min-h-[62px]
+                     text-white shadow-sm hover:bg-indigo-700">
+          <span className="h-10 w-10 rounded-xl bg-white/15 grid place-items-center flex-shrink-0">
+            <Send className="h-5 w-5" />
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className="block text-[14px] font-extrabold leading-tight">Raise a request</span>
+            <span className="block text-[11.5px] text-indigo-100 mt-0.5">
+              Ask a store for material — it goes to that store’s keeper
+            </span>
+          </span>
+          <ChevronRight className="h-5 w-5 text-indigo-200 flex-shrink-0" />
+        </Link>
+      )}
 
       <div className="grid grid-cols-3 gap-2">
         {[

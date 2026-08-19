@@ -42,6 +42,9 @@ export type RequestLineInput = {
   itemId: string
   qty: number
   note?: string | null
+  /** A tool or formwork that has to come back, ticked per LINE — one pour
+   *  routinely mixes cement that gets consumed with plates that do not. */
+  isReturnable?: boolean
 }
 
 export type RaiseInput = {

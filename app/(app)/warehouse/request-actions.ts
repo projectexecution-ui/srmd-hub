@@ -95,7 +95,9 @@ export async function raiseRequest(input: RaiseInput): Promise<Raised> {
 
   const { error: lErr } = await sb.from('wh_request_lines').insert(
     lines.map(l => ({
-      request_id: header.id, item_id: l.itemId, qty: l.qty, note: l.note?.trim() || null,
+      request_id: header.id, item_id: l.itemId, qty: l.qty,
+      note: l.note?.trim() || null,
+      is_returnable: l.isReturnable ?? false,
     })),
   )
   if (lErr) {
@@ -278,4 +280,66 @@ export async function cancelRequest(id: string): Promise<Result> {
 
   refresh(`/warehouse/requests/${id}`)
   return { ok: true }
+}
+
+/** What one store holds, for the item picker's "In this store" tab.
+ *
+ *  Quantities only, no rates — the picker is shown to whoever is raising a
+ *  request, and that includes roles the value-hiding rule covers. */
+export async function storeStock(
+  locationId: string,
+): Promise<Array<{ itemId: string; qty: number }>> {
+  const denied = await gate('view')
+  if (denied || !locationId) return []
+  const sb = await createClient()
+  const { data } = await sb.from('wh_stock')
+    .select('item_id, qty').eq('location_id', locationId).gt('qty', 0)
+  return (data ?? []).map(r => ({ itemId: r.item_id, qty: Number(r.qty) }))
+}
+
+/** Material the catalogue has never heard of, added while raising a request.
+ *
+ *  Created immediately rather than queued for an admin: an engineer standing on
+ *  site who needs a thing the master does not list should not be stopped, and
+ *  the Item Master's merge tool is what tidies a duplicate afterwards. Stamped
+ *  with created_via so a stray name can be traced back to where it came from. */
+export async function addCatalogueItem(
+  name: string,
+  unit: string,
+): Promise<{ ok: boolean; id?: string; error?: string }> {
+  const denied = await gate('edit')
+  if (denied) return { ok: false, error: denied }
+  const off = await requestsEnabled()
+  if (off) return { ok: false, error: off }
+
+  const n = name.trim()
+  const u = unit.trim()
+  if (n.length < 2) return { ok: false, error: 'Give the item a name of at least two characters.' }
+  if (!u) return { ok: false, error: 'Pick the unit it is counted in.' }
+
+  const sb = await createClient()
+  const me = await getMyUser()
+
+  // Reuse rather than twin: two rows for one material split its stock in half,
+  // and the engineer would never see the other one.
+  const { data: existing } = await sb.from('wh_items')
+    .select('id, name, unit').ilike('name', n).is('deleted_at', null).limit(1)
+  if (existing?.length) {
+    if (existing[0].unit !== u) {
+      return {
+        ok: false,
+        error: `${existing[0].name} already exists, counted in ${existing[0].unit} rather than ${u}. `
+          + 'Use it as it stands — the unit is locked once anything is recorded against an item.',
+      }
+    }
+    return { ok: true, id: existing[0].id }
+  }
+
+  const { data, error } = await sb.from('wh_items').insert({
+    name: n, unit: u, source: 'manual', created_via: 'request', created_by: me?.id ?? null,
+  }).select('id').single()
+  if (error) return { ok: false, error: error.message }
+
+  revalidatePath('/warehouse/items')
+  return { ok: true, id: data.id }
 }

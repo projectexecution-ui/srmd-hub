@@ -13,7 +13,7 @@ import { STATUS_TONE } from '@/lib/warehouse/requests'
 import { STAGE_LABEL } from '@/lib/warehouse/approval-matrix'
 import type { RequestDetail } from '@/lib/warehouse/request-data'
 import {
-  Loader2, Stamp, X, Info, PackageCheck, Ban, TriangleAlert, ArrowRight,
+  Loader2, Stamp, X, Info, PackageCheck, Ban, TriangleAlert, ArrowRight, Undo2,
 } from 'lucide-react'
 
 const inputCls =
@@ -150,6 +150,11 @@ export function RequestClient({
                     store holds {formatQty(it.available)} {it.unit}
                   </span>
                 </p>
+                {it.isReturnable && (
+                  <p className="text-[11px] font-semibold text-violet-700 mt-0.5 inline-flex items-center gap-1">
+                    <Undo2 className="h-3 w-3" /> Returnable — must come back
+                  </p>
+                )}
                 {it.note && <p className="text-[11px] text-slate-500 mt-0.5">{it.note}</p>}
               </div>
             )

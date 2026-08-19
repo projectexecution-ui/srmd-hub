@@ -153,6 +153,7 @@ export type RequestDetail = RequestRow & {
     /** What the asked store holds right now. */
     available: number
     note: string | null
+    isReturnable: boolean
   }>
   /** Issues recorded against this request. */
   issues: Array<{ id: string; entryNo: string; day: string; voided: boolean }>
@@ -171,7 +172,7 @@ export async function getRequestDetail(
              a2:profiles!wh_requests_approved2_by_fkey(full_name, email),
              rej:profiles!wh_requests_rejected_by_fkey(full_name, email),
              can:profiles!wh_requests_cancelled_by_fkey(full_name, email),
-             wh_request_lines(id, item_id, qty, issued_qty, note,
+             wh_request_lines(id, item_id, qty, issued_qty, note, is_returnable,
                wh_items(id, name, code, unit, category))`)
     .eq('id', id).is('deleted_at', null).maybeSingle()
   if (error) return { request: null, error: error.message }
@@ -230,6 +231,7 @@ export async function getRequestDetail(
           outstanding: outstanding({ qty, issuedQty }),
           available: stock.get(l.item_id as string) ?? 0,
           note: (l.note as string | null) ?? null,
+          isReturnable: (l.is_returnable as boolean) ?? false,
         }
       }),
       issues: (outs ?? []).map(o => ({
