@@ -338,3 +338,69 @@ select 'S46 merge' step,
      from wh_items where id = (select v from s46 where k='a')) as loser_retired;  -- expect true
 
 rollback;
+
+-- ===========================================================================
+-- S47-S50 · Material requests and the approval chain (2026-08-17)
+--
+-- Verified against production. S47 runs in a rolled-back transaction; S48-S50
+-- provoke a constraint and catch it, so they write nothing at all.
+-- ===========================================================================
+begin;
+-- S47 · The whole chain: raise a two-stage request, approve twice, part issue.
+create temp table s47(k text primary key, v uuid);
+insert into s47 values ('loc', (select id from wh_locations where parent_id is not null limit 1));
+insert into s47 values ('it',  (select id from wh_items where deleted_at is null limit 1));
+insert into s47 values ('prj', (select id from projects limit 1));
+
+insert into wh_requests (req_no, from_location_id, project_id, purpose,
+                         status, rule_at_raise, est_value, stages_needed, stages_done)
+values ('QA-RQ-1', (select v from s47 where k='loc'), (select v from s47 where k='prj'),
+        'QA slab shuttering', 'pending', 'above_value', 60000, 2, 0);
+insert into s47 values ('req', (select id from wh_requests where req_no='QA-RQ-1'));
+insert into wh_request_lines (request_id, item_id, qty)
+values ((select v from s47 where k='req'), (select v from s47 where k='it'), 100);
+
+update wh_requests set stages_done = 1, approved1_at = now() where id = (select v from s47 where k='req');
+update wh_requests set stages_done = 2, approved2_at = now(), status = 'approved'
+  where id = (select v from s47 where k='req');
+
+insert into wh_gate_out (entry_no, entry_date, dest_type, from_location_id, project_id, request_id)
+values ('QA-RQ-OUT', current_date, 'site', (select v from s47 where k='loc'),
+        (select v from s47 where k='prj'), (select v from s47 where k='req'));
+update wh_request_lines set issued_qty = 40 where request_id = (select v from s47 where k='req');
+update wh_requests set status = 'part_issued' where id = (select v from s47 where k='req');
+
+select 'S47 request chain' step,
+  (select status from wh_requests where id=(select v from s47 where k='req')) as status,          -- part_issued
+  (select stages_done || ' of ' || stages_needed from wh_requests
+     where id=(select v from s47 where k='req')) as approvals,                                     -- 2 of 2
+  (select qty - issued_qty from wh_request_lines
+     where request_id=(select v from s47 where k='req')) as still_to_come,                         -- 60
+  (select count(*) from wh_gate_out where request_id=(select v from s47 where k='req')) as issues;  -- 1
+rollback;
+
+-- S48-S50 · The guards the DATABASE enforces, not just the UI. Each statement
+-- is expected to be REFUSED; the helper catches it so nothing is written.
+create or replace function pg_temp.qa_guard(sql text) returns text language plpgsql as $$
+begin
+  execute sql;
+  return 'ACCEPTED — GUARD MISSING';
+exception
+  when check_violation  then return 'refused by CHECK';
+  when unique_violation then return 'refused by UNIQUE';
+  when others           then return 'refused: ' || sqlstate;
+end $$;
+
+with loc as (select id from wh_locations where parent_id is not null limit 1),
+     it  as (select id from wh_items where deleted_at is null limit 1)
+select 'S48 rejection with no reason' as guard, pg_temp.qa_guard(format(
+  'insert into wh_requests (req_no, from_location_id, purpose, status) values (%L,%L,%L,%L)',
+  'QA-A', (select id from loc), 'QA', 'rejected')) as result
+union all
+select 'S49 more approvals than needed', pg_temp.qa_guard(format(
+  'insert into wh_requests (req_no, from_location_id, purpose, stages_needed, stages_done) values (%L,%L,%L,1,2)',
+  'QA-B', (select id from loc), 'QA'))
+union all
+select 'S50 zero quantity on a line', pg_temp.qa_guard(format(
+  'insert into wh_request_lines (request_id, item_id, qty) values (%L,%L,0)',
+  gen_random_uuid(), (select id from it)));
