@@ -380,8 +380,6 @@ export default async function ApprovalsInboxPage({
           const code = proj?.code ?? ''
           const parent = proj?.parent_project_id ? parentMap.get(proj.parent_project_id) : null
           const tone = toneFor(code || pid)
-          const projBefore = approvedByProject.get(pid) ?? 0
-          const projInc = items.reduce((s, r) => s + increment(r), 0)
           const erpBudget = erpBudgetByProject.get(pid) ?? 0
 
           // Group this project's shown budgets by sub-discipline.
@@ -420,15 +418,6 @@ export default async function ApprovalsInboxPage({
                   <div className="mt-2 flex items-baseline gap-x-2 flex-wrap tabular-nums">
                     <span className="text-[10px] uppercase tracking-wide text-gray-400">Project budget (ERP)</span>
                     <span className="text-base font-bold text-gray-900">{formatINR(erpBudget)}</span>
-                  </div>
-                )}
-                {haveApproved && (
-                  <div className={`${ccSettings.show_erp_columns && erpBudget > 0 ? 'mt-0.5' : 'mt-2'} flex items-baseline gap-x-2 gap-y-0.5 flex-wrap tabular-nums`}>
-                    <span className="text-[10px] uppercase tracking-wide text-gray-400">Approved so far</span>
-                    <span className="text-sm font-bold text-gray-900">{formatINR(projBefore)}</span>
-                    <ArrowRight className="h-3 w-3 text-gray-400 self-center" />
-                    <span className="text-sm font-bold text-emerald-700">{formatINR(projBefore + projInc)}</span>
-                    <span className="text-[11px] text-gray-500">if you approve {items.length === 1 ? 'this' : 'these'} (+{formatINR(projInc)})</span>
                   </div>
                 )}
               </div>
@@ -492,10 +481,6 @@ export default async function ApprovalsInboxPage({
                                   <div className="flex justify-between gap-2 mt-1">
                                     <span className="opacity-80 truncate">{disc?.name ?? 'Discipline'} <span className="opacity-60">(discipline)</span></span>
                                     <span className="flex-shrink-0"><b>{formatINR(discBefore)}</b> → <b className="text-emerald-700">{formatINR(discBefore + inc)}</b></span>
-                                  </div>
-                                  <div className="flex justify-between gap-2 mt-1 pt-1 border-t border-black/5">
-                                    <span className="opacity-80">Project total</span>
-                                    <span className="flex-shrink-0"><b>{formatINR(projBefore)}</b> → <b className="text-emerald-700">{formatINR(projBefore + inc)}</b></span>
                                   </div>
                                 </div>
                               )}
