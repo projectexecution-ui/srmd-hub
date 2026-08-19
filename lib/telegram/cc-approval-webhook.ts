@@ -6,7 +6,7 @@
 // [IB] Internal-Estimate sheets are refused outright.
 
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { CB_PREFIX, approvalKeyboard, confirmReleaseKeyboard } from './cc-approval-send'
+import { CB_PREFIX, approvalKeyboard, waitingKeyboard } from './cc-approval-send'
 import type { ApprovalStage } from '@/lib/cost-control/approval-card'
 
 const api = (token: string, m: string) => `https://api.telegram.org/bot${token}/${m}`
@@ -61,9 +61,23 @@ interface CallbackQuery {
   message?: { message_id?: number; chat?: { id?: number | string } }
 }
 
+// A release RPC failure caused by the sheet already having moved reads as
+// "already done" to the tapper, not as a scary error (double-taps hit this).
+function friendlyReleaseError(msg: string): string {
+  const m = (msg || '').toLowerCase()
+  if (m.includes('atm_approved') || m.includes('released') || m.includes('already') || m.includes('only sheets')) {
+    return 'This budget was already released or has moved on ✓'
+  }
+  return msg
+}
+
 /**
  * Handle an inline-button tap. Returns true if it was ours (so the route can
- * stop). Verb grammar: ccapv:sign|rel|relok|cancel:<wsId>.
+ * stop). Verb grammar: ccapv:sign|wait|scancel|rel|relok|cancel:<wsId>.
+ *
+ * Repeated / accidental taps are safe: the moment a real action is taken the
+ * buttons are swapped or removed so they can't re-fire, and any tap on a sheet
+ * that has already moved answers "already done ✓" instead of erroring.
  */
 export async function handleApprovalCallback(
   svc: SupabaseClient, token: string, cbq: CallbackQuery,
@@ -78,6 +92,7 @@ export async function handleApprovalCallback(
     await answerCbq(token, cbq.id, 'Something went wrong — open CT Hub to act.')
     return true
   }
+  const clearButtons = () => editMarkup(token, chatId, messageId, { inline_keyboard: [] })
 
   if (!(await approvalsEnabled(svc))) {
     await answerCbq(token, cbq.id, 'Telegram approvals are turned off in CT Hub.', true)
@@ -102,24 +117,31 @@ export async function handleApprovalCallback(
   }
   const status = ws.status as string
   const wsCode = (ws.ws_code as string) || 'budget'
+  const isSignStage = status === 'submitted' || status === 'ph_approved'
+  const isReleaseStage = status === 'atm_approved' || status === 'partially_approved'
+
+  // Is there a live (unexpired) prompt waiting for this exact sheet (sign-off
+  // amount+remark, or release remark)?
+  async function freshPending(): Promise<boolean> {
+    const { data: p } = await svc
+      .from('tg_pending_approvals')
+      .select('expires_at')
+      .eq('chat_id', String(chatId)).eq('ws_id', wsId)
+      .order('created_at', { ascending: false }).limit(1).maybeSingle()
+    return !!p && new Date(p.expires_at as string).getTime() > Date.now()
+  }
 
   // ── Test cards (dry-run to your own chat): validate the plumbing + identity,
   //     then confirm WITHOUT touching the sheet. ──
   if (verb === 'tsign') {
-    if (status !== 'submitted' && status !== 'ph_approved') {
-      await answerCbq(token, cbq.id, 'This budget is not at a sign-off stage.', true)
-      return true
-    }
+    if (!isSignStage) { await answerCbq(token, cbq.id, 'This budget is not at a sign-off stage.', true); return true }
     await answerCbq(token, cbq.id, 'Test OK ✔')
     await sendMessage(token, chatId,
       `✅ Test OK — the buttons work and you're recognised as an approver. The real Approve on ${wsCode} would ask for your checked amount and sign it off. Nothing was changed.`)
     return true
   }
   if (verb === 'trel') {
-    if (status !== 'atm_approved' && status !== 'partially_approved') {
-      await answerCbq(token, cbq.id, 'This budget is not ready for release.', true)
-      return true
-    }
+    if (!isReleaseStage) { await answerCbq(token, cbq.id, 'This budget is not ready for release.', true); return true }
     await answerCbq(token, cbq.id, 'Test OK ✔')
     await sendMessage(token, chatId,
       `✅ Test OK — the real "Approve & release" on ${wsCode} would release the budget into ERP. Nothing was changed.`)
@@ -127,49 +149,94 @@ export async function handleApprovalCallback(
   }
 
   if (verb === 'sign') {
-    if (status !== 'submitted' && status !== 'ph_approved') {
-      await answerCbq(token, cbq.id, 'This budget has already moved on.', true)
-      await editMarkup(token, chatId, messageId, { inline_keyboard: [] })
+    if (!isSignStage) {
+      await answerCbq(token, cbq.id, 'This budget has already moved on ✓', true)
+      await clearButtons()
       return true
     }
-    // Remember what they're approving; the next numeric reply completes it.
-    await svc.from('tg_pending_approvals').delete().eq('chat_id', String(chatId)).eq('action', 'signoff')
+    // Already asked? Don't send a second prompt — just point them back to it.
+    if (await freshPending()) {
+      await answerCbq(token, cbq.id, 'Already asked — reply with the amount above ↑')
+      await editMarkup(token, chatId, messageId, waitingKeyboard(wsId))
+      return true
+    }
+    // Remember what they're approving (with the card's message id, to clean it
+    // up after), then ask for the amount + remark and lock the card so a re-tap
+    // can't fire another prompt. One live prompt per chat.
+    await svc.from('tg_pending_approvals').delete().eq('chat_id', String(chatId))
     await svc.from('tg_pending_approvals').insert({
       chat_id: String(chatId), user_id: actor, ws_id: wsId, action: 'signoff', stage: status,
+      card_message_id: messageId,
     })
+    await editMarkup(token, chatId, messageId, waitingKeyboard(wsId))
     await sendMessage(token, chatId,
-      `Reply with the amount you have checked (₹) for ${wsCode}. This is your own independent figure — the same as signing off in the app.`,
-      { reply_markup: { force_reply: true, input_field_placeholder: 'e.g. 334754' } })
-    await answerCbq(token, cbq.id, 'Type the amount you checked ↓')
+      `Reply with the amount you checked AND a short remark for ${wsCode} — e.g. “334754 rates verified, approved”. Both are required (the amount is your own independent figure, same as in the app).`,
+      { reply_markup: { force_reply: true, input_field_placeholder: 'e.g. 334754 rates verified' } })
+    await answerCbq(token, cbq.id, 'Reply with the amount + remark ↓')
     return true
   }
 
-  if (verb === 'rel') {
-    if (status !== 'atm_approved' && status !== 'partially_approved') {
-      await answerCbq(token, cbq.id, 'This budget is not ready for release.', true)
-      await editMarkup(token, chatId, messageId, { inline_keyboard: [] })
-      return true
+  if (verb === 'wait') {
+    if (await freshPending()) {
+      await answerCbq(token, cbq.id, 'Reply with the amount above ↑')
+    } else {
+      await answerCbq(token, cbq.id, 'This one is already done ✓')
+      await clearButtons()
     }
-    await editMarkup(token, chatId, messageId, confirmReleaseKeyboard(wsId))
-    await answerCbq(token, cbq.id, 'Confirm the release ↓')
     return true
   }
 
-  if (verb === 'cancel') {
-    await editMarkup(token, chatId, messageId, approvalKeyboard(status as ApprovalStage, wsId))
+  if (verb === 'scancel' || verb === 'cancel') {
+    await svc.from('tg_pending_approvals').delete().eq('chat_id', String(chatId)).eq('ws_id', wsId)
+    if (isSignStage || isReleaseStage) await editMarkup(token, chatId, messageId, approvalKeyboard(status as ApprovalStage, wsId))
+    else await clearButtons()
     await answerCbq(token, cbq.id, 'Cancelled.')
     return true
   }
 
+  if (verb === 'rel') {
+    if (!isReleaseStage) {
+      await answerCbq(token, cbq.id, 'This budget has already moved on ✓', true)
+      await clearButtons()
+      return true
+    }
+    if (await freshPending()) {
+      await answerCbq(token, cbq.id, 'Already asked — type your remark above ↑')
+      await editMarkup(token, chatId, messageId, waitingKeyboard(wsId))
+      return true
+    }
+    // Compulsory remark to confirm the release — the typed remark is both the
+    // confirmation (accidental-tap safe) and the record.
+    await svc.from('tg_pending_approvals').delete().eq('chat_id', String(chatId))
+    await svc.from('tg_pending_approvals').insert({
+      chat_id: String(chatId), user_id: actor, ws_id: wsId, action: 'release', stage: status,
+      card_message_id: messageId,
+    })
+    await editMarkup(token, chatId, messageId, waitingKeyboard(wsId))
+    await sendMessage(token, chatId,
+      `Type a short remark to confirm the release of ${wsCode} (required) — e.g. “Checked, release to ERP”.`,
+      { reply_markup: { force_reply: true, input_field_placeholder: 'e.g. Checked, release to ERP' } })
+    await answerCbq(token, cbq.id, 'Type a remark to confirm ↓')
+    return true
+  }
+
+  // Legacy two-tap confirm buttons (from cards sent before the remark flow):
+  // honour a "Yes, release" but require nothing typed. New cards never show these.
   if (verb === 'relok') {
+    if (!isReleaseStage) {
+      await answerCbq(token, cbq.id, 'Already released or moved on ✓', true)
+      await clearButtons()
+      return true
+    }
+    await clearButtons()
     const { data: res, error } = await svc.rpc('cc_tg_release', { p_actor: actor, p_ws_id: wsId, p_tranche: null })
     if (error) {
-      await answerCbq(token, cbq.id, error.message, true)
-      await editMarkup(token, chatId, messageId, approvalKeyboard('atm_approved', wsId))
+      const msg = friendlyReleaseError(error.message)
+      await answerCbq(token, cbq.id, msg, true)
+      await sendMessage(token, chatId, `${msg} — open CT Hub if you need to act on ${wsCode}.`)
       return true
     }
     const r = res as { released?: number; new_status?: string }
-    await editMarkup(token, chatId, messageId, { inline_keyboard: [] })
     await sendMessage(token, chatId,
       `✅ Released ${inr(r.released ?? 0)} — ${wsCode} is now ${prettyStage(r.new_status ?? 'approved')}. Recorded in CT Hub.`)
     await answerCbq(token, cbq.id, 'Approved ✔')
@@ -181,51 +248,93 @@ export async function handleApprovalCallback(
 }
 
 /**
- * A plain (non-command) private message. If the chat has a pending sign-off
- * waiting for a typed amount, treat this as that amount and run the sign-off.
- * Returns true if it consumed the message.
+ * A plain (non-command) private message that answers a pending approval prompt:
+ * a sign-off needs the checked AMOUNT + a required remark ("334754 rates ok");
+ * a release needs a required remark. The remark is mandatory either way and is
+ * recorded (sign-off: on the approval trail; release: on the sheet's comments).
+ * A bad reply never consumes the prompt — they can just type again.
  */
 export async function handleApprovalAmountReply(
   svc: SupabaseClient, token: string, chatId: string | number, tgUserId: string | number, text: string,
 ): Promise<boolean> {
   const { data: pend } = await svc
     .from('tg_pending_approvals')
-    .select('id, user_id, ws_id, stage, expires_at')
+    .select('id, user_id, ws_id, action, expires_at, card_message_id')
     .eq('chat_id', String(chatId))
-    .eq('action', 'signoff')
     .order('created_at', { ascending: false })
     .limit(1)
     .maybeSingle()
   if (!pend) return false
-  // Expired → clear + tell them to tap again.
   if (new Date(pend.expires_at as string).getTime() < Date.now()) {
     await svc.from('tg_pending_approvals').delete().eq('id', pend.id)
-    await sendMessage(token, chatId, 'That approval prompt expired — tap Approve on the budget card again.')
-    return true
-  }
-
-  const amt = Number(text.replace(/[^0-9.]/g, ''))
-  if (!isFinite(amt) || amt <= 0) {
-    await sendMessage(token, chatId, 'That does not look like an amount. Reply with just the number, e.g. 334754.')
+    await sendMessage(token, chatId, 'That approval prompt expired — tap the button on the budget card again.')
     return true
   }
 
   const actor = await resolveActor(svc, tgUserId)
   if (!actor || actor !== pend.user_id) {
-    await sendMessage(token, chatId, 'Only the person this budget is waiting on can sign it off here.')
+    await sendMessage(token, chatId, 'Only the person this budget is waiting on can act on it here.')
+    return true
+  }
+
+  const raw = text.trim()
+  const isRelease = pend.action === 'release'
+  let amt = 0
+  let remark = ''
+
+  if (isRelease) {
+    remark = raw
+    if (remark.length < 3) {
+      await sendMessage(token, chatId, 'Add a short remark to confirm the release (required) — e.g. “Checked, release to ERP”.')
+      return true
+    }
+  } else {
+    // "<amount> <remark>" — leading number, then the mandatory remark.
+    const m = raw.match(/^[₹\s]*([0-9][0-9,]*(?:\.[0-9]+)?)\s+([\s\S]+)$/)
+    if (!m) {
+      await sendMessage(token, chatId, /[0-9]/.test(raw)
+        ? 'Add a short remark after the amount — e.g. “334754 rates verified”.'
+        : 'Reply with the amount you checked, then a remark — e.g. “334754 rates verified”.')
+      return true
+    }
+    amt = Number(m[1].replace(/,/g, ''))
+    remark = m[2].trim()
+    if (!isFinite(amt) || amt <= 0) {
+      await sendMessage(token, chatId, 'That amount does not look right. Reply like “334754 rates verified”.')
+      return true
+    }
+    if (remark.length < 2) {
+      await sendMessage(token, chatId, 'Add a short remark after the amount (required).')
+      return true
+    }
+  }
+
+  // Claim the prompt atomically BEFORE acting, so a racing second reply can't
+  // run a second action — only the reply that deletes the row proceeds.
+  const { data: claimed } = await svc.from('tg_pending_approvals').delete().eq('id', pend.id).select('id')
+  if (!claimed || claimed.length === 0) return true
+  const cardMsgId = pend.card_message_id != null ? Number(pend.card_message_id) : null
+  const clearCard = async () => { if (cardMsgId != null) await editMarkup(token, chatId, cardMsgId, { inline_keyboard: [] }) }
+
+  if (isRelease) {
+    const { data: res, error } = await svc.rpc('cc_tg_release', { p_actor: actor, p_ws_id: pend.ws_id, p_tranche: null })
+    await clearCard()
+    if (error) { await sendMessage(token, chatId, `Could not release: ${friendlyReleaseError(error.message)}`); return true }
+    const r = res as { released?: number; new_status?: string; ws_code?: string }
+    // Record the mandatory remark on the sheet's comment thread.
+    try { await svc.from('cc_ws_comments').insert({ ws_id: pend.ws_id, author_id: actor, body: `Released via Telegram — ${remark}` }) } catch { /* best-effort */ }
+    await sendMessage(token, chatId,
+      `✅ Released ${inr(r.released ?? 0)} — ${r.ws_code ?? 'budget'} is now ${prettyStage(r.new_status ?? 'approved')}. Remark saved. Recorded in CT Hub.`)
     return true
   }
 
   const { data: res, error } = await svc.rpc('cc_tg_signoff', {
-    p_actor: actor, p_ws_id: pend.ws_id, p_checked_amt: amt, p_note: null,
+    p_actor: actor, p_ws_id: pend.ws_id, p_checked_amt: amt, p_note: remark,
   })
-  await svc.from('tg_pending_approvals').delete().eq('id', pend.id)
-  if (error) {
-    await sendMessage(token, chatId, `Could not sign off: ${error.message}`)
-    return true
-  }
+  await clearCard()
+  if (error) { await sendMessage(token, chatId, `Could not sign off: ${error.message}`); return true }
   const r = res as { new_status?: string; ws_code?: string }
   await sendMessage(token, chatId,
-    `✅ Signed off ${inr(amt)} — ${r.ws_code ?? 'budget'} now moves to ${prettyStage(r.new_status ?? '')}. Recorded in CT Hub.`)
+    `✅ Signed off ${inr(amt)} — ${r.ws_code ?? 'budget'} now moves to ${prettyStage(r.new_status ?? '')}. Remark saved. Recorded in CT Hub.`)
   return true
 }

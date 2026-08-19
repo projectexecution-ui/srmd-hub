@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { approvalKeyboard, confirmReleaseKeyboard, CB_PREFIX } from './cc-approval-send'
+import { approvalKeyboard, confirmReleaseKeyboard, waitingKeyboard, CB_PREFIX } from './cc-approval-send'
 
 const UUID = 'b68b7d2a-5ae1-4c86-bb26-005d9405f172'
 
@@ -30,11 +30,18 @@ describe('approvalKeyboard', () => {
     expect(verbs).toContain(`${CB_PREFIX}:cancel:${UUID}`)
   })
 
+  it('waiting keyboard uses wait + scancel verbs', () => {
+    const verbs = waitingKeyboard(UUID).inline_keyboard.flat().map(b => b.callback_data).filter(Boolean)
+    expect(verbs).toContain(`${CB_PREFIX}:wait:${UUID}`)
+    expect(verbs).toContain(`${CB_PREFIX}:scancel:${UUID}`)
+  })
+
   it('every callback_data stays within Telegram’s 64-byte limit', () => {
     const all = [
       ...approvalKeyboard('submitted', UUID).inline_keyboard,
       ...approvalKeyboard('atm_approved', UUID).inline_keyboard,
       ...confirmReleaseKeyboard(UUID).inline_keyboard,
+      ...waitingKeyboard(UUID).inline_keyboard,
     ].flat()
     for (const b of all) {
       if (b.callback_data) expect(Buffer.byteLength(b.callback_data, 'utf8')).toBeLessThanOrEqual(64)

@@ -59,6 +59,22 @@ export function approvalKeyboard(stage: ApprovalStage, wsId: string, test = fals
   }
 }
 
+/** After "Approve" (or "Approve & release") is tapped, the action button is
+ *  swapped for this — so repeated taps can't fire another prompt. It only points
+ *  back to the reply that's now waiting above, or cancels / opens the app. */
+export function waitingKeyboard(wsId: string): { inline_keyboard: Btn[][] } {
+  const wsUrl = `${appBase()}/cost-control/working-sheets/${wsId}`
+  return {
+    inline_keyboard: [
+      [{ text: '⏳ Reply above to finish', callback_data: `${CB_PREFIX}:wait:${wsId}` }],
+      [
+        { text: '✖ Cancel', callback_data: `${CB_PREFIX}:scancel:${wsId}` },
+        { text: '↩️ Open in app', url: wsUrl },
+      ],
+    ],
+  }
+}
+
 /** The Yes/Cancel confirm keyboard shown after a Trustee taps "Approve & release". */
 export function confirmReleaseKeyboard(wsId: string): { inline_keyboard: Btn[][] } {
   return {
