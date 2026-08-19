@@ -1,10 +1,12 @@
 'use server'
 
 import { revalidatePath } from 'next/cache'
+import { after } from 'next/server'
 import { z } from 'zod'
 import { createClient } from '@/lib/supabase/server'
 import { getMyUser, getMyProfile, getMyPermissions, can } from '@/lib/auth'
 import { generateSmartWSCode } from './ws-code-action'
+import { dispatchCardsForSheet } from '@/lib/telegram/cc-approval-dispatch'
 
 // ---------- shared authorization helpers ----------
 
@@ -572,6 +574,9 @@ export async function submitWorkingSheet(wsId: string): Promise<{ ok: boolean; e
 
   revalidatePath(`/cost-control/working-sheets/${wsId}`)
   revalidatePath('/cost-control/working-sheets')
+  // Auto-send the Telegram approval card to the Project Head (best-effort,
+  // after the response so the button stays snappy).
+  after(() => dispatchCardsForSheet(wsId).catch(() => {}))
   return { ok: true }
 }
 
@@ -667,6 +672,9 @@ export async function signOffWorkingSheet(
   revalidatePath('/cost-control/approvals')
   revalidatePath('/cost-control')
   revalidatePath(`/cost-control/projects/${ws.project_id}`)
+  // Auto-send the next stage's approval card (PH→Atm, Atm→Trustee) to the
+  // connected approver, best-effort after the response.
+  after(() => dispatchCardsForSheet(wsId).catch(() => {}))
   if (recErr) {
     return { ok: true, new_status: toStage, error: `Signed off, but event log failed: ${recErr.message}` }
   }

@@ -6,7 +6,9 @@
 // [IB] Internal-Estimate sheets are refused outright.
 
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { after } from 'next/server'
 import { CB_PREFIX, approvalKeyboard, waitingKeyboard } from './cc-approval-send'
+import { dispatchCardsForSheet } from './cc-approval-dispatch'
 import type { ApprovalStage } from '@/lib/cost-control/approval-card'
 
 const api = (token: string, m: string) => `https://api.telegram.org/bot${token}/${m}`
@@ -372,5 +374,7 @@ export async function handleApprovalAmountReply(
   const r = res as { new_status?: string; ws_code?: string }
   await sendMessage(token, chatId,
     `✅ Signed off ${inr(amt)} — ${r.ws_code ?? 'budget'} now moves to ${prettyStage(r.new_status ?? '')}. Remark saved. Recorded in CT Hub.`)
+  // Auto-send the next stage's card to the next connected approver.
+  after(() => dispatchCardsForSheet(pend.ws_id as string).catch(() => {}))
   return true
 }
