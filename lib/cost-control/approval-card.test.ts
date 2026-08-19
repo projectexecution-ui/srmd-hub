@@ -5,6 +5,8 @@ const base: ApprovalCardInput = {
   wsCode: 'NGHB-CIV-W3',
   project: { code: 'NGH B', name: 'New Guest House B' },
   work: 'RCC Superstructure',
+  category: '01 Site Pre-lims',
+  subCategory: '101 Soil',
   stage: 'submitted',
   amount: 4820000,
   area: 65400,
@@ -25,7 +27,12 @@ describe('buildApprovalCardSpec', () => {
   it('builds the approval card with the ask + ERP position', () => {
     const c = buildApprovalCardSpec(base)
     expect(c.brand).toBe('Budget approval')
-    expect(c.title).toContain('NGHB-CIV-W3')
+    // Project name is the hero; the ws code moves to the subtitle.
+    expect(c.title).toBe('New Guest House B')
+    expect(c.subtitle).toContain('NGHB-CIV-W3')
+    // Category + Sub-category (with codes) are constant identity chips.
+    expect(c.chips).toContain('Category · 01 Site Pre-lims')
+    expect(c.chips).toContain('Sub-category · 101 Soil')
     // ask stat with ₹/sft + days
     expect(c.stats![0].value).toBe('₹48,20,000')
     expect(c.stats![0].sub).toContain('/sft')

@@ -426,7 +426,7 @@ export default async function ApprovalsInboxPage({
                       <div className="flex items-baseline justify-between gap-2 mb-2 px-3 py-1.5 rounded-lg bg-gray-100/70 border border-gray-200">
                         <span className="text-[11px] font-bold text-gray-700 uppercase tracking-wide truncate inline-flex items-center gap-2">
                           <span className="h-2.5 w-2.5 rounded-sm bg-gray-400 flex-shrink-0" />
-                          {disc?.name ?? '—'}
+                          {[disc?.code, disc?.name].filter(Boolean).join(' ') || '—'}
                         </span>
                         {haveApproved && (
                           <span className="text-[11px] text-gray-500 tabular-nums whitespace-nowrap normal-case">
@@ -449,7 +449,7 @@ export default async function ApprovalsInboxPage({
                               <div className="flex items-start justify-between gap-3">
                                 <div className="min-w-0">
                                   <div className="flex items-center gap-2 flex-wrap">
-                                    <span className="font-medium text-gray-900">{sub?.name ?? disc?.name ?? '—'}</span>
+                                    <span className="font-medium text-gray-900">{[sub?.code, sub?.name].filter(Boolean).join(' ') || disc?.name || '—'}</span>
                                     {ver > 1 && <span className="text-[10px] font-semibold rounded px-1.5 py-0.5 bg-gray-100 text-gray-600 border border-gray-200">Rev {ver}</span>}
                                     {ex?.prev && <RevisionFlag prev={ex.prev} />}
                                   </div>

@@ -55,9 +55,19 @@ interface WsJoinRow {
   chain_anchor_id: string | null
   version_no: number | null
   summary_notes: string | null
-  projects: { code: string; name: string; built_up_sft: number | null } | Array<{ code: string; name: string; built_up_sft: number | null }> | null
-  cc_disciplines: { name: string } | Array<{ name: string }> | null
-  cc_sub_skills: { name: string } | Array<{ name: string }> | null
+  projects: PJoin | PJoin[] | null
+  cc_disciplines: CJoin | CJoin[] | null
+  cc_sub_skills: CJoin | CJoin[] | null
+}
+interface PJoin { code: string; name: string; built_up_sft: number | null; parent_project_id: string | null }
+interface CJoin { code: string | null; name: string | null }
+
+// "01 Site Pre-lims" / "101 Soil" — code + name, the constant identity label.
+function codeName(j: CJoin | null): string {
+  if (!j) return ''
+  const code = (j.code ?? '').trim()
+  const name = (j.name ?? '').trim()
+  return code && name ? `${code} ${name}` : (name || code)
 }
 
 /**
@@ -75,9 +85,9 @@ export async function loadApprovalCardInput(
     .select(
       `id, ws_code, status, total_amount, approved_for_erp_amt, submitted_at, engineer_id,
        discipline_id, sub_skill_id, project_id, chain_anchor_id, version_no, summary_notes,
-       projects(code, name, built_up_sft),
-       cc_disciplines(name),
-       cc_sub_skills(name)`,
+       projects(code, name, built_up_sft, parent_project_id),
+       cc_disciplines(code, name),
+       cc_sub_skills(code, name)`,
     )
     .eq('id', wsId)
     .maybeSingle()
@@ -91,9 +101,19 @@ export async function loadApprovalCardInput(
   const proj = pickFirst(ws.projects)
   const sub = pickFirst(ws.cc_sub_skills)
   const disc = pickFirst(ws.cc_disciplines)
-  const sft = Number(proj?.built_up_sft ?? 0)
   const amount = Number(ws.total_amount ?? 0)
   const isIB = (ws.summary_notes ?? '').startsWith('[IB')
+  const category = codeName(disc)
+  const subCategory = codeName(sub)
+
+  // ₹/sft area: the project's own built-up area, or — for a "Common Expenses"
+  // style sub-project that has none — fall back to its parent project's area.
+  let sft = Number(proj?.built_up_sft ?? 0)
+  if (sft <= 0 && proj?.parent_project_id) {
+    const { data: par } = await svc
+      .from('projects').select('built_up_sft').eq('id', proj.parent_project_id).maybeSingle()
+    sft = Number(par?.built_up_sft ?? 0)
+  }
 
   // Engineer (raiser) name.
   const { data: eng } = await svc.from('profiles').select('full_name').eq('id', ws.engineer_id).maybeSingle()
@@ -145,6 +165,8 @@ export async function loadApprovalCardInput(
     wsCode: ws.ws_code,
     project: { code: proj?.code ?? '', name: proj?.name ?? '' },
     work: sub?.name || disc?.name || 'Budget',
+    category,
+    subCategory,
     stage,
     amount,
     area: sft > 0 ? sft : null,

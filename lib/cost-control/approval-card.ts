@@ -17,6 +17,10 @@ export interface ApprovalCardInput {
   project: { code: string; name: string }
   /** sub-skill (preferred) or discipline label */
   work: string
+  /** Discipline shown as "Category" — code + name, e.g. "01 Site Pre-lims". */
+  category: string
+  /** Sub-skill shown as "Sub-category" — code + name, e.g. "101 Soil". */
+  subCategory: string
   stage: ApprovalStage
   /** total_amount — the ask, incl GST + contingency (what actually gets approved). */
   amount: number
@@ -65,8 +69,12 @@ function stageChain(stage: ApprovalStage): string {
 }
 
 export function buildApprovalCardSpec(i: ApprovalCardInput): CardSpec {
-  const sameCode = i.project.code && i.project.name && i.project.code.toLowerCase() === i.project.name.toLowerCase()
-  const projLabel = sameCode ? i.project.code : `${i.project.code} · ${i.project.name}`
+  // Identity, constant on every surface: Project name (hero) + Category +
+  // Sub-category (each with its number code).
+  const projName = i.project.name || i.project.code || 'Project'
+  const chips: string[] = []
+  if (i.category) chips.push(`Category · ${i.category}`)
+  if (i.subCategory) chips.push(`Sub-category · ${i.subCategory}`)
 
   // ── Stats: the ask + the position ──
   const stats: NonNullable<CardSpec['stats']> = [
@@ -98,7 +106,7 @@ export function buildApprovalCardSpec(i: ApprovalCardInput): CardSpec {
   const sections: CardSection[] = []
 
   const thisRows: CardRow[] = [
-    { main: 'This ask', sub: i.work, right: inr(i.amount), rightTone: 'brand' },
+    { main: 'This ask', sub: i.subCategory || i.work, right: inr(i.amount), rightTone: 'brand' },
   ]
   if (i.revision) {
     thisRows.push({
@@ -116,7 +124,7 @@ export function buildApprovalCardSpec(i: ApprovalCardInput): CardSpec {
       rightTone: 'neutral',
     })
   }
-  sections.push({ heading: 'The budget', sub: projLabel, rows: thisRows })
+  sections.push({ heading: 'The budget', sub: `${i.category}${i.category && i.subCategory ? '  ›  ' : ''}${i.subCategory}`, rows: thisRows })
 
   if (i.showErp && i.erp) {
     sections.push({
@@ -138,8 +146,9 @@ export function buildApprovalCardSpec(i: ApprovalCardInput): CardSpec {
 
   return {
     brand: 'Budget approval',
-    title: `${i.wsCode} — approve budget`,
-    subtitle: `${projLabel} · ${i.work} · Confidential`,
+    title: projName,
+    subtitle: `${i.wsCode} · Confidential — approver only`,
+    chips,
     stats,
     sections,
     footer: 'CT HUB · Cost Control · Confidential — approver only',

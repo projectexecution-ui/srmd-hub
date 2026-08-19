@@ -132,7 +132,9 @@ export async function getHomeBudgetGroups(
     if (!disc) {
       const d = pickJoin(s.cc_disciplines)
       const dBefore = approvedByDisc.get(`${pid}::${s.discipline_id}`) ?? 0
-      disc = { disciplineId: did, name: d?.name ?? null, before: dBefore, after: dBefore, items: [] }
+      // "Category" label = code + name, e.g. "01 Site Pre-lims" (constant with
+      // the approval card, Telegram + email).
+      disc = { disciplineId: did, name: [d?.code, d?.name].filter(Boolean).join(' ') || null, before: dBefore, after: dBefore, items: [] }
       proj.disciplines.push(disc)
     }
     const inc = increment(s)
@@ -140,7 +142,7 @@ export async function getHomeBudgetGroups(
     disc.items.push({
       id: s.id,
       wsCode: s.ws_code ?? null,
-      subName: sub?.name ?? null,
+      subName: [sub?.code, sub?.name].filter(Boolean).join(' ') || null, // "Sub-category" = code + name, e.g. "101 Soil"
       amount: Number(s.total_amount ?? 0),
       docUrl: ref.docUrl,
       createdAt: ref.createdAt,
