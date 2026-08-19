@@ -87,9 +87,10 @@ export async function sendMyApprovalTest(): Promise<{ ok: boolean; error?: strin
     if (!data || data.isIB) continue
     tried++
     try {
-      // attach:false — keep the test fast + reliable; the real approver cards
-      // carry the working Excel + evidence.
-      const res = await sendApprovalToChat(svc, token, chatId, data, { dryRun: true, attach: false })
+      // attach:true — the test now carries the full working: Computed Working
+      // PDF + source Excel + evidence, exactly like a real approver card. The
+      // page's maxDuration is bumped so the extra sends fit the time budget.
+      const res = await sendApprovalToChat(svc, token, chatId, data, { dryRun: true, attach: true })
       if (res.ok) sent++
       else lastError = res.error ?? 'send failed'
     } catch (e) {
@@ -118,8 +119,16 @@ export async function sendApprovalTestToUser(
   if (!can(perms, 'cost-control', 'admin')) return { ok: false, error: 'Only a Cost Control admin can send test cards to others.' }
   if (!targetUserId) return { ok: false, error: 'Pick a teammate first.' }
 
-  const supabase = await createClient()
-  const { data: pref } = await supabase
+  const token = process.env.TELEGRAM_BOT_TOKEN
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY
+  if (!token || !url || !key) return { ok: false, error: 'Telegram is not fully configured on the server yet.' }
+  const svc = createServiceClient(url, key, { auth: { persistSession: false } })
+
+  // Read the TARGET's Telegram via the service client. notification_preferences
+  // is RLS'd to auth.uid(), so the session client only ever sees the caller's own
+  // row — which is why other connected teammates looked "not connected".
+  const { data: pref } = await svc
     .from('notification_preferences')
     .select('telegram, telegram_chat_id')
     .eq('user_id', targetUserId)
@@ -128,12 +137,6 @@ export async function sendApprovalTestToUser(
   if (!chatId || pref?.telegram === false) {
     return { ok: false, error: 'That teammate has not connected their Telegram yet.' }
   }
-
-  const token = process.env.TELEGRAM_BOT_TOKEN
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY
-  if (!token || !url || !key) return { ok: false, error: 'Telegram is not fully configured on the server yet.' }
-  const svc = createServiceClient(url, key, { auth: { persistSession: false } })
 
   const ccSettings = await getCcSettings()
   const { data: cands } = await svc
@@ -159,7 +162,7 @@ export async function sendApprovalTestToUser(
     if (!data || data.isIB) continue
     tried++
     try {
-      const res = await sendApprovalToChat(svc, token, chatId, data, { dryRun: true, attach: false })
+      const res = await sendApprovalToChat(svc, token, chatId, data, { dryRun: true, attach: true })
       if (res.ok) sent++
       else lastError = res.error ?? 'send failed'
     } catch (e) {

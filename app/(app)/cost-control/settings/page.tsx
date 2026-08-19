@@ -1,11 +1,15 @@
 import { requirePermission } from '@/lib/auth'
 import { createClient } from '@/lib/supabase/server'
+import { createClient as createServiceClient } from '@supabase/supabase-js'
 import { getCcSettings } from '@/lib/cost-control/settings'
 import { PageHeader } from '@/components/PageHeader'
 import { Card } from '@/components/ui/card'
 import { CcSettingsForm } from './settings-form'
 
 export const dynamic = 'force-dynamic'
+// The "Send me a test card" action renders a card + generates the Computed
+// Working PDF + forwards the Excel & evidence, so give it room past the 10s default.
+export const maxDuration = 60
 
 export default async function CostControlSettingsPage() {
   await requirePermission('cost-control', 'admin')
@@ -25,12 +29,16 @@ export default async function CostControlSettingsPage() {
   }))
 
   // Teammates who have connected Telegram — the ones we can send a test approval
-  // card to (for rolling the feature out to approvers one by one).
-  const { data: connRows } = await supabase
-    .from('notification_preferences')
-    .select('user_id')
-    .eq('telegram', true)
-    .not('telegram_chat_id', 'is', null)
+  // card to (for rolling the feature out to approvers one by one). Read via the
+  // SERVICE client: notification_preferences is RLS'd to auth.uid(), so the
+  // session client would only ever see the admin's own row (this page is already
+  // admin-gated above).
+  const svcUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+  const svcKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+  const svc = svcUrl && svcKey ? createServiceClient(svcUrl, svcKey, { auth: { persistSession: false } }) : null
+  const { data: connRows } = svc
+    ? await svc.from('notification_preferences').select('user_id').eq('telegram', true).not('telegram_chat_id', 'is', null)
+    : { data: [] as Array<{ user_id: string }> }
   const connectedIds = new Set((connRows ?? []).map(r => r.user_id as string))
   const connectedUsers = users.filter(u => connectedIds.has(u.id))
 
