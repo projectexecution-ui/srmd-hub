@@ -194,6 +194,13 @@ export default async function ApprovalsInboxPage({
     blMap.set(k, cur)
   }
 
+  // Whole-project ERP budget (every budget line, all disciplines) — the base
+  // figure management tracks against, shown as the project card headline.
+  const erpBudgetByProject = new Map<string, number>()
+  for (const b of (budgetLines ?? []) as BudgetLineRow[]) {
+    erpBudgetByProject.set(b.project_id, (erpBudgetByProject.get(b.project_id) ?? 0) + Number(b.current_budget_amt ?? 0))
+  }
+
   const chainVers = new Map<string, Array<{ ver: number; total: number }>>()
   for (const v of (priorVersions ?? []) as Array<{ chain_anchor_id: string | null; version_no: number | null; total_amount: number | null }>) {
     if (!v.chain_anchor_id) continue
@@ -375,6 +382,7 @@ export default async function ApprovalsInboxPage({
           const tone = toneFor(code || pid)
           const projBefore = approvedByProject.get(pid) ?? 0
           const projInc = items.reduce((s, r) => s + increment(r), 0)
+          const erpBudget = erpBudgetByProject.get(pid) ?? 0
 
           // Group this project's shown budgets by sub-discipline.
           const byDisc = new Map<string, WSRow[]>()
@@ -404,10 +412,16 @@ export default async function ApprovalsInboxPage({
                     {items.length} {showAll ? 'pending' : 'waiting on you'}
                   </span>
                 </div>
+                {ccSettings.show_erp_columns && erpBudget > 0 && (
+                  <div className="mt-2 flex items-baseline gap-x-2 flex-wrap tabular-nums">
+                    <span className="text-[10px] uppercase tracking-wide text-gray-400">Project budget (ERP)</span>
+                    <span className="text-base font-bold text-gray-900">{formatINR(erpBudget)}</span>
+                  </div>
+                )}
                 {haveApproved && (
-                  <div className="mt-2 flex items-baseline gap-x-2 gap-y-0.5 flex-wrap tabular-nums">
-                    <span className="text-[10px] uppercase tracking-wide text-gray-400">Project budget approved</span>
-                    <span className="text-base font-bold text-gray-900">{formatINR(projBefore)}</span>
+                  <div className={`${ccSettings.show_erp_columns && erpBudget > 0 ? 'mt-0.5' : 'mt-2'} flex items-baseline gap-x-2 gap-y-0.5 flex-wrap tabular-nums`}>
+                    <span className="text-[10px] uppercase tracking-wide text-gray-400">Approved so far</span>
+                    <span className="text-sm font-bold text-gray-900">{formatINR(projBefore)}</span>
                     <ArrowRight className="h-3 w-3 text-gray-400 self-center" />
                     <span className="text-sm font-bold text-emerald-700">{formatINR(projBefore + projInc)}</span>
                     <span className="text-[11px] text-gray-500">if you approve {items.length === 1 ? 'this' : 'these'} (+{formatINR(projInc)})</span>
