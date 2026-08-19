@@ -197,13 +197,7 @@ export async function sendApprovalToChat(
     try {
       const rows = await loadComputedWorkingRows(svc, data.wsId)
       if (rows.length) {
-        const pdf = buildComputedWorkingPdf({
-          wsCode: data.wsCode,
-          project: data.input.project.name || data.input.project.code,
-          category: data.input.category,
-          subCategory: data.input.subCategory,
-          total: data.amount,
-        }, rows)
+        const pdf = buildComputedWorkingPdf(data.input, data.wsCode, rows)
         await tgSendDocument(token, chatId, new Uint8Array(pdf), `${data.wsCode}-computed-working.pdf`, `Computed working · ${data.wsCode}`, 'application/pdf')
       }
     } catch { /* best-effort — the card still carries the numbers */ }
