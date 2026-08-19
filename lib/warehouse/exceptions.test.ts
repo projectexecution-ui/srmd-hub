@@ -240,11 +240,14 @@ describe('the report catalogue', () => {
     expect(DEFERRED_REPORTS).toHaveLength(2)
     for (const d of DEFERRED_REPORTS) expect(d.why.length).toBeGreaterThan(40)
   })
-  it('covers the 14 from the review — 13 built plus 2 deferred, with 2 added since', () => {
+  it('covers the 14 from the review — 14 built plus 2 deferred, with 3 added since', () => {
     // "Differs from IN4" came out of following IN4's item as the base.
     // "Voided entries" moved from deferred to built once voiding existed: the
     // reason it was deferred — "nothing can be edited yet" — stopped being true.
-    expect(CONTROL_REPORTS.length + DEFERRED_REPORTS.length).toBe(15)
+    // "Requests waiting" arrived with the request flow, which the review never
+    // asked for because the module had no way to ask for material at all.
+    expect(CONTROL_REPORTS.length + DEFERRED_REPORTS.length).toBe(16)
+    expect(CONTROL_REPORTS.some(r => r.key === 'requests')).toBe(true)
     expect(CONTROL_REPORTS.some(r => r.key === 'differs-from-in4')).toBe(true)
     expect(CONTROL_REPORTS.some(r => r.key === 'voided')).toBe(true)
     expect(DEFERRED_REPORTS.some(d => d.title === 'Edit history')).toBe(false)

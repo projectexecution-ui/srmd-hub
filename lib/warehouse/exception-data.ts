@@ -43,6 +43,7 @@ export async function getControlReport(
     case 'entity-settlement': return entitySettlement(ctx)
     case 'number-gaps':       return numberGaps(ctx)
     case 'voided':            return voidedEntries(ctx)
+    case 'requests':          return requestsWaiting(ctx)
   }
 }
 
@@ -1066,4 +1067,78 @@ async function voidedEntries(ctx: Ctx): Promise<ReportView> {
 function personName(p: unknown): string | null {
   const o = p as { full_name?: string | null; email?: string | null } | null
   return o ? (o.full_name || o.email || null) : null
+}
+
+// ===========================================================================
+// 14 · Requests waiting
+//
+// The queue nobody wants to be at the bottom of. Grouped by the store being
+// asked, because that is who can clear it, and ordered oldest first — ageing is
+// what makes a request queue self-policing. Not period-filtered: a request
+// raised in June that is still open is exactly what this exists to surface.
+// ===========================================================================
+async function requestsWaiting(ctx: Ctx): Promise<ReportView> {
+  const { getRequestLanes } = await import('./request-data')
+  const lanes = await getRequestLanes(400)
+  if (lanes.error) return shell(ctx, { error: lanes.error })
+
+  const open = [...lanes.toApprove, ...lanes.toIssue, ...lanes.mine, ...lanes.recent]
+    .filter((r, i, all) => all.findIndex(x => x.id === r.id) === i)
+    .filter(r => r.status === 'pending' || r.status === 'approved' || r.status === 'part_issued')
+    .sort((a, b) => b.age - a.age)
+
+  const byStore = new Map<string, typeof open>()
+  for (const r of open) {
+    if (!byStore.has(r.storeName)) byStore.set(r.storeName, [])
+    byStore.get(r.storeName)!.push(r)
+  }
+
+  const groups = [...byStore.entries()]
+    .sort((a, b) => b[1].length - a[1].length || a[0].localeCompare(b[0]))
+    .map(([store, rs]) => ({
+      label: `${store} — ${rs.length} ${rs.length === 1 ? 'request' : 'requests'} outstanding`,
+      rows: rs.map(r => [
+        cell(formatDate(r.day)),
+        cell(r.reqNo),
+        cell(r.destination),
+        cell(r.purpose),
+        cell(r.requestedBy ?? '—'),
+        cell(`${formatNumber(r.age, 0)} days`, r.age,
+          r.age >= 7 ? 'bad' : r.age >= 3 ? 'warn' : undefined),
+        cell(r.status === 'pending'
+          ? `waiting for ${r.stagesNeeded - r.stagesDone} approval${r.stagesNeeded - r.stagesDone === 1 ? '' : 's'}`
+          : r.status === 'part_issued' ? `${r.pct}% issued` : 'with the store',
+          null, r.status === 'pending' ? 'warn' : undefined),
+        ...(ctx.showValues ? [MONEY(r.estValue)] : []),
+      ]),
+    }))
+
+  const waitingApproval = open.filter(r => r.status === 'pending').length
+  const week = open.filter(r => r.age >= 7).length
+
+  return shell(ctx, {
+    columns: [
+      { header: 'Raised' }, { header: 'Request', width: 18 },
+      { header: 'For', width: 22 }, { header: 'What for', width: 30 },
+      { header: 'Asked by', width: 18 },
+      { header: 'Waiting', align: 'right' }, { header: 'Stuck on', width: 22 },
+      ...(ctx.showValues ? [{ header: 'About', align: 'right' as const }] : []),
+    ],
+    groups,
+    kpis: [
+      { label: 'requests outstanding', value: String(open.length),
+        tone: open.length ? 'warn' : undefined },
+      { label: 'waiting for approval', value: String(waitingApproval),
+        tone: waitingApproval ? 'warn' : undefined },
+      { label: 'waiting a week or more', value: String(week),
+        tone: week ? 'bad' : undefined,
+        hint: 'a request nobody has answered in a week is a request nobody read' },
+    ],
+    caveats: [
+      'A position as at today, so the period filter does not apply — a request raised in June and still open is the point.',
+      'Value is each item’s last known rate, indicative only, and never a commitment.',
+      'Requests already issued, rejected or withdrawn are not here. They are on the request itself.',
+    ],
+    emptyGood: 'Nothing is outstanding. Every request has been answered.',
+  })
 }

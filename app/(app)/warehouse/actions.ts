@@ -11,6 +11,7 @@ import { in4Key, planIn4Items, FALLBACK_UOM } from '@/lib/warehouse/in4-items'
 import { runIn4Sync } from '@/lib/warehouse/in4-sync-apply'
 import type { SyncGroup } from '@/lib/warehouse/in4-sync'
 import { buildSheet, submitBlocker, adjustments } from '@/lib/warehouse/count'
+import { statusAfterIssue, issuableBlocker } from '@/lib/warehouse/requests'
 import type { GateInInput } from '@/lib/warehouse/types'
 import type { In4ItemSpec } from '@/lib/warehouse/in4-items'
 import type { CountScope, SheetSource } from '@/lib/warehouse/count'
@@ -248,6 +249,10 @@ export type GateOutInput = {
   returnDueDate: string | null
   vehicleNo: string | null
   remarks: string | null
+  /** The request this issue answers, when it answers one. A request never gets
+   *  its own issue path — stock must only ever move one way — so the OUT entry
+   *  simply carries the link and closes the request down as it goes. */
+  requestId?: string | null
   lines: Array<{ itemId: string; qty: number; rate: number | null }>
 }
 
@@ -319,6 +324,19 @@ export async function saveGateOut(input: GateOutInput): Promise<SaveResult> {
     if (blocked) return { ok: false, error: blocked }
   }
 
+  if (input.requestId) {
+    const { data: rq } = await sb.from('wh_requests')
+      .select('req_no, status, stages_needed, stages_done, requested_by')
+      .eq('id', input.requestId).maybeSingle()
+    if (!rq) return { ok: false, error: 'That request no longer exists.' }
+    const refusal = issuableBlocker({
+      reqNo: rq.req_no, status: rq.status,
+      stagesNeeded: rq.stages_needed, stagesDone: rq.stages_done,
+      requestedBy: rq.requested_by, approvers: [],
+    })
+    if (refusal) return { ok: false, error: refusal }
+  }
+
   // A store move gets its own series because it never leaves the campus.
   // Everything that actually goes out of the gate — a site issue or a vendor
   // taking his material back — belongs in the one OUT sequence. (#1)
@@ -343,6 +361,7 @@ export async function saveGateOut(input: GateOutInput): Promise<SaveResult> {
       return_due_date: input.destType === 'site' && input.isReturnable ? input.returnDueDate : null,
       vehicle_no: input.vehicleNo,
       remarks: input.remarks,
+      request_id: input.requestId ?? null,
       created_by: me?.id ?? null,
     })
     .select('id, entry_no')
@@ -360,10 +379,52 @@ export async function saveGateOut(input: GateOutInput): Promise<SaveResult> {
   const moveErr = await applyOutStock(header.id, input, lines, me?.id ?? null)
   if (moveErr) return { ok: false, error: moveErr }
 
+  if (input.requestId) await creditRequest(input.requestId, lines)
+
   revalidatePath('/warehouse')
   revalidatePath('/warehouse/out')
   revalidatePath('/warehouse/stock')
+  revalidatePath('/warehouse/requests')
   return { ok: true, entryNo: header.entry_no }
+}
+
+/** Credit an issue against the request that asked for it, and move the request
+ *  along: part issued while anything is outstanding, issued once nothing is.
+ *
+ *  Recomputed from the LINES rather than incremented blindly, so a second issue
+ *  against the same request cannot drift, and an item issued that was never
+ *  asked for is simply ignored here — it is on the OUT entry either way, which
+ *  is the record that matters for stock. */
+async function creditRequest(
+  requestId: string,
+  lines: GateOutInput['lines'],
+): Promise<void> {
+  const sb = await createClient()
+  const { data: reqLines } = await sb.from('wh_request_lines')
+    .select('id, item_id, qty, issued_qty').eq('request_id', requestId)
+  if (!reqLines?.length) return
+
+  const issuedNow = new Map<string, number>()
+  for (const l of lines) issuedNow.set(l.itemId, (issuedNow.get(l.itemId) ?? 0) + l.qty)
+
+  const after: Array<{ qty: number; issuedQty: number }> = []
+  for (const rl of reqLines) {
+    const add = issuedNow.get(rl.item_id) ?? 0
+    const next = Number(rl.issued_qty) + add
+    after.push({ qty: Number(rl.qty), issuedQty: next })
+    if (add > 0) {
+      await sb.from('wh_request_lines').update({ issued_qty: next }).eq('id', rl.id)
+    }
+  }
+
+  // Never reopen a request that was already finished, and never touch one that
+  // has been rejected or withdrawn since the keeper opened his screen.
+  const { data: cur } = await sb.from('wh_requests').select('status').eq('id', requestId).maybeSingle()
+  if (!cur || cur.status === 'rejected' || cur.status === 'cancelled') return
+
+  await sb.from('wh_requests')
+    .update({ status: statusAfterIssue(after) })
+    .eq('id', requestId)
 }
 
 /** A site issue takes stock away. A store move takes it from one shelf and puts

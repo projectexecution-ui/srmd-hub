@@ -263,7 +263,7 @@ export type ReportKey =
   | 'count-variance' | 'vendor-balance' | 'shortage-damage' | 'no-po'
   | 'dead-stock' | 'returnables' | 'entity-settlement' | 'rate-variance'
   | 'number-gaps' | 'po-pending' | 'over-receipt' | 'differs-from-in4'
-  | 'voided'
+  | 'voided' | 'requests'
 
 export type ReportMeta = {
   key: ReportKey
@@ -362,6 +362,13 @@ export const CONTROL_REPORTS: ReportMeta[] = [
     blurb: 'A number was handed out but has no entry against it',
     question: 'Did a truck come in or go out without being written down?',
     usesPeriod: true,
+  },
+  {
+    key: 'requests',
+    title: 'Requests waiting',
+    blurb: 'What a site asked for and has not got — by store, oldest first',
+    question: 'Who is waiting on whom, and for how long?',
+    usesPeriod: false,
   },
   {
     key: 'voided',

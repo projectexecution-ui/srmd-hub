@@ -1,0 +1,279 @@
+'use client'
+
+import { useState, useTransition } from 'react'
+import { useRouter } from 'next/navigation'
+import Link from 'next/link'
+import { toast } from 'sonner'
+import { Card } from '@/components/ui/card'
+import { confirm } from '@/components/ui/confirm-dialog'
+import { formatDate, formatDateTime } from '@/lib/utils'
+import { formatQty, formatINR } from '@/lib/warehouse/format'
+import { approveRequest, rejectRequest, cancelRequest } from '../../request-actions'
+import { STATUS_LABEL, STATUS_TONE, REJECT_REASON_MIN } from '@/lib/warehouse/requests'
+import type { RequestDetail } from '@/lib/warehouse/request-data'
+import {
+  Loader2, Stamp, X, Info, PackageCheck, Ban, TriangleAlert, ArrowRight,
+} from 'lucide-react'
+
+const inputCls =
+  'w-full rounded-lg border border-slate-300 px-2.5 py-2 text-sm bg-white min-h-[40px] ' +
+  'focus:outline-none focus:ring-2 focus:ring-emerald-400/40 focus:border-emerald-400'
+const labelCls = 'block text-[10px] font-extrabold uppercase tracking-wider text-slate-400 mb-1'
+
+const TONE: Record<string, string> = {
+  wait: 'bg-amber-100 text-amber-900 border-amber-200',
+  go: 'bg-emerald-100 text-emerald-800 border-emerald-200',
+  part: 'bg-sky-100 text-sky-800 border-sky-200',
+  done: 'bg-slate-100 text-slate-600 border-slate-200',
+  bad: 'bg-rose-100 text-rose-800 border-rose-200',
+  dead: 'bg-slate-100 text-slate-400 border-slate-200',
+}
+
+export function RequestClient({
+  request: r, showValues, canApprove, whyNotApprove, canIssue, whyNotIssue, canCancel,
+}: {
+  request: RequestDetail
+  showValues: boolean
+  canApprove: boolean
+  whyNotApprove: string | null
+  canIssue: boolean
+  whyNotIssue: string | null
+  canCancel: boolean
+}) {
+  const router = useRouter()
+  const [busy, start] = useTransition()
+  const [rejecting, setRejecting] = useState(false)
+  const [reason, setReason] = useState('')
+
+  return (
+    <div className="space-y-3">
+      {/* Where it stands, first thing, in one band. */}
+      <Card className={`p-3 shadow-sm border ${TONE[STATUS_TONE[r.status]]}`}>
+        <div className="flex items-start justify-between gap-3 flex-wrap">
+          <div>
+            <p className="text-[14px] font-extrabold">{STATUS_LABEL[r.status]}</p>
+            <p className="text-[12px] mt-0.5">
+              Raised {formatDate(r.day)}{r.requestedBy ? ` by ${r.requestedBy}` : ''}
+              {r.age > 0 ? ` · ${r.age} ${r.age === 1 ? 'day' : 'days'} ago` : ' · today'}
+            </p>
+          </div>
+          {r.status === 'part_issued' && (
+            <p className="text-[13px] font-extrabold">{r.pct}% issued</p>
+          )}
+        </div>
+
+        {r.status === 'pending' && r.stagesNeeded > 0 && (
+          <p className="text-[12px] mt-1.5">
+            {r.stagesDone} of {r.stagesNeeded} {r.stagesNeeded === 1 ? 'approval' : 'approvals'} done
+            {r.ruleAtRaise === 'above_value' && r.estValue != null && showValues
+              ? ` · about ${formatINR(r.estValue)}`
+              : ''}
+          </p>
+        )}
+        {r.status === 'rejected' && r.rejectReason && (
+          <p className="text-[12.5px] mt-1.5">
+            <b>Reason:</b> {r.rejectReason}{r.rejectedBy ? ` — ${r.rejectedBy}` : ''}
+          </p>
+        )}
+        {r.status === 'cancelled' && (
+          <p className="text-[12.5px] mt-1.5">
+            Withdrawn{r.cancelledBy ? ` by ${r.cancelledBy}` : ''}. Nobody refused it.
+          </p>
+        )}
+      </Card>
+
+      <Card className="p-3 shadow-sm">
+        <dl className="grid sm:grid-cols-2 gap-x-4 gap-y-1.5">
+          {[
+            ['Asking', r.storeName],
+            ['Going to', r.destination],
+            ['What for', r.purpose],
+            ['Needed by', r.needBy ? formatDate(r.needBy) : 'not stated'],
+          ].map(([k, v]) => (
+            <div key={k} className="flex gap-2 text-[12.5px] min-w-0">
+              <dt className="text-slate-500 flex-shrink-0 w-[86px]">{k}</dt>
+              <dd className="font-semibold text-slate-800 min-w-0 break-words">{v}</dd>
+            </div>
+          ))}
+        </dl>
+
+        {r.approvals.length > 0 && (
+          <div className="mt-2.5 pt-2.5 border-t border-slate-100 space-y-1">
+            {r.approvals.map(a => (
+              <p key={a.stage} className="text-[11.5px] text-emerald-800 flex items-center gap-1.5">
+                <Stamp className="h-3.5 w-3.5" />
+                Approval {a.stage} — {a.by}, {formatDateTime(a.at)}
+              </p>
+            ))}
+          </div>
+        )}
+      </Card>
+
+      {/* Each line against what the store actually holds, so the keeper is not
+          guessing and the requester can see why only part came. */}
+      <Card className="p-0 shadow-sm overflow-hidden">
+        <p className="px-3 pt-3 pb-2 text-[11px] font-extrabold uppercase tracking-wider text-slate-400">
+          {r.items.length} {r.items.length === 1 ? 'item' : 'items'} asked for
+        </p>
+        <div className="divide-y divide-slate-100">
+          {r.items.map(it => {
+            const shortNow = it.outstanding > it.available
+            return (
+              <div key={it.lineId} className="px-3 py-2.5">
+                <div className="flex items-start justify-between gap-3">
+                  <p className="text-[13px] font-semibold text-slate-800 min-w-0">
+                    {it.itemName}
+                    {it.itemCode && (
+                      <span className="ml-1.5 font-mono text-[10px] font-normal text-slate-400">{it.itemCode}</span>
+                    )}
+                  </p>
+                  <p className="text-[13px] font-bold tabular-nums text-slate-900 whitespace-nowrap">
+                    {formatQty(it.qty)} <span className="font-normal text-slate-400">{it.unit}</span>
+                  </p>
+                </div>
+                <p className="text-[11px] mt-0.5">
+                  {it.issuedQty > 0 && (
+                    <span className="text-emerald-700 font-semibold mr-2">
+                      {formatQty(it.issuedQty)} issued
+                    </span>
+                  )}
+                  {it.outstanding > 0 && (
+                    <span className="text-amber-800 font-semibold mr-2">
+                      {formatQty(it.outstanding)} still to come
+                    </span>
+                  )}
+                  <span className={shortNow ? 'text-rose-700 font-semibold' : 'text-slate-500'}>
+                    store holds {formatQty(it.available)} {it.unit}
+                  </span>
+                </p>
+                {it.note && <p className="text-[11px] text-slate-500 mt-0.5">{it.note}</p>}
+              </div>
+            )
+          })}
+        </div>
+      </Card>
+
+      {r.issues.length > 0 && (
+        <Card className="p-3 shadow-sm">
+          <p className="text-[11px] font-extrabold uppercase tracking-wider text-slate-400 mb-1.5">
+            Issued against this request
+          </p>
+          {r.issues.map(i => (
+            <Link key={i.id} href={`/warehouse/entries/out/${i.id}`}
+              className="flex items-center justify-between gap-2 py-1 text-[12.5px] hover:underline">
+              <span className={i.voided ? 'line-through text-slate-400' : 'text-slate-700'}>
+                <span className="font-mono text-[11px]">{i.entryNo}</span> · {formatDate(i.day)}
+              </span>
+              {i.voided && <span className="text-[11px] font-bold text-rose-600">voided</span>}
+            </Link>
+          ))}
+        </Card>
+      )}
+
+      {/* ---- What can be done next ---- */}
+      <Card className="p-3 shadow-sm space-y-2">
+        <p className="text-[11px] font-extrabold uppercase tracking-wider text-slate-400">Next step</p>
+
+        {canApprove && !rejecting && (
+          <div className="flex flex-wrap gap-2">
+            <button type="button" disabled={busy}
+              className="rounded-lg bg-emerald-600 px-3 py-2 min-h-[42px] text-[12.5px] font-bold text-white
+                         hover:bg-emerald-700 disabled:opacity-50 inline-flex items-center gap-1.5"
+              onClick={() => start(async () => {
+                const res = await approveRequest(r.id)
+                if (!res.ok) { toast.error(res.error ?? 'Could not approve it.', { duration: 9000 }); return }
+                toast.success(r.stagesDone + 1 >= r.stagesNeeded
+                  ? `${r.reqNo} approved — it is with the storekeeper`
+                  : `${r.reqNo} approved — one more approval to go`)
+                router.refresh()
+              })}>
+              {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Stamp className="h-3.5 w-3.5" />}
+              Approve
+            </button>
+            <button type="button" disabled={busy} onClick={() => setRejecting(true)}
+              className="rounded-lg border-2 border-rose-200 px-3 py-2 min-h-[42px] text-[12.5px] font-bold
+                         text-rose-700 hover:bg-rose-50 inline-flex items-center gap-1.5">
+              <X className="h-3.5 w-3.5" /> Reject
+            </button>
+          </div>
+        )}
+
+        {canApprove && rejecting && (
+          <div className="space-y-2">
+            <div>
+              <label className={labelCls} htmlFor="rej">Why is it being rejected?</label>
+              <input id="rej" className={inputCls} value={reason} autoFocus
+                onChange={e => setReason(e.target.value)}
+                placeholder="Not budgeted this month — raise it in September" />
+              <p className="text-[11px] text-slate-500 mt-1">
+                At least {REJECT_REASON_MIN} characters. A rejection the requester cannot act on just gets
+                raised again tomorrow.
+              </p>
+            </div>
+            <div className="flex gap-2">
+              <button type="button" disabled={busy}
+                className="rounded-lg bg-rose-600 px-3 py-2 min-h-[42px] text-[12.5px] font-bold text-white
+                           hover:bg-rose-700 disabled:opacity-50 inline-flex items-center gap-1.5"
+                onClick={() => start(async () => {
+                  const res = await rejectRequest(r.id, reason)
+                  if (!res.ok) { toast.error(res.error ?? 'Could not reject it.', { duration: 9000 }); return }
+                  toast.success(`${r.reqNo} rejected`)
+                  setRejecting(false)
+                  router.refresh()
+                })}>
+                {busy && <Loader2 className="h-3.5 w-3.5 animate-spin" />} Reject it
+              </button>
+              <button type="button" onClick={() => { setRejecting(false); setReason('') }} disabled={busy}
+                className="rounded-lg border-2 border-slate-200 px-3 py-2 min-h-[42px] text-[12.5px] font-bold text-slate-500">
+                Back
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* The rule is shown rather than the button being quietly greyed. */}
+        {whyNotApprove && !canApprove && r.status === 'pending' && (
+          <p className="text-[12px] text-amber-900 bg-amber-50 border border-amber-200 rounded-lg px-2.5 py-2 flex gap-1.5">
+            <Info className="h-3.5 w-3.5 flex-shrink-0 mt-0.5" />
+            <span>{whyNotApprove}</span>
+          </p>
+        )}
+
+        {canIssue && (
+          <Link href={`/warehouse/out?req=${r.id}`}
+            className="rounded-lg bg-sky-600 px-3 py-2 min-h-[42px] text-[12.5px] font-bold text-white
+                       hover:bg-sky-700 inline-flex items-center gap-1.5 w-fit">
+            <PackageCheck className="h-3.5 w-3.5" /> Issue against this request
+            <ArrowRight className="h-3.5 w-3.5" />
+          </Link>
+        )}
+        {whyNotIssue && r.status !== 'pending' && (
+          <p className="text-[12px] text-slate-600 bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-2 flex gap-1.5">
+            <TriangleAlert className="h-3.5 w-3.5 flex-shrink-0 mt-0.5 text-slate-400" />
+            <span>{whyNotIssue}</span>
+          </p>
+        )}
+
+        {canCancel && (r.status === 'pending' || r.status === 'approved') && (
+          <button type="button" disabled={busy}
+            className="rounded-lg border-2 border-slate-200 px-3 py-2 min-h-[42px] text-[12.5px] font-bold
+                       text-slate-500 hover:border-slate-300 inline-flex items-center gap-1.5 w-fit"
+            onClick={() => start(async () => {
+              const ok = await confirm({
+                title: `Withdraw ${r.reqNo}?`,
+                message: 'It disappears from the store’s queue. Nobody is recorded as having refused it.',
+                confirmLabel: 'Withdraw it',
+              })
+              if (!ok) return
+              const res = await cancelRequest(r.id)
+              if (!res.ok) { toast.error(res.error ?? 'Could not cancel it.', { duration: 9000 }); return }
+              toast.success(`${r.reqNo} withdrawn`)
+              router.refresh()
+            })}>
+            <Ban className="h-3.5 w-3.5" /> Withdraw this request
+          </button>
+        )}
+      </Card>
+    </div>
+  )
+}

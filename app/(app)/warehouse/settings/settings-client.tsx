@@ -9,11 +9,12 @@ import { saveSetting, addListValue, setListValueActive } from '../actions'
 import { StoreMap } from './store-map'
 import {
   SETTINGS, SECTIONS, NOT_BUILT,
-  isOn, rawValue, valuesHiddenRoles,
+  isOn, rawValue, valuesHiddenRoles, isRelevant,
 } from '@/lib/warehouse/settings'
 import type { SettingDef, SettingValues, HideableRole } from '@/lib/warehouse/settings'
 import type { AdminLocation } from '@/lib/warehouse/admin-data'
 import { formatDateTime } from '@/lib/utils'
+import { formatINR } from '@/lib/warehouse/format'
 import { ChevronRight, Loader2, Lock, ShieldCheck, Plus, X, Info, EyeOff } from 'lucide-react'
 
 const inputCls =
@@ -72,7 +73,7 @@ export function SettingsClient({
       </p>
 
       {SECTIONS.map(sec => {
-        const live = bySection(sec.key)
+        const live = bySection(sec.key).filter(d => isRelevant(d, values))
         const isOpenNow = open === sec.key
         // The header says the STATE, not the size: "6 of 9 on" answers the
         // question you opened the section to ask.
@@ -201,6 +202,38 @@ function SettingRow({ def, values, hideableRoles, canAdmin }: {
             </button>
           )}
           {raw && <Lock className="h-3.5 w-3.5 text-slate-400 mb-3" />}
+        </div>
+      )}
+
+      {def.kind === 'choice' && (
+        <div className="mt-2 flex flex-wrap gap-1.5">
+          {(def.choices ?? []).map(c => {
+            const picked = raw === c.value
+            return (
+              <button key={c.value} type="button" aria-pressed={picked} disabled={!canAdmin || busy}
+                onClick={() => save(c.value)}
+                className={`rounded-full border-2 px-3 py-1.5 min-h-[38px] text-[12px] font-bold transition
+                            disabled:opacity-50 ${
+                  picked ? 'border-emerald-500 bg-emerald-600 text-white'
+                         : 'border-slate-200 bg-white text-slate-600 hover:border-slate-400'}`}>
+                {c.label}
+              </button>
+            )
+          })}
+        </div>
+      )}
+
+      {def.kind === 'money' && (
+        <div className="mt-2 flex items-center gap-2">
+          <span className="text-[13px] font-bold text-slate-500">₹</span>
+          <input type="number" min={0} step={1000} className={`${inputCls} max-w-[180px]`}
+            defaultValue={raw} disabled={!canAdmin || busy} aria-label={def.label}
+            onBlur={e => { if (e.target.value !== raw) save(e.target.value) }} />
+          {Number(raw) > 0 && (
+            <span className="text-[11.5px] text-slate-500">
+              = {formatINR(Number(raw))}
+            </span>
+          )}
         </div>
       )}
 
