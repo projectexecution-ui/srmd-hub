@@ -6,6 +6,8 @@ import { one } from './data'
 import { outstanding, fulfilledPct, ageDays, isStale, isOpen } from './requests'
 import { todayIST } from './ledger'
 import type { RequestStatus } from './requests'
+import { MODULE, DOC_TYPE } from './approval-matrix'
+import type { Rule } from './approval-matrix'
 
 export type RequestRow = {
   id: string
@@ -259,4 +261,48 @@ export async function getIssuableRequests(
     ].filter(Boolean)
     return { id: r.id, reqNo: r.req_no, label: bits.join(' · ') }
   })
+}
+
+// ===========================================================================
+// The approval chain, as configured
+// ===========================================================================
+
+/** The warehouse request rules from the shared matrix.
+ *
+ *  Read live, not frozen onto the request. Every other module in the hub works
+ *  that way, and consistency matters more here than my earlier instinct to
+ *  freeze: the matrix IS the authority, and two modules disagreeing about
+ *  whether a rule change applies to work in flight would be worse. What stays
+ *  frozen is `est_value` — the value the caps are compared against — because
+ *  that is data about the request, not configuration. */
+export async function getApprovalRules(): Promise<{ rules: Rule[]; error?: string }> {
+  const sb = await createClient()
+  const { data, error } = await sb.from('approval_rules')
+    .select('from_stage, to_stage, approver_role, override_role, amount_cap_max, requires_remarks, notes')
+    .eq('module_slug', MODULE).eq('doc_type', DOC_TYPE).eq('is_active', true)
+  if (error) return { rules: [], error: error.message }
+  return {
+    rules: (data ?? []).map(r => ({
+      fromStage: r.from_stage,
+      toStage: r.to_stage,
+      approverRole: r.approver_role,
+      overrideRole: r.override_role,
+      amountCapMax: r.amount_cap_max == null ? null : Number(r.amount_cap_max),
+      requiresRemarks: r.requires_remarks,
+      notes: r.notes,
+    })),
+  }
+}
+
+/** This person's effective role in the warehouse, which is what the matrix
+ *  compares against. Uses the hub's own resolver so a per-user override set on
+ *  /admin/users is honoured here exactly as it is everywhere else. */
+export async function myWarehouseRole(): Promise<string | null> {
+  const sb = await createClient()
+  const { data } = await sb.rpc('effective_user_role', { p_module_slug: MODULE })
+  if (typeof data === 'string' && data) return data
+  const me = await getMyUser()
+  if (!me?.id) return null
+  const { data: p } = await sb.from('profiles').select('role').eq('id', me.id).maybeSingle()
+  return p?.role ?? null
 }

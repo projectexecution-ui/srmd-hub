@@ -1,47 +1,27 @@
-/** Material requests, and the approval rule that decides how far one travels
- *  before a keeper may act on it.
+/** Material requests: raising one, and tracking how far it has been fulfilled.
  *
- *  Everything here is pure. The point of putting the approval dial in a tested
- *  function rather than inside the action is that "who has to say yes, and when"
- *  is the part somebody will argue about six months from now.
+ *  WHO approves and WHEN is not here — that moved to `approval-matrix.ts`, on
+ *  top of the hub's shared `approval_rules` table, so Aksha edits the chain at
+ *  /admin/approvals instead of asking me. This file keeps only what is not
+ *  configurable: what makes a request valid, what it is worth, and how much of
+ *  it has actually been issued.
  *
- *  The one non-obvious rule: the dial is READ ONCE, when the request is raised,
- *  and frozen onto it. If the admin later changes the setting, a request already
- *  in flight keeps the rule it was judged under. A pending request that silently
- *  changes its own requirements is unauditable.
+ *  Everything here is pure.
  */
 
+/** The stages a request can sit in.
+ *
+ *  `checked` is what makes an arbitrary chain expressible in approval_rules
+ *  rows alone: pending → checked → approved is a two-stage chain, and a
+ *  pending → approved row with an amount cap is "this role alone, up to here". */
 export type RequestStatus =
-  | 'pending' | 'approved' | 'rejected' | 'part_issued' | 'issued' | 'cancelled'
+  | 'pending' | 'checked' | 'approved' | 'rejected' | 'part_issued' | 'issued' | 'cancelled'
 
-/** How much approval a request needs. */
-export type ApprovalRule =
-  /** Nobody approves. The keeper sees it and issues it. */
-  | 'off'
-  /** Every request waits for an Atm Head. */
-  | 'always'
-  /** Only requests worth more than the threshold wait. */
-  | 'above_value'
-
-export type ApprovalConfig = {
-  rule: ApprovalRule
-  /** Rupees. Only meaningful for `above_value`. */
-  threshold: number
-  /** 1 = an Atm Head. 2 = an Atm Head, then a Trustee. */
-  stages: 1 | 2
-}
-
-export const DEFAULT_APPROVAL: ApprovalConfig = { rule: 'off', threshold: 0, stages: 1 }
-
-export const RULE_LABEL: Record<ApprovalRule, string> = {
-  off: 'No approval — the storekeeper issues it',
-  always: 'Every request needs approval',
-  above_value: 'Only requests above a value need approval',
-}
-
-/** What a request is worth, for the threshold. Uses each item's last known
- *  rate, so it is indicative — and a line with no rate contributes nothing
- *  rather than silently counting as free material. */
+/** What a request is worth, so the approval matrix has a number to compare
+ *  against its amount caps. Each item's last known rate, so indicative only —
+ *  and a line with no rate contributes NOTHING rather than silently counting as
+ *  free material. Frozen onto the request at raise time: the value is a fact
+ *  about the request, unlike the chain, which is live configuration. */
 export function estimateValue(
   lines: Array<{ qty: number; lastRate: number | null }>,
 ): { value: number; partial: boolean } {
@@ -52,46 +32,6 @@ export function estimateValue(
     value += l.qty * l.lastRate
   }
   return { value, partial }
-}
-
-/** How many approvals THIS request needs, decided once at raise time.
- *
- *  A request under an `above_value` rule whose value cannot be estimated at all
- *  is treated as needing approval. The alternative is letting an unpriced
- *  request skip the gate, which is exactly the hole somebody would find. */
-export function stagesNeeded(
-  cfg: ApprovalConfig,
-  est: { value: number; partial: boolean },
-  anyLinePriced: boolean,
-): number {
-  if (cfg.rule === 'off') return 0
-  if (cfg.rule === 'always') return cfg.stages
-  if (!anyLinePriced) return cfg.stages
-  return est.value > cfg.threshold ? cfg.stages : 0
-}
-
-/** In one sentence, why this request is or is not waiting — shown to the person
- *  raising it BEFORE they submit, so approval is never a surprise. */
-export function approvalPreview(
-  cfg: ApprovalConfig,
-  est: { value: number; partial: boolean },
-  anyLinePriced: boolean,
-  money: (n: number) => string,
-): string {
-  const stages = stagesNeeded(cfg, est, anyLinePriced)
-  if (stages === 0) {
-    return cfg.rule === 'above_value'
-      ? `Goes straight to the storekeeper — under the ${money(cfg.threshold)} approval limit.`
-      : 'Goes straight to the storekeeper. No approval needed.'
-  }
-  const who = stages === 2 ? 'an Atm Head and then a Trustee' : 'an Atm Head'
-  if (cfg.rule === 'always') return `Waits for ${who} before the storekeeper can issue it.`
-  if (!anyLinePriced) {
-    return `Waits for ${who}: no item here has a known rate, so it cannot be shown to be under the `
-      + `${money(cfg.threshold)} limit.`
-  }
-  return `Waits for ${who} — about ${money(est.value)}${est.partial ? '+' : ''}, over the `
-    + `${money(cfg.threshold)} limit.`
 }
 
 // ===========================================================================
@@ -176,62 +116,11 @@ export type RequestState = {
   approvers: Array<string | null>
 }
 
-/** Why this approval is refused, or null to record it.
- *
- *  Two rules carry the weight. A requester cannot approve his own request —
- *  that is the whole point of the stage. And in a two-stage chain the same
- *  person cannot fill both, or "Atm Head then Trustee" is one signature
- *  wearing two hats. */
-export function approveBlocker(
-  r: RequestState,
-  actorId: string | null,
-  canApprove: boolean,
-): string | null {
-  if (r.status === 'cancelled') return `${r.reqNo} was cancelled.`
-  if (r.status === 'rejected') return `${r.reqNo} was already rejected.`
-  if (r.status !== 'pending') {
-    return `${r.reqNo} is not waiting for approval — it is already ${STATUS_LABEL[r.status].toLowerCase()}.`
-  }
-  if (r.stagesNeeded === 0) return `${r.reqNo} does not need approval.`
-  if (r.stagesDone >= r.stagesNeeded) return `${r.reqNo} already has every approval it needs.`
-  if (!canApprove) return 'Only an admin or Atm Head can approve a request.'
-  if (actorId && r.requestedBy === actorId) {
-    return 'You raised this request, so you cannot approve it. That is the point of the approval.'
-  }
-  if (actorId && r.approvers.includes(actorId)) {
-    return 'You have already approved this request. The second approval has to be somebody else.'
-  }
-  return null
-}
-
-/** The status a request lands in once an approval is recorded. */
-export function statusAfterApproval(r: RequestState): RequestStatus {
-  return r.stagesDone + 1 >= r.stagesNeeded ? 'approved' : 'pending'
-}
-
-export const REJECT_REASON_MIN = 6
-
-export function rejectBlocker(
-  r: RequestState,
-  reason: string,
-  canApprove: boolean,
-): string | null {
-  if (r.status !== 'pending') {
-    return `${r.reqNo} is not waiting for approval — it is already ${STATUS_LABEL[r.status].toLowerCase()}.`
-  }
-  if (!canApprove) return 'Only an admin or Atm Head can reject a request.'
-  if (reason.trim().length < REJECT_REASON_MIN) {
-    return 'Give a reason. A rejection the requester cannot act on just gets raised again tomorrow.'
-  }
-  return null
-}
-
 /** Can the keeper issue against this request yet? */
 export function issuableBlocker(r: RequestState): string | null {
-  if (r.status === 'pending') {
-    const left = r.stagesNeeded - r.stagesDone
-    return `${r.reqNo} is still waiting for ${left} ${left === 1 ? 'approval' : 'approvals'}. `
-      + 'Nothing can be issued against it yet.'
+  if (r.status === 'pending' || r.status === 'checked') {
+    return `${r.reqNo} has not finished the approval chain yet. `
+      + 'Nothing can be issued against it until it reaches the storekeeper.'
   }
   if (r.status === 'rejected') return `${r.reqNo} was rejected.`
   if (r.status === 'cancelled') return `${r.reqNo} was cancelled.`
@@ -263,6 +152,7 @@ export function fulfilledPct(lines: FulfilLine[]): number {
 
 export const STATUS_LABEL: Record<RequestStatus, string> = {
   pending: 'Waiting for approval',
+  checked: 'Checked, waiting for release',
   approved: 'With the storekeeper',
   rejected: 'Rejected',
   part_issued: 'Part issued',
@@ -272,6 +162,7 @@ export const STATUS_LABEL: Record<RequestStatus, string> = {
 
 export const STATUS_TONE: Record<RequestStatus, 'wait' | 'go' | 'bad' | 'part' | 'done' | 'dead'> = {
   pending: 'wait',
+  checked: 'wait',
   approved: 'go',
   rejected: 'bad',
   part_issued: 'part',
@@ -281,7 +172,7 @@ export const STATUS_TONE: Record<RequestStatus, 'wait' | 'go' | 'bad' | 'part' |
 
 /** Requests still needing something from somebody. */
 export function isOpen(s: RequestStatus): boolean {
-  return s === 'pending' || s === 'approved' || s === 'part_issued'
+  return s === 'pending' || s === 'checked' || s === 'approved' || s === 'part_issued'
 }
 
 /** How long a request has been waiting, in days. Ageing is what makes a

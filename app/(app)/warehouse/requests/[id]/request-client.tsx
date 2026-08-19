@@ -8,8 +8,9 @@ import { Card } from '@/components/ui/card'
 import { confirm } from '@/components/ui/confirm-dialog'
 import { formatDate, formatDateTime } from '@/lib/utils'
 import { formatQty, formatINR } from '@/lib/warehouse/format'
-import { approveRequest, rejectRequest, cancelRequest } from '../../request-actions'
-import { STATUS_LABEL, STATUS_TONE, REJECT_REASON_MIN } from '@/lib/warehouse/requests'
+import { moveRequest, cancelRequest } from '../../request-actions'
+import { STATUS_TONE } from '@/lib/warehouse/requests'
+import { STAGE_LABEL } from '@/lib/warehouse/approval-matrix'
 import type { RequestDetail } from '@/lib/warehouse/request-data'
 import {
   Loader2, Stamp, X, Info, PackageCheck, Ban, TriangleAlert, ArrowRight,
@@ -29,20 +30,23 @@ const TONE: Record<string, string> = {
   dead: 'bg-slate-100 text-slate-400 border-slate-200',
 }
 
+type Move = { toStage: string; needsRemarks: boolean; label: string }
+
 export function RequestClient({
-  request: r, showValues, canApprove, whyNotApprove, canIssue, whyNotIssue, canCancel,
+  request: r, showValues, moves, whyNoMoves, canIssue, whyNotIssue, canCancel,
 }: {
   request: RequestDetail
   showValues: boolean
-  canApprove: boolean
-  whyNotApprove: string | null
+  /** Generated from the approval rules, not hard-coded. */
+  moves: Move[]
+  whyNoMoves: string | null
   canIssue: boolean
   whyNotIssue: string | null
   canCancel: boolean
 }) {
   const router = useRouter()
   const [busy, start] = useTransition()
-  const [rejecting, setRejecting] = useState(false)
+  const [open, setOpen] = useState<Move | null>(null)
   const [reason, setReason] = useState('')
 
   return (
@@ -51,7 +55,7 @@ export function RequestClient({
       <Card className={`p-3 shadow-sm border ${TONE[STATUS_TONE[r.status]]}`}>
         <div className="flex items-start justify-between gap-3 flex-wrap">
           <div>
-            <p className="text-[14px] font-extrabold">{STATUS_LABEL[r.status]}</p>
+            <p className="text-[14px] font-extrabold">{STAGE_LABEL[r.status]}</p>
             <p className="text-[12px] mt-0.5">
               Raised {formatDate(r.day)}{r.requestedBy ? ` by ${r.requestedBy}` : ''}
               {r.age > 0 ? ` · ${r.age} ${r.age === 1 ? 'day' : 'days'} ago` : ' · today'}
@@ -62,12 +66,12 @@ export function RequestClient({
           )}
         </div>
 
-        {r.status === 'pending' && r.stagesNeeded > 0 && (
+        {(r.status === 'pending' || r.status === 'checked') && (
           <p className="text-[12px] mt-1.5">
-            {r.stagesDone} of {r.stagesNeeded} {r.stagesNeeded === 1 ? 'approval' : 'approvals'} done
-            {r.ruleAtRaise === 'above_value' && r.estValue != null && showValues
-              ? ` · about ${formatINR(r.estValue)}`
-              : ''}
+            {r.approvals.length > 0
+              ? `${r.approvals.length} ${r.approvals.length === 1 ? 'approval' : 'approvals'} so far`
+              : 'No approval yet'}
+            {r.estValue != null && showValues ? ` · about ${formatINR(r.estValue)}` : ''}
           </p>
         )}
         {r.status === 'rejected' && r.rejectReason && (
@@ -174,56 +178,59 @@ export function RequestClient({
       <Card className="p-3 shadow-sm space-y-2">
         <p className="text-[11px] font-extrabold uppercase tracking-wider text-slate-400">Next step</p>
 
-        {canApprove && !rejecting && (
+        {/* One button per hop the rules allow this person, at this stage, at
+            this value. A new stage or a new approver role needs no code here. */}
+        {moves.length > 0 && !open && (
           <div className="flex flex-wrap gap-2">
-            <button type="button" disabled={busy}
-              className="rounded-lg bg-emerald-600 px-3 py-2 min-h-[42px] text-[12.5px] font-bold text-white
-                         hover:bg-emerald-700 disabled:opacity-50 inline-flex items-center gap-1.5"
-              onClick={() => start(async () => {
-                const res = await approveRequest(r.id)
-                if (!res.ok) { toast.error(res.error ?? 'Could not approve it.', { duration: 9000 }); return }
-                toast.success(r.stagesDone + 1 >= r.stagesNeeded
-                  ? `${r.reqNo} approved — it is with the storekeeper`
-                  : `${r.reqNo} approved — one more approval to go`)
-                router.refresh()
-              })}>
-              {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Stamp className="h-3.5 w-3.5" />}
-              Approve
-            </button>
-            <button type="button" disabled={busy} onClick={() => setRejecting(true)}
-              className="rounded-lg border-2 border-rose-200 px-3 py-2 min-h-[42px] text-[12.5px] font-bold
-                         text-rose-700 hover:bg-rose-50 inline-flex items-center gap-1.5">
-              <X className="h-3.5 w-3.5" /> Reject
-            </button>
+            {moves.map(m => (
+              <button key={m.toStage} type="button" disabled={busy}
+                onClick={() => { setOpen(m); setReason('') }}
+                className={`rounded-lg px-3 py-2 min-h-[42px] text-[12.5px] font-bold inline-flex items-center
+                            gap-1.5 disabled:opacity-50 ${
+                  m.toStage === 'rejected'
+                    ? 'border-2 border-rose-200 text-rose-700 hover:bg-rose-50'
+                    : 'bg-emerald-600 text-white hover:bg-emerald-700'}`}>
+                {m.toStage === 'rejected' ? <X className="h-3.5 w-3.5" /> : <Stamp className="h-3.5 w-3.5" />}
+                {m.label}
+              </button>
+            ))}
           </div>
         )}
 
-        {canApprove && rejecting && (
+        {open && (
           <div className="space-y-2">
             <div>
-              <label className={labelCls} htmlFor="rej">Why is it being rejected?</label>
-              <input id="rej" className={inputCls} value={reason} autoFocus
+              <label className={labelCls} htmlFor="mv-note">
+                {open.needsRemarks ? 'Why? (compulsory for this step)' : 'Remark (optional)'}
+              </label>
+              <input id="mv-note" className={inputCls} value={reason} autoFocus
                 onChange={e => setReason(e.target.value)}
-                placeholder="Not budgeted this month — raise it in September" />
-              <p className="text-[11px] text-slate-500 mt-1">
-                At least {REJECT_REASON_MIN} characters. A rejection the requester cannot act on just gets
-                raised again tomorrow.
-              </p>
+                placeholder={open.toStage === 'rejected'
+                  ? 'Not budgeted this month — raise it in September'
+                  : 'Anything the storekeeper should know'} />
+              {open.needsRemarks && (
+                <p className="text-[11px] text-slate-500 mt-1">
+                  An admin made a remark compulsory for this step in Admin ▸ Approvals. A decision the
+                  requester cannot act on just gets raised again tomorrow.
+                </p>
+              )}
             </div>
             <div className="flex gap-2">
               <button type="button" disabled={busy}
-                className="rounded-lg bg-rose-600 px-3 py-2 min-h-[42px] text-[12.5px] font-bold text-white
-                           hover:bg-rose-700 disabled:opacity-50 inline-flex items-center gap-1.5"
+                className={`rounded-lg px-3 py-2 min-h-[42px] text-[12.5px] font-bold text-white
+                            disabled:opacity-50 inline-flex items-center gap-1.5 ${
+                  open.toStage === 'rejected' ? 'bg-rose-600 hover:bg-rose-700'
+                                              : 'bg-emerald-600 hover:bg-emerald-700'}`}
                 onClick={() => start(async () => {
-                  const res = await rejectRequest(r.id, reason)
-                  if (!res.ok) { toast.error(res.error ?? 'Could not reject it.', { duration: 9000 }); return }
-                  toast.success(`${r.reqNo} rejected`)
-                  setRejecting(false)
+                  const res = await moveRequest(r.id, open.toStage, reason)
+                  if (!res.ok) { toast.error(res.error ?? 'Could not do that.', { duration: 10000 }); return }
+                  toast.success(`${r.reqNo} → ${STAGE_LABEL[open.toStage] ?? open.toStage}`)
+                  setOpen(null); setReason('')
                   router.refresh()
                 })}>
-                {busy && <Loader2 className="h-3.5 w-3.5 animate-spin" />} Reject it
+                {busy && <Loader2 className="h-3.5 w-3.5 animate-spin" />} {open.label}
               </button>
-              <button type="button" onClick={() => { setRejecting(false); setReason('') }} disabled={busy}
+              <button type="button" onClick={() => { setOpen(null); setReason('') }} disabled={busy}
                 className="rounded-lg border-2 border-slate-200 px-3 py-2 min-h-[42px] text-[12.5px] font-bold text-slate-500">
                 Back
               </button>
@@ -231,11 +238,11 @@ export function RequestClient({
           </div>
         )}
 
-        {/* The rule is shown rather than the button being quietly greyed. */}
-        {whyNotApprove && !canApprove && r.status === 'pending' && (
+        {/* The rule is shown rather than the button being quietly greyed out. */}
+        {whyNoMoves && (
           <p className="text-[12px] text-amber-900 bg-amber-50 border border-amber-200 rounded-lg px-2.5 py-2 flex gap-1.5">
             <Info className="h-3.5 w-3.5 flex-shrink-0 mt-0.5" />
-            <span>{whyNotApprove}</span>
+            <span>{whyNoMoves}</span>
           </p>
         )}
 

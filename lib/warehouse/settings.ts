@@ -11,8 +11,6 @@
  *  shorter one, because there is no way to tell which are real.
  */
 
-import type { ApprovalConfig, ApprovalRule } from './requests'
-
 export type SettingKey =
   | 'wh_warn_over_receipt'
   | 'wh_blind_count_default'
@@ -24,9 +22,6 @@ export type SettingKey =
   | 'wh_any_keeper_any_store'
   | 'wh_auto_sync_on_upload'
   | 'wh_requests_on'
-  | 'wh_req_approval_rule'
-  | 'wh_req_approval_threshold'
-  | 'wh_req_approval_stages'
 
 /** Four sections, not ten.
  *
@@ -165,61 +160,14 @@ export const SETTINGS: SettingDef[] = [
     section: 'rules',
     kind: 'toggle',
     label: 'Let engineers ask a store for material',
-    onEffect: 'An engineer can raise a request against any store — it lands with that store’s keeper, on his '
-      + 'screen and on his phone, and he issues against it from the usual OUT screen. Every ask is dated, '
-      + 'named and ageing, so "I asked last week" becomes a fact instead of a claim.',
+    onEffect: 'An engineer can raise a request against any store — it lands with that store’s keeper, and he '
+      + 'issues against it from the usual OUT screen. Every ask is dated, named and ageing, so "I asked last '
+      + 'week" becomes a fact instead of a claim. WHO approves a request, up to what value, and in how many '
+      + 'steps is yours to set in Admin ▸ Approvals, alongside every other module’s chain.',
     offEffect: 'There is no way to ask inside the app. Material still moves — the keeper records an OUT the '
       + 'moment he hands it over — but who asked, for what, and how long they waited is not captured anywhere.',
     fallback: 'false',
     enforcedAt: 'The Requests screen, and the Warehouse home tile',
-  },
-  {
-    key: 'wh_req_approval_rule',
-    section: 'rules',
-    kind: 'choice',
-    label: 'Approval before the store may issue against a request',
-    choices: [
-      { value: 'off', label: 'None — the storekeeper issues it' },
-      { value: 'always', label: 'Every request' },
-      { value: 'above_value', label: 'Only above a value' },
-    ],
-    showWhen: { key: 'wh_requests_on', is: 'true' },
-    onEffect: 'The request waits. Nothing can be issued against it until it is approved, and the requester is '
-      + 'told up front that it will wait — approval is never a surprise discovered later.',
-    offEffect: 'A request goes straight to the storekeeper. Fast, and right for a small site where the person '
-      + 'asking and the person holding the material already talk every day.',
-    recommended: true,
-    fallback: 'off',
-    enforcedAt: 'Raising a request, and again before any issue against it',
-  },
-  {
-    key: 'wh_req_approval_threshold',
-    section: 'rules',
-    kind: 'money',
-    label: 'Approval needed above',
-    showWhen: { key: 'wh_req_approval_rule', is: 'above_value' },
-    onEffect: 'Requests worth more than this wait for approval; cheaper ones go straight to the store. '
-      + 'Worth is each item’s last known rate — indicative, not a valuation.',
-    offEffect: 'With no amount set every request needs approval, because a limit of zero is exceeded by '
-      + 'everything. A request whose items have no rate at all also waits, rather than slipping through.',
-    fallback: '0',
-    enforcedAt: 'Raising a request',
-  },
-  {
-    key: 'wh_req_approval_stages',
-    section: 'rules',
-    kind: 'choice',
-    label: 'How many people must approve',
-    choices: [
-      { value: '1', label: 'One — an Atm Head' },
-      { value: '2', label: 'Two — an Atm Head, then a Trustee' },
-    ],
-    showWhen: { key: 'wh_req_approval_rule', isNot: 'off' },
-    onEffect: 'Two stages means two DIFFERENT people: the same person cannot fill both, or the chain is one '
-      + 'signature wearing two hats.',
-    offEffect: 'One approval is enough. The requester still cannot approve his own request.',
-    fallback: '1',
-    enforcedAt: 'Each approval on a request',
   },
   {
     key: 'wh_any_keeper_any_store',
@@ -376,19 +324,6 @@ export type HideableRole = {
   /** False when the role has no warehouse access, so hiding money from it
    *  would change nothing — worth saying rather than letting it look done. */
   hasAccess: boolean
-}
-
-/** The request-approval dial, read as one object.
- *
- *  Every screen and action reads it through here rather than parsing three
- *  settings itself, so "what is the rule right now" has exactly one answer. */
-export function approvalConfig(values: SettingValues): ApprovalConfig {
-  const raw = rawValue(values, 'wh_req_approval_rule')
-  const rule: ApprovalRule =
-    raw === 'always' || raw === 'above_value' ? raw : 'off'
-  const threshold = Number(rawValue(values, 'wh_req_approval_threshold')) || 0
-  const stages = rawValue(values, 'wh_req_approval_stages') === '2' ? 2 : 1
-  return { rule, threshold, stages }
 }
 
 /** Is a setting relevant right now? A threshold under a rule that ignores it is

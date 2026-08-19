@@ -1,18 +1,13 @@
 import { describe, expect, it } from 'vitest'
 import {
-  estimateValue, stagesNeeded, approvalPreview, raiseBlocker, shortfalls,
-  approveBlocker, statusAfterApproval, rejectBlocker, issuableBlocker,
+  estimateValue, raiseBlocker, shortfalls, issuableBlocker,
   outstanding, statusAfterIssue, fulfilledPct, isOpen, ageDays, isStale,
   STALE_REQUEST_DAYS, STATUS_LABEL,
 } from './requests'
-import type { ApprovalConfig, RaiseInput, RequestState, RequestStatus } from './requests'
-
-const money = (n: number) => `Rs ${n.toLocaleString('en-IN')}`
-const cfg = (o: Partial<ApprovalConfig> = {}): ApprovalConfig =>
-  ({ rule: 'off', threshold: 0, stages: 1, ...o })
+import type { RaiseInput, RequestState, RequestStatus } from './requests'
 
 // ===========================================================================
-// The approval dial
+// What a request is worth
 // ===========================================================================
 describe('what a request is worth', () => {
   it('adds up the priced lines', () => {
@@ -24,70 +19,6 @@ describe('what a request is worth', () => {
     const e = estimateValue([{ qty: 10, lastRate: 392 }, { qty: 500, lastRate: null }])
     expect(e.value).toBe(3920)
     expect(e.partial).toBe(true)
-  })
-})
-
-describe('how many approvals a request needs', () => {
-  const est = { value: 50_000, partial: false }
-
-  it('needs none when the rule is off', () => {
-    expect(stagesNeeded(cfg({ rule: 'off' }), est, true)).toBe(0)
-  })
-
-  it('needs every stage when the rule is always', () => {
-    expect(stagesNeeded(cfg({ rule: 'always', stages: 2 }), est, true)).toBe(2)
-  })
-
-  it('compares against the threshold when the rule is by value', () => {
-    const c = cfg({ rule: 'above_value', threshold: 25_000 })
-    expect(stagesNeeded(c, { value: 50_000, partial: false }, true)).toBe(1)
-    expect(stagesNeeded(c, { value: 10_000, partial: false }, true)).toBe(0)
-  })
-
-  it('treats exactly the threshold as under it, not over', () => {
-    const c = cfg({ rule: 'above_value', threshold: 25_000 })
-    expect(stagesNeeded(c, { value: 25_000, partial: false }, true)).toBe(0)
-  })
-
-  it('DEMANDS approval when nothing can be priced — the hole somebody would find', () => {
-    // Otherwise a request of entirely unpriced items sails past a value rule.
-    const c = cfg({ rule: 'above_value', threshold: 25_000 })
-    expect(stagesNeeded(c, { value: 0, partial: true }, false)).toBe(1)
-  })
-})
-
-describe('telling the requester before he submits', () => {
-  it('says it goes straight through when nothing is needed', () => {
-    expect(approvalPreview(cfg(), { value: 0, partial: false }, true, money))
-      .toContain('straight to the storekeeper')
-  })
-
-  it('names both approvers on a two-stage chain', () => {
-    const p = approvalPreview(cfg({ rule: 'always', stages: 2 }), { value: 0, partial: false }, true, money)
-    expect(p).toContain('Atm Head')
-    expect(p).toContain('Trustee')
-  })
-
-  it('shows the value and the limit when value is what triggered it', () => {
-    const p = approvalPreview(
-      cfg({ rule: 'above_value', threshold: 25_000 }),
-      { value: 60_000, partial: false }, true, money)
-    expect(p).toContain('60,000')
-    expect(p).toContain('25,000')
-  })
-
-  it('explains itself when the trigger was a missing rate, not a big number', () => {
-    const p = approvalPreview(
-      cfg({ rule: 'above_value', threshold: 25_000 }),
-      { value: 0, partial: true }, false, money)
-    expect(p).toContain('no item here has a known rate')
-  })
-
-  it('says why a cheap request is NOT waiting, so silence is never mysterious', () => {
-    const p = approvalPreview(
-      cfg({ rule: 'above_value', threshold: 25_000 }),
-      { value: 500, partial: false }, true, money)
-    expect(p).toContain('under the')
   })
 })
 
@@ -160,73 +91,6 @@ describe('warning about stock before submitting', () => {
   })
 })
 
-// ===========================================================================
-// Approving
-// ===========================================================================
-describe('approving', () => {
-  const st = (o: Partial<RequestState> = {}): RequestState => ({
-    reqNo: 'Rq: 17Aug26/001', status: 'pending',
-    stagesNeeded: 1, stagesDone: 0, requestedBy: 'eng', approvers: [],
-    ...o,
-  })
-
-  it('lets an Atm Head approve a waiting request', () => {
-    expect(approveBlocker(st(), 'head1', true)).toBeNull()
-  })
-
-  it('refuses the requester approving his own request', () => {
-    expect(approveBlocker(st({ requestedBy: 'head1' }), 'head1', true))
-      .toContain('cannot approve it')
-  })
-
-  it('refuses one person filling both stages of a two-stage chain', () => {
-    const r = st({ stagesNeeded: 2, stagesDone: 1, approvers: ['head1'] })
-    expect(approveBlocker(r, 'head1', true)).toContain('somebody else')
-  })
-
-  it('lets a DIFFERENT person fill the second stage', () => {
-    const r = st({ stagesNeeded: 2, stagesDone: 1, approvers: ['head1'] })
-    expect(approveBlocker(r, 'trustee', true)).toBeNull()
-  })
-
-  it('refuses someone without the authority', () => {
-    expect(approveBlocker(st(), 'keeper', false)).toContain('admin or Atm Head')
-  })
-
-  it('refuses a request that is not waiting', () => {
-    for (const s of ['approved', 'issued', 'part_issued'] as RequestStatus[]) {
-      expect(approveBlocker(st({ status: s }), 'head1', true)).toContain('not waiting')
-    }
-    expect(approveBlocker(st({ status: 'cancelled' }), 'head1', true)).toContain('cancelled')
-    expect(approveBlocker(st({ status: 'rejected' }), 'head1', true)).toContain('rejected')
-  })
-
-  it('moves to approved on the last stage, stays pending before it', () => {
-    expect(statusAfterApproval(st({ stagesNeeded: 1, stagesDone: 0 }))).toBe('approved')
-    expect(statusAfterApproval(st({ stagesNeeded: 2, stagesDone: 0 }))).toBe('pending')
-    expect(statusAfterApproval(st({ stagesNeeded: 2, stagesDone: 1 }))).toBe('approved')
-  })
-})
-
-describe('rejecting', () => {
-  const r: RequestState = {
-    reqNo: 'Rq: 17Aug26/001', status: 'pending',
-    stagesNeeded: 1, stagesDone: 0, requestedBy: 'eng', approvers: [],
-  }
-
-  it('needs a reason worth reading', () => {
-    expect(rejectBlocker(r, 'no', true)).toContain('Give a reason')
-    expect(rejectBlocker(r, 'Not budgeted this month', true)).toBeNull()
-  })
-
-  it('needs the authority', () => {
-    expect(rejectBlocker(r, 'Not budgeted this month', false)).toContain('admin or Atm Head')
-  })
-})
-
-// ===========================================================================
-// Issuing against it
-// ===========================================================================
 describe('issuing against a request', () => {
   const st = (o: Partial<RequestState> = {}): RequestState => ({
     reqNo: 'Rq: 17Aug26/001', status: 'approved',
@@ -238,9 +102,9 @@ describe('issuing against a request', () => {
     expect(issuableBlocker(st())).toBeNull()
   })
 
-  it('blocks it while approval is outstanding, and says how many are left', () => {
-    const b = issuableBlocker(st({ status: 'pending', stagesNeeded: 2, stagesDone: 0 }))
-    expect(b).toContain('2 approvals')
+  it('blocks it anywhere in the approval chain', () => {
+    expect(issuableBlocker(st({ status: 'pending' }))).toContain('approval chain')
+    expect(issuableBlocker(st({ status: 'checked' }))).toContain('approval chain')
   })
 
   it('blocks a rejected, cancelled or finished request', () => {
@@ -302,6 +166,7 @@ describe('ageing and chasing', () => {
 
   it('agrees with isOpen about what is still somebody’s problem', () => {
     expect(isOpen('pending')).toBe(true)
+    expect(isOpen('checked')).toBe(true)
     expect(isOpen('approved')).toBe(true)
     expect(isOpen('part_issued')).toBe(true)
     expect(isOpen('issued')).toBe(false)

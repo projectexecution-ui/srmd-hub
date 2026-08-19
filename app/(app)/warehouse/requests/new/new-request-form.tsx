@@ -7,8 +7,10 @@ import { Card } from '@/components/ui/card'
 import { SearchableSelect } from '@/components/ui/searchable-select'
 import { formatQty, formatINR } from '@/lib/warehouse/format'
 import { raiseRequest, checkStock } from '../../request-actions'
-import { approvalPreview, estimateValue, raiseBlocker } from '@/lib/warehouse/requests'
-import type { ApprovalConfig, ShortLine } from '@/lib/warehouse/requests'
+import { estimateValue, raiseBlocker } from '@/lib/warehouse/requests'
+import type { ShortLine } from '@/lib/warehouse/requests'
+import { waitingOn } from '@/lib/warehouse/approval-matrix'
+import type { Rule } from '@/lib/warehouse/approval-matrix'
 import type { WhSite, WhItem } from '@/lib/warehouse/types'
 import { Loader2, Plus, Trash2, Stamp, TriangleAlert, Info } from 'lucide-react'
 
@@ -21,12 +23,14 @@ type Row = { key: string; itemId: string; qty: string; note: string }
 const blank = (): Row => ({ key: Math.random().toString(36).slice(2), itemId: '', qty: '', note: '' })
 
 export function NewRequestForm({
-  sites, items, projects, approval, today,
+  sites, items, projects, rules, roleLabels, today,
 }: {
   sites: WhSite[]
   items: WhItem[]
   projects: Array<{ id: string; name: string }>
-  approval: ApprovalConfig
+  /** The live approval chain, so this sentence follows whatever is configured. */
+  rules: Rule[]
+  roleLabels: Record<string, string>
   today: string
 }) {
   const router = useRouter()
@@ -59,7 +63,12 @@ export function NewRequestForm({
     return lines.some(l => byId.get(l.itemId)?.lastRate != null)
   }, [lines, items])
 
-  const preview = approvalPreview(approval, est, anyPriced, formatINR)
+  const preview = waitingOn(
+    rules, 'pending',
+    anyPriced ? est.value : null,
+    r => roleLabels[r] ?? r,
+    formatINR,
+  )
 
   // Tell him what the store has NOT got while he is still typing. Advisory —
   // asking for material a store is out of is how the store learns to order it.

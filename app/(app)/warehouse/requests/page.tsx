@@ -5,8 +5,10 @@ import { Card } from '@/components/ui/card'
 import { QueryError } from '@/components/ui/query-error'
 import { getRequestLanes } from '@/lib/warehouse/request-data'
 import { getSettings, getShowValues } from '@/lib/warehouse/data'
-import { isOn, approvalConfig } from '@/lib/warehouse/settings'
-import { RULE_LABEL } from '@/lib/warehouse/requests'
+import { isOn } from '@/lib/warehouse/settings'
+import { getApprovalRules } from '@/lib/warehouse/request-data'
+import { describeChain } from '@/lib/warehouse/approval-matrix'
+import { getRoleLabels } from '@/lib/role-labels'
 import { formatINR } from '@/lib/warehouse/format'
 import { RequestsClient } from './requests-client'
 import { ChevronLeft, Plus } from 'lucide-react'
@@ -17,7 +19,7 @@ export default async function WarehouseRequestsPage() {
   await requirePermission('warehouse', 'view')
   const values = await getSettings()
   const on = isOn(values, 'wh_requests_on')
-  const cfg = approvalConfig(values)
+
 
   // Never a blank screen with a disabled button and no explanation: if the
   // feature is off, say so and say who turns it on.
@@ -44,7 +46,14 @@ export default async function WarehouseRequestsPage() {
     )
   }
 
-  const [lanes, showValues] = await Promise.all([getRequestLanes(), getShowValues()])
+  const [lanes, showValues, { rules }, roleLabels] = await Promise.all([
+    getRequestLanes(), getShowValues(), getApprovalRules(), getRoleLabels(),
+  ])
+  const chain = describeChain(
+    rules,
+    r => roleLabels[r as keyof typeof roleLabels]?.label ?? r,
+    formatINR,
+  )
 
   return (
     <div className="p-4 md:p-6 max-w-5xl mx-auto space-y-4">
@@ -63,11 +72,23 @@ export default async function WarehouseRequestsPage() {
         </Link>
       </div>
 
-      <p className="text-[11.5px] text-slate-500 px-0.5">
-        <b>Approval rule:</b> {RULE_LABEL[cfg.rule].toLowerCase()}
-        {cfg.rule === 'above_value' ? ` — over ${formatINR(cfg.threshold)}` : ''}
-        {cfg.rule !== 'off' ? `, ${cfg.stages === 2 ? 'two approvals' : 'one approval'}` : ''}.
-      </p>
+      {/* The chain as configured, read from the rules so it cannot go stale the
+          moment somebody edits one. */}
+      <details className="text-[11.5px] text-slate-500 px-0.5">
+        <summary className="cursor-pointer font-semibold hover:text-slate-700">
+          Approval chain — {chain.length === 1 && chain[0].startsWith('No approval')
+            ? 'none configured' : `${chain.length} step${chain.length === 1 ? '' : 's'}`}
+        </summary>
+        <ul className="mt-1 space-y-0.5 pl-1">
+          {chain.map(l => <li key={l}>• {l}</li>)}
+        </ul>
+        <p className="mt-1 pl-1">
+          Set by an admin in{' '}
+          <Link href="/admin/approvals" className="font-semibold text-emerald-700 hover:underline">
+            Admin ▸ Approvals
+          </Link>.
+        </p>
+      </details>
 
       {lanes.error && <QueryError message={lanes.error} what="the requests" />}
       <RequestsClient lanes={lanes} showValues={showValues} />

@@ -12,12 +12,11 @@ import { getMyUser, getMyPermissions, can } from '@/lib/auth'
 import { one, getSettings } from '@/lib/warehouse/data'
 import { gate } from '@/lib/warehouse/guards'
 import { todayIST } from '@/lib/warehouse/ledger'
-import { isOn, approvalConfig } from '@/lib/warehouse/settings'
-import {
-  raiseBlocker, estimateValue, stagesNeeded, shortfalls,
-  approveBlocker, statusAfterApproval, rejectBlocker,
-} from '@/lib/warehouse/requests'
-import type { RaiseInput, RequestState, ShortLine } from '@/lib/warehouse/requests'
+import { isOn } from '@/lib/warehouse/settings'
+import { raiseBlocker, estimateValue, shortfalls } from '@/lib/warehouse/requests'
+import type { RaiseInput, ShortLine } from '@/lib/warehouse/requests'
+import { movesFor, needsApproval, personBlocker } from '@/lib/warehouse/approval-matrix'
+import { getApprovalRules, myWarehouseRole } from '@/lib/warehouse/request-data'
 
 type Result = { ok: boolean; error?: string }
 type Raised = { ok: true; reqNo: string; id: string; waiting: boolean } | { ok: false; error: string }
@@ -64,10 +63,15 @@ export async function raiseRequest(input: RaiseInput): Promise<Raised> {
   const est = estimateValue(priced)
   const anyPriced = priced.some(l => l.lastRate != null)
 
-  // The dial is read ONCE and frozen onto the request. Changing the setting
-  // later must not change what an in-flight request needs.
-  const cfg = approvalConfig(await getSettings())
-  const needed = stagesNeeded(cfg, est, anyPriced)
+  // The MATRIX decides whether this needs approving — the same rules Aksha
+  // edits at /admin/approvals, shared with every other module. What is frozen
+  // onto the request is only est_value, the number the caps compare against,
+  // because that is data about the request rather than configuration.
+  const { rules } = await getApprovalRules()
+  const needsIt = needsApproval(rules, 'pending')
+    // An unpriced request cannot be shown to be under anybody's cap, so it goes
+    // through approval rather than around it.
+    || (!anyPriced && rules.some(r => r.fromStage === 'pending' && r.amountCapMax != null))
 
   const { data: reqNo, error: nErr } = await sb.rpc('fn_wh_next_no', { p_register: 'req' })
   if (nErr || !reqNo) return { ok: false, error: nErr?.message ?? 'Could not allocate a request number.' }
@@ -81,10 +85,10 @@ export async function raiseRequest(input: RaiseInput): Promise<Raised> {
     need_by: input.needBy || null,
     requested_by: me?.id ?? null,
     // No approval needed means it is already the storekeeper's to act on.
-    status: needed === 0 ? 'approved' : 'pending',
-    rule_at_raise: cfg.rule,
+    status: needsIt ? 'pending' : 'approved',
+    rule_at_raise: needsIt ? 'matrix' : 'none',
     est_value: anyPriced ? est.value : null,
-    stages_needed: needed,
+    stages_needed: needsIt ? 1 : 0,
     stages_done: 0,
   }).select('id, req_no').single()
   if (hErr || !header) return { ok: false, error: hErr?.message ?? 'Could not save the request.' }
@@ -101,7 +105,7 @@ export async function raiseRequest(input: RaiseInput): Promise<Raised> {
   }
 
   refresh()
-  return { ok: true, reqNo: header.req_no, id: header.id, waiting: needed > 0 }
+  return { ok: true, reqNo: header.req_no, id: header.id, waiting: needsIt }
 }
 
 /** What the store actually has, for the shortfall warning shown while typing.
@@ -137,73 +141,103 @@ export async function checkStock(
 // Approving, rejecting, cancelling
 // ===========================================================================
 
-async function loadState(id: string): Promise<{ state: RequestState | null; error?: string }> {
+/** Move a request to the next stage the matrix allows.
+ *
+ *  Replaces the separate approve/reject actions. Which stages exist, who may
+ *  reach them, up to what value, and whether a remark is compulsory are all
+ *  ROWS Aksha edits — so a new stage or a new approver role needs no code here.
+ *
+ *  Two things are still checked in code because no row could express them: the
+ *  requester may not approve his own request, and one person may not fill two
+ *  stages. Those are facts about a person, not about a role. */
+export async function moveRequest(
+  id: string,
+  toStage: string,
+  remarks: string,
+): Promise<Result> {
+  const denied = await gate('edit')
+  if (denied) return { ok: false, error: denied }
   const sb = await createClient()
-  const { data, error } = await sb.from('wh_requests')
-    .select('req_no, status, stages_needed, stages_done, requested_by, approved1_by, approved2_by, deleted_at')
+  const me = await getMyUser()
+
+  const { data: r, error } = await sb.from('wh_requests')
+    .select(`req_no, status, requested_by, est_value, stages_done,
+             approved1_by, approved2_by, deleted_at`)
     .eq('id', id).maybeSingle()
-  if (error) return { state: null, error: error.message }
-  if (!data || data.deleted_at) return { state: null }
-  return {
-    state: {
-      reqNo: data.req_no,
-      status: data.status,
-      stagesNeeded: data.stages_needed,
-      stagesDone: data.stages_done,
-      requestedBy: data.requested_by,
-      approvers: [data.approved1_by, data.approved2_by].filter(Boolean),
-    },
+  if (error) return { ok: false, error: error.message }
+  if (!r || r.deleted_at) return { ok: false, error: 'That request no longer exists.' }
+
+  const [{ rules }, role] = await Promise.all([getApprovalRules(), myWarehouseRole()])
+  const amount = r.est_value == null ? null : Number(r.est_value)
+  const allowed = movesFor(rules, r.status, role, amount)
+  const move = allowed.find(m => m.toStage === toStage)
+
+  if (!move) {
+    // Say WHY rather than "not authorised". The reader needs to know whether it
+    // is the stage, the role, or the value that stopped them.
+    const anyRule = rules.some(x => x.fromStage === r.status && x.toStage === toStage)
+    if (!anyRule) {
+      return {
+        ok: false,
+        error: `Nothing is configured to move a request from "${r.status}" to "${toStage}". `
+          + 'An admin sets the chain in Admin ▸ Approvals.',
+      }
+    }
+    const capped = rules.find(x =>
+      x.fromStage === r.status && x.toStage === toStage
+      && x.amountCapMax != null && amount != null && amount > x.amountCapMax)
+    if (capped) {
+      return {
+        ok: false,
+        error: `${r.req_no} is worth about ${amount} — over the ${capped.amountCapMax} limit for that `
+          + 'approval. It needs the next stage in the chain instead.',
+      }
+    }
+    return { ok: false, error: `Your role cannot move ${r.req_no} to that stage.` }
   }
-}
 
-export async function approveRequest(id: string): Promise<Result> {
-  const sb = await createClient()
-  const [me, perms] = await Promise.all([getMyUser(), getMyPermissions()])
-  const canApprove = can(perms, 'warehouse', 'admin')
+  const personal = personBlocker(
+    me?.id ?? null, r.requested_by,
+    [r.approved1_by, r.approved2_by].filter(Boolean) as string[],
+  )
+  if (personal) return { ok: false, error: personal }
 
-  const { state, error } = await loadState(id)
-  if (error) return { ok: false, error }
-  if (!state) return { ok: false, error: 'That request no longer exists.' }
+  if (move.needsRemarks && remarks.trim().length < 6) {
+    return {
+      ok: false,
+      error: 'A remark is compulsory for this step — an admin set that in Approvals. '
+        + 'A decision the requester cannot act on just gets raised again tomorrow.',
+    }
+  }
 
-  const refusal = approveBlocker(state, me?.id ?? null, canApprove)
-  if (refusal) return { ok: false, error: refusal }
-
-  const next = statusAfterApproval(state)
-  const stage = state.stagesDone + 1
   const stamp = new Date().toISOString()
+  const stage = Number(r.stages_done ?? 0) + 1
+  const patch: Record<string, unknown> = { status: toStage }
 
-  const { error: uErr } = await sb.from('wh_requests').update({
-    status: next,
-    stages_done: stage,
-    ...(stage === 1
-      ? { approved1_by: me?.id ?? null, approved1_at: stamp }
-      : { approved2_by: me?.id ?? null, approved2_at: stamp }),
-  }).eq('id', id).eq('stages_done', state.stagesDone)   // optimistic: two heads pressing at once
+  if (toStage === 'rejected') {
+    Object.assign(patch, {
+      rejected_by: me?.id ?? null, rejected_at: stamp, reject_reason: remarks.trim(),
+    })
+  } else {
+    // Every non-rejection hop counts as an approval and is stamped, so the trail
+    // shows who moved it and when however long the chain is.
+    Object.assign(patch, {
+      stages_done: Math.min(stage, 2),
+      ...(stage === 1
+        ? { approved1_by: me?.id ?? null, approved1_at: stamp }
+        : { approved2_by: me?.id ?? null, approved2_at: stamp }),
+    })
+    if (remarks.trim()) patch.remarks = remarks.trim()
+  }
+
+  // Guarded on the stage we read, so two approvers pressing at the same moment
+  // cannot both count. The DB trigger enforces authority a second time.
+  const { data: done, error: uErr } = await sb.from('wh_requests')
+    .update(patch).eq('id', id).eq('status', r.status).select('id')
   if (uErr) return { ok: false, error: uErr.message }
-
-  refresh(`/warehouse/requests/${id}`)
-  return { ok: true }
-}
-
-export async function rejectRequest(id: string, reason: string): Promise<Result> {
-  const sb = await createClient()
-  const [me, perms] = await Promise.all([getMyUser(), getMyPermissions()])
-  const canApprove = can(perms, 'warehouse', 'admin')
-
-  const { state, error } = await loadState(id)
-  if (error) return { ok: false, error }
-  if (!state) return { ok: false, error: 'That request no longer exists.' }
-
-  const refusal = rejectBlocker(state, reason, canApprove)
-  if (refusal) return { ok: false, error: refusal }
-
-  const { error: uErr } = await sb.from('wh_requests').update({
-    status: 'rejected',
-    rejected_by: me?.id ?? null,
-    rejected_at: new Date().toISOString(),
-    reject_reason: reason.trim(),
-  }).eq('id', id)
-  if (uErr) return { ok: false, error: uErr.message }
+  if (!done?.length) {
+    return { ok: false, error: `${r.req_no} moved on while you were looking at it. Open it again.` }
+  }
 
   refresh(`/warehouse/requests/${id}`)
   return { ok: true }

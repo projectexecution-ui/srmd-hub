@@ -3,7 +3,9 @@ import { redirect } from 'next/navigation'
 import { requirePermission } from '@/lib/auth'
 import { PageHeader } from '@/components/PageHeader'
 import { getLocationTree, getItems, getSettings } from '@/lib/warehouse/data'
-import { isOn, approvalConfig } from '@/lib/warehouse/settings'
+import { isOn } from '@/lib/warehouse/settings'
+import { getApprovalRules } from '@/lib/warehouse/request-data'
+import { getRoleLabels } from '@/lib/role-labels'
 import { todayIST } from '@/lib/warehouse/ledger'
 import { createClient } from '@/lib/supabase/server'
 import { NewRequestForm } from './new-request-form'
@@ -17,10 +19,12 @@ export default async function NewRequestPage() {
   if (!isOn(values, 'wh_requests_on')) redirect('/warehouse/requests')
 
   const sb = await createClient()
-  const [sites, items, projectsRes] = await Promise.all([
+  const [sites, items, projectsRes, { rules }, roleLabels] = await Promise.all([
     getLocationTree(),
     getItems(),
     sb.from('projects').select('id, name').order('name'),
+    getApprovalRules(),
+    getRoleLabels(),
   ])
 
   return (
@@ -36,7 +40,9 @@ export default async function NewRequestPage() {
         sites={sites}
         items={items}
         projects={projectsRes.data ?? []}
-        approval={approvalConfig(values)}
+        rules={rules}
+        roleLabels={Object.fromEntries(
+          Object.entries(roleLabels).map(([k, v]) => [k, v.label]))}
         today={todayIST()}
       />
     </div>

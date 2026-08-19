@@ -3,9 +3,10 @@ import { notFound } from 'next/navigation'
 import { requirePermission, getMyPermissions, can, getMyUser } from '@/lib/auth'
 import { PageHeader } from '@/components/PageHeader'
 import { QueryError } from '@/components/ui/query-error'
-import { getRequestDetail } from '@/lib/warehouse/request-data'
+import { getRequestDetail, getApprovalRules, myWarehouseRole } from '@/lib/warehouse/request-data'
 import { getShowValues } from '@/lib/warehouse/data'
-import { approveBlocker, issuableBlocker } from '@/lib/warehouse/requests'
+import { issuableBlocker } from '@/lib/warehouse/requests'
+import { movesFor, personBlocker } from '@/lib/warehouse/approval-matrix'
 import { RequestClient } from './request-client'
 import { ChevronLeft } from 'lucide-react'
 
@@ -19,12 +20,16 @@ export default async function RequestPage({
   await requirePermission('warehouse', 'view')
   const { id } = await params
 
-  const [{ request, error }, perms, me, showValues] = await Promise.all([
-    getRequestDetail(id),
-    getMyPermissions(),
-    getMyUser(),
-    getShowValues(),
-  ])
+  const [{ request, error }, perms, me, showValues, { rules }, role] =
+    await Promise.all([
+      getRequestDetail(id),
+      getMyPermissions(),
+      getMyUser(),
+      getShowValues(),
+      getApprovalRules(),
+      myWarehouseRole(),
+    ])
+
   if (error) {
     return (
       <div className="p-4 md:p-6 max-w-3xl mx-auto space-y-4">
@@ -34,26 +39,33 @@ export default async function RequestPage({
   }
   if (!request) notFound()
 
-  const canApprove = can(perms, 'warehouse', 'admin')
   const canEdit = can(perms, 'warehouse', 'edit')
-  const state = {
-    reqNo: request.reqNo,
-    status: request.status,
-    stagesNeeded: request.stagesNeeded,
-    stagesDone: request.stagesDone,
-    requestedBy: request.requestedById,
-    approvers: request.approvals.map(() => null as string | null),
-  }
-
-  // The same rules the actions enforce, resolved here so the buttons explain
-  // themselves rather than refusing after the fact.
-  const whyNotApprove = approveBlocker(
-    { ...state, approvers: [] },
-    me?.id ?? null,
-    canApprove,
-  )
-  const whyNotIssue = issuableBlocker(state)
+  const isAdmin = can(perms, 'warehouse', 'admin')
   const mine = !!me?.id && request.requestedById === me.id
+
+  // The buttons come from the RULES, not from code: whatever chain is configured
+  // at /admin/approvals is what appears here.
+  const moves = movesFor(rules, request.status, role, request.estValue).map(m => ({
+    toStage: m.toStage,
+    needsRemarks: m.needsRemarks,
+    label: m.toStage === 'rejected' ? 'Reject'
+      : m.toStage === 'checked' ? 'Check and pass on'
+      : m.toStage === 'approved' ? 'Approve'
+      : `Move to ${m.toStage}`,
+  }))
+
+  // A person-level refusal is not configuration and must not read like one.
+  const personal = personBlocker(me?.id ?? null, request.requestedById, [])
+  const whyNoMoves = personal
+    ?? (moves.length === 0 && (request.status === 'pending' || request.status === 'checked')
+      ? 'Your role cannot move this request on. The chain is set in Admin ▸ Approvals.'
+      : null)
+
+  const whyNotIssue = issuableBlocker({
+    reqNo: request.reqNo, status: request.status,
+    stagesNeeded: request.stagesNeeded, stagesDone: request.stagesDone,
+    requestedBy: request.requestedById, approvers: [],
+  })
 
   return (
     <div className="p-4 md:p-6 max-w-3xl mx-auto space-y-4">
@@ -67,11 +79,11 @@ export default async function RequestPage({
       <RequestClient
         request={request}
         showValues={showValues}
-        canApprove={canApprove && !whyNotApprove}
-        whyNotApprove={whyNotApprove}
+        moves={personal ? [] : moves}
+        whyNoMoves={whyNoMoves}
         canIssue={canEdit && !whyNotIssue}
         whyNotIssue={whyNotIssue}
-        canCancel={canEdit && (mine || canApprove)}
+        canCancel={canEdit && (mine || isAdmin)}
       />
     </div>
   )
