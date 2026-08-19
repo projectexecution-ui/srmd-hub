@@ -5,7 +5,7 @@ import { Card } from '@/components/ui/card'
 import { createClient } from '@/lib/supabase/server'
 import { getSettings } from '@/lib/warehouse/data'
 import { isOn } from '@/lib/warehouse/settings'
-import { ArrowDownToLine, ArrowUpFromLine, ClipboardList, Boxes, BarChart3, Settings2, ChevronRight, FileText, ScrollText, Package, CalendarDays, ClipboardCheck, Send } from 'lucide-react'
+import { ArrowDownToLine, ArrowUpFromLine, ClipboardList, Boxes, BarChart3, Settings2, ChevronRight, FileText, ScrollText, Package, CalendarDays, ClipboardCheck } from 'lucide-react'
 
 export const dynamic = 'force-dynamic'
 
@@ -44,24 +44,19 @@ export default async function WarehouseHomePage() {
         subtitle="The main-gate material in-out register. Every truck in, every issue out, and the reports that show what went missing."
       />
 
-      {/* The one thing an engineer comes here to do. A tile in a list of eleven
-          is a hunt; this is the action, at the top, before the counters. Hidden
-          rather than greyed when requests are off — a button that cannot work is
-          worse than no button. */}
+      {/* The one thing an engineer comes here to do, as a card in the house
+          style rather than a banner. Above the counters so it is the first thing
+          on the screen, and hidden rather than greyed when requests are off — a
+          button that cannot work is worse than no button. */}
       {requestsOn && (
-        <Link href="/warehouse/requests/new"
-          className="flex items-center gap-3 rounded-2xl bg-indigo-600 px-4 py-3.5 min-h-[62px]
-                     text-white shadow-sm hover:bg-indigo-700">
-          <span className="h-10 w-10 rounded-xl bg-white/15 grid place-items-center flex-shrink-0">
-            <Send className="h-5 w-5" />
-          </span>
-          <span className="min-w-0 flex-1">
-            <span className="block text-[14px] font-extrabold leading-tight">Raise a request</span>
-            <span className="block text-[11.5px] text-indigo-100 mt-0.5">
-              Ask a store for material — it goes to that store’s keeper
+        <Link href="/warehouse/requests/new" className="block w-fit">
+          <Card className="p-4 shadow-sm hover:border-emerald-300 hover:shadow transition">
+            <span className="rounded-lg bg-emerald-50 p-2 inline-flex">
+              <ClipboardCheck className="h-5 w-5 text-emerald-600" />
             </span>
-          </span>
-          <ChevronRight className="h-5 w-5 text-indigo-200 flex-shrink-0" />
+            <span className="block font-bold text-slate-800 text-sm mt-3">Raise request</span>
+            <span className="block text-[11.5px] text-emerald-700/70 mt-1">New material need</span>
+          </Card>
         </Link>
       )}
 
