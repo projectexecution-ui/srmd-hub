@@ -42,7 +42,7 @@ export const dynamic = 'force-dynamic'
 
 interface DRow { code: string; name: string }
 interface SRow { code: string; name: string }
-interface PRow { code: string; name: string }
+interface PRow { code: string; name: string; parent_project_id?: string | null }
 
 export default async function WorkingSheetEditorPage(
   { params, searchParams }: {
@@ -75,7 +75,7 @@ export default async function WorkingSheetEditorPage(
 
   const { data: ws, error: wsErr } = await supabase
     .from('cc_ws_with_versions')
-    .select('id, ws_code, status, total_amount, approved_for_erp_amt, past_approved_in_subskill, return_reason, engineer_id, project_id, discipline_id, sub_skill_id, line_type, entry_mode, source_excel_url, source_excel_name, summary_total, summary_notes, flag_summary, ai_parse_meta, last_checked_at, deadline_date, deadline_notes, break_chain, chain_anchor_id, version_no, chain_size, created_at, projects(code, name), cc_disciplines(code, name), cc_sub_skills(code, name)')
+    .select('id, ws_code, status, total_amount, approved_for_erp_amt, past_approved_in_subskill, return_reason, engineer_id, project_id, discipline_id, sub_skill_id, line_type, entry_mode, source_excel_url, source_excel_name, summary_total, summary_notes, flag_summary, ai_parse_meta, last_checked_at, deadline_date, deadline_notes, break_chain, chain_anchor_id, version_no, chain_size, created_at, projects(code, name, parent_project_id), cc_disciplines(code, name), cc_sub_skills(code, name)')
     .eq('id', id)
     .single()
 
@@ -372,6 +372,29 @@ export default async function WorkingSheetEditorPage(
   const wsProj = (Array.isArray(ws.projects) ? ws.projects[0] : ws.projects) as PRow | null
   const wsDisc = (Array.isArray(ws.cc_disciplines) ? ws.cc_disciplines[0] : ws.cc_disciplines) as DRow | null
   const wsSub = (Array.isArray(ws.cc_sub_skills) ? ws.cc_sub_skills[0] : ws.cc_sub_skills) as SRow | null
+
+  // Parent ("main") project name so the header reads "Main Project › Sub Project"
+  // in full — approvers want the exact names, never a short code, never clipped.
+  let wsParentName: string | null = null
+  if (wsProj?.parent_project_id) {
+    const { data: par } = await supabase.from('projects').select('name').eq('id', wsProj.parent_project_id).maybeSingle()
+    wsParentName = (par?.name as string | null) ?? null
+  }
+  // One clear identity block, reused on every sheet view: full Project (+ parent)
+  // name, then Category and Sub-category with their codes. No truncation.
+  const identityBlock = (
+    <div className="rounded-xl border border-gray-200 bg-gray-50/70 px-4 py-3">
+      <div className="text-[11px] uppercase tracking-wide text-gray-400">Project</div>
+      <div className="text-[15px] font-bold text-gray-900 leading-snug break-words">
+        {wsParentName && <span className="text-gray-500 font-medium">{wsParentName} <span className="text-gray-300">›</span> </span>}
+        {wsProj?.name ?? wsProj?.code ?? '—'}
+      </div>
+      <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1.5 text-sm">
+        <div className="break-words"><span className="text-gray-400">Category</span>{' '}<span className="font-semibold text-gray-900">{[wsDisc?.code, wsDisc?.name].filter(Boolean).join(' ') || '—'}</span></div>
+        <div className="break-words"><span className="text-gray-400">Sub-category</span>{' '}<span className="font-semibold text-gray-900">{[wsSub?.code, wsSub?.name].filter(Boolean).join(' ') || '—'}</span></div>
+      </div>
+    </div>
+  )
   const reviewPanel = reviewer && isPendingApproval && ws.project_id ? (
     <BudgetPositionPanel
       projectId={ws.project_id}
@@ -420,6 +443,7 @@ export default async function WorkingSheetEditorPage(
           )}
         </PageHeader>
 
+        {identityBlock}
         {reviewTop}
 
         <VersionChainBar
@@ -624,7 +648,7 @@ export default async function WorkingSheetEditorPage(
       <div className="p-4 md:p-6 max-w-6xl mx-auto space-y-4">
         <PageHeader
           title={ws.ws_code}
-          subtitle={`${proj?.code ?? '—'} · ${dis?.code} ${dis?.name} → ${sub?.code} ${sub?.name} · Budget Request (Excel)`}
+          subtitle="Budget Request (Excel)"
           back={backHref}
           backMode="history"
         >
@@ -636,6 +660,7 @@ export default async function WorkingSheetEditorPage(
           )}
         </PageHeader>
 
+        {identityBlock}
         {reviewTop}
 
         <VersionChainBar
@@ -891,6 +916,7 @@ export default async function WorkingSheetEditorPage(
         )}
       </PageHeader>
 
+      {identityBlock}
       {reviewTop}
 
       <VersionChainBar

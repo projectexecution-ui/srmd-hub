@@ -395,22 +395,26 @@ export default async function ApprovalsInboxPage({
           return (
             <Card key={pid} className={`p-0 overflow-hidden border-l-4 ${tone.rail}`}>
               <div className={`px-4 py-3 ${tone.head} border-b border-gray-100`}>
-                <div className="flex items-start justify-between gap-3 flex-wrap">
-                  <div className="flex items-center gap-2 min-w-0">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="flex items-start gap-2 min-w-0 flex-1">
                     <span className={`inline-flex h-7 w-7 items-center justify-center rounded-lg text-sm flex-shrink-0 ${tone.avatar}`}>🏢</span>
-                    <span className="min-w-0 truncate">
+                    {/* Full names, never truncated — the parent is a small breadcrumb
+                        line and the project name shows in full below, wrapping if long. */}
+                    <div className="min-w-0">
                       {parent && (
-                        <span className="text-gray-500 font-medium">
-                          {parent.name} <span className="text-gray-300">›</span>{' '}
-                        </span>
+                        <div className="text-[11px] text-gray-500 font-medium leading-tight break-words">
+                          {parent.name} <span className="text-gray-300">›</span>
+                        </div>
                       )}
-                      <span className="font-bold text-gray-900">{proj?.name ?? '—'}</span>
-                    </span>
-                    {code && <span className={`font-mono text-[11px] rounded px-1.5 py-0.5 flex-shrink-0 ${tone.code}`}>{code}</span>}
+                      <div className="font-bold text-gray-900 text-[15px] leading-snug break-words">{proj?.name ?? '—'}</div>
+                    </div>
                   </div>
-                  <span className="inline-flex items-center rounded-full bg-amber-50 text-amber-800 border border-amber-200 text-[11px] font-semibold px-2.5 py-0.5 whitespace-nowrap">
-                    {items.length} {showAll ? 'pending' : 'waiting on you'}
-                  </span>
+                  <div className="flex flex-col items-end gap-1 flex-shrink-0">
+                    <span className="inline-flex items-center rounded-full bg-amber-50 text-amber-800 border border-amber-200 text-[11px] font-semibold px-2.5 py-0.5 whitespace-nowrap">
+                      {items.length} {showAll ? 'pending' : 'waiting on you'}
+                    </span>
+                    {code && <span className={`font-mono text-[11px] rounded px-1.5 py-0.5 ${tone.code}`}>{code}</span>}
+                  </div>
                 </div>
                 {ccSettings.show_erp_columns && erpBudget > 0 && (
                   <div className="mt-2 flex items-baseline gap-x-2 flex-wrap tabular-nums">
