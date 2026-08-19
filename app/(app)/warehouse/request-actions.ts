@@ -157,7 +157,11 @@ export async function moveRequest(
   toStage: string,
   remarks: string,
 ): Promise<Result> {
-  const denied = await gate('edit')
+  // Deliberately 'view', not 'edit'. Who may make a transition is decided by the
+  // approval matrix and enforced again by the database trigger; requiring edit
+  // on top of that locked out the Trustee named as the second approver, who has
+  // view-only on this module by design.
+  const denied = await gate('view')
   if (denied) return { ok: false, error: denied }
   const sb = await createClient()
   const me = await getMyUser()

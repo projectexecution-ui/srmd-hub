@@ -6,7 +6,7 @@ import { one } from './data'
 import { outstanding, fulfilledPct, ageDays, isStale, isOpen } from './requests'
 import { todayIST } from './ledger'
 import type { RequestStatus } from './requests'
-import { MODULE, DOC_TYPE } from './approval-matrix'
+import { MODULE, DOC_TYPE, movesFor } from './approval-matrix'
 import type { Rule } from './approval-matrix'
 
 export type RequestRow = {
@@ -99,8 +99,10 @@ export type RequestLanes = {
 export async function getRequestLanes(limit = 120): Promise<RequestLanes> {
   const sb = await createClient()
   const today = todayIST()
-  const [me, perms] = await Promise.all([getMyUser(), getMyPermissions()])
-  const canApprove = can(perms, 'warehouse', 'admin')
+  const [me, perms, { rules }, role] = await Promise.all([
+    getMyUser(), getMyPermissions(), getApprovalRules(), myWarehouseRole(),
+  ])
+  const isAdmin = can(perms, 'warehouse', 'admin')
 
   const [reqRes, keptRes] = await Promise.all([
     sb.from('wh_requests').select(SELECT)
@@ -114,22 +116,41 @@ export async function getRequestLanes(limit = 120): Promise<RequestLanes> {
       : Promise.resolve({ data: [] as Array<{ id: string }> }),
   ])
   if (reqRes.error) {
-    return { toApprove: [], toIssue: [], mine: [], recent: [], canApprove, error: reqRes.error.message }
+    return {
+      toApprove: [], toIssue: [], mine: [], recent: [],
+      canApprove: false, error: reqRes.error.message,
+    }
   }
 
   const rows = (reqRes.data ?? []).map(r => toRow(r as never, today))
   const myStores = new Set((keptRes.data ?? []).map(l => l.id))
 
-  const toApprove = canApprove
-    ? rows.filter(r => r.status === 'pending' && r.requestedById !== me?.id)
-    : []
+  // Read from the MATRIX, at whatever stage each request is actually sitting.
+  // Two bugs lived in the old version of this: it only looked at 'pending', so a
+  // two-stage request in 'checked' fell out of every queue; and it keyed on
+  // warehouse-admin, so the Trustee named as the second approver — view-only on
+  // this module — never saw a lane.
+  const canMoveOn = (r: RequestRow) =>
+    movesFor(rules, r.status, role, r.estValue)
+      .some(m => m.toStage !== 'rejected' && m.toStage !== 'cancelled')
+
+  const toApprove = rows.filter(r =>
+    (r.status === 'pending' || r.status === 'checked')
+    && r.requestedById !== me?.id
+    && canMoveOn(r))
+
   const toIssue = rows.filter(r =>
     (r.status === 'approved' || r.status === 'part_issued')
-    && (canApprove || myStores.size === 0 || myStores.has(r.storeId)))
+    && (isAdmin || myStores.size === 0 || myStores.has(r.storeId)))
+
   const mine = rows.filter(r => r.requestedById === me?.id && isOpen(r.status))
 
   const claimed = new Set([...toApprove, ...toIssue, ...mine].map(r => r.id))
   const recent = rows.filter(r => !claimed.has(r.id))
+
+  // "Can this person approve anything at all", for the footnote on the screen.
+  const canApprove = rows.some(canMoveOn)
+    || rules.some(x => role === 'admin' || role === x.approverRole || role === x.overrideRole)
 
   return { toApprove, toIssue, mine, recent, canApprove }
 }
@@ -137,6 +158,8 @@ export async function getRequestLanes(limit = 120): Promise<RequestLanes> {
 export type RequestDetail = RequestRow & {
   remarks: string | null
   approvals: Array<{ stage: number; by: string; at: string }>
+  /** Who has already stamped it, for the "not twice by one person" rule. */
+  approverIds: Array<string>
   rejectedBy: string | null
   cancelledBy: string | null
   ruleAtRaise: string
@@ -167,7 +190,7 @@ export async function getRequestDetail(
 
   const { data: r, error } = await sb.from('wh_requests')
     .select(`${SELECT}, remarks, rule_at_raise, from_location_id,
-             approved1_at, approved2_at,
+             approved1_at, approved2_at, approved1_by, approved2_by,
              a1:profiles!wh_requests_approved1_by_fkey(full_name, email),
              a2:profiles!wh_requests_approved2_by_fkey(full_name, email),
              rej:profiles!wh_requests_rejected_by_fkey(full_name, email),
@@ -212,6 +235,7 @@ export async function getRequestDetail(
       remarks: (r.remarks as string | null) ?? null,
       ruleAtRaise: (r.rule_at_raise as string) ?? 'off',
       approvals,
+      approverIds: [r.approved1_by, r.approved2_by].filter(Boolean) as string[],
       rejectedBy: name(r.rej),
       cancelledBy: name(r.can),
       items: lines.map(l => {
@@ -301,10 +325,21 @@ export async function getApprovalRules(): Promise<{ rules: Rule[]; error?: strin
  *  /admin/users is honoured here exactly as it is everywhere else. */
 export async function myWarehouseRole(): Promise<string | null> {
   const sb = await createClient()
-  const { data } = await sb.rpc('effective_user_role', { p_module_slug: MODULE })
-  if (typeof data === 'string' && data) return data
   const me = await getMyUser()
   if (!me?.id) return null
-  const { data: p } = await sb.from('profiles').select('role').eq('id', me.id).maybeSingle()
-  return p?.role ?? null
+
+  // effective_user_role takes (p_user_id, p_module_slug) — BOTH. Calling it with
+  // only the slug failed silently, the role came back null, and movesFor() then
+  // offered nobody any move at all: the approval screen would have had no
+  // buttons and no explanation for anyone.
+  const { data, error } = await sb.rpc('effective_user_role', {
+    p_user_id: me.id,
+    p_module_slug: MODULE,
+  })
+  if (!error && typeof data === 'string' && data) return data
+
+  // Fall back to the base role rather than to null, so a broken RPC degrades to
+  // "your plain role" instead of "you may do nothing".
+  const { data: prof } = await sb.from('profiles').select('role').eq('id', me.id).maybeSingle()
+  return prof?.role ?? null
 }

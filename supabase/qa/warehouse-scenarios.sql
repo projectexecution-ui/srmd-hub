@@ -404,3 +404,97 @@ union all
 select 'S50 zero quantity on a line', pg_temp.qa_guard(format(
   'insert into wh_request_lines (request_id, item_id, qty) values (%L,%L,0)',
   gen_random_uuid(), (select id from it)));
+
+-- ===========================================================================
+-- S51-S60 · Requests, after the four runtime bugs (2026-08-19)
+--
+-- Every one of those bugs typechecked, linted and BUILT clean, and three of the
+-- four could only ever surface on a real screen. This suite exists so they stay
+-- dead. Self-cleaning: it deletes its own rows and returns a pass column.
+--
+--   select * from pg_temp.qa_suite();   -- after defining it below
+-- ===========================================================================
+create or replace function pg_temp.qa_suite() returns table(scenario text, expected text, got text, pass boolean)
+language plpgsql as $$
+declare
+  loc  uuid := (select id from wh_locations where parent_id is not null limit 1);
+  loc2 uuid := (select id from wh_locations where parent_id is not null offset 1 limit 1);
+  it1  uuid := (select id from wh_items where deleted_at is null limit 1);
+  it2  uuid := (select id from wh_items where deleted_at is null offset 1 limit 1);
+  prj  uuid := (select id from projects limit 1);
+  rq   uuid; n text; r text;
+begin
+  -- S51 THE bug Aksha hit: fn_wh_next_no('req') vs the register CHECK.
+  begin n := fn_wh_next_no('req'); r := 'issued'; exception when others then r := 'FAILED'; end;
+  return query select 'S51 request number issues'::text, 'issued'::text, r, r = 'issued';
+
+  -- S52 the CHECK still refuses a typo, so it was widened not dropped.
+  begin
+    insert into wh_number_series (register, day, last_no) values ('reqq', current_date, 1);
+    r := 'accepted';
+  exception when check_violation then r := 'refused'; end;
+  return query select 'S52 typo register refused'::text, 'refused'::text, r, r = 'refused';
+
+  -- S53 one request, one consumable line and one returnable line.
+  insert into wh_requests (req_no, from_location_id, project_id, purpose,
+                           status, rule_at_raise, est_value, stages_needed, stages_done)
+  values ('QA-S-1', loc, prj, 'QA pour', 'pending', 'matrix', 500000, 1, 0) returning id into rq;
+  insert into wh_request_lines (request_id, item_id, qty, note, is_returnable)
+  values (rq, it1, 200, 'consumed', false), (rq, it2, 40, 'plates', true);
+  select count(*) filter (where is_returnable) || ' of ' || count(*)
+    into r from wh_request_lines where request_id = rq;
+  return query select 'S53 per-line returnable'::text, '1 of 2'::text, r, r = '1 of 2';
+
+  -- S54 the two-stage chain. `stages_done <= stages_needed` made this fail.
+  begin
+    update wh_requests set status='checked',  stages_done=1, approved1_at=now() where id=rq;
+    update wh_requests set status='approved', stages_done=2, approved2_at=now() where id=rq;
+    select status || '/' || stages_done into r from wh_requests where id = rq;
+  exception when others then r := 'FAILED: ' || sqlstate; end;
+  return query select 'S54 two-stage chain completes'::text, 'approved/2'::text, r, r = 'approved/2';
+
+  -- S55 a rejection with no reason is refused by the DATABASE.
+  begin
+    insert into wh_requests (req_no, from_location_id, purpose, status)
+    values ('QA-S-2', loc, 'QA', 'rejected'); r := 'accepted';
+  exception when check_violation then r := 'refused'; end;
+  return query select 'S55 rejection needs a reason'::text, 'refused'::text, r, r = 'refused';
+
+  -- S56 an invented stage cannot be written.
+  begin
+    update wh_requests set status = 'whatever' where id = rq; r := 'accepted';
+  exception when others then r := 'refused'; end;
+  return query select 'S56 unknown stage refused'::text, 'refused'::text, r, r = 'refused';
+
+  -- S57 the gate_out shape CHECK still forbids a returnable store move.
+  begin
+    insert into wh_gate_out (entry_no, entry_date, dest_type, from_location_id,
+                             to_location_id, is_returnable)
+    values ('QA-S-MOVE', current_date, 'store', loc, loc2, true); r := 'accepted';
+  exception when check_violation then r := 'refused'; end;
+  return query select 'S57 store move not returnable'::text, 'refused'::text, r, r = 'refused';
+
+  -- S58 an issue links back and leaves the right balance outstanding.
+  insert into wh_gate_out (entry_no, entry_date, dest_type, from_location_id, project_id, request_id)
+  values ('QA-S-OUT', current_date, 'site', loc, prj, rq);
+  update wh_request_lines set issued_qty = 100 where request_id = rq and item_id = it1;
+  select sum(qty - issued_qty)::text into r from wh_request_lines where request_id = rq;
+  return query select 'S58 part issue balance'::text, '140'::text, r, r = '140';
+
+  -- S59/S60 both triggers are actually attached. The amount cap is enforced by
+  -- the warehouse-only guard, because the SHARED trigger derives its amount from
+  -- the change in est_value and a status move does not change it.
+  select count(*)::text into r from pg_trigger
+   where tgrelid = 'wh_requests'::regclass and tgname = 'wh_requests_cap_guard' and not tgisinternal;
+  return query select 'S59 cap guard attached'::text, '1'::text, r, r = '1';
+
+  select count(*)::text into r from pg_trigger
+   where tgrelid = 'wh_requests'::regclass and tgname = 'wh_requests_approval_matrix' and not tgisinternal;
+  return query select 'S60 matrix trigger attached'::text, '1'::text, r, r = '1';
+
+  delete from wh_gate_out where entry_no in ('QA-S-OUT','QA-S-MOVE');
+  delete from wh_requests where req_no like 'QA-S-%';
+  delete from wh_number_series where register = 'req';
+end $$;
+
+select * from pg_temp.qa_suite();

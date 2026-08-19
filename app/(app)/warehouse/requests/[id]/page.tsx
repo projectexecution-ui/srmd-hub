@@ -55,7 +55,9 @@ export default async function RequestPage({
   }))
 
   // A person-level refusal is not configuration and must not read like one.
-  const personal = personBlocker(me?.id ?? null, request.requestedById, [])
+  // The SAME arguments the action uses. Passing an empty list here made the
+  // screen offer a button the action would then refuse — a silent blocker.
+  const personal = personBlocker(me?.id ?? null, request.requestedById, request.approverIds)
   const whyNoMoves = personal
     ?? (moves.length === 0 && (request.status === 'pending' || request.status === 'checked')
       ? 'Your role cannot move this request on. The chain is set in Admin ▸ Approvals.'
