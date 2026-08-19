@@ -131,20 +131,46 @@ export async function handleApprovalCallback(
     return !!p && new Date(p.expires_at as string).getTime() > Date.now()
   }
 
-  // ── Test cards (dry-run to your own chat): validate the plumbing + identity,
-  //     then confirm WITHOUT touching the sheet. ──
+  // ── Test cards (dry-run to your own chat): run the SAME flow as the real
+  //     buttons — lock the card, ask for the amount+remark / remark — but marked
+  //     is_test, so the typed reply just confirms "Test OK" and changes nothing.
+  //     This lets you feel the compulsory comment + the tap-locking for real. ──
   if (verb === 'tsign') {
-    if (!isSignStage) { await answerCbq(token, cbq.id, 'This budget is not at a sign-off stage.', true); return true }
-    await answerCbq(token, cbq.id, 'Test OK ✔')
+    if (!isSignStage) { await answerCbq(token, cbq.id, 'This budget is not at a sign-off stage.', true); await clearButtons(); return true }
+    if (await freshPending()) {
+      await answerCbq(token, cbq.id, 'Already asked — reply with the amount + remark above ↑')
+      await editMarkup(token, chatId, messageId, waitingKeyboard(wsId))
+      return true
+    }
+    await svc.from('tg_pending_approvals').delete().eq('chat_id', String(chatId))
+    await svc.from('tg_pending_approvals').insert({
+      chat_id: String(chatId), user_id: actor, ws_id: wsId, action: 'signoff', stage: status,
+      card_message_id: messageId, is_test: true,
+    })
+    await editMarkup(token, chatId, messageId, waitingKeyboard(wsId))
     await sendMessage(token, chatId,
-      `✅ Test OK — the buttons work and you're recognised as an approver. The real Approve on ${wsCode} would ask for your checked amount and sign it off. Nothing was changed.`)
+      `TEST — reply with the amount you checked AND a short remark for ${wsCode} (e.g. “334754 rates verified”). This is a dry run — nothing will change.`,
+      { reply_markup: { force_reply: true, input_field_placeholder: 'e.g. 334754 rates verified' } })
+    await answerCbq(token, cbq.id, 'Reply with the amount + remark ↓')
     return true
   }
   if (verb === 'trel') {
-    if (!isReleaseStage) { await answerCbq(token, cbq.id, 'This budget is not ready for release.', true); return true }
-    await answerCbq(token, cbq.id, 'Test OK ✔')
+    if (!isReleaseStage) { await answerCbq(token, cbq.id, 'This budget is not ready for release.', true); await clearButtons(); return true }
+    if (await freshPending()) {
+      await answerCbq(token, cbq.id, 'Already asked — type your remark above ↑')
+      await editMarkup(token, chatId, messageId, waitingKeyboard(wsId))
+      return true
+    }
+    await svc.from('tg_pending_approvals').delete().eq('chat_id', String(chatId))
+    await svc.from('tg_pending_approvals').insert({
+      chat_id: String(chatId), user_id: actor, ws_id: wsId, action: 'release', stage: status,
+      card_message_id: messageId, is_test: true,
+    })
+    await editMarkup(token, chatId, messageId, waitingKeyboard(wsId))
     await sendMessage(token, chatId,
-      `✅ Test OK — the real "Approve & release" on ${wsCode} would release the budget into ERP. Nothing was changed.`)
+      `TEST — type a short remark to confirm the release of ${wsCode} (e.g. “Checked, release to ERP”). This is a dry run — nothing will change.`,
+      { reply_markup: { force_reply: true, input_field_placeholder: 'e.g. Checked, release to ERP' } })
+    await answerCbq(token, cbq.id, 'Type a remark to confirm ↓')
     return true
   }
 
@@ -259,7 +285,7 @@ export async function handleApprovalAmountReply(
 ): Promise<boolean> {
   const { data: pend } = await svc
     .from('tg_pending_approvals')
-    .select('id, user_id, ws_id, action, expires_at, card_message_id')
+    .select('id, user_id, ws_id, action, expires_at, card_message_id, is_test')
     .eq('chat_id', String(chatId))
     .order('created_at', { ascending: false })
     .limit(1)
@@ -315,6 +341,15 @@ export async function handleApprovalAmountReply(
   if (!claimed || claimed.length === 0) return true
   const cardMsgId = pend.card_message_id != null ? Number(pend.card_message_id) : null
   const clearCard = async () => { if (cardMsgId != null) await editMarkup(token, chatId, cardMsgId, { inline_keyboard: [] }) }
+
+  // Test dry-run: same UX, but stop here — no engine call, nothing changes.
+  if (pend.is_test) {
+    await clearCard()
+    await sendMessage(token, chatId, isRelease
+      ? `✅ Test OK — you'd have released with the remark “${remark}”. Nothing was changed.`
+      : `✅ Test OK — you'd have signed off ${inr(amt)} with the remark “${remark}”. Nothing was changed.`)
+    return true
+  }
 
   if (isRelease) {
     const { data: res, error } = await svc.rpc('cc_tg_release', { p_actor: actor, p_ws_id: pend.ws_id, p_tranche: null })
