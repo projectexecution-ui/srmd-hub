@@ -19,6 +19,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import type { ApprovalCardInput } from '@/lib/cost-control/approval-card'
 
 export interface CwRow { sr: string; description: string; unit: string; qty: string; rate: string; amount: number }
+export interface TrailEntry { when: string; who: string; action: string; comment: string }
 
 const FONT_PATH = join(process.cwd(), 'lib', 'bills-pipeline', 'fonts', 'NotoSans.ttf')
 let FONT_B64: string | null = null
@@ -80,6 +81,54 @@ export async function loadComputedWorkingRows(svc: SupabaseClient, wsId: string)
   }))
 }
 
+// ── Approval trail (audit history + comments) ──────────────────────────────
+const STAGE_ACTION: Record<string, string> = {
+  'submitted>ph_approved': 'Project Head signed',
+  'ph_approved>atm_approved': 'Atm Head signed',
+  'atm_approved>approved': 'Trustee released',
+  'atm_approved>partially_approved': 'Trustee part-released',
+  'partially_approved>approved': 'Trustee released (balance)',
+}
+function stageAction(from: string, to: string): string {
+  if (to === 'returned') return 'Returned'
+  return STAGE_ACTION[`${from}>${to}`] ?? `${from} → ${to}`
+}
+function fmtDT(iso: string): string {
+  const t = Date.parse(iso)
+  if (!isFinite(t)) return ''
+  return new Date(t).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', hour12: true, timeZone: 'Asia/Kolkata' })
+}
+
+/** Load the approval trail + comment thread for a sheet, oldest first — so the
+ *  final approver sees who signed off, when, and with what remark. */
+export async function loadApprovalTrail(svc: SupabaseClient, wsId: string): Promise<TrailEntry[]> {
+  const [{ data: ev }, { data: cm }] = await Promise.all([
+    svc.from('approval_events').select('from_stage, to_stage, comment, created_at, actor_id')
+      .eq('doc_id', wsId).eq('module_slug', 'cost-control').order('created_at'),
+    svc.from('cc_ws_comments').select('author_id, body, created_at').eq('ws_id', wsId).order('created_at'),
+  ])
+  const ids = new Set<string>()
+  for (const e of ev ?? []) if (e.actor_id) ids.add(e.actor_id as string)
+  for (const c of cm ?? []) if (c.author_id) ids.add(c.author_id as string)
+  const names = new Map<string, string>()
+  if (ids.size) {
+    const { data: profs } = await svc.from('profiles').select('id, full_name, name').in('id', [...ids])
+    for (const p of profs ?? []) names.set(p.id as string, (p.full_name as string) || (p.name as string) || '—')
+  }
+  const rows: Array<{ ts: string } & TrailEntry> = []
+  for (const e of ev ?? []) rows.push({
+    ts: e.created_at as string, when: fmtDT(e.created_at as string),
+    who: names.get(e.actor_id as string) ?? '—',
+    action: stageAction(e.from_stage as string, e.to_stage as string), comment: (e.comment as string) ?? '',
+  })
+  for (const c of cm ?? []) rows.push({
+    ts: c.created_at as string, when: fmtDT(c.created_at as string),
+    who: names.get(c.author_id as string) ?? '—', action: 'Comment', comment: (c.body as string) ?? '',
+  })
+  rows.sort((a, b) => (a.ts < b.ts ? -1 : a.ts > b.ts ? 1 : 0))
+  return rows.map(({ when, who, action, comment }) => ({ when, who, action, comment }))
+}
+
 function useFont(doc: jsPDF): string {
   if (!existsSync(FONT_PATH)) return 'helvetica'
   if (FONT_B64 == null) FONT_B64 = readFileSync(FONT_PATH).toString('base64')
@@ -101,7 +150,7 @@ function pct(part: number, whole: number): number | null {
 /** The computed working PDF — an approval-ready document: header + approval
  *  summary (Project budget ERP, the ask, ERP position, waiting-on, raised-by)
  *  then the itemised computation with subtotal / GST & additions / grand total. */
-export function buildComputedWorkingPdf(input: ApprovalCardInput, wsCode: string, rows: CwRow[]): Buffer {
+export function buildComputedWorkingPdf(input: ApprovalCardInput, wsCode: string, rows: CwRow[], trail: TrailEntry[] = []): Buffer {
   const doc = new jsPDF({ unit: 'pt', format: 'a4' })
   const font = useFont(doc)
   const M = 40
@@ -220,6 +269,22 @@ export function buildComputedWorkingPdf(input: ApprovalCardInput, wsCode: string
   doc.setTextColor(...NAVY); doc.text('Grand Total', labelX, fy + 4)
   doc.setFontSize(12.5); doc.text(inr(total), W - M, fy + 4, { align: 'right' })
   fy += 34
+
+  // ── Approval trail & comments (auto-paginates) ──
+  if (trail.length) {
+    doc.setFont(font, 'normal'); doc.setFontSize(10.5); doc.setTextColor(...NAVY)
+    doc.text('Approval Trail & Comments', M, fy + 6)
+    autoTable(doc, {
+      startY: fy + 12,
+      margin: { left: M, right: M },
+      head: [['When', 'Stage', 'By', 'Remark']],
+      body: trail.map(t => [t.when, t.action, t.who, t.comment]),
+      styles: { font, fontStyle: 'normal', fontSize: 8.5, cellPadding: { top: 5, bottom: 5, left: 6, right: 6 }, overflow: 'linebreak', textColor: INK, lineColor: LINE, lineWidth: { bottom: 0.5 }, valign: 'top' },
+      headStyles: { font, fontStyle: 'normal', fillColor: [237, 240, 245], textColor: MUT, fontSize: 8, halign: 'left' },
+      alternateRowStyles: { fillColor: STRIPE },
+      columnStyles: { 0: { cellWidth: 84 }, 1: { cellWidth: 104, textColor: NAVY }, 2: { cellWidth: 92 }, 3: { cellWidth: 'auto' } },
+    })
+  }
 
   // ── Footer ──
   const pageH = doc.internal.pageSize.getHeight()

@@ -107,7 +107,7 @@ export async function handleApprovalCallback(
   // Current state of the sheet (also blocks [IB]).
   const { data: ws } = await svc
     .from('cc_working_sheets')
-    .select('ws_code, status, summary_notes')
+    .select('ws_code, status, summary_notes, total_amount')
     .eq('id', wsId)
     .maybeSingle()
   if (!ws) { await answerCbq(token, cbq.id, 'That budget could not be found.', true); return true }
@@ -117,6 +117,7 @@ export async function handleApprovalCallback(
   }
   const status = ws.status as string
   const wsCode = (ws.ws_code as string) || 'budget'
+  const askAmount = Number(ws.total_amount ?? 0)
   const isSignStage = status === 'submitted' || status === 'ph_approved'
   const isReleaseStage = status === 'atm_approved' || status === 'partially_approved'
 
@@ -145,13 +146,13 @@ export async function handleApprovalCallback(
     await svc.from('tg_pending_approvals').delete().eq('chat_id', String(chatId))
     await svc.from('tg_pending_approvals').insert({
       chat_id: String(chatId), user_id: actor, ws_id: wsId, action: 'signoff', stage: status,
-      card_message_id: messageId, is_test: true,
+      card_message_id: messageId, is_test: true, ask_amount: askAmount,
     })
     await editMarkup(token, chatId, messageId, waitingKeyboard(wsId))
     await sendMessage(token, chatId,
-      `TEST — reply with the amount you checked AND a short remark for ${wsCode} (e.g. “334754 rates verified”). This is a dry run — nothing will change.`,
-      { reply_markup: { force_reply: true, input_field_placeholder: 'e.g. 334754 rates verified' } })
-    await answerCbq(token, cbq.id, 'Reply with the amount + remark ↓')
+      `TEST — ${inr(askAmount)} to be approved for ${wsCode}. Just reply with your remark (e.g. “rates verified”). Dry run — nothing changes.`,
+      { reply_markup: { force_reply: true, input_field_placeholder: 'your remark' } })
+    await answerCbq(token, cbq.id, 'Reply with your remark ↓')
     return true
   }
   if (verb === 'trel') {
@@ -192,13 +193,13 @@ export async function handleApprovalCallback(
     await svc.from('tg_pending_approvals').delete().eq('chat_id', String(chatId))
     await svc.from('tg_pending_approvals').insert({
       chat_id: String(chatId), user_id: actor, ws_id: wsId, action: 'signoff', stage: status,
-      card_message_id: messageId,
+      card_message_id: messageId, ask_amount: askAmount,
     })
     await editMarkup(token, chatId, messageId, waitingKeyboard(wsId))
     await sendMessage(token, chatId,
-      `Reply with the amount you checked AND a short remark for ${wsCode} — e.g. “334754 rates verified, approved”. Both are required (the amount is your own independent figure, same as in the app).`,
-      { reply_markup: { force_reply: true, input_field_placeholder: 'e.g. 334754 rates verified' } })
-    await answerCbq(token, cbq.id, 'Reply with the amount + remark ↓')
+      `${inr(askAmount)} to be approved for ${wsCode}. Just reply with your remark — e.g. “rates verified, approved”. (To approve a different amount, type it first: “300000 revised down”.)`,
+      { reply_markup: { force_reply: true, input_field_placeholder: 'your remark' } })
+    await answerCbq(token, cbq.id, 'Reply with your remark ↓')
     return true
   }
 
@@ -285,7 +286,7 @@ export async function handleApprovalAmountReply(
 ): Promise<boolean> {
   const { data: pend } = await svc
     .from('tg_pending_approvals')
-    .select('id, user_id, ws_id, action, expires_at, card_message_id, is_test')
+    .select('id, user_id, ws_id, action, expires_at, card_message_id, is_test, ask_amount')
     .eq('chat_id', String(chatId))
     .order('created_at', { ascending: false })
     .limit(1)
@@ -315,22 +316,22 @@ export async function handleApprovalAmountReply(
       return true
     }
   } else {
-    // "<amount> <remark>" — leading number, then the mandatory remark.
-    const m = raw.match(/^[₹\s]*([0-9][0-9,]*(?:\.[0-9]+)?)\s+([\s\S]+)$/)
-    if (!m) {
-      await sendMessage(token, chatId, /[0-9]/.test(raw)
-        ? 'Add a short remark after the amount — e.g. “334754 rates verified”.'
-        : 'Reply with the amount you checked, then a remark — e.g. “334754 rates verified”.')
+    // Amount is prefilled: just a remark → approve the ask amount. Or type
+    // "<amount> <remark>" to approve a different amount. A bare number is refused.
+    const onlyNum = /^[₹\s]*[0-9][0-9,]*(?:\.[0-9]+)?\s*$/.test(raw)
+    if (onlyNum) {
+      await sendMessage(token, chatId, 'Add a short remark too — e.g. “rates verified, approved”.')
       return true
     }
-    amt = Number(m[1].replace(/,/g, ''))
-    remark = m[2].trim()
+    const m = raw.match(/^[₹\s]*([0-9][0-9,]*(?:\.[0-9]+)?)\s+([\s\S]+)$/)
+    if (m) { amt = Number(m[1].replace(/,/g, '')); remark = m[2].trim() }
+    else { amt = Number(pend.ask_amount ?? 0); remark = raw }
     if (!isFinite(amt) || amt <= 0) {
-      await sendMessage(token, chatId, 'That amount does not look right. Reply like “334754 rates verified”.')
+      await sendMessage(token, chatId, 'The amount to approve is missing — type the amount first, then your remark.')
       return true
     }
     if (remark.length < 2) {
-      await sendMessage(token, chatId, 'Add a short remark after the amount (required).')
+      await sendMessage(token, chatId, 'Add a short remark (required).')
       return true
     }
   }
