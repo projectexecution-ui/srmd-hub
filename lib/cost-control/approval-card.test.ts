@@ -13,6 +13,7 @@ const base: ApprovalCardInput = {
   raisedBy: 'Ramesh',
   daysWaiting: 3,
   overdue: false,
+  projectErpBudget: 462127403,
   erp: { budget: 17770000, wo: 10950000, paid: 8640000 },
   erpNew: false,
   revision: null,
@@ -37,9 +38,13 @@ describe('buildApprovalCardSpec', () => {
     expect(c.stats![0].value).toBe('₹48,20,000')
     expect(c.stats![0].sub).toContain('/sft')
     expect(c.stats![0].sub).toContain('waiting 3d')
-    // ERP stat present (paid 8.64/17.77 ≈ 49%)
-    expect(c.stats![1].label).toBe('Budget (ERP)')
-    expect(c.stats![1].sub).toContain('49%')
+    // whole-project ERP budget is the prominent 2nd stat
+    expect(c.stats![1].label).toBe('Project budget (ERP)')
+    expect(c.stats![1].value).toBe('₹46,21,27,403')
+    // the sub-category's own ERP position moves to its own section (49% used)
+    const erpSec = c.sections!.find(s => s.heading === 'ERP position')!
+    expect(erpSec.sub).toContain('101 Soil')
+    expect(erpSec.rows!.some(r => r.sub?.includes('49%'))).toBe(true)
     // stage chain marks the Project Head as acting now
     const appr = c.sections!.find(s => s.heading === 'Approval')!
     expect(appr.sub).toContain('» Project Head «')

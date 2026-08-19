@@ -16,6 +16,7 @@ import { renderCardSpec } from './report-card'
 import { buildApprovalCardSpec } from '@/lib/cost-control/approval-card'
 import type { ApprovalCardData } from '@/lib/cost-control/approval-card-data'
 import type { ApprovalStage } from '@/lib/cost-control/approval-card'
+import { loadComputedWorkingRows, buildComputedWorkingPdf } from '@/lib/cost-control/computed-working-pdf'
 
 export const CB_PREFIX = 'ccapv'
 
@@ -174,6 +175,23 @@ export async function sendApprovalToChat(
   }
 
   if (opts.attach !== false) {
+    // Computed working (the parsed BOQ the app computed from the Excel) as a PDF
+    // — so the approver can review the actual line-item computation on their
+    // phone, not just the raw source file. Best-effort.
+    try {
+      const rows = await loadComputedWorkingRows(svc, data.wsId)
+      if (rows.length) {
+        const pdf = buildComputedWorkingPdf({
+          wsCode: data.wsCode,
+          project: data.input.project.name || data.input.project.code,
+          category: data.input.category,
+          subCategory: data.input.subCategory,
+          total: data.amount,
+        }, rows)
+        await tgSendDocument(token, chatId, new Uint8Array(pdf), `${data.wsCode}-computed-working.pdf`, `Computed working · ${data.wsCode}`, 'application/pdf')
+      }
+    } catch { /* best-effort — the card still carries the numbers */ }
+
     // Fetch the working files from the cc-sheets bucket and forward them so the
     // approver has the full working in hand, not just the summary card.
     const { data: files } = await svc

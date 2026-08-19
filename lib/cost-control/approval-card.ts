@@ -28,6 +28,9 @@ export interface ApprovalCardInput {
   raisedBy: string | null
   daysWaiting: number
   overdue: boolean
+  /** Whole-project ERP budget (sum of all budget lines) — management's base
+   *  figure, shown on top. null (or showErp=false) hides it. */
+  projectErpBudget: number | null
   /** ERP strip — pass null (or showErp=false) to hide it (engineer/confidential). */
   erp: { budget: number; wo: number; paid: number } | null
   /** ERP columns on but no BPH-synced budget line → a brand-new ERP budget. */
@@ -85,7 +88,17 @@ export function buildApprovalCardSpec(i: ApprovalCardInput): CardSpec {
       tone: i.overdue ? 'danger' : 'brand',
     },
   ]
-  if (i.showErp && i.erp) {
+  // The whole-project ERP budget is the base figure management tracks — show it
+  // as the prominent second stat (mirrors the approvals page "PROJECT BUDGET
+  // (ERP)"). The specific sub-category's ERP position stays in its own section.
+  if (i.showErp && i.projectErpBudget && i.projectErpBudget > 0) {
+    stats.push({
+      label: 'Project budget (ERP)',
+      value: inr(i.projectErpBudget),
+      sub: 'whole-project budget',
+      tone: 'ok',
+    })
+  } else if (i.showErp && i.erp) {
     const usedPct = pct(i.erp.paid, i.erp.budget)
     stats.push({
       label: i.erpNew ? 'ERP budget (new)' : 'Budget (ERP)',
@@ -129,6 +142,7 @@ export function buildApprovalCardSpec(i: ApprovalCardInput): CardSpec {
   if (i.showErp && i.erp) {
     sections.push({
       heading: 'ERP position',
+      sub: `this sub-category · ${i.subCategory || i.work}`,
       rows: [
         { main: 'Budget', sub: i.erpNew ? 'brand-new ERP budget' : 'from BPH', right: inr(i.erp.budget) },
         { main: 'WO / PO', right: inr(i.erp.wo), rightTone: 'brand' },

@@ -71,6 +71,7 @@ interface ApprovalData {
   stage_label?: string        // e.g. "Atm Head sign-off"
   stage_index?: number        // 1..4 current stage
   project?: string
+  project_erp_budget?: number | null  // whole-project ERP budget — management's base figure
   category?: string           // discipline as "Category" — code + name, e.g. "01 Site Pre-lims"
   work?: string               // sub-skill as "Sub-category" — code + name, e.g. "101 Soil"
   raised_by?: string | null
@@ -181,6 +182,7 @@ function renderApproval(d: ApprovalData, link: string): string {
     <tr><td style="padding:16px 22px 6px">${stageTracker(d.stage_index ?? 3)}</td></tr>
     ${factGrid([
       ['Project', d.project ?? '—'],
+      ...(d.project_erp_budget ? [['Project budget (ERP)', inr(d.project_erp_budget)] as [string, string]] : []),
       ...(d.category ? [['Category', d.category] as [string, string]] : []),
       ['Sub-category', d.work ?? '—'],
       ...(d.raised_by ? [['Raised by', d.raised_by] as [string, string]] : []),

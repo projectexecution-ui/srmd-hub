@@ -140,6 +140,16 @@ export async function loadApprovalCardInput(
   }
   const erpNew = ccSettings.show_erp_columns && !erp
 
+  // Whole-project ERP budget — the base figure management tracks, sum of every
+  // budget line for the project (mirrors the approvals page "PROJECT BUDGET (ERP)").
+  let projectErpBudget: number | null = null
+  if (ccSettings.show_erp_columns) {
+    const { data: allLines } = await svc
+      .from('cc_budget_lines').select('current_budget_amt').eq('project_id', ws.project_id)
+    const sum = (allLines ?? []).reduce((a, b) => a + Number(b.current_budget_amt ?? 0), 0)
+    if (sum > 0) projectErpBudget = sum
+  }
+
   // vs-last-revision — only for v2+ sheets, comparing to the highest earlier
   // version on the chain (same logic as the page).
   let revision: ApprovalCardInput['revision'] = null
@@ -173,6 +183,7 @@ export async function loadApprovalCardInput(
     raisedBy: (eng?.full_name as string | null) ?? null,
     daysWaiting: dWait,
     overdue: dWait > 2,
+    projectErpBudget,
     erp,
     erpNew,
     revision,
