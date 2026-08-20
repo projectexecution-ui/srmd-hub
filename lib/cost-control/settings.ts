@@ -67,6 +67,10 @@ export interface CcSettings {
    *  the exact same approval engine (can_approve + the RPCs); it's just a second
    *  doorway. Gated per-recipient by who has connected Telegram. */
   telegram_approvals: boolean
+  /** Send the Trustee ONE grouped "budgets to release" digest instead of an
+   *  individual card per budget — so the founder (last stage on every project)
+   *  isn't flooded. Off (default) = individual release cards as they arrive. */
+  tg_trustee_digest: boolean
 }
 
 export const CC_SETTINGS_DEFAULTS: CcSettings = {
@@ -88,6 +92,7 @@ export const CC_SETTINGS_DEFAULTS: CcSettings = {
   cumulative_versions: false,
   bph_sync: false,
   telegram_approvals: false,
+  tg_trustee_digest: false,
 }
 
 /** Pure parser — exported so tests cover defaults/overrides without Supabase. */
@@ -125,6 +130,7 @@ export function parseCcSettings(map: Record<string, string | null | undefined>):
     cumulative_versions: parseBool('cc_cumulative_versions', d.cumulative_versions),
     bph_sync:          parseBool('cc_bph_sync', d.bph_sync),
     telegram_approvals: parseBool('cc_telegram_approvals', d.telegram_approvals),
+    tg_trustee_digest: parseBool('cc_tg_trustee_digest', d.tg_trustee_digest),
   }
 }
 

@@ -47,6 +47,9 @@ export const CRON_JOBS: CronJob[] = [
   // day); escalates items stuck 3+ days. Rides both slots; its own IST-date
   // "aged since a previous day" gate + the ledger prevent a double-send.
   { key: 'cc-approval-reminders', policy: 'daily', am: '/api/cron/cc-approval-reminders?cron=1', pm: '/api/cron/cc-approval-reminders?cron=1' },
+  // Trustee release digest — one grouped "budgets to release" summary per founder
+  // (only fires when cc_tg_trustee_digest is on). Both slots; ledger caps to once/day.
+  { key: 'cc-trustee-digest',     policy: 'daily', am: '/api/cron/cc-trustee-digest?cron=1',    pm: '/api/cron/cc-trustee-digest?cron=1' },
   // Weekly portfolio Budget-vs-Actual card to management; the route self-gates
   // to Monday IST (BPH data refreshes weekly), so most days it no-ops.
   { key: 'cc-budget-vs-actual',   policy: 'daily', am: '/api/cron/cc-budget-vs-actual?cron=1',   pm: '/api/cron/cc-budget-vs-actual?cron=1' },

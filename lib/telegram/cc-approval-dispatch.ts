@@ -40,6 +40,10 @@ export async function dispatchCardsForSheet(wsId: string): Promise<void> {
   const data = await loadApprovalCardInput(svc, wsId, ccSettings)
   if (!data || data.isIB) return
 
+  // Trustee-digest mode: the founder (release stage) gets ONE grouped digest from
+  // the cron instead of a card per budget, so skip the individual release card.
+  if (ccSettings.tg_trustee_digest && (data.status === 'atm_approved' || data.status === 'partially_approved')) return
+
   for (const t of list) {
     // One card per (sheet, stage, approver) — never a duplicate.
     const { data: existing } = await svc

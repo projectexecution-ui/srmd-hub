@@ -122,6 +122,23 @@ export function CcSettingsForm({ initial, users = [], connectedUsers = [] }: {
     router.refresh()
   }
 
+  // Trustee digest — group the founder's release cards into one daily summary.
+  async function toggleTrusteeDigest(next: boolean) {
+    setV(prev => ({ ...prev, tg_trustee_digest: next }))
+    setMsg(null); setError(null)
+    const supabase = createClient()
+    const { error } = await supabase
+      .from('app_settings')
+      .upsert({ key: 'cc_tg_trustee_digest', value: String(next) }, { onConflict: 'key' })
+    if (error) {
+      setV(prev => ({ ...prev, tg_trustee_digest: !next }))  // revert
+      setError(`Couldn't save the switch: ${error.message}`)
+      return
+    }
+    setMsg(next ? 'Trustee digest turned ON — saved.' : 'Trustee digest turned OFF — saved.')
+    router.refresh()
+  }
+
   async function submit(e: React.FormEvent) {
     e.preventDefault()
     setSaving(true)
@@ -263,7 +280,13 @@ export function CcSettingsForm({ initial, users = [], connectedUsers = [] }: {
           </p>
           {v.telegram_approvals && (
             <div className="pt-1 border-t border-sky-200/70 space-y-1.5">
-              <div className="flex items-center gap-2">
+              <Toggle
+                label="Trustee release digest"
+                hint="Group the Trustee's release approvals into ONE daily summary (‘N budgets to release · M projects’) instead of a card per budget — so the founder, who's the last stage on every project, isn't flooded. Others still get individual cards. Saves instantly."
+                checked={v.tg_trustee_digest}
+                onChange={toggleTrusteeDigest}
+              />
+              <div className="flex items-center gap-2 pt-1">
                 <Button type="button" variant="outline" size="sm" onClick={handleSendApprovalTest} disabled={testing}>
                   {testing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
                   Send me a test card
