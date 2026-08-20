@@ -4,6 +4,7 @@ import { showValuesFor, isOn } from './settings'
 import type { SettingValues } from './settings'
 import type { GateInOptions, WhItem, WhPo, WhPoHead, WhPoLine, WhSite, WhSpot, WhLists, StockRow } from './types'
 import type { CountLine } from './count'
+import { totalReceived, linePending, lineDone } from './po-balance'
 
 /** PostgREST embeds a to-one relation as an object at runtime, but the generated
  *  types describe it as an array. This normalises both shapes so callers can
@@ -138,7 +139,7 @@ export async function getPoBalance(poId: string): Promise<{ po: WhPo | null; err
   const sb = await createClient()
   const { data: p, error } = await sb
     .from('wh_po')
-    .select('id, po_no, kind, vendor, entity, status, project_id, wh_po_lines(id, item_id, ordered_qty, rate, source_text, wh_items(name, unit))')
+    .select('id, po_no, kind, vendor, entity, status, project_id, wh_po_lines(id, item_id, ordered_qty, received_before_qty, rate, source_text, wh_items(name, unit))')
     .eq('id', poId)
     .is('deleted_at', null)
     .maybeSingle()
@@ -177,7 +178,11 @@ export async function getPoBalance(poId: string): Promise<{ po: WhPo | null; err
       lines: (p.wh_po_lines ?? []).map((l): WhPoLine => {
         const ordered = Number(l.ordered_qty)
         const got = received.get(l.id) ?? 0
-        const pending = ordered - got
+        // IN4's own receipts count too. Without this the balance was
+        // `ordered − our gate receipts`, and for a PO delivered before this
+        // system existed that is the whole order — see po-balance.ts.
+        const before = Number(l.received_before_qty ?? 0)
+        const n = { ordered, receivedBefore: before, receivedAtGate: got }
         const item = one(l.wh_items)
         return {
           lineId: l.id,
@@ -185,10 +190,11 @@ export async function getPoBalance(poId: string): Promise<{ po: WhPo | null; err
           itemName: item?.name ?? '—',
           unit: item?.unit ?? '',
           ordered,
-          received: got,
-          pending: pending > 0 ? pending : 0,
+          received: totalReceived(n),
+          receivedBefore: before,
+          pending: linePending(n),
           rate: l.rate,
-          done: pending <= 0,
+          done: lineDone(n),
           sourceText: l.source_text ?? null,
         }
       }),

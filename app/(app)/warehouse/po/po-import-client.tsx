@@ -48,6 +48,10 @@ export function PoImportClient({
           material: l.material,
           uom: l.uom,
           orderedQty: l.orderedQty,
+          // Carried across so a PO already delivered in IN4 does not arrive here
+          // looking untouched. Dropping this is what let 1.37 million already-
+          // received units read as "still to come".
+          receivedQty: l.receivedQty,
           rate: l.rate,
           discipline: l.discipline,
         })),

@@ -8,6 +8,7 @@ import { settingDef, periodLockBlocker, isOn } from '@/lib/warehouse/settings'
 import { gate, settingsBlocker } from '@/lib/warehouse/guards'
 import { todayIST } from '@/lib/warehouse/ledger'
 import { in4Key, planIn4Items, FALLBACK_UOM } from '@/lib/warehouse/in4-items'
+import { derivedStatus } from '@/lib/warehouse/po-balance'
 import { runIn4Sync } from '@/lib/warehouse/in4-sync-apply'
 import type { SyncGroup } from '@/lib/warehouse/in4-sync'
 import { buildSheet, submitBlocker, adjustments } from '@/lib/warehouse/count'
@@ -32,7 +33,7 @@ export async function loadPoBalance(poId: string) {
 
 export type SaveResult = { ok: true; entryNo: string } | { ok: false; error: string }
 export type PoResult =
-  | { ok: true; poNo: string; lines: number; itemsCreated: number; skipped: number }
+  | { ok: true; poNo: string; lines: number; itemsCreated: number; skipped: number; warning?: string }
   | { ok: false; error: string }
 
 /** Import a PO exactly as IN4 has it.
@@ -55,6 +56,11 @@ export async function savePo(input: {
     material: string
     uom: string | null
     orderedQty: number
+    /** What IN4 says has ALREADY been received against this line. Frozen onto
+     *  the line at import: for a PO delivered before this system existed, this
+     *  is the whole order, and without it the gate would invite a keeper to
+     *  book the same material in again. See lib/warehouse/po-balance.ts. */
+    receivedQty: number
     rate: number | null
     discipline: string | null
   }>
@@ -83,17 +89,22 @@ export async function savePo(input: {
   // One item per distinct IN4 name; the tracker repeats a material once per
   // indent, so the quantities add up onto one line.
   const plan = planIn4Items(usable)
-  const totals = new Map<string, { orderedQty: number; rate: number | null }>()
+  const totals = new Map<string, { orderedQty: number; receivedQty: number; rate: number | null }>()
   for (const l of usable) {
     const key = in4Key(l.material)
     if (!key) continue
     const cur = totals.get(key)
     if (cur) {
       cur.orderedQty += l.orderedQty
+      cur.receivedQty += Math.max(0, Number(l.receivedQty) || 0)
       if (!cur.rate && l.rate) cur.rate = l.rate
       continue
     }
-    totals.set(key, { orderedQty: l.orderedQty, rate: l.rate })
+    totals.set(key, {
+      orderedQty: l.orderedQty,
+      receivedQty: Math.max(0, Number(l.receivedQty) || 0),
+      rate: l.rate,
+    })
   }
 
   const items = await ensureIn4Items(plan.wanted, me?.id ?? null)
@@ -122,6 +133,7 @@ export async function savePo(input: {
       po_id: po.id,
       item_id: itemId,
       ordered_qty: t.orderedQty,
+      received_before_qty: t.receivedQty,
       rate: t.rate,
       // IN4's own words, kept on the line so the gate can show the keeper
       // exactly what was ordered rather than a tidied-up version of it.
@@ -133,6 +145,28 @@ export async function savePo(input: {
   if (lErr) {
     await sb.from('wh_po').delete().eq('id', po.id)   // never leave a PO with no lines
     return { ok: false, error: lErr.message }
+  }
+
+  // An order already delivered in IN4 must not land here as "open", or the gate
+  // will offer it and the same material gets booked in twice. getOpenPoHeads()
+  // only lists open/partly_received, so this one write is what keeps a historic
+  // PO out of the keeper's picker.
+  const status = derivedStatus(rows.map(r => ({
+    ordered: Number(r.ordered_qty),
+    receivedBefore: Number(r.received_before_qty),
+    receivedAtGate: 0,   // nothing can have arrived at our gate yet
+  })))
+  if (status !== 'open') {
+    const { error: sErr } = await sb.from('wh_po').update({ status }).eq('id', po.id)
+    // Not fatal: the PO and its lines are correct either way, and the repair in
+    // Settings recomputes status. But say so rather than swallowing it.
+    if (sErr) {
+      return {
+        ok: true, poNo: po.po_no, lines: rows.length,
+        itemsCreated: items.created, skipped,
+        warning: `Imported, but could not mark it ${status.replace('_', ' ')}: ${sErr.message}`,
+      }
+    }
   }
 
   revalidatePath('/warehouse/po')

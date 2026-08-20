@@ -38,7 +38,13 @@ export type WhPoLine = {
   itemName: string
   unit: string
   ordered: number
+  /** Everything received, from either side of the cutover. */
   received: number
+  /** Of that, what IN4 had already received before this PO was imported. Kept
+   *  separate so the gate can say "600 of this arrived before the system" —
+   *  otherwise a fully-delivered historic order looks untouched and invites a
+   *  keeper to book it in a second time. */
+  receivedBefore: number
   pending: number
   rate: number | null
   done: boolean
