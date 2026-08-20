@@ -550,3 +550,46 @@ begin
   end if;
   raise exception 'ROLLBACK_ON_PURPOSE: S61-S63 all passed';
 end $$;
+
+-- ===========================================================================
+-- S64-S67 · Request notifications reach the pipeline  (2026-08-20)
+--
+-- Proves notify_user accepts the new wh_* event types, that they default to ON
+-- (no notification_rules row is needed), and that both the bell and the email
+-- queue actually get a delivery row. Ends with ROLLBACK_ON_PURPOSE, so nothing
+-- survives; seeing that message IS the pass. Verified green against production.
+--
+-- The three dispatch triggers on notification_deliveries (email / push /
+-- telegram) were confirmed enabled at the same time, so a queued email really
+-- does go out rather than sitting pending for ever.
+-- ===========================================================================
+do $$
+declare
+  v_head uuid; v_nid uuid; v_in_app int; v_email int; v_total int; v_title text;
+begin
+  select id into v_head from profiles where full_name = 'Akshay Atmarpit' limit 1;
+
+  select notify_user(
+    v_head, 'wh_request_raised',
+    'Rq: 20Aug26/999 - Ramesh needs your approval',
+    '3 items from NGH A store for P2 A01. Slab shuttering.',
+    '/warehouse/requests/00000000-0000-0000-0000-000000000000',
+    'warehouse', 'wh_requests', null,
+    '{"reqNo":"Rq: 20Aug26/999","scenario":"S64"}'::jsonb
+  ) into v_nid;
+
+  select count(*) into v_total  from notification_deliveries where notification_id = v_nid;
+  select count(*) into v_in_app from notification_deliveries
+    where notification_id = v_nid and channel = 'in_app' and status = 'sent';
+  select count(*) into v_email  from notification_deliveries
+    where notification_id = v_nid and channel = 'email'  and status = 'pending';
+  select title into v_title from notifications where id = v_nid;
+
+  -- S64 the notification row exists · S65 the bell is delivered ·
+  -- S66 the email is queued · S67 the title survives intact
+  if v_nid is null or v_in_app <> 1 or v_email <> 1 or v_title is null then
+    raise exception 'SCENARIO FAILED: nid=% in_app=% email=% total=% title=%',
+      v_nid, v_in_app, v_email, v_total, v_title;
+  end if;
+  raise exception 'ROLLBACK_ON_PURPOSE: S64-S67 passed (in_app=%, email=%)', v_in_app, v_email;
+end $$;

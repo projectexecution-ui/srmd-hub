@@ -9,6 +9,7 @@ import { gate, settingsBlocker } from '@/lib/warehouse/guards'
 import { todayIST } from '@/lib/warehouse/ledger'
 import { in4Key, planIn4Items, FALLBACK_UOM } from '@/lib/warehouse/in4-items'
 import { derivedStatus } from '@/lib/warehouse/po-balance'
+import { notifyRequestIssued } from '@/lib/warehouse/notify'
 import { runIn4Sync } from '@/lib/warehouse/in4-sync-apply'
 import type { SyncGroup } from '@/lib/warehouse/in4-sync'
 import { buildSheet, submitBlocker, adjustments } from '@/lib/warehouse/count'
@@ -427,7 +428,13 @@ export async function saveGateOut(input: GateOutInput): Promise<SaveResult> {
   const moveErr = await applyOutStock(header.id, input, lines, me?.id ?? null)
   if (moveErr) return { ok: false, error: moveErr }
 
-  if (input.requestId) await creditRequest(input.requestId, lines)
+  if (input.requestId) {
+    await creditRequest(input.requestId, lines)
+    // The engineer who asked is the one waiting at the other end of this.
+    const { data: after } = await sb.from('wh_requests')
+      .select('status').eq('id', input.requestId).maybeSingle()
+    await notifyRequestIssued(input.requestId, entryNo as string, after?.status === 'issued')
+  }
 
   revalidatePath('/warehouse')
   revalidatePath('/warehouse/out')

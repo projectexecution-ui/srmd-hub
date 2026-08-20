@@ -99,6 +99,46 @@ export const NOTIFICATION_EVENTS: NotificationEventDef[] = [
     audience: 'The engineer who logged it',
   },
   {
+    type: 'wh_request_raised',
+    label: 'Warehouse — material request needs approval',
+    description: 'The moment an engineer raises a request, everyone who could approve it at that '
+      + 'stage is told — with the store, the project, the value and what it is for. When a chain has '
+      + 'a second stage, the next approver is told the moment the first one signs. This is the gap '
+      + 'that killed the old inventory module: the chain worked, nobody knew there was anything in it.',
+    audience: 'Whoever can approve it (Atm Head, then Trustee)',
+  },
+  {
+    type: 'wh_request_decided',
+    label: 'Warehouse — your request was approved or turned down',
+    description: 'The engineer who raised it hears the outcome, with the approver’s name and — on a '
+      + 'refusal — the reason, so they can act rather than just ask again tomorrow.',
+    audience: 'The engineer who raised it',
+  },
+  {
+    type: 'wh_request_to_issue',
+    label: 'Warehouse — approved request ready to hand over',
+    description: 'Once approved, the store keeper is told there is material to hand over, with who '
+      + 'it is for and when it is needed. Goes to the store’s named keeper; where no keeper is set it '
+      + 'falls back to whoever the approval matrix allows to issue, so an approved request is never '
+      + 'left with nobody told.',
+    audience: 'The store keeper (or whoever may issue)',
+  },
+  {
+    type: 'wh_request_issued',
+    label: 'Warehouse — your material has been handed over',
+    description: 'The requester is told when material goes out against their request, naming the gate '
+      + 'entry, and says plainly when only part of it went so they know the rest is still coming.',
+    audience: 'The engineer who raised it',
+  },
+  {
+    type: 'wh_return_waived',
+    label: 'Warehouse — you need not return it after all',
+    description: 'Material borrowed from another project’s store must come back. When the Atm Head '
+      + 'decides it need not, the borrower is told who decided and why — their obligation changed, so '
+      + 'they should not have to discover it.',
+    audience: 'The engineer who borrowed it',
+  },
+  {
     type: 'comment_mention',
     label: 'You were @mentioned in a comment',
     description: 'When someone tags you with @ in a comment (any module), you get the comment and a link straight to it.',

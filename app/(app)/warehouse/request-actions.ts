@@ -18,6 +18,8 @@ import type { RaiseInput, ShortLine } from '@/lib/warehouse/requests'
 import { movesFor, needsApproval, personBlocker } from '@/lib/warehouse/approval-matrix'
 import { waiveBlocker, waivableLines, isCrossProject } from '@/lib/warehouse/cross-project'
 import { getApprovalRules, myWarehouseRole } from '@/lib/warehouse/request-data'
+import { notifyRequestRaised, notifyRequestMoved, notifyReturnWaived } from '@/lib/warehouse/notify'
+import { getMyProfile } from '@/lib/auth'
 
 type Result = { ok: boolean; error?: string }
 type Raised = { ok: true; reqNo: string; id: string; waiting: boolean } | { ok: false; error: string }
@@ -116,6 +118,12 @@ export async function raiseRequest(input: RaiseInput): Promise<Raised> {
     await sb.from('wh_requests').delete().eq('id', header.id)
     return { ok: false, error: lErr.message }
   }
+
+  // Tell whoever has to approve it. THE gap that killed V1: the chain worked,
+  // nobody knew there was anything in it. Awaited rather than fired and
+  // forgotten — a serverless function can be torn down the moment it returns,
+  // and a notification that sometimes arrives is worse than none.
+  await notifyRequestRaised(header.id)
 
   refresh()
   return { ok: true, reqNo: header.req_no, id: header.id, waiting: needsIt }
@@ -255,6 +263,13 @@ export async function moveRequest(
   if (!done?.length) {
     return { ok: false, error: `${r.req_no} moved on while you were looking at it. Open it again.` }
   }
+
+  // The requester hears the outcome, and whoever is waited on NEXT hears that
+  // it is now their turn. Without the second half a two-stage chain stalls in
+  // silence at the middle.
+  const actor = await getMyProfile()
+  await notifyRequestMoved(id, toStage, actor?.full_name || actor?.email || null,
+    remarks.trim() || null)
 
   refresh(`/warehouse/requests/${id}`)
   return { ok: true }
@@ -452,6 +467,11 @@ export async function waiveReturn(
       }
     }
   }
+
+  // The requester’s obligation just changed — they must be told, not left to
+  // discover it.
+  const actor = await getMyProfile()
+  await notifyReturnWaived(requestId, actor?.full_name || actor?.email || null, reason)
 
   refresh(`/warehouse/requests/${requestId}`, '/warehouse/reports/control/returnables')
   return { ok: true }
