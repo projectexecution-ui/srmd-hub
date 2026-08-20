@@ -5,6 +5,7 @@ import { after } from 'next/server'
 import { z } from 'zod'
 import { createClient } from '@/lib/supabase/server'
 import { getMyUser, getMyProfile, getMyPermissions, can } from '@/lib/auth'
+import { personName } from '@/lib/utils'
 import { generateSmartWSCode } from './ws-code-action'
 import { dispatchCardsForSheet } from '@/lib/telegram/cc-approval-dispatch'
 
@@ -310,6 +311,37 @@ export async function archiveWorkingSheet(
   if (error) return { ok: false, error: error.message }
   revalidatePath('/cost-control/working-sheets')
   revalidatePath(`/cost-control/working-sheets/${wsId}`)
+
+  // When a NON-admin archives a sheet, tell the admins — archiving hides it
+  // from every list/total, and only an admin can delete it, so they need to
+  // know it's sitting in the Archived list awaiting a decision. Fire-and-forget
+  // (after the response) so it never slows the archive action.
+  if (action === 'archive') {
+    after(async () => {
+      try {
+        const [me, prof] = await Promise.all([getMyUser(), getMyProfile()])
+        if (!me || prof?.role === 'admin') return // admin's own archive → no ping
+        const svc = await createClient()
+        const [{ data: ws }, { data: admins }] = await Promise.all([
+          svc.from('cc_working_sheets').select('ws_code').eq('id', wsId).maybeSingle(),
+          svc.from('profiles').select('id').eq('role', 'admin'),
+        ])
+        const who = personName(prof?.full_name ?? null, prof?.name ?? null, me.email ?? null)
+        const code = (ws?.ws_code as string | null) ?? 'a working sheet'
+        for (const a of admins ?? []) {
+          await svc.rpc('notify_user', {
+            p_user_id: a.id as string,
+            p_type: 'cc_ws_archived',
+            p_title: `Working sheet archived — ${code}`,
+            p_body: `${who} archived ${code}. It's hidden from lists and totals and is in the Archived list. Only you can delete it permanently.`,
+            p_url: '/cost-control/working-sheets?status=archived',
+            p_module_slug: 'cost-control',
+            p_data: {},
+          })
+        }
+      } catch { /* best-effort — the Archived list is the backstop */ }
+    })
+  }
   return { ok: true }
 }
 
