@@ -199,7 +199,7 @@ export async function handleApprovalCallback(
     })
     await editMarkup(token, chatId, messageId, waitingKeyboard(wsId))
     await sendMessage(token, chatId,
-      `${inr(askAmount)} to be approved for ${wsCode}. Just reply with your remark — e.g. “rates verified, approved”. (To approve a different amount, type it first: “300000 revised down”.)`,
+      `${inr(askAmount)} to be approved for ${wsCode}. Just reply with your remark — e.g. “rates verified, approved”. (Different amount? Type it first: “300000 revised”. Optional: attach a photo/file with the remark as its caption.)`,
       { reply_markup: { force_reply: true, input_field_placeholder: 'your remark' } })
     await answerCbq(token, cbq.id, 'Reply with your remark ↓')
     return true
@@ -376,5 +376,82 @@ export async function handleApprovalAmountReply(
     `✅ Signed off ${inr(amt)} — ${r.ws_code ?? 'budget'} now moves to ${prettyStage(r.new_status ?? '')}. Remark saved. Recorded in CT Hub.`)
   // Auto-send the next stage's card to the next connected approver.
   after(() => dispatchCardsForSheet(pend.ws_id as string).catch(() => {}))
+  return true
+}
+
+function mimeOf(name: string): string {
+  const e = (name.split('.').pop() || '').toLowerCase()
+  return e === 'pdf' ? 'application/pdf'
+    : e === 'png' ? 'image/png' : (e === 'jpg' || e === 'jpeg') ? 'image/jpeg'
+    : e === 'xlsx' ? 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    : e === 'xls' ? 'application/vnd.ms-excel'
+    : (e === 'doc' || e === 'docx') ? 'application/msword'
+    : 'application/octet-stream'
+}
+
+/** Download a Telegram file and save it against the sheet as an approval record
+ *  (kind='approval_record'), the same "for record" attachments the app supports. */
+async function attachTelegramFile(svc: SupabaseClient, token: string, wsId: string, actor: string, fileId: string, fileName: string | null): Promise<boolean> {
+  try {
+    const info = (await (await fetch(`https://api.telegram.org/bot${token}/getFile?file_id=${encodeURIComponent(fileId)}`)).json()) as { ok?: boolean; result?: { file_path?: string } }
+    const fp = info?.result?.file_path
+    if (!info.ok || !fp) return false
+    const bin = await (await fetch(`https://api.telegram.org/file/bot${token}/${fp}`)).arrayBuffer()
+    if (bin.byteLength > 25 * 1024 * 1024) return false
+    const { data: ws } = await svc.from('cc_working_sheets').select('project_id').eq('id', wsId).maybeSingle()
+    const projectId = ws?.project_id as string | undefined
+    if (!projectId) return false
+    const base = (fileName && fileName.trim()) || `telegram-${(fp.split('/').pop() || 'file')}`
+    const safe = base.replace(/[^A-Za-z0-9._-]/g, '_')
+    const path = `${projectId}/approval-tg-${Date.now()}-${safe}`
+    const { error: upErr } = await svc.storage.from('cc-sheets').upload(path, Buffer.from(bin), { contentType: mimeOf(safe), upsert: false })
+    if (upErr) return false
+    await svc.from('cc_ws_attachments').insert({ working_sheet_id: wsId, path, name: base, kind: 'approval_record', uploaded_by: actor })
+    return true
+  } catch { return false }
+}
+
+/**
+ * The approver sent a photo/document while a budget is waiting on them: attach
+ * it to the sheet as an approval record. If the file carries a caption, that
+ * caption is the remark and the approval is finished; otherwise we just confirm
+ * the attachment and wait for the remark. Returns true if consumed.
+ */
+export async function handleApprovalMedia(
+  svc: SupabaseClient, token: string, chatId: string | number, tgUserId: string | number,
+  fileId: string, fileName: string | null, caption: string,
+): Promise<boolean> {
+  const { data: pend } = await svc
+    .from('tg_pending_approvals')
+    .select('id, user_id, ws_id, expires_at, is_test')
+    .eq('chat_id', String(chatId))
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+  if (!pend) return false
+  if (new Date(pend.expires_at as string).getTime() < Date.now()) {
+    await sendMessage(token, chatId, 'That approval prompt expired — tap the button on the budget card again.')
+    return true
+  }
+  const actor = await resolveActor(svc, tgUserId)
+  if (!actor || actor !== pend.user_id) {
+    await sendMessage(token, chatId, 'Only the person this budget is waiting on can attach a file here.')
+    return true
+  }
+
+  if (pend.is_test) {
+    if (caption && caption.trim()) return handleApprovalAmountReply(svc, token, chatId, tgUserId, caption)
+    await sendMessage(token, chatId, '📎 Test — the file would be attached to the budget. Reply with your remark to finish.')
+    return true
+  }
+
+  const ok = await attachTelegramFile(svc, token, pend.ws_id as string, actor, fileId, fileName)
+  if (!ok) {
+    await sendMessage(token, chatId, 'Could not save that attachment — try again, or add it in CT Hub.')
+    return true
+  }
+  // Caption present → it's the remark; attach + finish the approval in one step.
+  if (caption && caption.trim()) return handleApprovalAmountReply(svc, token, chatId, tgUserId, caption)
+  await sendMessage(token, chatId, '📎 Attached to the budget. Now reply with your remark (or amount + remark) to finish approving.')
   return true
 }

@@ -7,7 +7,7 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient as createServiceClient } from '@supabase/supabase-js'
-import { handleApprovalCallback, handleApprovalAmountReply } from '@/lib/telegram/cc-approval-webhook'
+import { handleApprovalCallback, handleApprovalAmountReply, handleApprovalMedia } from '@/lib/telegram/cc-approval-webhook'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -34,6 +34,9 @@ export async function POST(req: NextRequest) {
   let update: {
     message?: {
       text?: string
+      caption?: string
+      photo?: Array<{ file_id?: string }>
+      document?: { file_id?: string; file_name?: string }
       chat?: { id?: number | string; type?: string; title?: string }
       from?: { id?: number | string }
     }
@@ -64,7 +67,18 @@ export async function POST(req: NextRequest) {
   const chatTitle = msg?.chat?.title ?? ''
   const fromId = msg?.from?.id
   const text = (msg?.text ?? '').trim()
-  if (chatId == null || !text) return NextResponse.json({ ok: true })
+  const caption = (msg?.caption ?? '').trim()
+  if (chatId == null) return NextResponse.json({ ok: true })
+
+  // ── Approver attached a photo/document while a budget is waiting on them:
+  //     save it as an approval record (caption, if any, is the remark). ──
+  if (chatType === 'private' && fromId != null && (msg?.document?.file_id || (msg?.photo && msg.photo.length))) {
+    const fileId = msg?.document?.file_id ?? msg?.photo?.[msg.photo.length - 1]?.file_id ?? null
+    const fileName = msg?.document?.file_name ?? null
+    if (svc && fileId) { try { await handleApprovalMedia(svc, token, chatId, fromId, fileId, fileName, caption) } catch { /* always ack */ } }
+    return NextResponse.json({ ok: true })
+  }
+  if (!text) return NextResponse.json({ ok: true })
 
   const connectHint = 'Open CT Hub → Settings → Notifications → Connect Telegram to link your account.'
 
