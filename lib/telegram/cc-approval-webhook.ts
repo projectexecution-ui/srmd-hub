@@ -363,6 +363,8 @@ export async function handleApprovalAmountReply(
     try { await svc.from('cc_ws_comments').insert({ ws_id: pend.ws_id, author_id: actor, body: `Released via Telegram — ${remark}` }) } catch { /* best-effort */ }
     await sendMessage(token, chatId,
       `✅ Released ${inr(r.released ?? 0)} — ${r.ws_code ?? 'budget'} is now ${prettyStage(r.new_status ?? 'approved')}. Remark saved. Recorded in CT Hub.`)
+    // Advance the progress thread (release has no next approver, but managers still trace it).
+    after(() => dispatchCardsForSheet(pend.ws_id as string).catch(() => {}))
     return true
   }
 

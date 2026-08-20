@@ -12,6 +12,7 @@ import { createClient as createServiceClient } from '@supabase/supabase-js'
 import { parseCcSettings } from '@/lib/cost-control/settings'
 import { loadApprovalCardInput } from '@/lib/cost-control/approval-card-data'
 import { sendApprovalToChat } from './cc-approval-send'
+import { notifyApprovalProgress } from './cc-approval-progress'
 
 export async function dispatchCardsForSheet(wsId: string): Promise<void> {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL
@@ -25,6 +26,10 @@ export async function dispatchCardsForSheet(wsId: string): Promise<void> {
   const map: Record<string, string> = {}
   for (const r of sRows ?? []) map[r.key as string] = r.value as string
   if (!['true', '1', 'on'].includes(map['cc_telegram_approvals'] ?? '')) return
+
+  // Threaded progress line to the managers who watch approvals — fires on EVERY
+  // transition (including the final release, which has no next approver).
+  await notifyApprovalProgress(svc, token, wsId).catch(() => {})
 
   // Who approves THIS sheet at its current stage, and has Telegram connected.
   const { data: targets } = await svc.rpc('cc_tg_stage_approvers', { p_ws_id: wsId })
