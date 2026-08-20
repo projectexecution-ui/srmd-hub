@@ -22,8 +22,9 @@ export interface CwRow {
   sr: string; description: string; unit: string; qty: string; rate: string; amount: number
   /** Take-off provenance — where the qty came from, e.g. "Working Sheet!G15". */
   takeoff?: string
-  /** Rate breakdown, e.g. "Installation ₹30". */
-  rateBreak?: string
+  /** Rate split, e.g. [{label:'M+L', value:20000}] / [{label:'Material',…},{label:'Labour',…}].
+   *  Shown right-aligned against the row, one component per line. */
+  breakdown?: Array<{ label: string; value: number }>
   /** A flag raised by the Excel check on this row (null = clean). */
   flag?: { severity: string; reason: string } | null
 }
@@ -73,9 +74,7 @@ export async function loadComputedWorkingRows(svc: SupabaseClient, wsId: string)
         ? `${r.source_sheet}!${r.source_cell}`
         : (r.qty_formula ? String(r.qty_formula).replace(/'/g, '') : '')
       const rb = Array.isArray(r.rate_breakdown) ? (r.rate_breakdown as Array<{ label?: string; value?: number }>) : []
-      const rateBreak = rb.length
-        ? rb.map(b => `${b.label ?? ''} ₹${Math.round(Number(b.value) || 0).toLocaleString('en-IN')}`).join(' + ').trim()
-        : ''
+      const breakdown = rb.filter(b => b && (b.label || b.value != null)).map(b => ({ label: String(b.label ?? ''), value: Number(b.value) || 0 }))
       return {
         sr: String(r.row_no ?? ''),
         description: (r.description as string | null) ?? '',
@@ -84,7 +83,7 @@ export async function loadComputedWorkingRows(svc: SupabaseClient, wsId: string)
         rate: num(r.rate),
         amount: Number(r.amount ?? 0),
         takeoff: takeoff || undefined,
-        rateBreak: rateBreak || undefined,
+        breakdown: breakdown.length ? breakdown : undefined,
         flag: r.flag ? { severity: (r.flag_severity as string) ?? '', reason: (r.flag_reason as string) ?? String(r.flag) } : null,
       }
     })
@@ -297,8 +296,8 @@ export function buildComputedWorkingPdf(input: ApprovalCardInput, wsCode: string
       r.description + (r.takeoff ? `\n· from ${r.takeoff}` : '') + (r.flag ? `\n! ${r.flag.reason}` : ''),
       r.unit,
       r.qty,
-      r.rate + (r.rateBreak ? `\n${r.rateBreak}` : ''),
-      inr(r.amount),
+      r.rate,
+      inr(r.amount) + (r.breakdown ? r.breakdown.map(b => `\n${b.label} ₹${Math.round(b.value).toLocaleString('en-IN')}`).join('') : ''),
     ]),
     styles: { font, fontStyle: 'normal', fontSize: 9, cellPadding: { top: 5, bottom: 5, left: 6, right: 6 }, overflow: 'linebreak', textColor: INK, lineColor: LINE, lineWidth: { bottom: 0.5 }, valign: 'top' },
     headStyles: { font, fontStyle: 'normal', fillColor: NAVY, textColor: WHITE, fontSize: 8.5, halign: 'left', cellPadding: { top: 7, bottom: 7, left: 6, right: 6 } },

@@ -156,9 +156,11 @@ export function buildComputedWorkingImages(input: ApprovalCardInput, wsCode: str
     const lines = wrap(r.description, 44)
     const subs: Array<{ t: string; fill: string }> = []
     if (r.takeoff) subs.push({ t: `· from ${r.takeoff}`, fill: C.FAINT })
-    if (r.rateBreak) subs.push({ t: `· rate: ${r.rateBreak}`, fill: C.FAINT })
     if (r.flag) subs.push({ t: `! ${r.flag.reason}`, fill: '#8a5a0b' })
-    const h = Math.max(52, (lines.length + subs.length) * LINE_LH + 22)
+    const bd = r.breakdown ?? []
+    // Row height is whichever side is taller — description+sub-lines (left) or
+    // amount + breakdown components (right).
+    const h = Math.max(52, Math.max(lines.length + subs.length, 1 + bd.length) * LINE_LH + 22)
     const add = ADD_RE.test(r.description)
     return {
       kind: 'row', h,
@@ -175,6 +177,8 @@ export function buildComputedWorkingImages(input: ApprovalCardInput, wsCode: str
         p.push(text(COL.qtyR, y + 32, r.qty, { fill: tc, size: 20, anchor: 'end' }))
         p.push(text(COL.rateR, y + 32, r.rate, { fill: tc, size: 20, anchor: 'end' }))
         p.push(text(COL.amtR, y + 32, inr(r.amount), { fill: C.INK, size: 20, anchor: 'end' }))
+        // Rate split (Material / Labour / M+L) — right-aligned under the amount.
+        bd.forEach((b, k) => p.push(text(COL.amtR, y + 32 + (k + 1) * LINE_LH, `${b.label} ₹${Math.round(b.value).toLocaleString('en-IN')}`, { fill: C.FAINT, size: 16, anchor: 'end' })))
         p.push(`<line x1="${PAD}" y1="${y + h}" x2="${W - PAD}" y2="${y + h}" stroke="${C.LINE}" stroke-width="1"/>`)
         return p.join('')
       },
