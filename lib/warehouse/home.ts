@@ -37,7 +37,15 @@ export type HomeInput = {
   role: string | null
   /** Is this person named keeper of at least one store? */
   keepsAStore: boolean
-  items: number
+  /** Distinct items with a quantity actually on a shelf right now. NOT the
+   *  size of the catalogue: the master carries every material name IN4 has
+   *  ever ordered, most of which has never been received. Showing 2,803 on a
+   *  tile labelled Stock read as "you hold 2,803 items" when the true figure
+   *  was 472. */
+  itemsInStock: number
+  /** The item master. Belongs on the Item Master tile, where it means
+   *  something, and nowhere else. */
+  catalogueItems: number
   spots: number
   todayIn: number
   toApprove: number
@@ -75,7 +83,7 @@ export function homeTiles(i: HomeInput): HomeTile[] {
   const all: Array<HomeTile & { show: boolean }> = [
     {
       key: 'stock', href: '/warehouse/stock', title: 'Stock',
-      subtitle: 'What lies where', stat: `${nf(i.items)} items`,
+      subtitle: 'What lies where', stat: `${nf(i.itemsInStock)} items in stock`,
       section: 'main', accent: 'none', show: true,
     },
     {
@@ -142,6 +150,7 @@ export function homeTiles(i: HomeInput): HomeTile[] {
     {
       key: 'items', href: '/warehouse/items', title: 'Item Master',
       subtitle: 'Names · units · category',
+      stat: `${nf(i.catalogueItems)} in the master`,
       section: 'setup', accent: 'none', show: i.canEdit,
     },
     {

@@ -6,6 +6,7 @@ import Link from 'next/link'
 import { toast } from 'sonner'
 import { Card } from '@/components/ui/card'
 import { saveSetting, addListValue, setListValueActive } from '../actions'
+import { formatNumber } from '@/lib/utils'
 import { StoreMap } from './store-map'
 import {
   SETTINGS, SECTIONS, NOT_BUILT,
@@ -432,7 +433,7 @@ function Lists({ lists, itemCount, canAdmin }: { lists: ListRow[]; itemCount: nu
         <p className="text-[11.5px] text-slate-500 mt-0.5">
           <b>Storage locations</b> are set up above, under Stores and who keeps them. <b>Projects</b> and{' '}
           <b>vendors</b> are the hub&apos;s own lists — set up once and used by every module, never a second copy here.
-          The <b>item master</b> holds {itemCount} items and grows by itself: a material IN4 names on a PO becomes an
+          The <b>item master</b> holds {formatNumber(itemCount, 0)} items and grows by itself: a material IN4 names on a PO becomes an
           item on import.
         </p>
         <Link href="/warehouse/items"

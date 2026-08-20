@@ -47,8 +47,12 @@ export default async function WarehouseHomePage() {
   const requestsOn = isOn(values, 'wh_requests_on')
 
   const sb = await createClient()
-  const [itemsRes, spotsRes, todayInRes, keptRes, lanes] = await Promise.all([
+  const [itemsRes, stockRes, spotsRes, todayInRes, keptRes, lanes] = await Promise.all([
     sb.from('wh_items').select('id', { count: 'exact', head: true }).is('deleted_at', null),
+    // What is actually ON A SHELF. Fetched as rows rather than a count because
+    // one item can sit in several stores and the honest figure is how many
+    // DIFFERENT items we hold, not how many store-and-item pairs exist.
+    sb.from('wh_stock').select('item_id').gt('qty', 0),
     sb.from('wh_locations').select('id', { count: 'exact', head: true })
       .not('parent_id', 'is', null).is('deleted_at', null),
     sb.from('wh_gate_in').select('id', { count: 'exact', head: true })
@@ -66,7 +70,8 @@ export default async function WarehouseHomePage() {
     canEdit, canAdmin, requestsOn,
     role: profile?.role ?? null,
     keepsAStore: (keptRes.data ?? []).length > 0,
-    items: itemsRes.count ?? 0,
+    itemsInStock: new Set((stockRes.data ?? []).map(r => r.item_id)).size,
+    catalogueItems: itemsRes.count ?? 0,
     spots: spotsRes.count ?? 0,
     todayIn: todayInRes.count ?? 0,
     toApprove: lanes?.toApprove.length ?? 0,

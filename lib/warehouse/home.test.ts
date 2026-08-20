@@ -29,7 +29,7 @@ function input(role: string, over: Partial<HomeInput> = {}): HomeInput {
   return {
     canEdit: m.edit, canAdmin: m.admin, requestsOn: true, role,
     keepsAStore: false,
-    items: 2803, spots: 9, todayIn: 0,
+    itemsInStock: 472, catalogueItems: 2803, spots: 9, todayIn: 0,
     toApprove: 0, toIssue: 0, mine: 0, canApprove: false,
     ...over,
   }
@@ -128,15 +128,37 @@ describe('keeper queue', () => {
   })
 })
 
-describe('numbers are formatted, not printed raw', () => {
-  it('groups the item count in the Indian style', () => {
+describe('the Stock tile counts what is on the shelf', () => {
+  it('shows items actually in stock, NOT the size of the catalogue', () => {
     const stock = homeTiles(input('viewer')).find(t => t.key === 'stock')
-    // The old screen rendered {k.n} and showed "2803".
-    expect(stock?.stat).toBe('2,803 items')
+    // The bug Aksha spotted: the tile said "2,803 items" — the item master —
+    // on a tile labelled Stock, when only 472 items were on a shelf. The
+    // catalogue carries every material IN4 has ever ordered; 2,331 of those
+    // have never been received anywhere.
+    expect(stock?.stat).toBe('472 items in stock')
+    expect(stock?.stat).not.toContain('2,803')
   })
-  it('groups a six-figure count too', () => {
-    const stock = homeTiles(input('viewer', { items: 250000 })).find(t => t.key === 'stock')
-    expect(stock?.stat).toBe('2,50,000 items')
+
+  it('puts the catalogue count on the Item Master tile, where it means something', () => {
+    const items = homeTiles(input('admin')).find(t => t.key === 'items')
+    expect(items?.stat).toBe('2,803 in the master')
+  })
+
+  it('does not read the two counts off each other', () => {
+    const tiles = homeTiles(input('admin', { itemsInStock: 12, catalogueItems: 9000 }))
+    expect(tiles.find(t => t.key === 'stock')?.stat).toBe('12 items in stock')
+    expect(tiles.find(t => t.key === 'items')?.stat).toBe('9,000 in the master')
+  })
+
+  it('still groups in the Indian style', () => {
+    // The other half of what Aksha flagged: the counters printed raw numbers.
+    const stock = homeTiles(input('viewer', { itemsInStock: 250000 })).find(t => t.key === 'stock')
+    expect(stock?.stat).toBe('2,50,000 items in stock')
+  })
+
+  it('says nothing misleading when the stores are empty', () => {
+    const stock = homeTiles(input('viewer', { itemsInStock: 0 })).find(t => t.key === 'stock')
+    expect(stock?.stat).toBe('0 items in stock')
   })
 })
 
