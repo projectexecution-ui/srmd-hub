@@ -272,6 +272,46 @@ export async function renameLocation(id: string, name: string): Promise<Result> 
   return { ok: true }
 }
 
+/** Say whose stock a store holds.
+ *
+ *  This is what makes the cross-project rule possible: an engineer asking
+ *  ANOTHER project's store is always put on a returnable footing, because that
+ *  material was bought against a different budget. Leaving it blank marks the
+ *  store shared — Central Store and the CT containers — and asking from a shared
+ *  store is never cross-project.
+ *
+ *  Set on the STORE, not the site: NGH holds an A store, a B store and an open
+ *  area, and they do not all belong to the same project. */
+export async function setLocationProject(
+  id: string,
+  projectId: string | null,
+): Promise<Result> {
+  const denied = await gate('admin')
+  if (denied) return { ok: false, error: denied }
+  const sb = await createClient()
+
+  const { data: self, error } = await sb
+    .from('wh_locations').select('id, parent_id, name').eq('id', id).maybeSingle()
+  if (error) return { ok: false, error: error.message }
+  if (!self) return { ok: false, error: 'That store no longer exists.' }
+  if (!self.parent_id) {
+    return {
+      ok: false,
+      error: `${self.name} is a site, not a store. Material sits in the stores under it, `
+        + 'so the project belongs on each store — they need not all be the same project.',
+    }
+  }
+
+  const { error: uErr } = await sb
+    .from('wh_locations').update({ project_id: projectId }).eq('id', id)
+  if (uErr) return { ok: false, error: uErr.message }
+
+  // The request form reads this to decide whether to force Returnable, and the
+  // gate reads it when issuing, so both have to see the change.
+  refresh('/warehouse/requests/new', '/warehouse/out', '/warehouse/settings')
+  return { ok: true }
+}
+
 /** Retire hides a store from every picker without touching its history.
  *  Un-retiring is the same switch the other way, so a mistake costs nothing. */
 export async function setLocationActive(id: string, active: boolean): Promise<Result> {

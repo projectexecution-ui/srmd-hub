@@ -498,3 +498,55 @@ begin
 end $$;
 
 select * from pg_temp.qa_suite();
+
+-- ===========================================================================
+-- S61-S63 · Cross-project returnable + the Atm Head's waiver  (2026-08-20)
+--
+-- Run as one block. It ends by raising ROLLBACK_ON_PURPOSE, so nothing it
+-- writes survives; seeing that message IS the pass. Any other exception is a
+-- real failure. Verified green against production 2026-08-20.
+-- ===========================================================================
+do $$
+declare
+  v_store uuid; v_proj uuid; v_req uuid; v_line uuid; v_me uuid; v_no text;
+  ok_needs_returnable boolean := false;
+  ok_needs_by boolean := false;
+  ok_good_waiver boolean := false;
+begin
+  select id into v_store from wh_locations where name = 'NGH A store' and deleted_at is null;
+  select id into v_proj  from projects where name = 'P2 A01';
+  select id into v_me    from profiles limit 1;
+
+  select fn_wh_next_no('req') into v_no;
+  insert into wh_requests (req_no, from_location_id, project_id, purpose, requested_by,
+                           status, rule_at_raise, stages_needed, stages_done)
+  values (v_no, v_store, v_proj, 'SCENARIO S61 - delete me', v_me, 'approved', 'none', 0, 0)
+  returning id into v_req;
+
+  -- S61 · a waiver on a line that was never returnable is refused
+  insert into wh_request_lines (request_id, item_id, qty, is_returnable)
+  values (v_req, (select id from wh_items limit 1), 5, false) returning id into v_line;
+  begin
+    update wh_request_lines set return_waived_at = now(), return_waived_by = v_me where id = v_line;
+  exception when check_violation then ok_needs_returnable := true;
+  end;
+
+  -- S62 · a waiver with nobody named is refused: it must be attributable
+  update wh_request_lines set is_returnable = true where id = v_line;
+  begin
+    update wh_request_lines set return_waived_at = now(), return_waived_by = null where id = v_line;
+  exception when check_violation then ok_needs_by := true;
+  end;
+
+  -- S63 · a proper waiver is accepted
+  update wh_request_lines
+     set return_waived_at = now(), return_waived_by = v_me, return_waived_note = 'consumed on site'
+   where id = v_line;
+  ok_good_waiver := true;
+
+  if not (ok_needs_returnable and ok_needs_by and ok_good_waiver) then
+    raise exception 'SCENARIO FAILED: needs_returnable=% needs_by=% good=%',
+      ok_needs_returnable, ok_needs_by, ok_good_waiver;
+  end if;
+  raise exception 'ROLLBACK_ON_PURPOSE: S61-S63 all passed';
+end $$;

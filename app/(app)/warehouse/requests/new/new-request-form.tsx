@@ -11,10 +11,11 @@ import { raiseRequest, checkStock, storeStock, addCatalogueItem } from '../../re
 import { estimateValue, raiseBlocker } from '@/lib/warehouse/requests'
 import type { ShortLine } from '@/lib/warehouse/requests'
 import { waitingOn } from '@/lib/warehouse/approval-matrix'
+import { returnableLock } from '@/lib/warehouse/cross-project'
 import type { Rule } from '@/lib/warehouse/approval-matrix'
 import type { WhSite, WhItem } from '@/lib/warehouse/types'
 import {
-  Loader2, Plus, Trash2, Stamp, TriangleAlert, Info, Send, ChevronDown,
+  Loader2, Plus, Trash2, Stamp, TriangleAlert, Info, Send, ChevronDown, Undo2,
 } from 'lucide-react'
 
 const inputCls =
@@ -63,8 +64,20 @@ export function NewRequestForm({
 
   const spots = useMemo(() => sites.flatMap(s => s.spots.map(sp => ({
     id: sp.id, name: sp.name, site: sp.siteName,
+    projectId: sp.projectId, projectName: sp.projectName,
   }))), [sites])
-  const storeName = spots.find(s => s.id === fromLocationId)?.name ?? null
+  const store = spots.find(s => s.id === fromLocationId) ?? null
+  const storeName = store?.name ?? null
+
+  // Borrowing from ANOTHER project’s store is always returnable — that stock was
+  // bought against a different budget. The engineer does not choose; the Atm
+  // Head can release it after approving. A sentence rather than a disabled tick
+  // with no explanation, which reads as a bug.
+  const lock = returnableLock(
+    { projectId: store?.projectId ?? null },
+    { projectId: projectId || null },
+    store?.projectName ?? null,
+  )
 
   // The catalogue with this store's quantities folded in, so the picker can
   // separate "here now" from "somewhere in the master".
@@ -89,8 +102,8 @@ export function NewRequestForm({
     .map(r => ({
       itemId: r.itemId, qty: Number(r.qty),
       note: r.remarks.trim() || null,
-      isReturnable: r.returnable,
-    })), [rows])
+      isReturnable: !!lock || r.returnable,
+    })), [rows, lock])
 
   const est = useMemo(() => {
     const byId = new Map(items.map(i => [i.id, i]))
@@ -164,6 +177,16 @@ export function NewRequestForm({
             </select>
           </div>
         </div>
+
+        {/* Said once, here, next to the two answers that decide it — rather than
+            only as small print beside every line’s tick. */}
+        {lock && (
+          <p className="mt-2 flex items-start gap-1.5 rounded-lg border border-violet-200 bg-violet-50
+                        px-2.5 py-2 text-[11.5px] leading-snug text-violet-900">
+            <Undo2 className="h-3.5 w-3.5 mt-0.5 flex-shrink-0" />
+            <span>{lock}</span>
+          </p>
+        )}
       </Card>
 
       {/* Items, in the V1 sheet layout: a header with Add row on the right, then
@@ -209,10 +232,14 @@ export function NewRequestForm({
             <div className="flex items-center justify-between gap-2 flex-wrap px-0.5">
               {/* Per LINE, not per request: one pour routinely mixes cement that
                   gets consumed with shuttering that has to come back. */}
-              <label className="flex items-start gap-2 text-[11.5px] text-slate-600 cursor-pointer">
-                <input type="checkbox" checked={row.returnable} className="mt-0.5 h-3.5 w-3.5"
+              <label className={`flex items-start gap-2 text-[11.5px] ${
+                lock ? 'text-violet-800 cursor-default' : 'text-slate-600 cursor-pointer'}`}>
+                <input type="checkbox" checked={!!lock || row.returnable} disabled={!!lock}
+                  className="mt-0.5 h-3.5 w-3.5"
                   onChange={e => setRow(row.key, { returnable: e.target.checked })} />
-                <span>Returnable <span className="text-slate-400">(tool / formwork — must come back)</span></span>
+                <span>Returnable <span className={lock ? 'text-violet-500' : 'text-slate-400'}>
+                  {lock ? '(another project’s stock)' : '(tool / formwork — must come back)'}
+                </span></span>
               </label>
               {row.itemId && (
                 <span className={`text-[11px] font-semibold ${

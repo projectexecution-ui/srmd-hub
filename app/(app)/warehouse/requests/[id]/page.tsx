@@ -7,6 +7,7 @@ import { getRequestDetail, getApprovalRules, myWarehouseRole } from '@/lib/wareh
 import { getShowValues } from '@/lib/warehouse/data'
 import { issuableBlocker } from '@/lib/warehouse/requests'
 import { movesFor, personBlocker } from '@/lib/warehouse/approval-matrix'
+import { waiveBlocker } from '@/lib/warehouse/cross-project'
 import { RequestClient } from './request-client'
 import { ChevronLeft } from 'lucide-react'
 
@@ -63,6 +64,19 @@ export default async function RequestPage({
       ? 'Your role cannot move this request on. The chain is set in Admin ▸ Approvals.'
       : null)
 
+  // "Not required to take back" — the Atm Head releasing a returnable after
+  // approving it. Same authority that approves, and deliberately not tied to
+  // edit permission: the Head may be view-only on this module.
+  const canWaive = isAdmin || role === 'head' || role === 'admin'
+  const whyNotWaive = waiveBlocker({
+    status: request.status,
+    canWaive,
+    lines: request.items.map(i => ({
+      lineId: i.lineId, isReturnable: i.isReturnable,
+      waivedAt: i.waivedAt, issuedQty: i.issuedQty,
+    })),
+  })
+
   const whyNotIssue = issuableBlocker({
     reqNo: request.reqNo, status: request.status,
     stagesNeeded: request.stagesNeeded, stagesDone: request.stagesDone,
@@ -86,6 +100,8 @@ export default async function RequestPage({
         canIssue={canEdit && !whyNotIssue}
         whyNotIssue={whyNotIssue}
         canCancel={canEdit && (mine || isAdmin)}
+        canWaive={canWaive && !whyNotWaive}
+        whyNotWaive={whyNotWaive}
       />
     </div>
   )

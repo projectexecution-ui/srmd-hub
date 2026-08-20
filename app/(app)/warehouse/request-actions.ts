@@ -16,6 +16,7 @@ import { isOn } from '@/lib/warehouse/settings'
 import { raiseBlocker, estimateValue, shortfalls } from '@/lib/warehouse/requests'
 import type { RaiseInput, ShortLine } from '@/lib/warehouse/requests'
 import { movesFor, needsApproval, personBlocker } from '@/lib/warehouse/approval-matrix'
+import { waiveBlocker, waivableLines, isCrossProject } from '@/lib/warehouse/cross-project'
 import { getApprovalRules, myWarehouseRole } from '@/lib/warehouse/request-data'
 
 type Result = { ok: boolean; error?: string }
@@ -51,6 +52,16 @@ export async function raiseRequest(input: RaiseInput): Promise<Raised> {
   const sb = await createClient()
   const me = await getMyUser()
   const lines = input.lines.filter(l => l.itemId && l.qty > 0)
+
+  // Borrowing from ANOTHER project's store is always returnable. Decided HERE
+  // rather than trusting the form: the tick is locked in the UI, but a locked
+  // control is a courtesy and not a rule until the server says so.
+  const { data: store } = await sb
+    .from('wh_locations').select('project_id').eq('id', input.fromLocationId).maybeSingle()
+  const forcedReturnable = isCrossProject(
+    { projectId: store?.project_id ?? null },
+    { projectId: input.projectId ?? null },
+  )
 
   // Price the request from what each item last cost, so the value rule has
   // something to compare against.
@@ -97,7 +108,7 @@ export async function raiseRequest(input: RaiseInput): Promise<Raised> {
     lines.map(l => ({
       request_id: header.id, item_id: l.itemId, qty: l.qty,
       note: l.note?.trim() || null,
-      is_returnable: l.isReturnable ?? false,
+      is_returnable: forcedReturnable || (l.isReturnable ?? false),
     })),
   )
   if (lErr) {
@@ -346,4 +357,102 @@ export async function addCatalogueItem(
 
   revalidatePath('/warehouse/items')
   return { ok: true, id: data.id }
+}
+
+/** "Not required to take back" — the Atm Head releasing a returnable.
+ *
+ *  Aksha's rule has two halves. Borrowing from another project's store is ALWAYS
+ *  returnable, because that stock was bought against a different budget and the
+ *  engineer does not get to decide otherwise. But the Atm Head can release it
+ *  AFTER approving — including once the material has already gone out — so the
+ *  rule is firm at the point of asking and flexible afterwards.
+ *
+ *  Two records are written, because the obligation lives in two places:
+ *    · the request line, so a later issue is not forced returnable again
+ *    · every OUT entry already raised against the request, which is what the
+ *      Returnables outstanding report actually counts
+ *
+ *  `is_returnable` is never flipped to false. It WAS issued on a returnable
+ *  footing; the register must keep saying so, and the waiver sits beside it as a
+ *  second, later, attributed fact.
+ *
+ *  `lineId` releases one line; omit it to release the whole request in one tap.
+ */
+export async function waiveReturn(
+  requestId: string,
+  note: string,
+  lineId?: string | null,
+): Promise<Result> {
+  const off = await requestsEnabled()
+  if (off) return { ok: false, error: off }
+
+  // 'view', for the same reason moveRequest uses it: the Atm Head who approves
+  // may be view-only on this module, and authority here is a role question, not
+  // an edit-permission one.
+  const denied = await gate('view')
+  if (denied) return { ok: false, error: denied }
+
+  const reason = note.trim()
+  if (!reason) {
+    return {
+      ok: false,
+      error: 'Say why it need not come back. A released return with no reason is '
+        + 'the kind of gap that turns into an argument months later.',
+    }
+  }
+
+  const sb = await createClient()
+  const [me, perms, role] = await Promise.all([getMyUser(), getMyPermissions(), myWarehouseRole()])
+  if (!me?.id) return { ok: false, error: 'Sign in again — we could not tell who you are.' }
+
+  const { data: r, error } = await sb.from('wh_requests')
+    .select(`status, deleted_at,
+             wh_request_lines(id, is_returnable, issued_qty, return_waived_at)`)
+    .eq('id', requestId).maybeSingle()
+  if (error) return { ok: false, error: error.message }
+  if (!r || r.deleted_at) return { ok: false, error: 'That request no longer exists.' }
+
+  // The Atm Head, or an admin. Same authority that approves.
+  const canWaive = can(perms, 'warehouse', 'admin') || role === 'head' || role === 'admin'
+
+  const allLines = (r.wh_request_lines ?? []).map(l => ({
+    lineId: l.id as string,
+    isReturnable: (l.is_returnable as boolean) ?? false,
+    issuedQty: Number(l.issued_qty ?? 0),
+    waivedAt: (l.return_waived_at as string | null) ?? null,
+  }))
+  const scope = lineId ? allLines.filter(l => l.lineId === lineId) : allLines
+  if (lineId && scope.length === 0) return { ok: false, error: 'That line is not on this request.' }
+
+  const why = waiveBlocker({ status: r.status as string, canWaive, lines: scope })
+  if (why) return { ok: false, error: why }
+
+  const targets = waivableLines(scope).map(l => l.lineId)
+  const stamp = { return_waived_at: new Date().toISOString(), return_waived_by: me.id, return_waived_note: reason }
+
+  const { error: lErr } = await sb.from('wh_request_lines').update(stamp).in('id', targets)
+  if (lErr) return { ok: false, error: lErr.message }
+
+  // Now the OUT entries. Only worth touching when the WHOLE request is released:
+  // wh_gate_out.is_returnable is per ENTRY, not per line, so releasing one line
+  // of a multi-line issue cannot honestly clear the entry's obligation.
+  const wholeRequestReleased = !lineId
+    || allLines.filter(l => l.isReturnable).every(l => l.waivedAt || targets.includes(l.lineId))
+  if (wholeRequestReleased) {
+    const { error: gErr } = await sb.from('wh_gate_out').update(stamp)
+      .eq('request_id', requestId)
+      .eq('is_returnable', true)
+      .is('return_waived_at', null)
+      .is('deleted_at', null)
+    if (gErr) {
+      return {
+        ok: false,
+        error: `The request lines were released but the issued entries were not: ${gErr.message}. `
+          + 'Try again — releasing twice is harmless.',
+      }
+    }
+  }
+
+  refresh(`/warehouse/requests/${requestId}`, '/warehouse/reports/control/returnables')
+  return { ok: true }
 }

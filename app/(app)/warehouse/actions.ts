@@ -358,9 +358,18 @@ export async function saveGateOut(input: GateOutInput): Promise<SaveResult> {
     if (blocked) return { ok: false, error: blocked }
   }
 
+  // Does the request this issue answers put it on a returnable footing?
+  //
+  // The request's returnable flag used to stop at the request: the keeper's OUT
+  // entry decided returnability all over again, so an engineer borrowing another
+  // project's stock could be issued it with no obligation to bring it back —
+  // which would make the whole cross-project rule decorative. A line the Atm
+  // Head has already released does not count.
+  let requestForcesReturn = false
   if (input.requestId) {
     const { data: rq } = await sb.from('wh_requests')
-      .select('req_no, status, stages_needed, stages_done, requested_by')
+      .select(`req_no, status, stages_needed, stages_done, requested_by,
+               wh_request_lines(is_returnable, return_waived_at)`)
       .eq('id', input.requestId).maybeSingle()
     if (!rq) return { ok: false, error: 'That request no longer exists.' }
     const refusal = issuableBlocker({
@@ -369,6 +378,9 @@ export async function saveGateOut(input: GateOutInput): Promise<SaveResult> {
       requestedBy: rq.requested_by, approvers: [],
     })
     if (refusal) return { ok: false, error: refusal }
+
+    requestForcesReturn = (rq.wh_request_lines ?? [])
+      .some(l => l.is_returnable && !l.return_waived_at)
   }
 
   // A store move gets its own series because it never leaves the campus.
@@ -391,8 +403,10 @@ export async function saveGateOut(input: GateOutInput): Promise<SaveResult> {
       party: input.destType === 'vendor' ? input.party!.trim() : null,
       entity: input.entity,
       engineer_id: input.destType === 'site' ? input.engineerId : null,
-      is_returnable: input.destType === 'site' ? input.isReturnable : false,
-      return_due_date: input.destType === 'site' && input.isReturnable ? input.returnDueDate : null,
+      // A request that demands the material back outranks the keeper's tick.
+      is_returnable: input.destType === 'site' ? (input.isReturnable || requestForcesReturn) : false,
+      return_due_date: input.destType === 'site' && (input.isReturnable || requestForcesReturn)
+        ? input.returnDueDate : null,
       vehicle_no: input.vehicleNo,
       remarks: input.remarks,
       request_id: input.requestId ?? null,

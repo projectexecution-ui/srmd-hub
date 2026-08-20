@@ -19,6 +19,9 @@ export type AdminLocation = {
   name: string
   keeperId: string | null
   active: boolean
+  /** The project whose stock this store holds; null means shared. */
+  projectId: string | null
+  projectName: string | null
   /** Stores under a site, sites have none. */
   children: AdminLocation[]
 }
@@ -30,13 +33,15 @@ export async function getAllLocations(): Promise<{ sites: AdminLocation[]; error
   const sb = await createClient()
   const { data, error } = await sb
     .from('wh_locations')
-    .select('id, parent_id, code, name, keeper_id, is_active, deleted_at')
+    .select('id, parent_id, code, name, keeper_id, is_active, deleted_at, project_id, projects(name)')
     .order('sort').order('name')
   if (error) return { sites: [], error: error.message }
 
   const rows = (data ?? []).map(r => ({
     id: r.id, parentId: r.parent_id, code: r.code, name: r.name,
     keeperId: r.keeper_id,
+    projectId: r.project_id ?? null,
+    projectName: one(r.projects)?.name ?? null,
     active: r.is_active && r.deleted_at == null,
     children: [] as AdminLocation[],
   }))

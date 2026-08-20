@@ -17,6 +17,10 @@ export type WhSpot = {
   /** Who may POST entries here. Everyone with view can still SEE the stock —
    *  that is the point of a shared warehouse. */
   keeperId: string | null
+  /** The project whose stock this store holds; null means shared/central, and
+   *  asking from a shared store is never cross-project. */
+  projectId: string | null
+  projectName: string | null
 }
 
 export type WhItem = {

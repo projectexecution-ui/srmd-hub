@@ -17,7 +17,7 @@ export default async function WarehouseSettingsPage() {
   const canAdmin = can(perms, 'warehouse', 'admin')
   const sb = await createClient()
 
-  const [values, locations, people, hideableRoles, listsRes, historyRes, itemsRes] = await Promise.all([
+  const [values, locations, people, hideableRoles, listsRes, historyRes, itemsRes, projectsRes] = await Promise.all([
     getSettings(),
     getAllLocations(),
     getReceivers(),
@@ -27,6 +27,9 @@ export default async function WarehouseSettingsPage() {
       .select('id, key, old_value, new_value, changed_at, profiles(full_name, email)')
       .order('changed_at', { ascending: false }).limit(30),
     sb.from('wh_items').select('id, source', { count: 'exact', head: true }).is('deleted_at', null),
+    // For "Belongs to project" on each store — what makes a cross-project ask
+    // recognisable, and so always returnable.
+    sb.from('projects').select('id, name').order('name'),
   ])
 
   // How much each store actually holds, so "who works where" shows what a
@@ -49,6 +52,7 @@ export default async function WarehouseSettingsPage() {
 
       {listsRes.error && <QueryError message={listsRes.error.message} what="your lists" />}
       {locations.error && <QueryError message={locations.error} what="your stores" />}
+      {projectsRes.error && <QueryError message={projectsRes.error.message} what="your projects" />}
 
       {!canAdmin && (
         <Card className="p-3 shadow-sm text-[12.5px] text-amber-900 bg-amber-50 border-amber-200">
@@ -61,6 +65,7 @@ export default async function WarehouseSettingsPage() {
         values={values}
         sites={locations.sites}
         people={people}
+        projects={projectsRes.data ?? []}
         lists={listsRes.data ?? []}
         history={historyRes.data ?? []}
         itemsPerStore={itemsPerStore}

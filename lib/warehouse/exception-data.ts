@@ -559,12 +559,18 @@ async function returnables(ctx: Ctx): Promise<ReportView> {
     .from('wh_gate_out')
     .select(`entry_no, entry_date, return_due_date, projects(name),
              engineer:profiles!wh_gate_out_engineer_id_fkey(full_name, email),
+             return_waived_at,
              wh_gate_out_lines(qty, returned_qty, wh_items(name, unit))`)
     .eq('is_returnable', true).is('deleted_at', null)
   if (error) return shell(ctx, { error: error.message })
 
   const lines: ReturnableLine[] = []
+  // Released by the Atm Head: it went out on a returnable footing and the
+  // register still says so, but nobody is chasing it any more, so it must not
+  // sit on this report for ever. Counted rather than silently dropped.
+  let released = 0
   for (const e of data ?? []) {
+    if (e.return_waived_at) { released += (e.wh_gate_out_lines ?? []).length; continue }
     const eng = one(e.engineer)
     for (const l of e.wh_gate_out_lines ?? []) {
       const it = one(l.wh_items)
@@ -612,6 +618,10 @@ async function returnables(ctx: Ctx): Promise<ReportView> {
     ],
     caveats: [
       'Only what is still out. A returnable that came back is closed, however late it was.',
+      released > 0
+        ? `${formatNumber(released, 0)} ${released === 1 ? 'line is' : 'lines are'} not counted here — the Atm `
+          + 'Head released them from coming back. Who decided that, and why, is on the request itself.'
+        : 'Nothing has been released from coming back.',
       'A position as at today, so the period filter does not apply.',
     ],
     emptyGood: 'Nothing is out on a promise to come back.',

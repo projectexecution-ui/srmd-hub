@@ -45,12 +45,13 @@ const HUB_SCREENS: Array<[string, string, string]> = [
 ]
 
 export function SettingsClient({
-  values, sites, people, lists, history, itemsPerStore, itemCount, hideableRoles, canAdmin,
+  values, sites, people, projects, lists, history, itemsPerStore, itemCount, hideableRoles, canAdmin,
 }: {
   values: SettingValues
   hideableRoles: HideableRole[]
   sites: AdminLocation[]
   people: Array<{ id: string; name: string }>
+  projects: Array<{ id: string; name: string }>
   lists: ListRow[]
   history: HistoryRow[]
   itemsPerStore: Record<string, number>
@@ -104,7 +105,8 @@ export function SettingsClient({
                 ))}
 
                 {sec.key === 'who-where' && (
-                  <StoreMap sites={sites} people={people} itemsPerStore={itemsPerStore} canAdmin={canAdmin} />
+                  <StoreMap sites={sites} people={people} projects={projects}
+                    itemsPerStore={itemsPerStore} canAdmin={canAdmin} />
                 )}
                 {sec.key === 'lists' && <Lists lists={lists} itemCount={itemCount} canAdmin={canAdmin} />}
                 {sec.key === 'elsewhere' && <><SyncLink /><RolesTable /><FromHub /></>}

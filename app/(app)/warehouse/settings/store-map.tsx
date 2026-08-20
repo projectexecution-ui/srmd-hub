@@ -10,7 +10,7 @@ import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
 import { setStoreKeeper } from '../actions'
-import { createLocation, renameLocation, setLocationActive } from '../admin-actions'
+import { createLocation, renameLocation, setLocationActive, setLocationProject } from '../admin-actions'
 import type { AdminLocation } from '@/lib/warehouse/admin-data'
 import { Loader2, Plus, Pencil, Archive, RotateCcw, Check, X } from 'lucide-react'
 
@@ -22,10 +22,11 @@ const iconBtn =
   'text-slate-500 hover:border-emerald-300 hover:text-emerald-700 disabled:opacity-40'
 
 export function StoreMap({
-  sites, people, itemsPerStore, canAdmin,
+  sites, people, projects, itemsPerStore, canAdmin,
 }: {
   sites: AdminLocation[]
   people: Array<{ id: string; name: string }>
+  projects: Array<{ id: string; name: string }>
   itemsPerStore: Record<string, number>
   canAdmin: boolean
 }) {
@@ -52,6 +53,7 @@ export function StoreMap({
               .map(sp => (
                 <div key={sp.id} className="space-y-1">
                   <LocationRow loc={sp} isSite={false} canAdmin={canAdmin} itemsPerStore={itemsPerStore} />
+                  {sp.active && <OwnerPicker spot={sp} projects={projects} canAdmin={canAdmin} />}
                   {sp.active && <KeeperPicker spot={sp} people={people} canAdmin={canAdmin} />}
                 </div>
               ))}
@@ -165,6 +167,60 @@ function LocationRow({
 /** Tap a name to make them the keeper; tap again to unassign.
  *
  *  Chips rather than a dropdown, copying the Engineer-projects screen in V1.
+/** Whose stock does this store hold?
+ *
+ *  This is what lets the request form tell a normal ask from an engineer
+ *  reaching into ANOTHER project’s stock, which is always on a returnable
+ *  footing. Left blank the store is shared — Central Store, the CT containers
+ *  — and asking from it is never cross-project.
+ *
+ *  A dropdown rather than chips: there are 36 projects and only one can own a
+ *  store, so chips would be a wall. */
+function OwnerPicker({
+  spot, projects, canAdmin,
+}: {
+  spot: AdminLocation
+  projects: Array<{ id: string; name: string }>
+  canAdmin: boolean
+}) {
+  const router = useRouter()
+  const [busy, start] = useTransition()
+
+  function pick(id: string) {
+    start(async () => {
+      const res = await setLocationProject(spot.id, id || null)
+      if (!res.ok) { toast.error(res.error ?? 'Could not save that.'); return }
+      toast.success(id ? 'Owner set' : 'Marked shared')
+      router.refresh()
+    })
+  }
+
+  return (
+    <div className="flex items-center gap-2 flex-wrap pb-1">
+      <label className="text-[11px] font-bold uppercase tracking-wide text-slate-400"
+        htmlFor={`owner-${spot.id}`}>
+        Belongs to
+      </label>
+      <select id={`owner-${spot.id}`} disabled={!canAdmin || busy}
+        value={spot.projectId ?? ''}
+        onChange={e => pick(e.target.value)}
+        className="rounded-lg border border-slate-300 bg-white px-2 py-1 min-h-[34px] text-[12px]
+                   disabled:opacity-50 focus:outline-none focus:ring-2 focus:ring-emerald-400/40">
+        <option value="">— shared, any project may ask —</option>
+        {projects.map(pr => <option key={pr.id} value={pr.id}>{pr.name}</option>)}
+      </select>
+      {busy && <Loader2 className="h-3.5 w-3.5 animate-spin text-slate-400" />}
+      {spot.projectId && (
+        <span className="text-[11px] text-violet-800 bg-violet-50 border border-violet-200 rounded-full px-2 py-0.5">
+          another project asking = must come back
+        </span>
+      )}
+    </div>
+  )
+}
+
+/** Who keeps this store.
+ *
  *  Who keeps which store is a map you read across all the stores at once, and
  *  a column of collapsed dropdowns hides exactly that — you cannot see that
  *  one person holds four stores without opening four of them. */

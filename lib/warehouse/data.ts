@@ -35,7 +35,7 @@ export async function getLocationTree(): Promise<WhSite[]> {
   const sb = await createClient()
   const { data } = await sb
     .from('wh_locations')
-    .select('id, code, name, parent_id, keeper_id, sort')
+    .select('id, code, name, parent_id, keeper_id, sort, project_id, projects(name)')
     .is('deleted_at', null)
     .eq('is_active', true)
     .order('sort')
@@ -49,7 +49,11 @@ export async function getLocationTree(): Promise<WhSite[]> {
     name: s.name,
     spots: rows
       .filter(r => r.parent_id === s.id)
-      .map<WhSpot>(r => ({ id: r.id, code: r.code, name: r.name, siteName: s.name, keeperId: r.keeper_id })),
+      .map<WhSpot>(r => ({
+        id: r.id, code: r.code, name: r.name, siteName: s.name, keeperId: r.keeper_id,
+        projectId: r.project_id ?? null,
+        projectName: one(r.projects)?.name ?? null,
+      })),
   }))
 }
 

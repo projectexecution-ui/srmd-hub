@@ -8,9 +8,10 @@ import { Card } from '@/components/ui/card'
 import { confirm } from '@/components/ui/confirm-dialog'
 import { formatDate, formatDateTime } from '@/lib/utils'
 import { formatQty, formatINR } from '@/lib/warehouse/format'
-import { moveRequest, cancelRequest } from '../../request-actions'
+import { moveRequest, cancelRequest, waiveReturn } from '../../request-actions'
 import { STATUS_TONE } from '@/lib/warehouse/requests'
 import { STAGE_LABEL } from '@/lib/warehouse/approval-matrix'
+import { returnSummary } from '@/lib/warehouse/cross-project'
 import type { RequestDetail } from '@/lib/warehouse/request-data'
 import {
   Loader2, Stamp, X, Info, PackageCheck, Ban, TriangleAlert, ArrowRight, Undo2,
@@ -34,6 +35,7 @@ type Move = { toStage: string; needsRemarks: boolean; label: string }
 
 export function RequestClient({
   request: r, showValues, moves, whyNoMoves, canIssue, whyNotIssue, canCancel,
+  canWaive, whyNotWaive,
 }: {
   request: RequestDetail
   showValues: boolean
@@ -43,11 +45,16 @@ export function RequestClient({
   canIssue: boolean
   whyNotIssue: string | null
   canCancel: boolean
+  /** May this person release the material from having to come back? */
+  canWaive: boolean
+  whyNotWaive: string | null
 }) {
   const router = useRouter()
   const [busy, start] = useTransition()
   const [open, setOpen] = useState<Move | null>(null)
   const [reason, setReason] = useState('')
+  const [waiving, setWaiving] = useState(false)
+  const [waiveNote, setWaiveNote] = useState('')
 
   return (
     <div className="space-y-3">
@@ -72,6 +79,16 @@ export function RequestClient({
               ? `${r.approvals.length} ${r.approvals.length === 1 ? 'approval' : 'approvals'} so far`
               : 'No approval yet'}
             {r.estValue != null && showValues ? ` · about ${formatINR(r.estValue)}` : ''}
+          </p>
+        )}
+        {returnSummary(r.items.map(i => ({
+          lineId: i.lineId, isReturnable: i.isReturnable, waivedAt: i.waivedAt, issuedQty: i.issuedQty,
+        }))) && (
+          <p className="text-[12px] mt-1.5 inline-flex items-center gap-1.5">
+            <Undo2 className="h-3.5 w-3.5" />
+            {returnSummary(r.items.map(i => ({
+              lineId: i.lineId, isReturnable: i.isReturnable, waivedAt: i.waivedAt, issuedQty: i.issuedQty,
+            })))}
           </p>
         )}
         {r.status === 'rejected' && r.rejectReason && (
@@ -150,9 +167,16 @@ export function RequestClient({
                     store holds {formatQty(it.available)} {it.unit}
                   </span>
                 </p>
-                {it.isReturnable && (
+                {it.isReturnable && !it.waivedAt && (
                   <p className="text-[11px] font-semibold text-violet-700 mt-0.5 inline-flex items-center gap-1">
                     <Undo2 className="h-3 w-3" /> Returnable — must come back
+                  </p>
+                )}
+                {it.waivedAt && (
+                  <p className="text-[11px] text-slate-500 mt-0.5">
+                    <span className="font-semibold text-slate-600">Need not come back</span>
+                    {it.waivedBy ? ` — ${it.waivedBy}` : ''}, {formatDateTime(it.waivedAt)}
+                    {it.waivedNote ? ` · ${it.waivedNote}` : ''}
                   </p>
                 )}
                 {it.note && <p className="text-[11px] text-slate-500 mt-0.5">{it.note}</p>}
@@ -263,6 +287,58 @@ export function RequestClient({
           <p className="text-[12px] text-slate-600 bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-2 flex gap-1.5">
             <TriangleAlert className="h-3.5 w-3.5 flex-shrink-0 mt-0.5 text-slate-400" />
             <span>{whyNotIssue}</span>
+          </p>
+        )}
+
+        {/* Aksha’s rule: another project’s stock is always borrowed on a
+            returnable footing, but the Atm Head can release it AFTER approving —
+            including once it has gone out. Firm at the asking, flexible after. */}
+        {canWaive && !waiving && (
+          <button type="button" disabled={busy} onClick={() => { setWaiving(true); setWaiveNote('') }}
+            className="rounded-lg border-2 border-violet-200 px-3 py-2 min-h-[42px] text-[12.5px] font-bold
+                       text-violet-800 hover:bg-violet-50 inline-flex items-center gap-1.5 w-fit">
+            <Undo2 className="h-3.5 w-3.5" /> Not required to take back
+          </button>
+        )}
+
+        {waiving && (
+          <div className="space-y-2 rounded-lg border border-violet-200 bg-violet-50/60 p-2.5">
+            <div>
+              <label className={labelCls} htmlFor="waive-note">Why need it not come back?</label>
+              <input id="waive-note" className={inputCls} value={waiveNote} autoFocus
+                onChange={e => setWaiveNote(e.target.value)}
+                placeholder="Consumed on site — charge it to the borrowing project" />
+              <p className="text-[11px] text-violet-900 mt-1">
+                It stops being chased on the Returnables report, and your name and reason stay
+                on the request.
+              </p>
+            </div>
+            <div className="flex gap-2">
+              <button type="button" disabled={busy || !waiveNote.trim()}
+                className="rounded-lg bg-violet-700 px-3 py-2 min-h-[42px] text-[12.5px] font-bold text-white
+                           hover:bg-violet-800 disabled:opacity-50 inline-flex items-center gap-1.5"
+                onClick={() => start(async () => {
+                  const res = await waiveReturn(r.id, waiveNote)
+                  if (!res.ok) { toast.error(res.error ?? 'Could not do that.', { duration: 10000 }); return }
+                  toast.success('Released — it need not come back')
+                  setWaiving(false); setWaiveNote('')
+                  router.refresh()
+                })}>
+                {busy && <Loader2 className="h-3.5 w-3.5 animate-spin" />} Release it
+              </button>
+              <button type="button" onClick={() => { setWaiving(false); setWaiveNote('') }} disabled={busy}
+                className="rounded-lg border-2 border-slate-200 px-3 py-2 min-h-[42px] text-[12.5px] font-bold text-slate-500">
+                Back
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Shown, not hidden — a missing button with no reason reads as a bug. */}
+        {!canWaive && whyNotWaive && r.items.some(i => i.isReturnable) && (
+          <p className="text-[12px] text-slate-600 bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-2 flex gap-1.5">
+            <Info className="h-3.5 w-3.5 flex-shrink-0 mt-0.5 text-slate-400" />
+            <span>{whyNotWaive}</span>
           </p>
         )}
 

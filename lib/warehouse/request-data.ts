@@ -177,9 +177,26 @@ export type RequestDetail = RequestRow & {
     available: number
     note: string | null
     isReturnable: boolean
+    /** Released by the Atm Head from having to come back. Null means it is
+     *  still expected. */
+    waivedAt: string | null
+    waivedBy: string | null
+    waivedNote: string | null
   }>
+  /** The project whose stock the asked store holds; null when it is shared.
+   *  Together with the request’s own project this is what makes it a
+   *  cross-project ask — see lib/warehouse/cross-project.ts. */
+  storeProjectId: string | null
+  storeProjectName: string | null
   /** Issues recorded against this request. */
   issues: Array<{ id: string; entryNo: string; day: string; voided: boolean }>
+}
+
+/** The embedded profile of whoever released a return, however PostgREST
+ *  shaped it. Falls back to the email when nobody set a full name. */
+function waiverName(v: unknown): string | null {
+  const p = one(v as { full_name?: string | null; email?: string | null } | null)
+  return p ? (p.full_name || p.email || null) : null
 }
 
 export async function getRequestDetail(
@@ -195,7 +212,10 @@ export async function getRequestDetail(
              a2:profiles!wh_requests_approved2_by_fkey(full_name, email),
              rej:profiles!wh_requests_rejected_by_fkey(full_name, email),
              can:profiles!wh_requests_cancelled_by_fkey(full_name, email),
+             store:wh_locations!wh_requests_from_location_id_fkey(project_id, projects(name)),
              wh_request_lines(id, item_id, qty, issued_qty, note, is_returnable,
+               return_waived_at, return_waived_note,
+               waiver:profiles!wh_request_lines_return_waived_by_fkey(full_name, email),
                wh_items(id, name, code, unit, category))`)
     .eq('id', id).is('deleted_at', null).maybeSingle()
   if (error) return { request: null, error: error.message }
@@ -256,8 +276,13 @@ export async function getRequestDetail(
           available: stock.get(l.item_id as string) ?? 0,
           note: (l.note as string | null) ?? null,
           isReturnable: (l.is_returnable as boolean) ?? false,
+          waivedAt: (l.return_waived_at as string | null) ?? null,
+          waivedBy: waiverName(l.waiver),
+          waivedNote: (l.return_waived_note as string | null) ?? null,
         }
       }),
+      storeProjectId: (one(r.store)?.project_id as string | null) ?? null,
+      storeProjectName: one(one(r.store)?.projects)?.name ?? null,
       issues: (outs ?? []).map(o => ({
         id: o.id, entryNo: o.entry_no, day: o.entry_date, voided: o.deleted_at != null,
       })),
