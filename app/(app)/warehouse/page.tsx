@@ -1,100 +1,169 @@
 import Link from 'next/link'
-import { requirePermission } from '@/lib/auth'
+import { requirePermission, can, getMyProfile, getMyUser } from '@/lib/auth'
 import { PageHeader } from '@/components/PageHeader'
 import { Card } from '@/components/ui/card'
+import { QueryError } from '@/components/ui/query-error'
 import { createClient } from '@/lib/supabase/server'
 import { getSettings } from '@/lib/warehouse/data'
 import { isOn } from '@/lib/warehouse/settings'
-import { ArrowDownToLine, ArrowUpFromLine, ClipboardList, Boxes, BarChart3, Settings2, ChevronRight, FileText, ScrollText, Package, CalendarDays, ClipboardCheck } from 'lucide-react'
+import { getRequestLanes } from '@/lib/warehouse/request-data'
+import { todayIST } from '@/lib/warehouse/ledger'
+import { homeTiles, homeCallout } from '@/lib/warehouse/home'
+import type { HomeTile, TileKey } from '@/lib/warehouse/home'
+import { formatNumber } from '@/lib/utils'
+import {
+  ArrowDownToLine, ArrowUpFromLine, ClipboardList, Boxes, BarChart3, Settings2,
+  FileText, ScrollText, Package, ClipboardCheck, ShieldCheck, Truck,
+} from 'lucide-react'
 
 export const dynamic = 'force-dynamic'
 
-const LANES = [
-  { href: '/warehouse/in',       icon: ArrowDownToLine,  label: 'Gate IN',        blurb: 'Record a truck arriving — challan vs received, damage, PO balance' },
-  { href: '/warehouse/po',       icon: FileText,         label: 'Purchase Orders', blurb: 'Pull a PO from IN4 so the gate screen can show what is still to come' },
-  { href: '/warehouse/out',      icon: ArrowUpFromLine,  label: 'OUT to site',    blurb: 'Issue to a site for use, or move stock to another store' },
-  { href: '/warehouse/count',    icon: ClipboardList,    label: 'Physical count', blurb: 'Walk a store and count what is actually there — the difference is named, witnessed and approved' },
-  { href: '/warehouse/stock',    icon: Boxes,            label: 'Stock',          blurb: 'What lies where, as on a date — In, Out, transfers and count corrections per store' },
-  { href: '/warehouse/reports',  icon: BarChart3,        label: 'Registers & reports', blurb: 'Vendor IN · Vendor OUT · SRM IN · SRM OUT · Total Stock' },
-  { href: '/warehouse/entries',  icon: ScrollText,       label: 'Gate register',  blurb: 'Every entry recorded — open one to void it if it was recorded wrong, or book returnable material back in' },
-  { href: '/warehouse/items',    icon: Package,          label: 'Item Master',    blurb: 'The catalogue by category — fix a name, a unit or a category, and download the register as PDF or Excel' },
-  { href: '/warehouse/daily',    icon: CalendarDays,     label: 'Daily movement', blurb: 'What moved today — in, out, across the yard and corrected, with where each load went' },
-  { href: '/warehouse/requests', icon: ClipboardCheck,   label: 'Requests',       blurb: 'What a site has asked a store for — raise one, approve one, or issue against one' },
-  { href: '/warehouse/settings', icon: Settings2,        label: 'Settings',       blurb: 'Add or retire a store, set your lists, and say who keeps what' },
-]
+/** Which picture goes with which tile. The only thing this page decides — WHAT
+ *  to show and to whom is decided in lib/warehouse/home.ts, where a test can
+ *  reach it. Every bug this module has shipped was role-dependent behaviour
+ *  that compiled cleanly, so that decision does not live in a component. */
+const ICONS: Record<TileKey, React.ComponentType<{ className?: string }>> = {
+  stock: Boxes,
+  raise: ClipboardList,
+  mine: FileText,
+  approvals: ShieldCheck,
+  'to-issue': Truck,
+  'gate-in': ArrowDownToLine,
+  'gate-out': ArrowUpFromLine,
+  count: ClipboardCheck,
+  register: ScrollText,
+  reports: BarChart3,
+  po: FileText,
+  items: Package,
+  settings: Settings2,
+}
 
 export default async function WarehouseHomePage() {
-  await requirePermission('warehouse', 'view')
-  const sb = await createClient()
+  const perms = await requirePermission('warehouse', 'view')
+  const [values, profile, me] = await Promise.all([getSettings(), getMyProfile(), getMyUser()])
 
-  const [values, items, spots, todayIn] = await Promise.all([
-    getSettings(),
-    sb.from('wh_items').select('id', { count: 'exact', head: true }).is('deleted_at', null),
-    sb.from('wh_locations').select('id', { count: 'exact', head: true }).not('parent_id', 'is', null).is('deleted_at', null),
-    sb.from('wh_gate_in').select('id', { count: 'exact', head: true })
-      .eq('entry_date', new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' }))
-      .is('deleted_at', null),
-  ])
+  const canEdit = can(perms, 'warehouse', 'edit')
+  const canAdmin = can(perms, 'warehouse', 'admin')
   const requestsOn = isOn(values, 'wh_requests_on')
 
+  const sb = await createClient()
+  const [itemsRes, spotsRes, todayInRes, keptRes, lanes] = await Promise.all([
+    sb.from('wh_items').select('id', { count: 'exact', head: true }).is('deleted_at', null),
+    sb.from('wh_locations').select('id', { count: 'exact', head: true })
+      .not('parent_id', 'is', null).is('deleted_at', null),
+    sb.from('wh_gate_in').select('id', { count: 'exact', head: true })
+      .eq('entry_date', todayIST()).is('deleted_at', null),
+    // Which stores do I keep? Being named a store's keeper counts whatever the
+    // base role is — that is how the stores are actually set up.
+    me?.id
+      ? sb.from('wh_locations').select('id').eq('keeper_id', me.id).is('deleted_at', null)
+      : Promise.resolve({ data: [] as Array<{ id: string }>, error: null }),
+    // Only worth the query when the feature is switched on at all.
+    requestsOn ? getRequestLanes(200) : Promise.resolve(null),
+  ])
+
+  const shape = {
+    canEdit, canAdmin, requestsOn,
+    role: profile?.role ?? null,
+    keepsAStore: (keptRes.data ?? []).length > 0,
+    items: itemsRes.count ?? 0,
+    spots: spotsRes.count ?? 0,
+    todayIn: todayInRes.count ?? 0,
+    toApprove: lanes?.toApprove.length ?? 0,
+    toIssue: lanes?.toIssue.length ?? 0,
+    mine: lanes?.mine.length ?? 0,
+    canApprove: lanes?.canApprove ?? false,
+  }
+
+  const tiles = homeTiles(shape)
+  const main = tiles.filter(t => t.section === 'main')
+  const setup = tiles.filter(t => t.section === 'setup')
+  const callout = homeCallout(shape)
+
   return (
-    <div className="p-4 md:p-6 max-w-4xl mx-auto space-y-4">
+    <div className="p-4 md:p-6 max-w-5xl mx-auto space-y-5">
       <PageHeader
-        title="Warehouse V2"
-        subtitle="The main-gate material in-out register. Every truck in, every issue out, and the reports that show what went missing."
+        title="Warehouse"
+        subtitle="Request material, receive it at the gate, issue it out, and see where it went."
       />
 
-      {/* The one thing an engineer comes here to do, as a card in the house
-          style rather than a banner. Above the counters so it is the first thing
-          on the screen, and hidden rather than greyed when requests are off — a
-          button that cannot work is worse than no button. */}
-      {requestsOn && (
-        <Link href="/warehouse/requests/new" className="block w-fit">
-          <Card className="p-4 shadow-sm hover:border-emerald-300 hover:shadow transition">
-            <span className="rounded-lg bg-emerald-50 p-2 inline-flex">
-              <ClipboardCheck className="h-5 w-5 text-emerald-600" />
-            </span>
-            <span className="block font-bold text-slate-800 text-sm mt-3">Raise request</span>
-            <span className="block text-[11.5px] text-emerald-700/70 mt-1">New material need</span>
-          </Card>
-        </Link>
+      {lanes?.error && <QueryError what="the request queues" message={lanes.error} />}
+
+      {callout && (
+        <Card className="p-4 bg-amber-50 border-amber-200 text-sm flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+          <span className="text-amber-900">
+            <b>{formatNumber(callout.count, 0)}</b> request{callout.count === 1 ? '' : 's'} waiting
+            on you in <b>{callout.label}</b>.
+          </span>
+          <Link href={callout.href}
+            className="text-amber-900 font-semibold underline-offset-2 hover:underline whitespace-nowrap">
+            Open queue →
+          </Link>
+        </Card>
       )}
 
-      <div className="grid grid-cols-3 gap-2">
-        {[
-          { n: todayIn.count ?? 0, l: 'entries today' },
-          { n: items.count ?? 0,   l: 'items in the master' },
-          { n: spots.count ?? 0,   l: 'storage locations' },
-        ].map(k => (
-          <Card key={k.l} className="p-3 text-center shadow-sm">
-            <div className="text-xl font-extrabold text-slate-800 tabular-nums">{k.n}</div>
-            <div className="text-[11px] text-slate-500 mt-0.5">{k.l}</div>
-          </Card>
-        ))}
-      </div>
+      {main.length > 0 ? (
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+          {main.map(t => <HomeTileCard key={t.key} tile={t} />)}
+        </div>
+      ) : (
+        <Card className="p-6 text-center text-sm text-slate-500">
+          Nothing to show yet. Ask your admin to give you warehouse access.
+        </Card>
+      )}
 
-      {/* Every lane is live now, so there is no "next" state left to render. */}
-      <div className="grid sm:grid-cols-2 gap-3">
-        {LANES.map(lane => {
-          const Icon = lane.icon
-          return (
-            <Link key={lane.href} href={lane.href} className="block">
-              <Card className="p-4 shadow-sm h-full flex items-start gap-3 hover:border-emerald-300 hover:shadow transition">
-                <span className="rounded-lg bg-emerald-50 p-2 flex-shrink-0">
-                  <Icon className="h-5 w-5 text-emerald-600" />
-                </span>
-                <span className="min-w-0 flex-1">
-                  <span className="font-bold text-slate-800 text-sm flex items-center gap-1.5">
-                    {lane.label}
-                    <ChevronRight className="h-3.5 w-3.5 text-slate-400" />
-                  </span>
-                  <span className="block text-[11.5px] text-slate-500 mt-1 leading-snug">{lane.blurb}</span>
-                </span>
-              </Card>
-            </Link>
-          )
-        })}
-      </div>
+      {setup.length > 0 && (
+        <div className="pt-2 border-t border-slate-100 space-y-2">
+          <p className="text-[11px] uppercase tracking-wide text-slate-500">Setup</p>
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+            {setup.map(t => <HomeTileCard key={t.key} tile={t} dashed />)}
+          </div>
+        </div>
+      )}
     </div>
+  )
+}
+
+const BADGE_STYLES = {
+  amber: 'bg-amber-100 text-amber-900 border-amber-200',
+  rose: 'bg-rose-100 text-rose-900 border-rose-200',
+  blue: 'bg-blue-100 text-blue-900 border-blue-200',
+} as const
+
+// The icon chip, the left edge and the stat colour all key off whether
+// something is actually waiting. Calm green when nothing is.
+const ACCENT_STYLES = {
+  none: { chip: 'bg-emerald-50 text-emerald-600', edge: 'border-l-transparent', stat: 'text-slate-500' },
+  warning: { chip: 'bg-amber-50 text-amber-700', edge: 'border-l-amber-400', stat: 'text-amber-700 font-medium' },
+  danger: { chip: 'bg-rose-50 text-rose-700', edge: 'border-l-rose-400', stat: 'text-rose-700 font-medium' },
+} as const
+
+function HomeTileCard({ tile, dashed = false }: { tile: HomeTile; dashed?: boolean }) {
+  const { key, href, title, subtitle, stat, badge, badgeStyle = 'amber', accent } = tile
+  const Icon = ICONS[key]
+  const showBadge = typeof badge === 'number' && badge > 0
+  const a = ACCENT_STYLES[accent]
+  const line = stat ?? subtitle
+  return (
+    <Link href={href} className="group">
+      <Card className={`relative h-full p-4 pl-[15px] flex flex-col items-start gap-3 border-l-[3px] ${a.edge} ${
+        dashed ? 'border-dashed bg-slate-50/40' : ''
+      } transition-all hover:shadow-md hover:-translate-y-0.5`}>
+        {showBadge && (
+          <span className={`absolute top-2.5 right-2.5 inline-flex items-center justify-center min-w-[1.5rem] h-5 px-1.5 rounded-full border text-[11px] font-bold tabular-nums ${BADGE_STYLES[badgeStyle]}`}>
+            {badge > 99 ? '99+' : badge}
+          </span>
+        )}
+        <div className={`inline-flex h-11 w-11 items-center justify-center rounded-xl transition-colors ${a.chip}`}>
+          <Icon className="h-[22px] w-[22px]" />
+        </div>
+        <div className="min-w-0 w-full">
+          <h3 className="text-sm font-semibold text-slate-900 leading-tight">{title}</h3>
+          <p className={`text-xs leading-tight mt-1 tabular-nums truncate ${stat ? a.stat : 'text-slate-500'}`}>
+            {line}
+          </p>
+        </div>
+      </Card>
+    </Link>
   )
 }

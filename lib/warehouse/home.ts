@@ -1,0 +1,182 @@
+/** What the warehouse home screen shows, and to whom.
+ *
+ *  This is deliberately pure. Every bug that has bitten this module so far was
+ *  role-dependent behaviour that typechecked, linted and built perfectly and
+ *  then failed on a real screen — a button the action refused, a queue nobody
+ *  could see. None of that is reachable by a compiler, but all of it is
+ *  reachable by a test, provided the decision lives somewhere a test can call.
+ *
+ *  So the page fetches counts and permissions and does nothing else; the choice
+ *  of what to render is made here.
+ */
+
+export type TileKey =
+  | 'stock' | 'raise' | 'mine' | 'approvals' | 'to-issue'
+  | 'gate-in' | 'gate-out' | 'count' | 'register' | 'reports'
+  | 'po' | 'items' | 'settings'
+
+export type HomeTile = {
+  key: TileKey
+  href: string
+  title: string
+  /** The fixed one-liner. Held to a hard word budget — see MAX_SUBTITLE_WORDS. */
+  subtitle: string
+  /** Live status line; replaces the subtitle when there is something to say. */
+  stat?: string
+  section: 'main' | 'setup'
+  badge?: number
+  badgeStyle?: 'amber' | 'rose' | 'blue'
+  accent: 'warning' | 'danger' | 'none'
+}
+
+export type HomeInput = {
+  canEdit: boolean
+  canAdmin: boolean
+  /** Is the requests feature switched on at all? */
+  requestsOn: boolean
+  role: string | null
+  /** Is this person named keeper of at least one store? */
+  keepsAStore: boolean
+  items: number
+  spots: number
+  todayIn: number
+  toApprove: number
+  toIssue: number
+  mine: number
+  /** Can this person move ANY request on, per the approval matrix. */
+  canApprove: boolean
+}
+
+/** The whole reason the old screen read as a wall: fifteen-word blurbs on every
+ *  tile, repeating what the destination page already says in its own subtitle.
+ *  The test asserts this ceiling so the prose cannot creep back in. */
+export const MAX_SUBTITLE_WORDS = 5
+
+/** Whole numbers with Indian grouping — 2803 reads as "2,803". */
+function nf(n: number): string {
+  return n.toLocaleString('en-IN', { maximumFractionDigits: 0 })
+}
+
+/** Who gets the keeper's issue queue.
+ *
+ *  Being named a store's keeper counts whatever the base role is — that is how
+ *  the old module worked and it is how the stores are actually set up. */
+export function canStoreFor(i: Pick<HomeInput, 'keepsAStore' | 'role' | 'canAdmin'>): boolean {
+  return i.keepsAStore || i.role === 'store_manager' || i.canAdmin
+}
+
+/** Every tile this person should see, in order, main section first.
+ *
+ *  The invariant a test can hold us to: nothing here leads to a screen that
+ *  would refuse this person. A tile that promises something the next page denies
+ *  is worse than no tile. */
+export function homeTiles(i: HomeInput): HomeTile[] {
+  const canStore = canStoreFor(i)
+  const all: Array<HomeTile & { show: boolean }> = [
+    {
+      key: 'stock', href: '/warehouse/stock', title: 'Stock',
+      subtitle: 'What lies where', stat: `${nf(i.items)} items`,
+      section: 'main', accent: 'none', show: true,
+    },
+    {
+      key: 'raise', href: '/warehouse/requests/new', title: 'Raise request',
+      subtitle: 'New material need',
+      section: 'main', accent: 'none', show: i.requestsOn,
+    },
+    {
+      key: 'mine', href: '/warehouse/requests', title: 'My requests',
+      subtitle: 'Everything I raised',
+      stat: i.mine > 0 ? `${nf(i.mine)} open` : undefined,
+      section: 'main', accent: 'none', show: i.requestsOn,
+    },
+    {
+      key: 'approvals', href: '/warehouse/requests', title: 'Approvals',
+      subtitle: 'Requests to OK',
+      stat: i.toApprove > 0 ? `${nf(i.toApprove)} to approve` : undefined,
+      section: 'main', badge: i.toApprove, badgeStyle: 'amber',
+      accent: i.toApprove > 0 ? 'warning' : 'none',
+      show: i.requestsOn && i.canApprove,
+    },
+    {
+      key: 'to-issue', href: '/warehouse/requests', title: 'To issue',
+      subtitle: 'Hand it over',
+      stat: i.toIssue > 0 ? `${nf(i.toIssue)} to issue` : undefined,
+      section: 'main', badge: i.toIssue, badgeStyle: 'blue',
+      accent: i.toIssue > 0 ? 'warning' : 'none',
+      show: i.requestsOn && canStore,
+    },
+    {
+      key: 'gate-in', href: '/warehouse/in', title: 'Gate IN',
+      subtitle: 'Record a truck in',
+      stat: i.todayIn > 0 ? `${nf(i.todayIn)} today` : undefined,
+      section: 'main', accent: 'none', show: i.canEdit,
+    },
+    {
+      key: 'gate-out', href: '/warehouse/out', title: 'OUT to site',
+      subtitle: 'Issue or transfer',
+      section: 'main', accent: 'none', show: i.canEdit,
+    },
+    {
+      key: 'count', href: '/warehouse/count', title: 'Physical count',
+      subtitle: 'Count · variance',
+      section: 'main', accent: 'none', show: i.canEdit,
+    },
+    {
+      key: 'register', href: '/warehouse/entries', title: 'Gate register',
+      subtitle: 'Void · book returns',
+      section: 'main', accent: 'none', show: i.canEdit,
+    },
+    {
+      // Open to anyone who can see the module. Money is a separate question,
+      // answered by wh_values_hidden_roles — an engineer opening a register
+      // sees quantities and no rates.
+      key: 'reports', href: '/warehouse/reports', title: 'Reports',
+      subtitle: 'Registers · control',
+      section: 'main', accent: 'none', show: true,
+    },
+    {
+      key: 'po', href: '/warehouse/po', title: 'Purchase Orders',
+      subtitle: 'Pull a PO from IN4',
+      section: 'setup', accent: 'none', show: i.canEdit,
+    },
+    {
+      key: 'items', href: '/warehouse/items', title: 'Item Master',
+      subtitle: 'Names · units · category',
+      section: 'setup', accent: 'none', show: i.canEdit,
+    },
+    {
+      key: 'settings', href: '/warehouse/settings', title: 'Settings',
+      subtitle: `${nf(i.spots)} storage locations`,
+      section: 'setup', accent: 'none', show: i.canAdmin,
+    },
+  ]
+  // Rebuilt field by field rather than spread-minus-`show`, so the returned
+  // shape is exactly HomeTile and the visibility flag cannot leak to the client.
+  return all.filter(t => t.show).map(t => ({
+    key: t.key,
+    href: t.href,
+    title: t.title,
+    subtitle: t.subtitle,
+    stat: t.stat,
+    section: t.section,
+    badge: t.badge,
+    badgeStyle: t.badgeStyle,
+    accent: t.accent,
+  }))
+}
+
+/** The SINGLE most urgent thing waiting on this person, for the top banner.
+ *  Approvals outrank issuing: nothing can be issued until it is approved. */
+export function homeCallout(
+  i: Pick<HomeInput, 'requestsOn' | 'toApprove' | 'toIssue'>,
+): { count: number; label: string; href: string } | null {
+  if (!i.requestsOn) return null
+  if (i.toApprove > 0) return { count: i.toApprove, label: 'Approvals', href: '/warehouse/requests' }
+  if (i.toIssue > 0) return { count: i.toIssue, label: 'To issue', href: '/warehouse/requests' }
+  return null
+}
+
+/** Which tiles lead to a screen that needs more than plain view access.
+ *  Used by the test to prove no tile is offered to somebody it would refuse. */
+export const NEEDS_EDIT: TileKey[] = ['gate-in', 'gate-out', 'count', 'register', 'po', 'items']
+export const NEEDS_ADMIN: TileKey[] = ['settings']

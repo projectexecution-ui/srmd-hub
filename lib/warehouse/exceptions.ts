@@ -400,3 +400,55 @@ export const DEFERRED_REPORTS: Array<{ title: string; blurb: string; why: string
       + 'nobody able to add or change an entry dated before a closed date — which is a Settings switch (S8).',
   },
 ]
+
+// ---------------------------------------------------------------------------
+// How the index reads
+// ---------------------------------------------------------------------------
+
+/** The three questions the fourteen control reports answer between them.
+ *
+ *  The index used to lay all fourteen out flat, each with a title, a blurb AND
+ *  the italic question — three lines apiece, which is a wall rather than a menu.
+ *  Grouping them by what the reader is actually worried about turns one long
+ *  list into three short ones without hiding anything.
+ *
+ *  A report named here but absent from CONTROL_REPORTS is dropped with its key
+ *  reported; a report present in CONTROL_REPORTS but named in no group comes
+ *  back as an orphan rather than disappearing — a menu that quietly loses an
+ *  item is how a requirement gets forgotten. */
+export const CONTROL_GROUPS: Array<{ label: string; blurb: string; keys: ReportKey[] }> = [
+  {
+    label: 'Money at risk',
+    blurb: 'Two prices for one material, loads beyond the order, and material taken in against no order at all.',
+    keys: ['rate-variance', 'entity-settlement', 'over-receipt', 'no-po', 'differs-from-in4'],
+  },
+  {
+    label: 'Material at risk',
+    blurb: 'What the count could not find, what arrived short or broken, and what went out on a promise to come back.',
+    keys: ['count-variance', 'shortage-damage', 'returnables', 'vendor-balance', 'dead-stock'],
+  },
+  {
+    label: 'Who is waiting · is the book straight',
+    blurb: 'Open promises against a vendor or a site, and holes in the register itself.',
+    keys: ['po-pending', 'requests', 'number-gaps', 'voided'],
+  },
+]
+
+export type ControlGroup = { label: string; blurb: string; reports: ReportMeta[] }
+
+/** The grouped index, plus anything that fell through the grouping.
+ *
+ *  Deliberately total: `orphans` is what the screen must still render so a newly
+ *  added report is never invisible just because nobody put it in a group. The
+ *  unit test asserts it is empty, which is where a forgotten report gets caught
+ *  — not on a user's screen. */
+export function groupedControlReports(): { groups: ControlGroup[]; orphans: ReportMeta[] } {
+  const byKey = new Map(CONTROL_REPORTS.map(r => [r.key, r]))
+  const groups = CONTROL_GROUPS.map(g => ({
+    label: g.label,
+    blurb: g.blurb,
+    reports: g.keys.map(k => byKey.get(k)).filter((r): r is ReportMeta => !!r),
+  }))
+  const named = new Set(CONTROL_GROUPS.flatMap(g => g.keys))
+  return { groups, orphans: CONTROL_REPORTS.filter(r => !named.has(r.key)) }
+}

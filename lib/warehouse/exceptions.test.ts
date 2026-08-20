@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   ageBucket, daysBetween, seriesGaps, entrySeq, rateSpread, crossEntity,
   outstandingReturnables, poPending, CONTROL_REPORTS, reportMeta, DEFERRED_REPORTS,
-  RATE_SPREAD_FLOOR, STALE_PO_DAYS,
+  RATE_SPREAD_FLOOR, STALE_PO_DAYS, CONTROL_GROUPS, groupedControlReports,
 } from './exceptions'
 import type { ReturnableLine, PoLineState } from './exceptions'
 
@@ -251,5 +251,35 @@ describe('the report catalogue', () => {
     expect(CONTROL_REPORTS.some(r => r.key === 'differs-from-in4')).toBe(true)
     expect(CONTROL_REPORTS.some(r => r.key === 'voided')).toBe(true)
     expect(DEFERRED_REPORTS.some(d => d.title === 'Edit history')).toBe(false)
+  })
+})
+
+describe('control report grouping', () => {
+  it('places every control report in exactly one group', () => {
+    const { orphans } = groupedControlReports()
+    // If this fails, a report was added to CONTROL_REPORTS and nobody put it in
+    // a group. It still renders, under 'Ungrouped' — but name it properly.
+    expect(orphans.map(r => r.key)).toEqual([])
+
+    const named = CONTROL_GROUPS.flatMap(g => g.keys)
+    expect(new Set(named).size).toBe(named.length) // no report named twice
+  })
+
+  it('names no report that does not exist', () => {
+    const known = new Set<string>(CONTROL_REPORTS.map(r => r.key))
+    const unknown = CONTROL_GROUPS.flatMap(g => g.keys).filter(k => !known.has(k as string))
+    expect(unknown).toEqual([])
+  })
+
+  it('accounts for every report across the three groups', () => {
+    const { groups } = groupedControlReports()
+    expect(groups).toHaveLength(3)
+    expect(groups.reduce((n, g) => n + g.reports.length, 0)).toBe(CONTROL_REPORTS.length)
+  })
+
+  it('keeps every group non-empty, so no heading renders over nothing', () => {
+    for (const g of groupedControlReports().groups) {
+      expect(g.reports.length, g.label).toBeGreaterThan(0)
+    }
   })
 })
