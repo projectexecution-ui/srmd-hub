@@ -16,7 +16,8 @@ import { renderCardSpec } from './report-card'
 import { buildApprovalCardSpec } from '@/lib/cost-control/approval-card'
 import type { ApprovalCardData } from '@/lib/cost-control/approval-card-data'
 import type { ApprovalStage } from '@/lib/cost-control/approval-card'
-import { loadComputedWorkingRows, buildComputedWorkingPdf, loadApprovalTrail } from '@/lib/cost-control/computed-working-pdf'
+import { loadComputedWorkingRows, buildComputedWorkingPdf, loadApprovalTrail, loadCheckSummary } from '@/lib/cost-control/computed-working-pdf'
+import { buildComputedWorkingImages } from '@/lib/cost-control/computed-working-image'
 
 export const CB_PREFIX = 'ccapv'
 
@@ -133,6 +134,28 @@ async function tgSendText(token: string, chatId: string, text: string, keyboard:
   }
 }
 
+// Send a PNG as an inline photo (no buttons); fall back to a document if the
+// image is too tall for Telegram's photo limits.
+async function tgSendPhotoOnly(token: string, chatId: string, png: Buffer, caption: string): Promise<boolean> {
+  const bytes = new Uint8Array(png)
+  try {
+    const form = new FormData()
+    form.append('chat_id', chatId)
+    if (caption) form.append('caption', caption.slice(0, 1000))
+    form.append('photo', blobOf(bytes, 'image/png'), 'working.png')
+    const r = await fetch(api(token, 'sendPhoto'), { method: 'POST', body: form })
+    const j = (await r.json().catch(() => ({}))) as { ok?: boolean }
+    if (j.ok) return true
+    const form2 = new FormData()
+    form2.append('chat_id', chatId)
+    if (caption) form2.append('caption', caption.slice(0, 1000))
+    form2.append('document', blobOf(bytes, 'image/png'), 'working.png')
+    const r2 = await fetch(api(token, 'sendDocument'), { method: 'POST', body: form2 })
+    const j2 = (await r2.json().catch(() => ({}))) as { ok?: boolean }
+    return !!j2.ok
+  } catch { return false }
+}
+
 async function tgSendDocument(
   token: string, chatId: string, bytes: Uint8Array, filename: string, caption: string, mime: string,
 ): Promise<boolean> {
@@ -191,14 +214,19 @@ export async function sendApprovalToChat(
   }
 
   if (opts.attach !== false) {
-    // Computed working (the parsed BOQ the app computed from the Excel) as a PDF
-    // — so the approver can review the actual line-item computation on their
-    // phone, not just the raw source file. Best-effort.
+    // Computed working (the parsed BOQ the app computed) — sent as inline
+    // image(s) (glance) AND a PDF (record), both carrying the Excel-check
+    // scorecard + take-off + the approval trail. Best-effort.
     try {
       const rows = await loadComputedWorkingRows(svc, data.wsId)
       if (rows.length) {
-        const trail = await loadApprovalTrail(svc, data.wsId)
-        const pdf = buildComputedWorkingPdf(data.input, data.wsCode, rows, trail)
+        const [trail, check] = await Promise.all([loadApprovalTrail(svc, data.wsId), loadCheckSummary(svc, data.wsId)])
+        const imgs = buildComputedWorkingImages(data.input, data.wsCode, rows, trail, check)
+        for (let i = 0; i < imgs.length; i++) {
+          const cap = imgs.length > 1 ? `Computed working · ${data.wsCode} (${i + 1}/${imgs.length})` : `Computed working · ${data.wsCode}`
+          await tgSendPhotoOnly(token, chatId, imgs[i], cap)
+        }
+        const pdf = buildComputedWorkingPdf(data.input, data.wsCode, rows, trail, check)
         await tgSendDocument(token, chatId, new Uint8Array(pdf), `${data.wsCode}-computed-working.pdf`, `Computed working · ${data.wsCode}`, 'application/pdf')
       }
     } catch { /* best-effort — the card still carries the numbers */ }

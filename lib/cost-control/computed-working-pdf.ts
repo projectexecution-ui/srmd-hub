@@ -18,8 +18,19 @@ import { join } from 'node:path'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { ApprovalCardInput } from '@/lib/cost-control/approval-card'
 
-export interface CwRow { sr: string; description: string; unit: string; qty: string; rate: string; amount: number }
+export interface CwRow {
+  sr: string; description: string; unit: string; qty: string; rate: string; amount: number
+  /** Take-off provenance — where the qty came from, e.g. "Working Sheet!G15". */
+  takeoff?: string
+  /** Rate breakdown, e.g. "Installation ₹30". */
+  rateBreak?: string
+  /** A flag raised by the Excel check on this row (null = clean). */
+  flag?: { severity: string; reason: string } | null
+}
 export interface TrailEntry { when: string; who: string; action: string; comment: string }
+/** The Excel-check scorecard: how many qtys were measured vs estimated, and how
+ *  many rows the check flagged. */
+export interface CwCheck { measured: number; estimated: number; flagged: number; total: number; narrative: string | null }
 
 const FONT_PATH = join(process.cwd(), 'lib', 'bills-pipeline', 'fonts', 'NotoSans.ttf')
 let FONT_B64: string | null = null
@@ -53,18 +64,30 @@ const isAddition = (desc: string) => ADDITION_RE.test(desc || '')
 export async function loadComputedWorkingRows(svc: SupabaseClient, wsId: string): Promise<CwRow[]> {
   const { data: xr } = await svc
     .from('cc_excel_rows')
-    .select('row_no, description, unit, qty, rate, amount')
+    .select('row_no, description, unit, qty, rate, amount, qty_formula, source_sheet, source_cell, rate_breakdown, flag, flag_reason, flag_severity')
     .eq('working_sheet_id', wsId)
     .order('row_no')
   if (xr && xr.length) {
-    return xr.map(r => ({
-      sr: String(r.row_no ?? ''),
-      description: (r.description as string | null) ?? '',
-      unit: (r.unit as string | null) ?? '',
-      qty: num(r.qty),
-      rate: num(r.rate),
-      amount: Number(r.amount ?? 0),
-    }))
+    return xr.map(r => {
+      const takeoff = r.source_sheet && r.source_cell
+        ? `${r.source_sheet}!${r.source_cell}`
+        : (r.qty_formula ? String(r.qty_formula).replace(/'/g, '') : '')
+      const rb = Array.isArray(r.rate_breakdown) ? (r.rate_breakdown as Array<{ label?: string; value?: number }>) : []
+      const rateBreak = rb.length
+        ? rb.map(b => `${b.label ?? ''} ₹${Math.round(Number(b.value) || 0).toLocaleString('en-IN')}`).join(' + ').trim()
+        : ''
+      return {
+        sr: String(r.row_no ?? ''),
+        description: (r.description as string | null) ?? '',
+        unit: (r.unit as string | null) ?? '',
+        qty: num(r.qty),
+        rate: num(r.rate),
+        amount: Number(r.amount ?? 0),
+        takeoff: takeoff || undefined,
+        rateBreak: rateBreak || undefined,
+        flag: r.flag ? { severity: (r.flag_severity as string) ?? '', reason: (r.flag_reason as string) ?? String(r.flag) } : null,
+      }
+    })
   }
   const { data: li } = await svc
     .from('cc_working_sheet_items')
@@ -79,6 +102,25 @@ export async function loadComputedWorkingRows(svc: SupabaseClient, wsId: string)
     rate: num(r.rate),
     amount: Number(r.total_amount ?? 0),
   }))
+}
+
+/** The Excel-check scorecard for a sheet: measured vs estimated qtys + flags. */
+export async function loadCheckSummary(svc: SupabaseClient, wsId: string): Promise<CwCheck | null> {
+  const [{ data: rows }, { data: ws }] = await Promise.all([
+    svc.from('cc_excel_rows').select('qty, qty_basis, flag').eq('working_sheet_id', wsId),
+    svc.from('cc_working_sheets').select('flag_summary').eq('id', wsId).maybeSingle(),
+  ])
+  if (!rows || !rows.length) return null
+  let measured = 0, estimated = 0, flagged = 0
+  for (const r of rows) {
+    if (r.flag) flagged++
+    if (r.qty == null) continue
+    if (r.qty_basis === 'measured') measured++
+    else estimated++
+  }
+  const fs = (ws?.flag_summary as { narrative?: string | null; flagged_rows?: number } | null) ?? null
+  if (fs && typeof fs.flagged_rows === 'number') flagged = fs.flagged_rows
+  return { measured, estimated, flagged, total: measured + estimated, narrative: fs?.narrative ?? null }
 }
 
 // ── Approval trail (audit history + comments) ──────────────────────────────
@@ -141,7 +183,8 @@ function useFont(doc: jsPDF): string {
 
 function perSftStr(amt: number, area: number | null | undefined): string {
   if (!area || area <= 0 || !amt) return ''
-  return `₹${Math.round(amt / area).toLocaleString('en-IN')}/sft`
+  const v = Math.round(amt / area)
+  return v > 0 ? `₹${v.toLocaleString('en-IN')}/sft` : ''
 }
 function pct(part: number, whole: number): number | null {
   return whole > 0 ? Math.round((part / whole) * 100) : null
@@ -150,7 +193,17 @@ function pct(part: number, whole: number): number | null {
 /** The computed working PDF — an approval-ready document: header + approval
  *  summary (Project budget ERP, the ask, ERP position, waiting-on, raised-by)
  *  then the itemised computation with subtotal / GST & additions / grand total. */
-export function buildComputedWorkingPdf(input: ApprovalCardInput, wsCode: string, rows: CwRow[], trail: TrailEntry[] = []): Buffer {
+// Excel-check banner text + colour from the scorecard.
+function checkBanner(check: CwCheck | null): { text: string; bg: RGB; fg: RGB } | null {
+  if (!check || check.total === 0) return null
+  const pctM = check.total > 0 ? Math.round((check.measured / check.total) * 100) : 0
+  if (check.flagged > 0) {
+    return { text: `Excel check: ${check.flagged} flagged — review · ${check.measured}/${check.total} measured (${pctM}%)`, bg: [250, 238, 218], fg: [138, 90, 11] }
+  }
+  return { text: `Excel check: OK to review · ${check.measured}/${check.total} measured (${pctM}%) · nothing flagged`, bg: [225, 245, 238], fg: [15, 111, 61] }
+}
+
+export function buildComputedWorkingPdf(input: ApprovalCardInput, wsCode: string, rows: CwRow[], trail: TrailEntry[] = [], check: CwCheck | null = null): Buffer {
   const doc = new jsPDF({ unit: 'pt', format: 'a4' })
   const font = useFont(doc)
   const M = 40
@@ -219,6 +272,16 @@ export function buildComputedWorkingPdf(input: ApprovalCardInput, wsCode: string
   if (rev) field('Revision', rev, rightX, by)
   y = boxTop + boxH
 
+  // ── Excel-check banner ──
+  const banner = checkBanner(check)
+  if (banner) {
+    y += 12
+    doc.setFillColor(...banner.bg); doc.roundedRect(M, y, W - 2 * M, 22, 4, 4, 'F')
+    doc.setFont(font, 'normal'); doc.setFontSize(9); doc.setTextColor(...banner.fg)
+    doc.text((check!.flagged > 0 ? '! ' : 'OK  ') + banner.text, M + 12, y + 15)
+    y += 22
+  }
+
   // ── Line-items table ──
   const items = rows.filter(r => !isAddition(r.description))
   const additions = rows.filter(r => isAddition(r.description))
@@ -229,8 +292,15 @@ export function buildComputedWorkingPdf(input: ApprovalCardInput, wsCode: string
     startY: y + 16,
     margin: { left: M, right: M },
     head: [['#', 'Description', 'Unit', 'Qty', 'Rate', 'Amount']],
-    body: rows.map(r => [r.sr, r.description, r.unit, r.qty, r.rate, inr(r.amount)]),
-    styles: { font, fontStyle: 'normal', fontSize: 9, cellPadding: { top: 5, bottom: 5, left: 6, right: 6 }, overflow: 'linebreak', textColor: INK, lineColor: LINE, lineWidth: { bottom: 0.5 }, valign: 'middle' },
+    body: rows.map(r => [
+      r.sr,
+      r.description + (r.takeoff ? `\n· from ${r.takeoff}` : '') + (r.flag ? `\n! ${r.flag.reason}` : ''),
+      r.unit,
+      r.qty,
+      r.rate + (r.rateBreak ? `\n${r.rateBreak}` : ''),
+      inr(r.amount),
+    ]),
+    styles: { font, fontStyle: 'normal', fontSize: 9, cellPadding: { top: 5, bottom: 5, left: 6, right: 6 }, overflow: 'linebreak', textColor: INK, lineColor: LINE, lineWidth: { bottom: 0.5 }, valign: 'top' },
     headStyles: { font, fontStyle: 'normal', fillColor: NAVY, textColor: WHITE, fontSize: 8.5, halign: 'left', cellPadding: { top: 7, bottom: 7, left: 6, right: 6 } },
     alternateRowStyles: { fillColor: STRIPE },
     columnStyles: {
@@ -246,6 +316,8 @@ export function buildComputedWorkingPdf(input: ApprovalCardInput, wsCode: string
       const r = rows[d.row.index]
       // GST / contingency rows read as muted "additions", except the amount.
       if (isAddition(r.description) && d.column.index !== 5) d.cell.styles.textColor = MUT
+      // Flagged rows get an amber tint so the approver can spot them.
+      if (r.flag) d.cell.styles.fillColor = [252, 246, 235]
     },
   })
 
