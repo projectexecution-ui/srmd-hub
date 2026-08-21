@@ -8,6 +8,7 @@ import { getMyUser, getMyProfile, getMyPermissions, can } from '@/lib/auth'
 import { personName } from '@/lib/utils'
 import { generateSmartWSCode } from './ws-code-action'
 import { dispatchCardsForSheet } from '@/lib/telegram/cc-approval-dispatch'
+import { notifyInternalEstimateAccepted } from '@/lib/cost-control/ie-notify'
 
 // ---------- shared authorization helpers ----------
 
@@ -209,6 +210,7 @@ export async function setInternalEstimateDecision(input: {
   amount?: number | null
 }): Promise<{ ok: boolean; error?: string }> {
   const supabase = await createClient()
+  const me = await getMyUser()
   const { error } = await supabase.rpc('cc_set_internal_estimate', {
     p_project: input.project_id,
     p_discipline: input.discipline_id,
@@ -218,6 +220,19 @@ export async function setInternalEstimateDecision(input: {
   })
   if (error) return { ok: false, error: error.message }
   revalidatePath(`/cost-control/projects/${input.project_id}`)
+
+  // Internal Estimate is set silently by default (confidential). On ACCEPT,
+  // tell the named few (Aksha + Parimal + the project's Atm Head) on every
+  // channel. Best-effort, after the response so the decision stays snappy.
+  if (input.decision === 'accept') {
+    after(() => notifyInternalEstimateAccepted({
+      projectId: input.project_id,
+      subSkillId: input.sub_skill_id,
+      amount: input.amount ?? null,
+      actorId: me?.id ?? null,
+      kind: 'baseline',
+    }).catch(() => {}))
+  }
   return { ok: true }
 }
 

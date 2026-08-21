@@ -4,10 +4,12 @@
 // the revision. Aborts (touching nothing) if the parse fails or reconciles
 // to zero — the old estimate is never lost.
 import { NextResponse } from 'next/server'
+import { after } from 'next/server'
 import * as XLSX from 'xlsx'
 import { createClient } from '@/lib/supabase/server'
-import { requirePermission } from '@/lib/auth'
+import { requirePermission, getMyUser } from '@/lib/auth'
 import { checkCanDecideInternalEstimate } from '@/components/cost-control/ws-actions'
+import { notifyInternalEstimateAccepted } from '@/lib/cost-control/ie-notify'
 import { workbookToSheetInputs } from '@/lib/cost-control/excel-parse-adapter'
 import { parseInternalBudget } from '@/lib/cost-control/internal-budget-parse'
 import { mapBudgetToWS } from '@/lib/cost-control/ib-reimport'
@@ -160,6 +162,13 @@ export async function POST(
   }
   const { error: finErr } = await supabase.rpc('cc_ie_finalize', { p_revision: revisionId, p_summary: summary })
   if (finErr) return NextResponse.json({ ok: false, reason: finErr.message }, { status: 403 })
+
+  // Tell the named few (Aksha + Parimal + this project's Atm Head) that the
+  // Trustee approved the revised Internal Estimate — all channels, best-effort.
+  const me = await getMyUser()
+  after(() => notifyInternalEstimateAccepted({
+    projectId, actorId: me?.id ?? null, kind: 'revision', amount: plan.total, sheets: inserted,
+  }).catch(() => {}))
 
   return NextResponse.json({ ok: true, ...summary })
 }
