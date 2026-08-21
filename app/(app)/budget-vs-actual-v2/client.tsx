@@ -286,6 +286,7 @@ export default function BudgetV2Client({
             </summary>
             <div className="absolute right-0 z-20 mt-1 w-[248px] rounded-xl border border-gray-200 bg-white shadow-lg overflow-hidden">
               {[
+                { href: '/budget-vs-actual-v2/sc-presentation',    icon: Sparkles,   label: 'SC Presentation', hint: 'Pick projects · budget vs actual' },
                 { href: '/budget-vs-actual-v2/weekly',             icon: Printer,    label: 'Weekly PDF',      hint: 'One line per project' },
                 { href: '/budget-vs-actual-v2/weekly-category',    icon: FolderTree, label: 'By Category',     hint: 'One project per page' },
                 { href: '/budget-vs-actual-v2/weekly-subcategory', icon: ListTree,   label: 'By Sub-category', hint: 'Category & sub-category' },
