@@ -33,12 +33,23 @@ export type RequestRow = {
   rejectReason: string | null
 }
 
-const SELECT = `id, req_no, request_date, status, purpose, need_by, requested_by,
+/** Everything about a request EXCEPT its lines.
+ *
+ *  The lines are deliberately not in here. PostgREST refuses a select that
+ *  embeds the same table twice — "table name … specified more than once" — and
+ *  the detail screen needs far more of each line than a list row does. When both
+ *  this constant and the caller embedded wh_request_lines, the whole detail query
+ *  400'd: the request detail page could not open at all. Each caller adds the
+ *  lines it needs, exactly once. */
+const SELECT_BASE = `id, req_no, request_date, status, purpose, need_by, requested_by,
   rule_at_raise, est_value, stages_needed, stages_done, reject_reason,
-  store:wh_locations!wh_requests_from_location_id_fkey(id, name),
+  store:wh_locations!wh_requests_from_location_id_fkey(id, name, project_id, projects(name)),
   dest:wh_locations!wh_requests_to_location_id_fkey(name),
   projects(name),
-  requester:profiles!wh_requests_requested_by_fkey(full_name, email),
+  requester:profiles!wh_requests_requested_by_fkey(full_name, email)`
+
+/** A list row: just enough of each line to work out how much is outstanding. */
+const SELECT = `${SELECT_BASE},
   wh_request_lines(id, qty, issued_qty)`
 
 function toRow(r: Record<string, unknown>, today: string): RequestRow {
@@ -206,13 +217,12 @@ export async function getRequestDetail(
   const today = todayIST()
 
   const { data: r, error } = await sb.from('wh_requests')
-    .select(`${SELECT}, remarks, rule_at_raise, from_location_id,
+    .select(`${SELECT_BASE}, remarks, from_location_id,
              approved1_at, approved2_at, approved1_by, approved2_by,
              a1:profiles!wh_requests_approved1_by_fkey(full_name, email),
              a2:profiles!wh_requests_approved2_by_fkey(full_name, email),
              rej:profiles!wh_requests_rejected_by_fkey(full_name, email),
              can:profiles!wh_requests_cancelled_by_fkey(full_name, email),
-             store:wh_locations!wh_requests_from_location_id_fkey(project_id, projects(name)),
              wh_request_lines(id, item_id, qty, issued_qty, note, is_returnable,
                return_waived_at, return_waived_note,
                waiver:profiles!wh_request_lines_return_waived_by_fkey(full_name, email),
