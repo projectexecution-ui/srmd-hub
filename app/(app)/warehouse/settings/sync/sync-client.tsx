@@ -362,7 +362,7 @@ function PosDetail({ plan, showValues }: { plan: SyncPlan; showValues: boolean }
             <div className="flex items-baseline gap-2 flex-wrap">
               <span className="font-mono text-[11.5px] font-bold text-slate-800">{p.poNo}</span>
               {p.poDate && <span className="text-[11px] text-slate-500">{formatDate(p.poDate)}</span>}
-              <span className="text-[11.5px] text-slate-700 truncate">{p.vendor ?? 'no vendor named'}</span>
+              <span className="text-[11.5px] text-slate-700 min-w-0 truncate">{p.vendor ?? 'no vendor named'}</span>
               {p.entity && (
                 <span className="text-[9.5px] font-extrabold uppercase rounded-full px-1.5 py-0.5 bg-slate-100 text-slate-600">
                   {p.entity}

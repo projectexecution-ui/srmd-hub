@@ -204,20 +204,28 @@ export function NewRequestForm({
 
         {rows.map(row => (
           <div key={row.key} className="rounded-xl border border-slate-200 p-2 space-y-2">
-            <div className="grid grid-cols-[1fr_78px_auto] sm:grid-cols-[1fr_92px_1fr_auto] gap-2 items-start">
+            {/* On a phone the item gets its own row and qty · remarks · bin share
+                the next one. Cramming four controls onto one 375px line put the
+                quantity box off the edge of the screen.
+                `min-w-0` on the picker is what actually stops the overflow: a
+                grid item defaults to min-width:auto, so a long IN4 material name
+                sets the column's floor and `truncate` never gets a chance. */}
+            <div className="grid grid-cols-[96px_1fr_auto] sm:grid-cols-[1fr_92px_1fr_auto]
+                            gap-2 items-start">
               {/* A picker, not a dropdown — 2,803 items is a browsing job. */}
               <button type="button" onClick={() => setPickFor(row.key)}
-                className={`${inputCls} text-left flex items-center justify-between gap-2 ${
+                className={`${inputCls} min-w-0 col-span-3 sm:col-span-1 text-left
+                            flex items-center justify-between gap-2 ${
                   row.itemId ? 'text-slate-900' : 'text-slate-400'}`}>
                 <span className="truncate">{row.itemName || '— Select item —'}</span>
                 <ChevronDown className="h-4 w-4 flex-shrink-0 text-slate-400" />
               </button>
 
-              <input className={inputCls} inputMode="decimal" value={row.qty}
+              <input className={`${inputCls} min-w-0`} inputMode="decimal" value={row.qty}
                 aria-label="Quantity" placeholder="qty"
                 onChange={e => setRow(row.key, { qty: e.target.value })} />
 
-              <input className={`${inputCls} col-span-2 sm:col-span-1`} value={row.remarks}
+              <input className={`${inputCls} min-w-0`} value={row.remarks}
                 aria-label="Remarks" placeholder="remarks"
                 onChange={e => setRow(row.key, { remarks: e.target.value })} />
 

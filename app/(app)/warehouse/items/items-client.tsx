@@ -234,7 +234,7 @@ function Chip({ label, count, active, onClick }: {
 }) {
   return (
     <button type="button" onClick={onClick}
-      className={`inline-flex items-center gap-1.5 text-[12px] font-semibold px-3 h-9 rounded-full whitespace-nowrap ${
+      className={`inline-flex items-center gap-1.5 text-[12px] font-semibold px-3 h-11 rounded-full whitespace-nowrap ${
         active ? 'bg-emerald-600 text-white' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'}`}>
       {label}
       <span className={active ? 'text-emerald-100' : 'text-slate-400'}>{count}</span>
@@ -259,7 +259,10 @@ function ItemCard({ item, canAdmin, onEdit }: {
           {item.code && (
             <span className="font-mono text-[10.5px] font-bold text-sky-700">{item.code}</span>
           )}
-          <span className={`text-[13px] font-semibold truncate ${
+          {/* min-w-0 on the span itself: the wrapper's min-w-0 does not reach
+              through this nested flex-wrap, and an IN4 material name is as long
+              as IN4 felt like making it. */}
+          <span className={`text-[13px] font-semibold truncate min-w-0 ${
             item.active ? 'text-slate-900' : 'text-slate-400 line-through'}`}>
             {item.name}
           </span>

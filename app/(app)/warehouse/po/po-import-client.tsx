@@ -107,7 +107,7 @@ export function PoImportClient({
                         already imported
                       </span>
                     )}
-                    <span className="text-[12px] text-slate-600 truncate">{p.vendor ?? '—'}</span>
+                    <span className="text-[12px] text-slate-600 min-w-0 truncate">{p.vendor ?? '—'}</span>
                     <span className="ml-auto text-[11.5px] text-slate-500">
                       {p.lineCount} {p.lineCount === 1 ? 'line' : 'lines'}
                       {p.poDate ? ` · ${formatDate(p.poDate)}` : ''}

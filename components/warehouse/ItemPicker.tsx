@@ -128,12 +128,12 @@ export function ItemPicker({
           {/* Scope: what this store holds, or the whole catalogue. */}
           <div className="flex gap-1.5 mt-2.5">
             <button type="button" onClick={() => { setScope('store'); setCat('') }}
-              className={`rounded-full px-3 h-9 text-[12px] font-bold whitespace-nowrap ${
+              className={`rounded-full px-3 h-11 text-[12px] font-bold whitespace-nowrap ${
                 scope === 'store' ? 'bg-emerald-600 text-white' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'}`}>
               In {storeName ?? 'this store'} ({inStore.length})
             </button>
             <button type="button" onClick={() => { setScope('all'); setCat('') }}
-              className={`rounded-full px-3 h-9 text-[12px] font-bold whitespace-nowrap ${
+              className={`rounded-full px-3 h-11 text-[12px] font-bold whitespace-nowrap ${
                 scope === 'all' ? 'bg-emerald-600 text-white' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'}`}>
               All catalogue ({items.length})
             </button>
@@ -242,7 +242,7 @@ function Chip({ label, n, on, onClick }: {
 }) {
   return (
     <button type="button" onClick={onClick}
-      className={`inline-flex items-center gap-1.5 rounded-full px-2.5 h-8 text-[11.5px] font-semibold whitespace-nowrap ${
+      className={`inline-flex items-center gap-1.5 rounded-full px-2.5 h-11 text-[11.5px] font-semibold whitespace-nowrap ${
         on ? 'bg-slate-800 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>
       {label}<span className={on ? 'text-slate-400' : 'text-slate-400'}>{n}</span>
     </button>

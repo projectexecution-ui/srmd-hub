@@ -359,7 +359,7 @@ export function RegisterClient({
                   <span className="font-mono text-[10.5px]">{r.entryNo}</span>
                   <span>{formatDate(r.day)}</span>
                   {r.party && <span className="truncate max-w-[45%]">{r.party}</span>}
-                  {r.projectName && <span className="truncate max-w-[45%]">{r.projectName}</span>}
+                  {r.projectName && <span className="min-w-0 truncate max-w-[45%]">{r.projectName}</span>}
                 </div>
                 {(r.shortQty || r.damagedQty || (showValues && r.amount != null)) && (
                   <div className="mt-1 flex items-baseline gap-x-3 flex-wrap text-[11.5px] tabular-nums">

@@ -83,7 +83,7 @@ export default async function GateOutPage() {
                   <span className="text-[10px] font-extrabold uppercase rounded-full px-2 py-0.5 bg-white/70 text-slate-600">
                     {isSite ? 'to site' : isStore ? 'store move' : 'back to vendor'}
                   </span>
-                  <span className="text-[11.5px] font-semibold text-slate-800 truncate">
+                  <span className="text-[11.5px] font-semibold text-slate-800 min-w-0 truncate">
                     {isSite ? one(r.projects)?.name
                       : isStore ? `${one(r.from_loc)?.name} → ${one(r.to_loc)?.name}`
                       : r.party}

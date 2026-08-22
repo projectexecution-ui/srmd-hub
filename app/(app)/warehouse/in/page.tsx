@@ -62,7 +62,7 @@ export default async function GateInPage() {
                 <div className="px-3 py-2 bg-slate-50/70 border-b border-slate-100 flex items-center gap-2 flex-wrap">
                   <span className="font-mono text-[11.5px] font-bold text-slate-700">{r.entry_no}</span>
                   <span className="text-[11px] text-slate-500">{formatDate(r.entry_date)}</span>
-                  <span className="text-[11.5px] font-semibold text-slate-800 truncate">{r.party}</span>
+                  <span className="text-[11.5px] font-semibold text-slate-800 min-w-0 truncate">{r.party}</span>
                   {r.owner === 'vendor' && (
                     <span className="text-[9.5px] font-extrabold uppercase bg-purple-100 text-purple-700 rounded-full px-2 py-0.5">vendor</span>
                   )}

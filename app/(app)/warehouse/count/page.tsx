@@ -117,7 +117,7 @@ export default async function CountListPage() {
                     <span className={`text-[9.5px] font-extrabold uppercase rounded-full px-2 py-0.5 ${STATUS_STYLE[r.status] ?? 'bg-slate-100 text-slate-600'}`}>
                       {STATUS_LABEL[r.status] ?? r.status}
                     </span>
-                    <span className="text-[11.5px] font-semibold text-slate-800 truncate">
+                    <span className="text-[11.5px] font-semibold text-slate-800 min-w-0 truncate">
                       {one(r.wh_locations)?.name ?? '—'}
                     </span>
                     <ChevronRight className="ml-auto h-4 w-4 text-slate-400 flex-shrink-0" />

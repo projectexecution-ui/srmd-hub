@@ -818,7 +818,9 @@ function SummaryStrip({ rows, showValues }: { rows: CountLine[]; showValues: boo
   ]
   return (
     <div className="space-y-2">
-      <div className="grid grid-cols-5 gap-1.5">
+      {/* Five cells across a 375px screen gives each about 60px, which is not
+          enough for a number and a word. Three then two reads properly. */}
+      <div className="grid grid-cols-3 sm:grid-cols-5 gap-1.5">
         {cells.map(c => (
           <div key={c.l} className="rounded-lg bg-slate-50 border border-slate-100 px-1 py-2 text-center">
             <div className={`text-base font-extrabold tabular-nums ${c.cls}`}>{c.n}</div>

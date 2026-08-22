@@ -251,7 +251,7 @@ function KeeperPicker({
           <button key={p.id} type="button" disabled={!canAdmin || busy}
             aria-pressed={on} aria-label={`${on ? 'Unassign' : 'Assign'} ${p.name} from ${spot.name}`}
             onClick={() => pick(on ? null : p.id)}
-            className={`inline-flex items-center gap-1 rounded-full px-2.5 h-8 text-[11.5px] font-semibold
+            className={`inline-flex items-center gap-1 rounded-full px-2.5 h-11 text-[11.5px] font-semibold
                         border-2 disabled:opacity-50 ${
               on ? 'border-emerald-400 bg-emerald-50 text-emerald-800'
                  : 'border-slate-200 text-slate-500 hover:border-slate-300'}`}>
