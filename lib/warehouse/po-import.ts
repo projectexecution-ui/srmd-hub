@@ -1,5 +1,6 @@
 import { cache } from 'react'
 import { createClient } from '@/lib/supabase/server'
+import { getTrackerSlot } from '@/lib/procurement/tracker-cache'
 import { in4Key, planIn4Items, cleanUom } from './in4-items'
 
 /** Reading POs out of the Indent → PO Tracker.
@@ -41,14 +42,12 @@ export type TrackerPoLine = {
   ourUnit: string | null
 }
 
+// Cached at the source (lib/procurement/tracker-cache) — this was fetching and
+// parsing ~803 kB of JSON on every render of the PO screen. cache() still wraps
+// it so the flatMap runs once per request rather than once per caller.
 const readTracker = cache(async (): Promise<TrackerLine[]> => {
-  const sb = await createClient()
-  const { data } = await sb
-    .from('procurement_tracker_state')
-    .select('state')
-    .eq('id', 'global')
-    .maybeSingle()
-  const projects = (data?.state as { projects?: Array<{ lines?: TrackerLine[] }> } | null)?.projects ?? []
+  const slot = await getTrackerSlot('global', await createClient())
+  const projects = (slot?.state as { projects?: Array<{ lines?: TrackerLine[] }> } | null)?.projects ?? []
   return projects.flatMap(p => p.lines ?? [])
 })
 

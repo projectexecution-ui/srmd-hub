@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
+import { getTrackerSlots } from '@/lib/procurement/tracker-cache'
 import { in4Key } from './in4-items'
 import { plan } from './in4-sync'
 import type { SyncLine, SyncExisting, SyncPlan } from './in4-sync'
@@ -28,13 +29,16 @@ const num = (v: unknown): number | null => {
  *  planner keys items and POs itself, so a line appearing in both is harmless
  *  and the PO slot is often the only one carrying a rate. */
 export async function readTrackerLines(): Promise<{ lines: SyncLine[]; slots: string[]; error?: string }> {
-  const sb = await createClient()
-  // Ordered so the slots are always read in the same sequence. Without it the
-  // database may hand them back either way round, and anything that takes the
-  // FIRST value it sees for an item (its unit) could differ between two runs
-  // over identical data.
-  const { data, error } = await sb.from('procurement_tracker_state').select('id, state').order('id')
-  if (error) return { lines: [], slots: [], error: error.message }
+  // Cached at the source (lib/procurement/tracker-cache), which also does the
+  // id ordering — without it the database may hand the slots back either way
+  // round, and anything that takes the FIRST value it sees for an item (its
+  // unit) could differ between two runs over identical data.
+  let data: Array<{ id: string; state: unknown }>
+  try {
+    data = await getTrackerSlots(await createClient())
+  } catch (e) {
+    return { lines: [], slots: [], error: e instanceof Error ? e.message : 'tracker read failed' }
+  }
 
   const lines: SyncLine[] = []
   const slots: string[] = []

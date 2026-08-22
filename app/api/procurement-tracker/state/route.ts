@@ -6,55 +6,31 @@
 //
 // Response: { indent: Slot | null, po: Slot | null }
 //   Slot = { state, version, updatedAt, updatedByName }
+//
+// The read is cached (see lib/procurement/tracker-cache.ts) — this used to fetch
+// and serialise ~803 kB of JSON on every visit. The permission check stays out
+// here, ahead of the cache, so gating is still per user.
 
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { requirePermission } from '@/lib/auth'
+import { getTrackerSlots } from '@/lib/procurement/tracker-cache'
 
 export const runtime = 'nodejs'
 
-type Row = { state: unknown; version: number; updated_at: string; updated_by: string | null }
-
 export async function GET() {
   await requirePermission('procurement-tracker', 'view')
-  const supabase = await createClient()
 
-  const { data, error } = await supabase
-    .from('procurement_tracker_state')
-    .select('id, state, version, updated_at, updated_by')
-    .in('id', ['global', 'po'])
-
-  if (error) {
-    console.error('[procurement] state fetch failed:', error)
+  try {
+    const slots = await getTrackerSlots(await createClient())
+    const slot = (id: string) => {
+      const r = slots.find(s => s.id === id)
+      if (!r) return null
+      return { state: r.state, version: r.version, updatedAt: r.updatedAt, updatedByName: r.updatedByName }
+    }
+    return NextResponse.json({ indent: slot('global'), po: slot('po') })
+  } catch (e) {
+    console.error('[procurement] state fetch failed:', e)
     return NextResponse.json({ indent: null, po: null }, { status: 500 })
   }
-
-  const rows = (data ?? []) as Array<Row & { id: string }>
-  const byId = new Map(rows.map(r => [r.id, r]))
-
-  // Resolve updater names in one query.
-  const ids = rows.map(r => r.updated_by).filter((x): x is string => !!x)
-  const nameById = new Map<string, string>()
-  if (ids.length > 0) {
-    const { data: profs } = await supabase
-      .from('profiles')
-      .select('id, full_name, email')
-      .in('id', ids)
-    for (const p of (profs ?? []) as Array<{ id: string; full_name: string | null; email: string }>) {
-      nameById.set(p.id, p.full_name ?? p.email ?? '')
-    }
-  }
-
-  const slot = (id: string) => {
-    const r = byId.get(id)
-    if (!r) return null
-    return {
-      state: r.state,
-      version: r.version,
-      updatedAt: r.updated_at,
-      updatedByName: r.updated_by ? nameById.get(r.updated_by) ?? null : null,
-    }
-  }
-
-  return NextResponse.json({ indent: slot('global'), po: slot('po') })
 }

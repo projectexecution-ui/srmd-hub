@@ -1,5 +1,6 @@
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
+import { getTrackerSlot } from '@/lib/procurement/tracker-cache'
 import { getMyProfile } from '@/lib/auth'
 import { PageHeader } from '@/components/PageHeader'
 import { ProcurementProjectVisibilityEditor } from './ProcurementProjectVisibilityEditor'
@@ -23,7 +24,7 @@ export default async function ProcurementProjectVisibilityPage() {
     { data: known },
     { data: users },
     { data: hidden },
-    { data: stateRow },
+    stateRow,
     { data: closedRow },
   ] = await Promise.all([
     supabase
@@ -38,11 +39,9 @@ export default async function ProcurementProjectVisibilityPage() {
     supabase
       .from('procurement_user_project_visibility')
       .select('user_id, project_name'),
-    supabase
-      .from('procurement_tracker_state')
-      .select('state')
-      .eq('id', 'global')
-      .maybeSingle(),
+    // Cached at the source — this page was parsing the whole ~803 kB blob just
+    // to list project names and the saved-at stamp.
+    getTrackerSlot('global', supabase),
     supabase
       .from('app_settings')
       .select('value')

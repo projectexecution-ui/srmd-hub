@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { revalidateTrackerSoon } from '@/lib/procurement/tracker-cache'
 import { parseProcurementReport } from '@/lib/procurement-tracker'
 import type {
   ProjectSummary, LineRecord, IndentStatusSnapshot, LineStatusSnapshot,
@@ -155,6 +156,12 @@ export async function POST(req: NextRequest) {
       // the parsed result so they at least see the dashboard for
       // their own session — they just won't be the one persisting.
       console.error('[procurement] state upsert failed:', writeError)
+    } else {
+      // The blob is cached (it is ~803 kB and four hot paths were parsing it on
+      // every request). Only invalidate when the write actually landed — an RLS
+      // rejection above means the stored state did NOT change, so dropping the
+      // cache would just make everyone re-parse the same data for nothing.
+      revalidateTrackerSoon()
     }
 
     // Compute the diff server-side. Convert the Set fields to arrays
