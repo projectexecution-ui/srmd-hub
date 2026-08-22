@@ -6,6 +6,7 @@
 // every save, so the whole team sees the same numbers.
 
 import { NextResponse } from 'next/server'
+import { revalidateBudgetV2Soon } from '@/lib/budget-v2-cached'
 import { createClient } from '@/lib/supabase/server'
 import { createClient as createServiceClient } from '@supabase/supabase-js'
 
@@ -113,6 +114,13 @@ export async function PUT(req: Request) {
     .eq('id', STATE_ID)
 
   if (updErr) return NextResponse.json({ error: updErr.message }, { status: 500 })
+
+  // The Budget-vs-Actual tree is cached (a 137 kB blob was being parsed and
+  // recomposed on every page view). Mark it stale now that the source changed.
+  // Stale-while-revalidate is the most a Route Handler can do; the Budget Hub
+  // page calls refreshBudgetV2() after a successful save for an immediate
+  // expiry, so nobody is shown last week's numbers.
+  revalidateBudgetV2Soon()
 
   // ── Auto-pull mapped CT Hub projects ────────────────────────────────
   // After the BPH state is saved, run a sync for every saved BPH↔CT

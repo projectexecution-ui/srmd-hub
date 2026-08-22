@@ -1,6 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
 import { requirePermission } from '@/lib/auth'
-import { loadBudgetV2 } from '@/lib/budget-v2-load'
+import { getBudgetV2 } from '@/lib/budget-v2-cached'
 import ScPresentationClient from './sc-presentation-client'
 
 export const dynamic = 'force-dynamic'
@@ -13,6 +13,6 @@ export const dynamic = 'force-dynamic'
 export default async function ScPresentationPage() {
   await requirePermission('budget-vs-actual-v2', 'view')
   const supabase = await createClient()
-  const { result, freshness } = await loadBudgetV2(supabase)
+  const { result, freshness } = await getBudgetV2(supabase)
   return <ScPresentationClient result={result} freshness={freshness} />
 }

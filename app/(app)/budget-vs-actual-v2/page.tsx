@@ -1,6 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
 import { requirePermission, getMyUser, getMyProfile, isPortalOwner } from '@/lib/auth'
-import { loadBudgetV2 } from '@/lib/budget-v2-load'
+import { getBudgetV2 } from '@/lib/budget-v2-cached'
 import BudgetV2Client from './client'
 
 export const dynamic = 'force-dynamic'
@@ -13,7 +13,7 @@ export default async function BudgetV2Page() {
 
   // Shared loader (also used by the weekly Telegram report) so the page and the
   // report are composed from exactly the same tree.
-  const { result, freshness, delta, prevSnapshotWeek } = await loadBudgetV2(supabase)
+  const { result, freshness, delta, prevSnapshotWeek } = await getBudgetV2(supabase)
   // Existing group names (real BPH groups + any V2-extra group) for the
   // Add-project dropdown.
   const knownGroupNames = Array.from(new Set(result.groups.map(g => g.name).filter(n => n !== '— Ungrouped'))).sort()
