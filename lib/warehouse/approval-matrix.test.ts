@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   movesFor, needsApproval, describeChain, waitingOn, personBlocker, STAGE_LABEL,
+  describeMove, capNote, nextApproverRoles,
 } from './approval-matrix'
 import type { Rule } from './approval-matrix'
 
@@ -163,5 +164,105 @@ describe('stage labels', () => {
       expect(STAGE_LABEL[k]).toBeTruthy()
       expect(STAGE_LABEL[k]).not.toMatch(/_/)
     }
+  })
+})
+
+describe('saying what a button will do', () => {
+  // The chain Aksha actually has configured.
+  const LIVE: Rule[] = [
+    rule({ fromStage: 'pending', toStage: 'checked', approverRole: 'head' }),
+    rule({ fromStage: 'pending', toStage: 'approved', approverRole: 'head', amountCapMax: 200000 }),
+    rule({ fromStage: 'pending', toStage: 'rejected', approverRole: 'head' }),
+    rule({ fromStage: 'checked', toStage: 'approved', approverRole: 'founder' }),
+    rule({ fromStage: 'checked', toStage: 'rejected', approverRole: 'founder' }),
+    rule({ fromStage: 'approved', toStage: 'issued', approverRole: 'store_manager' }),
+    rule({ fromStage: 'approved', toStage: 'part_issued', approverRole: 'store_manager' }),
+  ]
+
+  it('names who a pass-up goes to, instead of "Check and pass on"', () => {
+    const d = describeMove(LIVE, 'checked', label)
+    expect(d.label).toBe('Check, then send to Trustee')
+    expect(d.hint).toContain('Trustee')
+    expect(d.hint).toMatch(/final approval/i)
+  })
+
+  it('says an approve is the last word, because issuing is not approving', () => {
+    // 'approved' has rules leading out of it, but they are the storekeeper
+    // issuing — that is material moving, not another signature.
+    const d = describeMove(LIVE, 'approved', label)
+    expect(d.label).toBe('Approve')
+    expect(d.hint).toMatch(/hand the material over/i)
+  })
+
+  it('spells out what a rejection does to the requester', () => {
+    expect(describeMove(LIVE, 'rejected', label).hint).toMatch(/told, with your reason/i)
+  })
+
+  it('follows the rules rather than assuming a Trustee', () => {
+    // Lengthen the chain and the wording must follow it.
+    const longer: Rule[] = [
+      rule({ fromStage: 'pending', toStage: 'checked', approverRole: 'head' }),
+      rule({ fromStage: 'checked', toStage: 'approved', approverRole: 'project_head' }),
+      rule({ fromStage: 'approved', toStage: 'issued', approverRole: 'store_manager' }),
+    ]
+    expect(describeMove(longer, 'checked', r => r === 'project_head' ? 'Project Head' : r).label)
+      .toBe('Check, then send to Project Head')
+  })
+
+  it('treats a one-stage chain as a final approval', () => {
+    const short: Rule[] = [
+      rule({ fromStage: 'pending', toStage: 'approved', approverRole: 'head' }),
+      rule({ fromStage: 'approved', toStage: 'issued', approverRole: 'store_manager' }),
+    ]
+    expect(describeMove(short, 'approved', label).label).toBe('Approve')
+  })
+})
+
+describe('who still has to sign after a stage', () => {
+  const LIVE: Rule[] = [
+    rule({ fromStage: 'pending', toStage: 'checked', approverRole: 'head' }),
+    rule({ fromStage: 'checked', toStage: 'approved', approverRole: 'founder' }),
+    rule({ fromStage: 'checked', toStage: 'rejected', approverRole: 'founder' }),
+    rule({ fromStage: 'approved', toStage: 'issued', approverRole: 'store_manager' }),
+  ]
+  it('names the next approver', () => {
+    expect(nextApproverRoles(LIVE, 'checked')).toEqual(['founder'])
+  })
+  it('counts issuing as the end of the chain, not another signature', () => {
+    expect(nextApproverRoles(LIVE, 'approved')).toEqual([])
+  })
+  it('ignores a rejection route — refusing is not moving it on', () => {
+    expect(nextApproverRoles(LIVE, 'checked')).not.toContain('rejected')
+  })
+})
+
+describe('explaining the cap, which is invisible otherwise', () => {
+  const LIVE: Rule[] = [
+    rule({ fromStage: 'pending', toStage: 'checked', approverRole: 'head' }),
+    rule({ fromStage: 'pending', toStage: 'approved', approverRole: 'head', amountCapMax: 200000 }),
+    rule({ fromStage: 'checked', toStage: 'approved', approverRole: 'founder' }),
+  ]
+
+  it('explains why BOTH buttons appear on an unpriced request', () => {
+    const note = capNote(LIVE, 'pending', null, label, money)!
+    expect(note).toContain('Rs 2,00,000')
+    expect(note).toMatch(/no known rate|cannot be worked out/i)
+    expect(note).toMatch(/both routes/i)
+  })
+
+  it('says a small request is within the limit', () => {
+    expect(capNote(LIVE, 'pending', 45000, label, money))
+      .toBe('Rs 45,000 is within the Rs 2,00,000 an Atm Head may approve alone.')
+  })
+
+  it('says where a large one has to go instead', () => {
+    const note = capNote(LIVE, 'pending', 500000, label, money)!
+    expect(note).toContain('over the Rs 2,00,000')
+    expect(note).toContain('Trustee')
+  })
+
+  it('stays silent when no cap is configured', () => {
+    const uncapped: Rule[] = [rule({ fromStage: 'pending', toStage: 'approved', approverRole: 'head' })]
+    expect(capNote(uncapped, 'pending', 45000, label, money)).toBeNull()
   })
 })

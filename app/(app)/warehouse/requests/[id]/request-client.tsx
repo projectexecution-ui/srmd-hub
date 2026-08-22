@@ -31,11 +31,17 @@ const TONE: Record<string, string> = {
   dead: 'bg-slate-100 text-slate-400 border-slate-200',
 }
 
-type Move = { toStage: string; needsRemarks: boolean; label: string }
+type Move = {
+  toStage: string
+  needsRemarks: boolean
+  label: string
+  /** What pressing it does, in consequences rather than stage names. */
+  hint: string
+}
 
 export function RequestClient({
   request: r, showValues, moves, whyNoMoves, canIssue, whyNotIssue, canCancel,
-  canWaive, whyNotWaive,
+  canWaive, whyNotWaive, capExplainer,
 }: {
   request: RequestDetail
   showValues: boolean
@@ -48,6 +54,8 @@ export function RequestClient({
   /** May this person release the material from having to come back? */
   canWaive: boolean
   whyNotWaive: string | null
+  /** Where this person’s own authority stops, when a cap is configured. */
+  capExplainer: string | null
 }) {
   const router = useRouter()
   const [busy, start] = useTransition()
@@ -210,17 +218,38 @@ export function RequestClient({
         {/* One button per hop the rules allow this person, at this stage, at
             this value. A new stage or a new approver role needs no code here. */}
         {moves.length > 0 && !open && (
-          <div className="flex flex-wrap gap-2">
+          <div className="space-y-2">
+            {capExplainer && (
+              <p className="text-[12px] text-slate-600 bg-slate-50 border border-slate-200
+                            rounded-lg px-2.5 py-2 flex gap-1.5">
+                <Info className="h-3.5 w-3.5 flex-shrink-0 mt-0.5 text-slate-400" />
+                <span>{capExplainer}</span>
+              </p>
+            )}
+            {/* One full-width choice per row, each saying what it does. Chips
+                side by side had no room for the consequence, which is how
+                "Check and pass on" ended up meaning nothing to anybody. */}
             {moves.map(m => (
               <button key={m.toStage} type="button" disabled={busy}
                 onClick={() => { setOpen(m); setReason('') }}
-                className={`rounded-lg px-3 py-2 min-h-[42px] text-[12.5px] font-bold inline-flex items-center
-                            gap-1.5 disabled:opacity-50 ${
+                className={`w-full text-left rounded-lg border-2 px-3 py-2.5 min-h-[56px]
+                            disabled:opacity-50 transition flex items-start gap-2.5 ${
                   m.toStage === 'rejected'
-                    ? 'border-2 border-rose-200 text-rose-700 hover:bg-rose-50'
-                    : 'bg-emerald-600 text-white hover:bg-emerald-700'}`}>
-                {m.toStage === 'rejected' ? <X className="h-3.5 w-3.5" /> : <Stamp className="h-3.5 w-3.5" />}
-                {m.label}
+                    ? 'border-rose-200 hover:border-rose-300 hover:bg-rose-50'
+                    : 'border-emerald-300 bg-emerald-50/50 hover:bg-emerald-50'}`}>
+                <span className={`mt-0.5 flex-shrink-0 ${
+                  m.toStage === 'rejected' ? 'text-rose-600' : 'text-emerald-700'}`}>
+                  {m.toStage === 'rejected' ? <X className="h-4 w-4" /> : <Stamp className="h-4 w-4" />}
+                </span>
+                <span className="min-w-0">
+                  <span className={`block text-[13.5px] font-bold ${
+                    m.toStage === 'rejected' ? 'text-rose-800' : 'text-emerald-900'}`}>
+                    {m.label}
+                  </span>
+                  <span className="block text-[11.5px] text-slate-600 mt-0.5 leading-snug">
+                    {m.hint}
+                  </span>
+                </span>
               </button>
             ))}
           </div>

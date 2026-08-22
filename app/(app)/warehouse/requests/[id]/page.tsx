@@ -6,7 +6,9 @@ import { QueryError } from '@/components/ui/query-error'
 import { getRequestDetail, getApprovalRules, myWarehouseRole } from '@/lib/warehouse/request-data'
 import { getShowValues } from '@/lib/warehouse/data'
 import { issuableBlocker } from '@/lib/warehouse/requests'
-import { movesFor, personBlocker } from '@/lib/warehouse/approval-matrix'
+import { movesFor, personBlocker, describeMove, capNote } from '@/lib/warehouse/approval-matrix'
+import { getRoleLabels } from '@/lib/role-labels'
+import { formatINR } from '@/lib/utils'
 import { waiveBlocker } from '@/lib/warehouse/cross-project'
 import { RequestClient } from './request-client'
 import { ChevronLeft } from 'lucide-react'
@@ -21,7 +23,7 @@ export default async function RequestPage({
   await requirePermission('warehouse', 'view')
   const { id } = await params
 
-  const [{ request, error }, perms, me, showValues, { rules }, role] =
+  const [{ request, error }, perms, me, showValues, { rules }, role, roleLabels] =
     await Promise.all([
       getRequestDetail(id),
       getMyPermissions(),
@@ -29,6 +31,7 @@ export default async function RequestPage({
       getShowValues(),
       getApprovalRules(),
       myWarehouseRole(),
+      getRoleLabels(),
     ])
 
   if (error) {
@@ -46,14 +49,20 @@ export default async function RequestPage({
 
   // The buttons come from the RULES, not from code: whatever chain is configured
   // at /admin/approvals is what appears here.
-  const moves = movesFor(rules, request.status, role, request.estValue).map(m => ({
-    toStage: m.toStage,
-    needsRemarks: m.needsRemarks,
-    label: m.toStage === 'rejected' ? 'Reject'
-      : m.toStage === 'checked' ? 'Check and pass on'
-      : m.toStage === 'approved' ? 'Approve'
-      : `Move to ${m.toStage}`,
-  }))
+  // Both the label and the line under it are DERIVED from the rules, so a button
+  // always says what it will actually do. "Check and pass on" named neither the
+  // person it passed to nor the fact that the other button finishes the job.
+  const labelFor = (r: string) => roleLabels[r as keyof typeof roleLabels]?.label ?? r
+  const moves = movesFor(rules, request.status, role, request.estValue).map(m => {
+    const d = describeMove(rules, m.toStage, labelFor)
+    return { toStage: m.toStage, needsRemarks: m.needsRemarks, label: d.label, hint: d.hint }
+  })
+
+  // The cap is invisible otherwise: an Atm Head has no way of knowing where his
+  // own authority stops, and an unpriced request quietly offers both routes.
+  const capExplainer = moves.length > 0
+    ? capNote(rules, request.status, request.estValue, labelFor, formatINR)
+    : null
 
   // A person-level refusal is not configuration and must not read like one.
   // The SAME arguments the action uses. Passing an empty list here made the
@@ -102,6 +111,7 @@ export default async function RequestPage({
         canCancel={canEdit && (mine || isAdmin)}
         canWaive={canWaive && !whyNotWaive}
         whyNotWaive={whyNotWaive}
+        capExplainer={capExplainer}
       />
     </div>
   )

@@ -176,3 +176,97 @@ export function personBlocker(
   }
   return null
 }
+
+// ---------------------------------------------------------------------------
+// Saying what a button will actually do
+// ---------------------------------------------------------------------------
+
+/** Stages that mean the material moves, not that somebody approved something.
+ *  Reaching one of these is the END of the approval chain. */
+const NOT_APPROVAL: readonly string[] = ['issued', 'part_issued', 'cancelled', 'rejected']
+
+/** Who, if anyone, still has to sign after a request reaches this stage.
+ *
+ *  Read from the rules, so a chain the admin lengthens or shortens is described
+ *  correctly without touching this file. */
+export function nextApproverRoles(rules: Rule[], stage: string): string[] {
+  return [...new Set(
+    rules
+      .filter(r => r.fromStage === stage && !NOT_APPROVAL.includes(r.toStage))
+      .map(r => r.approverRole),
+  )]
+}
+
+export type MoveDescription = {
+  /** What the button says. */
+  label: string
+  /** What happens if you press it — one line, in consequences not stage names. */
+  hint: string
+}
+
+/** Describe a move the way the person pressing it needs to hear it.
+ *
+ *  "Check and pass on" told nobody who it passes to, or that the alternative
+ *  finishes the job. Both now name the consequence, and the next approver is
+ *  taken from the rules rather than assumed to be a Trustee. */
+export function describeMove(
+  rules: Rule[],
+  toStage: string,
+  roleLabel: (role: string) => string,
+): MoveDescription {
+  if (toStage === 'rejected') {
+    return {
+      label: 'Reject',
+      hint: 'The request is refused. Whoever raised it is told, with your reason.',
+    }
+  }
+
+  const after = nextApproverRoles(rules, toStage)
+  if (after.length === 0) {
+    return {
+      label: 'Approve',
+      hint: 'Final approval — the store can hand the material over straight away.',
+    }
+  }
+
+  const who = after.map(roleLabel).join(' or ')
+  return {
+    label: `Check, then send to ${who}`,
+    hint: `You are satisfied, but ${who} gives the final approval. `
+      + 'Nothing can be issued until they do.',
+  }
+}
+
+/** Why more than one route is on offer, or why only one is.
+ *
+ *  The cap is the thing nobody can see on the screen: an Atm Head who may
+ *  approve to two lakh and no further has no way of knowing that, and an unpriced
+ *  request quietly gets both buttons. Returns null when there is no cap to
+ *  explain. */
+export function capNote(
+  rules: Rule[],
+  fromStage: string,
+  amount: number | null,
+  roleLabel: (role: string) => string,
+  money: (n: number) => string,
+): string | null {
+  const capped = rules.filter(r =>
+    r.fromStage === fromStage && !NOT_APPROVAL.includes(r.toStage) && r.amountCapMax != null)
+  if (capped.length === 0) return null
+
+  const cap = Math.min(...capped.map(r => r.amountCapMax as number))
+  const who = roleLabel(capped[0].approverRole)
+  const onward = nextApproverRoles(rules, capped[0].toStage === 'approved'
+    ? 'checked' : capped[0].toStage).map(roleLabel).join(' or ')
+
+  if (amount == null) {
+    return `${who} can approve up to ${money(cap)} alone. Nothing on this request has a `
+      + 'known rate yet, so its value cannot be worked out — both routes are open to you, '
+      + 'and it is your call which one it needs.'
+  }
+  if (amount <= cap) {
+    return `${money(amount)} is within the ${money(cap)} an ${who} may approve alone.`
+  }
+  return `${money(amount)} is over the ${money(cap)} limit`
+    + (onward ? `, so it has to go to ${onward}.` : ', so it cannot be approved here.')
+}
