@@ -71,6 +71,10 @@ export function GateOutForm({
         lines: rows.map(({ key: _k, ...r }) => r),
       })
       if (!res.ok) { toast.error(res.error); return }
+      // The entry itself is safe, but the request or a store level may not have
+      // followed. Saying nothing leaves somebody chasing a request that already
+      // went out.
+      if (res.warning) toast.warning(res.warning, { duration: 12000 })
       toast.success(`Saved ${res.entryNo}`)
       setRows([blank()]); setVehicleNo(''); setRemarks(''); setReturnDue('')
       router.refresh()
@@ -129,8 +133,8 @@ export function GateOutForm({
         </div>
 
         <div>
-          <label className={labelCls}>Out of which store</label>
-          <select className={inputCls} value={fromId} onChange={e => { setFromId(e.target.value); setRows([blank()]) }}>
+          <label className={labelCls} htmlFor="go-out-of-which-store">Out of which store</label>
+          <select id="go-out-of-which-store" className={inputCls} value={fromId} onChange={e => { setFromId(e.target.value); setRows([blank()]) }}>
             <option value="">Pick a store…</option>
             {sites.map(site => (
               <optgroup key={site.id} label={site.name}>
@@ -210,8 +214,8 @@ export function GateOutForm({
               </div>
             </div>
             <div>
-              <label className={labelCls}>Engineer receiving</label>
-              <select className={inputCls} value={engineerId} onChange={e => setEngineerId(e.target.value)}>
+              <label className={labelCls} htmlFor="go-engineer-receiving">Engineer receiving</label>
+              <select id="go-engineer-receiving" className={inputCls} value={engineerId} onChange={e => setEngineerId(e.target.value)}>
                 <option value="">—</option>
                 {receivers.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
               </select>
@@ -231,8 +235,8 @@ export function GateOutForm({
               </div>
               {returnable && (
                 <div className="mt-2">
-                  <label className={labelCls}>Expected back by</label>
-                  <input type="date" className={inputCls} value={returnDue} onChange={e => setReturnDue(e.target.value)} />
+                  <label className={labelCls} htmlFor="go-expected-back-by">Expected back by</label>
+                  <input id="go-expected-back-by" type="date" className={inputCls} value={returnDue} onChange={e => setReturnDue(e.target.value)} />
                   <p className="text-[11px] text-slate-500 mt-1">Chased by the returnables ageing list if it does not come back.</p>
                 </div>
               )}
@@ -278,14 +282,14 @@ export function GateOutForm({
               </select>
               <div className="grid grid-cols-2 gap-2">
                 <div>
-                  <label className={labelCls}>Qty</label>
-                  <input className={inputCls + ' font-mono'} inputMode="decimal" value={row.qty || ''}
+                  <label className={labelCls} htmlFor="go-qty">Qty</label>
+                  <input id="go-qty" className={inputCls + ' font-mono'} inputMode="decimal" value={row.qty || ''}
                     onChange={e => setRows(rs => rs.map(r => r.key === row.key
                       ? { ...r, qty: Number(e.target.value.replace(/[^\d.]/g, '')) || 0 } : r))} />
                 </div>
                 <div>
-                  <label className={labelCls}>In stock</label>
-                  <input className={inputCls + ' bg-slate-100 text-slate-500 font-mono'} readOnly
+                  <label className={labelCls} htmlFor="go-in-stock">In stock</label>
+                  <input id="go-in-stock" className={inputCls + ' bg-slate-100 text-slate-500 font-mono'} readOnly
                     value={s ? `${formatQty(s.qty)} ${s.unit}` : '—'} />
                 </div>
               </div>
@@ -317,10 +321,10 @@ export function GateOutForm({
         </div>
 
         <div className="grid grid-cols-2 gap-2">
-          <button type="button" className="rounded-lg border-2 border-slate-200 py-2 min-h-[40px] text-[12.5px] font-bold text-slate-600">
+          <button type="button" className="rounded-lg border-2 border-slate-200 py-2 min-h-[44px] text-[12.5px] font-bold text-slate-600">
             ✍ {isStore ? 'Sending store' : 'Store'}
           </button>
-          <button type="button" className="rounded-lg border-2 border-slate-200 py-2 min-h-[40px] text-[12.5px] font-bold text-slate-600">
+          <button type="button" className="rounded-lg border-2 border-slate-200 py-2 min-h-[44px] text-[12.5px] font-bold text-slate-600">
             ✍ {isSite ? 'Engineer' : isStore ? 'Receiving store' : 'Vendor'}
           </button>
         </div>

@@ -9,6 +9,7 @@ import { saveGateIn, createItem, loadPoBalance } from '../actions'
 import { verdictFor } from '@/lib/warehouse/types'
 import type { GateInOptions, GateInLineInput, WhPo } from '@/lib/warehouse/types'
 import { Plus, Trash2, Loader2, Camera, FileText } from 'lucide-react'
+import { todayIST } from '@/lib/warehouse/ledger'
 import { formatQty } from '@/lib/warehouse/format'
 import { compressImage } from '@/lib/img/compress'
 import { createClient } from '@/lib/supabase/client'
@@ -97,7 +98,7 @@ export function GateInForm({
     setUploading(true)
     const paths: string[] = []
     try {
-      const stamp = new Date().toISOString().slice(0, 10)
+      const stamp = todayIST()   // IST: the folder should match the entry's day
       for (const [i, page] of bills.entries()) {
         const file = page.file.type.startsWith('image/') ? await compressImage(page.file) : page.file
         const ext = file.type === 'application/pdf' ? 'pdf' : 'jpg'
@@ -323,8 +324,8 @@ export function GateInForm({
 
         {!poId && (
           <div className="rounded-lg bg-amber-50 border border-amber-200 p-2.5">
-            <label className={labelCls}>Why no PO?</label>
-            <input className={inputCls} value={noPoReason} onChange={e => setNoPoReason(e.target.value)}
+            <label className={labelCls} htmlFor="gi-why-no-po">Why no PO?</label>
+            <input id="gi-why-no-po" className={inputCls} value={noPoReason} onChange={e => setNoPoReason(e.target.value)}
               placeholder="e.g. urgent site requirement" />
             <p className="text-[11px] text-amber-800 font-semibold mt-1.5">
               This lands on the monthly no-PO exception report. The entry still saves — we never block a truck.
@@ -345,7 +346,11 @@ export function GateInForm({
               {po.poNo} · {statusLabel(po.status)}
               {po.deliveries > 0 && <span className="font-semibold text-slate-500"> · delivery {po.deliveries + 1} of this PO</span>}
             </div>
-            <table className="w-full text-[11px] border-collapse">
+            {/* Four columns of numbers crush below about 420px, and this screen
+                lives on a phone at a gate. Scrolls in its own box rather than
+                pushing the whole form sideways. */}
+            <div className="overflow-x-auto -mx-0.5 px-0.5">
+            <table className="w-full min-w-[420px] text-[11px] border-collapse">
               <thead>
                 <tr className="text-slate-500">
                   <th className="text-left font-bold border border-slate-200 bg-slate-100 px-1.5 py-1">Item</th>
@@ -376,18 +381,19 @@ export function GateInForm({
                 })}
               </tbody>
             </table>
+            </div>
           </div>
         )}
 
         <div className="grid grid-cols-2 gap-2">
           <div>
-            <label className={labelCls}>Party</label>
-            <input className={inputCls} value={party} onChange={e => setParty(e.target.value)}
+            <label className={labelCls} htmlFor="gi-party">Party</label>
+            <input id="gi-party" className={inputCls} value={party} onChange={e => setParty(e.target.value)}
               placeholder={owner === 'vendor' ? 'Vendor name' : 'Supplier name'} />
           </div>
           <div>
-            <label className={labelCls}>Who paid</label>
-            <select className={inputCls} value={entity} onChange={e => setEntity(e.target.value)}>
+            <label className={labelCls} htmlFor="gi-who-paid">Who paid</label>
+            <select id="gi-who-paid" className={inputCls} value={entity} onChange={e => setEntity(e.target.value)}>
               <option value="">—</option>
               {options.lists.entity.map(v => <option key={v} value={v}>{v}</option>)}
             </select>
@@ -396,15 +402,15 @@ export function GateInForm({
 
         <div className="grid grid-cols-2 gap-2">
           <div>
-            <label className={labelCls}>Project</label>
-            <select className={inputCls} value={projectId} onChange={e => setProjectId(e.target.value)}>
+            <label className={labelCls} htmlFor="gi-project">Project</label>
+            <select id="gi-project" className={inputCls} value={projectId} onChange={e => setProjectId(e.target.value)}>
               <option value="">—</option>
               {options.projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
             </select>
           </div>
           <div>
-            <label className={labelCls}>Came by</label>
-            <select className={inputCls} value={deliveryMode} onChange={e => setDeliveryMode(e.target.value)}>
+            <label className={labelCls} htmlFor="gi-came-by">Came by</label>
+            <select id="gi-came-by" className={inputCls} value={deliveryMode} onChange={e => setDeliveryMode(e.target.value)}>
               <option value="">—</option>
               {options.lists.deliveryMode.map(v => <option key={v} value={v}>{v}</option>)}
             </select>
@@ -413,12 +419,12 @@ export function GateInForm({
 
         <div className="grid grid-cols-2 gap-2">
           <div>
-            <label className={labelCls}>Vehicle</label>
-            <input className={inputCls + ' font-mono'} value={vehicleNo} onChange={e => setVehicleNo(e.target.value)} placeholder="GJ-05-AB-1234" />
+            <label className={labelCls} htmlFor="gi-vehicle">Vehicle</label>
+            <input id="gi-vehicle" className={inputCls + ' font-mono'} value={vehicleNo} onChange={e => setVehicleNo(e.target.value)} placeholder="GJ-05-AB-1234" />
           </div>
           <div>
-            <label className={labelCls}>Driver mobile</label>
-            <input className={inputCls + ' font-mono'} value={driverMobile} onChange={e => setDriverMobile(e.target.value)} inputMode="tel" />
+            <label className={labelCls} htmlFor="gi-driver-mobile">Driver mobile</label>
+            <input id="gi-driver-mobile" className={inputCls + ' font-mono'} value={driverMobile} onChange={e => setDriverMobile(e.target.value)} inputMode="tel" />
           </div>
         </div>
 
@@ -578,7 +584,7 @@ export function GateInForm({
                     {!row.differsFromPo && (
                       <button type="button"
                         onClick={() => patch(row.key, { differsFromPo: true, differNote: '' })}
-                        className="flex-shrink-0 rounded-lg border-2 border-slate-200 bg-white px-2.5 py-1.5 min-h-[36px] text-[11.5px] font-bold text-slate-600 hover:border-amber-300 hover:text-amber-800">
+                        className="flex-shrink-0 rounded-lg border-2 border-slate-200 bg-white px-2.5 py-1.5 min-h-[44px] text-[11.5px] font-bold text-slate-600 hover:border-amber-300 hover:text-amber-800">
                         Not what came?
                       </button>
                     )}
@@ -620,7 +626,7 @@ export function GateInForm({
                         onClick={() => patch(row.key, {
                           differsFromPo: false, differNote: null, itemId: poItemOf(row),
                         })}
-                        className="text-[11.5px] font-semibold text-slate-500 hover:text-slate-700 min-h-[32px]">
+                        className="text-[11.5px] font-semibold text-slate-500 hover:text-slate-700 min-h-[44px]">
                         Never mind — it matches the PO
                       </button>
                     </div>
@@ -630,14 +636,14 @@ export function GateInForm({
 
               <div className="grid grid-cols-3 gap-2">
                 <div>
-                  <label className={labelCls}>Unit · locked</label>
-                  <input className={lockCls + ' font-mono'}
+                  <label className={labelCls} htmlFor="gi-unit-locked">Unit · locked</label>
+                  <input id="gi-unit-locked" className={lockCls + ' font-mono'}
                     value={(row.differsFromPo ? item?.unit : sel?.unit ?? item?.unit) ?? ''} readOnly
                     title="The unit belongs to the item and cannot be changed here" />
                 </div>
                 <div>
-                  <label className={labelCls}>Challan qty</label>
-                  <input className={inputCls + ' font-mono'} inputMode="decimal" value={row.challanQty || ''}
+                  <label className={labelCls} htmlFor="gi-challan-qty">Challan qty</label>
+                  <input id="gi-challan-qty" className={inputCls + ' font-mono'} inputMode="decimal" value={row.challanQty || ''}
                     onChange={e => {
                       const n = num(e.target.value)
                       // Typing one number covers the normal day: received
@@ -648,16 +654,16 @@ export function GateInForm({
                     }} />
                 </div>
                 <div>
-                  <label className={labelCls}>Received</label>
-                  <input className={inputCls + ' font-mono'} inputMode="decimal" value={row.receivedQty || ''}
+                  <label className={labelCls} htmlFor="gi-received">Received</label>
+                  <input id="gi-received" className={inputCls + ' font-mono'} inputMode="decimal" value={row.receivedQty || ''}
                     onChange={e => patch(row.key, { receivedQty: num(e.target.value) })} />
                 </div>
               </div>
 
               <div className="grid grid-cols-2 gap-2">
                 <div>
-                  <label className={labelCls}>Damaged</label>
-                  <input className={inputCls + ' font-mono'} inputMode="decimal" value={row.damagedQty || ''}
+                  <label className={labelCls} htmlFor="gi-damaged">Damaged</label>
+                  <input id="gi-damaged" className={inputCls + ' font-mono'} inputMode="decimal" value={row.damagedQty || ''}
                     onChange={e => patch(row.key, { damagedQty: num(e.target.value) })} />
                 </div>
                 {showValues && (
@@ -709,14 +715,14 @@ export function GateInForm({
         <div className="grid grid-cols-[1fr_auto] gap-2">
           <button type="button" onClick={() => setRows(rs => [...rs, blankRow()])}
             disabled={po ? po.lines.length <= rows.filter(r => r.poLineId).length : false}
-            className="rounded-lg border-2 border-dashed border-slate-300 py-2 min-h-[40px] text-[12.5px] font-bold text-slate-500 hover:border-emerald-300 hover:text-emerald-700 disabled:opacity-40 disabled:hover:border-slate-300 disabled:hover:text-slate-500 inline-flex items-center justify-center gap-1.5">
+            className="rounded-lg border-2 border-dashed border-slate-300 py-2 min-h-[44px] text-[12.5px] font-bold text-slate-500 hover:border-emerald-300 hover:text-emerald-700 disabled:opacity-40 disabled:hover:border-slate-300 disabled:hover:text-slate-500 inline-flex items-center justify-center gap-1.5">
             <Plus className="h-3.5 w-3.5" /> Add another item {po ? 'from this PO' : ''}
           </button>
           {rows.length > 1 && (
             // A truck often brings two of the seven things ordered. Clearing the
             // list is quicker than deleting five rows one at a time.
             <button type="button" onClick={() => setRows([blankRow()])}
-              className="rounded-lg border-2 border-slate-200 px-3 py-2 min-h-[40px] text-[12.5px] font-bold text-slate-500 hover:border-rose-300 hover:text-rose-700">
+              className="rounded-lg border-2 border-slate-200 px-3 py-2 min-h-[44px] text-[12.5px] font-bold text-slate-500 hover:border-rose-300 hover:text-rose-700">
               Clear the list
             </button>
           )}
@@ -737,8 +743,8 @@ export function GateInForm({
         )}
 
         <div>
-          <label className={labelCls}>Into which store</label>
-          <select className={inputCls} value={locationId} onChange={e => setLocationId(e.target.value)}>
+          <label className={labelCls} htmlFor="gi-into-which-store">Into which store</label>
+          <select id="gi-into-which-store" className={inputCls} value={locationId} onChange={e => setLocationId(e.target.value)}>
             <option value="">Pick a store…</option>
             {options.sites.map(site => (
               <optgroup key={site.id} label={site.name}>
@@ -758,8 +764,8 @@ export function GateInForm({
         </div>
 
         <div>
-          <label className={labelCls}>Remarks</label>
-          <input className={inputCls} value={remarks} onChange={e => setRemarks(e.target.value)} />
+          <label className={labelCls} htmlFor="gi-remarks">Remarks</label>
+          <input id="gi-remarks" className={inputCls} value={remarks} onChange={e => setRemarks(e.target.value)} />
         </div>
 
         {/* Blocked, but never silently — it says what is missing. */}
@@ -798,7 +804,7 @@ function NewItemInline({ units, onCreated }: { units: string[]; onCreated: (id: 
   if (!open) {
     return (
       <button type="button" onClick={() => setOpen(true)}
-        className="text-[11.5px] font-bold text-slate-500 hover:text-emerald-700 min-h-[32px] inline-flex items-center gap-1">
+        className="text-[11.5px] font-bold text-slate-500 hover:text-emerald-700 min-h-[44px] inline-flex items-center gap-1">
         <Plus className="h-3 w-3" /> It is not on the list — add it
       </button>
     )
@@ -822,7 +828,7 @@ function NewItemInline({ units, onCreated }: { units: string[]; onCreated: (id: 
       <p className="text-[11px] text-slate-500">The unit is locked to the item once saved, so get it right now.</p>
       <div className="grid grid-cols-2 gap-2">
         <button type="button" onClick={() => { setOpen(false); setName('') }}
-          className="rounded-lg border-2 border-slate-200 py-2 min-h-[36px] text-[12px] font-bold text-slate-600">
+          className="rounded-lg border-2 border-slate-200 py-2 min-h-[44px] text-[12px] font-bold text-slate-600">
           Cancel
         </button>
         <button type="button" disabled={busy || !name.trim()}
@@ -833,7 +839,7 @@ function NewItemInline({ units, onCreated }: { units: string[]; onCreated: (id: 
             onCreated(res.id)
             setOpen(false); setName('')
           })}
-          className="rounded-lg bg-emerald-600 hover:bg-emerald-700 py-2 min-h-[36px] text-[12px] font-bold text-white disabled:opacity-50 inline-flex items-center justify-center gap-1.5">
+          className="rounded-lg bg-emerald-600 hover:bg-emerald-700 py-2 min-h-[44px] text-[12px] font-bold text-white disabled:opacity-50 inline-flex items-center justify-center gap-1.5">
           {busy && <Loader2 className="h-3.5 w-3.5 animate-spin" />} Add item
         </button>
       </div>

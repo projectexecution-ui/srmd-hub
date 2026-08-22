@@ -18,7 +18,7 @@ const inputCls =
   'w-full rounded-lg border border-slate-300 px-2.5 py-2 text-sm bg-white min-h-[40px] ' +
   'focus:outline-none focus:ring-2 focus:ring-emerald-400/40 focus:border-emerald-400'
 const iconBtn =
-  'rounded-lg border-2 border-slate-200 px-2 py-1.5 min-h-[36px] min-w-[36px] grid place-items-center ' +
+  'rounded-lg border-2 border-slate-200 px-2 py-1.5 min-h-[44px] min-w-[44px] grid place-items-center ' +
   'text-slate-500 hover:border-emerald-300 hover:text-emerald-700 disabled:opacity-40'
 
 export function StoreMap({
@@ -204,7 +204,7 @@ function OwnerPicker({
       <select id={`owner-${spot.id}`} disabled={!canAdmin || busy}
         value={spot.projectId ?? ''}
         onChange={e => pick(e.target.value)}
-        className="rounded-lg border border-slate-300 bg-white px-2 py-1 min-h-[34px] text-[12px]
+        className="rounded-lg border border-slate-300 bg-white px-2 py-1 min-h-[44px] text-[12px]
                    disabled:opacity-50 focus:outline-none focus:ring-2 focus:ring-emerald-400/40">
         <option value="">— shared, any project may ask —</option>
         {projects.map(pr => <option key={pr.id} value={pr.id}>{pr.name}</option>)}
@@ -286,7 +286,7 @@ function AddRow({
     return (
       <button type="button" onClick={() => setOpen(true)}
         className="mt-1 inline-flex items-center gap-1 text-[12px] font-bold text-emerald-700 hover:underline
-                   min-h-[36px] px-0.5">
+                   min-h-[44px] px-0.5">
         <Plus className="h-3.5 w-3.5" /> Add a {what}
       </button>
     )

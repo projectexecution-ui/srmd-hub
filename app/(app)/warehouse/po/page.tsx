@@ -2,6 +2,7 @@ import Link from 'next/link'
 import { requirePermission, getMyPermissions, can } from '@/lib/auth'
 import { PageHeader } from '@/components/PageHeader'
 import { Card } from '@/components/ui/card'
+import { QueryError } from '@/components/ui/query-error'
 import { createClient } from '@/lib/supabase/server'
 import { searchTrackerPos, getTrackerPo } from '@/lib/warehouse/po-import'
 import { formatDate } from '@/lib/utils'
@@ -29,6 +30,9 @@ export default async function PoPage({
   ])
 
   const mine = mineRes.data ?? []
+  // Two independent reads, two independent failures. A blank 'already imported'
+  // list must not be mistaken for 'nothing imported yet'.
+  const readError = mineRes.error?.message ?? projectsRes.error?.message ?? null
 
   return (
     <div className="p-4 md:p-6 max-w-6xl mx-auto space-y-4">
@@ -39,6 +43,8 @@ export default async function PoPage({
         title="Purchase Orders"
         subtitle="Pull a PO out of the Indent → PO Tracker. Vendor, date, materials, units and ordered quantities all come from IN4 as they are — nothing to map or confirm."
       />
+
+      {readError && <QueryError message={readError} what="your purchase orders" />}
 
       <div className="rounded-xl border border-sky-200 bg-sky-50 p-3 text-[12.5px] text-sky-900">
         <b>IN4 is the base.</b> The material name IN4 uses <i>is</i> the item here, with IN4&apos;s own unit —

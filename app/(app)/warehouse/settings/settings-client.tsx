@@ -215,7 +215,7 @@ function SettingRow({ def, values, hideableRoles, canAdmin }: {
             return (
               <button key={c.value} type="button" aria-pressed={picked} disabled={!canAdmin || busy}
                 onClick={() => save(c.value)}
-                className={`rounded-full border-2 px-3 py-1.5 min-h-[38px] text-[12px] font-bold transition
+                className={`rounded-full border-2 px-3 py-1.5 min-h-[44px] text-[12px] font-bold transition
                             disabled:opacity-50 ${
                   picked ? 'border-emerald-500 bg-emerald-600 text-white'
                          : 'border-slate-200 bg-white text-slate-600 hover:border-slate-400'}`}>
@@ -254,7 +254,7 @@ function SettingRow({ def, values, hideableRoles, canAdmin }: {
                       : [...valuesHiddenRoles(values), r.id]
                     save(next.join(','))
                   }}
-                  className={`rounded-full border-2 px-3 py-1.5 min-h-[38px] text-[12px] font-bold transition
+                  className={`rounded-full border-2 px-3 py-1.5 min-h-[44px] text-[12px] font-bold transition
                               disabled:opacity-50 inline-flex items-center gap-1.5 ${
                     hidden ? 'border-slate-700 bg-slate-700 text-white'
                            : 'border-slate-200 bg-white text-slate-600 hover:border-slate-400'}`}>
@@ -381,7 +381,8 @@ function Lists({ lists, itemCount, canAdmin }: { lists: ListRow[]; itemCount: nu
                         if (!res.ok) { toast.error(res.error ?? 'Could not change that.'); return }
                         router.refresh()
                       })}
-                      className="text-slate-400 hover:text-rose-600 min-h-[20px]">
+                      className="text-slate-400 hover:text-rose-600 min-h-[44px] min-w-[44px]
+                                 grid place-items-center -my-2">
                       {r.is_active ? <X className="h-3 w-3" /> : <Plus className="h-3 w-3" />}
                     </button>
                   )}
@@ -419,7 +420,7 @@ function Lists({ lists, itemCount, canAdmin }: { lists: ListRow[]; itemCount: nu
                 </div>
               ) : (
                 <button type="button" onClick={() => setAdding(kind)}
-                  className="mt-2 text-[11.5px] font-bold text-slate-500 hover:text-emerald-700 inline-flex items-center gap-1 min-h-[32px]">
+                  className="mt-2 text-[11.5px] font-bold text-slate-500 hover:text-emerald-700 inline-flex items-center gap-1 min-h-[44px]">
                   <Plus className="h-3 w-3" /> Add to {meta.label.toLowerCase()}
                 </button>
               )
@@ -437,7 +438,7 @@ function Lists({ lists, itemCount, canAdmin }: { lists: ListRow[]; itemCount: nu
           item on import.
         </p>
         <Link href="/warehouse/items"
-          className="inline-flex items-center gap-1 text-[12px] font-bold text-emerald-700 hover:underline min-h-[36px]">
+          className="inline-flex items-center gap-1 text-[12px] font-bold text-emerald-700 hover:underline min-h-[44px]">
           Open the item master <ChevronRight className="h-3.5 w-3.5" />
         </Link>
       </div>

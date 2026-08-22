@@ -178,10 +178,28 @@ describe('stat lines replace the subtitle only when there is news', () => {
   })
 })
 
+describe('the request tiles deep-link to their own lane', () => {
+  it('gives each badge its own destination', () => {
+    const t = homeTiles(input('admin', { canApprove: true, keepsAStore: true }))
+    const href = (k: string) => t.find(x => x.key === k)?.href
+    // Three badges that all landed on the same unfiltered page was the finding.
+    expect(href('approvals')).toContain('lane=approve')
+    expect(href('to-issue')).toContain('lane=issue')
+    expect(href('mine')).toContain('lane=mine')
+    expect(new Set([href('approvals'), href('to-issue'), href('mine')]).size).toBe(3)
+  })
+  it('carries the anchor so the browser scrolls to the lane', () => {
+    const t = homeTiles(input('admin', { canApprove: true, keepsAStore: true }))
+    for (const k of ['approvals', 'to-issue', 'mine']) {
+      expect(t.find(x => x.key === k)?.href, k).toMatch(/#lane-/)
+    }
+  })
+})
+
 describe('the callout names one thing', () => {
   it('prefers approvals, because nothing issues before it is approved', () => {
     expect(homeCallout({ requestsOn: true, toApprove: 2, toIssue: 5 }))
-      .toEqual({ count: 2, label: 'Approvals', href: '/warehouse/requests' })
+      .toEqual({ count: 2, label: 'Approvals', href: '/warehouse/requests?lane=approve#lane-approve' })
   })
   it('falls through to issuing', () => {
     expect(homeCallout({ requestsOn: true, toApprove: 0, toIssue: 5 })?.label).toBe('To issue')

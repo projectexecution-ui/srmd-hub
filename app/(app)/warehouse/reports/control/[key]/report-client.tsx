@@ -138,7 +138,7 @@ export function ReportClient({
             return (
               <button key={r.label} type="button" aria-pressed={on}
                 onClick={() => setParams({ from: r.from, to: r.to })}
-                className={`rounded-full border-2 px-3 py-1.5 min-h-[36px] text-[12px] font-bold transition ${
+                className={`rounded-full border-2 px-3 py-1.5 min-h-[44px] text-[12px] font-bold transition ${
                   on ? 'border-emerald-500 bg-emerald-600 text-white'
                      : 'border-slate-200 bg-white text-slate-600 hover:border-emerald-300'}`}>
                 {r.label}

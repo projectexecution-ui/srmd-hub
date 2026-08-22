@@ -11,7 +11,7 @@ import type { WhSite } from '@/lib/warehouse/types'
 import { Loader2, EyeOff, Eye } from 'lucide-react'
 
 const inputCls =
-  'w-full rounded-lg border border-slate-300 px-2.5 py-2 text-sm bg-white min-h-[40px] ' +
+  'w-full rounded-lg border border-slate-300 px-2.5 py-2 text-sm bg-white min-h-[44px] ' +
   'focus:outline-none focus:ring-2 focus:ring-emerald-400/40 focus:border-emerald-400'
 const labelCls = 'block text-[10px] font-extrabold uppercase tracking-wider text-slate-400 mb-1'
 

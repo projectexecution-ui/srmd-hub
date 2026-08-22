@@ -15,8 +15,14 @@ import { ChevronLeft, Plus } from 'lucide-react'
 
 export const dynamic = 'force-dynamic'
 
-export default async function WarehouseRequestsPage() {
+export default async function WarehouseRequestsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ lane?: string }>
+}) {
   await requirePermission('warehouse', 'view')
+  // Which lane the home tile was pointing at, so a badge lands on its queue.
+  const { lane } = await searchParams
   const values = await getSettings()
   const on = isOn(values, 'wh_requests_on')
 
@@ -91,7 +97,7 @@ export default async function WarehouseRequestsPage() {
       </details>
 
       {lanes.error && <QueryError message={lanes.error} what="the requests" />}
-      <RequestsClient lanes={lanes} showValues={showValues} />
+      <RequestsClient lanes={lanes} showValues={showValues} focus={lane} />
     </div>
   )
 }

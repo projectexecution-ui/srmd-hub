@@ -195,7 +195,7 @@ export function NewRequestForm({
         <div className="flex items-center justify-between gap-2">
           <p className="text-[13px] font-bold text-slate-800">Items</p>
           <button type="button" onClick={() => setRows(rs => [...rs, blank()])}
-            className="rounded-lg border-2 border-slate-200 px-2.5 py-1.5 min-h-[38px] text-[12px] font-bold
+            className="rounded-lg border-2 border-slate-200 px-2.5 py-1.5 min-h-[44px] text-[12px] font-bold
                        text-slate-600 hover:border-emerald-300 hover:text-emerald-700
                        inline-flex items-center gap-1.5">
             <Plus className="h-3.5 w-3.5" /> Add row

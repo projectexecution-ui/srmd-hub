@@ -32,7 +32,9 @@ export async function loadPoBalance(poId: string) {
   return { ok: true as const, po }
 }
 
-export type SaveResult = { ok: true; entryNo: string } | { ok: false; error: string }
+export type SaveResult =
+  | { ok: true; entryNo: string; warning?: string }
+  | { ok: false; error: string }
 export type PoResult =
   | { ok: true; poNo: string; lines: number; itemsCreated: number; skipped: number; warning?: string }
   | { ok: false; error: string }
@@ -428,8 +430,9 @@ export async function saveGateOut(input: GateOutInput): Promise<SaveResult> {
   const moveErr = await applyOutStock(header.id, input, lines, me?.id ?? null)
   if (moveErr) return { ok: false, error: moveErr }
 
+  let requestWarning: string | null = null
   if (input.requestId) {
-    await creditRequest(input.requestId, lines)
+    requestWarning = await creditRequest(input.requestId, lines)
     // The engineer who asked is the one waiting at the other end of this.
     const { data: after } = await sb.from('wh_requests')
       .select('status').eq('id', input.requestId).maybeSingle()
@@ -440,7 +443,9 @@ export async function saveGateOut(input: GateOutInput): Promise<SaveResult> {
   revalidatePath('/warehouse/out')
   revalidatePath('/warehouse/stock')
   revalidatePath('/warehouse/requests')
-  return { ok: true, entryNo: header.entry_no }
+  return requestWarning
+    ? { ok: true, entryNo: header.entry_no, warning: `The entry saved, but ${requestWarning}.` }
+    : { ok: true, entryNo: header.entry_no }
 }
 
 /** Credit an issue against the request that asked for it, and move the request
@@ -453,11 +458,17 @@ export async function saveGateOut(input: GateOutInput): Promise<SaveResult> {
 async function creditRequest(
   requestId: string,
   lines: GateOutInput['lines'],
-): Promise<void> {
+): Promise<string | null> {
   const sb = await createClient()
-  const { data: reqLines } = await sb.from('wh_request_lines')
+  // A failed read here used to look identical to "this request has no lines",
+  // so the function returned quietly and the request stayed at nothing-issued
+  // even though the material had gone out of the gate.
+  const { data: reqLines, error: linesErr } = await sb.from('wh_request_lines')
     .select('id, item_id, qty, issued_qty').eq('request_id', requestId)
-  if (!reqLines?.length) return
+  if (linesErr) {
+    return `the request could not be updated (${linesErr.message}), so it still shows as not issued`
+  }
+  if (!reqLines?.length) return null
 
   const issuedNow = new Map<string, number>()
   for (const l of lines) issuedNow.set(l.itemId, (issuedNow.get(l.itemId) ?? 0) + l.qty)
@@ -475,11 +486,12 @@ async function creditRequest(
   // Never reopen a request that was already finished, and never touch one that
   // has been rejected or withdrawn since the keeper opened his screen.
   const { data: cur } = await sb.from('wh_requests').select('status').eq('id', requestId).maybeSingle()
-  if (!cur || cur.status === 'rejected' || cur.status === 'cancelled') return
+  if (!cur || cur.status === 'rejected' || cur.status === 'cancelled') return null
 
-  await sb.from('wh_requests')
+  const { error: upErr } = await sb.from('wh_requests')
     .update({ status: statusAfterIssue(after) })
     .eq('id', requestId)
+  return upErr ? `the request's status could not be moved on (${upErr.message})` : null
 }
 
 /** A site issue takes stock away. A store move takes it from one shelf and puts
@@ -507,8 +519,16 @@ async function applyOutStock(
   if (error) return `Entry saved but the stock ledger failed: ${error.message}`
 
   for (const l of lines) {
-    const { data: from } = await sb.from('wh_stock').select('id, qty')
+    // The READ error matters as much as the write one. If this lookup fails,
+    // `from` is null, the update below is skipped, and wh_stock is quietly left
+    // un-decremented while wh_movements has already been written — the exact way
+    // the ledger and the stock table drift apart without anybody being told.
+    const { data: from, error: fromErr } = await sb.from('wh_stock').select('id, qty')
       .eq('item_id', l.itemId).eq('location_id', input.fromLocationId).maybeSingle()
+    if (fromErr) {
+      return `Entry saved, but the issuing store's stock could not be read `
+        + `(${fromErr.message}), so its level is now behind the ledger. Tell an admin.`
+    }
     if (from) {
       const { error: e } = await sb.from('wh_stock')
         .update({ qty: Number(from.qty) - l.qty, last_moved_at: new Date().toISOString() })
@@ -517,8 +537,14 @@ async function applyOutStock(
     }
 
     if (toStore) {
-      const { data: to } = await sb.from('wh_stock').select('id, qty')
+      // Same again, and worse: a failed read here looks like "no row yet" and
+      // takes the insert branch, which would duplicate the store's stock row.
+      const { data: to, error: toErr } = await sb.from('wh_stock').select('id, qty')
         .eq('item_id', l.itemId).eq('location_id', input.toLocationId!).maybeSingle()
+      if (toErr) {
+        return `Entry saved, but the receiving store's stock could not be read `
+          + `(${toErr.message}). Nothing was added there — tell an admin.`
+      }
       const { error: e } = to
         ? await sb.from('wh_stock')
             .update({ qty: Number(to.qty) + l.qty, last_moved_at: new Date().toISOString() })

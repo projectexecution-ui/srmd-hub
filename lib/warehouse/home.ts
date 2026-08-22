@@ -92,13 +92,13 @@ export function homeTiles(i: HomeInput): HomeTile[] {
       section: 'main', accent: 'none', show: i.requestsOn,
     },
     {
-      key: 'mine', href: '/warehouse/requests', title: 'My requests',
+      key: 'mine', href: '/warehouse/requests?lane=mine#lane-mine', title: 'My requests',
       subtitle: 'Everything I raised',
       stat: i.mine > 0 ? `${nf(i.mine)} open` : undefined,
       section: 'main', accent: 'none', show: i.requestsOn,
     },
     {
-      key: 'approvals', href: '/warehouse/requests', title: 'Approvals',
+      key: 'approvals', href: '/warehouse/requests?lane=approve#lane-approve', title: 'Approvals',
       subtitle: 'Requests to OK',
       stat: i.toApprove > 0 ? `${nf(i.toApprove)} to approve` : undefined,
       section: 'main', badge: i.toApprove, badgeStyle: 'amber',
@@ -106,7 +106,7 @@ export function homeTiles(i: HomeInput): HomeTile[] {
       show: i.requestsOn && i.canApprove,
     },
     {
-      key: 'to-issue', href: '/warehouse/requests', title: 'To issue',
+      key: 'to-issue', href: '/warehouse/requests?lane=issue#lane-issue', title: 'To issue',
       subtitle: 'Hand it over',
       stat: i.toIssue > 0 ? `${nf(i.toIssue)} to issue` : undefined,
       section: 'main', badge: i.toIssue, badgeStyle: 'blue',
@@ -180,8 +180,8 @@ export function homeCallout(
   i: Pick<HomeInput, 'requestsOn' | 'toApprove' | 'toIssue'>,
 ): { count: number; label: string; href: string } | null {
   if (!i.requestsOn) return null
-  if (i.toApprove > 0) return { count: i.toApprove, label: 'Approvals', href: '/warehouse/requests' }
-  if (i.toIssue > 0) return { count: i.toIssue, label: 'To issue', href: '/warehouse/requests' }
+  if (i.toApprove > 0) return { count: i.toApprove, label: 'Approvals', href: '/warehouse/requests?lane=approve#lane-approve' }
+  if (i.toIssue > 0) return { count: i.toIssue, label: 'To issue', href: '/warehouse/requests?lane=issue#lane-issue' }
   return null
 }
 

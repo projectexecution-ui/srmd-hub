@@ -2,6 +2,8 @@ import Link from 'next/link'
 import { redirect } from 'next/navigation'
 import { requirePermission } from '@/lib/auth'
 import { PageHeader } from '@/components/PageHeader'
+import { QueryError } from '@/components/ui/query-error'
+import { Card } from '@/components/ui/card'
 import { getLocationTree, getItems, getSettings } from '@/lib/warehouse/data'
 import { isOn } from '@/lib/warehouse/settings'
 import { getApprovalRules } from '@/lib/warehouse/request-data'
@@ -36,6 +38,19 @@ export default async function NewRequestPage() {
         title="Ask a store for material"
         subtitle="Pick the store, say what you need and why. It goes to that store’s keeper — and you are told up front whether it will wait for approval."
       />
+
+      {/* A project list that failed to load leaves the picker empty, and an empty
+          picker is indistinguishable from "no projects exist". Say which it is. */}
+      {projectsRes.error && (
+        <QueryError message={projectsRes.error.message} what="the project list" />
+      )}
+      {sites.length === 0 && (
+        <Card className="p-4 shadow-sm text-[13px] text-amber-900 bg-amber-50 border-amber-200">
+          <b>There are no stores set up yet.</b> A request has to name the store it is asking, so
+          nothing can be raised until an admin adds one in Warehouse ▸ Settings ▸ Stores.
+        </Card>
+      )}
+
       <NewRequestForm
         sites={sites}
         items={items}

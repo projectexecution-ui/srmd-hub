@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   ageBucket, daysBetween, seriesGaps, entrySeq, rateSpread, crossEntity,
   outstandingReturnables, poPending, CONTROL_REPORTS, reportMeta, DEFERRED_REPORTS,
-  RATE_SPREAD_FLOOR, STALE_PO_DAYS, CONTROL_GROUPS, groupedControlReports,
+  RATE_SPREAD_FLOOR, STALE_PO_DAYS, CONTROL_GROUPS, groupedControlReports, stockDrift,
 } from './exceptions'
 import type { ReturnableLine, PoLineState } from './exceptions'
 
@@ -246,8 +246,11 @@ describe('the report catalogue', () => {
     // reason it was deferred — "nothing can be edited yet" — stopped being true.
     // "Requests waiting" arrived with the request flow, which the review never
     // asked for because the module had no way to ask for material at all.
-    expect(CONTROL_REPORTS.length + DEFERRED_REPORTS.length).toBe(16)
+    expect(CONTROL_REPORTS.length + DEFERRED_REPORTS.length).toBe(17)
     expect(CONTROL_REPORTS.some(r => r.key === 'requests')).toBe(true)
+    // Added after the UX audit found two sources of truth for stock and
+    // nothing checking they still matched.
+    expect(CONTROL_REPORTS.some(r => r.key === 'stock-vs-ledger')).toBe(true)
     expect(CONTROL_REPORTS.some(r => r.key === 'differs-from-in4')).toBe(true)
     expect(CONTROL_REPORTS.some(r => r.key === 'voided')).toBe(true)
     expect(DEFERRED_REPORTS.some(d => d.title === 'Edit history')).toBe(false)
@@ -281,5 +284,40 @@ describe('control report grouping', () => {
     for (const g of groupedControlReports().groups) {
       expect(g.reports.length, g.label).toBeGreaterThan(0)
     }
+  })
+})
+
+describe('stock vs the ledger', () => {
+  const pair = (over = {}) => ({
+    itemName: 'Cement OPC 53', storeName: 'Yunus Land Store', unit: 'Bag',
+    ledgerQty: 100, tableQty: 100, ...over,
+  })
+
+  it('reports nothing when the two agree', () => {
+    expect(stockDrift([pair(), pair({ itemName: 'Sand' })])).toEqual([])
+  })
+
+  it('catches the table running behind the entries', () => {
+    // The exact failure mode: wh_movements was written, wh_stock was not.
+    const [d] = stockDrift([pair({ ledgerQty: 100, tableQty: 94 })])
+    expect(d.diff).toBe(-6)
+  })
+
+  it('catches the table running ahead — stock nobody has an entry for', () => {
+    const [d] = stockDrift([pair({ ledgerQty: 100, tableQty: 106 })])
+    expect(d.diff).toBe(6)
+  })
+
+  it('offers no tolerance, because any gap is a fault not rounding', () => {
+    expect(stockDrift([pair({ ledgerQty: 100, tableQty: 100.001 })])).toHaveLength(1)
+  })
+
+  it('puts the worst gap first, whichever way it leans', () => {
+    const out = stockDrift([
+      pair({ itemName: 'small', ledgerQty: 10, tableQty: 9 }),
+      pair({ itemName: 'big', ledgerQty: 10, tableQty: 40 }),
+      pair({ itemName: 'medium', ledgerQty: 50, tableQty: 40 }),
+    ])
+    expect(out.map(d => d.itemName)).toEqual(['big', 'medium', 'small'])
   })
 })

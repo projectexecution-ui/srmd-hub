@@ -23,10 +23,13 @@ const TONE: Record<string, string> = {
 }
 
 export function RequestsClient({
-  lanes, showValues,
+  lanes, showValues, focus,
 }: {
   lanes: RequestLanes
   showValues: boolean
+  /** Which lane the home tile pointed at: the badge that was tapped should
+   *  land on its own queue, not on a page of four stacked ones. */
+  focus?: string
 }) {
   const empty = lanes.toApprove.length === 0 && lanes.toIssue.length === 0
     && lanes.mine.length === 0 && lanes.recent.length === 0
@@ -42,6 +45,9 @@ export function RequestsClient({
     )
   }
 
+  // The lane that was asked for is scrolled to on arrival. Ordering is left
+  // alone: a queue that moves about depending on how you got here is harder
+  // to learn than one that is always in the same place.
   return (
     <div className="space-y-4">
       <Lane
@@ -49,6 +55,7 @@ export function RequestsClient({
         why="Nothing can be issued against these until you decide."
         icon={<Stamp className="h-4 w-4" />}
         tone="border-amber-200 bg-amber-50/50"
+        id="lane-approve" focused={focus === 'approve'}
         rows={lanes.toApprove} showValues={showValues} />
 
       <Lane
@@ -56,6 +63,7 @@ export function RequestsClient({
         why="Approved and outstanding. The material has not gone out yet."
         icon={<PackageCheck className="h-4 w-4" />}
         tone="border-emerald-200 bg-emerald-50/40"
+        id="lane-issue" focused={focus === 'issue'}
         rows={lanes.toIssue} showValues={showValues} />
 
       <Lane
@@ -63,6 +71,7 @@ export function RequestsClient({
         why="Still open. Chase them from here rather than by phone."
         icon={<UserRound className="h-4 w-4" />}
         tone="border-slate-200"
+        id="lane-mine" focused={focus === 'mine'}
         rows={lanes.mine} showValues={showValues} />
 
       <Lane
@@ -82,7 +91,7 @@ export function RequestsClient({
 }
 
 function Lane({
-  title, why, icon, tone, rows, showValues, collapsedByDefault,
+  title, why, icon, tone, rows, showValues, collapsedByDefault, id, focused,
 }: {
   title: string
   why: string
@@ -91,13 +100,16 @@ function Lane({
   rows: RequestRow[]
   showValues: boolean
   collapsedByDefault?: boolean
+  id?: string
+  focused?: boolean
 }) {
   // An empty lane is not shown at all — a heading over nothing is noise, and
   // "Waiting for your approval · 0" is worse than silence.
   if (rows.length === 0) return null
 
   return (
-    <section className="space-y-1.5">
+    <section id={id} className={`space-y-1.5 scroll-mt-20 ${
+      focused ? 'rounded-xl ring-2 ring-amber-300 bg-amber-50/40 p-2 -m-0.5' : ''}`}>
       <div className="flex items-baseline gap-2 px-0.5">
         <span className="text-slate-500">{icon}</span>
         <h2 className="text-[13px] font-extrabold text-slate-800">{title}</h2>

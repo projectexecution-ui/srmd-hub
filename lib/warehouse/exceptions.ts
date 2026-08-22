@@ -263,7 +263,7 @@ export type ReportKey =
   | 'count-variance' | 'vendor-balance' | 'shortage-damage' | 'no-po'
   | 'dead-stock' | 'returnables' | 'entity-settlement' | 'rate-variance'
   | 'number-gaps' | 'po-pending' | 'over-receipt' | 'differs-from-in4'
-  | 'voided' | 'requests'
+  | 'voided' | 'requests' | 'stock-vs-ledger'
 
 export type ReportMeta = {
   key: ReportKey
@@ -371,6 +371,13 @@ export const CONTROL_REPORTS: ReportMeta[] = [
     usesPeriod: false,
   },
   {
+    key: 'stock-vs-ledger',
+    title: 'Stock vs the ledger',
+    blurb: 'The running stock table against the entries it is meant to equal',
+    question: 'Do the two places we keep stock still agree?',
+    usesPeriod: false,
+  },
+  {
     key: 'voided',
     title: 'Voided entries',
     blurb: 'Every entry undone — what it said, who undid it, and why',
@@ -430,7 +437,7 @@ export const CONTROL_GROUPS: Array<{ label: string; blurb: string; keys: ReportK
   {
     label: 'Who is waiting · is the book straight',
     blurb: 'Open promises against a vendor or a site, and holes in the register itself.',
-    keys: ['po-pending', 'requests', 'number-gaps', 'voided'],
+    keys: ['po-pending', 'requests', 'number-gaps', 'voided', 'stock-vs-ledger'],
   },
 ]
 
@@ -451,4 +458,38 @@ export function groupedControlReports(): { groups: ControlGroup[]; orphans: Repo
   }))
   const named = new Set(CONTROL_GROUPS.flatMap(g => g.keys))
   return { groups, orphans: CONTROL_REPORTS.filter(r => !named.has(r.key)) }
+}
+
+// ---------------------------------------------------------------------------
+// Stock vs the ledger
+// ---------------------------------------------------------------------------
+
+/** Warehouse V2 keeps stock in TWO places: wh_movements, which the Stock screen
+ *  adds up, and wh_stock, a running total the write path maintains by hand. They
+ *  are equal by construction, and nothing checked that they still were.
+ *
+ *  They agree today only because no gate entry exists yet — both are just the
+ *  opening balance. Once material moves, a write that updates one and not the
+ *  other drifts them apart, and two screens then show two different stocks with
+ *  nothing to say which is right. This is the check that notices. */
+export type StockPair = {
+  itemName: string
+  storeName: string
+  unit: string
+  /** Summed from wh_movements — what the entries say. */
+  ledgerQty: number
+  /** Read off wh_stock — what the running total says. */
+  tableQty: number
+}
+
+export type StockDrift = StockPair & { diff: number }
+
+/** Only genuine disagreements, worst first. No tolerance is offered on purpose:
+ *  these two numbers are the same arithmetic over the same rows, so any
+ *  difference at all is a fault rather than rounding. */
+export function stockDrift(pairs: StockPair[]): StockDrift[] {
+  return pairs
+    .map(p => ({ ...p, diff: p.tableQty - p.ledgerQty }))
+    .filter(p => p.diff !== 0)
+    .sort((a, b) => Math.abs(b.diff) - Math.abs(a.diff))
 }

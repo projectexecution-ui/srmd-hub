@@ -200,7 +200,7 @@ export function StockClient({
             {(['category', 'store'] as const).map(g => (
               <button key={g} type="button" onClick={() => setGroupBy(g)}
                 aria-pressed={groupBy === g}
-                className={`px-3 py-1.5 min-h-[36px] text-[12px] font-bold transition ${
+                className={`px-3 py-1.5 min-h-[44px] text-[12px] font-bold transition ${
                   groupBy === g ? 'bg-slate-700 text-white' : 'bg-white text-slate-600 hover:bg-slate-50'}`}>
                 {g === 'category' ? 'By category' : 'By store'}
               </button>
@@ -208,7 +208,7 @@ export function StockClient({
           </span>
           <button type="button" onClick={() => setOnlyFlagged(v => !v)}
             aria-pressed={onlyFlagged}
-            className={`rounded-full border-2 px-3 py-1.5 min-h-[36px] text-[12px] font-bold transition ${
+            className={`rounded-full border-2 px-3 py-1.5 min-h-[44px] text-[12px] font-bold transition ${
               onlyFlagged
                 ? 'border-rose-500 bg-rose-600 text-white'
                 : 'border-slate-200 bg-white text-slate-600 hover:border-rose-300'}`}>

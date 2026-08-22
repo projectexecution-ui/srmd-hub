@@ -128,7 +128,7 @@ export function SyncClient({
               {n > 0 && (
                 <button type="button" onClick={() => setOpen(isOpen ? null : meta.key)}
                   aria-expanded={isOpen}
-                  className="flex-shrink-0 text-[11.5px] font-bold text-slate-500 hover:text-emerald-700 inline-flex items-center gap-0.5 min-h-[36px]">
+                  className="flex-shrink-0 text-[11.5px] font-bold text-slate-500 hover:text-emerald-700 inline-flex items-center gap-0.5 min-h-[44px]">
                   {isOpen ? 'Hide' : 'See the list'}
                   <ChevronRight className={`h-3.5 w-3.5 transition ${isOpen ? 'rotate-90' : ''}`} />
                 </button>

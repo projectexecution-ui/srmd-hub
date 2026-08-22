@@ -129,7 +129,7 @@ function ReturnRow({
 
       {!open ? (
         <button type="button" onClick={() => setOpen(true)} disabled={!mayReturn}
-          className="mt-1 rounded-lg border-2 border-slate-200 px-2.5 py-1.5 min-h-[36px] text-[12px] font-bold
+          className="mt-1 rounded-lg border-2 border-slate-200 px-2.5 py-1.5 min-h-[44px] text-[12px] font-bold
                      text-slate-600 hover:border-emerald-300 hover:text-emerald-700 disabled:opacity-50">
           Record a return
         </button>

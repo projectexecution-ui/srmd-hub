@@ -6,7 +6,8 @@
 import { useState, useTransition, useEffect } from 'react'
 import { toast } from 'sonner'
 import { loadCatalogue, catalogueStores } from '../catalogue-actions'
-import { formatDateTime } from '@/lib/utils'
+import { todayIST } from '@/lib/warehouse/ledger'
+import { formatDateTime, formatNumber } from '@/lib/utils'
 import { FileDown, FileSpreadsheet, Loader2, X } from 'lucide-react'
 
 const inputCls =
@@ -17,13 +18,20 @@ export function CatalogueButton() {
   const [open, setOpen] = useState(false)
   const [busy, start] = useTransition()
   const [stores, setStores] = useState<Array<{ id: string; name: string }>>([])
+  const [storeError, setStoreError] = useState<string | null>(null)
   const [scope, setScope] = useState('')
   const [photos, setPhotos] = useState(false)
 
   useEffect(() => {
     if (!open || stores.length) return
     let live = true
-    catalogueStores().then(s => { if (live) setStores(s) })
+    void (async () => {
+      const { stores: rows, error } = await catalogueStores()
+      if (!live) return
+      setStores(rows)
+      // An empty picker used to be indistinguishable from a broken one.
+      setStoreError(error ?? null)
+    })()
     return () => { live = false }
   }, [open, stores.length])
 
@@ -41,7 +49,8 @@ export function CatalogueButton() {
         scopeLabel,
         warehouses,
       }
-      const stamp = new Date().toISOString().slice(0, 10)
+      // IST, so a file exported at 1am is not named with yesterday's date.
+      const stamp = todayIST()
 
       // Loaded on demand: jsPDF and xlsx are heavy, and most visits to the item
       // master never press this.
@@ -52,7 +61,7 @@ export function CatalogueButton() {
         const XLSX = await import('xlsx')
         XLSX.writeFile(mod.buildCatalogueExcel(rows, meta), `Material-Register_${stamp}.xlsx`)
       }
-      toast.success(`${rows.length} items exported`)
+      toast.success(`${formatNumber(rows.length, 0)} items exported`)
       setOpen(false)
     })
   }
@@ -80,6 +89,11 @@ export function CatalogueButton() {
         <option value="">All stores</option>
         {stores.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
       </select>
+      {storeError && (
+        <p className="text-[11.5px] text-rose-700 bg-rose-50 border border-rose-200 rounded-lg px-2 py-1.5">
+          {storeError} You can still export every store together.
+        </p>
+      )}
 
       <label className="flex items-center gap-1.5 text-[11.5px] font-semibold text-slate-600 cursor-pointer">
         <input type="checkbox" checked={photos} onChange={e => setPhotos(e.target.checked)} className="h-3.5 w-3.5" />

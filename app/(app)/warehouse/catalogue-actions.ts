@@ -85,17 +85,31 @@ export async function loadCatalogue(opts: { locationId?: string } = {}): Promise
   }
 }
 
-/** The stores the catalogue can be scoped to, for the picker. */
-export async function catalogueStores(): Promise<Array<{ id: string; name: string }>> {
+/** The stores the catalogue can be scoped to, for the picker.
+ *
+ *  The site name is embedded through `!parent_id` — the FOREIGN KEY COLUMN, not
+ *  the constraint name. PostgREST will not resolve a constraint-name hint on a
+ *  self-reference: `wh_locations!wh_locations_parent_id_fkey` returns
+ *  "Could not find a relationship between 'wh_locations' and 'wh_locations'",
+ *  which is what this did, on every call, since it was written. The error was
+ *  discarded, so the picker just rendered empty and nobody could scope an export
+ *  to one store. Returning the error is the half that stops that repeating. */
+export async function catalogueStores(): Promise<{
+  stores: Array<{ id: string; name: string }>
+  error?: string
+}> {
   const denied = await gate('view')
-  if (denied) return []
+  if (denied) return { stores: [], error: denied }
   const sb = await createClient()
-  const { data } = await sb.from('wh_locations')
-    .select('id, name, parent:wh_locations!wh_locations_parent_id_fkey(name)')
+  const { data, error } = await sb.from('wh_locations')
+    .select('id, name, parent:wh_locations!parent_id(name)')
     .not('parent_id', 'is', null).is('deleted_at', null).eq('is_active', true)
     .order('name')
-  return (data ?? []).map(l => ({
-    id: l.id,
-    name: one(l.parent)?.name ? `${one(l.parent)!.name} — ${l.name}` : l.name,
-  }))
+  if (error) return { stores: [], error: `Could not load the store list: ${error.message}` }
+  return {
+    stores: (data ?? []).map(l => ({
+      id: l.id,
+      name: one(l.parent)?.name ? `${one(l.parent)!.name} — ${l.name}` : l.name,
+    })),
+  }
 }

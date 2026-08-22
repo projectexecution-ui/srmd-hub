@@ -7,9 +7,10 @@ import { formatQty, formatINR } from './format'
 import {
   cell, ageBucket, daysBetween, seriesGaps, entrySeq, rateSpread, crossEntity,
   outstandingReturnables, poPending, reportMeta, RATE_SPREAD_FLOOR, AGE_BUCKETS,
+  stockDrift,
 } from './exceptions'
 import type {
-  Cell, ReportKey, ReportView, RateObservation, ReturnableLine, PoLineState, EntitySpend,
+  Cell, ReportKey, ReportView, RateObservation, ReturnableLine, PoLineState, EntitySpend, StockPair,
 } from './exceptions'
 
 /** What family this material belongs to — the same one word the stock screen
@@ -44,6 +45,7 @@ export async function getControlReport(
     case 'number-gaps':       return numberGaps(ctx)
     case 'voided':            return voidedEntries(ctx)
     case 'requests':          return requestsWaiting(ctx)
+    case 'stock-vs-ledger':   return stockVsLedger(ctx)
   }
 }
 
@@ -1150,5 +1152,79 @@ async function requestsWaiting(ctx: Ctx): Promise<ReportView> {
       'Requests already issued, rejected or withdrawn are not here. They are on the request itself.',
     ],
     emptyGood: 'Nothing is outstanding. Every request has been answered.',
+  })
+}
+
+// ===========================================================================
+// Stock vs the ledger — do our two records of stock still agree?
+// ===========================================================================
+
+/** Deliberately reuses getStockView rather than folding the ledger again here.
+ *  The point of the report is "does the Stock screen agree with wh_stock", so it
+ *  has to ask the Stock screen, not a second implementation that could be wrong
+ *  in the same way or in a different one. */
+async function stockVsLedger(ctx: Ctx): Promise<ReportView> {
+  const sb = await createClient()
+  const [view, tblRes] = await Promise.all([
+    getStockView({ asOn: ctx.today }),
+    sb.from('wh_stock').select('item_id, location_id, qty'),
+  ])
+  if (view.error) return shell(ctx, { error: view.error })
+  if (tblRes.error) return shell(ctx, { error: tblRes.error.message })
+
+  const tbl = new Map<string, number>()
+  for (const r of tblRes.data ?? []) {
+    tbl.set(`${r.item_id}|${r.location_id}`, Number(r.qty))
+  }
+
+  // Every pair either side knows about, so a row missing from one shows up too.
+  const seen = new Set<string>()
+  const pairs: StockPair[] = []
+  for (const l of view.lines) {
+    const k = `${l.itemId}|${l.locationId}`
+    seen.add(k)
+    pairs.push({
+      itemName: l.itemName, unit: l.unit, storeName: l.locationName,
+      ledgerQty: l.inHand, tableQty: tbl.get(k) ?? 0,
+    })
+  }
+  for (const [k, qty] of tbl) {
+    if (seen.has(k)) continue
+    // In the table, absent from the ledger — the worse direction: stock nobody
+    // can point at an entry for.
+    pairs.push({ itemName: '— not in the ledger —', unit: '', storeName: '—', ledgerQty: 0, tableQty: qty })
+  }
+
+  const drift = stockDrift(pairs)
+
+  return shell(ctx, {
+    columns: [
+      { header: 'Item', width: 34 }, { header: 'Store', width: 22 },
+      { header: 'Entries say', align: 'right' }, { header: 'Stock table says', align: 'right' },
+      { header: 'Out by', align: 'right' },
+    ],
+    groups: [{
+      label: `${formatNumber(drift.length, 0)} ${drift.length === 1 ? 'line disagrees' : 'lines disagree'}`,
+      rows: drift.map(d => [
+        cell(d.itemName), cell(d.storeName),
+        cell(`${formatQty(d.ledgerQty)} ${d.unit}`.trim(), d.ledgerQty),
+        cell(`${formatQty(d.tableQty)} ${d.unit}`.trim(), d.tableQty),
+        cell(`${d.diff > 0 ? '+' : ''}${formatQty(d.diff)}`, d.diff, 'bad'),
+      ]),
+    }].filter(g => g.rows.length > 0),
+    kpis: [
+      { label: 'lines checked', value: formatNumber(pairs.length, 0) },
+      { label: 'disagreeing', value: formatNumber(drift.length, 0),
+        tone: drift.length ? 'bad' : 'good' },
+      { label: 'worst gap', value: drift.length ? formatQty(Math.abs(drift[0].diff)) : '—' },
+    ],
+    caveats: [
+      'Stock is kept in two places: the entries, which the Stock screen adds up, and a running '
+      + 'total the save path maintains alongside them. They are equal by construction.',
+      'Any difference at all is a fault rather than rounding — it means one save updated one and '
+      + 'not the other. The entries are the authority: every register and report is built from them.',
+      'A position as at today, so the period filter does not apply.',
+    ],
+    emptyGood: 'The two agree exactly, line for line. Nothing to do.',
   })
 }

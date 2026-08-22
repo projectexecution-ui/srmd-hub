@@ -166,8 +166,25 @@ export function ItemsClient({
       )}
 
       {rows.length === 0 ? (
-        <Card className="p-8 shadow-sm text-center text-[13px] text-slate-500">
-          No item matches that.
+        <Card className="p-8 shadow-sm text-center space-y-2">
+          {/* "No item matches that" is wrong when nothing was searched for — it
+              tells a first-time user their catalogue is broken rather than empty. */}
+          {q || activeCategory ? (
+            <>
+              <p className="text-sm font-bold text-slate-700">No item matches that.</p>
+              <p className="text-[12.5px] text-slate-500">
+                Try a shorter search{activeCategory ? ', or clear the category' : ''}.
+              </p>
+            </>
+          ) : (
+            <>
+              <p className="text-sm font-bold text-slate-700">The item master is empty.</p>
+              <p className="text-[12.5px] text-slate-500 max-w-md mx-auto">
+                It fills itself: a material IN4 names on a purchase order becomes an item the moment
+                that PO is imported. Nothing needs typing in by hand.
+              </p>
+            </>
+          )}
         </Card>
       ) : (
         <div className="space-y-3">
@@ -181,7 +198,7 @@ export function ItemsClient({
                     if (n.has(g.category)) n.delete(g.category); else n.add(g.category)
                     return n
                   })}
-                  className="w-full flex items-center gap-1.5 px-1 py-1.5 min-h-[36px] text-[11px] font-extrabold
+                  className="w-full flex items-center gap-1.5 px-1 py-1.5 min-h-[44px] text-[11px] font-extrabold
                              uppercase tracking-wider text-slate-500 hover:text-slate-800">
                   {isCollapsed ? <ChevronRight className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
                   {g.category}
@@ -261,7 +278,7 @@ function ItemCard({ item, canAdmin, onEdit }: {
       )}
 
       <button type="button" onClick={onEdit} aria-label={`Edit ${item.name}`}
-        className="flex-shrink-0 rounded-lg border-2 border-slate-200 px-2 py-1.5 min-h-[36px] min-w-[36px]
+        className="flex-shrink-0 rounded-lg border-2 border-slate-200 px-2 py-1.5 min-h-[44px] min-w-[44px]
                    grid place-items-center text-slate-500 hover:border-emerald-300 hover:text-emerald-700">
         <Pencil className="h-3.5 w-3.5" />
       </button>

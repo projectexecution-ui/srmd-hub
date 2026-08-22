@@ -57,7 +57,7 @@ export function EntriesClient({ rows }: { rows: EntryRow[] }) {
         <div className="flex flex-wrap gap-1.5">
           {FILTERS.map(f => (
             <button key={f.key} type="button" onClick={() => setFilter(f.key)}
-              className={`rounded-lg px-2.5 py-1.5 min-h-[34px] text-[12px] font-bold border-2 ${
+              className={`rounded-lg px-2.5 py-1.5 min-h-[44px] text-[12px] font-bold border-2 ${
                 filter === f.key
                   ? 'border-emerald-400 bg-emerald-50 text-emerald-800'
                   : 'border-slate-200 text-slate-500 hover:border-slate-300'}`}>

@@ -16,7 +16,7 @@ import {
 } from 'lucide-react'
 
 const inputCls =
-  'w-full rounded-lg border border-slate-300 px-2.5 py-2 text-sm bg-white min-h-[40px] ' +
+  'w-full rounded-lg border border-slate-300 px-2.5 py-2 text-sm bg-white min-h-[44px] ' +
   'focus:outline-none focus:ring-2 focus:ring-violet-400/40 focus:border-violet-400'
 const labelCls = 'block text-[10px] font-extrabold uppercase tracking-wider text-slate-400 mb-1'
 
@@ -287,7 +287,7 @@ function WalkingSheet(props: Parameters<typeof CountSheet>[0]) {
                 <div className="flex flex-wrap gap-1.5">
                   {SKIP_HINTS.map(h => (
                     <button key={h} type="button" onClick={() => setSkipReason(h)}
-                      className="rounded-full border border-amber-300 bg-white px-2.5 py-1.5 min-h-[32px] text-[11.5px] font-semibold text-amber-900 hover:bg-amber-100">
+                      className="rounded-full border border-amber-300 bg-white px-2.5 py-1.5 min-h-[44px] text-[11.5px] font-semibold text-amber-900 hover:bg-amber-100">
                       {h}
                     </button>
                   ))}
@@ -297,11 +297,11 @@ function WalkingSheet(props: Parameters<typeof CountSheet>[0]) {
                 </p>
                 <div className="grid grid-cols-2 gap-2">
                   <button type="button" onClick={() => setSkipping(false)}
-                    className="rounded-lg border-2 border-amber-300 bg-white py-2 min-h-[40px] text-[12.5px] font-bold text-amber-900">
+                    className="rounded-lg border-2 border-amber-300 bg-white py-2 min-h-[44px] text-[12.5px] font-bold text-amber-900">
                     Back
                   </button>
                   <button type="button" onClick={submitSkip} disabled={saving}
-                    className="rounded-lg bg-amber-600 hover:bg-amber-700 py-2 min-h-[40px] text-[12.5px] font-bold text-white disabled:opacity-50">
+                    className="rounded-lg bg-amber-600 hover:bg-amber-700 py-2 min-h-[44px] text-[12.5px] font-bold text-white disabled:opacity-50">
                     Skip this item
                   </button>
                 </div>
@@ -310,7 +310,7 @@ function WalkingSheet(props: Parameters<typeof CountSheet>[0]) {
 
             <div className="flex items-center gap-2 pt-1 border-t border-slate-100">
               <button type="button" disabled={cursor === 0} onClick={() => goTo(cursor - 1)}
-                className="text-[12px] font-semibold text-slate-500 hover:text-slate-700 disabled:opacity-40 inline-flex items-center gap-1 min-h-[36px]">
+                className="text-[12px] font-semibold text-slate-500 hover:text-slate-700 disabled:opacity-40 inline-flex items-center gap-1 min-h-[44px]">
                 <ChevronLeft className="h-3.5 w-3.5" /> Previous item
               </button>
               {onSheet > 0 && (
@@ -318,7 +318,7 @@ function WalkingSheet(props: Parameters<typeof CountSheet>[0]) {
               )}
               {onSheet === 0 && (
                 <button type="button" onClick={() => setPhase('close')}
-                  className="ml-auto text-[12px] font-bold text-violet-700 hover:text-violet-900 inline-flex items-center gap-1 min-h-[36px]">
+                  className="ml-auto text-[12px] font-bold text-violet-700 hover:text-violet-900 inline-flex items-center gap-1 min-h-[44px]">
                   Finish <ChevronRight className="h-3.5 w-3.5" />
                 </button>
               )}
@@ -346,7 +346,7 @@ function WalkingSheet(props: Parameters<typeof CountSheet>[0]) {
                 {props.reasons.map(r => (
                   <button key={r} type="button" onClick={() => setReason(r)}
                     aria-pressed={reason === r}
-                    className={`rounded-full border-2 px-3 py-1.5 min-h-[36px] text-[12px] font-bold transition ${
+                    className={`rounded-full border-2 px-3 py-1.5 min-h-[44px] text-[12px] font-bold transition ${
                       reason === r
                         ? 'border-rose-500 bg-rose-600 text-white'
                         : 'border-slate-200 bg-white text-slate-600 hover:border-rose-300'}`}>
@@ -538,7 +538,7 @@ function WalkingSheet(props: Parameters<typeof CountSheet>[0]) {
           could never be counted again. */}
       {props.canEdit && (props.iAmTheCounter || props.canApprove) && (
         <button type="button" onClick={doAbandon} disabled={saving}
-          className="w-full text-[11.5px] font-semibold text-slate-400 hover:text-rose-600 py-2 min-h-[40px]">
+          className="w-full text-[11.5px] font-semibold text-slate-400 hover:text-rose-600 py-2 min-h-[44px]">
           Discard this count
         </button>
       )}
@@ -675,11 +675,11 @@ function ClosedSheet(props: Parameters<typeof CountSheet>[0]) {
                     onChange={e => setReason(e.target.value)} />
                   <div className="grid grid-cols-2 gap-2">
                     <button type="button" onClick={() => setRejecting(false)}
-                      className="rounded-lg border-2 border-slate-200 py-2 min-h-[40px] text-[12.5px] font-bold text-slate-600">
+                      className="rounded-lg border-2 border-slate-200 py-2 min-h-[44px] text-[12.5px] font-bold text-slate-600">
                       Cancel
                     </button>
                     <button type="button" onClick={doReject} disabled={busy}
-                      className="rounded-lg bg-rose-600 hover:bg-rose-700 py-2 min-h-[40px] text-[12.5px] font-bold text-white disabled:opacity-50">
+                      className="rounded-lg bg-rose-600 hover:bg-rose-700 py-2 min-h-[44px] text-[12.5px] font-bold text-white disabled:opacity-50">
                       Send it back
                     </button>
                   </div>
@@ -715,7 +715,7 @@ function NewCountItem({
   if (!open) {
     return (
       <button type="button" onClick={() => setOpen(true)}
-        className="text-[11.5px] font-bold text-slate-500 hover:text-violet-700 min-h-[32px] inline-flex items-center gap-1">
+        className="text-[11.5px] font-bold text-slate-500 hover:text-violet-700 min-h-[44px] inline-flex items-center gap-1">
         <Plus className="h-3 w-3" /> It is not on the list at all — add it
       </button>
     )
@@ -741,7 +741,7 @@ function NewCountItem({
       </p>
       <div className="grid grid-cols-2 gap-2">
         <button type="button" onClick={() => { setOpen(false); setName('') }}
-          className="rounded-lg border-2 border-slate-200 py-2 min-h-[36px] text-[12px] font-bold text-slate-600">
+          className="rounded-lg border-2 border-slate-200 py-2 min-h-[44px] text-[12px] font-bold text-slate-600">
           Cancel
         </button>
         <button type="button" disabled={busy || saving || !name.trim()}
@@ -752,7 +752,7 @@ function NewCountItem({
             onCreated(res.id)
             setOpen(false); setName('')
           })}
-          className="rounded-lg bg-violet-700 hover:bg-violet-800 py-2 min-h-[36px] text-[12px] font-bold text-white disabled:opacity-50 inline-flex items-center justify-center gap-1.5">
+          className="rounded-lg bg-violet-700 hover:bg-violet-800 py-2 min-h-[44px] text-[12px] font-bold text-white disabled:opacity-50 inline-flex items-center justify-center gap-1.5">
           {busy && <Loader2 className="h-3.5 w-3.5 animate-spin" />} Create item
         </button>
       </div>
