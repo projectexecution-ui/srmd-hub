@@ -25,7 +25,7 @@ import {
   Wallet, TrendingUp, Scale, FileCheck2, UploadCloud, Printer, Clock, Plus, Pencil, Check, HelpCircle,
   ArrowUp, ArrowDown, PencilLine, FolderTree,
 } from 'lucide-react'
-import { cn } from '@/lib/utils'
+import { cn, istAgeLabel } from '@/lib/utils'
 import type { ComposeResult, CatNode, ProjectNode, GroupNode, DeltaResult, Delta } from '@/lib/budget-v2'
 
 // ─── formatting helpers ──────────────────────────────────────────────────────
@@ -109,16 +109,14 @@ type StatusFilter = 'all' | 'open' | 'closed'
 
 interface Freshness { budget: string | null }
 
+// IST CALENDAR days, not elapsed ms. Dividing elapsed time by 24h reported a
+// file uploaded at 3:49 pm yesterday as "uploaded today", because only ~15
+// hours had passed. The staleness flag was off by up to a day for the same
+// reason.
 function fmtAge(iso: string | null): { text: string; stale: boolean } {
   if (!iso) return { text: 'no upload yet', stale: true }
-  const t = Date.parse(iso); if (!isFinite(t)) return { text: 'unknown', stale: true }
-  const days = Math.floor((Date.now() - t) / (24 * 3600 * 1000))
-  let text: string
-  if (days <= 0) text = 'today'
-  else if (days === 1) text = 'yesterday'
-  else if (days < 7) text = `${days} d ago`
-  else if (days < 30) text = `${Math.floor(days / 7)} w ago`
-  else text = `${Math.floor(days / 30)} mo ago`
+  const { text, days } = istAgeLabel(iso, { short: true })
+  if (days == null) return { text: 'unknown', stale: true }
   return { text, stale: days >= 14 }
 }
 

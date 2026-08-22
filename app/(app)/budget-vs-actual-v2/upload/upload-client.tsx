@@ -14,7 +14,7 @@ import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { toast } from 'sonner'
 import { UploadCloud, Loader2, CheckCircle2, ExternalLink, ListTree, FileSpreadsheet, Receipt, Users } from 'lucide-react'
-import { cn } from '@/lib/utils'
+import { cn, istAgeLabel } from '@/lib/utils'
 import {
   parseSourceReports as parseContractor,
   type ReportDoc as ContractorDoc,
@@ -28,15 +28,11 @@ type Kind = 'budget' | 'contractor' | 'supplier'
 const CONTRACTOR_URL = '/api/contractor-report/state'
 const SUPPLIER_URL = '/api/supplier-report/state'
 
+// IST calendar days — see istAgeLabel. Dividing elapsed ms by 24h called an
+// upload from yesterday afternoon "today".
 function fmtAge(iso: string | null): string {
   if (!iso) return 'no upload yet'
-  const t = Date.parse(iso); if (!isFinite(t)) return 'unknown'
-  const days = Math.floor((Date.now() - t) / (24 * 3600 * 1000))
-  if (days <= 0) return 'today'
-  if (days === 1) return 'yesterday'
-  if (days < 7) return `${days} days ago`
-  if (days < 30) return `${Math.floor(days / 7)} weeks ago`
-  return `${Math.floor(days / 30)} months ago`
+  return istAgeLabel(iso).text
 }
 
 interface StateMeta { at: string | null; by: string | null }

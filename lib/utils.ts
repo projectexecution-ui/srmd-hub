@@ -110,3 +110,44 @@ export function formatDuration(fromISO: string, toISO: string): string {
   if (h > 0) return `${h}h ${m}m`
   return `${m}m`
 }
+
+/** Whole CALENDAR days between a timestamp and now, in IST.
+ *
+ *  Not the same as dividing elapsed milliseconds by 24 hours, which is what
+ *  callers reached for and what produced "uploaded today" for a file uploaded at
+ *  3:49 pm the previous afternoon: only ~15 hours had elapsed, so the division
+ *  gave 0. A calendar comparison gives 1, which is what a reader means by
+ *  "yesterday".
+ *
+ *  Use this whenever the output is a calendar WORD (today / yesterday). For an
+ *  ageing or SLA measure ("waiting 3d") elapsed time is the right semantic and
+ *  this is the wrong helper.
+ */
+export function istCalendarDaysAgo(date: string | Date | null | undefined): number | null {
+  if (date == null) return null
+  const t = typeof date === 'string' ? Date.parse(date) : date.getTime()
+  if (!Number.isFinite(t)) return null
+  // en-CA renders as YYYY-MM-DD, so the IST calendar date can be compared as a
+  // plain UTC-midnight instant without any local-timezone drift.
+  const istDay = (ms: number) =>
+    Date.parse(new Date(ms).toLocaleDateString('en-CA', { timeZone: APP_TIME_ZONE }) + 'T00:00:00Z')
+  return Math.round((istDay(Date.now()) - istDay(t)) / 86_400_000)
+}
+
+/** "today" / "yesterday" / "3 d ago" — from IST calendar days, not elapsed ms. */
+export function istAgeLabel(
+  date: string | Date | null | undefined,
+  opts: { short?: boolean } = {},
+): { text: string; days: number | null } {
+  const days = istCalendarDaysAgo(date)
+  if (days == null) return { text: 'unknown', days: null }
+  if (days <= 0) return { text: 'today', days }
+  if (days === 1) return { text: 'yesterday', days }
+  if (days < 7) return { text: opts.short ? `${days} d ago` : `${days} days ago`, days }
+  if (days < 30) {
+    const w = Math.floor(days / 7)
+    return { text: opts.short ? `${w} w ago` : `${w} week${w === 1 ? '' : 's'} ago`, days }
+  }
+  const m = Math.floor(days / 30)
+  return { text: opts.short ? `${m} mo ago` : `${m} month${m === 1 ? '' : 's'} ago`, days }
+}
