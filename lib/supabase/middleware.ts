@@ -1,5 +1,6 @@
 import { createServerClient } from '@supabase/ssr'
 import { type NextRequest, NextResponse } from 'next/server'
+import { getUserResilient } from './auth-retry'
 
 export async function updateSession(request: NextRequest) {
   let supabaseResponse = NextResponse.next({ request })
@@ -23,7 +24,9 @@ export async function updateSession(request: NextRequest) {
     }
   )
 
-  const { data: { user } } = await supabase.auth.getUser()
+  // Retries transient auth faults, and distinguishes "signed out" from "auth
+  // never answered". See lib/supabase/auth-retry.
+  const { user, unavailable } = await getUserResilient(supabase)
 
   const pathname = request.nextUrl.pathname
 
@@ -51,6 +54,14 @@ export async function updateSession(request: NextRequest) {
     '/api/cost-control/in4-followup', // cron
   ]
   const isPublic = publicRoutes.some(r => pathname.startsWith(r))
+
+  // Redirect ONLY when auth definitively says there is no user. During the
+  // Supabase auth incident a 504 produced user=null here and every signed-in
+  // person was bounced to /login mid-task. An outage is not a logout, so we let
+  // the request through and leave the decision to the page's own
+  // requirePermission — which still refuses anyone who is genuinely not signed
+  // in, so nothing is opened up.
+  if (unavailable) return supabaseResponse
 
   if (!user && !isPublic) {
     const url = request.nextUrl.clone()

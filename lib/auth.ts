@@ -5,11 +5,15 @@
 import { cache } from 'react'
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
+import { getUserResilient } from '@/lib/supabase/auth-retry'
 import type { Profile, PermissionMap, PermAction } from '@/lib/types'
 
 export const getMyUser = cache(async () => {
   const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
+  // Retried, not a bare getUser(): during the Supabase auth incident a single
+  // 504 here made every page behave as though the user had signed out. cache()
+  // means the retry runs once per request, not once per caller.
+  const { user } = await getUserResilient(supabase)
   return user
 })
 
