@@ -36,17 +36,6 @@ function LoginContent() {
 
   function clearMsgs() { setError(''); setInfo('') }
 
-  async function signInWithGoogle() {
-    setLoading(true); clearMsgs()
-    const { error } = await supabase.auth.signInWithOAuth({
-      provider: 'google',
-      options: {
-        redirectTo: `${window.location.origin}/auth/callback?next=${encodeURIComponent(redirect)}`,
-      },
-    })
-    if (error) { setError(error.message); setLoading(false) }
-  }
-
   async function signInWithEmail(e: React.FormEvent) {
     e.preventDefault()
     setLoading(true); clearMsgs()
@@ -99,11 +88,15 @@ function LoginContent() {
                   /authorize endpoint, which went down for a whole day. */}
               <GoogleOneTapButton redirect={redirect} onError={setError} />
 
-              <Button onClick={signInWithGoogle} disabled={loading} size="lg" variant="outline"
-                className="w-full mt-2">
-                {loading ? <Loader2 className="h-5 w-5 animate-spin" /> : <GoogleIcon />}
-                Continue with Google
-              </Button>
+              {/* The old signInWithOAuth redirect button lived here. Removed:
+                  it sends the browser into Supabase's /authorize endpoint, which
+                  hung for 25 s on every provider — including one that does not
+                  exist. Worse, it set loading=true and could never clear it
+                  (the call never returns), which disabled the email button too
+                  and locked people out of the ONE path that still worked. Two
+                  buttons labelled "Continue with Google" also meant the dead
+                  one got clicked. The button above uses a different Supabase
+                  endpoint and is the working route. */}
 
               <Button onClick={() => { clearMsgs(); setMode('signin') }} disabled={loading} size="lg" variant="outline" className="w-full mt-2">
                 <Mail className="h-5 w-5" />

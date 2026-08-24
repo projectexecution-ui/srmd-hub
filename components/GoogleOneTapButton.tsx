@@ -62,10 +62,15 @@ export function GoogleOneTapButton({
   const holder = useRef<HTMLDivElement>(null)
   const [busy, setBusy] = useState(false)
   const [ready, setReady] = useState(false)
+  // If Google's script never loads or the origin is not allow-listed, the
+  // button simply never appears. Spinning forever tells the user nothing, so
+  // say what is wrong and point at the path that works.
+  const [stuck, setStuck] = useState(false)
 
   useEffect(() => {
     if (!clientId || !holder.current) return
     let cancelled = false
+    const watchdog = setTimeout(() => { if (!cancelled) setStuck(true) }, 8000)
 
     loadGis()
       .then(() => {
@@ -98,10 +103,11 @@ export function GoogleOneTapButton({
           text: 'continue_with', logo_alignment: 'center',
         })
         setReady(true)
+        clearTimeout(watchdog)
       })
       .catch((e: Error) => onError(e.message))
 
-    return () => { cancelled = true }
+    return () => { cancelled = true; clearTimeout(watchdog) }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [clientId, redirect])
 
@@ -110,9 +116,16 @@ export function GoogleOneTapButton({
   return (
     <div className="w-full">
       <div ref={holder} className={busy ? 'pointer-events-none opacity-60' : ''} />
-      {!ready && (
+      {!ready && !stuck && (
         <div className="flex items-center gap-2 text-sm text-gray-500 py-2">
           <Loader2 className="h-4 w-4 animate-spin" /> Loading Google sign-in…
+        </div>
+      )}
+      {!ready && stuck && (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[12.5px] text-amber-900">
+          <b>Google sign-in could not load.</b> Usually an ad/script blocker, or
+          this site is not yet listed under the Google client&apos;s Authorized
+          JavaScript origins. Use <b>Sign in with email</b> below — that works.
         </div>
       )}
       {busy && (
