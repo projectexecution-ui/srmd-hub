@@ -73,3 +73,31 @@ describe('getUserResilient', () => {
     expect(c.calls()).toBe(1)
   })
 })
+
+/** The regression that mattered most: my first version of this retry had no
+ *  clock. During the incident each getUser() hung ~25 s, so three attempts
+ *  could hold the proxy for 75 s — and Vercel kills Routing Middleware at 25 s.
+ *  Aksha got a hard "504 MIDDLEWARE_INVOCATION_TIMEOUT" page, which is strictly
+ *  worse than the redirect-to-login it replaced. */
+describe('time budget — must never hold the proxy long enough to be killed', () => {
+  const hangs = (ms: number) => ({
+    auth: { getUser: () => new Promise(r => setTimeout(() => r({ data: { user: null }, error: null }), ms)) },
+  })
+
+  it('gives up in a few seconds when every call hangs, not tens of seconds', async () => {
+    const t0 = Date.now()
+    const r = await getUserResilient(hangs(30_000))     // the real incident behaviour
+    const elapsed = Date.now() - t0
+    expect(r.unavailable).toBe(true)                    // reported as an outage
+    expect(r.user).toBeNull()
+    expect(elapsed).toBeLessThan(5_000)                 // Vercel's limit is 25 s
+  }, 20_000)
+
+  it('still returns a slow-but-successful answer rather than discarding it', async () => {
+    const r = await getUserResilient({
+      auth: { getUser: () => new Promise(res => setTimeout(() => res({ data: { user: { id: 'slow' } }, error: null }), 400)) },
+    })
+    expect(r.user).toEqual({ id: 'slow' })
+    expect(r.unavailable).toBe(false)
+  }, 20_000)
+})
