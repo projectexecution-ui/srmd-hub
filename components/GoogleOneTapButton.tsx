@@ -51,7 +51,14 @@ function loadGis(): Promise<void> {
 export function GoogleOneTapButton({
   redirect, onError,
 }: { redirect: string; onError: (msg: string) => void }) {
-  const clientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID
+  // A Google WEB client id is public by design — it is visible in the page
+  // source of every site that uses it, and it grants nothing on its own (the
+  // client SECRET, which is not here, is what matters). Inlined as a default so
+  // Google sign-in works without waiting on a Vercel env var and a redeploy;
+  // NEXT_PUBLIC_GOOGLE_CLIENT_ID still overrides it if it is ever rotated.
+  const clientId =
+    process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID
+    ?? '345498618624-6c3l4djo2u87lu9903fhhnqj42j2r237.apps.googleusercontent.com'
   const holder = useRef<HTMLDivElement>(null)
   const [busy, setBusy] = useState(false)
   const [ready, setReady] = useState(false)
