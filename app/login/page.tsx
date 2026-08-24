@@ -6,6 +6,7 @@ import { Loader2, Mail, Lock, User as UserIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { GoogleOneTapButton } from '@/components/GoogleOneTapButton'
 
 type Mode = 'choose' | 'signin' | 'signup'
 
@@ -92,7 +93,14 @@ function LoginContent() {
               {error && <ErrorBox text={error} />}
               {info && <InfoBox text={info} />}
 
-              <Button onClick={signInWithGoogle} disabled={loading} size="lg" variant="outline" className="w-full">
+              {/* Google, the direct way: the token comes from Google in the
+                  browser and goes to Supabase's /token endpoint. Deliberately
+                  FIRST, because the redirect flow below depends on Supabase's
+                  /authorize endpoint, which went down for a whole day. */}
+              <GoogleOneTapButton redirect={redirect} onError={setError} />
+
+              <Button onClick={signInWithGoogle} disabled={loading} size="lg" variant="outline"
+                className="w-full mt-2">
                 {loading ? <Loader2 className="h-5 w-5 animate-spin" /> : <GoogleIcon />}
                 Continue with Google
               </Button>

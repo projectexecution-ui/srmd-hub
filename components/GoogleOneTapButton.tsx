@@ -1,0 +1,118 @@
+'use client'
+
+import { useEffect, useRef, useState } from 'react'
+import { createClient } from '@/lib/supabase/client'
+import { Loader2 } from 'lucide-react'
+
+/** Google sign-in that does NOT touch Supabase's /auth/v1/authorize endpoint.
+ *
+ *  Why this exists: during the Supabase auth incident, /auth/v1/authorize hung
+ *  for 25–30 s and returned {"message":"Gateway Timeout"} for EVERY provider —
+ *  including a provider name that does not exist, which proves the endpoint
+ *  itself was down rather than the Google configuration. signInWithOAuth()
+ *  redirects the browser straight into that endpoint, so Google sign-in was
+ *  completely unusable and nothing in project settings could fix it.
+ *
+ *  This takes the other route. Google Identity Services issues the ID token in
+ *  the browser, and signInWithIdToken() exchanges it at
+ *  /auth/v1/token?grant_type=id_token — a different endpoint, which stayed
+ *  healthy (~0.14 s) throughout.
+ *
+ *  Renders nothing unless NEXT_PUBLIC_GOOGLE_CLIENT_ID is set, so the app is
+ *  safe to deploy before the variable exists.
+ */
+
+/* eslint-disable @typescript-eslint/no-explicit-any */
+declare global {
+  interface Window { google?: any }
+}
+
+const SCRIPT_ID = 'gsi-client'
+const SRC = 'https://accounts.google.com/gsi/client'
+
+function loadGis(): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (typeof window === 'undefined') return reject(new Error('no window'))
+    if (window.google?.accounts?.id) return resolve()
+    const existing = document.getElementById(SCRIPT_ID) as HTMLScriptElement | null
+    if (existing) {
+      existing.addEventListener('load', () => resolve(), { once: true })
+      existing.addEventListener('error', () => reject(new Error('script failed')), { once: true })
+      return
+    }
+    const s = document.createElement('script')
+    s.id = SCRIPT_ID; s.src = SRC; s.async = true; s.defer = true
+    s.onload = () => resolve()
+    s.onerror = () => reject(new Error('Could not reach Google. Check your connection.'))
+    document.head.appendChild(s)
+  })
+}
+
+export function GoogleOneTapButton({
+  redirect, onError,
+}: { redirect: string; onError: (msg: string) => void }) {
+  const clientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID
+  const holder = useRef<HTMLDivElement>(null)
+  const [busy, setBusy] = useState(false)
+  const [ready, setReady] = useState(false)
+
+  useEffect(() => {
+    if (!clientId || !holder.current) return
+    let cancelled = false
+
+    loadGis()
+      .then(() => {
+        if (cancelled || !holder.current) return
+        window.google.accounts.id.initialize({
+          client_id: clientId,
+          // The ID token goes to Supabase, never anywhere else.
+          callback: async (resp: { credential?: string }) => {
+            if (!resp?.credential) { onError('Google did not return a sign-in token. Try again.'); return }
+            setBusy(true)
+            const supabase = createClient()
+            const { error } = await supabase.auth.signInWithIdToken({
+              provider: 'google',
+              token: resp.credential,
+            })
+            if (error) {
+              setBusy(false)
+              // The commonest cause is the client id not being listed under
+              // Supabase → Auth → Providers → Google → Authorized Client IDs.
+              onError(`Google sign-in was refused: ${error.message}`)
+              return
+            }
+            // Full reload rather than router.push, so the server sees the new
+            // session cookie on the very first request.
+            window.location.assign(redirect)
+          },
+        })
+        window.google.accounts.id.renderButton(holder.current, {
+          theme: 'outline', size: 'large', width: 320,
+          text: 'continue_with', logo_alignment: 'center',
+        })
+        setReady(true)
+      })
+      .catch((e: Error) => onError(e.message))
+
+    return () => { cancelled = true }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [clientId, redirect])
+
+  if (!clientId) return null
+
+  return (
+    <div className="w-full">
+      <div ref={holder} className={busy ? 'pointer-events-none opacity-60' : ''} />
+      {!ready && (
+        <div className="flex items-center gap-2 text-sm text-gray-500 py-2">
+          <Loader2 className="h-4 w-4 animate-spin" /> Loading Google sign-in…
+        </div>
+      )}
+      {busy && (
+        <div className="flex items-center gap-2 text-sm text-gray-500 py-2">
+          <Loader2 className="h-4 w-4 animate-spin" /> Signing you in…
+        </div>
+      )}
+    </div>
+  )
+}
