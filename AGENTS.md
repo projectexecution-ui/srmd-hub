@@ -63,6 +63,49 @@ permission-gated, in ALL of these — do NOT hardcode the module anywhere else:
    `QueryError` banner (or a toast) instead of a blank/empty state. Use the
    app-styled `confirm()` from `components/ui/confirm-dialog.tsx`, never the
    native `window.confirm()`.
+7. **Mobile AND desktop — always both.** See the rule below.
+
+### Mobile AND desktop — always both
+
+**Every** UI change ships for phone *and* browser. Not desktop-first with
+mobile "later": a change that only lands on one is an incomplete change.
+Most screens here are built as two renderings of the same data — a wide
+`hidden md:block` table plus an `md:hidden` stack of cards (see
+`app/(app)/cost-control/projects/[id]/page.tsx`). Touch a column, a label, a
+sort order, a badge or an interaction in one and you must make the matching
+change in the other, or the two drift apart and the phone quietly shows stale
+or different numbers.
+
+When the two genuinely need different treatments (a header row has no
+equivalent in a card list; heavy editing widgets stay on desktop), say so
+explicitly in a comment and still deliver the mobile equivalent of the intent
+rather than skipping it. Mobile targets stay ≥44px.
+
+**A trap worth knowing — `position: sticky` does not work against the page
+scroll anywhere in this app.** `main` in `app/(app)/layout.tsx` sets
+`overflow-x-auto`. Because `overflow-x` is `auto`, `overflow-y` computes to
+`auto` too, which makes `main` a scrollport — one that never actually scrolls,
+since the document is what scrolls. So any `sticky top-0` inside it just
+scrolls away. Verified in Chromium: identical markup pins when `main` has no
+overflow and scrolls away when it has `overflow-x-auto`. Several sticky
+toolbars in the app are inert for this reason (`procurement-tracker/client.tsx`,
+`bills-pipeline/daily-report`, `budget-vs-actual-v2/*`, `schedule/[id]`).
+
+So to freeze a header, give the scrolling region its **own** container —
+`overflow-auto` plus a `max-h-[…]` — and put `sticky top-0` on the cells or
+bar inside it, with an opaque background (see the desktop table and the mobile
+category bars in `cost-control/projects/[id]/page.tsx`, and
+`admin/permissions/PermissionsMatrix.tsx`). `max-h`, never `h`, so short
+content keeps its natural height.
+
+The clean global fix is `overflow-x-clip` on `main` — it contains wide content
+identically but creates no scrollport, so page-level sticky starts working
+everywhere. It is not applied yet because 11 tables (in
+`budget-vs-actual-v2/*`, `schedule/[id]`, `jmr/admin/admins`,
+`bills-pipeline/daily-report`) have no scroll wrapper of their own and rely on
+`main` for horizontal scrolling; they'd need their own wrapper first, print
+views included. Always verify sticky in a real browser — this failure looks
+perfectly fine in code review.
 
 ### The role model (keep it simple for laymen)
 
