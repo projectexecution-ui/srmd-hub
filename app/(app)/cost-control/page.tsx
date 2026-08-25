@@ -315,6 +315,19 @@ export default async function CostControlLandingPage() {
     }
   }
   type ProjGroup = { key: string; label: string | null; members: CCProject[] }
+  // A parent that carries NO cost-control data of its own (no budget, approved,
+  // paid, estimate or working sheets) is a pure grouping ANCHOR — it exists only
+  // to build the tree (NGH, P2, VV). We still show its group band + children,
+  // but drop the parent's own empty row so the list isn't padded with a row of
+  // dashes. A parent that DOES have its own budget/sheets still leads its group
+  // as a real row. The parent stays reachable via the quick-search box.
+  const parentHasOwnData = (p: CCProject): boolean => {
+    const b = budgetByProj.get(p.id) ?? { budget: 0, committed: 0, paid: 0 }
+    return b.budget > 0 || b.paid > 0 || b.committed > 0
+      || (approvedByProj.get(p.id) ?? 0) > 0
+      || (estimateByProj.get(p.id) ?? 0) > 0
+      || (wsByProject.get(p.id) ?? 0) > 0
+  }
   const projGroups: ProjGroup[] = []
   const independents: CCProject[] = []
   for (const p of ccProjects) {
@@ -324,7 +337,10 @@ export default async function CostControlLandingPage() {
     // Group heading = the admin's custom group name, else the parent's short
     // code (e.g. "NGH", "P2", "VV") — never the parent's full name, which can
     // carry extra words ("NGH Infra").
-    if (kids.length > 0) projGroups.push({ key: p.id, label: p.group_label?.trim() || p.code.trim() || p.name.trim(), members: [p, ...kids] })
+    if (kids.length > 0) {
+      const members = parentHasOwnData(p) ? [p, ...kids] : kids
+      projGroups.push({ key: p.id, label: p.group_label?.trim() || p.code.trim() || p.name.trim(), members })
+    }
     else independents.push(p)
   }
   projGroups.sort((a, b) => (a.label ?? '').localeCompare(b.label ?? ''))
