@@ -1,7 +1,7 @@
 import Link from 'next/link'
 import { notFound, redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
-import { requirePermission, getMyProfile } from '@/lib/auth'
+import { requirePermission, getMyProfile, getMyPermissions, can } from '@/lib/auth'
 import { checkIsCcReviewer } from '@/components/cost-control/ws-actions'
 import { PageHeader } from '@/components/PageHeader'
 import { Card } from '@/components/ui/card'
@@ -59,8 +59,10 @@ export default async function ResumeProjectSetupPage(
   if (!project) notFound()
 
   // Config controls (details / grouping / approvers) are surfaced right here on
-  // the setup screen — one management home. Rename/alias/parent are admin-only.
+  // the setup screen — one management home. Alias/parent stay admin-only; the
+  // NAME can be changed by any Cost-Control admin or coordinator (e.g. Parimal).
   const isAdmin = (await getMyProfile())?.role === 'admin'
+  const canRename = can(await getMyPermissions(), 'cost-control', 'admin')
   const ccSettings = await getCcSettings()
   const bphMapping = ccSettings.bph_sync ? await getBphMappingForProject(id) : null
 
@@ -171,7 +173,7 @@ export default async function ResumeProjectSetupPage(
         <div>
           <h2 className="text-sm font-semibold text-gray-900 mb-2">Project details</h2>
           <div className="flex flex-wrap items-center gap-2">
-            <RenameProjectChip projectId={id} name={project.name} isAdmin={isAdmin} />
+            <RenameProjectChip projectId={id} name={project.name} canRename={canRename} />
             <ProjectAliasChip projectId={id} code={project.code} isAdmin={isAdmin} />
             <AreaChip projectId={id} sft={project.built_up_sft != null ? Number(project.built_up_sft) : null} canWrite />
           </div>

@@ -1,8 +1,8 @@
 'use client'
-// Admin-only inline rename for the project — sits next to the AreaChip on
-// the Internal Estimate header. The name shows on every module, so this
-// stays above management level; the CODE is never editable (it's baked
-// into WS codes).
+// Inline rename for the project — sits next to the AreaChip on the Internal
+// Estimate header. Allowed for Cost-Control admins + coordinators (canRename);
+// the name shows on every module, so it stays an admin/coordinator action.
+// The CODE is never editable here (it's baked into WS codes).
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
@@ -10,10 +10,10 @@ import { Pencil, Loader2, Check, X } from 'lucide-react'
 import { Input } from '@/components/ui/input'
 import { renameProject } from './actions'
 
-export function RenameProjectChip({ projectId, name, isAdmin }: {
+export function RenameProjectChip({ projectId, name, canRename }: {
   projectId: string
   name: string
-  isAdmin: boolean
+  canRename: boolean
 }) {
   const router = useRouter()
   const [editing, setEditing] = useState(false)
@@ -21,7 +21,7 @@ export function RenameProjectChip({ projectId, name, isAdmin }: {
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState<string | null>(null)
 
-  if (!isAdmin) return null
+  if (!canRename) return null
 
   async function save() {
     const trimmed = draft.trim()
@@ -41,7 +41,7 @@ export function RenameProjectChip({ projectId, name, isAdmin }: {
         type="button"
         onClick={() => { setEditing(true); setDraft(name); setErr(null) }}
         className="inline-flex items-center gap-1.5 rounded-full border border-gray-200 bg-white px-2.5 py-1 text-xs text-gray-700 hover:border-blue-300 hover:text-blue-700"
-        title="Rename this project (Admin only) — the new name shows everywhere"
+        title="Rename this project — the new name shows everywhere"
       >
         <Pencil className="h-3 w-3" /> Rename
       </button>

@@ -6,7 +6,7 @@
 import { revalidatePath } from 'next/cache'
 import { z } from 'zod'
 import { createClient } from '@/lib/supabase/server'
-import { requirePermission, getMyProfile } from '@/lib/auth'
+import { requirePermission, getMyProfile, getMyPermissions, can } from '@/lib/auth'
 import { checkIsCcReviewer } from '@/components/cost-control/ws-actions'
 
 const uuid = z.string().uuid()
@@ -219,17 +219,19 @@ export async function setProjectArea(
 }
 
 // ============================================================
-// Rename a project — ADMIN only. The name shows on every module
-// (dashboard groups, sheets, reports), so renaming is kept above
-// management level. Code stays fixed — it's baked into WS codes.
+// Rename a project — Cost-Control ADMIN permission (real admins + CC
+// coordinators, e.g. Parimal). The name shows on every module (dashboard
+// groups, sheets, reports), so renaming stays an admin/coordinator action,
+// not something every reviewer can do. Code stays fixed — it's baked into
+// WS codes (change the alias separately, still admin-only).
 // ============================================================
 export async function renameProject(
   projectId: string,
   name: string,
 ): Promise<{ ok: boolean; error?: string }> {
-  const profile = await getMyProfile()
-  if (profile?.role !== 'admin') {
-    return { ok: false, error: 'Only an Admin can rename a project' }
+  const perms = await getMyPermissions()
+  if (!can(perms, 'cost-control', 'admin')) {
+    return { ok: false, error: 'Only a Cost Control admin or coordinator can rename a project' }
   }
   if (!uuid.safeParse(projectId).success) return { ok: false, error: 'Bad project id' }
   const trimmed = name.trim()
