@@ -9,13 +9,12 @@ name: Apply Supabase migrations
 # full timestamps, so db push would try to re-run the whole folder).
 #
 # ── ONE-TIME SETUP (browser) ──────────────────────────────────────────────────
-# Paste ONLY the database password (not a URL) into one secret:
 #   GitHub -> repo -> Settings -> Secrets and variables -> Actions ->
-#   New repository secret:
-#     Name:  SUPABASE_DB_PASSWORD
-#     Value: your Supabase DB password (Dashboard -> Project Settings ->
-#            Database -> Database password -> Reset -> Copy).
-# Passed via PGPASSWORD, so special characters are fine (no URL encoding).
+#   secret name:  SUPABASE_DB_URL
+#   value: your full Supabase connection string (Session pooler, URI), with the
+#          real DB password filled in, e.g.
+#     postgresql://postgres.hjwtjrjkmuhhbsbjsqhx:YOURPASSWORD@aws-1-ap-south-1.pooler.supabase.com:5432/postgres
+#   Use an alphanumeric DB password (no symbols) to avoid URL-encoding issues.
 #
 # ── SAFETY ────────────────────────────────────────────────────────────────────
 # Changes the LIVE database automatically on merge — the PR review is the gate.
@@ -48,24 +47,21 @@ jobs:
 
       - name: Apply newly added migration files
         env:
-          # Non-secret connection coordinates, set directly on this step so psql
-          # always sees them (Supabase Session pooler — IPv4, works from CI).
-          PGHOST: aws-1-ap-south-1.pooler.supabase.com
-          PGPORT: '5432'
-          PGUSER: postgres.hjwtjrjkmuhhbsbjsqhx
-          PGDATABASE: postgres
+          DATABASE_URL: ${{ secrets.SUPABASE_DB_URL }}
           PGSSLMODE: require
-          PGPASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
         run: |
           set -euo pipefail
 
-          echo "Target: host=$PGHOST port=$PGPORT db=$PGDATABASE user=$PGUSER sslmode=$PGSSLMODE"
-          echo "Password secret length: ${#PGPASSWORD} (0 means the secret is missing/empty)"
-
-          if [ -z "${PGPASSWORD:-}" ]; then
-            echo "::error::SUPABASE_DB_PASSWORD secret is not set. Add it in Settings -> Secrets and variables -> Actions."
+          if [ -z "${DATABASE_URL:-}" ]; then
+            echo "::error::SUPABASE_DB_URL secret is not set or is empty. Add it in Settings -> Secrets and variables -> Actions."
             exit 1
           fi
+
+          # Safe diagnostic: show the connection string with the password masked,
+          # so we can confirm host/user/structure without leaking the password.
+          MASKED="$(printf '%s' "$DATABASE_URL" | sed -E 's,(://[^:/]+:)[^@]*(@),\1********\2,')"
+          echo "Using connection string (password masked): $MASKED"
+          echo "Secret length: ${#DATABASE_URL}"
 
           BEFORE="${{ github.event.before }}"
           AFTER="${{ github.sha }}"
@@ -88,7 +84,7 @@ jobs:
             [ -z "$f" ] && continue
             echo "──────────────────────────────────────────"
             echo "Applying: $f"
-            psql -v ON_ERROR_STOP=1 --single-transaction -f "$f"
+            psql "$DATABASE_URL" -v ON_ERROR_STOP=1 --single-transaction -f "$f"
             echo "OK: $f"
           done <<< "$FILES"
 
