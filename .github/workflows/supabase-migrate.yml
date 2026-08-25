@@ -4,27 +4,23 @@ name: Apply Supabase migrations
 # files to the live Supabase database — so DB changes can ship fully remotely
 # (cloud Claude writes the migration -> you merge the PR -> this runs).
 #
-# Why not `supabase db push`? This repo's migration history uses full-timestamp
-# versions (e.g. 20260821094724) while files use short date names
-# (e.g. 20260821_*.sql). `db push` matches by that number and would try to
-# re-run the WHOLE folder. Instead we run ONLY the .sql files ADDED in this push
-# (git diff), each once, when it first lands on main.
+# Runs ONLY the .sql files ADDED in this push (git diff), each once. We do NOT
+# use `supabase db push` (repo files use short date names while the history uses
+# full timestamps, so db push would try to re-run the whole folder).
 #
-# ── ONE-TIME SETUP (do this once, in the browser) ─────────────────────────────
-# You only need to paste the DATABASE PASSWORD (not a full URL). The host, user
-# and db name below are not secret and are fixed for this project.
-#   GitHub -> the repo -> Settings -> Secrets and variables -> Actions ->
-#   "New repository secret":
+# ── ONE-TIME SETUP (browser) ──────────────────────────────────────────────────
+# Paste ONLY the database password (not a URL) into one secret:
+#   GitHub -> repo -> Settings -> Secrets and variables -> Actions ->
+#   New repository secret:
 #     Name:  SUPABASE_DB_PASSWORD
-#     Value: your Supabase database password (Dashboard -> Project Settings ->
-#            Database -> Database password -> Reset, then copy it).
-# Passing it via PGPASSWORD means special characters are fine — no URL encoding.
+#     Value: your Supabase DB password (Dashboard -> Project Settings ->
+#            Database -> Database password -> Reset -> Copy).
+# Passed via PGPASSWORD, so special characters are fine (no URL encoding).
 #
 # ── SAFETY ────────────────────────────────────────────────────────────────────
-# This changes the LIVE database automatically on merge, so the PR review IS the
-# gate. Write migrations idempotently (create or replace / if not exists) and let
-# this Action be the ONLY thing that applies a migration (don't also run it by
-# hand) so nothing runs twice.
+# Changes the LIVE database automatically on merge — the PR review is the gate.
+# Write migrations idempotently and let this Action be the only thing that
+# applies them.
 
 on:
   push:
@@ -35,14 +31,6 @@ on:
 concurrency:
   group: supabase-migrate
   cancel-in-progress: false
-
-env:
-  # Not secret — the project's Session-pooler coordinates (IPv4, works from CI).
-  PGHOST: aws-1-ap-south-1.pooler.supabase.com
-  PGPORT: '5432'
-  PGUSER: postgres.hjwtjrjkmuhhbsbjsqhx
-  PGDATABASE: postgres
-  PGSSLMODE: require
 
 jobs:
   migrate:
@@ -60,9 +48,19 @@ jobs:
 
       - name: Apply newly added migration files
         env:
+          # Non-secret connection coordinates, set directly on this step so psql
+          # always sees them (Supabase Session pooler — IPv4, works from CI).
+          PGHOST: aws-1-ap-south-1.pooler.supabase.com
+          PGPORT: '5432'
+          PGUSER: postgres.hjwtjrjkmuhhbsbjsqhx
+          PGDATABASE: postgres
+          PGSSLMODE: require
           PGPASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
         run: |
           set -euo pipefail
+
+          echo "Target: host=$PGHOST port=$PGPORT db=$PGDATABASE user=$PGUSER sslmode=$PGSSLMODE"
+          echo "Password secret length: ${#PGPASSWORD} (0 means the secret is missing/empty)"
 
           if [ -z "${PGPASSWORD:-}" ]; then
             echo "::error::SUPABASE_DB_PASSWORD secret is not set. Add it in Settings -> Secrets and variables -> Actions."
@@ -71,8 +69,6 @@ jobs:
 
           BEFORE="${{ github.event.before }}"
           AFTER="${{ github.sha }}"
-
-          # New branch / first push / history rewrite -> compare from the root commit.
           if [ -z "$BEFORE" ] \
              || [ "$BEFORE" = "0000000000000000000000000000000000000000" ] \
              || ! git cat-file -e "${BEFORE}^{commit}" 2>/dev/null; then
@@ -80,7 +76,6 @@ jobs:
           fi
 
           FILES="$(git diff --name-only --diff-filter=A "$BEFORE" "$AFTER" -- 'supabase/migrations/*.sql' | sort)"
-
           if [ -z "$FILES" ]; then
             echo "No newly added migration files in this push. Nothing to apply."
             exit 0
