@@ -11,6 +11,7 @@ import { createClient } from '@/lib/supabase/server'
 import { requirePermission } from '@/lib/auth'
 import { checkIsCcReviewer } from '@/components/cost-control/ws-actions'
 import { computeMoneyRollup, subFigures, type RollupWSRow, type RollupVersionRow, type RollupBudgetLine } from '@/lib/cost-control/project-rollup'
+import { compareDisciplines } from '@/lib/cost-control/discipline-order'
 
 export const dynamic = 'force-dynamic'
 
@@ -51,7 +52,7 @@ export async function GET(req: NextRequest) {
   type SS = { id: string; discipline_id: string; code: string; name: string }
   const discs: D[] = (pd ?? []).map(r => (Array.isArray(r.cc_disciplines) ? r.cc_disciplines[0] : r.cc_disciplines)).filter(Boolean) as D[]
   const subs: SS[] = (ps ?? []).map(r => (Array.isArray(r.cc_sub_skills) ? r.cc_sub_skills[0] : r.cc_sub_skills)).filter(Boolean) as SS[]
-  discs.sort((a, b) => (a.display_order ?? 0) - (b.display_order ?? 0) || a.code.localeCompare(b.code))
+  discs.sort(compareDisciplines)
 
   // Latest LIVE working sheet per (sub-skill, line_type) BUCKET, split into the
   // Internal Estimate baseline (the "[IB]" imports — the workings management

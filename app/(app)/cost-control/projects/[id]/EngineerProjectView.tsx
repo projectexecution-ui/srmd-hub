@@ -5,6 +5,7 @@ import { PageHeader } from '@/components/PageHeader'
 import { QueryError } from '@/components/ui/query-error'
 import { formatINR } from '@/lib/utils'
 import { isPendingStatus } from '@/lib/cost-control/chain'
+import { sortDisciplines } from '@/lib/cost-control/discipline-order'
 import { TreeProvider, TreeToolbar, CatChevron, CatRows, SubRow } from '@/components/cost-control/project-tree'
 import { getModuleLabels, labelFor } from '@/lib/module-labels'
 
@@ -48,10 +49,11 @@ export async function EngineerProjectTable({ projectId }: { projectId: string })
       .is('archived_at', null),
   ])
 
-  const disciplines: DRow[] = ((pdRes.data ?? []) as Array<{ cc_disciplines: DRow | DRow[] | null }>)
-    .map(r => (Array.isArray(r.cc_disciplines) ? r.cc_disciplines[0] : r.cc_disciplines))
-    .filter((d): d is DRow => !!d)
-    .sort((a, b) => a.display_order - b.display_order)
+  const disciplines: DRow[] = sortDisciplines(
+    ((pdRes.data ?? []) as Array<{ cc_disciplines: DRow | DRow[] | null }>)
+      .map(r => (Array.isArray(r.cc_disciplines) ? r.cc_disciplines[0] : r.cc_disciplines))
+      .filter((d): d is DRow => !!d),
+  )
 
   const subSkills: SRow[] = ((psRes.data ?? []) as Array<{ cc_sub_skills: SRow | SRow[] | null }>)
     .map(r => (Array.isArray(r.cc_sub_skills) ? r.cc_sub_skills[0] : r.cc_sub_skills))

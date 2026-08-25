@@ -12,6 +12,7 @@ import { Plus, Flame, Info, Settings, Download, Ruler } from 'lucide-react'
 import { formatINR } from '@/lib/utils'
 import { getCcSettings } from '@/lib/cost-control/settings'
 import { computeMoneyRollup, type RollupWSRow, type RollupVersionRow, type RollupBudgetLine } from '@/lib/cost-control/project-rollup'
+import { sortDisciplines } from '@/lib/cost-control/discipline-order'
 import { QueryError } from '@/components/ui/query-error'
 import { DeadlineBadge } from '@/components/cost-control/DeadlineBadge'
 import { TreeProvider, TreeToolbar, CatChevron, CatRows, SubRow } from '@/components/cost-control/project-tree'
@@ -215,10 +216,11 @@ export default async function CostControlProjectDetailPage(
     cc_sub_skills: SubSkillRow | SubSkillRow[] | null
   }
 
-  const disciplines: DisciplineRow[] = ((projDisRes.data ?? []) as ProjDisJoin[])
-    .map(r => Array.isArray(r.cc_disciplines) ? r.cc_disciplines[0] : r.cc_disciplines)
-    .filter((d): d is DisciplineRow => !!d)
-    .sort((a, b) => a.display_order - b.display_order)
+  const disciplines: DisciplineRow[] = sortDisciplines(
+    ((projDisRes.data ?? []) as ProjDisJoin[])
+      .map(r => Array.isArray(r.cc_disciplines) ? r.cc_disciplines[0] : r.cc_disciplines)
+      .filter((d): d is DisciplineRow => !!d),
+  )
 
   const subSkills: SubSkillRow[] = ((projSubRes.data ?? []) as ProjSubJoin[])
     .map(r => Array.isArray(r.cc_sub_skills) ? r.cc_sub_skills[0] : r.cc_sub_skills)
