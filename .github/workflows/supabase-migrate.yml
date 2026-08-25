@@ -1,0 +1,93 @@
+name: Apply Supabase migrations
+
+# On every merge to main that ADDS a new migration file, apply just those new
+# files to the live Supabase database — so you can ship DB changes fully
+# remotely (cloud Claude writes the migration -> you merge the PR -> this runs).
+#
+# Why not `supabase db push`? This repo's migration history uses full-timestamp
+# versions (e.g. 20260821094724) while the files use short date names
+# (e.g. 20260821_*.sql). `db push` matches by that number and would try to
+# re-run the WHOLE folder against production. Instead we run ONLY the .sql files
+# ADDED in this push (git diff), each once, when it first lands on main.
+#
+# ── ONE-TIME SETUP (do this once, in the browser) ─────────────────────────────
+#   GitHub -> the repo -> Settings -> Secrets and variables -> Actions ->
+#   "New repository secret":
+#     Name:  SUPABASE_DB_URL
+#     Value: your Supabase connection string, WITH the DB password filled in.
+#            Get it at: Supabase Dashboard -> Project Settings -> Database ->
+#            "Connection string" -> choose the "Session pooler" tab -> URI form.
+#            It looks like:
+#              postgresql://postgres.hjwtjrjkmuhhbsbjsqhx:YOUR-PASSWORD@aws-0-...pooler.supabase.com:5432/postgres
+#            If a run fails on SSL, append ?sslmode=require to the end.
+#
+# ── SAFETY ────────────────────────────────────────────────────────────────────
+#   This changes the LIVE database automatically on merge, so the PR review IS
+#   the gate. Write migrations idempotently (create or replace / if not exists)
+#   and, when using this flow, let this Action be the ONLY thing that applies a
+#   migration (don't also run it by hand) so nothing runs twice.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'supabase/migrations/**.sql'
+
+concurrency:
+  group: supabase-migrate
+  cancel-in-progress: false
+
+jobs:
+  migrate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Ensure psql is available
+        run: |
+          if ! command -v psql >/dev/null 2>&1; then
+            sudo apt-get update && sudo apt-get install -y postgresql-client
+          fi
+
+      - name: Apply newly added migration files
+        env:
+          DATABASE_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${DATABASE_URL:-}" ]; then
+            echo "::error::SUPABASE_DB_URL secret is not set. Add it in Settings -> Secrets and variables -> Actions."
+            exit 1
+          fi
+
+          BEFORE="${{ github.event.before }}"
+          AFTER="${{ github.sha }}"
+
+          # New branch / first push / history rewrite -> compare from the root commit.
+          if [ -z "$BEFORE" ] \
+             || [ "$BEFORE" = "0000000000000000000000000000000000000000" ] \
+             || ! git cat-file -e "${BEFORE}^{commit}" 2>/dev/null; then
+            BEFORE="$(git rev-list --max-parents=0 "$AFTER" | tail -n 1)"
+          fi
+
+          FILES="$(git diff --name-only --diff-filter=A "$BEFORE" "$AFTER" -- 'supabase/migrations/*.sql' | sort)"
+
+          if [ -z "$FILES" ]; then
+            echo "No newly added migration files in this push. Nothing to apply."
+            exit 0
+          fi
+
+          echo "New migrations to apply:"
+          echo "$FILES"
+
+          while IFS= read -r f; do
+            [ -z "$f" ] && continue
+            echo "──────────────────────────────────────────"
+            echo "Applying: $f"
+            psql "$DATABASE_URL" -v ON_ERROR_STOP=1 --single-transaction -f "$f"
+            echo "OK: $f"
+          done <<< "$FILES"
+
+          echo "All new migrations applied."
