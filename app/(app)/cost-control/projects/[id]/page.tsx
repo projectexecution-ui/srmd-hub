@@ -568,6 +568,7 @@ export default async function CostControlProjectDetailPage(
           </p>
           <p className="mt-1 text-[11px] text-rose-700/90">
             Either the ERP budget needs topping up, or a WO was issued beyond it — check in IN4, then re-pull BPH.
+            A work category can still read a smaller &ldquo;net&rdquo; figure, where other sub-categories under it have budget left.
           </p>
         </div>
       )}
@@ -807,9 +808,17 @@ export default async function CostControlProjectDetailPage(
                           <Td align="right" mono className="text-gray-600"><Money amt={dAgg.paid} /></Td>
                           <Td align="right" className={dOver > 0 ? 'text-rose-700 font-bold' : dPct > 95 ? 'text-red-600' : dPct > 80 ? 'text-amber-700' : 'text-green-700'}>
                             {dAgg.budget > 0 ? `${dPct.toFixed(0)}%` : '—'}
+                            {/* NET for the whole category — individual lines can
+                                be further over while others still have headroom,
+                                so this figure is deliberately smaller than the
+                                sum in the header banner. Spelled out, because
+                                two true numbers that differ look like a bug. */}
                             {dOver > 0 && (
-                              <span className="block text-[10px] font-extrabold leading-tight text-rose-600">
-                                OVER {formatINR(dOver)}
+                              <span
+                                className="block text-[10px] font-extrabold leading-tight text-rose-600"
+                                title={`This whole category is ${formatINR(dOver)} over its released budget, after netting off the sub-categories that still have budget left. Expand it to see which lines are over.`}
+                              >
+                                OVER {formatINR(dOver)} net
                               </span>
                             )}
                           </Td>
