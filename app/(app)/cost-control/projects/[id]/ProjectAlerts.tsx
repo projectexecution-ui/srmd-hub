@@ -79,9 +79,11 @@ export function ProjectAlerts({
 
   return (
     <section className="rounded-xl border border-gray-200 bg-white overflow-hidden">
-      {/* Counts. Horizontally scrollable rather than wrapping, so the strip is
-          always exactly one line tall however many alerts there are. */}
-      <div className="flex items-center gap-2 overflow-x-auto px-3 py-2.5">
+      {/* Wraps rather than scrolls sideways. A horizontal scroller kept the
+          strip one line tall but clipped the last chip mid-word ("32 c…"),
+          which reads as broken — and a sideways scroll you cannot see is a
+          sideways scroll nobody uses. Three chips wrap to at most two lines. */}
+      <div className="flex flex-wrap items-center gap-2 px-3 py-2.5">
         {chips.map(c => {
           const t = TONES[c.tone]
           const isOpen = open === c.key
