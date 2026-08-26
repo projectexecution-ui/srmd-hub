@@ -755,7 +755,11 @@ export default async function CostControlProjectDetailPage(
       {focusSub && <FocusScroll targetIds={[`sub-${focusSub}`, `subm-${focusSub}`]} />}
       <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
         <div className="flex items-center justify-between px-3 py-2 border-b border-gray-100 bg-gray-50/60">
-          <span className="text-[11px] font-medium text-gray-500">Work categories — click a row to collapse; totals roll up.</span>
+          {/* On a phone the sentence stole the whole row and forced the toolbar
+              buttons to wrap onto two lines each. */}
+          <span className="text-[11px] font-medium text-gray-500">
+            Work categories<span className="hidden sm:inline"> — click a row to collapse; totals roll up.</span>
+          </span>
           <TreeToolbar />
         </div>
         {/* The header row stays visible while you read down the table. Sticky
@@ -1319,13 +1323,22 @@ export default async function CostControlProjectDetailPage(
             if (cards.length === 0) return null
             return (
               <div key={d.id}>
-                <div className="sticky top-0 z-10 flex items-center justify-between gap-2 px-4 py-2 bg-slate-50 border-t border-b border-gray-200">
-                  <span className="flex items-center min-w-0 text-[13px] font-semibold text-gray-900">
+                {/* Name on its own line, money underneath. Side by side, the
+                    money block never shrinks and squeezed the name down to
+                    "07 E." / "03 C.." on a 375px phone — the one thing on the
+                    row you actually need to read. */}
+                <div className="sticky top-0 z-10 px-4 py-2 bg-slate-50 border-t border-b border-gray-200">
+                  <span className="flex items-center text-[13px] font-semibold text-gray-900">
                     <CatChevron catId={d.id} />
                     <span className="font-mono text-[11px] text-gray-500 mr-1.5">{d.code}</span>
-                    <span className="truncate">{d.name}</span>
+                    <span>{d.name}</span>
+                    {dOver > 0 && (
+                      <span className="ml-2 text-[10px] font-extrabold text-rose-600 whitespace-nowrap">
+                        OVER {formatINR(dOver)}
+                      </span>
+                    )}
                   </span>
-                  <p className="text-[11px] text-gray-500 flex-shrink-0 text-right leading-tight tabular-nums">
+                  <p className="mt-0.5 pl-6 text-[11px] text-gray-500 leading-tight tabular-nums">
                     Est <span className="font-semibold text-indigo-800">{dAgg.estimate > 0 ? formatINR(dAgg.estimate) : '—'}</span>
                     <span className="mx-1 text-gray-300">·</span>
                     Rel <span className="font-semibold text-emerald-700">{dAgg.approvedTotal > 0 ? formatINR(dAgg.approvedTotal) : '—'}</span>
