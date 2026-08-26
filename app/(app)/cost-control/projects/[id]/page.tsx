@@ -1173,6 +1173,7 @@ export default async function CostControlProjectDetailPage(
           )}
           {disciplines.map(d => {
             const dAgg = discAgg.get(d.id) ?? { budget: 0, wo: 0, paid: 0, approvedTotal: 0, estimate: 0, pending: 0 }
+            const dOver = overBudgetAmount(dAgg)
             const subs = subSkills.filter(s => s.discipline_id === d.id)
             const cards = subs.map(s => {
               const a = wsAgg.get(`${d.id}::${s.id}`)
