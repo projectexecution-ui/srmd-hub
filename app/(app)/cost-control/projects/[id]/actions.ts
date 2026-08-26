@@ -8,6 +8,8 @@ import { z } from 'zod'
 import { createClient } from '@/lib/supabase/server'
 import { requirePermission, getMyProfile, getMyPermissions, can } from '@/lib/auth'
 import { checkIsCcReviewer } from '@/components/cost-control/ws-actions'
+import { canMarkComplete } from '@/lib/cost-control/completion'
+import { formatINR } from '@/lib/utils'
 
 const uuid = z.string().uuid()
 const isoDateOrNull = z
@@ -489,5 +491,86 @@ export async function setProjectAlias(
 
   revalidatePath(`/cost-control/projects/${projectId}`)
   revalidatePath('/cost-control')
+  return { ok: true }
+}
+
+// ============================================================
+// Close a sub-category once WO/PO committed == Paid  (HOD #3)
+// ============================================================
+/** Mark a sub-category complete, or reopen it.
+ *
+ *  The button only appears where WO equals Paid (see lib/cost-control/completion.ts),
+ *  but eligibility is re-checked HERE against the live budget line — a stale page
+ *  or a hand-made request must not be able to close a line that still owes money.
+ *
+ *  Nothing is written to cc_budget_lines: those figures belong to the IN4/BPH
+ *  sync. The leftover budget is derived for display. */
+export async function setSubSkillCompleted(
+  projectId: string,
+  subSkillId: string,
+  disciplineId: string,
+  complete: boolean,
+  note: string | null,
+): Promise<Result> {
+  await requirePermission('cost-control', 'edit')
+  // Closing a line is a management judgement, not an engineer's.
+  if (!(await checkIsCcReviewer())) {
+    return { ok: false, error: 'Only Cost Control management can close a sub-category' }
+  }
+
+  const parsed = z.object({
+    project_id: uuid,
+    sub_skill_id: uuid,
+    discipline_id: uuid,
+    complete: z.boolean(),
+    note: z.string().max(300).nullable(),
+  }).safeParse({ project_id: projectId, sub_skill_id: subSkillId, discipline_id: disciplineId, complete, note })
+  if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? 'Invalid input' }
+
+  const supabase = await createClient()
+
+  if (complete) {
+    // Re-check the rule server-side against what IN4 says right now.
+    const { data: lines, error: blErr } = await supabase
+      .from('cc_budget_lines')
+      .select('current_budget_amt, current_wo_committed_amt, current_paid_amt')
+      .eq('project_id', projectId)
+      .eq('discipline_id', disciplineId)
+      .eq('sub_skill_id', subSkillId)
+    if (blErr) return { ok: false, error: blErr.message }
+    const agg = (lines ?? []).reduce(
+      (a, b) => ({
+        budget: a.budget + Number(b.current_budget_amt ?? 0),
+        wo: a.wo + Number(b.current_wo_committed_amt ?? 0),
+        paid: a.paid + Number(b.current_paid_amt ?? 0),
+      }),
+      { budget: 0, wo: 0, paid: 0 },
+    )
+    if (!canMarkComplete(agg)) {
+      const wo = Math.round(agg.wo), paid = Math.round(agg.paid)
+      return {
+        ok: false,
+        error: wo <= 0
+          ? 'Nothing has been committed on this sub-category yet, so there is nothing to close.'
+          : `WO/PO is ${formatINR(wo)} but only ${formatINR(paid)} is paid — ${formatINR(Math.abs(wo - paid))} is still outstanding, so this cannot be closed yet.`,
+      }
+    }
+  }
+
+  const profile = await getMyProfile()
+  const { data, error } = await supabase
+    .from('cc_project_sub_skills')
+    .update(complete
+      ? { completed_at: new Date().toISOString(), completed_by: profile?.id ?? null, completed_note: note }
+      : { completed_at: null, completed_by: null, completed_note: null })
+    .eq('project_id', projectId)
+    .eq('sub_skill_id', subSkillId)
+    .select('id')
+  if (error) return { ok: false, error: error.message }
+  // A row-level-security refusal comes back as 200 with zero rows, not an
+  // error — so an empty result is a denial, not a no-op.
+  if (!data || data.length === 0) return { ok: false, error: 'Change was blocked — check your permissions' }
+
+  revalidatePath(`/cost-control/projects/${projectId}`)
   return { ok: true }
 }

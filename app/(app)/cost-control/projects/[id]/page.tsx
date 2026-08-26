@@ -14,6 +14,8 @@ import { getCcSettings } from '@/lib/cost-control/settings'
 import { computeMoneyRollup, type RollupWSRow, type RollupVersionRow, type RollupBudgetLine } from '@/lib/cost-control/project-rollup'
 import { sortDisciplines } from '@/lib/cost-control/discipline-order'
 import { overBudgetAmount, overBudgetDriver } from '@/lib/cost-control/over-budget'
+import { canMarkComplete, savingsOnCompletion } from '@/lib/cost-control/completion'
+import { CompleteControl } from './CompleteControl'
 import { QueryError } from '@/components/ui/query-error'
 import { DeadlineBadge } from '@/components/cost-control/DeadlineBadge'
 import { TreeProvider, TreeToolbar, CatChevron, CatRows, SubRow } from '@/components/cost-control/project-tree'
@@ -156,7 +158,7 @@ export default async function CostControlProjectDetailPage(
       .eq('is_enabled', true),
     supabase
       .from('cc_project_sub_skills')
-      .select('sub_skill_id, estimation_mode, thumbrule_rate_per_sft, thumbrule_notes, target_deadline, cc_sub_skills(id, discipline_id, code, name)')
+      .select('sub_skill_id, estimation_mode, thumbrule_rate_per_sft, thumbrule_notes, target_deadline, completed_at, completed_by, cc_sub_skills(id, discipline_id, code, name)')
       .eq('project_id', id)
       .eq('is_enabled', true),
     supabase
@@ -217,6 +219,8 @@ export default async function CostControlProjectDetailPage(
     thumbrule_rate_per_sft: number | null
     thumbrule_notes: string | null
     target_deadline: string | null
+    completed_at: string | null
+    completed_by: string | null
     cc_sub_skills: SubSkillRow | SubSkillRow[] | null
   }
 
@@ -241,13 +245,15 @@ export default async function CostControlProjectDetailPage(
       deadline: r.target_deadline,
     })
   }
-  const subMeta = new Map<string, { mode: 'detailed' | 'thumbrule' | null; rate: number | null; notes: string | null; deadline: string | null }>()
+  const subMeta = new Map<string, { mode: 'detailed' | 'thumbrule' | null; rate: number | null; notes: string | null; deadline: string | null; completedAt: string | null; completedBy: string | null }>()
   for (const r of (projSubRes.data ?? []) as ProjSubJoin[]) {
     subMeta.set(r.sub_skill_id, {
       mode: r.estimation_mode, // null = inherit
       rate: r.thumbrule_rate_per_sft,
       notes: r.thumbrule_notes,
       deadline: r.target_deadline,
+      completedAt: r.completed_at,
+      completedBy: r.completed_by,
     })
   }
 
@@ -393,6 +399,20 @@ export default async function CostControlProjectDetailPage(
     .filter(x => x.over > 0)
     .sort((a, b) => b.over - a.over)
   const overBudgetTotal = overBudgetLines.reduce((sum, l) => sum + l.over, 0)
+
+  // Closed sub-categories (HOD #3) and the budget they released. Two figures
+  // worth separating: what has already been released, and what is sitting
+  // ready to be released the moment someone presses the button.
+  const completedCount = subSkills.filter(s => subMeta.get(s.id)?.completedAt).length
+  const releasedTotal = subSkills.reduce((sum, s) => {
+    if (!subMeta.get(s.id)?.completedAt) return sum
+    return sum + savingsOnCompletion(blMap.get(`${s.discipline_id}::${s.id}`))
+  }, 0)
+  const readyToClose = subSkills.filter(s =>
+    !subMeta.get(s.id)?.completedAt && canMarkComplete(blMap.get(`${s.discipline_id}::${s.id}`)),
+  )
+  const readyToCloseSavings = readyToClose.reduce(
+    (sum, s) => sum + savingsOnCompletion(blMap.get(`${s.discipline_id}::${s.id}`)), 0)
 
   // Portfolio rollup (across all sub-skills on this project)
   const totalBudget = Array.from(discAgg.values()).reduce((s, v) => s + v.budget, 0)
@@ -551,6 +571,28 @@ export default async function CostControlProjectDetailPage(
               <ArrowRight className="h-4 w-4" />
             </Link>
           </div>
+        </div>
+      )}
+
+      {/* Finished work, and work that is finished but not yet marked so. Kept
+          to one quiet line: it is housekeeping, not something waiting on
+          anyone. (HOD #3) */}
+      {showErp && (completedCount > 0 || readyToClose.length > 0) && (
+        <div className="rounded-lg border border-emerald-200 bg-emerald-50/70 px-4 py-2.5 text-[12.5px] text-emerald-900">
+          {completedCount > 0 && (
+            <span className="font-semibold">
+              {completedCount} sub-{completedCount === 1 ? 'category' : 'categories'} complete
+              {releasedTotal > 0 && <> · {formatINR(releasedTotal)} released</>}
+            </span>
+          )}
+          {completedCount > 0 && readyToClose.length > 0 && <span className="mx-1.5 text-emerald-300">·</span>}
+          {readyToClose.length > 0 && (
+            <span>
+              <b>{readyToClose.length} more can be closed</b> — WO and Paid match on {readyToClose.length === 1 ? 'it' : 'them'}
+              {readyToCloseSavings > 0 && <>, freeing {formatINR(readyToCloseSavings)}</>}.
+              {' '}Look for the <b>Mark complete</b> button on those rows.
+            </span>
+          )}
         </div>
       )}
 
@@ -875,6 +917,8 @@ export default async function CostControlProjectDetailPage(
                       // fact from "nearly full". (HOD #4)
                       const sOver = overBudgetAmount(bl)
                       const sOverBy = overBudgetDriver(bl)
+                      const sCompletedAt = subMeta.get(s.id)?.completedAt ?? null
+                      const sCompletedBy = profileMap.get(subMeta.get(s.id)?.completedBy ?? '') ?? null
                       const wsCount = a?.chains.size ?? 0
                       const ie = ieMap.get(`${d.id}::${s.id}`)
                       const estLive = a?.planTotal ?? 0
@@ -1040,6 +1084,20 @@ export default async function CostControlProjectDetailPage(
                                   Approve <ArrowRight className="h-3 w-3" />
                                 </Link>
                               )}
+                              {/* Same rule as the phone card. (HOD #3) */}
+                              {(sCompletedAt || canMarkComplete(bl)) && (
+                                <CompleteControl
+                                  projectId={project.id}
+                                  disciplineId={d.id}
+                                  subSkillId={s.id}
+                                  label={`${s.code} ${s.name}`}
+                                  savings={savingsOnCompletion(bl)}
+                                  completedAt={sCompletedAt}
+                                  completedByName={sCompletedBy}
+                                  canWrite={canWrite}
+                                  variant="row"
+                                />
+                              )}
                               {canWrite && (
                                 <Link
                                   href={effMode === 'thumbrule'
@@ -1125,6 +1183,8 @@ export default async function CostControlProjectDetailPage(
               const sPct = bl && bl.budget > 0 ? (bl.paid / bl.budget) * 100 : 0
               const sOver = overBudgetAmount(bl)
               const sOverBy = overBudgetDriver(bl)
+              const sCompletedAt = subMeta.get(s.id)?.completedAt ?? null
+              const sCompletedBy = profileMap.get(subMeta.get(s.id)?.completedBy ?? '') ?? null
               const isEmpty = estLive === 0 && ask === 0 && wsCount === 0
                 && (bl?.budget ?? 0) === 0 && (bl?.wo ?? 0) === 0 && (bl?.paid ?? 0) === 0
               // Never hide the row the approver was deep-linked to, even if it
@@ -1222,6 +1282,23 @@ export default async function CostControlProjectDetailPage(
                         {(bl?.paid ?? 0) > 0 && <> · Paid {formatINR(bl?.paid ?? 0)}</>}
                       </p>
                     </div>
+                  )}
+
+                  {/* Close the line — only where WO equals Paid, so most cards
+                      never show this. Full-width 44px tap: this is the phone,
+                      where nearly everyone reads this screen. (HOD #3) */}
+                  {(sCompletedAt || canMarkComplete(bl)) && (
+                    <CompleteControl
+                      projectId={project.id}
+                      disciplineId={d.id}
+                      subSkillId={s.id}
+                      label={`${s.code} ${s.name}`}
+                      savings={savingsOnCompletion(bl)}
+                      completedAt={sCompletedAt}
+                      completedByName={sCompletedBy}
+                      canWrite={canWrite}
+                      variant="card"
+                    />
                   )}
 
                   {canWrite && (
