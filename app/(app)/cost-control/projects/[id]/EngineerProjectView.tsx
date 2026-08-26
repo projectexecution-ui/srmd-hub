@@ -5,6 +5,7 @@ import { PageHeader } from '@/components/PageHeader'
 import { QueryError } from '@/components/ui/query-error'
 import { formatINR } from '@/lib/utils'
 import { isPendingStatus } from '@/lib/cost-control/chain'
+import { sortDisciplines } from '@/lib/cost-control/discipline-order'
 import { TreeProvider, TreeToolbar, CatChevron, CatRows, SubRow } from '@/components/cost-control/project-tree'
 import { getModuleLabels, labelFor } from '@/lib/module-labels'
 
@@ -48,10 +49,11 @@ export async function EngineerProjectTable({ projectId }: { projectId: string })
       .is('archived_at', null),
   ])
 
-  const disciplines: DRow[] = ((pdRes.data ?? []) as Array<{ cc_disciplines: DRow | DRow[] | null }>)
-    .map(r => (Array.isArray(r.cc_disciplines) ? r.cc_disciplines[0] : r.cc_disciplines))
-    .filter((d): d is DRow => !!d)
-    .sort((a, b) => a.display_order - b.display_order)
+  const disciplines: DRow[] = sortDisciplines(
+    ((pdRes.data ?? []) as Array<{ cc_disciplines: DRow | DRow[] | null }>)
+      .map(r => (Array.isArray(r.cc_disciplines) ? r.cc_disciplines[0] : r.cc_disciplines))
+      .filter((d): d is DRow => !!d),
+  )
 
   const subSkills: SRow[] = ((psRes.data ?? []) as Array<{ cc_sub_skills: SRow | SRow[] | null }>)
     .map(r => (Array.isArray(r.cc_sub_skills) ? r.cc_sub_skills[0] : r.cc_sub_skills))
@@ -140,15 +142,18 @@ export async function EngineerProjectTable({ projectId }: { projectId: string })
             <TreeToolbar />
           </div>
         )}
-        <div className="overflow-x-auto hidden md:block">
+        {/* Header row stays put while you read down the table — same mechanism
+            as the management view: the body scrolls inside this box, and each
+            header CELL carries the sticky + its own opaque background. */}
+        <div className="overflow-auto max-h-[75vh] hidden md:block">
           <table className="w-full text-[13px]">
             <thead className="bg-gray-50 text-left">
               <tr>
-                <th className="px-3 py-2 font-semibold text-gray-600 min-w-[260px]">Work Category / Sub-skill</th>
-                <th className="px-3 py-2 font-semibold text-gray-600 text-right w-32">Awaiting Approval</th>
-                <th className="px-3 py-2 font-semibold text-gray-600 text-right w-32">Budget (ERP)</th>
-                <th className="px-3 py-2 font-semibold text-gray-600 text-right w-28">WO / PO</th>
-                <th className="px-3 py-2 font-semibold text-gray-600 w-28">Working Sheets</th>
+                <th className="sticky top-0 z-10 bg-gray-50 border-b border-gray-200 px-3 py-2 font-semibold text-gray-600 min-w-[260px]">Work Category / Sub-skill</th>
+                <th className="sticky top-0 z-10 bg-gray-50 border-b border-gray-200 px-3 py-2 font-semibold text-gray-600 text-right w-32">Awaiting Approval</th>
+                <th className="sticky top-0 z-10 bg-gray-50 border-b border-gray-200 px-3 py-2 font-semibold text-gray-600 text-right w-32">Budget (ERP)</th>
+                <th className="sticky top-0 z-10 bg-gray-50 border-b border-gray-200 px-3 py-2 font-semibold text-gray-600 text-right w-28">WO / PO</th>
+                <th className="sticky top-0 z-10 bg-gray-50 border-b border-gray-200 px-3 py-2 font-semibold text-gray-600 w-28">Working Sheets</th>
               </tr>
             </thead>
             <tbody>
@@ -223,8 +228,10 @@ export async function EngineerProjectTable({ projectId }: { projectId: string })
           </table>
         </div>
 
-        {/* Mobile: your work as cards per sub-skill. */}
-        <div className="md:hidden divide-y divide-gray-100">
+        {/* Mobile: your work as cards per sub-skill. The category bar pins as you
+            scroll its cards — the card-stack equivalent of freezing a header
+            row. Needs its own scroll box; see AGENTS.md on `main`'s overflow. */}
+        <div className="md:hidden divide-y divide-gray-100 overflow-auto max-h-[75vh]">
           {disciplines.length === 0 && (
             <p className="px-4 py-8 text-center text-sm text-gray-400">No disciplines set up on this project yet.</p>
           )}
@@ -257,7 +264,9 @@ export async function EngineerProjectTable({ projectId }: { projectId: string })
             if (cards.length === 0) return null
             return (
               <div key={d.id}>
-                <div className="px-4 py-2 bg-gray-50/60 flex items-center justify-between gap-2">
+                {/* bg must be OPAQUE (was bg-gray-50/60) or cards show through
+                    it once it pins. */}
+                <div className="sticky top-0 z-10 px-4 py-2 bg-gray-50 border-b border-gray-200 flex items-center justify-between gap-2">
                   <span className="flex items-center min-w-0 text-[12px] font-semibold text-gray-800">
                     <CatChevron catId={d.id} />
                     <span className="font-mono text-[11px] text-gray-400 mr-1.5">{d.code}</span>

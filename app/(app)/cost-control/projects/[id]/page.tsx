@@ -12,6 +12,7 @@ import { Plus, Flame, Info, Settings, Download, Ruler, ArrowRight } from 'lucide
 import { formatINR } from '@/lib/utils'
 import { getCcSettings } from '@/lib/cost-control/settings'
 import { computeMoneyRollup, type RollupWSRow, type RollupVersionRow, type RollupBudgetLine } from '@/lib/cost-control/project-rollup'
+import { sortDisciplines } from '@/lib/cost-control/discipline-order'
 import { QueryError } from '@/components/ui/query-error'
 import { DeadlineBadge } from '@/components/cost-control/DeadlineBadge'
 import { TreeProvider, TreeToolbar, CatChevron, CatRows, SubRow } from '@/components/cost-control/project-tree'
@@ -218,10 +219,11 @@ export default async function CostControlProjectDetailPage(
     cc_sub_skills: SubSkillRow | SubSkillRow[] | null
   }
 
-  const disciplines: DisciplineRow[] = ((projDisRes.data ?? []) as ProjDisJoin[])
-    .map(r => Array.isArray(r.cc_disciplines) ? r.cc_disciplines[0] : r.cc_disciplines)
-    .filter((d): d is DisciplineRow => !!d)
-    .sort((a, b) => a.display_order - b.display_order)
+  const disciplines: DisciplineRow[] = sortDisciplines(
+    ((projDisRes.data ?? []) as ProjDisJoin[])
+      .map(r => Array.isArray(r.cc_disciplines) ? r.cc_disciplines[0] : r.cc_disciplines)
+      .filter((d): d is DisciplineRow => !!d),
+  )
 
   const subSkills: SubSkillRow[] = ((projSubRes.data ?? []) as ProjSubJoin[])
     .map(r => Array.isArray(r.cc_sub_skills) ? r.cc_sub_skills[0] : r.cc_sub_skills)
@@ -678,7 +680,17 @@ export default async function CostControlProjectDetailPage(
           <span className="text-[11px] font-medium text-gray-500">Work categories — click a row to collapse; totals roll up.</span>
           <TreeToolbar />
         </div>
-        <div className="overflow-x-auto hidden md:block">
+        {/* The header row stays visible while you read down the table. Sticky
+            needs a scrollport that actually scrolls, so the table body scrolls
+            INSIDE this box (max-h) rather than with the page: `main` in
+            app/(app)/layout.tsx sets overflow-x-auto, which forces overflow-y
+            to auto and makes it the nearest scrollport — one that never scrolls
+            itself — so a page-scroll sticky header just scrolls away. Pinning
+            to the viewport instead would mean dropping the horizontal scroll
+            this wide table needs, since overflow-x:auto cannot pair with
+            overflow-y:visible. max-h (not h) means a short table still renders
+            at its natural height with no scrollbar and no dead space. */}
+        <div className="overflow-auto max-h-[75vh] hidden md:block">
           <table className="w-full text-[13px]">
             <thead className="bg-gray-50 text-left">
               <tr>
@@ -1025,7 +1037,13 @@ export default async function CostControlProjectDetailPage(
         {/* Mobile: the same Internal Estimate as stacked cards — the table above
             is far too wide for a phone. Read + navigate; heavy editing (mode,
             deadlines, IE decision, remove) stays on the desktop table. */}
-        <div className="md:hidden divide-y divide-gray-100">
+        {/* A card stack has no header ROW to freeze, so the mobile equivalent is
+            the category bar: it pins while you scroll that category's cards, so
+            you always know which discipline the amounts belong to. Same
+            mechanism as the desktop table — the list scrolls inside this box,
+            because a page-scroll sticky cannot work under `main`'s overflow
+            (see AGENTS.md). Each bar is pushed out by the next one. */}
+        <div className="md:hidden divide-y divide-gray-100 overflow-auto max-h-[75vh]">
           {disciplines.length === 0 && (
             <p className="px-4 py-8 text-center text-sm text-gray-500">No disciplines enabled yet. Open the setup wizard to pick them.</p>
           )}
@@ -1152,7 +1170,7 @@ export default async function CostControlProjectDetailPage(
             if (cards.length === 0) return null
             return (
               <div key={d.id}>
-                <div className="flex items-center justify-between gap-2 px-4 py-2 bg-slate-50 border-t border-gray-200">
+                <div className="sticky top-0 z-10 flex items-center justify-between gap-2 px-4 py-2 bg-slate-50 border-t border-b border-gray-200">
                   <span className="flex items-center min-w-0 text-[13px] font-semibold text-gray-900">
                     <CatChevron catId={d.id} />
                     <span className="font-mono text-[11px] text-gray-500 mr-1.5">{d.code}</span>
@@ -1221,7 +1239,9 @@ function Th({
   children, align = 'left', className = '',
 }: { children?: React.ReactNode; align?: 'left' | 'right'; className?: string }) {
   return (
-    <th className={`px-3 py-2.5 text-${align} font-semibold text-[10px] uppercase tracking-wide text-gray-500 ${className}`}>
+    // Sticky lives on the CELLS, not the <thead> — and the cell carries its own
+    // opaque background + bottom border, or rows scroll through underneath it.
+    <th className={`sticky top-0 z-10 bg-gray-50 border-b border-gray-200 px-3 py-2.5 text-${align} font-semibold text-[10px] uppercase tracking-wide text-gray-500 ${className}`}>
       {children}
     </th>
   )
