@@ -8,7 +8,7 @@ import { EngineerProjectView } from './EngineerProjectView'
 import { PageHeader } from '@/components/PageHeader'
 import { getModuleLabels, labelFor } from '@/lib/module-labels'
 import { SetupProgressBanner } from '@/components/ProjectSetupWizard/SetupProgressBanner'
-import { Plus, Flame, Info, Settings, Download, Ruler } from 'lucide-react'
+import { Plus, Flame, Info, Settings, Download, Ruler, ArrowRight } from 'lucide-react'
 import { formatINR } from '@/lib/utils'
 import { getCcSettings } from '@/lib/cost-control/settings'
 import { computeMoneyRollup, type RollupWSRow, type RollupVersionRow, type RollupBudgetLine } from '@/lib/cost-control/project-rollup'
@@ -52,7 +52,7 @@ interface WSAgg {
 export default async function CostControlProjectDetailPage(
   { params, searchParams }: {
     params: Promise<{ id: string }>
-    searchParams: Promise<{ focus_disc?: string; focus_sub?: string }>
+    searchParams: Promise<{ focus_disc?: string; focus_sub?: string; ws?: string }>
   }
 ) {
   const perms = await requirePermission('cost-control', 'view')
@@ -60,8 +60,11 @@ export default async function CostControlProjectDetailPage(
   const ccLabel = labelFor(await getModuleLabels(), 'cost-control') // configurable module name (e.g. "Internal Estimate")
   // Deep-link from an approval review: open ONLY this category, highlight this
   // sub-skill, keep everything else collapsed so the reviewer isn't lost in a
-  // wall of rows.
-  const { focus_disc: focusDisc, focus_sub: focusSub } = await searchParams
+  // wall of rows. `ws` names the exact sheet he came to sign off — every
+  // approval link (home inbox, My Approvals, the bell, the email) now lands
+  // here rather than on the bare voucher, so he judges the ask against the
+  // project before opening it.
+  const { focus_disc: focusDisc, focus_sub: focusSub, ws: focusWs } = await searchParams
 
   const supabase = await createClient()
   const ccSettings = await getCcSettings()
@@ -359,6 +362,19 @@ export default async function CostControlProjectDetailPage(
   const awaitingHref = (ids: string[], listHref: string): string | null =>
     ids.length === 0 ? null : ids.length === 1 ? `/cost-control/working-sheets/${ids[0]}` : listHref
 
+  // The sheet this visit is ABOUT, when the approver arrived from an approval
+  // link (?ws=…). Resolved out of this project's own sheets so a stale link —
+  // already approved, archived, or pointing at another project — degrades to a
+  // quiet "already handled" note instead of a dead button. (#HOD)
+  const focusSheet = focusWs
+    ? ((wsRes.data ?? []) as WSAgg[]).find(w => w.id === focusWs) ?? null
+    : null
+  const focusPending = !!focusSheet &&
+    ['submitted', 'ph_approved', 'atm_approved', 'partially_approved'].includes(focusSheet.status)
+  const focusDiscRow = focusSheet ? disciplines.find(d => d.id === focusSheet.discipline_id) ?? null : null
+  const focusSubRow  = focusSheet ? subSkills.find(s => s.id === focusSheet.sub_skill_id) ?? null : null
+  const focusSheetHref = focusSheet ? `/cost-control/working-sheets/${focusSheet.id}?from=approvals` : null
+
   // Portfolio rollup (across all sub-skills on this project)
   const totalBudget = Array.from(discAgg.values()).reduce((s, v) => s + v.budget, 0)
   const totalWO = Array.from(discAgg.values()).reduce((s, v) => s + v.wo, 0)
@@ -476,6 +492,47 @@ export default async function CostControlProjectDetailPage(
           canRequest={canRequestRevision}
           canDecide={canDecideRevision}
         />
+      )}
+
+      {/* Arrived from an approval link (home inbox / My Approvals / bell /
+          email). The project numbers above and the highlighted row below are
+          the context the HOD asked to see BEFORE signing — this bar just says
+          plainly what he came for and gives him one tap into the voucher, so
+          the amber figure in the table is never the only way in. */}
+      {focusSheet && focusSheetHref && (
+        <div className={`rounded-xl border px-4 py-3 ${focusPending ? 'border-amber-300 bg-amber-50' : 'border-gray-200 bg-gray-50'}`}>
+          <div className="flex items-start justify-between gap-3 flex-wrap">
+            <div className="min-w-0">
+              <p className={`text-[11px] font-extrabold uppercase tracking-wider ${focusPending ? 'text-amber-700' : 'text-gray-500'}`}>
+                {focusPending ? 'Waiting on you' : 'Already handled'}
+              </p>
+              <p className="text-sm font-semibold text-gray-900 mt-0.5 break-words">
+                {focusDiscRow ? `${focusDiscRow.code} ${focusDiscRow.name}` : 'Uncategorised'}
+                <span className="mx-1.5 text-gray-400">›</span>
+                {focusSubRow ? `${focusSubRow.code} ${focusSubRow.name}` : '—'}
+              </p>
+              <p className="text-[12px] text-gray-600 mt-0.5 tabular-nums">
+                {formatINR(Number(focusSheet.total_amount ?? 0))}
+                <span className="mx-1.5 text-gray-300">·</span>
+                {wsStatusLabel(focusSheet.status)}
+                {focusPending && (
+                  <span className="text-gray-500"> — its row is highlighted below</span>
+                )}
+              </p>
+            </div>
+            <Link
+              href={focusSheetHref}
+              className={`inline-flex items-center justify-center gap-1.5 min-h-[44px] px-4 rounded-lg text-sm font-semibold w-full sm:w-auto ${
+                focusPending
+                  ? 'bg-amber-600 text-white hover:bg-amber-700'
+                  : 'bg-white text-gray-700 border border-gray-300 hover:bg-gray-50'
+              }`}
+            >
+              {focusPending ? 'Open the sheet to approve' : 'Open the sheet'}
+              <ArrowRight className="h-4 w-4" />
+            </Link>
+          </div>
+        </div>
       )}
 
       {/* Pending-approval shortcut — covers EVERY sheet type (submitted or
@@ -613,7 +670,9 @@ export default async function CostControlProjectDetailPage(
             && (bl?.budget ?? 0) === 0 && (bl?.wo ?? 0) === 0 && (bl?.paid ?? 0) === 0
         }).length}
       >
-      {focusSub && <FocusScroll targetId={`sub-${focusSub}`} />}
+      {/* The same sub-skill exists twice — desktop row and phone card — so hand
+          both ids over and let it scroll to whichever is actually on screen. */}
+      {focusSub && <FocusScroll targetIds={[`sub-${focusSub}`, `subm-${focusSub}`]} />}
       <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
         <div className="flex items-center justify-between px-3 py-2 border-b border-gray-100 bg-gray-50/60">
           <span className="text-[11px] font-medium text-gray-500">Work categories — click a row to collapse; totals roll up.</span>
@@ -895,6 +954,18 @@ export default async function CostControlProjectDetailPage(
                           )}
                           <Td>
                             <div className="inline-flex items-start gap-1">
+                              {/* The row he was sent here to sign off. The page
+                                  scrolls to this row, so the button has to be
+                                  HERE too — the banner up top is off-screen by
+                                  the time he lands. */}
+                              {isFocus && focusPending && focusSheetHref && (
+                                <Link
+                                  href={focusSheetHref}
+                                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-bold bg-amber-600 text-white hover:bg-amber-700 whitespace-nowrap"
+                                >
+                                  Approve <ArrowRight className="h-3 w-3" />
+                                </Link>
+                              )}
                               {canWrite && (
                                 <Link
                                   href={effMode === 'thumbrule'
@@ -974,10 +1045,17 @@ export default async function CostControlProjectDetailPage(
               const sPct = bl && bl.budget > 0 ? (bl.paid / bl.budget) * 100 : 0
               const isEmpty = estLive === 0 && ask === 0 && wsCount === 0
                 && (bl?.budget ?? 0) === 0 && (bl?.wo ?? 0) === 0 && (bl?.paid ?? 0) === 0
-              if (isEmpty) return null
+              // Never hide the row the approver was deep-linked to, even if it
+              // reads as empty — landing on "nothing here" would be worse.
+              const isFocus = focusSub === s.id
+              if (isEmpty && !isFocus) return null
               const effMode = subMeta.get(s.id)?.mode ?? discMeta.get(d.id)?.mode ?? 'detailed'
               return (
-                <div key={s.id} className="mx-3 my-2 rounded-xl border border-gray-200 bg-white p-3.5">
+                <div
+                  key={s.id}
+                  id={`subm-${s.id}`}
+                  className={`mx-3 my-2 rounded-xl border bg-white p-3.5 ${isFocus ? 'border-amber-400 ring-2 ring-amber-300' : 'border-gray-200'}`}
+                >
                   {/* Name + sheets chip */}
                   <div className="flex items-start justify-between gap-2 mb-0.5">
                     <p className="text-sm text-gray-900 min-w-0">
@@ -1014,6 +1092,16 @@ export default async function CostControlProjectDetailPage(
                   })()}
                   {overBy > 0 && (
                     <p className="text-[10px] font-semibold text-rose-600 mb-0.5">▲ over the Internal Estimate by {formatINR(overBy)}</p>
+                  )}
+                  {/* Same one-tap route into the voucher on the phone, where the
+                      card — not the table row — is what he actually lands on. */}
+                  {isFocus && focusPending && focusSheetHref && (
+                    <Link
+                      href={focusSheetHref}
+                      className="mt-2 flex items-center justify-center gap-1.5 min-h-[44px] rounded-lg bg-amber-600 text-white text-sm font-semibold"
+                    >
+                      Open the sheet to approve <ArrowRight className="h-4 w-4" />
+                    </Link>
                   )}
                   {released > 0 && (
                     <div className="flex items-center justify-between gap-3 py-1.5 border-t border-gray-100">

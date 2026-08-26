@@ -109,7 +109,7 @@ export async function handleApprovalCallback(
   // Current state of the sheet (also blocks [IB]).
   const { data: ws } = await svc
     .from('cc_working_sheets')
-    .select('ws_code, status, summary_notes, total_amount')
+    .select('ws_code, status, summary_notes, total_amount, project_id, discipline_id, sub_skill_id')
     .eq('id', wsId)
     .maybeSingle()
   if (!ws) { await answerCbq(token, cbq.id, 'That budget could not be found.', true); return true }
@@ -120,6 +120,12 @@ export async function handleApprovalCallback(
   const status = ws.status as string
   const wsCode = (ws.ws_code as string) || 'budget'
   const askAmount = Number(ws.total_amount ?? 0)
+  // Where the restored card should point for the full-project view.
+  const wsTarget = {
+    projectId: (ws.project_id as string | null) ?? null,
+    disciplineId: (ws.discipline_id as string | null) ?? null,
+    subSkillId: (ws.sub_skill_id as string | null) ?? null,
+  }
   const isSignStage = status === 'submitted' || status === 'ph_approved'
   const isReleaseStage = status === 'atm_approved' || status === 'partially_approved'
 
@@ -217,7 +223,7 @@ export async function handleApprovalCallback(
 
   if (verb === 'scancel' || verb === 'cancel') {
     await svc.from('tg_pending_approvals').delete().eq('chat_id', String(chatId)).eq('ws_id', wsId)
-    if (isSignStage || isReleaseStage) await editMarkup(token, chatId, messageId, approvalKeyboard(status as ApprovalStage, wsId))
+    if (isSignStage || isReleaseStage) await editMarkup(token, chatId, messageId, approvalKeyboard(status as ApprovalStage, wsId, false, wsTarget))
     else await clearButtons()
     await answerCbq(token, cbq.id, 'Cancelled.')
     return true

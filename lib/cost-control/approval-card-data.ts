@@ -17,6 +17,9 @@ export interface ApprovalCardData {
   wsId: string
   status: ApprovalStage
   projectId: string
+  /** Carried so the Telegram card can offer the project-first approval view. */
+  disciplineId: string | null
+  subSkillId: string | null
   engineerId: string
   /** [IB…] Internal-Estimate baseline — must NEVER go to Telegram. */
   isIB: boolean
@@ -199,6 +202,8 @@ export async function loadApprovalCardInput(
     wsId: ws.id,
     status: stage,
     projectId: ws.project_id,
+    disciplineId: ws.discipline_id,
+    subSkillId: ws.sub_skill_id,
     engineerId: ws.engineer_id,
     isIB,
     wsCode: ws.ws_code,

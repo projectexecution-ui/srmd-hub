@@ -16,6 +16,7 @@ import { renderCardSpec } from './report-card'
 import { buildApprovalCardSpec } from '@/lib/cost-control/approval-card'
 import type { ApprovalCardData } from '@/lib/cost-control/approval-card-data'
 import type { ApprovalStage } from '@/lib/cost-control/approval-card'
+import { ccApprovalPath, type CcApprovalTarget } from '@/lib/cost-control/approval-link'
 import { loadComputedWorkingRows, buildComputedWorkingPdf, loadApprovalTrail, loadCheckSummary } from '@/lib/cost-control/computed-working-pdf'
 import { buildComputedWorkingImages } from '@/lib/cost-control/computed-working-image'
 
@@ -39,15 +40,27 @@ type Btn = { text: string; callback_data?: string; url?: string }
 /** The button strip for the stage the sheet is waiting at. PH/Atm sign-off vs
  *  Trustee release; Return/Partial always open the app (they need typed input).
  *  `test` = a dry-run card whose Approve button validates the plumbing but never
- *  mutates (verbs tsign/trel), so it can be sent safely to your own chat. */
-export function approvalKeyboard(stage: ApprovalStage, wsId: string, test = false): { inline_keyboard: Btn[][] } {
+ *  mutates (verbs tsign/trel), so it can be sent safely to your own chat.
+ *
+ *  `project` adds the "full project" button beside it — the same project-first
+ *  landing every other approval link now uses. The sheet button STAYS: it is the
+ *  escape hatch for returning or part-approving, which can only be done there. */
+export function approvalKeyboard(
+  stage: ApprovalStage,
+  wsId: string,
+  test = false,
+  project?: CcApprovalTarget,
+): { inline_keyboard: Btn[][] } {
   const wsUrl = `${appBase()}/cost-control/working-sheets/${wsId}`
+  const projBtn: Btn[] = project?.projectId
+    ? [{ text: '🏢 Full project', url: `${appBase()}${ccApprovalPath({ ...project, wsId })}` }]
+    : []
   const tag = test ? ' (test)' : ''
   if (stage === 'atm_approved' || stage === 'partially_approved') {
     return {
       inline_keyboard: [
         [{ text: `✅ Approve & release${tag}`, callback_data: `${CB_PREFIX}:${test ? 'trel' : 'rel'}:${wsId}` }],
-        [{ text: '📊 Partial / Return — in app', url: wsUrl }],
+        [{ text: '📊 Partial / Return — in app', url: wsUrl }, ...projBtn],
       ],
     }
   }
@@ -55,7 +68,7 @@ export function approvalKeyboard(stage: ApprovalStage, wsId: string, test = fals
   return {
     inline_keyboard: [
       [{ text: `✅ Approve${tag}`, callback_data: `${CB_PREFIX}:${test ? 'tsign' : 'sign'}:${wsId}` }],
-      [{ text: '↩️ Return / open in app', url: wsUrl }],
+      [{ text: '↩️ Return / open in app', url: wsUrl }, ...projBtn],
     ],
   }
 }
@@ -184,7 +197,9 @@ export async function sendApprovalToChat(
   opts: { attach?: boolean; dryRun?: boolean } = {},
 ): Promise<{ ok: boolean; error?: string }> {
   const caption = opts.dryRun ? `Budget approval (TEST) · ${data.wsCode}` : `Budget approval · ${data.wsCode}`
-  const keyboard = approvalKeyboard(data.status, data.wsId, opts.dryRun === true)
+  const keyboard = approvalKeyboard(data.status, data.wsId, opts.dryRun === true, {
+    projectId: data.projectId, disciplineId: data.disciplineId, subSkillId: data.subSkillId,
+  })
 
   // The text fallback (used if the image fails to render or send) — same
   // numbers, same buttons, so the approver can always act.

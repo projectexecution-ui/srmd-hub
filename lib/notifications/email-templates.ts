@@ -187,7 +187,7 @@ function renderApproval(d: ApprovalData, link: string): string {
       ['Sub-category', d.work ?? '—'],
       ...(d.raised_by ? [['Raised by', d.raised_by] as [string, string]] : []),
     ])}
-    <tr><td style="padding:18px 22px;border-top:1px solid ${HAIR}">${button('Review & approve', link)}</td></tr>`
+    <tr><td style="padding:18px 22px;border-top:1px solid ${HAIR}">${button('Open the project to approve', link)}</td></tr>`
   return shell(inner, `You're an approver on this project in CT HUB · manage alerts in Settings → Notifications`)
 }
 
