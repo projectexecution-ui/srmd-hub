@@ -43,23 +43,23 @@ compute to `auto`. Documented in `AGENTS.md`.
 
 ---
 
-## 3. Completed disciplines/items: show complete + reduce the budget — TODO
+## 3. Completed items: mark complete + budget reduced — DONE (`7a525f2`)
 
-**Open question — needs the HOD.** Two readings, and they are not the same job:
+**Answered by the HOD:** offer the button ONLY where WO/PO committed equals
+Paid, so only a few rows ever show it. Portfolio-wide 152 of 272 lines with a
+WO match to the rupee; on SRAH exactly 32 of several hundred rows qualify.
+Compared on whole rupees with NO tolerance (155 match within ₹100 — three extra
+lines are not worth an unexplainable rule).
 
-- *Show only*: a *Complete* chip and the unspent balance displayed as saved.
-  Small, safe, reversible.
-- *Write back*: actually reduce `cc_budget_lines.current_budget_amt`, which
-  means the app starts writing figures that today only ever come from IN4/BPH.
-  That breaks "IN4 is the source of truth" and a later BPH sync would
-  overwrite it.
+Closing shows the leftover budget as released, e.g. 1213 SS Works: ₹3,50,000
+budget, ₹1,87,620 paid → **₹1,62,380 released**. Nothing is written back to
+ — those figures are authored by the IN4 → BPH sync and the
+next sync would overwrite us. Stored on .
 
-**Proceeding assumption if no answer:** build the *show only* version — a
-`completed_at` / `completed_by` on `cc_project_sub_skills`, a green **Complete**
-chip, and "Saved ₹X" next to it. Nothing written back to the ERP figures.
-Marking complete gated to management (Atm Head / admin).
+Eligibility is re-checked server-side, so a stale page cannot close a line that
+still owes money; the refusal names the outstanding amount.
 
-## 4. Items showing spend over the ERP-approved budget — TODO (flag it)
+## 4. Items showing spend over the ERP-approved budget — DONE (`49dc34a`)
 
 **Not a display bug — the data says so.** SRAH has exactly three such lines:
 
@@ -72,7 +72,7 @@ Marking complete gated to management (Atm Head / admin).
 IN4 shows WOs issued *above* the released budget. Today the row only turns red
 past 95% used, which reads as "nearly full", not "overspent".
 
-**Doing:** an explicit `OVER by ₹X` marker on the row and the phone card, a
+**Done:** an explicit `OVER by ₹X` marker on the row and the phone card, a
 count on the project header, and the same on the discipline roll-up. Read-only
 — it reports, it does not block.
 

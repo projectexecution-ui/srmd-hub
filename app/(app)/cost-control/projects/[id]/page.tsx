@@ -1333,9 +1333,11 @@ export default async function CostControlProjectDetailPage(
                     <CatChevron catId={d.id} />
                     <span className="font-mono text-[11px] text-gray-500 mr-1.5">{d.code}</span>
                     <span>{d.name}</span>
+                    {/* Same wording as the desktop "% Used" column — "net",
+                        because sub-categories with budget left are netted off. */}
                     {dOver > 0 && (
                       <span className="ml-2 text-[10px] font-extrabold text-rose-600 whitespace-nowrap">
-                        OVER {formatINR(dOver)}
+                        OVER {formatINR(dOver)} net
                       </span>
                     )}
                   </span>
