@@ -416,30 +416,6 @@ export default async function CostControlProjectDetailPage(
   const readyToCloseSavings = readyToClose.reduce(
     (sum, s) => sum + savingsOnCompletion(blMap.get(`${s.discipline_id}::${s.id}`)), 0)
 
-  // The pending sheets themselves, for the alert strip: he asked to open them
-  // from there rather than be sent to a list page to find the same row again.
-  // Biggest ask first — that is the one worth his attention. Capped so the
-  // strip can never become the page; "See all" covers the rest.
-  const ALERT_SHEETS_MAX = 8
-  const pendingSheetItems = [...pendingSheets]
-    .sort((a, b) => Number(b.total_amount ?? 0) - Number(a.total_amount ?? 0))
-    .slice(0, ALERT_SHEETS_MAX)
-    .map(w => {
-      const d = disciplines.find(x => x.id === w.discipline_id)
-      const s = subSkills.find(x => x.id === w.sub_skill_id)
-      const amt = Number(w.total_amount ?? 0)
-      // IST calendar days, not elapsed ms — "waiting 3d" must mean three dates.
-      const age = w.submitted_at ? istCalendarDaysAgo(w.submitted_at) : null
-      return {
-        id: w.id,
-        label: [d ? `${d.code} ${d.name}` : null, s ? `${s.code} ${s.name}` : null]
-          .filter(Boolean).join(' › ') || 'Budget',
-        amountLabel: `${formatINR(amt)}${perSftInline(amt)}`,
-        stageLabel: wsStatusLabel(w.status),
-        ageDays: age,
-        href: `/cost-control/working-sheets/${w.id}?from=approvals`,
-      }
-    })
 
   // Portfolio rollup (across all sub-skills on this project)
   const totalBudget = Array.from(discAgg.values()).reduce((s, v) => s + v.budget, 0)
@@ -474,6 +450,31 @@ export default async function CostControlProjectDetailPage(
     const r = perSft(amt)
     return r ? ` · ${r}` : ''
   }
+
+  // The pending sheets themselves, for the alert strip: he asked to open them
+  // from there rather than be sent to a list page to find the same row again.
+  // Biggest ask first — that is the one worth his attention. Capped so the
+  // strip can never become the page; "See all" covers the rest.
+  const ALERT_SHEETS_MAX = 8
+  const pendingSheetItems = [...pendingSheets]
+    .sort((a, b) => Number(b.total_amount ?? 0) - Number(a.total_amount ?? 0))
+    .slice(0, ALERT_SHEETS_MAX)
+    .map(w => {
+      const d = disciplines.find(x => x.id === w.discipline_id)
+      const s = subSkills.find(x => x.id === w.sub_skill_id)
+      const amt = Number(w.total_amount ?? 0)
+      // IST calendar days, not elapsed ms — "waiting 3d" must mean three dates.
+      const age = w.submitted_at ? istCalendarDaysAgo(w.submitted_at) : null
+      return {
+        id: w.id,
+        label: [d ? `${d.code} ${d.name}` : null, s ? `${s.code} ${s.name}` : null]
+          .filter(Boolean).join(' › ') || 'Budget',
+        amountLabel: `${formatINR(amt)}${perSftInline(amt)}`,
+        stageLabel: wsStatusLabel(w.status),
+        ageDays: age,
+        href: `/cost-control/working-sheets/${w.id}?from=approvals`,
+      }
+    })
   // Visible column count for empty-state rows (name + Internal Estimate +
   // Awaiting Approval + Released via WS + Working Sheets + actions, plus the
   // toggleable ERP and deadline groups).
