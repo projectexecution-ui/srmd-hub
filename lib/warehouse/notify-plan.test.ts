@@ -200,3 +200,34 @@ describe('releasing the return', () => {
     expect(n.body).toContain('Consumed on site')
   })
 })
+
+describe('a request that names no store — the normal case now', () => {
+  const noStore = () => facts({ storeName: null, storeId: null })
+
+  it('leaves the store clause out rather than saying "a store"', () => {
+    const n = planRaised(noStore(), PEOPLE, LIVE_RULES, inr)[0]
+    expect(n.body).toContain('3 items')
+    expect(n.body).not.toMatch(/from (a|the|your) store/)
+    expect(n.body).not.toContain('null')
+  })
+
+  it('still names the store when the request has one', () => {
+    const n = planRaised(facts(), PEOPLE, LIVE_RULES, inr)[0]
+    expect(n.body).toContain('from NGH A store')
+  })
+
+  it('tells the requester it can be handed over without inventing a store', () => {
+    const n = planMoved(noStore(), 'approved', null, null, PEOPLE, LIVE_RULES, inr)
+      .find(x => x.userId === 'eng1')
+    expect(n?.body).toContain('can be handed over now')
+    expect(n?.body).not.toMatch(/from (a|the|your) store/)
+  })
+
+  it('tells the keeper what to hand over without claiming it is his store', () => {
+    // He keeps one of nine. "from your store" was a guess, and a wrong one.
+    const n = planMoved(noStore(), 'approved', null, null, PEOPLE, LIVE_RULES, inr)
+      .filter(x => x.userId !== 'eng1')
+    expect(n.length).toBeGreaterThan(0)
+    for (const x of n) expect(x.body).not.toContain('your store')
+  })
+})

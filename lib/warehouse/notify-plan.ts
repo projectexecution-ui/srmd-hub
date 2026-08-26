@@ -104,6 +104,16 @@ export function peopleWhoCanMove(
 const money = (n: number | null, fmt: (v: number) => string) =>
   n == null ? '' : ` · about ${fmt(n)}`
 
+/** " from Yunus Land Store", or nothing at all.
+ *
+ *  A request does not name a store any more — the engineer asks and the keeper
+ *  decides — so the clause has to disappear rather than fall back on "a store"
+ *  or "your store", which told the reader nothing and, for a keeper of one of
+ *  nine stores, told him something wrong. Older requests that DO name one still
+ *  say so. */
+const fromStore = (r: { storeName: string | null }) =>
+  r.storeName ? ` from ${r.storeName}` : ''
+
 /** Raised, and somebody has to approve it. */
 export function planRaised(
   r: RequestFacts,
@@ -123,7 +133,7 @@ export function planRaised(
     userId: p.id,
     type: WH_EVENTS.raised,
     title: `${r.reqNo} — ${who} needs your approval`,
-    body: `${what} from ${r.storeName ?? 'a store'}`
+    body: `${what}${fromStore(r)}`
       + (r.projectName ? ` for ${r.projectName}` : '')
       + money(r.estValue, fmtINR)
       + (r.purpose ? `. ${r.purpose}` : '')
@@ -160,8 +170,8 @@ export function planMoved(
       out.push({
         userId: r.requestedById, type: WH_EVENTS.decided,
         title: `${r.reqNo} was approved${by}`,
-        body: `The store can hand it over now — ${r.itemCount} `
-          + `${r.itemCount === 1 ? 'item' : 'items'} from ${r.storeName ?? 'the store'}.`
+        body: (r.storeName ? 'The store can hand it over now' : 'It can be handed over now')
+          + ` — ${r.itemCount} ${r.itemCount === 1 ? 'item' : 'items'}${fromStore(r)}.`
           + (r.anyReturnable ? ' Some of it must come back.' : ''),
         url: url(r.id), data: { reqNo: r.reqNo, outcome: 'approved' },
       })
@@ -184,7 +194,7 @@ export function planMoved(
         userId: p.id, type: WH_EVENTS.raised,
         title: `${r.reqNo} needs your approval`,
         body: `Already passed the first stage${by}. `
-          + `${r.itemCount} ${r.itemCount === 1 ? 'item' : 'items'} from ${r.storeName ?? 'a store'}`
+          + `${r.itemCount} ${r.itemCount === 1 ? 'item' : 'items'}${fromStore(r)}`
           + money(r.estValue, fmtINR) + '.',
         url: url(r.id),
         data: { reqNo: r.reqNo, stage: 'checked' },
@@ -196,8 +206,7 @@ export function planMoved(
       out.push({
         userId: p.id, type: WH_EVENTS.toIssue,
         title: `${r.reqNo} is approved — ready to hand over`,
-        body: `${r.itemCount} ${r.itemCount === 1 ? 'item' : 'items'} from `
-          + `${r.storeName ?? 'your store'}`
+        body: `${r.itemCount} ${r.itemCount === 1 ? 'item' : 'items'}${fromStore(r)}`
           + (r.requesterName ? ` for ${r.requesterName}` : '')
           + (r.needBy ? `, needed by ${r.needBy}` : '') + '.'
           + (r.anyReturnable ? ' Returnable — it has to come back.' : ''),

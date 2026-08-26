@@ -7,7 +7,7 @@ import { toast } from 'sonner'
 import { Card } from '@/components/ui/card'
 import { confirm } from '@/components/ui/confirm-dialog'
 import { formatDate, formatDateTime } from '@/lib/utils'
-import { formatQty, formatINR } from '@/lib/warehouse/format'
+import { formatQty, formatQtyUnit, formatINR } from '@/lib/warehouse/format'
 import { moveRequest, cancelRequest, waiveReturn } from '../../request-actions'
 import { STATUS_TONE } from '@/lib/warehouse/requests'
 import { STAGE_LABEL } from '@/lib/warehouse/approval-matrix'
@@ -115,7 +115,7 @@ export function RequestClient({
       <Card className="p-3 shadow-sm">
         <dl className="grid sm:grid-cols-2 gap-x-4 gap-y-1.5">
           {[
-            ['Asking', r.storeName],
+            ['Asking', r.storeId ? r.storeName : 'any store — keeper decides'],
             ['Going to', r.destination],
             ['What for', r.purpose],
             ['Needed by', r.needBy ? formatDate(r.needBy) : 'not stated'],
@@ -139,8 +139,13 @@ export function RequestClient({
         )}
       </Card>
 
-      {/* Each line against what the store actually holds, so the keeper is not
-          guessing and the requester can see why only part came. */}
+      {/* Each line against the stock behind it, so the keeper is not guessing and
+          the requester can see why only part came.
+
+          `available` is scoped to the asked store when the request names one, and
+          summed across every store when it does not — which is now the normal
+          case, since the engineer no longer picks. The wording has to follow, or
+          a total across nine stores reads as one store's shelf. */}
       <Card className="p-0 shadow-sm overflow-hidden">
         <p className="px-3 pt-3 pb-2 text-[11px] font-extrabold uppercase tracking-wider text-slate-400">
           {r.items.length} {r.items.length === 1 ? 'item' : 'items'} asked for
@@ -173,7 +178,9 @@ export function RequestClient({
                     </span>
                   )}
                   <span className={shortNow ? 'text-rose-700 font-semibold' : 'text-slate-500'}>
-                    store holds {formatQty(it.available)} {it.unit}
+                    {r.storeId
+                      ? `${r.storeName} holds ${formatQtyUnit(it.available, it.unit)}`
+                      : `${formatQtyUnit(it.available, it.unit)} in stock`}
                   </span>
                 </p>
                 {it.isReturnable && !it.waivedAt && (

@@ -125,9 +125,11 @@ export async function raiseRequest(input: RaiseInput): Promise<Raised> {
   return { ok: true, reqNo: header.req_no, id: header.id, waiting: needsIt }
 }
 
-/** What the store actually has, for the shortfall warning shown while typing.
- *  Deliberately advisory: asking for material a store has not got is how the
- *  store learns to order it. */
+/** What we actually hold, for the shortfall warning shown while typing.
+ *
+ *  Summed across every store unless a store is named — which none is, on a
+ *  request. Deliberately advisory: asking for material nobody has got is how
+ *  it gets ordered. */
 export async function checkStock(
   locationId: string | null,
   lines: Array<{ itemId: string; qty: number }>,
@@ -317,7 +319,8 @@ export async function cancelRequest(id: string): Promise<Result> {
   return { ok: true }
 }
 
-/** What one store holds, for the item picker's "In this store" tab.
+/** What is on a shelf, for the item picker's first tab — one store when one is
+ *  named, every store when none is.
  *
  *  Quantities only, no rates — the picker is shown to whoever is raising a
  *  request, and that includes roles the value-hiding rule covers. */

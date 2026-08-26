@@ -267,7 +267,7 @@ export async function getRequestDetail(
   const base = toRow(r as never, today)
   const lines = (r.wh_request_lines ?? []) as Array<Record<string, unknown>>
 
-  // What the asked store actually holds, so the keeper is not guessing.
+  // What is on a shelf behind each line, so the keeper is not guessing.
   const itemIds = lines.map(l => l.item_id as string)
   const stock = new Map<string, number>()
   if (itemIds.length > 0) {

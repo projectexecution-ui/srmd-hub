@@ -6,7 +6,7 @@ import { toast } from 'sonner'
 import { Card } from '@/components/ui/card'
 import { ItemPicker } from '@/components/warehouse/ItemPicker'
 import type { PickerItem } from '@/components/warehouse/ItemPicker'
-import { formatQty, formatINR } from '@/lib/warehouse/format'
+import { formatQty, formatQtyUnit, formatINR } from '@/lib/warehouse/format'
 import { raiseRequest, checkStock, storeStock, addCatalogueItem } from '../../request-actions'
 import { estimateValue, raiseBlocker, foldStock } from '@/lib/warehouse/requests'
 import type { ShortLine } from '@/lib/warehouse/requests'
@@ -229,16 +229,16 @@ export function NewRequestForm({
       {short.length > 0 && (
         <Card className="p-3 shadow-sm bg-amber-50 border-amber-200 space-y-1">
           <p className="text-[12.5px] font-bold text-amber-900 flex items-center gap-1.5">
-            <TriangleAlert className="h-4 w-4" /> This store has less than you asked for
+            <TriangleAlert className="h-4 w-4" /> Less in stock than you asked for
           </p>
           {short.map(s => (
             <p key={s.itemName} className="text-[12px] text-amber-900">
-              <b>{s.itemName}</b> — you want {formatQty(s.wanted)} {s.unit}, the store holds{' '}
-              {formatQty(s.available)} {s.unit}
+              <b>{s.itemName}</b> — you want {formatQty(s.wanted)} {s.unit},{' '}
+              {formatQtyUnit(s.available, s.unit)} in stock
             </p>
           ))}
           <p className="text-[11.5px] text-amber-800 pt-0.5">
-            You can still ask. A request for material a store is out of is how it gets ordered.
+            You can still ask. A request for material we are out of is how it gets ordered.
           </p>
         </Card>
       )}
