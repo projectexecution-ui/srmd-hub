@@ -12,6 +12,7 @@ import { moveRequest, cancelRequest, waiveReturn } from '../../request-actions'
 import { STATUS_TONE } from '@/lib/warehouse/requests'
 import { STAGE_LABEL } from '@/lib/warehouse/approval-matrix'
 import { returnSummary } from '@/lib/warehouse/cross-project'
+import { passLabel, requestClosed } from '@/lib/warehouse/requests'
 import type { RequestDetail } from '@/lib/warehouse/request-data'
 import {
   Loader2, Stamp, X, Info, PackageCheck, Ban, TriangleAlert, ArrowRight, Undo2,
@@ -193,6 +194,23 @@ export function RequestClient({
           })}
         </div>
       </Card>
+
+      {/* Fully issued but a pass is missing: the material has gone and the
+          paperwork has not. Aksha's rule — that is not closed. */}
+      {passLabel(r.issues) && (
+        <Card className="p-3 shadow-sm bg-amber-50 border-amber-200">
+          <p className="text-[13px] font-bold text-amber-900 flex items-center gap-1.5">
+            <TriangleAlert className="h-4 w-4" />
+            {requestClosed(r.status, r.issues)
+              ? 'Signed gate pass missing'
+              : `Not closed — ${passLabel(r.issues)}`}
+          </p>
+          <p className="text-[12px] text-amber-900 mt-1">
+            Open the handover below and attach a photograph of the signed pass. Until then this
+            request stays open, however much material has gone out.
+          </p>
+        </Card>
+      )}
 
       {r.issues.length > 0 && (
         <Card className="p-3 shadow-sm">

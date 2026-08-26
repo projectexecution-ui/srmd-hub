@@ -3,9 +3,9 @@ import {
   estimateValue, raiseBlocker, shortfalls, issuableBlocker,
   outstanding, statusAfterIssue, fulfilledPct, isOpen, ageDays, isStale,
   STALE_REQUEST_DAYS, STATUS_LABEL,
-  foldStock,
+  foldStock, passPending, requestClosed, passLabel,
 } from './requests'
-import type { RaiseInput, RequestState, RequestStatus } from './requests'
+import type { RaiseInput, RequestState, RequestStatus, Handover } from './requests'
 
 // ===========================================================================
 // What a request is worth
@@ -206,4 +206,48 @@ describe('stock across every store, now that the engineer picks none', () => {
 
 
 
+})
+
+describe('the signed gate pass', () => {
+  const h = (over: Partial<Handover> = {}): Handover => ({
+    entryNo: 'Out: 22Aug26/007', voided: false, passPages: 0, ...over,
+  })
+
+  it('owes a pass on a handover that has none', () => {
+    expect(passPending(h())).toBe(true)
+  })
+
+  it('is satisfied by one page', () => {
+    expect(passPending(h({ passPages: 1 }))).toBe(false)
+  })
+
+  it('never chases a voided handover — it did not happen', () => {
+    expect(passPending(h({ voided: true }))).toBe(false)
+  })
+
+  it('does not close a fully issued request while a pass is missing', () => {
+    // The paperwork is part of the handover, not an optional extra.
+    expect(requestClosed('issued', [h()])).toBe(false)
+    expect(requestClosed('issued', [h({ passPages: 2 })])).toBe(true)
+  })
+
+  it('does not close a part-issued request even with every pass in', () => {
+    expect(requestClosed('part_issued', [h({ passPages: 1 })])).toBe(false)
+  })
+
+  it('closes a fully issued request whose only missing pass was voided', () => {
+    expect(requestClosed('issued', [h({ passPages: 1 }), h({ voided: true })])).toBe(true)
+  })
+
+  it('names the one entry that is short, or counts them when several are', () => {
+    expect(passLabel([h({ entryNo: 'Out: 22Aug26/007' })]))
+      .toBe('Out: 22Aug26/007 has no signed gate pass attached')
+    expect(passLabel([h(), h({ entryNo: 'Out: 22Aug26/008' })]))
+      .toBe('2 handovers have no signed gate pass attached')
+  })
+
+  it('says nothing when every pass is in', () => {
+    expect(passLabel([h({ passPages: 1 })])).toBeNull()
+    expect(passLabel([])).toBeNull()
+  })
 })

@@ -4,9 +4,10 @@ import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
 import { Card } from '@/components/ui/card'
-import { formatDate } from '@/lib/utils'
+import { formatDate, formatDateTime } from '@/lib/utils'
 import { formatQty } from '@/lib/warehouse/format'
-import { voidGateEntry, recordReturn } from '../../../admin-actions'
+import { voidGateEntry, recordReturn, attachGatePass } from '../../../admin-actions'
+import { createClient } from '@/lib/supabase/client'
 import { VOID_REASON_MIN } from '@/lib/warehouse/corrections'
 import type { EntryDetail } from '@/lib/warehouse/admin-data'
 import { Loader2, Undo2, PackageCheck, Info, ImageIcon } from 'lucide-react'
@@ -87,6 +88,12 @@ export function EntryClient({
       </Card>
 
       {entry.photoUrls.length > 0 && <BillPhotos urls={entry.photoUrls} />}
+
+      {/* The signed pass, above the void panel: attaching it is the ordinary
+          next step after a handover, voiding is the exception. */}
+      {entry.kind === 'out' && !entry.voided && (
+        <GatePassPanel entry={entry} />
+      )}
 
       <VoidPanel entry={entry} mayVoid={mayVoid} whyNotVoid={whyNotVoid} />
     </div>
@@ -277,6 +284,104 @@ function VoidPanel({
           </div>
         </div>
       )}
+    </Card>
+  )
+}
+
+/** The signed gate pass.
+ *
+ *  Aksha's rule: the physical pass, signed at the barrier, is what closes the
+ *  engineer's request. Deliberately attached AFTER the entry — the pass is signed
+ *  as the material changes hands, so demanding it before the entry could be saved
+ *  would leave stock wrong for as long as the paperwork took.
+ *
+ *  Uploaded straight from the browser to storage, like the bill on Gate IN: a
+ *  photograph over a site connection is not something to hold a server action
+ *  open for. */
+function GatePassPanel({ entry }: { entry: EntryDetail }) {
+  const router = useRouter()
+  const [busy, start] = useTransition()
+  const [uploading, setUploading] = useState(false)
+  const attached = entry.gatePassUrls.length > 0
+
+  async function pick(files: FileList | null) {
+    if (!files || files.length === 0) return
+    setUploading(true)
+    const supabase = createClient()
+    const paths: string[] = []
+    try {
+      for (const [i, file] of Array.from(files).entries()) {
+        const ext = file.type === 'application/pdf' ? 'pdf' : 'jpg'
+        const path = `${entry.day}/${crypto.randomUUID()}-p${i + 1}.${ext}`
+        const { error } = await supabase.storage.from('wh-gate-passes')
+          .upload(path, file, { cacheControl: '3600', contentType: file.type || 'image/jpeg' })
+        if (error) {
+          toast.error(`Could not upload page ${i + 1}: ${error.message}`)
+          setUploading(false)
+          return
+        }
+        paths.push(path)
+      }
+    } catch (e) {
+      setUploading(false)
+      toast.error(e instanceof Error ? e.message : 'Could not upload the pass')
+      return
+    }
+    setUploading(false)
+
+    start(async () => {
+      const res = await attachGatePass(entry.id, paths)
+      if (!res.ok) { toast.error(res.error ?? 'Could not attach it.', { duration: 10000 }); return }
+      toast.success('Signed gate pass attached')
+      router.refresh()
+    })
+  }
+
+  return (
+    <Card className={`p-3 shadow-sm ${attached ? '' : 'bg-amber-50 border-amber-200'}`}>
+      <p className={`text-[11px] font-extrabold uppercase tracking-wider mb-1.5 ${
+        attached ? 'text-slate-400' : 'text-amber-800'}`}>
+        Signed gate pass
+      </p>
+
+      {attached ? (
+        <>
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+            {entry.gatePassUrls.map((u, i) => (
+              <a key={u} href={u} target="_blank" rel="noreferrer"
+                className="rounded-xl border-2 border-slate-200 p-3 min-h-[64px] flex items-center gap-2
+                           text-[12px] font-semibold text-slate-600 hover:border-emerald-300 hover:text-emerald-700">
+                <ImageIcon className="h-4 w-4 flex-shrink-0" /> Page {i + 1}
+              </a>
+            ))}
+          </div>
+          <p className="text-[11px] text-slate-500 mt-2">
+            Attached{entry.gatePassBy ? ` by ${entry.gatePassBy}` : ''}
+            {entry.gatePassAt ? `, ${formatDateTime(entry.gatePassAt)}` : ''}.
+            {entry.requestId ? ' The request it answers can now be closed.' : ''}
+          </p>
+        </>
+      ) : (
+        <p className="text-[12.5px] text-amber-900">
+          <b>Not attached yet.</b> The material has gone out, but until the signed pass is
+          photographed here
+          {entry.requestId
+            ? ' the request it answers stays open.'
+            : ' this handover has no independent record.'}
+        </p>
+      )}
+
+      <label className="mt-2.5 inline-flex items-center gap-1.5 rounded-lg border-2 border-slate-200 bg-white
+                        px-3 py-2 min-h-[44px] text-[12.5px] font-bold text-slate-600 cursor-pointer
+                        hover:border-emerald-300 hover:text-emerald-700 w-fit">
+        {uploading || busy
+          ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+          : <ImageIcon className="h-3.5 w-3.5" />}
+        {attached ? 'Add another page' : 'Attach signed gate pass'}
+        <input type="file" accept="image/*,application/pdf" multiple capture="environment"
+          className="hidden" disabled={uploading || busy}
+          onChange={e => { void pick(e.target.files); e.target.value = '' }} />
+      </label>
     </Card>
   )
 }

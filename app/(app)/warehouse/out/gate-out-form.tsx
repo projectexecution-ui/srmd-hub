@@ -21,7 +21,7 @@ const blank = (): Row => ({ key: ++seq, itemId: '', qty: 0, rate: null })
 
 export function GateOutForm({
   sites, postableSpotIds, scopingOff, stock, projects, receivers, entities, vendorNames,
-  canEdit, nextOut, nextMove,
+  canEdit, nextOut, nextMove, prefill,
 }: {
   sites: WhSite[]; postableSpotIds: string[]; scopingOff: boolean; stock: StockRow[]
   projects: Array<{ id: string; name: string }>
@@ -31,22 +31,41 @@ export function GateOutForm({
    *  matched to its IN by picking the same name rather than retyping it. */
   vendorNames: string[]
   canEdit: boolean; nextOut: string; nextMove: string
+  /** The request this handover answers, if the keeper came from one. Its
+   *  outstanding lines become the checklist; he still chooses the store. */
+  prefill: {
+    id: string
+    reqNo: string
+    projectId: string | null
+    engineerId: string | null
+    requestedBy: string | null
+    purpose: string
+    toLocationId: string | null
+    anyReturnable: boolean
+    lines: Array<{ itemId: string; itemName: string; unit: string; outstanding: number }>
+  } | null
 }) {
   const router = useRouter()
   const [pending, start] = useTransition()
 
-  const [destType, setDestType] = useState<'site' | 'store' | 'vendor'>('site')
+  // Everything the request already answered is seeded; the store is the one
+  // thing it deliberately does NOT answer, because that is the keeper's call.
+  const [destType, setDestType] = useState<'site' | 'store' | 'vendor'>(
+    prefill?.toLocationId ? 'store' : 'site')
   const [fromId, setFromId] = useState('')
-  const [toId, setToId] = useState('')
+  const [toId, setToId] = useState(prefill?.toLocationId ?? '')
   const [party, setParty] = useState('')
-  const [projectId, setProjectId] = useState('')
+  const [projectId, setProjectId] = useState(prefill?.projectId ?? '')
   const [entity, setEntity] = useState('')
-  const [engineerId, setEngineerId] = useState('')
-  const [returnable, setReturnable] = useState(false)
+  const [engineerId, setEngineerId] = useState(prefill?.engineerId ?? '')
+  const [returnable, setReturnable] = useState(prefill?.anyReturnable ?? false)
   const [returnDue, setReturnDue] = useState('')
   const [vehicleNo, setVehicleNo] = useState('')
-  const [remarks, setRemarks] = useState('')
-  const [rows, setRows] = useState<Row[]>([blank()])
+  const [remarks, setRemarks] = useState(prefill ? `Against ${prefill.reqNo}` : '')
+  const [rows, setRows] = useState<Row[]>(
+    prefill && prefill.lines.length > 0
+      ? prefill.lines.map(l => ({ key: ++seq, itemId: l.itemId, qty: l.outstanding, rate: null }))
+      : [blank()])
 
   const postable = new Set(postableSpotIds)
   const here = useMemo(
@@ -68,6 +87,7 @@ export function GateOutForm({
         returnDueDate: returnDue || null,
         vehicleNo: vehicleNo || null,
         remarks: remarks || null,
+        requestId: prefill?.id ?? null,
         lines: rows.map(({ key: _k, ...r }) => r),
       })
       if (!res.ok) { toast.error(res.error); return }

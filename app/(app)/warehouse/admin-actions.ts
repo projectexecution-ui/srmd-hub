@@ -603,3 +603,56 @@ export async function findItems(q: string) {
   const { rows } = await searchItems(q, { limit: 12 })
   return rows
 }
+
+/** Attach the signed gate pass that closes a handover.
+ *
+ *  Aksha's rule: the physical pass, signed at the barrier, is mandatory before
+ *  the engineer's request counts as closed. It is attached AFTER the fact on
+ *  purpose — the pass is signed when the material changes hands, so demanding it
+ *  before the entry could be saved would leave stock wrong in the meantime.
+ *
+ *  The upload itself happens in the browser (straight to storage, so a patchy
+ *  site connection is not holding a server action open); this records the paths
+ *  and stamps who attached them. */
+export async function attachGatePass(
+  gateOutId: string,
+  urls: string[],
+): Promise<Result> {
+  const denied = await gate('edit')
+  if (denied) return { ok: false, error: denied }
+
+  const pages = urls.filter(u => u.trim())
+  if (pages.length === 0) {
+    return { ok: false, error: 'Attach at least one photograph of the signed pass.' }
+  }
+
+  const sb = await createClient()
+  const me = await getMyUser()
+  if (!me?.id) return { ok: false, error: 'Sign in again — we could not tell who you are.' }
+
+  const { data: entry, error: eErr } = await sb.from('wh_gate_out')
+    .select('id, entry_no, deleted_at, gate_pass_urls, request_id')
+    .eq('id', gateOutId).maybeSingle()
+  if (eErr) return { ok: false, error: eErr.message }
+  if (!entry) return { ok: false, error: 'That entry no longer exists.' }
+  if (entry.deleted_at) {
+    return {
+      ok: false,
+      error: `${entry.entry_no} was voided, so it never happened — there is no handover to sign for.`,
+    }
+  }
+
+  // Adding pages to an existing pass is fine; a two-page pass photographed in
+  // two goes is the normal case.
+  const merged = [...(entry.gate_pass_urls ?? []), ...pages]
+  const { error: uErr } = await sb.from('wh_gate_out').update({
+    gate_pass_urls: merged,
+    gate_pass_at: new Date().toISOString(),
+    gate_pass_by: me.id,
+  }).eq('id', gateOutId)
+  if (uErr) return { ok: false, error: uErr.message }
+
+  refresh('/warehouse/entries', `/warehouse/entries/out/${gateOutId}`)
+  if (entry.request_id) refresh(`/warehouse/requests/${entry.request_id}`)
+  return { ok: true }
+}

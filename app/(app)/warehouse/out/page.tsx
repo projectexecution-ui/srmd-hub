@@ -10,13 +10,23 @@ import {
 } from '@/lib/warehouse/data'
 import { formatDate } from '@/lib/utils'
 import { formatQty } from '@/lib/warehouse/format'
+import { getRequestDetail } from '@/lib/warehouse/request-data'
 import { GateOutForm } from './gate-out-form'
 import { ChevronLeft } from 'lucide-react'
 
 export const dynamic = 'force-dynamic'
 
-export default async function GateOutPage() {
+export default async function GateOutPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ req?: string }>
+}) {
   await requirePermission('warehouse', 'view')
+  // "Issue against this request" arrives here. The link existed and this page
+  // ignored it, so the keeper landed on a blank form, retyped every line by
+  // hand, and the entry was never tied back — which meant a request could never
+  // move past approved.
+  const { req } = await searchParams
   const perms = await getMyPermissions()
   const canEdit = can(perms, 'warehouse', 'edit')
   const sb = await createClient()
@@ -34,6 +44,31 @@ export default async function GateOutPage() {
     peekNextEntryNo('move'),
   ])
 
+  // The request becomes the keeper's checklist: its outstanding lines, prefilled.
+  const { request: asked } = req ? await getRequestDetail(req) : { request: null }
+  const prefill = asked && (asked.status === 'approved' || asked.status === 'part_issued')
+    ? {
+        id: asked.id,
+        reqNo: asked.reqNo,
+        projectId: asked.projectId,
+        engineerId: asked.requestedById,
+        requestedBy: asked.requestedBy,
+        purpose: asked.purpose,
+        toLocationId: asked.toLocationId,
+        anyReturnable: asked.items.some(i => i.isReturnable && !i.waivedAt),
+        lines: asked.items
+          .filter(i => i.outstanding > 0)
+          .map(i => ({ itemId: i.itemId, itemName: i.itemName, unit: i.unit, outstanding: i.outstanding })),
+      }
+    : null
+  // Asked for but already finished, rejected or withdrawn: say so rather than
+  // silently showing a blank form as though nothing had been requested.
+  const prefillNote = req && !prefill
+    ? asked
+      ? `${asked.reqNo} is ${asked.status.replace('_', ' ')}, so there is nothing left to issue against it.`
+      : 'That request could not be found. This is a blank OUT entry.'
+    : null
+
   return (
     <div className="p-4 md:p-6 max-w-6xl mx-auto space-y-4">
       <Link href="/warehouse" className="inline-flex items-center gap-1 text-xs font-semibold text-slate-500 hover:text-slate-700">
@@ -43,6 +78,12 @@ export default async function GateOutPage() {
         title="OUT of the store"
         subtitle="One screen for all three — material going to a site to be used, stock moving to another store, or a vendor taking his own material back. The first question decides which."
       />
+
+      {prefillNote && (
+        <Card className="p-3 shadow-sm text-[12.5px] text-amber-900 bg-amber-50 border-amber-200">
+          {prefillNote}
+        </Card>
+      )}
 
       <div className="grid lg:grid-cols-[minmax(0,400px)_1fr] gap-4 items-start">
         <GateOutForm
@@ -57,6 +98,7 @@ export default async function GateOutPage() {
           canEdit={canEdit}
           nextOut={nextOut}
           nextMove={nextMove}
+          prefill={prefill}
         />
 
         <div className="space-y-3 min-w-0">

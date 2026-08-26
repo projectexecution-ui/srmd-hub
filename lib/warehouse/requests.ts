@@ -222,3 +222,50 @@ export function foldStock(
   return out
 }
 
+
+// ===========================================================================
+// The signed gate pass
+// ===========================================================================
+
+/** One handover recorded against a request. */
+export type Handover = {
+  entryNo: string
+  /** Voided entries never happened, so they are neither owed a pass nor
+   *  counted as one. */
+  voided: boolean
+  /** How many pages of signed pass are attached. Zero means none. */
+  passPages: number
+}
+
+/** Is this handover still owed its signed pass? */
+export function passPending(h: Handover): boolean {
+  return !h.voided && h.passPages === 0
+}
+
+/** The handovers still owed a signed pass, in entry order. */
+export function passesPending(hs: Handover[]): Handover[] {
+  return hs.filter(passPending)
+}
+
+/** Is a request finished?
+ *
+ *  Two conditions, and the second is the one Aksha added: everything asked for
+ *  has gone out, AND every handover carries its signed gate pass. A request that
+ *  is fully issued but missing a pass is deliberately NOT closed — the paperwork
+ *  is part of the handover, not an optional extra afterwards. */
+export function requestClosed(
+  status: RequestStatus,
+  handovers: Handover[],
+): boolean {
+  if (status !== 'issued') return false
+  return passesPending(handovers).length === 0
+}
+
+/** What to show against a request that has been issued, in one line. */
+export function passLabel(handovers: Handover[]): string | null {
+  const owed = passesPending(handovers)
+  if (owed.length === 0) return null
+  return owed.length === 1
+    ? `${owed[0].entryNo} has no signed gate pass attached`
+    : `${owed.length} handovers have no signed gate pass attached`
+}

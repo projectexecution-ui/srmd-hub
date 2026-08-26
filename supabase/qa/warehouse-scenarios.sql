@@ -593,3 +593,59 @@ begin
   end if;
   raise exception 'ROLLBACK_ON_PURPOSE: S64-S67 passed (in_app=%, email=%)', v_in_app, v_email;
 end $$;
+
+-- ===========================================================================
+-- S68-S71 · The signed gate pass  (2026-08-22)
+--
+-- Ends by raising ROLLBACK_ON_PURPOSE; seeing that message IS the pass.
+-- NOTE a site issue must name a project — wh_gate_out_shape enforces that, and
+-- an earlier draft of this scenario tripped over exactly that.
+-- ===========================================================================
+do $$
+declare
+  v_store uuid; v_me uuid; v_proj uuid; v_no text; v_out uuid;
+  ok_needs_who boolean := false; ok_needs_pages boolean := false;
+  ok_proper boolean := false; ok_bucket boolean := false;
+begin
+  select id into v_store from wh_locations where name = 'Yunus Land Store' and deleted_at is null;
+  select id into v_me    from profiles where full_name = 'Akshay Atmarpit' limit 1;
+  select id into v_proj  from projects where name = 'NGH A';
+
+  select fn_wh_next_no('out') into v_no;
+  insert into wh_gate_out (entry_no, entry_date, dest_type, from_location_id, project_id,
+                           is_returnable, created_by, remarks)
+  values (v_no, current_date, 'site', v_store, v_proj, true, v_me, 'ZZTEST gate pass scenario')
+  returning id into v_out;
+
+  -- S68 · pages attached but nobody named is refused
+  begin
+    update wh_gate_out set gate_pass_urls = array['a/b.jpg'] where id = v_out;
+  exception when check_violation then ok_needs_who := true;
+  end;
+
+  -- S69 · a stamp with no pages is refused
+  begin
+    update wh_gate_out set gate_pass_at = now(), gate_pass_by = v_me where id = v_out;
+  exception when check_violation then ok_needs_pages := true;
+  end;
+
+  -- S70 · pages + who + when together is accepted
+  update wh_gate_out
+     set gate_pass_urls = array['2026-08-22/x-p1.jpg'], gate_pass_at = now(), gate_pass_by = v_me
+   where id = v_out;
+  ok_proper := true;
+
+  -- S71 · the bucket is private AND governed by the module's own permission fn,
+  -- unlike V1 inv-gate-passes which checks only the bucket name
+  select exists(select 1 from storage.buckets where id = 'wh-gate-passes' and public = false)
+     and exists(select 1 from pg_policy p where p.polrelid = 'storage.objects'::regclass
+                and p.polname = 'wh_gate_pass_obj_insert'
+                and pg_get_expr(p.polwithcheck, p.polrelid) ilike '%fn_wh_can%')
+    into ok_bucket;
+
+  if not (ok_needs_who and ok_needs_pages and ok_proper and ok_bucket) then
+    raise exception 'SCENARIO FAILED: who=% pages=% proper=% bucket=%',
+      ok_needs_who, ok_needs_pages, ok_proper, ok_bucket;
+  end if;
+  raise exception 'ROLLBACK_ON_PURPOSE: S68-S71 all passed';
+end $$;

@@ -154,6 +154,28 @@ export type EntryDetail = {
   }>
   /** OUT only: can material be booked back in against this entry? */
   returnable: boolean
+  /** OUT only: the signed gate pass. Empty means the handover happened but
+   *  nobody has attached the pass, so the request it answers is not closed. */
+  gatePassUrls: string[]
+  gatePassBy: string | null
+  gatePassAt: string | null
+  /** The request this handover answers, if any — for linking back. */
+  requestId: string | null
+}
+
+/** Signed, time-limited URLs for private-bucket paths.
+ *
+ *  Both buckets are private, so a stored path is NOT a usable href — rendering
+ *  one produces a link that cannot resolve. An hour is long enough to look at a
+ *  bill or a gate pass and short enough that a copied link goes stale. */
+async function signPaths(bucket: string, paths: string[]): Promise<string[]> {
+  if (paths.length === 0) return []
+  const sb = await createClient()
+  const { data, error } = await sb.storage.from(bucket).createSignedUrls(paths, 3600)
+  if (error) return []
+  return (data ?? [])
+    .map(d => d.signedUrl)
+    .filter((u): u is string => typeof u === 'string' && u.length > 0)
 }
 
 export async function getEntryDetail(
@@ -193,7 +215,7 @@ export async function getEntryDetail(
         voidedBy: personName(e.voider),
         createdBy: e.created_by, createdByName: personName(e.creator),
         facts, storeName: one(e.wh_locations)?.name ?? '—',
-        photoUrls: e.photo_urls ?? [],
+        photoUrls: await signPaths('wh-bills', e.photo_urls ?? []),
         lines: (e.wh_gate_in_lines ?? []).map(l => ({
           lineId: l.id,
           itemName: one(l.wh_items)?.name ?? '—',
@@ -203,6 +225,7 @@ export async function getEntryDetail(
           short: Math.max(0, Number(l.short_qty ?? 0)),
         })),
         returnable: false,
+        gatePassUrls: [], gatePassBy: null, gatePassAt: null, requestId: null,
       },
     }
   }
@@ -210,6 +233,8 @@ export async function getEntryDetail(
   const { data: e, error } = await sb.from('wh_gate_out')
     .select(`id, entry_no, entry_date, dest_type, party, entity, vehicle_no, remarks,
              is_returnable, return_due_date, confirmed_at, deleted_at, void_reason, created_by,
+             gate_pass_urls, gate_pass_at, request_id,
+             passer:profiles!wh_gate_out_gate_pass_by_fkey(full_name, email),
              from:wh_locations!wh_gate_out_from_location_id_fkey(name),
              to:wh_locations!wh_gate_out_to_location_id_fkey(name),
              projects(name),
@@ -239,6 +264,10 @@ export async function getEntryDetail(
       voidedBy: personName(e.voider),
       createdBy: e.created_by, createdByName: personName(e.creator),
       facts, storeName: one(e.from)?.name ?? '—', photoUrls: [],
+      gatePassUrls: await signPaths('wh-gate-passes', e.gate_pass_urls ?? []),
+      gatePassBy: personName(e.passer),
+      gatePassAt: (e.gate_pass_at as string | null) ?? null,
+      requestId: (e.request_id as string | null) ?? null,
       lines: (e.wh_gate_out_lines ?? []).map(l => ({
         lineId: l.id,
         itemName: one(l.wh_items)?.name ?? '—',

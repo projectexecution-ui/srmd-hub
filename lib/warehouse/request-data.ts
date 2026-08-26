@@ -42,6 +42,7 @@ export type RequestRow = {
  *  400'd: the request detail page could not open at all. Each caller adds the
  *  lines it needs, exactly once. */
 const SELECT_BASE = `id, req_no, request_date, status, purpose, need_by, requested_by,
+  project_id, to_location_id,
   rule_at_raise, est_value, stages_needed, stages_done, reject_reason,
   store:wh_locations!wh_requests_from_location_id_fkey(id, name, project_id, projects(name)),
   dest:wh_locations!wh_requests_to_location_id_fkey(name),
@@ -202,10 +203,16 @@ export type RequestDetail = RequestRow & {
   /** The project whose stock the asked store holds; null when it is shared.
    *  Together with the request’s own project this is what makes it a
    *  cross-project ask — see lib/warehouse/cross-project.ts. */
+  /** Raw ids, for prefilling a Gate OUT rather than just displaying a name. */
+  projectId: string | null
+  toLocationId: string | null
   storeProjectId: string | null
   storeProjectName: string | null
-  /** Issues recorded against this request. */
-  issues: Array<{ id: string; entryNo: string; day: string; voided: boolean }>
+  /** Issues recorded against this request, each with whether its signed gate
+   *  pass is attached. A request is not closed until every one of them is. */
+  issues: Array<{
+    id: string; entryNo: string; day: string; voided: boolean; passPages: number
+  }>
 }
 
 /** The embedded profile of whoever released a return, however PostgREST
@@ -255,7 +262,7 @@ export async function getRequestDetail(
   }
 
   const { data: outs } = await sb.from('wh_gate_out')
-    .select('id, entry_no, entry_date, deleted_at')
+    .select('id, entry_no, entry_date, deleted_at, gate_pass_urls')
     .eq('request_id', id)
     .order('entry_date', { ascending: false })
 
@@ -300,10 +307,13 @@ export async function getRequestDetail(
           waivedNote: (l.return_waived_note as string | null) ?? null,
         }
       }),
+      projectId: (r.project_id as string | null) ?? null,
+      toLocationId: (r.to_location_id as string | null) ?? null,
       storeProjectId: (one(r.store)?.project_id as string | null) ?? null,
       storeProjectName: one(one(r.store)?.projects)?.name ?? null,
       issues: (outs ?? []).map(o => ({
         id: o.id, entryNo: o.entry_no, day: o.entry_date, voided: o.deleted_at != null,
+        passPages: (o.gate_pass_urls ?? []).length,
       })),
     },
   }
