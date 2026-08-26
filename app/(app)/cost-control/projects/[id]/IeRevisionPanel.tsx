@@ -34,6 +34,7 @@ export function IeRevisionPanel({
   const [busy, start] = useTransition()
   const [err, setErr] = useState<string | null>(null)
   const [uploading, setUploading] = useState(false)
+  const [showLocked, setShowLocked] = useState(false)
 
   const wrap = (fn: () => Promise<{ ok: boolean; error?: string }>) => {
     setErr(null)
@@ -93,6 +94,46 @@ export function IeRevisionPanel({
     </span>
   )
 
+  // LOCKED is the resting state — nothing is happening and nobody is waiting.
+  // It was taking a full-width card, an explanatory sentence and a large blue
+  // button for an action taken maybe once a project, right at the top of the
+  // screen. Collapsed to a lock chip; one tap gives back the sentence and the
+  // action. Every other state IS in flight, so those stay open.
+  if (locked) {
+    return (
+      <div>
+        <button
+          type="button"
+          onClick={() => setShowLocked(v => !v)}
+          aria-expanded={showLocked}
+          title="The Internal Estimate is a fixed baseline; changing it needs Trustee approval"
+          className="inline-flex items-center gap-1.5 h-8 px-2.5 rounded-full border border-gray-200 bg-white text-[11px] font-bold text-gray-600 hover:bg-gray-50"
+        >
+          <Lock className="h-3 w-3" /> Estimate locked
+          <span className="text-[10px] font-normal opacity-50">{showLocked ? '×' : '›'}</span>
+        </button>
+        {showLocked && (
+          <div className="mt-2 rounded-lg border border-gray-200 bg-white px-3 py-2.5">
+            <p className="text-xs text-gray-500">
+              The estimate is a fixed baseline; changing it needs Trustee approval.
+            </p>
+            {canRequest && (
+              <button
+                onClick={() => wrap(() => requestIeReopen(projectId, null))}
+                disabled={busy}
+                className="mt-2 inline-flex items-center gap-1.5 min-h-[38px] px-3 rounded-md bg-blue-600 text-white text-xs font-semibold hover:bg-blue-700 disabled:opacity-50"
+              >
+                {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RotateCcw className="h-3.5 w-3.5" />}
+                Request to revise Internal Estimate
+              </button>
+            )}
+            {err && <p className="mt-1.5 text-xs text-rose-700">{err}</p>}
+          </div>
+        )}
+      </div>
+    )
+  }
+
   return (
     <div className="rounded-lg border border-gray-200 bg-white px-4 py-3 space-y-2">
       <div className="flex items-center justify-between gap-3 flex-wrap">
@@ -102,17 +143,6 @@ export function IeRevisionPanel({
         </div>
         {busy && <Loader2 className="h-4 w-4 animate-spin text-gray-400" />}
       </div>
-
-      {/* LOCKED → Atm/PH can request a reopen */}
-      {locked && canRequest && (
-        <button
-          onClick={() => wrap(() => requestIeReopen(projectId, null))}
-          disabled={busy}
-          className="inline-flex items-center gap-1.5 h-8 px-3 rounded-md bg-blue-600 text-white text-xs font-semibold hover:bg-blue-700 disabled:opacity-50"
-        >
-          <RotateCcw className="h-3.5 w-3.5" /> Request to revise Internal Estimate
-        </button>
-      )}
 
       {/* REOPEN REQUESTED → Trustee approves / denies */}
       {lockState === 'reopen_requested' && (

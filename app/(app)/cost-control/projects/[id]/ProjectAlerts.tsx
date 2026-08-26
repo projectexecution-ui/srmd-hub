@@ -42,7 +42,10 @@ export function ProjectAlerts({
   over: OverBudgetAlert | null
   completion: CompletionAlert | null
 }) {
-  const [open, setOpen] = useState<Key | null>(null)
+  // Approvals open by default: they are the only one of the three that is
+  // waiting on a person. Over-budget and ready-to-close are standing facts —
+  // worth knowing, not worth opening every time you land on the page.
+  const [open, setOpen] = useState<Key | null>(pending ? 'pending' : null)
 
   const chips: { key: Key; tone: string; icon: React.ReactNode; label: string }[] = []
   if (pending) {
