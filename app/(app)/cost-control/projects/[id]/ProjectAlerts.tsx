@@ -15,12 +15,26 @@ import { useState } from 'react'
 import Link from 'next/link'
 import { Flame, TrendingUp, CheckCircle2, ArrowRight, X } from 'lucide-react'
 
+export interface PendingSheet {
+  id: string
+  /** "10 MGPS › 1004 BHP" */
+  label: string
+  amountLabel: string
+  /** "With Atm Head" */
+  stageLabel: string
+  /** Days since it was submitted, or null if never submitted. */
+  ageDays: number | null
+  href: string
+}
 export interface PendingAlert {
   count: number
   amountLabel: string | null
   href: string
   thumbruleCount: number
   thumbruleHref: string
+  /** The sheets themselves, so he can step straight into one from here
+   *  instead of being sent to a list page to find it again. */
+  sheets: PendingSheet[]
 }
 export interface OverBudgetAlert {
   lines: { label: string; amountLabel: string }[]
@@ -114,16 +128,49 @@ export function ProjectAlerts({
                 {pending.count} working sheet{pending.count === 1 ? '' : 's'} awaiting approval
                 {pending.amountLabel && <span className="font-normal"> · {pending.amountLabel} yet to be released</span>}
               </p>
-              <div className="mt-2 flex flex-wrap gap-2">
-                <Link href={pending.href} className="inline-flex items-center gap-1 min-h-[36px] px-3 rounded-lg bg-amber-600 text-white text-[12px] font-semibold">
-                  Review now <ArrowRight className="h-3.5 w-3.5" />
-                </Link>
-                {pending.thumbruleCount > 0 && (
-                  <Link href={pending.thumbruleHref} className="inline-flex items-center min-h-[36px] px-3 rounded-lg border border-amber-300 bg-white text-[12px] font-semibold text-amber-800">
-                    Bulk approve {pending.thumbruleCount} Thumbrule
-                  </Link>
-                )}
-              </div>
+
+              {/* The sheets themselves. Naming them here and linking each one
+                  straight to its voucher saves a hop through a list page where
+                  he would have to find the same row again. */}
+              {pending.sheets.length > 0 && (
+                <ul className="mt-2 divide-y divide-amber-200/70 rounded-lg border border-amber-200 bg-white overflow-hidden">
+                  {pending.sheets.map(s => (
+                    <li key={s.id}>
+                      <Link
+                        href={s.href}
+                        className="flex items-center gap-3 px-3 py-2.5 min-h-[52px] hover:bg-amber-50/60 active:bg-amber-100/60"
+                      >
+                        <span className="min-w-0 flex-1">
+                          <span className="block text-[12.5px] font-semibold text-gray-900">{s.label}</span>
+                          <span className="block text-[11px] text-gray-500">
+                            {s.stageLabel}
+                            {s.ageDays != null && <> · waiting {s.ageDays === 0 ? 'today' : `${s.ageDays}d`}</>}
+                          </span>
+                        </span>
+                        <span className="flex-shrink-0 text-right">
+                          <span className="block text-[12.5px] font-bold tabular-nums text-gray-900">{s.amountLabel}</span>
+                        </span>
+                        <ArrowRight className="h-4 w-4 flex-shrink-0 text-amber-600" />
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+              )}
+
+              {(pending.count > pending.sheets.length || pending.thumbruleCount > 0) && (
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {pending.count > pending.sheets.length && (
+                    <Link href={pending.href} className="inline-flex items-center gap-1 min-h-[36px] px-3 rounded-lg bg-amber-600 text-white text-[12px] font-semibold">
+                      See all {pending.count} <ArrowRight className="h-3.5 w-3.5" />
+                    </Link>
+                  )}
+                  {pending.thumbruleCount > 0 && (
+                    <Link href={pending.thumbruleHref} className="inline-flex items-center min-h-[36px] px-3 rounded-lg border border-amber-300 bg-white text-[12px] font-semibold text-amber-800">
+                      Bulk approve {pending.thumbruleCount} Thumbrule
+                    </Link>
+                  )}
+                </div>
+              )}
             </>
           )}
 

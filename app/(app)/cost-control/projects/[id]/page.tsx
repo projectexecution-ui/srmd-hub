@@ -9,7 +9,7 @@ import { PageHeader } from '@/components/PageHeader'
 import { getModuleLabels, labelFor } from '@/lib/module-labels'
 import { SetupProgressBanner } from '@/components/ProjectSetupWizard/SetupProgressBanner'
 import { Plus, Flame, Info, Settings, Download, Ruler, ArrowRight } from 'lucide-react'
-import { formatINR } from '@/lib/utils'
+import { formatINR, istCalendarDaysAgo } from '@/lib/utils'
 import { getCcSettings } from '@/lib/cost-control/settings'
 import { computeMoneyRollup, type RollupWSRow, type RollupVersionRow, type RollupBudgetLine } from '@/lib/cost-control/project-rollup'
 import { sortDisciplines } from '@/lib/cost-control/discipline-order'
@@ -52,6 +52,7 @@ interface WSAgg {
   entry_mode: 'line_items' | 'excel_summary' | 'thumbrule' | null
   summary_notes: string | null
   in4_entered_at: string | null
+  submitted_at: string | null
 }
 
 export default async function CostControlProjectDetailPage(
@@ -168,7 +169,7 @@ export default async function CostControlProjectDetailPage(
       .eq('project_id', id),
     supabase
       .from('cc_working_sheets')
-      .select('id, discipline_id, sub_skill_id, status, total_amount, approved_for_erp_amt, deadline_date, entry_mode, summary_notes, in4_entered_at')
+      .select('id, discipline_id, sub_skill_id, status, total_amount, approved_for_erp_amt, deadline_date, entry_mode, summary_notes, in4_entered_at, submitted_at')
       .eq('project_id', id)
       .is('archived_at', null),
     supabase
@@ -415,6 +416,31 @@ export default async function CostControlProjectDetailPage(
   const readyToCloseSavings = readyToClose.reduce(
     (sum, s) => sum + savingsOnCompletion(blMap.get(`${s.discipline_id}::${s.id}`)), 0)
 
+  // The pending sheets themselves, for the alert strip: he asked to open them
+  // from there rather than be sent to a list page to find the same row again.
+  // Biggest ask first — that is the one worth his attention. Capped so the
+  // strip can never become the page; "See all" covers the rest.
+  const ALERT_SHEETS_MAX = 8
+  const pendingSheetItems = [...pendingSheets]
+    .sort((a, b) => Number(b.total_amount ?? 0) - Number(a.total_amount ?? 0))
+    .slice(0, ALERT_SHEETS_MAX)
+    .map(w => {
+      const d = disciplines.find(x => x.id === w.discipline_id)
+      const s = subSkills.find(x => x.id === w.sub_skill_id)
+      const amt = Number(w.total_amount ?? 0)
+      // IST calendar days, not elapsed ms — "waiting 3d" must mean three dates.
+      const age = w.submitted_at ? istCalendarDaysAgo(w.submitted_at) : null
+      return {
+        id: w.id,
+        label: [d ? `${d.code} ${d.name}` : null, s ? `${s.code} ${s.name}` : null]
+          .filter(Boolean).join(' › ') || 'Budget',
+        amountLabel: `${formatINR(amt)}${perSftInline(amt)}`,
+        stageLabel: wsStatusLabel(w.status),
+        ageDays: age,
+        href: `/cost-control/working-sheets/${w.id}?from=approvals`,
+      }
+    })
+
   // Portfolio rollup (across all sub-skills on this project)
   const totalBudget = Array.from(discAgg.values()).reduce((s, v) => s + v.budget, 0)
   const totalWO = Array.from(discAgg.values()).reduce((s, v) => s + v.wo, 0)
@@ -602,6 +628,7 @@ export default async function CostControlProjectDetailPage(
           href: `/cost-control/working-sheets?project=${project.id}`,
           thumbruleCount: pendingThumbruleCount,
           thumbruleHref: `/cost-control/approvals/thumbrule?project=${project.id}`,
+          sheets: pendingSheetItems,
         } : null}
         over={showErp && overBudgetLines.length > 0 ? {
           lines: overBudgetLines.map(l => ({ label: l.label, amountLabel: formatINR(l.over) })),

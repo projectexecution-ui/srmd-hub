@@ -21,6 +21,10 @@ export interface RollupWSRow {
   approved_for_erp_amt: number | null
   summary_notes: string | null
   entry_mode?: string | null
+  /** Not used by the rollup maths — carried through so callers that read the
+   *  surviving rows back out (e.g. the project page's pending-approval list)
+   *  can show how long a sheet has been waiting. */
+  submitted_at?: string | null
 }
 export interface RollupVersionRow { id: string; chain_anchor_id: string | null; version_no: number | null }
 export interface RollupBudgetLine {
