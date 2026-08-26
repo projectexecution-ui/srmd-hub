@@ -127,3 +127,35 @@ So this needs one of:
 **Needs the HOD's call.** 8a proceeds regardless.
 
 ## 9. (cut off in the message) — awaiting the rest
+
+---
+
+## Mobile pass (running alongside — Aksha: "All the users are majorly on Mobile")
+
+The phone is the primary layout for this view, not the narrow version of the
+desktop. Done so far:
+
+- **Category names no longer truncated.** The bar was one flex row with a
+  `flex-shrink-0` money block, so at 375px the name was the only thing that
+  gave way — `19 Site Ad…`, `04 Extern…`, `03 C..`, and `07 E.` for Electrical
+  Works. Name now takes the full width on its own line, money underneath.
+- **₹/sft everywhere.** It was on the KPI tiles and every desktop table cell,
+  but on the phone only on Estimate / Awaiting / Released. Now also on the
+  category bar (3-column grid, rate under each figure), the card's Actuals
+  caption, and every figure in the alert strip.
+- **No more "₹0/sft".** `perSft` rounded to zero for anything under ~₹4.2 L on
+  SRAH's 8,40,034 sft, printing a rate that said nothing. Omitted instead.
+- **"ERP", not "Bud"** — the label now names the source, matching the
+  "Approved Budget (ERP)" KPI tile. Card caption reads "ERP Budget".
+- **Three alert banners → one chip strip** (`ProjectAlerts`). Counts always
+  visible, detail opens on tap, approvals open by default (the only one waiting
+  on a person). Chips wrap rather than scroll sideways.
+- **Locked Internal Estimate → a lock chip.** It is the resting state; it was
+  taking a full card and a large button for a once-a-project action.
+- **Settings / Master Excel icon-only below sm** — four labelled buttons wrapped
+  onto three lines and pushed the table down the screen.
+
+Net effect on a 375px phone: the KPI tiles start ~640px down instead of ~950px.
+
+Still to do on mobile: the ≥44px audit across the remaining row controls, and
+the item-level tree (#8a) must be designed as cards first, not a wide table.
