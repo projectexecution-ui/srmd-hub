@@ -19,6 +19,7 @@ import { ccApprovalPath } from '@/lib/cost-control/approval-link'
 import { estimateShortfall, hasNoEstimate } from '@/lib/cost-control/estimate-vs-erp'
 import { CompleteControl } from './CompleteControl'
 import { ProjectAlerts } from './ProjectAlerts'
+import { AddToProject } from './AddToProject'
 import { QueryError } from '@/components/ui/query-error'
 import { DeadlineBadge } from '@/components/cost-control/DeadlineBadge'
 import { TreeProvider, TreeToolbar, CatChevron, CatRows, SubRow } from '@/components/cost-control/project-tree'
@@ -114,6 +115,10 @@ export default async function CostControlProjectDetailPage(
   // Setup / disable / deadline / BPH-sync controls are management-only even
   // when an engineer is allowed to view.
   const canWrite = can(perms, 'cost-control', 'edit') && reviewer
+  // Adding a work category / sub-category mints a code in the ONE master list
+  // shared by every project, so it stays with admin / Trustee / coordinator —
+  // Atm Heads hold can_edit but not can_admin. (HOD #6)
+  const canAddStructure = can(perms, 'cost-control', 'admin')
   // ERP columns + spend KPIs (engineers never reach this page — they get
   // the EngineerProjectView below).
   const showErp = ccSettings.show_erp_columns
@@ -422,6 +427,34 @@ export default async function CostControlProjectDetailPage(
   }
   estimateGapLines.sort((a, b) => b.short - a.short)
   const estimateGapTotal = estimateGapLines.reduce((sum, l) => sum + l.short, 0)
+
+  // Master items NOT yet on this project, for the "Add …" pickers. Only read
+  // for someone who can actually add — no point paying for it otherwise.
+  // Small lists (36 categories / 233 sub-categories portfolio-wide), so one
+  // round trip rather than a search box. (HOD #6)
+  let addableDisciplines: { id: string; code: string; name: string }[] = []
+  const addableSubsByDiscipline = new Map<string, { id: string; code: string; name: string }[]>()
+  if (canAddStructure) {
+    const [allDiscRes, allSubRes] = await Promise.all([
+      supabase.from('cc_disciplines').select('id, code, name, is_archived'),
+      supabase.from('cc_sub_skills').select('id, discipline_id, code, name'),
+    ])
+    const onProject = new Set(disciplines.map(d => d.id))
+    addableDisciplines = ((allDiscRes.data ?? []) as { id: string; code: string; name: string; is_archived: boolean | null }[])
+      .filter(d => !d.is_archived && !onProject.has(d.id))
+      .map(d => ({ id: d.id, code: d.code, name: d.name }))
+      .sort((a, b) => a.code.localeCompare(b.code, undefined, { numeric: true }))
+    const enabledSubs = new Set(subSkills.map(s => s.id))
+    for (const s of (allSubRes.data ?? []) as { id: string; discipline_id: string; code: string; name: string }[]) {
+      if (enabledSubs.has(s.id)) continue
+      const bag = addableSubsByDiscipline.get(s.discipline_id) ?? []
+      bag.push({ id: s.id, code: s.code, name: s.name })
+      addableSubsByDiscipline.set(s.discipline_id, bag)
+    }
+    for (const bag of addableSubsByDiscipline.values()) {
+      bag.sort((a, b) => a.code.localeCompare(b.code, undefined, { numeric: true }))
+    }
+  }
 
   // Closed sub-categories (HOD #3) and the budget they released. Two figures
   // worth separating: what has already been released, and what is sitting
@@ -1184,9 +1217,24 @@ export default async function CostControlProjectDetailPage(
                       )
                     })}
 
-                    {subs.length === 0 && (
+                    {subs.length === 0 && !canAddStructure && (
                       <tr className="border-t border-gray-100">
                         <td colSpan={tableCols} className="pl-10 pr-3 py-2 text-xs italic text-gray-400">No sub-skills enabled for this discipline. Add via the setup wizard.</td>
+                      </tr>
+                    )}
+                    {/* Same control as the phone card list, in the table's own
+                        idiom. (HOD #6) */}
+                    {canAddStructure && (
+                      <tr className="border-t border-gray-100">
+                        <td colSpan={tableCols} className="pl-10 pr-3 py-2">
+                          <AddToProject
+                            kind="sub"
+                            size="small"
+                            projectId={project.id}
+                            disciplineId={d.id}
+                            available={addableSubsByDiscipline.get(d.id) ?? []}
+                          />
+                        </td>
                       </tr>
                     )}
                     </CatRows>
@@ -1418,11 +1466,40 @@ export default async function CostControlProjectDetailPage(
                     )}
                   </div>
                 </div>
-                <div className="bg-gray-50/60"><CatRows catId={d.id}>{cards}</CatRows></div>
+                <div className="bg-gray-50/60">
+                  <CatRows catId={d.id}>
+                    {cards}
+                    {/* Add a sub-category to THIS category, where he is already
+                        looking at its rows. (HOD #6) */}
+                    {canAddStructure && (
+                      <div className="px-3 pb-3 pt-1">
+                        <AddToProject
+                          kind="sub"
+                          projectId={project.id}
+                          disciplineId={d.id}
+                          available={addableSubsByDiscipline.get(d.id) ?? []}
+                        />
+                      </div>
+                    )}
+                  </CatRows>
+                </div>
               </div>
             )
           })}
         </div>
+
+        {/* Add a whole work category to the project. Outside the two layouts
+            because it belongs to the table as a whole, not to either
+            rendering of it. (HOD #6) */}
+        {canAddStructure && (
+          <div className="border-t border-gray-100 px-3 py-3">
+            <AddToProject
+              kind="discipline"
+              projectId={project.id}
+              available={addableDisciplines}
+            />
+          </div>
+        )}
       </div>
       </TreeProvider>
 
