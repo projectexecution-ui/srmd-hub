@@ -384,7 +384,6 @@ export default async function CostControlProjectDetailPage(
     : null
   const focusPending = !!focusSheet &&
     ['submitted', 'ph_approved', 'atm_approved', 'partially_approved'].includes(focusSheet.status)
-  const focusDiscRow = focusSheet ? disciplines.find(d => d.id === focusSheet.discipline_id) ?? null : null
   const focusSubRow  = focusSheet ? subSkills.find(s => s.id === focusSheet.sub_skill_id) ?? null : null
   const focusSheetHref = focusSheet ? `/cost-control/working-sheets/${focusSheet.id}?from=approvals` : null
 
@@ -608,44 +607,23 @@ export default async function CostControlProjectDetailPage(
         />
       )}
 
-      {/* Arrived from an approval link (home inbox / My Approvals / bell /
-          email). The project numbers above and the highlighted row below are
-          the context the HOD asked to see BEFORE signing — this bar just says
-          plainly what he came for and gives him one tap into the voucher, so
-          the amber figure in the table is never the only way in. */}
-      {focusSheet && focusSheetHref && (
-        <div className={`rounded-xl border px-4 py-3 ${focusPending ? 'border-amber-300 bg-amber-50' : 'border-gray-200 bg-gray-50'}`}>
-          <div className="flex items-start justify-between gap-3 flex-wrap">
-            <div className="min-w-0">
-              <p className={`text-[11px] font-extrabold uppercase tracking-wider ${focusPending ? 'text-amber-700' : 'text-gray-500'}`}>
-                {focusPending ? 'Waiting on you' : 'Already handled'}
-              </p>
-              <p className="text-sm font-semibold text-gray-900 mt-0.5 break-words">
-                {focusDiscRow ? `${focusDiscRow.code} ${focusDiscRow.name}` : 'Uncategorised'}
-                <span className="mx-1.5 text-gray-400">›</span>
-                {focusSubRow ? `${focusSubRow.code} ${focusSubRow.name}` : '—'}
-              </p>
-              <p className="text-[12px] text-gray-600 mt-0.5 tabular-nums">
-                {formatINR(Number(focusSheet.total_amount ?? 0))}
-                <span className="mx-1.5 text-gray-300">·</span>
-                {wsStatusLabel(focusSheet.status)}
-                {focusPending && (
-                  <span className="text-gray-500"> — its row is highlighted below</span>
-                )}
-              </p>
-            </div>
-            <Link
-              href={focusSheetHref}
-              className={`inline-flex items-center justify-center gap-1.5 min-h-[44px] px-4 rounded-lg text-sm font-semibold w-full sm:w-auto ${
-                focusPending
-                  ? 'bg-amber-600 text-white hover:bg-amber-700'
-                  : 'bg-white text-gray-700 border border-gray-300 hover:bg-gray-50'
-              }`}
-            >
-              {focusPending ? 'Open the sheet to approve' : 'Open the sheet'}
-              <ArrowRight className="h-4 w-4" />
-            </Link>
-          </div>
+      {/* Deliberately NO "waiting on you" banner for a live approval. The
+          row itself is ambered, scrolled to, and carries its own Approve
+          button, so a bar at the top only pushed the table further down the
+          phone — Aksha, looking at it: "i dont want here".
+
+          A STALE link still gets one quiet line, because landing on a row
+          with nothing to approve and no explanation is a dead end. */}
+      {focusSheet && focusSheetHref && !focusPending && (
+        <div className="rounded-lg border border-gray-200 bg-gray-50 px-3.5 py-2.5">
+          <p className="text-[12.5px] text-gray-700">
+            <b>Already handled.</b>{' '}
+            {focusSubRow ? `${focusSubRow.code} ${focusSubRow.name}` : 'This sub-category'}
+            {' '}is {wsStatusLabel(focusSheet.status).toLowerCase()} — nothing is waiting on you here.
+          </p>
+          <Link href={focusSheetHref} className="mt-1.5 inline-flex items-center gap-1.5 min-h-[38px] px-3 rounded-md border border-gray-300 bg-white text-[12px] font-semibold text-gray-700">
+            Open the sheet <ArrowRight className="h-3.5 w-3.5" />
+          </Link>
         </div>
       )}
 

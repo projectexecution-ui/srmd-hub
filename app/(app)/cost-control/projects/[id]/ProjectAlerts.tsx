@@ -155,21 +155,24 @@ export function ProjectAlerts({
                 <ul className="mt-2 divide-y divide-amber-200/70 rounded-lg border border-amber-200 bg-white overflow-hidden">
                   {pending.sheets.map(s => (
                     <li key={s.id}>
+                      {/* Stacked, not side-by-side. The amount could not shrink,
+                          so on a 375px phone the name was squeezed into a column
+                          one word wide — "10 / MGPS / › 1004 / BHP". The name is
+                          the thing you read, so it gets the full width and the
+                          amount sits under it. */}
                       <Link
                         href={s.href}
-                        className="flex items-center gap-3 px-3 py-2.5 min-h-[52px] hover:bg-amber-50/60 active:bg-amber-100/60"
+                        className="flex items-start gap-2 px-3 py-2.5 min-h-[52px] hover:bg-amber-50/60 active:bg-amber-100/60"
                       >
                         <span className="min-w-0 flex-1">
                           <span className="block text-[12.5px] font-semibold text-gray-900">{s.label}</span>
+                          <span className="block text-[13px] font-bold tabular-nums text-gray-900">{s.amountLabel}</span>
                           <span className="block text-[11px] text-gray-500">
                             {s.stageLabel}
                             {s.ageDays != null && <> · waiting {s.ageDays === 0 ? 'today' : `${s.ageDays}d`}</>}
                           </span>
                         </span>
-                        <span className="flex-shrink-0 text-right">
-                          <span className="block text-[12.5px] font-bold tabular-nums text-gray-900">{s.amountLabel}</span>
-                        </span>
-                        <ArrowRight className="h-4 w-4 flex-shrink-0 text-amber-600" />
+                        <ArrowRight className="h-4 w-4 flex-shrink-0 text-amber-600 mt-0.5" />
                       </Link>
                     </li>
                   ))}
