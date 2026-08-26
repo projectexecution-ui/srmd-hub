@@ -3,7 +3,7 @@ import { requirePermission, getMyPermissions, can } from '@/lib/auth'
 import { PageHeader } from '@/components/PageHeader'
 import { QueryError } from '@/components/ui/query-error'
 import { getLocationTree, getShowValues } from '@/lib/warehouse/data'
-import { getStockView, getStockCategories } from '@/lib/warehouse/report-data'
+import { getStockView } from '@/lib/warehouse/report-data'
 import { todayIST } from '@/lib/warehouse/ledger'
 import { StockClient } from './stock-client'
 import { ChevronLeft } from 'lucide-react'
@@ -26,9 +26,11 @@ export default async function StockPage({
   const today = todayIST()
   const asOn = sp.asOn && sp.asOn <= today ? sp.asOn : today
 
-  const [sites, categories, view] = await Promise.all([
+  // The category list comes back inside the view now, with a count against each
+  // one — it is the same fold, so a chip can never disagree with the register
+  // under it, and it saves a second full read of the 2,803-row master.
+  const [sites, view] = await Promise.all([
     getLocationTree(),
-    getStockCategories(),
     getStockView({ asOn, locationId: sp.loc || null, category: sp.cat || null }),
   ])
 
@@ -50,7 +52,8 @@ export default async function StockPage({
         groups={view.groups}
         totals={view.totals}
         sites={sites}
-        categories={categories}
+        categories={view.categoryCounts}
+        locationCounts={view.locationCounts}
         masterItems={view.masterItems}
         selectedLocation={sp.loc || ''}
         selectedCategory={sp.cat || ''}

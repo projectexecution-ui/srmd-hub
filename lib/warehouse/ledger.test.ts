@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
-  stockEffect, foldLedger, stockFlag, groupByLocation, stockTotals,
+  stockEffect, foldLedger, stockFlag, groupByLocation, stockTotals, countItemsBy,
 } from './ledger'
 import type { LedgerRow, MovementKind, StockLine } from './ledger'
 
@@ -192,3 +192,42 @@ describe('the V1 carry-over is not a count correction', () => {
     expect(t.countShortValue).toBe(0)
   })
 })
+
+describe('counts for the filter dropdowns', () => {
+  const cells = [
+    { itemId: 'a', locationId: 'S1', inHand: 10 },
+    { itemId: 'b', locationId: 'S1', inHand: 5 },
+    { itemId: 'a', locationId: 'S2', inHand: 3 },
+    { itemId: 'c', locationId: 'S2', inHand: 0 },   // folded to nothing
+  ].map(c => ({ ...emptyCellLike(), ...c }))
+
+  it('counts distinct items per key, never the rows', () => {
+    expect(countItemsBy(cells, c => c.locationId)).toEqual({ S1: 2, S2: 1 })
+  })
+
+  it('leaves out anything that folded to zero', () => {
+    // 'c' exists in the ledger but is on no shelf, so it must not send
+    // anybody to store S2 looking for it.
+    expect(countItemsBy(cells, c => c.locationId).S2).toBe(1)
+  })
+
+  it('one item on two shelves is still one item in its category', () => {
+    // This is the whole reason the counter de-duplicates. Item 'a' sits in
+    // both stores; the category chip must read 2 items, not 3 rows, or the
+    // chips add up to more than the register they filter.
+    const cat = (c: { itemId: string }) => (c.itemId === 'c' ? 'Plumbing' : 'Electrical')
+    expect(countItemsBy(cells, cat)).toEqual({ Electrical: 2 })
+  })
+
+  it('skips a null key rather than inventing a bucket for it', () => {
+    expect(countItemsBy(cells, () => null)).toEqual({})
+  })
+})
+
+function emptyCellLike() {
+  return {
+    itemId: '', locationId: '', inQty: 0, outQty: 0, transferQty: 0,
+    openingQty: 0, adjustQty: 0, voidQty: 0, damagedQty: 0,
+    vendorOutQty: 0, inHand: 0,
+  }
+}

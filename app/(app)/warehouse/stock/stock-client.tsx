@@ -22,7 +22,7 @@ const btnCls =
   'hover:border-emerald-300 hover:text-emerald-700 inline-flex items-center justify-center gap-1.5 disabled:opacity-50'
 
 export function StockClient({
-  asOn, today, groups, totals, sites, categories, masterItems,
+  asOn, today, groups, totals, sites, categories, locationCounts, masterItems,
   selectedLocation, selectedCategory, showValues, canEdit, failed,
 }: {
   asOn: string
@@ -30,7 +30,11 @@ export function StockClient({
   groups: StockGroup[]
   totals: StockTotals
   sites: WhSite[]
-  categories: string[]
+  /** Every master category with how many items are in stock in it, zeros
+   *  included — picking one is how you find out there is nothing there. */
+  categories: Array<{ name: string; items: number }>
+  /** Items in stock per store id. */
+  locationCounts: Record<string, number>
   masterItems: number
   selectedLocation: string
   selectedCategory: string
@@ -38,6 +42,14 @@ export function StockClient({
   canEdit: boolean
   failed: boolean
 }) {
+  // The "All …" rows carry the whole figure so the parts can be read against
+  // it. Both are sums of what the dropdowns already show, never a third
+  // count from somewhere else that could disagree with them.
+  const catTotal = categories.reduce((n, c) => n + c.items, 0)
+  const storeTotal = Object.values(locationCounts).reduce((n, v) => n + v, 0)
+  const siteTotal = (s: WhSite) =>
+    s.spots.reduce((n, sp) => n + (locationCounts[sp.id] ?? 0), 0)
+
   const router = useRouter()
   const params = useSearchParams()
   const [q, setQ] = useState('')
@@ -168,10 +180,14 @@ export function StockClient({
             <label className={labelCls} htmlFor="stock-loc">Store</label>
             <select id="stock-loc" className={inputCls} value={selectedLocation}
               onChange={e => setParam('loc', e.target.value)}>
-              <option value="">All storage locations</option>
+              <option value="">All storage locations ({nf(storeTotal)})</option>
               {sites.map(s => (
-                <optgroup key={s.id} label={s.name}>
-                  {s.spots.map(sp => <option key={sp.id} value={sp.id}>{sp.name}</option>)}
+                <optgroup key={s.id} label={`${s.name} (${nf(siteTotal(s))})`}>
+                  {s.spots.map(sp => (
+                    <option key={sp.id} value={sp.id}>
+                      {sp.name} ({nf(locationCounts[sp.id] ?? 0)})
+                    </option>
+                  ))}
                 </optgroup>
               ))}
             </select>
@@ -180,8 +196,10 @@ export function StockClient({
             <label className={labelCls} htmlFor="stock-cat">Category</label>
             <select id="stock-cat" className={inputCls} value={selectedCategory}
               onChange={e => setParam('cat', e.target.value)}>
-              <option value="">All categories</option>
-              {categories.map(c => <option key={c} value={c}>{c}</option>)}
+              <option value="">All categories ({nf(catTotal)})</option>
+              {categories.map(c => (
+                <option key={c.name} value={c.name}>{c.name} ({nf(c.items)})</option>
+              ))}
             </select>
           </div>
           <div>

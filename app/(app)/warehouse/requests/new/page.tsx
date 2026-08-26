@@ -52,7 +52,6 @@ export default async function NewRequestPage() {
       )}
 
       <NewRequestForm
-        sites={sites}
         items={items}
         projects={projectsRes.data ?? []}
         rules={rules}

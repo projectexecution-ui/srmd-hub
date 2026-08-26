@@ -5,8 +5,8 @@ import { fetchAll } from './paging'
  *  ceiling, used here to keep an `in(...)` list from overflowing the URL. */
 const PAGE = 1000
 import { getLocationTree, one } from './data'
-import { foldLedger, groupByLocation, stockFlag, stockTotals, todayIST } from './ledger'
-import type { LedgerRow, MovementKind, StockLine, StockGroup, StockTotals } from './ledger'
+import { countItemsBy, foldLedger, groupByLocation, stockFlag, stockTotals, todayIST } from './ledger'
+import type { LedgerRow, MovementKind, StockCell, StockLine, StockGroup, StockTotals } from './ledger'
 import { inPeriod } from './registers'
 import type { RegisterKind, RegisterRow } from './registers'
 
@@ -51,6 +51,12 @@ export type StockView = {
   groups: StockGroup[]
   lines: StockLine[]
   totals: StockTotals
+  /** Items in stock per category, and per store id — for the counts in the
+   *  filter dropdowns. Every master category is present, zero included: a
+   *  category reading "(0)" tells you not to bother looking, which is worth
+   *  more than leaving it off the list. */
+  categoryCounts: Array<{ name: string; items: number }>
+  locationCounts: Record<string, number>
   /** How many items exist in the master at all. Only a fraction of them
    *  have ever been received anywhere, and without this number on screen
    *  "472 items in stock" invites the question of where the other 2,331
@@ -98,10 +104,10 @@ export async function getStockView(opts: {
   ])
 
   if (movRes.error) {
-    return { asOn, groups: [], lines: [], totals: emptyTotals(), masterItems: 0, error: movRes.error }
+    return { asOn, groups: [], lines: [], totals: emptyTotals(), categoryCounts: [], locationCounts: {}, masterItems: 0, error: movRes.error }
   }
   if (itemsRes.error) {
-    return { asOn, groups: [], lines: [], totals: emptyTotals(), masterItems: 0, error: itemsRes.error }
+    return { asOn, groups: [], lines: [], totals: emptyTotals(), categoryCounts: [], locationCounts: {}, masterItems: 0, error: itemsRes.error }
   }
 
   const day = await businessDays(movRes.rows)
@@ -121,7 +127,32 @@ export async function getStockView(opts: {
   const spots = new Map(sites.flatMap(s => s.spots).map(sp => [sp.id, sp]))
   const mins = new Map(minRes.rows.map(r => [`${r.item_id}|${r.location_id}`, Number(r.min_qty)]))
 
-  const lines: StockLine[] = foldLedger(ledger, asOn).flatMap(c => {
+  const cells = foldLedger(ledger, asOn)
+
+  // Each dropdown counts under the OTHER filter, never its own — a store list
+  // that re-applied the store filter would read "1" against the one store you
+  // already picked and "0" against every other.
+  const inLoc = (c: StockCell) => !opts.locationId || c.locationId === opts.locationId
+  const inCat = (c: StockCell) =>
+    !opts.category || (items.get(c.itemId)?.category ?? null) === opts.category
+  const catCounted = countItemsBy(
+    cells.filter(inLoc),
+    c => items.get(c.itemId)?.category ?? null,
+  )
+  const locationCounts = countItemsBy(cells.filter(inCat), c => c.locationId)
+
+  // Every category the master knows, so the list does not shrink as stock moves,
+  // and a category with nothing in it still says so rather than vanishing.
+  //
+  // Categories, never IN4's discipline. The discipline is IN4's BUDGET HEAD —
+  // "07 Electrical Works", "19 Site Admin", "56 Mock Up Expense" — a cost code,
+  // not a kind of material, and filtering a store by it was wrong.
+  const allCategories = [...new Set(
+    [...items.values()].map(i => i.category).filter((c): c is string => Boolean(c)),
+  )].sort((a, b) => a.localeCompare(b))
+  const categoryCounts = allCategories.map(name => ({ name, items: catCounted[name] ?? 0 }))
+
+  const lines: StockLine[] = cells.flatMap(c => {
     const item = items.get(c.itemId)
     const spot = spots.get(c.locationId)
     if (!item || !spot) return []
@@ -141,7 +172,8 @@ export async function getStockView(opts: {
 
   return {
     asOn, groups: groupByLocation(lines), lines,
-    totals: stockTotals(lines), masterItems: items.size, error: null,
+    totals: stockTotals(lines), categoryCounts, locationCounts,
+    masterItems: items.size, error: null,
   }
 }
 
@@ -279,25 +311,6 @@ export async function getVendorMovements(from: string | null, to: string | null)
   }
 }
 
-/** Disciplines that actually appear on items, for the stock filter. */
-/** The material families to filter stock by.
- *
- *  Categories, never IN4's discipline. The discipline is IN4's BUDGET HEAD —
- *  "07 Electrical Works", "19 Site Admin", "56 Mock Up Expense" — a cost code,
- *  not a kind of material, and filtering a store by it was wrong. */
-export async function getStockCategories(): Promise<string[]> {
-  const sb = await createClient()
-  // Paged, or the dropdown offers only the categories that happen to fall in
-  // the first thousand items — two of sixteen, as it did.
-  const { rows } = await fetchAll<{ category: string | null }>((from, to) => sb
-    .from('wh_items')
-    .select('category')
-    .is('deleted_at', null)
-    .not('category', 'is', null)
-    .order('category')
-    .range(from, to))
-  return [...new Set(rows.map(r => r.category as string))].sort((a, b) => a.localeCompare(b))
-}
 
 type Embedded<T> = T | T[] | null
 

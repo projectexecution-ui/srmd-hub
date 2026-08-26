@@ -88,6 +88,30 @@ function emptyCell(itemId: string, locationId: string): StockCell {
   }
 }
 
+/** How many distinct items are actually on a shelf, per key.
+ *
+ *  Feeds the counts in the filter dropdowns. Each dropdown counts under the
+ *  OTHER filters but not its own — pick Electrical and the store list says how
+ *  much Electrical each store holds, which is the only reading that helps you
+ *  choose. So the caller narrows `cells` however it likes and picks the key.
+ *
+ *  Only `inHand > 0` counts. A row that folds to zero is a closed history, not
+ *  stock, and counting it would send somebody to an empty shelf. */
+export function countItemsBy(
+  cells: StockCell[],
+  key: (c: StockCell) => string | null,
+): Record<string, number> {
+  const seen = new Map<string, Set<string>>()
+  for (const c of cells) {
+    if (c.inHand <= 0) continue
+    const k = key(c)
+    if (k == null) continue
+    if (!seen.has(k)) seen.set(k, new Set())
+    seen.get(k)!.add(c.itemId)
+  }
+  return Object.fromEntries([...seen].map(([k, set]) => [k, set.size]))
+}
+
 /** Fold the ledger into one cell per item per store, counting only movements up
  *  to and including `asOn`. */
 export function foldLedger(rows: LedgerRow[], asOn?: string): StockCell[] {

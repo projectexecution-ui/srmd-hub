@@ -6,14 +6,22 @@
  *  browsing job: 2,803 items, and the engineer often knows the category and the
  *  size but not the exact name the master holds.
  *
- *  The valuable part is the pair of tabs. "In this store" first, then "All
- *  catalogue" — so the default view is what can actually be handed over today,
- *  and asking for something the store has not got is a deliberate second step
+ *  The valuable part is the pair of tabs: what is on a shelf right now, then
+ *  "All catalogue" — so the default view is what can actually be handed over
+ *  today, and asking for something nobody holds is a deliberate second step
  *  rather than an accident. Every card says which it is.
+ *
+ *  `storeName` is null when no store has been chosen — which is the normal case
+ *  on a request, since the engineer asks and the keeper decides which of nine
+ *  stores serves it. Then every figure here is stock ACROSS ALL STORES, and the
+ *  wording has to say so: "in stock", never "here", which would be pointing at
+ *  a store nobody has picked.
  */
 
 import { useState, useMemo, useEffect, useRef } from 'react'
 import { Search, X, Package, PlusCircle, Loader2 } from 'lucide-react'
+
+import { formatCount, formatQtyUnit } from '@/lib/warehouse/format'
 
 export type PickerItem = {
   id: string
@@ -66,6 +74,11 @@ export function ItemPicker({
   onCreate?: (name: string, unit: string) => Promise<{ ok: boolean; error?: string }>
 }) {
   const [q, setQ] = useState('')
+  // One place decides "here" vs "in stock", so a tab and the card under it can
+  // never disagree about what the number means.
+  const scopeLabel = storeName ? `In ${storeName}` : 'In stock'
+  const whereWord = storeName ? 'here' : 'in stock'
+
   const [scope, setScope] = useState<'store' | 'all'>('store')
   const [cat, setCat] = useState('')
   const [creating, setCreating] = useState(false)
@@ -130,12 +143,12 @@ export function ItemPicker({
             <button type="button" onClick={() => { setScope('store'); setCat('') }}
               className={`rounded-full px-3 h-11 text-[12px] font-bold whitespace-nowrap ${
                 scope === 'store' ? 'bg-emerald-600 text-white' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'}`}>
-              In {storeName ?? 'this store'} ({inStore.length})
+              {scopeLabel} ({formatCount(inStore.length)})
             </button>
             <button type="button" onClick={() => { setScope('all'); setCat('') }}
               className={`rounded-full px-3 h-11 text-[12px] font-bold whitespace-nowrap ${
                 scope === 'all' ? 'bg-emerald-600 text-white' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'}`}>
-              All catalogue ({items.length})
+              All catalogue ({formatCount(items.length)})
             </button>
           </div>
 
@@ -158,8 +171,9 @@ export function ItemPicker({
         <div className="flex-1 overflow-y-auto p-3">
           {scope === 'store' && inStore.length === 0 && (
             <p className="text-[12.5px] text-amber-900 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mb-3">
-              {storeName ?? 'This store'} is holding nothing at all yet. Switch to <b>All catalogue</b> to ask
-              for material anyway — a request for something a store has not got is how it gets ordered.
+              {storeName ? `${storeName} is` : 'No store is'} holding anything at all yet. Switch to
+              <b> All catalogue</b> to ask for material anyway — a request for something no store has got
+              is how it gets ordered.
             </p>
           )}
 
@@ -198,7 +212,9 @@ export function ItemPicker({
                       {/* Say plainly whether it can be handed over today. */}
                       <span className={`block text-[10.5px] mt-0.5 font-semibold ${
                         i.inStore > 0 ? 'text-emerald-700' : 'text-slate-400'}`}>
-                        {i.inStore > 0 ? `${i.inStore} ${i.unit} here` : 'not in this store'}
+                        {i.inStore > 0
+                          ? `${formatQtyUnit(i.inStore, i.unit)} ${whereWord}`
+                          : (storeName ? 'not in this store' : 'not in stock anywhere')}
                       </span>
                       {on && <span className="block text-[10.5px] text-slate-500 mt-0.5">already on the sheet</span>}
                     </span>

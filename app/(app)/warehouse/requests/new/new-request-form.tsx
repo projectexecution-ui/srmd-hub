@@ -12,7 +12,7 @@ import { estimateValue, raiseBlocker, foldStock } from '@/lib/warehouse/requests
 import type { ShortLine } from '@/lib/warehouse/requests'
 import { waitingOn } from '@/lib/warehouse/approval-matrix'
 import type { Rule } from '@/lib/warehouse/approval-matrix'
-import type { WhSite, WhItem } from '@/lib/warehouse/types'
+import type { WhItem } from '@/lib/warehouse/types'
 import {
   Loader2, Plus, Trash2, Stamp, TriangleAlert, Info, Send, ChevronDown,
 } from 'lucide-react'
@@ -39,9 +39,8 @@ const blank = (): Row => ({
 })
 
 export function NewRequestForm({
-  sites, items, projects, rules, roleLabels, today,
+  items, projects, rules, roleLabels, today,
 }: {
-  sites: WhSite[]
   items: WhItem[]
   projects: Array<{ id: string; name: string }>
   rules: Rule[]
@@ -52,7 +51,10 @@ export function NewRequestForm({
   const [busy, start] = useTransition()
 
 
-  const [toLocationId, setTo] = useState('')
+  // No "send it to another store" here. An engineer asking for material is
+  // asking for his own site, full stop; store-to-store movement is the
+  // keeper's business and is done from Gate OUT, where the stock actually is.
+  const toLocationId = null
   const [projectId, setProject] = useState('')
   const [purpose, setPurpose] = useState('')
   const [needBy, setNeedBy] = useState('')
@@ -61,11 +63,8 @@ export function NewRequestForm({
   const [pickFor, setPickFor] = useState<string | null>(null)
   const [catalogue, setCatalogue] = useState<PickerItem[]>([])
 
-  const spots = useMemo(() => sites.flatMap(s => s.spots.map(sp => ({
-    id: sp.id, name: sp.name, site: sp.siteName,
-    projectId: sp.projectId, projectName: sp.projectName,
-  }))), [sites])
-  // No source store: the engineer says what he needs and the keeper decides
+  // No source store, and no destination store either: the engineer says what he
+  // needs and the keeper decides
   // which of nine stores serves it. That also means the cross-project returnable
   // rule cannot be judged here — it is applied at Gate OUT, where the store is
   // finally known. The tick below is therefore the engineer's own call again.
@@ -120,7 +119,7 @@ export function NewRequestForm({
   }, [lines])
 
   const blocker = raiseBlocker({
-    fromLocationId: null, toLocationId: toLocationId || null, projectId: projectId || null,
+    fromLocationId: null, toLocationId, projectId: projectId || null,
     purpose, needBy: needBy || null, lines,
   }, today)
 
@@ -151,15 +150,7 @@ export function NewRequestForm({
             <input id="req-need" type="date" className={inputCls} value={needBy} min={today}
               onChange={e => setNeedBy(e.target.value)} />
           </div>
-          <div>
-            <label className={labelCls} htmlFor="req-to">Send it to another store?</label>
-            <select id="req-to" className={inputCls} value={toLocationId}
-              onChange={e => setTo(e.target.value)}>
-              <option value="">— no, issue it to my site —</option>
-              {spots.map(s =>
-                <option key={s.id} value={s.id}>{s.name}</option>)}
-            </select>
-          </div>
+
         </div>
       </Card>
 
@@ -270,7 +261,7 @@ export function NewRequestForm({
         <button type="button" disabled={busy || !!blocker}
           onClick={() => start(async () => {
             const res = await raiseRequest({
-              fromLocationId: null, toLocationId: toLocationId || null, projectId: projectId || null,
+              fromLocationId: null, toLocationId, projectId: projectId || null,
               purpose, needBy: needBy || null, lines,
             })
             if (!res.ok) { toast.error(res.error, { duration: 9000 }); return }
