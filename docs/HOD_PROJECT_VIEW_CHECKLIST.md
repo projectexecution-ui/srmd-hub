@@ -53,8 +53,9 @@ lines are not worth an unexplainable rule).
 
 Closing shows the leftover budget as released, e.g. 1213 SS Works: ₹3,50,000
 budget, ₹1,87,620 paid → **₹1,62,380 released**. Nothing is written back to
- — those figures are authored by the IN4 → BPH sync and the
-next sync would overwrite us. Stored on .
+`cc_budget_lines` — those figures are authored by the IN4 → BPH sync and the
+next sync would overwrite us. Stored on
+`cc_project_sub_skills.completed_at / completed_by / completed_note`.
 
 Eligibility is re-checked server-side, so a stale page cannot close a line that
 still owes money; the refusal names the outstanding amount.
