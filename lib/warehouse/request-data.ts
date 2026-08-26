@@ -68,7 +68,9 @@ function toRow(r: Record<string, unknown>, today: string): RequestRow {
     day,
     status,
     storeId: store?.id ?? '',
-    storeName: store?.name ?? '—',
+    // No store named is the normal case now: the engineer asks, the keeper
+    // decides which store serves it.
+    storeName: store?.name ?? 'Any store',
     // A request either goes to a site (named by its project) or across to
     // another store. Saying which is the first thing the keeper needs.
     destination: dest?.name ?? proj?.name ?? 'the requester’s site',
@@ -152,7 +154,10 @@ export async function getRequestLanes(limit = 120): Promise<RequestLanes> {
 
   const toIssue = rows.filter(r =>
     (r.status === 'approved' || r.status === 'part_issued')
-    && (isAdmin || myStores.size === 0 || myStores.has(r.storeId)))
+    // A request that names no store belongs to whoever picks it up — hiding it
+    // from every keeper because it matched none of their stores would leave it
+    // sitting for ever, which is precisely what the old module did.
+    && (isAdmin || myStores.size === 0 || !r.storeId || myStores.has(r.storeId)))
 
   const mine = rows.filter(r => r.requestedById === me?.id && isOpen(r.status))
 
@@ -238,11 +243,15 @@ export async function getRequestDetail(
   const itemIds = lines.map(l => l.item_id as string)
   const stock = new Map<string, number>()
   if (itemIds.length > 0) {
-    const { data: st } = await sb.from('wh_stock')
-      .select('item_id, qty')
-      .eq('location_id', r.from_location_id as string)
-      .in('item_id', itemIds)
-    for (const s of st ?? []) stock.set(s.item_id, Number(s.qty))
+    // Scoped to the asked store when there is one; otherwise summed across every
+    // store, because "do we hold this at all" is the question a keeper is
+    // answering before he decides where to pull it from.
+    let q = sb.from('wh_stock').select('item_id, qty').in('item_id', itemIds)
+    if (r.from_location_id) q = q.eq('location_id', r.from_location_id as string)
+    const { data: st } = await q
+    for (const row of st ?? []) {
+      stock.set(row.item_id, (stock.get(row.item_id) ?? 0) + Number(row.qty))
+    }
   }
 
   const { data: outs } = await sb.from('wh_gate_out')

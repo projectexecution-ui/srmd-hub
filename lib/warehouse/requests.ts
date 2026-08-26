@@ -48,7 +48,9 @@ export type RequestLineInput = {
 }
 
 export type RaiseInput = {
-  fromLocationId: string
+  /** The store being asked. Null is the normal case: the engineer says what he
+   *  needs and the keeper decides which store serves it. */
+  fromLocationId: string | null
   toLocationId: string | null
   projectId: string | null
   purpose: string
@@ -60,8 +62,8 @@ export const PURPOSE_MIN = 4
 
 /** Why this request cannot be raised, as a sentence — or null to go ahead. */
 export function raiseBlocker(input: RaiseInput, today: string): string | null {
-  if (!input.fromLocationId) return 'Pick the store you are asking.'
-  if (input.toLocationId && input.toLocationId === input.fromLocationId) {
+  // Only meaningful when a source was named at all.
+  if (input.fromLocationId && input.toLocationId && input.toLocationId === input.fromLocationId) {
     return 'The store you are asking and the store it should go to are the same — nothing would move.'
   }
   if (input.purpose.trim().length < PURPOSE_MIN) {
@@ -192,3 +194,31 @@ export const STALE_REQUEST_DAYS = 3
 export function isStale(requestDate: string, today: string, status: RequestStatus): boolean {
   return isOpen(status) && ageDays(requestDate, today) >= STALE_REQUEST_DAYS
 }
+
+/** What we hold of an item ACROSS EVERY STORE, and where.
+ *
+ *  The request form used to show stock at the one store the engineer had picked.
+ *  Now that he picks no store, the useful answer is "we have 340 Bag, in two
+ *  places" — enough to know the ask is realistic, without making him choose. */
+export type StockAnywhere = {
+  itemId: string
+  qty: number
+  /** How many stores it is spread over, so "340 in 3 stores" reads honestly. */
+  stores: number
+}
+
+/** Fold per-store rows into a per-item total. Pure so the totalling is testable
+ *  separately from the query that fetches it. */
+export function foldStock(
+  rows: Array<{ itemId: string; qty: number }>,
+): Map<string, StockAnywhere> {
+  const out = new Map<string, StockAnywhere>()
+  for (const r of rows) {
+    if (r.qty <= 0) continue
+    const cur = out.get(r.itemId)
+    if (cur) { cur.qty += r.qty; cur.stores += 1 }
+    else out.set(r.itemId, { itemId: r.itemId, qty: r.qty, stores: 1 })
+  }
+  return out
+}
+

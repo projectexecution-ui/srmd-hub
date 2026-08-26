@@ -10,6 +10,7 @@ import { todayIST } from '@/lib/warehouse/ledger'
 import { in4Key, planIn4Items, FALLBACK_UOM } from '@/lib/warehouse/in4-items'
 import { derivedStatus } from '@/lib/warehouse/po-balance'
 import { notifyRequestIssued } from '@/lib/warehouse/notify'
+import { isCrossProject } from '@/lib/warehouse/cross-project'
 import { runIn4Sync } from '@/lib/warehouse/in4-sync-apply'
 import type { SyncGroup } from '@/lib/warehouse/in4-sync'
 import { buildSheet, submitBlocker, adjustments } from '@/lib/warehouse/count'
@@ -371,7 +372,7 @@ export async function saveGateOut(input: GateOutInput): Promise<SaveResult> {
   let requestForcesReturn = false
   if (input.requestId) {
     const { data: rq } = await sb.from('wh_requests')
-      .select(`req_no, status, stages_needed, stages_done, requested_by,
+      .select(`req_no, status, stages_needed, stages_done, requested_by, project_id,
                wh_request_lines(is_returnable, return_waived_at)`)
       .eq('id', input.requestId).maybeSingle()
     if (!rq) return { ok: false, error: 'That request no longer exists.' }
@@ -384,6 +385,20 @@ export async function saveGateOut(input: GateOutInput): Promise<SaveResult> {
 
     requestForcesReturn = (rq.wh_request_lines ?? [])
       .some(l => l.is_returnable && !l.return_waived_at)
+
+    // The cross-project rule lands HERE now, because this is the first moment
+    // anybody knows which store the material actually leaves. The engineer no
+    // longer names a store when he asks, so it could not be judged at raise
+    // time — and judging it here is more correct anyway: what matters is whose
+    // stock genuinely went, not whose stock somebody guessed at.
+    const { data: src } = await sb.from('wh_locations')
+      .select('project_id').eq('id', input.fromLocationId).maybeSingle()
+    if (isCrossProject(
+      { projectId: src?.project_id ?? null },
+      { projectId: (rq.project_id as string | null) ?? null },
+    )) {
+      requestForcesReturn = true
+    }
   }
 
   // A store move gets its own series because it never leaves the campus.

@@ -36,7 +36,7 @@ export default async function NewRequestPage() {
       </Link>
       <PageHeader
         title="Ask a store for material"
-        subtitle="Pick the store, say what you need and why. It goes to that store’s keeper — and you are told up front whether it will wait for approval."
+        subtitle="Say what you need and why. Which store it comes from is the keeper’s call, not yours — and you are told up front whether it will wait for approval."
       />
 
       {/* A project list that failed to load leaves the picker empty, and an empty
@@ -46,8 +46,8 @@ export default async function NewRequestPage() {
       )}
       {sites.length === 0 && (
         <Card className="p-4 shadow-sm text-[13px] text-amber-900 bg-amber-50 border-amber-200">
-          <b>There are no stores set up yet.</b> A request has to name the store it is asking, so
-          nothing can be raised until an admin adds one in Warehouse ▸ Settings ▸ Stores.
+          <b>There are no stores set up yet.</b> You can still raise this, but nothing can be issued
+          against it until an admin adds a store in Warehouse ▸ Settings ▸ Stores.
         </Card>
       )}
 

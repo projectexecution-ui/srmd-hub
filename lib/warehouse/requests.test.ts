@@ -3,6 +3,7 @@ import {
   estimateValue, raiseBlocker, shortfalls, issuableBlocker,
   outstanding, statusAfterIssue, fulfilledPct, isOpen, ageDays, isStale,
   STALE_REQUEST_DAYS, STATUS_LABEL,
+  foldStock,
 } from './requests'
 import type { RaiseInput, RequestState, RequestStatus } from './requests'
 
@@ -37,12 +38,19 @@ describe('raising a request', () => {
     expect(raiseBlocker(good(), '2026-08-17')).toBeNull()
   })
 
-  it('needs a store', () => {
-    expect(raiseBlocker(good({ fromLocationId: '' }), '2026-08-17')).toContain('store you are asking')
+  it('does NOT need a store — the keeper decides that', () => {
+    // Aksha's rule: an engineer says what he needs, not which of nine stores
+    // happens to hold it. Naming no store is the normal case, not an error.
+    expect(raiseBlocker(good({ fromLocationId: null }), '2026-08-17')).toBeNull()
   })
 
-  it('refuses a transfer to the same store it is asking', () => {
+  it('still refuses a transfer to the same store it is asking, when one is named', () => {
     expect(raiseBlocker(good({ toLocationId: 'A' }), '2026-08-17')).toContain('nothing would move')
+  })
+
+  it('does not trip that check when no source store was named', () => {
+    // Null source vs a named destination is a perfectly ordinary transfer ask.
+    expect(raiseBlocker(good({ fromLocationId: null, toLocationId: 'B' }), '2026-08-17')).toBeNull()
   })
 
   it('insists on a purpose the keeper can act on', () => {
@@ -179,4 +187,23 @@ describe('ageing and chasing', () => {
       expect(STATUS_LABEL[s]).not.toMatch(/_/)
     }
   })
+})
+
+describe('stock across every store, now that the engineer picks none', () => {
+  it('adds an item up over the stores holding it', () => {
+    const m = foldStock([
+      { itemId: 'cement', qty: 200 }, { itemId: 'cement', qty: 140 },
+      { itemId: 'sand', qty: 12 },
+    ])
+    expect(m.get('cement')).toEqual({ itemId: 'cement', qty: 340, stores: 2 })
+    expect(m.get('sand')).toEqual({ itemId: 'sand', qty: 12, stores: 1 })
+  })
+
+  it('ignores a zero or negative row rather than counting the store', () => {
+    const m = foldStock([{ itemId: 'a', qty: 5 }, { itemId: 'a', qty: 0 }])
+    expect(m.get('a')).toEqual({ itemId: 'a', qty: 5, stores: 1 })
+  })
+
+
+
 })

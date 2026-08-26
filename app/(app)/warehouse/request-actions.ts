@@ -16,7 +16,7 @@ import { isOn } from '@/lib/warehouse/settings'
 import { raiseBlocker, estimateValue, shortfalls } from '@/lib/warehouse/requests'
 import type { RaiseInput, ShortLine } from '@/lib/warehouse/requests'
 import { movesFor, needsApproval, personBlocker } from '@/lib/warehouse/approval-matrix'
-import { waiveBlocker, waivableLines, isCrossProject } from '@/lib/warehouse/cross-project'
+import { waiveBlocker, waivableLines } from '@/lib/warehouse/cross-project'
 import { getApprovalRules, myWarehouseRole } from '@/lib/warehouse/request-data'
 import { notifyRequestRaised, notifyRequestMoved, notifyReturnWaived } from '@/lib/warehouse/notify'
 import { getMyProfile } from '@/lib/auth'
@@ -55,15 +55,11 @@ export async function raiseRequest(input: RaiseInput): Promise<Raised> {
   const me = await getMyUser()
   const lines = input.lines.filter(l => l.itemId && l.qty > 0)
 
-  // Borrowing from ANOTHER project's store is always returnable. Decided HERE
-  // rather than trusting the form: the tick is locked in the UI, but a locked
-  // control is a courtesy and not a rule until the server says so.
-  const { data: store } = await sb
-    .from('wh_locations').select('project_id').eq('id', input.fromLocationId).maybeSingle()
-  const forcedReturnable = isCrossProject(
-    { projectId: store?.project_id ?? null },
-    { projectId: input.projectId ?? null },
-  )
+  // The cross-project returnable rule USED to be decided here. It cannot be any
+  // more: the engineer no longer names a store, so at this moment there is
+  // nothing to compare his project against. It moved to the only place that
+  // knows — Gate OUT, where the keeper picks the store the material leaves from.
+  // See saveGateOut in actions.ts.
 
   // Price the request from what each item last cost, so the value rule has
   // something to compare against.
@@ -110,7 +106,7 @@ export async function raiseRequest(input: RaiseInput): Promise<Raised> {
     lines.map(l => ({
       request_id: header.id, item_id: l.itemId, qty: l.qty,
       note: l.note?.trim() || null,
-      is_returnable: forcedReturnable || (l.isReturnable ?? false),
+      is_returnable: l.isReturnable ?? false,
     })),
   )
   if (lErr) {
@@ -133,24 +129,33 @@ export async function raiseRequest(input: RaiseInput): Promise<Raised> {
  *  Deliberately advisory: asking for material a store has not got is how the
  *  store learns to order it. */
 export async function checkStock(
-  locationId: string,
+  locationId: string | null,
   lines: Array<{ itemId: string; qty: number }>,
 ): Promise<ShortLine[]> {
   const denied = await gate('view')
-  if (denied || !locationId) return []
+  if (denied) return []
   const wanted = lines.filter(l => l.itemId && l.qty > 0)
   if (wanted.length === 0) return []
 
   const sb = await createClient()
-  const { data } = await sb.from('wh_stock')
+  // No store named — the normal case now — so the question becomes "do we hold
+  // this ANYWHERE", which is the only answer that helps before a keeper has
+  // decided which store serves it.
+  let q = sb.from('wh_stock')
     .select('item_id, qty, wh_items(name, unit)')
-    .eq('location_id', locationId)
     .in('item_id', wanted.map(l => l.itemId))
+  if (locationId) q = q.eq('location_id', locationId)
+  const { data, error } = await q
+  if (error) return []
 
   const onHand = new Map<string, { qty: number; itemName: string; unit: string }>()
   for (const r of data ?? []) {
-    onHand.set(r.item_id, {
-      qty: Number(r.qty),
+    // Summed, because without a store the same item appears once per store.
+    const cur = onHand.get(r.item_id)
+    const qty = Number(r.qty)
+    if (cur) cur.qty += qty
+    else onHand.set(r.item_id, {
+      qty,
       itemName: one(r.wh_items)?.name ?? 'that item',
       unit: one(r.wh_items)?.unit ?? '',
     })
@@ -317,13 +322,17 @@ export async function cancelRequest(id: string): Promise<Result> {
  *  Quantities only, no rates — the picker is shown to whoever is raising a
  *  request, and that includes roles the value-hiding rule covers. */
 export async function storeStock(
-  locationId: string,
+  locationId: string | null,
 ): Promise<Array<{ itemId: string; qty: number }>> {
   const denied = await gate('view')
-  if (denied || !locationId) return []
+  if (denied) return []
   const sb = await createClient()
-  const { data } = await sb.from('wh_stock')
-    .select('item_id, qty').eq('location_id', locationId).gt('qty', 0)
+  let q = sb.from('wh_stock').select('item_id, qty').gt('qty', 0)
+  if (locationId) q = q.eq('location_id', locationId)
+  const { data, error } = await q
+  if (error) return []
+  // One row per store, so the picker gets the per-store rows and folds them
+  // itself via foldStock — that way "340 in 2 stores" stays sayable.
   return (data ?? []).map(r => ({ itemId: r.item_id, qty: Number(r.qty) }))
 }
 

@@ -8,14 +8,13 @@ import { ItemPicker } from '@/components/warehouse/ItemPicker'
 import type { PickerItem } from '@/components/warehouse/ItemPicker'
 import { formatQty, formatINR } from '@/lib/warehouse/format'
 import { raiseRequest, checkStock, storeStock, addCatalogueItem } from '../../request-actions'
-import { estimateValue, raiseBlocker } from '@/lib/warehouse/requests'
+import { estimateValue, raiseBlocker, foldStock } from '@/lib/warehouse/requests'
 import type { ShortLine } from '@/lib/warehouse/requests'
 import { waitingOn } from '@/lib/warehouse/approval-matrix'
-import { returnableLock } from '@/lib/warehouse/cross-project'
 import type { Rule } from '@/lib/warehouse/approval-matrix'
 import type { WhSite, WhItem } from '@/lib/warehouse/types'
 import {
-  Loader2, Plus, Trash2, Stamp, TriangleAlert, Info, Send, ChevronDown, Undo2,
+  Loader2, Plus, Trash2, Stamp, TriangleAlert, Info, Send, ChevronDown,
 } from 'lucide-react'
 
 const inputCls =
@@ -52,7 +51,7 @@ export function NewRequestForm({
   const router = useRouter()
   const [busy, start] = useTransition()
 
-  const [fromLocationId, setFrom] = useState('')
+
   const [toLocationId, setTo] = useState('')
   const [projectId, setProject] = useState('')
   const [purpose, setPurpose] = useState('')
@@ -66,44 +65,37 @@ export function NewRequestForm({
     id: sp.id, name: sp.name, site: sp.siteName,
     projectId: sp.projectId, projectName: sp.projectName,
   }))), [sites])
-  const store = spots.find(s => s.id === fromLocationId) ?? null
-  const storeName = store?.name ?? null
+  // No source store: the engineer says what he needs and the keeper decides
+  // which of nine stores serves it. That also means the cross-project returnable
+  // rule cannot be judged here — it is applied at Gate OUT, where the store is
+  // finally known. The tick below is therefore the engineer's own call again.
 
-  // Borrowing from ANOTHER project’s store is always returnable — that stock was
-  // bought against a different budget. The engineer does not choose; the Atm
-  // Head can release it after approving. A sentence rather than a disabled tick
-  // with no explanation, which reads as a bug.
-  const lock = returnableLock(
-    { projectId: store?.projectId ?? null },
-    { projectId: projectId || null },
-    store?.projectName ?? null,
-  )
-
-  // The catalogue with this store's quantities folded in, so the picker can
-  // separate "here now" from "somewhere in the master".
+  // The catalogue with TOTAL stock folded in — across every store, since no one
+  // store has been chosen. The picker separates "we hold some" from "we hold
+  // none anywhere", which is the only distinction that helps before a keeper
+  // decides where it comes from.
   useEffect(() => {
     let live = true
     const base: PickerItem[] = items.map(i => ({
       id: i.id, name: i.name, code: i.code, unit: i.unit, category: i.category, inStore: 0,
     }))
     const load = async () => {
-      if (!fromLocationId) { if (live) setCatalogue(base); return }
-      const held = await storeStock(fromLocationId)
+      const held = await storeStock(null)
       if (!live) return
-      const m = new Map(held.map(h => [h.itemId, h.qty]))
-      setCatalogue(base.map(i => ({ ...i, inStore: m.get(i.id) ?? 0 })))
+      const folded = foldStock(held)
+      setCatalogue(base.map(i => ({ ...i, inStore: folded.get(i.id)?.qty ?? 0 })))
     }
     void load()
     return () => { live = false }
-  }, [fromLocationId, items])
+  }, [items])
 
   const lines = useMemo(() => rows
     .filter(r => r.itemId && Number(r.qty) > 0)
     .map(r => ({
       itemId: r.itemId, qty: Number(r.qty),
       note: r.remarks.trim() || null,
-      isReturnable: !!lock || r.returnable,
-    })), [rows, lock])
+      isReturnable:  r.returnable,
+    })), [rows])
 
   const est = useMemo(() => {
     const byId = new Map(items.map(i => [i.id, i]))
@@ -120,15 +112,15 @@ export function NewRequestForm({
   useEffect(() => {
     let live = true
     const t = setTimeout(async () => {
-      if (!fromLocationId || lines.length === 0) { if (live) setShort([]); return }
-      const s = await checkStock(fromLocationId, lines.map(l => ({ itemId: l.itemId, qty: l.qty })))
+      if (lines.length === 0) { if (live) setShort([]); return }
+      const s = await checkStock(null, lines.map(l => ({ itemId: l.itemId, qty: l.qty })))
       if (live) setShort(s)
     }, 450)
     return () => { live = false; clearTimeout(t) }
-  }, [fromLocationId, lines])
+  }, [lines])
 
   const blocker = raiseBlocker({
-    fromLocationId, toLocationId: toLocationId || null, projectId: projectId || null,
+    fromLocationId: null, toLocationId: toLocationId || null, projectId: projectId || null,
     purpose, needBy: needBy || null, lines,
   }, today)
 
@@ -140,14 +132,6 @@ export function NewRequestForm({
     <div className="space-y-3">
       <Card className="p-3 shadow-sm">
         <div className="grid sm:grid-cols-2 gap-2">
-          <div>
-            <label className={labelCls} htmlFor="req-from">Which store are you asking?</label>
-            <select id="req-from" className={inputCls} value={fromLocationId}
-              onChange={e => setFrom(e.target.value)}>
-              <option value="">— pick a store —</option>
-              {spots.map(s => <option key={s.id} value={s.id}>{s.site} — {s.name}</option>)}
-            </select>
-          </div>
           <div>
             <label className={labelCls} htmlFor="req-proj">For which project?</label>
             <select id="req-proj" className={inputCls} value={projectId}
@@ -172,21 +156,11 @@ export function NewRequestForm({
             <select id="req-to" className={inputCls} value={toLocationId}
               onChange={e => setTo(e.target.value)}>
               <option value="">— no, issue it to my site —</option>
-              {spots.filter(s => s.id !== fromLocationId).map(s =>
+              {spots.map(s =>
                 <option key={s.id} value={s.id}>{s.name}</option>)}
             </select>
           </div>
         </div>
-
-        {/* Said once, here, next to the two answers that decide it — rather than
-            only as small print beside every line’s tick. */}
-        {lock && (
-          <p className="mt-2 flex items-start gap-1.5 rounded-lg border border-violet-200 bg-violet-50
-                        px-2.5 py-2 text-[11.5px] leading-snug text-violet-900">
-            <Undo2 className="h-3.5 w-3.5 mt-0.5 flex-shrink-0" />
-            <span>{lock}</span>
-          </p>
-        )}
       </Card>
 
       {/* Items, in the V1 sheet layout: a header with Add row on the right, then
@@ -240,21 +214,20 @@ export function NewRequestForm({
             <div className="flex items-center justify-between gap-2 flex-wrap px-0.5">
               {/* Per LINE, not per request: one pour routinely mixes cement that
                   gets consumed with shuttering that has to come back. */}
-              <label className={`flex items-start gap-2 text-[11.5px] ${
-                lock ? 'text-violet-800 cursor-default' : 'text-slate-600 cursor-pointer'}`}>
-                <input type="checkbox" checked={!!lock || row.returnable} disabled={!!lock}
+              <label className="flex items-start gap-2 text-[11.5px] text-slate-600 cursor-pointer">
+                <input type="checkbox" checked={row.returnable}
                   className="mt-0.5 h-3.5 w-3.5"
                   onChange={e => setRow(row.key, { returnable: e.target.checked })} />
-                <span>Returnable <span className={lock ? 'text-violet-500' : 'text-slate-400'}>
-                  {lock ? '(another project’s stock)' : '(tool / formwork — must come back)'}
+                <span>Returnable <span className="text-slate-400">
+                  (tool / formwork — must come back)
                 </span></span>
               </label>
               {row.itemId && (
                 <span className={`text-[11px] font-semibold ${
                   row.inStore > 0 ? 'text-emerald-700' : 'text-slate-400'}`}>
                   {row.inStore > 0
-                    ? `${formatQty(row.inStore)} ${row.unit} in this store`
-                    : 'not in this store'}
+                    ? `${formatQty(row.inStore)} ${row.unit} in stock`
+                    : 'none in any store'}
                 </span>
               )}
             </div>
@@ -297,7 +270,7 @@ export function NewRequestForm({
         <button type="button" disabled={busy || !!blocker}
           onClick={() => start(async () => {
             const res = await raiseRequest({
-              fromLocationId, toLocationId: toLocationId || null, projectId: projectId || null,
+              fromLocationId: null, toLocationId: toLocationId || null, projectId: projectId || null,
               purpose, needBy: needBy || null, lines,
             })
             if (!res.ok) { toast.error(res.error, { duration: 9000 }); return }
@@ -321,7 +294,7 @@ export function NewRequestForm({
         open={pickFor !== null}
         onClose={() => setPickFor(null)}
         items={catalogue}
-        storeName={storeName}
+        storeName={null}
         alreadyOn={rows.filter(r => r.key !== pickFor && r.itemId).map(r => r.itemId)}
         onPick={it => {
           if (!pickFor) return
