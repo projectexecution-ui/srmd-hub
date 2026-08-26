@@ -16,6 +16,7 @@ import { sortDisciplines } from '@/lib/cost-control/discipline-order'
 import { overBudgetAmount, overBudgetDriver } from '@/lib/cost-control/over-budget'
 import { canMarkComplete, savingsOnCompletion } from '@/lib/cost-control/completion'
 import { ccApprovalPath } from '@/lib/cost-control/approval-link'
+import { estimateShortfall, hasNoEstimate } from '@/lib/cost-control/estimate-vs-erp'
 import { CompleteControl } from './CompleteControl'
 import { ProjectAlerts } from './ProjectAlerts'
 import { QueryError } from '@/components/ui/query-error'
@@ -403,6 +404,26 @@ export default async function CostControlProjectDetailPage(
     .sort((a, b) => b.over - a.over)
   const overBudgetTotal = overBudgetLines.reduce((sum, l) => sum + l.over, 0)
 
+  // Internal Estimate sitting BELOW what ERP already released (HOD #5).
+  // Reported, never blocked: 21 lines portfolio-wide already break the rule and
+  // estimates are routinely loaded before the ERP figures arrive. What it
+  // actually catches is placeholders — a round ₹12,00,000 typed to fill a box.
+  // "No estimate at all" is counted apart: a missing baseline is a different
+  // problem, and 208 blank lines would bury the 20 genuinely wrong ones.
+  const estimateGapLines: { label: string; short: number }[] = []
+  let noEstimateCount = 0
+  for (const s of subSkills) {
+    if (!disciplines.some(d => d.id === s.discipline_id)) continue
+    const d = disciplines.find(x => x.id === s.discipline_id)!
+    const bl = blMap.get(`${s.discipline_id}::${s.id}`)
+    const est = wsAgg.get(`${s.discipline_id}::${s.id}`)?.planTotal ?? 0
+    if (hasNoEstimate(est, bl)) { noEstimateCount++; continue }
+    const short = estimateShortfall(est, bl)
+    if (short > 0) estimateGapLines.push({ label: `${d.code} ${d.name} › ${s.code} ${s.name}`, short })
+  }
+  estimateGapLines.sort((a, b) => b.short - a.short)
+  const estimateGapTotal = estimateGapLines.reduce((sum, l) => sum + l.short, 0)
+
   // Closed sub-categories (HOD #3) and the budget they released. Two figures
   // worth separating: what has already been released, and what is sitting
   // ready to be released the moment someone presses the button.
@@ -644,6 +665,11 @@ export default async function CostControlProjectDetailPage(
         over={showErp && overBudgetLines.length > 0 ? {
           lines: overBudgetLines.map(l => ({ label: l.label, amountLabel: formatINR(l.over) })),
           totalLabel: `${formatINR(overBudgetTotal)}${perSftInline(overBudgetTotal)}`,
+        } : null}
+        estimateGap={showErp && (estimateGapLines.length > 0 || noEstimateCount > 0) ? {
+          lines: estimateGapLines.map(l => ({ label: l.label, amountLabel: formatINR(l.short) })),
+          totalLabel: `${formatINR(estimateGapTotal)}${perSftInline(estimateGapTotal)}`,
+          noEstimateCount,
         } : null}
         completion={showErp ? {
           completedCount,
@@ -934,6 +960,9 @@ export default async function CostControlProjectDetailPage(
                       const estLive = a?.planTotal ?? 0
                       const ask = a?.pendingAmount ?? 0
                       const released = a?.approvedTotal ?? 0
+                      // Estimate below what ERP already released (HOD #5).
+                      const sEstShort = estimateShortfall(estLive, bl)
+                      const sNoEstimate = hasNoEstimate(estLive, bl)
                       // estLive is now the Internal Estimate baseline alone
                       // (the latest [IB] upload) — no longer mixed with the
                       // engineer's ask — so compare the ask straight against
@@ -982,6 +1011,24 @@ export default async function CostControlProjectDetailPage(
                           </td>
                           <Td align="right" mono className="text-indigo-800">
                             <Money amt={estLive} />
+                            {/* Below what ERP already released — usually a
+                                placeholder nobody filled in. (HOD #5) */}
+                            {sEstShort > 0 && (
+                              <span
+                                className="block text-[10px] font-extrabold leading-tight text-violet-700"
+                                title={`The Internal Estimate is ${formatINR(sEstShort)} lower than the budget already approved in ERP. An estimate can only be higher than what ERP has released, never lower.`}
+                              >
+                                ▼ {formatINR(sEstShort)} below ERP
+                              </span>
+                            )}
+                            {sNoEstimate && (
+                              <span
+                                className="block text-[10px] font-bold leading-tight text-violet-700"
+                                title={`ERP has released ${formatINR(bl?.budget ?? 0)} against this sub-category but no Internal Estimate was ever set.`}
+                              >
+                                no estimate set
+                              </span>
+                            )}
                             {ccSettings.ie_review && (estLive > 0 || ie) && (
                               <div className="mt-1 flex justify-end">
                                 <InternalEstimateDecision
@@ -1196,6 +1243,8 @@ export default async function CostControlProjectDetailPage(
               const sOverBy = overBudgetDriver(bl)
               const sCompletedAt = subMeta.get(s.id)?.completedAt ?? null
               const sCompletedBy = profileMap.get(subMeta.get(s.id)?.completedBy ?? '') ?? null
+              const sEstShort = estimateShortfall(estLive, bl)
+              const sNoEstimate = hasNoEstimate(estLive, bl)
               const isEmpty = estLive === 0 && ask === 0 && wsCount === 0
                 && (bl?.budget ?? 0) === 0 && (bl?.wo ?? 0) === 0 && (bl?.paid ?? 0) === 0
               // Never hide the row the approver was deep-linked to, even if it
@@ -1231,6 +1280,18 @@ export default async function CostControlProjectDetailPage(
                     <span className="text-[13px] text-gray-600">Estimate</span>
                     <span className="text-[14px] font-semibold tabular-nums text-indigo-800 text-right"><Money amt={estLive} /></span>
                   </div>
+                  {/* An estimate below what ERP already released is usually a
+                      placeholder nobody filled in. Reported, never blocked. (HOD #5) */}
+                  {sEstShort > 0 && (
+                    <p className="-mt-0.5 mb-1 text-[11px] font-bold text-violet-700">
+                      Estimate is {formatINR(sEstShort)} BELOW the ERP budget — it cannot be lower than what is already approved
+                    </p>
+                  )}
+                  {sNoEstimate && (
+                    <p className="-mt-0.5 mb-1 text-[11px] font-semibold text-violet-700">
+                      No Internal Estimate set, but ERP has released {formatINR(bl?.budget ?? 0)}
+                    </p>
+                  )}
                   {ask > 0 && (() => {
                     const ids = awaitingBySub.get(`${d.id}::${s.id}`) ?? []
                     const href = awaitingHref(ids, `/cost-control/working-sheets?project=${project.id}&discipline=${d.id}&sub_skill=${s.id}`)

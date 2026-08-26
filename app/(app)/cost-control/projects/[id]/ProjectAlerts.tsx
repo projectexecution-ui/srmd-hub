@@ -13,7 +13,7 @@
 
 import { useState } from 'react'
 import Link from 'next/link'
-import { Flame, TrendingUp, CheckCircle2, ArrowRight, X } from 'lucide-react'
+import { Flame, TrendingUp, TrendingDown, CheckCircle2, ArrowRight, X } from 'lucide-react'
 
 export interface PendingSheet {
   id: string
@@ -40,6 +40,14 @@ export interface OverBudgetAlert {
   lines: { label: string; amountLabel: string }[]
   totalLabel: string
 }
+export interface EstimateGapAlert {
+  /** Lines whose Internal Estimate sits below the ERP-approved budget. */
+  lines: { label: string; amountLabel: string }[]
+  totalLabel: string
+  /** Lines ERP has funded with no Internal Estimate at all — a MISSING
+   *  baseline, counted apart from a wrong one. */
+  noEstimateCount: number
+}
 export interface CompletionAlert {
   completedCount: number
   releasedLabel: string | null
@@ -47,13 +55,14 @@ export interface CompletionAlert {
   readySavingsLabel: string | null
 }
 
-type Key = 'pending' | 'over' | 'done'
+type Key = 'pending' | 'over' | 'estgap' | 'done'
 
 export function ProjectAlerts({
-  pending, over, completion,
+  pending, over, estimateGap, completion,
 }: {
   pending: PendingAlert | null
   over: OverBudgetAlert | null
+  estimateGap: EstimateGapAlert | null
   completion: CompletionAlert | null
 }) {
   // Approvals open by default: they are the only one of the three that is
@@ -76,6 +85,15 @@ export function ProjectAlerts({
       label: `${over.lines.length} over budget`,
     })
   }
+  if (estimateGap && (estimateGap.lines.length > 0 || estimateGap.noEstimateCount > 0)) {
+    chips.push({
+      key: 'estgap', tone: 'violet',
+      icon: <TrendingDown className="h-3.5 w-3.5" />,
+      label: estimateGap.lines.length > 0
+        ? `${estimateGap.lines.length} estimate below ERP`
+        : `${estimateGap.noEstimateCount} no estimate`,
+    })
+  }
   if (completion && (completion.readyCount > 0 || completion.completedCount > 0)) {
     chips.push({
       key: 'done', tone: 'emerald',
@@ -90,6 +108,7 @@ export function ProjectAlerts({
   const TONES: Record<string, { idle: string; active: string; panel: string }> = {
     amber:   { idle: 'border-amber-200 bg-amber-50 text-amber-900',      active: 'border-amber-400 bg-amber-100 text-amber-900 ring-1 ring-amber-300',      panel: 'bg-amber-50/70 border-amber-200' },
     rose:    { idle: 'border-rose-200 bg-rose-50 text-rose-900',         active: 'border-rose-400 bg-rose-100 text-rose-900 ring-1 ring-rose-300',          panel: 'bg-rose-50/70 border-rose-200' },
+    violet:  { idle: 'border-violet-200 bg-violet-50 text-violet-900',      active: 'border-violet-400 bg-violet-100 text-violet-900 ring-1 ring-violet-300',      panel: 'bg-violet-50/70 border-violet-200' },
     emerald: { idle: 'border-emerald-200 bg-emerald-50 text-emerald-900', active: 'border-emerald-400 bg-emerald-100 text-emerald-900 ring-1 ring-emerald-300', panel: 'bg-emerald-50/70 border-emerald-200' },
   }
   const activeTone = chips.find(c => c.key === open)?.tone ?? 'amber'
@@ -191,6 +210,37 @@ export function ProjectAlerts({
                 Either the ERP budget needs topping up, or a WO was issued beyond it — check in IN4, then re-pull BPH.
                 A work category can read a smaller &ldquo;net&rdquo; figure where its other sub-categories still have budget left.
               </p>
+            </>
+          )}
+
+          {open === 'estgap' && estimateGap && (
+            <>
+              {estimateGap.lines.length > 0 && (
+                <>
+                  <p className="font-semibold text-violet-900">
+                    Internal Estimate is below the budget ERP already approved · {estimateGap.totalLabel} short
+                  </p>
+                  <ul className="mt-1.5 space-y-1">
+                    {estimateGap.lines.map(l => (
+                      <li key={l.label} className="flex items-baseline justify-between gap-3 text-violet-900">
+                        <span className="min-w-0">{l.label}</span>
+                        <span className="flex-shrink-0 font-bold tabular-nums">{l.amountLabel}</span>
+                      </li>
+                    ))}
+                  </ul>
+                  <p className="mt-2 text-[11.5px] text-violet-700">
+                    An estimate can only be higher than what ERP has released, never lower. A round number well under
+                    the ERP figure is usually a placeholder nobody went back and filled in — fix it in the Internal
+                    Budget and re-import.
+                  </p>
+                </>
+              )}
+              {estimateGap.noEstimateCount > 0 && (
+                <p className={`text-violet-800 ${estimateGap.lines.length > 0 ? 'mt-2 pt-2 border-t border-violet-200' : 'font-semibold'}`}>
+                  {estimateGap.noEstimateCount} sub-{estimateGap.noEstimateCount === 1 ? 'category has' : 'categories have'} an
+                  ERP budget with <b>no Internal Estimate at all</b> — a missing baseline rather than a wrong one.
+                </p>
+              )}
             </>
           )}
 
