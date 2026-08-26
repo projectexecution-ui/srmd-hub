@@ -741,6 +741,14 @@ export default async function CostControlProjectDetailPage(
           (Budget vs Actual) and deadline columns follow the settings toggles.
           Categories collapse into their cumulative totals (project-tree). */}
       <TreeProvider
+        // Remount when the focused row changes. TreeProvider seeds `collapsed`
+        // from a useState INITIALISER, which runs only on mount — and tapping a
+        // row in the alert strip is a same-route navigation (only the search
+        // params change), so React keeps the old instance and the new
+        // initialCollapsedIds are ignored. Every category stayed collapsed, the
+        // target row was never rendered, and FocusScroll had nothing to scroll
+        // to: the tap looked like it did nothing. A key is the idiomatic reset.
+        key={`${focusDisc ?? ''}|${focusSub ?? ''}`}
         allCatIds={disciplines.map(d => d.id)}
         // Declutter by default: management lands on rolled-up categories (expand
         // what you need). A deep-link from an approval opens ONLY its category.
