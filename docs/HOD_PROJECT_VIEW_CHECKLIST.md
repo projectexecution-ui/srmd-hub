@@ -77,15 +77,39 @@ past 95% used, which reads as "nearly full", not "overspent".
 count on the project header, and the same on the discipline roll-up. Read-only
 — it reports, it does not block.
 
-## 5. Internal Estimate can never be below what ERP already approved — TODO
+## 5. Internal Estimate can never be below what ERP already approved — DONE (`627f700`)
 
-The rule is clear; the enforcement point is the question. The Internal Estimate
-is usually loaded **before** the ERP figures arrive, so a hard block at upload
-would reject legitimate imports.
+**Reported, not blocked — and that was a data decision.** Of the 135 lines
+carrying both figures, **21 already break the rule**, ₹8.75 Cr between them. A
+block would refuse numbers that are already live, and estimates are routinely
+loaded before the ERP figures arrive.
 
-**Proceeding assumption:** allow the value, but flag it loudly on the row
-(`below ERP approved by ₹X`) and block the *manual* Trustee "accept" of an
-estimate that sits below the approved figure. Never silently clamp a number.
+What it catches is placeholders:
+
+| Project | Sub-category | Estimate | ERP Budget | Short by |
+|---|---|---:|---:|---:|
+| NGH B | 317 Civil Contractor Cost | ₹7,76,54,035 | ₹11,81,14,151 | ₹4,04,60,116 |
+| SRAH | 801 High Side | ₹5,00,000 | ₹1,72,00,000 | ₹1,67,00,000 |
+| 7 projects | 201 Excavation & Backfilling | ₹12,00,000 each | 3–4× that | — |
+
+A round ₹12,00,000 repeated across seven unrelated projects is not an estimate.
+
+**₹1,000 noise floor** (`ESTIMATE_SHORTFALL_FLOOR`). SRAH's 1602 Courtyards is
+₹5,20,000 against ₹5,20,001 — one rupee. Every genuine violation is ₹9,332 or
+more, so nothing real is hidden. Live: 21 raw → **20 flagged**.
+
+**"No estimate at all" counted separately** — 208 lines portfolio-wide (10 on
+SRAH). Folding them in would take the flag from 20 to 228 and bury every
+genuinely wrong one. A missing baseline is a different problem from a wrong one.
+
+Surfaces: violet marker under the Internal Estimate cell (desktop), the same
+sentence on the phone card, and an alert-strip chip naming the worst lines —
+necessary because categories are collapsed by default.
+
+Not enforced at the Trustee accept step: `cc_ie_review` is **false**, so that
+path is dead code today. Revisit if the toggle is switched on.
+
+Verified live on SRAH: 4 lines, **₹2,09,72,600 · ₹250/sft short**.
 
 ## 6. Create a new discipline / sub-discipline from this view — TODO
 
