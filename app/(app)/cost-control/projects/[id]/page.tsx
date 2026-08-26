@@ -13,6 +13,7 @@ import { formatINR } from '@/lib/utils'
 import { getCcSettings } from '@/lib/cost-control/settings'
 import { computeMoneyRollup, type RollupWSRow, type RollupVersionRow, type RollupBudgetLine } from '@/lib/cost-control/project-rollup'
 import { sortDisciplines } from '@/lib/cost-control/discipline-order'
+import { overBudgetAmount, overBudgetDriver } from '@/lib/cost-control/over-budget'
 import { QueryError } from '@/components/ui/query-error'
 import { DeadlineBadge } from '@/components/cost-control/DeadlineBadge'
 import { TreeProvider, TreeToolbar, CatChevron, CatRows, SubRow } from '@/components/cost-control/project-tree'
@@ -377,6 +378,22 @@ export default async function CostControlProjectDetailPage(
   const focusSubRow  = focusSheet ? subSkills.find(s => s.id === focusSheet.sub_skill_id) ?? null : null
   const focusSheetHref = focusSheet ? `/cost-control/working-sheets/${focusSheet.id}?from=approvals` : null
 
+  // Every sub-skill whose spend/commitment has passed the released ERP budget,
+  // worst first — drives the header banner. Built off the same blMap the rows
+  // read, so the banner can never name a line the table contradicts. (HOD #4)
+  const overBudgetLines = subSkills
+    .filter(s => disciplines.some(d => d.id === s.discipline_id))
+    .map(s => {
+      const d = disciplines.find(x => x.id === s.discipline_id)!
+      return {
+        label: `${d.code} ${d.name} › ${s.code} ${s.name}`,
+        over: overBudgetAmount(blMap.get(`${s.discipline_id}::${s.id}`)),
+      }
+    })
+    .filter(x => x.over > 0)
+    .sort((a, b) => b.over - a.over)
+  const overBudgetTotal = overBudgetLines.reduce((sum, l) => sum + l.over, 0)
+
   // Portfolio rollup (across all sub-skills on this project)
   const totalBudget = Array.from(discAgg.values()).reduce((s, v) => s + v.budget, 0)
   const totalWO = Array.from(discAgg.values()).reduce((s, v) => s + v.wo, 0)
@@ -534,6 +551,24 @@ export default async function CostControlProjectDetailPage(
               <ArrowRight className="h-4 w-4" />
             </Link>
           </div>
+        </div>
+      )}
+
+      {/* Spend past what ERP released. Not our arithmetic — IN4 says WOs were
+          issued above the budget — so this reports it and names the lines
+          rather than quietly turning a percentage red. (HOD #4) */}
+      {showErp && overBudgetLines.length > 0 && (
+        <div className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-2.5">
+          <p className="text-sm font-semibold text-rose-900">
+            {overBudgetLines.length} {overBudgetLines.length === 1 ? 'item is' : 'items are'} over the budget released in ERP
+            <span className="font-normal text-rose-700"> · {formatINR(overBudgetTotal)} beyond</span>
+          </p>
+          <p className="mt-1 text-[12px] text-rose-800 leading-snug">
+            {overBudgetLines.map(l => `${l.label} (${formatINR(l.over)})`).join(' · ')}
+          </p>
+          <p className="mt-1 text-[11px] text-rose-700/90">
+            Either the ERP budget needs topping up, or a WO was issued beyond it — check in IN4, then re-pull BPH.
+          </p>
         </div>
       )}
 
@@ -726,6 +761,7 @@ export default async function CostControlProjectDetailPage(
                 const dPct = dAgg.budget > 0 ? (dAgg.paid / dAgg.budget) * 100 : 0
                 const subs = subSkills.filter(s => s.discipline_id === d.id)
                 const dHot = dPct > 95
+                const dOver = overBudgetAmount(dAgg)
 
                 // Discipline-level earliest open deadline across its sub-skills
                 let dEarliest: string | null = null
@@ -769,8 +805,13 @@ export default async function CostControlProjectDetailPage(
                           <Td align="right" mono><Money amt={dAgg.budget} /></Td>
                           <Td align="right" mono className="text-gray-600"><Money amt={dAgg.wo} /></Td>
                           <Td align="right" mono className="text-gray-600"><Money amt={dAgg.paid} /></Td>
-                          <Td align="right" className={dPct > 95 ? 'text-red-600' : dPct > 80 ? 'text-amber-700' : 'text-green-700'}>
+                          <Td align="right" className={dOver > 0 ? 'text-rose-700 font-bold' : dPct > 95 ? 'text-red-600' : dPct > 80 ? 'text-amber-700' : 'text-green-700'}>
                             {dAgg.budget > 0 ? `${dPct.toFixed(0)}%` : '—'}
+                            {dOver > 0 && (
+                              <span className="block text-[10px] font-extrabold leading-tight text-rose-600">
+                                OVER {formatINR(dOver)}
+                              </span>
+                            )}
                           </Td>
                         </>
                       )}
@@ -821,6 +862,10 @@ export default async function CostControlProjectDetailPage(
                         ? (bl.paid / bl.budget) * 100
                         : 0
                       const sHot = sPct > 95
+                      // Spent/committed past what ERP released — a different
+                      // fact from "nearly full". (HOD #4)
+                      const sOver = overBudgetAmount(bl)
+                      const sOverBy = overBudgetDriver(bl)
                       const wsCount = a?.chains.size ?? 0
                       const ie = ieMap.get(`${d.id}::${s.id}`)
                       const estLive = a?.planTotal ?? 0
@@ -917,8 +962,16 @@ export default async function CostControlProjectDetailPage(
                               <Td align="right" mono><Money amt={bl?.budget ?? 0} /></Td>
                               <Td align="right" mono className="text-gray-600"><Money amt={bl?.wo ?? 0} /></Td>
                               <Td align="right" mono className="text-gray-600"><Money amt={bl?.paid ?? 0} /></Td>
-                              <Td align="right" className={sPct > 95 ? 'text-red-600 font-semibold' : sPct > 80 ? 'text-amber-700 font-semibold' : sPct > 0 ? 'text-green-700 font-semibold' : 'text-gray-400'}>
+                              <Td align="right" className={sOver > 0 ? 'text-rose-700 font-bold' : sPct > 95 ? 'text-red-600 font-semibold' : sPct > 80 ? 'text-amber-700 font-semibold' : sPct > 0 ? 'text-green-700 font-semibold' : 'text-gray-400'}>
                                 {bl && bl.budget > 0 ? `${sPct.toFixed(0)}%` : '—'}
+                                {sOver > 0 && (
+                                  <span
+                                    className="block text-[10px] font-extrabold leading-tight text-rose-600"
+                                    title={`${sOverBy === 'paid' ? 'Paid' : 'Committed on WO/PO'} is ${formatINR(sOver)} more than the budget released in ERP`}
+                                  >
+                                    OVER {formatINR(sOver)}
+                                  </span>
+                                )}
                               </Td>
                             </>
                           )}
@@ -1061,6 +1114,8 @@ export default async function CostControlProjectDetailPage(
               const baseline = ie?.decision === 'accepted' && ie.amt != null ? ie.amt : estLive
               const overBy = baseline > 0 && ask > baseline ? ask - baseline : 0
               const sPct = bl && bl.budget > 0 ? (bl.paid / bl.budget) * 100 : 0
+              const sOver = overBudgetAmount(bl)
+              const sOverBy = overBudgetDriver(bl)
               const isEmpty = estLive === 0 && ask === 0 && wsCount === 0
                 && (bl?.budget ?? 0) === 0 && (bl?.wo ?? 0) === 0 && (bl?.paid ?? 0) === 0
               // Never hide the row the approver was deep-linked to, even if it
@@ -1136,13 +1191,21 @@ export default async function CostControlProjectDetailPage(
                       <div className="flex items-center justify-between gap-2 mb-1.5">
                         <span className="text-[10px] uppercase tracking-wider text-gray-400">Actuals (ERP)</span>
                         {bl && bl.budget > 0
-                          ? <span className={`text-[11px] font-semibold tabular-nums ${sPct > 95 ? 'text-red-600' : sPct > 80 ? 'text-amber-700' : 'text-emerald-700'}`}>{sPct.toFixed(0)}% used</span>
+                          ? <span className={`text-[11px] font-semibold tabular-nums ${sOver > 0 ? 'text-rose-700' : sPct > 95 ? 'text-red-600' : sPct > 80 ? 'text-amber-700' : 'text-emerald-700'}`}>{sPct.toFixed(0)}% used</span>
                           : <span className="text-[11px] text-gray-400">No budget yet</span>}
                       </div>
                       {bl && bl.budget > 0 && (
                         <div className="h-1.5 rounded-full bg-gray-100 overflow-hidden">
-                          <div className={`h-full rounded-full ${sPct > 95 ? 'bg-red-500' : sPct > 80 ? 'bg-amber-500' : 'bg-emerald-500'}`} style={{ width: `${Math.min(sPct, 100)}%` }} />
+                          <div className={`h-full rounded-full ${sOver > 0 ? 'bg-rose-600' : sPct > 95 ? 'bg-red-500' : sPct > 80 ? 'bg-amber-500' : 'bg-emerald-500'}`} style={{ width: `${Math.min(sPct, 100)}%` }} />
                         </div>
+                      )}
+                      {/* The desktop table says this in the "% Used" column; the
+                          phone gets its own line so the two never disagree. (HOD #4) */}
+                      {sOver > 0 && (
+                        <p className="mt-1.5 text-[11px] font-bold text-rose-700">
+                          Over the ERP budget by {formatINR(sOver)}
+                          <span className="font-normal text-rose-600"> ({sOverBy === 'paid' ? 'already paid' : 'committed on WO/PO'})</span>
+                        </p>
                       )}
                       <p className="mt-1.5 text-[11px] text-gray-500 tabular-nums leading-snug">
                         Budget {formatINR(bl?.budget ?? 0)}
