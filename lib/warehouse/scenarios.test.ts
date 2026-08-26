@@ -160,7 +160,7 @@ describe('QA scenarios — rules enforced in code', () => {
 
   it('S42 the same stock totals the same whichever way it is grouped', () => {
     const line = (o: Partial<StockLine> & { itemId: string }): StockLine => ({
-      locationId: 'A', inQty: 0, outQty: 0, transferQty: 0, adjustQty: 0, voidQty: 0,
+      locationId: 'A', inQty: 0, outQty: 0, transferQty: 0, openingQty: 0, adjustQty: 0, voidQty: 0,
       damagedQty: 0, vendorOutQty: 0, inHand: 10, itemName: o.itemId, unit: 'Nos',
       category: null, discipline: null, locationName: 'Store A', siteName: 'Site',
       minQty: null, rate: 5, value: 50, flag: null, ...o,

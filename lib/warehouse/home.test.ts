@@ -30,7 +30,7 @@ function input(role: string, over: Partial<HomeInput> = {}): HomeInput {
     canEdit: m.edit, canAdmin: m.admin, requestsOn: true, role,
     keepsAStore: false,
     itemsInStock: 472, catalogueItems: 2803, spots: 9, todayIn: 0,
-    toApprove: 0, toIssue: 0, mine: 0, canApprove: false,
+    toApprove: 0, toIssue: 0, passPending: 0, mine: 0, canApprove: false,
     ...over,
   }
 }

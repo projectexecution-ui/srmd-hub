@@ -1,6 +1,7 @@
 /** Reads for the correction screens. Writes live in admin-actions.ts. */
 
 import { createClient } from '@/lib/supabase/server'
+import { fetchAll } from './paging'
 import { one } from './data'
 import { outstandingOf } from './corrections'
 import { getRoleLabels } from '@/lib/role-labels'
@@ -161,6 +162,8 @@ export type EntryDetail = {
   gatePassAt: string | null
   /** The request this handover answers, if any — for linking back. */
   requestId: string | null
+  /** OUT only. A store move stays on the campus, so it is owed no gate pass. */
+  destType: 'site' | 'store' | 'vendor' | null
 }
 
 /** Signed, time-limited URLs for private-bucket paths.
@@ -225,7 +228,7 @@ export async function getEntryDetail(
           short: Math.max(0, Number(l.short_qty ?? 0)),
         })),
         returnable: false,
-        gatePassUrls: [], gatePassBy: null, gatePassAt: null, requestId: null,
+        gatePassUrls: [], gatePassBy: null, gatePassAt: null, requestId: null, destType: null,
       },
     }
   }
@@ -268,6 +271,7 @@ export async function getEntryDetail(
       gatePassBy: personName(e.passer),
       gatePassAt: (e.gate_pass_at as string | null) ?? null,
       requestId: (e.request_id as string | null) ?? null,
+      destType: e.dest_type as 'site' | 'store' | 'vendor',
       lines: (e.wh_gate_out_lines ?? []).map(l => ({
         lineId: l.id,
         itemName: one(l.wh_items)?.name ?? '—',
@@ -315,18 +319,23 @@ export async function getCategoryCounts(
   includeRetired = false,
 ): Promise<{ counts: Array<{ category: string; n: number }>; total: number; error?: string }> {
   const sb = await createClient()
-  let q = sb.from('wh_items').select('category')
-  if (!includeRetired) q = q.is('deleted_at', null)
-  const { data, error } = await q
-  if (error) return { counts: [], total: 0, error: error.message }
+  // Paged: this counts the WHOLE master. Unpaginated it counted the first
+  // thousand of 2,803, so the chips read "All 1000 · Electrical 917 · Civil
+  // 83" and the other fourteen categories were simply absent.
+  const { rows, error } = await fetchAll<{ category: string | null }>((from, to) => {
+    let q = sb.from('wh_items').select('category')
+    if (!includeRetired) q = q.is('deleted_at', null)
+    return q.order('id').range(from, to)
+  })
+  if (error) return { counts: [], total: 0, error }
 
   const map = new Map<string, number>()
-  for (const r of data ?? []) {
+  for (const r of rows) {
     const k = r.category?.trim() || 'Not categorised'
     map.set(k, (map.get(k) ?? 0) + 1)
   }
   return {
-    total: data?.length ?? 0,
+    total: rows.length,
     // Biggest first — the chip row is scanned left to right and the big
     // families are the ones anybody is actually looking for.
     counts: [...map.entries()]

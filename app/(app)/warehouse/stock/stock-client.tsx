@@ -5,7 +5,7 @@ import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { Card } from '@/components/ui/card'
 import { formatDate } from '@/lib/utils'
-import { formatQty, formatINR } from '@/lib/warehouse/format'
+import { formatQty, formatINR, formatCount as nf } from '@/lib/warehouse/format'
 import { groupByCategory, groupByLocation } from '@/lib/warehouse/ledger'
 import { exportXlsx, exportPdf } from '@/lib/warehouse/export'
 import type { ExportSpec } from '@/lib/warehouse/export'
@@ -22,7 +22,7 @@ const btnCls =
   'hover:border-emerald-300 hover:text-emerald-700 inline-flex items-center justify-center gap-1.5 disabled:opacity-50'
 
 export function StockClient({
-  asOn, today, groups, totals, sites, categories,
+  asOn, today, groups, totals, sites, categories, masterItems,
   selectedLocation, selectedCategory, showValues, canEdit, failed,
 }: {
   asOn: string
@@ -31,6 +31,7 @@ export function StockClient({
   totals: StockTotals
   sites: WhSite[]
   categories: string[]
+  masterItems: number
   selectedLocation: string
   selectedCategory: string
   showValues: boolean
@@ -125,6 +126,7 @@ export function StockClient({
         { header: 'In', cell: l => formatQty(l.inQty), raw: l => l.inQty, align: 'right' },
         { header: 'Out', cell: l => formatQty(l.outQty), raw: l => l.outQty, align: 'right' },
         { header: 'Transfer', cell: l => l.transferQty === 0 ? '—' : `${l.transferQty > 0 ? '+' : '−'}${formatQty(Math.abs(l.transferQty))}`, raw: l => l.transferQty, align: 'right' },
+        { header: 'Opening', cell: l => l.openingQty === 0 ? '—' : formatQty(l.openingQty), raw: l => l.openingQty, align: 'right' },
         { header: 'Count corr.', cell: l => l.adjustQty === 0 ? '—' : `${l.adjustQty > 0 ? '+' : '−'}${formatQty(Math.abs(l.adjustQty))}`, raw: l => l.adjustQty, align: 'right' },
         { header: 'In hand', cell: l => formatQty(l.inHand), raw: l => l.inHand, align: 'right' },
         { header: 'Damaged', cell: l => l.damagedQty ? formatQty(l.damagedQty) : '—', raw: l => l.damagedQty, align: 'right' },
@@ -245,7 +247,8 @@ export function StockClient({
             hint={totals.valuePartial ? 'understated — some items have no rate' : undefined} />
         )}
         <Kpi label={shownLines.length === 1 ? 'item in stock' : 'items in stock'}
-          value={String(new Set(shownLines.filter(l => l.inHand > 0).map(l => l.itemId)).size)} />
+          value={String(new Set(shownLines.filter(l => l.inHand > 0).map(l => l.itemId)).size)}
+          hint={masterItems > 0 ? `of ${nf(masterItems)} in the item master` : undefined} />
         <Kpi label="low or nil" value={String(shownLines.filter(l => l.flag).length)}
           tone={shownLines.some(l => l.flag) ? 'bad' : undefined} />
         {showValues
@@ -290,14 +293,18 @@ export function StockClient({
 
           {/* Desktop: the register as a table. */}
           <div className="hidden md:block overflow-x-auto">
-            <table className="w-full min-w-[820px] text-[12px]">
+            <table className="w-full min-w-[980px] text-[12px]">
               <thead>
                 <tr className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400 border-b border-slate-100">
                   <th className="text-left px-3 py-1.5">Item</th>
+                  {groupBy === 'category' && (
+                    <th className="text-left px-2 py-1.5">Store</th>
+                  )}
+                  <th className="text-right px-2 py-1.5" title="On the shelf when the module opened — carried over from Warehouse V1">Opening</th>
                   <th className="text-right px-2 py-1.5">In</th>
                   <th className="text-right px-2 py-1.5">Out</th>
                   <th className="text-right px-2 py-1.5">Transfer</th>
-                  <th className="text-right px-2 py-1.5">Count corr.</th>
+                  <th className="text-right px-2 py-1.5" title="Stock written on or off by a physical count">Count corr.</th>
                   <th className="text-right px-2 py-1.5">In hand</th>
                   <th className="text-right px-2 py-1.5">Damaged</th>
                   {showValues && <th className="text-right px-3 py-1.5">Value</th>}
@@ -309,6 +316,12 @@ export function StockClient({
                     <td className="px-3 py-1.5 text-slate-800">
                       {l.itemName}
                       {l.flag && <Flag flag={l.flag} />}
+                    </td>
+                    {groupBy === 'category' && (
+                      <td className="px-2 py-1.5 text-slate-500 whitespace-nowrap">{l.locationName}</td>
+                    )}
+                    <td className="px-2 py-1.5 text-right tabular-nums text-slate-500">
+                      {l.openingQty === 0 ? '—' : formatQty(l.openingQty)}
                     </td>
                     <td className="px-2 py-1.5 text-right tabular-nums text-slate-600">{formatQty(l.inQty)}</td>
                     <td className="px-2 py-1.5 text-right tabular-nums text-slate-600">{formatQty(l.outQty)}</td>
@@ -348,6 +361,8 @@ export function StockClient({
                   </span>
                 </div>
                 <div className="mt-1 flex items-baseline gap-x-3 gap-y-0.5 flex-wrap text-[11.5px] text-slate-500 tabular-nums">
+                  {groupBy === 'category' && <span className="font-medium">{l.locationName}</span>}
+                  {l.openingQty !== 0 && <span>Opening {formatQty(l.openingQty)}</span>}
                   <span>In {formatQty(l.inQty)}</span>
                   <span>Out {formatQty(l.outQty)}</span>
                   {l.transferQty !== 0 && <span>Transfer <Signed n={l.transferQty} /></span>}

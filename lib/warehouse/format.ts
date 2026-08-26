@@ -15,6 +15,13 @@ export function formatQty(n: number | string | null | undefined): string {
   return formatNumber(v, Math.min(decimals, 3))
 }
 
+/** A whole-number count with Indian grouping — 2803 reads as "2,803".
+ *  Counts of things, never quantities: use `formatQty` for those, which
+ *  keeps real decimals. */
+export function formatCount(n: number): string {
+  return n.toLocaleString('en-IN', { maximumFractionDigits: 0 })
+}
+
 /** Quantity with its unit — "3,686 Bag", "1.5 MT". */
 export function formatQtyUnit(n: number | string | null | undefined, unit?: string | null): string {
   const q = formatQty(n)

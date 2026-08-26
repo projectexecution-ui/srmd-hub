@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
+import { fetchAll } from './paging'
 import { getMyUser, getMyPermissions, getMyProfile, can } from '@/lib/auth'
 import { showValuesFor, isOn } from './settings'
 import type { SettingValues } from './settings'
@@ -86,15 +87,27 @@ export async function getPostableSpots(sites: WhSite[]): Promise<{ ids: string[]
 
 export async function getItems(): Promise<WhItem[]> {
   const sb = await createClient()
-  const { data } = await sb
+  // Paged. This list is what every item picker offers — the request form,
+  // Gate IN, Gate OUT — so unpaginated it made 1,803 of 2,803 items simply
+  // unselectable, with nothing on screen to say so.
+  const { rows: data } = await fetchAll<{
+    id: string; code: string | null; name: string; unit: string
+    category: string | null; discipline: string | null; last_rate: number | string | null
+  }>((from, to) => sb
     .from('wh_items')
     .select('id, code, name, unit, category, discipline, last_rate')
     .is('deleted_at', null)
     .eq('is_active', true)
     .order('name')
-  return (data ?? []).map(r => ({
+    .range(from, to))
+  return data.map(r => ({
     id: r.id, code: r.code, name: r.name, unit: r.unit,
-    category: r.category, discipline: r.discipline, lastRate: r.last_rate,
+    category: r.category, discipline: r.discipline,
+    // Converted, not passed through. numeric(…) arrives from Postgres as a
+    // STRING, and this was handing it straight to a field typed number | null —
+    // which only compiled because the read was untyped. Anything that added
+    // rates rather than multiplying them would have concatenated instead.
+    lastRate: r.last_rate == null ? null : Number(r.last_rate),
   }))
 }
 

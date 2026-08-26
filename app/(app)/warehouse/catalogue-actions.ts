@@ -10,6 +10,18 @@
  *  touches its TYPES, not its data. */
 
 import { createClient } from '@/lib/supabase/server'
+import { fetchAll } from '@/lib/warehouse/paging'
+
+/** Just the shapes the catalogue needs, so the paged reads stay typed. */
+type CatItem = {
+  id: string; code: string | null; name: string; unit: string
+  category: string | null; subcategory: string | null
+  hsn_code: string | null; image_url: string | null; in4_name: string | null
+}
+type CatStock = {
+  item_id: string; location_id: string
+  qty: string; damaged_qty: string; min_qty: string | null
+}
 import { gate } from '@/lib/warehouse/guards'
 import { one } from '@/lib/warehouse/data'
 import type { CatalogueRow, WarehouseInfo } from '@/lib/inventory/catalogue-report'
@@ -25,15 +37,20 @@ export async function loadCatalogue(opts: { locationId?: string } = {}): Promise
   const sb = await createClient()
 
   const [itemsRes, stockRes, locRes] = await Promise.all([
-    sb.from('wh_items')
+    // Paged: a catalogue that stops at row 1,000 is not a catalogue, and the
+    // PDF gave no hint that two thirds of the master was missing from it.
+    fetchAll<CatItem>((from, to) => sb.from('wh_items')
       .select('id, code, name, unit, category, subcategory, hsn_code, image_url, in4_name')
-      .is('deleted_at', null).eq('is_active', true).order('category').order('name'),
-    sb.from('wh_stock').select('item_id, location_id, qty, damaged_qty, min_qty'),
+      .is('deleted_at', null).eq('is_active', true)
+      .order('category').order('name').range(from, to)),
+    fetchAll<CatStock>((from, to) => sb.from('wh_stock')
+      .select('item_id, location_id, qty, damaged_qty, min_qty')
+      .order('item_id').range(from, to)),
     sb.from('wh_locations').select('id, code, name, parent_id')
       .is('deleted_at', null).eq('is_active', true),
   ])
-  if (itemsRes.error) return { rows: [], warehouses: [], scopeLabel: '', error: itemsRes.error.message }
-  if (stockRes.error) return { rows: [], warehouses: [], scopeLabel: '', error: stockRes.error.message }
+  if (itemsRes.error) return { rows: [], warehouses: [], scopeLabel: '', error: itemsRes.error }
+  if (stockRes.error) return { rows: [], warehouses: [], scopeLabel: '', error: stockRes.error }
   if (locRes.error) return { rows: [], warehouses: [], scopeLabel: '', error: locRes.error.message }
 
   // Only the stores (spots), never the sites — a site holds nothing itself.
@@ -42,7 +59,7 @@ export async function loadCatalogue(opts: { locationId?: string } = {}): Promise
   const byId = new Map(scoped.map(s => [s.id, s]))
 
   const perItem = new Map<string, Array<{ code: string; label: string; qty: number; low: boolean }>>()
-  for (const s of stockRes.data ?? []) {
+  for (const s of stockRes.rows) {
     const loc = byId.get(s.location_id)
     if (!loc) continue
     const qty = Number(s.qty)
@@ -55,7 +72,7 @@ export async function loadCatalogue(opts: { locationId?: string } = {}): Promise
     })
   }
 
-  const rows: CatalogueRow[] = (itemsRes.data ?? []).map(i => {
+  const rows: CatalogueRow[] = itemsRes.rows.map(i => {
     const st = perItem.get(i.id) ?? []
     const inHand = st.reduce((s, x) => s + x.qty, 0)
     return {

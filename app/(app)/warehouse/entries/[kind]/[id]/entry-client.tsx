@@ -91,7 +91,7 @@ export function EntryClient({
 
       {/* The signed pass, above the void panel: attaching it is the ordinary
           next step after a handover, voiding is the exception. */}
-      {entry.kind === 'out' && !entry.voided && (
+      {entry.kind === 'out' && !entry.voided && entry.destType !== 'store' && (
         <GatePassPanel entry={entry} />
       )}
 

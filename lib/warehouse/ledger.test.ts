@@ -105,7 +105,7 @@ describe('stockFlag', () => {
 const line = (over: Partial<StockLine> & { itemId: string; locationId: string }): StockLine => ({
   itemName: over.itemId, unit: 'Bag', category: null, discipline: null,
   locationName: over.locationId, siteName: 'NGH',
-  inQty: 0, outQty: 0, transferQty: 0, adjustQty: 0, voidQty: 0, damagedQty: 0, vendorOutQty: 0,
+  inQty: 0, outQty: 0, transferQty: 0, openingQty: 0, adjustQty: 0, voidQty: 0, damagedQty: 0, vendorOutQty: 0,
   inHand: 0, minQty: null, rate: null, value: 0, flag: null,
   ...over,
 })
@@ -157,5 +157,38 @@ describe('stockTotals', () => {
     expect(stockTotals([line({ itemId: 'x', locationId: 'A1', inHand: 5 })]).valuePartial).toBe(true)
     // a nil line with no rate does not make the total wrong
     expect(stockTotals([line({ itemId: 'x', locationId: 'A1', inHand: 0 })]).valuePartial).toBe(false)
+  })
+})
+
+describe('the V1 carry-over is not a count correction', () => {
+  const row = (over: Partial<LedgerRow>): LedgerRow => ({
+    itemId: 'i1', locationId: 'L1', kind: 'adjust', qty: 18, day: '2026-08-15',
+    rate: null, ...over,
+  })
+
+  it('opening stock lands in openingQty, leaving count corrections empty', () => {
+    const [c] = foldLedger([row({ opening: true })])
+    expect(c.openingQty).toBe(18)
+    expect(c.adjustQty).toBe(0)
+    expect(c.inHand).toBe(18)   // it is still real stock
+  })
+
+  it('a genuine count correction still lands in adjustQty', () => {
+    const [c] = foldLedger([row({ qty: -3 })])
+    expect(c.openingQty).toBe(0)
+    expect(c.adjustQty).toBe(-3)
+  })
+
+  it('the two add up side by side without double counting', () => {
+    const [c] = foldLedger([row({ opening: true }), row({ qty: -3 })])
+    expect(c.openingQty).toBe(18)
+    expect(c.adjustQty).toBe(-3)
+    expect(c.inHand).toBe(15)
+  })
+
+  it('count shortage no longer includes the carry-over', () => {
+    const t = stockTotals([line({ itemId: 'i1', locationId: 'L1', openingQty: 18, inHand: 18, rate: 10 })])
+    expect(t.countShortQty).toBe(0)
+    expect(t.countShortValue).toBe(0)
   })
 })

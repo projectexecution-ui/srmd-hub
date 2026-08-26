@@ -76,6 +76,7 @@ export default async function WarehouseHomePage() {
     todayIn: todayInRes.count ?? 0,
     toApprove: lanes?.toApprove.length ?? 0,
     toIssue: lanes?.toIssue.length ?? 0,
+    passPending: lanes?.passPending ?? 0,
     mine: lanes?.mine.length ?? 0,
     canApprove: lanes?.canApprove ?? false,
   }

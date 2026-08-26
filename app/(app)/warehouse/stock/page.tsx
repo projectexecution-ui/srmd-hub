@@ -51,6 +51,7 @@ export default async function StockPage({
         totals={view.totals}
         sites={sites}
         categories={categories}
+        masterItems={view.masterItems}
         selectedLocation={sp.loc || ''}
         selectedCategory={sp.cat || ''}
         showValues={showValues}

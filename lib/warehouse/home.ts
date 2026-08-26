@@ -1,3 +1,5 @@
+import { formatCount } from './format'
+
 /** What the warehouse home screen shows, and to whom.
  *
  *  This is deliberately pure. Every bug that has bitten this module so far was
@@ -50,6 +52,10 @@ export type HomeInput = {
   todayIn: number
   toApprove: number
   toIssue: number
+  /** Handovers that went out with no signed gate pass attached. The material
+   *  has left and the paperwork has not — a follow-up that surfaces nowhere
+   *  else, so it rides on the same tile. */
+  passPending: number
   mine: number
   /** Can this person move ANY request on, per the approval matrix. */
   canApprove: boolean
@@ -60,10 +66,10 @@ export type HomeInput = {
  *  The test asserts this ceiling so the prose cannot creep back in. */
 export const MAX_SUBTITLE_WORDS = 5
 
-/** Whole numbers with Indian grouping — 2803 reads as "2,803". */
-function nf(n: number): string {
-  return n.toLocaleString('en-IN', { maximumFractionDigits: 0 })
-}
+/** Whole numbers with Indian grouping. Re-exported from the shared formatter
+ *  so the home tiles and the Stock screen cannot print the same count two
+ *  different ways. */
+const nf = formatCount
 
 /** Who gets the keeper's issue queue.
  *
@@ -108,10 +114,17 @@ export function homeTiles(i: HomeInput): HomeTile[] {
     {
       key: 'to-issue', href: '/warehouse/requests?lane=issue#lane-issue', title: 'To issue',
       subtitle: 'Hand it over',
-      stat: i.toIssue > 0 ? `${nf(i.toIssue)} to issue` : undefined,
-      section: 'main', badge: i.toIssue, badgeStyle: 'blue',
-      accent: i.toIssue > 0 ? 'warning' : 'none',
-      show: i.requestsOn && canStore,
+      // Two counts, one line, in the order they happen: hand it over, then
+      // get the pass signed. Either alone is worth showing.
+      stat: [
+        i.toIssue > 0 ? `${nf(i.toIssue)} to issue` : null,
+        i.passPending > 0 ? `${nf(i.passPending)} gate pass` : null,
+      ].filter(Boolean).join(' · ') || undefined,
+      section: 'main', badge: i.toIssue + i.passPending, badgeStyle: 'blue',
+      accent: (i.toIssue > 0 || i.passPending > 0) ? 'warning' : 'none',
+      // Shown when a pass is outstanding even with the requests feature off:
+      // a handover whose paperwork is missing does not stop mattering.
+      show: canStore && (i.requestsOn || i.passPending > 0),
     },
     {
       key: 'gate-in', href: '/warehouse/in', title: 'Gate IN',

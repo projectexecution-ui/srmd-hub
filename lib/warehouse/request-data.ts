@@ -102,6 +102,11 @@ export type RequestLanes = {
   /** Everything else recent, so the screen is never empty. */
   recent: RequestRow[]
   canApprove: boolean
+  /** Handovers this person is responsible for that have gone out without a
+   *  signed gate pass. Aksha wanted this on the home tile: the material has
+   *  left and the paperwork has not, which is the follow-up that otherwise
+   *  never surfaces anywhere. */
+  passPending: number
   error?: string
 }
 
@@ -118,7 +123,7 @@ export async function getRequestLanes(limit = 120): Promise<RequestLanes> {
   ])
   const isAdmin = can(perms, 'warehouse', 'admin')
 
-  const [reqRes, keptRes] = await Promise.all([
+  const [reqRes, keptRes, passRes] = await Promise.all([
     sb.from('wh_requests').select(SELECT)
       .is('deleted_at', null)
       .order('request_date', { ascending: false })
@@ -128,11 +133,21 @@ export async function getRequestLanes(limit = 120): Promise<RequestLanes> {
     me?.id
       ? sb.from('wh_locations').select('id').eq('keeper_id', me.id).is('deleted_at', null)
       : Promise.resolve({ data: [] as Array<{ id: string }> }),
+    // Gone out, never coming back through a gate, and no signed pass attached.
+    // A store move is excluded: it stays on the campus, so it is owed none.
+    sb.from('wh_gate_out')
+      // The empty test is done in JS, not as eq.{}: PostgREST accepts that
+      // filter but with no rows to try it on there was no way to prove it
+      // means what it looks like, and a silently wrong count is worse than a
+      // slightly larger read.
+      .select('id, from_location_id, gate_pass_urls')
+      .neq('dest_type', 'store')
+      .is('deleted_at', null),
   ])
   if (reqRes.error) {
     return {
       toApprove: [], toIssue: [], mine: [], recent: [],
-      canApprove: false, error: reqRes.error.message,
+      canApprove: false, passPending: 0, error: reqRes.error.message,
     }
   }
 
@@ -169,7 +184,13 @@ export async function getRequestLanes(limit = 120): Promise<RequestLanes> {
   const canApprove = rows.some(canMoveOn)
     || rules.some(x => role === 'admin' || role === x.approverRole || role === x.overrideRole)
 
-  return { toApprove, toIssue, mine, recent, canApprove }
+  // Scoped the same way the issue queue is, so a keeper is shown his own
+  // paperwork and not the whole campus.
+  const passPending = (passRes.data ?? []).filter(o =>
+    ((o.gate_pass_urls as string[] | null) ?? []).length === 0
+    && (isAdmin || myStores.size === 0 || myStores.has(o.from_location_id as string))).length
+
+  return { toApprove, toIssue, mine, recent, canApprove, passPending }
 }
 
 export type RequestDetail = RequestRow & {

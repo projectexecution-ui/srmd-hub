@@ -1,30 +1,15 @@
 import { createClient } from '@/lib/supabase/server'
+import { fetchAll } from './paging'
+
+/** Chunk size for the id-batched reads below. The same 1,000 PostgREST
+ *  ceiling, used here to keep an `in(...)` list from overflowing the URL. */
+const PAGE = 1000
 import { getLocationTree, one } from './data'
 import { foldLedger, groupByLocation, stockFlag, stockTotals, todayIST } from './ledger'
 import type { LedgerRow, MovementKind, StockLine, StockGroup, StockTotals } from './ledger'
 import { inPeriod } from './registers'
 import type { RegisterKind, RegisterRow } from './registers'
 
-/** PostgREST caps a request at 1,000 rows by default, and a register that
- *  silently stops at row 1,000 is a register that lies. Everything here pages
- *  until the source is exhausted. */
-const PAGE = 1000
-
-async function fetchAll<T>(
-  build: (from: number, to: number) => PromiseLike<{ data: T[] | null; error: { message: string } | null }>,
-): Promise<{ rows: T[]; error: string | null }> {
-  const rows: T[] = []
-  for (let page = 0; ; page++) {
-    const { data, error } = await build(page * PAGE, page * PAGE + PAGE - 1)
-    if (error) return { rows, error: error.message }
-    const batch = data ?? []
-    rows.push(...batch)
-    if (batch.length < PAGE) return { rows, error: null }
-    // A runaway guard: 200 pages is 200,000 movements, far past anything a gate
-    // register produces, and better than looping forever on a bad cursor.
-    if (page > 200) return { rows, error: 'Too many rows to read in one go — narrow the period.' }
-  }
-}
 
 /** yyyy-mm-dd in IST for a timestamptz. The register's day is the site's day. */
 function istDay(ts: string): string {
@@ -66,6 +51,11 @@ export type StockView = {
   groups: StockGroup[]
   lines: StockLine[]
   totals: StockTotals
+  /** How many items exist in the master at all. Only a fraction of them
+   *  have ever been received anywhere, and without this number on screen
+   *  "472 items in stock" invites the question of where the other 2,331
+   *  went — they were never in a store, which is not the same as missing. */
+  masterItems: number
   error: string | null
 }
 
@@ -92,16 +82,26 @@ export async function getStockView(opts: {
       .select('item_id, location_id, kind, qty, created_at, rate, ref_table, ref_id')
       .order('created_at')
       .range(from, to)),
-    sb.from('wh_items').select('id, name, unit, category, discipline, last_rate').is('deleted_at', null),
-    sb.from('wh_stock').select('item_id, location_id, min_qty').not('min_qty', 'is', null),
+    // Paged. An unpaginated read stops at 1,000 of 2,803 items, and every
+    // stock line whose item fell outside that window was then silently
+    // dropped — the screen reported 436 items in stock out of 472.
+    fetchAll<{
+      id: string; name: string; unit: string; category: string | null
+      discipline: string | null; last_rate: string | null
+    }>((from, to) => sb
+      .from('wh_items').select('id, name, unit, category, discipline, last_rate')
+      .is('deleted_at', null).order('id').range(from, to)),
+    fetchAll<{ item_id: string; location_id: string; min_qty: string | null }>((from, to) => sb
+      .from('wh_stock').select('item_id, location_id, min_qty')
+      .not('min_qty', 'is', null).order('item_id').range(from, to)),
     getLocationTree(),
   ])
 
   if (movRes.error) {
-    return { asOn, groups: [], lines: [], totals: emptyTotals(), error: movRes.error }
+    return { asOn, groups: [], lines: [], totals: emptyTotals(), masterItems: 0, error: movRes.error }
   }
   if (itemsRes.error) {
-    return { asOn, groups: [], lines: [], totals: emptyTotals(), error: itemsRes.error.message }
+    return { asOn, groups: [], lines: [], totals: emptyTotals(), masterItems: 0, error: itemsRes.error }
   }
 
   const day = await businessDays(movRes.rows)
@@ -111,12 +111,15 @@ export async function getStockView(opts: {
     kind: m.kind,
     qty: Number(m.qty),
     day: (m.ref_table && m.ref_id ? day.get(`${m.ref_table}|${m.ref_id}`) : null) ?? istDay(m.created_at),
+    // The V1 carry-over is the only thing that points at the old module's
+    // table, which is what makes it recognisable after the fact.
+    opening: m.ref_table === 'inv_stock',
     rate: m.rate == null ? null : Number(m.rate),
   }))
 
-  const items = new Map((itemsRes.data ?? []).map(i => [i.id, i]))
+  const items = new Map(itemsRes.rows.map(i => [i.id, i]))
   const spots = new Map(sites.flatMap(s => s.spots).map(sp => [sp.id, sp]))
-  const mins = new Map((minRes.data ?? []).map(r => [`${r.item_id}|${r.location_id}`, Number(r.min_qty)]))
+  const mins = new Map(minRes.rows.map(r => [`${r.item_id}|${r.location_id}`, Number(r.min_qty)]))
 
   const lines: StockLine[] = foldLedger(ledger, asOn).flatMap(c => {
     const item = items.get(c.itemId)
@@ -136,7 +139,10 @@ export async function getStockView(opts: {
     }]
   })
 
-  return { asOn, groups: groupByLocation(lines), lines, totals: stockTotals(lines), error: null }
+  return {
+    asOn, groups: groupByLocation(lines), lines,
+    totals: stockTotals(lines), masterItems: items.size, error: null,
+  }
 }
 
 function emptyTotals(): StockTotals {
@@ -281,12 +287,16 @@ export async function getVendorMovements(from: string | null, to: string | null)
  *  not a kind of material, and filtering a store by it was wrong. */
 export async function getStockCategories(): Promise<string[]> {
   const sb = await createClient()
-  const { data } = await sb
+  // Paged, or the dropdown offers only the categories that happen to fall in
+  // the first thousand items — two of sixteen, as it did.
+  const { rows } = await fetchAll<{ category: string | null }>((from, to) => sb
     .from('wh_items')
     .select('category')
     .is('deleted_at', null)
     .not('category', 'is', null)
-  return [...new Set((data ?? []).map(r => r.category as string))].sort((a, b) => a.localeCompare(b))
+    .order('category')
+    .range(from, to))
+  return [...new Set(rows.map(r => r.category as string))].sort((a, b) => a.localeCompare(b))
 }
 
 type Embedded<T> = T | T[] | null

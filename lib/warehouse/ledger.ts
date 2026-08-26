@@ -21,6 +21,10 @@ export type LedgerRow = {
   /** IST date, yyyy-mm-dd. */
   day: string
   rate: number | null
+  /** True for the one-off V1 carry-over. It is posted as an `adjust`
+   *  because that is the only kind that can create stock out of nothing,
+   *  but it is not a count correction and must not be reported as one. */
+  opening?: boolean
 }
 
 /** What each kind does to GOOD stock.
@@ -58,6 +62,10 @@ export type StockCell = {
   outQty: number
   /** Net of move_in − move_out. Signed: negative means this store gave it away. */
   transferQty: number
+  /** Stock that was already on the shelf when the module opened — the V1
+   *  carry-over. Kept out of `adjustQty` so the count-correction column
+   *  does not read as though somebody counted 78,000 units into existence. */
+  openingQty: number
   /** Net of count corrections. Signed. */
   adjustQty: number
   /** Net of voided entries reversed back out. Signed, and kept apart from
@@ -75,7 +83,7 @@ export type StockCell = {
 function emptyCell(itemId: string, locationId: string): StockCell {
   return {
     itemId, locationId,
-    inQty: 0, outQty: 0, transferQty: 0, adjustQty: 0, voidQty: 0,
+    inQty: 0, outQty: 0, transferQty: 0, openingQty: 0, adjustQty: 0, voidQty: 0,
     damagedQty: 0, vendorOutQty: 0, inHand: 0,
   }
 }
@@ -103,7 +111,9 @@ export function foldLedger(rows: LedgerRow[], asOn?: string): StockCell[] {
       case 'move_out':
         c.transferQty -= r.qty; break
       case 'adjust':
-        c.adjustQty += r.qty; break
+        if (r.opening) c.openingQty += r.qty
+        else c.adjustQty += r.qty
+        break
       case 'void':
         c.voidQty += r.qty; break
       case 'damage':
