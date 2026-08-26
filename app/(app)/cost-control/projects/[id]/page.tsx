@@ -15,6 +15,7 @@ import { computeMoneyRollup, type RollupWSRow, type RollupVersionRow, type Rollu
 import { sortDisciplines } from '@/lib/cost-control/discipline-order'
 import { overBudgetAmount, overBudgetDriver } from '@/lib/cost-control/over-budget'
 import { canMarkComplete, savingsOnCompletion } from '@/lib/cost-control/completion'
+import { ccApprovalPath } from '@/lib/cost-control/approval-link'
 import { CompleteControl } from './CompleteControl'
 import { ProjectAlerts } from './ProjectAlerts'
 import { QueryError } from '@/components/ui/query-error'
@@ -472,7 +473,16 @@ export default async function CostControlProjectDetailPage(
         amountLabel: `${formatINR(amt)}${perSftInline(amt)}`,
         stageLabel: wsStatusLabel(w.status),
         ageDays: age,
-        href: `/cost-control/working-sheets/${w.id}?from=approvals`,
+        // Same rule as every other approval link: open the sub-category in
+        // context first — this page again, that row ambered and scrolled to —
+        // and step into the voucher from there. Straight to the sheet would
+        // skip exactly the context the HOD asked for.
+        href: ccApprovalPath({
+          projectId: project.id,
+          disciplineId: w.discipline_id,
+          subSkillId: w.sub_skill_id,
+          wsId: w.id,
+        }),
       }
     })
   // Visible column count for empty-state rows (name + Internal Estimate +
