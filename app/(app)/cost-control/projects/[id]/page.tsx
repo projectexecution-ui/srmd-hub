@@ -16,6 +16,7 @@ import { sortDisciplines } from '@/lib/cost-control/discipline-order'
 import { overBudgetAmount, overBudgetDriver } from '@/lib/cost-control/over-budget'
 import { canMarkComplete, savingsOnCompletion } from '@/lib/cost-control/completion'
 import { CompleteControl } from './CompleteControl'
+import { ProjectAlerts } from './ProjectAlerts'
 import { QueryError } from '@/components/ui/query-error'
 import { DeadlineBadge } from '@/components/cost-control/DeadlineBadge'
 import { TreeProvider, TreeToolbar, CatChevron, CatRows, SubRow } from '@/components/cost-control/project-tree'
@@ -432,10 +433,21 @@ export default async function CostControlProjectDetailPage(
   // project's built-up area; hidden gracefully when no area is set, and
   // switchable off from Cost Control settings.
   const sft = Number(project.built_up_sft ?? 0)
-  const perSft = (amt: number): string | null =>
-    ccSettings.show_per_sft && sft > 0 && amt > 0
-      ? `₹${Math.round(amt / sft).toLocaleString('en-IN')}/sft`
-      : null
+  const perSft = (amt: number): string | null => {
+    if (!(ccSettings.show_per_sft && sft > 0 && amt > 0)) return null
+    const rate = Math.round(amt / sft)
+    // "₹0/sft" is noise, not information: on SRAH's 8,40,034 sft anything under
+    // ~₹4.2 L rounds to zero, so small lines were printing a rate that told the
+    // reader nothing. Show the figure alone instead.
+    if (rate <= 0) return null
+    return `₹${rate.toLocaleString('en-IN')}/sft`
+  }
+  /** Inline " · ₹N/sft" for prose and banners, where a stacked sub-line
+   *  would not fit. Empty string when there is no meaningful rate. */
+  const perSftInline = (amt: number): string => {
+    const r = perSft(amt)
+    return r ? ` · ${r}` : ''
+  }
   // Visible column count for empty-state rows (name + Internal Estimate +
   // Awaiting Approval + Released via WS + Working Sheets + actions, plus the
   // toggleable ERP and deadline groups).
@@ -499,22 +511,27 @@ export default async function CostControlProjectDetailPage(
                 <Plus className="h-4 w-4" /> Raise Budget Request
               </Link>
               {ccSettings.bph_sync && <BphSyncButton projectId={project.id} isMapped={isBphMapped} />}
+              {/* Icon-only on a phone. Four labelled buttons wrapped onto three
+                  lines and pushed the whole table down the screen; these two are
+                  occasional, so the label is the part that gives way. */}
               <Link
                 href={`/cost-control/projects/${project.id}/setup`}
-                className="inline-flex items-center gap-1.5 h-9 px-3 rounded-md bg-white text-gray-700 border border-gray-300 text-sm font-semibold hover:bg-gray-50"
+                className="inline-flex items-center justify-center gap-1.5 h-9 min-w-[44px] px-2.5 sm:px-3 rounded-md bg-white text-gray-700 border border-gray-300 text-sm font-semibold hover:bg-gray-50"
                 title="Project settings — details, grouping/parent, BPH mapping, approvers, engineers & disciplines"
+                aria-label="Project settings"
               >
-                <Settings className="h-4 w-4" /> Settings
+                <Settings className="h-4 w-4" /> <span className="hidden sm:inline">Settings</span>
               </Link>
             </>
           )}
           {reviewer && (
             <a
               href={`/api/cost-control/master-export?project=${project.id}`}
-              className="inline-flex items-center gap-1.5 h-9 px-3 rounded-md bg-white text-emerald-800 border border-emerald-300 text-sm font-semibold hover:bg-emerald-50"
+              className="inline-flex items-center justify-center gap-1.5 h-9 min-w-[44px] px-2.5 sm:px-3 rounded-md bg-white text-emerald-800 border border-emerald-300 text-sm font-semibold hover:bg-emerald-50"
               title="Download the whole Internal Estimate as one linked Master Excel — every category & sub-skill, sheets cross-linked"
+              aria-label="Download Master Excel"
             >
-              <Download className="h-4 w-4" /> Master Excel
+              <Download className="h-4 w-4" /> <span className="hidden sm:inline">Master Excel</span>
             </a>
           )}
         </div>
@@ -574,78 +591,29 @@ export default async function CostControlProjectDetailPage(
         </div>
       )}
 
-      {/* Finished work, and work that is finished but not yet marked so. Kept
-          to one quiet line: it is housekeeping, not something waiting on
-          anyone. (HOD #3) */}
-      {showErp && (completedCount > 0 || readyToClose.length > 0) && (
-        <div className="rounded-lg border border-emerald-200 bg-emerald-50/70 px-4 py-2.5 text-[12.5px] text-emerald-900">
-          {completedCount > 0 && (
-            <span className="font-semibold">
-              {completedCount} sub-{completedCount === 1 ? 'category' : 'categories'} complete
-              {releasedTotal > 0 && <> · {formatINR(releasedTotal)} released</>}
-            </span>
-          )}
-          {completedCount > 0 && readyToClose.length > 0 && <span className="mx-1.5 text-emerald-300">·</span>}
-          {readyToClose.length > 0 && (
-            <span>
-              <b>{readyToClose.length} more can be closed</b> — WO and Paid match on {readyToClose.length === 1 ? 'it' : 'them'}
-              {readyToCloseSavings > 0 && <>, freeing {formatINR(readyToCloseSavings)}</>}.
-              {' '}Look for the <b>Mark complete</b> button on those rows.
-            </span>
-          )}
-        </div>
-      )}
-
-      {/* Spend past what ERP released. Not our arithmetic — IN4 says WOs were
-          issued above the budget — so this reports it and names the lines
-          rather than quietly turning a percentage red. (HOD #4) */}
-      {showErp && overBudgetLines.length > 0 && (
-        <div className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-2.5">
-          <p className="text-sm font-semibold text-rose-900">
-            {overBudgetLines.length} {overBudgetLines.length === 1 ? 'item is' : 'items are'} over the budget released in ERP
-            <span className="font-normal text-rose-700"> · {formatINR(overBudgetTotal)} beyond</span>
-          </p>
-          <p className="mt-1 text-[12px] text-rose-800 leading-snug">
-            {overBudgetLines.map(l => `${l.label} (${formatINR(l.over)})`).join(' · ')}
-          </p>
-          <p className="mt-1 text-[11px] text-rose-700/90">
-            Either the ERP budget needs topping up, or a WO was issued beyond it — check in IN4, then re-pull BPH.
-            A work category can still read a smaller &ldquo;net&rdquo; figure, where other sub-categories under it have budget left.
-          </p>
-        </div>
-      )}
-
-      {/* Pending-approval shortcut — covers EVERY sheet type (submitted or
-          partially approved). Hides itself when nothing is pending. */}
-      {pendingCount > 0 && canWrite && (
-        <div className="rounded-lg border border-amber-200 bg-amber-50/60 px-4 py-2.5">
-          <div className="flex items-center justify-between gap-3 flex-wrap">
-            <p className="text-sm font-semibold text-amber-900 inline-flex items-center gap-2">
-              <Flame className="h-4 w-4" />
-              {pendingCount} working sheet{pendingCount === 1 ? '' : 's'} awaiting approval
-              {pendingTotal > 0 && (
-                <span className="text-xs font-normal text-amber-700">· {formatINR(pendingTotal)} yet to be released</span>
-              )}
-            </p>
-            <span className="inline-flex items-center gap-3 flex-wrap">
-              <Link
-                href={`/cost-control/working-sheets?project=${project.id}`}
-                className="text-xs font-semibold text-amber-700 hover:underline"
-              >
-                Review now →
-              </Link>
-              {pendingThumbruleCount > 0 && (
-                <Link
-                  href={`/cost-control/approvals/thumbrule?project=${project.id}`}
-                  className="text-xs font-semibold text-amber-700 hover:underline"
-                >
-                  Bulk approve {pendingThumbruleCount} Thumbrule sheet{pendingThumbruleCount === 1 ? '' : 's'} →
-                </Link>
-              )}
-            </span>
-          </div>
-        </div>
-      )}
+      {/* One strip for everything that needs a look, instead of three
+          stacked full-width banners. Counts always visible; the prose opens
+          on tap. Four alert cards above the table meant scrolling past a
+          wall of boxes on a phone before reaching a single number. */}
+      <ProjectAlerts
+        pending={pendingCount > 0 && canWrite ? {
+          count: pendingCount,
+          amountLabel: pendingTotal > 0 ? `${formatINR(pendingTotal)}${perSftInline(pendingTotal)}` : null,
+          href: `/cost-control/working-sheets?project=${project.id}`,
+          thumbruleCount: pendingThumbruleCount,
+          thumbruleHref: `/cost-control/approvals/thumbrule?project=${project.id}`,
+        } : null}
+        over={showErp && overBudgetLines.length > 0 ? {
+          lines: overBudgetLines.map(l => ({ label: l.label, amountLabel: formatINR(l.over) })),
+          totalLabel: `${formatINR(overBudgetTotal)}${perSftInline(overBudgetTotal)}`,
+        } : null}
+        completion={showErp ? {
+          completedCount,
+          releasedLabel: releasedTotal > 0 ? `${formatINR(releasedTotal)}${perSftInline(releasedTotal)}` : null,
+          readyCount: readyToClose.length,
+          readySavingsLabel: readyToCloseSavings > 0 ? `${formatINR(readyToCloseSavings)}${perSftInline(readyToCloseSavings)}` : null,
+        } : null}
+      />
 
       {/* Gap between what HOD has approved in CT Hub and what IN4 has
           released. Positive gap = work to do in IN4 + then re-pull BPH. */}
@@ -1282,9 +1250,9 @@ export default async function CostControlProjectDetailPage(
                         </p>
                       )}
                       <p className="mt-1.5 text-[11px] text-gray-500 tabular-nums leading-snug">
-                        Budget {formatINR(bl?.budget ?? 0)}
-                        {(bl?.wo ?? 0) > 0 && <> · WO {formatINR(bl?.wo ?? 0)}</>}
-                        {(bl?.paid ?? 0) > 0 && <> · Paid {formatINR(bl?.paid ?? 0)}</>}
+                        ERP Budget {formatINR(bl?.budget ?? 0)}{perSftInline(bl?.budget ?? 0)}
+                        {(bl?.wo ?? 0) > 0 && <> · WO {formatINR(bl?.wo ?? 0)}{perSftInline(bl?.wo ?? 0)}</>}
+                        {(bl?.paid ?? 0) > 0 && <> · Paid {formatINR(bl?.paid ?? 0)}{perSftInline(bl?.paid ?? 0)}</>}
                       </p>
                     </div>
                   )}
@@ -1341,17 +1309,29 @@ export default async function CostControlProjectDetailPage(
                       </span>
                     )}
                   </span>
-                  <p className="mt-0.5 pl-6 text-[11px] text-gray-500 leading-tight tabular-nums">
-                    Est <span className="font-semibold text-indigo-800">{dAgg.estimate > 0 ? formatINR(dAgg.estimate) : '—'}</span>
-                    <span className="mx-1 text-gray-300">·</span>
-                    Rel <span className="font-semibold text-emerald-700">{dAgg.approvedTotal > 0 ? formatINR(dAgg.approvedTotal) : '—'}</span>
-                    {showErp && dAgg.budget > 0 && (
-                      <>
-                        <span className="mx-1 text-gray-300">·</span>
-                        Bud <span className="font-semibold text-gray-800">{formatINR(dAgg.budget)}</span>
-                      </>
+                  {/* Three columns so each figure can carry its ₹/sft beneath —
+                      the phone was the only place showing money with no rate. */}
+                  <div className="mt-1 pl-6 grid grid-cols-3 gap-2 text-[11px] leading-tight tabular-nums">
+                    <div>
+                      <span className="text-gray-400">Est</span>{' '}
+                      <span className="font-semibold text-indigo-800">{dAgg.estimate > 0 ? formatINR(dAgg.estimate) : '—'}</span>
+                      {perSft(dAgg.estimate) && <span className="block text-[10px] text-gray-400">{perSft(dAgg.estimate)}</span>}
+                    </div>
+                    <div>
+                      <span className="text-gray-400">Rel</span>{' '}
+                      <span className="font-semibold text-emerald-700">{dAgg.approvedTotal > 0 ? formatINR(dAgg.approvedTotal) : '—'}</span>
+                      {perSft(dAgg.approvedTotal) && <span className="block text-[10px] text-gray-400">{perSft(dAgg.approvedTotal)}</span>}
+                    </div>
+                    {showErp && (
+                      <div>
+                        {/* "ERP", not "Bud" — this figure comes from IN4 and the
+                            KPI tile above calls it Approved Budget (ERP). */}
+                        <span className="text-gray-400" title="Budget approved in ERP (IN4)">ERP</span>{' '}
+                        <span className="font-semibold text-gray-800">{dAgg.budget > 0 ? formatINR(dAgg.budget) : '—'}</span>
+                        {perSft(dAgg.budget) && <span className="block text-[10px] text-gray-400">{perSft(dAgg.budget)}</span>}
+                      </div>
                     )}
-                  </p>
+                  </div>
                 </div>
                 <div className="bg-gray-50/60"><CatRows catId={d.id}>{cards}</CatRows></div>
               </div>
