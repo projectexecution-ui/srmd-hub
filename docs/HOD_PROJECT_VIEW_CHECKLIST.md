@@ -111,12 +111,50 @@ path is dead code today. Revisit if the toggle is switched on.
 
 Verified live on SRAH: 4 lines, **₹2,09,72,600 · ₹250/sft short**.
 
-## 6. Create a new discipline / sub-discipline from this view — TODO
+## 6. Create a work category / sub-category from this view — DONE (`dcfdba6`)
 
-Today this only happens in the setup wizard and `/cost-control/admin/disciplines`.
-Add an inline "Add work category" / "Add sub-category" on the project view,
-gated to management, writing `cc_project_disciplines` / `cc_project_sub_skills`
-(and `cc_disciplines` / `cc_sub_skills` when genuinely new).
+**Checked before building, as Aksha asked — it was NOT already there, and the
+blocker was a permission gate rather than placement.**
+
+| Capability | Where it lived | Reachable by a head? |
+|---|---|---|
+| Create a new discipline / sub-skill | `/cost-control/admin/disciplines` | **No** |
+| Add an *existing* one to a project | setup wizard, steps 2–3 | Yes |
+| Either, from the project view | nowhere | — |
+
+The admin page is gated on `requirePermission('cost-control','admin')`, and in
+the live matrix **`head` has `can_admin = false`**. All four Atm Heads are
+`head`, so none of them could create a code anywhere — the page redirects them
+out. Only admin (projectexecution), founder (Chirag) and coordinator (Parimal)
+can. The setup wizard only PICKS: `setProjectDisciplines` /
+`setProjectSubSkills` have no create path at all.
+
+**Aksha's call:** keep creation with admin/Trustee/coordinator, put the control
+on the project view. So `canAddStructure = can(perms,'cost-control','admin')` —
+**the HOD does not see this button**; an admin adds the category for him. One
+line to revisit if that turns out to be the wrong trade.
+
+One control, two jobs: pick an existing code (the common case — it exists in the
+shared master list but is not switched on for THIS project) or create a new one,
+one tap away. Care taken:
+
+- a duplicate **code is reused, not re-created** — a shared master list where two
+  projects mean different things by "12" is how it rots;
+- a sub-category code that already exists under a **different** category is
+  refused by name, not silently re-parented;
+- a new category takes `display_order` from the leading number in its code,
+  matching `discipline-order.ts`, so it sorts where a reader expects (point 1);
+- re-enabling something switched off earlier is an UPDATE, not an insert;
+- a sub-category cannot be added while its category is off for the project;
+- every write `.select()`s and checks the row count (an RLS refusal returns 200
+  with zero rows).
+
+Both layouts: a table row inside each category on desktop, under the cards on
+the phone, and "Add work category" at the foot of the table. 44px targets.
+
+**Not visually verified** — the Claude Browser pane lost the ability to load
+ct-hub.vercel.app (production healthy: curl returns 200). Deploy `dcfdba6` is
+READY; build and 890 tests green.
 
 ## 7. Show which budgets are adhoc vs per the BOQ estimate — TODO
 
