@@ -91,16 +91,13 @@ export default async function WorkingSheetsPage({
         .limit(1)
         .maybeSingle()
       recentProjectId = (mine?.project_id as string | null) ?? null
-      // Fallback for non-engineers (PMs, Heads) — most recent WS overall
-      if (!recentProjectId) {
-        const { data: any1 } = await supabase
-          .from('cc_working_sheets')
-          .select('project_id')
-          .order('created_at', { ascending: false })
-          .limit(1)
-          .maybeSingle()
-        recentProjectId = (any1?.project_id as string | null) ?? null
-      }
+      // NO fallback to "most recent sheet anywhere". That branch scoped anyone
+      // who raises no sheets of their own — the Trustee, the Atm Heads — into
+      // whichever project happened to be touched last, and then every filter
+      // they applied searched only that one project. Chirag reported he could
+      // not see returned sheets: the single returned sheet was SRAH-324-Q01 on
+      // SRAH, and he had been silently parked in CV5. Their job is
+      // portfolio-wide; landing them on everything is the correct default.
     }
     if (recentProjectId) {
       // auto=1 lets the destination explain the silent project pick.
@@ -416,11 +413,22 @@ export default async function WorkingSheetsPage({
         </div>
       )}
 
+      {/* Say it loudly and give the way out in one tap. As grey small print it
+          was easy to miss that the whole list — and every filter applied to it
+          — covered ONE project. */}
       {autoPickedProject && (
-        <p className="mb-3 text-xs text-gray-500">
-          Showing <span className="font-semibold text-gray-700">{autoPickedProject.name}</span> — your
-          most recent project. Pick another from the project filter.
-        </p>
+        <div className="mb-3 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 flex items-center justify-between gap-3 flex-wrap">
+          <p className="text-[12.5px] text-blue-900">
+            Showing only <span className="font-semibold">{autoPickedProject.name}</span> — the project you
+            last worked on. Filters below search this project only.
+          </p>
+          <Link
+            href="/cost-control/working-sheets?project="
+            className="inline-flex items-center min-h-[36px] px-3 rounded-lg bg-white border border-blue-300 text-[12px] font-semibold text-blue-800 flex-shrink-0"
+          >
+            Show all projects
+          </Link>
+        </div>
       )}
 
       {/* KPI strip — running roll-up across the filtered set. Shown to
@@ -449,6 +457,17 @@ export default async function WorkingSheetsPage({
             }
             action={
               <div className="flex flex-wrap items-center justify-center gap-3">
+                {/* "Clear filters" deliberately KEEPS the project, so on a
+                    project-scoped list it cannot answer "is this sheet
+                    somewhere else?". That is exactly how a returned sheet on
+                    SRAH stayed invisible to someone parked in CV5. */}
+                {sp.project && (
+                  <Button asChild size="sm" variant="outline">
+                    <Link href={`/cost-control/working-sheets${buildQuery({ ...filterParams, project: undefined })}`}>
+                      Search all projects
+                    </Link>
+                  </Button>
+                )}
                 <Link
                   href={`/cost-control/working-sheets${buildQuery({ project: sp.project })}`}
                   className="text-sm font-semibold text-blue-700 hover:underline"
