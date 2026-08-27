@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useState, useTransition } from 'react'
+import { useId, useMemo, useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
 import { Card } from '@/components/ui/card'
@@ -556,14 +556,25 @@ export function GateInForm({
                   </>
                 )
               })() : (
-                <SearchableSelect
-                  value={row.itemId}
-                  onChange={id => pickItem(row.key, id)}
-                  options={selectableItems.map(s => ({ id: s.id, label: s.label, hint: [s.group, s.unit].filter(Boolean).join(' · ') }))}
-                  placeholder={poLoading ? 'Loading the order…' : 'Search the item list…'}
-                  disabled={poLoading}
-                  emptyText="No item matches — add it below"
-                />
+                <>
+                  <SearchableSelect
+                    value={row.itemId}
+                    onChange={id => pickItem(row.key, id)}
+                    options={selectableItems.map(s => ({ id: s.id, label: s.label, hint: [s.group, s.unit].filter(Boolean).join(' · ') }))}
+                    placeholder={poLoading ? 'Loading the order…' : 'Search the item list…'}
+                    disabled={poLoading}
+                    emptyText="No item matches — add it below"
+                  />
+                  {/* The line the empty state points at. Collapsed to one link, so a
+                      row that needs nothing costs nothing, but a challan naming
+                      material the master has never heard of is never a dead end. */}
+                  {!poLoading && (
+                    <NewItemInline
+                      units={options.lists.unit}
+                      onCreated={(id) => pickItem(row.key, id)}
+                    />
+                  )}
+                </>
               )}
 
               {/* IN4 is the base for what was ordered. What actually turned up
@@ -796,6 +807,12 @@ export function GateInForm({
  *  all. A keeper who cannot record the truck standing in front of him writes it
  *  on paper instead, and the register loses the entry entirely. */
 function NewItemInline({ units, onCreated }: { units: string[]; onCreated: (id: string) => void }) {
+  // Unique per instance: there is one of these per row, and two on a row whose
+  // PO line differs. Hardcoded ids made every label point at the page's first
+  // field, so tapping "Unit" focused a different row.
+  const uid = useId()
+  const nameId = `new-item-name-${uid}`
+  const unitId = `new-item-unit-${uid}`
   const [open, setOpen] = useState(false)
   const [name, setName] = useState('')
   const [unit, setUnit] = useState(units[0] ?? 'Nos')
@@ -814,13 +831,13 @@ function NewItemInline({ units, onCreated }: { units: string[]; onCreated: (id: 
     <div className="rounded-lg border-2 border-dashed border-slate-300 p-2 space-y-2">
       <div className="grid grid-cols-[1fr_auto] gap-2">
         <div>
-          <label className={labelCls} htmlFor="new-item-name">New item name</label>
-          <input id="new-item-name" className={inputCls} value={name} autoFocus
+          <label className={labelCls} htmlFor={nameId}>New item name</label>
+          <input id={nameId} className={inputCls} value={name} autoFocus
             onChange={e => setName(e.target.value)} placeholder="As written on the challan" />
         </div>
         <div>
-          <label className={labelCls} htmlFor="new-item-unit">Unit</label>
-          <select id="new-item-unit" className={inputCls} value={unit} onChange={e => setUnit(e.target.value)}>
+          <label className={labelCls} htmlFor={unitId}>Unit</label>
+          <select id={unitId} className={inputCls} value={unit} onChange={e => setUnit(e.target.value)}>
             {(units.length ? units : ['Nos', 'Bag', 'MT', 'Kg']).map(u => <option key={u} value={u}>{u}</option>)}
           </select>
         </div>
