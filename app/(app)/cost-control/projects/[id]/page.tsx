@@ -297,6 +297,16 @@ export default async function CostControlProjectDetailPage(
       amt: b.internal_estimate_amt != null ? Number(b.internal_estimate_amt) : null,
     })
   }
+  // Category roll-up of the estimate. computeMoneyRollup sums the imported
+  // [IB…] baseline, which is now the FALLBACK rather than the truth — the
+  // maintained figure follows the ERP budget and CT Hub releases. Summing it
+  // here keeps the category row agreeing with the sub-category rows under it.
+  const discEstimate = new Map<string, number>()
+  for (const sk of subSkills) {
+    const key = `${sk.discipline_id}::${sk.id}`
+    const value = ieMap.get(key)?.amt ?? (wsAgg.get(key)?.planTotal ?? 0)
+    if (value > 0) discEstimate.set(sk.discipline_id, (discEstimate.get(sk.discipline_id) ?? 0) + value)
+  }
 
   // Short remark per (discipline, sub-skill) — the "Remark: …" line that the
   // Internal Budget import (and any sheet notes) carry. First non-empty wins;
@@ -969,7 +979,7 @@ export default async function CostControlProjectDetailPage(
                         {dHot && <Flame className="inline h-3.5 w-3.5 text-orange-500 ml-2" />}
                       </td>
                       <Td align="right" mono className="text-indigo-800">
-                        <Money amt={dAgg.estimate} />
+                        <Money amt={discEstimate.get(d.id) ?? dAgg.estimate} />
                       </Td>
                       <Td align="right" mono className="text-amber-700">
                         {(() => {
@@ -1060,7 +1070,12 @@ export default async function CostControlProjectDetailPage(
                       const sCompletedBy = profileMap.get(subMeta.get(s.id)?.completedBy ?? '') ?? null
                       const wsCount = a?.chains.size ?? 0
                       const ie = ieMap.get(`${d.id}::${s.id}`)
-                      const estLive = a?.planTotal ?? 0
+                      // The MAINTAINED estimate wins over the originally
+                      // imported [IB…] baseline: it follows the ERP budget and
+                      // CT Hub releases (HOD's rule). The import is left
+                      // untouched, so clearing the override restores it.
+                      const estImported = a?.planTotal ?? 0
+                      const estLive = ie?.amt ?? estImported
                       const ask = a?.pendingAmount ?? 0
                       const released = a?.approvedTotal ?? 0
                       // Estimate below what ERP already released (HOD #5).
@@ -1371,7 +1386,9 @@ export default async function CostControlProjectDetailPage(
               const a = wsAgg.get(`${d.id}::${s.id}`)
               const bl = blMap.get(`${d.id}::${s.id}`)
               const ie = ieMap.get(`${d.id}::${s.id}`)
-              const estLive = a?.planTotal ?? 0
+              // Same precedence as the desktop row — maintained estimate first.
+              const estImported = a?.planTotal ?? 0
+              const estLive = ie?.amt ?? estImported
               const ask = a?.pendingAmount ?? 0
               const released = a?.approvedTotal ?? 0
               const wsCount = a?.chains.size ?? 0
@@ -1572,8 +1589,8 @@ export default async function CostControlProjectDetailPage(
                   <div className="mt-1 pl-6 grid grid-cols-3 gap-2 text-[11px] leading-tight tabular-nums">
                     <div>
                       <span className="text-gray-400">Est</span>{' '}
-                      <span className="font-semibold text-indigo-800">{dAgg.estimate > 0 ? formatINR(dAgg.estimate) : '—'}</span>
-                      {perSft(dAgg.estimate) && <span className="block text-[10px] text-gray-400">{perSft(dAgg.estimate)}</span>}
+                      <span className="font-semibold text-indigo-800">{(discEstimate.get(d.id) ?? dAgg.estimate) > 0 ? formatINR(discEstimate.get(d.id) ?? dAgg.estimate) : '—'}</span>
+                      {perSft(discEstimate.get(d.id) ?? dAgg.estimate) && <span className="block text-[10px] text-gray-400">{perSft(discEstimate.get(d.id) ?? dAgg.estimate)}</span>}
                     </div>
                     <div>
                       <span className="text-gray-400" title="Budget approved in CT Hub — through our own approval chain">CT Hub</span>{' '}
