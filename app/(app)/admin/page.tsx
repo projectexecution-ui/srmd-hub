@@ -4,7 +4,7 @@ import { PageHeader } from '@/components/PageHeader'
 import { Card } from '@/components/ui/card'
 import {
   Users, ShieldCheck, LayoutGrid, GitBranch, Trash2, Bell, RotateCcw,
-  UserPlus, CalendarDays, UserCog, CircleCheck, AlertTriangle,
+  UserPlus, CalendarDays, UserCog, CircleCheck, AlertTriangle, ListTree,
 } from 'lucide-react'
 import { getMyPermissions, can, isPortalOwner, getMyProfile } from '@/lib/auth'
 import { createClient } from '@/lib/supabase/server'
@@ -108,6 +108,7 @@ export default async function AdminHomePage() {
       tiles: [
         { href: '/admin/notifications', icon: Bell, title: 'Notifications', sub: 'Which alerts the team gets, by channel & role', show: canEditApprovals, iconCls: 'bg-emerald-50 text-emerald-600', badge: cronHealthy ? 'OK' : cronKnown ? 'Check' : null, badgeCls: cronHealthy ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-800', badgeIcon: cronHealthy ? CircleCheck : AlertTriangle },
         { href: '/admin/dashboard-modules', icon: LayoutGrid, title: 'Dashboard Modules', sub: 'Turn modules on / off for the portal', show: portalOwner, iconCls: 'bg-violet-50 text-violet-600', badge: `${moduleOn}/${moduleTotal}`, badgeCls: 'bg-slate-100 text-slate-600' },
+        { href: '/admin/sidebar-groups', icon: ListTree, title: 'Sidebar Groups', sub: 'Nest side-pane modules under names you choose', show: canEditApprovals, iconCls: 'bg-indigo-50 text-indigo-600' },
       ],
     },
   ]

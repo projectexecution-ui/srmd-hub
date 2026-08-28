@@ -7,14 +7,16 @@ import { ConfirmHost } from '@/components/ui/confirm-dialog'
 import { AccessPendingScreen } from '@/components/AccessPendingScreen'
 import { getMyProfile, getMyPermissions, getDisabledModuleSlugs, isPortalOwner } from '@/lib/auth'
 import { getModuleLabels } from '@/lib/module-labels'
+import { getSidebarGroups } from '@/lib/sidebar-groups.server'
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
-  const [profile, permissions, disabledSlugs, portalOwner, moduleLabelsMap] = await Promise.all([
+  const [profile, permissions, disabledSlugs, portalOwner, moduleLabelsMap, sidebarGroups] = await Promise.all([
     getMyProfile(),
     getMyPermissions(),
     getDisabledModuleSlugs(),
     isPortalOwner(),
     getModuleLabels(),
+    getSidebarGroups(),
   ])
   // Flatten { label, description } → just label for the NavBar prop shape.
   const moduleLabels: Record<string, string> = Object.fromEntries(
@@ -42,6 +44,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           disabledSlugs={Array.from(disabledSlugs)}
           isPortalOwner={portalOwner}
           moduleLabels={moduleLabels}
+          sidebarGroups={sidebarGroups}
         />
         <main className="flex-1 min-w-0 overflow-x-auto">
           {children}
