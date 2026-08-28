@@ -127,3 +127,57 @@ export function TreeToolbar() {
     </div>
   )
 }
+
+// ──────────────────────────────────────────────────────────────────────
+// Row detail — a THIRD level under a sub-skill: the Verified BOQ rows of
+// its budgets. Deliberately its own context rather than reusing the
+// category one, so "Expand all" opens the categories a reader asked for
+// without also unfurling every line item on the project.
+// ──────────────────────────────────────────────────────────────────────
+const DetailCtx = createContext<{ isOpen: (id: string) => boolean; toggle: (id: string) => void } | null>(null)
+
+export function RowDetailProvider({ children }: { children: ReactNode }) {
+  const [open, setOpen] = useState<Set<string>>(() => new Set())
+  const api = useMemo(() => ({
+    isOpen: (id: string) => open.has(id),
+    toggle: (id: string) => setOpen(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id); else next.add(id)
+      return next
+    }),
+  }), [open])
+  return <DetailCtx.Provider value={api}>{children}</DetailCtx.Provider>
+}
+
+function useDetail() {
+  const v = useContext(DetailCtx)
+  if (!v) throw new Error('Row detail components must be inside <RowDetailProvider>')
+  return v
+}
+
+/** The "show the items" control on a sub-skill row. Renders nothing when the
+ *  sub-skill has no budget rows to show — an affordance that opens an empty
+ *  drawer is worse than no affordance. */
+export function RowDetailToggle({ id, count }: { id: string; count: number }) {
+  const { isOpen, toggle } = useDetail()
+  if (count <= 0) return null
+  const open = isOpen(id)
+  return (
+    <button
+      type="button"
+      onClick={() => toggle(id)}
+      aria-expanded={open}
+      title={open ? 'Hide the item-wise BOQ' : 'Show the item-wise BOQ (unit, qty, rate, amount)'}
+      className="ml-2 inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-bold align-middle border border-gray-200 text-gray-500 hover:border-blue-300 hover:text-blue-700"
+    >
+      {open ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+      {count} item{count === 1 ? '' : 's'}
+    </button>
+  )
+}
+
+/** Wraps the detail block; renders only while its row is open. */
+export function RowDetail({ id, children }: { id: string; children: ReactNode }) {
+  const { isOpen } = useDetail()
+  return isOpen(id) ? <>{children}</> : null
+}

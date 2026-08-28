@@ -22,9 +22,10 @@ import { ProjectAlerts } from './ProjectAlerts'
 import { AddToProject } from './AddToProject'
 import { QueryError } from '@/components/ui/query-error'
 import { DeadlineBadge } from '@/components/cost-control/DeadlineBadge'
-import { TreeProvider, TreeToolbar, CatChevron, CatRows, SubRow } from '@/components/cost-control/project-tree'
+import { TreeProvider, TreeToolbar, CatChevron, CatRows, SubRow, RowDetailProvider, RowDetailToggle, RowDetail } from '@/components/cost-control/project-tree'
 import { FocusScroll } from '@/components/cost-control/FocusScroll'
 import { wsStatusLabel } from '@/components/cost-control/WSStatusPill'
+import { SubSkillBoq, type BoqRow, type BoqSheet } from '@/components/cost-control/SubSkillBoq'
 import { DeadlineCell, SubSkillModeCell, DisableButton, InternalEstimateDecision, RowConfigMenu, RowConfigItem } from './RowControls'
 import { BphSyncButton } from './BphSyncButton'
 import { getBphMappingForProject } from '@/app/(app)/cost-control/import/bph/actions'
@@ -448,6 +449,60 @@ export default async function CostControlProjectDetailPage(
   const undeclaredCount = Array.from(adhocBySub.values()).reduce((n, v) => n + v.undeclared, 0)
   const adhocCount = Array.from(adhocBySub.values()).reduce((n, v) => n + v.adhoc, 0)
 
+  // Item-wise BOQ under each sub-category (HOD #8a). The rows the approver
+  // checks, shown in the tree instead of only on the sheet. Loaded for the
+  // LATEST version of each budget chain — the biggest project in the system is
+  // 130 rows, so there is nothing to gain from lazy-loading and a lot to lose
+  // in complexity.
+  const boqBySub = new Map<string, BoqSheet[]>()
+  {
+    const latestIds = [...latestEng.values()].map(x => x.w.id)
+    if (latestIds.length > 0) {
+      const { data: boqRows } = await supabase
+        .from('cc_excel_rows')
+        .select('id, working_sheet_id, row_no, description, unit, qty, rate, amount, formula_in_amount, rate_breakdown, flag_severity, flag_reason, source_sheet, source_cell, qty_formula, qty_basis')
+        .in('working_sheet_id', latestIds)
+        .order('row_no', { ascending: true })
+      const byWs = new Map<string, BoqRow[]>()
+      for (const r of (boqRows ?? []) as Record<string, unknown>[]) {
+        const wsId = r.working_sheet_id as string
+        const bag = byWs.get(wsId) ?? []
+        bag.push({
+          id: r.id as string,
+          rowNo: r.row_no as number | null,
+          description: r.description as string | null,
+          unit: r.unit as string | null,
+          qty: r.qty == null ? null : Number(r.qty),
+          rate: r.rate == null ? null : Number(r.rate),
+          amount: r.amount == null ? null : Number(r.amount),
+          sourceSheet: r.source_sheet as string | null,
+          sourceCell: r.source_cell as string | null,
+          qtyFormula: r.qty_formula as string | null,
+          qtyBasis: r.qty_basis as string | null,
+          formulaInAmount: r.formula_in_amount as string | null,
+          rateBreakdown: (r.rate_breakdown as { label: string; value: number }[] | null) ?? null,
+          flagSeverity: r.flag_severity as string | null,
+          flagReason: r.flag_reason as string | null,
+        })
+        byWs.set(wsId, bag)
+      }
+      for (const { w } of latestEng.values()) {
+        const rows = byWs.get(w.id) ?? []
+        if (rows.length === 0) continue
+        const key = `${w.discipline_id}::${w.sub_skill_id}`
+        const bag = boqBySub.get(key) ?? []
+        bag.push({
+          wsId: w.id,
+          wsCode: (w as { ws_code?: string | null }).ws_code ?? null,
+          statusLabel: wsStatusLabel(w.status),
+          total: rows.reduce((n, r) => n + (r.amount ?? 0), 0),
+          rows,
+        })
+        boqBySub.set(key, bag)
+      }
+    }
+  }
+
   // Master items NOT yet on this project, for the "Add …" pickers. Only read
   // for someone who can actually add — no point paying for it otherwise.
   // Small lists (36 categories / 233 sub-categories portfolio-wide), so one
@@ -824,6 +879,7 @@ export default async function CostControlProjectDetailPage(
       >
       {/* The same sub-skill exists twice — desktop row and phone card — so hand
           both ids over and let it scroll to whichever is actually on screen. */}
+      <RowDetailProvider>
       {focusSub && <FocusScroll targetIds={[`sub-${focusSub}`, `subm-${focusSub}`]} />}
       <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
         <div className="flex items-center justify-between px-3 py-2 border-b border-gray-100 bg-gray-50/60">
@@ -1028,6 +1084,7 @@ export default async function CostControlProjectDetailPage(
                           <td className="pl-10 pr-3 py-2 text-gray-700">
                             <span className="font-mono text-[11px] text-gray-400 mr-2">{s.code}</span>
                             <span>{s.name}</span>
+                            <RowDetailToggle id={s.id} count={(boqBySub.get(`${d.id}::${s.id}`) ?? []).reduce((n, b) => n + b.rows.length, 0)} />
                             {sHot && <Flame className="inline h-3 w-3 text-orange-500 ml-1.5" />}
                             {/* Thumbrule is the rare exception — flag it read-only.
                                 BOQ (the default) shows no chip. The mode TOGGLE now
@@ -1248,6 +1305,15 @@ export default async function CostControlProjectDetailPage(
                             </div>
                           </Td>
                         </tr>
+                        {/* Item-wise BOQ — the same reading as the approval
+                            screen, one level deeper. (HOD #8a) */}
+                        <RowDetail id={s.id}>
+                          <tr className="border-t border-gray-100 bg-gray-50/40">
+                            <td colSpan={tableCols} className="px-3 py-3">
+                              <SubSkillBoq sheets={boqBySub.get(`${d.id}::${s.id}`) ?? []} />
+                            </td>
+                          </tr>
+                        </RowDetail>
                         </SubRow>
                       )
                     })}
@@ -1331,6 +1397,7 @@ export default async function CostControlProjectDetailPage(
                   <div className="flex items-start justify-between gap-2 mb-0.5">
                     <p className="text-sm text-gray-900 min-w-0">
                       <span className="font-mono text-[11px] text-gray-400 mr-1.5">{s.code}</span>{s.name}
+                      <RowDetailToggle id={s.id} count={(boqBySub.get(`${d.id}::${s.id}`) ?? []).reduce((n, b) => n + b.rows.length, 0)} />
                       {(() => {
                         const t = adhocBySub.get(`${d.id}::${s.id}`)
                         if (!t || (t.adhoc === 0 && t.boq === 0)) return null
@@ -1455,6 +1522,12 @@ export default async function CostControlProjectDetailPage(
                     />
                   )}
 
+                  <RowDetail id={s.id}>
+                    <div className="mt-2.5">
+                      <SubSkillBoq sheets={boqBySub.get(`${d.id}::${s.id}`) ?? []} />
+                    </div>
+                  </RowDetail>
+
                   {canWrite && (
                     <div className="mt-3">
                       <Link
@@ -1549,6 +1622,7 @@ export default async function CostControlProjectDetailPage(
           </div>
         )}
       </div>
+      </RowDetailProvider>
       </TreeProvider>
 
       {/* Engineers strip */}
