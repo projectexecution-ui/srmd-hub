@@ -36,7 +36,12 @@ export interface BoqSheet {
   wsId: string
   wsCode: string | null
   statusLabel: string
-  total: number
+  /** Sum of the parsed rows. */
+  rowsTotal: number
+  /** The sheet's own figure — the one that gets approved. On 20 of 69 sheets
+   *  this is HIGHER than rowsTotal, because GST and contingency are folded
+   *  into the total without being parsed as rows. */
+  grandTotal: number
   rows: BoqRow[]
 }
 
@@ -79,7 +84,7 @@ export function SubSkillBoq({ sheets }: { sheets: BoqSheet[] }) {
               </Link>
               <span className="ml-2 font-normal text-gray-500">{sh.statusLabel}</span>
             </span>
-            <span className="text-[12px] font-bold tabular-nums text-gray-900">{formatINR(sh.total)}</span>
+            <span className="text-[12px] font-bold tabular-nums text-gray-900">{formatINR(sh.grandTotal)}</span>
           </div>
 
           {/* Desktop: the same columns as the approval screen. */}
@@ -127,9 +132,29 @@ export function SubSkillBoq({ sheets }: { sheets: BoqSheet[] }) {
               ))}
               <tr className="border-t-2 border-gray-200 bg-gray-50/70">
                 <td />
-                <td className="px-2 py-1.5 font-semibold text-gray-700">Rows total</td>
+                <td className="px-2 py-1.5 text-gray-600">Rows total</td>
                 <td colSpan={3} />
-                <td className="px-2 py-1.5 text-right font-bold tabular-nums text-gray-900">{formatINR(sh.total)}</td>
+                <td className="px-2 py-1.5 text-right tabular-nums text-gray-700">{formatINR(sh.rowsTotal)}</td>
+              </tr>
+              {/* On many sheets GST and contingency are folded into the total
+                  without being parsed as rows. Showing the rows alone would
+                  under-state the budget by ~18-24%, so the difference is named
+                  rather than left for the reader to notice. */}
+              {Math.round(sh.grandTotal) !== Math.round(sh.rowsTotal) && (
+                <tr className="bg-gray-50/70">
+                  <td />
+                  <td className="px-2 py-1.5 text-gray-600">GST, contingency &amp; other — not itemised in the sheet</td>
+                  <td colSpan={3} />
+                  <td className="px-2 py-1.5 text-right tabular-nums text-gray-700">
+                    {formatINR(Math.round(sh.grandTotal) - Math.round(sh.rowsTotal))}
+                  </td>
+                </tr>
+              )}
+              <tr className="border-t border-gray-300 bg-gray-100/70">
+                <td />
+                <td className="px-2 py-2 font-bold text-gray-900">Grand total (the approved figure)</td>
+                <td colSpan={3} />
+                <td className="px-2 py-2 text-right font-bold tabular-nums text-gray-900">{formatINR(sh.grandTotal)}</td>
               </tr>
             </tbody>
           </table>
@@ -155,9 +180,23 @@ export function SubSkillBoq({ sheets }: { sheets: BoqSheet[] }) {
                 </p>
               </div>
             ))}
-            <div className="px-3 py-2 bg-gray-50/70 flex items-center justify-between">
-              <span className="text-[12px] font-semibold text-gray-700">Rows total</span>
-              <span className="text-[12.5px] font-bold tabular-nums text-gray-900">{formatINR(sh.total)}</span>
+            <div className="px-3 py-2 bg-gray-50/70 space-y-1">
+              <div className="flex items-center justify-between">
+                <span className="text-[12px] text-gray-600">Rows total</span>
+                <span className="text-[12px] tabular-nums text-gray-700">{formatINR(sh.rowsTotal)}</span>
+              </div>
+              {Math.round(sh.grandTotal) !== Math.round(sh.rowsTotal) && (
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-[12px] text-gray-600">GST, contingency &amp; other</span>
+                  <span className="text-[12px] tabular-nums text-gray-700 flex-shrink-0">
+                    {formatINR(Math.round(sh.grandTotal) - Math.round(sh.rowsTotal))}
+                  </span>
+                </div>
+              )}
+              <div className="flex items-center justify-between border-t border-gray-200 pt-1">
+                <span className="text-[12px] font-bold text-gray-900">Grand total</span>
+                <span className="text-[13px] font-bold tabular-nums text-gray-900">{formatINR(sh.grandTotal)}</span>
+              </div>
             </div>
           </div>
         </div>

@@ -495,7 +495,11 @@ export default async function CostControlProjectDetailPage(
           wsId: w.id,
           wsCode: (w as { ws_code?: string | null }).ws_code ?? null,
           statusLabel: wsStatusLabel(w.status),
-          total: rows.reduce((n, r) => n + (r.amount ?? 0), 0),
+          rowsTotal: rows.reduce((n, r) => n + (r.amount ?? 0), 0),
+          // The sheet's own figure, which is what gets approved. On 20 of 69
+          // sheets it is HIGHER than the parsed rows because GST and
+          // contingency are folded into the total without being parsed.
+          grandTotal: Number((w as { total_amount?: number | null }).total_amount ?? 0),
           rows,
         })
         boqBySub.set(key, bag)
