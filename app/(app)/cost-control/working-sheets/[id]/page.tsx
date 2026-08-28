@@ -381,18 +381,33 @@ export default async function WorkingSheetEditorPage(
     const { data: par } = await supabase.from('projects').select('name').eq('id', wsProj.parent_project_id).maybeSingle()
     wsParentName = (par?.name as string | null) ?? null
   }
-  // One clear identity block, reused on every sheet view: full Project (+ parent)
-  // name, then Category and Sub-category with their codes. No truncation.
+  // One clear identity block, reused on every sheet view. All four levels are
+  // NAMED — the hierarchy used to be implied by a "›" between two project
+  // names, which reads as one long title unless you already know the parent.
+  // Labelling Project / Sub-project makes it match the Category / Sub-category
+  // pair underneath, so the block reads as two levels twice over.
+  //
+  // Two grids rather than one four-cell grid: a standalone project has no
+  // sub-project, and in a single grid its Category would slide up beside
+  // Project and break the pairing. No truncation anywhere — approvers want the
+  // exact names.
+  const idCell = (label: string, value: string) => (
+    <div className="break-words">
+      <span className="text-gray-400">{label}</span>{' '}
+      <span className="font-semibold text-gray-900">{value}</span>
+    </div>
+  )
   const identityBlock = (
-    <div className="rounded-xl border border-gray-200 bg-gray-50/70 px-4 py-3">
-      <div className="text-[11px] uppercase tracking-wide text-gray-400">Project</div>
-      <div className="text-[15px] font-bold text-gray-900 leading-snug break-words">
-        {wsParentName && <span className="text-gray-500 font-medium">{wsParentName} <span className="text-gray-300">›</span> </span>}
-        {wsProj?.name ?? wsProj?.code ?? '—'}
+    <div className="rounded-xl border border-gray-200 bg-gray-50/70 px-4 py-3 space-y-1.5">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1.5 text-sm">
+        {/* With a parent, "Project" is the parent and this sheet sits on the
+            sub-project. Standalone, the project IS the project. */}
+        {idCell('Project', wsParentName ?? wsProj?.name ?? wsProj?.code ?? '—')}
+        {wsParentName && idCell('Sub-project', wsProj?.name ?? wsProj?.code ?? '—')}
       </div>
-      <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1.5 text-sm">
-        <div className="break-words"><span className="text-gray-400">Category</span>{' '}<span className="font-semibold text-gray-900">{[wsDisc?.code, wsDisc?.name].filter(Boolean).join(' ') || '—'}</span></div>
-        <div className="break-words"><span className="text-gray-400">Sub-category</span>{' '}<span className="font-semibold text-gray-900">{[wsSub?.code, wsSub?.name].filter(Boolean).join(' ') || '—'}</span></div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1.5 text-sm">
+        {idCell('Category', [wsDisc?.code, wsDisc?.name].filter(Boolean).join(' ') || '—')}
+        {idCell('Sub-category', [wsSub?.code, wsSub?.name].filter(Boolean).join(' ') || '—')}
       </div>
     </div>
   )
