@@ -509,7 +509,7 @@ export default async function CostControlLandingPage() {
           >
             <Stat label="Your drafts" value={myDraftsCount} hint="draft + returned to you" icon={<Clock className="h-5 w-5" />} />
           </Link>
-          <Stat label="Budget Approved in CT Hub" value={formatINR(approvedTotal)} hint={`approved through CT Hub's own chain · ${totalWS} sheet${totalWS === 1 ? '' : 's'}`} icon={<FileText className="h-5 w-5" />} />
+          <Stat label="Budget (CT Hub)" value={formatINR(approvedTotal)} hint={`approved through CT Hub's own chain · ${totalWS} sheet${totalWS === 1 ? '' : 's'}`} icon={<FileText className="h-5 w-5" />} />
           {ccSettings.billing_step && (() => {
             const queue = engWinners.filter(w =>
               (w.status === 'approved' || w.status === 'partially_approved')
@@ -621,7 +621,7 @@ export default async function CostControlLandingPage() {
                   <th className="px-3 py-2.5 font-semibold text-[10px] uppercase tracking-wide text-gray-500 text-right">Area (sft)</th>
                   <th className="px-3 py-2.5 font-semibold text-[10px] uppercase tracking-wide text-gray-500 text-right">WS</th>
                   <th className="px-3 py-2.5 font-semibold text-[10px] uppercase tracking-wide text-gray-500 text-right">Internal Estimate</th>
-                  <th className="px-3 py-2.5 font-semibold text-[10px] uppercase tracking-wide text-gray-500 text-right">Budget Approved in CT Hub</th>
+                  <th className="px-3 py-2.5 font-semibold text-[10px] uppercase tracking-wide text-gray-500 text-right">Budget (CT Hub)</th>
                   {ccSettings.show_erp_columns && (
                     <>
                       <th className="px-3 py-2.5 font-semibold text-[10px] uppercase tracking-wide text-gray-500 text-right">Budget (ERP)</th>
@@ -813,7 +813,7 @@ export default async function CostControlLandingPage() {
                             <p className="text-[13px] font-semibold text-indigo-800 tabular-nums">{estimate > 0 ? formatINR(estimate) : '—'}</p>
                           </div>
                           <div className="rounded-lg bg-emerald-50/60 py-1.5">
-                            <p className="text-[10px] uppercase tracking-wide text-gray-500">Budget Approved in CT Hub</p>
+                            <p className="text-[10px] uppercase tracking-wide text-gray-500">Budget (CT Hub)</p>
                             <p className="text-[13px] font-semibold text-emerald-700 tabular-nums">{approvedHere > 0 ? formatINR(approvedHere) : '—'}</p>
                           </div>
                         </div>
