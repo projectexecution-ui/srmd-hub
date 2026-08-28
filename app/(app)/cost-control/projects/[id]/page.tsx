@@ -178,7 +178,7 @@ export default async function CostControlProjectDetailPage(
       .eq('project_id', id),
     supabase
       .from('cc_working_sheets')
-      .select('id, discipline_id, sub_skill_id, status, total_amount, approved_for_erp_amt, deadline_date, entry_mode, summary_notes, in4_entered_at, submitted_at, is_adhoc')
+      .select('id, discipline_id, sub_skill_id, status, total_amount, approved_for_erp_amt, deadline_date, entry_mode, summary_notes, in4_entered_at, submitted_at, is_adhoc, contingency_pct, contingency_amt, gst_pct, gst_amt')
       .eq('project_id', id)
       .is('archived_at', null),
     supabase
@@ -510,6 +510,14 @@ export default async function CostControlProjectDetailPage(
           // sheets it is HIGHER than the parsed rows because GST and
           // contingency are folded into the total without being parsed.
           grandTotal: Number((w as { total_amount?: number | null }).total_amount ?? 0),
+          // Saved at upload, so the footer names each addition rather than
+          // showing one lumped 'GST / additions' figure.
+          ladder: {
+            contingencyPct: w.contingency_pct == null ? null : Number(w.contingency_pct),
+            contingencyAmt: w.contingency_amt == null ? null : Number(w.contingency_amt),
+            gstPct:         w.gst_pct == null ? null : Number(w.gst_pct),
+            gstAmt:         w.gst_amt == null ? null : Number(w.gst_amt),
+          },
           rows,
         })
         boqBySub.set(key, bag)

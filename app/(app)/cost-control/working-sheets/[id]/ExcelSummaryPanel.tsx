@@ -11,6 +11,7 @@ import { WSApprovalActions, type SignOffCfg } from '@/components/cost-control/WS
 import type { WSApprovalContext } from '@/components/cost-control/ws-actions'
 import type { WSStatus } from '@/components/cost-control/WSStatusPill'
 import { formatINR } from '@/lib/utils'
+import { explainAdditions, type StoredLadder } from '@/lib/cost-control/additions'
 
 interface Breakdown { label: string; value: number }
 
@@ -52,7 +53,7 @@ interface FlagSummary {
 }
 
 export function ExcelSummaryPanel({
-  wsId, status, ctx, reviewer, aiEnabled = true, signOffCfg, totalAmount, approvedSoFar, chainReleasedSoFar, fileName, downloadUrl, summaryTotal, summaryNotes, flagSummary, lastCheckedAt, rows, grandTotal,
+  wsId, status, ctx, reviewer, aiEnabled = true, signOffCfg, totalAmount, approvedSoFar, chainReleasedSoFar, fileName, downloadUrl, summaryTotal, summaryNotes, flagSummary, lastCheckedAt, rows, grandTotal, ladder,
 }: {
   wsId: string
   status: WSStatus
@@ -78,6 +79,10 @@ export function ExcelSummaryPanel({
   rows: Row[]
   /** The sheet's grand total (GST-inclusive) — shown in the BOQ footer. */
   grandTotal?: number
+  /** Contingency / GST as confirmed on the review grid at upload. Null on
+   *  sheets raised before we started saving it — the footer then works the
+   *  split out of the two totals instead. */
+  ladder?: StoredLadder | null
 }) {
   const router = useRouter()
   const [rechecking, setRechecking] = useState(false)
@@ -419,12 +424,13 @@ export function ExcelSummaryPanel({
                   </tr>
                 ))}
               </tbody>
-              {/* Totals footer — rows sum, the GST/additions gap, and the
-                  grand total (the figure that actually gets approved). */}
+              {/* Totals footer — rows sum, then everything added on top named
+                  one line at a time (contingency, GST), then the grand total
+                  that actually gets approved. */}
               {(() => {
                 const rowsSum = visibleRows.reduce((s, r) => s + (r.amount ?? 0), 0)
                 const gt = grandTotal ?? summaryTotal ?? rowsSum
-                const gap = gt - rowsSum
+                const add = explainAdditions(rowsSum, gt, ladder)
                 return (
                   <tfoot>
                     <tr className="border-t-2 border-gray-200 font-medium text-gray-700">
@@ -432,11 +438,18 @@ export function ExcelSummaryPanel({
                       <td className="px-2 py-2 text-right tabular-nums">{formatINR(rowsSum)}</td>
                       {showFlags && <td />}
                     </tr>
-                    {Math.abs(gap) > 1 && (
-                      <tr className="text-gray-500 text-xs">
-                        <td className="px-2 py-1" colSpan={5}>GST / additions</td>
-                        <td className="px-2 py-1 text-right tabular-nums">{gap >= 0 ? '+' : ''}{formatINR(gap)}</td>
+                    {add?.lines.map((l, i) => (
+                      <tr key={i} className={add.source === 'overrun' ? 'text-amber-800 text-xs' : 'text-gray-600 text-xs'}>
+                        <td className="px-2 py-1" colSpan={5}>{l.label}</td>
+                        <td className="px-2 py-1 text-right tabular-nums">
+                          {l.amount >= 0 ? '+' : '−'}{formatINR(Math.abs(l.amount))}
+                        </td>
                         {showFlags && <td />}
+                      </tr>
+                    ))}
+                    {add?.note && (
+                      <tr className="text-[10px] text-gray-400">
+                        <td className="px-2 pb-1" colSpan={showFlags ? 7 : 6}>{add.note}</td>
                       </tr>
                     )}
                     <tr className="border-t border-gray-200 font-bold text-emerald-900">
@@ -485,13 +498,17 @@ export function ExcelSummaryPanel({
             {(() => {
               const rowsSum = visibleRows.reduce((s, r) => s + (r.amount ?? 0), 0)
               const gt = grandTotal ?? summaryTotal ?? rowsSum
-              const gap = gt - rowsSum
+              const add = explainAdditions(rowsSum, gt, ladder)
               return (
                 <div className="pt-3 space-y-1 text-sm">
                   <div className="flex justify-between text-gray-700"><span>Rows total</span><span className="tabular-nums">{formatINR(rowsSum)}</span></div>
-                  {Math.abs(gap) > 1 && (
-                    <div className="flex justify-between text-gray-500 text-xs"><span>GST / additions</span><span className="tabular-nums">{gap >= 0 ? '+' : ''}{formatINR(gap)}</span></div>
-                  )}
+                  {add?.lines.map((l, i) => (
+                    <div key={i} className={`flex justify-between gap-3 text-xs ${add.source === 'overrun' ? 'text-amber-800' : 'text-gray-600'}`}>
+                      <span>{l.label}</span>
+                      <span className="tabular-nums flex-shrink-0">{l.amount >= 0 ? '+' : '−'}{formatINR(Math.abs(l.amount))}</span>
+                    </div>
+                  ))}
+                  {add?.note && <p className="text-[10px] text-gray-400 leading-snug">{add.note}</p>}
                   <div className="flex justify-between font-bold text-emerald-900 border-t border-gray-200 pt-1.5"><span>Grand total (approved figure)</span><span className="tabular-nums">{formatINR(gt)}</span></div>
                 </div>
               )

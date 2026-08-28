@@ -7,6 +7,7 @@
 import { formatINR } from '@/lib/utils'
 import { Paperclip, AlertTriangle } from 'lucide-react'
 import type { MatchedRow, MatchSummary } from '@/lib/cost-control/version-ledger'
+import { explainAdditions, type StoredLadder } from '@/lib/cost-control/additions'
 
 const COMP_LABEL: Record<string, string> = {
   material: 'Material', installation: 'Installation', ml: 'M+L', rate: 'Rate',
@@ -24,6 +25,9 @@ interface Props {
   grandTotal?: number
   /** The previous approved version's grand total incl. GST (= its total_amount). */
   priorGrandTotal?: number
+  /** Contingency / GST as saved at upload, so the footer can name each one
+   *  instead of lumping them. Null on sheets raised before we saved it. */
+  ladder?: StoredLadder | null
 }
 
 function QtyRate({ qty, rate }: { qty: number | null; rate: number | null }) {
@@ -35,7 +39,7 @@ function QtyRate({ qty, rate }: { qty: number | null; rate: number | null }) {
   )
 }
 
-export function CumulativeBoqPanel({ rows, summary, workingByKey = {}, grandTotal, priorGrandTotal }: Props) {
+export function CumulativeBoqPanel({ rows, summary, workingByKey = {}, grandTotal, priorGrandTotal, ladder }: Props) {
   const continuing = rows.filter(r => !r.isNew && !r.dropped)
   const fresh = rows.filter(r => r.isNew)
   const dropped = rows.filter(r => r.dropped)
@@ -47,7 +51,10 @@ export function CumulativeBoqPanel({ rows, summary, workingByKey = {}, grandTota
   const subtotal = summary.newAskTotal
   const gt = grandTotal ?? subtotal                 // this version, incl. GST
   const pgt = priorGrandTotal ?? summary.approvedTotal // prev approved, incl. GST
-  const taxes = Math.max(gt - subtotal, 0)          // GST + contingency
+  // Everything sitting between the BOQ rows and the version total, named one
+  // line at a time (Contingency @ 5%, GST @ 18%) rather than lumped.
+  const additions = explainAdditions(subtotal, gt, ladder)
+  const addLines = additions && additions.source !== 'overrun' ? additions.lines : []
   const newAsk = gt - pgt                            // new money this version, incl. GST
 
   const renderRow = (r: MatchedRow) => {
@@ -217,13 +224,13 @@ export function CumulativeBoqPanel({ rows, summary, workingByKey = {}, grandTota
               <td className="px-2 py-1.5 text-right tabular-nums text-gray-600">{formatINR(subtotal)}</td>
               <td></td>
             </tr>
-            {taxes > 0.5 && (
-              <tr>
-                <td className="px-2 py-1.5 text-right text-gray-500" colSpan={4}>+ GST &amp; contingency</td>
-                <td className="px-2 py-1.5 text-right tabular-nums text-gray-600">{formatINR(taxes)}</td>
+            {addLines.map((l, i) => (
+              <tr key={i}>
+                <td className="px-2 py-1.5 text-right text-gray-500" colSpan={4}>+ {l.label}</td>
+                <td className="px-2 py-1.5 text-right tabular-nums text-gray-600">{formatINR(l.amount)}</td>
                 <td></td>
               </tr>
-            )}
+            ))}
             <tr>
               <td className="px-2 py-2 text-right font-semibold text-gray-800" colSpan={4}>This version total (incl. GST)</td>
               <td className="px-2 py-2 text-right font-bold tabular-nums text-gray-900">{formatINR(gt)}</td>
@@ -258,7 +265,11 @@ export function CumulativeBoqPanel({ rows, summary, workingByKey = {}, grandTota
         </div>
         <div className="px-4 py-3 bg-gray-50 border-t border-gray-200 space-y-1 text-sm">
           <div className="flex justify-between text-gray-500 text-xs"><span>Subtotal (BOQ items)</span><span className="tabular-nums">{formatINR(subtotal)}</span></div>
-          {taxes > 0.5 && <div className="flex justify-between text-gray-500 text-xs"><span>+ GST &amp; contingency</span><span className="tabular-nums">{formatINR(taxes)}</span></div>}
+          {addLines.map((l, i) => (
+            <div key={i} className="flex justify-between gap-3 text-gray-500 text-xs">
+              <span>+ {l.label}</span><span className="tabular-nums flex-shrink-0">{formatINR(l.amount)}</span>
+            </div>
+          ))}
           <div className="flex justify-between font-semibold text-gray-900"><span>This version total (incl. GST)</span><span className="tabular-nums">{formatINR(gt)}</span></div>
           <div className="flex justify-between text-gray-600 text-xs border-t border-gray-200 pt-1"><span>Already approved (prev version)</span><span className="tabular-nums">{formatINR(pgt)}</span></div>
           <div className="flex justify-between font-bold text-indigo-800"><span>➜ New to approve now (incl. GST)</span><span className="tabular-nums">{newAsk < 0 ? `−${formatINR(Math.abs(newAsk))}` : formatINR(newAsk)}</span></div>

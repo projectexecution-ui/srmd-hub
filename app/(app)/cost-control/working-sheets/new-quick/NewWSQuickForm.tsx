@@ -661,6 +661,14 @@ export function NewWSQuickForm({ projects, allDisciplines, allSubSkills, default
       summary_image_name: shot?.name ?? null,
       summary_total: Number(summaryTotal) || null,
       summary_notes: null, // justification now lives on the approval note (see doSubmit)
+      // The totals ladder the engineer just confirmed on the review grid.
+      // Without it the BOQ footer can only say "GST / additions" and leave
+      // the approver to guess which is which. Template mode only — a fuzzy
+      // upload has no ladder to read.
+      contingency_pct: tplActive ? tplContPct : null,
+      contingency_amt: tplActive ? tplSummary?.contingency ?? null : null,
+      gst_pct:         tplActive ? tplGstPct : null,
+      gst_amt:         tplActive ? tplSummary?.gst ?? null : null,
       deadline_date:  deadline || null,
       deadline_notes: deadlineNotes.trim() || null,
       ai_parse_meta: aiMode === 'ai' && aiSummary ? aiSummary : null,

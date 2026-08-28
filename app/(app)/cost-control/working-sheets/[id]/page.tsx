@@ -76,7 +76,7 @@ export default async function WorkingSheetEditorPage(
 
   const { data: ws, error: wsErr } = await supabase
     .from('cc_ws_with_versions')
-    .select('id, ws_code, status, total_amount, approved_for_erp_amt, past_approved_in_subskill, return_reason, engineer_id, project_id, discipline_id, sub_skill_id, line_type, entry_mode, source_excel_url, source_excel_name, summary_total, summary_notes, flag_summary, ai_parse_meta, last_checked_at, deadline_date, deadline_notes, break_chain, chain_anchor_id, version_no, chain_size, created_at, is_adhoc, adhoc_set_by, projects(code, name, parent_project_id), cc_disciplines(code, name), cc_sub_skills(code, name)')
+    .select('id, ws_code, status, total_amount, approved_for_erp_amt, past_approved_in_subskill, return_reason, engineer_id, project_id, discipline_id, sub_skill_id, line_type, entry_mode, source_excel_url, source_excel_name, summary_total, summary_notes, flag_summary, ai_parse_meta, last_checked_at, deadline_date, deadline_notes, break_chain, chain_anchor_id, version_no, chain_size, created_at, is_adhoc, adhoc_set_by, contingency_pct, contingency_amt, gst_pct, gst_amt, projects(code, name, parent_project_id), cc_disciplines(code, name), cc_sub_skills(code, name)')
     .eq('id', id)
     .single()
 
@@ -116,6 +116,18 @@ export default async function WorkingSheetEditorPage(
   const myIdx = siblings.findIndex(s => s.id === ws.id)
   const prevSibling = myIdx > 0 ? siblings[myIdx - 1] : null
   const nextSibling = myIdx >= 0 && myIdx < siblings.length - 1 ? siblings[myIdx + 1] : null
+
+  // The totals ladder saved at upload, so the BOQ footer can name each
+  // addition (Contingency @ 5%, GST @ 18%) instead of lumping them into one
+  // "GST / additions" line. Null on sheets raised before we saved it — the
+  // footer then works the split out of the two totals.
+  const num = (v: unknown) => (v == null ? null : Number(v))
+  const wsLadder = {
+    contingencyPct: num(ws.contingency_pct),
+    contingencyAmt: num(ws.contingency_amt),
+    gstPct:         num(ws.gst_pct),
+    gstAmt:         num(ws.gst_amt),
+  }
 
   // Cumulative money for a revision (v2+) — shared by every layout branch.
   const chainMoney = (ccSettings.cumulative_versions && ws.version_no > 1)
@@ -756,7 +768,7 @@ export default async function WorkingSheetEditorPage(
         {/* Approved-vs-new-ask BOQ + cumulative totals — a management review
             tool. Gated on reviewer to match its siblings above (strip +
             scorecard); engineers see only their own sheet's BOQ. */}
-        {matchSummary && reviewer && <CumulativeBoqPanel rows={matchedRows} summary={matchSummary} workingByKey={workingByKey} grandTotal={chainMoney?.cumulative} priorGrandTotal={chainMoney?.alreadyApproved} />}
+        {matchSummary && reviewer && <CumulativeBoqPanel rows={matchedRows} summary={matchSummary} workingByKey={workingByKey} grandTotal={chainMoney?.cumulative} priorGrandTotal={chainMoney?.alreadyApproved} ladder={wsLadder} />}
 
         {ccSettings.show_deadlines && (ws.deadline_date || canEditDeadline) && (
           <div className="flex items-center gap-2 flex-wrap">
@@ -863,6 +875,7 @@ export default async function WorkingSheetEditorPage(
             source_cell: (r as { source_cell?: string | null }).source_cell ?? null,
           }))}
           grandTotal={ws.summary_total != null ? Number(ws.summary_total) : Number(ws.total_amount ?? 0)}
+          ladder={wsLadder}
         />
         </>
         )}

@@ -12,6 +12,7 @@
 
 import Link from 'next/link'
 import { formatINR } from '@/lib/utils'
+import { explainAdditions, type StoredLadder } from '@/lib/cost-control/additions'
 
 export interface BoqRow {
   id: string
@@ -38,10 +39,13 @@ export interface BoqSheet {
   statusLabel: string
   /** Sum of the parsed rows. */
   rowsTotal: number
-  /** The sheet's own figure — the one that gets approved. On 20 of 69 sheets
-   *  this is HIGHER than rowsTotal, because GST and contingency are folded
-   *  into the total without being parsed as rows. */
+  /** The sheet's own figure — the one that gets approved. It is usually
+   *  HIGHER than rowsTotal, because GST and contingency are folded into the
+   *  total without being parsed as rows. */
   grandTotal: number
+  /** Contingency / GST as saved at upload — null on older sheets, where the
+   *  footer works the split out of the two totals instead. */
+  ladder: StoredLadder | null
   rows: BoqRow[]
 }
 
@@ -75,7 +79,9 @@ export function SubSkillBoq({ sheets }: { sheets: BoqSheet[] }) {
 
   return (
     <div className="space-y-3">
-      {sheets.map(sh => (
+      {sheets.map(sh => {
+        const add = explainAdditions(sh.rowsTotal, sh.grandTotal, sh.ladder)
+        return (
         <div key={sh.wsId} className="rounded-lg border border-gray-200 bg-white overflow-hidden">
           <div className="flex items-center justify-between gap-3 flex-wrap px-3 py-2 bg-gray-50 border-b border-gray-200">
             <span className="text-[12px] font-semibold text-gray-900">
@@ -136,18 +142,24 @@ export function SubSkillBoq({ sheets }: { sheets: BoqSheet[] }) {
                 <td colSpan={3} />
                 <td className="px-2 py-1.5 text-right tabular-nums text-gray-700">{formatINR(sh.rowsTotal)}</td>
               </tr>
-              {/* On many sheets GST and contingency are folded into the total
-                  without being parsed as rows. Showing the rows alone would
-                  under-state the budget by ~18-24%, so the difference is named
-                  rather than left for the reader to notice. */}
-              {Math.round(sh.grandTotal) !== Math.round(sh.rowsTotal) && (
-                <tr className="bg-gray-50/70">
+              {/* GST and contingency are folded into the total without being
+                  parsed as rows. Showing the rows alone would under-state the
+                  budget by ~18-24%, so each addition gets its own named line
+                  rather than being left for the reader to notice. */}
+              {add?.lines.map((l, i) => (
+                <tr key={i} className="bg-gray-50/70">
                   <td />
-                  <td className="px-2 py-1.5 text-gray-600">GST, contingency &amp; other — not itemised in the sheet</td>
+                  <td className={`px-2 py-1.5 ${add.source === 'overrun' ? 'text-amber-800' : 'text-gray-600'}`}>{l.label}</td>
                   <td colSpan={3} />
                   <td className="px-2 py-1.5 text-right tabular-nums text-gray-700">
-                    {formatINR(Math.round(sh.grandTotal) - Math.round(sh.rowsTotal))}
+                    {l.amount >= 0 ? '+' : '−'}{formatINR(Math.abs(l.amount))}
                   </td>
+                </tr>
+              ))}
+              {add?.note && (
+                <tr className="bg-gray-50/70">
+                  <td />
+                  <td className="px-2 pb-1 text-[10px] text-gray-400" colSpan={5}>{add.note}</td>
                 </tr>
               )}
               <tr className="border-t border-gray-300 bg-gray-100/70">
@@ -185,14 +197,15 @@ export function SubSkillBoq({ sheets }: { sheets: BoqSheet[] }) {
                 <span className="text-[12px] text-gray-600">Rows total</span>
                 <span className="text-[12px] tabular-nums text-gray-700">{formatINR(sh.rowsTotal)}</span>
               </div>
-              {Math.round(sh.grandTotal) !== Math.round(sh.rowsTotal) && (
-                <div className="flex items-center justify-between gap-3">
-                  <span className="text-[12px] text-gray-600">GST, contingency &amp; other</span>
+              {add?.lines.map((l, i) => (
+                <div key={i} className="flex items-center justify-between gap-3">
+                  <span className={`text-[12px] ${add.source === 'overrun' ? 'text-amber-800' : 'text-gray-600'}`}>{l.label}</span>
                   <span className="text-[12px] tabular-nums text-gray-700 flex-shrink-0">
-                    {formatINR(Math.round(sh.grandTotal) - Math.round(sh.rowsTotal))}
+                    {l.amount >= 0 ? '+' : '−'}{formatINR(Math.abs(l.amount))}
                   </span>
                 </div>
-              )}
+              ))}
+              {add?.note && <p className="text-[10px] text-gray-400 leading-snug">{add.note}</p>}
               <div className="flex items-center justify-between border-t border-gray-200 pt-1">
                 <span className="text-[12px] font-bold text-gray-900">Grand total</span>
                 <span className="text-[13px] font-bold tabular-nums text-gray-900">{formatINR(sh.grandTotal)}</span>
@@ -200,7 +213,8 @@ export function SubSkillBoq({ sheets }: { sheets: BoqSheet[] }) {
             </div>
           </div>
         </div>
-      ))}
+        )
+      })}
     </div>
   )
 }

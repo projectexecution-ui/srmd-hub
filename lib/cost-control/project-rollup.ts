@@ -25,6 +25,12 @@ export interface RollupWSRow {
    *  surviving rows back out (e.g. the project page's pending-approval list)
    *  can show how long a sheet has been waiting. */
   submitted_at?: string | null
+  /** Also carried through, not used by the maths: the totals ladder saved at
+   *  upload, so the project tree's BOQ footer can name each addition. */
+  contingency_pct?: number | null
+  contingency_amt?: number | null
+  gst_pct?: number | null
+  gst_amt?: number | null
 }
 export interface RollupVersionRow { id: string; chain_anchor_id: string | null; version_no: number | null }
 export interface RollupBudgetLine {
