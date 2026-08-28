@@ -509,7 +509,7 @@ export default async function CostControlLandingPage() {
           >
             <Stat label="Your drafts" value={myDraftsCount} hint="draft + returned to you" icon={<Clock className="h-5 w-5" />} />
           </Link>
-          <Stat label="Released via WS" value={formatINR(approvedTotal)} hint={`approved through Working Sheets · ${totalWS} sheet${totalWS === 1 ? '' : 's'}`} icon={<FileText className="h-5 w-5" />} />
+          <Stat label="Budget Approved in CT Hub" value={formatINR(approvedTotal)} hint={`approved through CT Hub's own chain · ${totalWS} sheet${totalWS === 1 ? '' : 's'}`} icon={<FileText className="h-5 w-5" />} />
           {ccSettings.billing_step && (() => {
             const queue = engWinners.filter(w =>
               (w.status === 'approved' || w.status === 'partially_approved')

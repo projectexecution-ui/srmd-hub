@@ -71,7 +71,7 @@ export function ProjectAliasChip({ projectId, code, isAdmin }: {
           <X className="h-4 w-4" />
         </button>
       </span>
-      <span className="text-[10px] text-gray-400">New WS codes use this; old codes keep their prefix.</span>
+      <span className="text-[10px] text-gray-400">Budget requests raised from now on use this; existing codes keep their prefix.</span>
       {err && <span className="text-[10px] text-rose-600">{err}</span>}
     </span>
   )

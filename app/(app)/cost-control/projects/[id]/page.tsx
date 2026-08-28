@@ -851,7 +851,10 @@ export default async function CostControlProjectDetailPage(
                 <Th className="min-w-[280px]">Work Category / Sub-skill</Th>
                 <Th align="right" className="w-32">Internal Estimate</Th>
                 <Th align="right" className="w-32">Awaiting Approval</Th>
-                <Th align="right" className="w-32">Released via WS</Th>
+                {/* "Released via WS" named the mechanism, not the meaning. This
+                    is money approved through CT Hub's own approval chain — the
+                    counterpart to "Budget (ERP)", which is what IN4 says. */}
+                <Th align="right" className="w-32">Budget Approved in CT Hub</Th>
                 {showErp && (
                   <>
                     <Th align="right">Budget (ERP)</Th>
@@ -1215,7 +1218,7 @@ export default async function CostControlProjectDetailPage(
                                     : `/cost-control/working-sheets/new-quick?project=${project.id}&discipline=${d.id}&sub_skill=${s.id}`}
                                   className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-semibold border border-blue-300 text-blue-700 hover:bg-blue-50"
                                 >
-                                  <Plus className="h-3 w-3" /> New WS
+                                  <Plus className="h-3 w-3" /> Raise Budget Request
                                 </Link>
                               )}
                               {/* Config (mode · remove) tucked behind one ▾ so the
@@ -1400,7 +1403,7 @@ export default async function CostControlProjectDetailPage(
                   )}
                   {released > 0 && (
                     <div className="flex items-center justify-between gap-3 py-1.5 border-t border-gray-100">
-                      <span className="text-[13px] text-gray-600">Released</span>
+                      <span className="text-[13px] text-gray-600">Budget approved in CT Hub</span>
                       <span className="text-[14px] font-semibold tabular-nums text-emerald-700 text-right"><Money amt={released} /></span>
                     </div>
                   )}
@@ -1462,7 +1465,7 @@ export default async function CostControlProjectDetailPage(
                           : `/cost-control/working-sheets/new-quick?project=${project.id}&discipline=${d.id}&sub_skill=${s.id}`}
                         className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-semibold border border-blue-300 text-blue-700"
                       >
-                        <Plus className="h-3 w-3" /> New WS
+                        <Plus className="h-3 w-3" /> Raise Budget Request
                       </Link>
                     </div>
                   )}
@@ -1498,7 +1501,7 @@ export default async function CostControlProjectDetailPage(
                       {perSft(dAgg.estimate) && <span className="block text-[10px] text-gray-400">{perSft(dAgg.estimate)}</span>}
                     </div>
                     <div>
-                      <span className="text-gray-400">Rel</span>{' '}
+                      <span className="text-gray-400" title="Budget approved in CT Hub — through our own approval chain">CT Hub</span>{' '}
                       <span className="font-semibold text-emerald-700">{dAgg.approvedTotal > 0 ? formatINR(dAgg.approvedTotal) : '—'}</span>
                       {perSft(dAgg.approvedTotal) && <span className="block text-[10px] text-gray-400">{perSft(dAgg.approvedTotal)}</span>}
                     </div>
@@ -1576,7 +1579,7 @@ export default async function CostControlProjectDetailPage(
       <div className="rounded-md border-l-4 border-blue-500 bg-blue-50 px-4 py-3 text-sm text-blue-900 flex items-start gap-2">
         <Info className="h-4 w-4 mt-0.5 flex-shrink-0" />
         <p>
-          Click <b>+ New WS</b> on any sub-skill row to start a Working Sheet pre-filled with that discipline & sub-skill.
+          Click <b>+ Raise Budget Request</b> on any sub-category row to start a Working Sheet pre-filled with that discipline & sub-skill.
           Budget / WO / Paid columns will fill in automatically once you import the ENGG_CONSOLIDATED_BUDGET_REPORT
           (or after Working Sheets get approved and bills land).
         </p>
