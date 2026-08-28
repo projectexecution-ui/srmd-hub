@@ -597,7 +597,14 @@ export default async function CostControlLandingPage() {
         // Tabular project overview — more data per glance than the old cards.
         // Client groups (NGH, P2, …) collapse into their roll-up like the
         // project detail tree.
-        <TreeProvider allCatIds={projGroups.filter(g => g.label).map(g => g.key)}>
+        <TreeProvider
+          allCatIds={projGroups.filter(g => g.label).map(g => g.key)}
+          // Land on the roll-up, not 39 projects. Passing every group id as
+          // "collapsed on first render" is the same declutter the project
+          // detail tree uses; without it TreeProvider falls back to its legacy
+          // all-expanded default.
+          initialCollapsedIds={projGroups.filter(g => g.label).map(g => g.key)}
+        >
         <Card className="overflow-hidden">
           {projGroups.some(g => g.label) && (
             <div className="flex items-center justify-between px-3 py-2 border-b border-gray-100 bg-gray-50/60">
@@ -614,7 +621,7 @@ export default async function CostControlLandingPage() {
                   <th className="px-3 py-2.5 font-semibold text-[10px] uppercase tracking-wide text-gray-500 text-right">Area (sft)</th>
                   <th className="px-3 py-2.5 font-semibold text-[10px] uppercase tracking-wide text-gray-500 text-right">WS</th>
                   <th className="px-3 py-2.5 font-semibold text-[10px] uppercase tracking-wide text-gray-500 text-right">Internal Estimate</th>
-                  <th className="px-3 py-2.5 font-semibold text-[10px] uppercase tracking-wide text-gray-500 text-right">Approved via WS</th>
+                  <th className="px-3 py-2.5 font-semibold text-[10px] uppercase tracking-wide text-gray-500 text-right">Budget Approved in CT Hub</th>
                   {ccSettings.show_erp_columns && (
                     <>
                       <th className="px-3 py-2.5 font-semibold text-[10px] uppercase tracking-wide text-gray-500 text-right">Budget (ERP)</th>
@@ -806,7 +813,7 @@ export default async function CostControlLandingPage() {
                             <p className="text-[13px] font-semibold text-indigo-800 tabular-nums">{estimate > 0 ? formatINR(estimate) : '—'}</p>
                           </div>
                           <div className="rounded-lg bg-emerald-50/60 py-1.5">
-                            <p className="text-[10px] uppercase tracking-wide text-gray-500">Approved via WS</p>
+                            <p className="text-[10px] uppercase tracking-wide text-gray-500">Budget Approved in CT Hub</p>
                             <p className="text-[13px] font-semibold text-emerald-700 tabular-nums">{approvedHere > 0 ? formatINR(approvedHere) : '—'}</p>
                           </div>
                         </div>
@@ -1209,7 +1216,10 @@ async function EngineerHome({ userId, canWrite, label }: { userId: string | null
           )}
         </Card>
       ) : (
-        <TreeProvider allCatIds={[...realGroups.map(g => g.key), ...(realGroups.length > 0 && soloProjects.length > 0 ? ['_independent'] : [])]}>
+        <TreeProvider
+          allCatIds={[...realGroups.map(g => g.key), ...(realGroups.length > 0 && soloProjects.length > 0 ? ['_independent'] : [])]}
+          initialCollapsedIds={[...realGroups.map(g => g.key), ...(realGroups.length > 0 && soloProjects.length > 0 ? ['_independent'] : [])]}
+        >
         <Card className="overflow-hidden">
           {realGroups.length > 0 && (
             <div className="flex items-center justify-between px-3 py-2 border-b border-gray-100 bg-gray-50/60">
