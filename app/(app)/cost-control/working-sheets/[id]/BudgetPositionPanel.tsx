@@ -3,7 +3,12 @@
 // project, it shows the budget ALREADY APPROVED so far → what it BECOMES once
 // this sheet is signed off. Reuses the same money rollup as the project /
 // approvals pages so the figures always match. No Internal Estimate here —
-// only approved amounts. One component → renders the same on web and mobile.
+// only approved amounts — EXCEPT the Internal Estimate check the HOD asked
+// for: an approver has to be told, at the moment he signs, when the ask takes
+// this line past what management estimated. Safe to show here because this
+// panel is reviewer-gated (page.tsx: `reviewer && isPendingApproval`); the
+// Internal Estimate must never reach an engineer.
+// One component → renders the same on web and mobile.
 
 import { createClient } from '@/lib/supabase/server'
 import { computeMoneyRollup, type RollupWSRow, type RollupVersionRow } from '@/lib/cost-control/project-rollup'
@@ -35,6 +40,24 @@ export async function BudgetPositionPanel({
     versionRows: (sheets ?? []) as SheetRow[],
     budgetLines: [], subSkills: [], disciplines: [],
   })
+
+  // Internal Estimate for THIS sub-category: the imported [IB…] baseline, or a
+  // Trustee-accepted figure where one has been set (that always wins).
+  const ieRoll = computeMoneyRollup({
+    wsRows: (sheets ?? []) as SheetRow[],
+    versionRows: (sheets ?? []) as SheetRow[],
+    budgetLines: [], subSkills: [], disciplines: [],
+  })
+  const ieFromImport = ieRoll.wsAgg.get(`${disciplineId}::${subSkillId}`)?.planTotal ?? 0
+  const { data: blRows } = await supabase
+    .from('cc_budget_lines')
+    .select('internal_estimate_amt')
+    .eq('project_id', projectId)
+    .eq('discipline_id', disciplineId ?? '')
+    .eq('sub_skill_id', subSkillId ?? '')
+  const ieAccepted = (blRows ?? []).reduce(
+    (a, b) => a + (b.internal_estimate_amt == null ? 0 : Number(b.internal_estimate_amt)), 0)
+  const internalEstimate = ieAccepted > 0 ? ieAccepted : ieFromImport
 
   // Already-approved so far, at each level. wsAgg is keyed `${disc}::${sub}`.
   let projApproved = 0, discApproved = 0, subApproved = 0
@@ -80,6 +103,47 @@ export async function BudgetPositionPanel({
           </div>
         ))}
       </div>
+
+      {/* The Internal Estimate check (HOD). Only for THIS line — a discipline or
+          project total tells an approver nothing about the decision in front of
+          him. Silent when the ask sits inside the estimate; loud when it does
+          not; and explicit when no estimate was ever set, because "no estimate"
+          reads identically to "zero" if nobody says which it is. */}
+      {(() => {
+        const after = subApproved + inc
+        if (internalEstimate <= 0) {
+          return (
+            <div className="border-t border-amber-200 bg-amber-50 px-4 py-2.5">
+              <p className="text-[12.5px] font-semibold text-amber-900">No Internal Estimate set for this line</p>
+              <p className="text-[11px] text-amber-800 mt-0.5">
+                There is nothing to check {formatINR(after)} against. Approving is fine — just know you are
+                not approving against an estimate.
+              </p>
+            </div>
+          )
+        }
+        const over = Math.round(after) - Math.round(internalEstimate)
+        if (over <= 0) {
+          return (
+            <div className="border-t border-gray-100 bg-gray-50/60 px-4 py-2.5">
+              <p className="text-[12px] text-gray-600">
+                Internal Estimate for this line <b className="text-gray-900 tabular-nums">{formatINR(internalEstimate)}</b>
+                <span className="text-gray-400"> · within estimate</span>
+              </p>
+            </div>
+          )
+        }
+        return (
+          <div className="border-t border-rose-200 bg-rose-50 px-4 py-3">
+            <p className="text-[13px] font-bold text-rose-900">
+              This takes the line {formatINR(over)} ABOVE the Internal Estimate
+            </p>
+            <p className="text-[11.5px] text-rose-800 mt-0.5 tabular-nums">
+              Internal Estimate {formatINR(internalEstimate)} · approved after this {formatINR(after)}
+            </p>
+          </div>
+        )
+      })()}
     </div>
   )
 }
