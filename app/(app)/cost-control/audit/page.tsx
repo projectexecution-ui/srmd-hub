@@ -7,14 +7,14 @@ import { PageHeader } from '@/components/PageHeader'
 import { Card } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { formatINR, personName } from '@/lib/utils'
-import { ClipboardList, FilePen, FileSpreadsheet, IndianRupee, CheckCircle2 } from 'lucide-react'
+import { ClipboardList, FilePen, FileSpreadsheet, IndianRupee, CheckCircle2, Lock } from 'lucide-react'
 
 export const dynamic = 'force-dynamic'
 
 interface UnifiedEvent {
   id: string
   ts: string
-  kind: 'approval' | 'ws_edit' | 'budget_event' | 'excel_import'
+  kind: 'approval' | 'ws_edit' | 'budget_event' | 'excel_import' | 'completion'
   who: string | null
   project_code: string | null
   project_id: string | null
@@ -83,7 +83,20 @@ export default async function AuditLogPage({
     .order('created_at', { ascending: false })
     .limit(200)
 
-  const [wsEditsR, budgetEventsR, importsR, approvalsR] = await Promise.all([wsEditsQ, budgetEventsQ, importsQ, approvalsQ])
+  // Work closed / reopened, and the ERP budget actually taken out afterwards.
+  // These are the events that stop money being spent, so they belong here
+  // beside the approvals rather than only on the project screen.
+  const completionsQ = supabase
+    .from('cc_completion_events')
+    .select(
+      `id, action, savings_amt, note, created_at, project_id, actor_id,
+       projects(code, name), cc_disciplines(code, name), cc_sub_skills(code, name),
+       actor:profiles!cc_completion_events_actor_id_fkey(full_name, name, email)`,
+    )
+    .order('created_at', { ascending: false })
+    .limit(200)
+
+  const [wsEditsR, budgetEventsR, importsR, approvalsR, completionsR] = await Promise.all([wsEditsQ, budgetEventsQ, importsQ, approvalsQ, completionsQ])
 
   const events: UnifiedEvent[] = []
 
@@ -242,6 +255,49 @@ export default async function AuditLogPage({
     })
   }
 
+  type CompletionRow = {
+    id: string
+    action: 'completed' | 'reopened' | 'erp_reduced' | 'erp_reduction_undone'
+    savings_amt: number | null
+    note: string | null
+    created_at: string
+    project_id: string
+    projects: { code: string; name: string } | { code: string; name: string }[] | null
+    cc_disciplines: { code: string; name: string } | { code: string; name: string }[] | null
+    cc_sub_skills: { code: string; name: string } | { code: string; name: string }[] | null
+    actor: { full_name: string | null; name: string | null; email: string } | { full_name: string | null; name: string | null; email: string }[] | null
+  }
+
+  for (const e of (completionsR.data ?? []) as unknown as CompletionRow[]) {
+    if (projectFilter && e.project_id !== projectFilter) continue
+    if (kindFilter && kindFilter !== 'completion') continue
+    const proj = pickFirst(e.projects)
+    const disc = pickFirst(e.cc_disciplines)
+    const sub = pickFirst(e.cc_sub_skills)
+    const who = pickFirst(e.actor)
+    // A null sub-category means the whole work category moved.
+    const what = sub
+      ? `${sub.code} ${sub.name}`
+      : disc ? `${disc.code} ${disc.name} (whole category)` : ''
+    const verb = e.action === 'completed' ? 'Marked Completed'
+      : e.action === 'reopened' ? 'Reopened'
+      : e.action === 'erp_reduced' ? 'ERP budget reduced'
+      : 'ERP reduction undone'
+    events.push({
+      id: `ce-${e.id}`,
+      ts: e.created_at,
+      kind: 'completion',
+      who: who ? personName(who.full_name, who.name, who.email) : null,
+      project_code: proj?.code ?? null,
+      project_id: e.project_id,
+      ws_code: null,
+      ws_id: null,
+      description: `${verb} — ${what}`,
+      amount: e.action === 'completed' || e.action === 'erp_reduced' ? e.savings_amt : null,
+      detail: e.note ?? undefined,
+    })
+  }
+
   events.sort((a, b) => b.ts.localeCompare(a.ts))
 
   const { data: projects } = await supabase.from('projects').select('id, code, name').order('code')
@@ -250,7 +306,7 @@ export default async function AuditLogPage({
     <div className="p-4 md:p-6 max-w-6xl mx-auto space-y-4">
       <PageHeader
         title="Audit log"
-        subtitle={`Last ${events.length} cost-control events — working-sheet edits, budget changes, Excel imports`}
+        subtitle={`Last ${events.length} cost-control events — approvals, working-sheet edits, budget changes, work closed or reopened, Excel imports`}
         back="/cost-control"
       />
 
@@ -279,6 +335,7 @@ export default async function AuditLogPage({
             <option value="ws_edit">WS edits</option>
             <option value="budget_event">Budget events</option>
             <option value="excel_import">Excel imports</option>
+            <option value="completion">Completed / reopened</option>
           </select>
           <button
             type="submit"
@@ -316,6 +373,7 @@ export default async function AuditLogPage({
                     {ev.kind === 'ws_edit' && <FilePen className="h-3.5 w-3.5" />}
                     {ev.kind === 'budget_event' && <IndianRupee className="h-3.5 w-3.5" />}
                     {ev.kind === 'excel_import' && <FileSpreadsheet className="h-3.5 w-3.5" />}
+                    {ev.kind === 'completion' && <Lock className="h-3.5 w-3.5 text-teal-600" />}
                   </td>
                   <td className="px-3 py-2 text-gray-600 text-xs whitespace-nowrap">
                     {new Date(ev.ts).toLocaleString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata' })}

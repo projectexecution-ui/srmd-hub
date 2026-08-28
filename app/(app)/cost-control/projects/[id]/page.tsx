@@ -14,10 +14,14 @@ import { getCcSettings } from '@/lib/cost-control/settings'
 import { computeMoneyRollup, type RollupWSRow, type RollupVersionRow, type RollupBudgetLine } from '@/lib/cost-control/project-rollup'
 import { sortDisciplines } from '@/lib/cost-control/discipline-order'
 import { overBudgetAmount, overBudgetDriver } from '@/lib/cost-control/over-budget'
-import { canMarkComplete, savingsOnCompletion } from '@/lib/cost-control/completion'
+import {
+  canMarkComplete, savingsOnCompletion, canCompleteDiscipline, cascadeCount,
+} from '@/lib/cost-control/completion'
 import { ccApprovalPath } from '@/lib/cost-control/approval-link'
+import { getEffectiveCcRole } from '@/app/(app)/cost-control/billing/billing-actions'
 import { estimateShortfall, hasNoEstimate } from '@/lib/cost-control/estimate-vs-erp'
 import { CompleteControl } from './CompleteControl'
+import { ErpReducedControl } from './ErpReducedControl'
 import { ProjectAlerts } from './ProjectAlerts'
 import { AddToProject } from './AddToProject'
 import { QueryError } from '@/components/ui/query-error'
@@ -117,6 +121,12 @@ export default async function CostControlProjectDetailPage(
   // Setup / disable / deadline / BPH-sync controls are management-only even
   // when an engineer is allowed to view.
   const canWrite = can(perms, 'cost-control', 'edit') && reviewer
+  // Confirming that the leftover budget actually came OUT of IN4 is not a
+  // management call — it belongs to whoever keys the ERP. Same two roles the
+  // billing queue uses, so Parimal (coordinator) can tick it without being
+  // given management rights he should not have. The DB enforces it too.
+  const ccRole = await getEffectiveCcRole()
+  const canTickErp = ccRole === 'admin' || ccRole === 'billing' || ccRole === 'coordinator'
   // Adding a work category / sub-category mints a code in the ONE master list
   // shared by every project, so it stays with admin / Trustee / coordinator —
   // Atm Heads hold can_edit but not can_admin. (HOD #6)
@@ -164,12 +174,12 @@ export default async function CostControlProjectDetailPage(
       : Promise.resolve({ data: null }),
     supabase
       .from('cc_project_disciplines')
-      .select('discipline_id, estimation_mode, thumbrule_rate_per_sft, thumbrule_notes, target_deadline, cc_disciplines(id, code, name, display_order)')
+      .select('discipline_id, estimation_mode, thumbrule_rate_per_sft, thumbrule_notes, target_deadline, completed_at, completed_by, cc_disciplines(id, code, name, display_order)')
       .eq('project_id', id)
       .eq('is_enabled', true),
     supabase
       .from('cc_project_sub_skills')
-      .select('sub_skill_id, estimation_mode, thumbrule_rate_per_sft, thumbrule_notes, target_deadline, completed_at, completed_by, cc_sub_skills(id, discipline_id, code, name)')
+      .select('sub_skill_id, estimation_mode, thumbrule_rate_per_sft, thumbrule_notes, target_deadline, completed_at, completed_by, erp_reduced_at, erp_reduced_by, erp_reduced_amt, cc_sub_skills(id, discipline_id, code, name)')
       .eq('project_id', id)
       .eq('is_enabled', true),
     supabase
@@ -222,6 +232,8 @@ export default async function CostControlProjectDetailPage(
     thumbrule_rate_per_sft: number | null
     thumbrule_notes: string | null
     target_deadline: string | null
+    completed_at: string | null
+    completed_by: string | null
     cc_disciplines: DisciplineRow | DisciplineRow[] | null
   }
   type ProjSubJoin = {
@@ -232,6 +244,9 @@ export default async function CostControlProjectDetailPage(
     target_deadline: string | null
     completed_at: string | null
     completed_by: string | null
+    erp_reduced_at: string | null
+    erp_reduced_by: string | null
+    erp_reduced_amt: number | null
     cc_sub_skills: SubSkillRow | SubSkillRow[] | null
   }
 
@@ -247,16 +262,18 @@ export default async function CostControlProjectDetailPage(
     .sort((a, b) => a.code.localeCompare(b.code))
 
   // Per-row metadata lookup maps — used by the inline RowControls.
-  const discMeta = new Map<string, { mode: 'detailed' | 'thumbrule'; rate: number | null; notes: string | null; deadline: string | null }>()
+  const discMeta = new Map<string, { mode: 'detailed' | 'thumbrule'; rate: number | null; notes: string | null; deadline: string | null; completedAt: string | null; completedBy: string | null }>()
   for (const r of (projDisRes.data ?? []) as ProjDisJoin[]) {
     discMeta.set(r.discipline_id, {
       mode: (r.estimation_mode ?? 'detailed') as 'detailed' | 'thumbrule',
       rate: r.thumbrule_rate_per_sft,
       notes: r.thumbrule_notes,
       deadline: r.target_deadline,
+      completedAt: r.completed_at,
+      completedBy: r.completed_by,
     })
   }
-  const subMeta = new Map<string, { mode: 'detailed' | 'thumbrule' | null; rate: number | null; notes: string | null; deadline: string | null; completedAt: string | null; completedBy: string | null }>()
+  const subMeta = new Map<string, { mode: 'detailed' | 'thumbrule' | null; rate: number | null; notes: string | null; deadline: string | null; completedAt: string | null; completedBy: string | null; erpReducedAt: string | null; erpReducedBy: string | null; erpReducedAmt: number | null }>()
   for (const r of (projSubRes.data ?? []) as ProjSubJoin[]) {
     subMeta.set(r.sub_skill_id, {
       mode: r.estimation_mode, // null = inherit
@@ -265,6 +282,9 @@ export default async function CostControlProjectDetailPage(
       deadline: r.target_deadline,
       completedAt: r.completed_at,
       completedBy: r.completed_by,
+      erpReducedAt: r.erp_reduced_at,
+      erpReducedBy: r.erp_reduced_by,
+      erpReducedAmt: r.erp_reduced_amt == null ? null : Number(r.erp_reduced_amt),
     })
   }
 
@@ -566,6 +586,42 @@ export default async function CostControlProjectDetailPage(
   )
   const readyToCloseSavings = readyToClose.reduce(
     (sum, s) => sum + savingsOnCompletion(blMap.get(`${s.discipline_id}::${s.id}`)), 0)
+
+  // Work-category completion. A category is closable once every sub-category
+  // under it that carries money is closed or closable; the click then closes
+  // the lot. Computed once here so the desktop header and the phone card show
+  // the same thing — and so the confirm can say how many rows are about to
+  // move. The DB re-checks all of it (cc_set_completion).
+  const discCompletion = new Map<string, {
+    completedAt: string | null
+    completedByName: string | null
+    canComplete: boolean
+    cascade: number
+    reopen: number
+    savings: number
+  }>()
+  for (const d of disciplines) {
+    const kids = subSkills.filter(s => s.discipline_id === d.id)
+    const lines = kids.map(s => ({
+      completed: !!subMeta.get(s.id)?.completedAt,
+      figures: blMap.get(`${d.id}::${s.id}`) ?? null,
+    }))
+    const meta = discMeta.get(d.id)
+    discCompletion.set(d.id, {
+      completedAt: meta?.completedAt ?? null,
+      completedByName: profileMap.get(meta?.completedBy ?? '') ?? null,
+      canComplete: canCompleteDiscipline(lines),
+      cascade: cascadeCount(lines),
+      reopen: lines.filter(l => l.completed).length,
+      // What the whole category would free up: every sub-category that is
+      // closed or about to be.
+      savings: kids.reduce((sum, s) => {
+        const closedOrClosing = !!subMeta.get(s.id)?.completedAt
+          || canMarkComplete(blMap.get(`${d.id}::${s.id}`))
+        return closedOrClosing ? sum + savingsOnCompletion(blMap.get(`${d.id}::${s.id}`)) : sum
+      }, 0),
+    })
+  }
 
 
   // Portfolio rollup (across all sub-skills on this project)
@@ -977,6 +1033,8 @@ export default async function CostControlProjectDetailPage(
                   if (sAgg) dWsCount += sAgg.chains.size
                 }
 
+                const dComplete = discCompletion.get(d.id)
+
                 return (
                   <>
                     <tr key={d.id} className="border-t border-gray-200 bg-slate-50 font-semibold">
@@ -1052,13 +1110,33 @@ export default async function CostControlProjectDetailPage(
                         </>
                       )}
                       <Td>
-                        <DisableButton
-                          projectId={project.id}
-                          disciplineId={d.id}
-                          label={`${d.code} ${d.name}`}
-                          attachedCount={dWsCount}
-                          canWrite={canWrite}
-                        />
+                        <span className="inline-flex items-center gap-1.5 flex-wrap">
+                          {/* Closing the whole category — same rule as a row,
+                              read upwards. (HOD #3) */}
+                          {(dComplete?.completedAt || dComplete?.canComplete) && (
+                            <CompleteControl
+                              level="discipline"
+                              projectId={project.id}
+                              disciplineId={d.id}
+                              subSkillId={null}
+                              label={`${d.code} ${d.name}`}
+                              savings={dComplete.savings}
+                              completedAt={dComplete.completedAt}
+                              completedByName={dComplete.completedByName}
+                              cascadeCount={dComplete.cascade}
+                              reopenCount={dComplete.reopen}
+                              canWrite={canWrite}
+                              variant="row"
+                            />
+                          )}
+                          <DisableButton
+                            projectId={project.id}
+                            disciplineId={d.id}
+                            label={`${d.code} ${d.name}`}
+                            attachedCount={dWsCount}
+                            canWrite={canWrite}
+                          />
+                        </span>
                       </Td>
                     </tr>
 
@@ -1075,6 +1153,13 @@ export default async function CostControlProjectDetailPage(
                       const sOver = overBudgetAmount(bl)
                       const sOverBy = overBudgetDriver(bl)
                       const sCompletedAt = subMeta.get(s.id)?.completedAt ?? null
+                      // Why the Request button is off, in words. A closed work category
+                      // closes everything under it, so name whichever one is shut.
+                      const sClosedReason = discCompletion.get(d.id)?.completedAt
+                        ? `The work category ${d.code} ${d.name} is marked Completed — reopen it to raise a request here.`
+                        : sCompletedAt
+                          ? `${s.code} ${s.name} is marked Completed — reopen it to raise a request.`
+                          : null
                       const sCompletedBy = profileMap.get(subMeta.get(s.id)?.completedBy ?? '') ?? null
                       const wsCount = a?.chains.size ?? 0
                       const ie = ieMap.get(`${d.id}::${s.id}`)
@@ -1293,7 +1378,35 @@ export default async function CostControlProjectDetailPage(
                                   variant="row"
                                 />
                               )}
-                              {canWrite && (
+                              {/* Closed, with money still sitting in IN4 —
+                                  everyone sees the amount, only Billing /
+                                  Coordinator can tick it off. */}
+                              {sCompletedAt && (
+                                <ErpReducedControl
+                                  projectId={project.id}
+                                  disciplineId={d.id}
+                                  subSkillId={s.id}
+                                  label={`${s.code} ${s.name}`}
+                                  savings={savingsOnCompletion(bl)}
+                                  reducedAt={subMeta.get(s.id)?.erpReducedAt ?? null}
+                                  reducedAmt={subMeta.get(s.id)?.erpReducedAmt ?? null}
+                                  reducedByName={profileMap.get(subMeta.get(s.id)?.erpReducedBy ?? '') ?? null}
+                                  canTick={canTickErp}
+                                  variant="row"
+                                />
+                              )}
+                              {/* Never just hide the Request button on a closed
+                                  line — say why it is off, or the row reads as
+                                  broken. */}
+                              {canWrite && (sClosedReason ? (
+                                <span
+                                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-semibold border border-gray-200 bg-gray-50 text-gray-400 whitespace-nowrap"
+                                  title={sClosedReason}
+                                >
+                                  <Plus className="h-3 w-3" /> Request
+                                  <span className="font-normal text-gray-500">· reopen first</span>
+                                </span>
+                              ) : (
                                 <Link
                                   href={effMode === 'thumbrule'
                                     ? `/cost-control/working-sheets/new-thumbrule?project=${project.id}&discipline=${d.id}&sub_skill=${s.id}`
@@ -1303,7 +1416,7 @@ export default async function CostControlProjectDetailPage(
                                 >
                                   <Plus className="h-3 w-3" /> Request
                                 </Link>
-                              )}
+                              ))}
                               {/* Config (mode · remove) tucked behind one ▾ so the
                                   table stays KPIs + amounts, not editing widgets. */}
                               {canWrite && (
@@ -1407,6 +1520,13 @@ export default async function CostControlProjectDetailPage(
               const sOver = overBudgetAmount(bl)
               const sOverBy = overBudgetDriver(bl)
               const sCompletedAt = subMeta.get(s.id)?.completedAt ?? null
+              // Why the Request button is off, in words. A closed work category
+              // closes everything under it, so name whichever one is shut.
+              const sClosedReason = discCompletion.get(d.id)?.completedAt
+                ? `The work category ${d.code} ${d.name} is marked Completed — reopen it to raise a request here.`
+                : sCompletedAt
+                  ? `${s.code} ${s.name} is marked Completed — reopen it to raise a request.`
+                  : null
               const sCompletedBy = profileMap.get(subMeta.get(s.id)?.completedBy ?? '') ?? null
               const sEstShort = estimateShortfall(estLive, bl)
               const sNoEstimate = hasNoEstimate(estLive, bl)
@@ -1552,13 +1672,40 @@ export default async function CostControlProjectDetailPage(
                     />
                   )}
 
+                  {/* Closed, but the money is still in IN4 until somebody
+                      takes it out. Shown to everyone; only Billing /
+                      Coordinator gets the tick. */}
+                  {sCompletedAt && (
+                    <ErpReducedControl
+                      projectId={project.id}
+                      disciplineId={d.id}
+                      subSkillId={s.id}
+                      label={`${s.code} ${s.name}`}
+                      savings={savingsOnCompletion(bl)}
+                      reducedAt={subMeta.get(s.id)?.erpReducedAt ?? null}
+                      reducedAmt={subMeta.get(s.id)?.erpReducedAmt ?? null}
+                      reducedByName={profileMap.get(subMeta.get(s.id)?.erpReducedBy ?? '') ?? null}
+                      canTick={canTickErp}
+                      variant="card"
+                    />
+                  )}
+
                   <RowDetail id={s.id}>
                     <div className="mt-2.5">
                       <SubSkillBoq sheets={boqBySub.get(`${d.id}::${s.id}`) ?? []} />
                     </div>
                   </RowDetail>
 
-                  {canWrite && (
+                  {/* A closed line still shows the button, greyed, with the
+                      reason on it — hiding it would read as a bug. */}
+                  {canWrite && (sClosedReason ? (
+                    <div className="mt-3 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2">
+                      <p className="text-[12px] font-semibold text-gray-500 inline-flex items-center gap-1.5">
+                        <Plus className="h-3.5 w-3.5" /> Request — not available
+                      </p>
+                      <p className="text-[11px] text-gray-500 mt-0.5">{sClosedReason}</p>
+                    </div>
+                  ) : (
                     <div className="mt-3">
                       <Link
                         href={effMode === 'thumbrule'
@@ -1570,7 +1717,7 @@ export default async function CostControlProjectDetailPage(
                         <Plus className="h-3 w-3" /> Request
                       </Link>
                     </div>
-                  )}
+                  ))}
                 </div>
               )
             }).filter(Boolean)
@@ -1594,6 +1741,26 @@ export default async function CostControlProjectDetailPage(
                       </span>
                     )}
                   </span>
+                  {/* Close the whole trade from the phone too — the desktop
+                      header carries the same control. (HOD #3) */}
+                  {(discCompletion.get(d.id)?.completedAt || discCompletion.get(d.id)?.canComplete) && (
+                    <div className="mt-1.5 pl-6">
+                      <CompleteControl
+                        level="discipline"
+                        projectId={project.id}
+                        disciplineId={d.id}
+                        subSkillId={null}
+                        label={`${d.code} ${d.name}`}
+                        savings={discCompletion.get(d.id)!.savings}
+                        completedAt={discCompletion.get(d.id)!.completedAt}
+                        completedByName={discCompletion.get(d.id)!.completedByName}
+                        cascadeCount={discCompletion.get(d.id)!.cascade}
+                        reopenCount={discCompletion.get(d.id)!.reopen}
+                        canWrite={canWrite}
+                        variant="row"
+                      />
+                    </div>
+                  )}
                   {/* Three columns so each figure can carry its ₹/sft beneath —
                       the phone was the only place showing money with no rate. */}
                   <div className="mt-1 pl-6 grid grid-cols-3 gap-2 text-[11px] leading-tight tabular-nums">

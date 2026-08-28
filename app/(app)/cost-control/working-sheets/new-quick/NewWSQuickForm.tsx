@@ -324,6 +324,9 @@ export function NewWSQuickForm({ projects, allDisciplines, allSubSkills, default
   const [projectId, setProjectId]     = useState(defaultProjectId ?? projects[0]?.id ?? '')
   const [disciplineId, setDisciplineId] = useState(defaultDisciplineId ?? '')
   const [subSkillId, setSubSkillId]   = useState(defaultSubSkillId ?? '')
+  // Closed work refuses new requests (trg_cc_ws_block_when_closed). Find out
+  // as soon as the target is picked, not after the file is uploaded.
+  const [closedReason, setClosedReason] = useState<string | null>(null)
   // Opened from a sub-skill row (discipline + sub-skill pre-filled)? Collapse
   // the picker to a one-line summary so the engineer lands straight on
   // Download template → Upload. "Change" reopens it.
@@ -368,6 +371,40 @@ export function NewWSQuickForm({ projects, allDisciplines, allSubSkills, default
   // drift from what the review grid shows (the earlier prefill used the parser's
   // ladder, which could differ from the grid's default %, showing a stale total).
   const gridGrand = tplActive ? (tplSummary?.grandTotal ?? null) : null
+  useEffect(() => {
+    let live = true
+    setClosedReason(null)
+    if (!projectId || !disciplineId) return
+    const sb = createClient()
+    void (async () => {
+      const [discR, subR] = await Promise.all([
+        sb.from('cc_project_disciplines')
+          .select('completed_at, cc_disciplines(code, name)')
+          .eq('project_id', projectId).eq('discipline_id', disciplineId)
+          .not('completed_at', 'is', null).maybeSingle(),
+        subSkillId
+          ? sb.from('cc_project_sub_skills')
+              .select('completed_at, cc_sub_skills(code, name)')
+              .eq('project_id', projectId).eq('sub_skill_id', subSkillId)
+              .not('completed_at', 'is', null).maybeSingle()
+          : Promise.resolve({ data: null }),
+      ])
+      if (!live) return
+      const one = <T,>(v: T | T[] | null | undefined): T | null =>
+        Array.isArray(v) ? v[0] ?? null : v ?? null
+      const d = one((discR.data as { cc_disciplines?: unknown } | null)?.cc_disciplines as
+        { code: string; name: string } | { code: string; name: string }[] | null | undefined)
+      const ss = one((subR.data as { cc_sub_skills?: unknown } | null)?.cc_sub_skills as
+        { code: string; name: string } | { code: string; name: string }[] | null | undefined)
+      if (discR.data && d) {
+        setClosedReason(`The work category ${d.code} ${d.name} is marked Completed on this project. Management has to reopen it before a request can be raised.`)
+      } else if (subR.data && ss) {
+        setClosedReason(`${ss.code} ${ss.name} is marked Completed on this project. Management has to reopen it before a request can be raised.`)
+      }
+    })()
+    return () => { live = false }
+  }, [projectId, disciplineId, subSkillId])
+
   useEffect(() => {
     if (gridGrand != null) setSummaryTotal(String(Math.round(gridGrand)))
   }, [gridGrand])
@@ -599,6 +636,7 @@ export function NewWSQuickForm({ projects, allDisciplines, allSubSkills, default
     // No comment is collected here: the mandatory justification is captured once,
     // at "Send for approval" (WSApprovalActions), so it isn't asked for twice.
     if (!projectId || !disciplineId || !subSkillId) { setError('Pick project / discipline / sub-skill'); return }
+    if (closedReason) { setError(closedReason); return }
     setSubmitting(true); setError(null)
     const supabase = createClient()
     const { data: { user } } = await supabase.auth.getUser()
@@ -783,6 +821,7 @@ export function NewWSQuickForm({ projects, allDisciplines, allSubSkills, default
   // tplActive (parsed stays null there) — the old `!parsed` check wrongly
   // disabled the button for every standard-template upload.
   const missingToSend: string[] = []
+  if (closedReason) missingToSend.push('this work is closed — it must be reopened first')
   if (!file) missingToSend.push('attach the BOQ Excel')
   else if (parsing) missingToSend.push('wait for the file to finish parsing')
   else if (cumulativeVersions && notTemplate) missingToSend.push('upload the STANDARD template — this file isn’t it')
@@ -794,6 +833,15 @@ export function NewWSQuickForm({ projects, allDisciplines, allSubSkills, default
   return (
     <form onSubmit={submit} className="space-y-5">
       {error && <p className="text-sm text-rose-700 bg-rose-50 border border-rose-200 rounded-lg px-3 py-2">{error}</p>}
+
+      {/* Say it at the top, before any work is done — not after the file is
+          uploaded and the rows are filled in. */}
+      {closedReason && (
+        <div className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2.5">
+          <p className="text-sm font-semibold text-amber-900">This work is closed — no new request can be raised</p>
+          <p className="text-[12px] text-amber-800 mt-0.5">{closedReason}</p>
+        </div>
+      )}
 
       {!showContext && (
         <div className="flex items-center justify-between gap-3 rounded-xl border border-gray-200 bg-gray-50 px-3 py-2.5">

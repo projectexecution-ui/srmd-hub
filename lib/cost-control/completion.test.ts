@@ -1,5 +1,8 @@
 import { describe, it, expect } from 'vitest'
-import { canMarkComplete, savingsOnCompletion } from './completion'
+import {
+  canMarkComplete, savingsOnCompletion, canCompleteDiscipline,
+  blockersForDiscipline, cascadeCount, hasMoney,
+} from './completion'
 
 describe('canMarkComplete', () => {
   // Real SRAH lines. The eligible ones all have WO === Paid to the rupee.
@@ -51,5 +54,58 @@ describe('canMarkComplete', () => {
   it('handles a missing budget line', () => {
     expect(canMarkComplete(null)).toBe(false)
     expect(savingsOnCompletion(undefined)).toBe(0)
+  })
+})
+
+describe('the work-category rule', () => {
+  const closable = { budget: 500000, wo: 400000, paid: 400000 }
+  const owing = { budget: 500000, wo: 400000, paid: 100000 }
+  const empty = { budget: 0, wo: 0, paid: 0 }
+
+  it('closes a category whose money-bearing sub-categories all match', () => {
+    expect(canCompleteDiscipline([
+      { completed: false, figures: closable },
+      { completed: true, figures: owing },   // already closed — no longer a blocker
+      { completed: false, figures: empty },  // empty row — not unfinished work
+    ])).toBe(true)
+  })
+
+  it('refuses while any sub-category still owes money', () => {
+    expect(canCompleteDiscipline([
+      { completed: false, figures: closable },
+      { completed: false, figures: owing },
+    ])).toBe(false)
+  })
+
+  it('names what is blocking it', () => {
+    const subs = [
+      { completed: false, figures: closable, label: 'ok' },
+      { completed: false, figures: owing, label: 'still owed' },
+      { completed: false, figures: empty, label: 'empty' },
+    ]
+    expect(blockersForDiscipline(subs).map(s => s.label)).toEqual(['still owed'])
+  })
+
+  it('refuses a category with no money anywhere — nothing to close', () => {
+    expect(canCompleteDiscipline([
+      { completed: false, figures: empty },
+      { completed: false, figures: null },
+    ])).toBe(false)
+  })
+
+  it('counts what the cascade will close, ignoring the already-closed', () => {
+    expect(cascadeCount([
+      { completed: false, figures: closable },
+      { completed: false, figures: closable },
+      { completed: true, figures: closable },
+      { completed: false, figures: empty },
+    ])).toBe(2)
+  })
+
+  it('treats budget with nothing committed as unfinished, not empty', () => {
+    // Real money sitting on a line nobody has raised a WO against — the work
+    // has not started, so the category is not finished.
+    expect(hasMoney({ budget: 385000, wo: 0, paid: 0 })).toBe(true)
+    expect(canCompleteDiscipline([{ completed: false, figures: { budget: 385000, wo: 0, paid: 0 } }])).toBe(false)
   })
 })

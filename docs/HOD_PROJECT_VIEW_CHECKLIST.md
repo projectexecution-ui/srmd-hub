@@ -43,7 +43,7 @@ compute to `auto`. Documented in `AGENTS.md`.
 
 ---
 
-## 3. Completed items: mark complete + budget reduced — DONE (`7a525f2`)
+## 3. Completed items: Completed + budget reduced — DONE (`7a525f2`, extended 28 Aug)
 
 **Answered by the HOD:** offer the button ONLY where WO/PO committed equals
 Paid, so only a few rows ever show it. Portfolio-wide 152 of 272 lines with a
@@ -59,6 +59,35 @@ next sync would overwrite us. Stored on
 
 Eligibility is re-checked server-side, so a stale page cannot close a line that
 still owes money; the refusal names the outstanding amount.
+
+### Round 2 — closing now actually closes (28 Aug 2026)
+
+Aksha, relaying the HOD: the label was not the point. Three things follow now.
+
+- **Renamed** "Mark complete" → **Completed**, as asked.
+- **Work-category level too.** A category is closable once every sub-category
+  under it that carries money is closed or closable; one click closes the lot,
+  and reopening it reopens the lot. 40 of the 135 categories that carry money
+  qualify today. Sub-categories with no budget and nothing committed are
+  ignored — an empty row is not unfinished work.
+- **A closed line refuses new requests**, in the database
+  (`trg_cc_ws_block_when_closed`), not just in the UI — `/new-quick` inserts
+  straight from the browser, so a React-only check would be a suggestion. The
+  `+ Request` button stays visible but greyed with the reason on it, and the
+  request form says so at the top before any work is done. `[IB…]` Internal
+  Estimate baselines are exempt: they are management's own record, not a request.
+- **The leftover budget still has to come out of IN4 by hand.** Closing flags
+  it; the person who keys the ERP ticks it off (`cc_set_erp_reduced`, gated to
+  cost-control role `billing` or `coordinator` — Parimal is `coordinator`, the
+  same gate the billing queue already uses). Until ticked, the amount shows as
+  still in the ERP on the row, and the whole list is gathered on
+  `/cost-control/billing` so nobody has to hunt through 42 projects.
+- **Every close, reopen and ERP tick is written to `cc_completion_events`** and
+  shown in `/cost-control/audit` under "Completed / reopened".
+
+Answered by Aksha before building: closing a category cascades to its
+sub-categories; sheets already submitted finish their approval, only NEW
+requests are refused.
 
 ## 4. Items showing spend over the ERP-approved budget — DONE (`49dc34a`)
 

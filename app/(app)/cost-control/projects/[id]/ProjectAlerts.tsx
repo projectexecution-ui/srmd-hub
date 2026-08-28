@@ -288,13 +288,15 @@ export function ProjectAlerts({
               )}
               {completion.completedCount > 0 && (
                 <p className={`text-emerald-800 ${completion.readyCount > 0 ? 'mt-1' : 'font-semibold'}`}>
-                  {completion.completedCount} already complete
+                  {completion.completedCount} already completed
                   {completion.releasedLabel && <> · {completion.releasedLabel} released</>}
                 </p>
               )}
               {completion.readyCount > 0 && (
                 <p className="mt-2 text-[11.5px] text-emerald-700">
-                  Open a work category and look for the <b>Mark complete</b> button on those rows.
+                  Open a work category and look for the <b>Completed</b> button on those rows.
+                  Closing one stops new requests being raised against it, and flags any
+                  leftover budget for Billing to take out of IN4.
                 </p>
               )}
             </>

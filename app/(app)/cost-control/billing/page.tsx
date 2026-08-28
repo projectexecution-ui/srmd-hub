@@ -10,6 +10,7 @@ import { QueryError } from '@/components/ui/query-error'
 import { EmptyState } from '@/components/ui/empty-state'
 import { WSStatusPill, type WSStatus } from '@/components/cost-control/WSStatusPill'
 import { MarkEnteredButton } from './MarkEnteredButton'
+import { ErpReductionQueue } from './ErpReductionQueue'
 import { formatINR, formatDate } from '@/lib/utils'
 import { Landmark, Info } from 'lucide-react'
 
@@ -128,6 +129,11 @@ export default async function BillingQueuePage() {
           </div>
         </Card>
       )}
+
+      {/* Second job for the same person: when management closes a finished
+          sub-category, whatever budget was left over is still sitting in IN4
+          and has to be taken out by hand. */}
+      <ErpReductionQueue />
     </div>
   )
 }
