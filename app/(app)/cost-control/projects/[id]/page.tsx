@@ -1010,9 +1010,7 @@ export default async function CostControlProjectDetailPage(
                       // (the latest [IB] upload) — no longer mixed with the
                       // engineer's ask — so compare the ask straight against
                       // it. A Trustee-accepted amount still wins.
-                      const baseline = ie?.decision === 'accepted' && ie.amt != null
-                        ? ie.amt
-                        : estLive
+                      const baseline = estLive
                       const overBy = baseline > 0 && ask > baseline ? ask - baseline : 0
                       // Effective estimation mode, computed once and reused in
                       // the name cell (read-only signal) + the ▾ config menu
@@ -1307,7 +1305,7 @@ export default async function CostControlProjectDetailPage(
               const ask = a?.pendingAmount ?? 0
               const released = a?.approvedTotal ?? 0
               const wsCount = a?.chains.size ?? 0
-              const baseline = ie?.decision === 'accepted' && ie.amt != null ? ie.amt : estLive
+              const baseline = estLive
               const overBy = baseline > 0 && ask > baseline ? ask - baseline : 0
               const sPct = bl && bl.budget > 0 ? (bl.paid / bl.budget) * 100 : 0
               const sOver = overBudgetAmount(bl)
