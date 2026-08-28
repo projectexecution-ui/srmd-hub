@@ -6,6 +6,7 @@
 
 import { createClient } from '@/lib/supabase/server'
 import { formatINR, personName, formatDuration, formatDateTime } from '@/lib/utils'
+import { splitCheckedComment, remarkRepeatsAmount } from '@/lib/cost-control/approval-trail'
 import {
   FilePlus2, Send, CheckCircle2, RotateCcw, Wallet, Paperclip, CircleDot, Clock,
 } from 'lucide-react'
@@ -47,8 +48,12 @@ type TLItem = {
   title: string
   comment?: string | null
   amount?: number | null
+  /** The figure the approver typed at sign-off, lifted out of the comment. */
+  checked?: number | null
   attachments?: Array<{ name?: string; url?: string }> | null
 }
+
+
 
 export async function ApprovalTimeline({ wsId }: { wsId: string }) {
   const supabase = await createClient()
@@ -95,8 +100,12 @@ export async function ApprovalTimeline({ wsId }: { wsId: string }) {
   if (wsRow?.created_at) {
     items.push({ ts: wsRow.created_at, kind: 'raised', who: wsRow.engineer_id ? nameById.get(wsRow.engineer_id) ?? null : null, title: 'Working Sheet raised' })
   }
-  // 2. Submitted (use submitted_at if present, else the first submit-related event)
-  if (wsRow?.submitted_at) {
+  // 2. Submitted. The event log is authoritative when it has a submit-shaped
+  //    event, because cc_request_release ALSO rewrites submitted_at — which
+  //    produced "Submitted for approval" and "Requested release of the
+  //    balance" as two entries a minute apart for one action.
+  const hasSubmitEvent = evRows.some(e => e.to_stage === 'submitted' || e.decision === 'release_requested')
+  if (wsRow?.submitted_at && !hasSubmitEvent) {
     items.push({ ts: wsRow.submitted_at, kind: 'submitted', who: wsRow.engineer_id ? nameById.get(wsRow.engineer_id) ?? null : null, title: 'Submitted for approval' })
   }
   // 3. Approval events (decisions by stakeholders). The 3-stage chain
@@ -118,7 +127,11 @@ export async function ApprovalTimeline({ wsId }: { wsId: string }) {
         : e.to_stage === 'ph_approved' ? 'Project Head signed off'
         : e.to_stage === 'atm_approved' ? 'Atm Head signed off'
         : isFull ? 'Fully approved into ERP' : 'Release approved (partial)',
-      comment: e.comment,
+      // Sign-offs store the checked figure INSIDE the comment
+      // ("Checked ₹51,27,656 — <remark>"). Split it back out so the remark
+      // reads as the person's own words instead of a sentence with our
+      // bookkeeping welded to the front.
+      ...splitCheckedComment(e.comment),
       attachments: e.attachments,
     })
   }
@@ -146,7 +159,12 @@ export async function ApprovalTimeline({ wsId }: { wsId: string }) {
     })
   }
 
+  // Chronological first, so "+2h after previous" measures against the step that
+  // genuinely came before…
   items.sort((a, b) => a.ts.localeCompare(b.ts))
+  const gaps = items.map((it, i) => (i > 0 ? formatDuration(items[i - 1].ts, it.ts) : ''))
+  // …then newest at the top, which is where the reader looks first.
+  const feed = items.map((it, i) => ({ ...it, gap: gaps[i] })).reverse()
 
   const style: Record<TLItem['kind'], { Icon: typeof Send; dot: string; ring: string }> = {
     raised:    { Icon: FilePlus2,    dot: 'bg-gray-400',    ring: 'ring-gray-100' },
@@ -165,19 +183,22 @@ export async function ApprovalTimeline({ wsId }: { wsId: string }) {
         <h3 className="text-sm font-bold text-gray-900 inline-flex items-center gap-2">
           <Clock className="h-4 w-4 text-gray-500" /> Approval trail
         </h3>
-        <p className="text-[11px] text-gray-500">Full cycle — every stakeholder action on this sheet, in order.</p>
+        <p className="text-[11px] text-gray-500">Full cycle — every stakeholder action on this sheet, most recent first.</p>
       </div>
 
       {items.length === 0 ? (
         <p className="px-4 py-6 text-sm text-gray-500 text-center">No activity yet — this sheet hasn&apos;t moved through approval.</p>
       ) : (
         <ol className="p-4 space-y-0">
-          {items.map((it, i) => {
+          {feed.map((it, i) => {
             const s = style[it.kind]
-            const last = i === items.length - 1
-            // Time elapsed since the previous step — gives a feel for how
-            // long each stage of the cycle took.
-            const gap = i > 0 ? formatDuration(items[i - 1].ts, it.ts) : ''
+            const last = i === feed.length - 1
+            const gap = it.gap
+            // Don't print the checked figure twice. Approvers routinely type it
+            // into their own remark ("Ok to go ahead, checked 51,27,656/-"),
+            // and repeating it from our prefix is what made the trail read
+            // like a machine talking over a person.
+            const showChecked = it.checked != null && !remarkRepeatsAmount(it.comment ?? null, it.checked)
             return (
               <li key={i} className="relative flex gap-3 pb-4 last:pb-0">
                 {/* connector line */}
@@ -190,6 +211,11 @@ export async function ApprovalTimeline({ wsId }: { wsId: string }) {
                     <p className="text-sm font-semibold text-gray-900">
                       {it.title}
                       {it.amount != null && <span className="ml-2 font-bold text-emerald-700 tabular-nums">{formatINR(it.amount)}</span>}
+                      {showChecked && (
+                        <span className="ml-2 text-xs font-normal text-gray-500 tabular-nums">
+                          checked {formatINR(it.checked!)}
+                        </span>
+                      )}
                     </p>
                     <time className="text-[11px] text-gray-400 whitespace-nowrap">{formatDateTime(it.ts)}</time>
                   </div>
