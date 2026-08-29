@@ -94,22 +94,22 @@ export function SubSkillBoq({ sheets }: { sheets: BoqSheet[] }) {
           </div>
 
           {/* Desktop: the same columns as the approval screen. */}
-          <table className="w-full text-[12px] hidden md:table">
+          <table className="w-full table-fixed text-[12px] hidden md:table">
             <thead className="bg-white text-left text-[10px] uppercase tracking-wide text-gray-400">
               <tr>
-                <th className="px-2 py-1.5 w-8">#</th>
-                <th className="px-2 py-1.5">Description &amp; take-off</th>
-                <th className="px-2 py-1.5 w-16">Unit</th>
-                <th className="px-2 py-1.5 text-right w-24">Qty</th>
-                <th className="px-2 py-1.5 text-right w-28">Rate</th>
-                <th className="px-2 py-1.5 text-right w-28">Amount</th>
+                <th className="px-2 py-1.5 w-[4%]">#</th>
+                <th className="px-2 py-1.5 w-[40%]">Description &amp; take-off</th>
+                <th className="px-2 py-1.5 w-[8%]">Unit</th>
+                <th className="px-2 py-1.5 text-right w-[13%]">Qty</th>
+                <th className="px-2 py-1.5 text-right w-[17%]">Rate</th>
+                <th className="px-2 py-1.5 text-right w-[18%]">Amount</th>
               </tr>
             </thead>
             <tbody>
               {sh.rows.map(r => (
                 <tr key={r.id} className={`border-t border-gray-100 ${tint(r.flagSeverity)}`}>
                   <td className="px-2 py-1.5 text-gray-400 align-top">{r.rowNo ?? ''}</td>
-                  <td className="px-2 py-1.5 text-gray-800 align-top max-w-md">
+                  <td className="px-2 py-1.5 text-gray-800 align-top">
                     <p className="truncate" title={r.description ?? ''}>{r.description ?? '—'}</p>
                     <TakeOff r={r} />
                     {r.formulaInAmount && (

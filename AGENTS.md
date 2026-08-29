@@ -76,6 +76,14 @@ sort order, a badge or an interaction in one and you must make the matching
 change in the other, or the two drift apart and the phone quietly shows stale
 or different numbers.
 
+**The breakpoint is a budget, not a habit.** `md` (768px) is the default pair,
+but a wide table must only render where it actually fits. Cost Control’s
+project table switches at `xl` (1280px) because its minimum width is 944px and
+the page container gives 992px at 1280 — at `md` it overflowed on every laptop
+and the HOD had to scroll sideways. Before choosing a breakpoint, MEASURE the
+table: put its markup in a probe page, shrink the container, and read
+`table.scrollWidth`. Remember the container caps at `max-w-7xl` (1280) minus
+`p-6` = 1232px, and the sidebar takes 240px — so a 1440 screen leaves 1152px.
 When the two genuinely need different treatments (a header row has no
 equivalent in a card list; heavy editing widgets stay on desktop), say so
 explicitly in a comment and still deliver the mobile equivalent of the intent

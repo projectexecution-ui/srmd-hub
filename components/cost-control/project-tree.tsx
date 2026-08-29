@@ -167,11 +167,17 @@ export function RowDetailToggle({ id, count }: { id: string; count: number }) {
       type="button"
       onClick={() => toggle(id)}
       aria-expanded={open}
-      title={open ? 'Hide the item-wise BOQ' : 'Show the item-wise BOQ (unit, qty, rate, amount)'}
-      className="ml-2 inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-bold align-middle border border-gray-200 text-gray-500 hover:border-blue-300 hover:text-blue-700"
+      title={open
+        ? 'Hide the item-wise BOQ'
+        : `Show the item-wise BOQ — ${count} item${count === 1 ? '' : 's'} (unit, qty, rate, amount)`}
+      // Same chevron as the category rows above it (CatChevron) — one tree,
+      // one affordance. It used to be a bordered "> 1 item" pill, which read
+      // as a badge sitting next to the name rather than a level of the tree.
+      // The count lives in the tooltip; the chevron only appears when there
+      // is something to open, so its presence already says so.
+      className="ml-1.5 inline-flex items-center justify-center h-5 w-5 rounded text-gray-400 hover:bg-gray-200 hover:text-gray-800 align-middle"
     >
-      {open ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
-      {count} item{count === 1 ? '' : 's'}
+      {open ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
     </button>
   )
 }

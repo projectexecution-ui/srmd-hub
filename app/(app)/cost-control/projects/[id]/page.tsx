@@ -694,7 +694,7 @@ export default async function CostControlProjectDetailPage(
   // Visible column count for empty-state rows (name + Internal Estimate +
   // Awaiting Approval + Released via WS + Working Sheets + actions, plus the
   // toggleable ERP and deadline groups).
-  const tableCols = 6 + (showErp ? 4 : 0) + (ccSettings.show_deadlines ? 2 : 0)
+  const tableCols = 5 + (showErp ? 4 : 0) + (ccSettings.show_deadlines ? 1 : 0)
 
   const Money = ({ amt, dash = '—' }: { amt: number; dash?: string }) => {
     if (!(amt > 0)) return <>{dash}</>
@@ -978,11 +978,11 @@ export default async function CostControlProjectDetailPage(
             this wide table needs, since overflow-x:auto cannot pair with
             overflow-y:visible. max-h (not h) means a short table still renders
             at its natural height with no scrollbar and no dead space. */}
-        <div className="overflow-auto max-h-[75vh] hidden md:block">
+        <div className="overflow-auto max-h-[75vh] hidden xl:block">
           <table className="w-full text-[13px]">
             <thead className="bg-gray-50 text-left">
               <tr>
-                <Th className="min-w-[280px]">Work Category / Sub-skill</Th>
+                <Th className="min-w-[220px]">Work Category / Sub-skill</Th>
                 <Th align="right" className="w-32">Internal Estimate</Th>
                 <Th align="right" className="w-32">Awaiting Approval</Th>
                 {/* "Released via WS" named the mechanism, not the meaning. This
@@ -997,11 +997,9 @@ export default async function CostControlProjectDetailPage(
                     <Th align="right" className="w-20">% Used</Th>
                   </>
                 )}
-                <Th className="w-28">Working Sheets</Th>
                 {ccSettings.show_deadlines && (
                   <>
-                    <Th className="w-44">Plan Deadline</Th>
-                    <Th className="w-28">WS Status</Th>
+                    <Th className="w-36">Deadline &amp; status</Th>
                   </>
                 )}
                 <Th className="w-28"></Th>
@@ -1043,6 +1041,13 @@ export default async function CostControlProjectDetailPage(
                         <span className="font-mono text-[11px] text-gray-500 mr-2">{d.code}</span>
                         <span className="text-gray-900">{d.name}</span>
                         {dHot && <Flame className="inline h-3.5 w-3.5 text-orange-500 ml-2" />}
+                        {/* Sheet count rides with the name — as its own column
+                            it cost 76px the table could not spare. */}
+                        {dWsCount > 0 && (
+                          <span className="ml-2 text-[11px] font-normal text-gray-500">
+                            {dWsCount} sheet{dWsCount === 1 ? '' : 's'}
+                          </span>
+                        )}
                       </td>
                       <Td align="right" mono className="text-indigo-800">
                         <Money amt={discEstimate.get(d.id) ?? dAgg.estimate} />
@@ -1081,33 +1086,25 @@ export default async function CostControlProjectDetailPage(
                           </Td>
                         </>
                       )}
-                      <Td>
-                        {dWsCount > 0
-                          ? <span className="text-[11px] text-gray-500">{dWsCount} sheet{dWsCount === 1 ? '' : 's'}</span>
-                          : <span className="text-[11px] text-gray-400">—</span>}
-                      </Td>
+                      {/* Deadline and its status share one cell, stacked. As
+                          two columns they cost 176px of width the table did
+                          not have. (The sheet count now sits by the name.) */}
                       {ccSettings.show_deadlines && (
-                        <>
-                          <Td>
-                            <DeadlineCell
-                              projectId={project.id}
-                              disciplineId={d.id}
-                              initialDeadline={discMeta.get(d.id)?.deadline ?? null}
-                              inheritedFromWS={dEarliest}
-                              canWrite={canWrite}
-                            />
-                          </Td>
-                          <Td>
-                            {dEarliest ? (
-                              <div className="inline-flex items-center gap-1">
-                                <DeadlineBadge deadlineDate={dEarliest} compact />
-                                {dOverdue > 0 && <span className="text-[10px] font-bold text-rose-700 bg-rose-100 rounded-full px-1.5">+{dOverdue}</span>}
-                              </div>
-                            ) : (
-                              <span className="text-[11px] text-gray-400">—</span>
-                            )}
-                          </Td>
-                        </>
+                        <Td>
+                          <DeadlineCell
+                            projectId={project.id}
+                            disciplineId={d.id}
+                            initialDeadline={discMeta.get(d.id)?.deadline ?? null}
+                            inheritedFromWS={dEarliest}
+                            canWrite={canWrite}
+                          />
+                          {dEarliest && (
+                            <div className="mt-0.5 inline-flex items-center gap-1">
+                              <DeadlineBadge deadlineDate={dEarliest} compact />
+                              {dOverdue > 0 && <span className="text-[10px] font-bold text-rose-700 bg-rose-100 rounded-full px-1.5">+{dOverdue}</span>}
+                            </div>
+                          )}
+                        </Td>
                       )}
                       <Td>
                         <div className="flex items-center justify-end gap-1.5">
@@ -1201,6 +1198,16 @@ export default async function CostControlProjectDetailPage(
                             <span className="font-mono text-[11px] text-gray-400 mr-2">{s.code}</span>
                             <span>{s.name}</span>
                             <RowDetailToggle id={s.id} count={(boqBySub.get(`${d.id}::${s.id}`) ?? []).reduce((n, b) => n + b.rows.length, 0)} />
+                            {/* Sheet count rides with the name rather than
+                                holding a column of its own. */}
+                            {wsCount > 0 && (
+                              <Link
+                                href={`/cost-control/working-sheets?project=${project.id}&discipline=${d.id}&sub_skill=${s.id}`}
+                                className="ml-1.5 inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100 align-middle"
+                              >
+                                {wsCount} sheet{wsCount === 1 ? '' : 's'}
+                              </Link>
+                            )}
                             {sHot && <Flame className="inline h-3 w-3 text-orange-500 ml-1.5" />}
                             {/* Thumbrule is the rare exception — flag it read-only.
                                 BOQ (the default) shows no chip. The mode TOGGLE now
@@ -1312,47 +1319,31 @@ export default async function CostControlProjectDetailPage(
                               </Td>
                             </>
                           )}
-                          <Td>
-                            {wsCount > 0 ? (
-                              <Link
-                                href={`/cost-control/working-sheets?project=${project.id}&discipline=${d.id}&sub_skill=${s.id}`}
-                                className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-semibold bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100"
-                              >
-                                {wsCount} sheet{wsCount === 1 ? '' : 's'}
-                              </Link>
-                            ) : (
-                              <span className="text-[11px] text-gray-400">—</span>
-                            )}
-                          </Td>
                           {ccSettings.show_deadlines && (
-                            <>
-                              <Td>
-                                <DeadlineCell
-                                  projectId={project.id}
-                                  subSkillId={s.id}
-                                  initialDeadline={subMeta.get(s.id)?.deadline ?? null}
-                                  inheritedFromDiscipline={discMeta.get(d.id)?.deadline ?? null}
-                                  inheritedFromWS={dlAgg.get(`${d.id}::${s.id}`)?.earliest ?? null}
-                                  canWrite={canWrite}
-                                />
-                              </Td>
-                              <Td>
-                                {(() => {
-                                  const dl = dlAgg.get(`${d.id}::${s.id}`)
-                                  if (!dl?.earliest) return <span className="text-[11px] text-gray-400">—</span>
-                                  return (
-                                    <div className="inline-flex items-center gap-1">
-                                      <DeadlineBadge deadlineDate={dl.earliest} compact />
-                                      {dl.overdue > 0 && (
-                                        <span className="text-[10px] font-bold text-rose-700 bg-rose-100 rounded-full px-1.5">
-                                          +{dl.overdue}
-                                        </span>
-                                      )}
-                                    </div>
-                                  )
-                                })()}
-                              </Td>
-                            </>
+                            <Td>
+                              <DeadlineCell
+                                projectId={project.id}
+                                subSkillId={s.id}
+                                initialDeadline={subMeta.get(s.id)?.deadline ?? null}
+                                inheritedFromDiscipline={discMeta.get(d.id)?.deadline ?? null}
+                                inheritedFromWS={dlAgg.get(`${d.id}::${s.id}`)?.earliest ?? null}
+                                canWrite={canWrite}
+                              />
+                              {(() => {
+                                const dl = dlAgg.get(`${d.id}::${s.id}`)
+                                if (!dl?.earliest) return null
+                                return (
+                                  <div className="mt-0.5 inline-flex items-center gap-1">
+                                    <DeadlineBadge deadlineDate={dl.earliest} compact />
+                                    {dl.overdue > 0 && (
+                                      <span className="text-[10px] font-bold text-rose-700 bg-rose-100 rounded-full px-1.5">
+                                        +{dl.overdue}
+                                      </span>
+                                    )}
+                                  </div>
+                                )
+                              })()}
+                            </Td>
                           )}
                           <Td>
                             {/* Right-aligned, with the two always-present controls last, so
@@ -1508,7 +1499,7 @@ export default async function CostControlProjectDetailPage(
             mechanism as the desktop table — the list scrolls inside this box,
             because a page-scroll sticky cannot work under `main`'s overflow
             (see AGENTS.md). Each bar is pushed out by the next one. */}
-        <div className="md:hidden divide-y divide-gray-100 overflow-auto max-h-[75vh]">
+        <div className="xl:hidden divide-y divide-gray-100 overflow-auto max-h-[75vh]">
           {disciplines.length === 0 && (
             <p className="px-4 py-8 text-center text-sm text-gray-500">No disciplines enabled yet. Open the setup wizard to pick them.</p>
           )}
@@ -1880,7 +1871,7 @@ function Th({
   return (
     // Sticky lives on the CELLS, not the <thead> — and the cell carries its own
     // opaque background + bottom border, or rows scroll through underneath it.
-    <th className={`sticky top-0 z-10 bg-gray-50 border-b border-gray-200 px-3 py-2.5 text-${align} font-semibold text-[10px] uppercase tracking-wide text-gray-500 ${className}`}>
+    <th className={`sticky top-0 z-10 bg-gray-50 border-b border-gray-200 px-2 py-2.5 text-${align} font-semibold text-[10px] uppercase tracking-wide text-gray-500 ${className}`}>
       {children}
     </th>
   )
@@ -1890,7 +1881,7 @@ function Td({
   children, align = 'left', mono = false, className = '',
 }: { children?: React.ReactNode; align?: 'left' | 'right'; mono?: boolean; className?: string }) {
   return (
-    <td className={`px-3 py-2 text-${align} ${mono ? 'tabular-nums' : ''} ${className}`}>
+    <td className={`px-2 py-2 text-${align} ${mono ? 'tabular-nums' : ''} ${className}`}>
       {children}
     </td>
   )
