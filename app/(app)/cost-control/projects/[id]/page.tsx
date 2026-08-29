@@ -629,7 +629,12 @@ export default async function CostControlProjectDetailPage(
   const totalWO = Array.from(discAgg.values()).reduce((s, v) => s + v.wo, 0)
   const totalPaid = Array.from(discAgg.values()).reduce((s, v) => s + v.paid, 0)
   const totalApproved = Array.from(discAgg.values()).reduce((s, v) => s + v.approvedTotal, 0)
-  const totalEstimate = Array.from(discAgg.values()).reduce((s, v) => s + v.estimate, 0)
+  // MUST match what the category rows print (`discEstimate ?? dAgg.estimate`).
+  // Summing discAgg.estimate alone reads the imported [IB…] baseline only, so
+  // a project whose estimate is maintained from the ERP budget showed "—" up
+  // here while every row below it showed a number.
+  const totalEstimate = disciplines.reduce(
+    (sum, d) => sum + (discEstimate.get(d.id) ?? discAgg.get(d.id)?.estimate ?? 0), 0)
   const utilPct = totalBudget > 0 ? Math.round((totalPaid / totalBudget) * 100) : 0
   const releasedPct = totalEstimate > 0 ? Math.round((totalBudget / totalEstimate) * 100) : 0
   // Released money Billing has already keyed into IN4 — it shows here
@@ -868,7 +873,7 @@ export default async function CostControlProjectDetailPage(
           label="Internal Estimate"
           value={totalEstimate > 0 ? formatINR(totalEstimate) : '—'}
           perSft={perSft(totalEstimate)}
-          sub={totalEstimate > 0 ? 'Imported baseline (latest per item)' : 'Will populate once WSes are raised'}
+          sub={totalEstimate > 0 ? 'Maintained estimate (latest per item)' : 'Set an estimate, or it follows the ERP budget once approved'}
           tone="indigo"
         />
         <KPI
@@ -916,7 +921,7 @@ export default async function CostControlProjectDetailPage(
         )}
         {showErp && (
           <KPI label="Paid to Date" value={formatINR(totalPaid)} perSft={perSft(totalPaid)}
-               sub={totalBudget > 0 ? `${utilPct}% utilized` : '—'} tone="orange" />
+               sub={totalBudget > 0 ? `${utilPct}% of ERP budget` : '—'} tone="orange" />
         )}
       </div>
 
@@ -994,7 +999,14 @@ export default async function CostControlProjectDetailPage(
                     <Th align="right">Budget (ERP)</Th>
                     <Th align="right">WO / PO</Th>
                     <Th align="right">Paid</Th>
-                    <Th align="right" className="w-20">% Used</Th>
+                    <Th align="right" className="w-24">
+                      % Used
+                      {/* The formula, in the header — four money columns sit
+                          beside this and nothing said which two made it. */}
+                      <span className="block font-normal normal-case tracking-normal text-[9px] text-gray-400 leading-tight">
+                        Paid ÷ Budget (ERP)
+                      </span>
+                    </Th>
                   </>
                 )}
                 {ccSettings.show_deadlines && (
@@ -1068,7 +1080,13 @@ export default async function CostControlProjectDetailPage(
                           <Td align="right" mono><Money amt={dAgg.budget} /></Td>
                           <Td align="right" mono className="text-gray-600"><Money amt={dAgg.wo} /></Td>
                           <Td align="right" mono className="text-gray-600"><Money amt={dAgg.paid} /></Td>
-                          <Td align="right" className={dOver > 0 ? 'text-rose-700 font-bold' : dPct > 95 ? 'text-red-600' : dPct > 80 ? 'text-amber-700' : 'text-green-700'}>
+                          <Td
+                            align="right"
+                            className={dOver > 0 ? 'text-rose-700 font-bold' : dPct > 95 ? 'text-red-600' : dPct > 80 ? 'text-amber-700' : 'text-green-700'}
+                            title={dAgg.budget > 0
+                              ? `${formatINR(dAgg.paid)} paid ÷ ${formatINR(dAgg.budget)} ERP budget = ${dPct.toFixed(0)}%`
+                              : 'No ERP budget on this work category yet'}
+                          >
                             {dAgg.budget > 0 ? `${dPct.toFixed(0)}%` : '—'}
                             {/* NET for the whole category — individual lines can
                                 be further over while others still have headroom,
@@ -1128,7 +1146,11 @@ export default async function CostControlProjectDetailPage(
                               />
                             )}
                           </span>
-                          <span className="inline-flex items-center flex-shrink-0">
+                          {/* A category has no "+ Request", but it reserves the
+                              slot so its Completed chip lines up with the ones
+                              on the sub-categories underneath. */}
+                          {canWrite && <span className="w-[86px] flex-shrink-0" aria-hidden />}
+                          <span className="inline-flex items-center justify-end w-[26px] flex-shrink-0">
                             <DisableButton
                               projectId={project.id}
                               disciplineId={d.id}
@@ -1194,10 +1216,10 @@ export default async function CostControlProjectDetailPage(
                       return (
                         <SubRow key={s.id} empty={isEmpty}>
                         <tr id={`sub-${s.id}`} className={`border-t border-gray-100 hover:bg-gray-50/60 ${isFocus ? 'bg-amber-100/70 ring-2 ring-inset ring-amber-400' : ''}`}>
-                          <td className="pl-10 pr-3 py-2 text-gray-700">
+                          <td className="pl-4 pr-2 py-2 text-gray-700">
+                            <RowDetailToggle id={s.id} count={(boqBySub.get(`${d.id}::${s.id}`) ?? []).reduce((n, b) => n + b.rows.length, 0)} />
                             <span className="font-mono text-[11px] text-gray-400 mr-2">{s.code}</span>
                             <span>{s.name}</span>
-                            <RowDetailToggle id={s.id} count={(boqBySub.get(`${d.id}::${s.id}`) ?? []).reduce((n, b) => n + b.rows.length, 0)} />
                             {/* Sheet count rides with the name rather than
                                 holding a column of its own. */}
                             {wsCount > 0 && (
@@ -1306,7 +1328,13 @@ export default async function CostControlProjectDetailPage(
                               <Td align="right" mono><Money amt={bl?.budget ?? 0} /></Td>
                               <Td align="right" mono className="text-gray-600"><Money amt={bl?.wo ?? 0} /></Td>
                               <Td align="right" mono className="text-gray-600"><Money amt={bl?.paid ?? 0} /></Td>
-                              <Td align="right" className={sOver > 0 ? 'text-rose-700 font-bold' : sPct > 95 ? 'text-red-600 font-semibold' : sPct > 80 ? 'text-amber-700 font-semibold' : sPct > 0 ? 'text-green-700 font-semibold' : 'text-gray-400'}>
+                              <Td
+                                align="right"
+                                className={sOver > 0 ? 'text-rose-700 font-bold' : sPct > 95 ? 'text-red-600 font-semibold' : sPct > 80 ? 'text-amber-700 font-semibold' : sPct > 0 ? 'text-green-700 font-semibold' : 'text-gray-400'}
+                                title={bl && bl.budget > 0
+                                  ? `${formatINR(bl.paid)} paid ÷ ${formatINR(bl.budget)} ERP budget = ${sPct.toFixed(0)}%`
+                                  : 'No ERP budget on this sub-category yet'}
+                              >
                                 {bl && bl.budget > 0 ? `${sPct.toFixed(0)}%` : '—'}
                                 {sOver > 0 && (
                                   <span
@@ -1396,17 +1424,19 @@ export default async function CostControlProjectDetailPage(
                                   />
                                 )}
                               </span>
-                              <span className="inline-flex items-center gap-1.5 flex-shrink-0">
+                              {/* Two fixed slots, matching the category row above, so the
+                                  Completed chips line up down the column instead of each row
+                                  ending wherever its own buttons happen to finish. */}
+                              <span className="inline-flex items-center justify-end w-[86px] flex-shrink-0">
                                 {/* Never just hide the Request button on a closed
                                     line — say why it is off, or the row reads as
                                     broken. */}
                                 {canWrite && (sClosedReason ? (
                                   <span
-                                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-semibold border border-gray-200 bg-gray-50 text-gray-400 whitespace-nowrap"
+                                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-semibold border border-gray-200 bg-gray-50 text-gray-400 whitespace-nowrap cursor-not-allowed"
                                     title={sClosedReason}
                                   >
                                     <Plus className="h-3 w-3" /> Request
-                                    <span className="font-normal text-gray-500">· reopen first</span>
                                   </span>
                                 ) : (
                                   <Link
@@ -1419,6 +1449,8 @@ export default async function CostControlProjectDetailPage(
                                     <Plus className="h-3 w-3" /> Request
                                   </Link>
                                 ))}
+                              </span>
+                              <span className="inline-flex items-center justify-end w-[26px] flex-shrink-0">
                                 {/* Config (mode · remove) tucked behind one ▾ so the
                                     table stays KPIs + amounts, not editing widgets. */}
                                 {canWrite && (
@@ -1549,8 +1581,8 @@ export default async function CostControlProjectDetailPage(
                   {/* Name + sheets chip */}
                   <div className="flex items-start justify-between gap-2 mb-0.5">
                     <p className="text-sm text-gray-900 min-w-0">
-                      <span className="font-mono text-[11px] text-gray-400 mr-1.5">{s.code}</span>{s.name}
                       <RowDetailToggle id={s.id} count={(boqBySub.get(`${d.id}::${s.id}`) ?? []).reduce((n, b) => n + b.rows.length, 0)} />
+                      <span className="font-mono text-[11px] text-gray-400 mr-1.5">{s.code}</span>{s.name}
                       {(() => {
                         const t = adhocBySub.get(`${d.id}::${s.id}`)
                         if (!t || (t.adhoc === 0 && t.boq === 0)) return null
@@ -1634,7 +1666,13 @@ export default async function CostControlProjectDetailPage(
                       <div className="flex items-center justify-between gap-2 mb-1.5">
                         <span className="text-[10px] uppercase tracking-wider text-gray-400">Actuals (ERP)</span>
                         {bl && bl.budget > 0
-                          ? <span className={`text-[11px] font-semibold tabular-nums ${sOver > 0 ? 'text-rose-700' : sPct > 95 ? 'text-red-600' : sPct > 80 ? 'text-amber-700' : 'text-emerald-700'}`}>{sPct.toFixed(0)}% used</span>
+                          ? (
+                            <span className={`text-[11px] font-semibold tabular-nums ${sOver > 0 ? 'text-rose-700' : sPct > 95 ? 'text-red-600' : sPct > 80 ? 'text-amber-700' : 'text-emerald-700'}`}>
+                              {sPct.toFixed(0)}% used
+                              {/* No hover on a phone, so the sum is printed. */}
+                              <span className="ml-1 font-normal text-gray-400">(paid ÷ budget)</span>
+                            </span>
+                          )
                           : <span className="text-[11px] text-gray-400">No budget yet</span>}
                       </div>
                       {bl && bl.budget > 0 && (
@@ -1878,10 +1916,10 @@ function Th({
 }
 
 function Td({
-  children, align = 'left', mono = false, className = '',
-}: { children?: React.ReactNode; align?: 'left' | 'right'; mono?: boolean; className?: string }) {
+  children, align = 'left', mono = false, className = '', title,
+}: { children?: React.ReactNode; align?: 'left' | 'right'; mono?: boolean; className?: string; title?: string }) {
   return (
-    <td className={`px-2 py-2 text-${align} ${mono ? 'tabular-nums' : ''} ${className}`}>
+    <td title={title} className={`px-2 py-2 text-${align} ${mono ? 'tabular-nums' : ''} ${className}`}>
       {children}
     </td>
   )

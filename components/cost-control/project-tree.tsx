@@ -155,12 +155,14 @@ function useDetail() {
   return v
 }
 
-/** The "show the items" control on a sub-skill row. Renders nothing when the
- *  sub-skill has no budget rows to show — an affordance that opens an empty
- *  drawer is worse than no affordance. */
+/** The "show the items" control on a sub-skill row — the tree's next level
+ *  down, so it sits at the LEFT of the row like CatChevron does on the
+ *  category above it. A sub-skill with no budget rows gets no chevron (an
+ *  affordance that opens an empty drawer is worse than none) but still gets
+ *  its width back as a spacer, or the codes underneath would sit ragged. */
 export function RowDetailToggle({ id, count }: { id: string; count: number }) {
   const { isOpen, toggle } = useDetail()
-  if (count <= 0) return null
+  if (count <= 0) return <span className="inline-block h-5 w-5 mr-1 align-middle" aria-hidden />
   const open = isOpen(id)
   return (
     <button
@@ -175,7 +177,7 @@ export function RowDetailToggle({ id, count }: { id: string; count: number }) {
       // as a badge sitting next to the name rather than a level of the tree.
       // The count lives in the tooltip; the chevron only appears when there
       // is something to open, so its presence already says so.
-      className="ml-1.5 inline-flex items-center justify-center h-5 w-5 rounded text-gray-400 hover:bg-gray-200 hover:text-gray-800 align-middle"
+      className="mr-1 inline-flex items-center justify-center h-5 w-5 rounded text-gray-400 hover:bg-gray-200 hover:text-gray-800 align-middle"
     >
       {open ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
     </button>

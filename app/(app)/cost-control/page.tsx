@@ -241,8 +241,6 @@ export default async function CostControlLandingPage() {
   }
 
   // Distinct live chains across all projects (baseline + engineer, deduped).
-  const totalWS = new Set<string>([...latestIB.keys(), ...latestEng.keys()]).size
-  const approvedTotal = engWinners.reduce((s, w) => s + approvedSoFar(w), 0)
   const myDrafts = myDraftsRes as { count?: number | null; error?: { message: string } | null }
   const draftsErr = myDrafts.error ?? null
   const myDraftsCount = myDrafts.count ?? 0
@@ -486,9 +484,9 @@ export default async function CostControlLandingPage() {
       {wsErr || draftsErr ? (
         <QueryError message={(wsErr ?? draftsErr)?.message} what="the summary numbers" />
       ) : (
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 auto-rows-fr">
           <Stat label="Projects" value={ccProjects.length} hint={incompleteCount ? `${incompleteCount} need setup` : 'all set up'} icon={<Calculator className="h-5 w-5" />} />
-          <Link href="/cost-control/approvals" className="block">
+          <Link href="/cost-control/approvals" className="block h-full">
             <Stat
               label="My Approvals"
               value={waitingOnMe}
@@ -505,11 +503,10 @@ export default async function CostControlLandingPage() {
           </Link>
           <Link
             href={user ? `/cost-control/working-sheets?engineer=${user.id}` : '/cost-control/working-sheets'}
-            className="block"
+            className="block h-full"
           >
             <Stat label="Your drafts" value={myDraftsCount} hint="draft + returned to you" icon={<Clock className="h-5 w-5" />} />
           </Link>
-          <Stat label="Budget (CT Hub)" value={formatINR(approvedTotal)} hint={`approved through CT Hub's own chain · ${totalWS} sheet${totalWS === 1 ? '' : 's'}`} icon={<FileText className="h-5 w-5" />} />
           {ccSettings.billing_step && (() => {
             const queue = engWinners.filter(w =>
               (w.status === 'approved' || w.status === 'partially_approved')
@@ -517,7 +514,7 @@ export default async function CostControlLandingPage() {
               && !w.in4_entered_at)
             if (queue.length === 0) return null
             return (
-              <Link href="/cost-control/billing" className="block">
+              <Link href="/cost-control/billing" className="block h-full">
                 <Stat
                   label="IN4 entry queue"
                   value={queue.length}
@@ -617,9 +614,7 @@ export default async function CostControlLandingPage() {
               <thead className="bg-gray-50 text-left">
                 <tr>
                   <th className="px-3 py-2.5 font-semibold text-[10px] uppercase tracking-wide text-gray-500 min-w-[220px]">Project</th>
-                  <th className="px-3 py-2.5 font-semibold text-[10px] uppercase tracking-wide text-gray-500">Status</th>
                   <th className="px-3 py-2.5 font-semibold text-[10px] uppercase tracking-wide text-gray-500 text-right">Area (sft)</th>
-                  <th className="px-3 py-2.5 font-semibold text-[10px] uppercase tracking-wide text-gray-500 text-right">WS</th>
                   <th className="px-3 py-2.5 font-semibold text-[10px] uppercase tracking-wide text-gray-500 text-right">Internal Estimate</th>
                   <th className="px-3 py-2.5 font-semibold text-[10px] uppercase tracking-wide text-gray-500 text-right">Budget (CT Hub)</th>
                   {ccSettings.show_erp_columns && (
@@ -640,7 +635,7 @@ export default async function CostControlLandingPage() {
                     {/* Group band — name + rollup of the whole group. */}
                     {g.label && (
                       <tr className="bg-indigo-50/80 border-t border-indigo-100">
-                        <td className="px-3 py-2 font-bold text-[11px] uppercase tracking-wide text-indigo-900" colSpan={2}>
+                        <td className="px-3 py-2 font-bold text-[11px] uppercase tracking-wide text-indigo-900">
                           <CatChevron catId={g.key} />
                           {g.key !== '_independent'
                             ? <GroupLabelChip projectId={g.key} label={g.label ?? ''} isAdmin={isAdmin} />
@@ -650,7 +645,6 @@ export default async function CostControlLandingPage() {
                         <td className="px-3 py-2 text-right tabular-nums text-[11px] font-semibold text-indigo-900/70">
                           {gt.sft > 0 ? gt.sft.toLocaleString('en-IN') : '—'}
                         </td>
-                        <td className="px-3 py-2 text-right tabular-nums text-[11px] font-semibold text-indigo-900/70">{gt.ws || '—'}</td>
                         <td className="px-3 py-2 text-right tabular-nums text-[11px] font-bold text-indigo-900">
                           {gt.estimate > 0 ? formatINR(gt.estimate) : '—'}
                         </td>
@@ -676,7 +670,6 @@ export default async function CostControlLandingPage() {
                     {g.members.map(p => {
                   const pct = p.setup_progress_pct ?? 0
                   const isIncomplete = pct < 100
-                  const wsHere = wsByProject.get(p.id) ?? 0
                   const bud = budgetByProj.get(p.id) ?? { budget: 0, committed: 0, paid: 0 }
                   const estimate = estimateByProj.get(p.id) ?? 0
                   const approvedHere = approvedByProj.get(p.id) ?? 0
@@ -691,16 +684,18 @@ export default async function CostControlLandingPage() {
                           <span className="font-mono text-[11px] font-bold text-indigo-700 mr-2">{p.code}</span>
                           <span className="font-semibold text-gray-900 hover:underline">{p.name}</span>
                         </Link>
-                      </td>
-                      <td className="px-3 py-2.5">
-                        <span className="inline-flex items-center gap-1.5 flex-wrap">
+                        {/* What used to be a Status column. "active" was on
+                            every row and said nothing, so it is gone; only the
+                            exceptions show, and they sit beside the name where
+                            they are read rather than in a column of their own. */}
+                        <span className="mt-0.5 inline-flex items-center gap-1.5 flex-wrap">
                           {isIncomplete ? (
                             <span className="inline-flex items-center text-[10px] font-bold text-amber-800 bg-amber-100 rounded-full px-2 py-0.5">
                               Setup {pct}%
                             </span>
                           ) : (
-                            p.cc_status && (
-                              <Badge variant={p.cc_status === 'active' ? 'success' : 'secondary'}>
+                            p.cc_status && p.cc_status !== 'active' && (
+                              <Badge variant="secondary">
                                 {p.cc_status.replace('_', ' ')}
                               </Badge>
                             )
@@ -728,7 +723,6 @@ export default async function CostControlLandingPage() {
                       <td className="px-3 py-2.5 text-right tabular-nums text-gray-600">
                         {p.built_up_sft != null ? p.built_up_sft.toLocaleString('en-IN') : '—'}
                       </td>
-                      <td className="px-3 py-2.5 text-right tabular-nums text-gray-600">{wsHere || '—'}</td>
                       <td className="px-3 py-2.5 text-right tabular-nums font-semibold text-indigo-800">
                         {estimate > 0 ? formatINR(estimate) : '—'}
                       </td>
@@ -783,8 +777,7 @@ export default async function CostControlLandingPage() {
                   {g.members.map(p => {
                     const pct = p.setup_progress_pct ?? 0
                     const isIncomplete = pct < 100
-                    const wsHere = wsByProject.get(p.id) ?? 0
-                    const bud = budgetByProj.get(p.id) ?? { budget: 0, committed: 0, paid: 0 }
+                      const bud = budgetByProj.get(p.id) ?? { budget: 0, committed: 0, paid: 0 }
                     const estimate = estimateByProj.get(p.id) ?? 0
                     const approvedHere = approvedByProj.get(p.id) ?? 0
                     const pending = pendingByProj.get(p.id) ?? 0
@@ -797,13 +790,13 @@ export default async function CostControlLandingPage() {
                             <span className="font-semibold text-gray-900">{p.name}</span>
                           </Link>
                           <span className="flex-shrink-0 text-[11px] text-gray-400 whitespace-nowrap">
-                            {wsHere || 0} WS{p.built_up_sft != null ? ` · ${p.built_up_sft.toLocaleString('en-IN')} sft` : ''}
+                            {p.built_up_sft != null ? `${p.built_up_sft.toLocaleString('en-IN')} sft` : ''}
                           </span>
                         </div>
                         <div className="mt-1 flex flex-wrap items-center gap-1.5">
                           {isIncomplete
                             ? <span className="text-[10px] font-bold text-amber-800 bg-amber-100 rounded-full px-2 py-0.5">Setup {pct}%</span>
-                            : p.cc_status && <Badge variant={p.cc_status === 'active' ? 'success' : 'secondary'}>{p.cc_status.replace('_', ' ')}</Badge>}
+                            : p.cc_status && p.cc_status !== 'active' && <Badge variant="secondary">{p.cc_status.replace('_', ' ')}</Badge>}
                           {pending > 0 && <Link href={`/cost-control/working-sheets?project=${p.id}`} className="text-[10px] font-bold text-amber-800 bg-amber-100 rounded-full px-2 py-0.5">{pending} pending →</Link>}
                           {ccSettings.show_deadlines && overdue > 0 && <Link href={`/cost-control/working-sheets?project=${p.id}`} className="text-[10px] font-bold text-rose-800 bg-rose-100 rounded-full px-2 py-0.5">{overdue} overdue →</Link>}
                         </div>
@@ -1331,7 +1324,7 @@ function Stat({ label, value, hint, icon, tone = 'default' }: { label: string; v
   const wrap = tone === 'amber' ? 'border-amber-200 bg-amber-50' : 'border-gray-200 bg-white'
   const iconWrap = tone === 'amber' ? 'bg-amber-100 text-amber-700' : 'bg-indigo-50 text-indigo-700'
   return (
-    <div className={`rounded-xl border ${wrap} p-4`}>
+    <div className={`rounded-xl border ${wrap} p-4 h-full`}>
       <div className="flex items-center gap-3">
         {icon && <div className={`p-2 rounded-lg ${iconWrap}`}>{icon}</div>}
         <div className="min-w-0">
