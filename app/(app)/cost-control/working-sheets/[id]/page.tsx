@@ -429,9 +429,10 @@ export default async function WorkingSheetEditorPage(
       subSkillId={ws.sub_skill_id}
       totalAmount={Number(ws.total_amount ?? 0)}
       approvedForErp={ws.approved_for_erp_amt}
-      subName={wsSub?.name ?? null}
-      discName={wsDisc?.name ?? null}
-      projName={wsProj?.name ?? wsProj?.code ?? null}
+      subLabel={[wsSub?.code, wsSub?.name].filter(Boolean).join(' ') || null}
+      discLabel={[wsDisc?.code, wsDisc?.name].filter(Boolean).join(' ') || null}
+      projLabel={wsProj?.name ?? wsProj?.code ?? null}
+      projIsSub={wsParentName != null}
     />
   ) : null
   const reviewTop = <>{reviewNav}{reviewPanel}</>

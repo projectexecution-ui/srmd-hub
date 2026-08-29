@@ -18,16 +18,22 @@ interface SheetRow extends RollupWSRow, RollupVersionRow {}
 
 export async function BudgetPositionPanel({
   projectId, disciplineId, subSkillId, totalAmount, approvedForErp,
-  subName, discName, projName,
+  subLabel, discLabel, projLabel, projIsSub,
 }: {
   projectId: string
   disciplineId: string | null
   subSkillId: string | null
   totalAmount: number
   approvedForErp: number | null
-  subName: string | null
-  discName: string | null
-  projName: string | null
+  /** Exactly what the identity block shows — code and name, e.g.
+   *  "1203 Internal Partitions". Same strings, so the two agree. */
+  subLabel: string | null
+  discLabel: string | null
+  projLabel: string | null
+  /** True when this sheet sits on a sub-project, so the bottom row is
+   *  labelled Sub-project rather than Project — the total is that
+   *  sub-project's, not the parent's. */
+  projIsSub: boolean
 }) {
   const supabase = await createClient()
   const { data: sheets } = await supabase
@@ -71,10 +77,11 @@ export async function BudgetPositionPanel({
   // What this sign-off adds = the ask minus whatever's already released on it.
   const inc = Math.max(0, Number(totalAmount ?? 0) - Number(approvedForErp ?? 0))
 
+  // Same three levels, same names, as the identity block on this sheet.
   const rows = [
-    { key: 'line', label: subName ?? discName ?? 'This line', tag: 'this line', before: subApproved, lead: true },
-    { key: 'disc', label: discName ?? '—', tag: 'discipline', before: discApproved, lead: false },
-    { key: 'proj', label: projName ?? '—', tag: 'project total', before: projApproved, lead: false },
+    { key: 'line', tag: 'Sub-category', label: subLabel ?? discLabel ?? '—', before: subApproved, lead: true },
+    { key: 'disc', tag: 'Category', label: discLabel ?? '—', before: discApproved, lead: false },
+    { key: 'proj', tag: projIsSub ? 'Sub-project' : 'Project', label: projLabel ?? '—', before: projApproved, lead: false },
   ]
 
   return (
@@ -88,10 +95,14 @@ export async function BudgetPositionPanel({
       </div>
       <div className="divide-y divide-gray-100">
         {rows.map(r => (
-          <div key={r.key} className={`flex items-center justify-between gap-4 px-4 py-3 ${r.lead ? 'bg-emerald-50/30' : ''}`}>
+          <div key={r.key} className={`flex items-baseline justify-between gap-x-4 gap-y-1 flex-wrap px-4 py-3 ${r.lead ? 'bg-emerald-50/30' : ''}`}>
             <div className="min-w-0 flex-1">
-              <p className={`truncate ${r.lead ? 'text-sm font-semibold text-gray-900' : 'text-[13px] font-medium text-gray-700'}`}>{r.label}</p>
-              <p className="text-[11px] text-gray-400 mt-0.5">{r.tag}</p>
+              {/* Grey label, bold value, on one line — exactly how the
+                  identity block at the top of this sheet reads. */}
+              <p className="text-[13px] break-words">
+                <span className="text-gray-400">{r.tag}</span>{' '}
+                <span className={r.lead ? 'font-semibold text-gray-900' : 'font-medium text-gray-700'}>{r.label}</span>
+              </p>
             </div>
             <div className="flex-shrink-0 text-right leading-tight">
               <div className="tabular-nums whitespace-nowrap">
@@ -114,7 +125,7 @@ export async function BudgetPositionPanel({
         if (internalEstimate <= 0) {
           return (
             <div className="border-t border-amber-200 bg-amber-50 px-4 py-2.5">
-              <p className="text-[12.5px] font-semibold text-amber-900">No Internal Estimate set for this line</p>
+              <p className="text-[12.5px] font-semibold text-amber-900">No Internal Estimate set for this sub-category</p>
               <p className="text-[11px] text-amber-800 mt-0.5">
                 There is nothing to check {formatINR(after)} against. Approving is fine — just know you are
                 not approving against an estimate.
@@ -127,7 +138,7 @@ export async function BudgetPositionPanel({
           return (
             <div className="border-t border-gray-100 bg-gray-50/60 px-4 py-2.5">
               <p className="text-[12px] text-gray-600">
-                Internal Estimate for this line <b className="text-gray-900 tabular-nums">{formatINR(internalEstimate)}</b>
+                Internal Estimate for this sub-category <b className="text-gray-900 tabular-nums">{formatINR(internalEstimate)}</b>
                 <span className="text-gray-400"> · within estimate</span>
               </p>
             </div>
@@ -136,7 +147,7 @@ export async function BudgetPositionPanel({
         return (
           <div className="border-t border-rose-200 bg-rose-50 px-4 py-3">
             <p className="text-[13px] font-bold text-rose-900">
-              This takes the line {formatINR(over)} ABOVE the Internal Estimate
+              This takes the sub-category {formatINR(over)} ABOVE the Internal Estimate
             </p>
             <p className="text-[11.5px] text-rose-800 mt-0.5 tabular-nums">
               Internal Estimate {formatINR(internalEstimate)} · approved after this {formatINR(after)}
