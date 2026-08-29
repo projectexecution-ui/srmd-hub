@@ -614,6 +614,7 @@ export default async function CostControlLandingPage() {
               <thead className="bg-gray-50 text-left">
                 <tr>
                   <th className="px-3 py-2.5 font-semibold text-[10px] uppercase tracking-wide text-gray-500 min-w-[220px]">Project</th>
+                  <th className="px-3 py-2.5" />
                   <th className="px-3 py-2.5 font-semibold text-[10px] uppercase tracking-wide text-gray-500 text-right">Area (sft)</th>
                   <th className="px-3 py-2.5 font-semibold text-[10px] uppercase tracking-wide text-gray-500 text-right">Internal Estimate</th>
                   <th className="px-3 py-2.5 font-semibold text-[10px] uppercase tracking-wide text-gray-500 text-right">Budget (CT Hub)</th>
@@ -621,7 +622,13 @@ export default async function CostControlLandingPage() {
                     <>
                       <th className="px-3 py-2.5 font-semibold text-[10px] uppercase tracking-wide text-gray-500 text-right">Budget (ERP)</th>
                       <th className="px-3 py-2.5 font-semibold text-[10px] uppercase tracking-wide text-gray-500 text-right">Paid</th>
-                      <th className="px-3 py-2.5 font-semibold text-[10px] uppercase tracking-wide text-gray-500 text-right">% Used</th>
+                      <th className="px-3 py-2.5 font-semibold text-[10px] uppercase tracking-wide text-gray-500 text-right">
+                        % Used
+                        {/* Which two of the money columns made this. */}
+                        <span className="block font-normal normal-case tracking-normal text-[9px] text-gray-400 leading-tight">
+                          Paid ÷ Budget (ERP)
+                        </span>
+                      </th>
                     </>
                   )}
                 </tr>
@@ -635,7 +642,7 @@ export default async function CostControlLandingPage() {
                     {/* Group band — name + rollup of the whole group. */}
                     {g.label && (
                       <tr className="bg-indigo-50/80 border-t border-indigo-100">
-                        <td className="px-3 py-2 font-bold text-[11px] uppercase tracking-wide text-indigo-900">
+                        <td className="px-3 py-2 font-bold text-[11px] uppercase tracking-wide text-indigo-900" colSpan={2}>
                           <CatChevron catId={g.key} />
                           {g.key !== '_independent'
                             ? <GroupLabelChip projectId={g.key} label={g.label ?? ''} isAdmin={isAdmin} />
@@ -659,7 +666,12 @@ export default async function CostControlLandingPage() {
                             <td className="px-3 py-2 text-right tabular-nums text-[11px] font-semibold text-indigo-900/70">
                               {gt.paid > 0 ? formatINR(gt.paid) : '—'}
                             </td>
-                            <td className="px-3 py-2 text-right tabular-nums text-[11px] font-bold text-indigo-900/70">
+                            <td
+                              className="px-3 py-2 text-right tabular-nums text-[11px] font-bold text-indigo-900/70"
+                              title={gt.budget > 0
+                                ? `${formatINR(gt.paid)} paid ÷ ${formatINR(gt.budget)} ERP budget = ${gPaidPct}%`
+                                : 'No ERP budget in this group yet'}
+                            >
                               {gt.budget > 0 ? `${gPaidPct}%` : '—'}
                             </td>
                           </>
@@ -681,24 +693,21 @@ export default async function CostControlLandingPage() {
                     <tr key={p.id} className="border-t border-gray-100 hover:bg-gray-50/70">
                       <td className={`px-3 py-2.5 ${g.label ? 'pl-8' : ''}`}>
                         <Link href={`/cost-control/projects/${p.id}`} className="block">
+                          {/* Status, as a dot. It is a state you glance at, not
+                              a word you read on 39 rows — the name is on hover. */}
+                          <StatusDot status={p.cc_status} />
                           <span className="font-mono text-[11px] font-bold text-indigo-700 mr-2">{p.code}</span>
                           <span className="font-semibold text-gray-900 hover:underline">{p.name}</span>
                         </Link>
-                        {/* What used to be a Status column. "active" was on
-                            every row and said nothing, so it is gone; only the
-                            exceptions show, and they sit beside the name where
-                            they are read rather than in a column of their own. */}
-                        <span className="mt-0.5 inline-flex items-center gap-1.5 flex-wrap">
-                          {isIncomplete ? (
+                      </td>
+                      {/* Things to act on, in their own column so the eye finds
+                          them in the same place down every row. */}
+                      <td className="px-3 py-2.5">
+                        <span className="inline-flex items-center gap-1.5 flex-wrap">
+                          {isIncomplete && (
                             <span className="inline-flex items-center text-[10px] font-bold text-amber-800 bg-amber-100 rounded-full px-2 py-0.5">
                               Setup {pct}%
                             </span>
-                          ) : (
-                            p.cc_status && p.cc_status !== 'active' && (
-                              <Badge variant="secondary">
-                                {p.cc_status.replace('_', ' ')}
-                              </Badge>
-                            )
                           )}
                           {pending > 0 && (
                             <Link
@@ -737,7 +746,12 @@ export default async function CostControlLandingPage() {
                           <td className="px-3 py-2.5 text-right tabular-nums text-gray-600">
                             {bud.paid > 0 ? formatINR(bud.paid) : '—'}
                           </td>
-                          <td className={`px-3 py-2.5 text-right tabular-nums font-semibold ${hot ? 'text-rose-600' : paidPct > 80 ? 'text-amber-700' : paidPct > 0 ? 'text-green-700' : 'text-gray-400'}`}>
+                          <td
+                            className={`px-3 py-2.5 text-right tabular-nums font-semibold ${hot ? 'text-rose-600' : paidPct > 80 ? 'text-amber-700' : paidPct > 0 ? 'text-green-700' : 'text-gray-400'}`}
+                            title={bud.budget > 0
+                              ? `${formatINR(bud.paid)} paid ÷ ${formatINR(bud.budget)} ERP budget = ${paidPct}%`
+                              : 'No ERP budget on this project yet'}
+                          >
                             {bud.budget > 0 ? `${paidPct}%` : '—'}
                           </td>
                         </>
@@ -782,10 +796,13 @@ export default async function CostControlLandingPage() {
                     const approvedHere = approvedByProj.get(p.id) ?? 0
                     const pending = pendingByProj.get(p.id) ?? 0
                     const overdue = overdueByProj.get(p.id) ?? 0
+                    // Same figure the desktop column shows: Paid ÷ Budget (ERP).
+                    const cardPaidPct = bud.budget > 0 ? Math.round((bud.paid / bud.budget) * 100) : 0
                     return (
                       <div key={p.id} className="px-4 py-3">
                         <div className="flex items-start justify-between gap-2">
                           <Link href={`/cost-control/projects/${p.id}`} className="min-w-0">
+                            <StatusDot status={p.cc_status} />
                             <span className="font-mono text-[11px] font-bold text-indigo-700 mr-1.5">{p.code}</span>
                             <span className="font-semibold text-gray-900">{p.name}</span>
                           </Link>
@@ -794,9 +811,7 @@ export default async function CostControlLandingPage() {
                           </span>
                         </div>
                         <div className="mt-1 flex flex-wrap items-center gap-1.5">
-                          {isIncomplete
-                            ? <span className="text-[10px] font-bold text-amber-800 bg-amber-100 rounded-full px-2 py-0.5">Setup {pct}%</span>
-                            : p.cc_status && p.cc_status !== 'active' && <Badge variant="secondary">{p.cc_status.replace('_', ' ')}</Badge>}
+                          {isIncomplete && <span className="text-[10px] font-bold text-amber-800 bg-amber-100 rounded-full px-2 py-0.5">Setup {pct}%</span>}
                           {pending > 0 && <Link href={`/cost-control/working-sheets?project=${p.id}`} className="text-[10px] font-bold text-amber-800 bg-amber-100 rounded-full px-2 py-0.5">{pending} pending →</Link>}
                           {ccSettings.show_deadlines && overdue > 0 && <Link href={`/cost-control/working-sheets?project=${p.id}`} className="text-[10px] font-bold text-rose-800 bg-rose-100 rounded-full px-2 py-0.5">{overdue} overdue →</Link>}
                         </div>
@@ -811,7 +826,13 @@ export default async function CostControlLandingPage() {
                           </div>
                         </div>
                         {ccSettings.show_erp_columns && (bud.budget > 0 || bud.paid > 0) && (
-                          <p className="mt-1.5 text-[11px] text-gray-500">Budget {bud.budget > 0 ? formatINR(bud.budget) : '—'} · Paid {bud.paid > 0 ? formatINR(bud.paid) : '—'}</p>
+                          <p className="mt-1.5 text-[11px] text-gray-500">
+                            Budget {bud.budget > 0 ? formatINR(bud.budget) : '—'} · Paid {bud.paid > 0 ? formatINR(bud.paid) : '—'}
+                            {bud.budget > 0 && (
+                              <> · <b className={cardPaidPct > 95 ? 'text-rose-600' : cardPaidPct > 80 ? 'text-amber-700' : 'text-green-700'}>{cardPaidPct}%</b>
+                              <span className="text-gray-400"> (paid ÷ budget)</span></>
+                            )}
+                          </p>
                         )}
                       </div>
                     )
@@ -1320,6 +1341,24 @@ async function EngineerHome({ userId, canWrite, label }: { userId: string | null
 
 }
 
+/** Project status as a 6px dot. It was a Badge in a column of its own, which
+ *  meant the word "active" printed on every row and a whole column of width
+ *  paid for it. The state still shows — in colour, and by name on hover —
+ *  without costing the table anything. */
+function StatusDot({ status }: { status: string | null }) {
+  if (!status) return null
+  const tone = status === 'active' ? 'bg-emerald-500'
+    : status === 'on_hold' ? 'bg-amber-500'
+    : status === 'completed' ? 'bg-blue-500'
+    : 'bg-gray-400'
+  return (
+    <span
+      title={status.replace('_', ' ')}
+      aria-label={status.replace('_', ' ')}
+      className={`inline-block h-1.5 w-1.5 rounded-full align-middle mr-1.5 ${tone}`}
+    />
+  )
+}
 function Stat({ label, value, hint, icon, tone = 'default' }: { label: string; value: React.ReactNode; hint?: string; icon?: React.ReactNode; tone?: 'default' | 'amber' }) {
   const wrap = tone === 'amber' ? 'border-amber-200 bg-amber-50' : 'border-gray-200 bg-white'
   const iconWrap = tone === 'amber' ? 'bg-amber-100 text-amber-700' : 'bg-indigo-50 text-indigo-700'
