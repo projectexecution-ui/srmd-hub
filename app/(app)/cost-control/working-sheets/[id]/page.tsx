@@ -1,5 +1,4 @@
 import Link from 'next/link'
-import { AdhocChoice } from '@/components/cost-control/AdhocChoice'
 import { Inbox, FolderTree } from 'lucide-react'
 import { notFound, redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
@@ -76,7 +75,7 @@ export default async function WorkingSheetEditorPage(
 
   const { data: ws, error: wsErr } = await supabase
     .from('cc_ws_with_versions')
-    .select('id, ws_code, status, total_amount, approved_for_erp_amt, past_approved_in_subskill, return_reason, engineer_id, project_id, discipline_id, sub_skill_id, line_type, entry_mode, source_excel_url, source_excel_name, summary_total, summary_notes, flag_summary, ai_parse_meta, last_checked_at, deadline_date, deadline_notes, break_chain, chain_anchor_id, version_no, chain_size, created_at, is_adhoc, adhoc_set_by, contingency_pct, contingency_amt, gst_pct, gst_amt, projects(code, name, parent_project_id), cc_disciplines(code, name), cc_sub_skills(code, name)')
+    .select('id, ws_code, status, total_amount, approved_for_erp_amt, past_approved_in_subskill, return_reason, engineer_id, project_id, discipline_id, sub_skill_id, line_type, entry_mode, source_excel_url, source_excel_name, summary_total, summary_notes, flag_summary, ai_parse_meta, last_checked_at, deadline_date, deadline_notes, break_chain, chain_anchor_id, version_no, chain_size, created_at, contingency_pct, contingency_amt, gst_pct, gst_amt, projects(code, name, parent_project_id), cc_disciplines(code, name), cc_sub_skills(code, name)')
     .eq('id', id)
     .single()
 
@@ -435,31 +434,7 @@ export default async function WorkingSheetEditorPage(
       projName={wsProj?.name ?? wsProj?.code ?? null}
     />
   ) : null
-  // Who declared it, for the "Set by …" line.
-  let adhocSetByName: string | null = null
-  if (ws.adhoc_set_by) {
-    const { data: setter } = await supabase
-      .from('profiles').select('full_name, name').eq('id', ws.adhoc_set_by as string).maybeSingle()
-    adhocSetByName = (setter?.full_name ?? setter?.name ?? null) as string | null
-  }
-
-  // "Is this adhoc or as per BOQ?" (HOD #7). One place rather than threaded
-  // through the three entry-mode panels, so it appears whichever way the sheet
-  // was raised. Prompted (amber) while the sheet is still in the approval
-  // chain and undeclared — that is when the Project Head is looking at it.
-  // The [IB] baseline is not a budget request, so it is never asked.
-  const isIbSheet = (ws.summary_notes ?? '').startsWith('[IB')
-  const adhocBlock = (!isIbSheet && (reviewer || ws.is_adhoc != null)) ? (
-    <AdhocChoice
-      wsId={ws.id as string}
-      isAdhoc={(ws.is_adhoc ?? null) as boolean | null}
-      setByName={adhocSetByName}
-      canSet={reviewer}
-      prompt={['submitted', 'ph_approved', 'atm_approved', 'partially_approved'].includes(ws.status as string)}
-    />
-  ) : null
-
-  const reviewTop = <>{reviewNav}{adhocBlock}{reviewPanel}</>
+  const reviewTop = <>{reviewNav}{reviewPanel}</>
 
   // Thumbrule mode: a single rate × area figure — no line items. Render
   // a read-only summary + the same submit/approve/return actions, NOT the

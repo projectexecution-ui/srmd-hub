@@ -61,7 +61,6 @@ interface WSAgg {
   summary_notes: string | null
   in4_entered_at: string | null
   submitted_at: string | null
-  is_adhoc: boolean | null
 }
 
 export default async function CostControlProjectDetailPage(
@@ -188,7 +187,7 @@ export default async function CostControlProjectDetailPage(
       .eq('project_id', id),
     supabase
       .from('cc_working_sheets')
-      .select('id, discipline_id, sub_skill_id, status, total_amount, approved_for_erp_amt, deadline_date, entry_mode, summary_notes, in4_entered_at, submitted_at, is_adhoc, contingency_pct, contingency_amt, gst_pct, gst_amt')
+      .select('id, discipline_id, sub_skill_id, status, total_amount, approved_for_erp_amt, deadline_date, entry_mode, summary_notes, in4_entered_at, submitted_at, contingency_pct, contingency_amt, gst_pct, gst_amt')
       .eq('project_id', id)
       .is('archived_at', null),
     supabase
@@ -459,25 +458,6 @@ export default async function CostControlProjectDetailPage(
   }
   estimateGapLines.sort((a, b) => b.short - a.short)
   const estimateGapTotal = estimateGapLines.reduce((sum, l) => sum + l.short, 0)
-
-  // Adhoc vs BOQ per sub-category (HOD #7). A sub-category can hold several
-  // sheets, so it is only "Adhoc" if a sheet under it was DECLARED adhoc, and
-  // only "BOQ" once every declared sheet says BOQ. Undeclared sheets are
-  // counted, never guessed at — that is the state the HOD anticipated when he
-  // said "if Mayank bhai forgets".
-  const adhocBySub = new Map<string, { adhoc: number; boq: number; undeclared: number }>()
-  for (const w of (wsRes.data ?? []) as WSAgg[]) {
-    if (w.status === 'cancelled') continue
-    if ((w.summary_notes ?? '').startsWith('[IB')) continue // the baseline is not a budget request
-    const k = `${w.discipline_id}::${w.sub_skill_id}`
-    const cur = adhocBySub.get(k) ?? { adhoc: 0, boq: 0, undeclared: 0 }
-    if (w.is_adhoc === true) cur.adhoc++
-    else if (w.is_adhoc === false) cur.boq++
-    else cur.undeclared++
-    adhocBySub.set(k, cur)
-  }
-  const undeclaredCount = Array.from(adhocBySub.values()).reduce((n, v) => n + v.undeclared, 0)
-  const adhocCount = Array.from(adhocBySub.values()).reduce((n, v) => n + v.adhoc, 0)
 
   // Item-wise BOQ under each sub-category (HOD #8a). The rows the approver
   // checks, shown in the tree instead of only on the sheet. Loaded for the
@@ -840,7 +820,6 @@ export default async function CostControlProjectDetailPage(
           totalLabel: `${formatINR(estimateGapTotal)}${perSftInline(estimateGapTotal)}`,
           noEstimateCount,
         } : null}
-        adhoc={{ undeclaredCount, adhocCount }}
         completion={showErp ? {
           completedCount,
           releasedLabel: releasedTotal > 0 ? `${formatINR(releasedTotal)}${perSftInline(releasedTotal)}` : null,
@@ -1231,22 +1210,9 @@ export default async function CostControlProjectDetailPage(
                               </Link>
                             )}
                             {sHot && <Flame className="inline h-3 w-3 text-orange-500 ml-1.5" />}
-                            {/* Thumbrule is the rare exception — flag it read-only.
-                                BOQ (the default) shows no chip. The mode TOGGLE now
-                                lives in the ▾ config menu, not on the row. */}
-                            {(() => {
-                              const t = adhocBySub.get(`${d.id}::${s.id}`)
-                              if (!t || (t.adhoc === 0 && t.boq === 0)) return null
-                              const isAdhoc = t.adhoc > 0
-                              return (
-                                <span
-                                  title={isAdhoc ? 'A budget here was declared adhoc — extra work outside the BOQ' : 'Every declared budget here is as per the BOQ estimate'}
-                                  className={`ml-1.5 align-middle inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-extrabold border ${isAdhoc ? 'bg-orange-50 text-orange-800 border-orange-200' : 'bg-slate-50 text-slate-600 border-slate-200'}`}
-                                >
-                                  {isAdhoc ? 'ADHOC' : 'BOQ'}
-                                </span>
-                              )
-                            })()}
+                            {/* Thumbrule is the rare exception — flag it
+                                read-only. The mode TOGGLE lives in the ▾
+                                config menu, not on the row. */}
                             {effMode === 'thumbrule' && (
                               <span className="ml-2 inline-flex items-center gap-0.5 text-[10px] font-semibold rounded px-1.5 py-0.5 bg-amber-50 text-amber-800 border border-amber-200 align-middle" title="Thumbrule (rate × area)">
                                 <Ruler className="h-2.5 w-2.5" /> TR
@@ -1583,19 +1549,6 @@ export default async function CostControlProjectDetailPage(
                     <p className="text-sm text-gray-900 min-w-0">
                       <RowDetailToggle id={s.id} count={(boqBySub.get(`${d.id}::${s.id}`) ?? []).reduce((n, b) => n + b.rows.length, 0)} />
                       <span className="font-mono text-[11px] text-gray-400 mr-1.5">{s.code}</span>{s.name}
-                      {(() => {
-                        const t = adhocBySub.get(`${d.id}::${s.id}`)
-                        if (!t || (t.adhoc === 0 && t.boq === 0)) return null
-                        const isAdhoc = t.adhoc > 0
-                        return (
-                          <span
-                            title={isAdhoc ? 'A budget here was declared adhoc — extra work outside the BOQ' : 'Every declared budget here is as per the BOQ estimate'}
-                            className={`ml-1.5 align-middle inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-extrabold border ${isAdhoc ? 'bg-orange-50 text-orange-800 border-orange-200' : 'bg-slate-50 text-slate-600 border-slate-200'}`}
-                          >
-                            {isAdhoc ? 'ADHOC' : 'BOQ'}
-                          </span>
-                        )
-                      })()}
                     </p>
                     {wsCount > 0 && (
                       <Link

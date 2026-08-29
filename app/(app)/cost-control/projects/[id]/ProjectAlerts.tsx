@@ -13,7 +13,7 @@
 
 import { useState } from 'react'
 import Link from 'next/link'
-import { Flame, TrendingUp, TrendingDown, CheckCircle2, ArrowRight, X, Sparkles } from 'lucide-react'
+import { Flame, TrendingUp, TrendingDown, CheckCircle2, ArrowRight, X } from 'lucide-react'
 
 export interface PendingSheet {
   id: string
@@ -48,11 +48,6 @@ export interface EstimateGapAlert {
    *  baseline, counted apart from a wrong one. */
   noEstimateCount: number
 }
-export interface AdhocAlert {
-  /** Budgets nobody has declared adhoc-or-BOQ yet (HOD #7). */
-  undeclaredCount: number
-  adhocCount: number
-}
 export interface CompletionAlert {
   completedCount: number
   releasedLabel: string | null
@@ -60,15 +55,14 @@ export interface CompletionAlert {
   readySavingsLabel: string | null
 }
 
-type Key = 'pending' | 'over' | 'estgap' | 'adhoc' | 'done'
+type Key = 'pending' | 'over' | 'estgap' | 'done'
 
 export function ProjectAlerts({
-  pending, over, estimateGap, adhoc, completion,
+  pending, over, estimateGap, completion,
 }: {
   pending: PendingAlert | null
   over: OverBudgetAlert | null
   estimateGap: EstimateGapAlert | null
-  adhoc: AdhocAlert | null
   completion: CompletionAlert | null
 }) {
   // Approvals open by default: they are the only one of the three that is
@@ -89,13 +83,6 @@ export function ProjectAlerts({
       key: 'over', tone: 'rose',
       icon: <TrendingUp className="h-3.5 w-3.5" />,
       label: `${over.lines.length} over budget`,
-    })
-  }
-  if (adhoc && adhoc.undeclaredCount > 0) {
-    chips.push({
-      key: 'adhoc', tone: 'orange',
-      icon: <Sparkles className="h-3.5 w-3.5" />,
-      label: `${adhoc.undeclaredCount} not declared`,
     })
   }
   if (estimateGap && (estimateGap.lines.length > 0 || estimateGap.noEstimateCount > 0)) {
@@ -256,23 +243,6 @@ export function ProjectAlerts({
                 <p className={`text-violet-800 ${estimateGap.lines.length > 0 ? 'mt-2 pt-2 border-t border-violet-200' : 'font-semibold'}`}>
                   {estimateGap.noEstimateCount} sub-{estimateGap.noEstimateCount === 1 ? 'category has' : 'categories have'} an
                   ERP budget with <b>no Internal Estimate at all</b> — a missing baseline rather than a wrong one.
-                </p>
-              )}
-            </>
-          )}
-
-          {open === 'adhoc' && adhoc && (
-            <>
-              <p className="font-semibold text-orange-900">
-                {adhoc.undeclaredCount} budget{adhoc.undeclaredCount === 1 ? '' : 's'} not yet declared adhoc or as per BOQ
-              </p>
-              <p className="mt-1.5 text-[11.5px] text-orange-800">
-                The Project Head is asked when he signs off; the Atm Head or Trustee can set it any time afterwards.
-                Open a budget and pick <b>As per BOQ</b> or <b>Adhoc — extra work</b> at the top of the sheet.
-              </p>
-              {adhoc.adhocCount > 0 && (
-                <p className="mt-1.5 text-[11.5px] text-orange-800">
-                  {adhoc.adhocCount} already marked <b>adhoc</b> on this project.
                 </p>
               )}
             </>
