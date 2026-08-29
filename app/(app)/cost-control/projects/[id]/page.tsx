@@ -1110,33 +1110,37 @@ export default async function CostControlProjectDetailPage(
                         </>
                       )}
                       <Td>
-                        <span className="inline-flex items-center gap-1.5 flex-wrap">
-                          {/* Closing the whole category — same rule as a row,
-                              read upwards. (HOD #3) */}
-                          {(dComplete?.completedAt || dComplete?.canComplete) && (
-                            <CompleteControl
-                              level="discipline"
+                        <div className="flex items-center justify-end gap-1.5">
+                          <span className="inline-flex items-center justify-end gap-1.5 flex-wrap">
+                            {/* Closing the whole category — same rule as a row,
+                                read upwards. (HOD #3) */}
+                            {(dComplete?.completedAt || dComplete?.canComplete) && (
+                              <CompleteControl
+                                level="discipline"
+                                projectId={project.id}
+                                disciplineId={d.id}
+                                subSkillId={null}
+                                label={`${d.code} ${d.name}`}
+                                savings={dComplete.savings}
+                                completedAt={dComplete.completedAt}
+                                completedByName={dComplete.completedByName}
+                                cascadeCount={dComplete.cascade}
+                                reopenCount={dComplete.reopen}
+                                canWrite={canWrite}
+                                variant="row"
+                              />
+                            )}
+                          </span>
+                          <span className="inline-flex items-center flex-shrink-0">
+                            <DisableButton
                               projectId={project.id}
                               disciplineId={d.id}
-                              subSkillId={null}
                               label={`${d.code} ${d.name}`}
-                              savings={dComplete.savings}
-                              completedAt={dComplete.completedAt}
-                              completedByName={dComplete.completedByName}
-                              cascadeCount={dComplete.cascade}
-                              reopenCount={dComplete.reopen}
+                              attachedCount={dWsCount}
                               canWrite={canWrite}
-                              variant="row"
                             />
-                          )}
-                          <DisableButton
-                            projectId={project.id}
-                            disciplineId={d.id}
-                            label={`${d.code} ${d.name}`}
-                            attachedCount={dWsCount}
-                            canWrite={canWrite}
-                          />
-                        </span>
+                          </span>
+                        </div>
                       </Td>
                     </tr>
 
@@ -1351,98 +1355,106 @@ export default async function CostControlProjectDetailPage(
                             </>
                           )}
                           <Td>
-                            <div className="inline-flex items-start gap-1">
-                              {/* The row he was sent here to sign off. The page
-                                  scrolls to this row, so the button has to be
-                                  HERE too — the banner up top is off-screen by
-                                  the time he lands. */}
-                              {isFocus && focusPending && focusSheetHref && (
-                                <Link
-                                  href={focusSheetHref}
-                                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-bold bg-amber-600 text-white hover:bg-amber-700 whitespace-nowrap"
-                                >
-                                  Approve <ArrowRight className="h-3 w-3" />
-                                </Link>
-                              )}
-                              {/* Same rule as the phone card. (HOD #3) */}
-                              {(sCompletedAt || canMarkComplete(bl)) && (
-                                <CompleteControl
-                                  projectId={project.id}
-                                  disciplineId={d.id}
-                                  subSkillId={s.id}
-                                  label={`${s.code} ${s.name}`}
-                                  savings={savingsOnCompletion(bl)}
-                                  completedAt={sCompletedAt}
-                                  completedByName={sCompletedBy}
-                                  canWrite={canWrite}
-                                  variant="row"
-                                />
-                              )}
-                              {/* Closed, with money still sitting in IN4 —
-                                  everyone sees the amount, only Billing /
-                                  Coordinator can tick it off. */}
-                              {sCompletedAt && (
-                                <ErpReducedControl
-                                  projectId={project.id}
-                                  disciplineId={d.id}
-                                  subSkillId={s.id}
-                                  label={`${s.code} ${s.name}`}
-                                  savings={savingsOnCompletion(bl)}
-                                  reducedAt={subMeta.get(s.id)?.erpReducedAt ?? null}
-                                  reducedAmt={subMeta.get(s.id)?.erpReducedAmt ?? null}
-                                  reducedByName={profileMap.get(subMeta.get(s.id)?.erpReducedBy ?? '') ?? null}
-                                  canTick={canTickErp}
-                                  variant="row"
-                                />
-                              )}
-                              {/* Never just hide the Request button on a closed
-                                  line — say why it is off, or the row reads as
-                                  broken. */}
-                              {canWrite && (sClosedReason ? (
-                                <span
-                                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-semibold border border-gray-200 bg-gray-50 text-gray-400 whitespace-nowrap"
-                                  title={sClosedReason}
-                                >
-                                  <Plus className="h-3 w-3" /> Request
-                                  <span className="font-normal text-gray-500">· reopen first</span>
-                                </span>
-                              ) : (
-                                <Link
-                                  href={effMode === 'thumbrule'
-                                    ? `/cost-control/working-sheets/new-thumbrule?project=${project.id}&discipline=${d.id}&sub_skill=${s.id}`
-                                    : `/cost-control/working-sheets/new-quick?project=${project.id}&discipline=${d.id}&sub_skill=${s.id}`}
-                                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-semibold border border-blue-300 text-blue-700 hover:bg-blue-50"
+                            {/* Right-aligned, with the two always-present controls last, so
+                                "+ Request" and the config button land in the SAME place on
+                                every row. The optional chips grow leftwards instead of
+                                shunting them about. */}
+                            <div className="flex items-center justify-end gap-1.5">
+                              <span className="inline-flex items-center justify-end gap-1.5 flex-wrap">
+                                {/* The row he was sent here to sign off. The page
+                                    scrolls to this row, so the button has to be
+                                    HERE too — the banner up top is off-screen by
+                                    the time he lands. */}
+                                {isFocus && focusPending && focusSheetHref && (
+                                  <Link
+                                    href={focusSheetHref}
+                                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-bold bg-amber-600 text-white hover:bg-amber-700 whitespace-nowrap"
+                                  >
+                                    Approve <ArrowRight className="h-3 w-3" />
+                                  </Link>
+                                )}
+                                {/* Same rule as the phone card. (HOD #3) */}
+                                {(sCompletedAt || canMarkComplete(bl)) && (
+                                  <CompleteControl
+                                    projectId={project.id}
+                                    disciplineId={d.id}
+                                    subSkillId={s.id}
+                                    label={`${s.code} ${s.name}`}
+                                    savings={savingsOnCompletion(bl)}
+                                    completedAt={sCompletedAt}
+                                    completedByName={sCompletedBy}
+                                    canWrite={canWrite}
+                                    variant="row"
+                                  />
+                                )}
+                                {/* Closed, with money still sitting in IN4 —
+                                    everyone sees the amount, only Billing /
+                                    Coordinator can tick it off. */}
+                                {sCompletedAt && (
+                                  <ErpReducedControl
+                                    projectId={project.id}
+                                    disciplineId={d.id}
+                                    subSkillId={s.id}
+                                    label={`${s.code} ${s.name}`}
+                                    savings={savingsOnCompletion(bl)}
+                                    reducedAt={subMeta.get(s.id)?.erpReducedAt ?? null}
+                                    reducedAmt={subMeta.get(s.id)?.erpReducedAmt ?? null}
+                                    reducedByName={profileMap.get(subMeta.get(s.id)?.erpReducedBy ?? '') ?? null}
+                                    canTick={canTickErp}
+                                    variant="row"
+                                  />
+                                )}
+                              </span>
+                              <span className="inline-flex items-center gap-1.5 flex-shrink-0">
+                                {/* Never just hide the Request button on a closed
+                                    line — say why it is off, or the row reads as
+                                    broken. */}
+                                {canWrite && (sClosedReason ? (
+                                  <span
+                                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-semibold border border-gray-200 bg-gray-50 text-gray-400 whitespace-nowrap"
+                                    title={sClosedReason}
+                                  >
+                                    <Plus className="h-3 w-3" /> Request
+                                    <span className="font-normal text-gray-500">· reopen first</span>
+                                  </span>
+                                ) : (
+                                  <Link
+                                    href={effMode === 'thumbrule'
+                                      ? `/cost-control/working-sheets/new-thumbrule?project=${project.id}&discipline=${d.id}&sub_skill=${s.id}`
+                                      : `/cost-control/working-sheets/new-quick?project=${project.id}&discipline=${d.id}&sub_skill=${s.id}`}
+                                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-semibold border border-blue-300 text-blue-700 hover:bg-blue-50"
                                   title="Raise a budget request for this sub-category"
-                                >
-                                  <Plus className="h-3 w-3" /> Request
-                                </Link>
-                              ))}
-                              {/* Config (mode · remove) tucked behind one ▾ so the
-                                  table stays KPIs + amounts, not editing widgets. */}
-                              {canWrite && (
-                                <RowConfigMenu>
-                                  <RowConfigItem label="Estimation mode">
-                                    <SubSkillModeCell
-                                      projectId={project.id}
-                                      subSkillId={s.id}
-                                      initialMode={subMeta.get(s.id)?.mode ?? null}
-                                      initialRate={subMeta.get(s.id)?.rate ?? null}
-                                      initialNotes={subMeta.get(s.id)?.notes ?? null}
-                                      inheritedMode={discMeta.get(d.id)?.mode ?? 'detailed'}
-                                      canWrite={canWrite}
-                                    />
-                                  </RowConfigItem>
-                                  <RowConfigItem label="Remove from project">
-                                    <DisableButton
-                                      projectId={project.id}
-                                      subSkillId={s.id}
-                                      label={`${s.code} ${s.name}`}
-                                      attachedCount={wsCount}
-                                      canWrite={canWrite}
-                                    />
-                                  </RowConfigItem>
-                                </RowConfigMenu>
-                              )}
+                                  >
+                                    <Plus className="h-3 w-3" /> Request
+                                  </Link>
+                                ))}
+                                {/* Config (mode · remove) tucked behind one ▾ so the
+                                    table stays KPIs + amounts, not editing widgets. */}
+                                {canWrite && (
+                                  <RowConfigMenu>
+                                    <RowConfigItem label="Estimation mode">
+                                      <SubSkillModeCell
+                                        projectId={project.id}
+                                        subSkillId={s.id}
+                                        initialMode={subMeta.get(s.id)?.mode ?? null}
+                                        initialRate={subMeta.get(s.id)?.rate ?? null}
+                                        initialNotes={subMeta.get(s.id)?.notes ?? null}
+                                        inheritedMode={discMeta.get(d.id)?.mode ?? 'detailed'}
+                                        canWrite={canWrite}
+                                      />
+                                    </RowConfigItem>
+                                    <RowConfigItem label="Remove from project">
+                                      <DisableButton
+                                        projectId={project.id}
+                                        subSkillId={s.id}
+                                        label={`${s.code} ${s.name}`}
+                                        attachedCount={wsCount}
+                                        canWrite={canWrite}
+                                      />
+                                    </RowConfigItem>
+                                  </RowConfigMenu>
+                                )}
+                              </span>
                             </div>
                           </Td>
                         </tr>

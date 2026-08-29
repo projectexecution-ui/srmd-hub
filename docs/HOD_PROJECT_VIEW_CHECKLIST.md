@@ -82,6 +82,15 @@ Aksha, relaying the HOD: the label was not the point. Three things follow now.
   same gate the billing queue already uses). Until ticked, the amount shows as
   still in the ERP on the row, and the whole list is gathered on
   `/cost-control/billing` so nobody has to hunt through 42 projects.
+- **Reopening clears the ERP tick** (Aksha, same day). The tick answers "does
+  this line still have money to take out of the ERP?", not "what happened in
+  history" — and a stale tick would quietly keep the line off Parimal’s queue
+  the second time it is closed. Clearing it writes its own
+  `erp_reduction_undone` row carrying the amount, so the trail reads
+  completed → erp_reduced → reopened → erp_reduction_undone.
+- **Row actions are right-aligned** so `+ Request` and the config button sit in
+  the same place on every row; the optional chips (Approve / Completed / the ERP
+  marker) grow leftwards instead of shunting them about.
 - **Every close, reopen and ERP tick is written to `cc_completion_events`** and
   shown in `/cost-control/audit` under "Completed / reopened".
 
