@@ -31,21 +31,59 @@ export const IS_DEMO =
 export const DEMO_BLOCKED_MESSAGE =
   'This is the trial site — nothing is saved here. Use the live CT Hub to make a real change.'
 
-/** Thrown by the Supabase wrappers. A distinct class so callers can tell a
- *  deliberate trial-site refusal from a genuine database failure. */
-export class DemoModeError extends Error {
-  readonly isDemoBlock = true
-  constructor(operation: string) {
-    super(`${DEMO_BLOCKED_MESSAGE} (blocked: ${operation})`)
-    this.name = 'DemoModeError'
+/** Shape Supabase itself returns on a failed query. Blocked writes resolve to
+ *  this rather than throwing.
+ *
+ *  WHY NOT THROW: server components write during render (a last-seen stamp, a
+ *  cache refresh). A throw there takes down the whole page with a 500 — which
+ *  is exactly what happened on the first trial deployment. Supabase's own
+ *  contract is to RESOLVE with `{ data, error }` and never throw on a query
+ *  error, so matching it means every existing `if (error)` branch in the app
+ *  handles a blocked write correctly and nothing crashes. */
+export function demoBlockedResult(operation: string) {
+  return {
+    data: null,
+    error: {
+      message: DEMO_BLOCKED_MESSAGE,
+      details: `blocked on the trial site: ${operation}`,
+      hint: 'Use the live CT Hub to make a real change.',
+      code: 'DEMO_READ_ONLY',
+    },
   }
 }
 
 /** The Supabase query-builder methods that change data. `select` is absent on
- *  purpose — reading is the entire point of the trial site. */
+ *  purpose — reading is the entire point of the trial site.
+ *
+ *  `rpc` is NOT here. Blocking it wholesale broke the app instantly: the
+ *  permission system itself runs on RPCs (my_permissions, effective_user_role,
+ *  can_approve) and the dashboard calls them on every render, so a blanket
+ *  block 500s every page. The writing RPCs (cc_tg_signoff, recycle_restore,
+ *  act_on_delete_request…) are all reached through Server Actions or POST API
+ *  routes, which proxy.ts already refuses — so they are covered by layer 1,
+ *  and an RPC reached during a plain GET render is read-only by construction. */
 const MUTATING_METHODS = new Set([
-  'insert', 'update', 'upsert', 'delete', 'rpc',
+  'insert', 'update', 'upsert', 'delete',
 ])
+
+/** A stand-in for a query builder whose write was refused. It stays chainable
+ *  (`.update().eq().select()`) and awaits to a normal Supabase error result. */
+function blockedBuilder(operation: string): Record<string, unknown> {
+  const result = demoBlockedResult(operation)
+  const base: Record<string, unknown> = {
+    then: (onOk?: (v: unknown) => unknown, onErr?: (e: unknown) => unknown) =>
+      Promise.resolve(result).then(onOk, onErr),
+    catch: (onErr?: (e: unknown) => unknown) => Promise.resolve(result).catch(onErr),
+    finally: (onEnd?: () => void) => Promise.resolve(result).finally(onEnd),
+  }
+  return new Proxy(base, {
+    get(target, prop, receiver) {
+      if (prop in target) return Reflect.get(target, prop, receiver)
+      // Any further chained method just keeps the blocked builder going.
+      return () => blockedBuilder(operation)
+    },
+  })
+}
 
 /** Storage methods that write. Reading/downloading stays allowed. */
 const MUTATING_STORAGE_METHODS = new Set([
@@ -53,13 +91,12 @@ const MUTATING_STORAGE_METHODS = new Set([
 ])
 
 /**
- * Wrap a Supabase client so mutating calls throw instead of reaching the
- * database. Returns the client untouched when not in demo mode, so the live
- * site carries no wrapper and no overhead.
+ * Wrap a Supabase client so mutating calls never reach the database. Returns
+ * the client untouched when not in demo mode, so the live site carries no
+ * wrapper and no overhead.
  *
- * Note `rpc` is blocked too: several RPCs (cc_tg_signoff, recycle_restore,
- * act_on_delete_request…) write. A read-only RPC is a small price for not
- * having to maintain an allow-list that would silently rot.
+ * `auth` is passed straight through — signing in is how anyone gets into the
+ * trial at all, and it writes no application data.
  */
 export function guardSupabaseClient<T extends object>(client: T): T {
   if (!IS_DEMO) return client
@@ -74,11 +111,6 @@ export function guardSupabaseClient<T extends object>(client: T): T {
           const builder = (value as (...a: unknown[]) => object).apply(target, args)
           return guardQueryBuilder(builder)
         }
-      }
-
-      // supabase.rpc(...) — refuse outright.
-      if (prop === 'rpc' && typeof value === 'function') {
-        return () => { throw new DemoModeError('rpc') }
       }
 
       // supabase.storage.from('bucket').upload(...)
@@ -97,7 +129,7 @@ function guardQueryBuilder<T extends object>(builder: T): T {
   return new Proxy(builder, {
     get(target, prop, receiver) {
       if (typeof prop === 'string' && MUTATING_METHODS.has(prop)) {
-        return () => { throw new DemoModeError(prop) }
+        return () => blockedBuilder(prop)
       }
       const value = Reflect.get(target, prop, receiver)
       if (typeof value !== 'function') return value
@@ -123,7 +155,8 @@ function guardStorage<T extends object>(storage: T): T {
           return new Proxy(bucket, {
             get(bTarget, bProp, bReceiver) {
               if (typeof bProp === 'string' && MUTATING_STORAGE_METHODS.has(bProp)) {
-                return () => { throw new DemoModeError(`storage.${bProp}`) }
+                // Storage methods return plain promises, not chainable builders.
+                return () => Promise.resolve(demoBlockedResult(`storage.${bProp}`))
               }
               const bValue = Reflect.get(bTarget, bProp, bReceiver)
               return typeof bValue === 'function' ? bValue.bind(bTarget) : bValue
