@@ -47,10 +47,10 @@ describe('revamped left pane', () => {
     expect(buildRevampNav({}, new Set(), NOT_ADMIN).primary.map(i => i.label)).not.toContain('Admin')
   })
 
-  it('keeps Masters visible even though it is not built, so the plan is honest', () => {
+  it('always offers Masters — it has no module permission of its own', () => {
     const masters = buildRevampNav({}, new Set(), NOT_ADMIN).primary.find(i => i.label === 'Masters')
     expect(masters).toBeDefined()
-    expect(masters!.built).toBe(false)
+    expect(masters!.slug).toBeNull()
   })
 
   it('is a real reduction — far fewer top-level lanes than old screens replaced', () => {

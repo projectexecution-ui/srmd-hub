@@ -44,7 +44,7 @@ export const REVAMP_PRIMARY: RevampNavItem[] = [
   { href: '/cost-control', label: 'Projects',  icon: Building2,       slug: 'cost-control', built: true },
   { href: '/bills-booking', label: 'Bills',    icon: Receipt,         slug: 'bills-booking', built: true },
   { href: '/warehouse',    label: 'Warehouse', icon: Warehouse,       slug: 'warehouse',    built: true },
-  { href: '/masters',      label: 'Masters',   icon: Library,         slug: null,           built: false },
+  { href: '/masters',      label: 'Masters',   icon: Library,         slug: null,           built: true },
   { href: '/admin',        label: 'Admin',     icon: Shield,          slug: null,           built: true },
 ]
 
