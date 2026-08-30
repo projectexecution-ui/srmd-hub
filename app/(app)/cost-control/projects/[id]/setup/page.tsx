@@ -23,6 +23,8 @@ import { ProjectArchiveControls } from '../ProjectArchiveControls'
 import { GroupLabelChip } from '@/app/(app)/cost-control/GroupLabelChip'
 import { getBphMappingForProject } from '@/app/(app)/cost-control/import/bph/actions'
 import { getCcSettings } from '@/lib/cost-control/settings'
+import { CopySetupPanel } from './CopySetupPanel'
+import { listSetupSources } from './copy-setup-actions'
 
 export const dynamic = 'force-dynamic'
 
@@ -136,6 +138,9 @@ export default async function ResumeProjectSetupPage(
     .map(r => ({ role: r.role, user_id: r.user_id, name: nameById.get(r.user_id) ?? '(user)' }))
   const approverCandidates = profRows.map(p => ({ id: p.id, name: p.full_name ?? p.name ?? '(unnamed)' }))
 
+  // Projects that already have a setup worth reusing (richest first).
+  const setupSources = await listSetupSources(id)
+
   // Pick the first incomplete step.
   //
   //   step1 done  := project basics row exists (always true at this point)
@@ -234,8 +239,14 @@ export default async function ResumeProjectSetupPage(
 
       <div className="pt-1">
         <h2 className="text-sm font-semibold text-gray-900">Disciplines &amp; sub-skills</h2>
-        <p className="text-xs text-gray-500">Pick what this project estimates.</p>
+        <p className="text-xs text-gray-500">Pick what this project estimates — or copy it from a project you have already set up.</p>
       </div>
+
+      <CopySetupPanel
+        targetProjectId={id}
+        targetProjectName={project.name}
+        sources={setupSources}
+      />
 
       <ProjectSetupWizard
         parentProjects={parentProjects}

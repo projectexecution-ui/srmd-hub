@@ -4,6 +4,7 @@ import { getMyProfile } from '@/lib/auth'
 import { PageHeader } from '@/components/PageHeader'
 import { parseBillsDigestConfig, BILLS_PROJECT_CODES } from '@/lib/bills-pipeline/digest-settings'
 import { BillsDigestForm } from './BillsDigestForm'
+import { WorklistRecipients } from './WorklistRecipients'
 
 export const dynamic = 'force-dynamic'
 
@@ -17,10 +18,11 @@ export default async function BillsDigestSettingsPage() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL!
   const sb = createServiceClient(url, serviceKey!, { auth: { persistSession: false } })
 
-  const [{ data: settings }, { data: users }, { data: stuckRow }] = await Promise.all([
+  const [{ data: settings }, { data: users }, { data: stuckRow }, { data: worklistRow }] = await Promise.all([
     sb.from('app_settings').select('key, value').like('key', 'bills_digest_%'),
     sb.from('profiles').select('id, full_name, email, role').eq('is_active', true).order('full_name', { ascending: true }),
     sb.from('app_settings').select('value').eq('key', 'bills_pipeline_stuck').maybeSingle(),
+    sb.from('app_settings').select('value').eq('key', 'bills_worklist_to').maybeSingle(),
   ])
 
   const cfg = parseBillsDigestConfig((settings ?? []) as Array<{ key: string; value: string }>)
@@ -47,6 +49,7 @@ export default async function BillsDigestSettingsPage() {
         projectCodes={BILLS_PROJECT_CODES}
         availableStages={availableStages}
       />
+      <WorklistRecipients initial={(worklistRow?.value as string | null) ?? ''} />
     </div>
   )
 }

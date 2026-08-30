@@ -12,6 +12,9 @@ import type { ProcurementNotifyConfig, NotifyFrequency } from '@/lib/procurement
 
 interface UserOpt { id: string; full_name: string | null; email: string; role: string }
 
+/** Index matches the stored value: 0 = Sunday … 6 = Saturday. */
+const WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'] as const
+
 const FREQ_LABELS: Record<NotifyFrequency, string> = {
   weekdays: 'Every weekday (Mon–Sat)',
   daily: 'Every day',
@@ -27,6 +30,10 @@ export function ProcurementNotifySettingsForm({
   const [frequency, setFrequency] = useState<NotifyFrequency>(initial.frequency)
   const [noPo, setNoPo] = useState(initial.noPoSlaDays)
   const [grn, setGrn] = useState(initial.grnSlaDays)
+  const [weeklyDay, setWeeklyDay] = useState(initial.weeklyDay)
+  const [abandoned, setAbandoned] = useState(initial.abandonedDays)
+  const [listLen, setListLen] = useState(initial.listLen)
+  const [skipIfEmpty, setSkipIfEmpty] = useState(initial.skipIfEmpty)
   const [sections, setSections] = useState(initial.sections)
   const [assign, setAssign] = useState<Record<string, string[]>>(initial.assignments)
   const [expanded, setExpanded] = useState<string | null>(null)
@@ -57,6 +64,10 @@ export function ProcurementNotifySettingsForm({
       { key: 'procurement_notify_frequency', value: frequency },
       { key: 'procurement_notify_no_po_sla_days', value: String(noPo) },
       { key: 'procurement_notify_grn_sla_days', value: String(grn) },
+      { key: 'procurement_notify_weekly_day', value: String(weeklyDay) },
+      { key: 'procurement_notify_abandoned_days', value: String(abandoned) },
+      { key: 'procurement_notify_list_len', value: String(listLen) },
+      { key: 'procurement_notify_skip_if_empty', value: String(skipIfEmpty) },
       { key: 'procurement_notify_sections', value: JSON.stringify(sections) },
       { key: 'procurement_notify_assignments', value: JSON.stringify(clean) },
     ]
@@ -178,6 +189,54 @@ export function ProcurementNotifySettingsForm({
               className="w-full h-9 rounded-lg border border-gray-300 px-2 text-sm" />
             <span className="text-gray-500">days</span>
           </div>
+        </label>
+        {frequency === 'weekly' && (
+          <label className="text-xs">
+            <span className="font-semibold text-gray-600">Send it on</span>
+            <select value={weeklyDay} onChange={e => setWeeklyDay(Number(e.target.value))}
+              className="mt-1 w-full h-9 rounded-lg border border-gray-300 bg-white px-2 text-sm">
+              {WEEKDAYS.map((d, i) => <option key={i} value={i}>{d}</option>)}
+            </select>
+          </label>
+        )}
+      </div>
+
+      {/* Fine-tuning — the cron already obeys these; before, only the code could set them. */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        <label className="text-xs">
+          <span className="font-semibold text-gray-600">Treat as abandoned after</span>
+          <div className="mt-1 flex items-center gap-2">
+            <input type="number" min={30} value={abandoned}
+              onChange={e => setAbandoned(Math.max(30, Number(e.target.value)))}
+              className="w-full h-9 rounded-lg border border-gray-300 px-2 text-sm" />
+            <span className="text-gray-500">days</span>
+          </div>
+          <span className="block text-[11px] text-gray-400 mt-1">
+            Older no-PO items stop being chased and collapse into one “worth closing” line. Minimum 30.
+          </span>
+        </label>
+        <label className="text-xs">
+          <span className="font-semibold text-gray-600">Rows per section</span>
+          <div className="mt-1 flex items-center gap-2">
+            <input type="number" min={3} max={25} value={listLen}
+              onChange={e => setListLen(Math.min(25, Math.max(3, Number(e.target.value))))}
+              className="w-full h-9 rounded-lg border border-gray-300 px-2 text-sm" />
+            <span className="text-gray-500">rows</span>
+          </div>
+          <span className="block text-[11px] text-gray-400 mt-1">
+            Anything beyond this shows as “+N more”. Between 3 and 25.
+          </span>
+        </label>
+        <label className="text-xs">
+          <span className="font-semibold text-gray-600">When there is nothing to report</span>
+          <select value={skipIfEmpty ? 'skip' : 'send'} onChange={e => setSkipIfEmpty(e.target.value === 'skip')}
+            className="mt-1 w-full h-9 rounded-lg border border-gray-300 bg-white px-2 text-sm">
+            <option value="skip">Send no email</option>
+            <option value="send">Send it anyway</option>
+          </select>
+          <span className="block text-[11px] text-gray-400 mt-1">
+            “Send it anyway” gives each head a daily all-clear.
+          </span>
         </label>
       </div>
 

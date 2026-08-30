@@ -8,6 +8,7 @@ import { isPendingStatus } from '@/lib/cost-control/chain'
 import { sortDisciplines } from '@/lib/cost-control/discipline-order'
 import { TreeProvider, TreeToolbar, CatChevron, CatRows, SubRow } from '@/components/cost-control/project-tree'
 import { getModuleLabels, labelFor } from '@/lib/module-labels'
+import { getCcSettings } from '@/lib/cost-control/settings'
 
 // Engineer-safe project table. Deliberately a SEPARATE component from the
 // management Internal Estimate page so a confidential figure can't leak: it
@@ -20,6 +21,10 @@ type SRow = { id: string; discipline_id: string; code: string; name: string }
 
 export async function EngineerProjectTable({ projectId }: { projectId: string }) {
   const supabase = await createClient()
+  // Whether engineers see the ERP money columns at all — admin's choice in
+  // Cost Control → Settings. Default on = the behaviour that has been live.
+  // Internal Estimate and Paid are never shown here whatever this says.
+  const { eng_erp: showErp } = await getCcSettings()
 
   const [pdRes, psRes, blRes, wsRes] = await Promise.all([
     supabase
@@ -128,10 +133,10 @@ export async function EngineerProjectTable({ projectId }: { projectId: string })
       {errored && <QueryError message={(pdRes.error ?? psRes.error ?? blRes.error ?? wsRes.error)?.message} what="this project's budget" />}
 
       {/* KPI strip — no Internal Estimate, no Paid. */}
-      <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+      <div className={`grid gap-3 ${showErp ? 'grid-cols-2 md:grid-cols-3' : 'grid-cols-1'}`}>
         <KPI label="Awaiting Approval" value={totPending > 0 ? formatINR(totPending) : '—'} tone="amber" />
-        <KPI label="Budget (ERP)" value={totBudget > 0 ? formatINR(totBudget) : '—'} tone="blue" />
-        <KPI label="Committed (WO / PO)" value={totWO > 0 ? formatINR(totWO) : '—'} tone="purple" />
+        {showErp && <KPI label="Budget (ERP)" value={totBudget > 0 ? formatINR(totBudget) : '—'} tone="blue" />}
+        {showErp && <KPI label="Committed (WO / PO)" value={totWO > 0 ? formatINR(totWO) : '—'} tone="purple" />}
       </div>
 
       <TreeProvider allCatIds={disciplines.map(d => d.id)} emptyCount={emptyCount}>
@@ -151,8 +156,8 @@ export async function EngineerProjectTable({ projectId }: { projectId: string })
               <tr>
                 <th className="sticky top-0 z-10 bg-gray-50 border-b border-gray-200 px-3 py-2 font-semibold text-gray-600 min-w-[260px]">Work Category / Sub-skill</th>
                 <th className="sticky top-0 z-10 bg-gray-50 border-b border-gray-200 px-3 py-2 font-semibold text-gray-600 text-right w-32">Awaiting Approval</th>
-                <th className="sticky top-0 z-10 bg-gray-50 border-b border-gray-200 px-3 py-2 font-semibold text-gray-600 text-right w-32">Budget (ERP)</th>
-                <th className="sticky top-0 z-10 bg-gray-50 border-b border-gray-200 px-3 py-2 font-semibold text-gray-600 text-right w-28">WO / PO</th>
+                {showErp && <th className="sticky top-0 z-10 bg-gray-50 border-b border-gray-200 px-3 py-2 font-semibold text-gray-600 text-right w-32">Budget (ERP)</th>}
+                {showErp && <th className="sticky top-0 z-10 bg-gray-50 border-b border-gray-200 px-3 py-2 font-semibold text-gray-600 text-right w-28">WO / PO</th>}
                 <th className="sticky top-0 z-10 bg-gray-50 border-b border-gray-200 px-3 py-2 font-semibold text-gray-600 w-28">Working Sheets</th>
               </tr>
             </thead>
@@ -168,8 +173,8 @@ export async function EngineerProjectTable({ projectId }: { projectId: string })
                         <span className="font-mono text-[11px] text-gray-400 mr-2">{d.code}</span>{d.name}
                       </td>
                       <td className="px-3 py-2 text-right tabular-nums text-amber-700">{dt.pending > 0 ? formatINR(dt.pending) : '—'}</td>
-                      <td className="px-3 py-2 text-right font-semibold tabular-nums">{dt.budget > 0 ? formatINR(dt.budget) : '—'}</td>
-                      <td className="px-3 py-2 text-right tabular-nums text-gray-600">{dt.wo > 0 ? formatINR(dt.wo) : '—'}</td>
+                      {showErp && <td className="px-3 py-2 text-right font-semibold tabular-nums">{dt.budget > 0 ? formatINR(dt.budget) : '—'}</td>}
+                      {showErp && <td className="px-3 py-2 text-right tabular-nums text-gray-600">{dt.wo > 0 ? formatINR(dt.wo) : '—'}</td>}
                       <td className="px-3 py-2"></td>
                     </tr>
                     <CatRows catId={d.id}>
@@ -184,8 +189,8 @@ export async function EngineerProjectTable({ projectId }: { projectId: string })
                             <span className="font-mono text-[11px] text-gray-400 mr-2">{s.code}</span>{s.name}
                           </td>
                           <td className="px-3 py-2 text-right tabular-nums text-amber-700">{ag?.pending ? formatINR(ag.pending) : '—'}</td>
-                          <td className="px-3 py-2 text-right tabular-nums">{bl?.budget ? formatINR(bl.budget) : '—'}</td>
-                          <td className="px-3 py-2 text-right tabular-nums text-gray-600">{bl?.wo ? formatINR(bl.wo) : '—'}</td>
+                          {showErp && <td className="px-3 py-2 text-right tabular-nums">{bl?.budget ? formatINR(bl.budget) : '—'}</td>}
+                          {showErp && <td className="px-3 py-2 text-right tabular-nums text-gray-600">{bl?.wo ? formatINR(bl.wo) : '—'}</td>}
                           <td className="px-3 py-2">
                             {/* Fixed 2-slot grid so the sheet chip and "+ New"
                                 line up in the same columns on every row (the
@@ -220,7 +225,7 @@ export async function EngineerProjectTable({ projectId }: { projectId: string })
                 )
               })}
               {disciplines.length === 0 && (
-                <tr><td colSpan={5} className="px-4 py-10 text-center text-sm text-gray-400">
+                <tr><td colSpan={showErp ? 5 : 3} className="px-4 py-10 text-center text-sm text-gray-400">
                   No disciplines set up on this project yet.
                 </td></tr>
               )}
@@ -255,8 +260,8 @@ export async function EngineerProjectTable({ projectId }: { projectId: string })
                   </div>
                   <div className="mt-1.5 flex items-center gap-4 text-[11px] text-gray-500">
                     <span>Awaiting <span className="font-semibold text-amber-700">{ag?.pending ? formatINR(ag.pending) : '—'}</span></span>
-                    <span>Budget <span className="font-semibold text-gray-800">{bl?.budget ? formatINR(bl.budget) : '—'}</span></span>
-                    <span>WO <span className="font-semibold text-gray-600">{bl?.wo ? formatINR(bl.wo) : '—'}</span></span>
+                    {showErp && <span>Budget <span className="font-semibold text-gray-800">{bl?.budget ? formatINR(bl.budget) : '—'}</span></span>}
+                    {showErp && <span>WO <span className="font-semibold text-gray-600">{bl?.wo ? formatINR(bl.wo) : '—'}</span></span>}
                   </div>
                 </div>
               )

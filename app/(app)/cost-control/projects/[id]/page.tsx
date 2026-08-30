@@ -161,6 +161,29 @@ export default async function CostControlProjectDetailPage(
   // Internal Estimate / Paid / % Used) — reached by opening one of their
   // projects from the Cost Control home.
   if (!reviewer) {
+    // Admin can close the project page to engineers entirely (Settings → What
+    // engineers can see). Default on = today's behaviour. When off, say so and
+    // point at the sheets rather than bouncing them somewhere with no reason.
+    if (!ccSettings.eng_projects) {
+      return (
+        <div className="p-4 md:p-6 max-w-2xl mx-auto space-y-4">
+          <PageHeader title={project.name} subtitle={project.code ?? undefined} back="/cost-control" />
+          <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 space-y-2">
+            <p className="text-sm font-semibold text-amber-900">Project pages are switched off for engineers</p>
+            <p className="text-xs text-amber-800">
+              An admin has set Cost Control so engineers work from their sheets rather than the project page.
+              Everything you need to raise and track a budget is still there.
+            </p>
+            <Link
+              href={`/cost-control/working-sheets?project=${project.id}`}
+              className="inline-flex items-center gap-1.5 rounded-lg bg-amber-700 px-3 py-2 text-xs font-semibold text-white hover:bg-amber-800 min-h-[44px] sm:min-h-0"
+            >
+              Open your working sheets for {project.code ?? 'this project'} <ArrowRight className="h-3.5 w-3.5" />
+            </Link>
+          </div>
+        </div>
+      )
+    }
     return <EngineerProjectView project={{ id: project.id, code: project.code, name: project.name, built_up_sft: project.built_up_sft }} />
   }
 

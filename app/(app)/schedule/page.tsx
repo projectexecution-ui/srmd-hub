@@ -4,7 +4,7 @@ import { PageHeader } from '@/components/PageHeader'
 import { Card } from '@/components/ui/card'
 import { getScheduleProjects, getPortfolioWo } from '@/lib/schedule/data'
 import { formatDate } from '@/lib/utils'
-import { CalendarClock, ChevronRight, Wrench } from 'lucide-react'
+import { CalendarClock, ChevronRight, Wrench, Settings2 } from 'lucide-react'
 
 export const dynamic = 'force-dynamic'
 
@@ -18,7 +18,15 @@ export default async function ScheduleHomePage() {
       <PageHeader
         title="Schedule & WOs"
         subtitle="Pick a project to open its schedule — plan vs actual, Work-Order deadlines, drawings and floor-by-floor progress."
-      />
+      >
+        <Link
+          href="/schedule/settings"
+          className="inline-flex items-center gap-1.5 rounded-lg border border-gray-300 px-3 py-2 text-xs font-medium text-gray-700 hover:bg-gray-50 min-h-[44px] sm:min-h-0"
+        >
+          <Settings2 className="h-3.5 w-3.5" />
+          Settings
+        </Link>
+      </PageHeader>
 
       {/* One WO watch across ALL projects — no opening 20 schedules to check dates */}
       {(wo.due.length > 0 || wo.issuedRecent.length > 0) && (

@@ -155,8 +155,12 @@ export function CcSettingsForm({ initial, users = [], connectedUsers = [] }: {
       { key: 'cc_label_ph_checked',  value: v.label_ph_checked.trim() },
       { key: 'cc_label_atm_checked', value: v.label_atm_checked.trim() },
       { key: 'cc_label_approved',    value: v.label_approved.trim() },
-      // Engineer visibility is fixed policy now (own + assigned sheets,
-      // ERP visible, Internal Estimate/Paid hidden) — no keys saved for it.
+      // Engineer visibility — these three drive real behaviour again
+      // (working-sheets list scope, the project page, the ERP columns).
+      // The Internal Estimate stays hidden from engineers in code regardless.
+      { key: 'cc_eng_estimates',    value: v.eng_estimates },
+      { key: 'cc_eng_projects',     value: String(v.eng_projects) },
+      { key: 'cc_eng_erp',          value: String(v.eng_erp) },
       { key: 'cc_archive_users',    value: v.archive_users.join(',') },
       { key: 'cc_ie_review',        value: String(v.ie_review) },
       { key: 'cc_cumulative_versions', value: String(v.cumulative_versions) },
@@ -322,12 +326,42 @@ export function CcSettingsForm({ initial, users = [], connectedUsers = [] }: {
 
       <div className="space-y-2">
         <p className="text-[11px] uppercase tracking-wider font-semibold text-gray-500">What engineers can see</p>
-        <div className="rounded-md border border-gray-200 bg-gray-50/60 px-3 py-2.5 text-xs text-gray-600 space-y-1">
-          <p className="font-semibold text-gray-800">Fixed rules — no toggles needed:</p>
-          <p>• An engineer sees only the working sheets <b>they created</b> or in sub-skills <b>assigned to them</b> (from the Internal Estimate page).</p>
-          <p>• They see each project&apos;s <b>Budget (ERP)</b> and <b>WO/PO</b> — never the <b>Internal Estimate</b>, <b>Paid</b>, or <b>% Used</b>.</p>
-          <p>• They raise sheets only by <b>uploading their working Excel</b> (typed sheets and thumbrule are management-only).</p>
+        <div className="rounded-md border border-emerald-200 bg-emerald-50/60 px-3 py-2.5 text-xs text-emerald-900">
+          <b>Always hidden, whatever you pick below:</b> the Internal Estimate, Paid, and % Used.
+          That is enforced in the code, not by these settings.
         </div>
+
+        <div className="rounded-md border border-gray-200 px-3 py-2.5 space-y-1.5">
+          <Label className="text-sm">Which working sheets an engineer sees</Label>
+          <select
+            value={v.eng_estimates}
+            onChange={e => setV({ ...v, eng_estimates: e.target.value as CcSettings['eng_estimates'] })}
+            className="w-full h-10 rounded-md border border-gray-300 bg-white px-2 text-sm"
+          >
+            <option value="all">Every sheet in Cost Control (current setting)</option>
+            <option value="projects">Only sheets in projects they work on</option>
+            <option value="own">Only sheets they raised themselves</option>
+          </select>
+          <p className="text-xs text-gray-500">
+            &ldquo;Projects they work on&rdquo; means a project where they hold a sub-skill assignment, or have already raised a sheet.
+          </p>
+        </div>
+
+        <Toggle
+          label="Engineers can open a project page"
+          hint="On (current setting) — an engineer opening a project gets the safe view: categories, sub-skills and Awaiting Approval. Off — they are told project pages are closed and sent to their working sheets instead."
+          checked={v.eng_projects}
+          onChange={x => setV({ ...v, eng_projects: x })}
+        />
+        <Toggle
+          label="Engineers see Budget (ERP) and WO / PO"
+          hint="On (current setting) — the money columns appear on their project view. Off — they see the structure and what is awaiting approval, but no ERP figures."
+          checked={v.eng_erp}
+          onChange={x => setV({ ...v, eng_erp: x })}
+        />
+        <p className="text-xs text-gray-500 px-1">
+          They still raise sheets only by <b>uploading their working Excel</b> — typed sheets and thumbrule stay management-only.
+        </p>
       </div>
 
       <div className="space-y-2">

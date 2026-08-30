@@ -127,16 +127,15 @@ export default async function WorkingSheetsPage({
     if (sp.status && sp.status !== 'archived') q = q.eq('status', sp.status as WSStatus)
   }
   // Engineer estimate visibility — enforced server-side regardless of the
-  // URL's filter params. Admin picks the scope in Settings.
-  // An engineer sees a sheet only if THEY created it, or the sub-skill is
-  // assigned to them for budget working (cc_subskill_assignments). Never the
-  // [IB…] Internal Estimate baseline. (engineer_id is not a safe [IB]
-  // signal — the import attributed those to a real user — so the TS filter
-  // below also drops them by the summary-notes tag.)
-  // Role-based access: an engineer sees every sheet in Cost Control EXCEPT
-  // the confidential [IB…] Internal Estimate baselines (dropped in the TS
-  // filter below — null-safe, unlike a SQL ilike). Sub-skill assignment no
-  // longer scopes what an engineer can see.
+  // URL's filter params, in the TS filter below. Two separate rules:
+  //   1. The confidential [IB…] Internal Estimate baselines are ALWAYS
+  //      dropped for a non-reviewer. No setting can turn that off.
+  //      (engineer_id is not a safe [IB] signal — the import attributed
+  //      those to real users — so it's matched on the summary-notes tag,
+  //      null-safe, unlike a SQL ilike.)
+  //   2. How wide the rest of the view is comes from cc_eng_estimates
+  //      (Settings → What engineers can see): own | projects | all.
+  //      Default 'all' = the behaviour that has been live.
 
   const [wsRes, projectsRes, profilesRes] = await Promise.all([
     q,
@@ -172,9 +171,28 @@ export default async function WorkingSheetsPage({
   const { data: wsData, error: wsError } = wsRes
   let rows = (wsData ?? []) as WSRow[]
   if (!isManagement) {
-    // Engineers see every sheet EXCEPT the confidential [IB…] Internal
-    // Estimate baselines. Never leak those, whatever the query returned.
+    // Engineers NEVER see the confidential [IB…] Internal Estimate baselines.
+    // This drop is unconditional — no setting can switch it off.
     rows = rows.filter(r => !(r.summary_notes ?? '').startsWith('[IB'))
+
+    // On top of that, the admin chooses how wide an engineer's view is
+    // (Cost Control → Settings → What engineers can see). Default 'all' =
+    // today's behaviour, so this narrows nothing until an admin picks.
+    if (cc.eng_estimates !== 'all' && me) {
+      if (cc.eng_estimates === 'own') {
+        rows = rows.filter(r => r.engineer_id === me.id)
+      } else {
+        // 'projects' — every sheet in a project the engineer is involved in:
+        // they hold a sub-skill assignment there, or they raised a sheet there.
+        const { data: mine } = await supabase
+          .from('cc_subskill_assignments')
+          .select('project_id')
+          .eq('engineer_id', me.id)
+        const allowed = new Set<string>((mine ?? []).map(a => a.project_id as string))
+        for (const r of rows) if (r.engineer_id === me.id) allowed.add(r.project_id)
+        rows = rows.filter(r => allowed.has(r.project_id))
+      }
+    }
   }
   const projects = projectsRes.data ?? []
   type ProfileLite = { id: string; full_name: string | null; name: string | null }

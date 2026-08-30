@@ -84,9 +84,13 @@ export const CC_SETTINGS_DEFAULTS: CcSettings = {
   label_ph_checked: 'Project Head Checked Amt',
   label_atm_checked: 'Atm Head Checked Amt',
   label_approved: 'Approved Amount',
-  eng_estimates: 'own',
-  eng_projects: false,
-  eng_erp: false,
+  // These three describe what engineers see TODAY. They were parsed but never
+  // read for a while; now that the Settings fields drive real behaviour again,
+  // the defaults must equal the live behaviour or turning them on would lock
+  // engineers out of pages they use every day.
+  eng_estimates: 'all',
+  eng_projects: true,
+  eng_erp: true,
   archive_users: [],
   ie_review: false,
   cumulative_versions: false,
