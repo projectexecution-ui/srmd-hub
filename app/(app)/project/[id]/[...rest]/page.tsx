@@ -4,6 +4,8 @@ import { requirePermission } from '@/lib/auth'
 import { findTab, PROJECT_TABS, tabHref } from '@/lib/revamp/tabs'
 import { Hammer, ArrowRight } from 'lucide-react'
 import CostControlProjectDetailPage from '@/app/(app)/cost-control/projects/[id]/page'
+import ProjectSchedulePage from '@/app/(app)/schedule/[id]/page'
+import { ApprovalsTab, StoresTab, JmrTab } from '../tabs'
 
 export const dynamic = 'force-dynamic'
 
@@ -40,6 +42,15 @@ export default async function ProjectTabPage({
         searchParams={Promise.resolve({ ...sp, in_cockpit: '1' })}
       />
     )
+  }
+
+  if (slug === 'approvals') return <ApprovalsTab projectId={id} />
+  if (slug === 'stores')    return <StoresTab projectId={id} />
+  if (slug === 'jmr')       return <JmrTab projectId={id} />
+
+  if (slug === 'schedule') {
+    // The existing per-project schedule page, whole, inside the cockpit.
+    return <ProjectSchedulePage params={Promise.resolve({ id })} />
   }
 
   if (slug === 'setup') {

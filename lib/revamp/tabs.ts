@@ -27,12 +27,12 @@ export interface ProjectTab {
 export const PROJECT_TABS: ProjectTab[] = [
   { slug: '',            label: 'Overview',    hint: 'Money, progress and what is waiting on someone', built: true,  permissionSlug: 'cost-control' },
   { slug: 'budget',      label: 'Budget',      hint: 'Internal Estimate, approvals and ERP position',  built: true,  permissionSlug: 'cost-control' },
-  { slug: 'approvals',   label: 'Approvals',   hint: 'Everything waiting on someone in this project',  built: false, permissionSlug: 'cost-control' },
+  { slug: 'approvals',   label: 'Approvals',   hint: 'Everything waiting on someone in this project',  built: true,  permissionSlug: 'cost-control' },
   { slug: 'reports',     label: 'Reports',     hint: 'Contractor, Supplier and Bills for this project', built: false, permissionSlug: 'contractor-report' },
-  { slug: 'schedule',    label: 'Schedule',    hint: 'Plan vs actual, WO deadlines and drawings',      built: false, permissionSlug: 'schedule' },
-  { slug: 'stores',      label: 'Stores',      hint: 'Stock, requests and gate movements',             built: false, permissionSlug: 'warehouse' },
+  { slug: 'schedule',    label: 'Schedule',    hint: 'Plan vs actual, WO deadlines and drawings',      built: true,  permissionSlug: 'schedule' },
+  { slug: 'stores',      label: 'Stores',      hint: 'Stock, requests and gate movements',             built: true,  permissionSlug: 'warehouse' },
   { slug: 'procurement', label: 'Indent → PO', hint: 'Indents raised, POs pending, deliveries due',    built: false, permissionSlug: 'procurement-tracker' },
-  { slug: 'jmr',         label: 'JMR',         hint: 'Daily measured work on this site',               built: false, permissionSlug: 'jmr' },
+  { slug: 'jmr',         label: 'JMR',         hint: 'Daily measured work on this site',               built: true,  permissionSlug: 'jmr' },
   { slug: 'discussions', label: 'Discussions', hint: 'Instructions and questions, with owners',        built: false, permissionSlug: 'cost-control' },
   { slug: 'setup',       label: 'Setup',       hint: 'Categories, approvers, area and grouping',       built: true,  permissionSlug: 'cost-control' },
 ]
