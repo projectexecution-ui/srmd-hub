@@ -1,5 +1,6 @@
 import Link from 'next/link'
-import { notFound } from 'next/navigation'
+import { notFound, redirect } from 'next/navigation'
+import { IS_DEMO } from '@/lib/demo-mode'
 import { createClient } from '@/lib/supabase/server'
 import { requirePermission, can } from '@/lib/auth'
 import { checkIsCcReviewer, checkCanDecideInternalEstimate, checkCanRequestIeRevision } from '@/components/cost-control/ws-actions'
@@ -68,7 +69,9 @@ interface WSAgg {
 export default async function CostControlProjectDetailPage(
   { params, searchParams }: {
     params: Promise<{ id: string }>
-    searchParams: Promise<{ focus_disc?: string; focus_sub?: string; ws?: string }>
+    // `in_cockpit` is set only when the revamp's Budget tab renders this
+    // component; it suppresses the trial-site redirect below.
+    searchParams: Promise<{ focus_disc?: string; focus_sub?: string; ws?: string; in_cockpit?: string }>
   }
 ) {
   const perms = await requirePermission('cost-control', 'view')
@@ -80,7 +83,25 @@ export default async function CostControlProjectDetailPage(
   // approval link (home inbox, My Approvals, the bell, the email) now lands
   // here rather than on the bare voucher, so he judges the ask against the
   // project before opening it.
-  const { focus_disc: focusDisc, focus_sub: focusSub, ws: focusWs } = await searchParams
+  const sp = await searchParams
+  const { focus_disc: focusDisc, focus_sub: focusSub, ws: focusWs } = sp
+
+  // On the TRIAL deployment, every route into a project lands in the new
+  // cockpit — including the deep links inside old approval emails and the
+  // dashboard's "Needs you now" cards, which all point at this URL. Without
+  // this you would have to know to click a project from the Cost Control list
+  // to see the revamp at all.
+  //
+  // `in_cockpit` is how the Budget tab renders THIS component from inside the
+  // cockpit without bouncing back here forever.
+  if (IS_DEMO && !sp.in_cockpit) {
+    const qs = new URLSearchParams()
+    if (focusDisc) qs.set('focus_disc', focusDisc)
+    if (focusSub) qs.set('focus_sub', focusSub)
+    if (focusWs) qs.set('ws', focusWs)
+    const tail = qs.toString()
+    redirect(`/project/${id}/budget${tail ? `?${tail}` : ''}`)
+  }
 
   const supabase = await createClient()
   const ccSettings = await getCcSettings()

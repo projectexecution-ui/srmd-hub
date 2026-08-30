@@ -30,10 +30,14 @@ export default async function ProjectTabPage({
 
   if (slug === 'budget') {
     // The live Internal Estimate page, unchanged, inside the cockpit chrome.
+    // `in_cockpit` tells it not to bounce back to /project/[id]/budget — on the
+    // trial deployment that page redirects here, so without the flag the two
+    // would ping-pong forever.
+    const sp = await searchParams
     return (
       <CostControlProjectDetailPage
         params={Promise.resolve({ id })}
-        searchParams={searchParams}
+        searchParams={Promise.resolve({ ...sp, in_cockpit: '1' })}
       />
     )
   }
