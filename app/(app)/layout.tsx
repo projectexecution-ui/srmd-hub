@@ -5,6 +5,7 @@ import { InstallPrompt } from '@/components/InstallPrompt'
 import { NotificationProvider } from '@/components/NotificationProvider'
 import { ConfirmHost } from '@/components/ui/confirm-dialog'
 import { AccessPendingScreen } from '@/components/AccessPendingScreen'
+import { DemoBanner } from '@/components/DemoBanner'
 import { getMyProfile, getMyPermissions, getDisabledModuleSlugs, isPortalOwner } from '@/lib/auth'
 import { getModuleLabels } from '@/lib/module-labels'
 import { getSidebarGroups } from '@/lib/sidebar-groups.server'
@@ -37,6 +38,8 @@ export default async function AppLayout({ children }: { children: React.ReactNod
 
   return (
     <NotificationProvider userId={profile.id}>
+      {/* Renders nothing on the live site. */}
+      <DemoBanner />
       <div className="flex flex-col md:flex-row min-h-screen">
         <NavBar
           profile={profile}

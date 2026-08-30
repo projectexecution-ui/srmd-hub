@@ -2,6 +2,14 @@ import type { NextConfig } from 'next'
 
 const nextConfig: NextConfig = {
   reactStrictMode: true,
+  // Trial-site flag. VERCEL_ENV is 'preview' on every non-production Vercel
+  // deployment and 'production' on the live site, so this is computed per
+  // build with nothing to set in the dashboard — and the live site can never
+  // be a trial by accident. Copied to a NEXT_PUBLIC_ name so client
+  // components (which talk to supabase.co directly) can see it too.
+  env: {
+    NEXT_PUBLIC_DEMO_MODE: process.env.VERCEL_ENV === 'preview' ? '1' : '',
+  },
   // @resvg/resvg-js ships a native .node binding that Turbopack can't bundle
   // into an ESM chunk ("non-ecmascript placeable asset"). Marking it external
   // keeps it as a runtime require() in the server bundle.
