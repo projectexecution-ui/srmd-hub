@@ -9,6 +9,9 @@ import { DemoBanner } from '@/components/DemoBanner'
 import { getMyProfile, getMyPermissions, getDisabledModuleSlugs, isPortalOwner } from '@/lib/auth'
 import { getModuleLabels } from '@/lib/module-labels'
 import { getSidebarGroups } from '@/lib/sidebar-groups.server'
+import { IS_DEMO } from '@/lib/demo-mode'
+import { createClient } from '@/lib/supabase/server'
+import type { FlatProject } from '@/lib/revamp/project-tree'
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const [profile, permissions, disabledSlugs, portalOwner, moduleLabelsMap, sidebarGroups] = await Promise.all([
@@ -23,6 +26,21 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const moduleLabels: Record<string, string> = Object.fromEntries(
     Object.entries(moduleLabelsMap).map(([slug, m]) => [slug, m.label]),
   )
+
+  // Project hierarchy for the revamped Projects lane. Only queried on the
+  // trial deployment, so the live site carries no extra round trip.
+  let projectList: FlatProject[] = []
+  if (IS_DEMO && profile) {
+    const sb = await createClient()
+    const { data } = await sb.from('projects')
+      .select('id, code, name, parent_project_id').is('archived_at', null)
+    projectList = ((data ?? []) as Array<Record<string, unknown>>).map(p => ({
+      id: p.id as string,
+      code: (p.code as string | null) ?? null,
+      name: p.name as string,
+      parentId: (p.parent_project_id as string | null) ?? null,
+    }))
+  }
 
   if (!profile) redirect('/login')
 
@@ -48,6 +66,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           isPortalOwner={portalOwner}
           moduleLabels={moduleLabels}
           sidebarGroups={sidebarGroups}
+          projectList={projectList}
         />
         <main className="flex-1 min-w-0 overflow-x-auto">
           {children}

@@ -1,44 +1,46 @@
+import { Fragment } from 'react'
+import { notFound } from 'next/navigation'
+import Link from 'next/link'
 import { formatINR } from '@/lib/utils'
 import { EmptyState } from '@/components/ui/empty-state'
+import { TreeProvider, TreeToolbar, CatChevron, CatRows, SubRow } from '@/components/cost-control/project-tree'
 import { loadProjectReports, type ReportSide } from '@/lib/revamp/reports-data'
-import { FileBarChart, AlertTriangle } from 'lucide-react'
+import { loadCockpit } from '@/lib/revamp/project-cockpit'
+import { AlertTriangle } from 'lucide-react'
 
 /**
- * Contractor and Supplier money for one project, as a tree —
- * category → party — which is the shape Aksha asked for ("same as Budget vs
- * Actual View"). Collapsed by default via <details>, per his standing rule
- * that long lists start rolled up.
+ * Contractor and Supplier money for one project.
+ *
+ * Uses the SAME tree machinery as the Internal Estimate page — TreeProvider /
+ * CatChevron / CatRows / SubRow — so it collapses, expands and reads exactly
+ * like the table Aksha already works in: category rows over party rows, sticky
+ * header inside its own scroll box, ₹/sft under every figure, and a matching
+ * card list on mobile. Not a second table invented for this screen.
  */
 export async function ReportsTab({ projectId }: { projectId: string }) {
-  const { contractor, supplier, unattributed } = await loadProjectReports(projectId)
+  const [{ contractor, supplier, unattributed }, cockpit] = await Promise.all([
+    loadProjectReports(projectId),
+    loadCockpit(projectId),
+  ])
+  if (!cockpit) notFound()
+
+  const sft = cockpit.project.builtUpSft ?? 0
   const nothing = contractor.categories.length === 0 && supplier.categories.length === 0
 
   return (
-    <section className="space-y-4">
-      <header className="flex items-start gap-2.5">
-        <FileBarChart className="h-4 w-4 mt-0.5 text-gray-400" />
-        <div>
-          <h2 className="text-sm font-bold text-gray-900">Contractor &amp; Supplier</h2>
-          <p className="text-xs text-gray-500">
-            From the weekly IN4 uploads, attributed to this project by sub-project name.
-          </p>
-        </div>
-      </header>
-
+    <div className="space-y-4">
       {nothing ? (
         <EmptyState
           title="Nothing attributed to this project yet"
-          description="The uploads hold no sub-project whose name matches this project. See the note below — that is a naming gap, not missing money."
+          description="No sub-project in the uploads carries this project's name. That is a naming gap, not missing money — see the note below."
         />
       ) : (
         <>
-          <SideBlock title="Contractor" side={contractor} partyLabel="Contractor" />
-          <SideBlock title="Supplier" side={supplier} partyLabel="Supplier" />
+          <SideTable title="Contractor" side={contractor} partyLabel="Contractor" sft={sft} />
+          <SideTable title="Supplier" side={supplier} partyLabel="Supplier" sft={sft} />
         </>
       )}
 
-      {/* The holding list. Never hide money we could not place — that is how it
-          goes missing without anyone noticing. */}
       {unattributed.subProjects > 0 && (
         <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3">
           <p className="text-sm font-semibold text-amber-900 flex items-center gap-2">
@@ -46,85 +48,147 @@ export async function ReportsTab({ projectId }: { projectId: string }) {
             {unattributed.subProjects} sub-projects belong to no project in CT Hub
           </p>
           <p className="text-xs text-amber-800 mt-1">
-            {formatINR(unattributed.bill)} of billed work sits in the uploads under names the hub does not
-            have — either the project has not been created yet, or IN4 spells it differently.
-            It is parked here rather than guessed onto a project. The moment the project exists
-            or the name is confirmed, it attaches on its own.
+            {formatINR(unattributed.bill)} of billed work sits in the uploads under names the hub does
+            not have. Parked rather than guessed onto a project — it attaches on its own once the
+            project exists or the name is confirmed.
           </p>
+          <Link href="/masters/mapping" className="inline-block mt-1.5 text-xs font-semibold text-amber-900 underline">
+            See exactly which, and why →
+          </Link>
         </div>
       )}
-    </section>
+    </div>
   )
 }
 
-function SideBlock({ title, side, partyLabel }: { title: string; side: ReportSide; partyLabel: string }) {
+/** ₹ with the /sft companion beneath, exactly as the Internal Estimate shows it. */
+function Money({ value, sft, className = '' }: { value: number; sft: number; className?: string }) {
+  if (!value) return <span className="text-gray-300">—</span>
+  const per = sft > 0 ? Math.round(value / sft) : 0
+  return (
+    <span className={className}>
+      {formatINR(value)}
+      {per > 0 && (
+        <span className="block text-[10px] font-normal text-gray-400 tabular-nums">
+          ₹{per.toLocaleString('en-IN')}/sft
+        </span>
+      )}
+    </span>
+  )
+}
+
+function SideTable({ title, side, partyLabel, sft }: {
+  title: string; side: ReportSide; partyLabel: string; sft: number
+}) {
   if (side.categories.length === 0) return null
+  const catIds = side.categories.map(c => c.category)
 
   return (
-    <div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
-      <div className="px-4 py-2.5 border-b border-gray-100 flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
-        <h3 className="text-sm font-bold text-gray-900">{title}</h3>
-        <p className="text-xs text-gray-500">
-          from {side.subProjects.length} sub-project{side.subProjects.length === 1 ? '' : 's'}
-        </p>
-      </div>
+    <TreeProvider allCatIds={catIds} emptyCount={0}>
+      <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
+        <div className="flex items-center justify-between px-3 py-2 border-b border-gray-100 bg-gray-50/60 gap-2 flex-wrap">
+          <span className="text-sm font-bold text-gray-900">
+            {title}
+            <span className="ml-2 text-[11px] font-normal text-gray-500">
+              from {side.subProjects.length} sub-project{side.subProjects.length === 1 ? '' : 's'}
+            </span>
+          </span>
+          <TreeToolbar />
+        </div>
 
-      <div className="grid grid-cols-3 divide-x divide-gray-100 border-b border-gray-100">
-        <Fig label="WO / PO" value={side.wo} />
-        <Fig label="Billed" value={side.bill} />
-        <Fig label="Paid" value={side.paid} />
-      </div>
-
-      <div className="divide-y divide-gray-100">
-        {side.categories.map(c => (
-          <details key={c.category} className="group">
-            <summary className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 px-4 py-2.5 cursor-pointer hover:bg-gray-50 list-none [&::-webkit-details-marker]:hidden min-h-[44px]">
-              <span className="flex items-center gap-2 min-w-0">
-                <span className="text-gray-400 transition-transform group-open:rotate-90">›</span>
-                <span className="text-sm text-gray-900 truncate">{c.category}</span>
-                <span className="text-[11px] text-gray-400 whitespace-nowrap">
-                  {c.parties.length} {partyLabel.toLowerCase()}{c.parties.length === 1 ? '' : 's'}
-                </span>
-              </span>
-              <span className="tabular-nums text-sm font-semibold text-gray-900">{formatINR(c.bill)}</span>
-            </summary>
-
-            <div className="bg-gray-50/60 px-4 pb-2">
-              <div className="overflow-x-auto">
-                <table className="w-full text-[12.5px] min-w-[420px]">
-                  <thead>
-                    <tr className="text-left text-gray-500">
-                      <th className="py-1.5 font-medium">{partyLabel}</th>
-                      <th className="py-1.5 font-medium text-right w-28">WO / PO</th>
-                      <th className="py-1.5 font-medium text-right w-28">Billed</th>
-                      <th className="py-1.5 font-medium text-right w-28">Paid</th>
+        {/* Desktop — header cells carry their own sticky + opaque background,
+            and the BODY scrolls in this box. See AGENTS.md: page-level sticky
+            does not work anywhere in this app. */}
+        <div className="overflow-auto max-h-[70vh] hidden md:block">
+          <table className="w-full text-[13px]">
+            <thead className="bg-gray-50 text-left">
+              <tr>
+                <th className="sticky top-0 z-10 bg-gray-50 border-b border-gray-200 px-3 py-2 font-semibold text-gray-600 min-w-[260px]">Category / {partyLabel}</th>
+                <th className="sticky top-0 z-10 bg-gray-50 border-b border-gray-200 px-3 py-2 font-semibold text-gray-600 text-right w-32">WO / PO</th>
+                <th className="sticky top-0 z-10 bg-gray-50 border-b border-gray-200 px-3 py-2 font-semibold text-gray-600 text-right w-32">Billed</th>
+                <th className="sticky top-0 z-10 bg-gray-50 border-b border-gray-200 px-3 py-2 font-semibold text-gray-600 text-right w-32">Paid</th>
+                <th className="sticky top-0 z-10 bg-gray-50 border-b border-gray-200 px-3 py-2 font-semibold text-gray-600 text-right w-28">Outstanding</th>
+              </tr>
+            </thead>
+            <tbody>
+              {side.categories.map(c => {
+                const outstanding = c.parties.reduce((s, p) => s + p.outstanding, 0)
+                return (
+                  <Fragment key={c.category}>
+                    <tr className="bg-gray-50/60 border-t border-gray-200">
+                      <td className="px-3 py-2 font-semibold text-gray-800">
+                        <CatChevron catId={c.category} />
+                        {c.category}
+                      </td>
+                      <td className="px-3 py-2 text-right tabular-nums text-gray-600"><Money value={c.wo} sft={sft} /></td>
+                      <td className="px-3 py-2 text-right tabular-nums font-semibold text-gray-900"><Money value={c.bill} sft={sft} /></td>
+                      <td className="px-3 py-2 text-right tabular-nums text-gray-600"><Money value={c.paid} sft={sft} /></td>
+                      <td className="px-3 py-2 text-right tabular-nums text-amber-700">{outstanding > 0 ? formatINR(outstanding) : '—'}</td>
                     </tr>
-                  </thead>
-                  <tbody>
-                    {c.parties.map(p => (
-                      <tr key={p.party} className="border-t border-gray-200/70">
-                        <td className="py-1.5 pr-3 text-gray-800">{p.party}</td>
-                        <td className="py-1.5 text-right tabular-nums text-gray-600">{p.wo > 0 ? formatINR(p.wo) : '—'}</td>
-                        <td className="py-1.5 text-right tabular-nums text-gray-900">{formatINR(p.bill)}</td>
-                        <td className="py-1.5 text-right tabular-nums text-gray-600">{formatINR(p.paid)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          </details>
-        ))}
-      </div>
-    </div>
-  )
-}
+                    <CatRows catId={c.category}>
+                      {c.parties.map(p => (
+                        <SubRow key={p.party} empty={false}>
+                          <tr className="border-t border-gray-100 hover:bg-gray-50/60">
+                            <td className="pl-9 pr-3 py-2 text-gray-700">{p.party}</td>
+                            <td className="px-3 py-2 text-right tabular-nums text-gray-600"><Money value={p.wo} sft={sft} /></td>
+                            <td className="px-3 py-2 text-right tabular-nums text-gray-900"><Money value={p.bill} sft={sft} /></td>
+                            <td className="px-3 py-2 text-right tabular-nums text-gray-600"><Money value={p.paid} sft={sft} /></td>
+                            <td className="px-3 py-2 text-right tabular-nums text-amber-700">{p.outstanding > 0 ? formatINR(p.outstanding) : '—'}</td>
+                          </tr>
+                        </SubRow>
+                      ))}
+                    </CatRows>
+                  </Fragment>
+                )
+              })}
+              <tr className="border-t-2 border-gray-300 bg-gray-50 font-semibold">
+                <td className="px-3 py-2 text-gray-900">Total</td>
+                <td className="px-3 py-2 text-right tabular-nums text-gray-700"><Money value={side.wo} sft={sft} /></td>
+                <td className="px-3 py-2 text-right tabular-nums text-gray-900"><Money value={side.bill} sft={sft} /></td>
+                <td className="px-3 py-2 text-right tabular-nums text-gray-700"><Money value={side.paid} sft={sft} /></td>
+                <td className="px-3 py-2"></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
 
-function Fig({ label, value }: { label: string; value: number }) {
-  return (
-    <div className="px-4 py-2.5">
-      <p className="text-[10px] uppercase tracking-wide font-semibold text-gray-500">{label}</p>
-      <p className="text-sm font-bold tabular-nums text-gray-900 mt-0.5">{value > 0 ? formatINR(value) : '—'}</p>
-    </div>
+        {/* Mobile — the same data as cards, with the category bar pinning as
+            you scroll its rows. Its own scroll box, same reason as above. */}
+        <div className="md:hidden divide-y divide-gray-100 overflow-auto max-h-[70vh]">
+          {side.categories.map(c => (
+            <div key={c.category}>
+              <div className="sticky top-0 z-10 px-4 py-2 bg-gray-50 border-b border-gray-200 flex items-center justify-between gap-2">
+                <span className="flex items-center min-w-0 text-[12px] font-semibold text-gray-800">
+                  <CatChevron catId={c.category} />
+                  <span className="truncate">{c.category}</span>
+                </span>
+                <span className="text-[11px] text-gray-600 flex-shrink-0 whitespace-nowrap tabular-nums">
+                  {formatINR(c.bill)}
+                </span>
+              </div>
+              <CatRows catId={c.category}>
+                {c.parties.map(p => (
+                  <div key={p.party} className="px-4 py-3">
+                    <p className="text-sm text-gray-900">{p.party}</p>
+                    <div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-0.5 text-[11px] text-gray-500">
+                      <span>WO <span className="font-semibold text-gray-700 tabular-nums">{p.wo ? formatINR(p.wo) : '—'}</span></span>
+                      <span>Billed <span className="font-semibold text-gray-900 tabular-nums">{formatINR(p.bill)}</span></span>
+                      <span>Paid <span className="font-semibold text-gray-700 tabular-nums">{formatINR(p.paid)}</span></span>
+                      {p.outstanding > 0 && (
+                        <span>Outstanding <span className="font-semibold text-amber-700 tabular-nums">{formatINR(p.outstanding)}</span></span>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </CatRows>
+            </div>
+          ))}
+          <div className="px-4 py-3 bg-gray-50 flex items-center justify-between">
+            <span className="text-sm font-semibold text-gray-900">Total billed</span>
+            <span className="text-sm font-bold tabular-nums text-gray-900">{formatINR(side.bill)}</span>
+          </div>
+        </div>
+      </div>
+    </TreeProvider>
   )
 }

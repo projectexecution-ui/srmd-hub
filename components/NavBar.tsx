@@ -13,6 +13,8 @@ import { MODULES } from '@/lib/modules'
 import { buildNavTree, type SidebarGroup } from '@/lib/sidebar-groups'
 import { IS_DEMO } from '@/lib/demo-mode'
 import { buildRevampNav } from '@/lib/revamp/nav'
+import { ProjectTree } from '@/components/nav/ProjectTree'
+import type { FlatProject } from '@/lib/revamp/project-tree'
 import NotificationBell from '@/components/NotificationBell'
 
 interface NavBarProps {
@@ -24,6 +26,8 @@ interface NavBarProps {
   moduleLabels?: Record<string, string>
   /** Admin-defined groups that nest modules under a named, collapsible branch. */
   sidebarGroups?: SidebarGroup[]
+  /** Project hierarchy for the revamped Projects lane (trial only). */
+  projectList?: FlatProject[]
 }
 
 // Compact labels for the sidebar so they don't wrap. Defaults to the
@@ -45,7 +49,7 @@ const GROUPS_OPEN_KEY = 'srmd_nav_groups_open'
 
 type NavItem = { href: string; label: string; icon: typeof LayoutDashboard; slug: string | null }
 
-export default function NavBar({ profile, permissions, disabledSlugs = [], isPortalOwner = false, moduleLabels = {}, sidebarGroups = [] }: NavBarProps) {
+export default function NavBar({ profile, permissions, disabledSlugs = [], isPortalOwner = false, moduleLabels = {}, sidebarGroups = [], projectList = [] }: NavBarProps) {
   const disabled = new Set(disabledSlugs)
   const pathname = usePathname()
   const router = useRouter()
@@ -223,7 +227,9 @@ export default function NavBar({ profile, permissions, disabledSlugs = [], isPor
                   branch. Today's layout is groups-then-flat, unchanged. */}
               {revamp
                 ? <>
-                    {primaryLinks.map(it => renderLink(it, true))}
+                    {primaryLinks.map(it => it.label === 'Projects'
+                      ? <ProjectTree key="tree" projects={projectList} onNavigate={() => setOpen(false)} />
+                      : renderLink(it, true))}
                     {tree.groups.map(g => renderGroup(g, true))}
                   </>
                 : <>
@@ -298,7 +304,9 @@ export default function NavBar({ profile, permissions, disabledSlugs = [], isPor
             flatLinks.map(it => renderLink(it, false))
           ) : revamp ? (
             <>
-              {primaryLinks.map(it => renderLink(it, false))}
+              {primaryLinks.map(it => it.label === 'Projects'
+                ? <ProjectTree key="tree" projects={projectList} />
+                : renderLink(it, false))}
               {tree.groups.map(g => renderGroup(g, false))}
             </>
           ) : (
