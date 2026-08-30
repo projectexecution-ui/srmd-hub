@@ -28,6 +28,16 @@ function fakeClient() {
   return {
     calls,
     client: {
+      // Signing in must keep working on the trial site — it is the same
+      // database, so people log in with their normal account. auth.* talks to
+      // supabase.co directly and writes no application data.
+      auth: {
+        signInWithPassword: (..._a: unknown[]) => { calls.push('signInWithPassword'); return Promise.resolve({ error: null }) },
+        signInWithOAuth: (..._a: unknown[]) => { calls.push('signInWithOAuth'); return Promise.resolve({ error: null }) },
+        exchangeCodeForSession: (..._a: unknown[]) => { calls.push('exchangeCodeForSession'); return Promise.resolve({ error: null }) },
+        getUser: (..._a: unknown[]) => { calls.push('getUser'); return Promise.resolve({ data: { user: null } }) },
+        signOut: (..._a: unknown[]) => { calls.push('signOut'); return Promise.resolve({ error: null }) },
+      },
       from: (_t: string) => builder,
       rpc: (..._a: unknown[]) => { calls.push('rpc'); return Promise.resolve({ data: null }) },
       storage: {
@@ -103,6 +113,18 @@ describe('demo mode — the trial site', () => {
     guarded.storage.from('cc-sheets').download('a.xlsx')
     expect(calls).toEqual(['download'])
   })
+
+  // Regression guard: an over-broad block here would make the trial site
+  // impossible to enter at all, which is exactly how it first went wrong.
+  it.each(['signInWithPassword', 'signInWithOAuth', 'exchangeCodeForSession', 'getUser', 'signOut'] as const)(
+    'lets auth.%s() through so people can actually sign in', async (method) => {
+      const m = await loadWith({ VERCEL_ENV: 'preview' })
+      const { client, calls } = fakeClient()
+      const guarded = m.guardSupabaseClient(client)
+      await expect(guarded.auth[method]('a@b.c')).resolves.toBeDefined()
+      expect(calls).toContain(method)
+    },
+  )
 
   it('still allows reads — the whole point of the trial site', async () => {
     const m = await loadWith({ VERCEL_ENV: 'preview' })
