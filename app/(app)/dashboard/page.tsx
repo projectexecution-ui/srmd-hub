@@ -15,6 +15,8 @@ import { getHomeBudgetGroups } from '@/lib/cost-control/my-budget-approvals'
 import { CostControlSnapshot } from '@/components/dashboard/CostControlSnapshot'
 import { ReturnedToEngineer } from '@/components/dashboard/ReturnedToEngineer'
 import { getReturnedToEngineer } from '@/lib/cost-control/returned-to-engineer'
+import { IS_DEMO } from '@/lib/demo-mode'
+import { WorkStrip } from './WorkStrip'
 
 export const dynamic = 'force-dynamic'
 
@@ -116,6 +118,11 @@ export default async function DashboardPage() {
       {/* Returned budgets — NOT the approver's to act on, so deliberately below
           "Needs you now" and quieter. A chasing list, so the loop gets closed. */}
       {showCC && <ReturnedToEngineer items={returned.items} />}
+
+      {/* TRIAL DEPLOYMENT: the rest of the hub's WORK — material requests,
+          deletions, conversation and whether the weekly uploads are current.
+          "Needs you now" above is untouched, per Aksha. Live is unaffected. */}
+      {IS_DEMO && <WorkStrip />}
 
       {/* Your budget work — an engineer's own drafts/returns/awaiting (things
           that don't appear in the approval inbox). Self-hides when there's none. */}
