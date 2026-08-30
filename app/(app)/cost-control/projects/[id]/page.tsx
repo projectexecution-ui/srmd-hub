@@ -1840,7 +1840,7 @@ function Th({
   return (
     // Sticky lives on the CELLS, not the <thead> — and the cell carries its own
     // opaque background + bottom border, or rows scroll through underneath it.
-    <th className={`sticky top-0 z-10 bg-gray-50 border-b border-gray-200 px-2 py-2.5 text-${align} font-semibold text-[10px] uppercase tracking-wide text-gray-500 ${className}`}>
+    <th className={`sticky top-0 z-10 h-12 bg-gray-50 border-b border-gray-200 px-2 py-2.5 text-${align} font-semibold text-[10px] uppercase tracking-wide text-gray-500 ${className}`}>
       {children}
     </th>
   )

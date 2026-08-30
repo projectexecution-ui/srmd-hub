@@ -97,12 +97,12 @@ export function SubSkillBoq({ sheets }: { sheets: BoqSheet[] }) {
           <table className="w-full table-fixed text-[12px] hidden md:table">
             <thead className="text-left text-[10px] uppercase tracking-wide text-gray-400">
               <tr>
-                <th className="sticky top-[44px] z-[9] bg-white border-b border-gray-100 px-2 py-1.5 w-[4%]">#</th>
-                <th className="sticky top-[44px] z-[9] bg-white border-b border-gray-100 px-2 py-1.5 w-[40%]">Description &amp; take-off</th>
-                <th className="sticky top-[44px] z-[9] bg-white border-b border-gray-100 px-2 py-1.5 w-[8%]">Unit</th>
-                <th className="sticky top-[44px] z-[9] bg-white border-b border-gray-100 px-2 py-1.5 text-right w-[13%]">Qty</th>
-                <th className="sticky top-[44px] z-[9] bg-white border-b border-gray-100 px-2 py-1.5 text-right w-[17%]">Rate</th>
-                <th className="sticky top-[44px] z-[9] bg-white border-b border-gray-100 px-2 py-1.5 text-right w-[18%]">Amount</th>
+                <th className="sticky top-12 z-[9] bg-white border-b border-gray-100 px-2 py-1.5 w-[4%]">#</th>
+                <th className="sticky top-12 z-[9] bg-white border-b border-gray-100 px-2 py-1.5 w-[40%]">Description &amp; take-off</th>
+                <th className="sticky top-12 z-[9] bg-white border-b border-gray-100 px-2 py-1.5 w-[8%]">Unit</th>
+                <th className="sticky top-12 z-[9] bg-white border-b border-gray-100 px-2 py-1.5 text-right w-[13%]">Qty</th>
+                <th className="sticky top-12 z-[9] bg-white border-b border-gray-100 px-2 py-1.5 text-right w-[17%]">Rate</th>
+                <th className="sticky top-12 z-[9] bg-white border-b border-gray-100 px-2 py-1.5 text-right w-[18%]">Amount</th>
               </tr>
             </thead>
             <tbody>
