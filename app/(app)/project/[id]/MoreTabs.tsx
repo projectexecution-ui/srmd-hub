@@ -32,14 +32,19 @@ export async function ProcurementTab({ projectId }: { projectId: string }) {
         </div>
       </header>
 
-      {p.isThisProject ? (
+      {p.matchedName ? (
         <>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+          <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
             <Stat label="Indent lines" value={p.totalLines.toLocaleString('en-IN')} />
             <Stat label="Still pending" value={p.pendingLines.toLocaleString('en-IN')} tone={p.pendingLines ? 'amber' : 'plain'} />
             <Stat label="Pending value" value={p.pendingValue > 0 ? formatINR(p.pendingValue) : '—'} tone={p.pendingValue > 0 ? 'amber' : 'plain'} />
             <Stat label="PO raised" value={p.poValue > 0 ? formatINR(p.poValue) : '—'} />
+            <Stat label="Received (GRN)" value={p.grnValue > 0 ? formatINR(p.grnValue) : '—'} />
           </div>
+          <p className="text-[11px] text-gray-500">
+            Matched to <b className="text-gray-700">&ldquo;{p.matchedName}&rdquo;</b> in the upload,
+            which covers {p.uploadCovers} projects.
+          </p>
           <Link href="/procurement-tracker" className="inline-block text-xs font-medium text-indigo-700 hover:underline">
             Open the full tracker →
           </Link>
@@ -48,21 +53,30 @@ export async function ProcurementTab({ projectId }: { projectId: string }) {
         <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3">
           <p className="text-sm font-semibold text-amber-900 flex items-center gap-2">
             <Info className="h-4 w-4" />
-            {p.uploadedFor
-              ? `The latest upload covers “${p.uploadedFor}”, not this project`
+            {p.uploadCovers > 0
+              ? 'This project has no name in the tracker upload'
               : 'No tracker upload yet'}
           </p>
           <p className="text-xs text-amber-800 mt-1">
-            {p.uploadedFor
-              ? <>The Indent → PO tracker keeps one uploaded snapshot at a time and identifies it by
-                  IN4&rsquo;s project name — there is no project id anywhere in it. So a project only
-                  shows figures here when it is the one most recently uploaded, or once its IN4 name
-                  is linked to it.</>
+            {p.uploadCovers > 0
+              ? <>The upload covers {p.uploadCovers} projects, but IN4 identifies them by name and none
+                  of those names is this project. That is the same naming gap the Reports tab has.</>
               : <>Nothing has been uploaded to the tracker yet.</>}
           </p>
-          <Link href="/procurement-tracker" className="inline-block mt-2 text-xs font-medium text-amber-900 underline">
-            Open the tracker →
-          </Link>
+          {p.unmatchedNames.length > 0 && (
+            <p className="text-[11px] text-amber-700 mt-1.5">
+              In the upload: {p.unmatchedNames.slice(0, 8).join(' · ')}
+              {p.unmatchedNames.length > 8 && ` · +${p.unmatchedNames.length - 8} more`}
+            </p>
+          )}
+          <div className="flex flex-wrap gap-3 mt-2">
+            <Link href="/masters/mapping" className="text-xs font-semibold text-amber-900 underline">
+              Why names do not match →
+            </Link>
+            <Link href="/procurement-tracker" className="text-xs font-medium text-amber-900 underline">
+              Open the tracker →
+            </Link>
+          </div>
         </div>
       )}
     </section>

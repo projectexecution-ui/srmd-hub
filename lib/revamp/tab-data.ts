@@ -5,6 +5,8 @@
 // is a filtered read, not a new pipeline.
 
 import { createClient } from '@/lib/supabase/server'
+import { matchSubProjects, clean, type HubProject } from './subproject-match'
+import { PROJECT_ALIASES } from './alias-seed'
 
 // ── Approvals ───────────────────────────────────────────────────────────────
 
@@ -97,10 +99,12 @@ export async function loadProjectStores(projectId: string): Promise<ProjectStore
 // ── Indent → PO ─────────────────────────────────────────────────────────────
 
 export interface ProjectProcurement {
-  /** The project name the latest upload actually covers. */
-  uploadedFor: string | null
-  /** True when that upload is this project. */
-  isThisProject: boolean
+  /** The IN4 project name this project's figures came from. */
+  matchedName: string | null
+  /** How many projects the upload covers, for context when we found none. */
+  uploadCovers: number
+  /** Names in the upload that match no project in the hub. */
+  unmatchedNames: string[]
   totalLines: number
   pendingLines: number
   pendingValue: number
@@ -109,37 +113,47 @@ export interface ProjectProcurement {
 }
 
 /**
- * The Indent → PO tracker keeps ONE uploaded snapshot at a time, keyed by
- * IN4's project name — there is no project_id anywhere in it. So this reports
- * honestly: the figures when the snapshot is this project, and otherwise which
- * project it does cover, rather than a misleading row of zeros.
+ * The Indent → PO tracker holds its snapshot keyed by IN4's project name —
+ * there is no project_id anywhere in it — so the figures are found by matching
+ * the name, using the SAME alias list as the Contractor/Supplier reports.
+ *
+ * Two rows exist in that table: `global` is the main indent tracker and covers
+ * every project; `po` is a separate purchase-order report covering one. Reading
+ * "the most recently updated row" picks up `po` and makes 22 projects look
+ * empty — so `global` is asked for by name.
  */
 export async function loadProjectProcurement(
   projectId: string, projectName: string, projectCode: string | null,
 ): Promise<ProjectProcurement> {
   const supabase = await createClient()
-  const { data } = await supabase
-    .from('procurement_tracker_state').select('state')
-    .order('updated_at', { ascending: false }).limit(1).maybeSingle()
+  const { data: rows } = await supabase
+    .from('procurement_tracker_state').select('id, state')
 
-  const projects = ((data?.state as { projects?: unknown })?.projects ?? []) as Array<Record<string, unknown>>
-  const first = projects[0]
-  const uploadedFor = first ? String(first.projectName ?? '') || null : null
+  const list = (rows ?? []) as Array<{ id: string; state: unknown }>
+  const state = (list.find(r => r.id === 'global') ?? list[0])?.state
+  const projects = ((state as { projects?: unknown })?.projects ?? []) as Array<Record<string, unknown>>
 
-  const k = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, '')
-  const isThisProject = !!uploadedFor
-    && (k(uploadedFor) === k(projectName) || (!!projectCode && k(uploadedFor) === k(projectCode)))
+  const names = projects.map(p => clean(String(p.projectName ?? ''))).filter(Boolean)
+  const hub: HubProject[] = [{ id: projectId, code: projectCode, name: projectName }]
+  const matches = matchSubProjects(names, hub, PROJECT_ALIASES)
+
+  const mineName = matches.find(m => m.projectId === projectId)?.subProjectName ?? null
+  const mine = mineName
+    ? projects.find(p => clean(String(p.projectName ?? '')) === mineName)
+    : undefined
 
   const num = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : Number(v) || 0)
 
   return {
-    uploadedFor,
-    isThisProject,
-    totalLines: isThisProject ? num(first!.total) : 0,
-    pendingLines: isThisProject ? num(first!.pendingLineCount) : 0,
-    pendingValue: isThisProject ? num(first!.pendingValue) : 0,
-    poValue: isThisProject ? num(first!.totalPoValue) : 0,
-    grnValue: isThisProject ? num(first!.totalGrnValue) : 0,
+    matchedName: mine ? mineName : null,
+    uploadCovers: projects.length,
+    // Only meaningful when we found nothing: which names went unclaimed here.
+    unmatchedNames: mine ? [] : names,
+    totalLines: mine ? num(mine.total) : 0,
+    pendingLines: mine ? num(mine.pendingLineCount) : 0,
+    pendingValue: mine ? num(mine.pendingValue) : 0,
+    poValue: mine ? num(mine.totalPoValue) : 0,
+    grnValue: mine ? num(mine.totalGrnValue) : 0,
   }
 }
 

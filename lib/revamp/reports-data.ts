@@ -8,6 +8,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { matchSubProjects, clean, type HubProject } from './subproject-match'
 import { PROJECT_ALIASES } from './alias-seed'
+import { compareDisciplines } from '@/lib/cost-control/discipline-order'
 
 export interface PartyRow {
   party: string
@@ -98,7 +99,16 @@ function readSide(
         paid: list.reduce((s, p) => s + p.paid, 0),
       }
     })
-    .sort((a, b) => b.bill - a.bill)
+    // Same sequence as the Internal Estimate: by the category's own code
+    // number — 01, 02, 03 … — NOT by value. The report categories carry that
+    // code in their name (" 03 Civil", "03 (M) Civil"), which is exactly what
+    // compareDisciplines reads, so the two screens list categories in the same
+    // order and can be read side by side. Parties inside a category stay
+    // biggest-first, since a contractor has no code to sequence by.
+    .sort((a, b) => compareDisciplines(
+      { code: a.category, display_order: null },
+      { code: b.category, display_order: null },
+    ))
 
   return {
     side: {
