@@ -327,18 +327,6 @@ export default async function CostControlProjectDetailPage(
     if (value > 0) discEstimate.set(sk.discipline_id, (discEstimate.get(sk.discipline_id) ?? 0) + value)
   }
 
-  // Short remark per (discipline, sub-skill) — the "Remark: …" line that the
-  // Internal Budget import (and any sheet notes) carry. First non-empty wins;
-  // shown truncated under the sub-skill name with the full text on hover.
-  const remarkAgg = new Map<string, string>()
-  for (const w of (wsRes.data ?? []) as WSAgg[]) {
-    if (w.status === 'cancelled' || !w.summary_notes) continue
-    const k = `${w.discipline_id}::${w.sub_skill_id}`
-    if (remarkAgg.has(k)) continue
-    const m = w.summary_notes.match(/^Remark:\s*(.+)$/m)
-    if (m) remarkAgg.set(k, m[1].trim())
-  }
-
   // Per-(discipline, sub-skill) deadline rollup: earliest open deadline +
   // overdue count for sheets that are still in flight (not approved/paid).
   const TERMINAL = new Set(['approved','wo_issued','paid','cancelled'])
@@ -1218,18 +1206,6 @@ export default async function CostControlProjectDetailPage(
                                 <Ruler className="h-2.5 w-2.5" /> TR
                               </span>
                             )}
-                            {(() => {
-                              const remark = remarkAgg.get(`${d.id}::${s.id}`)
-                              if (!remark) return null
-                              return (
-                                <p
-                                  className="text-[11px] italic text-gray-400 truncate max-w-[260px] leading-snug"
-                                  title={remark}
-                                >
-                                  {remark.length > 70 ? remark.slice(0, 70) + '…' : remark}
-                                </p>
-                              )
-                            })()}
                           </td>
                           <Td align="right" mono className="text-indigo-800">
                             <Money amt={estLive} />
