@@ -21,6 +21,7 @@ import {
 import { ccApprovalPath } from '@/lib/cost-control/approval-link'
 import { getEffectiveCcRole } from '@/app/(app)/cost-control/billing/billing-actions'
 import { estimateShortfall, hasNoEstimate } from '@/lib/cost-control/estimate-vs-erp'
+import { OtherDeptPanel, type DeptApproval } from './OtherDeptPanel'
 import { CompleteControl } from './CompleteControl'
 import { ErpReducedControl } from './ErpReducedControl'
 import { ProjectAlerts } from './ProjectAlerts'
@@ -211,7 +212,7 @@ export default async function CostControlProjectDetailPage(
       .eq('project_id', id),
     supabase
       .from('cc_working_sheets')
-      .select('id, discipline_id, sub_skill_id, status, total_amount, approved_for_erp_amt, deadline_date, entry_mode, summary_notes, in4_entered_at, submitted_at, contingency_pct, contingency_amt, gst_pct, gst_amt')
+      .select('id, discipline_id, sub_skill_id, status, total_amount, approved_for_erp_amt, deadline_date, entry_mode, summary_notes, in4_entered_at, submitted_at, other_dept, other_dept_note, other_dept_set_by, other_dept_set_at, contingency_pct, contingency_amt, gst_pct, gst_amt')
       .eq('project_id', id)
       .is('archived_at', null),
     supabase
@@ -493,6 +494,38 @@ export default async function CostControlProjectDetailPage(
         when: m.moved_at,
       })
     }
+  }
+
+  // Approvals the Atm Head marked as another department’s. Two shapes: the
+  // list for the band above the table, and a per-sub-category lookup so the
+  // tree row can carry a badge and the expanded row the note.
+  const deptRecords: DeptApproval[] = []
+  const deptBySub = new Map<string, DeptApproval[]>()
+  {
+    const subById = new Map(subSkills.map(s => [s.id, s]))
+    for (const w of (wsRes.data ?? []) as WSAgg[]) {
+      const dept = (w as { other_dept?: string | null }).other_dept
+      if (!dept) continue
+      const sk = w.sub_skill_id ? subById.get(w.sub_skill_id) : null
+      const rec: DeptApproval = {
+        wsId: w.id,
+        wsCode: (w as { ws_code?: string | null }).ws_code ?? null,
+        dept,
+        note: (w as { other_dept_note?: string | null }).other_dept_note ?? null,
+        // What the Trustee released, falling back to the ask on a sheet
+        // still in the chain.
+        amount: Number(w.approved_for_erp_amt ?? 0) || Number(w.total_amount ?? 0),
+        subLabel: sk ? `${sk.code} ${sk.name}` : '—',
+        byName: profileMap.get((w as { other_dept_set_by?: string | null }).other_dept_set_by ?? '') ?? null,
+        at: (w as { other_dept_set_at?: string | null }).other_dept_set_at ?? null,
+      }
+      deptRecords.push(rec)
+      if (w.discipline_id && w.sub_skill_id) {
+        const k = `${w.discipline_id}::${w.sub_skill_id}`
+        deptBySub.set(k, [...(deptBySub.get(k) ?? []), rec])
+      }
+    }
+    deptRecords.sort((a, b) => (b.at ?? '').localeCompare(a.at ?? ''))
   }
 
   const boqBySub = new Map<string, BoqSheet[]>()
@@ -971,6 +1004,9 @@ export default async function CostControlProjectDetailPage(
           both ids over and let it scroll to whichever is actually on screen. */}
       <RowDetailProvider>
       {focusSub && <FocusScroll targetIds={[`sub-${focusSub}`, `subm-${focusSub}`]} />}
+      {/* Budget on this project that belongs to another department.
+          Renders nothing at all when there is none. */}
+      <OtherDeptPanel records={deptRecords} />
       <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
         <div className="flex items-center justify-between px-3 py-2 border-b border-gray-100 bg-gray-50/60">
           {/* On a phone the sentence stole the whole row and forced the toolbar
@@ -1238,6 +1274,17 @@ export default async function CostControlProjectDetailPage(
                                 {wsCount} sheet{wsCount === 1 ? '' : 's'}
                               </Link>
                             )}
+                            {/* Approved for another department, not CT. Same slot as the sheet
+                                count and the transfer chip, so the row keeps one language. */}
+                            {(deptBySub.get(`${d.id}::${s.id}`) ?? []).slice(0, 1).map(r => (
+                              <span
+                                key={r.wsId}
+                                title={`${r.dept} — ${r.note ?? 'approved for another department'}`}
+                                className="ml-1.5 align-middle inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide bg-purple-700 text-white"
+                              >
+                                {r.dept}
+                              </span>
+                            ))}
                             {/* Budget moved in or out of this line in IN4. Without this the row
                                 reads as a lost Billing entry or as money nobody approved. */}
                             {(() => {
@@ -1485,6 +1532,17 @@ export default async function CostControlProjectDetailPage(
                         <RowDetail id={s.id}>
                           <tr className="border-t border-gray-100 bg-gray-50/40">
                             <td colSpan={tableCols} className="px-3 py-3">
+                              {(deptBySub.get(`${d.id}::${s.id}`) ?? []).map(r => (
+                                <div key={r.wsId} className="mb-2.5 rounded-lg border border-purple-200 bg-purple-50/60 px-3 py-2">
+                                  <p className="text-[12px] text-gray-900">
+                                    <span className="inline-block mr-2 rounded px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide bg-purple-700 text-white align-middle">{r.dept}</span>
+                                    {r.note}
+                                  </p>
+                                  <p className="mt-1 text-[11px] text-gray-500">
+                                    {r.byName ?? '—'}{r.at && ` · ${formatDate(r.at)}`} · {formatINR(r.amount)}
+                                  </p>
+                                </div>
+                              ))}
                               <SubSkillBoq sheets={boqBySub.get(`${d.id}::${s.id}`) ?? []} />
                             </td>
                           </tr>
@@ -1582,6 +1640,17 @@ export default async function CostControlProjectDetailPage(
                     <p className="text-sm text-gray-900 min-w-0">
                       <RowDetailToggle id={s.id} count={(boqBySub.get(`${d.id}::${s.id}`) ?? []).reduce((n, b) => n + b.rows.length, 0)} />
                       <span className="font-mono text-[11px] text-gray-400 mr-1.5">{s.code}</span>{s.name}
+                      {/* Approved for another department, not CT. Same slot as the sheet
+                          count and the transfer chip, so the row keeps one language. */}
+                      {(deptBySub.get(`${d.id}::${s.id}`) ?? []).slice(0, 1).map(r => (
+                        <span
+                          key={r.wsId}
+                          title={`${r.dept} — ${r.note ?? 'approved for another department'}`}
+                          className="ml-1.5 align-middle inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide bg-purple-700 text-white"
+                        >
+                          {r.dept}
+                        </span>
+                      ))}
                       {/* Same marker as the table row — a phone reader needs it more. */}
                       {(() => {
                         const mv = transferBySub.get(`${d.id}::${s.id}`)
@@ -1731,6 +1800,17 @@ export default async function CostControlProjectDetailPage(
 
                   <RowDetail id={s.id}>
                     <div className="mt-2.5">
+                      {(deptBySub.get(`${d.id}::${s.id}`) ?? []).map(r => (
+                        <div key={r.wsId} className="mb-2.5 rounded-lg border border-purple-200 bg-purple-50/60 px-3 py-2">
+                          <p className="text-[12px] text-gray-900">
+                            <span className="inline-block mr-2 rounded px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide bg-purple-700 text-white align-middle">{r.dept}</span>
+                            {r.note}
+                          </p>
+                          <p className="mt-1 text-[11px] text-gray-500">
+                            {r.byName ?? '—'}{r.at && ` · ${formatDate(r.at)}`} · {formatINR(r.amount)}
+                          </p>
+                        </div>
+                      ))}
                       <SubSkillBoq sheets={boqBySub.get(`${d.id}::${s.id}`) ?? []} />
                     </div>
                   </RowDetail>

@@ -640,6 +640,10 @@ export async function signOffWorkingSheet(
   wsId: string,
   checkedAmt: number,
   comment?: string | null,
+  /** Atm Head only: this budget belongs to another department (Design,
+   *  Security, ICT…) rather than to Construction, with the note saying who
+   *  authorised it. Refused at the Project Head stage. */
+  otherDept?: { dept: string; note: string } | null,
 ): Promise<{ ok: boolean; error?: string; new_status?: string }> {
   const me = await whoAmI()
   if (!me.user) return { ok: false, error: 'Not signed in' }
@@ -677,14 +681,39 @@ export async function signOffWorkingSheet(
     return { ok: false, error: 'This stage is assigned to a specific approver for this project — it is not with you.' }
   }
 
+  // The department tag is an Atm Head decision. Silently dropping it at the
+  // Project Head stage would be worse than refusing — the person would
+  // believe it had been recorded.
+  if (otherDept && toStage !== 'atm_approved') {
+    return { ok: false, error: 'Only the Atm Head can record a budget as another department\u2019s' }
+  }
+  if (otherDept && !otherDept.dept.trim()) {
+    return { ok: false, error: 'Pick which department this budget belongs to' }
+  }
+  if (otherDept && !otherDept.note.trim()) {
+    return { ok: false, error: 'Add the note \u2014 who approved it, and how much is being drawn' }
+  }
+
   const now = new Date().toISOString()
+  // Cleared when the switch is off, so a sheet corrected on a later cycle
+  // does not keep a department it no longer belongs to.
+  const deptCols = toStage === 'atm_approved'
+    ? (otherDept
+        ? {
+            other_dept: otherDept.dept.trim(),
+            other_dept_note: otherDept.note.trim(),
+            other_dept_set_by: me.user.id,
+            other_dept_set_at: now,
+          }
+        : { other_dept: null, other_dept_note: null, other_dept_set_by: null, other_dept_set_at: null })
+    : {}
   const checkedCols = toStage === 'ph_approved'
     ? { ph_checked_amt: checkedAmt, ph_checked_at: now, ph_checked_by: me.user.id }
     : { atm_checked_amt: checkedAmt, atm_checked_at: now, atm_checked_by: me.user.id }
 
   const { data: updRows, error: updErr } = await supabase
     .from('cc_working_sheets')
-    .update({ status: toStage, ...checkedCols })
+    .update({ status: toStage, ...checkedCols, ...deptCols })
     .eq('id', wsId)
     .eq('status', ws.status) // optimistic: someone else may have acted meanwhile
     .select('id')
@@ -700,7 +729,8 @@ export async function signOffWorkingSheet(
   // checked amount rides in the comment (approval_events has no amount
   // column) — the sheet columns hold the latest cycle, the trail keeps
   // every cycle. record_approval_event re-checks can_approve.
-  const eventComment = `Checked ₹${Math.round(checkedAmt).toLocaleString('en-IN')}${comment?.trim() ? ` — ${comment.trim()}` : ''}`
+  const deptLine = otherDept ? ` · [${otherDept.dept.trim()}] ${otherDept.note.trim()}` : ''
+  const eventComment = `Checked ₹${Math.round(checkedAmt).toLocaleString('en-IN')}${comment?.trim() ? ` — ${comment.trim()}` : ''}${deptLine}`
   const { error: recErr } = await supabase.rpc('record_approval_event', {
     p_module_slug: 'cost-control',
     p_doc_type:    'cc_working_sheet',

@@ -46,6 +46,11 @@ const DEFAULT_SIGNOFF_CFG: SignOffCfg = {
   atmChecked: null,
 }
 
+/** The departments that raise work against a construction project. "Other"
+ *  opens a free-text box rather than forcing a wrong choice. */
+const OTHER_DEPT = 'Other…'
+const DEPARTMENTS = ['Design', 'Security', 'ICT', 'Housekeeping', OTHER_DEPT]
+
 export function WSApprovalActions({
   wsId, status, ctx, totalAmount, approvedSoFar, chainReleasedSoFar, submitDisabled = false, onBeforeSubmit, signOffCfg,
 }: {
@@ -71,6 +76,12 @@ export function WSApprovalActions({
   const [signOffOpen, setSignOffOpen] = useState(false)
   const [checkedRaw, setCheckedRaw] = useState('')
   const [signOffComment, setSignOffComment] = useState('')
+  // Most approvals are Construction’s own work, so this stays off unless the
+  // Atm Head says otherwise.
+  const [otherDeptOn, setOtherDeptOn] = useState(false)
+  const [dept, setDept] = useState('')
+  const [deptOther, setDeptOther] = useState('')
+  const [deptNote, setDeptNote] = useState('')
   const [submitComment, setSubmitComment] = useState('')
   const [err, setErr] = useState<string | null>(null)
 
@@ -111,11 +122,22 @@ export function WSApprovalActions({
       setErr('Add a note on what you checked before signing off')
       return
     }
+    // Tagging without saying which department, or without the note, would
+    // leave a record nobody can act on.
+    const deptName = (dept === OTHER_DEPT ? deptOther : dept).trim()
+    if (otherDeptOn && !deptName) { setErr('Pick which department this budget belongs to'); return }
+    if (otherDeptOn && deptNote.trim().length < 5) {
+      setErr('Add the note \u2014 who approved it, and how much is being drawn'); return
+    }
     setBusy(true); setErr(null)
-    const r = await signOffWorkingSheet(wsId, amt, signOffComment.trim() || null)
+    const r = await signOffWorkingSheet(
+      wsId, amt, signOffComment.trim() || null,
+      otherDeptOn ? { dept: deptName, note: deptNote.trim() } : null,
+    )
     setBusy(false)
     if (!r.ok) { setErr(r.error ?? 'Sign-off failed'); return }
     setSignOffOpen(false); setCheckedRaw(''); setSignOffComment('')
+    setOtherDeptOn(false); setDept(''); setDeptOther(''); setDeptNote('')
     toast.success(
       r.new_status === 'ph_approved'
         ? 'Signed off — the sheet moves to the Atm Head'
@@ -280,8 +302,70 @@ export function WSApprovalActions({
             className="w-full rounded-md border border-emerald-200 bg-white p-2 text-sm"
             placeholder="Required — e.g. verified rates against the Q1 vendor quotes"
           />
+
+          {/* Whose budget is this? Atm Head only — the Project Head stage
+              never shows it, and the server refuses it there too. */}
+          {ctx.nextSignOff === 'atm_approved' && (
+            <div className={`rounded-lg border px-3 py-2.5 ${otherDeptOn ? 'border-purple-300 bg-purple-50' : 'border-gray-200 bg-white'}`}>
+              <label className="flex items-start gap-2.5 cursor-pointer">
+                <input
+                  type="checkbox" checked={otherDeptOn}
+                  onChange={e => { setOtherDeptOn(e.target.checked); setErr(null) }}
+                  className="mt-0.5 h-4 w-4 flex-shrink-0 accent-purple-700"
+                />
+                <span className="min-w-0">
+                  <span className="block text-[13px] font-semibold text-gray-900">
+                    This budget is for another department
+                  </span>
+                  <span className="block text-[11.5px] text-gray-500">
+                    Design, Security, ICT and so on — not Construction. It is recorded on the
+                    project page so the extra work is visible without opening this sheet.
+                  </span>
+                </span>
+              </label>
+
+              {otherDeptOn && (
+                <div className="mt-3 space-y-2.5">
+                  <div className="flex flex-wrap gap-1.5">
+                    {DEPARTMENTS.map(d => (
+                      <button
+                        key={d} type="button"
+                        onClick={() => { setDept(d); setErr(null) }}
+                        className={`min-h-[36px] px-3 rounded-full text-[12px] font-semibold border ${
+                          dept === d ? 'bg-purple-700 border-purple-700 text-white'
+                            : 'bg-white border-gray-300 text-gray-700 hover:border-purple-400'}`}
+                      >
+                        {d}
+                      </button>
+                    ))}
+                  </div>
+                  {dept === OTHER_DEPT && (
+                    <input
+                      value={deptOther}
+                      onChange={e => { setDeptOther(e.target.value); setErr(null) }}
+                      placeholder="Name the department"
+                      className="w-full min-h-[40px] rounded-md border border-gray-300 bg-white px-2 text-sm"
+                    />
+                  )}
+                  <div>
+                    <label className="text-xs font-semibold text-gray-900 block mb-1">
+                      What was approved, and by whom <span className="text-rose-600">*</span>
+                    </label>
+                    <textarea
+                      value={deptNote}
+                      onChange={e => { setDeptNote(e.target.value); setErr(null) }}
+                      rows={2}
+                      className="w-full rounded-md border border-gray-300 bg-white p-2 text-sm"
+                      placeholder="e.g. Mji approved ₹20,00,000. For CX approval, as per the working we are taking ₹7,00,000."
+                    />
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
           <div className="flex justify-end gap-2">
-            <Button variant="ghost" size="sm" onClick={() => { setSignOffOpen(false); setCheckedRaw(''); setSignOffComment('') }} disabled={busy}>
+            <Button variant="ghost" size="sm" onClick={() => { setSignOffOpen(false); setCheckedRaw(''); setSignOffComment(''); setOtherDeptOn(false); setDept(''); setDeptOther(''); setDeptNote('') }} disabled={busy}>
               Cancel
             </Button>
             <Button

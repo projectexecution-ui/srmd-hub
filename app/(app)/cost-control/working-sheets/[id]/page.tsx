@@ -75,7 +75,7 @@ export default async function WorkingSheetEditorPage(
 
   const { data: ws, error: wsErr } = await supabase
     .from('cc_ws_with_versions')
-    .select('id, ws_code, status, total_amount, approved_for_erp_amt, past_approved_in_subskill, return_reason, engineer_id, project_id, discipline_id, sub_skill_id, line_type, entry_mode, source_excel_url, source_excel_name, summary_total, summary_notes, flag_summary, ai_parse_meta, last_checked_at, deadline_date, deadline_notes, break_chain, chain_anchor_id, version_no, chain_size, created_at, contingency_pct, contingency_amt, gst_pct, gst_amt, projects(code, name, parent_project_id), cc_disciplines(code, name), cc_sub_skills(code, name)')
+    .select('id, ws_code, status, total_amount, approved_for_erp_amt, past_approved_in_subskill, return_reason, engineer_id, project_id, discipline_id, sub_skill_id, line_type, entry_mode, source_excel_url, source_excel_name, summary_total, summary_notes, flag_summary, ai_parse_meta, last_checked_at, deadline_date, deadline_notes, break_chain, chain_anchor_id, version_no, chain_size, created_at, other_dept, other_dept_note, contingency_pct, contingency_amt, gst_pct, gst_amt, projects(code, name, parent_project_id), cc_disciplines(code, name), cc_sub_skills(code, name)')
     .eq('id', id)
     .single()
 
@@ -408,6 +408,23 @@ export default async function WorkingSheetEditorPage(
       <span className="font-semibold text-gray-900">{value}</span>
     </div>
   )
+  // Marked by the Atm Head at sign-off as belonging to another department.
+  // Sits with the identity block because it answers the same question — what
+  // is this budget — rather than being an approval control.
+  const deptBanner = ws.other_dept ? (
+    <div className="rounded-xl border border-purple-200 bg-purple-50 px-4 py-3">
+      <p className="text-[13px] text-gray-900">
+        <span className="inline-block mr-2 rounded px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide bg-purple-700 text-white align-middle">
+          {ws.other_dept}
+        </span>
+        This budget belongs to another department, not Construction.
+      </p>
+      {ws.other_dept_note && (
+        <p className="mt-1.5 text-[12.5px] text-gray-700 whitespace-pre-line">{ws.other_dept_note}</p>
+      )}
+    </div>
+  ) : null
+
   const identityBlock = (
     <div className="rounded-xl border border-gray-200 bg-gray-50/70 px-4 py-3 space-y-1.5">
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1.5 text-sm">
@@ -472,6 +489,7 @@ export default async function WorkingSheetEditorPage(
         </PageHeader>
 
         {identityBlock}
+        {deptBanner}
         {reviewTop}
 
         <VersionChainBar
@@ -689,6 +707,7 @@ export default async function WorkingSheetEditorPage(
         </PageHeader>
 
         {identityBlock}
+        {deptBanner}
         {reviewTop}
 
         <VersionChainBar
@@ -946,6 +965,7 @@ export default async function WorkingSheetEditorPage(
       </PageHeader>
 
       {identityBlock}
+        {deptBanner}
       {reviewTop}
 
       <VersionChainBar
