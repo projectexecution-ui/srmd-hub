@@ -26,7 +26,7 @@ import { setSubSkillCompleted, setDisciplineCompleted } from './actions'
 export function CompleteControl({
   projectId, disciplineId, subSkillId, label, level = 'sub',
   savings, completedAt, completedByName, canWrite, variant,
-  cascadeCount = 0, reopenCount = 0,
+  cascadeCount = 0, reopenCount = 0, outstanding = 0, outstandingLines = 0,
 }: {
   projectId: string
   disciplineId: string
@@ -45,6 +45,11 @@ export function CompleteControl({
   cascadeCount?: number
   /** Category only: closed sub-categories a reopen will reopen. */
   reopenCount?: number
+  /** Committed on a WO/PO and not yet paid. Closing over this is allowed —
+   *  it is management's call — but never silently. */
+  outstanding?: number
+  /** Category only: how many sub-categories under it still owe money. */
+  outstandingLines?: number
 }) {
   const router = useRouter()
   const [pending, start] = useTransition()
@@ -70,18 +75,26 @@ export function CompleteControl({
 
   const onComplete = async () => {
     // Say what it means — in money, in rows, and in what stops working.
+    // Money still committed on a work order is the thing worth pausing on,
+    // so it leads and it turns the dialog red.
+    const owed = outstanding > 0
+      ? `${formatINR(outstanding)} is committed on a WO/PO here and NOT yet paid. Closing anyway says that balance will never be billed.\n\n`
+      : isDisc && outstandingLines > 0
+        ? `${outstandingLines} sub-categor${outstandingLines === 1 ? 'y' : 'ies'} under this still have money committed and unpaid. Closing anyway says those balances will never be billed.\n\n`
+        : ''
     const money = savings > 0
-      ? `${formatINR(savings)} of unspent budget is left over and will show as still to be removed from IN4, for Billing to confirm once they have done it.`
-      : 'Nothing is left over — everything budgeted here was paid.'
+      ? `${formatINR(savings)} of uncommitted budget is left over and will show as still to be removed from IN4, for Billing to confirm once they have done it.`
+      : 'Nothing spare is left over — the budget here is all paid or still committed.'
     const cascade = isDisc && cascadeCount > 0
       ? `\n\nThis also closes ${cascadeCount} sub-categor${cascadeCount === 1 ? 'y' : 'ies'} under it.`
       : ''
     const ok = await confirm({
       title: `Close ${label}?`,
-      message: `Everything committed here has been paid, so the work is finished.\n\nNo new budget request can be raised on this ${noun} until it is reopened.\n\n${money}${cascade}`,
+      message: `${owed}No new budget request can be raised on this ${noun} until it is reopened.\n\n${money}${cascade}`,
       confirmLabel: 'Completed',
-      // Closing a finished line is housekeeping, not a destructive act.
-      danger: false,
+      // Red only when there is money outstanding — otherwise this is
+      // housekeeping and should not look like a hazard.
+      danger: outstanding > 0 || (isDisc && outstandingLines > 0),
     })
     if (ok) run(true)
   }
@@ -157,9 +170,11 @@ export function CompleteControl({
       <span className="inline-flex flex-col items-start gap-0.5">
         <button
           type="button" onClick={onComplete} disabled={pending}
-          title={savings > 0
-            ? `WO and Paid match — close this and flag ${formatINR(savings)} to come out of ERP`
-            : `WO and Paid match — close this ${noun}`}
+          title={outstanding > 0
+            ? `${formatINR(outstanding)} still committed and unpaid — you can close it, but say so knowingly`
+            : savings > 0
+              ? `Close this and flag ${formatINR(savings)} to come out of the ERP budget`
+              : `Close this ${noun}`}
           className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-semibold border border-emerald-300 text-emerald-700 hover:bg-emerald-50 disabled:opacity-50 whitespace-nowrap"
         >
           {pending ? <Loader2 className="h-3 w-3 animate-spin" /> : <CheckCircle2 className="h-3 w-3" />}
@@ -174,14 +189,16 @@ export function CompleteControl({
     <div className="mt-2.5">
       <button
         type="button" onClick={onComplete} disabled={pending}
-        className="flex w-full items-center justify-center gap-1.5 min-h-[44px] rounded-lg border border-emerald-300 bg-emerald-50 text-sm font-semibold text-emerald-800 disabled:opacity-50"
+        className={`flex w-full items-center justify-center gap-1.5 min-h-[44px] rounded-lg border text-sm font-semibold disabled:opacity-50 ${outstanding > 0 ? 'border-amber-300 bg-amber-50 text-amber-900' : 'border-emerald-300 bg-emerald-50 text-emerald-800'}`}
       >
         {pending ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
         Completed
         {savings > 0 && <span className="font-normal">· {formatINR(savings)} to remove from ERP</span>}
       </button>
       <p className="mt-1 text-[11px] text-gray-500">
-        WO and Paid match, so nothing more is owed here.
+        {outstanding > 0
+          ? `${formatINR(outstanding)} is still committed and unpaid here.`
+          : 'Nothing is still owed here.'}
         {isDisc && cascadeCount > 0 && ` Closes ${cascadeCount} sub-categor${cascadeCount === 1 ? 'y' : 'ies'} with it.`}
       </p>
       {err && <p className="mt-1.5 text-[11px] font-semibold text-rose-700">{err}</p>}

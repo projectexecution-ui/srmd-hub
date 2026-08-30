@@ -15,7 +15,8 @@ import { computeMoneyRollup, type RollupWSRow, type RollupVersionRow, type Rollu
 import { sortDisciplines } from '@/lib/cost-control/discipline-order'
 import { overBudgetAmount, overBudgetDriver } from '@/lib/cost-control/over-budget'
 import {
-  canMarkComplete, savingsOnCompletion, canCompleteDiscipline, cascadeCount,
+  canMarkComplete, savingsOnCompletion, cascadeCount,
+  outstandingOnLine, outstandingUnderDiscipline,
 } from '@/lib/cost-control/completion'
 import { ccApprovalPath } from '@/lib/cost-control/approval-link'
 import { getEffectiveCcRole } from '@/app/(app)/cost-control/billing/billing-actions'
@@ -563,7 +564,7 @@ export default async function CostControlProjectDetailPage(
   const discCompletion = new Map<string, {
     completedAt: string | null
     completedByName: string | null
-    canComplete: boolean
+    outstandingLines: number
     cascade: number
     reopen: number
     savings: number
@@ -578,16 +579,13 @@ export default async function CostControlProjectDetailPage(
     discCompletion.set(d.id, {
       completedAt: meta?.completedAt ?? null,
       completedByName: profileMap.get(meta?.completedBy ?? '') ?? null,
-      canComplete: canCompleteDiscipline(lines),
+      outstandingLines: outstandingUnderDiscipline(lines).length,
       cascade: cascadeCount(lines),
       reopen: lines.filter(l => l.completed).length,
-      // What the whole category would free up: every sub-category that is
-      // closed or about to be.
-      savings: kids.reduce((sum, s) => {
-        const closedOrClosing = !!subMeta.get(s.id)?.completedAt
-          || canMarkComplete(blMap.get(`${d.id}::${s.id}`))
-        return closedOrClosing ? sum + savingsOnCompletion(blMap.get(`${d.id}::${s.id}`)) : sum
-      }, 0),
+      // What the whole category would free up, across every
+      // sub-category under it — uncommitted budget only, since
+      // savingsOnCompletion nets off the WO as well as the Paid.
+      savings: kids.reduce((sum, s) => sum + savingsOnCompletion(blMap.get(`${d.id}::${s.id}`)), 0),
     })
   }
 
@@ -1096,7 +1094,7 @@ export default async function CostControlProjectDetailPage(
                           <span className="inline-flex items-center justify-end gap-1.5 flex-wrap">
                             {/* Closing the whole category — same rule as a row,
                                 read upwards. (HOD #3) */}
-                            {(dComplete?.completedAt || dComplete?.canComplete) && (
+                            {dComplete && (
                               <CompleteControl
                                 level="discipline"
                                 projectId={project.id}
@@ -1108,6 +1106,7 @@ export default async function CostControlProjectDetailPage(
                                 completedByName={dComplete.completedByName}
                                 cascadeCount={dComplete.cascade}
                                 reopenCount={dComplete.reopen}
+                                outstandingLines={dComplete.outstandingLines}
                                 canWrite={canWrite}
                                 variant="row"
                               />
@@ -1335,7 +1334,7 @@ export default async function CostControlProjectDetailPage(
                                   </Link>
                                 )}
                                 {/* Same rule as the phone card. (HOD #3) */}
-                                {(sCompletedAt || canMarkComplete(bl)) && (
+                                {(
                                   <CompleteControl
                                     projectId={project.id}
                                     disciplineId={d.id}
@@ -1344,6 +1343,7 @@ export default async function CostControlProjectDetailPage(
                                     savings={savingsOnCompletion(bl)}
                                     completedAt={sCompletedAt}
                                     completedByName={sCompletedBy}
+                                    outstanding={outstandingOnLine(bl)}
                                     canWrite={canWrite}
                                     variant="row"
                                   />
@@ -1628,7 +1628,7 @@ export default async function CostControlProjectDetailPage(
                   {/* Close the line — only where WO equals Paid, so most cards
                       never show this. Full-width 44px tap: this is the phone,
                       where nearly everyone reads this screen. (HOD #3) */}
-                  {(sCompletedAt || canMarkComplete(bl)) && (
+                  {(
                     <CompleteControl
                       projectId={project.id}
                       disciplineId={d.id}
@@ -1637,6 +1637,7 @@ export default async function CostControlProjectDetailPage(
                       savings={savingsOnCompletion(bl)}
                       completedAt={sCompletedAt}
                       completedByName={sCompletedBy}
+                      outstanding={outstandingOnLine(bl)}
                       canWrite={canWrite}
                       variant="card"
                     />
@@ -1713,7 +1714,7 @@ export default async function CostControlProjectDetailPage(
                   </span>
                   {/* Close the whole trade from the phone too — the desktop
                       header carries the same control. (HOD #3) */}
-                  {(discCompletion.get(d.id)?.completedAt || discCompletion.get(d.id)?.canComplete) && (
+                  {discCompletion.get(d.id) && (
                     <div className="mt-1.5 pl-6">
                       <CompleteControl
                         level="discipline"
@@ -1726,6 +1727,7 @@ export default async function CostControlProjectDetailPage(
                         completedByName={discCompletion.get(d.id)!.completedByName}
                         cascadeCount={discCompletion.get(d.id)!.cascade}
                         reopenCount={discCompletion.get(d.id)!.reopen}
+                        outstandingLines={discCompletion.get(d.id)!.outstandingLines}
                         canWrite={canWrite}
                         variant="row"
                       />
