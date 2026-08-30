@@ -7,6 +7,7 @@
 
 import { createClient } from '@/lib/supabase/server'
 import { matchSubProjects, clean, type HubProject } from './subproject-match'
+import { PROJECT_ALIASES } from './alias-seed'
 
 export interface PartyRow {
   party: string
@@ -135,7 +136,7 @@ export async function loadProjectReports(projectId: string): Promise<ProjectRepo
       }
     }
   }
-  const matches = matchSubProjects([...names], projects)
+  const matches = matchSubProjects([...names], projects, PROJECT_ALIASES)
   const mine = new Set(matches.filter(m => m.projectId === projectId).map(m => m.subProjectName))
 
   const c = readSide(cReports, mine, 'contractors', 'contractor')

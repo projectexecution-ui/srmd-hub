@@ -90,6 +90,9 @@ export interface SubProjectMatch {
   base: string
   stage: string | null
   projectId: string | null
+  /** How it was matched — so the review screen can show automatic matches
+   *  separately from ones that rest on a stated alias. */
+  via: 'name' | 'code' | 'alias' | null
 }
 
 /**
@@ -103,6 +106,9 @@ export interface SubProjectMatch {
 export function matchSubProjects(
   subProjectNames: string[],
   projects: HubProject[],
+  /** Stated IN4-name → hub-name/code aliases. See alias-seed.ts. Optional, so
+   *  the pure matching rule can still be tested on its own. */
+  aliases: Array<{ in4: string; hub: string }> = [],
 ): SubProjectMatch[] {
   const byName = new Map<string, string>()
   const byCode = new Map<string, string>()
@@ -115,14 +121,38 @@ export function matchSubProjects(
     }
   }
 
+  // An alias resolves to a project id via the hub's own name or code, so a
+  // typo'd alias target simply fails to resolve rather than matching nothing
+  // silently or, worse, something wrong.
+  const byAlias = new Map<string, string>()
+  for (const a of aliases) {
+    const target = byName.get(key(a.hub)) ?? byCode.get(key(a.hub))
+    if (target) byAlias.set(key(a.in4), target)
+  }
+
   return subProjectNames.map(raw => {
-    const { base, stage } = splitSubProject(raw)
-    const projectId =
-      byName.get(key(clean(raw)))
-      ?? byName.get(key(base))
-      ?? byCode.get(key(base))
-      ?? null
-    return { subProjectName: clean(raw), base, stage, projectId }
+    const cleaned = clean(raw)
+    const { base, stage } = splitSubProject(cleaned)
+
+    // Aliases are checked on the FULL name first: some of them are only
+    // distinguishable before the stage is stripped, e.g. "P2 Stepped Terraces
+    // - Execution A-01" is the A01 tower while the bare base is not.
+    let projectId: string | null = null
+    let via: SubProjectMatch['via'] = null
+
+    const tryIn = (m: Map<string, string>, k: string, how: SubProjectMatch['via']) => {
+      if (projectId) return
+      const hit = m.get(k)
+      if (hit) { projectId = hit; via = how }
+    }
+
+    tryIn(byAlias, key(cleaned), 'alias')
+    tryIn(byName,  key(cleaned), 'name')
+    tryIn(byAlias, key(base),    'alias')
+    tryIn(byName,  key(base),    'name')
+    tryIn(byCode,  key(base),    'code')
+
+    return { subProjectName: cleaned, base, stage, projectId, via }
   })
 }
 

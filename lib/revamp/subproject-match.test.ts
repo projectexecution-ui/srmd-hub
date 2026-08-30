@@ -100,6 +100,50 @@ describe('matchSubProjects', () => {
   })
 })
 
+describe('stated aliases', () => {
+  const P = [
+    { id: 'p-ngha', code: 'NGH A',  name: 'NGH A' },
+    { id: 'p-a01',  code: 'P2 A01', name: 'P2 A01' },
+    { id: 'p-srah', code: 'SRAH',   name: 'SRAH' },
+  ]
+  const A = [
+    { in4: 'New Guest House A', hub: 'NGH A' },
+    { in4: 'P2 Stepped Terraces - Execution A-01', hub: 'P2 A01' },
+    { in4: 'SR Animal Hospital', hub: 'SRAH' },
+  ]
+
+  it('bridges the spelling gap that string matching cannot', () => {
+    const m = matchSubProjects(['New Guest House A-Execution'], P, A)[0]
+    expect(m.projectId).toBe('p-ngha')
+    expect(m.via).toBe('alias')
+  })
+
+  // This one only works if aliases are checked on the FULL name before the
+  // stage is stripped — the bare base "P2 Stepped Terraces" is a different
+  // thing entirely, and matching it to A01 would be wrong.
+  it('matches an alias that only makes sense before the stage is stripped', () => {
+    const m = matchSubProjects(['P2 Stepped Terraces - Execution A-01'], P, A)[0]
+    expect(m.projectId).toBe('p-a01')
+    expect(m.via).toBe('alias')
+  })
+
+  it('records HOW each one matched, so the review screen can separate them', () => {
+    const [alias, auto] = matchSubProjects(['SR Animal Hospital', 'SRAH - Execution'], P, A)
+    expect(alias.via).toBe('alias')
+    expect(auto.via).toBe('name')
+  })
+
+  // A typo'd alias target must fail closed, not attach money somewhere random.
+  it('ignores an alias pointing at a project that does not exist', () => {
+    const m = matchSubProjects(['New Guest House A'], P, [{ in4: 'New Guest House A', hub: 'Nowhere' }])[0]
+    expect(m.projectId).toBeNull()
+  })
+
+  it('changes nothing when no aliases are supplied', () => {
+    expect(matchSubProjects(['New Guest House A-Execution'], P)[0].projectId).toBeNull()
+  })
+})
+
 // Measured against all 102 real sub-project names on 2026-08-30: stripping the
 // stage lifts automatic matching from 7 to 18. The rest fail for four reasons,
 // and they are recorded here because each needs a DIFFERENT fix — a synonym
