@@ -139,6 +139,14 @@ export const NOTIFICATION_EVENTS: NotificationEventDef[] = [
     audience: 'The engineer who borrowed it',
   },
   {
+    type: 'cc_budget_transfer',
+    label: 'Budget moved inside one of your categories',
+    description: 'Budget was transferred between two sub-categories of the same work category in IN4. '
+      + 'Nothing was approved in CT Hub and the category total does not change, so without this it '
+      + 'happens unseen — one line simply looks short and another looks like it grew on its own.',
+    audience: 'The project’s named Atm Head',
+  },
+  {
     type: 'comment_mention',
     label: 'You were @mentioned in a comment',
     description: 'When someone tags you with @ in a comment (any module), you get the comment and a link straight to it.',

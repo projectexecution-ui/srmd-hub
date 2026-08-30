@@ -22,6 +22,9 @@
 -- budget_update that is really half of a transfer but does not pair cleanly
 -- stays a budget_update, which is the honest outcome — no claim is made.
 --
+-- SUPERSEDED by 20260830_cc_transfer_notifies_atm_head.sql, which adds the
+-- p_notify argument and the Atm Head notification. Kept for history.
+--
 -- The amount is NOT written into the remark: delta_amount already holds it and
 -- the UI formats money in Indian grouping. The remark carries the relationship.
 
