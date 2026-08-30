@@ -9,6 +9,13 @@
 // list and just is not switched on for THIS project; occasionally it is
 // genuinely new. Picking is the default and creating is one tap away, so the
 // easy path does not encourage minting duplicate codes.
+//
+// Layout note, because it bit: the panel used `space-y-2` around children that
+// are inline-level (<button> is inline-block). space-y only separates BLOCK
+// siblings, so the "create a new one instead" link and the blue submit button
+// flowed onto the same line and overlapped each other. Everything here is now
+// an explicit flex column, and the two actions live in their own row where they
+// cannot collide.
 
 import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
@@ -39,12 +46,15 @@ export function AddToProject({
   const [busy, start] = useTransition()
 
   const what = kind === 'discipline' ? 'work category' : 'sub-category'
+  const nothingLeft = available.length === 0
 
   const reset = () => { setOpen(false); setCreating(false); setPick(''); setCode(''); setName(''); setErr(null) }
 
   const submit = () => {
     setErr(null)
-    if (!creating && !pick) { setErr(`Choose a ${what}, or create a new one`); return }
+    if (!creating && !pick) { setErr(`Choose a ${what} from the list, or create a new one`); return }
+    if (creating && !code.trim()) { setErr('Give it a code — the number from the master budget'); return }
+    if (creating && !name.trim()) { setErr('Give it a name'); return }
     start(async () => {
       const r = kind === 'discipline'
         ? await addDisciplineToProject(projectId, creating ? null : pick, creating ? code : null, creating ? name : null)
@@ -60,7 +70,9 @@ export function AddToProject({
     return (
       <button
         type="button"
-        onClick={() => setOpen(true)}
+        // Nothing left to pick means the only useful path is creating, so open
+        // straight into it rather than showing an empty dropdown.
+        onClick={() => { setOpen(true); setCreating(nothingLeft) }}
         className={size === 'small'
           ? 'inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-semibold border border-dashed border-gray-300 text-gray-600 hover:border-blue-300 hover:text-blue-700 whitespace-nowrap'
           : 'inline-flex items-center justify-center gap-1.5 min-h-[44px] px-3 rounded-lg text-[13px] font-semibold border border-dashed border-gray-300 text-gray-700 hover:border-blue-400 hover:text-blue-700 w-full sm:w-auto'}
@@ -72,81 +84,104 @@ export function AddToProject({
   }
 
   return (
-    <div className="rounded-lg border border-blue-200 bg-blue-50/60 p-3 space-y-2 max-w-md">
+    <div className="flex flex-col gap-3 rounded-lg border border-blue-200 bg-blue-50/60 p-3 w-full max-w-md">
       <div className="flex items-center justify-between gap-2">
-        <p className="text-[12px] font-bold text-blue-900">Add a {what}</p>
-        <button type="button" onClick={reset} className="text-blue-700/60 hover:text-blue-900" aria-label="Cancel">
+        <p className="text-[12px] font-bold text-blue-900">
+          {creating ? `Create a new ${what}` : `Add a ${what}`}
+        </p>
+        <button
+          type="button" onClick={reset}
+          className="inline-flex items-center justify-center h-7 w-7 -mr-1 rounded text-blue-700/60 hover:bg-blue-100 hover:text-blue-900"
+          aria-label="Cancel"
+        >
           <X className="h-4 w-4" />
         </button>
       </div>
 
       {!creating ? (
-        <>
-          {available.length > 0 ? (
+        nothingLeft ? (
+          <p className="text-[12px] text-blue-900">
+            Every {what} in the shared list is already on this project.
+          </p>
+        ) : (
+          <label className="flex flex-col gap-1">
+            <span className="text-[11px] font-semibold text-blue-900/80">
+              Pick from the shared list · {available.length} not yet on this project
+            </span>
             <select
               value={pick}
-              onChange={e => setPick(e.target.value)}
+              onChange={e => { setPick(e.target.value); setErr(null) }}
               className="w-full min-h-[44px] rounded-md border border-gray-300 bg-white px-2 text-[13px]"
             >
-              <option value="">Choose from the existing list…</option>
+              <option value="">Choose one…</option>
               {available.map(o => (
                 <option key={o.id} value={o.id}>{o.code} {o.name}</option>
               ))}
             </select>
-          ) : (
-            <p className="text-[12px] text-blue-900">
-              Every {what} in the list is already on this project. Create a new one below.
-            </p>
-          )}
-          <button
-            type="button"
-            onClick={() => { setCreating(true); setPick(''); setErr(null) }}
-            className="text-[12px] font-semibold text-blue-700 hover:underline"
-          >
-            + Create a new {what} instead
-          </button>
-        </>
+          </label>
+        )
       ) : (
-        <>
+        <div className="flex flex-col gap-2">
           <div className="flex gap-2">
-            <input
-              value={code} onChange={e => setCode(e.target.value)}
-              placeholder="Code" inputMode="numeric"
-              className="w-24 min-h-[44px] rounded-md border border-gray-300 px-2 text-[13px]"
-            />
-            <input
-              value={name} onChange={e => setName(e.target.value)}
-              placeholder={kind === 'discipline' ? 'e.g. Solar Works' : 'e.g. Panel Mounting'}
-              className="flex-1 min-w-0 min-h-[44px] rounded-md border border-gray-300 px-2 text-[13px]"
-            />
+            <label className="flex flex-col gap-1 w-24 flex-shrink-0">
+              <span className="text-[11px] font-semibold text-blue-900/80">Code</span>
+              <input
+                value={code} onChange={e => { setCode(e.target.value); setErr(null) }}
+                placeholder={kind === 'discipline' ? '21' : '2104'} inputMode="numeric"
+                className="w-full min-h-[44px] rounded-md border border-gray-300 bg-white px-2 text-[13px]"
+              />
+            </label>
+            <label className="flex flex-col gap-1 flex-1 min-w-0">
+              <span className="text-[11px] font-semibold text-blue-900/80">Name</span>
+              <input
+                value={name} onChange={e => { setName(e.target.value); setErr(null) }}
+                placeholder={kind === 'discipline' ? 'e.g. Solar Works' : 'e.g. Panel Mounting'}
+                className="w-full min-h-[44px] rounded-md border border-gray-300 bg-white px-2 text-[13px]"
+              />
+            </label>
           </div>
           {/* Said out loud because it is the surprising part: the code is not
               private to this project. */}
           <p className="text-[11px] text-blue-800/80">
-            This code is added to the shared list, so every project can use it. Keep the numbering consistent
+            This code joins the shared list, so every project can use it. Keep the numbering consistent
             with the master budget.
           </p>
-          {available.length > 0 && (
-            <button
-              type="button"
-              onClick={() => { setCreating(false); setCode(''); setName(''); setErr(null) }}
-              className="text-[12px] font-semibold text-blue-700 hover:underline"
-            >
-              ← Pick from the existing list instead
-            </button>
-          )}
-        </>
+        </div>
       )}
 
       {err && <p className="text-[12px] font-semibold text-rose-700">{err}</p>}
 
-      <button
-        type="button" onClick={submit} disabled={busy}
-        className="inline-flex items-center justify-center gap-1.5 min-h-[44px] px-4 rounded-lg bg-blue-600 text-white text-[13px] font-semibold disabled:opacity-50 w-full sm:w-auto"
-      >
-        {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
-        Add to this project
-      </button>
+      {/* The two actions, in a row of their own. The primary is last on a phone
+          (stacked, full width) and right on a wider screen. */}
+      <div className="flex flex-col-reverse sm:flex-row sm:items-center sm:justify-between gap-2 pt-1">
+        {creating ? (
+          nothingLeft ? <span className="hidden sm:block" /> : (
+            <button
+              type="button"
+              onClick={() => { setCreating(false); setCode(''); setName(''); setErr(null) }}
+              className="text-[12px] font-semibold text-blue-700 hover:underline text-left"
+            >
+              ← Pick from the list instead
+            </button>
+          )
+        ) : (
+          <button
+            type="button"
+            onClick={() => { setCreating(true); setPick(''); setErr(null) }}
+            className="text-[12px] font-semibold text-blue-700 hover:underline text-left"
+          >
+            + Create a new {what} instead
+          </button>
+        )}
+
+        <button
+          type="button" onClick={submit} disabled={busy}
+          className="inline-flex items-center justify-center gap-1.5 min-h-[44px] px-4 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-[13px] font-semibold disabled:opacity-50 w-full sm:w-auto flex-shrink-0"
+        >
+          {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
+          {creating ? 'Create and add' : 'Add to this project'}
+        </button>
+      </div>
     </div>
   )
 }
