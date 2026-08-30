@@ -100,7 +100,8 @@ export default async function CostControlProjectDetailPage(
     if (focusSub) qs.set('focus_sub', focusSub)
     if (focusWs) qs.set('ws', focusWs)
     const tail = qs.toString()
-    redirect(`/project/${id}/budget${tail ? `?${tail}` : ''}`)
+    // Budget is the cockpit's landing tab, so this is /project/<id> itself.
+    redirect(`/project/${id}${tail ? `?${tail}` : ''}`)
   }
 
   const supabase = await createClient()

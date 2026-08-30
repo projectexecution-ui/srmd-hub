@@ -10,6 +10,11 @@ describe('project cockpit tabs', () => {
     expect(PROJECT_TABS[0].slug).toBe('')
   })
 
+  // Aksha's call: opening a project shows the Internal Estimate, not a summary.
+  it('lands on Budget', () => {
+    expect(PROJECT_TABS[0].label).toBe('Budget')
+  })
+
   it('has unique slugs', () => {
     const slugs = PROJECT_TABS.map(t => t.slug)
     expect(new Set(slugs).size).toBe(slugs.length)
@@ -28,7 +33,7 @@ describe('project cockpit tabs', () => {
 
   it('builds a clean href for the index tab and for the rest', () => {
     expect(tabHref(P, PROJECT_TABS[0])).toBe(`/project/${P}`)
-    expect(tabHref(P, findTab('budget')!)).toBe(`/project/${P}/budget`)
+    expect(tabHref(P, findTab('overview')!)).toBe(`/project/${P}/overview`)
   })
 
   describe('activeTabSlug', () => {
@@ -38,13 +43,13 @@ describe('project cockpit tabs', () => {
     })
 
     it('reports the tab actually open', () => {
-      expect(activeTabSlug(`/project/${P}/budget`, P)).toBe('budget')
+      expect(activeTabSlug(`/project/${P}/overview`, P)).toBe('overview')
       expect(activeTabSlug(`/project/${P}/schedule`, P)).toBe('schedule')
     })
 
     // A deep link inside a tab must keep that tab lit, not fall back to Overview.
     it('stays on the tab for a nested path', () => {
-      expect(activeTabSlug(`/project/${P}/budget/working-sheets/abc`, P)).toBe('budget')
+      expect(activeTabSlug(`/project/${P}/reports/detail/abc`, P)).toBe('reports')
     })
 
     it('falls back to the index tab for an unknown segment', () => {

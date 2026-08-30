@@ -25,10 +25,13 @@ export interface ProjectTab {
 }
 
 export const PROJECT_TABS: ProjectTab[] = [
-  { slug: '',            label: 'Overview',    hint: 'Money, progress and what is waiting on someone', built: true,  permissionSlug: 'cost-control' },
-  { slug: 'budget',      label: 'Budget',      hint: 'Internal Estimate, approvals and ERP position',  built: true,  permissionSlug: 'cost-control' },
+  // Budget is the INDEX tab — Aksha's call. Opening a project should land on
+  // the Internal Estimate, which is what people actually came for; Overview is
+  // the summary you step back to, not the thing you open.
+  { slug: '',            label: 'Budget',      hint: 'Internal Estimate, approvals and ERP position',  built: true,  permissionSlug: 'cost-control' },
+  { slug: 'overview',    label: 'Overview',    hint: 'Money, progress and what is waiting on someone', built: true,  permissionSlug: 'cost-control' },
   { slug: 'approvals',   label: 'Approvals',   hint: 'Everything waiting on someone in this project',  built: true,  permissionSlug: 'cost-control' },
-  { slug: 'reports',     label: 'Reports',     hint: 'Contractor, Supplier and Bills for this project', built: false, permissionSlug: 'contractor-report' },
+  { slug: 'reports',     label: 'Reports',     hint: 'Contractor, Supplier and Bills for this project', built: true,  permissionSlug: 'contractor-report' },
   { slug: 'schedule',    label: 'Schedule',    hint: 'Plan vs actual, WO deadlines and drawings',      built: true,  permissionSlug: 'schedule' },
   { slug: 'stores',      label: 'Stores',      hint: 'Stock, requests and gate movements',             built: true,  permissionSlug: 'warehouse' },
   { slug: 'procurement', label: 'Indent → PO', hint: 'Indents raised, POs pending, deliveries due',    built: false, permissionSlug: 'procurement-tracker' },

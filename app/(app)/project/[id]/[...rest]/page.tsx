@@ -3,9 +3,10 @@ import { notFound, redirect } from 'next/navigation'
 import { requirePermission } from '@/lib/auth'
 import { findTab, PROJECT_TABS, tabHref } from '@/lib/revamp/tabs'
 import { Hammer, ArrowRight } from 'lucide-react'
-import CostControlProjectDetailPage from '@/app/(app)/cost-control/projects/[id]/page'
 import ProjectSchedulePage from '@/app/(app)/schedule/[id]/page'
 import { ApprovalsTab, StoresTab, JmrTab } from '../tabs'
+import { OverviewTab } from '../OverviewTab'
+import { ReportsTab } from '../ReportsTab'
 
 export const dynamic = 'force-dynamic'
 
@@ -30,20 +31,8 @@ export default async function ProjectTabPage({
   const tab = findTab(slug)
   if (!tab || slug === '') notFound()
 
-  if (slug === 'budget') {
-    // The live Internal Estimate page, unchanged, inside the cockpit chrome.
-    // `in_cockpit` tells it not to bounce back to /project/[id]/budget — on the
-    // trial deployment that page redirects here, so without the flag the two
-    // would ping-pong forever.
-    const sp = await searchParams
-    return (
-      <CostControlProjectDetailPage
-        params={Promise.resolve({ id })}
-        searchParams={Promise.resolve({ ...sp, in_cockpit: '1' })}
-      />
-    )
-  }
-
+  if (slug === 'overview')  return <OverviewTab projectId={id} />
+  if (slug === 'reports')   return <ReportsTab projectId={id} />
   if (slug === 'approvals') return <ApprovalsTab projectId={id} />
   if (slug === 'stores')    return <StoresTab projectId={id} />
   if (slug === 'jmr')       return <JmrTab projectId={id} />
