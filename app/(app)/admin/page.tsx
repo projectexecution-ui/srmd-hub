@@ -12,6 +12,8 @@ import { isPendingAccessRequest, allowedEmailSet } from '@/lib/access-requests'
 import { MODULES } from '@/lib/modules'
 import { cn } from '@/lib/utils'
 import { AdminEmailRow } from './AdminEmailRow'
+import { IS_DEMO } from '@/lib/demo-mode'
+import { AdminRevamp } from './AdminRevamp'
 
 export const dynamic = 'force-dynamic'
 
@@ -21,6 +23,13 @@ export default async function AdminHomePage() {
     isPortalOwner(),
     getMyProfile(),
   ])
+
+  // TRIAL DEPLOYMENT: the revamped Admin — all 43 settings screens, including
+  // the 34 hidden inside modules, grouped into four areas. Live keeps today's
+  // page unchanged.
+  if (IS_DEMO) {
+    return <AdminRevamp isAdmin={portalOwner || profile?.role === 'admin'} />
+  }
   const canEditApprovals = portalOwner || profile?.role === 'admin'
   const canViewUsers = can(perms, 'admin-users', 'view')
   const canSettings = portalOwner || can(perms, 'admin-settings', 'admin')
