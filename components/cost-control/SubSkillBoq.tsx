@@ -82,8 +82,8 @@ export function SubSkillBoq({ sheets }: { sheets: BoqSheet[] }) {
       {sheets.map(sh => {
         const add = explainAdditions(sh.rowsTotal, sh.grandTotal, sh.ladder)
         return (
-        <div key={sh.wsId} className="rounded-lg border border-gray-200 bg-white overflow-hidden">
-          <div className="flex items-center justify-between gap-3 flex-wrap px-3 py-2 bg-gray-50 border-b border-gray-200">
+        <div key={sh.wsId} className="rounded-lg border border-gray-200 bg-white">
+          <div className="flex items-center justify-between gap-3 flex-wrap px-3 py-2 bg-gray-50 border-b border-gray-200 rounded-t-lg">
             <span className="text-[12px] font-semibold text-gray-900">
               <Link href={`/cost-control/working-sheets/${sh.wsId}`} className="text-blue-700 hover:underline">
                 {sh.wsCode ?? 'Budget'}
@@ -95,14 +95,14 @@ export function SubSkillBoq({ sheets }: { sheets: BoqSheet[] }) {
 
           {/* Desktop: the same columns as the approval screen. */}
           <table className="w-full table-fixed text-[12px] hidden md:table">
-            <thead className="bg-white text-left text-[10px] uppercase tracking-wide text-gray-400">
+            <thead className="text-left text-[10px] uppercase tracking-wide text-gray-400">
               <tr>
-                <th className="px-2 py-1.5 w-[4%]">#</th>
-                <th className="px-2 py-1.5 w-[40%]">Description &amp; take-off</th>
-                <th className="px-2 py-1.5 w-[8%]">Unit</th>
-                <th className="px-2 py-1.5 text-right w-[13%]">Qty</th>
-                <th className="px-2 py-1.5 text-right w-[17%]">Rate</th>
-                <th className="px-2 py-1.5 text-right w-[18%]">Amount</th>
+                <th className="sticky top-[44px] z-[9] bg-white border-b border-gray-100 px-2 py-1.5 w-[4%]">#</th>
+                <th className="sticky top-[44px] z-[9] bg-white border-b border-gray-100 px-2 py-1.5 w-[40%]">Description &amp; take-off</th>
+                <th className="sticky top-[44px] z-[9] bg-white border-b border-gray-100 px-2 py-1.5 w-[8%]">Unit</th>
+                <th className="sticky top-[44px] z-[9] bg-white border-b border-gray-100 px-2 py-1.5 text-right w-[13%]">Qty</th>
+                <th className="sticky top-[44px] z-[9] bg-white border-b border-gray-100 px-2 py-1.5 text-right w-[17%]">Rate</th>
+                <th className="sticky top-[44px] z-[9] bg-white border-b border-gray-100 px-2 py-1.5 text-right w-[18%]">Amount</th>
               </tr>
             </thead>
             <tbody>
