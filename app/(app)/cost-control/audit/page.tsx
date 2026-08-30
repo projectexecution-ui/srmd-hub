@@ -187,8 +187,8 @@ export default async function AuditLogPage({
     budget_add: 'Budget added',
     budget_update: 'Budget updated',
     budget_remove: 'Budget removed',
-    budget_shift_in: 'Budget shifted in',
-    budget_shift_out: 'Budget shifted out',
+    budget_shift_in: 'Budget moved IN — internal transfer',
+    budget_shift_out: 'Budget moved OUT — internal transfer',
   }
   function budgetEventLabel(t: string): string {
     const fallback = t.replace(/_/g, ' ')

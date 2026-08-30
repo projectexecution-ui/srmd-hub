@@ -532,6 +532,9 @@ export async function commitBphImport(
       ? ((prevLink.last_pull as { keys?: string[] } | null)?.keys ?? [])
       : []
 
+  // Everything this run writes is stamped after this instant — the transfer
+  // detector uses it to scope itself to this sync and no other.
+  const syncStartedAt = new Date().toISOString()
   let inserted = 0, updated = 0, skipped = 0
   const errors: string[] = []
   if (prevLinkErr) errors.push(`Couldn't read the previous pull's bookkeeping — removed-line cleanup skipped this time (${prevLinkErr.message})`)
@@ -720,6 +723,19 @@ export async function commitBphImport(
     if (zeroEvErr) errors.push(`Cleared a removed line, but the audit event failed (${zeroEvErr.message})`)
   }
 
+  // An internal transfer in IN4 arrives here as two unrelated budget_update
+  // rows. Pair them into one movement so the audit log and the project screen
+  // can say the money moved rather than leaving both sides unexplained.
+  // Best-effort: a sync that imported correctly must not fail over labelling.
+  const { data: transfersFound, error: shiftErr } = await supabase.rpc('cc_detect_budget_transfers', {
+    p_project: parsed.data.cc_project_id,
+    p_after: syncStartedAt,
+  })
+  if (shiftErr) {
+    errors.push(`Figures imported, but internal transfers could not be labelled (${shiftErr.message})`)
+  }
+  const transfers = Number(transfersFound ?? 0)
+
   // Persist the BPH↔CT mapping so future BPH saves auto-pull. Upsert keyed
   // on bph_project_id (the BPH side); if the same BPH project is being
   // remapped to a different CT project (rare — usually a fix), update.
@@ -734,7 +750,7 @@ export async function commitBphImport(
       created_by: me?.id ?? null,
       last_pulled_at: now,
       last_pull_result: {
-        inserted, updated, skipped,
+        inserted, updated, skipped, transfers,
         errors_count: errors.length,
         ...(unmatchedNames !== null
           ? { unmatched_count: unmatchedNames.length, unmatched_names: unmatchedNames.slice(0, 50) }

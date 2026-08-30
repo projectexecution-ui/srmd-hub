@@ -9,7 +9,7 @@ import { PageHeader } from '@/components/PageHeader'
 import { getModuleLabels, labelFor } from '@/lib/module-labels'
 import { SetupProgressBanner } from '@/components/ProjectSetupWizard/SetupProgressBanner'
 import { Plus, Flame, Info, Settings, Download, Ruler, ArrowRight } from 'lucide-react'
-import { formatINR, istCalendarDaysAgo } from '@/lib/utils'
+import { formatINR, formatDate, istCalendarDaysAgo } from '@/lib/utils'
 import { getCcSettings } from '@/lib/cost-control/settings'
 import { computeMoneyRollup, type RollupWSRow, type RollupVersionRow, type RollupBudgetLine } from '@/lib/cost-control/project-rollup'
 import { sortDisciplines } from '@/lib/cost-control/discipline-order'
@@ -453,6 +453,25 @@ export default async function CostControlProjectDetailPage(
   // LATEST version of each budget chain — the biggest project in the system is
   // 130 rows, so there is nothing to gain from lazy-loading and a lot to lose
   // in complexity.
+  // Budget moved between sub-categories inside a category in IN4. The BPH
+  // sync pairs the two halves (cc_detect_budget_transfers); this is the
+  // latest movement on each line, so the row can say where the money went.
+  const transferBySub = new Map<string, { dir: string; amount: number; other: string; when: string }>()
+  {
+    const { data: moves } = await supabase.rpc('cc_recent_transfers', { p_project: id })
+    for (const m of (moves ?? []) as Array<{
+      discipline_id: string; sub_skill_id: string; direction: string
+      amount: number; other_code: string | null; other_name: string | null; moved_at: string
+    }>) {
+      transferBySub.set(`${m.discipline_id}::${m.sub_skill_id}`, {
+        dir: m.direction,
+        amount: Number(m.amount ?? 0),
+        other: [m.other_code, m.other_name].filter(Boolean).join(' '),
+        when: m.moved_at,
+      })
+    }
+  }
+
   const boqBySub = new Map<string, BoqSheet[]>()
   {
     const latestIds = [...latestEng.values()].map(x => x.w.id)
@@ -1196,6 +1215,21 @@ export default async function CostControlProjectDetailPage(
                                 {wsCount} sheet{wsCount === 1 ? '' : 's'}
                               </Link>
                             )}
+                            {/* Budget moved in or out of this line in IN4. Without this the row
+                                reads as a lost Billing entry or as money nobody approved. */}
+                            {(() => {
+                              const mv = transferBySub.get(`${d.id}::${s.id}`)
+                              if (!mv || mv.amount <= 0) return null
+                              return (
+                                <span
+                                  className="ml-1.5 align-middle inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-bold border border-amber-300 bg-amber-50 text-amber-800 whitespace-nowrap"
+                                  title={`${formatINR(mv.amount)} moved ${mv.dir === 'out' ? 'to' : 'from'} ${mv.other} in IN4 on ${formatDate(mv.when)} — an internal transfer inside this work category, not a new approval`}
+                                >
+                                  <span className="font-normal">↔</span>
+                                  {formatINR(mv.amount)} {mv.dir === 'out' ? 'out to' : 'in from'} {mv.other}
+                                </span>
+                              )
+                            })()}
                             {sHot && <Flame className="inline h-3 w-3 text-orange-500 ml-1.5" />}
                             {/* Thumbrule is the rare exception — flag it
                                 read-only. The mode TOGGLE lives in the ▾
@@ -1525,6 +1559,17 @@ export default async function CostControlProjectDetailPage(
                     <p className="text-sm text-gray-900 min-w-0">
                       <RowDetailToggle id={s.id} count={(boqBySub.get(`${d.id}::${s.id}`) ?? []).reduce((n, b) => n + b.rows.length, 0)} />
                       <span className="font-mono text-[11px] text-gray-400 mr-1.5">{s.code}</span>{s.name}
+                      {/* Same marker as the table row — a phone reader needs it more. */}
+                      {(() => {
+                        const mv = transferBySub.get(`${d.id}::${s.id}`)
+                        if (!mv || mv.amount <= 0) return null
+                        return (
+                          <span className="ml-1.5 align-middle inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-bold border border-amber-300 bg-amber-50 text-amber-800">
+                            <span className="font-normal">↔</span>
+                            {formatINR(mv.amount)} {mv.dir === 'out' ? 'out to' : 'in from'} {mv.other}
+                          </span>
+                        )
+                      })()}
                     </p>
                     {wsCount > 0 && (
                       <Link
