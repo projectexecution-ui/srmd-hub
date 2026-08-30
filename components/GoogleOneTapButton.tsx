@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { Loader2 } from 'lucide-react'
+import { IS_DEMO } from '@/lib/demo-mode'
 
 /** Google sign-in that does NOT touch Supabase's /auth/v1/authorize endpoint.
  *
@@ -68,6 +69,12 @@ export function GoogleOneTapButton({
   const [stuck, setStuck] = useState(false)
 
   useEffect(() => {
+    // On a trial deployment the Google button can only fail. Google checks the
+    // page's origin against the client's Authorized JavaScript origins, and a
+    // preview URL is never on that list — clicking it dead-ends on
+    // "Error 400: origin_mismatch" with no way back. Don't render it at all;
+    // the note below sends people to email sign-in, which works everywhere.
+    if (IS_DEMO) return
     if (!clientId || !holder.current) return
     let cancelled = false
     const watchdog = setTimeout(() => { if (!cancelled) setStuck(true) }, 8000)
@@ -112,6 +119,16 @@ export function GoogleOneTapButton({
   }, [clientId, redirect])
 
   if (!clientId) return null
+
+  if (IS_DEMO) {
+    return (
+      <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 text-[12.5px] text-amber-900">
+        <b>Google sign-in doesn&apos;t work on the trial site.</b> Google only allows
+        the live address. Use <b>Sign in with email</b> below — the same email and
+        password you use on the live CT Hub.
+      </div>
+    )
+  }
 
   return (
     <div className="w-full">
