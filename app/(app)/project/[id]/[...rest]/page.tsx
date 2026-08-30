@@ -7,6 +7,7 @@ import ProjectSchedulePage from '@/app/(app)/schedule/[id]/page'
 import { ApprovalsTab, StoresTab, JmrTab } from '../tabs'
 import { OverviewTab } from '../OverviewTab'
 import { ReportsTab } from '../ReportsTab'
+import { ProcurementTab, DiscussionsTab } from '../MoreTabs'
 
 export const dynamic = 'force-dynamic'
 
@@ -31,9 +32,11 @@ export default async function ProjectTabPage({
   const tab = findTab(slug)
   if (!tab || slug === '') notFound()
 
-  if (slug === 'overview')  return <OverviewTab projectId={id} />
-  if (slug === 'reports')   return <ReportsTab projectId={id} />
-  if (slug === 'approvals') return <ApprovalsTab projectId={id} />
+  if (slug === 'overview')    return <OverviewTab projectId={id} />
+  if (slug === 'reports')     return <ReportsTab projectId={id} />
+  if (slug === 'approvals')   return <ApprovalsTab projectId={id} />
+  if (slug === 'procurement') return <ProcurementTab projectId={id} />
+  if (slug === 'discussions') return <DiscussionsTab projectId={id} />
   if (slug === 'stores')    return <StoresTab projectId={id} />
   if (slug === 'jmr')       return <JmrTab projectId={id} />
 

@@ -34,9 +34,9 @@ export const PROJECT_TABS: ProjectTab[] = [
   { slug: 'reports',     label: 'Reports',     hint: 'Contractor, Supplier and Bills for this project', built: true,  permissionSlug: 'contractor-report' },
   { slug: 'schedule',    label: 'Schedule',    hint: 'Plan vs actual, WO deadlines and drawings',      built: true,  permissionSlug: 'schedule' },
   { slug: 'stores',      label: 'Stores',      hint: 'Stock, requests and gate movements',             built: true,  permissionSlug: 'warehouse' },
-  { slug: 'procurement', label: 'Indent → PO', hint: 'Indents raised, POs pending, deliveries due',    built: false, permissionSlug: 'procurement-tracker' },
+  { slug: 'procurement', label: 'Indent → PO', hint: 'Indents raised, POs pending, deliveries due',    built: true,  permissionSlug: 'procurement-tracker' },
   { slug: 'jmr',         label: 'JMR',         hint: 'Daily measured work on this site',               built: true,  permissionSlug: 'jmr' },
-  { slug: 'discussions', label: 'Discussions', hint: 'Instructions and questions, with owners',        built: false, permissionSlug: 'cost-control' },
+  { slug: 'discussions', label: 'Discussions', hint: 'Every comment on this project, in one place',      built: true,  permissionSlug: 'cost-control' },
   { slug: 'setup',       label: 'Setup',       hint: 'Categories, approvers, area and grouping',       built: true,  permissionSlug: 'cost-control' },
 ]
 

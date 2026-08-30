@@ -94,6 +94,107 @@ export async function loadProjectStores(projectId: string): Promise<ProjectStore
   }
 }
 
+// ── Indent → PO ─────────────────────────────────────────────────────────────
+
+export interface ProjectProcurement {
+  /** The project name the latest upload actually covers. */
+  uploadedFor: string | null
+  /** True when that upload is this project. */
+  isThisProject: boolean
+  totalLines: number
+  pendingLines: number
+  pendingValue: number
+  poValue: number
+  grnValue: number
+}
+
+/**
+ * The Indent → PO tracker keeps ONE uploaded snapshot at a time, keyed by
+ * IN4's project name — there is no project_id anywhere in it. So this reports
+ * honestly: the figures when the snapshot is this project, and otherwise which
+ * project it does cover, rather than a misleading row of zeros.
+ */
+export async function loadProjectProcurement(
+  projectId: string, projectName: string, projectCode: string | null,
+): Promise<ProjectProcurement> {
+  const supabase = await createClient()
+  const { data } = await supabase
+    .from('procurement_tracker_state').select('state')
+    .order('updated_at', { ascending: false }).limit(1).maybeSingle()
+
+  const projects = ((data?.state as { projects?: unknown })?.projects ?? []) as Array<Record<string, unknown>>
+  const first = projects[0]
+  const uploadedFor = first ? String(first.projectName ?? '') || null : null
+
+  const k = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, '')
+  const isThisProject = !!uploadedFor
+    && (k(uploadedFor) === k(projectName) || (!!projectCode && k(uploadedFor) === k(projectCode)))
+
+  const num = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : Number(v) || 0)
+
+  return {
+    uploadedFor,
+    isThisProject,
+    totalLines: isThisProject ? num(first!.total) : 0,
+    pendingLines: isThisProject ? num(first!.pendingLineCount) : 0,
+    pendingValue: isThisProject ? num(first!.pendingValue) : 0,
+    poValue: isThisProject ? num(first!.totalPoValue) : 0,
+    grnValue: isThisProject ? num(first!.totalGrnValue) : 0,
+  }
+}
+
+// ── Discussions ─────────────────────────────────────────────────────────────
+
+export interface ProjectComment {
+  id: string
+  body: string
+  author: string
+  createdAt: string
+  wsId: string
+  wsCode: string | null
+}
+
+/** Every comment written on any of this project's budget sheets, newest first.
+ *  Today's comments live per-sheet, so nobody can see the conversation for a
+ *  project as a whole — this is that view. */
+export async function loadProjectDiscussions(projectId: string): Promise<ProjectComment[]> {
+  const supabase = await createClient()
+
+  const { data: sheets } = await supabase
+    .from('cc_working_sheets').select('id, ws_code').eq('project_id', projectId)
+  const rows = (sheets ?? []) as Array<{ id: string; ws_code: string | null }>
+  if (rows.length === 0) return []
+
+  const codeById = new Map(rows.map(r => [r.id, r.ws_code]))
+  const { data: comments } = await supabase
+    .from('cc_ws_comments')
+    .select('id, ws_id, author_id, body, created_at')
+    .in('ws_id', rows.map(r => r.id))
+    .order('created_at', { ascending: false })
+    .limit(100)
+
+  const list = (comments ?? []) as Array<Record<string, unknown>>
+  const authorIds = [...new Set(list.map(c => c.author_id as string).filter(Boolean))]
+  const names = new Map<string, string>()
+  if (authorIds.length) {
+    const { data: profs } = await supabase
+      .from('profiles').select('id, full_name, name, email').in('id', authorIds)
+    for (const p of (profs ?? []) as Array<Record<string, unknown>>) {
+      names.set(p.id as string,
+        (p.full_name as string) || (p.name as string) || (p.email as string) || 'Someone')
+    }
+  }
+
+  return list.map(c => ({
+    id: c.id as string,
+    body: String(c.body ?? ''),
+    author: names.get(c.author_id as string) ?? 'Someone',
+    createdAt: c.created_at as string,
+    wsId: c.ws_id as string,
+    wsCode: codeById.get(c.ws_id as string) ?? null,
+  }))
+}
+
 // ── JMR ─────────────────────────────────────────────────────────────────────
 
 export interface ProjectJmr {
