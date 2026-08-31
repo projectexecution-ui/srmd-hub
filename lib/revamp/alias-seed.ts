@@ -64,11 +64,10 @@ export const PROJECT_ALIASES: ProjectAlias[] = [
   // The Indent → PO tracker names this one in full.
   { in4: 'SR Animal Hospital', hub: 'SRAH', confidence: 'certain', why: 'SRAH is Shrimad Rajchandra Animal Hospital' },
 
-  // AV House sits under Admin Block in the hub.
-  { in4: 'AV House', hub: 'Admin Block AV House', confidence: 'likely', why: 'The hub files AV House under Admin Block; IN4 lists it on its own' },
-
-  // Vinay Vivek Infra ↔ VV Infra. VV is the hub's code for Vinay Vivek.
-  { in4: 'Vinay Vivek Infra', hub: 'VV Infra', confidence: 'likely', why: 'VV is the hub’s code for Vinay Vivek' },
+  // CONFIRMED by Aksha 2026-08-31. Plain Infra IS the hub's VV Infra project —
+  // unlike MEP Infra, which he confirmed is separate. The two are not the same
+  // rule, which is why each was asked rather than inferred.
+  { in4: 'Vinay Vivek Infra', hub: 'VV Infra', confidence: 'certain', why: 'Confirmed by Aksha — this is the VV Infra project' },
 
   // CONFIRMED by Aksha 2026-08-31. "ST" is not a different project — these are
   // the VINAY and VIVEK buildings, so their ₹2.78 Cr rolls up under VV.
@@ -100,6 +99,9 @@ export const DELIBERATELY_UNMAPPED: Array<{ in4: string; why: string }> = [
   { in4: 'DN Annex Extension', why: "Parked by Aksha's decision, 2026-08-31 — attaches automatically if it is ever created" },
   { in4: 'DN Annex Refurbish', why: "Parked by Aksha's decision, 2026-08-31 — attaches automatically if it is ever created" },
   { in4: 'Prem Parking', why: 'No such project in CT Hub' },
+  // CONFIRMED by Aksha 2026-08-31: AV House is its OWN project, NOT the hub's
+  // "Admin Block AV House". My earlier guess was wrong and is removed.
+  { in4: 'AV House', why: 'Its own project, not the hub’s Admin Block AV House (Aksha confirmed, 2026-08-31)' },
   // CONFIRMED by Aksha 2026-08-31: "p2 row house is a project - but infra is
   // seperate and common expense is also diff - but these all are of same group".
   // So three distinct projects under the P2 group; only Common Expenses exists
