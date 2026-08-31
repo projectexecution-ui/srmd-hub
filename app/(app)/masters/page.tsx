@@ -15,7 +15,7 @@ export default async function MastersPage() {
   const scattered = masters.filter(m => m.sources.length > 1)
 
   return (
-    <div className="p-4 md:p-6 max-w-5xl mx-auto space-y-4">
+    <div className="space-y-4">
       <PageHeader
         title="Masters"
         subtitle="The lists everything else points at. Today several of them exist more than once — this is where that gets fixed."
@@ -46,9 +46,11 @@ export default async function MastersPage() {
                   </p>
                   <p className="text-xs text-gray-500 mt-0.5">{m.hint}</p>
                 </div>
-                <p className="text-lg font-bold tabular-nums text-gray-900 flex-shrink-0">
-                  {m.total.toLocaleString('en-IN')}
-                </p>
+                {m.total !== null && (
+                  <p className="text-lg font-bold tabular-nums text-gray-900 flex-shrink-0">
+                    {m.total.toLocaleString('en-IN')}
+                  </p>
+                )}
               </div>
 
               <ul className="mt-2.5 space-y-1">
@@ -58,7 +60,7 @@ export default async function MastersPage() {
                       {s.name}
                       {s.note && <span className="text-gray-400"> — {s.note}</span>}
                     </span>
-                    <span className="tabular-nums text-gray-600 flex-shrink-0">{s.count.toLocaleString('en-IN')}</span>
+                    {s.count > 0 && <span className="tabular-nums text-gray-600 flex-shrink-0">{s.count.toLocaleString('en-IN')}</span>}
                   </li>
                 ))}
               </ul>

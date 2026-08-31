@@ -15,10 +15,9 @@ export default async function TrustsMasterPage() {
   const total = trusts.reduce((s, t) => s + t.workOrders, 0)
 
   return (
-    <div className="p-4 md:p-6 max-w-3xl mx-auto space-y-4">
+    <div className="space-y-4">
       <PageHeader
         title="Trusts"
-        back="/masters"
         subtitle="Read out of the work-order numbers — nothing here was typed."
       />
 

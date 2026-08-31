@@ -15,10 +15,9 @@ export default async function ItemsMasterPage() {
   const biggest = lists.reduce((a, b) => (a.count >= b.count ? a : b))
 
   return (
-    <div className="p-4 md:p-6 max-w-4xl mx-auto space-y-4">
+    <div className="space-y-4">
       <PageHeader
         title="Items"
-        back="/masters"
         subtitle="The same materials are held in four separate lists today."
       />
 

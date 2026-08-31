@@ -1,6 +1,7 @@
 import { requirePermission } from '@/lib/auth'
 import { PageHeader } from '@/components/PageHeader'
 import { loadStores } from '@/lib/revamp/masters'
+import { MasterTable, type MasterRow } from '../MasterTable'
 
 export const dynamic = 'force-dynamic'
 
@@ -12,17 +13,25 @@ export default async function StoresMasterPage() {
   const noKeeper = wh.filter(s => !s.keeper).length
   const shared = wh.filter(s => !s.ownerProject).length
 
+  const rows: MasterRow[] = stores.map(s => ({
+    id: `${s.source}-${s.name}`,
+    tone: s.source !== 'Warehouse' ? 'warn' : undefined,
+    cells: {
+      name: { text: s.name, tone: 'strong', sub: s.code ?? undefined },
+      list: { text: s.source, tone: s.source === 'Warehouse' ? 'muted' : 'warn' },
+      owner: s.ownerProject ? { text: s.ownerProject } : { text: 'shared', tone: 'muted' },
+      keeper: s.keeper ? { text: s.keeper } : { text: 'not set', tone: 'warn' },
+      items: { text: s.items ? s.items.toLocaleString('en-IN') : '—', tone: 'muted' },
+    },
+  }))
+
   return (
-    <div className="p-4 md:p-6 max-w-5xl mx-auto space-y-4">
-      <PageHeader
-        title="Stores"
-        back="/masters"
-        subtitle={`${stores.length} stores across two modules.`}
-      />
+    <div className="space-y-4">
+      <PageHeader title="Stores" subtitle={`${stores.length} stores across two modules.`} />
 
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
         <Stat label="Warehouse" value={String(wh.length)} />
-        <Stat label="Inventory (old)" value={String(inv.length)} />
+        <Stat label="Inventory (old)" value={String(inv.length)} warn={inv.length > 0} />
         <Stat label="No keeper set" value={String(noKeeper)} warn={noKeeper > 0} />
         <Stat label="Shared (no owner)" value={String(shared)} />
       </div>
@@ -37,39 +46,19 @@ export default async function StoresMasterPage() {
         </div>
       )}
 
-      <div className="rounded-lg border border-gray-200 bg-white overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-[13px] min-w-[640px]">
-            <thead>
-              <tr className="bg-gray-50 text-left">
-                <th className="border-b border-gray-200 px-3 py-2 font-semibold text-gray-600 min-w-[200px]">Store</th>
-                <th className="border-b border-gray-200 px-3 py-2 font-semibold text-gray-600 w-36">List</th>
-                <th className="border-b border-gray-200 px-3 py-2 font-semibold text-gray-600 min-w-[160px]">Owner project</th>
-                <th className="border-b border-gray-200 px-3 py-2 font-semibold text-gray-600 min-w-[140px]">Keeper</th>
-                <th className="border-b border-gray-200 px-3 py-2 font-semibold text-gray-600 text-right w-24">Items</th>
-              </tr>
-            </thead>
-            <tbody>
-              {stores.map(s => (
-                <tr key={`${s.source}-${s.name}`} className="border-t border-gray-100 hover:bg-gray-50/60">
-                  <td className="px-3 py-2 text-gray-900">
-                    {s.code && <span className="font-mono text-[11px] text-gray-400 mr-2">{s.code}</span>}
-                    {s.name}
-                  </td>
-                  <td className="px-3 py-2">
-                    <span className={`inline-block rounded text-[10px] px-1.5 py-0.5 ${
-                      s.source === 'Warehouse' ? 'bg-indigo-50 text-indigo-700' : 'bg-gray-100 text-gray-600'
-                    }`}>{s.source}</span>
-                  </td>
-                  <td className="px-3 py-2 text-gray-600">{s.ownerProject ?? <span className="text-gray-300">shared</span>}</td>
-                  <td className="px-3 py-2 text-gray-600">{s.keeper ?? <span className="text-amber-600">not set</span>}</td>
-                  <td className="px-3 py-2 text-right tabular-nums text-gray-600">{s.items || '—'}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
+      <MasterTable
+        columns={[
+          { key: 'name', label: 'Store' },
+          { key: 'list', label: 'List', width: 'w-36' },
+          { key: 'owner', label: 'Owner project' },
+          { key: 'keeper', label: 'Keeper' },
+          { key: 'items', label: 'Items', align: 'right', width: 'w-24' },
+        ]}
+        sortableKeys={['name', 'items']}
+        rows={rows}
+        searchPlaceholder="Search a store by name, code, project or keeper…"
+        emptyMessage="No stores yet."
+      />
     </div>
   )
 }

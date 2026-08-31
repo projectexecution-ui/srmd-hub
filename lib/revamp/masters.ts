@@ -16,8 +16,10 @@ export interface MasterSummary {
   label: string
   /** One line a non-technical reader understands. */
   hint: string
-  /** Total distinct records across every list that holds this thing. */
-  total: number
+  /** Total distinct records across every list that holds this thing.
+   *  null when a count would be meaningless — the mapping screen is a
+   *  diagnosis, not a list, and showing it as "0" read as broken. */
+  total: number | null
   /** The lists it currently lives in. More than one = the scattering. */
   sources: Array<{ name: string; count: number; note?: string }>
   built: boolean
@@ -278,8 +280,8 @@ export async function loadMasterSummaries(): Promise<MasterSummary[]> {
     {
       key: 'mapping', label: 'Project name mapping', built: true, href: '/masters/mapping',
       hint: 'Why a project’s Reports or Indent → PO tab shows what it shows',
-      total: 0,
-      sources: [{ name: 'IN4 sub-project names matched onto hub projects', count: 0 }],
+      total: null,
+      sources: [{ name: 'IN4, the bills report and CT Hub each spell a building differently', count: 0, note: 'open to see every name and where it landed' }],
     },
     {
       key: 'contacts', label: 'Contacts', built: true, href: '/masters/contacts',

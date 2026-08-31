@@ -1,8 +1,8 @@
-import Link from 'next/link'
 import { requirePermission } from '@/lib/auth'
 import { PageHeader } from '@/components/PageHeader'
 import { loadProjectMaster } from '@/lib/revamp/masters'
 import { formatDate } from '@/lib/utils'
+import { MasterTable, type MasterRow } from '../MasterTable'
 
 export const dynamic = 'force-dynamic'
 
@@ -11,9 +11,9 @@ export const dynamic = 'force-dynamic'
  *  for different fields — which is why so much of it is empty. */
 export default async function ProjectsMasterPage() {
   await requirePermission('cost-control', 'view')
-  const rows = await loadProjectMaster()
+  const projects = await loadProjectMaster()
 
-  const missing = (f: (r: typeof rows[number]) => boolean) => rows.filter(f).length
+  const missing = (f: (r: typeof projects[number]) => boolean) => projects.filter(f).length
   const gaps = [
     { label: 'No area', n: missing(r => !r.builtUpSft) },
     { label: 'No start date', n: missing(r => !r.startDate) },
@@ -21,12 +21,36 @@ export default async function ProjectsMasterPage() {
     { label: 'No manager', n: missing(r => !r.hasPm) },
   ]
 
+  const miss = { text: 'missing', tone: 'missing' as const }
+
+  const rows: MasterRow[] = projects.map(p => ({
+    id: p.id,
+    href: `/project/${p.id}`,
+    tone: p.filled < 50 ? 'warn' : undefined,
+    cells: {
+      name: {
+        text: p.name,
+        tone: 'strong',
+        sub: [p.code, p.parent].filter(Boolean).join(' · ') || undefined,
+      },
+      type: p.projectType ? { text: p.projectType, tone: 'muted' } : miss,
+      area: p.builtUpSft
+        ? { text: p.builtUpSft.toLocaleString('en-IN'), sub: 'sft' }
+        : miss,
+      start: p.startDate ? { text: formatDate(p.startDate) } : miss,
+      target: p.targetDate ? { text: formatDate(p.targetDate) } : miss,
+      filled: {
+        text: `${p.filled}%`,
+        tone: p.filled >= 80 ? 'good' : p.filled >= 50 ? 'warn' : 'missing',
+      },
+    },
+  }))
+
   return (
-    <div className="p-4 md:p-6 max-w-6xl mx-auto space-y-4">
+    <div className="space-y-4">
       <PageHeader
         title="Projects"
-        back="/masters"
-        subtitle={`${rows.length} live projects. One registry — but three screens create into it.`}
+        subtitle={`${projects.length} live projects. One registry — but three screens create into it.`}
       />
 
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
@@ -36,7 +60,7 @@ export default async function ProjectsMasterPage() {
             <p className={`text-base font-bold tabular-nums mt-0.5 ${g.n > 0 ? 'text-amber-900' : 'text-gray-900'}`}>
               {g.n}
             </p>
-            <p className="text-[11px] text-gray-400">of {rows.length}</p>
+            <p className="text-[11px] text-gray-400">of {projects.length}</p>
           </div>
         ))}
       </div>
@@ -50,66 +74,20 @@ export default async function ProjectsMasterPage() {
         </p>
       </div>
 
-      {/* Desktop */}
-      <div className="hidden md:block rounded-lg border border-gray-200 bg-white overflow-hidden">
-        <div className="overflow-auto max-h-[65vh]">
-          <table className="w-full text-[13px]">
-            <thead>
-              <tr className="bg-gray-50 text-left">
-                <th className="sticky top-0 z-10 bg-gray-50 border-b border-gray-200 px-3 py-2 font-semibold text-gray-600 min-w-[240px]">Project</th>
-                <th className="sticky top-0 z-10 bg-gray-50 border-b border-gray-200 px-3 py-2 font-semibold text-gray-600 w-28">Type</th>
-                <th className="sticky top-0 z-10 bg-gray-50 border-b border-gray-200 px-3 py-2 font-semibold text-gray-600 text-right w-28">Area</th>
-                <th className="sticky top-0 z-10 bg-gray-50 border-b border-gray-200 px-3 py-2 font-semibold text-gray-600 w-28">Start</th>
-                <th className="sticky top-0 z-10 bg-gray-50 border-b border-gray-200 px-3 py-2 font-semibold text-gray-600 w-28">Target</th>
-                <th className="sticky top-0 z-10 bg-gray-50 border-b border-gray-200 px-3 py-2 font-semibold text-gray-600 text-right w-24">Filled</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map(r => (
-                <tr key={r.id} className="border-t border-gray-100 hover:bg-gray-50/60">
-                  <td className="px-3 py-2">
-                    <Link href={`/project/${r.id}`} className="text-gray-900 hover:underline">
-                      {r.code && <span className="font-mono text-[11px] font-bold text-indigo-700 mr-2">{r.code}</span>}
-                      {r.parent && <span className="text-gray-400">{r.parent} › </span>}
-                      {r.name}
-                    </Link>
-                  </td>
-                  <td className="px-3 py-2 text-gray-500 text-[12px]">{r.projectType ?? '—'}</td>
-                  <td className="px-3 py-2 text-right tabular-nums">
-                    {r.builtUpSft ? r.builtUpSft.toLocaleString('en-IN') : <Missing />}
-                  </td>
-                  <td className="px-3 py-2 text-gray-600">{r.startDate ? formatDate(r.startDate) : <Missing />}</td>
-                  <td className="px-3 py-2 text-gray-600">{r.targetDate ? formatDate(r.targetDate) : <Missing />}</td>
-                  <td className={`px-3 py-2 text-right tabular-nums font-semibold ${
-                    r.filled >= 80 ? 'text-emerald-700' : r.filled >= 50 ? 'text-amber-700' : 'text-rose-700'
-                  }`}>{r.filled}%</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      {/* Mobile */}
-      <div className="md:hidden rounded-lg border border-gray-200 bg-white divide-y divide-gray-100">
-        {rows.map(r => (
-          <Link key={r.id} href={`/project/${r.id}`} className="block px-4 py-3">
-            <p className="text-sm text-gray-900">
-              {r.code && <span className="font-mono text-[11px] font-bold text-indigo-700 mr-1.5">{r.code}</span>}
-              {r.name}
-            </p>
-            <p className="text-[11px] text-gray-500 mt-0.5">
-              {r.builtUpSft ? `${r.builtUpSft.toLocaleString('en-IN')} sft` : 'no area'} ·{' '}
-              {r.startDate ? formatDate(r.startDate) : 'no start'} ·{' '}
-              <span className={r.filled >= 80 ? 'text-emerald-700' : 'text-amber-700'}>{r.filled}% filled</span>
-            </p>
-          </Link>
-        ))}
-      </div>
+      <MasterTable
+        columns={[
+          { key: 'name', label: 'Project' },
+          { key: 'type', label: 'Type', width: 'w-28' },
+          { key: 'area', label: 'Area', align: 'right', width: 'w-28' },
+          { key: 'start', label: 'Start', width: 'w-28' },
+          { key: 'target', label: 'Target', width: 'w-28' },
+          { key: 'filled', label: 'Filled', align: 'right', width: 'w-24' },
+        ]}
+        sortableKeys={['name', 'area', 'filled']}
+        rows={rows}
+        searchPlaceholder="Search a project by name or code…"
+        emptyMessage="No live projects."
+      />
     </div>
   )
-}
-
-function Missing() {
-  return <span className="text-rose-300">—</span>
 }

@@ -1,12 +1,12 @@
 import { requirePermission } from '@/lib/auth'
 import { PageHeader } from '@/components/PageHeader'
 import { loadContacts } from '@/lib/revamp/masters'
+import { MasterTable, type MasterRow } from '../MasterTable'
 
 export const dynamic = 'force-dynamic'
 
 /** One contact list, merged by name across the lists that hold contacts today,
- *  with what is MISSING made obvious — because the gap is the point. The hub's
- *  90 vendors have no phone, email, GSTIN or address at all. */
+ *  with what is MISSING made obvious — because the gap is the point. */
 export default async function ContactsMasterPage() {
   await requirePermission('cost-control', 'view')
   const contacts = await loadContacts()
@@ -21,11 +21,25 @@ export default async function ContactsMasterPage() {
     { label: 'Address', n: filled(c => c.address) },
   ]
 
+  const rows: MasterRow[] = contacts.map(c => ({
+    id: c.name,
+    tone: c.completeness <= 20 ? 'warn' : undefined,
+    cells: {
+      name: { text: c.name, tone: 'strong', sub: c.sources.join(' · ') },
+      gstin: c.gstin ? { text: c.gstin, mono: true } : { text: 'missing', tone: 'missing' },
+      phone: c.phone ? { text: c.phone } : { text: 'missing', tone: 'missing' },
+      email: c.email ? { text: c.email, tone: 'muted' } : { text: 'missing', tone: 'missing' },
+      completeness: {
+        text: `${c.completeness}%`,
+        tone: c.completeness >= 60 ? 'good' : c.completeness >= 40 ? 'warn' : 'missing',
+      },
+    },
+  }))
+
   return (
-    <div className="p-4 md:p-6 max-w-6xl mx-auto space-y-4">
+    <div className="space-y-4">
       <PageHeader
         title="Contacts"
-        back="/masters"
         subtitle={`${contacts.length} names, merged from the lists that hold contacts today.`}
       />
 
@@ -49,59 +63,19 @@ export default async function ContactsMasterPage() {
         ))}
       </div>
 
-      {/* Desktop table */}
-      <div className="hidden md:block rounded-lg border border-gray-200 bg-white overflow-hidden">
-        <div className="overflow-auto max-h-[70vh]">
-          <table className="w-full text-[13px]">
-            <thead>
-              <tr className="bg-gray-50 text-left">
-                <th className="sticky top-0 z-10 bg-gray-50 border-b border-gray-200 px-3 py-2 font-semibold text-gray-600 min-w-[240px]">Name</th>
-                <th className="sticky top-0 z-10 bg-gray-50 border-b border-gray-200 px-3 py-2 font-semibold text-gray-600 w-40">GSTIN</th>
-                <th className="sticky top-0 z-10 bg-gray-50 border-b border-gray-200 px-3 py-2 font-semibold text-gray-600 w-32">Phone</th>
-                <th className="sticky top-0 z-10 bg-gray-50 border-b border-gray-200 px-3 py-2 font-semibold text-gray-600 min-w-[200px]">Email</th>
-                <th className="sticky top-0 z-10 bg-gray-50 border-b border-gray-200 px-3 py-2 font-semibold text-gray-600 w-36">In which list</th>
-              </tr>
-            </thead>
-            <tbody>
-              {contacts.map(c => (
-                <tr key={c.name} className="border-t border-gray-100 hover:bg-gray-50/60">
-                  <td className="px-3 py-2 text-gray-900">{c.name}</td>
-                  <td className="px-3 py-2 font-mono text-[11px] text-gray-600">{c.gstin ?? <Missing />}</td>
-                  <td className="px-3 py-2 tabular-nums text-gray-600">{c.phone ?? <Missing />}</td>
-                  <td className="px-3 py-2 text-gray-600 truncate">{c.email ?? <Missing />}</td>
-                  <td className="px-3 py-2">
-                    {c.sources.map(s => (
-                      <span key={s} className="inline-block rounded bg-gray-100 text-gray-600 text-[10px] px-1.5 py-0.5 mr-1">{s}</span>
-                    ))}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      {/* Mobile cards */}
-      <div className="md:hidden rounded-lg border border-gray-200 bg-white divide-y divide-gray-100 overflow-auto max-h-[70vh]">
-        {contacts.map(c => (
-          <div key={c.name} className="px-4 py-3">
-            <p className="text-sm font-medium text-gray-900">{c.name}</p>
-            <p className="text-[11px] text-gray-500 mt-0.5">
-              {c.gstin ?? '—'} · {c.phone ?? '—'}
-            </p>
-            <p className="text-[11px] text-gray-500 truncate">{c.email ?? '—'}</p>
-            <div className="mt-1">
-              {c.sources.map(s => (
-                <span key={s} className="inline-block rounded bg-gray-100 text-gray-600 text-[10px] px-1.5 py-0.5 mr-1">{s}</span>
-              ))}
-            </div>
-          </div>
-        ))}
-      </div>
+      <MasterTable
+        columns={[
+          { key: 'name', label: 'Name' },
+          { key: 'gstin', label: 'GSTIN', width: 'w-40' },
+          { key: 'phone', label: 'Phone', width: 'w-32' },
+          { key: 'email', label: 'Email' },
+          { key: 'completeness', label: 'Filled', align: 'right', width: 'w-24' },
+        ]}
+        sortableKeys={['name', 'completeness']}
+        rows={rows}
+        searchPlaceholder="Search a contractor or supplier by name, GSTIN, phone or email…"
+        emptyMessage="No contacts yet."
+      />
     </div>
   )
-}
-
-function Missing() {
-  return <span className="text-rose-300">— missing</span>
 }

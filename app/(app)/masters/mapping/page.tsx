@@ -59,10 +59,9 @@ export default async function MappingPage() {
   const unmappedReason = new Map(DELIBERATELY_UNMAPPED.map(u => [u.in4.toLowerCase(), u.why]))
 
   return (
-    <div className="p-4 md:p-6 max-w-5xl mx-auto space-y-4">
+    <div className="space-y-4">
       <PageHeader
         title="Project name mapping"
-        back="/masters"
         subtitle="Why a project's Reports or Indent → PO tab shows what it shows."
       />
 
