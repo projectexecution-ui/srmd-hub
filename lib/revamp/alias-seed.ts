@@ -83,18 +83,22 @@ export const PROJECT_ALIASES: ProjectAlias[] = [
  * unattributed.
  */
 export const DELIBERATELY_UNMAPPED: Array<{ in4: string; why: string }> = [
-  { in4: 'Raj Uphaar', why: 'No such project in CT Hub' },
+  // Aksha will create these himself (2026-08-31). Nothing to do here when he
+  // does: name the project exactly "Raj Uphaar" / "Raj Saurabh" and every stage
+  // under it attaches on the next page load, because the matcher strips the
+  // stage and matches the base. Its Infra Work stays separate, as he confirmed.
+  { in4: 'Raj Uphaar', why: 'Aksha is creating it — attaches automatically once a project named "Raj Uphaar" exists' },
   // CONFIRMED by Aksha 2026-08-31: RU Infra is a SEPARATE project, not part of
   // Raj Uphaar. Do not fold its ₹10.94 Cr into Raj Uphaar.
   { in4: 'RU', why: 'RU Infra is its own project, separate from Raj Uphaar (Aksha confirmed, 2026-08-31). Not in CT Hub yet' },
-  { in4: 'Raj Saurabh', why: 'No such project in CT Hub' },
-  { in4: 'Common Facility Block', why: 'No such project in CT Hub' },
-  { in4: 'Staff Facilities Block', why: 'No such project in CT Hub' },
+  { in4: 'Raj Saurabh', why: 'Aksha is creating it — attaches automatically once a project named "Raj Saurabh" exists' },
+  { in4: 'Common Facility Block', why: "Parked by Aksha's decision, 2026-08-31 — attaches automatically if it is ever created" },
+  { in4: 'Staff Facilities Block', why: "Parked by Aksha's decision, 2026-08-31 — attaches automatically if it is ever created" },
   { in4: 'Old Swadhyay Hall', why: 'No such project in CT Hub — one of the four to create' },
   { in4: 'Naturopathy', why: 'No such project in CT Hub — one of the four to create' },
-  { in4: 'DN Extension', why: 'No such project in CT Hub' },
-  { in4: 'DN Annex Extension', why: 'No such project in CT Hub' },
-  { in4: 'DN Annex Refurbish', why: 'No such project in CT Hub' },
+  { in4: 'DN Extension', why: "Parked by Aksha's decision, 2026-08-31 — attaches automatically if it is ever created" },
+  { in4: 'DN Annex Extension', why: "Parked by Aksha's decision, 2026-08-31 — attaches automatically if it is ever created" },
+  { in4: 'DN Annex Refurbish', why: "Parked by Aksha's decision, 2026-08-31 — attaches automatically if it is ever created" },
   { in4: 'Prem Parking', why: 'No such project in CT Hub' },
   // CONFIRMED by Aksha 2026-08-31: "p2 row house is a project - but infra is
   // seperate and common expense is also diff - but these all are of same group".
@@ -103,7 +107,7 @@ export const DELIBERATELY_UNMAPPED: Array<{ in4: string; why: string }> = [
   { in4: 'P2 Row Houses', why: 'A project in its own right, under the P2 group — not yet in CT Hub (Aksha confirmed, 2026-08-31)' },
   { in4: 'P2 Row Houses - Infra Work', why: 'Separate from P2 Row Houses itself (Aksha confirmed, 2026-08-31). Not in CT Hub' },
   { in4: 'Raj Uphaar - Infra Work', why: 'Infra is its own project, not a stage of Raj Uphaar' },
-  { in4: 'Raj Sabhagruh Museum', why: 'No such project in CT Hub' },
+  { in4: 'Raj Sabhagruh Museum', why: "Parked by Aksha's decision, 2026-08-31 — attaches automatically if it is ever created" },
   // CONFIRMED by Aksha 2026-08-31: a DIFFERENT warehouse, not Civil & MEP
   // Central Warehouse (which appears separately in the same upload with only
   // ₹76,640). ₹15.73 Cr stays parked until the project is created.
