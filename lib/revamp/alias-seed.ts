@@ -50,6 +50,13 @@ export const PROJECT_ALIASES: ProjectAlias[] = [
   { in4: 'P2 Stepped Terraces', hub: 'P2', confidence: 'certain', why: 'The group holding P2 Infra and the A01–A03 towers' },
   { in4: 'P2 Infra', hub: 'P2  Infra', confidence: 'certain', why: 'The hub name carries a double space' },
 
+  // BILLS PIPELINE "area" values. The daily bills report names the building in
+  // its own shorthand, which differs again from both IN4 and the hub.
+  { in4: 'NGH Common Expenses', hub: 'New Guest House - Common Expenses', confidence: 'certain', why: 'The bills report abbreviates New Guest House to NGH' },
+  { in4: 'VINAY Building', hub: 'VINAY', confidence: 'certain', why: 'The bills report appends “Building”' },
+  { in4: 'VIVEK Building', hub: 'VIVEK', confidence: 'certain', why: 'The bills report appends “Building”' },
+  { in4: 'VV Common Expenses', hub: 'Vinay Vivek Common Expenses', confidence: 'certain', why: 'The bills report abbreviates Vinay Vivek to VV' },
+
   // Plain plural.
   { in4: 'Ekant Kutirs', hub: 'Ekant Kutir', confidence: 'certain', why: 'Plural in IN4, singular in the hub' },
 
