@@ -16,6 +16,10 @@ export interface ProjectBills {
   bills: CockpitBill[]
   /** The date the snapshot represents — everything here is only this fresh. */
   asOf: string
+  /** When the pipeline last actually ran against Zoho. */
+  generatedAt: string | null
+  /** Whole days since that run, so a stale snapshot can say so itself. */
+  ageDays: number | null
   /** Bills whose area matches no project in CT Hub at all. */
   unattributed: { count: number; claimed: number }
 }
@@ -37,10 +41,16 @@ export async function loadProjectBills(projectId: string): Promise<ProjectBills>
   } catch { /* a malformed snapshot must not take the tab down */ }
 
   let asOf = 'latest'
+  let generatedAt: string | null = null
   try {
     const meta = JSON.parse(byKey.get('bills_pipeline_last') ?? '{}')
     if (typeof meta?.asOf === 'string') asOf = meta.asOf
-  } catch { /* keep the default */ }
+    if (typeof meta?.generatedAt === 'string') generatedAt = meta.generatedAt
+  } catch { /* keep the defaults */ }
+
+  const ageDays = generatedAt
+    ? Math.max(0, Math.floor((Date.now() - new Date(generatedAt).getTime()) / 86_400_000))
+    : null
 
   const raw = (projRows ?? []) as Array<Record<string, unknown>>
   const projects = raw as unknown as HubProject[]
@@ -76,6 +86,8 @@ export async function loadProjectBills(projectId: string): Promise<ProjectBills>
   return {
     bills,
     asOf,
+    generatedAt,
+    ageDays,
     unattributed: { count: unattributedCount, claimed: unattributedClaimed },
   }
 }

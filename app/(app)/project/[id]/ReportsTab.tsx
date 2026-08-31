@@ -7,6 +7,7 @@ import { TreeProvider, TreeToolbar, CatChevron, CatRows, SubRow } from '@/compon
 import { loadProjectReports, type ReportSide } from '@/lib/revamp/reports-data'
 import { loadProjectBills } from '@/lib/revamp/bills-data'
 import Cockpit from '@/app/(app)/bills-pipeline/cockpit'
+import { BillsRefresh } from './BillsRefresh'
 import { loadCockpit } from '@/lib/revamp/project-cockpit'
 import { AlertTriangle } from 'lucide-react'
 
@@ -88,12 +89,15 @@ export async function ReportsTab({ projectId }: { projectId: string }) {
  * the input — this project's bills instead of all 206.
  */
 async function BillsCockpit({ projectId }: { projectId: string }) {
-  const { bills, asOf, unattributed } = await loadProjectBills(projectId)
+  const { bills, asOf, ageDays, unattributed } = await loadProjectBills(projectId)
 
   if (bills.length === 0) {
     return (
       <div className="rounded-lg border border-gray-200 bg-white px-4 py-3">
-        <p className="text-sm font-semibold text-gray-900">Bills with CT</p>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <p className="text-sm font-semibold text-gray-900">Bills with CT</p>
+          <BillsRefresh asOf={asOf} ageDays={ageDays} />
+        </div>
         <p className="text-xs text-gray-500 mt-0.5">
           No bills for this project in the {asOf} snapshot.
           {unattributed.count > 0 && (
@@ -107,6 +111,9 @@ async function BillsCockpit({ projectId }: { projectId: string }) {
 
   return (
     <div className="space-y-1">
+      <div className="flex justify-end">
+        <BillsRefresh asOf={asOf} ageDays={ageDays} />
+      </div>
       <Cockpit bills={bills} asOf={asOf} />
       {unattributed.count > 0 && (
         <p className="text-[11px] text-amber-700 px-1">
