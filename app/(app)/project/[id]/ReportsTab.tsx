@@ -1,10 +1,12 @@
 import { Fragment } from 'react'
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
-import { formatINR, formatDate } from '@/lib/utils'
+import { formatINR } from '@/lib/utils'
 import { EmptyState } from '@/components/ui/empty-state'
 import { TreeProvider, TreeToolbar, CatChevron, CatRows, SubRow } from '@/components/cost-control/project-tree'
-import { loadProjectReports, type ReportSide, type BillsSide } from '@/lib/revamp/reports-data'
+import { loadProjectReports, type ReportSide } from '@/lib/revamp/reports-data'
+import { loadProjectBills } from '@/lib/revamp/bills-data'
+import Cockpit from '@/app/(app)/bills-pipeline/cockpit'
 import { loadCockpit } from '@/lib/revamp/project-cockpit'
 import { AlertTriangle } from 'lucide-react'
 
@@ -18,7 +20,7 @@ import { AlertTriangle } from 'lucide-react'
  * card list on mobile. Not a second table invented for this screen.
  */
 export async function ReportsTab({ projectId }: { projectId: string }) {
-  const [{ contractor, supplier, billsPipeline, unattributed, rolledUpChildren }, cockpit] = await Promise.all([
+  const [{ contractor, supplier, unattributed, rolledUpChildren }, cockpit] = await Promise.all([
     loadProjectReports(projectId),
     loadCockpit(projectId),
   ])
@@ -38,6 +40,11 @@ export async function ReportsTab({ projectId }: { projectId: string }) {
         </p>
       )}
 
+      {/* Bills first — Aksha's order. What is sitting with CT and ageing is
+          the thing to act on today; the contractor and supplier positions are
+          the record of what has already happened. */}
+      <BillsCockpit projectId={projectId} />
+
       {nothing ? (
         <EmptyState
           title="Nothing attributed to this project yet"
@@ -49,8 +56,6 @@ export async function ReportsTab({ projectId }: { projectId: string }) {
           <SideTable title="Supplier" side={supplier} partyLabel="Supplier" sft={sft} />
         </>
       )}
-
-      <BillsBlock side={billsPipeline} />
 
       {unattributed.subProjects > 0 && (
         <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3">
@@ -73,102 +78,43 @@ export async function ReportsTab({ projectId }: { projectId: string }) {
 }
 
 /**
- * Bills sitting with CT for this project, from the daily bills report.
+ * Bills with CT for this project — the Bills Pipeline module's OWN cockpit,
+ * not a second bills screen.
  *
- * Grouped by the report's own "area" — the building — using the same tree as
- * everything else, so a group project shows each of its buildings as a
- * collapsible row. Oldest first inside each: the age is what makes a bill
- * chaseable, and it is the whole reason this list is worth having per project
- * rather than only in the pipeline module.
+ * Rendering that component means the tab inherits everything it does: the
+ * checking-flow stage order (Site Head → CT Disc Head → CT Head → ATMs →
+ * CT Billing → Trust), the ageing colours, stalled detection, the filters, the
+ * "Push today" priority list and the screenshot export. The only difference is
+ * the input — this project's bills instead of all 206.
  */
-function BillsBlock({ side }: { side: BillsSide }) {
-  if (side.bills.length === 0 && side.unattributed.count === 0) return null
+async function BillsCockpit({ projectId }: { projectId: string }) {
+  const { bills, asOf, unattributed } = await loadProjectBills(projectId)
 
-  const byArea = new Map<string, typeof side.bills>()
-  for (const b of side.bills) {
-    const list = byArea.get(b.area)
-    if (list) list.push(b); else byArea.set(b.area, [b])
-  }
-  const areas = [...byArea.entries()].sort((a, b) =>
-    b[1].reduce((s, x) => s + x.amount, 0) - a[1].reduce((s, x) => s + x.amount, 0))
-
-  const overdue = side.bills.filter(b => b.ageDays >= 30).length
-
-  return (
-    <TreeProvider allCatIds={areas.map(([a]) => a)} emptyCount={0}>
-      <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
-        <div className="flex items-center justify-between px-3 py-2 border-b border-gray-100 bg-gray-50/60 gap-2 flex-wrap">
-          <span className="text-sm font-bold text-gray-900">
-            Bills with CT
-            <span className="ml-2 text-[11px] font-normal text-gray-500">
-              {side.bills.length} bill{side.bills.length === 1 ? '' : 's'} · {formatINR(side.total)}
-              {overdue > 0 && <span className="text-rose-700 font-semibold"> · {overdue} over 30 days</span>}
-            </span>
-          </span>
-          {areas.length > 0 && <TreeToolbar />}
-        </div>
-
-        {side.bills.length === 0 ? (
-          <p className="px-4 py-6 text-center text-sm text-gray-400">
-            No bills with CT for this project right now.
-          </p>
-        ) : (
-          <div className="divide-y divide-gray-100">
-            {areas.map(([area, rows]) => {
-              const total = rows.reduce((s, b) => s + b.amount, 0)
-              return (
-                <div key={area}>
-                  <div className="px-3 py-2 bg-gray-50/60 flex items-center justify-between gap-2">
-                    <span className="flex items-center min-w-0 text-sm font-semibold text-gray-800">
-                      <CatChevron catId={area} />
-                      {area}
-                      <span className="ml-2 text-[11px] font-normal text-gray-400">{rows.length} bills</span>
-                    </span>
-                    <span className="tabular-nums text-sm font-semibold text-gray-900">{formatINR(total)}</span>
-                  </div>
-                  <CatRows catId={area}>
-                    {rows.map(b => (
-                      <div key={b.id} className="px-4 py-2.5 border-t border-gray-100 flex flex-wrap items-center justify-between gap-x-4 gap-y-1">
-                        <span className="min-w-0">
-                          <span className="block text-sm text-gray-900 truncate">{b.vendor || '(no vendor)'}</span>
-                          <span className="block text-[11px] text-gray-500 font-mono">
-                            {b.invoiceNo || '—'}
-                            {b.billDate ? ` · ${formatDate(b.billDate)}` : ''}
-                          </span>
-                        </span>
-                        <span className="flex items-center gap-3 flex-shrink-0">
-                          <span className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-semibold whitespace-nowrap ${
-                            b.ageDays >= 30 ? 'bg-rose-100 text-rose-800'
-                            : b.ageDays >= 14 ? 'bg-amber-100 text-amber-800'
-                            : 'bg-gray-100 text-gray-600'
-                          }`}>
-                            {b.ageDays}d with CT
-                          </span>
-                          <span className="tabular-nums font-semibold text-gray-900">{formatINR(b.amount)}</span>
-                        </span>
-                      </div>
-                    ))}
-                  </CatRows>
-                </div>
-              )
-            })}
-          </div>
-        )}
-
-        <p className="px-4 py-2 border-t border-gray-100 text-[11px] text-gray-500 flex flex-wrap gap-x-3">
-          {side.asOf && <span>Report generated {formatDate(side.asOf)}</span>}
-          {side.unattributed.count > 0 && (
-            <span className="text-amber-700">
-              {side.unattributed.count} bills ({formatINR(side.unattributed.amount)}) name an area
-              no project in CT Hub has
-            </span>
+  if (bills.length === 0) {
+    return (
+      <div className="rounded-lg border border-gray-200 bg-white px-4 py-3">
+        <p className="text-sm font-semibold text-gray-900">Bills with CT</p>
+        <p className="text-xs text-gray-500 mt-0.5">
+          No bills for this project in the {asOf} snapshot.
+          {unattributed.count > 0 && (
+            <> {unattributed.count} bills ({formatINR(unattributed.claimed)}) in the pipeline name an
+            area no project in CT Hub has.</>
           )}
-          <Link href="/bills-pipeline" className="text-indigo-700 hover:underline font-medium">
-            Open the full pipeline →
-          </Link>
         </p>
       </div>
-    </TreeProvider>
+    )
+  }
+
+  return (
+    <div className="space-y-1">
+      <Cockpit bills={bills} asOf={asOf} />
+      {unattributed.count > 0 && (
+        <p className="text-[11px] text-amber-700 px-1">
+          {unattributed.count} more bills ({formatINR(unattributed.claimed)}) in the pipeline name an
+          area no project in CT Hub has, so they are on no project&rsquo;s tab.
+        </p>
+      )}
+    </div>
   )
 }
 

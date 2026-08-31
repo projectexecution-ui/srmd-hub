@@ -33,39 +33,38 @@ export default async function ProjectCockpitLayout({
 
   return (
     <div className="min-h-full bg-gray-50/60">
-      {/* Header — identity only. The money lives on Budget, which is the tab
-          a project opens on, so repeating it here only cost vertical space. */}
+      {/* Header — one line. Identity only: which project you are on, and the
+          area every ₹/sft on the page depends on. The money lives on Budget,
+          the tab a project opens on, so repeating it here only cost space. */}
       <div className="bg-white border-b border-gray-100">
-        <div className="max-w-7xl mx-auto px-4 md:px-6 pt-4 pb-3">
+        <div className="max-w-7xl mx-auto px-4 md:px-6 py-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
           <Link
             href="/cost-control"
-            className="inline-flex items-center gap-1 text-xs text-gray-500 hover:text-gray-700 mb-1.5"
+            title="All projects"
+            className="text-gray-400 hover:text-gray-700 flex-shrink-0"
           >
-            <ChevronLeft className="h-3.5 w-3.5" />
-            All projects
+            <ChevronLeft className="h-4 w-4" />
           </Link>
 
-          <div className="min-w-0">
-            <div className="min-w-0">
-              <h1 className="text-xl md:text-2xl font-bold text-gray-900 break-words">
-                {project.parentName && (
-                  <span className="text-gray-400 font-semibold">{project.parentName} › </span>
-                )}
-                {project.name}
-              </h1>
-              <p className="text-sm text-gray-500 mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1">
-                {project.code && (
-                  <span className="inline-flex rounded bg-indigo-50 text-indigo-700 text-[11px] font-bold px-1.5 py-0.5">
-                    {project.code}
-                  </span>
-                )}
-                {sft > 0
-                  ? <span className="tabular-nums">{sft.toLocaleString('en-IN')} sft</span>
-                  : <span className="text-amber-600">Area not set — ₹/sft cannot show</span>}
-                {perSft && <span className="tabular-nums text-gray-400">· ₹{perSft.toLocaleString('en-IN')}/sft budget</span>}
-              </p>
-            </div>
-          </div>
+          {project.code && (
+            <span className="inline-flex rounded bg-indigo-50 text-indigo-700 text-[11px] font-bold px-1.5 py-0.5 flex-shrink-0">
+              {project.code}
+            </span>
+          )}
+
+          <h1 className="font-bold text-gray-900 truncate">
+            {project.parentName && (
+              <span className="font-medium text-gray-400">{project.parentName} › </span>
+            )}
+            {project.name}
+          </h1>
+
+          <span className="text-xs text-gray-400 flex items-center gap-x-2 min-w-0">
+            {sft > 0
+              ? <span className="tabular-nums">{sft.toLocaleString('en-IN')} sft</span>
+              : <span className="text-amber-600">no area set</span>}
+            {perSft && <span className="tabular-nums">· ₹{perSft.toLocaleString('en-IN')}/sft</span>}
+          </span>
         </div>
 
         <div className="max-w-7xl mx-auto">

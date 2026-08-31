@@ -56,6 +56,8 @@ export const PROJECT_ALIASES: ProjectAlias[] = [
   { in4: 'VINAY Building', hub: 'VINAY', confidence: 'certain', why: 'The bills report appends “Building”' },
   { in4: 'VIVEK Building', hub: 'VIVEK', confidence: 'certain', why: 'The bills report appends “Building”' },
   { in4: 'VV Common Expenses', hub: 'Vinay Vivek Common Expenses', confidence: 'certain', why: 'The bills report abbreviates Vinay Vivek to VV' },
+  { in4: 'P2 A02 Building', hub: 'P2 A02', confidence: 'certain', why: 'The bills report appends “Building”' },
+  { in4: 'P2 A03 Building', hub: 'P2 A03', confidence: 'certain', why: 'The bills report appends “Building”' },
 
   // Plain plural.
   { in4: 'Ekant Kutirs', hub: 'Ekant Kutir', confidence: 'certain', why: 'Plural in IN4, singular in the hub' },

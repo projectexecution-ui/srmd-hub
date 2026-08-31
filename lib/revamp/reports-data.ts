@@ -37,33 +37,9 @@ export interface ReportSide {
   paid: number
 }
 
-export interface BillRow {
-  id: string
-  invoiceNo: string
-  vendor: string
-  area: string
-  amount: number
-  billDate: string | null
-  submittedOn: string | null
-  /** Days since it was submitted to CT — the number that makes it chaseable. */
-  ageDays: number
-  section: string
-}
-
-export interface BillsSide {
-  bills: BillRow[]
-  total: number
-  /** Bills in the report whose area matches no project in the hub at all. */
-  unattributed: { count: number; amount: number }
-  /** When the report was last generated. Everything here is only as fresh. */
-  asOf: string | null
-}
-
 export interface ProjectReports {
   contractor: ReportSide
   supplier: ReportSide
-  /** Bills sitting with CT for this project, from the daily bills report. */
-  billsPipeline: BillsSide
   /** Money in the uploads that belongs to NO hub project — the holding list. */
   unattributed: { subProjects: number; bill: number }
   /** How many sub-projects were rolled up into these figures. 0 = a leaf.
@@ -153,11 +129,10 @@ function readSide(
 
 export async function loadProjectReports(projectId: string): Promise<ProjectReports> {
   const supabase = await createClient()
-  const [cRes, sRes, pRes, bRes] = await Promise.all([
+  const [cRes, sRes, pRes] = await Promise.all([
     supabase.from('contractor_report_state').select('state').limit(1).maybeSingle(),
     supabase.from('supplier_report_state').select('state').limit(1).maybeSingle(),
     supabase.from('projects').select('id, code, name, parent_project_id').is('archived_at', null),
-    supabase.from('app_settings').select('value').eq('key', 'bills_pipeline_report').maybeSingle(),
   ])
 
   const raw = (pRes.data ?? []) as Array<Record<string, unknown>>
@@ -204,77 +179,13 @@ export async function loadProjectReports(projectId: string): Promise<ProjectRepo
   return {
     contractor: c.side,
     supplier: s.side,
-    billsPipeline: readBills(bRes.data?.value, projects, covered),
     unattributed: { subProjects: unmatchedNames.size, bill: unattributedBill },
     rolledUpChildren,
   }
 }
 
-/**
- * Bills sitting with CT, from the daily bills report.
- *
- * The report names the building in its OWN shorthand — "NGH B", "VINAY
- * Building", "VV Common Expenses" — a third spelling on top of IN4's and the
- * hub's. Attribution is by that `area` through the same matcher and alias list,
- * NOT by the report's `projectCode`: the code "NGH" collides with the hub's
- * NGH Infra, so a code fallback would quietly file every NGH bill against Infra.
- * A bill whose area matches nothing is counted as unattributed rather than
- * guessed.
- */
-function readBills(
-  raw: unknown, projects: HubProject[], covered: Set<string>,
-): BillsSide {
-  let parsed: { asOf?: string; bills?: unknown } = {}
-  try {
-    parsed = typeof raw === 'string' ? JSON.parse(raw) : (raw as typeof parsed) ?? {}
-  } catch { /* a malformed report must not take the tab down */ }
-
-  const all = (Array.isArray(parsed.bills) ? parsed.bills : []) as Array<Record<string, unknown>>
-  const areas = [...new Set(all.map(b => clean(String(b.area ?? ''))).filter(Boolean))]
-  const areaMatch = new Map(
-    matchSubProjects(areas, projects, PROJECT_ALIASES).map(m => [m.subProjectName, m.projectId]),
-  )
-
-  const today = Date.now()
-  const bills: BillRow[] = []
-  let unattributedCount = 0
-  let unattributedAmount = 0
-
-  for (const b of all) {
-    const area = clean(String(b.area ?? ''))
-    const projectId = areaMatch.get(area) ?? null
-    const amount = num(b.amount)
-
-    if (!projectId) { unattributedCount += 1; unattributedAmount += amount; continue }
-    if (!covered.has(projectId)) continue
-
-    const submittedOn = String(b.submittedOn ?? '') || null
-    bills.push({
-      id: String(b.id ?? ''),
-      invoiceNo: clean(String(b.invoiceNo ?? '')),
-      vendor: clean(String(b.vendor ?? '')),
-      area,
-      amount,
-      billDate: String(b.billDate ?? '') || null,
-      submittedOn,
-      ageDays: submittedOn
-        ? Math.max(0, Math.floor((today - new Date(submittedOn).getTime()) / 86_400_000))
-        : 0,
-      section: String(b.section ?? ''),
-    })
-  }
-
-  // Oldest first — the ones that have been waiting longest are the ones to chase.
-  bills.sort((a, b) => b.ageDays - a.ageDays)
-
-  return {
-    bills,
-    total: bills.reduce((s, b) => s + b.amount, 0),
-    unattributed: { count: unattributedCount, amount: unattributedAmount },
-    asOf: (parsed.asOf as string) ?? null,
-  }
-}
-
+/** Billed value across a named set of sub-projects — used to size the holding
+ *  list of work that belongs to no project in the hub. */
 function sumFor(reports: unknown, names: Set<string>, partyKey: 'contractors' | 'suppliers'): number {
   let total = 0
   for (const rep of (Array.isArray(reports) ? reports : []) as Array<Record<string, unknown>>) {
@@ -289,3 +200,4 @@ function sumFor(reports: unknown, names: Set<string>, partyKey: 'contractors' | 
   }
   return total
 }
+
