@@ -1,9 +1,11 @@
+import { Fragment } from 'react'
 import Link from 'next/link'
-import { notFound } from 'next/navigation'
 import { formatINR, formatDateTime } from '@/lib/utils'
 import { EmptyState } from '@/components/ui/empty-state'
-import { loadCockpit } from '@/lib/revamp/project-cockpit'
-import { loadProjectProcurement, loadProjectDiscussions } from '@/lib/revamp/tab-data'
+import { TreeProvider, TreeToolbar, CatChevron, CatRows, SubRow } from '@/components/cost-control/project-tree'
+import {
+  loadProjectProcurement, loadProjectDiscussions, type ProcurementGroup,
+} from '@/lib/revamp/tab-data'
 import { Truck, MessageSquare, Info } from 'lucide-react'
 
 function Stat({ label, value, tone = 'plain' }: { label: string; value: string; tone?: 'plain' | 'amber' }) {
@@ -53,6 +55,8 @@ export async function ProcurementTab({ projectId }: { projectId: string }) {
               ))}
             </ul>
           </details>
+          <IndentLines groups={p.byDiscipline} />
+
           <Link href="/procurement-tracker" className="inline-block text-xs font-medium text-indigo-700 hover:underline">
             Open the full tracker →
           </Link>
@@ -88,6 +92,139 @@ export async function ProcurementTab({ projectId }: { projectId: string }) {
         </div>
       )}
     </section>
+  )
+}
+
+/** The indent lines themselves — category over line, the same tree the
+ *  Internal Estimate uses, so it collapses and reads the same way. Numbers
+ *  alone are not something anyone can chase. */
+function IndentLines({ groups }: { groups: ProcurementGroup[] }) {
+  if (groups.length === 0) return null
+  const catIds = groups.map(g => g.discipline)
+
+  return (
+    <TreeProvider allCatIds={catIds} emptyCount={0}>
+      <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
+        <div className="flex items-center justify-between px-3 py-2 border-b border-gray-100 bg-gray-50/60 gap-2 flex-wrap">
+          <span className="text-sm font-bold text-gray-900">Every indent line</span>
+          <TreeToolbar />
+        </div>
+
+        {/* Desktop. Body scrolls in this box with sticky header cells — page
+            level sticky does not work in this app (AGENTS.md). */}
+        <div className="overflow-auto max-h-[70vh] hidden md:block">
+          <table className="w-full text-[13px]">
+            <thead className="bg-gray-50 text-left">
+              <tr>
+                <th className="sticky top-0 z-10 bg-gray-50 border-b border-gray-200 px-3 py-2 font-semibold text-gray-600 min-w-[280px]">Category / Material</th>
+                <th className="sticky top-0 z-10 bg-gray-50 border-b border-gray-200 px-3 py-2 font-semibold text-gray-600 min-w-[150px]">Supplier</th>
+                <th className="sticky top-0 z-10 bg-gray-50 border-b border-gray-200 px-3 py-2 font-semibold text-gray-600 text-right w-32">Ordered / Got</th>
+                <th className="sticky top-0 z-10 bg-gray-50 border-b border-gray-200 px-3 py-2 font-semibold text-gray-600 text-right w-32">Pending</th>
+                <th className="sticky top-0 z-10 bg-gray-50 border-b border-gray-200 px-3 py-2 font-semibold text-gray-600 w-28">Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {groups.map(g => (
+                <Fragment key={g.discipline}>
+                  <tr className="bg-gray-50/60 border-t border-gray-200">
+                    <td className="px-3 py-2 font-semibold text-gray-800">
+                      <CatChevron catId={g.discipline} />
+                      {g.discipline}
+                      <span className="ml-2 text-[11px] font-normal text-gray-400">{g.lines.length} lines</span>
+                    </td>
+                    <td className="px-3 py-2"></td>
+                    <td className="px-3 py-2"></td>
+                    <td className="px-3 py-2 text-right tabular-nums font-semibold text-amber-700">
+                      {g.pendingValue > 0 ? formatINR(g.pendingValue) : '—'}
+                    </td>
+                    <td className="px-3 py-2"></td>
+                  </tr>
+                  <CatRows catId={g.discipline}>
+                    {g.lines.map(l => (
+                      <SubRow key={l.id} empty={false}>
+                        <tr className="border-t border-gray-100 hover:bg-gray-50/60 align-top">
+                          <td className="pl-9 pr-3 py-2 text-gray-700">
+                            <span className="block">{l.material || '—'}</span>
+                            <span className="block text-[11px] text-gray-400 font-mono">
+                              {l.indentNo}{l.indentDate ? ` · ${l.indentDate}` : ''}
+                              {l.ageDays > 0 ? ` · ${l.ageDays}d old` : ''}
+                            </span>
+                          </td>
+                          <td className="px-3 py-2 text-gray-600">{l.supplier || '—'}</td>
+                          <td className="px-3 py-2 text-right tabular-nums text-gray-600">
+                            {l.orderedQty.toLocaleString('en-IN')} / {l.receivedQty.toLocaleString('en-IN')}
+                            <span className="text-[11px] text-gray-400"> {l.uom}</span>
+                          </td>
+                          <td className="px-3 py-2 text-right tabular-nums">
+                            {l.pendingValue > 0
+                              ? <span className="font-semibold text-amber-700">{formatINR(l.pendingValue)}</span>
+                              : <span className="text-gray-300">—</span>}
+                            {l.pendingQty > 0 && (
+                              <span className="block text-[11px] text-gray-400">
+                                {l.pendingQty.toLocaleString('en-IN')} {l.uom} due
+                              </span>
+                            )}
+                          </td>
+                          <td className="px-3 py-2">
+                            <StatusChip status={l.status} />
+                          </td>
+                        </tr>
+                      </SubRow>
+                    ))}
+                  </CatRows>
+                </Fragment>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        {/* Mobile — same lines as cards, category bar pinned. */}
+        <div className="md:hidden divide-y divide-gray-100 overflow-auto max-h-[70vh]">
+          {groups.map(g => (
+            <div key={g.discipline}>
+              <div className="sticky top-0 z-10 px-4 py-2 bg-gray-50 border-b border-gray-200 flex items-center justify-between gap-2">
+                <span className="flex items-center min-w-0 text-[12px] font-semibold text-gray-800">
+                  <CatChevron catId={g.discipline} />
+                  <span className="truncate">{g.discipline}</span>
+                </span>
+                {g.pendingValue > 0 && (
+                  <span className="text-[11px] text-amber-700 flex-shrink-0 tabular-nums">{formatINR(g.pendingValue)}</span>
+                )}
+              </div>
+              <CatRows catId={g.discipline}>
+                {g.lines.map(l => (
+                  <div key={l.id} className="px-4 py-3">
+                    <div className="flex items-start justify-between gap-2">
+                      <p className="text-sm text-gray-900 min-w-0">{l.material || '—'}</p>
+                      <StatusChip status={l.status} />
+                    </div>
+                    <p className="text-[11px] text-gray-400 font-mono mt-0.5">{l.indentNo}</p>
+                    <p className="text-[11px] text-gray-500 mt-0.5">
+                      {l.supplier || 'no supplier'} · {l.orderedQty}/{l.receivedQty} {l.uom}
+                      {l.pendingValue > 0 && (
+                        <span className="font-semibold text-amber-700"> · {formatINR(l.pendingValue)} pending</span>
+                      )}
+                    </p>
+                  </div>
+                ))}
+              </CatRows>
+            </div>
+          ))}
+        </div>
+      </div>
+    </TreeProvider>
+  )
+}
+
+function StatusChip({ status }: { status: string }) {
+  const tone =
+    status === 'received' ? 'bg-emerald-100 text-emerald-800'
+    : status === 'no_po' ? 'bg-rose-100 text-rose-800'
+    : 'bg-amber-100 text-amber-800'
+  return (
+    <span className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-semibold whitespace-nowrap ${tone}`}>
+      {status.replace(/_/g, ' ')}
+    </span>
   )
 }
 

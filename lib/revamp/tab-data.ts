@@ -8,6 +8,7 @@ import { createClient } from '@/lib/supabase/server'
 import { matchSubProjects, clean, type HubProject } from './subproject-match'
 import { PROJECT_ALIASES } from './alias-seed'
 import { descendantIds } from './hierarchy'
+import { compareDisciplines } from '@/lib/cost-control/discipline-order'
 
 // ── Approvals ───────────────────────────────────────────────────────────────
 
@@ -111,6 +112,34 @@ export interface ProjectProcurement {
   pendingValue: number
   poValue: number
   grnValue: number
+  /** The lines themselves, grouped by discipline — a summary alone is not
+   *  something anyone can act on. */
+  byDiscipline: ProcurementGroup[]
+}
+
+export interface ProcurementGroup {
+  discipline: string
+  lines: ProcurementLine[]
+  pendingValue: number
+  grnValue: number
+}
+
+export interface ProcurementLine {
+  id: string
+  indentNo: string
+  indentDate: string | null
+  ageDays: number
+  material: string
+  supplier: string
+  uom: string
+  indentQty: number
+  orderedQty: number
+  receivedQty: number
+  pendingQty: number
+  pendingValue: number
+  grnValue: number
+  status: string
+  poNos: string[]
 }
 
 /**
@@ -191,6 +220,48 @@ export async function loadProjectProcurement(projectId: string): Promise<Project
     }
   }
 
+  // Group the lines by discipline, the same shape the Internal Estimate uses:
+  // a category row you can collapse, with its rows underneath. Pending work
+  // sorts to the top of each group, because that is what needs chasing.
+  const groups = new Map<string, ProcurementLine[]>()
+  for (const l of mineLines) {
+    const disc = clean(String(l.discipline ?? '')) || '—'
+    const line: ProcurementLine = {
+      id: String(l.id ?? ''),
+      indentNo: String(l.indentNo ?? ''),
+      indentDate: (l.indentDate as string | null) ?? null,
+      ageDays: num(l.indentAgeDays),
+      material: clean(String(l.material ?? '')),
+      supplier: clean(String(l.supplier ?? '')),
+      uom: String(l.uom ?? ''),
+      indentQty: num(l.indentQty),
+      orderedQty: num(l.orderedQty),
+      receivedQty: num(l.receivedQty),
+      pendingQty: num(l.pendingQty),
+      pendingValue: num(l.pendingValue),
+      grnValue: num(l.grnValue),
+      status: String(l.status ?? ''),
+      poNos: ((Array.isArray(l.pos) ? l.pos : []) as Array<Record<string, unknown>>)
+        .map(po => String(po.poNo ?? '')).filter(Boolean),
+    }
+    const list = groups.get(disc)
+    if (list) list.push(line); else groups.set(disc, [line])
+  }
+
+  const byDiscipline: ProcurementGroup[] = [...groups.entries()]
+    .map(([discipline, list]) => ({
+      discipline,
+      lines: list.sort((a, b) =>
+        (b.pendingValue - a.pendingValue) || (b.pendingQty - a.pendingQty) || (b.ageDays - a.ageDays)),
+      pendingValue: list.reduce((s, l) => s + l.pendingValue, 0),
+      grnValue: list.reduce((s, l) => s + l.grnValue, 0),
+    }))
+    // Same rule as everywhere else in the hub: by the discipline's code number.
+    .sort((a, b) => compareDisciplines(
+      { code: a.discipline, display_order: null },
+      { code: b.discipline, display_order: null },
+    ))
+
   return {
     matchedName: mineLines.length ? [...mineSubs].sort().join(', ') : null,
     uploadCovers: uploaded.length,
@@ -203,6 +274,7 @@ export async function loadProjectProcurement(projectId: string): Promise<Project
     pendingValue: mineLines.reduce((s, l) => s + num(l.pendingValue), 0),
     poValue,
     grnValue: mineLines.reduce((s, l) => s + num(l.grnValue), 0),
+    byDiscipline,
   }
 }
 
