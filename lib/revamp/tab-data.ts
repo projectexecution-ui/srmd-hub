@@ -9,6 +9,7 @@ import { matchSubProjects, clean, type HubProject } from './subproject-match'
 import { PROJECT_ALIASES } from './alias-seed'
 import { descendantIds } from './hierarchy'
 import { compareDisciplines } from '@/lib/cost-control/discipline-order'
+import type { LineRecord } from '@/lib/procurement'
 
 // ── Approvals ───────────────────────────────────────────────────────────────
 
@@ -115,6 +116,11 @@ export interface ProjectProcurement {
   /** The lines themselves, grouped by discipline — a summary alone is not
    *  something anyone can act on. */
   byDiscipline: ProcurementGroup[]
+  /** The same lines untouched, so the cockpit can hand them to the tracker's
+   *  OWN views (Pending receipts / Needs PO / Completed) rather than
+   *  re-implementing chase notes, ageing and drill-down a second time. The
+   *  stored JSON already IS LineRecord — it is what the parser wrote. */
+  lines: LineRecord[]
 }
 
 export interface ProcurementGroup {
@@ -275,6 +281,7 @@ export async function loadProjectProcurement(projectId: string): Promise<Project
     poValue,
     grnValue: mineLines.reduce((s, l) => s + num(l.grnValue), 0),
     byDiscipline,
+    lines: mineLines as unknown as LineRecord[],
   }
 }
 
