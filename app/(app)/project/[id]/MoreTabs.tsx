@@ -39,10 +39,20 @@ export async function ProcurementTab({ projectId }: { projectId: string }) {
             <Stat label="PO raised" value={p.poValue > 0 ? formatINR(p.poValue) : '—'} />
             <Stat label="Received (GRN)" value={p.grnValue > 0 ? formatINR(p.grnValue) : '—'} />
           </div>
-          <p className="text-[11px] text-gray-500">
-            Matched to <b className="text-gray-700">&ldquo;{p.matchedName}&rdquo;</b> in the upload,
-            which covers {p.uploadCovers} projects.
-          </p>
+          {/* Name the sub-projects these lines came from — a group's total
+              covers several, and the reader should not have to guess which. */}
+          <details className="text-[11px] text-gray-500">
+            <summary className="cursor-pointer list-none [&::-webkit-details-marker]:hidden">
+              From {p.matchedName!.split(', ').length} sub-project
+              {p.matchedName!.split(', ').length === 1 ? '' : 's'} in the upload
+              <span className="text-gray-400"> — show</span>
+            </summary>
+            <ul className="mt-1 space-y-0.5 pl-3">
+              {p.matchedName!.split(', ').map(n => (
+                <li key={n} className="text-gray-600">{n}</li>
+              ))}
+            </ul>
+          </details>
           <Link href="/procurement-tracker" className="inline-block text-xs font-medium text-indigo-700 hover:underline">
             Open the full tracker →
           </Link>

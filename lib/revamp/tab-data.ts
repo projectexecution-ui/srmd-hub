@@ -100,7 +100,7 @@ export async function loadProjectStores(projectId: string): Promise<ProjectStore
 // ── Indent → PO ─────────────────────────────────────────────────────────────
 
 export interface ProjectProcurement {
-  /** The IN4 project name this project's figures came from. */
+  /** The IN4 sub-project name(s) these figures came from. */
   matchedName: string | null
   /** How many projects the upload covers, for context when we found none. */
   uploadCovers: number
@@ -111,6 +111,26 @@ export interface ProjectProcurement {
   pendingValue: number
   poValue: number
   grnValue: number
+}
+
+/**
+ * Every indent line carries `subProject`, written as
+ * "<Project> - <SubProject>" — e.g.
+ *   "New Guest House - New Guest House B-Execution"
+ *   "P2 Stepped Terraces - P2 Stepped Terraces - Execution A-01"
+ *
+ * Strip the leading project name and what is left is the SAME sub-project
+ * string the contractor/supplier reports use, so the one matcher handles both.
+ * The project name repeats inside, so only the first occurrence is removed.
+ */
+export function subProjectOfLine(line: Record<string, unknown>): string {
+  const raw = clean(String(line.subProject ?? ''))
+  const project = clean(String(line.project ?? ''))
+  if (!raw) return ''
+  if (project && raw.toLowerCase().startsWith(project.toLowerCase() + ' - ')) {
+    return clean(raw.slice(project.length + 3))
+  }
+  return raw
 }
 
 /**
@@ -141,29 +161,48 @@ export async function loadProjectProcurement(projectId: string): Promise<Project
     projectId,
   ))
 
-  const names = uploaded.map(p => clean(String(p.projectName ?? ''))).filter(Boolean)
-  const matches = matchSubProjects(names, hub, PROJECT_ALIASES)
+  // Work from the LINES, not the project totals. IN4 records an indent against
+  // "New Guest House" as a whole, so the project-level figures cannot tell NGH A
+  // from NGH B — but every LINE carries its own subProject, which does. That is
+  // what lets a tower show its own indents instead of the group's.
+  const lines: Array<Record<string, unknown>> = []
+  for (const proj of uploaded) {
+    for (const ln of (Array.isArray(proj.lines) ? proj.lines : []) as Array<Record<string, unknown>>) {
+      lines.push(ln)
+    }
+  }
 
-  // A group rolls up its children, same as Reports — an upload naming
-  // "New Guest House" lands on NGH, and NGH A's own row lands there too.
-  const mineNames = new Set(
-    matches.filter(m => m.projectId && covered.has(m.projectId)).map(m => m.subProjectName),
+  // Match every distinct sub-project once, then keep the lines whose
+  // sub-project resolved to this project or anything under it.
+  const subNames = [...new Set(lines.map(subProjectOfLine).filter(Boolean))]
+  const subMatches = matchSubProjects(subNames, hub, PROJECT_ALIASES)
+  const mineSubs = new Set(
+    subMatches.filter(m => m.projectId && covered.has(m.projectId)).map(m => m.subProjectName),
   )
-  const mine = uploaded.filter(p => mineNames.has(clean(String(p.projectName ?? ''))))
+  const mineLines = lines.filter(l => mineSubs.has(subProjectOfLine(l)))
 
   const num = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : Number(v) || 0)
-  const sum = (k: string) => mine.reduce((s, p) => s + num(p[k]), 0)
+
+  // PO value has no line-level total — it is the sum of each PO's qty × rate.
+  let poValue = 0
+  for (const l of mineLines) {
+    for (const po of (Array.isArray(l.pos) ? l.pos : []) as Array<Record<string, unknown>>) {
+      poValue += num(po.qty) * num(po.rate)
+    }
+  }
 
   return {
-    matchedName: mine.length ? [...mineNames].sort().join(', ') : null,
+    matchedName: mineLines.length ? [...mineSubs].sort().join(', ') : null,
     uploadCovers: uploaded.length,
-    // Only meaningful when we found nothing: which names went unclaimed here.
-    unmatchedNames: mine.length ? [] : names,
-    totalLines: sum('total'),
-    pendingLines: sum('pendingLineCount'),
-    pendingValue: sum('pendingValue'),
-    poValue: sum('totalPoValue'),
-    grnValue: sum('totalGrnValue'),
+    // Only meaningful when we found nothing: which sub-projects went unclaimed.
+    unmatchedNames: mineLines.length
+      ? []
+      : subMatches.filter(m => !m.projectId).map(m => m.subProjectName),
+    totalLines: mineLines.length,
+    pendingLines: mineLines.filter(l => num(l.pendingQty) > 0).length,
+    pendingValue: mineLines.reduce((s, l) => s + num(l.pendingValue), 0),
+    poValue,
+    grnValue: mineLines.reduce((s, l) => s + num(l.grnValue), 0),
   }
 }
 
