@@ -3,9 +3,11 @@
 // WHY THIS EXISTS. Stripping the stage suffix gets automatic matching from 7 to
 // 18 of 102 sub-projects. The rest fail because IN4 and the hub simply spell
 // the same building differently, and no amount of clever string matching can
-// safely bridge that — "Vinay ST" and "VINAY" look close and are probably NOT
-// the same thing. Aksha asked for the map to be built in "for ease of job", so
-// these are stated explicitly, one line each, with the reason.
+// safely bridge that. Only a person knows that "Vinay ST" IS VINAY while
+// "RU Infra" is NOT part of Raj Uphaar — both were settled by asking Aksha, and
+// a matcher that guessed would have got one of them wrong. He asked for the map
+// to be built in "for ease of job", so these are stated explicitly, one line
+// each, with the reason.
 //
 // RULES FOR THIS FILE
 //  1. Every entry needs a reason a person can check. No entry exists because
@@ -67,6 +69,11 @@ export const PROJECT_ALIASES: ProjectAlias[] = [
 
   // Vinay Vivek Infra ↔ VV Infra. VV is the hub's code for Vinay Vivek.
   { in4: 'Vinay Vivek Infra', hub: 'VV Infra', confidence: 'likely', why: 'VV is the hub’s code for Vinay Vivek' },
+
+  // CONFIRMED by Aksha 2026-08-31. "ST" is not a different project — these are
+  // the VINAY and VIVEK buildings, so their ₹2.78 Cr rolls up under VV.
+  { in4: 'Vinay ST', hub: 'VINAY', confidence: 'certain', why: 'Confirmed by Aksha — the VINAY building' },
+  { in4: 'Vivek ST', hub: 'VIVEK', confidence: 'certain', why: 'Confirmed by Aksha — the VIVEK building' },
 ]
 
 /**
@@ -77,6 +84,9 @@ export const PROJECT_ALIASES: ProjectAlias[] = [
  */
 export const DELIBERATELY_UNMAPPED: Array<{ in4: string; why: string }> = [
   { in4: 'Raj Uphaar', why: 'No such project in CT Hub' },
+  // CONFIRMED by Aksha 2026-08-31: RU Infra is a SEPARATE project, not part of
+  // Raj Uphaar. Do not fold its ₹10.94 Cr into Raj Uphaar.
+  { in4: 'RU', why: 'RU Infra is its own project, separate from Raj Uphaar (Aksha confirmed, 2026-08-31). Not in CT Hub yet' },
   { in4: 'Raj Saurabh', why: 'No such project in CT Hub' },
   { in4: 'Common Facility Block', why: 'No such project in CT Hub' },
   { in4: 'Staff Facilities Block', why: 'No such project in CT Hub' },
@@ -86,9 +96,23 @@ export const DELIBERATELY_UNMAPPED: Array<{ in4: string; why: string }> = [
   { in4: 'DN Annex Extension', why: 'No such project in CT Hub' },
   { in4: 'DN Annex Refurbish', why: 'No such project in CT Hub' },
   { in4: 'Prem Parking', why: 'No such project in CT Hub' },
+  // CONFIRMED by Aksha 2026-08-31: "p2 row house is a project - but infra is
+  // seperate and common expense is also diff - but these all are of same group".
+  // So three distinct projects under the P2 group; only Common Expenses exists
+  // in CT Hub today (P2RHCE) and it matches by its own exact name.
+  { in4: 'P2 Row Houses', why: 'A project in its own right, under the P2 group — not yet in CT Hub (Aksha confirmed, 2026-08-31)' },
+  { in4: 'P2 Row Houses - Infra Work', why: 'Separate from P2 Row Houses itself (Aksha confirmed, 2026-08-31). Not in CT Hub' },
+  { in4: 'Raj Uphaar - Infra Work', why: 'Infra is its own project, not a stage of Raj Uphaar' },
   { in4: 'Raj Sabhagruh Museum', why: 'No such project in CT Hub' },
-  { in4: 'Warehouse', why: 'Ambiguous — may or may not be Civil & MEP Central Warehouse. Needs Aksha' },
-  { in4: 'Vinay ST', why: 'Ambiguous — “ST” is probably Stepped Terrace, not VINAY. Needs Aksha' },
-  { in4: 'Vivek ST', why: 'Ambiguous — same as Vinay ST. Needs Aksha' },
+  // CONFIRMED by Aksha 2026-08-31: a DIFFERENT warehouse, not Civil & MEP
+  // Central Warehouse (which appears separately in the same upload with only
+  // ₹76,640). ₹15.73 Cr stays parked until the project is created.
+  { in4: 'Warehouse', why: 'A different warehouse — CT Hub has no such project yet (Aksha confirmed, 2026-08-31). ₹15.73 Cr parked' },
+  // CONFIRMED by Aksha 2026-08-31: MEP infrastructure is tracked as its OWN
+  // project, not as the MEP scope of the building it is named after. So these
+  // must never be folded into VV / Ekant Kutir / P2.
+  { in4: 'Vinay Vivek MEP Infra', why: 'MEP Infra is a separate project, not part of VV (Aksha confirmed, 2026-08-31)' },
+  { in4: 'Ekant Kutir MEP Infra', why: 'MEP Infra is a separate project, not part of Ekant Kutir (Aksha confirmed, 2026-08-31)' },
+  { in4: 'Step Terrace MEP Infra', why: 'MEP Infra is a separate project, not part of P2 (Aksha confirmed, 2026-08-31)' },
   { in4: 'MULTIPLE', why: 'IN4’s own catch-all — unattributable by design, ₹3.16 Cr' },
 ]

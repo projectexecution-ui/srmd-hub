@@ -48,6 +48,21 @@ describe('splitSubProject', () => {
     expect(splitSubProject('Design').base).toBe('Design')
   })
 
+  // Aksha, 2026-08-31: Infra is a separate PROJECT, not a stage. Stripping it
+  // would merge "Raj Uphaar - Infra Work" (₹9.98 Cr) into Raj Uphaar, and
+  // "P2 Row Houses - Infra Work" into P2 Row Houses — both wrong.
+  it('does NOT treat "Infra Work" as a stage', () => {
+    expect(splitSubProject('Raj Uphaar - Infra Work'))
+      .toEqual({ base: 'Raj Uphaar - Infra Work', stage: null })
+    expect(splitSubProject('P2 Row Houses - Infra Work'))
+      .toEqual({ base: 'P2 Row Houses - Infra Work', stage: null })
+  })
+
+  it('still strips a real stage that follows Infra Work', () => {
+    expect(splitSubProject('P2 Row Houses - Infra Work - Execution'))
+      .toEqual({ base: 'P2 Row Houses - Infra Work', stage: 'Execution' })
+  })
+
   it('handles the en-dash and em-dash separators too', () => {
     expect(splitSubProject('Sheth House – Design').stage).toBe('Design')
     expect(splitSubProject('Sheth House — Design').stage).toBe('Design')

@@ -19,7 +19,14 @@
 // its money attaches on the next read with no map to maintain.
 
 /** Stage suffixes seen in the real exports. Order matters — longest first, so
- *  "SRMD Ashram ICT Team" is stripped before "Team" could ever be. */
+ *  "SRMD Ashram ICT Team" is stripped before "Team" could ever be.
+ *
+ *  "Infra Work" is deliberately NOT here. Aksha confirmed (2026-08-31) that
+ *  Infra is a SEPARATE PROJECT, not a stage of the building it is named after:
+ *  P2 Row Houses, its Infra, and its Common Expenses are three different
+ *  projects in one group. Treating it as a stage would strip
+ *  "Raj Uphaar - Infra Work" down to "Raj Uphaar" and merge ₹9.98 Cr into the
+ *  wrong project. Same reasoning for MEP Infra. */
 export const STAGE_SUFFIXES = [
   'SRMD Ashram Security Team',
   'SRMD Ashram ICT Team',
@@ -28,7 +35,6 @@ export const STAGE_SUFFIXES = [
   'Interior Scope',
   'SRMD Landscape',
   'Bhoomi Pujan',
-  'Infra Work',
   'Execution',
   'Design',
 ] as const
