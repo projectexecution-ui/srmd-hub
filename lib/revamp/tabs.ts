@@ -2,20 +2,20 @@
 // lib/modules.ts is the one source for modules. Pure (no Supabase, no React)
 // so it can be unit-tested and imported from both server and client.
 //
-// The revamp's central idea: you open a PROJECT, and Budget / Approvals /
-// Reports / Schedule / Stores are tabs INSIDE it — not separate modules you
-// visit and then filter down to the project you actually meant.
+// The revamp's central idea: you open a PROJECT, and Budget / Reports /
+// Indent → PO are tabs INSIDE it — not separate modules you visit and then
+// filter down to the project you actually meant.
 //
 // `built` is deliberately part of the data. Aksha's rule for the preview was
 // "honest tabs": a page that does not exist yet says so before you click it,
 // rather than opening an empty screen. Flip the flag when the tab lands.
 
 export interface ProjectTab {
-  /** URL segment under /project/[id]. Empty string = the index (Overview). */
+  /** URL segment under /project/[id]. Empty string = the index (Budget). */
   slug: string
   /** ≤5 words — Aksha's V1-layout rule; long labels wrap and look unfinished. */
   label: string
-  /** One line, shown on the Overview grid and as the tab's title attribute. */
+  /** One line, used as the tab's title attribute. */
   hint: string
   /** False = the tab renders a "not built yet" panel instead of a dead screen. */
   built: boolean
@@ -25,11 +25,9 @@ export interface ProjectTab {
 }
 
 export const PROJECT_TABS: ProjectTab[] = [
-  // Budget is the INDEX tab — Aksha's call. Opening a project should land on
-  // the Internal Estimate, which is what people actually came for; Overview is
-  // the summary you step back to, not the thing you open.
+  // Budget is the INDEX tab — Aksha's call. Opening a project lands on the
+  // Internal Estimate, which is what people came for.
   { slug: '',            label: 'Budget',      hint: 'Internal Estimate, approvals and ERP position',  built: true,  permissionSlug: 'cost-control' },
-  { slug: 'overview',    label: 'Overview',    hint: 'Money, progress and what is waiting on someone', built: true,  permissionSlug: 'cost-control' },
   { slug: 'reports',     label: 'Reports',     hint: 'Contractor, Supplier and Bills for this project', built: true,  permissionSlug: 'contractor-report' },
   { slug: 'procurement', label: 'Indent → PO', hint: 'Indents raised, POs pending, deliveries due',    built: true,  permissionSlug: 'procurement-tracker' },
   { slug: 'discussions', label: 'Discussions', hint: 'Every comment on this project, in one place',      built: true,  permissionSlug: 'cost-control' },
@@ -60,8 +58,13 @@ export const PROJECT_TABS: ProjectTab[] = [
  *              cockpit-specific code to keep — restoring it is only the tab row
  *              plus its branch in [...rest]/page.tsx. Removed because only 2
  *              projects have a schedule at all (NGH A 65 items, Admin Block 47).
+ *
+ *   Overview   OverviewTab in ../app/(app)/project/[id]/OverviewTab.tsx
+ *              Removed because Budget is the landing tab and its table already
+ *              carries Internal Estimate, Budget, WO, Paid and % Used — the
+ *              Overview repeated them one level less precisely.
  */
-export const PARKED_TABS = ['approvals', 'stores', 'jmr', 'schedule'] as const
+export const PARKED_TABS = ['approvals', 'stores', 'jmr', 'schedule', 'overview'] as const
 
 /**
  * Where clicking a project name goes.
@@ -99,8 +102,7 @@ export function findTab(slug: string): ProjectTab | undefined {
   return PROJECT_TABS.find(t => t.slug === slug)
 }
 
-/** How much of the cockpit is real today — shown on the Overview so nobody has
- *  to click every tab to find out what is finished. */
+/** How much of the cockpit is real today. */
 export function builtCount(): { built: number; total: number } {
   return { built: PROJECT_TABS.filter(t => t.built).length, total: PROJECT_TABS.length }
 }

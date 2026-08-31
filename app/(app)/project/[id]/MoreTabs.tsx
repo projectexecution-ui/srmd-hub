@@ -1,20 +1,11 @@
 import Link from 'next/link'
-import { formatINR, formatDateTime } from '@/lib/utils'
+import { formatDateTime } from '@/lib/utils'
 import { EmptyState } from '@/components/ui/empty-state'
 import { loadProjectProcurement, loadProjectDiscussions } from '@/lib/revamp/tab-data'
 import { IndentViews } from './IndentViews'
 import { loadCockpit } from '@/lib/revamp/project-cockpit'
 import { notFound } from 'next/navigation'
 import { Truck, MessageSquare, Info } from 'lucide-react'
-
-function Stat({ label, value, tone = 'plain' }: { label: string; value: string; tone?: 'plain' | 'amber' }) {
-  return (
-    <div className={`rounded-lg border px-3 py-2 ${tone === 'amber' ? 'border-amber-200 bg-amber-50/70' : 'border-gray-200 bg-white'}`}>
-      <p className="text-[10px] uppercase tracking-wide font-semibold text-gray-500">{label}</p>
-      <p className={`text-base font-bold tabular-nums mt-0.5 ${tone === 'amber' ? 'text-amber-900' : 'text-gray-900'}`}>{value}</p>
-    </div>
-  )
-}
 
 // ── Indent → PO ─────────────────────────────────────────────────────────────
 
@@ -35,13 +26,6 @@ export async function ProcurementTab({ projectId }: { projectId: string }) {
 
       {p.matchedName ? (
         <>
-          <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
-            <Stat label="Indent lines" value={p.totalLines.toLocaleString('en-IN')} />
-            <Stat label="Still pending" value={p.pendingLines.toLocaleString('en-IN')} tone={p.pendingLines ? 'amber' : 'plain'} />
-            <Stat label="Pending value" value={p.pendingValue > 0 ? formatINR(p.pendingValue) : '—'} tone={p.pendingValue > 0 ? 'amber' : 'plain'} />
-            <Stat label="PO raised" value={p.poValue > 0 ? formatINR(p.poValue) : '—'} />
-            <Stat label="Received (GRN)" value={p.grnValue > 0 ? formatINR(p.grnValue) : '—'} />
-          </div>
           {/* Name the sub-projects these lines came from — a group's total
               covers several, and the reader should not have to guess which. */}
           <details className="text-[11px] text-gray-500">

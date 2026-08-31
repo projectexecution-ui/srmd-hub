@@ -33,7 +33,7 @@ describe('project cockpit tabs', () => {
 
   it('builds a clean href for the index tab and for the rest', () => {
     expect(tabHref(P, PROJECT_TABS[0])).toBe(`/project/${P}`)
-    expect(tabHref(P, findTab('overview')!)).toBe(`/project/${P}/overview`)
+    expect(tabHref(P, findTab('reports')!)).toBe(`/project/${P}/reports`)
   })
 
   describe('activeTabSlug', () => {
@@ -43,11 +43,11 @@ describe('project cockpit tabs', () => {
     })
 
     it('reports the tab actually open', () => {
-      expect(activeTabSlug(`/project/${P}/overview`, P)).toBe('overview')
+      expect(activeTabSlug(`/project/${P}/procurement`, P)).toBe('procurement')
       expect(activeTabSlug(`/project/${P}/reports`, P)).toBe('reports')
     })
 
-    // A deep link inside a tab must keep that tab lit, not fall back to Overview.
+    // A deep link inside a tab must keep that tab lit, not fall back to Budget.
     it('stays on the tab for a nested path', () => {
       expect(activeTabSlug(`/project/${P}/reports/detail/abc`, P)).toBe('reports')
     })
