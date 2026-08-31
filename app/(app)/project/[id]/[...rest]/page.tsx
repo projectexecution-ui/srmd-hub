@@ -1,11 +1,12 @@
 import Link from 'next/link'
-import { notFound, redirect } from 'next/navigation'
+import { notFound } from 'next/navigation'
 import { requirePermission } from '@/lib/auth'
 import { findTab, PROJECT_TABS, tabHref } from '@/lib/revamp/tabs'
 import { Hammer, ArrowRight } from 'lucide-react'
 import { OverviewTab } from '../OverviewTab'
 import { ReportsTab } from '../ReportsTab'
 import { ProcurementTab, DiscussionsTab } from '../MoreTabs'
+import ProjectSetupPage from '@/app/(app)/cost-control/projects/[id]/setup/page'
 
 export const dynamic = 'force-dynamic'
 
@@ -19,10 +20,9 @@ export const dynamic = 'force-dynamic'
  * arithmetic, and re-writing that table would mean re-arguing every figure.
  */
 export default async function ProjectTabPage({
-  params, searchParams,
+  params,
 }: {
   params: Promise<{ id: string; rest: string[] }>
-  searchParams: Promise<{ focus_disc?: string; focus_sub?: string; ws?: string }>
 }) {
   await requirePermission('cost-control', 'view')
   const { id, rest } = await params
@@ -36,8 +36,12 @@ export default async function ProjectTabPage({
   if (slug === 'discussions') return <DiscussionsTab projectId={id} />
 
   if (slug === 'setup') {
-    // Setup already exists and is good; don't fork it.
-    redirect(`/cost-control/projects/${id}/setup`)
+    // The existing Setup screen, rendered INSIDE the cockpit — not a redirect.
+    // Redirecting threw you out of the project: the tab bar vanished and
+    // getting back meant the browser's Back button. Every other tab stays in
+    // the shell, and Setup is where you go mid-task (fix an area, add a
+    // category) and then carry on, so leaving is exactly wrong here.
+    return <ProjectSetupPage params={Promise.resolve({ id })} />
   }
 
   return <NotBuiltYet projectId={id} label={tab.label} hint={tab.hint} />
