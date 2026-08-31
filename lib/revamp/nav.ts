@@ -38,30 +38,58 @@ export interface RevampNavGroup {
   items: RevampNavItem[]
 }
 
-/** The lanes that stay top-level. Order is the order they appear. */
+/**
+ * The lanes that stay top-level. Order is the order they appear.
+ *
+ * Bills points at the pipeline, not Bills Booking: the pipeline is the weekly
+ * SRA/SRET work the ERP team actually does, while Bills Booking holds 2 records.
+ */
 export const REVAMP_PRIMARY: RevampNavItem[] = [
-  { href: '/dashboard',    label: 'Dashboard', icon: LayoutDashboard, slug: null,           built: true },
-  { href: '/cost-control', label: 'Projects',  icon: Building2,       slug: 'cost-control', built: true },
-  { href: '/bills-booking', label: 'Bills',    icon: Receipt,         slug: 'bills-booking', built: true },
-  { href: '/warehouse',    label: 'Warehouse', icon: Warehouse,       slug: 'warehouse',    built: true },
-  { href: '/masters',      label: 'Masters',   icon: Library,         slug: null,           built: true },
-  { href: '/admin',        label: 'Admin',     icon: Shield,          slug: null,           built: true },
+  { href: '/dashboard',      label: 'Dashboard', icon: LayoutDashboard, slug: null,             built: true },
+  { href: '/cost-control',   label: 'Projects',  icon: Building2,       slug: 'cost-control',   built: true },
+  { href: '/bills-pipeline', label: 'Bills',     icon: Receipt,         slug: 'bills-pipeline', built: true },
+  { href: '/masters',        label: 'Masters',   icon: Library,         slug: null,             built: true },
+  { href: '/admin',          label: 'Admin',     icon: Shield,          slug: null,             built: true },
 ]
 
-/** Everything the cockpit replaces. Kept reachable, one click deeper, so the
- *  trial can be compared against what people use today. */
+/** Screens the cockpit REPLACES — the same information now lives inside a
+ *  project. Kept reachable so the trial can be compared against today. */
 export const REVAMP_OLD_SCREENS: RevampNavItem[] = [
   { href: '/budget',              label: 'Budget (BPH)',        icon: Archive, slug: 'budget',               built: true },
   { href: '/budget-vs-actual',    label: 'Budget vs Actual',    icon: Archive, slug: 'budget-vs-actual',     built: true },
   { href: '/budget-vs-actual-v2', label: 'Budget vs Actual V2', icon: Archive, slug: 'budget-vs-actual-v2',  built: true },
   { href: '/contractor-report',   label: 'Contractor Report',   icon: Archive, slug: 'contractor-report',    built: true },
   { href: '/supplier-report',     label: 'Supplier Report',     icon: Archive, slug: 'supplier-report',      built: true },
-  { href: '/bills-pipeline',      label: 'Bills Pipeline',      icon: Archive, slug: 'bills-pipeline',       built: true },
-  { href: '/stuck-bills',         label: 'Stuck Bills',         icon: Archive, slug: 'stuck-bills',          built: true },
   { href: '/procurement-tracker', label: 'Indent → PO',         icon: Archive, slug: 'procurement-tracker',  built: true },
-  { href: '/jmr',                 label: 'JMR',                 icon: Archive, slug: 'jmr',                  built: true },
-  { href: '/schedule',            label: 'Schedule',            icon: Archive, slug: 'schedule',             built: true },
-  { href: '/inventory',           label: 'Inventory (old)',     icon: Archive, slug: 'inventory',            built: true },
+  { href: '/stuck-bills',         label: 'Stuck Bills',         icon: Archive, slug: 'stuck-bills',          built: true },
+]
+
+/**
+ * Modules deliberately left OUT of the revamp — Aksha, 2026-08-31. Not
+ * replaced and not broken: built, working, and not being used enough to earn a
+ * lane yet. Listed separately from the replaced screens because "we moved this"
+ * and "we parked this" are different messages, and labelling a module people
+ * still open as "old" would be wrong.
+ *
+ * Measured usage at the time of the decision:
+ *   Warehouse V2        0 gate movements in or out, 2 live requests
+ *   Schedule            2 projects (NGH A 65 items, Admin Block 47)
+ *   JMR                 21 entries, all on NGH Infra
+ *   Bills Booking       2 records
+ *   Inventory (old)     superseded by Warehouse V2
+ *   Established Rates   374 rates, module switched off
+ *   Comparison          0 records, module switched off
+ *   Daily Site Report   1 report, module switched off
+ */
+export const REVAMP_PARKED: RevampNavItem[] = [
+  { href: '/warehouse',         label: 'Warehouse',         icon: Warehouse, slug: 'warehouse',         built: true },
+  { href: '/schedule',          label: 'Schedule',          icon: Archive,   slug: 'schedule',          built: true },
+  { href: '/jmr',               label: 'JMR',               icon: Archive,   slug: 'jmr',               built: true },
+  { href: '/bills-booking',     label: 'Bills Booking',     icon: Archive,   slug: 'bills-booking',     built: true },
+  { href: '/inventory',         label: 'Inventory (old)',   icon: Archive,   slug: 'inventory',         built: true },
+  { href: '/established-rates', label: 'Established Rates', icon: Archive,   slug: 'established-rates', built: true },
+  { href: '/comparison',        label: 'Comparisons',       icon: Archive,   slug: 'comparison',        built: true },
+  { href: '/daily-site-report', label: 'Daily Site Report', icon: Archive,   slug: 'daily-site-report', built: true },
 ]
 
 export interface PermissionMap {
@@ -91,10 +119,14 @@ export function buildRevampNav(
     .filter(it => it.href !== '/admin' || opts.canSeeAdmin)
     .filter(allowed)
 
-  const old = REVAMP_OLD_SCREENS.filter(allowed)
-  const groups: RevampNavGroup[] = old.length
-    ? [{ id: 'revamp_old', name: 'Old screens', items: old }]
-    : []
+  // Two branches, not one: "we moved this into the project" and "we parked
+  // this" are different messages, and a module someone still opens should not
+  // be filed under "old".
+  const groups: RevampNavGroup[] = []
+  const replaced = REVAMP_OLD_SCREENS.filter(allowed)
+  if (replaced.length) groups.push({ id: 'revamp_old', name: 'Now inside a project', items: replaced })
+  const parked = REVAMP_PARKED.filter(allowed)
+  if (parked.length) groups.push({ id: 'revamp_parked', name: 'Not in the revamp', items: parked })
 
   return { primary, groups }
 }

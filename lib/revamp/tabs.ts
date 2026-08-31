@@ -31,7 +31,6 @@ export const PROJECT_TABS: ProjectTab[] = [
   { slug: '',            label: 'Budget',      hint: 'Internal Estimate, approvals and ERP position',  built: true,  permissionSlug: 'cost-control' },
   { slug: 'overview',    label: 'Overview',    hint: 'Money, progress and what is waiting on someone', built: true,  permissionSlug: 'cost-control' },
   { slug: 'reports',     label: 'Reports',     hint: 'Contractor, Supplier and Bills for this project', built: true,  permissionSlug: 'contractor-report' },
-  { slug: 'schedule',    label: 'Schedule',    hint: 'Plan vs actual, WO deadlines and drawings',      built: true,  permissionSlug: 'schedule' },
   { slug: 'procurement', label: 'Indent → PO', hint: 'Indents raised, POs pending, deliveries due',    built: true,  permissionSlug: 'procurement-tracker' },
   { slug: 'discussions', label: 'Discussions', hint: 'Every comment on this project, in one place',      built: true,  permissionSlug: 'cost-control' },
   { slug: 'setup',       label: 'Setup',       hint: 'Categories, approvers, area and grouping',       built: true,  permissionSlug: 'cost-control' },
@@ -56,8 +55,13 @@ export const PROJECT_TABS: ProjectTab[] = [
  *
  *   JMR        JmrTab, loadProjectJmr
  *              Removed because JMR has 21 entries in total, all on NGH Infra.
+ *
+ *   Schedule   rendered the existing /schedule/[id] page whole, so there is no
+ *              cockpit-specific code to keep — restoring it is only the tab row
+ *              plus its branch in [...rest]/page.tsx. Removed because only 2
+ *              projects have a schedule at all (NGH A 65 items, Admin Block 47).
  */
-export const PARKED_TABS = ['approvals', 'stores', 'jmr'] as const
+export const PARKED_TABS = ['approvals', 'stores', 'jmr', 'schedule'] as const
 
 /**
  * Where clicking a project name goes.

@@ -3,7 +3,6 @@ import { notFound, redirect } from 'next/navigation'
 import { requirePermission } from '@/lib/auth'
 import { findTab, PROJECT_TABS, tabHref } from '@/lib/revamp/tabs'
 import { Hammer, ArrowRight } from 'lucide-react'
-import ProjectSchedulePage from '@/app/(app)/schedule/[id]/page'
 import { OverviewTab } from '../OverviewTab'
 import { ReportsTab } from '../ReportsTab'
 import { ProcurementTab, DiscussionsTab } from '../MoreTabs'
@@ -35,11 +34,6 @@ export default async function ProjectTabPage({
   if (slug === 'reports')     return <ReportsTab projectId={id} />
   if (slug === 'procurement') return <ProcurementTab projectId={id} />
   if (slug === 'discussions') return <DiscussionsTab projectId={id} />
-
-  if (slug === 'schedule') {
-    // The existing per-project schedule page, whole, inside the cockpit.
-    return <ProjectSchedulePage params={Promise.resolve({ id })} />
-  }
 
   if (slug === 'setup') {
     // Setup already exists and is good; don't fork it.

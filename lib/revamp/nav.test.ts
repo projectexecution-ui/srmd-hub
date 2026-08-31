@@ -13,16 +13,29 @@ describe('revamped left pane', () => {
     expect(primary.map(i => i.label).slice(0, 2)).toEqual(['Dashboard', 'Projects'])
   })
 
-  it('collapses the replaced screens into one branch rather than deleting them', () => {
-    const { groups } = buildRevampNav(allow('jmr', 'schedule'), new Set(), NOT_ADMIN)
-    expect(groups).toHaveLength(1)
-    expect(groups[0].name).toBe('Old screens')
-    expect(groups[0].items.map(i => i.label)).toEqual(['JMR', 'Schedule'])
+  // Two branches on purpose: "we moved this into the project" and "we parked
+  // this" are different messages. A module people still open must not be
+  // filed under "old".
+  it('separates screens the cockpit replaced from ones simply parked', () => {
+    const { groups } = buildRevampNav(
+      allow('budget', 'jmr', 'schedule', 'warehouse'), new Set(), NOT_ADMIN)
+    const byName = Object.fromEntries(groups.map(g => [g.name, g.items.map(i => i.label)]))
+    expect(byName['Now inside a project']).toEqual(['Budget (BPH)'])
+    expect(byName['Not in the revamp']).toEqual(['Warehouse', 'Schedule', 'JMR'])
   })
 
-  it('drops the branch entirely when none of the old screens are visible', () => {
+  it('drops a branch entirely when none of its screens are visible', () => {
     const { groups } = buildRevampNav(allow('cost-control'), new Set(), NOT_ADMIN)
     expect(groups).toEqual([])
+  })
+
+  // Warehouse and Schedule were cut from the main lanes on 2026-08-31 —
+  // reachable, but no longer competing with Projects for attention.
+  it('keeps Warehouse and Schedule out of the top-level lanes', () => {
+    const { primary } = buildRevampNav(
+      allow('cost-control', 'warehouse', 'schedule'), new Set(), NOT_ADMIN)
+    expect(primary.map(i => i.label)).not.toContain('Warehouse')
+    expect(primary.map(i => i.label)).not.toContain('Schedule')
   })
 
   // The revamp must never widen access — same two gates as today's sidebar.

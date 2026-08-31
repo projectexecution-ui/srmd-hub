@@ -44,7 +44,7 @@ describe('project cockpit tabs', () => {
 
     it('reports the tab actually open', () => {
       expect(activeTabSlug(`/project/${P}/overview`, P)).toBe('overview')
-      expect(activeTabSlug(`/project/${P}/schedule`, P)).toBe('schedule')
+      expect(activeTabSlug(`/project/${P}/reports`, P)).toBe('reports')
     })
 
     // A deep link inside a tab must keep that tab lit, not fall back to Overview.
