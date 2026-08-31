@@ -120,5 +120,9 @@ export const DELIBERATELY_UNMAPPED: Array<{ in4: string; why: string }> = [
   { in4: 'Vinay Vivek MEP Infra', why: 'MEP Infra is a separate project, not part of VV (Aksha confirmed, 2026-08-31)' },
   { in4: 'Ekant Kutir MEP Infra', why: 'MEP Infra is a separate project, not part of Ekant Kutir (Aksha confirmed, 2026-08-31)' },
   { in4: 'Step Terrace MEP Infra', why: 'MEP Infra is a separate project, not part of P2 (Aksha confirmed, 2026-08-31)' },
+  // CONFIRMED by Aksha 2026-08-31: both are real projects CT Hub does not have
+  // yet, not overheads. Parked until created, then they attach on their own.
+  { in4: 'Design Admin', why: 'A real project, not yet in CT Hub (Aksha confirmed, 2026-08-31)' },
+  { in4: 'Professional Consultancy (Staff)', why: 'A real project, not yet in CT Hub (Aksha confirmed, 2026-08-31)' },
   { in4: 'MULTIPLE', why: 'IN4’s own catch-all — unattributable by design, ₹3.16 Cr' },
 ]
