@@ -5,6 +5,7 @@ import { loadProjectProcurement, loadProjectDiscussions } from '@/lib/revamp/tab
 import { IndentViews } from './IndentViews'
 import { loadCockpit } from '@/lib/revamp/project-cockpit'
 import { notFound } from 'next/navigation'
+import { MentionText } from '@/components/mentions/MentionText'
 import { Truck, MessageSquare, Info } from 'lucide-react'
 
 // ── Indent → PO ─────────────────────────────────────────────────────────────
@@ -84,17 +85,34 @@ export async function ProcurementTab({ projectId }: { projectId: string }) {
 // ── Discussions ─────────────────────────────────────────────────────────────
 
 export async function DiscussionsTab({ projectId }: { projectId: string }) {
-  const comments = await loadProjectDiscussions(projectId)
+  const { comments, mentionUsers, mentioningMe } = await loadProjectDiscussions(projectId)
+
+  // Anything aimed at you first, then newest. A mention is the only part of a
+  // thread that is actually a task, and today it can only be found by opening
+  // each sheet in turn.
+  const ordered = [...comments].sort((a, b) =>
+    Number(b.mentionsMe) - Number(a.mentionsMe) ||
+    new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
 
   return (
     <section className="space-y-3">
       <header className="flex items-start gap-2.5">
         <MessageSquare className="h-4 w-4 mt-0.5 text-gray-400" />
         <div>
-          <h2 className="text-sm font-bold text-gray-900">Discussions</h2>
+          <h2 className="text-sm font-bold text-gray-900">
+            Discussions
+            {comments.length > 0 && (
+              <span className="ml-2 text-[11px] font-normal text-gray-500">
+                {comments.length} comment{comments.length === 1 ? '' : 's'}
+                {mentioningMe > 0 && (
+                  <span className="font-semibold text-blue-700"> · {mentioningMe} mentioning you</span>
+                )}
+              </span>
+            )}
+          </h2>
           <p className="text-xs text-gray-500">
-            Every comment written on this project&rsquo;s budget sheets, newest first — the conversation
-            for the project as a whole, which today can only be read one sheet at a time.
+            Every comment written on this project&rsquo;s budget sheets — the conversation for the
+            project as a whole, which today can only be read one sheet at a time.
           </p>
         </div>
       </header>
@@ -106,13 +124,28 @@ export async function DiscussionsTab({ projectId }: { projectId: string }) {
         />
       ) : (
         <div className="rounded-lg border border-gray-200 bg-white divide-y divide-gray-100">
-          {comments.map(c => (
-            <div key={c.id} className="px-4 py-3">
+          {ordered.map(c => (
+            <div
+              key={c.id}
+              className={`px-4 py-3 ${c.mentionsMe ? 'bg-blue-50/50 border-l-2 border-l-blue-500' : ''}`}
+            >
               <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5">
-                <p className="text-sm font-semibold text-gray-900">{c.author}</p>
+                <p className="text-sm font-semibold text-gray-900">
+                  {c.author}
+                  {c.mentionsMe && (
+                    <span className="ml-2 rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-bold text-blue-800 align-middle">
+                      mentions you
+                    </span>
+                  )}
+                </p>
                 <p className="text-[11px] text-gray-400">{formatDateTime(c.createdAt)}</p>
               </div>
-              <p className="text-sm text-gray-700 mt-1 whitespace-pre-wrap break-words">{c.body}</p>
+              {/* MentionText, the same renderer the per-sheet comments panel
+                  uses, so an @name looks identical in both places instead of
+                  arriving here as plain text. */}
+              <p className="text-sm text-gray-700 mt-1 whitespace-pre-wrap break-words">
+                <MentionText text={c.body} users={mentionUsers} />
+              </p>
               <Link
                 href={`/cost-control/working-sheets/${c.wsId}`}
                 className="inline-block mt-1.5 text-[11px] font-medium text-indigo-700 hover:underline"
