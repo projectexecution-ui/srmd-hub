@@ -30,15 +30,34 @@ export const PROJECT_TABS: ProjectTab[] = [
   // the summary you step back to, not the thing you open.
   { slug: '',            label: 'Budget',      hint: 'Internal Estimate, approvals and ERP position',  built: true,  permissionSlug: 'cost-control' },
   { slug: 'overview',    label: 'Overview',    hint: 'Money, progress and what is waiting on someone', built: true,  permissionSlug: 'cost-control' },
-  { slug: 'approvals',   label: 'Approvals',   hint: 'Everything waiting on someone in this project',  built: true,  permissionSlug: 'cost-control' },
   { slug: 'reports',     label: 'Reports',     hint: 'Contractor, Supplier and Bills for this project', built: true,  permissionSlug: 'contractor-report' },
   { slug: 'schedule',    label: 'Schedule',    hint: 'Plan vs actual, WO deadlines and drawings',      built: true,  permissionSlug: 'schedule' },
-  { slug: 'stores',      label: 'Stores',      hint: 'Stock, requests and gate movements',             built: true,  permissionSlug: 'warehouse' },
   { slug: 'procurement', label: 'Indent → PO', hint: 'Indents raised, POs pending, deliveries due',    built: true,  permissionSlug: 'procurement-tracker' },
-  { slug: 'jmr',         label: 'JMR',         hint: 'Daily measured work on this site',               built: true,  permissionSlug: 'jmr' },
   { slug: 'discussions', label: 'Discussions', hint: 'Every comment on this project, in one place',      built: true,  permissionSlug: 'cost-control' },
   { slug: 'setup',       label: 'Setup',       hint: 'Categories, approvers, area and grouping',       built: true,  permissionSlug: 'cost-control' },
 ]
+
+/**
+ * PARKED, not deleted — Aksha, 2026-08-31: "right now remove them but keep in
+ * ur memory whenever i want we will take that feature".
+ *
+ * Each is finished and tested; only its row above was removed, so restoring one
+ * is a single line. The components and loaders stay where they are:
+ *
+ *   Approvals  ApprovalsTab in ../app/(app)/project/[id]/tabs.tsx
+ *              loadProjectApprovals in ./tab-data.ts
+ *              Showed budget requests part-way through the sign-off chain and
+ *              which desk each sits on. Removed because the Dashboard's
+ *              "Needs you now" already answers that across every project.
+ *
+ *   Stores     StoresTab, loadProjectStores
+ *              Removed because the warehouse is not in use yet — wh_gate_in and
+ *              wh_gate_out are both 0, and only 2 real requests exist.
+ *
+ *   JMR        JmrTab, loadProjectJmr
+ *              Removed because JMR has 21 entries in total, all on NGH Infra.
+ */
+export const PARKED_TABS = ['approvals', 'stores', 'jmr'] as const
 
 /**
  * Where clicking a project name goes.
