@@ -18,7 +18,7 @@ import { AlertTriangle } from 'lucide-react'
  * card list on mobile. Not a second table invented for this screen.
  */
 export async function ReportsTab({ projectId }: { projectId: string }) {
-  const [{ contractor, supplier, unattributed }, cockpit] = await Promise.all([
+  const [{ contractor, supplier, unattributed, rolledUpChildren }, cockpit] = await Promise.all([
     loadProjectReports(projectId),
     loadCockpit(projectId),
   ])
@@ -29,6 +29,15 @@ export async function ReportsTab({ projectId }: { projectId: string }) {
 
   return (
     <div className="space-y-4">
+      {/* A group's figures include its children. Say so — a total that silently
+          covers more than the project you opened is how numbers get misread. */}
+      {rolledUpChildren > 0 && !nothing && (
+        <p className="text-xs text-gray-600 rounded-lg border border-indigo-100 bg-indigo-50/50 px-3 py-2">
+          Includes this project&rsquo;s <b>{rolledUpChildren} sub-projects</b>. IN4 uploads name the
+          group; CT Hub splits it into its buildings, so the group shows everything underneath it.
+        </p>
+      )}
+
       {nothing ? (
         <EmptyState
           title="Nothing attributed to this project yet"

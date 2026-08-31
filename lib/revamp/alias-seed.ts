@@ -39,6 +39,15 @@ export const PROJECT_ALIASES: ProjectAlias[] = [
   { in4: 'New Guest House C', hub: 'NGH C', confidence: 'certain', why: 'NGH is the hub’s abbreviation for New Guest House' },
   { in4: 'New Guest House - Infra Work', hub: 'NGH Infra', confidence: 'certain', why: 'Same building, same stage — “Infra Work” is the hub’s “Infra”' },
 
+  // GROUP NAMES. IN4 writes the group, the hub splits it into children.
+  // "New Guest House" in an upload is NGH-the-group, which holds NGH A/B/C,
+  // NGH Infra and Common Expenses — so it belongs on the group, and the group's
+  // cockpit rolls its children up. Confirmed by Aksha, 2026-08-31.
+  { in4: 'New Guest House', hub: 'NGH', confidence: 'certain', why: 'The group holding NGH A, B, C, Infra and Common Expenses' },
+  { in4: 'Vinay Vivek', hub: 'VV', confidence: 'certain', why: 'The group holding VINAY, VIVEK, VV Infra and Common Expenses' },
+  { in4: 'P2 Stepped Terraces', hub: 'P2', confidence: 'certain', why: 'The group holding P2 Infra and the A01–A03 towers' },
+  { in4: 'P2 Infra', hub: 'P2  Infra', confidence: 'certain', why: 'The hub name carries a double space' },
+
   // Plain plural.
   { in4: 'Ekant Kutirs', hub: 'Ekant Kutir', confidence: 'certain', why: 'Plural in IN4, singular in the hub' },
 

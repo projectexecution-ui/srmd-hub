@@ -9,6 +9,7 @@ import { createClient } from '@/lib/supabase/server'
 import { matchSubProjects, clean, type HubProject } from './subproject-match'
 import { PROJECT_ALIASES } from './alias-seed'
 import { compareDisciplines } from '@/lib/cost-control/discipline-order'
+import { descendantIds } from './hierarchy'
 
 export interface PartyRow {
   party: string
@@ -41,6 +42,9 @@ export interface ProjectReports {
   supplier: ReportSide
   /** Money in the uploads that belongs to NO hub project — the holding list. */
   unattributed: { subProjects: number; bill: number }
+  /** How many sub-projects were rolled up into these figures. 0 = a leaf.
+   *  Shown on screen so a group's totals are never mistaken for its own. */
+  rolledUpChildren: number
 }
 
 const num = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : 0)
@@ -128,10 +132,22 @@ export async function loadProjectReports(projectId: string): Promise<ProjectRepo
   const [cRes, sRes, pRes] = await Promise.all([
     supabase.from('contractor_report_state').select('state').limit(1).maybeSingle(),
     supabase.from('supplier_report_state').select('state').limit(1).maybeSingle(),
-    supabase.from('projects').select('id, code, name').is('archived_at', null),
+    supabase.from('projects').select('id, code, name, parent_project_id').is('archived_at', null),
   ])
 
-  const projects = (pRes.data ?? []) as HubProject[]
+  const raw = (pRes.data ?? []) as Array<Record<string, unknown>>
+  const projects = raw as unknown as HubProject[]
+
+  // A GROUP shows its children's money too. IN4 uploads name the group
+  // ("New Guest House"), the hub splits it into NGH A/B/C/Infra/Common — so
+  // without this the group's cockpit reads as empty while its children hold
+  // everything. Confirmed by Aksha: the group IS the project that contains them.
+  const nodes = raw.map(p => ({
+    id: p.id as string,
+    parentId: (p.parent_project_id as string | null) ?? null,
+  }))
+  const covered = new Set(descendantIds(nodes, projectId))
+  const rolledUpChildren = covered.size - 1
   const cReports = (cRes.data?.state as { reports?: unknown })?.reports
   const sReports = (sRes.data?.state as { reports?: unknown })?.reports
 
@@ -147,7 +163,9 @@ export async function loadProjectReports(projectId: string): Promise<ProjectRepo
     }
   }
   const matches = matchSubProjects([...names], projects, PROJECT_ALIASES)
-  const mine = new Set(matches.filter(m => m.projectId === projectId).map(m => m.subProjectName))
+  const mine = new Set(
+    matches.filter(m => m.projectId && covered.has(m.projectId)).map(m => m.subProjectName),
+  )
 
   const c = readSide(cReports, mine, 'contractors', 'contractor')
   const s = readSide(sReports, mine, 'suppliers', 'supplier')
@@ -162,6 +180,7 @@ export async function loadProjectReports(projectId: string): Promise<ProjectRepo
     contractor: c.side,
     supplier: s.side,
     unattributed: { subProjects: unmatchedNames.size, bill: unattributedBill },
+    rolledUpChildren,
   }
 }
 

@@ -18,9 +18,7 @@ function Stat({ label, value, tone = 'plain' }: { label: string; value: string; 
 // ── Indent → PO ─────────────────────────────────────────────────────────────
 
 export async function ProcurementTab({ projectId }: { projectId: string }) {
-  const cockpit = await loadCockpit(projectId)
-  if (!cockpit) notFound()
-  const p = await loadProjectProcurement(projectId, cockpit.project.name, cockpit.project.code)
+  const p = await loadProjectProcurement(projectId)
 
   return (
     <section className="space-y-3">

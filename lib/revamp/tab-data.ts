@@ -7,6 +7,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { matchSubProjects, clean, type HubProject } from './subproject-match'
 import { PROJECT_ALIASES } from './alias-seed'
+import { descendantIds } from './hierarchy'
 
 // ── Approvals ───────────────────────────────────────────────────────────────
 
@@ -122,38 +123,47 @@ export interface ProjectProcurement {
  * "the most recently updated row" picks up `po` and makes 22 projects look
  * empty — so `global` is asked for by name.
  */
-export async function loadProjectProcurement(
-  projectId: string, projectName: string, projectCode: string | null,
-): Promise<ProjectProcurement> {
+export async function loadProjectProcurement(projectId: string): Promise<ProjectProcurement> {
   const supabase = await createClient()
-  const { data: rows } = await supabase
-    .from('procurement_tracker_state').select('id, state')
+  const [{ data: rows }, { data: projRows }] = await Promise.all([
+    supabase.from('procurement_tracker_state').select('id, state'),
+    supabase.from('projects').select('id, code, name, parent_project_id').is('archived_at', null),
+  ])
 
   const list = (rows ?? []) as Array<{ id: string; state: unknown }>
   const state = (list.find(r => r.id === 'global') ?? list[0])?.state
-  const projects = ((state as { projects?: unknown })?.projects ?? []) as Array<Record<string, unknown>>
+  const uploaded = ((state as { projects?: unknown })?.projects ?? []) as Array<Record<string, unknown>>
 
-  const names = projects.map(p => clean(String(p.projectName ?? ''))).filter(Boolean)
-  const hub: HubProject[] = [{ id: projectId, code: projectCode, name: projectName }]
+  const raw = (projRows ?? []) as Array<Record<string, unknown>>
+  const hub = raw as unknown as HubProject[]
+  const covered = new Set(descendantIds(
+    raw.map(p => ({ id: p.id as string, parentId: (p.parent_project_id as string | null) ?? null })),
+    projectId,
+  ))
+
+  const names = uploaded.map(p => clean(String(p.projectName ?? ''))).filter(Boolean)
   const matches = matchSubProjects(names, hub, PROJECT_ALIASES)
 
-  const mineName = matches.find(m => m.projectId === projectId)?.subProjectName ?? null
-  const mine = mineName
-    ? projects.find(p => clean(String(p.projectName ?? '')) === mineName)
-    : undefined
+  // A group rolls up its children, same as Reports — an upload naming
+  // "New Guest House" lands on NGH, and NGH A's own row lands there too.
+  const mineNames = new Set(
+    matches.filter(m => m.projectId && covered.has(m.projectId)).map(m => m.subProjectName),
+  )
+  const mine = uploaded.filter(p => mineNames.has(clean(String(p.projectName ?? ''))))
 
   const num = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : Number(v) || 0)
+  const sum = (k: string) => mine.reduce((s, p) => s + num(p[k]), 0)
 
   return {
-    matchedName: mine ? mineName : null,
-    uploadCovers: projects.length,
+    matchedName: mine.length ? [...mineNames].sort().join(', ') : null,
+    uploadCovers: uploaded.length,
     // Only meaningful when we found nothing: which names went unclaimed here.
-    unmatchedNames: mine ? [] : names,
-    totalLines: mine ? num(mine.total) : 0,
-    pendingLines: mine ? num(mine.pendingLineCount) : 0,
-    pendingValue: mine ? num(mine.pendingValue) : 0,
-    poValue: mine ? num(mine.totalPoValue) : 0,
-    grnValue: mine ? num(mine.totalGrnValue) : 0,
+    unmatchedNames: mine.length ? [] : names,
+    totalLines: sum('total'),
+    pendingLines: sum('pendingLineCount'),
+    pendingValue: sum('pendingValue'),
+    poValue: sum('totalPoValue'),
+    grnValue: sum('totalGrnValue'),
   }
 }
 
