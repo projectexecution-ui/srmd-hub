@@ -21,6 +21,10 @@ export interface AdminScreen {
   hint: string
   /** True when only a Portal Owner / admin can open it. */
   adminOnly?: boolean
+  /** Module slug to check against module_visibility. A screen inside a
+   *  switched-off module is a dead link — established-rates, comparison,
+   *  daily-site-report and vendors are all OFF today, and were listed anyway. */
+  visibilitySlug?: string
 }
 
 export const ADMIN_AREAS: Array<{ id: AdminArea; label: string; hint: string }> = [
@@ -56,8 +60,8 @@ export const ADMIN_SCREENS: AdminScreen[] = [
   { href: '/jmr/admin/contractors',      label: 'JMR contractors',      module: 'jmr',         area: 'lists', hint: 'Contractors who log measured work' },
   { href: '/jmr/admin/rate-cards',       label: 'JMR rate cards',       module: 'jmr',         area: 'lists', hint: 'Rate per item per contractor, with validity' },
   { href: '/jmr/admin/projects',         label: 'JMR projects',         module: 'jmr',         area: 'lists', hint: 'Sub-projects used as JMR columns' },
-  { href: '/established-rates/admin',    label: 'Rate taxonomy',        module: 'established-rates', area: 'lists', hint: 'Disciplines, categories and sub-categories for rates' },
-  { href: '/vendors',                    label: 'Vendors',              module: 'vendors',     area: 'lists', hint: 'The contact list as it exists today' },
+  { href: '/established-rates/admin',    label: 'Rate taxonomy',        module: 'established-rates', area: 'lists', hint: 'Disciplines, categories and sub-categories for rates', visibilitySlug: 'established-rates' },
+  { href: '/vendors',                    label: 'Vendors',              module: 'vendors',     area: 'lists', hint: 'The contact list as it exists today', visibilitySlug: 'vendors' },
 
   // ── System ──
   { href: '/admin/notifications',        label: 'Notifications',        module: '',            area: 'system', hint: 'Which alerts go out, on which channel, and job health' },
@@ -74,8 +78,12 @@ export const ADMIN_SCREENS: AdminScreen[] = [
   { href: '/cost-control/audit',         label: 'Audit log',            module: 'cost-control', area: 'system', hint: 'Who changed what, and when' },
 ]
 
-export function screensByArea(area: AdminArea): AdminScreen[] {
-  return ADMIN_SCREENS.filter(s => s.area === area)
+export function screensByArea(area: AdminArea, disabled: Set<string> = new Set()): AdminScreen[] {
+  return ADMIN_SCREENS
+    .filter(s => s.area === area)
+    // Never offer a screen inside a switched-off module: clicking it only
+    // produces a permission refusal, which reads as a bug.
+    .filter(s => !s.visibilitySlug || !disabled.has(s.visibilitySlug))
 }
 
 /** How many screens each area holds — shown on the cards so the size of each

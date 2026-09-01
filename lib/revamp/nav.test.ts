@@ -60,10 +60,14 @@ describe('revamped left pane', () => {
     expect(buildRevampNav({}, new Set(), NOT_ADMIN).primary.map(i => i.label)).not.toContain('Admin')
   })
 
-  it('always offers Masters — it has no module permission of its own', () => {
-    const masters = buildRevampNav({}, new Set(), NOT_ADMIN).primary.find(i => i.label === 'Masters')
-    expect(masters).toBeDefined()
-    expect(masters!.slug).toBeNull()
+  // Every Masters page calls requirePermission('cost-control'), so an ungated
+  // lane offered a link that then refused whoever clicked it.
+  it('gates Masters on cost-control, matching what its pages require', () => {
+    const withPerm = buildRevampNav(allow('cost-control'), new Set(), NOT_ADMIN)
+    expect(withPerm.primary.map(i => i.label)).toContain('Masters')
+
+    const without = buildRevampNav({}, new Set(), NOT_ADMIN)
+    expect(without.primary.map(i => i.label)).not.toContain('Masters')
   })
 
   it('is a real reduction — far fewer top-level lanes than old screens replaced', () => {

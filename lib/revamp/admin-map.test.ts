@@ -32,6 +32,18 @@ describe('admin map', () => {
 
   // The point of the exercise: most admin screens are NOT under /admin, and
   // that is exactly why 34 of them were never found.
+  // A screen inside a switched-off module only produces a permission refusal,
+  // which reads as a bug rather than as "that module is off".
+  it('hides screens whose module is switched off', () => {
+    const on = screensByArea('lists').map(s => s.href)
+    expect(on).toContain('/vendors')
+
+    const off = screensByArea('lists', new Set(['vendors', 'established-rates'])).map(s => s.href)
+    expect(off).not.toContain('/vendors')
+    expect(off).not.toContain('/established-rates/admin')
+    expect(off).toContain('/masters')
+  })
+
   it('gathers the screens that live inside modules', () => {
     const inModules = ADMIN_SCREENS.filter(s => !s.href.startsWith('/admin/'))
     expect(inModules.length).toBeGreaterThan(ADMIN_SCREENS.length / 2)

@@ -48,7 +48,9 @@ export const REVAMP_PRIMARY: RevampNavItem[] = [
   { href: '/dashboard',      label: 'Dashboard', icon: LayoutDashboard, slug: null,             built: true },
   { href: '/cost-control',   label: 'Projects',  icon: Building2,       slug: 'cost-control',   built: true },
   { href: '/bills-pipeline', label: 'Bills',     icon: Receipt,         slug: 'bills-pipeline', built: true },
-  { href: '/masters',        label: 'Masters',   icon: Library,         slug: null,             built: true },
+  // Gated on cost-control: every Masters page calls requirePermission('cost-control'),
+  // so an ungated lane would show a link that then refuses the person who clicked it.
+  { href: '/masters',        label: 'Masters',   icon: Library,         slug: 'cost-control',   built: true },
   { href: '/admin',          label: 'Admin',     icon: Shield,          slug: null,             built: true },
 ]
 

@@ -6,7 +6,7 @@ import {
   Users, ShieldCheck, LayoutGrid, GitBranch, Trash2, Bell, RotateCcw,
   UserPlus, CalendarDays, UserCog, CircleCheck, AlertTriangle, ListTree,
 } from 'lucide-react'
-import { getMyPermissions, can, isPortalOwner, getMyProfile } from '@/lib/auth'
+import { getMyPermissions, can, isPortalOwner, getMyProfile, getDisabledModuleSlugs } from '@/lib/auth'
 import { createClient } from '@/lib/supabase/server'
 import { isPendingAccessRequest, allowedEmailSet } from '@/lib/access-requests'
 import { MODULES } from '@/lib/modules'
@@ -28,7 +28,8 @@ export default async function AdminHomePage() {
   // the 34 hidden inside modules, grouped into four areas. Live keeps today's
   // page unchanged.
   if (IS_DEMO) {
-    return <AdminRevamp isAdmin={portalOwner || profile?.role === 'admin'} />
+    const disabled = await getDisabledModuleSlugs()
+    return <AdminRevamp isAdmin={portalOwner || profile?.role === 'admin'} disabledSlugs={Array.from(disabled)} />
   }
   const canEditApprovals = portalOwner || profile?.role === 'admin'
   const canViewUsers = can(perms, 'admin-users', 'view')

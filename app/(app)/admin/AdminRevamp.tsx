@@ -1,6 +1,6 @@
 import Link from 'next/link'
 import { PageHeader } from '@/components/PageHeader'
-import { ADMIN_AREAS, screensByArea, ADMIN_SCREENS } from '@/lib/revamp/admin-map'
+import { ADMIN_AREAS, screensByArea } from '@/lib/revamp/admin-map'
 import { Users, ShieldCheck, Library, Settings2 } from 'lucide-react'
 
 const AREA_ICON = {
@@ -19,14 +19,15 @@ const AREA_ICON = {
  * why it lives where it does. Before this, 34 of the 43 were only reachable
  * by already knowing they existed.
  */
-export function AdminRevamp({ isAdmin }: { isAdmin: boolean }) {
+export function AdminRevamp({ isAdmin, disabledSlugs = [] }: { isAdmin: boolean; disabledSlugs?: string[] }) {
+  const disabled = new Set(disabledSlugs)
   const visible = (s: { adminOnly?: boolean }) => isAdmin || !s.adminOnly
 
   return (
     <div className="p-4 md:p-6 max-w-5xl mx-auto space-y-5">
       <PageHeader
         title="Admin"
-        subtitle={`${ADMIN_SCREENS.filter(visible).length} settings screens, grouped by what they are for.`}
+        subtitle={`${ADMIN_AREAS.flatMap(a => screensByArea(a.id, disabled)).filter(visible).length} settings screens, grouped by what they are for.`}
       />
 
       <div className="rounded-lg border border-gray-200 bg-gray-50/70 px-4 py-3">
@@ -38,7 +39,7 @@ export function AdminRevamp({ isAdmin }: { isAdmin: boolean }) {
       </div>
 
       {ADMIN_AREAS.map(area => {
-        const screens = screensByArea(area.id).filter(visible)
+        const screens = screensByArea(area.id, disabled).filter(visible)
         if (screens.length === 0) return null
         const Icon = AREA_ICON[area.id]
 
