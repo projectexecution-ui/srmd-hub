@@ -24,11 +24,19 @@ export default async function ProjectTabPage({
 }: {
   params: Promise<{ id: string; rest: string[] }>
 }) {
-  await requirePermission('cost-control', 'view')
   const { id, rest } = await params
   const slug = rest?.[0] ?? ''
   const tab = findTab(slug)
   if (!tab || slug === '') notFound()
+
+  // Gate on the TAB's own module, not on cost-control. Gating every tab on
+  // cost-control (which all eight roles hold) turned the cockpit into a way
+  // round the permission matrix: /project/<id>/reports served contractor and
+  // supplier billing to the two contractor accounts and the two engineers,
+  // none of whom have contractor-report, and /project/<id>/procurement served
+  // the tracker to everyone. Same slug the standalone screen uses, so the two
+  // can never drift apart.
+  await requirePermission(tab.permissionSlug, 'view')
 
   if (slug === 'overview')    return <OverviewTab projectId={id} />
   if (slug === 'reports')     return <ReportsTab projectId={id} />

@@ -102,6 +102,37 @@ export function findTab(slug: string): ProjectTab | undefined {
   return PROJECT_TABS.find(t => t.slug === slug)
 }
 
+/**
+ * The tabs THIS person may open.
+ *
+ * Every tab is gated on its own module's permission — the same slug the module
+ * uses as a standalone screen — plus the Portal Owner's on/off switch.
+ *
+ * This exists because the cockpit was, briefly, a way around the permission
+ * matrix: the layout gated everything on `cost-control`, which all eight roles
+ * hold, so the Reports tab handed contractor and supplier billing to the two
+ * contractor accounts and the two engineers, none of whom have
+ * `contractor-report`. Nesting a screen inside a project must never grant
+ * access the same screen refuses at the top level.
+ */
+export function visibleTabs(
+  perms: Record<string, { view?: boolean } | undefined>,
+  disabled: Set<string> = new Set(),
+): ProjectTab[] {
+  return PROJECT_TABS.filter(
+    t => perms[t.permissionSlug]?.view === true && !disabled.has(t.permissionSlug),
+  )
+}
+
+/** Whether this person may open one specific tab. */
+export function canOpenTab(
+  tab: ProjectTab,
+  perms: Record<string, { view?: boolean } | undefined>,
+  disabled: Set<string> = new Set(),
+): boolean {
+  return perms[tab.permissionSlug]?.view === true && !disabled.has(tab.permissionSlug)
+}
+
 /** How much of the cockpit is real today. */
 export function builtCount(): { built: number; total: number } {
   return { built: PROJECT_TABS.filter(t => t.built).length, total: PROJECT_TABS.length }

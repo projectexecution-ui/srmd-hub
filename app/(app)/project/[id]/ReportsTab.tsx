@@ -9,6 +9,7 @@ import { loadProjectBills } from '@/lib/revamp/bills-data'
 import Cockpit from '@/app/(app)/bills-pipeline/cockpit'
 import { BillsRefresh } from './BillsRefresh'
 import { loadCockpit } from '@/lib/revamp/project-cockpit'
+import { getMyPermissions, can, isModuleEnabled } from '@/lib/auth'
 import { AlertTriangle } from 'lucide-react'
 
 /**
@@ -21,14 +22,23 @@ import { AlertTriangle } from 'lucide-react'
  * card list on mobile. Not a second table invented for this screen.
  */
 export async function ReportsTab({ projectId }: { projectId: string }) {
-  const [{ contractor, supplier, unattributed, rolledUpChildren }, cockpit] = await Promise.all([
-    loadProjectReports(projectId),
-    loadCockpit(projectId),
-  ])
+  const [{ contractor, supplier, unattributed, rolledUpChildren }, cockpit, perms, billsOn] =
+    await Promise.all([
+      loadProjectReports(projectId),
+      loadCockpit(projectId),
+      getMyPermissions(),
+      isModuleEnabled('bills-pipeline'),
+    ])
   if (!cockpit) notFound()
 
   const sft = cockpit.project.builtUpSft ?? 0
   const nothing = contractor.categories.length === 0 && supplier.categories.length === 0
+
+  // Bills is its OWN module inside this tab, so it carries its own permission.
+  // Three people — the Trustee, Mayank and the Sr. Civil Engineer — hold
+  // contractor-report but not bills-pipeline; without this check, nesting the
+  // Bills cockpit here would hand them a screen they are refused at /bills-pipeline.
+  const showBills = billsOn && can(perms, 'bills-pipeline', 'view')
 
   return (
     <div className="space-y-4">
@@ -44,7 +54,7 @@ export async function ReportsTab({ projectId }: { projectId: string }) {
       {/* Bills first — Aksha's order. What is sitting with CT and ageing is
           the thing to act on today; the contractor and supplier positions are
           the record of what has already happened. */}
-      <BillsCockpit projectId={projectId} />
+      {showBills && <BillsCockpit projectId={projectId} />}
 
       {nothing ? (
         <EmptyState

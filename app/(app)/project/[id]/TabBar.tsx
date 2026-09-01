@@ -1,7 +1,7 @@
 'use client'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { PROJECT_TABS, tabHref, activeTabSlug } from '@/lib/revamp/tabs'
+import { tabHref, activeTabSlug, type ProjectTab } from '@/lib/revamp/tabs'
 
 /**
  * The cockpit's tab strip.
@@ -13,8 +13,13 @@ import { PROJECT_TABS, tabHref, activeTabSlug } from '@/lib/revamp/tabs'
  * Tabs that are not built yet still appear, greyed with a dot, and still
  * navigate — clicking one lands on a panel that says what it will hold. The
  * alternative (hiding them) makes the cockpit look finished when it isn't.
+ *
+ * `tabs` is already filtered to what this person may open (see visibleTabs) —
+ * a tab they cannot open is not shown at all, rather than shown and then
+ * refused. The layout does that filtering, because permissions are a server
+ * concern and this component runs in the browser.
  */
-export function TabBar({ projectId }: { projectId: string }) {
+export function TabBar({ projectId, tabs }: { projectId: string; tabs: ProjectTab[] }) {
   const pathname = usePathname()
   const active = activeTabSlug(pathname, projectId)
 
@@ -24,7 +29,7 @@ export function TabBar({ projectId }: { projectId: string }) {
         aria-label="Project sections"
         className="flex gap-1 overflow-x-auto px-2 sm:px-4 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
       >
-        {PROJECT_TABS.map(tab => {
+        {tabs.map(tab => {
           const isActive = tab.slug === active
           return (
             <Link

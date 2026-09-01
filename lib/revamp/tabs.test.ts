@@ -1,7 +1,70 @@
 import { describe, it, expect, afterEach, vi } from 'vitest'
-import { PROJECT_TABS, tabHref, activeTabSlug, findTab, builtCount, projectHref } from './tabs'
+import { PROJECT_TABS, tabHref, activeTabSlug, findTab, builtCount, projectHref, visibleTabs, canOpenTab } from './tabs'
 
 const P = '11111111-2222-3333-4444-555555555555'
+
+// The eight real roles, exactly as role_permissions had them on 2026-09-01.
+const view = (...slugs: string[]) => Object.fromEntries(slugs.map(s => [s, { view: true }]))
+const ROLES = {
+  head:       view('cost-control', 'contractor-report', 'bills-pipeline'),
+  engineer:   view('cost-control', 'procurement-tracker'),
+  contractor: view('cost-control', 'procurement-tracker'),
+  admin:      view('cost-control', 'contractor-report', 'procurement-tracker', 'bills-pipeline'),
+  uploader:   view('cost-control', 'contractor-report', 'procurement-tracker', 'bills-pipeline'),
+  viewer:     view('cost-control', 'contractor-report', 'procurement-tracker'),
+  founder:    view('cost-control', 'contractor-report', 'procurement-tracker'),
+  backoffice: view('cost-control', 'contractor-report', 'procurement-tracker'),
+}
+
+describe('a tab never grants what the module refuses', () => {
+  // The bug this locks shut: the cockpit gated EVERY tab on cost-control,
+  // which all eight roles hold. /project/<id>/reports therefore served
+  // contractor and supplier billing to the two contractor accounts and the two
+  // engineers, and /project/<id>/procurement served the tracker to everyone.
+  it('hides Reports from engineers and contractors, who have no contractor-report', () => {
+    for (const role of ['engineer', 'contractor'] as const) {
+      const labels = visibleTabs(ROLES[role]).map(t => t.label)
+      expect(labels, role).not.toContain('Reports')
+    }
+  })
+
+  it('hides Indent → PO from the Atm Heads, who have no procurement-tracker', () => {
+    expect(visibleTabs(ROLES.head).map(t => t.label)).not.toContain('Indent → PO')
+  })
+
+  it('still gives an admin every tab', () => {
+    expect(visibleTabs(ROLES.admin)).toHaveLength(PROJECT_TABS.length)
+  })
+
+  it('always keeps Budget, Discussions and Setup — every role holds cost-control', () => {
+    for (const [role, perms] of Object.entries(ROLES)) {
+      const labels = visibleTabs(perms).map(t => t.label)
+      expect(labels, role).toEqual(expect.arrayContaining(['Budget', 'Discussions', 'Setup']))
+    }
+  })
+
+  it('keeps the index tab first for everyone, so the cockpit always has a landing tab', () => {
+    for (const [role, perms] of Object.entries(ROLES)) {
+      expect(visibleTabs(perms)[0]?.slug, role).toBe('')
+    }
+  })
+
+  it('respects the Portal Owner switch as well as the permission', () => {
+    expect(visibleTabs(ROLES.admin, new Set(['contractor-report'])).map(t => t.label))
+      .not.toContain('Reports')
+  })
+
+  it('canOpenTab agrees with visibleTabs for every role and tab', () => {
+    for (const perms of Object.values(ROLES)) {
+      const shown = new Set(visibleTabs(perms).map(t => t.slug))
+      for (const t of PROJECT_TABS) expect(canOpenTab(t, perms)).toBe(shown.has(t.slug))
+    }
+  })
+
+  it('refuses someone with no permissions at all', () => {
+    expect(visibleTabs({})).toEqual([])
+  })
+})
 
 describe('project cockpit tabs', () => {
   it('has exactly one index tab, and it is first', () => {

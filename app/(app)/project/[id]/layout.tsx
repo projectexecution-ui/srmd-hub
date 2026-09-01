@@ -1,8 +1,9 @@
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
-import { requirePermission } from '@/lib/auth'
+import { requirePermission, getDisabledModuleSlugs } from '@/lib/auth'
 import { ChevronLeft } from 'lucide-react'
 import { loadCockpit } from '@/lib/revamp/project-cockpit'
+import { visibleTabs } from '@/lib/revamp/tabs'
 import { TabBar } from './TabBar'
 
 export const dynamic = 'force-dynamic'
@@ -13,8 +14,10 @@ export const dynamic = 'force-dynamic'
  * Reports / Indent → PO live inside it, instead of opening a module and
  * filtering down to the project you meant.
  *
- * Gated on cost-control view for now because every project in the hub is a
- * Cost Control project; per-tab permissions come with the matrix work.
+ * Entering the cockpit needs cost-control view, because every project in the
+ * hub is a Cost Control project. Each TAB is then gated on its own module's
+ * permission, so nesting a screen inside a project never grants access that
+ * the same screen refuses at the top level.
  */
 export default async function ProjectCockpitLayout({
   children, params,
@@ -22,7 +25,9 @@ export default async function ProjectCockpitLayout({
   children: React.ReactNode
   params: Promise<{ id: string }>
 }) {
-  await requirePermission('cost-control', 'view')
+  const perms = await requirePermission('cost-control', 'view')
+  const disabled = await getDisabledModuleSlugs()
+  const tabs = visibleTabs(perms, disabled)
   const { id } = await params
   const data = await loadCockpit(id)
   if (!data) notFound()
@@ -68,7 +73,7 @@ export default async function ProjectCockpitLayout({
         </div>
 
         <div className="max-w-7xl mx-auto">
-          <TabBar projectId={id} />
+          <TabBar projectId={id} tabs={tabs} />
         </div>
       </div>
 
