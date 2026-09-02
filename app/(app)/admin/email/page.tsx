@@ -44,6 +44,9 @@ export default async function EmailRoofPage() {
     who: r.message.recipients.who,
     settingsHref: r.message.settingsHref,
     warning: r.warning,
+    addressKey: r.message.recipients.kind === 'addresses' ? r.message.recipients.settingKey : undefined,
+    enabledKey: r.message.enabledKey,
+    derived: r.message.recipients.kind !== 'addresses' && r.message.recipients.kind !== 'assignment',
   }))
 
   return (
@@ -56,10 +59,10 @@ export default async function EmailRoofPage() {
 
       <div className="rounded-lg border border-gray-200 bg-gray-50/70 px-4 py-3">
         <p className="text-xs text-gray-600">
-          These are set up in <b>{s.screens} different screens</b> across{' '}
-          <b>{s.settingKeys} settings</b>, which is why &ldquo;who gets this mail&rdquo; has been hard to
-          answer. Nothing has moved — each message still links to the screen that owns it. What is
-          new is being able to see them together, and spot the ones going nowhere.
+          These used to be set up in <b>{s.screens} different screens</b> across{' '}
+          <b>{s.settingKeys} settings</b>. Change them here instead — addresses, channels and the
+          on/off switch all save from this page, to the same places the module screens write, so
+          both stay in step.
         </p>
       </div>
 

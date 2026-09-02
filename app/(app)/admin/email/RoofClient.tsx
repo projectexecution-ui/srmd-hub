@@ -1,7 +1,8 @@
 'use client'
 import { useMemo, useState } from 'react'
 import Link from 'next/link'
-import { AlertTriangle, Search, ExternalLink, Clock, Zap } from 'lucide-react'
+import { AlertTriangle, Search, Clock, Zap, Settings2 } from 'lucide-react'
+import { ChannelToggles, EnabledToggle, AddressList } from './MessageEditor'
 
 export interface RoofRow {
   key: string
@@ -21,9 +22,14 @@ export interface RoofRow {
   who: string
   settingsHref: string
   warning?: string
+  /** Set when the recipients are a plain address list this page can edit. */
+  addressKey?: string
+  /** Set when the whole message has an on/off switch this page can flip. */
+  enabledKey?: string
+  /** True when recipients are worked out at send time — nothing to edit. */
+  derived: boolean
 }
 
-const CH_LABEL: Record<string, string> = { in_app: 'In-app', email: 'Email', web_push: 'Phone' }
 
 /**
  * Every message CT Hub sends, in one list, with who receives it.
@@ -130,59 +136,56 @@ export function RoofClient({ rows }: { rows: RoofRow[] }) {
                       : <><Zap className="h-3 w-3" />As it happens</>}
                   </span>
 
-                  {!r.enabled && (
-                    <span className="text-[10px] font-bold text-gray-500 bg-gray-100 rounded px-1.5 py-0.5">
-                      SWITCHED OFF
-                    </span>
+                  {r.enabledKey ? (
+                    <span className="ml-auto"><EnabledToggle settingKey={r.enabledKey} enabled={r.enabled} /></span>
+                  ) : (
+                    <span className="ml-auto" />
                   )}
-
-                  <Link
-                    href={r.settingsHref}
-                    className="ml-auto inline-flex items-center gap-1 text-[11px] font-semibold text-indigo-700 hover:underline min-h-[44px] sm:min-h-0"
-                  >
-                    Set up <ExternalLink className="h-3 w-3" />
-                  </Link>
                 </div>
 
                 <p className="text-xs text-gray-500 mt-1">{r.trigger}</p>
 
-                <dl className="mt-2 flex flex-wrap gap-x-5 gap-y-1.5 text-[11px]">
-                  <div className="min-w-0">
-                    <dt className="text-gray-400">Goes to</dt>
-                    <dd className="text-gray-800 font-medium">
+                {/* Recipients — editable right here when they are a plain address
+                    list. Where they are worked out at send time there is nothing
+                    to edit, so say who it lands on and leave it. */}
+                {r.addressKey ? (
+                  <AddressList settingKey={r.addressKey} addresses={r.recipients} />
+                ) : (
+                  <p className="mt-2 text-[11px]">
+                    <span className="text-gray-400">Goes to </span>
+                    <span className="text-gray-800 font-medium">
                       {r.recipients.length > 0
                         ? r.recipients.join(' · ')
                         : <span className="text-amber-700">nobody</span>}
-                    </dd>
-                  </div>
+                    </span>
+                    {r.derived && (
+                      <span className="text-gray-400"> — worked out when it sends, nothing to set</span>
+                    )}
+                  </p>
+                )}
 
-                  <div>
-                    <dt className="text-gray-400">Channels</dt>
-                    <dd className="flex gap-1 mt-0.5">
-                      {r.respectsRules
-                        ? r.channels.map(c => (
-                            <span
-                              key={c}
-                              className={[
-                                'rounded px-1.5 py-0.5 font-semibold',
-                                r.channelsOn.includes(c)
-                                  ? 'bg-emerald-50 text-emerald-700'
-                                  : 'bg-gray-100 text-gray-400 line-through',
-                              ].join(' ')}
-                            >
-                              {CH_LABEL[c] ?? c}
-                            </span>
-                          ))
-                        : <span className="text-gray-500">Email, direct</span>}
-                    </dd>
-                  </div>
-                </dl>
+                <div className="mt-2">
+                  <p className="text-[11px] text-gray-400 mb-0.5">Channels</p>
+                  {r.respectsRules ? (
+                    <ChannelToggles
+                      eventType={r.key}
+                      channels={r.channels}
+                      channelsOn={r.channelsOn}
+                    />
+                  ) : (
+                    <p className="text-[11px] text-gray-600 bg-gray-50 border border-gray-200 rounded px-2 py-1.5">
+                      Sends straight to its own address list, so channel switches do not apply to it.
+                    </p>
+                  )}
+                </div>
 
-                {!r.respectsRules && (
-                  <p className="mt-2 text-[11px] text-gray-600 bg-gray-50 border border-gray-200 rounded px-2 py-1.5">
-                    Sends straight to its own address list — the switches on{' '}
-                    <Link href="/admin/notifications" className="underline font-medium">Notifications</Link>{' '}
-                    do not affect it.
+                {!r.addressKey && !r.derived && (
+                  <p className="mt-2 text-[11px] text-gray-500 flex items-center gap-1">
+                    <Settings2 className="h-3 w-3" />
+                    Who gets this is a per-person project map —{' '}
+                    <Link href={r.settingsHref} className="underline font-medium text-indigo-700">
+                      set it on the {r.moduleLabel} screen
+                    </Link>
                   </p>
                 )}
 

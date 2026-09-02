@@ -148,7 +148,8 @@ export const SCHEDULED_MESSAGES: OutboundMessage[] = [
     respectsRules: false,
     recipients: { kind: 'addresses', who: 'A plain address list', settingKey: 'inv_daily_report_emails' },
     schedule: 'Daily, morning slot',
-    settingsHref: '/inventory/settings',
+    enabledKey: 'inv_daily_report',
+    settingsHref: '/inventory/admin/settings',
   },
   {
     key: 'inv_site_stock_reminder',
@@ -158,9 +159,15 @@ export const SCHEDULED_MESSAGES: OutboundMessage[] = [
     trigger: 'An item has fallen below its reorder level.',
     channels: ['in_app', 'email'],
     respectsRules: true,
-    recipients: { kind: 'addresses', who: 'Per-store alert list', settingKey: 'inv_low_stock_alerts' },
+    // inv_low_stock_alerts is the on/off SWITCH, not a recipient list — it is
+    // read with a boolean parser. Recipients come from the engineers assigned
+    // to the site. An earlier version of this file had it as an address list,
+    // which made the roof report it as "reaching nobody" when it has no list to
+    // be empty in the first place.
+    recipients: { kind: 'derived', who: 'Engineers assigned to the site' },
     schedule: 'Daily, morning slot',
-    settingsHref: '/inventory/settings',
+    enabledKey: 'inv_low_stock_alerts',
+    settingsHref: '/inventory/admin/settings',
   },
   {
     key: 'jmr_weekly_report',
