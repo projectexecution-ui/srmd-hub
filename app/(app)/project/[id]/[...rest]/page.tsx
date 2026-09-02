@@ -1,6 +1,7 @@
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { requirePermission } from '@/lib/auth'
+import { checkIsCcReviewer } from '@/components/cost-control/ws-actions'
 import { findTab, PROJECT_TABS, tabHref } from '@/lib/revamp/tabs'
 import { Hammer, ArrowRight } from 'lucide-react'
 import { OverviewTab } from '../OverviewTab'
@@ -37,6 +38,12 @@ export default async function ProjectTabPage({
   // the tracker to everyone. Same slug the standalone screen uses, so the two
   // can never drift apart.
   await requirePermission(tab.permissionSlug, 'view')
+
+  // Some tabs need more than the module permission. Setup's own page redirects
+  // a non-reviewer to /cost-control, which from inside the cockpit reads as
+  // being thrown out of the project for no stated reason — so don't let them
+  // arrive there at all. The strip hides it for the same reason.
+  if (tab.reviewerOnly && !(await checkIsCcReviewer())) notFound()
 
   if (slug === 'overview')    return <OverviewTab projectId={id} />
   if (slug === 'reports')     return <ReportsTab projectId={id} />

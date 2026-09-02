@@ -64,6 +64,27 @@ describe('a tab never grants what the module refuses', () => {
   it('refuses someone with no permissions at all', () => {
     expect(visibleTabs({})).toEqual([])
   })
+
+  // Setup's own page redirects a non-reviewer to /cost-control. Showing the tab
+  // anyway meant an engineer clicked it and was thrown clean out of the project
+  // with nothing said — a silent blocker, and the tab bar went with it.
+  it('hides Setup from an engineer, who is not a Cost Control reviewer', () => {
+    const labels = visibleTabs(ROLES.engineer, new Set(), false).map(t => t.label)
+    expect(labels).not.toContain('Setup')
+    expect(labels).toEqual(['Budget', 'Indent → PO', 'Discussions'])
+  })
+
+  it('keeps Setup for a reviewer', () => {
+    expect(visibleTabs(ROLES.head, new Set(), true).map(t => t.label)).toContain('Setup')
+  })
+
+  it('leaves a non-reviewer a working cockpit, not an empty one', () => {
+    for (const role of ['engineer', 'contractor'] as const) {
+      const tabs = visibleTabs(ROLES[role], new Set(), false)
+      expect(tabs.length, role).toBeGreaterThan(0)
+      expect(tabs[0].slug, role).toBe('')
+    }
+  })
 })
 
 describe('project cockpit tabs', () => {

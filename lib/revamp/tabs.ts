@@ -22,6 +22,11 @@ export interface ProjectTab {
   /** Which existing module's permission gates it, once permissions are wired.
    *  Recorded now so the migration has a map instead of a guess (issue #6). */
   permissionSlug: string
+  /** Needs Cost Control REVIEWER standing on top of the permission — the
+   *  page itself redirects anyone else. Without this the tab shows to an
+   *  engineer, who clicks it and is thrown out of the cockpit with no reason
+   *  given. Module permission alone is not always the whole gate. */
+  reviewerOnly?: boolean
 }
 
 export const PROJECT_TABS: ProjectTab[] = [
@@ -31,7 +36,7 @@ export const PROJECT_TABS: ProjectTab[] = [
   { slug: 'reports',     label: 'Reports',     hint: 'Contractor, Supplier and Bills for this project', built: true,  permissionSlug: 'contractor-report' },
   { slug: 'procurement', label: 'Indent → PO', hint: 'Indents raised, POs pending, deliveries due',    built: true,  permissionSlug: 'procurement-tracker' },
   { slug: 'discussions', label: 'Discussions', hint: 'Every comment on this project, in one place',      built: true,  permissionSlug: 'cost-control' },
-  { slug: 'setup',       label: 'Setup',       hint: 'Categories, approvers, area and grouping',       built: true,  permissionSlug: 'cost-control' },
+  { slug: 'setup',       label: 'Setup',       hint: 'Categories, approvers, area and grouping',       built: true,  permissionSlug: 'cost-control', reviewerOnly: true },
 ]
 
 /**
@@ -118,10 +123,9 @@ export function findTab(slug: string): ProjectTab | undefined {
 export function visibleTabs(
   perms: Record<string, { view?: boolean } | undefined>,
   disabled: Set<string> = new Set(),
+  isReviewer = true,
 ): ProjectTab[] {
-  return PROJECT_TABS.filter(
-    t => perms[t.permissionSlug]?.view === true && !disabled.has(t.permissionSlug),
-  )
+  return PROJECT_TABS.filter(t => canOpenTab(t, perms, disabled, isReviewer))
 }
 
 /** Whether this person may open one specific tab. */
@@ -129,7 +133,9 @@ export function canOpenTab(
   tab: ProjectTab,
   perms: Record<string, { view?: boolean } | undefined>,
   disabled: Set<string> = new Set(),
+  isReviewer = true,
 ): boolean {
+  if (tab.reviewerOnly && !isReviewer) return false
   return perms[tab.permissionSlug]?.view === true && !disabled.has(tab.permissionSlug)
 }
 

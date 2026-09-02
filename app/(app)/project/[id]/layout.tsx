@@ -4,6 +4,7 @@ import { requirePermission, getDisabledModuleSlugs } from '@/lib/auth'
 import { ChevronLeft } from 'lucide-react'
 import { loadCockpit } from '@/lib/revamp/project-cockpit'
 import { visibleTabs } from '@/lib/revamp/tabs'
+import { checkIsCcReviewer } from '@/components/cost-control/ws-actions'
 import { TabBar } from './TabBar'
 
 export const dynamic = 'force-dynamic'
@@ -26,8 +27,11 @@ export default async function ProjectCockpitLayout({
   params: Promise<{ id: string }>
 }) {
   const perms = await requirePermission('cost-control', 'view')
-  const disabled = await getDisabledModuleSlugs()
-  const tabs = visibleTabs(perms, disabled)
+  const [disabled, isReviewer] = await Promise.all([
+    getDisabledModuleSlugs(),
+    checkIsCcReviewer(),
+  ])
+  const tabs = visibleTabs(perms, disabled, isReviewer)
   const { id } = await params
   const data = await loadCockpit(id)
   if (!data) notFound()
