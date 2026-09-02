@@ -64,7 +64,8 @@ export const ADMIN_SCREENS: AdminScreen[] = [
   { href: '/vendors',                    label: 'Vendors',              module: 'vendors',     area: 'lists', hint: 'The contact list as it exists today', visibilitySlug: 'vendors' },
 
   // ── System ──
-  { href: '/admin/notifications',        label: 'Notifications',        module: '',            area: 'system', hint: 'Which alerts go out, on which channel, and job health' },
+  { href: '/admin/email',                label: 'Email & notifications', module: '',           area: 'system', hint: 'Everything the hub sends and who receives it — all modules, one list' },
+  { href: '/admin/notifications',        label: 'Notification switches', module: '',           area: 'system', hint: 'Turn each alert on or off per channel, and check job health' },
   { href: '/admin/dashboard-modules',    label: 'Modules on/off',       module: '',            area: 'system', hint: 'Switch a module off for everyone, or rename it', adminOnly: true },
   { href: '/admin/sidebar-groups',       label: 'Sidebar groups',       module: '',            area: 'system', hint: 'Nest modules under names you choose', adminOnly: true },
   { href: '/cost-control/settings',      label: 'Cost Control settings', module: 'cost-control', area: 'system', hint: 'Feature switches, field names, engineer visibility' },
