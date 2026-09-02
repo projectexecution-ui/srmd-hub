@@ -18,7 +18,8 @@ import { RenameProjectChip } from '../RenameProjectChip'
 import { ProjectAliasChip } from '../ProjectAliasChip'
 import { AreaChip } from '../AreaChip'
 import { ParentProjectControl } from '../ParentProjectControl'
-import { ProjectApproversPanel } from '../ProjectApproversPanel'
+import { ProjectPeoplePanel } from './ProjectPeoplePanel'
+import { mergeGrants } from '@/lib/revamp/project-people'
 import { ProjectArchiveControls } from '../ProjectArchiveControls'
 import { GroupLabelChip } from '@/app/(app)/cost-control/GroupLabelChip'
 import { getBphMappingForProject } from '@/app/(app)/cost-control/import/bph/actions'
@@ -92,6 +93,22 @@ export default async function ResumeProjectSetupPage(
     supabase.from('cc_project_approvers').select('role, user_id').eq('project_id', id),
   ])
 
+  // "Who works on this project" reads all six tables that answer that question,
+  // so the whole picture is on one screen instead of five. Each is optional —
+  // a module that has never been set up simply contributes nothing.
+  const [assignRes, jmrRes, deskRes, desksRes] = await Promise.all([
+    supabase.from('project_assignments').select('user_id').eq('project_id', id),
+    supabase.from('jmr_user_project_access').select('user_id').eq('project_id', id),
+    supabase.from('bb_desk_members').select('user_id, desk').eq('project_id', id),
+    supabase.from('bb_desk_members').select('desk'),
+  ])
+  // Indent visibility is keyed on the project NAME rather than its id — the one
+  // fragile grant of the six, and the panel says so on screen.
+  const { data: indentRes } = await supabase
+    .from('procurement_user_project_visibility')
+    .select('user_id')
+    .eq('project_name', project.name)
+
   const tablesMissing = !!disciplinesRes.error
 
   type AllProj = { id: string; code: string; name: string; parent_project_id: string | null }
@@ -132,11 +149,35 @@ export default async function ResumeProjectSetupPage(
   }))
   const savedSubSkillIds = (projSubRes.data ?? []).map(r => r.sub_skill_id as string)
 
-  // Config-panel inputs (approvers roster).
-  const nameById = new Map(profRows.map(p => [p.id, p.full_name ?? p.name ?? '(unnamed)']))
-  const projectApprovers = ((approverRes.data ?? []) as Array<{ role: 'project_head' | 'head' | 'founder'; user_id: string }>)
-    .map(r => ({ role: r.role, user_id: r.user_id, name: nameById.get(r.user_id) ?? '(user)' }))
-  const approverCandidates = profRows.map(p => ({ id: p.id, name: p.full_name ?? p.name ?? '(unnamed)' }))
+  // Fold the six sources into one row per person. mergeGrants drops a grant
+  // whose account no longer exists rather than throwing, so a stale row left by
+  // a deleted user cannot take this page down.
+  const peopleRows = mergeGrants(
+    profRows.map(p => ({
+      id: p.id,
+      full_name: p.full_name ?? p.name ?? null,
+      email: p.email ?? null,
+      role: p.role ?? 'viewer',
+    })),
+    {
+      approvers: (approverRes.data ?? []) as Array<{ user_id: string; role: string | null }>,
+      assignments: (assignRes.data ?? []) as Array<{ user_id: string }>,
+      jmrAccess: (jmrRes.data ?? []) as Array<{ user_id: string }>,
+      indentViewers: (indentRes ?? []) as Array<{ user_id: string }>,
+      deskMembers: (deskRes.data ?? []) as Array<{ user_id: string; desk: string | null }>,
+    },
+  )
+  const peopleCandidates = profRows.map(p => ({
+    id: p.id,
+    name: p.full_name ?? p.name ?? p.email ?? '(unnamed)',
+    role: p.role ?? 'viewer',
+  }))
+  // Desk names already in use, so the panel offers real choices rather than a
+  // free-text box that invents a new desk on every typo.
+  const deskNames = [...new Set(
+    ((desksRes.data ?? []) as Array<{ desk: string | null }>).map(d => d.desk?.trim()).filter(Boolean) as string[],
+  )].sort()
+  if (deskNames.length === 0) deskNames.push('Site Head')
 
   // Projects that already have a setup worth reusing (richest first).
   const setupSources = await listSetupSources(id)
@@ -220,11 +261,14 @@ export default async function ResumeProjectSetupPage(
         )}
       </Card>
 
-      {/* Per-project approvers roster. */}
-      <ProjectApproversPanel
+      {/* Everyone on this project and what each may do — approvals, site
+          access, indents and bill desks together. Replaces the trip to five
+          screens that used to be the only way to see this. */}
+      <ProjectPeoplePanel
         projectId={id}
-        approvers={projectApprovers}
-        candidates={approverCandidates}
+        rows={peopleRows}
+        candidates={peopleCandidates}
+        desks={deskNames}
         canWrite
       />
 
