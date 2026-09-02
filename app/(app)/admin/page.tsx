@@ -24,9 +24,10 @@ export default async function AdminHomePage() {
     getMyProfile(),
   ])
 
-  // TRIAL DEPLOYMENT: the revamped Admin — all 43 settings screens, including
-  // the 34 hidden inside modules, grouped into four areas. Live keeps today's
-  // page unchanged.
+  // TRIAL DEPLOYMENT: the revamped Admin — every settings screen, including the
+  // ones hidden inside modules, organised by the JOB rather than by where the
+  // code lives, with what is currently broken shown above them. Live keeps
+  // today's page unchanged.
   if (IS_DEMO) {
     const disabled = await getDisabledModuleSlugs()
     return <AdminRevamp isAdmin={portalOwner || profile?.role === 'admin'} disabledSlugs={Array.from(disabled)} />
