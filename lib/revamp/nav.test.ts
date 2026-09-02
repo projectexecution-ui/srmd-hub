@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { buildRevampNav, REVAMP_PRIMARY, REVAMP_OLD_SCREENS } from './nav'
+import { MODULES } from '@/lib/modules'
 
 const allow = (...slugs: string[]) =>
   Object.fromEntries(slugs.map(s => [s, { view: true }]))
@@ -16,11 +17,25 @@ describe('revamped left pane', () => {
   // Two branches on purpose: "we moved this into the project" and "we parked
   // this" are different messages. A module people still open must not be
   // filed under "old".
+  // A lane gated on a slug no module owns can never appear, because no role can
+  // hold a permission for something that is not in the registry. 'budget' was
+  // exactly that: the href is /budget, but the module slug is
+  // 'budget-vs-actual', so the Budget (BPH) lane was invisible to everyone.
+  it('gates every lane on a slug that a module actually owns', () => {
+    const real = new Set(MODULES.map(m => m.slug))
+    for (const item of [...REVAMP_PRIMARY, ...REVAMP_OLD_SCREENS]) {
+      if (!item.slug) continue
+      expect(real.has(item.slug), `${item.href} → ${item.slug}`).toBe(true)
+    }
+  })
+
   it('separates screens the cockpit replaced from ones simply parked', () => {
     const { groups } = buildRevampNav(
-      allow('budget', 'jmr', 'schedule', 'warehouse'), new Set(), NOT_ADMIN)
+      allow('budget-vs-actual', 'jmr', 'schedule', 'warehouse'), new Set(), NOT_ADMIN)
     const byName = Object.fromEntries(groups.map(g => [g.name, g.items.map(i => i.label)]))
-    expect(byName['Now inside a project']).toEqual(['Budget (BPH)'])
+    // Both BPH screens hang off the one 'budget-vs-actual' permission, so
+    // granting it shows both — that is the module's real shape, not a bug.
+    expect(byName['Now inside a project']).toEqual(['Budget (BPH)', 'Budget vs Actual'])
     expect(byName['Not in the revamp']).toEqual(['Warehouse', 'Schedule', 'JMR'])
   })
 
