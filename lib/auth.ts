@@ -7,6 +7,7 @@ import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { getUserResilient } from '@/lib/supabase/auth-retry'
 import type { Profile, PermissionMap, PermAction } from '@/lib/types'
+import { moduleOf } from '@/lib/modules'
 
 export const getMyUser = cache(async () => {
   const supabase = await createClient()
@@ -84,12 +85,17 @@ export const getDisabledModuleSlugs = cache(async (): Promise<Set<string>> => {
   )
 })
 
-/** True when the module is enabled portal-wide (or the viewer is the
- *  Portal Owner — they always see everything so they can manage). */
+/** True when the module is enabled portal-wide. Sub-module slugs (jmr-admin)
+ *  follow their parent module's switch.
+ *
+ *  No Portal Owner exemption. There used to be one ("they always see
+ *  everything so they can manage"), and it is exactly why the switch looked
+ *  broken: the Portal Owner is the person who flips it and then opens the
+ *  module to check — and it was still there for them alone. Managing the
+ *  switch happens on /admin/dashboard-modules, which is not module-gated. */
 export async function isModuleEnabled(slug: string): Promise<boolean> {
-  if (await isPortalOwner()) return true
   const disabled = await getDisabledModuleSlugs()
-  return !disabled.has(slug)
+  return !disabled.has(moduleOf(slug))
 }
 
 /** Require a permission or redirect. Use at top of authed pages.

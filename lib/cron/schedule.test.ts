@@ -12,6 +12,22 @@ describe('istDateOf', () => {
   })
 })
 
+describe('plannedJobs — a switched-off module takes its jobs with it', () => {
+  it('skips every job tagged with a disabled module and nothing else', () => {
+    const off = new Set(['daily-site-report', 'inventory'])
+    const keys = plannedJobs('am', {}, DAY, false, off).map(j => j.key)
+    expect(keys).not.toContain('daily-site-report')
+    expect(keys).not.toContain('inventory-low-stock')
+    expect(keys).not.toContain('inventory-daily-report')
+    expect(keys).toContain('cc-backup')       // portal-wide, no module
+    expect(keys).toContain('procurement-digest')
+  })
+  it('every job that mails a module owner names its module', () => {
+    const untagged = CRON_JOBS.filter(j => !j.module).map(j => j.key)
+    expect(untagged.sort()).toEqual(['cc-backup', 'email-retry'])
+  })
+})
+
 describe('plannedJobs — daily jobs run once/day across both slots', () => {
   it('am with an empty ledger runs every am daily + each job', () => {
     const jobs = plannedJobs('am', {}, DAY, false)

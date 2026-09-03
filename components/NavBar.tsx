@@ -31,7 +31,6 @@ const SHORT_LABELS: Record<string, string> = {
   'comparison':       'Comparisons',
   'pos':              'POs',
   'budget-vs-actual': 'Budget',
-  'in4-indent-to-po': 'IN4 Tracker',
   'jmr':              'JMR',
   'admin-users':      'Users',
   'admin-permissions':'Permissions',

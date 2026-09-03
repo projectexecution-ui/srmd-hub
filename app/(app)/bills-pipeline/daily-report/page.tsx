@@ -19,21 +19,23 @@ export default async function DailyReportPage({
   const dateParam = typeof sp.date === 'string' && DATE_RE.test(sp.date) ? sp.date : ''
 
   // Which past days do we have a saved report for? (calendar look-back)
-  const { data: keyRows } = await supabase
-    .from('app_settings')
-    .select('key')
-    .like('key', 'bills_pipeline_report_%')
-  const availableDates = ((keyRows ?? []) as Array<{ key: string }>)
-    .map(r => r.key.replace('bills_pipeline_report_', ''))
+  const { data: dateRows } = await supabase
+    .from('bills_pipeline_reports')
+    .select('report_date')
+    .order('report_date', { ascending: false })
+    .limit(400)
+  const availableDates = ((dateRows ?? []) as Array<{ report_date: string }>)
+    .map(r => r.report_date)
     .filter(d => DATE_RE.test(d))
-    .sort()
-    .reverse()
 
-  const useDated = dateParam && availableDates.includes(dateParam)
-  const snapKey = useDated ? `bills_pipeline_report_${dateParam}` : 'bills_pipeline_report'
+  // A chosen past day comes from the snapshots table; the default view is the
+  // "latest" pointer the cron keeps in app_settings.
+  const useDated = !!dateParam && availableDates.includes(dateParam)
 
   const [{ data: snap }, { data: entryRows }, { data: mapRow }] = await Promise.all([
-    supabase.from('app_settings').select('value').eq('key', snapKey).maybeSingle(),
+    useDated
+      ? supabase.from('bills_pipeline_reports').select('value:payload').eq('report_date', dateParam).maybeSingle()
+      : supabase.from('app_settings').select('value').eq('key', 'bills_pipeline_report').maybeSingle(),
     supabase.from('bp_bill_trustdesk').select('bill_id, submission_date, courier_date, remark, is_adjust_advance, highlight'),
     supabase.from('app_settings').select('value').eq('key', 'bills_pipeline_trust_map').maybeSingle(),
   ])

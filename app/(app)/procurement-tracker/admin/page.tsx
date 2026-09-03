@@ -1,7 +1,6 @@
-import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { getTrackerSlot } from '@/lib/procurement/tracker-cache'
-import { getMyProfile } from '@/lib/auth'
+import { requirePermission } from '@/lib/auth'
 import { PageHeader } from '@/components/PageHeader'
 import { ProcurementProjectVisibilityEditor } from './ProcurementProjectVisibilityEditor'
 import { ProcurementNotifySettingsForm } from './ProcurementNotifySettingsForm'
@@ -15,8 +14,9 @@ export default async function ProcurementProjectVisibilityPage() {
   // asked to keep module-specific admin out of the global sidebar
   // and reachable from the module's own header instead — same
   // pattern as /inventory/admin/…).
-  const profile = await getMyProfile()
-  if (!profile || profile.role !== 'admin') redirect('/procurement-tracker')
+  // Gated through the permission matrix (admin holds can_admin) so the module's
+  // on/off switch applies here too — a bare role check ignored it.
+  await requirePermission('procurement-tracker', 'admin', '/procurement-tracker')
 
   const supabase = await createClient()
   const notifyConfig = await getProcurementNotifyConfig()

@@ -198,9 +198,12 @@ async function runPipeline(supabase: SupabaseClient): Promise<NextResponse> {
     .from('app_settings')
     .upsert({ key: 'bills_pipeline_report', value: reportPayload }, { onConflict: 'key' })
   if (repErr) console.warn('[bills-pipeline] report persist failed:', repErr.message)
+  // The per-day copy lives in its own table. It used to be one app_settings
+  // row per day (bills_pipeline_report_2026-08-16, _17, ...), which grew the
+  // settings key space - read by every page - by a row a day, for ever.
   const { error: repDayErr } = await supabase
-    .from('app_settings')
-    .upsert({ key: `bills_pipeline_report_${istToday}`, value: reportPayload }, { onConflict: 'key' })
+    .from('bills_pipeline_reports')
+    .upsert({ report_date: istToday, payload: reportPayload, generated_at: isoNow }, { onConflict: 'report_date' })
   if (repDayErr) console.warn('[bills-pipeline] dated report persist failed:', repDayErr.message)
 
   // TODO: send PNG to WhatsApp via WABA API

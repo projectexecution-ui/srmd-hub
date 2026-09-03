@@ -105,7 +105,11 @@ function renderRows(doc: jsPDF, rows: Row[], head: string[], startY: number, M: 
     didParseCell: (d) => {
       if (d.section === 'head') { if (d.column.index === 0) d.cell.styles.halign = 'left'; return }
       if (d.section !== 'body') return
-      const r = rows[d.row.index]; const cell = r.cols[d.column.index]
+      // autoTable can call these hooks for a row index we did not supply (the
+      // weekly card crashed on 31 Aug 2026 reading `.cols` of undefined). Skip
+      // rather than throw — a plain cell beats no report.
+      const r = rows[d.row.index]; const cell = r?.cols[d.column.index]
+      if (!r || !cell) return
       if (cell.color) d.cell.styles.textColor = cell.color
       if (r.type === 'grp') { d.cell.styles.fillColor = C.grpBg; if (d.column.index === 0) d.cell.styles.textColor = C.navy }
       else if (r.type === 'total') { d.cell.styles.fillColor = C.totalBg; if (d.column.index === 0) d.cell.styles.textColor = C.navy }
@@ -123,7 +127,8 @@ function renderRows(doc: jsPDF, rows: Row[], head: string[], startY: number, M: 
     },
     didDrawCell: (d) => {
       if (d.section !== 'body') return
-      const r = rows[d.row.index]; const cell = r.cols[d.column.index]
+      const r = rows[d.row.index]; const cell = r?.cols[d.column.index]
+      if (!r || !cell) return
       if (r.type !== 'grp' && cell.sub && s > SUBLINE_MIN) {
         doc.setFont('Noto', 'normal'); doc.setFontSize(5.6); doc.setTextColor(...C.faint)
         doc.text(cell.sub, d.cell.x + d.cell.width - 6, d.cell.y + d.cell.height - 4.5, { align: 'right' })

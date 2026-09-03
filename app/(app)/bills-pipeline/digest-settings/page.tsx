@@ -1,6 +1,5 @@
-import { redirect } from 'next/navigation'
 import { createClient as createServiceClient } from '@supabase/supabase-js'
-import { getMyProfile } from '@/lib/auth'
+import { requirePermission } from '@/lib/auth'
 import { PageHeader } from '@/components/PageHeader'
 import { parseBillsDigestConfig, BILLS_PROJECT_CODES } from '@/lib/bills-pipeline/digest-settings'
 import { BillsDigestForm } from './BillsDigestForm'
@@ -11,8 +10,9 @@ export const dynamic = 'force-dynamic'
 const FALLBACK_STAGES = ['Under: Site Head', 'Under: CT Head', 'Under: CT Billing', 'Under: CT Disc Head']
 
 export default async function BillsDigestSettingsPage() {
-  const profile = await getMyProfile()
-  if (!profile || profile.role !== 'admin') redirect('/bills-pipeline')
+  // Gated through the permission matrix (admin holds can_admin) so the module's
+  // on/off switch applies here too — a bare role check ignored it.
+  await requirePermission('bills-pipeline', 'admin', '/bills-pipeline')
 
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL!

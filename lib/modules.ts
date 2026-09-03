@@ -68,6 +68,17 @@ export const MODULES: ModuleTile[] = [
   { slug: 'admin-permissions',label: 'Permissions',      description: 'Who can do what in each module',              href: '/admin/permissions', icon: ShieldCheck, tone: 'slate' },
 ]
 
+// Permission slugs that gate pages INSIDE a module without being a module
+// themselves — they have no tile, so the Portal Owner's on/off switch never
+// names them. Each maps to the module whose switch governs it; otherwise
+// switching JMR off left all 15 JMR admin pages reachable.
+export const MODULE_PARENT: Record<string, string> = {
+  'jmr-admin': 'jmr',
+}
+export function moduleOf(slug: string): string {
+  return MODULE_PARENT[slug] ?? slug
+}
+
 export function visibleModules(perms: PermissionMap): ModuleTile[] {
   return MODULES.filter(m => perms[m.slug]?.view)
 }

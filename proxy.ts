@@ -11,12 +11,14 @@ export async function proxy(request: NextRequest) {
 }
 
 // Skip the proxy (and the Supabase auth round-trip it triggers) for static
-// assets and the embedded vendor HTML files. Those HTMLs are public shells —
-// any user data lives in the visitor's browser (localStorage / drop-zone),
-// not on our server, so it's safe to serve them without auth gating and we
-// save ~50–200 ms per nested iframe load.
+// assets only. The embedded HTML shells (budget-hub.html, indent-tracker.html)
+// used to be excluded too, back when their data lived in the visitor's
+// browser. They are server-backed now (/api/budget-hub/state), and the budget
+// hub is the full ERP budget - so the shell itself needs a signed-in session
+// like every other page. ~100 ms per iframe load is not worth an
+// unauthenticated copy of the budget UI.
 export const config = {
   matcher: [
-    '/((?!_next/static|_next/image|favicon.ico|icons|manifest\\.json|manifest\\.webmanifest|indent-tracker\\.html|budget-hub\\.html|srmd-icon\\.png|srmd-logo\\.svg|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico|css|js|woff|woff2|ttf|map)$).*)',
+    '/((?!_next/static|_next/image|favicon.ico|icons|manifest\\.json|manifest\\.webmanifest|srmd-icon\\.png|srmd-logo\\.svg|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico|css|js|woff|woff2|ttf|map)$).*)',
   ],
 }

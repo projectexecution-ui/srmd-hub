@@ -1,6 +1,7 @@
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/server'
+import { requirePermission } from '@/lib/auth'
 import { PageHeader } from '@/components/PageHeader'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { EmptyState } from '@/components/ui/empty-state'
@@ -14,6 +15,9 @@ export default async function GRNDetailPage({
   params: Promise<{ id: string }>
 }) {
   const { id } = await params
+  // The list page was gated but the detail page was not — a deep link opened
+  // any grns record regardless of permission or the module's on/off switch.
+  await requirePermission('grns', 'view')
   const supabase = await createClient()
 
   const { data: grn } = await supabase

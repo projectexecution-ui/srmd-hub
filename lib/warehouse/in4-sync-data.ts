@@ -1,6 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { getTrackerSlots } from '@/lib/procurement/tracker-cache'
 import { in4Key } from './in4-items'
+import { fetchAll } from './paging'
 import { plan } from './in4-sync'
 import type { SyncLine, SyncExisting, SyncPlan } from './in4-sync'
 
@@ -72,20 +73,26 @@ export async function readTrackerLines(): Promise<{ lines: SyncLine[]; slots: st
 /** What the warehouse already holds, keyed for the planner. */
 export async function readExisting(): Promise<{ have: SyncExisting; error?: string }> {
   const sb = await createClient()
+  // Items and POs are PAGED. PostgREST returns at most 1,000 rows and says
+  // nothing about the rest; wh_items passed that in August, so the planner saw
+  // 1,000 of 2,803 items, decided the other 1,803 were new, and every upload's
+  // sync died on wh_items_in4_key_idx ("duplicate key") for two weeks.
   const [itemsRes, listsRes, posRes, projectsRes] = await Promise.all([
-    sb.from('wh_items').select('id, name, unit, in4_name').is('deleted_at', null),
+    fetchAll<{ id: string; name: string; unit: string; in4_name: string | null }>((from, to) =>
+      sb.from('wh_items').select('id, name, unit, in4_name').is('deleted_at', null).order('id').range(from, to)),
     sb.from('wh_lists').select('kind, value'),
-    sb.from('wh_po').select('po_no').is('deleted_at', null),
+    fetchAll<{ po_no: string }>((from, to) =>
+      sb.from('wh_po').select('id, po_no').is('deleted_at', null).order('id').range(from, to)),
     sb.from('projects').select('id, name'),
   ])
-  const error = itemsRes.error?.message ?? listsRes.error?.message
-    ?? posRes.error?.message ?? projectsRes.error?.message
+  const error = itemsRes.error ?? listsRes.error?.message
+    ?? posRes.error ?? projectsRes.error?.message ?? undefined
 
   const have: SyncExisting = {
     byIn4Key: new Map(), byNameKey: new Map(),
     units: new Set(), disciplines: new Set(), poNos: new Set(), projectsByName: new Map(),
   }
-  for (const i of itemsRes.data ?? []) {
+  for (const i of itemsRes.rows) {
     if (i.in4_name) have.byIn4Key.set(in4Key(i.in4_name), { id: i.id, unit: i.unit })
     const nk = in4Key(i.name)
     // First one wins: two hand-typed items with the same name would make
@@ -96,7 +103,7 @@ export async function readExisting(): Promise<{ have: SyncExisting; error?: stri
     if (l.kind === 'unit') have.units.add(l.value)
     if (l.kind === 'discipline') have.disciplines.add(l.value)
   }
-  for (const p of posRes.data ?? []) have.poNos.add(p.po_no)
+  for (const p of posRes.rows) have.poNos.add(p.po_no)
   for (const p of projectsRes.data ?? []) {
     const k = in4Key(p.name)
     if (k) have.projectsByName.set(k, p.id)
