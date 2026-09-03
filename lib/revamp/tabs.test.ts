@@ -14,7 +14,7 @@ const ROLES = {
   admin:      view('cost-control', 'contractor-report', 'procurement-tracker', 'bills-pipeline', 'jmr', 'warehouse', 'budget-vs-actual-v2'),
   uploader:   view('cost-control', 'contractor-report', 'procurement-tracker', 'bills-pipeline', 'jmr', 'warehouse'),
   viewer:     view('cost-control', 'contractor-report', 'procurement-tracker'),
-  founder:    view('cost-control', 'contractor-report', 'procurement-tracker'),
+  founder:    view('cost-control', 'contractor-report', 'procurement-tracker', 'budget-vs-actual-v2'),
   backoffice: view('cost-control', 'contractor-report', 'procurement-tracker'),
 }
 
@@ -215,19 +215,13 @@ describe('a tab never grants what the module refuses', () => {
     }
   })
 
-  it('shows SC Budgets to the Atm Heads and admin', () => {
-    for (const role of ['head', 'admin'] as const) {
+  // Granted 2026-09-03 at Aksha's word: founder → budget-vs-actual-v2, view
+  // only, matching head. Top management is the Atm Heads, the Trustee and admin.
+  it('shows SC Budgets to the Atm Heads, the Trustee and admin', () => {
+    for (const role of ['head', 'founder', 'admin'] as const) {
       const labels = visibleTabs(ROLES[role], new Set(), true).map(t => t.label)
       expect(labels, role).toContain('SC Budgets')
     }
-  })
-
-  // The Trustee holds no budget-vs-actual-v2 row today, so the report is shut
-  // to him as well. That is one row for Aksha to grant — recorded here rather
-  // than assumed, because top management surely includes the Trustee.
-  it('does not yet reach the Trustee — he has no budget-vs-actual-v2 row', () => {
-    expect(visibleTabs(ROLES.founder, new Set(), true).map(t => t.label))
-      .not.toContain('SC Budgets')
   })
 
   // Mayank is `backoffice`. He is inside `roles_management`, so gating on that

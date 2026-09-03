@@ -82,10 +82,11 @@ export const PROJECT_TABS: ProjectTab[] = [
   // only managment - not also Mayank bhai should not be able to see - atm heads
   // can", then "No Parimal also cant see".
   //
-  // Gated on `budget-vs-actual-v2`, which today only ADMIN and HEAD hold. That
-  // is exactly the line he drew, by construction rather than by a list someone
-  // has to maintain: the four Atm Heads are in; coordinator (Parimal),
-  // backoffice (Mayank), engineer, contractor, viewer and uploader are all out.
+  // Gated on `budget-vs-actual-v2`, held by ADMIN, HEAD and FOUNDER. That is
+  // exactly the line he drew, by construction rather than by a list someone has
+  // to maintain: the four Atm Heads and the Trustee are in; coordinator
+  // (Parimal), backoffice (Mayank), engineer, contractor, viewer and uploader
+  // are all out.
   //
   // Two mechanisms deliberately NOT used:
   //   `roles_management` — contains backoffice, so Mayank would have seen it,
@@ -93,8 +94,9 @@ export const PROJECT_TABS: ProjectTab[] = [
   //   `reviewerOnly` (checkIsCcReviewer) — includes `coordinator`, so Parimal
   //     would have seen it. Right gate for the Internal Estimate, wrong one here.
   //
-  // The Trustee (founder) has no budget-vs-actual-v2 row today, so he cannot
-  // see it either — flagged to Aksha as one row to grant, not assumed.
+  // The Trustee's row was granted 2026-09-03 (founder → view only, matching
+  // head). Worth knowing: `founder` permissions have been reset before by the
+  // other app sharing this database, so if Chirag loses this, that is why.
   //
   // HIDDEN rather than greyed for everyone else: a greyed tab still announces
   // that the report exists, and "not to be seen" means not seen.
