@@ -8,6 +8,7 @@ import { OverviewTab } from '../OverviewTab'
 import { ReportsTab } from '../ReportsTab'
 import { ProcurementTab, DiscussionsTab } from '../MoreTabs'
 import { ApprovalsTab, JmrTab, StoresTab } from '../tabs'
+import { ScBudgetsTab } from '../ScBudgetsTab'
 import ProjectSetupPage from '@/app/(app)/cost-control/projects/[id]/setup/page'
 
 export const dynamic = 'force-dynamic'
@@ -61,6 +62,10 @@ export default async function ProjectTabPage({
   if (slug === 'approvals')   return <ApprovalsTab projectId={id} />
   if (slug === 'jmr')         return <JmrTab projectId={id} />
   if (slug === 'material')    return <StoresTab projectId={id} />
+
+  // Confidentiality is the route guard above, on budget-vs-actual-v2 — admin
+  // and head only. The component does not re-check, so there is one gate.
+  if (slug === 'sc-budgets')  return <ScBudgetsTab projectId={id} />
 
   if (slug === 'setup') {
     // The existing Setup screen, rendered INSIDE the cockpit — not a redirect.

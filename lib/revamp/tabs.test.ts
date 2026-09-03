@@ -6,10 +6,12 @@ const P = '11111111-2222-3333-4444-555555555555'
 // The eight real roles, exactly as role_permissions had them on 2026-09-01.
 const view = (...slugs: string[]) => Object.fromEntries(slugs.map(s => [s, { view: true }]))
 const ROLES = {
-  head:       view('cost-control', 'contractor-report', 'bills-pipeline'),
+  // budget-vs-actual-v2 is held today by admin and head ONLY — the gate that
+  // makes SC Budgets top-management without a hand-maintained list.
+  head:       view('cost-control', 'contractor-report', 'bills-pipeline', 'budget-vs-actual-v2'),
   engineer:   view('cost-control', 'procurement-tracker', 'jmr', 'warehouse'),
   contractor: view('cost-control', 'procurement-tracker'),
-  admin:      view('cost-control', 'contractor-report', 'procurement-tracker', 'bills-pipeline', 'jmr', 'warehouse'),
+  admin:      view('cost-control', 'contractor-report', 'procurement-tracker', 'bills-pipeline', 'jmr', 'warehouse', 'budget-vs-actual-v2'),
   uploader:   view('cost-control', 'contractor-report', 'procurement-tracker', 'bills-pipeline', 'jmr', 'warehouse'),
   viewer:     view('cost-control', 'contractor-report', 'procurement-tracker'),
   founder:    view('cost-control', 'contractor-report', 'procurement-tracker'),
@@ -126,7 +128,7 @@ describe('coming-soon lanes', () => {
 
   it('leaves the built count honest', () => {
     const { built, total } = builtCount()
-    expect(built).toBe(9)
+    expect(built).toBe(10)
     expect(total).toBe(18)
     expect(BUILT_TABS).toHaveLength(built)
     expect(COMING_SOON_TABS).toHaveLength(total - built)
@@ -213,11 +215,19 @@ describe('a tab never grants what the module refuses', () => {
     }
   })
 
-  it('shows SC Budgets to the Atm Heads, the Trustee and admin', () => {
-    for (const role of ['head', 'founder', 'admin'] as const) {
+  it('shows SC Budgets to the Atm Heads and admin', () => {
+    for (const role of ['head', 'admin'] as const) {
       const labels = visibleTabs(ROLES[role], new Set(), true).map(t => t.label)
       expect(labels, role).toContain('SC Budgets')
     }
+  })
+
+  // The Trustee holds no budget-vs-actual-v2 row today, so the report is shut
+  // to him as well. That is one row for Aksha to grant — recorded here rather
+  // than assumed, because top management surely includes the Trustee.
+  it('does not yet reach the Trustee — he has no budget-vs-actual-v2 row', () => {
+    expect(visibleTabs(ROLES.founder, new Set(), true).map(t => t.label))
+      .not.toContain('SC Budgets')
   })
 
   // Mayank is `backoffice`. He is inside `roles_management`, so gating on that

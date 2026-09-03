@@ -77,6 +77,28 @@ export const PROJECT_TABS: ProjectTab[] = [
   { slug: 'jmr',          label: 'JMRs',             hint: 'Measured work logged against this project',             built: true,  permissionSlug: 'jmr' },
   { slug: 'material',     label: 'Material In-Out',  hint: 'Gate entries in and out of the store',                  built: true,  permissionSlug: 'warehouse' },
   { slug: 'reports',      label: 'Reports',          hint: 'Contractor, Supplier and Bills for this project',       built: true,  permissionSlug: 'contractor-report' },
+
+  // TOP MANAGEMENT ONLY — Aksha, 2026-09-03: "not to be seen by Eng level but
+  // only managment - not also Mayank bhai should not be able to see - atm heads
+  // can", then "No Parimal also cant see".
+  //
+  // Gated on `budget-vs-actual-v2`, which today only ADMIN and HEAD hold. That
+  // is exactly the line he drew, by construction rather than by a list someone
+  // has to maintain: the four Atm Heads are in; coordinator (Parimal),
+  // backoffice (Mayank), engineer, contractor, viewer and uploader are all out.
+  //
+  // Two mechanisms deliberately NOT used:
+  //   `roles_management` — contains backoffice, so Mayank would have seen it,
+  //     and its own file says it is a labelling layer, not a confidentiality gate.
+  //   `reviewerOnly` (checkIsCcReviewer) — includes `coordinator`, so Parimal
+  //     would have seen it. Right gate for the Internal Estimate, wrong one here.
+  //
+  // The Trustee (founder) has no budget-vs-actual-v2 row today, so he cannot
+  // see it either — flagged to Aksha as one row to grant, not assumed.
+  //
+  // HIDDEN rather than greyed for everyone else: a greyed tab still announces
+  // that the report exists, and "not to be seen" means not seen.
+  { slug: 'sc-budgets',   label: 'SC Budgets',       hint: 'Top management report — pick projects, categories and columns', built: true, permissionSlug: 'budget-vs-actual-v2' },
   // Not on the mind map — it is how a project gets configured, and the map
   // covers pages people READ. Kept last so it never competes with them.
   { slug: 'setup',        label: 'Setup',            hint: 'Categories, approvers, area and grouping',              built: true,  permissionSlug: 'cost-control', reviewerOnly: true },
@@ -93,23 +115,6 @@ export const PROJECT_TABS: ProjectTab[] = [
   { slug: 'drawings',     label: 'Drawings',         hint: 'Not captured anywhere yet — the first stage of the WO chain', built: false, permissionSlug: 'cost-control' },
   { slug: 'decisions',    label: 'Decisions & Specs', hint: 'Decisions taken, by category and sub-category',          built: false, permissionSlug: 'cost-control' },
   { slug: 'qc',           label: 'QC',               hint: 'Daily site quality checks and the trend over time',       built: false, permissionSlug: 'cost-control' },
-  // TOP MANAGEMENT ONLY — Aksha, 2026-09-03: "not to be seen by Eng level but
-  // only managment - not also Mayank bhai should not be able to see - atm heads
-  // can". Gated on `reviewerOnly`, which is the app's EXISTING confidentiality
-  // gate (checkIsCcReviewer — the same one that hides the Internal Estimate),
-  // not a second parallel mechanism. It resolves today to admin, coordinator,
-  // founder, head and project_head: the four Atm Heads and the Trustee are in,
-  // and backoffice (Mayank), engineer, contractor, viewer and uploader are all
-  // out — exactly the line he drew.
-  //
-  // Deliberately HIDDEN rather than greyed for everyone else. A greyed tab
-  // still announces that the report exists, and "not to be seen" means not
-  // seen at all.
-  //
-  // NOT used: `roles_management`, which contains backoffice and whose own file
-  // says it is a labelling layer, not a confidentiality gate.
-  { slug: 'sc-budgets',   label: 'SC Budgets',       hint: 'Top management reports — confidential',                  built: false, permissionSlug: 'cost-control', reviewerOnly: true },
-
   // ── Blocked: no data exists ──────────────────────────────────────────────
   { slug: 'payments',     label: 'Payment Reports',  hint: 'What has actually been paid out on this project',         built: false, permissionSlug: 'cost-control',
     blockedBy: 'The payments table is empty — CT Hub has never held payment records. Needs an IN4 or Zoho export.' },
