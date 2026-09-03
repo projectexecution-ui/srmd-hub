@@ -33,39 +33,90 @@ export interface ProjectTab {
   /** For a coming-soon tab whose work already happens SOMEWHERE — the screen
    *  to send people to meanwhile, so a greyed tab is never a dead end. */
   todayHref?: string
+  /**
+   * Set when the page cannot be built from what CT Hub holds — the data does
+   * not exist, so this needs a DECISION about where it comes from, not dev
+   * time. Distinguished from plain "coming soon" because the two need
+   * completely different things from Aksha.
+   */
+  blockedBy?: string
 }
 
+/**
+ * THE PAGES OF A PROJECT — in the order of Aksha's mind map, 2026-09-03.
+ *
+ * The map has 17 pages under Projects → Project → Pages. This list is that
+ * structure, faithfully, with three honest states rather than two:
+ *
+ *   built            it works now
+ *   coming soon      buildable; just not written yet
+ *   blocked          the DATA does not exist, so it needs a decision about
+ *                    where the data comes from, not developer time
+ *
+ * The distinction matters because those need different things from Aksha. Four
+ * pages he drew are blocked, and all four are the deepest level of the map —
+ * "Breakup Item Wise with Unit Qty Rate Amt". Verified 2026-09-03: 629 working
+ * sheets exist but cc_working_sheet_items, po_lines, indent_lines and payments
+ * are ALL empty. Sheets carry summary amounts only, so there is no item to
+ * break down and no payment to attribute to one.
+ *
+ * Four pages here were previously PARKED by me and are now restored, because
+ * they are in the map and they are already built: Pending Approvals, JMRs,
+ * Material In-Out and Schedules.
+ */
 export const PROJECT_TABS: ProjectTab[] = [
+  // ── Built ────────────────────────────────────────────────────────────────
   // Budget is the INDEX tab — Aksha's call. Opening a project lands on the
-  // Internal Estimate, which is what people came for.
-  { slug: '',            label: 'Budget',      hint: 'Internal Estimate, approvals and ERP position',  built: true,  permissionSlug: 'cost-control' },
-  { slug: 'reports',     label: 'Reports',     hint: 'Contractor, Supplier and Bills for this project', built: true,  permissionSlug: 'contractor-report' },
-  { slug: 'procurement', label: 'Indent → PO', hint: 'Indents raised, POs pending, deliveries due',    built: true,  permissionSlug: 'procurement-tracker' },
-  { slug: 'discussions', label: 'Discussions', hint: 'Every comment on this project, in one place',      built: true,  permissionSlug: 'cost-control' },
-  { slug: 'setup',       label: 'Setup',       hint: 'Categories, approvers, area and grouping',       built: true,  permissionSlug: 'cost-control', reviewerOnly: true },
+  // Internal Estimate, which is what people came for. This is map page 1,
+  // "Budget Vs Actual: Cat Sub Cat Wise".
+  { slug: '',             label: 'Budget vs Actual', hint: 'Category and sub-category, against the ERP position',   built: true,  permissionSlug: 'cost-control' },
+  { slug: 'approvals',    label: 'Pending Approvals', hint: 'Budget requests part-way through their sign-off chain', built: true,  permissionSlug: 'cost-control' },
+  { slug: 'discussions',  label: 'Discussions',      hint: 'Every comment on this project, in one place',           built: true,  permissionSlug: 'cost-control' },
+  { slug: 'procurement',  label: 'Indents',          hint: 'Indents raised, and what is still to be ordered',       built: true,  permissionSlug: 'procurement-tracker' },
+  { slug: 'wo-po',        label: 'WO / POs',         hint: 'The Indent → PO tracker: POs raised, deliveries due',   built: true,  permissionSlug: 'procurement-tracker' },
+  { slug: 'jmr',          label: 'JMRs',             hint: 'Measured work logged against this project',             built: true,  permissionSlug: 'jmr' },
+  { slug: 'material',     label: 'Material In-Out',  hint: 'Gate entries in and out of the store',                  built: true,  permissionSlug: 'warehouse' },
+  { slug: 'reports',      label: 'Reports',          hint: 'Contractor, Supplier and Bills for this project',       built: true,  permissionSlug: 'contractor-report' },
+  // Not on the mind map — it is how a project gets configured, and the map
+  // covers pages people READ. Kept last so it never competes with them.
+  { slug: 'setup',        label: 'Setup',            hint: 'Categories, approvers, area and grouping',              built: true,  permissionSlug: 'cost-control', reviewerOnly: true },
 
-  // ── COMING SOON ─────────────────────────────────────────────────────────
-  // The lanes from Aksha's mind map (docs/TEAM_PROBLEMS.md) that the cockpit
-  // does not hold yet: "a single per-project cockpit where everything shows as
-  // lanes — schedule, the Dwg → Budget → WO pipeline, daily site entries,
-  // procurement, bills." Procurement and Bills are done; these four are not.
-  //
-  // Shown greyed rather than hidden, so the plan is visible instead of the
-  // cockpit looking finished when it is not — the "honest tabs" rule. Each
-  // one's hint says where that work happens TODAY, so a greyed tab still
-  // points somewhere useful rather than being a dead end.
-  //
-  // They are gated on `cost-control` — the permission to be in the cockpit at
-  // all — NOT on the module they will eventually use. A greyed tab shows no
+  // ── Coming soon ──────────────────────────────────────────────────────────
+  // Buildable. Gated on `cost-control` — the permission to be in the cockpit
+  // at all — NOT on the module each will eventually use: a greyed tab shows no
   // data, so there is nothing to protect, and gating on the future module would
-  // hide the roadmap from nearly everyone: daily-site-report is switched off
-  // portal-wide, and most roles have no `schedule`. The intended module is kept
-  // in `futureSlug` so the map is not lost.
-  { slug: 'drawings',  label: 'Drawings',          hint: 'Not captured anywhere yet — the first stage of the WO chain',    built: false, permissionSlug: 'cost-control' },
-  { slug: 'pipeline',  label: 'Dwg → Budget → WO', hint: 'Where this project is stuck, and who owns the next step',        built: false, permissionSlug: 'cost-control' },
-  { slug: 'site',      label: 'Site entries',      hint: 'Daily material deliveries — on its own screen today',            built: false, permissionSlug: 'cost-control', futureSlug: 'daily-site-report', todayHref: '/daily-site-report' },
-  { slug: 'schedule',  label: 'Schedule',          hint: 'Planned vs actual, with Work Orders — on its own screen today',  built: false, permissionSlug: 'cost-control', futureSlug: 'schedule', todayHref: '/schedule' },
+  // hide the roadmap from nearly everyone (daily-site-report is off portal-wide,
+  // most roles have no `schedule`). `futureSlug` keeps the map.
+  { slug: 'wo-view',      label: 'Budget by WO/PO',  hint: 'The same budget seen work-order wise, not category wise', built: false, permissionSlug: 'cost-control' },
+  { slug: 'schedule',     label: 'Schedules',        hint: 'Master and detailed, down to tasks — its own screen today', built: false, permissionSlug: 'cost-control', futureSlug: 'schedule', todayHref: '/schedule' },
+  { slug: 'stakeholders', label: 'Stake Holders',    hint: 'Everyone attached to this project and their part in it',  built: false, permissionSlug: 'cost-control' },
+  { slug: 'drawings',     label: 'Drawings',         hint: 'Not captured anywhere yet — the first stage of the WO chain', built: false, permissionSlug: 'cost-control' },
+  { slug: 'decisions',    label: 'Decisions & Specs', hint: 'Decisions taken, by category and sub-category',          built: false, permissionSlug: 'cost-control' },
+  { slug: 'qc',           label: 'QC',               hint: 'Daily site quality checks and the trend over time',       built: false, permissionSlug: 'cost-control' },
+  { slug: 'sc-budgets',   label: 'SC Budgets',       hint: 'Sub-contractor budgets — needs your definition',          built: false, permissionSlug: 'cost-control' },
+
+  // ── Blocked: no data exists ──────────────────────────────────────────────
+  { slug: 'payments',     label: 'Payment Reports',  hint: 'What has actually been paid out on this project',         built: false, permissionSlug: 'cost-control',
+    blockedBy: 'The payments table is empty — CT Hub has never held payment records. Needs an IN4 or Zoho export.' },
+  { slug: 'accounts',     label: 'Accounts',         hint: 'Reconcile with Trust accounts, and party ledgers',        built: false, permissionSlug: 'cost-control',
+    blockedBy: 'No trust-account or party-ledger data in CT Hub. Needs a feed from the accounting system.' },
 ]
+
+/**
+ * The deepest level of the mind map — the item breakdown under each Budget
+ * vs Actual view. NOT tabs: they are how a sub-category expands.
+ *
+ * All four are blocked on the same fact, so they are recorded here rather than
+ * as four dead tabs: 629 working sheets hold summary amounts only, and
+ * cc_working_sheet_items is empty. The HOD asked for exactly this (checklist
+ * #8a/#8b) and it needs one of — an IN4 export carrying WO/PO line items,
+ * engineers entering items by hand, or accepting sub-category level only.
+ */
+export const BLOCKED_ITEM_VIEWS = [
+  'Budget breakup, item wise with Unit / Qty / Rate / Amt',
+  'Already Paid breakup, item wise with Unit / Qty / Rate / Amt',
+  'WO/PO breakup, item wise with Unit / Qty / Rate / Amt',
+] as const
 
 /** The tabs that exist and work. */
 export const BUILT_TABS = PROJECT_TABS.filter(t => t.built)

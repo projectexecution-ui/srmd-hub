@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach, vi } from 'vitest'
-import { PROJECT_TABS, tabHref, activeTabSlug, findTab, builtCount, projectHref, visibleTabs, canOpenTab, COMING_SOON_TABS, BUILT_TABS } from './tabs'
+import { PROJECT_TABS, tabHref, activeTabSlug, findTab, builtCount, projectHref, visibleTabs, canOpenTab, COMING_SOON_TABS, BUILT_TABS, BLOCKED_ITEM_VIEWS } from './tabs'
 
 const P = '11111111-2222-3333-4444-555555555555'
 
@@ -7,23 +7,63 @@ const P = '11111111-2222-3333-4444-555555555555'
 const view = (...slugs: string[]) => Object.fromEntries(slugs.map(s => [s, { view: true }]))
 const ROLES = {
   head:       view('cost-control', 'contractor-report', 'bills-pipeline'),
-  engineer:   view('cost-control', 'procurement-tracker'),
+  engineer:   view('cost-control', 'procurement-tracker', 'jmr', 'warehouse'),
   contractor: view('cost-control', 'procurement-tracker'),
-  admin:      view('cost-control', 'contractor-report', 'procurement-tracker', 'bills-pipeline'),
-  uploader:   view('cost-control', 'contractor-report', 'procurement-tracker', 'bills-pipeline'),
+  admin:      view('cost-control', 'contractor-report', 'procurement-tracker', 'bills-pipeline', 'jmr', 'warehouse'),
+  uploader:   view('cost-control', 'contractor-report', 'procurement-tracker', 'bills-pipeline', 'jmr', 'warehouse'),
   viewer:     view('cost-control', 'contractor-report', 'procurement-tracker'),
   founder:    view('cost-control', 'contractor-report', 'procurement-tracker'),
   backoffice: view('cost-control', 'contractor-report', 'procurement-tracker'),
 }
+
+// An admin must reach every page. If a tab is added with a permission the admin
+// fixture lacks, this fails and says so — better than silently asserting less.
+const ADMIN_ALL = view(...new Set(PROJECT_TABS.map(t => t.permissionSlug)))
 
 // The mind map (docs/TEAM_PROBLEMS.md) asks for one cockpit with lanes for
 // schedule, Dwg → Budget → WO, daily site entries, procurement and bills.
 // Procurement and Bills exist; the other lanes are shown greyed so the plan is
 // visible rather than the cockpit looking finished.
 describe('coming-soon lanes', () => {
-  it('shows the four lanes from the mind map that are not built', () => {
-    expect(COMING_SOON_TABS.map(t => t.label))
-      .toEqual(['Drawings', 'Dwg → Budget → WO', 'Site entries', 'Schedule'])
+  it('carries every page from the mind map', () => {
+    // Aksha's mind map, 2026-09-03: 17 pages under Projects → Project → Pages,
+    // plus Setup, which is not on the map but is how a project is configured.
+    expect(PROJECT_TABS).toHaveLength(18)
+    for (const label of [
+      'Budget vs Actual', 'Budget by WO/PO', 'Pending Approvals', 'Discussions',
+      'Stake Holders', 'Drawings', 'Decisions & Specs', 'QC', 'Indents',
+      'WO / POs', 'Schedules', 'JMRs', 'Material In-Out', 'Payment Reports',
+      'SC Budgets', 'Reports', 'Accounts',
+    ]) {
+      expect(PROJECT_TABS.map(t => t.label), label).toContain(label)
+    }
+  })
+
+  // These four are on the map, were already built and tested, and I had parked
+  // them. Restoring one is a single row, so a test guards against it happening
+  // again.
+  it('has the four pages I parked back, and working', () => {
+    for (const label of ['Pending Approvals', 'JMRs', 'Material In-Out', 'Schedules']) {
+      expect(PROJECT_TABS.find(t => t.label === label), label).toBeDefined()
+    }
+    for (const label of ['Pending Approvals', 'JMRs', 'Material In-Out']) {
+      expect(PROJECT_TABS.find(t => t.label === label)!.built, label).toBe(true)
+    }
+  })
+
+  // "Not written yet" and "cannot be written yet" need different things from
+  // Aksha — dev time versus a decision about where data comes from.
+  it('separates blocked-on-data from merely unbuilt', () => {
+    const blocked = PROJECT_TABS.filter(t => t.blockedBy)
+    expect(blocked.map(t => t.label)).toEqual(['Payment Reports', 'Accounts'])
+    for (const t of blocked) {
+      expect(t.built, t.slug).toBe(false)
+      expect(t.blockedBy!.length, t.slug).toBeGreaterThan(30)
+    }
+  })
+
+  it('never marks a tab both blocked and built', () => {
+    for (const t of PROJECT_TABS) if (t.blockedBy) expect(t.built, t.slug).toBe(false)
   })
 
   it('keeps every built tab before every coming-soon one', () => {
@@ -48,7 +88,9 @@ describe('coming-soon lanes', () => {
 
   it('still records which module each lane will belong to', () => {
     const withFuture = COMING_SOON_TABS.filter(t => t.futureSlug)
-    expect(withFuture.map(t => t.futureSlug)).toEqual(['daily-site-report', 'schedule'])
+    // Only Schedules. The mind map folds daily site entries into "Material
+    // In-Out", which is built, so there is no separate site-entries lane.
+    expect(withFuture.map(t => t.futureSlug)).toEqual(['schedule'])
   })
 
   it('gives a lane that already has a screen somewhere a way to reach it', () => {
@@ -81,8 +123,18 @@ describe('coming-soon lanes', () => {
 
   it('leaves the built count honest', () => {
     const { built, total } = builtCount()
-    expect(built).toBe(5)
-    expect(total).toBe(9)
+    expect(built).toBe(9)
+    expect(total).toBe(18)
+    expect(BUILT_TABS).toHaveLength(built)
+    expect(COMING_SOON_TABS).toHaveLength(total - built)
+  })
+
+  // The deepest level of the map. Recorded as text rather than four dead tabs,
+  // because all four are blocked on the same fact: 629 working sheets hold
+  // summary amounts only and cc_working_sheet_items is empty.
+  it('records the item-level views the map asks for and the data cannot give', () => {
+    expect(BLOCKED_ITEM_VIEWS).toHaveLength(3)
+    for (const v of BLOCKED_ITEM_VIEWS) expect(v).toMatch(/item wise/i)
   })
 })
 
@@ -109,7 +161,7 @@ describe('a tab never grants what the module refuses', () => {
   it('always keeps Budget, Discussions and Setup — every role holds cost-control', () => {
     for (const [role, perms] of Object.entries(ROLES)) {
       const labels = visibleTabs(perms).map(t => t.label)
-      expect(labels, role).toEqual(expect.arrayContaining(['Budget', 'Discussions', 'Setup']))
+      expect(labels, role).toEqual(expect.arrayContaining(['Budget vs Actual', 'Discussions', 'Setup']))
     }
   })
 
@@ -144,7 +196,7 @@ describe('a tab never grants what the module refuses', () => {
     // The built tabs they may open — the greyed coming-soon lanes show to
     // everyone and are asserted separately.
     expect(labels.filter(l => BUILT_TABS.some(t => t.label === l)))
-      .toEqual(['Budget', 'Indent → PO', 'Discussions'])
+      .toEqual(['Budget vs Actual', 'Pending Approvals', 'Discussions', 'Indents', 'WO / POs', 'JMRs', 'Material In-Out'])
   })
 
   it('keeps Setup for a reviewer', () => {
@@ -169,7 +221,7 @@ describe('project cockpit tabs', () => {
 
   // Aksha's call: opening a project shows the Internal Estimate, not a summary.
   it('lands on Budget', () => {
-    expect(PROJECT_TABS[0].label).toBe('Budget')
+    expect(PROJECT_TABS[0].label).toBe('Budget vs Actual')
   })
 
   it('has unique slugs', () => {

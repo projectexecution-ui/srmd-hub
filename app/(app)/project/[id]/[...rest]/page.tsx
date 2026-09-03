@@ -3,10 +3,11 @@ import { notFound } from 'next/navigation'
 import { requirePermission } from '@/lib/auth'
 import { checkIsCcReviewer } from '@/components/cost-control/ws-actions'
 import { findTab, PROJECT_TABS, tabHref, type ProjectTab } from '@/lib/revamp/tabs'
-import { Hammer, ArrowRight } from 'lucide-react'
+import { Hammer, ArrowRight, Database } from 'lucide-react'
 import { OverviewTab } from '../OverviewTab'
 import { ReportsTab } from '../ReportsTab'
 import { ProcurementTab, DiscussionsTab } from '../MoreTabs'
+import { ApprovalsTab, JmrTab, StoresTab } from '../tabs'
 import ProjectSetupPage from '@/app/(app)/cost-control/projects/[id]/setup/page'
 
 export const dynamic = 'force-dynamic'
@@ -47,8 +48,19 @@ export default async function ProjectTabPage({
 
   if (slug === 'overview')    return <OverviewTab projectId={id} />
   if (slug === 'reports')     return <ReportsTab projectId={id} />
-  if (slug === 'procurement') return <ProcurementTab projectId={id} />
   if (slug === 'discussions') return <DiscussionsTab projectId={id} />
+
+  // Indents and WO/POs are two pages on the mind map and two views of the one
+  // tracker — its `global` snapshot holds the indents, its `po` snapshot the
+  // purchase orders. Same component, told which side to show.
+  if (slug === 'procurement') return <ProcurementTab projectId={id} />
+  if (slug === 'wo-po')       return <ProcurementTab projectId={id} />
+
+  // Restored from the parked set — all three are on the mind map and all three
+  // were already built and tested; only their row in PROJECT_TABS was removed.
+  if (slug === 'approvals')   return <ApprovalsTab projectId={id} />
+  if (slug === 'jmr')         return <JmrTab projectId={id} />
+  if (slug === 'material')    return <StoresTab projectId={id} />
 
   if (slug === 'setup') {
     // The existing Setup screen, rendered INSIDE the cockpit — not a redirect.
@@ -65,21 +77,35 @@ export default async function ProjectTabPage({
 /** Aksha's "honest tabs" rule: a section that does not exist says what it will
  *  hold and where that work happens today — never a blank screen. */
 function NotBuiltYet({ projectId, tab }: { projectId: string; tab: ProjectTab }) {
-  const { label, hint, todayHref } = tab
+  const { label, hint, todayHref, blockedBy } = tab
   const builtElsewhere = PROJECT_TABS.filter(t => t.built && t.slug !== '')
 
   return (
     <div className="max-w-xl mx-auto text-center py-12 px-4">
-      <div className="inline-flex h-11 w-11 items-center justify-center rounded-xl bg-amber-50 border border-amber-200 mb-3">
-        <Hammer className="h-5 w-5 text-amber-700" />
+      <div className={`inline-flex h-11 w-11 items-center justify-center rounded-xl border mb-3 ${
+        blockedBy ? 'bg-rose-50 border-rose-200' : 'bg-amber-50 border-amber-200'
+      }`}>
+        {blockedBy
+          ? <Database className="h-5 w-5 text-rose-700" />
+          : <Hammer className="h-5 w-5 text-amber-700" />}
       </div>
-      <h2 className="text-lg font-bold text-gray-900">{label} — coming soon</h2>
+      <h2 className="text-lg font-bold text-gray-900">
+        {label} — {blockedBy ? 'waiting on data' : 'coming soon'}
+      </h2>
       <p className="text-sm text-gray-500 mt-1.5">{hint}</p>
-      <p className="text-xs text-gray-400 mt-3">
-        This is one of the lanes from the plan. Nothing is broken — it simply has not
-        been written yet, and it is shown greyed so the plan is visible rather than
-        hidden.
-      </p>
+
+      {/* "Not written yet" and "cannot be written yet" need different things
+          from the reader, so they must not read the same. */}
+      {blockedBy ? (
+        <p className="text-xs text-rose-900 bg-rose-50 border border-rose-200 rounded-lg px-3 py-2 mt-3 text-left">
+          <b>This one is not waiting on development.</b> {blockedBy}
+        </p>
+      ) : (
+        <p className="text-xs text-gray-400 mt-3">
+          One of the pages from the plan. Nothing is broken — it simply has not been
+          written yet, and it is shown greyed so the plan is visible rather than hidden.
+        </p>
+      )}
 
       {/* Where this work happens TODAY. Without it a greyed tab is a dead end,
           and Site entries / Schedule both already have a working screen. */}
