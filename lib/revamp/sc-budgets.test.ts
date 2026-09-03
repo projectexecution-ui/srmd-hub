@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 import {
   MEASURES, DEFAULT_COLUMNS, measure, defaultSelection, filterLines, buildRows,
   totalRow, formatCell, pdfColumnsOf, describeSelection, UNITS,
+  savedKeyFor, toSaved, fromSaved, bucketFor, usableBuckets,
   type SourceLine, type Selection,
 } from './sc-budgets'
 
@@ -200,6 +201,166 @@ describe('choosing what the PDF carries', () => {
   // A PDF column that is not in the report would print an empty column.
   it('never carries a column the report does not show', () => {
     expect(pdfColumnsOf(sel({ columns: ['budget'], pdfColumns: ['budget', 'ie'] }))).toEqual(['budget'])
+  })
+})
+
+// Aksha, 2026-09-03: "i want to club 2 Sub cat in one name and also sometine
+// 2 CAt in one name".
+describe('clubbing lines under one name', () => {
+  const club = (over: Partial<import('./sc-budgets').Bucket> = {}) => ({
+    id: 'b1', name: 'Finishes', disciplineCodes: [], subCodes: [], ...over,
+  })
+
+  it('clubs two sub-categories into one named row', () => {
+    const s = sel({ buckets: [club({ subCodes: ['102', '105'] })], grouping: 'subcategory' })
+    const rows = buildRows(LINES, s)
+    const f = rows.find(r => r.label === 'Finishes')!
+    expect(f.values.budget).toBe(134450) // 132,085 + 2,365
+    expect(f.lines).toBe(2)
+    expect(f.isClub).toBe(true)
+    expect(rows.map(r => r.label)).not.toContain('102 Porta Cabins')
+  })
+
+  it('clubs two categories into one named row', () => {
+    const s = sel({ buckets: [club({ name: 'Civil', disciplineCodes: ['02', '03'] })] })
+    const f = buildRows(LINES, s).find(r => r.label === 'Civil')!
+    expect(f.values.budget).toBe(1311130) // 111,130 + 400,000 + 800,000
+    expect(f.lines).toBe(3)
+  })
+
+  it('mixes a category and a sub-category inside one club', () => {
+    const s = sel({ buckets: [club({ disciplineCodes: ['03'], subCodes: ['102'] })] })
+    const f = buildRows(LINES, s).find(r => r.label === 'Finishes')!
+    expect(f.values.budget).toBe(932085) // 800,000 + 132,085
+  })
+
+  it('leaves everything not clubbed grouped as before', () => {
+    const s = sel({ buckets: [club({ subCodes: ['102'] })] })
+    const labels = buildRows(LINES, s).map(r => r.label)
+    expect(labels).toContain('Finishes')
+    expect(labels).toContain('02 Earthworks')
+    expect(labels).toContain('03 Civil')
+  })
+
+  // The more specific rule is what someone means when they club one
+  // sub-category out of a category they have also clubbed.
+  it('lets a sub-category club win over a category club', () => {
+    const s = sel({
+      buckets: [
+        club({ id: 'cat', name: 'All Prelims', disciplineCodes: ['01'] }),
+        club({ id: 'sub', name: 'Just Cabins', subCodes: ['102'] }),
+      ],
+    })
+    const rows = buildRows(LINES, s)
+    expect(rows.find(r => r.label === 'Just Cabins')!.values.budget).toBe(132085)
+    expect(rows.find(r => r.label === 'All Prelims')!.values.budget).toBe(2365)
+  })
+
+  it('never counts a line into two clubs', () => {
+    const s = sel({
+      buckets: [
+        club({ id: 'a', name: 'A', disciplineCodes: ['02'] }),
+        club({ id: 'b', name: 'B', disciplineCodes: ['02'] }),
+      ],
+    })
+    const rows = buildRows(LINES, s)
+    expect(rows.find(r => r.label === 'B')).toBeUndefined()
+    expect(totalRow(rows, LINES).values.budget).toBe(1445580) // unchanged total
+  })
+
+  it('keeps the total identical however lines are clubbed', () => {
+    const plain = totalRow(buildRows(LINES, sel()), LINES)
+    const clubbed = totalRow(
+      buildRows(LINES, sel({ buckets: [club({ disciplineCodes: ['01', '02', '03'] })] })), LINES)
+    expect(clubbed.values.budget).toBe(plain.values.budget)
+    expect(clubbed.values.paid).toBe(plain.values.paid)
+  })
+
+  it('puts clubs first, in the order they were defined', () => {
+    const s = sel({
+      buckets: [
+        club({ id: 'z', name: 'Zebra', disciplineCodes: ['03'] }),
+        club({ id: 'a', name: 'Alpha', disciplineCodes: ['02'] }),
+      ],
+    })
+    expect(buildRows(LINES, s).map(r => r.label).slice(0, 2)).toEqual(['Zebra', 'Alpha'])
+  })
+
+  it('ignores a club with no name or no members', () => {
+    const s = sel({ buckets: [club({ name: '  ' , subCodes: ['102'] }), club({ id: 'e', name: 'Empty' })] })
+    const rows = buildRows(LINES, s)
+    expect(rows.some(r => r.isClub)).toBe(false)
+    expect(rows.map(r => r.label)).toContain('01 Site Pre-lims')
+  })
+
+  it('names the club across projects when it spans them', () => {
+    const s = sel({ buckets: [club({ name: 'Excavation', subCodes: ['201'] })] })
+    expect(buildRows(LINES, s).find(r => r.label === 'Excavation')!.sub).toBe('2 projects')
+  })
+})
+
+describe('saving a layout per project', () => {
+  it('keys on the project', () => {
+    expect(savedKeyFor('abc')).toBe('sc_budgets_abc')
+  })
+
+  // Saving the projects would make a report open somewhere other than where
+  // it was clicked.
+  it('saves the presentation but never which projects', () => {
+    const saved = toSaved(sel({ projectIds: ['p1'], unit: 'crore', grouping: 'subcategory' }))
+    expect(saved).not.toHaveProperty('projectIds')
+    expect(saved.unit).toBe('crore')
+    expect(saved.grouping).toBe('subcategory')
+  })
+
+  it('drops unusable clubs on the way out', () => {
+    const saved = toSaved(sel({ buckets: [{ id: 'x', name: '', disciplineCodes: ['01'], subCodes: [] }] }))
+    expect(saved.buckets).toEqual([])
+  })
+
+  it('round-trips a real layout', () => {
+    const s = sel({
+      unit: 'crore', grouping: 'subcategory', columns: ['budget', 'paid'], pdfColumns: ['budget'],
+      buckets: [{ id: 'b1', name: 'Finishes', disciplineCodes: ['01'], subCodes: ['201'] }],
+    })
+    const back = fromSaved(toSaved(s), ['p1'])
+    expect(back.unit).toBe('crore')
+    expect(back.grouping).toBe('subcategory')
+    expect(back.columns).toEqual(['budget', 'paid'])
+    expect(back.pdfColumns).toEqual(['budget'])
+    expect(back.buckets).toEqual(s.buckets)
+    expect(back.projectIds).toEqual(['p1'])
+  })
+
+  // This JSON gets hand-edited in app_settings; a bad value must degrade, not
+  // throw on a report the Trustee is opening.
+  it('falls back to defaults on rubbish rather than throwing', () => {
+    for (const bad of [null, undefined, 'nope', 42, [], {}]) {
+      const r = fromSaved(bad, ['p1'])
+      expect(r.columns).toEqual(DEFAULT_COLUMNS)
+      expect(r.unit).toBe('lakh')
+      expect(r.buckets).toEqual([])
+    }
+  })
+
+  it('drops a column name that is not a real measure', () => {
+    expect(fromSaved({ columns: ['budget', 'made_up'] }, ['p1']).columns).toEqual(['budget'])
+  })
+
+  it('keeps the default columns when the saved list is empty', () => {
+    expect(fromSaved({ columns: [] }, ['p1']).columns).toEqual(DEFAULT_COLUMNS)
+  })
+
+  it('rejects a bad unit or grouping', () => {
+    const r = fromSaved({ unit: 'dollars', grouping: 'sideways' }, ['p1'])
+    expect(r.unit).toBe('lakh')
+    expect(r.grouping).toBe('category')
+  })
+
+  it('gives a club an id when the saved one has none', () => {
+    const r = fromSaved({ buckets: [{ name: 'X', disciplineCodes: ['01'] }] }, ['p1'])
+    expect(r.buckets[0].id).toBe('club-0')
+    expect(r.buckets[0].subCodes).toEqual([])
   })
 })
 

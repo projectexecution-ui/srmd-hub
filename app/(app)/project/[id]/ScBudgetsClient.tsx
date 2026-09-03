@@ -1,11 +1,12 @@
 'use client'
-import { useMemo, useState } from 'react'
-import { Printer, Check, ChevronDown } from 'lucide-react'
+import { useMemo, useState, useTransition } from 'react'
+import { Printer, Check, ChevronDown, X, Save } from 'lucide-react'
 import {
   MEASURES, UNITS, buildRows, filterLines, totalRow, formatCell, pdfColumnsOf,
-  describeSelection, defaultSelection, measure,
-  type SourceLine, type Selection, type MeasureId, type Grouping, type Unit,
+  describeSelection, measure, usableBuckets, toSaved,
+  type SourceLine, type Selection, type MeasureId, type Grouping, type Unit, type Bucket,
 } from '@/lib/revamp/sc-budgets'
+import { saveScLayout } from './sc-budgets-actions'
 
 /**
  * SC Budgets — the top-management report.
@@ -19,21 +20,30 @@ import {
  * page does it (`no-print` + window.print() + an @media print block), so it
  * comes out looking like the reports the HOD already receives.
  */
-export function ScBudgetsClient({ lines, projectName, openOn, allProjects }: {
+export function ScBudgetsClient({ lines, projectName, projectId, openOn, allProjects, saved }: {
   lines: SourceLine[]
   projectName: string
+  projectId: string
   /** This project, plus its children when it is a group. */
   openOn: string[]
   allProjects: Array<{ id: string; name: string }>
+  /** The layout saved for this project, already validated server-side. */
+  saved: Selection
 }) {
   // Opens on THIS project — you arrived from inside it — but every other
   // project can be added, because the report is a portfolio hand-out.
-  const [s, setS] = useState<Selection>(() => defaultSelection(openOn))
-  const [open, setOpen] = useState<'projects' | 'cats' | 'cols' | null>(null)
+  const [s, setS] = useState<Selection>(() => ({ ...saved, projectIds: openOn }))
+  const [open, setOpen] = useState<'projects' | 'clubs' | 'cats' | 'cols' | null>(null)
+  const [note, setNote] = useState<{ ok: boolean; message: string } | null>(null)
+  const [saving, startSave] = useTransition()
 
-  const set = (patch: Partial<Selection>) => setS(prev => ({ ...prev, ...patch }))
+  const set = (patch: Partial<Selection>) => { setS(prev => ({ ...prev, ...patch })); setNote(null) }
   const toggle = <T,>(list: T[], v: T): T[] =>
     list.includes(v) ? list.filter(x => x !== v) : [...list, v]
+  const setBucket = (i: number, patch: Partial<Bucket>) =>
+    set({ buckets: s.buckets.map((b, j) => (j === i ? { ...b, ...patch } : b)) })
+
+  const usable = useMemo(() => usableBuckets(s.buckets), [s.buckets])
 
   const projectNames = useMemo(
     () => new Map(allProjects.map(p => [p.id, p.name])), [allProjects])
@@ -66,7 +76,7 @@ export function ScBudgetsClient({ lines, projectName, openOn, allProjects }: {
   const printCols = pdfColumnsOf(s)
 
   const Panel = ({ id, label, count, children }: {
-    id: 'projects' | 'cats' | 'cols'; label: string; count: string; children: React.ReactNode
+    id: 'projects' | 'clubs' | 'cats' | 'cols'; label: string; count: string; children: React.ReactNode
   }) => (
     <div className="relative">
       <button
@@ -113,17 +123,84 @@ export function ScBudgetsClient({ lines, projectName, openOn, allProjects }: {
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          <Panel id="projects" label="Projects" count={s.projectIds.length === 0 ? 'all' : String(s.projectIds.length)}>
-            <Pick on={s.projectIds.length === 0} onClick={() => set({ projectIds: [], disciplineCodes: [], subCodes: [] })}>
-              All projects
-            </Pick>
-            <div className="my-1 h-px bg-gray-100" />
-            {allProjects.map(p => (
+          {/* No "All projects" — Aksha, 2026-09-03: "dont want all projects
+              option in respective project". You are standing in a project, so
+              the report is about it; a group opens covering its children, and
+              a sibling can still be added deliberately. */}
+          <Panel id="projects" label="Projects" count={String(s.projectIds.length)}>
+            <p className="px-2 pb-1 pt-0.5 text-[10px] font-semibold uppercase tracking-wide text-gray-400">
+              This project{openOn.length > 1 ? ' and its sub-projects' : ''}
+            </p>
+            {allProjects.filter(p => openOn.includes(p.id)).map(p => (
               <Pick key={p.id} on={s.projectIds.includes(p.id)}
                 onClick={() => set({ projectIds: toggle(s.projectIds, p.id), subCodes: [] })}>
                 {p.name}
               </Pick>
             ))}
+            {allProjects.some(p => !openOn.includes(p.id)) && (
+              <>
+                <p className="px-2 pb-1 pt-2 text-[10px] font-semibold uppercase tracking-wide text-gray-400">
+                  Add another project
+                </p>
+                {allProjects.filter(p => !openOn.includes(p.id)).map(p => (
+                  <Pick key={p.id} on={s.projectIds.includes(p.id)}
+                    onClick={() => set({ projectIds: toggle(s.projectIds, p.id), subCodes: [] })}>
+                    {p.name}
+                  </Pick>
+                ))}
+              </>
+            )}
+          </Panel>
+
+          {/* Clubbing — the thing Aksha actually meant by "mix". */}
+          <Panel id="clubs" label="Club lines" count={usable.length ? String(usable.length) : 'none'}>
+            <p className="px-2 pb-1.5 pt-0.5 text-[11px] text-gray-500">
+              Put two or more categories or sub-categories together under one name.
+              Anything not clubbed stays as it is.
+            </p>
+            {s.buckets.map((b, i) => (
+              <div key={b.id} className="rounded-lg border border-gray-200 p-2 mb-2">
+                <div className="flex gap-1.5">
+                  <input
+                    value={b.name}
+                    onChange={e => setBucket(i, { name: e.target.value })}
+                    placeholder="Name this line, e.g. Finishes"
+                    className="flex-1 rounded border border-gray-300 px-2 py-1.5 text-xs min-h-[40px]"
+                  />
+                  <button
+                    onClick={() => set({ buckets: s.buckets.filter(x => x.id !== b.id) })}
+                    aria-label={`Remove ${b.name || 'club'}`}
+                    className="rounded border border-gray-300 px-2 text-gray-500 hover:bg-gray-50 min-h-[40px]"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+                <p className="px-0.5 pb-0.5 pt-2 text-[10px] font-semibold uppercase tracking-wide text-gray-400">Categories</p>
+                {cats.map(([code, label]) => (
+                  <Pick key={code} on={b.disciplineCodes.includes(code)}
+                    onClick={() => setBucket(i, { disciplineCodes: toggle(b.disciplineCodes, code) })}>
+                    {label}
+                  </Pick>
+                ))}
+                {subs.length > 0 && (
+                  <>
+                    <p className="px-0.5 pb-0.5 pt-2 text-[10px] font-semibold uppercase tracking-wide text-gray-400">Sub-categories</p>
+                    {subs.map(([code, label]) => (
+                      <Pick key={code} on={b.subCodes.includes(code)}
+                        onClick={() => setBucket(i, { subCodes: toggle(b.subCodes, code) })}>
+                        {label}
+                      </Pick>
+                    ))}
+                  </>
+                )}
+              </div>
+            ))}
+            <button
+              onClick={() => set({ buckets: [...s.buckets, { id: `club-${Date.now()}`, name: '', disciplineCodes: [], subCodes: [] }] })}
+              className="w-full rounded-lg border border-dashed border-gray-300 px-2 py-2 text-xs font-semibold text-gray-600 hover:bg-gray-50 min-h-[44px]"
+            >
+              + Club some lines together
+            </button>
           </Panel>
 
           <Panel id="cats" label="Categories"
@@ -200,13 +277,27 @@ export function ScBudgetsClient({ lines, projectName, openOn, allProjects }: {
           </div>
 
           <button
+            onClick={() => startSave(async () => setNote(await saveScLayout(projectId, toSaved(s))))}
+            disabled={saving}
+            className="ml-auto inline-flex items-center gap-1.5 rounded-lg border border-gray-300 bg-white px-3 text-xs font-semibold text-gray-700 min-h-[44px] hover:bg-gray-50 disabled:opacity-40"
+          >
+            <Save className="h-4 w-4" /> {saving ? 'Saving…' : 'Save for this project'}
+          </button>
+
+          <button
             onClick={() => window.print()}
             disabled={rows.length === 0}
-            className="ml-auto inline-flex items-center gap-1.5 rounded-lg bg-indigo-700 px-3.5 text-xs font-semibold text-white min-h-[44px] hover:bg-indigo-800 disabled:opacity-40"
+            className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-700 px-3.5 text-xs font-semibold text-white min-h-[44px] hover:bg-indigo-800 disabled:opacity-40"
           >
             <Printer className="h-4 w-4" /> Print / Save as PDF
           </button>
         </div>
+
+        {note && (
+          <p role="status" className={`text-[11px] flex items-center gap-1 ${note.ok ? 'text-emerald-700' : 'text-rose-700'}`}>
+            {note.ok ? <Check className="h-3 w-3" /> : <X className="h-3 w-3" />}{note.message}
+          </p>
+        )}
       </div>
 
       {/* ── The report itself — this is what prints ── */}

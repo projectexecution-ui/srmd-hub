@@ -82,8 +82,25 @@ export interface SourceLine {
   sft: number
 }
 
-/** How the report is grouped. Aksha's "mix category and sub-category". */
+/** How the report is grouped. */
 export type Grouping = 'category' | 'subcategory' | 'project'
+
+/**
+ * A CLUB — Aksha, 2026-09-03: "i want to club 2 Sub cat in one name and also
+ * sometine 2 CAt in one name".
+ *
+ * Categories and sub-categories can be mixed inside one club, because the
+ * reason for clubbing is presentational: the HOD wants "Finishes" as one line,
+ * and what makes that up may be two categories on one project and three
+ * sub-categories on another.
+ */
+export interface Bucket {
+  id: string
+  /** What the clubbed line is called on the report. */
+  name: string
+  disciplineCodes: string[]
+  subCodes: string[]
+}
 
 export interface Selection {
   projectIds: string[]
@@ -96,6 +113,8 @@ export interface Selection {
   unit: Unit
   /** Columns ticked for the PDF. Empty = whatever is on screen. */
   pdfColumns: MeasureId[]
+  /** Clubbed lines. Anything not claimed by one is grouped normally. */
+  buckets: Bucket[]
 }
 
 export function defaultSelection(projectIds: string[]): Selection {
@@ -107,7 +126,31 @@ export function defaultSelection(projectIds: string[]): Selection {
     columns: [...DEFAULT_COLUMNS],
     unit: 'lakh',
     pdfColumns: [],
+    buckets: [],
   }
+}
+
+/**
+ * Which club claims a line, if any.
+ *
+ * A SUB-category match wins over a category match, even if the category club
+ * comes first — the more specific rule is what someone means when they club a
+ * single sub-category out of a category they have also clubbed. Among equally
+ * specific matches, the first club wins, so the result is deterministic and a
+ * line can never be counted twice.
+ */
+export function bucketFor(line: SourceLine, buckets: Bucket[]): Bucket | null {
+  if (line.subCode) {
+    const bySub = buckets.find(b => b.subCodes.includes(line.subCode!))
+    if (bySub) return bySub
+  }
+  return buckets.find(b => b.disciplineCodes.includes(line.disciplineCode)) ?? null
+}
+
+/** A club with no members contributes nothing and would print an empty row. */
+export function usableBuckets(buckets: Bucket[]): Bucket[] {
+  return buckets.filter(b =>
+    b.name.trim().length > 0 && (b.disciplineCodes.length + b.subCodes.length) > 0)
 }
 
 /** Rows that survive the project / category / sub-category picks. */
@@ -133,6 +176,8 @@ export interface ReportRow {
   values: Record<MeasureId, number>
   /** How many source lines rolled into this row. */
   lines: number
+  /** True when this row is a club, so the report can mark it as one. */
+  isClub?: boolean
 }
 
 const zero = (): Record<MeasureId, number> => ({
@@ -151,14 +196,21 @@ function derive(v: Record<MeasureId, number>, sft: number): void {
 export function buildRows(lines: SourceLine[], s: Selection): ReportRow[] {
   const groups = new Map<string, { label: string; projects: Set<string>; sft: Map<string, number>; v: Record<MeasureId, number>; n: number }>()
 
+  const clubs = usableBuckets(s.buckets)
+
   for (const l of lines) {
-    const key =
-      s.grouping === 'project'     ? l.projectId
-      : s.grouping === 'category'  ? `${l.disciplineCode}`
+    // A club overrides the grouping — that is the whole point of clubbing.
+    const club = clubs.length > 0 ? bucketFor(l, clubs) : null
+
+    const key = club
+      ? `club:${club.id}`
+      : s.grouping === 'project'    ? l.projectId
+      : s.grouping === 'category'   ? `${l.disciplineCode}`
       : `${l.disciplineCode}|${l.subCode ?? '—'}`
-    const label =
-      s.grouping === 'project'     ? l.projectName
-      : s.grouping === 'category'  ? `${l.disciplineCode} ${l.disciplineName}`
+    const label = club
+      ? club.name
+      : s.grouping === 'project'    ? l.projectName
+      : s.grouping === 'category'   ? `${l.disciplineCode} ${l.disciplineName}`
       : `${l.subCode ?? l.disciplineCode} ${l.subName ?? l.disciplineName}`
 
     let g = groups.get(key)
@@ -187,14 +239,24 @@ export function buildRows(lines: SourceLine[], s: Selection): ReportRow[] {
       sub: names.length === 1 ? names[0] : `${names.length} projects`,
       values: g.v,
       lines: g.n,
+      isClub: key.startsWith('club:'),
     }
   })
 
-  // Categories and sub-categories by their code number, the one ordering rule
-  // used everywhere else in the app; projects biggest-budget first.
-  return s.grouping === 'project'
-    ? rows.sort((a, b) => b.values.budget - a.values.budget)
-    : rows.sort((a, b) => a.label.localeCompare(b.label, undefined, { numeric: true }))
+  // Clubs first, in the order they were defined — someone who clubbed lines
+  // did so to control how the report reads, so their order is the intent.
+  // Everything else follows: categories by code number (the one ordering rule
+  // used across the app), projects biggest-budget first.
+  const clubOrder = new Map(clubs.map((b, i) => [`club:${b.id}`, i]))
+  return rows.sort((a, b) => {
+    const ca = clubOrder.get(a.key), cb = clubOrder.get(b.key)
+    if (ca != null && cb != null) return ca - cb
+    if (ca != null) return -1
+    if (cb != null) return 1
+    return s.grouping === 'project'
+      ? b.values.budget - a.values.budget
+      : a.label.localeCompare(b.label, undefined, { numeric: true })
+  })
 }
 
 /** The Total line. Derived measures are recomputed, never added up. */
@@ -235,6 +297,76 @@ export function pdfColumnsOf(s: Selection): MeasureId[] {
   if (s.pdfColumns.length === 0) return s.columns
   // Never let the PDF carry a column that is not part of the report.
   return s.columns.filter(c => s.pdfColumns.includes(c))
+}
+
+/**
+ * SAVED PER PROJECT — Aksha: "once i do this and want to save for per project".
+ *
+ * Stored in app_settings under one key per project, the same shape
+ * `sched_floors_<id>` already uses. No new table, because the database is
+ * shared with the live app and adding one is not a branch-only change.
+ *
+ * Only the presentational choices are saved. `projectIds` is NOT, because the
+ * report always opens on the project you are standing in — saving it would
+ * make a report open somewhere other than where you clicked.
+ */
+export const savedKeyFor = (projectId: string) => `sc_budgets_${projectId}`
+
+export interface SavedLayout {
+  buckets: Bucket[]
+  columns: MeasureId[]
+  unit: Unit
+  grouping: Grouping
+  pdfColumns: MeasureId[]
+}
+
+export function toSaved(s: Selection): SavedLayout {
+  return {
+    buckets: usableBuckets(s.buckets),
+    columns: s.columns,
+    unit: s.unit,
+    grouping: s.grouping,
+    pdfColumns: s.pdfColumns,
+  }
+}
+
+/**
+ * Rebuild a selection from what was saved.
+ *
+ * Every field is checked rather than trusted: this JSON is edited by hand in
+ * app_settings from time to time, and a bad value must degrade to the default
+ * rather than throw on a report the Trustee is opening.
+ */
+export function fromSaved(raw: unknown, projectIds: string[]): Selection {
+  const base = defaultSelection(projectIds)
+  if (!raw || typeof raw !== 'object') return base
+  const v = raw as Partial<SavedLayout>
+  const validIds = new Set(MEASURES.map(m => m.id))
+  const cols = Array.isArray(v.columns) ? v.columns.filter(c => validIds.has(c)) : []
+  const pdf = Array.isArray(v.pdfColumns) ? v.pdfColumns.filter(c => validIds.has(c)) : []
+  const grouping: Grouping =
+    v.grouping === 'category' || v.grouping === 'subcategory' || v.grouping === 'project'
+      ? v.grouping : base.grouping
+  const unit: Unit = UNITS.some(u => u.id === v.unit) ? (v.unit as Unit) : base.unit
+  const buckets = Array.isArray(v.buckets)
+    ? v.buckets
+        .filter((b): b is Bucket => !!b && typeof b === 'object' && typeof (b as Bucket).name === 'string')
+        .map((b, i) => ({
+          id: typeof b.id === 'string' && b.id ? b.id : `club-${i}`,
+          name: b.name,
+          disciplineCodes: Array.isArray(b.disciplineCodes) ? b.disciplineCodes.map(String) : [],
+          subCodes: Array.isArray(b.subCodes) ? b.subCodes.map(String) : [],
+        }))
+    : []
+  return {
+    ...base,
+    grouping,
+    unit,
+    // An empty saved column list would render a table with no figures.
+    columns: cols.length > 0 ? cols : base.columns,
+    pdfColumns: pdf,
+    buckets: usableBuckets(buckets),
+  }
 }
 
 /** A one-line description of what the report covers, for the PDF header. */

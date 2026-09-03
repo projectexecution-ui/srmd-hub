@@ -1,7 +1,7 @@
 import { notFound } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { descendantIds } from '@/lib/revamp/hierarchy'
-import type { SourceLine } from '@/lib/revamp/sc-budgets'
+import { savedKeyFor, fromSaved, type SourceLine } from '@/lib/revamp/sc-budgets'
 import { ScBudgetsClient } from './ScBudgetsClient'
 
 /**
@@ -18,12 +18,13 @@ import { ScBudgetsClient } from './ScBudgetsClient'
 export async function ScBudgetsTab({ projectId }: { projectId: string }) {
   const supabase = await createClient()
 
-  const [projRes, lineRes, discRes, subRes] = await Promise.all([
+  const [projRes, lineRes, discRes, subRes, savedRes] = await Promise.all([
     supabase.from('projects').select('id, name, built_up_sft, parent_project_id').is('archived_at', null),
     supabase.from('cc_budget_lines')
       .select('project_id, discipline_id, sub_skill_id, current_budget_amt, current_wo_committed_amt, current_paid_amt, internal_estimate_amt'),
     supabase.from('cc_disciplines').select('id, code, name'),
     supabase.from('cc_sub_skills').select('id, code, name'),
+    supabase.from('app_settings').select('value').eq('key', savedKeyFor(projectId)).maybeSingle(),
   ])
 
   type Proj = { id: string; name: string; built_up_sft: number | null; parent_project_id: string | null }
@@ -70,10 +71,22 @@ export async function ScBudgetsTab({ projectId }: { projectId: string }) {
   ))
   const openOn = projects.filter(p => covered.has(p.id)).map(p => p.id)
 
+  // The layout saved for THIS project — clubs, columns, unit, grouping.
+  // Parsed and validated server-side, so a hand-edited app_settings row cannot
+  // throw on a report the Trustee is opening.
+  let savedRaw: unknown = null
+  try {
+    const v = (savedRes.data as { value?: string } | null)?.value
+    if (v) savedRaw = JSON.parse(v)
+  } catch { /* fall through to defaults */ }
+  const saved = fromSaved(savedRaw, openOn)
+
   return (
     <ScBudgetsClient
       lines={lines}
       projectName={here.name}
+      projectId={projectId}
+      saved={saved}
       openOn={openOn}
       allProjects={projects
         .map(p => ({ id: p.id, name: p.name }))
