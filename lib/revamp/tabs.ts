@@ -93,7 +93,22 @@ export const PROJECT_TABS: ProjectTab[] = [
   { slug: 'drawings',     label: 'Drawings',         hint: 'Not captured anywhere yet — the first stage of the WO chain', built: false, permissionSlug: 'cost-control' },
   { slug: 'decisions',    label: 'Decisions & Specs', hint: 'Decisions taken, by category and sub-category',          built: false, permissionSlug: 'cost-control' },
   { slug: 'qc',           label: 'QC',               hint: 'Daily site quality checks and the trend over time',       built: false, permissionSlug: 'cost-control' },
-  { slug: 'sc-budgets',   label: 'SC Budgets',       hint: 'Sub-contractor budgets — needs your definition',          built: false, permissionSlug: 'cost-control' },
+  // TOP MANAGEMENT ONLY — Aksha, 2026-09-03: "not to be seen by Eng level but
+  // only managment - not also Mayank bhai should not be able to see - atm heads
+  // can". Gated on `reviewerOnly`, which is the app's EXISTING confidentiality
+  // gate (checkIsCcReviewer — the same one that hides the Internal Estimate),
+  // not a second parallel mechanism. It resolves today to admin, coordinator,
+  // founder, head and project_head: the four Atm Heads and the Trustee are in,
+  // and backoffice (Mayank), engineer, contractor, viewer and uploader are all
+  // out — exactly the line he drew.
+  //
+  // Deliberately HIDDEN rather than greyed for everyone else. A greyed tab
+  // still announces that the report exists, and "not to be seen" means not
+  // seen at all.
+  //
+  // NOT used: `roles_management`, which contains backoffice and whose own file
+  // says it is a labelling layer, not a confidentiality gate.
+  { slug: 'sc-budgets',   label: 'SC Budgets',       hint: 'Top management reports — confidential',                  built: false, permissionSlug: 'cost-control', reviewerOnly: true },
 
   // ── Blocked: no data exists ──────────────────────────────────────────────
   { slug: 'payments',     label: 'Payment Reports',  hint: 'What has actually been paid out on this project',         built: false, permissionSlug: 'cost-control',

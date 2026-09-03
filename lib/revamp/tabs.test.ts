@@ -110,7 +110,10 @@ describe('coming-soon lanes', () => {
   it('shows the coming-soon lanes to every role, since they hold no data', () => {
     for (const [role, perms] of Object.entries(ROLES)) {
       const labels = visibleTabs(perms).map(t => t.label)
-      for (const t of COMING_SOON_TABS) expect(labels, `${role} → ${t.label}`).toContain(t.label)
+      for (const t of COMING_SOON_TABS) {
+        if (t.reviewerOnly) continue // confidential — asserted separately below
+        expect(labels, `${role} → ${t.label}`).toContain(t.label)
+      }
     }
   })
 
@@ -197,6 +200,33 @@ describe('a tab never grants what the module refuses', () => {
     // everyone and are asserted separately.
     expect(labels.filter(l => BUILT_TABS.some(t => t.label === l)))
       .toEqual(['Budget vs Actual', 'Pending Approvals', 'Discussions', 'Indents', 'WO / POs', 'JMRs', 'Material In-Out'])
+  })
+
+  // Aksha, 2026-09-03: "SC Budgets is Top Managmnet Reports - not to be seen by
+  // Eng level but only managment - not also Mayank bhai should not be able to
+  // see - atm heads can."
+  it('hides SC Budgets from everyone below management', () => {
+    // Not greyed — absent. A greyed tab still announces the report exists.
+    for (const role of ['engineer', 'contractor', 'viewer', 'uploader', 'backoffice'] as const) {
+      const labels = visibleTabs(ROLES[role], new Set(), false).map(t => t.label)
+      expect(labels, role).not.toContain('SC Budgets')
+    }
+  })
+
+  it('shows SC Budgets to the Atm Heads, the Trustee and admin', () => {
+    for (const role of ['head', 'founder', 'admin'] as const) {
+      const labels = visibleTabs(ROLES[role], new Set(), true).map(t => t.label)
+      expect(labels, role).toContain('SC Budgets')
+    }
+  })
+
+  // Mayank is `backoffice`. He is inside `roles_management`, so gating on that
+  // list would have shown him the report; checkIsCcReviewer excludes him.
+  it('keeps Mayank out even though roles_management includes backoffice', () => {
+    // backoffice is not a cc_working_sheet approver, so it is not a reviewer.
+    const asReviewer = false
+    expect(visibleTabs(ROLES.backoffice, new Set(), asReviewer).map(t => t.label))
+      .not.toContain('SC Budgets')
   })
 
   it('keeps Setup for a reviewer', () => {
