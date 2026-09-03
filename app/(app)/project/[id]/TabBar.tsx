@@ -1,4 +1,5 @@
 'use client'
+import { Fragment } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { tabHref, activeTabSlug, type ProjectTab } from '@/lib/revamp/tabs'
@@ -27,37 +28,51 @@ export function TabBar({ projectId, tabs }: { projectId: string; tabs: ProjectTa
     <div className="border-b border-gray-200 bg-white">
       <nav
         aria-label="Project sections"
-        className="flex gap-1 overflow-x-auto px-2 sm:px-4 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+        className="flex items-center gap-1 overflow-x-auto px-2 sm:px-4 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
       >
-        {tabs.map(tab => {
+        {tabs.map((tab, i) => {
+          // A divider before the first unbuilt tab, so the strip reads as
+          // "here is the project" then "here is what is still coming" rather
+          // than one list where some entries quietly do nothing.
+          const firstComingSoon = !tab.built && (i === 0 || tabs[i - 1].built)
           const isActive = tab.slug === active
           return (
-            <Link
-              key={tab.slug || 'overview'}
-              href={tabHref(projectId, tab)}
-              title={tab.hint}
-              aria-current={isActive ? 'page' : undefined}
-              className={[
-                'relative whitespace-nowrap px-3 py-3 text-sm transition-colors min-h-[44px] flex items-center gap-1.5',
-                isActive
-                  ? 'font-semibold text-indigo-800'
-                  : tab.built
-                    ? 'text-gray-600 hover:text-gray-900'
-                    : 'text-gray-400 hover:text-gray-600',
-              ].join(' ')}
-            >
-              {tab.label}
-              {!tab.built && (
+            <Fragment key={tab.slug || 'index'}>
+              {firstComingSoon && (
                 <span
-                  className="h-1.5 w-1.5 rounded-full bg-amber-400"
-                  title="Not built yet"
-                  aria-label="not built yet"
-                />
+                  className="flex items-center gap-2 pl-2 pr-1 flex-shrink-0"
+                  aria-hidden
+                >
+                  <span className="h-4 w-px bg-gray-200" />
+                  <span className="text-[10px] font-semibold uppercase tracking-wide text-gray-400 whitespace-nowrap">
+                    Coming soon
+                  </span>
+                </span>
               )}
-              {isActive && (
-                <span className="absolute inset-x-2 bottom-0 h-0.5 rounded-full bg-indigo-700" />
-              )}
-            </Link>
+
+              <Link
+                href={tabHref(projectId, tab)}
+                title={tab.built ? tab.hint : `Coming soon — ${tab.hint}`}
+                aria-current={isActive ? 'page' : undefined}
+                aria-label={tab.built ? undefined : `${tab.label} — coming soon`}
+                className={[
+                  'relative whitespace-nowrap px-3 py-3 text-sm transition-colors min-h-[44px] flex items-center gap-1.5 flex-shrink-0',
+                  isActive
+                    ? 'font-semibold text-indigo-800'
+                    : tab.built
+                      ? 'text-gray-600 hover:text-gray-900'
+                      // Light grey — Aksha's ask. Still a link, because the
+                      // panel behind it says what the lane will hold and where
+                      // that work happens today.
+                      : 'text-gray-400 font-normal hover:text-gray-600',
+                ].join(' ')}
+              >
+                {tab.label}
+                {isActive && (
+                  <span className="absolute inset-x-2 bottom-0 h-0.5 rounded-full bg-indigo-700" />
+                )}
+              </Link>
+            </Fragment>
           )
         })}
       </nav>

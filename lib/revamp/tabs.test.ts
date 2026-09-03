@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach, vi } from 'vitest'
-import { PROJECT_TABS, tabHref, activeTabSlug, findTab, builtCount, projectHref, visibleTabs, canOpenTab } from './tabs'
+import { PROJECT_TABS, tabHref, activeTabSlug, findTab, builtCount, projectHref, visibleTabs, canOpenTab, COMING_SOON_TABS, BUILT_TABS } from './tabs'
 
 const P = '11111111-2222-3333-4444-555555555555'
 
@@ -15,6 +15,76 @@ const ROLES = {
   founder:    view('cost-control', 'contractor-report', 'procurement-tracker'),
   backoffice: view('cost-control', 'contractor-report', 'procurement-tracker'),
 }
+
+// The mind map (docs/TEAM_PROBLEMS.md) asks for one cockpit with lanes for
+// schedule, Dwg → Budget → WO, daily site entries, procurement and bills.
+// Procurement and Bills exist; the other lanes are shown greyed so the plan is
+// visible rather than the cockpit looking finished.
+describe('coming-soon lanes', () => {
+  it('shows the four lanes from the mind map that are not built', () => {
+    expect(COMING_SOON_TABS.map(t => t.label))
+      .toEqual(['Drawings', 'Dwg → Budget → WO', 'Site entries', 'Schedule'])
+  })
+
+  it('keeps every built tab before every coming-soon one', () => {
+    const firstUnbuilt = PROJECT_TABS.findIndex(t => !t.built)
+    expect(firstUnbuilt).toBeGreaterThan(0)
+    expect(PROJECT_TABS.slice(firstUnbuilt).every(t => !t.built)).toBe(true)
+  })
+
+  it('still lands on Budget — a greyed tab never becomes the index', () => {
+    expect(PROJECT_TABS[0].built).toBe(true)
+    expect(PROJECT_TABS[0].slug).toBe('')
+  })
+
+  // Gating a greyed tab on its FUTURE module would hide the roadmap from
+  // nearly everyone: daily-site-report is switched off portal-wide and most
+  // roles have no `schedule`. It shows no data, so there is nothing to protect.
+  it('gates coming-soon tabs on being in the cockpit, not on the future module', () => {
+    for (const t of COMING_SOON_TABS) {
+      expect(t.permissionSlug, t.slug).toBe('cost-control')
+    }
+  })
+
+  it('still records which module each lane will belong to', () => {
+    const withFuture = COMING_SOON_TABS.filter(t => t.futureSlug)
+    expect(withFuture.map(t => t.futureSlug)).toEqual(['daily-site-report', 'schedule'])
+  })
+
+  it('gives a lane that already has a screen somewhere a way to reach it', () => {
+    for (const t of COMING_SOON_TABS) {
+      if (!t.todayHref) continue
+      expect(t.todayHref.startsWith('/'), t.slug).toBe(true)
+      expect(t.hint, t.slug).toMatch(/today/i)
+    }
+  })
+
+  it('says plainly when a lane has no screen anywhere yet', () => {
+    const drawings = COMING_SOON_TABS.find(t => t.slug === 'drawings')!
+    expect(drawings.todayHref).toBeUndefined()
+    expect(drawings.hint).toMatch(/not captured/i)
+  })
+
+  it('shows the coming-soon lanes to every role, since they hold no data', () => {
+    for (const [role, perms] of Object.entries(ROLES)) {
+      const labels = visibleTabs(perms).map(t => t.label)
+      for (const t of COMING_SOON_TABS) expect(labels, `${role} → ${t.label}`).toContain(t.label)
+    }
+  })
+
+  it('routes every coming-soon lane, so a click is never a 404', () => {
+    for (const t of COMING_SOON_TABS) {
+      expect(findTab(t.slug), t.slug).toBeDefined()
+      expect(activeTabSlug(`/project/${P}/${t.slug}`, P)).toBe(t.slug)
+    }
+  })
+
+  it('leaves the built count honest', () => {
+    const { built, total } = builtCount()
+    expect(built).toBe(5)
+    expect(total).toBe(9)
+  })
+})
 
 describe('a tab never grants what the module refuses', () => {
   // The bug this locks shut: the cockpit gated EVERY tab on cost-control,
@@ -71,7 +141,10 @@ describe('a tab never grants what the module refuses', () => {
   it('hides Setup from an engineer, who is not a Cost Control reviewer', () => {
     const labels = visibleTabs(ROLES.engineer, new Set(), false).map(t => t.label)
     expect(labels).not.toContain('Setup')
-    expect(labels).toEqual(['Budget', 'Indent → PO', 'Discussions'])
+    // The built tabs they may open — the greyed coming-soon lanes show to
+    // everyone and are asserted separately.
+    expect(labels.filter(l => BUILT_TABS.some(t => t.label === l)))
+      .toEqual(['Budget', 'Indent → PO', 'Discussions'])
   })
 
   it('keeps Setup for a reviewer', () => {

@@ -2,7 +2,7 @@ import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { requirePermission } from '@/lib/auth'
 import { checkIsCcReviewer } from '@/components/cost-control/ws-actions'
-import { findTab, PROJECT_TABS, tabHref } from '@/lib/revamp/tabs'
+import { findTab, PROJECT_TABS, tabHref, type ProjectTab } from '@/lib/revamp/tabs'
 import { Hammer, ArrowRight } from 'lucide-react'
 import { OverviewTab } from '../OverviewTab'
 import { ReportsTab } from '../ReportsTab'
@@ -59,12 +59,13 @@ export default async function ProjectTabPage({
     return <ProjectSetupPage params={Promise.resolve({ id })} />
   }
 
-  return <NotBuiltYet projectId={id} label={tab.label} hint={tab.hint} />
+  return <NotBuiltYet projectId={id} tab={tab} />
 }
 
 /** Aksha's "honest tabs" rule: a section that does not exist says what it will
  *  hold and where that work happens today — never a blank screen. */
-function NotBuiltYet({ projectId, label, hint }: { projectId: string; label: string; hint: string }) {
+function NotBuiltYet({ projectId, tab }: { projectId: string; tab: ProjectTab }) {
+  const { label, hint, todayHref } = tab
   const builtElsewhere = PROJECT_TABS.filter(t => t.built && t.slug !== '')
 
   return (
@@ -72,13 +73,24 @@ function NotBuiltYet({ projectId, label, hint }: { projectId: string; label: str
       <div className="inline-flex h-11 w-11 items-center justify-center rounded-xl bg-amber-50 border border-amber-200 mb-3">
         <Hammer className="h-5 w-5 text-amber-700" />
       </div>
-      <h2 className="text-lg font-bold text-gray-900">{label} — not built yet</h2>
+      <h2 className="text-lg font-bold text-gray-900">{label} — coming soon</h2>
       <p className="text-sm text-gray-500 mt-1.5">{hint}</p>
       <p className="text-xs text-gray-400 mt-3">
-        This tab is part of the revamp and is coming. Nothing is broken — it simply
-        has not been written yet, and it is shown here so the plan is visible rather
-        than hidden.
+        This is one of the lanes from the plan. Nothing is broken — it simply has not
+        been written yet, and it is shown greyed so the plan is visible rather than
+        hidden.
       </p>
+
+      {/* Where this work happens TODAY. Without it a greyed tab is a dead end,
+          and Site entries / Schedule both already have a working screen. */}
+      {todayHref && (
+        <Link
+          href={todayHref}
+          className="mt-5 inline-flex items-center gap-1.5 rounded-lg bg-indigo-700 px-3.5 py-2 text-xs font-semibold text-white hover:bg-indigo-800 min-h-[44px]"
+        >
+          Open {label} as it works today <ArrowRight className="h-3.5 w-3.5" />
+        </Link>
+      )}
 
       <div className="mt-6 flex flex-wrap justify-center gap-2">
         {builtElsewhere.map(t => (
