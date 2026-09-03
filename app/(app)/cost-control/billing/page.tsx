@@ -11,6 +11,7 @@ import { EmptyState } from '@/components/ui/empty-state'
 import { WSStatusPill, type WSStatus } from '@/components/cost-control/WSStatusPill'
 import { MarkEnteredButton } from './MarkEnteredButton'
 import { ErpReductionQueue } from './ErpReductionQueue'
+import { TransferQueue } from './TransferQueue'
 import { formatINR, formatDate } from '@/lib/utils'
 import { Landmark, Info } from 'lucide-react'
 
@@ -134,6 +135,10 @@ export default async function BillingQueuePage() {
           sub-category, whatever budget was left over is still sitting in IN4
           and has to be taken out by hand. */}
       <ErpReductionQueue />
+
+      {/* Third job for the same person: budget approved to move between two work
+          categories, which only IN4 can actually do. */}
+      <TransferQueue />
     </div>
   )
 }

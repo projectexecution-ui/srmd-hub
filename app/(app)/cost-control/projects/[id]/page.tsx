@@ -22,6 +22,9 @@ import { ccApprovalPath } from '@/lib/cost-control/approval-link'
 import { getEffectiveCcRole } from '@/app/(app)/cost-control/billing/billing-actions'
 import { estimateShortfall, hasNoEstimate } from '@/lib/cost-control/estimate-vs-erp'
 import { OtherDeptPanel, type DeptApproval } from './OtherDeptPanel'
+import { TransferPanel } from './TransferPanel'
+import { RaiseTransferButton } from './RaiseTransferButton'
+import type { ProjectTransfer } from '@/lib/cost-control/transfers'
 import { CompleteControl } from './CompleteControl'
 import { ErpReducedControl } from './ErpReducedControl'
 import { ProjectAlerts } from './ProjectAlerts'
@@ -528,6 +531,25 @@ export default async function CostControlProjectDetailPage(
     deptRecords.sort((a, b) => (b.at ?? '').localeCompare(a.at ?? ''))
   }
 
+  // Budget moved between work categories. Read through the RPC rather than
+  // the table so a Coordinator with no project membership still sees them,
+  // and so the two line labels come back already formatted the same way
+  // everywhere else names them.
+  const [transfersRes, canRaiseRes] = await Promise.all([
+    supabase.rpc('cc_project_transfers', { p_project: project.id }),
+    supabase.rpc('cc_can_i_raise_transfer'),
+  ])
+  const transfers = (transfersRes.data ?? []) as ProjectTransfer[]
+  const canRaiseTransfer = canRaiseRes.data === true
+  // Lines already carrying an open request, so the row can say so instead
+  // of inviting a second one on top of it.
+  const transferReqBySub = new Map<string, ProjectTransfer[]>()
+  for (const t of transfers) {
+    for (const k of [`${t.from_discipline_id}::${t.from_sub_skill_id}`, `${t.to_discipline_id}::${t.to_sub_skill_id}`]) {
+      transferReqBySub.set(k, [...(transferReqBySub.get(k) ?? []), t])
+    }
+  }
+
   const boqBySub = new Map<string, BoqSheet[]>()
   {
     const latestIds = [...latestEng.values()].map(x => x.w.id)
@@ -1007,6 +1029,13 @@ export default async function CostControlProjectDetailPage(
       {/* Budget on this project that belongs to another department.
           Renders nothing at all when there is none. */}
       <OtherDeptPanel records={deptRecords} />
+      {/* Budget moving between work categories. Open requests in full,
+          settled ones rolled up. Renders nothing on a project that has
+          never moved budget across categories. */}
+      <TransferPanel
+        transfers={transfers}
+        projectId={project.id}
+      />
       <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
         <div className="flex items-center justify-between px-3 py-2 border-b border-gray-100 bg-gray-50/60">
           {/* On a phone the sentence stole the whole row and forced the toolbar
@@ -1014,7 +1043,14 @@ export default async function CostControlProjectDetailPage(
           <span className="text-[11px] font-medium text-gray-500">
             Work categories<span className="hidden sm:inline"> — click a row to collapse; totals roll up.</span>
           </span>
-          <TreeToolbar />
+          <span className="flex items-center gap-2">
+            {/* Moving budget acts on these lines, so it belongs here rather
+                than as a fifth button in the page header. */}
+            {canRaiseTransfer && (
+              <RaiseTransferButton projectId={project.id} variant="header" />
+            )}
+            <TreeToolbar />
+          </span>
         </div>
         {/* The header row stays visible while you read down the table. Sticky
             needs a scrollport that actually scrolls, so the table body scrolls
@@ -1438,6 +1474,21 @@ export default async function CostControlProjectDetailPage(
                                   </Link>
                                 )}
                                 {/* Same rule as the phone card. (HOD #3) */}
+                                {/* Short here — ask for budget from another
+                                    category. Only on a line actually over
+                                    budget, and only while it has no open
+                                    request of its own. */}
+                                {canRaiseTransfer && sOver > 0
+                                  && !(transferReqBySub.get(`${d.id}::${s.id}`) ?? []).some(t => t.status === 'pending_atm' || t.status === 'pending_trustee' || t.status === 'awaiting_in4' || t.status === 'awaiting_sync') && (
+                                  <RaiseTransferButton
+                                    projectId={project.id}
+                                    disciplineId={d.id}
+                                    subSkillId={s.id}
+                                    label={`${s.code} ${s.name}`}
+                                    shortfall={sOver}
+                                    variant="row"
+                                  />
+                                )}
                                 {(
                                   <CompleteControl
                                     projectId={project.id}
@@ -1765,6 +1816,18 @@ export default async function CostControlProjectDetailPage(
                   {/* Close the line — only where WO equals Paid, so most cards
                       never show this. Full-width 44px tap: this is the phone,
                       where nearly everyone reads this screen. (HOD #3) */}
+                  {/* Same rule as the desktop row. */}
+                  {canRaiseTransfer && sOver > 0
+                    && !(transferReqBySub.get(`${d.id}::${s.id}`) ?? []).some(t => t.status === 'pending_atm' || t.status === 'pending_trustee' || t.status === 'awaiting_in4' || t.status === 'awaiting_sync') && (
+                    <RaiseTransferButton
+                      projectId={project.id}
+                      disciplineId={d.id}
+                      subSkillId={s.id}
+                      label={`${s.code} ${s.name}`}
+                      shortfall={sOver}
+                      variant="card"
+                    />
+                  )}
                   {(
                     <CompleteControl
                       projectId={project.id}

@@ -736,6 +736,19 @@ export async function commitBphImport(
   }
   const transfers = Number(transfersFound ?? 0)
 
+  // Approved CROSS-category transfers are a different thing: somebody asked,
+  // it was signed, and somebody claims to have made the move in IN4. This is
+  // the moment that claim can be checked. A request whose two lines moved by
+  // the approved amount closes itself here; one that does not stays open and
+  // records what actually moved. Best-effort, for the same reason as above.
+  const { data: transfersClosed, error: verifyErr } = await supabase.rpc('cc_transfer_verify', {
+    p_project: parsed.data.cc_project_id,
+  })
+  if (verifyErr) {
+    errors.push(`Figures imported, but approved budget transfers could not be checked against IN4 (${verifyErr.message})`)
+  }
+  const transfersConfirmed = Number(transfersClosed ?? 0)
+
   // Persist the BPH↔CT mapping so future BPH saves auto-pull. Upsert keyed
   // on bph_project_id (the BPH side); if the same BPH project is being
   // remapped to a different CT project (rare — usually a fix), update.
@@ -750,7 +763,7 @@ export async function commitBphImport(
       created_by: me?.id ?? null,
       last_pulled_at: now,
       last_pull_result: {
-        inserted, updated, skipped, transfers,
+        inserted, updated, skipped, transfers, transfersConfirmed,
         errors_count: errors.length,
         ...(unmatchedNames !== null
           ? { unmatched_count: unmatchedNames.length, unmatched_names: unmatchedNames.slice(0, 50) }
