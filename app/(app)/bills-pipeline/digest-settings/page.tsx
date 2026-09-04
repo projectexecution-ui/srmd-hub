@@ -2,6 +2,7 @@ import { createClient as createServiceClient } from '@supabase/supabase-js'
 import { requirePermission } from '@/lib/auth'
 import { PageHeader } from '@/components/PageHeader'
 import { parseBillsDigestConfig, BILLS_PROJECT_CODES } from '@/lib/bills-pipeline/digest-settings'
+import { billsProjectLabels } from '@/lib/bills-pipeline/project-names'
 import { BillsDigestForm } from './BillsDigestForm'
 import { WorklistRecipients } from './WorklistRecipients'
 
@@ -26,6 +27,10 @@ export default async function BillsDigestSettingsPage() {
   ])
 
   const cfg = parseBillsDigestConfig((settings ?? []) as Array<{ key: string; value: string }>)
+  // The billing codes shown with the hub's project names (Admin → Name mapping),
+  // so "NGH" reads as New Guest House here as it does everywhere else.
+  const labels = await billsProjectLabels(sb)
+  const projectOptions = BILLS_PROJECT_CODES.map(code => ({ code, label: labels.get(code)?.label ?? code }))
 
   // Available internal stages come live from the last bills snapshot (they're
   // not hardcoded — the Zoho blueprint can change them).
@@ -46,7 +51,7 @@ export default async function BillsDigestSettingsPage() {
       <BillsDigestForm
         initial={cfg}
         users={(users ?? []).map(u => ({ id: u.id as string, full_name: (u.full_name as string | null) ?? null, email: u.email as string, role: u.role as string }))}
-        projectCodes={BILLS_PROJECT_CODES}
+        projectOptions={projectOptions}
         availableStages={availableStages}
       />
       <WorklistRecipients initial={(worklistRow?.value as string | null) ?? ''} />

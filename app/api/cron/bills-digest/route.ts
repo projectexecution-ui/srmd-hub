@@ -15,6 +15,7 @@ import { createClient as createServiceClient, type SupabaseClient } from '@supab
 import { createClient } from '@/lib/supabase/server'
 import { getMyPermissions, can } from '@/lib/auth'
 import { parseBillsDigestConfig, stageAllowed, type BillsDigestConfig } from '@/lib/bills-pipeline/digest-settings'
+import { billsProjectLabels } from '@/lib/bills-pipeline/project-names'
 import { renderProjectPushCard, type DigestBill } from '@/lib/bills-pipeline/project-card'
 import { sendCardsToChat } from '@/lib/telegram/dm'
 import { personName } from '@/lib/utils'
@@ -86,6 +87,8 @@ interface RenderCtx {
   asOf: string
   generatedAt: string
   cache: Map<string, string>   // `${code}|${stageKey}` -> base64 ('' = empty, no card)
+  /** Billing code → what people call the project (the hub's name, via Admin → Name mapping). */
+  labels: Map<string, string>
 }
 function stageKey(picked: string[] | undefined): string {
   return picked && picked.length ? [...picked].sort().join('~') : '__siteHead__'
@@ -96,7 +99,7 @@ async function cardFor(ctx: RenderCtx, code: string, picked: string[] | undefine
   if (ctx.cache.has(key)) { const v = ctx.cache.get(key)!; return v || null }
   const bills = (ctx.byProject.get(code) ?? []).filter(b => stageAllowed(b.status, picked))
   if (bills.length === 0) { ctx.cache.set(key, ''); return null }
-  const buf = await renderProjectPushCard(code, bills.map(toDigestBill), ctx.asOf || new Date().toISOString().slice(0, 10), ctx.generatedAt)
+  const buf = await renderProjectPushCard(ctx.labels.get(code) ?? code, bills.map(toDigestBill), ctx.asOf || new Date().toISOString().slice(0, 10), ctx.generatedAt)
   const b64 = buf.toString('base64')
   ctx.cache.set(key, b64)
   return b64
@@ -148,7 +151,8 @@ async function cardsForRecipient(ctx: RenderCtx, codes: string[], picked: string
 
 async function runAll(supabase: Client, cfg: BillsDigestConfig) {
   const { byProject, asOf, generatedAt } = await readStuck(supabase)
-  const ctx: RenderCtx = { byProject, asOf, generatedAt, cache: new Map() }
+  const labelRows = await billsProjectLabels(supabase)
+  const ctx: RenderCtx = { byProject, asOf, generatedAt, cache: new Map(), labels: new Map([...labelRows].map(([code, l]) => [code, l.label])) }
   const headIds = Object.keys(cfg.assignments)
   const allCodes = [...new Set(Object.values(cfg.assignments).flat())]
   const ids = [...new Set([...headIds, ...cfg.cc])]
@@ -303,7 +307,8 @@ export async function POST(req: Request) {
   const token = process.env.TELEGRAM_BOT_TOKEN
 
   const { byProject, asOf, generatedAt } = await readStuck(supabase)
-  const ctx: RenderCtx = { byProject, asOf, generatedAt, cache: new Map() }
+  const labelRows2 = await billsProjectLabels(supabase)
+  const ctx: RenderCtx = { byProject, asOf, generatedAt, cache: new Map(), labels: new Map([...labelRows2].map(([code, l]) => [code, l.label])) }
   const codes = [...new Set(Object.values(cfg.assignments).flat())]
   const useCodes = codes.length ? codes : [...byProject.keys()]
   const cards = await cardsForRecipient(ctx, useCodes, cfg.stages[user.id])
