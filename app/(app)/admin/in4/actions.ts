@@ -1,13 +1,13 @@
 'use server'
-// Admin actions for the IN4 budget sync screen: the live switch and the
-// sub-project ↔ Budget-Hub project links. Both are admin-only through the
-// permission matrix (budget-vs-actual admin) and written with the service role
-// so the RLS on the link table stays admin-only for everyone else.
+// Admin actions for the IN4 sync screen: the per-feed live switches and the
+// sub-project ↔ Budget-Hub project links. Admin-only through the permission
+// matrix and written with the service role so the RLS on the link table stays
+// admin-only for everyone else.
 
 import { createClient as createServiceClient } from '@supabase/supabase-js'
 import { revalidatePath } from 'next/cache'
 import { getMyPermissions, can, getMyUser } from '@/lib/auth'
-import { IN4_LIVE_KEY } from '@/lib/in4/sync'
+import { FEED_LIVE_KEY, type Feed } from '@/lib/in4/feeds'
 
 function svc() {
   return createServiceClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!, { auth: { persistSession: false } })
@@ -15,18 +15,20 @@ function svc() {
 
 async function requireAdmin(): Promise<{ ok: true; userId: string } | { ok: false; error: string }> {
   const perms = await getMyPermissions()
-  if (!can(perms, 'budget-vs-actual', 'admin') && !can(perms, 'cost-control', 'admin')) return { ok: false, error: 'Only a Budget admin can change this.' }
+  if (!can(perms, 'admin-settings', 'view') && !can(perms, 'budget-vs-actual', 'admin') && !can(perms, 'cost-control', 'admin')) return { ok: false, error: 'Only an admin can change this.' }
   const user = await getMyUser()
   if (!user) return { ok: false, error: 'Not signed in.' }
   return { ok: true, userId: user.id }
 }
 
-export async function setIn4Live(live: boolean): Promise<{ ok: boolean; error?: string }> {
+export async function setFeedLive(feed: Feed, live: boolean): Promise<{ ok: boolean; error?: string }> {
   const gate = await requireAdmin()
   if (!gate.ok) return gate
-  const { error } = await svc().from('app_settings').upsert({ key: IN4_LIVE_KEY, value: live ? 'true' : 'false' }, { onConflict: 'key' })
+  const key = FEED_LIVE_KEY[feed]
+  if (!key) return { ok: false, error: 'This feed has no live switch.' }
+  const { error } = await svc().from('app_settings').upsert({ key, value: live ? 'true' : 'false' }, { onConflict: 'key' })
   if (error) return { ok: false, error: error.message }
-  revalidatePath('/budget/in4'); revalidatePath('/budget')
+  revalidatePath('/admin/in4'); revalidatePath('/budget'); revalidatePath('/procurement-tracker'); revalidatePath('/contractor-report'); revalidatePath('/supplier-report')
   return { ok: true }
 }
 
@@ -47,6 +49,6 @@ export async function linkSubproject(subprojectId: number, bphProjectId: string 
     }, { onConflict: 'subproject_id' })
     if (error) return { ok: false, error: error.message }
   }
-  revalidatePath('/budget/in4')
+  revalidatePath('/admin/in4')
   return { ok: true }
 }

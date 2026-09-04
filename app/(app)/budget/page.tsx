@@ -30,7 +30,7 @@ export default async function BPHReportHubPage() {
               ? <span>IN4 live sync · {last.mode === 'live' ? 'this report is now written from IN4 twice a day — no upload needed' : 'shadow mode — upload still the source'} · last {formatDateTime(last.at)}{typeof last.exact === 'number' && last.figures ? ` · ${Math.round((last.exact / last.figures) * 100)}% matches the last upload` : ''}</span>
               : <span>IN4 live sync failed at {formatDateTime(last.at)} — {last.error}</span>
             : <span>IN4 live sync has not run yet.</span>}
-          {isAdmin && <Link href="/budget/in4" className="ml-auto font-semibold text-blue-700 hover:underline whitespace-nowrap">Open sync</Link>}
+          {isAdmin && <Link href="/admin/in4" className="ml-auto font-semibold text-blue-700 hover:underline whitespace-nowrap">Open sync</Link>}
         </div>
       )}
       <BphHubClient />
