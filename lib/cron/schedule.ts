@@ -60,6 +60,11 @@ export const CRON_JOBS: CronJob[] = [
   { key: 'cc-budget-vs-actual',   policy: 'daily', module: 'cost-control', am: '/api/cron/cc-budget-vs-actual?cron=1',   pm: '/api/cron/cc-budget-vs-actual?cron=1' },
   // ── Each-slot jobs (intentionally run at both 09:00 and 15:00) ────────────
   { key: 'bills-pipeline',        policy: 'each', module: 'bills-pipeline',  am: '/api/cron/bills-pipeline?cron=1',      pm: '/api/cron/bills-pipeline?cron=1&slot=pm' },
+  // IN4 live budget sync — reads IN4's SQL Server, rebuilds the SRMD Budget vs
+  // Expenses report and (in live mode) replaces the weekly Excel upload. Listed
+  // before bph-sync so the pull that follows sees fresh figures. Portal-wide on
+  // purpose: Cost Control's ERP columns depend on it even if the BPH tile is off.
+  { key: 'in4-sync',              policy: 'each',  am: '/api/cron/in4-sync?cron=1',    pm: '/api/cron/in4-sync?cron=1' },
   { key: 'bph-sync',              policy: 'each', module: 'cost-control',  am: '/api/cron/bph-sync?cron=1',            pm: '/api/cron/bph-sync?cron=1' },
   { key: 'email-retry',           policy: 'each',  am: '/api/cron/email-retry?cron=1',         pm: '/api/cron/email-retry?cron=1' },
   // am = Monday week-plan ping (route self-gates to Mondays); pm = evening open-promises reminder

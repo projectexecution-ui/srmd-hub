@@ -1,8 +1,8 @@
 # IN4 database → CT Hub: what backs each report we upload
 
 **Phase 0 of the IN4 live-data plan. Read-only reconnaissance, 3–4 Sept 2026.**
-Companion to `scripts/in4-explore.mjs`. Nothing here has been built yet — this is the
-map the build follows.
+Companion to `scripts/in4-explore.mjs`. Phase 0 is the map; Phase 1 (bottom of this file) is
+the build that follows it.
 
 ## Connection facts
 
@@ -130,3 +130,29 @@ Rules: raw columns kept as IN4 names; every row carries `synced_at`; snapshots (
 1. **Cadence/hosting** — twice daily inside the existing Vercel cron dispatcher (free, nothing new), or hourly via a GitHub Actions schedule calling the sync route (free), or Vercel Pro. Recommendation: dispatcher first, GitHub Actions if hourly is wanted.
 2. **Which BPH report exactly** is the weekly upload — *Consolidated Budget Report(BPH)* or *Construction Budget Report for Project(BPH)*? Not needed to build (the figures are reproduced from tables) but needed to validate one full Excel against the sync before switching the upload off.
 3. **RDS exposure** — raise with In4Velocity.
+
+---
+
+## Phase 1 — built 4 Sept 2026 (branch `in4-sync`)
+
+What exists now:
+
+- `lib/in4/db.ts` — the one SQL Server connection (read-only intent, TLS, SELECT-only guard).
+- `lib/in4/extract.ts` — ten SELECTs: projects, sub-projects, skills, material types, WC budget (base table), material budget, work orders, WO BOQ shares, WO certificates, supplier money per sub-skill.
+- `lib/in4/compute.ts` — rebuilds the **SRMD Budget vs Expenses Report** (`ENGG_CONSOLIDATED_SRMDBUDGET_VS_EXPENSECUSTOM_REPORT`, one Excel per sub-project) in the exact shape `public/budget-hub.html` produces from the Excel. Rules, all verified on NGH A:
+  - budget = sub-skill rows of the approved budget version + the category row's residual + material budgets by (M)/(A) type → sub-type code;
+  - WO/PO approved = WO gross value split across sub-skills by BOQ amount share, + material GRN value;
+  - gross bill = certificate gross bill + material landed cost; paid = certificate paid + material paid;
+  - actual = max(paid, gross) per sub-skill; max(paid, gross + WO advance balance) per category.
+- `lib/in4/compare.ts` — shadow comparison against the stored upload (exact ≤ ₹1, near ≤ 0.5%).
+- `lib/in4/sync.ts` — the run: extract → mirror (`in4_*` tables) → compute → compare → in **live** mode write `budget_hub_state` like an upload would (history snapshot, version bump, cache invalidation, BPH → Cost Control pull).
+- `/api/cron/in4-sync` (dispatcher job `in4-sync`, twice daily, portal-wide) and `/budget/in4` (status, Run now, comparison, sub-project ↔ Budget-Hub links, the live switch `app_settings.in4_budget_live`).
+
+**Shadow result on 4 Sept against the 2 Sept uploads: 1,313 of 1,689 figures exact (78%), 19 near, 357 off.** NGH A: 87 exact, 1 off. Of the remainder, a large share is genuine movement in the two days between upload and comparison — certificates 3020–3083 (the newest in IN4) appear in the "off" lines, NGH C's civil WO 1766 was amended from ₹2.11 Cr to ₹2.79 Cr, P2 Infra's budget moved ₹93 L from 58 Retaining Wall into 26 STP & ETP. Two things are IN4-side and worth fixing there:
+
+1. **Two categories share code "01"** — "01 Site Pre-lims" and "01 Pre Design Works" (the latter appears as 111/112/001 in older uploads, so it keeps being renamed). Any report keyed by code merges them; ask In4Velocity/Chirag to give Pre Design Works a code of its own.
+2. `BI.FACT_ENGG_BUDGET_WC_LINE_ITEMS` silently drops lines (NGH B's 1204 Flooring). The sync reads the base table instead; anyone else building on the BI layer should know.
+
+**To finish validation:** upload the report once more (any day), then open /budget/in4 the same day — the comparison is then same-day and what is left "off" is a rule to fix, not a payment that landed since.
+
+**Not configured on Vercel yet.** The sync needs `IN4_DB_HOST`, `IN4_DB_PORT`, `IN4_DB_NAME=In4re`, `IN4_DB_USER`, `IN4_DB_PASSWORD` in Vercel → ct-hub → Settings → Environment Variables (Production). Until then the cron job answers 503 "not configured" and the page says so.

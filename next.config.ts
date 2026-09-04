@@ -5,7 +5,9 @@ const nextConfig: NextConfig = {
   // @resvg/resvg-js ships a native .node binding that Turbopack can't bundle
   // into an ESM chunk ("non-ecmascript placeable asset"). Marking it external
   // keeps it as a runtime require() in the server bundle.
-  serverExternalPackages: ['@resvg/resvg-js'],
+  // mssql (the IN4 SQL Server driver) pulls in tedious + native-ish helpers
+  // that bundle badly; keep it a runtime require() as well.
+  serverExternalPackages: ['@resvg/resvg-js', 'mssql'],
   // The bills-pipeline card renderer reads a bundled TTF at runtime. Next's
   // file tracer can't see the fs.readFile path, so force-include the font in
   // the route's serverless bundle (Vercel has no system fonts to fall back on).

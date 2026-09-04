@@ -14,7 +14,7 @@ export function BphHubClient() {
   useEffect(() => { const t = setTimeout(() => setLoaded(true), 100); return () => clearTimeout(t) }, [])
 
   return (
-    <div className="flex flex-col h-screen">
+    <div className="flex flex-col flex-1 min-h-0">
       <div className="flex items-center justify-between px-4 py-2 border-b border-gray-200 bg-white flex-shrink-0">
         <div className="flex items-center gap-2">
           <FileSpreadsheet className="h-4 w-4 text-teal-600" />
