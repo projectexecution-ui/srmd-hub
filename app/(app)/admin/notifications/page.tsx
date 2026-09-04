@@ -1,3 +1,4 @@
+import Link from 'next/link'
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { getMyProfile, isPortalOwner } from '@/lib/auth'
@@ -57,6 +58,15 @@ export default async function AdminNotificationsPage() {
     <div className="space-y-4">
       <div className="pt-2"><EmailHealthStrip health={health} /></div>
       <CronHealthStrip amAt={cronAmAt} pmAt={cronPmAt} nowMs={Date.now()} />
+      <div className="max-w-4xl mx-auto px-4 md:px-6">
+        <Link href="/admin/notifications/recipients" className="flex items-center justify-between gap-3 rounded-xl border border-indigo-200 bg-indigo-50/60 px-4 py-3 hover:bg-indigo-50 min-h-[44px]">
+          <span>
+            <span className="block text-sm font-semibold text-indigo-900">Who receives what</span>
+            <span className="block text-xs text-indigo-800/80">Every email, alert and Telegram card the hub sends, with its recipients — the typed lists from six module screens, edited in one place.</span>
+          </span>
+          <span className="text-xs font-medium text-indigo-700 whitespace-nowrap">Open →</span>
+        </Link>
+      </div>
       <NotificationRulesClient
         initialRules={(rules ?? []) as NotificationRuleRow[]}
         initialSchedules={(schedules ?? []) as NotificationScheduleRow[]}

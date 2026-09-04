@@ -54,6 +54,7 @@ export const ADMIN_SCREENS: AdminScreen[] = [
 
   // ── Emails & alerts ──
   { href: '/admin/notifications',            label: 'Notification switches',   module: '',                    area: 'notifications', hint: 'Each alert on/off per channel and role; scheduled-job health' },
+  { href: '/admin/notifications/recipients', label: 'Who receives what',       module: '',                    area: 'notifications', hint: 'Every email and alert the hub sends, with its recipients — edit the lists from one place' },
   { href: '/settings/notifications',         label: 'My notifications',        module: '',                    area: 'notifications', hint: 'Your own channels, phone push, Telegram' },
   { href: '/bills-pipeline/digest-settings', label: 'Bills digest',            module: 'bills-pipeline',      area: 'notifications', hint: 'The daily bills email per Atm Head, and who gets the stuck list' },
   { href: '/daily-site-report/digest',       label: 'Site report digest',      module: 'daily-site-report',   area: 'notifications', hint: 'The shareable daily material-arrivals card' },
