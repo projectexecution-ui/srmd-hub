@@ -5,6 +5,7 @@
 // entries). Far shorter than the IN4 Excel it replaces.
 
 import { Fragment } from 'react'
+import { formatDate } from '@/lib/utils'
 import Link from 'next/link'
 import { ArrowLeft, Printer } from 'lucide-react'
 import type { ComposeResult, DeltaResult } from '@/lib/budget-v2'
@@ -27,7 +28,7 @@ function toneClass(u: number | null): string { return u == null ? '' : u > 100 ?
 function asOf(iso: string | null): string {
   if (!iso) return '—'
   const t = Date.parse(iso); if (!isFinite(t)) return '—'
-  return new Date(t).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'Asia/Kolkata' })
+  return formatDate(new Date(t))
 }
 
 export default function WeeklyClient({ result, freshness, delta, prevSnapshotWeek }: {

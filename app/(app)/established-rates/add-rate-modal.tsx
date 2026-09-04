@@ -2,6 +2,7 @@
 // Inline modal for manually adding a unit rate to a sub-category.
 
 import { useState } from 'react'
+import { todayISO } from '@/lib/utils'
 import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -26,7 +27,7 @@ export function AddRateModal({ subcategory, vendors, contractors, onClose, onSav
   const [partyId, setPartyId]   = useState('')
   const [rate, setRate]         = useState('')
   const [gst, setGst]           = useState('18')
-  const [validFrom, setValidFrom] = useState(new Date().toISOString().slice(0, 10))
+  const [validFrom, setValidFrom] = useState(todayISO())
   const [validTill, setValidTill] = useState('')
   const [remarks, setRemarks]   = useState('')
   const [busy, setBusy]         = useState(false)
@@ -44,7 +45,7 @@ export function AddRateModal({ subcategory, vendors, contractors, onClose, onSav
       contractor_id:  sourceType === 'contractor' ? partyId : null,
       rate_per_unit:  Number(rate),
       gst_pct:        gst === '' ? null : Number(gst),
-      valid_from:     validFrom || new Date().toISOString().slice(0, 10),
+      valid_from:     validFrom || todayISO(),
       valid_till:     validTill || null,
       remarks:        remarks.trim() || null,
       source:         'manual',

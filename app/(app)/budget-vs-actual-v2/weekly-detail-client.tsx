@@ -8,6 +8,7 @@
 // Single source: the budget report (+ any flagged manual entries).
 
 import { Fragment } from 'react'
+import { formatDate } from '@/lib/utils'
 import Link from 'next/link'
 import { ArrowLeft, Printer } from 'lucide-react'
 import type { ComposeResult, CatNode, DeltaResult } from '@/lib/budget-v2'
@@ -32,7 +33,7 @@ function normLabel(s: string): string { return (s || '').toLowerCase().replace(/
 function asOf(iso: string | null): string {
   if (!iso) return '—'
   const t = Date.parse(iso.length === 10 ? iso + 'T00:00:00' : iso); if (!isFinite(t)) return '—'
-  return new Date(t).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'Asia/Kolkata' })
+  return formatDate(new Date(t))
 }
 
 export default function WeeklyDetailClient({ result, prev, delta, freshness, prevSnapshotWeek, mode }: {

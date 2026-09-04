@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
+import { todayISO } from '@/lib/utils'
 import { requirePermission } from '@/lib/auth'
 import { PageHeader } from '@/components/PageHeader'
 import { Card } from '@/components/ui/card'
@@ -60,7 +61,7 @@ export default async function CommandCenterPage() {
 
   const rows = (itemsRaw ?? []) as EccRow[]
   const acctEmail = accounts?.[0]?.email_address
-  const today = new Date().toISOString().slice(0, 10)
+  const today = todayISO()
 
   const boardItems: BoardItem[] = rows.map(r => ({
     id: r.id,

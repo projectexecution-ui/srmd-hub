@@ -16,7 +16,7 @@ import {
   ChevronDown, ChevronRight, Plus, Trash2, Loader2, Search, Filter,
   ArrowUpDown, ArrowUp, ArrowDown,
 } from 'lucide-react'
-import { cn } from '@/lib/utils'
+import { cn, todayISO } from '@/lib/utils'
 import { toast } from 'sonner'
 import { confirm } from '@/components/ui/confirm-dialog'
 import { recycleDelete } from '@/lib/recycle-bin'
@@ -122,7 +122,7 @@ export function RateLibrary({
 
   // ── Filtered rates (active-only + vendor filter applied) ─────
   const filteredRates = useMemo(() => {
-    const today = new Date().toISOString().slice(0, 10)
+    const today = todayISO()
     return rates.filter(r => {
       if (activeOnly && r.valid_till && r.valid_till < today) return false
       if (vendorFilter) {

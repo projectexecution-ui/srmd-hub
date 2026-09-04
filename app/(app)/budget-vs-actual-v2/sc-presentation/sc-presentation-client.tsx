@@ -10,6 +10,7 @@
 // Choices persist in this browser (localStorage). Browser-print → PDF.
 
 import { useEffect, useMemo, useState } from 'react'
+import { formatDate } from '@/lib/utils'
 import Link from 'next/link'
 import { ArrowLeft, Printer, Search, Check } from 'lucide-react'
 import type { ComposeResult, ProjectNode } from '@/lib/budget-v2'
@@ -29,7 +30,7 @@ function perSft(amt: number, area: number | null | undefined): string {
 function asOf(iso: string | null): string {
   if (!iso) return '—'
   const t = Date.parse(iso.length === 10 ? iso + 'T00:00:00' : iso); if (!isFinite(t)) return '—'
-  return new Date(t).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'Asia/Kolkata' })
+  return formatDate(new Date(t))
 }
 
 // Pre-filled descriptors (editable). Only applied when the user hasn't set one.

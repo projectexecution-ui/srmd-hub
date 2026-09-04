@@ -10,7 +10,7 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { EmptyState } from '@/components/ui/empty-state'
 import { Calculator, Plus, FileText, Clock, Inbox, Upload, ClipboardList, Settings, CalendarClock, ChevronDown, Download, RefreshCw, AlertTriangle, CheckCircle2, FileSpreadsheet, Ruler, ArrowRight, Bell } from 'lucide-react'
-import { formatINR } from '@/lib/utils'
+import { formatINR, todayISO } from '@/lib/utils'
 import { DeadlineBadge } from '@/components/cost-control/DeadlineBadge'
 import { QueryError } from '@/components/ui/query-error'
 import { wsStatusLabel, WSStatusPill } from '@/components/cost-control/WSStatusPill'
@@ -134,7 +134,7 @@ export default async function CostControlLandingPage() {
   type WSRollup = { id: string; status: string; total_amount: number | null; approved_for_erp_amt: number | null; project_id: string; discipline_id: string; deadline_date: string | null; in4_entered_at: string | null; summary_notes: string | null }
   const { data: wsData, error: wsErr } = wsAllRes
   const ws = (wsData ?? []) as WSRollup[]
-  const todayStr = new Date().toISOString().slice(0, 10)
+  const todayStr = todayISO()
   const TERMINAL = new Set(['approved', 'wo_issued', 'paid', 'cancelled'])
   const APPROVED_DONE = new Set(['approved', 'wo_issued', 'paid'])
 

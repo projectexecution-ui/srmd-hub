@@ -8,7 +8,7 @@
 import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { Bell, CheckCheck, Trash2, Settings as SettingsIcon } from 'lucide-react'
-import { cn } from '@/lib/utils'
+import { cn, formatDate } from '@/lib/utils'
 import { confirm } from '@/components/ui/confirm-dialog'
 import { useNotifications, type NotificationRow } from '@/components/NotificationProvider'
 
@@ -171,5 +171,5 @@ function formatWhen(iso: string): string {
   if (h < 24) return `${h}h ago`
   const d = Math.floor(h / 24)
   if (d < 7) return `${d}d ago`
-  return new Date(iso).toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata' })
+  return formatDate(iso)
 }

@@ -1,5 +1,6 @@
 'use client'
 import { useState, useMemo } from 'react'
+import { todayISO } from '@/lib/utils'
 import { useRouter } from 'next/navigation'
 import * as XLSX from 'xlsx'
 import { createClient } from '@/lib/supabase/client'
@@ -357,7 +358,7 @@ export function JmrImportClient({ projects, contractors, items, rateCards }: Pro
     const sampleProject = topProjects[0]
     const sampleContractor = contractors[0]
     const sampleItem = items[0]
-    const today = new Date().toISOString().slice(0, 10)
+    const today = todayISO()
     const sample = {
       date: today,
       project: sampleProject?.code ?? sampleProject?.name ?? 'PROJECT_CODE',

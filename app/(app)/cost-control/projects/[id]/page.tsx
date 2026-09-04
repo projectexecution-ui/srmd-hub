@@ -9,7 +9,7 @@ import { PageHeader } from '@/components/PageHeader'
 import { getModuleLabels, labelFor } from '@/lib/module-labels'
 import { SetupProgressBanner } from '@/components/ProjectSetupWizard/SetupProgressBanner'
 import { Plus, Flame, Info, Settings, Download, Ruler, ArrowRight } from 'lucide-react'
-import { formatINR, formatDate, istCalendarDaysAgo } from '@/lib/utils'
+import { formatINR, formatDate, istCalendarDaysAgo, istDateKey } from '@/lib/utils'
 import { getCcSettings } from '@/lib/cost-control/settings'
 import { computeMoneyRollup, type RollupWSRow, type RollupVersionRow, type RollupBudgetLine } from '@/lib/cost-control/project-rollup'
 import { sortDisciplines } from '@/lib/cost-control/discipline-order'
@@ -360,7 +360,7 @@ export default async function CostControlProjectDetailPage(
   const TERMINAL = new Set(['approved','wo_issued','paid','cancelled'])
   const dlAgg = new Map<string, { earliest: string | null; overdue: number; openCount: number }>()
   const today = new Date()
-  const todayISO = today.toISOString().slice(0, 10)
+  const todayISO = istDateKey(today)
   for (const w of (wsRes.data ?? []) as WSAgg[]) {
     if (!w.deadline_date) continue
     if (TERMINAL.has(w.status)) continue
@@ -799,7 +799,7 @@ export default async function CostControlProjectDetailPage(
             subtitle={[
               project.code,
               pmName ? `Owner: ${pmName}` : null,
-              project.start_date ? `Started ${new Date(project.start_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'Asia/Kolkata' })}` : null,
+              project.start_date ? `Started ${formatDate(project.start_date)}` : null,
             ].filter(Boolean).join(' · ')}
             className="mb-0"
           />

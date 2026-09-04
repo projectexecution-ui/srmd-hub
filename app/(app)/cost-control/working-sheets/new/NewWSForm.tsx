@@ -1,6 +1,7 @@
 'use client'
 
 import * as React from 'react'
+import { formatDate } from '@/lib/utils'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
@@ -107,7 +108,7 @@ export function NewWSForm({ projects, projectDisciplines, projectSubSkills, defa
       disciplineCode: disc?.code, disciplineName: disc?.name,
       subSkillCode: sub?.code, subSkillName: sub?.name,
       lineTypeLabel: lineType === 'work' ? 'Work' : lineType === 'material' ? 'Material' : 'Combined',
-      dateText: new Date().toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'Asia/Kolkata' }),
+      dateText: formatDate(new Date()),
       projectId, disciplineId, subSkillId,
     })
   }

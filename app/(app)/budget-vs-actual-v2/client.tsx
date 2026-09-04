@@ -25,7 +25,7 @@ import {
   Wallet, TrendingUp, Scale, FileCheck2, UploadCloud, Printer, Clock, Plus, Pencil, Check, HelpCircle,
   ArrowUp, ArrowDown, PencilLine, FolderTree,
 } from 'lucide-react'
-import { cn, istAgeLabel } from '@/lib/utils'
+import { cn, istAgeLabel, APP_TIME_ZONE } from '@/lib/utils'
 import type { ComposeResult, CatNode, ProjectNode, GroupNode, DeltaResult, Delta } from '@/lib/budget-v2'
 
 // ─── formatting helpers ──────────────────────────────────────────────────────
@@ -583,7 +583,7 @@ function fmtSnapDate(iso: string | null): string {
   if (!iso) return 'last snapshot'
   const t = Date.parse(iso + 'T00:00:00')
   if (!isFinite(t)) return iso
-  return new Date(t).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })
+  return new Date(t).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', timeZone: APP_TIME_ZONE })
 }
 function DeltaChip({ label, v, muted }: { label: string; v: number; muted?: boolean }) {
   const up = v > 0

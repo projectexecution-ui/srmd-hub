@@ -6,6 +6,7 @@
 // own short formatter.
 
 import { format as formatDate, parseISO, isValid } from 'date-fns'
+import { todayIST } from '@/lib/utils'
 
 export function formatINR(n: number, opts: { decimals?: number } = {}): string {
   const { decimals = 0 } = opts
@@ -58,6 +59,8 @@ export function formatDateShort(d: string | Date | null | undefined): string {
   return formatDate(date, 'd MMM yy')
 }
 
+/** Today in IST. date-fns formats in the server's zone (UTC on Vercel), which
+ *  is yesterday before 05:30 IST. */
 export function todayISO(): string {
-  return formatDate(new Date(), 'yyyy-MM-dd')
+  return todayIST()
 }

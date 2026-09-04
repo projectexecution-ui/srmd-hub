@@ -20,6 +20,20 @@ export function formatDate(date: string | Date | null | undefined): string {
   })
 }
 
+/** Today's calendar date in IST as 'YYYY-MM-DD'. The server runs in UTC, so
+ *  `new Date().toISOString().slice(0, 10)` is YESTERDAY between midnight and
+ *  05:30 IST — every "today" for a deadline, a default date field or a
+ *  date-keyed query must go through this. */
+export function todayIST(nowMs: number = Date.now()): string {
+  return new Date(nowMs + 5.5 * 3_600_000).toISOString().slice(0, 10)
+}
+
+/** A Date (or ISO string) as its IST calendar date 'YYYY-MM-DD'. */
+export function istDateKey(date: string | Date): string {
+  const t = typeof date === 'string' ? Date.parse(date) : date.getTime()
+  return todayIST(t)
+}
+
 export function formatDateTime(date: string | Date | null | undefined): string {
   if (!date) return '--'
   return new Date(date).toLocaleString('en-IN', {
@@ -74,8 +88,11 @@ export function indentStageLabel(stage: string): string {
   }
 }
 
+/** Today in IST as 'YYYY-MM-DD'. Used to be the UTC date, which is yesterday
+ *  between midnight and 05:30 IST — every deadline check and default date
+ *  field that used it was a day behind first thing in the morning. */
 export function todayISO(): string {
-  return new Date().toISOString().slice(0, 10)
+  return todayIST()
 }
 
 /** Best display name for a person. Profiles in this DB sometimes have

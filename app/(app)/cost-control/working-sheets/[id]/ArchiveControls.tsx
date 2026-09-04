@@ -4,6 +4,7 @@
 // - Archived → banner "Archived by X on date" with Restore (granted users)
 //   and Delete forever (admin only, confirmed).
 import { useState, useTransition } from 'react'
+import { formatDate } from '@/lib/utils'
 import { useRouter } from 'next/navigation'
 import { Archive, ArchiveRestore, Trash2, Loader2 } from 'lucide-react'
 import { confirm } from '@/components/ui/confirm-dialog'
@@ -40,7 +41,7 @@ export function ArchiveControls({
           <Archive className="h-4 w-4 text-gray-500" />
           <span>
             <b>Archived</b> by {archivedByName ?? 'unknown'} on{' '}
-            {new Date(archivedAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'Asia/Kolkata' })}
+            {formatDate(archivedAt)}
             <span className="text-gray-500"> — hidden from all lists and totals.</span>
           </span>
         </p>

@@ -8,7 +8,7 @@ import {
   Inbox, Calendar, Building2,
   AlertTriangle, CheckCheck, Clock, ArrowRight,
 } from 'lucide-react'
-import { formatINR } from '@/lib/utils'
+import { formatINR, formatDate } from '@/lib/utils'
 import { inboxActionLabel } from '@/lib/approvals/inbox-action'
 import { MODULES } from '@/lib/modules'
 import { getModuleLabels, DEFAULT_MODULE_LABELS, type ModuleLabelMap } from '@/lib/module-labels'
@@ -386,5 +386,5 @@ function formatDateAgo(dateStr: string | null, now: number): string {
   if (diffDays === 1) return 'yesterday'
   if (diffDays < 7) return `${diffDays} days ago`
   if (diffDays < 30) return `${Math.floor(diffDays / 7)} wk ago`
-  return new Date(dateStr).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'Asia/Kolkata' })
+  return formatDate(dateStr)
 }
