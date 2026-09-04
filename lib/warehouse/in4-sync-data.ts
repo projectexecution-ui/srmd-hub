@@ -6,6 +6,10 @@ import { loadAliasMap } from '@/lib/aliases'
 import { plan } from './in4-sync'
 import type { SyncLine, SyncExisting, SyncPlan } from './in4-sync'
 
+/** Any Supabase client — the request-scoped one or the service role. */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export type SupabaseLike = { from: (table: string) => any }
+
 /** Reading the daily IN4 uploads and working out what would come across.
  *
  *  Reads BOTH tracker slots. The Warehouse PO screen only ever read `global`,
@@ -30,14 +34,14 @@ const num = (v: unknown): number | null => {
 /** Every line from both slots. Deliberately NOT de-duplicated across slots: the
  *  planner keys items and POs itself, so a line appearing in both is harmless
  *  and the PO slot is often the only one carrying a rate. */
-export async function readTrackerLines(): Promise<{ lines: SyncLine[]; slots: string[]; error?: string }> {
+export async function readTrackerLines(client?: SupabaseLike): Promise<{ lines: SyncLine[]; slots: string[]; error?: string }> {
   // Cached at the source (lib/procurement/tracker-cache), which also does the
   // id ordering — without it the database may hand the slots back either way
   // round, and anything that takes the FIRST value it sees for an item (its
   // unit) could differ between two runs over identical data.
   let data: Array<{ id: string; state: unknown }>
   try {
-    data = await getTrackerSlots(await createClient())
+    data = await getTrackerSlots(client ?? await createClient())
   } catch (e) {
     return { lines: [], slots: [], error: e instanceof Error ? e.message : 'tracker read failed' }
   }
@@ -72,8 +76,9 @@ export async function readTrackerLines(): Promise<{ lines: SyncLine[]; slots: st
 }
 
 /** What the warehouse already holds, keyed for the planner. */
-export async function readExisting(): Promise<{ have: SyncExisting; error?: string }> {
-  const sb = await createClient()
+export async function readExisting(client?: SupabaseLike): Promise<{ have: SyncExisting; error?: string }> {
+  // A cron has no cookies, so it hands in the service-role client; a page uses its own.
+  const sb = (client ?? await createClient()) as Awaited<ReturnType<typeof createClient>>
   // Items and POs are PAGED. PostgREST returns at most 1,000 rows and says
   // nothing about the rest; wh_items passed that in August, so the planner saw
   // 1,000 of 2,803 items, decided the other 1,803 were new, and every upload's
@@ -133,8 +138,8 @@ export type SyncPreview = {
 }
 
 /** The dry run. Reads everything, writes nothing. */
-export async function getSyncPreview(): Promise<SyncPreview> {
-  const [tracker, existing] = await Promise.all([readTrackerLines(), readExisting()])
+export async function getSyncPreview(client?: SupabaseLike): Promise<SyncPreview> {
+  const [tracker, existing] = await Promise.all([readTrackerLines(client), readExisting(client)])
   const error = tracker.error ?? existing.error
   const p = plan(tracker.lines, existing.have)
   return { plan: p, slots: tracker.slots, lineCount: tracker.lines.length, error }

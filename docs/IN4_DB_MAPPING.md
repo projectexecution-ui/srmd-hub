@@ -156,3 +156,24 @@ What exists now:
 **To finish validation:** upload the report once more (any day), then open /budget/in4 the same day — the comparison is then same-day and what is left "off" is a rule to fix, not a payment that landed since.
 
 **Not configured on Vercel yet.** The sync needs `IN4_DB_HOST`, `IN4_DB_PORT`, `IN4_DB_NAME=In4re`, `IN4_DB_USER`, `IN4_DB_PASSWORD` in Vercel → ct-hub → Settings → Environment Variables (Production). Until then the cron job answers 503 "not configured" and the page says so.
+
+## Phase 2 — built 5 Sept 2026: every upload becomes a feed; the masters
+
+One route (`/api/cron/in4-sync?feed=…`), one job per feed in the dispatcher, one switch per feed in `app_settings` (`in4_<feed>_live`), one admin screen (`/admin/in4`). Shadow mode compares with the stored upload; live mode writes the module's state the way its upload did (history snapshot, version bump, cache invalidation), so nothing downstream changes.
+
+| Feed | Replaces | Source | Verified against the 3 Sept uploads |
+|---|---|---|---|
+| `tracker` | both uploads on `/procurement-tracker` (Indent-to-Issue **and** the PO report) | `PURCH_INDENT_TO_ISSUE` → `lib/in4/tracker.ts` rebuilds the parser's `LineRecord` (same ids, same cleaned material strings the Warehouse catalogue is keyed on, IN4's `PROJECT_NAME` instead of the indent-code guess, IN4's order rate on every PO — so the PO-report slot becomes empty) | dry run 5 Sept: 4,887 lines · 22 projects · 604 pending (the 3 Sept upload had 4,766 lines); every PO priced |
+| `contractor` | `/contractor-report` Excel | `ENGG_RPT_WO_CERTIFICATE_DETAILS` (Running/Final/Retention/SalesTax, not cancelled) **+ `BI.ENGG_ADVANCE_PAYMENTS_HEADER`** (advances, not cancelled) **+ `BI.ENGG_MISC_PAYMENTS_HEADER`** → `lib/in4/contractor.ts` | dry run 5 Sept: Warehouse, Covered Seating Spaces, Prem Parking, AV House, Naturopathy reconciled to the rupee on all six figures (gross, recoveries, paid, deductions, retention, outstanding); Raj Uphaar +₹2,823 and SRAH +₹9 L = certificates raised since the 3 Sept upload. The Excel's "All Types" is exactly WO certificates + advances + misc payments |
+| `supplier` | `/supplier-report` Excel | `BI.FACT_PURCHASE_SUPPLIER_PAY` summed per certificate (bill = landed cost; category = material TYPE names joined with ",") **+ `BI.FACT_PURCHASE_SUPPLIER_ADV_PAY`** (advances, "(Uncategorised)") → `lib/in4/supplier.ts` | Admin Block, P2 Stepped Terraces, WC Reg Office, Old Swadhyay Hall, P2 Infra exact (±₹1 rounding); Raj Uphaar −1.4%, SRAH −0.8%; Covered Seating Spaces and Prem Parking off by about the advance amount — the Excel appears to list an advance twice (the certificate and its adjustment). Shown as near/off on /admin/in4 rather than hidden; the definition here (landed cost + advances given, cancelled excluded) is the coherent one |
+| `masters` | nothing (mirror only) | `ENGG_SERVICE_PROVIDER` (+contact, address, skills), `PURCH_SUPPLIER` (+contact, address), `PURCH_MATERIAL_LOOKUP` (+type/sub-type/UOM/HSN), `BI.DIM_STORE`, `COMMON.TBLCOMMONCOMPANY`, `COMMON_UOM_LOOKUP` → `in4_parties`, `in4_materials`, `in4_stores`, `in4_companies`, `in4_uoms` | 422 contractors · 178 suppliers · 3,972 materials · 24 stores · 4 companies · 42 units |
+
+Gotchas found on the way:
+
+- `PURCH_INDENT_TO_ISSUE` returns a `TOP 5` in 5 s and a `COUNT` in 6 s but the full 38-column result never arrives (9 min → connection reset). The plan is the problem, not the size: a 9-column projection with `OPTION (RECOMPILE, MAXDOP 1)` returns all 5,586 rows in 12 s. The tracker extract therefore reads the view in column groups keyed by (`INDENT_ITEM_ID`, `PO_DETAIL_ID`, `GRN_ID`) and joins them in code.
+- Advance and misc certificates have their own id spaces that overlap the WO certificates', so `in4_wo_certificates` is keyed by (`kind`, `certificate_id`).
+- `BI.FACT_ENGG_ADVANCE_PAYMENTS` has one row; the advance data is in `BI.ENGG_ADVANCE_PAYMENTS_HEADER` (362).
+- `COMMON_COMPANY_LOOKUP` holds In4Velocity; the trusts are `COMMON.TBLCOMMONCOMPANY` (2 SRET · 3 SRASSK · 4 SRJT · 5 SRMD FA).
+- The IN4 view's `PROJECT_NAME` agrees with every name the tracker's indent-code map produced; the codes it did not know (ND → New Guest House, DA → Design Admin) now land on their real project.
+
+Masters screens (`/admin/masters`): Contacts (IN4 parties, hub Vendors/JMR contractors matched by GSTIN or name), Items (IN4 catalogue as a type → sub-type → item tree; Warehouse/Inventory coverage; unmatched hub items with a pin), Stores, Trusts, Projects (IN4 sub-projects, area and budget beside each hub project; one-click "Use IN4 area"), Work categories (hub codes vs IN4 codes; the duplicate "01" surfaced), Name mapping. Manual pins live in `master_links`; nothing in the hub's own lists is rewritten.

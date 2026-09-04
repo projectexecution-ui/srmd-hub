@@ -24,7 +24,7 @@ describe('plannedJobs — a switched-off module takes its jobs with it', () => {
   })
   it('every job that mails a module owner names its module', () => {
     const untagged = CRON_JOBS.filter(j => !j.module).map(j => j.key)
-    expect(untagged.sort()).toEqual(['cc-backup', 'drive-archive', 'email-retry', 'in4-sync'])
+    expect(untagged.sort()).toEqual(['cc-backup', 'drive-archive', 'email-retry', 'in4-contractor', 'in4-masters', 'in4-supplier', 'in4-sync', 'in4-tracker'])
   })
 })
 

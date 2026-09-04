@@ -6,7 +6,7 @@
 //
 // Two modes, one switch (app_settings.in4_budget_live):
 //   shadow  — everything except the last step. The Excel upload stays the source;
-//             the comparison on /budget/in4 shows how close IN4 gets.
+//             the comparison on /admin/in4 shows how close IN4 gets.
 //   live    — the sync IS the upload. The upload button stays as a fallback.
 //
 // Server-only, service-role. Called by the cron dispatcher twice a day and by
@@ -66,7 +66,7 @@ async function loadMirror(sb: SupabaseClient, x: In4Extract, reports: Map<number
   await upsertAll(sb, 'in4_subprojects', x.subprojects.map(s => ({ ...s, synced_at: now })), 'id')
   await upsertAll(sb, 'in4_skills', x.skills.map(s => ({ id: s.id, name: s.name, code: splitCode(s.name).code || null, parent_id: s.parent_id, short_name: s.short_name, is_active: s.is_active, synced_at: now })), 'id')
   await upsertAll(sb, 'in4_work_orders', x.workOrders.map(w => ({ ...w, synced_at: now })), 'wo_id')
-  await upsertAll(sb, 'in4_wo_certificates', x.certificates.map(c => ({ ...c, synced_at: now })), 'certificate_id')
+  await upsertAll(sb, 'in4_wo_certificates', x.certificates.map(c => ({ ...c, kind: 'wo', synced_at: now })), 'kind,certificate_id')
 
   const lines: Record<string, unknown>[] = []
   for (const r of reports.values()) {

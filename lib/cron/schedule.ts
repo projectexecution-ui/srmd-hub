@@ -65,6 +65,12 @@ export const CRON_JOBS: CronJob[] = [
   // before bph-sync so the pull that follows sees fresh figures. Portal-wide on
   // purpose: Cost Control's ERP columns depend on it even if the BPH tile is off.
   { key: 'in4-sync',              policy: 'each',  am: '/api/cron/in4-sync?cron=1',    pm: '/api/cron/in4-sync?cron=1' },
+  // The other IN4 feeds — Indent → PO tracker, Contractor and Supplier reports,
+  // and the masters mirror. One job each so a slow one cannot time out another.
+  { key: 'in4-tracker',           policy: 'each',  am: '/api/cron/in4-sync?cron=1&feed=tracker',    pm: '/api/cron/in4-sync?cron=1&feed=tracker' },
+  { key: 'in4-contractor',        policy: 'each',  am: '/api/cron/in4-sync?cron=1&feed=contractor', pm: '/api/cron/in4-sync?cron=1&feed=contractor' },
+  { key: 'in4-supplier',          policy: 'each',  am: '/api/cron/in4-sync?cron=1&feed=supplier',   pm: '/api/cron/in4-sync?cron=1&feed=supplier' },
+  { key: 'in4-masters',           policy: 'each',  am: '/api/cron/in4-sync?cron=1&feed=masters',    pm: '/api/cron/in4-sync?cron=1&feed=masters' },
   { key: 'bph-sync',              policy: 'each', module: 'cost-control',  am: '/api/cron/bph-sync?cron=1',            pm: '/api/cron/bph-sync?cron=1' },
   { key: 'email-retry',           policy: 'each',  am: '/api/cron/email-retry?cron=1',         pm: '/api/cron/email-retry?cron=1' },
   // Google Drive archive — copies new uploads to the Shared drive and moves the
