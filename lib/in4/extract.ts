@@ -35,6 +35,22 @@ export interface In4WorkOrder {
 /** WO value split by BOQ item into sub-categories — the report attributes a WO
  *  raised at category level to sub-skills by this share. */
 export interface In4WoBoqShare { wo_id: number; subcategory_id: number; amt: number }
+/** One WO BOQ line as ORDERED, with its name/unit from the paired dimension.
+ *  `item_id` is the join key to the certified abstracts — never `boq_id`, which
+ *  the two IN4 facts disagree on by one. */
+export interface In4WoBoqItem {
+  item_id: number; wo_id: number; boq_id: number; category_id: number; subcategory_id: number
+  quantity: number; rate: number; amt: number
+  boq_name: string | null; boq_subname: string | null; description: string | null; uom: string | null; uom_id: number | null
+}
+/** One certified quantity, per BOQ item per certificate ("abstract" = IN4's
+ *  word for a bill/RA certificate). `bill_no`/`abstract_dt` come from the
+ *  ENGG_BOQ_ABSTRACT header; joins to In4WoBoqItem on `item_id`. */
+export interface In4WoAbstractItem {
+  abstract_id: number; wo_id: number; item_id: number
+  executed_quantity: number; recommended_rate: number; executed_amt: number
+  bill_no: string | null; display_no: string | null; abstract_dt: string | null
+}
 export interface In4WoCertificate {
   certificate_id: number; wo_id: number; subproject_id: number; category_id: number; subcategory_id: number
   status: number; gross_bill_amt: number; certified_amt: number; paid_amt: number; advance_recovery_amt: number
@@ -46,6 +62,8 @@ export interface In4SupplierSkill {
 }
 
 const n = (v: unknown): number => (v == null ? 0 : Number(v))
+const str = (v: unknown): string | null => { const s = v == null ? '' : String(v).replace(/\s+/g, ' ').trim(); return s || null }
+const day = (v: unknown): string | null => { if (v == null) return null; const d = new Date(v as string); return Number.isNaN(d.getTime()) ? null : d.toISOString().slice(0, 10) }
 
 export async function extractProjects(): Promise<In4Project[]> {
   const rows = await in4Query<Record<string, unknown>>(`
@@ -135,6 +153,42 @@ export async function extractWoBoqShares(): Promise<In4WoBoqShare[]> {
   const rows = await in4Query<Record<string, unknown>>(`
     SELECT WO_ID, WORK_SUBCATEGORY_ID, SUM(AMT) amt FROM BI.FACT_ENGG_WORK_ORDER_BOQ GROUP BY WO_ID, WORK_SUBCATEGORY_ID`)
   return rows.map(r => ({ wo_id: n(r.WO_ID), subcategory_id: n(r.WORK_SUBCATEGORY_ID), amt: n(r.amt) }))
+}
+
+/** Every WO BOQ line as ORDERED (quantity × rate = amt), with its name/unit
+ *  from the paired dimension BI.DIM_ENGG_WORK_ORDER_BOQ (keyed on ITEM_ID). The
+ *  budget split above keeps SUM(AMT); this carries the item rows themselves. */
+export async function extractWoBoqItems(): Promise<In4WoBoqItem[]> {
+  const rows = await in4Query<Record<string, unknown>>(`
+    SELECT f.ITEM_ID, f.WO_ID, f.BOQ_ID, f.WORK_CATEGORY_ID, f.WORK_SUBCATEGORY_ID,
+           f.QUANTITY, f.RATE, f.AMT,
+           d.BOQ_NAME, d.BOQ_SUBNAME, d.BOQ_DESCRIPTION, d.UOM, d.UOM_ID
+    FROM BI.FACT_ENGG_WORK_ORDER_BOQ f
+    LEFT JOIN BI.DIM_ENGG_WORK_ORDER_BOQ d ON d.ITEM_ID = f.ITEM_ID`)
+  return rows.map(r => ({
+    item_id: n(r.ITEM_ID), wo_id: n(r.WO_ID), boq_id: n(r.BOQ_ID),
+    category_id: n(r.WORK_CATEGORY_ID), subcategory_id: n(r.WORK_SUBCATEGORY_ID),
+    quantity: n(r.QUANTITY), rate: n(r.RATE), amt: n(r.AMT),
+    boq_name: str(r.BOQ_NAME), boq_subname: str(r.BOQ_SUBNAME), description: str(r.BOQ_DESCRIPTION),
+    uom: str(r.UOM), uom_id: r.UOM_ID == null ? null : n(r.UOM_ID),
+  }))
+}
+
+/** Every certified BOQ quantity, one row per (certificate, BOQ item), with the
+ *  bill number + date from the ENGG_BOQ_ABSTRACT header. Joins to the ordered
+ *  items on ITEM_ID. LEFT JOIN so an executed row is never dropped if its header
+ *  is somehow missing (bill_no/date come back null then). */
+export async function extractWoAbstractItems(): Promise<In4WoAbstractItem[]> {
+  const rows = await in4Query<Record<string, unknown>>(`
+    SELECT a.ABSTRACT_ID, a.WO_ID, a.ITEM_ID, a.EXECUTED_QUANTITY, a.RECOMMENDED_RATE, a.EXECUTED_AMT,
+           h.BILL_NO, h.DISPLAY_NO, h.ABSTRACT_DT
+    FROM BI.FACT_ENGG_WO_ABSTRACT_BOQ a
+    LEFT JOIN dbo.ENGG_BOQ_ABSTRACT h ON h.ID = a.ABSTRACT_ID`)
+  return rows.map(r => ({
+    abstract_id: n(r.ABSTRACT_ID), wo_id: n(r.WO_ID), item_id: n(r.ITEM_ID),
+    executed_quantity: n(r.EXECUTED_QUANTITY), recommended_rate: n(r.RECOMMENDED_RATE), executed_amt: n(r.EXECUTED_AMT),
+    bill_no: str(r.BILL_NO), display_no: str(r.DISPLAY_NO), abstract_dt: day(r.ABSTRACT_DT),
+  }))
 }
 
 export async function extractWoCertificates(): Promise<In4WoCertificate[]> {

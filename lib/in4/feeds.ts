@@ -12,7 +12,7 @@
 // twice a day) and by "Run now" on /admin/in4.
 
 import { createClient as createServiceClient, type SupabaseClient } from '@supabase/supabase-js'
-import { extractProjects, extractSubprojects, extractSkills } from './extract'
+import { extractProjects, extractSubprojects, extractSkills, extractWoBoqItems, extractWoAbstractItems } from './extract'
 import {
   extractIndentRows, extractContractorCerts, extractSupplierCerts,
   extractParties, extractMaterials, extractStores, extractCompanies, extractUoms,
@@ -27,12 +27,12 @@ import { isOn, type SettingValues } from '@/lib/warehouse/settings'
 import type { ReportDoc as ContractorDoc } from '@/lib/contractor-report'
 import type { ReportDoc as SupplierDoc } from '@/lib/supplier-report'
 
-export type Feed = 'budget' | 'tracker' | 'contractor' | 'supplier' | 'masters'
+export type Feed = 'budget' | 'tracker' | 'contractor' | 'supplier' | 'masters' | 'boq'
 export type FeedMode = 'shadow' | 'live' | 'mirror'
-export const FEEDS: Feed[] = ['budget', 'tracker', 'contractor', 'supplier', 'masters']
+export const FEEDS: Feed[] = ['budget', 'tracker', 'contractor', 'supplier', 'masters', 'boq']
 
 export const FEED_LIVE_KEY: Partial<Record<Feed, string>> = {
-  budget: 'in4_budget_live', tracker: 'in4_tracker_live', contractor: 'in4_contractor_live', supplier: 'in4_supplier_live',
+  budget: 'in4_budget_live', tracker: 'in4_tracker_live', contractor: 'in4_contractor_live', supplier: 'in4_supplier_live', boq: 'in4_boq_live',
 }
 export function feedLastKey(feed: Feed): string { return feed === 'budget' ? 'in4_last_sync' : `in4_last_sync_${feed}` }
 
@@ -42,6 +42,7 @@ export const FEED_META: Record<Feed, { label: string; replaces: string; page: st
   contractor: { label: 'Contractor report', replaces: 'the "All Types Certificates Details" Excel on /contractor-report', page: '/contractor-report', source: 'ENGG_RPT_WO_CERTIFICATE_DETAILS · BI.ENGG_ADVANCE_PAYMENTS_HEADER · BI.ENGG_MISC_PAYMENTS_HEADER' },
   supplier:   { label: 'Supplier report', replaces: 'the "All Purchase Payments Report" Excel on /supplier-report', page: '/supplier-report', source: 'BI.FACT_PURCHASE_SUPPLIER_PAY · BI.FACT_PURCHASE_SUPPLIER_ADV_PAY' },
   masters:    { label: 'Masters (contractors, suppliers, materials, stores, trusts, units)', replaces: 'nothing — mirrors IN4 for the Masters screens', page: '/admin/masters', source: 'ENGG_SERVICE_PROVIDER · PURCH_SUPPLIER · PURCH_MATERIAL_LOOKUP · BI.DIM_STORE · COMMON.TBLCOMMONCOMPANY · COMMON_UOM_LOOKUP' },
+  boq:        { label: 'WO BOQ items (ordered vs certified)', replaces: 'nothing yet — mirrors ordered BOQ + per-bill certified quantities for later use', page: '/admin/in4', source: 'BI.FACT_ENGG_WORK_ORDER_BOQ · BI.DIM_ENGG_WORK_ORDER_BOQ · BI.FACT_ENGG_WO_ABSTRACT_BOQ · ENGG_BOQ_ABSTRACT' },
 }
 
 export interface FeedResult {
@@ -132,6 +133,33 @@ async function runMasters(sb: SupabaseClient, now: string): Promise<{ rows: numb
   const rows = projects.length + subprojects.length + skills.length + parties.length + materials.length + stores.length + companies.length + uoms.length
   const contractors = parties.filter(p => p.kind === 'contractor').length
   return { rows, summary: `${contractors} contractors · ${parties.length - contractors} suppliers · ${materials.length} materials · ${stores.length} stores · ${companies.length} trusts · ${uoms.length} units` }
+}
+
+// ── WO BOQ items: ordered rows + certified-per-bill (abstract) rows ────────────
+// Mirror only — fills in4_wo_boq_items + in4_wo_abstract_items for a later screen
+// to read (ordered qty/rate beside each bill's certified qty). The live switch
+// (in4_boq_live) is wired for consistency with the other feeds; there is no
+// hub-state write yet, so shadow and live both just mirror.
+async function runBoq(sb: SupabaseClient, now: string): Promise<{ rows: number; summary: string }> {
+  const items = await extractWoBoqItems()
+  const abstracts = await extractWoAbstractItems()
+
+  await upsertAll(sb, 'in4_wo_boq_items', items.map(i => ({
+    item_id: i.item_id, wo_id: i.wo_id, boq_id: i.boq_id, category_id: i.category_id, subcategory_id: i.subcategory_id,
+    quantity: i.quantity, rate: i.rate, amt: i.amt,
+    boq_name: i.boq_name, boq_subname: i.boq_subname, description: i.description, uom: i.uom, uom_id: i.uom_id, synced_at: now,
+  })), 'item_id')
+  await dropStale(sb, 'in4_wo_boq_items', now)
+
+  await upsertAll(sb, 'in4_wo_abstract_items', abstracts.map(a => ({
+    abstract_id: a.abstract_id, item_id: a.item_id, wo_id: a.wo_id,
+    executed_quantity: a.executed_quantity, recommended_rate: a.recommended_rate, executed_amt: a.executed_amt,
+    bill_no: a.bill_no, display_no: a.display_no, abstract_dt: a.abstract_dt, synced_at: now,
+  })), 'abstract_id,item_id')
+  await dropStale(sb, 'in4_wo_abstract_items', now)
+
+  const certs = new Set(abstracts.map(a => a.abstract_id)).size
+  return { rows: items.length + abstracts.length, summary: `${items.length} ordered BOQ items · ${abstracts.length} certified rows across ${certs} certificates` }
 }
 
 // ── Indent → PO ──────────────────────────────────────────────────────────────
@@ -305,6 +333,7 @@ export async function runFeed(feed: Exclude<Feed, 'budget'>, opts: FeedOptions):
   try {
     let out: { rows: number; comparison?: unknown; wrote?: boolean; summary: string }
     if (feed === 'masters') out = await runMasters(sb, startedAt)
+    else if (feed === 'boq') out = await runBoq(sb, startedAt)
     else if (feed === 'tracker') out = await runTracker(sb, startedAt, mode, opts.actorId ?? null)
     else if (feed === 'contractor') out = await runContractor(sb, startedAt, mode, opts.actorId ?? null)
     else out = await runSupplier(sb, startedAt, mode, opts.actorId ?? null)

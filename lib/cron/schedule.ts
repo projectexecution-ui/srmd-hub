@@ -71,6 +71,7 @@ export const CRON_JOBS: CronJob[] = [
   { key: 'in4-contractor',        policy: 'each',  am: '/api/cron/in4-sync?cron=1&feed=contractor', pm: '/api/cron/in4-sync?cron=1&feed=contractor' },
   { key: 'in4-supplier',          policy: 'each',  am: '/api/cron/in4-sync?cron=1&feed=supplier',   pm: '/api/cron/in4-sync?cron=1&feed=supplier' },
   { key: 'in4-masters',           policy: 'each',  am: '/api/cron/in4-sync?cron=1&feed=masters',    pm: '/api/cron/in4-sync?cron=1&feed=masters' },
+  { key: 'in4-boq',               policy: 'each',  am: '/api/cron/in4-sync?cron=1&feed=boq',        pm: '/api/cron/in4-sync?cron=1&feed=boq' },
   { key: 'bph-sync',              policy: 'each', module: 'cost-control',  am: '/api/cron/bph-sync?cron=1',            pm: '/api/cron/bph-sync?cron=1' },
   { key: 'email-retry',           policy: 'each',  am: '/api/cron/email-retry?cron=1',         pm: '/api/cron/email-retry?cron=1' },
   // Google Drive archive — copies new uploads to the Shared drive and moves the

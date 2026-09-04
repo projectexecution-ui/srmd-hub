@@ -110,7 +110,7 @@ export function In4SyncClient({ configured, missingVars, feeds, budgetComparison
       {/* Feeds */}
       <Card className="overflow-hidden">
         <div className="px-4 py-3 border-b border-gray-100 bg-gray-50/60">
-          <h3 className="text-sm font-semibold text-gray-900">The five feeds</h3>
+          <h3 className="text-sm font-semibold text-gray-900">The {feeds.length} feeds</h3>
           <p className="text-[11px] text-gray-500 mt-0.5">Shadow = the sync runs and compares, the upload stays the source. Live = the sync is the upload. Open a row for the comparison with your last upload.</p>
         </div>
         <div className="divide-y divide-gray-100">
