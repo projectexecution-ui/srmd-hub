@@ -1,4 +1,5 @@
 'use client'
+import { bumpShell } from '@/lib/shell-actions'
 import { useState, useMemo } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { Card, CardContent } from '@/components/ui/card'
@@ -93,6 +94,7 @@ export default function DashboardModulesEditor({ groups: initialGroups, canRenam
       )
       return
     }
+    await bumpShell()
     // The sidebar + dashboard tiles read module_visibility from the shared app
     // layout, which does NOT reliably re-render on a client-side router.refresh()
     // (the same reason renameLabel below does a full reload). A hard reload

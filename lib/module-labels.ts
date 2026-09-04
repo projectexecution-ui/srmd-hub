@@ -6,6 +6,7 @@
 import { cache } from 'react'
 import { createClient } from '@/lib/supabase/server'
 import { MODULES } from '@/lib/modules'
+import { getShell } from '@/lib/shell'
 
 export interface ModuleLabel { label: string; description: string }
 export type ModuleLabelMap = Record<string, ModuleLabel>
@@ -24,6 +25,8 @@ export const DEFAULT_MODULE_LABELS: ModuleLabelMap = Object.fromEntries(
  */
 export const getModuleLabels = cache(async (): Promise<ModuleLabelMap> => {
   try {
+    const shell = await getShell()
+    if (shell) return shell.labels
     const supabase = await createClient()
     const { data, error } = await supabase
       .from('module_labels')

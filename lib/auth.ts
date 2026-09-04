@@ -5,22 +5,23 @@
 import { cache } from 'react'
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
-import { getUserResilient } from '@/lib/supabase/auth-retry'
 import type { Profile, PermissionMap, PermAction } from '@/lib/types'
 import { moduleOf } from '@/lib/modules'
+import { getShell } from '@/lib/shell'
+import { getMyUser } from '@/lib/auth-user'
 
-export const getMyUser = cache(async () => {
-  const supabase = await createClient()
-  // Retried, not a bare getUser(): during the Supabase auth incident a single
-  // 504 here made every page behave as though the user had signed out. cache()
-  // means the retry runs once per request, not once per caller.
-  const { user } = await getUserResilient(supabase)
-  return user
-})
+export { getMyUser }
+
+// Profile, permissions and the module switches come from the cached shell
+// (lib/shell.ts — one call per request, one minute per user) whenever it is
+// available; the per-query paths below remain as the fallback for local envs
+// without a service key, and as the source of truth the shell mirrors.
 
 export const getMyProfile = cache(async (): Promise<Profile | null> => {
   const user = await getMyUser()
   if (!user) return null
+  const shell = await getShell()
+  if (shell) return shell.profile
   const supabase = await createClient()
   // .maybeSingle() returns {data: null, error: null} when the row is
   // genuinely missing (e.g. handle_new_user trigger hadn't fired yet);
@@ -46,6 +47,8 @@ export const getMyProfile = cache(async (): Promise<Profile | null> => {
 export const getMyPermissions = cache(async (): Promise<PermissionMap> => {
   const user = await getMyUser()
   if (!user) return {}
+  const shell = await getShell()
+  if (shell) return shell.permissions
   const supabase = await createClient()
   const { data, error } = await supabase.rpc('my_permissions')
   if (error || !data) return {}
@@ -73,6 +76,8 @@ export function can(perms: PermissionMap, slug: string, action: PermAction): boo
 export const getDisabledModuleSlugs = cache(async (): Promise<Set<string>> => {
   const user = await getMyUser()
   if (!user) return new Set()
+  const shell = await getShell()
+  if (shell) return shell.disabled
   const supabase = await createClient()
   const { data, error } = await supabase
     .from('module_visibility')

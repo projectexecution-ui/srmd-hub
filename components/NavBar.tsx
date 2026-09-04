@@ -12,6 +12,8 @@ import {
 import { MODULES } from '@/lib/modules'
 import { buildNavTree, type SidebarGroup } from '@/lib/sidebar-groups'
 import NotificationBell from '@/components/NotificationBell'
+import { ProjectTree } from '@/components/nav/ProjectTree'
+import type { FlatProject } from '@/lib/project-tree'
 
 interface NavBarProps {
   profile: Profile
@@ -22,6 +24,8 @@ interface NavBarProps {
   moduleLabels?: Record<string, string>
   /** Admin-defined groups that nest modules under a named, collapsible branch. */
   sidebarGroups?: SidebarGroup[]
+  /** Live projects for the Projects lane (tree by parent). */
+  projects?: FlatProject[]
 }
 
 // Compact labels for the sidebar so they don't wrap. Defaults to the
@@ -42,7 +46,7 @@ const GROUPS_OPEN_KEY = 'srmd_nav_groups_open'
 
 type NavItem = { href: string; label: string; icon: typeof LayoutDashboard; slug: string | null }
 
-export default function NavBar({ profile, permissions, disabledSlugs = [], isPortalOwner = false, moduleLabels = {}, sidebarGroups = [] }: NavBarProps) {
+export default function NavBar({ profile, permissions, disabledSlugs = [], isPortalOwner = false, moduleLabels = {}, sidebarGroups = [], projects = [] }: NavBarProps) {
   const disabled = new Set(disabledSlugs)
   const pathname = usePathname()
   const router = useRouter()
@@ -89,6 +93,7 @@ export default function NavBar({ profile, permissions, disabledSlugs = [], isPor
     }))
 
   const dashboardLink: NavItem = { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard, slug: null }
+  const showProjectsLane = !!permissions['cost-control']?.view && !disabled.has('cost-control') && projects.length > 0
 
   const canSeeAdmin = isPortalOwner
     || profile.role === 'admin'
@@ -196,6 +201,7 @@ export default function NavBar({ profile, permissions, disabledSlugs = [], isPor
             <ProfileRow profile={profile} />
             <div className="flex-1 overflow-y-auto py-2">
               {renderLink(dashboardLink, true)}
+              {showProjectsLane && <ProjectTree projects={projects} mobile onNavigate={() => setOpen(false)} />}
               {tree.groups.map(g => renderGroup(g, true))}
               {tree.ungrouped.map(it => renderLink(it, true))}
               {bottomLinks.map(it => renderLink(it, true))}
@@ -262,10 +268,15 @@ export default function NavBar({ profile, permissions, disabledSlugs = [], isPor
 
         <div className="flex-1 overflow-y-auto py-2 px-2">
           {collapsed ? (
-            flatLinks.map(it => renderLink(it, false))
+            <>
+              {renderLink(dashboardLink, false)}
+              {showProjectsLane && <ProjectTree projects={projects} collapsed />}
+              {flatLinks.slice(1).map(it => renderLink(it, false))}
+            </>
           ) : (
             <>
               {renderLink(dashboardLink, false)}
+              {showProjectsLane && <ProjectTree projects={projects} />}
               {tree.groups.map(g => renderGroup(g, false))}
               {tree.ungrouped.map(it => renderLink(it, false))}
               {bottomLinks.map(it => renderLink(it, false))}

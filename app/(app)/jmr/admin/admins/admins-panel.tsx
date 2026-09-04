@@ -1,4 +1,5 @@
 'use client'
+import { bumpShell } from '@/lib/shell-actions'
 
 import { useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
@@ -104,6 +105,7 @@ export function JmrRolesPanel({ profiles, overrides: initialOverrides, blocks: i
     }
 
     setBusyId(null)
+    await bumpShell()
     router.refresh()
   }
 

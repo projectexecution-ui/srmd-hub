@@ -8,6 +8,7 @@ import { AccessPendingScreen } from '@/components/AccessPendingScreen'
 import { getMyProfile, getMyPermissions, getDisabledModuleSlugs, isPortalOwner } from '@/lib/auth'
 import { getModuleLabels } from '@/lib/module-labels'
 import { getSidebarGroups } from '@/lib/sidebar-groups.server'
+import { getShell } from '@/lib/shell'
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const [profile, permissions, disabledSlugs, portalOwner, moduleLabelsMap, sidebarGroups] = await Promise.all([
