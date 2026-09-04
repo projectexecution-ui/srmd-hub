@@ -22,6 +22,7 @@ import { buildContractorDocs, compareContractor } from './contractor'
 import { buildSupplierDocs, compareSupplier } from './supplier'
 import { splitCode, cleanLabel } from './compute'
 import { revalidateTrackerSoon } from '@/lib/procurement/tracker-cache'
+import { revalidateReportState } from '@/lib/report-state-cache'
 import { isOn, type SettingValues } from '@/lib/warehouse/settings'
 import type { ReportDoc as ContractorDoc } from '@/lib/contractor-report'
 import type { ReportDoc as SupplierDoc } from '@/lib/supplier-report'
@@ -238,6 +239,7 @@ async function writeReportState<D extends { projectName: string; areaBySub?: Rec
   }
   const { error: updErr } = await sb.from(table).upsert({ id: 'global', state: { ...state, reports: next }, version: (cur?.version ?? 0) + 1, updated_at: now, updated_by: actorId })
   if (updErr) throw new Error(`${table}: ${updErr.message}`)
+  revalidateReportState(table)
 }
 
 async function runContractor(sb: SupabaseClient, now: string, mode: FeedMode, actorId: string | null) {

@@ -5,6 +5,7 @@
 
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { getReportState, revalidateReportState } from '@/lib/report-state-cache'
 
 const STATE_ID = 'global'
 const MAX_BYTES = 8 * 1024 * 1024
@@ -14,29 +15,18 @@ export async function GET() {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'unauthenticated' }, { status: 401 })
 
-  const { data, error } = await supabase
-    .from('supplier_report_state')
-    .select('state, version, updated_at, updated_by')
-    .eq('id', STATE_ID)
-    .single()
-
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
-
-  let updatedByName: string | null = null
-  if (data.updated_by) {
-    const { data: prof } = await supabase
-      .from('profiles')
-      .select('full_name, name')
-      .eq('id', data.updated_by)
-      .single()
-    updatedByName = prof?.full_name ?? prof?.name ?? null
-  }
+  // Cached (lib/report-state-cache) — the blob is a few hundred kB and was
+  // parsed from scratch on every open. Auth stays out here, ahead of the cache.
+  let row
+  try { row = await getReportState('supplier_report_state', supabase) }
+  catch (e) { return NextResponse.json({ error: e instanceof Error ? e.message : 'read failed' }, { status: 500 }) }
+  if (!row) return NextResponse.json({ error: 'not found' }, { status: 404 })
 
   return NextResponse.json({
-    state: data.state,
-    version: data.version,
-    updated_at: data.updated_at,
-    updated_by_name: updatedByName,
+    state: row.state,
+    version: row.version,
+    updated_at: row.updatedAt,
+    updated_by_name: row.updatedByName,
   })
 }
 
@@ -92,6 +82,7 @@ export async function PUT(req: Request) {
     .eq('id', STATE_ID)
 
   if (updErr) return NextResponse.json({ error: updErr.message }, { status: 500 })
+  revalidateReportState('supplier_report_state')
 
   return NextResponse.json({ ok: true, version: newVersion })
 }
