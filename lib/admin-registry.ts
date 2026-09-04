@@ -59,6 +59,13 @@ export const ADMIN_SCREENS: AdminScreen[] = [
   { href: '/daily-site-report/digest',       label: 'Site report digest',      module: 'daily-site-report',   area: 'notifications', hint: 'The shareable daily material-arrivals card' },
 
   // ── Lists & masters ──
+  { href: '/admin/masters',                  label: 'Masters',                 module: '',                    area: 'masters', hint: 'Contacts, items, stores, trusts, projects and work categories — IN4’s register against the hub’s lists' },
+  { href: '/admin/masters/contacts',         label: 'Contacts',                module: '',                    area: 'masters', hint: 'Contractors and suppliers from IN4, with PAN and GSTIN; hub entries matched onto them' },
+  { href: '/admin/masters/items',            label: 'Items',                   module: '',                    area: 'masters', hint: 'IN4’s material catalogue as a tree; which items the Warehouse already holds' },
+  { href: '/admin/masters/stores',           label: 'Stores',                  module: '',                    area: 'masters', hint: 'IN4’s stores against the Warehouse’s sites' },
+  { href: '/admin/masters/trusts',           label: 'Trusts',                  module: '',                    area: 'masters', hint: 'The paying companies, from IN4' },
+  { href: '/admin/masters/projects',         label: 'Projects (registry)',     module: '',                    area: 'masters', hint: 'Every hub project with its IN4 sub-projects, area and budget; the gaps' },
+  { href: '/admin/masters/categories',       label: 'Work categories vs IN4',  module: '',                    area: 'masters', hint: 'The hub’s discipline codes against IN4’s' },
   { href: '/admin/masters/mapping',          label: 'Project name mapping',    module: '',                    area: 'masters', hint: 'What IN4, the budget report, the procurement upload and Zoho call each project' },
   { href: '/cost-control/admin/disciplines', label: 'Work categories',         module: 'cost-control',        area: 'masters', hint: 'Disciplines and sub-skills used by every project' },
   { href: '/cost-control/projects/new',      label: 'New project',             module: 'cost-control',        area: 'masters', hint: 'Create a project with its code, group and approval chain' },
@@ -76,7 +83,7 @@ export const ADMIN_SCREENS: AdminScreen[] = [
   { href: '/projects',                       label: 'Projects (master)',       module: 'projects',            area: 'masters', hint: 'The project master as the first version of the hub kept it' },
 
   // ── Data & imports ──
-  { href: '/budget/in4',                     label: 'IN4 live sync',           module: 'budget-vs-actual',    area: 'data', hint: 'Budget report rebuilt from IN4 twice a day; shadow comparison; the live switch' },
+  { href: '/admin/in4',                      label: 'IN4 live sync',           module: '',                    area: 'data', hint: 'Every IN4 report the hub used to upload, read from IN4 twice a day; per-feed comparison and live switch' },
   { href: '/cost-control/import',            label: 'Cost Control import',     module: 'cost-control',        area: 'data', hint: 'Excel budget import and the BPH → project mapping' },
   { href: '/cost-control/import/bph',        label: 'BPH → project links',     module: 'cost-control',        area: 'data', hint: 'Which Budget-Hub project feeds which Internal Estimate' },
   { href: '/warehouse/settings/sync',        label: 'Warehouse ← IN4 uploads', module: 'warehouse',           area: 'data', hint: 'Bring items and POs across from the Indent → PO upload' },
