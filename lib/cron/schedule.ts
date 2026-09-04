@@ -67,6 +67,9 @@ export const CRON_JOBS: CronJob[] = [
   { key: 'in4-sync',              policy: 'each',  am: '/api/cron/in4-sync?cron=1',    pm: '/api/cron/in4-sync?cron=1' },
   { key: 'bph-sync',              policy: 'each', module: 'cost-control',  am: '/api/cron/bph-sync?cron=1',            pm: '/api/cron/bph-sync?cron=1' },
   { key: 'email-retry',           policy: 'each',  am: '/api/cron/email-retry?cron=1',         pm: '/api/cron/email-retry?cron=1' },
+  // Google Drive archive — copies new uploads to the Shared drive and moves the
+  // copies of deleted files under Archive/. Portal-wide; 503s until configured.
+  { key: 'drive-archive',         policy: 'each',  am: '/api/cron/drive-archive?cron=1',      pm: '/api/cron/drive-archive?cron=1' },
   // am = Monday week-plan ping (route self-gates to Mondays); pm = evening open-promises reminder
   { key: 'schedule-nudge',        policy: 'each', module: 'schedule',  am: '/api/cron/schedule-nudge?cron=1',      pm: '/api/cron/schedule-nudge?cron=1&slot=pm' },
 ]
