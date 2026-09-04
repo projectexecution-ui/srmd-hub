@@ -2,6 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import { getTrackerSlots } from '@/lib/procurement/tracker-cache'
 import { in4Key } from './in4-items'
 import { fetchAll } from './paging'
+import { loadAliasMap } from '@/lib/aliases'
 import { plan } from './in4-sync'
 import type { SyncLine, SyncExisting, SyncPlan } from './in4-sync'
 
@@ -85,6 +86,11 @@ export async function readExisting(): Promise<{ have: SyncExisting; error?: stri
       sb.from('wh_po').select('id, po_no').is('deleted_at', null).order('id').range(from, to)),
     sb.from('projects').select('id, name'),
   ])
+  // The alias table (Admin → Project name mapping) is consulted alongside the
+  // exact hub name, so a project the upload spells IN4's way ("New Guest
+  // House", "Ekant Kutirs") still lands on the right hub project.
+  const aliases = await loadAliasMap(sb, 'procurement').catch(() => null)
+  const in4Aliases = await loadAliasMap(sb, 'in4').catch(() => null)
   const error = itemsRes.error ?? listsRes.error?.message
     ?? posRes.error ?? projectsRes.error?.message ?? undefined
 
@@ -107,6 +113,14 @@ export async function readExisting(): Promise<{ have: SyncExisting; error?: stri
   for (const p of projectsRes.data ?? []) {
     const k = in4Key(p.name)
     if (k) have.projectsByName.set(k, p.id)
+  }
+  for (const m of [in4Aliases, aliases]) {
+    if (!m) continue
+    for (const [norm, { projectId }] of m) {
+      // in4Key() and the alias normalisation agree (lower-case, non-alphanumerics
+      // to single spaces), so the alias key is already the planner's key.
+      if (projectId && !have.projectsByName.has(norm)) have.projectsByName.set(norm, projectId)
+    }
   }
   return { have, error }
 }

@@ -102,6 +102,26 @@ async function seedLinksFromFileNames(sb: SupabaseClient, state: HubState, x: In
     inserts.push({ subproject_id: sp, bph_project_id: p.id, source: 'filename' })
   }
   if (inserts.length) await upsertAll(sb, 'in4_subproject_links', inserts, 'subproject_id')
+
+  // Every linked IN4 sub-project also becomes a known spelling in the one alias
+  // table (Admin → Project name mapping): its name and its EX_CODE → the hub
+  // project the Budget-Hub project is linked to. Existing rows are left alone.
+  try {
+    const { data: bphLinks } = await sb.from('cc_bph_project_links').select('bph_project_id, cc_project_id')
+    const ccByBph = new Map((bphLinks ?? []).map(r => [r.bph_project_id as string, r.cc_project_id as string]))
+    const spById = new Map(x.subprojects.map(s => [s.id, s]))
+    const aliasRows: Record<string, unknown>[] = []
+    for (const [spId, bph] of links) {
+      const cc = ccByBph.get(bph); const sp = spById.get(spId)
+      if (!cc || !sp) continue
+      aliasRows.push({ source: 'in4', alias: sp.name, project_id: cc, why: 'IN4 sub-project name (from the IN4 sync)' })
+      if (sp.ex_code) aliasRows.push({ source: 'in4', alias: sp.ex_code, project_id: cc, why: 'IN4 sub-project EX_CODE (from the IN4 sync)' })
+    }
+    for (const batch of chunk(aliasRows, 200)) {
+      const { error } = await sb.from('project_aliases').upsert(batch, { onConflict: 'source,alias_norm', ignoreDuplicates: true })
+      if (error) console.warn('[in4-sync] alias seed:', error.message)
+    }
+  } catch (e) { console.warn('[in4-sync] alias seed skipped:', e instanceof Error ? e.message : e) }
   return links
 }
 
