@@ -26,6 +26,9 @@ interface NavBarProps {
   sidebarGroups?: SidebarGroup[]
   /** Live projects for the Projects lane (tree by parent). */
   projects?: FlatProject[]
+  /** Collapsed flag read from the cookie on the server, so the first paint is
+   *  already right and nothing has to stay invisible until hydration. */
+  initialCollapsed?: boolean
 }
 
 // Compact labels for the sidebar so they don't wrap. Defaults to the
@@ -46,21 +49,23 @@ const GROUPS_OPEN_KEY = 'srmd_nav_groups_open'
 
 type NavItem = { href: string; label: string; icon: typeof LayoutDashboard; slug: string | null }
 
-export default function NavBar({ profile, permissions, disabledSlugs = [], isPortalOwner = false, moduleLabels = {}, sidebarGroups = [], projects = [] }: NavBarProps) {
+export default function NavBar({ profile, permissions, disabledSlugs = [], isPortalOwner = false, moduleLabels = {}, sidebarGroups = [], projects = [], initialCollapsed }: NavBarProps) {
   const disabled = new Set(disabledSlugs)
   const pathname = usePathname()
   const router = useRouter()
   const supabase = createClient()
   const [open, setOpen] = useState(false)
-  const [ui, setUi] = useState<{ collapsed: boolean; hydrated: boolean }>({ collapsed: false, hydrated: false })
+  const [ui, setUi] = useState<{ collapsed: boolean; hydrated: boolean }>({ collapsed: initialCollapsed ?? false, hydrated: initialCollapsed !== undefined })
   const { collapsed, hydrated } = ui
   // Which named groups are expanded (persisted). Absent = fall back to
   // auto-open when the group contains the active route.
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({})
 
   useEffect(() => {
-    let isCollapsed = false
-    try { isCollapsed = localStorage.getItem(COLLAPSE_KEY) === '1' } catch {}
+    // The cookie decided the first paint; localStorage only fills in for a
+    // browser that has the old flag and no cookie yet.
+    let isCollapsed = initialCollapsed ?? false
+    if (initialCollapsed === undefined) { try { isCollapsed = localStorage.getItem(COLLAPSE_KEY) === '1' } catch {} }
     let og: Record<string, boolean> = {}
     try { const raw = localStorage.getItem(GROUPS_OPEN_KEY); if (raw) og = JSON.parse(raw) } catch {}
     // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -73,6 +78,7 @@ export default function NavBar({ profile, permissions, disabledSlugs = [], isPor
     setUi(s => {
       const next = !s.collapsed
       try { localStorage.setItem(COLLAPSE_KEY, next ? '1' : '0') } catch {}
+      try { document.cookie = `${COLLAPSE_KEY}=${next ? '1' : '0'}; path=/; max-age=31536000; samesite=lax` } catch {}
       return { ...s, collapsed: next }
     })
   }

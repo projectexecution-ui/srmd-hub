@@ -1,4 +1,5 @@
 import { redirect } from 'next/navigation'
+import { cookies } from 'next/headers'
 import { Toaster } from 'sonner'
 import NavBar from '@/components/NavBar'
 import { InstallPrompt } from '@/components/InstallPrompt'
@@ -25,6 +26,10 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   )
 
   if (!profile) redirect('/login')
+  // The sidebar used to render invisible until it had read localStorage, so
+  // every page flashed. The collapsed flag is also kept in a cookie now, so
+  // the server can paint the right width on the first frame.
+  const navCollapsed = (await cookies()).get('srmd_nav_collapsed')?.value === '1'
 
   if (profile.is_active === false) {
     return (
@@ -46,6 +51,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           isPortalOwner={portalOwner}
           moduleLabels={moduleLabels}
           sidebarGroups={sidebarGroups}
+          initialCollapsed={navCollapsed}
         />
         <main className="flex-1 min-w-0 overflow-x-auto">
           {children}
