@@ -166,7 +166,10 @@ export function In4SyncClient({ configured, feeds, budgetComparison, rows, bphOp
       <Card className="overflow-hidden">
         <div className="px-4 py-3 border-b border-gray-100 bg-gray-50/60">
           <h3 className="text-sm font-semibold text-gray-900">Which IN4 sub-project is which Budget-Hub project</h3>
-          <p className="text-[11px] text-gray-500 mt-0.5">Needed by the budget feed only. Seeded from the file names of your uploads. {unlinkedBph.length > 0 ? `${unlinkedBph.length} Budget-Hub project${unlinkedBph.length === 1 ? '' : 's'} still need a sub-project: ${unlinkedBph.map(p => p.name).join(', ')}.` : 'Every Budget-Hub project is linked.'}</p>
+          <p className="text-[11px] text-gray-500 mt-0.5">Needed by the budget feed only. Seeded from the file names of your uploads on the first sync.{' '}
+            {rows.length === 0
+              ? 'IN4’s sub-projects appear here after the first run of the Budget or Masters feed.'
+              : unlinkedBph.length > 0 ? `${unlinkedBph.length} Budget-Hub project${unlinkedBph.length === 1 ? '' : 's'} still need a sub-project: ${unlinkedBph.map(p => p.name).join(', ')}.` : 'Every Budget-Hub project is linked.'}</p>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-[12.5px]">
@@ -174,6 +177,7 @@ export function In4SyncClient({ configured, feeds, budgetComparison, rows, bphOp
               <tr><th className="px-4 py-2">IN4 sub-project</th><th className="px-3 py-2">Code</th><th className="px-3 py-2">Budget-Hub project</th><th className="px-3 py-2">How</th></tr>
             </thead>
             <tbody>
+              {rows.length === 0 && <tr><td colSpan={4} className="px-4 py-6 text-center text-sm text-gray-400">Nothing mirrored from IN4 yet.</td></tr>}
               {rows.map(r => (
                 <tr key={r.subprojectId} className="border-t border-gray-100">
                   <td className="px-4 py-1.5 text-gray-900">{r.name}</td>
