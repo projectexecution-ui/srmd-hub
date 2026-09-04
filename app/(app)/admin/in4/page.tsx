@@ -1,7 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { requirePermission } from '@/lib/auth'
 import { PageHeader } from '@/components/PageHeader'
-import { in4Config } from '@/lib/in4/db'
+import { in4Config, in4MissingVars } from '@/lib/in4/db'
 import { readLastSync } from '@/lib/in4/sync'
 import { FEEDS, FEED_META, readFeedModes, readLastFeedSync, type Feed } from '@/lib/in4/feeds'
 import type { ComparisonSummary } from '@/lib/in4/compare'
@@ -69,6 +69,7 @@ export default async function In4AdminPage() {
       />
       <In4SyncClient
         configured={!!in4Config()}
+        missingVars={in4MissingVars()}
         feeds={feeds}
         budgetComparison={budgetComparison}
         rows={rows}

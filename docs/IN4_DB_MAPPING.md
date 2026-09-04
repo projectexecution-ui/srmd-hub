@@ -155,7 +155,7 @@ What exists now:
 
 **To finish validation:** upload the report once more (any day), then open /budget/in4 the same day — the comparison is then same-day and what is left "off" is a rule to fix, not a payment that landed since.
 
-**Not configured on Vercel yet.** The sync needs `IN4_DB_HOST`, `IN4_DB_PORT`, `IN4_DB_NAME=In4re`, `IN4_DB_USER`, `IN4_DB_PASSWORD` in Vercel → ct-hub → Settings → Environment Variables (Production). Until then the cron job answers 503 "not configured" and the page says so.
+**Not configured on Vercel yet.** The sync needs `IN4_DB_USER` and `IN4_DB_PASSWORD` in Vercel (host, port and database default to the RDS endpoint and In4re since 5 Sept) → ct-hub → Settings → Environment Variables (Production). Until then the cron job answers 503 "not configured" and the page says so.
 
 ## Phase 2 — built 5 Sept 2026: every upload becomes a feed; the masters
 

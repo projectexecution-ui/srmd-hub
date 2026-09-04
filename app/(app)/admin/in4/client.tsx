@@ -27,6 +27,7 @@ export interface FeedRow {
 
 interface Props {
   configured: boolean
+  missingVars: string[]
   feeds: FeedRow[]
   budgetComparison: ComparisonSummary | null
   rows: LinkRow[]
@@ -34,7 +35,7 @@ interface Props {
   unlinkedBph: BphOption[]
 }
 
-export function In4SyncClient({ configured, feeds, budgetComparison, rows, bphOptions, unlinkedBph }: Props) {
+export function In4SyncClient({ configured, missingVars, feeds, budgetComparison, rows, bphOptions, unlinkedBph }: Props) {
   const router = useRouter()
   const [busy, setBusy] = useState<string | null>(null)
   const [err, setErr] = useState<string | null>(null)
@@ -91,12 +92,12 @@ export function In4SyncClient({ configured, feeds, budgetComparison, rows, bphOp
       {!configured && (
         <Card className="p-4 border-amber-300 bg-amber-50 text-sm text-amber-900">
           <p className="font-semibold">IN4 is not connected on this deployment.</p>
-          <p className="mt-1">Add <code>IN4_DB_HOST</code>, <code>IN4_DB_PORT</code>, <code>IN4_DB_NAME</code>, <code>IN4_DB_USER</code> and <code>IN4_DB_PASSWORD</code> in Vercel → ct-hub → Settings → Environment Variables (Production), then redeploy. Locally they live in <code>.env.in4.local</code>.</p>
+          <p className="mt-1">This deployment cannot see {missingVars.map((v, i) => <span key={v}>{i > 0 ? ' and ' : ''}<code>{v}</code></span>)}. In Vercel → ct-hub → Settings → Environment Variables, the name must be spelt exactly like that, ticked for <b>Production</b>, and the site redeployed after saving (Deployments → ⋯ → Redeploy). Host, port and database need no variable — they default to the RDS endpoint and <code>In4re</code>.</p>
         </Card>
       )}
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <Stat label="Connection" value={configured ? 'Connected' : 'Not set up'} hint={configured ? 'read-only login to In4re' : 'IN4_DB_* variables missing'} tone={configured ? 'green' : 'red'} />
+        <Stat label="Connection" value={configured ? 'Connected' : 'Not set up'} hint={configured ? 'read-only login to In4re' : `${missingVars.join(', ')} missing`} tone={configured ? 'green' : 'red'} />
         <Stat label="Feeds live" value={`${liveCount} of ${switchable}`} hint={liveCount === switchable ? 'no Excel upload left' : `${switchable - liveCount} still on upload`} tone={liveCount === switchable ? 'green' : 'amber'} />
         <Stat label="Runs" value="Twice a day" hint="09:00 and 15:00 IST, one job per feed" />
         <div className="rounded-xl border border-gray-200 bg-white p-3 flex items-center">
