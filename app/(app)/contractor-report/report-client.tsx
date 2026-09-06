@@ -14,7 +14,7 @@ import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { QueryError } from '@/components/ui/query-error'
 import {
-  FileSpreadsheet, FileText, UploadCloud, Download, Loader2, Eye, EyeOff, X, Clock, Lock, Search,
+  FileSpreadsheet, FileText, UploadCloud, Download, Loader2, Eye, EyeOff, X, Clock, Lock, Search, Database,
   CheckCircle2, AlertTriangle, ChevronRight, ChevronDown, ChevronsDownUp, ChevronsUpDown, Layers,
 } from 'lucide-react'
 import { toast } from 'sonner'
@@ -68,7 +68,9 @@ async function parseFile(file: File): Promise<ReportDoc[]> {
 
 type FullState = { reports: ReportDoc[]; settings: ContractorReportSettings }
 
-export default function ContractorReportClient({ canDelete = false }: { canDelete?: boolean }) {
+export type In4Status = { live: boolean; at: string | null; error: string | null } | null
+
+export default function ContractorReportClient({ canDelete = false, in4 = null }: { canDelete?: boolean; in4?: In4Status }) {
   const [reports, setReports] = useState<ReportDoc[]>([])
   const [costBase, setCostBase] = useState<CostBase>('bill')
   const [showMetrics, setShowMetrics] = useState(true)
@@ -269,7 +271,7 @@ export default function ContractorReportClient({ canDelete = false }: { canDelet
       {/* Page-wide drop overlay — only visible while the user is actively
           dragging a file. Pointer-events disabled so React still receives the
           drop event on the wrapper underneath. */}
-      {dragOver && (
+      {dragOver && !in4?.live && (
         <div className="fixed inset-0 z-50 bg-[#1F4E78]/15 backdrop-blur-[2px] flex items-center justify-center pointer-events-none">
           <div className="bg-white rounded-2xl px-8 py-7 shadow-2xl border-2 border-dashed border-[#1F4E78] text-center">
             <UploadCloud className="h-10 w-10 text-[#1F4E78] mx-auto mb-2" />
@@ -281,7 +283,7 @@ export default function ContractorReportClient({ canDelete = false }: { canDelet
 
       <PageHeader
         title="Contractor Report"
-        subtitle="Category × Contractor summary, saved for the whole team. Re-upload the latest IN4 export to update."
+        subtitle={in4?.live ? 'Category × Contractor summary, saved for the whole team. Written from IN4 twice a day.' : 'Category × Contractor summary, saved for the whole team. Re-upload the latest IN4 export to update.'}
       >
         <label className="inline-flex items-center gap-1.5 text-xs text-gray-600 cursor-pointer">
           <input type="checkbox" checked={showWorking} onChange={e => setShowWorking(e.target.checked)}
@@ -298,6 +300,16 @@ export default function ContractorReportClient({ canDelete = false }: { canDelet
         {/* Compact upload affordance — replaces the old main-entrance card.
             Click → file picker. Drop anywhere on the page → the overlay
             above catches it. */}
+        {in4?.live && (
+          <span
+            title={in4.error ? `The last IN4 sync failed: ${in4.error}` : 'Written from IN4 twice a day — no Excel upload needed'}
+            className={`inline-flex items-center gap-1.5 h-8 px-2.5 rounded-lg border text-xs font-medium ${in4.error ? 'border-rose-200 bg-rose-50 text-rose-800' : 'border-emerald-200 bg-emerald-50 text-emerald-800'}`}
+          >
+            <Database className="h-4 w-4" />
+            <span className="hidden sm:inline">{in4.error ? 'IN4 sync failed' : `Live from IN4${in4.at ? ` · ${formatDateTime(in4.at)}` : ''}`}</span>
+          </span>
+        )}
+        {!in4?.live && (
         <button
           type="button"
           onClick={() => inputRef.current?.click()}
@@ -308,6 +320,7 @@ export default function ContractorReportClient({ canDelete = false }: { canDelet
           {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <UploadCloud className="h-4 w-4" />}
           <span className="hidden sm:inline">{busy ? 'Uploading…' : 'Upload'}</span>
         </button>
+        )}
         <input ref={inputRef} type="file" accept=".xlsx,.xls" multiple className="hidden"
           onChange={e => { handleFiles(e.target.files); e.target.value = '' }} />
       </PageHeader>
@@ -321,7 +334,7 @@ export default function ContractorReportClient({ canDelete = false }: { canDelet
           <div className="h-12 w-12 rounded-2xl bg-[#1F4E78]/10 text-[#1F4E78] inline-flex items-center justify-center mb-3">
             <UploadCloud className="h-6 w-6" />
           </div>
-          <p className="text-sm text-gray-700 font-medium">No reports saved yet.</p>
+          <p className="text-sm text-gray-700 font-medium">{in4?.live ? 'Nothing from IN4 yet.' : 'No reports saved yet.'}</p>
           <p className="text-xs text-gray-500 mt-1">
             Upload the IN4 <b>“All Types Certificates Details”</b> export, or drop it anywhere on this page — it&apos;ll be saved for the whole team.
           </p>

@@ -1,145 +1,108 @@
 'use client'
-import { useEffect, useMemo, useState } from 'react'
+// The Projects lane in the sidebar: the portfolio as a two-level tree (group →
+// project) instead of one long list. Each branch remembers whether it is open;
+// the branch holding the project on screen opens itself. A project links to its
+// Internal Estimate page — the closest thing to a project cockpit today.
+
 import Link from 'next/link'
+import { useEffect, useMemo, useState } from 'react'
 import { usePathname } from 'next/navigation'
-import { ChevronRight, Building2 } from 'lucide-react'
+import { Building2, ChevronDown, ChevronRight, FolderKanban } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { buildProjectTree, countTree, projectIdFromPath, type FlatProject } from '@/lib/revamp/project-tree'
+import { buildProjectTree, countTree, projectIdFromPath, type FlatProject } from '@/lib/project-tree'
+import { projectHref } from '@/lib/revamp/tabs'
 
 const OPEN_KEY = 'srmd_nav_projects_open'
-const BRANCHES_KEY = 'srmd_nav_project_branches'
+const LANE_KEY = 'srmd_nav_projects_lane'
 
-/**
- * The Projects lane, as a tree.
- *
- * Collapsed by default — Aksha's standing rule that long lists start rolled up
- * (39 projects would otherwise bury every other lane). Opens automatically when
- * you are looking at a project, so the tree always shows where you are without
- * you having to find it.
- */
-export function ProjectTree({
-  projects, onNavigate,
-}: {
+interface Props {
   projects: FlatProject[]
+  mobile?: boolean
+  /** Desktop rail collapsed to icons — render one icon that opens the list page. */
+  collapsed?: boolean
   onNavigate?: () => void
-}) {
+}
+
+export function ProjectTree({ projects, mobile = false, collapsed = false, onNavigate }: Props) {
   const pathname = usePathname()
   const tree = useMemo(() => buildProjectTree(projects), [projects])
   const activeId = projectIdFromPath(pathname)
-
-  const [open, setOpen] = useState(false)
-  const [branches, setBranches] = useState<Record<string, boolean>>({})
-  const [hydrated, setHydrated] = useState(false)
+  const [laneOpen, setLaneOpen] = useState(true)
+  const [open, setOpen] = useState<Record<string, boolean>>({})
 
   useEffect(() => {
-    let o = false
-    let b: Record<string, boolean> = {}
-    try { o = localStorage.getItem(OPEN_KEY) === '1' } catch { /* private mode */ }
-    try { const raw = localStorage.getItem(BRANCHES_KEY); if (raw) b = JSON.parse(raw) } catch { /* ignore */ }
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setOpen(o); setBranches(b); setHydrated(true)
+    try { const raw = localStorage.getItem(OPEN_KEY); if (raw) setOpen(JSON.parse(raw)) } catch {}
+    try { const l = localStorage.getItem(LANE_KEY); if (l != null) setLaneOpen(l === '1') } catch {}
   }, [])
 
-  // Looking at a project? Show it, whatever was remembered.
-  const isOnAProject = !!activeId
-  const laneOpen = open || isOnAProject
-
-  const parentOf = useMemo(() => {
-    const m = new Map<string, string>()
-    for (const t of tree) for (const c of t.children) m.set(c.id, t.id)
-    return m
-  }, [tree])
-
-  const branchOpen = (id: string) => {
-    if (branches[id] !== undefined) return branches[id]
-    // Auto-open the branch holding the project on screen.
-    return activeId === id || parentOf.get(activeId ?? '') === id
-  }
-
-  function toggleLane() {
-    const next = !laneOpen
+  const isOpen = (id: string, hasActive: boolean) => (id in open ? open[id] : hasActive)
+  const toggle = (id: string, hasActive: boolean) => {
+    const next = { ...open, [id]: !isOpen(id, hasActive) }
     setOpen(next)
-    try { localStorage.setItem(OPEN_KEY, next ? '1' : '0') } catch { /* ignore */ }
+    try { localStorage.setItem(OPEN_KEY, JSON.stringify(next)) } catch {}
+  }
+  const toggleLane = () => {
+    setLaneOpen(v => { try { localStorage.setItem(LANE_KEY, v ? '0' : '1') } catch {}; return !v })
   }
 
-  function toggleBranch(id: string) {
-    const next = { ...branches, [id]: !branchOpen(id) }
-    setBranches(next)
-    try { localStorage.setItem(BRANCHES_KEY, JSON.stringify(next)) } catch { /* ignore */ }
-  }
+  if (projects.length === 0) return null
 
-  const total = countTree(tree)
+  const linkCls = (active: boolean) => cn(
+    'flex items-center gap-2 text-sm rounded-lg transition-colors min-h-[36px]',
+    mobile ? 'px-3 py-2' : 'px-2 py-1.5',
+    active ? 'text-blue-700 bg-blue-50 font-medium' : 'text-gray-700 hover:bg-gray-50',
+  )
+
+  if (collapsed && !mobile) {
+    return (
+      <Link href="/cost-control" title={`Projects (${countTree(tree)})`} className={cn('flex items-center justify-center px-2 py-2.5 my-0.5 rounded-xl text-sm font-medium', (pathname.startsWith('/cost-control') || pathname.startsWith('/project/')) ? 'text-blue-700 bg-blue-50' : 'text-gray-700 hover:bg-gray-50')}>
+        <FolderKanban className="h-5 w-5" />
+      </Link>
+    )
+  }
 
   return (
-    <div>
-      <button
-        type="button"
-        onClick={toggleLane}
-        aria-expanded={laneOpen}
-        className={cn(
-          'flex w-full items-center gap-3 px-4 py-2.5 text-sm font-medium transition-colors min-h-[44px]',
-          isOnAProject ? 'text-indigo-800 bg-indigo-50/60' : 'text-gray-700 hover:bg-gray-50',
-        )}
-      >
-        <Building2 className="h-5 w-5 flex-shrink-0" />
-        <span className="flex-1 text-left">Projects</span>
-        <span className="text-[11px] tabular-nums text-gray-400">{total}</span>
-        <ChevronRight className={cn('h-4 w-4 text-gray-400 transition-transform', laneOpen && 'rotate-90')} />
+    <div className={mobile ? '' : 'my-0.5'}>
+      <button type="button" onClick={toggleLane} aria-expanded={laneOpen}
+        className={cn('w-full flex items-center gap-2 text-sm font-semibold rounded-xl transition-colors', mobile ? 'px-4 py-2.5' : 'px-3 py-2', activeId ? 'text-blue-700' : 'text-gray-700 hover:bg-gray-50')}>
+        <FolderKanban className={cn('h-5 w-5 flex-shrink-0', activeId ? 'text-blue-600' : 'text-gray-400')} />
+        <span className="flex-1 text-left truncate">Projects</span>
+        <span className="text-[11px] font-semibold text-gray-400 tabular-nums">{countTree(tree)}</span>
+        <ChevronDown className={cn('h-4 w-4 flex-shrink-0 text-gray-400 transition-transform', laneOpen && 'rotate-180')} />
       </button>
-
-      {/* Render only once hydrated OR when a project is open, so the server and
-          first client paint agree and React does not warn about a mismatch. */}
-      {(hydrated || isOnAProject) && laneOpen && (
-        <div className="pb-1">
-          {tree.map(p => {
-            const hasKids = p.children.length > 0
-            const isActive = activeId === p.id
-            const bOpen = branchOpen(p.id)
-
+      {laneOpen && (
+        <div className={cn('mt-0.5 space-y-0.5 border-l border-gray-200', mobile ? 'ml-6 pl-2' : 'ml-5 pl-2')}>
+          {tree.map(g => {
+            const hasActive = g.id === activeId || g.children.some(c => c.id === activeId)
+            if (g.children.length === 0) {
+              return (
+                <Link key={g.id} href={projectHref(g.id)} onClick={onNavigate} className={linkCls(g.id === activeId)} title={g.name}>
+                  <Building2 className="h-4 w-4 flex-shrink-0 text-gray-400" />
+                  <span className="truncate">{g.label}</span>
+                </Link>
+              )
+            }
+            const o = isOpen(g.id, hasActive)
             return (
-              <div key={p.id}>
-                <div className="flex items-stretch">
-                  {hasKids ? (
-                    <button
-                      type="button"
-                      onClick={() => toggleBranch(p.id)}
-                      aria-label={bOpen ? `Collapse ${p.name}` : `Expand ${p.name}`}
-                      className="pl-6 pr-1 flex items-center text-gray-400 hover:text-gray-700"
-                    >
-                      <ChevronRight className={cn('h-3.5 w-3.5 transition-transform', bOpen && 'rotate-90')} />
-                    </button>
-                  ) : (
-                    <span className="pl-6 pr-1 w-[1.375rem]" aria-hidden />
-                  )}
-                  <Link
-                    href={`/project/${p.id}`}
-                    onClick={onNavigate}
-                    className={cn(
-                      'flex-1 min-w-0 py-1.5 pr-3 text-[13px] truncate min-h-[36px] flex items-center',
-                      isActive ? 'font-semibold text-indigo-800' : 'text-gray-600 hover:text-gray-900',
-                    )}
-                    title={p.name}
-                  >
-                    {p.code && <span className="font-mono text-[10px] text-gray-400 mr-1.5 flex-shrink-0">{p.code}</span>}
-                    <span className="truncate">{p.name}</span>
+              <div key={g.id}>
+                <div className="flex items-center">
+                  <button type="button" onClick={() => toggle(g.id, hasActive)} aria-expanded={o} className="p-1.5 -ml-1 rounded text-gray-400 hover:text-gray-700 hover:bg-gray-100" title={o ? 'Collapse' : 'Expand'}>
+                    {o ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
+                  </button>
+                  <Link href={projectHref(g.id)} onClick={onNavigate} className={cn(linkCls(g.id === activeId), 'flex-1 min-w-0 font-medium')} title={g.name}>
+                    <span className="truncate">{g.label}</span>
+                    <span className="ml-auto text-[10px] text-gray-400 tabular-nums">{g.children.length}</span>
                   </Link>
                 </div>
-
-                {hasKids && bOpen && p.children.map(c => (
-                  <Link
-                    key={c.id}
-                    href={`/project/${c.id}`}
-                    onClick={onNavigate}
-                    className={cn(
-                      'flex items-center pl-12 pr-3 py-1.5 text-[13px] truncate min-h-[36px]',
-                      activeId === c.id ? 'font-semibold text-indigo-800' : 'text-gray-500 hover:text-gray-900',
-                    )}
-                    title={c.name}
-                  >
-                    {c.code && <span className="font-mono text-[10px] text-gray-400 mr-1.5 flex-shrink-0">{c.code}</span>}
-                    <span className="truncate">{c.name}</span>
-                  </Link>
-                ))}
+                {o && (
+                  <div className={cn('space-y-0.5 border-l border-gray-100', mobile ? 'ml-5 pl-2' : 'ml-4 pl-2')}>
+                    {g.children.map(c => (
+                      <Link key={c.id} href={projectHref(c.id)} onClick={onNavigate} className={linkCls(c.id === activeId)} title={c.name}>
+                        <span className="truncate">{c.code ?? c.name}</span>
+                      </Link>
+                    ))}
+                  </div>
+                )}
               </div>
             )
           })}

@@ -73,6 +73,14 @@ export async function GET(req: Request) {
   // split — never "run every daily job in both slots" (which would double-send).
   // app_settings.value is TEXT, so the ledger is a JSON string.
   let ledger: Record<string, string> | null = null
+  // Modules the Portal Owner has switched off. A switched-off module's job is
+  // skipped here, so "off" means off for its digests and reminders too — not
+  // just for its tile. Read failure → empty set → every job runs (fail open).
+  const disabledModules = new Set<string>()
+  if (supa) {
+    const { data: vis } = await supa.from('module_visibility').select('slug, enabled')
+    for (const r of (vis ?? []) as Array<{ slug: string; enabled: boolean }>) if (!r.enabled) disabledModules.add(r.slug)
+  }
   if (supa) {
     const { data, error } = await supa.from('app_settings').select('value').eq('key', LEDGER_KEY).maybeSingle()
     if (!error) {
@@ -92,7 +100,7 @@ export async function GET(req: Request) {
 
   if (ledger) {
     mode = 'ledger'
-    const planned = plannedJobs(slot, ledger, istDate, every3)
+    const planned = plannedJobs(slot, ledger, istDate, every3, disabledModules)
     results = await Promise.all(planned.map(async j => ({ ...(await runJob(base, j.path, CRON_SECRET)), key: j.key, policy: j.policy })))
     // Persist: stamp daily successes + the heartbeat. Fail-open (best effort).
     const nextLedger = stampLedger(ledger, results.map(r => ({ key: r.key!, policy: r.policy!, ok: r.ok })), istDate)
@@ -109,5 +117,5 @@ export async function GET(req: Request) {
   }
 
   const okCount = results.filter(r => r.ok).length
-  return NextResponse.json({ ok: true, slot, mode, ran: results.length, ok_count: okCount, results })
+  return NextResponse.json({ ok: true, slot, mode, ran: results.length, ok_count: okCount, skipped_modules: [...disabledModules], results })
 }

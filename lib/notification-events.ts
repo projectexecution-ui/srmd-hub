@@ -147,6 +147,44 @@ export const NOTIFICATION_EVENTS: NotificationEventDef[] = [
     audience: 'The project’s named Atm Head',
   },
   {
+    type: 'cc_transfer_pending',
+    label: 'Budget transfer waiting for your approval',
+    description: 'Somebody has asked to move approved budget from one work category to another. '
+      + 'It crosses two categories, so what each was approved to spend changes — which is why it '
+      + 'is signed rather than just done. Sent to whoever it is with now: the Atm Head first, then the Trustee.',
+    audience: 'The Atm Head, then the Trustee',
+  },
+  {
+    type: 'cc_transfer_rejected',
+    label: 'Budget transfer turned down',
+    description: 'A transfer was not approved, with the reason. Goes to the person who raised it, '
+      + 'so they learn what to change rather than waiting on a request that will never move.',
+    audience: 'The person who raised it',
+  },
+  {
+    type: 'cc_transfer_awaiting_in4',
+    label: 'Budget transfer to be made in IN4',
+    description: 'Fully approved and now waiting on the ERP. CT Hub never writes a budget itself, so '
+      + 'nothing changes until somebody makes the move in IN4 and ticks it in the billing queue.',
+    audience: 'Billing & the Coordinator',
+  },
+  {
+    type: 'cc_transfer_confirmed',
+    label: 'Budget transfer confirmed against IN4',
+    description: 'A sync checked both lines and found they moved by the approved amount, so the request '
+      + 'closed itself. Confirmation that the ERP and CT Hub agree, rather than someone having to compare them.',
+    audience: 'The raiser and both approvers',
+  },
+  {
+    type: 'cc_transfer_mismatch',
+    label: 'Budget transfer does not match IN4',
+    description: 'A transfer was approved and recorded as done, but the sync found the two lines did not '
+      + 'move as approved — a partial move, the wrong line, or nothing at all. The request stays open and '
+      + 'says what actually happened, because a transfer that was signed and never made is the case most '
+      + 'worth catching early.',
+    audience: 'The raiser and the Coordinator',
+  },
+  {
     type: 'comment_mention',
     label: 'You were @mentioned in a comment',
     description: 'When someone tags you with @ in a comment (any module), you get the comment and a link straight to it.',

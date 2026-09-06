@@ -1,4 +1,5 @@
 import { redirect } from 'next/navigation'
+import { cookies } from 'next/headers'
 import { Toaster } from 'sonner'
 import NavBar from '@/components/NavBar'
 import { InstallPrompt } from '@/components/InstallPrompt'
@@ -9,40 +10,30 @@ import { DemoBanner } from '@/components/DemoBanner'
 import { getMyProfile, getMyPermissions, getDisabledModuleSlugs, isPortalOwner } from '@/lib/auth'
 import { getModuleLabels } from '@/lib/module-labels'
 import { getSidebarGroups } from '@/lib/sidebar-groups.server'
-import { IS_DEMO } from '@/lib/demo-mode'
-import { createClient } from '@/lib/supabase/server'
-import type { FlatProject } from '@/lib/revamp/project-tree'
+import { getShell } from '@/lib/shell'
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
-  const [profile, permissions, disabledSlugs, portalOwner, moduleLabelsMap, sidebarGroups] = await Promise.all([
+  const [profile, permissions, disabledSlugs, portalOwner, moduleLabelsMap, sidebarGroups, shell] = await Promise.all([
     getMyProfile(),
     getMyPermissions(),
     getDisabledModuleSlugs(),
     isPortalOwner(),
     getModuleLabels(),
     getSidebarGroups(),
+    // The same cached shell the calls above read from — no extra round trip.
+    // It carries the live project list for the sidebar's Projects tree.
+    getShell(),
   ])
   // Flatten { label, description } → just label for the NavBar prop shape.
   const moduleLabels: Record<string, string> = Object.fromEntries(
     Object.entries(moduleLabelsMap).map(([slug, m]) => [slug, m.label]),
   )
 
-  // Project hierarchy for the revamped Projects lane. Only queried on the
-  // trial deployment, so the live site carries no extra round trip.
-  let projectList: FlatProject[] = []
-  if (IS_DEMO && profile) {
-    const sb = await createClient()
-    const { data } = await sb.from('projects')
-      .select('id, code, name, parent_project_id').is('archived_at', null)
-    projectList = ((data ?? []) as Array<Record<string, unknown>>).map(p => ({
-      id: p.id as string,
-      code: (p.code as string | null) ?? null,
-      name: p.name as string,
-      parentId: (p.parent_project_id as string | null) ?? null,
-    }))
-  }
-
   if (!profile) redirect('/login')
+  // The sidebar used to render invisible until it had read localStorage, so
+  // every page flashed. The collapsed flag is also kept in a cookie now, so
+  // the server can paint the right width on the first frame.
+  const navCollapsed = (await cookies()).get('srmd_nav_collapsed')?.value === '1'
 
   if (profile.is_active === false) {
     return (
@@ -66,7 +57,8 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           isPortalOwner={portalOwner}
           moduleLabels={moduleLabels}
           sidebarGroups={sidebarGroups}
-          projectList={projectList}
+          projects={shell?.projects ?? []}
+          initialCollapsed={navCollapsed}
         />
         <main className="flex-1 min-w-0 overflow-x-auto">
           {children}

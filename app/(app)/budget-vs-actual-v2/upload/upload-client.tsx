@@ -37,7 +37,7 @@ function fmtAge(iso: string | null): string {
 
 interface StateMeta { at: string | null; by: string | null }
 
-export default function UploadClient() {
+export default function UploadClient({ live = { budget: false, contractor: false, supplier: false } }: { live?: Record<Kind, boolean> }) {
   const [meta, setMeta] = useState<Record<Kind, StateMeta>>({
     budget: { at: null, by: null }, contractor: { at: null, by: null }, supplier: { at: null, by: null },
   })
@@ -134,6 +134,12 @@ export default function UploadClient() {
       <PageHeader title="Upload — Budget vs Actual V2" back="/budget-vs-actual-v2"
         subtitle="Drop the three IN4 Excels here. Each goes straight to its module — V2, Contractor and Supplier all update together." />
 
+      {(live.budget || live.contractor || live.supplier) && (
+        <Card className="p-3 bg-emerald-50 border-emerald-200 text-[12px] text-emerald-900 leading-relaxed">
+          Live from IN4, twice a day — no Excel needed: {[live.budget && 'Budget', live.contractor && 'Contractor', live.supplier && 'Supplier'].filter(Boolean).join(', ')}.
+          The tiles below stay as a fallback. <Link className="underline" href="/admin/in4">IN4 live sync</Link>
+        </Card>
+      )}
       <Card className="p-3 bg-blue-50 border-blue-200 text-[12px] text-blue-900 leading-relaxed">
         Same files you upload today, in one place. Contractor &amp; Supplier save here directly.
         Budget BPH still uses its own uploader at <Link className="underline" href="/budget">Budget vs Actual</Link> — click the tile below.

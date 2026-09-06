@@ -6,6 +6,7 @@ import { checkIsCcReviewer } from '@/components/cost-control/ws-actions'
 import { PageHeader } from '@/components/PageHeader'
 import { Card } from '@/components/ui/card'
 import { QueryError } from '@/components/ui/query-error'
+import { TransferInboxSection, type TransferInboxRow } from '@/components/cost-control/TransferInboxSection'
 import { isWaitingOnMe, type MyApprovalContext } from '@/lib/cost-control/my-approvals'
 import { getCcSettings } from '@/lib/cost-control/settings'
 import { computeMoneyRollup, type RollupWSRow, type RollupVersionRow } from '@/lib/cost-control/project-rollup'
@@ -319,13 +320,23 @@ export default async function ApprovalsInboxPage({
   // where his budgets stand, so the chasing list belongs here too.
   const returned = await getReturnedToEngineer()
 
+  // Budget transfers waiting on this same person. The RPC applies the same
+  // eligibility as the approve call, so a row shown here can always be acted
+  // on and one that cannot never appears.
+  const { data: transferRows } = await supabase.rpc('cc_transfer_inbox')
+  const transfers = (transferRows ?? []) as TransferInboxRow[]
+  const transferValue = transfers.reduce((sum, t) => sum + Number(t.amount ?? 0), 0)
+
   return (
     <div className="p-4 md:p-6 max-w-4xl mx-auto space-y-4">
       <PageHeader
         title="My Approvals"
         subtitle={
-          mine.length > 0
-            ? `${mine.length} waiting on you · ${formatINR(pendingValue(mine))} to decide`
+          mine.length > 0 || transfers.length > 0
+            ? [
+                mine.length > 0 ? `${mine.length} budget${mine.length === 1 ? '' : 's'} · ${formatINR(pendingValue(mine))}` : null,
+                transfers.length > 0 ? `${transfers.length} transfer${transfers.length === 1 ? '' : 's'} · ${formatINR(transferValue)}` : null,
+              ].filter(Boolean).join(' · ') + ' waiting on you'
             : 'Nothing waiting on you right now'
         }
         back="/cost-control"
@@ -347,6 +358,10 @@ export default async function ApprovalsInboxPage({
         </Link>
       </div>
 
+      {/* Budget being moved between work categories. Renders nothing when
+          none are waiting on this person. */}
+      <TransferInboxSection rows={transfers} />
+
       {hasThumbruleMine && (
         <Link
           href="/cost-control/approvals/thumbrule"
@@ -363,7 +378,7 @@ export default async function ApprovalsInboxPage({
         </Link>
       )}
 
-      {projOrder.length === 0 ? (
+      {projOrder.length === 0 && transfers.length > 0 ? null : projOrder.length === 0 ? (
         <Card className="p-10 text-center text-gray-500 text-sm">
           <Inbox className="h-8 w-8 mx-auto text-gray-300 mb-2" />
           <div>{showAll ? 'No budgets are pending right now.' : 'Nothing is waiting on you right now.'}</div>

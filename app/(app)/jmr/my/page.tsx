@@ -1,4 +1,5 @@
 import Link from 'next/link'
+import { todayIST } from '@/lib/utils'
 import { createClient } from '@/lib/supabase/server'
 import { requirePermission } from '@/lib/auth'
 import { PageHeader } from '@/components/PageHeader'
@@ -28,13 +29,9 @@ export default async function MyJmrPage() {
   // Look back 14 days; we'll do the "this week" slice client-side using the
   // existing date strings.
   const today = todayISO()
-  const fromDate = new Date()
-  fromDate.setDate(fromDate.getDate() - 14)
-  const fromISO = fromDate.toISOString().slice(0, 10)
+  const fromISO = todayIST(Date.now() - 14 * 86_400_000)
   // "This week" = last 7 days inclusive of today
-  const weekStart = new Date()
-  weekStart.setDate(weekStart.getDate() - 6)
-  const weekStartISO = weekStart.toISOString().slice(0, 10)
+  const weekStartISO = todayIST(Date.now() - 6 * 86_400_000)
 
   const { data: entries } = await supabase
     .from('jmr_daily_entries')

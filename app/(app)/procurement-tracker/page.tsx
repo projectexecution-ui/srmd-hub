@@ -1,5 +1,6 @@
 import { requirePermission, getMyProfile } from '@/lib/auth'
 import { createClient } from '@/lib/supabase/server'
+import { readFeedModes, readLastFeedSync } from '@/lib/in4/feeds'
 import { ProcurementTrackerClient } from './client'
 
 export const dynamic = 'force-dynamic'
@@ -27,5 +28,10 @@ export default async function ProcurementTrackerPage() {
     if (Array.isArray(parsed)) closedProjects = parsed.filter((x): x is string => typeof x === 'string')
   } catch { /* malformed setting — treat as none */ }
 
-  return <ProcurementTrackerClient isAdmin={isAdmin} closedProjects={closedProjects} />
+  // When the IN4 feed is live the tracker is written from IN4 twice a day and
+  // the two Excel uploads are no longer needed; the client hides them.
+  const [modes, last] = await Promise.all([readFeedModes(supabase), readLastFeedSync(supabase, 'tracker')])
+  const in4 = modes.tracker === 'live' ? { live: true, at: last?.ok ? last.at : null, error: last && !last.ok ? (last.error ?? 'failed') : null } : null
+
+  return <ProcurementTrackerClient isAdmin={isAdmin} closedProjects={closedProjects} in4={in4} />
 }

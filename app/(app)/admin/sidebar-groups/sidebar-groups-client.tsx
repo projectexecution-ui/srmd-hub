@@ -1,4 +1,5 @@
 'use client'
+import { bumpShell } from '@/lib/shell-actions'
 // Editor for sidebar GROUPS. Create a named branch, tick the modules that
 // belong under it, reorder or remove — saved to app_settings('sidebar_groups').
 // A module can live in only one group; ticking it here moves it out of any other.
@@ -64,6 +65,7 @@ export default function SidebarGroupsClient({ initialGroups, modules }: { initia
     if (error) { toast.error(`Could not save: ${error.message}`); return }
     setDirty(false)
     toast.success('Sidebar groups saved — refresh any open tabs to see the new side pane.')
+    await bumpShell()
     router.refresh()
   }
 

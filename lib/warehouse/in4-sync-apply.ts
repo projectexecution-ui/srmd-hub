@@ -1,6 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
 import { in4Key } from './in4-items'
-import { getSyncPreview, readExisting } from './in4-sync-data'
+import { getSyncPreview, readExisting, type SupabaseLike } from './in4-sync-data'
 import type { SyncGroup } from './in4-sync'
 
 /** Writing the plan.
@@ -33,11 +33,13 @@ function chunked<T>(rows: T[], size = CHUNK): T[][] {
   return out
 }
 
-export async function runIn4Sync(groups: SyncGroup[], actorId: string | null): Promise<SyncOutcome> {
+export async function runIn4Sync(groups: SyncGroup[], actorId: string | null, client?: SupabaseLike): Promise<SyncOutcome> {
   if (groups.length === 0) return { ok: false, error: 'Nothing was selected to bring across.' }
 
-  const sb = await createClient()
-  const preview = await getSyncPreview()
+  // The IN4 live sync runs from a cron with no cookies and passes the service
+  // role in; the settings page and the upload route use the request client.
+  const sb = (client ?? await createClient()) as Awaited<ReturnType<typeof createClient>>
+  const preview = await getSyncPreview(client)
   if (preview.error) return { ok: false, error: `Could not read the uploads: ${preview.error}` }
 
   const p = preview.plan
@@ -56,7 +58,7 @@ export async function runIn4Sync(groups: SyncGroup[], actorId: string | null): P
   }
 
   const itemIdByKey = new Map<string, string>()
-  const { have } = await readExisting()
+  const { have } = await readExisting(client)
   for (const [k, v] of have.byIn4Key) itemIdByKey.set(k, v.id)
 
   // The rate a newly created item starts with, taken from the PO that is about

@@ -11,7 +11,7 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { SearchableSelect } from '@/components/ui/searchable-select'
 import { Loader2, Upload, FileSpreadsheet, X, Sparkles, AlertTriangle, Image as ImageIcon, Download, Paperclip, FileText } from 'lucide-react'
-import { formatINR } from '@/lib/utils'
+import { formatINR, formatDate } from '@/lib/utils'
 import { downloadBoqTemplate } from '@/lib/cost-control/boq-template-xlsx'
 import { COL as BOQ_COL } from '@/lib/cost-control/boq-template'
 import { detectTemplate, parseTemplateSheet, evaluateItem } from '@/lib/cost-control/boq-template-parse'
@@ -427,7 +427,7 @@ export function NewWSQuickForm({ projects, allDisciplines, allSubSkills, default
       disciplineCode: selDiscipline?.code, disciplineName: selDiscipline?.name,
       subSkillCode: selSubSkill?.code, subSkillName: selSubSkill?.name,
       lineTypeLabel: lineType === 'work' ? 'Work' : lineType === 'material' ? 'Material' : 'Combined',
-      dateText: new Date().toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'Asia/Kolkata' }),
+      dateText: formatDate(new Date()),
       projectId, disciplineId, subSkillId,
       // When a prior version exists, pre-fill it and stamp the next version #.
       seedRows: priorVersion?.rows,

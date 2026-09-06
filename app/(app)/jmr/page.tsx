@@ -1,4 +1,5 @@
 import Link from 'next/link'
+import { todayIST } from '@/lib/utils'
 import { createClient } from '@/lib/supabase/server'
 import { requirePermission, can, getMyProfile } from '@/lib/auth'
 import {
@@ -17,8 +18,7 @@ export default async function JMRPage() {
 
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
-  const now = new Date()
-  const weekAgo = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 7).toISOString().slice(0, 10)
+  const weekAgo = todayIST(Date.now() - 7 * 86_400_000)
 
   const [pendingRes, weekRes, myFlaggedRes] = await Promise.all([
     supabase.from('jmr_daily_entries').select('id', { count: 'exact', head: true }).eq('status', 'submitted'),

@@ -1,4 +1,5 @@
 'use client'
+import { bumpShell } from '@/lib/shell-actions'
 import { useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -178,6 +179,7 @@ export default function UsersClient({
   async function updateRole(u: Profile, next: Role) {
     setBusyId(u.id); setError(null)
     const { error } = await supabase.from('profiles').update({ role: next }).eq('id', u.id)
+    await bumpShell()
     setBusyId(null)
     if (error) { setError(error.message); return }
     setUsers(prev => prev.map(x => x.id === u.id ? { ...x, role: next } : x))
@@ -198,6 +200,7 @@ export default function UsersClient({
     setBusyId(u.id); setError(null)
     const next = !u.is_active
     const { error } = await supabase.from('profiles').update({ is_active: next }).eq('id', u.id)
+    await bumpShell()
     setBusyId(null)
     if (error) { setError(error.message); return }
     setUsers(prev => prev.map(x => x.id === u.id ? { ...x, is_active: next } : x))
@@ -249,6 +252,7 @@ export default function UsersClient({
     setBusyId(u.id); setError(null)
     const next = !u.is_portal_owner
     const { error } = await supabase.from('profiles').update({ is_portal_owner: next }).eq('id', u.id)
+    await bumpShell()
     setBusyId(null)
     if (error) {
       // The DB trigger refuses removal of the last Portal Owner — surface a friendly message.
@@ -284,6 +288,7 @@ export default function UsersClient({
       .upsert({ user_id: userId, module_slug: moduleSlug, role }, { onConflict: 'user_id,module_slug' })
       .select('*')
       .single()
+      await bumpShell()
     setBusyId(null)
     if (error) { setError(error.message); return }
     setModuleRoles(prev => {
@@ -299,6 +304,7 @@ export default function UsersClient({
       .delete()
       .eq('user_id', userId)
       .eq('module_slug', moduleSlug)
+      await bumpShell()
     setBusyId(null)
     if (error) { setError(error.message); return }
     setModuleRoles(prev => prev.filter(r => !(r.user_id === userId && r.module_slug === moduleSlug)))
@@ -316,6 +322,7 @@ export default function UsersClient({
       .upsert({ user_id: userId, module_slug: moduleSlug }, { onConflict: 'user_id,module_slug' })
       .select('*')
       .single()
+      await bumpShell()
     setBusyId(null)
     if (error) { setError(error.message); return }
     setModuleBlocks(prev => {
@@ -331,6 +338,7 @@ export default function UsersClient({
       .delete()
       .eq('user_id', userId)
       .eq('module_slug', moduleSlug)
+      await bumpShell()
     setBusyId(null)
     if (error) { setError(error.message); return }
     setModuleBlocks(prev => prev.filter(b => !(b.user_id === userId && b.module_slug === moduleSlug)))
@@ -353,6 +361,7 @@ export default function UsersClient({
       .from('profiles')
       .update({ role, is_active: true, access_state: 'approved' })
       .eq('id', u.id)
+      await bumpShell()
     setBusyId(null)
     if (profErr) { setError(profErr.message); return }
     setUsers(prev => prev.map(x => x.id === u.id ? { ...x, role, is_active: true, access_state: 'approved' } : x))

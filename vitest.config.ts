@@ -11,6 +11,7 @@ export default defineConfig({
   test: {
     environment: 'node',
     include: ['**/*.test.ts'],
-    exclude: ['node_modules', '.next', 'dist'],
+    // .tmp-* holds ad-hoc scripts (some reach real databases) — never part of the suite.
+    exclude: ['node_modules', '.next', 'dist', '.tmp-*/**'],
   },
 })

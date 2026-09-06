@@ -1,4 +1,5 @@
 'use client'
+import { bumpShell } from '@/lib/shell-actions'
 import { useMemo, useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
@@ -120,6 +121,7 @@ export default function PermissionsMatrix({ modules, roles, initial, roleLabels,
     setLabels(m => ({ ...m, [finalKey]: { label: newRoleLabel.trim(), description: newRoleDesc.trim() } } as RoleLabelMap))
     setShowAddRole(false)
     setNewRoleLabel(''); setNewRoleDesc('')
+    await bumpShell()
     router.refresh()
   }
 
@@ -131,6 +133,7 @@ export default function PermissionsMatrix({ modules, roles, initial, roleLabels,
     setDelBusyRole(null)
     if (error) { setError(error.message); return }
     setVisibleRoles(rs => rs.filter(r => r !== role))
+    await bumpShell()
     router.refresh()
   }
 
@@ -162,6 +165,7 @@ export default function PermissionsMatrix({ modules, roles, initial, roleLabels,
     if (error) { setLabels(m => ({ ...m, [role]: prev })); setError(error.message || 'Could not save role'); return }
     setLabelSaved(role)
     setTimeout(() => setLabelSaved(r => (r === role ? null : r)), 1500)
+    await bumpShell()
     router.refresh()
   }
 

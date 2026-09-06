@@ -1,6 +1,5 @@
-import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
-import { getMyProfile } from '@/lib/auth'
+import { requirePermission } from '@/lib/auth'
 import { PageHeader } from '@/components/PageHeader'
 import { Card, CardContent } from '@/components/ui/card'
 import { TaxonomyEditor } from './taxonomy-editor'
@@ -13,9 +12,10 @@ export default async function EstablishedRatesAdminPage({
 }: {
   searchParams: Promise<{ tab?: string }>
 }) {
-  const profile = await getMyProfile()
-  if (!profile) redirect('/login')
-  if (profile.role !== 'admin' && !profile.is_portal_owner) redirect('/established-rates')
+  // The permission matrix decides who administers this module (admin holds
+  // can_admin today). Going through requirePermission also honours the
+  // module's on/off switch, which a bare role check never did.
+  await requirePermission('established-rates', 'admin', '/established-rates')
   const sp = await searchParams
   const tab = sp.tab === 'import' ? 'import' : 'taxonomy'
 

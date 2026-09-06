@@ -15,8 +15,8 @@ interface UserOpt { id: string; full_name: string | null; email: string; role: s
 const stageLabel = (s: string) => s.replace(/^Under:\s*/i, '')
 
 export function BillsDigestForm({
-  initial, users, projectCodes, availableStages,
-}: { initial: BillsDigestConfig; users: UserOpt[]; projectCodes: string[]; availableStages: string[] }) {
+  initial, users, projectOptions, availableStages,
+}: { initial: BillsDigestConfig; users: UserOpt[]; projectOptions: Array<{ code: string; label: string }>; availableStages: string[] }) {
   const router = useRouter()
   const [enabled, setEnabled] = useState(initial.enabled)
   const [assign, setAssign] = useState<Record<string, string[]>>(initial.assignments)
@@ -197,11 +197,11 @@ export function BillsDigestForm({
                     <div>
                       <p className="text-[10px] uppercase tracking-wide text-gray-400 font-semibold mb-1">Projects</p>
                       <div className="flex flex-wrap gap-x-4 gap-y-1">
-                        {projectCodes.map(code => (
+                        {projectOptions.map(({ code, label }) => (
                           <label key={code} className="inline-flex items-center gap-1.5 text-xs text-gray-700 cursor-pointer py-0.5">
                             <input type="checkbox" checked={mine.includes(code)} onChange={() => toggleProject(u.id, code)}
                               className="h-4 w-4 rounded border-gray-300 text-rose-600 focus:ring-rose-500" />
-                            <span className="font-mono">{code}</span>
+                            <span>{label !== code ? label : ''}<span className="font-mono text-gray-500">{label !== code ? ` (${code})` : code}</span></span>
                           </label>
                         ))}
                       </div>

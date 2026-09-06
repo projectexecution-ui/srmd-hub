@@ -1,8 +1,14 @@
 import { createClient } from '@/lib/supabase/server'
 import { getTrackerSlots } from '@/lib/procurement/tracker-cache'
 import { in4Key } from './in4-items'
+import { fetchAll } from './paging'
+import { loadAliasMap } from '@/lib/aliases'
 import { plan } from './in4-sync'
 import type { SyncLine, SyncExisting, SyncPlan } from './in4-sync'
+
+/** Any Supabase client — the request-scoped one or the service role. */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export type SupabaseLike = { from: (table: string) => any }
 
 /** Reading the daily IN4 uploads and working out what would come across.
  *
@@ -28,14 +34,14 @@ const num = (v: unknown): number | null => {
 /** Every line from both slots. Deliberately NOT de-duplicated across slots: the
  *  planner keys items and POs itself, so a line appearing in both is harmless
  *  and the PO slot is often the only one carrying a rate. */
-export async function readTrackerLines(): Promise<{ lines: SyncLine[]; slots: string[]; error?: string }> {
+export async function readTrackerLines(client?: SupabaseLike): Promise<{ lines: SyncLine[]; slots: string[]; error?: string }> {
   // Cached at the source (lib/procurement/tracker-cache), which also does the
   // id ordering — without it the database may hand the slots back either way
   // round, and anything that takes the FIRST value it sees for an item (its
   // unit) could differ between two runs over identical data.
   let data: Array<{ id: string; state: unknown }>
   try {
-    data = await getTrackerSlots(await createClient())
+    data = await getTrackerSlots(client ?? await createClient())
   } catch (e) {
     return { lines: [], slots: [], error: e instanceof Error ? e.message : 'tracker read failed' }
   }
@@ -70,22 +76,34 @@ export async function readTrackerLines(): Promise<{ lines: SyncLine[]; slots: st
 }
 
 /** What the warehouse already holds, keyed for the planner. */
-export async function readExisting(): Promise<{ have: SyncExisting; error?: string }> {
-  const sb = await createClient()
+export async function readExisting(client?: SupabaseLike): Promise<{ have: SyncExisting; error?: string }> {
+  // A cron has no cookies, so it hands in the service-role client; a page uses its own.
+  const sb = (client ?? await createClient()) as Awaited<ReturnType<typeof createClient>>
+  // Items and POs are PAGED. PostgREST returns at most 1,000 rows and says
+  // nothing about the rest; wh_items passed that in August, so the planner saw
+  // 1,000 of 2,803 items, decided the other 1,803 were new, and every upload's
+  // sync died on wh_items_in4_key_idx ("duplicate key") for two weeks.
   const [itemsRes, listsRes, posRes, projectsRes] = await Promise.all([
-    sb.from('wh_items').select('id, name, unit, in4_name').is('deleted_at', null),
+    fetchAll<{ id: string; name: string; unit: string; in4_name: string | null }>((from, to) =>
+      sb.from('wh_items').select('id, name, unit, in4_name').is('deleted_at', null).order('id').range(from, to)),
     sb.from('wh_lists').select('kind, value'),
-    sb.from('wh_po').select('po_no').is('deleted_at', null),
+    fetchAll<{ po_no: string }>((from, to) =>
+      sb.from('wh_po').select('id, po_no').is('deleted_at', null).order('id').range(from, to)),
     sb.from('projects').select('id, name'),
   ])
-  const error = itemsRes.error?.message ?? listsRes.error?.message
-    ?? posRes.error?.message ?? projectsRes.error?.message
+  // The alias table (Admin → Project name mapping) is consulted alongside the
+  // exact hub name, so a project the upload spells IN4's way ("New Guest
+  // House", "Ekant Kutirs") still lands on the right hub project.
+  const aliases = await loadAliasMap(sb, 'procurement').catch(() => null)
+  const in4Aliases = await loadAliasMap(sb, 'in4').catch(() => null)
+  const error = itemsRes.error ?? listsRes.error?.message
+    ?? posRes.error ?? projectsRes.error?.message ?? undefined
 
   const have: SyncExisting = {
     byIn4Key: new Map(), byNameKey: new Map(),
     units: new Set(), disciplines: new Set(), poNos: new Set(), projectsByName: new Map(),
   }
-  for (const i of itemsRes.data ?? []) {
+  for (const i of itemsRes.rows) {
     if (i.in4_name) have.byIn4Key.set(in4Key(i.in4_name), { id: i.id, unit: i.unit })
     const nk = in4Key(i.name)
     // First one wins: two hand-typed items with the same name would make
@@ -96,10 +114,18 @@ export async function readExisting(): Promise<{ have: SyncExisting; error?: stri
     if (l.kind === 'unit') have.units.add(l.value)
     if (l.kind === 'discipline') have.disciplines.add(l.value)
   }
-  for (const p of posRes.data ?? []) have.poNos.add(p.po_no)
+  for (const p of posRes.rows) have.poNos.add(p.po_no)
   for (const p of projectsRes.data ?? []) {
     const k = in4Key(p.name)
     if (k) have.projectsByName.set(k, p.id)
+  }
+  for (const m of [in4Aliases, aliases]) {
+    if (!m) continue
+    for (const [norm, { projectId }] of m) {
+      // in4Key() and the alias normalisation agree (lower-case, non-alphanumerics
+      // to single spaces), so the alias key is already the planner's key.
+      if (projectId && !have.projectsByName.has(norm)) have.projectsByName.set(norm, projectId)
+    }
   }
   return { have, error }
 }
@@ -112,8 +138,8 @@ export type SyncPreview = {
 }
 
 /** The dry run. Reads everything, writes nothing. */
-export async function getSyncPreview(): Promise<SyncPreview> {
-  const [tracker, existing] = await Promise.all([readTrackerLines(), readExisting()])
+export async function getSyncPreview(client?: SupabaseLike): Promise<SyncPreview> {
+  const [tracker, existing] = await Promise.all([readTrackerLines(client), readExisting(client)])
   const error = tracker.error ?? existing.error
   const p = plan(tracker.lines, existing.have)
   return { plan: p, slots: tracker.slots, lineCount: tracker.lines.length, error }

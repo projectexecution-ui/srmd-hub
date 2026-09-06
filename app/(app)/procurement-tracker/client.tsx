@@ -26,7 +26,7 @@ import type { DroppedLine } from '@/lib/procurement/dropped'
 import { dropKey } from '@/lib/procurement/dropped'
 import { DroppedItemsPanel } from '@/components/procurement-tracker/DroppedItemsPanel'
 import Link from 'next/link'
-import { Upload, FileSpreadsheet, Loader2, PackageX, ClipboardList, EyeOff, CheckCircle2, Clock, FileText } from 'lucide-react'
+import { Upload, FileSpreadsheet, Loader2, PackageX, ClipboardList, EyeOff, CheckCircle2, Clock, FileText, Database } from 'lucide-react'
 
 type AnalyseResponse = ParseResult & {
   success: boolean
@@ -84,7 +84,9 @@ function toSlot(x: { state?: { projects: ProjectSummary[]; fileName: string; for
   }
 }
 
-export function ProcurementTrackerClient({ isAdmin = false, closedProjects = [] }: { isAdmin?: boolean; closedProjects?: string[] }) {
+export type In4Status = { live: boolean; at: string | null; error: string | null } | null
+
+export function ProcurementTrackerClient({ isAdmin = false, closedProjects = [], in4 = null }: { isAdmin?: boolean; closedProjects?: string[]; in4?: In4Status }) {
   const [isDragging, setIsDragging] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -341,7 +343,7 @@ export function ProcurementTrackerClient({ isAdmin = false, closedProjects = [] 
       {/* Page-wide drop overlay — only visible while the user is actively
           dragging a file. Pointer-events disabled so React still receives
           the drop event on the wrapper underneath. */}
-      {isDragging && (
+      {isDragging && !in4?.live && (
         <div className="fixed inset-0 z-50 bg-orange-900/15 backdrop-blur-[2px] flex items-center justify-center pointer-events-none">
           <div className="bg-white rounded-2xl px-8 py-7 shadow-2xl border-2 border-dashed border-orange-700 text-center">
             <Upload className="h-10 w-10 text-orange-700 mx-auto mb-2" />
@@ -398,6 +400,15 @@ export function ProcurementTrackerClient({ isAdmin = false, closedProjects = [] 
                   <span className="hidden sm:inline">PDF</span>
                 </button>
               )}
+              {in4?.live ? (
+                <span
+                  title={in4.error ? `The last IN4 sync failed: ${in4.error}` : 'Written from IN4 twice a day — no Excel upload needed'}
+                  className={`inline-flex items-center gap-1.5 h-8 px-2.5 rounded-lg border text-xs font-medium shadow-sm ${in4.error ? 'border-rose-200 bg-rose-50 text-rose-800' : 'border-emerald-200 bg-emerald-50 text-emerald-800'}`}
+                >
+                  <Database className="h-4 w-4" />
+                  <span className="hidden sm:inline">{in4.error ? 'IN4 sync failed' : `Live from IN4${in4.at ? ` · ${formatSavedAt(in4.at)}` : ''}`}</span>
+                </span>
+              ) : (
               <button
                 type="button"
                 onClick={() => fileInputRef.current?.click()}
@@ -408,8 +419,12 @@ export function ProcurementTrackerClient({ isAdmin = false, closedProjects = [] 
                 {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
                 <span className="hidden sm:inline">{isLoading ? 'Uploading…' : 'Upload'}</span>
               </button>
+              )}
             </div>
-            {(indentSlot || poSlot) && (
+            {in4?.live && savedAt && (
+              <div className="text-right text-[11px] leading-tight text-stone-500">Every indent, PO and GRN in IN4 · rates on every line · refreshed {formatSavedAt(savedAt)}</div>
+            )}
+            {!in4?.live && (indentSlot || poSlot) && (
               <div className="text-right text-[11px] leading-tight space-y-0.5">
                 <div className={indentSlot ? 'text-stone-600' : 'text-stone-400'}>
                   {indentSlot
@@ -447,7 +462,9 @@ export function ProcurementTrackerClient({ isAdmin = false, closedProjects = [] 
             </div>
             <p className="text-stone-800 font-semibold text-base mb-1">No procurement data yet</p>
             <p className="text-stone-500 text-sm mb-4">
-              Click <b>Upload</b> at the top right, or drop the IN4 export anywhere on this page — it&apos;ll be saved for the whole team.
+              {in4?.live
+                ? 'The IN4 live sync fills this page twice a day. Nothing has arrived yet — an admin can run it now from Admin → IN4 live sync.'
+                : <>Click <b>Upload</b> at the top right, or drop the IN4 export anywhere on this page — it&apos;ll be saved for the whole team.</>}
             </p>
             <p className="text-xs text-stone-500 bg-orange-50 border border-orange-100 inline-flex items-center gap-1.5 px-3 py-1 rounded-full">
               <FileSpreadsheet className="h-3 w-3" />

@@ -4,6 +4,7 @@
 // smooth card-in transition and a progress-to-zero bar.
 
 import { useState } from 'react'
+import { todayIST } from '@/lib/utils'
 import { createClient } from '@/lib/supabase/client'
 import { formatINRShort, formatDateShort } from '@/lib/jmr/format'
 import type { BoardItem, EccCategory } from './board-client'
@@ -37,7 +38,7 @@ export function TriageMode({ items, onClose }: { items: BoardItem[]; onClose: ()
   const total = queue.length
   const current: BoardItem | undefined = queue[idx]
 
-  function dateInDays(n: number) { const d = new Date(); d.setDate(d.getDate() + n); return d.toISOString().slice(0, 10) }
+  function dateInDays(n: number) { return todayIST(Date.now() + n * 86_400_000) }
   async function update(id: string, patch: Record<string, unknown>) {
     await createClient().from('ecc_items').update(patch).eq('id', id)
   }

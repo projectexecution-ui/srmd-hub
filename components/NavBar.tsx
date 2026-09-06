@@ -13,9 +13,9 @@ import { MODULES } from '@/lib/modules'
 import { buildNavTree, type SidebarGroup } from '@/lib/sidebar-groups'
 import { IS_DEMO } from '@/lib/demo-mode'
 import { buildRevampNav } from '@/lib/revamp/nav'
-import { ProjectTree } from '@/components/nav/ProjectTree'
-import type { FlatProject } from '@/lib/revamp/project-tree'
 import NotificationBell from '@/components/NotificationBell'
+import { ProjectTree } from '@/components/nav/ProjectTree'
+import type { FlatProject } from '@/lib/project-tree'
 
 interface NavBarProps {
   profile: Profile
@@ -26,8 +26,11 @@ interface NavBarProps {
   moduleLabels?: Record<string, string>
   /** Admin-defined groups that nest modules under a named, collapsible branch. */
   sidebarGroups?: SidebarGroup[]
-  /** Project hierarchy for the revamped Projects lane (trial only). */
-  projectList?: FlatProject[]
+  /** Live projects for the Projects lane (tree by parent). */
+  projects?: FlatProject[]
+  /** Collapsed flag read from the cookie on the server, so the first paint is
+   *  already right and nothing has to stay invisible until hydration. */
+  initialCollapsed?: boolean
 }
 
 // Compact labels for the sidebar so they don't wrap. Defaults to the
@@ -37,7 +40,6 @@ const SHORT_LABELS: Record<string, string> = {
   'comparison':       'Comparisons',
   'pos':              'POs',
   'budget-vs-actual': 'Budget',
-  'in4-indent-to-po': 'IN4 Tracker',
   'jmr':              'JMR',
   'admin-users':      'Users',
   'admin-permissions':'Permissions',
@@ -49,21 +51,23 @@ const GROUPS_OPEN_KEY = 'srmd_nav_groups_open'
 
 type NavItem = { href: string; label: string; icon: typeof LayoutDashboard; slug: string | null }
 
-export default function NavBar({ profile, permissions, disabledSlugs = [], isPortalOwner = false, moduleLabels = {}, sidebarGroups = [], projectList = [] }: NavBarProps) {
+export default function NavBar({ profile, permissions, disabledSlugs = [], isPortalOwner = false, moduleLabels = {}, sidebarGroups = [], projects = [], initialCollapsed }: NavBarProps) {
   const disabled = new Set(disabledSlugs)
   const pathname = usePathname()
   const router = useRouter()
   const supabase = createClient()
   const [open, setOpen] = useState(false)
-  const [ui, setUi] = useState<{ collapsed: boolean; hydrated: boolean }>({ collapsed: false, hydrated: false })
+  const [ui, setUi] = useState<{ collapsed: boolean; hydrated: boolean }>({ collapsed: initialCollapsed ?? false, hydrated: initialCollapsed !== undefined })
   const { collapsed, hydrated } = ui
   // Which named groups are expanded (persisted). Absent = fall back to
   // auto-open when the group contains the active route.
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({})
 
   useEffect(() => {
-    let isCollapsed = false
-    try { isCollapsed = localStorage.getItem(COLLAPSE_KEY) === '1' } catch {}
+    // The cookie decided the first paint; localStorage only fills in for a
+    // browser that has the old flag and no cookie yet.
+    let isCollapsed = initialCollapsed ?? false
+    if (initialCollapsed === undefined) { try { isCollapsed = localStorage.getItem(COLLAPSE_KEY) === '1' } catch {} }
     let og: Record<string, boolean> = {}
     try { const raw = localStorage.getItem(GROUPS_OPEN_KEY); if (raw) og = JSON.parse(raw) } catch {}
     // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -76,6 +80,7 @@ export default function NavBar({ profile, permissions, disabledSlugs = [], isPor
     setUi(s => {
       const next = !s.collapsed
       try { localStorage.setItem(COLLAPSE_KEY, next ? '1' : '0') } catch {}
+      try { document.cookie = `${COLLAPSE_KEY}=${next ? '1' : '0'}; path=/; max-age=31536000; samesite=lax` } catch {}
       return { ...s, collapsed: next }
     })
   }
@@ -96,6 +101,7 @@ export default function NavBar({ profile, permissions, disabledSlugs = [], isPor
     }))
 
   const dashboardLink: NavItem = { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard, slug: null }
+  const showProjectsLane = !!permissions['cost-control']?.view && !disabled.has('cost-control') && projects.length > 0
 
   const canSeeAdmin = isPortalOwner
     || profile.role === 'admin'
@@ -223,17 +229,18 @@ export default function NavBar({ profile, permissions, disabledSlugs = [], isPor
             </div>
             <ProfileRow profile={profile} />
             <div className="flex-1 overflow-y-auto py-2">
-              {/* Revamp: main lanes first, then the collapsed "Old screens"
-                  branch. Today's layout is groups-then-flat, unchanged. */}
+              {/* Revamp (trial only): main lanes first — Projects as the tree —
+                  then the collapsed branches. Live keeps groups-then-flat. */}
               {revamp
                 ? <>
-                    {primaryLinks.map(it => it.label === 'Projects'
-                      ? <ProjectTree key="tree" projects={projectList} onNavigate={() => setOpen(false)} />
+                    {primaryLinks.map(it => it.label === 'Projects' && projects.length > 0
+                      ? <ProjectTree key="tree" projects={projects} mobile onNavigate={() => setOpen(false)} />
                       : renderLink(it, true))}
                     {tree.groups.map(g => renderGroup(g, true))}
                   </>
                 : <>
                     {renderLink(dashboardLink, true)}
+                    {showProjectsLane && <ProjectTree projects={projects} mobile onNavigate={() => setOpen(false)} />}
                     {tree.groups.map(g => renderGroup(g, true))}
                     {tree.ungrouped.map(it => renderLink(it, true))}
                     {bottomLinks.map(it => renderLink(it, true))}
@@ -301,17 +308,22 @@ export default function NavBar({ profile, permissions, disabledSlugs = [], isPor
 
         <div className="flex-1 overflow-y-auto py-2 px-2">
           {collapsed ? (
-            flatLinks.map(it => renderLink(it, false))
+            <>
+              {renderLink(dashboardLink, false)}
+              {showProjectsLane && <ProjectTree projects={projects} collapsed />}
+              {flatLinks.slice(1).map(it => renderLink(it, false))}
+            </>
           ) : revamp ? (
             <>
-              {primaryLinks.map(it => it.label === 'Projects'
-                ? <ProjectTree key="tree" projects={projectList} />
+              {primaryLinks.map(it => it.label === 'Projects' && projects.length > 0
+                ? <ProjectTree key="tree" projects={projects} />
                 : renderLink(it, false))}
               {tree.groups.map(g => renderGroup(g, false))}
             </>
           ) : (
             <>
               {renderLink(dashboardLink, false)}
+              {showProjectsLane && <ProjectTree projects={projects} />}
               {tree.groups.map(g => renderGroup(g, false))}
               {tree.ungrouped.map(it => renderLink(it, false))}
               {bottomLinks.map(it => renderLink(it, false))}
