@@ -23,6 +23,9 @@ export interface WorkspaceHeader {
   /** The CT Hub group this project sits under, when it has one. */
   parentName: string | null
   builtUpSft: number | null
+  /** active / on_hold / completed. Shown as a chip because the Internal
+   *  Estimate page no longer prints one when it renders inside the tab. */
+  ccStatus: string | null
   /** IN4's certifying company for this project — the trust. Null when the
    *  project is not linked to an IN4 sub-project yet. */
   trustCode: string | null
@@ -64,7 +67,7 @@ export async function loadWorkspaceHeader(projectId: string): Promise<HeaderResu
 
   const { data: project, error } = await supabase
     .from('projects')
-    .select('id, code, name, built_up_sft, parent_project_id')
+    .select('id, code, name, built_up_sft, parent_project_id, cc_status')
     .eq('id', projectId)
     .maybeSingle()
 
@@ -77,6 +80,7 @@ export async function loadWorkspaceHeader(projectId: string): Promise<HeaderResu
     name: project.name as string,
     parentName: null,
     builtUpSft: project.built_up_sft != null ? Number(project.built_up_sft) : null,
+    ccStatus: (project.cc_status as string | null) ?? null,
     trustCode: null,
     trustName: null,
     subProjectCount: null,

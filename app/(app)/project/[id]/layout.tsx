@@ -91,6 +91,20 @@ export default async function ProjectWorkspaceLayout({
             {/* Grey meta, hairline-separated. A chip whose value IN4 does not
                 hold is left out rather than shown as "—": the header is
                 identity, and a blank identity field is noise. */}
+            {/* The Internal Estimate page printed this chip; it no longer does
+                when it renders inside the Budget tab, so the status moved up
+                here rather than being lost. */}
+            {head.ccStatus && (
+              <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold tracking-wide flex-shrink-0 ${
+                head.ccStatus === 'active' ? 'bg-green-100 text-green-800'
+                : head.ccStatus === 'on_hold' ? 'bg-amber-100 text-amber-800'
+                : head.ccStatus === 'completed' ? 'bg-blue-100 text-blue-800'
+                : 'bg-gray-100 text-gray-700'
+              }`}>
+                {head.ccStatus.replace('_', ' ').toUpperCase()}
+              </span>
+            )}
+
             <div className="flex items-center text-[12.5px] text-gray-500 min-w-0">
               <Meta first>Project workspace</Meta>
               {head.parentName && <Meta>Part of <b className="font-medium text-gray-700">{head.parentName}</b></Meta>}

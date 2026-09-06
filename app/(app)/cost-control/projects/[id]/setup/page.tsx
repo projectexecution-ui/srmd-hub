@@ -25,6 +25,7 @@ import { GroupLabelChip } from '@/app/(app)/cost-control/GroupLabelChip'
 import { getBphMappingForProject } from '@/app/(app)/cost-control/import/bph/actions'
 import { getCcSettings } from '@/lib/cost-control/settings'
 import { CopySetupPanel } from './CopySetupPanel'
+import { BphSyncButton } from '../BphSyncButton'
 import { listSetupSources } from './copy-setup-actions'
 
 export const dynamic = 'force-dynamic'
@@ -246,10 +247,19 @@ export default async function ResumeProjectSetupPage(
               <FileSpreadsheet className="h-4 w-4 text-gray-400" /> Budget (BPH) source
             </h2>
             {bphMapping ? (
-              <p className="text-sm text-gray-700">
-                Linked to a BPH report — <span className="text-emerald-700 font-medium">auto-syncs on every BPH upload</span>.{' '}
-                <Link href={`/cost-control/import/bph?cc_project=${id}`} className="text-blue-600 hover:underline">Change or resync →</Link>
-              </p>
+              <>
+                <p className="text-sm text-gray-700">
+                  Linked to a BPH report — <span className="text-emerald-700 font-medium">auto-syncs on every BPH upload</span>.{' '}
+                  <Link href={`/cost-control/import/bph?cc_project=${id}`} className="text-blue-600 hover:underline">Change the mapping →</Link>
+                </p>
+                {/* Moved here from the Internal Estimate page on 7 Sept 2026.
+                    It is a setting, and Aksha's rule for the workspace is that
+                    settings live on Setup — but it is a one-click resync with
+                    no equivalent here, so it moved rather than being dropped. */}
+                <div className="pt-1">
+                  <BphSyncButton projectId={id} isMapped />
+                </div>
+              </>
             ) : (
               <p className="text-sm text-gray-700">
                 Not linked yet.{' '}

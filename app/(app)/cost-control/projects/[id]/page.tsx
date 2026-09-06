@@ -89,6 +89,23 @@ export default async function CostControlProjectDetailPage(
   const sp = await searchParams
   const { focus_disc: focusDisc, focus_sub: focusSub, ws: focusWs } = sp
 
+  // Rendered inside the project workspace's Budget tab rather than as a page
+  // of its own. Aksha, 7 Sept 2026: "i want the page to be Clean as Excel — if
+  // any setting is linked so pls check it should go in Setup (if duplicating
+  // then remove else keep in Setup)".
+  //
+  // So when embedded, this page drops everything the workspace already gives
+  // you or that belongs on Setup, and opens on the numbers:
+  //   · the breadcrumb      — the workspace header has its own back arrow and
+  //                           names the parent in its meta line
+  //   · the title/subtitle  — the workspace header IS the project name + code
+  //   · the Settings gear   — it linked to Setup, which is a tab here
+  //   · Sync from BPH       — moved onto Setup, under "Budget (BPH) source"
+  //   · the status chip     — moved into the workspace header's meta line
+  // What stays is what is neither a setting nor a duplicate: Raise Budget
+  // Request, Master Excel, the Internal Estimate lock and the alert chips.
+  const embedded = !!sp.in_cockpit
+
   // On the TRIAL deployment, every route into a project lands in the new
   // cockpit — including the deep links inside old approval emails and the
   // dashboard's "Needs you now" cards, which all point at this URL. Without
@@ -799,35 +816,40 @@ export default async function CostControlProjectDetailPage(
 
   return (
     <div className="p-4 md:p-6 max-w-7xl mx-auto space-y-4">
-      {/* Breadcrumb */}
-      <div className="flex items-center gap-2 text-xs">
-        <Link href="/cost-control" className="text-blue-600 hover:underline">← {ccLabel}</Link>
-        {parent && (
-          <>
-            <span className="text-gray-300">/</span>
-            <span className="text-gray-500">{parent.name} ({parent.code})</span>
-          </>
-        )}
-      </div>
+      {/* Breadcrumb — not when embedded: the workspace header carries both the
+          back arrow and the parent's name already. */}
+      {!embedded && (
+        <div className="flex items-center gap-2 text-xs">
+          <Link href="/cost-control" className="text-blue-600 hover:underline">← {ccLabel}</Link>
+          {parent && (
+            <>
+              <span className="text-gray-300">/</span>
+              <span className="text-gray-500">{parent.name} ({parent.code})</span>
+            </>
+          )}
+        </div>
+      )}
 
       {/* Title + primary actions. All project configuration (rename, alias,
           area, grouping/parent, BPH mapping, approvers, engineer assignment)
           lives on the Settings screen behind the gear — this page stays on
           the numbers + working sheets. */}
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="min-w-0">
-          <PageHeader
-            title={project.name}
-            subtitle={[
-              project.code,
-              pmName ? `Owner: ${pmName}` : null,
-              project.start_date ? `Started ${formatDate(project.start_date)}` : null,
-            ].filter(Boolean).join(' · ')}
-            className="mb-0"
-          />
-        </div>
+      <div className={`flex flex-wrap items-start gap-3 ${embedded ? 'justify-end' : 'justify-between'}`}>
+        {!embedded && (
+          <div className="min-w-0">
+            <PageHeader
+              title={project.name}
+              subtitle={[
+                project.code,
+                pmName ? `Owner: ${pmName}` : null,
+                project.start_date ? `Started ${formatDate(project.start_date)}` : null,
+              ].filter(Boolean).join(' · ')}
+              className="mb-0"
+            />
+          </div>
+        )}
         <div className="flex flex-wrap items-center gap-2">
-          {project.cc_status && (
+          {!embedded && project.cc_status && (
             <span className={`inline-flex items-center px-2 py-1 rounded-full text-[10px] font-bold tracking-wide ${
               project.cc_status === 'active' ? 'bg-green-100 text-green-800' :
               project.cc_status === 'on_hold' ? 'bg-amber-100 text-amber-800' :
@@ -843,18 +865,23 @@ export default async function CostControlProjectDetailPage(
               >
                 <Plus className="h-4 w-4" /> Raise Budget Request
               </Link>
-              {ccSettings.bph_sync && <BphSyncButton projectId={project.id} isMapped={isBphMapped} />}
+              {/* Both of these are settings, and both are on Setup — which is
+                  a tab away inside the workspace. BPH sync moved there rather
+                  than being dropped; the gear only ever linked there. */}
+              {!embedded && ccSettings.bph_sync && <BphSyncButton projectId={project.id} isMapped={isBphMapped} />}
               {/* Icon-only on a phone. Four labelled buttons wrapped onto three
                   lines and pushed the whole table down the screen; these two are
                   occasional, so the label is the part that gives way. */}
-              <Link
-                href={`/cost-control/projects/${project.id}/setup`}
-                className="inline-flex items-center justify-center gap-1.5 h-9 min-w-[44px] px-2.5 sm:px-3 rounded-md bg-white text-gray-700 border border-gray-300 text-sm font-semibold hover:bg-gray-50"
-                title="Project settings — details, grouping/parent, BPH mapping, approvers, engineers & disciplines"
-                aria-label="Project settings"
-              >
-                <Settings className="h-4 w-4" /> <span className="hidden sm:inline">Settings</span>
-              </Link>
+              {!embedded && (
+                <Link
+                  href={`/cost-control/projects/${project.id}/setup`}
+                  className="inline-flex items-center justify-center gap-1.5 h-9 min-w-[44px] px-2.5 sm:px-3 rounded-md bg-white text-gray-700 border border-gray-300 text-sm font-semibold hover:bg-gray-50"
+                  title="Project settings — details, grouping/parent, BPH mapping, approvers, engineers & disciplines"
+                  aria-label="Project settings"
+                >
+                  <Settings className="h-4 w-4" /> <span className="hidden sm:inline">Settings</span>
+                </Link>
+              )}
             </>
           )}
           {reviewer && (
