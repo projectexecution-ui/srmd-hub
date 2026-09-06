@@ -117,6 +117,9 @@ export const PROJECT_TABS: ProjectTab[] = [
   { slug: 'drawings',     label: 'Drawings',         hint: 'Not captured anywhere yet — the first stage of the WO chain', built: false, permissionSlug: 'cost-control' },
   { slug: 'decisions',    label: 'Decisions & Specs', hint: 'Decisions taken, by category and sub-category',          built: false, permissionSlug: 'cost-control' },
   { slug: 'qc',           label: 'QC',               hint: 'Daily site quality checks and the trend over time',       built: false, permissionSlug: 'cost-control' },
+  // Its own ribbon tab under People (workspace.ts), not a view of Stakeholders:
+  // consultants carry a cost line, which is what "& Specialised Cost" means.
+  { slug: 'consultants',  label: 'Consultants',      hint: 'Consultants and specialised cost, by category',           built: false, permissionSlug: 'cost-control' },
   // ── Blocked: no data exists ──────────────────────────────────────────────
   { slug: 'payments',     label: 'Payment Reports',  hint: 'What has actually been paid out on this project',         built: false, permissionSlug: 'cost-control',
     blockedBy: 'The payments table is empty — CT Hub has never held payment records. Needs an IN4 or Zoho export.' },

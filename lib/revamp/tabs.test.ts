@@ -29,8 +29,10 @@ const ADMIN_ALL = view(...new Set(PROJECT_TABS.map(t => t.permissionSlug)))
 describe('coming-soon lanes', () => {
   it('carries every page from the mind map', () => {
     // Aksha's mind map, 2026-09-03: 17 pages under Projects → Project → Pages,
-    // plus Setup, which is not on the map but is how a project is configured.
-    expect(PROJECT_TABS).toHaveLength(18)
+    // plus Setup, which is not on the map but is how a project is configured,
+    // plus Consultants & Specialised Cost, which the fifteen-tab ribbon gives
+    // its own lane under People (see lib/revamp/workspace.ts).
+    expect(PROJECT_TABS).toHaveLength(19)
     for (const label of [
       'Budget vs Actual', 'Budget by WO/PO', 'Pending Approvals', 'Discussions',
       'Stake Holders', 'Drawings', 'Decisions & Specs', 'QC', 'Indents',
@@ -129,7 +131,7 @@ describe('coming-soon lanes', () => {
   it('leaves the built count honest', () => {
     const { built, total } = builtCount()
     expect(built).toBe(10)
-    expect(total).toBe(18)
+    expect(total).toBe(19)
     expect(BUILT_TABS).toHaveLength(built)
     expect(COMING_SOON_TABS).toHaveLength(total - built)
   })

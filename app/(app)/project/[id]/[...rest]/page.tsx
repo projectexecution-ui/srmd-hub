@@ -1,8 +1,9 @@
 import Link from 'next/link'
-import { notFound } from 'next/navigation'
+import { notFound, redirect } from 'next/navigation'
 import { requirePermission } from '@/lib/auth'
 import { checkIsCcReviewer } from '@/components/cost-control/ws-actions'
 import { findTab, PROJECT_TABS, tabHref, type ProjectTab } from '@/lib/revamp/tabs'
+import { ABSORBED, findWorkspaceTab, workspaceHref } from '@/lib/revamp/workspace'
 import { Hammer, ArrowRight, Database } from 'lucide-react'
 import { OverviewTab } from '../OverviewTab'
 import { ReportsTab } from '../ReportsTab'
@@ -29,6 +30,15 @@ export default async function ProjectTabPage({
 }) {
   const { id, rest } = await params
   const slug = rest?.[0] ?? ''
+  // Tabs the fifteen-tab ribbon absorbed are now a VIEW of another tab, so
+  // an old bookmark, email link or approval card lands on that view instead
+  // of a 404. See ABSORBED in lib/revamp/workspace.ts for which went where.
+  const moved = ABSORBED[slug]
+  if (moved) {
+    const target = findWorkspaceTab(moved.slug)
+    if (target) redirect(workspaceHref(id, target, moved.sub))
+  }
+
   const tab = findTab(slug)
   if (!tab || slug === '') notFound()
 
