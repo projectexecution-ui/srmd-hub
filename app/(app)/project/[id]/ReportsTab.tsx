@@ -10,7 +10,8 @@ import Cockpit from '@/app/(app)/bills-pipeline/cockpit'
 import { BillsRefresh } from './BillsRefresh'
 import { loadCockpit } from '@/lib/revamp/project-cockpit'
 import { getMyPermissions, can, isModuleEnabled } from '@/lib/auth'
-import { AlertTriangle } from 'lucide-react'
+import { AlertTriangle, Download } from 'lucide-react'
+import { checkIsCcReviewer } from '@/components/cost-control/ws-actions'
 
 /**
  * Contractor and Supplier money for one project.
@@ -29,6 +30,11 @@ export async function ReportsTab({ projectId }: { projectId: string }) {
       getMyPermissions(),
       isModuleEnabled('bills-pipeline'),
     ])
+  // The Master Excel is the whole Internal Estimate, so it needs the Internal
+  // Estimate's OWN gate, not this tab's. Reports is gated on contractor-report,
+  // which three people hold without being Cost Control reviewers — offering it
+  // on the tab permission alone would hand them the confidential baseline.
+  const reviewer = await checkIsCcReviewer()
   if (!cockpit) notFound()
 
   const sft = cockpit.project.builtUpSft ?? 0
@@ -42,6 +48,18 @@ export async function ReportsTab({ projectId }: { projectId: string }) {
 
   return (
     <div className="space-y-4">
+      {/* Moved off the Budget tab, where it sat in a row of buttons above the
+          numbers. Renamed to say what it actually contains — Aksha, 7 Sept
+          2026: "Download Full Budget Excel (upto date)". */}
+      {reviewer && (
+        <a
+          href={`/api/cost-control/master-export?project=${projectId}`}
+          className="inline-flex items-center gap-2 rounded-lg border border-emerald-300 bg-white px-3.5 py-2 text-sm font-semibold text-emerald-800 hover:bg-emerald-50 min-h-[44px]"
+          title="The whole Internal Estimate as one linked workbook — every category and sub-skill, sheets cross-linked"
+        >
+          <Download className="h-4 w-4" /> Download Full Budget Excel (upto date)
+        </a>
+      )}
       {/* A group's figures include its children. Say so — a total that silently
           covers more than the project you opened is how numbers get misread. */}
       {rolledUpChildren > 0 && !nothing && (

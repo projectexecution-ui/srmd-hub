@@ -26,6 +26,8 @@ import { getBphMappingForProject } from '@/app/(app)/cost-control/import/bph/act
 import { getCcSettings } from '@/lib/cost-control/settings'
 import { CopySetupPanel } from './CopySetupPanel'
 import { BphSyncButton } from '../BphSyncButton'
+import { IeRevisionPanel, type IeRevision } from '../IeRevisionPanel'
+import { checkCanDecideInternalEstimate, checkCanRequestIeRevision } from '@/components/cost-control/ws-actions'
 import { listSetupSources } from './copy-setup-actions'
 
 export const dynamic = 'force-dynamic'
@@ -69,6 +71,36 @@ export default async function ResumeProjectSetupPage(
   const canRename = can(await getMyPermissions(), 'cost-control', 'admin')
   const ccSettings = await getCcSettings()
   const bphMapping = ccSettings.bph_sync ? await getBphMappingForProject(id) : null
+
+  // Internal Estimate lock + any in-flight revision. Moved here from the
+  // Internal Estimate page on 7 Sept 2026 — Aksha: "Internal Estimate if can
+  // be moved in Setup". It is the lock on the baseline, which is
+  // configuration, not one of the numbers on the sheet.
+  const [{ data: lockRaw }, { data: revRow }, canDecideRevision, canRequestRevision] = await Promise.all([
+    supabase.rpc('cc_ie_lock_state', { p_project: id }),
+    supabase.from('cc_ie_revisions')
+      .select('id, status, request_note, requested_by, reopen_note, revised_excel_name, decision_note')
+      .eq('project_id', id).order('created_at', { ascending: false }).limit(1).maybeSingle(),
+    checkCanDecideInternalEstimate(),
+    checkCanRequestIeRevision(),
+  ])
+  const lockState = (lockRaw as 'locked' | 'reopen_requested' | 'unlocked' | 'revision_submitted' | null) ?? 'locked'
+  let ieRevision: IeRevision | null = null
+  if (revRow && !['approved', 'rejected', 'reopen_denied'].includes(revRow.status as string)) {
+    let requesterName: string | null = null
+    if (revRow.requested_by) {
+      const { data: rp } = await supabase.from('profiles').select('full_name, name').eq('id', revRow.requested_by).maybeSingle()
+      requesterName = (rp?.full_name ?? rp?.name ?? null) as string | null
+    }
+    ieRevision = {
+      id: revRow.id as string, status: revRow.status as string,
+      request_note: revRow.request_note as string | null,
+      requested_by_name: requesterName,
+      reopen_note: revRow.reopen_note as string | null,
+      revised_excel_name: revRow.revised_excel_name as string | null,
+      decision_note: revRow.decision_note as string | null,
+    }
+  }
 
   // Used to bounce 100%-complete projects, but PMs need to be able to
   // edit setup after going active (add/remove disciplines, re-tick subs).
@@ -212,6 +244,17 @@ export default async function ResumeProjectSetupPage(
           </div>
         </Card>
       )}
+
+      {/* The Internal Estimate lock and its revision workflow. Whoever opens
+          Setup to change a category or an area needs to know whether the
+          baseline is locked, so it sits above the settings it governs. */}
+      <IeRevisionPanel
+        projectId={id}
+        lockState={lockState}
+        revision={ieRevision}
+        canRequest={ccSettings.ie_review && canRequestRevision}
+        canDecide={ccSettings.ie_review && canDecideRevision}
+      />
 
       {/* ── Project settings ────────────────────────────────────────────
           Details, grouping, BPH source — the config that used to clutter the

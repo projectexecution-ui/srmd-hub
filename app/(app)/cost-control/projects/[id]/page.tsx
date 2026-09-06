@@ -814,6 +814,36 @@ export default async function CostControlProjectDetailPage(
     )
   }
 
+  // Hoisted so it can render in its usual place on the standalone page and
+  // at the foot of the sheet inside the workspace, from one piece of markup.
+  const alertsBar = (
+  <ProjectAlerts
+    pending={pendingCount > 0 && canWrite ? {
+      count: pendingCount,
+      amountLabel: pendingTotal > 0 ? `${formatINR(pendingTotal)}${perSftInline(pendingTotal)}` : null,
+      href: `/cost-control/working-sheets?project=${project.id}`,
+      thumbruleCount: pendingThumbruleCount,
+      thumbruleHref: `/cost-control/approvals/thumbrule?project=${project.id}`,
+      sheets: pendingSheetItems,
+    } : null}
+    over={showErp && overBudgetLines.length > 0 ? {
+      lines: overBudgetLines.map(l => ({ label: l.label, amountLabel: formatINR(l.over) })),
+      totalLabel: `${formatINR(overBudgetTotal)}${perSftInline(overBudgetTotal)}`,
+    } : null}
+    estimateGap={showErp && (estimateGapLines.length > 0 || noEstimateCount > 0) ? {
+      lines: estimateGapLines.map(l => ({ label: l.label, amountLabel: formatINR(l.short) })),
+      totalLabel: `${formatINR(estimateGapTotal)}${perSftInline(estimateGapTotal)}`,
+      noEstimateCount,
+    } : null}
+    completion={showErp ? {
+      completedCount,
+      releasedLabel: releasedTotal > 0 ? `${formatINR(releasedTotal)}${perSftInline(releasedTotal)}` : null,
+      readyCount: readyToClose.length,
+      readySavingsLabel: readyToCloseSavings > 0 ? `${formatINR(readyToCloseSavings)}${perSftInline(readyToCloseSavings)}` : null,
+    } : null}
+  />
+  )
+
   return (
     <div className="p-4 md:p-6 max-w-7xl mx-auto space-y-4">
       {/* Breadcrumb — not when embedded: the workspace header carries both the
@@ -859,12 +889,15 @@ export default async function CostControlProjectDetailPage(
           )}
           {canWrite && (
             <>
-              <Link
+              {/* Removed inside the workspace: every sub-skill row in the
+                  table already carries its own "+ Request", so this was a
+                  second door to the same thing above the numbers. */}
+              {!embedded && <Link
                 href={`/cost-control/working-sheets/new-quick?project=${project.id}`}
                 className="inline-flex items-center gap-1.5 h-9 px-3 rounded-md bg-blue-600 text-white text-sm font-semibold hover:bg-blue-700"
               >
                 <Plus className="h-4 w-4" /> Raise Budget Request
-              </Link>
+              </Link>}
               {/* Both of these are settings, and both are on Setup — which is
                   a tab away inside the workspace. BPH sync moved there rather
                   than being dropped; the gear only ever linked there. */}
@@ -884,7 +917,9 @@ export default async function CostControlProjectDetailPage(
               )}
             </>
           )}
-          {reviewer && (
+          {/* Moved to the Reports tab inside the workspace, renamed
+              "Download Full Budget Excel (upto date)". */}
+          {reviewer && !embedded && (
             <a
               href={`/api/cost-control/master-export?project=${project.id}`}
               className="inline-flex items-center justify-center gap-1.5 h-9 min-w-[44px] px-2.5 sm:px-3 rounded-md bg-white text-emerald-800 border border-emerald-300 text-sm font-semibold hover:bg-emerald-50"
@@ -900,7 +935,9 @@ export default async function CostControlProjectDetailPage(
       {/* Internal Estimate lock + revision workflow (management only). One
           slim status bar; actions (request to revise / Trustee decision)
           appear inline right when they're relevant. */}
-      {reviewer && (
+      {/* Moved to Setup inside the workspace — it is the Internal Estimate
+          lock, which is configuration, not a number on the sheet. */}
+      {reviewer && !embedded && (
         <IeRevisionPanel
           projectId={project.id}
           lockState={lockState}
@@ -934,31 +971,10 @@ export default async function CostControlProjectDetailPage(
           stacked full-width banners. Counts always visible; the prose opens
           on tap. Four alert cards above the table meant scrolling past a
           wall of boxes on a phone before reaching a single number. */}
-      <ProjectAlerts
-        pending={pendingCount > 0 && canWrite ? {
-          count: pendingCount,
-          amountLabel: pendingTotal > 0 ? `${formatINR(pendingTotal)}${perSftInline(pendingTotal)}` : null,
-          href: `/cost-control/working-sheets?project=${project.id}`,
-          thumbruleCount: pendingThumbruleCount,
-          thumbruleHref: `/cost-control/approvals/thumbrule?project=${project.id}`,
-          sheets: pendingSheetItems,
-        } : null}
-        over={showErp && overBudgetLines.length > 0 ? {
-          lines: overBudgetLines.map(l => ({ label: l.label, amountLabel: formatINR(l.over) })),
-          totalLabel: `${formatINR(overBudgetTotal)}${perSftInline(overBudgetTotal)}`,
-        } : null}
-        estimateGap={showErp && (estimateGapLines.length > 0 || noEstimateCount > 0) ? {
-          lines: estimateGapLines.map(l => ({ label: l.label, amountLabel: formatINR(l.short) })),
-          totalLabel: `${formatINR(estimateGapTotal)}${perSftInline(estimateGapTotal)}`,
-          noEstimateCount,
-        } : null}
-        completion={showErp ? {
-          completedCount,
-          releasedLabel: releasedTotal > 0 ? `${formatINR(releasedTotal)}${perSftInline(releasedTotal)}` : null,
-          readyCount: readyToClose.length,
-          readySavingsLabel: readyToCloseSavings > 0 ? `${formatINR(readyToCloseSavings)}${perSftInline(readyToCloseSavings)}` : null,
-        } : null}
-      />
+      {/* Below the sheet when embedded — Aksha: "can be removed or Pushed
+          to Bottom of the Sheet". Kept, because it is the only place the
+          hub says a category is ready to close or short of its ERP line. */}
+      {!embedded && alertsBar}
 
       {/* Gap between what HOD has approved in CT Hub and what IN4 has
           released. Positive gap = work to do in IN4 + then re-pull BPH. */}
@@ -2086,6 +2102,9 @@ export default async function CostControlProjectDetailPage(
           (or after Working Sheets get approved and bills land).
         </p>
       </div>
+      {/* The alert bar, pushed under the sheet inside the workspace. */}
+      {embedded && alertsBar}
+
     </div>
   )
 }
