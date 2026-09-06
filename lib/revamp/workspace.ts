@@ -57,9 +57,13 @@ export const WORKSPACE_TABS: WorkspaceTab[] = [
   { slug: '', ribbon: 'Budget', label: 'Budget vs Actual', group: 'money', icon: 'BarChart3',
     subs: ['Category / sub-category wise', 'Category — WO/PO wise', 'CT wise'],
     permissionSlug: 'cost-control', built: true },
+  // reviewerOnly because these cards carry project-level financials — the ERP
+  // budget, approved-so-far and every pending ask. /cost-control/approvals
+  // redirects a non-reviewer for exactly that reason, and a tab that showed
+  // the same cards on cost-control view alone would be a way round it.
   { slug: 'approvals', ribbon: 'Approvals', label: 'Pending Approvals', group: 'money', icon: 'CircleCheck',
     subs: ['Waiting on me', 'All pending', 'Returned to engineer', 'Transfers'],
-    permissionSlug: 'cost-control', built: true },
+    permissionSlug: 'cost-control', built: true, reviewerOnly: true },
   // Top management only — gated on budget-vs-actual-v2, held by admin, head
   // and founder. Hidden rather than greyed for everyone else: a greyed tab
   // still announces that the report exists.

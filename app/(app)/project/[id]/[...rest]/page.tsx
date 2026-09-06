@@ -3,12 +3,13 @@ import { notFound, redirect } from 'next/navigation'
 import { requirePermission } from '@/lib/auth'
 import { checkIsCcReviewer } from '@/components/cost-control/ws-actions'
 import { findTab, PROJECT_TABS, tabHref, type ProjectTab } from '@/lib/revamp/tabs'
-import { ABSORBED, findWorkspaceTab, workspaceHref } from '@/lib/revamp/workspace'
+import { ABSORBED, activeSubTab, findWorkspaceTab, workspaceHref } from '@/lib/revamp/workspace'
 import { Hammer, ArrowRight, Database } from 'lucide-react'
 import { OverviewTab } from '../OverviewTab'
 import { ReportsTab } from '../ReportsTab'
 import { ProcurementTab, DiscussionsTab } from '../MoreTabs'
-import { ApprovalsTab, JmrTab, StoresTab } from '../tabs'
+import { JmrTab, StoresTab } from '../tabs'
+import { ApprovalsTab } from '../ApprovalsTab'
 import { ScBudgetsTab } from '../ScBudgetsTab'
 import ProjectSetupPage from '@/app/(app)/cost-control/projects/[id]/setup/page'
 
@@ -24,11 +25,14 @@ export const dynamic = 'force-dynamic'
  * arithmetic, and re-writing that table would mean re-arguing every figure.
  */
 export default async function ProjectTabPage({
-  params,
+  params, searchParams,
 }: {
   params: Promise<{ id: string; rest: string[] }>
+  /** Which sub-tab pill is selected, same `?view=` the landing tab uses. */
+  searchParams: Promise<{ view?: string }>
 }) {
   const { id, rest } = await params
+  const { view: viewParam } = await searchParams
   const slug = rest?.[0] ?? ''
   // Tabs the fifteen-tab ribbon absorbed are now a VIEW of another tab, so
   // an old bookmark, email link or approval card lands on that view instead
@@ -51,6 +55,12 @@ export default async function ProjectTabPage({
   // can never drift apart.
   await requirePermission(tab.permissionSlug, 'view')
 
+  // Which sub-tab pill is on, clamped to the ones the tab declares. The pills
+  // live on the fifteen-tab list (the ribbon's own source), not on the older
+  // PROJECT_TABS this route still gates with.
+  const wsTab = findWorkspaceTab(slug)
+  const view = wsTab ? activeSubTab(wsTab, viewParam) : 0
+
   // Some tabs need more than the module permission. Setup's own page redirects
   // a non-reviewer to /cost-control, which from inside the cockpit reads as
   // being thrown out of the project for no stated reason — so don't let them
@@ -67,9 +77,12 @@ export default async function ProjectTabPage({
   if (slug === 'procurement') return <ProcurementTab projectId={id} />
   if (slug === 'wo-po')       return <ProcurementTab projectId={id} />
 
-  // Restored from the parked set — all three are on the mind map and all three
-  // were already built and tested; only their row in PROJECT_TABS was removed.
-  if (slug === 'approvals')   return <ApprovalsTab projectId={id} />
+  // Approvals is the live My-Approvals card, narrowed to this project — same
+  // loader and same component, so the two can never quote different money.
+  if (slug === 'approvals')   return <ApprovalsTab projectId={id} view={view} />
+
+  // Restored from the parked set — both are on the mind map and both were
+  // already built and tested; only their row in PROJECT_TABS was removed.
   if (slug === 'jmr')         return <JmrTab projectId={id} />
   if (slug === 'material')    return <StoresTab projectId={id} />
 

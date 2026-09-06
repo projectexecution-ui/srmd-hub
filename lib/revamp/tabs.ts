@@ -70,7 +70,7 @@ export const PROJECT_TABS: ProjectTab[] = [
   // Internal Estimate, which is what people came for. This is map page 1,
   // "Budget Vs Actual: Cat Sub Cat Wise".
   { slug: '',             label: 'Budget vs Actual', hint: 'Category and sub-category, against the ERP position',   built: true,  permissionSlug: 'cost-control' },
-  { slug: 'approvals',    label: 'Pending Approvals', hint: 'Budget requests part-way through their sign-off chain', built: true,  permissionSlug: 'cost-control' },
+  { slug: 'approvals',    label: 'Pending Approvals', hint: 'Budget requests part-way through their sign-off chain', built: true,  permissionSlug: 'cost-control', reviewerOnly: true },
   { slug: 'discussions',  label: 'Discussions',      hint: 'Every comment on this project, in one place',           built: true,  permissionSlug: 'cost-control' },
   { slug: 'procurement',  label: 'Indents',          hint: 'Indents raised, and what is still to be ordered',       built: true,  permissionSlug: 'procurement-tracker' },
   { slug: 'wo-po',        label: 'WO / POs',         hint: 'The Indent → PO tracker: POs raised, deliveries due',   built: true,  permissionSlug: 'procurement-tracker' },

@@ -15,6 +15,8 @@ export const RETURNED_STALE_DAYS = 3
 export type ReturnedItem = {
   id: string
   wsCode: string | null
+  /** Kept so a per-project screen can scope this list without re-querying. */
+  projectId: string
   projectCode: string | null
   projectName: string | null
   work: string
@@ -89,6 +91,7 @@ export async function getReturnedToEngineer(): Promise<{ items: ReturnedItem[]; 
       return {
         id: r.id,
         wsCode: r.ws_code,
+        projectId: r.project_id,
         projectCode: proj?.code ?? null,
         projectName: proj?.name ?? null,
         work: one(r.cc_sub_skills)?.name ?? one(r.cc_disciplines)?.name ?? 'Budget',

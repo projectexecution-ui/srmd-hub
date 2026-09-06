@@ -197,13 +197,25 @@ describe('a tab never grants what the module refuses', () => {
   // Setup's own page redirects a non-reviewer to /cost-control. Showing the tab
   // anyway meant an engineer clicked it and was thrown clean out of the project
   // with nothing said — a silent blocker, and the tab bar went with it.
-  it('hides Setup from an engineer, who is not a Cost Control reviewer', () => {
+  it('hides Setup AND Pending Approvals from an engineer, who is not a reviewer', () => {
     const labels = visibleTabs(ROLES.engineer, new Set(), false).map(t => t.label)
     expect(labels).not.toContain('Setup')
+    // Pending Approvals was in this list until 6 Sept 2026, when the tab
+    // started rendering the live My-Approvals cards. Those carry the project
+    // ERP budget, approved-so-far and every pending ask, and
+    // /cost-control/approvals redirects a non-reviewer for exactly that
+    // reason — so the tab showing them on cost-control view alone was a way
+    // round that gate.
+    expect(labels).not.toContain('Pending Approvals')
     // The built tabs they may open — the greyed coming-soon lanes show to
     // everyone and are asserted separately.
     expect(labels.filter(l => BUILT_TABS.some(t => t.label === l)))
-      .toEqual(['Budget vs Actual', 'Pending Approvals', 'Discussions', 'Indents', 'WO / POs', 'JMRs', 'Material In-Out'])
+      .toEqual(['Budget vs Actual', 'Discussions', 'Indents', 'WO / POs', 'JMRs', 'Material In-Out'])
+  })
+
+  it('shows Pending Approvals to a reviewer', () => {
+    const labels = visibleTabs(ROLES.engineer, new Set(), true).map(t => t.label)
+    expect(labels).toContain('Pending Approvals')
   })
 
   // Aksha, 2026-09-03: "SC Budgets is Top Managmnet Reports - not to be seen by
