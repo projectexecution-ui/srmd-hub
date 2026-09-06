@@ -13,6 +13,7 @@ import { MODULES } from '@/lib/modules'
 import { buildNavTree, type SidebarGroup } from '@/lib/sidebar-groups'
 import { IS_DEMO } from '@/lib/demo-mode'
 import { buildRevampNav } from '@/lib/revamp/nav'
+import { readOpenMap, writeOpenMap } from '@/lib/nav-prefs'
 import NotificationBell from '@/components/NotificationBell'
 import { ProjectTree } from '@/components/nav/ProjectTree'
 import type { FlatProject } from '@/lib/project-tree'
@@ -68,8 +69,9 @@ export default function NavBar({ profile, permissions, disabledSlugs = [], isPor
     // browser that has the old flag and no cookie yet.
     let isCollapsed = initialCollapsed ?? false
     if (initialCollapsed === undefined) { try { isCollapsed = localStorage.getItem(COLLAPSE_KEY) === '1' } catch {} }
-    let og: Record<string, boolean> = {}
-    try { const raw = localStorage.getItem(GROUPS_OPEN_KEY); if (raw) og = JSON.parse(raw) } catch {}
+    // Same guard as the Projects lane: `g.id in openGroups` below throws on
+    // anything that is not an object, and localStorage outlives deploys.
+    const og = readOpenMap(GROUPS_OPEN_KEY)
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setUi({ collapsed: isCollapsed, hydrated: true })
     // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -145,7 +147,7 @@ export default function NavBar({ profile, permissions, disabledSlugs = [], isPor
   function toggleGroup(g: { id: string; items: NavItem[] }) {
     const next = { ...openGroups, [g.id]: !groupOpen(g) }
     setOpenGroups(next)
-    try { localStorage.setItem(GROUPS_OPEN_KEY, JSON.stringify(next)) } catch {}
+    writeOpenMap(GROUPS_OPEN_KEY, next)
   }
 
   async function signOut() {

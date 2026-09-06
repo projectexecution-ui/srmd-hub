@@ -11,6 +11,7 @@ import { Building2, ChevronDown, ChevronRight, FolderKanban } from 'lucide-react
 import { cn } from '@/lib/utils'
 import { buildProjectTree, countTree, projectIdFromPath, type FlatProject } from '@/lib/project-tree'
 import { projectHref } from '@/lib/revamp/tabs'
+import { readOpenMap, writeOpenMap, readFlag, writeFlag } from '@/lib/nav-prefs'
 
 const OPEN_KEY = 'srmd_nav_projects_open'
 const LANE_KEY = 'srmd_nav_projects_lane'
@@ -31,18 +32,22 @@ export function ProjectTree({ projects, mobile = false, collapsed = false, onNav
   const [open, setOpen] = useState<Record<string, boolean>>({})
 
   useEffect(() => {
-    try { const raw = localStorage.getItem(OPEN_KEY); if (raw) setOpen(JSON.parse(raw)) } catch {}
-    try { const l = localStorage.getItem(LANE_KEY); if (l != null) setLaneOpen(l === '1') } catch {}
+    // Validated, not just parsed: this key held a plain "1" in the revamp
+    // trial, and JSON.parse turns that into the NUMBER 1 — after which
+    // `id in open` throws and takes the whole app layout down with it.
+    setOpen(readOpenMap(OPEN_KEY))
+    const lane = readFlag(LANE_KEY)
+    if (lane !== null) setLaneOpen(lane)
   }, [])
 
   const isOpen = (id: string, hasActive: boolean) => (id in open ? open[id] : hasActive)
   const toggle = (id: string, hasActive: boolean) => {
     const next = { ...open, [id]: !isOpen(id, hasActive) }
     setOpen(next)
-    try { localStorage.setItem(OPEN_KEY, JSON.stringify(next)) } catch {}
+    writeOpenMap(OPEN_KEY, next)
   }
   const toggleLane = () => {
-    setLaneOpen(v => { try { localStorage.setItem(LANE_KEY, v ? '0' : '1') } catch {}; return !v })
+    setLaneOpen(v => { writeFlag(LANE_KEY, !v); return !v })
   }
 
   if (projects.length === 0) return null
