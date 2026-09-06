@@ -3,12 +3,13 @@ import { AlertTriangle } from 'lucide-react'
 import { formatINR } from '@/lib/utils'
 import { loadCtWise } from '@/lib/revamp/budget-actual-data'
 import ProjectInternalEstimatePage from '@/app/(app)/cost-control/projects/[id]/page'
+import { OrdersView } from './OrdersView'
 
 /**
  * Budget vs Actual (build order §2) — three views behind the sub-tab pills.
  *
  *   0  Category / sub-category wise   CT Hub's Internal Estimate — the live page
- *   1  Category — WO/PO wise          the orders tree (ships with §3)
+ *   1  Category — WO/PO wise          the orders tree, live from IN4
  *   2  CT wise                        sub-project roll-up from IN4, flat
  *
  * Pill 1 RENDERS THE LIVE INTERNAL ESTIMATE PAGE, it does not reproduce it.
@@ -36,7 +37,7 @@ import ProjectInternalEstimatePage from '@/app/(app)/cost-control/projects/[id]/
  */
 export async function BudgetTab({ projectId, view }: { projectId: string; view: number }) {
   if (view === 2) return <CtWiseView projectId={projectId} />
-  if (view === 1) return <OrdersPlaceholder />
+  if (view === 1) return <OrdersView projectId={projectId} />
   return (
     <ProjectInternalEstimatePage
       params={Promise.resolve({ id: projectId })}
@@ -149,25 +150,6 @@ async function CtWiseView({ projectId }: { projectId: string }) {
         </div>
       </div>
       <p className="text-[11.5px] text-gray-400 leading-relaxed">{note}</p>
-    </div>
-  )
-}
-
-/* ── pill 2 — the orders tree ───────────────────────────────────────────── */
-
-function OrdersPlaceholder() {
-  return (
-    <div className="rounded-xl border border-gray-200 bg-white p-5">
-      <p className="text-sm font-semibold text-gray-900">Category — WO/PO wise</p>
-      <p className="text-[13px] text-gray-600 mt-1.5 max-w-2xl leading-relaxed">
-        The orders tree — category → sub-category → order → BOQ item → bill, work orders and POs
-        together. It reads the same IN4 tables as Procurement → WO / PO (§3), so it is built
-        alongside that tab rather than twice, and lands in the next stage.
-      </p>
-      <p className="text-[11.5px] text-gray-400 mt-3">
-        Nothing is hidden behind this: the same money is on the Category / sub-category view now,
-        cut by budget category instead of by order.
-      </p>
     </div>
   )
 }
