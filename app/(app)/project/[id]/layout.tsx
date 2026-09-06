@@ -35,8 +35,29 @@ export default async function ProjectWorkspaceLayout({
     checkIsCcReviewer(),
   ])
   const { id } = await params
-  const head = await loadWorkspaceHeader(id)
-  if (!head) notFound()
+  const res = await loadWorkspaceHeader(id)
+  // A project that is not there is a 404. A lookup that BROKE is not — saying
+  // "not found" would tell someone their project had gone, which is both wrong
+  // and alarming, so the failure states itself instead.
+  if (res.kind === 'missing') notFound()
+  if (res.kind === 'failed') {
+    return (
+      <div className="max-w-2xl mx-auto p-6">
+        <div className="rounded-xl border border-rose-200 bg-rose-50 p-4">
+          <p className="text-sm font-semibold text-rose-900">This project could not be opened</p>
+          <p className="text-xs text-rose-800 mt-1">
+            The project record could not be read, so the workspace has nothing to build a header from.
+            The project itself is fine — this is a read that failed.
+          </p>
+          <p className="text-xs text-rose-800 mt-2 font-mono break-all">{res.error}</p>
+          <Link href="/cost-control" className="inline-flex mt-3 text-xs font-semibold text-rose-900 underline">
+            Back to all projects
+          </Link>
+        </div>
+      </div>
+    )
+  }
+  const head = res.header
 
   const tabs = visibleWorkspaceTabs(perms, disabled, isReviewer)
 
