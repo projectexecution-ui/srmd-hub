@@ -112,6 +112,33 @@ describe('renderTemplate — filling IN4’s own template', () => {
     expect(r.html).not.toContain('[BOQ_Name]')
   })
 
+  it('inserts a RAW tag as markup — IN4’s conditions are html, not text', () => {
+    // The work-order conditions come out of IN4 as html (<strong>, <ol>, <br>).
+    // Escaped, a contract prints as visible markup instead of clauses.
+    const r = renderTemplate(
+      '<div>[Wo_Terms_and_Condititons]</div>',
+      { '[Wo_Terms_and_Condititons]': '<strong>Advance Payment:</strong><br>Rs 50,00,000' },
+      [], undefined, ['[Wo_Terms_and_Condititons]'],
+    )
+    expect(r.html).toContain('<strong>Advance Payment:</strong>')
+    expect(r.html).not.toContain('&lt;strong&gt;')
+  })
+
+  it('leaves IN4’s own square-bracket text inside a raw block alone', () => {
+    // WO 623’s conditions contain the literal text "[Link share with mail]" —
+    // an unfilled placeholder somebody left in a live contract. It is IN4’s
+    // data, so it must print exactly as IN4 would print it rather than being
+    // silently swallowed by the tag-clearing pass. Reporting it is a
+    // conversation with Aksha, not something to paper over here.
+    const r = renderTemplate(
+      '<div>[Wo_Terms_and_Condititons]</div>',
+      { '[Wo_Terms_and_Condititons]': 'Uploaded to Drive at [Link share with mail].' },
+      [], undefined, ['[Wo_Terms_and_Condititons]'],
+    )
+    expect(r.html).toContain('[Link share with mail]')
+    expect(r.unresolved).not.toContain('[Link share with mail]')
+  })
+
   it('does not touch tags the template never asked for', () => {
     const r = renderTemplate('<p>[A]</p>', { '[A]': '1', '[Unused]': '2' }, [])
     expect(r.html).toBe('<p>1</p>')
@@ -136,7 +163,27 @@ describe('wrapForPrint', () => {
   it('prints A4 portrait and hides its own toolbar on paper', () => {
     const html = wrapForPrint('<p>doc</p>', meta)
     expect(html).toContain('size: A4 portrait')
-    expect(html).toContain('@media print { .ct-bar { display: none } }')
+    expect(html).toMatch(/@media print { .ct-bar { display: none }/)
+  })
+
+  it('KEEPS background fills when printed — the colours went white on paper', () => {
+    // A browser drops every background fill on print unless the page asks for
+    // them, so IN4's shaded bands printed blank while looking right on screen.
+    const html = wrapForPrint('<p>doc</p>', meta)
+    expect(html).toContain('print-color-adjust: exact')
+    expect(html).toContain('-webkit-print-color-adjust: exact')
+  })
+
+  it('never breaks a table row across pages, and repeats a table head', () => {
+    const html = wrapForPrint('<p>doc</p>', meta)
+    expect(html).toContain('page-break-inside: avoid')
+    expect(html).toContain('display: table-header-group')
+  })
+
+  it('tells the reader the two print-dialogue settings CSS cannot control', () => {
+    const html = wrapForPrint('<p>doc</p>', meta)
+    expect(html).toContain('Background graphics')
+    expect(html).toContain('Headers and footers')
   })
 
   it('lists unfilled fields on the page itself', () => {

@@ -12,7 +12,7 @@
 
 import { NextResponse } from 'next/server'
 import { requirePermission } from '@/lib/auth'
-import { loadWoPrint, renderTemplate, wrapForPrint, In4NotConfigured } from '@/lib/in4/wo-print'
+import { loadWoPrint, renderTemplate, wrapForPrint, In4NotConfigured, RAW_TAGS } from '@/lib/in4/wo-print'
 import { in4MissingVars } from '@/lib/in4/db'
 
 export const dynamic = 'force-dynamic'
@@ -44,7 +44,7 @@ export async function GET(
 
   try {
     const d = await loadWoPrint(woId)
-    const r = renderTemplate(d.templateHtml, d.scalars, d.rows)
+    const r = renderTemplate(d.templateHtml, d.scalars, d.rows, undefined, RAW_TAGS)
     const html = wrapForPrint(r.html, {
       displayNo: d.displayNo,
       templateName: d.templateName,
