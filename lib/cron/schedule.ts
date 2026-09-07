@@ -48,10 +48,17 @@ export const CRON_JOBS: CronJob[] = [
   // sends it (the afternoon slot is best-effort on Vercel's free plan and can be
   // skipped). Its own approval_events.mgmt_digest_at guard prevents any double-send.
   { key: 'cc-approval-digest',    policy: 'daily', module: 'cost-control', am: '/api/cron/cc-approval-digest?cron=1',  pm: '/api/cron/cc-approval-digest?cron=1' },
-  // Morning reminder to whoever a budget is waiting on (aged since a previous
-  // day); escalates items stuck 3+ days. Rides both slots; its own IST-date
-  // "aged since a previous day" gate + the ledger prevent a double-send.
-  { key: 'cc-approval-reminders', policy: 'daily', module: 'cost-control', am: '/api/cron/cc-approval-reminders?cron=1', pm: '/api/cron/cc-approval-reminders?cron=1' },
+  // ONE reminder a day, in the EVENING slot only. It used to ride both slots
+  // and the Trustee was getting the same "budgets pending" line at 09:20 and
+  // again at 15:40, on all four channels.
+  //
+  // Deliberately pm-ONLY rather than 'daily' across both slots: the ledger is
+  // what stops a both-slots job sending twice, and it stopped stamping after
+  // 2026-09-04, which is exactly when the duplicates appeared. One slot cannot
+  // double-send whatever the ledger does. The price is the lost self-heal — if
+  // Vercel skips the evening cron there is no reminder that day, which is the
+  // right way round for a nag.
+  { key: 'cc-approval-reminders', policy: 'daily', module: 'cost-control', pm: '/api/cron/cc-approval-reminders?cron=1' },
   // Trustee release digest — one grouped "budgets to release" summary per founder
   // (only fires when cc_tg_trustee_digest is on). Both slots; ledger caps to once/day.
   { key: 'cc-trustee-digest',     policy: 'daily', module: 'cost-control', am: '/api/cron/cc-trustee-digest?cron=1',    pm: '/api/cron/cc-trustee-digest?cron=1' },

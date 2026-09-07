@@ -68,6 +68,24 @@ describe('plannedJobs — daily jobs run once/day across both slots', () => {
   })
 })
 
+describe('cc-approval-reminders is a once-a-day EVENING nag', () => {
+  it('is absent from the morning slot and present in the evening one', () => {
+    expect(plannedJobs('am', {}, DAY, false).map(j => j.key)).not.toContain('cc-approval-reminders')
+    expect(plannedJobs('pm', {}, DAY, false).map(j => j.key)).toContain('cc-approval-reminders')
+  })
+
+  // The duplicate reminders in Sept 2026 happened because the ledger was not
+  // being stamped, so both slots ran. A single slot has to survive that.
+  it('still fires only once when the ledger is stale or empty', () => {
+    const ledgers: Record<string, string>[] = [{}, { 'cc-approval-reminders': '2026-08-05' }]
+    for (const ledger of ledgers) {
+      const runs = (['am', 'pm'] as const).filter(slot =>
+        plannedJobs(slot, ledger, DAY, false).some(j => j.key === 'cc-approval-reminders'))
+      expect(runs).toEqual(['pm'])
+    }
+  })
+})
+
 describe('stampLedger', () => {
   it('stamps only daily jobs that succeeded; leaves each-slot + failures alone', () => {
     const next = stampLedger({}, [

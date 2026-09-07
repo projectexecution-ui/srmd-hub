@@ -32,6 +32,22 @@ export async function getReturnedToEngineer(): Promise<{ items: ReturnedItem[]; 
   if (!can(perms, 'cost-control', 'view')) return { items: [] }
 
   const sb = await createClient()
+
+  // Chasing a returned sheet is the construction team's job: the Atm Head over
+  // the work and the Project Head over the project. The Trustee only signs the
+  // final release — getting an engineer to redo a working sheet is no part of
+  // that, and because he is a named approver on 22 projects he was being shown
+  // the lot. Engineers are not shown it either; they are the ones holding these
+  // sheets, and their own count already sits on the Cost Control snapshot.
+  const isAdmin = can(perms, 'cost-control', 'admin') || profile?.role === 'admin'
+  if (!isAdmin) {
+    const { data: role } = await sb.rpc('effective_user_role', {
+      p_user_id: profile?.id ?? '',
+      p_module_slug: 'cost-control',
+    })
+    if (role !== 'head' && role !== 'project_head') return { items: [] }
+  }
+
   const { data, error } = await sb
     .from('cc_working_sheets')
     .select(`id, ws_code, project_id, total_amount, summary_total,
@@ -68,7 +84,7 @@ export async function getReturnedToEngineer(): Promise<{ items: ReturnedItem[]; 
 
   // A head sees only the projects he approves for; an admin sees everything.
   let allowed: Set<string> | null = null
-  if (!can(perms, 'cost-control', 'admin') && profile?.role !== 'admin') {
+  if (!isAdmin) {
     const { data: mine } = await sb
       .from('cc_project_approvers')
       .select('project_id')
