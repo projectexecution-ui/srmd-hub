@@ -50,6 +50,7 @@ export async function GET(
       templateName: d.templateName,
       unresolved: r.unresolved,
       rows: r.rows,
+      sources: d.sources,
     })
     return new NextResponse(html, {
       status: 200,
