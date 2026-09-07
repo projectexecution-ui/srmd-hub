@@ -530,7 +530,7 @@ export default async function ApprovalsInboxPage({
       {/* Below the queue on purpose: what you must approve comes first, what you
           sent back comes after. Same lane and same data as the dashboard, so the
           two can never tell a different story. Self-hides when empty. */}
-      <ReturnedToEngineer items={returned.items} />
+      <ReturnedToEngineer items={returned.items} mine={returned.mine} />
     </div>
   )
 }

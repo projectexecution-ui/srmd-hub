@@ -115,7 +115,7 @@ export default async function DashboardPage() {
 
       {/* Returned budgets — NOT the approver's to act on, so deliberately below
           "Needs you now" and quieter. A chasing list, so the loop gets closed. */}
-      {showCC && <ReturnedToEngineer items={returned.items} />}
+      {showCC && <ReturnedToEngineer items={returned.items} mine={returned.mine} />}
 
       {/* Your budget work — an engineer's own drafts/returns/awaiting (things
           that don't appear in the approval inbox). Self-hides when there's none. */}

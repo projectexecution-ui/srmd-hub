@@ -27,28 +27,39 @@ export type ReturnedItem = {
   url: string
 }
 
-export async function getReturnedToEngineer(): Promise<{ items: ReturnedItem[]; error?: string }> {
+export async function getReturnedToEngineer(): Promise<{ items: ReturnedItem[]; mine?: boolean; error?: string }> {
   const [profile, perms] = await Promise.all([getMyProfile(), getMyPermissions()])
   if (!can(perms, 'cost-control', 'view')) return { items: [] }
 
   const sb = await createClient()
 
-  // Chasing a returned sheet is the construction team's job: the Atm Head over
-  // the work and the Project Head over the project. The Trustee only signs the
-  // final release — getting an engineer to redo a working sheet is no part of
-  // that, and because he is a named approver on 22 projects he was being shown
-  // the lot. Engineers are not shown it either; they are the ones holding these
-  // sheets, and their own count already sits on the Cost Control snapshot.
+  // Two audiences, one list.
+  //
+  // The Atm Head over the work and the Project Head over the project CHASE it —
+  // who is holding a sent-back sheet, for how long, and what they were asked to
+  // change. The engineer needs the same list for the opposite reason: it is his
+  // work to redo, and he should not have to hunt for what came back.
+  //
+  // Nobody else. The Trustee only signs the final release; getting an engineer
+  // to redo a working sheet is no part of that, and because he is a named
+  // approver on 22 projects he was being shown effectively all of it.
+  //
+  // An engineer sees ONLY his own. The approver's return comment is feedback on
+  // one person's work, and an ENG role carries edit rights on every project with
+  // no assignment — so without this an engineer would read every other
+  // engineer's sheets and the criticism written on them.
   const isAdmin = can(perms, 'cost-control', 'admin') || profile?.role === 'admin'
+  let mine = false
   if (!isAdmin) {
     const { data: role } = await sb.rpc('effective_user_role', {
       p_user_id: profile?.id ?? '',
       p_module_slug: 'cost-control',
     })
-    if (role !== 'head' && role !== 'project_head') return { items: [] }
+    if (role === 'engineer') mine = true
+    else if (role !== 'head' && role !== 'project_head') return { items: [] }
   }
 
-  const { data, error } = await sb
+  let q = sb
     .from('cc_working_sheets')
     .select(`id, ws_code, project_id, total_amount, summary_total,
              projects(code, name),
@@ -56,10 +67,12 @@ export async function getReturnedToEngineer(): Promise<{ items: ReturnedItem[]; 
              eng:profiles!cc_working_sheets_engineer_id_fkey(full_name, name)`)
     .eq('status', 'returned')
     .is('archived_at', null)
+  if (mine) q = q.eq('engineer_id', profile?.id ?? '')
+  const { data, error } = await q
   if (error) return { items: [], error: error.message }
 
   const rows = data ?? []
-  if (rows.length === 0) return { items: [] }
+  if (rows.length === 0) return { items: [], mine }
 
   // When it was returned, and why — the return comment is the whole point of
   // this list, otherwise chasing means opening every sheet to remember.
@@ -119,7 +132,7 @@ export async function getReturnedToEngineer(): Promise<{ items: ReturnedItem[]; 
     })
     .sort((a, b) => b.days - a.days || b.amount - a.amount)
 
-  return { items }
+  return { items, mine }
 }
 
 function one<T>(v: T | T[] | null | undefined): T | null {
