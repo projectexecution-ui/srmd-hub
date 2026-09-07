@@ -13,6 +13,7 @@
 import { NextResponse } from 'next/server'
 import { requirePermission } from '@/lib/auth'
 import { loadWoPrint, renderTemplate, wrapForPrint, In4NotConfigured } from '@/lib/in4/wo-print'
+import { in4MissingVars } from '@/lib/in4/db'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
@@ -61,13 +62,24 @@ export async function GET(
     })
   } catch (e) {
     if (e instanceof In4NotConfigured) {
-      // The honest failure. On the trial deployment IN4's credentials are not
-      // set, so say exactly that instead of showing an empty document.
+      // Say WHICH variable is absent, not just that something is. Two things
+      // catch people out here and neither is visible from the old message:
+      // Vercel scopes a variable per environment, and the trial site is a
+      // PREVIEW deployment, so setting it on Production alone changes nothing
+      // here; and a variable only reaches a deployment BUILT after it was
+      // added, so an existing deployment keeps answering this page until it
+      // is redeployed.
+      const missing = in4MissingVars()
       return page('IN4 is not connected on this deployment', `
-        <p>This work order is rendered live from IN4's own print template, so it needs the
-        IN4 database credentials. They are not set here.</p>
-        <p>Add <code>IN4_DB_USER</code> and <code>IN4_DB_PASSWORD</code> to the deployment's
-        environment variables and this page works with no other change.</p>`, 503)
+        <p>This work order is rendered live from IN4&rsquo;s own print template, so it needs the
+        IN4 database login. ${missing.length === 2
+          ? 'Neither variable is set on this deployment.'
+          : `<b>${missing.join(', ')}</b> ${missing.length === 1 ? 'is' : 'are'} not set on this deployment (the other one is).`}</p>
+        <p>Missing here: ${missing.map(v => `<code>${v}</code>`).join(', ') || 'nothing — so the failure is elsewhere'}</p>
+        <p>Two things catch this out. A Vercel variable is scoped per environment, and this
+        trial runs as a <b>Preview</b> deployment — setting it on Production only will not reach
+        here. And a variable only reaches a deployment <b>built after</b> it was added, so this
+        page keeps saying the same thing until the branch is redeployed.</p>`, 503)
     }
     const msg = e instanceof Error ? e.message : String(e)
     return page('The work order could not be rendered', `
