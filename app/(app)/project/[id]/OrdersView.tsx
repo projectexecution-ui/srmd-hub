@@ -16,7 +16,7 @@
 
 import { Fragment } from 'react'
 import Link from 'next/link'
-import { AlertTriangle, Info } from 'lucide-react'
+import { AlertTriangle, Info, FileText } from 'lucide-react'
 import { formatINR } from '@/lib/utils'
 import {
   TreeProvider, TreeToolbar, CatChevron, CatRows, SubRow,
@@ -151,6 +151,10 @@ export async function OrdersView({ projectId }: { projectId: string }) {
                                       <RowDetailToggle id={o.id} count={o.lines.length} />
                                       <span className="font-mono text-[11.5px] text-gray-700">{o.ref}</span>
                                       {o.party && <span className="ml-2 text-[11.5px] text-gray-500">{o.party}</span>}
+                                      {/* Work orders only: IN4 holds a print
+                                          template for them (event 3) and none
+                                          for purchase orders. */}
+                                      {o.kind === 'wo' && <PrintWo id={o.id} ref_={o.ref} />}
                                     </td>
                                     <td colSpan={3} className="px-3 py-1.5 text-right text-[11px] text-gray-400">
                                       {o.lines.length} item{o.lines.length === 1 ? '' : 's'}
@@ -239,6 +243,7 @@ export async function OrdersView({ projectId }: { projectId: string }) {
                                   <span className="font-mono text-gray-700">{o.ref}</span>
                                 </p>
                                 {o.party && <p className="ml-6 text-[11px] text-gray-500">{o.party}</p>}
+                                {o.kind === 'wo' && <p className="ml-6 mt-0.5"><PrintWo id={o.id} ref_={o.ref} /></p>}
                                 <div className="ml-6 mt-0.5 flex flex-wrap gap-x-3 text-[11px] text-gray-500">
                                   <span>Ordered <span className="font-semibold text-gray-800 tabular-nums">{formatINR(o.ordered)}</span></span>
                                   {o.paid != null && <span>Paid <span className="font-semibold text-gray-700 tabular-nums">{formatINR(o.paid)}</span></span>}
@@ -309,6 +314,24 @@ function RowName({ row }: { row: OrdersSubRow }) {
   }
   if (row.unassigned) return <span className="text-gray-500 italic">{row.name}</span>
   return <>{row.name}</>
+}
+
+/** Opens the order in IN4's OWN print format, rendered live from IN4's
+ *  template. A new tab, because it is a document rather than a screen — and
+ *  the page it opens carries the Print button that makes the PDF. */
+function PrintWo({ id, ref_ }: { id: string; ref_: string }) {
+  const woId = id.replace(/^wo:/, '')
+  return (
+    <a
+      href={`/api/in4/work-order/${woId}/print`}
+      target="_blank"
+      rel="noopener"
+      title={`Open ${ref_} in IN4's own work-order format`}
+      className="ml-2 inline-flex items-center gap-1 text-[11px] font-semibold text-indigo-700 hover:underline"
+    >
+      <FileText className="h-3 w-3" /> Print
+    </a>
+  )
 }
 
 const Dash = () => <span className="text-gray-300">—</span>

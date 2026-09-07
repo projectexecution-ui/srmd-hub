@@ -1,0 +1,77 @@
+// The printable work order, in IN4's own format.
+//
+// Returns HTML rather than a PDF on purpose: the browser's own print dialogue
+// makes the PDF, which keeps a headless Chrome out of the deployment and means
+// the page is also readable on screen. The wrapper carries a Print button and
+// an A4 page rule.
+//
+// Gated on cost-control view — the same permission as the orders tree this is
+// opened from, which already shows the order value and every line item. It
+// carries no Internal Estimate figure, so the reviewer-only gate that guards
+// the Budget tab's first pill does not apply here.
+
+import { NextResponse } from 'next/server'
+import { requirePermission } from '@/lib/auth'
+import { loadWoPrint, renderTemplate, wrapForPrint, In4NotConfigured } from '@/lib/in4/wo-print'
+
+export const dynamic = 'force-dynamic'
+export const maxDuration = 60
+
+function page(title: string, body: string, status: number) {
+  return new NextResponse(
+    `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>${title}</title>
+     <style>body{margin:0;min-height:100vh;display:grid;place-items:center;padding:24px;
+     background:#f8fafc;color:#0f172a;font:14px/1.55 system-ui,sans-serif}
+     .c{max-width:560px}h1{font-size:19px;margin:0 0 8px}p{margin:0 0 8px;color:#475569}
+     code{font:12.5px ui-monospace,Menlo,monospace;background:#f1f5f9;padding:1px 5px;border-radius:4px}</style>
+     </head><body><div class="c"><h1>${title}</h1>${body}</div></body></html>`,
+    { status, headers: { 'content-type': 'text/html; charset=utf-8' } },
+  )
+}
+
+export async function GET(
+  _req: Request,
+  { params }: { params: Promise<{ woId: string }> },
+) {
+  await requirePermission('cost-control', 'view')
+
+  const { woId: raw } = await params
+  const woId = Number(raw)
+  if (!Number.isInteger(woId) || woId <= 0) {
+    return page('Not a work order', `<p>“${raw}” is not a work-order id.</p>`, 400)
+  }
+
+  try {
+    const d = await loadWoPrint(woId)
+    const r = renderTemplate(d.templateHtml, d.scalars, d.rows)
+    const html = wrapForPrint(r.html, {
+      displayNo: d.displayNo,
+      templateName: d.templateName,
+      unresolved: r.unresolved,
+      rows: r.rows,
+    })
+    return new NextResponse(html, {
+      status: 200,
+      headers: {
+        'content-type': 'text/html; charset=utf-8',
+        // Never cached: it is read straight from IN4 and must not be a stale
+        // copy of an order that has since been amended.
+        'cache-control': 'no-store',
+      },
+    })
+  } catch (e) {
+    if (e instanceof In4NotConfigured) {
+      // The honest failure. On the trial deployment IN4's credentials are not
+      // set, so say exactly that instead of showing an empty document.
+      return page('IN4 is not connected on this deployment', `
+        <p>This work order is rendered live from IN4's own print template, so it needs the
+        IN4 database credentials. They are not set here.</p>
+        <p>Add <code>IN4_DB_USER</code> and <code>IN4_DB_PASSWORD</code> to the deployment's
+        environment variables and this page works with no other change.</p>`, 503)
+    }
+    const msg = e instanceof Error ? e.message : String(e)
+    return page('The work order could not be rendered', `
+      <p>IN4 was reachable but this order did not come back.</p>
+      <p><code>${msg.replace(/[<>&]/g, '')}</code></p>`, 502)
+  }
+}
