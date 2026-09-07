@@ -7,6 +7,7 @@ import { visibleWorkspaceTabs } from '@/lib/revamp/workspace'
 import { checkIsCcReviewer } from '@/components/cost-control/ws-actions'
 import { formatDateTime } from '@/lib/utils'
 import { Ribbon } from './Ribbon'
+import { getMyApprovalCounts } from '@/lib/revamp/approval-counts'
 
 export const dynamic = 'force-dynamic'
 
@@ -30,9 +31,11 @@ export default async function ProjectWorkspaceLayout({
   params: Promise<{ id: string }>
 }) {
   const perms = await requirePermission('cost-control', 'view')
-  const [disabled, isReviewer] = await Promise.all([
+  const [disabled, isReviewer, approvalCounts] = await Promise.all([
     getDisabledModuleSlugs(),
     checkIsCcReviewer(),
+    // Deduplicated with the sidebar's call by React cache — one RPC per page.
+    getMyApprovalCounts(),
   ])
   const { id } = await params
   const res = await loadWorkspaceHeader(id)
@@ -144,7 +147,13 @@ export default async function ProjectWorkspaceLayout({
             </div>
           </div>
 
-          <Ribbon projectId={id} tabs={tabs} canSetup={isReviewer} />
+          <Ribbon
+            projectId={id}
+            tabs={tabs}
+            canSetup={isReviewer}
+            /* This project's own Cost Control queue, for the Approvals tab. */
+            badges={{ approvals: approvalCounts.byProject[id] ?? 0 }}
+          />
         </div>
       </div>
 

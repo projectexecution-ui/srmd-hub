@@ -11,9 +11,10 @@ import { getMyProfile, getMyPermissions, getDisabledModuleSlugs, isPortalOwner }
 import { getModuleLabels } from '@/lib/module-labels'
 import { getSidebarGroups } from '@/lib/sidebar-groups.server'
 import { getShell } from '@/lib/shell'
+import { getMyApprovalCounts, rollUpCounts } from '@/lib/revamp/approval-counts'
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
-  const [profile, permissions, disabledSlugs, portalOwner, moduleLabelsMap, sidebarGroups, shell] = await Promise.all([
+  const [profile, permissions, disabledSlugs, portalOwner, moduleLabelsMap, sidebarGroups, shell, approvalCounts] = await Promise.all([
     getMyProfile(),
     getMyPermissions(),
     getDisabledModuleSlugs(),
@@ -23,6 +24,10 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     // The same cached shell the calls above read from — no extra round trip.
     // It carries the live project list for the sidebar's Projects tree.
     getShell(),
+    // The yellow "waiting on you" counts for the Projects lane. One RPC —
+    // the same my_approval_inbox() the dashboard and the bell read, so the
+    // three can never disagree — and it degrades to zeroes on failure.
+    getMyApprovalCounts(),
   ])
   // Flatten { label, description } → just label for the NavBar prop shape.
   const moduleLabels: Record<string, string> = Object.fromEntries(
@@ -58,6 +63,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           moduleLabels={moduleLabels}
           sidebarGroups={sidebarGroups}
           projects={shell?.projects ?? []}
+          approvals={rollUpCounts(approvalCounts.byProject, shell?.projects ?? [])}
           initialCollapsed={navCollapsed}
         />
         <main className="flex-1 min-w-0 overflow-x-auto">

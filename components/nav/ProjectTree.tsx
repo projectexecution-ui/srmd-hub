@@ -18,13 +18,17 @@ const LANE_KEY = 'srmd_nav_projects_lane'
 
 interface Props {
   projects: FlatProject[]
+  /** project id → approvals waiting on THIS person, already rolled up so a
+   *  collapsed group carries its children's queue. Amber, because it is work
+   *  on your desk rather than a count of what exists. */
+  approvals?: Record<string, number>
   mobile?: boolean
   /** Desktop rail collapsed to icons — render one icon that opens the list page. */
   collapsed?: boolean
   onNavigate?: () => void
 }
 
-export function ProjectTree({ projects, mobile = false, collapsed = false, onNavigate }: Props) {
+export function ProjectTree({ projects, approvals = {}, mobile = false, collapsed = false, onNavigate }: Props) {
   const pathname = usePathname()
   const tree = useMemo(() => buildProjectTree(projects), [projects])
   const activeId = projectIdFromPath(pathname)
@@ -50,6 +54,12 @@ export function ProjectTree({ projects, mobile = false, collapsed = false, onNav
     setLaneOpen(v => { writeFlag(LANE_KEY, !v); return !v })
   }
 
+  // Every project's own queue, for the lane header.
+  const laneWaiting = Object.values(approvals).length
+    ? projects.reduce((t, p) => t + (p.parentId ? (approvals[p.id] ?? 0) : 0), 0)
+      + projects.reduce((t, p) => t + (p.parentId ? 0 : (approvals[p.id] ?? 0)), 0)
+    : 0
+
   if (projects.length === 0) return null
 
   const linkCls = (active: boolean) => cn(
@@ -72,6 +82,7 @@ export function ProjectTree({ projects, mobile = false, collapsed = false, onNav
         className={cn('w-full flex items-center gap-2 text-sm font-semibold rounded-xl transition-colors', mobile ? 'px-4 py-2.5' : 'px-3 py-2', activeId ? 'text-blue-700' : 'text-gray-700 hover:bg-gray-50')}>
         <FolderKanban className={cn('h-5 w-5 flex-shrink-0', activeId ? 'text-blue-600' : 'text-gray-400')} />
         <span className="flex-1 text-left truncate">Projects</span>
+        {laneWaiting > 0 && <WaitPill n={laneWaiting} />}
         <span className="text-[11px] font-semibold text-gray-400 tabular-nums">{countTree(tree)}</span>
         <ChevronDown className={cn('h-4 w-4 flex-shrink-0 text-gray-400 transition-transform', laneOpen && 'rotate-180')} />
       </button>
@@ -84,6 +95,7 @@ export function ProjectTree({ projects, mobile = false, collapsed = false, onNav
                 <Link key={g.id} href={projectHref(g.id)} onClick={onNavigate} className={linkCls(g.id === activeId)} title={g.name}>
                   <Building2 className="h-4 w-4 flex-shrink-0 text-gray-400" />
                   <span className="truncate">{g.label}</span>
+                  {(approvals[g.id] ?? 0) > 0 && <WaitPill n={approvals[g.id]} className="ml-auto" />}
                 </Link>
               )
             }
@@ -96,7 +108,8 @@ export function ProjectTree({ projects, mobile = false, collapsed = false, onNav
                   </button>
                   <Link href={projectHref(g.id)} onClick={onNavigate} className={cn(linkCls(g.id === activeId), 'flex-1 min-w-0 font-medium')} title={g.name}>
                     <span className="truncate">{g.label}</span>
-                    <span className="ml-auto text-[10px] text-gray-400 tabular-nums">{g.children.length}</span>
+                    {(approvals[g.id] ?? 0) > 0 && <WaitPill n={approvals[g.id]} className="ml-auto" />}
+                    <span className={cn('text-[10px] text-gray-400 tabular-nums', (approvals[g.id] ?? 0) > 0 ? 'ml-1.5' : 'ml-auto')}>{g.children.length}</span>
                   </Link>
                 </div>
                 {o && (
@@ -104,6 +117,7 @@ export function ProjectTree({ projects, mobile = false, collapsed = false, onNav
                     {g.children.map(c => (
                       <Link key={c.id} href={projectHref(c.id)} onClick={onNavigate} className={linkCls(c.id === activeId)} title={c.name}>
                         <span className="truncate">{c.code ?? c.name}</span>
+                        {(approvals[c.id] ?? 0) > 0 && <WaitPill n={approvals[c.id]} className="ml-auto" />}
                       </Link>
                     ))}
                   </div>
@@ -114,5 +128,22 @@ export function ProjectTree({ projects, mobile = false, collapsed = false, onNav
         </div>
       )}
     </div>
+  )
+}
+
+/** The yellow count: approvals waiting on the person reading it. Amber and not
+ *  grey on purpose — grey is "how many exist", amber is "this is yours". */
+function WaitPill({ n, className }: { n: number; className?: string }) {
+  return (
+    <span
+      title={`${n} approval${n === 1 ? '' : 's'} waiting on you`}
+      className={cn(
+        'inline-flex items-center justify-center rounded-full bg-amber-100 text-amber-800',
+        'border border-amber-200 text-[10px] font-bold tabular-nums min-w-[17px] h-[17px] px-1 flex-shrink-0',
+        className,
+      )}
+    >
+      {n}
+    </span>
   )
 }
