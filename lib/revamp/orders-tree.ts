@@ -126,6 +126,10 @@ export interface OrderRow extends Money {
   ref: string
   party: string | null
   kind: 'wo' | 'po'
+  /** IN4's own id for the order — ENGG_WORK_ORDER.ID or PURCH_PURCHASE_
+   *  ORDER.ID — which the print and ledger routes take. Null for a PO whose
+   *  header IN4 did not return. */
+  in4Id: number | null
   /** How the full amount is made up, in IN4's own parts — "before GST
    *  ₹x · GST ₹y" or "material ₹a · GST ₹b · freight ₹c". Null when the
    *  header was not available. */
@@ -992,7 +996,7 @@ export function buildOrdersTree(
       id: `wo:${w.wo_id}`,
       ref,
       party: w.contractor_id != null ? (parties.get(w.contractor_id) ?? null) : null,
-      kind: 'wo',
+      kind: 'wo', in4Id: w.wo_id,
       ordered, gross, ...money, breakup,
       lines, lineTotal, certifiedAmt, lineNote,
       flag: dup ? 'IN4 has given this number to two different work orders.' : null,
@@ -1035,7 +1039,7 @@ export function buildOrdersTree(
         order = {
           id: `po:${ck}:${no}`, ref: no,
           party: po?.supplier?.trim() || null,
-          kind: 'po', ...ZERO_MONEY, gross: null, billed: null, paid: null, advanceOutstanding: null, retention: null, balance: null,
+          kind: 'po', in4Id: null, ...ZERO_MONEY, gross: null, billed: null, paid: null, advanceOutstanding: null, retention: null, balance: null,
           breakup: null, lines: [], lineTotal: 0, certifiedAmt: null, lineNote: null, flag: null,
           ledger: EMPTY_LEDGER, ledgerNote: null,
         }
@@ -1088,6 +1092,7 @@ export function buildOrdersTree(
       o.certifiedAmt = received.length ? received.reduce((s, l) => s + (l.certifiedAmt ?? 0), 0) : null
       const h = src.poHeaders.get(o.ref)
       if (!h) { poWithoutHeader++; continue }
+      o.in4Id = h.poId
       const c = src.poCerts.get(h.poId)
       // Same money-out rule as a work order: bill payments + TDS (counted as
       // paid) + advances paid. All from rows placed by GRN — the header's

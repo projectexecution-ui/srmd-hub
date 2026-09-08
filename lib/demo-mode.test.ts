@@ -149,7 +149,7 @@ describe('demo mode — the trial site', () => {
       const m = await loadWith({ VERCEL_ENV: 'preview' })
       const { client, calls } = fakeClient()
       expect(m.READ_RPCS.has(name)).toBe(false)
-      const { data, error } = await m.guardSupabaseClient(client).rpc(name, { id: 1 })
+      const { data, error } = (await m.guardSupabaseClient(client).rpc(name, { id: 1 })) as { data: unknown; error: { code?: string; details?: string } | null }
       expect(data).toBeNull()
       expect(error?.code).toBe('DEMO_READ_ONLY')
       expect(error?.details).toContain(name)

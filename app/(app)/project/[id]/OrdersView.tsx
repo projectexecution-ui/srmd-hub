@@ -166,11 +166,13 @@ export async function OrdersView({ projectId }: { projectId: string }) {
                                       <RowDetailToggle id={o.id} count={o.lines.length} />
                                       <span className="font-mono text-[12px] text-gray-700">{o.ref}</span>
                                       {o.party && <span className="ml-2 text-[12px] text-gray-500">{o.party}</span>}
-                                      {/* Work orders only: IN4 holds a print
-                                          template for them (event 3) and none
-                                          for purchase orders. */}
+                                      {/* Both kinds print in IN4's own format
+                                          (WO template 109, PO template 100). A
+                                          WO's ledger opens inline from the
+                                          mirror; a PO's is a live IN4 page. */}
                                       {o.kind === 'wo' && <PrintWo id={o.id} ref_={o.ref} />}
                                       {o.kind === 'wo' && o.ledger.rows.length > 0 && <LedgerToggle order={o} />}
+                                      {o.kind === 'po' && o.in4Id != null && <PoLinks poId={o.in4Id} ref_={o.ref} />}
                                       <span className="ml-2 text-[12px] text-gray-400">{o.lines.length} item{o.lines.length === 1 ? '' : 's'}</span>
                                       {o.flag && <span className="block mt-0.5 text-[12px] text-amber-700">{o.flag}</span>}
                                     </td>
@@ -251,6 +253,9 @@ export async function OrdersView({ projectId }: { projectId: string }) {
                                 {o.party && <p className="ml-6 text-[12px] text-gray-500">{o.party}</p>}
                                 {o.kind === 'wo' && (
                                   <p className="ml-6 mt-0.5 flex items-center gap-2"><PrintWo id={o.id} ref_={o.ref} />{o.ledger.rows.length > 0 && <LedgerToggle order={o} />}</p>
+                                )}
+                                {o.kind === 'po' && o.in4Id != null && (
+                                  <p className="ml-6 mt-0.5 flex items-center gap-2"><PoLinks poId={o.in4Id} ref_={o.ref} /></p>
                                 )}
                                 {o.flag && <p className="ml-6 mt-0.5 text-[12px] text-amber-700">{o.flag}</p>}
                                 <div className="ml-6"><MoneyChips m={o} /></div>
@@ -578,6 +583,23 @@ function PrintWo({ id, ref_ }: { id: string; ref_: string }) {
     >
       <FileText className="h-3 w-3" /> Print
     </a>
+  )
+}
+
+/** A purchase order's two documents, both rendered live from IN4: the order
+ *  in IN4's own PO format (template 100) and its supplier ledger — receipts,
+ *  bills and payments with the running still-to-pay. New tabs, like the WO. */
+function PoLinks({ poId, ref_ }: { poId: number; ref_: string }) {
+  const cls = 'ml-2 inline-flex items-center gap-1 text-[12px] font-semibold text-indigo-700 hover:underline max-md:min-h-[44px] max-md:px-2'
+  return (
+    <>
+      <a href={`/api/in4/purchase-order/${poId}/print`} target="_blank" rel="noopener" title={`Open ${ref_} in IN4's own purchase-order format`} className={cls}>
+        <FileText className="h-3 w-3" /> Print
+      </a>
+      <a href={`/api/in4/purchase-order/${poId}/ledger`} target="_blank" rel="noopener" title={`Receipts, bills and payments for ${ref_}, live from IN4`} className={cls}>
+        <FileText className="h-3 w-3" /> Ledger
+      </a>
+    </>
   )
 }
 
