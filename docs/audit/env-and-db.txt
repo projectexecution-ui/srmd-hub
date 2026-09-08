@@ -1,0 +1,1141 @@
+﻿app/(app)/admin/approvals/approvals-matrix.tsx:14:import { createClient } from '@/lib/supabase/client'
+app/(app)/admin/approvals/approvals-matrix.tsx:246:    const { error } = await createClient().from('approval_rules').update({ is_active: next }).eq('id', id)
+app/(app)/admin/approvals/approvals-matrix.tsx:260:    const { error } = await createClient().from('approval_rules').update(patch).eq('id', id)
+app/(app)/admin/approvals/approvals-matrix.tsx:272:    const { data, error } = await createClient().from('approval_rules').insert({
+app/(app)/admin/approvals/approvals-matrix.tsx:290:    const { error } = await createClient().from('approval_rules').delete().eq('id', id)
+app/(app)/admin/approvals/page.tsx:2:import { createClient } from '@/lib/supabase/server'
+app/(app)/admin/approvals/page.tsx:27:  const supabase = await createClient()
+app/(app)/admin/dashboard-modules/DashboardModulesEditor.tsx:4:import { createClient } from '@/lib/supabase/client'
+app/(app)/admin/dashboard-modules/DashboardModulesEditor.tsx:78:    const supabase = createClient()
+app/(app)/admin/dashboard-modules/DashboardModulesEditor.tsx:117:    const supabase = createClient()
+app/(app)/admin/dashboard-modules/page.tsx:2:import { createClient } from '@/lib/supabase/server'
+app/(app)/admin/dashboard-modules/page.tsx:15:  const supabase = await createClient()
+app/(app)/admin/delete-requests/DeleteRequestsList.tsx:4:import { createClient } from '@/lib/supabase/client'
+app/(app)/admin/delete-requests/DeleteRequestsList.tsx:54:    const supabase = createClient()
+app/(app)/admin/delete-requests/page.tsx:2:import { createClient } from '@/lib/supabase/server'
+app/(app)/admin/delete-requests/page.tsx:18:  const supabase = await createClient()
+app/(app)/admin/email/actions.ts:4:import { createClient } from '@/lib/supabase/server'
+app/(app)/admin/email/actions.ts:67:  const supabase = await createClient()
+app/(app)/admin/email/actions.ts:102:  const supabase = await createClient()
+app/(app)/admin/email/actions.ts:138:  const supabase = await createClient()
+app/(app)/admin/in4/actions.ts:7:import { createClient as createServiceClient } from '@supabase/supabase-js'
+app/(app)/admin/in4/actions.ts:13:  return createServiceClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!, { auth: { persistSession: false } })
+app/(app)/admin/in4/page.tsx:1:import { createClient } from '@/lib/supabase/server'
+app/(app)/admin/in4/page.tsx:18:  const supabase = await createClient()
+app/(app)/admin/masters/actions.ts:7:import { createClient } from '@/lib/supabase/server'
+app/(app)/admin/masters/actions.ts:23:  const sb = await createClient()
+app/(app)/admin/masters/actions.ts:40:  const sb = await createClient()
+app/(app)/admin/masters/mapping/actions.ts:6:import { createClient as createServiceClient } from '@supabase/supabase-js'
+app/(app)/admin/masters/mapping/actions.ts:12:  return createServiceClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!, { auth: { persistSession: false } })
+app/(app)/admin/masters/mapping/page.tsx:1:import { createClient } from '@/lib/supabase/server'
+app/(app)/admin/masters/mapping/page.tsx:19:  const supabase = await createClient()
+app/(app)/admin/notifications/NotificationRulesClient.tsx:3:import { createClient } from '@/lib/supabase/client'
+app/(app)/admin/notifications/NotificationRulesClient.tsx:45:  const supabase = createClient()
+app/(app)/admin/notifications/SelfManageAdmin.tsx:7:import { createClient } from '@/lib/supabase/client'
+app/(app)/admin/notifications/SelfManageAdmin.tsx:26:  const supabase = useMemo(() => createClient(), [])
+app/(app)/admin/notifications/page.tsx:3:import { createClient } from '@/lib/supabase/server'
+app/(app)/admin/notifications/page.tsx:31:  const supabase = await createClient()
+app/(app)/admin/notifications/recipients/actions.ts:8:import { createClient as createServiceClient } from '@supabase/supabase-js'
+app/(app)/admin/notifications/recipients/actions.ts:26:  const sb = createServiceClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!, { auth: { persistSession: false } })
+app/(app)/admin/notifications/recipients/page.tsx:3:import { createClient as createServiceClient } from '@supabase/supabase-js'
+app/(app)/admin/notifications/recipients/page.tsx:23:  const sb = createServiceClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!, { auth: { persistSession: false } })
+app/(app)/admin/page.tsx:9:import { createClient } from '@/lib/supabase/server'
+app/(app)/admin/page.tsx:56:  const supabase = await createClient()
+app/(app)/admin/permissions/PermissionsMatrix.tsx:5:import { createClient } from '@/lib/supabase/client'
+app/(app)/admin/permissions/PermissionsMatrix.tsx:112:    const supabase = createClient()
+app/(app)/admin/permissions/PermissionsMatrix.tsx:131:    const supabase = createClient()
+app/(app)/admin/permissions/PermissionsMatrix.tsx:147:    const supabase = createClient()
+app/(app)/admin/permissions/PermissionsMatrix.tsx:163:    const { error } = await createClient().rpc('set_role_label', { p_role: role, p_label: label, p_description: description })
+app/(app)/admin/permissions/PermissionsMatrix.tsx:206:    const supabase = createClient()
+app/(app)/admin/permissions/PermissionsMatrix.tsx:233:    const { error } = await createClient()
+app/(app)/admin/permissions/page.tsx:1:import { createClient } from '@/lib/supabase/server'
+app/(app)/admin/permissions/page.tsx:15:  const supabase = await createClient()
+app/(app)/admin/recycle-bin/RecycleBinList.tsx:4:import { createClient } from '@/lib/supabase/client'
+app/(app)/admin/recycle-bin/RecycleBinList.tsx:32:    const { error } = await createClient().rpc('recycle_restore', { p_bin_id: item.id })
+app/(app)/admin/recycle-bin/page.tsx:2:import { createClient } from '@/lib/supabase/server'
+app/(app)/admin/recycle-bin/page.tsx:13:  const supabase = await createClient()
+app/(app)/admin/settings/settings-form.tsx:3:import { createClient } from '@/lib/supabase/client'
+app/(app)/admin/settings/settings-form.tsx:20:    const supabase = createClient()
+app/(app)/admin/sidebar-groups/sidebar-groups-client.tsx:11:import { createClient } from '@/lib/supabase/client'
+app/(app)/admin/sidebar-groups/sidebar-groups-client.tsx:61:    const { error } = await createClient()
+app/(app)/admin/users/UsersClient.tsx:4:import { createClient } from '@/lib/supabase/client'
+app/(app)/admin/users/UsersClient.tsx:74:  const supabase = createClient()
+app/(app)/admin/users/page.tsx:1:import { createClient } from '@/lib/supabase/server'
+app/(app)/admin/users/page.tsx:17:  const supabase = await createClient()
+app/(app)/approvals/page.tsx:2:import { createClient } from '@/lib/supabase/server'
+app/(app)/approvals/page.tsx:90:  const supabase = await createClient()
+app/(app)/bills-booking/[id]/Documents.tsx:4:import { createClient } from '@/lib/supabase/client'
+app/(app)/bills-booking/[id]/Documents.tsx:31:  const supabase = createClient()
+app/(app)/bills-booking/[id]/MoveActions.tsx:4:import { createClient } from '@/lib/supabase/client'
+app/(app)/bills-booking/[id]/MoveActions.tsx:16:  const supabase = createClient()
+app/(app)/bills-booking/[id]/page.tsx:2:import { createClient } from '@/lib/supabase/server'
+app/(app)/bills-booking/[id]/page.tsx:27:  const supabase = await createClient()
+app/(app)/bills-booking/admin/DeskMembersEditor.tsx:3:import { createClient } from '@/lib/supabase/client'
+app/(app)/bills-booking/admin/DeskMembersEditor.tsx:18:  const supabase = createClient()
+app/(app)/bills-booking/admin/page.tsx:2:import { createClient } from '@/lib/supabase/server'
+app/(app)/bills-booking/admin/page.tsx:22:  const supabase = await createClient()
+app/(app)/bills-booking/new/BillForm.tsx:4:import { createClient } from '@/lib/supabase/client'
+app/(app)/bills-booking/new/BillForm.tsx:16:  const supabase = createClient()
+app/(app)/bills-booking/new/page.tsx:1:import { createClient } from '@/lib/supabase/server'
+app/(app)/bills-booking/new/page.tsx:10:  const supabase = await createClient()
+app/(app)/bills-booking/page.tsx:2:import { createClient } from '@/lib/supabase/server'
+app/(app)/bills-booking/page.tsx:34:  const supabase = await createClient()
+app/(app)/bills-pipeline/daily-report/page.tsx:2:import { createClient } from '@/lib/supabase/server'
+app/(app)/bills-pipeline/daily-report/page.tsx:16:  const supabase = await createClient()
+app/(app)/bills-pipeline/digest-settings/BillsDigestForm.tsx:4:import { createClient } from '@/lib/supabase/client'
+app/(app)/bills-pipeline/digest-settings/BillsDigestForm.tsx:66:    const { error } = await createClient().from('app_settings').upsert(rows, { onConflict: 'key' })
+app/(app)/bills-pipeline/digest-settings/WorklistRecipients.tsx:8:import { createClient } from '@/lib/supabase/client'
+app/(app)/bills-pipeline/digest-settings/WorklistRecipients.tsx:40:    const { error } = await createClient()
+app/(app)/bills-pipeline/digest-settings/page.tsx:1:import { createClient as createServiceClient } from '@supabase/supabase-js'
+app/(app)/bills-pipeline/digest-settings/page.tsx:18:  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+app/(app)/bills-pipeline/digest-settings/page.tsx:19:  const url = process.env.NEXT_PUBLIC_SUPABASE_URL!
+app/(app)/bills-pipeline/page.tsx:1:import { createClient as createServiceClient } from '@supabase/supabase-js'
+app/(app)/bills-pipeline/page.tsx:35:  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+app/(app)/bills-pipeline/page.tsx:36:  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
+app/(app)/blueprint-demo/admin/admin-client.tsx:14:import { createClient } from '@/lib/supabase/client'
+app/(app)/blueprint-demo/admin/admin-client.tsx:120:    const supabase = createClient()
+app/(app)/blueprint-demo/admin/admin-client.tsx:141:    const supabase = createClient()
+app/(app)/blueprint-demo/admin/page.tsx:6:import { createClient } from '@/lib/supabase/server'
+app/(app)/blueprint-demo/admin/page.tsx:22:  const supabase = await createClient()
+app/(app)/blueprint-demo/page.tsx:8:import { createClient } from '@/lib/supabase/server'
+app/(app)/blueprint-demo/page.tsx:52:  const supabase = await createClient()
+app/(app)/blueprint-demo/requests/[id]/action-client.tsx:10:import { createClient } from '@/lib/supabase/client'
+app/(app)/blueprint-demo/requests/[id]/action-client.tsx:71:    const supabase = createClient()
+app/(app)/blueprint-demo/requests/[id]/page.tsx:2:import { createClient } from '@/lib/supabase/server'
+app/(app)/blueprint-demo/requests/[id]/page.tsx:26:  const supabase = await createClient()
+app/(app)/blueprint-demo/requests/new/new-form.tsx:4:import { createClient } from '@/lib/supabase/client'
+app/(app)/blueprint-demo/requests/new/new-form.tsx:29:    const supabase = createClient()
+app/(app)/blueprint-demo/requests/new/page.tsx:1:import { createClient } from '@/lib/supabase/server'
+app/(app)/blueprint-demo/requests/new/page.tsx:11:  const supabase = await createClient()
+app/(app)/blueprint-demo/requests/page.tsx:2:import { createClient } from '@/lib/supabase/server'
+app/(app)/blueprint-demo/requests/page.tsx:22:  const supabase = await createClient()
+app/(app)/budget-vs-actual-v2/client.tsx:17:import { createClient } from '@/lib/supabase/client'
+app/(app)/budget-vs-actual-v2/client.tsx:135:  const supabase = createClient()
+app/(app)/budget-vs-actual-v2/page.tsx:1:import { createClient } from '@/lib/supabase/server'
+app/(app)/budget-vs-actual-v2/page.tsx:12:  const supabase = await createClient()
+app/(app)/budget-vs-actual-v2/print/page.tsx:1:import { createClient } from '@/lib/supabase/server'
+app/(app)/budget-vs-actual-v2/print/page.tsx:11:  const supabase = await createClient()
+app/(app)/budget-vs-actual-v2/sc-presentation/page.tsx:1:import { createClient } from '@/lib/supabase/server'
+app/(app)/budget-vs-actual-v2/sc-presentation/page.tsx:15:  const supabase = await createClient()
+app/(app)/budget-vs-actual-v2/upload/page.tsx:2:import { createClient } from '@/lib/supabase/server'
+app/(app)/budget-vs-actual-v2/upload/page.tsx:11:  const modes = await readFeedModes(await createClient())
+app/(app)/budget-vs-actual-v2/weekly-category/page.tsx:1:import { createClient } from '@/lib/supabase/server'
+app/(app)/budget-vs-actual-v2/weekly-category/page.tsx:10:  const supabase = await createClient()
+app/(app)/budget-vs-actual-v2/weekly-subcategory/page.tsx:1:import { createClient } from '@/lib/supabase/server'
+app/(app)/budget-vs-actual-v2/weekly-subcategory/page.tsx:10:  const supabase = await createClient()
+app/(app)/budget-vs-actual-v2/weekly/page.tsx:1:import { createClient } from '@/lib/supabase/server'
+app/(app)/budget-vs-actual-v2/weekly/page.tsx:10:  const supabase = await createClient()
+app/(app)/budget/page.tsx:3:import { createClient } from '@/lib/supabase/server'
+app/(app)/budget/page.tsx:17:  const supabase = await createClient()
+app/(app)/command-center/board-client.tsx:8:import { createClient } from '@/lib/supabase/client'
+app/(app)/command-center/board-client.tsx:88:    const { error } = await createClient().from('ecc_items').update(patch).in('id', ids)
+app/(app)/command-center/page.tsx:1:import { createClient } from '@/lib/supabase/server'
+app/(app)/command-center/page.tsx:48:  const supabase = await createClient()
+app/(app)/command-center/triage-mode.tsx:8:import { createClient } from '@/lib/supabase/client'
+app/(app)/command-center/triage-mode.tsx:43:    await createClient().from('ecc_items').update(patch).eq('id', id)
+app/(app)/comparisons/[id]/comparison-grid.tsx:15:import { createClient } from '@/lib/supabase/client'
+app/(app)/comparisons/[id]/comparison-grid.tsx:47:  const supabase = createClient()
+app/(app)/comparisons/[id]/page.tsx:2:import { createClient } from '@/lib/supabase/server'
+app/(app)/comparisons/[id]/page.tsx:23:  const supabase = await createClient()
+app/(app)/comparisons/new-comparison-button.tsx:4:import { createClient } from '@/lib/supabase/client'
+app/(app)/comparisons/new-comparison-button.tsx:14:  const supabase = createClient()
+app/(app)/comparisons/page.tsx:2:import { createClient } from '@/lib/supabase/server'
+app/(app)/comparisons/page.tsx:36:  const supabase = await createClient()
+app/(app)/contractor-report/page.tsx:2:import { createClient } from '@/lib/supabase/server'
+app/(app)/contractor-report/page.tsx:18:  const supabase = await createClient()
+app/(app)/cost-control/admin/disciplines/DisciplinesAdmin.tsx:4:import { createClient } from '@/lib/supabase/client'
+app/(app)/cost-control/admin/disciplines/DisciplinesAdmin.tsx:127:                    const { error } = await createClient()
+app/(app)/cost-control/admin/disciplines/DisciplinesAdmin.tsx:205:    const supabase = createClient()
+app/(app)/cost-control/admin/disciplines/DisciplinesAdmin.tsx:275:            const { data, error } = await createClient()
+app/(app)/cost-control/admin/disciplines/DisciplinesAdmin.tsx:312:            const { error } = await createClient()
+app/(app)/cost-control/admin/disciplines/DisciplinesAdmin.tsx:347:    const { data, error } = await createClient()
+app/(app)/cost-control/admin/disciplines/ImportPanel.tsx:9:import { createClient } from '@/lib/supabase/client'
+app/(app)/cost-control/admin/disciplines/ImportPanel.tsx:280:    const supabase = createClient()
+app/(app)/cost-control/admin/disciplines/ImportPanel.tsx:356:    const { error } = await createClient()
+app/(app)/cost-control/admin/disciplines/page.tsx:1:import { createClient } from '@/lib/supabase/server'
+app/(app)/cost-control/admin/disciplines/page.tsx:12:  const supabase = await createClient()
+app/(app)/cost-control/approvals/page.tsx:3:import { createClient } from '@/lib/supabase/server'
+app/(app)/cost-control/approvals/page.tsx:44:  const supabase = await createClient()
+app/(app)/cost-control/approvals/thumbrule/actions.ts:15:import { createClient } from '@/lib/supabase/server'
+app/(app)/cost-control/approvals/thumbrule/actions.ts:48:  const supabase = await createClient()
+app/(app)/cost-control/approvals/thumbrule/page.tsx:1:import { createClient } from '@/lib/supabase/server'
+app/(app)/cost-control/approvals/thumbrule/page.tsx:34:  const supabase = await createClient()
+app/(app)/cost-control/audit/page.tsx:3:import { createClient } from '@/lib/supabase/server'
+app/(app)/cost-control/audit/page.tsx:38:  const supabase = await createClient()
+app/(app)/cost-control/billing/ErpReductionQueue.tsx:16:import { createClient } from '@/lib/supabase/server'
+app/(app)/cost-control/billing/ErpReductionQueue.tsx:35:  const supabase = await createClient()
+app/(app)/cost-control/billing/TransferQueue.tsx:19:import { createClient } from '@/lib/supabase/server'
+app/(app)/cost-control/billing/TransferQueue.tsx:40:  const supabase = await createClient()
+app/(app)/cost-control/billing/billing-actions.ts:8:import { createClient } from '@/lib/supabase/server'
+app/(app)/cost-control/billing/billing-actions.ts:12:  const supabase = await createClient()
+app/(app)/cost-control/billing/billing-actions.ts:26:  const supabase = await createClient()
+app/(app)/cost-control/billing/page.tsx:3:import { createClient } from '@/lib/supabase/server'
+app/(app)/cost-control/billing/page.tsx:46:  const supabase = await createClient()
+app/(app)/cost-control/import/actions.ts:4:import { createClient } from '@/lib/supabase/server'
+app/(app)/cost-control/import/actions.ts:32:  const supabase = await createClient()
+app/(app)/cost-control/import/bph/actions.ts:16:import { createClient as createServiceClient } from '@supabase/supabase-js'
+app/(app)/cost-control/import/bph/actions.ts:18:import { createClient } from '@/lib/supabase/server'
+app/(app)/cost-control/import/bph/actions.ts:25:type CcClient = Awaited<ReturnType<typeof createClient>>
+app/(app)/cost-control/import/bph/actions.ts:39:  const key = process.env.SUPABASE_SERVICE_ROLE_KEY
+app/(app)/cost-control/import/bph/actions.ts:41:    return createServiceClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, key, {
+app/(app)/cost-control/import/bph/actions.ts:45:  return (await createClient()) as CcClient
+app/(app)/cost-control/import/bph/actions.ts:213:  const supabase = await createClient()
+app/(app)/cost-control/import/bph/actions.ts:251:  const supabase = (opts?.client ?? await createClient()) as CcClient
+app/(app)/cost-control/import/bph/actions.ts:826:  const supabase = (opts?.client ?? await createClient()) as CcClient
+app/(app)/cost-control/import/bph/actions.ts:886:  const supabase = await createClient()
+app/(app)/cost-control/import/bph/actions.ts:909:  const supabase = await createClient()
+app/(app)/cost-control/import/bph/actions.ts:923:  const supabase = await createClient()
+app/(app)/cost-control/import/bph/actions.ts:933:  const supabase = await createClient()
+app/(app)/cost-control/import/bph/actions.ts:947:  const supabase = await createClient()
+app/(app)/cost-control/import/bph/page.tsx:1:import { createClient } from '@/lib/supabase/server'
+app/(app)/cost-control/import/bph/page.tsx:31:  const supabase = await createClient()
+app/(app)/cost-control/import/page.tsx:1:import { createClient } from '@/lib/supabase/server'
+app/(app)/cost-control/import/page.tsx:27:  const supabase = await createClient()
+app/(app)/cost-control/ledger/page.tsx:8:import { createClient } from '@/lib/supabase/server'
+app/(app)/cost-control/ledger/page.tsx:56:  const supabase = await createClient()
+app/(app)/cost-control/page.tsx:5:import { createClient } from '@/lib/supabase/server'
+app/(app)/cost-control/page.tsx:53:  const supabase = await createClient()
+app/(app)/cost-control/page.tsx:948:  const supabase = await createClient()
+app/(app)/cost-control/projects/[id]/EngineerProjectView.tsx:3:import { createClient } from '@/lib/supabase/server'
+app/(app)/cost-control/projects/[id]/EngineerProjectView.tsx:23:  const supabase = await createClient()
+app/(app)/cost-control/projects/[id]/IeRevisionPanel.tsx:7:import { createClient } from '@/lib/supabase/client'
+app/(app)/cost-control/projects/[id]/IeRevisionPanel.tsx:52:      const supabase = createClient()
+app/(app)/cost-control/projects/[id]/actions.ts:8:import { createClient } from '@/lib/supabase/server'
+app/(app)/cost-control/projects/[id]/actions.ts:40:  const supabase = await createClient()
+app/(app)/cost-control/projects/[id]/actions.ts:69:  const supabase = await createClient()
+app/(app)/cost-control/projects/[id]/actions.ts:101:  const supabase = await createClient()
+app/(app)/cost-control/projects/[id]/actions.ts:149:  const supabase = await createClient()
+app/(app)/cost-control/projects/[id]/actions.ts:183:  const supabase = await createClient()
+app/(app)/cost-control/projects/[id]/actions.ts:211:  const supabase = await createClient()
+app/(app)/cost-control/projects/[id]/actions.ts:244:  const supabase = await createClient()
+app/(app)/cost-control/projects/[id]/actions.ts:278:  const supabase = await createClient()
+app/(app)/cost-control/projects/[id]/actions.ts:328:  const supabase = await createClient()
+app/(app)/cost-control/projects/[id]/actions.ts:358:  const supabase = await createClient()
+app/(app)/cost-control/projects/[id]/actions.ts:389:  const supabase = await createClient()
+app/(app)/cost-control/projects/[id]/actions.ts:422:  const supabase = await createClient()
+app/(app)/cost-control/projects/[id]/actions.ts:444:  const supabase = await createClient()
+app/(app)/cost-control/projects/[id]/actions.ts:473:  const supabase = await createClient()
+app/(app)/cost-control/projects/[id]/actions.ts:557:  const supabase = await createClient()
+app/(app)/cost-control/projects/[id]/actions.ts:596:  const supabase = await createClient()
+app/(app)/cost-control/projects/[id]/add-to-project-actions.ts:18:import { createClient } from '@/lib/supabase/server'
+app/(app)/cost-control/projects/[id]/add-to-project-actions.ts:39:  const supabase = await createClient()
+app/(app)/cost-control/projects/[id]/add-to-project-actions.ts:110:  const supabase = await createClient()
+app/(app)/cost-control/projects/[id]/ie-revision-actions.ts:5:import { createClient } from '@/lib/supabase/server'
+app/(app)/cost-control/projects/[id]/ie-revision-actions.ts:10:  const supabase = await createClient()
+app/(app)/cost-control/projects/[id]/ie-revision-actions.ts:18:  const supabase = await createClient()
+app/(app)/cost-control/projects/[id]/ie-revision-actions.ts:26:  const supabase = await createClient()
+app/(app)/cost-control/projects/[id]/ie-revision-actions.ts:34:  const supabase = await createClient()
+app/(app)/cost-control/projects/[id]/ie-revision/approve/route.ts:9:import { createClient } from '@/lib/supabase/server'
+app/(app)/cost-control/projects/[id]/ie-revision/approve/route.ts:36:  const supabase = await createClient()
+app/(app)/cost-control/projects/[id]/page.tsx:4:import { createClient } from '@/lib/supabase/server'
+app/(app)/cost-control/projects/[id]/page.tsx:127:  const supabase = await createClient()
+app/(app)/cost-control/projects/[id]/setup/copy-setup-actions.ts:11:import { createClient } from '@/lib/supabase/server'
+app/(app)/cost-control/projects/[id]/setup/copy-setup-actions.ts:52:  const supabase = await createClient()
+app/(app)/cost-control/projects/[id]/setup/copy-setup-actions.ts:160:  const supabase = await createClient()
+app/(app)/cost-control/projects/[id]/setup/page.tsx:3:import { createClient } from '@/lib/supabase/server'
+app/(app)/cost-control/projects/[id]/setup/page.tsx:57:  const supabase = await createClient()
+app/(app)/cost-control/projects/[id]/setup/people-actions.ts:4:import { createClient } from '@/lib/supabase/server'
+app/(app)/cost-control/projects/[id]/setup/people-actions.ts:47:  const supabase = await createClient()
+app/(app)/cost-control/projects/[id]/setup/people-actions.ts:117:  const supabase = await createClient()
+app/(app)/cost-control/projects/[id]/transfer-actions.ts:13:import { createClient } from '@/lib/supabase/server'
+app/(app)/cost-control/projects/[id]/transfer-actions.ts:50:  const supabase = await createClient()
+app/(app)/cost-control/projects/[id]/transfer-actions.ts:94:  const supabase = await createClient()
+app/(app)/cost-control/projects/[id]/transfer-actions.ts:119:  const supabase = await createClient()
+app/(app)/cost-control/projects/[id]/transfer-actions.ts:143:  const supabase = await createClient()
+app/(app)/cost-control/projects/[id]/transfer-actions.ts:157:  const supabase = await createClient()
+app/(app)/cost-control/projects/[id]/transfer-actions.ts:173:  const supabase = await createClient()
+app/(app)/cost-control/projects/new/page.tsx:2:import { createClient } from '@/lib/supabase/server'
+app/(app)/cost-control/projects/new/page.tsx:29:  const supabase = await createClient()
+app/(app)/cost-control/settings/approval-test-action.ts:9:import { createClient as createServiceClient } from '@supabase/supabase-js'
+app/(app)/cost-control/settings/approval-test-action.ts:10:import { createClient } from '@/lib/supabase/server'
+app/(app)/cost-control/settings/approval-test-action.ts:26:  const supabase = await createClient()
+app/(app)/cost-control/settings/approval-test-action.ts:39:  const token = process.env.TELEGRAM_BOT_TOKEN
+app/(app)/cost-control/settings/approval-test-action.ts:40:  const url = process.env.NEXT_PUBLIC_SUPABASE_URL
+app/(app)/cost-control/settings/approval-test-action.ts:41:  const key = process.env.SUPABASE_SERVICE_ROLE_KEY
+app/(app)/cost-control/settings/approval-test-action.ts:122:  const token = process.env.TELEGRAM_BOT_TOKEN
+app/(app)/cost-control/settings/approval-test-action.ts:123:  const url = process.env.NEXT_PUBLIC_SUPABASE_URL
+app/(app)/cost-control/settings/approval-test-action.ts:124:  const key = process.env.SUPABASE_SERVICE_ROLE_KEY
+app/(app)/cost-control/settings/page.tsx:2:import { createClient } from '@/lib/supabase/server'
+app/(app)/cost-control/settings/page.tsx:3:import { createClient as createServiceClient } from '@supabase/supabase-js'
+app/(app)/cost-control/settings/page.tsx:19:  const supabase = await createClient()
+app/(app)/cost-control/settings/page.tsx:36:  const svcUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+app/(app)/cost-control/settings/page.tsx:37:  const svcKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+app/(app)/cost-control/settings/settings-form.tsx:4:import { createClient } from '@/lib/supabase/client'
+app/(app)/cost-control/settings/settings-form.tsx:94:    const supabase = createClient()
+app/(app)/cost-control/settings/settings-form.tsx:112:    const supabase = createClient()
+app/(app)/cost-control/settings/settings-form.tsx:129:    const supabase = createClient()
+app/(app)/cost-control/settings/settings-form.tsx:146:    const supabase = createClient()
+app/(app)/cost-control/working-sheets/[id]/BudgetPositionPanel.tsx:13:import { createClient } from '@/lib/supabase/server'
+app/(app)/cost-control/working-sheets/[id]/BudgetPositionPanel.tsx:38:  const supabase = await createClient()
+app/(app)/cost-control/working-sheets/[id]/ReplaceExcelButton.tsx:10:import { createClient } from '@/lib/supabase/client'
+app/(app)/cost-control/working-sheets/[id]/ReplaceExcelButton.tsx:50:    const supabase = createClient()
+app/(app)/cost-control/working-sheets/[id]/WorkingEvidence.tsx:10:import { createClient } from '@/lib/supabase/client'
+app/(app)/cost-control/working-sheets/[id]/WorkingEvidence.tsx:41:    const supabase = createClient()
+app/(app)/cost-control/working-sheets/[id]/WorkingEvidence.tsx:73:    const supabase = createClient()
+app/(app)/cost-control/working-sheets/[id]/page.tsx:4:import { createClient } from '@/lib/supabase/server'
+app/(app)/cost-control/working-sheets/[id]/page.tsx:28:import { createClient as createServiceClient } from '@supabase/supabase-js'
+app/(app)/cost-control/working-sheets/[id]/page.tsx:59:  const supabase = await createClient()
+app/(app)/cost-control/working-sheets/[id]/page.tsx:302:    const svcKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+app/(app)/cost-control/working-sheets/[id]/page.tsx:304:      ? createServiceClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, svcKey, { auth: { persistSession: false } })
+app/(app)/cost-control/working-sheets/[id]/version-actions.ts:6:import { createClient } from '@/lib/supabase/server'
+app/(app)/cost-control/working-sheets/[id]/version-actions.ts:34:  const supabase = await createClient()
+app/(app)/cost-control/working-sheets/[id]/version-actions.ts:66:  const supabase = await createClient()
+app/(app)/cost-control/working-sheets/[id]/version-actions.ts:185:  const supabase = await createClient()
+app/(app)/cost-control/working-sheets/new-quick/NewWSQuickForm.tsx:5:import { createClient } from '@/lib/supabase/client'
+app/(app)/cost-control/working-sheets/new-quick/NewWSQuickForm.tsx:378:    const sb = createClient()
+app/(app)/cost-control/working-sheets/new-quick/NewWSQuickForm.tsx:641:    const supabase = createClient()
+app/(app)/cost-control/working-sheets/new-quick/page.tsx:1:import { createClient } from '@/lib/supabase/server'
+app/(app)/cost-control/working-sheets/new-quick/page.tsx:18:  const supabase = await createClient()
+app/(app)/cost-control/working-sheets/new-thumbrule/NewWSThumbruleForm.tsx:4:import { createClient } from '@/lib/supabase/client'
+app/(app)/cost-control/working-sheets/new-thumbrule/NewWSThumbruleForm.tsx:84:    const supabase = createClient()
+app/(app)/cost-control/working-sheets/new-thumbrule/page.tsx:2:import { createClient } from '@/lib/supabase/server'
+app/(app)/cost-control/working-sheets/new-thumbrule/page.tsx:28:  const supabase = await createClient()
+app/(app)/cost-control/working-sheets/new/page.tsx:3:import { createClient } from '@/lib/supabase/server'
+app/(app)/cost-control/working-sheets/new/page.tsx:30:  const supabase = await createClient()
+app/(app)/cost-control/working-sheets/page.tsx:3:import { createClient } from '@/lib/supabase/server'
+app/(app)/cost-control/working-sheets/page.tsx:67:  const supabase = await createClient()
+app/(app)/daily-site-report/[id]/StatusLadder.tsx:5:import { createClient } from '@/lib/supabase/client'
+app/(app)/daily-site-report/[id]/StatusLadder.tsx:18:  const supabase = createClient()
+app/(app)/daily-site-report/[id]/page.tsx:2:import { createClient } from '@/lib/supabase/server'
+app/(app)/daily-site-report/[id]/page.tsx:25:  const supabase = await createClient()
+app/(app)/daily-site-report/new/page.tsx:2:import { createClient } from '@/lib/supabase/server'
+app/(app)/daily-site-report/new/page.tsx:33:  const supabase = await createClient()
+app/(app)/daily-site-report/new/report-form.tsx:5:import { createClient } from '@/lib/supabase/client'
+app/(app)/daily-site-report/new/report-form.tsx:24:  const supabase = createClient()
+app/(app)/daily-site-report/page.tsx:3:import { createClient } from '@/lib/supabase/server'
+app/(app)/daily-site-report/page.tsx:51:  const supabase = await createClient()
+app/(app)/dashboard/WorkStrip.tsx:2:import { createClient } from '@/lib/supabase/server'
+app/(app)/dashboard/WorkStrip.tsx:16:  const supabase = await createClient()
+app/(app)/dashboard/page.tsx:1:import { createClient } from '@/lib/supabase/server'
+app/(app)/dashboard/page.tsx:37:  const supabase = await createClient()
+app/(app)/established-rates/add-rate-modal.tsx:6:import { createClient } from '@/lib/supabase/client'
+app/(app)/established-rates/add-rate-modal.tsx:40:    const supabase = createClient()
+app/(app)/established-rates/admin/actions.ts:10:import { createClient } from '@/lib/supabase/server'
+app/(app)/established-rates/admin/actions.ts:30:  const supabase = await createClient()
+app/(app)/established-rates/admin/page.tsx:1:import { createClient } from '@/lib/supabase/server'
+app/(app)/established-rates/admin/page.tsx:22:  const supabase = await createClient()
+app/(app)/established-rates/admin/taxonomy-editor.tsx:8:import { createClient } from '@/lib/supabase/client'
+app/(app)/established-rates/admin/taxonomy-editor.tsx:62:                const { data, error } = await createClient().from('est_disciplines')
+app/(app)/established-rates/admin/taxonomy-editor.tsx:72:                const { error } = await createClient().from('est_disciplines').update(patch).eq('id', id)
+app/(app)/established-rates/admin/taxonomy-editor.tsx:82:                const { error } = await createClient().from('est_disciplines').delete().eq('id', id)
+app/(app)/established-rates/admin/taxonomy-editor.tsx:107:                  const { data, error } = await createClient().from('est_categories')
+app/(app)/established-rates/admin/taxonomy-editor.tsx:117:                  const { error } = await createClient().from('est_categories').update(patch).eq('id', id)
+app/(app)/established-rates/admin/taxonomy-editor.tsx:127:                  const { error } = await createClient().from('est_categories').delete().eq('id', id)
+app/(app)/established-rates/admin/taxonomy-editor.tsx:152:                  const { data, error } = await createClient().from('est_subcategories')
+app/(app)/established-rates/admin/taxonomy-editor.tsx:162:                  const { error } = await createClient().from('est_subcategories').update(patch).eq('id', id)
+app/(app)/established-rates/admin/taxonomy-editor.tsx:172:                  const { error } = await createClient().from('est_subcategories').delete().eq('id', id)
+app/(app)/established-rates/page.tsx:2:import { createClient } from '@/lib/supabase/server'
+app/(app)/established-rates/page.tsx:18:  const supabase = await createClient()
+app/(app)/established-rates/rate-library.tsx:10:import { createClient } from '@/lib/supabase/client'
+app/(app)/established-rates/rate-library.tsx:292:    const err = await recycleDelete(createClient(), {
+app/(app)/grns/[id]/page.tsx:3:import { createClient } from '@/lib/supabase/server'
+app/(app)/grns/[id]/page.tsx:21:  const supabase = await createClient()
+app/(app)/grns/page.tsx:2:import { createClient } from '@/lib/supabase/server'
+app/(app)/grns/page.tsx:14:  const supabase = await createClient()
+app/(app)/indents/[id]/notes-form.tsx:3:import { createClient } from '@/lib/supabase/client'
+app/(app)/indents/[id]/notes-form.tsx:30:    const supabase = createClient()
+app/(app)/indents/[id]/page.tsx:3:import { createClient } from '@/lib/supabase/server'
+app/(app)/indents/[id]/page.tsx:23:  const supabase = await createClient()
+app/(app)/indents/page.tsx:2:import { createClient } from '@/lib/supabase/server'
+app/(app)/indents/page.tsx:29:  const supabase = await createClient()
+app/(app)/inventory/admin/engineers/EngineerProjectsEditor.tsx:9:import { createClient } from '@/lib/supabase/client'
+app/(app)/inventory/admin/engineers/EngineerProjectsEditor.tsx:32:  const supabase = createClient()
+app/(app)/inventory/admin/engineers/page.tsx:2:import { createClient } from '@/lib/supabase/server'
+app/(app)/inventory/admin/engineers/page.tsx:12:  const supabase = await createClient()
+app/(app)/inventory/admin/items/PendingItemsReview.tsx:7:import { createClient } from '@/lib/supabase/client'
+app/(app)/inventory/admin/items/PendingItemsReview.tsx:22:    const supabase = createClient()
+app/(app)/inventory/admin/items/import/ImportForm.tsx:27:import { createClient } from '@/lib/supabase/client'
+app/(app)/inventory/admin/items/import/ImportForm.tsx:388:    const supabase = createClient()
+app/(app)/inventory/admin/items/import/page.tsx:1:import { createClient } from '@/lib/supabase/server'
+app/(app)/inventory/admin/items/import/page.tsx:13:  const supabase = await createClient()
+app/(app)/inventory/admin/items/item-list.tsx:4:import { createClient } from '@/lib/supabase/client'
+app/(app)/inventory/admin/items/item-list.tsx:232:    const err = await recycleDelete(createClient(), {
+app/(app)/inventory/admin/items/item-list.tsx:291:    const supabase = createClient()
+app/(app)/inventory/admin/items/item-list.tsx:304:    const supabase = createClient()
+app/(app)/inventory/admin/items/page.tsx:2:import { createClient } from '@/lib/supabase/server'
+app/(app)/inventory/admin/items/page.tsx:16:  const supabase = await createClient()
+app/(app)/inventory/admin/projects/ProjectStoresEditor.tsx:7:import { createClient } from '@/lib/supabase/client'
+app/(app)/inventory/admin/projects/ProjectStoresEditor.tsx:37:    const supabase = createClient()
+app/(app)/inventory/admin/projects/page.tsx:3:import { createClient } from '@/lib/supabase/server'
+app/(app)/inventory/admin/projects/page.tsx:13:  const supabase = await createClient()
+app/(app)/inventory/admin/settings/settings-form.tsx:8:import { createClient } from '@/lib/supabase/client'
+app/(app)/inventory/admin/settings/settings-form.tsx:77:    const { error } = await createClient().from('app_settings').upsert({ key: 'inv_daily_report_emails', value: clean }, { onConflict: 'key' })
+app/(app)/inventory/admin/settings/settings-form.tsx:100:    const supabase = createClient()
+app/(app)/inventory/admin/settings/settings-form.tsx:111:    const supabase = createClient()
+app/(app)/inventory/admin/warehouses/page.tsx:1:import { createClient } from '@/lib/supabase/server'
+app/(app)/inventory/admin/warehouses/page.tsx:13:  const supabase = await createClient()
+app/(app)/inventory/admin/warehouses/warehouse-list.tsx:4:import { createClient } from '@/lib/supabase/client'
+app/(app)/inventory/admin/warehouses/warehouse-list.tsx:117:    const err = await recycleDelete(createClient(), {
+app/(app)/inventory/admin/warehouses/warehouse-list.tsx:168:    const supabase = createClient()
+app/(app)/inventory/inbox/hop/page.tsx:1:import { createClient } from '@/lib/supabase/server'
+app/(app)/inventory/inbox/hop/page.tsx:11:  const supabase = await createClient()
+app/(app)/inventory/inbox/store/page.tsx:1:import { createClient } from '@/lib/supabase/server'
+app/(app)/inventory/inbox/store/page.tsx:19:  const supabase = await createClient()
+app/(app)/inventory/page.tsx:2:import { createClient } from '@/lib/supabase/server'
+app/(app)/inventory/page.tsx:35:  const supabase = await createClient()
+app/(app)/inventory/receipt/page.tsx:1:import { createClient } from '@/lib/supabase/server'
+app/(app)/inventory/receipt/page.tsx:13:  const supabase = await createClient()
+app/(app)/inventory/receipt/receipt-form.tsx:4:import { createClient } from '@/lib/supabase/client'
+app/(app)/inventory/receipt/receipt-form.tsx:37:    const supabase = createClient()
+app/(app)/inventory/reports/daily/page.tsx:2:import { createClient } from '@/lib/supabase/server'
+app/(app)/inventory/reports/daily/page.tsx:22:  const supabase = await createClient()
+app/(app)/inventory/reports/page.tsx:2:import { createClient } from '@/lib/supabase/server'
+app/(app)/inventory/reports/page.tsx:20:  const supabase = await createClient()
+app/(app)/inventory/requests/[id]/page.tsx:3:import { createClient } from '@/lib/supabase/server'
+app/(app)/inventory/requests/[id]/page.tsx:22:  const supabase = await createClient()
+app/(app)/inventory/requests/[id]/request-actions.tsx:4:import { createClient } from '@/lib/supabase/client'
+app/(app)/inventory/requests/[id]/request-actions.tsx:48:  const supabase = createClient()
+app/(app)/inventory/requests/new/page.tsx:1:import { createClient } from '@/lib/supabase/server'
+app/(app)/inventory/requests/new/page.tsx:16:  const supabase = await createClient()
+app/(app)/inventory/requests/new/request-form.tsx:4:import { createClient } from '@/lib/supabase/client'
+app/(app)/inventory/requests/new/request-form.tsx:74:    const supabase = createClient()
+app/(app)/inventory/requests/new/request-form.tsx:125:    const supabase = createClient()
+app/(app)/inventory/requests/page.tsx:2:import { createClient } from '@/lib/supabase/server'
+app/(app)/inventory/requests/page.tsx:17:  const supabase = await createClient()
+app/(app)/inventory/returns/new/page.tsx:1:import { createClient } from '@/lib/supabase/server'
+app/(app)/inventory/returns/new/page.tsx:12:  const supabase = await createClient()
+app/(app)/inventory/site-stock/[projectId]/CheckForm.tsx:4:import { createClient } from '@/lib/supabase/client'
+app/(app)/inventory/site-stock/[projectId]/CheckForm.tsx:21:  const supabase = createClient()
+app/(app)/inventory/site-stock/[projectId]/page.tsx:1:import { createClient } from '@/lib/supabase/server'
+app/(app)/inventory/site-stock/[projectId]/page.tsx:20:  const supabase = await createClient()
+app/(app)/inventory/site-stock/page.tsx:2:import { createClient } from '@/lib/supabase/server'
+app/(app)/inventory/site-stock/page.tsx:27:  const supabase = await createClient()
+app/(app)/inventory/stock-ops/StockOpsForms.tsx:4:import { createClient } from '@/lib/supabase/client'
+app/(app)/inventory/stock-ops/StockOpsForms.tsx:38:    const supabase = createClient()
+app/(app)/inventory/stock-ops/page.tsx:2:import { createClient } from '@/lib/supabase/server'
+app/(app)/inventory/stock-ops/page.tsx:12:  const supabase = await createClient()
+app/(app)/inventory/stock/page.tsx:1:import { createClient } from '@/lib/supabase/server'
+app/(app)/inventory/stock/page.tsx:16:  const supabase = await createClient()
+app/(app)/inventory/stock/stock-table.tsx:4:import { createClient } from '@/lib/supabase/client'
+app/(app)/inventory/stock/stock-table.tsx:175:    const supabase = createClient()
+app/(app)/invoices/[id]/page.tsx:3:import { createClient } from '@/lib/supabase/server'
+app/(app)/invoices/[id]/page.tsx:21:  const supabase = await createClient()
+app/(app)/invoices/page.tsx:2:import { createClient } from '@/lib/supabase/server'
+app/(app)/invoices/page.tsx:15:  const supabase = await createClient()
+app/(app)/jmr/admin/access/access-matrix.tsx:3:import { createClient } from '@/lib/supabase/client'
+app/(app)/jmr/admin/access/access-matrix.tsx:25:    const supabase = createClient()
+app/(app)/jmr/admin/access/page.tsx:1:import { createClient } from '@/lib/supabase/server'
+app/(app)/jmr/admin/access/page.tsx:10:  const supabase = await createClient()
+app/(app)/jmr/admin/admins/admins-panel.tsx:6:import { createClient } from '@/lib/supabase/client'
+app/(app)/jmr/admin/admins/admins-panel.tsx:74:    const supabase = createClient()
+app/(app)/jmr/admin/admins/page.tsx:1:import { createClient } from '@/lib/supabase/server'
+app/(app)/jmr/admin/admins/page.tsx:22:  const supabase = await createClient()
+app/(app)/jmr/admin/contractors/[id]/page.tsx:2:import { createClient } from '@/lib/supabase/server'
+app/(app)/jmr/admin/contractors/[id]/page.tsx:12:  const supabase = await createClient()
+app/(app)/jmr/admin/contractors/contractor-form.tsx:4:import { createClient } from '@/lib/supabase/client'
+app/(app)/jmr/admin/contractors/contractor-form.tsx:33:    const supabase = createClient()
+app/(app)/jmr/admin/contractors/page.tsx:2:import { createClient } from '@/lib/supabase/server'
+app/(app)/jmr/admin/contractors/page.tsx:15:  const supabase = await createClient()
+app/(app)/jmr/admin/import/JmrImportClient.tsx:6:import { createClient } from '@/lib/supabase/client'
+app/(app)/jmr/admin/import/JmrImportClient.tsx:155:  const supabase = createClient()
+app/(app)/jmr/admin/import/page.tsx:1:import { createClient } from '@/lib/supabase/server'
+app/(app)/jmr/admin/import/page.tsx:10:  const supabase = await createClient()
+app/(app)/jmr/admin/items/[id]/page.tsx:2:import { createClient } from '@/lib/supabase/server'
+app/(app)/jmr/admin/items/[id]/page.tsx:12:  const supabase = await createClient()
+app/(app)/jmr/admin/items/item-form.tsx:4:import { createClient } from '@/lib/supabase/client'
+app/(app)/jmr/admin/items/item-form.tsx:31:    const supabase = createClient()
+app/(app)/jmr/admin/items/page.tsx:2:import { createClient } from '@/lib/supabase/server'
+app/(app)/jmr/admin/items/page.tsx:15:  const supabase = await createClient()
+app/(app)/jmr/admin/projects/page.tsx:1:import { createClient } from '@/lib/supabase/server'
+app/(app)/jmr/admin/projects/page.tsx:13:  const supabase = await createClient()
+app/(app)/jmr/admin/projects/projects-builder.tsx:13:import { createClient } from '@/lib/supabase/client'
+app/(app)/jmr/admin/projects/projects-builder.tsx:39:  const supabase = createClient()
+app/(app)/jmr/admin/rate-cards/[id]/page.tsx:2:import { createClient } from '@/lib/supabase/server'
+app/(app)/jmr/admin/rate-cards/[id]/page.tsx:13:  const supabase = await createClient()
+app/(app)/jmr/admin/rate-cards/new/page.tsx:1:import { createClient } from '@/lib/supabase/server'
+app/(app)/jmr/admin/rate-cards/new/page.tsx:10:  const supabase = await createClient()
+app/(app)/jmr/admin/rate-cards/page.tsx:2:import { createClient } from '@/lib/supabase/server'
+app/(app)/jmr/admin/rate-cards/page.tsx:16:  const supabase = await createClient()
+app/(app)/jmr/admin/rate-cards/rate-form.tsx:4:import { createClient } from '@/lib/supabase/client'
+app/(app)/jmr/admin/rate-cards/rate-form.tsx:44:    const supabase = createClient()
+app/(app)/jmr/admin/settings/page.tsx:2:import { createClient } from '@/lib/supabase/server'
+app/(app)/jmr/admin/settings/page.tsx:15:  const supabase = await createClient()
+app/(app)/jmr/admin/settings/settings-form.tsx:4:import { createClient } from '@/lib/supabase/client'
+app/(app)/jmr/admin/settings/settings-form.tsx:55:    const supabase = createClient()
+app/(app)/jmr/dashboard/page.tsx:1:import { createClient } from '@/lib/supabase/server'
+app/(app)/jmr/dashboard/page.tsx:18:  const supabase = await createClient()
+app/(app)/jmr/entry/entry-form.tsx:4:import { createClient } from '@/lib/supabase/client'
+app/(app)/jmr/entry/entry-form.tsx:30:  const supabase = createClient()
+app/(app)/jmr/entry/page.tsx:1:import { createClient } from '@/lib/supabase/server'
+app/(app)/jmr/entry/page.tsx:12:  const supabase = await createClient()
+app/(app)/jmr/entry/today-entries.tsx:1:import { createClient } from '@/lib/supabase/server'
+app/(app)/jmr/entry/today-entries.tsx:10:  const supabase = await createClient()
+app/(app)/jmr/log/page.tsx:1:import { createClient } from '@/lib/supabase/server'
+app/(app)/jmr/log/page.tsx:15:  const supabase = await createClient()
+app/(app)/jmr/matrix/page.tsx:1:import { createClient } from '@/lib/supabase/server'
+app/(app)/jmr/matrix/page.tsx:22:  const supabase = await createClient()
+app/(app)/jmr/my/page.tsx:3:import { createClient } from '@/lib/supabase/server'
+app/(app)/jmr/my/page.tsx:25:  const supabase = await createClient()
+app/(app)/jmr/page.tsx:3:import { createClient } from '@/lib/supabase/server'
+app/(app)/jmr/page.tsx:19:  const supabase = await createClient()
+app/(app)/masters/mapping/page.tsx:3:import { createClient } from '@/lib/supabase/server'
+app/(app)/masters/mapping/page.tsx:21:  const supabase = await createClient()
+app/(app)/pos/[id]/page.tsx:3:import { createClient } from '@/lib/supabase/server'
+app/(app)/pos/[id]/page.tsx:24:  const supabase = await createClient()
+app/(app)/pos/page.tsx:2:import { createClient } from '@/lib/supabase/server'
+app/(app)/pos/page.tsx:21:  const supabase = await createClient()
+app/(app)/procurement-tracker/admin/ClosedProjectsEditor.tsx:3:import { createClient } from '@/lib/supabase/client'
+app/(app)/procurement-tracker/admin/ClosedProjectsEditor.tsx:42:    const supabase = createClient()
+app/(app)/procurement-tracker/admin/ProcurementNotifySettingsForm.tsx:4:import { createClient } from '@/lib/supabase/client'
+app/(app)/procurement-tracker/admin/ProcurementNotifySettingsForm.tsx:74:    const { error } = await createClient().from('app_settings').upsert(rows, { onConflict: 'key' })
+app/(app)/procurement-tracker/admin/page.tsx:1:import { createClient } from '@/lib/supabase/server'
+app/(app)/procurement-tracker/admin/page.tsx:21:  const supabase = await createClient()
+app/(app)/procurement-tracker/page.tsx:2:import { createClient } from '@/lib/supabase/server'
+app/(app)/procurement-tracker/page.tsx:19:  const supabase = await createClient()
+app/(app)/project/[id]/ApprovalsTab.tsx:21:import { createClient } from '@/lib/supabase/server'
+app/(app)/project/[id]/ApprovalsTab.tsx:41:    getMyUser(), createClient(), getCcSettings(),
+app/(app)/project/[id]/ApprovalsTab.tsx:163:  const supabase = await createClient()
+app/(app)/project/[id]/ScBudgetsTab.tsx:2:import { createClient } from '@/lib/supabase/server'
+app/(app)/project/[id]/ScBudgetsTab.tsx:19:  const supabase = await createClient()
+app/(app)/project/[id]/sc-budgets-actions.ts:4:import { createClient } from '@/lib/supabase/server'
+app/(app)/project/[id]/sc-budgets-actions.ts:47:  const supabase = await createClient()
+app/(app)/projects/[id]/page.tsx:3:import { createClient } from '@/lib/supabase/server'
+app/(app)/projects/[id]/page.tsx:39:  const supabase = await createClient()
+app/(app)/projects/[id]/project-users-tab.tsx:4:import { createClient } from '@/lib/supabase/client'
+app/(app)/projects/[id]/project-users-tab.tsx:43:  const supabase = createClient()
+app/(app)/projects/page.tsx:2:import { createClient } from '@/lib/supabase/server'
+app/(app)/projects/page.tsx:17:  const supabase = await createClient()
+app/(app)/projects/project-form.tsx:4:import { createClient } from '@/lib/supabase/client'
+app/(app)/projects/project-form.tsx:69:    const sb = createClient()
+app/(app)/projects/project-form.tsx:102:    const supabase = createClient()
+app/(app)/schedule/actions.ts:4:import { createClient } from '@/lib/supabase/server'
+app/(app)/schedule/actions.ts:47:  const sb = await createClient()
+app/(app)/schedule/actions.ts:79:  const sb = await createClient()
+app/(app)/schedule/actions.ts:108:  const sb = await createClient()
+app/(app)/schedule/actions.ts:125:  const sb = await createClient()
+app/(app)/schedule/actions.ts:149:  const sb = await createClient()
+app/(app)/schedule/actions.ts:171:  const sb = await createClient()
+app/(app)/schedule/actions.ts:189:  const sb = await createClient()
+app/(app)/schedule/actions.ts:208:  const sb = await createClient()
+app/(app)/schedule/actions.ts:235:  const sb = await createClient()
+app/(app)/schedule/actions.ts:251:  const sb = await createClient()
+app/(app)/schedule/actions.ts:301:  const sb = await createClient()
+app/(app)/schedule/actions.ts:320:  const sb = await createClient()
+app/(app)/schedule/actions.ts:368:  const sb = await createClient()
+app/(app)/schedule/settings/actions.ts:7:import { createClient } from '@/lib/supabase/server'
+app/(app)/schedule/settings/actions.ts:54:  const supabase = await createClient()
+app/(app)/settings/notifications/page.tsx:8:import { createClient } from '@/lib/supabase/server'
+app/(app)/settings/notifications/page.tsx:46:  const supabase = await createClient()
+app/(app)/settings/notifications/preferences-form.tsx:8:import { createClient } from '@/lib/supabase/client'
+app/(app)/settings/notifications/preferences-form.tsx:39:    const supabase = createClient()
+app/(app)/settings/notifications/telegram-actions.ts:7:import { createClient } from '@/lib/supabase/server'
+app/(app)/settings/notifications/telegram-actions.ts:19:  const token = process.env.TELEGRAM_BOT_TOKEN
+app/(app)/settings/notifications/telegram-actions.ts:23:  const supabase = await createClient()
+app/(app)/settings/notifications/telegram-actions.ts:32:  const supabase = await createClient()
+app/(app)/settings/notifications/telegram-actions.ts:43:  const supabase = await createClient()
+app/(app)/settings/notifications/telegram-actions.ts:48:  const token = process.env.TELEGRAM_BOT_TOKEN
+app/(app)/settings/notifications/telegram-actions.ts:54:  const supabase = await createClient()
+app/(app)/stuck-bills/page.tsx:1:import { createClient as createServiceClient } from '@supabase/supabase-js'
+app/(app)/stuck-bills/page.tsx:14:  const serviceKey  = process.env.SUPABASE_SERVICE_ROLE_KEY
+app/(app)/stuck-bills/page.tsx:15:  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
+app/(app)/supplier-report/page.tsx:2:import { createClient } from '@/lib/supabase/server'
+app/(app)/supplier-report/page.tsx:18:  const supabase = await createClient()
+app/(app)/uploads/page.tsx:1:import { createClient } from '@/lib/supabase/server'
+app/(app)/uploads/page.tsx:14:  const supabase = await createClient()
+app/(app)/vendors/[id]/page.tsx:3:import { createClient } from '@/lib/supabase/server'
+app/(app)/vendors/[id]/page.tsx:28:  const supabase = await createClient()
+app/(app)/vendors/page.tsx:2:import { createClient } from '@/lib/supabase/server'
+app/(app)/vendors/page.tsx:15:  const supabase = await createClient()
+app/(app)/vendors/vendor-form.tsx:4:import { createClient } from '@/lib/supabase/client'
+app/(app)/vendors/vendor-form.tsx:34:    const supabase = createClient()
+app/(app)/warehouse/actions.ts:4:import { createClient } from '@/lib/supabase/server'
+app/(app)/warehouse/actions.ts:87:  const sb = await createClient()
+app/(app)/warehouse/actions.ts:193:  const sb = await createClient()
+app/(app)/warehouse/actions.ts:253:  const sb = await createClient()
+app/(app)/warehouse/actions.ts:324:  const sb = await createClient()
+app/(app)/warehouse/actions.ts:477:  const sb = await createClient()
+app/(app)/warehouse/actions.ts:522:  const sb = await createClient()
+app/(app)/warehouse/actions.ts:582:  const sb = await createClient()
+app/(app)/warehouse/actions.ts:624:  const sb = await createClient()
+app/(app)/warehouse/actions.ts:730:  const sb = await createClient()
+app/(app)/warehouse/actions.ts:770:  const sb = await createClient()
+app/(app)/warehouse/actions.ts:824:  const sb = await createClient()
+app/(app)/warehouse/actions.ts:859:  const sb = await createClient()
+app/(app)/warehouse/actions.ts:909:  const sb = await createClient()
+app/(app)/warehouse/actions.ts:1011:  const sb = await createClient()
+app/(app)/warehouse/actions.ts:1049:  const sb = await createClient()
+app/(app)/warehouse/actions.ts:1088:  const sb = await createClient()
+app/(app)/warehouse/actions.ts:1113:  const sb = await createClient()
+app/(app)/warehouse/actions.ts:1131:  const sb = await createClient()
+app/(app)/warehouse/actions.ts:1215:  const sb = await createClient()
+app/(app)/warehouse/actions.ts:1307:  const sb = await createClient()
+app/(app)/warehouse/actions.ts:1370:  const sb = await createClient()
+app/(app)/warehouse/admin-actions.ts:11:import { createClient } from '@/lib/supabase/server'
+app/(app)/warehouse/admin-actions.ts:49:  const sb = await createClient()
+app/(app)/warehouse/admin-actions.ts:144:  const sb = await createClient()
+app/(app)/warehouse/admin-actions.ts:166:  const sb = await createClient()
+app/(app)/warehouse/admin-actions.ts:192:  const sb = await createClient()
+app/(app)/warehouse/admin-actions.ts:225:  const sb = await createClient()
+app/(app)/warehouse/admin-actions.ts:255:  const sb = await createClient()
+app/(app)/warehouse/admin-actions.ts:291:  const sb = await createClient()
+app/(app)/warehouse/admin-actions.ts:320:  const sb = await createClient()
+app/(app)/warehouse/admin-actions.ts:341:  const sb = await createClient()
+app/(app)/warehouse/admin-actions.ts:379:  const sb = await createClient()
+app/(app)/warehouse/admin-actions.ts:437:  const sb = await createClient()
+app/(app)/warehouse/admin-actions.ts:466:  const sb = await createClient()
+app/(app)/warehouse/admin-actions.ts:501:  const sb = await createClient()
+app/(app)/warehouse/admin-actions.ts:532:  const sb = await createClient()
+app/(app)/warehouse/admin-actions.ts:629:  const sb = await createClient()
+app/(app)/warehouse/catalogue-actions.ts:12:import { createClient } from '@/lib/supabase/server'
+app/(app)/warehouse/catalogue-actions.ts:37:  const sb = await createClient()
+app/(app)/warehouse/catalogue-actions.ts:120:  const sb = await createClient()
+app/(app)/warehouse/entries/[kind]/[id]/entry-client.tsx:10:import { createClient } from '@/lib/supabase/client'
+app/(app)/warehouse/entries/[kind]/[id]/entry-client.tsx:310:    const supabase = createClient()
+app/(app)/warehouse/in/gate-in-form.tsx:15:import { createClient } from '@/lib/supabase/client'
+app/(app)/warehouse/in/gate-in-form.tsx:38:  const supabase = createClient()
+app/(app)/warehouse/out/page.tsx:6:import { createClient } from '@/lib/supabase/server'
+app/(app)/warehouse/out/page.tsx:32:  const sb = await createClient()
+app/(app)/warehouse/page.tsx:6:import { createClient } from '@/lib/supabase/server'
+app/(app)/warehouse/page.tsx:49:  const sb = await createClient()
+app/(app)/warehouse/po/page.tsx:6:import { createClient } from '@/lib/supabase/server'
+app/(app)/warehouse/po/page.tsx:21:  const sb = await createClient()
+app/(app)/warehouse/request-actions.ts:10:import { createClient } from '@/lib/supabase/server'
+app/(app)/warehouse/request-actions.ts:54:  const sb = await createClient()
+app/(app)/warehouse/request-actions.ts:142:  const sb = await createClient()
+app/(app)/warehouse/request-actions.ts:192:  const sb = await createClient()
+app/(app)/warehouse/request-actions.ts:290:  const sb = await createClient()
+app/(app)/warehouse/request-actions.ts:332:  const sb = await createClient()
+app/(app)/warehouse/request-actions.ts:362:  const sb = await createClient()
+app/(app)/warehouse/request-actions.ts:431:  const sb = await createClient()
+app/(app)/warehouse/requests/new/page.tsx:12:import { createClient } from '@/lib/supabase/server'
+app/(app)/warehouse/requests/new/page.tsx:23:  const sb = await createClient()
+app/(app)/warehouse/settings/page.tsx:6:import { createClient } from '@/lib/supabase/server'
+app/(app)/warehouse/settings/page.tsx:18:  const sb = await createClient()
+app/api/admin/procurement-projects/route.ts:14:import { createClient } from '@/lib/supabase/server'
+app/api/admin/procurement-projects/route.ts:31:  const supabase = await createClient()
+app/api/admin/procurement-projects/route.ts:71:  const supabase = await createClient()
+app/api/bills-pipeline/checklist/route.ts:5:import { createClient } from '@/lib/supabase/server'
+app/api/bills-pipeline/checklist/route.ts:39:  const supabase = await createClient()
+app/api/bills-pipeline/projects/route.ts:6:import { createClient as createServiceClient, type SupabaseClient } from '@supabase/supabase-js'
+app/api/bills-pipeline/projects/route.ts:15:  const key = process.env.SUPABASE_SERVICE_ROLE_KEY
+app/api/bills-pipeline/projects/route.ts:17:  return createServiceClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, key, { auth: { persistSession: false } })
+app/api/bills-pipeline/trust-map/route.ts:7:import { createClient } from '@/lib/supabase/server'
+app/api/bills-pipeline/trust-map/route.ts:36:  const supabase = await createClient()
+app/api/bills-pipeline/trustdesk/route.ts:6:import { createClient } from '@/lib/supabase/server'
+app/api/bills-pipeline/trustdesk/route.ts:43:  const supabase = await createClient()
+app/api/budget-hub/state/route.ts:10:import { createClient } from '@/lib/supabase/server'
+app/api/budget-hub/state/route.ts:11:import { createClient as createServiceClient } from '@supabase/supabase-js'
+app/api/budget-hub/state/route.ts:18:  const supabase = await createClient()
+app/api/budget-hub/state/route.ts:52:  const supabase = await createClient()
+app/api/budget-hub/state/route.ts:144:    const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+app/api/budget-hub/state/route.ts:146:      ? createServiceClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, serviceKey, { auth: { persistSession: false } })
+app/api/contractor-report/areas/route.ts:7:import { createClient } from '@/lib/supabase/server'
+app/api/contractor-report/areas/route.ts:10:  const supabase = await createClient()
+app/api/contractor-report/state/route.ts:7:import { createClient } from '@/lib/supabase/server'
+app/api/contractor-report/state/route.ts:14:  const supabase = await createClient()
+app/api/contractor-report/state/route.ts:34:  const supabase = await createClient()
+app/api/cost-control/backup/route.ts:20:import { createClient } from '@/lib/supabase/server'
+app/api/cost-control/backup/route.ts:21:import { createClient as createServiceClient, type SupabaseClient } from '@supabase/supabase-js'
+app/api/cost-control/backup/route.ts:29:const CRON_SECRET = process.env.CRON_SECRET
+app/api/cost-control/backup/route.ts:85:  const supabase = await createClient()
+app/api/cost-control/backup/route.ts:117:  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+app/api/cost-control/backup/route.ts:124:  const supabase = createServiceClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, serviceKey, {
+app/api/cost-control/backup/route.ts:178:  const supabase = await createClient()
+app/api/cost-control/in4-followup/route.ts:7:import { createClient as createServiceClient } from '@supabase/supabase-js'
+app/api/cost-control/in4-followup/route.ts:13:  const CRON_SECRET = process.env.CRON_SECRET
+app/api/cost-control/in4-followup/route.ts:18:  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+app/api/cost-control/in4-followup/route.ts:21:  const supabase = createServiceClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, serviceKey, {
+app/api/cost-control/master-export/route.ts:10:import { createClient } from '@/lib/supabase/server'
+app/api/cost-control/master-export/route.ts:42:  const supabase = await createClient()
+app/api/cost-control/working-sheets/[id]/ai-presets/route.ts:9:import { createClient } from '@/lib/supabase/server'
+app/api/cost-control/working-sheets/[id]/ai-presets/route.ts:46:  const supabase = await createClient()
+app/api/cost-control/working-sheets/[id]/ai-reparse/route.ts:12:import { createClient } from '@/lib/supabase/server'
+app/api/cost-control/working-sheets/[id]/ai-reparse/route.ts:65:  const supabase = await createClient()
+app/api/cost-control/working-sheets/[id]/approval-attachment/route.ts:14:import { createClient } from '@/lib/supabase/server'
+app/api/cost-control/working-sheets/[id]/approval-attachment/route.ts:15:import { createClient as createServiceClient } from '@supabase/supabase-js'
+app/api/cost-control/working-sheets/[id]/approval-attachment/route.ts:28:    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+app/api/cost-control/working-sheets/[id]/approval-attachment/route.ts:29:    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+app/api/cost-control/working-sheets/[id]/approval-attachment/route.ts:40:  if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
+app/api/cost-control/working-sheets/[id]/approval-attachment/route.ts:50:  const session = await createClient()
+app/api/cost-control/working-sheets/[id]/approval-attachment/route.ts:91:  if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
+app/api/cost-control/working-sheets/[id]/ask/route.ts:11:import { createClient } from '@/lib/supabase/server'
+app/api/cost-control/working-sheets/[id]/ask/route.ts:49:  const supabase = await createClient()
+app/api/cost-control/working-sheets/[id]/check-screenshot/route.ts:10:import { createClient } from '@/lib/supabase/server'
+app/api/cost-control/working-sheets/[id]/check-screenshot/route.ts:42:  const supabase = await createClient()
+app/api/cost-control/working-sheets/[id]/check/route.ts:7:import { createClient } from '@/lib/supabase/server'
+app/api/cost-control/working-sheets/[id]/check/route.ts:78:  const supabase = await createClient()
+app/api/cost-control/working-sheets/[id]/download/route.ts:12:import { createClient } from '@/lib/supabase/server'
+app/api/cost-control/working-sheets/[id]/download/route.ts:29:  const supabase = await createClient()
+app/api/cost-control/working-sheets/ai-parse/route.ts:17:import { createClient } from '@/lib/supabase/server'
+app/api/cost-control/working-sheets/ai-parse/route.ts:94:  const supabase = await createClient()
+app/api/cron/bills-digest/route.ts:14:import { createClient as createServiceClient, type SupabaseClient } from '@supabase/supabase-js'
+app/api/cron/bills-digest/route.ts:15:import { createClient } from '@/lib/supabase/server'
+app/api/cron/bills-digest/route.ts:36:  const prod = process.env.VERCEL_PROJECT_PRODUCTION_URL
+app/api/cron/bills-digest/route.ts:124:  const secret = process.env.NOTIFY_INTERNAL_SECRET
+app/api/cron/bills-digest/route.ts:171:  const token = process.env.TELEGRAM_BOT_TOKEN
+app/api/cron/bills-digest/route.ts:207:  const CRON_SECRET = process.env.CRON_SECRET
+app/api/cron/bills-digest/route.ts:212:  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+app/api/cron/bills-digest/route.ts:214:  const supabase = createServiceClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, serviceKey, { auth: { persistSession: false } })
+app/api/cron/bills-digest/route.ts:225:  const session = await createClient()
+app/api/cron/bills-digest/route.ts:239:    const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+app/api/cron/bills-digest/route.ts:241:    const token = process.env.TELEGRAM_BOT_TOKEN
+app/api/cron/bills-digest/route.ts:243:    const svc = createServiceClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, serviceKey, { auth: { persistSession: false } }) as unknown as Client
+app/api/cron/bills-digest/route.ts:283:    const svcKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+app/api/cron/bills-digest/route.ts:285:      ? (createServiceClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, svcKey, { auth: { persistSession: false } }) as unknown as Client)
+app/api/cron/bills-digest/route.ts:297:  const svcKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+app/api/cron/bills-digest/route.ts:299:    ? (createServiceClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, svcKey, { auth: { persistSession: false } }) as unknown as Client)
+app/api/cron/bills-digest/route.ts:307:  const token = process.env.TELEGRAM_BOT_TOKEN
+app/api/cron/bills-digest/route.ts:330:    const secret = process.env.NOTIFY_INTERNAL_SECRET
+app/api/cron/bills-pipeline/route.ts:10:import { createClient as createServiceClient, type SupabaseClient } from '@supabase/supabase-js'
+app/api/cron/bills-pipeline/route.ts:22:const CRON_SECRET = process.env.CRON_SECRET
+app/api/cron/bills-pipeline/route.ts:25:  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+app/api/cron/bills-pipeline/route.ts:27:  return createServiceClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, serviceKey, {
+app/api/cron/bills-stuck-worklist/route.ts:8:import { createClient as createServiceClient } from '@supabase/supabase-js'
+app/api/cron/bills-stuck-worklist/route.ts:9:import { createClient } from '@/lib/supabase/server'
+app/api/cron/bills-stuck-worklist/route.ts:18:  const prod = process.env.VERCEL_PROJECT_PRODUCTION_URL
+app/api/cron/bills-stuck-worklist/route.ts:51:  const secret = process.env.NOTIFY_INTERNAL_SECRET
+app/api/cron/bills-stuck-worklist/route.ts:67:  const CRON_SECRET = process.env.CRON_SECRET
+app/api/cron/bills-stuck-worklist/route.ts:72:  const sb = createServiceClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
+app/api/cron/bills-stuck-worklist/route.ts:95:  const sb = createServiceClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
+app/api/cron/bph-sync/route.ts:13:import { createClient as createServiceClient } from '@supabase/supabase-js'
+app/api/cron/bph-sync/route.ts:20:const CRON_SECRET = process.env.CRON_SECRET
+app/api/cron/bph-sync/route.ts:31:  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+app/api/cron/bph-sync/route.ts:35:  const supabase = createServiceClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, serviceKey, {
+app/api/cron/cc-approval-digest/route.ts:15:import { createClient as createServiceClient } from '@supabase/supabase-js'
+app/api/cron/cc-approval-digest/route.ts:22:  const key = process.env.SUPABASE_SERVICE_ROLE_KEY
+app/api/cron/cc-approval-digest/route.ts:24:  return createServiceClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, key, { auth: { persistSession: false } })
+app/api/cron/cc-approval-digest/route.ts:28:  const CRON_SECRET = process.env.CRON_SECRET
+app/api/cron/cc-approval-reminders/route.ts:9:import { createClient as createServiceClient } from '@supabase/supabase-js'
+app/api/cron/cc-approval-reminders/route.ts:17:  return createServiceClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!, {
+app/api/cron/cc-approval-reminders/route.ts:23:  const CRON_SECRET = process.env.CRON_SECRET
+app/api/cron/cc-approval-reminders/route.ts:27:  if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
+app/api/cron/cc-approval-reminders/route.ts:43:  if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
+app/api/cron/cc-budget-vs-actual/route.ts:12:import { createClient as createServiceClient } from '@supabase/supabase-js'
+app/api/cron/cc-budget-vs-actual/route.ts:24:  return createServiceClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!, {
+app/api/cron/cc-budget-vs-actual/route.ts:119:  const CRON_SECRET = process.env.CRON_SECRET
+app/api/cron/cc-budget-vs-actual/route.ts:123:  if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
+app/api/cron/cc-budget-vs-actual/route.ts:153:  if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
+app/api/cron/cc-trustee-digest/route.ts:7:import { createClient as createServiceClient } from '@supabase/supabase-js'
+app/api/cron/cc-trustee-digest/route.ts:16:  return createServiceClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!, { auth: { persistSession: false } })
+app/api/cron/cc-trustee-digest/route.ts:19:  return !!(process.env.SUPABASE_SERVICE_ROLE_KEY && process.env.TELEGRAM_BOT_TOKEN)
+app/api/cron/cc-trustee-digest/route.ts:23:  const CRON_SECRET = process.env.CRON_SECRET
+app/api/cron/cc-trustee-digest/route.ts:28:  const res = await sendTrusteeDigests(svc(), process.env.TELEGRAM_BOT_TOKEN!)
+app/api/cron/cc-trustee-digest/route.ts:38:  const res = await sendTrusteeDigests(svc(), process.env.TELEGRAM_BOT_TOKEN!, me?.id ?? null)
+app/api/cron/daily-site-report/route.ts:16:import { createClient as createServiceClient, type SupabaseClient } from '@supabase/supabase-js'
+app/api/cron/daily-site-report/route.ts:17:import { createClient } from '@/lib/supabase/server'
+app/api/cron/daily-site-report/route.ts:98:  const CRON_SECRET = process.env.CRON_SECRET
+app/api/cron/daily-site-report/route.ts:103:  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+app/api/cron/daily-site-report/route.ts:105:  const supabase = createServiceClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, serviceKey, { auth: { persistSession: false } })
+app/api/cron/daily-site-report/route.ts:157:  const supabase = (await createClient()) as unknown as Client
+app/api/cron/dispatch/route.ts:18:import { createClient as createServiceClient } from '@supabase/supabase-js'
+app/api/cron/dispatch/route.ts:28:  const key = process.env.SUPABASE_SERVICE_ROLE_KEY
+app/api/cron/dispatch/route.ts:29:  const url = process.env.NEXT_PUBLIC_SUPABASE_URL
+app/api/cron/dispatch/route.ts:39:  const prod = process.env.VERCEL_PROJECT_PRODUCTION_URL
+app/api/cron/dispatch/route.ts:58:  const CRON_SECRET = process.env.CRON_SECRET
+app/api/cron/drive-archive/route.ts:11:import { createClient as createServiceClient } from '@supabase/supabase-js'
+app/api/cron/drive-archive/route.ts:20:const CRON_SECRET = process.env.CRON_SECRET
+app/api/cron/drive-archive/route.ts:23:  return createServiceClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!, { auth: { persistSession: false } })
+app/api/cron/email-retry/route.ts:6:import { createClient as createServiceClient } from '@supabase/supabase-js'
+app/api/cron/email-retry/route.ts:7:import { createClient } from '@/lib/supabase/server'
+app/api/cron/email-retry/route.ts:15:  const CRON_SECRET = process.env.CRON_SECRET
+app/api/cron/email-retry/route.ts:20:  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+app/api/cron/email-retry/route.ts:24:  const supabase = createServiceClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, serviceKey, {
+app/api/cron/email-retry/route.ts:40:  const supabase = await createClient()
+app/api/cron/engineer-digest/route.ts:13:import { createClient as createServiceClient } from '@supabase/supabase-js'
+app/api/cron/engineer-digest/route.ts:20:  const key = process.env.SUPABASE_SERVICE_ROLE_KEY
+app/api/cron/engineer-digest/route.ts:22:  return createServiceClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, key, { auth: { persistSession: false } })
+app/api/cron/engineer-digest/route.ts:27:  const CRON_SECRET = process.env.CRON_SECRET
+app/api/cron/in4-sync/route.ts:23:const CRON_SECRET = process.env.CRON_SECRET
+app/api/cron/inventory-daily-report/route.ts:12:import { createClient as createServiceClient, type SupabaseClient } from '@supabase/supabase-js'
+app/api/cron/inventory-daily-report/route.ts:13:import { createClient } from '@/lib/supabase/server'
+app/api/cron/inventory-daily-report/route.ts:27:  return `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL || 'ct-hub.vercel.app'}`
+app/api/cron/inventory-daily-report/route.ts:41:  const secret = process.env.NOTIFY_INTERNAL_SECRET
+app/api/cron/inventory-daily-report/route.ts:57:  const CRON_SECRET = process.env.CRON_SECRET
+app/api/cron/inventory-daily-report/route.ts:62:  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+app/api/cron/inventory-daily-report/route.ts:64:  const supabase = createServiceClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, serviceKey, { auth: { persistSession: false } })
+app/api/cron/inventory-daily-report/route.ts:86:  const session = await createClient()
+app/api/cron/inventory-low-stock/route.ts:7:import { createClient as createServiceClient } from '@supabase/supabase-js'
+app/api/cron/inventory-low-stock/route.ts:13:  const CRON_SECRET = process.env.CRON_SECRET
+app/api/cron/inventory-low-stock/route.ts:19:  const url = process.env.NEXT_PUBLIC_SUPABASE_URL
+app/api/cron/inventory-low-stock/route.ts:20:  const key = process.env.SUPABASE_SERVICE_ROLE_KEY
+app/api/cron/procurement-digest/route.ts:12:import { createClient as createServiceClient, type SupabaseClient } from '@supabase/supabase-js'
+app/api/cron/procurement-digest/route.ts:13:import { createClient } from '@/lib/supabase/server'
+app/api/cron/procurement-digest/route.ts:77:  const CRON_SECRET = process.env.CRON_SECRET
+app/api/cron/procurement-digest/route.ts:82:  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+app/api/cron/procurement-digest/route.ts:84:  const supabase = createServiceClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, serviceKey, { auth: { persistSession: false } })
+app/api/cron/procurement-digest/route.ts:128:  const session = await createClient()
+app/api/cron/procurement-digest/route.ts:145:    const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+app/api/cron/procurement-digest/route.ts:147:    const token = process.env.TELEGRAM_BOT_TOKEN
+app/api/cron/procurement-digest/route.ts:149:    const svc = createServiceClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, serviceKey, { auth: { persistSession: false } }) as unknown as Client
+app/api/cron/run-now/route.ts:14:  const prod = process.env.VERCEL_PROJECT_PRODUCTION_URL
+app/api/cron/run-now/route.ts:23:  const secret = process.env.CRON_SECRET
+app/api/cron/schedule-nudge/route.ts:9:import { createClient as createServiceClient } from '@supabase/supabase-js'
+app/api/cron/schedule-nudge/route.ts:25:  const CRON_SECRET = process.env.CRON_SECRET
+app/api/cron/schedule-nudge/route.ts:30:  const url = process.env.NEXT_PUBLIC_SUPABASE_URL
+app/api/cron/schedule-nudge/route.ts:31:  const key = process.env.SUPABASE_SERVICE_ROLE_KEY
+app/api/daily-site-report/digest/route.ts:5:import { createClient } from '@/lib/supabase/server'
+app/api/daily-site-report/digest/route.ts:33:  const supabase = await createClient()
+app/api/daily-site-report/tracking/route.ts:6:import { createClient } from '@/lib/supabase/server'
+app/api/daily-site-report/tracking/route.ts:38:  const supabase = await createClient()
+app/api/ecc/ask/route.ts:10:import { createClient } from '@/lib/supabase/server'
+app/api/ecc/ask/route.ts:25:  const supabase = await createClient()
+app/api/ecc/draft-reply/route.ts:15:import { createClient } from '@/lib/supabase/server'
+app/api/ecc/draft-reply/route.ts:31:  const supabase = await createClient()
+app/api/email/send/route.ts:15:import { createClient as createServiceClient } from '@supabase/supabase-js'
+app/api/email/send/route.ts:25:  const url = process.env.NEXT_PUBLIC_SUPABASE_URL
+app/api/email/send/route.ts:26:  const key = process.env.SUPABASE_SERVICE_ROLE_KEY
+app/api/email/send/route.ts:41:  const user = process.env.GMAIL_USER
+app/api/email/send/route.ts:42:  const pass = process.env.GMAIL_APP_PASSWORD
+app/api/email/send/route.ts:49:  const secret = process.env.NOTIFY_INTERNAL_SECRET
+app/api/email/send/route.ts:82:  const origin = (process.env.NEXT_PUBLIC_APP_URL || req.nextUrl.origin).replace(/\/$/, '')
+app/api/email/send/route.ts:84:  const fromName = process.env.GMAIL_FROM_NAME || 'CT HUB'
+app/api/email/send/route.ts:104:      from: `"${fromName}" <${process.env.GMAIL_USER}>`,
+app/api/jmr/entries/approve/route.ts:23:import { createClient } from '@/lib/supabase/server'
+app/api/jmr/entries/approve/route.ts:64:  const supabase = await createClient()
+app/api/jmr/entries/notify-submit/route.ts:17:import { createClient } from '@/lib/supabase/server'
+app/api/jmr/entries/notify-submit/route.ts:18:import { createClient as createServiceClient } from '@supabase/supabase-js'
+app/api/jmr/entries/notify-submit/route.ts:41:  const supabase = await createClient()
+app/api/jmr/entries/notify-submit/route.ts:76:  const svcKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+app/api/jmr/entries/notify-submit/route.ts:77:  const svcUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+app/api/jmr/weekly-report/route.ts:4:import { createClient } from '@/lib/supabase/server'
+app/api/jmr/weekly-report/route.ts:7:const CRON_SECRET = process.env.CRON_SECRET
+app/api/jmr/weekly-report/route.ts:21:  const supabase = await createClient()
+app/api/jmr/weekly-report/route.ts:51:    const supabaseSettings = await createClient()
+app/api/jmr/weekly-report/route.ts:96:  const RESEND_KEY = process.env.RESEND_API_KEY
+app/api/jmr/weekly-report/route.ts:97:  const FROM = process.env.RESEND_FROM_EMAIL || 'CT HUB JMR <noreply@srmd.org>'
+app/api/jmr/weekly-report/route.ts:128:    const supabase = await createClient()
+app/api/notifications/test/route.ts:5:import { createClient as createServiceClient } from '@supabase/supabase-js'
+app/api/notifications/test/route.ts:16:  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+app/api/notifications/test/route.ts:19:  const svc = createServiceClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, serviceKey, {
+app/api/procurement-tracker/analyse/route.ts:9:import { createClient } from '@/lib/supabase/server'
+app/api/procurement-tracker/analyse/route.ts:105:    const supabase = await createClient()
+app/api/procurement-tracker/chase-notes/route.ts:14:import { createClient } from '@/lib/supabase/server'
+app/api/procurement-tracker/chase-notes/route.ts:41:  const supabase = await createClient()
+app/api/procurement-tracker/chase-notes/route.ts:58:  const supabase = await createClient()
+app/api/procurement-tracker/dropped/route.ts:11:import { createClient } from '@/lib/supabase/server'
+app/api/procurement-tracker/dropped/route.ts:41:  const supabase = await createClient()
+app/api/procurement-tracker/dropped/route.ts:54:  const supabase = await createClient()
+app/api/procurement-tracker/dropped/route.ts:84:  const supabase = await createClient()
+app/api/procurement-tracker/my-hidden-projects/route.ts:9:import { createClient } from '@/lib/supabase/server'
+app/api/procurement-tracker/my-hidden-projects/route.ts:18:  const supabase = await createClient()
+app/api/procurement-tracker/state/route.ts:15:import { createClient } from '@/lib/supabase/server'
+app/api/procurement-tracker/state/route.ts:25:    const slots = await getTrackerSlots(await createClient())
+app/api/projects/[id]/route.ts:21:import { createClient } from '@/lib/supabase/server'
+app/api/projects/[id]/route.ts:44:  const supabase = await createClient()
+app/api/projects/[id]/route.ts:98:  const supabase = await createClient()
+app/api/push/send/route.ts:16:import { createClient as createServiceClient } from '@supabase/supabase-js'
+app/api/push/send/route.ts:21:const PUB = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY
+app/api/push/send/route.ts:22:const PRIV = process.env.VAPID_PRIVATE_KEY
+app/api/push/send/route.ts:25:  const secret = process.env.NOTIFY_INTERNAL_SECRET
+app/api/push/send/route.ts:30:  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+app/api/push/send/route.ts:35:  webpush.setVapidDetails(process.env.VAPID_SUBJECT || 'mailto:construction@srmd.org', PUB, PRIV)
+app/api/push/send/route.ts:42:  const svc = createServiceClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, serviceKey, {
+app/api/push/send/route.ts:71:  const origin = (process.env.NEXT_PUBLIC_APP_URL || 'https://ct-hub.vercel.app').replace(/\/$/, '')
+app/api/push/subscribe/route.ts:7:import { createClient } from '@/lib/supabase/server'
+app/api/push/subscribe/route.ts:13:  const supabase = await createClient()
+app/api/push/subscribe/route.ts:43:  const supabase = await createClient()
+app/api/supplier-report/areas/route.ts:7:import { createClient } from '@/lib/supabase/server'
+app/api/supplier-report/areas/route.ts:10:  const supabase = await createClient()
+app/api/supplier-report/state/route.ts:7:import { createClient } from '@/lib/supabase/server'
+app/api/supplier-report/state/route.ts:14:  const supabase = await createClient()
+app/api/supplier-report/state/route.ts:34:  const supabase = await createClient()
+app/api/telegram/send/route.ts:15:import { createClient as createServiceClient } from '@supabase/supabase-js'
+app/api/telegram/send/route.ts:27:  const url = process.env.NEXT_PUBLIC_SUPABASE_URL
+app/api/telegram/send/route.ts:28:  const key = process.env.SUPABASE_SERVICE_ROLE_KEY
+app/api/telegram/send/route.ts:51:  const secret = process.env.NOTIFY_INTERNAL_SECRET
+app/api/telegram/send/route.ts:56:  const token = process.env.TELEGRAM_BOT_TOKEN
+app/api/telegram/send/route.ts:87:  const origin = (process.env.NEXT_PUBLIC_APP_URL || req.nextUrl.origin).replace(/\/$/, '')
+app/api/telegram/setup/route.ts:28:  const token = process.env.TELEGRAM_BOT_TOKEN
+app/api/telegram/setup/route.ts:39:  const token = process.env.TELEGRAM_BOT_TOKEN
+app/api/telegram/setup/route.ts:40:  const secret = process.env.NOTIFY_INTERNAL_SECRET
+app/api/telegram/setup/route.ts:44:  const origin = (process.env.NEXT_PUBLIC_APP_URL || 'https://ct-hub.vercel.app').replace(/\/$/, '')
+app/api/telegram/webhook/route.ts:9:import { createClient as createServiceClient } from '@supabase/supabase-js'
+app/api/telegram/webhook/route.ts:26:  const secret = process.env.NOTIFY_INTERNAL_SECRET
+app/api/telegram/webhook/route.ts:27:  const token = process.env.TELEGRAM_BOT_TOKEN
+app/api/telegram/webhook/route.ts:52:  const url = process.env.NEXT_PUBLIC_SUPABASE_URL
+app/api/telegram/webhook/route.ts:53:  const key = process.env.SUPABASE_SERVICE_ROLE_KEY
+app/api/users/mentionable/route.ts:5:import { createClient } from '@/lib/supabase/server'
+app/api/users/mentionable/route.ts:11:  const supabase = await createClient()
+app/api/zoho/bp-callback/route.ts:5:import { createClient as createServiceClient } from '@supabase/supabase-js'
+app/api/zoho/bp-callback/route.ts:7:const DC       = process.env.ZOHO_DC ?? 'in'
+app/api/zoho/bp-callback/route.ts:28:      client_id:     process.env.ZOHO_BP_CLIENT_ID     ?? '',
+app/api/zoho/bp-callback/route.ts:29:      client_secret: process.env.ZOHO_BP_CLIENT_SECRET ?? '',
+app/api/zoho/bp-callback/route.ts:48:    const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+app/api/zoho/bp-callback/route.ts:52:      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+app/api/zoho/bp-connect/route.ts:9:const DC = process.env.ZOHO_DC ?? 'in'
+app/api/zoho/bp-connect/route.ts:21:  const clientId = process.env.ZOHO_BP_CLIENT_ID
+app/auth/callback/route.ts:1:import { createClient } from '@/lib/supabase/server'
+app/auth/callback/route.ts:10:    const supabase = await createClient()
+app/login/page.tsx:4:import { createClient } from '@/lib/supabase/client'
+app/login/page.tsx:24:  const supabase = createClient()
+components/AccessPendingScreen.tsx:8:import { createClient } from '@/lib/supabase/client'
+components/AccessPendingScreen.tsx:14:  const supabase = createClient()
+components/GoogleOneTapButton.tsx:4:import { createClient } from '@/lib/supabase/client'
+components/GoogleOneTapButton.tsx:61:    process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID
+components/GoogleOneTapButton.tsx:91:            const supabase = createClient()
+components/NavBar.tsx:5:import { createClient } from '@/lib/supabase/client'
+components/NavBar.tsx:61:  const supabase = createClient()
+components/NotificationProvider.tsx:9:import { createClient } from '@/lib/supabase/client'
+components/NotificationProvider.tsx:50:  const supabase = useMemo(() => createClient(), [])
+components/ProjectSetupWizard/actions.ts:6:import { createClient } from '@/lib/supabase/server'
+components/ProjectSetupWizard/actions.ts:74:  const supabase = await createClient()
+components/ProjectSetupWizard/actions.ts:145:  const supabase = await createClient()
+components/ProjectSetupWizard/actions.ts:195:  const supabase = await createClient()
+components/ProjectSetupWizard/actions.ts:242:  const supabase = await createClient()
+components/ProjectSetupWizard/actions.ts:289:  const supabase = await createClient()
+components/approvals/ApprovalActionDialog.tsx:33:import { createClient } from '@/lib/supabase/client'
+components/approvals/ApprovalActionDialog.tsx:76:  const supabase = createClient()
+components/approvals/ApprovalHistory.tsx:6:import { createClient } from '@/lib/supabase/server'
+components/approvals/ApprovalHistory.tsx:42:  const supabase = await createClient()
+components/cost-control/ApprovalTimeline.tsx:7:import { createClient } from '@/lib/supabase/server'
+components/cost-control/ApprovalTimeline.tsx:59:  const supabase = await createClient()
+components/cost-control/ApproveTrancheButton.tsx:16:import { createClient } from '@/lib/supabase/client'
+components/cost-control/ApproveTrancheButton.tsx:62:  const supabase = createClient()
+components/cost-control/AutoBackup.tsx:10:import { createClient } from '@/lib/supabase/client'
+components/cost-control/AutoBackup.tsx:24:    const supabase = createClient()
+components/cost-control/CommentsPanel.tsx:5:import { createClient } from '@/lib/supabase/server'
+components/cost-control/CommentsPanel.tsx:25:  const supabase = await createClient()
+components/cost-control/comment-actions.ts:8:import { createClient } from '@/lib/supabase/server'
+components/cost-control/comment-actions.ts:17:  const supabase = await createClient()
+components/cost-control/ws-actions.ts:6:import { createClient } from '@/lib/supabase/server'
+components/cost-control/ws-actions.ts:60:  const supabase = await createClient()
+components/cost-control/ws-actions.ts:95:  const supabase = await createClient()
+components/cost-control/ws-actions.ts:157:  const supabase = await createClient()
+components/cost-control/ws-actions.ts:184:  const supabase = await createClient()
+components/cost-control/ws-actions.ts:197:  const supabase = await createClient()
+components/cost-control/ws-actions.ts:212:  const supabase = await createClient()
+components/cost-control/ws-actions.ts:247:  const supabase = await createClient()
+components/cost-control/ws-actions.ts:270:  const supabase = await createClient()
+components/cost-control/ws-actions.ts:283:  const supabase = await createClient()
+components/cost-control/ws-actions.ts:308:  const supabase = await createClient()
+components/cost-control/ws-actions.ts:324:  const supabase = await createClient()
+components/cost-control/ws-actions.ts:339:        const svc = await createClient()
+components/cost-control/ws-actions.ts:367:  const supabase = await createClient()
+components/cost-control/ws-actions.ts:401:  const supabase = await createClient()
+components/cost-control/ws-actions.ts:444:  const supabase = await createClient()
+components/cost-control/ws-actions.ts:524:  const supabase = await createClient()
+components/cost-control/ws-actions.ts:566:  const supabase = await createClient()
+components/cost-control/ws-actions.ts:579:  const supabase = await createClient()
+components/cost-control/ws-actions.ts:600:  const supabase = await createClient()
+components/cost-control/ws-actions.ts:656:  const supabase = await createClient()
+components/cost-control/ws-actions.ts:783:  const supabase = await createClient()
+components/cost-control/ws-actions.ts:833:  const supabase = await createClient()
+components/cost-control/ws-code-action.ts:20:import { createClient } from '@/lib/supabase/server'
+components/cost-control/ws-code-action.ts:34:  const supabase = await createClient()
+components/jmr/AdminRowDeleteButton.tsx:9:import { createClient } from '@/lib/supabase/client'
+components/jmr/AdminRowDeleteButton.tsx:38:    const { error } = await createClient().from(table).delete().eq('id', id)
+components/push/EnablePushButton.tsx:11:const VAPID = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY
+lib/ai/index.ts:39:  return !!(process.env.GEMINI_API_KEY || process.env.GROQ_API_KEY || process.env.CEREBRAS_API_KEY)
+lib/ai/index.ts:51:  if (process.env.GEMINI_API_KEY) return 'gemini'
+lib/ai/index.ts:52:  if (process.env.GROQ_API_KEY) return 'groq'
+lib/ai/index.ts:53:  if (process.env.CEREBRAS_API_KEY) return 'cerebras'
+lib/ai/index.ts:71:    if (!process.env.GEMINI_API_KEY) {
+lib/ai/index.ts:76:  if (process.env.GEMINI_API_KEY) {
+lib/ai/index.ts:82:  if (process.env.GROQ_API_KEY) {
+lib/ai/index.ts:85:    if (!r.rateLimited || !process.env.CEREBRAS_API_KEY) return r
+lib/ai/index.ts:88:  if (process.env.CEREBRAS_API_KEY) return callCerebrasJSON<T>(args)
+lib/ai/index.ts:98:  if (process.env.GEMINI_API_KEY) {
+lib/ai/index.ts:104:  if (process.env.GROQ_API_KEY) {
+lib/ai/index.ts:107:    if (!r.rateLimited || !process.env.CEREBRAS_API_KEY) return r
+lib/ai/index.ts:110:  if (process.env.CEREBRAS_API_KEY) return callCerebrasText(args)
+lib/ai/index.ts:116:  if (!process.env.GEMINI_API_KEY) {
+lib/ai/index.ts:120:  const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_EMBED_MODEL}:batchEmbedContents?key=${process.env.GEMINI_API_KEY}`
+lib/ai/index.ts:146:  const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${process.env.GEMINI_API_KEY}`
+lib/ai/index.ts:189:  const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${process.env.GEMINI_API_KEY}`
+lib/ai/index.ts:227:      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${process.env.GROQ_API_KEY}` },
+lib/ai/index.ts:267:      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${process.env.GROQ_API_KEY}` },
+lib/ai/index.ts:312:      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${process.env.CEREBRAS_API_KEY}` },
+lib/ai/index.ts:352:      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${process.env.CEREBRAS_API_KEY}` },
+lib/auth-user.ts:5:import { createClient } from '@/lib/supabase/server'
+lib/auth-user.ts:9:  const supabase = await createClient()
+lib/auth.ts:7:import { createClient } from '@/lib/supabase/server'
+lib/auth.ts:25:  const supabase = await createClient()
+lib/auth.ts:52:  const supabase = await createClient()
+lib/auth.ts:81:  const supabase = await createClient()
+lib/bills-pipeline/zoho.ts:4:const DC = process.env.ZOHO_DC ?? 'in'
+lib/bills-pipeline/zoho.ts:26:  const refreshToken = (row?.value as string | null) ?? process.env.ZOHO_BP_REFRESH_TOKEN
+lib/bills-pipeline/zoho.ts:37:    client_id:     process.env.ZOHO_BP_CLIENT_ID ?? '',
+lib/bills-pipeline/zoho.ts:38:    client_secret: process.env.ZOHO_BP_CLIENT_SECRET ?? '',
+lib/budget-v2-cached.ts:2:import { createClient as createServiceClient } from '@supabase/supabase-js'
+lib/budget-v2-cached.ts:32:    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+lib/budget-v2-cached.ts:33:    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+lib/budget-v2-cached.ts:57:  if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
+lib/cost-control/ie-notify.ts:14:import { createClient as createServiceClient } from '@supabase/supabase-js'
+lib/cost-control/ie-notify.ts:36:  const url = process.env.NEXT_PUBLIC_SUPABASE_URL
+lib/cost-control/ie-notify.ts:37:  const key = process.env.SUPABASE_SERVICE_ROLE_KEY
+lib/cost-control/returned-to-engineer.ts:1:import { createClient } from '@/lib/supabase/server'
+lib/cost-control/returned-to-engineer.ts:36:  const sb = await createClient()
+lib/cost-control/settings.ts:6:import { createClient } from '@/lib/supabase/server'
+lib/cost-control/settings.ts:142:  const supabase = await createClient()
+lib/demo-mode.ts:28:  process.env.NEXT_PUBLIC_DEMO_MODE === '1' || process.env.VERCEL_ENV === 'preview'
+lib/drive.ts:18:  const raw = process.env.GOOGLE_SERVICE_ACCOUNT_JSON
+lib/drive.ts:19:  const root = process.env.GDRIVE_ROOT_FOLDER_ID
+lib/in4/db.ts:29:  const { IN4_DB_HOST, IN4_DB_PORT, IN4_DB_NAME, IN4_DB_USER, IN4_DB_PASSWORD } = process.env
+lib/in4/db.ts:41:  return ['IN4_DB_USER', 'IN4_DB_PASSWORD'].filter(k => !process.env[k])
+lib/in4/feeds.ts:14:import { createClient as createServiceClient, type SupabaseClient } from '@supabase/supabase-js'
+lib/in4/feeds.ts:65:  const url = process.env.NEXT_PUBLIC_SUPABASE_URL
+lib/in4/feeds.ts:66:  const key = process.env.SUPABASE_SERVICE_ROLE_KEY
+lib/in4/sync.ts:15:import { createClient as createServiceClient, type SupabaseClient } from '@supabase/supabase-js'
+lib/in4/sync.ts:42:  const url = process.env.NEXT_PUBLIC_SUPABASE_URL
+lib/in4/sync.ts:43:  const key = process.env.SUPABASE_SERVICE_ROLE_KEY
+lib/inventory/settings.ts:6:import { createClient } from '@/lib/supabase/server'
+lib/inventory/settings.ts:64:  const supabase = await createClient()
+lib/jmr/dashboard.ts:8:import { createClient } from '@/lib/supabase/server'
+lib/jmr/dashboard.ts:17:  const supabase = await createClient()
+lib/jmr/matrix.ts:4:import { createClient } from '@/lib/supabase/server'
+lib/jmr/matrix.ts:59:  const supabase = await createClient()
+lib/jmr/rates.ts:5:import { createClient } from '@/lib/supabase/client'
+lib/jmr/rates.ts:13:  const supabase = createClient()
+lib/jmr/settings.ts:5:import { createClient } from '@/lib/supabase/server'
+lib/jmr/settings.ts:15:  const supabase = await createClient()
+lib/masters.ts:15:import { createClient } from '@/lib/supabase/server'
+lib/masters.ts:24:type Sb = Awaited<ReturnType<typeof createClient>>
+lib/masters.ts:57:  const sb = await createClient()
+lib/masters.ts:136:  const sb = await createClient()
+lib/masters.ts:205:  const sb = await createClient()
+lib/masters.ts:260:  const sb = await createClient()
+lib/masters.ts:299:  const sb = await createClient()
+lib/masters.ts:341:  const sb = await createClient()
+lib/mentions/notify.ts:6:import { createClient as createServiceClient } from '@supabase/supabase-js'
+lib/mentions/notify.ts:22:  const key = process.env.SUPABASE_SERVICE_ROLE_KEY
+lib/mentions/notify.ts:23:  const supaUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+lib/module-labels.ts:7:import { createClient } from '@/lib/supabase/server'
+lib/module-labels.ts:30:    const supabase = await createClient()
+lib/modules.ts:51:  { slug: 'attendance',       label: 'Attendance',       description: 'Open the SiteAttend app',                     href: process.env.NEXT_PUBLIC_ATTENDANCE_URL || 'https://siteattend.vercel.app', external: true, icon: ExternalLink, tone: 'rose' },
+lib/notifications/roof.ts:8:import { createClient } from '@/lib/supabase/server'
+lib/notifications/roof.ts:128:  const supabase = await createClient()
+lib/notifications/self-manage.ts:1:import { createClient } from '@/lib/supabase/server'
+lib/notifications/self-manage.ts:15:  const supabase = await createClient()
+lib/procurement/notify-settings.ts:11:import { createClient } from '@/lib/supabase/server'
+lib/procurement/notify-settings.ts:114:  const supabase = await createClient()
+lib/procurement/tracker-cache.ts:2:import { createClient as createServiceClient } from '@supabase/supabase-js'
+lib/procurement/tracker-cache.ts:34:    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+lib/procurement/tracker-cache.ts:35:    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+lib/procurement/tracker-cache.ts:90:  if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
+lib/recycle-bin.ts:12:import type { createClient } from '@/lib/supabase/client'
+lib/recycle-bin.ts:14:type Client = ReturnType<typeof createClient>
+lib/report-state-cache.ts:2:import { createClient as createServiceClient } from '@supabase/supabase-js'
+lib/report-state-cache.ts:32:    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+lib/report-state-cache.ts:33:    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+lib/report-state-cache.ts:57:  if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
+lib/revamp/admin-health.ts:12:import { createClient } from '@/lib/supabase/server'
+lib/revamp/admin-health.ts:98:  const supabase = await createClient()
+lib/revamp/approval-counts.ts:18:import { createClient } from '@/lib/supabase/server'
+lib/revamp/approval-counts.ts:68:    const supabase = await createClient()
+lib/revamp/bills-data.ts:9:import { createClient } from '@/lib/supabase/server'
+lib/revamp/bills-data.ts:28:  const supabase = await createClient()
+lib/revamp/budget-actual-data.ts:10:import { createClient } from '@/lib/supabase/server'
+lib/revamp/budget-actual-data.ts:35:  const supabase = await createClient()
+lib/revamp/masters.ts:12:import { createClient } from '@/lib/supabase/server'
+lib/revamp/masters.ts:50:  const supabase = await createClient()
+lib/revamp/masters.ts:108:  const supabase = await createClient()
+lib/revamp/masters.ts:139:  const supabase = await createClient()
+lib/revamp/masters.ts:199:  const supabase = await createClient()
+lib/revamp/masters.ts:237:  const supabase = await createClient()
+lib/revamp/masters.ts:266:  const supabase = await createClient()
+lib/revamp/orders-tree.ts:42:import { createClient } from '@/lib/supabase/server'
+lib/revamp/orders-tree.ts:176:  const supabase = await createClient()
+lib/revamp/project-cockpit.ts:9:import { createClient } from '@/lib/supabase/server'
+lib/revamp/project-cockpit.ts:48:  const supabase = await createClient()
+lib/revamp/reports-data.ts:8:import { createClient } from '@/lib/supabase/server'
+lib/revamp/reports-data.ts:131:  const supabase = await createClient()
+lib/revamp/tab-data.ts:7:import { createClient } from '@/lib/supabase/server'
+lib/revamp/tab-data.ts:39:  const supabase = await createClient()
+lib/revamp/tab-data.ts:71:  const supabase = await createClient()
+lib/revamp/tab-data.ts:183:  const supabase = await createClient()
+lib/revamp/tab-data.ts:316:  const supabase = await createClient()
+lib/revamp/tab-data.ts:379:  const supabase = await createClient()
+lib/revamp/tabs.ts:194:    process.env.NEXT_PUBLIC_DEMO_MODE === '1' || process.env.VERCEL_ENV === 'preview'
+lib/revamp/workspace-header.ts:16:import { createClient } from '@/lib/supabase/server'
+lib/revamp/workspace-header.ts:66:  const supabase = await createClient()
+lib/role-labels.ts:6:import { createClient } from '@/lib/supabase/server'
+lib/role-labels.ts:47:    const supabase = await createClient()
+lib/role-sides.ts:2:import { createClient } from '@/lib/supabase/server'
+lib/role-sides.ts:41:  const supabase = await createClient()
+lib/schedule/data.ts:5:import { createClient } from '@/lib/supabase/server'
+lib/schedule/data.ts:42:  const sb = await createClient()
+lib/schedule/data.ts:71:  const sb = await createClient()
+lib/schedule/data.ts:86:  const sb = await createClient()
+lib/schedule/data.ts:100:  const sb = await createClient()
+lib/schedule/data.ts:132:  const sb = await createClient()
+lib/schedule/data.ts:205:  const sb = await createClient()
+lib/shell.ts:16:import { createClient as createServiceClient } from '@supabase/supabase-js'
+lib/shell.ts:45:  const url = process.env.NEXT_PUBLIC_SUPABASE_URL
+lib/shell.ts:46:  const key = process.env.SUPABASE_SERVICE_ROLE_KEY
+lib/sidebar-groups.server.ts:6:import { createClient } from '@/lib/supabase/server'
+lib/sidebar-groups.server.ts:15:    const supabase = await createClient()
+lib/supabase/client.ts:4:export function createClient() {
+lib/supabase/client.ts:9:    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+lib/supabase/client.ts:10:    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+lib/supabase/middleware.ts:9:    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+lib/supabase/middleware.ts:10:    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+lib/supabase/server.ts:5:export async function createClient() {
+lib/supabase/server.ts:10:    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+lib/supabase/server.ts:11:    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+lib/telegram/cc-approval-dispatch.ts:11:import { createClient as createServiceClient } from '@supabase/supabase-js'
+lib/telegram/cc-approval-dispatch.ts:18:  const url = process.env.NEXT_PUBLIC_SUPABASE_URL
+lib/telegram/cc-approval-dispatch.ts:19:  const key = process.env.SUPABASE_SERVICE_ROLE_KEY
+lib/telegram/cc-approval-dispatch.ts:20:  const token = process.env.TELEGRAM_BOT_TOKEN
+lib/telegram/cc-approval-progress.ts:13:  return (process.env.NEXT_PUBLIC_APP_URL || 'https://ct-hub.vercel.app').replace(/\/$/, '')
+lib/telegram/cc-approval-send.ts:35:  return (process.env.NEXT_PUBLIC_APP_URL || 'https://ct-hub.vercel.app').replace(/\/$/, '')
+lib/telegram/cc-trustee-digest.ts:11:  return (process.env.NEXT_PUBLIC_APP_URL || 'https://ct-hub.vercel.app').replace(/\/$/, '')
+lib/telegram/group.ts:36:  const token = process.env.TELEGRAM_BOT_TOKEN
+lib/telegram/group.ts:71:  const token = process.env.TELEGRAM_BOT_TOKEN
+lib/telegram/group.ts:79:  const origin = (process.env.NEXT_PUBLIC_APP_URL || '').replace(/\/$/, '')
+lib/warehouse/admin-data.ts:3:import { createClient } from '@/lib/supabase/server'
+lib/warehouse/admin-data.ts:34:  const sb = await createClient()
+lib/warehouse/admin-data.ts:80:  const sb = await createClient()
+lib/warehouse/admin-data.ts:176:  const sb = await createClient()
+lib/warehouse/admin-data.ts:188:  const sb = await createClient()
+lib/warehouse/admin-data.ts:321:  const sb = await createClient()
+lib/warehouse/admin-data.ts:353:  const sb = await createClient()
+lib/warehouse/admin-data.ts:403:  const sb = await createClient()
+lib/warehouse/daily-data.ts:3:import { createClient } from '@/lib/supabase/server'
+lib/warehouse/daily-data.ts:17:  const sb = await createClient()
+lib/warehouse/daily-data.ts:71:  const sb = await createClient()
+lib/warehouse/daily-data.ts:83:  const sb = await createClient()
+lib/warehouse/data.ts:1:import { createClient } from '@/lib/supabase/server'
+lib/warehouse/data.ts:21:  const sb = await createClient()
+lib/warehouse/data.ts:36:  const sb = await createClient()
+lib/warehouse/data.ts:89:  const sb = await createClient()
+lib/warehouse/data.ts:121:  const sb = await createClient()
+lib/warehouse/data.ts:156:  const sb = await createClient()
+lib/warehouse/data.ts:223:  const sb = await createClient()
+lib/warehouse/data.ts:242:  const sb = await createClient()
+lib/warehouse/data.ts:271:  const sb = await createClient()
+lib/warehouse/data.ts:290:  const sb = await createClient()
+lib/warehouse/data.ts:311:  const sb = await createClient()
+lib/warehouse/data.ts:322:  const sb = await createClient()
+lib/warehouse/data.ts:333:  const sb = await createClient()
+lib/warehouse/data.ts:350:  const sb = await createClient()
+lib/warehouse/data.ts:391:  const sb = await createClient()
+lib/warehouse/data.ts:405:  const sb = await createClient()
+lib/warehouse/exception-data.ts:1:import { createClient } from '@/lib/supabase/server'
+lib/warehouse/exception-data.ts:91:  const sb = await createClient()
+lib/warehouse/exception-data.ts:177:  const sb = await createClient()
+lib/warehouse/exception-data.ts:261:  const sb = await createClient()
+lib/warehouse/exception-data.ts:344:  const sb = await createClient()
+lib/warehouse/exception-data.ts:411:  const sb = await createClient()
+lib/warehouse/exception-data.ts:483:  const sb = await createClient()
+lib/warehouse/exception-data.ts:559:  const sb = await createClient()
+lib/warehouse/exception-data.ts:637:  const sb = await createClient()
+lib/warehouse/exception-data.ts:776:  const sb = await createClient()
+lib/warehouse/exception-data.ts:845:  const sb = await createClient()
+lib/warehouse/exception-data.ts:903:  const sb = await createClient()
+lib/warehouse/exception-data.ts:982:  const sb = await createClient()
+lib/warehouse/exception-data.ts:1167:  const sb = await createClient()
+lib/warehouse/guards.ts:4:import { createClient } from '@/lib/supabase/server'
+lib/warehouse/guards.ts:41:    const sb = await createClient()
+lib/warehouse/in4-sync-apply.ts:1:import { createClient } from '@/lib/supabase/server'
+lib/warehouse/in4-sync-apply.ts:41:  const sb = (client ?? await createClient()) as Awaited<ReturnType<typeof createClient>>
+lib/warehouse/in4-sync-data.ts:1:import { createClient } from '@/lib/supabase/server'
+lib/warehouse/in4-sync-data.ts:44:    data = await getTrackerSlots(client ?? await createClient())
+lib/warehouse/in4-sync-data.ts:81:  const sb = (client ?? await createClient()) as Awaited<ReturnType<typeof createClient>>
+lib/warehouse/notify.ts:14:import { createClient as createServiceClient } from '@supabase/supabase-js'
+lib/warehouse/notify.ts:25:  const key = process.env.SUPABASE_SERVICE_ROLE_KEY
+lib/warehouse/notify.ts:26:  const url = process.env.NEXT_PUBLIC_SUPABASE_URL
+lib/warehouse/po-import.ts:2:import { createClient } from '@/lib/supabase/server'
+lib/warehouse/po-import.ts:49:  const slot = await getTrackerSlot('global', await createClient())
+lib/warehouse/po-import.ts:56:  const [lines, sb] = await Promise.all([readTracker(), createClient()])
+lib/warehouse/po-import.ts:113:  const [lines, sb] = await Promise.all([readTracker(), createClient()])
+lib/warehouse/report-data.ts:1:import { createClient } from '@/lib/supabase/server'
+lib/warehouse/report-data.ts:26:  const sb = await createClient()
+lib/warehouse/report-data.ts:80:  const sb = await createClient()
+lib/warehouse/report-data.ts:203:  const sb = await createClient()
+lib/warehouse/report-data.ts:260:  const sb = await createClient()
+lib/warehouse/request-data.ts:3:import { createClient } from '@/lib/supabase/server'
+lib/warehouse/request-data.ts:119:  const sb = await createClient()
+lib/warehouse/request-data.ts:249:  const sb = await createClient()
+lib/warehouse/request-data.ts:348:  const sb = await createClient()
+lib/warehouse/request-data.ts:380:  const sb = await createClient()
+lib/warehouse/request-data.ts:402:  const sb = await createClient()

@@ -1,0 +1,5 @@
+﻿branch main : hjwtjrjkmuhhbsbjsqhx.supabase.co
+branch revamp-trial : hjwtjrjkmuhhbsbjsqhx.supabase.co
+.env.in4.local : 
+.env.local : hjwtjrjkmuhhbsbjsqhx.supabase.co
+.env.local.example : hjwtjrjkmuhhbsbjsqhx.supabase.co

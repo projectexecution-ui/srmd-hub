@@ -1,0 +1,36 @@
+﻿app/(app)/admin/page.tsx:16:import { IS_DEMO } from '@/lib/demo-mode'
+app/(app)/admin/page.tsx:35:  if (IS_DEMO) {
+app/(app)/cost-control/projects/[id]/page.tsx:3:import { IS_DEMO } from '@/lib/demo-mode'
+app/(app)/cost-control/projects/[id]/page.tsx:117:  if (IS_DEMO && !sp.in_cockpit) {
+app/(app)/dashboard/page.tsx:18:import { IS_DEMO } from '@/lib/demo-mode'
+app/(app)/dashboard/page.tsx:125:      {IS_DEMO && <WorkStrip />}
+app/(app)/project/[id]/BillsRefresh.tsx:8:import { IS_DEMO } from '@/lib/demo-mode'
+app/(app)/project/[id]/BillsRefresh.tsx:55:      {IS_DEMO ? (
+components/DemoBanner.tsx:1:import { IS_DEMO } from '@/lib/demo-mode'
+components/DemoBanner.tsx:12:  if (!IS_DEMO) return null
+components/GoogleOneTapButton.tsx:6:import { IS_DEMO } from '@/lib/demo-mode'
+components/GoogleOneTapButton.tsx:77:    if (IS_DEMO) return
+components/GoogleOneTapButton.tsx:123:  if (IS_DEMO) {
+components/NavBar.tsx:14:import { IS_DEMO } from '@/lib/demo-mode'
+components/NavBar.tsx:125:  // revamp can never widen anyone's access. On the live site IS_DEMO is false
+components/NavBar.tsx:127:  const revamp = IS_DEMO
+lib/demo-mode.test.ts:3:// IS_DEMO is read from env at module load, so each case re-imports the module
+lib/demo-mode.test.ts:66:    const m = await loadWith({ VERCEL_ENV: 'production', NEXT_PUBLIC_DEMO_MODE: '' })
+lib/demo-mode.test.ts:67:    expect(m.IS_DEMO).toBe(false)
+lib/demo-mode.test.ts:71:    const m = await loadWith({ VERCEL_ENV: '', NEXT_PUBLIC_DEMO_MODE: '' })
+lib/demo-mode.test.ts:72:    expect(m.IS_DEMO).toBe(false)
+lib/demo-mode.test.ts:76:    const m = await loadWith({ VERCEL_ENV: 'production', NEXT_PUBLIC_DEMO_MODE: '' })
+lib/demo-mode.test.ts:92:    expect(m.IS_DEMO).toBe(true)
+lib/demo-mode.test.ts:96:    const m = await loadWith({ VERCEL_ENV: '', NEXT_PUBLIC_DEMO_MODE: '1' })
+lib/demo-mode.test.ts:97:    expect(m.IS_DEMO).toBe(true)
+lib/demo-mode.ts:22:// NEXT_PUBLIC_DEMO_MODE at build time so the browser can see it too. Nothing to
+lib/demo-mode.ts:27:export const IS_DEMO =
+lib/demo-mode.ts:28:  process.env.NEXT_PUBLIC_DEMO_MODE === '1' || process.env.VERCEL_ENV === 'preview'
+lib/demo-mode.ts:102:  if (!IS_DEMO) return client
+lib/revamp/tabs.test.ts:327:      vi.stubEnv('NEXT_PUBLIC_DEMO_MODE', '')
+lib/revamp/tabs.test.ts:338:      vi.stubEnv('NEXT_PUBLIC_DEMO_MODE', '')
+lib/revamp/tabs.ts:194:    process.env.NEXT_PUBLIC_DEMO_MODE === '1' || process.env.VERCEL_ENV === 'preview'
+proxy.ts:3:import { IS_DEMO, DEMO_BLOCKED_MESSAGE } from '@/lib/demo-mode'
+proxy.ts:7:const READ_ONLY_METHODS = new Set(['GET', 'HEAD', 'OPTIONS'])
+proxy.ts:13:  if (IS_DEMO) {
+proxy.ts:27:    if (!READ_ONLY_METHODS.has(method)) {

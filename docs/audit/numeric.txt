@@ -1,0 +1,1028 @@
+﻿app/(app)/admin/approvals/approvals-matrix.tsx:236:      amount_cap_max: v.amount_cap_max.trim() === '' ? null : Number(v.amount_cap_max),
+app/(app)/admin/approvals/approvals-matrix.tsx:483:      <IndianRupee className="h-2.5 w-2.5" />≤ {Number(rule.amount_cap_max).toLocaleString('en-IN')}
+app/(app)/admin/approvals/approvals-matrix.tsx:531:            if (st.cap != null) extras.push(<span key="cap" className="text-amber-700">up to ₹{Number(st.cap).toLocaleString('en-IN')}</span>)
+app/(app)/admin/in4/page.tsx:37:      ? (budgetLast ? { at: budgetLast.at, ok: budgetLast.ok, error: budgetLast.error, summary: budgetLast.ok ? `${budgetLast.subprojects ?? 0} sub-projects · ${budgetLast.linked ?? 0} linked${typeof budgetLast.exact === 'number' && budgetLast.figures ? ` · ${Math.round((budgetLast.exact / budgetLast.figures) * 100)}% of figures match the last upload` : ''}` : undefined } : null)
+app/(app)/admin/masters/MasterTable.tsx:81:      const asNum = (s: string) => Number(s.replace(/[^0-9.-]/g, ''))
+app/(app)/admin/masters/actions.ts:41:  const { error } = await sb.from('projects').update({ built_up_sft: Math.round(sft) }).eq('id', projectId)
+app/(app)/admin/masters/contacts/page.tsx:19:  const pct = (n: number) => contacts.length ? Math.round((n / contacts.length) * 100) : 0
+app/(app)/admin/masters/items/ItemsTree.tsx:69:                        <span className="text-[11px] text-gray-500 w-20 text-right tabular-nums hidden md:inline">{i.rate ? `₹${formatNumber(i.rate)}` : ''}</span>
+app/(app)/admin/masters/projects/UseIn4AreaButton.tsx:18:        if (!r.ok) toast.error(r.error ?? 'Could not save'); else { toast.success(`Area set to ${formatNumber(Math.round(sft))} sft from IN4`); router.refresh() }
+app/(app)/admin/masters/projects/page.tsx:36:      area: p.builtUpSft ? { text: formatNumber(p.builtUpSft), sub: 'sft' } : miss,
+app/(app)/admin/masters/projects/page.tsx:37:      in4area: p.in4?.areaFt ? { text: formatNumber(p.in4.areaFt), sub: 'sft in IN4', tone: 'muted' } : { text: '' },
+app/(app)/admin/notifications/CronHealthStrip.tsx:36:  const agoText = (h: number | null) => h === null ? '' : h < 1 ? ' (under an hour ago)' : ` (${Math.round(h)}h ago)`
+app/(app)/bills-booking/BillingTree.tsx:17:  const v = Number(n || 0)
+app/(app)/bills-booking/BillingTree.tsx:18:  if (v >= 1e7) return '₹' + (v / 1e7).toFixed(2) + ' Cr'
+app/(app)/bills-booking/BillingTree.tsx:19:  if (v >= 1e5) return '₹' + (v / 1e5).toFixed(1).replace(/\.0$/, '') + ' L'
+app/(app)/bills-booking/[id]/MoveActions.tsx:35:      p_net: showAmount && net ? Number(net) : null,
+app/(app)/bills-booking/[id]/MoveActions.tsx:36:      p_certified: showAmount && net ? Number(net) : null,
+app/(app)/bills-booking/[id]/StatusTimeline.tsx:5:const fmtDays = (d: number) => (d < 1 ? `${Math.round(d * 24)}h` : `${d.toFixed(d < 10 ? 1 : 0)}d`)
+app/(app)/bills-booking/[id]/page.tsx:76:  const money = (n: number | null | undefined) => (n == null ? '—' : '₹' + Number(n).toLocaleString('en-IN'))
+app/(app)/bills-booking/new/BillForm.tsx:40:  const woNum = Number(woValue) || 0
+app/(app)/bills-booking/new/BillForm.tsx:41:  const overWO = !noWO && woNum > 0 && (Number(paidTill) || 0) + (Number(claimed) || 0) > woNum
+app/(app)/bills-booking/new/BillForm.tsx:56:        bill_date: billDate || null, claimed_amount: Number(claimed) || 0, trust: trust.trim() || null,
+app/(app)/bills-booking/new/BillForm.tsx:57:        wo_value: noWO ? null : (Number(woValue) || null), paid_till_date: Number(paidTill) || 0,
+app/(app)/bills-booking/new/BillForm.tsx:190:          <b>WO budget short.</b> Paid-so-far + this bill ({(((Number(paidTill) || 0) + (Number(claimed) || 0))).toLocaleString('en-IN')}) exceeds the {orderType} value ({woNum.toLocaleString('en-IN')}) by <b>₹{(((Number(paidTill) || 0) + (Number(claimed) || 0)) - woNum).toLocaleString('en-IN')}</b> — an <b>amendment in IN4</b> will be needed before payment. It&apos;s flagged automatically.
+app/(app)/bills-booking/page.tsx:14:  const v = Number(n || 0)
+app/(app)/bills-booking/page.tsx:15:  if (v >= 1e7) return '₹' + (v / 1e7).toFixed(2) + ' Cr'
+app/(app)/bills-booking/page.tsx:16:  if (v >= 1e5) return '₹' + (v / 1e5).toFixed(1).replace(/\.0$/, '') + ' L'
+app/(app)/bills-booking/page.tsx:47:  const amt = (r: Row) => Number(r.net_amount ?? r.claimed_amount ?? 0)
+app/(app)/bills-booking/page.tsx:65:          : { t: `Over SLA ${Math.round(daysIn(r.stage_since))}d`, c: 'bg-orange-100 text-orange-800' }
+app/(app)/bills-pipeline/cockpit.tsx:11:  const v = Math.round(n || 0); const s = Math.abs(v).toString(); const neg = v < 0 ? '-' : ''
+app/(app)/bills-pipeline/cockpit.tsx:16:  if (n >= 1e7) return '₹' + (n / 1e7).toFixed(2) + ' Cr'
+app/(app)/bills-pipeline/cockpit.tsx:17:  if (n >= 1e5) return '₹' + (n / 1e5).toFixed(1).replace(/\.0$/, '') + ' L'
+app/(app)/bills-pipeline/cockpit.tsx:368:                      <span className="block h-full rounded" style={{ width: `${Math.round((rank === 'days' ? r.oldest / desks.maxOldest : r.val / desks.max) * 100)}%`, background: col }} />
+app/(app)/bills-pipeline/cockpit.tsx:395:              const w = Math.max(6, Math.round(s.val / funnel.max * 100))
+app/(app)/bills-pipeline/cockpit.tsx:413:              const w = Math.max(6, Math.round(s.val / funnel.max * 100))
+app/(app)/bills-pipeline/stuck-bills.tsx:54:  const v = Math.round(n || 0)
+app/(app)/bills-pipeline/stuck-bills.tsx:61:  if (n >= 1e7) return '₹' + (n / 1e7).toFixed(2) + ' Cr'
+app/(app)/bills-pipeline/stuck-bills.tsx:62:  if (n >= 1e5) return '₹' + (n / 1e5).toFixed(1).replace(/\.0$/, '') + ' L'
+app/(app)/blueprint-demo/admin/admin-client.tsx:151:        sla_hours: newSlaHours ? Number(newSlaHours) : null,
+app/(app)/blueprint-demo/admin/admin-client.tsx:179:    const sla = Math.round(s.p90_hours)
+app/(app)/blueprint-demo/admin/admin-client.tsx:213:        sla_hours: Math.round(s.p90_hours),
+app/(app)/blueprint-demo/admin/admin-client.tsx:279:                  const canAdopt   = s?.p90_hours != null && (r.sla_hours ?? -1) !== Math.round(s.p90_hours)
+app/(app)/blueprint-demo/admin/admin-client.tsx:294:                        {s?.median_hours != null ? `${Math.round(s.median_hours)}h` : '—'}
+app/(app)/blueprint-demo/admin/admin-client.tsx:297:                        {s?.p90_hours != null ? `${Math.round(s.p90_hours)}h` : '—'}
+app/(app)/blueprint-demo/admin/admin-client.tsx:322:                              title={`Set SLA = ${Math.round(s!.p90_hours!)}h based on observed P90`}
+app/(app)/blueprint-demo/dashboard-client.tsx:162:                          {Math.round(r.hours_in_status)}h
+app/(app)/blueprint-demo/dashboard-client.tsx:167:                              {Math.round(r.sla_hours)}h
+app/(app)/blueprint-demo/dashboard-client.tsx:174:                          {r.amount != null ? `₹${Number(r.amount).toLocaleString('en-IN')}` : '—'}
+app/(app)/blueprint-demo/page.tsx:124:      const aScore = sa * a.hours_in_status * Math.max(1, Math.log10(Math.max(1, Number(a.amount ?? 1))))
+app/(app)/blueprint-demo/page.tsx:125:      const bScore = sb * b.hours_in_status * Math.max(1, Math.log10(Math.max(1, Number(b.amount ?? 1))))
+app/(app)/blueprint-demo/page.tsx:197:                <b>{Math.round(bottleneck.median)} h</b> against a threshold of{' '}
+app/(app)/blueprint-demo/page.tsx:198:                <b>{Math.round(bottleneck.threshold)} h</b> &mdash;{' '}
+app/(app)/blueprint-demo/page.tsx:199:                <b>{Math.round((bottleneck.ratio - 1) * 100)}%</b> over.
+app/(app)/blueprint-demo/page.tsx:242:                  {Math.round(r.hours_in_status)}h
+app/(app)/blueprint-demo/requests/[id]/page.tsx:64:          <Meta label="Amount"  value={req.amount != null ? `₹${Number(req.amount).toLocaleString('en-IN')}` : '—'} />
+app/(app)/blueprint-demo/requests/new/new-form.tsx:48:        amount: amount ? Number(amount) : 0,
+app/(app)/blueprint-demo/requests/page.tsx:78:                      {r.amount != null ? `₹${Number(r.amount).toLocaleString('en-IN')}` : '—'}
+app/(app)/budget-vs-actual-v2/client.tsx:38:  if (a >= 1e7) return `${sign}₹${(a / 1e7).toFixed(2)} Cr`
+app/(app)/budget-vs-actual-v2/client.tsx:39:  return `${sign}₹${Math.round(a).toLocaleString('en-IN')}/-`
+app/(app)/budget-vs-actual-v2/client.tsx:43:  return Math.round(v / area).toLocaleString('en-IN')
+app/(app)/budget-vs-actual-v2/client.tsx:47:  return Math.round((spent / budget) * 100)
+app/(app)/budget-vs-actual-v2/client.tsx:259:  const spentPct = t.budget > 0 ? Math.round((t.spent / t.budget) * 100) : 0
+app/(app)/budget-vs-actual-v2/client.tsx:432:                budget {fmtINR(gBudget)} · paid {fmtINR(gSpent)}{gu != null ? ` · ${gu}%` : ''}{gAvgSft != null ? ` · avg ₹${Math.round(gAvgSft).toLocaleString('en-IN')}/sft` : ''}
+app/(app)/budget-vs-actual-v2/client.tsx:642:  const parse = (s: string): number | null => { const t = s.trim(); if (t === '') return null; const n = Number(t.replace(/,/g, '')); return isFinite(n) ? n : null }
+app/(app)/budget-vs-actual-v2/client.tsx:713:  if (mySft != null) caption += `${caption ? ' · ' : ''}₹${Math.round(mySft).toLocaleString('en-IN')}/sft paid`
+app/(app)/budget-vs-actual-v2/client.tsx:715:    const d = Math.round(((mySft - groupAvgSft) / groupAvgSft) * 100)
+app/(app)/budget-vs-actual-v2/client.tsx:758:                onClick={() => { const n = areaDraft.trim() === '' ? null : Number(areaDraft); onArea(p.name, n); setEditingArea(false) }}
+app/(app)/budget-vs-actual-v2/client.tsx:913:  const parse = (s: string): number | null => { const t = s.trim(); if (t === '') return null; const n = Number(t.replace(/,/g, '')); return isFinite(n) ? n : null }
+app/(app)/budget-vs-actual-v2/client.tsx:919:    const a = area.trim() === '' ? null : Number(area)
+app/(app)/budget-vs-actual-v2/print/print-client.tsx:16:  if (a >= 1e7) return `${sign}₹${(a / 1e7).toFixed(2)} Cr`
+app/(app)/budget-vs-actual-v2/print/print-client.tsx:17:  return `${sign}₹${Math.round(a).toLocaleString('en-IN')}/-`
+app/(app)/budget-vs-actual-v2/print/print-client.tsx:21:  return Math.round((spent / budget) * 100)
+app/(app)/budget-vs-actual-v2/print/print-client.tsx:25:  return `₹${Math.round(amt / area).toLocaleString('en-IN')}/sft`
+app/(app)/budget-vs-actual-v2/print/print-client.tsx:40:    const d = Math.round(((mySft - groupAvgSft) / groupAvgSft) * 100)
+app/(app)/budget-vs-actual-v2/print/print-client.tsx:123:            <div className="kpi-sub">{t.budget > 0 ? `${Math.round(t.spent / t.budget * 100)}% of budget` : ''}</div></div>
+app/(app)/budget-vs-actual-v2/print/print-client.tsx:126:            <div className="kpi-sub">{t.area > 0 ? `avg ₹${Math.round(t.spent / t.area).toLocaleString('en-IN')}/sft paid` : ''}</div></div>
+app/(app)/budget-vs-actual-v2/print/print-client.tsx:132:          ({t.budget > 0 ? Math.round(t.spent / t.budget * 100) : 0}%), leaving <b>{fmtINR(Math.abs(balance))}</b> {balance < 0 ? 'over budget' : 'unspent'}.
+app/(app)/budget-vs-actual-v2/print/print-client.tsx:183:            <p className="muted mt-2">{g.projects.length} project{g.projects.length === 1 ? '' : 's'} · budget {fmtINR(g.budget)} · paid {fmtINR(g.spent)}{g.budget > 0 ? ` (${Math.round(g.spent / g.budget * 100)}%)` : ''} · balance {fmtINR(g.budget - g.spent)}</p>
+app/(app)/budget-vs-actual-v2/sc-presentation/sc-presentation-client.tsx:23:  if (a >= 1e7) return `${s}₹${(a / 1e7).toFixed(2)} Cr`
+app/(app)/budget-vs-actual-v2/sc-presentation/sc-presentation-client.tsx:24:  return `${s}₹${Math.round(a).toLocaleString('en-IN')}/-`
+app/(app)/budget-vs-actual-v2/sc-presentation/sc-presentation-client.tsx:28:  return `₹${Math.round(amt / area).toLocaleString('en-IN')}/sft`
+app/(app)/budget-vs-actual-v2/sc-presentation/sc-presentation-client.tsx:77:    const n = Number(raw)
+app/(app)/budget-vs-actual-v2/sc-presentation/sc-presentation-client.tsx:152:                          placeholder={`report: ${Math.round(p.spent).toLocaleString('en-IN')}`}
+app/(app)/budget-vs-actual-v2/weekly-detail-client.tsx:21:  if (a >= 1e7) return `${s}₹${(a / 1e7).toFixed(2)} Cr`
+app/(app)/budget-vs-actual-v2/weekly-detail-client.tsx:22:  return `${s}₹${Math.round(a).toLocaleString('en-IN')}/-`
+app/(app)/budget-vs-actual-v2/weekly-detail-client.tsx:27:  return `₹${Math.round(amt / area).toLocaleString('en-IN')}/sft`
+app/(app)/budget-vs-actual-v2/weekly-detail-client.tsx:29:function pct(p: number, b: number): number | null { return b > 0 ? Math.round((p / b) * 100) : null }
+app/(app)/budget-vs-actual-v2/weekly/weekly-client.tsx:18:  if (a >= 1e7) return `${s}₹${(a / 1e7).toFixed(2)} Cr`
+app/(app)/budget-vs-actual-v2/weekly/weekly-client.tsx:19:  return `${s}₹${Math.round(a).toLocaleString('en-IN')}/-`
+app/(app)/budget-vs-actual-v2/weekly/weekly-client.tsx:24:  return `₹${Math.round(amt / area).toLocaleString('en-IN')}/sft`
+app/(app)/budget-vs-actual-v2/weekly/weekly-client.tsx:26:function pct(p: number, b: number): number | null { return b > 0 ? Math.round((p / b) * 100) : null }
+app/(app)/budget/page.tsx:30:              ? <span>IN4 live sync · {last.mode === 'live' ? 'this report is now written from IN4 twice a day — no upload needed' : 'shadow mode — upload still the source'} · last {formatDateTime(last.at)}{typeof last.exact === 'number' && last.figures ? ` · ${Math.round((last.exact / last.figures) * 100)}% matches the last upload` : ''}</span>
+app/(app)/command-center/page.tsx:72:    amount_inr: r.amount_inr != null ? Number(r.amount_inr) : null,
+app/(app)/command-center/triage-mode.tsx:71:  const pct = total > 0 ? Math.round((idx / total) * 100) : 100
+app/(app)/comparisons/[id]/comparison-grid.tsx:34:  return '₹' + Number(n).toLocaleString('en-IN', { maximumFractionDigits: 2 })
+app/(app)/comparisons/[id]/comparison-grid.tsx:142:      patch.rate != null && it?.quantity != null ? Number(it.quantity) * Number(patch.rate) : (patch.amount ?? null)
+app/(app)/comparisons/[id]/comparison-grid.tsx:265:                        onChange={(v) => updateItem(it.id, { quantity: v === '' ? null : Number(v) })}
+app/(app)/comparisons/[id]/comparison-grid.tsx:294:                              const num = raw === '' ? null : Number(raw)
+app/(app)/contractor-report/report-client.tsx:460:    const pct = grandCost > 0 ? Number(((costOf(t, costBase) / grandCost) * 100).toFixed(1)) : null
+app/(app)/contractor-report/report-client.tsx:461:    const rs  = area > 0      ? Math.round(costOf(t, costBase) / area)                       : null
+app/(app)/contractor-report/report-client.tsx:526:  return formatNumber(n, 0)
+app/(app)/contractor-report/report-client.tsx:529:  return grandCost > 0 ? ((amount / grandCost) * 100).toFixed(1) + '%' : '—'
+app/(app)/contractor-report/report-client.tsx:532:  return area > 0 ? formatNumber(amount / area, 0) : '—'
+app/(app)/contractor-report/report-client.tsx:630:      pdf.text(`Built-up area: ${formatNumber(area, 0)} sq ft`, pageW - margin - 6, y + 12, { align: 'right' })
+app/(app)/contractor-report/report-client.tsx:682:    pdf.text(`GRAND TOTAL — all sub-projects: ${formatNumber(grandCost, 0)}` +
+app/(app)/contractor-report/report-client.tsx:683:      (showMetrics && totalArea > 0 ? ` · ${formatNumber(grandCost / totalArea, 0)} Rs/Sft` : ''),
+app/(app)/contractor-report/report-client.tsx:698:    notes.push(`• % of Cost and Rs/Sft are based on ${COST_BASE_OPTIONS.find(o => o.value === costBase)?.label ?? 'Total Bill Value'}${totalArea > 0 ? `; total built-up area = ${formatNumber(totalArea, 0)} sq ft` : ' (no built-up area set — Rs/Sft blank)'}.`)
+app/(app)/contractor-report/report-client.tsx:766:            {l.label}: <span className="tabular-nums">{formatNumber(l.computed, 0)}</span>
+app/(app)/contractor-report/report-client.tsx:767:            {!l.ok && <span className="tabular-nums"> vs IN4 {formatNumber(l.source, 0)} (Δ{formatNumber(l.delta, 0)})</span>}
+app/(app)/contractor-report/report-client.tsx:784:      <td className={`px-3 ${py} text-right tabular-nums ${tone}`}>{pct == null ? '—' : pct.toFixed(1) + '%'}</td>
+app/(app)/contractor-report/report-client.tsx:785:      <td className={`px-3 ${py} text-right tabular-nums ${tone}`}>{rs == null ? '—' : formatNumber(rs, 0)}</td>
+app/(app)/contractor-report/report-client.tsx:909:        onBlur={e => { const v = e.target.value.trim(); const n = v === '' ? null : Number(v); onSet(n != null && Number.isFinite(n) ? n : null) }}
+app/(app)/contractor-report/report-client.tsx:937:          <span>Bill {formatNumber(t.billValue, 0)} · Paid {formatNumber(t.paidValue, 0)} · Owed {formatNumber(t.totalOwed, 0)}{rs != null ? ` · ${formatNumber(rs, 0)} Rs/Sft` : ''}</span>
+app/(app)/contractor-report/report-client.tsx:965:      <span>GRAND TOTAL — all sub-projects{totalArea > 0 ? ` · ${formatNumber(totalArea, 0)} sq ft` : ''}</span>
+app/(app)/contractor-report/report-client.tsx:967:        WO {formatNumber(totals.woValue, 0)} · Bill {formatNumber(totals.billValue, 0)} · Paid {formatNumber(totals.paidValue, 0)} · Owed {formatNumber(totals.totalOwed, 0)}{rs != null ? ` · ${formatNumber(rs, 0)} Rs/Sft` : ''}
+app/(app)/contractor-report/report-client.tsx:988:        <td className="px-3 py-1.5 text-right tabular-nums">{formatNumber(sub.woValue, 0)}</td>
+app/(app)/contractor-report/report-client.tsx:989:        <td className="px-3 py-1.5 text-right tabular-nums">{formatNumber(sub.billValue, 0)}</td>
+app/(app)/contractor-report/report-client.tsx:990:        <td className="px-3 py-1.5 text-right tabular-nums">{formatNumber(sub.paidValue, 0)}</td>
+app/(app)/contractor-report/report-client.tsx:991:        {showWorking && <td className="px-3 py-1.5 text-right tabular-nums">{formatNumber(sub.deductions, 0)}</td>}
+app/(app)/contractor-report/report-client.tsx:992:        {showWorking && <td className="px-3 py-1.5 text-right tabular-nums">{formatNumber(sub.retentionHeld, 0)}</td>}
+app/(app)/contractor-report/report-client.tsx:993:        {showWorking && <td className="px-3 py-1.5 text-right tabular-nums">{formatNumber(sub.balanceValue, 0)}</td>}
+app/(app)/contractor-report/report-client.tsx:994:        <td className="px-3 py-1.5 text-right tabular-nums">{formatNumber(sub.totalOwed, 0)}</td>
+app/(app)/contractor-report/report-client.tsx:1003:            <td className="px-3 py-1.5 text-right tabular-nums text-gray-700">{formatNumber(c.woValue, 0)}</td>
+app/(app)/contractor-report/report-client.tsx:1004:            <td className="px-3 py-1.5 text-right tabular-nums text-gray-700">{formatNumber(c.billValue, 0)}</td>
+app/(app)/contractor-report/report-client.tsx:1005:            <td className="px-3 py-1.5 text-right tabular-nums text-gray-700">{formatNumber(c.paidValue, 0)}</td>
+app/(app)/contractor-report/report-client.tsx:1006:            {showWorking && <td className="px-3 py-1.5 text-right tabular-nums text-gray-500">{formatNumber(c.deductions, 0)}</td>}
+app/(app)/contractor-report/report-client.tsx:1007:            {showWorking && <td className="px-3 py-1.5 text-right tabular-nums text-gray-500">{formatNumber(c.retentionHeld, 0)}</td>}
+app/(app)/contractor-report/report-client.tsx:1008:            {showWorking && <td className="px-3 py-1.5 text-right tabular-nums text-gray-500">{formatNumber(c.balanceValue, 0)}</td>}
+app/(app)/contractor-report/report-client.tsx:1009:            <td className="px-3 py-1.5 text-right tabular-nums font-medium text-gray-900">{formatNumber(c.totalOwed, 0)}</td>
+app/(app)/contractor-report/report-client.tsx:1025:      <td className="px-3 py-2 text-right tabular-nums">{formatNumber(totals.woValue, 0)}</td>
+app/(app)/contractor-report/report-client.tsx:1026:      <td className="px-3 py-2 text-right tabular-nums">{formatNumber(totals.billValue, 0)}</td>
+app/(app)/contractor-report/report-client.tsx:1027:      <td className="px-3 py-2 text-right tabular-nums">{formatNumber(totals.paidValue, 0)}</td>
+app/(app)/contractor-report/report-client.tsx:1028:      {showWorking && <td className="px-3 py-2 text-right tabular-nums">{formatNumber(totals.deductions, 0)}</td>}
+app/(app)/contractor-report/report-client.tsx:1029:      {showWorking && <td className="px-3 py-2 text-right tabular-nums">{formatNumber(totals.retentionHeld, 0)}</td>}
+app/(app)/contractor-report/report-client.tsx:1030:      {showWorking && <td className="px-3 py-2 text-right tabular-nums">{formatNumber(totals.balanceValue, 0)}</td>}
+app/(app)/contractor-report/report-client.tsx:1031:      <td className="px-3 py-2 text-right tabular-nums">{formatNumber(totals.totalOwed, 0)}</td>
+app/(app)/cost-control/admin/disciplines/DisciplinesAdmin.tsx:208:    const parsedOrder = displayOrder.trim() === '' ? 0 : Number(displayOrder)
+app/(app)/cost-control/admin/disciplines/ImportPanel.tsx:179:      disc_order: order != null && order !== '' && Number.isFinite(Number(order)) ? Number(order) : null,
+app/(app)/cost-control/approvals/page.tsx:85:  const transferValue = transfers.reduce((sum, t) => sum + Number(t.amount ?? 0), 0)
+app/(app)/cost-control/approvals/thumbrule/actions.ts:76:      const r = await signOffWorkingSheet(wsId, Number(ws.total_amount ?? 0), parsed.data.comment)
+app/(app)/cost-control/approvals/thumbrule/actions.ts:98:    const total = Number(ws.total_amount ?? 0)
+app/(app)/cost-control/approvals/thumbrule/actions.ts:99:    const already = Number(ws.approved_for_erp_amt ?? 0)
+app/(app)/cost-control/approvals/thumbrule/page.tsx:111:    const total = Number(r.total_amount ?? 0)
+app/(app)/cost-control/billing/ErpReductionQueue.tsx:57:  const total = rows.reduce((s, r) => s + Number(r.savings ?? 0), 0)
+app/(app)/cost-control/billing/ErpReductionQueue.tsx:97:                  {formatINR(Number(r.savings))}
+app/(app)/cost-control/billing/ErpReductionQueue.tsx:106:                    savings={Number(r.savings)}
+app/(app)/cost-control/billing/ErpReductionQueue.tsx:129:                {formatINR(Number(r.savings))}
+app/(app)/cost-control/billing/ErpReductionQueue.tsx:141:              savings={Number(r.savings)}
+app/(app)/cost-control/billing/TransferQueue.tsx:64:  const todoTotal = todo.reduce((s, r) => s + Number(r.amount ?? 0), 0)
+app/(app)/cost-control/billing/TransferQueue.tsx:122:                  {formatINR(Number(r.amount ?? 0))}
+app/(app)/cost-control/billing/TransferQueue.tsx:132:                      amount={Number(r.amount ?? 0)}
+app/(app)/cost-control/billing/TransferQueue.tsx:161:                {formatINR(Number(r.amount ?? 0))}
+app/(app)/cost-control/billing/TransferQueue.tsx:174:                amount={Number(r.amount ?? 0)}
+app/(app)/cost-control/billing/page.tsx:57:  const totalToEnter = rows.reduce((s, r) => s + Number(r.approved_for_erp_amt ?? 0), 0)
+app/(app)/cost-control/billing/page.tsx:116:                        {formatINR(Number(r.approved_for_erp_amt ?? 0))}
+app/(app)/cost-control/import/ImportClient.tsx:130:  function toNumber(v: unknown): number | null {
+app/(app)/cost-control/import/ImportClient.tsx:134:    const n = Number(s)
+app/(app)/cost-control/import/ImportClient.tsx:156:          budget_amount: toNumber(getCell(r, colMap.budget_amount)),
+app/(app)/cost-control/import/ImportClient.tsx:157:          committed_amount: toNumber(getCell(r, colMap.committed_amount)),
+app/(app)/cost-control/import/ImportClient.tsx:158:          paid_amount: toNumber(getCell(r, colMap.paid_amount)),
+app/(app)/cost-control/import/bph/BphImportClient.tsx:281:                          title={`Matched by AI on name${r.ai_confidence != null ? ` · ${Math.round(r.ai_confidence * 100)}% confident` : ''} — code didn't match, please verify`}>
+app/(app)/cost-control/import/bph/BphImportClient.tsx:282:                          <Sparkles className="h-2.5 w-2.5" /> AI{r.ai_confidence != null ? ` ${Math.round(r.ai_confidence * 100)}%` : ''}
+app/(app)/cost-control/import/bph/actions.ts:232:        total_budget: rows.reduce((s, r) => s + (Number(r.budget) || 0), 0),
+app/(app)/cost-control/import/bph/actions.ts:233:        total_actual: rows.reduce((s, r) => s + (Number(r.actual) || 0), 0),
+app/(app)/cost-control/import/bph/actions.ts:290:    const budget = Number(r.budget) || 0
+app/(app)/cost-control/import/bph/actions.ts:291:    const actual = Number(r.actual) || 0
+app/(app)/cost-control/import/bph/actions.ts:292:    const woApproved = Number(r.woApproved) || 0
+app/(app)/cost-control/import/bph/actions.ts:465:        || Math.abs((Number(src.budget) || 0) - r.budget) > 1
+app/(app)/cost-control/import/bph/actions.ts:466:        || Math.abs((Number(src.woApproved) || 0) - r.woApproved) > 1
+app/(app)/cost-control/import/bph/actions.ts:467:        || Math.abs((Number(src.actual) || 0) - r.actual) > 1
+app/(app)/cost-control/import/bph/actions.ts:613:      const oldBudget = Number(existing.current_budget_amt) || 0
+app/(app)/cost-control/import/bph/actions.ts:706:    const oldB = Number(staleLine.current_budget_amt) || 0
+app/(app)/cost-control/import/bph/actions.ts:707:    const oldW = Number(staleLine.current_wo_committed_amt) || 0
+app/(app)/cost-control/import/bph/actions.ts:708:    const oldP = Number(staleLine.current_paid_amt) || 0
+app/(app)/cost-control/import/bph/actions.ts:737:  const transfers = Number(transfersFound ?? 0)
+app/(app)/cost-control/import/bph/actions.ts:750:  const transfersConfirmed = Number(transfersClosed ?? 0)
+app/(app)/cost-control/ledger/page.tsx:89:    arr.push({ amount: Number(e.delta_amount) || 0, at: e.event_date })
+app/(app)/cost-control/ledger/page.tsx:101:    push(v, 'ph', v.ph_checked_at, `Project Head checked${v.ph_checked_amt != null ? ` · ${formatINR(Number(v.ph_checked_amt))}` : ''}`)
+app/(app)/cost-control/ledger/page.tsx:102:    push(v, 'atm', v.atm_checked_at, `Atm Head checked${v.atm_checked_amt != null ? ` · ${formatINR(Number(v.atm_checked_amt))}` : ''}`)
+app/(app)/cost-control/ledger/page.tsx:107:    } else if (v.approved_for_erp_at && Number(v.approved_for_erp_amt) > 0) {
+app/(app)/cost-control/ledger/page.tsx:108:      push(v, 'released', v.approved_for_erp_at, 'Released to ERP', Number(v.approved_for_erp_amt))
+app/(app)/cost-control/ledger/page.tsx:122:  const approvedTotal = latestApproved ? Number(latestApproved.total_amount) || 0 : 0
+app/(app)/cost-control/page.tsx:148:    const released = Number(w.approved_for_erp_amt ?? 0)
+app/(app)/cost-control/page.tsx:149:    if (APPROVED_DONE.has(w.status)) return released > 0 ? released : Number(w.total_amount ?? 0)
+app/(app)/cost-control/page.tsx:163:    if (r.chain_anchor_id) chainOf.set(r.id, { anchor: r.chain_anchor_id, ver: Number(r.version_no ?? 1) })
+app/(app)/cost-control/page.tsx:193:    estimateByProj.set(w.project_id, (estimateByProj.get(w.project_id) ?? 0) + Number(w.total_amount ?? 0))
+app/(app)/cost-control/page.tsx:229:    cur.budget    += Number(b.current_budget_amt ?? 0)
+app/(app)/cost-control/page.tsx:230:    cur.committed += Number(b.current_wo_committed_amt ?? 0)
+app/(app)/cost-control/page.tsx:231:    cur.paid      += Number(b.current_paid_amt ?? 0)
+app/(app)/cost-control/page.tsx:236:      Number(b.current_budget_amt ?? 0) !== 0 ||
+app/(app)/cost-control/page.tsx:237:      Number(b.current_wo_committed_amt ?? 0) !== 0 ||
+app/(app)/cost-control/page.tsx:238:      Number(b.current_paid_amt ?? 0) !== 0,
+app/(app)/cost-control/page.tsx:354:    t.sft += Number(p.built_up_sft ?? 0)
+app/(app)/cost-control/page.tsx:514:              && Number(w.approved_for_erp_amt ?? 0) > 0
+app/(app)/cost-control/page.tsx:640:                  const gPaidPct = gt.budget > 0 ? Math.round((gt.paid / gt.budget) * 100) : 0
+app/(app)/cost-control/page.tsx:691:                  const paidPct = bud.budget > 0 ? Math.round((bud.paid / bud.budget) * 100) : 0
+app/(app)/cost-control/page.tsx:801:                    const cardPaidPct = bud.budget > 0 ? Math.round((bud.paid / bud.budget) * 100) : 0
+app/(app)/cost-control/page.tsx:995:  const blMoney = (b: BLRow) => Number(b.current_budget_amt ?? 0) || Number(b.current_wo_committed_amt ?? 0)
+app/(app)/cost-control/page.tsx:1000:      cur.budget += Number(b.current_budget_amt ?? 0)
+app/(app)/cost-control/page.tsx:1001:      cur.wo += Number(b.current_wo_committed_amt ?? 0)
+app/(app)/cost-control/page.tsx:1105:    const sft = Number(p.built_up_sft ?? 0)
+app/(app)/cost-control/page.tsx:1128:    const sft = Number(p.built_up_sft ?? 0)
+app/(app)/cost-control/page.tsx:1260:                    t.sft += Number(p.built_up_sft ?? 0)
+app/(app)/cost-control/projects/[id]/AreaChip.tsx:24:    const n = raw === '' ? null : Number(raw)
+app/(app)/cost-control/projects/[id]/EngineerProjectView.tsx:74:    cur.budget += Number(b.current_budget_amt ?? 0)
+app/(app)/cost-control/projects/[id]/EngineerProjectView.tsx:75:    cur.wo += Number(b.current_wo_committed_amt ?? 0)
+app/(app)/cost-control/projects/[id]/EngineerProjectView.tsx:95:    if (isPendingStatus(w.status)) cur.pending += Math.max(Number(w.total_amount ?? 0) - Number(w.approved_for_erp_amt ?? 0), 0)
+app/(app)/cost-control/projects/[id]/EngineerProjectView.tsx:295:  const sft = Number(project.built_up_sft ?? 0)
+app/(app)/cost-control/projects/[id]/RaiseTransferButton.tsx:86:  const amt = Math.round(Number(amount || 0))
+app/(app)/cost-control/projects/[id]/RowControls.tsx:174:  const days = Math.round(ms / 86400000)
+app/(app)/cost-control/projects/[id]/RowControls.tsx:231:      const rateNum = rate === '' ? null : Number(rate)
+app/(app)/cost-control/projects/[id]/RowControls.tsx:508:  const rupee = (n: number) => `₹${Math.round(n).toLocaleString('en-IN')}`
+app/(app)/cost-control/projects/[id]/actions.ts:569:  const touched = Number((data as { sub_skills_touched?: number } | null)?.sub_skills_touched ?? 0)
+app/(app)/cost-control/projects/[id]/ie-revision/approve/route.ts:80:  const sft = Number(proj?.built_up_sft ?? 0)
+app/(app)/cost-control/projects/[id]/ie-revision/approve/route.ts:81:  const inr = (n: number) => `₹${Math.round(n).toLocaleString('en-IN')}`
+app/(app)/cost-control/projects/[id]/page.tsx:353:      erpReducedAmt: r.erp_reduced_amt == null ? null : Number(r.erp_reduced_amt),
+app/(app)/cost-control/projects/[id]/page.tsx:383:      amt: b.internal_estimate_amt != null ? Number(b.internal_estimate_amt) : null,
+app/(app)/cost-control/projects/[id]/page.tsx:534:        amount: Number(m.amount ?? 0),
+app/(app)/cost-control/projects/[id]/page.tsx:559:        amount: Number(w.approved_for_erp_amt ?? 0) || Number(w.total_amount ?? 0),
+app/(app)/cost-control/projects/[id]/page.tsx:610:          qty: r.qty == null ? null : Number(r.qty),
+app/(app)/cost-control/projects/[id]/page.tsx:611:          rate: r.rate == null ? null : Number(r.rate),
+app/(app)/cost-control/projects/[id]/page.tsx:612:          amount: r.amount == null ? null : Number(r.amount),
+app/(app)/cost-control/projects/[id]/page.tsx:637:          grandTotal: Number((w as { total_amount?: number | null }).total_amount ?? 0),
+app/(app)/cost-control/projects/[id]/page.tsx:641:            contingencyPct: w.contingency_pct == null ? null : Number(w.contingency_pct),
+app/(app)/cost-control/projects/[id]/page.tsx:642:            contingencyAmt: w.contingency_amt == null ? null : Number(w.contingency_amt),
+app/(app)/cost-control/projects/[id]/page.tsx:643:            gstPct:         w.gst_pct == null ? null : Number(w.gst_pct),
+app/(app)/cost-control/projects/[id]/page.tsx:644:            gstAmt:         w.gst_amt == null ? null : Number(w.gst_amt),
+app/(app)/cost-control/projects/[id]/page.tsx:740:  const utilPct = totalBudget > 0 ? Math.round((totalPaid / totalBudget) * 100) : 0
+app/(app)/cost-control/projects/[id]/page.tsx:741:  const releasedPct = totalEstimate > 0 ? Math.round((totalBudget / totalEstimate) * 100) : 0
+app/(app)/cost-control/projects/[id]/page.tsx:746:    .reduce((s, w) => s + Number(w.approved_for_erp_amt ?? 0), 0)
+app/(app)/cost-control/projects/[id]/page.tsx:751:  const sft = Number(project.built_up_sft ?? 0)
+app/(app)/cost-control/projects/[id]/page.tsx:754:    const rate = Math.round(amt / sft)
+app/(app)/cost-control/projects/[id]/page.tsx:774:    .sort((a, b) => Number(b.total_amount ?? 0) - Number(a.total_amount ?? 0))
+app/(app)/cost-control/projects/[id]/page.tsx:779:      const amt = Number(w.total_amount ?? 0)
+app/(app)/cost-control/projects/[id]/page.tsx:1047:               sub={totalBudget > 0 ? `${Math.round((totalWO / totalBudget) * 100)}% of budget` : '—'} tone="purple" />
+app/(app)/cost-control/projects/[id]/page.tsx:1231:                              ? `${formatINR(dAgg.paid)} paid ÷ ${formatINR(dAgg.budget)} ERP budget = ${dPct.toFixed(0)}%`
+app/(app)/cost-control/projects/[id]/page.tsx:1234:                            {dAgg.budget > 0 ? `${dPct.toFixed(0)}%` : '—'}
+app/(app)/cost-control/projects/[id]/page.tsx:1481:                                  ? `${formatINR(bl.paid)} paid ÷ ${formatINR(bl.budget)} ERP budget = ${sPct.toFixed(0)}%`
+app/(app)/cost-control/projects/[id]/page.tsx:1484:                                {bl && bl.budget > 0 ? `${sPct.toFixed(0)}%` : '—'}
+app/(app)/cost-control/projects/[id]/page.tsx:1853:                              {sPct.toFixed(0)}% used
+app/(app)/cost-control/projects/[id]/setup/page.tsx:268:            <AreaChip projectId={id} sft={project.built_up_sft != null ? Number(project.built_up_sft) : null} canWrite />
+app/(app)/cost-control/projects/[id]/transfer-actions.ts:63:      budget: Number(r.budget ?? 0),
+app/(app)/cost-control/projects/[id]/transfer-actions.ts:64:      free_to_move: Number(r.free_to_move ?? 0),
+app/(app)/cost-control/projects/[id]/transfer-actions.ts:65:      over_budget: Number(r.over_budget ?? 0),
+app/(app)/cost-control/working-sheets/[id]/BudgetPositionPanel.tsx:65:    (a, b) => a + (b.internal_estimate_amt == null ? 0 : Number(b.internal_estimate_amt)), 0)
+app/(app)/cost-control/working-sheets/[id]/BudgetPositionPanel.tsx:78:  const inc = Math.max(0, Number(totalAmount ?? 0) - Number(approvedForErp ?? 0))
+app/(app)/cost-control/working-sheets/[id]/BudgetPositionPanel.tsx:136:        const over = Math.round(after) - Math.round(internalEstimate)
+app/(app)/cost-control/working-sheets/[id]/ConfidenceScorecard.tsx:22:  const measPct = items > 0 ? Math.round((measured / items) * 100) : 100
+app/(app)/cost-control/working-sheets/[id]/RevisionEditor.tsx:52:  const n = Number(v.replace(/[,₹\s]/g, ''))
+app/(app)/cost-control/working-sheets/[id]/SourceExcelViewer.tsx:87:      colWidths.push(meta?.wpx ? Math.max(28, Math.round(meta.wpx)) : 80)
+app/(app)/cost-control/working-sheets/[id]/SourceExcelViewer.tsx:143:      rows.push({ idx: r, heightPx: rowsMeta[r]?.hpx ? Math.round(rowsMeta[r].hpx) : undefined, cells })
+app/(app)/cost-control/working-sheets/[id]/WSEditor.tsx:64:  const total = items.reduce((s, i) => s + Number(i.total_amount ?? (i.qty * i.rate * (1 + i.gst_pct / 100))), 0)
+app/(app)/cost-control/working-sheets/[id]/WSEditor.tsx:108:      qty: Number(row.qty) || 0,
+app/(app)/cost-control/working-sheets/[id]/WSEditor.tsx:109:      rate: Number(row.rate) || 0,
+app/(app)/cost-control/working-sheets/[id]/WSEditor.tsx:110:      gst_pct: Number(row.gst_pct) || 0,
+app/(app)/cost-control/working-sheets/[id]/WSEditor.tsx:155:      next.total_amount = Number(next.qty) * Number(next.rate) * (1 + Number(next.gst_pct) / 100)
+app/(app)/cost-control/working-sheets/[id]/WSEditor.tsx:235:                      onChange={(v) => updateField(idx, 'qty', v === '' ? 0 : Number(v))}
+app/(app)/cost-control/working-sheets/[id]/WSEditor.tsx:244:                      onChange={(v) => updateField(idx, 'rate', v === '' ? 0 : Number(v))}
+app/(app)/cost-control/working-sheets/[id]/WSEditor.tsx:253:                      onChange={e => { updateField(idx, 'gst_pct', Number(e.target.value)); }}
+app/(app)/cost-control/working-sheets/[id]/WSEditor.tsx:369:          <b>{Math.round(top.score * 100)}%</b> match{' '}
+app/(app)/cost-control/working-sheets/[id]/WSEditor.tsx:379:                {Math.round(m.score * 100)}%
+app/(app)/cost-control/working-sheets/[id]/page.tsx:123:  const num = (v: unknown) => (v == null ? null : Number(v))
+app/(app)/cost-control/working-sheets/[id]/page.tsx:136:          total_amount: Number(s.total_amount ?? 0), approved_for_erp_amt: Number(s.approved_for_erp_amt ?? 0),
+app/(app)/cost-control/working-sheets/[id]/page.tsx:153:        total_amount: Number(s.total_amount ?? 0), approved_for_erp_amt: Number(s.approved_for_erp_amt ?? 0),
+app/(app)/cost-control/working-sheets/[id]/page.tsx:156:    : Number(ws.approved_for_erp_amt ?? 0)
+app/(app)/cost-control/working-sheets/[id]/page.tsx:209:    phChecked: extraCols?.ph_checked_amt != null ? { amt: Number(extraCols.ph_checked_amt) } : null,
+app/(app)/cost-control/working-sheets/[id]/page.tsx:210:    atmChecked: extraCols?.atm_checked_amt != null ? { amt: Number(extraCols.atm_checked_amt) } : null,
+app/(app)/cost-control/working-sheets/[id]/page.tsx:216:  const releasedAmt = Number(ws.approved_for_erp_amt ?? 0)
+app/(app)/cost-control/working-sheets/[id]/page.tsx:217:  const balanceAmt = Math.max(Number(ws.total_amount ?? 0) - releasedAmt, 0)
+app/(app)/cost-control/working-sheets/[id]/page.tsx:447:      totalAmount={Number(ws.total_amount ?? 0)}
+app/(app)/cost-control/working-sheets/[id]/page.tsx:548:          totalAmount={Number(ws.total_amount ?? 0)}
+app/(app)/cost-control/working-sheets/[id]/page.tsx:549:          approvedSoFar={Number(ws.approved_for_erp_amt ?? 0)}
+app/(app)/cost-control/working-sheets/[id]/page.tsx:552:          pastApproved={Number(ws.past_approved_in_subskill ?? 0)}
+app/(app)/cost-control/working-sheets/[id]/page.tsx:599:      return hit ? Number(hit.value) : null
+app/(app)/cost-control/working-sheets/[id]/page.tsx:603:      qty: Number(r.qty ?? 0), rate: Number(r.rate ?? 0), amount: Number(r.amount ?? 0),
+app/(app)/cost-control/working-sheets/[id]/page.tsx:638:          qty: r.qty != null ? Number(r.qty) : null,
+app/(app)/cost-control/working-sheets/[id]/page.tsx:673:    const recTotal = Number(ws.total_amount) || 0
+app/(app)/cost-control/working-sheets/[id]/page.tsx:823:                amount: r.amount != null ? Number(r.amount) : null,
+app/(app)/cost-control/working-sheets/[id]/page.tsx:843:          totalAmount={Number(ws.total_amount ?? 0)}
+app/(app)/cost-control/working-sheets/[id]/page.tsx:844:          approvedSoFar={Number(ws.approved_for_erp_amt ?? 0)}
+app/(app)/cost-control/working-sheets/[id]/page.tsx:848:          summaryTotal={ws.summary_total != null ? Number(ws.summary_total) : null}
+app/(app)/cost-control/working-sheets/[id]/page.tsx:857:            qty: r.qty != null ? Number(r.qty) : null,
+app/(app)/cost-control/working-sheets/[id]/page.tsx:858:            rate: r.rate != null ? Number(r.rate) : null,
+app/(app)/cost-control/working-sheets/[id]/page.tsx:859:            amount: r.amount != null ? Number(r.amount) : null,
+app/(app)/cost-control/working-sheets/[id]/page.tsx:872:          grandTotal={ws.summary_total != null ? Number(ws.summary_total) : Number(ws.total_amount ?? 0)}
+app/(app)/cost-control/working-sheets/[id]/page.tsx:924:  const budgeted = Number(bl?.current_budget_amt ?? 0)
+app/(app)/cost-control/working-sheets/[id]/page.tsx:925:  const committed = Number(bl?.current_wo_committed_amt ?? 0)
+app/(app)/cost-control/working-sheets/[id]/page.tsx:926:  const paid = Number(bl?.current_paid_amt ?? 0)
+app/(app)/cost-control/working-sheets/[id]/page.tsx:928:  const remainingAfter = remainingBeforeThisWS - Number(ws.total_amount ?? 0)
+app/(app)/cost-control/working-sheets/[id]/page.tsx:945:      .reduce((s, r) => s + Number(r.total_amount ?? 0), 0)
+app/(app)/cost-control/working-sheets/[id]/page.tsx:1080:            <p className="font-semibold mb-0.5">ERP has released {Math.round((budgeted / estimate) * 100)}% of the team plan</p>
+app/(app)/cost-control/working-sheets/[id]/page.tsx:1107:        approvedSoFar={Number(ws.approved_for_erp_amt ?? 0)}
+app/(app)/cost-control/working-sheets/[id]/page.tsx:1117:            qty: Number(p.qty),
+app/(app)/cost-control/working-sheets/[id]/page.tsx:1119:            rate: Number(p.rate),
+app/(app)/cost-control/working-sheets/new-quick/NewWSQuickForm.tsx:163:  const n = typeof v === 'number' ? v : Number(String(v).replace(/[,₹\s]/g, ''))
+app/(app)/cost-control/working-sheets/new-quick/NewWSQuickForm.tsx:409:    if (gridGrand != null) setSummaryTotal(String(Math.round(gridGrand)))
+app/(app)/cost-control/working-sheets/new-quick/NewWSQuickForm.tsx:571:        if (json.grand_total != null && (!summaryTotal || Number(summaryTotal) === local.grandTotal)) {
+app/(app)/cost-control/working-sheets/new-quick/NewWSQuickForm.tsx:694:      total_amount: Number(summaryTotal) || null,
+app/(app)/cost-control/working-sheets/new-quick/NewWSQuickForm.tsx:700:      summary_total: Number(summaryTotal) || null,
+app/(app)/cost-control/working-sheets/new-quick/NewWSQuickForm.tsx:990:            claimedTotal={summaryTotal ? Number(summaryTotal) : null}
+app/(app)/cost-control/working-sheets/new-quick/NewWSQuickForm.tsx:1151:              const typed = Number(summaryTotal) || 0
+app/(app)/cost-control/working-sheets/new-quick/NewWSQuickForm.tsx:1221:  const pct = (v: number) => total > 0 ? Math.round((v / total) * 100) : 0
+app/(app)/cost-control/working-sheets/new-quick/TemplateReviewGrid.tsx:66:  const n = Number(v.replace(/[,₹\s]/g, ''))
+app/(app)/cost-control/working-sheets/new-quick/page.tsx:74:          const ml = mlBd ?? (material == null && installation == null && r.rate != null ? Number(r.rate) : null)
+app/(app)/cost-control/working-sheets/new-quick/page.tsx:78:            qty: r.qty != null ? Number(r.qty) : null,
+app/(app)/cost-control/working-sheets/new-thumbrule/NewWSThumbruleForm.tsx:73:    const a = Number(area), r = Number(rate)
+app/(app)/cost-control/working-sheets/new-thumbrule/NewWSThumbruleForm.tsx:95:    const pastSnap = (past ?? []).reduce((s, r) => s + Number(r.total_amount ?? 0), 0)
+app/(app)/cost-control/working-sheets/new-thumbrule/NewWSThumbruleForm.tsx:105:      `Thumbrule estimate: ${fmtINR(Number(area))} sft × ₹${fmtINR(Number(rate))}/sft`,
+app/(app)/cost-control/working-sheets/new-thumbrule/page.tsx:71:      rate_per_sft: r.thumbrule_rate_per_sft != null ? Number(r.thumbrule_rate_per_sft) : null,
+app/(app)/cost-control/working-sheets/new-thumbrule/page.tsx:91:          projects={(projects ?? []).map(p => ({ id: p.id, code: p.code, name: p.name, built_up_sft: p.built_up_sft != null ? Number(p.built_up_sft) : null }))}
+app/(app)/cost-control/working-sheets/page.tsx:202:  const total = rows.reduce((s, r) => s + Number(r.total_amount ?? 0), 0)
+app/(app)/cost-control/working-sheets/page.tsx:206:    const amt = Number(r.total_amount ?? 0)
+app/(app)/cost-control/working-sheets/page.tsx:207:    const appr = Number(r.approved_for_erp_amt ?? 0)
+app/(app)/cost-control/working-sheets/page.tsx:458:          <KpiTile label="Approved to date"   value={formatINR(kpis.approvedToDate)} sub={kpis.estimateTotal > 0 ? `${Math.round((kpis.approvedToDate / kpis.estimateTotal) * 100)}% of estimate` : '—'} tone="green" />
+app/(app)/cost-control/working-sheets/page.tsx:513:                <span className="ml-1 text-gray-500">({Math.round((kpis.approvedToDate / kpis.estimateTotal) * 100)}%)</span>
+app/(app)/cost-control/working-sheets/page.tsx:539:                    const est = Number(w.total_amount ?? 0)
+app/(app)/cost-control/working-sheets/page.tsx:540:                    const appr = Number(w.approved_for_erp_amt ?? 0)
+app/(app)/cost-control/working-sheets/page.tsx:543:                    const pct = cumEstimate > 0 ? Math.round((cumApproved / cumEstimate) * 100) : 0
+app/(app)/cost-control/working-sheets/page.tsx:594:                    {kpis.estimateTotal > 0 ? `${Math.round((kpis.approvedToDate / kpis.estimateTotal) * 100)}%` : '—'}
+app/(app)/cost-control/working-sheets/page.tsx:608:                const est = Number(w.total_amount ?? 0)
+app/(app)/cost-control/working-sheets/page.tsx:609:                const appr = Number(w.approved_for_erp_amt ?? 0)
+app/(app)/cost-control/working-sheets/page.tsx:612:                const pct = cumEstimate > 0 ? Math.round((cumApproved / cumEstimate) * 100) : 0
+app/(app)/cost-control/working-sheets/page.tsx:656:            const sum = g.rows.reduce((s, r) => s + Number(r.total_amount ?? 0), 0)
+app/(app)/cost-control/working-sheets/page.tsx:657:            const apprSum = g.rows.reduce((s, r) => s + Number(r.approved_for_erp_amt ?? 0), 0)
+app/(app)/cost-control/working-sheets/page.tsx:702:                        const appr = Number(w.approved_for_erp_amt ?? 0)
+app/(app)/cost-control/working-sheets/page.tsx:703:                        const est = Number(w.total_amount ?? 0)
+app/(app)/cost-control/working-sheets/page.tsx:704:                        const pct = est > 0 ? Math.round((appr / est) * 100) : 0
+app/(app)/cost-control/working-sheets/page.tsx:792:                    const appr = Number(w.approved_for_erp_amt ?? 0)
+app/(app)/cost-control/working-sheets/page.tsx:793:                    const est = Number(w.total_amount ?? 0)
+app/(app)/cost-control/working-sheets/page.tsx:794:                    const pct = est > 0 ? Math.round((appr / est) * 100) : 0
+app/(app)/daily-site-report/[id]/page.tsx:98:            {report.amount != null && <Detail label="Amount" value={formatINR(Number(report.amount))} />}
+app/(app)/daily-site-report/new/report-form.tsx:92:      quantity: qty ? Number(qty) : null,
+app/(app)/daily-site-report/new/report-form.tsx:94:      amount: amount ? Number(amount) : null,
+app/(app)/daily-site-report/page.tsx:87:      amount: r.amount != null ? Number(r.amount) : null,
+app/(app)/established-rates/add-rate-modal.tsx:46:      rate_per_unit:  Number(rate),
+app/(app)/established-rates/add-rate-modal.tsx:47:      gst_pct:        gst === '' ? null : Number(gst),
+app/(app)/established-rates/rate-library.tsx:75:  return '₹' + Number(n).toLocaleString('en-IN', { maximumFractionDigits: 2 })
+app/(app)/grns/[id]/page.tsx:88:                        <td className="px-4 py-2 text-right tabular-nums">{formatNumber(l.received_qty, 3)}</td>
+app/(app)/grns/[id]/page.tsx:89:                        <td className="px-4 py-2 text-right tabular-nums text-amber-700">{formatNumber(l.breakage_qty, 3)}</td>
+app/(app)/grns/[id]/page.tsx:90:                        <td className="px-4 py-2 text-right tabular-nums font-semibold text-gray-900">{formatNumber(l.net_received_qty, 3)}</td>
+app/(app)/indents/[id]/page.tsx:104:                      <td className="px-4 py-2 text-right tabular-nums text-gray-900">{formatNumber(l.indent_qty, 3)}</td>
+app/(app)/indents/[id]/page.tsx:136:                    <p className="text-xs text-gray-500">₹{formatNumber(po.po_amount)}</p>
+app/(app)/inventory/admin/items/import/ImportForm.tsx:148:  const n = Number(s)
+app/(app)/inventory/admin/items/import/ImportForm.tsx:791:                              {r.qty != null ? Number(r.qty).toLocaleString("en-IN") : '—'}
+app/(app)/inventory/page.tsx:98:              const outstanding = Number(row.issued_qty) - Number(row.returned_good_qty) - Number(row.returned_damaged_qty)
+app/(app)/inventory/receipt/receipt-form.tsx:33:      .map(l => ({ item_id: l.item_id, qty: Number(l.qty) }))
+app/(app)/inventory/reports/daily/DailyReportActions.tsx:10:const nf = (n: number) => Number(n || 0).toLocaleString('en-IN')
+app/(app)/inventory/reports/daily/page.tsx:18:const nf = (n: number) => Number(n || 0).toLocaleString('en-IN')
+app/(app)/inventory/reports/page.tsx:58:    const qty = Number(s.physical_qty || 0)
+app/(app)/inventory/requests/[id]/page.tsx:53:    (stock ?? []).map(s => [s.item_id, Number(s.available_qty)]),
+app/(app)/inventory/requests/[id]/page.tsx:153:              const ret = Number(l.returned_good_qty) + Number(l.returned_damaged_qty)
+app/(app)/inventory/requests/[id]/page.tsx:165:                    <LineStat label="Requested" value={`${Number(l.requested_qty).toLocaleString('en-IN')} ${it?.unit ?? ''}`} />
+app/(app)/inventory/requests/[id]/page.tsx:166:                    <LineStat label="Approved" value={l.approved_qty != null ? Number(l.approved_qty).toLocaleString('en-IN') : '—'} />
+app/(app)/inventory/requests/[id]/page.tsx:167:                    <LineStat label="Issued" value={Number(l.issued_qty).toLocaleString('en-IN')} />
+app/(app)/inventory/requests/[id]/page.tsx:168:                    <LineStat label="Returned" value={ret > 0 ? `${ret.toLocaleString('en-IN')}${Number(l.returned_damaged_qty) > 0 ? ` (${Number(l.returned_damaged_qty).toLocaleString('en-IN')} dmg)` : ''}` : '—'} />
+app/(app)/inventory/requests/[id]/page.tsx:169:                    <LineStat label="Available" value={stockErr ? '—' : Number(avail).toLocaleString('en-IN')} />
+app/(app)/inventory/requests/[id]/page.tsx:201:                      <td className="px-2 py-2 text-right tabular-nums">{Number(l.requested_qty).toLocaleString('en-IN')} {it?.unit}</td>
+app/(app)/inventory/requests/[id]/page.tsx:202:                      <td className="px-2 py-2 text-right tabular-nums">{l.approved_qty != null ? Number(l.approved_qty).toLocaleString('en-IN') : '—'}</td>
+app/(app)/inventory/requests/[id]/page.tsx:203:                      <td className="px-2 py-2 text-right tabular-nums">{Number(l.issued_qty).toLocaleString('en-IN')}</td>
+app/(app)/inventory/requests/[id]/page.tsx:206:                          const ret = Number(l.returned_good_qty) + Number(l.returned_damaged_qty)
+app/(app)/inventory/requests/[id]/page.tsx:208:                            ? <span className="text-amber-700">{ret.toLocaleString('en-IN')}{Number(l.returned_damaged_qty) > 0 ? ` (${Number(l.returned_damaged_qty).toLocaleString('en-IN')} dmg)` : ''}</span>
+app/(app)/inventory/requests/[id]/page.tsx:212:                      <td className="px-2 py-2 text-right tabular-nums text-gray-500">{stockErr ? '—' : Number(avail).toLocaleString('en-IN')}</td>
+app/(app)/inventory/requests/[id]/page.tsx:243:            requested_qty: Number(l.requested_qty),
+app/(app)/inventory/requests/[id]/page.tsx:244:            approved_qty: l.approved_qty == null ? null : Number(l.approved_qty),
+app/(app)/inventory/requests/[id]/page.tsx:245:            issued_qty: Number(l.issued_qty),
+app/(app)/inventory/requests/[id]/page.tsx:247:            returned_good_qty: Number(l.returned_good_qty),
+app/(app)/inventory/requests/[id]/page.tsx:248:            returned_damaged_qty: Number(l.returned_damaged_qty),
+app/(app)/inventory/requests/[id]/request-actions.tsx:16:const fmtQty = (n: number) => Number(n).toLocaleString('en-IN')
+app/(app)/inventory/requests/[id]/request-actions.tsx:228:            const items = lines.map(l => ({ request_item_id: l.id, issued_qty: Number(issuedQty[l.id]) }))
+app/(app)/inventory/requests/[id]/request-actions.tsx:344:            const q = Number(returnQty)
+app/(app)/inventory/requests/new/page.tsx:41:    ;(stockByWh[wh] ??= {})[s.item_id as string] = Number(s.available_qty)
+app/(app)/inventory/requests/new/page.tsx:77:          requested_qty: Number(i.requested_qty),
+app/(app)/inventory/requests/new/request-form.tsx:108:        requested_qty: Number(l.requested_qty),
+app/(app)/inventory/requests/new/request-form.tsx:233:                  const want = Number(l.requested_qty)
+app/(app)/inventory/site-stock/[projectId]/CheckForm.tsx:13:const nf = (n: number) => Number(n || 0).toLocaleString('en-IN')
+app/(app)/inventory/site-stock/[projectId]/CheckForm.tsx:34:    const n = Math.max(0, (Number(s[id] ?? '0') || 0) + d)
+app/(app)/inventory/site-stock/[projectId]/CheckForm.tsx:56:    const k = classifyLine(it.expected, Number(actual[it.itemId] ?? '0') || 0, it.isReturnable).kind
+app/(app)/inventory/site-stock/[projectId]/CheckForm.tsx:71:      actual_qty: Number(actual[it.itemId] ?? '0') || 0,
+app/(app)/inventory/site-stock/[projectId]/CheckForm.tsx:168:  const actualNum = Number(value ?? '0') || 0
+app/(app)/inventory/site-stock/[projectId]/page.tsx:29:    isReturnable: r.is_returnable, expected: Number(r.expected || 0),
+app/(app)/inventory/site-stock/[projectId]/page.tsx:30:    lastActual: r.last_actual == null ? null : Number(r.last_actual),
+app/(app)/inventory/site-stock/page.tsx:13:const nf = (n: number) => Number(n || 0).toLocaleString('en-IN')
+app/(app)/inventory/stock-ops/StockOpsForms.tsx:37:    const n = Number(qty)
+app/(app)/inventory/stock/stock-table.tsx:92:                    <p className={cn('text-lg font-bold tabular-nums', r.is_low_stock ? 'text-rose-700' : 'text-gray-900')}>{Number(r.available_qty).toLocaleString('en-IN')}</p>
+app/(app)/inventory/stock/stock-table.tsx:99:                  <span>Physical <b className="tabular-nums text-gray-700">{Number(r.physical_qty).toLocaleString('en-IN')}</b></span>
+app/(app)/inventory/stock/stock-table.tsx:100:                  <span>Reserved <b className="tabular-nums text-amber-700">{Number(r.reserved_qty).toLocaleString('en-IN')}</b></span>
+app/(app)/inventory/stock/stock-table.tsx:101:                  <span>Damaged <b className="tabular-nums text-rose-700">{Number(r.damaged_qty).toLocaleString('en-IN')}</b></span>
+app/(app)/inventory/stock/stock-table.tsx:138:                  <td className="px-2 py-2 text-right tabular-nums text-gray-700">{Number(r.physical_qty).toLocaleString('en-IN')}</td>
+app/(app)/inventory/stock/stock-table.tsx:139:                  <td className="px-2 py-2 text-right tabular-nums text-amber-700">{Number(r.reserved_qty).toLocaleString('en-IN')}</td>
+app/(app)/inventory/stock/stock-table.tsx:140:                  <td className="px-2 py-2 text-right tabular-nums text-rose-700">{Number(r.damaged_qty).toLocaleString('en-IN')}</td>
+app/(app)/inventory/stock/stock-table.tsx:141:                  <td className="px-2 py-2 text-right tabular-nums font-semibold text-gray-900">{Number(r.available_qty).toLocaleString('en-IN')}</td>
+app/(app)/inventory/stock/stock-table.tsx:171:    const n = Number(val)
+app/(app)/inventory/stock/stock-table.tsx:185:    return <span className="tabular-nums text-gray-400">{row.min_threshold != null ? Number(row.min_threshold).toLocaleString('en-IN') : '—'}</span>
+app/(app)/invoices/[id]/page.tsx:88:                        <td className="px-4 py-2 text-right tabular-nums">{formatNumber(l.invoice_qty, 3)}</td>
+app/(app)/invoices/[id]/page.tsx:89:                        <td className="px-4 py-2 text-right tabular-nums">{formatNumber(l.rate, 2)}</td>
+app/(app)/invoices/[id]/page.tsx:90:                        <td className="px-4 py-2 text-right tabular-nums font-semibold text-gray-900">{formatNumber(l.line_amount, 2)}</td>
+app/(app)/invoices/page.tsx:22:  const total = invoices?.reduce((s, i) => s + Number(i.invoice_amount ?? 0), 0) ?? 0
+app/(app)/jmr/admin/import/JmrImportClient.tsx:105:    if (v >= 0 && v < 2) return +(v * 24).toFixed(4)
+app/(app)/jmr/admin/import/JmrImportClient.tsx:111:    let hh = Number(m[1]); const mm = Number(m[2]); const ampm = m[3]?.toLowerCase()
+app/(app)/jmr/admin/import/JmrImportClient.tsx:114:    return +(hh + mm / 60).toFixed(4)
+app/(app)/jmr/admin/import/JmrImportClient.tsx:116:  const n = Number(s)
+app/(app)/jmr/admin/import/JmrImportClient.tsx:148:  if (projectMatch) return Number(projectMatch.rate_per_unit)
+app/(app)/jmr/admin/import/JmrImportClient.tsx:150:  return fallback ? Number(fallback.rate_per_unit) : null
+app/(app)/jmr/admin/import/JmrImportClient.tsx:249:          quantity = +raw.toFixed(2)
+app/(app)/jmr/admin/import/JmrImportClient.tsx:255:          const v = Number(r[colQty])
+app/(app)/jmr/admin/import/JmrImportClient.tsx:267:          const v = Number(r[colRate])
+app/(app)/jmr/admin/import/JmrImportClient.tsx:281:        const amount = (rate != null && quantity != null) ? +(rate * quantity).toFixed(2) : null
+app/(app)/jmr/admin/rate-cards/[id]/page.tsx:42:                <span className="line-through">{formatINR(Number(entry.old_rate))}</span>
+app/(app)/jmr/admin/rate-cards/[id]/page.tsx:43:                <span className="text-gray-700">→ {formatINR(Number(entry.new_rate))}</span>
+app/(app)/jmr/admin/rate-cards/page.tsx:77:                        {formatINR(Number(r.rate_per_unit))}
+app/(app)/jmr/admin/rate-cards/rate-form.tsx:49:      rate_per_unit: Number(v.rate_per_unit),
+app/(app)/jmr/admin/rate-cards/rate-form.tsx:61:      if (existing && Number(existing.rate_per_unit) !== payload.rate_per_unit) {
+app/(app)/jmr/dashboard/page.tsx:71:      quantity: Number(r.quantity),
+app/(app)/jmr/dashboard/page.tsx:72:      amount: Number(r.amount),
+app/(app)/jmr/dashboard/page.tsx:73:      rate_snapshot: Number(r.rate_snapshot),
+app/(app)/jmr/entry/entry-form.tsx:119:    return +raw.toFixed(2)
+app/(app)/jmr/entry/entry-form.tsx:122:  const effectiveQty = isHourly ? hours : (qty ? Number(qty) : null)
+app/(app)/jmr/entry/entry-form.tsx:123:  const earned = (rate != null && effectiveQty != null) ? +(rate * effectiveQty).toFixed(2) : null
+app/(app)/jmr/entry/today-entries.tsx:27:  const total = entries?.reduce((s, e) => s + Number(e.amount), 0) ?? 0
+app/(app)/jmr/entry/today-entries.tsx:57:                  <p className="text-xs text-gray-500">{Number(e.quantity)} {unit}</p>
+app/(app)/jmr/entry/today-entries.tsx:60:                  <p className="text-sm font-semibold text-emerald-700">{formatINR(Number(e.amount))}</p>
+app/(app)/jmr/log/page.tsx:96:      quantity: Number(r.quantity),
+app/(app)/jmr/log/page.tsx:97:      amount: Number(r.amount),
+app/(app)/jmr/log/page.tsx:98:      rate_snapshot: Number(r.rate_snapshot),
+app/(app)/jmr/my/page.tsx:85:    weekEarned:  thisWeek.reduce((s, r) => s + Number(r.amount), 0),
+app/(app)/jmr/my/page.tsx:149:            const dayTotal = dayRows.reduce((s, r) => s + Number(r.amount), 0)
+app/(app)/jmr/my/page.tsx:214:                              <span className="font-mono">{Number(r.quantity)}</span> {it?.unit ?? ''}
+app/(app)/jmr/my/page.tsx:215:                              <span className="text-gray-400"> @ {formatINR(Number(r.rate_snapshot))}</span>
+app/(app)/jmr/my/page.tsx:238:                            <p className="font-semibold text-emerald-700">{formatINR(Number(r.amount))}</p>
+app/(app)/masters/MasterTable.tsx:81:      const asNum = (s: string) => Number(s.replace(/[^0-9.-]/g, ''))
+app/(app)/masters/contacts/page.tsx:15:  const pct = (n: number) => contacts.length ? Math.round((n / contacts.length) * 100) : 0
+app/(app)/masters/items/page.tsx:36:          const share = total > 0 ? Math.round((l.count / total) * 100) : 0
+app/(app)/pos/[id]/page.tsx:91:                      <td className="px-4 py-2 text-right tabular-nums text-gray-900">{formatNumber(l.po_qty, 3)}</td>
+app/(app)/pos/[id]/page.tsx:92:                      <td className="px-4 py-2 text-right tabular-nums text-gray-700">{formatNumber(l.po_rate, 2)}</td>
+app/(app)/pos/[id]/page.tsx:93:                      <td className="px-4 py-2 text-right tabular-nums font-semibold text-gray-900">{formatNumber(l.line_amount, 2)}</td>
+app/(app)/pos/[id]/page.tsx:102:                  {Number(po.tax_on_material) > 0 && (
+app/(app)/pos/[id]/page.tsx:108:                  {Number(po.other_charges) > 0 && (
+app/(app)/pos/[id]/page.tsx:114:                  {Number(po.taxes_on_other_charges) > 0 && (
+app/(app)/pos/page.tsx:43:  const total = filtered?.reduce((sum, p) => sum + Number(p.po_amount ?? 0), 0) ?? 0
+app/(app)/procurement-tracker/admin/ProcurementNotifySettingsForm.tsx:180:            <input type="number" min={0} value={noPo} onChange={e => setNoPo(Math.max(0, Number(e.target.value)))}
+app/(app)/procurement-tracker/admin/ProcurementNotifySettingsForm.tsx:188:            <input type="number" min={0} value={grn} onChange={e => setGrn(Math.max(0, Number(e.target.value)))}
+app/(app)/procurement-tracker/admin/ProcurementNotifySettingsForm.tsx:196:            <select value={weeklyDay} onChange={e => setWeeklyDay(Number(e.target.value))}
+app/(app)/procurement-tracker/admin/ProcurementNotifySettingsForm.tsx:210:              onChange={e => setAbandoned(Math.max(30, Number(e.target.value)))}
+app/(app)/procurement-tracker/admin/ProcurementNotifySettingsForm.tsx:222:              onChange={e => setListLen(Math.min(25, Math.max(3, Number(e.target.value))))}
+app/(app)/project/[id]/BudgetTab.tsx:59:      <span className={bold ? 'tabular-nums font-semibold' : 'tabular-nums'}>{formatINR(Math.round(v))}</span>
+app/(app)/project/[id]/MoreTabs.tsx:94:    Number(b.mentionsMe) - Number(a.mentionsMe) ||
+app/(app)/project/[id]/OverviewTab.tsx:65:            const per = sft > 0 && f.value > 0 ? Math.round(f.value / sft) : null
+app/(app)/project/[id]/ReportsTab.tsx:159:  const per = sft > 0 ? Math.round(value / sft) : 0
+app/(app)/project/[id]/ScBudgetsTab.tsx:39:  const num = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : Number(v) || 0)
+app/(app)/projects/[id]/page.tsx:60:  const posTotal = (posRes.data ?? []).reduce((s, p) => s + Number(p.po_amount ?? 0), 0)
+app/(app)/projects/[id]/page.tsx:144:  const v = Number(n).toLocaleString('en-IN', { maximumFractionDigits: 2 })
+app/(app)/projects/[id]/page.tsx:167:    ? Math.round((Number(project.fsi_consumed) / Number(project.fsi_permitted)) * 100)
+app/(app)/projects/project-form.tsx:32:  const n = Number(trimmed)
+app/(app)/projects/project-form.tsx:159:    return Math.round((used / perm) * 100)
+app/(app)/schedule/[id]/schedule-client.tsx:61:      <span className="relative font-mono font-bold" style={{ fontSize: Math.round(size * 0.28), color: pct > 0 ? '#0f172a' : '#94a3b8' }}>{pct}</span>
+app/(app)/schedule/[id]/schedule-client.tsx:78:  const label = gap > 3 ? `${Math.round(gap)}% behind plan` : (actual - planned > 5 ? 'Ahead of plan' : 'On track')
+app/(app)/schedule/[id]/schedule-client.tsx:171:    const pct = active.length ? Math.round(active.reduce((s, i) => s + i.pct, 0) / active.length) : 0
+app/(app)/schedule/[id]/schedule-client.tsx:173:    const actualScheduled = dated.length ? Math.round(dated.reduce((s, i) => s + i.pct, 0) / dated.length) : 0
+app/(app)/schedule/[id]/schedule-client.tsx:174:    const plannedScheduled = dated.length ? Math.round(dated.reduce((s, i) => s + expectedPct(i, today), 0) / dated.length) : 0
+app/(app)/schedule/[id]/schedule-client.tsx:332:            {overall.plannedScheduled - overall.actualScheduled > 3 ? `${Math.round(overall.plannedScheduled - overall.actualScheduled)}% behind` : 'On track'}</b></span>}
+app/(app)/schedule/[id]/schedule-client.tsx:350:            const pct = active.length ? Math.round(active.reduce((s, r) => s + r.item.pct, 0) / active.length) : 0
+app/(app)/schedule/[id]/schedule-client.tsx:416:    : behind ? <>Behind plan — <span className="text-amber-600">{Math.round(gap)}% short of where we should be</span></>
+app/(app)/schedule/[id]/schedule-client.tsx:646:            <div className="text-[10px] text-slate-400">last week ({lastWeek.total ? Math.round(lastWeek.kept / lastWeek.total * 100) : 0}%)</div>
+app/(app)/schedule/[id]/schedule-client.tsx:717:  const ppc = promises.length ? Math.round(kept / promises.length * 100) : (lastWeek && lastWeek.total ? Math.round(lastWeek.kept / lastWeek.total * 100) : null)
+app/(app)/schedule/[id]/schedule-client.tsx:775:                  const pct = active.length ? Math.round(active.reduce((s, r) => s + r.item.pct, 0) / active.length) : 0
+app/(app)/schedule/[id]/schedule-client.tsx:793:            const pct = Math.round(rs.reduce((s, r) => s + r.item.pct, 0) / rs.length)
+app/(app)/schedule/[id]/schedule-client.tsx:972:      g.pct = active.length ? Math.round(active.reduce((s, r) => s + r.item.pct, 0) / active.length) : 0
+app/(app)/schedule/[id]/schedule-client.tsx:1120:                    onBlur={e => { const v = Math.max(0, Number(e.target.value) || 0); if (v !== item.gap_days) run(() => setSequence({ id: item.id, projectId, followsItemId: item.follows_item_id, gapDays: v, cycleDays: item.cycle_days }), 'Gap updated') }} />
+app/(app)/schedule/[id]/schedule-client.tsx:1129:                onBlur={e => { const v = Number(e.target.value) || null; if (v !== item.cycle_days) run(() => setSequence({ id: item.id, projectId, followsItemId: item.follows_item_id, gapDays: item.gap_days, cycleDays: v }), 'Cycle updated') }} />
+app/(app)/schedule/actions.ts:304:    gap_days: Math.max(0, Math.round(input.gapDays || 0)),
+app/(app)/schedule/actions.ts:305:    cycle_days: input.cycleDays && input.cycleDays > 0 ? Math.round(input.cycleDays) : null,
+app/(app)/schedule/settings/actions.ts:33:  const v = Math.round(n)
+app/(app)/schedule/settings/settings-client.tsx:76:          onChange={e => set(Math.max(0, Math.min(365, Number(e.target.value))))}
+app/(app)/schedule/settings/settings-client.tsx:139:            So planning has to begin <b>{totalLead} days</b> ({(totalLead / 30).toFixed(1)} months) before anyone can start on site.
+app/(app)/supplier-report/report-client.tsx:429:    const pct = grandCost > 0 ? Number(((costOf(t, costBase) / grandCost) * 100).toFixed(1)) : null
+app/(app)/supplier-report/report-client.tsx:430:    const rs  = area > 0      ? Math.round(costOf(t, costBase) / area)                       : null
+app/(app)/supplier-report/report-client.tsx:491:  return formatNumber(n, 0)
+app/(app)/supplier-report/report-client.tsx:494:  return grandCost > 0 ? ((amount / grandCost) * 100).toFixed(1) + '%' : '—'
+app/(app)/supplier-report/report-client.tsx:497:  return area > 0 ? formatNumber(amount / area, 0) : '—'
+app/(app)/supplier-report/report-client.tsx:586:      pdf.text(`Built-up area: ${formatNumber(area, 0)} sq ft`, pageW - margin - 6, y + 12, { align: 'right' })
+app/(app)/supplier-report/report-client.tsx:634:    pdf.text(`GRAND TOTAL — all sub-projects: ${formatNumber(grandCost, 0)}` +
+app/(app)/supplier-report/report-client.tsx:635:      (showMetrics && totalArea > 0 ? ` · ${formatNumber(grandCost / totalArea, 0)} Rs/Sft` : ''),
+app/(app)/supplier-report/report-client.tsx:649:    notes.push(`• % of Cost and Rs/Sft are based on ${COST_BASE_OPTIONS.find(o => o.value === costBase)?.label ?? 'Total Bill Value'}${totalArea > 0 ? `; total built-up area = ${formatNumber(totalArea, 0)} sq ft` : ' (no built-up area set — Rs/Sft blank)'}.`)
+app/(app)/supplier-report/report-client.tsx:699:            {l.label}: <span className="tabular-nums">{formatNumber(l.computed, 0)}</span>
+app/(app)/supplier-report/report-client.tsx:700:            {!l.ok && <span className="tabular-nums"> vs IN4 {formatNumber(l.source, 0)} (Δ{formatNumber(l.delta, 0)})</span>}
+app/(app)/supplier-report/report-client.tsx:716:      <td className={`px-3 ${py} text-right tabular-nums ${tone}`}>{pct == null ? '—' : pct.toFixed(1) + '%'}</td>
+app/(app)/supplier-report/report-client.tsx:717:      <td className={`px-3 ${py} text-right tabular-nums ${tone}`}>{rs == null ? '—' : formatNumber(rs, 0)}</td>
+app/(app)/supplier-report/report-client.tsx:836:        onBlur={e => { const v = e.target.value.trim(); const n = v === '' ? null : Number(v); onSet(n != null && Number.isFinite(n) ? n : null) }}
+app/(app)/supplier-report/report-client.tsx:864:          <span>Bill {formatNumber(t.billValue, 0)} · Paid {formatNumber(t.paidValue, 0)} · Outstanding {formatNumber(t.outstanding, 0)}{rs != null ? ` · ${formatNumber(rs, 0)} Rs/Sft` : ''}</span>
+app/(app)/supplier-report/report-client.tsx:892:      <span>GRAND TOTAL — all sub-projects{totalArea > 0 ? ` · ${formatNumber(totalArea, 0)} sq ft` : ''}</span>
+app/(app)/supplier-report/report-client.tsx:894:        Bill {formatNumber(totals.billValue, 0)} · Paid {formatNumber(totals.paidValue, 0)} · Outstanding {formatNumber(totals.outstanding, 0)}{rs != null ? ` · ${formatNumber(rs, 0)} Rs/Sft` : ''}
+app/(app)/supplier-report/report-client.tsx:918:        <td className="px-3 py-1.5 text-right tabular-nums">{formatNumber(sub.billValue, 0)}</td>
+app/(app)/supplier-report/report-client.tsx:919:        {showWorking && <td className="px-3 py-1.5 text-right tabular-nums">{formatNumber(sub.recoveries, 0)}</td>}
+app/(app)/supplier-report/report-client.tsx:920:        {showWorking && <td className="px-3 py-1.5 text-right tabular-nums">{formatNumber(sub.retentionHeld, 0)}</td>}
+app/(app)/supplier-report/report-client.tsx:921:        {showWorking && <td className="px-3 py-1.5 text-right tabular-nums">{formatNumber(sub.netPayable, 0)}</td>}
+app/(app)/supplier-report/report-client.tsx:922:        <td className="px-3 py-1.5 text-right tabular-nums">{formatNumber(sub.paidValue, 0)}</td>
+app/(app)/supplier-report/report-client.tsx:923:        <td className="px-3 py-1.5 text-right tabular-nums">{formatNumber(sub.outstanding, 0)}</td>
+app/(app)/supplier-report/report-client.tsx:930:          <td className="px-3 py-1.5 text-right tabular-nums text-gray-700">{formatNumber(s.billValue, 0)}</td>
+app/(app)/supplier-report/report-client.tsx:931:          {showWorking && <td className="px-3 py-1.5 text-right tabular-nums text-gray-500">{formatNumber(s.recoveries, 0)}</td>}
+app/(app)/supplier-report/report-client.tsx:932:          {showWorking && <td className="px-3 py-1.5 text-right tabular-nums text-gray-500">{formatNumber(s.retentionHeld, 0)}</td>}
+app/(app)/supplier-report/report-client.tsx:933:          {showWorking && <td className="px-3 py-1.5 text-right tabular-nums text-gray-500">{formatNumber(s.netPayable, 0)}</td>}
+app/(app)/supplier-report/report-client.tsx:934:          <td className="px-3 py-1.5 text-right tabular-nums text-gray-700">{formatNumber(s.paidValue, 0)}</td>
+app/(app)/supplier-report/report-client.tsx:935:          <td className="px-3 py-1.5 text-right tabular-nums font-medium text-gray-900">{formatNumber(s.outstanding, 0)}</td>
+app/(app)/supplier-report/report-client.tsx:949:      <td className="px-3 py-2 text-right tabular-nums">{formatNumber(totals.billValue, 0)}</td>
+app/(app)/supplier-report/report-client.tsx:950:      {showWorking && <td className="px-3 py-2 text-right tabular-nums">{formatNumber(totals.recoveries, 0)}</td>}
+app/(app)/supplier-report/report-client.tsx:951:      {showWorking && <td className="px-3 py-2 text-right tabular-nums">{formatNumber(totals.retentionHeld, 0)}</td>}
+app/(app)/supplier-report/report-client.tsx:952:      {showWorking && <td className="px-3 py-2 text-right tabular-nums">{formatNumber(totals.netPayable, 0)}</td>}
+app/(app)/supplier-report/report-client.tsx:953:      <td className="px-3 py-2 text-right tabular-nums">{formatNumber(totals.paidValue, 0)}</td>
+app/(app)/supplier-report/report-client.tsx:954:      <td className="px-3 py-2 text-right tabular-nums">{formatNumber(totals.outstanding, 0)}</td>
+app/(app)/warehouse/actions.ts:103:      cur.receivedQty += Math.max(0, Number(l.receivedQty) || 0)
+app/(app)/warehouse/actions.ts:109:      receivedQty: Math.max(0, Number(l.receivedQty) || 0),
+app/(app)/warehouse/actions.ts:159:    ordered: Number(r.ordered_qty),
+app/(app)/warehouse/actions.ts:160:    receivedBefore: Number(r.received_before_qty),
+app/(app)/warehouse/actions.ts:348:    const available = s ? Number(s.qty) : 0
+app/(app)/warehouse/actions.ts:494:    const next = Number(rl.issued_qty) + add
+app/(app)/warehouse/actions.ts:495:    after.push({ qty: Number(rl.qty), issuedQty: next })
+app/(app)/warehouse/actions.ts:549:        .update({ qty: Number(from.qty) - l.qty, last_moved_at: new Date().toISOString() })
+app/(app)/warehouse/actions.ts:565:            .update({ qty: Number(to.qty) + l.qty, last_moved_at: new Date().toISOString() })
+app/(app)/warehouse/actions.ts:673:      qty: Number(r.qty), rate: item.last_rate == null ? null : Number(item.last_rate),
+app/(app)/warehouse/actions.ts:811:    book_qty: stock ? Number(stock.qty) : 0,
+app/(app)/warehouse/actions.ts:1345:        qty: Number(existing.qty) + good,
+app/(app)/warehouse/actions.ts:1346:        damaged_qty: Number(existing.damaged_qty) + l.damagedQty,
+app/(app)/warehouse/actions.ts:1388:    received.set(g.po_line_id, (received.get(g.po_line_id) ?? 0) + Number(g.received_qty))
+app/(app)/warehouse/actions.ts:1391:  const allDone = poLines.every(l => (received.get(l.id) ?? 0) >= Number(l.ordered_qty))
+app/(app)/warehouse/admin-actions.ts:99:    kind: m.kind as MovementKind, qty: Number(m.qty),
+app/(app)/warehouse/admin-actions.ts:100:    rate: m.rate == null ? null : Number(m.rate),
+app/(app)/warehouse/admin-actions.ts:152:      qty: Number(r.qty),
+app/(app)/warehouse/admin-actions.ts:176:          qty: Number(row.qty) + dGood,
+app/(app)/warehouse/admin-actions.ts:177:          damaged_qty: Number(row.damaged_qty) + dDamaged,
+app/(app)/warehouse/admin-actions.ts:207:    received.set(g.po_line_id, (received.get(g.po_line_id) ?? 0) + Number(g.received_qty))
+app/(app)/warehouse/admin-actions.ts:210:  const allDone = poLines.every(l => (received.get(l.id) ?? 0) >= Number(l.ordered_qty))
+app/(app)/warehouse/admin-actions.ts:356:  const held = (stockRes.data ?? []).filter(r => Number(r.qty) !== 0 || Number(r.damaged_qty) !== 0)
+app/(app)/warehouse/admin-actions.ts:360:    stockQty: held.reduce((s, r) => s + Number(r.qty) + Number(r.damaged_qty), 0),
+app/(app)/warehouse/admin-actions.ts:400:    qty: Number(line.qty), returnedQty: Number(line.returned_qty),
+app/(app)/warehouse/admin-actions.ts:423:    .update({ returned_qty: Number(line.returned_qty) + qty })
+app/(app)/warehouse/admin-actions.ts:448:  const held = (stockRes.data ?? []).filter(r => Number(r.qty) !== 0 || Number(r.damaged_qty) !== 0)
+app/(app)/warehouse/admin-actions.ts:453:    stockQty: held.reduce((s, r) => s + Number(r.qty) + Number(r.damaged_qty), 0),
+app/(app)/warehouse/admin-actions.ts:551:        qty: Number(target.qty) + Number(row.qty),
+app/(app)/warehouse/admin-actions.ts:552:        damaged_qty: Number(target.damaged_qty) + Number(row.damaged_qty),
+app/(app)/warehouse/catalogue-actions.ts:65:    const qty = Number(s.qty)
+app/(app)/warehouse/catalogue-actions.ts:67:    const min = s.min_qty == null ? null : Number(s.min_qty)
+app/(app)/warehouse/count/[id]/count-sheet.tsx:143:  function submitNumber() {
+app/(app)/warehouse/count/[id]/count-sheet.tsx:145:    const qty = Number(entry.replace(/[^\d.]/g, ''))
+app/(app)/warehouse/count/[id]/count-sheet.tsx:259:                    onKeyDown={e => { if (e.key === 'Enter') submitNumber() }}
+app/(app)/warehouse/count/page.tsx:108:              && Number(l.counted_qty) !== Number(l.book_qty)).length
+app/(app)/warehouse/entries/[kind]/[id]/entry-client.tsx:162:                const n = Number(qty)
+app/(app)/warehouse/in/gate-in-form.tsx:868:  const n = Number(s.replace(/[^\d.]/g, ''))
+app/(app)/warehouse/in/page.tsx:57:            const short = lines.reduce((s, l) => s + Math.max(0, Number(l.short_qty)), 0)
+app/(app)/warehouse/in/page.tsx:58:            const damaged = lines.reduce((s, l) => s + Number(l.damaged_qty), 0)
+app/(app)/warehouse/in/page.tsx:86:                        {Number(l.short_qty) > 0 && (
+app/(app)/warehouse/in/page.tsx:89:                        {Number(l.damaged_qty) > 0 && (
+app/(app)/warehouse/items/catalogue-button.tsx:64:      toast.success(`${formatNumber(rows.length, 0)} items exported`)
+app/(app)/warehouse/out/gate-out-form.tsx:308:                      ? { ...r, qty: Number(e.target.value.replace(/[^\d.]/g, '')) || 0 } : r))} />
+app/(app)/warehouse/page.tsx:101:            <b>{formatNumber(callout.count, 0)}</b> request{callout.count === 1 ? '' : 's'} waiting
+app/(app)/warehouse/reports/[kind]/register-client.tsx:33:  const fyStart = Number(today.slice(5, 7)) >= 4 ? y : y - 1
+app/(app)/warehouse/request-actions.ts:69:  const rates = new Map((items ?? []).map(i => [i.id, i.last_rate == null ? null : Number(i.last_rate)]))
+app/(app)/warehouse/request-actions.ts:157:    const qty = Number(r.qty)
+app/(app)/warehouse/request-actions.ts:203:  const amount = r.est_value == null ? null : Number(r.est_value)
+app/(app)/warehouse/request-actions.ts:246:  const stage = Number(r.stages_done ?? 0) + 1
+app/(app)/warehouse/request-actions.ts:339:  return (data ?? []).map(r => ({ itemId: r.item_id, qty: Number(r.qty) }))
+app/(app)/warehouse/request-actions.ts:448:    issuedQty: Number(l.issued_qty ?? 0),
+app/(app)/warehouse/requests/new/new-request-form.tsx:92:    .filter(r => r.itemId && Number(r.qty) > 0)
+app/(app)/warehouse/requests/new/new-request-form.tsx:94:      itemId: r.itemId, qty: Number(r.qty),
+app/(app)/warehouse/settings/settings-client.tsx:235:          {Number(raw) > 0 && (
+app/(app)/warehouse/settings/settings-client.tsx:237:              = {formatINR(Number(raw))}
+app/(app)/warehouse/settings/settings-client.tsx:437:          The <b>item master</b> holds {formatNumber(itemCount, 0)} items and grows by itself: a material IN4 names on a PO becomes an
+app/(app)/warehouse/settings/sync/sync-client.tsx:122:                        +{formatNumber(n, 0)} new
+app/(app)/warehouse/settings/sync/sync-client.tsx:235:                    ? `${formatNumber(totalPicked, 0)} things ticked`
+app/(app)/warehouse/settings/sync/sync-client.tsx:260:      <b className="tabular-nums text-slate-800">{formatNumber(n, 0)}</b> {what} —{' '}
+app/(app)/warehouse/settings/sync/sync-client.tsx:317:        <p className="text-[11px] text-slate-500">Showing the first 400 of {formatNumber(rows.length, 0)}.</p>
+app/(app)/warehouse/settings/sync/sync-client.tsx:353:        {formatNumber(pos.length, 0)} purchase orders, {formatNumber(lineTotal, 0)} lines
+app/(app)/warehouse/settings/sync/sync-client.tsx:355:          <> · {formatNumber(plan.rates.pricedLines, 0)} lines carry a rate, which also becomes the
+app/(app)/warehouse/settings/sync/sync-client.tsx:356:             &ldquo;last rate&rdquo; on {formatNumber(plan.rates.itemsWithARate, 0)} items</>
+app/(app)/warehouse/settings/sync/sync-client.tsx:399:        <p className="text-[11px] text-slate-500">Showing the first 120 of {formatNumber(pos.length, 0)}.</p>
+app/api/bills-pipeline/push-card/route.ts:37:      age: Math.max(0, Math.round(num(r.age))),
+app/api/bills-pipeline/push-card/route.ts:38:      idle: Math.max(0, Math.round(num(r.idle))),
+app/api/cost-control/master-export/route.ts:45:  const sft = Number(project.built_up_sft) || 0
+app/api/cost-control/master-export/route.ts:80:    const bucket: Bucket = { wsId: w.id, wsCode: w.ws_code, status: w.status, total: Number(w.total_amount) || 0, versionNo: v, lineType: w.line_type ?? null }
+app/api/cost-control/master-export/route.ts:138:      const amt = Number(row.amount) || 0
+app/api/cost-control/master-export/route.ts:140:      if (row.qty != null) ws['D' + r] = N(Number(row.qty))
+app/api/cost-control/master-export/route.ts:141:      if (row.rate != null) ws['E' + r] = N(Number(row.rate), MONEY)
+app/api/cost-control/master-export/route.ts:255:      if (hasSft) m[SFT + mr] = F(`IF(${IE}${mr}=0,"",ROUND(${IE}${mr}/${sft},0))`, f.internalEstimate ? Math.round(f.internalEstimate / sft) : 0, MONEY_DASH)
+app/api/cost-control/master-export/route.ts:269:    if (hasSft) m[SFT + mr] = F(`IF(${IE}${mr}=0,"",ROUND(${IE}${mr}/${sft},0))`, cat[IE] ? Math.round(cat[IE] / sft) : 0, MONEY_DASH)
+app/api/cost-control/master-export/route.ts:283:  if (hasSft) m[SFT + mr] = F(`IF(${IE}${mr}=0,"",ROUND(${IE}${mr}/${sft},0))`, gIE ? Math.round(gIE / sft) : 0, MONEY_DASH)
+app/api/cost-control/working-sheets/[id]/check-screenshot/route.ts:25:const inr = (n: number) => `₹${Math.round(n).toLocaleString('en-IN')}`
+app/api/cost-control/working-sheets/[id]/check/route.ts:103:    rate: Number(r.rate),
+app/api/cost-control/working-sheets/[id]/check/route.ts:140:        const pct = Math.round((ratio - 1) * 100) // positive when above
+app/api/cron/daily-site-report/route.ts:52:  if (a >= 1_00_00_000) return '₹' + (n / 1_00_00_000).toFixed(2) + ' Cr'
+app/api/cron/daily-site-report/route.ts:53:  if (a >= 1_00_000) return '₹' + (n / 1_00_000).toFixed(1).replace(/\.0$/, '') + ' L'
+app/api/cron/daily-site-report/route.ts:54:  return '₹' + Math.round(n).toLocaleString('en-IN')
+app/api/cron/daily-site-report/route.ts:71:    amount: r.amount != null ? Number(r.amount) : null,
+app/api/daily-site-report/digest/route.ts:74:      amount: r.amount != null ? Number(r.amount) : null,
+app/api/in4/work-order/[woId]/print/route.ts:40:  const woId = Number(raw)
+components/InstallPrompt.tsx:25:    const n = Number(raw)
+components/ProjectSetupWizard/ProjectSetupWizard.tsx:141:      const rate = m?.rate ? Number(m.rate) : null
+components/cost-control/AiBifurcationPanel.tsx:142:        <BifurcationCard label="Material" amount={material} pct={total > 0 ? Math.round(material / total * 100) : 0} tone="blue" />
+components/cost-control/AiBifurcationPanel.tsx:143:        <BifurcationCard label="Labour" amount={labour} pct={total > 0 ? Math.round(labour / total * 100) : 0} tone="green" />
+components/cost-control/AiBifurcationPanel.tsx:144:        <BifurcationCard label="Equipment" amount={equipment} pct={total > 0 ? Math.round(equipment / total * 100) : 0} tone="amber" />
+components/cost-control/ApprovalCards.tsx:97:                const ver = Number(ws.version_no ?? 1)
+components/cost-control/ApproveTrancheButton.tsx:149:      const num = Number(amount)
+components/cost-control/ApproveTrancheButton.tsx:253:        {Number(amount) > remaining + 0.5 && (
+components/cost-control/ApproveTrancheButton.tsx:255:            ⚠ {formatINR(Number(amount) - remaining)} above the asked {formatINR(remaining)} — allowed (e.g. rounding up); you&apos;ll confirm before it goes.
+components/cost-control/DeadlineBadge.tsx:8:  return Math.round((db - da) / ms)
+components/cost-control/TransferInboxSection.tsx:38:  const total = rows.reduce((s, r) => s + Number(r.amount ?? 0), 0)
+components/cost-control/TransferInboxSection.tsx:64:                {formatINR(Number(r.amount ?? 0))}
+components/cost-control/TransferInboxSection.tsx:90:                amount={Number(r.amount ?? 0)}
+components/cost-control/WSApprovalActions.tsx:115:    const amt = Number(checkedRaw)
+components/cost-control/WSApprovalActions.tsx:212:                <span><b>{cfg.phLabel}:</b> ₹{Math.round(cfg.phChecked.amt).toLocaleString('en-IN')}</span>
+components/cost-control/WSApprovalActions.tsx:215:                <span><b>{cfg.atmLabel}:</b> ₹{Math.round(cfg.atmChecked.amt).toLocaleString('en-IN')}</span>
+components/cost-control/WSApprovalActions.tsx:218:                <span className="text-emerald-700"><b>{cfg.approvedLabel}:</b> ₹{Math.round(approvedSoFar).toLocaleString('en-IN')}</span>
+components/cost-control/WSApprovalActions.tsx:255:              if (!signOffOpen) setCheckedRaw(String(Math.round(totalAmount)))
+components/cost-control/WSApprovalActions.tsx:373:              disabled={busy || !(Number(checkedRaw) > 0)}
+components/cost-control/ws-actions.ts:117:  const total = Number(ws.total_amount ?? 0)
+components/cost-control/ws-actions.ts:118:  const already = Number(ws.approved_for_erp_amt ?? 0)
+components/cost-control/ws-actions.ts:477:  const pastSnapshot = (past ?? []).reduce((s, r) => s + Number(r.total_amount ?? 0), 0)
+components/cost-control/ws-actions.ts:587:  const sum = (items ?? []).reduce((s, r) => s + Number((r as { total_amount: number | null }).total_amount ?? 0), 0)
+components/cost-control/ws-actions.ts:733:  const eventComment = `Checked ₹${Math.round(checkedAmt).toLocaleString('en-IN')}${comment?.trim() ? ` — ${comment.trim()}` : ''}${deptLine}`
+components/cost-control/ws-actions.ts:849:  const allowed = await callCanApprove(ws.status as string, 'returned', Number(ws.total_amount ?? 0))
+components/inventory/QtyInput.tsx:11:// string (no commas), so callers that do Number(value) keep working unchanged.
+components/procurement-tracker/ActionStrip.tsx:7:  if (n >= 1e7) return `₹${(n / 1e7).toFixed(2)} Cr`
+components/procurement-tracker/ActionStrip.tsx:8:  if (n >= 1e5) return `₹${(n / 1e5).toFixed(1)} L`
+components/procurement-tracker/ActionStrip.tsx:9:  if (n >= 1e3) return `₹${(n / 1e3).toFixed(1)} K`
+components/procurement-tracker/CompletedView.tsx:25:  if (n >= 1e7) return `₹${(n / 1e7).toFixed(2)} Cr`
+components/procurement-tracker/CompletedView.tsx:26:  if (n >= 1e5) return `₹${(n / 1e5).toFixed(1)} L`
+components/procurement-tracker/CompletedView.tsx:27:  if (n >= 1e3) return `₹${(n / 1e3).toFixed(1)} K`
+components/procurement-tracker/CompletedView.tsx:94:    ln.orderedQty, ln.receivedQty, ln.grnValue.toFixed(2),
+components/procurement-tracker/CompletedView.tsx:114:  return Math.round(valid.reduce((s, n) => s + n, 0) / valid.length)
+components/procurement-tracker/IndentTable.tsx:17:  if (n >= 1e7) return `₹${(n / 1e7).toFixed(2)} Cr`
+components/procurement-tracker/IndentTable.tsx:18:  if (n >= 1e5) return `₹${(n / 1e5).toFixed(1)} L`
+components/procurement-tracker/IndentTable.tsx:19:  if (n >= 1e3) return `₹${(n / 1e3).toFixed(1)} K`
+components/procurement-tracker/IndentTable.tsx:148:          ln.pendingValue.toFixed(2), ln.grnValue.toFixed(2), ln.status,
+components/procurement-tracker/PendingReceiptsView.tsx:45:  if (n >= 1e7) return `₹${(n / 1e7).toFixed(2)} Cr`
+components/procurement-tracker/PendingReceiptsView.tsx:46:  if (n >= 1e5) return `₹${(n / 1e5).toFixed(1)} L`
+components/procurement-tracker/PendingReceiptsView.tsx:47:  if (n >= 1e3) return `₹${(n / 1e3).toFixed(1)} K`
+components/procurement-tracker/PendingReceiptsView.tsx:93:    ln.pendingValue.toFixed(2),
+components/procurement-tracker/ProjectFilterStrip.tsx:26:  if (n >= 1e7) return `₹${(n / 1e7).toFixed(2)} Cr`
+components/procurement-tracker/ProjectFilterStrip.tsx:27:  if (n >= 1e5) return `₹${(n / 1e5).toFixed(2)} L`
+components/procurement-tracker/ProjectFilterStrip.tsx:28:  if (n >= 1e3) return `₹${(n / 1e3).toFixed(1)}K`
+components/procurement-tracker/ProjectFilterStrip.tsx:29:  return `₹${Math.round(n).toLocaleString('en-IN')}`
+components/procurement-tracker/SummaryCards.tsx:5:  if (n >= 1e7) return `₹${(n / 1e7).toFixed(2)} Cr`
+components/procurement-tracker/SummaryCards.tsx:6:  if (n >= 1e5) return `₹${(n / 1e5).toFixed(1)} L`
+components/procurement-tracker/SummaryCards.tsx:7:  if (n >= 1e3) return `₹${(n / 1e3).toFixed(1)} K`
+components/procurement-tracker/SummaryCards.tsx:27:  const pct = (v: number) => summary.total > 0 ? Math.round((v / summary.total) * 100) : 0
+components/procurement-tracker/SummaryCards.tsx:29:    ? Math.round(((summary.lines.length - summary.pendingLineCount) / summary.lines.length) * 100)
+components/procurement-tracker/TopVendors.tsx:5:  if (n >= 1e7) return `₹${(n / 1e7).toFixed(2)} Cr`
+components/procurement-tracker/TopVendors.tsx:6:  if (n >= 1e5) return `₹${(n / 1e5).toFixed(1)} L`
+components/procurement-tracker/TopVendors.tsx:7:  if (n >= 1e3) return `₹${(n / 1e3).toFixed(1)} K`
+components/procurement-tracker/TrendRibbon.tsx:8:  const deltaPct = first > 0 ? Math.round(((last - first) / first) * 100) : 0
+lib/bills-booking/timeline.ts:32:    segs.push({ stage, enteredAt, days: Math.round(days * 10) / 10, movedBy, current, sla, breached: sla != null && days > sla })
+lib/bills-pipeline/project-card.ts:37:      claimed: Number(b.amount ?? 0),
+lib/bills-pipeline/render.ts:37:  const v = Math.round(n)
+lib/bills-pipeline/render.ts:47:  if (a >= 1_00_00_000) return '₹' + (n / 1_00_00_000).toFixed(2) + ' Cr'
+lib/bills-pipeline/render.ts:48:  if (a >= 1_00_000)    return '₹' + (n / 1_00_000).toFixed(1).replace(/\.0$/, '') + ' L'
+lib/bills-pipeline/render.ts:174:    const w = Math.round((b.value / maxVal) * barMaxW)
+lib/bills-pipeline/render.ts:196:      const w = Math.max(2, Math.round((p.value / projTotal) * sbW))
+lib/bills-pipeline/render.ts:436:      const invW = Math.round(16 + inv.length * 7.2)
+lib/bills-pipeline/render.ts:447:        const stW = Math.round(16 + st.length * 7)
+lib/bills-pipeline/stuck-worklist.ts:33:  const v = Math.round(n || 0); const s = Math.abs(v).toString(); const neg = v < 0 ? '-' : ''
+lib/bills-pipeline/stuck-worklist.ts:38:  if (n >= 1e7) return '₹' + (n / 1e7).toFixed(2) + ' Cr'
+lib/bills-pipeline/stuck-worklist.ts:39:  if (n >= 1e5) return '₹' + (n / 1e5).toFixed(1).replace(/\.0$/, '') + ' L'
+lib/budget-utils.ts:10:  if (abs >= 1e7) return '₹' + (n / 1e7).toFixed(2) + ' Cr'
+lib/budget-utils.ts:11:  if (abs >= 1e5) return '₹' + (n / 1e5).toFixed(2) + ' L'
+lib/budget-utils.ts:12:  if (abs >= 1e3) return '₹' + (n / 1e3).toFixed(1) + 'K'
+lib/budget-utils.ts:13:  return '₹' + (n as number).toFixed(0)
+lib/budget-utils.ts:18:  return '₹' + Math.round(n as number).toLocaleString('en-IN')
+lib/budget-v2-pdf.ts:46:  if (a >= 1e7) return `${s}₹${(a / 1e7).toFixed(2)} Cr`
+lib/budget-v2-pdf.ts:47:  return `${s}₹${Math.round(a).toLocaleString('en-IN')}/-`
+lib/budget-v2-pdf.ts:52:  return `₹${Math.round(amt / area).toLocaleString('en-IN')}/sft`
+lib/budget-v2-pdf.ts:54:function pct(p: number, b: number): number | null { return b > 0 ? Math.round((p / b) * 100) : null }
+lib/budget-v2-pdf.ts:184:  const used = p.budget > 0 ? Math.round((p.spent / p.budget) * 100) : null
+lib/budget-v2-pdf.ts:202:  const used = g.budget > 0 ? Math.round((g.spent / g.budget) * 100) : null
+lib/budget-v2-pdf.ts:221:  if (a >= 1e7) return `${(n / 1e7).toFixed(2).replace(/\.00$/, '')}Cr`
+lib/budget-v2-pdf.ts:222:  if (a >= 1e5) return `${(n / 1e5).toFixed(2).replace(/\.00$/, '')}L`
+lib/budget-v2-pdf.ts:223:  return String(Math.round(n))
+lib/budget-v2-report.ts:27:  if (a >= 1e7) return `${sign}₹${(a / 1e7).toFixed(2)} Cr`
+lib/budget-v2-report.ts:28:  return `${sign}₹${Math.round(a).toLocaleString('en-IN')}/-`
+lib/budget-v2-report.ts:32:  return Math.round(v / area).toLocaleString('en-IN')
+lib/budget-v2-report.ts:36:  return Math.round((spent / budget) * 100)
+lib/budget-v2-report.ts:71:  const avgSft = t.area > 0 ? Math.round(t.spent / t.area) : 0
+lib/budget-v2-report.ts:78:    const gAvgSft = gArea > 0 ? Math.round(withArea.reduce((s, p) => s + p.spent, 0) / gArea) : null
+lib/comparison.ts:51:  const rate = Number(q.rate)
+lib/comparison.ts:52:  if (item.quantity != null && Number.isFinite(Number(item.quantity))) {
+lib/comparison.ts:53:    return Number(item.quantity) * rate
+lib/comparison.ts:55:  return q.amount != null && Number.isFinite(q.amount) ? Number(q.amount) : null
+lib/comparison.ts:71:        const rate = Number(q.rate)
+lib/cost-control/additions.ts:77:  const contingency = contingencyPct != null ? Math.round(subtotal * contingencyPct / 100) : 0
+lib/cost-control/additions.ts:78:  const gst = gstPct != null ? Math.round((subtotal + contingency) * gstPct / 100) : 0
+lib/cost-control/approval-card-data.ts:107:  const amount = Number(ws.total_amount ?? 0)
+lib/cost-control/approval-card-data.ts:114:  let sft = Number(proj?.built_up_sft ?? 0)
+lib/cost-control/approval-card-data.ts:118:    sft = Number(par?.built_up_sft ?? 0)
+lib/cost-control/approval-card-data.ts:136:        budget: a.budget + Number(b.current_budget_amt ?? 0),
+lib/cost-control/approval-card-data.ts:137:        wo: a.wo + Number(b.current_wo_committed_amt ?? 0),
+lib/cost-control/approval-card-data.ts:138:        paid: a.paid + Number(b.current_paid_amt ?? 0),
+lib/cost-control/approval-card-data.ts:152:    const sum = (allLines ?? []).reduce((a, b) => a + Number(b.current_budget_amt ?? 0), 0)
+lib/cost-control/approval-card-data.ts:159:  const ver = Number(ws.version_no ?? 1)
+lib/cost-control/approval-card-data.ts:170:      const pt = Number(prev.total_amount ?? 0)
+lib/cost-control/approval-card-data.ts:171:      revision = { n: ver, deltaPct: pt > 0 ? Math.round(((amount - pt) / pt) * 100) : null }
+lib/cost-control/approval-card.ts:52:  const n = Math.round(Number(v) || 0)
+lib/cost-control/approval-card.ts:57:  return `₹${Math.round(amt / area).toLocaleString('en-IN')}/sft`
+lib/cost-control/approval-card.ts:60:  return whole > 0 ? Math.round((part / whole) * 100) : null
+lib/cost-control/approval-trail.ts:24:  const checked = Number(m[1].replace(/,/g, ''))
+lib/cost-control/approval-trail.ts:34:  return comment.replace(/[^0-9]/g, '').includes(String(Math.round(checked)))
+lib/cost-control/approvals-inbox.ts:111:  return Math.max(0, Number(r.total_amount ?? 0) - Number(r.approved_for_erp_amt ?? 0))
+lib/cost-control/approvals-inbox.ts:190:    ...new Set(rows.filter(r => Number(r.version_no ?? 1) > 1 && r.chain_anchor_id).map(r => r.chain_anchor_id as string)),
+lib/cost-control/approvals-inbox.ts:219:    cur.budget += Number(b.current_budget_amt ?? 0)
+lib/cost-control/approvals-inbox.ts:220:    cur.wo += Number(b.current_wo_committed_amt ?? 0)
+lib/cost-control/approvals-inbox.ts:221:    cur.paid += Number(b.current_paid_amt ?? 0)
+lib/cost-control/approvals-inbox.ts:225:    erpBudgetByProject.set(b.project_id, (erpBudgetByProject.get(b.project_id) ?? 0) + Number(b.current_budget_amt ?? 0))
+lib/cost-control/approvals-inbox.ts:232:    arr.push({ ver: Number(v.version_no ?? 1), total: Number(v.total_amount ?? 0) })
+lib/cost-control/approvals-inbox.ts:238:      ? `₹${Math.round(amt / sft).toLocaleString('en-IN')}/sft`
+lib/cost-control/approvals-inbox.ts:243:    const sft = Number(pickFirst(ws.projects)?.built_up_sft ?? 0)
+lib/cost-control/approvals-inbox.ts:244:    const est = Number(ws.total_amount ?? 0)
+lib/cost-control/approvals-inbox.ts:252:          woPct: bl.budget > 0 ? Math.round((bl.wo / bl.budget) * 100) : null,
+lib/cost-control/approvals-inbox.ts:253:          paidPct: bl.budget > 0 ? Math.round((bl.paid / bl.budget) * 100) : null,
+lib/cost-control/approvals-inbox.ts:258:    const ver = Number(ws.version_no ?? 1)
+lib/cost-control/approvals-inbox.ts:263:        prev = { total: p.total, ver: p.ver, deltaPct: p.total > 0 ? Math.round(((est - p.total) / p.total) * 100) : null }
+lib/cost-control/boq-template-parse.ts:60:  const n = typeof v === 'number' ? v : Number(String(v).replace(/[,₹\s]/g, ''))
+lib/cost-control/boq-template-parse.ts:134:  const contingency = contingencyPct != null ? Math.round(subtotal * contingencyPct / 100) : 0
+lib/cost-control/boq-template-parse.ts:135:  const gst = gstPct != null ? Math.round((subtotal + contingency) * gstPct / 100) : 0
+lib/cost-control/completion.ts:31:  const wo = Math.round(Number(f.wo) || 0)
+lib/cost-control/completion.ts:32:  const paid = Math.round(Number(f.paid) || 0)
+lib/cost-control/completion.ts:45:  const wo = Math.round(Number(f.wo) || 0)
+lib/cost-control/completion.ts:48:  return wo === Math.round(Number(f.paid) || 0)
+lib/cost-control/completion.ts:62:  return Math.round(Number(f.budget) || 0) > 0
+lib/cost-control/completion.ts:63:    || Math.round(Number(f.wo) || 0) > 0
+lib/cost-control/completion.ts:64:    || Math.round(Number(f.paid) || 0) > 0
+lib/cost-control/completion.ts:89:  const budget = Math.round(Number(f.budget) || 0)
+lib/cost-control/completion.ts:90:  const paid = Math.round(Number(f.paid) || 0)
+lib/cost-control/completion.ts:91:  const wo = Math.round(Number(f.wo) || 0)
+lib/cost-control/computed-working-image.ts:28:const inr = (v: number) => '₹' + Math.round(Number(v) || 0).toLocaleString('en-IN')
+lib/cost-control/computed-working-image.ts:94:  const psftV = input.showPerSft && input.area && input.area > 0 && total ? Math.round(total / input.area) : 0
+lib/cost-control/computed-working-image.ts:98:  const usedPct = hasErp && input.erp && input.erp.budget > 0 ? Math.round((input.erp.paid / input.erp.budget) * 100) : null
+lib/cost-control/computed-working-image.ts:145:    const pctM = Math.round((check.measured / check.total) * 100)
+lib/cost-control/computed-working-image.ts:181:        bd.forEach((b, k) => p.push(text(COL.amtR, y + 32 + (k + 1) * LINE_LH, `${b.label} ₹${Math.round(b.value).toLocaleString('en-IN')}`, { fill: C.FAINT, size: 16, anchor: 'end' })))
+lib/cost-control/computed-working-pdf.ts:50:const inr = (v: number) => '₹' + Math.round(Number(v) || 0).toLocaleString('en-IN')
+lib/cost-control/computed-working-pdf.ts:53:  const n = Number(v)
+lib/cost-control/computed-working-pdf.ts:77:      const breakdown = rb.filter(b => b && (b.label || b.value != null)).map(b => ({ label: String(b.label ?? ''), value: Number(b.value) || 0 }))
+lib/cost-control/computed-working-pdf.ts:84:        amount: Number(r.amount ?? 0),
+lib/cost-control/computed-working-pdf.ts:102:    amount: Number(r.total_amount ?? 0),
+lib/cost-control/computed-working-pdf.ts:185:  const v = Math.round(amt / area)
+lib/cost-control/computed-working-pdf.ts:189:  return whole > 0 ? Math.round((part / whole) * 100) : null
+lib/cost-control/computed-working-pdf.ts:198:  const pctM = check.total > 0 ? Math.round((check.measured / check.total) * 100) : 0
+lib/cost-control/computed-working-pdf.ts:300:      inr(r.amount) + (r.breakdown ? r.breakdown.map(b => `\n${b.label} ₹${Math.round(b.value).toLocaleString('en-IN')}`).join('') : ''),
+lib/cost-control/discipline-order.ts:30:export function disciplineCodeNumber(code: string | null | undefined): number {
+lib/cost-control/discipline-order.ts:32:  return digits ? Number(digits[1]) : Number.POSITIVE_INFINITY
+lib/cost-control/discipline-order.ts:39:    : disciplineCodeNumber(d.code)
+lib/cost-control/discipline-order.ts:46:    disciplineCodeNumber(a.code) - disciplineCodeNumber(b.code) ||
+lib/cost-control/estimate-vs-erp.ts:31:  const budget = Math.round(Number(erp?.budget) || 0)
+lib/cost-control/estimate-vs-erp.ts:33:  const est = Math.round(Number(estimate) || 0)
+lib/cost-control/estimate-vs-erp.ts:47:  const budget = Math.round(Number(erp?.budget) || 0)
+lib/cost-control/estimate-vs-erp.ts:49:  return Math.round(Number(estimate) || 0) <= 0
+lib/cost-control/excel-parse.ts:118:  const n = typeof v === 'number' ? v : Number(String(v).replace(/[,₹\s]/g, ''))
+lib/cost-control/ie-notify.ts:72:    const inr = (n: number) => `₹${Math.round(n).toLocaleString('en-IN')}`
+lib/cost-control/my-budget-approvals.ts:114:    Math.max(0, Number(s.total_amount ?? 0) - Number(s.approved_for_erp_amt ?? 0))
+lib/cost-control/my-budget-approvals.ts:146:      amount: Number(s.total_amount ?? 0),
+lib/cost-control/over-budget.ts:25:  const budget = Math.round(Number(f.budget) || 0)
+lib/cost-control/over-budget.ts:29:  const worst = Math.max(Math.round(Number(f.wo) || 0), Math.round(Number(f.paid) || 0))
+lib/cost-control/over-budget.ts:37:  return Math.round(Number(f.paid) || 0) >= Math.round(Number(f.wo) || 0) ? 'paid' : 'committed'
+lib/cost-control/project-rollup.ts:95:    cur.budget += Number(b.current_budget_amt ?? 0)
+lib/cost-control/project-rollup.ts:96:    cur.wo += Number(b.current_wo_committed_amt ?? 0)
+lib/cost-control/project-rollup.ts:97:    cur.paid += Number(b.current_paid_amt ?? 0)
+lib/cost-control/project-rollup.ts:103:    if (r.chain_anchor_id) chainOf.set(r.id, { anchor: r.chain_anchor_id, ver: Number(r.version_no ?? 1) })
+lib/cost-control/project-rollup.ts:124:      const appr = Number(w.approved_for_erp_amt ?? 0)
+lib/cost-control/project-rollup.ts:138:    cur.planTotal += Number(w.total_amount ?? 0)
+lib/cost-control/project-rollup.ts:146:    const amt = Number(w.total_amount ?? 0)
+lib/cost-control/project-rollup.ts:150:    const released = Math.max(releasedByChain.get(anchor) ?? 0, Number(w.approved_for_erp_amt ?? 0))
+lib/cost-control/returned-to-engineer.ts:98:        amount: Number(r.total_amount ?? r.summary_total ?? 0),
+lib/cost-control/version-ledger.ts:71:    const a = Number(v.approved_for_erp_amt) || 0
+lib/cost-control/version-ledger.ts:90:  const alreadyApproved = baseline ? (Number(baseline.total_amount) || 0) : 0
+lib/cost-control/version-ledger.ts:91:  const cumulative = current ? (Number(current.total_amount) || 0) : 0
+lib/cost-control/version-ledger.ts:192:      prev.qty += Number(it.qty) || 0
+lib/cost-control/version-ledger.ts:193:      prev.amount += Number(it.amount) || 0
+lib/cost-control/version-ledger.ts:194:      prev.rate = prev.qty !== 0 ? prev.amount / prev.qty : (Number(it.rate) || prev.rate)
+lib/cost-control/version-ledger.ts:198:        qty: Number(it.qty) || 0,
+lib/cost-control/version-ledger.ts:199:        amount: Number(it.amount) || 0,
+lib/cost-control/version-ledger.ts:200:        rate: Number(it.rate) || 0,
+lib/daily-site-report/render.ts:46:  const v = Math.round(n)
+lib/daily-site-report/render.ts:55:  if (a >= 1_00_00_000) return '₹' + (n / 1_00_00_000).toFixed(2) + ' Cr'
+lib/daily-site-report/render.ts:56:  if (a >= 1_00_000)    return '₹' + (n / 1_00_000).toFixed(1).replace(/\.0$/, '') + ' L'
+lib/drive-archive.ts:104:      stored.push({ bucket, object_path: o.name, created_at: o.created_at, size: Number(o.size ?? 0) })
+lib/img/compress.ts:31:    const w = Math.max(1, Math.round(width * scale))
+lib/img/compress.ts:32:    const h = Math.max(1, Math.round(height * scale))
+lib/in4-parser.ts:126:  const n = Number(cleaned)
+lib/in4/compute.ts:50:const r2 = (v: number) => Math.round(v * 100) / 100
+lib/in4/compute.ts:166:    const sp = Number(spS)
+lib/in4/compute.ts:190:    rows.sort((a, b) => Number(a.catNum) - Number(b.catNum))
+lib/in4/compute.ts:191:    subRows.sort((a, b) => Number(a.subNum) - Number(b.subNum) || a.catNum.localeCompare(b.catNum))
+lib/in4/contractor.ts:146:  const r = (n: number) => Math.round(n * 100) / 100
+lib/in4/db.ts:33:    port: Number(IN4_DB_PORT?.trim() || IN4_DEFAULTS.port),
+lib/in4/extract-feeds.ts:11:const n = (v: unknown): number => (v == null ? 0 : Number(v))
+lib/in4/extract-feeds.ts:12:const ni = (v: unknown): number | null => (v == null ? null : Number(v))
+lib/in4/extract-feeds.ts:194:    is_active: r.is_active == null ? true : Number(r.is_active) === 1 || r.is_active === true,
+lib/in4/extract.ts:64:const n = (v: unknown): number => (v == null ? 0 : Number(v))
+lib/in4/supplier.ts:108:      computedBill: Math.round(acc.computedBill * 100) / 100,
+lib/in4/sync.ts:192:    const version = Number(stateRow.version ?? 0)
+lib/in4/tracker.ts:108:            qty: r.po_qty, rate: r.po_rate, amount: Math.round(r.po_qty * r.po_rate * 100) / 100,
+lib/in4/tracker.ts:169:      avgGrnLagDays: lags.length ? Math.round(lags.reduce((s, x) => s + x, 0) / lags.length) : null,
+lib/in4/wo-print.ts:190:  const n = v == null ? NaN : Number(v)
+lib/in4/wo-print.ts:197:  const n = v == null ? NaN : Number(v)
+lib/in4/wo-print.ts:204:  const n = v == null ? NaN : Number(v)
+lib/in4/wo-print.ts:383:  if (wo.WO_GROSS_VALUE == null || Number(wo.WO_GROSS_VALUE) === 0) {
+lib/inventory/catalogue-report.ts:51:const nf = (n: number) => Number(n || 0).toLocaleString('en-IN')
+lib/inventory/catalogue-report.ts:261:    .sort((a, b) => Number(b.out) - Number(a.out) || a.name.localeCompare(b.name))
+lib/inventory/catalogue-report.ts:478:        Number(r.in_hand || 0),
+lib/inventory/catalogue-report.ts:480:        ...stores.map(s => Number(byStore.get(s.code) || 0)),
+lib/inventory/daily-movement.ts:84:const nf = (n: number) => Number(n || 0).toLocaleString('en-IN')
+lib/inventory/daily-movement.ts:122:    itemCode: m.item_code, itemName: m.item_name, qty: Number(m.qty || 0), unit: m.unit,
+lib/inventory/daily-movement.ts:151:      itemCode: any.item_code, itemName: any.item_name, qty: Number(any.qty || 0), unit: any.unit,
+lib/inventory/fetch-movements.ts:55:      qty: Number(m.qty || 0),
+lib/jmr/dashboard.ts:35:    map.set(e.contractor_id, (map.get(e.contractor_id) ?? 0) + Number(e.amount) * gstMul)
+lib/jmr/format.ts:18:  const fixed = abs.toFixed(decimals)
+lib/jmr/format.ts:32:  if (abs >= 1e7) return `${sign}₹${(abs / 1e7).toFixed(2)} Cr`
+lib/jmr/format.ts:33:  if (abs >= 1e5) return `${sign}₹${(abs / 1e5).toFixed(2)} L`
+lib/jmr/format.ts:34:  if (abs >= 1e3) return `${sign}₹${(abs / 1e3).toFixed(1)} K`
+lib/jmr/format.ts:35:  return `${sign}₹${abs.toFixed(0)}`
+lib/jmr/matrix.ts:132:    const rate = Number(e.rate_snapshot)
+lib/jmr/matrix.ts:150:    const qty = Number(e.quantity)
+lib/jmr/matrix.ts:151:    const amount = Number(e.amount)
+lib/jmr/matrix.ts:188:  const gstAmount = +(subTotalAll * (filters.gstRatePct / 100)).toFixed(2)
+lib/jmr/matrix.ts:189:  const grandTotal = +(subTotalAll + gstAmount).toFixed(2)
+lib/jmr/rates.ts:25:  if (projectSpecific) return Number(projectSpecific.rate_per_unit)
+lib/jmr/rates.ts:28:  return fallback ? Number(fallback.rate_per_unit) : null
+lib/jmr/settings.ts:26:    const n = Number(v)
+lib/masters.ts:110:  for (const r of rows) r.completeness = Math.round(([r.name, r.pan, r.gstin, r.phone, r.email, r.address].filter(Boolean).length / 6) * 100)
+lib/masters.ts:155:    const id = pin ? Number(pin) : byName.get(nameKey(w.in4_name)) ?? byName.get(nameKey(w.name))
+lib/masters.ts:160:    const id = pin ? Number(pin) : byName.get(nameKey(i.name))
+lib/masters.ts:319:    const builtUpSft = r.built_up_sft != null ? Number(r.built_up_sft) : null
+lib/masters.ts:329:      projectType: (r.project_type as string | null) ?? null, hasPm, filled: Math.round((filled / 6) * 100),
+lib/notifications/email-templates.ts:23:export const inr = (n: number): string => `₹${Math.round(Number(n) || 0).toLocaleString('en-IN')}`
+lib/notifications/email-templates.ts:27:  const v = Math.round(Number(n) || 0)
+lib/notifications/email-templates.ts:28:  if (v >= 1e7) return `₹${(v / 1e7).toFixed(2).replace(/\.00$/, '')} Cr`
+lib/notifications/email-templates.ts:29:  if (v >= 1e5) return `₹${(v / 1e5).toFixed(1).replace(/\.0$/, '')} L`
+lib/notifications/email-templates.ts:107:  const pct = estimate > 0 ? Math.min(100, Math.round((ask / estimate) * 100)) : 0
+lib/notifications/email-templates.ts:111:  const diffPct = estimate > 0 ? Math.round((diff / estimate) * 100) : 0
+lib/notifications/email-templates.ts:140:  const amount = Number(d.amount ?? 0)
+lib/notifications/email-templates.ts:175:           <td style="padding:10px 14px;font-size:12px;color:${MUT}">Already approved<br><span style="font-size:15px;font-weight:600;color:${INK}">${inr(Number(d.already_approved))}</span></td>
+lib/notifications/email-templates.ts:176:           <td style="padding:10px 14px;font-size:12px;color:${MUT}">This ask (new)<br><span style="font-size:15px;font-weight:600;color:${BRAND}">${inr(amount - Number(d.already_approved))}</span></td>
+lib/notifications/email-templates.ts:177:           <td style="padding:10px 14px;font-size:12px;color:${MUT}">Cumulative<br><span style="font-size:15px;font-weight:600;color:${OK}">${inr(Number(d.cumulative ?? amount))}</span></td>
+lib/notifications/email-templates.ts:218:          <div style="font-size:20px;font-weight:500;color:${INK}">${crL(Number(d.total_stuck ?? 0))}</div>
+lib/notifications/email-templates.ts:235:      <div style="font-size:16px;font-weight:500;color:${INK};margin-top:6px">${esc(d.project ?? '')} · ${esc(d.work ?? '')} — ${inr(Number(d.amount ?? 0))} is now in IN4</div>
+lib/notifications/email-templates.ts:347:    ? `<tr><td style="padding:14px 22px 0"><div style="font-size:12px;color:${MUT}">${awaiting} awaiting approval${d.oldest_awaiting_days ? ` · oldest waiting ${d.oldest_awaiting_days} day${d.oldest_awaiting_days === 1 ? '' : 's'}` : ''}${d.awaiting_amount ? ` · ${crL(Number(d.awaiting_amount))}` : ''}</div></td></tr>`
+lib/notifications/email-templates.ts:371:      <div style="margin-top:8px"><span style="font-size:26px;font-weight:500;color:${INK}">${inr(Number(d.amount ?? 0))}</span>${d.per_sft ? `<span style="font-size:13px;color:${MUT};margin-left:9px">${inr(d.per_sft)} / sft</span>` : ''}</div>
+lib/notifications/email-templates.ts:398:      <div style="font-size:18px;font-weight:600;color:${INK};margin-top:4px">${count} budget${count === 1 ? '' : 's'} approved${d.total ? ` · ${crL(Number(d.total))}` : ''}</div>
+lib/po-pdf.ts:68:    formatNumber(l.po_qty, 3),
+lib/po-pdf.ts:69:    formatNumber(l.po_rate, 2),
+lib/po-pdf.ts:70:    formatNumber(l.line_amount, 2),
+lib/po-pdf.ts:100:  if (Number(po.tax_on_material) > 0) { totalRow('Tax on material', formatINR(po.tax_on_material), labelX, valueX, ty); ty += 14 }
+lib/po-pdf.ts:101:  if (Number(po.other_charges) > 0) { totalRow('Other charges', formatINR(po.other_charges), labelX, valueX, ty); ty += 14 }
+lib/po-pdf.ts:102:  if (Number(po.taxes_on_other_charges) > 0) { totalRow('Tax on other', formatINR(po.taxes_on_other_charges), labelX, valueX, ty); ty += 14 }
+lib/procurement/digest.ts:199:  const v = Math.round(n || 0)
+lib/procurement/digest.ts:200:  if (v >= 1e7) return `₹${(v / 1e7).toFixed(2).replace(/\.?0+$/, '')} Cr`
+lib/procurement/digest.ts:201:  if (v >= 1e5) return `₹${(v / 1e5).toFixed(1).replace(/\.0$/, '')} L`
+lib/procurement/notify-settings.ts:73:  const num = (k: string, f: number) => { const n = Number(m[k]); return Number.isFinite(n) && m[k] != null ? n : f }
+lib/procurement/parsers/banded.ts:178:      ? Math.round(lags.reduce((s, x) => s + x, 0) / lags.length)
+lib/procurement/parsers/flat.ts:271:    line.avgGrnLagDays = lags.length > 0 ? Math.round(lags.reduce((s, x) => s + x, 0) / lags.length) : null
+lib/procurement/pdf.ts:15:  if (n >= 1e7) return `Rs ${(n / 1e7).toFixed(2)} Cr`
+lib/procurement/pdf.ts:16:  if (n >= 1e5) return `Rs ${(n / 1e5).toFixed(1)} L`
+lib/procurement/pdf.ts:17:  if (n >= 1e3) return `Rs ${(n / 1e3).toFixed(1)} K`
+lib/procurement/pdf.ts:18:  return `Rs ${Math.round(n).toLocaleString('en-IN')}`
+lib/procurement/rollup.ts:193:      v.avgLagDays = Math.round(agg.sum / agg.count)
+lib/procurement/rollup.ts:194:      v.onTimePct = Math.round((agg.onTime / agg.count) * 100)
+lib/procurement/share.ts:6:  if (n >= 1e7) return `Rs ${(n / 1e7).toFixed(2)} Cr`
+lib/procurement/share.ts:7:  if (n >= 1e5) return `Rs ${(n / 1e5).toFixed(1)} L`
+lib/procurement/share.ts:8:  if (n >= 1e3) return `Rs ${(n / 1e3).toFixed(1)} K`
+lib/procurement/share.ts:9:  return `Rs ${Math.round(n).toLocaleString('en-IN')}`
+lib/procurement/shared.ts:140:      const day = Number(dmy[1]), mon = Number(dmy[2]) - 1
+lib/procurement/shared.ts:141:      let year = Number(dmy[3]); if (year < 100) year += 2000
+lib/procurement/shared.ts:162:        const day = Number(dmy[1]), mon = Number(dmy[2]) - 1
+lib/procurement/shared.ts:163:        let year = Number(dmy[3]); if (year < 100) year += 2000
+lib/procurement/shared.ts:175:  return Math.round((b.getTime() - a.getTime()) / 86_400_000)
+lib/procurement/shared.ts:190:    const months = Math.round(absDays / 30)
+lib/procurement/shared.ts:194:  const remainderMonths = Math.round((absDays % 365) / 30)
+lib/procurement/shared.ts:202:    const n = Number(v.replace(/,/g, ''))
+lib/revamp/admin-health.ts:70:    const pct = Math.round((i.projectsNoArea / Math.max(1, i.projects)) * 100)
+lib/revamp/bills-data.ts:80:      unattributedClaimed += Number(b.claimed) || 0
+lib/revamp/budget-actual-data.ts:77:    woBy.set(w.subproject_id, (woBy.get(w.subproject_id) ?? 0) + Number(w.wo_value ?? 0))
+lib/revamp/budget-actual-data.ts:81:    certBy.set(c.subproject_id, (certBy.get(c.subproject_id) ?? 0) + Number(c.certified_amt ?? 0))
+lib/revamp/budget-actual-data.ts:86:    const budget = s.budget != null ? Number(s.budget) : null
+lib/revamp/budget-actual-data.ts:92:      areaSft: s.construction_area_ft != null ? Math.round(Number(s.construction_area_ft)) : null,
+lib/revamp/budget-actual-data.ts:97:      pctUsed: budget && budget !== 0 && certified != null ? Math.round((certified / budget) * 100) : null,
+lib/revamp/budget-actual-data.ts:115:      pctUsed: tBudget && tBudget !== 0 && tCert != null ? Math.round((tCert / tBudget) * 100) : null,
+lib/revamp/masters.ts:94:    r.completeness = Math.round(
+lib/revamp/masters.ts:248:    const builtUpSft = r.built_up_sft != null ? Number(r.built_up_sft) : null
+lib/revamp/masters.ts:260:      filled: Math.round((filled / PROJECT_FIELDS) * 100),
+lib/revamp/orders-tree.ts:151:  const na = Number(a), nb = Number(b)
+lib/revamp/orders-tree.ts:277:      qty: b.quantity != null ? Number(b.quantity) : null,
+lib/revamp/orders-tree.ts:278:      rate: b.rate != null ? Number(b.rate) : null,
+lib/revamp/orders-tree.ts:279:      amount: Number(b.amt ?? 0),
+lib/revamp/orders-tree.ts:324:      ordered: Number(w.wo_value ?? 0),
+lib/revamp/orders-tree.ts:325:      paid: Number(w.wo_paid_amt ?? 0),
+lib/revamp/orders-tree.ts:329:    row.ordered += Number(w.wo_value ?? 0)
+lib/revamp/orders-tree.ts:330:    row.paid = (row.paid ?? 0) + Number(w.wo_paid_amt ?? 0)
+lib/revamp/orders-tree.ts:345:      const amount = Number(po?.amount ?? 0)
+lib/revamp/orders-tree.ts:365:        qty: po?.qty != null ? Number(po.qty) : null,
+lib/revamp/orders-tree.ts:366:        rate: po?.rate != null ? Number(po.rate) : null,
+lib/revamp/orders-tree.ts:432:      + `(₹${Math.round(draftAmount).toLocaleString('en-IN')}) `
+lib/revamp/project-cockpit.ts:119:      builtUpSft: project.built_up_sft != null ? Number(project.built_up_sft) : null,
+lib/revamp/project-cockpit.ts:122:      setupPct: Number(project.setup_progress_pct ?? 0),
+lib/revamp/project-cockpit.ts:126:      usedPct: budgetErp > 0 ? Math.round((paid / budgetErp) * 100) : null,
+lib/revamp/sc-budgets.ts:287:  if (m.kind === 'pct') return value > 0 ? `${value.toFixed(0)}%` : '—'
+lib/revamp/sc-budgets.ts:288:  if (m.kind === 'rate') return value > 0 ? `₹${Math.round(value).toLocaleString('en-IN')}` : '—'
+lib/revamp/tab-data.ts:56:    amount: Number(r.total_amount ?? 0),
+lib/revamp/tab-data.ts:220:  const num = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : Number(v) || 0)
+lib/revamp/tab-data.ts:390:    totalAmount: rows.reduce((s, r) => s + Number(r.amount ?? 0), 0),
+lib/revamp/tab-data.ts:395:      qty: Number(r.quantity ?? 0),
+lib/revamp/tab-data.ts:396:      amount: Number(r.amount ?? 0),
+lib/revamp/workspace-header.ts:82:    builtUpSft: project.built_up_sft != null ? Number(project.built_up_sft) : null,
+lib/revamp/workspace.ts:164:  const n = Number(view)
+lib/schedule/data.ts:64:        pct: a && a.active ? Math.round(a.sum / a.active) : 0,
+lib/schedule/data.ts:74:  const m = new Map((data ?? []).map((r: { key: string; value: string }) => [r.key, Number(r.value)]))
+lib/schedule/formula.ts:20:  return Math.round((parseISO(bISO) - parseISO(aISO)) / 86400000)
+lib/schedule/formula.ts:45:  return Math.round(((now - start) / (end - start)) * 100)
+lib/schedule/formula.ts:84:      return { ...base, status: 'behind', behindDays: Math.round(((exp - item.pct) / 100) * dur) }
+lib/schedule/formula.ts:109:  return Math.round((score / applicable.length) * 100)
+lib/schedule/sequence.ts:133:    diffs.push(Math.round(ms / 86400000))
+lib/telegram/cc-approval-progress.ts:11:const inr = (n: number) => '₹' + Math.round(Number(n) || 0).toLocaleString('en-IN')
+lib/telegram/cc-approval-progress.ts:73:  const text = `${ws.ws_code} · ${projName}${subLabel ? ` · ${subLabel}` : ''} — ${inr(Number(ws.total_amount ?? 0))}\n${lineFn(who)}`
+lib/telegram/cc-approval-progress.ts:89:    const replyTo = th?.last_message_id != null ? Number(th.last_message_id) : null
+lib/telegram/cc-approval-send.ts:132:const inr = (n: number) => '₹' + Math.round(Number(n) || 0).toLocaleString('en-IN')
+lib/telegram/cc-approval-webhook.ts:15:const inr = (n: number) => '₹' + Math.round(Number(n) || 0).toLocaleString('en-IN')
+lib/telegram/cc-approval-webhook.ts:122:  const askAmount = Number(ws.total_amount ?? 0)
+lib/telegram/cc-approval-webhook.ts:335:    if (m) { amt = Number(m[1].replace(/,/g, '')); remark = m[2].trim() }
+lib/telegram/cc-approval-webhook.ts:336:    else { amt = Number(pend.ask_amount ?? 0); remark = raw }
+lib/telegram/cc-approval-webhook.ts:351:  const cardMsgId = pend.card_message_id != null ? Number(pend.card_message_id) : null
+lib/telegram/cc-trustee-digest.ts:9:const inr = (n: number) => '₹' + Math.round(Number(n) || 0).toLocaleString('en-IN')
+lib/telegram/cc-trustee-digest.ts:55:      const remaining = Math.max(Number(s.total_amount ?? 0) - Number(s.approved_for_erp_amt ?? 0), 0)
+lib/utils.ts:48:// rounds half-to-even, same as Math.round.
+lib/utils.ts:57:  const v = typeof n === 'string' ? Number(n) : n
+lib/utils.ts:63:export function formatNumber(n: number | string | null | undefined, decimals = 2): string {
+lib/utils.ts:64:  const v = typeof n === 'string' ? Number(n) : n
+lib/utils.ts:151:  return Math.round((istDay(Date.now()) - istDay(t)) / 86_400_000)
+lib/warehouse/admin-data.ts:106:      qty: lines.reduce((s, l) => s + Number(l.received_qty), 0),
+lib/warehouse/admin-data.ts:119:      qty: lines.reduce((s, l) => s + Number(l.qty), 0),
+lib/warehouse/admin-data.ts:122:        ? lines.reduce((s, l) => s + Math.max(0, Number(l.qty) - Number(l.returned_qty)), 0)
+lib/warehouse/admin-data.ts:226:          qty: Number(l.received_qty),
+lib/warehouse/admin-data.ts:227:          damaged: Number(l.damaged_qty),
+lib/warehouse/admin-data.ts:228:          short: Math.max(0, Number(l.short_qty ?? 0)),
+lib/warehouse/admin-data.ts:279:        qty: Number(l.qty),
+lib/warehouse/admin-data.ts:280:        returned: Number(l.returned_qty),
+lib/warehouse/admin-data.ts:283:          qty: Number(l.qty), returnedQty: Number(l.returned_qty),
+lib/warehouse/admin-data.ts:373:      stock.set(s.item_id, (stock.get(s.item_id) ?? 0) + Number(s.qty) + Number(s.damaged_qty))
+lib/warehouse/admin-data.ts:383:      lastRate: r.last_rate == null ? null : Number(r.last_rate),
+lib/warehouse/daily-data.ts:48:      qty: Number(m.qty),
+lib/warehouse/data.ts:110:    lastRate: r.last_rate == null ? null : Number(r.last_rate),
+lib/warehouse/data.ts:180:      received.set(g.po_line_id, (received.get(g.po_line_id) ?? 0) + Number(g.received_qty))
+lib/warehouse/data.ts:196:        const ordered = Number(l.ordered_qty)
+lib/warehouse/data.ts:201:        const before = Number(l.received_before_qty ?? 0)
+lib/warehouse/data.ts:279:  const next = (Number(data?.last_no ?? 0) + 1).toString().padStart(3, '0')
+lib/warehouse/data.ts:303:      qty: Number(r.qty), damagedQty: Number(r.damaged_qty),
+lib/warehouse/data.ts:304:      minQty: r.min_qty == null ? null : Number(r.min_qty),
+lib/warehouse/data.ts:374:        bookQty: Number(l.book_qty),
+lib/warehouse/data.ts:375:        countedQty: l.counted_qty == null ? null : Number(l.counted_qty),
+lib/warehouse/data.ts:380:        rate: item?.last_rate == null ? null : Number(item.last_rate),
+lib/warehouse/exception-data.ts:113:      !l.skipped && l.counted_qty != null && Number(l.diff) !== 0)
+lib/warehouse/exception-data.ts:117:      const diff = Number(l.diff)
+lib/warehouse/exception-data.ts:118:      const rate = item?.last_rate == null ? null : Number(item.last_rate)
+lib/warehouse/exception-data.ts:125:        cell(formatQty(l.book_qty), Number(l.book_qty)),
+lib/warehouse/exception-data.ts:126:        cell(formatQty(l.counted_qty), Number(l.counted_qty)),
+lib/warehouse/exception-data.ts:201:      touch(e.party, it.id, it.name, it.unit).broughtIn += Number(l.received_qty)
+lib/warehouse/exception-data.ts:207:      touch(e.party, it.id, it.name, it.unit).takenBack += Number(l.qty)
+lib/warehouse/exception-data.ts:276:      const short = Math.max(0, Number(l.short_qty))
+lib/warehouse/exception-data.ts:277:      const damaged = Number(l.damaged_qty)
+lib/warehouse/exception-data.ts:280:      const rate = l.rate == null ? null : Number(l.rate)
+lib/warehouse/exception-data.ts:369:      const v = lines.reduce((s, l) => s + (l.rate == null ? 0 : Number(l.good_qty) * Number(l.rate)), 0)
+lib/warehouse/exception-data.ts:427:    const rate = l.rate == null ? null : Number(l.rate)
+lib/warehouse/exception-data.ts:433:      qty: Number(l.received_qty),
+lib/warehouse/exception-data.ts:435:      value: rate == null ? null : Number(l.received_qty) * rate,
+lib/warehouse/exception-data.ts:518:        cell(`${formatNumber(f.idle, 0)} days`, f.idle, b === 180 ? 'bad' : 'warn'),
+lib/warehouse/exception-data.ts:584:        qty: Number(l.qty), returnedQty: Number(l.returned_qty),
+lib/warehouse/exception-data.ts:607:        cell(`${formatNumber(f.daysOut, 0)}`, f.daysOut),
+lib/warehouse/exception-data.ts:609:        cell(f.overdueDays ? `${formatNumber(f.overdueDays, 0)} days` : '—', f.overdueDays,
+lib/warehouse/exception-data.ts:617:      { label: 'longest out', value: findings.length ? `${formatNumber(findings[0].daysOut, 0)} days` : '—' },
+lib/warehouse/exception-data.ts:624:        ? `${formatNumber(released, 0)} ${released === 1 ? 'line is' : 'lines are'} not counted here — the Atm `
+lib/warehouse/exception-data.ts:657:    received.set(g.po_line_id, (received.get(g.po_line_id) ?? 0) + Number(g.received_qty))
+lib/warehouse/exception-data.ts:672:        ordered: Number(l.ordered_qty), received: received.get(l.id) ?? 0,
+lib/warehouse/exception-data.ts:673:        rate: l.rate == null ? null : Number(l.rate),
+lib/warehouse/exception-data.ts:716:            : `${formatNumber(p.daysSinceDelivery, 0)} days ago`,
+lib/warehouse/exception-data.ts:792:      entity: e.entity, party: e.party, rate: Number(l.rate), day: e.entry_date,
+lib/warehouse/exception-data.ts:821:          cell(`${formatNumber(s.spreadPct * 100, 1)}%`, s.spreadPct, 'bad'),
+lib/warehouse/exception-data.ts:830:        ? `${formatNumber(findings[0].spread!.spreadPct * 100, 1)}%` : '—',
+lib/warehouse/exception-data.ts:834:      `Differences under ${Math.round(RATE_SPREAD_FLOOR * 100)}% are ignored — freight and order size move a rate that much without anything being wrong.`,
+lib/warehouse/exception-data.ts:863:      s.amount += l.rate == null ? 0 : Number(l.qty) * Number(l.rate)
+lib/warehouse/exception-data.ts:880:        cell(f.total > 0 ? `${formatNumber((e.amount / f.total) * 100, 1)}%` : '—'),
+lib/warehouse/exception-data.ts:934:    const gaps = seriesGaps(Number(s.last_no), seen.get(`${s.register}|${s.day}`) ?? [])
+lib/warehouse/exception-data.ts:940:      cell(String(s.last_no), Number(s.last_no)),
+lib/warehouse/exception-data.ts:1012:      lines: lines.length, qty: lines.reduce((s, l) => s + Number(l.received_qty), 0),
+lib/warehouse/exception-data.ts:1022:      lines: lines.length, qty: lines.reduce((s, l) => s + Number(l.qty), 0),
+lib/warehouse/exception-data.ts:1118:        cell(`${formatNumber(r.age, 0)} days`, r.age,
+lib/warehouse/exception-data.ts:1177:    tbl.set(`${r.item_id}|${r.location_id}`, Number(r.qty))
+lib/warehouse/exception-data.ts:1207:      label: `${formatNumber(drift.length, 0)} ${drift.length === 1 ? 'line disagrees' : 'lines disagree'}`,
+lib/warehouse/exception-data.ts:1216:      { label: 'lines checked', value: formatNumber(pairs.length, 0) },
+lib/warehouse/exception-data.ts:1217:      { label: 'disagreeing', value: formatNumber(drift.length, 0),
+lib/warehouse/exceptions.ts:69:  return Math.round((b - a) / 86_400_000)
+lib/warehouse/exceptions.ts:94:  const n = Number(m[1])
+lib/warehouse/export.ts:60:  return typeof v === 'number' ? formatNumber(v, 0) : v
+lib/warehouse/format.ts:12:  const v = typeof n === 'string' ? Number(n) : n
+lib/warehouse/format.ts:15:  return formatNumber(v, Math.min(decimals, 3))
+lib/warehouse/in4-sync-data.ts:30:  const n = Number(String(v).replace(/[₹$,]/g, ''))
+lib/warehouse/in4-sync.ts:272:      const qty = Number(p.qty ?? 0)
+lib/warehouse/in4-sync.ts:273:      const rate = p.rate && Number(p.rate) > 0 ? Number(p.rate) : null
+lib/warehouse/notify.ts:63:    amountCapMax: r.amount_cap_max == null ? null : Number(r.amount_cap_max),
+lib/warehouse/notify.ts:98:    estValue: r.est_value == null ? null : Number(r.est_value),
+lib/warehouse/po-import.ts:130:      cur.orderedQty += Number(l.orderedQty ?? 0)
+lib/warehouse/po-import.ts:131:      cur.receivedQty += Number(l.receivedQty ?? 0)
+lib/warehouse/po-import.ts:132:      if (!cur.rate && ref?.rate) cur.rate = Number(ref.rate)
+lib/warehouse/po-import.ts:138:      orderedQty: Number(l.orderedQty ?? 0),
+lib/warehouse/po-import.ts:139:      receivedQty: Number(l.receivedQty ?? 0),
+lib/warehouse/po-import.ts:140:      rate: ref?.rate ? Number(ref.rate) : null,
+lib/warehouse/report-data.ts:118:    qty: Number(m.qty),
+lib/warehouse/report-data.ts:123:    rate: m.rate == null ? null : Number(m.rate),
+lib/warehouse/report-data.ts:128:  const mins = new Map(minRes.rows.map(r => [`${r.item_id}|${r.location_id}`, Number(r.min_qty)]))
+lib/warehouse/report-data.ts:162:    const rate = item.last_rate == null ? null : Number(item.last_rate)
+lib/warehouse/report-data.ts:231:      const qty = Number(l.good_qty)
+lib/warehouse/report-data.ts:232:      const rate = l.rate == null ? null : Number(l.rate)
+lib/warehouse/report-data.ts:240:        shortQty: Math.max(0, Number(l.short_qty)),
+lib/warehouse/report-data.ts:241:        damagedQty: Number(l.damaged_qty),
+lib/warehouse/report-data.ts:285:      const qty = Number(l.qty)
+lib/warehouse/report-data.ts:286:      const rate = l.rate == null ? null : Number(l.rate)
+lib/warehouse/request-data.ts:58:  const fulfil = lines.map(l => ({ qty: Number(l.qty), issuedQty: Number(l.issued_qty) }))
+lib/warehouse/request-data.ts:87:    stagesNeeded: Number(r.stages_needed ?? 0),
+lib/warehouse/request-data.ts:88:    stagesDone: Number(r.stages_done ?? 0),
+lib/warehouse/request-data.ts:89:    estValue: r.est_value == null ? null : Number(r.est_value),
+lib/warehouse/request-data.ts:281:      stock.set(row.item_id, (stock.get(row.item_id) ?? 0) + Number(row.qty))
+lib/warehouse/request-data.ts:311:        const qty = Number(l.qty)
+lib/warehouse/request-data.ts:312:        const issuedQty = Number(l.issued_qty)
+lib/warehouse/request-data.ts:391:      amountCapMax: r.amount_cap_max == null ? null : Number(r.amount_cap_max),
+lib/warehouse/requests.ts:155:  return Math.round((got / want) * 100)
+lib/warehouse/requests.ts:189:  return Math.max(0, Math.round((b - a) / 86_400_000))
