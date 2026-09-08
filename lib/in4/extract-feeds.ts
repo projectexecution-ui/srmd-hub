@@ -29,11 +29,34 @@ const d = (v: unknown): string | null => {
  *  (INDENT_ITEM_ID, PO_DETAIL_ID, GRN_ID) and joined here, and the three GRN
  *  figures come from BI.FACT_PURCHASE_GRN_DETAILS (base-UOM qty, unit rate,
  *  material cost), keyed by GRN + indent + material. */
+/** One PO line as IN4's PO-details fact holds it: quantity in base UOM and
+ *  material value for THAT line. */
+export interface PoLineDetail { qty: number; value: number; rate: number }
+
+/** The view's PO quantity and rate, corrected from the PO line itself.
+ *
+ *  PURCH_INDENT_TO_ISSUE reports PO_ORDER_QTY_IN_BASE_UOM as the PO's total
+ *  for the material, not the line's own quantity. PO/SRASSK/NGH/2025-26/93
+ *  has two lines — 44,200 kg and 70 kg — and the view says 44,270 on both,
+ *  so the tracker ordered 88,540 kg of a 44,270 kg PO, and the 70 kg indent
+ *  looked 44,200 kg over-ordered. Checked 8 Sept 2026: 424 of 4,714 PO lines
+ *  in the view differ from BI.FACT_PURCHASE_ORDER_DETAILS, over-stating
+ *  70.8 lakh; every view line has a detail row. The detail wins; the rate is
+ *  the line's value over its base quantity so it is in the same UOM as the
+ *  quantity. A line IN4 has cancelled to zero stays zero. */
+export function applyPoLine(
+  view: { po_qty: number; po_rate: number },
+  det: PoLineDetail | undefined,
+): { po_qty: number; po_rate: number } {
+  if (!det) return view
+  return { po_qty: det.qty, po_rate: det.qty > 0 ? det.value / det.qty : view.po_rate }
+}
+
 export async function extractIndentRows(): Promise<In4IndentRow[]> {
   const HINT = 'OPTION (RECOMPILE, MAXDOP 1)'
   const KEY = 'INDENT_ITEM_ID, PO_DETAIL_ID, GRN_ID'
   const q = (cols: string) => in4Query<Record<string, unknown>>(`SELECT ${KEY}, ${cols} FROM PURCH_INDENT_TO_ISSUE ${HINT}`)
-  const [names, indent, po, grn, grnFacts] = await Promise.all([
+  const [names, indent, po, grn, grnFacts, poDetails] = await Promise.all([
     q('PROJECT_ID, PROJECT_NAME, SUBPROJECT_ID, SUBPROJECT_NAME, WO_SKILL_NAME, WO_DISPLAY_NO, WO_SERVICE_PROVIDER_NAME'),
     q('MATERIAL_TYPE, MAT_SUBTYPE, MATERIAL_ID, MATERIAL_NAME, INDENT_ID, INDENT_DISPLAY_NO, INDENT_STATUS, INDENT_CREATION_DT, INDENT_TYPE, INDENT_QTY_BASE_UOM, INDENT_BASE_UOM'),
     q('PO_ID, PO_DISPLAY_NO, PO_SUPPLIER_ID, PO_SUPPLIER_NAME, PO_STATUS, PO_CREATED_DT, PO_ORDER_QTY_IN_BASE_UOM, PO_ORDER_RATE_IN_BASE_UOM'),
@@ -41,6 +64,11 @@ export async function extractIndentRows(): Promise<In4IndentRow[]> {
     in4Query<Record<string, unknown>>(`
       SELECT GRN_ID, INDENT_ID, MATERIAL_ID, SUM(BASE_UOM_QTY) qty, MAX(UNIT_RATE) rate, SUM(GRN_MATERIAL_COST) value
       FROM BI.FACT_PURCHASE_GRN_DETAILS GROUP BY GRN_ID, INDENT_ID, MATERIAL_ID`),
+    // The PO line's OWN quantity and value (see applyPoLine). ITEM_ID is the
+    // view's PO_DETAIL_ID. MAX, not SUM: 2 of 4,946 rows are exact repeats.
+    in4Query<Record<string, unknown>>(`
+      SELECT ITEM_ID, MAX(BASE_PO_QTY) qty, MAX(MATERIAL_VALUE) value, MAX(NET_RATE) rate
+      FROM BI.FACT_PURCHASE_ORDER_DETAILS GROUP BY ITEM_ID`),
   ])
   const key = (r: Record<string, unknown>) => `${r.INDENT_ITEM_ID}|${r.PO_DETAIL_ID ?? ''}|${r.GRN_ID ?? ''}`
   const merged = new Map<string, Record<string, unknown>>()
@@ -53,9 +81,15 @@ export async function extractIndentRows(): Promise<In4IndentRow[]> {
   }
   const grnByKey = new Map<string, { qty: number; rate: number; value: number }>()
   for (const g of grnFacts) grnByKey.set(`${g.GRN_ID}|${g.INDENT_ID}|${g.MATERIAL_ID}`, { qty: n(g.qty), rate: n(g.rate), value: n(g.value) })
+  const detailByItem = new Map<number, PoLineDetail>()
+  for (const p of poDetails) detailByItem.set(n(p.ITEM_ID), { qty: n(p.qty), value: n(p.value), rate: n(p.rate) })
 
   return [...merged.values()].map(r => {
     const g = r.GRN_ID == null ? null : grnByKey.get(`${r.GRN_ID}|${r.INDENT_ID}|${r.MATERIAL_ID}`) ?? null
+    const line = applyPoLine(
+      { po_qty: n(r.PO_ORDER_QTY_IN_BASE_UOM), po_rate: n(r.PO_ORDER_RATE_IN_BASE_UOM) },
+      r.PO_DETAIL_ID == null ? undefined : detailByItem.get(n(r.PO_DETAIL_ID)),
+    )
     return {
       project_id: n(r.PROJECT_ID), project_name: s(r.PROJECT_NAME), subproject_id: n(r.SUBPROJECT_ID), subproject_name: s(r.SUBPROJECT_NAME),
       skill_id: ni(r.SKILL_ID), wo_skill_name: sn(r.WO_SKILL_NAME), wo_id: ni(r.WORK_ORDER_ID), wo_no: sn(r.WO_DISPLAY_NO), contractor_name: sn(r.WO_SERVICE_PROVIDER_NAME),
@@ -63,7 +97,7 @@ export async function extractIndentRows(): Promise<In4IndentRow[]> {
       indent_id: n(r.INDENT_ID), indent_no: s(r.INDENT_DISPLAY_NO), indent_status: n(r.INDENT_STATUS), indent_date: d(r.INDENT_CREATION_DT), indent_type: sn(r.INDENT_TYPE),
       indent_item_id: n(r.INDENT_ITEM_ID), indent_qty: n(r.INDENT_QTY_BASE_UOM), uom: s(r.INDENT_BASE_UOM),
       po_id: ni(r.PO_ID), po_detail_id: ni(r.PO_DETAIL_ID), po_no: sn(r.PO_DISPLAY_NO), po_supplier_id: ni(r.PO_SUPPLIER_ID), po_supplier: sn(r.PO_SUPPLIER_NAME),
-      po_status: ni(r.PO_STATUS), po_date: d(r.PO_CREATED_DT), po_qty: n(r.PO_ORDER_QTY_IN_BASE_UOM), po_rate: n(r.PO_ORDER_RATE_IN_BASE_UOM),
+      po_status: ni(r.PO_STATUS), po_date: d(r.PO_CREATED_DT), po_qty: line.po_qty, po_rate: line.po_rate,
       grn_id: ni(r.GRN_ID), grn_no: sn(r.GRN_DISPLAY_NO), grn_date: d(r.GRN_DATE), grn_status: ni(r.GRN_STATUS),
       grn_qty: g?.qty ?? 0, grn_rate: g?.rate ?? 0, grn_value: g?.value ?? 0,
       closed_for_po: n(r.CLOSED_FOR_PO) === 1,

@@ -76,3 +76,25 @@ describe('IN4 → tracker lines', () => {
     expect(cmp.projects[0]).toMatchObject({ project: 'Raj Uphaar', hubLines: 0, in4Lines: 1 })
   })
 })
+
+describe('GRN rows the view joins to a line that received nothing on them', () => {
+  // PO/SRASSK/NGH/2025-26/93: the 70 kg indent line sees the other line's three
+  // GRNs (25,050 / 19,020 / 130 kg) at 0 kg, plus its own 70 kg GRN.
+  it('keeps only the GRNs with quantity or value for THIS line', () => {
+    const line = { ...base, indent_item_id: 3833, indent_id: 1101, po_id: 1165, po_detail_id: 4371, po_no: 'PO/SRASSK/NGH/2025-26/93', po_qty: 70, po_rate: 13.25, po_date: '2026-03-26' }
+    const rows: In4IndentRow[] = [
+      { ...line, grn_id: 1270, grn_no: 'GRN/SRASSK/NGH/2026-27/1', grn_date: '2026-04-04', grn_qty: 0, grn_rate: 0, grn_value: 0 },
+      { ...line, grn_id: 1272, grn_no: 'GRN/SRASSK/NGH/2026-27/1', grn_date: '2026-04-06', grn_qty: 0, grn_rate: 0, grn_value: 0 },
+      { ...line, grn_id: 1274, grn_no: 'GRN/SRASSK/NGH/2026-27/1', grn_date: '2026-04-06', grn_qty: 0, grn_rate: 0, grn_value: 0 },
+      { ...line, grn_id: 1336, grn_no: 'GRN/SRASSK/NGH/2026-27/1', grn_date: '2026-04-28', grn_qty: 70, grn_rate: 15.635, grn_value: 1094.45 },
+    ]
+    const { lines } = buildTracker(rows, NOW)
+    expect(lines).toHaveLength(1)
+    expect(lines[0].grns).toHaveLength(1)
+    expect(lines[0].grns[0].qty).toBe(70)
+    expect(lines[0].pos[0].grnQty).toBe(70)
+    expect(lines[0].orderedQty).toBe(70)
+    expect(lines[0].receivedQty).toBe(70)
+    expect(lines[0].status).toBe('received')
+  })
+})

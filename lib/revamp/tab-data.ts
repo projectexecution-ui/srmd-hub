@@ -11,6 +11,7 @@ import { PROJECT_ALIASES } from './alias-seed'
 import { descendantIds } from './hierarchy'
 import { compareDisciplines } from '@/lib/cost-control/discipline-order'
 import type { LineRecord } from '@/lib/procurement'
+import { correctTrackerLines, loadTrackerFixes, type ItemReader, type Corrections } from './tracker-corrections'
 
 // ── Approvals ───────────────────────────────────────────────────────────────
 
@@ -122,6 +123,9 @@ export interface ProjectProcurement {
    *  re-implementing chase notes, ageing and drill-down a second time. The
    *  stored JSON already IS LineRecord — it is what the parser wrote. */
   lines: LineRecord[]
+  /** What the read-time correction did to these lines (tracker-corrections.ts),
+   *  and whether IN4 was reached to do it. */
+  corrections: Corrections & { live: boolean }
 }
 
 export interface ProcurementGroup {
@@ -215,7 +219,13 @@ export async function loadProjectProcurement(projectId: string): Promise<Project
   const mineSubs = new Set(
     subMatches.filter(m => m.projectId && covered.has(m.projectId)).map(m => m.subProjectName),
   )
-  const mineLines = lines.filter(l => mineSubs.has(subProjectOfLine(l)))
+  const mineRaw = lines.filter(l => mineSubs.has(subProjectOfLine(l)))
+
+  // The snapshot repeats a PO line's quantity and joins GRNs to lines that
+  // received nothing on them (see tracker-corrections.ts). Corrected here from
+  // IN4's own PO-line figures until the feed fix runs on the live site.
+  const { items, fixes, live } = await loadTrackerFixes(supabase as unknown as ItemReader, mineRaw)
+  const { lines: mineLines, corrections } = correctTrackerLines(mineRaw, items, fixes)
 
   const num = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : Number(v) || 0)
 
@@ -283,6 +293,7 @@ export async function loadProjectProcurement(projectId: string): Promise<Project
     grnValue: mineLines.reduce((s, l) => s + num(l.grnValue), 0),
     byDiscipline,
     lines: mineLines as unknown as LineRecord[],
+    corrections: { ...corrections, live },
   }
 }
 

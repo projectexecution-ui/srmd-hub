@@ -41,6 +41,16 @@ export async function ProcurementTab({ projectId }: { projectId: string }) {
               ))}
             </ul>
           </details>
+          {/* Said once, quietly: which lines were put right from IN4's PO
+              record, so a number here that differs from the live tracker is
+              understood rather than doubted. */}
+          {p.corrections.live && (p.corrections.poLinesCorrected > 0 || p.corrections.grnRowsDropped > 0) && (
+            <p className="text-[11px] text-gray-500">
+              {p.corrections.poLinesCorrected > 0 && `${p.corrections.poLinesCorrected} PO line${p.corrections.poLinesCorrected === 1 ? '' : 's'} read from IN4’s PO record`}
+              {p.corrections.poLinesCorrected > 0 && p.corrections.grnRowsDropped > 0 && ' · '}
+              {p.corrections.grnRowsDropped > 0 && `${p.corrections.grnRowsDropped} empty GRN row${p.corrections.grnRowsDropped === 1 ? '' : 's'} left out`}
+            </p>
+          )}
           {/* The tracker's own three views, on this project's lines. */}
           <IndentViews lines={p.lines} projectName={projectName} />
 
