@@ -39,6 +39,24 @@ export const NOTIFICATION_EVENTS: NotificationEventDef[] = [
     audience: 'Promise owners (engineers)',
   },
   {
+    type: 'in4_indent_verify',
+    label: 'IN4 — indent waiting for approval',
+    description: 'An indent in IN4 reached Verify; the Atm Head of the linked project is asked to approve it in IN4.',
+    audience: 'Atm Heads (per project)',
+  },
+  {
+    type: 'in4_po_verify',
+    label: 'IN4 — purchase order waiting for approval',
+    description: 'A purchase order in IN4 reached Verify; the Atm Head of the linked project is asked to approve it in IN4.',
+    audience: 'Atm Heads (per project)',
+  },
+  {
+    type: 'in4_grn_received',
+    label: 'IN4 — material received',
+    description: 'A GRN was approved in IN4 against one of the project’s purchase orders.',
+    audience: 'Atm Heads (per project)',
+  },
+  {
     type: 'procurement_digest',
     label: 'Indent → PO daily follow-up',
     description: 'Weekday reminder to each Atm Head — POs to raise (2+ days) and deliveries to chase (1 week+), only their projects.',

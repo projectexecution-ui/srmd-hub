@@ -75,7 +75,7 @@ export default async function ProjectTabPage({
   // Indents and WO/POs are two pages on the mind map and two views of the one
   // tracker — its `global` snapshot holds the indents, its `po` snapshot the
   // purchase orders. Same component, told which side to show.
-  if (slug === 'procurement') return <ProcurementTab projectId={id} />
+  if (slug === 'procurement') return <ProcurementTab projectId={id} view={view} />
   if (slug === 'wo-po')       return <ProcurementTab projectId={id} />
 
   // Approvals is the live My-Approvals card, narrowed to this project — same

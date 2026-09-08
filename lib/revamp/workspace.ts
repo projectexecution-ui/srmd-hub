@@ -78,7 +78,7 @@ export const WORKSPACE_TABS: WorkspaceTab[] = [
 
   // ── Procurement ──────────────────────────────────────────────────────────
   { slug: 'procurement', ribbon: 'Indents', label: 'Indents', group: 'procurement', icon: 'ClipboardList',
-    subs: ['Approval queue', 'Open POs', 'Rate history', 'Material master'],
+    subs: ['By category', 'Tracker'],
     permissionSlug: 'procurement-tracker', built: true },
   { slug: 'wo-po', ribbon: 'WO / PO', label: 'WO / PO', group: 'procurement', icon: 'GitBranch',
     subs: ['All orders', 'Work orders', 'POs', 'BOQ upload'],

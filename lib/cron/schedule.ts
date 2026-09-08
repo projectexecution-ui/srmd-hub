@@ -79,6 +79,9 @@ export const CRON_JOBS: CronJob[] = [
   { key: 'drive-archive',         policy: 'each',  am: '/api/cron/drive-archive?cron=1',      pm: '/api/cron/drive-archive?cron=1' },
   // am = Monday week-plan ping (route self-gates to Mondays); pm = evening open-promises reminder
   { key: 'schedule-nudge',        policy: 'each', module: 'schedule',  am: '/api/cron/schedule-nudge?cron=1',      pm: '/api/cron/schedule-nudge?cron=1&slot=pm' },
+  // Tells each Atm Head when IN4 needs them: an indent or PO at Verify, a GRN
+  // received. Idempotent, so both slots; a faster plan just tells them sooner.
+  { key: 'in4-approvals',         policy: 'each', module: 'procurement-tracker', am: '/api/cron/in4-approvals?cron=1',   pm: '/api/cron/in4-approvals?cron=1' },
 ]
 
 /** IST calendar date (YYYY-MM-DD) for a given epoch ms — the ledger key. */
