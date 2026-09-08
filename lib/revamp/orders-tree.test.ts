@@ -631,3 +631,51 @@ describe('a work-order number IN4 gave to two orders', () => {
     expect(t.notes.some(n => n.includes('2 work-order rows'))).toBe(true)
   })
 })
+
+describe('PO lines IN4’s tracker view repeats, and GRN rows of nothing', () => {
+  // PO/SRASSK/NGH/2025-26/93 as the mirror holds it: ONE PO line (44,270 kg
+  // Pidilite at 13.25) listed against two indents after the amendment, so
+  // two lines of 44,270 each; the receipts split 70 kg / 44,200 kg between
+  // them, and each indent line also carries the OTHER indent's GRNs at 0 kg.
+  const po = (grnQty: number) => [{ poNo: 'PO/SRASSK/NGH/2025-26/93', amount: 586577.5, draft: false, qty: 44270, rate: 13.25, grnQty }]
+  const a = indent(1, po(70), 'Pidilite - Roff (T02) Grey', 'Kgs')
+  a.grns = [
+    { grnNo: 'GRN/SRASSK/NGH/2026-27/1', grnDate: '2026-04-28', qty: 70, rate: 15.635, value: 1094.45 },
+    { grnNo: 'GRN/SRASSK/NGH/2026-27/1', grnDate: '2026-04-04', qty: 0, rate: 15.635, value: 0 },
+    { grnNo: 'GRN/SRASSK/NGH/2026-27/1', grnDate: '2026-04-06', qty: 0, rate: 15.635, value: 0 },
+  ]
+  const b = indent(1, po(44200), 'Pidilite - Roff (T02) Grey', 'Kgs')
+  b.grns = [
+    { grnNo: 'GRN/SRASSK/NGH/2026-27/1', grnDate: '2026-04-04', qty: 25050, rate: 15.635, value: 391656.75 },
+    { grnNo: 'GRN/SRASSK/NGH/2026-27/1', grnDate: '2026-04-06', qty: 19020, rate: 15.635, value: 297377.7 },
+    { grnNo: 'GRN/SRASSK/NGH/2026-27/1', grnDate: '2026-04-06', qty: 130, rate: 15.635, value: 2032.55 },
+    { grnNo: 'GRN/SRASSK/NGH/2026-27/1', grnDate: '2026-04-28', qty: 0, rate: 15.635, value: 0 },
+  ]
+
+  it('shows the repeated line once, ordered once, with the receipts of both indents brought together', () => {
+    const t = build([], [a, b])
+    const o = t.cats[0].subs[0].orders[0]
+    expect(o.lines).toHaveLength(1)
+    expect(o.ordered).toBeCloseTo(586577.5, 2)       // not 11,73,155
+    expect(o.lines[0].certifiedQty).toBe(44270)      // 70 + 44,200 — the PO is fully received
+    expect(o.lines[0].bills).toHaveLength(4)         // the four real receipts; the 0 kg rows are gone
+    expect(o.lines[0].bills.map(x => x.cumQty)).toEqual([25050, 44070, 44200, 44270])
+    expect(o.lines[0].certifiedAmt).toBeCloseTo(692161.45, 1)
+    expect(o.flag).toContain('against more than one indent')
+    expect(t.notes.some(n => n.includes('repeats the PO line'))).toBe(true)
+  })
+
+  it('a GRN row of 0 kg and ₹0 is not a receipt and is not listed', () => {
+    const t = build([], [a])
+    expect(t.cats[0].subs[0].orders[0].lines[0].bills).toHaveLength(1)
+  })
+
+  it('two genuinely different lines on one PO stay two lines', () => {
+    const t = build([], [
+      indent(1, [{ poNo: 'PO/X/1', amount: 100, draft: false, qty: 10, rate: 10 }], 'Cement'),
+      indent(1, [{ poNo: 'PO/X/1', amount: 200, draft: false, qty: 10, rate: 20 }], 'Steel'),
+    ])
+    const o = t.cats[0].subs[0].orders[0]
+    expect(o.lines).toHaveLength(2); expect(o.ordered).toBe(300); expect(o.flag).toBeNull()
+  })
+})

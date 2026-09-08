@@ -637,6 +637,60 @@ export function billsFromCertificates(rows: readonly CertRow[]): { woBilled: Map
   return { woBilled, woBillTds }
 }
 
+/**
+ * A PO line IN4's tracker view repeated. PO/SRASSK/NGH/2025-26/93 holds ONE
+ * line — 44,270 kg of Pidilite — but after its amendment the view lists that
+ * line twice, against two indents (PO details 3726 and 4371), full quantity
+ * both times, so the tree summed 88,540 kg and 11,73,155 for a 5,86,578
+ * order. The receipts, by contrast, are split between the two: 44,200 kg
+ * under one, 70 kg under the other. Lines with the same material, unit,
+ * quantity and rate are therefore ONE line: ordered once, receipts added,
+ * GRN rows brought together and de-duplicated. Mutates the order in place
+ * and sets its flag. Pure otherwise, so the PO 93 case is a test.
+ */
+export function mergeRepeatedPoLines(o: OrderRow): void {
+  if (o.kind !== 'po' || o.lines.length < 2) return
+  const groups = new Map<string, OrderLine[]>()
+  for (const l of o.lines) {
+    const k = `${l.name}|${l.uom ?? ''}|${l.qty ?? ''}|${l.rate ?? ''}`
+    const g = groups.get(k) ?? []
+    g.push(l)
+    groups.set(k, g)
+  }
+  if ([...groups.values()].every(g => g.length === 1)) return
+
+  const merged: OrderLine[] = []
+  let repeated = 0
+  for (const g of groups.values()) {
+    if (g.length === 1) { merged.push(g[0]); continue }
+    repeated++
+    const first = g[0]
+    const qtys = g.map(l => l.certifiedQty).filter((v): v is number => v != null)
+    const seen = new Set<string>()
+    const bills: LineBill[] = []
+    for (const l of g) for (const b of l.bills) {
+      const key = `${b.billNo ?? ''}|${b.date ?? ''}|${b.qty}|${b.amount}`
+      if (seen.has(key)) continue
+      seen.add(key)
+      bills.push({ ...b })
+    }
+    bills.sort((x, y) => (x.date ?? '').localeCompare(y.date ?? ''))
+    let run = 0
+    for (const b of bills) { run += b.qty; b.cumQty = run }
+    merged.push({
+      ...first,
+      certifiedQty: qtys.length ? qtys.reduce((s, v) => s + v, 0) : null,
+      certifiedAmt: bills.length ? bills.reduce((s, b) => s + b.amount, 0) : null,
+      bills,
+    })
+  }
+  o.lines = merged
+  o.ordered = merged.reduce((s, l) => s + l.amount, 0)
+  o.lineTotal = o.ordered
+  const f = `IN4 lists ${repeated === 1 ? 'a line of this PO' : `${repeated} lines of this PO`} against more than one indent; shown once here.`
+  o.flag = o.flag ? `${o.flag} ${f}` : f
+}
+
 /** Sum a money column over rows, null when NO row carries it — a dash, never
  *  a zero that reads as "fully paid". */
 function sumOrNull<T>(rows: readonly T[], pick: (r: T) => number | null): number | null {
@@ -826,6 +880,7 @@ export function buildOrdersTree(
   let poWithoutHeader = 0
   let multiPoLines = 0
   let bookedElsewhere = 0
+  let repeatedPoLines = 0
 
   for (const i of indents) {
     const arr = Array.isArray(i.pos) ? (i.pos as PoEntry[]) : []
@@ -861,8 +916,14 @@ export function buildOrdersTree(
       // only when this is the line's one PO. Absent grnQty = nothing received
       // yet = null, not zero.
       const receivedQty = po?.grnQty != null && po.grnQty > 0 ? Number(po.grnQty) : null
+      // IN4's tracker view joins EVERY GRN of a PO to EVERY indent line of
+      // that PO; the GRN fact then has a quantity for only one of them, so
+      // the others come through as GRN rows of 0 kg. A receipt of nothing is
+      // not a receipt — those rows are dropped.
       const grns: LineBill[] = singlePo
-        ? grnList.map(g => ({ billNo: g.grnNo?.trim() || null, abstractNo: null, date: g.grnDate ?? null, qty: Number(g.qty ?? 0), amount: Number(g.value ?? 0), cumQty: 0 }))
+        ? grnList
+            .filter(g => Number(g.qty ?? 0) > 0 || Number(g.value ?? 0) > 0)
+            .map(g => ({ billNo: g.grnNo?.trim() || null, abstractNo: null, date: g.grnDate ?? null, qty: Number(g.qty ?? 0), amount: Number(g.value ?? 0), cumQty: 0 }))
         : []
       grns.sort((x, y) => (x.date ?? '').localeCompare(y.date ?? ''))
       let run = 0
@@ -888,6 +949,8 @@ export function buildOrdersTree(
     if (!cat) continue
     const orders = [...byNo.values()].sort((a, b) => a.ref.localeCompare(b.ref, undefined, { numeric: true }))
     for (const o of orders) {
+      mergeRepeatedPoLines(o)
+      if (o.flag) repeatedPoLines++
       const received = o.lines.filter(l => l.certifiedAmt != null)
       o.certifiedAmt = received.length ? received.reduce((s, l) => s + (l.certifiedAmt ?? 0), 0) : null
       const h = src.poHeaders.get(o.ref)
@@ -906,7 +969,8 @@ export function buildOrdersTree(
       o.balance = h.value - paid - retention
       if (c && c.bookedUnder.length) {
         bookedElsewhere++
-        o.flag = `IN4 booked ${c.bookedUnder.length === 1 ? 'a bill' : 'bills'} for this PO under ${c.bookedUnder.join(', ')}; shown here by its GRNs.`
+        const f = `IN4 booked ${c.bookedUnder.length === 1 ? 'a bill' : 'bills'} for this PO under ${c.bookedUnder.join(', ')}; shown here by its GRNs.`
+        o.flag = o.flag ? `${o.flag} ${f}` : f
       }
       o.breakup = breakupOf([['material', h.material], ['GST', h.tax], ['freight', h.freight], ['handling', h.handling], ['other', h.other]])
     }
@@ -967,6 +1031,12 @@ export function buildOrdersTree(
     if (woWithoutHeader > 0) parts.push(`${woWithoutHeader} work order${woWithoutHeader === 1 ? '' : 's'}`)
     if (poWithoutHeader > 0) parts.push(`${poWithoutHeader} purchase order${poWithoutHeader === 1 ? '' : 's'}`)
     notes.push(`IN4 returned no order record for ${parts.join(' and ')} in the mirror; their header columns are blank.`)
+  }
+  if (repeatedPoLines > 0) {
+    notes.push(
+      `When a purchase order is amended, or one PO line serves two indents, IN4’s tracker view repeats the PO line — full quantity each time — against `
+      + `every indent it touches. On ${repeatedPoLines} PO${repeatedPoLines === 1 ? '' : 's'} here such lines are shown once, with their receipts brought together, and the row says so.`,
+    )
   }
   if (bookedElsewhere > 0) {
     notes.push(
