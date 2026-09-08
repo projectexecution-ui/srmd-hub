@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { buildCategoryTree, consultantSkillNames, oneLine, splitParties, type Party } from './masters-in4'
+import { buildCategoryTree, consultantSkillNames, oneLine, splitParties, flagParties, matchesQuery, looksLikeGstin, looksLikePan, type Party } from './masters-in4'
 
 const SKILLS = [
   { id: -1, name: 'Sub Project Milestone', parent_id: 0 },
@@ -13,7 +13,7 @@ const SKILLS = [
 
 const party = (o: Partial<Party> & { id: number; name: string }): Party => ({
   kind: 'contractor', code: null, pan: null, gstin: null, address: null, city: null, state: null, pin: null,
-  phone: null, email: null, contactPerson: null, isActive: true, skills: [], ...o,
+  phone: null, email: null, contactPerson: null, isActive: true, skills: [], duplicateOf: [], gstinLooksWrong: false, panLooksWrong: false, ...o,
 })
 
 describe('consultantSkillNames — IN4 has no consultant master, only a category', () => {
@@ -35,6 +35,36 @@ describe('splitParties — the map’s three lists from IN4’s two', () => {
   })
   it('vendors are the suppliers', () => {
     expect(out.vendors.map(p => p.name)).toEqual(['NATUROPROTECT'])
+  })
+})
+
+describe('flagParties — the scattering IN4 itself carries', () => {
+  const out = flagParties([
+    { kind: 'contractor', id: 223, name: 'JANAK BHAVSAR', gstin: '24AAEFN0301R1ZE', pan: 'AAEFN0301R' },
+    { kind: 'contractor', id: 225, name: 'Janak  Bhavsar', gstin: null, pan: 'AKXPM9594' },
+    { kind: 'supplier', id: 9, name: 'JANAK BHAVSAR', gstin: 'GST-PENDING', pan: null },
+  ])
+  it('finds the same name twice within one kind, but not across kinds', () => {
+    expect(out[0].duplicateOf).toEqual([225])
+    expect(out[1].duplicateOf).toEqual([223])
+    expect(out[2].duplicateOf).toEqual([])
+  })
+  it('flags a GSTIN or PAN of the wrong shape, never an absent one', () => {
+    expect(out[0]).toMatchObject({ gstinLooksWrong: false, panLooksWrong: false })
+    expect(out[1]).toMatchObject({ gstinLooksWrong: false, panLooksWrong: true })
+    expect(out[2]).toMatchObject({ gstinLooksWrong: true, panLooksWrong: false })
+    expect(looksLikeGstin('27AAMFS8877P1ZU')).toBe(true)
+    expect(looksLikePan('AABTS2637Q')).toBe(true)
+    expect(looksLikePan('NA')).toBe(false)
+  })
+})
+
+describe('matchesQuery', () => {
+  it('is a case-insensitive contains over any field, and false for an empty query', () => {
+    expect(matchesQuery('pidi', 'Pidilite - Roff (T02) Grey')).toBe(true)
+    expect(matchesQuery('ngh', 'New Guest House', 'NGH')).toBe(true)
+    expect(matchesQuery('', 'anything')).toBe(false)
+    expect(matchesQuery('x', null, undefined)).toBe(false)
   })
 })
 

@@ -19,14 +19,17 @@ type GroupKey = (typeof GROUPS)[number]['key']
  * contractors are IN4's registers with PAN, GST, address, phone, e-mail and
  * contact person (a consultant is a contractor under IN4's "Consultants
  * Cost" category; IN4 keeps no separate list). The SRMD team is CT Hub's
- * own users — IN4 has no staff list this login can read.
+ * own users — IN4 has no staff list this login can read. What IN4 itself
+ * gets wrong is shown, not smoothed over: the same firm entered twice, a
+ * GSTIN that cannot be right.
  */
-export default async function ContactsMasterPage({ searchParams }: { searchParams: Promise<{ group?: string }> }) {
+export default async function ContactsMasterPage({ searchParams }: { searchParams: Promise<{ group?: string; q?: string }> }) {
   await requirePermission('cost-control', 'view')
-  const { group: raw } = await searchParams
+  const { group: raw, q = '' } = await searchParams
   const group: GroupKey = GROUPS.some(g => g.key === raw) ? (raw as GroupKey) : 'team'
   const c = await loadContactMaster()
   const counts: Record<GroupKey, number> = { team: c.team.length, consultants: c.consultants.length, vendors: c.vendors.length, contractors: c.contractors.length }
+  const qs = q ? `&q=${encodeURIComponent(q)}` : ''
 
   return (
     <div className="space-y-4">
@@ -39,7 +42,7 @@ export default async function ContactsMasterPage({ searchParams }: { searchParam
         {GROUPS.map(g => (
           <Link
             key={g.key}
-            href={g.key === 'team' ? '/masters/contacts' : `/masters/contacts?group=${g.key}`}
+            href={g.key === 'team' ? `/masters/contacts${q ? `?q=${encodeURIComponent(q)}` : ''}` : `/masters/contacts?group=${g.key}${qs}`}
             aria-current={g.key === group ? 'page' : undefined}
             className={[
               'whitespace-nowrap rounded-full border px-3 py-1.5 text-[13px] min-h-[44px] inline-flex items-center gap-1.5',
@@ -50,6 +53,12 @@ export default async function ContactsMasterPage({ searchParams }: { searchParam
           </Link>
         ))}
       </nav>
+      <p className="text-[12px] text-gray-500">
+        {group === 'team' && 'CT Hub’s own users, without contractor logins (those are under Contractors, from IN4).'}
+        {group === 'consultants' && 'IN4 keeps no consultant list: these are the contractors IN4 files under its “Consultants Cost” category.'}
+        {group === 'vendors' && 'IN4’s supplier register — PAN, GST, address, phone, e-mail and contact person as entered there.'}
+        {group === 'contractors' && 'IN4’s service-provider register, without the consultants.'}
+      </p>
 
       {group === 'team' ? (
         <MasterTable
@@ -64,57 +73,73 @@ export default async function ContactsMasterPage({ searchParams }: { searchParam
             cells: {
               name: { text: u.name, tone: 'strong' },
               role: { text: u.roleLabel },
-              email: u.email ? { text: u.email, tone: 'muted' } : { text: 'no e-mail on the account', tone: 'missing' },
+              email: u.email ? { text: u.email, tone: 'muted' } : { text: '—', tone: 'muted' },
             },
           }))}
+          initialQuery={q}
+          exportName="srmd-team"
           searchPlaceholder="Search the team by name, role or e-mail…"
           emptyMessage="No CT Hub users yet."
+          emptyHint={<Link href={`/masters/search?q=${encodeURIComponent(q)}`} className="text-indigo-700 hover:underline">Search all masters instead</Link>}
         />
       ) : (
-        <PartyTable parties={c[group]} kind={group} />
+        <PartyTable parties={c[group]} kind={group} q={q} />
       )}
     </div>
   )
 }
 
-function PartyTable({ parties, kind }: { parties: Party[]; kind: 'consultants' | 'vendors' | 'contractors' }) {
+function PartyTable({ parties, kind, q }: { parties: Party[]; kind: 'consultants' | 'vendors' | 'contractors'; q: string }) {
   const columns: MasterColumn[] = [
     { key: 'name', label: 'Name' },
     { key: 'pan', label: 'PAN', width: 'w-32' },
     { key: 'gstin', label: 'GST No', width: 'w-40' },
     { key: 'phone', label: 'Phone', width: 'w-32' },
     { key: 'email', label: 'E-mail' },
-    { key: 'city', label: 'City', width: 'w-32' },
+    { key: 'city', label: 'City · address', width: 'w-56' },
     ...(kind === 'vendors' ? [] : [{ key: 'skills', label: 'Categories', desktopOnly: true } as MasterColumn]),
   ]
-  const rows: MasterRow[] = parties.map(p => ({
-    id: `${p.kind}:${p.id}`,
-    tone: p.isActive ? undefined : 'warn',
-    cells: {
-      name: { text: p.name, tone: p.isActive ? 'strong' : 'muted', sub: [p.contactPerson, p.isActive ? null : 'inactive in IN4'].filter(Boolean).join(' · ') || undefined },
-      pan: p.pan ? { text: p.pan, mono: true } : { text: 'none in IN4', tone: 'missing' },
-      gstin: p.gstin ? { text: p.gstin, mono: true } : { text: 'none in IN4', tone: 'missing' },
-      phone: p.phone ? { text: p.phone } : { text: 'none in IN4', tone: 'missing' },
-      email: p.email ? { text: p.email, tone: 'muted' } : { text: 'none in IN4', tone: 'missing' },
-      city: { text: p.city ?? p.address ?? '', sub: [p.state, p.pin].filter(Boolean).join(' ') || undefined },
-      skills: { text: p.skills.join(', '), tone: 'muted' },
-    },
-  }))
+  const dash = { text: '—', tone: 'muted' as const }
+  const rows: MasterRow[] = parties.map(p => {
+    const notes = [
+      p.contactPerson,
+      p.isActive ? null : 'inactive in IN4',
+      p.duplicateOf.length ? `duplicate of #${p.duplicateOf.join(', #')} in IN4` : null,
+    ].filter(Boolean).join(' · ')
+    return {
+      id: `${p.kind}:${p.id}`,
+      tone: !p.isActive || p.duplicateOf.length > 0 ? 'warn' : undefined,
+      cells: {
+        name: { text: p.name, tone: p.isActive ? 'strong' : 'muted', sub: notes || undefined },
+        pan: p.pan ? { text: p.pan, mono: true, tone: p.panLooksWrong ? 'missing' : 'default', sub: p.panLooksWrong ? 'looks wrong' : undefined } : dash,
+        gstin: p.gstin ? { text: p.gstin, mono: true, tone: p.gstinLooksWrong ? 'missing' : 'default', sub: p.gstinLooksWrong ? 'looks wrong' : undefined } : dash,
+        phone: p.phone ? { text: p.phone } : dash,
+        email: p.email ? { text: p.email, tone: 'muted' } : dash,
+        city: { text: p.city ?? (p.address ? '' : '—'), sub: [p.address, p.pin].filter(Boolean).join(' · ') || undefined },
+        skills: { text: p.skills.join(', '), tone: 'muted' },
+      },
+    }
+  })
   const filled = (f: (p: Party) => unknown) => parties.filter(f).length
+  const dupes = parties.filter(p => p.duplicateOf.length > 0).length
+  const wrong = parties.filter(p => p.gstinLooksWrong || p.panLooksWrong).length
   const stats = [
-    { label: 'PAN', n: filled(p => p.pan) },
-    { label: 'GST No', n: filled(p => p.gstin) },
-    { label: 'Phone', n: filled(p => p.phone) },
-    { label: 'E-mail', n: filled(p => p.email) },
-    { label: 'Address', n: filled(p => p.address) },
+    { label: 'PAN on record', n: filled(p => p.pan) },
+    { label: 'GST No on record', n: filled(p => p.gstin) },
+    { label: 'Phone on record', n: filled(p => p.phone) },
+    { label: 'E-mail on record', n: filled(p => p.email) },
+    { label: 'Entered twice in IN4', n: dupes, tone: dupes > 0 ? 'amber' as const : undefined },
+    { label: 'PAN/GST looks wrong', n: wrong, tone: wrong > 0 ? 'rose' as const : undefined },
   ]
   return (
     <div className="space-y-3">
-      <div className="grid grid-cols-3 sm:grid-cols-5 gap-2">
+      <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
         {stats.map(s => (
           <div key={s.label} className="rounded-lg border border-gray-200 bg-white px-3 py-2">
-            <p className="text-[12px] text-gray-500">{s.label} on record</p>
-            <p className="text-[15px] font-semibold tabular-nums text-gray-900">{s.n.toLocaleString('en-IN')} <span className="text-[12px] font-normal text-gray-400">of {parties.length}</span></p>
+            <p className="text-[12px] text-gray-500">{s.label}</p>
+            <p className={`text-[15px] font-semibold tabular-nums ${s.tone === 'amber' ? 'text-amber-700' : s.tone === 'rose' ? 'text-rose-700' : 'text-gray-900'}`}>
+              {s.n.toLocaleString('en-IN')}{s.tone ? '' : <span className="text-[12px] font-normal text-gray-400"> of {parties.length}</span>}
+            </p>
           </div>
         ))}
       </div>
@@ -122,8 +147,11 @@ function PartyTable({ parties, kind }: { parties: Party[]; kind: 'consultants' |
         columns={columns}
         rows={rows}
         sortableKeys={['name', 'city']}
+        initialQuery={q}
+        exportName={kind}
         searchPlaceholder={`Search ${kind} by name, PAN, GST, phone, e-mail or city…`}
         emptyMessage={`No ${kind} in IN4.`}
+        emptyHint={<span>Not here? It may be in another group — <Link href={`/masters/search?q=${encodeURIComponent(q)}`} className="text-indigo-700 hover:underline">search all masters</Link>.</span>}
       />
     </div>
   )

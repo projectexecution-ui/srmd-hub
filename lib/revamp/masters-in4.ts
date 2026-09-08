@@ -144,11 +144,13 @@ export async function loadTrustMaster(): Promise<{ trusts: Trust[] } & In4Read> 
     const { companies, gst, projects } = r.data
     const trusts: Trust[] = companies.map(c => {
       const id = n(c.CompanyID)
+      // Buildings first: IN4 also files three placeholder "projects" named
+      // after the trusts themselves, each with no work orders.
       const projs: TrustProject[] = projects.filter(p => n(p.CERT_COMPANY_ID) === id).map(p => ({
         id: n(p.ID), name: s(p.NAME) ?? `Project ${p.ID}`, code: s(p.EX_CODE),
         address: oneLine(p.ADDR), pin: s(p.PIN), city: s(p.city), status: s(p.status),
         workOrders: wo.byProject.get(n(p.ID)) ?? 0,
-      }))
+      })).sort((a, b) => b.workOrders - a.workOrders || a.name.localeCompare(b.name))
       return {
         id, code: s(c.CompanyCode) ?? String(id), name: s(c.CompanyName) ?? '',
         address: oneLine(c.Address), printAddress: oneLine(c.PrintAddress),
@@ -303,8 +305,32 @@ export interface Party {
   phone: string | null; email: string | null; contactPerson: string | null
   isActive: boolean
   skills: string[]
+  /** Other IN4 ids of the same kind carrying the same name — IN4 holds JANAK
+   *  BHAVSAR as #223 and #225, UTTARA ADVANCE ENGINEERING as #162 and #163. */
+  duplicateOf: number[]
+  /** A GSTIN/PAN that is present but cannot be right (wrong shape). */
+  gstinLooksWrong: boolean
+  panLooksWrong: boolean
 }
 export interface TeamMember { id: string; name: string; email: string | null; role: string; roleLabel: string }
+
+const GSTIN_RE = /^\d{2}[A-Z]{5}\d{4}[A-Z][1-9A-Z]Z[0-9A-Z]$/
+const PAN_RE = /^[A-Z]{5}\d{4}[A-Z]$/
+export const looksLikeGstin = (v: string | null) => v == null || GSTIN_RE.test(v.toUpperCase())
+export const looksLikePan = (v: string | null) => v == null || PAN_RE.test(v.toUpperCase())
+const nameKey = (v: string) => v.toLowerCase().replace(/[^a-z0-9]/g, '')
+
+/** Mark duplicates (same name, same kind) and malformed tax ids. Pure. */
+export function flagParties<T extends Pick<Party, 'kind' | 'id' | 'name' | 'gstin' | 'pan'>>(parties: readonly T[]): Array<T & Pick<Party, 'duplicateOf' | 'gstinLooksWrong' | 'panLooksWrong'>> {
+  const byKey = new Map<string, number[]>()
+  for (const p of parties) { const k = `${p.kind}|${nameKey(p.name)}`; if (nameKey(p.name)) byKey.set(k, [...(byKey.get(k) ?? []), p.id]) }
+  return parties.map(p => ({
+    ...p,
+    duplicateOf: (byKey.get(`${p.kind}|${nameKey(p.name)}`) ?? []).filter(id => id !== p.id),
+    gstinLooksWrong: !looksLikeGstin(p.gstin),
+    panLooksWrong: !looksLikePan(p.pan),
+  }))
+}
 
 interface SkillRow { id: number; name: string; parent_id: number; is_active?: boolean; code?: string | null; short_name?: string | null }
 
@@ -338,20 +364,24 @@ export async function loadContactMaster(): Promise<{ team: TeamMember[]; consult
     supabase.from('profiles').select('id, full_name, name, email, role').order('full_name'),
     getRoleLabels(),
   ])
-  const rows: Party[] = parties.rows.map(p => ({
-    kind: p.kind === 'supplier' ? 'supplier' : 'contractor',
+  const rows: Party[] = flagParties(parties.rows.map(p => ({
+    kind: (p.kind === 'supplier' ? 'supplier' : 'contractor') as Party['kind'],
     id: n(p.id), name: s(p.name) ?? '', code: s(p.code), pan: s(p.pan), gstin: s(p.gstin),
     address: oneLine(p.address), city: s(p.city), state: s(p.state), pin: s(p.pin),
     phone: s(p.phone), email: s(p.email), contactPerson: s(p.contact_person),
     isActive: p.is_active !== false, skills: Array.isArray(p.skills) ? (p.skills as string[]) : [],
-  }))
-  const team: TeamMember[] = ((profiles.data ?? []) as Array<Record<string, unknown>>).map(u => {
-    const role = s(u.role) ?? 'viewer'
-    return {
-      id: String(u.id), name: s(u.full_name) ?? s(u.name) ?? s(u.email) ?? '—', email: s(u.email),
-      role, roleLabel: labels[role as Role]?.label ?? role,
-    }
-  }).sort((a, b) => a.name.localeCompare(b.name))
+  })))
+  // The SRMD team is CT Hub's users — minus contractor logins, who are not
+  // the team and already appear under Contractors from IN4.
+  const team: TeamMember[] = ((profiles.data ?? []) as Array<Record<string, unknown>>)
+    .filter(u => s(u.role) !== 'contractor')
+    .map(u => {
+      const role = s(u.role) ?? 'viewer'
+      return {
+        id: String(u.id), name: s(u.full_name) ?? s(u.name) ?? s(u.email) ?? '—', email: s(u.email),
+        role, roleLabel: labels[role as Role]?.label ?? role,
+      }
+    }).sort((a, b) => a.name.localeCompare(b.name))
   return { team, ...splitParties(rows, consultantSkillNames((skills.data ?? []) as SkillRow[])) }
 }
 
@@ -502,6 +532,81 @@ export async function loadBoqCategory(categoryId: number): Promise<{ category: B
     groups: list,
     in4: 'live',
   }
+}
+
+/* ── Search across all six ──────────────────────────────────────────────── */
+
+export interface SearchHit { master: string; label: string; sub: string | null; href: string }
+export interface SearchResult { q: string; groups: Array<{ master: string; hits: SearchHit[]; more: number }> }
+
+/** Case- and punctuation-insensitive "contains". Pure. */
+export function matchesQuery(q: string, ...fields: Array<string | null | undefined>): boolean {
+  const needle = q.trim().toLowerCase()
+  if (!needle) return false
+  return fields.some(f => f != null && f.toLowerCase().includes(needle))
+}
+
+const LIMIT = 15
+
+/** One search over trusts, projects, contacts, categories, items and BOQ
+ *  names, each hit linking to its screen with the search already typed. */
+export async function loadMasterSearch(q: string): Promise<SearchResult & In4Read> {
+  const needle = q.trim()
+  if (!needle) return { q: needle, groups: [], in4: 'live' }
+  const enc = encodeURIComponent(needle)
+  const supabase = await createClient()
+  const [co, pr, sp, sk, mat, contacts, boq] = await Promise.all([
+    supabase.from('in4_companies').select('id, name, code'),
+    supabase.from('in4_projects').select('id, name, ex_code'),
+    supabase.from('in4_subprojects').select('id, name, ex_code, project_id'),
+    supabase.from('in4_skills').select('id, name, code, parent_id'),
+    supabase.from('in4_materials').select('id, name, code, type_name').or(`name.ilike.%${needle.replace(/[%,()]/g, '')}%,code.ilike.%${needle.replace(/[%,()]/g, '')}%`).limit(LIMIT + 1),
+    loadContactMaster(),
+    live(() => in4Query<{ BOQ_NAME: string; cat: number; n: number }>(`
+      SELECT TOP ${LIMIT + 1} d.BOQ_NAME, d.WORK_CATEGORY_ID cat, COUNT(DISTINCT d.WO_ID) n
+      FROM BI.DIM_ENGG_WORK_ORDER_BOQ d
+      WHERE d.BOQ_NAME LIKE '%${needle.replace(/'/g, "''").replace(/[%_\[\]]/g, '')}%'
+      GROUP BY d.BOQ_NAME, d.WORK_CATEGORY_ID
+      ORDER BY n DESC`)),
+  ])
+  const group = (master: string, all: SearchHit[]) => ({ master, hits: all.slice(0, LIMIT), more: Math.max(0, all.length - LIMIT) })
+  const trusts = ((co.data ?? []) as Array<{ id: number; name: string; code: string | null }>)
+    .filter(c => matchesQuery(needle, c.name, c.code))
+    .map(c => ({ master: 'Trusts', label: c.name, sub: c.code, href: '/masters/trusts' }))
+  const projName = new Map(((pr.data ?? []) as Array<{ id: number; name: string }>).map(p => [p.id, p.name]))
+  const projects = [
+    ...((pr.data ?? []) as Array<{ id: number; name: string; ex_code: string | null }>).filter(p => matchesQuery(needle, p.name, p.ex_code))
+      .map(p => ({ master: 'Projects', label: p.name, sub: p.ex_code, href: `/masters/projects?q=${enc}#p-${p.id}` })),
+    ...((sp.data ?? []) as Array<{ id: number; name: string; ex_code: string | null; project_id: number }>).filter(x => matchesQuery(needle, x.name, x.ex_code))
+      .map(x => ({ master: 'Projects', label: x.name, sub: `sub-project of ${projName.get(x.project_id) ?? '?'}${x.ex_code ? ` · ${x.ex_code}` : ''}`, href: `/masters/projects?q=${enc}` })),
+  ]
+  const people: SearchHit[] = [
+    ...contacts.team.filter(u => matchesQuery(needle, u.name, u.email)).map(u => ({ master: 'Contacts', label: u.name, sub: `SRMD team · ${u.roleLabel}`, href: `/masters/contacts?q=${enc}` })),
+    ...(['consultants', 'vendors', 'contractors'] as const).flatMap(g => contacts[g]
+      .filter(p => matchesQuery(needle, p.name, p.pan, p.gstin, p.phone, p.email, p.contactPerson, p.city))
+      .map(p => ({ master: 'Contacts', label: p.name, sub: `${g === 'vendors' ? 'Vendor' : g === 'consultants' ? 'Consultant' : 'Contractor'}${p.city ? ` · ${p.city}` : ''}${p.gstin ? ` · ${p.gstin}` : ''}`, href: `/masters/contacts?group=${g}&q=${enc}` }))),
+  ]
+  const skills = (sk.data ?? []) as Array<{ id: number; name: string; code: string | null; parent_id: number }>
+  const skillName = new Map(skills.map(k => [k.id, k.name]))
+  const categories = skills.filter(k => k.id > 0 && matchesQuery(needle, k.name, k.code))
+    .map(k => ({ master: 'Budget categories', label: k.name, sub: k.parent_id ? `under ${skillName.get(k.parent_id) ?? '?'}` : 'main category', href: `/masters/categories?q=${enc}` }))
+  const items = ((mat.data ?? []) as Array<{ id: number; name: string; code: string | null; type_name: string | null }>)
+    .map(m => ({ master: 'Items', label: m.name, sub: [m.code, m.type_name].filter(Boolean).join(' · ') || null, href: `/masters/items?q=${enc}` }))
+  const boqHits = (boq.data ?? []).map(b => ({ master: 'BOQ', label: b.BOQ_NAME, sub: `${skillName.get(n(b.cat)) ?? 'no category'} · used in ${n(b.n)} WO${n(b.n) === 1 ? '' : 's'}`, href: `/masters/boq?cat=${n(b.cat)}&q=${enc}` }))
+  const groups = [
+    group('Trusts', trusts), group('Projects', projects), group('Contacts', people),
+    group('Budget categories', categories), group('Items', items), group('BOQ', boqHits),
+  ].filter(g => g.hits.length > 0)
+  return { q: needle, groups, in4: boq.in4, in4Error: boq.in4Error }
+}
+
+/** When the IN4 mirror last finished a sync — the freshness of every mirror-fed
+ *  number on these screens. */
+export async function lastMirrorSync(): Promise<string | null> {
+  const supabase = await createClient()
+  const { data } = await supabase.from('in4_sync_runs').select('finished_at').eq('ok', true).order('finished_at', { ascending: false }).limit(1)
+  const v = (data?.[0] as { finished_at: string | null } | undefined)?.finished_at
+  return v ?? null
 }
 
 /* ── The landing page: one card per master, with real counts ───────────── */

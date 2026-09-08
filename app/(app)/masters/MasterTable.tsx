@@ -1,7 +1,7 @@
 'use client'
 import { useMemo, useState } from 'react'
 import Link from 'next/link'
-import { Search, ArrowUpDown, X } from 'lucide-react'
+import { Search, ArrowUpDown, X, Download } from 'lucide-react'
 
 /**
  * One table for every Masters screen.
@@ -54,7 +54,7 @@ const TONE: Record<CellTone, string> = {
 
 export function MasterTable({
   columns, rows, searchPlaceholder = 'Search…', emptyMessage = 'Nothing here.',
-  sortableKeys = [], maxRows = 500,
+  sortableKeys = [], maxRows = 500, initialQuery = '', exportName, emptyHint,
 }: {
   columns: MasterColumn[]
   rows: MasterRow[]
@@ -65,8 +65,15 @@ export function MasterTable({
   /** How many rows to draw at once. The Item master is 4,041 rows; drawing
    *  them all froze a phone. Search narrows; the count line says so. */
   maxRows?: number
+  /** Pre-filled search — how a hit on /masters/search lands here already narrowed. */
+  initialQuery?: string
+  /** File name (without .csv) for the Download button; omit for no button.
+   *  Exports the rows as shown after search and sort — Aksha works in Excel. */
+  exportName?: string
+  /** Shown under "nothing matches" — e.g. where else to look. */
+  emptyHint?: React.ReactNode
 }) {
-  const [q, setQ] = useState('')
+  const [q, setQ] = useState(initialQuery)
   const [sort, setSort] = useState<{ key: string; dir: 1 | -1 } | null>(null)
 
   const matched = useMemo(() => {
@@ -97,6 +104,23 @@ export function MasterTable({
     setSort(s => s?.key === key ? (s.dir === 1 ? { key, dir: -1 } : null) : { key, dir: 1 })
   }
 
+  /** The visible rows as a CSV file, via a Blob — nothing leaves the browser. */
+  function download() {
+    const cell = (v: string) => `"${v.replace(/"/g, '""')}"`
+    const head = columns.map(c => cell(c.label)).join(',')
+    const body = matched.map(r => columns.map(c => {
+      const x = r.cells[c.key]
+      return cell([x?.text ?? '', x?.sub ?? ''].filter(Boolean).join(' — '))
+    }).join(','))
+    const blob = new Blob(['﻿' + [head, ...body].join('\r\n')], { type: 'text/csv;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `${exportName ?? 'masters'}${q.trim() ? `-${q.trim().replace(/[^a-z0-9]+/gi, '-')}` : ''}.csv`
+    a.click()
+    setTimeout(() => URL.revokeObjectURL(url), 1000)
+  }
+
   return (
     <div className="space-y-2">
       <div className="relative">
@@ -121,17 +145,30 @@ export function MasterTable({
         )}
       </div>
 
-      <p className="text-[12px] text-gray-500 tabular-nums">
-        {matched.length === rows.length
-          ? `${rows.length.toLocaleString('en-IN')} row${rows.length === 1 ? '' : 's'}`
-          : `${matched.length.toLocaleString('en-IN')} of ${rows.length.toLocaleString('en-IN')}`}
-        {matched.length > maxRows && ` — showing the first ${maxRows.toLocaleString('en-IN')}; search to narrow`}
-      </p>
+      <div className="flex items-center justify-between gap-3">
+        <p className="text-[12px] text-gray-500 tabular-nums">
+          {matched.length === rows.length
+            ? `${rows.length.toLocaleString('en-IN')} row${rows.length === 1 ? '' : 's'}`
+            : `${matched.length.toLocaleString('en-IN')} of ${rows.length.toLocaleString('en-IN')}`}
+          {matched.length > maxRows && ` — showing the first ${maxRows.toLocaleString('en-IN')}; search to narrow`}
+        </p>
+        {exportName && matched.length > 0 && (
+          <button
+            type="button"
+            onClick={download}
+            className="inline-flex items-center gap-1 text-[12px] font-semibold text-indigo-700 hover:underline min-h-[44px] px-1"
+            title={`Download ${matched.length.toLocaleString('en-IN')} row${matched.length === 1 ? '' : 's'} as a spreadsheet file`}
+          >
+            <Download className="h-3.5 w-3.5" /> Download CSV
+          </button>
+        )}
+      </div>
 
       {filtered.length === 0 ? (
-        <p className="rounded-lg border border-gray-200 bg-white px-4 py-8 text-center text-sm text-gray-400">
-          {q ? `Nothing matches “${q}”.` : emptyMessage}
-        </p>
+        <div className="rounded-lg border border-gray-200 bg-white px-4 py-8 text-center text-sm text-gray-400">
+          <p>{q ? `Nothing matches “${q}”.` : emptyMessage}</p>
+          {q && emptyHint && <p className="mt-1 text-[12px]">{emptyHint}</p>}
+        </div>
       ) : (
         <>
           {/* Desktop */}

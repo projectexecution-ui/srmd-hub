@@ -1,8 +1,10 @@
 import Link from 'next/link'
 import { requirePermission } from '@/lib/auth'
 import { PageHeader } from '@/components/PageHeader'
-import { loadMasterOverview } from '@/lib/revamp/masters-in4'
+import { loadMasterOverview, lastMirrorSync } from '@/lib/revamp/masters-in4'
+import { formatDateTime } from '@/lib/utils'
 import { In4Note } from './In4Note'
+import { MasterSearchBox } from './MasterSearchBox'
 import { ArrowRight, Landmark, FolderKanban, Users, Layers, Package, ListTree } from 'lucide-react'
 
 export const dynamic = 'force-dynamic'
@@ -12,11 +14,11 @@ const ICONS: Record<string, React.ComponentType<{ className?: string }>> = {
 }
 
 /** Masters landing — the six lists of Aksha's mind map, one card each, with
- *  the real count on every card. Nothing here writes: IN4 is the register,
- *  CT Hub reads it. */
+ *  the real count on every card, a search across all six, and how fresh the
+ *  mirror is. Nothing here writes: IN4 is the register, CT Hub reads it. */
 export default async function MastersPage() {
   await requirePermission('cost-control', 'view')
-  const { cards, in4, in4Error } = await loadMasterOverview()
+  const [{ cards, in4, in4Error }, synced] = await Promise.all([loadMasterOverview(), lastMirrorSync()])
 
   return (
     <div className="space-y-4">
@@ -24,6 +26,7 @@ export default async function MastersPage() {
         title="Masters"
         subtitle="The lists everything else points at — read from IN4, the system that already holds them."
       />
+      <MasterSearchBox />
       <In4Note in4={in4} error={in4Error} what="the BOQ count" />
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
@@ -59,6 +62,11 @@ export default async function MastersPage() {
           )
         })}
       </div>
+
+      <p className="text-[12px] text-gray-500">
+        Trusts, projects, BOQ: live from IN4 when opened. Contacts, categories, items: from the IN4 mirror{synced ? `, last synced ${formatDateTime(synced)}` : ''}.
+        Everything is read-only here — a wrong name or number is fixed in IN4 and appears on the next sync.
+      </p>
     </div>
   )
 }

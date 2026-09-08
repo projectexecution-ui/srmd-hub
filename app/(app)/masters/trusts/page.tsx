@@ -39,6 +39,7 @@ export default async function TrustsMasterPage() {
 
 function TrustCard({ t }: { t: Trust }) {
   const place = [t.city, t.state, t.pin].filter(Boolean).join(' · ')
+  const active = t.projects.filter(p => p.workOrders > 0).length
   return (
     <section className="rounded-xl border border-gray-200 bg-white">
       <div className="px-4 py-3 border-b border-gray-100 flex items-start gap-3">
@@ -59,14 +60,14 @@ function TrustCard({ t }: { t: Trust }) {
             ? <Missing>No GST registration on record in IN4</Missing>
             : t.gst.map(g => (
               <span key={g.gstin} className="block">
-                <span className="font-mono">{g.gstin}</span>
+                <span className="font-mono select-all">{g.gstin}</span>
                 {(g.address || g.pin) && <span className="block text-[12px] text-gray-500">Registered at {[g.address, g.pin].filter(Boolean).join(' · ')}</span>}
               </span>
             ))}
         </Field>
         <Field label="PAN No">
           {t.pan && t.pan.toUpperCase() !== 'NA'
-            ? <span className="font-mono">{t.pan}</span>
+            ? <span className="font-mono select-all">{t.pan}</span>
             : <Missing>{t.pan ? 'Recorded as “NA” in IN4' : 'IN4 holds no PAN for this trust'}</Missing>}
         </Field>
         <Field label="E-mail">{t.email ?? <Missing>None in IN4</Missing>}</Field>
@@ -75,19 +76,21 @@ function TrustCard({ t }: { t: Trust }) {
 
       <div className="border-t border-gray-100">
         <div className="px-3 py-2 flex items-center gap-1 text-[13px]">
-          <RowDetailToggle id={`trust:${t.id}`} count={t.projects.length} />
+          <RowDetailToggle id={`trust:${t.id}`} count={t.projects.length} label="the projects this trust pays for" />
           <span className="font-semibold text-gray-900">Project addresses</span>
-          <span className="ml-auto text-[12px] text-gray-500 tabular-nums">{t.projects.length} project{t.projects.length === 1 ? '' : 's'} · {t.workOrders.toLocaleString('en-IN')} work orders</span>
+          <span className="ml-auto text-[12px] text-gray-500 tabular-nums text-right">
+            {t.projects.length} project{t.projects.length === 1 ? '' : 's'}{active < t.projects.length ? ` (${active} with work orders)` : ''} · {t.workOrders.toLocaleString('en-IN')} work orders
+          </span>
         </div>
         <RowDetail id={`trust:${t.id}`}>
           <ul className="divide-y divide-gray-100 border-t border-gray-100 bg-slate-50/60">
             {t.projects.map(p => (
-              <li key={p.id} className="px-4 py-2 text-[13px]">
+              <li key={p.id} className={`px-4 py-2 text-[13px] ${p.workOrders === 0 ? 'text-gray-500' : ''}`}>
                 <p className="flex items-center gap-2 flex-wrap">
                   {p.code && <span className="font-mono text-[12px] text-gray-500">{p.code}</span>}
-                  <Link href={`/masters/projects#p-${p.id}`} className="font-medium text-gray-900 hover:underline">{p.name}</Link>
+                  <Link href={`/masters/projects?q=${encodeURIComponent(p.name)}`} className={`font-medium hover:underline ${p.workOrders === 0 ? '' : 'text-gray-900'}`}>{p.name}</Link>
                   {p.status && p.status !== 'Approved' && <span className="text-[11px] rounded border border-amber-200 bg-amber-50 text-amber-800 px-1">{p.status}</span>}
-                  <span className="ml-auto text-[12px] text-gray-500 tabular-nums">{p.workOrders.toLocaleString('en-IN')} WO{p.workOrders === 1 ? '' : 's'}</span>
+                  <span className="ml-auto text-[12px] text-gray-500 tabular-nums">{p.workOrders > 0 ? `${p.workOrders.toLocaleString('en-IN')} WO${p.workOrders === 1 ? '' : 's'}` : 'no work orders'}</span>
                 </p>
                 <p className="text-[12px] text-gray-600 mt-0.5">
                   {p.address

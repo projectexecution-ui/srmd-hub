@@ -162,7 +162,7 @@ function useDetail() {
  *  category above it. A sub-skill with no budget rows gets no chevron (an
  *  affordance that opens an empty drawer is worse than none) but still gets
  *  its width back as a spacer, or the codes underneath would sit ragged. */
-export function RowDetailToggle({ id, count }: { id: string; count: number }) {
+export function RowDetailToggle({ id, count, label }: { id: string; count: number; /** What opens, e.g. "sub-projects" — the Masters and Accounts screens reuse this chevron for things that are not a BOQ. Default keeps the Cost Control wording. */ label?: string }) {
   const { isOpen, toggle } = useDetail()
   if (count <= 0) return <span className="inline-block h-5 w-5 mr-1 align-middle" aria-hidden />
   const open = isOpen(id)
@@ -171,9 +171,11 @@ export function RowDetailToggle({ id, count }: { id: string; count: number }) {
       type="button"
       onClick={() => toggle(id)}
       aria-expanded={open}
-      title={open
-        ? 'Hide the item-wise BOQ'
-        : `Show the item-wise BOQ — ${count} item${count === 1 ? '' : 's'} (unit, qty, rate, amount)`}
+      title={label
+        ? (open ? `Hide ${label}` : `Show ${label} — ${count}`)
+        : open
+          ? 'Hide the item-wise BOQ'
+          : `Show the item-wise BOQ — ${count} item${count === 1 ? '' : 's'} (unit, qty, rate, amount)`}
       // Same chevron as the category rows above it (CatChevron) — one tree,
       // one affordance. It used to be a bordered "> 1 item" pill, which read
       // as a badge sitting next to the name rather than a level of the tree.
