@@ -25,6 +25,7 @@ import {
   RowDetailProvider, RowDetailToggle, RowDetail,
 } from '@/components/cost-control/project-tree'
 import { loadOrdersTree, type OrdersSubRow, type OrderRow, type OrderLine, type Money } from '@/lib/revamp/orders-tree'
+import { checkIsCcReviewer } from '@/components/cost-control/ws-actions'
 
 /** Quantities are not money: they carry decimals and their own unit. */
 const qty = (v: number | null) =>
@@ -50,14 +51,23 @@ export async function OrdersView({ projectId }: { projectId: string }) {
   // A mapping gap and an empty project are different things, and calling the
   // first "no orders" would be a lie.
   if (!linked) {
+    // Says what to do, not only what is wrong (UX 32). Only a reviewer can
+    // fix the mapping; everyone else is told who can.
+    const reviewer = await checkIsCcReviewer()
     return (
       <div className="rounded-xl border border-amber-200 bg-amber-50 p-4">
         <p className="text-sm font-semibold text-amber-900">Not linked to an IN4 sub-project yet</p>
         <p className="text-xs text-amber-800 mt-1 max-w-2xl">
-          Orders are read from IN4 through a confirmed mapping, never a name match. Confirm it on{' '}
-          <Link href="/admin/masters/mapping" className="underline font-medium">Masters → Mapping</Link>{' '}
-          and this tree fills in. Until then this is a gap in the mapping, not a project without orders.
+          Orders are read from IN4 through a confirmed mapping, never a name match. This is a gap in the
+          mapping, not a project without orders.
         </p>
+        {reviewer ? (
+          <Link href="/admin/masters/mapping" className="mt-3 inline-flex items-center rounded-lg bg-amber-700 px-3 text-xs font-semibold text-white min-h-[44px] hover:bg-amber-800">
+            Link it in Masters → Mapping
+          </Link>
+        ) : (
+          <p className="mt-2 text-xs text-amber-800">Ask Aksha or a reviewer to link it; the tree fills in once it is.</p>
+        )}
       </div>
     )
   }
@@ -100,7 +110,7 @@ export async function OrdersView({ projectId }: { projectId: string }) {
             <div className="flex items-center justify-between px-3 py-2 border-b border-gray-100 bg-gray-50/60 gap-2 flex-wrap">
               <span className="text-sm font-bold text-gray-900">
                 Category — WO/PO wise
-                <span className="ml-2 text-[11px] font-normal text-gray-500">
+                <span className="ml-2 text-[12px] font-normal text-gray-500">
                   {cats.length} categor{cats.length === 1 ? 'y' : 'ies'} · {totals.woCount} WO · {totals.poCount} PO · {totals.lineCount} line items
                   {live ? ' · live from IN4' : ' · mirror'}
                 </span>
@@ -129,7 +139,7 @@ export async function OrdersView({ projectId }: { projectId: string }) {
                         <td className="px-3 py-2 font-semibold text-gray-800">
                           <CatChevron catId={c.id} />
                           {c.name}
-                          <span className="ml-2 text-[11px] font-normal text-gray-500">{c.count} order{c.count === 1 ? '' : 's'}</span>
+                          <span className="ml-2 text-[12px] font-normal text-gray-500">{c.count} order{c.count === 1 ? '' : 's'}</span>
                         </td>
                         <MoneyCells m={c} bold />
                       </tr>
@@ -142,7 +152,7 @@ export async function OrdersView({ projectId }: { projectId: string }) {
                               <td className="pl-6 pr-3 py-2 text-gray-700">
                                 <RowDetailToggle id={s.id} count={s.orders.length} />
                                 <RowName row={s} />
-                                <span className="ml-2 text-[11px] text-gray-400">{s.count} order{s.count === 1 ? '' : 's'}</span>
+                                <span className="ml-2 text-[12px] text-gray-400">{s.count} order{s.count === 1 ? '' : 's'}</span>
                               </td>
                               <MoneyCells m={s} />
                             </tr>
@@ -154,14 +164,14 @@ export async function OrdersView({ projectId }: { projectId: string }) {
                                   <tr className="border-t border-gray-100 bg-slate-50/50">
                                     <td className="pl-12 pr-3 py-1.5">
                                       <RowDetailToggle id={o.id} count={o.lines.length} />
-                                      <span className="font-mono text-[11.5px] text-gray-700">{o.ref}</span>
-                                      {o.party && <span className="ml-2 text-[11.5px] text-gray-500">{o.party}</span>}
+                                      <span className="font-mono text-[12px] text-gray-700">{o.ref}</span>
+                                      {o.party && <span className="ml-2 text-[12px] text-gray-500">{o.party}</span>}
                                       {/* Work orders only: IN4 holds a print
                                           template for them (event 3) and none
                                           for purchase orders. */}
                                       {o.kind === 'wo' && <PrintWo id={o.id} ref_={o.ref} />}
-                                      <span className="ml-2 text-[11px] text-gray-400">{o.lines.length} item{o.lines.length === 1 ? '' : 's'}</span>
-                                      {o.flag && <span className="block mt-0.5 text-[10.5px] text-amber-700">{o.flag}</span>}
+                                      <span className="ml-2 text-[12px] text-gray-400">{o.lines.length} item{o.lines.length === 1 ? '' : 's'}</span>
+                                      {o.flag && <span className="block mt-0.5 text-[12px] text-amber-700">{o.flag}</span>}
                                     </td>
                                     <MoneyCells m={o} small />
                                   </tr>
@@ -191,7 +201,7 @@ export async function OrdersView({ projectId }: { projectId: string }) {
                   <tr className="border-t-2 border-gray-300 bg-gray-50 font-semibold">
                     <td className="px-3 py-2 text-gray-900">
                       Total
-                      <span className="ml-2 text-[11px] font-normal text-gray-500">{totals.woCount + totals.poCount} orders</span>
+                      <span className="ml-2 text-[12px] font-normal text-gray-500">{totals.woCount + totals.poCount} orders</span>
                     </td>
                     <MoneyCells m={live ? totals : { ...totals, billed: null, paid: null, advanceOutstanding: null, retention: null, balance: null }} bold />
                   </tr>
@@ -208,7 +218,7 @@ export async function OrdersView({ projectId }: { projectId: string }) {
                       <CatChevron catId={c.id} />
                       <span className="truncate">{c.name}</span>
                     </span>
-                    <span className="text-[11px] text-gray-600 flex-shrink-0 whitespace-nowrap tabular-nums">
+                    <span className="text-[12px] text-gray-600 flex-shrink-0 whitespace-nowrap tabular-nums">
                       {money(c.gross)}
                     </span>
                   </div>
@@ -229,9 +239,9 @@ export async function OrdersView({ projectId }: { projectId: string }) {
                                   <RowDetailToggle id={o.id} count={o.lines.length} />
                                   <span className="font-mono text-gray-700">{o.ref}</span>
                                 </p>
-                                {o.party && <p className="ml-6 text-[11px] text-gray-500">{o.party}</p>}
+                                {o.party && <p className="ml-6 text-[12px] text-gray-500">{o.party}</p>}
                                 {o.kind === 'wo' && <p className="ml-6 mt-0.5"><PrintWo id={o.id} ref_={o.ref} /></p>}
-                                {o.flag && <p className="ml-6 mt-0.5 text-[10.5px] text-amber-700">{o.flag}</p>}
+                                {o.flag && <p className="ml-6 mt-0.5 text-[12px] text-amber-700">{o.flag}</p>}
                                 <div className="ml-6"><MoneyChips m={o} /></div>
                                 <RowDetail id={o.id}>
                                   <div className="mt-2">
@@ -253,7 +263,7 @@ export async function OrdersView({ projectId }: { projectId: string }) {
                   <span className="text-[12px] font-semibold text-gray-900 tabular-nums">{formatINR(totals.gross)}</span>
                 </div>
                 {live && (
-                  <div className="flex items-center justify-between text-[11px] text-gray-600 flex-wrap gap-x-3">
+                  <div className="flex items-center justify-between text-[12px] text-gray-600 flex-wrap gap-x-3">
                     <span>Billed {formatINR(totals.billed)} · Paid {formatINR(totals.paid)} · Retention {formatINR(totals.retention)}</span>
                     <span className="font-semibold text-amber-700 tabular-nums">Balance {formatINR(totals.balance)}</span>
                   </div>
@@ -265,12 +275,12 @@ export async function OrdersView({ projectId }: { projectId: string }) {
           {/* What the tree did with the awkward parts of the data, stated
               rather than applied quietly. */}
           <div className="rounded-lg border border-gray-200 bg-gray-50/60 px-3.5 py-2.5">
-            <p className="text-[11px] font-semibold text-gray-700 flex items-center gap-1.5">
+            <p className="text-[12px] font-semibold text-gray-700 flex items-center gap-1.5">
               <Info className="h-3.5 w-3.5 text-gray-400" /> How this is put together
             </p>
             <ul className="mt-1 space-y-1">
               {notes.map((n, i) => (
-                <li key={i} className="text-[11.5px] text-gray-600 leading-relaxed">{n}</li>
+                <li key={i} className="text-[12px] text-gray-600 leading-relaxed">{n}</li>
               ))}
             </ul>
           </div>
@@ -305,7 +315,7 @@ function MoneyChips({ m, count }: { m: Money; count?: number }) {
   const chip = (label: string, v: number | null, cls = 'text-gray-800') =>
     v == null ? null : <span key={label}>{label} <span className={`font-semibold tabular-nums ${cls}`}>{formatINR(v)}</span></span>
   return (
-    <div className="mt-0.5 ml-6 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[11px] text-gray-500">
+    <div className="mt-0.5 ml-6 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[12px] text-gray-500">
       {count != null && <span>{count} order{count === 1 ? '' : 's'}</span>}
       {chip('Ordered', m.gross ?? m.ordered, 'text-gray-900')}
       {chip('Billed', m.billed)}
@@ -332,7 +342,7 @@ function MoneyChips({ m, count }: { m: Money; count?: number }) {
 function OrderItems({ order: o }: { order: OrderRow }) {
   if (o.lines.length === 0) {
     return (
-      <p className="text-[11.5px] text-gray-500">
+      <p className="text-[12px] text-gray-500">
         IN4 holds no line items against this {o.kind === 'wo' ? 'work order' : 'purchase order'}.
       </p>
     )
@@ -356,7 +366,7 @@ function OrderItems({ order: o }: { order: OrderRow }) {
 
       {/* Desktop: the Internal Estimate's columns, then the certified ones. */}
       <table className="w-full table-fixed text-[12px] hidden md:table">
-        <thead className="text-left text-[10px] uppercase tracking-wide text-gray-400">
+        <thead className="text-left text-[12px] uppercase tracking-wide text-gray-400">
           <tr>
             <th className="border-b border-gray-100 px-2 py-1.5 w-[4%]">#</th>
             <th className="border-b border-gray-100 px-2 py-1.5 w-[30%]">Description</th>
@@ -377,7 +387,7 @@ function OrderItems({ order: o }: { order: OrderRow }) {
                 <td className="px-2 py-1.5 text-gray-800 align-top">
                   <p className="truncate" title={l.description ?? l.name}>{l.name}</p>
                   {l.description && l.description !== l.name && (
-                    <p className="text-[10.5px] text-gray-400 leading-snug line-clamp-2">{l.description}</p>
+                    <p className="text-[12px] text-gray-400 leading-snug line-clamp-2">{l.description}</p>
                   )}
                 </td>
                 <td className="px-2 py-1.5 text-gray-600 align-top">{l.uom ?? ''}</td>
@@ -387,7 +397,7 @@ function OrderItems({ order: o }: { order: OrderRow }) {
                 <td className="px-2 py-1.5 text-right tabular-nums align-top text-emerald-800">
                   {l.certifiedQty == null ? <Dash /> : qty(l.certifiedQty)}
                   {l.certifiedQty != null && l.qty ? (
-                    <span className="block text-[10px] text-gray-400">{pctOf(l.certifiedQty, l.qty)} of qty</span>
+                    <span className="block text-[12px] text-gray-400">{pctOf(l.certifiedQty, l.qty)} of qty</span>
                   ) : null}
                 </td>
                 <td className="px-2 py-1.5 text-right tabular-nums align-top text-emerald-800 font-semibold">
@@ -424,7 +434,7 @@ function OrderItems({ order: o }: { order: OrderRow }) {
           {o.lineNote && (
             <tr className="bg-gray-100/70">
               <td />
-              <td className="px-2 pb-2 text-[10.5px] text-amber-800" colSpan={8}>{o.lineNote}</td>
+              <td className="px-2 pb-2 text-[12px] text-amber-800" colSpan={8}>{o.lineNote}</td>
             </tr>
           )}
         </tbody>
@@ -436,16 +446,16 @@ function OrderItems({ order: o }: { order: OrderRow }) {
           <li key={l.id} className="px-3 py-2">
             <p className="text-[12px] text-gray-800"><span className="text-gray-400 mr-1.5">{i + 1}.</span>{l.name}</p>
             {l.description && l.description !== l.name && (
-              <p className="text-[10.5px] text-gray-400 leading-snug line-clamp-2">{l.description}</p>
+              <p className="text-[12px] text-gray-400 leading-snug line-clamp-2">{l.description}</p>
             )}
-            <div className="mt-0.5 flex flex-wrap gap-x-3 gap-y-0.5 text-[11px] text-gray-500 tabular-nums">
+            <div className="mt-0.5 flex flex-wrap gap-x-3 gap-y-0.5 text-[12px] text-gray-500 tabular-nums">
               {l.uom && <span>{l.uom}</span>}
               <span>{qty(l.qty)}</span>
               {l.rate != null && <span>× {formatINR(l.rate)}</span>}
               <span className="font-semibold text-gray-800">{formatINR(l.amount)}</span>
             </div>
             {(
-              <div className="mt-0.5 flex flex-wrap items-center gap-x-3 text-[11px] text-emerald-800 tabular-nums">
+              <div className="mt-0.5 flex flex-wrap items-center gap-x-3 text-[12px] text-emerald-800 tabular-nums">
                 <span>{isWo ? 'Certified' : 'Received'} {l.certifiedQty == null ? '—' : qty(l.certifiedQty)}{l.uom && l.certifiedQty != null ? ` ${l.uom}` : ''}</span>
                 <span className="font-semibold">{l.certifiedAmt == null ? '—' : formatINR(l.certifiedAmt)}</span>
                 {l.bills.length > 0 && <RowDetailToggle id={`${o.id}:${l.id}`} count={l.bills.length} />}
@@ -464,7 +474,7 @@ function OrderItems({ order: o }: { order: OrderRow }) {
           <span className="text-gray-900">Lines total {formatINR(o.lineTotal)}</span>
           {o.certifiedAmt != null && <span className="text-emerald-800">{isWo ? 'Certified' : 'Received'} {formatINR(o.certifiedAmt)}</span>}
         </li>
-        {o.lineNote && <li className="px-3 py-1.5 text-[10.5px] text-amber-800 bg-gray-100/70">{o.lineNote}</li>}
+        {o.lineNote && <li className="px-3 py-1.5 text-[12px] text-amber-800 bg-gray-100/70">{o.lineNote}</li>}
       </ul>
     </div>
   )
@@ -475,8 +485,8 @@ function OrderItems({ order: o }: { order: OrderRow }) {
  *  quantity, and the amount. */
 function BillsTable({ line: l, kind }: { line: OrderLine; kind: 'wo' | 'po' }) {
   return (
-    <table className="w-full text-[11.5px] tabular-nums">
-      <thead className="text-left text-[10px] uppercase tracking-wide text-gray-400">
+    <table className="w-full text-[12px] tabular-nums">
+      <thead className="text-left text-[12px] uppercase tracking-wide text-gray-400">
         <tr>
           <th className="px-2 py-1 w-[14%]">Date</th>
           <th className="px-2 py-1 w-[26%]">{kind === 'wo' ? 'Bill' : 'GRN'}</th>
@@ -516,7 +526,7 @@ const pctOf = (part: number, whole: number) => `${Math.round((part / whole) * 10
  *  as a CT Hub mistake. */
 function LineNote({ text }: { text: string }) {
   return (
-    <span className="block mt-0.5 text-[11px] text-amber-800 leading-snug">
+    <span className="block mt-0.5 text-[12px] text-amber-800 leading-snug">
       <Info className="inline h-3 w-3 mr-1 -mt-0.5 text-amber-600" />{text}
     </span>
   )
@@ -529,7 +539,7 @@ function RowName({ row }: { row: OrdersSubRow }) {
     return (
       <span className="inline-flex items-center gap-1.5">
         {row.name}
-        <span className="text-[10px] font-semibold rounded px-1.5 py-0.5 bg-sky-50 text-sky-700 border border-sky-100">PO</span>
+        <span className="text-[12px] font-semibold rounded px-1.5 py-0.5 bg-sky-50 text-sky-700 border border-sky-100">PO</span>
       </span>
     )
   }
@@ -548,7 +558,7 @@ function PrintWo({ id, ref_ }: { id: string; ref_: string }) {
       target="_blank"
       rel="noopener"
       title={`Open ${ref_} in IN4's own work-order format`}
-      className="ml-2 inline-flex items-center gap-1 text-[11px] font-semibold text-indigo-700 hover:underline"
+      className="ml-2 inline-flex items-center gap-1 text-[12px] font-semibold text-indigo-700 hover:underline max-md:min-h-[44px] max-md:px-2"
     >
       <FileText className="h-3 w-3" /> Print
     </a>
@@ -568,11 +578,11 @@ function Th({ children, className }: { children: React.ReactNode; className?: st
 function Kpi({ label, value, sub, muted, tone }: { label: string; value: string; sub?: string; muted?: boolean; tone?: 'amber' }) {
   return (
     <div className="rounded-lg border border-gray-200 bg-white px-3 py-2">
-      <p className="text-[10px] uppercase tracking-wider font-semibold text-gray-500">{label}</p>
+      <p className="text-[12px] uppercase tracking-wider font-semibold text-gray-500">{label}</p>
       <p className={`text-[15px] font-bold mt-0.5 tabular-nums ${
         tone === 'amber' ? 'text-amber-700' : muted ? 'text-gray-700' : 'text-gray-900'
       }`}>{value}</p>
-      {sub && <p className="text-[10.5px] text-gray-500 tabular-nums mt-0.5">{sub}</p>}
+      {sub && <p className="text-[12px] text-gray-500 tabular-nums mt-0.5">{sub}</p>}
     </div>
   )
 }

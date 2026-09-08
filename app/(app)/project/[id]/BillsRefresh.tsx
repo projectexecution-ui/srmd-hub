@@ -47,13 +47,13 @@ export function BillsRefresh({ asOf, ageDays }: { asOf: string; ageDays: number 
 
   return (
     <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
-      <span className={`text-[11px] ${stale ? 'font-semibold text-amber-700' : 'text-gray-500'}`}>
+      <span className={`text-[12px] ${stale ? 'font-semibold text-amber-700' : 'text-gray-500'}`}>
         From Zoho, {asOf}
         {ageDays !== null && (ageDays === 0 ? ' · today' : ` · ${ageDays} day${ageDays === 1 ? '' : 's'} ago`)}
       </span>
 
       {IS_DEMO ? (
-        <span className="inline-flex items-center gap-1.5 text-[11px] text-gray-500">
+        <span className="inline-flex items-center gap-1.5 text-[12px] text-gray-500">
           <Info className="h-3.5 w-3.5" />
           Refresh is blocked on the trial site — it rewrites the live snapshot.
           <Link

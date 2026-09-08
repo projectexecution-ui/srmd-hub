@@ -44,7 +44,7 @@ export function TabBar({ projectId, tabs }: { projectId: string; tabs: ProjectTa
                   aria-hidden
                 >
                   <span className="h-4 w-px bg-gray-200" />
-                  <span className="text-[10px] font-semibold uppercase tracking-wide text-gray-400 whitespace-nowrap">
+                  <span className="text-[12px] font-semibold uppercase tracking-wide text-gray-400 whitespace-nowrap">
                     Coming soon
                   </span>
                 </span>

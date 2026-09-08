@@ -71,7 +71,9 @@ export function CatChevron({ catId }: { catId: string }) {
       onClick={() => toggle(catId)}
       aria-expanded={!collapsed}
       title={collapsed ? 'Expand' : 'Collapse'}
-      className="inline-flex items-center justify-center h-5 w-5 rounded text-gray-500 hover:bg-gray-200 hover:text-gray-800 align-middle mr-1 -ml-1"
+      // 44 px on a phone (AGENTS.md tap targets); the compact 20 px box from
+      // md up, where a mouse is doing the clicking.
+      className="inline-flex items-center justify-center h-5 w-5 max-md:h-11 max-md:w-11 max-md:-my-3 rounded text-gray-500 hover:bg-gray-200 hover:text-gray-800 align-middle mr-1 -ml-1"
     >
       {collapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
     </button>
@@ -177,7 +179,7 @@ export function RowDetailToggle({ id, count }: { id: string; count: number }) {
       // as a badge sitting next to the name rather than a level of the tree.
       // The count lives in the tooltip; the chevron only appears when there
       // is something to open, so its presence already says so.
-      className="mr-1 inline-flex items-center justify-center h-5 w-5 rounded text-gray-400 hover:bg-gray-200 hover:text-gray-800 align-middle"
+      className="mr-1 inline-flex items-center justify-center h-5 w-5 max-md:h-11 max-md:w-11 max-md:-my-3 rounded text-gray-400 hover:bg-gray-200 hover:text-gray-800 align-middle"
     >
       {open ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
     </button>

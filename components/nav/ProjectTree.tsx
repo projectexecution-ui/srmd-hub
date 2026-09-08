@@ -7,7 +7,7 @@
 import Link from 'next/link'
 import { useEffect, useMemo, useState } from 'react'
 import { usePathname } from 'next/navigation'
-import { Building2, ChevronDown, ChevronRight, FolderKanban } from 'lucide-react'
+import { Building2, ChevronDown, ChevronRight, FolderKanban, Search } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { buildProjectTree, countTree, projectIdFromPath, type FlatProject } from '@/lib/project-tree'
 import { projectHref } from '@/lib/revamp/tabs'
@@ -15,6 +15,7 @@ import { readOpenMap, writeOpenMap, readFlag, writeFlag } from '@/lib/nav-prefs'
 
 const OPEN_KEY = 'srmd_nav_projects_open'
 const LANE_KEY = 'srmd_nav_projects_lane'
+const FILTER_KEY = 'srmd_nav_projects_filter'
 
 interface Props {
   projects: FlatProject[]
@@ -34,6 +35,23 @@ export function ProjectTree({ projects, approvals = {}, mobile = false, collapse
   const activeId = projectIdFromPath(pathname)
   const [laneOpen, setLaneOpen] = useState(true)
   const [open, setOpen] = useState<Record<string, boolean>>({})
+  // Type two letters and the tree collapses to the matches (UX item 2 —
+  // 33 projects on a phone is a long scroll). Remembered for the session.
+  const [q, setQ] = useState('')
+  useEffect(() => { try { setQ(sessionStorage.getItem(FILTER_KEY) ?? '') } catch { /* private mode */ } }, [])
+  const setFilter = (v: string) => { setQ(v); try { sessionStorage.setItem(FILTER_KEY, v) } catch { /* ignore */ } }
+  const needle = q.trim().toLowerCase()
+  const hit = (s: string | null | undefined) => !!s && s.toLowerCase().includes(needle)
+  const shown = useMemo(() => {
+    if (!needle) return tree
+    return tree
+      .map(g => {
+        const kids = g.children.filter(c => hit(c.name) || hit(c.code) || hit(c.label))
+        const self = hit(g.name) || hit(g.label) || hit(g.code)
+        return self || kids.length ? { ...g, children: self ? g.children : kids } : null
+      })
+      .filter((g): g is NonNullable<typeof g> => g !== null)
+  }, [tree, needle])
 
   useEffect(() => {
     // Validated, not just parsed: this key held a plain "1" in the revamp
@@ -88,7 +106,23 @@ export function ProjectTree({ projects, approvals = {}, mobile = false, collapse
       </button>
       {laneOpen && (
         <div className={cn('mt-0.5 space-y-0.5 border-l border-gray-200', mobile ? 'ml-6 pl-2' : 'ml-5 pl-2')}>
-          {tree.map(g => {
+          {tree.length > 6 && (
+            <div className={cn('relative', mobile ? 'pr-3 pb-1' : 'pr-2 pb-1')}>
+              <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400 pointer-events-none" />
+              <input
+                type="search"
+                value={q}
+                onChange={e => setFilter(e.target.value)}
+                placeholder="Find a project"
+                aria-label="Find a project"
+                className={cn('w-full rounded-lg border border-gray-200 bg-white pl-7 pr-2 text-[12px] text-gray-800 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-200', mobile ? 'min-h-[44px]' : 'h-8')}
+              />
+            </div>
+          )}
+          {needle && shown.length === 0 && (
+            <p className="px-2 py-1.5 text-[12px] text-gray-500">No project matches “{q.trim()}”.</p>
+          )}
+          {shown.map(g => {
             const hasActive = g.id === activeId || g.children.some(c => c.id === activeId)
             if (g.children.length === 0) {
               return (
@@ -99,7 +133,9 @@ export function ProjectTree({ projects, approvals = {}, mobile = false, collapse
                 </Link>
               )
             }
-            const o = isOpen(g.id, hasActive)
+            // While filtering, every surviving group is open — that is what the
+            // filter is for. Otherwise the remembered state.
+            const o = needle ? true : isOpen(g.id, hasActive)
             return (
               <div key={g.id}>
                 <div className="flex items-center">

@@ -55,7 +55,7 @@ export interface WorkspaceTab {
 export const WORKSPACE_TABS: WorkspaceTab[] = [
   // ── Money ────────────────────────────────────────────────────────────────
   { slug: '', ribbon: 'Budget', label: 'Budget vs Actual', group: 'money', icon: 'BarChart3',
-    subs: ['Category / sub-category wise', 'Category — WO/PO wise', 'CT wise'],
+    subs: ['By category', 'By order', 'By CT'],
     permissionSlug: 'cost-control', built: true },
   // reviewerOnly because these cards carry project-level financials — the ERP
   // budget, approved-so-far and every pending ask. /cost-control/approvals

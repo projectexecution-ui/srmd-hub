@@ -26,7 +26,7 @@ function TabShell({
 function Stat({ label, value, tone = 'plain' }: { label: string; value: string; tone?: 'plain' | 'amber' }) {
   return (
     <div className={`rounded-lg border px-3 py-2 ${tone === 'amber' ? 'border-amber-200 bg-amber-50/70' : 'border-gray-200 bg-white'}`}>
-      <p className="text-[10px] uppercase tracking-wide font-semibold text-gray-500">{label}</p>
+      <p className="text-[12px] uppercase tracking-wide font-semibold text-gray-500">{label}</p>
       <p className={`text-base font-bold tabular-nums mt-0.5 ${tone === 'amber' ? 'text-amber-900' : 'text-gray-900'}`}>{value}</p>
     </div>
   )
@@ -64,12 +64,12 @@ export async function ApprovalsTab({ projectId }: { projectId: string }) {
                 <span className="block text-sm text-gray-900 truncate">
                   {r.category} <span className="text-gray-400">›</span> {r.subSkill}
                 </span>
-                <span className="block text-[11px] text-gray-500">
+                <span className="block text-[12px] text-gray-500">
                   {r.wsCode ?? '—'} · submitted {r.submittedAt ? formatDate(r.submittedAt) : '—'}
                 </span>
               </span>
               <span className="flex items-center gap-3 flex-shrink-0">
-                <span className="inline-flex rounded-full bg-amber-100 text-amber-800 text-[11px] font-semibold px-2 py-0.5 whitespace-nowrap">
+                <span className="inline-flex rounded-full bg-amber-100 text-amber-800 text-[12px] font-semibold px-2 py-0.5 whitespace-nowrap">
                   {r.waitingOn}
                 </span>
                 <span className="tabular-nums font-semibold text-gray-900">{formatINR(r.amount)}</span>
@@ -105,7 +105,7 @@ export async function StoresTab({ projectId }: { projectId: string }) {
           {ownStores.map(s => (
             <div key={s.id} className="flex items-center justify-between px-3 py-2.5">
               <span className="text-sm text-gray-900">
-                {s.code && <span className="font-mono text-[11px] text-gray-400 mr-2">{s.code}</span>}
+                {s.code && <span className="font-mono text-[12px] text-gray-400 mr-2">{s.code}</span>}
                 {s.name}
               </span>
               <span className="text-xs text-gray-500 tabular-nums">{s.items} items</span>
@@ -128,9 +128,9 @@ export async function StoresTab({ projectId }: { projectId: string }) {
               className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 px-3 py-2.5 hover:bg-gray-50 min-h-[44px]">
               <span className="min-w-0">
                 <span className="block text-sm text-gray-900 truncate">{r.purpose || '(no purpose given)'}</span>
-                <span className="block text-[11px] text-gray-500">{r.reqNo ?? '—'} · {r.date ? formatDate(r.date) : '—'}</span>
+                <span className="block text-[12px] text-gray-500">{r.reqNo ?? '—'} · {r.date ? formatDate(r.date) : '—'}</span>
               </span>
-              <span className="inline-flex rounded-full bg-gray-100 text-gray-700 text-[11px] font-semibold px-2 py-0.5 whitespace-nowrap">
+              <span className="inline-flex rounded-full bg-gray-100 text-gray-700 text-[12px] font-semibold px-2 py-0.5 whitespace-nowrap">
                 {r.status.replace('_', ' ')}
               </span>
             </Link>
@@ -169,12 +169,12 @@ export async function JmrTab({ projectId }: { projectId: string }) {
                 <span className="block text-sm text-gray-900 truncate">
                   {e.description?.trim() || '(no description)'}
                 </span>
-                <span className="block text-[11px] text-gray-500">
+                <span className="block text-[12px] text-gray-500">
                   {e.date ? formatDate(e.date) : '—'} · qty {e.qty.toLocaleString('en-IN')}
                 </span>
               </span>
               <span className="flex items-center gap-3 flex-shrink-0">
-                <span className={`inline-flex rounded-full text-[11px] font-semibold px-2 py-0.5 whitespace-nowrap ${
+                <span className={`inline-flex rounded-full text-[12px] font-semibold px-2 py-0.5 whitespace-nowrap ${
                   e.status === 'approved' ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
                 }`}>
                   {e.status}

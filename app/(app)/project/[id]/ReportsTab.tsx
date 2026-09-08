@@ -144,7 +144,7 @@ async function BillsCockpit({ projectId }: { projectId: string }) {
       </div>
       <Cockpit bills={bills} asOf={asOf} />
       {unattributed.count > 0 && (
-        <p className="text-[11px] text-amber-700 px-1">
+        <p className="text-[12px] text-amber-700 px-1">
           {unattributed.count} more bills ({formatINR(unattributed.claimed)}) in the pipeline name an
           area no project in CT Hub has, so they are on no project&rsquo;s tab.
         </p>
@@ -161,7 +161,7 @@ function Money({ value, sft, className = '' }: { value: number; sft: number; cla
     <span className={className}>
       {formatINR(value)}
       {per > 0 && (
-        <span className="block text-[10px] font-normal text-gray-400 tabular-nums">
+        <span className="block text-[12px] font-normal text-gray-400 tabular-nums">
           ₹{per.toLocaleString('en-IN')}/sft
         </span>
       )}
@@ -181,7 +181,7 @@ function SideTable({ title, side, partyLabel, sft }: {
         <div className="flex items-center justify-between px-3 py-2 border-b border-gray-100 bg-gray-50/60 gap-2 flex-wrap">
           <span className="text-sm font-bold text-gray-900">
             {title}
-            <span className="ml-2 text-[11px] font-normal text-gray-500">
+            <span className="ml-2 text-[12px] font-normal text-gray-500">
               from {side.subProjects.length} sub-project{side.subProjects.length === 1 ? '' : 's'}
             </span>
           </span>
@@ -254,7 +254,7 @@ function SideTable({ title, side, partyLabel, sft }: {
                   <CatChevron catId={c.category} />
                   <span className="truncate">{c.category}</span>
                 </span>
-                <span className="text-[11px] text-gray-600 flex-shrink-0 whitespace-nowrap tabular-nums">
+                <span className="text-[12px] text-gray-600 flex-shrink-0 whitespace-nowrap tabular-nums">
                   {formatINR(c.bill)}
                 </span>
               </div>
@@ -262,7 +262,7 @@ function SideTable({ title, side, partyLabel, sft }: {
                 {c.parties.map(p => (
                   <div key={p.party} className="px-4 py-3">
                     <p className="text-sm text-gray-900">{p.party}</p>
-                    <div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-0.5 text-[11px] text-gray-500">
+                    <div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-0.5 text-[12px] text-gray-500">
                       <span>WO <span className="font-semibold text-gray-700 tabular-nums">{p.wo ? formatINR(p.wo) : '—'}</span></span>
                       <span>Billed <span className="font-semibold text-gray-900 tabular-nums">{formatINR(p.bill)}</span></span>
                       <span>Paid <span className="font-semibold text-gray-700 tabular-nums">{formatINR(p.paid)}</span></span>

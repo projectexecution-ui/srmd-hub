@@ -82,7 +82,7 @@ export default async function ProjectWorkspaceLayout({
             </Link>
 
             {head.code && (
-              <span className="inline-flex rounded bg-indigo-50 text-indigo-700 text-[11px] font-bold px-1.5 py-0.5 flex-shrink-0">
+              <span className="inline-flex rounded bg-indigo-50 text-indigo-700 text-[12px] font-bold px-1.5 py-0.5 flex-shrink-0">
                 {head.code}
               </span>
             )}
@@ -98,7 +98,7 @@ export default async function ProjectWorkspaceLayout({
                 when it renders inside the Budget tab, so the status moved up
                 here rather than being lost. */}
             {head.ccStatus && (
-              <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold tracking-wide flex-shrink-0 ${
+              <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[12px] font-bold tracking-wide flex-shrink-0 ${
                 head.ccStatus === 'active' ? 'bg-green-100 text-green-800'
                 : head.ccStatus === 'on_hold' ? 'bg-amber-100 text-amber-800'
                 : head.ccStatus === 'completed' ? 'bg-blue-100 text-blue-800'
@@ -128,7 +128,7 @@ export default async function ProjectWorkspaceLayout({
 
             <div className="flex items-center gap-2 ml-auto flex-shrink-0">
               {head.syncedAt && (
-                <span className="hidden sm:inline text-[11.5px] text-gray-400 whitespace-nowrap">
+                <span className="hidden sm:inline text-[12px] text-gray-400 whitespace-nowrap">
                   IN4 · {formatDateTime(head.syncedAt)}
                 </span>
               )}
@@ -139,7 +139,7 @@ export default async function ProjectWorkspaceLayout({
                 <Bell className="h-4 w-4 text-gray-400" />
                 <span className="hidden sm:inline">Notifications</span>
                 {head.unread > 0 && (
-                  <span className="inline-flex items-center justify-center rounded-full bg-indigo-600 text-white text-[10px] font-bold min-w-[18px] h-[18px] px-1 tabular-nums">
+                  <span className="inline-flex items-center justify-center rounded-full bg-indigo-600 text-white text-[12px] font-bold min-w-[18px] h-[18px] px-1 tabular-nums">
                     {head.unread}
                   </span>
                 )}

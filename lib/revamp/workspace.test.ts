@@ -33,8 +33,8 @@ describe('the ribbon is fifteen tabs in five groups', () => {
     expect(WORKSPACE_TABS.every(t => t.subs.every(s => s.trim().length > 0))).toBe(true)
   })
 
-  it('opens Budget on Category / sub-category wise', () => {
-    expect(WORKSPACE_TABS[0].subs[0]).toBe('Category / sub-category wise')
+  it('opens Budget on the category view — short pill names, long name as the heading (UX 10)', () => {
+    expect(WORKSPACE_TABS[0].subs).toEqual(['By category', 'By order', 'By CT'])
   })
 
   it('names a slug the cockpit can actually route', () => {

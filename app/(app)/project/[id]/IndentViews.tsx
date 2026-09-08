@@ -88,7 +88,7 @@ export function IndentViews({ lines, projectName }: { lines: LineRecord[]; proje
               <Icon className={`h-4 w-4 ${active ? '' : t.tone === 'amber' ? 'text-amber-600' : t.tone === 'rose' ? 'text-rose-600' : 'text-emerald-600'}`} />
               {t.label}
               <span className={[
-                'rounded-full px-1.5 py-0.5 text-[11px] font-bold tabular-nums',
+                'rounded-full px-1.5 py-0.5 text-[12px] font-bold tabular-nums',
                 active ? 'bg-white/20 text-white'
                   : t.late > 0 ? 'bg-red-100 text-red-800'
                   : t.tone === 'emerald' ? 'bg-emerald-100 text-emerald-800'

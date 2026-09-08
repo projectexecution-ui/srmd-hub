@@ -77,7 +77,7 @@ export async function ApprovalsTab({ projectId, view }: { projectId: string; vie
         </p>
         {ccSettings.show_erp_columns && (inbox.erpBudgetByProject.get(projectId) ?? 0) > 0 && (
           <p className="text-xs text-gray-500 tabular-nums">
-            <span className="text-[10px] uppercase tracking-wide text-gray-400">Project budget (ERP)</span>{' '}
+            <span className="text-[12px] uppercase tracking-wide text-gray-400">Project budget (ERP)</span>{' '}
             <b className="text-gray-900">{formatINR(inbox.erpBudgetByProject.get(projectId) ?? 0)}</b>
           </p>
         )}

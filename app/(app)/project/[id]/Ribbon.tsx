@@ -110,7 +110,7 @@ export function Ribbon({
                     {/* Labels drop below 1180px; the icons carry the ribbon. */}
                     <span
                       className={cn(
-                        'hidden min-[1180px]:block text-[11px] leading-none whitespace-nowrap',
+                        'hidden min-[1180px]:block text-[12px] leading-none whitespace-nowrap',
                         isActive && 'font-medium',
                       )}
                     >
@@ -120,7 +120,7 @@ export function Ribbon({
                 )
               })}
             </div>
-            <div className="hidden min-[1180px]:block text-center text-[10px] tracking-wide text-gray-400 mt-1 mb-1">
+            <div className="hidden min-[1180px]:block text-center text-[12px] tracking-wide text-gray-400 mt-1 mb-1">
               {g.label}
             </div>
           </div>
@@ -144,6 +144,10 @@ export function Ribbon({
                 )}
               >
                 <Settings2 className="h-[17px] w-[17px]" strokeWidth={1.6} />
+                {/* Named, not just an icon — a gear with no word is the
+                    classic hidden control (UX item 33). Hidden where the tab
+                    labels hide too, so it never widens the ribbon. */}
+                <span className="hidden min-[1180px]:block text-[12px] leading-none">Setup</span>
               </Link>
             </div>
           </div>

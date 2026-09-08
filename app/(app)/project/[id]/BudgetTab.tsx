@@ -2,6 +2,8 @@ import Link from 'next/link'
 import { AlertTriangle } from 'lucide-react'
 import { formatINR } from '@/lib/utils'
 import { loadCtWise } from '@/lib/revamp/budget-actual-data'
+import { usedTone, USED_LEGEND } from '@/lib/revamp/used-tone'
+import { checkIsCcReviewer } from '@/components/cost-control/ws-actions'
 import ProjectInternalEstimatePage from '@/app/(app)/cost-control/projects/[id]/page'
 import { OrdersView } from './OrdersView'
 
@@ -58,19 +60,34 @@ function Money({ v, perSft, bold }: { v: number | null; perSft: number | null; b
     <span className="inline-flex flex-col items-end leading-tight">
       <span className={bold ? 'tabular-nums font-semibold' : 'tabular-nums'}>{formatINR(Math.round(v))}</span>
       {perSft != null && (
-        <span className="text-[10.5px] text-gray-400 tabular-nums">₹{perSft.toLocaleString('en-IN')}/sft</span>
+        <span className="text-[12px] text-gray-400 tabular-nums">₹{perSft.toLocaleString('en-IN')}/sft</span>
       )}
     </span>
   )
 }
 
+/** % used in the one shared colour rule (lib/revamp/used-tone.ts, UX 15). */
 function Pct({ v }: { v: number | null }) {
   if (v == null) return <Dash />
-  return <span className="tabular-nums">{v}%</span>
+  return <span className={`tabular-nums font-semibold ${usedTone(v)}`}>{v}%</span>
+}
+
+/** Said once per page: what the colours and the dash mean (UX 13, 15). */
+function Legend() {
+  return (
+    <p className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[12px] text-gray-500">
+      {USED_LEGEND.map(l => (
+        <span key={l.label} className="inline-flex items-center gap-1.5">
+          <span className={`inline-block h-2 w-2 rounded-full ${l.dot}`} aria-hidden />{l.label}
+        </span>
+      ))}
+      <span className="inline-flex items-center gap-1.5"><span className="text-gray-300">—</span> IN4 holds no figure</span>
+    </p>
+  )
 }
 
 function Th({ children, className }: { children: React.ReactNode; className?: string }) {
-  return <th className={`px-3 py-2 text-[11px] font-semibold uppercase tracking-wide text-gray-500 ${className ?? 'text-right'}`}>{children}</th>
+  return <th className={`px-3 py-2 text-[12px] font-semibold uppercase tracking-wide text-gray-500 ${className ?? 'text-right'}`}>{children}</th>
 }
 
 function Td({ children }: { children: React.ReactNode }) {
@@ -93,15 +110,22 @@ async function CtWiseView({ projectId }: { projectId: string }) {
   }
 
   if (rows.length === 0) {
+    // Says what to do, not only what is wrong (UX 32). Only a reviewer can
+    // fix the mapping; everyone else is told who can.
+    const reviewer = await checkIsCcReviewer()
     return (
       <div className="rounded-xl border border-amber-200 bg-amber-50 p-4">
         <p className="text-sm font-semibold text-amber-900">Not linked to an IN4 sub-project yet</p>
         <p className="text-xs text-amber-800 mt-1">
-          This roll-up reads IN4 sub-projects, and the link is a confirmed mapping rather than a
-          name match. Confirm it on{' '}
-          <Link href="/admin/masters/mapping" className="underline font-medium">Masters → Mapping</Link>{' '}
-          and the rows appear here.
+          This roll-up reads IN4 sub-projects through a confirmed mapping, never a name match.
         </p>
+        {reviewer ? (
+          <Link href="/admin/masters/mapping" className="mt-3 inline-flex items-center rounded-lg bg-amber-700 px-3 text-xs font-semibold text-white min-h-[44px] hover:bg-amber-800">
+            Link it in Masters → Mapping
+          </Link>
+        ) : (
+          <p className="mt-2 text-xs text-amber-800">Ask Aksha or a reviewer to link it; the rows appear here once it is.</p>
+        )}
       </div>
     )
   }
@@ -112,7 +136,7 @@ async function CtWiseView({ projectId }: { projectId: string }) {
         <div className="overflow-auto max-h-[70vh]">
           <table className="w-full text-sm min-w-[860px]">
             <thead className="sticky top-0 z-10 bg-gray-50/95 backdrop-blur">
-              <tr className="text-[10.5px] uppercase tracking-[0.04em] text-gray-500">
+              <tr className="text-[12px] uppercase tracking-[0.04em] text-gray-500">
                 <Th className="text-left pl-4">Sub-project</Th>
                 <Th>Area (sft)</Th>
                 <Th>Budget (ERP)</Th>
@@ -149,7 +173,8 @@ async function CtWiseView({ projectId }: { projectId: string }) {
           </table>
         </div>
       </div>
-      <p className="text-[11.5px] text-gray-400 leading-relaxed">{note}</p>
+      <Legend />
+      <p className="text-[12px] text-gray-400 leading-relaxed">{note}</p>
     </div>
   )
 }

@@ -7,6 +7,7 @@ import {
   type SourceLine, type Selection, type MeasureId, type Grouping, type Unit, type Bucket,
 } from '@/lib/revamp/sc-budgets'
 import { saveScLayout } from './sc-budgets-actions'
+import { IS_DEMO } from '@/lib/demo-mode'
 
 /**
  * SC Budgets — the top-management report.
@@ -128,7 +129,7 @@ export function ScBudgetsClient({ lines, projectName, projectId, openOn, allProj
               the report is about it; a group opens covering its children, and
               a sibling can still be added deliberately. */}
           <Panel id="projects" label="Projects" count={String(s.projectIds.length)}>
-            <p className="px-2 pb-1 pt-0.5 text-[10px] font-semibold uppercase tracking-wide text-gray-400">
+            <p className="px-2 pb-1 pt-0.5 text-[12px] font-semibold uppercase tracking-wide text-gray-400">
               This project{openOn.length > 1 ? ' and its sub-projects' : ''}
             </p>
             {allProjects.filter(p => openOn.includes(p.id)).map(p => (
@@ -139,7 +140,7 @@ export function ScBudgetsClient({ lines, projectName, projectId, openOn, allProj
             ))}
             {allProjects.some(p => !openOn.includes(p.id)) && (
               <>
-                <p className="px-2 pb-1 pt-2 text-[10px] font-semibold uppercase tracking-wide text-gray-400">
+                <p className="px-2 pb-1 pt-2 text-[12px] font-semibold uppercase tracking-wide text-gray-400">
                   Add another project
                 </p>
                 {allProjects.filter(p => !openOn.includes(p.id)).map(p => (
@@ -154,7 +155,7 @@ export function ScBudgetsClient({ lines, projectName, projectId, openOn, allProj
 
           {/* Clubbing — the thing Aksha actually meant by "mix". */}
           <Panel id="clubs" label="Club lines" count={usable.length ? String(usable.length) : 'none'}>
-            <p className="px-2 pb-1.5 pt-0.5 text-[11px] text-gray-500">
+            <p className="px-2 pb-1.5 pt-0.5 text-[12px] text-gray-500">
               Put two or more categories or sub-categories together under one name.
               Anything not clubbed stays as it is.
             </p>
@@ -175,7 +176,7 @@ export function ScBudgetsClient({ lines, projectName, projectId, openOn, allProj
                     <X className="h-3.5 w-3.5" />
                   </button>
                 </div>
-                <p className="px-0.5 pb-0.5 pt-2 text-[10px] font-semibold uppercase tracking-wide text-gray-400">Categories</p>
+                <p className="px-0.5 pb-0.5 pt-2 text-[12px] font-semibold uppercase tracking-wide text-gray-400">Categories</p>
                 {cats.map(([code, label]) => (
                   <Pick key={code} on={b.disciplineCodes.includes(code)}
                     onClick={() => setBucket(i, { disciplineCodes: toggle(b.disciplineCodes, code) })}>
@@ -184,7 +185,7 @@ export function ScBudgetsClient({ lines, projectName, projectId, openOn, allProj
                 ))}
                 {subs.length > 0 && (
                   <>
-                    <p className="px-0.5 pb-0.5 pt-2 text-[10px] font-semibold uppercase tracking-wide text-gray-400">Sub-categories</p>
+                    <p className="px-0.5 pb-0.5 pt-2 text-[12px] font-semibold uppercase tracking-wide text-gray-400">Sub-categories</p>
                     {subs.map(([code, label]) => (
                       <Pick key={code} on={b.subCodes.includes(code)}
                         onClick={() => setBucket(i, { subCodes: toggle(b.subCodes, code) })}>
@@ -205,7 +206,7 @@ export function ScBudgetsClient({ lines, projectName, projectId, openOn, allProj
 
           <Panel id="cats" label="Categories"
             count={`${s.disciplineCodes.length || cats.length}${s.subCodes.length ? ` · ${s.subCodes.length} sub` : ''}`}>
-            <p className="px-2 pb-1 pt-0.5 text-[10px] font-semibold uppercase tracking-wide text-gray-400">Categories</p>
+            <p className="px-2 pb-1 pt-0.5 text-[12px] font-semibold uppercase tracking-wide text-gray-400">Categories</p>
             <Pick on={s.disciplineCodes.length === 0} onClick={() => set({ disciplineCodes: [], subCodes: [] })}>
               All categories
             </Pick>
@@ -217,7 +218,7 @@ export function ScBudgetsClient({ lines, projectName, projectId, openOn, allProj
             ))}
             {subs.length > 0 && (
               <>
-                <p className="px-2 pb-1 pt-2 text-[10px] font-semibold uppercase tracking-wide text-gray-400">
+                <p className="px-2 pb-1 pt-2 text-[12px] font-semibold uppercase tracking-wide text-gray-400">
                   Sub-categories — mix freely with the above
                 </p>
                 <Pick on={s.subCodes.length === 0} onClick={() => set({ subCodes: [] })}>All sub-categories</Pick>
@@ -231,16 +232,16 @@ export function ScBudgetsClient({ lines, projectName, projectId, openOn, allProj
           </Panel>
 
           <Panel id="cols" label="Columns" count={`${s.columns.length}${s.pdfColumns.length ? ` · ${printCols.length} in PDF` : ''}`}>
-            <p className="px-2 pb-1 pt-0.5 text-[10px] font-semibold uppercase tracking-wide text-gray-400">Show these amounts</p>
+            <p className="px-2 pb-1 pt-0.5 text-[12px] font-semibold uppercase tracking-wide text-gray-400">Show these amounts</p>
             {MEASURES.map(m => (
               <Pick key={m.id} on={s.columns.includes(m.id)}
                 onClick={() => set({ columns: MEASURES.filter(x => toggle(s.columns, m.id).includes(x.id)).map(x => x.id) })}>
                 {m.label}
                 {m.confidential && <span className="ml-1 text-[9px] font-bold text-rose-600">CONF</span>}
-                <span className="block text-[10px] font-normal text-gray-400">{m.hint}</span>
+                <span className="block text-[12px] font-normal text-gray-400">{m.hint}</span>
               </Pick>
             ))}
-            <p className="px-2 pb-1 pt-2 text-[10px] font-semibold uppercase tracking-wide text-gray-400">
+            <p className="px-2 pb-1 pt-2 text-[12px] font-semibold uppercase tracking-wide text-gray-400">
               Attach to the PDF — leave empty for all
             </p>
             {s.columns.map(id => (
@@ -276,13 +277,26 @@ export function ScBudgetsClient({ lines, projectName, projectId, openOn, allProj
             ))}
           </div>
 
-          <button
-            onClick={() => startSave(async () => setNote(await saveScLayout(projectId, toSaved(s))))}
-            disabled={saving}
-            className="ml-auto inline-flex items-center gap-1.5 rounded-lg border border-gray-300 bg-white px-3 text-xs font-semibold text-gray-700 min-h-[44px] hover:bg-gray-50 disabled:opacity-40"
-          >
-            <Save className="h-4 w-4" /> {saving ? 'Saving…' : 'Save for this project'}
-          </button>
+          {IS_DEMO ? (
+            // The trial site cannot save. Say so where the button would be,
+            // rather than letting a Server Action come back as a 403 that reads
+            // like a crash (UX item 21; same pattern as BillsRefresh).
+            <span className="ml-auto inline-flex items-center gap-1.5 text-xs text-gray-500 min-h-[44px]">
+              <Save className="h-4 w-4 text-gray-300" />
+              Saving is off on the trial site — nothing is stored here.
+              <a href={`https://ct-hub.vercel.app/cost-control/projects/${projectId}`} className="font-semibold text-indigo-700 hover:underline">
+                Use the live hub →
+              </a>
+            </span>
+          ) : (
+            <button
+              onClick={() => startSave(async () => setNote(await saveScLayout(projectId, toSaved(s))))}
+              disabled={saving}
+              className="ml-auto inline-flex items-center gap-1.5 rounded-lg border border-gray-300 bg-white px-3 text-xs font-semibold text-gray-700 min-h-[44px] hover:bg-gray-50 disabled:opacity-40"
+            >
+              <Save className="h-4 w-4" /> {saving ? 'Saving…' : 'Save for this project'}
+            </button>
+          )}
 
           <button
             onClick={() => window.print()}
@@ -294,7 +308,7 @@ export function ScBudgetsClient({ lines, projectName, projectId, openOn, allProj
         </div>
 
         {note && (
-          <p role="status" className={`text-[11px] flex items-center gap-1 ${note.ok ? 'text-emerald-700' : 'text-rose-700'}`}>
+          <p role="status" className={`text-[12px] flex items-center gap-1 ${note.ok ? 'text-emerald-700' : 'text-rose-700'}`}>
             {note.ok ? <Check className="h-3 w-3" /> : <X className="h-3 w-3" />}{note.message}
           </p>
         )}
@@ -304,7 +318,7 @@ export function ScBudgetsClient({ lines, projectName, projectId, openOn, allProj
       <div className="rounded-lg border border-gray-200 bg-white overflow-hidden print:border-0 print:rounded-none">
         <header className="px-4 py-3 border-b border-gray-100">
           <h2 className="text-sm font-bold text-gray-900">SC Budgets — {projectName}</h2>
-          <p className="text-[11px] text-gray-500 mt-0.5">{describeSelection(s, projectNames)}</p>
+          <p className="text-[12px] text-gray-500 mt-0.5">{describeSelection(s, projectNames)}</p>
         </header>
 
         {rows.length === 0 ? (
@@ -333,7 +347,7 @@ export function ScBudgetsClient({ lines, projectName, projectId, openOn, allProj
                     <tr key={r.key} className="border-t border-gray-100">
                       <td className="px-3 py-2 text-gray-800">
                         {r.label}
-                        <span className="block text-[10px] text-gray-400">{r.sub}</span>
+                        <span className="block text-[12px] text-gray-400">{r.sub}</span>
                       </td>
                       {printCols.map(id => (
                         <td key={id} className="px-3 py-2 text-right tabular-nums text-gray-900">
@@ -345,7 +359,7 @@ export function ScBudgetsClient({ lines, projectName, projectId, openOn, allProj
                   <tr className="border-t-2 border-gray-300 bg-gray-50 font-semibold">
                     <td className="px-3 py-2 text-gray-900">
                       {total.label}
-                      <span className="block text-[10px] font-normal text-gray-500">{total.sub}</span>
+                      <span className="block text-[12px] font-normal text-gray-500">{total.sub}</span>
                     </td>
                     {printCols.map(id => (
                       <td key={id} className="px-3 py-2 text-right tabular-nums text-gray-900">
@@ -362,11 +376,11 @@ export function ScBudgetsClient({ lines, projectName, projectId, openOn, allProj
               {[...rows, total].map(r => (
                 <div key={r.key} className={`px-4 py-3 ${r.key === '__total' ? 'bg-gray-50' : ''}`}>
                   <p className="text-sm font-semibold text-gray-900">{r.label}</p>
-                  <p className="text-[10px] text-gray-400">{r.sub}</p>
+                  <p className="text-[12px] text-gray-400">{r.sub}</p>
                   <dl className="mt-1.5 grid grid-cols-2 gap-x-4 gap-y-1">
                     {printCols.map(id => (
                       <div key={id}>
-                        <dt className="text-[10px] text-gray-400">{measure(id).label}</dt>
+                        <dt className="text-[12px] text-gray-400">{measure(id).label}</dt>
                         <dd className="text-xs font-semibold tabular-nums text-gray-900">
                           {formatCell(r.values[id], id, s.unit)}
                         </dd>

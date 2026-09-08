@@ -29,7 +29,7 @@ export async function ProcurementTab({ projectId }: { projectId: string }) {
         <>
           {/* Name the sub-projects these lines came from — a group's total
               covers several, and the reader should not have to guess which. */}
-          <details className="text-[11px] text-gray-500">
+          <details className="text-[12px] text-gray-500">
             <summary className="cursor-pointer list-none [&::-webkit-details-marker]:hidden">
               From {p.matchedName!.split(', ').length} sub-project
               {p.matchedName!.split(', ').length === 1 ? '' : 's'} in the upload
@@ -45,7 +45,7 @@ export async function ProcurementTab({ projectId }: { projectId: string }) {
               record, so a number here that differs from the live tracker is
               understood rather than doubted. */}
           {p.corrections.live && (p.corrections.poLinesCorrected > 0 || p.corrections.grnRowsDropped > 0) && (
-            <p className="text-[11px] text-gray-500">
+            <p className="text-[12px] text-gray-500">
               {p.corrections.poLinesCorrected > 0 && `${p.corrections.poLinesCorrected} PO line${p.corrections.poLinesCorrected === 1 ? '' : 's'} read from IN4’s PO record`}
               {p.corrections.poLinesCorrected > 0 && p.corrections.grnRowsDropped > 0 && ' · '}
               {p.corrections.grnRowsDropped > 0 && `${p.corrections.grnRowsDropped} empty GRN row${p.corrections.grnRowsDropped === 1 ? '' : 's'} left out`}
@@ -73,7 +73,7 @@ export async function ProcurementTab({ projectId }: { projectId: string }) {
               : <>Nothing has been uploaded to the tracker yet.</>}
           </p>
           {p.unmatchedNames.length > 0 && (
-            <p className="text-[11px] text-amber-700 mt-1.5">
+            <p className="text-[12px] text-amber-700 mt-1.5">
               In the upload: {p.unmatchedNames.slice(0, 8).join(' · ')}
               {p.unmatchedNames.length > 8 && ` · +${p.unmatchedNames.length - 8} more`}
             </p>
@@ -112,7 +112,7 @@ export async function DiscussionsTab({ projectId }: { projectId: string }) {
           <h2 className="text-sm font-bold text-gray-900">
             Discussions
             {comments.length > 0 && (
-              <span className="ml-2 text-[11px] font-normal text-gray-500">
+              <span className="ml-2 text-[12px] font-normal text-gray-500">
                 {comments.length} comment{comments.length === 1 ? '' : 's'}
                 {mentioningMe > 0 && (
                   <span className="font-semibold text-blue-700"> · {mentioningMe} mentioning you</span>
@@ -143,12 +143,12 @@ export async function DiscussionsTab({ projectId }: { projectId: string }) {
                 <p className="text-sm font-semibold text-gray-900">
                   {c.author}
                   {c.mentionsMe && (
-                    <span className="ml-2 rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-bold text-blue-800 align-middle">
+                    <span className="ml-2 rounded-full bg-blue-100 px-2 py-0.5 text-[12px] font-bold text-blue-800 align-middle">
                       mentions you
                     </span>
                   )}
                 </p>
-                <p className="text-[11px] text-gray-400">{formatDateTime(c.createdAt)}</p>
+                <p className="text-[12px] text-gray-400">{formatDateTime(c.createdAt)}</p>
               </div>
               {/* MentionText, the same renderer the per-sheet comments panel
                   uses, so an @name looks identical in both places instead of
@@ -158,7 +158,7 @@ export async function DiscussionsTab({ projectId }: { projectId: string }) {
               </p>
               <Link
                 href={`/cost-control/working-sheets/${c.wsId}`}
-                className="inline-block mt-1.5 text-[11px] font-medium text-indigo-700 hover:underline"
+                className="inline-block mt-1.5 text-[12px] font-medium text-indigo-700 hover:underline"
               >
                 on {c.wsCode ?? 'a sheet'} →
               </Link>

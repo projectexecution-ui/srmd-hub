@@ -2,6 +2,7 @@ import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { formatINR } from '@/lib/utils'
 import { loadCockpit } from '@/lib/revamp/project-cockpit'
+import { usedTone as toneFor } from '@/lib/revamp/used-tone'
 import { PROJECT_TABS, tabHref, builtCount } from '@/lib/revamp/tabs'
 import { ArrowRight, AlertTriangle } from 'lucide-react'
 
@@ -24,12 +25,8 @@ export async function OverviewTab({ projectId }: { projectId: string }) {
     { label: 'Paid',              value: money.paid,             tone: 'text-gray-600' },
   ]
 
-  const usedTone =
-    money.usedPct === null ? 'text-gray-400'
-    : money.usedPct > 100 ? 'text-rose-700'
-    : money.usedPct > 95 ? 'text-red-600'
-    : money.usedPct > 80 ? 'text-amber-700'
-    : 'text-emerald-700'
+  // One shared rule (lib/revamp/used-tone.ts), not a copy of it.
+  const usedTone = toneFor(money.usedPct)
 
   return (
     <div className="space-y-5">
@@ -65,26 +62,26 @@ export async function OverviewTab({ projectId }: { projectId: string }) {
             const per = sft > 0 && f.value > 0 ? Math.round(f.value / sft) : null
             return (
               <div key={f.label} className="px-4 py-3">
-                <p className="text-[10px] uppercase tracking-wide font-semibold text-gray-500">{f.label}</p>
+                <p className="text-[12px] uppercase tracking-wide font-semibold text-gray-500">{f.label}</p>
                 <p className={`text-base font-bold tabular-nums mt-0.5 ${f.tone}`}>
                   {f.value > 0 ? formatINR(f.value) : '—'}
                 </p>
                 {per !== null && (
-                  <p className="text-[11px] text-gray-400 tabular-nums">₹{per.toLocaleString('en-IN')}/sft</p>
+                  <p className="text-[12px] text-gray-400 tabular-nums">₹{per.toLocaleString('en-IN')}/sft</p>
                 )}
               </div>
             )
           })}
           <div className="px-4 py-3">
-            <p className="text-[10px] uppercase tracking-wide font-semibold text-gray-500">% Used</p>
+            <p className="text-[12px] uppercase tracking-wide font-semibold text-gray-500">% Used</p>
             <p className={`text-base font-bold tabular-nums mt-0.5 ${usedTone}`}>
               {money.usedPct === null ? '—' : `${money.usedPct}%`}
             </p>
-            <p className="text-[11px] text-gray-400">Paid ÷ Budget (ERP)</p>
+            <p className="text-[12px] text-gray-400">Paid ÷ Budget (ERP)</p>
           </div>
         </div>
 
-        <p className="px-4 py-2 border-t border-gray-100 text-[11px] text-gray-500">
+        <p className="px-4 py-2 border-t border-gray-100 text-[12px] text-gray-500">
           {categories} work categories · {subSkills} sub-skills
         </p>
       </section>
@@ -92,7 +89,7 @@ export async function OverviewTab({ projectId }: { projectId: string }) {
       <section>
         <div className="flex items-baseline justify-between gap-2 mb-2 flex-wrap">
           <h2 className="text-sm font-bold text-gray-900">Everything for this project</h2>
-          <p className="text-[11px] text-gray-500">
+          <p className="text-[12px] text-gray-500">
             {built} of {total} sections built · the rest are marked
             <span className="inline-block h-1.5 w-1.5 rounded-full bg-amber-400 mx-1 align-middle" />
           </p>
