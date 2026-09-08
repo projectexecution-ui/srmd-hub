@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import {
-  buildOrdersTree, contractorNames,
+  buildOrdersTree, contractorNames, lineNoteFor,
   type WoRow, type IndentRow, type BoqRow, type Skill, type PartyReader,
 } from './orders-tree'
 
@@ -21,7 +21,7 @@ const SKILLS = new Map<number, Skill>([
 const PARTIES = new Map<number, string>([[9, 'ACME Constructions'], [11, 'Sonal Ceramics']])
 
 const wo = (o: Partial<WoRow> & { wo_id: number }): WoRow => ({
-  category_id: 1, subcategory_id: 317, wo_value: 0, wo_paid_amt: 0,
+  category_id: 1, subcategory_id: 317, wo_value: 0, wo_gross_value: null, wo_paid_amt: 0,
   display_no: `WO/SRASSK/ND/2023-24/${o.wo_id}`, contractor_id: 9, ...o,
 })
 const indent = (skill_id: number | null, pos: unknown, material_name = 'Cement', uom = 'Bag'): IndentRow =>
@@ -285,5 +285,87 @@ describe('contractor names — in4_parties is keyed on (kind, id), not id', () =
     const res = await contractorNames(reader, [{ contractor_id: null }])
     expect(res).toEqual({ rows: [], error: null })
     expect(calls).toEqual([])
+  })
+})
+
+describe('GST — Ordered is before tax, Paid is with tax, Balance compares like with like', () => {
+  // WO/SRASSK/NGH/2025-26/233 as IN4 holds it on 8 Sep 2026.
+  const WO233 = wo({ wo_id: 1427, wo_value: 305067.95, wo_gross_value: 359980.19, wo_paid_amt: 344726 })
+
+  it('balance is gross minus paid, so a paid-up order is not shown as overpaid', () => {
+    const t = build([WO233])
+    const o = t.cats[0].subs[0].orders[0]
+    expect(o.ordered).toBe(305067.95)
+    expect(o.gross).toBe(359980.19)
+    expect(o.paid).toBe(344726)
+    // The old sum, ordered − paid, was −39,658.05. The contractor was billed tax.
+    expect(o.balance).toBeCloseTo(15254.19, 2)
+    expect(t.cats[0].subs[0].balance).toBeCloseTo(15254.19, 2)
+    expect(t.cats[0].balance).toBeCloseTo(15254.19, 2)
+    expect(t.totals.gross).toBe(359980.19)
+    expect(t.totals.balance).toBeCloseTo(15254.19, 2)
+  })
+
+  it('an order with no GST in IN4 has gross equal to value, and balance falls out the same', () => {
+    const t = build([wo({ wo_id: 1, wo_value: 18000, wo_gross_value: 18000, wo_paid_amt: 9000 })])
+    expect(t.cats[0].subs[0].orders[0].balance).toBe(9000)
+  })
+
+  it('a missing gross falls back to the value rather than to nothing', () => {
+    const t = build([wo({ wo_id: 1, wo_value: 1000, wo_gross_value: null, wo_paid_amt: 250 })])
+    expect(t.cats[0].subs[0].orders[0].gross).toBe(1000)
+    expect(t.cats[0].subs[0].orders[0].balance).toBe(750)
+  })
+
+  it('purchase orders carry no gross, paid or balance, and a category of only POs shows none', () => {
+    const t = build([], [indent(1, [{ poNo: 'PO/A/1', amount: 400, draft: false }])])
+    const po = t.cats[0].subs[0].orders[0]
+    expect(po.gross).toBeNull(); expect(po.paid).toBeNull(); expect(po.balance).toBeNull()
+    expect(t.cats[0].gross).toBeNull(); expect(t.cats[0].balance).toBeNull()
+  })
+
+  it('a mixed category sums gross and balance over its work orders only', () => {
+    const t = build(
+      [wo({ wo_id: 1, subcategory_id: 317, wo_value: 1000, wo_gross_value: 1180, wo_paid_amt: 500 })],
+      [indent(1, [{ poNo: 'PO/A/1', amount: 400, draft: false }])],
+    )
+    const civil = t.cats[0]
+    expect(civil.ordered).toBe(1400)   // WO + PO
+    expect(civil.gross).toBe(1180)     // WO only
+    expect(civil.balance).toBe(680)    // 1180 − 500, the PO adds nothing it cannot support
+  })
+})
+
+describe('lines that do not add up to the order value — IN4 discounts and amendments, said on the row', () => {
+  it('says nothing when the lines tie to the value within a rupee', () => {
+    expect(lineNoteFor(4, 116775, 116775.4)).toBeNull()
+  })
+  it('names the discount when the lines exceed the value (WO/SRJT/SRAH/2025-26/41: 13.98 %)', () => {
+    const note = lineNoteFor(220, 27633587.6692, 23770412.15)
+    expect(note).toContain('13.98%')
+    expect(note).toContain('discount')
+    expect(note).toContain('₹2,76,33,588')
+  })
+  it('a round discount prints without decimals (WO/SRASSK/NGH/2026-27/28: 25 %)', () => {
+    expect(lineNoteFor(2, 24000, 18000)).toContain('a 25% discount')
+  })
+  it('calls it an amendment when the lines fall short of the value (WO/SRASSK/DAE/2023-24/75)', () => {
+    const note = lineNoteFor(4, 116775, 157325)
+    expect(note).toContain('amended')
+    expect(note).not.toContain('discount')
+  })
+  it('an order with no lines at all gets no note — there is nothing to compare', () => {
+    expect(lineNoteFor(0, 0, 5000)).toBeNull()
+  })
+  it('the note reaches the order row and the counts reach the notes', () => {
+    const t = build(
+      [wo({ wo_id: 9, wo_value: 18000, wo_gross_value: 18000, wo_paid_amt: 0 })],
+      [],
+      [boq({ item_id: 1, wo_id: 9, amt: 12000 }), boq({ item_id: 2, wo_id: 9, amt: 12000 })],
+    )
+    const o = t.cats[0].subs[0].orders[0]
+    expect(o.lineTotal).toBe(24000)
+    expect(o.lineNote).toContain('25% discount')
+    expect(t.notes.some(n => n.includes('1 carries a discount in IN4'))).toBe(true)
   })
 })

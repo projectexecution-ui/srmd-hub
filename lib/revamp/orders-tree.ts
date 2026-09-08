@@ -39,6 +39,7 @@
 //    value. The line items reconcile to the order, so the deepest level of the
 //    tree adds up to the top of it.
 
+import { formatINR } from '@/lib/utils'
 import { createClient } from '@/lib/supabase/server'
 
 export interface OrderLine {
@@ -58,10 +59,28 @@ export interface OrderRow {
   ref: string
   party: string | null
   kind: 'wo' | 'po'
+  /** IN4's WORK_ORDER_VALUE — the price of the work BEFORE GST. The BOQ lines
+   *  under the order add up to this (1,666 of 1,670 orders, to the rupee). */
   ordered: number
-  /** WO only — IN4's PO feed carries no payment. */
+  /** IN4's WO_GROSS_VALUE — the same order WITH GST, i.e. what the contractor
+   *  actually bills. WO only; IN4's PO feed carries no gross. */
+  gross: number | null
+  /** IN4's WO_PAID_AMT. Payments are made against bills, so this INCLUDES
+   *  GST. WO only — IN4's PO feed carries no payment. */
   paid: number | null
+  /** gross − paid: the only figure on this screen that is arithmetic rather
+   *  than a value IN4 holds. Both sides carry GST, so it is like-for-like.
+   *  Subtracting Paid from the ex-GST Ordered — the first cut — made 353 of
+   *  1,670 orders look overpaid when the contractor was simply billed tax. */
+  balance: number | null
   lines: OrderLine[]
+  /** Sum of the line items, kept so a reader can see when it does NOT equal
+   *  Ordered and why (see lineNote). */
+  lineTotal: number
+  /** Set only when the lines do not add up to the order value: IN4 applied a
+   *  discount (lines above value) or the order was amended (lines below). A
+   *  fact about the IN4 record, stated so it is not read as a CT Hub error. */
+  lineNote: string | null
 }
 
 export interface OrdersSubRow {
@@ -72,7 +91,9 @@ export interface OrdersSubRow {
   kind: 'wo' | 'po'
   count: number
   ordered: number
+  gross: number | null
   paid: number | null
+  balance: number | null
   unassigned?: boolean
   orders: OrderRow[]
 }
@@ -84,19 +105,23 @@ export interface OrdersCatRow {
   subs: OrdersSubRow[]
   count: number
   ordered: number
+  /** Work orders only — a category that also holds POs shows a gross below
+   *  its Ordered, because IN4 holds no gross for a PO. */
+  gross: number | null
   paid: number | null
+  balance: number | null
 }
 
 export interface OrdersTree {
   cats: OrdersCatRow[]
-  totals: { ordered: number; paid: number; woCount: number; poCount: number; lineCount: number }
+  totals: { ordered: number; gross: number; paid: number; balance: number; woCount: number; poCount: number; lineCount: number }
   notes: string[]
   linked: boolean
   error: string | null
 }
 
 const EMPTY: OrdersTree = {
-  cats: [], totals: { ordered: 0, paid: 0, woCount: 0, poCount: 0, lineCount: 0 },
+  cats: [], totals: { ordered: 0, gross: 0, paid: 0, balance: 0, woCount: 0, poCount: 0, lineCount: 0 },
   notes: [], linked: false, error: null,
 }
 
@@ -105,6 +130,7 @@ export interface WoRow {
   category_id: number | null
   subcategory_id: number | null
   wo_value: number | null
+  wo_gross_value: number | null
   wo_paid_amt: number | null
   display_no: string | null
   contractor_id: number | null
@@ -230,7 +256,7 @@ export async function loadOrdersTree(projectId: string): Promise<OrdersTree> {
   // nothing on screen to say so.
   const [woRes, indentRes] = await Promise.all([
     fetchAll<WoRow>((f, t) => supabase.from('in4_work_orders')
-      .select('wo_id, category_id, subcategory_id, wo_value, wo_paid_amt, display_no, contractor_id')
+      .select('wo_id, category_id, subcategory_id, wo_value, wo_gross_value, wo_paid_amt, display_no, contractor_id')
       .in('subproject_id', subIds).range(f, t)),
     fetchAll<IndentRow>((f, t) => supabase.from('in4_indent_items')
       .select('indent_item_id, skill_id, material_name, uom, pos')
@@ -331,6 +357,8 @@ export function buildOrdersTree(
   }
 
   let woMissingSub = 0
+  let discounted = 0
+  let amended = 0
 
   // ── Work orders ─────────────────────────────────────────────────────────
   for (const w of wos) {
@@ -344,23 +372,35 @@ export function buildOrdersTree(
         id: `${ck}::${sk}`,
         name: hasSub ? nameOf(w.subcategory_id, 'Sub-category') : 'No sub-category in IN4',
         code: hasSub ? codeOf(w.subcategory_id) : '',
-        kind: 'wo', count: 0, ordered: 0, paid: 0, unassigned: !hasSub, orders: [],
+        kind: 'wo', count: 0, ordered: 0, gross: 0, paid: 0, balance: 0, unassigned: !hasSub, orders: [],
       }
       cat.subs.set(sk, row)
     }
     const lines = linesByWo.get(w.wo_id) ?? []
+    const ordered = Number(w.wo_value ?? 0)
+    // IN4 holds gross = value on orders with no GST and value × 1.18 on the
+    // rest; either way it is what the contractor bills, so it is the figure
+    // Paid can be compared against. Missing gross falls back to the value —
+    // the pre-fix behaviour — rather than to nothing.
+    const gross = w.wo_gross_value != null ? Number(w.wo_gross_value) : ordered
+    const paid = Number(w.wo_paid_amt ?? 0)
+    const lineTotal = lines.reduce((s, l) => s + l.amount, 0)
+    const lineNote = lineNoteFor(lines.length, lineTotal, ordered)
+    if (lineNote?.includes('discount')) discounted++
+    else if (lineNote) amended++
     row.orders.push({
       id: `wo:${w.wo_id}`,
       ref: w.display_no?.trim() || `WO ${w.wo_id}`,
       party: w.contractor_id != null ? (parties.get(w.contractor_id) ?? null) : null,
       kind: 'wo',
-      ordered: Number(w.wo_value ?? 0),
-      paid: Number(w.wo_paid_amt ?? 0),
-      lines,
+      ordered, gross, paid, balance: gross - paid,
+      lines, lineTotal, lineNote,
     })
     row.count += 1
-    row.ordered += Number(w.wo_value ?? 0)
-    row.paid = (row.paid ?? 0) + Number(w.wo_paid_amt ?? 0)
+    row.ordered += ordered
+    row.gross = (row.gross ?? 0) + gross
+    row.paid = (row.paid ?? 0) + paid
+    row.balance = (row.balance ?? 0) + (gross - paid)
   }
 
   // ── Purchase orders ─────────────────────────────────────────────────────
@@ -384,12 +424,13 @@ export function buildOrdersTree(
         order = {
           id: `po:${ck}:${no}`, ref: no,
           party: po?.supplier?.trim() || null,
-          kind: 'po', ordered: 0, paid: null, lines: [],
+          kind: 'po', ordered: 0, gross: null, paid: null, balance: null, lines: [], lineTotal: 0, lineNote: null,
         }
         byNo.set(no, order)
         poAcc.set(ck, byNo)
       }
       order.ordered += amount
+      order.lineTotal += amount
       order.lines.push({
         id: `poline:${order.id}:${order.lines.length}`,
         name: i.material_name?.trim() || 'Material',
@@ -412,7 +453,9 @@ export function buildOrdersTree(
       kind: 'po',
       count: orders.length,
       ordered: orders.reduce((s, o) => s + o.ordered, 0),
+      gross: null,
       paid: null,
+      balance: null,
       orders,
     })
   }
@@ -425,6 +468,9 @@ export function buildOrdersTree(
         orders: s.orders.slice().sort((a, b) => a.ref.localeCompare(b.ref, undefined, { numeric: true })),
       }))
       .sort((a, b) => rankOf(a) - rankOf(b) || byCode(a.code, b.code))
+    // Gross, Paid and Balance are known for work orders only, so at category
+    // level they sum the WO sub-rows and stay null when the category is all
+    // purchase orders — a dash, never a zero that looks like "fully paid".
     const paidKnown = subs.some(s => s.paid != null)
     return {
       id: key,
@@ -433,7 +479,9 @@ export function buildOrdersTree(
       subs,
       count: subs.reduce((s, r) => s + r.count, 0),
       ordered: subs.reduce((s, r) => s + r.ordered, 0),
+      gross: paidKnown ? subs.reduce((s, r) => s + (r.gross ?? 0), 0) : null,
       paid: paidKnown ? subs.reduce((s, r) => s + (r.paid ?? 0), 0) : null,
+      balance: paidKnown ? subs.reduce((s, r) => s + (r.balance ?? 0), 0) : null,
     }
   }).sort((a, b) => byCode(a.code, b.code))
 
@@ -442,7 +490,9 @@ export function buildOrdersTree(
 
   const totals = {
     ordered: out.reduce((s, c) => s + c.ordered, 0),
+    gross: out.reduce((s, c) => s + (c.gross ?? 0), 0),
     paid: out.reduce((s, c) => s + (c.paid ?? 0), 0),
+    balance: out.reduce((s, c) => s + (c.balance ?? 0), 0),
     woCount: wos.length,
     poCount: poNumbers.size,
     lineCount: out.reduce((s, c) => s + c.subs.reduce((t, r) => t + r.orders.reduce((u, o) => u + o.lines.length, 0), 0), 0),
@@ -466,7 +516,36 @@ export function buildOrdersTree(
       + 'are excluded — a draft is not a committed order.',
     )
   }
-  notes.push('Paid is what IN4 holds against work orders. Its purchase-order feed carries no payment, so that column is blank on PO rows.')
+  notes.push(
+    'Ordered is the order value before GST — the line items add up to it. "Incl. GST" is the same order as the '
+    + 'contractor bills it. Paid is IN4’s own figure on the work-order record and includes GST, so Balance is '
+    + 'Incl. GST minus Paid: both sides with tax. Subtracting Paid from the before-tax figure made paid-up orders look overpaid.',
+  )
+  notes.push('Incl. GST, Paid and Balance are held against work orders only. IN4’s purchase-order feed carries neither, so those columns are blank on PO rows and a category’s figures cover its work orders.')
+  if (discounted > 0 || amended > 0) {
+    const parts: string[] = []
+    if (discounted > 0) parts.push(`${discounted} carr${discounted === 1 ? 'ies' : 'y'} a discount in IN4`)
+    if (amended > 0) parts.push(`${amended} ${amended === 1 ? 'was' : 'were'} amended in IN4`)
+    notes.push(
+      `On ${discounted + amended} work order${discounted + amended === 1 ? '' : 's'} the line items do not add up to the order value: `
+      + parts.join(' and ') + '. The row says which. Both figures are exactly as IN4 holds them.',
+    )
+  }
 
   return { cats: out, totals, notes }
+}
+
+/** Why an order's line items do not add up to its value, in IN4's own terms.
+ *  Lines above the value: IN4 applied a discount (WO/SRJT/SRAH/2025-26/41 is
+ *  13.98 %). Lines below: the order was amended and IN4's header and BOQ no
+ *  longer agree (WO/SRASSK/DAE/2023-24/75). Within a rupee: no note. */
+export function lineNoteFor(lineCount: number, lineTotal: number, ordered: number): string | null {
+  if (lineCount === 0 || Math.abs(lineTotal - ordered) <= 1) return null
+  const lines = formatINR(lineTotal)
+  if (lineTotal > ordered) {
+    const pct = ((lineTotal - ordered) / lineTotal) * 100
+    const shown = Number.isInteger(Math.round(pct * 100) / 100) ? String(Math.round(pct)) : pct.toFixed(2)
+    return `Line items total ${lines}; the order value is after a ${shown}% discount in IN4.`
+  }
+  return `Line items total ${lines}; the order was amended in IN4 and its value no longer equals its lines.`
 }

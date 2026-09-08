@@ -11,6 +11,12 @@
 // wise", and "follow the Tree View of Cat/sub cat wise layout and colour
 // scheme".
 //
+// Money columns, left to right: Ordered (before GST — the lines add up to
+// it), Incl. GST (as the contractor bills it), Paid (IN4's own figure, with
+// GST), Balance (Incl. GST − Paid, both sides with tax). The first cut
+// subtracted Paid from the before-tax Ordered and showed 353 orders as
+// overpaid. Aksha, 8 Sept 2026: fix it, and say why lines ≠ value.
+//
 // The sticky header lives on the cells inside their own scroll box, never on
 // the page — page-level sticky is inert everywhere in this app (AGENTS.md).
 
@@ -27,6 +33,9 @@ import { loadOrdersTree, type OrdersSubRow, type OrderRow, type OrderLine } from
 /** Quantities are not money: they carry decimals and their own unit. */
 const qty = (v: number | null) =>
   v == null ? '—' : v.toLocaleString('en-IN', { maximumFractionDigits: 3 })
+
+/** A money cell that shows a dash where IN4 holds nothing, never a zero. */
+const money = (v: number | null) => (v == null ? <Dash /> : formatINR(v))
 
 export async function OrdersView({ projectId }: { projectId: string }) {
   const { cats, totals, notes, linked, error } = await loadOrdersTree(projectId)
@@ -67,16 +76,15 @@ export async function OrdersView({ projectId }: { projectId: string }) {
   }
 
   const catIds = cats.map(c => c.id)
-  const balance = totals.ordered - totals.paid
 
   return (
     <TreeProvider allCatIds={catIds} emptyCount={0}>
       <RowDetailProvider>
         <div className="space-y-3">
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-            <Kpi label="Ordered" value={formatINR(totals.ordered)} />
-            <Kpi label="Paid" value={formatINR(totals.paid)} muted />
-            <Kpi label="Balance" value={formatINR(balance)} tone="amber" />
+            <Kpi label="Ordered (before GST)" value={formatINR(totals.ordered)} sub={`incl. GST ${formatINR(totals.gross)}`} />
+            <Kpi label="Paid (IN4 work-order record)" value={formatINR(totals.paid)} muted />
+            <Kpi label="Balance (incl. GST − Paid)" value={formatINR(totals.balance)} tone="amber" sub="work orders only" />
             <Kpi label="Orders" value={`${totals.woCount} WO · ${totals.poCount} PO`} muted />
           </div>
 
@@ -97,10 +105,11 @@ export async function OrdersView({ projectId }: { projectId: string }) {
                 <thead className="bg-gray-50 text-left">
                   <tr>
                     <Th className="min-w-[300px] text-left">Category / sub-category / order / item</Th>
-                    <Th className="text-right w-24">Unit</Th>
+                    <Th className="text-right w-20">Unit</Th>
                     <Th className="text-right w-24">Qty</Th>
                     <Th className="text-right w-28">Rate</Th>
                     <Th className="text-right w-36">Ordered</Th>
+                    <Th className="text-right w-36">Incl. GST</Th>
                     <Th className="text-right w-32">Paid</Th>
                     <Th className="text-right w-32">Balance</Th>
                   </tr>
@@ -117,10 +126,9 @@ export async function OrdersView({ projectId }: { projectId: string }) {
                           {c.count} order{c.count === 1 ? '' : 's'}
                         </td>
                         <td className="px-3 py-2 text-right tabular-nums font-semibold text-gray-900">{formatINR(c.ordered)}</td>
-                        <td className="px-3 py-2 text-right tabular-nums text-gray-600">{c.paid == null ? <Dash /> : formatINR(c.paid)}</td>
-                        <td className="px-3 py-2 text-right tabular-nums text-amber-700">
-                          {c.paid == null ? <Dash /> : formatINR(c.ordered - c.paid)}
-                        </td>
+                        <td className="px-3 py-2 text-right tabular-nums text-gray-700">{money(c.gross)}</td>
+                        <td className="px-3 py-2 text-right tabular-nums text-gray-600">{money(c.paid)}</td>
+                        <td className="px-3 py-2 text-right tabular-nums text-amber-700">{money(c.balance)}</td>
                       </tr>
 
                       <CatRows catId={c.id}>
@@ -136,10 +144,9 @@ export async function OrdersView({ projectId }: { projectId: string }) {
                                 {s.count} order{s.count === 1 ? '' : 's'}
                               </td>
                               <td className="px-3 py-2 text-right tabular-nums text-gray-900">{formatINR(s.ordered)}</td>
-                              <td className="px-3 py-2 text-right tabular-nums text-gray-600">{s.paid == null ? <Dash /> : formatINR(s.paid)}</td>
-                              <td className="px-3 py-2 text-right tabular-nums text-amber-700">
-                                {s.paid == null ? <Dash /> : formatINR(s.ordered - s.paid)}
-                              </td>
+                              <td className="px-3 py-2 text-right tabular-nums text-gray-700">{money(s.gross)}</td>
+                              <td className="px-3 py-2 text-right tabular-nums text-gray-600">{money(s.paid)}</td>
+                              <td className="px-3 py-2 text-right tabular-nums text-amber-700">{money(s.balance)}</td>
                             </tr>
 
                             {/* Level 3 — the orders themselves. */}
@@ -155,15 +162,15 @@ export async function OrdersView({ projectId }: { projectId: string }) {
                                           template for them (event 3) and none
                                           for purchase orders. */}
                                       {o.kind === 'wo' && <PrintWo id={o.id} ref_={o.ref} />}
+                                      {o.lineNote && <LineNote text={o.lineNote} />}
                                     </td>
                                     <td colSpan={3} className="px-3 py-1.5 text-right text-[11px] text-gray-400">
                                       {o.lines.length} item{o.lines.length === 1 ? '' : 's'}
                                     </td>
                                     <td className="px-3 py-1.5 text-right tabular-nums text-gray-800">{formatINR(o.ordered)}</td>
-                                    <td className="px-3 py-1.5 text-right tabular-nums text-gray-600">{o.paid == null ? <Dash /> : formatINR(o.paid)}</td>
-                                    <td className="px-3 py-1.5 text-right tabular-nums text-amber-700">
-                                      {o.paid == null ? <Dash /> : formatINR(o.ordered - o.paid)}
-                                    </td>
+                                    <td className="px-3 py-1.5 text-right tabular-nums text-gray-700">{money(o.gross)}</td>
+                                    <td className="px-3 py-1.5 text-right tabular-nums text-gray-600">{money(o.paid)}</td>
+                                    <td className="px-3 py-1.5 text-right tabular-nums text-amber-700">{money(o.balance)}</td>
                                   </tr>
 
                                   {/* Level 4 — the line items. */}
@@ -180,7 +187,8 @@ export async function OrdersView({ projectId }: { projectId: string }) {
                                         <td className="px-3 py-1.5 text-right tabular-nums text-[11.5px] text-gray-600">{qty(l.qty)}</td>
                                         <td className="px-3 py-1.5 text-right tabular-nums text-[11.5px] text-gray-600">{l.rate == null ? '—' : formatINR(l.rate)}</td>
                                         <td className="px-3 py-1.5 text-right tabular-nums text-gray-800">{formatINR(l.amount)}</td>
-                                        {/* Paid and balance are held per ORDER, never per line. */}
+                                        {/* GST, paid and balance are held per ORDER, never per line. */}
+                                        <td className="px-3 py-1.5 text-right"><Dash /></td>
                                         <td className="px-3 py-1.5 text-right"><Dash /></td>
                                         <td className="px-3 py-1.5 text-right"><Dash /></td>
                                       </tr>
@@ -201,8 +209,9 @@ export async function OrdersView({ projectId }: { projectId: string }) {
                       {totals.woCount + totals.poCount} orders
                     </td>
                     <td className="px-3 py-2 text-right tabular-nums text-gray-900">{formatINR(totals.ordered)}</td>
+                    <td className="px-3 py-2 text-right tabular-nums text-gray-800">{formatINR(totals.gross)}</td>
                     <td className="px-3 py-2 text-right tabular-nums text-gray-700">{formatINR(totals.paid)}</td>
-                    <td className="px-3 py-2 text-right tabular-nums text-amber-700">{formatINR(balance)}</td>
+                    <td className="px-3 py-2 text-right tabular-nums text-amber-700">{formatINR(totals.balance)}</td>
                   </tr>
                 </tbody>
               </table>
@@ -231,7 +240,9 @@ export async function OrdersView({ projectId }: { projectId: string }) {
                         <div className="mt-0.5 ml-6 flex flex-wrap items-center gap-x-4 gap-y-0.5 text-[11px] text-gray-500">
                           <span>{s.count} order{s.count === 1 ? '' : 's'}</span>
                           <span>Ordered <span className="font-semibold text-gray-900 tabular-nums">{formatINR(s.ordered)}</span></span>
+                          {s.gross != null && <span>Incl. GST <span className="font-semibold text-gray-800 tabular-nums">{formatINR(s.gross)}</span></span>}
                           <span>Paid <span className="font-semibold text-gray-700 tabular-nums">{s.paid == null ? '—' : formatINR(s.paid)}</span></span>
+                          {s.balance != null && <span>Balance <span className="font-semibold text-amber-700 tabular-nums">{formatINR(s.balance)}</span></span>}
                         </div>
 
                         <RowDetail id={s.id}>
@@ -244,10 +255,13 @@ export async function OrdersView({ projectId }: { projectId: string }) {
                                 </p>
                                 {o.party && <p className="ml-6 text-[11px] text-gray-500">{o.party}</p>}
                                 {o.kind === 'wo' && <p className="ml-6 mt-0.5"><PrintWo id={o.id} ref_={o.ref} /></p>}
-                                <div className="ml-6 mt-0.5 flex flex-wrap gap-x-3 text-[11px] text-gray-500">
+                                <div className="ml-6 mt-0.5 flex flex-wrap gap-x-3 gap-y-0.5 text-[11px] text-gray-500">
                                   <span>Ordered <span className="font-semibold text-gray-800 tabular-nums">{formatINR(o.ordered)}</span></span>
+                                  {o.gross != null && <span>Incl. GST <span className="font-semibold text-gray-800 tabular-nums">{formatINR(o.gross)}</span></span>}
                                   {o.paid != null && <span>Paid <span className="font-semibold text-gray-700 tabular-nums">{formatINR(o.paid)}</span></span>}
+                                  {o.balance != null && <span>Balance <span className="font-semibold text-amber-700 tabular-nums">{formatINR(o.balance)}</span></span>}
                                 </div>
+                                {o.lineNote && <p className="ml-6 mt-1"><LineNote text={o.lineNote} /></p>}
                                 <RowDetail id={o.id}>
                                   <ul className="ml-6 mt-1.5 space-y-1.5 border-l border-gray-200 pl-2.5">
                                     {o.lines.map(l => <LineCard key={l.id} line={l} />)}
@@ -262,9 +276,15 @@ export async function OrdersView({ projectId }: { projectId: string }) {
                   </CatRows>
                 </div>
               ))}
-              <div className="px-4 py-3 bg-gray-50 flex items-center justify-between">
-                <span className="text-[12px] font-semibold text-gray-900">Total</span>
-                <span className="text-[12px] font-semibold text-gray-900 tabular-nums">{formatINR(totals.ordered)}</span>
+              <div className="px-4 py-3 bg-gray-50 space-y-1">
+                <div className="flex items-center justify-between">
+                  <span className="text-[12px] font-semibold text-gray-900">Total ordered</span>
+                  <span className="text-[12px] font-semibold text-gray-900 tabular-nums">{formatINR(totals.ordered)}</span>
+                </div>
+                <div className="flex items-center justify-between text-[11px] text-gray-600">
+                  <span>Incl. GST {formatINR(totals.gross)} · Paid {formatINR(totals.paid)}</span>
+                  <span className="font-semibold text-amber-700 tabular-nums">Balance {formatINR(totals.balance)}</span>
+                </div>
               </div>
             </div>
           </div>
@@ -298,6 +318,17 @@ function LineCard({ line }: { line: OrderLine }) {
         <span className="font-semibold text-gray-800">{formatINR(line.amount)}</span>
       </div>
     </li>
+  )
+}
+
+/** Why an order's lines do not add up to its value — a fact about the IN4
+ *  record (discount or amendment), shown on the row so nobody reads the gap
+ *  as a CT Hub mistake. */
+function LineNote({ text }: { text: string }) {
+  return (
+    <span className="block mt-0.5 text-[11px] text-amber-800 leading-snug">
+      <Info className="inline h-3 w-3 mr-1 -mt-0.5 text-amber-600" />{text}
+    </span>
   )
 }
 
@@ -344,13 +375,14 @@ function Th({ children, className }: { children: React.ReactNode; className?: st
   )
 }
 
-function Kpi({ label, value, muted, tone }: { label: string; value: string; muted?: boolean; tone?: 'amber' }) {
+function Kpi({ label, value, sub, muted, tone }: { label: string; value: string; sub?: string; muted?: boolean; tone?: 'amber' }) {
   return (
     <div className="rounded-lg border border-gray-200 bg-white px-3 py-2">
       <p className="text-[10px] uppercase tracking-wider font-semibold text-gray-500">{label}</p>
       <p className={`text-[15px] font-bold mt-0.5 tabular-nums ${
         tone === 'amber' ? 'text-amber-700' : muted ? 'text-gray-700' : 'text-gray-900'
       }`}>{value}</p>
+      {sub && <p className="text-[10.5px] text-gray-500 tabular-nums mt-0.5">{sub}</p>}
     </div>
   )
 }
