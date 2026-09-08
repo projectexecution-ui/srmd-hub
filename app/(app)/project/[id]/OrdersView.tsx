@@ -92,7 +92,7 @@ export async function OrdersView({ projectId }: { projectId: string }) {
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
             <Kpi label="Ordered" value={formatINR(totals.gross)} />
             <Kpi label="Billed" value={live ? formatINR(totals.billed) : '—'} muted />
-            <Kpi label="Paid" value={live ? formatINR(totals.paid) : '—'} muted />
+            <Kpi label="Paid (money out)" value={live ? formatINR(totals.paid) : '—'} muted />
             <Kpi label="Balance" value={live ? formatINR(totals.balance) : '—'} tone="amber" />
           </div>
 
@@ -116,7 +116,7 @@ export async function OrdersView({ projectId }: { projectId: string }) {
                     <Th className="min-w-[300px] text-left">Category / sub-category / order</Th>
                     <Th className="text-right w-36">Ordered</Th>
                     <Th className="text-right w-32">Billed</Th>
-                    <Th className="text-right w-32">Paid</Th>
+                    <Th className="text-right w-36">Paid <span className="font-normal text-gray-400">(money out)</span></Th>
                     <Th className="text-right w-28">Adv. o/s</Th>
                     <Th className="text-right w-28">Retention</Th>
                     <Th className="text-right w-32">Balance</Th>
