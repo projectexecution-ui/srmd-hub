@@ -144,6 +144,12 @@ export interface OrderRow extends Money {
    *  the row: a PO whose bills IN4 booked under another PO's number, or a WO
    *  number IN4 has given to two orders. Null for the ordinary case. */
   flag: string | null
+  /** Work orders: every bill and advance in date order with the running
+   *  "still to pay". Empty for purchase orders. */
+  ledger: Ledger
+  /** Set when IN4's order record and its own bills disagree on Paid — the
+   *  header is what the row shows; the ledger shows the bills. */
+  ledgerNote: string | null
 }
 
 export interface OrdersSubRow extends Money {
@@ -327,13 +333,16 @@ export interface Sources {
   woBilled: Map<number, number>
   /** TDS deducted on those same bills. */
   woBillTds: Map<number, number>
+  /** Every certificate (bill or advance, any status) per work order, for the
+   *  ledger. */
+  woCerts: Map<number, CertRow[]>
   poHeaders: Map<string, PoHeader>
   poCerts: Map<number, PoCertAgg>
   in4: OrdersTree['in4']
   in4Error?: string
 }
 export const NO_SOURCES: Sources = {
-  woHeaders: new Map(), woBilled: new Map(), woBillTds: new Map(), poHeaders: new Map(), poCerts: new Map(), in4: 'unavailable',
+  woHeaders: new Map(), woBilled: new Map(), woBillTds: new Map(), woCerts: new Map(), poHeaders: new Map(), poCerts: new Map(), in4: 'unavailable',
 }
 
 /** Certificate statuses the figures leave out — IN4's 3 = Rejected, 6 =
@@ -507,6 +516,32 @@ async function readIn4PoPayments(poIds: number[]): Promise<SupplierPayRow[] | nu
   }
 }
 
+/** One work order's ledger on its own, for the printable page. Header from
+ *  IN4 live (gross), certificates from the mirror. Null when the order is not
+ *  in the mirror. */
+export async function loadWoLedger(woId: number): Promise<{ ref: string; party: string | null; gross: number; ledger: Ledger; in4: OrdersTree['in4'] } | null> {
+  const supabase = await createClient()
+  const { data: wo } = await supabase.from('in4_work_orders')
+    .select('wo_id, display_no, wo_value, wo_gross_value, contractor_id').eq('wo_id', woId).maybeSingle()
+  if (!wo) return null
+  const [{ rows: certs }, headers, party] = await Promise.all([
+    fetchAll<CertRow>((f, t) => supabase.from('in4_wo_certificates')
+      .select('wo_id, kind, status, gross_bill_amt, deductions, certificate_id, invoice_no, invoice_date, creation_dt, certified_amt, retention_amt, advance_recovery_amt, paid_amt, outstanding_amt')
+      .eq('wo_id', woId).range(f, t)),
+    readIn4Headers([woId], []),
+    contractorNames(supabase as unknown as PartyReader, [{ contractor_id: (wo as { contractor_id: number | null }).contractor_id }]),
+  ])
+  const w = wo as { display_no: string | null; wo_value: number | null; wo_gross_value: number | null }
+  const gross = headers.woHeaders.get(woId)?.gross ?? (w.wo_gross_value != null ? Number(w.wo_gross_value) : Number(w.wo_value ?? 0))
+  return {
+    ref: w.display_no?.trim() || `WO ${woId}`,
+    party: party.rows[0]?.name ?? null,
+    gross,
+    ledger: buildLedger(certs, gross),
+    in4: headers.in4,
+  }
+}
+
 export async function loadOrdersTree(projectId: string): Promise<OrdersTree> {
   const supabase = await createClient()
 
@@ -577,7 +612,8 @@ export async function loadOrdersTree(projectId: string): Promise<OrdersTree> {
     // WO_ADVANCE_PAID_AMT — and only live bills (status filtered below).
     woIds.length
       ? fetchAll<CertRow>((f, t) => supabase.from('in4_wo_certificates')
-          .select('wo_id, kind, status, gross_bill_amt, deductions').in('wo_id', woIds).range(f, t))
+          .select('wo_id, kind, status, gross_bill_amt, deductions, certificate_id, invoice_no, invoice_date, creation_dt, certified_amt, retention_amt, advance_recovery_amt, paid_amt, outstanding_amt')
+          .in('wo_id', woIds).range(f, t))
       : Promise.resolve({ rows: [] as CertRow[], error: null }),
     readIn4Headers(woIds, poNos),
   ])
@@ -588,6 +624,8 @@ export async function loadOrdersTree(projectId: string): Promise<OrdersTree> {
   if (partyRes.error) return { ...EMPTY, linked: true, error: partyRes.error }
 
   const { woBilled, woBillTds } = billsFromCertificates(certRes.rows)
+  const woCerts = new Map<number, CertRow[]>()
+  for (const c of certRes.rows) { const arr = woCerts.get(c.wo_id) ?? []; arr.push(c); woCerts.set(c.wo_id, arr) }
 
   // Supplier money for the POs IN4 just identified. Bills come live from IN4
   // attributed by GRN (see PoCertAgg); advances have no GRN and come from the
@@ -615,13 +653,94 @@ export async function loadOrdersTree(projectId: string): Promise<OrdersTree> {
   const parties = new Map<number, string>(
     partyRes.rows.filter(p => p.name).map(p => [p.id, p.name as string]),
   )
-  const sources: Sources = { ...headers, woBilled, woBillTds, poCerts }
+  const sources: Sources = { ...headers, woBilled, woBillTds, woCerts, poCerts }
 
   return { ...buildOrdersTree(wos, indents, boqRes.rows, skills, parties, absRes.rows, sources), linked: true, error: null }
 }
 
-/** One row of in4_wo_certificates as the loader reads it. */
-export interface CertRow { wo_id: number; kind: string; status: number | null; gross_bill_amt: number | null; deductions: number | null }
+/** One row of in4_wo_certificates as the loader reads it — a bill or an
+ *  advance certificate against a work order. */
+export interface CertRow {
+  wo_id: number; kind: string; status: number | null
+  gross_bill_amt: number | null; deductions: number | null
+  certificate_id?: number | null; invoice_no?: string | null; invoice_date?: string | null; creation_dt?: string | null
+  certified_amt?: number | null; retention_amt?: number | null; advance_recovery_amt?: number | null
+  paid_amt?: number | null; outstanding_amt?: number | null
+}
+
+/** One line of a work order's ledger: a bill or an advance, in date order,
+ *  with the running "still to pay" after it. */
+export interface LedgerRow {
+  id: string
+  date: string | null
+  /** The bill number as written (cleanBillNo), or "Advance" for an advance
+   *  certificate. */
+  ref: string
+  kind: 'bill' | 'advance'
+  status: 'live' | 'cancelled' | 'rejected'
+  /** With GST. */
+  gross: number
+  /** Before GST (bills). Advances carry the advance amount. */
+  certified: number
+  tds: number
+  retention: number
+  advanceRecovered: number
+  /** Cash that left the account on this row. */
+  paid: number
+  /** What this row adds to "money out": cash + TDS for a bill; the advance as
+   *  billed (already including its TDS) for an advance. Zero when cancelled. */
+  paidOut: number
+  /** Ordered (with GST) − Σ paidOut − Σ retention, after this row. */
+  stillToPay: number
+}
+
+export interface Ledger {
+  rows: LedgerRow[]
+  totals: { paidOut: number; paid: number; tds: number; retention: number; advancePaid: number; advanceRecovered: number; billed: number }
+}
+
+const EMPTY_LEDGER: Ledger = { rows: [], totals: { paidOut: 0, paid: 0, tds: 0, retention: 0, advancePaid: 0, advanceRecovered: 0, billed: 0 } }
+
+/** A work order's ledger from its certificates. Cancelled and rejected rows
+ *  stay visible, greyed, and add nothing. Pure, so SRAH/2025-26/41 — three
+ *  advances, one bill set wholly against the advance, one bill paid after
+ *  TDS — is a test that ends on 44,85,101, the same Balance the order row
+ *  computes from IN4's header. */
+export function buildLedger(certs: readonly CertRow[], gross: number): Ledger {
+  const n = (v: unknown) => (v == null ? 0 : Number(v))
+  const sorted = [...certs].sort((a, b) =>
+    String(a.invoice_date ?? a.creation_dt ?? '').localeCompare(String(b.invoice_date ?? b.creation_dt ?? ''))
+    || n(a.certificate_id) - n(b.certificate_id))
+  let paidOutRun = 0, retentionRun = 0
+  const t = { ...EMPTY_LEDGER.totals }
+  const rows = sorted.map(c => {
+    const kind: LedgerRow['kind'] = c.kind === 'advance' ? 'advance' : 'bill'
+    const status: LedgerRow['status'] = c.status === 6 ? 'cancelled' : c.status === 3 ? 'rejected' : 'live'
+    const live = status === 'live'
+    const paid = n(c.paid_amt), tds = n(c.deductions), retention = n(c.retention_amt), grossAmt = n(c.gross_bill_amt)
+    const paidOut = !live ? 0 : kind === 'advance' ? grossAmt : paid + tds
+    if (live) {
+      paidOutRun += paidOut
+      retentionRun += retention
+      t.paidOut += paidOut; t.paid += paid; t.tds += tds; t.retention += retention
+      t.advanceRecovered += n(c.advance_recovery_amt)
+      if (kind === 'advance') t.advancePaid += grossAmt; else t.billed += grossAmt
+    }
+    return {
+      id: `cert:${c.certificate_id ?? `${c.wo_id}-${c.kind}-${c.invoice_no ?? ''}`}`,
+      date: c.invoice_date ?? c.creation_dt ?? null,
+      ref: kind === 'advance' ? 'Advance' : (cleanBillNo(c.invoice_no) ?? '—'),
+      kind, status,
+      gross: grossAmt,
+      certified: n(c.certified_amt),
+      tds, retention,
+      advanceRecovered: n(c.advance_recovery_amt),
+      paid, paidOut,
+      stillToPay: gross - paidOutRun - retentionRun,
+    }
+  })
+  return { rows, totals: t }
+}
 
 /** Billed and TDS per work order from its bill certificates: kind 'wo' only,
  *  rejected and cancelled left out. Pure, so the cancelled-bill case is
@@ -862,6 +981,13 @@ export function buildOrdersTree(
     const ref = w.display_no?.trim() || `WO ${w.wo_id}`
     const dup = (noCount.get(ref) ?? 0) > 1
     if (dup) duplicateNos++
+    // The ledger runs from the bills themselves; the row's Paid is IN4's
+    // header. They agree on 1,390 of 1,670 orders; where they do not, both
+    // are shown and the difference is named rather than hidden.
+    const ledger = buildLedger(src.woCerts.get(w.wo_id) ?? [], gross ?? ordered)
+    const ledgerNote = h && ledger.rows.length && Math.abs(ledger.totals.paidOut - (money.paid ?? 0)) > 1
+      ? `IN4’s order record puts Paid at ${formatINR(money.paid ?? 0)}; its bills and advances add to ${formatINR(ledger.totals.paidOut)}.`
+      : null
     const order: OrderRow = {
       id: `wo:${w.wo_id}`,
       ref,
@@ -870,6 +996,7 @@ export function buildOrdersTree(
       ordered, gross, ...money, breakup,
       lines, lineTotal, certifiedAmt, lineNote,
       flag: dup ? 'IN4 has given this number to two different work orders.' : null,
+      ledger, ledgerNote,
     }
     row.orders.push(order)
     row.count += 1
@@ -910,6 +1037,7 @@ export function buildOrdersTree(
           party: po?.supplier?.trim() || null,
           kind: 'po', ...ZERO_MONEY, gross: null, billed: null, paid: null, advanceOutstanding: null, retention: null, balance: null,
           breakup: null, lines: [], lineTotal: 0, certifiedAmt: null, lineNote: null, flag: null,
+          ledger: EMPTY_LEDGER, ledgerNote: null,
         }
         byNo.set(no, order)
         poAcc.set(ck, byNo)

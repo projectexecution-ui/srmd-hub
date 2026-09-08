@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import {
-  buildOrdersTree, contractorNames, lineNoteFor, poNumbersOf, sqlLiteral, cleanBillNo, billsFromCertificates, poPaymentsFromRows, fetchAll, NO_SOURCES,
+  buildOrdersTree, contractorNames, lineNoteFor, poNumbersOf, sqlLiteral, cleanBillNo, billsFromCertificates, poPaymentsFromRows, fetchAll, buildLedger, NO_SOURCES,
   type SupplierPayRow,
   type CertRow,
   type AbstractRow, type WoRow, type IndentRow, type BoqRow, type Skill, type PartyReader,
@@ -704,5 +704,57 @@ describe('fetchAll — PostgREST stops at 1,000 rows and says nothing', () => {
       Promise.resolve(f === 0 ? { data: Array.from({ length: 1000 }, (_, i) => ({ id: i })), error: null } : { data: null, error: { message: 'boom' } }))
     expect(error).toBe('boom')
     expect(rows).toHaveLength(1000)
+  })
+})
+
+describe('the ledger — every bill and advance, running still-to-pay', () => {
+  // WO/SRJT/SRAH/2025-26/41 exactly as IN4 held it on 8 Sept 2026.
+  const certs: CertRow[] = [
+    { wo_id: 841, kind: 'advance', status: 15, certificate_id: 111, invoice_no: 'PI/19/MAY/2526', invoice_date: '2025-05-20', creation_dt: '2025-05-24', gross_bill_amt: 10000000, certified_amt: 10000000, retention_amt: 0, deductions: 200000, advance_recovery_amt: null, paid_amt: 9800000, outstanding_amt: 0 },
+    { wo_id: 841, kind: 'advance', status: 15, certificate_id: 306, invoice_no: 'PI/DEC/027/2526', invoice_date: '2025-12-30', creation_dt: '2025-12-31', gross_bill_amt: 5900000, certified_amt: 5000000, retention_amt: 0, deductions: 100000, advance_recovery_amt: null, paid_amt: 5800000, outstanding_amt: 0 },
+    { wo_id: 841, kind: 'wo', status: 15, certificate_id: 2660, invoice_no: 'TAX INVOICE NO : PRO/015/26-27/Dt-13-05-2026', invoice_date: '2026-05-13', creation_dt: '2026-05-15', gross_bill_amt: 11274235.91, certified_amt: 11107227.63, retention_amt: 955444, deductions: 0, advance_recovery_amt: 10318792, paid_amt: 0, outstanding_amt: 0 },
+    { wo_id: 841, kind: 'wo', status: 15, certificate_id: 2955, invoice_no: 'PRO/054/26-27', invoice_date: '2026-08-01', creation_dt: '2026-08-04', gross_bill_amt: 3908541.97, certified_amt: 3312323.7, retention_amt: 0, deductions: 66246, advance_recovery_amt: 0, paid_amt: 3842296, outstanding_amt: 0 },
+    { wo_id: 841, kind: 'advance', status: 15, certificate_id: 361, invoice_no: 'PI/013AUG/2627', invoice_date: '2026-08-24', creation_dt: '2026-08-25', gross_bill_amt: 2799999.58, certified_amt: 2372881, retention_amt: 0, deductions: 47458, advance_recovery_amt: null, paid_amt: 2752542, outstanding_amt: 0 },
+  ]
+  const GROSS = 28049086.34
+
+  it('runs in date order and ends on the order row’s Balance, 44,85,101', () => {
+    const { rows, totals } = buildLedger(certs, GROSS)
+    expect(rows.map(r => r.ref)).toEqual(['Advance', 'Advance', 'PRO/015/26-27', 'PRO/054/26-27', 'Advance'])
+    expect(rows[0].stillToPay).toBeCloseTo(GROSS - 10000000, 2)             // the first advance, as billed
+    expect(rows[2].stillToPay).toBeCloseTo(GROSS - 15900000 - 0 - 955444, 2) // a bill paid 0 in cash: only its retention moves the line
+    expect(rows.at(-1)!.stillToPay).toBeCloseTo(4485100.76, 1)
+    expect(totals.paidOut).toBeCloseTo(22608541.58, 2)  // = the order row's Paid (money out)
+    expect(totals.retention).toBe(955444)
+    expect(totals.advancePaid).toBeCloseTo(18699999.58, 2)
+    expect(totals.advanceRecovered).toBe(10318792)
+  })
+
+  it('a cancelled bill stays on the ledger, greyed, and moves nothing', () => {
+    const cancelled: CertRow = { ...certs[3], certificate_id: 9999, status: 6, invoice_no: 'DUPLICATE/1', invoice_date: '2026-08-02' }
+    const a = buildLedger(certs, GROSS), b = buildLedger([...certs, cancelled], GROSS)
+    expect(b.rows).toHaveLength(6)
+    expect(b.rows.find(r => r.id === 'cert:9999')).toMatchObject({ status: 'cancelled', paidOut: 0 })
+    expect(b.totals).toEqual(a.totals)
+    expect(b.rows.at(-1)!.stillToPay).toBeCloseTo(a.rows.at(-1)!.stillToPay, 6)
+  })
+
+  it('the ledger reaches the order row; a header/bills disagreement is named, agreement is silent', () => {
+    const woHeaders = new Map([[841, header({ gross: GROSS, billsPaid: 3842296, advancePaid: 18699999.58, advanceRecovered: 10318792, retention: 955444 })]])
+    const agree = build([wo({ wo_id: 841, wo_value: 23770412.15, wo_gross_value: GROSS })], [], [],
+      live({ woHeaders, woBilled: new Map([[841, 15182777.88]]), woBillTds: new Map([[841, 66246]]), woCerts: new Map([[841, certs]]) }))
+    const o = agree.cats[0].subs[0].orders[0]
+    expect(o.ledger.rows).toHaveLength(5)
+    expect(o.ledgerNote).toBeNull()
+    expect(o.ledger.rows.at(-1)!.stillToPay).toBeCloseTo(o.balance!, 1)
+
+    const disagree = build([wo({ wo_id: 841, wo_value: 23770412.15, wo_gross_value: GROSS })], [], [],
+      live({ woHeaders: new Map([[841, header({ gross: GROSS, billsPaid: 1000000, advancePaid: 18699999.58, advanceRecovered: 10318792, retention: 955444 })]]), woBilled: new Map([[841, 15182777.88]]), woBillTds: new Map([[841, 66246]]), woCerts: new Map([[841, certs]]) }))
+    expect(disagree.cats[0].subs[0].orders[0].ledgerNote).toContain('order record puts Paid at')
+  })
+
+  it('a purchase order has an empty ledger', () => {
+    const t = build([], [indent(1, [{ poNo: 'PO/A/1', amount: 400, draft: false }])])
+    expect(t.cats[0].subs[0].orders[0].ledger.rows).toEqual([])
   })
 })

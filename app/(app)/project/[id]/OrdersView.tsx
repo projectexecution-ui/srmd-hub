@@ -170,6 +170,7 @@ export async function OrdersView({ projectId }: { projectId: string }) {
                                           template for them (event 3) and none
                                           for purchase orders. */}
                                       {o.kind === 'wo' && <PrintWo id={o.id} ref_={o.ref} />}
+                                      {o.kind === 'wo' && o.ledger.rows.length > 0 && <LedgerToggle order={o} />}
                                       <span className="ml-2 text-[12px] text-gray-400">{o.lines.length} item{o.lines.length === 1 ? '' : 's'}</span>
                                       {o.flag && <span className="block mt-0.5 text-[12px] text-amber-700">{o.flag}</span>}
                                     </td>
@@ -186,6 +187,14 @@ export async function OrdersView({ projectId }: { projectId: string }) {
                                     <tr className="border-t border-gray-100 bg-gray-50/40">
                                       <td colSpan={7} className="pl-12 pr-3 py-3">
                                         <OrderItems order={o} />
+                                      </td>
+                                    </tr>
+                                  </RowDetail>
+                                  {/* The ledger — every bill and advance with the running still-to-pay. */}
+                                  <RowDetail id={`${o.id}:ledger`}>
+                                    <tr className="border-t border-gray-100 bg-gray-50/40">
+                                      <td colSpan={7} className="pl-12 pr-3 py-3">
+                                        <LedgerTable order={o} />
                                       </td>
                                     </tr>
                                   </RowDetail>
@@ -240,12 +249,19 @@ export async function OrdersView({ projectId }: { projectId: string }) {
                                   <span className="font-mono text-gray-700">{o.ref}</span>
                                 </p>
                                 {o.party && <p className="ml-6 text-[12px] text-gray-500">{o.party}</p>}
-                                {o.kind === 'wo' && <p className="ml-6 mt-0.5"><PrintWo id={o.id} ref_={o.ref} /></p>}
+                                {o.kind === 'wo' && (
+                                  <p className="ml-6 mt-0.5 flex items-center gap-2"><PrintWo id={o.id} ref_={o.ref} />{o.ledger.rows.length > 0 && <LedgerToggle order={o} />}</p>
+                                )}
                                 {o.flag && <p className="ml-6 mt-0.5 text-[12px] text-amber-700">{o.flag}</p>}
                                 <div className="ml-6"><MoneyChips m={o} /></div>
                                 <RowDetail id={o.id}>
                                   <div className="mt-2">
                                     <OrderItems order={o} />
+                                  </div>
+                                </RowDetail>
+                                <RowDetail id={`${o.id}:ledger`}>
+                                  <div className="mt-2">
+                                    <LedgerTable order={o} />
                                   </div>
                                 </RowDetail>
                               </div>
@@ -562,6 +578,121 @@ function PrintWo({ id, ref_ }: { id: string; ref_: string }) {
     >
       <FileText className="h-3 w-3" /> Print
     </a>
+  )
+}
+
+/** Opens the order's ledger: the same chevron the tree uses everywhere, with
+ *  the word beside it so it is found (a bare chevron reads as more items). */
+function LedgerToggle({ order: o }: { order: OrderRow }) {
+  return (
+    <span className="ml-2 inline-flex items-center text-[12px] font-semibold text-indigo-700">
+      <RowDetailToggle id={`${o.id}:ledger`} count={o.ledger.rows.length} />Ledger
+    </span>
+  )
+}
+
+/**
+ * A work order's ledger — every bill and advance certificate in date order,
+ * with what each one paid out, held back or recovered, and the running
+ * "still to pay" after it. The last running figure is the order row's Balance
+ * when IN4's header and its bills agree; when they do not, the note says so
+ * rather than forcing them. Cancelled and rejected rows stay visible, greyed,
+ * and add nothing. Desktop table; cards below md.
+ */
+function LedgerTable({ order: o }: { order: OrderRow }) {
+  const { rows, totals: t } = o.ledger
+  const woId = o.id.replace(/^wo:/, '')
+  const stillToPay = (o.gross ?? o.ordered) - t.paidOut - t.retention
+  const off = (r: { status: string }) => r.status !== 'live'
+  return (
+    <div className="rounded-lg border border-gray-200 bg-white">
+      <div className="flex items-center justify-between gap-3 flex-wrap px-3 py-2 bg-gray-50 border-b border-gray-200 rounded-t-lg">
+        <span className="text-[12px] font-semibold text-gray-900">
+          Ledger <span className="font-mono">{o.ref}</span>
+          <span className="ml-2 font-normal text-gray-500">{rows.length} entr{rows.length === 1 ? 'y' : 'ies'}{o.party ? ` · ${o.party}` : ''}</span>
+        </span>
+        <span className="flex items-center gap-3 text-[12px] tabular-nums text-gray-700">
+          <span>Ordered <b className="text-gray-900">{formatINR(o.gross ?? o.ordered)}</b> · Still to pay <b className="text-amber-700">{formatINR(stillToPay)}</b></span>
+          <a href={`/api/in4/work-order/${woId}/ledger`} target="_blank" rel="noopener" className="inline-flex items-center gap-1 font-semibold text-indigo-700 hover:underline max-md:min-h-[44px]">
+            <FileText className="h-3 w-3" /> Print ledger
+          </a>
+        </span>
+      </div>
+
+      <table className="w-full table-fixed text-[12px] hidden md:table">
+        <thead className="text-left text-[12px] uppercase tracking-wide text-gray-400">
+          <tr>
+            <th className="border-b border-gray-100 px-2 py-1.5 w-[9%]">Date</th>
+            <th className="border-b border-gray-100 px-2 py-1.5 w-[15%]">Bill</th>
+            <th className="border-b border-gray-100 px-2 py-1.5 w-[7%]">Type</th>
+            <th className="border-b border-gray-100 px-2 py-1.5 text-right w-[11%]">Gross</th>
+            <th className="border-b border-gray-100 px-2 py-1.5 text-right w-[10%]">Certified</th>
+            <th className="border-b border-gray-100 px-2 py-1.5 text-right w-[8%]">TDS</th>
+            <th className="border-b border-gray-100 px-2 py-1.5 text-right w-[9%]">Retention</th>
+            <th className="border-b border-gray-100 px-2 py-1.5 text-right w-[10%]">Adv. recovered</th>
+            <th className="border-b border-gray-100 px-2 py-1.5 text-right w-[10%]">Paid</th>
+            <th className="border-b border-gray-100 px-2 py-1.5 text-right w-[11%] text-amber-700">Still to pay</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map(r => (
+            <tr key={r.id} className={`border-t border-gray-100 ${off(r) ? 'text-gray-400' : 'text-gray-800'}`}>
+              <td className="px-2 py-1.5">{r.date ?? '—'}</td>
+              <td className="px-2 py-1.5 font-mono truncate" title={r.ref}>
+                {r.ref}{off(r) && <span className="ml-1.5 rounded border border-gray-200 px-1 text-[12px] font-sans text-gray-500">{r.status}</span>}
+              </td>
+              <td className="px-2 py-1.5">{r.kind === 'advance' ? 'Advance' : 'Bill'}</td>
+              <td className="px-2 py-1.5 text-right tabular-nums">{formatINR(r.gross)}</td>
+              <td className="px-2 py-1.5 text-right tabular-nums">{formatINR(r.certified)}</td>
+              <td className="px-2 py-1.5 text-right tabular-nums">{r.tds ? formatINR(r.tds) : <Dash />}</td>
+              <td className="px-2 py-1.5 text-right tabular-nums">{r.retention ? formatINR(r.retention) : <Dash />}</td>
+              <td className="px-2 py-1.5 text-right tabular-nums">{r.advanceRecovered ? formatINR(r.advanceRecovered) : <Dash />}</td>
+              <td className="px-2 py-1.5 text-right tabular-nums font-semibold">{formatINR(r.paid)}</td>
+              <td className="px-2 py-1.5 text-right tabular-nums font-semibold text-amber-700">{off(r) ? <Dash /> : formatINR(r.stillToPay)}</td>
+            </tr>
+          ))}
+          <tr className="border-t border-gray-300 bg-gray-100/70 font-bold text-gray-900">
+            <td className="px-2 py-2" colSpan={3}>Totals — live entries</td>
+            <td className="px-2 py-2 text-right tabular-nums">{formatINR(t.billed + t.advancePaid)}</td>
+            <td />
+            <td className="px-2 py-2 text-right tabular-nums">{formatINR(t.tds)}</td>
+            <td className="px-2 py-2 text-right tabular-nums">{formatINR(t.retention)}</td>
+            <td className="px-2 py-2 text-right tabular-nums">{formatINR(t.advanceRecovered)}</td>
+            <td className="px-2 py-2 text-right tabular-nums">{formatINR(t.paid)}</td>
+            <td className="px-2 py-2 text-right tabular-nums text-amber-700">{formatINR(stillToPay)}</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <ul className="md:hidden divide-y divide-gray-100">
+        {rows.map(r => (
+          <li key={r.id} className={`px-3 py-2 ${off(r) ? 'text-gray-400' : 'text-gray-800'}`}>
+            <p className="text-[12px] flex flex-wrap items-baseline gap-x-2">
+              <span className="text-gray-500">{r.date ?? '—'}</span>
+              <span className="font-mono">{r.ref}</span>
+              <span className="text-gray-500">{r.kind === 'advance' ? 'Advance' : 'Bill'}{off(r) ? ` · ${r.status}` : ''}</span>
+            </p>
+            <div className="mt-0.5 flex flex-wrap gap-x-3 gap-y-0.5 text-[12px] tabular-nums">
+              <span>Gross <b>{formatINR(r.gross)}</b></span>
+              <span>Paid <b>{formatINR(r.paid)}</b></span>
+              {r.tds > 0 && <span>TDS {formatINR(r.tds)}</span>}
+              {r.retention > 0 && <span>Retention {formatINR(r.retention)}</span>}
+              {r.advanceRecovered > 0 && <span>Adv. recovered {formatINR(r.advanceRecovered)}</span>}
+              {!off(r) && <span className="text-amber-700">Still to pay <b>{formatINR(r.stillToPay)}</b></span>}
+            </div>
+          </li>
+        ))}
+        <li className="px-3 py-2 bg-gray-100/70 text-[12px] font-bold tabular-nums flex items-center justify-between">
+          <span>Paid {formatINR(t.paid)} · TDS {formatINR(t.tds)} · Retention {formatINR(t.retention)}</span>
+          <span className="text-amber-700">Still to pay {formatINR(stillToPay)}</span>
+        </li>
+      </ul>
+
+      <p className="px-3 py-2 text-[12px] text-gray-500 border-t border-gray-100">
+        Money out = bill payments + TDS (counted as paid) + advances as billed. Still to pay = Ordered − money out − retention held.
+        Cancelled and rejected certificates are greyed and add nothing.{o.ledgerNote ? ` ${o.ledgerNote}` : ''}
+      </p>
+    </div>
   )
 }
 
