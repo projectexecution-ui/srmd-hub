@@ -650,9 +650,14 @@ export function billsFromCertificates(rows: readonly CertRow[]): { woBilled: Map
  */
 export function mergeRepeatedPoLines(o: OrderRow): void {
   if (o.kind !== 'po' || o.lines.length < 2) return
+  // A repeat is the SAME line — material, unit, quantity, rate AND amount all
+  // equal, and quantity and rate actually present. Three indent lines that
+  // merely share a PO number and a material name are three lines.
   const groups = new Map<string, OrderLine[]>()
   for (const l of o.lines) {
-    const k = `${l.name}|${l.uom ?? ''}|${l.qty ?? ''}|${l.rate ?? ''}`
+    const k = l.qty != null && l.rate != null
+      ? `${l.name}|${l.uom ?? ''}|${l.qty}|${l.rate}|${l.amount}`
+      : `unique|${l.id}`
     const g = groups.get(k) ?? []
     g.push(l)
     groups.set(k, g)
