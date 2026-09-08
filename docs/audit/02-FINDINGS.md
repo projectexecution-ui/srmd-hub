@@ -1,7 +1,7 @@
 # Findings — `revamp-trial` @ 1562b42, audited 8 Sep 2026
 
 Severity: P0 wrong money / data written from the trial / exposed data · P1 a new or changed screen that does not work or excludes phones · P2 usability/performance · P3 backlog.
-Status values: FIXED → FIXED (Prompt B) → VERIFIED / NOT-FIXED / REGRESSED (Prompt C).
+Status values: OPEN → FIXED (Prompt B) → VERIFIED / NOT-FIXED / REGRESSED (Prompt C).
 
 ---
 
@@ -23,7 +23,7 @@ Status values: FIXED → FIXED (Prompt B) → VERIFIED / NOT-FIXED / REGRESSED (
 **Suggested fix.** `if (IS_DEMO) return 403` at the top of the handler (same for every service-role GET, see F-005).
 **Effort:** S
 
-### F-004 | P0 | RLS | policy `sched_promises_select_merged_public` on `public.sched_promises` (db-inventory.txt §3) | Status: FIXED
+### F-004 | P0 | RLS | policy `sched_promises_select_merged_public` on `public.sched_promises` (db-inventory.txt §3) | Status: OPEN
 **What is wrong.** Role `{public}`, `USING (true OR sched_can_write())`. `public` includes `anon`; the expression is `true` for everyone. All rows readable with the public anon key, no login.
 **Why it matters.** Exposed data, per this audit's own scale. Content is Schedule promise dates — not money, not personal — but the table is open.
 **Suggested fix.** Change the role to `authenticated`, or the qual to `(select auth.uid()) is not null OR sched_can_write()`. Database change → confirmation rule.
@@ -65,7 +65,7 @@ Status values: FIXED → FIXED (Prompt B) → VERIFIED / NOT-FIXED / REGRESSED (
 **Suggested fix.** Route each through `formatINR` (or a `perSft()` helper that calls it).
 **Effort:** S
 
-### F-011 | P2 | Trial flag | `lib/revamp/tabs.ts:194` | Status: OPEN
+### F-011 | P2 | Trial flag | `lib/revamp/tabs.ts:194` | Status: FIXED
 **What is wrong.** Re-derives the demo condition (`NEXT_PUBLIC_DEMO_MODE === '1' || VERCEL_ENV === 'preview'`) instead of importing `IS_DEMO`. The nav gate (`NavBar.tsx:127`) and the link target can drift.
 **Suggested fix.** `import { IS_DEMO }`.
 **Effort:** S
@@ -76,7 +76,7 @@ Status values: FIXED → FIXED (Prompt B) → VERIFIED / NOT-FIXED / REGRESSED (
 **Suggested fix.** For the five writable tables, add a role/module check to the policy. For the SELECT list, confirm intent per table.
 **Effort:** M
 
-### F-013 | P3 | Paging (latent) | `lib/revamp/tab-data.ts:381-384` | Status: OPEN
+### F-013 | P3 | Paging (latent) | `lib/revamp/tab-data.ts:381-384` | Status: FIXED
 **What is wrong.** `jmr_daily_entries` read per project without `.range()`. 21 rows today; the same 1,000-row cliff as F-002 when it grows.
 **Suggested fix.** Same `fetchAll`.
 **Effort:** S

@@ -4,15 +4,15 @@ Each batch fits one Sonnet/Opus session under Prompt B. Items marked **[confirm]
 
 ## Batch 1 — stop the trial site writing (P0)
 
-- [ ] **F-001 [confirm: touches the guard]** In `lib/demo-mode.ts`, intercept `rpc` in `guardSupabaseClient`: allow a named read list (`my_permissions`, `effective_user_role`, `can_approve`, `my_approval_inbox`, `shell_for`, `cc_ie_lock_state`, `cc_transfer_inbox`, `cc_recent_transfers`, `cc_project_transfers`, `cc_can_i_raise_transfer`, `email_delivery_health`, `list_storage_objects`, `inv_rpc_custody_projects`, `inv_rpc_custody_prefill`, `blueprint_demo_sla_inbox`, `bb_stage_members`); every other name resolves to `demoBlockedResult('rpc:<name>')`. Flip `lib/demo-mode.test.ts:132` to assert a writer is blocked and a reader passes. Verify: on the trial, open any Cost Control approval and click Approve → the blocked message, and `cc_approvals` unchanged (SQL). Then load the dashboard → it still renders (permissions RPCs pass).
-- [ ] **F-003** `app/api/zoho/bp-callback/route.ts`: first line of `GET`, `if (IS_DEMO) return NextResponse.json({ ok:false, error: DEMO_BLOCKED_MESSAGE }, { status: 403 })`. Verify: `GET /api/zoho/bp-callback?code=x` on the trial → 403.
-- [ ] **F-005** Same `IS_DEMO` refusal at the top of `cronBackup` in `app/api/cost-control/backup/route.ts:108` and of `GET` in `app/api/cost-control/in4-followup/route.ts`. Then create `lib/supabase/service.ts` exporting `createServiceClient()` that wraps `@supabase/supabase-js` with `guardSupabaseClient`, and switch the twelve raw call sites listed in F-005 to it. Verify: `git grep "createClient as createServiceClient"` returns only `lib/supabase/service.ts`.
+- [x] **F-001 [confirm: touches the guard]** In `lib/demo-mode.ts`, intercept `rpc` in `guardSupabaseClient`: allow a named read list (`my_permissions`, `effective_user_role`, `can_approve`, `my_approval_inbox`, `shell_for`, `cc_ie_lock_state`, `cc_transfer_inbox`, `cc_recent_transfers`, `cc_project_transfers`, `cc_can_i_raise_transfer`, `email_delivery_health`, `list_storage_objects`, `inv_rpc_custody_projects`, `inv_rpc_custody_prefill`, `blueprint_demo_sla_inbox`, `bb_stage_members`); every other name resolves to `demoBlockedResult('rpc:<name>')`. Flip `lib/demo-mode.test.ts:132` to assert a writer is blocked and a reader passes. Verify: on the trial, open any Cost Control approval and click Approve → the blocked message, and `cc_approvals` unchanged (SQL). Then load the dashboard → it still renders (permissions RPCs pass).
+- [x] **F-003** `app/api/zoho/bp-callback/route.ts`: first line of `GET`, `if (IS_DEMO) return NextResponse.json({ ok:false, error: DEMO_BLOCKED_MESSAGE }, { status: 403 })`. Verify: `GET /api/zoho/bp-callback?code=x` on the trial → 403.
+- [x] **F-005** Same `IS_DEMO` refusal at the top of `cronBackup` in `app/api/cost-control/backup/route.ts:108` and of `GET` in `app/api/cost-control/in4-followup/route.ts`. Then create `lib/supabase/service.ts` exporting `createServiceClient()` that wraps `@supabase/supabase-js` with `guardSupabaseClient`, and switch the twelve raw call sites listed in F-005 to it. Verify: `git grep "createClient as createServiceClient"` returns only `lib/supabase/service.ts`.
 - [ ] Append to `docs/audit/CHANGELOG.md`. Run `npx vitest run` and `npx next build`; push to `revamp-trial`.
 
 ## Batch 2 — wrong money (P0)
 
-- [ ] **F-002** `lib/revamp/budget-actual-data.ts:68-71`: replace both reads with the `fetchAll` pager (copy from `lib/revamp/orders-tree.ts:160-175` or export it from a shared module). Add a unit test feeding 1,500 certificate rows and asserting the sum includes all of them. Verify: open Raj Uphaar → Budget → CT wise; Certified total should rise, and match `select sum(certified_amt) from in4_wo_certificates c join in4_subprojects s on s.id=c.subproject_id where s.project_id=8`.
-- [ ] **F-013** Same pager on `lib/revamp/tab-data.ts:381`.
+- [x] **F-002** `lib/revamp/budget-actual-data.ts:68-71`: replace both reads with the `fetchAll` pager (copy from `lib/revamp/orders-tree.ts:160-175` or export it from a shared module). Add a unit test feeding 1,500 certificate rows and asserting the sum includes all of them. Verify: open Raj Uphaar → Budget → CT wise; Certified total should rise, and match `select sum(certified_amt) from in4_wo_certificates c join in4_subprojects s on s.id=c.subproject_id where s.project_id=8`.
+- [x] **F-013** Same pager on `lib/revamp/tab-data.ts:381`.
 - [ ] Changelog, tests, build, push.
 
 ## Batch 3 — database policies (P0 + judgement) — every item **[confirm: database change]**
@@ -32,7 +32,7 @@ Each batch fits one Sonnet/Opus session under Prompt B. Items marked **[confirm]
 ## Batch 5 — hygiene (P2/P3)
 
 - [ ] **F-010** Route the nine hand-built rupee strings through `formatINR` (a small `perSft(amount, sft)` helper in `lib/utils`).
-- [ ] **F-011** `lib/revamp/tabs.ts:194` → `import { IS_DEMO } from '@/lib/demo-mode'`.
+- [x] **F-011** `lib/revamp/tabs.ts:194` → `import { IS_DEMO } from '@/lib/demo-mode'`.
 - [ ] **F-017** Add `lib/revamp/tabs.test.ts` asserting that for every slug present in both `PROJECT_TABS` and `WORKSPACE_TABS`, `permissionSlug` and `reviewerOnly` agree.
 - [ ] **F-015** Type the budget state in `lib/budget-v2-load.ts`; remove the six `console.log` in `lib/ai/index.ts` or gate on `NODE_ENV !== 'production'`; resolve the two TODOs at `app/api/cron/bills-pipeline/route.ts:209-210`.
 - [ ] **F-014** No code: add `IN4_DB_HOST/NAME/USER/PASSWORD/PORT` to the Vercel **Preview** environment checklist in `docs/audit/AUDIT-PROMPT-PACK.md` §6.
