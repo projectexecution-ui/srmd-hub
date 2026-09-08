@@ -1,5 +1,28 @@
 # CT HUB revamp audit — summary
 
+## Re-audit after the overnight run — 9 Sep 2026, `revamp-trial` @ a4fd4f4
+
+Read-only. Every fix was checked in the code, not taken from the changelog.
+
+| | |
+|---|---|
+| Write-guard holds? | **Yes.** `rpc()` now passes only the 23 named read functions; every other RPC, and every `insert/update/upsert/delete`, resolves as a blocked result (no throw, no 500). 31 browser-side writers are covered (F-001 VERIFIED). |
+| GET handlers that can write | All three refuse with 403 on the trial (F-003, F-005 VERIFIED). |
+| 1,000-row cap | Both Budget-vs-Actual reads and the JMR read page through `fetchAll` (F-002, F-013 VERIFIED). |
+| Loading states | `loading.tsx` on the project workspace and masters (F-007 VERIFIED). |
+| IN4 read-only? | Still yes — the four new IN4 readers (PO print, PO ledger, PO payments, PO detail) are SELECT only. |
+| Database | Unchanged. No migration on this branch. |
+| Tests / build | 1,476 tests green; `next build` clean at every step. |
+
+**Verdict now:** the trial site is safe to hand to reviewers **for reading**. Nothing on it can write to the live database through the app. What remains is not about the trial: F-004 and F-012 are RLS policies on the shared database (a change to live — waits for the main-branch round), and F-009 still needs one click in a browser to see how a Server Action 403 reads.
+
+Status count: VERIFIED **7** (F-001, F-002, F-003, F-005, F-007, F-011, F-013) · OPEN **10** (F-004, F-006, F-008, F-009, F-010, F-012, F-014, F-015, F-016, F-017). Two of the ten are database changes; the rest are S/M code items in `03-BACKLOG.md`.
+
+What the run added beyond the audit: a ledger under every WO (Step 3), the PO print in IN4's own format and a supplier ledger per PO (Step 4), and the Accounts tab (Step 5). Row by row in `CHANGELOG.md`.
+
+---
+
+## Original audit — 8 Sep 2026
 Audited 8 Sep 2026 on `revamp-trial` (commit 1562b42). Read-only. Nothing was changed.
 
 ## Trial-site safety

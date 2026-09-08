@@ -25,7 +25,7 @@ Each batch fits one Sonnet/Opus session under Prompt B. Items marked **[confirm]
 
 - [ ] **F-009** First, verify in a browser on the trial: open `/project/<id>/sc-budgets`, change a value, Save. If the result is a crash or a generic error rather than the blocked-message, apply the `BillsRefresh.tsx:55-64` pattern (an `IS_DEMO` branch that shows the message and a link to the live hub) to the Save buttons behind `sc-budgets-actions.ts`, `setup/people-actions.ts`, `admin/email/actions.ts`.
 - [ ] **F-006** `BudgetTab.tsx` CT-wise view: add an `md:hidden` card list mirroring `OrdersView.tsx:212-230`; hide the table below `md`. Verify at 375 px: no horizontal page scroll.
-- [ ] **F-007** Add `app/(app)/project/[id]/loading.tsx` and `app/(app)/masters/loading.tsx` (header + three pulse rows). Verify: throttle the network, open a project → skeleton appears.
+- [x] **F-007** Add `app/(app)/project/[id]/loading.tsx` and `app/(app)/masters/loading.tsx` (header + three pulse rows). Verify: throttle the network, open a project → skeleton appears.
 - [ ] **F-008 / F-016** Delete `app/(app)/project/[id]/OverviewTab.tsx` and its import at `[...rest]/page.tsx:8,70`, and remove `internalEstimate` from `lib/revamp/project-cockpit.ts` if no other caller needs it — or, if Aksha wants Overview back one day, gate the figure on `checkIsCcReviewer()` inside the component. **[confirm: deletes a component file]**
 - [ ] Changelog, tests, build, push.
 
