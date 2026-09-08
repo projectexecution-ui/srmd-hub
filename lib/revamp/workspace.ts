@@ -70,9 +70,11 @@ export const WORKSPACE_TABS: WorkspaceTab[] = [
   { slug: 'sc-budgets', ribbon: 'SC Budget', label: 'SC Budget', group: 'money', icon: 'Layers',
     subs: ['Report', 'Category totals', 'Contractors'],
     permissionSlug: 'budget-vs-actual-v2', built: true },
+  // One screen, four sections (due · received not billed · held back · by
+  // party); no pills, they would only split what reads better together.
   { slug: 'accounts', ribbon: 'Accounts', label: 'Accounts', group: 'money', icon: 'CreditCard',
-    subs: ['Payment reports — FY wise', 'Month wise', 'Reconcile with trust accounts', 'Party ledgers'],
-    permissionSlug: 'cost-control', built: false },
+    subs: [],
+    permissionSlug: 'cost-control', built: true, reviewerOnly: true },
 
   // ── Procurement ──────────────────────────────────────────────────────────
   { slug: 'procurement', ribbon: 'Indents', label: 'Indents', group: 'procurement', icon: 'ClipboardList',
@@ -123,7 +125,7 @@ export const WORKSPACE_TABS: WorkspaceTab[] = [
  */
 export const ABSORBED: Record<string, { slug: string; sub: number }> = {
   'wo-view':   { slug: '',            sub: 1 }, // → Budget · Category — WO/PO wise
-  'payments':  { slug: 'accounts',    sub: 0 }, // → Accounts · Payment reports
+  'payments':  { slug: 'accounts',    sub: 0 }, // → Accounts (due, held back, by party)
   'decisions': { slug: 'discussions', sub: 2 }, // → Discussions · Decisions log
   'overview':  { slug: '',            sub: 0 }, // Overview folded into Budget
 }

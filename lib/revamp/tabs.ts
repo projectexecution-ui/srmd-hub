@@ -103,6 +103,10 @@ export const PROJECT_TABS: ProjectTab[] = [
   // HIDDEN rather than greyed for everyone else: a greyed tab still announces
   // that the report exists, and "not to be seen" means not seen.
   { slug: 'sc-budgets',   label: 'SC Budgets',       hint: 'Top management report — pick projects, categories and columns', built: true, permissionSlug: 'budget-vs-actual-v2' },
+  // Built from the WO/PO tree's own figures (IN4 headers + certificates):
+  // what is due, what is held back, and each party's account. Reviewer-only
+  // because it is project-level money, like Approvals.
+  { slug: 'accounts',     label: 'Accounts',         hint: 'What is due, what is held back, and each party’s account',  built: true,  permissionSlug: 'cost-control', reviewerOnly: true },
   // Not on the mind map — it is how a project gets configured, and the map
   // covers pages people READ. Kept last so it never competes with them.
   { slug: 'setup',        label: 'Setup',            hint: 'Categories, approvers, area and grouping',              built: true,  permissionSlug: 'cost-control', reviewerOnly: true },
@@ -125,8 +129,6 @@ export const PROJECT_TABS: ProjectTab[] = [
   // ── Blocked: no data exists ──────────────────────────────────────────────
   { slug: 'payments',     label: 'Payment Reports',  hint: 'What has actually been paid out on this project',         built: false, permissionSlug: 'cost-control',
     blockedBy: 'The payments table is empty — CT Hub has never held payment records. Needs an IN4 or Zoho export.' },
-  { slug: 'accounts',     label: 'Accounts',         hint: 'Reconcile with Trust accounts, and party ledgers',        built: false, permissionSlug: 'cost-control',
-    blockedBy: 'No trust-account or party-ledger data in CT Hub. Needs a feed from the accounting system.' },
 ]
 
 /**

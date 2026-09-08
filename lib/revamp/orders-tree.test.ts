@@ -381,7 +381,7 @@ describe('money — full order, Paid as money out with TDS, Retention apart, Bal
       [indent(1, [{ poNo: 'PO/A/1', amount: 400, draft: false }])],
       [],
       live({ woHeaders: new Map([[1, header({ gross: 1180, billsPaid: 500 })]]), poHeaders: new Map([['PO/A/1', po]]),
-            poCerts: new Map([[9, { billed: 472, paid: 100, tds: 0, retention: 0, advancePaid: 0, advanceRecovered: 0, bookedUnder: [] }]]) }),
+            poCerts: new Map([[9, { billed: 472, paid: 100, tds: 0, retention: 0, advancePaid: 0, advanceRecovered: 0, outstanding: 0, bookedUnder: [] }]]) }),
     )
     const civil = t.cats[0]
     expect(civil.ordered).toBe(1400)      // before tax, WO + PO
@@ -553,7 +553,7 @@ describe('purchase orders — received (GRN) per line, billed per PO', () => {
     const po: PoHeader = { poId: 58, value: 280.25, material: 237.5, tax: 42.75, freight: 0, handling: 0, other: 0, paid: 250 }
     const t = build([], [line], [], live({
       poHeaders: new Map([['PO/SRASSK/CVR/2026-27/58', po]]),
-      poCerts: new Map([[58, { billed: 280.26, paid: 250, tds: 5, retention: 0, advancePaid: 0, advanceRecovered: 0, bookedUnder: [] }]]),
+      poCerts: new Map([[58, { billed: 280.26, paid: 250, tds: 5, retention: 0, advancePaid: 0, advanceRecovered: 0, outstanding: 0, bookedUnder: [] }]]),
     }))
     const o = t.cats[0].subs[0].orders[0]
     expect(o.billed).toBeCloseTo(280.26, 2)

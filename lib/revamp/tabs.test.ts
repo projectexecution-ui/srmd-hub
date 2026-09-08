@@ -59,7 +59,7 @@ describe('coming-soon lanes', () => {
   // Aksha — dev time versus a decision about where data comes from.
   it('separates blocked-on-data from merely unbuilt', () => {
     const blocked = PROJECT_TABS.filter(t => t.blockedBy)
-    expect(blocked.map(t => t.label)).toEqual(['Payment Reports', 'Accounts'])
+    expect(blocked.map(t => t.label)).toEqual(['Payment Reports'])
     for (const t of blocked) {
       expect(t.built, t.slug).toBe(false)
       expect(t.blockedBy!.length, t.slug).toBeGreaterThan(30)
@@ -130,7 +130,7 @@ describe('coming-soon lanes', () => {
 
   it('leaves the built count honest', () => {
     const { built, total } = builtCount()
-    expect(built).toBe(10)
+    expect(built).toBe(11)
     expect(total).toBe(19)
     expect(BUILT_TABS).toHaveLength(built)
     expect(COMING_SOON_TABS).toHaveLength(total - built)

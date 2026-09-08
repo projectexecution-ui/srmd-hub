@@ -29,7 +29,8 @@ describe('the ribbon is fifteen tabs in five groups', () => {
   })
 
   it('gives every tab at least one sub-tab — two levels, never three', () => {
-    expect(WORKSPACE_TABS.every(t => t.subs.length >= 2)).toBe(true)
+    // Accounts is the one exception: one screen of four sections, no pills.
+    expect(WORKSPACE_TABS.every(t => t.slug === 'accounts' || t.subs.length >= 2)).toBe(true)
     expect(WORKSPACE_TABS.every(t => t.subs.every(s => s.trim().length > 0))).toBe(true)
   })
 
@@ -67,7 +68,9 @@ describe('permissions still decide what is shown', () => {
 
   it('keeps unbuilt tabs visible — they are the roadmap, and carry no data', () => {
     const tabs = visibleWorkspaceTabs({ 'cost-control': { view: true } }, new Set(), false)
-    expect(tabs.map(t => t.slug)).toEqual(expect.arrayContaining(['qc', 'drawings', 'accounts']))
+    expect(tabs.map(t => t.slug)).toEqual(expect.arrayContaining(['qc', 'drawings', 'consultants']))
+    // Accounts is built and reviewer-only now, so a non-reviewer does not see it.
+    expect(tabs.map(t => t.slug)).not.toContain('accounts')
   })
 
   it('shows all fifteen to someone who holds everything', () => {
@@ -129,7 +132,7 @@ describe('routing', () => {
     for (const [from, to] of Object.entries(ABSORBED)) {
       const tab = findWorkspaceTab(to.slug)
       expect(tab, `${from} → ${to.slug}`).toBeDefined()
-      expect(to.sub).toBeLessThan(tab!.subs.length)
+      expect(to.sub).toBeLessThan(Math.max(1, tab!.subs.length))
     }
   })
 })

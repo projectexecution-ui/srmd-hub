@@ -11,6 +11,7 @@ import { ProcurementTab, DiscussionsTab } from '../MoreTabs'
 import { JmrTab, StoresTab } from '../tabs'
 import { ApprovalsTab } from '../ApprovalsTab'
 import { ScBudgetsTab } from '../ScBudgetsTab'
+import { AccountsTab } from '../AccountsTab'
 import ProjectSetupPage from '@/app/(app)/cost-control/projects/[id]/setup/page'
 
 export const dynamic = 'force-dynamic'
@@ -89,6 +90,10 @@ export default async function ProjectTabPage({
   // Confidentiality is the route guard above, on budget-vs-actual-v2 — admin
   // and head only. The component does not re-check, so there is one gate.
   if (slug === 'sc-budgets')  return <ScBudgetsTab projectId={id} />
+
+  // Every figure here is the WO/PO tree's own, regrouped by what is due, what
+  // is held back and who is owed — so it can never disagree with the tree.
+  if (slug === 'accounts')    return <AccountsTab projectId={id} />
 
   if (slug === 'setup') {
     // The existing Setup screen, rendered INSIDE the cockpit — not a redirect.

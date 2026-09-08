@@ -130,6 +130,9 @@ export interface OrderRow extends Money {
    *  ORDER.ID — which the print and ledger routes take. Null for a PO whose
    *  header IN4 did not return. */
   in4Id: number | null
+  /** Certified and not yet paid — bills passed in IN4 that the supplier or
+   *  contractor is still waiting on. Null when IN4's header was not reached. */
+  due: number | null
   /** How the full amount is made up, in IN4's own parts — "before GST
    *  ₹x · GST ₹y" or "material ₹a · GST ₹b · freight ₹c". Null when the
    *  header was not available. */
@@ -292,6 +295,9 @@ export interface PoCertAgg {
    *  problem as the header's PO number. */
   paid: number
   tds: number; retention: number; advancePaid: number; advanceRecovered: number
+  /** Certified and not yet paid — IN4's CERTIFIED_OUT_AMT, which is payable
+   *  minus paid on every one of its 27 open supplier certificates. */
+  outstanding: number
   bookedUnder: string[]
 }
 
@@ -306,6 +312,8 @@ export interface SupplierPayRow {
   tds: number
   retention: number
   advanceRecovered: number
+  /** Certified, not yet paid (CERTIFIED_OUT_AMT). Absent = 0. */
+  outstanding?: number
 }
 
 /** Fold payment rows into per-PO sums by the GRN's PO. Pure, so the
@@ -313,12 +321,13 @@ export interface SupplierPayRow {
 export function poPaymentsFromRows(rows: readonly SupplierPayRow[]): Map<number, PoCertAgg> {
   const out = new Map<number, PoCertAgg>()
   for (const r of rows) {
-    const agg = out.get(r.grnPoId) ?? { billed: 0, paid: 0, tds: 0, retention: 0, advancePaid: 0, advanceRecovered: 0, bookedUnder: [] }
+    const agg = out.get(r.grnPoId) ?? { billed: 0, paid: 0, tds: 0, retention: 0, advancePaid: 0, advanceRecovered: 0, outstanding: 0, bookedUnder: [] }
     agg.billed += r.landed
     agg.paid += r.paid
     agg.tds += r.tds
     agg.retention += r.retention
     agg.advanceRecovered += r.advanceRecovered
+    agg.outstanding += r.outstanding ?? 0
     if (r.billPoId !== r.grnPoId) {
       const label = r.billPoNo?.trim() || `PO id ${r.billPoId}`
       if (!agg.bookedUnder.includes(label)) agg.bookedUnder.push(label)
@@ -501,7 +510,8 @@ async function readIn4PoPayments(poIds: number[]): Promise<SupplierPayRow[] | nu
         WITH g AS (SELECT DISTINCT GRN_ID, PO_ID FROM BI.FACT_PURCHASE_GRN_DETAILS)
         SELECT g.PO_ID GRN_PO_ID, p.PO_ID BILL_PO_ID, h.PO_NO BILL_PO_NO,
                SUM(p.LANDED_COST) LANDED, SUM(p.PAID_AMT) PAID, SUM(p.TAX_DEDUCTION_AMT) TDS,
-               SUM(p.RETENTION_AMT) RETENTION, SUM(p.ADV_RECOVERY_AMT) ADV_RECOVERY
+               SUM(p.RETENTION_AMT) RETENTION, SUM(p.ADV_RECOVERY_AMT) ADV_RECOVERY,
+               SUM(p.CERTIFIED_OUT_AMT) OUTSTANDING
         FROM BI.FACT_PURCHASE_SUPPLIER_PAY p
         JOIN g ON g.GRN_ID = p.GRN_ID
         LEFT JOIN BI.PURCHASE_ORDER_HEADER h ON h.PO_ID = p.PO_ID
@@ -511,6 +521,7 @@ async function readIn4PoPayments(poIds: number[]): Promise<SupplierPayRow[] | nu
         rows.push({
           grnPoId: n(r.GRN_PO_ID), billPoId: n(r.BILL_PO_ID), billPoNo: r.BILL_PO_NO == null ? null : String(r.BILL_PO_NO),
           landed: n(r.LANDED), paid: n(r.PAID), tds: n(r.TDS), retention: n(r.RETENTION), advanceRecovered: n(r.ADV_RECOVERY),
+          outstanding: n(r.OUTSTANDING),
         })
       }
     }
@@ -646,7 +657,7 @@ export async function loadOrdersTree(projectId: string): Promise<OrdersTree> {
     if (payRows) {
       poCerts = poPaymentsFromRows(payRows)
       for (const r of adv.rows) {
-        const agg = poCerts.get(r.po_id) ?? { billed: 0, paid: 0, tds: 0, retention: 0, advancePaid: 0, advanceRecovered: 0, bookedUnder: [] }
+        const agg = poCerts.get(r.po_id) ?? { billed: 0, paid: 0, tds: 0, retention: 0, advancePaid: 0, advanceRecovered: 0, outstanding: 0, bookedUnder: [] }
         agg.advancePaid += Number(r.paid ?? 0) + Number(r.tax_deduction ?? 0)
         poCerts.set(r.po_id, agg)
       }
@@ -691,6 +702,9 @@ export interface LedgerRow {
   advanceRecovered: number
   /** Cash that left the account on this row. */
   paid: number
+  /** Certified and not yet paid on this row (IN4's outstanding). Zero when
+   *  cancelled or rejected. */
+  outstanding: number
   /** What this row adds to "money out": cash + TDS for a bill; the advance as
    *  billed (already including its TDS) for an advance. Zero when cancelled. */
   paidOut: number
@@ -700,10 +714,10 @@ export interface LedgerRow {
 
 export interface Ledger {
   rows: LedgerRow[]
-  totals: { paidOut: number; paid: number; tds: number; retention: number; advancePaid: number; advanceRecovered: number; billed: number }
+  totals: { paidOut: number; paid: number; tds: number; retention: number; advancePaid: number; advanceRecovered: number; billed: number; outstanding: number }
 }
 
-const EMPTY_LEDGER: Ledger = { rows: [], totals: { paidOut: 0, paid: 0, tds: 0, retention: 0, advancePaid: 0, advanceRecovered: 0, billed: 0 } }
+const EMPTY_LEDGER: Ledger = { rows: [], totals: { paidOut: 0, paid: 0, tds: 0, retention: 0, advancePaid: 0, advanceRecovered: 0, billed: 0, outstanding: 0 } }
 
 /** A work order's ledger from its certificates. Cancelled and rejected rows
  *  stay visible, greyed, and add nothing. Pure, so SRAH/2025-26/41 — three
@@ -723,10 +737,11 @@ export function buildLedger(certs: readonly CertRow[], gross: number): Ledger {
     const live = status === 'live'
     const paid = n(c.paid_amt), tds = n(c.deductions), retention = n(c.retention_amt), grossAmt = n(c.gross_bill_amt)
     const paidOut = !live ? 0 : kind === 'advance' ? grossAmt : paid + tds
+    const outstanding = live ? n(c.outstanding_amt) : 0
     if (live) {
       paidOutRun += paidOut
       retentionRun += retention
-      t.paidOut += paidOut; t.paid += paid; t.tds += tds; t.retention += retention
+      t.paidOut += paidOut; t.paid += paid; t.tds += tds; t.retention += retention; t.outstanding += outstanding
       t.advanceRecovered += n(c.advance_recovery_amt)
       if (kind === 'advance') t.advancePaid += grossAmt; else t.billed += grossAmt
     }
@@ -739,7 +754,7 @@ export function buildLedger(certs: readonly CertRow[], gross: number): Ledger {
       certified: n(c.certified_amt),
       tds, retention,
       advanceRecovered: n(c.advance_recovery_amt),
-      paid, paidOut,
+      paid, outstanding, paidOut,
       stillToPay: gross - paidOutRun - retentionRun,
     }
   })
@@ -997,6 +1012,9 @@ export function buildOrdersTree(
       ref,
       party: w.contractor_id != null ? (parties.get(w.contractor_id) ?? null) : null,
       kind: 'wo', in4Id: w.wo_id,
+      // Due comes from the certificates (the mirror's outstanding), so it is
+      // known whenever the ledger is, header or no header.
+      due: h ? ledger.totals.outstanding : null,
       ordered, gross, ...money, breakup,
       lines, lineTotal, certifiedAmt, lineNote,
       flag: dup ? 'IN4 has given this number to two different work orders.' : null,
@@ -1039,7 +1057,7 @@ export function buildOrdersTree(
         order = {
           id: `po:${ck}:${no}`, ref: no,
           party: po?.supplier?.trim() || null,
-          kind: 'po', in4Id: null, ...ZERO_MONEY, gross: null, billed: null, paid: null, advanceOutstanding: null, retention: null, balance: null,
+          kind: 'po', in4Id: null, due: null, ...ZERO_MONEY, gross: null, billed: null, paid: null, advanceOutstanding: null, retention: null, balance: null,
           breakup: null, lines: [], lineTotal: 0, certifiedAmt: null, lineNote: null, flag: null,
           ledger: EMPTY_LEDGER, ledgerNote: null,
         }
@@ -1101,6 +1119,7 @@ export function buildOrdersTree(
       const retention = c?.retention ?? 0
       o.gross = h.value
       o.billed = c ? c.billed : null
+      o.due = c ? c.outstanding : 0
       o.paid = paid
       o.retention = retention
       o.advanceOutstanding = c ? c.advancePaid - c.advanceRecovered : 0
