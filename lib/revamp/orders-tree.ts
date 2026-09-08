@@ -42,6 +42,14 @@
 import { formatINR } from '@/lib/utils'
 import { createClient } from '@/lib/supabase/server'
 
+/** One bill (IN4 "abstract" / certificate) against one line item. */
+export interface LineBill {
+  billNo: string | null
+  date: string | null
+  qty: number
+  amount: number
+}
+
 export interface OrderLine {
   id: string
   name: string
@@ -51,6 +59,15 @@ export interface OrderLine {
   qty: number | null
   rate: number | null
   amount: number
+  /** What has been CERTIFIED (billed and passed) against this line so far,
+   *  summed over its bills — IN4 records quantity per bill, never per
+   *  payment, so this is the item-wise breakup of work done and billed.
+   *  Null when IN4 holds no bill against the line; never a zero pretending
+   *  to be a measurement. Joined on (wo_id, item_id) — never boq_id, which
+   *  the two IN4 facts disagree on by one. */
+  certifiedQty: number | null
+  certifiedAmt: number | null
+  bills: LineBill[]
 }
 
 export interface OrderRow {
@@ -77,6 +94,10 @@ export interface OrderRow {
   /** Sum of the line items, kept so a reader can see when it does NOT equal
    *  Ordered and why (see lineNote). */
   lineTotal: number
+  /** Sum of the lines' certified amounts; null when no line has a bill. This
+   *  is work billed, before GST — not the same thing as Paid, which IN4 holds
+   *  per order, after GST, and after retention and recoveries. */
+  certifiedAmt: number | null
   /** Set only when the lines do not add up to the order value: IN4 applied a
    *  discount (lines above value) or the order was amended (lines below). A
    *  fact about the IN4 record, stated so it is not read as a CT Hub error. */
@@ -145,6 +166,16 @@ export interface BoqRow {
   quantity: number | null
   rate: number | null
   amt: number | null
+}
+/** One row of in4_wo_abstract_items: a line item on one bill. */
+export interface AbstractRow {
+  wo_id: number
+  item_id: number
+  executed_quantity: number | null
+  executed_amt: number | null
+  bill_no: string | null
+  display_no: string | null
+  abstract_dt: string | null
 }
 export interface IndentRow {
   indent_item_id?: number
@@ -269,7 +300,7 @@ export async function loadOrdersTree(projectId: string): Promise<OrdersTree> {
   const indents = indentRes.rows
   const woIds = wos.map(w => w.wo_id)
 
-  const [boqRes, skillRes, partyRes] = await Promise.all([
+  const [boqRes, skillRes, partyRes, absRes] = await Promise.all([
     woIds.length
       ? fetchAll<BoqRow>((f, t) => supabase.from('in4_wo_boq_items')
           .select('item_id, wo_id, boq_name, boq_subname, description, uom, quantity, rate, amt')
@@ -291,8 +322,16 @@ export async function loadOrdersTree(projectId: string): Promise<OrdersTree> {
     // builder's generic types until it gives up ("excessively deep").
     // PartyReader names exactly the five calls contractorNames makes.
     contractorNames(supabase as unknown as PartyReader, wos),
+    // Every bill line against these orders. Raj Uphaar alone has 3,502, so
+    // this pages like the BOQ read. Joined to lines on (wo_id, item_id).
+    woIds.length
+      ? fetchAll<AbstractRow>((f, t) => supabase.from('in4_wo_abstract_items')
+          .select('wo_id, item_id, executed_quantity, executed_amt, bill_no, display_no, abstract_dt')
+          .in('wo_id', woIds).range(f, t))
+      : Promise.resolve({ rows: [] as AbstractRow[], error: null }),
   ])
   if (boqRes.error) return { ...EMPTY, linked: true, error: boqRes.error }
+  if (absRes.error) return { ...EMPTY, linked: true, error: absRes.error }
   if (skillRes.error) return { ...EMPTY, linked: true, error: skillRes.error }
   if (partyRes.error) return { ...EMPTY, linked: true, error: partyRes.error }
 
@@ -301,7 +340,7 @@ export async function loadOrdersTree(projectId: string): Promise<OrdersTree> {
     partyRes.rows.filter(p => p.name).map(p => [p.id, p.name as string]),
   )
 
-  return { ...buildOrdersTree(wos, indents, boqRes.rows, skills, parties), linked: true, error: null }
+  return { ...buildOrdersTree(wos, indents, boqRes.rows, skills, parties, absRes.rows), linked: true, error: null }
 }
 
 /**
@@ -317,15 +356,33 @@ export function buildOrdersTree(
   boq: BoqRow[],
   skills: Map<number, Skill>,
   parties: Map<number, string>,
+  abstracts: AbstractRow[] = [],
 ): Omit<OrdersTree, 'linked' | 'error'> {
   const nameOf = (id: number | null, fallback: string) =>
     id == null ? fallback : (skills.get(id)?.name ?? `${fallback} ${id}`)
   const codeOf = (id: number | null) => (id == null ? '￿' : (skills.get(id)?.code ?? String(id)))
 
+  // Bills per line item, keyed on (wo_id, item_id). Oldest bill first, so
+  // the list reads as the history of the line.
+  const billsByLine = new Map<string, LineBill[]>()
+  for (const a of abstracts) {
+    const k = `${a.wo_id}:${a.item_id}`
+    const arr = billsByLine.get(k) ?? []
+    arr.push({
+      billNo: a.display_no?.trim() || a.bill_no?.trim() || null,
+      date: a.abstract_dt,
+      qty: Number(a.executed_quantity ?? 0),
+      amount: Number(a.executed_amt ?? 0),
+    })
+    billsByLine.set(k, arr)
+  }
+  for (const arr of billsByLine.values()) arr.sort((x, y) => (x.date ?? '').localeCompare(y.date ?? ''))
+
   // BOQ lines by work order — the deepest level.
   const linesByWo = new Map<number, OrderLine[]>()
   for (const b of boq) {
     const arr = linesByWo.get(b.wo_id) ?? []
+    const bills = billsByLine.get(`${b.wo_id}:${b.item_id}`) ?? []
     arr.push({
       id: `boq:${b.item_id}`,
       // boq_name is the heading IN4 groups by; the description is the full
@@ -336,6 +393,9 @@ export function buildOrdersTree(
       qty: b.quantity != null ? Number(b.quantity) : null,
       rate: b.rate != null ? Number(b.rate) : null,
       amount: Number(b.amt ?? 0),
+      certifiedQty: bills.length ? bills.reduce((s, x) => s + x.qty, 0) : null,
+      certifiedAmt: bills.length ? bills.reduce((s, x) => s + x.amount, 0) : null,
+      bills,
     })
     linesByWo.set(b.wo_id, arr)
   }
@@ -385,6 +445,8 @@ export function buildOrdersTree(
     const gross = w.wo_gross_value != null ? Number(w.wo_gross_value) : ordered
     const paid = Number(w.wo_paid_amt ?? 0)
     const lineTotal = lines.reduce((s, l) => s + l.amount, 0)
+    const billed = lines.filter(l => l.certifiedAmt != null)
+    const certifiedAmt = billed.length ? billed.reduce((s, l) => s + (l.certifiedAmt ?? 0), 0) : null
     const lineNote = lineNoteFor(lines.length, lineTotal, ordered)
     if (lineNote?.includes('discount')) discounted++
     else if (lineNote) amended++
@@ -394,7 +456,7 @@ export function buildOrdersTree(
       party: w.contractor_id != null ? (parties.get(w.contractor_id) ?? null) : null,
       kind: 'wo',
       ordered, gross, paid, balance: gross - paid,
-      lines, lineTotal, lineNote,
+      lines, lineTotal, certifiedAmt, lineNote,
     })
     row.count += 1
     row.ordered += ordered
@@ -424,7 +486,7 @@ export function buildOrdersTree(
         order = {
           id: `po:${ck}:${no}`, ref: no,
           party: po?.supplier?.trim() || null,
-          kind: 'po', ordered: 0, gross: null, paid: null, balance: null, lines: [], lineTotal: 0, lineNote: null,
+          kind: 'po', ordered: 0, gross: null, paid: null, balance: null, lines: [], lineTotal: 0, certifiedAmt: null, lineNote: null,
         }
         byNo.set(no, order)
         poAcc.set(ck, byNo)
@@ -439,6 +501,8 @@ export function buildOrdersTree(
         qty: po?.qty != null ? Number(po.qty) : null,
         rate: po?.rate != null ? Number(po.rate) : null,
         amount,
+        // IN4's PO feed carries no GRN or bill per line, so nothing here.
+        certifiedQty: null, certifiedAmt: null, bills: [],
       })
     }
   }
@@ -520,6 +584,12 @@ export function buildOrdersTree(
     'Ordered is the order value before GST — the line items add up to it. "Incl. GST" is the same order as the '
     + 'contractor bills it. Paid is IN4’s own figure on the work-order record and includes GST, so Balance is '
     + 'Incl. GST minus Paid: both sides with tax. Subtracting Paid from the before-tax figure made paid-up orders look overpaid.',
+  )
+  notes.push(
+    'Under each work order the line items show what has been CERTIFIED so far — quantity and amount summed over its bills, '
+    + 'as IN4 records them, joined line to line. IN4 records payment per bill, not per item, so the item-wise figure is '
+    + 'work billed and passed, before GST; Paid on the order row is the actual money, after GST, retention and recoveries. '
+    + 'A dash means IN4 holds no bill against that line yet.',
   )
   notes.push('Incl. GST, Paid and Balance are held against work orders only. IN4’s purchase-order feed carries neither, so those columns are blank on PO rows and a category’s figures cover its work orders.')
   if (discounted > 0 || amended > 0) {

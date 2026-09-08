@@ -173,26 +173,18 @@ export async function OrdersView({ projectId }: { projectId: string }) {
                                     <td className="px-3 py-1.5 text-right tabular-nums text-amber-700">{money(o.balance)}</td>
                                   </tr>
 
-                                  {/* Level 4 — the line items. */}
+                                  {/* Level 4 — the line items, as their own
+                                      table inside one full-width cell: the
+                                      same shape the Internal Estimate uses
+                                      for a sub-skill's item-wise BOQ
+                                      (SubSkillBoq), so a reader who knows
+                                      that screen knows this one. */}
                                   <RowDetail id={o.id}>
-                                    {o.lines.map(l => (
-                                      <tr key={l.id} className="border-t border-gray-50 bg-white">
-                                        <td className="pl-[4.5rem] pr-3 py-1.5">
-                                          <p className="text-[12px] text-gray-800">{l.name}</p>
-                                          {l.description && (
-                                            <p className="text-[11px] text-gray-400 leading-snug line-clamp-2">{l.description}</p>
-                                          )}
-                                        </td>
-                                        <td className="px-3 py-1.5 text-right text-[11.5px] text-gray-500">{l.uom ?? '—'}</td>
-                                        <td className="px-3 py-1.5 text-right tabular-nums text-[11.5px] text-gray-600">{qty(l.qty)}</td>
-                                        <td className="px-3 py-1.5 text-right tabular-nums text-[11.5px] text-gray-600">{l.rate == null ? '—' : formatINR(l.rate)}</td>
-                                        <td className="px-3 py-1.5 text-right tabular-nums text-gray-800">{formatINR(l.amount)}</td>
-                                        {/* GST, paid and balance are held per ORDER, never per line. */}
-                                        <td className="px-3 py-1.5 text-right"><Dash /></td>
-                                        <td className="px-3 py-1.5 text-right"><Dash /></td>
-                                        <td className="px-3 py-1.5 text-right"><Dash /></td>
-                                      </tr>
-                                    ))}
+                                    <tr className="border-t border-gray-100 bg-gray-50/40">
+                                      <td colSpan={8} className="pl-12 pr-3 py-3">
+                                        <OrderItems order={o} />
+                                      </td>
+                                    </tr>
                                   </RowDetail>
                                 </Fragment>
                               ))}
@@ -263,9 +255,9 @@ export async function OrdersView({ projectId }: { projectId: string }) {
                                 </div>
                                 {o.lineNote && <p className="ml-6 mt-1"><LineNote text={o.lineNote} /></p>}
                                 <RowDetail id={o.id}>
-                                  <ul className="ml-6 mt-1.5 space-y-1.5 border-l border-gray-200 pl-2.5">
-                                    {o.lines.map(l => <LineCard key={l.id} line={l} />)}
-                                  </ul>
+                                  <div className="mt-2">
+                                    <OrderItems order={o} />
+                                  </div>
                                 </RowDetail>
                               </div>
                             ))}
@@ -307,18 +299,149 @@ export async function OrdersView({ projectId }: { projectId: string }) {
   )
 }
 
-function LineCard({ line }: { line: OrderLine }) {
+/**
+ * An order's line items in the Internal Estimate's item-wise shape
+ * (components/cost-control/SubSkillBoq.tsx): a bordered card, a grey header
+ * row with the order number and its total, then # · Description · Unit ·
+ * Qty · Rate · Amount — and, because this is an ORDER rather than an
+ * estimate, three more columns for what IN4 has certified against each line
+ * so far: Certified Qty · Certified Amt · Bills. The certified figures are
+ * the item-wise breakup of work billed; Paid stays on the order row because
+ * IN4 holds payment per bill, not per item.
+ *
+ * Desktop is the table; below md the same rows render as cards, one per
+ * line, so the phone never scrolls a nine-column table sideways.
+ */
+function OrderItems({ order: o }: { order: OrderRow }) {
+  if (o.lines.length === 0) {
+    return (
+      <p className="text-[11.5px] text-gray-500">
+        IN4 holds no line items against this {o.kind === 'wo' ? 'work order' : 'purchase order'}.
+      </p>
+    )
+  }
+  const isWo = o.kind === 'wo'
+  const certifiedQtyKnown = o.lines.some(l => l.certifiedQty != null)
+
   return (
-    <li>
-      <p className="text-[12px] text-gray-800">{line.name}</p>
-      <div className="flex flex-wrap gap-x-3 text-[11px] text-gray-500 tabular-nums">
-        {line.uom && <span>{line.uom}</span>}
-        <span>{qty(line.qty)}</span>
-        {line.rate != null && <span>× {formatINR(line.rate)}</span>}
-        <span className="font-semibold text-gray-800">{formatINR(line.amount)}</span>
+    <div className="rounded-lg border border-gray-200 bg-white">
+      <div className="flex items-center justify-between gap-3 flex-wrap px-3 py-2 bg-gray-50 border-b border-gray-200 rounded-t-lg">
+        <span className="text-[12px] font-semibold text-gray-900">
+          <span className="font-mono">{o.ref}</span>
+          <span className="ml-2 font-normal text-gray-500">
+            {o.lines.length} line item{o.lines.length === 1 ? '' : 's'}{o.party ? ` · ${o.party}` : ''}
+          </span>
+        </span>
+        <span className="text-[12px] tabular-nums text-gray-700">
+          Ordered <b className="text-gray-900">{formatINR(o.ordered)}</b>
+          {isWo && (
+            <> · Certified <b className="text-gray-900">{o.certifiedAmt == null ? '—' : formatINR(o.certifiedAmt)}</b></>
+          )}
+        </span>
       </div>
-    </li>
+
+      {/* Desktop: the Internal Estimate's columns, then the certified ones. */}
+      <table className="w-full table-fixed text-[12px] hidden md:table">
+        <thead className="text-left text-[10px] uppercase tracking-wide text-gray-400">
+          <tr>
+            <th className="border-b border-gray-100 px-2 py-1.5 w-[4%]">#</th>
+            <th className="border-b border-gray-100 px-2 py-1.5 w-[32%]">Description</th>
+            <th className="border-b border-gray-100 px-2 py-1.5 w-[6%]">Unit</th>
+            <th className="border-b border-gray-100 px-2 py-1.5 text-right w-[9%]">Qty</th>
+            <th className="border-b border-gray-100 px-2 py-1.5 text-right w-[11%]">Rate</th>
+            <th className="border-b border-gray-100 px-2 py-1.5 text-right w-[12%]">Amount</th>
+            <th className="border-b border-gray-100 px-2 py-1.5 text-right w-[9%] text-emerald-700">Certified Qty</th>
+            <th className="border-b border-gray-100 px-2 py-1.5 text-right w-[12%] text-emerald-700">Certified Amt</th>
+            <th className="border-b border-gray-100 px-2 py-1.5 text-right w-[5%]">Bills</th>
+          </tr>
+        </thead>
+        <tbody>
+          {o.lines.map((l, i) => (
+            <tr key={l.id} className="border-t border-gray-100">
+              <td className="px-2 py-1.5 text-gray-400 align-top">{i + 1}</td>
+              <td className="px-2 py-1.5 text-gray-800 align-top">
+                <p className="truncate" title={l.description ?? l.name}>{l.name}</p>
+                {l.description && l.description !== l.name && (
+                  <p className="text-[10.5px] text-gray-400 leading-snug line-clamp-2">{l.description}</p>
+                )}
+              </td>
+              <td className="px-2 py-1.5 text-gray-600 align-top">{l.uom ?? ''}</td>
+              <td className="px-2 py-1.5 text-right tabular-nums align-top">{qty(l.qty)}</td>
+              <td className="px-2 py-1.5 text-right tabular-nums align-top">{l.rate == null ? '' : formatINR(l.rate)}</td>
+              <td className="px-2 py-1.5 text-right tabular-nums font-semibold align-top">{formatINR(l.amount)}</td>
+              <td className="px-2 py-1.5 text-right tabular-nums align-top text-emerald-800">
+                {l.certifiedQty == null ? <Dash /> : qty(l.certifiedQty)}
+                {l.certifiedQty != null && l.qty ? (
+                  <span className="block text-[10px] text-gray-400">{Math.round((l.certifiedQty / l.qty) * 100)}% of qty</span>
+                ) : null}
+              </td>
+              <td className="px-2 py-1.5 text-right tabular-nums align-top text-emerald-800 font-semibold">
+                {l.certifiedAmt == null ? <Dash /> : formatINR(l.certifiedAmt)}
+              </td>
+              <td className="px-2 py-1.5 text-right tabular-nums align-top text-gray-500" title={billsTitle(l)}>
+                {l.bills.length || <Dash />}
+              </td>
+            </tr>
+          ))}
+          <tr className="border-t border-gray-300 bg-gray-100/70">
+            <td />
+            <td className="px-2 py-2 font-bold text-gray-900">Lines total</td>
+            <td colSpan={3} />
+            <td className="px-2 py-2 text-right font-bold tabular-nums text-gray-900">{formatINR(o.lineTotal)}</td>
+            <td />
+            <td className="px-2 py-2 text-right font-bold tabular-nums text-emerald-800">
+              {o.certifiedAmt == null ? <Dash /> : formatINR(o.certifiedAmt)}
+            </td>
+            <td />
+          </tr>
+          {o.lineNote && (
+            <tr className="bg-gray-100/70">
+              <td />
+              <td className="px-2 pb-2 text-[10.5px] text-amber-800" colSpan={8}>{o.lineNote}</td>
+            </tr>
+          )}
+        </tbody>
+      </table>
+
+      {/* Mobile: one card per line, the same figures in the same order. */}
+      <ul className="md:hidden divide-y divide-gray-100">
+        {o.lines.map((l, i) => (
+          <li key={l.id} className="px-3 py-2">
+            <p className="text-[12px] text-gray-800"><span className="text-gray-400 mr-1.5">{i + 1}.</span>{l.name}</p>
+            {l.description && l.description !== l.name && (
+              <p className="text-[10.5px] text-gray-400 leading-snug line-clamp-2">{l.description}</p>
+            )}
+            <div className="mt-0.5 flex flex-wrap gap-x-3 gap-y-0.5 text-[11px] text-gray-500 tabular-nums">
+              {l.uom && <span>{l.uom}</span>}
+              <span>{qty(l.qty)}</span>
+              {l.rate != null && <span>× {formatINR(l.rate)}</span>}
+              <span className="font-semibold text-gray-800">{formatINR(l.amount)}</span>
+            </div>
+            {isWo && (
+              <div className="mt-0.5 flex flex-wrap gap-x-3 text-[11px] text-emerald-800 tabular-nums">
+                <span>Certified {l.certifiedQty == null ? '—' : qty(l.certifiedQty)}{l.uom && l.certifiedQty != null ? ` ${l.uom}` : ''}</span>
+                <span className="font-semibold">{l.certifiedAmt == null ? '—' : formatINR(l.certifiedAmt)}</span>
+                {l.bills.length > 0 && <span className="text-gray-500">{l.bills.length} bill{l.bills.length === 1 ? '' : 's'}</span>}
+              </div>
+            )}
+          </li>
+        ))}
+        <li className="px-3 py-2 bg-gray-100/70 flex items-center justify-between text-[12px] font-bold tabular-nums">
+          <span className="text-gray-900">Lines total {formatINR(o.lineTotal)}</span>
+          {isWo && certifiedQtyKnown && <span className="text-emerald-800">Certified {formatINR(o.certifiedAmt ?? 0)}</span>}
+        </li>
+        {o.lineNote && <li className="px-3 py-1.5 text-[10.5px] text-amber-800 bg-gray-100/70">{o.lineNote}</li>}
+      </ul>
+    </div>
   )
+}
+
+/** Hover text listing a line's bills, oldest first. */
+function billsTitle(l: OrderLine): string {
+  if (l.bills.length === 0) return 'No bill against this line in IN4'
+  return l.bills
+    .map(b => `${b.billNo ?? 'Bill'}${b.date ? ` · ${b.date}` : ''} · ${qty(b.qty)} · ${formatINR(b.amount)}`)
+    .join('\n')
 }
 
 /** Why an order's lines do not add up to its value — a fact about the IN4

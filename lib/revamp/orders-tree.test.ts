@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import {
-  buildOrdersTree, contractorNames, lineNoteFor,
+  buildOrdersTree, contractorNames, lineNoteFor, type AbstractRow,
   type WoRow, type IndentRow, type BoqRow, type Skill, type PartyReader,
 } from './orders-tree'
 
@@ -367,5 +367,59 @@ describe('lines that do not add up to the order value — IN4 discounts and amen
     expect(o.lineTotal).toBe(24000)
     expect(o.lineNote).toContain('25% discount')
     expect(t.notes.some(n => n.includes('1 carries a discount in IN4'))).toBe(true)
+  })
+})
+
+describe('certified per line item — the item-wise breakup of what has been billed', () => {
+  // WO 623 item 6340, as the mirror holds it: 60,707.15 SqFt ordered, twelve
+  // bills certifying 57,775.06 = 95.17 %.
+  const ORDERED = boq({ item_id: 6340, wo_id: 623, uom: 'SqFt', quantity: 60707.15, rate: 100, amt: 6070715 })
+  const bills = (n: number, qtyEach: number, amtEach: number): AbstractRow[] =>
+    Array.from({ length: n }, (_, i) => ({
+      wo_id: 623, item_id: 6340, executed_quantity: qtyEach, executed_amt: amtEach,
+      bill_no: `B${i + 1}`, display_no: `RA/${i + 1}`, abstract_dt: `2025-0${(i % 9) + 1}-01`,
+    }))
+  const WO = wo({ wo_id: 623, wo_value: 6070715, wo_gross_value: 6070715, wo_paid_amt: 0 })
+
+  it('sums quantity and amount over the bills on the line, joined on (wo_id, item_id)', () => {
+    const t = buildOrdersTree([WO], [], [ORDERED], SKILLS, PARTIES, bills(12, 4814.588, 481458.8))
+    const l = t.cats[0].subs[0].orders[0].lines[0]
+    expect(l.certifiedQty).toBeCloseTo(57775.06, 1)
+    expect(l.certifiedAmt).toBeCloseTo(5777505.6, 0)
+    expect(l.bills).toHaveLength(12)
+    expect(Math.round((l.certifiedQty! / l.qty!) * 100)).toBe(95)
+  })
+
+  it('a line with no bill shows null, never zero — IN4 holds nothing against it', () => {
+    const t = buildOrdersTree([WO], [], [ORDERED], SKILLS, PARTIES, [])
+    const l = t.cats[0].subs[0].orders[0].lines[0]
+    expect(l.certifiedQty).toBeNull()
+    expect(l.certifiedAmt).toBeNull()
+    expect(t.cats[0].subs[0].orders[0].certifiedAmt).toBeNull()
+  })
+
+  it("a bill on another order's item with the same item_id does not leak across orders", () => {
+    const other: AbstractRow = { wo_id: 999, item_id: 6340, executed_quantity: 5, executed_amt: 500, bill_no: 'X', display_no: null, abstract_dt: null }
+    const t = buildOrdersTree([WO], [], [ORDERED], SKILLS, PARTIES, [other])
+    expect(t.cats[0].subs[0].orders[0].lines[0].certifiedQty).toBeNull()
+  })
+
+  it('the order carries the sum of its billed lines, and bills read oldest first', () => {
+    const second = boq({ item_id: 7, wo_id: 623, amt: 1000 })
+    const abs: AbstractRow[] = [
+      { wo_id: 623, item_id: 6340, executed_quantity: 10, executed_amt: 1000, bill_no: 'B2', display_no: null, abstract_dt: '2025-06-01' },
+      { wo_id: 623, item_id: 6340, executed_quantity: 5, executed_amt: 500, bill_no: 'B1', display_no: null, abstract_dt: '2025-01-01' },
+    ]
+    const t = buildOrdersTree([WO], [], [ORDERED, second], SKILLS, PARTIES, abs)
+    const o = t.cats[0].subs[0].orders[0]
+    expect(o.certifiedAmt).toBe(1500)          // only the billed line counts
+    expect(o.lines[0].bills.map(b => b.billNo)).toEqual(['B1', 'B2'])
+    expect(o.lines[1].certifiedAmt).toBeNull()
+  })
+
+  it('purchase-order lines never carry certified figures — the PO feed has none', () => {
+    const t = build([], [indent(1, [{ poNo: 'PO/A/1', amount: 400, draft: false, qty: 4, rate: 100 }])])
+    const l = t.cats[0].subs[0].orders[0].lines[0]
+    expect(l.certifiedQty).toBeNull(); expect(l.bills).toEqual([])
   })
 })
