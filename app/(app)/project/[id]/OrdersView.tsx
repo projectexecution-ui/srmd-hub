@@ -1,21 +1,17 @@
-// Budget vs Actual, pill 2 — the orders tree, four levels deep.
+// Budget vs Actual, pill 2 — the orders tree, five levels deep.
 //
-//   category → sub-category → order → line item
+//   category → sub-category → order → line item → bill
 //
 // Same machinery and same colours as the Internal Estimate's category /
 // sub-category table: TreeProvider + CatChevron + CatRows for the first two
-// levels, and RowDetailProvider + RowDetailToggle + RowDetail for the two
+// levels, and RowDetailProvider + RowDetailToggle + RowDetail for the ones
 // below — the SAME "show the items" chevron the Internal Estimate already uses
 // to open a sub-skill's item-wise BOQ, so the affordance is one people know.
-// Aksha, 7 Sept 2026: "i want all the Line of Items as Tree view in WO/PO
-// wise", and "follow the Tree View of Cat/sub cat wise layout and colour
-// scheme".
 //
-// Money columns, left to right: Ordered (before GST — the lines add up to
-// it), Incl. GST (as the contractor bills it), Paid (IN4's own figure, with
-// GST), Balance (Incl. GST − Paid, both sides with tax). The first cut
-// subtracted Paid from the before-tax Ordered and showed 353 orders as
-// overpaid. Aksha, 8 Sept 2026: fix it, and say why lines ≠ value.
+// Money columns, left to right, all as IN4 holds them (see orders-tree.ts):
+// Ordered (the full order, before-tax value under it) · Billed · Paid (bills
+// + advances, TDS counted as paid) · Adv. o/s · Retention · Balance
+// (Ordered − Paid − Retention, the one derived figure). Aksha, 8 Sept 2026.
 //
 // The sticky header lives on the cells inside their own scroll box, never on
 // the page — page-level sticky is inert everywhere in this app (AGENTS.md).
@@ -28,7 +24,7 @@ import {
   TreeProvider, TreeToolbar, CatChevron, CatRows, SubRow,
   RowDetailProvider, RowDetailToggle, RowDetail,
 } from '@/components/cost-control/project-tree'
-import { loadOrdersTree, type OrdersSubRow, type OrderRow, type OrderLine } from '@/lib/revamp/orders-tree'
+import { loadOrdersTree, type OrdersSubRow, type OrderRow, type OrderLine, type Money } from '@/lib/revamp/orders-tree'
 
 /** Quantities are not money: they carry decimals and their own unit. */
 const qty = (v: number | null) =>
@@ -38,7 +34,7 @@ const qty = (v: number | null) =>
 const money = (v: number | null) => (v == null ? <Dash /> : formatINR(v))
 
 export async function OrdersView({ projectId }: { projectId: string }) {
-  const { cats, totals, notes, linked, error } = await loadOrdersTree(projectId)
+  const { cats, totals, notes, linked, error, in4 } = await loadOrdersTree(projectId)
 
   if (error) {
     return (
@@ -76,16 +72,30 @@ export async function OrdersView({ projectId }: { projectId: string }) {
   }
 
   const catIds = cats.map(c => c.id)
+  const live = in4 === 'live'
 
   return (
     <TreeProvider allCatIds={catIds} emptyCount={0}>
       <RowDetailProvider>
         <div className="space-y-3">
+          {!live && (
+            <div className="rounded-lg border border-amber-200 bg-amber-50 px-3.5 py-2 text-[12px] text-amber-900 flex items-start gap-2">
+              <AlertTriangle className="h-4 w-4 flex-shrink-0 mt-0.5" />
+              <span>
+                {in4 === 'not-configured'
+                  ? 'This deployment has no IN4 login, so Billed, Paid, Adv. o/s, Retention and Balance are blank. Ordered shows the mirror’s last-synced figure.'
+                  : 'IN4 could not be reached just now, so Billed, Paid, Adv. o/s, Retention and Balance are blank rather than stale. Ordered shows the mirror’s last-synced figure.'}
+              </span>
+            </div>
+          )}
+
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-            <Kpi label="Ordered (before GST)" value={formatINR(totals.ordered)} sub={`incl. GST ${formatINR(totals.gross)}`} />
-            <Kpi label="Paid (IN4 work-order record)" value={formatINR(totals.paid)} muted />
-            <Kpi label="Balance (incl. GST − Paid)" value={formatINR(totals.balance)} tone="amber" sub="work orders only" />
-            <Kpi label="Orders" value={`${totals.woCount} WO · ${totals.poCount} PO`} muted />
+            <Kpi label="Ordered (full)" value={formatINR(totals.gross)} sub={`before GST ${formatINR(totals.ordered)}`} />
+            <Kpi label="Billed (incl. GST)" value={live ? formatINR(totals.billed) : '—'} muted />
+            <Kpi label="Paid (bills + advances, TDS counted)" value={live ? formatINR(totals.paid) : '—'} muted
+                 sub={live ? `advance o/s ${formatINR(totals.advanceOutstanding)}` : undefined} />
+            <Kpi label="Balance (Ordered − Paid − Retention)" value={live ? formatINR(totals.balance) : '—'} tone="amber"
+                 sub={live ? `retention held ${formatINR(totals.retention)}` : undefined} />
           </div>
 
           <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
@@ -93,7 +103,8 @@ export async function OrdersView({ projectId }: { projectId: string }) {
               <span className="text-sm font-bold text-gray-900">
                 Category — WO/PO wise
                 <span className="ml-2 text-[11px] font-normal text-gray-500">
-                  {cats.length} categor{cats.length === 1 ? 'y' : 'ies'} · {totals.lineCount} line items · live from IN4
+                  {cats.length} categor{cats.length === 1 ? 'y' : 'ies'} · {totals.woCount} WO · {totals.poCount} PO · {totals.lineCount} line items
+                  {live ? ' · live from IN4' : ' · mirror'}
                 </span>
               </span>
               <TreeToolbar />
@@ -104,13 +115,12 @@ export async function OrdersView({ projectId }: { projectId: string }) {
               <table className="w-full text-[13px]">
                 <thead className="bg-gray-50 text-left">
                   <tr>
-                    <Th className="min-w-[300px] text-left">Category / sub-category / order / item</Th>
-                    <Th className="text-right w-20">Unit</Th>
-                    <Th className="text-right w-24">Qty</Th>
-                    <Th className="text-right w-28">Rate</Th>
+                    <Th className="min-w-[300px] text-left">Category / sub-category / order</Th>
                     <Th className="text-right w-36">Ordered</Th>
-                    <Th className="text-right w-36">Incl. GST</Th>
+                    <Th className="text-right w-32">Billed</Th>
                     <Th className="text-right w-32">Paid</Th>
+                    <Th className="text-right w-28">Adv. o/s</Th>
+                    <Th className="text-right w-28">Retention</Th>
                     <Th className="text-right w-32">Balance</Th>
                   </tr>
                 </thead>
@@ -121,14 +131,9 @@ export async function OrdersView({ projectId }: { projectId: string }) {
                         <td className="px-3 py-2 font-semibold text-gray-800">
                           <CatChevron catId={c.id} />
                           {c.name}
+                          <span className="ml-2 text-[11px] font-normal text-gray-500">{c.count} order{c.count === 1 ? '' : 's'}</span>
                         </td>
-                        <td colSpan={3} className="px-3 py-2 text-right text-[11px] text-gray-500">
-                          {c.count} order{c.count === 1 ? '' : 's'}
-                        </td>
-                        <td className="px-3 py-2 text-right tabular-nums font-semibold text-gray-900">{formatINR(c.ordered)}</td>
-                        <td className="px-3 py-2 text-right tabular-nums text-gray-700">{money(c.gross)}</td>
-                        <td className="px-3 py-2 text-right tabular-nums text-gray-600">{money(c.paid)}</td>
-                        <td className="px-3 py-2 text-right tabular-nums text-amber-700">{money(c.balance)}</td>
+                        <MoneyCells m={c} bold />
                       </tr>
 
                       <CatRows catId={c.id}>
@@ -139,14 +144,9 @@ export async function OrdersView({ projectId }: { projectId: string }) {
                               <td className="pl-6 pr-3 py-2 text-gray-700">
                                 <RowDetailToggle id={s.id} count={s.orders.length} />
                                 <RowName row={s} />
+                                <span className="ml-2 text-[11px] text-gray-400">{s.count} order{s.count === 1 ? '' : 's'}</span>
                               </td>
-                              <td colSpan={3} className="px-3 py-2 text-right text-[11px] text-gray-400">
-                                {s.count} order{s.count === 1 ? '' : 's'}
-                              </td>
-                              <td className="px-3 py-2 text-right tabular-nums text-gray-900">{formatINR(s.ordered)}</td>
-                              <td className="px-3 py-2 text-right tabular-nums text-gray-700">{money(s.gross)}</td>
-                              <td className="px-3 py-2 text-right tabular-nums text-gray-600">{money(s.paid)}</td>
-                              <td className="px-3 py-2 text-right tabular-nums text-amber-700">{money(s.balance)}</td>
+                              <MoneyCells m={s} />
                             </tr>
 
                             {/* Level 3 — the orders themselves. */}
@@ -162,15 +162,11 @@ export async function OrdersView({ projectId }: { projectId: string }) {
                                           template for them (event 3) and none
                                           for purchase orders. */}
                                       {o.kind === 'wo' && <PrintWo id={o.id} ref_={o.ref} />}
+                                      <span className="ml-2 text-[11px] text-gray-400">{o.lines.length} item{o.lines.length === 1 ? '' : 's'}</span>
+                                      {o.breakup && <span className="block mt-0.5 text-[10.5px] text-gray-400 tabular-nums">{o.breakup}</span>}
                                       {o.lineNote && <LineNote text={o.lineNote} />}
                                     </td>
-                                    <td colSpan={3} className="px-3 py-1.5 text-right text-[11px] text-gray-400">
-                                      {o.lines.length} item{o.lines.length === 1 ? '' : 's'}
-                                    </td>
-                                    <td className="px-3 py-1.5 text-right tabular-nums text-gray-800">{formatINR(o.ordered)}</td>
-                                    <td className="px-3 py-1.5 text-right tabular-nums text-gray-700">{money(o.gross)}</td>
-                                    <td className="px-3 py-1.5 text-right tabular-nums text-gray-600">{money(o.paid)}</td>
-                                    <td className="px-3 py-1.5 text-right tabular-nums text-amber-700">{money(o.balance)}</td>
+                                    <MoneyCells m={o} small />
                                   </tr>
 
                                   {/* Level 4 — the line items, as their own
@@ -181,7 +177,7 @@ export async function OrdersView({ projectId }: { projectId: string }) {
                                       that screen knows this one. */}
                                   <RowDetail id={o.id}>
                                     <tr className="border-t border-gray-100 bg-gray-50/40">
-                                      <td colSpan={8} className="pl-12 pr-3 py-3">
+                                      <td colSpan={7} className="pl-12 pr-3 py-3">
                                         <OrderItems order={o} />
                                       </td>
                                     </tr>
@@ -196,20 +192,17 @@ export async function OrdersView({ projectId }: { projectId: string }) {
                   ))}
 
                   <tr className="border-t-2 border-gray-300 bg-gray-50 font-semibold">
-                    <td className="px-3 py-2 text-gray-900">Total</td>
-                    <td colSpan={3} className="px-3 py-2 text-right text-[11px] text-gray-500">
-                      {totals.woCount + totals.poCount} orders
+                    <td className="px-3 py-2 text-gray-900">
+                      Total
+                      <span className="ml-2 text-[11px] font-normal text-gray-500">{totals.woCount + totals.poCount} orders</span>
                     </td>
-                    <td className="px-3 py-2 text-right tabular-nums text-gray-900">{formatINR(totals.ordered)}</td>
-                    <td className="px-3 py-2 text-right tabular-nums text-gray-800">{formatINR(totals.gross)}</td>
-                    <td className="px-3 py-2 text-right tabular-nums text-gray-700">{formatINR(totals.paid)}</td>
-                    <td className="px-3 py-2 text-right tabular-nums text-amber-700">{formatINR(totals.balance)}</td>
+                    <MoneyCells m={live ? totals : { ...totals, billed: null, paid: null, advanceOutstanding: null, retention: null, balance: null }} bold />
                   </tr>
                 </tbody>
               </table>
             </div>
 
-            {/* Mobile — the same four levels as nested cards. */}
+            {/* Mobile — the same levels as nested cards. */}
             <div className="md:hidden divide-y divide-gray-100 overflow-auto max-h-[70vh]">
               {cats.map(c => (
                 <div key={c.id}>
@@ -219,7 +212,7 @@ export async function OrdersView({ projectId }: { projectId: string }) {
                       <span className="truncate">{c.name}</span>
                     </span>
                     <span className="text-[11px] text-gray-600 flex-shrink-0 whitespace-nowrap tabular-nums">
-                      {formatINR(c.ordered)}
+                      {money(c.gross)}
                     </span>
                   </div>
                   <CatRows catId={c.id}>
@@ -229,13 +222,7 @@ export async function OrdersView({ projectId }: { projectId: string }) {
                           <RowDetailToggle id={s.id} count={s.orders.length} />
                           <RowName row={s} />
                         </p>
-                        <div className="mt-0.5 ml-6 flex flex-wrap items-center gap-x-4 gap-y-0.5 text-[11px] text-gray-500">
-                          <span>{s.count} order{s.count === 1 ? '' : 's'}</span>
-                          <span>Ordered <span className="font-semibold text-gray-900 tabular-nums">{formatINR(s.ordered)}</span></span>
-                          {s.gross != null && <span>Incl. GST <span className="font-semibold text-gray-800 tabular-nums">{formatINR(s.gross)}</span></span>}
-                          <span>Paid <span className="font-semibold text-gray-700 tabular-nums">{s.paid == null ? '—' : formatINR(s.paid)}</span></span>
-                          {s.balance != null && <span>Balance <span className="font-semibold text-amber-700 tabular-nums">{formatINR(s.balance)}</span></span>}
-                        </div>
+                        <MoneyChips m={s} count={s.count} />
 
                         <RowDetail id={s.id}>
                           <div className="mt-2 ml-6 space-y-2">
@@ -247,12 +234,8 @@ export async function OrdersView({ projectId }: { projectId: string }) {
                                 </p>
                                 {o.party && <p className="ml-6 text-[11px] text-gray-500">{o.party}</p>}
                                 {o.kind === 'wo' && <p className="ml-6 mt-0.5"><PrintWo id={o.id} ref_={o.ref} /></p>}
-                                <div className="ml-6 mt-0.5 flex flex-wrap gap-x-3 gap-y-0.5 text-[11px] text-gray-500">
-                                  <span>Ordered <span className="font-semibold text-gray-800 tabular-nums">{formatINR(o.ordered)}</span></span>
-                                  {o.gross != null && <span>Incl. GST <span className="font-semibold text-gray-800 tabular-nums">{formatINR(o.gross)}</span></span>}
-                                  {o.paid != null && <span>Paid <span className="font-semibold text-gray-700 tabular-nums">{formatINR(o.paid)}</span></span>}
-                                  {o.balance != null && <span>Balance <span className="font-semibold text-amber-700 tabular-nums">{formatINR(o.balance)}</span></span>}
-                                </div>
+                                {o.breakup && <p className="ml-6 mt-0.5 text-[10.5px] text-gray-400 tabular-nums">{o.breakup}</p>}
+                                <div className="ml-6"><MoneyChips m={o} /></div>
                                 {o.lineNote && <p className="ml-6 mt-1"><LineNote text={o.lineNote} /></p>}
                                 <RowDetail id={o.id}>
                                   <div className="mt-2">
@@ -270,13 +253,15 @@ export async function OrdersView({ projectId }: { projectId: string }) {
               ))}
               <div className="px-4 py-3 bg-gray-50 space-y-1">
                 <div className="flex items-center justify-between">
-                  <span className="text-[12px] font-semibold text-gray-900">Total ordered</span>
-                  <span className="text-[12px] font-semibold text-gray-900 tabular-nums">{formatINR(totals.ordered)}</span>
+                  <span className="text-[12px] font-semibold text-gray-900">Total ordered (full)</span>
+                  <span className="text-[12px] font-semibold text-gray-900 tabular-nums">{formatINR(totals.gross)}</span>
                 </div>
-                <div className="flex items-center justify-between text-[11px] text-gray-600">
-                  <span>Incl. GST {formatINR(totals.gross)} · Paid {formatINR(totals.paid)}</span>
-                  <span className="font-semibold text-amber-700 tabular-nums">Balance {formatINR(totals.balance)}</span>
-                </div>
+                {live && (
+                  <div className="flex items-center justify-between text-[11px] text-gray-600 flex-wrap gap-x-3">
+                    <span>Billed {formatINR(totals.billed)} · Paid {formatINR(totals.paid)} · Retention {formatINR(totals.retention)}</span>
+                    <span className="font-semibold text-amber-700 tabular-nums">Balance {formatINR(totals.balance)}</span>
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -299,18 +284,56 @@ export async function OrdersView({ projectId }: { projectId: string }) {
   )
 }
 
+/** The six money cells of a tree row, desktop. Ordered shows the FULL amount
+ *  with the before-tax value beneath when they differ. */
+function MoneyCells({ m, bold, small }: { m: Money; bold?: boolean; small?: boolean }) {
+  const py = small ? 'py-1.5' : 'py-2'
+  const strong = bold ? 'font-semibold text-gray-900' : 'text-gray-900'
+  const showBase = m.gross != null && Math.abs(m.gross - m.ordered) >= 1
+  return (
+    <>
+      <td className={`px-3 ${py} text-right tabular-nums ${strong}`}>
+        {m.gross == null ? formatINR(m.ordered) : formatINR(m.gross)}
+        {showBase && <span className="block text-[10px] font-normal text-gray-400">before GST {formatINR(m.ordered)}</span>}
+      </td>
+      <td className={`px-3 ${py} text-right tabular-nums text-gray-700`}>{money(m.billed)}</td>
+      <td className={`px-3 ${py} text-right tabular-nums text-gray-700`}>{money(m.paid)}</td>
+      <td className={`px-3 ${py} text-right tabular-nums text-gray-600`}>{money(m.advanceOutstanding)}</td>
+      <td className={`px-3 ${py} text-right tabular-nums text-gray-600`}>{money(m.retention)}</td>
+      <td className={`px-3 ${py} text-right tabular-nums text-amber-700 ${bold ? 'font-semibold' : ''}`}>{money(m.balance)}</td>
+    </>
+  )
+}
+
+/** The same six figures as inline chips, mobile. Blank figures are left out
+ *  rather than shown as dashes, so a PO row does not carry four dashes. */
+function MoneyChips({ m, count }: { m: Money; count?: number }) {
+  const chip = (label: string, v: number | null, cls = 'text-gray-800') =>
+    v == null ? null : <span key={label}>{label} <span className={`font-semibold tabular-nums ${cls}`}>{formatINR(v)}</span></span>
+  return (
+    <div className="mt-0.5 ml-6 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[11px] text-gray-500">
+      {count != null && <span>{count} order{count === 1 ? '' : 's'}</span>}
+      {chip('Ordered', m.gross ?? m.ordered, 'text-gray-900')}
+      {chip('Billed', m.billed)}
+      {chip('Paid', m.paid)}
+      {chip('Adv. o/s', m.advanceOutstanding, 'text-gray-700')}
+      {chip('Retention', m.retention, 'text-gray-700')}
+      {chip('Balance', m.balance, 'text-amber-700')}
+    </div>
+  )
+}
+
 /**
  * An order's line items in the Internal Estimate's item-wise shape
  * (components/cost-control/SubSkillBoq.tsx): a bordered card, a grey header
  * row with the order number and its total, then # · Description · Unit ·
  * Qty · Rate · Amount — and, because this is an ORDER rather than an
  * estimate, three more columns for what IN4 has certified against each line
- * so far: Certified Qty · Certified Amt · Bills. The certified figures are
- * the item-wise breakup of work billed; Paid stays on the order row because
- * IN4 holds payment per bill, not per item.
+ * so far: Certified Qty · Certified Amt · Bills. Each line's bill count is a
+ * chevron that opens the bills themselves: date, bill number, quantity on
+ * that bill, running quantity against the ordered quantity, amount.
  *
- * Desktop is the table; below md the same rows render as cards, one per
- * line, so the phone never scrolls a nine-column table sideways.
+ * Desktop is the table; below md the same rows render as cards.
  */
 function OrderItems({ order: o }: { order: OrderRow }) {
   if (o.lines.length === 0) {
@@ -321,7 +344,6 @@ function OrderItems({ order: o }: { order: OrderRow }) {
     )
   }
   const isWo = o.kind === 'wo'
-  const certifiedQtyKnown = o.lines.some(l => l.certifiedQty != null)
 
   return (
     <div className="rounded-lg border border-gray-200 bg-white">
@@ -333,7 +355,7 @@ function OrderItems({ order: o }: { order: OrderRow }) {
           </span>
         </span>
         <span className="text-[12px] tabular-nums text-gray-700">
-          Ordered <b className="text-gray-900">{formatINR(o.ordered)}</b>
+          Before GST <b className="text-gray-900">{formatINR(o.ordered)}</b>
           {isWo && (
             <> · Certified <b className="text-gray-900">{o.certifiedAmt == null ? '—' : formatINR(o.certifiedAmt)}</b></>
           )}
@@ -345,43 +367,56 @@ function OrderItems({ order: o }: { order: OrderRow }) {
         <thead className="text-left text-[10px] uppercase tracking-wide text-gray-400">
           <tr>
             <th className="border-b border-gray-100 px-2 py-1.5 w-[4%]">#</th>
-            <th className="border-b border-gray-100 px-2 py-1.5 w-[32%]">Description</th>
+            <th className="border-b border-gray-100 px-2 py-1.5 w-[30%]">Description</th>
             <th className="border-b border-gray-100 px-2 py-1.5 w-[6%]">Unit</th>
             <th className="border-b border-gray-100 px-2 py-1.5 text-right w-[9%]">Qty</th>
             <th className="border-b border-gray-100 px-2 py-1.5 text-right w-[11%]">Rate</th>
             <th className="border-b border-gray-100 px-2 py-1.5 text-right w-[12%]">Amount</th>
-            <th className="border-b border-gray-100 px-2 py-1.5 text-right w-[9%] text-emerald-700">Certified Qty</th>
-            <th className="border-b border-gray-100 px-2 py-1.5 text-right w-[12%] text-emerald-700">Certified Amt</th>
-            <th className="border-b border-gray-100 px-2 py-1.5 text-right w-[5%]">Bills</th>
+            <th className="border-b border-gray-100 px-2 py-1.5 text-right w-[9%] text-emerald-700">Certified qty</th>
+            <th className="border-b border-gray-100 px-2 py-1.5 text-right w-[12%] text-emerald-700">Certified amt</th>
+            <th className="border-b border-gray-100 px-2 py-1.5 text-right w-[7%]">Bills</th>
           </tr>
         </thead>
         <tbody>
           {o.lines.map((l, i) => (
-            <tr key={l.id} className="border-t border-gray-100">
-              <td className="px-2 py-1.5 text-gray-400 align-top">{i + 1}</td>
-              <td className="px-2 py-1.5 text-gray-800 align-top">
-                <p className="truncate" title={l.description ?? l.name}>{l.name}</p>
-                {l.description && l.description !== l.name && (
-                  <p className="text-[10.5px] text-gray-400 leading-snug line-clamp-2">{l.description}</p>
-                )}
-              </td>
-              <td className="px-2 py-1.5 text-gray-600 align-top">{l.uom ?? ''}</td>
-              <td className="px-2 py-1.5 text-right tabular-nums align-top">{qty(l.qty)}</td>
-              <td className="px-2 py-1.5 text-right tabular-nums align-top">{l.rate == null ? '' : formatINR(l.rate)}</td>
-              <td className="px-2 py-1.5 text-right tabular-nums font-semibold align-top">{formatINR(l.amount)}</td>
-              <td className="px-2 py-1.5 text-right tabular-nums align-top text-emerald-800">
-                {l.certifiedQty == null ? <Dash /> : qty(l.certifiedQty)}
-                {l.certifiedQty != null && l.qty ? (
-                  <span className="block text-[10px] text-gray-400">{Math.round((l.certifiedQty / l.qty) * 100)}% of qty</span>
-                ) : null}
-              </td>
-              <td className="px-2 py-1.5 text-right tabular-nums align-top text-emerald-800 font-semibold">
-                {l.certifiedAmt == null ? <Dash /> : formatINR(l.certifiedAmt)}
-              </td>
-              <td className="px-2 py-1.5 text-right tabular-nums align-top text-gray-500" title={billsTitle(l)}>
-                {l.bills.length || <Dash />}
-              </td>
-            </tr>
+            <Fragment key={l.id}>
+              <tr className="border-t border-gray-100">
+                <td className="px-2 py-1.5 text-gray-400 align-top">{i + 1}</td>
+                <td className="px-2 py-1.5 text-gray-800 align-top">
+                  <p className="truncate" title={l.description ?? l.name}>{l.name}</p>
+                  {l.description && l.description !== l.name && (
+                    <p className="text-[10.5px] text-gray-400 leading-snug line-clamp-2">{l.description}</p>
+                  )}
+                </td>
+                <td className="px-2 py-1.5 text-gray-600 align-top">{l.uom ?? ''}</td>
+                <td className="px-2 py-1.5 text-right tabular-nums align-top">{qty(l.qty)}</td>
+                <td className="px-2 py-1.5 text-right tabular-nums align-top">{l.rate == null ? '' : formatINR(l.rate)}</td>
+                <td className="px-2 py-1.5 text-right tabular-nums font-semibold align-top">{formatINR(l.amount)}</td>
+                <td className="px-2 py-1.5 text-right tabular-nums align-top text-emerald-800">
+                  {l.certifiedQty == null ? <Dash /> : qty(l.certifiedQty)}
+                  {l.certifiedQty != null && l.qty ? (
+                    <span className="block text-[10px] text-gray-400">{pctOf(l.certifiedQty, l.qty)} of qty</span>
+                  ) : null}
+                </td>
+                <td className="px-2 py-1.5 text-right tabular-nums align-top text-emerald-800 font-semibold">
+                  {l.certifiedAmt == null ? <Dash /> : formatINR(l.certifiedAmt)}
+                </td>
+                <td className="px-2 py-1.5 text-right tabular-nums align-top text-gray-500 whitespace-nowrap">
+                  {l.bills.length ? <RowDetailToggle id={`${o.id}:${l.id}`} count={l.bills.length} /> : <Dash />}
+                </td>
+              </tr>
+              {/* Level 5 — the bills on this line, oldest first. */}
+              {l.bills.length > 0 && (
+                <RowDetail id={`${o.id}:${l.id}`}>
+                  <tr className="bg-emerald-50/40">
+                    <td />
+                    <td colSpan={8} className="px-2 py-2">
+                      <BillsTable line={l} />
+                    </td>
+                  </tr>
+                </RowDetail>
+              )}
+            </Fragment>
           ))}
           <tr className="border-t border-gray-300 bg-gray-100/70">
             <td />
@@ -418,17 +453,24 @@ function OrderItems({ order: o }: { order: OrderRow }) {
               <span className="font-semibold text-gray-800">{formatINR(l.amount)}</span>
             </div>
             {isWo && (
-              <div className="mt-0.5 flex flex-wrap gap-x-3 text-[11px] text-emerald-800 tabular-nums">
+              <div className="mt-0.5 flex flex-wrap items-center gap-x-3 text-[11px] text-emerald-800 tabular-nums">
                 <span>Certified {l.certifiedQty == null ? '—' : qty(l.certifiedQty)}{l.uom && l.certifiedQty != null ? ` ${l.uom}` : ''}</span>
                 <span className="font-semibold">{l.certifiedAmt == null ? '—' : formatINR(l.certifiedAmt)}</span>
-                {l.bills.length > 0 && <span className="text-gray-500">{l.bills.length} bill{l.bills.length === 1 ? '' : 's'}</span>}
+                {l.bills.length > 0 && <RowDetailToggle id={`${o.id}:${l.id}`} count={l.bills.length} />}
               </div>
+            )}
+            {l.bills.length > 0 && (
+              <RowDetail id={`${o.id}:${l.id}`}>
+                <div className="mt-1.5 rounded border border-emerald-100 bg-emerald-50/40 p-2 overflow-x-auto">
+                  <BillsTable line={l} />
+                </div>
+              </RowDetail>
             )}
           </li>
         ))}
         <li className="px-3 py-2 bg-gray-100/70 flex items-center justify-between text-[12px] font-bold tabular-nums">
           <span className="text-gray-900">Lines total {formatINR(o.lineTotal)}</span>
-          {isWo && certifiedQtyKnown && <span className="text-emerald-800">Certified {formatINR(o.certifiedAmt ?? 0)}</span>}
+          {isWo && o.certifiedAmt != null && <span className="text-emerald-800">Certified {formatINR(o.certifiedAmt)}</span>}
         </li>
         {o.lineNote && <li className="px-3 py-1.5 text-[10.5px] text-amber-800 bg-gray-100/70">{o.lineNote}</li>}
       </ul>
@@ -436,13 +478,45 @@ function OrderItems({ order: o }: { order: OrderRow }) {
   )
 }
 
-/** Hover text listing a line's bills, oldest first. */
-function billsTitle(l: OrderLine): string {
-  if (l.bills.length === 0) return 'No bill against this line in IN4'
-  return l.bills
-    .map(b => `${b.billNo ?? 'Bill'}${b.date ? ` · ${b.date}` : ''} · ${qty(b.qty)} · ${formatINR(b.amount)}`)
-    .join('\n')
+/** The bills on one line item: when, which bill, how much on that bill, how
+ *  much in total so far against the ordered quantity, and the amount. */
+function BillsTable({ line: l }: { line: OrderLine }) {
+  return (
+    <table className="w-full text-[11.5px] tabular-nums">
+      <thead className="text-left text-[10px] uppercase tracking-wide text-gray-400">
+        <tr>
+          <th className="px-2 py-1 w-[14%]">Date</th>
+          <th className="px-2 py-1 w-[26%]">Bill</th>
+          <th className="px-2 py-1 text-right w-[15%]">This bill</th>
+          <th className="px-2 py-1 text-right w-[15%]">Cumulative</th>
+          <th className="px-2 py-1 text-right w-[12%]">Of ordered</th>
+          <th className="px-2 py-1 text-right w-[18%]">Amount</th>
+        </tr>
+      </thead>
+      <tbody>
+        {l.bills.map((b, i) => (
+          <tr key={i} className="border-t border-emerald-100/70">
+            <td className="px-2 py-1 text-gray-600">{b.date ?? '—'}</td>
+            <td className="px-2 py-1 text-gray-800 font-mono truncate" title={b.billNo ?? undefined}>{b.billNo ?? '—'}</td>
+            <td className="px-2 py-1 text-right text-gray-800">{qty(b.qty)}{l.uom ? <span className="text-gray-400"> {l.uom}</span> : null}</td>
+            <td className="px-2 py-1 text-right text-emerald-800 font-semibold">{qty(b.cumQty)}</td>
+            <td className="px-2 py-1 text-right text-gray-600">{l.qty ? pctOf(b.cumQty, l.qty) : '—'}</td>
+            <td className="px-2 py-1 text-right text-gray-800">{formatINR(b.amount)}</td>
+          </tr>
+        ))}
+        <tr className="border-t border-emerald-200">
+          <td className="px-2 py-1 text-gray-500" colSpan={2}>Ordered {qty(l.qty)}{l.uom ? ` ${l.uom}` : ''}</td>
+          <td />
+          <td className="px-2 py-1 text-right text-emerald-800 font-semibold">{qty(l.certifiedQty)}</td>
+          <td className="px-2 py-1 text-right text-gray-600">{l.qty && l.certifiedQty != null ? pctOf(l.certifiedQty, l.qty) : '—'}</td>
+          <td className="px-2 py-1 text-right text-emerald-800 font-semibold">{l.certifiedAmt == null ? '—' : formatINR(l.certifiedAmt)}</td>
+        </tr>
+      </tbody>
+    </table>
+  )
 }
+
+const pctOf = (part: number, whole: number) => `${Math.round((part / whole) * 100)}%`
 
 /** Why an order's lines do not add up to its value — a fact about the IN4
  *  record (discount or amendment), shown on the row so nobody reads the gap
@@ -509,6 +583,3 @@ function Kpi({ label, value, sub, muted, tone }: { label: string; value: string;
     </div>
   )
 }
-
-// Referenced for its type only; kept so the import stays honest.
-export type { OrderRow }

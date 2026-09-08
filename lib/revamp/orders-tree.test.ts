@@ -1,7 +1,8 @@
 import { describe, it, expect } from 'vitest'
 import {
-  buildOrdersTree, contractorNames, lineNoteFor, type AbstractRow,
-  type WoRow, type IndentRow, type BoqRow, type Skill, type PartyReader,
+  buildOrdersTree, contractorNames, lineNoteFor, poNumbersOf, sqlLiteral, NO_SOURCES,
+  type AbstractRow, type WoRow, type IndentRow, type BoqRow, type Skill, type PartyReader,
+  type Sources, type WoHeader, type PoHeader,
 } from './orders-tree'
 
 // Real IN4 skills, with the codes that decide the sequence. Categories have
@@ -31,8 +32,13 @@ const boq = (o: Partial<BoqRow> & { item_id: number; wo_id: number }): BoqRow =>
   description: 'Providing and laying box type waterproofing', uom: 'SqM',
   quantity: 1, rate: 0, amt: 0, ...o,
 })
-const build = (wos: WoRow[], indents: IndentRow[] = [], boqs: BoqRow[] = []) =>
-  buildOrdersTree(wos, indents, boqs, SKILLS, PARTIES)
+const build = (wos: WoRow[], indents: IndentRow[] = [], boqs: BoqRow[] = [], src: Sources = NO_SOURCES) =>
+  buildOrdersTree(wos, indents, boqs, SKILLS, PARTIES, [], src)
+
+/** IN4 header figures as the live read would return them. */
+const header = (o: Partial<WoHeader> & { gross: number }): WoHeader =>
+  ({ billed: 0, billsPaid: 0, advancePaid: 0, advanceRecovered: 0, retention: 0, ...o })
+const live = (o: Partial<Sources>): Sources => ({ ...NO_SOURCES, in4: 'live', ...o })
 
 describe('sequence — IN4 code order, the same spine as the Internal Estimate', () => {
   it('orders categories by CODE, not by value', () => {
@@ -206,14 +212,18 @@ describe('NGH B, against the live mirror', () => {
       draft: false,
     })))]
 
-    const t = build(wos, indents)
+    // Header figures as IN4 would return them: no GST on these, no advances,
+    // no retention, so Paid is the bill payments alone.
+    const woHeaders = new Map(wos.map(w => [w.wo_id, header({ gross: w.wo_value ?? 0, billsPaid: w.wo_paid_amt ?? 0 })]))
+    const t = build(wos, indents, [], live({ woHeaders }))
     expect(t.totals.woCount).toBe(WO_COUNT)
     expect(t.totals.poCount).toBe(PO_COUNT)
     expect(t.totals.paid).toBe(WO_PAID)
     expect(t.totals.ordered).toBe(TOTAL_ORDERED)
-    // Balance is the only derived figure on the screen, and it is a
-    // subtraction of two amounts IN4 holds.
-    expect(t.totals.ordered - t.totals.paid).toBe(38_577_385)
+    // Balance is the only derived figure on the screen: Ordered (full) −
+    // Paid − Retention, over the orders IN4 gave a header for. The POs have
+    // no header here, so they add nothing to it.
+    expect(t.totals.balance).toBe(WO_ORDERED - WO_PAID)
   })
 
   it("the BOQ lines add up to the work order's value — the deepest level ties to the top", () => {
@@ -288,51 +298,108 @@ describe('contractor names — in4_parties is keyed on (kind, id), not id', () =
   })
 })
 
-describe('GST — Ordered is before tax, Paid is with tax, Balance compares like with like', () => {
-  // WO/SRASSK/NGH/2025-26/233 as IN4 holds it on 8 Sep 2026.
-  const WO233 = wo({ wo_id: 1427, wo_value: 305067.95, wo_gross_value: 359980.19, wo_paid_amt: 344726 })
+describe('money — full order, Paid as money out with TDS, Retention apart, Balance like for like', () => {
+  // WO/SRJT/SRAH/2025-26/41 exactly as IN4 held it on 8 Sep 2026: three
+  // advances (1,86,99,999.58 with their TDS), one bill fully set against the
+  // advance (recovered 1,03,18,792), one bill paid 38,42,296 after TDS 66,246.
+  const SRAH41 = wo({ wo_id: 841, wo_value: 23770412.15, wo_gross_value: 28049086.34, wo_paid_amt: 3842296 })
+  const SRAH41_HEADER = header({
+    gross: 28049086.34, billed: 15182777.88, billsPaid: 3842296,
+    advancePaid: 18699999.58, advanceRecovered: 10318792, retention: 955444,
+  })
+  const srah = live({ woHeaders: new Map([[841, SRAH41_HEADER]]), woBillTds: new Map([[841, 66246]]) })
 
-  it('balance is gross minus paid, so a paid-up order is not shown as overpaid', () => {
-    const t = build([WO233])
+  it('Paid = bills paid + TDS on bills + advances paid (which already carry their TDS)', () => {
+    const o = build([SRAH41], [], [], srah).cats[0].subs[0].orders[0]
+    expect(o.gross).toBe(28049086.34)
+    expect(o.billed).toBe(15182777.88)
+    expect(o.paid).toBeCloseTo(22608541.58, 2)
+    expect(o.advanceOutstanding).toBeCloseTo(8381207.58, 2)
+    expect(o.retention).toBe(955444)
+  })
+
+  it('Balance = Ordered − Paid − Retention, and equals (yet to bill) − (advance outstanding)', () => {
+    const o = build([SRAH41], [], [], srah).cats[0].subs[0].orders[0]
+    expect(o.balance).toBeCloseTo(4485100.76, 1)
+    const yetToBill = 28049086.34 - 15182777.88
+    expect(o.balance).toBeCloseTo(yetToBill - 8381207.58, 0)   // IN4 rounds its header to the rupee
+  })
+
+  it('the breakup names the before-GST value and the GST', () => {
+    const o = build([SRAH41], [], [], srah).cats[0].subs[0].orders[0]
+    expect(o.breakup).toBe('before GST ₹2,37,70,412 · GST ₹42,78,674')
+  })
+
+  it('WO 233: paid up, retention held, balance nil — not the −39,658 the first cut showed', () => {
+    const WO233 = wo({ wo_id: 1427, wo_value: 305067.95, wo_gross_value: 359980.19, wo_paid_amt: 344726 })
+    const src = live({ woHeaders: new Map([[1427, header({ gross: 359980.19, billed: 359980.17, billsPaid: 344726, retention: 15254 })]]) })
+    const t = build([WO233], [], [], src)
     const o = t.cats[0].subs[0].orders[0]
-    expect(o.ordered).toBe(305067.95)
-    expect(o.gross).toBe(359980.19)
     expect(o.paid).toBe(344726)
-    // The old sum, ordered − paid, was −39,658.05. The contractor was billed tax.
-    expect(o.balance).toBeCloseTo(15254.19, 2)
-    expect(t.cats[0].subs[0].balance).toBeCloseTo(15254.19, 2)
-    expect(t.cats[0].balance).toBeCloseTo(15254.19, 2)
-    expect(t.totals.gross).toBe(359980.19)
-    expect(t.totals.balance).toBeCloseTo(15254.19, 2)
+    expect(o.retention).toBe(15254)
+    expect(o.balance).toBeCloseTo(0.19, 2)
+    expect(t.totals.balance).toBeCloseTo(0.19, 2)
   })
 
-  it('an order with no GST in IN4 has gross equal to value, and balance falls out the same', () => {
-    const t = build([wo({ wo_id: 1, wo_value: 18000, wo_gross_value: 18000, wo_paid_amt: 9000 })])
-    expect(t.cats[0].subs[0].orders[0].balance).toBe(9000)
+  it('without IN4 the header columns are null — never zero — and Ordered falls back to the mirror gross', () => {
+    const t = build([SRAH41])
+    const o = t.cats[0].subs[0].orders[0]
+    expect(o.gross).toBe(28049086.34)
+    expect(o.billed).toBeNull(); expect(o.paid).toBeNull(); expect(o.retention).toBeNull(); expect(o.balance).toBeNull()
+    expect(t.cats[0].balance).toBeNull()
+    expect(t.in4).toBe('unavailable')
+    expect(t.notes.some(n => n.includes('could not be reached'))).toBe(true)
   })
 
-  it('a missing gross falls back to the value rather than to nothing', () => {
-    const t = build([wo({ wo_id: 1, wo_value: 1000, wo_gross_value: null, wo_paid_amt: 250 })])
-    expect(t.cats[0].subs[0].orders[0].gross).toBe(1000)
-    expect(t.cats[0].subs[0].orders[0].balance).toBe(750)
+  it('a purchase order takes its FULL value from the IN4 header — GST and charges included', () => {
+    // PO 1443 as BI.PURCHASE_ORDER_HEADER returns it: material 2,20,321 + GST 39,658 = 2,59,979.
+    const po: PoHeader = { poId: 1443, value: 259979, material: 220321.1, tax: 39657.86, freight: 0, handling: 0, other: 0, paid: 0 }
+    const t = build([], [indent(1, [{ poNo: 'DRAFT-PO/SRASSK/AB/2026-27/1443'.replace('DRAFT-', ''), amount: 220321.1, draft: false }])], [],
+      live({ poHeaders: new Map([['PO/SRASSK/AB/2026-27/1443', po]]) }))
+    const o = t.cats[0].subs[0].orders[0]
+    expect(o.ordered).toBeCloseTo(220321.1, 2)   // the tracker's qty × rate
+    expect(o.gross).toBe(259979)                  // IN4's full value
+    expect(o.paid).toBe(0)
+    expect(o.balance).toBe(259979)
+    expect(o.breakup).toBe('material ₹2,20,321 · GST ₹39,658')
   })
 
-  it('purchase orders carry no gross, paid or balance, and a category of only POs shows none', () => {
-    const t = build([], [indent(1, [{ poNo: 'PO/A/1', amount: 400, draft: false }])])
-    const po = t.cats[0].subs[0].orders[0]
-    expect(po.gross).toBeNull(); expect(po.paid).toBeNull(); expect(po.balance).toBeNull()
-    expect(t.cats[0].gross).toBeNull(); expect(t.cats[0].balance).toBeNull()
+  it('a PO with no header keeps its material value and blank money columns', () => {
+    const t = build([], [indent(1, [{ poNo: 'PO/A/1', amount: 400, draft: false }])], [], live({}))
+    const o = t.cats[0].subs[0].orders[0]
+    expect(o.gross).toBeNull(); expect(o.paid).toBeNull(); expect(o.balance).toBeNull()
+    expect(t.cats[0].gross).toBeNull()
+    expect(t.notes.some(n => n.includes('1 purchase order'))).toBe(true)
   })
 
-  it('a mixed category sums gross and balance over its work orders only', () => {
+  it('a mixed category sums the full amounts of what IN4 gave a header for', () => {
+    const po: PoHeader = { poId: 9, value: 472, material: 400, tax: 72, freight: 0, handling: 0, other: 0, paid: 100 }
     const t = build(
       [wo({ wo_id: 1, subcategory_id: 317, wo_value: 1000, wo_gross_value: 1180, wo_paid_amt: 500 })],
       [indent(1, [{ poNo: 'PO/A/1', amount: 400, draft: false }])],
+      [],
+      live({ woHeaders: new Map([[1, header({ gross: 1180, billsPaid: 500 })]]), poHeaders: new Map([['PO/A/1', po]]) }),
     )
     const civil = t.cats[0]
-    expect(civil.ordered).toBe(1400)   // WO + PO
-    expect(civil.gross).toBe(1180)     // WO only
-    expect(civil.balance).toBe(680)    // 1180 − 500, the PO adds nothing it cannot support
+    expect(civil.ordered).toBe(1400)      // before tax, WO + PO
+    expect(civil.gross).toBe(1652)        // 1180 + 472
+    expect(civil.paid).toBe(600)          // 500 + 100
+    expect(civil.balance).toBe(1052)      // 1652 − 600 − 0
+  })
+})
+
+describe('the live IN4 read — what it asks for', () => {
+  it('collects distinct non-draft PO numbers from the indent lines', () => {
+    const nos = poNumbersOf([
+      indent(1, [{ poNo: 'PO/A/1', amount: 1, draft: false }, { poNo: 'PO/A/2', amount: 1, draft: false }]),
+      indent(1, [{ poNo: 'PO/A/1', amount: 1, draft: false }, { poNo: 'DRAFT-PO/A/3', amount: 1, draft: true }]),
+    ])
+    expect(nos.sort()).toEqual(['PO/A/1', 'PO/A/2'])
+  })
+  it('quotes a PO number for SQL and refuses anything that is not shaped like one', () => {
+    expect(sqlLiteral('PO/SRASSK/NGH/2025-26/12')).toBe("'PO/SRASSK/NGH/2025-26/12'")
+    expect(sqlLiteral("PO/1' OR 1=1 --")).toBeNull()
+    expect(sqlLiteral('')).toBeNull()
   })
 })
 
