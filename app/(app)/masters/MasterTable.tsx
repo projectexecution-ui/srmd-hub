@@ -54,7 +54,7 @@ const TONE: Record<CellTone, string> = {
 
 export function MasterTable({
   columns, rows, searchPlaceholder = 'Search…', emptyMessage = 'Nothing here.',
-  sortableKeys = [],
+  sortableKeys = [], maxRows = 500,
 }: {
   columns: MasterColumn[]
   rows: MasterRow[]
@@ -62,11 +62,14 @@ export function MasterTable({
   emptyMessage?: string
   /** Column keys that can be sorted. Others stay in the order given. */
   sortableKeys?: string[]
+  /** How many rows to draw at once. The Item master is 4,041 rows; drawing
+   *  them all froze a phone. Search narrows; the count line says so. */
+  maxRows?: number
 }) {
   const [q, setQ] = useState('')
   const [sort, setSort] = useState<{ key: string; dir: 1 | -1 } | null>(null)
 
-  const filtered = useMemo(() => {
+  const matched = useMemo(() => {
     const needle = q.trim().toLowerCase()
     let out = rows
     if (needle) {
@@ -88,6 +91,7 @@ export function MasterTable({
     }
     return out
   }, [rows, q, sort])
+  const filtered = matched.length > maxRows ? matched.slice(0, maxRows) : matched
 
   function toggleSort(key: string) {
     setSort(s => s?.key === key ? (s.dir === 1 ? { key, dir: -1 } : null) : { key, dir: 1 })
@@ -117,10 +121,11 @@ export function MasterTable({
         )}
       </div>
 
-      <p className="text-[11px] text-gray-500 tabular-nums">
-        {filtered.length === rows.length
-          ? `${rows.length} row${rows.length === 1 ? '' : 's'}`
-          : `${filtered.length} of ${rows.length}`}
+      <p className="text-[12px] text-gray-500 tabular-nums">
+        {matched.length === rows.length
+          ? `${rows.length.toLocaleString('en-IN')} row${rows.length === 1 ? '' : 's'}`
+          : `${matched.length.toLocaleString('en-IN')} of ${rows.length.toLocaleString('en-IN')}`}
+        {matched.length > maxRows && ` — showing the first ${maxRows.toLocaleString('en-IN')}; search to narrow`}
       </p>
 
       {filtered.length === 0 ? (
