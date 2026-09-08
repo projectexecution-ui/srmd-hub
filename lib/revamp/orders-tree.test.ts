@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
-  buildOrdersTree,
-  type WoRow, type IndentRow, type BoqRow, type Skill,
+  buildOrdersTree, contractorNames,
+  type WoRow, type IndentRow, type BoqRow, type Skill, type PartyReader,
 } from './orders-tree'
 
 // Real IN4 skills, with the codes that decide the sequence. Categories have
@@ -232,5 +232,58 @@ describe('NGH B, against the live mirror', () => {
     const lineSum = order.lines.reduce((s, l) => s + l.amount, 0)
     expect(lineSum).toBe(WO_ORDERED)
     expect(order.ordered).toBe(WO_ORDERED)
+  })
+})
+
+describe('contractor names — in4_parties is keyed on (kind, id), not id', () => {
+  // The real collision from production: id 3 is a contractor AND a supplier.
+  const PARTIES = [
+    { kind: 'contractor', id: 3, name: 'Desai Construction Pvt Ltd.' },
+    { kind: 'supplier',   id: 3, name: 'BEYOND THE BEST SERVICES' },
+    { kind: 'contractor', id: 7, name: 'Shree Builders' },
+  ]
+
+  /** A stub client that applies the filters the way PostgREST would and
+   *  records which ones were asked for. */
+  function stub() {
+    const calls: Array<[string, string]> = []
+    const reader: PartyReader = {
+      from: () => ({
+        select: () => ({
+          eq: (col, v) => {
+            calls.push([col, v])
+            return {
+              in: (_c, ids) => ({
+                range: () => Promise.resolve({
+                  data: PARTIES.filter(p => p[col as 'kind'] === v && ids.includes(p.id)).map(({ id, name }) => ({ id, name })),
+                  error: null,
+                }),
+              }),
+            }
+          },
+        }),
+      }),
+    }
+    return { reader, calls }
+  }
+
+  it('filters on kind = contractor, so a colliding id resolves to the contractor', async () => {
+    const { reader, calls } = stub()
+    const { rows, error } = await contractorNames(reader, [{ contractor_id: 3 }, { contractor_id: 7 }, { contractor_id: null }])
+    expect(error).toBeNull()
+    expect(calls).toEqual([['kind', 'contractor']])
+    expect(rows).toEqual([
+      { id: 3, name: 'Desai Construction Pvt Ltd.' },
+      { id: 7, name: 'Shree Builders' },
+    ])
+    // One row per id — the Map built from these can no longer pick a supplier.
+    expect(new Set(rows.map(r => r.id)).size).toBe(rows.length)
+  })
+
+  it('skips the query when no work order carries a contractor', async () => {
+    const { reader, calls } = stub()
+    const res = await contractorNames(reader, [{ contractor_id: null }])
+    expect(res).toEqual({ rows: [], error: null })
+    expect(calls).toEqual([])
   })
 })

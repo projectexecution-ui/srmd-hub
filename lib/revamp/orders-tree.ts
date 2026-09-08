@@ -172,6 +172,40 @@ async function fetchAll<T>(
   return { rows, error: null }
 }
 
+/** The minimum a Supabase client needs to look up party names — small on
+ *  purpose so a test can hand in a stub and check the query that is built. */
+export interface PartyReader {
+  from(table: string): {
+    select(cols: string): {
+      eq(col: string, v: string): {
+        in(col: string, ids: number[]): {
+          range(f: number, t: number): PromiseLike<{ data: unknown; error: { message: string } | null }>
+        }
+      }
+    }
+  }
+}
+
+/** Contractor names for a set of work orders.
+ *
+ *  `in4_parties` is keyed on (kind, id), NOT on id. Contractors come from IN4's
+ *  ENGG_SERVICE_PROVIDER and suppliers from PURCH_SUPPLIER, two tables that
+ *  each number from 1, so 178 of the 601 ids exist as BOTH a contractor and a
+ *  supplier — id 3 is Desai Construction and also Beyond The Best Services.
+ *  1,316 of 1,670 work orders sit on such an id. Without the kind filter the
+ *  lookup returned two rows per id and the Map below kept whichever Postgres
+ *  sent last, so WO 233 showed a supplier's name. The filter is load-bearing. */
+export function contractorNames(
+  supabase: PartyReader,
+  wos: ReadonlyArray<{ contractor_id: number | null }>,
+): Promise<{ rows: Array<{ id: number; name: string | null }>; error: string | null }> {
+  const ids = [...new Set(wos.map(w => w.contractor_id).filter((v): v is number => v != null))]
+  return ids.length
+    ? fetchAll<{ id: number; name: string | null }>((f, t) =>
+        supabase.from('in4_parties').select('id, name').eq('kind', 'contractor').in('id', ids).range(f, t))
+    : Promise.resolve({ rows: [], error: null })
+}
+
 export async function loadOrdersTree(projectId: string): Promise<OrdersTree> {
   const supabase = await createClient()
 
@@ -226,12 +260,11 @@ export async function loadOrdersTree(projectId: string): Promise<OrdersTree> {
         ? fetchAll<Skill>((f, t) => supabase.from('in4_skills').select('id, name, code').in('id', [...ids]).range(f, t))
         : Promise.resolve({ rows: [] as Skill[], error: null })
     })(),
-    (() => {
-      const ids = [...new Set(wos.map(w => w.contractor_id).filter((v): v is number => v != null))]
-      return ids.length
-        ? fetchAll<{ id: number; name: string | null }>((f, t) => supabase.from('in4_parties').select('id, name').in('id', ids).range(f, t))
-        : Promise.resolve({ rows: [] as Array<{ id: number; name: string | null }>, error: null })
-    })(),
+    // The cast is deliberate: asking TypeScript to check the full Supabase
+    // client against PartyReader structurally makes it instantiate the
+    // builder's generic types until it gives up ("excessively deep").
+    // PartyReader names exactly the five calls contractorNames makes.
+    contractorNames(supabase as unknown as PartyReader, wos),
   ])
   if (boqRes.error) return { ...EMPTY, linked: true, error: boqRes.error }
   if (skillRes.error) return { ...EMPTY, linked: true, error: skillRes.error }
