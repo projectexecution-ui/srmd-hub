@@ -140,6 +140,10 @@ export interface OrderRow extends Money {
   /** Set only when the lines do not add up to the order value: IN4 applied a
    *  discount (lines above value) or the order was amended (lines below). */
   lineNote: string | null
+  /** A one-line fact about the IN4 record that a reader needs to interpret
+   *  the row: a PO whose bills IN4 booked under another PO's number, or a WO
+   *  number IN4 has given to two orders. Null for the ordinary case. */
+  flag: string | null
 }
 
 export interface OrdersSubRow extends Money {
@@ -259,10 +263,60 @@ export interface PoHeader {
   /** PAID_AMT — payments to the supplier, after TDS. */
   paid: number
 }
-/** Sums from in4_supplier_certificates for one purchase order. `billed` is
- *  the landed cost of the supplier's bills — material with GST — the PO-side
- *  twin of a work order's certified gross. */
-export interface PoCertAgg { billed: number; tds: number; retention: number; advancePaid: number; advanceRecovered: number }
+/** A purchase order's supplier money. `billed` is the landed cost of the
+ *  supplier's bills — material with GST — the PO-side twin of a work order's
+ *  certified gross.
+ *
+ *  Bills are attributed to a PO through the GRN on each payment row, NOT the
+ *  PO number IN4 stamps on the bill's header. One supplier bill can cover two
+ *  same-day POs (Naturoprotect's bill 1229 covered PO 92 and PO 93 on NGH);
+ *  IN4 puts the whole bill under one of them at the header, so its own PO
+ *  screen shows PO 92 unpaid and PO 93 overpaid by 90,683. The GRN rows say
+ *  which PO each rupee belongs to: 73 such bills, 90 POs, 73.8 lakh. Where
+ *  that happened, `bookedUnder` names the PO IN4's header used, so the page
+ *  can say so rather than silently disagree with IN4. */
+export interface PoCertAgg {
+  billed: number
+  /** Payments on the bills, after TDS — from the same GRN-placed rows as
+   *  `billed`, never the header's PAID_AMT, which carries the same booking
+   *  problem as the header's PO number. */
+  paid: number
+  tds: number; retention: number; advancePaid: number; advanceRecovered: number
+  bookedUnder: string[]
+}
+
+/** One supplier-payment row from IN4, already joined to the PO its GRN
+ *  belongs to (BI.FACT_PURCHASE_SUPPLIER_PAY ⋈ BI.FACT_PURCHASE_GRN_DETAILS). */
+export interface SupplierPayRow {
+  grnPoId: number
+  billPoId: number
+  billPoNo: string | null
+  landed: number
+  paid: number
+  tds: number
+  retention: number
+  advanceRecovered: number
+}
+
+/** Fold payment rows into per-PO sums by the GRN's PO. Pure, so the
+ *  two-POs-one-bill case is a test rather than a surprise. */
+export function poPaymentsFromRows(rows: readonly SupplierPayRow[]): Map<number, PoCertAgg> {
+  const out = new Map<number, PoCertAgg>()
+  for (const r of rows) {
+    const agg = out.get(r.grnPoId) ?? { billed: 0, paid: 0, tds: 0, retention: 0, advancePaid: 0, advanceRecovered: 0, bookedUnder: [] }
+    agg.billed += r.landed
+    agg.paid += r.paid
+    agg.tds += r.tds
+    agg.retention += r.retention
+    agg.advanceRecovered += r.advanceRecovered
+    if (r.billPoId !== r.grnPoId) {
+      const label = r.billPoNo?.trim() || `PO id ${r.billPoId}`
+      if (!agg.bookedUnder.includes(label)) agg.bookedUnder.push(label)
+    }
+    out.set(r.grnPoId, agg)
+  }
+  return out
+}
 
 /** Everything the pure builder needs beyond the mirror rows. Empty maps mean
  *  "IN4 not reached": header-derived columns come out null. */
@@ -419,6 +473,40 @@ async function readIn4Headers(woIds: number[], poNos: string[]): Promise<Pick<So
   }
 }
 
+/** Supplier payments for a set of POs, each row placed under the PO its GRN
+ *  belongs to. Bills spanning two POs come back as two rows with the bill's
+ *  header PO named, so the page can say where IN4 booked it. Null on failure
+ *  (the caller then leaves the PO money blank). */
+async function readIn4PoPayments(poIds: number[]): Promise<SupplierPayRow[] | null> {
+  const rows: SupplierPayRow[] = []
+  const n = (v: unknown) => (v == null ? 0 : Number(v))
+  try {
+    for (let i = 0; i < poIds.length; i += 500) {
+      const chunk = poIds.slice(i, i + 500).filter(Number.isInteger)
+      if (!chunk.length) continue
+      const got = await in4Query<Record<string, unknown>>(`
+        WITH g AS (SELECT DISTINCT GRN_ID, PO_ID FROM BI.FACT_PURCHASE_GRN_DETAILS)
+        SELECT g.PO_ID GRN_PO_ID, p.PO_ID BILL_PO_ID, h.PO_NO BILL_PO_NO,
+               SUM(p.LANDED_COST) LANDED, SUM(p.PAID_AMT) PAID, SUM(p.TAX_DEDUCTION_AMT) TDS,
+               SUM(p.RETENTION_AMT) RETENTION, SUM(p.ADV_RECOVERY_AMT) ADV_RECOVERY
+        FROM BI.FACT_PURCHASE_SUPPLIER_PAY p
+        JOIN g ON g.GRN_ID = p.GRN_ID
+        LEFT JOIN BI.PURCHASE_ORDER_HEADER h ON h.PO_ID = p.PO_ID
+        WHERE g.PO_ID IN (${chunk.join(',')})
+        GROUP BY g.PO_ID, p.PO_ID, h.PO_NO`)
+      for (const r of got) {
+        rows.push({
+          grnPoId: n(r.GRN_PO_ID), billPoId: n(r.BILL_PO_ID), billPoNo: r.BILL_PO_NO == null ? null : String(r.BILL_PO_NO),
+          landed: n(r.LANDED), paid: n(r.PAID), tds: n(r.TDS), retention: n(r.RETENTION), advanceRecovered: n(r.ADV_RECOVERY),
+        })
+      }
+    }
+    return rows
+  } catch {
+    return null
+  }
+}
+
 export async function loadOrdersTree(projectId: string): Promise<OrdersTree> {
   const supabase = await createClient()
 
@@ -501,21 +589,25 @@ export async function loadOrdersTree(projectId: string): Promise<OrdersTree> {
 
   const { woBilled, woBillTds } = billsFromCertificates(certRes.rows)
 
-  // Supplier certificates for the POs IN4 just identified — TDS, retention
-  // and advances on the material side. Needs the PO ids, so it follows.
-  const poCerts = new Map<number, PoCertAgg>()
+  // Supplier money for the POs IN4 just identified. Bills come live from IN4
+  // attributed by GRN (see PoCertAgg); advances have no GRN and come from the
+  // mirror's supplier certificates by PO id. Needs the PO ids, so it follows.
+  let poCerts = new Map<number, PoCertAgg>()
   const poIds = [...headers.poHeaders.values()].map(h => h.poId)
   if (poIds.length) {
-    const { rows, error } = await fetchAll<{ po_id: number; kind: string; landed_cost: number | null; paid: number | null; tax_deduction: number | null; retention: number | null; adv_recovery: number | null }>(
-      (f, t) => supabase.from('in4_supplier_certificates').select('po_id, kind, landed_cost, paid, tax_deduction, retention, adv_recovery').in('po_id', poIds).range(f, t))
-    if (error) return { ...EMPTY, linked: true, error }
-    for (const r of rows) {
-      const agg = poCerts.get(r.po_id) ?? { billed: 0, tds: 0, retention: 0, advancePaid: 0, advanceRecovered: 0 }
-      agg.tds += Number(r.tax_deduction ?? 0)
-      agg.retention += Number(r.retention ?? 0)
-      if (r.kind === 'advance') agg.advancePaid += Number(r.paid ?? 0) + Number(r.tax_deduction ?? 0)
-      else { agg.billed += Number(r.landed_cost ?? 0); agg.advanceRecovered += Number(r.adv_recovery ?? 0) }
-      poCerts.set(r.po_id, agg)
+    const [payRows, adv] = await Promise.all([
+      readIn4PoPayments(poIds),
+      fetchAll<{ po_id: number; kind: string; paid: number | null; tax_deduction: number | null }>(
+        (f, t) => supabase.from('in4_supplier_certificates').select('po_id, kind, paid, tax_deduction').eq('kind', 'advance').in('po_id', poIds).range(f, t)),
+    ])
+    if (adv.error) return { ...EMPTY, linked: true, error: adv.error }
+    if (payRows) {
+      poCerts = poPaymentsFromRows(payRows)
+      for (const r of adv.rows) {
+        const agg = poCerts.get(r.po_id) ?? { billed: 0, paid: 0, tds: 0, retention: 0, advancePaid: 0, advanceRecovered: 0, bookedUnder: [] }
+        agg.advancePaid += Number(r.paid ?? 0) + Number(r.tax_deduction ?? 0)
+        poCerts.set(r.po_id, agg)
+      }
     }
   }
 
@@ -648,6 +740,16 @@ export function buildOrdersTree(
   let discounted = 0
   let amended = 0
   let woWithoutHeader = 0
+  let duplicateNos = 0
+
+  // IN4 has given the same work-order number to two orders on five occasions
+  // (WO/SRET/RU/2023-24/17, 18, 19, 21, 22 — different orders, different
+  // values). Both rows show, keyed on IN4's own id; each says so.
+  const noCount = new Map<string, number>()
+  for (const w of wos) {
+    const no = w.display_no?.trim()
+    if (no) noCount.set(no, (noCount.get(no) ?? 0) + 1)
+  }
 
   // ── Work orders ─────────────────────────────────────────────────────────
   for (const w of wos) {
@@ -698,13 +800,17 @@ export function buildOrdersTree(
       money = { billed: null, paid: null, advanceOutstanding: null, retention: null, balance: null }
     }
 
+    const ref = w.display_no?.trim() || `WO ${w.wo_id}`
+    const dup = (noCount.get(ref) ?? 0) > 1
+    if (dup) duplicateNos++
     const order: OrderRow = {
       id: `wo:${w.wo_id}`,
-      ref: w.display_no?.trim() || `WO ${w.wo_id}`,
+      ref,
       party: w.contractor_id != null ? (parties.get(w.contractor_id) ?? null) : null,
       kind: 'wo',
       ordered, gross, ...money, breakup,
       lines, lineTotal, certifiedAmt, lineNote,
+      flag: dup ? 'IN4 has given this number to two different work orders.' : null,
     }
     row.orders.push(order)
     row.count += 1
@@ -719,6 +825,7 @@ export function buildOrdersTree(
   let draftAmount = 0
   let poWithoutHeader = 0
   let multiPoLines = 0
+  let bookedElsewhere = 0
 
   for (const i of indents) {
     const arr = Array.isArray(i.pos) ? (i.pos as PoEntry[]) : []
@@ -742,7 +849,7 @@ export function buildOrdersTree(
           id: `po:${ck}:${no}`, ref: no,
           party: po?.supplier?.trim() || null,
           kind: 'po', ...ZERO_MONEY, gross: null, billed: null, paid: null, advanceOutstanding: null, retention: null, balance: null,
-          breakup: null, lines: [], lineTotal: 0, certifiedAmt: null, lineNote: null,
+          breakup: null, lines: [], lineTotal: 0, certifiedAmt: null, lineNote: null, flag: null,
         }
         byNo.set(no, order)
         poAcc.set(ck, byNo)
@@ -786,7 +893,10 @@ export function buildOrdersTree(
       const h = src.poHeaders.get(o.ref)
       if (!h) { poWithoutHeader++; continue }
       const c = src.poCerts.get(h.poId)
-      const paid = h.paid + (c?.tds ?? 0)
+      // Same money-out rule as a work order: bill payments + TDS (counted as
+      // paid) + advances paid. All from rows placed by GRN — the header's
+      // PAID_AMT would put PO 92's money on PO 93.
+      const paid = c ? c.paid + c.tds + c.advancePaid : 0
       const retention = c?.retention ?? 0
       o.gross = h.value
       o.billed = c ? c.billed : null
@@ -794,6 +904,10 @@ export function buildOrdersTree(
       o.retention = retention
       o.advanceOutstanding = c ? c.advancePaid - c.advanceRecovered : 0
       o.balance = h.value - paid - retention
+      if (c && c.bookedUnder.length) {
+        bookedElsewhere++
+        o.flag = `IN4 booked ${c.bookedUnder.length === 1 ? 'a bill' : 'bills'} for this PO under ${c.bookedUnder.join(', ')}; shown here by its GRNs.`
+      }
       o.breakup = breakupOf([['material', h.material], ['GST', h.tax], ['freight', h.freight], ['handling', h.handling], ['other', h.other]])
     }
     cat.subs.set('po', {
@@ -853,6 +967,15 @@ export function buildOrdersTree(
     if (woWithoutHeader > 0) parts.push(`${woWithoutHeader} work order${woWithoutHeader === 1 ? '' : 's'}`)
     if (poWithoutHeader > 0) parts.push(`${poWithoutHeader} purchase order${poWithoutHeader === 1 ? '' : 's'}`)
     notes.push(`IN4 returned no order record for ${parts.join(' and ')} in the mirror; their header columns are blank.`)
+  }
+  if (bookedElsewhere > 0) {
+    notes.push(
+      `A supplier’s bill can cover two purchase orders; IN4 books the whole bill under one PO number at the header. On ${bookedElsewhere} `
+      + `PO${bookedElsewhere === 1 ? '' : 's'} here the money is placed by the GRN on each bill line instead, and the row says which PO IN4’s header used.`,
+    )
+  }
+  if (duplicateNos > 0) {
+    notes.push(`${duplicateNos} work-order row${duplicateNos === 1 ? '' : 's'} carr${duplicateNos === 1 ? 'ies' : 'y'} a number IN4 has also given to another order. Both are shown; each is marked.`)
   }
   notes.push(
     'Under each purchase order the line items show what has been RECEIVED so far — the GRN quantity against that PO, and the GRNs '

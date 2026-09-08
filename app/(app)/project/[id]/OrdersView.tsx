@@ -161,6 +161,7 @@ export async function OrdersView({ projectId }: { projectId: string }) {
                                           for purchase orders. */}
                                       {o.kind === 'wo' && <PrintWo id={o.id} ref_={o.ref} />}
                                       <span className="ml-2 text-[11px] text-gray-400">{o.lines.length} item{o.lines.length === 1 ? '' : 's'}</span>
+                                      {o.flag && <span className="block mt-0.5 text-[10.5px] text-amber-700">{o.flag}</span>}
                                     </td>
                                     <MoneyCells m={o} small />
                                   </tr>
@@ -230,6 +231,7 @@ export async function OrdersView({ projectId }: { projectId: string }) {
                                 </p>
                                 {o.party && <p className="ml-6 text-[11px] text-gray-500">{o.party}</p>}
                                 {o.kind === 'wo' && <p className="ml-6 mt-0.5"><PrintWo id={o.id} ref_={o.ref} /></p>}
+                                {o.flag && <p className="ml-6 mt-0.5 text-[10.5px] text-amber-700">{o.flag}</p>}
                                 <div className="ml-6"><MoneyChips m={o} /></div>
                                 <RowDetail id={o.id}>
                                   <div className="mt-2">

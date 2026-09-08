@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
-  buildOrdersTree, contractorNames, lineNoteFor, poNumbersOf, sqlLiteral, cleanBillNo, billsFromCertificates, NO_SOURCES,
+  buildOrdersTree, contractorNames, lineNoteFor, poNumbersOf, sqlLiteral, cleanBillNo, billsFromCertificates, poPaymentsFromRows, NO_SOURCES,
+  type SupplierPayRow,
   type CertRow,
   type AbstractRow, type WoRow, type IndentRow, type BoqRow, type Skill, type PartyReader,
   type Sources, type WoHeader, type PoHeader,
@@ -379,7 +380,8 @@ describe('money — full order, Paid as money out with TDS, Retention apart, Bal
       [wo({ wo_id: 1, subcategory_id: 317, wo_value: 1000, wo_gross_value: 1180, wo_paid_amt: 500 })],
       [indent(1, [{ poNo: 'PO/A/1', amount: 400, draft: false }])],
       [],
-      live({ woHeaders: new Map([[1, header({ gross: 1180, billsPaid: 500 })]]), poHeaders: new Map([['PO/A/1', po]]) }),
+      live({ woHeaders: new Map([[1, header({ gross: 1180, billsPaid: 500 })]]), poHeaders: new Map([['PO/A/1', po]]),
+            poCerts: new Map([[9, { billed: 472, paid: 100, tds: 0, retention: 0, advancePaid: 0, advanceRecovered: 0, bookedUnder: [] }]]) }),
     )
     const civil = t.cats[0]
     expect(civil.ordered).toBe(1400)      // before tax, WO + PO
@@ -551,11 +553,11 @@ describe('purchase orders — received (GRN) per line, billed per PO', () => {
     const po: PoHeader = { poId: 58, value: 280.25, material: 237.5, tax: 42.75, freight: 0, handling: 0, other: 0, paid: 250 }
     const t = build([], [line], [], live({
       poHeaders: new Map([['PO/SRASSK/CVR/2026-27/58', po]]),
-      poCerts: new Map([[58, { billed: 280.26, tds: 5, retention: 0, advancePaid: 0, advanceRecovered: 0 }]]),
+      poCerts: new Map([[58, { billed: 280.26, paid: 250, tds: 5, retention: 0, advancePaid: 0, advanceRecovered: 0, bookedUnder: [] }]]),
     }))
     const o = t.cats[0].subs[0].orders[0]
     expect(o.billed).toBeCloseTo(280.26, 2)
-    expect(o.paid).toBe(255)                 // header paid 250 + TDS 5
+    expect(o.paid).toBe(255)                 // bills paid 250 + TDS 5, from the GRN-placed rows
     expect(o.certifiedAmt).toBeCloseTo(280.26, 2)
     expect(o.balance).toBeCloseTo(280.25 - 255, 2)
   })
@@ -586,5 +588,46 @@ describe('Billed — from the bills themselves, cancelled and rejected left out'
     expect(a.billed).toBe(69796325)
     expect(a.billed!).toBeLessThan(a.gross!)
     expect(b.billed).toBe(0)
+  })
+})
+
+describe('supplier bills placed by GRN, not by the PO number IN4 stamps on the bill', () => {
+  // Bill 1229 (Naturoprotect, NGH): rows for GRN 1273 (PO 92 = id 1164) and
+  // GRNs 1274/1336 (PO 93 = id 1165). IN4's header put the whole bill under
+  // PO 93, so its own PO screen shows PO 92 unpaid and PO 93 overpaid by 90,683.
+  const rows: SupplierPayRow[] = [
+    { grnPoId: 1164, billPoId: 1165, billPoNo: 'PO/SRASSK/NGH/2025-26/93', landed: 90683, paid: 90683, tds: 0, retention: 0, advanceRecovered: 0 },
+    { grnPoId: 1165, billPoId: 1165, billPoNo: 'PO/SRASSK/NGH/2025-26/93', landed: 692162, paid: 692161, tds: 0, retention: 0, advanceRecovered: 0 },
+  ]
+  it('puts each rupee on the PO its GRN belongs to, and names where IN4 booked it', () => {
+    const m = poPaymentsFromRows(rows)
+    expect(m.get(1164)).toMatchObject({ billed: 90683, bookedUnder: ['PO/SRASSK/NGH/2025-26/93'] })
+    expect(m.get(1165)).toMatchObject({ billed: 692162, bookedUnder: [] })
+  })
+  it('the PO row carries the money and a flag saying which PO IN4’s header used', () => {
+    const po92: PoHeader = { poId: 1164, value: 90683, material: 76850, tax: 13833, freight: 0, handling: 0, other: 0, paid: 0 }
+    const t = build([], [indent(1, [{ poNo: 'PO/SRASSK/NGH/2025-26/92', amount: 76850, draft: false, qty: 5800, rate: 13.25, grnQty: 5800 }])], [],
+      live({ poHeaders: new Map([['PO/SRASSK/NGH/2025-26/92', po92]]), poCerts: poPaymentsFromRows(rows) }))
+    const o = t.cats[0].subs[0].orders[0]
+    expect(o.billed).toBe(90683)
+    expect(o.paid).toBe(90683)          // IN4's header says 0; the GRN-placed rows say 90,683
+    expect(o.balance).toBe(0)
+    expect(o.flag).toContain('PO/SRASSK/NGH/2025-26/93')
+    expect(t.notes.some(n => n.includes('books the whole bill under one PO'))).toBe(true)
+  })
+})
+
+describe('a work-order number IN4 gave to two orders', () => {
+  it('both rows show, each marked, and the note counts them', () => {
+    const t = build([
+      wo({ wo_id: 171, display_no: 'WO/SRET/RU/2023-24/17', wo_value: 31600 }),
+      wo({ wo_id: 288, display_no: 'WO/SRET/RU/2023-24/17', wo_value: 436441 }),
+      wo({ wo_id: 300, display_no: 'WO/SRET/RU/2023-24/20', wo_value: 100 }),
+    ])
+    const orders = t.cats[0].subs[0].orders
+    expect(orders.filter(o => o.flag?.includes('two different work orders'))).toHaveLength(2)
+    expect(orders.find(o => o.ref === 'WO/SRET/RU/2023-24/20')!.flag).toBeNull()
+    expect(t.totals.ordered).toBe(468141)   // nothing lost to the shared number
+    expect(t.notes.some(n => n.includes('2 work-order rows'))).toBe(true)
   })
 })
