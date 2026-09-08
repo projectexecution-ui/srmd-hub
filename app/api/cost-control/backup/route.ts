@@ -17,6 +17,7 @@
 // table (see lib/cost-control/backup.ts).
 
 import { NextRequest, NextResponse } from 'next/server'
+import { IS_DEMO, DEMO_BLOCKED_MESSAGE } from '@/lib/demo-mode'
 import { createClient } from '@/lib/supabase/server'
 import { createClient as createServiceClient, type SupabaseClient } from '@supabase/supabase-js'
 import { getMyPermissions, can } from '@/lib/auth'
@@ -106,6 +107,9 @@ export async function GET(req: NextRequest) {
 
 // ── Cron: build with service role, upload to storage + prune ────────────
 async function cronBackup(req: NextRequest) {
+  // Service-role write path reachable by GET (?cron=1) outside /api/cron/, so
+  // proxy.ts does not stop it; the trial site refuses it here (F-005).
+  if (IS_DEMO) return NextResponse.json({ ok: false, reason: DEMO_BLOCKED_MESSAGE, demo: true }, { status: 403 })
   // Fail CLOSED: a missing CRON_SECRET must reject, not wave everyone in.
   const auth = req.headers.get('authorization') || ''
   if (!CRON_SECRET || auth !== `Bearer ${CRON_SECRET}`) {

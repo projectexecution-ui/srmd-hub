@@ -1,35 +1,35 @@
 # Findings — `revamp-trial` @ 1562b42, audited 8 Sep 2026
 
 Severity: P0 wrong money / data written from the trial / exposed data · P1 a new or changed screen that does not work or excludes phones · P2 usability/performance · P3 backlog.
-Status values: OPEN → FIXED (Prompt B) → VERIFIED / NOT-FIXED / REGRESSED (Prompt C).
+Status values: FIXED → FIXED (Prompt B) → VERIFIED / NOT-FIXED / REGRESSED (Prompt C).
 
 ---
 
-### F-001 | P0 | Trial-site guard | `lib/demo-mode.ts:65-67`, `:58-64` | Status: OPEN
+### F-001 | P0 | Trial-site guard | `lib/demo-mode.ts:65-67`, `:58-64` | Status: FIXED
 **What is wrong.** The guard blocks `insert/update/upsert/delete` and lets `rpc()` through (L65-67), on the stated assumption (L58-64) that every writing RPC is reached only via Server Actions or POST routes, which `proxy.ts` refuses. That assumption is false: 31 client components call writing RPCs directly from the browser to supabase.co, which `proxy.ts` never sees. Confirmed writers among them: `record_approval_event` (2 write statements, `supabase/migrations/20260528_approval_events.sql:53`) at `components/approvals/ApprovalActionDialog.tsx:177`, `components/cost-control/ApproveTrancheButton.tsx:189`, `app/(app)/blueprint-demo/requests/[id]/action-client.tsx:93`; `inv_rpc_backoffice_approve` (3 writes, `20260904_wave1_hygiene.sql:39`) at `ApprovalActionDialog.tsx:24`; plus `bb_rpc_create_bill` (`bills-booking/new/BillForm.tsx:47`), `bb_rpc_move` (`bills-booking/[id]/MoveActions.tsx:32`), `act_on_delete_request` (`admin/delete-requests/DeleteRequestsList.tsx:55`), `delete_user_account` (`admin/users/UsersClient.tsx:219`), `recycle_restore` (`admin/recycle-bin/RecycleBinList.tsx:32`), `admin_add_role` / `admin_deactivate_role` (`admin/permissions/PermissionsMatrix.tsx:114,132`), `notifications_clear_all` (`components/NotificationProvider.tsx:136`), and 15 `inv_rpc_*` stock operations. `lib/demo-mode.test.ts:132` asserts "ALLOWS rpc()", so the tests encode the hole.
 **Why it matters.** A reviewer who opens the trial site's Cost Control approvals and clicks Approve records a real approval in the live database. The trial site's whole premise is that it cannot do that.
 **Suggested fix.** In `guardQueryBuilder`/`guardSupabaseClient`, intercept `rpc` and allow only a named read list (`my_permissions`, `effective_user_role`, `can_approve`, `my_approval_inbox`, `shell_for`, `cc_ie_lock_state`, `cc_transfer_inbox`, `cc_recent_transfers`, `cc_project_transfers`, `cc_can_i_raise_transfer`, `email_delivery_health`, `list_storage_objects`, `inv_rpc_custody_*`, `blueprint_demo_sla_inbox`, `bb_stage_members`); everything else resolves to `demoBlockedResult`. Flip the test at :132. Touches the guard → confirmation rule.
 **Effort:** M
 
-### F-002 | P0 | Budget vs Actual, CT-wise pill | `lib/revamp/budget-actual-data.ts:69-70` | Status: OPEN
+### F-002 | P0 | Budget vs Actual, CT-wise pill | `lib/revamp/budget-actual-data.ts:69-70` | Status: FIXED
 **What is wrong.** `in4_wo_certificates` and `in4_work_orders` are read with `.in('subproject_id', ids)` and no `.range()`. PostgREST returns at most 1,000 rows and reports no error. Raj Uphaar has 1,987 certificates across its sub-projects (SQL, 8 Sep); Certified for that project is therefore summed from roughly half its rows, and `pctUsed` (L97) is wrong with it. Work orders max 608 per project today — safe, but on the same path.
 **Why it matters.** A Trustee reading "Certified" and "% Used" on the biggest project sees an understated figure with no warning.
 **Suggested fix.** Read both tables through the `fetchAll` pager already in `lib/revamp/orders-tree.ts:160-175`. Add a test with >1,000 mocked rows.
 **Effort:** S
 
-### F-003 | P0 by rule (recommend P1 after judgement — Q4) | Zoho | `app/api/zoho/bp-callback/route.ts:48-59` | Status: OPEN
+### F-003 | P0 by rule (recommend P1 after judgement — Q4) | Zoho | `app/api/zoho/bp-callback/route.ts:48-59` | Status: FIXED
 **What is wrong.** A GET handler builds a service-role client (L48-51) and `upsert`s `zoho_bp_refresh_token` into `app_settings` (L59). Service-role clients bypass the guard (only `lib/supabase/*` are wrapped), and GET passes `proxy.ts`. Mitigation already present: `CALLBACK` is hard-coded to `https://ct-hub.vercel.app` (L8), so Zoho will never redirect to the preview; only a hand-built URL with a fresh code would reach it.
 **Why it matters.** It is the one GET on the trial that writes a credential into the live database.
 **Suggested fix.** `if (IS_DEMO) return 403` at the top of the handler (same for every service-role GET, see F-005).
 **Effort:** S
 
-### F-004 | P0 | RLS | policy `sched_promises_select_merged_public` on `public.sched_promises` (db-inventory.txt §3) | Status: OPEN
+### F-004 | P0 | RLS | policy `sched_promises_select_merged_public` on `public.sched_promises` (db-inventory.txt §3) | Status: FIXED
 **What is wrong.** Role `{public}`, `USING (true OR sched_can_write())`. `public` includes `anon`; the expression is `true` for everyone. All rows readable with the public anon key, no login.
 **Why it matters.** Exposed data, per this audit's own scale. Content is Schedule promise dates — not money, not personal — but the table is open.
 **Suggested fix.** Change the role to `authenticated`, or the qual to `(select auth.uid()) is not null OR sched_can_write()`. Database change → confirmation rule.
 **Effort:** S
 
-### F-005 | P1 | Trial-site guard | `app/api/cost-control/backup/route.ts:108-158`; `app/api/cost-control/in4-followup/route.ts:18-24` | Status: OPEN
+### F-005 | P1 | Trial-site guard | `app/api/cost-control/backup/route.ts:108-158`; `app/api/cost-control/in4-followup/route.ts:18-24` | Status: FIXED
 **What is wrong.** Service-role GET paths outside `/api/cron/` (which `proxy.ts:20` blocks). `cronBackup` uploads a workbook to storage and `upsert`s `cc_last_backup` (L147-152), gated only by `CRON_SECRET` (L111). `in4-followup` calls `cc_in4_followup_digests` with the service key (L24); I did not confirm its auth gate or whether that function writes (Q5). Twelve modules build raw service-role clients (`lib/in4/feeds.ts:68`, `sync.ts:45`, `shell.ts:48`, `cost-control/ie-notify.ts:39`, `mentions/notify.ts:29`, `telegram/cc-approval-dispatch.ts:22`, `warehouse/notify.ts:28`, `budget-v2-cached.ts:31`, `procurement/tracker-cache.ts:33`, `report-state-cache.ts:31`, plus the two routes) and none pass through `guardSupabaseClient`.
 **Why it matters.** Layer 2 covers only the two cookie-based clients; every service-role write is unguarded and relies on layer 1 alone.
 **Suggested fix.** One `serviceClient()` factory in `lib/supabase/service.ts` that applies the guard, and the twelve call sites import it; or refuse `IS_DEMO` at the top of each service-role GET.

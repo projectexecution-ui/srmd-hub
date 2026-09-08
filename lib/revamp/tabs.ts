@@ -1,3 +1,5 @@
+import { isDemoNow } from '@/lib/demo-mode'
+
 // The project cockpit's tab list — ONE source of truth, the same way
 // lib/modules.ts is the one source for modules. Pure (no Supabase, no React)
 // so it can be unit-tested and imported from both server and client.
@@ -190,8 +192,7 @@ export const PARKED_TABS = ['approvals', 'stores', 'jmr', 'schedule', 'overview'
  * and nobody's habits change until the revamp is actually adopted.
  */
 export function projectHref(projectId: string): string {
-  const trial =
-    process.env.NEXT_PUBLIC_DEMO_MODE === '1' || process.env.VERCEL_ENV === 'preview'
+  const trial = isDemoNow()
   return trial ? `/project/${projectId}` : `/cost-control/projects/${projectId}`
 }
 

@@ -2,6 +2,7 @@
 // Exchanges it for a refresh_token, stores in app_settings, redirects to dashboard.
 
 import { NextRequest, NextResponse } from 'next/server'
+import { IS_DEMO, DEMO_BLOCKED_MESSAGE } from '@/lib/demo-mode'
 import { createClient as createServiceClient } from '@supabase/supabase-js'
 
 const DC       = process.env.ZOHO_DC ?? 'in'
@@ -10,6 +11,9 @@ const CALLBACK = 'https://ct-hub.vercel.app/api/zoho/bp-callback'
 export const dynamic = 'force-dynamic'
 
 export async function GET(req: NextRequest) {
+  // The trial site must not write a credential into the live database, and this
+  // is the one GET handler that does (F-003). Refused before anything is read.
+  if (IS_DEMO) return NextResponse.json({ ok: false, error: DEMO_BLOCKED_MESSAGE, demo: true }, { status: 403 })
   const code  = req.nextUrl.searchParams.get('code')
   const error = req.nextUrl.searchParams.get('error')
 

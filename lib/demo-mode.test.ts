@@ -128,11 +128,39 @@ describe('demo mode — the trial site', () => {
   })
 
   // Regression: blocking rpc() wholesale 500'd every page — my_permissions()
-  // and friends are read-only RPCs the app calls on every render.
-  it('ALLOWS rpc() — the permission system runs on it', async () => {
+  // and friends are read-only RPCs the app calls on every render. They are
+  // named in READ_RPCS and pass through.
+  it('ALLOWS the named read RPCs — the permission system runs on them', async () => {
     const m = await loadWith({ VERCEL_ENV: 'preview' })
     const { client, calls } = fakeClient()
-    await m.guardSupabaseClient(client).rpc('my_permissions')
+    for (const name of ['my_permissions', 'effective_user_role', 'can_approve', 'my_approval_inbox', 'shell_for']) {
+      expect(m.READ_RPCS.has(name)).toBe(true)
+      await m.guardSupabaseClient(client).rpc(name)
+    }
+    expect(calls.filter(c => c === 'rpc')).toHaveLength(5)
+  })
+
+  // The hole the audit found (F-001): 31 client components call WRITING RPCs
+  // straight from the browser, which proxy.ts never sees. A reviewer on the
+  // trial could approve a real budget. Anything not on the read list is blocked
+  // and resolves like every other blocked write — no throw, no 500.
+  it.each(['record_approval_event', 'inv_rpc_backoffice_approve', 'bb_rpc_create_bill', 'act_on_delete_request', 'delete_user_account', 'recycle_restore', 'notifications_clear_all'])(
+    'BLOCKS rpc(%s) — a writer, never reaches the database', async (name) => {
+      const m = await loadWith({ VERCEL_ENV: 'preview' })
+      const { client, calls } = fakeClient()
+      expect(m.READ_RPCS.has(name)).toBe(false)
+      const { data, error } = await m.guardSupabaseClient(client).rpc(name, { id: 1 })
+      expect(data).toBeNull()
+      expect(error?.code).toBe('DEMO_READ_ONLY')
+      expect(error?.details).toContain(name)
+      expect(calls).not.toContain('rpc')
+    },
+  )
+
+  it('on the live site rpc() is untouched for every name', async () => {
+    const m = await loadWith({ VERCEL_ENV: 'production', NEXT_PUBLIC_DEMO_MODE: '' })
+    const { client, calls } = fakeClient()
+    await m.guardSupabaseClient(client).rpc('record_approval_event', {})
     expect(calls).toContain('rpc')
   })
 

@@ -6,3 +6,4 @@ to undo a step, `git revert <sha>` on revamp-trial and push.
 
 | Step | Commit | What changed | How to verify on the trial site |
 |---|---|---|---|
+| Step 1 — Trial site safe (audit P0) | see `git log` "Step 1" | `lib/demo-mode.ts` now allows only the 23 named read RPCs and blocks every other `rpc()` (F-001 — 31 browser-side writers were reaching the live DB). Service-role GETs outside `/api/cron/` refuse on the trial (F-003 Zoho callback, F-005 backup + in4-followup). Un-paged reads of growing tables paged (F-002 CT-wise certificates — Raj Uphaar's 1,987 rows; F-013 JMR). One demo expression (F-011). | Any Cost Control approval → Approve → the "trial site" message, and `cc_approvals` unchanged. Raj Uphaar → Budget → CT wise → Certified rises to `sum(certified_amt)` for project 8. |

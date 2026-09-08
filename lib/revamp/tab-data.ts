@@ -12,6 +12,7 @@ import { descendantIds } from './hierarchy'
 import { compareDisciplines } from '@/lib/cost-control/discipline-order'
 import type { LineRecord } from '@/lib/procurement'
 import { correctTrackerLines, loadTrackerFixes, type ItemReader, type Corrections } from './tracker-corrections'
+import { fetchAll } from './orders-tree'
 
 // ── Approvals ───────────────────────────────────────────────────────────────
 
@@ -388,13 +389,14 @@ export interface ProjectJmr {
 
 export async function loadProjectJmr(projectId: string): Promise<ProjectJmr> {
   const supabase = await createClient()
-  const { data } = await supabase
+  // Paged — 21 rows today, but this table grows and PostgREST's 1,000-row cap
+  // is silent (audit F-013).
+  const { rows } = await fetchAll<Record<string, unknown>>((f, t) => supabase
     .from('jmr_daily_entries')
     .select('id, entry_date, quantity, amount, status, work_description')
     .eq('project_id', projectId)
     .order('entry_date', { ascending: false })
-
-  const rows = (data ?? []) as Array<Record<string, unknown>>
+    .range(f, t))
   return {
     entries: rows.length,
     pending: rows.filter(r => r.status !== 'approved').length,

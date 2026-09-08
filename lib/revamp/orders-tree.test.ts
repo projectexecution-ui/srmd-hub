@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import {
-  buildOrdersTree, contractorNames, lineNoteFor, poNumbersOf, sqlLiteral, cleanBillNo, billsFromCertificates, poPaymentsFromRows, NO_SOURCES,
+  buildOrdersTree, contractorNames, lineNoteFor, poNumbersOf, sqlLiteral, cleanBillNo, billsFromCertificates, poPaymentsFromRows, fetchAll, NO_SOURCES,
   type SupplierPayRow,
   type CertRow,
   type AbstractRow, type WoRow, type IndentRow, type BoqRow, type Skill, type PartyReader,
@@ -677,5 +677,32 @@ describe('PO lines IN4’s tracker view repeats, and GRN rows of nothing', () =>
     ])
     const o = t.cats[0].subs[0].orders[0]
     expect(o.lines).toHaveLength(2); expect(o.ordered).toBe(300); expect(o.flag).toBeNull()
+  })
+})
+
+describe('fetchAll — PostgREST stops at 1,000 rows and says nothing', () => {
+  it('keeps asking until a page comes back short, so 1,500 rows are 1,500 rows', async () => {
+    // Raj Uphaar has 1,987 certificates; the un-paged read summed about half.
+    const all = Array.from({ length: 1500 }, (_, i) => ({ id: i + 1 }))
+    const asked: Array<[number, number]> = []
+    const { rows, error } = await fetchAll<{ id: number }>((f, t) => {
+      asked.push([f, t])
+      return Promise.resolve({ data: all.slice(f, t + 1), error: null })
+    })
+    expect(error).toBeNull()
+    expect(rows).toHaveLength(1500)
+    expect(rows[1499].id).toBe(1500)
+    expect(asked).toEqual([[0, 999], [1000, 1999]])
+  })
+  it('exactly 1,000 rows costs one extra empty page and loses nothing', async () => {
+    const all = Array.from({ length: 1000 }, (_, i) => ({ id: i }))
+    const { rows } = await fetchAll<{ id: number }>((f, t) => Promise.resolve({ data: all.slice(f, t + 1), error: null }))
+    expect(rows).toHaveLength(1000)
+  })
+  it('an error on any page is reported, with the rows read so far', async () => {
+    const { rows, error } = await fetchAll<{ id: number }>((f) =>
+      Promise.resolve(f === 0 ? { data: Array.from({ length: 1000 }, (_, i) => ({ id: i })), error: null } : { data: null, error: { message: 'boom' } }))
+    expect(error).toBe('boom')
+    expect(rows).toHaveLength(1000)
   })
 })

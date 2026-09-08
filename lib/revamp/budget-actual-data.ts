@@ -7,6 +7,7 @@
 // Returns its Supabase `error` rather than swallowing it. §10: show the
 // error, never a silent empty state.
 
+import { fetchAll } from './orders-tree'
 import { createClient } from '@/lib/supabase/server'
 
 export interface CtWiseRow {
@@ -65,19 +66,24 @@ export async function loadCtWise(projectId: string): Promise<CtWise> {
   const ids = (subs ?? []).map(s => s.id as number)
   if (ids.length === 0) return { rows: [], total: null, error: null, note }
 
+  // Paged. PostgREST stops at 1,000 rows and says nothing; Raj Uphaar has
+  // 1,987 certificates, so the un-paged read summed about half of them and
+  // the Certified figure on this screen was wrong (audit F-002).
   const [woRes, certRes] = await Promise.all([
-    supabase.from('in4_work_orders').select('subproject_id, wo_value').in('subproject_id', ids),
-    supabase.from('in4_wo_certificates').select('subproject_id, certified_amt').in('subproject_id', ids),
+    fetchAll<{ subproject_id: number; wo_value: number | null }>((f, t) =>
+      supabase.from('in4_work_orders').select('subproject_id, wo_value').in('subproject_id', ids).range(f, t)),
+    fetchAll<{ subproject_id: number; certified_amt: number | null }>((f, t) =>
+      supabase.from('in4_wo_certificates').select('subproject_id, certified_amt').in('subproject_id', ids).range(f, t)),
   ])
   const err = woRes.error ?? certRes.error
-  if (err) return { rows: [], total: null, error: err.message, note }
+  if (err) return { rows: [], total: null, error: err, note }
 
   const woBy = new Map<number, number>()
-  for (const w of (woRes.data ?? []) as Array<{ subproject_id: number; wo_value: number | null }>) {
+  for (const w of woRes.rows) {
     woBy.set(w.subproject_id, (woBy.get(w.subproject_id) ?? 0) + Number(w.wo_value ?? 0))
   }
   const certBy = new Map<number, number>()
-  for (const c of (certRes.data ?? []) as Array<{ subproject_id: number; certified_amt: number | null }>) {
+  for (const c of certRes.rows) {
     certBy.set(c.subproject_id, (certBy.get(c.subproject_id) ?? 0) + Number(c.certified_amt ?? 0))
   }
 

@@ -360,7 +360,7 @@ function byCode(a: string, b: string): number {
 
 /** PostgREST caps a plain select at 1,000 rows and reports no error. Raj
  *  Uphaar has 4,102 BOQ lines and 3,502 bill lines. Paged, always. */
-async function fetchAll<T>(
+export async function fetchAll<T>(
   run: (from: number, to: number) => PromiseLike<{ data: unknown; error: { message: string } | null }>,
 ): Promise<{ rows: T[]; error: string | null }> {
   const PAGE = 1000

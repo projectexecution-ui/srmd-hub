@@ -23,9 +23,15 @@
 // configure in the Vercel dashboard, and production can never be demo by
 // accident — it would need VERCEL_ENV to literally say 'preview'.
 
+/** The ONE expression that decides trial mode, evaluated when called. Use this
+ *  where the answer must follow the environment at call time (lib/revamp/tabs.ts
+ *  is exercised by tests that flip the env); use IS_DEMO everywhere else. */
+export function isDemoNow(): boolean {
+  return process.env.NEXT_PUBLIC_DEMO_MODE === '1' || process.env.VERCEL_ENV === 'preview'
+}
+
 /** True only on a Vercel preview deployment. Always false on the live site. */
-export const IS_DEMO =
-  process.env.NEXT_PUBLIC_DEMO_MODE === '1' || process.env.VERCEL_ENV === 'preview'
+export const IS_DEMO = isDemoNow()
 
 /** Shown wherever a write is refused. Plain words — a real person reads this. */
 export const DEMO_BLOCKED_MESSAGE =
@@ -53,17 +59,39 @@ export function demoBlockedResult(operation: string) {
 }
 
 /** The Supabase query-builder methods that change data. `select` is absent on
- *  purpose — reading is the entire point of the trial site.
- *
- *  `rpc` is NOT here. Blocking it wholesale broke the app instantly: the
- *  permission system itself runs on RPCs (my_permissions, effective_user_role,
- *  can_approve) and the dashboard calls them on every render, so a blanket
- *  block 500s every page. The writing RPCs (cc_tg_signoff, recycle_restore,
- *  act_on_delete_request…) are all reached through Server Actions or POST API
- *  routes, which proxy.ts already refuses — so they are covered by layer 1,
- *  and an RPC reached during a plain GET render is read-only by construction. */
+ *  purpose — reading is the entire point of the trial site. */
 const MUTATING_METHODS = new Set([
   'insert', 'update', 'upsert', 'delete',
+])
+
+/** The RPCs a page may call on the trial site: every one is a SELECT-only
+ *  function, checked against its definition in supabase/migrations on
+ *  8 Sept 2026 (docs/audit/02-FINDINGS.md F-001). Anything else resolves to
+ *  the blocked result.
+ *
+ *  This list exists because the earlier rule — "let rpc() through, the writing
+ *  RPCs are only reached through Server Actions and POST routes, which proxy.ts
+ *  refuses" — was wrong: 31 client components call writing RPCs straight from
+ *  the browser to supabase.co, which proxy.ts never sees (record_approval_event,
+ *  inv_rpc_backoffice_approve, bb_rpc_create_bill, act_on_delete_request,
+ *  delete_user_account, recycle_restore, the inv_rpc_* stock operations…). A
+ *  reviewer on the trial could approve a real budget. Blocking rpc() wholesale
+ *  is not an option either — the permission system runs on it and a blanket
+ *  block 500s every page — so the reads are named and the rest is refused.
+ *
+ *  Adding a read: confirm its body has no INSERT/UPDATE/DELETE/set_config,
+ *  then add it here. A read left off this list shows as a blocked-write error
+ *  on the trial, never as a wrong figure. */
+export const READ_RPCS: ReadonlySet<string> = new Set([
+  // permissions and shell — every render
+  'my_permissions', 'effective_user_role', 'can_approve', 'shell_for',
+  // inboxes and read-only state
+  'my_approval_inbox', 'cc_ie_lock_state', 'cc_erp_reduction_queue', 'cc_tg_stage_approvers',
+  'cc_transfer_inbox', 'cc_recent_transfers', 'cc_project_transfers', 'cc_can_i_raise_transfer',
+  'cc_transfer_line_options', 'cc_transfer_in4_queue', 'cc_budget_vs_actual_report',
+  'email_delivery_health', 'list_storage_objects', 'telegram_reports_group_info',
+  'inv_rpc_custody_prefill', 'inv_rpc_custody_projects', 'inv_low_stock_digest',
+  'blueprint_demo_sla_inbox', 'bb_stage_members',
 ])
 
 /** A stand-in for a query builder whose write was refused. It stays chainable
@@ -116,6 +144,21 @@ export function guardSupabaseClient<T extends object>(client: T): T {
       // supabase.storage.from('bucket').upload(...)
       if (prop === 'storage' && value && typeof value === 'object') {
         return guardStorage(value as object)
+      }
+
+      // supabase.rpc('name', args) — allowed only for the named reads. The
+      // browser client talks to supabase.co directly, so this is the ONLY
+      // layer between a client component's rpc() and the live database.
+      if (prop === 'rpc' && typeof value === 'function') {
+        return (name: unknown, ...rest: unknown[]) => {
+          if (typeof name === 'string' && READ_RPCS.has(name)) {
+            const result = (value as (...a: unknown[]) => unknown).apply(target, [name, ...rest])
+            return result && typeof result === 'object' && !(result instanceof Promise)
+              ? guardQueryBuilder(result as object)
+              : result
+          }
+          return blockedBuilder(`rpc:${String(name)}`)
+        }
       }
 
       return typeof value === 'function' ? value.bind(target) : value
