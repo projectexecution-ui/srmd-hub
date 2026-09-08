@@ -71,7 +71,14 @@ import { in4Query, in4Config } from '@/lib/in4/db'
 
 /** One bill (IN4 "abstract" / certificate) against one line item. */
 export interface LineBill {
+  /** The contractor's bill number as IN4 recorded it, cleaned of IN4's
+   *  "TAX INVOICE NO :" prefix and "/Dt-…" suffix. Null when IN4 holds none
+   *  (210 of 8,248 rows), in which case the abstract number is all there is. */
   billNo: string | null
+  /** IN4's own abstract reference ("Abs/SRASSK/NGH/2024-25/7") — the internal
+   *  certificate number, not the bill. Shown only when there is no bill number,
+   *  and labelled as an abstract so nobody reads it as one. */
+  abstractNo: string | null
   date: string | null
   qty: number
   amount: number
@@ -552,7 +559,8 @@ export function buildOrdersTree(
     const k = `${a.wo_id}:${a.item_id}`
     const arr = billsByLine.get(k) ?? []
     arr.push({
-      billNo: a.display_no?.trim() || a.bill_no?.trim() || null,
+      billNo: cleanBillNo(a.bill_no),
+      abstractNo: a.display_no?.trim() || null,
       date: a.abstract_dt,
       qty: Number(a.executed_quantity ?? 0),
       amount: Number(a.executed_amt ?? 0),
@@ -809,6 +817,20 @@ export function buildOrdersTree(
   }
 
   return { cats: out, totals, notes, in4: src.in4 }
+}
+
+/** The bill number as a person wrote it on the bill. IN4 stores it as free
+ *  text and 211 rows carry a "TAX INVOICE NO :" prefix, 1,438 a "/Dt-13-05-2026"
+ *  date suffix — "TAX INVOICE NO : PRO/015/26-27/Dt-13-05-2026" is the bill
+ *  PRO/015/26-27. Plain forms ("SR/26-27/32", "H-2331", "01/2024-25") pass
+ *  through untouched. Empty → null. */
+export function cleanBillNo(raw: string | null | undefined): string | null {
+  if (raw == null) return null
+  let s = raw.trim()
+  s = s.replace(/^\s*(tax\s+)?(invoice|bill)\s*(no\.?|number)?\s*[:\-–]?\s*/i, '')
+  s = s.replace(/\s*[\/,]?\s*Dt\.?\s*[-:]?\s*\d{1,2}[-\/.]\d{1,2}[-\/.]\d{2,4}\s*$/i, '')
+  s = s.replace(/[\/\s,;:-]+$/, '').trim()
+  return s || null
 }
 
 /** Why an order's line items do not add up to its value, in IN4's own terms.

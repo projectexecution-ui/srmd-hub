@@ -90,12 +90,10 @@ export async function OrdersView({ projectId }: { projectId: string }) {
           )}
 
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-            <Kpi label="Ordered (full)" value={formatINR(totals.gross)} sub={`before GST ${formatINR(totals.ordered)}`} />
-            <Kpi label="Billed (incl. GST)" value={live ? formatINR(totals.billed) : '—'} muted />
-            <Kpi label="Paid (bills + advances, TDS counted)" value={live ? formatINR(totals.paid) : '—'} muted
-                 sub={live ? `advance o/s ${formatINR(totals.advanceOutstanding)}` : undefined} />
-            <Kpi label="Balance (Ordered − Paid − Retention)" value={live ? formatINR(totals.balance) : '—'} tone="amber"
-                 sub={live ? `retention held ${formatINR(totals.retention)}` : undefined} />
+            <Kpi label="Ordered" value={formatINR(totals.gross)} />
+            <Kpi label="Billed" value={live ? formatINR(totals.billed) : '—'} muted />
+            <Kpi label="Paid" value={live ? formatINR(totals.paid) : '—'} muted />
+            <Kpi label="Balance" value={live ? formatINR(totals.balance) : '—'} tone="amber" />
           </div>
 
           <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
@@ -163,8 +161,6 @@ export async function OrdersView({ projectId }: { projectId: string }) {
                                           for purchase orders. */}
                                       {o.kind === 'wo' && <PrintWo id={o.id} ref_={o.ref} />}
                                       <span className="ml-2 text-[11px] text-gray-400">{o.lines.length} item{o.lines.length === 1 ? '' : 's'}</span>
-                                      {o.breakup && <span className="block mt-0.5 text-[10.5px] text-gray-400 tabular-nums">{o.breakup}</span>}
-                                      {o.lineNote && <LineNote text={o.lineNote} />}
                                     </td>
                                     <MoneyCells m={o} small />
                                   </tr>
@@ -234,9 +230,7 @@ export async function OrdersView({ projectId }: { projectId: string }) {
                                 </p>
                                 {o.party && <p className="ml-6 text-[11px] text-gray-500">{o.party}</p>}
                                 {o.kind === 'wo' && <p className="ml-6 mt-0.5"><PrintWo id={o.id} ref_={o.ref} /></p>}
-                                {o.breakup && <p className="ml-6 mt-0.5 text-[10.5px] text-gray-400 tabular-nums">{o.breakup}</p>}
                                 <div className="ml-6"><MoneyChips m={o} /></div>
-                                {o.lineNote && <p className="ml-6 mt-1"><LineNote text={o.lineNote} /></p>}
                                 <RowDetail id={o.id}>
                                   <div className="mt-2">
                                     <OrderItems order={o} />
@@ -289,12 +283,10 @@ export async function OrdersView({ projectId }: { projectId: string }) {
 function MoneyCells({ m, bold, small }: { m: Money; bold?: boolean; small?: boolean }) {
   const py = small ? 'py-1.5' : 'py-2'
   const strong = bold ? 'font-semibold text-gray-900' : 'text-gray-900'
-  const showBase = m.gross != null && Math.abs(m.gross - m.ordered) >= 1
   return (
     <>
       <td className={`px-3 ${py} text-right tabular-nums ${strong}`}>
         {m.gross == null ? formatINR(m.ordered) : formatINR(m.gross)}
-        {showBase && <span className="block text-[10px] font-normal text-gray-400">before GST {formatINR(m.ordered)}</span>}
       </td>
       <td className={`px-3 ${py} text-right tabular-nums text-gray-700`}>{money(m.billed)}</td>
       <td className={`px-3 ${py} text-right tabular-nums text-gray-700`}>{money(m.paid)}</td>
@@ -355,7 +347,7 @@ function OrderItems({ order: o }: { order: OrderRow }) {
           </span>
         </span>
         <span className="text-[12px] tabular-nums text-gray-700">
-          Before GST <b className="text-gray-900">{formatINR(o.ordered)}</b>
+          Ordered <b className="text-gray-900">{formatINR(o.ordered)}</b>
           {isWo && (
             <> · Certified <b className="text-gray-900">{o.certifiedAmt == null ? '—' : formatINR(o.certifiedAmt)}</b></>
           )}
@@ -497,7 +489,7 @@ function BillsTable({ line: l }: { line: OrderLine }) {
         {l.bills.map((b, i) => (
           <tr key={i} className="border-t border-emerald-100/70">
             <td className="px-2 py-1 text-gray-600">{b.date ?? '—'}</td>
-            <td className="px-2 py-1 text-gray-800 font-mono truncate" title={b.billNo ?? undefined}>{b.billNo ?? '—'}</td>
+            <td className="px-2 py-1 text-gray-800 font-mono truncate" title={b.billNo ?? (b.abstractNo ? `No bill number in IN4 — abstract ${b.abstractNo}` : undefined)}>{b.billNo ?? (b.abstractNo ? <span className="text-gray-500">abstract {b.abstractNo}</span> : '—')}</td>
             <td className="px-2 py-1 text-right text-gray-800">{qty(b.qty)}{l.uom ? <span className="text-gray-400"> {l.uom}</span> : null}</td>
             <td className="px-2 py-1 text-right text-emerald-800 font-semibold">{qty(b.cumQty)}</td>
             <td className="px-2 py-1 text-right text-gray-600">{l.qty ? pctOf(b.cumQty, l.qty) : '—'}</td>

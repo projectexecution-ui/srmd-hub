@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import {
-  buildOrdersTree, contractorNames, lineNoteFor, poNumbersOf, sqlLiteral, NO_SOURCES,
+  buildOrdersTree, contractorNames, lineNoteFor, poNumbersOf, sqlLiteral, cleanBillNo, NO_SOURCES,
   type AbstractRow, type WoRow, type IndentRow, type BoqRow, type Skill, type PartyReader,
   type Sources, type WoHeader, type PoHeader,
 } from './orders-tree'
@@ -488,5 +488,23 @@ describe('certified per line item — the item-wise breakup of what has been bil
     const t = build([], [indent(1, [{ poNo: 'PO/A/1', amount: 400, draft: false, qty: 4, rate: 100 }])])
     const l = t.cats[0].subs[0].orders[0].lines[0]
     expect(l.certifiedQty).toBeNull(); expect(l.bills).toEqual([])
+  })
+})
+
+describe('bill numbers — the bill as written, not IN4’s abstract reference', () => {
+  it('strips the "TAX INVOICE NO :" prefix and the "/Dt-…" date suffix IN4 users type in', () => {
+    expect(cleanBillNo('TAX INVOICE NO : PRO/015/26-27/Dt-13-05-2026')).toBe('PRO/015/26-27')
+    expect(cleanBillNo('Tax Invoice No. SR/26-27/32 Dt 01.08.2026')).toBe('SR/26-27/32')
+  })
+  it('leaves plain numbers alone', () => {
+    for (const s of ['01/2024-25', 'SR/26-27/32', 'SRB 14', 'H-2331', 'SNK/2023-24/010']) expect(cleanBillNo(s)).toBe(s)
+  })
+  it('empty is null, so the abstract number can stand in — labelled', () => {
+    expect(cleanBillNo('')).toBeNull(); expect(cleanBillNo('  ')).toBeNull(); expect(cleanBillNo(null)).toBeNull()
+    const abs: AbstractRow = { wo_id: 623, item_id: 6340, executed_quantity: 1, executed_amt: 1, bill_no: '', display_no: 'Abs/SRASSK/NGH/2024-25/7', abstract_dt: '2025-01-01' }
+    const t = buildOrdersTree([wo({ wo_id: 623 })], [], [boq({ item_id: 6340, wo_id: 623 })], SKILLS, PARTIES, [abs])
+    const b = t.cats[0].subs[0].orders[0].lines[0].bills[0]
+    expect(b.billNo).toBeNull()
+    expect(b.abstractNo).toBe('Abs/SRASSK/NGH/2024-25/7')
   })
 })
