@@ -508,3 +508,54 @@ describe('bill numbers — the bill as written, not IN4’s abstract reference',
     expect(b.abstractNo).toBe('Abs/SRASSK/NGH/2024-25/7')
   })
 })
+
+describe('purchase orders — received (GRN) per line, billed per PO', () => {
+  // Indent line 4925 as the mirror holds it: one PO of 2.5 Kgs, two GRNs
+  // (2 + 0.5) at the landed rate 112.104 against a PO rate of 95.
+  const line = indent(1, [{ poNo: 'PO/SRASSK/CVR/2026-27/58', amount: 237.5, draft: false, qty: 2.5, rate: 95, grnQty: 2.5 }], 'Tor Nails', 'Kgs')
+  line.grns = [
+    { grnNo: 'GRN/SRASSK/CVR/2026-27/1', grnDate: '2026-08-11', qty: 0.5, rate: 112.104, value: 56.052 },
+    { grnNo: 'GRN/SRASSK/CVR/2026-27/1', grnDate: '2026-07-29', qty: 2, rate: 112.104, value: 224.208 },
+  ]
+
+  it('a single-PO line lists its GRNs oldest first with a running quantity, and sums their landed value', () => {
+    const l = build([], [line]).cats[0].subs[0].orders[0].lines[0]
+    expect(l.certifiedQty).toBe(2.5)
+    expect(l.certifiedAmt).toBeCloseTo(280.26, 2)
+    expect(l.bills.map(b => b.date)).toEqual(['2026-07-29', '2026-08-11'])
+    expect(l.bills.map(b => b.cumQty)).toEqual([2, 2.5])
+    expect(l.bills[0].billNo).toBe('GRN/SRASSK/CVR/2026-27/1')
+  })
+
+  it('a line split across two POs keeps the received quantity per PO but cannot place the GRN rows', () => {
+    const split = indent(1, [
+      { poNo: 'PO/A/1', amount: 100, draft: false, qty: 10, rate: 10, grnQty: 6 },
+      { poNo: 'PO/A/2', amount: 50, draft: false, qty: 5, rate: 10, grnQty: 5 },
+    ])
+    split.grns = [{ grnNo: 'GRN/1', grnDate: '2026-01-01', qty: 11, rate: 11.8, value: 129.8 }]
+    const t = build([], [split])
+    const [a, b] = t.cats[0].subs[0].orders
+    expect(a.lines[0].certifiedQty).toBe(6)
+    expect(b.lines[0].certifiedQty).toBe(5)
+    expect(a.lines[0].bills).toEqual([]); expect(a.lines[0].certifiedAmt).toBeNull()
+    expect(t.notes.some(n => n.includes('split across two POs'))).toBe(true)
+  })
+
+  it('nothing received yet is null, not zero', () => {
+    const l = build([], [indent(1, [{ poNo: 'PO/A/1', amount: 100, draft: false, qty: 10, rate: 10 }])]).cats[0].subs[0].orders[0].lines[0]
+    expect(l.certifiedQty).toBeNull(); expect(l.bills).toEqual([])
+  })
+
+  it("a PO's Billed is the landed cost of the supplier's bills, from the certificates keyed by IN4's PO id", () => {
+    const po: PoHeader = { poId: 58, value: 280.25, material: 237.5, tax: 42.75, freight: 0, handling: 0, other: 0, paid: 250 }
+    const t = build([], [line], [], live({
+      poHeaders: new Map([['PO/SRASSK/CVR/2026-27/58', po]]),
+      poCerts: new Map([[58, { billed: 280.26, tds: 5, retention: 0, advancePaid: 0, advanceRecovered: 0 }]]),
+    }))
+    const o = t.cats[0].subs[0].orders[0]
+    expect(o.billed).toBeCloseTo(280.26, 2)
+    expect(o.paid).toBe(255)                 // header paid 250 + TDS 5
+    expect(o.certifiedAmt).toBeCloseTo(280.26, 2)
+    expect(o.balance).toBeCloseTo(280.25 - 255, 2)
+  })
+})

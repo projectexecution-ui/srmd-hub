@@ -215,8 +215,18 @@ export interface IndentRow {
   material_name: string | null
   uom: string | null
   pos: unknown
+  /** The GRNs (goods received) against this indent line, as the tracker feed
+   *  stores them. A GRN is tied to a PO in IN4, but this list is per LINE, so
+   *  it can only be shown under a PO when the line has exactly one. */
+  grns?: unknown
 }
-export interface PoEntry { poNo?: string; amount?: number; draft?: boolean; qty?: number; rate?: number; supplier?: string }
+export interface PoEntry {
+  poNo?: string; amount?: number; draft?: boolean; qty?: number; rate?: number; supplier?: string
+  /** Quantity received against THIS PO on this line — attributed by the feed
+   *  through IN4's PO_DETAIL_ID, so it is right even when the line has two POs. */
+  grnQty?: number
+}
+export interface GrnEntry { grnNo?: string; grnDate?: string; qty?: number; rate?: number; value?: number }
 
 export interface Skill { id: number; name: string | null; code: string | null }
 
@@ -244,8 +254,10 @@ export interface PoHeader {
   /** PAID_AMT — payments to the supplier, after TDS. */
   paid: number
 }
-/** Sums from in4_supplier_certificates for one purchase order. */
-export interface PoCertAgg { tds: number; retention: number; advancePaid: number; advanceRecovered: number }
+/** Sums from in4_supplier_certificates for one purchase order. `billed` is
+ *  the landed cost of the supplier's bills — material with GST — the PO-side
+ *  twin of a work order's certified gross. */
+export interface PoCertAgg { billed: number; tds: number; retention: number; advancePaid: number; advanceRecovered: number }
 
 /** Everything the pure builder needs beyond the mirror rows. Empty maps mean
  *  "IN4 not reached": header-derived columns come out null. */
@@ -422,7 +434,7 @@ export async function loadOrdersTree(projectId: string): Promise<OrdersTree> {
       .select('wo_id, category_id, subcategory_id, wo_value, wo_gross_value, wo_paid_amt, display_no, contractor_id')
       .in('subproject_id', subIds).range(f, t)),
     fetchAll<IndentRow>((f, t) => supabase.from('in4_indent_items')
-      .select('indent_item_id, skill_id, material_name, uom, pos')
+      .select('indent_item_id, skill_id, material_name, uom, pos, grns')
       .in('subproject_id', subIds).range(f, t)),
   ])
   if (woRes.error) return { ...EMPTY, linked: true, error: woRes.error }
@@ -485,15 +497,15 @@ export async function loadOrdersTree(projectId: string): Promise<OrdersTree> {
   const poCerts = new Map<number, PoCertAgg>()
   const poIds = [...headers.poHeaders.values()].map(h => h.poId)
   if (poIds.length) {
-    const { rows, error } = await fetchAll<{ po_id: number; kind: string; paid: number | null; tax_deduction: number | null; retention: number | null; adv_recovery: number | null }>(
-      (f, t) => supabase.from('in4_supplier_certificates').select('po_id, kind, paid, tax_deduction, retention, adv_recovery').in('po_id', poIds).range(f, t))
+    const { rows, error } = await fetchAll<{ po_id: number; kind: string; landed_cost: number | null; paid: number | null; tax_deduction: number | null; retention: number | null; adv_recovery: number | null }>(
+      (f, t) => supabase.from('in4_supplier_certificates').select('po_id, kind, landed_cost, paid, tax_deduction, retention, adv_recovery').in('po_id', poIds).range(f, t))
     if (error) return { ...EMPTY, linked: true, error }
     for (const r of rows) {
-      const agg = poCerts.get(r.po_id) ?? { tds: 0, retention: 0, advancePaid: 0, advanceRecovered: 0 }
+      const agg = poCerts.get(r.po_id) ?? { billed: 0, tds: 0, retention: 0, advancePaid: 0, advanceRecovered: 0 }
       agg.tds += Number(r.tax_deduction ?? 0)
       agg.retention += Number(r.retention ?? 0)
       if (r.kind === 'advance') agg.advancePaid += Number(r.paid ?? 0) + Number(r.tax_deduction ?? 0)
-      else agg.advanceRecovered += Number(r.adv_recovery ?? 0)
+      else { agg.billed += Number(r.landed_cost ?? 0); agg.advanceRecovered += Number(r.adv_recovery ?? 0) }
       poCerts.set(r.po_id, agg)
     }
   }
@@ -678,11 +690,19 @@ export function buildOrdersTree(
   let draftLines = 0
   let draftAmount = 0
   let poWithoutHeader = 0
+  let multiPoLines = 0
 
   for (const i of indents) {
     const arr = Array.isArray(i.pos) ? (i.pos as PoEntry[]) : []
     if (arr.length === 0) continue
     const { key: ck } = catFor(i.skill_id)
+    // The GRNs on this line belong to ONE of its POs; the feed only tells us
+    // which through grnQty per PO. When the line has a single live PO the
+    // GRN list is that PO's; with two, only the quantity can be placed.
+    const livePos = arr.filter(p => !p?.draft)
+    const grnList: GrnEntry[] = Array.isArray(i.grns) ? (i.grns as GrnEntry[]) : []
+    const singlePo = livePos.length === 1
+    if (livePos.length > 1 && grnList.length > 0) multiPoLines++
     for (const po of arr) {
       const amount = Number(po?.amount ?? 0)
       if (po?.draft) { draftLines++; draftAmount += amount; continue }
@@ -701,6 +721,17 @@ export function buildOrdersTree(
       }
       order.ordered += amount
       order.lineTotal += amount
+      // Received against this PO line. grnQty is attributed per PO by the
+      // feed; the GRN rows (number, date, qty, landed value) can be listed
+      // only when this is the line's one PO. Absent grnQty = nothing received
+      // yet = null, not zero.
+      const receivedQty = po?.grnQty != null && po.grnQty > 0 ? Number(po.grnQty) : null
+      const grns: LineBill[] = singlePo
+        ? grnList.map(g => ({ billNo: g.grnNo?.trim() || null, abstractNo: null, date: g.grnDate ?? null, qty: Number(g.qty ?? 0), amount: Number(g.value ?? 0), cumQty: 0 }))
+        : []
+      grns.sort((x, y) => (x.date ?? '').localeCompare(y.date ?? ''))
+      let run = 0
+      for (const g of grns) { run += g.qty; g.cumQty = run }
       order.lines.push({
         id: `poline:${order.id}:${order.lines.length}`,
         name: i.material_name?.trim() || 'Material',
@@ -709,8 +740,11 @@ export function buildOrdersTree(
         qty: po?.qty != null ? Number(po.qty) : null,
         rate: po?.rate != null ? Number(po.rate) : null,
         amount,
-        // IN4's PO feed carries no GRN or bill per line, so nothing here.
-        certifiedQty: null, certifiedAmt: null, bills: [],
+        certifiedQty: receivedQty,
+        // Landed value of the receipts (GST included), when they can be tied
+        // to this PO. Quantity alone otherwise.
+        certifiedAmt: grns.length ? grns.reduce((s, g) => s + g.amount, 0) : null,
+        bills: grns,
       })
     }
   }
@@ -719,12 +753,15 @@ export function buildOrdersTree(
     if (!cat) continue
     const orders = [...byNo.values()].sort((a, b) => a.ref.localeCompare(b.ref, undefined, { numeric: true }))
     for (const o of orders) {
+      const received = o.lines.filter(l => l.certifiedAmt != null)
+      o.certifiedAmt = received.length ? received.reduce((s, l) => s + (l.certifiedAmt ?? 0), 0) : null
       const h = src.poHeaders.get(o.ref)
       if (!h) { poWithoutHeader++; continue }
       const c = src.poCerts.get(h.poId)
       const paid = h.paid + (c?.tds ?? 0)
       const retention = c?.retention ?? 0
       o.gross = h.value
+      o.billed = c ? c.billed : null
       o.paid = paid
       o.retention = retention
       o.advanceOutstanding = c ? c.advancePaid - c.advanceRecovered : 0
@@ -789,6 +826,13 @@ export function buildOrdersTree(
     if (poWithoutHeader > 0) parts.push(`${poWithoutHeader} purchase order${poWithoutHeader === 1 ? '' : 's'}`)
     notes.push(`IN4 returned no order record for ${parts.join(' and ')} in the mirror; their header columns are blank.`)
   }
+  notes.push(
+    'Under each purchase order the line items show what has been RECEIVED so far — the GRN quantity against that PO, and the GRNs '
+    + 'themselves with their landed value (GST included). Billed on a PO row is the landed cost of the supplier’s bills.'
+    + (multiPoLines > 0
+      ? ` On ${multiPoLines} line${multiPoLines === 1 ? '' : 's'} the indent was split across two POs; IN4 ties each GRN to a PO but the mirror keeps the list per line, so those show received quantity only.`
+      : ''),
+  )
   notes.push(
     'Under each work order the line items show what has been CERTIFIED so far — quantity and amount over its bills, joined line to line — '
     + 'and each line opens to its bills with a running quantity against the ordered quantity. IN4 records payment per bill, not per item, so '

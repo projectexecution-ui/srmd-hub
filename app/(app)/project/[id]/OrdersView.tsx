@@ -348,9 +348,7 @@ function OrderItems({ order: o }: { order: OrderRow }) {
         </span>
         <span className="text-[12px] tabular-nums text-gray-700">
           Ordered <b className="text-gray-900">{formatINR(o.ordered)}</b>
-          {isWo && (
-            <> · Certified <b className="text-gray-900">{o.certifiedAmt == null ? '—' : formatINR(o.certifiedAmt)}</b></>
-          )}
+          {' · '}{isWo ? 'Certified' : 'Received'} <b className="text-gray-900">{o.certifiedAmt == null ? '—' : formatINR(o.certifiedAmt)}</b>
         </span>
       </div>
 
@@ -364,9 +362,9 @@ function OrderItems({ order: o }: { order: OrderRow }) {
             <th className="border-b border-gray-100 px-2 py-1.5 text-right w-[9%]">Qty</th>
             <th className="border-b border-gray-100 px-2 py-1.5 text-right w-[11%]">Rate</th>
             <th className="border-b border-gray-100 px-2 py-1.5 text-right w-[12%]">Amount</th>
-            <th className="border-b border-gray-100 px-2 py-1.5 text-right w-[9%] text-emerald-700">Certified qty</th>
-            <th className="border-b border-gray-100 px-2 py-1.5 text-right w-[12%] text-emerald-700">Certified amt</th>
-            <th className="border-b border-gray-100 px-2 py-1.5 text-right w-[7%]">Bills</th>
+            <th className="border-b border-gray-100 px-2 py-1.5 text-right w-[9%] text-emerald-700">{isWo ? 'Certified qty' : 'Received qty'}</th>
+            <th className="border-b border-gray-100 px-2 py-1.5 text-right w-[12%] text-emerald-700">{isWo ? 'Certified amt' : 'Received value'}</th>
+            <th className="border-b border-gray-100 px-2 py-1.5 text-right w-[7%]">{isWo ? 'Bills' : 'GRNs'}</th>
           </tr>
         </thead>
         <tbody>
@@ -403,7 +401,7 @@ function OrderItems({ order: o }: { order: OrderRow }) {
                   <tr className="bg-emerald-50/40">
                     <td />
                     <td colSpan={8} className="px-2 py-2">
-                      <BillsTable line={l} />
+                      <BillsTable line={l} kind={o.kind} />
                     </td>
                   </tr>
                 </RowDetail>
@@ -444,9 +442,9 @@ function OrderItems({ order: o }: { order: OrderRow }) {
               {l.rate != null && <span>× {formatINR(l.rate)}</span>}
               <span className="font-semibold text-gray-800">{formatINR(l.amount)}</span>
             </div>
-            {isWo && (
+            {(
               <div className="mt-0.5 flex flex-wrap items-center gap-x-3 text-[11px] text-emerald-800 tabular-nums">
-                <span>Certified {l.certifiedQty == null ? '—' : qty(l.certifiedQty)}{l.uom && l.certifiedQty != null ? ` ${l.uom}` : ''}</span>
+                <span>{isWo ? 'Certified' : 'Received'} {l.certifiedQty == null ? '—' : qty(l.certifiedQty)}{l.uom && l.certifiedQty != null ? ` ${l.uom}` : ''}</span>
                 <span className="font-semibold">{l.certifiedAmt == null ? '—' : formatINR(l.certifiedAmt)}</span>
                 {l.bills.length > 0 && <RowDetailToggle id={`${o.id}:${l.id}`} count={l.bills.length} />}
               </div>
@@ -454,7 +452,7 @@ function OrderItems({ order: o }: { order: OrderRow }) {
             {l.bills.length > 0 && (
               <RowDetail id={`${o.id}:${l.id}`}>
                 <div className="mt-1.5 rounded border border-emerald-100 bg-emerald-50/40 p-2 overflow-x-auto">
-                  <BillsTable line={l} />
+                  <BillsTable line={l} kind={o.kind} />
                 </div>
               </RowDetail>
             )}
@@ -462,7 +460,7 @@ function OrderItems({ order: o }: { order: OrderRow }) {
         ))}
         <li className="px-3 py-2 bg-gray-100/70 flex items-center justify-between text-[12px] font-bold tabular-nums">
           <span className="text-gray-900">Lines total {formatINR(o.lineTotal)}</span>
-          {isWo && o.certifiedAmt != null && <span className="text-emerald-800">Certified {formatINR(o.certifiedAmt)}</span>}
+          {o.certifiedAmt != null && <span className="text-emerald-800">{isWo ? 'Certified' : 'Received'} {formatINR(o.certifiedAmt)}</span>}
         </li>
         {o.lineNote && <li className="px-3 py-1.5 text-[10.5px] text-amber-800 bg-gray-100/70">{o.lineNote}</li>}
       </ul>
@@ -470,16 +468,17 @@ function OrderItems({ order: o }: { order: OrderRow }) {
   )
 }
 
-/** The bills on one line item: when, which bill, how much on that bill, how
- *  much in total so far against the ordered quantity, and the amount. */
-function BillsTable({ line: l }: { line: OrderLine }) {
+/** The bills (or, on a purchase order, the GRNs) on one line item: when,
+ *  which one, how much on it, how much in total so far against the ordered
+ *  quantity, and the amount. */
+function BillsTable({ line: l, kind }: { line: OrderLine; kind: 'wo' | 'po' }) {
   return (
     <table className="w-full text-[11.5px] tabular-nums">
       <thead className="text-left text-[10px] uppercase tracking-wide text-gray-400">
         <tr>
           <th className="px-2 py-1 w-[14%]">Date</th>
-          <th className="px-2 py-1 w-[26%]">Bill</th>
-          <th className="px-2 py-1 text-right w-[15%]">This bill</th>
+          <th className="px-2 py-1 w-[26%]">{kind === 'wo' ? 'Bill' : 'GRN'}</th>
+          <th className="px-2 py-1 text-right w-[15%]">{kind === 'wo' ? 'This bill' : 'This GRN'}</th>
           <th className="px-2 py-1 text-right w-[15%]">Cumulative</th>
           <th className="px-2 py-1 text-right w-[12%]">Of ordered</th>
           <th className="px-2 py-1 text-right w-[18%]">Amount</th>
