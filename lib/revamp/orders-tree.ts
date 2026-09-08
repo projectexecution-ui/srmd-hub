@@ -230,10 +230,15 @@ export interface GrnEntry { grnNo?: string; grnDate?: string; qty?: number; rate
 
 export interface Skill { id: number; name: string | null; code: string | null }
 
-/** IN4's own header figures for one work order (BI.FACT_ENGG_WORK_ORDER). */
+/** IN4's own header figures for one work order (BI.FACT_ENGG_WORK_ORDER).
+ *  Deliberately NOT its TOT_CERTIFIED_AMT: that field counts cancelled bills
+ *  (WO/SRASSK/NGH/2024-25/270 carries 1,09,17,089 of cancelled certificates
+ *  inside it and so showed Billed above Ordered). Billed is summed from the
+ *  bill certificates themselves, skipping rejected and cancelled — the same
+ *  rule lib/in4/compute.ts applies for the budget report. The header's
+ *  retention and advance figures already exclude cancelled bills. */
 export interface WoHeader {
   gross: number
-  billed: number
   /** WO_PAID_AMT — payments against bills, after TDS and retention. */
   billsPaid: number
   /** WO_ADVANCE_PAID_AMT — advances as billed, i.e. including their TDS. */
@@ -263,7 +268,10 @@ export interface PoCertAgg { billed: number; tds: number; retention: number; adv
  *  "IN4 not reached": header-derived columns come out null. */
 export interface Sources {
   woHeaders: Map<number, WoHeader>
-  /** TDS deducted on a work order's BILLS (kind = 'wo'), from the mirror. */
+  /** Gross (with GST) of a work order's live bills — kind 'wo', not rejected
+   *  or cancelled — from the mirror's certificates. */
+  woBilled: Map<number, number>
+  /** TDS deducted on those same bills. */
   woBillTds: Map<number, number>
   poHeaders: Map<string, PoHeader>
   poCerts: Map<number, PoCertAgg>
@@ -271,8 +279,12 @@ export interface Sources {
   in4Error?: string
 }
 export const NO_SOURCES: Sources = {
-  woHeaders: new Map(), woBillTds: new Map(), poHeaders: new Map(), poCerts: new Map(), in4: 'unavailable',
+  woHeaders: new Map(), woBilled: new Map(), woBillTds: new Map(), poHeaders: new Map(), poCerts: new Map(), in4: 'unavailable',
 }
+
+/** Certificate statuses the figures leave out — IN4's 3 = Rejected, 6 =
+ *  Cancelled. Same set as lib/in4/compute.ts CERT_EXCLUDED. */
+export const CERT_EXCLUDED = new Set([3, 6])
 
 /** Where a row sits within its category, before its code is considered:
  *  the work-order sub-categories in IN4 order, then the purchase-order row,
@@ -379,11 +391,11 @@ async function readIn4Headers(woIds: number[], poNos: string[]): Promise<Pick<So
       const chunk = woIds.slice(i, i + 500).filter(Number.isInteger)
       if (!chunk.length) continue
       const rows = await in4Query<Record<string, unknown>>(`
-        SELECT WO_ID, WO_GROSS_VALUE, TOT_CERTIFIED_AMT, WO_PAID_AMT, WO_ADVANCE_PAID_AMT, WO_ADVANCE_RECOVERED_AMT, WO_RETENTION_AMT
+        SELECT WO_ID, WO_GROSS_VALUE, WO_PAID_AMT, WO_ADVANCE_PAID_AMT, WO_ADVANCE_RECOVERED_AMT, WO_RETENTION_AMT
         FROM BI.FACT_ENGG_WORK_ORDER WHERE WO_ID IN (${chunk.join(',')})`)
       for (const r of rows) {
         woHeaders.set(n(r.WO_ID), {
-          gross: n(r.WO_GROSS_VALUE), billed: n(r.TOT_CERTIFIED_AMT), billsPaid: n(r.WO_PAID_AMT),
+          gross: n(r.WO_GROSS_VALUE), billsPaid: n(r.WO_PAID_AMT),
           advancePaid: n(r.WO_ADVANCE_PAID_AMT), advanceRecovered: n(r.WO_ADVANCE_RECOVERED_AMT), retention: n(r.WO_RETENTION_AMT),
         })
       }
@@ -472,12 +484,13 @@ export async function loadOrdersTree(projectId: string): Promise<OrdersTree> {
           .select('wo_id, item_id, executed_quantity, executed_amt, bill_no, display_no, abstract_dt')
           .in('wo_id', woIds).range(f, t))
       : Promise.resolve({ rows: [] as AbstractRow[], error: null }),
-    // The TDS deducted on each work order's bills. Only the 'wo' kind: the
-    // TDS on advances is already inside WO_ADVANCE_PAID_AMT.
+    // Each work order's bills: gross (with GST) for Billed, and the TDS on
+    // them. Only the 'wo' kind — the TDS on advances is already inside
+    // WO_ADVANCE_PAID_AMT — and only live bills (status filtered below).
     woIds.length
-      ? fetchAll<{ wo_id: number; kind: string; deductions: number | null }>((f, t) => supabase.from('in4_wo_certificates')
-          .select('wo_id, kind, deductions').in('wo_id', woIds).range(f, t))
-      : Promise.resolve({ rows: [] as Array<{ wo_id: number; kind: string; deductions: number | null }>, error: null }),
+      ? fetchAll<CertRow>((f, t) => supabase.from('in4_wo_certificates')
+          .select('wo_id, kind, status, gross_bill_amt, deductions').in('wo_id', woIds).range(f, t))
+      : Promise.resolve({ rows: [] as CertRow[], error: null }),
     readIn4Headers(woIds, poNos),
   ])
   if (boqRes.error) return { ...EMPTY, linked: true, error: boqRes.error }
@@ -486,11 +499,7 @@ export async function loadOrdersTree(projectId: string): Promise<OrdersTree> {
   if (skillRes.error) return { ...EMPTY, linked: true, error: skillRes.error }
   if (partyRes.error) return { ...EMPTY, linked: true, error: partyRes.error }
 
-  const woBillTds = new Map<number, number>()
-  for (const c of certRes.rows) {
-    if (c.kind !== 'wo') continue
-    woBillTds.set(c.wo_id, (woBillTds.get(c.wo_id) ?? 0) + Number(c.deductions ?? 0))
-  }
+  const { woBilled, woBillTds } = billsFromCertificates(certRes.rows)
 
   // Supplier certificates for the POs IN4 just identified — TDS, retention
   // and advances on the material side. Needs the PO ids, so it follows.
@@ -514,9 +523,26 @@ export async function loadOrdersTree(projectId: string): Promise<OrdersTree> {
   const parties = new Map<number, string>(
     partyRes.rows.filter(p => p.name).map(p => [p.id, p.name as string]),
   )
-  const sources: Sources = { ...headers, woBillTds, poCerts }
+  const sources: Sources = { ...headers, woBilled, woBillTds, poCerts }
 
   return { ...buildOrdersTree(wos, indents, boqRes.rows, skills, parties, absRes.rows, sources), linked: true, error: null }
+}
+
+/** One row of in4_wo_certificates as the loader reads it. */
+export interface CertRow { wo_id: number; kind: string; status: number | null; gross_bill_amt: number | null; deductions: number | null }
+
+/** Billed and TDS per work order from its bill certificates: kind 'wo' only,
+ *  rejected and cancelled left out. Pure, so the cancelled-bill case is
+ *  tested rather than rediscovered on the page. */
+export function billsFromCertificates(rows: readonly CertRow[]): { woBilled: Map<number, number>; woBillTds: Map<number, number> } {
+  const woBilled = new Map<number, number>()
+  const woBillTds = new Map<number, number>()
+  for (const c of rows) {
+    if (c.kind !== 'wo' || (c.status != null && CERT_EXCLUDED.has(c.status))) continue
+    woBilled.set(c.wo_id, (woBilled.get(c.wo_id) ?? 0) + Number(c.gross_bill_amt ?? 0))
+    woBillTds.set(c.wo_id, (woBillTds.get(c.wo_id) ?? 0) + Number(c.deductions ?? 0))
+  }
+  return { woBilled, woBillTds }
 }
 
 /** Sum a money column over rows, null when NO row carries it — a dash, never
@@ -658,7 +684,9 @@ export function buildOrdersTree(
       const tds = src.woBillTds.get(w.wo_id) ?? 0
       const paid = h.billsPaid + tds + h.advancePaid
       money = {
-        billed: h.billed,
+        // No live bill against the order = nothing billed, which is a fact
+        // (unlike a missing header, which is a gap).
+        billed: src.woBilled.get(w.wo_id) ?? 0,
         paid,
         advanceOutstanding: h.advancePaid - h.advanceRecovered,
         retention: h.retention,

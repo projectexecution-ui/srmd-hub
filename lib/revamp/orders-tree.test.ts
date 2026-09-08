@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
-  buildOrdersTree, contractorNames, lineNoteFor, poNumbersOf, sqlLiteral, cleanBillNo, NO_SOURCES,
+  buildOrdersTree, contractorNames, lineNoteFor, poNumbersOf, sqlLiteral, cleanBillNo, billsFromCertificates, NO_SOURCES,
+  type CertRow,
   type AbstractRow, type WoRow, type IndentRow, type BoqRow, type Skill, type PartyReader,
   type Sources, type WoHeader, type PoHeader,
 } from './orders-tree'
@@ -37,7 +38,7 @@ const build = (wos: WoRow[], indents: IndentRow[] = [], boqs: BoqRow[] = [], src
 
 /** IN4 header figures as the live read would return them. */
 const header = (o: Partial<WoHeader> & { gross: number }): WoHeader =>
-  ({ billed: 0, billsPaid: 0, advancePaid: 0, advanceRecovered: 0, retention: 0, ...o })
+  ({ billsPaid: 0, advancePaid: 0, advanceRecovered: 0, retention: 0, ...o })
 const live = (o: Partial<Sources>): Sources => ({ ...NO_SOURCES, in4: 'live', ...o })
 
 describe('sequence — IN4 code order, the same spine as the Internal Estimate', () => {
@@ -304,10 +305,10 @@ describe('money — full order, Paid as money out with TDS, Retention apart, Bal
   // advance (recovered 1,03,18,792), one bill paid 38,42,296 after TDS 66,246.
   const SRAH41 = wo({ wo_id: 841, wo_value: 23770412.15, wo_gross_value: 28049086.34, wo_paid_amt: 3842296 })
   const SRAH41_HEADER = header({
-    gross: 28049086.34, billed: 15182777.88, billsPaid: 3842296,
+    gross: 28049086.34, billsPaid: 3842296,
     advancePaid: 18699999.58, advanceRecovered: 10318792, retention: 955444,
   })
-  const srah = live({ woHeaders: new Map([[841, SRAH41_HEADER]]), woBillTds: new Map([[841, 66246]]) })
+  const srah = live({ woHeaders: new Map([[841, SRAH41_HEADER]]), woBilled: new Map([[841, 15182777.88]]), woBillTds: new Map([[841, 66246]]) })
 
   it('Paid = bills paid + TDS on bills + advances paid (which already carry their TDS)', () => {
     const o = build([SRAH41], [], [], srah).cats[0].subs[0].orders[0]
@@ -332,7 +333,7 @@ describe('money — full order, Paid as money out with TDS, Retention apart, Bal
 
   it('WO 233: paid up, retention held, balance nil — not the −39,658 the first cut showed', () => {
     const WO233 = wo({ wo_id: 1427, wo_value: 305067.95, wo_gross_value: 359980.19, wo_paid_amt: 344726 })
-    const src = live({ woHeaders: new Map([[1427, header({ gross: 359980.19, billed: 359980.17, billsPaid: 344726, retention: 15254 })]]) })
+    const src = live({ woHeaders: new Map([[1427, header({ gross: 359980.19, billsPaid: 344726, retention: 15254 })]]), woBilled: new Map([[1427, 359980.17]]) })
     const t = build([WO233], [], [], src)
     const o = t.cats[0].subs[0].orders[0]
     expect(o.paid).toBe(344726)
@@ -557,5 +558,33 @@ describe('purchase orders — received (GRN) per line, billed per PO', () => {
     expect(o.paid).toBe(255)                 // header paid 250 + TDS 5
     expect(o.certifiedAmt).toBeCloseTo(280.26, 2)
     expect(o.balance).toBeCloseTo(280.25 - 255, 2)
+  })
+})
+
+describe('Billed — from the bills themselves, cancelled and rejected left out', () => {
+  // WO/SRASSK/NGH/2024-25/270 (wo_id 623) as the mirror holds it: two CANCELLED
+  // bills of 1,09,17,089 that IN4's own TOT_CERTIFIED_AMT still counts, which
+  // put Billed (8,07,13,413) above the 7,33,11,553 order on screen.
+  const rows: CertRow[] = [
+    { wo_id: 623, kind: 'advance', status: 15, gross_bill_amt: 5900000, deductions: 0 },
+    { wo_id: 623, kind: 'wo', status: 6,  gross_bill_amt: 10917089, deductions: 0 },
+    { wo_id: 623, kind: 'wo', status: 15, gross_bill_amt: 35500268, deductions: 7 },
+    { wo_id: 623, kind: 'wo', status: 75, gross_bill_amt: 34296057, deductions: 0 },
+    { wo_id: 624, kind: 'wo', status: 3,  gross_bill_amt: 999, deductions: 99 },
+  ]
+  it('sums live work-order bills only: not advances, not cancelled (6), not rejected (3)', () => {
+    const { woBilled, woBillTds } = billsFromCertificates(rows)
+    expect(woBilled.get(623)).toBe(69796325)      // = 5,91,49,428 certified × 1.18, below the 7.33 cr order
+    expect(woBillTds.get(623)).toBe(7)
+    expect(woBilled.has(624)).toBe(false)          // its only bill was rejected
+  })
+  it('reaches the order row, and an order with a header but no live bill shows 0 billed', () => {
+    const { woBilled, woBillTds } = billsFromCertificates(rows)
+    const src = live({ woHeaders: new Map([[623, header({ gross: 73311552.92, billsPaid: 55812172.64, advancePaid: 5900000, advanceRecovered: 5628912.8, retention: 2814457 })], [9, header({ gross: 100 })]]), woBilled, woBillTds })
+    const t = build([wo({ wo_id: 623, wo_value: 62128434.68, wo_gross_value: 73311552.92 }), wo({ wo_id: 9, wo_value: 100, wo_gross_value: 100 })], [], [], src)
+    const [a, b] = t.cats[0].subs[0].orders.sort((x, y) => x.id.localeCompare(y.id))
+    expect(a.billed).toBe(69796325)
+    expect(a.billed!).toBeLessThan(a.gross!)
+    expect(b.billed).toBe(0)
   })
 })
