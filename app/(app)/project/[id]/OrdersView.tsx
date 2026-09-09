@@ -29,13 +29,7 @@ import { checkIsCcReviewer } from '@/components/cost-control/ws-actions'
 import { PendingStrip, PendingOrderRow, PendingOrderCard } from './OrderApprovals'
 import { loadOrderApprovals } from '@/lib/revamp/order-approvals'
 import { placePending, filterByKind } from '@/lib/revamp/orders-pending'
-import { lineKey } from '@/lib/revamp/line-rates'
-import { LineRate } from './LineRates'
-
-/** The BOQ item id behind a WO tree line (its id is `boq:<item_id>`); null for
- *  a PO line, which the rate lookup matches by name + unit instead. */
-const woItemId = (lineId: string): number | null =>
-  lineId.startsWith('boq:') ? Number(lineId.slice(4)) || null : null
+import { RateCheck } from './LineRates'
 
 /** Quantities are not money: they carry decimals and their own unit. */
 const qty = (v: number | null) =>
@@ -407,6 +401,11 @@ function OrderItems({ order: o }: { order: OrderRow }) {
         </span>
       </div>
 
+      {/* One click checks every line against the last time it was bought. */}
+      <div className="px-3 pt-2">
+        <RateCheck kind={o.kind} in4Id={o.in4Id} orderRef={o.ref} />
+      </div>
+
       {/* Desktop: the Internal Estimate's columns, then the certified ones. */}
       <table className="w-full table-fixed text-[12px] hidden md:table">
         <thead className="text-left text-[12px] uppercase tracking-wide text-gray-400">
@@ -432,10 +431,6 @@ function OrderItems({ order: o }: { order: OrderRow }) {
                   {l.description && l.description !== l.name && (
                     <p className="text-[12px] text-gray-400 leading-snug line-clamp-2">{l.description}</p>
                   )}
-                  <LineRate
-                    kind={o.kind} in4Id={o.in4Id} orderRef={o.ref}
-                    matchKey={lineKey(l.name, l.uom)} itemId={woItemId(l.id)}
-                  />
                 </td>
                 <td className="px-2 py-1.5 text-gray-600 align-top">{l.uom ?? ''}</td>
                 <td className="px-2 py-1.5 text-right tabular-nums align-top">{qty(l.qty)}</td>
@@ -508,10 +503,6 @@ function OrderItems({ order: o }: { order: OrderRow }) {
                 {l.bills.length > 0 && <RowDetailToggle id={`${o.id}:${l.id}`} count={l.bills.length} />}
               </div>
             )}
-            <LineRate
-              kind={o.kind} in4Id={o.in4Id} orderRef={o.ref}
-              matchKey={lineKey(l.name, l.uom)} itemId={woItemId(l.id)} block
-            />
             {l.bills.length > 0 && (
               <RowDetail id={`${o.id}:${l.id}`}>
                 <div className="mt-1.5 rounded border border-emerald-100 bg-emerald-50/40 p-2 overflow-x-auto">

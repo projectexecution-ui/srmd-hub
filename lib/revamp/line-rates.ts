@@ -156,10 +156,11 @@ async function loadPo(poId: number | null, ref?: string | null): Promise<OrderLi
   const ctxByMaterial = buildPriceContext(histLines, projectId)
 
   // Near-name suggestions for the materials with no history at all.
-  const orphanNames = items
+  const orphans = items
     .filter(i => { const c = ctxByMaterial.get(n(i.MATERIAL_ID)); return !c || c.purchases === 0 })
-    .map(i => s(i.material)).filter((x): x is string => !!x)
-  const suggByLine = await poSuggestions(orphanNames, materialIds)
+    .map(i => ({ name: s(i.material), uom: s(i.uom) }))
+    .filter((x): x is { name: string; uom: string | null } => !!x.name)
+  const suggByLine = await poSuggestions(orphans, materialIds)
 
   const lines = items.map(i => {
     const name = s(i.material) ?? `Material ${n(i.MATERIAL_ID)}`
@@ -172,17 +173,20 @@ async function loadPo(poId: number | null, ref?: string | null): Promise<OrderLi
   return { kind: 'po', lines, in4: 'live', error: null }
 }
 
-/** For each orphan material name, up to 3 past-bought materials with a similar
- *  name and their last rate. One candidate query + one rate query; best-effort,
- *  so a failure just means no suggestions. */
-async function poSuggestions(orphanNames: string[], excludeIds: number[]): Promise<Map<string, RateSuggestion[]>> {
+/** A unit reduced to a comparison key, so "SqFt" == "sqft" == "Sq. Ft.". */
+const uomKey = (u: string | null | undefined) => String(u ?? '').toLowerCase().replace(/[^a-z0-9]/g, '')
+
+/** For each orphan line, up to 3 past-bought materials with a similar name AND
+ *  the SAME unit — never a per-box rate against a per-SqFt tile — with their
+ *  last rate. One candidate query + one rate query; best-effort. */
+async function poSuggestions(orphans: Array<{ name: string; uom: string | null }>, excludeIds: number[]): Promise<Map<string, RateSuggestion[]>> {
   const out = new Map<string, RateSuggestion[]>()
-  if (orphanNames.length === 0) return out
-  const tokens = [...new Set(orphanNames.flatMap(nameTokens))].slice(0, 40)
+  if (orphans.length === 0) return out
+  const tokens = [...new Set(orphans.flatMap(o => nameTokens(o.name)))].slice(0, 40)
   if (tokens.length === 0) return out
   try {
     const cands = await in4Query<Record<string, unknown>>(`
-      SELECT TOP 60 m.ID, m.NAME, u.NAME uom
+      SELECT TOP 80 m.ID, m.NAME, u.NAME uom
       FROM PURCH_MATERIAL_LOOKUP m
       LEFT JOIN COMMON_UOM_LOOKUP u ON u.ID = m.UNIT_OF_MEASUREMENT
       WHERE (${tokens.map(t => `m.NAME LIKE '%${like(t)}%'`).join(' OR ')})
@@ -201,9 +205,12 @@ async function poSuggestions(orphanNames: string[], excludeIds: number[]): Promi
     const pool = cands
       .map(c => { const last = lastByMat.get(n(c.ID)); return last ? { name: s(c.NAME) ?? '', uom: s(c.uom), lastRate: last.rate, date: last.date, supplier: last.supplier, tokens: nameTokens(s(c.NAME) ?? '') } : null })
       .filter((x): x is RateSuggestion & { tokens: string[] } => !!x && x.name !== '')
-    // Keyed by name alone (uom ignored — a near item may use a different unit).
-    // The caller looks these up with the same lineKey(name, null).
-    for (const name of new Set(orphanNames)) out.set(lineKey(name, null), rankSuggestions(name, pool))
+    // Per orphan line, keep only same-unit candidates (when the line has a unit),
+    // so a ₹648/box tile never appears against a ₹52/SqFt one. Keyed by name.
+    for (const o of orphans) {
+      const same = o.uom ? pool.filter(c => uomKey(c.uom) === uomKey(o.uom)) : pool
+      out.set(lineKey(o.name, null), rankSuggestions(o.name, same))
+    }
     return out
   } catch {
     return out
