@@ -4,8 +4,8 @@ import { requirePermission } from '@/lib/auth'
 import { checkIsCcReviewer } from '@/components/cost-control/ws-actions'
 import { findTab, PROJECT_TABS, tabHref, type ProjectTab } from '@/lib/revamp/tabs'
 import { ABSORBED, activeSubTab, findWorkspaceTab, workspaceHref } from '@/lib/revamp/workspace'
-import { canOpenWorkspaceTab, landingSub } from '@/lib/revamp/permissions'
-import { getMyPermissions, getDisabledModuleSlugs } from '@/lib/auth'
+import { canOpenWorkspaceTab, landingSub, scopedPerms } from '@/lib/revamp/permissions'
+import { getMyPermissions, getDisabledModuleSlugs, scopePermissions } from '@/lib/auth'
 import { Hammer, ArrowRight, Database } from 'lucide-react'
 import { OverviewTab } from '../OverviewTab'
 import { ReportsTab } from '../ReportsTab'
@@ -81,6 +81,9 @@ export default async function ProjectTabPage({
     if (tab.reviewerOnly && !isReviewer) notFound()
   }
   const view = wsTab ? landingSub(await getMyPermissions(), wsTab, activeSubTab(wsTab, viewParam)) : 0
+  // From here on, every screen in this tab sees what the TAB and PILL grant — Edit
+  // off on a tab hides its raise / act controls, even where the power says yes.
+  if (wsTab) await scopePermissions(scopedPerms(await getMyPermissions(), wsTab, view))
 
   if (slug === 'overview')    return <OverviewTab projectId={id} />
   if (slug === 'reports')     return <ReportsTab projectId={id} />

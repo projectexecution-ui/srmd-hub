@@ -1,7 +1,7 @@
 import { redirect } from 'next/navigation'
-import { requirePermission, getDisabledModuleSlugs } from '@/lib/auth'
+import { requirePermission, getDisabledModuleSlugs, scopePermissions } from '@/lib/auth'
 import { WORKSPACE_TABS, activeSubTab, workspaceHref } from '@/lib/revamp/workspace'
-import { canOpenWorkspaceTab, landingSub } from '@/lib/revamp/permissions'
+import { canOpenWorkspaceTab, landingSub, scopedPerms } from '@/lib/revamp/permissions'
 import { checkIsCcReviewer } from '@/components/cost-control/ws-actions'
 import { BudgetTab } from './BudgetTab'
 
@@ -35,6 +35,8 @@ export default async function ProjectBudgetPage({
   const land = landingSub(perms, budget, asked)
   if (land < 0) redirect('/dashboard')
   if (land !== asked) redirect(workspaceHref(id, budget, land))
+  // The Budget screens now see what the tab and pill grant (Edit / Admin), not the bare power.
+  await scopePermissions(scopedPerms(perms, budget, land))
 
   return <BudgetTab projectId={id} view={land} />
 }

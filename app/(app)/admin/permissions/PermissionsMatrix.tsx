@@ -15,7 +15,7 @@ import { confirm } from '@/components/ui/confirm-dialog'
 import { cn } from '@/lib/utils'
 import { TILE_TONES } from '@/lib/modules'
 import { moduleMetaMap, groupRoles, sortRolesByCategory } from './groups'
-import { tabAccess, subAccess, tabSlug, isWsSlug, ALL_TABS, type MatrixSection, type MatrixRow, type PermLike } from '@/lib/revamp/permissions'
+import { tabAccessFull, subAccessFull, tabSlug, isWsSlug, ALL_TABS, type MatrixSection, type MatrixRow, type PermLike, type Access } from '@/lib/revamp/permissions'
 import type { WorkspaceTab } from '@/lib/revamp/workspace'
 import type { Role, PermAction } from '@/lib/types'
 import type { RoleLabelMap } from '@/lib/role-labels'
@@ -210,19 +210,24 @@ export default function PermissionsMatrix({ sections, searching = false, roles, 
   }
   const hasOwnRow = (role: Role, slug: string) => `${role}::${slug}` in state
 
-  /** What a tab or pill row resolves to for a role, and whether that came from a row of its own. */
-  function wsEffective(role: Role, row: MatrixRow): { view: boolean; own: boolean; from: string } {
+  /** What a tab or pill row resolves to for a role — View · Edit · Admin and the delete rule — and whether that came from a row of its own. */
+  function wsEffective(role: Role, row: MatrixRow): { a: Access; own: boolean; del: Mode; approver: string | null; from: string } {
     const perms = permsByRole.get(role) ?? {}
+    const none = { a: { view: false, edit: false, admin: false }, own: false, del: 'none' as Mode, approver: null, from: '' }
     if (row.kind === 'tab') {
       const tab = TAB_BY_SLUG.get(row.slug)
-      if (!tab) return { view: false, own: false, from: '' }
-      const a = tabAccess(perms, tab)
-      return { view: a.view, own: a.source === 'tab', from: a.source === 'tab' ? '' : `inherits ${row.inherits}` }
+      if (!tab) return none
+      const f = tabAccessFull(perms, tab)
+      const own = f.source === 'tab'
+      const src = own ? getCell(role, row.slug) : getCell(role, row.inherits ?? '')
+      return { a: { view: f.view, edit: f.edit, admin: f.admin }, own, del: src.del, approver: src.approver, from: own ? '' : `inherits ${row.hint?.replace(/^coming soon · /, '') ?? row.inherits}` }
     }
     const tab = TAB_BY_SLUG.get(row.parent ?? '')
-    if (!tab) return { view: false, own: false, from: '' }
-    const own = hasOwnRow(role, row.slug)
-    return { view: subAccess(perms, tab, row.label), own, from: own ? '' : `inherits the ${tab.ribbon} tab` }
+    if (!tab) return none
+    const f = subAccessFull(perms, tab, row.label)
+    const tabEff = tabAccessFull(perms, tab)
+    const delSrc = f.own ? getCell(role, row.slug) : tabEff.source === 'tab' ? getCell(role, row.parent ?? '') : getCell(role, tab.built ? tab.permissionSlug : 'cost-control')
+    return { a: { view: f.view, edit: f.edit, admin: f.admin }, own: f.own, del: delSrc.del, approver: delSrc.approver, from: f.own ? '' : `inherits the ${tab.ribbon} tab` }
   }
 
   function roleContext(role: Role): string {
@@ -270,17 +275,36 @@ export default function PermissionsMatrix({ sections, searching = false, roles, 
     setTimeout(() => setSavedKey(k => (k === key ? null : k)), 1500)
   }
 
-  /** A tab or pill: one click writes a row of its own with the opposite of what the role gets today. */
-  async function toggleWs(role: Role, row: MatrixRow) {
+  /** A tab or pill: one click writes a row of its own — what the role gets today, with this action flipped, under the same rules as a power. */
+  async function toggleWs(role: Role, row: MatrixRow, action: PermAction) {
+    const eff = wsEffective(role, row)
+    const next: CellState = { view: eff.a.view, edit: eff.a.edit, admin: eff.a.admin, del: eff.del, approver: eff.approver }
+    next[action] = !next[action]
+    if (action === 'edit' && next.edit) next.view = true
+    if (action === 'admin' && next.admin) { next.view = true; next.edit = true }
+    if (action === 'view' && !next.view) { next.edit = false; next.admin = false }
+    await writeWs(role, row, next)
+  }
+
+  /** The delete rule on a tab or pill: none → direct → needs approval, written with the flags the row resolves to today. */
+  async function cycleDeleteWs(role: Role, row: MatrixRow) {
+    const eff = wsEffective(role, row)
+    const nextMode: Mode = eff.del === 'none' ? 'direct' : eff.del === 'direct' ? 'request' : 'none'
+    await writeWs(role, row, { view: eff.a.view, edit: eff.a.edit, admin: eff.a.admin, del: nextMode, approver: nextMode === 'request' ? (eff.approver ?? 'admin') : null })
+  }
+  async function setApproverWs(role: Role, row: MatrixRow, approver: string | null) {
+    const eff = wsEffective(role, row)
+    await writeWs(role, row, { view: eff.a.view, edit: eff.a.edit, admin: eff.a.admin, del: eff.del, approver })
+  }
+
+  async function writeWs(role: Role, row: MatrixRow, next: CellState) {
     const key: Key = `${role}::${row.slug}`
     const before = state[key]
-    const eff = wsEffective(role, row)
-    const next: CellState = { view: !eff.view, edit: false, admin: false, del: 'none', approver: null }
     setState(s => ({ ...s, [key]: next }))
     setBusyKey(key); setError(null)
     const { error } = await createClient()
       .from('role_permissions')
-      .upsert({ role, module_slug: row.slug, can_view: next.view, can_edit: false, can_admin: false, updated_at: new Date().toISOString() }, { onConflict: 'role,module_slug' })
+      .upsert({ role, module_slug: row.slug, can_view: next.view, can_edit: next.edit, can_admin: next.admin, delete_mode: next.del, delete_approver_role: next.approver, updated_at: new Date().toISOString() }, { onConflict: 'role,module_slug' })
     setBusyKey(null)
     if (error) {
       setError(`${role} / ${row.label}: ${error.message}`)
@@ -340,7 +364,7 @@ export default function PermissionsMatrix({ sections, searching = false, roles, 
 
   const rowProps = {
     visibleRoles: orderedRoles, catStart, labels, getCell, hasOwnRow, wsEffective, busyKey, savedKey, hoverRole, hoverSlug,
-    setHoverRole, setHoverSlug, toggle, toggleWs, resetWs, cycleDelete, setApprover, searching, expanded,
+    setHoverRole, setHoverSlug, toggle, toggleWs, resetWs, cycleDelete, setApprover, cycleDeleteWs, setApproverWs, searching, expanded,
     toggleExpanded: (slug: string) => setExpanded(e => { const n = new Set(e); if (n.has(slug)) n.delete(slug); else n.add(slug); return n }),
   }
 
@@ -360,7 +384,7 @@ export default function PermissionsMatrix({ sections, searching = false, roles, 
             </span>
             <div className="ml-auto flex items-center gap-3 text-[11px] text-gray-500">
               <span className="inline-flex items-center gap-1"><span className="inline-flex h-4 w-4 items-center justify-center rounded bg-blue-100 text-blue-700"><Eye className="h-2.5 w-2.5" /></span>Open / View</span>
-              <span className="inline-flex items-center gap-1"><span className="inline-flex h-4 w-4 items-center justify-center rounded border border-dashed border-blue-300 text-blue-400"><Eye className="h-2.5 w-2.5" /></span>inherited</span>
+              <span className="inline-flex items-center gap-1"><span className="inline-flex h-4 w-4 items-center justify-center rounded border border-dashed border-gray-300 text-gray-400"><Eye className="h-2.5 w-2.5" /></span>inherited</span>
               {ACTIONS.slice(1).map(a => (
                 <span key={a.key} className="inline-flex items-center gap-1">
                   <span className={cn('inline-flex h-4 w-4 items-center justify-center rounded', a.on)}><a.icon className="h-2.5 w-2.5" /></span>
@@ -374,7 +398,7 @@ export default function PermissionsMatrix({ sections, searching = false, roles, 
             </div>
           </div>
           <p className="text-xs text-gray-500 -mt-1">
-            <b>Tabs and pills</b> say who may <b>open</b> them in a project. A dashed cell inherits — a tab from its power, a pill from its tab; one click gives it a switch of its own, <RotateCcw className="inline h-3 w-3 align-text-bottom" /> takes it back. <b>Powers</b> say what a role can <b>do</b> inside: Edit auto-grants View, Admin auto-grants View + Edit, removing View clears the row; Delete cycles none → direct → needs approval. Admin has full access always.
+<b>Tabs and pills</b> carry View · Edit · Admin · Delete like a power. A dashed cell inherits — a tab from its power, a pill from its tab; one click gives it a row of its own, <RotateCcw className="inline h-3 w-3 align-text-bottom" /> takes it back. Inside a project the tab’s and pill’s settings are what the screens see. <b>Powers</b> are the base they inherit from and what a write still checks: Edit auto-grants View, Admin auto-grants View + Edit, removing View clears the row; Delete cycles none → direct → needs approval. Admin has full access always.
           </p>
 
           <div className="flex flex-wrap items-center gap-2">
@@ -513,22 +537,24 @@ interface RowsProps {
   labels: RoleLabelMap
   getCell: (role: Role, slug: string) => CellState
   hasOwnRow: (role: Role, slug: string) => boolean
-  wsEffective: (role: Role, row: MatrixRow) => { view: boolean; own: boolean; from: string }
+  wsEffective: (role: Role, row: MatrixRow) => { a: Access; own: boolean; del: Mode; approver: string | null; from: string }
   busyKey: Key | null; savedKey: Key | null
   hoverRole: Role | null; hoverSlug: string | null
   setHoverRole: (r: Role | null) => void; setHoverSlug: (s: string | null) => void
   toggle: (role: Role, slug: string, action: PermAction) => void
-  toggleWs: (role: Role, row: MatrixRow) => void
+  toggleWs: (role: Role, row: MatrixRow, action: PermAction) => void
   resetWs: (role: Role, row: MatrixRow) => void
   cycleDelete: (role: Role, slug: string) => void
   setApprover: (role: Role, slug: string, approver: string | null) => void
+  cycleDeleteWs: (role: Role, row: MatrixRow) => void
+  setApproverWs: (role: Role, row: MatrixRow, approver: string | null) => void
   searching: boolean
   expanded: Set<string>
   toggleExpanded: (slug: string) => void
 }
 
 function SectionRows(p: RowsProps) {
-  const { section, colCount, visibleRoles, catStart, labels, getCell, wsEffective, busyKey, savedKey, hoverRole, hoverSlug, setHoverRole, setHoverSlug, toggle, toggleWs, resetWs, cycleDelete, setApprover, searching, expanded, toggleExpanded } = p
+  const { section, colCount, visibleRoles, catStart, labels, getCell, wsEffective, busyKey, savedKey, hoverRole, hoverSlug, setHoverRole, setHoverSlug, toggle, toggleWs, resetWs, cycleDelete, setApprover, cycleDeleteWs, setApproverWs, searching, expanded, toggleExpanded } = p
   const pillsOf = (tabSlugStr: string) => section.rows.filter(r => r.parent === tabSlugStr).length
   return (
     <>
@@ -579,25 +605,42 @@ function SectionRows(p: RowsProps) {
               const locked = role === ('admin' as Role)
               const colHot = hoverRole === role
               if (isWs) {
-                const eff = locked ? { view: true, own: true, from: '' } : wsEffective(role, row)
-                const tint = colHot || rowHot ? 'bg-indigo-50/50' : eff.view ? (eff.own ? 'bg-blue-50/40' : '') : (eff.own ? 'bg-rose-50/40' : '')
-                const title = locked ? 'Admin always has full access'
-                  : eff.own ? `${eff.view ? 'May open' : 'May not open'} — set here. Click to flip · ↺ to inherit again`
-                  : `${eff.view ? 'May open' : 'May not open'} — ${eff.from}. Click to set for this ${row.kind === 'tab' ? 'tab' : 'pill'}`
+                const eff = locked ? { a: { view: true, edit: true, admin: true }, own: true, del: 'direct' as Mode, approver: null, from: '' } : wsEffective(role, row)
+                const level = eff.a.admin ? 'admin' : eff.a.edit ? 'edit' : eff.a.view ? 'view' : 'none'
+                const tint = colHot || rowHot ? 'bg-indigo-50/50'
+                  : !eff.own ? '' : level === 'admin' ? 'bg-purple-50/50' : level === 'edit' ? 'bg-amber-50/40' : level === 'view' ? 'bg-blue-50/40' : 'bg-rose-50/30'
+                const where = eff.own ? 'set here' : eff.from
                 return (
                   <td key={role} className={cn('border-b border-gray-100 px-2 py-1.5 text-center transition-colors', tint, catStart.has(role) && 'border-l-2 border-l-slate-200', saved && 'ring-1 ring-inset ring-green-300')}
                     onMouseEnter={() => { setHoverRole(role); setHoverSlug(row.slug) }}>
                     <div className="inline-flex items-center gap-1 align-middle">
-                      <button type="button" onClick={() => { if (!locked) toggleWs(role, row) }} disabled={busy || locked} title={title}
-                        className={cn('inline-flex h-6 w-6 items-center justify-center rounded-md border transition-colors',
-                          locked ? 'bg-purple-100 text-purple-800 border-purple-200 cursor-default'
-                          : eff.own && eff.view ? 'bg-blue-100 text-blue-700 border-blue-200'
-                          : eff.own && !eff.view ? 'bg-rose-50 text-rose-500 border-rose-200'
-                          : eff.view ? 'border-dashed border-blue-300 text-blue-400 hover:bg-blue-50'
-                          : 'border-dashed border-gray-300 text-gray-300 hover:text-gray-500 hover:bg-gray-50',
-                          busy && 'opacity-50 cursor-wait')}>
-                        {busy ? <Loader2 className="h-3 w-3 animate-spin" /> : eff.view ? <Eye className="h-3 w-3" /> : <EyeOff className="h-3 w-3" />}
-                      </button>
+                      <div className={cn('inline-flex overflow-hidden rounded-md border divide-x bg-white', eff.own || locked ? 'border-gray-200 divide-gray-200' : 'border-dashed border-gray-300 divide-gray-200')}
+                        title={locked ? 'Admin always has full access' : `${where} · click an action to ${eff.own ? 'flip it' : `set it for this ${row.kind === 'tab' ? 'tab' : 'pill'}`}`}>
+                        {ACTIONS.map(({ key, label, icon: I, on }) => {
+                          const active = eff.a[key]
+                          return (
+                            <button key={key} onClick={() => { if (!locked) toggleWs(role, row, key) }} disabled={busy || locked}
+                              title={locked ? 'Admin always has full access' : `${label}: ${active ? 'allowed' : 'denied'} — ${where}. Click to ${active ? 'remove' : 'allow'}`}
+                              className={cn('inline-flex h-6 w-6 items-center justify-center transition-colors', active ? (eff.own || locked ? on : cn(on, 'opacity-60')) : 'text-gray-300 hover:text-gray-500 hover:bg-gray-50', busy && 'opacity-50 cursor-wait', locked && 'cursor-default')}>
+                              {busy && key === 'view' ? <Loader2 className="h-3 w-3 animate-spin" /> : key === 'view' && !active ? <EyeOff className="h-3 w-3" /> : <I className="h-3 w-3" />}
+                            </button>
+                          )
+                        })}
+                        {(() => {
+                          const del: Mode = eff.del
+                          const dCls = del === 'direct' ? cn('bg-emerald-100 text-emerald-700', !eff.own && !locked && 'opacity-60')
+                            : del === 'request' ? cn('bg-amber-100 text-amber-800', !eff.own && !locked && 'opacity-60')
+                            : 'text-gray-300 hover:text-gray-500 hover:bg-gray-50'
+                          const dTitle = locked ? 'Admin always deletes directly'
+                            : `Delete: ${del === 'none' ? 'not allowed' : del === 'direct' ? 'direct' : 'needs approval'} — ${where}. Click to cycle`
+                          return (
+                            <button onClick={() => { if (!locked) cycleDeleteWs(role, row) }} disabled={busy || locked} title={dTitle}
+                              className={cn('inline-flex h-6 w-6 items-center justify-center transition-colors', dCls, busy && 'opacity-50 cursor-wait', locked && 'cursor-default')}>
+                              <Trash2 className="h-3 w-3" />
+                            </button>
+                          )
+                        })()}
+                      </div>
                       {!locked && eff.own && (
                         <button type="button" onClick={() => resetWs(role, row)} disabled={busy} title={`Back to inheriting (${row.kind === 'tab' ? row.inherits : 'its tab'})`}
                           className="inline-flex h-6 w-5 items-center justify-center rounded text-gray-300 hover:text-gray-700 hover:bg-gray-100">
@@ -605,6 +648,16 @@ function SectionRows(p: RowsProps) {
                         </button>
                       )}
                     </div>
+                    {eff.del === 'request' && eff.own && !locked && (
+                      <div className="mt-1">
+                        <select value={eff.approver ?? ''} onChange={e => setApproverWs(role, row, e.target.value || null)} disabled={busy}
+                          title="Who approves a delete request"
+                          className="h-6 max-w-[104px] rounded-md border border-amber-300 bg-amber-50 px-1 text-[10px] text-amber-900">
+                          <option value="">approver…</option>
+                          {visibleRoles.map(r => <option key={r} value={r as string}>{labels[r]?.label || r}</option>)}
+                        </select>
+                      </div>
+                    )}
                   </td>
                 )
               }

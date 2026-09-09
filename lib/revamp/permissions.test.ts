@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { WORKSPACE_TABS, SETUP_TAB, visibleWorkspaceTabs, findWorkspaceTab } from './workspace'
 import {
-  kebab, tabSlug, subSlug, tabAccess, subAccess, allowedSubs, landingSub, canOpenWorkspaceTab, visibleWorkspaceTabsV2,
+  kebab, tabSlug, subSlug, tabAccess, subAccess, tabAccessFull, subAccessFull, scopedPerms, allowedSubs, landingSub, canOpenWorkspaceTab, visibleWorkspaceTabsV2,
   allowedSubsByTab, buildMatrixSections, allWsSlugs, filterRows, POWER_SLUGS, type PermLike,
 } from './permissions'
 import { MODULES } from '@/lib/modules'
@@ -113,6 +113,45 @@ describe('pills', () => {
   it('the ribbon gets one list per visible tab', () => {
     const p = deny(engineer, 'ws:budget:by-ct')
     expect(allowedSubsByTab(p, [budget, woPo])).toEqual({ '': [0, 1], 'wo-po': [0, 1, 2, 3] })
+  })
+})
+
+describe('Edit and Admin on a tab or pill — the full set, inherited the same way', () => {
+  const engineer: PermLike = { 'cost-control': { view: true, edit: true, admin: false }, 'procurement-tracker': { view: true, edit: false, admin: false } }
+  it('a tab inherits all three flags from its power until it has a row', () => {
+    expect(tabAccessFull(engineer, budget)).toEqual({ view: true, edit: true, admin: false, source: 'module' })
+    expect(tabAccessFull(engineer, indents)).toEqual({ view: true, edit: false, admin: false, source: 'module' })
+  })
+  it('a tab row of its own decides Edit and Admin', () => {
+    const p = { ...engineer, 'ws:budget': { view: true, edit: false, admin: false } }
+    expect(tabAccessFull(p, budget)).toMatchObject({ edit: false, source: 'tab' })
+    const q = { ...engineer, 'ws:procurement': { view: true, edit: true, admin: true } }
+    expect(tabAccessFull(q, indents)).toMatchObject({ edit: true, admin: true, source: 'tab' })
+  })
+  it('a pill inherits the tab, may narrow or widen it, and never opens under a closed tab', () => {
+    expect(subAccessFull(engineer, budget, 'By order')).toEqual({ view: true, edit: true, admin: false, own: false })
+    const narrow = { ...engineer, 'ws:budget:by-order': { view: true, edit: false, admin: false } }
+    expect(subAccessFull(narrow, budget, 'By order')).toMatchObject({ edit: false, own: true })
+    expect(subAccessFull(narrow, budget, 'By category')).toMatchObject({ edit: true, own: false })
+    const widen = { ...engineer, 'ws:procurement:tracker': { view: true, edit: true, admin: false } }
+    expect(subAccessFull(widen, indents, 'Tracker')).toMatchObject({ edit: true, own: true })
+    const closed = { ...engineer, 'ws:budget': { view: false, edit: false, admin: false }, 'ws:budget:by-order': { view: true, edit: true, admin: true } }
+    expect(subAccessFull(closed, budget, 'By order')).toEqual({ view: false, edit: false, admin: false, own: false })
+    // a pill row that says view=false but edit=true cannot edit what it cannot open
+    const odd = { ...engineer, 'ws:budget:by-ct': { view: false, edit: true, admin: true } }
+    expect(subAccessFull(odd, budget, 'By CT')).toMatchObject({ view: false, edit: false, admin: false, own: true })
+  })
+  it('scopedPerms swaps the tab’s power for what the tab and pill grant, and leaves the rest', () => {
+    const p: PermLike = { ...engineer, 'ws:budget': { view: true, edit: false, admin: false } }
+    const s = scopedPerms(p, budget, 0)
+    expect(s['cost-control']).toEqual({ view: true, edit: false, admin: false })
+    expect(s['procurement-tracker']).toEqual(engineer['procurement-tracker'])
+    // the same power on another tab is untouched by Budget's row
+    const disc = findWorkspaceTab('discussions')!
+    expect(scopedPerms(p, disc, 0)['cost-control']).toEqual({ view: true, edit: true, admin: false })
+    // a tab without pills scopes from the tab itself
+    const accounts = findWorkspaceTab('accounts')!
+    expect(scopedPerms({ ...p, 'ws:accounts': { view: true, edit: true, admin: true } } as PermLike, accounts, 0)['cost-control']).toEqual({ view: true, edit: true, admin: true })
   })
 })
 
