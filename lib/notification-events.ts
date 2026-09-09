@@ -51,6 +51,12 @@ export const NOTIFICATION_EVENTS: NotificationEventDef[] = [
     audience: 'Atm Heads (per project)',
   },
   {
+    type: 'in4_wo_verify',
+    label: 'IN4 — work order waiting for approval',
+    description: 'A work order in IN4 reached Verify; the Atm Head of the linked project is asked to approve it in IN4. The WO / PO tab shows every rate against the last one paid.',
+    audience: 'Atm Heads (per project)',
+  },
+  {
     type: 'in4_grn_received',
     label: 'IN4 — material received',
     description: 'A GRN was approved in IN4 against one of the project’s purchase orders.',

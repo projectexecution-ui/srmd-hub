@@ -1,6 +1,7 @@
 // Watching IN4 for the three moments the Atm Head asked to hear about:
 //   · an indent reaches Verify        → "approve it in IN4"
 //   · a purchase order reaches Verify → "approve it in IN4"
+//   · a work order reaches Verify     → "approve it in IN4" (Aksha, 10 Sep 2026)
 //   · a GRN is approved               → "material received"
 //
 // IN4 has no hooks, so this is a poll: read what is at Verify now and what
@@ -25,15 +26,17 @@ export interface WatchState {
   indents: Record<string, number>
   /** PO id → status id already announced */
   pos: Record<string, number>
+  /** WO id → status id already announced */
+  wos?: Record<string, number>
   /** GRNs dated on/after this ISO date are candidates; announced ids listed. */
   grnSince: string | null
   grns: Record<string, true>
   lastRunAt: string | null
 }
-export const EMPTY_STATE: WatchState = { indents: {}, pos: {}, grnSince: null, grns: {}, lastRunAt: null }
+export const EMPTY_STATE: WatchState = { indents: {}, pos: {}, wos: {}, grnSince: null, grns: {}, lastRunAt: null }
 
 export interface PendingDoc {
-  kind: 'indent' | 'po'
+  kind: 'indent' | 'po' | 'wo'
   id: number; ref: string; statusId: number; status: string
   subprojectId: number | null; projectId: number | null
   who: string | null; since: string | null; what: string | null; value: number | null
@@ -47,7 +50,7 @@ export interface GrnDoc {
 }
 
 export interface Notice {
-  type: 'in4_indent_verify' | 'in4_po_verify' | 'in4_grn_received'
+  type: 'in4_indent_verify' | 'in4_po_verify' | 'in4_wo_verify' | 'in4_grn_received'
   subprojectId: number | null
   projectId: number | null
   title: string
@@ -74,11 +77,11 @@ const day = (isoStr: string | null) => (isoStr ? new Date(isoStr).toLocaleDateSt
  * ReSubmit → Verify is announced again, because it is waiting again.
  */
 export function planNotices(state: WatchState, pending: readonly PendingDoc[], grns: readonly GrnDoc[], nowIso: string): { notices: Notice[]; next: WatchState } {
-  const next: WatchState = { indents: {}, pos: {}, grnSince: state.grnSince, grns: { ...state.grns }, lastRunAt: nowIso }
+  const next: WatchState = { indents: {}, pos: {}, wos: {}, grnSince: state.grnSince, grns: { ...state.grns }, lastRunAt: nowIso }
   const notices: Notice[] = []
   for (const d of pending) {
-    const book = d.kind === 'indent' ? next.indents : next.pos
-    const before = d.kind === 'indent' ? state.indents : state.pos
+    const book = d.kind === 'indent' ? next.indents : d.kind === 'wo' ? (next.wos as Record<string, number>) : next.pos
+    const before = d.kind === 'indent' ? state.indents : d.kind === 'wo' ? (state.wos ?? {}) : state.pos
     book[String(d.id)] = d.statusId
     if (before[String(d.id)] === d.statusId) continue
     if (!VERIFY_STATUS_IDS.has(d.statusId)) continue
@@ -89,6 +92,13 @@ export function planNotices(state: WatchState, pending: readonly PendingDoc[], g
           title: `Indent ${d.ref} is waiting for your approval in IN4`,
           body: [`${d.ref}${d.context ? ` (${d.context})` : ''} reached ${d.status}${since ? ` on ${since}` : ''}${d.who ? `, raised by ${d.who}` : ''}.`, d.what ? d.what : null, 'Open IN4 to approve it.'].filter(Boolean).join(' '),
           data: { kind: 'indent', id: d.id, ref: d.ref, status: d.status, who: d.who, since: d.since, what: d.what, context: d.context },
+        }
+      : d.kind === 'wo'
+      ? {
+          type: 'in4_wo_verify', subprojectId: d.subprojectId, projectId: d.projectId,
+          title: `WO ${d.ref} is waiting for your approval in IN4`,
+          body: [`${d.ref}${d.what ? ` to ${d.what}` : ''}${d.value ? ` for ${inr(d.value)}` : ''} reached ${d.status}${since ? ` on ${since}` : ''}${d.who ? `, by ${d.who}` : ''}.`, d.context ? d.context : null, 'Open IN4 to approve it; the WO / PO tab in CT Hub shows every rate against the last one paid.'].filter(Boolean).join(' '),
+          data: { kind: 'wo', id: d.id, ref: d.ref, status: d.status, who: d.who, since: d.since, contractor: d.what, value: d.value, context: d.context },
         }
       : {
           type: 'in4_po_verify', subprojectId: d.subprojectId, projectId: d.projectId,
@@ -128,7 +138,7 @@ export function planNotices(state: WatchState, pending: readonly PendingDoc[], g
 /** What IN4 holds right now: every indent and PO at a pending status, and
  *  every approved GRN dated on/after `grnSince`. SELECT only. */
 export async function readIn4Watch(grnSince: string | null): Promise<{ pending: PendingDoc[]; grns: GrnDoc[] }> {
-  const [indents, pos, grnRows] = await Promise.all([
+  const [indents, pos, wos, grnRows] = await Promise.all([
     in4Query<Record<string, unknown>>(`
       SELECT i.ID, i.DISPLAY_NO, i.STATUS, st.NAME status_name, i.SUBPROJECT_ID, i.PROJECT_ID, i.MATERIAL_TYPE, i.REMARKS, w.DISPLAY_NO wo_no,
              LTRIM(RTRIM(CONCAT(e.FirstName, ' ', e.LastName))) who,
@@ -150,6 +160,16 @@ export async function readIn4Watch(grnSince: string | null): Promise<{ pending: 
       LEFT JOIN COMMON_STATUS_LOOKUP st ON st.ID = p.STATUS
       LEFT JOIN PURCH_SUPPLIER sp ON sp.ID = p.SUPPLIER_ID
       WHERE p.STATUS IN (1, 113, 60, 77, 117)`),
+    in4Query<Record<string, unknown>>(`
+      SELECT w.ID, w.DISPLAY_NO, w.STATUS, st.NAME status_name, w.PROJECT_ID, w.SUBPROJECT_ID, w.WORK_ORDER_VALUE, w.WORK_DESCRIPTION,
+             sp.FIRM_NAME contractor, sk.NAME category,
+             (SELECT TOP 1 LTRIM(RTRIM(CONCAT(e.FirstName, ' ', e.LastName))) FROM ENGG_WO_AUDIT_TRAIL a LEFT JOIN HR_EMP_PROFILE e ON e.ID = a.MODIFIED_BY WHERE a.WO_ID = w.ID AND a.STATUS = w.STATUS ORDER BY a.MODIFIED_DT DESC) who,
+             (SELECT MAX(a.MODIFIED_DT) FROM ENGG_WO_AUDIT_TRAIL a WHERE a.WO_ID = w.ID AND a.STATUS = w.STATUS) since
+      FROM ENGG_WORK_ORDER w
+      LEFT JOIN COMMON_STATUS_LOOKUP st ON st.ID = w.STATUS
+      LEFT JOIN ENGG_SERVICE_PROVIDER sp ON sp.ID = w.SERVICE_PROVIDER_ID
+      LEFT JOIN ENGG_SKILLS_LOOKUP sk ON sk.ID = w.SKILL_ID
+      WHERE w.STATUS IN (1, 113, 60, 77, 117)`),
     grnSince
       ? in4Query<Record<string, unknown>>(`
         SELECT h.GRN_ID, h.GRN_NO, h.GRN_DT, h.PROJECT_ID, MAX(d.SUBPROJECT_ID) subproject_id,
@@ -178,6 +198,12 @@ export async function readIn4Watch(grnSince: string | null): Promise<{ pending: 
       subprojectId: r.subproject_id == null ? null : n(r.subproject_id), projectId: r.PROJECT_ID == null ? null : n(r.PROJECT_ID),
       who: s(r.who), since: iso(r.since), what: s(r.supplier), value: n(r.TOTAL_VALUE) || null,
       context: s(r.indents) ? `for ${s(r.indents)}` : null,
+    })),
+    ...wos.map(r => ({
+      kind: 'wo' as const, id: n(r.ID), ref: s(r.DISPLAY_NO) ?? `WO ${r.ID}`, statusId: n(r.STATUS), status: s(r.status_name) ?? String(r.STATUS),
+      subprojectId: r.SUBPROJECT_ID == null ? null : n(r.SUBPROJECT_ID), projectId: r.PROJECT_ID == null ? null : n(r.PROJECT_ID),
+      who: s(r.who), since: iso(r.since), what: s(r.contractor), value: n(r.WORK_ORDER_VALUE) || null,
+      context: [s(r.category)?.replace(/^\d+\s+/, ''), s(r.WORK_DESCRIPTION)].filter(Boolean).join(' · ') || null,
     })),
   ]
   const grns: GrnDoc[] = grnRows.map(r => ({

@@ -26,6 +26,7 @@ import {
 } from '@/components/cost-control/project-tree'
 import { loadOrdersTree, type OrdersSubRow, type OrderRow, type OrderLine, type Money } from '@/lib/revamp/orders-tree'
 import { checkIsCcReviewer } from '@/components/cost-control/ws-actions'
+import { OrderApprovals } from './OrderApprovals'
 
 /** Quantities are not money: they carry decimals and their own unit. */
 const qty = (v: number | null) =>
@@ -88,6 +89,8 @@ export async function OrdersView({ projectId }: { projectId: string }) {
     <TreeProvider allCatIds={catIds} emptyCount={0}>
       <RowDetailProvider>
         <div className="space-y-3">
+          {/* What is waiting for the Atm Head in IN4, every rate against the last one paid. */}
+          <OrderApprovals projectId={projectId} />
           {!live && (
             <div className="rounded-lg border border-amber-200 bg-amber-50 px-3.5 py-2 text-[12px] text-amber-900 flex items-start gap-2">
               <AlertTriangle className="h-4 w-4 flex-shrink-0 mt-0.5" />
