@@ -39,7 +39,7 @@ const ICONS: Record<string, LucideIcon> = {
  * a server concern; this component only draws.
  */
 export function Ribbon({
-  projectId, tabs, pills, canSetup, badges = {},
+  projectId, tabs, pills, canSetup, badges = {}, badgeTitles = {},
 }: {
   projectId: string
   tabs: WorkspaceTab[]
@@ -48,6 +48,8 @@ export function Ribbon({
   /** tab slug → a count to show on that tab, in amber. Used for approvals
    *  waiting on THIS person; general so another lane can carry one later. */
   badges?: Record<string, number>
+  /** Words for a badge's tooltip; "n waiting on you" when absent. */
+  badgeTitles?: Record<string, string>
   canSetup: boolean
 }) {
   const pathname = usePathname()
@@ -102,7 +104,7 @@ export function Ribbon({
                           1180px and a badge beside it would vanish with it. */}
                       {(badges[tab.slug] ?? 0) > 0 && (
                         <span
-                          title={`${badges[tab.slug]} waiting on you`}
+                          title={badgeTitles[tab.slug] ?? `${badges[tab.slug]} waiting on you`}
                           className="absolute -top-1.5 -right-2 inline-flex items-center justify-center rounded-full bg-amber-100 text-amber-800 border border-amber-300 text-[9px] font-bold tabular-nums min-w-[15px] h-[15px] px-[3px]"
                         >
                           {badges[tab.slug]}

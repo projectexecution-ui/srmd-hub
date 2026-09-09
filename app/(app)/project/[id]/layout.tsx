@@ -9,6 +9,7 @@ import { checkIsCcReviewer } from '@/components/cost-control/ws-actions'
 import { formatDateTime } from '@/lib/utils'
 import { Ribbon } from './Ribbon'
 import { getMyApprovalCounts } from '@/lib/revamp/approval-counts'
+import { subprojectIdsFor, loadVerifyCounts, verifyBadges } from '@/lib/revamp/verify-counts'
 
 export const dynamic = 'force-dynamic'
 
@@ -69,6 +70,9 @@ export default async function ProjectWorkspaceLayout({
   const tabs = visibleWorkspaceTabsV2(perms, disabled, isReviewer)
   const pills = allowedSubsByTab(perms, tabs)
   const canSetup = canOpenWorkspaceTab(perms, SETUP_TAB, disabled, isReviewer)
+  // What is at Verify in IN4 for this project — the approver's turn — as yellow
+  // counts on Indents and WO / PO (Aksha, 10 Sep 2026). Zeros if IN4 is away.
+  const verify = verifyBadges(await loadVerifyCounts(await subprojectIdsFor(id)))
 
   return (
     <div className="min-h-full bg-gray-50/60">
@@ -159,7 +163,8 @@ export default async function ProjectWorkspaceLayout({
             pills={pills}
             canSetup={canSetup}
             /* This project's own Cost Control queue, for the Approvals tab. */
-            badges={{ approvals: approvalCounts.byProject[id] ?? 0 }}
+            badges={{ approvals: approvalCounts.byProject[id] ?? 0, ...verify.badges }}
+            badgeTitles={verify.titles}
           />
         </div>
       </div>
