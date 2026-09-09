@@ -1,11 +1,13 @@
 import Link from 'next/link'
 import { AlertTriangle } from 'lucide-react'
 import { formatINR } from '@/lib/utils'
+import { createClient } from '@/lib/supabase/server'
 import { loadCtWise } from '@/lib/revamp/budget-actual-data'
 import { usedTone, USED_LEGEND } from '@/lib/revamp/used-tone'
 import { checkIsCcReviewer } from '@/components/cost-control/ws-actions'
 import ProjectInternalEstimatePage from '@/app/(app)/cost-control/projects/[id]/page'
 import { OrdersView } from './OrdersView'
+import { GroupBudgetView } from './GroupBudgetView'
 
 /**
  * Budget vs Actual (build order §2) — three views behind the sub-tab pills.
@@ -40,12 +42,29 @@ import { OrdersView } from './OrdersView'
 export async function BudgetTab({ projectId, view }: { projectId: string; view: number }) {
   if (view === 2) return <CtWiseView projectId={projectId} />
   if (view === 1) return <OrdersView projectId={projectId} />
+  // A grouping anchor (NGH, P2, VV) holds no disciplines of its own — its
+  // Internal Estimate is empty, which reads as broken. When the project has
+  // sub-projects, the landing rolls them up instead. Leaf projects fall through
+  // to the live Internal Estimate exactly as before.
+  if (await hasSubProjects(projectId)) return <GroupBudgetView projectId={projectId} />
   return (
     <ProjectInternalEstimatePage
       params={Promise.resolve({ id: projectId })}
       searchParams={Promise.resolve({ in_cockpit: '1' })}
     />
   )
+}
+
+/** True when this project is a parent of one or more live sub-projects. One
+ *  cheap head-count, so a leaf pays only a COUNT before its estimate loads. */
+async function hasSubProjects(projectId: string): Promise<boolean> {
+  const supabase = await createClient()
+  const { count } = await supabase
+    .from('projects')
+    .select('id', { count: 'exact', head: true })
+    .eq('parent_project_id', projectId)
+    .is('archived_at', null)
+  return (count ?? 0) > 0
 }
 
 /* ── table helpers, shared by the views below ───────────────────────────── */

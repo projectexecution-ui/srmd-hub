@@ -60,6 +60,42 @@ export function subAccess(perms: PermLike, tab: WorkspaceTab, sub: string): bool
   return own && typeof own.view === 'boolean' ? own.view : true
 }
 
+/* ── The full set — View · Edit · Admin — with the same inheritance ─────── */
+
+export interface Access { view: boolean; edit: boolean; admin: boolean }
+const NONE: Access = { view: false, edit: false, admin: false }
+const asAccess = (p: { view?: boolean; edit?: boolean; admin?: boolean } | undefined): Access => ({ view: !!p?.view, edit: !!p?.edit, admin: !!p?.admin })
+
+/** The tab's three flags: its own row if it has one, else its power's (Aksha, 10 Sep 2026: "Edit and Admin on each tab and pill as the old modules had"). */
+export function tabAccessFull(perms: PermLike, tab: WorkspaceTab): Access & { source: 'tab' | 'module' } {
+  const own = perms[tabSlug(tab)]
+  if (own && typeof own.view === 'boolean') return { ...asAccess(own), source: 'tab' }
+  return { ...asAccess(perms[tab.built ? tab.permissionSlug : 'cost-control']), source: 'module' }
+}
+
+/** A pill's three flags: its own row if it has one (View still needs the tab), else the tab's. A closed tab closes everything under it. */
+export function subAccessFull(perms: PermLike, tab: WorkspaceTab, sub: string): Access & { own: boolean } {
+  const t = tabAccessFull(perms, tab)
+  if (!t.view) return { ...NONE, own: false }
+  const own = perms[subSlug(tab, sub)]
+  if (own && typeof own.view === 'boolean') { const a = asAccess(own); return { view: a.view, edit: a.view && a.edit, admin: a.view && a.admin, own: true } }
+  return { view: t.view, edit: t.edit, admin: t.admin, own: false }
+}
+
+/**
+ * The permission map a tab's screen should render with: the tab's power
+ * (cost-control, procurement-tracker …) replaced by what THIS tab — and, when
+ * it has pills, this pill — grants. So "Edit off on Budget" hides the raise /
+ * act controls on Budget while Discussions, on the same power, keeps them.
+ * Applied per server render of the tab (lib/auth.ts scopePermissions); a
+ * server action is its own request and still checks the power itself.
+ */
+export function scopedPerms<T extends PermLike>(perms: T, tab: WorkspaceTab, subIndex: number): T {
+  const moduleSlug = tab.built ? tab.permissionSlug : 'cost-control'
+  const a = tab.subs.length ? subAccessFull(perms, tab, tab.subs[subIndex] ?? tab.subs[0]) : tabAccessFull(perms, tab)
+  return { ...perms, [moduleSlug]: { view: a.view, edit: a.edit, admin: a.admin } }
+}
+
 /** Indices of the pills this role may open, in the tab's order. */
 export function allowedSubs(perms: PermLike, tab: WorkspaceTab): number[] {
   return tab.subs.map((s, i) => (subAccess(perms, tab, s) ? i : -1)).filter(i => i >= 0)

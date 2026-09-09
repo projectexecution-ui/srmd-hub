@@ -44,7 +44,24 @@ export const getMyProfile = cache(async (): Promise<Profile | null> => {
   return (data as Profile) ?? null
 })
 
-export const getMyPermissions = cache(async (): Promise<PermissionMap> => {
+/**
+ * A request-scoped override of the permission map. The project workspace sets
+ * it once it knows which tab and pill are rendering, so the screens inside
+ * (which check their power — cost-control, procurement-tracker …) see what
+ * THAT tab grants (lib/revamp/permissions.ts scopedPerms). React's cache()
+ * gives one holder per SSR request; a server action is a new request and
+ * therefore sees the base map — the power itself still guards every write.
+ */
+const permissionScope = cache(() => ({ perms: null as PermissionMap | null }))
+export async function scopePermissions(perms: PermissionMap): Promise<void> { permissionScope().perms = perms }
+
+export async function getMyPermissions(): Promise<PermissionMap> {
+  const scoped = permissionScope().perms
+  if (scoped) return scoped
+  return basePermissions()
+}
+
+const basePermissions = cache(async (): Promise<PermissionMap> => {
   const user = await getMyUser()
   if (!user) return {}
   const shell = await getShell()
