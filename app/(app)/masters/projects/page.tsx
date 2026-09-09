@@ -3,9 +3,14 @@ import { requirePermission } from '@/lib/auth'
 import { PageHeader } from '@/components/PageHeader'
 import { RowDetailProvider, RowDetailToggle, RowDetail } from '@/components/cost-control/project-tree'
 import { loadProjectMaster, matchesQuery, type MainProject, type SubProject } from '@/lib/revamp/masters-in4'
-import { formatDate, todayIST } from '@/lib/utils'
+import { loadProjectMaster as loadHubRegistry } from '@/lib/masters'
+import { formatDate, formatINR, formatNumber, todayIST } from '@/lib/utils'
 import { In4Note } from '../In4Note'
 import { MasterSearchBox } from '../MasterSearchBox'
+import { MasterTable, type MasterRow } from '../MasterTable'
+import { ViewPills } from '../ViewPills'
+import { UseIn4AreaButton } from './UseIn4AreaButton'
+import { canEditMasters } from '../admin'
 
 export const dynamic = 'force-dynamic'
 
@@ -17,10 +22,24 @@ export const dynamic = 'force-dynamic'
  * orders come first; IN4's placeholder projects (named after the trusts,
  * Warehouse, Fixed Assets) sit below, collapsed. A search narrows both, and
  * shows matching sub-projects open.
+ *
+ * Second view — "CT Hub registry": the hub's own projects with their IN4
+ * side beside them (which sub-projects feed each, IN4's area and budget) and
+ * the fields still empty; where the hub has no area and IN4 has one, an admin
+ * copies it across with one click, and ₹/sft appears everywhere.
  */
-export default async function ProjectsMasterPage({ searchParams }: { searchParams: Promise<{ q?: string }> }) {
+export default async function ProjectsMasterPage({ searchParams }: { searchParams: Promise<{ q?: string; view?: string }> }) {
   await requirePermission('cost-control', 'view')
-  const { q = '' } = await searchParams
+  const { q = '', view } = await searchParams
+  const hub = view === 'hub'
+  const pills = (
+    <ViewPills base="/masters/projects" view={hub ? 'hub' : 'in4'} keep={{ q }} options={[
+      { key: 'in4', label: 'IN4 projects' },
+      { key: 'hub', label: 'CT Hub registry' },
+    ]} />
+  )
+  if (hub) return <HubRegistry q={q} pills={pills} />
+
   const { projects, in4, in4Error } = await loadProjectMaster()
   const today = todayIST()
 
@@ -47,6 +66,7 @@ export default async function ProjectsMasterPage({ searchParams }: { searchParam
           title="Project Master"
           subtitle="Main projects and their sub-projects, as IN4 holds them — dates, paying trust, site address."
         />
+        {pills}
         <In4Note in4={in4} error={in4Error} what="dates, addresses and status" />
         <MasterSearchBox action="/masters/projects" initial={q} placeholder="Search a project or sub-project by name or code…" />
 
@@ -90,6 +110,83 @@ export default async function ProjectsMasterPage({ searchParams }: { searchParam
         )}
       </div>
     </RowDetailProvider>
+  )
+}
+
+/** CT Hub's own project registry, with its IN4 side beside it. */
+async function HubRegistry({ q, pills }: { q: string; pills: React.ReactNode }) {
+  const [{ rows: projects, in4Unmapped }, canEdit] = await Promise.all([loadHubRegistry(), canEditMasters()])
+  const missing = (f: (r: typeof projects[number]) => boolean) => projects.filter(f).length
+  const gaps = [
+    { label: 'No area', n: missing(r => !r.builtUpSft), sub: `${missing(r => !r.builtUpSft && !!r.in4?.areaFt)} fixable from IN4` },
+    { label: 'No IN4 link', n: missing(r => !r.in4) },
+    { label: 'No target date', n: missing(r => !r.targetDate) },
+    { label: 'No manager', n: missing(r => !r.hasPm) },
+  ]
+  const miss = { text: 'missing', tone: 'missing' as const }
+  const rows: MasterRow[] = projects.map(p => ({
+    id: p.id,
+    href: `/project/${p.id}`,
+    tone: p.filled < 50 ? 'warn' : undefined,
+    cells: {
+      name: { text: p.name, tone: 'strong', sub: [p.code, p.parent].filter(Boolean).join(' · ') || undefined },
+      in4: p.in4
+        ? { text: p.in4.subprojects.length === 1 ? p.in4.subprojects[0] : `${p.in4.subprojects.length} sub-projects`, tone: 'muted', sub: p.in4.subprojects.length > 1 ? p.in4.subprojects.join(' · ') : (p.in4.exCodes[0] ?? undefined) }
+        : { text: 'not linked', tone: 'missing' },
+      area: p.builtUpSft ? { text: formatNumber(p.builtUpSft, 0), sub: 'sft' } : miss,
+      in4area: p.in4?.areaFt ? { text: formatNumber(p.in4.areaFt, 0), sub: 'sft in IN4', tone: 'muted' } : { text: '' },
+      budget: p.in4?.budget ? { text: formatINR(p.in4.budget), tone: 'muted' } : { text: '' },
+      type: p.projectType ? { text: p.projectType, tone: 'muted' } : miss,
+      start: p.startDate ? { text: formatDate(p.startDate) } : miss,
+      target: p.targetDate ? { text: formatDate(p.targetDate) } : miss,
+      filled: { text: `${p.filled}%`, tone: p.filled >= 80 ? 'good' : p.filled >= 50 ? 'warn' : 'missing' },
+    },
+    action: canEdit && !p.builtUpSft && p.in4?.areaFt ? <UseIn4AreaButton projectId={p.id} sft={p.in4.areaFt} /> : undefined,
+  }))
+  return (
+    <div className="space-y-4">
+      <PageHeader title="Project Master" subtitle={`CT Hub’s registry — ${projects.length} live projects, ${projects.filter(p => p.in4).length} linked to IN4 sub-projects.`} />
+      {pills}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+        {gaps.map(g => (
+          <div key={g.label} className="rounded-lg border border-gray-200 bg-white px-3 py-2">
+            <p className="text-[12px] text-gray-500">{g.label}</p>
+            <p className={`text-[15px] font-semibold tabular-nums ${g.n > 0 ? 'text-amber-700' : 'text-gray-900'}`}>{g.n}</p>
+            <p className="text-[12px] text-gray-400">{g.sub ?? `of ${projects.length}`}</p>
+          </div>
+        ))}
+      </div>
+      {in4Unmapped.length > 0 && (
+        <p className="rounded-lg border border-blue-200 bg-blue-50/60 px-3 py-2 text-[12px] text-blue-900">
+          <b>{in4Unmapped.length} active IN4 sub-project{in4Unmapped.length === 1 ? ' is' : 's are'} not mapped to any CT Hub project</b> (and not marked “not ours”): {in4Unmapped.map(s => s.name).join(', ')}.
+          {' '}Decide each on <Link href="/masters/mapping" className="underline">Name mapping</Link>.
+        </p>
+      )}
+      <MasterTable
+        columns={[
+          { key: 'name', label: 'Project' },
+          { key: 'in4', label: 'IN4 sub-projects' },
+          { key: 'area', label: 'Area', align: 'right', width: 'w-24' },
+          { key: 'in4area', label: 'IN4 area', align: 'right', width: 'w-24', desktopOnly: true },
+          { key: 'budget', label: 'IN4 budget', align: 'right', width: 'w-28', desktopOnly: true },
+          { key: 'type', label: 'Type', width: 'w-24', desktopOnly: true },
+          { key: 'start', label: 'Start', width: 'w-28' },
+          { key: 'target', label: 'Target', width: 'w-28' },
+          { key: 'filled', label: 'Filled', align: 'right', width: 'w-20' },
+        ]}
+        sortableKeys={['name', 'area', 'start', 'target', 'filled']}
+        rows={rows}
+        filters={[
+          { key: 'unlinked', label: 'Not linked to IN4', test: r => r.cells.in4.text === 'not linked' },
+          { key: 'no-area', label: 'No area', test: r => r.cells.area.text === 'missing' },
+          { key: 'gaps', label: 'Under half filled', test: r => r.tone === 'warn' },
+        ]}
+        initialQuery={q}
+        exportName="ct-hub-projects"
+        searchPlaceholder="Search a CT Hub project by name or code…"
+        emptyMessage="No projects in CT Hub yet."
+      />
+    </div>
   )
 }
 

@@ -34,6 +34,16 @@ const nextConfig: NextConfig = {
       { protocol: 'https', hostname: 'lh3.googleusercontent.com' },
     ],
   },
+  // The Masters screens moved from /admin/masters to /masters (9 Sep 2026,
+  // one section instead of two). Bookmarks and old e-mails keep working.
+  async redirects() {
+    return [
+      { source: '/admin/masters', destination: '/masters', permanent: true },
+      { source: '/admin/masters/projects', destination: '/masters/projects?view=hub', permanent: true },
+      { source: '/admin/masters/categories', destination: '/masters/categories?view=hub', permanent: true },
+      { source: '/admin/masters/:path*', destination: '/masters/:path*', permanent: true },
+    ]
+  },
   // Static asset caching — heavy iframe HTMLs + logos rarely change. Long
   // browser cache + Vercel CDN means second-visit nav is near-instant.
   async headers() {

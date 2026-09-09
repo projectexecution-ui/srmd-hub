@@ -62,7 +62,7 @@ export async function OrdersView({ projectId }: { projectId: string }) {
           mapping, not a project without orders.
         </p>
         {reviewer ? (
-          <Link href="/admin/masters/mapping" className="mt-3 inline-flex items-center rounded-lg bg-amber-700 px-3 text-xs font-semibold text-white min-h-[44px] hover:bg-amber-800">
+          <Link href="/masters/mapping" className="mt-3 inline-flex items-center rounded-lg bg-amber-700 px-3 text-xs font-semibold text-white min-h-[44px] hover:bg-amber-800">
             Link it in Masters → Mapping
           </Link>
         ) : (

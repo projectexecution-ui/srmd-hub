@@ -28,7 +28,7 @@ export async function linkMaster(kind: 'party' | 'material' | 'store', hubTable:
     const { error } = await sb.from('master_links').upsert({ kind, hub_table: hubTable, hub_id: hubId, in4_key: in4Key, note: note ?? null, linked_by: gate.userId, linked_at: new Date().toISOString() }, { onConflict: 'kind,hub_table,hub_id' })
     if (error) return { ok: false, error: error.message }
   }
-  revalidatePath('/admin/masters', 'layout')
+  revalidatePath('/masters', 'layout')
   return { ok: true }
 }
 
@@ -40,6 +40,6 @@ export async function useIn4Area(projectId: string, sft: number): Promise<{ ok: 
   const sb = await createClient()
   const { error } = await sb.from('projects').update({ built_up_sft: Math.round(sft) }).eq('id', projectId)
   if (error) return { ok: false, error: error.message }
-  revalidatePath('/admin/masters/projects')
+  revalidatePath('/masters/projects')
   return { ok: true }
 }

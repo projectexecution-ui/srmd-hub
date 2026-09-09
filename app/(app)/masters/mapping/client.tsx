@@ -24,7 +24,7 @@ const SOURCE_LABEL: Record<AliasSource, string> = {
 }
 const NOT_OURS = '__not_ours__'
 
-export function MappingClient({ rows, projects }: { rows: MappingRow[]; projects: ProjectOption[] }) {
+export function MappingClient({ rows, projects, readOnly = false }: { rows: MappingRow[]; projects: ProjectOption[]; readOnly?: boolean }) {
   const router = useRouter()
   const [pending, startTransition] = useTransition()
   const [err, setErr] = useState<string | null>(null)
@@ -89,7 +89,7 @@ export function MappingClient({ rows, projects }: { rows: MappingRow[]; projects
                     {r.hint && <span className="block text-[11px] text-gray-400 ml-5">{r.hint}</span>}
                   </td>
                   <td className="px-3 py-1.5 text-gray-600 whitespace-nowrap">{SOURCE_LABEL[r.source]}</td>
-                  <td className="px-3 py-1.5"><Picker r={r} projects={projects} disabled={pending} onChange={v => change(r, v)} /></td>
+                  <td className="px-3 py-1.5"><Picker r={r} projects={projects} disabled={pending || readOnly} readOnly={readOnly} onChange={v => change(r, v)} /></td>
                   <td className="px-3 py-1.5 text-[12px] text-gray-500 max-w-[320px]">{r.why ?? ''}</td>
                 </tr>
               ))}
@@ -103,7 +103,7 @@ export function MappingClient({ rows, projects }: { rows: MappingRow[]; projects
             <div key={`${r.source}|${r.alias}`} className="p-3 space-y-1.5">
               <p className="text-sm font-medium text-gray-900">{r.alias}</p>
               <p className="text-[11px] text-gray-500">{SOURCE_LABEL[r.source]}{r.hint ? ` · ${r.hint}` : ''}</p>
-              <Picker r={r} projects={projects} disabled={pending} onChange={v => change(r, v)} />
+              <Picker r={r} projects={projects} disabled={pending || readOnly} readOnly={readOnly} onChange={v => change(r, v)} />
               {r.why && <p className="text-[11px] text-gray-500">{r.why}</p>}
             </div>
           ))}
@@ -113,8 +113,12 @@ export function MappingClient({ rows, projects }: { rows: MappingRow[]; projects
   )
 }
 
-function Picker({ r, projects, disabled, onChange }: { r: MappingRow; projects: ProjectOption[]; disabled: boolean; onChange: (v: string) => void }) {
+function Picker({ r, projects, disabled, readOnly, onChange }: { r: MappingRow; projects: ProjectOption[]; disabled: boolean; readOnly?: boolean; onChange: (v: string) => void }) {
   const value = r.state === 'mapped' ? (r.projectId ?? '') : r.state === 'not-ours' ? NOT_OURS : ''
+  // A reader sees the decision as text, not a control that would refuse them.
+  if (readOnly) {
+    return <span className={`text-[13px] ${r.state === 'open' ? 'text-amber-800 italic' : 'text-gray-800'}`}>{r.state === 'mapped' ? (r.projectLabel ?? 'mapped') : r.state === 'not-ours' ? 'Not ours (kept unattributed)' : 'not decided yet'}</span>
+  }
   return (
     <select value={value} disabled={disabled} onChange={e => onChange(e.target.value)} className="h-9 w-full md:w-[320px] rounded-md border border-gray-300 bg-white px-2 text-[12.5px]">
       <option value="">— not decided —</option>

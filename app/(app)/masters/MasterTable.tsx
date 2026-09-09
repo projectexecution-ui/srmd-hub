@@ -38,10 +38,16 @@ export interface MasterColumn {
 export interface MasterRow {
   id: string
   cells: Record<string, Cell>
-  /** Whole-row emphasis: 'warn' tints the row amber. */
-  tone?: 'warn'
+  /** Whole-row emphasis: 'warn' tints the row amber, 'info' blue. */
+  tone?: 'warn' | 'info'
   href?: string
+  /** Rendered at the end of the row (desktop) / card (mobile) — the "link to
+   *  IN4" picker on a hub-only record, for admins. */
+  action?: React.ReactNode
 }
+
+/** A quick chip above the table, e.g. "Not in IN4". */
+export type Filter = { key: string; label: string; test: (r: MasterRow) => boolean }
 
 const TONE: Record<CellTone, string> = {
   default: 'text-gray-800',
@@ -54,8 +60,11 @@ const TONE: Record<CellTone, string> = {
 
 export function MasterTable({
   columns, rows, searchPlaceholder = 'Search…', emptyMessage = 'Nothing here.',
-  sortableKeys = [], maxRows = 500, initialQuery = '', exportName, emptyHint,
+  sortableKeys = [], maxRows = 500, initialQuery = '', exportName, emptyHint, filters = [], defaultFilter,
 }: {
+  /** Quick chips above the table; one active at a time, "All" resets. */
+  filters?: Filter[]
+  defaultFilter?: string
   columns: MasterColumn[]
   rows: MasterRow[]
   searchPlaceholder?: string
@@ -75,10 +84,14 @@ export function MasterTable({
 }) {
   const [q, setQ] = useState(initialQuery)
   const [sort, setSort] = useState<{ key: string; dir: 1 | -1 } | null>(null)
+  const [filter, setFilter] = useState<string | null>(defaultFilter ?? null)
+  const hasAction = rows.some(r => r.action)
 
   const matched = useMemo(() => {
     const needle = q.trim().toLowerCase()
     let out = rows
+    const f = filters.find(x => x.key === filter)
+    if (f) out = out.filter(f.test)
     if (needle) {
       out = rows.filter(r =>
         Object.values(r.cells).some(c =>
@@ -97,7 +110,7 @@ export function MasterTable({
       })
     }
     return out
-  }, [rows, q, sort])
+  }, [rows, q, sort, filter, filters])
   const filtered = matched.length > maxRows ? matched.slice(0, maxRows) : matched
 
   function toggleSort(key: string) {
@@ -144,6 +157,16 @@ export function MasterTable({
           </button>
         )}
       </div>
+      {filters.length > 0 && (
+        <div className="flex gap-1 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          <Chip active={filter === null} onClick={() => setFilter(null)}>All</Chip>
+          {filters.map(f => (
+            <Chip key={f.key} active={filter === f.key} onClick={() => setFilter(filter === f.key ? null : f.key)}>
+              {f.label} <span className="tabular-nums opacity-70">{rows.filter(f.test).length.toLocaleString('en-IN')}</span>
+            </Chip>
+          ))}
+        </div>
+      )}
 
       <div className="flex items-center justify-between gap-3">
         <p className="text-[12px] text-gray-500 tabular-nums">
@@ -202,11 +225,12 @@ export function MasterTable({
                         </th>
                       )
                     })}
+                    {hasAction && <th className="sticky top-0 z-10 bg-gray-50 border-b border-gray-200 px-3 py-2" />}
                   </tr>
                 </thead>
                 <tbody>
                   {filtered.map(r => (
-                    <tr key={r.id} className={`border-t border-gray-100 hover:bg-gray-50/60 ${r.tone === 'warn' ? 'bg-amber-50/40' : ''}`}>
+                    <tr key={r.id} className={`border-t border-gray-100 hover:bg-gray-50/60 ${r.tone === 'warn' ? 'bg-amber-50/40' : r.tone === 'info' ? 'bg-blue-50/30' : ''}`}>
                       {columns.map((c, i) => {
                         const cell = r.cells[c.key] ?? { text: '' }
                         const body = (
@@ -223,6 +247,7 @@ export function MasterTable({
                           </td>
                         )
                       })}
+                      {hasAction && <td className="px-3 py-1.5 align-top text-right">{r.action}</td>}
                     </tr>
                   ))}
                 </tbody>
@@ -254,8 +279,9 @@ export function MasterTable({
                 </>
               )
               return (
-                <div key={r.id} className={`px-4 py-3 ${r.tone === 'warn' ? 'bg-amber-50/40' : ''}`}>
+                <div key={r.id} className={`px-4 py-3 ${r.tone === 'warn' ? 'bg-amber-50/40' : r.tone === 'info' ? 'bg-blue-50/30' : ''}`}>
                   {r.href ? <Link href={r.href} className="block">{inner}</Link> : inner}
+                  {r.action && <div className="mt-2">{r.action}</div>}
                 </div>
               )
             })}
@@ -263,5 +289,18 @@ export function MasterTable({
         </>
       )}
     </div>
+  )
+}
+
+function Chip({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`whitespace-nowrap rounded-full border px-3 min-h-[44px] sm:min-h-[36px] text-xs font-medium ${
+        active ? 'border-indigo-300 bg-indigo-50 text-indigo-800' : 'border-gray-200 bg-white text-gray-600 hover:bg-gray-50'}`}
+    >
+      {children}
+    </button>
   )
 }

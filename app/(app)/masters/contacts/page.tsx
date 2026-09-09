@@ -2,7 +2,10 @@ import Link from 'next/link'
 import { requirePermission } from '@/lib/auth'
 import { PageHeader } from '@/components/PageHeader'
 import { loadContactMaster, type Party } from '@/lib/revamp/masters-in4'
+import { loadContacts as loadHubContacts } from '@/lib/masters'
 import { MasterTable, type MasterRow, type MasterColumn } from '../MasterTable'
+import { LinkPicker } from '../LinkPicker'
+import { canEditMasters } from '../admin'
 
 export const dynamic = 'force-dynamic'
 
@@ -11,6 +14,7 @@ const GROUPS = [
   { key: 'consultants', label: 'Consultants' },
   { key: 'vendors', label: 'Vendors' },
   { key: 'contractors', label: 'Contractors' },
+  { key: 'hub-only', label: 'In CT Hub only' },
 ] as const
 type GroupKey = (typeof GROUPS)[number]['key']
 
@@ -27,8 +31,12 @@ export default async function ContactsMasterPage({ searchParams }: { searchParam
   await requirePermission('cost-control', 'view')
   const { group: raw, q = '' } = await searchParams
   const group: GroupKey = GROUPS.some(g => g.key === raw) ? (raw as GroupKey) : 'team'
-  const c = await loadContactMaster()
-  const counts: Record<GroupKey, number> = { team: c.team.length, consultants: c.consultants.length, vendors: c.vendors.length, contractors: c.contractors.length }
+  // The hub's own Vendors and JMR-contractor lists, measured against IN4: a
+  // name with no IN4 party behind it was typed here and never registered, or
+  // IN4 spells it differently — an admin pins it.
+  const [c, hubList] = await Promise.all([loadContactMaster(), loadHubContacts()])
+  const hubOnly = hubList.rows.filter(r => r.kind === 'hub-only')
+  const counts: Record<GroupKey, number> = { team: c.team.length, consultants: c.consultants.length, vendors: c.vendors.length, contractors: c.contractors.length, 'hub-only': hubOnly.length }
   const qs = q ? `&q=${encodeURIComponent(q)}` : ''
 
   return (
@@ -58,9 +66,12 @@ export default async function ContactsMasterPage({ searchParams }: { searchParam
         {group === 'consultants' && 'IN4 keeps no consultant list: these are the contractors IN4 files under its “Consultants Cost” category.'}
         {group === 'vendors' && 'IN4’s supplier register — PAN, GST, address, phone, e-mail and contact person as entered there.'}
         {group === 'contractors' && 'IN4’s service-provider register, without the consultants.'}
+        {group === 'hub-only' && `Names typed into CT Hub (Vendors, JMR contractors) that match no party in IN4 — ${hubList.matched} others matched. Either IN4 spells it differently (pin it) or it was never registered in IN4.`}
       </p>
 
-      {group === 'team' ? (
+      {group === 'hub-only' ? (
+        <HubOnly rows={hubOnly} in4Options={hubList.rows.filter(r => r.kind !== 'hub-only').map(r => ({ key: r.key, label: `${r.name}${r.pan ? ` · ${r.pan}` : ''}` }))} q={q} />
+      ) : group === 'team' ? (
         <MasterTable
           columns={[
             { key: 'name', label: 'Name' },
@@ -154,5 +165,37 @@ function PartyTable({ parties, kind, q }: { parties: Party[]; kind: 'consultants
         emptyHint={<span>Not here? It may be in another group — <Link href={`/masters/search?q=${encodeURIComponent(q)}`} className="text-indigo-700 hover:underline">search all masters</Link>.</span>}
       />
     </div>
+  )
+}
+
+/** CT Hub names with no IN4 party behind them — the scattering, measured. */
+async function HubOnly({ rows, in4Options, q }: { rows: Awaited<ReturnType<typeof loadHubContacts>>['rows']; in4Options: Array<{ key: string; label: string }>; q: string }) {
+  const canEdit = await canEditMasters()
+  const table: MasterRow[] = rows.map(r => ({
+    id: r.key,
+    tone: 'warn',
+    cells: {
+      name: { text: r.name, tone: 'strong', sub: r.hubSources.join(', ') || undefined },
+      gstin: r.gstin ? { text: r.gstin, mono: true } : { text: '—', tone: 'muted' },
+      phone: r.phone ? { text: r.phone } : { text: '—', tone: 'muted' },
+      email: r.email ? { text: r.email, tone: 'muted' } : { text: '—', tone: 'muted' },
+    },
+    action: canEdit && r.hubRefs[0] ? <LinkPicker kind="party" hubTable={r.hubRefs[0].table} hubId={r.hubRefs[0].id} current={null} options={in4Options} /> : undefined,
+  }))
+  return (
+    <MasterTable
+      columns={[
+        { key: 'name', label: 'CT Hub name' },
+        { key: 'gstin', label: 'GST No', width: 'w-40' },
+        { key: 'phone', label: 'Phone', width: 'w-32' },
+        { key: 'email', label: 'E-mail' },
+      ]}
+      sortableKeys={['name']}
+      rows={table}
+      initialQuery={q}
+      exportName="contacts-ct-hub-only"
+      searchPlaceholder="Search a CT Hub-only name…"
+      emptyMessage="Every CT Hub contact matches a party in IN4."
+    />
   )
 }

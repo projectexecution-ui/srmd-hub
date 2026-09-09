@@ -154,7 +154,7 @@ export function In4SyncClient({ configured, missingVars, feeds, budgetComparison
                     {f.feed === 'tracker' && <TrackerCmp c={f.comparison as TrackerComparison | null} />}
                     {f.feed === 'contractor' && <ReportCmp c={f.comparison as ReportComparison | null} />}
                     {f.feed === 'supplier' && <SupplierCmp c={f.comparison as SupplierComparison | null} />}
-                    {f.feed === 'masters' && <p className="text-xs text-gray-600">The mirror feeds the <Link href="/admin/masters" className="text-blue-700 hover:underline">Masters</Link> screens — contractors, suppliers, materials, stores, trusts and units, each matched against the hub&apos;s own lists there.</p>}
+                    {f.feed === 'masters' && <p className="text-xs text-gray-600">The mirror feeds the <Link href="/masters" className="text-blue-700 hover:underline">Masters</Link> screens — contractors, suppliers, materials, stores, trusts and units, each matched against the hub&apos;s own lists there.</p>}
                   </div>
                 )}
               </div>

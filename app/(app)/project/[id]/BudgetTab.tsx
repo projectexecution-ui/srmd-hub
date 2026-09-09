@@ -120,7 +120,7 @@ async function CtWiseView({ projectId }: { projectId: string }) {
           This roll-up reads IN4 sub-projects through a confirmed mapping, never a name match.
         </p>
         {reviewer ? (
-          <Link href="/admin/masters/mapping" className="mt-3 inline-flex items-center rounded-lg bg-amber-700 px-3 text-xs font-semibold text-white min-h-[44px] hover:bg-amber-800">
+          <Link href="/masters/mapping" className="mt-3 inline-flex items-center rounded-lg bg-amber-700 px-3 text-xs font-semibold text-white min-h-[44px] hover:bg-amber-800">
             Link it in Masters → Mapping
           </Link>
         ) : (

@@ -34,6 +34,6 @@ export async function setAlias(input: { source: AliasSource; alias: string; proj
     })
     if (error) return { ok: false, error: error.message }
   }
-  revalidatePath('/admin/masters/mapping')
+  revalidatePath('/masters/mapping')
   return { ok: true }
 }
