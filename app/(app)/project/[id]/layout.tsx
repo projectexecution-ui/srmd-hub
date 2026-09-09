@@ -3,7 +3,8 @@ import { notFound } from 'next/navigation'
 import { requirePermission, getDisabledModuleSlugs } from '@/lib/auth'
 import { ChevronLeft, Bell } from 'lucide-react'
 import { loadWorkspaceHeader } from '@/lib/revamp/workspace-header'
-import { visibleWorkspaceTabs } from '@/lib/revamp/workspace'
+import { SETUP_TAB } from '@/lib/revamp/workspace'
+import { visibleWorkspaceTabsV2, allowedSubsByTab, canOpenWorkspaceTab } from '@/lib/revamp/permissions'
 import { checkIsCcReviewer } from '@/components/cost-control/ws-actions'
 import { formatDateTime } from '@/lib/utils'
 import { Ribbon } from './Ribbon'
@@ -62,7 +63,12 @@ export default async function ProjectWorkspaceLayout({
   }
   const head = res.header
 
-  const tabs = visibleWorkspaceTabs(perms, disabled, isReviewer)
+  // Each tab and each pill under it has a switch of its own in the matrix,
+  // inheriting the module until set — so with no switches set this is the
+  // ribbon exactly as before (lib/revamp/permissions.ts).
+  const tabs = visibleWorkspaceTabsV2(perms, disabled, isReviewer)
+  const pills = allowedSubsByTab(perms, tabs)
+  const canSetup = canOpenWorkspaceTab(perms, SETUP_TAB, disabled, isReviewer)
 
   return (
     <div className="min-h-full bg-gray-50/60">
@@ -150,7 +156,8 @@ export default async function ProjectWorkspaceLayout({
           <Ribbon
             projectId={id}
             tabs={tabs}
-            canSetup={isReviewer}
+            pills={pills}
+            canSetup={canSetup}
             /* This project's own Cost Control queue, for the Approvals tab. */
             badges={{ approvals: approvalCounts.byProject[id] ?? 0 }}
           />

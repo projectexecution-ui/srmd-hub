@@ -39,10 +39,12 @@ const ICONS: Record<string, LucideIcon> = {
  * a server concern; this component only draws.
  */
 export function Ribbon({
-  projectId, tabs, canSetup, badges = {},
+  projectId, tabs, pills, canSetup, badges = {},
 }: {
   projectId: string
   tabs: WorkspaceTab[]
+  /** tab slug → the pill indices this person may open. A tab absent here shows all its pills. */
+  pills?: Record<string, number[]>
   /** tab slug → a count to show on that tab, in amber. Used for approvals
    *  waiting on THIS person; general so another lane can carry one later. */
   badges?: Record<string, number>
@@ -161,7 +163,7 @@ export function Ribbon({
           role="tablist"
           aria-label={`${current.label} views`}
         >
-          {current.subs.map((sub, i) => (
+          {current.subs.map((sub, i) => (pills && pills[current.slug] && !pills[current.slug].includes(i)) ? null : (
             <Link
               key={sub}
               href={workspaceHref(projectId, current, i)}

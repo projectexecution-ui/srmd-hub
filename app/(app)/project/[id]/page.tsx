@@ -1,5 +1,8 @@
-import { requirePermission } from '@/lib/auth'
-import { WORKSPACE_TABS, activeSubTab } from '@/lib/revamp/workspace'
+import { redirect } from 'next/navigation'
+import { requirePermission, getDisabledModuleSlugs } from '@/lib/auth'
+import { WORKSPACE_TABS, activeSubTab, workspaceHref } from '@/lib/revamp/workspace'
+import { canOpenWorkspaceTab, landingSub } from '@/lib/revamp/permissions'
+import { checkIsCcReviewer } from '@/components/cost-control/ws-actions'
 import { BudgetTab } from './BudgetTab'
 
 export const dynamic = 'force-dynamic'
@@ -19,9 +22,19 @@ export default async function ProjectBudgetPage({
   params: Promise<{ id: string }>
   searchParams: Promise<{ view?: string }>
 }) {
-  await requirePermission('cost-control', 'view')
+  const perms = await requirePermission('cost-control', 'view')
   const { id } = await params
   const { view } = await searchParams
 
-  return <BudgetTab projectId={id} view={activeSubTab(WORKSPACE_TABS[0], view)} />
+  // The Budget tab's own switch (ws:budget) and its pills (ws:budget:by-order …),
+  // inheriting cost-control until an admin sets them. See lib/revamp/permissions.ts.
+  const budget = WORKSPACE_TABS[0]
+  const [disabled, isReviewer] = await Promise.all([getDisabledModuleSlugs(), checkIsCcReviewer()])
+  if (!canOpenWorkspaceTab(perms, budget, disabled, isReviewer)) redirect('/dashboard')
+  const asked = activeSubTab(budget, view)
+  const land = landingSub(perms, budget, asked)
+  if (land < 0) redirect('/dashboard')
+  if (land !== asked) redirect(workspaceHref(id, budget, land))
+
+  return <BudgetTab projectId={id} view={land} />
 }

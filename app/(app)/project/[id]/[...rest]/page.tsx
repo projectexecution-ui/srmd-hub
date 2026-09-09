@@ -4,6 +4,8 @@ import { requirePermission } from '@/lib/auth'
 import { checkIsCcReviewer } from '@/components/cost-control/ws-actions'
 import { findTab, PROJECT_TABS, tabHref, type ProjectTab } from '@/lib/revamp/tabs'
 import { ABSORBED, activeSubTab, findWorkspaceTab, workspaceHref } from '@/lib/revamp/workspace'
+import { canOpenWorkspaceTab, landingSub } from '@/lib/revamp/permissions'
+import { getMyPermissions, getDisabledModuleSlugs } from '@/lib/auth'
 import { Hammer, ArrowRight, Database } from 'lucide-react'
 import { OverviewTab } from '../OverviewTab'
 import { ReportsTab } from '../ReportsTab'
@@ -54,19 +56,31 @@ export default async function ProjectTabPage({
   // none of whom have contractor-report, and /project/<id>/procurement served
   // the tracker to everyone. Same slug the standalone screen uses, so the two
   // can never drift apart.
-  await requirePermission(tab.permissionSlug, 'view')
-
-  // Which sub-tab pill is on, clamped to the ones the tab declares. The pills
-  // live on the fifteen-tab list (the ribbon's own source), not on the older
-  // PROJECT_TABS this route still gates with.
+  // Since 10 Sep 2026 the tab has a switch of its own in the matrix (ws:<tab>),
+  // which inherits the module until an admin sets it — so with no ws rows this
+  // is exactly the module gate above. Then the pill: a pill switched off for
+  // this role lands on the first pill that is on; none on = the tab is closed.
   const wsTab = findWorkspaceTab(slug)
-  const view = wsTab ? activeSubTab(wsTab, viewParam) : 0
-
-  // Some tabs need more than the module permission. Setup's own page redirects
-  // a non-reviewer to /cost-control, which from inside the cockpit reads as
-  // being thrown out of the project for no stated reason — so don't let them
-  // arrive there at all. The strip hides it for the same reason.
-  if (tab.reviewerOnly && !(await checkIsCcReviewer())) notFound()
+  const isReviewer = await checkIsCcReviewer()
+  if (wsTab) {
+    const [perms, disabled] = await Promise.all([getMyPermissions(), getDisabledModuleSlugs()])
+    if (!canOpenWorkspaceTab(perms, wsTab, disabled, isReviewer)) {
+      if (tab.reviewerOnly && !isReviewer) notFound()
+      redirect('/dashboard')
+    }
+    const asked = activeSubTab(wsTab, viewParam)
+    const land = landingSub(perms, wsTab, asked)
+    if (land < 0) redirect('/dashboard')
+    if (land !== asked) redirect(workspaceHref(id, wsTab, land))
+  } else {
+    await requirePermission(tab.permissionSlug, 'view')
+    // Some tabs need more than the module permission. Setup's own page redirects
+    // a non-reviewer to /cost-control, which from inside the cockpit reads as
+    // being thrown out of the project for no stated reason — so don't let them
+    // arrive there at all. The strip hides it for the same reason.
+    if (tab.reviewerOnly && !isReviewer) notFound()
+  }
+  const view = wsTab ? landingSub(await getMyPermissions(), wsTab, activeSubTab(wsTab, viewParam)) : 0
 
   if (slug === 'overview')    return <OverviewTab projectId={id} />
   if (slug === 'reports')     return <ReportsTab projectId={id} />

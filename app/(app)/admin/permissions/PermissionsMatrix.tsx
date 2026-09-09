@@ -1,26 +1,43 @@
 'use client'
 import { bumpShell } from '@/lib/shell-actions'
-import { useMemo, useState, useEffect } from 'react'
+import { useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Eye, Pencil, ShieldCheck, Trash2, Loader2, Check, Plus, X, Sparkles, Box } from 'lucide-react'
+import {
+  Eye, EyeOff, Pencil, ShieldCheck, Trash2, Loader2, Check, Plus, X, Sparkles, Box, ChevronRight, ChevronDown, RotateCcw, Archive,
+  BarChart3, CircleCheck, Layers, CreditCard, ClipboardList, GitBranch, Package, Ruler, CalendarDays, FileText, FileBarChart, Users, MessageSquare, Briefcase, Settings2,
+  type LucideIcon,
+} from 'lucide-react'
 import { confirm } from '@/components/ui/confirm-dialog'
 import { cn } from '@/lib/utils'
 import { TILE_TONES } from '@/lib/modules'
-import { groupModules, moduleMetaMap, groupRoles, sortRolesByCategory } from './groups'
+import { moduleMetaMap, groupRoles, sortRolesByCategory } from './groups'
+import { tabAccess, subAccess, tabSlug, isWsSlug, ALL_TABS, type MatrixSection, type MatrixRow, type PermLike } from '@/lib/revamp/permissions'
+import type { WorkspaceTab } from '@/lib/revamp/workspace'
 import type { Role, PermAction } from '@/lib/types'
 import type { RoleLabelMap } from '@/lib/role-labels'
 
-interface ModuleRef { slug: string; label: string }
+/**
+ * The matrix, revamp shape (Aksha, 10 Sep 2026).
+ *
+ * Three kinds of row:
+ *   tab     ws:<tab>          — may the role OPEN this tab of a project?
+ *   pill    ws:<tab>:<pill>   — may the role open this pill of the tab?
+ *   module  <slug>            — what the role can DO: View · Edit · Admin · Delete,
+ *                               exactly as before.
+ * A tab or pill with no row of its own INHERITS — the tab from its module, the
+ * pill from its tab — and shows as a dashed cell. One click writes a row of
+ * its own; the ↺ takes it back to inheriting. Only View exists on a tab or a
+ * pill: what a role can do inside is the module's Edit and Admin, because that
+ * is what every screen checks. See lib/revamp/permissions.ts.
+ */
 
 // Delete rule per role×module: no delete / immediate / needs an approver.
 type Mode = 'none' | 'direct' | 'request'
 
-// A permission row incl. the delete columns (RolePermission itself doesn't
-// carry delete_mode/approver).
 export type PermRow = {
   role: Role
   module_slug: string
@@ -32,7 +49,10 @@ export type PermRow = {
 }
 
 interface Props {
-  modules: ModuleRef[]
+  sections: MatrixSection[]
+  legacy: MatrixSection
+  /** A search is on: every pill shows, and the old screens unfold when they match. */
+  searching?: boolean
   roles: readonly Role[]
   initial: PermRow[]
   roleLabels: RoleLabelMap
@@ -51,6 +71,11 @@ const ACTIONS: { key: PermAction; label: string; icon: React.ComponentType<{ cla
   { key: 'admin', label: 'Admin', icon: ShieldCheck, on: 'bg-purple-100 text-purple-800' },
 ]
 
+const TAB_ICONS: Record<string, LucideIcon> = {
+  BarChart3, CircleCheck, Layers, CreditCard, ClipboardList, GitBranch, Package, Ruler, ShieldCheck, CalendarDays, FileText, FileBarChart, Users, MessageSquare, Briefcase, Settings2,
+}
+const TAB_BY_SLUG = new Map<string, WorkspaceTab>(ALL_TABS.map(t => [tabSlug(t), t]))
+
 async function fetchAiDescription(roleName: string, context: string): Promise<string> {
   const res = await fetch('/api/ai/role-description', {
     method: 'POST',
@@ -62,7 +87,7 @@ async function fetchAiDescription(roleName: string, context: string): Promise<st
   return (json?.description as string) || ''
 }
 
-export default function PermissionsMatrix({ modules, roles, initial, roleLabels, currentUserIsPortalOwner, canManageRoles = false, totalModules }: Props) {
+export default function PermissionsMatrix({ sections, legacy, searching = false, roles, initial, roleLabels, currentUserIsPortalOwner, canManageRoles = false, totalModules }: Props) {
   const router = useRouter()
   const initialMap = useMemo<Record<Key, CellState>>(() => {
     const m: Record<Key, CellState> = {}
@@ -93,17 +118,31 @@ export default function PermissionsMatrix({ modules, roles, initial, roleLabels,
   const [aiAddBusy, setAiAddBusy] = useState(false)
   const [delBusyRole, setDelBusyRole] = useState<Role | null>(null)
 
-  // Crosshair hover — highlight the hovered row + column so a wide matrix is
-  // readable at a glance.
+  // Which tabs show their pills (collapsed by default — 45 pill rows would bury the tabs). Old screens fold away.
+  const [expanded, setExpanded] = useState<Set<string>>(() => new Set())
+  const [showLegacy, setShowLegacy] = useState(false)
+  const allTabSlugs = useMemo(() => sections.flatMap(s => s.rows).filter(r => r.kind === 'tab').map(r => r.slug), [sections])
+  const legacyOpen = showLegacy || (searching && legacy.rows.length > 0)
+
+  // Crosshair hover — highlight the hovered row + column so a wide matrix is readable at a glance.
   const [hoverRole, setHoverRole] = useState<Role | null>(null)
   const [hoverSlug, setHoverSlug] = useState<string | null>(null)
 
-  const grouped = useMemo(() => groupModules(modules), [modules])
-  // Category-ordered roles so the matrix columns + legend cluster by category.
   const orderedRoles = useMemo(() => sortRolesByCategory(visibleRoles), [visibleRoles])
   const roleGroups = useMemo(() => groupRoles(orderedRoles), [orderedRoles])
-  // The first role of each category (after the first) gets a divider border.
   const catStart = useMemo(() => new Set(roleGroups.slice(1).map(g => g.roles[0] as string)), [roleGroups])
+
+  // The permission map each role would get from my_permissions(), built from the cells — what the workspace's own rule reads.
+  const permsByRole = useMemo(() => {
+    const out = new Map<Role, PermLike>()
+    for (const role of orderedRoles) {
+      const p: PermLike = {}
+      const prefix = `${role}::`
+      for (const [k, v] of Object.entries(state)) if (k.startsWith(prefix)) p[k.slice(prefix.length)] = { view: v.view, edit: v.edit, admin: v.admin }
+      out.set(role, p)
+    }
+    return out
+  }, [state, orderedRoles])
 
   async function addRole(e: React.FormEvent) {
     e.preventDefault()
@@ -172,10 +211,27 @@ export default function PermissionsMatrix({ modules, roles, initial, roleLabels,
   function getCell(role: Role, slug: string): CellState {
     return state[`${role}::${slug}`] ?? { view: false, edit: false, admin: false, del: 'none', approver: null }
   }
+  const hasOwnRow = (role: Role, slug: string) => `${role}::${slug}` in state
+
+  /** What a tab or pill row resolves to for a role, and whether that came from a row of its own. */
+  function wsEffective(role: Role, row: MatrixRow): { view: boolean; own: boolean; from: string } {
+    const perms = permsByRole.get(role) ?? {}
+    if (row.kind === 'tab') {
+      const tab = TAB_BY_SLUG.get(row.slug)
+      if (!tab) return { view: false, own: false, from: '' }
+      const a = tabAccess(perms, tab)
+      return { view: a.view, own: a.source === 'tab', from: a.source === 'tab' ? '' : `inherits ${row.inherits}` }
+    }
+    const tab = TAB_BY_SLUG.get(row.parent ?? '')
+    if (!tab) return { view: false, own: false, from: '' }
+    const own = hasOwnRow(role, row.slug)
+    return { view: subAccess(perms, tab, row.label), own, from: own ? '' : `inherits the ${tab.ribbon} tab` }
+  }
 
   function roleContext(role: Role): string {
     const parts: string[] = []
-    for (const m of modules) {
+    for (const s of [...sections, legacy]) for (const m of s.rows) {
+      if (m.kind !== 'module') continue
       const c = getCell(role, m.slug)
       if (c.admin) parts.push(`manage ${m.label}`)
       else if (c.edit) parts.push(`edit ${m.label}`)
@@ -184,13 +240,12 @@ export default function PermissionsMatrix({ modules, roles, initial, roleLabels,
     return parts.slice(0, 14).join(', ')
   }
 
-  // Count from live state (not the possibly-filtered `modules`) so search
-  // doesn't shrink the denominator or the tally.
-  const totalMods = totalModules ?? modules.length
+  // Count from live state (not the possibly-filtered rows) so search doesn't shrink the denominator or the tally. Modules only — tabs and pills inherit.
+  const totalMods = totalModules ?? [...sections, legacy].flatMap(s => s.rows).filter(r => r.kind === 'module').length
   const roleModuleCount = (role: Role) =>
     role === ('admin' as Role)
       ? totalMods
-      : Object.entries(state).filter(([k, v]) => k.startsWith(`${role}::`) && v.view).length
+      : Object.entries(state).filter(([k, v]) => k.startsWith(`${role}::`) && v.view && !isWsSlug(k.slice(`${role}::`.length))).length
 
   async function toggle(role: Role, slug: string, action: PermAction) {
     const key: Key = `${role}::${slug}`
@@ -218,8 +273,44 @@ export default function PermissionsMatrix({ modules, roles, initial, roleLabels,
     setTimeout(() => setSavedKey(k => (k === key ? null : k)), 1500)
   }
 
-  // Delete rule — cycles none → direct → request; only delete_* columns are
-  // written, so it never touches the view/edit/admin flags on the same row.
+  /** A tab or pill: one click writes a row of its own with the opposite of what the role gets today. */
+  async function toggleWs(role: Role, row: MatrixRow) {
+    const key: Key = `${role}::${row.slug}`
+    const before = state[key]
+    const eff = wsEffective(role, row)
+    const next: CellState = { view: !eff.view, edit: false, admin: false, del: 'none', approver: null }
+    setState(s => ({ ...s, [key]: next }))
+    setBusyKey(key); setError(null)
+    const { error } = await createClient()
+      .from('role_permissions')
+      .upsert({ role, module_slug: row.slug, can_view: next.view, can_edit: false, can_admin: false, updated_at: new Date().toISOString() }, { onConflict: 'role,module_slug' })
+    setBusyKey(null)
+    if (error) {
+      setError(`${role} / ${row.label}: ${error.message}`)
+      setState(s => { const c = { ...s }; if (before) c[key] = before; else delete c[key]; return c })
+      return
+    }
+    setSavedKey(key)
+    setTimeout(() => setSavedKey(k => (k === key ? null : k)), 1500)
+    await bumpShell()
+  }
+
+  /** Back to inheriting: the row of its own is removed. */
+  async function resetWs(role: Role, row: MatrixRow) {
+    const key: Key = `${role}::${row.slug}`
+    const before = state[key]
+    if (!before) return
+    setState(s => { const c = { ...s }; delete c[key]; return c })
+    setBusyKey(key); setError(null)
+    const { error } = await createClient().from('role_permissions').delete().match({ role, module_slug: row.slug })
+    setBusyKey(null)
+    if (error) { setError(`${role} / ${row.label}: ${error.message}`); setState(s => ({ ...s, [key]: before })); return }
+    setSavedKey(key)
+    setTimeout(() => setSavedKey(k => (k === key ? null : k)), 1500)
+    await bumpShell()
+  }
+
+  // Delete rule — cycles none → direct → request; only delete_* columns are written.
   async function persistDelete(role: Role, slug: string, patch: { del?: Mode; approver?: string | null }) {
     const key: Key = `${role}::${slug}`
     const current = getCell(role, slug)
@@ -247,6 +338,14 @@ export default function PermissionsMatrix({ modules, roles, initial, roleLabels,
   const setApprover = (role: Role, slug: string, approver: string | null) => persistDelete(role, slug, { approver })
 
   const colCount = visibleRoles.length + 1
+  const tabCount = allTabSlugs.length
+  const pillCount = sections.flatMap(s => s.rows).filter(r => r.kind === 'sub').length
+
+  const rowProps = {
+    visibleRoles: orderedRoles, catStart, labels, getCell, hasOwnRow, wsEffective, busyKey, savedKey, hoverRole, hoverSlug,
+    setHoverRole, setHoverSlug, toggle, toggleWs, resetWs, cycleDelete, setApprover, searching, expanded,
+    toggleExpanded: (slug: string) => setExpanded(e => { const n = new Set(e); if (n.has(slug)) n.delete(slug); else n.add(slug); return n }),
+  }
 
   return (
     <div className="space-y-4">
@@ -259,10 +358,13 @@ export default function PermissionsMatrix({ modules, roles, initial, roleLabels,
             <h2 className="text-base font-semibold text-gray-900">Access matrix</h2>
             <span className="inline-flex items-center gap-1.5 text-xs text-gray-500">
               <span className="inline-flex items-center rounded-full bg-slate-100 px-2 py-0.5 font-medium text-slate-700 tabular-nums">{visibleRoles.length} roles</span>
-              <span className="inline-flex items-center rounded-full bg-slate-100 px-2 py-0.5 font-medium text-slate-700 tabular-nums">{modules.length} modules</span>
+              <span className="inline-flex items-center rounded-full bg-slate-100 px-2 py-0.5 font-medium text-slate-700 tabular-nums">{tabCount} tabs · {pillCount} pills</span>
+              <span className="inline-flex items-center rounded-full bg-slate-100 px-2 py-0.5 font-medium text-slate-700 tabular-nums">{totalMods} screens</span>
             </span>
             <div className="ml-auto flex items-center gap-3 text-[11px] text-gray-500">
-              {ACTIONS.map(a => (
+              <span className="inline-flex items-center gap-1"><span className="inline-flex h-4 w-4 items-center justify-center rounded bg-blue-100 text-blue-700"><Eye className="h-2.5 w-2.5" /></span>Open / View</span>
+              <span className="inline-flex items-center gap-1"><span className="inline-flex h-4 w-4 items-center justify-center rounded border border-dashed border-blue-300 text-blue-400"><Eye className="h-2.5 w-2.5" /></span>inherited</span>
+              {ACTIONS.slice(1).map(a => (
                 <span key={a.key} className="inline-flex items-center gap-1">
                   <span className={cn('inline-flex h-4 w-4 items-center justify-center rounded', a.on)}><a.icon className="h-2.5 w-2.5" /></span>
                   {a.label}
@@ -275,49 +377,53 @@ export default function PermissionsMatrix({ modules, roles, initial, roleLabels,
             </div>
           </div>
           <p className="text-xs text-gray-500 -mt-1">
-            Click a cell to toggle — saves instantly. <b>Edit</b> auto-grants <b>View</b>; <b>Admin</b> auto-grants <b>View + Edit</b>; removing <b>View</b> clears the row. The <b>Delete</b> button cycles none → direct → needs-approval (pick an approver). Admin has full access always.
+            <b>Tabs and pills</b> say who may <b>open</b> them in a project. A dashed cell inherits — a tab from its screen, a pill from its tab; one click gives it a switch of its own, <RotateCcw className="inline h-3 w-3 align-text-bottom" /> takes it back. <b>Screens</b> say what a role can <b>do</b> inside: Edit auto-grants View, Admin auto-grants View + Edit, removing View clears the row; Delete cycles none → direct → needs approval. Admin has full access always.
           </p>
 
-          {canManageRoles && (
-            <div>
-              {!showAddRole ? (
-                <Button size="sm" variant="outline" onClick={() => setShowAddRole(true)}>
-                  <Plus className="h-4 w-4" /> Add role
+          <div className="flex flex-wrap items-center gap-2">
+            {canManageRoles && !showAddRole && (
+              <Button size="sm" variant="outline" onClick={() => setShowAddRole(true)}>
+                <Plus className="h-4 w-4" /> Add role
+              </Button>
+            )}
+            <Button size="sm" variant="ghost" onClick={() => setExpanded(new Set(allTabSlugs))} className="text-gray-600">
+              <ChevronDown className="h-4 w-4" /> Show every pill
+            </Button>
+            <Button size="sm" variant="ghost" onClick={() => setExpanded(new Set())} className="text-gray-600">
+              <ChevronRight className="h-4 w-4" /> Tabs only
+            </Button>
+          </div>
+          {canManageRoles && showAddRole && (
+            <form onSubmit={addRole} className="w-full flex flex-col sm:flex-row sm:flex-wrap sm:items-end gap-2 p-3 bg-blue-50/40 border border-blue-200 rounded-xl">
+              <div className="w-full sm:w-auto">
+                <label className="text-[11px] font-semibold uppercase tracking-wide text-gray-600 mb-1 block">Role name</label>
+                <Input value={newRoleLabel} onChange={e => setNewRoleLabel(e.target.value)} placeholder="e.g. QC Inspector" disabled={addBusy} className="w-full sm:min-w-[12rem]" autoFocus />
+              </div>
+              <div className="w-full sm:flex-1 sm:min-w-[14rem]">
+                <div className="flex items-center justify-between mb-1">
+                  <label className="text-[11px] font-semibold uppercase tracking-wide text-gray-600 block">Description (optional)</label>
+                  <button type="button" disabled={aiAddBusy || addBusy || !newRoleLabel.trim()}
+                    onClick={async () => { setAiAddBusy(true); setError(null); try { setNewRoleDesc(await fetchAiDescription(newRoleLabel, '')) } catch (e) { setError(e instanceof Error ? e.message : 'AI failed') } finally { setAiAddBusy(false) } }}
+                    title="Let AI write the description from the role name"
+                    className="inline-flex items-center gap-1 text-[11px] font-medium text-violet-700 hover:text-violet-900 disabled:opacity-40">
+                    {aiAddBusy ? <Loader2 className="h-3 w-3 animate-spin" /> : <Sparkles className="h-3 w-3" />} Write with AI
+                  </button>
+                </div>
+                <Input value={newRoleDesc} onChange={e => setNewRoleDesc(e.target.value)} placeholder="What this role can do…" disabled={addBusy} />
+              </div>
+              <div className="flex gap-2 w-full sm:w-auto">
+                <Button type="submit" size="sm" disabled={addBusy || !newRoleLabel.trim()} className="flex-1 sm:flex-none">
+                  {addBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />} Create role
                 </Button>
-              ) : (
-                <form onSubmit={addRole} className="w-full flex flex-col sm:flex-row sm:flex-wrap sm:items-end gap-2 p-3 bg-blue-50/40 border border-blue-200 rounded-xl">
-                  <div className="w-full sm:w-auto">
-                    <label className="text-[11px] font-semibold uppercase tracking-wide text-gray-600 mb-1 block">Role name</label>
-                    <Input value={newRoleLabel} onChange={e => setNewRoleLabel(e.target.value)} placeholder="e.g. QC Inspector" disabled={addBusy} className="w-full sm:min-w-[12rem]" autoFocus />
-                  </div>
-                  <div className="w-full sm:flex-1 sm:min-w-[14rem]">
-                    <div className="flex items-center justify-between mb-1">
-                      <label className="text-[11px] font-semibold uppercase tracking-wide text-gray-600 block">Description (optional)</label>
-                      <button type="button" disabled={aiAddBusy || addBusy || !newRoleLabel.trim()}
-                        onClick={async () => { setAiAddBusy(true); setError(null); try { setNewRoleDesc(await fetchAiDescription(newRoleLabel, '')) } catch (e) { setError(e instanceof Error ? e.message : 'AI failed') } finally { setAiAddBusy(false) } }}
-                        title="Let AI write the description from the role name"
-                        className="inline-flex items-center gap-1 text-[11px] font-medium text-violet-700 hover:text-violet-900 disabled:opacity-40">
-                        {aiAddBusy ? <Loader2 className="h-3 w-3 animate-spin" /> : <Sparkles className="h-3 w-3" />} Write with AI
-                      </button>
-                    </div>
-                    <Input value={newRoleDesc} onChange={e => setNewRoleDesc(e.target.value)} placeholder="What this role can do…" disabled={addBusy} />
-                  </div>
-                  <div className="flex gap-2 w-full sm:w-auto">
-                    <Button type="submit" size="sm" disabled={addBusy || !newRoleLabel.trim()} className="flex-1 sm:flex-none">
-                      {addBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />} Create role
-                    </Button>
-                    <Button type="button" size="sm" variant="ghost" onClick={() => { setShowAddRole(false); setNewRoleLabel(''); setNewRoleDesc('') }} disabled={addBusy}><X className="h-4 w-4" /> Cancel</Button>
-                  </div>
-                </form>
-              )}
-            </div>
+                <Button type="button" size="sm" variant="ghost" onClick={() => { setShowAddRole(false); setNewRoleLabel(''); setNewRoleDesc('') }} disabled={addBusy}><X className="h-4 w-4" /> Cancel</Button>
+              </div>
+            </form>
           )}
 
           {/* Matrix */}
           <div className="overflow-auto max-h-[72vh] rounded-xl border border-gray-200" onMouseLeave={() => { setHoverRole(null); setHoverSlug(null) }}>
             <table className="min-w-full border-separate border-spacing-0 text-sm">
               <thead>
-                {/* Category band — spans each group's role columns (scrolls away; the role row below stays pinned). */}
                 <tr>
                   <th className="sticky left-0 z-20 bg-gray-50 border-b border-gray-200" />
                   {roleGroups.map((g, gi) => (
@@ -328,7 +434,7 @@ export default function PermissionsMatrix({ modules, roles, initial, roleLabels,
                   ))}
                 </tr>
                 <tr>
-                  <th className="sticky left-0 top-0 z-30 bg-gray-50 border-b border-gray-200 px-3 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wide text-gray-500 min-w-[220px]">Module</th>
+                  <th className="sticky left-0 top-0 z-30 bg-gray-50 border-b border-gray-200 px-3 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wide text-gray-500 min-w-[260px]">Tab · pill · screen</th>
                   {orderedRoles.map(role => {
                     const rl = labels[role]
                     const busy = labelBusy === role
@@ -354,7 +460,7 @@ export default function PermissionsMatrix({ modules, roles, initial, roleLabels,
                           <div className="text-[11px] font-bold uppercase tracking-wide text-gray-700 leading-tight">{rl?.label || role}</div>
                         )}
                         <div className="mt-1 flex items-center justify-center gap-1 text-[10px] text-gray-400">
-                          {role === ('admin' as Role) ? <span className="text-purple-500 font-semibold">full</span> : <span className="tabular-nums">{roleModuleCount(role)}/{totalMods}</span>}
+                          {role === ('admin' as Role) ? <span className="text-purple-500 font-semibold">full</span> : <span className="tabular-nums" title="Screens this role can view">{roleModuleCount(role)}/{totalMods}</span>}
                           {busy && <Loader2 className="h-3 w-3 animate-spin text-blue-600" />}
                           {saved && <Check className="h-3 w-3 text-green-600" />}
                         </div>
@@ -364,21 +470,30 @@ export default function PermissionsMatrix({ modules, roles, initial, roleLabels,
                 </tr>
               </thead>
               <tbody>
-                {grouped.map(group => (
-                  <GroupRows key={group.title} title={group.title} mods={group.mods} colCount={colCount}
-                    visibleRoles={orderedRoles} catStart={catStart} labels={labels} moduleMeta={moduleMetaMap} getCell={getCell}
-                    busyKey={busyKey} savedKey={savedKey} hoverRole={hoverRole} hoverSlug={hoverSlug}
-                    setHoverRole={setHoverRole} setHoverSlug={setHoverSlug} toggle={toggle}
-                    cycleDelete={cycleDelete} setApprover={setApprover} />
-                ))}
+                {sections.map(section => <SectionRows key={section.id} section={section} colCount={colCount} {...rowProps} />)}
+
+                {/* Old screens — folded away; they still route by URL, so their switches still count. */}
+                {legacy.rows.length > 0 && (
+                  <>
+                    <tr>
+                      <td colSpan={colCount} className="sticky left-0 bg-white px-3 pt-4 pb-1">
+                        <button type="button" onClick={() => setShowLegacy(v => !v)} className="inline-flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-gray-400 hover:text-gray-700">
+                          {legacyOpen ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
+                          <Archive className="h-3.5 w-3.5" /> {legacy.title} · {legacy.rows.length}
+                        </button>
+                        {legacy.note && <p className="text-[11px] text-gray-400 normal-case tracking-normal font-normal mt-0.5">{legacy.note}</p>}
+                      </td>
+                    </tr>
+                    {legacyOpen && <SectionRows section={{ ...legacy, title: '' }} colCount={colCount} {...rowProps} />}
+                  </>
+                )}
               </tbody>
             </table>
           </div>
         </CardContent>
       </Card>
 
-      {/* Roles — grouped by category to make setup easier. Descriptions also
-          show on hover of each role column header in the matrix above. */}
+      {/* Roles — grouped by category to make setup easier. */}
       <Card>
         <CardContent className="pt-5">
           <div className="flex items-center justify-between mb-3">
@@ -407,62 +522,122 @@ export default function PermissionsMatrix({ modules, roles, initial, roleLabels,
   )
 }
 
-// ─── Grouped module rows ───────────────────────────────────────────────
-function GroupRows({ title, mods, colCount, visibleRoles, catStart, labels, moduleMeta, getCell, busyKey, savedKey, hoverRole, hoverSlug, setHoverRole, setHoverSlug, toggle, cycleDelete, setApprover }: {
-  title: string
-  mods: ModuleRef[]
+// ─── A section's rows ────────────────────────────────────────────────────
+interface RowsProps {
+  section: MatrixSection
   colCount: number
   visibleRoles: Role[]
   catStart: Set<string>
   labels: RoleLabelMap
-  moduleMeta: Map<string, { icon: React.ComponentType<{ className?: string }>; tone: keyof typeof TILE_TONES }>
   getCell: (role: Role, slug: string) => CellState
+  hasOwnRow: (role: Role, slug: string) => boolean
+  wsEffective: (role: Role, row: MatrixRow) => { view: boolean; own: boolean; from: string }
   busyKey: Key | null; savedKey: Key | null
   hoverRole: Role | null; hoverSlug: string | null
   setHoverRole: (r: Role | null) => void; setHoverSlug: (s: string | null) => void
   toggle: (role: Role, slug: string, action: PermAction) => void
+  toggleWs: (role: Role, row: MatrixRow) => void
+  resetWs: (role: Role, row: MatrixRow) => void
   cycleDelete: (role: Role, slug: string) => void
   setApprover: (role: Role, slug: string, approver: string | null) => void
-}) {
+  searching: boolean
+  expanded: Set<string>
+  toggleExpanded: (slug: string) => void
+}
+
+function SectionRows(p: RowsProps) {
+  const { section, colCount, visibleRoles, catStart, labels, getCell, wsEffective, busyKey, savedKey, hoverRole, hoverSlug, setHoverRole, setHoverSlug, toggle, toggleWs, resetWs, cycleDelete, setApprover, searching, expanded, toggleExpanded } = p
+  const pillsOf = (tabSlugStr: string) => section.rows.filter(r => r.parent === tabSlugStr).length
   return (
     <>
-      <tr>
-        <td colSpan={colCount} className="sticky left-0 bg-white px-3 pt-4 pb-1 text-[10px] font-bold uppercase tracking-wider text-gray-400">{title}</td>
-      </tr>
-      {mods.map(mod => {
-        const meta = moduleMeta.get(mod.slug)
+      {section.title && (
+        <tr>
+          <td colSpan={colCount} className="sticky left-0 bg-white px-3 pt-4 pb-1">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-gray-400">{section.title}</span>
+            {section.note && <p className="text-[11px] text-gray-400 mt-0.5">{section.note}</p>}
+          </td>
+        </tr>
+      )}
+      {section.rows.map(row => {
+        if (row.kind === 'sub' && !searching && !expanded.has(row.parent ?? '')) return null
+        const rowHot = hoverSlug === row.slug
+        const isWs = row.kind !== 'module'
+        const meta = row.kind === 'module' ? moduleMetaMap.get(row.slug) : undefined
         const tone = meta ? TILE_TONES[meta.tone] : TILE_TONES.slate
-        const Icon = meta?.icon ?? Box
-        const rowHot = hoverSlug === mod.slug
+        const Icon: React.ComponentType<{ className?: string }> = row.kind === 'tab' ? (TAB_ICONS[row.icon ?? ''] ?? Box) : row.kind === 'module' ? (meta?.icon ?? Box) : ChevronRight
+        const nPills = row.kind === 'tab' ? pillsOf(row.slug) : 0
         return (
-          <tr key={mod.slug} className="group">
-            <td className={cn('sticky left-0 z-10 border-b border-gray-100 px-3 py-2 transition-colors', rowHot ? 'bg-indigo-50/60' : 'bg-white')}>
-              <div className="flex items-center gap-2.5">
-                <span className={cn('inline-flex h-7 w-7 items-center justify-center rounded-lg flex-shrink-0', tone.bg, tone.ic)}><Icon className="h-4 w-4" /></span>
+          <tr key={row.slug} className={cn('group', row.kind === 'sub' && 'bg-slate-50/40')}>
+            <td className={cn('sticky left-0 z-10 border-b border-gray-100 py-1.5 transition-colors', row.kind === 'sub' ? 'pl-10 pr-3' : 'px-3', rowHot ? 'bg-indigo-50/60' : row.kind === 'sub' ? 'bg-slate-50/60' : 'bg-white')}>
+              <div className="flex items-center gap-2">
+                {row.kind === 'tab' && nPills > 0 && !searching ? (
+                  <button type="button" onClick={() => toggleExpanded(row.slug)} title={expanded.has(row.slug) ? 'Hide the pills' : `Show the ${nPills} pills`}
+                    className="inline-flex h-5 w-5 items-center justify-center rounded text-gray-400 hover:bg-gray-100 hover:text-gray-800 flex-shrink-0">
+                    {expanded.has(row.slug) ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                  </button>
+                ) : row.kind === 'tab' ? <span className="inline-block h-5 w-5 flex-shrink-0" /> : null}
+                {row.kind !== 'sub' && (
+                  <span className={cn('inline-flex h-7 w-7 items-center justify-center rounded-lg flex-shrink-0', row.kind === 'tab' ? 'bg-indigo-50 text-indigo-700' : cn(tone.bg, tone.ic))}><Icon className="h-4 w-4" /></span>
+                )}
                 <div className="min-w-0">
-                  <div className="font-medium text-gray-900 leading-tight truncate">{mod.label}</div>
-                  <div className="text-[11px] text-gray-400 font-mono truncate">{mod.slug}</div>
+                  <div className={cn('leading-tight truncate', row.kind === 'sub' ? 'text-[13px] text-gray-800' : 'font-medium text-gray-900')}>
+                    {row.label}
+                    {row.kind === 'tab' && nPills > 0 && <span className="ml-1.5 text-[11px] font-normal text-gray-400">{nPills} pill{nPills === 1 ? '' : 's'}</span>}
+                    {row.reviewerOnly && <span className="ml-1.5 text-[10px] font-semibold uppercase tracking-wide text-violet-700 bg-violet-50 rounded px-1 py-0.5">reviewers</span>}
+                    {row.unbuilt && <span className="ml-1.5 text-[10px] font-semibold uppercase tracking-wide text-gray-500 bg-gray-100 rounded px-1 py-0.5">coming soon</span>}
+                  </div>
+                  <div className="text-[11px] text-gray-400 truncate">{row.hint ?? row.slug}</div>
                 </div>
               </div>
             </td>
             {visibleRoles.map(role => {
-              const cell = getCell(role, mod.slug)
-              const k: Key = `${role}::${mod.slug}`
+              const k: Key = `${role}::${row.slug}`
               const busy = busyKey === k
               const saved = savedKey === k
               const locked = role === ('admin' as Role)
               const colHot = hoverRole === role
+              if (isWs) {
+                const eff = locked ? { view: true, own: true, from: '' } : wsEffective(role, row)
+                const tint = colHot || rowHot ? 'bg-indigo-50/50' : eff.view ? (eff.own ? 'bg-blue-50/40' : '') : (eff.own ? 'bg-rose-50/40' : '')
+                const title = locked ? 'Admin always has full access'
+                  : eff.own ? `${eff.view ? 'May open' : 'May not open'} — set here. Click to flip · ↺ to inherit again`
+                  : `${eff.view ? 'May open' : 'May not open'} — ${eff.from}. Click to set for this ${row.kind === 'tab' ? 'tab' : 'pill'}`
+                return (
+                  <td key={role} className={cn('border-b border-gray-100 px-2 py-1.5 text-center transition-colors', tint, catStart.has(role) && 'border-l-2 border-l-slate-200', saved && 'ring-1 ring-inset ring-green-300')}
+                    onMouseEnter={() => { setHoverRole(role); setHoverSlug(row.slug) }}>
+                    <div className="inline-flex items-center gap-1 align-middle">
+                      <button type="button" onClick={() => { if (!locked) toggleWs(role, row) }} disabled={busy || locked} title={title}
+                        className={cn('inline-flex h-6 w-6 items-center justify-center rounded-md border transition-colors',
+                          locked ? 'bg-purple-100 text-purple-800 border-purple-200 cursor-default'
+                          : eff.own && eff.view ? 'bg-blue-100 text-blue-700 border-blue-200'
+                          : eff.own && !eff.view ? 'bg-rose-50 text-rose-500 border-rose-200'
+                          : eff.view ? 'border-dashed border-blue-300 text-blue-400 hover:bg-blue-50'
+                          : 'border-dashed border-gray-300 text-gray-300 hover:text-gray-500 hover:bg-gray-50',
+                          busy && 'opacity-50 cursor-wait')}>
+                        {busy ? <Loader2 className="h-3 w-3 animate-spin" /> : eff.view ? <Eye className="h-3 w-3" /> : <EyeOff className="h-3 w-3" />}
+                      </button>
+                      {!locked && eff.own && (
+                        <button type="button" onClick={() => resetWs(role, row)} disabled={busy} title={`Back to inheriting (${row.kind === 'tab' ? row.inherits : 'its tab'})`}
+                          className="inline-flex h-6 w-5 items-center justify-center rounded text-gray-300 hover:text-gray-700 hover:bg-gray-100">
+                          <RotateCcw className="h-3 w-3" />
+                        </button>
+                      )}
+                    </div>
+                  </td>
+                )
+              }
+              const cell = getCell(role, row.slug)
               const level = locked || cell.admin ? 'admin' : cell.edit ? 'edit' : cell.view ? 'view' : 'none'
               const tint = colHot || rowHot ? 'bg-indigo-50/50'
                 : level === 'admin' ? 'bg-purple-50/50' : level === 'edit' ? 'bg-amber-50/40' : level === 'view' ? 'bg-blue-50/40' : ''
               return (
                 <td key={role} className={cn('border-b border-gray-100 px-2 py-1.5 text-center transition-colors', tint, catStart.has(role) && 'border-l-2 border-l-slate-200', saved && 'ring-1 ring-inset ring-green-300')}
-                  onMouseEnter={() => { setHoverRole(role); setHoverSlug(mod.slug) }}>
+                  onMouseEnter={() => { setHoverRole(role); setHoverSlug(row.slug) }}>
                   <div className="inline-flex overflow-hidden rounded-md border border-gray-200 divide-x divide-gray-200 bg-white align-middle">
                     {ACTIONS.map(({ key, label, icon: I, on }) => {
                       const active = locked ? true : cell[key]
                       return (
-                        <button key={key} onClick={() => { if (!locked) toggle(role, mod.slug, key) }} disabled={busy || locked}
+                        <button key={key} onClick={() => { if (!locked) toggle(role, row.slug, key) }} disabled={busy || locked}
                           title={locked ? 'Admin always has full access' : `${label}: ${active ? 'allowed — click to remove' : 'denied — click to allow'}`}
                           className={cn('inline-flex h-6 w-6 items-center justify-center transition-colors', active ? on : 'text-gray-300 hover:text-gray-500 hover:bg-gray-50', busy && 'opacity-50 cursor-wait', locked && 'cursor-default')}>
                           {busy && key === 'view' ? <Loader2 className="h-3 w-3 animate-spin" /> : <I className="h-3 w-3" />}
@@ -477,7 +652,7 @@ function GroupRows({ title, mods, colCount, visibleRoles, catStart, labels, modu
                       const dTitle = locked ? 'Admin always deletes directly'
                         : `Delete: ${del === 'none' ? 'not allowed' : del === 'direct' ? 'direct' : 'needs approval'} — click to cycle`
                       return (
-                        <button onClick={() => { if (!locked) cycleDelete(role, mod.slug) }} disabled={busy || locked} title={dTitle}
+                        <button onClick={() => { if (!locked) cycleDelete(role, row.slug) }} disabled={busy || locked} title={dTitle}
                           className={cn('inline-flex h-6 w-6 items-center justify-center transition-colors', dCls, busy && 'opacity-50 cursor-wait', locked && 'cursor-default')}>
                           <Trash2 className="h-3 w-3" />
                         </button>
@@ -486,7 +661,7 @@ function GroupRows({ title, mods, colCount, visibleRoles, catStart, labels, modu
                   </div>
                   {cell.del === 'request' && !locked && (
                     <div className="mt-1">
-                      <select value={cell.approver ?? ''} onChange={e => setApprover(role, mod.slug, e.target.value || null)} disabled={busy}
+                      <select value={cell.approver ?? ''} onChange={e => setApprover(role, row.slug, e.target.value || null)} disabled={busy}
                         title="Who approves a delete request"
                         className="h-6 max-w-[104px] rounded-md border border-amber-300 bg-amber-50 px-1 text-[10px] text-amber-900">
                         <option value="">approver…</option>
@@ -519,7 +694,6 @@ function LegendRole({ label, description, canEdit, busy, saved, onSave, onAi, on
   const [l, setL] = useState(label)
   const [d, setD] = useState(description)
   const [aiBusy, setAiBusy] = useState(false)
-  useEffect(() => { if (!editing) { setL(label); setD(description) } }, [label, description, editing])
 
   async function runAi() {
     if (!l.trim()) { onError('Type a role name first.'); return }
@@ -557,7 +731,7 @@ function LegendRole({ label, description, canEdit, busy, saved, onSave, onAi, on
         <span className="text-gray-500">{description || '—'}</span>
       </div>
       {canEdit && (
-        <button type="button" onClick={() => setEditing(true)} title="Rename / edit description"
+        <button type="button" onClick={() => { setL(label); setD(description); setEditing(true) }} title="Rename / edit description"
           className="flex-shrink-0 mt-0.5 h-5 w-5 inline-flex items-center justify-center rounded text-gray-300 group-hover:text-blue-600 hover:bg-blue-50">
           <Pencil className="h-3 w-3" />
         </button>
@@ -565,3 +739,4 @@ function LegendRole({ label, description, canEdit, busy, saved, onSave, onAi, on
     </div>
   )
 }
+
