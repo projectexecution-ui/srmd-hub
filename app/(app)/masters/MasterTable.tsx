@@ -23,6 +23,8 @@ export interface Cell {
   mono?: boolean
   /** Small second line under the value — a code, a date, a reason. */
   sub?: string
+  /** Small links under the value — "Print · Ledger · In project" on a last-used order. External ones open in a new tab. */
+  links?: Array<{ label: string; href: string; external?: boolean }>
 }
 
 export interface MasterColumn {
@@ -239,6 +241,7 @@ export function MasterTable({
                               {cell.text || '—'}
                             </span>
                             {cell.sub && <span className="block text-[11px] text-gray-400">{cell.sub}</span>}
+                            {cell.links && cell.links.length > 0 && <CellLinks links={cell.links} />}
                           </>
                         )
                         return (
@@ -265,6 +268,7 @@ export function MasterTable({
                 <>
                   <p className={`text-sm ${TONE[head.tone ?? 'strong']}`}>{head.text || '—'}</p>
                   {head.sub && <p className="text-[11px] text-gray-400">{head.sub}</p>}
+                  {head.links && head.links.length > 0 && <CellLinks links={head.links} />}
                   <div className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5">
                     {rest.filter(c => !c.desktopOnly).map(c => {
                       const cell = r.cells[c.key]
@@ -272,6 +276,7 @@ export function MasterTable({
                       return (
                         <span key={c.key} className="text-[11px] text-gray-500">
                           {c.label} <span className={TONE[cell.tone ?? 'default']}>{cell.text}</span>
+                          {cell.links && cell.links.length > 0 && <CellLinks links={cell.links} />}
                         </span>
                       )
                     })}
@@ -302,5 +307,21 @@ function Chip({ active, onClick, children }: { active: boolean; onClick: () => v
     >
       {children}
     </button>
+  )
+}
+
+/** "Print · Ledger · In project" under a cell. Stops the row link so a click lands on the document, not the row. */
+function CellLinks({ links }: { links: Array<{ label: string; href: string; external?: boolean }> }) {
+  return (
+    <span className="block text-[11px] mt-0.5" onClick={e => e.stopPropagation()}>
+      {links.map((l, i) => (
+        <span key={l.href + l.label}>
+          {i > 0 && <span className="text-gray-300"> · </span>}
+          {l.external
+            ? <a href={l.href} target="_blank" rel="noopener" className="text-indigo-700 hover:underline">{l.label}</a>
+            : <Link href={l.href} className="text-indigo-700 hover:underline">{l.label}</Link>}
+        </span>
+      ))}
+    </span>
   )
 }

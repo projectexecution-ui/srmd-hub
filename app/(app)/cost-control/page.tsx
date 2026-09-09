@@ -373,25 +373,8 @@ export default async function CostControlLandingPage() {
   return (
     <div className="p-4 md:p-6 max-w-7xl mx-auto space-y-4">
       <AutoBackup isAdmin={canAdmin} />
-      {isAdmin && archivedProjects.length > 0 && (
-        <details className="rounded-xl border border-amber-200 bg-amber-50/50 px-4 py-2">
-          <summary className="cursor-pointer text-sm font-semibold text-amber-900 select-none">
-            Archived projects ({archivedProjects.length})
-          </summary>
-          <p className="text-xs text-amber-800/80 mt-1 mb-2">Hidden from the active list. Open one to restore it or delete it permanently.</p>
-          <ul className="space-y-1">
-            {archivedProjects.map(ap => (
-              <li key={ap.id}>
-                <Link href={`/cost-control/projects/${ap.id}/setup`} className="text-sm text-blue-700 hover:underline">
-                  {ap.code} · {ap.name}
-                </Link>
-              </li>
-            ))}
-          </ul>
-        </details>
-      )}
       <PageHeader
-        title={ccLabel}
+        title="Projects"
         subtitle={`SRASSK — ${ccProjects.length} project${ccProjects.length === 1 ? '' : 's'}${incompleteCount ? ` · ${incompleteCount} need setup` : ''}`}
       >
         <div className="hidden sm:block">
@@ -419,6 +402,13 @@ export default async function CostControlLandingPage() {
             <ChevronDown className="h-3.5 w-3.5 transition-transform group-open:rotate-180" />
           </summary>
           <div className="absolute right-0 top-[calc(100%+4px)] z-20 w-64 max-w-[calc(100vw-2rem)] bg-white border border-gray-200 rounded-lg shadow-lg p-1.5">
+            <Link href="/cost-control/working-sheets" className="flex items-start gap-2.5 px-2.5 py-2 rounded-md hover:bg-gray-50">
+              <FileText className="h-4 w-4 text-gray-500 mt-0.5 flex-shrink-0" />
+              <div className="min-w-0">
+                <p className="text-sm font-medium text-gray-900">All Working Sheets</p>
+                <p className="text-[11px] text-gray-500">every sheet across all projects</p>
+              </div>
+            </Link>
             {canWrite && (
               <Link href="/cost-control/import" className="flex items-start gap-2.5 px-2.5 py-2 rounded-md hover:bg-gray-50">
                 <Upload className="h-4 w-4 text-gray-500 mt-0.5 flex-shrink-0" />
@@ -469,11 +459,6 @@ export default async function CostControlLandingPage() {
             )}
           </div>
         </details>
-        <Button asChild size="sm" variant="outline">
-          <Link href="/cost-control/working-sheets">
-            <FileText className="h-4 w-4" /> All Working Sheets
-          </Link>
-        </Button>
         {canWrite && (
           <Button asChild size="sm">
             <Link href="/cost-control/projects/new"><Plus className="h-4 w-4" /> New Project</Link>
@@ -854,6 +839,26 @@ export default async function CostControlLandingPage() {
             action={canWrite ? <Button asChild size="sm"><Link href="/cost-control/projects/new">Create first project</Link></Button> : null}
           />
         </Card>
+      )}
+
+      {/* Archived projects — least-important, so it lives at the FOOT of the
+          page, folded away. Admin-only; open one to restore or delete it. */}
+      {isAdmin && archivedProjects.length > 0 && (
+        <details className="rounded-xl border border-gray-200 bg-gray-50/60 px-4 py-2">
+          <summary className="cursor-pointer text-sm font-medium text-gray-600 select-none">
+            Archived projects ({archivedProjects.length})
+          </summary>
+          <p className="text-xs text-gray-500 mt-1 mb-2">Hidden from the active list. Open one to restore it or delete it permanently.</p>
+          <ul className="space-y-1">
+            {archivedProjects.map(ap => (
+              <li key={ap.id}>
+                <Link href={`/cost-control/projects/${ap.id}/setup`} className="text-sm text-blue-700 hover:underline">
+                  {ap.code} · {ap.name}
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </details>
       )}
     </div>
   )
