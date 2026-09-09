@@ -42,6 +42,10 @@ export interface PendingOrder {
   party: string | null
   projectId: number | null; project: string | null; subprojectId: number | null; subproject: string | null
   category: string | null
+  /** IN4's category (skill) and sub-category ids — where the order sits in the orders tree. */
+  categoryId: number | null
+  subcategory: string | null
+  subcategoryId: number | null
   description: string | null
   value: number
   raisedBy: string | null
@@ -97,12 +101,14 @@ export async function loadOrderApprovals(opts: { subprojectIds?: number[] } = {}
     const [wos, pos] = await Promise.all([
       in4Query<Record<string, unknown>>(`
         SELECT w.ID, w.DISPLAY_NO, w.STATUS, w.CREATION_DT, w.WORK_DESCRIPTION, w.WORK_ORDER_VALUE, w.SUBPROJECT_ID, w.PROJECT_ID,
-               pr.NAME project, sub.SUBPROJECT_NAME subproject, sp.FIRM_NAME party, sk.NAME category
+               pr.NAME project, sub.SUBPROJECT_NAME subproject, sp.FIRM_NAME party, sk.NAME category, w.SKILL_ID category_id,
+               COALESCE(w.SUB_SKILL_ID, w.SUBSKILL_ID) subcategory_id, ssk.NAME subcategory
         FROM ENGG_WORK_ORDER w
         LEFT JOIN ENGG_PROJECT pr ON pr.ID = w.PROJECT_ID
         LEFT JOIN ENGG_SUBPROJECT sub ON sub.ID = w.SUBPROJECT_ID
         LEFT JOIN ENGG_SERVICE_PROVIDER sp ON sp.ID = w.SERVICE_PROVIDER_ID
         LEFT JOIN ENGG_SKILLS_LOOKUP sk ON sk.ID = w.SKILL_ID
+        LEFT JOIN ENGG_SKILLS_LOOKUP ssk ON ssk.ID = COALESCE(w.SUB_SKILL_ID, w.SUBSKILL_ID)
         WHERE w.STATUS IN (${pendingList})${scope('w.SUBPROJECT_ID')}
         ORDER BY w.CREATION_DT`),
       in4Query<Record<string, unknown>>(`
@@ -126,7 +132,7 @@ export async function loadOrderApprovals(opts: { subprojectIds?: number[] } = {}
         FROM ENGG_WO_AUDIT_TRAIL a LEFT JOIN HR_EMP_PROFILE e ON e.ID = a.MODIFIED_BY WHERE a.WO_ID IN (${woIds.join(',')})`) : Promise.resolve([]),
       poIds.length ? in4Query<Record<string, unknown>>(`
         SELECT pi.ID, pi.PURCHASE_ORDER_ID po_id, pi.MATERIAL_ID, m.NAME material, u.NAME uom, pi.ORDER_QTY, f.NET_RATE, f.MATERIAL_VALUE, f.LANDED_COST,
-               ii.ORDER_QTY indent_qty, i.DISPLAY_NO indent_no, sk.NAME category
+               ii.ORDER_QTY indent_qty, i.DISPLAY_NO indent_no, sk.NAME category, ii.WORK_CATEGORY_ID category_id, ii.WORK_SUBCATEGORY_ID subcategory_id, ssk.NAME subcategory
         FROM PURCH_PURCHASE_ORDER_ITEMS pi
         LEFT JOIN PURCH_MATERIAL_LOOKUP m ON m.ID = pi.MATERIAL_ID
         LEFT JOIN COMMON_UOM_LOOKUP u ON u.ID = m.UNIT_OF_MEASUREMENT
@@ -134,6 +140,7 @@ export async function loadOrderApprovals(opts: { subprojectIds?: number[] } = {}
         LEFT JOIN PURCH_INDENT_ITEMS ii ON ii.ID = pi.INDENT_ITEM_ID
         LEFT JOIN PURCH_INDENT i ON i.ID = ii.INDENT_NO
         LEFT JOIN ENGG_SKILLS_LOOKUP sk ON sk.ID = ii.WORK_CATEGORY_ID
+        LEFT JOIN ENGG_SKILLS_LOOKUP ssk ON ssk.ID = ii.WORK_SUBCATEGORY_ID
         WHERE pi.PURCHASE_ORDER_ID IN (${poIds.join(',')}) ORDER BY pi.PURCHASE_ORDER_ID, pi.ID`) : Promise.resolve([]),
       poIds.length ? in4Query<AuditRaw>(`
         SELECT a.PURCHASE_ORDER_ID doc_id, a.STATUS, a.MODIFIED_DT, LTRIM(RTRIM(CONCAT(e.FirstName, ' ', e.LastName))) who, a.REMARKS
@@ -188,7 +195,8 @@ export async function loadOrderApprovals(opts: { subprojectIds?: number[] } = {}
       orders.push({
         kind: 'wo', id, ref: s(w.DISPLAY_NO) ?? `WO ${id}`, statusId: n(w.STATUS), status: statusName(n(w.STATUS)), stage: stageOf(n(w.STATUS)),
         date: iso(w.CREATION_DT), party: s(w.party), projectId, project: s(w.project), subprojectId: w.SUBPROJECT_ID == null ? null : n(w.SUBPROJECT_ID), subproject: s(w.subproject),
-        category: s(w.category), description: s(w.WORK_DESCRIPTION), value: n(w.WORK_ORDER_VALUE) || lines.reduce((t, l) => t + l.amount, 0),
+        category: s(w.category), categoryId: w.category_id == null ? null : n(w.category_id), subcategory: s(w.subcategory), subcategoryId: w.subcategory_id == null ? null : n(w.subcategory_id),
+        description: s(w.WORK_DESCRIPTION), value: n(w.WORK_ORDER_VALUE) || lines.reduce((t, l) => t + l.amount, 0),
         turn: turnOf(n(w.STATUS)), raisedBy: chain[0]?.by ?? null, since: chain[chain.length - 1]?.at ?? iso(w.CREATION_DT), chain, lines,
         refs: referencesFor(woRefLines, lines.map(l => l.refKey), projectId),
       })
@@ -206,7 +214,8 @@ export async function loadOrderApprovals(opts: { subprojectIds?: number[] } = {}
       orders.push({
         kind: 'po', id, ref: s(p.DISPLAY_NO) ?? `PO ${id}`, statusId: n(p.STATUS), status: statusName(n(p.STATUS)), stage: stageOf(n(p.STATUS)),
         date: iso(p.CREATED_DT), party: s(p.party), projectId, project: s(p.project), subprojectId: p.SUBPROJECT_ID == null ? null : n(p.SUBPROJECT_ID), subproject: s(p.subproject),
-        category: s(mine[0]?.category), description: [s(p.REMARKS), s(p.PAYMENT_TERMS) ? `terms: ${s(p.PAYMENT_TERMS)}` : null].filter(Boolean).join(' · ') || null,
+        category: s(mine[0]?.category), categoryId: mine[0]?.category_id == null ? null : n(mine[0].category_id), subcategory: s(mine[0]?.subcategory), subcategoryId: mine[0]?.subcategory_id == null ? null : n(mine[0].subcategory_id),
+        description: [s(p.REMARKS), s(p.PAYMENT_TERMS) ? `terms: ${s(p.PAYMENT_TERMS)}` : null].filter(Boolean).join(' · ') || null,
         value: n(p.TOTAL_VALUE) || lines.reduce((t, l) => t + l.amount, 0),
         turn: turnOf(n(p.STATUS)), raisedBy: chain[0]?.by ?? null, since: chain[chain.length - 1]?.at ?? iso(p.CREATED_DT), chain, lines,
         refs: referencesFor(poRefLines, lines.map(l => l.refKey), projectId),

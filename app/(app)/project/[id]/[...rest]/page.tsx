@@ -7,7 +7,7 @@ import { ABSORBED, activeSubTab, findWorkspaceTab, workspaceHref } from '@/lib/r
 import { Hammer, ArrowRight, Database } from 'lucide-react'
 import { OverviewTab } from '../OverviewTab'
 import { ReportsTab } from '../ReportsTab'
-import { ProcurementTab, DiscussionsTab } from '../MoreTabs'
+import { ProcurementTab, WoPoTab, DiscussionsTab } from '../MoreTabs'
 import { JmrTab, StoresTab } from '../tabs'
 import { ApprovalsTab } from '../ApprovalsTab'
 import { ScBudgetsTab } from '../ScBudgetsTab'
@@ -76,7 +76,9 @@ export default async function ProjectTabPage({
   // tracker — its `global` snapshot holds the indents, its `po` snapshot the
   // purchase orders. Same component, told which side to show.
   if (slug === 'procurement') return <ProcurementTab projectId={id} view={view} params={{ f, q, g, age }} />
-  if (slug === 'wo-po')       return <ProcurementTab projectId={id} />
+  // WO / PO is the orders tree — approved orders from the mirror, and the WOs
+  // and POs still waiting in IN4 as yellow rows inside it. Indents stay on Indents.
+  if (slug === 'wo-po')       return <WoPoTab projectId={id} view={view} />
 
   // Approvals is the live My-Approvals card, narrowed to this project — same
   // loader and same component, so the two can never quote different money.

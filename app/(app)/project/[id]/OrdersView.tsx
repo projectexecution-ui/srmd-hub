@@ -26,7 +26,9 @@ import {
 } from '@/components/cost-control/project-tree'
 import { loadOrdersTree, type OrdersSubRow, type OrderRow, type OrderLine, type Money } from '@/lib/revamp/orders-tree'
 import { checkIsCcReviewer } from '@/components/cost-control/ws-actions'
-import { OrderApprovals } from './OrderApprovals'
+import { PendingStrip, PendingOrderRow, PendingOrderCard } from './OrderApprovals'
+import { loadOrderApprovals } from '@/lib/revamp/order-approvals'
+import { placePending, filterByKind } from '@/lib/revamp/orders-pending'
 
 /** Quantities are not money: they carry decimals and their own unit. */
 const qty = (v: number | null) =>
@@ -35,8 +37,14 @@ const qty = (v: number | null) =>
 /** A money cell that shows a dash where IN4 holds nothing, never a zero. */
 const money = (v: number | null) => (v == null ? <Dash /> : formatINR(v))
 
-export async function OrdersView({ projectId }: { projectId: string }) {
-  const { cats, totals, notes, linked, error, in4 } = await loadOrdersTree(projectId)
+export async function OrdersView({ projectId, kind }: { projectId: string; /** Narrow to work orders or purchase orders (the tab's pills). */ kind?: 'wo' | 'po' }) {
+  const tree = await loadOrdersTree(projectId)
+  const { notes, linked, error, in4 } = tree
+  // What is still waiting in IN4 goes INTO the tree as yellow rows (Aksha, 10 Sep 2026).
+  const approvals = linked && !error ? await loadOrderApprovals({ subprojectIds: tree.subprojectIds ?? [] }) : null
+  const pendingAll = (approvals?.orders ?? []).filter(o => !kind || o.kind === kind)
+  const { cats, totals } = filterByKind(tree, kind)
+  const placed = placePending(cats, pendingAll)
 
   if (error) {
     return (
@@ -73,24 +81,23 @@ export async function OrdersView({ projectId }: { projectId: string }) {
     )
   }
 
-  if (cats.length === 0) {
+  if (cats.length === 0 && pendingAll.length === 0) {
     return (
       <div className="rounded-xl border border-gray-200 bg-white p-8 text-center">
-        <p className="text-sm text-gray-600">No work orders or purchase orders on this project in IN4.</p>
+        <p className="text-sm text-gray-600">No {kind === 'wo' ? 'work orders' : kind === 'po' ? 'purchase orders' : 'work orders or purchase orders'} on this project in IN4.</p>
         <p className="text-xs text-gray-400 mt-1">The mapping is confirmed — IN4 simply holds no orders against it yet.</p>
       </div>
     )
   }
 
-  const catIds = cats.map(c => c.id)
+  const catIds = placed.map(c => c.id)
   const live = in4 === 'live'
 
   return (
     <TreeProvider allCatIds={catIds} emptyCount={0}>
       <RowDetailProvider>
         <div className="space-y-3">
-          {/* What is waiting for the Atm Head in IN4, every rate against the last one paid. */}
-          <OrderApprovals projectId={projectId} />
+          <PendingStrip orders={pendingAll} in4={approvals?.in4 ?? in4} />
           {!live && (
             <div className="rounded-lg border border-amber-200 bg-amber-50 px-3.5 py-2 text-[12px] text-amber-900 flex items-start gap-2">
               <AlertTriangle className="h-4 w-4 flex-shrink-0 mt-0.5" />
@@ -112,7 +119,7 @@ export async function OrdersView({ projectId }: { projectId: string }) {
           <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
             <div className="flex items-center justify-between px-3 py-2 border-b border-gray-100 bg-gray-50/60 gap-2 flex-wrap">
               <span className="text-sm font-bold text-gray-900">
-                Category — WO/PO wise
+                {kind === 'wo' ? 'Category — WO wise' : kind === 'po' ? 'Category — PO wise' : 'Category — WO/PO wise'}
                 <span className="ml-2 text-[12px] font-normal text-gray-500">
                   {cats.length} categor{cats.length === 1 ? 'y' : 'ies'} · {totals.woCount} WO · {totals.poCount} PO · {totals.lineCount} line items
                   {live ? ' · live from IN4' : ' · mirror'}
@@ -136,13 +143,14 @@ export async function OrdersView({ projectId }: { projectId: string }) {
                   </tr>
                 </thead>
                 <tbody>
-                  {cats.map(c => (
+                  {placed.map(c => (
                     <Fragment key={c.id}>
                       <tr className="bg-gray-50/60 border-t border-gray-200">
                         <td className="px-3 py-2 font-semibold text-gray-800">
                           <CatChevron catId={c.id} />
                           {c.name}
                           <span className="ml-2 text-[12px] font-normal text-gray-500">{c.count} order{c.count === 1 ? '' : 's'}</span>
+                          {c.pendingCount > 0 && <span className="ml-2 text-[11px] font-semibold text-amber-900 bg-amber-200 rounded px-1.5 py-0.5">{c.pendingCount} waiting approval</span>}
                         </td>
                         <MoneyCells m={c} bold />
                       </tr>
@@ -156,12 +164,15 @@ export async function OrdersView({ projectId }: { projectId: string }) {
                                 <RowDetailToggle id={s.id} count={s.orders.length} />
                                 <RowName row={s} />
                                 <span className="ml-2 text-[12px] text-gray-400">{s.count} order{s.count === 1 ? '' : 's'}</span>
+                                {s.pending.length > 0 && <span className="ml-2 text-[11px] font-semibold text-amber-900 bg-amber-200 rounded px-1.5 py-0.5">{s.pending.length} waiting approval</span>}
                               </td>
                               <MoneyCells m={s} />
                             </tr>
 
                             {/* Level 3 — the orders themselves. */}
                             <RowDetail id={s.id}>
+                              {/* Still waiting in IN4 — yellow, first. */}
+                              {s.pending.map(o => <PendingOrderRow key={`${o.kind}:${o.id}`} o={o} colSpan={7} />)}
                               {s.orders.map(o => (
                                 <Fragment key={o.id}>
                                   <tr className="border-t border-gray-100 bg-slate-50/50">
@@ -225,7 +236,7 @@ export async function OrdersView({ projectId }: { projectId: string }) {
 
             {/* Mobile — the same levels as nested cards. */}
             <div className="md:hidden divide-y divide-gray-100 overflow-auto max-h-[70vh]">
-              {cats.map(c => (
+              {placed.map(c => (
                 <div key={c.id}>
                   <div className="sticky top-0 z-10 px-4 py-2 bg-gray-50 border-b border-gray-200 flex items-center justify-between gap-2">
                     <span className="flex items-center min-w-0 text-[12px] font-semibold text-gray-800">
@@ -247,6 +258,7 @@ export async function OrdersView({ projectId }: { projectId: string }) {
 
                         <RowDetail id={s.id}>
                           <div className="mt-2 ml-6 space-y-2">
+                            {s.pending.map(o => <PendingOrderCard key={`${o.kind}:${o.id}`} o={o} />)}
                             {s.orders.map(o => (
                               <div key={o.id} className="rounded-lg border border-gray-100 bg-slate-50/50 px-3 py-2">
                                 <p className="text-[12px] flex items-center">

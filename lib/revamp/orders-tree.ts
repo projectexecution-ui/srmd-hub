@@ -186,13 +186,15 @@ export interface OrdersTree {
   in4: 'live' | 'unavailable' | 'not-configured'
   linked: boolean
   error: string | null
+  /** The IN4 sub-projects the tree was read for — so the WO / PO tab can ask IN4 what is still waiting on them. */
+  subprojectIds?: number[]
 }
 
 const ZERO_MONEY: Money = { ordered: 0, gross: 0, billed: 0, paid: 0, advanceOutstanding: 0, retention: 0, balance: 0 }
 
 const EMPTY: OrdersTree = {
   cats: [], totals: { ...ZERO_MONEY, woCount: 0, poCount: 0, lineCount: 0 },
-  notes: [], in4: 'unavailable', linked: false, error: null,
+  notes: [], in4: 'unavailable', linked: false, error: null, subprojectIds: [],
 }
 
 export interface WoRow {
@@ -670,7 +672,7 @@ export async function loadOrdersTree(projectId: string): Promise<OrdersTree> {
   )
   const sources: Sources = { ...headers, woBilled, woBillTds, woCerts, poCerts }
 
-  return { ...buildOrdersTree(wos, indents, boqRes.rows, skills, parties, absRes.rows, sources), linked: true, error: null }
+  return { ...buildOrdersTree(wos, indents, boqRes.rows, skills, parties, absRes.rows, sources), linked: true, error: null, subprojectIds: subIds }
 }
 
 /** One row of in4_wo_certificates as the loader reads it — a bill or an
