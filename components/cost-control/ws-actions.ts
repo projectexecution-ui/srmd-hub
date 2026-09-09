@@ -863,6 +863,17 @@ export async function returnWorkingSheet(wsId: string, reason: string): Promise<
       return_reason: reason.trim(),
       locked_at: null,
       locked_by: null,
+      // The department tag records an Atm Head sign-off. Returning the sheet
+      // undoes that sign-off, so the tag goes with it — otherwise the project
+      // page keeps counting a sheet that is back with the engineer as approved
+      // budget belonging to Design. It is set again, or not, when the Atm Head
+      // signs the resubmitted sheet — exactly as unticking the box clears it
+      // there. No history is lost: the sign-off event in the approval trail
+      // carries the department and its note.
+      other_dept: null,
+      other_dept_note: null,
+      other_dept_set_by: null,
+      other_dept_set_at: null,
     })
     .eq('id', wsId)
     .select('id')
