@@ -52,7 +52,6 @@ What the old tracker and the clean procurement tools (Procore, Zoho Inventory, O
 |---|---|---|
 | One headline row with money on it | every dashboard | Four pipeline cards — Waiting approval → To be ordered → On order → Received — with count, ₹ to come, oldest wait, late count. Late and All indents beside them. |
 | The list opens on what matters | Zoho/Odoo "to do" defaults | Opens on the first stage that has something waiting. |
-| Chase first | the old tracker's "Chase first — biggest / oldest" | The five lines with the most ₹ stuck, above the list, when the list is long. |
 | Group by, collapsed | the old tracker's supplier / indent groups, collapsed | Supplier · Indent · Category · Project · Flat; one line per group with lines · ₹ · oldest; opens when few or when searching. |
 | Age bands | the old tracker's Under 7 · 7–14 · 14–30 · 30+ cards | Chips with counts, click to filter; the hot bands in red. |
 | Search everything | the old tracker's universal search | Material, indent, PO, supplier, category, who raised it — every word must match. |

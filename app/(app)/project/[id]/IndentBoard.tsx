@@ -1,11 +1,11 @@
 import Link from 'next/link'
-import { Search, X, ChevronRight, Flame, CheckCircle2 } from 'lucide-react'
+import { Search, X, ChevronRight, CheckCircle2 } from 'lucide-react'
 import { formatINR, formatDate } from '@/lib/utils'
 import { RowDetailProvider, RowDetailToggle, RowDetail } from '@/components/cost-control/project-tree'
 import { SLA_DAYS, type IndentsCatRow, type IndentFilter, type PendingApproval, type IndentRow } from '@/lib/revamp/indents-tree'
 import {
   flattenRows, stageRows, searchRows, groupRows, defaultGroup, groupOptions, isGroupKey, isAgeBand, inAgeBand, bandCounts, AGE_BANDS, GROUP_LABEL,
-  headline, chaseFirst, pendingValue, supplierOf, shortRef, indentGroups, boardHref,
+  headline, pendingValue, supplierOf, shortRef, indentGroups, boardHref,
   type BoardRow, type BoardParams, type GroupKey, type AgeBand, type Headline,
 } from '@/lib/revamp/indents-board'
 import { ItemLine, Details, cycleSummary } from './IndentRows'
@@ -17,10 +17,9 @@ import { ItemLine, Details, cycleSummary } from './IndentRows'
  * Aksha, 10 Sep 2026: "garbage free and more management friendly … take
  * inspiration from the Indent to PO tracker." So, top to bottom:
  *   1. the pipeline as four numbers with money on them (click one to open it)
- *   2. chase first — the five lines with the most money stuck
- *   3. one list, grouped the way the old tracker grouped — supplier, indent,
+ *   2. one list, grouped the way the old tracker grouped — supplier, indent,
  *      category — every group collapsed to a single line with ₹ and the wait
- *   4. search, age bands, and the record only under a chevron
+ *   3. search, age bands, and the record only under a chevron
  * Everything is a URL: f (stage), g (grouping), age (band), q (search).
  * Read-only; the doing happens in IN4.
  */
@@ -168,7 +167,7 @@ function Toolbar({ base, params, q, group, groups, age, bands, href, placeholder
   )
 }
 
-/* ── 2 + 3. A stage's lines: chase first, then groups ───────────────────── */
+/* ── 2. A stage’s lines, grouped ─────────────────────────────────────────── */
 
 function StageList({ rows, filter, q, group, age, href, base, params, manyProjects }: {
   rows: BoardRow[]; filter: IndentFilter; q?: string; group: GroupKey; age: AgeBand
@@ -178,7 +177,6 @@ function StageList({ rows, filter, q, group, age, href, base, params, manyProjec
   const bands = bandCounts(stage)
   const shown = stage.filter(r => inAgeBand(r, age))
   const groups = groupRows(shown, group)
-  const chase = filter !== 'done' && shown.length >= 6 ? chaseFirst(shown.filter(r => pendingValue(r.item) > 0.5 || r.item.late), 5) : []
   const money = filter !== 'po'
   const openAll = q || groups.length <= 3
   const empty = filter === 'po' ? 'Every approved line has its PO.' : filter === 'delivery' ? 'Nothing ordered is still to arrive.' : filter === 'late' ? 'Nothing is past its time.' : filter === 'done' ? 'Nothing received yet.' : 'Nothing here.'
@@ -187,15 +185,6 @@ function StageList({ rows, filter, q, group, age, href, base, params, manyProjec
     <RowDetailProvider initialOpen={openAll ? groups.map(g => `g:${g.key}`) : []}>
       <Toolbar base={base} params={params} q={q} group={group} groups={groupOptions(filter, manyProjects)} age={age} bands={bands} href={href}
         placeholder="Material, indent, PO, supplier…" />
-
-      {chase.length >= 3 && (
-        <section className="rounded-lg border border-amber-200 bg-amber-50/40">
-          <p className="px-3 pt-2 text-[11px] uppercase tracking-wide text-amber-800 font-semibold inline-flex items-center gap-1"><Flame className="h-3 w-3" /> Chase first</p>
-          <ul className="divide-y divide-amber-100/80">
-            {chase.map(r => <Line key={`c:${r.indent.id}:${r.item.id}`} r={r} filter={filter} money={money} manyProjects={manyProjects} />)}
-          </ul>
-        </section>
-      )}
 
       {shown.length === 0
         ? <Calm text={q ? `Nothing matches “${q}”.` : age !== 'all' ? 'Nothing in this age band.' : empty} />
