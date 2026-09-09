@@ -1,8 +1,7 @@
-import { Fragment } from 'react'
 import { formatINR, formatDate } from '@/lib/utils'
 import { RowDetailToggle, RowDetail } from '@/components/cost-control/project-tree'
 import type { IndentRow, ChainStep, IndentItem } from '@/lib/revamp/indents-tree'
-import { lineRate, pendingValue, shortRef, supplierOf } from '@/lib/revamp/indents-board'
+import { lineRate, pendingValue, shortRef, supplierOf, summariseChain, meaningfulRemark } from '@/lib/revamp/indents-board'
 
 /**
  * The parts of an indent's record the Indents board (IndentBoard.tsx) shows
@@ -146,33 +145,69 @@ export function IndentItems({ r, idPrefix }: { r: IndentRow; idPrefix: string })
 
       <div className="px-3 py-1.5 border-t border-gray-100 flex items-center gap-1 text-[12px] text-gray-500">
         <RowDetailToggle id={detailId} count={1} label="the audit trail, POs and receipts" />
-        <span>Who did what and when · POs · receipts</span>
+        <span>History — who raised, verified, approved · the POs · what came in</span>
       </div>
       <RowDetail id={detailId}><Details r={r} /></RowDetail>
     </div>
   )
 }
 
-/** The full record: the indent's chain, then each PO with its chain and receipts, with the print and ledger links. */
+/**
+ * The history: IN4's audit trail folded into milestones — Raised · Verified ·
+ * Approved · Sent back · Amended — one line each with the date and the
+ * person, a remark only when it says something; then each PO the same way,
+ * with what was received against it. Aksha, 10 Sep 2026: the arrow chain
+ * with every Draft → Submitted → Verify step was "clumsy, garbage".
+ */
 export function Details({ r }: { r: IndentRow }) {
-  const step = (c: ChainStep) => `${c.status}${c.at ? ` ${formatDate(c.at)}` : ''}${c.by ? ` · ${c.by}` : ''}${c.remark ? ` — “${c.remark}”` : ''}`
   const pos = new Map<number, IndentItem['pos'][number]>()
   for (const it of r.items) for (const p of it.pos) if (!pos.has(p.poId)) pos.set(p.poId, p)
+  const poValue = (poId: number) => r.items.flatMap(i => i.pos).filter(x => x.poId === poId).reduce((t, x) => t + x.value, 0)
   return (
-    <div className="px-3 pb-2 text-[12px] text-gray-600 space-y-1.5 border-t border-gray-100 pt-2 bg-gray-50/60 rounded-b-lg">
-      {r.remarks && <p className="italic">“{r.remarks}”</p>}
-      <p><span className="text-gray-400">Indent · </span>{r.chain.length ? r.chain.map(step).join(' → ') : 'no audit trail in IN4'}</p>
+    <div className="px-3 pb-3 pt-2 border-t border-gray-100 bg-gray-50/60 rounded-b-lg grid gap-x-8 gap-y-3 md:grid-cols-2">
+      <History title={`Indent ${shortRef(r.ref)}`} chain={r.chain} remark={meaningfulRemark(r.remarks)} />
       {[...pos.values()].map(p => (
-        <Fragment key={p.poId}>
-          <p>
-            <span className="text-gray-400">PO · </span><span className="text-gray-800">{p.poNo ?? p.poId}</span>{p.supplier ? ` · ${p.supplier}` : ''} · {formatINR(r.items.flatMap(i => i.pos).filter(x => x.poId === p.poId).reduce((t, x) => t + x.value, 0))}
-            {p.chain.length > 0 && <> · {p.chain.map(step).join(' → ')}</>}
-            {p.grns.length > 0 && <> · received {p.grns.map(g => `${qty(g.qty)}${g.date ? ` on ${formatDate(g.date)}` : ''}`).join(', ')}</>}
-            {' · '}<a href={`/api/in4/purchase-order/${p.poId}/print`} target="_blank" rel="noopener" className="text-indigo-700 hover:underline">PO</a>
-            {' · '}<a href={`/api/in4/purchase-order/${p.poId}/ledger`} target="_blank" rel="noopener" className="text-indigo-700 hover:underline">ledger</a>
-          </p>
-        </Fragment>
+        <History key={p.poId} title={`PO ${shortRef(p.poNo) || p.poId}`} sub={[p.supplier, formatINR(poValue(p.poId))].filter(Boolean).join(' · ')} chain={p.chain}
+          links={<>
+            <a href={`/api/in4/purchase-order/${p.poId}/print`} target="_blank" rel="noopener" className="text-indigo-700 hover:underline">Print</a>
+            {' · '}<a href={`/api/in4/purchase-order/${p.poId}/ledger`} target="_blank" rel="noopener" className="text-indigo-700 hover:underline">Ledger</a>
+          </>}
+          received={p.grns.map(g => ({ at: g.date, text: `${qty(g.qty)} received${g.grnNo ? ` · ${shortRef(g.grnNo)}` : ''}` }))} />
       ))}
+    </div>
+  )
+}
+
+function History({ title, sub, chain, remark, links, received = [] }: { title: string; sub?: string; chain: ChainStep[]; remark?: string | null; links?: React.ReactNode; received?: Array<{ at: string | null; text: string }> }) {
+  const steps = summariseChain(chain)
+  const tone = (label: string) => label === 'Approved' ? 'text-emerald-700' : label === 'Sent back' || label === 'Cancelled' || label === 'Terminated' ? 'text-rose-700' : label === 'Amended' ? 'text-amber-700' : 'text-gray-700'
+  return (
+    <div className="text-[12px] min-w-0">
+      <p className="flex items-baseline gap-2 flex-wrap">
+        <span className="font-semibold text-gray-900">{title}</span>
+        {sub && <span className="text-gray-500">{sub}</span>}
+        {links && <span className="ml-auto">{links}</span>}
+      </p>
+      {remark && <p className="italic text-gray-500 mt-0.5">“{remark}”</p>}
+      {steps.length === 0 && received.length === 0 && <p className="text-gray-400 mt-1">No history in IN4.</p>}
+      <table className="mt-1 w-full">
+        <tbody>
+          {steps.map((m, i) => (
+            <tr key={i} className="align-top">
+              <td className={`pr-3 py-0.5 whitespace-nowrap font-medium ${tone(m.label)}`}>{m.label}{m.times > 1 ? ` ×${m.times}` : ''}</td>
+              <td className="pr-3 py-0.5 whitespace-nowrap text-gray-500 tabular-nums">{m.at ? formatDate(m.at) : ''}</td>
+              <td className="py-0.5 text-gray-700">{m.by ?? ''}{m.remark && <span className="block text-gray-500 italic">“{m.remark}”</span>}</td>
+            </tr>
+          ))}
+          {received.map((g, i) => (
+            <tr key={`g${i}`} className="align-top">
+              <td className="pr-3 py-0.5 whitespace-nowrap font-medium text-emerald-700">Received</td>
+              <td className="pr-3 py-0.5 whitespace-nowrap text-gray-500 tabular-nums">{g.at ? formatDate(g.at) : ''}</td>
+              <td className="py-0.5 text-gray-700">{g.text}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   )
 }

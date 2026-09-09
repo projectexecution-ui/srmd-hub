@@ -2,8 +2,9 @@ import { describe, it, expect } from 'vitest'
 import { buildIndentsTree, type IndentRaw, type IndentItemRaw, type PoLineRaw, type GrnRaw, type AuditRaw } from './indents-tree'
 import {
   flattenRows, shortRef, pendingValue, ageBandOf, bandCounts, supplierOf, lineRate,
-  searchRows, stageRows, headline, boardTree, rollUp, catTotals, treeTotals, boardHref, cleanName,
+  searchRows, stageRows, headline, boardTree, rollUp, catTotals, treeTotals, boardHref, cleanName, summariseChain, meaningfulRemark,
 } from './indents-board'
+import type { ChainStep } from './indents-tree'
 
 const SKILLS = [
   { id: 324, name: '09 Fire Fighting Works', code: '09' },
@@ -128,6 +129,52 @@ describe('the tree the board shows', () => {
     const civil = tree.cats.find(c => c.name === '03 Civil')!
     expect(catTotals(civil)).toMatchObject({ indents: 2, items: 2, open: 1, poValue: 130683, toCome: 20000 })
     expect(rollUp([])).toEqual({ indents: 0, items: 0, open: 0, poValue: 0, receivedValue: 0, toCome: 0, late: 0, oldest: null })
+  })
+})
+
+describe('summariseChain — the audit trail as milestones', () => {
+  const step = (status: string, stage: ChainStep['stage'], at: string, by: string, remark = ''): ChainStep => ({ status, stage, at, by, remark: remark || null })
+  it('folds Draft → Submitted → Verify → Approved into Raised · Verified · Approved and drops "Ok"', () => {
+    const m = summariseChain([
+      step('Draft', 'draft', '2026-08-14T10:00:00Z', 'Vivekkumar Lad'),
+      step('Submitted', 'submitted', '2026-08-14T10:05:00Z', 'Vivekkumar Lad'),
+      step('Verify', 'verify', '2026-08-14T11:00:00Z', 'Ambrishkumar Mistry'),
+      step('Approved', 'approved', '2026-08-14T12:00:00Z', 'Akshay Parekh', 'Ok'),
+    ])
+    expect(m.map(x => [x.label, x.by, x.remark])).toEqual([['Raised', 'Vivekkumar Lad', null], ['Verified', 'Ambrishkumar Mistry', null], ['Approved', 'Akshay Parekh', null]])
+  })
+  it('an amendment loop is one Amended line (×n) and one Approved line', () => {
+    const m = summariseChain([
+      step('Approved', 'approved', '2026-08-14T12:00:00Z', 'Akshay Parekh'),
+      step('Amended & Draft', 'draft', '2026-08-31T09:00:00Z', 'Ambrishkumar Mistry'),
+      step('Amended & Submitted', 'submitted', '2026-08-31T09:01:00Z', 'Ambrishkumar Mistry'),
+      step('Amended & Verify', 'verify', '2026-08-31T09:02:00Z', 'Ambrishkumar Mistry'),
+      step('Amended & Draft', 'draft', '2026-08-31T09:10:00Z', 'Ambrishkumar Mistry'),
+      step('Amended & Submitted', 'submitted', '2026-08-31T09:11:00Z', 'Ambrishkumar Mistry'),
+      step('Amended & Verify', 'verify', '2026-08-31T09:12:00Z', 'Ambrishkumar Mistry'),
+      step('Amended & Approved', 'approved', '2026-08-31T10:00:00Z', 'Akshay Parekh', 'Ok'),
+    ])
+    expect(m.map(x => [x.label, x.times])).toEqual([['Approved', 1], ['Amended', 2], ['Approved', 1]])
+  })
+  it('keeps a Sent back with its reason, and a real remark on Verify', () => {
+    const m = summariseChain([
+      step('Draft', 'draft', '2026-09-01T09:00:00Z', 'Ambrishkumar Mistry'),
+      step('Submitted', 'submitted', '2026-09-01T09:01:00Z', 'Ambrishkumar Mistry'),
+      step('ReSubmit', 'submitted', '2026-09-01T09:30:00Z', 'Subhash Mahyavanshi', 'Need to add payment term & Quotation'),
+      step('Submitted', 'submitted', '2026-09-01T09:40:00Z', 'Ambrishkumar Mistry'),
+      step('ReSubmit', 'submitted', '2026-09-01T09:50:00Z', 'Subhash Mahyavanshi', 'Need to add transport note.'),
+      step('Submitted', 'submitted', '2026-09-01T10:00:00Z', 'Ambrishkumar Mistry'),
+      step('Verify', 'verify', '2026-09-01T10:10:00Z', 'Subhash Mahyavanshi', 'Checked & Approved By Akshay Sir.'),
+      step('Approved', 'approved', '2026-09-01T10:20:00Z', 'Subhash Mahyavanshi', 'Ok'),
+    ])
+    expect(m.map(x => x.label)).toEqual(['Raised', 'Sent back', 'Sent back', 'Verified', 'Approved'])
+    expect(m[1].remark).toBe('Need to add payment term & Quotation')
+    expect(m[3].remark).toBe('Checked & Approved By Akshay Sir.')
+    expect(m[4].remark).toBeNull()
+  })
+  it('trivial remarks are dropped, real ones kept', () => {
+    expect(['Ok', 'OK.', 'Checked and Found OK', 'Checked and Verify OK', '', null].map(meaningfulRemark)).toEqual([null, null, null, null, null, null])
+    expect(meaningfulRemark('NGH Wing-B GI pipes')).toBe('NGH Wing-B GI pipes')
   })
 })
 

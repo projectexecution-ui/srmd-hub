@@ -8,7 +8,7 @@
 // "it should be in Tree View, also in Table with Qty rate etc so all are in
 // the same format as IE."
 
-import type { IndentRow, IndentItem, IndentsCatRow, IndentsSubRow, IndentFilter, PendingApproval } from './indents-tree'
+import type { IndentRow, IndentItem, IndentsCatRow, IndentsSubRow, IndentFilter, PendingApproval, ChainStep } from './indents-tree'
 import { itemMatches, filterIndentsTreeBy } from './indents-tree'
 
 /* ── Lines ──────────────────────────────────────────────────────────────── */
@@ -189,4 +189,53 @@ export function boardHref(base: string, current: BoardParams, patch: Partial<Boa
   }
   const str = qs.toString()
   return str ? `${base}?${str}` : base
+}
+
+/* ── The history, as milestones ─────────────────────────────────────────── */
+
+export interface Milestone {
+  /** What happened, in one word a head reads: Raised · Verified · Approved · Sent back · Amended · Cancelled. */
+  label: string
+  at: string | null
+  by: string | null
+  /** Only when the remark says something ("Ok" and "Checked and found OK" do not). */
+  remark: string | null
+  /** The same step repeated back to back — "Amended ×2". */
+  times: number
+}
+
+const TRIVIAL_REMARK = /^\s*(ok(ay)?|fine|approved|checked( and| &)? (found |verif(y|ied) )?ok|done|yes|noted|verified|good)\s*[.!]*\s*$/i
+export const meaningfulRemark = (remark: string | null | undefined): string | null => {
+  const r = (remark ?? '').trim()
+  return r && !TRIVIAL_REMARK.test(r) ? r : null
+}
+
+/** IN4's audit trail (Draft → Submitted → Verify → Approved, with ReSubmit and Amended loops) folded into the few steps a reader needs. Pure. */
+export function summariseChain(chain: readonly ChainStep[]): Milestone[] {
+  const out: Milestone[] = []
+  const push = (label: string, c: ChainStep) => {
+    const last = out[out.length - 1]
+    const remark = meaningfulRemark(c.remark)
+    if (last && last.label === label && last.by === c.by && !remark && !last.remark) { last.times++; last.at = c.at ?? last.at; return }
+    out.push({ label, at: c.at, by: c.by, remark, times: 1 })
+  }
+  let amending = false
+  for (const c of chain) {
+    const st = c.status.toLowerCase()
+    if (st.startsWith('amended')) {
+      // The amendment loop (Amended & Draft → & Submitted → & Verify → & Approved)
+      // is one event with an outcome, not four.
+      if (st.includes('draft')) { amending = true; push('Amended', c) }
+      else if (st.includes('approved')) { push('Approved', c); amending = false }
+      else if (st.includes('verify') && !amending) push('Verified', c)
+      continue
+    }
+    if (c.stage === 'draft') push('Raised', c)
+    else if (c.stage === 'submitted' && st.includes('resubmit')) push('Sent back', c)
+    else if (c.stage === 'submitted') { if (!out.some(m => m.label === 'Raised')) push('Raised', c) }
+    else if (c.stage === 'verify') push('Verified', c)
+    else if (c.stage === 'approved') push('Approved', c)
+    else push(c.status, c)
+  }
+  return out
 }
