@@ -115,33 +115,35 @@ export interface MatrixRow {
 export interface MatrixSection { id: string; title: string; note?: string; rows: MatrixRow[] }
 
 /**
- * The modules the revamp still stands on — what a role can DO inside the
- * workspace and on the few lanes that stay top-level. Everything else in
- * lib/modules.ts is an old screen the revamp replaced or parked (see
- * lib/revamp/nav.ts) and goes to the collapsed section at the bottom.
+ * THE POWERS — what a role can DO, in the revamp's own words. Each is the
+ * permission slug the revamp's screens check (Edit raises a budget, Admin
+ * approves a JMR…), named for what it powers now, never for the old module
+ * screen it came from. This list, not lib/modules.ts, is what the matrix is
+ * built from — Aksha, 10 Sep 2026: "I don't want other modules in
+ * Permissions … without keeping any old module to be imported to new ones."
+ * When the old screens are removed after approval, nothing here changes.
  */
-export const REVAMP_MODULES: Array<{ slug: string; hint: string }> = [
-  { slug: 'cost-control',        hint: 'The projects lane, Budget, Approvals, Accounts, Discussions, Masters and Setup — Edit raises and acts on budgets' },
-  { slug: 'budget-vs-actual-v2', hint: 'SC Budget — top-management report' },
-  { slug: 'procurement-tracker', hint: 'Indents and WO / PO — live from IN4' },
-  { slug: 'warehouse',           hint: 'Material In-Out — Edit moves stock' },
-  { slug: 'jmr',                 hint: 'JMR — Edit logs a day, Admin approves' },
-  { slug: 'contractor-report',   hint: 'Reports tab — contractor billing' },
-  { slug: 'supplier-report',     hint: 'Reports tab — supplier billing' },
-  { slug: 'bills-pipeline',      hint: 'Bills lane — the ERP team’s weekly SRA / SRET work' },
-  { slug: 'stuck-bills',         hint: 'Bills lane — the stuck-bills checklist' },
-  { slug: 'approvals',           hint: 'My Approvals inbox' },
-  { slug: 'admin-users',         hint: 'Users, roles and the allowlist' },
-  { slug: 'admin-permissions',   hint: 'This matrix' },
-  { slug: 'admin-settings',      hint: 'Portal settings, notifications, IN4' },
+export interface Power { slug: string; label: string; hint: string; lane: 'workspace' | 'portal' }
+export const POWERS: Power[] = [
+  { slug: 'cost-control',        lane: 'workspace', label: 'Projects',        hint: 'The projects lane and the workspace itself — Budget, Approvals, Accounts, Discussions, Masters, Setup. Edit raises and acts on budgets; Admin manages projects.' },
+  { slug: 'procurement-tracker', lane: 'workspace', label: 'Procurement',     hint: 'Indents and WO / PO, live from IN4.' },
+  { slug: 'warehouse',           lane: 'workspace', label: 'Material In-Out', hint: 'Stores and gate entries. Edit moves stock.' },
+  { slug: 'jmr',                 lane: 'workspace', label: 'JMR',             hint: 'Edit logs a day; Admin approves.' },
+  { slug: 'budget-vs-actual-v2', lane: 'workspace', label: 'SC Budget',       hint: 'The top-management report.' },
+  { slug: 'contractor-report',   lane: 'workspace', label: 'Reports — contractors', hint: 'Contractor billing on the Reports tab.' },
+  { slug: 'supplier-report',     lane: 'workspace', label: 'Reports — suppliers',   hint: 'Supplier billing on the Reports tab.' },
+  { slug: 'bills-pipeline',      lane: 'portal',    label: 'Bills',           hint: 'The Bills lane — the ERP team’s weekly SRA / SRET work.' },
+  { slug: 'stuck-bills',         lane: 'portal',    label: 'Bills — stuck bills', hint: 'The stuck-bills checklist.' },
+  { slug: 'approvals',           lane: 'portal',    label: 'My Approvals',    hint: 'The approvals inbox.' },
+  { slug: 'admin-users',         lane: 'portal',    label: 'Admin — users & roles', hint: 'Users, roles, the allowlist.' },
+  { slug: 'admin-permissions',   lane: 'portal',    label: 'Admin — permissions',   hint: 'This matrix.' },
+  { slug: 'admin-settings',      lane: 'portal',    label: 'Admin — settings',      hint: 'Portal settings, notifications, IN4.' },
 ]
-export const REVAMP_MODULE_SLUGS = new Set(REVAMP_MODULES.map(m => m.slug))
+export const POWER_SLUGS = new Set(POWERS.map(m => m.slug))
+export const powerLabel = (slug: string) => POWERS.find(p => p.slug === slug)?.label ?? slug
 
-export interface ModuleRef { slug: string; label: string }
-
-/** The sections the admin screen shows: the workspace (tab rows with their pills), the modules the revamp uses, and the old screens apart. */
-export function buildMatrixSections(modules: readonly ModuleRef[]): { sections: MatrixSection[]; legacy: MatrixSection } {
-  const moduleLabel = (slug: string) => modules.find(m => m.slug === slug)?.label ?? slug
+/** The sections the admin screen shows: the workspace (tab rows with their pills), then the powers. Nothing from the old module list. */
+export function buildMatrixSections(): { sections: MatrixSection[] } {
   const sections: MatrixSection[] = []
   for (const g of RIBBON_GROUPS) {
     const rows: MatrixRow[] = []
@@ -149,7 +151,7 @@ export function buildMatrixSections(modules: readonly ModuleRef[]): { sections: 
       const moduleSlug = t.built ? t.permissionSlug : 'cost-control'
       rows.push({
         slug: tabSlug(t), label: t.label, kind: 'tab', inherits: moduleSlug, icon: t.icon, reviewerOnly: t.reviewerOnly, unbuilt: !t.built,
-        hint: `${t.built ? '' : 'coming soon · '}inherits ${moduleLabel(moduleSlug)}`,
+        hint: `${t.built ? '' : 'coming soon · '}inherits ${powerLabel(moduleSlug)}`,
       })
       for (const s of t.subs) rows.push({ slug: subSlug(t, s), label: s, kind: 'sub', inherits: tabSlug(t), parent: tabSlug(t), hint: `${t.ribbon} · pill` })
     }
@@ -158,19 +160,20 @@ export function buildMatrixSections(modules: readonly ModuleRef[]): { sections: 
   sections.push({
     id: 'ws-setup', title: 'Project workspace — Setup',
     note: 'The gear beside the sync stamp. Cost Control reviewers only, on top of this switch.',
-    rows: [{ slug: tabSlug(SETUP_TAB), label: SETUP_TAB.label, kind: 'tab', inherits: 'cost-control', icon: SETUP_TAB.icon, reviewerOnly: true, hint: `inherits ${moduleLabel('cost-control')}` }],
+    rows: [{ slug: tabSlug(SETUP_TAB), label: SETUP_TAB.label, kind: 'tab', inherits: 'cost-control', icon: SETUP_TAB.icon, reviewerOnly: true, hint: `inherits ${powerLabel('cost-control')}` }],
+  })
+  const power = (p: Power): MatrixRow => ({ slug: p.slug, label: p.label, kind: 'module', hint: p.hint })
+  sections.push({
+    id: 'powers-workspace', title: 'Powers — inside a project',
+    note: 'What a role can DO on the tabs above. A tab inherits View from its power until it has a switch of its own; Edit and Admin are what the screens check.',
+    rows: POWERS.filter(p => p.lane === 'workspace').map(power),
   })
   sections.push({
-    id: 'modules', title: 'Screens and powers',
-    note: 'What a role can DO. Edit and Admin here are what the screens check inside a tab; a tab above inherits View from its module until it has a switch of its own.',
-    rows: REVAMP_MODULES.filter(m => modules.some(x => x.slug === m.slug)).map(m => ({ slug: m.slug, label: moduleLabel(m.slug), kind: 'module' as const, hint: m.hint })),
+    id: 'powers-portal', title: 'Powers — portal lanes',
+    note: 'Bills, My Approvals and Admin — the lanes that stay top-level.',
+    rows: POWERS.filter(p => p.lane === 'portal').map(power),
   })
-  const legacy: MatrixSection = {
-    id: 'legacy', title: 'Old screens — not in the revamp',
-    note: 'Replaced by a tab or parked (lib/revamp/nav.ts). Still routable by URL, so their switches still matter; kept here, folded away.',
-    rows: modules.filter(m => !REVAMP_MODULE_SLUGS.has(m.slug)).map(m => ({ slug: m.slug, label: m.label, kind: 'module' as const })),
-  }
-  return { sections, legacy }
+  return { sections }
 }
 
 /** Every ws slug the matrix can write — used to prove they are unique and well-formed. */

@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { WORKSPACE_TABS, SETUP_TAB, visibleWorkspaceTabs, findWorkspaceTab } from './workspace'
 import {
   kebab, tabSlug, subSlug, tabAccess, subAccess, allowedSubs, landingSub, canOpenWorkspaceTab, visibleWorkspaceTabsV2,
-  allowedSubsByTab, buildMatrixSections, allWsSlugs, filterRows, REVAMP_MODULE_SLUGS, type PermLike,
+  allowedSubsByTab, buildMatrixSections, allWsSlugs, filterRows, POWER_SLUGS, type PermLike,
 } from './permissions'
 import { MODULES } from '@/lib/modules'
 
@@ -117,10 +117,9 @@ describe('pills', () => {
 })
 
 describe('the matrix rows', () => {
-  const modules = MODULES.map(m => ({ slug: m.slug, label: m.label }))
-  const { sections, legacy } = buildMatrixSections(modules)
-  it('has a section per ribbon group, then Setup, then the modules the revamp uses', () => {
-    expect(sections.map(s => s.id)).toEqual(['ws-money', 'ws-procurement', 'ws-site', 'ws-documents', 'ws-people', 'ws-setup', 'modules'])
+  const { sections } = buildMatrixSections()
+  it('has a section per ribbon group, then Setup, then the powers — inside a project and portal lanes', () => {
+    expect(sections.map(s => s.id)).toEqual(['ws-money', 'ws-procurement', 'ws-site', 'ws-documents', 'ws-people', 'ws-setup', 'powers-workspace', 'powers-portal'])
   })
   it('lists every tab with its pills right under it, each pill pointing at its tab', () => {
     const money = sections[0].rows
@@ -136,15 +135,26 @@ describe('the matrix rows', () => {
     const all = sections.flatMap(s => s.rows)
     expect(all.find(r => r.slug === 'ws:accounts')).toMatchObject({ reviewerOnly: true })
     expect(all.find(r => r.slug === 'ws:qc')).toMatchObject({ unbuilt: true, inherits: 'cost-control' })
-    expect(all.find(r => r.slug === 'ws:procurement')?.hint).toContain('Indent → PO Tracker')
+    expect(all.find(r => r.slug === 'ws:procurement')?.hint).toContain('inherits Procurement')
   })
-  it('puts the old screens apart and nothing is lost between the two', () => {
-    const shown = new Set(sections.find(s => s.id === 'modules')!.rows.map(r => r.slug))
-    const old = new Set(legacy.rows.map(r => r.slug))
-    for (const m of modules) expect(shown.has(m.slug) || old.has(m.slug)).toBe(true)
-    for (const s of shown) expect(old.has(s)).toBe(false)
-    for (const s of ['indents', 'pos', 'grns', 'invoices', 'payments', 'vendors', 'inventory', 'uploads', 'blueprint-demo']) expect(old.has(s)).toBe(true)
-    for (const s of ['cost-control', 'procurement-tracker', 'admin-permissions']) expect(REVAMP_MODULE_SLUGS.has(s)).toBe(true)
+  it('shows the powers in the revamp’s words and no old module at all', () => {
+    const powers = sections.filter(s => s.id.startsWith('powers-')).flatMap(s => s.rows)
+    expect(powers.map(r => r.slug)).toEqual([...POWER_SLUGS])
+    expect(powers.find(r => r.slug === 'cost-control')?.label).toBe('Projects')
+    expect(powers.find(r => r.slug === 'procurement-tracker')?.label).toBe('Procurement')
+    const shown = new Set(sections.flatMap(s => s.rows).map(r => r.slug))
+    for (const s of ['indents', 'pos', 'grns', 'invoices', 'payments', 'vendors', 'inventory', 'uploads', 'blueprint-demo', 'budget-vs-actual', 'comparison', 'established-rates', 'daily-site-report', 'schedule', 'bills-booking', 'ecc', 'projects', 'attendance']) {
+      expect(shown.has(s), s).toBe(false)
+    }
+  })
+  it('every power is a slug some revamp screen actually checks — the tabs’ modules and the lanes in nav.ts', () => {
+    const gated = new Set([...WORKSPACE_TABS.map(t => t.permissionSlug), 'cost-control', 'bills-pipeline', 'stuck-bills', 'supplier-report', 'approvals', 'admin-users', 'admin-permissions', 'admin-settings'])
+    for (const s of POWER_SLUGS) expect(gated.has(s), s).toBe(true)
+    // …and every module a tab gates on is a power, so no tab inherits from something the matrix cannot show.
+    for (const t of WORKSPACE_TABS) expect(POWER_SLUGS.has(t.built ? t.permissionSlug : 'cost-control'), t.slug).toBe(true)
+    // …and each is a real module slug in lib/modules.ts, so the screens' requirePermission() calls resolve.
+    const mods = new Set(MODULES.map(m => m.slug))
+    for (const s of POWER_SLUGS) expect(mods.has(s), s).toBe(true)
   })
   it('search keeps a pill with its tab and a tab with its pills', () => {
     const rows = sections.flatMap(s => s.rows)

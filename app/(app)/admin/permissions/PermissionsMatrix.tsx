@@ -7,7 +7,7 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import {
-  Eye, EyeOff, Pencil, ShieldCheck, Trash2, Loader2, Check, Plus, X, Sparkles, Box, ChevronRight, ChevronDown, RotateCcw, Archive,
+  Eye, EyeOff, Pencil, ShieldCheck, Trash2, Loader2, Check, Plus, X, Sparkles, Box, ChevronRight, ChevronDown, RotateCcw,
   BarChart3, CircleCheck, Layers, CreditCard, ClipboardList, GitBranch, Package, Ruler, CalendarDays, FileText, FileBarChart, Users, MessageSquare, Briefcase, Settings2,
   type LucideIcon,
 } from 'lucide-react'
@@ -50,8 +50,7 @@ export type PermRow = {
 
 interface Props {
   sections: MatrixSection[]
-  legacy: MatrixSection
-  /** A search is on: every pill shows, and the old screens unfold when they match. */
+  /** A search is on: every pill shows. */
   searching?: boolean
   roles: readonly Role[]
   initial: PermRow[]
@@ -87,7 +86,7 @@ async function fetchAiDescription(roleName: string, context: string): Promise<st
   return (json?.description as string) || ''
 }
 
-export default function PermissionsMatrix({ sections, legacy, searching = false, roles, initial, roleLabels, currentUserIsPortalOwner, canManageRoles = false, totalModules }: Props) {
+export default function PermissionsMatrix({ sections, searching = false, roles, initial, roleLabels, currentUserIsPortalOwner, canManageRoles = false, totalModules }: Props) {
   const router = useRouter()
   const initialMap = useMemo<Record<Key, CellState>>(() => {
     const m: Record<Key, CellState> = {}
@@ -118,11 +117,9 @@ export default function PermissionsMatrix({ sections, legacy, searching = false,
   const [aiAddBusy, setAiAddBusy] = useState(false)
   const [delBusyRole, setDelBusyRole] = useState<Role | null>(null)
 
-  // Which tabs show their pills (collapsed by default — 45 pill rows would bury the tabs). Old screens fold away.
+  // Which tabs show their pills (collapsed by default — 45 pill rows would bury the tabs).
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set())
-  const [showLegacy, setShowLegacy] = useState(false)
   const allTabSlugs = useMemo(() => sections.flatMap(s => s.rows).filter(r => r.kind === 'tab').map(r => r.slug), [sections])
-  const legacyOpen = showLegacy || (searching && legacy.rows.length > 0)
 
   // Crosshair hover — highlight the hovered row + column so a wide matrix is readable at a glance.
   const [hoverRole, setHoverRole] = useState<Role | null>(null)
@@ -230,7 +227,7 @@ export default function PermissionsMatrix({ sections, legacy, searching = false,
 
   function roleContext(role: Role): string {
     const parts: string[] = []
-    for (const s of [...sections, legacy]) for (const m of s.rows) {
+    for (const s of sections) for (const m of s.rows) {
       if (m.kind !== 'module') continue
       const c = getCell(role, m.slug)
       if (c.admin) parts.push(`manage ${m.label}`)
@@ -241,7 +238,7 @@ export default function PermissionsMatrix({ sections, legacy, searching = false,
   }
 
   // Count from live state (not the possibly-filtered rows) so search doesn't shrink the denominator or the tally. Modules only — tabs and pills inherit.
-  const totalMods = totalModules ?? [...sections, legacy].flatMap(s => s.rows).filter(r => r.kind === 'module').length
+  const totalMods = totalModules ?? sections.flatMap(s => s.rows).filter(r => r.kind === 'module').length
   const roleModuleCount = (role: Role) =>
     role === ('admin' as Role)
       ? totalMods
@@ -359,7 +356,7 @@ export default function PermissionsMatrix({ sections, legacy, searching = false,
             <span className="inline-flex items-center gap-1.5 text-xs text-gray-500">
               <span className="inline-flex items-center rounded-full bg-slate-100 px-2 py-0.5 font-medium text-slate-700 tabular-nums">{visibleRoles.length} roles</span>
               <span className="inline-flex items-center rounded-full bg-slate-100 px-2 py-0.5 font-medium text-slate-700 tabular-nums">{tabCount} tabs · {pillCount} pills</span>
-              <span className="inline-flex items-center rounded-full bg-slate-100 px-2 py-0.5 font-medium text-slate-700 tabular-nums">{totalMods} screens</span>
+              <span className="inline-flex items-center rounded-full bg-slate-100 px-2 py-0.5 font-medium text-slate-700 tabular-nums">{totalMods} powers</span>
             </span>
             <div className="ml-auto flex items-center gap-3 text-[11px] text-gray-500">
               <span className="inline-flex items-center gap-1"><span className="inline-flex h-4 w-4 items-center justify-center rounded bg-blue-100 text-blue-700"><Eye className="h-2.5 w-2.5" /></span>Open / View</span>
@@ -377,7 +374,7 @@ export default function PermissionsMatrix({ sections, legacy, searching = false,
             </div>
           </div>
           <p className="text-xs text-gray-500 -mt-1">
-            <b>Tabs and pills</b> say who may <b>open</b> them in a project. A dashed cell inherits — a tab from its screen, a pill from its tab; one click gives it a switch of its own, <RotateCcw className="inline h-3 w-3 align-text-bottom" /> takes it back. <b>Screens</b> say what a role can <b>do</b> inside: Edit auto-grants View, Admin auto-grants View + Edit, removing View clears the row; Delete cycles none → direct → needs approval. Admin has full access always.
+            <b>Tabs and pills</b> say who may <b>open</b> them in a project. A dashed cell inherits — a tab from its power, a pill from its tab; one click gives it a switch of its own, <RotateCcw className="inline h-3 w-3 align-text-bottom" /> takes it back. <b>Powers</b> say what a role can <b>do</b> inside: Edit auto-grants View, Admin auto-grants View + Edit, removing View clears the row; Delete cycles none → direct → needs approval. Admin has full access always.
           </p>
 
           <div className="flex flex-wrap items-center gap-2">
@@ -434,7 +431,7 @@ export default function PermissionsMatrix({ sections, legacy, searching = false,
                   ))}
                 </tr>
                 <tr>
-                  <th className="sticky left-0 top-0 z-30 bg-gray-50 border-b border-gray-200 px-3 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wide text-gray-500 min-w-[260px]">Tab · pill · screen</th>
+                  <th className="sticky left-0 top-0 z-30 bg-gray-50 border-b border-gray-200 px-3 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wide text-gray-500 min-w-[260px]">Tab · pill · power</th>
                   {orderedRoles.map(role => {
                     const rl = labels[role]
                     const busy = labelBusy === role
@@ -460,7 +457,7 @@ export default function PermissionsMatrix({ sections, legacy, searching = false,
                           <div className="text-[11px] font-bold uppercase tracking-wide text-gray-700 leading-tight">{rl?.label || role}</div>
                         )}
                         <div className="mt-1 flex items-center justify-center gap-1 text-[10px] text-gray-400">
-                          {role === ('admin' as Role) ? <span className="text-purple-500 font-semibold">full</span> : <span className="tabular-nums" title="Screens this role can view">{roleModuleCount(role)}/{totalMods}</span>}
+                          {role === ('admin' as Role) ? <span className="text-purple-500 font-semibold">full</span> : <span className="tabular-nums" title="Powers this role holds">{roleModuleCount(role)}/{totalMods}</span>}
                           {busy && <Loader2 className="h-3 w-3 animate-spin text-blue-600" />}
                           {saved && <Check className="h-3 w-3 text-green-600" />}
                         </div>
@@ -472,21 +469,6 @@ export default function PermissionsMatrix({ sections, legacy, searching = false,
               <tbody>
                 {sections.map(section => <SectionRows key={section.id} section={section} colCount={colCount} {...rowProps} />)}
 
-                {/* Old screens — folded away; they still route by URL, so their switches still count. */}
-                {legacy.rows.length > 0 && (
-                  <>
-                    <tr>
-                      <td colSpan={colCount} className="sticky left-0 bg-white px-3 pt-4 pb-1">
-                        <button type="button" onClick={() => setShowLegacy(v => !v)} className="inline-flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-gray-400 hover:text-gray-700">
-                          {legacyOpen ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
-                          <Archive className="h-3.5 w-3.5" /> {legacy.title} · {legacy.rows.length}
-                        </button>
-                        {legacy.note && <p className="text-[11px] text-gray-400 normal-case tracking-normal font-normal mt-0.5">{legacy.note}</p>}
-                      </td>
-                    </tr>
-                    {legacyOpen && <SectionRows section={{ ...legacy, title: '' }} colCount={colCount} {...rowProps} />}
-                  </>
-                )}
               </tbody>
             </table>
           </div>
