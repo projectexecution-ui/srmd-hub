@@ -17,6 +17,7 @@ import { AccountsTab } from '../AccountsTab'
 import ProjectSetupPage from '@/app/(app)/cost-control/projects/[id]/setup/page'
 
 export const dynamic = 'force-dynamic'
+export const maxDuration = 60
 
 /**
  * One catch-all for every tab under the cockpit, so the tab list in

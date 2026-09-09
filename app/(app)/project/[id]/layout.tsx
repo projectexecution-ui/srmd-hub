@@ -12,6 +12,7 @@ import { getMyApprovalCounts } from '@/lib/revamp/approval-counts'
 import { subprojectIdsFor, loadVerifyCounts, verifyBadges } from '@/lib/revamp/verify-counts'
 
 export const dynamic = 'force-dynamic'
+export const maxDuration = 60
 
 /**
  * The project workspace shell (build order §1) — one header and one ribbon,

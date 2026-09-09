@@ -11,6 +11,7 @@ import { ViewPills } from '../ViewPills'
 import { canEditMasters } from '../admin'
 
 export const dynamic = 'force-dynamic'
+export const maxDuration = 60
 
 /**
  * Item Master — IN4's material register: every material with its type,

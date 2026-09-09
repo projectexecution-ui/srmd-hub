@@ -6,6 +6,7 @@ import { checkIsCcReviewer } from '@/components/cost-control/ws-actions'
 import { BudgetTab } from './BudgetTab'
 
 export const dynamic = 'force-dynamic'
+export const maxDuration = 60
 
 /**
  * The workspace's landing tab is BUDGET vs ACTUAL — opening a project shows
