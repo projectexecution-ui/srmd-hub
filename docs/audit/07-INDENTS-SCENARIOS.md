@@ -40,3 +40,25 @@ Aksha: "Indent section needs a revamp." Thirty-four scenarios across the two pla
 | 34 | Aksha | Approve from here | No — approval stays in IN4 (Aksha, 9 Sep). The Atm Head is told when it is their turn (Step 8 watcher). | — |
 
 **Net:** 12 fixed, 3 later with a reason, 19 already fine.
+
+
+## Round 2 — the board (Step 14, 10 Sep 2026)
+
+Aksha after Step 13: "Still clumsy and too much info — garbage free, management friendly; take inspiration from the Indent → PO tracker and online software; use IN4's data smartly to give stakeholders the full idea."
+
+What the old tracker and the clean procurement tools (Procore, Zoho Inventory, Odoo Purchase) have in common, and what the board now does:
+
+| Pattern | Where it came from | On the board |
+|---|---|---|
+| One headline row with money on it | every dashboard | Four pipeline cards — Waiting approval → To be ordered → On order → Received — with count, ₹ to come, oldest wait, late count. Late and All indents beside them. |
+| The list opens on what matters | Zoho/Odoo "to do" defaults | Opens on the first stage that has something waiting. |
+| Chase first | the old tracker's "Chase first — biggest / oldest" | The five lines with the most ₹ stuck, above the list, when the list is long. |
+| Group by, collapsed | the old tracker's supplier / indent groups, collapsed | Supplier · Indent · Category · Project · Flat; one line per group with lines · ₹ · oldest; opens when few or when searching. |
+| Age bands | the old tracker's Under 7 · 7–14 · 14–30 · 30+ cards | Chips with counts, click to filter; the hot bands in red. |
+| Search everything | the old tracker's universal search | Material, indent, PO, supplier, category, who raised it — every word must match. |
+| Short references | Zoho hides the org prefix | IND/SRASSK/NGH/2026-27/151 → NGH/2026-27/151. |
+| Record on demand | Procore's drawers | Items under the indent's chevron; who/when/PO/receipts under a second one. |
+
+Removed from the first screen: the five tiles, the category → sub-category → indent → item tree, the six money columns, the footer statistics, the amber banner, the monospace references. Kept in the data: everything.
+
+Still later: chase notes and the digest on the live rows (19, 20); "my indents" (33); a cache once the all-projects read grows past a few seconds (31).

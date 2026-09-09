@@ -5,12 +5,10 @@ import { createClient } from '@/lib/supabase/server'
 import { readFeedModes, readLastFeedSync } from '@/lib/in4/feeds'
 import { ProcurementTrackerClient } from './client'
 import { LiveTracker } from './live'
-import type { IndentFilter } from '@/lib/revamp/indents-tree'
+import type { BoardParams } from '@/lib/revamp/indents-board'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
-
-const FILTERS = new Set<IndentFilter>(['all', 'approval', 'po', 'delivery', 'late', 'done'])
 
 /**
  * Indent → PO Tracker. Default: live from IN4, every project, with the cycle
@@ -18,10 +16,9 @@ const FILTERS = new Set<IndentFilter>(['all', 'approval', 'po', 'delivery', 'lat
  * upload-based tracker — chase notes, the Excel uploads, the digest's source
  * — stays one click away under "Upload".
  */
-export default async function ProcurementTrackerPage({ searchParams }: { searchParams: Promise<{ view?: string; f?: string; p?: string; months?: string }> }) {
+export default async function ProcurementTrackerPage({ searchParams }: { searchParams: Promise<{ view?: string } & BoardParams> }) {
   await requirePermission('procurement-tracker', 'view')
-  const { view, f, p, months: m } = await searchParams
-  const filter: IndentFilter = FILTERS.has(f as IndentFilter) ? (f as IndentFilter) : 'all'
+  const { view, months: m, ...params } = await searchParams
   const months = Math.max(1, Math.min(60, Number(m) || 12))
 
   if (view !== 'upload') {
@@ -36,7 +33,7 @@ export default async function ProcurementTrackerPage({ searchParams }: { searchP
             <Upload className="h-4 w-4" /> Upload-based tracker
           </Link>
         </header>
-        <LiveTracker filter={filter} project={p ?? null} months={months} />
+        <LiveTracker params={{ ...params, months: m }} months={months} />
       </div>
     )
   }

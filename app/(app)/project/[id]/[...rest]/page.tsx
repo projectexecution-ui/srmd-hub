@@ -30,10 +30,10 @@ export default async function ProjectTabPage({
 }: {
   params: Promise<{ id: string; rest: string[] }>
   /** Which sub-tab pill is selected, same `?view=` the landing tab uses. */
-  searchParams: Promise<{ view?: string; f?: string }>
+  searchParams: Promise<{ view?: string; f?: string; q?: string; g?: string; age?: string }>
 }) {
   const { id, rest } = await params
-  const { view: viewParam, f } = await searchParams
+  const { view: viewParam, f, q, g, age } = await searchParams
   const slug = rest?.[0] ?? ''
   // Tabs the fifteen-tab ribbon absorbed are now a VIEW of another tab, so
   // an old bookmark, email link or approval card lands on that view instead
@@ -75,7 +75,7 @@ export default async function ProjectTabPage({
   // Indents and WO/POs are two pages on the mind map and two views of the one
   // tracker — its `global` snapshot holds the indents, its `po` snapshot the
   // purchase orders. Same component, told which side to show.
-  if (slug === 'procurement') return <ProcurementTab projectId={id} view={view} filter={f} />
+  if (slug === 'procurement') return <ProcurementTab projectId={id} view={view} params={{ f, q, g, age }} />
   if (slug === 'wo-po')       return <ProcurementTab projectId={id} />
 
   // Approvals is the live My-Approvals card, narrowed to this project — same

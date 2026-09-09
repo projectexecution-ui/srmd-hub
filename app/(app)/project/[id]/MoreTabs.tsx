@@ -4,6 +4,7 @@ import { EmptyState } from '@/components/ui/empty-state'
 import { loadProjectProcurement, loadProjectDiscussions } from '@/lib/revamp/tab-data'
 import { IndentViews } from './IndentViews'
 import { IndentsTree } from './IndentsTree'
+import type { BoardParams } from '@/lib/revamp/indents-board'
 import { loadCockpit } from '@/lib/revamp/project-cockpit'
 import { notFound } from 'next/navigation'
 import { MentionText } from '@/components/mentions/MentionText'
@@ -11,11 +12,11 @@ import { Truck, MessageSquare, Info } from 'lucide-react'
 
 // ── Indent → PO ─────────────────────────────────────────────────────────────
 
-export async function ProcurementTab({ projectId, view = 0, filter }: { projectId: string; view?: number; filter?: string }) {
+export async function ProcurementTab({ projectId, view = 0, params = {} }: { projectId: string; view?: number; params?: BoardParams }) {
   // View 0 — the Internal Estimate's shape, live from IN4, with the approvals
   // waiting in IN4 on top and the whole Indent → PO → GRN cycle on each
   // indent. View 1 — the tracker upload's own three views, unchanged.
-  if (view === 0) return <IndentsTree projectId={projectId} filter={(['all', 'approval', 'po', 'delivery', 'late', 'done'] as const).find(x => x === filter)} />
+  if (view === 0) return <IndentsTree projectId={projectId} params={params} />
   const [p, cockpit] = await Promise.all([loadProjectProcurement(projectId), loadCockpit(projectId)])
   if (!cockpit) notFound()
   const projectName = cockpit.project.code ?? cockpit.project.name

@@ -432,7 +432,7 @@ export async function loadIndentsTree(projectId: string, opts: { showClosed?: bo
   }
 }
 
-const INDENT_SELECT = `
+export const INDENT_SELECT = `
       SELECT i.ID, i.DISPLAY_NO, i.CREATION_DT, i.STATUS, i.SUBPROJECT_ID, i.PROJECT_ID, i.WORK_ORDER_ID, w.DISPLAY_NO wo_no,
              i.MATERIAL_TYPE, i.REMARKS, LTRIM(RTRIM(CONCAT(e.FirstName, ' ', e.LastName))) raised_by,
              pr.NAME project, sp.SUBPROJECT_NAME subproject
@@ -443,7 +443,7 @@ const INDENT_SELECT = `
       LEFT JOIN ENGG_SUBPROJECT sp ON sp.ID = i.SUBPROJECT_ID`
 
 /** The lines, PO lines, receipts and both audit trails for a set of indents. */
-async function loadIndentParts(indentIds: number[]) {
+export async function loadIndentParts(indentIds: number[]) {
   const [items, indentAudit] = await Promise.all([
       inList(indentIds, list => in4Query<IndentItemRaw>(`
         SELECT ii.ID, ii.INDENT_NO indent_id, ii.MATERIAL_ID, m.NAME material, ii.ORDER_QTY, u.NAME uom,

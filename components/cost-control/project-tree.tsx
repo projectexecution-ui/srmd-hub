@@ -138,8 +138,8 @@ export function TreeToolbar() {
 // ──────────────────────────────────────────────────────────────────────
 const DetailCtx = createContext<{ isOpen: (id: string) => boolean; toggle: (id: string) => void } | null>(null)
 
-export function RowDetailProvider({ children }: { children: ReactNode }) {
-  const [open, setOpen] = useState<Set<string>>(() => new Set())
+export function RowDetailProvider({ children, initialOpen }: { children: ReactNode; /** Rows that start open — the Indents board opens its groups when there are only a few, or while a search is on. */ initialOpen?: readonly string[] }) {
+  const [open, setOpen] = useState<Set<string>>(() => new Set(initialOpen ?? []))
   const api = useMemo(() => ({
     isOpen: (id: string) => open.has(id),
     toggle: (id: string) => setOpen(prev => {
