@@ -11,11 +11,11 @@ import { Truck, MessageSquare, Info } from 'lucide-react'
 
 // ── Indent → PO ─────────────────────────────────────────────────────────────
 
-export async function ProcurementTab({ projectId, view = 0 }: { projectId: string; view?: number }) {
+export async function ProcurementTab({ projectId, view = 0, filter }: { projectId: string; view?: number; filter?: string }) {
   // View 0 — the Internal Estimate's shape, live from IN4, with the approvals
   // waiting in IN4 on top and the whole Indent → PO → GRN cycle on each
   // indent. View 1 — the tracker upload's own three views, unchanged.
-  if (view === 0) return <IndentsTree projectId={projectId} />
+  if (view === 0) return <IndentsTree projectId={projectId} filter={(['all', 'approval', 'po', 'delivery', 'late', 'done'] as const).find(x => x === filter) ?? 'all'} />
   const [p, cockpit] = await Promise.all([loadProjectProcurement(projectId), loadCockpit(projectId)])
   if (!cockpit) notFound()
   const projectName = cockpit.project.code ?? cockpit.project.name
