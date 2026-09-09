@@ -18,7 +18,7 @@ export async function LiveTracker({ params, months }: { params: BoardParams; mon
 
   const project = params.p ?? null
   const shown = project ? projects.filter(p => String(p.projectId) === project) : projects
-  const pill = (p: string | undefined) => boardHref('/procurement-tracker', params, { p, q: undefined, g: undefined, age: undefined })
+  const pill = (p: string | undefined) => boardHref('/procurement-tracker', params, { p, q: undefined, age: undefined })
 
   return (
     <div className="space-y-4">
@@ -35,7 +35,7 @@ export async function LiveTracker({ params, months }: { params: BoardParams; mon
         })}
       </nav>
 
-      <IndentBoard scopes={shown.map(p => ({ cats: p.tree.cats, pending: p.tree.pending }))} base="/procurement-tracker" params={params} manyProjects={!project} months={months} />
+      <IndentBoard scopes={shown.map(p => ({ id: String(p.projectId), name: p.project, cats: p.tree.cats, pending: p.tree.pending }))} base="/procurement-tracker" params={params} manyProjects={!project} months={months} />
 
       <p className="text-[12px] text-gray-400">
         The <Link href="/procurement-tracker?view=upload" className="text-indigo-700 hover:underline inline-flex items-center gap-1"><Upload className="h-3 w-3" /> upload-based tracker</Link> keeps the chase notes and the digest.

@@ -61,3 +61,9 @@ What the old tracker and the clean procurement tools (Procore, Zoho Inventory, O
 Removed from the first screen: the five tiles, the category → sub-category → indent → item tree, the six money columns, the footer statistics, the amber banner, the monospace references. Kept in the data: everything.
 
 Still later: chase notes and the digest on the live rows (19, 20); "my indents" (33); a cache once the all-projects read grows past a few seconds (31).
+
+## Round 3 — back to the tree, in the IE's format (Step 15, 10 Sep 2026)
+
+Aksha on the Step 14 board: "It should be in Tree View, also in Table with Qty rate etc so all are in same format as IE." The grouped-and-collapsed lists (by supplier / indent / category) were not it. What stays from round 2: the pipeline cards with money on them, the age bands, the search, the short references, the record under a chevron. What changed: the body is the Internal Estimate's tree — category → sub-category → indent — with the IE's columns machinery, and under each indent the IE's item-wise table (# · Description · Unit · Qty · PO qty · Rate · Amount · Received qty · Received value · Where it stands). A stage, a search or an age band narrows the tree and opens it; the full tree opens rolled up.
+
+Lesson for the file: Aksha wants ONE shape across CT Hub — the IE's category tree with an item table under each row — and the declutter to come from roll-up and default-collapsed levels, not from a different layout.

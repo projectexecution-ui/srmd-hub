@@ -1,8 +1,8 @@
 import { describe, it, expect } from 'vitest'
 import { buildIndentsTree, type IndentRaw, type IndentItemRaw, type PoLineRaw, type GrnRaw, type AuditRaw } from './indents-tree'
 import {
-  flattenRows, shortRef, pendingValue, ageBandOf, bandCounts, defaultGroup, groupOptions, groupRows, supplierOf,
-  searchRows, stageRows, chaseFirst, headline, indentGroups, boardHref, cleanName,
+  flattenRows, shortRef, pendingValue, ageBandOf, bandCounts, supplierOf, lineRate,
+  searchRows, stageRows, headline, boardTree, rollUp, catTotals, treeTotals, boardHref, cleanName,
 } from './indents-board'
 
 const SKILLS = [
@@ -35,7 +35,7 @@ const PO_AUDIT_92: AuditRaw[] = [
   { doc_id: 1164, STATUS: 2, MODIFIED_DT: '2026-03-26T11:05:00Z', who: 'Subhash Mahyavanshi', REMARKS: 'Ok' },
 ]
 
-// IND …/120 — approved, PO 200 approved 20 days ago, half received: a late delivery.
+// IND …/120 — approved, PO 200 approved 19 days ago, half received: a late delivery.
 const IND_120: IndentRaw = { ID: 1200, DISPLAY_NO: 'IND/SRASSK/NGH/2026-27/120', CREATION_DT: '2026-08-10T00:00:00Z', STATUS: 2, SUBPROJECT_ID: 12, PROJECT_ID: 12, project: 'New Guest House', WORK_ORDER_ID: null, wo_no: null, MATERIAL_TYPE: ' 03 (M) Civil', REMARKS: null, raised_by: 'Kalyan Singh' }
 const ITEM_120: IndentItemRaw = { ID: 4000, indent_id: 1200, MATERIAL_ID: 5000, material: 'Cement OPC 53', ORDER_QTY: 100, uom: 'Bags', WORK_CATEGORY_ID: 1, WORK_SUBCATEGORY_ID: 422, CLOSED_FOR_PO: false }
 const AUDIT_120: AuditRaw[] = [{ doc_id: 1200, STATUS: 2, MODIFIED_DT: '2026-08-12T10:00:00Z', who: 'Ambrishkumar Mistry', REMARKS: '' }]
@@ -47,8 +47,9 @@ const tree = buildIndentsTree(
   [...AUDIT_151, ...AUDIT_99, ...AUDIT_120], [...PO_AUDIT_92, ...PO_AUDIT_200], SKILLS, { now: NOW },
 )
 const rows = flattenRows(tree.cats)
+const line = (m: string) => rows.find(r => r.item.material === m)!.item
 
-describe('flattenRows / shortRef / pendingValue', () => {
+describe('lines', () => {
   it('lists every line once with its category names', () => {
     expect(rows).toHaveLength(4)
     expect(rows.find(r => r.item.material === 'Cement OPC 53')).toMatchObject({ category: '03 Civil', subcategory: '310 Door & Window Sills' })
@@ -59,12 +60,15 @@ describe('flattenRows / shortRef / pendingValue', () => {
     expect(shortRef(null)).toBe('')
   })
   it('₹ to come = the undelivered share of the landed PO value', () => {
-    const cement = rows.find(r => r.item.material === 'Cement OPC 53')!.item
-    expect(pendingValue(cement)).toBeCloseTo(20000)
-    const pidilite = rows.find(r => r.item.material.startsWith('Pidilite'))!.item
-    expect(pendingValue(pidilite)).toBe(0)
-    const gi = rows.find(r => r.item.material === 'GI PIPE 80MM')!.item
-    expect(pendingValue(gi)).toBe(0)
+    expect(pendingValue(line('Cement OPC 53'))).toBeCloseTo(20000)
+    expect(pendingValue(line('Pidilite - Roff (T02) Grey'))).toBe(0)
+    expect(pendingValue(line('GI PIPE 80MM'))).toBe(0)
+  })
+  it('names the supplier a line waits on, and IN4’s rate', () => {
+    expect(supplierOf(line('Cement OPC 53'))).toBe('ULTRATECH')
+    expect(supplierOf(line('GI PIPE 80MM'))).toBeNull()
+    expect(lineRate(line('Cement OPC 53'))).toBe(400)
+    expect(lineRate(line('GI PIPE 80MM'))).toBeNull()
   })
   it('strips the code from a category name', () => {
     expect(cleanName('09 Fire Fighting Works')).toBe('Fire Fighting Works')
@@ -83,49 +87,13 @@ describe('age bands', () => {
   })
 })
 
-describe('grouping', () => {
-  it('opens deliveries by supplier and POs by indent; all indents by category, or by project across projects', () => {
-    expect(defaultGroup('delivery')).toBe('supplier')
-    expect(defaultGroup('po')).toBe('indent')
-    expect(defaultGroup('all')).toBe('category')
-    expect(defaultGroup('all', true)).toBe('project')
-    expect(groupOptions('delivery', true)).toEqual(['supplier', 'indent', 'category', 'project', 'none'])
-    expect(groupOptions('all')).toEqual(['category', 'indent'])
-  })
-  it('names the supplier a line waits on', () => {
-    expect(supplierOf(rows.find(r => r.item.material === 'Cement OPC 53')!.item)).toBe('ULTRATECH')
-    expect(supplierOf(rows.find(r => r.item.material === 'GI PIPE 80MM')!.item)).toBeNull()
-  })
-  it('groups by supplier with ₹ stuck, the longest wait and the late count', () => {
-    const g = groupRows(stageRows(rows, 'delivery'), 'supplier')
-    expect(g).toHaveLength(1)
-    expect(g[0]).toMatchObject({ label: 'ULTRATECH', sub: '1 PO', value: 20000, oldest: 19, late: 1 })
-  })
-  it('groups by indent with the raiser as a second line, most money first', () => {
-    const g = groupRows(rows, 'indent')
-    expect(g[0]).toMatchObject({ label: 'NGH/2026-27/120', sub: 'Kalyan Singh · New Guest House', value: 20000 })
-    expect(g.map(x => x.label)).toContain('NGH/2026-27/151')
-  })
-  it('a flat list is one group sorted by the longest wait', () => {
-    const g = groupRows(rows, 'none')
-    expect(g).toHaveLength(1)
-    expect(g[0].rows[0].item.material).toBe('Cement OPC 53')
-    expect(groupRows([], 'none')).toEqual([])
-  })
-})
-
-describe('search / chase first / headline', () => {
+describe('search / headline', () => {
   it('finds a line by material, indent, PO number or supplier — every word must match', () => {
     expect(searchRows(rows, 'ultratech').map(r => r.item.material)).toEqual(['Cement OPC 53'])
     expect(searchRows(rows, '2026-27/151')).toHaveLength(2)
     expect(searchRows(rows, 'gi 80')).toHaveLength(1)
     expect(searchRows(rows, 'nothing here')).toHaveLength(0)
     expect(searchRows(rows, '  ')).toHaveLength(4)
-  })
-  it('chase first = most ₹ stuck, then the longest wait', () => {
-    const c = chaseFirst(rows, 2)
-    expect(c[0].item.material).toBe('Cement OPC 53')
-    expect(c[1].indent.ref).toBe('IND/SRASSK/NGH/2026-27/151')
   })
   it('the headline reads the cycle as numbers', () => {
     const h = headline(rows, tree.pending, Date.parse(NOW))
@@ -138,20 +106,28 @@ describe('search / chase first / headline', () => {
   })
 })
 
-describe('indentGroups', () => {
-  it('merges an indent back into one row per category, newest first, open work on top', () => {
-    const g = indentGroups(tree.cats, 'category')
-    expect(g.map(x => x.label)).toEqual(['Civil', 'Fire Fighting Works'])
-    expect(g[0].indents.map(r => shortRef(r.ref))).toEqual(['NGH/2026-27/120', 'NGH/2025-26/99'])
-    expect(g[0]).toMatchObject({ open: 1, poValue: 130683 })
+describe('the tree the board shows', () => {
+  it('is the whole tree when nothing is filtered', () => {
+    expect(boardTree(tree.cats, 'all', undefined, 'all')).toEqual(tree.cats)
   })
-  it('filters indents by a search and drops empty groups', () => {
-    const g = indentGroups(tree.cats, 'category', 'pidilite')
-    expect(g).toHaveLength(1)
-    expect(g[0].indents).toHaveLength(1)
+  it('keeps only the stage’s lines, re-summed, empty branches dropped', () => {
+    const t = boardTree(tree.cats, 'delivery', undefined, 'all')
+    expect(t).toHaveLength(1)
+    expect(t[0].name).toBe('03 Civil')
+    expect(t[0].subs[0].indents.map(r => r.ref)).toEqual(['IND/SRASSK/NGH/2026-27/120'])
+    expect(t[0].poValue).toBe(40000)
   })
-  it('groups by project for the portal tracker', () => {
-    expect(indentGroups(tree.cats, 'project').map(x => [x.label, x.indents.length])).toEqual([['New Guest House', 3]])
+  it('search and age band narrow the tree the same way', () => {
+    expect(boardTree(tree.cats, 'all', 'gi pipe', 'all')[0].name).toBe('09 Fire Fighting Works')
+    expect(boardTree(tree.cats, 'all', 'gi pipe', 'all')[0].subs[0].indents[0].items).toHaveLength(2)
+    expect(boardTree(tree.cats, 'all', undefined, '14to30')[0].subs[0].indents[0].items[0].material).toBe('Cement OPC 53')
+    expect(boardTree(tree.cats, 'all', 'nothing here', 'all')).toEqual([])
+  })
+  it('rolls a branch up: items, open, PO’d, received, to come, late, oldest', () => {
+    expect(treeTotals(tree.cats)).toEqual({ indents: 3, items: 4, open: 3, poValue: 130683, receivedValue: 110683, toCome: 20000, late: 1, oldest: 19 })
+    const civil = tree.cats.find(c => c.name === '03 Civil')!
+    expect(catTotals(civil)).toMatchObject({ indents: 2, items: 2, open: 1, poValue: 130683, toCome: 20000 })
+    expect(rollUp([])).toEqual({ indents: 0, items: 0, open: 0, poValue: 0, receivedValue: 0, toCome: 0, late: 0, oldest: null })
   })
 })
 
@@ -159,6 +135,6 @@ describe('boardHref', () => {
   it('keeps the project and months, drops defaults, and lets a patch clear a key', () => {
     expect(boardHref('/procurement-tracker', { p: '12', f: 'delivery', age: '7to14' }, { age: 'all' })).toBe('/procurement-tracker?p=12&f=delivery')
     expect(boardHref('/project/x/procurement', {}, { f: 'all' })).toBe('/project/x/procurement')
-    expect(boardHref('/project/x/procurement', { f: 'po' }, { q: 'gi pipe', g: 'supplier' })).toBe('/project/x/procurement?f=po&g=supplier&q=gi+pipe')
+    expect(boardHref('/project/x/procurement', { f: 'po' }, { q: 'gi pipe' })).toBe('/project/x/procurement?f=po&q=gi+pipe')
   })
 })

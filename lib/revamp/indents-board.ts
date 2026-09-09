@@ -1,17 +1,15 @@
 // The Indents board — what a project stakeholder sees first. Pure helpers over
 // the tree that lib/revamp/indents-tree.ts builds from IN4, so the layout
-// (one pipeline strip, one list grouped the way the old Indent → PO tracker
-// grouped it — by supplier, by indent, by category — with age bands, a search
-// box and a "chase first" shortlist) is tested on fixtures, not eyeballed.
+// (one pipeline strip with money on it; then the Internal Estimate's tree —
+// category → sub-category → indent → items with Qty · Unit · Rate · Amount;
+// age bands and a search box on top) is tested on fixtures, not eyeballed.
 //
-// Aksha, 10 Sep 2026: "garbage free and more management friendly … take
-// inspiration from the Indent to PO tracker and other online softwares."
-// What those do well: ONE headline row of numbers with money on it, a flat
-// list grouped and collapsed, ageing as bands you can click, and the record
-// only when asked for.
+// Aksha, 10 Sep 2026: "garbage free and more management friendly", then
+// "it should be in Tree View, also in Table with Qty rate etc so all are in
+// the same format as IE."
 
-import type { IndentRow, IndentItem, IndentsCatRow, IndentFilter, PendingApproval } from './indents-tree'
-import { itemMatches } from './indents-tree'
+import type { IndentRow, IndentItem, IndentsCatRow, IndentsSubRow, IndentFilter, PendingApproval } from './indents-tree'
+import { itemMatches, filterIndentsTreeBy } from './indents-tree'
 
 /* ── Lines ──────────────────────────────────────────────────────────────── */
 
@@ -44,6 +42,20 @@ export const pendingValue = (it: IndentItem) => (it.poQty > 0 ? it.poValue * Mat
 /** The category name without IN4's leading code ("09 Fire Fighting Works" → "Fire Fighting Works"). */
 export const cleanName = (name: string) => name.replace(/^\d+\s+/, '')
 
+/** The supplier a line waits on: the PO not yet approved or delivered, else the last one. */
+export function supplierOf(it: IndentItem): string | null {
+  const open = it.pos.find(p => p.stage !== 'approved') ?? it.pos.find(p => p.grnQty + 0.001 < p.qty) ?? it.pos[it.pos.length - 1]
+  return open?.supplier ?? null
+}
+
+/** IN4's net rate on the line — the one PO's rate, or the quantity-weighted rate across several. Null before a PO. */
+export function lineRate(it: IndentItem): number | null {
+  const priced = it.pos.filter(p => p.rate != null && p.qty > 0)
+  if (priced.length === 0) return null
+  const q = priced.reduce((t, p) => t + p.qty, 0)
+  return q > 0 ? priced.reduce((t, p) => t + (p.rate as number) * p.qty, 0) / q : null
+}
+
 /* ── Age bands (the old tracker's signature) ────────────────────────────── */
 
 export type AgeBand = 'all' | 'lt7' | '7to14' | '14to30' | '30plus'
@@ -61,8 +73,8 @@ export function ageBandOf(days: number | null): Exclude<AgeBand, 'all'> {
   return d < 7 ? 'lt7' : d < 14 ? '7to14' : d < 30 ? '14to30' : '30plus'
 }
 
-export function inAgeBand(row: BoardRow, band: AgeBand): boolean {
-  return band === 'all' || ageBandOf(row.item.waitingDays) === band
+export function inAgeBand(it: IndentItem, band: AgeBand): boolean {
+  return band === 'all' || ageBandOf(it.waitingDays) === band
 }
 
 export function bandCounts(rows: readonly BoardRow[]): Record<AgeBand, { count: number; value: number }> {
@@ -77,104 +89,25 @@ export function bandCounts(rows: readonly BoardRow[]): Record<AgeBand, { count: 
   return out
 }
 
-/* ── Grouping ───────────────────────────────────────────────────────────── */
-
-export type GroupKey = 'supplier' | 'indent' | 'category' | 'project' | 'none'
-export const GROUP_LABEL: Record<GroupKey, string> = { supplier: 'Supplier', indent: 'Indent', category: 'Category', project: 'Project', none: 'Flat list' }
-export const isGroupKey = (v: unknown): v is GroupKey => v === 'supplier' || v === 'indent' || v === 'category' || v === 'project' || v === 'none'
-
-/** Which grouping a stage opens on: deliveries are chased with the supplier, POs are raised per indent. */
-export function defaultGroup(filter: IndentFilter, manyProjects = false): GroupKey {
-  if (filter === 'delivery' || filter === 'done') return 'supplier'
-  if (filter === 'po' || filter === 'late' || filter === 'approval') return 'indent'
-  return manyProjects ? 'project' : 'category'
-}
-
-/** The groupings that make sense for a stage (the pills). */
-export function groupOptions(filter: IndentFilter, manyProjects = false): GroupKey[] {
-  const base: GroupKey[] = filter === 'delivery' || filter === 'done' ? ['supplier', 'indent', 'category'] : filter === 'all' ? ['category', 'indent'] : ['indent', 'supplier', 'category']
-  const withProject = manyProjects ? [...base.filter(g => g !== 'none'), 'project' as GroupKey] : base
-  return filter === 'all' ? withProject : [...withProject, 'none']
-}
-
-export interface Group {
-  key: string
-  label: string
-  /** A second line for the header: the indent's date and who raised it, the supplier's PO count. */
-  sub: string | null
-  rows: BoardRow[]
-  value: number
-  oldest: number | null
-  late: number
-}
-
-/** The supplier a line waits on: the PO that is not yet delivered or approved, else the last one. */
-export function supplierOf(it: IndentItem): string | null {
-  const open = it.pos.find(p => p.stage !== 'approved') ?? it.pos.find(p => p.grnQty + 0.001 < p.qty) ?? it.pos[it.pos.length - 1]
-  return open?.supplier ?? null
-}
-
-export function groupRows(rows: readonly BoardRow[], key: GroupKey): Group[] {
-  const byLate = (a: BoardRow, b: BoardRow) => (b.item.waitingDays ?? 0) - (a.item.waitingDays ?? 0) || pendingValue(b.item) - pendingValue(a.item)
-  if (key === 'none') {
-    const all = [...rows].sort(byLate)
-    return all.length ? [finish({ key: 'all', label: `${all.length} line${all.length === 1 ? '' : 's'}`, sub: null, rows: all })] : []
-  }
-  const map = new Map<string, { key: string; label: string; sub: string | null; rows: BoardRow[] }>()
-  for (const r of rows) {
-    let k: string, label: string, sub: string | null = null
-    switch (key) {
-      case 'supplier': k = supplierOf(r.item) ?? '—'; label = k === '—' ? 'No supplier yet' : k; break
-      case 'indent': k = `i${r.indent.id}`; label = shortRef(r.indent.ref); sub = [r.indent.raisedBy, r.indent.subproject ?? r.indent.project].filter(Boolean).join(' · ') || null; break
-      case 'category': k = r.category; label = cleanName(r.category); break
-      case 'project': k = r.indent.project ?? '—'; label = k === '—' ? 'No project on the indent' : k; break
-      default: k = 'all'; label = 'All'
-    }
-    const g = map.get(k) ?? { key: k, label, sub, rows: [] }
-    g.rows.push(r)
-    map.set(k, g)
-  }
-  const out = [...map.values()].map(g => { g.rows.sort(byLate); return finish(g) })
-  if (key === 'supplier') for (const g of out) {
-    const pos = new Set(g.rows.flatMap(r => r.item.pos.filter(p => p.grnQty + 0.001 < p.qty || p.stage !== 'approved').map(p => p.poId)))
-    g.sub = pos.size ? `${pos.size} PO${pos.size === 1 ? '' : 's'}` : null
-  }
-  // Most money stuck first, then the longest wait — what a head reads top-down.
-  return out.sort((a, b) => b.value - a.value || (b.oldest ?? 0) - (a.oldest ?? 0) || a.label.localeCompare(b.label))
-}
-
-function finish(g: { key: string; label: string; sub: string | null; rows: BoardRow[] }): Group {
-  return {
-    ...g,
-    value: g.rows.reduce((t, r) => t + pendingValue(r.item), 0),
-    oldest: g.rows.reduce<number | null>((m, r) => (r.item.waitingDays == null ? m : m == null ? r.item.waitingDays : Math.max(m, r.item.waitingDays)), null),
-    late: g.rows.filter(r => r.item.late).length,
-  }
-}
-
 /* ── Search ─────────────────────────────────────────────────────────────── */
 
 const norm = (v: string | null | undefined) => (v ?? '').toLowerCase()
 
-/** Does the line answer a typed search — material, indent, PO, supplier, category, who raised it, project? */
-export function rowMatchesQuery(r: BoardRow, q: string): boolean {
+/** Does the line answer a typed search — material, indent, PO, supplier, category, who raised it, project? Every word must match. */
+export function lineMatchesQuery(it: IndentItem, r: IndentRow, q: string, category = '', subcategory = ''): boolean {
   const needle = q.trim().toLowerCase()
   if (!needle) return true
-  const hay = [r.item.material, r.indent.ref, r.indent.raisedBy, r.indent.woNo, r.indent.project, r.indent.subproject, r.category, r.subcategory,
-    ...r.item.pos.flatMap(p => [p.poNo, p.supplier])].map(norm).join(' | ')
+  const hay = [it.material, r.ref, r.raisedBy, r.woNo, r.project, r.subproject, r.remarks, category, subcategory,
+    ...it.pos.flatMap(p => [p.poNo, p.supplier])].map(norm).join(' | ')
   return needle.split(/\s+/).every(w => hay.includes(w))
+}
+
+export function rowMatchesQuery(r: BoardRow, q: string): boolean {
+  return lineMatchesQuery(r.item, r.indent, q, r.category, r.subcategory)
 }
 
 export function searchRows(rows: readonly BoardRow[], q: string | undefined): BoardRow[] {
   return q?.trim() ? rows.filter(r => rowMatchesQuery(r, q)) : [...rows]
-}
-
-export function indentMatchesQuery(r: IndentRow, q: string): boolean {
-  const needle = q.trim().toLowerCase()
-  if (!needle) return true
-  const hay = [r.ref, r.raisedBy, r.woNo, r.project, r.subproject, r.remarks, r.materialType, r.status,
-    ...r.items.map(i => i.material), ...r.pos.flatMap(p => [p.poNo, p.supplier])].map(norm).join(' | ')
-  return needle.split(/\s+/).every(w => hay.includes(w))
 }
 
 /* ── The lines for a stage ──────────────────────────────────────────────── */
@@ -183,10 +116,34 @@ export function stageRows(rows: readonly BoardRow[], filter: IndentFilter): Boar
   return rows.filter(r => itemMatches(filter, r.item))
 }
 
-/** The few worth chasing first: most money stuck, then longest waiting. */
-export function chaseFirst(rows: readonly BoardRow[], n = 5): BoardRow[] {
-  return [...rows].sort((a, b) => pendingValue(b.item) - pendingValue(a.item) || (b.item.waitingDays ?? 0) - (a.item.waitingDays ?? 0)).slice(0, n)
+/** The Internal-Estimate-shaped tree with only the lines the stage, the search and the age band keep. */
+export function boardTree(cats: readonly IndentsCatRow[], filter: IndentFilter, q: string | undefined, age: AgeBand): IndentsCatRow[] {
+  if (filter === 'all' && !q?.trim() && age === 'all') return [...cats]
+  return filterIndentsTreeBy(cats, (it, r, c, sb) => itemMatches(filter, it) && inAgeBand(it, age) && (!q?.trim() || lineMatchesQuery(it, r, q, c.name, sb.name)))
 }
+
+export interface TreeTotals { indents: number; items: number; open: number; poValue: number; receivedValue: number; toCome: number; late: number; oldest: number | null }
+
+/** Roll-up for a category, a sub-category, an indent, or the whole tree. Pure. */
+export function rollUp(indents: readonly IndentRow[]): TreeTotals {
+  const seen = new Set<string>()
+  const items: IndentItem[] = []
+  for (const r of indents) for (const it of r.items) { const k = `${r.id}:${it.id}`; if (!seen.has(k)) { seen.add(k); items.push(it) } }
+  const waiting = items.filter(i => i.next !== 'done' && i.next !== 'closed')
+  return {
+    indents: new Set(indents.map(r => r.id)).size, items: items.length,
+    open: waiting.length,
+    poValue: items.reduce((t, i) => t + i.poValue, 0),
+    receivedValue: items.reduce((t, i) => t + i.receivedValue, 0),
+    toCome: items.reduce((t, i) => t + pendingValue(i), 0),
+    late: items.filter(i => i.late).length,
+    oldest: waiting.reduce<number | null>((m, i) => (i.waitingDays == null ? m : m == null ? i.waitingDays : Math.max(m, i.waitingDays)), null),
+  }
+}
+
+export const subTotals = (sb: IndentsSubRow) => rollUp(sb.indents)
+export const catTotals = (c: IndentsCatRow) => rollUp(c.subs.flatMap(sb => sb.indents))
+export const treeTotals = (cats: readonly IndentsCatRow[]) => rollUp(cats.flatMap(c => c.subs.flatMap(sb => sb.indents)))
 
 /* ── The headline: Indent → PO → GRN as numbers ─────────────────────────── */
 
@@ -218,49 +175,15 @@ export function headline(rows: readonly BoardRow[], pending: readonly PendingApp
   }
 }
 
-/* ── All indents, each once ─────────────────────────────────────────────── */
-
-export interface IndentGroup { key: string; label: string; indents: IndentRow[]; poValue: number; open: number }
-
-/** The tree's parts merged back into whole indents, grouped by category or project; an indent spanning two categories appears under both, as the Internal Estimate files it. */
-export function indentGroups(cats: readonly IndentsCatRow[], key: 'category' | 'project' | 'indent', q?: string): IndentGroup[] {
-  const groups = new Map<string, IndentGroup>()
-  const add = (gk: string, label: string, part: IndentRow) => {
-    const g = groups.get(gk) ?? { key: gk, label, indents: [], poValue: 0, open: 0 }
-    const cur = g.indents.find(x => x.id === part.id)
-    if (cur) {
-      const ids = new Set(cur.items.map(i => i.id))
-      const extra = part.items.filter(i => !ids.has(i.id))
-      cur.items = [...cur.items, ...extra]
-      cur.poValue += extra.reduce((t, i) => t + i.poValue, 0); cur.receivedValue += extra.reduce((t, i) => t + i.receivedValue, 0)
-      cur.awaitingPo += extra.filter(i => i.next === 'raise PO').length; cur.awaitingDelivery += extra.filter(i => i.next === 'delivery' || i.next === 'PO approval').length
-    } else g.indents.push({ ...part, items: [...part.items] })
-    groups.set(gk, g)
-  }
-  for (const c of cats) for (const sb of c.subs) for (const r of sb.indents) {
-    if (key === 'category') add(c.id, cleanName(c.name), r)
-    else if (key === 'project') add(r.project ?? '—', r.project ?? 'No project on the indent', r)
-    else add('all', 'All indents', r)
-  }
-  const out = [...groups.values()]
-  for (const g of out) {
-    if (q?.trim()) g.indents = g.indents.filter(r => indentMatchesQuery(r, q))
-    g.indents.sort((a, b) => String(b.date ?? '').localeCompare(String(a.date ?? '')))
-    g.poValue = g.indents.reduce((t, r) => t + r.poValue, 0)
-    g.open = g.indents.reduce((t, r) => t + r.awaitingPo + r.awaitingDelivery + (r.stage === 'verify' || r.stage === 'submitted' ? 1 : 0), 0)
-  }
-  return out.filter(g => g.indents.length > 0).sort((a, b) => b.open - a.open || b.poValue - a.poValue || a.label.localeCompare(b.label))
-}
-
 /* ── URL state ──────────────────────────────────────────────────────────── */
 
-export interface BoardParams { f?: string; q?: string; g?: string; age?: string; p?: string; months?: string }
+export interface BoardParams { f?: string; q?: string; age?: string; p?: string; months?: string; g?: string }
 
 /** The board's URL with some parameters changed; empty values drop the key. */
 export function boardHref(base: string, current: BoardParams, patch: Partial<BoardParams>): string {
   const merged: Record<string, string | undefined> = { ...current, ...patch }
   const qs = new URLSearchParams()
-  for (const k of ['p', 'months', 'f', 'g', 'age', 'q'] as const) {
+  for (const k of ['p', 'months', 'f', 'age', 'q'] as const) {
     const v = merged[k]
     if (v && !(k === 'f' && v === 'all') && !(k === 'age' && v === 'all')) qs.set(k, v)
   }

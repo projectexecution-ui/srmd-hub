@@ -365,6 +365,11 @@ export function itemMatches(f: IndentFilter, it: IndentItem): boolean {
  *  kept. Pure. */
 export function filterIndentsTree(cats: readonly IndentsCatRow[], f: IndentFilter): IndentsCatRow[] {
   if (f === 'all') return [...cats]
+  return filterIndentsTreeBy(cats, it => itemMatches(f, it))
+}
+
+/** The tree with only the lines a predicate keeps — sub-categories and categories re-summed, empty ones dropped. Pure. */
+export function filterIndentsTreeBy(cats: readonly IndentsCatRow[], keep: (it: IndentItem, r: IndentRow, cat: IndentsCatRow, sub: IndentsSubRow) => boolean): IndentsCatRow[] {
   const sum = (rows: IndentRow[]) => ({
     items: rows.reduce((t, r) => t + r.items.length, 0),
     poValue: rows.reduce((t, r) => t + r.poValue, 0), receivedValue: rows.reduce((t, r) => t + r.receivedValue, 0),
@@ -373,7 +378,7 @@ export function filterIndentsTree(cats: readonly IndentsCatRow[], f: IndentFilte
   return cats.map(c => {
     const subs = c.subs.map(sb => {
       const indents = sb.indents.map(r => {
-        const items = r.items.filter(it => itemMatches(f, it))
+        const items = r.items.filter(it => keep(it, r, c, sb))
         return {
           ...r, items,
           poValue: items.reduce((t, i) => t + i.poValue, 0), receivedValue: items.reduce((t, i) => t + i.receivedValue, 0),
