@@ -178,7 +178,7 @@ export function Details({ r }: { r: IndentRow }) {
   )
 }
 
-function History({ title, sub, chain, remark, links, received = [] }: { title: string; sub?: string; chain: ChainStep[]; remark?: string | null; links?: React.ReactNode; received?: Array<{ at: string | null; text: string }> }) {
+export function History({ title, sub, chain, remark, links, received = [] }: { title: string; sub?: string; chain: ChainStep[]; remark?: string | null; links?: React.ReactNode; received?: Array<{ at: string | null; text: string }> }) {
   const steps = summariseChain(chain)
   const tone = (label: string) => label === 'Approved' ? 'text-emerald-700' : label === 'Sent back' || label === 'Cancelled' || label === 'Terminated' ? 'text-rose-700' : label === 'Amended' ? 'text-amber-700' : 'text-gray-700'
   return (

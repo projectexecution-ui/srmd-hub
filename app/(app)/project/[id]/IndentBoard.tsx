@@ -12,7 +12,8 @@ import {
   stageRows, searchRows,
   type BoardParams, type AgeBand, type Headline, type TreeTotals,
 } from '@/lib/revamp/indents-board'
-import { IndentItems, cycleSummary, daysSince } from './IndentRows'
+import { IndentItems, cycleSummary } from './IndentRows'
+import { IndentApprovals } from './IndentApprovals'
 
 /**
  * The Indents board — one screen for a project's Indent → PO → GRN cycle,
@@ -59,7 +60,7 @@ export function IndentBoard({ scopes, base, params, manyProjects = false, months
       <Pipeline h={h} current={filter} href={href} />
 
       {filter === 'approval'
-        ? <Approvals pending={pending} q={q} href={href} base={base} params={{ ...params, f: filter }} manyProjects={manyProjects} />
+        ? <><Toolbar base={base} params={{ ...params, f: filter }} q={q} href={href} placeholder="Indent, PO, supplier, who raised it…" /><IndentApprovals pending={pending} rows={rows} q={q} manyProjects={manyProjects} /></>
         : (
           <>
             <Toolbar base={base} params={{ ...params, f: filter }} q={q} age={age} bands={filter === 'done' ? undefined : bandCounts(searchRows(stageRows(rows, filter), q))} href={href} />
@@ -423,70 +424,6 @@ function ProjectTrees({ scopes, filter, q, age, narrowed }: { scopes: BoardScope
         })}
       </div>
     </RowDetailProvider>
-  )
-}
-
-/* ── Waiting for approval ───────────────────────────────────────────────── */
-
-function Approvals({ pending, q, href, base, params, manyProjects }: { pending: PendingApproval[]; q?: string; href: (p: Partial<BoardParams>) => string; base: string; params: BoardParams; manyProjects: boolean }) {
-  const needle = q?.toLowerCase()
-  const list = needle ? pending.filter(p => [p.ref, p.what, p.by, p.context, p.project].map(x => (x ?? '').toLowerCase()).join(' | ').includes(needle)) : pending
-  if (pending.length === 0) return <Calm text="Nothing is waiting for approval in IN4." />
-  const rows = list.map(p => {
-    const days = daysSince(p.since)
-    return { p, days, late: days != null && days > SLA_DAYS['indent approval'] }
-  })
-  return (
-    <div className="space-y-3">
-      <Toolbar base={base} params={params} q={q} href={href} placeholder="Indent, PO, supplier, who raised it…" />
-      <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
-        <div className="px-3 py-2 border-b border-gray-100 bg-gray-50/60 text-sm font-bold text-gray-900">
-          Waiting for approval in IN4
-          <span className="ml-2 text-[12px] font-normal text-gray-500">{list.length} document{list.length === 1 ? '' : 's'} · oldest first · the Atm Head approves in IN4</span>
-        </div>
-        {rows.length === 0 ? <div className="p-3"><Calm text={`Nothing matches “${q}”.`} /></div> : (
-          <>
-            <table className="w-full text-[13px] hidden md:table">
-              <thead className="bg-gray-50 text-left">
-                <tr>
-                  <Th className="w-24">Kind</Th>
-                  <Th>Document</Th>
-                  {manyProjects && <Th className="w-48">Project</Th>}
-                  <Th className="w-40">Raised by</Th>
-                  <Th className="text-right w-32">Value</Th>
-                  <Th className="text-right w-24">Waiting</Th>
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map(({ p, days, late }) => (
-                  <tr key={`${p.kind}:${p.id}`} className="border-t border-gray-100">
-                    <td className="px-3 py-2 text-[12px] font-semibold uppercase tracking-wide text-gray-500">{p.kind === 'indent' ? 'Indent' : 'PO'}</td>
-                    <td className="px-3 py-2">
-                      <span className="font-medium text-gray-900">{shortRef(p.ref)}</span>
-                      <span className="text-gray-500"> · {p.status}</span>
-                      <span className="block text-[12px] text-gray-500 truncate">{[p.what, p.context].filter(Boolean).join(' · ')}</span>
-                    </td>
-                    {manyProjects && <td className="px-3 py-2 text-[12px] text-gray-600">{p.project ?? ''}</td>}
-                    <td className="px-3 py-2 text-[12px] text-gray-600">{p.by ?? ''}</td>
-                    <td className="px-3 py-2 text-right tabular-nums">{p.value != null && p.value > 0.5 ? formatINR(p.value) : <Dash />}</td>
-                    <td className={`px-3 py-2 text-right tabular-nums text-[12px] ${late ? 'text-rose-700 font-semibold' : 'text-gray-500'}`}>{d(days)}{late ? <span className="block text-[11px] font-normal">late</span> : null}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-            <ul className="md:hidden divide-y divide-gray-100">
-              {rows.map(({ p, days, late }) => (
-                <li key={`${p.kind}:${p.id}`} className="px-3 py-2 text-[13px]">
-                  <p><span className="text-[11px] font-semibold uppercase tracking-wide text-gray-500 mr-2">{p.kind === 'indent' ? 'Indent' : 'PO'}</span><span className="font-medium text-gray-900">{shortRef(p.ref)}</span><span className="text-gray-500"> · {p.status}</span></p>
-                  <p className="text-[12px] text-gray-500">{[p.what, p.context, manyProjects ? p.project : null, p.by ? `by ${p.by}` : null].filter(Boolean).join(' · ')}</p>
-                  <p className="text-[12px] tabular-nums flex justify-between"><span>{p.value != null && p.value > 0.5 ? formatINR(p.value) : ''}</span><span className={late ? 'text-rose-700 font-semibold' : 'text-gray-500'}>{d(days)}{late ? ' late' : ''}</span></p>
-                </li>
-              ))}
-            </ul>
-          </>
-        )}
-      </div>
-    </div>
   )
 }
 

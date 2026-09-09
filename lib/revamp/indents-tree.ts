@@ -94,7 +94,7 @@ export interface PoRow {
 }
 
 export interface IndentItem {
-  id: number; material: string; uom: string | null
+  id: number; materialId: number | null; material: string; uom: string | null
   categoryId: number | null; subcategoryId: number | null
   qty: number
   poQty: number; poValue: number; receivedQty: number; receivedValue: number
@@ -240,7 +240,7 @@ export function buildIndentsTree(
       const waitingDays = daysSince(waitingSince)
       const late = waitingDays != null && next !== 'done' && next !== 'closed' && waitingDays > SLA_DAYS[next]
       return {
-        id: it.ID, material: s(it.material) ?? `Material ${it.MATERIAL_ID}`, uom: s(it.uom),
+        id: it.ID, materialId: it.MATERIAL_ID, material: s(it.material) ?? `Material ${it.MATERIAL_ID}`, uom: s(it.uom),
         categoryId: it.WORK_CATEGORY_ID, subcategoryId: it.WORK_SUBCATEGORY_ID,
         qty, poQty, poValue, receivedQty, receivedValue, pos, next,
         closedForPo, waitingSince, waitingDays, late,
