@@ -54,8 +54,11 @@ export interface WorkspaceTab {
  */
 export const WORKSPACE_TABS: WorkspaceTab[] = [
   // ── Money ────────────────────────────────────────────────────────────────
+  // Two pills. A third, "By CT" (a flat IN4 sub-project roll-up), was removed
+  // on 9 Sep 2026 — Aksha: of no use, engineers get their own view as on the
+  // live site. activeSubTab clamps an old ?view=2 link back to the first pill.
   { slug: '', ribbon: 'Budget', label: 'Budget vs Actual', group: 'money', icon: 'BarChart3',
-    subs: ['By category', 'By order', 'By CT'],
+    subs: ['By category', 'By order'],
     permissionSlug: 'cost-control', built: true },
   // reviewerOnly because these cards carry project-level financials — the ERP
   // budget, approved-so-far and every pending ask. /cost-control/approvals

@@ -35,7 +35,8 @@ describe('the ribbon is fifteen tabs in five groups', () => {
   })
 
   it('opens Budget on the category view — short pill names, long name as the heading (UX 10)', () => {
-    expect(WORKSPACE_TABS[0].subs).toEqual(['By category', 'By order', 'By CT'])
+    // "By CT" was the third pill until 9 Sep 2026 — removed as of no use.
+    expect(WORKSPACE_TABS[0].subs).toEqual(['By category', 'By order'])
   })
 
   it('names a slug the cockpit can actually route', () => {

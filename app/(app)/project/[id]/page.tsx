@@ -12,10 +12,11 @@ export const maxDuration = 60
  * The workspace's landing tab is BUDGET vs ACTUAL — opening a project shows
  * the money, which is what people came for.
  *
- * Its three views are the sub-tab pills, chosen by `?view=`:
+ * Its two views are the sub-tab pills, chosen by `?view=`:
  *   0  Category / sub-category wise (default)
  *   1  Category — WO/PO wise
- *   2  CT wise
+ * (A third, CT wise, was removed on 9 Sep 2026 — Aksha: of no use, engineers
+ * get their own view as on the live site. An old `?view=2` link lands on 0.)
  */
 export default async function ProjectBudgetPage({
   params, searchParams,

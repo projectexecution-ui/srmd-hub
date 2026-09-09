@@ -56,7 +56,7 @@ describe('day one — no ws rows — is exactly today', () => {
     }
   })
   it('every pill is open when the tab is', () => {
-    expect(allowedSubs(engineer, budget)).toEqual([0, 1, 2])
+    expect(allowedSubs(engineer, budget)).toEqual([0, 1]) // By category · By order
     expect(allowedSubs(engineer, woPo)).toEqual([0, 1, 2, 3])
     expect(allowedSubs(engineer, scBudget)).toEqual([])
   })
@@ -105,14 +105,14 @@ describe('pills', () => {
   it('lands on the pill asked for when allowed, else the first allowed, else nowhere', () => {
     const p = deny(engineer, 'ws:budget:by-category')
     expect(landingSub(p, budget, 0)).toBe(1)
-    expect(landingSub(p, budget, 2)).toBe(2)
-    expect(landingSub(deny(engineer, 'ws:budget:by-category', 'ws:budget:by-order', 'ws:budget:by-ct'), budget, 0)).toBe(-1)
+    expect(landingSub(p, budget, 1)).toBe(1)
+    expect(landingSub(deny(engineer, 'ws:budget:by-category', 'ws:budget:by-order'), budget, 0)).toBe(-1)
     const accounts = findWorkspaceTab('accounts')!
     expect(landingSub(engineer, accounts, 3)).toBe(0) // no pills: always 0
   })
   it('the ribbon gets one list per visible tab', () => {
-    const p = deny(engineer, 'ws:budget:by-ct')
-    expect(allowedSubsByTab(p, [budget, woPo])).toEqual({ '': [0, 1], 'wo-po': [0, 1, 2, 3] })
+    const p = deny(engineer, 'ws:budget:by-order')
+    expect(allowedSubsByTab(p, [budget, woPo])).toEqual({ '': [0], 'wo-po': [0, 1, 2, 3] })
   })
 })
 
@@ -138,8 +138,8 @@ describe('Edit and Admin on a tab or pill — the full set, inherited the same w
     const closed = { ...engineer, 'ws:budget': { view: false, edit: false, admin: false }, 'ws:budget:by-order': { view: true, edit: true, admin: true } }
     expect(subAccessFull(closed, budget, 'By order')).toEqual({ view: false, edit: false, admin: false, own: false })
     // a pill row that says view=false but edit=true cannot edit what it cannot open
-    const odd = { ...engineer, 'ws:budget:by-ct': { view: false, edit: true, admin: true } }
-    expect(subAccessFull(odd, budget, 'By CT')).toMatchObject({ view: false, edit: false, admin: false, own: true })
+    const odd = { ...engineer, 'ws:budget:by-order': { view: false, edit: true, admin: true } }
+    expect(subAccessFull(odd, budget, 'By order')).toMatchObject({ view: false, edit: false, admin: false, own: true })
   })
   it('scopedPerms swaps the tab’s power for what the tab and pill grant, and leaves the rest', () => {
     const p: PermLike = { ...engineer, 'ws:budget': { view: true, edit: false, admin: false } }
@@ -163,8 +163,8 @@ describe('the matrix rows', () => {
   it('lists every tab with its pills right under it, each pill pointing at its tab', () => {
     const money = sections[0].rows
     expect(money[0]).toMatchObject({ slug: 'ws:budget', kind: 'tab', inherits: 'cost-control' })
-    expect(money.slice(1, 4).map(r => r.slug)).toEqual(['ws:budget:by-category', 'ws:budget:by-order', 'ws:budget:by-ct'])
-    expect(money.slice(1, 4).every(r => r.parent === 'ws:budget')).toBe(true)
+    expect(money.slice(1, 3).map(r => r.slug)).toEqual(['ws:budget:by-category', 'ws:budget:by-order'])
+    expect(money.slice(1, 3).every(r => r.parent === 'ws:budget')).toBe(true)
     const all = sections.flatMap(s => s.rows)
     for (const t of [...WORKSPACE_TABS, SETUP_TAB]) expect(all.some(r => r.slug === tabSlug(t))).toBe(true)
     expect(all.filter(r => r.kind === 'tab')).toHaveLength(16)
