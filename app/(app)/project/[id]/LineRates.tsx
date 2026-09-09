@@ -3,7 +3,6 @@
 import { useState } from 'react'
 import { History, TrendingUp, TrendingDown } from 'lucide-react'
 import { formatINR, formatDate } from '@/lib/utils'
-import { fetchOrderLineRates } from './line-rates-actions'
 import type { OrderLineRates, LineRate as LineRateInfo } from '@/lib/revamp/line-rates'
 
 /**
@@ -15,11 +14,28 @@ import type { OrderLineRates, LineRate as LineRateInfo } from '@/lib/revamp/line
  * been bought, or "new — never bought", with same-unit near-name suggestions.
  */
 
+// A GET, never a Server Action: the trial site's proxy refuses every POST so it
+// cannot write, and an action travels as a POST — so it was 403'd on the
+// preview before reaching IN4. A read moves like a read (api/revamp/line-rates).
 const cache = new Map<string, Promise<OrderLineRates>>()
 function getOrderRates(kind: 'wo' | 'po', in4Id: number | null, ref: string | null): Promise<OrderLineRates> {
   const k = `${kind}:${in4Id ?? 'ref'}:${ref ?? ''}`
   let p = cache.get(k)
-  if (!p) { p = fetchOrderLineRates(kind, in4Id, ref); cache.set(k, p) }
+  if (!p) {
+    const q = new URLSearchParams({ kind })
+    if (in4Id != null) q.set('id', String(in4Id))
+    if (ref) q.set('ref', ref)
+    p = fetch(`/api/revamp/line-rates?${q}`, { credentials: 'same-origin' }).then(async r => {
+      const body = await r.json().catch(() => null) as (OrderLineRates & { ok?: boolean; reason?: string }) | null
+      if (!r.ok || !body) {
+        return { kind, lines: [], in4: 'unavailable', error: body?.reason ?? `HTTP ${r.status}` } satisfies OrderLineRates
+      }
+      return body
+    })
+    // A failed fetch must not poison the cache — let the next click retry.
+    p.catch(() => cache.delete(k))
+    cache.set(k, p)
+  }
   return p
 }
 
@@ -41,7 +57,8 @@ export function RateCheck({ kind, in4Id, orderRef }: { kind: 'wo' | 'po'; in4Id:
       const res = await getOrderRates(kind, in4Id, orderRef)
       setData(res)
       setLoad(res.error || res.in4 !== 'live' ? 'error' : 'done')
-    } catch {
+    } catch (e) {
+      setData({ kind, lines: [], in4: 'unavailable', error: e instanceof Error ? e.message : 'network error' })
       setLoad('error')
     }
   }
@@ -65,9 +82,15 @@ export function RateCheck({ kind, in4Id, orderRef }: { kind: 'wo' | 'po'; in4Id:
         <div className="mt-2 rounded-lg border border-gray-200 bg-white">
           {load === 'loading' && <p className="px-3 py-3 text-[12px] text-gray-500">Checking IN4 for previous rates…</p>}
           {load === 'error' && (
-            <p className="px-3 py-3 text-[12px] text-gray-500">
-              {data?.in4 === 'not-configured' ? 'Rate history is not available here.' : 'Could not read the rate history from IN4 — try again in a moment.'}
-            </p>
+            <div className="px-3 py-3 text-[12px] text-gray-500">
+              <p>
+                {data?.in4 === 'not-configured'
+                  ? 'Rate history is not available here — IN4 is not connected on this deployment.'
+                  : 'Could not read the rate history from IN4.'}
+              </p>
+              {/* Say WHY, in IN4's own words — a blind "try again" is what hid the trial-site 403. */}
+              {data?.error && <p className="mt-1 font-mono text-[11px] text-gray-400 break-all">{data.error}</p>}
+            </div>
           )}
           {load === 'done' && data && <RateTable lines={data.lines} />}
         </div>
