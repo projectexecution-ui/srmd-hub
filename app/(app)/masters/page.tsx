@@ -63,6 +63,24 @@ export default async function MastersPage() {
         })}
       </div>
 
+      <section className="rounded-xl border border-gray-200 bg-white p-4">
+        <h2 className="text-[13px] font-semibold text-gray-900">What people come here for</h2>
+        <div className="mt-2 grid grid-cols-1 md:grid-cols-3 gap-3 text-[13px]">
+          {[
+            { who: 'Engineers', links: [['Rates — what we paid last time, to whom', '/masters/rates'], ['BOQ items by category, with rates', '/masters/boq'], ['Item master — the right material name', '/masters/items']] },
+            { who: 'Heads', links: [['Two prices for one thing', '/masters/rates?spread=1'], ['A contractor or supplier’s record', '/masters/contacts?group=contractors'], ['Projects past their end date', '/masters/projects']] },
+            { who: 'Admins & accounts', links: [['Housekeeping — everything to fix, with where', '/masters/housekeeping'], ['Name mapping — what IN4 calls our projects', '/masters/mapping'], ['Stores — IN4’s against the Warehouse’s', '/masters/stores']] },
+          ].map(g => (
+            <div key={g.who}>
+              <p className="text-[12px] uppercase tracking-wide text-gray-400">{g.who}</p>
+              <ul className="mt-1 space-y-1">
+                {g.links.map(([label, href]) => <li key={href}><Link href={href} className="text-indigo-700 hover:underline inline-flex min-h-[32px] items-center">{label}</Link></li>)}
+              </ul>
+            </div>
+          ))}
+        </div>
+      </section>
+
       <p className="text-[12px] text-gray-500">
         Trusts, projects, BOQ: live from IN4 when opened. Contacts, categories, items: from the IN4 mirror{synced ? `, last synced ${formatDateTime(synced)}` : ''}.
         Everything is read-only here — a wrong name or number is fixed in IN4 and appears on the next sync.

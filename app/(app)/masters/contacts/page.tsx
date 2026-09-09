@@ -119,6 +119,7 @@ function PartyTable({ parties, kind, q }: { parties: Party[]; kind: 'consultants
     ].filter(Boolean).join(' · ')
     return {
       id: `${p.kind}:${p.id}`,
+      href: `/masters/contacts/${p.kind}/${p.id}`,
       tone: !p.isActive || p.duplicateOf.length > 0 ? 'warn' : undefined,
       cells: {
         name: { text: p.name, tone: p.isActive ? 'strong' : 'muted', sub: notes || undefined },

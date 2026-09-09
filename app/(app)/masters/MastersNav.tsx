@@ -20,10 +20,12 @@ const MASTERS = [
   { href: '/masters/categories', label: 'Budget categories' },
   { href: '/masters/items', label: 'Items' },
   { href: '/masters/boq', label: 'BOQ' },
+  { href: '/masters/rates', label: 'Rates' },
 ] as const
 const HOUSEKEEPING = [
   { href: '/masters/stores', label: 'Stores' },
   { href: '/masters/mapping', label: 'Name mapping' },
+  { href: '/masters/housekeeping', label: 'Housekeeping' },
 ] as const
 
 export function MastersNav() {

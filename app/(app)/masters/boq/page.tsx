@@ -145,6 +145,7 @@ function Items({ g }: { g: BoqGroup }) {
                 {it.subname && <p className="font-medium text-gray-900">{it.subname}</p>}
                 {it.description && it.description !== it.subname && <p className="text-gray-600">{it.description}</p>}
                 {it.subcategory && <p className="text-[11px] text-gray-400">{it.subcategory.replace(/^\d+\s+/, '')}</p>}
+                {it.workOrders > 1 && it.subname && <Link href={`/masters/rates?view=boq&q=${encodeURIComponent(it.subname.slice(0, 60))}`} className="text-[11px] text-indigo-700 hover:underline">who charged what →</Link>}
               </td>
               <td className="px-2 py-1.5 text-gray-700">{it.uom ?? '—'}</td>
               <td className="px-2 py-1.5 text-right tabular-nums text-gray-700">{it.workOrders} WO{it.workOrders === 1 ? '' : 's'}</td>

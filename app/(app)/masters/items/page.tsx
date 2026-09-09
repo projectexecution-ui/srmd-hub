@@ -36,6 +36,7 @@ export default async function ItemsMasterPage({ searchParams }: { searchParams: 
 
   const rows: MasterRow[] = items.map(i => ({
     id: String(i.id),
+    href: `/masters/rates?q=${encodeURIComponent(i.name)}`,
     tone: i.isActive ? undefined : 'warn',
     cells: {
       name: { text: i.name, tone: i.isActive ? 'strong' : 'muted', sub: [i.code, i.isActive ? null : 'inactive in IN4'].filter(Boolean).join(' · ') || undefined },
