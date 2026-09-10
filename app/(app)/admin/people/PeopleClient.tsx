@@ -30,6 +30,9 @@ const TABS: Array<{ id: TabId; label: string; hint: string }> = [
   { id: 'powers',  label: 'Powers',          hint: 'The "who may" lists: Accounts tab, archive sheets, rename names, manual upload' },
   { id: 'signs',   label: 'Who signs',       hint: 'Each project’s Project Head, Atm Head and Trustee' },
   { id: 'works',   label: 'Who works where', hint: 'People assigned to projects' },
+  { id: 'indents', label: 'Sees indents',    hint: 'Which IN4 projects each person sees on the tracker — an unticked box hides it' },
+  { id: 'bills',   label: 'Bills e-mail',    hint: 'Which billing codes each person’s daily bills digest covers' },
+  { id: 'alerts',  label: 'Alert channels',  hint: 'How each person is alerted: in-app, e-mail, phone; Telegram shows linked or not' },
 ]
 
 const isAnon = (p: Person) => /^anonymous$/i.test(p.name)
