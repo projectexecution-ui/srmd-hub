@@ -318,25 +318,26 @@ describe('project cockpit tabs', () => {
     })
   })
 
-  // The revamp must not change where a live click lands until it is adopted.
+  // The revamp is live (lib/revamp/live.ts, 10 Sep 2026): a project click
+  // lands in the workspace on every deployment, whatever the environment says.
   describe('projectHref', () => {
     afterEach(() => { vi.unstubAllEnvs() })
 
-    it('keeps the live site on today\'s Internal Estimate page', () => {
+    it('sends the live site into the workspace', () => {
       vi.stubEnv('VERCEL_ENV', 'production')
       vi.stubEnv('NEXT_PUBLIC_DEMO_MODE', '')
-      expect(projectHref(P)).toBe(`/cost-control/projects/${P}`)
+      expect(projectHref(P)).toBe(`/project/${P}`)
     })
 
-    it('sends the trial site into the new cockpit', () => {
+    it('sends the trial site into the workspace', () => {
       vi.stubEnv('VERCEL_ENV', 'preview')
       expect(projectHref(P)).toBe(`/project/${P}`)
     })
 
-    it('defaults to today\'s page when nothing is set (local dev)', () => {
+    it('sends local dev into the workspace too', () => {
       vi.stubEnv('VERCEL_ENV', '')
       vi.stubEnv('NEXT_PUBLIC_DEMO_MODE', '')
-      expect(projectHref(P)).toBe(`/cost-control/projects/${P}`)
+      expect(projectHref(P)).toBe(`/project/${P}`)
     })
   })
 

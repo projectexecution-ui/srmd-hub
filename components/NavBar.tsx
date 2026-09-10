@@ -11,7 +11,7 @@ import {
 } from 'lucide-react'
 import { MODULES } from '@/lib/modules'
 import { buildNavTree, type SidebarGroup } from '@/lib/sidebar-groups'
-import { IS_DEMO } from '@/lib/demo-mode'
+import { IS_REVAMP } from '@/lib/revamp/live'
 import { buildRevampNav } from '@/lib/revamp/nav'
 import { readOpenMap, writeOpenMap } from '@/lib/nav-prefs'
 import NotificationBell from '@/components/NotificationBell'
@@ -118,13 +118,14 @@ export default function NavBar({ profile, permissions, disabledSlugs = [], isPor
     : null
   const bottomLinks: NavItem[] = [...(adminLink ? [adminLink] : []), ...(modulesAdminLink ? [modulesAdminLink] : [])]
 
-  // ── The revamped pane (TRIAL DEPLOYMENT ONLY) ──────────────────────────
+  // ── The revamped pane ─────────────────────────────────────────────────
   // Projects becomes the main lane and the screens it replaces move into one
   // collapsed "Old screens" branch, rather than 15 flat module lanes. Built
   // from the SAME permission + module_visibility inputs as below, so the
-  // revamp can never widen anyone's access. On the live site IS_DEMO is false
-  // and none of this runs.
-  const revamp = IS_DEMO
+  // revamp can never widen anyone's access. On since 10 Sep 2026 for live as
+  // well as the trial (lib/revamp/live.ts); with the switch off, the old
+  // sidebar below is what renders.
+  const revamp = IS_REVAMP
     ? buildRevampNav(permissions, disabled, { canSeeAdmin })
     : null
 

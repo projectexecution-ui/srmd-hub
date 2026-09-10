@@ -1,4 +1,4 @@
-import { isDemoNow } from '@/lib/demo-mode'
+import { isRevampNow } from './live'
 
 // The project cockpit's tab list — ONE source of truth, the same way
 // lib/modules.ts is the one source for modules. Pure (no Supabase, no React)
@@ -188,13 +188,12 @@ export const PARKED_TABS = ['approvals', 'stores', 'jmr', 'schedule', 'overview'
 /**
  * Where clicking a project name goes.
  *
- * On the TRIAL deployment it opens the new cockpit, because experiencing
- * project-first navigation is the whole point of the trial. On the live site it
- * stays on today's Internal Estimate page, so this file is safe to exist there
- * and nobody's habits change until the revamp is actually adopted.
+ * With the revamp on (lib/revamp/live.ts — Aksha, 10 Sep 2026: "make Live one
+ * as revamp") it opens the workspace everywhere. With it off, only the trial
+ * deployment does, and the live site stays on today's Internal Estimate page.
  */
 export function projectHref(projectId: string): string {
-  const trial = isDemoNow()
+  const trial = isRevampNow()
   return trial ? `/project/${projectId}` : `/cost-control/projects/${projectId}`
 }
 

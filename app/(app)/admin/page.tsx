@@ -13,7 +13,7 @@ import { getModuleLabels, labelFor } from '@/lib/module-labels'
 import { ADMIN_AREAS, screensFor, type AdminArea, type AdminScreen } from '@/lib/admin-registry'
 import { cn } from '@/lib/utils'
 import { AdminEmailRow } from './AdminEmailRow'
-import { IS_DEMO } from '@/lib/demo-mode'
+import { IS_REVAMP } from '@/lib/revamp/live'
 import { AdminRevamp } from './AdminRevamp'
 
 export const dynamic = 'force-dynamic'
@@ -29,10 +29,10 @@ export default async function AdminHomePage() {
   ])
   const isAdmin = portalOwner || profile?.role === 'admin'
 
-  // TRIAL DEPLOYMENT: the revamped Admin — the same screens organised by the
-  // JOB (what did you come to do), with what is currently broken shown above
-  // them. Live keeps the page below unchanged.
-  if (IS_DEMO) {
+  // REVAMP: the Admin home — the same screens organised by the JOB (what did
+  // you come to do), with what is currently broken shown above them. With the
+  // switch off (lib/revamp/live.ts) the page below is what shows.
+  if (IS_REVAMP) {
     return <AdminRevamp isAdmin={isAdmin} disabledSlugs={Array.from(disabled)} />
   }
   const canViewUsers = can(perms, 'admin-users', 'view')
