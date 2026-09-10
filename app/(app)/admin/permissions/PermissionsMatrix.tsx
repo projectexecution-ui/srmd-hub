@@ -443,19 +443,19 @@ export default function PermissionsMatrix({ sections, searching = false, roles, 
 
           {/* Matrix */}
           <div className="overflow-auto max-h-[72vh] rounded-xl border border-gray-200" onMouseLeave={() => { setHoverRole(null); setHoverSlug(null) }}>
-            <table className="min-w-full border-separate border-spacing-0 text-sm">
+            <table className="min-w-full border-separate border-spacing-0 text-sm table-fixed">
               <thead>
                 <tr>
-                  <th className="sticky left-0 z-20 bg-gray-50 border-b border-gray-200" />
+                  <th className="sticky left-0 top-0 z-30 bg-gray-50 border-b border-gray-200 w-[300px] min-w-[300px] max-w-[300px]" />
                   {roleGroups.map((g, gi) => (
                     <th key={g.title} colSpan={g.roles.length}
-                      className={cn('bg-gray-50 border-b border-gray-200 px-2 py-1 text-center text-[10px] font-bold uppercase tracking-wider text-slate-400', gi > 0 && 'border-l-2 border-l-slate-200')}>
+                      className={cn('sticky top-0 z-20 bg-gray-50 border-b border-gray-200 px-2 py-1 text-center text-[10px] font-bold uppercase tracking-wider text-slate-400', gi > 0 && 'border-l-2 border-l-slate-200')}>
                       {g.title}
                     </th>
                   ))}
                 </tr>
                 <tr>
-                  <th className="sticky left-0 top-0 z-30 bg-gray-50 border-b border-gray-200 px-3 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wide text-gray-500 min-w-[260px]">Tab · pill · power</th>
+                  <th className="sticky left-0 top-[25px] z-30 bg-gray-50 border-b border-gray-200 px-3 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wide text-gray-500 w-[300px] min-w-[300px] max-w-[300px]">Tab · pill · power</th>
                   {orderedRoles.map(role => {
                     const rl = labels[role]
                     const busy = labelBusy === role
@@ -463,7 +463,7 @@ export default function PermissionsMatrix({ sections, searching = false, roles, 
                     const delBusy = delBusyRole === role
                     const hot = hoverRole === role
                     return (
-                      <th key={role} className={cn('sticky top-0 z-20 border-b border-gray-200 px-2 py-2 text-center align-bottom relative min-w-[132px] transition-colors', hot ? 'bg-indigo-50' : 'bg-gray-50', catStart.has(role) && 'border-l-2 border-l-slate-200')} title={rl?.description}>
+                      <th key={role} className={cn('sticky top-[25px] z-20 border-b border-gray-200 px-2 py-2 text-center align-bottom min-w-[132px] w-[132px] transition-colors', hot ? 'bg-indigo-50' : 'bg-gray-50', catStart.has(role) && 'border-l-2 border-l-slate-200')} title={rl?.description}>
                         {canManageRoles && role !== ('admin' as Role) && (
                           <button type="button" onClick={() => deactivateRole(role)} disabled={delBusy} title="Deactivate this role"
                             className="absolute top-0.5 right-0.5 h-4 w-4 inline-flex items-center justify-center rounded-full text-gray-300 hover:text-rose-600 hover:bg-rose-50">
@@ -576,7 +576,7 @@ function SectionRows(p: RowsProps) {
         const nPills = row.kind === 'tab' ? pillsOf(row.slug) : 0
         return (
           <tr key={row.slug} className={cn('group', row.kind === 'sub' && 'bg-slate-50/40')}>
-            <td className={cn('sticky left-0 z-10 border-b border-gray-100 py-1.5 transition-colors', row.kind === 'sub' ? 'pl-10 pr-3' : 'px-3', rowHot ? 'bg-indigo-50/60' : row.kind === 'sub' ? 'bg-slate-50/60' : 'bg-white')}>
+            <td className={cn('sticky left-0 z-10 border-b border-gray-100 py-1.5 transition-colors w-[300px] min-w-[300px] max-w-[300px]', row.kind === 'sub' ? 'pl-10 pr-3' : 'px-3', rowHot ? 'bg-indigo-50/60' : row.kind === 'sub' ? 'bg-slate-50/60' : 'bg-white')}>
               <div className="flex items-center gap-2">
                 {row.kind === 'tab' && nPills > 0 && !searching ? (
                   <button type="button" onClick={() => toggleExpanded(row.slug)} title={expanded.has(row.slug) ? 'Hide the pills' : `Show the ${nPills} pills`}
@@ -594,7 +594,7 @@ function SectionRows(p: RowsProps) {
                     {row.reviewerOnly && <span className="ml-1.5 text-[10px] font-semibold uppercase tracking-wide text-violet-700 bg-violet-50 rounded px-1 py-0.5">reviewers</span>}
                     {row.unbuilt && <span className="ml-1.5 text-[10px] font-semibold uppercase tracking-wide text-gray-500 bg-gray-100 rounded px-1 py-0.5">coming soon</span>}
                   </div>
-                  <div className="text-[11px] text-gray-400 truncate">{row.hint ?? row.slug}</div>
+                  <div className="text-[11px] text-gray-400 truncate" title={row.hint ?? row.slug}>{row.hint ?? row.slug}</div>
                 </div>
               </div>
             </td>
