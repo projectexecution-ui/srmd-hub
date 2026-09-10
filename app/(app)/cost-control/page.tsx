@@ -2,6 +2,7 @@ import { Fragment } from 'react'
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
 import { projectHref } from '@/lib/revamp/tabs'
+import { getRevampOn } from '@/lib/revamp/shell-switch'
 import { createClient } from '@/lib/supabase/server'
 import { requirePermission, can, getMyUser, getMyProfile } from '@/lib/auth'
 import { checkIsCcReviewer } from '@/components/cost-control/ws-actions'
@@ -56,6 +57,7 @@ export default async function CostControlLandingPage() {
   const supabase = await createClient()
   const user = await getMyUser()
   const ccSettings = await getCcSettings()
+  const revampOn = await getRevampOn()
   // Renaming a group is admin-only (matches project rename/alias).
   const isAdmin = (await getMyProfile())?.role === 'admin'
   // Page title = the module's editable label (admin-renamable on
@@ -681,7 +683,7 @@ export default async function CostControlLandingPage() {
                   return (
                     <tr key={p.id} className="border-t border-gray-100 hover:bg-gray-50/70">
                       <td className={`px-3 py-2.5 ${g.label ? 'pl-8' : ''}`}>
-                        <Link href={projectHref(p.id)} className="block">
+                        <Link href={projectHref(p.id, revampOn)} className="block">
                           {/* Status, as a dot. It is a state you glance at, not
                               a word you read on 39 rows — the name is on hover. */}
                           <StatusDot status={p.cc_status} />
@@ -790,7 +792,7 @@ export default async function CostControlLandingPage() {
                     return (
                       <div key={p.id} className="px-4 py-3">
                         <div className="flex items-start justify-between gap-2">
-                          <Link href={projectHref(p.id)} className="min-w-0">
+                          <Link href={projectHref(p.id, revampOn)} className="min-w-0">
                             <StatusDot status={p.cc_status} />
                             <span className="font-mono text-[11px] font-bold text-indigo-700 mr-1.5" title={p.short_name?.trim() ? `Code ${p.code}` : undefined}>{projectChip(p.short_name, p.code)}</span>
                             <span className="font-semibold text-gray-900">{p.name}</span>
@@ -954,6 +956,7 @@ function BphSyncChip({
 // scrolling screen.
 async function EngineerHome({ userId, canWrite, label }: { userId: string | null; canWrite: boolean; label: string }) {
   const supabase = await createClient()
+  const revampOn = await getRevampOn()
 
   // The engineer's own working sheets — used to show how many sheets they
   // have per project ("My work" column).
@@ -1114,7 +1117,7 @@ async function EngineerHome({ userId, canWrite, label }: { userId: string | null
     return (
       <tr key={p.id} className="border-t border-gray-100 hover:bg-gray-50/70">
         <td className={`px-3 py-2.5 ${indent ? 'pl-8' : ''}`}>
-          <Link href={projectHref(p.id)} className="block">
+          <Link href={projectHref(p.id, revampOn)} className="block">
             <span className="font-mono text-[11px] font-bold text-indigo-700 mr-2" title={p.short_name?.trim() ? `Code ${p.code}` : undefined}>{projectChip(p.short_name, p.code)}</span>
             <span className="font-semibold text-gray-900 hover:underline">{p.name}</span>
           </Link>
@@ -1137,7 +1140,7 @@ async function EngineerHome({ userId, canWrite, label }: { userId: string | null
     return (
       <div key={p.id} className="px-4 py-3">
         <div className="flex items-start justify-between gap-2">
-          <Link href={projectHref(p.id)} className="min-w-0">
+          <Link href={projectHref(p.id, revampOn)} className="min-w-0">
             <span className="font-mono text-[11px] font-bold text-indigo-700 mr-1.5" title={p.short_name?.trim() ? `Code ${p.code}` : undefined}>{projectChip(p.short_name, p.code)}</span>
             <span className="font-semibold text-gray-900">{p.name}</span>
           </Link>

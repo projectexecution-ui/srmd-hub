@@ -1,6 +1,6 @@
 import Link from 'next/link'
 import { notFound, redirect } from 'next/navigation'
-import { IS_REVAMP } from '@/lib/revamp/live'
+import { getRevampOn } from '@/lib/revamp/shell-switch'
 import { createClient } from '@/lib/supabase/server'
 import { requirePermission, can } from '@/lib/auth'
 import { checkIsCcReviewer, checkCanDecideInternalEstimate, checkCanRequestIeRevision } from '@/components/cost-control/ws-actions'
@@ -114,7 +114,7 @@ export default async function CostControlProjectDetailPage(
   //
   // `in_cockpit` is how the Budget tab renders THIS component from inside the
   // cockpit without bouncing back here forever.
-  if (IS_REVAMP && !sp.in_cockpit) {
+  if (!sp.in_cockpit && await getRevampOn()) {
     const qs = new URLSearchParams()
     if (focusDisc) qs.set('focus_disc', focusDisc)
     if (focusSub) qs.set('focus_sub', focusSub)

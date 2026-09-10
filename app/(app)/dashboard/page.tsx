@@ -15,12 +15,13 @@ import { getHomeBudgetGroups } from '@/lib/cost-control/my-budget-approvals'
 import { CostControlSnapshot } from '@/components/dashboard/CostControlSnapshot'
 import { ReturnedToEngineer } from '@/components/dashboard/ReturnedToEngineer'
 import { getReturnedToEngineer } from '@/lib/cost-control/returned-to-engineer'
-import { IS_REVAMP } from '@/lib/revamp/live'
+import { getRevampOn } from '@/lib/revamp/shell-switch'
 import { WorkStrip } from './WorkStrip'
 
 export const dynamic = 'force-dynamic'
 
 export default async function DashboardPage() {
+  const revampOn = await getRevampOn()
   const [profile, permissions, disabledSlugs, moduleLabels] = await Promise.all([
     getMyProfile(),
     getMyPermissions(),
@@ -122,7 +123,7 @@ export default async function DashboardPage() {
       {/* REVAMP: the rest of the hub's WORK — material requests,
           deletions, conversation and whether the weekly uploads are current.
           "Needs you now" above is untouched, per Aksha. Live is unaffected. */}
-      {IS_REVAMP && <WorkStrip />}
+      {revampOn && <WorkStrip />}
 
       {/* Your budget work — an engineer's own drafts/returns/awaiting (things
           that don't appear in the approval inbox). Self-hides when there's none. */}

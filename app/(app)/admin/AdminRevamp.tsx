@@ -19,7 +19,7 @@ import { AlertTriangle, Info, ArrowRight } from 'lucide-react'
  * you come to do, and where is that one screen I already know the name of.
  * Nothing was deleted; the old A–Z grouping is still here, one fold down.
  */
-export async function AdminRevamp({ isAdmin, disabledSlugs = [] }: { isAdmin: boolean; disabledSlugs?: string[] }) {
+export async function AdminRevamp({ isAdmin, disabledSlugs = [], shellCard = null }: { isAdmin: boolean; disabledSlugs?: string[]; shellCard?: React.ReactNode }) {
   const disabled = new Set(disabledSlugs)
   const [findings, labels] = await Promise.all([loadHealth(), getModuleLabels()])
   const visible = (s: { adminOnly?: boolean }) => isAdmin || !s.adminOnly
@@ -70,6 +70,7 @@ export async function AdminRevamp({ isAdmin, disabledSlugs = [] }: { isAdmin: bo
         title="Admin"
         subtitle={`${screens.length} settings screens across ${tasks.length} common jobs.`}
       />
+      {shellCard}
 
       {findings.length > 0 && <HealthPanel findings={findings} />}
 

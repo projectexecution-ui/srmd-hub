@@ -11,7 +11,7 @@ import {
 } from 'lucide-react'
 import { MODULES } from '@/lib/modules'
 import { buildNavTree, type SidebarGroup } from '@/lib/sidebar-groups'
-import { IS_REVAMP } from '@/lib/revamp/live'
+import { isRevampNow } from '@/lib/revamp/live'
 import { buildRevampNav } from '@/lib/revamp/nav'
 import { readOpenMap, writeOpenMap } from '@/lib/nav-prefs'
 import NotificationBell from '@/components/NotificationBell'
@@ -34,6 +34,9 @@ interface NavBarProps {
   /** Collapsed flag read from the cookie on the server, so the first paint is
    *  already right and nothing has to stay invisible until hydration. */
   initialCollapsed?: boolean
+  /** The revamped pane, or the previous CT Hub — decided on the server from the
+   *  "CT Hub V1" toggle (lib/revamp/shell-switch.ts). */
+  revampOn?: boolean
 }
 
 // Compact labels for the sidebar so they don't wrap. Defaults to the
@@ -54,7 +57,7 @@ const GROUPS_OPEN_KEY = 'srmd_nav_groups_open'
 
 type NavItem = { href: string; label: string; icon: typeof LayoutDashboard; slug: string | null }
 
-export default function NavBar({ profile, permissions, disabledSlugs = [], isPortalOwner = false, moduleLabels = {}, sidebarGroups = [], projects = [], approvals = {}, initialCollapsed }: NavBarProps) {
+export default function NavBar({ profile, permissions, disabledSlugs = [], isPortalOwner = false, moduleLabels = {}, sidebarGroups = [], projects = [], approvals = {}, initialCollapsed, revampOn = isRevampNow() }: NavBarProps) {
   const disabled = new Set(disabledSlugs)
   const pathname = usePathname()
   const router = useRouter()
@@ -123,9 +126,9 @@ export default function NavBar({ profile, permissions, disabledSlugs = [], isPor
   // collapsed "Old screens" branch, rather than 15 flat module lanes. Built
   // from the SAME permission + module_visibility inputs as below, so the
   // revamp can never widen anyone's access. On since 10 Sep 2026 for live as
-  // well as the trial (lib/revamp/live.ts); with the switch off, the old
-  // sidebar below is what renders.
-  const revamp = IS_REVAMP
+  // well as the trial (lib/revamp/live.ts); with the "CT Hub V1" toggle on,
+  // the old sidebar below is what renders.
+  const revamp = revampOn
     ? buildRevampNav(permissions, disabled, { canSeeAdmin })
     : null
 
@@ -239,13 +242,13 @@ export default function NavBar({ profile, permissions, disabledSlugs = [], isPor
               {revamp
                 ? <>
                     {primaryLinks.map(it => it.label === 'Projects' && projects.length > 0
-                      ? <ProjectTree key="tree" projects={projects} approvals={approvals} mobile onNavigate={() => setOpen(false)} />
+                      ? <ProjectTree key="tree" projects={projects} approvals={approvals} revamp={revampOn} mobile onNavigate={() => setOpen(false)} />
                       : renderLink(it, true))}
                     {tree.groups.map(g => renderGroup(g, true))}
                   </>
                 : <>
                     {renderLink(dashboardLink, true)}
-                    {showProjectsLane && <ProjectTree projects={projects} approvals={approvals} mobile onNavigate={() => setOpen(false)} />}
+                    {showProjectsLane && <ProjectTree projects={projects} approvals={approvals} revamp={revampOn} mobile onNavigate={() => setOpen(false)} />}
                     {tree.groups.map(g => renderGroup(g, true))}
                     {tree.ungrouped.map(it => renderLink(it, true))}
                     {bottomLinks.map(it => renderLink(it, true))}
@@ -315,20 +318,20 @@ export default function NavBar({ profile, permissions, disabledSlugs = [], isPor
           {collapsed ? (
             <>
               {renderLink(dashboardLink, false)}
-              {showProjectsLane && <ProjectTree projects={projects} approvals={approvals} collapsed />}
+              {showProjectsLane && <ProjectTree projects={projects} approvals={approvals} revamp={revampOn} collapsed />}
               {flatLinks.slice(1).map(it => renderLink(it, false))}
             </>
           ) : revamp ? (
             <>
               {primaryLinks.map(it => it.label === 'Projects' && projects.length > 0
-                ? <ProjectTree key="tree" projects={projects} approvals={approvals} />
+                ? <ProjectTree key="tree" projects={projects} approvals={approvals} revamp={revampOn} />
                 : renderLink(it, false))}
               {tree.groups.map(g => renderGroup(g, false))}
             </>
           ) : (
             <>
               {renderLink(dashboardLink, false)}
-              {showProjectsLane && <ProjectTree projects={projects} approvals={approvals} />}
+              {showProjectsLane && <ProjectTree projects={projects} approvals={approvals} revamp={revampOn} />}
               {tree.groups.map(g => renderGroup(g, false))}
               {tree.ungrouped.map(it => renderLink(it, false))}
               {bottomLinks.map(it => renderLink(it, false))}

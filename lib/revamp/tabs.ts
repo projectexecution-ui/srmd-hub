@@ -192,9 +192,8 @@ export const PARKED_TABS = ['approvals', 'stores', 'jmr', 'schedule', 'overview'
  * as revamp") it opens the workspace everywhere. With it off, only the trial
  * deployment does, and the live site stays on today's Internal Estimate page.
  */
-export function projectHref(projectId: string): string {
-  const trial = isRevampNow()
-  return trial ? `/project/${projectId}` : `/cost-control/projects/${projectId}`
+export function projectHref(projectId: string, on: boolean = isRevampNow()): string {
+  return on ? `/project/${projectId}` : `/cost-control/projects/${projectId}`
 }
 
 /** Absolute path for a tab. The index tab has no trailing segment so the

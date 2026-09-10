@@ -11,6 +11,7 @@ import { Building2, ChevronDown, ChevronRight, FolderKanban, Search } from 'luci
 import { cn } from '@/lib/utils'
 import { buildProjectTree, countTree, projectIdFromPath, type FlatProject } from '@/lib/project-tree'
 import { projectHref } from '@/lib/revamp/tabs'
+import { isRevampNow } from '@/lib/revamp/live'
 import { readOpenMap, writeOpenMap, readFlag, writeFlag } from '@/lib/nav-prefs'
 
 const OPEN_KEY = 'srmd_nav_projects_open'
@@ -27,9 +28,11 @@ interface Props {
   /** Desktop rail collapsed to icons — render one icon that opens the list page. */
   collapsed?: boolean
   onNavigate?: () => void
+  /** Where a project click lands: the workspace (revamp) or the old Internal Estimate page (CT Hub V1). */
+  revamp?: boolean
 }
 
-export function ProjectTree({ projects, approvals = {}, mobile = false, collapsed = false, onNavigate }: Props) {
+export function ProjectTree({ projects, approvals = {}, mobile = false, collapsed = false, onNavigate, revamp = isRevampNow() }: Props) {
   const pathname = usePathname()
   const tree = useMemo(() => buildProjectTree(projects), [projects])
   const activeId = projectIdFromPath(pathname)
@@ -126,7 +129,7 @@ export function ProjectTree({ projects, approvals = {}, mobile = false, collapse
             const hasActive = g.id === activeId || g.children.some(c => c.id === activeId)
             if (g.children.length === 0) {
               return (
-                <Link key={g.id} href={projectHref(g.id)} onClick={onNavigate} className={linkCls(g.id === activeId)} title={g.name}>
+                <Link key={g.id} href={projectHref(g.id, revamp)} onClick={onNavigate} className={linkCls(g.id === activeId)} title={g.name}>
                   <Building2 className="h-4 w-4 flex-shrink-0 text-gray-400" />
                   <span className="truncate">{g.label}</span>
                   {(approvals[g.id] ?? 0) > 0 && <WaitPill n={approvals[g.id]} className="ml-auto" />}
@@ -142,7 +145,7 @@ export function ProjectTree({ projects, approvals = {}, mobile = false, collapse
                   <button type="button" onClick={() => toggle(g.id, hasActive)} aria-expanded={o} className="p-1.5 -ml-1 rounded text-gray-400 hover:text-gray-700 hover:bg-gray-100" title={o ? 'Collapse' : 'Expand'}>
                     {o ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
                   </button>
-                  <Link href={projectHref(g.id)} onClick={onNavigate} className={cn(linkCls(g.id === activeId), 'flex-1 min-w-0 font-medium')} title={g.name}>
+                  <Link href={projectHref(g.id, revamp)} onClick={onNavigate} className={cn(linkCls(g.id === activeId), 'flex-1 min-w-0 font-medium')} title={g.name}>
                     <span className="truncate">{g.label}</span>
                     {(approvals[g.id] ?? 0) > 0 && <WaitPill n={approvals[g.id]} className="ml-auto" />}
                     <span className={cn('text-[10px] text-gray-400 tabular-nums', (approvals[g.id] ?? 0) > 0 ? 'ml-1.5' : 'ml-auto')}>{g.children.length}</span>
@@ -151,7 +154,7 @@ export function ProjectTree({ projects, approvals = {}, mobile = false, collapse
                 {o && (
                   <div className={cn('space-y-0.5 border-l border-gray-100', mobile ? 'ml-5 pl-2' : 'ml-4 pl-2')}>
                     {g.children.map(c => (
-                      <Link key={c.id} href={projectHref(c.id)} onClick={onNavigate} className={linkCls(c.id === activeId)} title={c.name}>
+                      <Link key={c.id} href={projectHref(c.id, revamp)} onClick={onNavigate} className={linkCls(c.id === activeId)} title={c.name}>
                         <span className="truncate">{c.code ?? c.name}</span>
                         {(approvals[c.id] ?? 0) > 0 && <WaitPill n={approvals[c.id]} className="ml-auto" />}
                       </Link>

@@ -13,7 +13,8 @@ import { getModuleLabels, labelFor } from '@/lib/module-labels'
 import { ADMIN_AREAS, screensFor, type AdminArea, type AdminScreen } from '@/lib/admin-registry'
 import { cn } from '@/lib/utils'
 import { AdminEmailRow } from './AdminEmailRow'
-import { IS_REVAMP } from '@/lib/revamp/live'
+import { getRevampOn } from '@/lib/revamp/shell-switch'
+import { ShellSwitch } from './ShellSwitch'
 import { AdminRevamp } from './AdminRevamp'
 
 export const dynamic = 'force-dynamic'
@@ -31,9 +32,12 @@ export default async function AdminHomePage() {
 
   // REVAMP: the Admin home — the same screens organised by the JOB (what did
   // you come to do), with what is currently broken shown above them. With the
-  // switch off (lib/revamp/live.ts) the page below is what shows.
-  if (IS_REVAMP) {
-    return <AdminRevamp isAdmin={isAdmin} disabledSlugs={Array.from(disabled)} />
+  // "CT Hub V1" toggle on (lib/revamp/live.ts) the page below is what shows —
+  // and the toggle itself sits on both, so an admin can always get back.
+  const revampOn = await getRevampOn()
+  const shellCard = isAdmin ? <ShellSwitch mode={revampOn ? 'v2' : 'v1'} /> : null
+  if (revampOn) {
+    return <AdminRevamp isAdmin={isAdmin} disabledSlugs={Array.from(disabled)} shellCard={shellCard} />
   }
   const canViewUsers = can(perms, 'admin-users', 'view')
   const canSettings = portalOwner || can(perms, 'admin-settings', 'admin')
@@ -116,6 +120,7 @@ export default async function AdminHomePage() {
   return (
     <div className="p-4 md:p-6 max-w-3xl mx-auto">
       <PageHeader title="Admin" subtitle={`Every setting in one place — ${totalScreens} screens across ${areas.length} areas`} />
+      {shellCard && <div className="mb-3">{shellCard}</div>}
 
       {!hasAny ? (
         <p className="text-sm text-gray-500 text-center py-12">You don&apos;t have admin access.</p>
