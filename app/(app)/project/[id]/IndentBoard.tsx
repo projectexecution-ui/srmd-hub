@@ -14,6 +14,8 @@ import {
 } from '@/lib/revamp/indents-board'
 import { IndentItems, cycleSummary } from './IndentRows'
 import { IndentApprovals } from './IndentApprovals'
+import { NamePencil } from '@/components/names/NamePencil'
+import { skillKey } from '@/lib/names'
 
 /**
  * The Indents board — one screen for a project's Indent → PO → GRN cycle,
@@ -35,8 +37,12 @@ import { IndentApprovals } from './IndentApprovals'
 
 export interface BoardScope { name?: string; id?: string; cats: IndentsCatRow[]; pending: PendingApproval[] }
 
-export function IndentBoard({ scopes, base, params, manyProjects = false, months }: {
+export function IndentBoard({ scopes, base, params, manyProjects = false, months, namer = false, projectId = null }: {
   scopes: BoardScope[]
+  /** May this person rename categories here? (name layer, Phase 3) */
+  namer?: boolean
+  /** The hub project when the board is inside one — enables "only for this project". */
+  projectId?: string | null
   /** The page's path, e.g. /project/<id>/procurement or /procurement-tracker. */
   base: string
   params: BoardParams
@@ -65,8 +71,8 @@ export function IndentBoard({ scopes, base, params, manyProjects = false, months
           <>
             <Toolbar base={base} params={{ ...params, f: filter }} q={q} age={age} bands={filter === 'done' ? undefined : bandCounts(searchRows(stageRows(rows, filter), q))} href={href} />
             {manyProjects
-              ? <ProjectTrees scopes={scopes} filter={filter} q={q} age={age} narrowed={narrowed} />
-              : <Tree cats={boardTree(cats, filter, q, age)} filter={filter} narrowed={narrowed} q={q} age={age} />}
+              ? <ProjectTrees scopes={scopes} filter={filter} q={q} age={age} narrowed={narrowed} namer={namer} />
+              : <Tree cats={boardTree(cats, filter, q, age)} filter={filter} narrowed={narrowed} q={q} age={age} namer={namer} projectId={projectId} />}
           </>
         )}
 
@@ -177,7 +183,7 @@ const STAGE_TITLE: Record<IndentFilter, string> = {
   all: 'Category — indent wise', approval: 'Waiting for approval', po: 'Lines to be ordered', delivery: 'Lines on order', late: 'Late lines', done: 'Lines received',
 }
 
-function Tree({ cats, filter, narrowed, q, age, title }: { cats: IndentsCatRow[]; filter: IndentFilter; narrowed: boolean; q?: string; age: AgeBand; title?: string }) {
+function Tree({ cats, filter, narrowed, q, age, title, namer = false, projectId = null }: { cats: IndentsCatRow[]; filter: IndentFilter; narrowed: boolean; q?: string; age: AgeBand; title?: string; namer?: boolean; projectId?: string | null }) {
   if (cats.length === 0) {
     return <Calm text={q ? `Nothing matches “${q}”.` : age !== 'all' ? 'Nothing in this age band.' : filter === 'all' ? 'No indents in IN4 for this project yet.' : filter === 'po' ? 'Every approved line has its PO.' : filter === 'delivery' ? 'Nothing ordered is still to arrive.' : filter === 'late' ? 'Nothing is past its time.' : filter === 'done' ? 'Nothing received yet.' : 'Nothing here.'} />
   }
@@ -225,7 +231,7 @@ function Tree({ cats, filter, narrowed, q, age, title }: { cats: IndentsCatRow[]
                       <tr className="bg-gray-50/60 border-t border-gray-200">
                         <td className="px-3 py-2 font-semibold text-gray-800">
                           <CatChevron catId={c.id} />
-                          {cleanName(c.name)}
+                          {cleanName(c.name)}{namer && c.skillId != null && <NamePencil kind="skill" nameKey={skillKey(c.skillId)} shown={cleanName(c.name)} original={c.in4Name ?? cleanName(c.name)} projectId={projectId} module="procurement" moduleLabel="Indents" size="xs" />}
                           <span className="ml-2 text-[12px] font-normal text-gray-500">{ct.indents} indent{ct.indents === 1 ? '' : 's'}</span>
                         </td>
                         <Cells t={ct} bold />
@@ -239,7 +245,7 @@ function Tree({ cats, filter, narrowed, q, age, title }: { cats: IndentsCatRow[]
                               <tr className="border-t border-gray-100 hover:bg-gray-50/60">
                                 <td className="pl-6 pr-3 py-2 text-gray-700">
                                   <RowDetailToggle id={sb.id} count={sb.indents.length} label="indents" />
-                                  {cleanName(sb.name)}
+                                  {cleanName(sb.name)}{namer && sb.skillId != null && <NamePencil kind="skill" nameKey={skillKey(sb.skillId)} shown={cleanName(sb.name)} original={sb.in4Name ?? cleanName(sb.name)} projectId={projectId} module="procurement" moduleLabel="Indents" size="xs" />}
                                   <span className="ml-2 text-[12px] text-gray-400">{sb.indents.length} indent{sb.indents.length === 1 ? '' : 's'}</span>
                                 </td>
                                 <Cells t={st} />
@@ -302,7 +308,7 @@ function Tree({ cats, filter, narrowed, q, age, title }: { cats: IndentsCatRow[]
                   <div className="sticky top-0 z-10 px-4 py-2 bg-gray-50 border-b border-gray-200 flex items-center justify-between gap-2">
                     <span className="flex items-center min-w-0 text-[12px] font-semibold text-gray-800">
                       <CatChevron catId={c.id} />
-                      <span className="truncate">{cleanName(c.name)}</span>
+                      <span className="truncate">{cleanName(c.name)}{namer && c.skillId != null && <NamePencil kind="skill" nameKey={skillKey(c.skillId)} shown={cleanName(c.name)} original={c.in4Name ?? cleanName(c.name)} projectId={projectId} module="procurement" moduleLabel="Indents" size="xs" />}</span>
                     </span>
                     <span className="text-[12px] text-gray-600 flex-shrink-0 whitespace-nowrap tabular-nums">{money(ct.poValue)}</span>
                   </div>
@@ -311,7 +317,7 @@ function Tree({ cats, filter, narrowed, q, age, title }: { cats: IndentsCatRow[]
                       <div key={sb.id} className="px-4 py-2.5 border-t border-gray-50">
                         <p className="text-[13px] text-gray-900 flex items-center">
                           <RowDetailToggle id={sb.id} count={sb.indents.length} label="indents" />
-                          {cleanName(sb.name)}
+                          {cleanName(sb.name)}{namer && sb.skillId != null && <NamePencil kind="skill" nameKey={skillKey(sb.skillId)} shown={cleanName(sb.name)} original={sb.in4Name ?? cleanName(sb.name)} projectId={projectId} module="procurement" moduleLabel="Indents" size="xs" />}
                         </p>
                         <Chips t={subTotals(sb)} />
                         <RowDetail id={sb.id}>
@@ -398,9 +404,9 @@ function Th({ children, className }: { children: React.ReactNode; className?: st
 
 /* ── Across projects: one tree per project ──────────────────────────────── */
 
-function ProjectTrees({ scopes, filter, q, age, narrowed }: { scopes: BoardScope[]; filter: IndentFilter; q?: string; age: AgeBand; narrowed: boolean }) {
+function ProjectTrees({ scopes, filter, q, age, narrowed, namer = false }: { scopes: BoardScope[]; filter: IndentFilter; q?: string; age: AgeBand; narrowed: boolean; namer?: boolean }) {
   const trees = scopes.map(s => ({ s, cats: boardTree(s.cats, filter, q, age) })).filter(x => x.cats.length > 0)
-  if (trees.length === 0) return <Tree cats={[]} filter={filter} narrowed={narrowed} q={q} age={age} />
+  if (trees.length === 0) return <Tree cats={[]} filter={filter} narrowed={narrowed} q={q} age={age} namer={namer} />
   // Busiest project first; a lone project's tree opens by itself.
   trees.sort((a, b) => { const ta = treeTotals(a.cats), tb = treeTotals(b.cats); return tb.open - ta.open || tb.poValue - ta.poValue })
   const openAll = trees.length === 1 || !!q
@@ -418,7 +424,8 @@ function ProjectTrees({ scopes, filter, q, age, narrowed }: { scopes: BoardScope
                 <span className="text-[12px] text-gray-500 tabular-nums">{t.indents} indent{t.indents === 1 ? '' : 's'} · {t.items} line{t.items === 1 ? '' : 's'} · PO’d {formatINR(t.poValue)}{t.toCome > 0.5 ? ` · to come ${formatINR(t.toCome)}` : ''}</span>
                 <span className={`ml-auto text-[12px] tabular-nums ${t.open > 0 ? 'text-amber-700 font-semibold' : 'text-gray-400'}`}>{t.open > 0 ? `${t.open} open${t.late ? ` · ${t.late} late` : ''}` : 'nothing open'}</span>
               </div>
-              <RowDetail id={key}><div className="p-2"><Tree cats={cats} filter={filter} narrowed={narrowed} q={q} age={age} title={s.name} /></div></RowDetail>
+              {/* Across projects there is no single hub project, so a rename here is Everywhere or only-in-Indents. */}
+              <RowDetail id={key}><div className="p-2"><Tree cats={cats} filter={filter} narrowed={narrowed} q={q} age={age} title={s.name} namer={namer} /></div></RowDetail>
             </section>
           )
         })}

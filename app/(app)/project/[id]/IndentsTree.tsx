@@ -3,6 +3,7 @@ import { AlertTriangle, Link2Off } from 'lucide-react'
 import { EmptyState } from '@/components/ui/empty-state'
 import { loadIndentsTree } from '@/lib/revamp/indents-tree'
 import type { BoardParams } from '@/lib/revamp/indents-board'
+import { canName } from '@/lib/names-data'
 import { IndentBoard } from './IndentBoard'
 
 /**
@@ -26,5 +27,5 @@ export async function IndentsTree({ projectId, params }: { projectId: string; pa
     return <EmptyState icon={<AlertTriangle className="h-10 w-10" />} title={t.in4 === 'not-configured' ? 'IN4 is not connected on this deployment' : 'IN4 did not answer'} description={t.error ?? 'The indents are read live from IN4, which could not be reached just now.'} />
   }
 
-  return <IndentBoard scopes={[{ cats: t.cats, pending: t.pending }]} base={`/project/${projectId}/procurement`} params={params} />
+  return <IndentBoard scopes={[{ cats: t.cats, pending: t.pending }]} base={`/project/${projectId}/procurement`} params={params} namer={await canName()} projectId={projectId} />
 }

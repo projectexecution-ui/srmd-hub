@@ -56,7 +56,9 @@ export function Ribbon({
   const params = useSearchParams()
   const activeSlug = activeWorkspaceSlug(pathname, projectId)
   const groups = ribbonFor(tabs)
-  const current = findWorkspaceTab(activeSlug)
+  // The PASSED tabs, not the static registry: the layout hands in tabs whose
+  // labels and pills already carry any CT Hub names (name layer, Phase 3).
+  const current = tabs.find(t => t.slug === activeSlug) ?? findWorkspaceTab(activeSlug)
   const activeSub = current ? activeSubTab(current, params.get('view') ?? undefined) : 0
 
   return (

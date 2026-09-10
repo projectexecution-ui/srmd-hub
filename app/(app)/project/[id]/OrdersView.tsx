@@ -30,6 +30,9 @@ import { PendingStrip, PendingOrderRow, PendingOrderCard } from './OrderApproval
 import { loadOrderApprovals } from '@/lib/revamp/order-approvals'
 import { placePending, filterByKind } from '@/lib/revamp/orders-pending'
 import { RateCheck } from './LineRates'
+import { NamePencil } from '@/components/names/NamePencil'
+import { skillKey } from '@/lib/names'
+import { canName } from '@/lib/names-data'
 
 /** Quantities are not money: they carry decimals and their own unit. */
 const qty = (v: number | null) =>
@@ -39,6 +42,8 @@ const qty = (v: number | null) =>
 const money = (v: number | null) => (v == null ? <Dash /> : formatINR(v))
 
 export async function OrdersView({ projectId, kind }: { projectId: string; /** Narrow to work orders or purchase orders (the tab's pills). */ kind?: 'wo' | 'po' }) {
+  // Who may rename a category here (admin, Portal Owner, or a granted namer).
+  const namer = await canName()
   const tree = await loadOrdersTree(projectId)
   const { notes, linked, error, in4 } = tree
   // What is still waiting in IN4 goes INTO the tree as yellow rows (Aksha, 10 Sep 2026).
@@ -150,6 +155,10 @@ export async function OrdersView({ projectId, kind }: { projectId: string; /** N
                         <td className="px-3 py-2 font-semibold text-gray-800">
                           <CatChevron catId={c.id} />
                           {c.name}
+                          {namer && c.skillId != null && (
+                            <NamePencil kind="skill" nameKey={skillKey(c.skillId)} shown={c.name} original={c.in4Name ?? c.name}
+                              projectId={projectId} module="wo-po" moduleLabel="WO / PO" />
+                          )}
                           <span className="ml-2 text-[12px] font-normal text-gray-500">{c.count} order{c.count === 1 ? '' : 's'}</span>
                           {c.pendingCount > 0 && <span className="ml-2 text-[11px] font-semibold text-amber-900 bg-amber-200 rounded px-1.5 py-0.5">{c.pendingCount} waiting approval</span>}
                         </td>
@@ -164,6 +173,10 @@ export async function OrdersView({ projectId, kind }: { projectId: string; /** N
                               <td className="pl-6 pr-3 py-2 text-gray-700">
                                 <RowDetailToggle id={s.id} count={s.orders.length} />
                                 <RowName row={s} />
+                                {namer && s.kind === 'wo' && s.skillId != null && (
+                                  <NamePencil kind="skill" nameKey={skillKey(s.skillId)} shown={s.name} original={s.in4Name ?? s.name}
+                                    projectId={projectId} module="wo-po" moduleLabel="WO / PO" size="xs" />
+                                )}
                                 <span className="ml-2 text-[12px] text-gray-400">{s.count} order{s.count === 1 ? '' : 's'}</span>
                                 {s.pending.length > 0 && <span className="ml-2 text-[11px] font-semibold text-amber-900 bg-amber-200 rounded px-1.5 py-0.5">{s.pending.length} waiting approval</span>}
                               </td>

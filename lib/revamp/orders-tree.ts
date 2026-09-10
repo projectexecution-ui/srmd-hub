@@ -66,7 +66,8 @@
 //    facts disagree on BOQ_ID by one. WO 623 item 6340 = 95.17 %, as IN4 says.
 
 import { formatINR } from '@/lib/utils'
-import { skillLabel } from '@/lib/names'
+import { skillLabel, resolveName, skillKey } from '@/lib/names'
+import { loadNameIndex } from '@/lib/names-data'
 import { createClient } from '@/lib/supabase/server'
 import { in4Query, in4Config } from '@/lib/in4/db'
 
@@ -169,6 +170,11 @@ export interface OrdersSubRow extends Money {
   count: number
   unassigned?: boolean
   orders: OrderRow[]
+  /** IN4's skill id behind this sub-category — the key a CT Hub name is set on.
+   *  Null for the PO row and the "no sub-category" bucket. */
+  skillId?: number | null
+  /** IN4's own text (code stripped) — what a rename can go "back to". */
+  in4Name?: string
 }
 
 export interface OrdersCatRow extends Money {
@@ -177,6 +183,8 @@ export interface OrdersCatRow extends Money {
   code: string
   subs: OrdersSubRow[]
   count: number
+  skillId?: number | null
+  in4Name?: string
 }
 
 export interface OrdersTree {
@@ -248,7 +256,14 @@ export interface PoEntry {
 }
 export interface GrnEntry { grnNo?: string; grnDate?: string; qty?: number; rate?: number; value?: number }
 
-export interface Skill { id: number; name: string | null; code: string | null }
+export interface Skill {
+  id: number
+  name: string | null
+  code: string | null
+  /** A CT Hub name set for this category at the scope in force (project → WO/PO
+   *  module → everywhere), resolved by the loader. Null = show IN4's own text. */
+  label?: string | null
+}
 
 /** IN4's own header figures for one work order (BI.FACT_ENGG_WORK_ORDER).
  *  Deliberately NOT its TOT_CERTIFIED_AMT: that field counts cancelled bills
@@ -667,7 +682,12 @@ export async function loadOrdersTree(projectId: string): Promise<OrdersTree> {
     }
   }
 
-  const skills = new Map<number, Skill>(skillRes.rows.map(s => [s.id, s]))
+  // CT Hub names for these categories, at the scope in force on THIS screen:
+  // this project → the WO / PO module → everywhere (name layer, Phase 3).
+  const names = await loadNameIndex()
+  const skills = new Map<number, Skill>(skillRes.rows.map(s => [s.id, {
+    ...s, label: resolveName(names, 'skill', skillKey(s.id), { projectId, module: 'wo-po' })?.display_name ?? null,
+  }]))
   const parties = new Map<number, string>(
     partyRes.rows.filter(p => p.name).map(p => [p.id, p.name as string]),
   )
@@ -879,9 +899,12 @@ export function buildOrdersTree(
   src: Sources = NO_SOURCES,
 ): Omit<OrdersTree, 'linked' | 'error'> {
   // People read "Civil", not "03 Civil": the code stays the SORT key (codeOf),
-  // it just no longer prints inside the label (lib/names.ts, name layer).
-  const nameOf = (id: number | null, fallback: string) =>
+  // it just no longer prints inside the label (lib/names.ts, name layer). A CT
+  // Hub name set for the category (Skill.label) wins over IN4's text.
+  const in4NameOf = (id: number | null, fallback: string) =>
     id == null ? fallback : (skills.get(id)?.name ? skillLabel(skills.get(id)!.name) : `${fallback} ${id}`)
+  const nameOf = (id: number | null, fallback: string) =>
+    id == null ? fallback : (skills.get(id)?.label?.trim() || in4NameOf(id, fallback))
   const codeOf = (id: number | null) => (id == null ? '￿' : (skills.get(id)?.code ?? String(id)))
 
   // Bills per line item, keyed on (wo_id, item_id). Oldest bill first, with a
@@ -926,13 +949,16 @@ export function buildOrdersTree(
     linesByWo.set(b.wo_id, arr)
   }
 
-  interface CatAcc { name: string; code: string; subs: Map<string, OrdersSubRow> }
+  interface CatAcc { name: string; code: string; subs: Map<string, OrdersSubRow>; skillId: number | null; in4Name: string }
   const cats = new Map<string, CatAcc>()
   const catFor = (id: number | null) => {
     const key = id == null ? '_none' : String(id)
     let c = cats.get(key)
     if (!c) {
-      c = { name: id == null ? 'No category in IN4' : nameOf(id, 'Category'), code: codeOf(id), subs: new Map() }
+      c = {
+        name: id == null ? 'No category in IN4' : nameOf(id, 'Category'), code: codeOf(id), subs: new Map(),
+        skillId: id, in4Name: id == null ? 'No category in IN4' : in4NameOf(id, 'Category'),
+      }
       cats.set(key, c)
     }
     return { key, cat: c }
@@ -966,6 +992,8 @@ export function buildOrdersTree(
         name: hasSub ? nameOf(w.subcategory_id, 'Sub-category') : 'No sub-category in IN4',
         code: hasSub ? codeOf(w.subcategory_id) : '',
         kind: 'wo', count: 0, ...ZERO_MONEY, unassigned: !hasSub, orders: [],
+        skillId: hasSub ? w.subcategory_id : null,
+        in4Name: hasSub ? in4NameOf(w.subcategory_id, 'Sub-category') : 'No sub-category in IN4',
       }
       cat.subs.set(sk, row)
     }
@@ -1150,7 +1178,7 @@ export function buildOrdersTree(
         return { ...s, orders, ...rollUp(orders) }
       })
       .sort((a, b) => rankOf(a) - rankOf(b) || byCode(a.code, b.code))
-    return { id: key, name: c.name, code: c.code, subs, count: subs.reduce((s, r) => s + r.count, 0), ...rollUp(subs) }
+    return { id: key, name: c.name, code: c.code, subs, count: subs.reduce((s, r) => s + r.count, 0), skillId: c.skillId, in4Name: c.in4Name, ...rollUp(subs) }
   }).sort((a, b) => byCode(a.code, b.code))
 
   const poNumbers = new Set<string>()

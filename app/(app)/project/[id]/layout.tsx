@@ -10,6 +10,10 @@ import { formatDateTime } from '@/lib/utils'
 import { Ribbon } from './Ribbon'
 import { getMyApprovalCounts } from '@/lib/revamp/approval-counts'
 import { subprojectIdsFor, loadVerifyCounts, verifyBadges } from '@/lib/revamp/verify-counts'
+import { tabSlug, subSlug } from '@/lib/revamp/permissions'
+import { shownOr } from '@/lib/names'
+import { loadNameIndex, canName } from '@/lib/names-data'
+import { TabNames, type TabNameRow } from './TabNames'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
@@ -74,6 +78,21 @@ export default async function ProjectWorkspaceLayout({
   // What is at Verify in IN4 for this project — the approver's turn — as yellow
   // counts on Indents and WO / PO (Aksha, 10 Sep 2026). Zeros if IN4 is away.
   const verify = verifyBadges(await loadVerifyCounts(await subprojectIdsFor(id)))
+
+  // CT Hub names for the ribbon (name layer, Phase 3): a tab or pill renamed
+  // everywhere or for THIS project. Keys are the registry slugs the permission
+  // matrix already uses, so permissions and names never drift apart. The
+  // registry stays the identity; `pills` (indices) is unaffected.
+  const [names, namer] = await Promise.all([loadNameIndex(), canName()])
+  const ctx = { projectId: id }
+  const namedTabs = tabs.map(t => {
+    const shownTab = shownOr(names, 'tab', tabSlug(t), ctx, t.ribbon)
+    return { ...t, ribbon: shownTab, label: shownTab === t.ribbon ? t.label : shownTab, subs: t.subs.map(s => shownOr(names, 'pill', subSlug(t, s), ctx, s)) }
+  })
+  const tabNameRows: TabNameRow[] = tabs.map((t, i) => ({
+    key: tabSlug(t), original: t.ribbon, shown: namedTabs[i].ribbon,
+    pills: t.subs.map((s, j) => ({ key: subSlug(t, s), original: s, shown: namedTabs[i].subs[j] })),
+  }))
 
   return (
     <div className="min-h-full bg-gray-50/60">
@@ -143,6 +162,7 @@ export default async function ProjectWorkspaceLayout({
             </div>
 
             <div className="flex items-center gap-2 ml-auto flex-shrink-0">
+              {namer && <TabNames projectId={id} projectLabel={head.chip ?? head.name} rows={tabNameRows} />}
               {head.syncedAt && (
                 <span className="hidden sm:inline text-[12px] text-gray-400 whitespace-nowrap">
                   IN4 · {formatDateTime(head.syncedAt)}
@@ -165,7 +185,7 @@ export default async function ProjectWorkspaceLayout({
 
           <Ribbon
             projectId={id}
-            tabs={tabs}
+            tabs={namedTabs}
             pills={pills}
             canSetup={canSetup}
             /* This project's own Cost Control queue, for the Approvals tab. */

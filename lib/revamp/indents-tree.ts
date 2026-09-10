@@ -27,7 +27,8 @@
 
 import { createClient } from '@/lib/supabase/server'
 import { in4Query, in4Config } from '@/lib/in4/db'
-import { skillLabel } from '@/lib/names'
+import { skillLabel, resolveName, skillKey } from '@/lib/names'
+import { loadNameIndex } from '@/lib/names-data'
 
 /* ── Statuses ───────────────────────────────────────────────────────────── */
 
@@ -77,7 +78,20 @@ export interface GrnRaw {
   grn_status: string | null; RECIEVED_QTY: unknown; GRN_MATERIAL_COST: unknown
 }
 export interface AuditRaw { doc_id: number; STATUS: number | null; MODIFIED_DT: unknown; who: string | null; REMARKS: string | null }
-export interface SkillName { id: number; name: string; code: string | null }
+export interface SkillName {
+  id: number
+  name: string
+  code: string | null
+  /** A CT Hub name for this category at the scope in force (project → Indents
+   *  module → everywhere), resolved by the loader. Null = IN4's own text. */
+  label?: string | null
+}
+
+/** What a category row shows: the CT Hub name if one is set, else IN4's text
+ *  without its code prefix. */
+const skillShown = (sk: SkillName | undefined, fallback: string) =>
+  sk ? (sk.label?.trim() || skillLabel(sk.name)) : fallback
+const skillIn4 = (sk: SkillName | undefined, fallback: string) => (sk ? skillLabel(sk.name) : fallback)
 
 /* ── Built shapes ───────────────────────────────────────────────────────── */
 
@@ -123,8 +137,8 @@ export interface IndentRow {
   pos: Array<{ poId: number; poNo: string | null; status: string; stage: ChainStep['stage']; date: string | null; supplier: string | null; value: number; grnQty: number; qty: number }>
 }
 
-export interface IndentsSubRow { id: string; name: string; code: string | null; indents: IndentRow[]; items: number; poValue: number; receivedValue: number; awaitingPo: number; awaitingDelivery: number }
-export interface IndentsCatRow { id: string; name: string; code: string | null; subs: IndentsSubRow[]; indents: number; items: number; poValue: number; receivedValue: number; awaitingPo: number; awaitingDelivery: number }
+export interface IndentsSubRow { id: string; name: string; code: string | null; indents: IndentRow[]; items: number; poValue: number; receivedValue: number; awaitingPo: number; awaitingDelivery: number; skillId?: number | null; in4Name?: string }
+export interface IndentsCatRow { id: string; name: string; code: string | null; subs: IndentsSubRow[]; indents: number; items: number; poValue: number; receivedValue: number; awaitingPo: number; awaitingDelivery: number; skillId?: number | null; in4Name?: string }
 
 export interface PendingApproval {
   kind: 'indent' | 'po'
@@ -278,13 +292,15 @@ export function buildIndentsTree(
       const [catId, subId] = key.split('|').map(Number)
       const ck = `icat:${catId}`
       const c = cats.get(ck) ?? {
-        id: ck, name: catId ? (skill.get(catId)?.name ? skillLabel(skill.get(catId)!.name) : `Category ${catId}`) : '(no category on the indent line)', code: catId ? (skill.get(catId)?.code ?? null) : null,
+        id: ck, name: catId ? skillShown(skill.get(catId), `Category ${catId}`) : '(no category on the indent line)', code: catId ? (skill.get(catId)?.code ?? null) : null,
+        skillId: catId ?? null, in4Name: catId ? skillIn4(skill.get(catId), `Category ${catId}`) : '(no category on the indent line)',
         subs: [], indents: 0, items: 0, poValue: 0, receivedValue: 0, awaitingPo: 0, awaitingDelivery: 0,
       }
       const sk = `${ck}:${subId}`
       let sub = c.subs.find(x => x.id === sk)
       if (!sub) {
-        sub = { id: sk, name: subId ? (skill.get(subId)?.name ? skillLabel(skill.get(subId)!.name) : `Sub-category ${subId}`) : '(no sub-category)', code: subId ? (skill.get(subId)?.code ?? null) : null, indents: [], items: 0, poValue: 0, receivedValue: 0, awaitingPo: 0, awaitingDelivery: 0 }
+        sub = { id: sk, name: subId ? skillShown(skill.get(subId), `Sub-category ${subId}`) : '(no sub-category)', code: subId ? (skill.get(subId)?.code ?? null) : null, indents: [], items: 0, poValue: 0, receivedValue: 0, awaitingPo: 0, awaitingDelivery: 0,
+          skillId: subId ?? null, in4Name: subId ? skillIn4(skill.get(subId), `Sub-category ${subId}`) : '(no sub-category)' }
         c.subs.push(sub)
       }
       const part: IndentRow = {
@@ -423,7 +439,11 @@ export async function loadIndentsTree(projectId: string, opts: { showClosed?: bo
 
   if (!in4Config()) return { ...EMPTY, linked: true, in4: 'not-configured' }
   const { data: sk } = await supabase.from('in4_skills').select('id, name, code')
-  const skills = (sk ?? []) as SkillName[]
+  // CT Hub names at the scope in force here: this project → Indents → everywhere.
+  const names = await loadNameIndex()
+  const skills = ((sk ?? []) as SkillName[]).map(x => ({
+    ...x, label: resolveName(names, 'skill', skillKey(x.id), { projectId, module: 'procurement' })?.display_name ?? null,
+  }))
 
   try {
     const indents = await in4Query<IndentRaw>(`
@@ -503,7 +523,12 @@ export async function loadIndentsAll(opts: { months?: number; showClosed?: boole
   const months = opts.months ?? 12
   const supabase = await createClient()
   const { data: sk } = await supabase.from('in4_skills').select('id, name, code')
-  const skills = (sk ?? []) as SkillName[]
+  // The all-projects list has no single project, so only Indents-module and
+  // everywhere names apply here; a per-project name shows inside that project.
+  const names = await loadNameIndex()
+  const skills = ((sk ?? []) as SkillName[]).map(x => ({
+    ...x, label: resolveName(names, 'skill', skillKey(x.id), { module: 'procurement' })?.display_name ?? null,
+  }))
   try {
     const indents = await in4Query<IndentRaw>(`
       ${INDENT_SELECT}
