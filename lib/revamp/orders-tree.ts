@@ -66,6 +66,7 @@
 //    facts disagree on BOQ_ID by one. WO 623 item 6340 = 95.17 %, as IN4 says.
 
 import { formatINR } from '@/lib/utils'
+import { skillLabel } from '@/lib/names'
 import { createClient } from '@/lib/supabase/server'
 import { in4Query, in4Config } from '@/lib/in4/db'
 
@@ -877,8 +878,10 @@ export function buildOrdersTree(
   abstracts: AbstractRow[] = [],
   src: Sources = NO_SOURCES,
 ): Omit<OrdersTree, 'linked' | 'error'> {
+  // People read "Civil", not "03 Civil": the code stays the SORT key (codeOf),
+  // it just no longer prints inside the label (lib/names.ts, name layer).
   const nameOf = (id: number | null, fallback: string) =>
-    id == null ? fallback : (skills.get(id)?.name ?? `${fallback} ${id}`)
+    id == null ? fallback : (skills.get(id)?.name ? skillLabel(skills.get(id)!.name) : `${fallback} ${id}`)
   const codeOf = (id: number | null) => (id == null ? '￿' : (skills.get(id)?.code ?? String(id)))
 
   // Bills per line item, keyed on (wo_id, item_id). Oldest bill first, with a

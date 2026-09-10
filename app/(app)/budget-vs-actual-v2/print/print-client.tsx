@@ -7,6 +7,7 @@
 import Link from 'next/link'
 import { ArrowLeft, Printer } from 'lucide-react'
 import type { ComposeResult, ProjectNode, CatNode } from '@/lib/budget-v2'
+import { shownName } from '@/lib/budget-v2'
 
 // ≥ ₹1 Cr → compact crore; under ₹1 Cr → actual amount, Indian-grouped, "/-".
 function fmtINR(v: number): string {
@@ -40,8 +41,8 @@ function projectSentence(p: ProjectNode, groupAvgSft: number | null): string {
     const d = Math.round(((mySft - groupAvgSft) / groupAvgSft) * 100)
     if (Math.abs(d) >= 5) bits.push(`its ₹/sft is ${Math.abs(d)}% ${d > 0 ? 'above' : 'below'} the group average`)
   }
-  if (!bits.length) return `${p.name} is tracking on budget.`
-  return `${p.name} ${bits.join('; ')}.`
+  if (!bits.length) return `${shownName(p)} is tracking on budget.`
+  return `${shownName(p)} ${bits.join('; ')}.`
 }
 
 export default function PrintClient({ result }: { result: ComposeResult }) {
@@ -132,7 +133,7 @@ export default function PrintClient({ result }: { result: ComposeResult }) {
           ({t.budget > 0 ? Math.round(t.spent / t.budget * 100) : 0}%), leaving <b>{fmtINR(Math.abs(balance))}</b> {balance < 0 ? 'over budget' : 'unspent'}.
           {' '}{overruns.length === 0
             ? 'No project is currently over its budget.'
-            : <>Projects already over budget: <b>{overruns.map(x => x.p.name).join(', ')}</b>.</>}
+            : <>Projects already over budget: <b>{overruns.map(x => shownName(x.p)).join(', ')}</b>.</>}
         </p>
 
         {overruns.length > 0 && (
@@ -143,7 +144,7 @@ export default function PrintClient({ result }: { result: ComposeResult }) {
               <tbody>
                 {overruns.map(({ p, groupName, u }) => (
                   <tr key={p.name}>
-                    <td>{p.name}</td>
+                    <td>{shownName(p)}</td>
                     <td>{groupName === '— Ungrouped' ? '—' : groupName}</td>
                     <td className="right">{fmtINR(p.budget)}</td>
                     <td className="right over">{fmtINR(p.spent)}</td>

@@ -6,6 +6,7 @@ import { createClient } from '@/lib/supabase/server'
 import { requirePermission, can, getMyUser, getMyProfile } from '@/lib/auth'
 import { checkIsCcReviewer } from '@/components/cost-control/ws-actions'
 import { PageHeader } from '@/components/PageHeader'
+import { projectChip, groupBand } from '@/lib/names'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -44,6 +45,8 @@ type CCProject = {
   built_up_sft: number | null
   parent_project_id: string | null
   group_label: string | null
+  /** Display chip; falls back to code (lib/names.ts projectChip). */
+  short_name: string | null
 }
 
 export default async function CostControlLandingPage() {
@@ -74,7 +77,7 @@ export default async function CostControlLandingPage() {
   const [projectsRes, wsAllRes, myDraftsRes, approversRes, deadlinesRes, budgetRes, backupRes] = await Promise.all([
     supabase
       .from('projects')
-      .select('id, code, name, cc_status, setup_progress_pct, built_up_sft, parent_project_id, group_label')
+      .select('id, code, name, cc_status, setup_progress_pct, built_up_sft, parent_project_id, group_label, short_name')
       .not('cc_status', 'is', null)
       .is('archived_at', null)
       .order('code'),
@@ -338,7 +341,7 @@ export default async function CostControlLandingPage() {
     // carry extra words ("NGH Infra").
     if (kids.length > 0) {
       const members = parentHasOwnData(p) ? [p, ...kids] : kids
-      projGroups.push({ key: p.id, label: p.group_label?.trim() || p.code.trim() || p.name.trim(), members })
+      projGroups.push({ key: p.id, label: groupBand(p), members })
     }
     else independents.push(p)
   }
@@ -682,7 +685,7 @@ export default async function CostControlLandingPage() {
                           {/* Status, as a dot. It is a state you glance at, not
                               a word you read on 39 rows — the name is on hover. */}
                           <StatusDot status={p.cc_status} />
-                          <span className="font-mono text-[11px] font-bold text-indigo-700 mr-2">{p.code}</span>
+                          <span className="font-mono text-[11px] font-bold text-indigo-700 mr-2" title={p.short_name?.trim() ? `Code ${p.code}` : undefined}>{projectChip(p.short_name, p.code)}</span>
                           <span className="font-semibold text-gray-900 hover:underline">{p.name}</span>
                         </Link>
                       </td>
@@ -789,7 +792,7 @@ export default async function CostControlLandingPage() {
                         <div className="flex items-start justify-between gap-2">
                           <Link href={projectHref(p.id)} className="min-w-0">
                             <StatusDot status={p.cc_status} />
-                            <span className="font-mono text-[11px] font-bold text-indigo-700 mr-1.5">{p.code}</span>
+                            <span className="font-mono text-[11px] font-bold text-indigo-700 mr-1.5" title={p.short_name?.trim() ? `Code ${p.code}` : undefined}>{projectChip(p.short_name, p.code)}</span>
                             <span className="font-semibold text-gray-900">{p.name}</span>
                           </Link>
                           <span className="flex-shrink-0 text-[11px] text-gray-400 whitespace-nowrap">
@@ -968,13 +971,13 @@ async function EngineerHome({ userId, canWrite, label }: { userId: string | null
     : { data: [] as MyWsRow[] }
   const myWs = (myWsRes.data ?? []) as MyWsRow[]
 
-  type EProj = { id: string; code: string; name: string; built_up_sft: number | null; parent_project_id: string | null; group_label: string | null }
+  type EProj = { id: string; code: string; name: string; built_up_sft: number | null; parent_project_id: string | null; group_label: string | null; short_name: string | null }
   // Role-based access: an engineer can raise a budget in ANY cost-control
   // project, so the home lists them all — not just projects they're assigned
   // to or already have a sheet in.
   const { data: projData, error: projErr } = await supabase
     .from('projects')
-    .select('id, code, name, built_up_sft, parent_project_id, group_label')
+    .select('id, code, name, built_up_sft, parent_project_id, group_label, short_name')
     .not('cc_status', 'is', null)
     .order('code')
   const projects = (projData ?? []) as EProj[]
@@ -1070,10 +1073,10 @@ async function EngineerHome({ userId, canWrite, label }: { userId: string | null
   const projByIdE = new Map(projects.map(p => [p.id, p]))
   const parentIds = [...new Set(projects.map(p => p.parent_project_id).filter((x): x is string => !!x && !projByIdE.has(x)))]
   const { data: parentData } = parentIds.length
-    ? await supabase.from('projects').select('id, code, name, group_label').in('id', parentIds)
-    : { data: [] as Array<{ id: string; code: string; name: string; group_label: string | null }> }
-  const parentLabelById = new Map<string, { code: string; name: string; group_label: string | null }>()
-  for (const p of (parentData ?? [])) parentLabelById.set(p.id, { code: p.code, name: p.name, group_label: p.group_label })
+    ? await supabase.from('projects').select('id, code, name, group_label, short_name').in('id', parentIds)
+    : { data: [] as Array<{ id: string; code: string; name: string; group_label: string | null; short_name: string | null }> }
+  const parentLabelById = new Map<string, { code: string; name: string; group_label: string | null; short_name: string | null }>()
+  for (const p of (parentData ?? [])) parentLabelById.set(p.id, { code: p.code, name: p.name, group_label: p.group_label, short_name: p.short_name })
 
   const parentHasKids = new Set<string>()
   for (const p of projects) if (p.parent_project_id) parentHasKids.add(p.parent_project_id)
@@ -1081,9 +1084,9 @@ async function EngineerHome({ userId, canWrite, label }: { userId: string | null
     p.parent_project_id ? p.parent_project_id : parentHasKids.has(p.id) ? p.id : `solo:${p.id}`
   const groupLabelFor = (key: string): string => {
     const inSet = projByIdE.get(key)
-    if (inSet) return inSet.group_label?.trim() || inSet.code.trim() || inSet.name.trim()
+    if (inSet) return groupBand(inSet)
     const par = parentLabelById.get(key)
-    return par ? (par.group_label?.trim() || par.code.trim() || par.name.trim()) : ''
+    return par ? groupBand(par) : ''
   }
   const groupMap = new Map<string, EProj[]>()
   for (const p of projects) {
@@ -1112,7 +1115,7 @@ async function EngineerHome({ userId, canWrite, label }: { userId: string | null
       <tr key={p.id} className="border-t border-gray-100 hover:bg-gray-50/70">
         <td className={`px-3 py-2.5 ${indent ? 'pl-8' : ''}`}>
           <Link href={projectHref(p.id)} className="block">
-            <span className="font-mono text-[11px] font-bold text-indigo-700 mr-2">{p.code}</span>
+            <span className="font-mono text-[11px] font-bold text-indigo-700 mr-2" title={p.short_name?.trim() ? `Code ${p.code}` : undefined}>{projectChip(p.short_name, p.code)}</span>
             <span className="font-semibold text-gray-900 hover:underline">{p.name}</span>
           </Link>
         </td>
@@ -1135,7 +1138,7 @@ async function EngineerHome({ userId, canWrite, label }: { userId: string | null
       <div key={p.id} className="px-4 py-3">
         <div className="flex items-start justify-between gap-2">
           <Link href={projectHref(p.id)} className="min-w-0">
-            <span className="font-mono text-[11px] font-bold text-indigo-700 mr-1.5">{p.code}</span>
+            <span className="font-mono text-[11px] font-bold text-indigo-700 mr-1.5" title={p.short_name?.trim() ? `Code ${p.code}` : undefined}>{projectChip(p.short_name, p.code)}</span>
             <span className="font-semibold text-gray-900">{p.name}</span>
           </Link>
           {sft > 0 && <span className="flex-shrink-0 text-[11px] text-gray-400 whitespace-nowrap">{sft.toLocaleString('en-IN')} sft</span>}

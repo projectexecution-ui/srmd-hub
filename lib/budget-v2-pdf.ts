@@ -14,6 +14,7 @@ import autoTable from 'jspdf-autotable'
 import { readFileSync, existsSync } from 'node:fs'
 import { join } from 'node:path'
 import type { ComposeResult, CatNode, SubCatNode, DeltaResult } from '@/lib/budget-v2'
+import { shownName } from '@/lib/budget-v2'
 import type { BudgetV2Freshness } from '@/lib/budget-v2-load'
 
 // Embed Noto Sans (already bundled for the Telegram cards) so ₹ + Indian digit
@@ -279,7 +280,7 @@ export function buildWeeklyOnePagerPdf(input: WeeklyPdfInput): Uint8Array {
       const u = pct(p.spent, p.budget)
       const dp = delta.hasBaseline ? (delta.byProject[p.name]?.paid ?? 0) : null
       const manual = !!(p.manual && (p.manual.budget || p.manual.approved || p.manual.spent))
-      const name = `${p.name}${p.status === 'closed' ? ' · closed' : ''}${p.area ? ` · ${p.area.toLocaleString('en-IN')} sft` : ''}${manual ? (p.isExtra ? '  [manual]' : '  [adj]') : ''}`
+      const name = `${shownName(p)}${p.status === 'closed' ? ' · closed' : ''}${p.area ? ` · ${p.area.toLocaleString('en-IN')} sft` : ''}${manual ? (p.isExtra ? '  [manual]' : '  [adj]') : ''}`
       rows.push({ type: 'proj', cols: [{ t: name }, money(p.budget, undefined, perSft(p.budget, p.area)), money(p.approved, C.appr, perSft(p.approved, p.area)), money(p.spent, toneColor(u), perSft(p.spent, p.area)), money(p.budget - p.spent, p.budget - p.spent < 0 ? C.over : undefined, perSft(p.budget - p.spent, p.area)), { t: u != null ? `${u}%` : '—', color: toneColor(u) }, delta.hasBaseline ? deltaCell(dp) : { t: '—', color: C.faint }] })
     }
   }
@@ -368,7 +369,7 @@ export function buildWeeklyDetailPdf(input: WeeklyDetailInput, mode: 'category' 
       rows.push({ type: 'grp', cols: [{ t: `${g.name} · ${g.projects.length}` }, money(ga.budget), money(ga.approved, C.appr), money(ga.spent, toneColor(gu)), money(ga.budget - ga.spent, ga.budget - ga.spent < 0 ? C.over : undefined), { t: gu != null ? `${gu}%` : '—', color: toneColor(gu) }, delta.hasBaseline ? deltaCell(gd) : { t: '—', color: C.faint }] })
       for (const p of g.projects) {
         const u = pct(p.spent, p.budget)
-        rows.push({ type: 'proj', cols: [{ t: `${p.name}${p.status === 'closed' ? ' · closed' : ''}` }, money(p.budget, undefined, perSft(p.budget, p.area)), money(p.approved, C.appr, perSft(p.approved, p.area)), money(p.spent, toneColor(u), perSft(p.spent, p.area)), money(p.budget - p.spent, p.budget - p.spent < 0 ? C.over : undefined, perSft(p.budget - p.spent, p.area)), { t: u != null ? `${u}%` : '—', color: toneColor(u) }, deltaCell(projDelta(p.name))] })
+        rows.push({ type: 'proj', cols: [{ t: `${shownName(p)}${p.status === 'closed' ? ' · closed' : ''}` }, money(p.budget, undefined, perSft(p.budget, p.area)), money(p.approved, C.appr, perSft(p.approved, p.area)), money(p.spent, toneColor(u), perSft(p.spent, p.area)), money(p.budget - p.spent, p.budget - p.spent < 0 ? C.over : undefined, perSft(p.budget - p.spent, p.area)), { t: u != null ? `${u}%` : '—', color: toneColor(u) }, deltaCell(projDelta(p.name))] })
       }
     }
     rows.push({ type: 'total', cols: [{ t: 'TOTAL' }, money(vt.budget), money(vt.approved, C.appr), money(vt.spent), money(vt.budget - vt.spent, vt.budget - vt.spent < 0 ? C.over : undefined), { t: `${vUsedPct}%` }, delta.hasBaseline ? deltaCell(projects.reduce((s, x) => s + (projDelta(x.p.name) ?? 0), 0)) : { t: '—', color: C.faint }] })
@@ -381,8 +382,8 @@ export function buildWeeklyDetailPdf(input: WeeklyDetailInput, mode: 'category' 
   for (const { p, group } of projects) {
     page()
     doc.setFontSize(8.5); doc.setTextColor(...C.mut); doc.text(group, M, 36)
-    doc.setFontSize(16); doc.setTextColor(...C.ink); doc.text(p.name, M, 55)
-    let nx = M + doc.getTextWidth(p.name) + 12
+    doc.setFontSize(16); doc.setTextColor(...C.ink); doc.text(shownName(p), M, 55)
+    let nx = M + doc.getTextWidth(shownName(p)) + 12
     // status pill
     const pillBg = p.status === 'open' ? C.openBg : C.closedBg
     const pillInk = p.status === 'open' ? C.openInk : C.closedInk
@@ -423,7 +424,7 @@ export function buildWeeklyDetailPdf(input: WeeklyDetailInput, mode: 'category' 
           rows.push({ type: 'sub', cols: [{ t: `${sc.code ? sc.code + '  ' : ''}${sc.label}` }, money(sc.budget, undefined, perSft(sc.budget, p.area)), money(sc.approved, C.appr, perSft(sc.approved, p.area)), money(sc.spent, toneColor(su), perSft(sc.spent, p.area)), money(sc.budget - sc.spent, sc.budget - sc.spent < 0 ? C.over : undefined, perSft(sc.budget - sc.spent, p.area)), { t: su != null ? `${su}%` : '—', color: toneColor(su) }, deltaCell(subDelta(p.name, c, sc))] })
         }
       }
-      rows.push({ type: 'total', cols: [{ t: `TOTAL · ${p.name}` }, money(p.budget), money(p.approved, C.appr), money(p.spent), money(bal, bal < 0 ? C.over : undefined), { t: `${u}%` }, deltaCell(projDelta(p.name))] })
+      rows.push({ type: 'total', cols: [{ t: `TOTAL · ${shownName(p)}` }, money(p.budget), money(p.approved, C.appr), money(p.spent), money(bal, bal < 0 ? C.over : undefined), { t: `${u}%` }, deltaCell(projDelta(p.name))] })
       // Keep the project on ONE page. A category page has a handful of rows and
       // never needs this; the sub-category page expands every work-item, and a
       // project like NGH B or SRAH ran past the bottom and continued overleaf.

@@ -4,6 +4,7 @@ import { requirePermission } from '@/lib/auth'
 import { PageHeader } from '@/components/PageHeader'
 import { Card } from '@/components/ui/card'
 import { Landmark } from 'lucide-react'
+import { personName } from '@/lib/utils'
 import { DeskMembersEditor, type DeskState } from './DeskMembersEditor'
 
 export const dynamic = 'force-dynamic'
@@ -49,7 +50,7 @@ export default async function BillsDesksPage() {
 
       <DeskMembersEditor
         desks={DESKS as unknown as { key: string; label: string }[]}
-        users={(users ?? []).map(u => ({ id: u.id as string, name: (u.full_name || u.name || u.email) as string }))}
+        users={(users ?? []).map(u => ({ id: u.id as string, name: personName(u.full_name as string | null, u.name as string | null, u.email as string | null) }))}
         projects={(projects ?? []).map(p => ({ id: p.id as string, code: p.code as string }))}
         initial={initial}
       />

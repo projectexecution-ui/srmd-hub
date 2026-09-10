@@ -50,9 +50,10 @@ describe('buildIndentsTree', () => {
   const t = buildIndentsTree([IND_151, IND_99], [...ITEMS_151, ITEM_99], [PO_LINE_92], [GRN_92], [...AUDIT_151, ...IND_99_AUDIT], PO_AUDIT_92, SKILLS, { now: NOW })
 
   it('files each indent under the category and sub-category of its lines', () => {
-    expect(t.cats.map(c => c.name)).toEqual(['03 Civil', '09 Fire Fighting Works'])
+    // Labels drop IN4's code prefix (lib/names.ts skillLabel); the CODE still orders them.
+    expect(t.cats.map(c => c.name)).toEqual(['Civil', 'Fire Fighting Works'])
     const ff = t.cats[1]
-    expect(ff.subs[0].name).toBe('901 Sprinkler System')
+    expect(ff.subs[0].name).toBe('Sprinkler System')
     expect(ff.subs[0].indents[0].ref).toBe('IND/SRASSK/NGH/2026-27/151')
     expect(ff.items).toBe(2)
   })
@@ -136,10 +137,10 @@ describe('filterIndentsTree — the chips', () => {
   const t = buildIndentsTree([IND_151, IND_99], [...ITEMS_151, ITEM_99], [PO_LINE_92], [GRN_92], [...AUDIT_151, ...IND_99_AUDIT], PO_AUDIT_92, SKILLS, { now: NOW })
   it('keeps only the lines a chip means, and drops empty branches', () => {
     const approval = filterIndentsTree(t.cats, 'approval')
-    expect(approval.map(c => c.name)).toEqual(['09 Fire Fighting Works'])
+    expect(approval.map(c => c.name)).toEqual(['Fire Fighting Works'])
     expect(approval[0].items).toBe(2)
     const done = filterIndentsTree(t.cats, 'done')
-    expect(done.map(c => c.name)).toEqual(['03 Civil'])
+    expect(done.map(c => c.name)).toEqual(['Civil'])
     expect(filterIndentsTree(t.cats, 'late')).toEqual([])
     expect(filterIndentsTree(t.cats, 'all')).toHaveLength(2)
   })

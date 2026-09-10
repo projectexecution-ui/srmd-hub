@@ -92,9 +92,14 @@ export default async function ProjectWorkspaceLayout({
               <ChevronLeft className="h-4 w-4" />
             </Link>
 
-            {head.code && (
-              <span className="inline-flex rounded bg-indigo-50 text-indigo-700 text-[12px] font-bold px-1.5 py-0.5 flex-shrink-0">
-                {head.code}
+            {/* The chip is the project's short name when one is set, else its
+                code — the code itself is unchanged underneath (name layer). */}
+            {head.chip && (
+              <span
+                className="inline-flex rounded bg-indigo-50 text-indigo-700 text-[12px] font-bold px-1.5 py-0.5 flex-shrink-0"
+                title={head.code && head.code !== head.chip ? `Code ${head.code}` : undefined}
+              >
+                {head.chip}
               </span>
             )}
 

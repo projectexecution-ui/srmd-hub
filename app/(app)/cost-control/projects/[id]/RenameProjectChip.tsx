@@ -70,6 +70,12 @@ export function RenameProjectChip({ projectId, name, canRename }: {
           <X className="h-4 w-4" />
         </button>
       </span>
+      {/* The name is a match key, not only a label — say what hangs off it
+          before someone changes it to fix how a chip reads (name layer). */}
+      <span className="text-[10px] text-amber-700 max-w-[280px] leading-snug">
+        This is the project’s real name — BPH links, IN4 sub-project matching and the procurement snapshot key on it.
+        To change only what people see, set a short name instead.
+      </span>
       {err && <span className="text-[10px] text-rose-600">{err}</span>}
     </span>
   )

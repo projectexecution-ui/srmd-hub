@@ -15,10 +15,14 @@
 
 import { createClient } from '@/lib/supabase/server'
 import { getMyUser } from '@/lib/auth-user'
+import { projectChip } from '@/lib/names'
 
 export interface WorkspaceHeader {
   id: string
   code: string | null
+  /** CT Hub display chip — projects.short_name, else the code. The code is
+   *  still what Working-Sheet numbers and matching use (name layer, Phase 1). */
+  chip: string | null
   name: string
   /** The CT Hub group this project sits under, when it has one. */
   parentName: string | null
@@ -67,7 +71,7 @@ export async function loadWorkspaceHeader(projectId: string): Promise<HeaderResu
 
   const { data: project, error } = await supabase
     .from('projects')
-    .select('id, code, name, built_up_sft, parent_project_id, cc_status')
+    .select('id, code, short_name, name, built_up_sft, parent_project_id, cc_status')
     .eq('id', projectId)
     .maybeSingle()
 
@@ -77,6 +81,7 @@ export async function loadWorkspaceHeader(projectId: string): Promise<HeaderResu
   const header: WorkspaceHeader = {
     id: project.id as string,
     code: (project.code as string | null) ?? null,
+    chip: projectChip(project.short_name as string | null, project.code as string | null) || null,
     name: project.name as string,
     parentName: null,
     builtUpSft: project.built_up_sft != null ? Number(project.built_up_sft) : null,

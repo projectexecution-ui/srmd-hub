@@ -82,8 +82,8 @@ export async function GroupBudgetView({ projectId }: { projectId: string }) {
                 <tr key={c.id} className="hover:bg-indigo-50/40 group">
                   <td className="px-4 py-2.5">
                     <Link href={`/project/${c.id}`} className="flex items-center gap-2 min-w-0">
-                      {c.code && (
-                        <span className="inline-flex rounded bg-indigo-50 text-indigo-700 text-[11px] font-bold px-1.5 py-0.5 flex-shrink-0">{c.code}</span>
+                      {c.chip && (
+                        <span className="inline-flex rounded bg-indigo-50 text-indigo-700 text-[11px] font-bold px-1.5 py-0.5 flex-shrink-0" title={c.code && c.code !== c.chip ? `Code ${c.code}` : undefined}>{c.chip}</span>
                       )}
                       <span className="font-medium text-gray-900 group-hover:text-indigo-700 truncate">{c.name}</span>
                       <StatusDot status={c.ccStatus} />
@@ -123,8 +123,8 @@ export async function GroupBudgetView({ projectId }: { projectId: string }) {
           {children.map(c => (
             <Link key={c.id} href={`/project/${c.id}`} className="block px-4 py-3 hover:bg-indigo-50/40">
               <div className="flex items-center gap-2">
-                {c.code && (
-                  <span className="inline-flex rounded bg-indigo-50 text-indigo-700 text-[11px] font-bold px-1.5 py-0.5">{c.code}</span>
+                {c.chip && (
+                  <span className="inline-flex rounded bg-indigo-50 text-indigo-700 text-[11px] font-bold px-1.5 py-0.5">{c.chip}</span>
                 )}
                 <span className="font-medium text-gray-900 truncate">{c.name}</span>
                 <StatusDot status={c.ccStatus} />

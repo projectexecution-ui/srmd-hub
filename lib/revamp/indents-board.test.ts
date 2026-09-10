@@ -53,7 +53,7 @@ const line = (m: string) => rows.find(r => r.item.material === m)!.item
 describe('lines', () => {
   it('lists every line once with its category names', () => {
     expect(rows).toHaveLength(4)
-    expect(rows.find(r => r.item.material === 'Cement OPC 53')).toMatchObject({ category: '03 Civil', subcategory: '310 Door & Window Sills' })
+    expect(rows.find(r => r.item.material === 'Cement OPC 53')).toMatchObject({ category: 'Civil', subcategory: 'Door & Window Sills' })
   })
   it('drops the trust prefix from a reference', () => {
     expect(shortRef('IND/SRASSK/NGH/2026-27/151')).toBe('NGH/2026-27/151')
@@ -114,19 +114,19 @@ describe('the tree the board shows', () => {
   it('keeps only the stage’s lines, re-summed, empty branches dropped', () => {
     const t = boardTree(tree.cats, 'delivery', undefined, 'all')
     expect(t).toHaveLength(1)
-    expect(t[0].name).toBe('03 Civil')
+    expect(t[0].name).toBe('Civil')
     expect(t[0].subs[0].indents.map(r => r.ref)).toEqual(['IND/SRASSK/NGH/2026-27/120'])
     expect(t[0].poValue).toBe(40000)
   })
   it('search and age band narrow the tree the same way', () => {
-    expect(boardTree(tree.cats, 'all', 'gi pipe', 'all')[0].name).toBe('09 Fire Fighting Works')
+    expect(boardTree(tree.cats, 'all', 'gi pipe', 'all')[0].name).toBe('Fire Fighting Works')
     expect(boardTree(tree.cats, 'all', 'gi pipe', 'all')[0].subs[0].indents[0].items).toHaveLength(2)
     expect(boardTree(tree.cats, 'all', undefined, '14to30')[0].subs[0].indents[0].items[0].material).toBe('Cement OPC 53')
     expect(boardTree(tree.cats, 'all', 'nothing here', 'all')).toEqual([])
   })
   it('rolls a branch up: items, open, PO’d, received, to come, late, oldest', () => {
     expect(treeTotals(tree.cats)).toEqual({ indents: 3, items: 4, open: 3, poValue: 130683, receivedValue: 110683, toCome: 20000, late: 1, oldest: 19 })
-    const civil = tree.cats.find(c => c.name === '03 Civil')!
+    const civil = tree.cats.find(c => c.name === 'Civil')!
     expect(catTotals(civil)).toMatchObject({ indents: 2, items: 2, open: 1, poValue: 130683, toCome: 20000 })
     expect(rollUp([])).toEqual({ indents: 0, items: 0, open: 0, poValue: 0, receivedValue: 0, toCome: 0, late: 0, oldest: null })
   })

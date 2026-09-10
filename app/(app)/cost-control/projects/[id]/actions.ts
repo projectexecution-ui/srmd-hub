@@ -242,6 +242,9 @@ export async function renameProject(
   }
 
   const supabase = await createClient()
+  // Read the old name first so the audit line says what changed, not just that
+  // something did — the name is a match key (BPH links, sub-project matcher).
+  const { data: before } = await supabase.from('projects').select('name').eq('id', projectId).maybeSingle()
   // .select() catches a silent RLS no-op (0 rows) — report it, don't
   // pretend the rename happened.
   const { data, error } = await supabase
@@ -252,9 +255,33 @@ export async function renameProject(
   if (error) return { ok: false, error: error.message }
   if (!data || data.length === 0) return { ok: false, error: 'Rename was blocked — check your permissions' }
 
+  await auditProjectEdit(projectId, 'project_renamed', `Renamed “${before?.name ?? '?'}” → “${trimmed}”`)
   revalidatePath(`/cost-control/projects/${projectId}`)
   revalidatePath('/cost-control')
   return { ok: true }
+}
+
+/** One audit row in cc_budget_events for a name/code/short-name change — the
+ *  same log every other Cost Control edit lands in (/cost-control/audit).
+ *  Best-effort: a failed audit write must not undo a saved change. */
+async function auditProjectEdit(
+  projectId: string,
+  eventType: 'project_renamed' | 'project_code_changed' | 'project_short_name',
+  remarks: string,
+): Promise<void> {
+  try {
+    const supabase = await createClient()
+    const profile = await getMyProfile()
+    await supabase.from('cc_budget_events').insert({
+      project_id: projectId,
+      event_type: eventType,
+      delta_amount: 0,
+      remarks: remarks.slice(0, 500),
+      requested_by: profile?.id ?? null,
+    })
+  } catch (e) {
+    console.error('[cc] audit write failed', eventType, projectId, e)
+  }
 }
 
 // ============================================================
@@ -456,22 +483,73 @@ export async function setProjectArchived(
 // codes. Existing sheet codes are stored strings and keep their old prefix
 // (we don't rewrite history). Must stay unique across projects.
 // ============================================================
-export async function setProjectAlias(
+/**
+ * SHORT NAME — what the chip shows (name layer, Phase 1; Aksha, 10 Sep 2026).
+ * Display only: the code underneath is untouched, so Working-Sheet numbers and
+ * every matcher carry on exactly as before. Blank clears it and the chip falls
+ * back to the code. Need not be unique — two "Infra" chips under different
+ * groups read fine in context; the editor tells you when it is shared.
+ */
+export async function setProjectShortName(
+  projectId: string,
+  shortName: string,
+): Promise<{ ok: boolean; error?: string; sharedWith?: string[] }> {
+  const profile = await getMyProfile()
+  if (profile?.role !== 'admin') {
+    return { ok: false, error: 'Only an Admin can change the short name' }
+  }
+  if (!uuid.safeParse(projectId).success) return { ok: false, error: 'Bad project id' }
+  const trimmed = shortName.trim()
+  if (trimmed.length > 30) return { ok: false, error: 'Short name must be 30 characters or fewer' }
+
+  const supabase = await createClient()
+  const { data: before } = await supabase.from('projects').select('short_name, code').eq('id', projectId).maybeSingle()
+  const { data, error } = await supabase
+    .from('projects')
+    .update({ short_name: trimmed || null })
+    .eq('id', projectId)
+    .select('id')
+  if (error) return { ok: false, error: error.message }
+  if (!data || data.length === 0) return { ok: false, error: 'Change was blocked — check your permissions' }
+
+  // Not a rule, a heads-up: which other projects already show this chip.
+  let sharedWith: string[] = []
+  if (trimmed) {
+    const { data: same } = await supabase
+      .from('projects').select('name').ilike('short_name', trimmed).neq('id', projectId).is('archived_at', null).limit(5)
+    sharedWith = (same ?? []).map(r => r.name as string)
+  }
+
+  await auditProjectEdit(projectId, 'project_short_name',
+    trimmed ? `Short name “${before?.short_name ?? '(none)'}” → “${trimmed}” (code ${before?.code ?? '?'} unchanged)` : `Short name cleared — chip shows code ${before?.code ?? '?'} again`)
+  revalidatePath(`/cost-control/projects/${projectId}`)
+  revalidatePath('/cost-control')
+  revalidatePath(`/project/${projectId}`)
+  return { ok: true, sharedWith }
+}
+
+/**
+ * CODE — the real one. Kept editable, admin-only, behind an explicit control
+ * with a warning, because it IS a key: the prefix on every new Working-Sheet
+ * number and the last-resort match in the IN4 sub-project matcher. Existing
+ * sheet codes are stored strings and keep their old prefix. Must stay unique.
+ * Logged to the audit like any other Cost Control edit.
+ */
+export async function setProjectCode(
   projectId: string,
   code: string,
 ): Promise<{ ok: boolean; error?: string }> {
   const profile = await getMyProfile()
   if (profile?.role !== 'admin') {
-    return { ok: false, error: 'Only an Admin can change the project alias' }
+    return { ok: false, error: 'Only an Admin can change the project code' }
   }
   if (!uuid.safeParse(projectId).success) return { ok: false, error: 'Bad project id' }
   const trimmed = code.trim()
   if (trimmed.length < 1 || trimmed.length > 20) {
-    return { ok: false, error: 'Alias must be 1–20 characters' }
+    return { ok: false, error: 'Code must be 1–20 characters' }
   }
 
   const supabase = await createClient()
-  // Alias must stay unique — it's the short label + WS-code prefix.
   const { data: clash } = await supabase
     .from('projects')
     .select('id')
@@ -479,8 +557,9 @@ export async function setProjectAlias(
     .neq('id', projectId)
     .limit(1)
     .maybeSingle()
-  if (clash) return { ok: false, error: `Another project already uses the alias "${trimmed}"` }
+  if (clash) return { ok: false, error: `Another project already uses the code "${trimmed}"` }
 
+  const { data: before } = await supabase.from('projects').select('code').eq('id', projectId).maybeSingle()
   const { data, error } = await supabase
     .from('projects')
     .update({ code: trimmed })
@@ -489,9 +568,18 @@ export async function setProjectAlias(
   if (error) return { ok: false, error: error.message }
   if (!data || data.length === 0) return { ok: false, error: 'Change was blocked — check your permissions' }
 
+  await auditProjectEdit(projectId, 'project_code_changed', `Code “${before?.code ?? '?'}” → “${trimmed}” — new Working Sheets take the new prefix; existing sheet codes keep the old one`)
   revalidatePath(`/cost-control/projects/${projectId}`)
   revalidatePath('/cost-control')
+  revalidatePath(`/project/${projectId}`)
   return { ok: true }
+}
+
+/** @deprecated The "alias" was the code. Kept so nothing that still imports
+ *  it breaks; it now does what its name always implied and sets the SHORT NAME. */
+export async function setProjectAlias(projectId: string, alias: string): Promise<{ ok: boolean; error?: string }> {
+  const r = await setProjectShortName(projectId, alias)
+  return { ok: r.ok, error: r.error }
 }
 
 // ============================================================

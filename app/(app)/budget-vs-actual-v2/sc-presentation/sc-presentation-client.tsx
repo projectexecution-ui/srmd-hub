@@ -14,6 +14,7 @@ import { formatDate } from '@/lib/utils'
 import Link from 'next/link'
 import { ArrowLeft, Printer, Search, Check } from 'lucide-react'
 import type { ComposeResult, ProjectNode } from '@/lib/budget-v2'
+import { shownName } from '@/lib/budget-v2'
 import type { BudgetV2Freshness } from '@/lib/budget-v2-load'
 
 // ≥ ₹1 Cr → compact crore; under ₹1 Cr → actual amount, Indian-grouped, "/-".
@@ -132,7 +133,7 @@ export default function ScPresentationClient({ result, freshness }: {
                       {on && <Check className="h-3 w-3 text-white" />}
                     </span>
                     <span className="min-w-0 flex-1">
-                      <span className="block text-[13.5px] font-medium text-gray-800 truncate">{p.name}</span>
+                      <span className="block text-[13.5px] font-medium text-gray-800 truncate">{shownName(p)}</span>
                       <span className="block text-[11px] text-gray-500 tabular-nums">
                         Budget {fmtINR(p.budget)} · Paid {fmtINR(p.spent)}{p.area ? ` · ${p.area.toLocaleString('en-IN')} sft` : ' · area not set'}
                       </span>
@@ -187,7 +188,7 @@ export default function ScPresentationClient({ result, freshness }: {
                   return (
                     <tr className="row" key={p.name}>
                       <td className="l">
-                        <span className="pname">{p.name}</span>
+                        <span className="pname">{shownName(p)}</span>
                         {descOf(p.name) && <span className="pdesc">{descOf(p.name)}</span>}
                       </td>
                       <td>{p.area ? p.area.toLocaleString('en-IN') : '—'}</td>
@@ -211,7 +212,7 @@ export default function ScPresentationClient({ result, freshness }: {
             return (
               <div className="page" key={p.name}>
                 <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap' }}>
-                  <h1 className="h1">{p.name}</h1>
+                  <h1 className="h1">{shownName(p)}</h1>
                   {p.area ? <span className="muted">· {p.area.toLocaleString('en-IN')} sft</span> : null}
                 </div>
                 {descOf(p.name) && <div className="desc">{descOf(p.name)}</div>}
@@ -244,7 +245,7 @@ export default function ScPresentationClient({ result, freshness }: {
                         </tr>
                       )}
                       <tr className="total">
-                        <td className="l">TOTAL · {p.name}</td>
+                        <td className="l">TOTAL · {shownName(p)}</td>
                         <td>{fmtINR(p.budget)}{perSft(p.budget, p.area) && <span className="sft">{perSft(p.budget, p.area)}</span>}</td>
                         <td>{fmtINR(ep)}{perSft(ep, p.area) && <span className="sft">{perSft(ep, p.area)}</span>}</td>
                       </tr>

@@ -49,8 +49,27 @@ export interface ProjectNode {
   uploaded?: { budget: number; approved: number; spent: number }
   manualNote?: string | null
   manualAt?: string | null
+  /** CT Hub's name for this project, when the BPH project is linked to one
+   *  (name layer, Aksha 10 Sep 2026: trustee reports read CT Hub names). Display
+   *  only — `name` stays the BPH text and remains the key for status, area,
+   *  overrides and week-over-week deltas. Render with shownName(). */
+  displayName?: string
 }
 export interface GroupNode { name: string; budget: number; approved: number; spent: number; area: number; projects: ProjectNode[] }
+
+/** What a reader sees for a project: the CT Hub name when linked, else BPH's. */
+export const shownName = (p: Pick<ProjectNode, 'name' | 'displayName'>): string => p.displayName ?? p.name
+
+/** Stamp CT Hub names onto a composed tree. `names` is keyed by the BPH project
+ *  NAME (what ProjectNode.name holds). Pure and in place; keys are untouched, so
+ *  a status toggle or an override written after this still lands on the BPH row. */
+export function applyDisplayNames(result: ComposeResult, names: Record<string, string>): ComposeResult {
+  for (const g of result.groups) for (const p of g.projects) {
+    const n = names[p.name]?.trim()
+    if (n && n !== p.name) p.displayName = n
+  }
+  return result
+}
 export interface ComposeResult {
   groups: GroupNode[]
   totals: { budget: number; approved: number; spent: number; area: number }

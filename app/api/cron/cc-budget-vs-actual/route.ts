@@ -12,6 +12,7 @@ import { NextResponse } from 'next/server'
 import { createClient as createServiceClient } from '@supabase/supabase-js'
 import { getMyUser, getMyPermissions, can } from '@/lib/auth'
 import { loadBudgetV2 } from '@/lib/budget-v2-load'
+import { shownName } from '@/lib/budget-v2'
 import { buildBudgetV2Report } from '@/lib/budget-v2-report'
 import { buildWeeklyOnePagerPdf, buildWeeklyDetailPdf, projectPdfFilename, groupPdfFilename, displayGroupName, UNGROUPED } from '@/lib/budget-v2-pdf'
 import { sendPdfToGroup } from '@/lib/telegram/group'
@@ -70,7 +71,7 @@ async function sendPdfsToGroup(
     for (const p of live) {
       files.push({
         name: projectPdfFilename(p, freshness.budget),
-        caption: `${p.name} — Budget vs Actual, week to ${tag}`,
+        caption: `${shownName(p)} — Budget vs Actual, week to ${tag}`,
         pdf: buildWeeklyDetailPdf({ ...base, prev, onlyProject: p.name }, 'category'),
       })
     }

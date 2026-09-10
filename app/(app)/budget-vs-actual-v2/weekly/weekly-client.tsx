@@ -9,6 +9,7 @@ import { formatDate } from '@/lib/utils'
 import Link from 'next/link'
 import { ArrowLeft, Printer } from 'lucide-react'
 import type { ComposeResult, DeltaResult } from '@/lib/budget-v2'
+import { shownName } from '@/lib/budget-v2'
 import type { BudgetV2Freshness } from '@/lib/budget-v2-load'
 
 // ≥ ₹1 Cr → compact crore; under ₹1 Cr → actual amount, Indian-grouped, "/-".
@@ -135,7 +136,7 @@ export default function WeeklyClient({ result, freshness, delta, prevSnapshotWee
                     const manual = !!(p.manual && (p.manual.budget || p.manual.approved || p.manual.spent))
                     return (
                       <tr className="proj" key={p.name}>
-                        <td className="l">{p.name}{p.status === 'closed' ? ' · closed' : ''}{p.area ? <span style={{ color: '#9ca3af', fontWeight: 400 }}> · {p.area.toLocaleString('en-IN')} sft</span> : null}{manual && <span className="manual">{p.isExtra ? 'manual' : 'adj'}</span>}</td>
+                        <td className="l">{shownName(p)}{p.status === 'closed' ? ' · closed' : ''}{p.area ? <span style={{ color: '#9ca3af', fontWeight: 400 }}> · {p.area.toLocaleString('en-IN')} sft</span> : null}{manual && <span className="manual">{p.isExtra ? 'manual' : 'adj'}</span>}</td>
                         <td>{fmtINR(p.budget)}{perSft(p.budget, p.area) && <div className="sft">{perSft(p.budget, p.area)}</div>}</td>
                         <td className="appr">{fmtINR(p.approved)}{perSft(p.approved, p.area) && <div className="sft">{perSft(p.approved, p.area)}</div>}</td>
                         <td className={toneClass(u)}>{fmtINR(p.spent)}{perSft(p.spent, p.area) && <div className="sft">{perSft(p.spent, p.area)}</div>}</td>

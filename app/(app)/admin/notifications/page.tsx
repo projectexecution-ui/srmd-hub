@@ -4,6 +4,7 @@ import { createClient } from '@/lib/supabase/server'
 import { getMyProfile, isPortalOwner } from '@/lib/auth'
 import { getRoleLabels } from '@/lib/role-labels'
 import { ALL_ROLES } from '@/lib/types'
+import { personName } from '@/lib/utils'
 import NotificationRulesClient, { type NotificationScheduleRow } from './NotificationRulesClient'
 import SelfManageAdmin, { type SelfManageUser } from './SelfManageAdmin'
 import { EmailHealthStrip, type DeliveryHealth } from './EmailHealthStrip'
@@ -51,7 +52,7 @@ export default async function AdminNotificationsPage() {
   type ProfRow = { id: string; full_name: string | null; name: string | null; email: string | null; role: string }
   const selfManageUsers: SelfManageUser[] = ((userRows ?? []) as ProfRow[])
     .filter(u => u.role !== 'admin')
-    .map(u => ({ id: u.id, name: u.full_name ?? u.name ?? '(unnamed)', email: u.email, role: u.role, granted: granted.has(u.id) }))
+    .map(u => ({ id: u.id, name: personName(u.full_name, u.name, u.email), email: u.email, role: u.role, granted: granted.has(u.id) }))
     .sort((a, b) => a.name.localeCompare(b.name))
 
   return (

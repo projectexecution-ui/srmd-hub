@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { rollupGroupTotal, type GroupChild } from './group-budget'
 
 const child = (over: Partial<GroupChild['money']> & { builtUpSft?: number | null }): GroupChild => ({
-  id: crypto.randomUUID(), code: null, name: 'x', ccStatus: 'active',
+  id: crypto.randomUUID(), code: null, chip: null, name: 'x', ccStatus: 'active',
   builtUpSft: over.builtUpSft ?? null, setupPct: 0,
   money: {
     internalEstimate: over.internalEstimate ?? 0,

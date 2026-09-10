@@ -17,6 +17,7 @@ import {
 import { RenameProjectChip } from '../RenameProjectChip'
 import { ProjectAliasChip } from '../ProjectAliasChip'
 import { AreaChip } from '../AreaChip'
+import { personName } from '@/lib/utils'
 import { ParentProjectControl } from '../ParentProjectControl'
 import { ProjectPeoplePanel } from './ProjectPeoplePanel'
 import { mergeGrants } from '@/lib/revamp/project-people'
@@ -58,7 +59,7 @@ export default async function ResumeProjectSetupPage(
 
   const { data: project } = await supabase
     .from('projects')
-    .select('id, code, name, setup_progress_pct, cc_status, built_up_sft, parent_project_id, group_label, archived_at')
+    .select('id, code, short_name, name, setup_progress_pct, cc_status, built_up_sft, parent_project_id, group_label, archived_at')
     .eq('id', id)
     .single()
 
@@ -202,7 +203,7 @@ export default async function ResumeProjectSetupPage(
   )
   const peopleCandidates = profRows.map(p => ({
     id: p.id,
-    name: p.full_name ?? p.name ?? p.email ?? '(unnamed)',
+    name: personName(p.full_name, p.name, p.email),
     role: p.role ?? 'viewer',
   }))
   // Desk names already in use, so the panel offers real choices rather than a
@@ -264,7 +265,7 @@ export default async function ResumeProjectSetupPage(
           <h2 className="text-sm font-semibold text-gray-900 mb-2">Project details</h2>
           <div className="flex flex-wrap items-center gap-2">
             <RenameProjectChip projectId={id} name={project.name} canRename={canRename} />
-            <ProjectAliasChip projectId={id} code={project.code} isAdmin={isAdmin} />
+            <ProjectAliasChip projectId={id} code={project.code} shortName={(project as { short_name?: string | null }).short_name ?? null} isAdmin={isAdmin} />
             <AreaChip projectId={id} sft={project.built_up_sft != null ? Number(project.built_up_sft) : null} canWrite />
           </div>
         </div>

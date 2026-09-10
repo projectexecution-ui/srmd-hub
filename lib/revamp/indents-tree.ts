@@ -27,6 +27,7 @@
 
 import { createClient } from '@/lib/supabase/server'
 import { in4Query, in4Config } from '@/lib/in4/db'
+import { skillLabel } from '@/lib/names'
 
 /* ── Statuses ───────────────────────────────────────────────────────────── */
 
@@ -277,13 +278,13 @@ export function buildIndentsTree(
       const [catId, subId] = key.split('|').map(Number)
       const ck = `icat:${catId}`
       const c = cats.get(ck) ?? {
-        id: ck, name: catId ? (skill.get(catId)?.name ?? `Category ${catId}`) : '(no category on the indent line)', code: catId ? (skill.get(catId)?.code ?? null) : null,
+        id: ck, name: catId ? (skill.get(catId)?.name ? skillLabel(skill.get(catId)!.name) : `Category ${catId}`) : '(no category on the indent line)', code: catId ? (skill.get(catId)?.code ?? null) : null,
         subs: [], indents: 0, items: 0, poValue: 0, receivedValue: 0, awaitingPo: 0, awaitingDelivery: 0,
       }
       const sk = `${ck}:${subId}`
       let sub = c.subs.find(x => x.id === sk)
       if (!sub) {
-        sub = { id: sk, name: subId ? (skill.get(subId)?.name ?? `Sub-category ${subId}`) : '(no sub-category)', code: subId ? (skill.get(subId)?.code ?? null) : null, indents: [], items: 0, poValue: 0, receivedValue: 0, awaitingPo: 0, awaitingDelivery: 0 }
+        sub = { id: sk, name: subId ? (skill.get(subId)?.name ? skillLabel(skill.get(subId)!.name) : `Sub-category ${subId}`) : '(no sub-category)', code: subId ? (skill.get(subId)?.code ?? null) : null, indents: [], items: 0, poValue: 0, receivedValue: 0, awaitingPo: 0, awaitingDelivery: 0 }
         c.subs.push(sub)
       }
       const part: IndentRow = {

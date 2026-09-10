@@ -15,11 +15,14 @@
 
 import { cache } from 'react'
 import { createClient } from '@/lib/supabase/server'
+import { projectChip } from '@/lib/names'
 import { loadCockpit, type CockpitMoney } from './project-cockpit'
 
 export interface GroupChild {
   id: string
   code: string | null
+  /** projects.short_name → code (name layer, Phase 1). */
+  chip: string | null
   name: string
   ccStatus: string | null
   builtUpSft: number | null
@@ -72,14 +75,14 @@ export const loadGroupBudget = cache(async (parentId: string): Promise<GroupBudg
   const supabase = await createClient()
   const { data } = await supabase
     .from('projects')
-    .select('id, code, name, cc_status, built_up_sft, setup_progress_pct')
+    .select('id, code, short_name, name, cc_status, built_up_sft, setup_progress_pct')
     .eq('parent_project_id', parentId)
     .is('archived_at', null)
     .order('code', { ascending: true })
     .order('name', { ascending: true })
 
   const kids = (data ?? []) as Array<{
-    id: string; code: string | null; name: string
+    id: string; code: string | null; short_name: string | null; name: string
     cc_status: string | null; built_up_sft: number | null; setup_progress_pct: number | null
   }>
 
@@ -88,6 +91,7 @@ export const loadGroupBudget = cache(async (parentId: string): Promise<GroupBudg
     return {
       id: k.id,
       code: k.code ?? null,
+      chip: projectChip(k.short_name, k.code) || null,
       name: k.name,
       ccStatus: k.cc_status ?? null,
       builtUpSft: k.built_up_sft != null ? Number(k.built_up_sft) : null,

@@ -7,6 +7,7 @@ import { MODULES } from '@/lib/modules'
 import { OUTBOUND, byModule, recipientSettingKeys, ignoresTheSwitches } from '@/lib/notifications/catalog'
 import { billsProjectLabels } from '@/lib/bills-pipeline/project-names'
 import { BILLS_PROJECT_CODES } from '@/lib/bills-pipeline/digest-settings'
+import { personName } from '@/lib/utils'
 import { RecipientsClient, type PersonOpt, type ProjectOpt } from './RecipientsClient'
 
 export const dynamic = 'force-dynamic'
@@ -32,7 +33,7 @@ export default async function RecipientsPage() {
   for (const r of (settingsRes.data ?? []) as Array<{ key: string; value: string }>) settings[r.key] = r.value ?? ''
 
   const people: PersonOpt[] = ((usersRes.data ?? []) as Array<{ id: string; full_name: string | null; name: string | null; email: string | null; role: string }>)
-    .map(u => ({ id: u.id, name: u.full_name ?? u.name ?? u.email ?? '(unnamed)', email: u.email ?? '', role: u.role }))
+    .map(u => ({ id: u.id, name: personName(u.full_name, u.name, u.email), email: u.email ?? '', role: u.role }))
   const projectLists: Record<'bills' | 'tracker', ProjectOpt[]> = {
     bills: BILLS_PROJECT_CODES.map(code => ({ key: code, label: labels.get(code)?.label ?? code, sub: labels.get(code)?.label && labels.get(code)!.label !== code ? code : undefined })),
     tracker: ((knownRes.data ?? []) as Array<{ name: string }>).map(p => ({ key: p.name, label: p.name })),

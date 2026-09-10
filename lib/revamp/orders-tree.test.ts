@@ -51,7 +51,8 @@ describe('sequence — IN4 code order, the same spine as the Internal Estimate',
       wo({ wo_id: 2, category_id: 267, subcategory_id: null, wo_value: 10_000 }),    // 01 Site Pre-lims
       wo({ wo_id: 3, category_id: 1, subcategory_id: null, wo_value: 500_000 }),     // 03 Civil
     ])
-    expect(t.cats.map(c => c.name)).toEqual(['01 Site Pre-lims', '03 Civil', '12 Finishes'])
+    // Labels drop IN4's code prefix (lib/names.ts skillLabel); the CODE still orders them.
+    expect(t.cats.map(c => c.name)).toEqual(['Site Pre-lims', 'Civil', 'Finishes'])
   })
 
   it('compares codes NUMERICALLY, so 09 comes before 12', () => {
@@ -71,8 +72,8 @@ describe('sequence — IN4 code order, the same spine as the Internal Estimate',
       wo({ wo_id: 3, category_id: 312, subcategory_id: 315, wo_value: 1 }),  // 702
     ])
     const subs = t.cats[0].subs.map(s => s.name)
-    expect(subs[0]).toBe('702 Electrical Conducting & Wiring Works')
-    expect(subs[1]).toBe('703 Switches & Sockets')
+    expect(subs[0]).toBe('Electrical Conducting & Wiring Works')
+    expect(subs[1]).toBe('Switches & Sockets')
     expect(subs[2]).toBe('No sub-category in IN4')
   })
 
@@ -129,7 +130,7 @@ describe('the traps in IN4 order data', () => {
       wo({ wo_id: 1, subcategory_id: 317, wo_value: 1000, wo_paid_amt: 400 }),
       wo({ wo_id: 2, subcategory_id: null, wo_value: 500, wo_paid_amt: 100 }),
     ])
-    const civil = t.cats.find(c => c.name === '03 Civil')!
+    const civil = t.cats.find(c => c.name === 'Civil')!
     expect(civil.ordered).toBe(1500)
     const orphan = civil.subs.find(s => s.unassigned)!
     expect(orphan.ordered).toBe(500)
