@@ -117,7 +117,7 @@ export default async function DashboardPage() {
 
       {/* Returned budgets — NOT the approver's to act on, so deliberately below
           "Needs you now" and quieter. A chasing list, so the loop gets closed. */}
-      {showCC && <ReturnedToEngineer items={returned.items} />}
+      {showCC && <ReturnedToEngineer items={returned.items} mine={returned.mine} />}
 
       {/* REVAMP: the rest of the hub's WORK — material requests,
           deletions, conversation and whether the weekly uploads are current.

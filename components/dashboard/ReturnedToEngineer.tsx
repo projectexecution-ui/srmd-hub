@@ -4,13 +4,16 @@ import { formatINR, formatDate } from '@/lib/utils'
 import { RETURNED_STALE_DAYS, type ReturnedItem } from '@/lib/cost-control/returned-to-engineer'
 import { Undo2, Clock } from 'lucide-react'
 
-/** "Returned — waiting on the engineer".
+/** "Returned — waiting on the engineer", or "Sent back to you" when the reader
+ *  is the engineer holding them.
  *
- *  Sits BELOW "Needs you now" and is visually quieter on purpose: nothing here
- *  is the approver's to do. It is a chasing list, so it carries the three things
- *  you would otherwise open each sheet to find — who is holding it, how long,
- *  and what you asked him to change. Self-hides when there is nothing. */
-export function ReturnedToEngineer({ items }: { items: ReturnedItem[] }) {
+ *  Sits BELOW "Needs you now" and is visually quieter on purpose. For an
+ *  approver nothing here is theirs to do — it is a chasing list carrying the
+ *  three things you would otherwise open each sheet to find: who is holding it,
+ *  how long, and what you asked him to change. For the engineer it is a to-do
+ *  list, so the same card must not tell him the work is "with the engineer".
+ *  Self-hides when there is nothing. */
+export function ReturnedToEngineer({ items, mine = false }: { items: ReturnedItem[]; mine?: boolean }) {
   if (items.length === 0) return null
 
   const stale = items.filter(i => i.days >= RETURNED_STALE_DAYS)
@@ -21,7 +24,7 @@ export function ReturnedToEngineer({ items }: { items: ReturnedItem[] }) {
       <div className="px-4 py-2.5 border-b border-slate-100 bg-amber-50/50 flex items-center gap-2 flex-wrap">
         <h3 className="font-bold text-slate-800 text-sm inline-flex items-center gap-1.5">
           <Undo2 className="h-4 w-4 text-amber-600" />
-          Returned — waiting on the engineer · {items.length}
+          {mine ? 'Sent back to you — to redo' : 'Returned — waiting on the engineer'} · {items.length}
         </h3>
         <span className="ml-auto text-[11px] text-slate-500">
           {formatINR(total)} held up
@@ -53,8 +56,10 @@ export function ReturnedToEngineer({ items }: { items: ReturnedItem[] }) {
               </div>
 
               <div className="text-[11.5px] text-slate-500 mt-0.5">
-                with <b className="text-slate-700">{i.engineer ?? 'the engineer'}</b>
-                {i.returnedBy && <> · returned by {i.returnedBy}</>}
+                {/* Naming the engineer is the point when you are chasing, and
+                    noise when it is your own sheet. */}
+                {!mine && <>with <b className="text-slate-700">{i.engineer ?? 'the engineer'}</b></>}
+                {i.returnedBy && <>{!mine && ' · '}returned by {i.returnedBy}</>}
                 {i.returnedAt && <> on {formatDate(i.returnedAt)}</>}
                 {!i.returnedAt && <> · no return event recorded</>}
               </div>
@@ -70,8 +75,9 @@ export function ReturnedToEngineer({ items }: { items: ReturnedItem[] }) {
       </div>
 
       <p className="px-4 py-2 text-[11px] text-slate-400 border-t border-slate-50">
-        These are not yours to approve — they are with the engineer. Shown so the loop gets closed.
-        A returned sheet disappears from here once it is resubmitted, or once a replacement is approved.
+        {mine
+          ? 'Change what was asked and resubmit. Each one disappears from here once you resubmit it.'
+          : 'These are not yours to approve — they are with the engineer. Shown so the loop gets closed. A returned sheet disappears from here once it is resubmitted, or once a replacement is approved.'}
       </p>
     </Card>
   )

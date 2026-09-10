@@ -157,6 +157,13 @@ export function WSApprovalActions({
     router.refresh()
   }
 
+  // The same message, rendered next to whichever button produced it. A
+  // validation failure that scrolls out of view is indistinguishable from
+  // a button that does nothing.
+  const errorBox = err ? (
+    <p role="alert" className="text-sm text-rose-700 bg-rose-50 border border-rose-200 rounded-lg px-3 py-2">{err}</p>
+  ) : null
+
   const signOffLabel =
     ctx.nextSignOff === 'ph_approved' ? 'Sign off as Project Head'
     : ctx.nextSignOff === 'atm_approved' ? 'Sign off as Atm Head'
@@ -222,7 +229,9 @@ export function WSApprovalActions({
         </div>
       )}
 
-      {err && <p className="text-sm text-rose-700 bg-rose-50 border border-rose-200 rounded-lg px-3 py-2">{err}</p>}
+      {/* Only when no panel is open — an open panel shows it beside its own
+          buttons instead, so the reason is never off-screen. */}
+      {!signOffOpen && !returnOpen && errorBox}
 
       {/* Mandatory note when sending for approval — the approver reads this. */}
       {ctx.canSubmit && (
@@ -364,6 +373,8 @@ export function WSApprovalActions({
             </div>
           )}
 
+          {errorBox}
+
           <div className="flex justify-end gap-2">
             <Button variant="ghost" size="sm" onClick={() => { setSignOffOpen(false); setCheckedRaw(''); setSignOffComment(''); setOtherDeptOn(false); setDept(''); setDeptOther(''); setDeptNote('') }} disabled={busy}>
               Cancel
@@ -403,6 +414,8 @@ export function WSApprovalActions({
             className="w-full rounded-md border border-rose-200 bg-white p-2 text-sm"
             placeholder="e.g. Painting rate looks high vs last quarter — please re-check the vendor quote"
           />
+          {errorBox}
+
           <div className="flex justify-end gap-2">
             <Button variant="ghost" size="sm" onClick={() => { setReturnOpen(false); setReturnReason('') }} disabled={busy}>
               Cancel
