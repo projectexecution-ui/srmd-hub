@@ -1,5 +1,7 @@
 # Clean-up list — what the revamped CT Hub no longer needs (10 Sep 2026)
 
+> **Status, 10 Sep 2026 evening — Round 1 DONE** (commit "Clean-up round 1", migration `20260910_cleanup_round1.sql`). Aksha's decisions: delete 1–9, 11, 13–17, 19 — including **Warehouse V2, JMR and Schedule** (their tabs are gone from the ribbon); keep 10 (Command Centre) and 12 (Bills Booking); 18 → keep the Indents → Tracker view on live IN4 and remove the chase feature (Round 2); 17 → an Admin "Manual upload (IN4 fallback)" toggle page (Round 3); 20 → an Admin "Reports & digests" control centre with a users × reports matrix (Round 4). Full-fidelity copies of every dropped table sit in schema `cleanup_backup_20260910`; Excel exports in `srmd-hub-backups/2026-09-10-cleanup/`.
+
 Aksha: "help me clean up the unwanted data which is stale from CT Hub as I am going to use the revamped version — all extra stuff I need to remove — list down."
 
 Inventory taken from the live database (`pg_stat_user_tables`, `role_permissions`, `approval_rules`, `module_visibility`, `app_settings`, `storage.buckets`) and the repo. Database is 193 MB of the 500 MB free-plan allowance. Nothing here has been deleted; every row is a proposal with a verdict: **Safe** (nothing reads it), **Ask** (real data, superseded), **Keep**.
