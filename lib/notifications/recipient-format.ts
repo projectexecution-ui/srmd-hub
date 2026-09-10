@@ -45,7 +45,6 @@ export const KEY_SPECS: Record<string, KeySpec> = {
   // On/off switches, written as "true"/"false" by their own forms. The
   // inventory parser also accepts "1" and "on", but writes "true".
   bills_digest_enabled: { format: 'bool', holds: 'flag', alsoWrittenBy: '/bills-pipeline/digest-settings' },
-  procurement_notify_enabled: { format: 'bool', holds: 'flag', alsoWrittenBy: '/procurement-tracker/admin' },
   inv_low_stock_alerts: { format: 'bool', holds: 'flag', alsoWrittenBy: '/inventory/admin/settings' },
   inv_daily_report: { format: 'bool', holds: 'flag', alsoWrittenBy: '/inventory/admin/settings' },
   cc_tg_trustee_digest: { format: 'bool', holds: 'flag', alsoWrittenBy: '/cost-control/settings' },

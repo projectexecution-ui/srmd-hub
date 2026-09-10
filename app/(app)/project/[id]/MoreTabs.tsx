@@ -1,16 +1,13 @@
 import Link from 'next/link'
 import { formatDateTime } from '@/lib/utils'
 import { EmptyState } from '@/components/ui/empty-state'
-import { loadProjectProcurement, loadProjectDiscussions } from '@/lib/revamp/tab-data'
+import { loadProjectDiscussions } from '@/lib/revamp/tab-data'
 import { checkIsCcReviewer } from '@/components/cost-control/ws-actions'
-import { IndentViews } from './IndentViews'
 import { IndentsTree } from './IndentsTree'
 import { OrdersView } from './OrdersView'
 import type { BoardParams } from '@/lib/revamp/indents-board'
-import { loadCockpit } from '@/lib/revamp/project-cockpit'
-import { notFound } from 'next/navigation'
 import { MentionText } from '@/components/mentions/MentionText'
-import { Truck, MessageSquare, Info } from 'lucide-react'
+import { MessageSquare } from 'lucide-react'
 
 // ── WO / PO ─────────────────────────────────────────────────────────────────
 
@@ -32,90 +29,11 @@ export async function WoPoTab({ projectId, view = 0 }: { projectId: string; view
 
 // ── Indent → PO ─────────────────────────────────────────────────────────────
 
-export async function ProcurementTab({ projectId, view = 0, params = {} }: { projectId: string; view?: number; params?: BoardParams }) {
-  // View 0 — the Internal Estimate's shape, live from IN4, with the approvals
-  // waiting in IN4 on top and the whole Indent → PO → GRN cycle on each
-  // indent. View 1 — the tracker upload's own three views, unchanged.
-  if (view === 0) return <IndentsTree projectId={projectId} params={params} />
-  const [p, cockpit] = await Promise.all([loadProjectProcurement(projectId), loadCockpit(projectId)])
-  if (!cockpit) notFound()
-  const projectName = cockpit.project.code ?? cockpit.project.name
-
-  return (
-    <section className="space-y-3">
-      <header className="flex items-start gap-2.5">
-        <Truck className="h-4 w-4 mt-0.5 text-gray-400" />
-        <div>
-          <h2 className="text-sm font-bold text-gray-900">Indents and purchase orders</h2>
-          <p className="text-xs text-gray-500">From the Indent → PO tracker upload.</p>
-        </div>
-      </header>
-
-      {p.matchedName ? (
-        <>
-          {/* Name the sub-projects these lines came from — a group's total
-              covers several, and the reader should not have to guess which. */}
-          <details className="text-[12px] text-gray-500">
-            <summary className="cursor-pointer list-none [&::-webkit-details-marker]:hidden">
-              From {p.matchedName!.split(', ').length} sub-project
-              {p.matchedName!.split(', ').length === 1 ? '' : 's'} in the upload
-              <span className="text-gray-400"> — show</span>
-            </summary>
-            <ul className="mt-1 space-y-0.5 pl-3">
-              {p.matchedName!.split(', ').map(n => (
-                <li key={n} className="text-gray-600">{n}</li>
-              ))}
-            </ul>
-          </details>
-          {/* Said once, quietly: which lines were put right from IN4's PO
-              record, so a number here that differs from the live tracker is
-              understood rather than doubted. */}
-          {p.corrections.live && (p.corrections.poLinesCorrected > 0 || p.corrections.grnRowsDropped > 0) && (
-            <p className="text-[12px] text-gray-500">
-              {p.corrections.poLinesCorrected > 0 && `${p.corrections.poLinesCorrected} PO line${p.corrections.poLinesCorrected === 1 ? '' : 's'} read from IN4’s PO record`}
-              {p.corrections.poLinesCorrected > 0 && p.corrections.grnRowsDropped > 0 && ' · '}
-              {p.corrections.grnRowsDropped > 0 && `${p.corrections.grnRowsDropped} empty GRN row${p.corrections.grnRowsDropped === 1 ? '' : 's'} left out`}
-            </p>
-          )}
-          {/* The tracker's own three views, on this project's lines. */}
-          <IndentViews lines={p.lines} projectName={projectName} />
-
-          <Link href="/procurement-tracker" className="inline-block text-xs font-medium text-indigo-700 hover:underline">
-            Open the full tracker →
-          </Link>
-        </>
-      ) : (
-        <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3">
-          <p className="text-sm font-semibold text-amber-900 flex items-center gap-2">
-            <Info className="h-4 w-4" />
-            {p.uploadCovers > 0
-              ? 'This project has no name in the tracker upload'
-              : 'No tracker upload yet'}
-          </p>
-          <p className="text-xs text-amber-800 mt-1">
-            {p.uploadCovers > 0
-              ? <>The upload covers {p.uploadCovers} projects, but IN4 identifies them by name and none
-                  of those names is this project. That is the same naming gap the Reports tab has.</>
-              : <>Nothing has been uploaded to the tracker yet.</>}
-          </p>
-          {p.unmatchedNames.length > 0 && (
-            <p className="text-[12px] text-amber-700 mt-1.5">
-              In the upload: {p.unmatchedNames.slice(0, 8).join(' · ')}
-              {p.unmatchedNames.length > 8 && ` · +${p.unmatchedNames.length - 8} more`}
-            </p>
-          )}
-          <div className="flex flex-wrap gap-3 mt-2">
-            <Link href="/masters/mapping" className="text-xs font-semibold text-amber-900 underline">
-              Why names do not match →
-            </Link>
-            <Link href="/procurement-tracker" className="text-xs font-medium text-amber-900 underline">
-              Open the tracker →
-            </Link>
-          </div>
-        </div>
-      )}
-    </section>
-  )
+/** The Indents tab — the Internal Estimate's shape, live from IN4, with the
+ *  approvals waiting in IN4 on top and the whole Indent → PO → GRN cycle on
+ *  each indent. The upload-based views left on 10 Sep 2026 (clean-up round 2). */
+export async function ProcurementTab({ projectId, params = {} }: { projectId: string; view?: number; params?: BoardParams }) {
+  return <IndentsTree projectId={projectId} params={params} />
 }
 
 // ── Discussions ─────────────────────────────────────────────────────────────

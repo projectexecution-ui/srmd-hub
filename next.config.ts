@@ -54,7 +54,6 @@ const nextConfig: NextConfig = {
       { source: '/srmd-icon.png',     headers: [{ key: 'Cache-Control', value: immutable }] },
       { source: '/srmd-logo.svg',     headers: [{ key: 'Cache-Control', value: immutable }] },
       // Embedded vendor HTMLs — change rarely but we want CDN revalidation
-      { source: '/indent-tracker.html', headers: [{ key: 'Cache-Control', value: longish }] },
       { source: '/budget-hub.html',     headers: [{ key: 'Cache-Control', value: longish }] },
     ]
   },

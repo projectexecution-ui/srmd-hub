@@ -20,11 +20,11 @@ describe('plannedJobs — a switched-off module takes its jobs with it', () => {
     expect(keys).not.toContain('inventory-low-stock')
     expect(keys).not.toContain('inventory-daily-report')
     expect(keys).toContain('cc-backup')       // portal-wide, no module
-    expect(keys).toContain('procurement-digest')
+    expect(keys).toContain('cc-trustee-digest')
   })
   it('every job that mails a module owner names its module', () => {
     const untagged = CRON_JOBS.filter(j => !j.module).map(j => j.key)
-    expect(untagged.sort()).toEqual(['cc-backup', 'drive-archive', 'email-retry', 'in4-boq', 'in4-contractor', 'in4-masters', 'in4-supplier', 'in4-sync', 'in4-tracker'])
+    expect(untagged.sort()).toEqual(['cc-backup', 'drive-archive', 'email-retry', 'in4-boq', 'in4-contractor', 'in4-masters', 'in4-supplier', 'in4-sync'])
   })
 })
 
@@ -32,7 +32,7 @@ describe('plannedJobs — daily jobs run once/day across both slots', () => {
   it('am with an empty ledger runs every am daily + each job', () => {
     const jobs = plannedJobs('am', {}, DAY, false)
     const keys = jobs.map(j => j.key)
-    expect(keys).toContain('procurement-digest')
+    expect(keys).toContain('cc-trustee-digest')
     expect(keys).toContain('engineer-digest')
     expect(keys).toContain('bph-sync')      // each-slot
     expect(keys).not.toContain('in4-followup') // not an every-3rd day
@@ -40,10 +40,10 @@ describe('plannedJobs — daily jobs run once/day across both slots', () => {
   })
 
   it('pm SKIPS daily jobs already stamped for today, but re-runs each-slot jobs', () => {
-    const ledger = { 'procurement-digest': DAY, 'engineer-digest': DAY }
+    const ledger = { 'cc-trustee-digest': DAY, 'engineer-digest': DAY }
     const jobs = plannedJobs('pm', ledger, DAY, false)
     const keys = jobs.map(j => j.key)
-    expect(keys).not.toContain('procurement-digest') // done at am
+    expect(keys).not.toContain('cc-trustee-digest') // done at am
     expect(keys).not.toContain('engineer-digest')
     expect(keys).toContain('bph-sync')               // each-slot always
     expect(keys).toContain('email-retry')
@@ -53,13 +53,13 @@ describe('plannedJobs — daily jobs run once/day across both slots', () => {
   it('pm RE-RUNS a daily job that was NOT stamped (am was skipped) — self-heal', () => {
     const jobs = plannedJobs('pm', {}, DAY, false) // nothing ran at am
     const keys = jobs.map(j => j.key)
-    expect(keys).toContain('procurement-digest')     // caught up in pm
+    expect(keys).toContain('cc-trustee-digest')     // caught up in pm
     expect(keys).toContain('cc-approval-digest')
   })
 
   it('a stale ledger (yesterday) does not block today', () => {
-    const jobs = plannedJobs('am', { 'procurement-digest': '2026-08-05' }, DAY, false)
-    expect(jobs.map(j => j.key)).toContain('procurement-digest')
+    const jobs = plannedJobs('am', { 'cc-trustee-digest': '2026-08-05' }, DAY, false)
+    expect(jobs.map(j => j.key)).toContain('cc-trustee-digest')
   })
 
   it('in4-followup only appears on an every-3rd day', () => {
@@ -89,11 +89,11 @@ describe('cc-approval-reminders is a once-a-day EVENING nag', () => {
 describe('stampLedger', () => {
   it('stamps only daily jobs that succeeded; leaves each-slot + failures alone', () => {
     const next = stampLedger({}, [
-      { key: 'procurement-digest', policy: 'daily', ok: true },
+      { key: 'cc-trustee-digest', policy: 'daily', ok: true },
       { key: 'engineer-digest', policy: 'daily', ok: false },  // failed → retry next slot
       { key: 'bph-sync', policy: 'each', ok: true },           // each-slot → never stamped
     ], DAY)
-    expect(next['procurement-digest']).toBe(DAY)
+    expect(next['cc-trustee-digest']).toBe(DAY)
     expect(next['engineer-digest']).toBeUndefined()
     expect(next['bph-sync']).toBeUndefined()
   })

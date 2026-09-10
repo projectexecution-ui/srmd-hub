@@ -82,13 +82,6 @@ export const SCHEDULED_MESSAGES: OutboundMessage[] = [
     schedule: 'Daily, 09:00 IST', settingsHref: '/bills-pipeline/digest-settings',
   },
   {
-    key: 'procurement_digest', label: 'Indent → PO — follow-up', module: 'procurement-tracker', kind: 'scheduled',
-    trigger: 'POs to raise (2+ days) and deliveries to chase (7+ days), per Atm Head, only their projects.',
-    channels: ['in_app', 'email'], respectsRules: true,
-    recipients: { kind: 'assignment', who: 'Atm Heads, each with their own project list', settingKey: 'procurement_notify_assignments', projectList: 'tracker' },
-    schedule: 'Weekdays, 09:00 IST', enabledKey: 'procurement_notify_enabled', settingsHref: '/procurement-tracker/admin',
-  },
-  {
     key: 'engineer_digest', label: 'Engineers — daily digest', module: 'cost-control', kind: 'scheduled',
     trigger: 'What each engineer has open — sheets returned, budgets moving.',
     channels: ['in_app', 'email'], respectsRules: true,
