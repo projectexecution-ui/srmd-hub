@@ -2,6 +2,7 @@ import Link from 'next/link'
 import { notFound, redirect } from 'next/navigation'
 import { requirePermission } from '@/lib/auth'
 import { checkIsCcReviewer } from '@/components/cost-control/ws-actions'
+import { canOpenAccounts } from '@/lib/revamp/accounts-access'
 import { findTab, PROJECT_TABS, tabHref, type ProjectTab } from '@/lib/revamp/tabs'
 import { ABSORBED, activeSubTab, findWorkspaceTab, workspaceHref } from '@/lib/revamp/workspace'
 import { canOpenWorkspaceTab, landingSub, scopedPerms } from '@/lib/revamp/permissions'
@@ -81,6 +82,9 @@ export default async function ProjectTabPage({
     // arrive there at all. The strip hides it for the same reason.
     if (tab.reviewerOnly && !isReviewer) notFound()
   }
+  // Accounts: the named list on top of everything above — the ribbon hides the
+  // tab for everyone else, and the address refuses them here.
+  if (slug === 'accounts' && !(await canOpenAccounts())) notFound()
   const view = wsTab ? landingSub(await getMyPermissions(), wsTab, activeSubTab(wsTab, viewParam)) : 0
   // From here on, every screen in this tab sees what the TAB and PILL grant — Edit
   // off on a tab hides its raise / act controls, even where the power says yes.

@@ -6,6 +6,7 @@ import { loadWorkspaceHeader } from '@/lib/revamp/workspace-header'
 import { SETUP_TAB } from '@/lib/revamp/workspace'
 import { visibleWorkspaceTabsV2, allowedSubsByTab, canOpenWorkspaceTab } from '@/lib/revamp/permissions'
 import { checkIsCcReviewer } from '@/components/cost-control/ws-actions'
+import { canOpenAccounts } from '@/lib/revamp/accounts-access'
 import { formatDateTime } from '@/lib/utils'
 import { Ribbon } from './Ribbon'
 import { getMyApprovalCounts } from '@/lib/revamp/approval-counts'
@@ -72,7 +73,9 @@ export default async function ProjectWorkspaceLayout({
   // Each tab and each pill under it has a switch of its own in the matrix,
   // inheriting the module until set — so with no switches set this is the
   // ribbon exactly as before (lib/revamp/permissions.ts).
-  const tabs = visibleWorkspaceTabsV2(perms, disabled, isReviewer)
+  // Accounts is for named people on top of the reviewer rule (lib/revamp/accounts-access.ts).
+  const accountsOk = await canOpenAccounts()
+  const tabs = visibleWorkspaceTabsV2(perms, disabled, isReviewer).filter(t => t.slug !== 'accounts' || accountsOk)
   const pills = allowedSubsByTab(perms, tabs)
   const canSetup = canOpenWorkspaceTab(perms, SETUP_TAB, disabled, isReviewer)
   // What is at Verify in IN4 for this project — the approver's turn — as yellow

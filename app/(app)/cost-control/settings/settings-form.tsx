@@ -162,6 +162,7 @@ export function CcSettingsForm({ initial, users = [], connectedUsers = [] }: {
       { key: 'cc_eng_projects',     value: String(v.eng_projects) },
       { key: 'cc_eng_erp',          value: String(v.eng_erp) },
       { key: 'cc_archive_users',    value: v.archive_users.join(',') },
+      { key: 'cc_accounts_users',   value: v.accounts_users.join(',') },
       { key: 'cc_ie_review',        value: String(v.ie_review) },
       { key: 'cc_cumulative_versions', value: String(v.cumulative_versions) },
       { key: 'cc_bph_sync',         value: String(v.bph_sync) },
@@ -399,6 +400,46 @@ export function CcSettingsForm({ initial, users = [], connectedUsers = [] }: {
             <p className="px-3 py-2 text-xs text-gray-400">No other active users.</p>
           )}
         </div>
+      </div>
+
+      {/* Aksha, 10 Sep 2026: "Accounts visible only to Atm Akshay and Chirag and
+          Admin — no one else." A role cannot draw that line (four people are
+          Atm Head), so it is a list of people. Read by lib/revamp/accounts-access.ts. */}
+      <div className="space-y-2">
+        <p className="text-[11px] uppercase tracking-wider font-semibold text-gray-500">Who can open Accounts (project workspace)</p>
+        <p className="text-xs text-gray-500">
+          Admins can always open it. Tick the people who may see a project&apos;s Accounts tab — what is due, held back and each party&apos;s account.
+          Nobody else sees the tab, and its address refuses them.
+        </p>
+        <div className="rounded-md border border-gray-200 divide-y divide-gray-100 max-h-56 overflow-y-auto">
+          {users.filter(u => u.role !== 'admin').map(u => {
+            const on = v.accounts_users.includes(u.id)
+            return (
+              <button
+                key={u.id}
+                type="button"
+                onClick={() => setV({
+                  ...v,
+                  accounts_users: on
+                    ? v.accounts_users.filter(x => x !== u.id)
+                    : [...v.accounts_users, u.id],
+                })}
+                className="flex w-full items-center justify-between gap-3 px-3 py-2 text-left hover:bg-gray-50"
+              >
+                <span className="min-w-0">
+                  <span className="block text-sm text-gray-900">{u.name}</span>
+                  <span className="block text-[11px] text-gray-500">{u.role}</span>
+                </span>
+                <span className={`inline-flex h-4 w-4 flex-shrink-0 items-center justify-center rounded border ${on ? 'bg-blue-600 border-blue-600 text-white' : 'border-gray-300 bg-white'}`}>
+                  {on && <span className="text-[10px] leading-none">✓</span>}
+                </span>
+              </button>
+            )
+          })}
+        </div>
+        {v.accounts_users.length === 0 && (
+          <p className="text-xs text-amber-700">Nobody ticked — only admins can open Accounts right now.</p>
+        )}
       </div>
 
       <div className="space-y-3">
