@@ -31,13 +31,8 @@ const BLOCK_TABLES: Array<{
   module: string
 }> = [
   { table: 'projects',            column: 'parent_project_id', label: 'Sub-projects',        module: 'Projects'          },
-  { table: 'indents',             column: 'project_id',        label: 'Indents',             module: 'Indent → PO'       },
-  { table: 'purchase_orders',     column: 'project_id',        label: 'Purchase Orders',     module: 'Indent → PO'       },
   { table: 'cc_working_sheets',   column: 'project_id',        label: 'Cost Control sheets', module: 'Cost Control'      },
   { table: 'cc_bills',            column: 'project_id',        label: 'Contractor bills',    module: 'Bills'             },
-  { table: 'jmr_daily_entries',   column: 'project_id',        label: 'JMR daily entries',   module: 'JMR'               },
-  { table: 'dsr_reports',         column: 'project_id',        label: 'Daily Site Reports',  module: 'Daily Site Report' },
-  { table: 'inv_requests',        column: 'project_id',        label: 'Inventory requests',  module: 'Inventory'         },
 ]
 
 async function countBlocking(projectId: string) {
@@ -52,21 +47,13 @@ async function countBlocking(projectId: string) {
     })
   )
 
-  // Invoices have no project_id of their own — they hang off purchase_orders.
-  const { count: invoiceCount } = await supabase
-    .from('invoices')
-    .select('id, purchase_orders!inner(project_id)', { count: 'exact', head: true })
-    .eq('purchase_orders.project_id', projectId)
-
-  return [
-    ...direct,
-    { table: 'invoices', column: 'po_id', label: 'Invoices', module: 'Invoices', count: invoiceCount ?? 0 },
-  ]
+  return direct
 }
 
 export async function GET(_req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
   const perms = await getMyPermissions()
-  if (!can(perms, 'projects', 'view')) return new NextResponse('Forbidden', { status: 403 })
+  // The old Projects module is gone (10 Sep 2026); this check now belongs to Cost Control admins.
+  if (!can(perms, 'cost-control', 'admin')) return new NextResponse('Forbidden', { status: 403 })
   const { id } = await ctx.params
   const deps = await countBlocking(id)
   const blocking = deps.filter(d => d.count > 0)

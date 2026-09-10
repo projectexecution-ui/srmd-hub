@@ -12,7 +12,6 @@ import { descendantIds } from './hierarchy'
 import { compareDisciplines } from '@/lib/cost-control/discipline-order'
 import type { LineRecord } from '@/lib/procurement'
 import { correctTrackerLines, loadTrackerFixes, type ItemReader, type Corrections } from './tracker-corrections'
-import { fetchAll } from './orders-tree'
 
 // ── Approvals ───────────────────────────────────────────────────────────────
 
@@ -59,47 +58,6 @@ export async function loadProjectApprovals(projectId: string): Promise<PendingAp
     waitingOn: WAITING_ON[r.status as string] ?? 'Someone',
     submittedAt: (r.submitted_at as string | null) ?? null,
   }))
-}
-
-// ── Stores ──────────────────────────────────────────────────────────────────
-
-export interface ProjectStores {
-  /** Stores whose owner is this project. Empty = it draws from shared stores. */
-  ownStores: Array<{ id: string; code: string | null; name: string; items: number }>
-  requests: Array<{ id: string; reqNo: string | null; status: string; purpose: string | null; date: string | null }>
-}
-
-export async function loadProjectStores(projectId: string): Promise<ProjectStores> {
-  const supabase = await createClient()
-  const [locRes, reqRes] = await Promise.all([
-    supabase.from('wh_locations').select('id, code, name').eq('project_id', projectId).is('deleted_at', null),
-    supabase.from('wh_requests')
-      .select('id, req_no, status, purpose, request_date')
-      .eq('project_id', projectId).is('deleted_at', null)
-      .order('request_date', { ascending: false }).limit(25),
-  ])
-
-  const locs = (locRes.data ?? []) as Array<{ id: string; code: string | null; name: string }>
-  let counts = new Map<string, number>()
-  if (locs.length) {
-    const { data: stock } = await supabase
-      .from('wh_stock').select('location_id').in('location_id', locs.map(l => l.id))
-    counts = (stock ?? []).reduce((m, s) => {
-      const k = s.location_id as string
-      return m.set(k, (m.get(k) ?? 0) + 1)
-    }, new Map<string, number>())
-  }
-
-  return {
-    ownStores: locs.map(l => ({ ...l, items: counts.get(l.id) ?? 0 })),
-    requests: ((reqRes.data ?? []) as Array<Record<string, unknown>>).map(r => ({
-      id: r.id as string,
-      reqNo: (r.req_no as string | null) ?? null,
-      status: r.status as string,
-      purpose: (r.purpose as string | null) ?? null,
-      date: (r.request_date as string | null) ?? null,
-    })),
-  }
 }
 
 // ── Indent → PO ─────────────────────────────────────────────────────────────
@@ -382,41 +340,5 @@ export async function loadProjectDiscussions(
     comments: out,
     mentionUsers,
     mentioningMe: out.filter(c => c.mentionsMe).length,
-  }
-}
-
-// ── JMR ─────────────────────────────────────────────────────────────────────
-
-export interface ProjectJmr {
-  entries: number
-  pending: number
-  totalAmount: number
-  lastEntry: string | null
-  recent: Array<{ id: string; date: string | null; qty: number; amount: number; status: string; description: string | null }>
-}
-
-export async function loadProjectJmr(projectId: string): Promise<ProjectJmr> {
-  const supabase = await createClient()
-  // Paged — 21 rows today, but this table grows and PostgREST's 1,000-row cap
-  // is silent (audit F-013).
-  const { rows } = await fetchAll<Record<string, unknown>>((f, t) => supabase
-    .from('jmr_daily_entries')
-    .select('id, entry_date, quantity, amount, status, work_description')
-    .eq('project_id', projectId)
-    .order('entry_date', { ascending: false })
-    .range(f, t))
-  return {
-    entries: rows.length,
-    pending: rows.filter(r => r.status !== 'approved').length,
-    totalAmount: rows.reduce((s, r) => s + Number(r.amount ?? 0), 0),
-    lastEntry: (rows[0]?.entry_date as string | null) ?? null,
-    recent: rows.slice(0, 20).map(r => ({
-      id: r.id as string,
-      date: (r.entry_date as string | null) ?? null,
-      qty: Number(r.quantity ?? 0),
-      amount: Number(r.amount ?? 0),
-      status: r.status as string,
-      description: (r.work_description as string | null) ?? null,
-    })),
   }
 }

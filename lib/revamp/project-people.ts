@@ -12,7 +12,7 @@
 // single table is a data move rather than a redesign.
 
 export type CapabilityId =
-  | 'approver' | 'works_on' | 'jmr_log' | 'sees_indents' | 'bill_desk'
+  | 'approver' | 'works_on' | 'sees_indents' | 'bill_desk'
 
 export interface Capability {
   id: CapabilityId
@@ -53,14 +53,6 @@ export const CAPABILITIES: readonly Capability[] = [
     table: 'project_assignments',
     keyedBy: 'id',
     replaces: '/admin/users',
-  },
-  {
-    id: 'jmr_log',
-    label: 'Logs JMR',
-    hint: 'May record measured work against this site',
-    table: 'jmr_user_project_access',
-    keyedBy: 'id',
-    replaces: '/jmr/admin/access',
   },
   {
     id: 'sees_indents',
@@ -104,7 +96,6 @@ export interface PersonOnProject {
 export interface RawGrants {
   approvers: Array<{ user_id: string; role: string | null }>
   assignments: Array<{ user_id: string }>
-  jmrAccess: Array<{ user_id: string }>
   /** Already filtered to this project's names by the caller. */
   indentViewers: Array<{ user_id: string }>
   deskMembers: Array<{ user_id: string; desk: string | null }>
@@ -147,10 +138,6 @@ export function mergeGrants(people: Person[], raw: RawGrants): PersonOnProject[]
   for (const a of raw.assignments) {
     const r = touch(a.user_id)
     if (r) r.has.works_on = true
-  }
-  for (const a of raw.jmrAccess) {
-    const r = touch(a.user_id)
-    if (r) r.has.jmr_log = true
   }
   for (const a of raw.indentViewers) {
     const r = touch(a.user_id)

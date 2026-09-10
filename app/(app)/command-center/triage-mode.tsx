@@ -6,7 +6,7 @@
 import { useState } from 'react'
 import { todayIST } from '@/lib/utils'
 import { createClient } from '@/lib/supabase/client'
-import { formatINRShort, formatDateShort } from '@/lib/jmr/format'
+import { formatINRShort, formatDateShort } from '@/lib/format-short'
 import type { BoardItem, EccCategory } from './board-client'
 import { Check, Clock, CornerUpLeft, ExternalLink, ChevronRight, X, Star, Sparkles, Loader2 } from 'lucide-react'
 

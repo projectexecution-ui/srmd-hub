@@ -891,7 +891,7 @@ export default async function WorkingSheetEditorPage(
       .select('id, sr_no, description, uom, qty, rate, gst_pct, total_amount, vendor_id, location_tag, remark')
       .eq('working_sheet_id', id)
       .order('sr_no'),
-    supabase.from('vendors').select('id, name').order('name'),
+    Promise.resolve({ data: [] as Array<{ id: string; name: string }> }), // hub Vendors list removed 10 Sep 2026
     // Best-effort budget headroom lookup — MANAGEMENT ONLY. For engineers
     // the query never runs, so the big numbers never reach the payload.
     reviewer

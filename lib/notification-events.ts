@@ -33,12 +33,6 @@ export const NOTIFICATION_EVENTS: NotificationEventDef[] = [
     audience: 'Eligible approvers',
   },
   {
-    type: 'sched_promise_nudge',
-    label: 'Schedule — weekly promise nudge',
-    description: 'Monday "your week\'s promises" plan ping + evening reminder of still-open promises, to each responsible engineer.',
-    audience: 'Promise owners (engineers)',
-  },
-  {
     type: 'in4_indent_verify',
     label: 'IN4 — indent waiting for approval',
     description: 'An indent in IN4 reached Verify; the Atm Head of the linked project is asked to approve it in IN4.',
@@ -103,64 +97,6 @@ export const NOTIFICATION_EVENTS: NotificationEventDef[] = [
     label: 'Weekly: Budget vs Actual (portfolio tree)',
     description: 'A Monday-morning portfolio card to management, mirroring the Budget vs Actual V2 tree — projects grouped by block, each showing Budget · Spent · Outstanding + ₹/sft, with a warning when a source is 14+ days stale. Confidential — goes to Cost Control management/reviewers only. Arrives as a Telegram card.',
     audience: 'Management (Cost Control reviewers)',
-  },
-  {
-    type: 'jmr_entry_submitted',
-    label: 'JMR entry submitted (to review)',
-    description: 'The moment an engineer submits a daily JMR entry, the approvers (admin/head) are pinged that there’s something to review. Email is off by default for this one to avoid inbox flooding — in-app + phone push stay on; turn email on here if you want it.',
-    audience: 'Approvers (admin & head)',
-  },
-  {
-    type: 'jmr_entry_approved',
-    label: 'JMR entry approved',
-    description: 'When a Head/PM approves a daily JMR entry, the engineer who logged it is told (with the approver’s note).',
-    audience: 'The engineer who logged it',
-  },
-  {
-    type: 'jmr_entry_flagged',
-    label: 'JMR entry flagged',
-    description: 'When a Head/PM flags a daily JMR entry, the engineer who logged it is told the reason so they can fix or re-log.',
-    audience: 'The engineer who logged it',
-  },
-  {
-    type: 'wh_request_raised',
-    label: 'Warehouse — material request needs approval',
-    description: 'The moment an engineer raises a request, everyone who could approve it at that '
-      + 'stage is told — with the store, the project, the value and what it is for. When a chain has '
-      + 'a second stage, the next approver is told the moment the first one signs. This is the gap '
-      + 'that killed the old inventory module: the chain worked, nobody knew there was anything in it.',
-    audience: 'Whoever can approve it (Atm Head, then Trustee)',
-  },
-  {
-    type: 'wh_request_decided',
-    label: 'Warehouse — your request was approved or turned down',
-    description: 'The engineer who raised it hears the outcome, with the approver’s name and — on a '
-      + 'refusal — the reason, so they can act rather than just ask again tomorrow.',
-    audience: 'The engineer who raised it',
-  },
-  {
-    type: 'wh_request_to_issue',
-    label: 'Warehouse — approved request ready to hand over',
-    description: 'Once approved, the store keeper is told there is material to hand over, with who '
-      + 'it is for and when it is needed. Goes to the store’s named keeper; where no keeper is set it '
-      + 'falls back to whoever the approval matrix allows to issue, so an approved request is never '
-      + 'left with nobody told.',
-    audience: 'The store keeper (or whoever may issue)',
-  },
-  {
-    type: 'wh_request_issued',
-    label: 'Warehouse — your material has been handed over',
-    description: 'The requester is told when material goes out against their request, naming the gate '
-      + 'entry, and says plainly when only part of it went so they know the rest is still coming.',
-    audience: 'The engineer who raised it',
-  },
-  {
-    type: 'wh_return_waived',
-    label: 'Warehouse — you need not return it after all',
-    description: 'Material borrowed from another project’s store must come back. When the Atm Head '
-      + 'decides it need not, the borrower is told who decided and why — their obligation changed, so '
-      + 'they should not have to discover it.',
-    audience: 'The engineer who borrowed it',
   },
   {
     type: 'cc_budget_transfer',

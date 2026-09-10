@@ -3,7 +3,7 @@
 // short bulleted sections, computed from the board data (no wall of text).
 
 import { useState } from 'react'
-import { formatINRShort } from '@/lib/jmr/format'
+import { formatINRShort } from '@/lib/format-short'
 import { Sparkles, X, Star } from 'lucide-react'
 
 export interface BriefData {

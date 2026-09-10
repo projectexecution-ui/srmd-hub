@@ -4,7 +4,7 @@
 // chase in one tap. Superhuman's "Auto Follow-up", adapted.
 
 import { useState } from 'react'
-import { formatDateShort } from '@/lib/jmr/format'
+import { formatDateShort } from '@/lib/format-short'
 import type { BoardItem } from './board-client'
 import { Radar, Loader2, Send, ChevronDown, X } from 'lucide-react'
 

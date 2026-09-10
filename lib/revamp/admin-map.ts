@@ -38,30 +38,18 @@ export const ADMIN_SCREENS: AdminScreen[] = [
   // ── People & access ──
   { href: '/admin/users',                label: 'Users & roles',        module: '',            area: 'people', hint: 'Accounts, roles, access requests, per-module overrides' },
   { href: '/admin/permissions',          label: 'Permissions',          module: '',            area: 'people', hint: 'The role × module grid, and the delete rules' },
-  { href: '/jmr/admin/admins',           label: 'JMR roles',            module: 'jmr',         area: 'people', hint: 'Override a person’s role inside JMR only' },
-  { href: '/jmr/admin/access',           label: 'JMR project access',   module: 'jmr',         area: 'people', hint: 'Which sites each engineer may log against' },
-  { href: '/inventory/admin/engineers',  label: 'Engineer sites',       module: 'inventory',   area: 'people', hint: 'Assign engineers to their sites' },
-  { href: '/procurement-tracker/admin',  label: 'Procurement visibility', module: 'procurement-tracker', area: 'people', hint: 'Which projects each person sees in the tracker' },
+  { href: '/procurement-tracker/admin',  label: 'Procurement visibility', module: 'procurement-tracker', area: 'people', hint: 'Which projects each person sees in the tracker', visibilitySlug: 'procurement-tracker' },
 
   // ── Approvals & rules ──
   { href: '/admin/approvals',            label: 'Approval chains',      module: '',            area: 'approvals', hint: 'Who may move a document to the next stage, per module' },
   { href: '/admin/delete-requests',      label: 'Delete requests',      module: '',            area: 'approvals', hint: 'Approve or refuse deletions that need a second pair of eyes' },
   { href: '/admin/recycle-bin',          label: 'Recycle bin',          module: '',            area: 'approvals', hint: 'Restore anything deleted — nothing is removed automatically' },
-  { href: '/bills-booking/admin',        label: 'Bills desks',          module: 'bills-booking', area: 'approvals', hint: 'Who works each desk, per project' },
+  { href: '/bills-booking/admin',        label: 'Bills desks',          module: 'bills-booking', area: 'approvals', hint: 'Who works each desk, per project', visibilitySlug: 'bills-booking' },
   { href: '/cost-control/projects/new',  label: 'New project',          module: 'cost-control', area: 'approvals', hint: 'Create a project and its approval chain' },
 
   // ── Lists & catalogues ──
   { href: '/masters',                    label: 'Masters',              module: '',            area: 'lists', hint: 'The lists everything points at — and where they duplicate' },
   { href: '/cost-control/admin/disciplines', label: 'Work categories',  module: 'cost-control', area: 'lists', hint: 'Disciplines and sub-skills used by every project' },
-  { href: '/warehouse/settings',         label: 'Warehouse lists',      module: 'warehouse',   area: 'lists', hint: 'Stores, keepers, categories, units, delivery modes' },
-  { href: '/inventory/admin/items',      label: 'Inventory items',      module: 'inventory',   area: 'lists', hint: 'The older item catalogue' },
-  { href: '/inventory/admin/warehouses', label: 'Inventory warehouses', module: 'inventory',   area: 'lists', hint: 'The older store list' },
-  { href: '/jmr/admin/items',            label: 'JMR items',            module: 'jmr',         area: 'lists', hint: 'Machine and manpower types' },
-  { href: '/jmr/admin/contractors',      label: 'JMR contractors',      module: 'jmr',         area: 'lists', hint: 'Contractors who log measured work' },
-  { href: '/jmr/admin/rate-cards',       label: 'JMR rate cards',       module: 'jmr',         area: 'lists', hint: 'Rate per item per contractor, with validity' },
-  { href: '/jmr/admin/projects',         label: 'JMR projects',         module: 'jmr',         area: 'lists', hint: 'Sub-projects used as JMR columns' },
-  { href: '/established-rates/admin',    label: 'Rate taxonomy',        module: 'established-rates', area: 'lists', hint: 'Disciplines, categories and sub-categories for rates', visibilitySlug: 'established-rates' },
-  { href: '/vendors',                    label: 'Vendors',              module: 'vendors',     area: 'lists', hint: 'The contact list as it exists today', visibilitySlug: 'vendors' },
 
   // ── System ──
   { href: '/admin/email',                label: 'Email & notifications', module: '',           area: 'system', hint: 'Everything the hub sends and who receives it — all modules, one list' },
@@ -69,13 +57,8 @@ export const ADMIN_SCREENS: AdminScreen[] = [
   { href: '/admin/dashboard-modules',    label: 'Modules on/off',       module: '',            area: 'system', hint: 'Switch a module off for everyone, or rename it', adminOnly: true },
   { href: '/admin/sidebar-groups',       label: 'Sidebar groups',       module: '',            area: 'system', hint: 'Nest modules under names you choose', adminOnly: true },
   { href: '/cost-control/settings',      label: 'Cost Control settings', module: 'cost-control', area: 'system', hint: 'Feature switches, field names, engineer visibility' },
-  { href: '/schedule/settings',          label: 'Schedule settings',    module: 'schedule',    area: 'system', hint: 'Work-back lead times for WO, budget and drawings' },
-  { href: '/inventory/admin/settings',   label: 'Inventory settings',   module: 'inventory',   area: 'system', hint: 'Approval before issue, alerts, daily report' },
-  { href: '/jmr/admin/settings',         label: 'JMR settings',         module: 'jmr',         area: 'system', hint: 'GST rate and the weekly report' },
-  { href: '/bills-pipeline/digest-settings', label: 'Bills digest',     module: 'bills-pipeline', area: 'system', hint: 'The daily bills email, and who gets the stuck list' },
-  { href: '/warehouse/settings/sync',    label: 'Warehouse sync',       module: 'warehouse',   area: 'system', hint: 'Bring items and POs across from the IN4 uploads' },
+  { href: '/bills-pipeline/digest-settings', label: 'Bills digest',     module: 'bills-pipeline', area: 'system', hint: 'The daily bills email, and who gets the stuck list', visibilitySlug: 'bills-pipeline' },
   { href: '/cost-control/import',        label: 'Cost Control import',  module: 'cost-control', area: 'system', hint: 'Excel and BPH budget imports' },
-  { href: '/jmr/admin/import',           label: 'JMR import',           module: 'jmr',         area: 'system', hint: 'Bulk-load daily entries from Excel' },
   { href: '/cost-control/audit',         label: 'Audit log',            module: 'cost-control', area: 'system', hint: 'Who changed what, and when' },
 ]
 

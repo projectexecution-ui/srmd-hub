@@ -34,14 +34,10 @@ export interface CronJob {
 // unchanged; only the RUN decision (attempt daily jobs in both slots) is new.
 export const CRON_JOBS: CronJob[] = [
   // ── Daily jobs (once/IST-day, now attempted am AND pm for self-heal) ──────
-  { key: 'jmr-weekly',            policy: 'daily', module: 'jmr', am: '/api/jmr/weekly-report?cron=1',        pm: '/api/jmr/weekly-report?cron=1' },
   { key: 'cc-backup',             policy: 'daily', am: '/api/cost-control/backup?cron=1',      pm: '/api/cost-control/backup?cron=1' },
   { key: 'in4-followup',          policy: 'daily', module: 'cost-control', am: '/api/cost-control/in4-followup?cron=1', pm: '/api/cost-control/in4-followup?cron=1', everyThirdDayOnly: true },
   { key: 'procurement-digest',    policy: 'daily', module: 'procurement-tracker', am: '/api/cron/procurement-digest?cron=1',  pm: '/api/cron/procurement-digest?cron=1' },
   { key: 'engineer-digest',       policy: 'daily', module: 'cost-control', am: '/api/cron/engineer-digest?cron=1',     pm: '/api/cron/engineer-digest?cron=1' },
-  { key: 'daily-site-report',     policy: 'daily', module: 'daily-site-report', am: '/api/cron/daily-site-report?cron=1',   pm: '/api/cron/daily-site-report?cron=1' },
-  { key: 'inventory-low-stock',   policy: 'daily', module: 'inventory', am: '/api/cron/inventory-low-stock?cron=1', pm: '/api/cron/inventory-low-stock?cron=1' },
-  { key: 'inventory-daily-report',policy: 'daily', module: 'inventory', am: '/api/cron/inventory-daily-report?cron=1', pm: '/api/cron/inventory-daily-report?cron=1' },
   { key: 'bills-digest',          policy: 'daily', module: 'bills-pipeline', am: '/api/cron/bills-digest?cron=1',        pm: '/api/cron/bills-digest?cron=1' },
   { key: 'bills-stuck-worklist',  policy: 'daily', module: 'bills-pipeline', am: '/api/cron/bills-stuck-worklist?cron=1', pm: '/api/cron/bills-stuck-worklist?cron=1' },
   // cc-approval-digest rides BOTH slots so the reliable MORNING batch always
@@ -85,7 +81,6 @@ export const CRON_JOBS: CronJob[] = [
   // copies of deleted files under Archive/. Portal-wide; 503s until configured.
   { key: 'drive-archive',         policy: 'each',  am: '/api/cron/drive-archive?cron=1',      pm: '/api/cron/drive-archive?cron=1' },
   // am = Monday week-plan ping (route self-gates to Mondays); pm = evening open-promises reminder
-  { key: 'schedule-nudge',        policy: 'each', module: 'schedule',  am: '/api/cron/schedule-nudge?cron=1',      pm: '/api/cron/schedule-nudge?cron=1&slot=pm' },
   // Tells each Atm Head when IN4 needs them: an indent or PO at Verify, a GRN
   // received. Idempotent, so both slots; a faster plan just tells them sooner.
   { key: 'in4-approvals',         policy: 'each', module: 'procurement-tracker', am: '/api/cron/in4-approvals?cron=1',   pm: '/api/cron/in4-approvals?cron=1' },

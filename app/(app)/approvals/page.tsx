@@ -46,8 +46,6 @@ const REGISTRY_META: Record<string, ModuleMeta> = Object.fromEntries(
 )
 
 const MODULE_META_OVERRIDES: Record<string, Partial<ModuleMeta>> = {
-  inventory:      { label: 'Inventory requests' },
-  jmr:            { label: 'JMR — daily entries' },
   'cost-control': { label: 'Cost Control sheets' },
 }
 

@@ -28,6 +28,8 @@ export const KEY_SPECS: Record<string, KeySpec> = {
     format: 'csv', holds: 'email',
     alsoWrittenBy: '/bills-pipeline/digest-settings',
   },
+  // Kept as format fixtures although their screens left on 10 Sep 2026: a
+  // stale row in app_settings still has to be read back in its own shape.
   inv_daily_report_emails: {
     format: 'csv', holds: 'email',
     alsoWrittenBy: '/inventory/admin/settings',

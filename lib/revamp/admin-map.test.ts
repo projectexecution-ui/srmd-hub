@@ -36,18 +36,18 @@ describe('admin map', () => {
   // A screen inside a switched-off module only produces a permission refusal,
   // which reads as a bug rather than as "that module is off".
   it('hides screens whose module is switched off', () => {
-    const on = screensByArea('lists').map(s => s.href)
-    expect(on).toContain('/vendors')
+    const on = screensByArea('people').map(s => s.href)
+    expect(on).toContain('/procurement-tracker/admin')
 
-    const off = screensByArea('lists', new Set(['vendors', 'established-rates'])).map(s => s.href)
-    expect(off).not.toContain('/vendors')
-    expect(off).not.toContain('/established-rates/admin')
-    expect(off).toContain('/masters')
+    const off = screensByArea('people', new Set(['procurement-tracker'])).map(s => s.href)
+    expect(off).not.toContain('/procurement-tracker/admin')
+    expect(off).toContain('/admin/users')
   })
 
   it('gathers the screens that live inside modules', () => {
     const inModules = ADMIN_SCREENS.filter(s => !s.href.startsWith('/admin/'))
-    expect(inModules.length).toBeGreaterThan(ADMIN_SCREENS.length / 2)
+    // Half the map was module screens before the 10 Sep 2026 clean-up; a third is what remains.
+    expect(inModules.length).toBeGreaterThanOrEqual(ADMIN_SCREENS.length / 3)
   })
 })
 
@@ -111,21 +111,12 @@ describe('the things that made Admin hard to use', () => {
     }
   })
 
-  // The duplicate item lists are the clearest evidence that the masters need
-  // consolidating — the map must keep naming them rather than smoothing it over.
-  it('still shows that more than one module keeps its own item list', () => {
+  // The duplicate item lists were the evidence for consolidating the masters.
+  // Since the 10 Sep 2026 clean-up there is one list — Masters — and no "older" one.
+  it('has one item list — Masters — and no older ones left', () => {
     const itemLists = ADMIN_SCREENS.filter(s => /items|masters/i.test(s.label))
-    expect(itemLists.length).toBeGreaterThanOrEqual(3)
-    const modules = new Set(itemLists.map(s => s.module))
-    expect(modules.size).toBeGreaterThanOrEqual(3)
-  })
-
-  it('says plainly which item lists are the older ones', () => {
-    const legacy = ADMIN_SCREENS.filter(s => /older/i.test(s.hint))
-    expect(legacy.map(s => s.href).sort()).toEqual([
-      '/inventory/admin/items',
-      '/inventory/admin/warehouses',
-    ])
+    expect(itemLists.length).toBeGreaterThanOrEqual(1)
+    expect(ADMIN_SCREENS.filter(s => /older/i.test(s.hint))).toEqual([])
   })
 
   it('never points two screens at the same place', () => {
@@ -151,8 +142,10 @@ describe('the things that made Admin hard to use', () => {
   })
 
   it('shows fewer screens once the switched-off modules are removed', () => {
-    const off = new Set(['vendors', 'established-rates'])
+    const off = new Set(['procurement-tracker', 'bills-booking', 'bills-pipeline'])
     const shown = ADMIN_AREAS.reduce((n, a) => n + screensByArea(a.id, off).length, 0)
-    expect(shown).toBe(ADMIN_SCREENS.length - 2)
+    const hidden = ADMIN_SCREENS.filter(s => s.visibilitySlug && off.has(s.visibilitySlug)).length
+    expect(hidden).toBeGreaterThan(0)
+    expect(shown).toBe(ADMIN_SCREENS.length - hidden)
   })
 })

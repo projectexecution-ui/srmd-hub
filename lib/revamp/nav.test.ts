@@ -36,12 +36,10 @@ describe('revamped left pane', () => {
   })
 
   it('lists the old screens a person may still open, for the Admin fold', () => {
-    const labels = oldScreensFor(allow('budget-vs-actual', 'jmr', 'schedule', 'warehouse'), new Set()).map(i => i.label)
-    // Both BPH screens hang off the one 'budget-vs-actual' permission, so
-    // granting it shows both — that is the module's real shape, not a bug.
-    expect(labels).toEqual(['Budget (BPH)', 'Budget vs Actual', 'Warehouse', 'Schedule', 'JMR'])
+    const labels = oldScreensFor(allow('procurement-tracker', 'stuck-bills', 'bills-booking'), new Set()).map(i => i.label)
+    expect(labels).toEqual(['Indent → PO', 'Stuck Bills', 'Bills Booking'])
     // A switched-off module drops out even when the role holds it.
-    expect(oldScreensFor(allow('jmr'), new Set(['jmr']))).toEqual([])
+    expect(oldScreensFor(allow('bills-booking'), new Set(['bills-booking']))).toEqual([])
   })
 
   it('drops a branch entirely when none of its screens are visible', () => {
@@ -90,8 +88,9 @@ describe('revamped left pane', () => {
     expect(without.primary.map(i => i.label)).not.toContain('Masters')
   })
 
-  it('is a real reduction — far fewer top-level lanes than old screens replaced', () => {
-    expect(REVAMP_PRIMARY.length).toBeLessThan(REVAMP_OLD_SCREENS.length)
+  it('is five lanes — Dashboard, Projects, Bills, Masters, Admin', () => {
+    expect(REVAMP_PRIMARY.map(i => i.label)).toEqual(['Dashboard', 'Projects', 'Bills', 'Masters', 'Admin'])
+    expect(REVAMP_OLD_SCREENS.length).toBeGreaterThan(0)
   })
 
   it('has no duplicate hrefs between the main lanes and the old branch', () => {

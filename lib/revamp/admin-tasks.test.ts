@@ -69,15 +69,15 @@ describe('Admin organised by job', () => {
     const areas = new Set(
       t.steps.map(s => ADMIN_SCREENS.find(x => x.href === s.href)!.area),
     )
-    expect(t.steps.length).toBeGreaterThanOrEqual(5)
+    expect(t.steps.length).toBeGreaterThanOrEqual(4)
     expect(areas.size).toBeGreaterThanOrEqual(3)
   })
 
   it('drops steps whose module is switched off', () => {
-    const before = taskSteps(ADMIN_TASKS.find(t => t.id === 'lists')!)
-    const after = taskSteps(ADMIN_TASKS.find(t => t.id === 'lists')!, new Set(['vendors', 'established-rates']))
-    expect(after.length).toBe(before.length - 2)
-    expect(after.map(s => s.href)).not.toContain('/vendors')
+    const before = taskSteps(ADMIN_TASKS.find(t => t.id === 'new-project')!)
+    const after = taskSteps(ADMIN_TASKS.find(t => t.id === 'new-project')!, new Set(['procurement-tracker']))
+    expect(after.length).toBe(before.length - 1)
+    expect(after.map(s => s.href)).not.toContain('/procurement-tracker/admin')
   })
 
   it('drops a task entirely when every one of its steps is switched off', () => {
@@ -102,7 +102,7 @@ describe('Admin organised by job', () => {
 
   it('marks the jobs whose steps have no required order', () => {
     const anyOrder = ADMIN_TASKS.filter(t => t.anyOrder).map(t => t.id).sort()
-    expect(anyOrder).toEqual(['approvals', 'import', 'project-settings', 'recover'])
+    expect(anyOrder).toEqual(['approvals', 'project-settings', 'recover'])
   })
 
   it('covers a real spread of jobs rather than one giant list', () => {

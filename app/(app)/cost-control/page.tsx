@@ -912,7 +912,7 @@ function BphSyncChip({
     if (canWrite && ageDays >= STALE_DAYS) {
       return (
         <Link
-          href="/budget"
+          href="/cost-control/import/bph"
           title={`Cost Control's ERP figures last refreshed ${when} — ${ageDays} days ago. Export this week's BPH report from IN4 and upload it on the Budget page; all ${sync.total_links} mapped projects then re-sync automatically.`}
           className="inline-flex items-center gap-1.5 h-9 px-3 rounded-md border border-amber-300 bg-amber-50 text-sm font-semibold text-amber-800 hover:bg-amber-100 whitespace-nowrap"
         >

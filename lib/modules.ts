@@ -27,33 +27,15 @@ export type ModuleTile = {
 export const MODULES: ModuleTile[] = [
   { slug: 'approvals',        label: 'My Approvals',     description: 'Things waiting on you across every module',   href: '/approvals',      icon: Inbox,         tone: 'rose' },
   { slug: 'ecc',              label: 'Command Centre',   description: 'Your inbox, triaged — what needs action today', href: '/command-center', icon: Mail,          tone: 'teal' },
-  { slug: 'indents',          label: 'Indents',          description: 'Material indents raised from sites',         href: '/indents',        icon: ClipboardList, tone: 'blue' },
-  { slug: 'pos',              label: 'Purchase Orders',  description: 'POs issued to vendors',                       href: '/pos',            icon: FileText,      tone: 'indigo' },
-  { slug: 'grns',             label: 'GRN',              description: 'Goods received notes',                        href: '/grns',           icon: PackageCheck,  tone: 'green' },
-  { slug: 'invoices',         label: 'Invoices',         description: 'Vendor invoices',                             href: '/invoices',       icon: Receipt,       tone: 'amber' },
-  { slug: 'payments',         label: 'Payments',         description: 'Payments against invoices',                   href: '/payments',       icon: Wallet,        tone: 'teal',   comingSoon: true },
-  { slug: 'vendors',          label: 'Vendors',          description: 'Vendor master',                               href: '/vendors',        icon: Truck,         tone: 'purple' },
-  { slug: 'projects',         label: 'Projects',         description: 'Site / project master',                       href: '/projects',       icon: Building2,     tone: 'slate' },
   // Single JMR tile only. Sub-sections (Admin, Matrix, Dashboard, Entry)
   // live inside /jmr's own landing — no need to duplicate them on the hub.
   // The slug `jmr-admin` still exists in role_permissions and gates the admin
   // sub-routes; it's just not shown as a separate tile. (Bills feature removed.)
-  { slug: 'jmr',              label: 'JMR / Machinery',  description: 'Site machinery hours, JMR matrix, bills',     href: '/jmr',            icon: Wrench,        tone: 'orange' },
-  { slug: 'daily-site-report',label: 'Daily Site Report',description: 'Site material/supplier deliveries — received → bill with CT → GRN → paid, with a smart checklist for the Atm Head', href: '/daily-site-report', icon: ClipboardCheck, tone: 'teal' },
-  { slug: 'schedule',         label: 'Schedule & WOs',   description: 'Per-project schedule — plan vs actual, Work-Order deadlines, drawings & floor-by-floor progress; macro for management, micro for engineers', href: '/schedule', icon: CalendarClock, tone: 'indigo' },
-  { slug: 'inventory',        label: 'Inventory',        description: 'Stock, item master, requests & issue chain',  href: '/inventory',      icon: Boxes,         tone: 'green' },
   // Warehouse V2 — the HOD's main-gate material in-out register. A separate
   // module from `inventory` on purpose: its own items, locations, stock and
   // ledger, so the never-adopted request/issue chain above is left untouched.
-  { slug: 'warehouse',        label: 'Warehouse V2',     description: 'Main-gate material in-out register — challan vs received, PO balances, store-to-store moves, physical count and the control reports', href: '/warehouse', icon: Warehouse, tone: 'green' },
-  { slug: 'comparison',       label: 'Comparison Maker', description: 'Compare vendor quotations side-by-side — L1, L2, missing items', href: '/comparisons', icon: GitCompareArrows, tone: 'purple' },
-  { slug: 'established-rates',label: 'Established Rates',description: 'Master rate catalogue — Discipline → Category → Sub-category, multi-vendor with L1 highlight', href: '/established-rates', icon: Tags, tone: 'teal' },
   { slug: 'attendance',       label: 'Attendance',       description: 'Open the SiteAttend app',                     href: process.env.NEXT_PUBLIC_ATTENDANCE_URL || 'https://siteattend.vercel.app', external: true, icon: ExternalLink, tone: 'rose' },
-  { slug: 'uploads',          label: 'Uploads',          description: 'Excel imports history',                       href: '/uploads',        icon: Upload,        tone: 'slate' },
-  { slug: 'budget-vs-actual', label: 'Budget (IN4 BPH)',     description: 'IN4 Budget Performance report — server-backed BPH dashboard', href: '/budget',              icon: FileSpreadsheet, tone: 'teal' },
   { slug: 'procurement-tracker', label: 'Indent → PO Tracker', description: 'Live from IN4 — every indent’s cycle (Indent → PO → GRN), what waits for approval, a PO or a delivery, and what is late', href: '/procurement-tracker', icon: FileSpreadsheet, tone: 'amber' },
-  { slug: 'contractor-report', label: 'Contractor Report',  description: 'Upload IN4 “All Types Certificates Details” → Category × Contractor summary, in-app view + Excel export', href: '/contractor-report', icon: FileSpreadsheet, tone: 'blue' },
-  { slug: 'supplier-report',  label: 'Supplier Report',    description: 'Upload IN4 “All Purchase Payments Report” → Category × Supplier summary, in-app view + Excel/PDF export', href: '/supplier-report', icon: FileSpreadsheet, tone: 'green' },
   { slug: 'budget-vs-actual-v2', label: 'Budget vs Actual V2', description: 'Budget report as a tree — Budget · WO/PO Approved · Paid · Balance · Used% per project, with ₹/sft and open/closed status', href: '/budget-vs-actual-v2', icon: ListTree, tone: 'teal' },
   { slug: 'cost-control',     label: 'Cost Control',           description: 'Working Sheets, budgets & approvals (SRASSK)',                 href: '/cost-control',        icon: Calculator,      tone: 'indigo' },
   { slug: 'bills-booking',    label: 'Bills Booking',          description: 'Contractor (WO) & vendor (PO) bills — entry → Site Head → CT → Atm → Trust → paid, all in one platform', href: '/bills-booking', icon: ReceiptText, tone: 'indigo' },
@@ -62,7 +44,6 @@ export const MODULES: ModuleTile[] = [
   // Smart-Blueprint sandbox — proves the SLA + aging-dashboard UX in
   // isolation before any production module gets touched. Purple tone
   // (+ FlaskConical icon) marks it as an experiment.
-  { slug: 'blueprint-demo',   label: 'Blueprint Demo',   description: 'Sandbox for Smart Blueprints — SLA dashboard, auto-derived thresholds, escalation chain', href: '/blueprint-demo', icon: FlaskConical, tone: 'purple' },
   { slug: 'admin-users',      label: 'Users & Roles',    description: 'Manage app users',                            href: '/admin/users',    icon: Users,         tone: 'slate' },
   { slug: 'admin-settings',   label: 'Settings',         description: 'App settings (admin email, etc.)',            href: '/admin/settings', icon: Settings,      tone: 'slate' },
   { slug: 'admin-permissions',label: 'Permissions',      description: 'Who can do what in each module',              href: '/admin/permissions', icon: ShieldCheck, tone: 'slate' },

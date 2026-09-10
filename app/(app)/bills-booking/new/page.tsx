@@ -10,7 +10,7 @@ export default async function NewBillPage() {
   const supabase = await createClient()
   const [{ data: projects }, { data: vendors }, { data: disciplines }] = await Promise.all([
     supabase.from('projects').select('id, code, name').is('archived_at', null).order('code'),
-    supabase.from('vendors').select('id, name').order('name'),
+    Promise.resolve({ data: [] as Array<{ id: string; name: string }> }), // hub Vendors list removed 10 Sep 2026
     supabase.from('cc_disciplines').select('id, name, display_order').eq('is_archived', false).order('display_order'),
   ])
 
