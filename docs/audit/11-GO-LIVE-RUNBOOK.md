@@ -39,7 +39,7 @@ git checkout main && git pull
 git merge --no-ff revamp-trial -m "Revamp goes live (CT Hub V2) — see docs/audit/09, 10, 11"
 git push origin main
 ```
-Record the merge sha here: `__________` — it is what "simon go back" reverts. Vercel builds (≈3 min). The `in4-approvals` cron runs on the dispatcher's next slot and announces what is at Verify.
+Merge sha: `31f0fa9` (pushed 10 Sep 2026, 15:2x IST; main before it was `c5572a1`) — it is what "simon go back" reverts. Vercel builds (≈3 min). The `in4-approvals` cron runs on the dispatcher's next slot and announces what is at Verify.
 
 ## Phase 4 — check together (20–30 min)
 
