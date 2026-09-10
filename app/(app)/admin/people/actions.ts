@@ -46,7 +46,8 @@ export async function setAssignment(userId: string, projectId: string, on: boole
   const me = await guard(); if (!me) return denied
   const supabase = await createClient()
   const { error } = on
-    ? await supabase.from('project_assignments').insert({ user_id: userId, project_id: projectId, assigned_by: me.id })
+    // role is NOT NULL; every assignment today is 'engineer' and the project page reads role='engineer'
+    ? await supabase.from('project_assignments').insert({ user_id: userId, project_id: projectId, role: 'engineer', assigned_by: me.id })
     : await supabase.from('project_assignments').delete().eq('user_id', userId).eq('project_id', projectId)
   if (error && error.code !== '23505') return fail(error)
   revalidatePath('/admin/people'); revalidatePath(`/cost-control/projects/${projectId}/setup`)
