@@ -95,9 +95,10 @@ describe('Admin organised by job', () => {
     expect(tasksTouching('/nope')).toEqual([])
   })
 
-  it('lists the email roof first in the "what gets sent" job', () => {
+  it('lists Reports & digests first in the "what gets sent" job (the roof is its second step)', () => {
     const t = ADMIN_TASKS.find(x => x.id === 'whats-sent')!
-    expect(t.steps[0].href).toBe('/admin/email')
+    expect(t.steps[0].href).toBe('/admin/reports')
+    expect(t.steps[1].href).toBe('/admin/email')
   })
 
   it('marks the jobs whose steps have no required order', () => {

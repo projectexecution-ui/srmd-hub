@@ -77,7 +77,8 @@ export const ADMIN_TASKS: AdminTask[] = [
     label: 'Control what gets emailed out',
     hint: 'Start at the one list — it shows what is going nowhere',
     steps: [
-      { href: '/admin/email', why: 'See every message, who receives it, and what reaches nobody' },
+      { href: '/admin/reports', why: 'Every scheduled report — switch channels, see who gets it, send it now, mute a person' },
+      { href: '/admin/email', why: 'See every message, who receives it, and what reaches nobody', optional: true },
       { href: '/admin/notifications', why: 'Turn an alert on or off, per channel' },
       { href: '/bills-pipeline/digest-settings', why: 'Set who gets the bills digest and the stuck list', optional: true },
     ],

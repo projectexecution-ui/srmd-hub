@@ -52,6 +52,7 @@ export const ADMIN_SCREENS: AdminScreen[] = [
   { href: '/cost-control/admin/disciplines', label: 'Work categories',  module: 'cost-control', area: 'lists', hint: 'Disciplines and sub-skills used by every project' },
 
   // ── System ──
+  { href: '/admin/reports',              label: 'Reports & digests',    module: '',            area: 'system', hint: 'Every scheduled report in one place — channels, who gets it, last sent, send now — and a person-by-person mute matrix', adminOnly: true },
   { href: '/admin/email',                label: 'Email & notifications', module: '',           area: 'system', hint: 'Everything the hub sends and who receives it — all modules, one list' },
   { href: '/admin/notifications',        label: 'Notification switches', module: '',           area: 'system', hint: 'Turn each alert on or off per channel, and check job health' },
   { href: '/admin/dashboard-modules',    label: 'Modules on/off',       module: '',            area: 'system', hint: 'Switch a module off for everyone, or rename it', adminOnly: true },
@@ -60,7 +61,7 @@ export const ADMIN_SCREENS: AdminScreen[] = [
   { href: '/bills-pipeline/digest-settings', label: 'Bills digest',     module: 'bills-pipeline', area: 'system', hint: 'The daily bills email, and who gets the stuck list', visibilitySlug: 'bills-pipeline' },
   { href: '/admin/manual-upload',        label: 'Manual upload (IN4 fallback)', module: '',     area: 'system', hint: 'If the live IN4 read fails: switch on, upload the sheets by hand, switch off when IN4 is back', adminOnly: true },
   { href: '/cost-control/import',        label: 'Cost Control import',  module: 'cost-control', area: 'system', hint: 'Excel and BPH budget imports' },
-  { href: '/cost-control/audit',         label: 'Audit log',            module: 'cost-control', area: 'system', hint: 'Who changed what, and when' },
+  { href: '/cost-control/audit',         label: 'Audit log',            module: 'cost-control', area: 'approvals', hint: 'Who changed what, and when' },
 ]
 
 export function screensByArea(area: AdminArea, disabled: Set<string> = new Set()): AdminScreen[] {
