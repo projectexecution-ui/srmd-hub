@@ -3,7 +3,7 @@
 --
 -- Order matters: 1) copy everything into a backup schema, 2) rewrite the two
 -- functions that read tables about to go, 3) drop functions/views/tables,
--- 4) delete the configuration rows that pointed at them, 5) storage,
+-- 4) delete the configuration rows that pointed at them, 5) storage (dashboard, see below),
 -- 6) trim the sync snapshot tables, 7) the three August backup tables.
 -- Idempotent throughout (IF EXISTS / IF NOT EXISTS), so a re-run is harmless.
 
@@ -218,8 +218,9 @@ delete from public.app_settings where key in ('inv_approval_mode','sidebar_group
    or key like 'wh\_%' escape '\' or key like 'jmr\_%' escape '\' or key like 'sched\_%' escape '\';
 
 -- ── 5. Storage buckets of the removed modules ───────────────────────────────
-delete from storage.objects where bucket_id in ('jmr-photos','site-reports','item-images','inv-gate-passes','wh-bills','wh-gate-passes');
-delete from storage.buckets where id in ('jmr-photos','site-reports','item-images','inv-gate-passes','wh-bills','wh-gate-passes');
+-- Postgres refuses direct deletes from storage tables (storage.protect_delete). The six
+-- buckets — jmr-photos (7 files), site-reports (1), item-images, inv-gate-passes, wh-bills,
+-- wh-gate-passes (empty) — are removed from the Supabase dashboard → Storage instead.
 
 -- ── 6. Sync snapshot tables: keep the last 30 of each (the code prunes from now on) ──
 delete from public.procurement_tracker_state_history
