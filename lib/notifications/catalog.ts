@@ -254,3 +254,16 @@ export function parseAssignments(raw: string | null | undefined): Record<string,
     return out
   } catch { return {} }
 }
+
+/** How scattered it is today, measured rather than asserted — read by the
+ *  email roof (/admin/email) on the trial deployment. */
+export function spread(list: OutboundMessage[] = OUTBOUND): {
+  messages: number; screens: number; settingKeys: number; ignoring: number
+} {
+  return {
+    messages: list.length,
+    screens: new Set(list.map(o => o.settingsHref)).size,
+    settingKeys: recipientSettingKeys(list).length,
+    ignoring: ignoresTheSwitches(list).length,
+  }
+}

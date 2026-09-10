@@ -1,0 +1,63 @@
+﻿app/(app)/admin/approvals/approvals-matrix.tsx:63:  return (labels as any)[r]?.label || r
+app/(app)/budget-vs-actual-v2/print/page.tsx:23:  const extras: ExtraProject[] = (extraRows ?? []).map((r: any) => ({
+app/(app)/budget-vs-actual-v2/print/page.tsx:29:    ((bud?.state as any)?.projects ?? []) as any[],
+app/(app)/comparisons/page.tsx:52:  const rows: Row[] = (comparisons ?? []).map((c: any) => ({
+app/(app)/cost-control/working-sheets/[id]/SourceExcelViewer.tsx:80:    const colsMeta = (ws['!cols'] ?? []) as any[]
+app/(app)/cost-control/working-sheets/[id]/SourceExcelViewer.tsx:92:    const rowsMeta = (ws['!rows'] ?? []) as any[]
+app/(app)/cost-control/working-sheets/[id]/SourceExcelViewer.tsx:120:        const cell = ws[XLSX.utils.encode_cell({ r, c })] as any
+app/(app)/cost-control/working-sheets/[id]/page.tsx:101:  // Cost Control access is role-based: any engineer (a cost-control editor)
+app/(app)/error.tsx:36:    console.error('[AppError]', error)
+app/api/cost-control/working-sheets/[id]/ai-reparse/route.ts:322:            console.error('[ai-reparse] failed to restore original rows after insert failure:', restoreErr.message)
+app/api/cost-control/working-sheets/[id]/check/route.ts:130:    // Now: any peer triggers a flag if the deviation is ≥20%; severity
+app/api/cron/bills-pipeline/route.ts:209:  // TODO: send PNG to WhatsApp via WABA API
+app/api/cron/bills-pipeline/route.ts:210:  // TODO: email PNG via nodemailer
+app/api/procurement-tracker/analyse/route.ts:158:      console.error('[procurement] state upsert failed:', writeError)
+app/api/procurement-tracker/analyse/route.ts:216:          console.log('[procurement] warehouse sync:', warehouse.added)
+app/api/procurement-tracker/analyse/route.ts:219:          console.error('[procurement] warehouse sync failed:', res.error)
+app/api/procurement-tracker/analyse/route.ts:224:      console.error('[procurement] warehouse sync threw:', e)
+app/api/procurement-tracker/analyse/route.ts:247:    console.error('Procurement parse error:', err)
+app/api/procurement-tracker/chase-notes/route.ts:48:    console.error('[procurement] chase-notes GET failed:', error)
+app/api/procurement-tracker/chase-notes/route.ts:84:    console.error('[procurement] chase-notes POST failed:', error)
+app/api/procurement-tracker/dropped/route.ts:46:    console.error('[procurement] dropped GET failed:', error)
+app/api/procurement-tracker/dropped/route.ts:76:    console.error('[procurement] dropped POST failed:', error)
+app/api/procurement-tracker/dropped/route.ts:95:    console.error('[procurement] dropped DELETE failed:', error)
+app/api/procurement-tracker/my-hidden-projects/route.ts:28:    console.error('[procurement] my-hidden-projects fetch failed:', error)
+app/api/procurement-tracker/state/route.ts:33:    console.error('[procurement] state fetch failed:', e)
+components/GoogleOneTapButton.tsx:28:  interface Window { google?: any }
+components/InstallPrompt.tsx:45:  if ((window.navigator as any).standalone === true) return true
+components/NotificationProvider.tsx:110:      console.error('[notifications] markAllRead failed', error)
+components/NotificationProvider.tsx:123:      console.error('[notifications] markOneRead failed', error)
+components/NotificationProvider.tsx:138:      console.error('[notifications] clearAll failed', error)
+lib/ai/index.ts:178:    console.log(`[ai] gemini json tokens=${json.usageMetadata?.promptTokenCount ?? '?'}/${json.usageMetadata?.candidatesTokenCount ?? '?'}`)
+lib/ai/index.ts:211:    console.log(`[ai] gemini text tokens=${json.usageMetadata?.promptTokenCount ?? '?'}/${json.usageMetadata?.candidatesTokenCount ?? '?'}`)
+lib/ai/index.ts:253:    console.log(`[ai] groq json tokens=${json.usage?.prompt_tokens ?? '?'}/${json.usage?.completion_tokens ?? '?'}`)
+lib/ai/index.ts:289:    console.log(`[ai] groq text tokens=${json.usage?.prompt_tokens ?? '?'}/${json.usage?.completion_tokens ?? '?'}`)
+lib/ai/index.ts:338:    console.log(`[ai] cerebras json tokens=${json.usage?.prompt_tokens ?? '?'}/${json.usage?.completion_tokens ?? '?'}`)
+lib/ai/index.ts:374:    console.log(`[ai] cerebras text tokens=${json.usage?.prompt_tokens ?? '?'}/${json.usage?.completion_tokens ?? '?'}`)
+lib/auth.ts:41:    console.error('[getMyProfile] DB error', error)
+lib/budget-v2-load.ts:44:export async function loadBudgetV2(supabase: any): Promise<BudgetV2LoadResult> {
+lib/budget-v2-load.ts:62:  const budgetProjects = ((bud?.state as any)?.projects ?? []) as any[]
+lib/budget-v2-load.ts:68:  const extras: ExtraProject[] = (extraRows ?? []).map((r: any) => ({
+lib/budget-v2-load.ts:91:      const prevProjects = ((prevRow?.state as any)?.projects ?? []) as any[]
+lib/budget-v2-pdf.ts:139:  return (doc as any).lastAutoTable?.finalY ?? startY
+lib/cost-control/computed-working-pdf.ts:325:  let fy = ((doc as any).lastAutoTable?.finalY ?? y + 40) + 16
+lib/cost-control/ie-notify.ts:11:// by the caller's RLS. Best-effort: any failure is swallowed so it can never
+lib/inventory/daily-movement.ts:151:      itemCode: any.item_code, itemName: any.item_name, qty: Number(any.qty || 0), unit: any.unit,
+lib/inventory/daily-movement.ts:154:      actor: any.actor_name || 'Someone', at: any.created_at, remarks: any.remarks,
+lib/procurement/tracker-cache.ts:41:async function fetchSlots(sb: any): Promise<TrackerSlot[]> {
+lib/report-state-cache.ts:39:async function fetchRow(sb: any, table: ReportTable): Promise<ReportStateRow | null> {
+lib/revamp/workspace-header.ts:144:    console.error('[workspace-header] enrichment failed for', projectId, e)
+lib/shell.ts:50:  if (error) { console.error('[shell] shell_for failed', error); return null }
+lib/sidebar-groups.ts:31:    const name = typeof (g as any).name === 'string' ? (g as any).name.trim() : ''
+lib/sidebar-groups.ts:33:    let id = typeof (g as any).id === 'string' && (g as any).id ? (g as any).id : name
+lib/sidebar-groups.ts:36:    const slugs = Array.isArray((g as any).slugs)
+lib/sidebar-groups.ts:37:      ? (g as any).slugs.filter((s: unknown): s is string => typeof s === 'string')
+lib/supabase/auth-retry.ts:24:  user: any | null
+lib/supabase/auth-retry.ts:63:export async function getUserResilient(supabase: any, attempts = 3): Promise<AuthOutcome> {
+lib/supabase/auth-retry.ts:79:    const { data, error } = res as { data?: any; error?: unknown }
+lib/telegram/group.ts:19:async function groupChatId(supabase: any): Promise<string | null> {
+lib/telegram/group.ts:27:export async function hasReportsGroup(supabase: any): Promise<boolean> {
+lib/telegram/group.ts:33:  supabase: any,
+lib/telegram/group.ts:69:export async function broadcastReportToGroup(supabase: any, b: GroupBroadcast): Promise<SendResult> {
+lib/warehouse/paging.ts:14: *  So: any read of a table that can pass a thousand rows goes through here.
+proxy.ts:41:    console.error('[proxy] updateSession error:', err)

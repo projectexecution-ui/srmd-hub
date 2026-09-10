@@ -6,19 +6,31 @@ import { InstallPrompt } from '@/components/InstallPrompt'
 import { NotificationProvider } from '@/components/NotificationProvider'
 import { ConfirmHost } from '@/components/ui/confirm-dialog'
 import { AccessPendingScreen } from '@/components/AccessPendingScreen'
+import { DemoBanner } from '@/components/DemoBanner'
 import { getMyProfile, getMyPermissions, getDisabledModuleSlugs, isPortalOwner } from '@/lib/auth'
 import { getModuleLabels } from '@/lib/module-labels'
 import { getSidebarGroups } from '@/lib/sidebar-groups.server'
 import { getShell } from '@/lib/shell'
+import { getRevampOn } from '@/lib/revamp/shell-switch'
+import { getMyApprovalCounts, rollUpCounts } from '@/lib/revamp/approval-counts'
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
-  const [profile, permissions, disabledSlugs, portalOwner, moduleLabelsMap, sidebarGroups] = await Promise.all([
+  const [profile, permissions, disabledSlugs, portalOwner, moduleLabelsMap, sidebarGroups, shell, approvalCounts, revampOn] = await Promise.all([
     getMyProfile(),
     getMyPermissions(),
     getDisabledModuleSlugs(),
     isPortalOwner(),
     getModuleLabels(),
     getSidebarGroups(),
+    // The same cached shell the calls above read from — no extra round trip.
+    // It carries the live project list for the sidebar's Projects tree.
+    getShell(),
+    // The yellow "waiting on you" counts for the Projects lane. One RPC —
+    // the same my_approval_inbox() the dashboard and the bell read, so the
+    // three can never disagree — and it degrades to zeroes on failure.
+    getMyApprovalCounts(),
+    // The "CT Hub V1" toggle: which sidebar everyone gets (lib/revamp/live.ts).
+    getRevampOn(),
   ])
   // Flatten { label, description } → just label for the NavBar prop shape.
   const moduleLabels: Record<string, string> = Object.fromEntries(
@@ -43,6 +55,8 @@ export default async function AppLayout({ children }: { children: React.ReactNod
 
   return (
     <NotificationProvider userId={profile.id}>
+      {/* Renders nothing on the live site. */}
+      <DemoBanner />
       <div className="flex flex-col md:flex-row min-h-screen">
         <NavBar
           profile={profile}
@@ -51,7 +65,10 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           isPortalOwner={portalOwner}
           moduleLabels={moduleLabels}
           sidebarGroups={sidebarGroups}
+          projects={shell?.projects ?? []}
+          approvals={rollUpCounts(approvalCounts.byProject, shell?.projects ?? [])}
           initialCollapsed={navCollapsed}
+          revampOn={revampOn}
         />
         <main className="flex-1 min-w-0 overflow-x-auto">
           {children}

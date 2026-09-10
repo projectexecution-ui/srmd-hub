@@ -9,7 +9,8 @@ const APP = join(__dirname, '..', 'app', '(app)')
 describe('admin registry', () => {
   it('every screen points at a route that exists', () => {
     for (const s of ADMIN_SCREENS) {
-      const dir = join(APP, ...s.href.split('/').filter(Boolean))
+      // A link may carry a view (`/masters/projects?view=hub`); the route is the path.
+      const dir = join(APP, ...s.href.split('?')[0].split('/').filter(Boolean))
       expect(existsSync(join(dir, 'page.tsx')), `${s.href} has no page.tsx`).toBe(true)
     }
   })

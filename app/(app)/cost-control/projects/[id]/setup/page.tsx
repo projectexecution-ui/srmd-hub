@@ -17,13 +17,18 @@ import {
 import { RenameProjectChip } from '../RenameProjectChip'
 import { ProjectAliasChip } from '../ProjectAliasChip'
 import { AreaChip } from '../AreaChip'
+import { personName, formatDateTime } from '@/lib/utils'
 import { ParentProjectControl } from '../ParentProjectControl'
-import { ProjectApproversPanel } from '../ProjectApproversPanel'
+import { ProjectPeoplePanel } from './ProjectPeoplePanel'
+import { mergeGrants } from '@/lib/revamp/project-people'
 import { ProjectArchiveControls } from '../ProjectArchiveControls'
 import { GroupLabelChip } from '@/app/(app)/cost-control/GroupLabelChip'
 import { getBphMappingForProject } from '@/app/(app)/cost-control/import/bph/actions'
 import { getCcSettings } from '@/lib/cost-control/settings'
 import { CopySetupPanel } from './CopySetupPanel'
+import { BphSyncButton } from '../BphSyncButton'
+import { IeRevisionPanel, type IeRevision } from '../IeRevisionPanel'
+import { checkCanDecideInternalEstimate, checkCanRequestIeRevision } from '@/components/cost-control/ws-actions'
 import { listSetupSources } from './copy-setup-actions'
 
 export const dynamic = 'force-dynamic'
@@ -54,7 +59,7 @@ export default async function ResumeProjectSetupPage(
 
   const { data: project } = await supabase
     .from('projects')
-    .select('id, code, name, setup_progress_pct, cc_status, built_up_sft, parent_project_id, group_label, archived_at')
+    .select('id, code, short_name, name, setup_progress_pct, cc_status, built_up_sft, parent_project_id, group_label, archived_at')
     .eq('id', id)
     .single()
 
@@ -67,6 +72,39 @@ export default async function ResumeProjectSetupPage(
   const canRename = can(await getMyPermissions(), 'cost-control', 'admin')
   const ccSettings = await getCcSettings()
   const bphMapping = ccSettings.bph_sync ? await getBphMappingForProject(id) : null
+  // When the IN4 budget feed last ran — the stamp on the card. A pointer in
+  // app_settings, so no IN4 call and nothing slows the page when IN4 is away.
+  const in4Stamp = bphMapping ? await in4BudgetStamp() : null
+
+  // Internal Estimate lock + any in-flight revision. Moved here from the
+  // Internal Estimate page on 7 Sept 2026 — Aksha: "Internal Estimate if can
+  // be moved in Setup". It is the lock on the baseline, which is
+  // configuration, not one of the numbers on the sheet.
+  const [{ data: lockRaw }, { data: revRow }, canDecideRevision, canRequestRevision] = await Promise.all([
+    supabase.rpc('cc_ie_lock_state', { p_project: id }),
+    supabase.from('cc_ie_revisions')
+      .select('id, status, request_note, requested_by, reopen_note, revised_excel_name, decision_note')
+      .eq('project_id', id).order('created_at', { ascending: false }).limit(1).maybeSingle(),
+    checkCanDecideInternalEstimate(),
+    checkCanRequestIeRevision(),
+  ])
+  const lockState = (lockRaw as 'locked' | 'reopen_requested' | 'unlocked' | 'revision_submitted' | null) ?? 'locked'
+  let ieRevision: IeRevision | null = null
+  if (revRow && !['approved', 'rejected', 'reopen_denied'].includes(revRow.status as string)) {
+    let requesterName: string | null = null
+    if (revRow.requested_by) {
+      const { data: rp } = await supabase.from('profiles').select('full_name, name').eq('id', revRow.requested_by).maybeSingle()
+      requesterName = (rp?.full_name ?? rp?.name ?? null) as string | null
+    }
+    ieRevision = {
+      id: revRow.id as string, status: revRow.status as string,
+      request_note: revRow.request_note as string | null,
+      requested_by_name: requesterName,
+      reopen_note: revRow.reopen_note as string | null,
+      revised_excel_name: revRow.revised_excel_name as string | null,
+      decision_note: revRow.decision_note as string | null,
+    }
+  }
 
   // Used to bounce 100%-complete projects, but PMs need to be able to
   // edit setup after going active (add/remove disciplines, re-tick subs).
@@ -91,6 +129,22 @@ export default async function ResumeProjectSetupPage(
       .eq('is_enabled', true),
     supabase.from('cc_project_approvers').select('role, user_id').eq('project_id', id),
   ])
+
+  // "Who works on this project" reads all six tables that answer that question,
+  // so the whole picture is on one screen instead of five. Each is optional —
+  // a module that has never been set up simply contributes nothing.
+  const [assignRes, jmrRes, deskRes, desksRes] = await Promise.all([
+    supabase.from('project_assignments').select('user_id').eq('project_id', id),
+    supabase.from('jmr_user_project_access').select('user_id').eq('project_id', id),
+    supabase.from('bb_desk_members').select('user_id, desk').eq('project_id', id),
+    supabase.from('bb_desk_members').select('desk'),
+  ])
+  // Indent visibility is keyed on the project NAME rather than its id — the one
+  // fragile grant of the six, and the panel says so on screen.
+  const { data: indentRes } = await supabase
+    .from('procurement_user_project_visibility')
+    .select('user_id')
+    .eq('project_name', project.name)
 
   const tablesMissing = !!disciplinesRes.error
 
@@ -132,11 +186,35 @@ export default async function ResumeProjectSetupPage(
   }))
   const savedSubSkillIds = (projSubRes.data ?? []).map(r => r.sub_skill_id as string)
 
-  // Config-panel inputs (approvers roster).
-  const nameById = new Map(profRows.map(p => [p.id, p.full_name ?? p.name ?? '(unnamed)']))
-  const projectApprovers = ((approverRes.data ?? []) as Array<{ role: 'project_head' | 'head' | 'founder'; user_id: string }>)
-    .map(r => ({ role: r.role, user_id: r.user_id, name: nameById.get(r.user_id) ?? '(user)' }))
-  const approverCandidates = profRows.map(p => ({ id: p.id, name: p.full_name ?? p.name ?? '(unnamed)' }))
+  // Fold the six sources into one row per person. mergeGrants drops a grant
+  // whose account no longer exists rather than throwing, so a stale row left by
+  // a deleted user cannot take this page down.
+  const peopleRows = mergeGrants(
+    profRows.map(p => ({
+      id: p.id,
+      full_name: p.full_name ?? p.name ?? null,
+      email: p.email ?? null,
+      role: p.role ?? 'viewer',
+    })),
+    {
+      approvers: (approverRes.data ?? []) as Array<{ user_id: string; role: string | null }>,
+      assignments: (assignRes.data ?? []) as Array<{ user_id: string }>,
+      jmrAccess: (jmrRes.data ?? []) as Array<{ user_id: string }>,
+      indentViewers: (indentRes ?? []) as Array<{ user_id: string }>,
+      deskMembers: (deskRes.data ?? []) as Array<{ user_id: string; desk: string | null }>,
+    },
+  )
+  const peopleCandidates = profRows.map(p => ({
+    id: p.id,
+    name: personName(p.full_name, p.name, p.email),
+    role: p.role ?? 'viewer',
+  }))
+  // Desk names already in use, so the panel offers real choices rather than a
+  // free-text box that invents a new desk on every typo.
+  const deskNames = [...new Set(
+    ((desksRes.data ?? []) as Array<{ desk: string | null }>).map(d => d.desk?.trim()).filter(Boolean) as string[],
+  )].sort()
+  if (deskNames.length === 0) deskNames.push('Site Head')
 
   // Projects that already have a setup worth reusing (richest first).
   const setupSources = await listSetupSources(id)
@@ -171,6 +249,17 @@ export default async function ResumeProjectSetupPage(
         </Card>
       )}
 
+      {/* The Internal Estimate lock and its revision workflow. Whoever opens
+          Setup to change a category or an area needs to know whether the
+          baseline is locked, so it sits above the settings it governs. */}
+      <IeRevisionPanel
+        projectId={id}
+        lockState={lockState}
+        revision={ieRevision}
+        canRequest={ccSettings.ie_review && canRequestRevision}
+        canDecide={ccSettings.ie_review && canDecideRevision}
+      />
+
       {/* ── Project settings ────────────────────────────────────────────
           Details, grouping, BPH source — the config that used to clutter the
           project page now lives here, on the one management screen. */}
@@ -179,7 +268,7 @@ export default async function ResumeProjectSetupPage(
           <h2 className="text-sm font-semibold text-gray-900 mb-2">Project details</h2>
           <div className="flex flex-wrap items-center gap-2">
             <RenameProjectChip projectId={id} name={project.name} canRename={canRename} />
-            <ProjectAliasChip projectId={id} code={project.code} isAdmin={isAdmin} />
+            <ProjectAliasChip projectId={id} code={project.code} shortName={(project as { short_name?: string | null }).short_name ?? null} isAdmin={isAdmin} />
             <AreaChip projectId={id} sft={project.built_up_sft != null ? Number(project.built_up_sft) : null} canWrite />
           </div>
         </div>
@@ -202,29 +291,45 @@ export default async function ResumeProjectSetupPage(
         {ccSettings.bph_sync && (
           <div className="border-t border-gray-100 pt-3 space-y-1">
             <h2 className="text-sm font-semibold text-gray-900 inline-flex items-center gap-1.5">
-              <FileSpreadsheet className="h-4 w-4 text-gray-400" /> Budget (BPH) source
+              <FileSpreadsheet className="h-4 w-4 text-gray-400" /> Budget source: IN4
             </h2>
             {bphMapping ? (
-              <p className="text-sm text-gray-700">
-                Linked to a BPH report — <span className="text-emerald-700 font-medium">auto-syncs on every BPH upload</span>.{' '}
-                <Link href={`/cost-control/import/bph?cc_project=${id}`} className="text-blue-600 hover:underline">Change or resync →</Link>
-              </p>
+              <>
+                {/* Aksha, 10 Sep 2026: "why is this still coming when my IN4
+                    database is already connected?" — the mapping is what tells
+                    the IN4 feed which sub-projects belong to this project; the
+                    words used to describe the Excel upload it replaced. */}
+                <p className="text-sm text-gray-700">
+                  Linked to IN4 — <span className="text-emerald-700 font-medium">Budget (ERP) figures refresh twice a day{in4Stamp ? ` · last ${in4Stamp}` : ''}</span>.{' '}
+                  <Link href={`/cost-control/import/bph?cc_project=${id}`} className="text-blue-600 hover:underline">Change which IN4 sub-projects feed this project →</Link>
+                </p>
+                {/* Moved here from the Internal Estimate page on 7 Sept 2026.
+                    It is a setting, and Aksha's rule for the workspace is that
+                    settings live on Setup — but it is a one-click resync with
+                    no equivalent here, so it moved rather than being dropped. */}
+                <div className="pt-1">
+                  <BphSyncButton projectId={id} isMapped />
+                </div>
+              </>
             ) : (
               <p className="text-sm text-gray-700">
-                Not linked yet.{' '}
-                <Link href={`/cost-control/import/bph?cc_project=${id}`} className="text-blue-600 hover:underline">Map to a BPH report →</Link>{' '}
-                Once mapped, Budget (ERP) numbers refresh automatically on every upload.
+                Not linked to IN4 yet.{' '}
+                <Link href={`/cost-control/import/bph?cc_project=${id}`} className="text-blue-600 hover:underline">Link this project to its IN4 sub-projects →</Link>{' '}
+                Once linked, Budget (ERP) figures refresh from IN4 twice a day.
               </p>
             )}
           </div>
         )}
       </Card>
 
-      {/* Per-project approvers roster. */}
-      <ProjectApproversPanel
+      {/* Everyone on this project and what each may do — approvals, site
+          access, indents and bill desks together. Replaces the trip to five
+          screens that used to be the only way to see this. */}
+      <ProjectPeoplePanel
         projectId={id}
-        approvers={projectApprovers}
-        candidates={approverCandidates}
+        rows={peopleRows}
+        candidates={peopleCandidates}
+        desks={deskNames}
         canWrite
       />
 
@@ -261,4 +366,15 @@ export default async function ResumeProjectSetupPage(
       />
     </div>
   )
+}
+
+/** "10 Sep 2026, 09:23" from the IN4 budget feed's last successful run, or null. */
+async function in4BudgetStamp(): Promise<string | null> {
+  const supabase = await createClient()
+  const { data } = await supabase.from('app_settings').select('value').eq('key', 'in4_last_sync').maybeSingle()
+  if (!data?.value) return null
+  try {
+    const s = JSON.parse(String(data.value)) as { at?: string; ok?: boolean }
+    return s.ok && s.at ? formatDateTime(s.at) : null
+  } catch { return null }
 }

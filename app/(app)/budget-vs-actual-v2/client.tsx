@@ -27,6 +27,7 @@ import {
 } from 'lucide-react'
 import { cn, istAgeLabel, APP_TIME_ZONE } from '@/lib/utils'
 import type { ComposeResult, CatNode, ProjectNode, GroupNode, DeltaResult, Delta } from '@/lib/budget-v2'
+import { shownName } from '@/lib/budget-v2'
 
 // ─── formatting helpers ──────────────────────────────────────────────────────
 // ≥ ₹1 Cr → compact crore (₹1.46 Cr). Under ₹1 Cr → the actual amount, Indian-
@@ -724,7 +725,7 @@ function ProjectCard({ p, open, toggle, forceOpen, groupAvgSft, isAdmin, onStatu
           <div className="h-7 w-7 rounded-lg bg-gray-100 flex items-center justify-center flex-shrink-0">
             <Building2 className="h-4 w-4 text-gray-500" />
           </div>
-          <span className="font-semibold text-sm text-gray-900 truncate">{p.name}</span>
+          <span className="font-semibold text-sm text-gray-900 truncate" title={p.displayName ? `BPH: ${p.name}` : undefined}>{shownName(p)}</span>
           {isAdmin ? (
             <button
               type="button"

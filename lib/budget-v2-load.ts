@@ -17,7 +17,7 @@
 // cron) — it only needs `.from(...).select(...)`.
 
 import {
-  composeBudgetV2, snapshotOf, deltaVs,
+  composeBudgetV2, snapshotOf, deltaVs, applyDisplayNames,
   type StatusMap, type AreaOverrideMap, type ExtraProject, type OverrideMap,
   type ComposeResult, type DeltaResult,
 } from '@/lib/budget-v2'
@@ -48,6 +48,8 @@ export async function loadBudgetV2(supabase: any): Promise<BudgetV2LoadResult> {
     { data: areaRows }, { data: extraRows }, { data: overrideRows },
     { data: budHistRows },
     { data: histMeta },
+    { data: linkRows },
+    { data: hubRows },
   ] = await Promise.all([
     supabase.from('budget_hub_state').select('state').eq('id', 'global').maybeSingle(),
     supabase.from('budget_v2_project_status').select('project_name, status'),
@@ -57,9 +59,29 @@ export async function loadBudgetV2(supabase: any): Promise<BudgetV2LoadResult> {
     supabase.from('budget_hub_state').select('updated_at').eq('id', 'global').maybeSingle(),
     // Metadata only (no big state blobs) so we can pick the previous upload cheaply.
     supabase.from('budget_hub_state_history').select('version, snapshot_at').eq('state_id', 'global').order('version', { ascending: false }).limit(100),
+    // The HUMAN-CONFIRMED BPH → CT Hub project links (never a name match), so a
+    // trustee reads "NGH B", not "New Guest House B - Execution". Display only.
+    supabase.from('cc_bph_project_links').select('bph_project_id, cc_project_id'),
+    supabase.from('projects').select('id, name'),
   ])
 
   const budgetProjects = ((bud?.state as any)?.projects ?? []) as any[]
+
+  // BPH project NAME → CT Hub name, through the link table by BPH id. Only
+  // linked projects get one; hand-added extras already carry a hub-ish name.
+  const hubNameById = new Map<string, string>()
+  for (const r of (hubRows ?? []) as Array<{ id: string; name: string | null }>) if (r.name) hubNameById.set(r.id, r.name)
+  const hubByBphId = new Map<string, string>()
+  for (const l of (linkRows ?? []) as Array<{ bph_project_id: string; cc_project_id: string }>) {
+    const n = hubNameById.get(l.cc_project_id)
+    if (n) hubByBphId.set(l.bph_project_id, n)
+  }
+  const displayNames: Record<string, string> = {}
+  for (const p of budgetProjects) {
+    const id = String(p?.id ?? ''), name = String(p?.name ?? '')
+    const hub = id ? hubByBphId.get(id) : undefined
+    if (name && hub) displayNames[name] = hub
+  }
 
   const statusMap: StatusMap = {}
   for (const r of statusRows ?? []) statusMap[r.project_name] = r.status as 'open' | 'closed'
@@ -74,7 +96,7 @@ export async function loadBudgetV2(supabase: any): Promise<BudgetV2LoadResult> {
     overrides[r.project_name] = { budget: r.budget, approved: r.approved, paid: r.paid, note: r.note, updated_at: r.updated_at }
   }
 
-  const result = composeBudgetV2(budgetProjects, statusMap, areaOverrides, extras, overrides)
+  const result = applyDisplayNames(composeBudgetV2(budgetProjects, statusMap, areaOverrides, extras, overrides), displayNames)
 
   // Baseline = the previous UPLOAD: the newest history version from an earlier
   // IST day than the current one (collapses same-day re-saves into one upload).
@@ -91,7 +113,7 @@ export async function loadBudgetV2(supabase: any): Promise<BudgetV2LoadResult> {
       const prevProjects = ((prevRow?.state as any)?.projects ?? []) as any[]
       if (prevProjects.length) {
         // Same overrides/extras on both sides → manual entries cancel; Δ = real upload movement.
-        prev = composeBudgetV2(prevProjects, statusMap, areaOverrides, extras, overrides)
+        prev = applyDisplayNames(composeBudgetV2(prevProjects, statusMap, areaOverrides, extras, overrides), displayNames)
         delta = deltaVs(result, snapshotOf(prev))
         prevSnapshotWeek = istDateOf(prevMeta.snapshot_at)
       }

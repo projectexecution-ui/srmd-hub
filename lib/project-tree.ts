@@ -63,8 +63,8 @@ export function countTree(tree: TreeProject[]): number {
   return tree.reduce((n, t) => n + 1 + t.children.length, 0)
 }
 
-/** The project id a cost-control URL is on, or null — used to auto-open the branch. */
+/** The project id an Internal Estimate or cockpit URL is on, or null — used to auto-open the branch. */
 export function projectIdFromPath(pathname: string): string | null {
-  const m = pathname.match(/^\/cost-control\/projects\/([0-9a-f-]{36})/i)
+  const m = pathname.match(/^\/(?:cost-control\/projects|project)\/([0-9a-f-]{36})/i)
   return m ? m[1] : null
 }

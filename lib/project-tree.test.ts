@@ -29,6 +29,7 @@ describe('buildProjectTree', () => {
   })
   it('reads the project id off an Internal Estimate URL', () => {
     expect(projectIdFromPath('/cost-control/projects/9f1c2a3b-1111-2222-3333-444455556666/setup')).toBe('9f1c2a3b-1111-2222-3333-444455556666')
+    expect(projectIdFromPath('/project/9f1c2a3b-1111-2222-3333-444455556666/reports')).toBe('9f1c2a3b-1111-2222-3333-444455556666')
     expect(projectIdFromPath('/dashboard')).toBeNull()
   })
 })

@@ -1,0 +1,11 @@
+﻿NEW-ON-REVAMP   app/(app)/admin/email/page.tsx
+NEW-ON-REVAMP   app/(app)/masters/contacts/page.tsx
+NEW-ON-REVAMP   app/(app)/masters/items/page.tsx
+NEW-ON-REVAMP   app/(app)/masters/mapping/page.tsx
+NEW-ON-REVAMP   app/(app)/masters/page.tsx
+NEW-ON-REVAMP   app/(app)/masters/projects/page.tsx
+NEW-ON-REVAMP   app/(app)/masters/stores/page.tsx
+NEW-ON-REVAMP   app/(app)/masters/trusts/page.tsx
+NEW-ON-REVAMP   app/(app)/project/[id]/[...rest]/page.tsx
+NEW-ON-REVAMP   app/(app)/project/[id]/page.tsx
+NEW-ON-REVAMP   app/api/in4/work-order/[woId]/print/route.ts

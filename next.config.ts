@@ -2,6 +2,14 @@ import type { NextConfig } from 'next'
 
 const nextConfig: NextConfig = {
   reactStrictMode: true,
+  // Trial-site flag. VERCEL_ENV is 'preview' on every non-production Vercel
+  // deployment and 'production' on the live site, so this is computed per
+  // build with nothing to set in the dashboard — and the live site can never
+  // be a trial by accident. Copied to a NEXT_PUBLIC_ name so client
+  // components (which talk to supabase.co directly) can see it too.
+  env: {
+    NEXT_PUBLIC_DEMO_MODE: process.env.VERCEL_ENV === 'preview' ? '1' : '',
+  },
   // @resvg/resvg-js ships a native .node binding that Turbopack can't bundle
   // into an ESM chunk ("non-ecmascript placeable asset"). Marking it external
   // keeps it as a runtime require() in the server bundle.
@@ -25,6 +33,16 @@ const nextConfig: NextConfig = {
     remotePatterns: [
       { protocol: 'https', hostname: 'lh3.googleusercontent.com' },
     ],
+  },
+  // The Masters screens moved from /admin/masters to /masters (9 Sep 2026,
+  // one section instead of two). Bookmarks and old e-mails keep working.
+  async redirects() {
+    return [
+      { source: '/admin/masters', destination: '/masters', permanent: true },
+      { source: '/admin/masters/projects', destination: '/masters/projects?view=hub', permanent: true },
+      { source: '/admin/masters/categories', destination: '/masters/categories?view=hub', permanent: true },
+      { source: '/admin/masters/:path*', destination: '/masters/:path*', permanent: true },
+    ]
   },
   // Static asset caching — heavy iframe HTMLs + logos rarely change. Long
   // browser cache + Vercel CDN means second-visit nav is near-instant.

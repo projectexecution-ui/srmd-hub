@@ -1,10 +1,12 @@
 import { createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
+import { guardSupabaseClient } from '@/lib/demo-mode'
 
 export async function createClient() {
   const cookieStore = await cookies()
 
-  return createServerClient(
+  // No-op on the live site; blocks every write on the trial deployment.
+  return guardSupabaseClient(createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
@@ -23,5 +25,5 @@ export async function createClient() {
         },
       },
     }
-  )
+  ))
 }

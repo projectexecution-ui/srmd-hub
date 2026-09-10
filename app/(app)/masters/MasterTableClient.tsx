@@ -1,0 +1,330 @@
+'use client'
+import { useMemo, useState } from 'react'
+import Link from 'next/link'
+import { Search, ArrowUpDown, X, Download } from 'lucide-react'
+
+/**
+ * One table for every Masters screen.
+ *
+ * The first version of Masters rendered each list as a static wall — 91
+ * contacts, 39 projects, 100+ mapped names, no search and no sort. Measuring
+ * the mess is only half the job; you also have to be able to FIND the row you
+ * came for, which is the difference between a report and a tool.
+ *
+ * Data in, plain: the server pages stay server components and hand this plain
+ * strings, so nothing about the queries moves to the client.
+ */
+
+export type CellTone = 'default' | 'muted' | 'missing' | 'strong' | 'good' | 'warn'
+
+export interface Cell {
+  text: string
+  tone?: CellTone
+  mono?: boolean
+  /** Small second line under the value — a code, a date, a reason. */
+  sub?: string
+  /** Small links under the value — "Print · Ledger · In project" on a last-used order. External ones open in a new tab. */
+  links?: Array<{ label: string; href: string; external?: boolean }>
+}
+
+export interface MasterColumn {
+  key: string
+  label: string
+  align?: 'left' | 'right'
+  /** Tailwind width class for the desktop column, e.g. 'w-32'. */
+  width?: string
+  /** Hidden on mobile cards — for columns that only make sense in a table. */
+  desktopOnly?: boolean
+}
+
+export interface MasterRow {
+  id: string
+  cells: Record<string, Cell>
+  /** Whole-row emphasis: 'warn' tints the row amber, 'info' blue. */
+  tone?: 'warn' | 'info'
+  href?: string
+  /** Rendered at the end of the row (desktop) / card (mobile) — the "link to
+   *  IN4" picker on a hub-only record, for admins. */
+  action?: React.ReactNode
+  /** Which chips this row belongs to; filled in by the server wrapper from each chip's test. */
+  tags?: string[]
+}
+
+/** A quick chip above the table, e.g. "Not in IN4". */
+/** A chip as the client sees it — the test already ran on the server and became a tag on each row (see MasterTable.tsx). A function here would not cross the server → client boundary. */
+export type ClientFilter = { key: string; label: string }
+
+const TONE: Record<CellTone, string> = {
+  default: 'text-gray-800',
+  muted: 'text-gray-500',
+  missing: 'text-rose-300 italic',
+  strong: 'font-semibold text-gray-900',
+  good: 'font-semibold text-emerald-700',
+  warn: 'font-semibold text-amber-700',
+}
+
+export function MasterTableClient({
+  columns, rows, searchPlaceholder = 'Search…', emptyMessage = 'Nothing here.',
+  sortableKeys = [], maxRows = 500, initialQuery = '', exportName, emptyHint, filters = [], defaultFilter,
+}: {
+  /** Quick chips above the table; one active at a time, "All" resets. */
+  filters?: ClientFilter[]
+  defaultFilter?: string
+  columns: MasterColumn[]
+  rows: MasterRow[]
+  searchPlaceholder?: string
+  emptyMessage?: string
+  /** Column keys that can be sorted. Others stay in the order given. */
+  sortableKeys?: string[]
+  /** How many rows to draw at once. The Item master is 4,041 rows; drawing
+   *  them all froze a phone. Search narrows; the count line says so. */
+  maxRows?: number
+  /** Pre-filled search — how a hit on /masters/search lands here already narrowed. */
+  initialQuery?: string
+  /** File name (without .csv) for the Download button; omit for no button.
+   *  Exports the rows as shown after search and sort — Aksha works in Excel. */
+  exportName?: string
+  /** Shown under "nothing matches" — e.g. where else to look. */
+  emptyHint?: React.ReactNode
+}) {
+  const [q, setQ] = useState(initialQuery)
+  const [sort, setSort] = useState<{ key: string; dir: 1 | -1 } | null>(null)
+  const [filter, setFilter] = useState<string | null>(defaultFilter ?? null)
+  const hasAction = rows.some(r => r.action)
+
+  const matched = useMemo(() => {
+    const needle = q.trim().toLowerCase()
+    let out = rows
+    if (filter && filters.some(x => x.key === filter)) out = out.filter(r => r.tags?.includes(filter))
+    // The search narrows what the chip left — it used to start from every row again.
+    if (needle) {
+      out = out.filter(r =>
+        Object.values(r.cells).some(c =>
+          (c.text + ' ' + (c.sub ?? '')).toLowerCase().includes(needle)))
+    }
+    if (sort) {
+      // Numeric when both sides look numeric, so "1,200" sorts above "900"
+      // instead of below it the way a plain string compare would.
+      const val = (r: MasterRow) => r.cells[sort.key]?.text ?? ''
+      const asNum = (s: string) => Number(s.replace(/[^0-9.-]/g, ''))
+      out = [...out].sort((a, b) => {
+        const x = val(a), y = val(b)
+        const nx = asNum(x), ny = asNum(y)
+        const bothNum = x !== '' && y !== '' && Number.isFinite(nx) && Number.isFinite(ny)
+        return (bothNum ? nx - ny : x.localeCompare(y)) * sort.dir
+      })
+    }
+    return out
+  }, [rows, q, sort, filter, filters])
+  const filtered = matched.length > maxRows ? matched.slice(0, maxRows) : matched
+
+  function toggleSort(key: string) {
+    setSort(s => s?.key === key ? (s.dir === 1 ? { key, dir: -1 } : null) : { key, dir: 1 })
+  }
+
+  /** The visible rows as a CSV file, via a Blob — nothing leaves the browser. */
+  function download() {
+    const cell = (v: string) => `"${v.replace(/"/g, '""')}"`
+    const head = columns.map(c => cell(c.label)).join(',')
+    const body = matched.map(r => columns.map(c => {
+      const x = r.cells[c.key]
+      return cell([x?.text ?? '', x?.sub ?? ''].filter(Boolean).join(' — '))
+    }).join(','))
+    const blob = new Blob(['﻿' + [head, ...body].join('\r\n')], { type: 'text/csv;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `${exportName ?? 'masters'}${q.trim() ? `-${q.trim().replace(/[^a-z0-9]+/gi, '-')}` : ''}.csv`
+    a.click()
+    setTimeout(() => URL.revokeObjectURL(url), 1000)
+  }
+
+  return (
+    <div className="space-y-2">
+      <div className="relative">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400 pointer-events-none" />
+        <input
+          type="search"
+          value={q}
+          onChange={e => setQ(e.target.value)}
+          placeholder={searchPlaceholder}
+          aria-label={searchPlaceholder}
+          className="w-full min-h-[44px] rounded-lg border border-gray-300 bg-white pl-9 pr-9 text-sm"
+        />
+        {q && (
+          <button
+            type="button"
+            onClick={() => setQ('')}
+            aria-label="Clear search"
+            className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 text-gray-400 hover:text-gray-700"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        )}
+      </div>
+      {filters.length > 0 && (
+        <div className="flex gap-1 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          <Chip active={filter === null} onClick={() => setFilter(null)}>All</Chip>
+          {filters.map(f => (
+            <Chip key={f.key} active={filter === f.key} onClick={() => setFilter(filter === f.key ? null : f.key)}>
+              {f.label} <span className="tabular-nums opacity-70">{rows.filter(r => r.tags?.includes(f.key)).length.toLocaleString('en-IN')}</span>
+            </Chip>
+          ))}
+        </div>
+      )}
+
+      <div className="flex items-center justify-between gap-3">
+        <p className="text-[12px] text-gray-500 tabular-nums">
+          {matched.length === rows.length
+            ? `${rows.length.toLocaleString('en-IN')} row${rows.length === 1 ? '' : 's'}`
+            : `${matched.length.toLocaleString('en-IN')} of ${rows.length.toLocaleString('en-IN')}`}
+          {matched.length > maxRows && ` — showing the first ${maxRows.toLocaleString('en-IN')}; search to narrow`}
+        </p>
+        {exportName && matched.length > 0 && (
+          <button
+            type="button"
+            onClick={download}
+            className="inline-flex items-center gap-1 text-[12px] font-semibold text-indigo-700 hover:underline min-h-[44px] px-1"
+            title={`Download ${matched.length.toLocaleString('en-IN')} row${matched.length === 1 ? '' : 's'} as a spreadsheet file`}
+          >
+            <Download className="h-3.5 w-3.5" /> Download CSV
+          </button>
+        )}
+      </div>
+
+      {filtered.length === 0 ? (
+        <div className="rounded-lg border border-gray-200 bg-white px-4 py-8 text-center text-sm text-gray-400">
+          <p>{q ? `Nothing matches “${q}”.` : emptyMessage}</p>
+          {q && emptyHint && <p className="mt-1 text-[12px]">{emptyHint}</p>}
+        </div>
+      ) : (
+        <>
+          {/* Desktop */}
+          <div className="hidden md:block rounded-lg border border-gray-200 bg-white overflow-hidden">
+            <div className="overflow-auto max-h-[65vh]">
+              <table className="w-full text-[13px]">
+                <thead>
+                  <tr className="bg-gray-50 text-left">
+                    {columns.map(c => {
+                      const canSort = sortableKeys.includes(c.key)
+                      return (
+                        <th
+                          key={c.key}
+                          className={[
+                            'sticky top-0 z-10 bg-gray-50 border-b border-gray-200 px-3 py-2',
+                            'font-semibold text-gray-600',
+                            c.align === 'right' ? 'text-right' : '',
+                            c.width ?? '',
+                          ].join(' ')}
+                        >
+                          {canSort ? (
+                            <button
+                              type="button"
+                              onClick={() => toggleSort(c.key)}
+                              className="inline-flex items-center gap-1 hover:text-gray-900"
+                            >
+                              {c.label}
+                              <ArrowUpDown className={`h-3 w-3 ${sort?.key === c.key ? 'text-indigo-600' : 'text-gray-300'}`} />
+                            </button>
+                          ) : c.label}
+                        </th>
+                      )
+                    })}
+                    {hasAction && <th className="sticky top-0 z-10 bg-gray-50 border-b border-gray-200 px-3 py-2" />}
+                  </tr>
+                </thead>
+                <tbody>
+                  {filtered.map(r => (
+                    <tr key={r.id} className={`border-t border-gray-100 hover:bg-gray-50/60 ${r.tone === 'warn' ? 'bg-amber-50/40' : r.tone === 'info' ? 'bg-blue-50/30' : ''}`}>
+                      {columns.map((c, i) => {
+                        const cell = r.cells[c.key] ?? { text: '' }
+                        const body = (
+                          <>
+                            <span className={[TONE[cell.tone ?? 'default'], cell.mono ? 'font-mono text-[11px]' : ''].join(' ')}>
+                              {cell.text || '—'}
+                            </span>
+                            {cell.sub && <span className="block text-[11px] text-gray-400">{cell.sub}</span>}
+                            {cell.links && cell.links.length > 0 && <CellLinks links={cell.links} />}
+                          </>
+                        )
+                        return (
+                          <td key={c.key} className={`px-3 py-2 align-top ${c.align === 'right' ? 'text-right tabular-nums' : ''}`}>
+                            {i === 0 && r.href ? <Link href={r.href} className="hover:underline">{body}</Link> : body}
+                          </td>
+                        )
+                      })}
+                      {hasAction && <td className="px-3 py-1.5 align-top text-right">{r.action}</td>}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* Mobile — the same rows as cards. Every Masters screen gets this,
+              not just the two that happened to have it before. */}
+          <div className="md:hidden rounded-lg border border-gray-200 bg-white divide-y divide-gray-100 overflow-auto max-h-[65vh]">
+            {filtered.map(r => {
+              const [first, ...rest] = columns
+              const head = r.cells[first.key] ?? { text: '' }
+              const inner = (
+                <>
+                  <p className={`text-sm ${TONE[head.tone ?? 'strong']}`}>{head.text || '—'}</p>
+                  {head.sub && <p className="text-[11px] text-gray-400">{head.sub}</p>}
+                  {head.links && head.links.length > 0 && <CellLinks links={head.links} />}
+                  <div className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5">
+                    {rest.filter(c => !c.desktopOnly).map(c => {
+                      const cell = r.cells[c.key]
+                      if (!cell?.text) return null
+                      return (
+                        <span key={c.key} className="text-[11px] text-gray-500">
+                          {c.label} <span className={TONE[cell.tone ?? 'default']}>{cell.text}</span>
+                          {cell.links && cell.links.length > 0 && <CellLinks links={cell.links} />}
+                        </span>
+                      )
+                    })}
+                  </div>
+                </>
+              )
+              return (
+                <div key={r.id} className={`px-4 py-3 ${r.tone === 'warn' ? 'bg-amber-50/40' : r.tone === 'info' ? 'bg-blue-50/30' : ''}`}>
+                  {r.href ? <Link href={r.href} className="block">{inner}</Link> : inner}
+                  {r.action && <div className="mt-2">{r.action}</div>}
+                </div>
+              )
+            })}
+          </div>
+        </>
+      )}
+    </div>
+  )
+}
+
+function Chip({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`whitespace-nowrap rounded-full border px-3 min-h-[44px] sm:min-h-[36px] text-xs font-medium ${
+        active ? 'border-indigo-300 bg-indigo-50 text-indigo-800' : 'border-gray-200 bg-white text-gray-600 hover:bg-gray-50'}`}
+    >
+      {children}
+    </button>
+  )
+}
+
+/** "Print · Ledger · In project" under a cell. Stops the row link so a click lands on the document, not the row. */
+function CellLinks({ links }: { links: Array<{ label: string; href: string; external?: boolean }> }) {
+  return (
+    <span className="block text-[11px] mt-0.5" onClick={e => e.stopPropagation()}>
+      {links.map((l, i) => (
+        <span key={l.href + l.label}>
+          {i > 0 && <span className="text-gray-300"> · </span>}
+          {l.external
+            ? <a href={l.href} target="_blank" rel="noopener" className="text-indigo-700 hover:underline">{l.label}</a>
+            : <Link href={l.href} className="text-indigo-700 hover:underline">{l.label}</Link>}
+        </span>
+      ))}
+    </span>
+  )
+}

@@ -1,0 +1,31 @@
+﻿lib/in4/db.ts:67:export async function in4Query<T = Record<string, unknown>>(text: string): Promise<T[]> {
+lib/in4/extract-feeds.ts:6:import { in4Query } from './db'
+lib/in4/extract-feeds.ts:35:  const q = (cols: string) => in4Query<Record<string, unknown>>(`SELECT ${KEY}, ${cols} FROM PURCH_INDENT_TO_ISSUE ${HINT}`)
+lib/in4/extract-feeds.ts:41:    in4Query<Record<string, unknown>>(`
+lib/in4/extract-feeds.ts:77:  const rows = await in4Query<Record<string, unknown>>(`
+lib/in4/extract-feeds.ts:114:  const rows = await in4Query<Record<string, unknown>>(`
+lib/in4/extract-feeds.ts:169:  const contractors = await in4Query<Record<string, unknown>>(`
+lib/in4/extract-feeds.ts:178:  const suppliers = await in4Query<Record<string, unknown>>(`
+lib/in4/extract-feeds.ts:208:  const rows = await in4Query<Record<string, unknown>>(`
+lib/in4/extract-feeds.ts:226:  const rows = await in4Query<Record<string, unknown>>(`
+lib/in4/extract-feeds.ts:233:  const rows = await in4Query<Record<string, unknown>>(`SELECT CompanyID, CompanyName, CompanyCode, CompanyPrintName FROM COMMON.TBLCOMMONCOMPANY`)
+lib/in4/extract-feeds.ts:239:  const rows = await in4Query<Record<string, unknown>>(`SELECT ID, NAME, IsActive FROM COMMON_UOM_LOOKUP`)
+lib/in4/extract.ts:5:import { in4Query } from './db'
+lib/in4/extract.ts:69:  const rows = await in4Query<Record<string, unknown>>(`
+lib/in4/extract.ts:80:  const rows = await in4Query<Record<string, unknown>>(`
+lib/in4/extract.ts:96:  const rows = await in4Query<Record<string, unknown>>(`SELECT ID, NAME, PARENT_ID, SHORT_NAME, isActive FROM ENGG_SKILLS_LOOKUP`)
+lib/in4/extract.ts:101:  const rows = await in4Query<Record<string, unknown>>(`
+lib/in4/extract.ts:113:  const rows = await in4Query<Record<string, unknown>>(`
+lib/in4/extract.ts:128:  const rows = await in4Query<Record<string, unknown>>(`
+lib/in4/extract.ts:140:  const rows = await in4Query<Record<string, unknown>>(`
+lib/in4/extract.ts:153:  const rows = await in4Query<Record<string, unknown>>(`
+lib/in4/extract.ts:162:  const rows = await in4Query<Record<string, unknown>>(`
+lib/in4/extract.ts:182:  const rows = await in4Query<Record<string, unknown>>(`
+lib/in4/extract.ts:195:  const rows = await in4Query<Record<string, unknown>>(`
+lib/in4/extract.ts:211:  const rows = await in4Query<Record<string, unknown>>(`
+lib/in4/wo-print.ts:38:import { in4Query, in4Config } from './db'
+lib/in4/wo-print.ts:230:  const [tpl] = await in4Query<{ TemplateID: number; TemplateName: string; html: string }>(`
+lib/in4/wo-print.ts:242:  const [wo] = await in4Query<Record<string, unknown>>(`
+lib/in4/wo-print.ts:276:  let boq = await in4Query<Record<string, unknown>>(`
+lib/in4/wo-print.ts:290:    boq = await in4Query<Record<string, unknown>>(`
+lib/in4/wo-print.ts:307:  const conds = await in4Query<Record<string, unknown>>(`

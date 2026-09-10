@@ -1,0 +1,13 @@
+﻿lib/in4/feeds.ts:86:async function dropStale(sb: SupabaseClient, table: string, now: string, filter?: (q: ReturnType<SupabaseClient['from']>['delete'] extends (...a: never) => infer R ? R : never) => unknown) {
+lib/in4/feeds.ts:87:  let q = sb.from(table).delete().lt('synced_at', now)
+lib/in4/feeds.ts:187:    // report has nothing left to add and the merge just passes the first through.
+lib/in4/feeds.ts:190:      const { error: snapErr } = await sb.from('procurement_tracker_state_history').insert({ state_id: s.id, state: s.state, version: s.version, snapshot_by: actorId })
+lib/in4/feeds.ts:265:    const { error: snapErr } = await sb.from(`${table}_history`).insert({ state_id: 'global', state: cur.state, version: cur.version, snapshot_by: actorId })
+lib/in4/feeds.ts:328:  const { data: runRow } = await sb.from('in4_sync_runs').insert({ feed, trigger: opts.trigger, mode, actor_id: opts.actorId ?? null }).select('id').single()
+lib/in4/feeds.ts:331:    if (runId != null) await sb.from('in4_sync_runs').update({ finished_at: new Date().toISOString(), ...patch }).eq('id', runId)
+lib/in4/sync.ts:77:  const { error } = await sb.from('in4_report_lines').delete().lt('synced_at', now)
+lib/in4/sync.ts:152:  const { error: snapErr } = await sb.from('budget_hub_state_history').insert({ state_id: 'global', state, version, snapshot_by: actorId })
+lib/in4/sync.ts:156:    .update({ state: { ...state, projects: nextProjects }, version: newVersion, updated_at: new Date().toISOString(), updated_by: actorId })
+lib/in4/sync.ts:178:  const { data: runRow } = await sb.from('in4_sync_runs').insert({ trigger: opts.trigger, mode, actor_id: opts.actorId ?? null }).select('id').single()
+lib/in4/sync.ts:181:    if (runId != null) await sb.from('in4_sync_runs').update({ finished_at: new Date().toISOString(), ...patch }).eq('id', runId)
+lib/in4/wo-print.ts:5:// have to approximate it — IN4 keeps every printed report as HTML with merge

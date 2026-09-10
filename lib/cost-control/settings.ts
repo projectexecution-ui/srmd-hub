@@ -44,6 +44,11 @@ export interface CcSettings {
   /** User ids (besides admins) allowed to archive/restore working sheets.
    *  Admin grants these from the Settings page. */
   archive_users: string[]
+  /** User ids (besides admins) who may open the Accounts tab of the project
+   *  workspace. Empty = admins only. Aksha, 10 Sep 2026: "visible only to Atm
+   *  Akshay and Chirag and Admin — no one else". Ticked on the Settings page;
+   *  read by lib/revamp/accounts-access.ts. */
+  accounts_users: string[]
   /** Show the per-sub-skill Trustee/Admin accept-reject icons on the
    *  Internal Estimate. Off (default) = the uploaded estimate is simply the
    *  baseline that engineer asks are compared against (no manual step). */
@@ -92,6 +97,7 @@ export const CC_SETTINGS_DEFAULTS: CcSettings = {
   eng_projects: true,
   eng_erp: true,
   archive_users: [],
+  accounts_users: [],
   ie_review: false,
   cumulative_versions: false,
   bph_sync: false,
@@ -130,6 +136,7 @@ export function parseCcSettings(map: Record<string, string | null | undefined>):
     eng_projects:      parseBool('cc_eng_projects', d.eng_projects),
     eng_erp:           parseBool('cc_eng_erp', d.eng_erp),
     archive_users:     ((map['cc_archive_users'] ?? '').match(/[0-9a-f-]{36}/gi) ?? []),
+    accounts_users:    ((map['cc_accounts_users'] ?? '').match(/[0-9a-f-]{36}/gi) ?? []),
     ie_review:         parseBool('cc_ie_review', d.ie_review),
     cumulative_versions: parseBool('cc_cumulative_versions', d.cumulative_versions),
     bph_sync:          parseBool('cc_bph_sync', d.bph_sync),

@@ -110,7 +110,12 @@ export function buildTracker(rows: In4IndentRow[], now = Date.now()): { lines: L
           }
           poByDetail.set(r.po_detail_id, po); pos.push(po)
         }
-        if (r.grn_id != null && r.grn_no && !grnSeen.has(r.grn_id)) {
+        // The view joins every GRN of the PO to every indent line of the PO;
+        // the GRN fact has quantity for only the line actually received on.
+        // A GRN row with nothing on it for THIS line is not a receipt here —
+        // PO 93's 70 kg indent was showing the other line's three GRNs at
+        // 0 kg. Skipped, and not marked seen, so the real row still lands.
+        if (r.grn_id != null && r.grn_no && !grnSeen.has(r.grn_id) && (r.grn_qty > 0 || r.grn_value > 0)) {
           grnSeen.add(r.grn_id)
           grns.push({
             grnNo: r.grn_no, grnDate: excelDate(r.grn_date), qty: r.grn_qty, rate: r.grn_rate, value: r.grn_value,

@@ -11,6 +11,9 @@ import {
 } from 'lucide-react'
 import { MODULES } from '@/lib/modules'
 import { buildNavTree, type SidebarGroup } from '@/lib/sidebar-groups'
+import { isRevampNow } from '@/lib/revamp/live'
+import { buildRevampNav } from '@/lib/revamp/nav'
+import { readOpenMap, writeOpenMap } from '@/lib/nav-prefs'
 import NotificationBell from '@/components/NotificationBell'
 import { ProjectTree } from '@/components/nav/ProjectTree'
 import type { FlatProject } from '@/lib/project-tree'
@@ -26,9 +29,14 @@ interface NavBarProps {
   sidebarGroups?: SidebarGroup[]
   /** Live projects for the Projects lane (tree by parent). */
   projects?: FlatProject[]
+  /** project id → approvals waiting on this person, rolled up to parents. */
+  approvals?: Record<string, number>
   /** Collapsed flag read from the cookie on the server, so the first paint is
    *  already right and nothing has to stay invisible until hydration. */
   initialCollapsed?: boolean
+  /** The revamped pane, or the previous CT Hub — decided on the server from the
+   *  "CT Hub V1" toggle (lib/revamp/shell-switch.ts). */
+  revampOn?: boolean
 }
 
 // Compact labels for the sidebar so they don't wrap. Defaults to the
@@ -49,7 +57,7 @@ const GROUPS_OPEN_KEY = 'srmd_nav_groups_open'
 
 type NavItem = { href: string; label: string; icon: typeof LayoutDashboard; slug: string | null }
 
-export default function NavBar({ profile, permissions, disabledSlugs = [], isPortalOwner = false, moduleLabels = {}, sidebarGroups = [], projects = [], initialCollapsed }: NavBarProps) {
+export default function NavBar({ profile, permissions, disabledSlugs = [], isPortalOwner = false, moduleLabels = {}, sidebarGroups = [], projects = [], approvals = {}, initialCollapsed, revampOn = isRevampNow() }: NavBarProps) {
   const disabled = new Set(disabledSlugs)
   const pathname = usePathname()
   const router = useRouter()
@@ -66,8 +74,9 @@ export default function NavBar({ profile, permissions, disabledSlugs = [], isPor
     // browser that has the old flag and no cookie yet.
     let isCollapsed = initialCollapsed ?? false
     if (initialCollapsed === undefined) { try { isCollapsed = localStorage.getItem(COLLAPSE_KEY) === '1' } catch {} }
-    let og: Record<string, boolean> = {}
-    try { const raw = localStorage.getItem(GROUPS_OPEN_KEY); if (raw) og = JSON.parse(raw) } catch {}
+    // Same guard as the Projects lane: `g.id in openGroups` below throws on
+    // anything that is not an object, and localStorage outlives deploys.
+    const og = readOpenMap(GROUPS_OPEN_KEY)
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setUi({ collapsed: isCollapsed, hydrated: true })
     // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -112,17 +121,39 @@ export default function NavBar({ profile, permissions, disabledSlugs = [], isPor
     : null
   const bottomLinks: NavItem[] = [...(adminLink ? [adminLink] : []), ...(modulesAdminLink ? [modulesAdminLink] : [])]
 
+  // ── The revamped pane ─────────────────────────────────────────────────
+  // Projects becomes the main lane and the screens it replaces move into one
+  // collapsed "Old screens" branch, rather than 15 flat module lanes. Built
+  // from the SAME permission + module_visibility inputs as below, so the
+  // revamp can never widen anyone's access. On since 10 Sep 2026 for live as
+  // well as the trial (lib/revamp/live.ts); with the "CT Hub V1" toggle on,
+  // the old sidebar below is what renders.
+  const revamp = revampOn
+    ? buildRevampNav(permissions, disabled, { canSeeAdmin })
+    : null
+
   // Fold the module links into admin-defined groups. When no groups exist,
   // tree.groups is empty and everything stays flat exactly as before.
-  const tree = buildNavTree(moduleLinks, sidebarGroups)
-  const flatLinks: NavItem[] = [dashboardLink, ...moduleLinks, ...bottomLinks] // collapsed desktop
+  const tree = revamp
+    // The revamp wants its main lanes ABOVE the collapsed branch, which is the
+    // opposite of the admin-groups layout, so it supplies the shape directly.
+    ? { groups: revamp.groups.map(g => ({ id: g.id, name: g.name, items: g.items as unknown as NavItem[] })), ungrouped: [] as NavItem[] }
+    : buildNavTree(moduleLinks, sidebarGroups)
+
+  const primaryLinks: NavItem[] = revamp
+    ? (revamp.primary as unknown as NavItem[])
+    : [dashboardLink, ...tree.ungrouped]
+
+  const flatLinks: NavItem[] = revamp
+    ? [...revamp.primary as unknown as NavItem[], ...revamp.groups.flatMap(g => g.items as unknown as NavItem[])]
+    : [dashboardLink, ...moduleLinks, ...bottomLinks] // collapsed desktop
 
   const groupOpen = (g: { id: string; items: NavItem[] }) =>
     (g.id in openGroups) ? openGroups[g.id] : g.items.some(it => isActive(pathname, it.href))
   function toggleGroup(g: { id: string; items: NavItem[] }) {
     const next = { ...openGroups, [g.id]: !groupOpen(g) }
     setOpenGroups(next)
-    try { localStorage.setItem(GROUPS_OPEN_KEY, JSON.stringify(next)) } catch {}
+    writeOpenMap(GROUPS_OPEN_KEY, next)
   }
 
   async function signOut() {
@@ -206,11 +237,22 @@ export default function NavBar({ profile, permissions, disabledSlugs = [], isPor
             </div>
             <ProfileRow profile={profile} />
             <div className="flex-1 overflow-y-auto py-2">
-              {renderLink(dashboardLink, true)}
-              {showProjectsLane && <ProjectTree projects={projects} mobile onNavigate={() => setOpen(false)} />}
-              {tree.groups.map(g => renderGroup(g, true))}
-              {tree.ungrouped.map(it => renderLink(it, true))}
-              {bottomLinks.map(it => renderLink(it, true))}
+              {/* Revamp (trial only): main lanes first — Projects as the tree —
+                  then the collapsed branches. Live keeps groups-then-flat. */}
+              {revamp
+                ? <>
+                    {primaryLinks.map(it => it.label === 'Projects' && projects.length > 0
+                      ? <ProjectTree key="tree" projects={projects} approvals={approvals} revamp={revampOn} mobile onNavigate={() => setOpen(false)} />
+                      : renderLink(it, true))}
+                    {tree.groups.map(g => renderGroup(g, true))}
+                  </>
+                : <>
+                    {renderLink(dashboardLink, true)}
+                    {showProjectsLane && <ProjectTree projects={projects} approvals={approvals} revamp={revampOn} mobile onNavigate={() => setOpen(false)} />}
+                    {tree.groups.map(g => renderGroup(g, true))}
+                    {tree.ungrouped.map(it => renderLink(it, true))}
+                    {bottomLinks.map(it => renderLink(it, true))}
+                  </>}
             </div>
             <button onClick={signOut} className="flex items-center gap-3 px-4 py-3 text-sm font-medium text-gray-600 hover:text-red-600 hover:bg-red-50 border-t border-gray-200">
               <LogOut className="h-5 w-5" />
@@ -276,13 +318,20 @@ export default function NavBar({ profile, permissions, disabledSlugs = [], isPor
           {collapsed ? (
             <>
               {renderLink(dashboardLink, false)}
-              {showProjectsLane && <ProjectTree projects={projects} collapsed />}
+              {showProjectsLane && <ProjectTree projects={projects} approvals={approvals} revamp={revampOn} collapsed />}
               {flatLinks.slice(1).map(it => renderLink(it, false))}
+            </>
+          ) : revamp ? (
+            <>
+              {primaryLinks.map(it => it.label === 'Projects' && projects.length > 0
+                ? <ProjectTree key="tree" projects={projects} approvals={approvals} revamp={revampOn} />
+                : renderLink(it, false))}
+              {tree.groups.map(g => renderGroup(g, false))}
             </>
           ) : (
             <>
               {renderLink(dashboardLink, false)}
-              {showProjectsLane && <ProjectTree projects={projects} />}
+              {showProjectsLane && <ProjectTree projects={projects} approvals={approvals} revamp={revampOn} />}
               {tree.groups.map(g => renderGroup(g, false))}
               {tree.ungrouped.map(it => renderLink(it, false))}
               {bottomLinks.map(it => renderLink(it, false))}

@@ -71,7 +71,9 @@ export function CatChevron({ catId }: { catId: string }) {
       onClick={() => toggle(catId)}
       aria-expanded={!collapsed}
       title={collapsed ? 'Expand' : 'Collapse'}
-      className="inline-flex items-center justify-center h-5 w-5 rounded text-gray-500 hover:bg-gray-200 hover:text-gray-800 align-middle mr-1 -ml-1"
+      // 44 px on a phone (AGENTS.md tap targets); the compact 20 px box from
+      // md up, where a mouse is doing the clicking.
+      className="inline-flex items-center justify-center h-5 w-5 max-md:h-11 max-md:w-11 max-md:-my-3 rounded text-gray-500 hover:bg-gray-200 hover:text-gray-800 align-middle mr-1 -ml-1"
     >
       {collapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
     </button>
@@ -136,8 +138,8 @@ export function TreeToolbar() {
 // ──────────────────────────────────────────────────────────────────────
 const DetailCtx = createContext<{ isOpen: (id: string) => boolean; toggle: (id: string) => void } | null>(null)
 
-export function RowDetailProvider({ children }: { children: ReactNode }) {
-  const [open, setOpen] = useState<Set<string>>(() => new Set())
+export function RowDetailProvider({ children, initialOpen }: { children: ReactNode; /** Rows that start open — the Indents board opens its groups when there are only a few, or while a search is on. */ initialOpen?: readonly string[] }) {
+  const [open, setOpen] = useState<Set<string>>(() => new Set(initialOpen ?? []))
   const api = useMemo(() => ({
     isOpen: (id: string) => open.has(id),
     toggle: (id: string) => setOpen(prev => {
@@ -160,7 +162,7 @@ function useDetail() {
  *  category above it. A sub-skill with no budget rows gets no chevron (an
  *  affordance that opens an empty drawer is worse than none) but still gets
  *  its width back as a spacer, or the codes underneath would sit ragged. */
-export function RowDetailToggle({ id, count }: { id: string; count: number }) {
+export function RowDetailToggle({ id, count, label }: { id: string; count: number; /** What opens, e.g. "sub-projects" — the Masters and Accounts screens reuse this chevron for things that are not a BOQ. Default keeps the Cost Control wording. */ label?: string }) {
   const { isOpen, toggle } = useDetail()
   if (count <= 0) return <span className="inline-block h-5 w-5 mr-1 align-middle" aria-hidden />
   const open = isOpen(id)
@@ -169,15 +171,17 @@ export function RowDetailToggle({ id, count }: { id: string; count: number }) {
       type="button"
       onClick={() => toggle(id)}
       aria-expanded={open}
-      title={open
-        ? 'Hide the item-wise BOQ'
-        : `Show the item-wise BOQ — ${count} item${count === 1 ? '' : 's'} (unit, qty, rate, amount)`}
+      title={label
+        ? (open ? `Hide ${label}` : `Show ${label} — ${count}`)
+        : open
+          ? 'Hide the item-wise BOQ'
+          : `Show the item-wise BOQ — ${count} item${count === 1 ? '' : 's'} (unit, qty, rate, amount)`}
       // Same chevron as the category rows above it (CatChevron) — one tree,
       // one affordance. It used to be a bordered "> 1 item" pill, which read
       // as a badge sitting next to the name rather than a level of the tree.
       // The count lives in the tooltip; the chevron only appears when there
       // is something to open, so its presence already says so.
-      className="mr-1 inline-flex items-center justify-center h-5 w-5 rounded text-gray-400 hover:bg-gray-200 hover:text-gray-800 align-middle"
+      className="mr-1 inline-flex items-center justify-center h-5 w-5 max-md:h-11 max-md:w-11 max-md:-my-3 rounded text-gray-400 hover:bg-gray-200 hover:text-gray-800 align-middle"
     >
       {open ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
     </button>

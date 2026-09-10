@@ -252,33 +252,6 @@ export async function loadStores(): Promise<{ rows: StoreRow[]; in4Count: number
   return { rows: out, in4Count: sRes.data?.length ?? 0, synced: (sRes.data?.length ?? 0) > 0 }
 }
 
-// ── Trusts (paying companies) ────────────────────────────────────────────────
-
-export interface TrustRow { id: number | null; code: string; name: string; projects: number; stores: number; workOrders: number; source: string }
-
-export async function loadTrusts(): Promise<TrustRow[]> {
-  const sb = await createClient()
-  const [cRes, pRes, sRes, woRes] = await Promise.all([
-    sb.from('in4_companies').select('id, name, code, print_name').order('id'),
-    sb.from('in4_projects').select('cert_company_id'),
-    sb.from('in4_stores').select('company_id'),
-    sb.from('est_wo_history').select('wo_number'),
-  ])
-  const projects = new Map<number, number>(), stores = new Map<number, number>(), wos = new Map<string, number>()
-  for (const p of (pRes.data ?? []) as Array<{ cert_company_id: number | null }>) if (p.cert_company_id) projects.set(p.cert_company_id, (projects.get(p.cert_company_id) ?? 0) + 1)
-  for (const s of (sRes.data ?? []) as Array<{ company_id: number | null }>) if (s.company_id) stores.set(s.company_id, (stores.get(s.company_id) ?? 0) + 1)
-  for (const r of (woRes.data ?? []) as Array<{ wo_number: string | null }>) {
-    const code = (r.wo_number ?? '').startsWith('WO/') ? r.wo_number!.split('/')[1]?.trim() : ''
-    if (code) wos.set(code, (wos.get(code) ?? 0) + 1)
-  }
-  const rows: TrustRow[] = ((cRes.data ?? []) as Array<{ id: number; name: string; code: string | null; print_name: string | null }>).map(c => ({
-    id: c.id, code: c.code ?? String(c.id), name: c.print_name ?? c.name, projects: projects.get(c.id) ?? 0, stores: stores.get(c.id) ?? 0, workOrders: wos.get(c.code ?? '') ?? 0, source: 'IN4 paying company',
-  }))
-  // Codes seen in WO numbers that IN4's company table does not carry.
-  for (const [code, n] of wos) if (!rows.some(r => r.code === code)) rows.push({ id: null, code, name: '(only seen in WO numbers)', projects: 0, stores: 0, workOrders: n, source: 'Read from the WO number' })
-  return rows
-}
-
 // ── Projects ─────────────────────────────────────────────────────────────────
 
 export interface ProjectMasterRow {
@@ -373,58 +346,4 @@ export async function loadCategories(): Promise<{ rows: CategoryRow[]; synced: b
   }
   const out = [...rows.values()].sort((a, b) => (a.level === b.level ? 0 : a.level === 'category' ? -1 : 1) || a.code.localeCompare(b.code, undefined, { numeric: true }))
   return { rows: out, synced: skills.length > 0 }
-}
-
-// ── Overview ─────────────────────────────────────────────────────────────────
-
-export interface MasterSummary {
-  key: string
-  label: string
-  hint: string
-  href: string
-  /** Big number on the card. */
-  total: number | null
-  lines: Array<{ text: string; tone?: 'ok' | 'warn' | 'muted' }>
-}
-
-export async function loadMasterSummaries(): Promise<{ cards: MasterSummary[]; synced: boolean }> {
-  const [contacts, items, stores, trusts, projects, categories] = await Promise.all([loadContacts(), loadItems(), loadStores(), loadTrusts(), loadProjectMaster(), loadCategories()])
-  const synced = contacts.synced || items.synced
-  const cards: MasterSummary[] = [
-    { key: 'contacts', label: 'Contacts', href: '/admin/masters/contacts', hint: 'Contractors and suppliers — IN4’s register is the list', total: contacts.rows.length,
-      lines: [
-        { text: `${contacts.in4Count.toLocaleString('en-IN')} on IN4’s register (with PAN, GSTIN, address)`, tone: 'muted' },
-        { text: `${contacts.matched} of the hub’s own entries match an IN4 party`, tone: 'ok' },
-        { text: `${contacts.hubOnly} hub entries have no IN4 party behind them`, tone: contacts.hubOnly ? 'warn' : 'ok' },
-      ] },
-    { key: 'items', label: 'Items', href: '/admin/masters/items', hint: 'Materials — IN4’s catalogue, type → sub-type → item', total: items.in4Count,
-      lines: [
-        { text: `Warehouse: ${items.hub.warehouseMatched.toLocaleString('en-IN')} of ${items.hub.warehouse.toLocaleString('en-IN')} items match IN4`, tone: items.hub.warehouse - items.hub.warehouseMatched > 0 ? 'warn' : 'ok' },
-        { text: `Inventory (old): ${items.hub.inventoryMatched} of ${items.hub.inventory} match IN4`, tone: 'muted' },
-        { text: `Established Rates keeps ${items.hub.estSubcategories} sub-categories of its own; JMR ${items.hub.jmrItems} machine/manpower types`, tone: 'muted' },
-      ] },
-    { key: 'stores', label: 'Stores', href: '/admin/masters/stores', hint: 'Physical stores — IN4’s store list against the Warehouse’s', total: stores.rows.length,
-      lines: [
-        { text: `${stores.in4Count} stores in IN4`, tone: 'muted' },
-        { text: `${stores.rows.filter(s => s.in4Id && s.hubSources.length).length} also set up in the Warehouse`, tone: 'ok' },
-        { text: `${stores.rows.filter(s => !s.in4Id).length} Warehouse/Inventory stores IN4 does not know`, tone: stores.rows.some(s => !s.in4Id) ? 'warn' : 'ok' },
-      ] },
-    { key: 'trusts', label: 'Trusts', href: '/admin/masters/trusts', hint: 'The paying companies — from IN4, nothing typed', total: trusts.filter(t => t.id).length,
-      lines: trusts.filter(t => t.id).map(t => ({ text: `${t.code} · ${t.projects} projects · ${t.stores} stores`, tone: 'muted' as const })) },
-    { key: 'projects', label: 'Projects', href: '/admin/masters/projects', hint: 'The hub’s registry, with its IN4 sub-projects, area and budget beside it', total: projects.rows.length,
-      lines: [
-        { text: `${projects.rows.filter(p => p.in4).length} linked to IN4 sub-projects`, tone: 'ok' },
-        { text: `${projects.rows.filter(p => !p.builtUpSft && p.in4?.areaFt).length} have no area in the hub but IN4 has it`, tone: projects.rows.some(p => !p.builtUpSft && p.in4?.areaFt) ? 'warn' : 'ok' },
-        { text: `${projects.in4Unmapped.length} IN4 sub-projects not yet mapped to any hub project`, tone: projects.in4Unmapped.length ? 'warn' : 'ok' },
-      ] },
-    { key: 'categories', label: 'Work categories', href: '/admin/masters/categories', hint: 'Disciplines and sub-skills — the hub’s codes against IN4’s', total: categories.rows.length,
-      lines: [
-        { text: `${categories.rows.filter(r => r.state === 'both').length} agree on code and name`, tone: 'ok' },
-        { text: `${categories.rows.filter(r => r.state === 'name-differs').length} same code, different name`, tone: categories.rows.some(r => r.state === 'name-differs') ? 'warn' : 'ok' },
-        { text: `${categories.rows.filter(r => r.state === 'in4-only').length} in IN4 only · ${categories.rows.filter(r => r.state === 'hub-only').length} in the hub only`, tone: 'muted' },
-      ] },
-    { key: 'mapping', label: 'Project name mapping', href: '/admin/masters/mapping', hint: 'What IN4, the budget report, the procurement upload and Zoho call each project', total: null,
-      lines: [{ text: 'Every spelling the other systems send, mapped to a hub project or marked not ours', tone: 'muted' }] },
-  ]
-  return { cards, synced }
 }

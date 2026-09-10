@@ -3,7 +3,7 @@
 
 import { cache } from 'react'
 import { createClient } from '@/lib/supabase/server'
-import { APP_TIME_ZONE } from '@/lib/utils'
+import { APP_TIME_ZONE, personName } from '@/lib/utils'
 import { DEFAULT_LEADS, addDays, daysBetween, workBackDeadlines } from './formula'
 import { deriveSchedule } from './sequence'
 import { DEFAULT_FLOORS, floorsSettingKey, parseFloors, sortFloors } from './floors'
@@ -221,7 +221,7 @@ export async function getProjectSchedule(projectId: string): Promise<ProjectSche
   const people = Array.from(new Set(
     ((profiles ?? []) as Array<{ full_name: string | null; name: string | null; email: string | null; is_active: boolean | null }>)
       .filter(p => p.is_active !== false)
-      .map(p => (p.full_name || p.name || p.email || '').trim())
+      .map(p => personName(p.full_name, p.name, p.email))
       .filter(Boolean),
   )).sort((a, b) => a.localeCompare(b))
   const vendors = Array.from(new Set(

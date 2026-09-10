@@ -2,6 +2,7 @@ import { requirePermission } from '@/lib/auth'
 import { createClient } from '@/lib/supabase/server'
 import { Card } from '@/components/ui/card'
 import { getJmrSettings } from '@/lib/jmr/settings'
+import { personName } from '@/lib/utils'
 import { SettingsForm, type RecipientUser } from './settings-form'
 
 export const dynamic = 'force-dynamic'
@@ -25,7 +26,7 @@ export default async function JmrSettingsPage() {
     .filter(p => !!p.email)
     .map(p => ({
       email: p.email as string,
-      name: p.full_name ?? p.name ?? (p.email as string),
+      name: personName(p.full_name, p.name, p.email),
       role: p.role ?? '',
     }))
     .sort((a, b) => a.name.localeCompare(b.name))

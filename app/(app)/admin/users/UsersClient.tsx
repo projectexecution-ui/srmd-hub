@@ -12,7 +12,7 @@ import {
   Loader2, Plus, X, ChevronDown, ChevronRight, Layers, Ban,
   Settings2, Info, EyeOff, Clock, ThumbsDown, Pencil,
 } from 'lucide-react'
-import { cn } from '@/lib/utils'
+import { cn, personName } from '@/lib/utils'
 import type { Profile, Role } from '@/lib/types'
 import { ALL_ROLES } from '@/lib/types'
 import type { RoleLabelMap } from '@/lib/role-labels'
@@ -160,7 +160,7 @@ export default function UsersClient({
   const sideRank: Record<'management' | 'engineer' | 'other', number> = { management: 0, engineer: 1, other: 2 }
   const sorted = [...filtered].sort((a, b) =>
     sideRank[sideOf(a)] - sideRank[sideOf(b)] ||
-    (a.name ?? a.full_name ?? a.email).localeCompare(b.name ?? b.full_name ?? b.email))
+    personName(a.full_name, a.name, a.email).localeCompare(personName(b.full_name, b.name, b.email)))
 
   const activeCount = users.filter(u => u.is_active).length
   const adminCount = users.filter(u => u.role === 'admin').length

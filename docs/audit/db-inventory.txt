@@ -1,0 +1,93 @@
+CT HUB - Phase 0 database inventory
+Run 8 Sep 2026 ~09:30 IST against Supabase project hjwtjrjkmuhhbsbjsqhx (the project BOTH
+main and revamp-trial read). Every statement in phase0-readonly.sql is a SELECT; nothing
+was written. Re-run the SQL file to refresh these numbers.
+
+=== 1. in4_* mirror tables: row count, last sync ===
+Baseline (6 Sep): projects 36 + sub-projects 123, indent lines 4,914, work orders 1,666,
+wo_boq_items 9,852, wo_abstract_items 8,230. IN4 itself holds MORE than the mirror
+(2,157 work orders on 7 Sep) - a mirror count below IN4's is expected, not a fault.
+
+table                        rows    last_sync (UTC)
+in4_companies                   4    2026-09-08 03:51:44
+in4_indent_items            4,963    2026-09-08 03:51:44     (baseline 4,914)
+in4_materials               4,041    2026-09-08 03:51:44
+in4_parties                   601    2026-09-08 03:51:44
+in4_projects                   36    2026-09-08 03:51:53     (baseline 36)
+in4_report_lines            1,544    2026-09-08 03:51:53
+in4_skills                    462    2026-09-08 03:51:53
+in4_stores                     24    2026-09-08 03:51:44
+in4_subproject_links           38    (no synced_at - CT Hub mapping table, not a feed)
+in4_subprojects               123    2026-09-08 03:51:53     (baseline 123)
+in4_supplier_certificates   1,614    2026-09-08 03:51:44
+in4_sync_runs                  61    (no synced_at - the run log itself)
+in4_uoms                       42    2026-09-08 03:51:44
+in4_wo_abstract_items       8,237    2026-09-08 03:51:44     (baseline 8,230)
+in4_wo_boq_items            9,856    2026-09-08 03:51:44     (baseline 9,852)
+in4_wo_certificates         4,692    2026-09-08 03:51:53     (baseline 4,681)
+in4_work_orders             1,670    2026-09-08 03:51:53     (baseline 1,666)
+
+Verdict: every feed synced this morning (03:51 UTC = 09:21 IST, the "am" cron slot) and
+every count is at or above baseline. Nothing stale, nothing empty.
+
+=== 2. RLS on/off ===
+RLS is ON for every table in public (~190 tables). rls_forced is false everywhere, which
+is normal: forced RLS only matters for table owners.
+
+=== 3. Policies ===
+541 policies across 175 tables. 448 target {authenticated}, 93 target {public}.
+
+{public} means "every role including anon". 92 of the 93 still require a login inside
+their USING / WITH CHECK (auth.uid() IS NOT NULL, fn_wh_can(), sched_can_write(),
+jmr_can_see_project(), or an owner match) - so they are NOT open to anon in practice.
+
+The ONE exception, readable with the anon key and no login:
+  sched_promises | sched_promises_select_merged_public | SELECT | {public}
+  USING (true OR sched_can_write())   <- evaluates to true for anon
+  -> Anyone holding the public anon key can read every row of sched_promises.
+     By the pack's own scale (exposed data) this is P0 until judged otherwise.
+
+Policies permissive to EVERY logged-in user (USING/CHECK literally true, or "X OR true"): 59
+  SELECT 49, INSERT 5, UPDATE 3, DELETE 2.
+
+  Non-SELECT ones (any signed-in user can write, regardless of role or module permission):
+    blueprint_demo_request_status_log   INSERT
+    blueprint_demo_requests             INSERT, UPDATE, DELETE
+    procurement_chase_notes             INSERT, UPDATE
+    procurement_dropped_lines           INSERT, UPDATE, DELETE
+    recycle_bin                         INSERT
+
+  SELECT-true tables (any signed-in user can read all rows): app_settings, approval_rules,
+  approval_stages, bills_pipeline_reports, blueprint_demo_request_status_log,
+  blueprint_demo_requests, budget_v2_alias, budget_v2_extra_project, budget_v2_override,
+  budget_v2_project_area, budget_v2_project_status, budget_v2_weekly_snapshot,
+  cc_approval_thresholds, cc_bph_project_links, cc_discipline_approvers, cc_disciplines,
+  cc_notification_rules, cc_sub_skills, grn_lines, grns, indent_lines,
+  indent_status_snapshots, indents, invoice_lines, invoices, module_labels,
+  module_visibility, notification_rules, payments, permission_policies, po_lines,
+  procurement_chase_notes, procurement_dropped_lines, procurement_known_projects,
+  procurement_tracker_state, procurement_tracker_state_history, profiles, project_floors,
+  projects, purchase_orders, role_permissions, sched_date_changes, sched_drawing_revisions,
+  sched_drawings, sched_items, sched_progress, sched_promises, uploads, vendors
+
+  Many of these are deliberate (reference tables, and the app gates modules in code via
+  requirePermission). The ones to JUDGE, not assume: payments, invoices, invoice_lines,
+  profiles, procurement_tracker_state, and the five writable ones above. These are
+  QUESTIONS for Aksha unless Fable finds a screen that relies on the DB to hide them.
+
+Tables with RLS on and NO policy at all (locked to service_role only) = ~15; these are the
+in4_* mirror tables and similar - correct, the app reads them server-side.
+
+=== 4. anon table-level grants ===
+anon holds DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE on every public
+table. This is Supabase's DEFAULT grant and is NOT a finding: with RLS on, a grant does
+nothing unless a policy lets the row through. See section 3 for the one that does.
+
+=== 5. PO / GRN shape (in4_indent_items) ===
+indent_lines 4,963 | lines_with_po 4,294 | po_entries 4,664 | lines_with_grn 4,065 |
+grn_entries 4,535 | standalone_po_grn_tables 0
+Baseline 6 Sep: 1,360 POs / 4,664 PO lines, 255 GRNs / 4,531 lines, all nested.
+
+Still ONLY nested inside in4_indent_items.pos / .grns (jsonb). No standalone in4 PO or
+GRN table exists. Consequence for any screen: a PO not raised from an indent is invisible,
+and a GRN cannot be opened on its own.

@@ -1,0 +1,65 @@
+﻿main-only  revamp-only commits: 0	63
+
+493811f Make the printed work order hold up across all 2,157 orders, not just one
+c6dc9e3 Fix the printed work order: gross value, missing terms, colours, page breaks
+c0542cc Say WHICH IN4 variable is missing, and redeploy so the new ones take effect
+88b50dd The yellow "waiting on you" count, on the project rows and the Approvals tab
+4559247 Print a work order in IN4's own format, read from IN4's own template
+c0dc85e WO/PO wise: IN4's own sequence, and the line items as the tree's last level
+7794b25 Category — WO/PO wise, built on live IN4 data
+37b96c7 Strip the Budget tab to the sheet: lock to Setup, Excel to Reports
+a2c96e6 Budget tab opens on the numbers; its settings move to Setup
+9a62eb3 Budget tab renders the live Internal Estimate page, and stops leaking it
+533200e Approvals in the workspace: the live card, narrowed to one project
+537852d Fix the crash: a leftover sidebar preference took down every page
+c812500 Give the hub a last-resort error boundary, and stop the header taking a page down
+2aa54f6 Revamp §1 and §2: the project workspace shell, and Budget vs Actual
+249f2b9 Bring the revamp branch up to date with everything on live
+2e66b83 SC Budgets: club lines under one name, and save it per project
+14edaef The Trustee can see SC Budgets
+4284dc0 SC Budgets: the top-management report, built
+a0be0de SC Budgets is top-management only, and Mayank is not in it
+a6e784c Rebuild the cockpit tabs to the actual mind map
+28650d0 Show the mind map's unbuilt lanes, greyed, under "Coming soon"
+fb16e36 Stage 1a: who works on a project, in one panel
+7f0c6f7 Budget (BPH) was gated on a slug no module owns
+c3ec743 Set the email up here, not on six other screens
+5959256 Admin organised by the job, not by where the code lives
+2902c39 One roof for everything the hub sends
+90fc900 Setup tab threw engineers out of the project
+78bec68 The cockpit was a way round the permission matrix
+3448474 Two access bugs found while auditing the revamp for go-live
+a312617 Masters: make it usable, not just readable
+815a8c1 Setup opens inside the cockpit instead of throwing you out of it
+9ae264f Add the Zoho refresh to the project's bills, and say when it last ran
+bd8ddd2 Discussions: render @mentions properly, and surface the ones aimed at you
+bca7706 Bills Pipeline's own cockpit on the Reports tab, above the other two
+e6ada8e Add Bills to the Reports tab — the third thing its own hint promised
+93c85bc Strip three things that were repeating the Budget table
+fe84abb Bring the Indent → PO tracker's own views into the cockpit tab
+0cffb65 Show the indent lines themselves, as a tree
+b05f836 Indents now reach the individual building, not just the group
+40fdba2 Cut Warehouse and Schedule from the revamp; split the sidebar branch in two
+f77761e Park the Approvals, Stores and JMR tabs
+cd68275 Design Admin and Professional Consultancy (Staff) are real projects
+4d80352 Remove the AV House guess; confirm VV Infra
+d183333 Record the remaining mapping decisions
+35f4088 Record Aksha's mapping answers — including one that changes the matching rule
+8af38fe A group project now rolls up its children
+aa8f5c0 Fix the Indent tab reading the wrong row, and order Reports categories like the IE
+644c140 Revamp stage 10 — Projects as a tree in the pane, and Reports on the Internal Estimate's own table
+861d9f7 Revamp stage 9 — the mapping built in, and the last three Masters
+a328084 Revamp stage 8 — the dashboard gets the rest of the hub's work
+5c2ac03 Revamp stage 7 — Admin: 43 screens, four areas
+c4d9a71 Revamp stage 6 — Indent → PO and Discussions: all 10 tabs are real
+0106f41 Revamp stage 5 — Budget opens first, and the Reports tab
+342a4ab Revamp stage 4 — the Masters layer
+0a89f2b Revamp stage 3 — Approvals, Schedule, Stores and JMR tabs
+b3dcc4c Revamp stage 2 — the left pane
+0c85b3d Send every route into a project to the cockpit on the trial site
+f3074f7 Revamp stage 1 — the project cockpit
+9aab272 Fix the trial guard 500ing every page
+b2f48ec Hide the Google button on the trial site — it can only fail there
+21d683a Prove sign-in still works on the trial site
+06a13c4 Record approvals that belong to another department
+d12c0f3 Add the read-only trial-site harness (preview deployments only)
