@@ -15,6 +15,7 @@ import { cn } from '@/lib/utils'
 import { AdminEmailRow } from './AdminEmailRow'
 import { getRevampOn } from '@/lib/revamp/shell-switch'
 import { ShellSwitch } from './ShellSwitch'
+import { oldScreensFor } from '@/lib/revamp/nav'
 import { AdminRevamp } from './AdminRevamp'
 
 export const dynamic = 'force-dynamic'
@@ -37,7 +38,8 @@ export default async function AdminHomePage() {
   const revampOn = await getRevampOn()
   const shellCard = isAdmin ? <ShellSwitch mode={revampOn ? 'v2' : 'v1'} /> : null
   if (revampOn) {
-    return <AdminRevamp isAdmin={isAdmin} disabledSlugs={Array.from(disabled)} shellCard={shellCard} />
+    const oldScreens = oldScreensFor(perms, disabled).map(s => ({ href: s.href, label: s.label }))
+    return <AdminRevamp isAdmin={isAdmin} disabledSlugs={Array.from(disabled)} shellCard={shellCard} oldScreens={oldScreens} />
   }
   const canViewUsers = can(perms, 'admin-users', 'view')
   const canSettings = portalOwner || can(perms, 'admin-settings', 'admin')

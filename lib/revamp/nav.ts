@@ -9,10 +9,11 @@
 // cross-project: the ERP team's Bills desk, the warehouse, the Masters
 // everything references, and Admin.
 //
-// The old screens are NOT deleted — they move into a collapsed "Old screens"
-// branch so nothing silently disappears and the two can be compared
-// side-by-side during the trial. That was Aksha's call: "B is ok which u can
-// collapse in a group calling coming soon something like that."
+// The old screens are NOT deleted, but since go-live (Aksha, 10 Sep 2026:
+// "remove both groups — keep only 5 lanes") they are no longer in the pane at
+// all. During the trial they sat in two collapsed branches for side-by-side
+// comparison; that comparison is over. They stay reachable by URL (bookmarks,
+// e-mail links) and from a fold on the Admin home (oldScreensFor).
 //
 // Pure — no React, no Supabase — so it is unit-testable and importable from
 // the client NavBar.
@@ -124,14 +125,18 @@ export function buildRevampNav(
     .filter(it => it.href !== '/admin' || opts.canSeeAdmin)
     .filter(allowed)
 
-  // Two branches, not one: "we moved this into the project" and "we parked
-  // this" are different messages, and a module someone still opens should not
-  // be filed under "old".
-  const groups: RevampNavGroup[] = []
-  const replaced = REVAMP_OLD_SCREENS.filter(allowed)
-  if (replaced.length) groups.push({ id: 'revamp_old', name: 'Now inside a project', items: replaced })
-  const parked = REVAMP_PARKED.filter(allowed)
-  if (parked.length) groups.push({ id: 'revamp_parked', name: 'Not in the revamp', items: parked })
+  // Five lanes and nothing under them. The groups array stays in the shape so
+  // the NavBar needs no change; it is always empty now (Aksha, 10 Sep 2026).
+  return { primary, groups: [] as RevampNavGroup[] }
+}
 
-  return { primary, groups }
+/**
+ * The old screens this person may still open — for the "Old screens" fold on
+ * the Admin home, not the pane. Same two gates as a lane: permission and the
+ * module switch. Replaced screens first, then parked ones.
+ */
+export function oldScreensFor(permissions: PermissionMap, disabledSlugs: Set<string>): RevampNavItem[] {
+  const allowed = (it: RevampNavItem) =>
+    it.slug !== null && !disabledSlugs.has(it.slug) && permissions[it.slug]?.view === true
+  return [...REVAMP_OLD_SCREENS, ...REVAMP_PARKED].filter(allowed)
 }
