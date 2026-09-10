@@ -9,7 +9,7 @@ Aksha: "If I want to make all revamp changes in live CT Hub — will there be an
 | Commits on `revamp-trial` not on `main` | 109 |
 | Commits on `main` not on the branch | 4 (the Cost Control sign-off and returned-sheet fixes of 9 Sep) |
 | Merge dry run | 0 conflicts; 5 files changed on both sides merge cleanly (approvals page, dashboard, returned-to-engineer, cron schedule + its test) |
-| Database migrations added by the branch | **none** — no schema change, no seed |
+| Database migrations added by the branch | **two, both additive and ALREADY APPLIED to the live DB on 10 Sep by the Name-layer work**: `projects.short_name`, and `cthub_names` + RPC `set_cthub_name` (`supabase/migrations/20260910_cthub_names.sql`). Nothing on `main` reads them. Earlier line "none" was true when written on 9 Sep. |
 | Files deleted | 12 — the old `/admin/masters` screens (their URLs redirect to `/masters`) |
 | Tests / build on the branch | 1,586 tests green, `tsc` and `next build` clean |
 
