@@ -47,7 +47,8 @@ export const ADMIN_TASKS: AdminTask[] = [
     steps: [
       { href: '/cost-control/projects/new', why: 'Create it, with its code and its parent group' },
       { href: '/cost-control/admin/disciplines', why: 'Add any work category it needs that does not exist yet', optional: true },
-      { href: '/procurement-tracker/admin', why: 'Decide who sees its indents and POs' },
+      { href: '/admin/people', why: 'Name who signs it — Project Head, Atm Head, Trustee — and who works on it' },
+      { href: '/procurement-tracker/admin', why: 'Decide who sees its indents and POs', optional: true },
       { href: '/bills-booking/admin', why: 'Say who works each bill desk on it', optional: true },
     ],
   },
@@ -58,6 +59,7 @@ export const ADMIN_TASKS: AdminTask[] = [
     steps: [
       { href: '/admin/users', why: 'Approve their access and give them one role' },
       { href: '/admin/permissions', why: 'Check that role can reach what they need' },
+      { href: '/admin/people', why: 'Grant powers, put them on projects, choose which indents they see, set their alert channels' },
       { href: '/procurement-tracker/admin', why: 'Choose which projects they see in the tracker', optional: true },
     ],
   },
