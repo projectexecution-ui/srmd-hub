@@ -58,6 +58,7 @@ export const ADMIN_SCREENS: AdminScreen[] = [
   { href: '/admin/sidebar-groups',       label: 'Sidebar groups',       module: '',            area: 'system', hint: 'Nest modules under names you choose', adminOnly: true },
   { href: '/cost-control/settings',      label: 'Cost Control settings', module: 'cost-control', area: 'system', hint: 'Feature switches, field names, engineer visibility' },
   { href: '/bills-pipeline/digest-settings', label: 'Bills digest',     module: 'bills-pipeline', area: 'system', hint: 'The daily bills email, and who gets the stuck list', visibilitySlug: 'bills-pipeline' },
+  { href: '/admin/manual-upload',        label: 'Manual upload (IN4 fallback)', module: '',     area: 'system', hint: 'If the live IN4 read fails: switch on, upload the sheets by hand, switch off when IN4 is back', adminOnly: true },
   { href: '/cost-control/import',        label: 'Cost Control import',  module: 'cost-control', area: 'system', hint: 'Excel and BPH budget imports' },
   { href: '/cost-control/audit',         label: 'Audit log',            module: 'cost-control', area: 'system', hint: 'Who changed what, and when' },
 ]

@@ -24,6 +24,7 @@ import { revalidateReportState } from '@/lib/report-state-cache'
 import type { ReportDoc as ContractorDoc } from '@/lib/contractor-report'
 import type { ReportDoc as SupplierDoc } from '@/lib/supplier-report'
 import { pruneHistory } from './history-retention'
+import { readManualUpload } from './manual-upload'
 
 export type Feed = 'budget' | 'contractor' | 'supplier' | 'masters' | 'boq'
 export type FeedMode = 'shadow' | 'live' | 'mirror'
@@ -92,7 +93,11 @@ async function readMode(sb: SupabaseClient, feed: Feed, force?: 'shadow' | 'live
   if (force) return force
   const key = FEED_LIVE_KEY[feed]!
   const { data } = await sb.from('app_settings').select('value').eq('key', key).maybeSingle()
-  return String(data?.value ?? 'false') === 'true' ? 'live' : 'shadow'
+  const live = String(data?.value ?? 'false') === 'true'
+  // The manual-upload fallback (Admin → Manual upload) pauses every writing feed:
+  // a hand-uploaded sheet must not be overwritten at the next sync (10 Sep 2026).
+  if (live && await readManualUpload(sb)) return 'shadow'
+  return live ? 'live' : 'shadow'
 }
 
 /** Cheap read for status chips. Works with any Supabase client. */

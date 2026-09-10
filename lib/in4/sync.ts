@@ -18,6 +18,7 @@ import { extractAll, type In4Extract } from './extract'
 import { buildReports, splitCode, type SubprojectReport } from './compute'
 import { compareProject, summarise, type ComparisonSummary, type HubProjectData } from './compare'
 import { pruneHistory } from './history-retention'
+import { readManualUpload } from './manual-upload'
 
 export const IN4_LIVE_KEY = 'in4_budget_live'
 export const IN4_LAST_SYNC_KEY = 'in4_last_sync'
@@ -176,7 +177,9 @@ export async function runIn4Sync(opts: SyncOptions): Promise<SyncResult> {
   const sb = svc()
   const startedAt = new Date().toISOString()
   const { data: liveRow } = await sb.from('app_settings').select('value').eq('key', IN4_LIVE_KEY).maybeSingle()
-  const mode: 'shadow' | 'live' = opts.forceMode ?? (String(liveRow?.value ?? 'false') === 'true' ? 'live' : 'shadow')
+  // Admin → Manual upload (IN4 fallback) switched on = the feed reads and compares but does not write.
+  const paused = opts.forceMode ? false : await readManualUpload(sb)
+  const mode: 'shadow' | 'live' = opts.forceMode ?? (String(liveRow?.value ?? 'false') === 'true' && !paused ? 'live' : 'shadow')
 
   const { data: runRow } = await sb.from('in4_sync_runs').insert({ trigger: opts.trigger, mode, actor_id: opts.actorId ?? null }).select('id').single()
   const runId = (runRow?.id as number | undefined) ?? null
