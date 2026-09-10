@@ -79,6 +79,7 @@ export async function saveAddresses(key: string, raw: string): Promise<ActionRes
   }
 
   revalidatePath('/admin/email')
+  revalidatePath('/admin/reports')
   return {
     ok: true,
     message: emails.length === 0
@@ -112,6 +113,7 @@ export async function saveEnabled(key: string, on: boolean): Promise<ActionResul
   }
 
   revalidatePath('/admin/email')
+  revalidatePath('/admin/reports')
   return { ok: true, message: on ? 'Switched on.' : 'Switched off.' }
 }
 
@@ -152,5 +154,6 @@ export async function saveChannel(
   }
 
   revalidatePath('/admin/email')
+  revalidatePath('/admin/reports')
   return { ok: true, message: enabled ? 'Channel on.' : 'Channel off.' }
 }
