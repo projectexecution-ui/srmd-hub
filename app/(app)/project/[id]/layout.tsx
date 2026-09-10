@@ -1,7 +1,7 @@
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { requirePermission, getDisabledModuleSlugs } from '@/lib/auth'
-import { ChevronLeft, Bell } from 'lucide-react'
+import { ChevronLeft } from 'lucide-react'
 import { loadWorkspaceHeader } from '@/lib/revamp/workspace-header'
 import { SETUP_TAB } from '@/lib/revamp/workspace'
 import { visibleWorkspaceTabsV2, allowedSubsByTab, canOpenWorkspaceTab } from '@/lib/revamp/permissions'
@@ -171,18 +171,6 @@ export default async function ProjectWorkspaceLayout({
                   IN4 · {formatDateTime(head.syncedAt)}
                 </span>
               )}
-              <Link
-                href="/notifications"
-                className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 px-2.5 py-1.5 text-[12.5px] text-gray-600 hover:bg-gray-50 min-h-[36px]"
-              >
-                <Bell className="h-4 w-4 text-gray-400" />
-                <span className="hidden sm:inline">Notifications</span>
-                {head.unread > 0 && (
-                  <span className="inline-flex items-center justify-center rounded-full bg-indigo-600 text-white text-[12px] font-bold min-w-[18px] h-[18px] px-1 tabular-nums">
-                    {head.unread}
-                  </span>
-                )}
-              </Link>
             </div>
           </div>
 
