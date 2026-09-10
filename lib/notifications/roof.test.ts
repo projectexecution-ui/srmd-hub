@@ -8,8 +8,6 @@ const SETTINGS = new Map<string, string>([
   ['bills_digest_enabled', 'true'],
   ['bills_digest_assignments', '{"465e6bfe-b348-48d6-9346-836b0d444ec7":["NGH","P2","VV"],"4d76ff25-097e-475a-b6cd-3ccf709261d8":["NGH","P2","VV"]}'],
   ['bills_worklist_to', 'mayank.srmd@gmail.com'],
-  ['procurement_notify_enabled', 'true'],
-  ['procurement_notify_assignments', '{"465e6bfe-b348-48d6-9346-836b0d444ec7":["New Guest House","P2 Infra"],"4d76ff25-097e-475a-b6cd-3ccf709261d8":["Vinay Vivek"]}'],
 ])
 
 const RULES = [
@@ -17,7 +15,6 @@ const RULES = [
   // cc_ws_returned is off on e-mail only — one channel left, so not "silent".
   { event_type: 'cc_ws_returned', channel: 'email', enabled: false },
   // On.
-  ...['email', 'in_app'].map(channel => ({ event_type: 'procurement_digest', channel, enabled: true })),
   ...['email', 'in_app'].map(channel => ({ event_type: 'access_request', channel, enabled: true })),
 ]
 
@@ -40,13 +37,6 @@ describe('what the roof reports about the live setup', () => {
 
   it('reads a bare address rather than choking on non-JSON', () => {
     expect(row('bills_stuck_worklist').recipients).toEqual(['mayank.srmd@gmail.com'])
-  })
-
-  it('counts differing project lists per person', () => {
-    expect(row('procurement_digest').recipients).toEqual([
-      'Akshay Atmarpit · 2 projects',
-      'Amit Gala · 1 project',
-    ])
   })
 
   it('does not flag a message that still has one channel on', () => {

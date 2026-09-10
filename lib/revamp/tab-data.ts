@@ -10,8 +10,6 @@ import { matchSubProjects, clean, type HubProject } from './subproject-match'
 import { PROJECT_ALIASES } from './alias-seed'
 import { descendantIds } from './hierarchy'
 import { compareDisciplines } from '@/lib/cost-control/discipline-order'
-import type { LineRecord } from '@/lib/procurement'
-import { correctTrackerLines, loadTrackerFixes, type ItemReader, type Corrections } from './tracker-corrections'
 
 // ── Approvals ───────────────────────────────────────────────────────────────
 
@@ -60,68 +58,9 @@ export async function loadProjectApprovals(projectId: string): Promise<PendingAp
   }))
 }
 
-// ── Indent → PO ─────────────────────────────────────────────────────────────
+// ── Sub-project names ───────────────────────────────────────────────────────
+// Kept for the Indents tree and its tests after the upload-based loader left (10 Sep 2026).
 
-export interface ProjectProcurement {
-  /** The IN4 sub-project name(s) these figures came from. */
-  matchedName: string | null
-  /** How many projects the upload covers, for context when we found none. */
-  uploadCovers: number
-  /** Names in the upload that match no project in the hub. */
-  unmatchedNames: string[]
-  totalLines: number
-  pendingLines: number
-  pendingValue: number
-  poValue: number
-  grnValue: number
-  /** The lines themselves, grouped by discipline — a summary alone is not
-   *  something anyone can act on. */
-  byDiscipline: ProcurementGroup[]
-  /** The same lines untouched, so the cockpit can hand them to the tracker's
-   *  OWN views (Pending receipts / Needs PO / Completed) rather than
-   *  re-implementing chase notes, ageing and drill-down a second time. The
-   *  stored JSON already IS LineRecord — it is what the parser wrote. */
-  lines: LineRecord[]
-  /** What the read-time correction did to these lines (tracker-corrections.ts),
-   *  and whether IN4 was reached to do it. */
-  corrections: Corrections & { live: boolean }
-}
-
-export interface ProcurementGroup {
-  discipline: string
-  lines: ProcurementLine[]
-  pendingValue: number
-  grnValue: number
-}
-
-export interface ProcurementLine {
-  id: string
-  indentNo: string
-  indentDate: string | null
-  ageDays: number
-  material: string
-  supplier: string
-  uom: string
-  indentQty: number
-  orderedQty: number
-  receivedQty: number
-  pendingQty: number
-  pendingValue: number
-  grnValue: number
-  status: string
-  poNos: string[]
-}
-
-/**
- * Every indent line carries `subProject`, written as
- * "<Project> - <SubProject>" — e.g.
- *   "New Guest House - New Guest House B-Execution"
- *   "P2 Stepped Terraces - P2 Stepped Terraces - Execution A-01"
- *
- * Strip the leading project name and what is left is the SAME sub-project
- * string the contractor/supplier reports use, so the one matcher handles both.
- * The project name repeats inside, so only the first occurrence is removed.
- */
 export function subProjectOfLine(line: Record<string, unknown>): string {
   const raw = clean(String(line.subProject ?? ''))
   const project = clean(String(line.project ?? ''))
@@ -142,119 +81,6 @@ export function subProjectOfLine(line: Record<string, unknown>): string {
  * "the most recently updated row" picks up `po` and makes 22 projects look
  * empty — so `global` is asked for by name.
  */
-export async function loadProjectProcurement(projectId: string): Promise<ProjectProcurement> {
-  const supabase = await createClient()
-  const [{ data: rows }, { data: projRows }] = await Promise.all([
-    supabase.from('procurement_tracker_state').select('id, state'),
-    supabase.from('projects').select('id, code, name, parent_project_id').is('archived_at', null),
-  ])
-
-  const list = (rows ?? []) as Array<{ id: string; state: unknown }>
-  const state = (list.find(r => r.id === 'global') ?? list[0])?.state
-  const uploaded = ((state as { projects?: unknown })?.projects ?? []) as Array<Record<string, unknown>>
-
-  const raw = (projRows ?? []) as Array<Record<string, unknown>>
-  const hub = raw as unknown as HubProject[]
-  const covered = new Set(descendantIds(
-    raw.map(p => ({ id: p.id as string, parentId: (p.parent_project_id as string | null) ?? null })),
-    projectId,
-  ))
-
-  // Work from the LINES, not the project totals. IN4 records an indent against
-  // "New Guest House" as a whole, so the project-level figures cannot tell NGH A
-  // from NGH B — but every LINE carries its own subProject, which does. That is
-  // what lets a tower show its own indents instead of the group's.
-  const lines: Array<Record<string, unknown>> = []
-  for (const proj of uploaded) {
-    for (const ln of (Array.isArray(proj.lines) ? proj.lines : []) as Array<Record<string, unknown>>) {
-      lines.push(ln)
-    }
-  }
-
-  // Match every distinct sub-project once, then keep the lines whose
-  // sub-project resolved to this project or anything under it.
-  const subNames = [...new Set(lines.map(subProjectOfLine).filter(Boolean))]
-  const subMatches = matchSubProjects(subNames, hub, PROJECT_ALIASES)
-  const mineSubs = new Set(
-    subMatches.filter(m => m.projectId && covered.has(m.projectId)).map(m => m.subProjectName),
-  )
-  const mineRaw = lines.filter(l => mineSubs.has(subProjectOfLine(l)))
-
-  // The snapshot repeats a PO line's quantity and joins GRNs to lines that
-  // received nothing on them (see tracker-corrections.ts). Corrected here from
-  // IN4's own PO-line figures until the feed fix runs on the live site.
-  const { items, fixes, live } = await loadTrackerFixes(supabase as unknown as ItemReader, mineRaw)
-  const { lines: mineLines, corrections } = correctTrackerLines(mineRaw, items, fixes)
-
-  const num = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : Number(v) || 0)
-
-  // PO value has no line-level total — it is the sum of each PO's qty × rate.
-  let poValue = 0
-  for (const l of mineLines) {
-    for (const po of (Array.isArray(l.pos) ? l.pos : []) as Array<Record<string, unknown>>) {
-      poValue += num(po.qty) * num(po.rate)
-    }
-  }
-
-  // Group the lines by discipline, the same shape the Internal Estimate uses:
-  // a category row you can collapse, with its rows underneath. Pending work
-  // sorts to the top of each group, because that is what needs chasing.
-  const groups = new Map<string, ProcurementLine[]>()
-  for (const l of mineLines) {
-    const disc = clean(String(l.discipline ?? '')) || '—'
-    const line: ProcurementLine = {
-      id: String(l.id ?? ''),
-      indentNo: String(l.indentNo ?? ''),
-      indentDate: (l.indentDate as string | null) ?? null,
-      ageDays: num(l.indentAgeDays),
-      material: clean(String(l.material ?? '')),
-      supplier: clean(String(l.supplier ?? '')),
-      uom: String(l.uom ?? ''),
-      indentQty: num(l.indentQty),
-      orderedQty: num(l.orderedQty),
-      receivedQty: num(l.receivedQty),
-      pendingQty: num(l.pendingQty),
-      pendingValue: num(l.pendingValue),
-      grnValue: num(l.grnValue),
-      status: String(l.status ?? ''),
-      poNos: ((Array.isArray(l.pos) ? l.pos : []) as Array<Record<string, unknown>>)
-        .map(po => String(po.poNo ?? '')).filter(Boolean),
-    }
-    const list = groups.get(disc)
-    if (list) list.push(line); else groups.set(disc, [line])
-  }
-
-  const byDiscipline: ProcurementGroup[] = [...groups.entries()]
-    .map(([discipline, list]) => ({
-      discipline,
-      lines: list.sort((a, b) =>
-        (b.pendingValue - a.pendingValue) || (b.pendingQty - a.pendingQty) || (b.ageDays - a.ageDays)),
-      pendingValue: list.reduce((s, l) => s + l.pendingValue, 0),
-      grnValue: list.reduce((s, l) => s + l.grnValue, 0),
-    }))
-    // Same rule as everywhere else in the hub: by the discipline's code number.
-    .sort((a, b) => compareDisciplines(
-      { code: a.discipline, display_order: null },
-      { code: b.discipline, display_order: null },
-    ))
-
-  return {
-    matchedName: mineLines.length ? [...mineSubs].sort().join(', ') : null,
-    uploadCovers: uploaded.length,
-    // Only meaningful when we found nothing: which sub-projects went unclaimed.
-    unmatchedNames: mineLines.length
-      ? []
-      : subMatches.filter(m => !m.projectId).map(m => m.subProjectName),
-    totalLines: mineLines.length,
-    pendingLines: mineLines.filter(l => num(l.pendingQty) > 0).length,
-    pendingValue: mineLines.reduce((s, l) => s + num(l.pendingValue), 0),
-    poValue,
-    grnValue: mineLines.reduce((s, l) => s + num(l.grnValue), 0),
-    byDiscipline,
-    lines: mineLines as unknown as LineRecord[],
-    corrections: { ...corrections, live },
-  }
-}
 
 // ── Discussions ─────────────────────────────────────────────────────────────
 

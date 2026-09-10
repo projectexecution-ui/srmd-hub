@@ -57,12 +57,6 @@ export const NOTIFICATION_EVENTS: NotificationEventDef[] = [
     audience: 'Atm Heads (per project)',
   },
   {
-    type: 'procurement_digest',
-    label: 'Indent → PO daily follow-up',
-    description: 'Weekday reminder to each Atm Head — POs to raise (2+ days) and deliveries to chase (1 week+), only their projects.',
-    audience: 'Atm Heads (per project)',
-  },
-  {
     type: 'cc_estimate_approved',
     label: 'Budget approved by Trustee → enter in IN4',
     description: 'When the Trustee approves/releases a working sheet, the IN4-entry person is told to key it into IN4 and mark it done.',

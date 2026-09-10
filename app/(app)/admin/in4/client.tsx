@@ -10,7 +10,6 @@ import { formatINR, formatDateTime } from '@/lib/utils'
 import { Loader2, RefreshCw, Link2, Link2Off, CheckCircle2, AlertTriangle, Power, ChevronDown, ChevronRight, ExternalLink } from 'lucide-react'
 import type { ComparisonSummary } from '@/lib/in4/compare'
 import type { Feed, FeedMode } from '@/lib/in4/feeds'
-import type { TrackerComparison } from '@/lib/in4/tracker'
 import type { ReportComparison } from '@/lib/in4/contractor'
 import type { SupplierComparison } from '@/lib/in4/supplier'
 import { setFeedLive, linkSubproject } from './actions'
@@ -151,7 +150,6 @@ export function In4SyncClient({ configured, missingVars, feeds, budgetComparison
                   <div className="px-4 pb-4 space-y-3 bg-gray-50/40 border-t border-gray-100">
                     <p className="text-[11px] text-gray-500 pt-3">Source: <span className="font-mono">{f.source}</span>{f.lastRun ? ` · last run #${f.lastRun.id} · ${f.lastRun.trigger} · ${f.lastRun.rows ?? 0} rows read` : ''}</p>
                     {f.feed === 'budget' && <BudgetComparison comparison={budgetComparison} openProject={openProject} setOpenProject={setOpenProject} />}
-                    {f.feed === 'tracker' && <TrackerCmp c={f.comparison as TrackerComparison | null} />}
                     {f.feed === 'contractor' && <ReportCmp c={f.comparison as ReportComparison | null} />}
                     {f.feed === 'supplier' && <SupplierCmp c={f.comparison as SupplierComparison | null} />}
                     {f.feed === 'masters' && <p className="text-xs text-gray-600">The mirror feeds the <Link href="/masters" className="text-blue-700 hover:underline">Masters</Link> screens — contractors, suppliers, materials, stores, trusts and units, each matched against the hub&apos;s own lists there.</p>}
@@ -269,42 +267,6 @@ function Verdict({ v }: { v: string }) {
   const cls = v === 'exact' ? 'bg-emerald-50 text-emerald-700' : v === 'near' ? 'bg-amber-50 text-amber-800' : v === 'hub-only' ? 'bg-gray-100 text-gray-600' : v === 'in4-only' ? 'bg-blue-50 text-blue-700' : 'bg-rose-50 text-rose-700'
   const label = v === 'hub-only' ? 'only in upload' : v === 'in4-only' ? 'new in IN4' : v
   return <span className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold ${cls}`}>{label}</span>
-}
-
-function TrackerCmp({ c }: { c: TrackerComparison | null }) {
-  if (!c) return <p className="text-xs text-gray-500">No comparison yet — run the feed once.</p>
-  const t = c.totals
-  return (
-    <div className="rounded-lg border border-gray-200 bg-white overflow-hidden">
-      <div className="px-3 py-2 border-b border-gray-100 text-xs text-gray-700 flex flex-wrap gap-x-4 gap-y-1">
-        <span><b>{t.in4Lines.toLocaleString('en-IN')}</b> lines from IN4 vs <b>{t.hubLines.toLocaleString('en-IN')}</b> in the upload{c.uploadSavedAt ? ` (${formatDateTime(c.uploadSavedAt)})` : ''}</span>
-        <span>pending <b>{t.in4Pending}</b> vs {t.hubPending}</span>
-        <span>pending ₹ <b>{formatINR(t.in4PendingValue)}</b> vs {formatINR(t.hubPendingValue)}</span>
-        <span>GRN ₹ <b>{formatINR(t.in4GrnValue)}</b> vs {formatINR(t.hubGrnValue)}</span>
-      </div>
-      <div className="overflow-x-auto max-h-[50vh] overflow-y-auto">
-        <table className="w-full text-[12.5px]">
-          <thead className="bg-gray-50 text-left text-[10px] uppercase tracking-wide text-gray-500 sticky top-0">
-            <tr><th className="px-3 py-1.5">Project</th><th className="px-3 py-1.5 text-right">Lines IN4</th><th className="px-3 py-1.5 text-right">Lines upload</th><th className="px-3 py-1.5 text-right">Pending IN4</th><th className="px-3 py-1.5 text-right">Pending upload</th><th className="px-3 py-1.5 text-right">Pending ₹ IN4</th><th className="px-3 py-1.5 text-right">Pending ₹ upload</th></tr>
-          </thead>
-          <tbody>
-            {c.projects.map(p => (
-              <tr key={p.project} className={`border-t border-gray-50 ${p.hubLines === 0 || p.in4Lines === 0 ? 'bg-blue-50/30' : ''}`}>
-                <td className="px-3 py-1.5 text-gray-900">{p.project}</td>
-                <td className="px-3 py-1.5 text-right tabular-nums">{p.in4Lines}</td>
-                <td className="px-3 py-1.5 text-right tabular-nums text-gray-500">{p.hubLines}</td>
-                <td className="px-3 py-1.5 text-right tabular-nums">{p.in4Pending}</td>
-                <td className="px-3 py-1.5 text-right tabular-nums text-gray-500">{p.hubPending}</td>
-                <td className="px-3 py-1.5 text-right tabular-nums">{formatINR(p.in4PendingValue)}</td>
-                <td className="px-3 py-1.5 text-right tabular-nums text-gray-500">{formatINR(p.hubPendingValue)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-      <p className="px-3 py-2 text-[11px] text-gray-500">Pending ₹ is higher from IN4 wherever the upload had unpriced POs — IN4 carries the order rate on every line.</p>
-    </div>
-  )
 }
 
 function ReportCmp({ c }: { c: ReportComparison | null }) {

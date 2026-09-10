@@ -68,10 +68,8 @@ describe('the one roof', () => {
     const keys = recipientSettingKeys()
     expect(keys).toContain('bills_worklist_to')
     expect(keys).toContain('bills_digest_assignments')
-    expect(keys).toContain('procurement_notify_assignments')
     // on/off keys come along too, so the roof can show what is switched off
     expect(keys).toContain('bills_digest_enabled')
-    expect(keys).toContain('procurement_notify_enabled')
   })
 
   it('groups by module without losing anything', () => {
@@ -84,7 +82,7 @@ describe('the one roof', () => {
     const s = spread()
     expect(s.messages).toBeGreaterThanOrEqual(20)
     expect(s.screens).toBeGreaterThanOrEqual(3) // still configured in several places
-    expect(s.settingKeys).toBeGreaterThan(5)  // across more than five settings keys
+    expect(s.settingKeys).toBeGreaterThanOrEqual(4) // across several settings keys
     expect(s.ignoring).toBe(1)
   })
 })

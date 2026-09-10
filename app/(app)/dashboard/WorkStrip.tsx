@@ -17,13 +17,11 @@ export async function WorkStrip() {
 
   const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString()
 
-  const [delRes, commentRes, contractorRes, supplierRes, procRes] = await Promise.all([
+  const [delRes, commentRes, contractorRes, supplierRes] = await Promise.all([
     supabase.from('delete_requests').select('id', { count: 'exact', head: true }).eq('status', 'pending'),
     supabase.from('cc_ws_comments').select('id', { count: 'exact', head: true }).gte('created_at', sevenDaysAgo),
     supabase.from('contractor_report_state').select('updated_at').limit(1).maybeSingle(),
     supabase.from('supplier_report_state').select('updated_at').limit(1).maybeSingle(),
-    supabase.from('procurement_tracker_state').select('updated_at')
-      .order('updated_at', { ascending: false }).limit(1).maybeSingle(),
   ])
 
   const daysSince = (iso: string | null | undefined): number | null => {
@@ -34,7 +32,6 @@ export async function WorkStrip() {
   const uploads = [
     { label: 'Contractor report', at: contractorRes.data?.updated_at as string | undefined },
     { label: 'Supplier report',   at: supplierRes.data?.updated_at as string | undefined },
-    { label: 'Indent → PO',       at: procRes.data?.updated_at as string | undefined },
   ].map(u => ({ ...u, days: daysSince(u.at) }))
 
   const staleUploads = uploads.filter(u => u.days === null || u.days > 7)
@@ -84,7 +81,7 @@ export async function WorkStrip() {
       </div>
 
       {/* Upload freshness. Everything downstream — Budget vs Actual, the
-          Reports tabs, the Indent → PO figures — is only as current as these,
+          Reports tabs — is only as current as these,
           and nothing else on the hub says when they last arrived. */}
       <div className={`rounded-xl border p-4 ${staleUploads.length ? 'border-amber-200 bg-amber-50/70' : 'border-gray-200 bg-white'}`}>
         <div className="flex items-center justify-between gap-2 flex-wrap">

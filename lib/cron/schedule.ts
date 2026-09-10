@@ -36,7 +36,6 @@ export const CRON_JOBS: CronJob[] = [
   // ── Daily jobs (once/IST-day, now attempted am AND pm for self-heal) ──────
   { key: 'cc-backup',             policy: 'daily', am: '/api/cost-control/backup?cron=1',      pm: '/api/cost-control/backup?cron=1' },
   { key: 'in4-followup',          policy: 'daily', module: 'cost-control', am: '/api/cost-control/in4-followup?cron=1', pm: '/api/cost-control/in4-followup?cron=1', everyThirdDayOnly: true },
-  { key: 'procurement-digest',    policy: 'daily', module: 'procurement-tracker', am: '/api/cron/procurement-digest?cron=1',  pm: '/api/cron/procurement-digest?cron=1' },
   { key: 'engineer-digest',       policy: 'daily', module: 'cost-control', am: '/api/cron/engineer-digest?cron=1',     pm: '/api/cron/engineer-digest?cron=1' },
   { key: 'bills-digest',          policy: 'daily', module: 'bills-pipeline', am: '/api/cron/bills-digest?cron=1',        pm: '/api/cron/bills-digest?cron=1' },
   { key: 'bills-stuck-worklist',  policy: 'daily', module: 'bills-pipeline', am: '/api/cron/bills-stuck-worklist?cron=1', pm: '/api/cron/bills-stuck-worklist?cron=1' },
@@ -70,7 +69,6 @@ export const CRON_JOBS: CronJob[] = [
   { key: 'in4-sync',              policy: 'each',  am: '/api/cron/in4-sync?cron=1',    pm: '/api/cron/in4-sync?cron=1' },
   // The other IN4 feeds — Indent → PO tracker, Contractor and Supplier reports,
   // and the masters mirror. One job each so a slow one cannot time out another.
-  { key: 'in4-tracker',           policy: 'each',  am: '/api/cron/in4-sync?cron=1&feed=tracker',    pm: '/api/cron/in4-sync?cron=1&feed=tracker' },
   { key: 'in4-contractor',        policy: 'each',  am: '/api/cron/in4-sync?cron=1&feed=contractor', pm: '/api/cron/in4-sync?cron=1&feed=contractor' },
   { key: 'in4-supplier',          policy: 'each',  am: '/api/cron/in4-sync?cron=1&feed=supplier',   pm: '/api/cron/in4-sync?cron=1&feed=supplier' },
   { key: 'in4-masters',           policy: 'each',  am: '/api/cron/in4-sync?cron=1&feed=masters',    pm: '/api/cron/in4-sync?cron=1&feed=masters' },
