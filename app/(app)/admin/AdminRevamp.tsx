@@ -19,7 +19,7 @@ import { AlertTriangle, Info, ArrowRight } from 'lucide-react'
  * you come to do, and where is that one screen I already know the name of.
  * Nothing was deleted; the old A–Z grouping is still here, one fold down.
  */
-export async function AdminRevamp({ isAdmin, disabledSlugs = [], shellCard = null }: { isAdmin: boolean; disabledSlugs?: string[]; shellCard?: React.ReactNode }) {
+export async function AdminRevamp({ isAdmin, disabledSlugs = [], shellCard = null, oldScreens = [] }: { isAdmin: boolean; disabledSlugs?: string[]; shellCard?: React.ReactNode; oldScreens?: Array<{ href: string; label: string }> }) {
   const disabled = new Set(disabledSlugs)
   const [findings, labels] = await Promise.all([loadHealth(), getModuleLabels()])
   const visible = (s: { adminOnly?: boolean }) => isAdmin || !s.adminOnly
@@ -75,6 +75,27 @@ export async function AdminRevamp({ isAdmin, disabledSlugs = [], shellCard = nul
       {findings.length > 0 && <HealthPanel findings={findings} />}
 
       <AdminBrowser tasks={tasks} screens={screens} />
+
+      {/* The pre-revamp screens, out of the pane since go-live (Aksha, 10 Sep
+          2026: "keep only 5 lanes"). Still routable for bookmarks and e-mail
+          links; this fold is the one place they are listed. */}
+      {oldScreens.length > 0 && (
+        <details className="rounded-xl border border-gray-200 bg-white px-4 py-3">
+          <summary className="cursor-pointer text-sm font-semibold text-gray-700 select-none">
+            Old screens <span className="ml-1 text-[11px] font-normal text-gray-400 tabular-nums">{oldScreens.length}</span>
+          </summary>
+          <p className="mt-1 text-xs text-gray-500">The pre-revamp pages. Everything they showed now lives inside a project or in Bills and Masters; these stay open until you remove them.</p>
+          <ul className="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-1">
+            {oldScreens.map(s => (
+              <li key={s.href}>
+                <Link href={s.href} className="inline-flex items-center gap-1 text-sm text-indigo-700 hover:underline min-h-[36px]">
+                  {s.label} <ArrowRight className="h-3 w-3" />
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
     </div>
   )
 }

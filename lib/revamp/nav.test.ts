@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { buildRevampNav, REVAMP_PRIMARY, REVAMP_OLD_SCREENS } from './nav'
+import { buildRevampNav, REVAMP_PRIMARY, REVAMP_OLD_SCREENS, oldScreensFor } from './nav'
 import { MODULES } from '@/lib/modules'
 
 const allow = (...slugs: string[]) =>
@@ -29,14 +29,19 @@ describe('revamped left pane', () => {
     }
   })
 
-  it('separates screens the cockpit replaced from ones simply parked', () => {
+  it('puts nothing under the five lanes — old screens are not in the pane since go-live', () => {
     const { groups } = buildRevampNav(
       allow('budget-vs-actual', 'jmr', 'schedule', 'warehouse'), new Set(), NOT_ADMIN)
-    const byName = Object.fromEntries(groups.map(g => [g.name, g.items.map(i => i.label)]))
+    expect(groups).toEqual([])
+  })
+
+  it('lists the old screens a person may still open, for the Admin fold', () => {
+    const labels = oldScreensFor(allow('budget-vs-actual', 'jmr', 'schedule', 'warehouse'), new Set()).map(i => i.label)
     // Both BPH screens hang off the one 'budget-vs-actual' permission, so
     // granting it shows both — that is the module's real shape, not a bug.
-    expect(byName['Now inside a project']).toEqual(['Budget (BPH)', 'Budget vs Actual'])
-    expect(byName['Not in the revamp']).toEqual(['Warehouse', 'Schedule', 'JMR'])
+    expect(labels).toEqual(['Budget (BPH)', 'Budget vs Actual', 'Warehouse', 'Schedule', 'JMR'])
+    // A switched-off module drops out even when the role holds it.
+    expect(oldScreensFor(allow('jmr'), new Set(['jmr']))).toEqual([])
   })
 
   it('drops a branch entirely when none of its screens are visible', () => {
