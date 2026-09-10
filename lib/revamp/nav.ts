@@ -19,7 +19,7 @@
 // the client NavBar.
 
 import {
-  LayoutDashboard, Building2, Receipt, Warehouse, Library, Shield, Archive,
+  LayoutDashboard, Building2, Receipt, Library, Shield, Archive,
   type LucideIcon,
 } from 'lucide-react'
 
@@ -58,14 +58,7 @@ export const REVAMP_PRIMARY: RevampNavItem[] = [
 /** Screens the cockpit REPLACES — the same information now lives inside a
  *  project. Kept reachable so the trial can be compared against today. */
 export const REVAMP_OLD_SCREENS: RevampNavItem[] = [
-  // The module slug is 'budget-vs-actual' — /budget is its href, not its slug.
-  // Gating on 'budget' meant nobody held it, so this lane never appeared for
-  // anyone. Caught by cross-checking every nav slug against lib/modules.ts.
-  { href: '/budget',              label: 'Budget (BPH)',        icon: Archive, slug: 'budget-vs-actual',     built: true },
-  { href: '/budget-vs-actual',    label: 'Budget vs Actual',    icon: Archive, slug: 'budget-vs-actual',     built: true },
   { href: '/budget-vs-actual-v2', label: 'Budget vs Actual V2', icon: Archive, slug: 'budget-vs-actual-v2',  built: true },
-  { href: '/contractor-report',   label: 'Contractor Report',   icon: Archive, slug: 'contractor-report',    built: true },
-  { href: '/supplier-report',     label: 'Supplier Report',     icon: Archive, slug: 'supplier-report',      built: true },
   { href: '/procurement-tracker', label: 'Indent → PO',         icon: Archive, slug: 'procurement-tracker',  built: true },
   { href: '/stuck-bills',         label: 'Stuck Bills',         icon: Archive, slug: 'stuck-bills',          built: true },
 ]
@@ -88,14 +81,7 @@ export const REVAMP_OLD_SCREENS: RevampNavItem[] = [
  *   Daily Site Report   1 report, module switched off
  */
 export const REVAMP_PARKED: RevampNavItem[] = [
-  { href: '/warehouse',         label: 'Warehouse',         icon: Warehouse, slug: 'warehouse',         built: true },
-  { href: '/schedule',          label: 'Schedule',          icon: Archive,   slug: 'schedule',          built: true },
-  { href: '/jmr',               label: 'JMR',               icon: Archive,   slug: 'jmr',               built: true },
   { href: '/bills-booking',     label: 'Bills Booking',     icon: Archive,   slug: 'bills-booking',     built: true },
-  { href: '/inventory',         label: 'Inventory (old)',   icon: Archive,   slug: 'inventory',         built: true },
-  { href: '/established-rates', label: 'Established Rates', icon: Archive,   slug: 'established-rates', built: true },
-  { href: '/comparison',        label: 'Comparisons',       icon: Archive,   slug: 'comparison',        built: true },
-  { href: '/daily-site-report', label: 'Daily Site Report', icon: Archive,   slug: 'daily-site-report', built: true },
 ]
 
 export interface PermissionMap {

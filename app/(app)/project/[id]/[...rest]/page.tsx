@@ -11,7 +11,6 @@ import { Hammer, ArrowRight, Database } from 'lucide-react'
 import { OverviewTab } from '../OverviewTab'
 import { ReportsTab } from '../ReportsTab'
 import { ProcurementTab, WoPoTab, DiscussionsTab } from '../MoreTabs'
-import { JmrTab, StoresTab } from '../tabs'
 import { ApprovalsTab } from '../ApprovalsTab'
 import { ScBudgetsTab } from '../ScBudgetsTab'
 import { AccountsTab } from '../AccountsTab'
@@ -108,8 +107,6 @@ export default async function ProjectTabPage({
 
   // Restored from the parked set — both are on the mind map and both were
   // already built and tested; only their row in PROJECT_TABS was removed.
-  if (slug === 'jmr')         return <JmrTab projectId={id} />
-  if (slug === 'material')    return <StoresTab projectId={id} />
 
   // Confidentiality is the route guard above, on budget-vs-actual-v2 — admin
   // and head only. The component does not re-check, so there is one gate.

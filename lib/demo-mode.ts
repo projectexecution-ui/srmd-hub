@@ -90,8 +90,7 @@ export const READ_RPCS: ReadonlySet<string> = new Set([
   'cc_transfer_inbox', 'cc_recent_transfers', 'cc_project_transfers', 'cc_can_i_raise_transfer',
   'cc_transfer_line_options', 'cc_transfer_in4_queue', 'cc_budget_vs_actual_report',
   'email_delivery_health', 'list_storage_objects', 'telegram_reports_group_info',
-  'inv_rpc_custody_prefill', 'inv_rpc_custody_projects', 'inv_low_stock_digest',
-  'blueprint_demo_sla_inbox', 'bb_stage_members',
+  'bb_stage_members',
 ])
 
 /** A stand-in for a query builder whose write was refused. It stays chainable

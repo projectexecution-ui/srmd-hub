@@ -17,6 +17,7 @@ import { revalidateBudgetV2Soon } from '@/lib/budget-v2-cached'
 import { extractAll, type In4Extract } from './extract'
 import { buildReports, splitCode, type SubprojectReport } from './compute'
 import { compareProject, summarise, type ComparisonSummary, type HubProjectData } from './compare'
+import { pruneHistory } from './history-retention'
 
 export const IN4_LIVE_KEY = 'in4_budget_live'
 export const IN4_LAST_SYNC_KEY = 'in4_last_sync'
@@ -151,6 +152,8 @@ async function writeBudgetHub(sb: SupabaseClient, state: HubState, version: numb
 
   const { error: snapErr } = await sb.from('budget_hub_state_history').insert({ state_id: 'global', state, version, snapshot_by: actorId })
   if (snapErr) console.warn('[in4-sync] history snapshot failed:', snapErr.message)
+  // Keep the last 30 snapshots only (clean-up round 1, 10 Sep 2026).
+  await pruneHistory(sb, 'budget_hub_state_history', 'snapshot_at')
   const newVersion = version + 1
   const { error: updErr } = await sb.from('budget_hub_state')
     .update({ state: { ...state, projects: nextProjects }, version: newVersion, updated_at: new Date().toISOString(), updated_by: actorId })

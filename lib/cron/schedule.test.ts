@@ -54,7 +54,7 @@ describe('plannedJobs — daily jobs run once/day across both slots', () => {
     const jobs = plannedJobs('pm', {}, DAY, false) // nothing ran at am
     const keys = jobs.map(j => j.key)
     expect(keys).toContain('procurement-digest')     // caught up in pm
-    expect(keys).toContain('inventory-daily-report')
+    expect(keys).toContain('cc-approval-digest')
   })
 
   it('a stale ledger (yesterday) does not block today', () => {

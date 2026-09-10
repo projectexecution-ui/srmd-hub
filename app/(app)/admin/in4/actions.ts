@@ -28,7 +28,7 @@ export async function setFeedLive(feed: Feed, live: boolean): Promise<{ ok: bool
   if (!key) return { ok: false, error: 'This feed has no live switch.' }
   const { error } = await svc().from('app_settings').upsert({ key, value: live ? 'true' : 'false' }, { onConflict: 'key' })
   if (error) return { ok: false, error: error.message }
-  revalidatePath('/admin/in4'); revalidatePath('/budget'); revalidatePath('/procurement-tracker'); revalidatePath('/contractor-report'); revalidatePath('/supplier-report')
+  revalidatePath('/admin/in4'); revalidatePath('/procurement-tracker'); revalidatePath('/contractor-report'); revalidatePath('/supplier-report')
   return { ok: true }
 }
 

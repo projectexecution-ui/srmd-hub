@@ -133,9 +133,8 @@ export default async function ResumeProjectSetupPage(
   // "Who works on this project" reads all six tables that answer that question,
   // so the whole picture is on one screen instead of five. Each is optional —
   // a module that has never been set up simply contributes nothing.
-  const [assignRes, jmrRes, deskRes, desksRes] = await Promise.all([
+  const [assignRes, deskRes, desksRes] = await Promise.all([
     supabase.from('project_assignments').select('user_id').eq('project_id', id),
-    supabase.from('jmr_user_project_access').select('user_id').eq('project_id', id),
     supabase.from('bb_desk_members').select('user_id, desk').eq('project_id', id),
     supabase.from('bb_desk_members').select('desk'),
   ])
@@ -199,7 +198,6 @@ export default async function ResumeProjectSetupPage(
     {
       approvers: (approverRes.data ?? []) as Array<{ user_id: string; role: string | null }>,
       assignments: (assignRes.data ?? []) as Array<{ user_id: string }>,
-      jmrAccess: (jmrRes.data ?? []) as Array<{ user_id: string }>,
       indentViewers: (indentRes ?? []) as Array<{ user_id: string }>,
       deskMembers: (deskRes.data ?? []) as Array<{ user_id: string; desk: string | null }>,
     },

@@ -76,8 +76,6 @@ export const PROJECT_TABS: ProjectTab[] = [
   { slug: 'discussions',  label: 'Discussions',      hint: 'Every comment on this project, in one place',           built: true,  permissionSlug: 'cost-control' },
   { slug: 'procurement',  label: 'Indents',          hint: 'Indents raised, and what is still to be ordered',       built: true,  permissionSlug: 'procurement-tracker' },
   { slug: 'wo-po',        label: 'WO / POs',         hint: 'The Indent → PO tracker: POs raised, deliveries due',   built: true,  permissionSlug: 'procurement-tracker' },
-  { slug: 'jmr',          label: 'JMRs',             hint: 'Measured work logged against this project',             built: true,  permissionSlug: 'jmr' },
-  { slug: 'material',     label: 'Material In-Out',  hint: 'Gate entries in and out of the store',                  built: true,  permissionSlug: 'warehouse' },
   { slug: 'reports',      label: 'Reports',          hint: 'Contractor, Supplier and Bills for this project',       built: true,  permissionSlug: 'contractor-report' },
 
   // TOP MANAGEMENT ONLY — Aksha, 2026-09-03: "not to be seen by Eng level but
@@ -118,7 +116,6 @@ export const PROJECT_TABS: ProjectTab[] = [
   // hide the roadmap from nearly everyone (daily-site-report is off portal-wide,
   // most roles have no `schedule`). `futureSlug` keeps the map.
   { slug: 'wo-view',      label: 'Budget by WO/PO',  hint: 'The same budget seen work-order wise, not category wise', built: false, permissionSlug: 'cost-control' },
-  { slug: 'schedule',     label: 'Schedules',        hint: 'Master and detailed, down to tasks — its own screen today', built: false, permissionSlug: 'cost-control', futureSlug: 'schedule', todayHref: '/schedule' },
   { slug: 'stakeholders', label: 'Stake Holders',    hint: 'Everyone attached to this project and their part in it',  built: false, permissionSlug: 'cost-control' },
   { slug: 'drawings',     label: 'Drawings',         hint: 'Not captured anywhere yet — the first stage of the WO chain', built: false, permissionSlug: 'cost-control' },
   { slug: 'decisions',    label: 'Decisions & Specs', hint: 'Decisions taken, by category and sub-category',          built: false, permissionSlug: 'cost-control' },
@@ -183,7 +180,7 @@ export const COMING_SOON_TABS = PROJECT_TABS.filter(t => !t.built)
  *              carries Internal Estimate, Budget, WO, Paid and % Used — the
  *              Overview repeated them one level less precisely.
  */
-export const PARKED_TABS = ['approvals', 'stores', 'jmr', 'schedule', 'overview'] as const
+export const PARKED_TABS = ['approvals', 'overview'] as const
 
 /**
  * Where clicking a project name goes.

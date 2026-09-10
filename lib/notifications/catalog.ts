@@ -96,34 +96,6 @@ export const SCHEDULED_MESSAGES: OutboundMessage[] = [
     schedule: 'Daily, 09:00 IST', settingsHref: RULES_PAGE,
   },
   {
-    key: 'daily_site_report_digest', label: 'Daily Site Report — digest', module: 'daily-site-report', kind: 'scheduled',
-    trigger: "The day's site deliveries and what is still outstanding.",
-    channels: ['in_app', 'email'], respectsRules: true,
-    recipients: { kind: 'derived', who: 'Atm Heads, from each project’s approvers' },
-    schedule: 'Daily', settingsHref: '/daily-site-report/digest',
-  },
-  {
-    key: 'inventory_daily_report', label: 'Inventory — daily report', module: 'inventory', kind: 'scheduled',
-    trigger: "Yesterday's stock movement.",
-    channels: ['email'], respectsRules: false,
-    recipients: { kind: 'addresses', who: 'Admins, plus a plain address list', settingKey: 'inv_daily_report_emails', format: 'csv' },
-    schedule: 'Daily, 09:00 IST', enabledKey: 'inv_daily_report', settingsHref: '/inventory/admin/settings',
-  },
-  {
-    key: 'inv_site_stock_reminder', label: 'Inventory — low stock alert', module: 'inventory', kind: 'scheduled',
-    trigger: 'An item has fallen below its reorder level.',
-    channels: ['in_app', 'email'], respectsRules: true,
-    recipients: { kind: 'derived', who: 'Engineers assigned to the site' },
-    schedule: 'Daily, 09:00 IST', enabledKey: 'inv_low_stock_alerts', settingsHref: '/inventory/admin/settings',
-  },
-  {
-    key: 'jmr_weekly_report', label: 'JMR — weekly report', module: 'jmr', kind: 'scheduled',
-    trigger: "The week's measurement entries, as one report.",
-    channels: ['email'], respectsRules: false,
-    recipients: { kind: 'addresses', who: 'A plain address list', settingKey: 'jmr_weekly_report_recipients', format: 'json-array' },
-    schedule: 'Weekly', settingsHref: '/jmr/admin/settings',
-  },
-  {
     key: 'cc_budget_approved_digest', label: 'Cost Control — budgets approved today', module: 'cost-control', kind: 'scheduled',
     trigger: 'A once-a-day summary of what the Trustee approved.',
     channels: ['in_app', 'email'], respectsRules: true,
@@ -151,13 +123,6 @@ export const SCHEDULED_MESSAGES: OutboundMessage[] = [
     recipients: { kind: 'derived', who: 'Cost Control reviewers only — confidential' },
     schedule: 'Monday morning — Telegram card', settingsHref: RULES_PAGE,
   },
-  {
-    key: 'sched_promise_nudge', label: 'Schedule — weekly promise nudge', module: 'schedule', kind: 'scheduled',
-    trigger: 'Monday plan ping, then an evening reminder of promises still open.',
-    channels: ['in_app', 'email'], respectsRules: true,
-    recipients: { kind: 'derived', who: 'Each responsible engineer' },
-    schedule: 'Mondays + evenings', settingsHref: '/schedule/settings',
-  },
 ]
 
 const INSTANT_RECIPIENTS: Record<string, RecipientSource> = {
@@ -173,14 +138,6 @@ const INSTANT_RECIPIENTS: Record<string, RecipientSource> = {
   cc_transfer_awaiting_in4: { kind: 'derived', who: 'The person with IN4 access' },
   cc_transfer_confirmed: { kind: 'actor',     who: 'The person who requested the transfer' },
   cc_transfer_mismatch:  { kind: 'derived',   who: 'The requester and the approver' },
-  jmr_entry_submitted:   { kind: 'approvers', who: 'Approvers (admin & head)' },
-  jmr_entry_approved:    { kind: 'actor',     who: 'The engineer who logged it' },
-  jmr_entry_flagged:     { kind: 'actor',     who: 'The engineer who logged it' },
-  wh_request_raised:     { kind: 'approvers', who: 'Whoever can approve it' },
-  wh_request_decided:    { kind: 'actor',     who: 'The engineer who raised it' },
-  wh_request_to_issue:   { kind: 'derived',   who: 'The store keeper, or whoever may issue' },
-  wh_request_issued:     { kind: 'actor',     who: 'The engineer who raised it' },
-  wh_return_waived:      { kind: 'actor',     who: 'The engineer who borrowed it' },
   comment_mention:       { kind: 'actor',     who: 'The tagged person' },
   email_health:          { kind: 'derived',   who: 'Admins' },
 }
@@ -190,8 +147,6 @@ const INSTANT_MODULE: Record<string, string> = {
   approval_pending: 'approvals', comment_mention: 'cost-control',
   cc_estimate_approved: 'cost-control', cc_ws_returned: 'cost-control', cc_budget_approved: 'cost-control', cc_budget_transfer: 'cost-control',
   cc_transfer_pending: 'cost-control', cc_transfer_rejected: 'cost-control', cc_transfer_awaiting_in4: 'cost-control', cc_transfer_confirmed: 'cost-control', cc_transfer_mismatch: 'cost-control',
-  jmr_entry_submitted: 'jmr', jmr_entry_approved: 'jmr', jmr_entry_flagged: 'jmr',
-  wh_request_raised: 'warehouse', wh_request_decided: 'warehouse', wh_request_to_issue: 'warehouse', wh_request_issued: 'warehouse', wh_return_waived: 'warehouse',
 }
 
 const COVERED_BY_SCHEDULE = new Set(SCHEDULED_MESSAGES.map(m => m.key))

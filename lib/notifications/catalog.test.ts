@@ -55,16 +55,13 @@ describe('the one roof', () => {
     for (const m of INSTANT_MESSAGES) expect(m.schedule, m.key).toBeUndefined()
   })
 
-  // These four send straight to an address list, so switching the event off on
+  // This one sends straight to an address list, so switching the event off on
   // /admin/notifications does nothing. That is a trap, and the roof must show
   // it rather than let an admin believe they have turned something off.
+  // (The inventory and JMR reports that did the same left on 10 Sep 2026.)
   it('flags the messages that ignore the on/off switches', () => {
     const keys = ignoresTheSwitches().map(o => o.key).sort()
-    expect(keys).toEqual([
-      'bills_stuck_worklist',
-      'inventory_daily_report',
-      'jmr_weekly_report',
-    ])
+    expect(keys).toEqual(['bills_stuck_worklist'])
   })
 
   it('collects every setting key the roof must read', () => {
@@ -72,8 +69,6 @@ describe('the one roof', () => {
     expect(keys).toContain('bills_worklist_to')
     expect(keys).toContain('bills_digest_assignments')
     expect(keys).toContain('procurement_notify_assignments')
-    expect(keys).toContain('jmr_weekly_report_recipients')
-    expect(keys).toContain('inv_daily_report_emails')
     // on/off keys come along too, so the roof can show what is switched off
     expect(keys).toContain('bills_digest_enabled')
     expect(keys).toContain('procurement_notify_enabled')
@@ -87,9 +82,9 @@ describe('the one roof', () => {
   // The measurement that justifies the screen existing at all.
   it('measures how scattered it is today', () => {
     const s = spread()
-    expect(s.messages).toBeGreaterThanOrEqual(30)
-    expect(s.screens).toBeGreaterThan(5)      // configured in more than five places
+    expect(s.messages).toBeGreaterThanOrEqual(20)
+    expect(s.screens).toBeGreaterThanOrEqual(3) // still configured in several places
     expect(s.settingKeys).toBeGreaterThan(5)  // across more than five settings keys
-    expect(s.ignoring).toBe(3)
+    expect(s.ignoring).toBe(1)
   })
 })

@@ -8,21 +8,14 @@ const SETTINGS = new Map<string, string>([
   ['bills_digest_enabled', 'true'],
   ['bills_digest_assignments', '{"465e6bfe-b348-48d6-9346-836b0d444ec7":["NGH","P2","VV"],"4d76ff25-097e-475a-b6cd-3ccf709261d8":["NGH","P2","VV"]}'],
   ['bills_worklist_to', 'mayank.srmd@gmail.com'],
-  ['jmr_weekly_report_recipients', '[]'],
   ['procurement_notify_enabled', 'true'],
   ['procurement_notify_assignments', '{"465e6bfe-b348-48d6-9346-836b0d444ec7":["New Guest House","P2 Infra"],"4d76ff25-097e-475a-b6cd-3ccf709261d8":["Vinay Vivek"]}'],
-  // inv_daily_report_emails and inv_low_stock_alerts do not exist at all.
 ])
 
 const RULES = [
-  ...['email', 'in_app'].map(channel => ({ event_type: 'daily_site_report_digest', channel, enabled: false })),
-  ...['email', 'in_app'].map(channel => ({ event_type: 'inv_site_stock_reminder', channel, enabled: false })),
   ...['email', 'web_push'].map(channel => ({ event_type: 'email_health', channel, enabled: false })),
-  { event_type: 'jmr_entry_submitted', channel: 'email', enabled: false },
-  { event_type: 'sched_promise_nudge', channel: 'email', enabled: false },
-  // Every warehouse event is off on every channel.
-  ...['wh_request_raised', 'wh_request_decided', 'wh_request_to_issue', 'wh_request_issued', 'wh_return_waived']
-    .flatMap(event_type => ['email', 'in_app', 'web_push'].map(channel => ({ event_type, channel, enabled: false }))),
+  // cc_ws_returned is off on e-mail only — one channel left, so not "silent".
+  { event_type: 'cc_ws_returned', channel: 'email', enabled: false },
   // On.
   ...['email', 'in_app'].map(channel => ({ event_type: 'procurement_digest', channel, enabled: true })),
   ...['email', 'in_app'].map(channel => ({ event_type: 'access_request', channel, enabled: true })),
@@ -56,28 +49,8 @@ describe('what the roof reports about the live setup', () => {
     ])
   })
 
-  // The findings the screen exists to surface.
-  it('flags the JMR weekly report as reaching nobody — its list is empty', () => {
-    const r = row('jmr_weekly_report')
-    expect(r.recipients).toEqual([])
-    expect(r.warning).toMatch(/reaches nobody/i)
-  })
-
-  it('flags the inventory reports — their settings keys do not exist at all', () => {
-    expect(row('inventory_daily_report').warning).toMatch(/reaches nobody/i)
-    expect(row('inv_site_stock_reminder').warning).toBeTruthy()
-  })
-
-  it('flags every warehouse alert as delivering nothing — all channels are off', () => {
-    for (const key of ['wh_request_raised', 'wh_request_decided', 'wh_request_to_issue', 'wh_request_issued', 'wh_return_waived']) {
-      const r = row(key)
-      expect(r.channelsOn, key).toEqual([])
-      expect(r.warning, key).toMatch(/every channel is switched off/i)
-    }
-  })
-
   it('does not flag a message that still has one channel on', () => {
-    const r = row('jmr_entry_submitted')
+    const r = row('cc_ws_returned')
     expect(r.channelsOn).toEqual(['in_app', 'web_push'])
     expect(r.warning).toBeUndefined()
   })
@@ -97,7 +70,7 @@ describe('what the roof reports about the live setup', () => {
 
   it('totals the problems', () => {
     const { silent, ignoring } = roof()
-    expect(ignoring).toBe(3)
-    expect(silent).toBeGreaterThanOrEqual(8) // 5 warehouse + JMR + 2 inventory
+    expect(ignoring).toBe(1)               // the stuck-bills list, sent to a plain address
+    expect(silent).toBe(0)                   // nothing left that is switched off on every channel
   })
 })

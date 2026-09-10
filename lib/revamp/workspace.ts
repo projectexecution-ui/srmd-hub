@@ -86,19 +86,10 @@ export const WORKSPACE_TABS: WorkspaceTab[] = [
   { slug: 'wo-po', ribbon: 'WO / PO', label: 'WO / PO', group: 'procurement', icon: 'GitBranch',
     subs: ['All orders', 'Work orders', 'POs', 'BOQ upload'],
     permissionSlug: 'procurement-tracker', built: true },
-  { slug: 'material', ribbon: 'Material', label: 'Material In-Out', group: 'procurement', icon: 'Package',
-    subs: ['Issued', 'Received', 'Returned'],
-    permissionSlug: 'warehouse', built: true },
 
   // ── Site ─────────────────────────────────────────────────────────────────
-  { slug: 'jmr', ribbon: 'JMR', label: 'JMRs', group: 'site', icon: 'Ruler',
-    subs: ['Measure', 'Build abstract', 'Measured vs certified', 'Register'],
-    permissionSlug: 'jmr', built: true },
   { slug: 'qc', ribbon: 'QC', label: 'QC', group: 'site', icon: 'ShieldCheck',
     subs: ['Category wise', 'Sub-category wise', 'Level wise', 'QC checklist'],
-    permissionSlug: 'cost-control', built: false },
-  { slug: 'schedule', ribbon: 'Schedule', label: 'Schedules', group: 'site', icon: 'CalendarDays',
-    subs: ['Programme', 'Slippage'],
     permissionSlug: 'cost-control', built: false },
 
   // ── Documents ────────────────────────────────────────────────────────────

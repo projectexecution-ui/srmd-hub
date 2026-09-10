@@ -1,7 +1,7 @@
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/server'
 import { formatDate } from '@/lib/utils'
-import { Boxes, MessageSquare, Trash2, Upload, ArrowRight } from 'lucide-react'
+import { MessageSquare, Trash2, Upload, ArrowRight } from 'lucide-react'
 
 /**
  * The rest of the hub's work, on the dashboard.
@@ -17,9 +17,7 @@ export async function WorkStrip() {
 
   const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString()
 
-  const [reqRes, delRes, commentRes, contractorRes, supplierRes, procRes] = await Promise.all([
-    supabase.from('wh_requests').select('id', { count: 'exact', head: true })
-      .eq('status', 'pending').is('deleted_at', null),
+  const [delRes, commentRes, contractorRes, supplierRes, procRes] = await Promise.all([
     supabase.from('delete_requests').select('id', { count: 'exact', head: true }).eq('status', 'pending'),
     supabase.from('cc_ws_comments').select('id', { count: 'exact', head: true }).gte('created_at', sevenDaysAgo),
     supabase.from('contractor_report_state').select('updated_at').limit(1).maybeSingle(),
@@ -42,14 +40,6 @@ export async function WorkStrip() {
   const staleUploads = uploads.filter(u => u.days === null || u.days > 7)
 
   const cards = [
-    {
-      key: 'requests',
-      icon: Boxes,
-      label: 'Material requests',
-      value: reqRes.count ?? 0,
-      hint: 'waiting on a storekeeper',
-      href: '/warehouse/requests',
-    },
     {
       key: 'deletes',
       icon: Trash2,

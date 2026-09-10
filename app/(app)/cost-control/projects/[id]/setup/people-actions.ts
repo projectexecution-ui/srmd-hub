@@ -75,7 +75,6 @@ export async function setCapability(
     row.assigned_by = g.userId
   }
   if (capId === 'works_on') row.assigned_by = g.userId
-  if (capId === 'jmr_log') row.granted_by = g.userId
   if (capId === 'bill_desk') {
     if (!variant?.trim()) return { ok: false, message: 'Pick which desk they work.' }
     row.desk = variant.trim()

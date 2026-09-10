@@ -49,8 +49,6 @@ export const ADMIN_TASKS: AdminTask[] = [
       { href: '/cost-control/admin/disciplines', why: 'Add any work category it needs that does not exist yet', optional: true },
       { href: '/procurement-tracker/admin', why: 'Decide who sees its indents and POs' },
       { href: '/bills-booking/admin', why: 'Say who works each bill desk on it', optional: true },
-      { href: '/jmr/admin/access', why: 'Let the site engineers log measured work against it', optional: true },
-      { href: '/warehouse/settings', why: 'Point it at a store, if material will move through one', optional: true },
     ],
   },
   {
@@ -61,8 +59,6 @@ export const ADMIN_TASKS: AdminTask[] = [
       { href: '/admin/users', why: 'Approve their access and give them one role' },
       { href: '/admin/permissions', why: 'Check that role can reach what they need' },
       { href: '/procurement-tracker/admin', why: 'Choose which projects they see in the tracker', optional: true },
-      { href: '/jmr/admin/admins', why: 'Give them a different role inside JMR only, if needed', optional: true },
-      { href: '/inventory/admin/engineers', why: 'Assign them to their sites', optional: true },
     ],
   },
   {
@@ -84,8 +80,6 @@ export const ADMIN_TASKS: AdminTask[] = [
       { href: '/admin/email', why: 'See every message, who receives it, and what reaches nobody' },
       { href: '/admin/notifications', why: 'Turn an alert on or off, per channel' },
       { href: '/bills-pipeline/digest-settings', why: 'Set who gets the bills digest and the stuck list', optional: true },
-      { href: '/jmr/admin/settings', why: 'Set who gets the JMR weekly report', optional: true },
-      { href: '/inventory/admin/settings', why: 'Set the inventory alerts and daily report', optional: true },
     ],
   },
   {
@@ -105,15 +99,6 @@ export const ADMIN_TASKS: AdminTask[] = [
     steps: [
       { href: '/masters', why: 'See every list and where they duplicate each other' },
       { href: '/cost-control/admin/disciplines', why: 'Work categories and sub-skills' },
-      { href: '/warehouse/settings', why: 'Stores, keepers, categories, units' },
-      { href: '/jmr/admin/items', why: 'Machine and manpower types', optional: true },
-      { href: '/jmr/admin/contractors', why: 'Contractors who log measured work', optional: true },
-      { href: '/jmr/admin/rate-cards', why: 'Rate per item per contractor', optional: true },
-      { href: '/jmr/admin/projects', why: 'Sub-projects used as JMR columns', optional: true },
-      { href: '/inventory/admin/items', why: 'The older item catalogue — check before adding here', optional: true },
-      { href: '/inventory/admin/warehouses', why: 'The older store list', optional: true },
-      { href: '/established-rates/admin', why: 'Rate taxonomy', optional: true },
-      { href: '/vendors', why: 'The contact list as it stands today', optional: true },
     ],
   },
   {
@@ -127,27 +112,16 @@ export const ADMIN_TASKS: AdminTask[] = [
       { href: '/cost-control/audit', why: 'Find out who changed it, and when', optional: true },
     ],
   },
-  {
-    id: 'import',
-    label: 'Load data in from IN4 or Excel',
-    hint: 'Each module takes its own upload — there is no single importer',
-    anyOrder: true,
-    steps: [
-      { href: '/cost-control/import', why: 'Excel and BPH budget imports' },
-      { href: '/warehouse/settings/sync', why: 'Bring items and POs across from the IN4 uploads' },
-      { href: '/jmr/admin/import', why: 'Bulk-load daily JMR entries', optional: true },
-    ],
-  },
+  // Imports and behaviour switches used to be two jobs across five modules;
+  // since the 10 Sep 2026 clean-up only Cost Control's remain, so they are one job.
   {
     id: 'project-settings',
-    label: 'Change how a module behaves',
-    hint: 'Feature switches, field names, lead times',
+    label: 'Change how Cost Control behaves, or load a budget in',
+    hint: 'Feature switches and field names on one screen, Excel and BPH imports on the other',
     anyOrder: true,
     steps: [
       { href: '/cost-control/settings', why: 'Feature switches, field names, what engineers can see' },
-      { href: '/schedule/settings', why: 'Work-back lead times for WO, budget and drawings' },
-      { href: '/inventory/admin/settings', why: 'Approval before issue, alerts, daily report' },
-      { href: '/jmr/admin/settings', why: 'GST rate and the weekly report' },
+      { href: '/cost-control/import', why: 'Excel and BPH budget imports' },
     ],
   },
 ]

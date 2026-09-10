@@ -32,11 +32,12 @@ describe('coming-soon lanes', () => {
     // plus Setup, which is not on the map but is how a project is configured,
     // plus Consultants & Specialised Cost, which the fifteen-tab ribbon gives
     // its own lane under People (see lib/revamp/workspace.ts).
-    expect(PROJECT_TABS).toHaveLength(19)
+    // 16 since 10 Sep 2026: JMRs, Material In-Out and Schedules left with their modules.
+    expect(PROJECT_TABS).toHaveLength(16)
     for (const label of [
       'Budget vs Actual', 'Budget by WO/PO', 'Pending Approvals', 'Discussions',
       'Stake Holders', 'Drawings', 'Decisions & Specs', 'QC', 'Indents',
-      'WO / POs', 'Schedules', 'JMRs', 'Material In-Out', 'Payment Reports',
+      'WO / POs', 'Payment Reports',
       'SC Budgets', 'Reports', 'Accounts',
     ]) {
       expect(PROJECT_TABS.map(t => t.label), label).toContain(label)
@@ -46,13 +47,8 @@ describe('coming-soon lanes', () => {
   // These four are on the map, were already built and tested, and I had parked
   // them. Restoring one is a single row, so a test guards against it happening
   // again.
-  it('has the four pages I parked back, and working', () => {
-    for (const label of ['Pending Approvals', 'JMRs', 'Material In-Out', 'Schedules']) {
-      expect(PROJECT_TABS.find(t => t.label === label), label).toBeDefined()
-    }
-    for (const label of ['Pending Approvals', 'JMRs', 'Material In-Out']) {
-      expect(PROJECT_TABS.find(t => t.label === label)!.built, label).toBe(true)
-    }
+  it('has Pending Approvals back, and working', () => {
+    expect(PROJECT_TABS.find(t => t.label === 'Pending Approvals')?.built).toBe(true)
   })
 
   // "Not written yet" and "cannot be written yet" need different things from
@@ -92,9 +88,8 @@ describe('coming-soon lanes', () => {
 
   it('still records which module each lane will belong to', () => {
     const withFuture = COMING_SOON_TABS.filter(t => t.futureSlug)
-    // Only Schedules. The mind map folds daily site entries into "Material
-    // In-Out", which is built, so there is no separate site-entries lane.
-    expect(withFuture.map(t => t.futureSlug)).toEqual(['schedule'])
+    // None since 10 Sep 2026: the Schedules lane left with the Schedule module.
+    expect(withFuture.map(t => t.futureSlug)).toEqual([])
   })
 
   it('gives a lane that already has a screen somewhere a way to reach it', () => {
@@ -130,8 +125,8 @@ describe('coming-soon lanes', () => {
 
   it('leaves the built count honest', () => {
     const { built, total } = builtCount()
-    expect(built).toBe(11)
-    expect(total).toBe(19)
+    expect(built).toBe(9)
+    expect(total).toBe(16)
     expect(BUILT_TABS).toHaveLength(built)
     expect(COMING_SOON_TABS).toHaveLength(total - built)
   })
@@ -210,7 +205,7 @@ describe('a tab never grants what the module refuses', () => {
     // The built tabs they may open — the greyed coming-soon lanes show to
     // everyone and are asserted separately.
     expect(labels.filter(l => BUILT_TABS.some(t => t.label === l)))
-      .toEqual(['Budget vs Actual', 'Discussions', 'Indents', 'WO / POs', 'JMRs', 'Material In-Out'])
+      .toEqual(['Budget vs Actual', 'Discussions', 'Indents', 'WO / POs'])
   })
 
   it('shows Pending Approvals to a reviewer', () => {

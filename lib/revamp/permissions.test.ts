@@ -10,7 +10,6 @@ const budget = WORKSPACE_TABS[0]
 const woPo = findWorkspaceTab('wo-po')!
 const indents = findWorkspaceTab('procurement')!
 const scBudget = findWorkspaceTab('sc-budgets')!
-const jmr = findWorkspaceTab('jmr')!
 const qc = findWorkspaceTab('qc')! // unbuilt
 
 const view = (...slugs: string[]): PermLike => Object.fromEntries(slugs.map(s => [s, { view: true, edit: false, admin: false }]))
@@ -22,7 +21,7 @@ describe('slugs', () => {
     expect(tabSlug(woPo)).toBe('ws:wo-po')
     expect(subSlug(budget, 'By order')).toBe('ws:budget:by-order')
     expect(subSlug(woPo, 'BOQ upload')).toBe('ws:wo-po:boq-upload')
-    expect(subSlug(jmr, 'Measured vs certified')).toBe('ws:jmr:measured-vs-certified')
+    expect(subSlug(findWorkspaceTab('procurement')!, 'By category')).toBe('ws:procurement:by-category')
     expect(kebab('Consultants & Specialised Cost')).toBe('consultants-and-specialised-cost')
   })
   it('every ws slug is unique, lower-case and never collides with a module slug', () => {
@@ -167,7 +166,7 @@ describe('the matrix rows', () => {
     expect(money.slice(1, 3).every(r => r.parent === 'ws:budget')).toBe(true)
     const all = sections.flatMap(s => s.rows)
     for (const t of [...WORKSPACE_TABS, SETUP_TAB]) expect(all.some(r => r.slug === tabSlug(t))).toBe(true)
-    expect(all.filter(r => r.kind === 'tab')).toHaveLength(16)
+    expect(all.filter(r => r.kind === 'tab')).toHaveLength(13)
     expect(all.filter(r => r.kind === 'sub')).toHaveLength(WORKSPACE_TABS.reduce((t, x) => t + x.subs.length, 0))
   })
   it('marks reviewer-only and unbuilt tabs, and says what a tab inherits', () => {
@@ -192,7 +191,8 @@ describe('the matrix rows', () => {
     // …and every module a tab gates on is a power, so no tab inherits from something the matrix cannot show.
     for (const t of WORKSPACE_TABS) expect(POWER_SLUGS.has(t.built ? t.permissionSlug : 'cost-control'), t.slug).toBe(true)
     // …and each is a real module slug in lib/modules.ts, so the screens' requirePermission() calls resolve.
-    const mods = new Set(MODULES.map(m => m.slug))
+    // The two report powers have no screen of their own since 10 Sep 2026; they gate the Reports tab.
+    const mods = new Set([...MODULES.map(m => m.slug), 'contractor-report', 'supplier-report'])
     for (const s of POWER_SLUGS) expect(mods.has(s), s).toBe(true)
   })
   it('search keeps a pill with its tab and a tab with its pills', () => {

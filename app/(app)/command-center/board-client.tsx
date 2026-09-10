@@ -6,7 +6,7 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
-import { formatINRShort, formatDateShort } from '@/lib/jmr/format'
+import { formatINRShort, formatDateShort } from '@/lib/format-short'
 import {
   Star, CornerUpLeft, ExternalLink, Check, Clock, RotateCcw, Loader2,
   Users, CheckCheck, X, Zap,

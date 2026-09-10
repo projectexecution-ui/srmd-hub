@@ -12,7 +12,7 @@ const PEOPLE: Person[] = [
 ]
 
 const EMPTY: RawGrants = {
-  approvers: [], assignments: [], jmrAccess: [], indentViewers: [], deskMembers: [],
+  approvers: [], assignments: [], indentViewers: [], deskMembers: [],
 }
 
 describe('the six tables behind one question', () => {
@@ -34,9 +34,9 @@ describe('the six tables behind one question', () => {
     }
   })
 
-  it('covers six tables across five screens', () => {
-    expect(new Set(CAPABILITIES.map(c => c.table)).size).toBe(5)
-    expect(screensReplaced()).toBe(5)
+  it('covers five tables across four screens (JMR access left on 10 Sep 2026)', () => {
+    expect(new Set(CAPABILITIES.map(c => c.table)).size).toBe(4)
+    expect(screensReplaced()).toBe(4)
   })
 
   // Renaming a project silently detaches this grant, because it is matched on
@@ -65,13 +65,12 @@ describe('folding the six sources into one row per person', () => {
     const rows = mergeGrants(PEOPLE, {
       approvers: [{ user_id: 'u1', role: 'head' }],
       assignments: [{ user_id: 'u1' }],
-      jmrAccess: [{ user_id: 'u1' }],
       indentViewers: [{ user_id: 'u1' }],
       deskMembers: [{ user_id: 'u1', desk: 'CT Billing' }],
     })
     expect(rows).toHaveLength(1)
     expect(rows[0].has).toEqual({
-      approver: 'head', works_on: true, jmr_log: true,
+      approver: 'head', works_on: true,
       sees_indents: true, bill_desk: 'CT Billing',
     })
   })
@@ -113,7 +112,6 @@ describe('folding the six sources into one row per person', () => {
     const rows = mergeGrants(PEOPLE, {
       approvers: [{ user_id: 'u3', role: 'head' }],
       assignments: [{ user_id: 'u1' }, { user_id: 'u2' }],
-      jmrAccess: [{ user_id: 'u1' }],
       indentViewers: [],
       deskMembers: [],
     })

@@ -163,8 +163,6 @@ export interface Power { slug: string; label: string; hint: string; lane: 'works
 export const POWERS: Power[] = [
   { slug: 'cost-control',        lane: 'workspace', label: 'Projects',        hint: 'The projects lane and the workspace itself — Budget, Approvals, Accounts, Discussions, Masters, Setup. Edit raises and acts on budgets; Admin manages projects.' },
   { slug: 'procurement-tracker', lane: 'workspace', label: 'Procurement',     hint: 'Indents and WO / PO, live from IN4.' },
-  { slug: 'warehouse',           lane: 'workspace', label: 'Material In-Out', hint: 'Stores and gate entries. Edit moves stock.' },
-  { slug: 'jmr',                 lane: 'workspace', label: 'JMR',             hint: 'Edit logs a day; Admin approves.' },
   { slug: 'budget-vs-actual-v2', lane: 'workspace', label: 'SC Budget',       hint: 'The top-management report.' },
   { slug: 'contractor-report',   lane: 'workspace', label: 'Reports — contractors', hint: 'Contractor billing on the Reports tab.' },
   { slug: 'supplier-report',     lane: 'workspace', label: 'Reports — suppliers',   hint: 'Supplier billing on the Reports tab.' },

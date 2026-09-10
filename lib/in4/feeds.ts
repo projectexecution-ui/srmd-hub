@@ -23,9 +23,9 @@ import { buildSupplierDocs, compareSupplier } from './supplier'
 import { splitCode, cleanLabel } from './compute'
 import { revalidateTrackerSoon } from '@/lib/procurement/tracker-cache'
 import { revalidateReportState } from '@/lib/report-state-cache'
-import { isOn, type SettingValues } from '@/lib/warehouse/settings'
 import type { ReportDoc as ContractorDoc } from '@/lib/contractor-report'
 import type { ReportDoc as SupplierDoc } from '@/lib/supplier-report'
+import { pruneHistory } from './history-retention'
 
 export type Feed = 'budget' | 'tracker' | 'contractor' | 'supplier' | 'masters' | 'boq'
 export type FeedMode = 'shadow' | 'live' | 'mirror'
@@ -37,7 +37,7 @@ export const FEED_LIVE_KEY: Partial<Record<Feed, string>> = {
 export function feedLastKey(feed: Feed): string { return feed === 'budget' ? 'in4_last_sync' : `in4_last_sync_${feed}` }
 
 export const FEED_META: Record<Feed, { label: string; replaces: string; page: string; source: string }> = {
-  budget:     { label: 'Budget vs Expenses report', replaces: 'the weekly ENGG_CONSOLIDATED_SRMDBUDGET… Excel on /budget', page: '/budget', source: 'ENGG_SUBPROJECT_BUDGET · BI.FACT_ENGG_WORK_ORDER · BI.FACT_ENGG_WO_PAYMENTS · BI.FACT_PURCHASE_SUPPLIER_PAY' },
+  budget:     { label: 'Budget vs Expenses report', replaces: 'the weekly ENGG_CONSOLIDATED_SRMDBUDGET… Excel upload (page removed 10 Sep 2026)', page: '/admin/in4', source: 'ENGG_SUBPROJECT_BUDGET · BI.FACT_ENGG_WORK_ORDER · BI.FACT_ENGG_WO_PAYMENTS · BI.FACT_PURCHASE_SUPPLIER_PAY' },
   tracker:    { label: 'Indent → PO tracker', replaces: 'both uploads on /procurement-tracker (Indent-to-Issue and PO report)', page: '/procurement-tracker', source: 'PURCH_INDENT_TO_ISSUE' },
   contractor: { label: 'Contractor report', replaces: 'the "All Types Certificates Details" Excel on /contractor-report', page: '/contractor-report', source: 'ENGG_RPT_WO_CERTIFICATE_DETAILS · BI.ENGG_ADVANCE_PAYMENTS_HEADER · BI.ENGG_MISC_PAYMENTS_HEADER' },
   supplier:   { label: 'Supplier report', replaces: 'the "All Purchase Payments Report" Excel on /supplier-report', page: '/supplier-report', source: 'BI.FACT_PURCHASE_SUPPLIER_PAY · BI.FACT_PURCHASE_SUPPLIER_ADV_PAY' },
@@ -180,7 +180,6 @@ async function runTracker(sb: SupabaseClient, now: string, mode: FeedMode, actor
   const comparison = compareTracker(hubState, state)
 
   let wrote = false
-  let warehouse = ''
   if (mode === 'live') {
     // Snapshot both slots, then write: everything in the indent slot, and an
     // empty PO slot — IN4's rates are already on every line, so the second
@@ -190,6 +189,8 @@ async function runTracker(sb: SupabaseClient, now: string, mode: FeedMode, actor
       const { error: snapErr } = await sb.from('procurement_tracker_state_history').insert({ state_id: s.id, state: s.state, version: s.version, snapshot_by: actorId })
       if (snapErr) console.warn('[in4-tracker] history snapshot failed:', snapErr.message)
     }
+    // Keep the last 30 snapshots only (clean-up round 1, 10 Sep 2026).
+    await pruneHistory(sb, 'procurement_tracker_state_history', 'snapshot_at')
     const emptyPo: TrackerStoredState = { format: 'flat', fileName: 'IN4 live sync — rates are on the indent lines', savedAt: now, projects: [], pendingLineCount: 0, totalGrnValue: 0, pendingValue: 0, indentStatuses: [], lineStatuses: [] }
     const { error: w1 } = await sb.from('procurement_tracker_state').upsert({ id: 'global', state: state, version: (global?.version ?? 0) + 1, updated_at: now, updated_by: actorId })
     if (w1) throw new Error(`procurement_tracker_state(global): ${w1.message}`)
@@ -204,24 +205,10 @@ async function runTracker(sb: SupabaseClient, now: string, mode: FeedMode, actor
       const { error: kErr } = await sb.from('procurement_known_projects').upsert(known, { onConflict: 'name' })
       if (kErr) console.warn('[in4-tracker] known projects:', kErr.message)
     }
-
-    // Feed the Warehouse from the same data, the way the upload did.
-    try {
-      const { data: wh } = await sb.from('app_settings').select('key, value').like('key', 'wh_%')
-      const values: SettingValues = {}
-      for (const r of wh ?? []) values[r.key as string] = (r.value as string) ?? ''
-      if (isOn(values, 'wh_auto_sync_on_upload')) {
-        const { runIn4Sync: whSync } = await import('@/lib/warehouse/in4-sync-apply')
-        const res = await whSync(['items', 'units', 'disciplines', 'pos'], actorId, sb)
-        warehouse = res.ok
-          ? [res.itemsCreated ? `${res.itemsCreated} items` : '', res.itemsAdopted ? `${res.itemsAdopted} items linked` : '', res.posCreated ? `${res.posCreated} POs` : ''].filter(Boolean).join(', ') || 'warehouse up to date'
-          : `warehouse sync failed: ${res.error}`
-      }
-    } catch (e) { warehouse = `warehouse sync failed: ${e instanceof Error ? e.message : e}` }
   }
 
   const t = comparison.totals
-  const summary = `${state.lineStatuses.length} lines · ${state.projects.length} projects · ${state.pendingLineCount} pending (upload had ${t.hubLines} lines · ${t.hubPending} pending)${warehouse ? ` · ${warehouse}` : ''}`
+  const summary = `${state.lineStatuses.length} lines · ${state.projects.length} projects · ${state.pendingLineCount} pending (upload had ${t.hubLines} lines · ${t.hubPending} pending)`
   return { rows: rows.length, comparison, wrote, summary }
 }
 

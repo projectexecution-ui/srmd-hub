@@ -13,7 +13,7 @@
 // with the numbers in front of you; the screens show the numbers.
 
 import { createClient } from '@/lib/supabase/server'
-import { fetchAll } from '@/lib/warehouse/paging'
+import { fetchAll } from '@/lib/paging'
 
 /** Normalise a name for comparison: case, spacing and punctuation differ
  *  between IN4 and what people typed into the hub. */
@@ -57,8 +57,9 @@ export async function loadContacts(): Promise<{ rows: ContactRow[]; in4Count: nu
   const sb = await createClient()
   const [pRes, vRes, jRes, pinned] = await Promise.all([
     sb.from('in4_parties').select('kind, id, name, code, pan, gstin, msme, phone, email, city, address, skills, is_active').order('name'),
-    sb.from('vendors').select('id, name, gstin, address, contact_phone, contact_email'),
-    sb.from('jmr_contractors').select('id, name, gst_number, phone, email'),
+    // The hub's own Vendors list and JMR contractors were removed on 10 Sep 2026 — IN4 is the only party list now.
+    Promise.resolve({ data: [] as Array<{ id: string; name: string; gstin: string | null; address: string | null; contact_phone: string | null; contact_email: string | null }> }),
+    Promise.resolve({ data: [] as Array<{ id: string; name: string; gst_number: string | null; phone: string | null; email: string | null }> }),
     links(sb, 'party'),
   ])
   type P = { kind: 'contractor' | 'supplier'; id: number; name: string; code: string | null; pan: string | null; gstin: string | null; msme: string | null; phone: string | null; email: string | null; city: string | null; address: string | null; skills: string[]; is_active: boolean }
@@ -137,12 +138,11 @@ export async function loadItems(): Promise<ItemsMaster> {
   const [mats, wh, inv, estRes, jmrRes, pinned] = await Promise.all([
     fetchAll<{ id: number; name: string; code: string | null; type_id: number | null; type_name: string | null; subtype_id: number | null; subtype_name: string | null; uom: string | null; hsn_code: string | null; rate: number | null; is_active: boolean }>((from, to) =>
       sb.from('in4_materials').select('id, name, code, type_id, type_name, subtype_id, subtype_name, uom, hsn_code, rate, is_active').order('id').range(from, to)),
-    fetchAll<{ id: string; name: string; unit: string | null; in4_name: string | null }>((from, to) =>
-      sb.from('wh_items').select('id, name, unit, in4_name').is('deleted_at', null).order('id').range(from, to)),
-    fetchAll<{ id: string; name: string; unit: string | null }>((from, to) =>
-      sb.from('inv_items').select('id, name, unit').is('deleted_at', null).order('id').range(from, to)),
-    sb.from('est_subcategories').select('id', { count: 'exact', head: true }),
-    sb.from('jmr_items').select('id', { count: 'exact', head: true }),
+    // Warehouse, old Inventory, Established Rates and JMR item lists were removed on 10 Sep 2026.
+    Promise.resolve({ rows: [] as Array<{ id: string; name: string; unit: string | null; in4_name: string | null }>, error: null as string | null }),
+    Promise.resolve({ rows: [] as Array<{ id: string; name: string; unit: string | null }>, error: null as string | null }),
+    Promise.resolve({ count: 0 as number | null }),
+    Promise.resolve({ count: 0 as number | null }),
     links(sb, 'material'),
   ])
   const byName = new Map<string, number>()
@@ -206,9 +206,10 @@ export async function loadStores(): Promise<{ rows: StoreRow[]; in4Count: number
   const [sRes, cRes, whRes, invRes, stockRes, projRes, profRes, pinned] = await Promise.all([
     sb.from('in4_stores').select('id, name, code, company_id, address, is_active').order('name'),
     sb.from('in4_companies').select('id, code'),
-    sb.from('wh_locations').select('id, code, name, project_id, keeper_id, parent_id').is('deleted_at', null),
-    sb.from('inv_warehouses').select('id, code, name, location').is('deleted_at', null),
-    sb.from('wh_stock').select('location_id'),
+    // Warehouse and old Inventory stores were removed on 10 Sep 2026 — IN4's stores are the list.
+    Promise.resolve({ data: [] as Array<Record<string, unknown>> }),
+    Promise.resolve({ data: [] as Array<Record<string, unknown>> }),
+    Promise.resolve({ data: [] as Array<{ location_id: string }> }),
     sb.from('projects').select('id, name'),
     sb.from('profiles').select('id, full_name, name, email'),
     links(sb, 'store'),

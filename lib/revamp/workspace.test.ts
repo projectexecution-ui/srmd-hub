@@ -7,14 +7,15 @@ import {
 
 const ALL_VIEW = new Proxy({}, { get: () => ({ view: true }) }) as Record<string, { view: boolean }>
 
-describe('the ribbon is fifteen tabs in five groups', () => {
-  it('has exactly fifteen', () => {
-    expect(WORKSPACE_TABS).toHaveLength(15)
+// Twelve since 10 Sep 2026: Material, JMR and Schedule left with their modules (clean-up round 1).
+describe('the ribbon is twelve tabs in five groups', () => {
+  it('has exactly twelve', () => {
+    expect(WORKSPACE_TABS).toHaveLength(12)
   })
 
-  it('groups them 4 · 3 · 3 · 2 · 3', () => {
+  it('groups them 4 · 2 · 1 · 2 · 3', () => {
     const counts = RIBBON_GROUPS.map(g => WORKSPACE_TABS.filter(t => t.group === g.id).length)
-    expect(counts).toEqual([4, 3, 3, 2, 3])
+    expect(counts).toEqual([4, 2, 1, 2, 3])
   })
 
   it('puts every tab in a declared group', () => {
@@ -24,7 +25,7 @@ describe('the ribbon is fifteen tabs in five groups', () => {
 
   it('gives each tab a unique slug, with Budget as the index', () => {
     const slugs = WORKSPACE_TABS.map(t => t.slug)
-    expect(new Set(slugs).size).toBe(15)
+    expect(new Set(slugs).size).toBe(12)
     expect(slugs[0]).toBe('')
   })
 
@@ -52,7 +53,7 @@ describe('permissions still decide what is shown', () => {
   it('hides a tab whose module the role cannot view', () => {
     const perms = { 'cost-control': { view: true } }
     const tabs = visibleWorkspaceTabs(perms, new Set(), false)
-    expect(tabs.map(t => t.slug)).not.toContain('jmr')       // needs jmr
+    expect(tabs.map(t => t.slug)).not.toContain('procurement') // needs procurement-tracker
     expect(tabs.map(t => t.slug)).not.toContain('reports')   // needs contractor-report
     expect(tabs.map(t => t.slug)).toContain('')              // Budget
   })
@@ -63,8 +64,8 @@ describe('permissions still decide what is shown', () => {
   })
 
   it('hides a tab whose module is switched off portal-wide', () => {
-    const tabs = visibleWorkspaceTabs(ALL_VIEW, new Set(['warehouse']), true)
-    expect(tabs.map(t => t.slug)).not.toContain('material')
+    const tabs = visibleWorkspaceTabs(ALL_VIEW, new Set(['contractor-report']), true)
+    expect(tabs.map(t => t.slug)).not.toContain('reports')
   })
 
   it('keeps unbuilt tabs visible — they are the roadmap, and carry no data', () => {
@@ -74,16 +75,16 @@ describe('permissions still decide what is shown', () => {
     expect(tabs.map(t => t.slug)).not.toContain('accounts')
   })
 
-  it('shows all fifteen to someone who holds everything', () => {
-    expect(visibleWorkspaceTabs(ALL_VIEW, new Set(), true)).toHaveLength(15)
+  it('shows all twelve to someone who holds everything', () => {
+    expect(visibleWorkspaceTabs(ALL_VIEW, new Set(), true)).toHaveLength(12)
   })
 
   it('never lets an unbuilt tab be gated on a module that is off', () => {
-    // An unbuilt tab is gated on cost-control, so switching off (say) schedule
+    // An unbuilt tab is gated on cost-control, so switching off (say) the tracker
     // must not make the roadmap vanish.
-    const tabs = visibleWorkspaceTabs(ALL_VIEW, new Set(['schedule', 'jmr']), true)
-    expect(tabs.map(t => t.slug)).toContain('schedule')  // unbuilt → still shown
-    expect(tabs.map(t => t.slug)).not.toContain('jmr')   // built → follows its module
+    const tabs = visibleWorkspaceTabs(ALL_VIEW, new Set(['procurement-tracker']), true)
+    expect(tabs.map(t => t.slug)).toContain('qc')             // unbuilt → still shown
+    expect(tabs.map(t => t.slug)).not.toContain('procurement') // built → follows its module
   })
 })
 
@@ -140,9 +141,9 @@ describe('routing', () => {
 
 describe('ribbonFor', () => {
   it('drops a group whose tabs are all hidden', () => {
-    const tabs = visibleWorkspaceTabs({ 'jmr': { view: true }, 'cost-control': { view: false } }, new Set(), false)
+    const tabs = visibleWorkspaceTabs({ 'procurement-tracker': { view: true }, 'cost-control': { view: false } }, new Set(), false)
     const groups = ribbonFor(tabs)
-    expect(groups.map(g => g.id)).toEqual(['site'])
+    expect(groups.map(g => g.id)).toEqual(['procurement'])
   })
 
   it('keeps the declared group order', () => {
