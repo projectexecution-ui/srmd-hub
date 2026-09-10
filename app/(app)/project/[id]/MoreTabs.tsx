@@ -2,6 +2,7 @@ import Link from 'next/link'
 import { formatDateTime } from '@/lib/utils'
 import { EmptyState } from '@/components/ui/empty-state'
 import { loadProjectProcurement, loadProjectDiscussions } from '@/lib/revamp/tab-data'
+import { checkIsCcReviewer } from '@/components/cost-control/ws-actions'
 import { IndentViews } from './IndentViews'
 import { IndentsTree } from './IndentsTree'
 import { OrdersView } from './OrdersView'
@@ -120,7 +121,9 @@ export async function ProcurementTab({ projectId, view = 0, params = {} }: { pro
 // ── Discussions ─────────────────────────────────────────────────────────────
 
 export async function DiscussionsTab({ projectId }: { projectId: string }) {
-  const { comments, mentionUsers, mentioningMe } = await loadProjectDiscussions(projectId)
+  // Comments on the Internal Estimate baseline follow the baseline's own gate.
+  const reviewer = await checkIsCcReviewer()
+  const { comments, mentionUsers, mentioningMe } = await loadProjectDiscussions(projectId, { includeInternal: reviewer })
 
   // Anything aimed at you first, then newest. A mention is the only part of a
   // thread that is actually a task, and today it can only be found by opening

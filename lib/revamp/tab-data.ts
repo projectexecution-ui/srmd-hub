@@ -324,13 +324,21 @@ export interface ProjectDiscussions {
 /** Every comment written on any of this project's budget sheets, newest first.
  *  Today's comments live per-sheet, so nobody can see the conversation for a
  *  project as a whole — this is that view. */
-export async function loadProjectDiscussions(projectId: string): Promise<ProjectDiscussions> {
+export async function loadProjectDiscussions(
+  projectId: string,
+  /** includeInternal: the reader is a Cost Control reviewer, so comments on the
+   *  [IB…] Internal Estimate baseline sheets may be shown. Default off — the
+   *  baseline is management-confidential and a comment can quote its figures
+   *  (go-live audit H4, 10 Sep 2026). */
+  opts: { includeInternal?: boolean } = {},
+): Promise<ProjectDiscussions> {
   const supabase = await createClient()
   const empty: ProjectDiscussions = { comments: [], mentionUsers: [], mentioningMe: 0 }
 
   const { data: sheets } = await supabase
-    .from('cc_working_sheets').select('id, ws_code').eq('project_id', projectId)
-  const rows = (sheets ?? []) as Array<{ id: string; ws_code: string | null }>
+    .from('cc_working_sheets').select('id, ws_code, summary_notes').eq('project_id', projectId)
+  const all = (sheets ?? []) as Array<{ id: string; ws_code: string | null; summary_notes: string | null }>
+  const rows = all.filter(r => opts.includeInternal || !(r.summary_notes ?? '').startsWith('[IB'))
   if (rows.length === 0) return empty
 
   const codeById = new Map(rows.map(r => [r.id, r.ws_code]))
