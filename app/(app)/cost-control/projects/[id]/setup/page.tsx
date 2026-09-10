@@ -17,7 +17,7 @@ import {
 import { RenameProjectChip } from '../RenameProjectChip'
 import { ProjectAliasChip } from '../ProjectAliasChip'
 import { AreaChip } from '../AreaChip'
-import { personName } from '@/lib/utils'
+import { personName, formatDateTime } from '@/lib/utils'
 import { ParentProjectControl } from '../ParentProjectControl'
 import { ProjectPeoplePanel } from './ProjectPeoplePanel'
 import { mergeGrants } from '@/lib/revamp/project-people'
@@ -72,6 +72,9 @@ export default async function ResumeProjectSetupPage(
   const canRename = can(await getMyPermissions(), 'cost-control', 'admin')
   const ccSettings = await getCcSettings()
   const bphMapping = ccSettings.bph_sync ? await getBphMappingForProject(id) : null
+  // When the IN4 budget feed last ran — the stamp on the card. A pointer in
+  // app_settings, so no IN4 call and nothing slows the page when IN4 is away.
+  const in4Stamp = bphMapping ? await in4BudgetStamp() : null
 
   // Internal Estimate lock + any in-flight revision. Moved here from the
   // Internal Estimate page on 7 Sept 2026 — Aksha: "Internal Estimate if can
@@ -288,13 +291,17 @@ export default async function ResumeProjectSetupPage(
         {ccSettings.bph_sync && (
           <div className="border-t border-gray-100 pt-3 space-y-1">
             <h2 className="text-sm font-semibold text-gray-900 inline-flex items-center gap-1.5">
-              <FileSpreadsheet className="h-4 w-4 text-gray-400" /> Budget (BPH) source
+              <FileSpreadsheet className="h-4 w-4 text-gray-400" /> Budget source: IN4
             </h2>
             {bphMapping ? (
               <>
+                {/* Aksha, 10 Sep 2026: "why is this still coming when my IN4
+                    database is already connected?" — the mapping is what tells
+                    the IN4 feed which sub-projects belong to this project; the
+                    words used to describe the Excel upload it replaced. */}
                 <p className="text-sm text-gray-700">
-                  Linked to a BPH report — <span className="text-emerald-700 font-medium">auto-syncs on every BPH upload</span>.{' '}
-                  <Link href={`/cost-control/import/bph?cc_project=${id}`} className="text-blue-600 hover:underline">Change the mapping →</Link>
+                  Linked to IN4 — <span className="text-emerald-700 font-medium">Budget (ERP) figures refresh twice a day{in4Stamp ? ` · last ${in4Stamp}` : ''}</span>.{' '}
+                  <Link href={`/cost-control/import/bph?cc_project=${id}`} className="text-blue-600 hover:underline">Change which IN4 sub-projects feed this project →</Link>
                 </p>
                 {/* Moved here from the Internal Estimate page on 7 Sept 2026.
                     It is a setting, and Aksha's rule for the workspace is that
@@ -306,9 +313,9 @@ export default async function ResumeProjectSetupPage(
               </>
             ) : (
               <p className="text-sm text-gray-700">
-                Not linked yet.{' '}
-                <Link href={`/cost-control/import/bph?cc_project=${id}`} className="text-blue-600 hover:underline">Map to a BPH report →</Link>{' '}
-                Once mapped, Budget (ERP) numbers refresh automatically on every upload.
+                Not linked to IN4 yet.{' '}
+                <Link href={`/cost-control/import/bph?cc_project=${id}`} className="text-blue-600 hover:underline">Link this project to its IN4 sub-projects →</Link>{' '}
+                Once linked, Budget (ERP) figures refresh from IN4 twice a day.
               </p>
             )}
           </div>
@@ -359,4 +366,15 @@ export default async function ResumeProjectSetupPage(
       />
     </div>
   )
+}
+
+/** "10 Sep 2026, 09:23" from the IN4 budget feed's last successful run, or null. */
+async function in4BudgetStamp(): Promise<string | null> {
+  const supabase = await createClient()
+  const { data } = await supabase.from('app_settings').select('value').eq('key', 'in4_last_sync').maybeSingle()
+  if (!data?.value) return null
+  try {
+    const s = JSON.parse(String(data.value)) as { at?: string; ok?: boolean }
+    return s.ok && s.at ? formatDateTime(s.at) : null
+  } catch { return null }
 }

@@ -1,8 +1,9 @@
 'use client'
-// "Sync from BPH" button on the project detail header. When the project
-// is already mapped to a BPH project, it re-pulls the latest BPH numbers
-// in place (one click, no leaving the page). When not mapped, it links to
-// the BPH import page pre-selected to this project so the PM can map it.
+// "Pull latest from IN4" on Project setup. When the project is linked to its
+// IN4 sub-projects (the Budget Hub mapping), it re-pulls the latest figures in
+// place (one click, no leaving the page). When not linked, it goes to the
+// mapping page pre-selected to this project. Renamed from "Sync from BPH" on
+// 10 Sep 2026 — the source is IN4 live, not the Excel upload it replaced.
 
 import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
@@ -21,9 +22,9 @@ export function BphSyncButton({ projectId, isMapped }: { projectId: string; isMa
       <Link
         href={`/cost-control/import/bph?cc_project=${projectId}`}
         className="inline-flex items-center gap-1.5 h-9 px-3 rounded-md bg-white text-teal-700 border border-teal-300 text-sm font-semibold hover:bg-teal-50"
-        title="Map this project to your BPH report to pull budget + actuals"
+        title="Link this project to its IN4 sub-projects to pull budget + actuals"
       >
-        <FileSpreadsheet className="h-4 w-4" /> Map to BPH
+        <FileSpreadsheet className="h-4 w-4" /> Link to IN4
       </Link>
     )
   }
@@ -49,10 +50,10 @@ export function BphSyncButton({ projectId, isMapped }: { projectId: string; isMa
         onClick={sync}
         disabled={pending}
         className="inline-flex items-center gap-1.5 h-9 px-3 rounded-md bg-white text-teal-700 border border-teal-300 text-sm font-semibold hover:bg-teal-50 disabled:opacity-60"
-        title="Re-pull the latest budget + actuals from your BPH report"
+        title="Pull the latest budget + actuals from IN4 now"
       >
         {pending ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
-        Sync from BPH
+        Pull latest from IN4
       </button>
       {msg && (
         <span className={`text-[11px] inline-flex items-center gap-1 ${msg.ok ? 'text-emerald-700' : 'text-rose-700'}`}>
