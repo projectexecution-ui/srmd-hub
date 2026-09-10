@@ -37,6 +37,7 @@ export const ADMIN_AREAS: Array<{ id: AdminArea; label: string; hint: string }> 
 export const ADMIN_SCREENS: AdminScreen[] = [
   // ── People & access ──
   { href: '/admin/users',                label: 'Users & roles',        module: '',            area: 'people', hint: 'Accounts, roles, access requests, per-module overrides' },
+  { href: '/admin/people',               label: 'People',               module: '',            area: 'people', hint: 'Six grids: who may do what, who signs which project, who works where, who sees which indents, who gets the bills e-mail, alert channels', adminOnly: true },
   { href: '/admin/permissions',          label: 'Permissions',          module: '',            area: 'people', hint: 'The role × module grid, and the delete rules' },
   { href: '/procurement-tracker/admin',  label: 'Procurement visibility', module: 'procurement-tracker', area: 'people', hint: 'Which projects each person sees in the tracker', visibilitySlug: 'procurement-tracker' },
 

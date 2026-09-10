@@ -23,9 +23,14 @@ export const dynamic = 'force-dynamic'
  */
 export default async function ManualUploadPage() {
   const [profile, owner] = await Promise.all([getMyProfile(), isPortalOwner()])
-  if (!profile || !(owner || profile.role === 'admin')) redirect('/admin')
-
+  if (!profile) redirect('/admin')
   const supabase = await createClient()
+  // Admins always; others when ticked under Admin → People → Powers → Manual upload.
+  if (!(owner || profile.role === 'admin')) {
+    const { data: g } = await supabase.from('app_settings').select('value').eq('key', 'in4_manual_upload_users').maybeSingle()
+    if (!((g?.value as string | null) ?? '').includes(profile.id)) redirect('/admin')
+  }
+
   const [on, budget, contractor, supplier] = await Promise.all([
     readManualUpload(supabase),
     readLastSync(supabase),
