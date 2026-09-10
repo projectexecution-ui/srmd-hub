@@ -67,6 +67,7 @@ export const ADMIN_SCREENS: AdminScreen[] = [
   { href: '/cost-control/projects/new',      label: 'New project',             module: 'cost-control',        area: 'masters', hint: 'Create a project with its code, group and approval chain' },
 
   // ── Data & imports ──
+  { href: '/admin/manual-upload',            label: 'Manual upload (IN4 fallback)', module: '',               area: 'data', hint: 'If the live IN4 read fails: switch on, upload the Budget, contractor and supplier sheets by hand, switch off when IN4 is back' },
   { href: '/admin/in4',                      label: 'IN4 live sync',           module: '',                    area: 'data', hint: 'Every IN4 report the hub used to upload, read from IN4 twice a day; per-feed comparison and live switch' },
   { href: '/cost-control/import',            label: 'Cost Control import',     module: 'cost-control',        area: 'data', hint: 'Excel budget import and the BPH → project mapping' },
   { href: '/cost-control/import/bph',        label: 'BPH → project links',     module: 'cost-control',        area: 'data', hint: 'Which Budget-Hub project feeds which Internal Estimate' },

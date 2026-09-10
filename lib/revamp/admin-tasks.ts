@@ -122,6 +122,7 @@ export const ADMIN_TASKS: AdminTask[] = [
     steps: [
       { href: '/cost-control/settings', why: 'Feature switches, field names, what engineers can see' },
       { href: '/cost-control/import', why: 'Excel and BPH budget imports' },
+      { href: '/admin/manual-upload', why: 'If the IN4 read fails, switch this on and upload the sheets by hand', optional: true },
     ],
   },
 ]
