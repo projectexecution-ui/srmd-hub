@@ -88,9 +88,35 @@ describe('revamped left pane', () => {
     expect(without.primary.map(i => i.label)).not.toContain('Masters')
   })
 
-  it('is five lanes — Dashboard, Projects, Bills, Masters, Admin', () => {
-    expect(REVAMP_PRIMARY.map(i => i.label)).toEqual(['Dashboard', 'Projects', 'Bills', 'Masters', 'Admin'])
+  it('is six lanes — Dashboard, Projects, Bills, Accounts, Masters, Admin', () => {
+    expect(REVAMP_PRIMARY.map(i => i.label)).toEqual(['Dashboard', 'Projects', 'Bills', 'Accounts', 'Masters', 'Admin'])
     expect(REVAMP_OLD_SCREENS.length).toBeGreaterThan(0)
+  })
+
+  // Accounts is a named list in settings, not a role — four people hold
+  // `head` and only one of them may see it. Absent rather than greyed: a
+  // greyed lane still announces that the report exists.
+  it('hides Accounts from anyone not on the list, whatever their permissions', () => {
+    const { primary } = buildRevampNav(allow('cost-control'), new Set(), NOT_ADMIN)
+    expect(primary.map(i => i.label)).not.toContain('Accounts')
+  })
+
+  it('shows Accounts to someone on the list', () => {
+    const { primary } = buildRevampNav(allow('cost-control'), new Set(), { ...NOT_ADMIN, canSeeAccounts: true })
+    expect(primary.map(i => i.label)).toContain('Accounts')
+  })
+
+  // Being an admin of the PORTAL is a different thing from being on the
+  // Accounts list; one must not imply the other in the pane.
+  it('does not let admin rights alone open the Accounts lane', () => {
+    const { primary } = buildRevampNav(allow('cost-control'), new Set(), ADMIN)
+    expect(primary.map(i => i.label)).not.toContain('Accounts')
+  })
+
+  // The lane still needs cost-control view, like every other gated lane.
+  it('still refuses Accounts when cost-control itself is switched off', () => {
+    const { primary } = buildRevampNav(allow('cost-control'), new Set(['cost-control']), { ...NOT_ADMIN, canSeeAccounts: true })
+    expect(primary.map(i => i.label)).not.toContain('Accounts')
   })
 
   it('has no duplicate hrefs between the main lanes and the old branch', () => {

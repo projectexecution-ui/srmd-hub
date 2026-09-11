@@ -19,7 +19,7 @@
 // the client NavBar.
 
 import {
-  LayoutDashboard, Building2, Receipt, Library, Shield, Archive,
+  LayoutDashboard, Building2, Receipt, Library, Shield, Archive, CreditCard,
   type LucideIcon,
 } from 'lucide-react'
 
@@ -51,6 +51,11 @@ export const REVAMP_PRIMARY: RevampNavItem[] = [
   { href: '/bills-pipeline', label: 'Bills',     icon: Receipt,         slug: 'bills-pipeline', built: true },
   // Gated on cost-control: every Masters page calls requirePermission('cost-control'),
   // so an ungated lane would show a link that then refuses the person who clicked it.
+  // Money across the whole hub — a trust's total, a party's ledger, a
+  // financial year. None of those are answerable inside one project, which
+  // is why it is a lane and not a tab. Shown only to the people named in
+  // Cost Control settings; see buildRevampNav below.
+  { href: '/accounts',       label: 'Accounts',  icon: CreditCard,      slug: 'cost-control',   built: true },
   { href: '/masters',        label: 'Masters',   icon: Library,         slug: 'cost-control',   built: true },
   { href: '/admin',          label: 'Admin',     icon: Shield,          slug: null,             built: true },
 ]
@@ -99,7 +104,9 @@ export interface PermissionMap {
 export function buildRevampNav(
   permissions: PermissionMap,
   disabledSlugs: Set<string>,
-  opts: { canSeeAdmin: boolean },
+  /** canSeeAccounts is the named list in Cost Control settings, resolved on
+   *  the server — roles cannot draw that line, four people hold `head`. */
+  opts: { canSeeAdmin: boolean; canSeeAccounts?: boolean },
 ): { primary: RevampNavItem[]; groups: RevampNavGroup[] } {
   const allowed = (it: RevampNavItem) => {
     if (it.slug === null) return true
@@ -109,6 +116,9 @@ export function buildRevampNav(
 
   const primary = REVAMP_PRIMARY
     .filter(it => it.href !== '/admin' || opts.canSeeAdmin)
+    // Absent, not greyed: a greyed lane still announces that the report
+    // exists, and "not to be seen" means not seen.
+    .filter(it => it.href !== '/accounts' || opts.canSeeAccounts === true)
     .filter(allowed)
 
   // Five lanes and nothing under them. The groups array stays in the shape so

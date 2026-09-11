@@ -14,6 +14,7 @@ import { getShell } from '@/lib/shell'
 import { getRevampOn } from '@/lib/revamp/shell-switch'
 import { getMyApprovalCounts, rollUpCounts } from '@/lib/revamp/approval-counts'
 import { loadVerifyPortfolio, verifyTotal } from '@/lib/revamp/verify-counts'
+import { canOpenAccounts } from '@/lib/revamp/accounts-access'
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const [profile, permissions, disabledSlugs, portalOwner, moduleLabelsMap, sidebarGroups, shell, approvalCounts, revampOn] = await Promise.all([
@@ -37,6 +38,9 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   // lane. Cached for a minute and shared by every page, so the sidebar does
   // not pay an IN4 round trip on each navigation. Empty when IN4 is away.
   const verifyPortfolio = await loadVerifyPortfolio()
+  // The Accounts lane is a named list, not a role — resolved here because
+  // the NavBar is a client component and cannot read app_settings.
+  const canSeeAccounts = await canOpenAccounts()
 
   // Flatten { label, description } → just label for the NavBar prop shape.
   const moduleLabels: Record<string, string> = Object.fromEntries(
@@ -79,6 +83,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
             Object.fromEntries(Object.entries(verifyPortfolio.byProject).map(([id, c]) => [id, verifyTotal(c)])),
             shell?.projects ?? [],
           )}
+          canSeeAccounts={canSeeAccounts}
           initialCollapsed={navCollapsed}
           revampOn={revampOn}
         />

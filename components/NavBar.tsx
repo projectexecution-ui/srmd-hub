@@ -33,6 +33,9 @@ interface NavBarProps {
   approvals?: Record<string, number>
   /** project id → documents at Verify in IN4, rolled up the same way. */
   verify?: Record<string, number>
+  /** Whether this person is on the Accounts list. Resolved on the server —
+   *  it is a named list in settings, not something a role implies. */
+  canSeeAccounts?: boolean
   /** Collapsed flag read from the cookie on the server, so the first paint is
    *  already right and nothing has to stay invisible until hydration. */
   initialCollapsed?: boolean
@@ -59,7 +62,7 @@ const GROUPS_OPEN_KEY = 'srmd_nav_groups_open'
 
 type NavItem = { href: string; label: string; icon: typeof LayoutDashboard; slug: string | null }
 
-export default function NavBar({ profile, permissions, disabledSlugs = [], isPortalOwner = false, moduleLabels = {}, sidebarGroups = [], projects = [], approvals = {}, verify = {}, initialCollapsed, revampOn = isRevampNow() }: NavBarProps) {
+export default function NavBar({ profile, permissions, disabledSlugs = [], isPortalOwner = false, moduleLabels = {}, sidebarGroups = [], projects = [], approvals = {}, verify = {}, canSeeAccounts = false, initialCollapsed, revampOn = isRevampNow() }: NavBarProps) {
   const disabled = new Set(disabledSlugs)
   const pathname = usePathname()
   const router = useRouter()
@@ -131,7 +134,7 @@ export default function NavBar({ profile, permissions, disabledSlugs = [], isPor
   // well as the trial (lib/revamp/live.ts); with the "CT Hub V1" toggle on,
   // the old sidebar below is what renders.
   const revamp = revampOn
-    ? buildRevampNav(permissions, disabled, { canSeeAdmin })
+    ? buildRevampNav(permissions, disabled, { canSeeAdmin, canSeeAccounts })
     : null
 
   // Fold the module links into admin-defined groups. When no groups exist,
