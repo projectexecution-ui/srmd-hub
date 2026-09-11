@@ -9,7 +9,8 @@
 //     `CompanyAddress1/2` columns the print templates use are the empty
 //     ones). GST registrations live in FIN_COMPANY_GSTIN_LOOKUP, each with
 //     its registered address. SRASSK has none — checked in all 105 GSTIN
-//     columns of the database — and the screen says so in words.
+//     columns of the database — and the screen says so in words. Read from
+//     the mirror since 11 Sep 2026.
 //   · Project — ENGG_PROJECT (36) with site address, dates, certifying trust
 //     and IN4's own status name; ENGG_SUBPROJECT (123) underneath.
 //   · Contact — the mirror's in4_parties (423 contractors, 178 suppliers with
@@ -26,8 +27,9 @@
 //     descriptions, with how often and at what rate each was used. Read from
 //     the mirror since 11 Sep 2026 — see the in4_boq_items note below.
 //
-// Live IN4 where the mirror lacks the field (addresses, GST); the mirror
-// where it has it. Every IN4 read is a SELECT. Nothing writes.
+// Served from the mirror, which is in Mumbai with the app. The one read still
+// going to IN4 live is the last purchase order behind an item, which the
+// mirror has no copy of. Every IN4 read is a SELECT. Nothing writes.
 // [[feedback_dont_guess_follow_the_source]]
 
 import { createClient } from '@/lib/supabase/server'
@@ -117,73 +119,53 @@ export interface Trust {
   workOrders: number
 }
 
+/** The trusts, from the Supabase mirror.
+ *
+ * It used to make three live reads on every load — TBLCOMMONCOMPANY,
+ * FIN_COMPANY_GSTIN_LOOKUP and ENGG_PROJECT — for 4 trusts, 2 GST
+ * registrations and 36 projects. IN4 is an RDS in us-east-1 and this app runs
+ * in Mumbai, so that was roughly half a second of ocean per query for 42 rows.
+ *
+ * The mirror already knew the trusts by name; what it lacked was the address,
+ * PAN, contact details and the GST registrations, which is why the fallback
+ * showed blanks and the live path stayed primary. It carries all of them now.
+ */
 export async function loadTrustMaster(): Promise<{ trusts: Trust[] } & In4Read> {
-  const [r, wo] = await Promise.all([
-    live(async () => {
-      const [companies, gst, projects] = await Promise.all([
-        in4QueryCached<Record<string, unknown>>(`
-          SELECT co.CompanyID, co.CompanyCode, co.CompanyName, co.Address, co.PrintAddress,
-                 co.CompanyPinCode, co.PrintPinCode, co.CompanyEmail, co.CompanyContactNo, co.PANNumber,
-                 cl.NAME city, cst.NAME state
-          FROM COMMON.TBLCOMMONCOMPANY co
-          LEFT JOIN COMMON_LOCATION_LOOKUP cl ON cl.ID = co.LocationID
-          LEFT JOIN COMMON_STATE_LOOKUP cst ON cst.ID = co.StateID
-          WHERE co.Active = 1
-          ORDER BY co.CompanyID`),
-        in4QueryCached<Record<string, unknown>>(`SELECT COMPANY_ID, GSTIN_NO, Address, Pincode FROM FIN_COMPANY_GSTIN_LOOKUP ORDER BY ID`),
-        in4QueryCached<Record<string, unknown>>(`
-          SELECT p.ID, p.NAME, p.EX_CODE, p.CERT_COMPANY_ID, st.NAME status, a.ADDR, a.PIN, l.NAME city
-          FROM ENGG_PROJECT p
-          LEFT JOIN COMMON_ADDRESS a ON a.ID = TRY_CAST(p.ADDR_ID AS int)
-          LEFT JOIN COMMON_LOCATION_LOOKUP l ON l.ID = a.LOCATION_ID
-          LEFT JOIN COMMON_STATUS_LOOKUP st ON st.ID = p.STATUS
-          ORDER BY p.NAME`),
-      ])
-      return { companies, gst, projects }
-    }),
-    loadWoIndex(),
-  ])
-
-  if (r.data) {
-    const { companies, gst, projects } = r.data
-    const trusts: Trust[] = companies.map(c => {
-      const id = n(c.CompanyID)
-      // Buildings first: IN4 also files three placeholder "projects" named
-      // after the trusts themselves, each with no work orders.
-      const projs: TrustProject[] = projects.filter(p => n(p.CERT_COMPANY_ID) === id).map(p => ({
-        id: n(p.ID), name: s(p.NAME) ?? `Project ${p.ID}`, code: s(p.EX_CODE),
-        address: oneLine(p.ADDR), pin: s(p.PIN), city: s(p.city), status: s(p.status),
-        workOrders: wo.byProject.get(n(p.ID)) ?? 0,
-      })).sort((a, b) => b.workOrders - a.workOrders || a.name.localeCompare(b.name))
-      return {
-        id, code: s(c.CompanyCode) ?? String(id), name: s(c.CompanyName) ?? '',
-        address: oneLine(c.Address), printAddress: oneLine(c.PrintAddress),
-        pin: s(c.CompanyPinCode) ?? s(c.PrintPinCode), city: s(c.city), state: s(c.state),
-        email: s(c.CompanyEmail), phone: s(c.CompanyContactNo), pan: s(c.PANNumber),
-        gst: gst.filter(g => n(g.COMPANY_ID) === id).map(g => ({ gstin: s(g.GSTIN_NO) ?? '', address: oneLine(g.Address), pin: s(g.Pincode) })).filter(g => g.gstin),
-        projects: projs,
-        workOrders: projs.reduce((t, p) => t + p.workOrders, 0),
-      }
-    })
-    return { trusts, in4: 'live' }
-  }
-
-  // IN4 not reachable: the mirror knows the trusts and their projects by name.
   const supabase = await createClient()
-  const [co, pr] = await Promise.all([
-    supabase.from('in4_companies').select('id, name, code').order('id'),
-    supabase.from('in4_projects').select('id, name, ex_code, cert_company_id').order('name'),
+  const [wo, co, gst, pr] = await Promise.all([
+    loadWoIndex(),
+    supabase.from('in4_companies')
+      .select('id, name, code, address, print_address, pin, print_pin, email, phone, pan, city, state')
+      .eq('is_active', true).order('id'),
+    supabase.from('in4_company_gstins').select('company_id, gstin, address, pincode').order('id'),
+    supabase.from('in4_projects')
+      .select('id, name, ex_code, cert_company_id, status_name, addr, pin, city')
+      .order('name'),
   ])
-  const trusts: Trust[] = ((co.data ?? []) as Array<{ id: number; name: string; code: string | null }>).map(c => {
-    const projs = ((pr.data ?? []) as Array<{ id: number; name: string; ex_code: string | null; cert_company_id: number | null }>)
-      .filter(p => p.cert_company_id === c.id)
-      .map(p => ({ id: p.id, name: p.name, code: p.ex_code, address: null, pin: null, city: null, status: null, workOrders: wo.byProject.get(p.id) ?? 0 }))
+
+  type CoRow = Record<string, unknown>
+  const projects = (pr.data ?? []) as CoRow[]
+  const gstins = (gst.data ?? []) as CoRow[]
+  const trusts: Trust[] = ((co.data ?? []) as CoRow[]).map(c => {
+    const id = n(c.id)
+    // Buildings first: IN4 also files three placeholder "projects" named
+    // after the trusts themselves, each with no work orders.
+    const projs: TrustProject[] = projects.filter(p => n(p.cert_company_id) === id).map(p => ({
+      id: n(p.id), name: s(p.name) ?? `Project ${p.id}`, code: s(p.ex_code),
+      address: oneLine(p.addr), pin: s(p.pin), city: s(p.city), status: s(p.status_name),
+      workOrders: wo.byProject.get(n(p.id)) ?? 0,
+    })).sort((a, b) => b.workOrders - a.workOrders || a.name.localeCompare(b.name))
     return {
-      id: c.id, code: c.code ?? String(c.id), name: c.name, address: null, printAddress: null, pin: null, city: null, state: null,
-      email: null, phone: null, pan: null, gst: [], projects: projs, workOrders: projs.reduce((t, p) => t + p.workOrders, 0),
+      id, code: s(c.code) ?? String(id), name: s(c.name) ?? '',
+      address: oneLine(c.address), printAddress: oneLine(c.print_address),
+      pin: s(c.pin) ?? s(c.print_pin), city: s(c.city), state: s(c.state),
+      email: s(c.email), phone: s(c.phone), pan: s(c.pan),
+      gst: gstins.filter(g => n(g.company_id) === id).map(g => ({ gstin: s(g.gstin) ?? '', address: oneLine(g.address), pin: s(g.pincode) })).filter(g => g.gstin),
+      projects: projs,
+      workOrders: projs.reduce((t, p) => t + p.workOrders, 0),
     }
   })
-  return { trusts, in4: r.in4, in4Error: r.in4Error }
+  return { trusts, in4: 'mirror' }
 }
 
 /* ── 2. Project Master ──────────────────────────────────────────────────── */
@@ -653,7 +635,7 @@ const LIMIT = 15
  *  names, each hit linking to its screen with the search already typed. */
 export async function loadMasterSearch(q: string): Promise<SearchResult & In4Read> {
   const needle = q.trim()
-  if (!needle) return { q: needle, groups: [], in4: 'live' }
+  if (!needle) return { q: needle, groups: [], in4: 'mirror' }
   const enc = encodeURIComponent(needle)
   const supabase = await createClient()
   const [co, pr, sp, sk, mat, contacts, boq] = await Promise.all([
@@ -663,12 +645,7 @@ export async function loadMasterSearch(q: string): Promise<SearchResult & In4Rea
     supabase.from('in4_skills').select('id, name, code, parent_id'),
     supabase.from('in4_materials').select('id, name, code, type_name').or(`name.ilike.%${needle.replace(/[%,()]/g, '')}%,code.ilike.%${needle.replace(/[%,()]/g, '')}%`).limit(LIMIT + 1),
     loadContactMaster(),
-    live(() => in4QueryCached<{ BOQ_NAME: string; cat: number; n: number }>(`
-      SELECT TOP ${LIMIT + 1} d.BOQ_NAME, d.WORK_CATEGORY_ID cat, COUNT(DISTINCT d.WO_ID) n
-      FROM BI.DIM_ENGG_WORK_ORDER_BOQ d
-      WHERE d.BOQ_NAME LIKE '%${needle.replace(/'/g, "''").replace(/[%_\[\]]/g, '')}%'
-      GROUP BY d.BOQ_NAME, d.WORK_CATEGORY_ID
-      ORDER BY n DESC`)),
+    supabase.rpc('in4_boq_name_search', { p_q: needle, p_limit: LIMIT + 1 }),
   ])
   const group = (master: string, all: SearchHit[]) => ({ master, hits: all.slice(0, LIMIT), more: Math.max(0, all.length - LIMIT) })
   const trusts = ((co.data ?? []) as Array<{ id: number; name: string; code: string | null }>)
@@ -693,12 +670,12 @@ export async function loadMasterSearch(q: string): Promise<SearchResult & In4Rea
     .map(k => ({ master: 'Budget categories', label: k.name, sub: k.parent_id ? `under ${skillName.get(k.parent_id) ?? '?'}` : 'main category', href: `/masters/categories?q=${enc}` }))
   const items = ((mat.data ?? []) as Array<{ id: number; name: string; code: string | null; type_name: string | null }>)
     .map(m => ({ master: 'Items', label: m.name, sub: [m.code, m.type_name].filter(Boolean).join(' · ') || null, href: `/masters/items?q=${enc}` }))
-  const boqHits = (boq.data ?? []).map(b => ({ master: 'BOQ', label: b.BOQ_NAME, sub: `${skillName.get(n(b.cat)) ?? 'no category'} · used in ${n(b.n)} WO${n(b.n) === 1 ? '' : 's'}`, href: `/masters/boq?cat=${n(b.cat)}&q=${enc}` }))
+  const boqHits = ((boq.data ?? []) as Array<Record<string, unknown>>).map(b => ({ master: 'BOQ', label: s(b.boq_name) ?? '', sub: `${skillName.get(n(b.cat)) ?? 'no category'} · used in ${n(b.n)} WO${n(b.n) === 1 ? '' : 's'}`, href: `/masters/boq?cat=${n(b.cat)}&q=${enc}` }))
   const groups = [
     group('Trusts', trusts), group('Projects', projects), group('Contacts', people),
     group('Budget categories', categories), group('Items', items), group('BOQ', boqHits),
   ].filter(g => g.hits.length > 0)
-  return { q: needle, groups, in4: boq.in4, in4Error: boq.in4Error }
+  return { q: needle, groups, in4: boq.error ? 'unavailable' : 'mirror', in4Error: boq.error?.message }
 }
 
 /** When the IN4 mirror last finished a sync — the freshness of every mirror-fed
@@ -727,7 +704,7 @@ export async function loadMasterOverview(): Promise<{ cards: MasterCard[] } & In
     return q
   }
   const [co, pr, sp, mat, hsn, sk, skIn, team, contacts, boq] = await Promise.all([
-    count('in4_companies'),
+    supabase.from('in4_companies').select('id', { count: 'exact', head: true }).eq('is_active', true),
     count('in4_projects'),
     count('in4_subprojects'),
     count('in4_materials'),
@@ -736,12 +713,10 @@ export async function loadMasterOverview(): Promise<{ cards: MasterCard[] } & In
     supabase.from('in4_skills').select('id', { count: 'exact', head: true }).eq('is_active', false),
     count('profiles'),
     loadContactMaster(),
-    live(() => in4QueryCached<{ names: number; items: number }>(`
-      SELECT COUNT(DISTINCT BOQ_NAME) names, COUNT(DISTINCT CONCAT(BOQ_NAME, '|', BOQ_SUBNAME, '|', BOQ_DESCRIPTION)) items
-      FROM BI.DIM_ENGG_WORK_ORDER_BOQ`)),
+    supabase.rpc('in4_boq_totals'),
   ])
   const skillsTotal = (sk.count ?? 0) - 1 // minus IN4's "-1 Sub Project Milestone" pseudo-skill
-  const boqRow = boq.data?.[0]
+  const boqRow = ((boq.data ?? []) as Array<Record<string, unknown>>)[0]
   const cards: MasterCard[] = [
     { key: 'trusts', label: 'Trust Master', href: '/masters/trusts', hint: 'Name, address, GST and PAN of each trust, and the projects it pays for',
       total: co.count ?? 0, facts: ['From IN4’s company register', 'GST registrations with their registered address'] },
@@ -756,7 +731,7 @@ export async function loadMasterOverview(): Promise<{ cards: MasterCard[] } & In
       total: mat.count ?? 0, facts: [`HSN code on ${hsn.count ?? 0}`, 'From IN4’s material register'] },
     { key: 'boq', label: 'BOQ Master', href: '/masters/boq', hint: 'Every BOQ item ever ordered, by category, with how often and at what rate',
       total: boqRow ? n(boqRow.items) : null,
-      facts: boqRow ? [`${n(boqRow.names).toLocaleString('en-IN')} BOQ names`, 'Built from IN4’s work orders — IN4 keeps no separate BOQ master'] : ['Read live from IN4'] },
+      facts: boqRow ? [`${n(boqRow.names).toLocaleString('en-IN')} BOQ names`, 'Built from IN4’s work orders — IN4 keeps no separate BOQ master'] : ['Counted from the IN4 mirror'] },
   ]
-  return { cards, in4: boq.in4, in4Error: boq.in4Error }
+  return { cards, in4: boq.error ? 'unavailable' : 'mirror', in4Error: boq.error?.message }
 }

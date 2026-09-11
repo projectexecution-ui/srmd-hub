@@ -174,10 +174,40 @@ export async function extractStores(): Promise<In4Store[]> {
   return rows.map(r => ({ id: n(r.STORE_ID), name: s(r.STORE_NAME), code: sn(r.STORE_CODE), company_id: ni(r.COMPANY_ID), address: sn(r.STORE_ADDRESS), location: sn(r.STORE_LOCATION), is_active: /^(active|yes|1|true)$/i.test(s(r.IsACTIVE)) }))
 }
 
-export interface In4Company { id: number; name: string; code: string | null; print_name: string | null }
+/** A trust, as IN4's company master holds it. The Trust Master screen reads
+ *  every one of these fields, so all of them are mirrored — it used to fetch
+ *  them live and show blanks when it could not. */
+export interface In4Company {
+  id: number; name: string; code: string | null; print_name: string | null
+  address: string | null; print_address: string | null; pin: string | null; print_pin: string | null
+  email: string | null; phone: string | null; pan: string | null
+  city: string | null; state: string | null; is_active: boolean
+}
 export async function extractCompanies(): Promise<In4Company[]> {
-  const rows = await in4Query<Record<string, unknown>>(`SELECT CompanyID, CompanyName, CompanyCode, CompanyPrintName FROM COMMON.TBLCOMMONCOMPANY`)
-  return rows.map(r => ({ id: n(r.CompanyID), name: s(r.CompanyName), code: sn(r.CompanyCode), print_name: sn(r.CompanyPrintName) }))
+  const rows = await in4Query<Record<string, unknown>>(`
+    SELECT co.CompanyID, co.CompanyName, co.CompanyCode, co.CompanyPrintName, co.Active,
+           co.Address, co.PrintAddress, co.CompanyPinCode, co.PrintPinCode,
+           co.CompanyEmail, co.CompanyContactNo, co.PANNumber,
+           cl.NAME city, cst.NAME state
+    FROM COMMON.TBLCOMMONCOMPANY co
+    LEFT JOIN COMMON_LOCATION_LOOKUP cl ON cl.ID = co.LocationID
+    LEFT JOIN COMMON_STATE_LOOKUP cst ON cst.ID = co.StateID`)
+  return rows.map(r => ({
+    id: n(r.CompanyID), name: s(r.CompanyName), code: sn(r.CompanyCode), print_name: sn(r.CompanyPrintName),
+    address: sn(r.Address), print_address: sn(r.PrintAddress), pin: sn(r.CompanyPinCode), print_pin: sn(r.PrintPinCode),
+    email: sn(r.CompanyEmail), phone: sn(r.CompanyContactNo), pan: sn(r.PANNumber),
+    city: sn(r.city), state: sn(r.state), is_active: r.Active == null ? true : Boolean(r.Active),
+  }))
+}
+
+/** A trust's GST registrations, each with the address it is registered at. A
+ *  trust may hold several, so these are keyed by the registration's own ID. */
+export interface In4CompanyGstin { id: number; company_id: number; gstin: string; address: string | null; pincode: string | null }
+export async function extractCompanyGstins(): Promise<In4CompanyGstin[]> {
+  const rows = await in4Query<Record<string, unknown>>(`SELECT ID, COMPANY_ID, GSTIN_NO, Address, Pincode FROM FIN_COMPANY_GSTIN_LOOKUP`)
+  return rows
+    .map(r => ({ id: n(r.ID), company_id: n(r.COMPANY_ID), gstin: s(r.GSTIN_NO), address: sn(r.Address), pincode: sn(r.Pincode) }))
+    .filter(g => g.gstin)
 }
 
 export interface In4Uom { id: number; name: string; is_active: boolean }
