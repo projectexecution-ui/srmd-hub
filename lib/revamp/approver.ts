@@ -7,7 +7,7 @@
 // Aksha, 10 Sep 2026: "wear an Approver hat — it should come in an IE-type
 // table along with all details."
 
-import { in4Query, in4Config } from '@/lib/in4/db'
+import { in4QueryCached, in4Config } from '@/lib/in4/db'
 
 export interface PoRateLine {
   materialId: number
@@ -94,7 +94,7 @@ export async function loadPriceContext(materialIds: readonly (number | null)[], 
   try {
     const lines: PoRateLine[] = []
     for (const c of chunks(ids, 400)) {
-      const rows = await in4Query<Record<string, unknown>>(`
+      const rows = await in4QueryCached<Record<string, unknown>>(`
         SELECT f.MATERIAL_ID, f.PO_ID, h.PO_NO, h.PO_DT, COALESCE(sp.PrintName, sp.NAME) supplier, pr.NAME project, f.PROJECT_ID,
                f.BASE_PO_QTY qty, f.NET_RATE rate, f.MATERIAL_VALUE value, f.GRN_QTY grn_qty
         FROM BI.FACT_PURCHASE_ORDER_DETAILS f

@@ -26,7 +26,7 @@
 // tells the Atm Head (see lib/in4/approvals-watch.ts).
 
 import { createClient } from '@/lib/supabase/server'
-import { in4Query, in4Config } from '@/lib/in4/db'
+import { in4QueryCached, in4Config } from '@/lib/in4/db'
 import { skillLabel, resolveName, skillKey } from '@/lib/names'
 import { loadNameIndex } from '@/lib/names-data'
 
@@ -446,7 +446,7 @@ export async function loadIndentsTree(projectId: string, opts: { showClosed?: bo
   }))
 
   try {
-    const indents = await in4Query<IndentRaw>(`
+    const indents = await in4QueryCached<IndentRaw>(`
       ${INDENT_SELECT}
       WHERE i.SUBPROJECT_ID IN (${subIds.join(',')})`)
     const indentIds = indents.map(i => i.ID)
@@ -471,21 +471,21 @@ export const INDENT_SELECT = `
 /** The lines, PO lines, receipts and both audit trails for a set of indents. */
 export async function loadIndentParts(indentIds: number[]) {
   const [items, indentAudit] = await Promise.all([
-      inList(indentIds, list => in4Query<IndentItemRaw>(`
+      inList(indentIds, list => in4QueryCached<IndentItemRaw>(`
         SELECT ii.ID, ii.INDENT_NO indent_id, ii.MATERIAL_ID, m.NAME material, ii.ORDER_QTY, u.NAME uom,
                ii.WORK_CATEGORY_ID, ii.WORK_SUBCATEGORY_ID, ii.CLOSED_FOR_PO
         FROM PURCH_INDENT_ITEMS ii
         LEFT JOIN PURCH_MATERIAL_LOOKUP m ON m.ID = ii.MATERIAL_ID
         LEFT JOIN COMMON_UOM_LOOKUP u ON u.ID = ii.UNIT_OF_MEASUREMENT
         WHERE ii.INDENT_NO IN (${list})`)),
-      inList(indentIds, list => in4Query<AuditRaw>(`
+      inList(indentIds, list => in4QueryCached<AuditRaw>(`
         SELECT a.INDENT_ID doc_id, a.STATUS, a.MODIFIED_DT, LTRIM(RTRIM(CONCAT(e.FirstName, ' ', e.LastName))) who, a.REMARKS
         FROM PURCH_INDENT_AUDIT_TRAIL a
         LEFT JOIN HR_EMP_PROFILE e ON e.ID = a.MODIFIED_BY
         WHERE a.INDENT_ID IN (${list})`)),
     ])
     const itemIds = items.map(i => i.ID)
-    const poLines = await inList(itemIds, list => in4Query<PoLineRaw>(`
+    const poLines = await inList(itemIds, list => in4QueryCached<PoLineRaw>(`
       SELECT pi.ID po_item_id, pi.INDENT_ITEM_ID, pi.ORDER_QTY,
              p.ID po_id, p.DISPLAY_NO po_no, p.STATUS po_status, p.CREATED_DT po_date, COALESCE(sp.PrintName, sp.NAME) supplier,
              f.NET_RATE, f.LANDED_COST, f.MATERIAL_VALUE, f.GRN_QTY
@@ -496,12 +496,12 @@ export async function loadIndentParts(indentIds: number[]) {
       WHERE pi.INDENT_ITEM_ID IN (${list})`))
     const poIds = [...new Set(poLines.map(l => l.po_id))]
     const [grns, poAudit] = await Promise.all([
-      inList(poIds, list => in4Query<GrnRaw>(`
+      inList(poIds, list => in4QueryCached<GrnRaw>(`
         SELECT d.PO_ID, d.MATERIAL_ID, d.GRN_ID, h.GRN_NO, h.GRN_DT, h.STATUS grn_status, d.RECIEVED_QTY, d.GRN_MATERIAL_COST
         FROM BI.FACT_PURCHASE_GRN_DETAILS d
         LEFT JOIN BI.DIM_PURCHASE_GRN_HEADER h ON h.GRN_ID = d.GRN_ID
         WHERE d.PO_ID IN (${list}) AND (d.RECIEVED_QTY <> 0 OR d.GRN_MATERIAL_COST <> 0)`)),
-      inList(poIds, list => in4Query<AuditRaw>(`
+      inList(poIds, list => in4QueryCached<AuditRaw>(`
         SELECT a.PURCHASE_ORDER_ID doc_id, a.STATUS, a.MODIFIED_DT, LTRIM(RTRIM(CONCAT(e.FirstName, ' ', e.LastName))) who, a.REMARKS
         FROM PURCH_PURCHASE_ORDER_AUDIT_TRAIL a
         LEFT JOIN HR_EMP_PROFILE e ON e.ID = a.MODIFIED_BY
@@ -530,7 +530,7 @@ export async function loadIndentsAll(opts: { months?: number; showClosed?: boole
     ...x, label: resolveName(names, 'skill', skillKey(x.id), { module: 'procurement' })?.display_name ?? null,
   }))
   try {
-    const indents = await in4Query<IndentRaw>(`
+    const indents = await in4QueryCached<IndentRaw>(`
       ${INDENT_SELECT}
       WHERE i.STATUS NOT IN (6, 66)
         AND (i.CREATION_DT >= DATEADD(month, -${Math.max(1, Math.min(60, Math.round(months)))}, GETDATE())

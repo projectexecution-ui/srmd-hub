@@ -11,7 +11,7 @@
 // finds its earlier self even with "7." numbering or spacing differences.
 // Live from IN4, SELECT only. Loaded per order, lazily, when a line is opened.
 
-import { in4Query, in4Config } from '@/lib/in4/db'
+import { in4QueryCached, in4Config } from '@/lib/in4/db'
 import { buildPriceContext, referenceRate, priceDelta, type PoRateLine, type MaterialContext, type LastPurchase } from './approver'
 import { referencesFor, normaliseBoq, stripBoqNumber } from './order-approvals'
 
@@ -125,7 +125,7 @@ async function loadPo(poId: number | null, ref?: string | null): Promise<OrderLi
     : ref && /^[A-Za-z0-9/_\-. ]{1,60}$/.test(ref) ? `p.DISPLAY_NO = '${ref.replace(/'/g, "''")}'` : null
   if (!where) return EMPTY('po', 'unavailable', 'no purchase-order id')
 
-  const items = await in4Query<Record<string, unknown>>(`
+  const items = await in4QueryCached<Record<string, unknown>>(`
     SELECT p.PROJECT_ID, pi.ID item_id, pi.MATERIAL_ID, m.NAME material, u.NAME uom, f.NET_RATE rate
     FROM PURCH_PURCHASE_ORDER p
     JOIN PURCH_PURCHASE_ORDER_ITEMS pi ON pi.PURCHASE_ORDER_ID = p.ID
@@ -139,7 +139,7 @@ async function loadPo(poId: number | null, ref?: string | null): Promise<OrderLi
   const materialIds = [...new Set(items.map(i => i.MATERIAL_ID).filter((x): x is number => x != null).map(Number))]
 
   // Every prior PO line for these materials (this PO excluded), folded per material.
-  const hist = materialIds.length ? await in4Query<Record<string, unknown>>(`
+  const hist = materialIds.length ? await in4QueryCached<Record<string, unknown>>(`
     SELECT f.MATERIAL_ID, f.PO_ID, h.PO_NO, h.PO_DT, COALESCE(sp.PrintName, sp.NAME) supplier, pr.NAME project, f.PROJECT_ID,
            f.BASE_PO_QTY qty, f.NET_RATE rate, f.MATERIAL_VALUE value, f.GRN_QTY grn_qty
     FROM BI.FACT_PURCHASE_ORDER_DETAILS f
@@ -185,7 +185,7 @@ async function poSuggestions(orphans: Array<{ name: string; uom: string | null }
   const tokens = [...new Set(orphans.flatMap(o => nameTokens(o.name)))].slice(0, 40)
   if (tokens.length === 0) return out
   try {
-    const cands = await in4Query<Record<string, unknown>>(`
+    const cands = await in4QueryCached<Record<string, unknown>>(`
       SELECT TOP 80 m.ID, m.NAME, u.NAME uom
       FROM PURCH_MATERIAL_LOOKUP m
       LEFT JOIN COMMON_UOM_LOOKUP u ON u.ID = m.UNIT_OF_MEASUREMENT
@@ -193,7 +193,7 @@ async function poSuggestions(orphans: Array<{ name: string; uom: string | null }
         ${excludeIds.length ? `AND m.ID NOT IN (${excludeIds.join(',')})` : ''}`)
     const candIds = cands.map(c => n(c.ID)).filter(Boolean)
     if (candIds.length === 0) return out
-    const rates = await in4Query<Record<string, unknown>>(`
+    const rates = await in4QueryCached<Record<string, unknown>>(`
       SELECT f.MATERIAL_ID, h.PO_DT, f.NET_RATE, COALESCE(sp.PrintName, sp.NAME) supplier
       FROM BI.FACT_PURCHASE_ORDER_DETAILS f
       JOIN BI.PURCHASE_ORDER_HEADER h ON h.PO_ID = f.PO_ID
@@ -219,7 +219,7 @@ async function poSuggestions(orphans: Array<{ name: string; uom: string | null }
 
 async function loadWo(woId: number | null): Promise<OrderLineRates> {
   if (woId == null || !Number.isInteger(woId)) return EMPTY('wo', 'unavailable', 'no work-order id')
-  const items = await in4Query<Record<string, unknown>>(`
+  const items = await in4QueryCached<Record<string, unknown>>(`
     SELECT w.PROJECT_ID, d.ITEM_ID, d.BOQ_SUBNAME, d.UOM, f.RATE
     FROM ENGG_WORK_ORDER w
     JOIN BI.DIM_ENGG_WORK_ORDER_BOQ d ON d.WO_ID = w.ID
@@ -229,7 +229,7 @@ async function loadWo(woId: number | null): Promise<OrderLineRates> {
   const projectId = items[0].PROJECT_ID == null ? null : n(items[0].PROJECT_ID)
 
   const boqNames = [...new Set(items.map(i => stripBoqNumber(s(i.BOQ_SUBNAME))).filter(x => x.length >= 3))]
-  const refs = boqNames.length ? await in4Query<Record<string, unknown>>(`
+  const refs = boqNames.length ? await in4QueryCached<Record<string, unknown>>(`
     SELECT d.BOQ_SUBNAME, d.UOM, d.WO_ID, w.DISPLAY_NO wo_no, w.CREATION_DT, sp.FIRM_NAME party, w.PROJECT_ID, pr.NAME project, f.QUANTITY, f.RATE, f.AMT
     FROM BI.DIM_ENGG_WORK_ORDER_BOQ d
     JOIN BI.FACT_ENGG_WORK_ORDER_BOQ f ON f.ITEM_ID = d.ITEM_ID

@@ -15,7 +15,7 @@
 // paid) + advances as paid; retention is held separately; still to pay =
 // Ordered (with GST) − money out − retention.
 
-import { in4Query, in4Config } from '@/lib/in4/db'
+import { in4QueryCached, in4Config } from '@/lib/in4/db'
 import { In4NotConfigured } from '@/lib/in4/wo-print'
 import { createClient } from '@/lib/supabase/server'
 import { cleanBillNo } from '@/lib/revamp/orders-tree'
@@ -141,7 +141,7 @@ const s = (v: unknown) => (v == null || String(v).trim() === '' ? null : String(
  *  Throws In4NotConfigured when the deployment has no IN4 login. */
 export async function loadPoLedger(poId: number): Promise<{ poId: number; ref: string; party: string | null; ordered: number; headerPaid: number; ledger: PoLedger } | null> {
   if (!in4Config()) throw new In4NotConfigured()
-  const [hdr] = await in4Query<Record<string, unknown>>(`
+  const [hdr] = await in4QueryCached<Record<string, unknown>>(`
     SELECT h.PO_ID, h.PO_NO, h.PO_VALUE, h.PAID_AMT, COALESCE(sp.PrintName, sp.NAME) supplier
     FROM BI.PURCHASE_ORDER_HEADER h
     LEFT JOIN PURCH_PURCHASE_ORDER p ON p.ID = h.PO_ID
@@ -151,7 +151,7 @@ export async function loadPoLedger(poId: number): Promise<{ poId: number; ref: s
 
   const supabase = await createClient()
   const [grns, bills, adv] = await Promise.all([
-    in4Query<Record<string, unknown>>(`
+    in4QueryCached<Record<string, unknown>>(`
       SELECT d.GRN_ID, g.GRN_NO, g.GRN_DT, g.DELIVERY_CHALAN_NO, m.NAME material, u.NAME uom,
              d.RECIEVED_QTY, d.GRN_MATERIAL_COST
       FROM BI.FACT_PURCHASE_GRN_DETAILS d
@@ -161,7 +161,7 @@ export async function loadPoLedger(poId: number): Promise<{ poId: number; ref: s
       -- A GRN line of nothing (0 qty, 0 value) is IN4's placeholder, not a receipt.
       WHERE d.PO_ID = ${poId} AND (d.RECIEVED_QTY <> 0 OR d.GRN_MATERIAL_COST <> 0)
       ORDER BY g.GRN_DT, d.GRN_ID, d.AUTO_ID`),
-    in4Query<Record<string, unknown>>(`
+    in4QueryCached<Record<string, unknown>>(`
       WITH g AS (SELECT DISTINCT GRN_ID FROM BI.FACT_PURCHASE_GRN_DETAILS WHERE PO_ID = ${poId})
       SELECT p.CERTIFICATE_ID, p.PO_ID bill_po_id, hh.PO_NO bill_po_no,
              MAX(d.CERTIFICATE_NO) cert_no, MAX(d.CERTIFICATE_DT) cert_dt,

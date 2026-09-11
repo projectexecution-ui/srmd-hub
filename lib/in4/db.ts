@@ -10,6 +10,7 @@
 // it; a cold one pays the ~200 ms Mumbai → Virginia handshake once.
 
 import sql from 'mssql'
+import { unstable_cache } from 'next/cache'
 
 export interface In4Config {
   server: string
@@ -69,4 +70,42 @@ export async function in4Query<T = Record<string, unknown>>(text: string): Promi
   const p = await in4Pool()
   const r = await p.request().query<T>(text)
   return r.recordset
+}
+
+/** Clear every cached IN4 read at once — after a sync, or from an admin. */
+export const IN4_READ_TAG = 'in4-read'
+
+/**
+ * The same read, remembered for a minute — what every SCREEN should use. The
+ * sync keeps in4Query above, because a sync reading its own cache would never
+ * see a change.
+ *
+ * Why this exists. IN4 is an RDS in AWS us-east-1 — mssql-rds.srmd.org
+ * resolves to srmdv2.….us-east-1.rds.amazonaws.com — and this app runs on
+ * Vercel bom1, in Mumbai. Every query crosses to Virginia and back. Measured
+ * on 11 Sep 2026: `SELECT 1`, which does no work at all, took a 512ms median,
+ * and COUNT(*) over a whole table took 468ms. Essentially all of it is the
+ * trip, not the query — so the only thing that helps is making fewer trips.
+ * A screen doing 8 to 14 reads paid that on every single click.
+ *
+ * Keying on the SQL text is what makes it safe to apply broadly: two screens
+ * issuing the same query share one answer, and a query differing by one id is
+ * a different entry. A result too large for Next's data cache is simply not
+ * remembered — the read still returns, so a big report degrades to today's
+ * behaviour rather than breaking.
+ *
+ * This is the patch, not the cure. Supabase is in ap-south-1, the same city as
+ * the app, so a screen reading the mirror never crosses an ocean at all — but
+ * that is a migration per screen. This buys the time to do it.
+ */
+export function in4QueryCached<T = Record<string, unknown>>(
+  text: string,
+  /** Seconds. Reference data could sit far longer than a work queue. */
+  revalidate = 60,
+): Promise<T[]> {
+  return unstable_cache(
+    (s: string) => in4Query<T>(s),
+    ['in4-read'],
+    { tags: [IN4_READ_TAG], revalidate },
+  )(text)
 }

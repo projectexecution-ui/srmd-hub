@@ -30,7 +30,7 @@
 // [[feedback_dont_guess_follow_the_source]]
 
 import { createClient } from '@/lib/supabase/server'
-import { in4Query, in4Config } from '@/lib/in4/db'
+import { in4QueryCached, in4Config } from '@/lib/in4/db'
 import { fetchAll } from '@/lib/revamp/orders-tree'
 import { getRoleLabels } from '@/lib/role-labels'
 import type { Role } from '@/lib/types'
@@ -117,7 +117,7 @@ export async function loadTrustMaster(): Promise<{ trusts: Trust[] } & In4Read> 
   const [r, wo] = await Promise.all([
     live(async () => {
       const [companies, gst, projects] = await Promise.all([
-        in4Query<Record<string, unknown>>(`
+        in4QueryCached<Record<string, unknown>>(`
           SELECT co.CompanyID, co.CompanyCode, co.CompanyName, co.Address, co.PrintAddress,
                  co.CompanyPinCode, co.PrintPinCode, co.CompanyEmail, co.CompanyContactNo, co.PANNumber,
                  cl.NAME city, cst.NAME state
@@ -126,8 +126,8 @@ export async function loadTrustMaster(): Promise<{ trusts: Trust[] } & In4Read> 
           LEFT JOIN COMMON_STATE_LOOKUP cst ON cst.ID = co.StateID
           WHERE co.Active = 1
           ORDER BY co.CompanyID`),
-        in4Query<Record<string, unknown>>(`SELECT COMPANY_ID, GSTIN_NO, Address, Pincode FROM FIN_COMPANY_GSTIN_LOOKUP ORDER BY ID`),
-        in4Query<Record<string, unknown>>(`
+        in4QueryCached<Record<string, unknown>>(`SELECT COMPANY_ID, GSTIN_NO, Address, Pincode FROM FIN_COMPANY_GSTIN_LOOKUP ORDER BY ID`),
+        in4QueryCached<Record<string, unknown>>(`
           SELECT p.ID, p.NAME, p.EX_CODE, p.CERT_COMPANY_ID, st.NAME status, a.ADDR, a.PIN, l.NAME city
           FROM ENGG_PROJECT p
           LEFT JOIN COMMON_ADDRESS a ON a.ID = TRY_CAST(p.ADDR_ID AS int)
@@ -230,7 +230,7 @@ export async function loadProjectMaster(): Promise<{ projects: MainProject[] } &
   const [r, wo, links] = await Promise.all([
     live(async () => {
       const [projects, subs] = await Promise.all([
-        in4Query<Record<string, unknown>>(`
+        in4QueryCached<Record<string, unknown>>(`
           SELECT p.ID, p.NAME, p.EX_CODE, p.ESTIMATED_START_DT, p.ESTIMATED_END_DT, st.NAME status,
                  co.CompanyCode trust_code, co.CompanyName trust_name, a.ADDR, a.PIN, l.NAME city
           FROM ENGG_PROJECT p
@@ -239,7 +239,7 @@ export async function loadProjectMaster(): Promise<{ projects: MainProject[] } &
           LEFT JOIN COMMON_LOCATION_LOOKUP l ON l.ID = a.LOCATION_ID
           LEFT JOIN COMMON_STATUS_LOOKUP st ON st.ID = p.STATUS
           ORDER BY p.NAME`),
-        in4Query<Record<string, unknown>>(`
+        in4QueryCached<Record<string, unknown>>(`
           SELECT sp.ID, sp.PROJECT_ID, sp.SUBPROJECT_NAME, sp.EX_CODE, sp.ESTIMATED_START_DT, sp.ESTIMATED_END_DT,
                  sp.ISACTIVE, st.NAME status
           FROM ENGG_SUBPROJECT sp
@@ -501,7 +501,7 @@ export const boqKey = (name: unknown, subname: unknown, description: unknown, uo
 /** Last approved PO per material, one live query (ROW_NUMBER over IN4's PO facts). */
 export async function loadLastPoByMaterial(): Promise<{ byMaterial: Map<number, LastOrder> } & In4Read> {
   const [r, hub] = await Promise.all([
-    live(() => in4Query<Record<string, unknown>>(`
+    live(() => in4QueryCached<Record<string, unknown>>(`
       SELECT x.MATERIAL_ID, x.PO_ID, x.PO_NO, x.PO_DT, x.supplier, x.rate, x.qty, x.project, x.SUBPROJECT_ID
       FROM (
         SELECT f.MATERIAL_ID, f.PO_ID, h.PO_NO, h.PO_DT, COALESCE(sp.PrintName, sp.NAME) supplier, f.NET_RATE rate, f.BASE_PO_QTY qty, pr.NAME project, p.SUBPROJECT_ID,
@@ -573,7 +573,7 @@ export async function loadBoqSearch(q: string): Promise<{ items: BoqItem[]; capp
   const cond = (col: string) => words.map(w => `${col} LIKE '${sqlLike(w)}'`).join(' AND ')
   const where = `((${cond('d.BOQ_SUBNAME')}) OR (${cond('d.BOQ_DESCRIPTION')}) OR (${cond('d.BOQ_NAME')}))`
   const [sum, last, names, hub] = await Promise.all([
-    live(() => in4Query<Record<string, unknown>>(`
+    live(() => in4QueryCached<Record<string, unknown>>(`
       SELECT TOP 300 d.WORK_CATEGORY_ID, d.BOQ_NAME, d.BOQ_SUBNAME, d.BOQ_DESCRIPTION, d.UOM, d.WORK_SUBCATEGORY_ID,
              COUNT(DISTINCT d.WO_ID) wos, MIN(f.RATE) min_rate, MAX(f.RATE) max_rate, MAX(w.CREATION_DT) last_used
       FROM BI.DIM_ENGG_WORK_ORDER_BOQ d
@@ -582,7 +582,7 @@ export async function loadBoqSearch(q: string): Promise<{ items: BoqItem[]; capp
       WHERE ${where}
       GROUP BY d.WORK_CATEGORY_ID, d.BOQ_NAME, d.BOQ_SUBNAME, d.BOQ_DESCRIPTION, d.UOM, d.WORK_SUBCATEGORY_ID
       ORDER BY MAX(w.CREATION_DT) DESC`)),
-    live(() => in4Query<Record<string, unknown>>(LAST_WO_SQL(where))),
+    live(() => in4QueryCached<Record<string, unknown>>(LAST_WO_SQL(where))),
     skillNames(),
     loadHubProjectBySubproject(),
   ])
@@ -610,7 +610,7 @@ const NO_CATEGORY = { name: '(no category on the work order)', code: null }
 
 export async function loadBoqOverview(): Promise<{ categories: BoqCategory[]; totals: { names: number; items: number; workOrders: number } } & In4Read> {
   const [r, names] = await Promise.all([
-    live(() => in4Query<Record<string, unknown>>(`
+    live(() => in4QueryCached<Record<string, unknown>>(`
       SELECT d.WORK_CATEGORY_ID cat,
              COUNT(DISTINCT d.BOQ_NAME) names,
              COUNT(DISTINCT CONCAT(d.BOQ_NAME, '|', d.BOQ_SUBNAME, '|', d.BOQ_DESCRIPTION)) items,
@@ -639,7 +639,7 @@ export async function loadBoqOverview(): Promise<{ categories: BoqCategory[]; to
 export async function loadBoqCategory(categoryId: number): Promise<{ category: BoqCategory | null; groups: BoqGroup[] } & In4Read> {
   if (!Number.isInteger(categoryId) || categoryId < 0) return { category: null, groups: [], in4: 'live' }
   const [r, names, last, hub] = await Promise.all([
-    live(() => in4Query<Record<string, unknown>>(`
+    live(() => in4QueryCached<Record<string, unknown>>(`
       SELECT d.BOQ_NAME, d.BOQ_SUBNAME, d.BOQ_DESCRIPTION, d.UOM, d.WORK_SUBCATEGORY_ID,
              COUNT(DISTINCT d.WO_ID) wos, MIN(f.RATE) min_rate, MAX(f.RATE) max_rate, MAX(w.CREATION_DT) last_used
       FROM BI.DIM_ENGG_WORK_ORDER_BOQ d
@@ -650,7 +650,7 @@ export async function loadBoqCategory(categoryId: number): Promise<{ category: B
       ORDER BY d.BOQ_NAME, d.BOQ_SUBNAME, d.BOQ_DESCRIPTION`)),
     skillNames(),
     // The last work order each item was on — so the row leads to a document.
-    live(() => in4Query<Record<string, unknown>>(LAST_WO_SQL(`d.WORK_CATEGORY_ID = ${categoryId}`))),
+    live(() => in4QueryCached<Record<string, unknown>>(LAST_WO_SQL(`d.WORK_CATEGORY_ID = ${categoryId}`))),
     loadHubProjectBySubproject(),
   ])
   if (!r.data) return { category: null, groups: [], in4: r.in4, in4Error: r.in4Error }
@@ -711,7 +711,7 @@ export async function loadMasterSearch(q: string): Promise<SearchResult & In4Rea
     supabase.from('in4_skills').select('id, name, code, parent_id'),
     supabase.from('in4_materials').select('id, name, code, type_name').or(`name.ilike.%${needle.replace(/[%,()]/g, '')}%,code.ilike.%${needle.replace(/[%,()]/g, '')}%`).limit(LIMIT + 1),
     loadContactMaster(),
-    live(() => in4Query<{ BOQ_NAME: string; cat: number; n: number }>(`
+    live(() => in4QueryCached<{ BOQ_NAME: string; cat: number; n: number }>(`
       SELECT TOP ${LIMIT + 1} d.BOQ_NAME, d.WORK_CATEGORY_ID cat, COUNT(DISTINCT d.WO_ID) n
       FROM BI.DIM_ENGG_WORK_ORDER_BOQ d
       WHERE d.BOQ_NAME LIKE '%${needle.replace(/'/g, "''").replace(/[%_\[\]]/g, '')}%'
@@ -784,7 +784,7 @@ export async function loadMasterOverview(): Promise<{ cards: MasterCard[] } & In
     supabase.from('in4_skills').select('id', { count: 'exact', head: true }).eq('is_active', false),
     count('profiles'),
     loadContactMaster(),
-    live(() => in4Query<{ names: number; items: number }>(`
+    live(() => in4QueryCached<{ names: number; items: number }>(`
       SELECT COUNT(DISTINCT BOQ_NAME) names, COUNT(DISTINCT CONCAT(BOQ_NAME, '|', BOQ_SUBNAME, '|', BOQ_DESCRIPTION)) items
       FROM BI.DIM_ENGG_WORK_ORDER_BOQ`)),
   ])

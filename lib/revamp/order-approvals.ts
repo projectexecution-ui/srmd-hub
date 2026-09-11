@@ -15,7 +15,7 @@
 //   PURCH_PURCHASE_ORDER(_ITEMS/_AUDIT_TRAIL), BI.FACT_PURCHASE_ORDER_DETAILS (rate; rows exist at Verify too)
 //   BOQ_SUBID on a WO line is the sub-category, not the item — so items match by name.
 
-import { in4Query, in4Config } from '@/lib/in4/db'
+import { in4QueryCached, in4Config } from '@/lib/in4/db'
 import { chainFrom, stageOf, STATUS_NAMES, PENDING_STATUS_IDS, type ChainStep, type AuditRaw } from './indents-tree'
 import { buildPriceContext, type PoRateLine, type MaterialContext } from './approver'
 
@@ -99,7 +99,7 @@ export async function loadOrderApprovals(opts: { subprojectIds?: number[] } = {}
   const pendingList = [...PENDING_STATUS_IDS].join(',')
   try {
     const [wos, pos] = await Promise.all([
-      in4Query<Record<string, unknown>>(`
+      in4QueryCached<Record<string, unknown>>(`
         SELECT w.ID, w.DISPLAY_NO, w.STATUS, w.CREATION_DT, w.WORK_DESCRIPTION, w.WORK_ORDER_VALUE, w.SUBPROJECT_ID, w.PROJECT_ID,
                pr.NAME project, sub.SUBPROJECT_NAME subproject, sp.FIRM_NAME party, sk.NAME category, w.SKILL_ID category_id,
                COALESCE(w.SUB_SKILL_ID, w.SUBSKILL_ID) subcategory_id, ssk.NAME subcategory
@@ -111,7 +111,7 @@ export async function loadOrderApprovals(opts: { subprojectIds?: number[] } = {}
         LEFT JOIN ENGG_SKILLS_LOOKUP ssk ON ssk.ID = COALESCE(w.SUB_SKILL_ID, w.SUBSKILL_ID)
         WHERE w.STATUS IN (${pendingList})${scope('w.SUBPROJECT_ID')}
         ORDER BY w.CREATION_DT`),
-      in4Query<Record<string, unknown>>(`
+      in4QueryCached<Record<string, unknown>>(`
         SELECT p.ID, p.DISPLAY_NO, p.STATUS, p.CREATED_DT, p.REMARKS, p.TOTAL_VALUE, p.SUBPROJECT_ID, p.PROJECT_ID, p.PAYMENT_TERMS,
                pr.NAME project, sub.SUBPROJECT_NAME subproject, COALESCE(sp.PrintName, sp.NAME) party
         FROM PURCH_PURCHASE_ORDER p
@@ -123,14 +123,14 @@ export async function loadOrderApprovals(opts: { subprojectIds?: number[] } = {}
     ])
     const woIds = wos.map(w => n(w.ID)), poIds = pos.map(p => n(p.ID))
     const [woLines, woAudit, poLines, poAudit] = await Promise.all([
-      woIds.length ? in4Query<Record<string, unknown>>(`
+      woIds.length ? in4QueryCached<Record<string, unknown>>(`
         SELECT d.ITEM_ID, d.WO_ID, d.WO_ITEM_NO, d.BOQ_SUBNAME, d.BOQ_DESCRIPTION, d.UOM, f.QUANTITY, f.RATE, f.AMT
         FROM BI.DIM_ENGG_WORK_ORDER_BOQ d JOIN BI.FACT_ENGG_WORK_ORDER_BOQ f ON f.ITEM_ID = d.ITEM_ID
         WHERE d.WO_ID IN (${woIds.join(',')}) ORDER BY d.WO_ID, d.ITEM_ID`) : Promise.resolve([]),
-      woIds.length ? in4Query<AuditRaw>(`
+      woIds.length ? in4QueryCached<AuditRaw>(`
         SELECT a.WO_ID doc_id, a.STATUS, a.MODIFIED_DT, LTRIM(RTRIM(CONCAT(e.FirstName, ' ', e.LastName))) who, a.REMARKS
         FROM ENGG_WO_AUDIT_TRAIL a LEFT JOIN HR_EMP_PROFILE e ON e.ID = a.MODIFIED_BY WHERE a.WO_ID IN (${woIds.join(',')})`) : Promise.resolve([]),
-      poIds.length ? in4Query<Record<string, unknown>>(`
+      poIds.length ? in4QueryCached<Record<string, unknown>>(`
         SELECT pi.ID, pi.PURCHASE_ORDER_ID po_id, pi.MATERIAL_ID, m.NAME material, u.NAME uom, pi.ORDER_QTY, f.NET_RATE, f.MATERIAL_VALUE, f.LANDED_COST,
                ii.ORDER_QTY indent_qty, i.DISPLAY_NO indent_no, sk.NAME category, ii.WORK_CATEGORY_ID category_id, ii.WORK_SUBCATEGORY_ID subcategory_id, ssk.NAME subcategory
         FROM PURCH_PURCHASE_ORDER_ITEMS pi
@@ -142,7 +142,7 @@ export async function loadOrderApprovals(opts: { subprojectIds?: number[] } = {}
         LEFT JOIN ENGG_SKILLS_LOOKUP sk ON sk.ID = ii.WORK_CATEGORY_ID
         LEFT JOIN ENGG_SKILLS_LOOKUP ssk ON ssk.ID = ii.WORK_SUBCATEGORY_ID
         WHERE pi.PURCHASE_ORDER_ID IN (${poIds.join(',')}) ORDER BY pi.PURCHASE_ORDER_ID, pi.ID`) : Promise.resolve([]),
-      poIds.length ? in4Query<AuditRaw>(`
+      poIds.length ? in4QueryCached<AuditRaw>(`
         SELECT a.PURCHASE_ORDER_ID doc_id, a.STATUS, a.MODIFIED_DT, LTRIM(RTRIM(CONCAT(e.FirstName, ' ', e.LastName))) who, a.REMARKS
         FROM PURCH_PURCHASE_ORDER_AUDIT_TRAIL a LEFT JOIN HR_EMP_PROFILE e ON e.ID = a.MODIFIED_BY WHERE a.PURCHASE_ORDER_ID IN (${poIds.join(',')})`) : Promise.resolve([]),
     ])
@@ -153,7 +153,7 @@ export async function loadOrderApprovals(opts: { subprojectIds?: number[] } = {}
     const boqNames = [...new Set(woLines.map(l => stripBoqNumber(s(l.BOQ_SUBNAME))).filter(x => x.length >= 3))]
     const materialIds = [...new Set(poLines.map(l => l.MATERIAL_ID).filter((x): x is number => x != null).map(Number))]
     const [woRefs, poRefs] = await Promise.all([
-      boqNames.length ? in4Query<Record<string, unknown>>(`
+      boqNames.length ? in4QueryCached<Record<string, unknown>>(`
         SELECT d.BOQ_SUBNAME, d.UOM, d.WO_ID, w.DISPLAY_NO wo_no, w.CREATION_DT, sp.FIRM_NAME party, w.PROJECT_ID, pr.NAME project, f.QUANTITY, f.RATE, f.AMT
         FROM BI.DIM_ENGG_WORK_ORDER_BOQ d
         JOIN BI.FACT_ENGG_WORK_ORDER_BOQ f ON f.ITEM_ID = d.ITEM_ID
@@ -162,7 +162,7 @@ export async function loadOrderApprovals(opts: { subprojectIds?: number[] } = {}
         LEFT JOIN ENGG_PROJECT pr ON pr.ID = w.PROJECT_ID
         WHERE w.STATUS = 2 AND f.RATE > 0 AND (${boqNames.map(x => `d.BOQ_SUBNAME LIKE '%${like(x).replace(/[%_[]/g, ch => `[${ch}]`)}%'`).join(' OR ')})
         ORDER BY w.CREATION_DT DESC`) : Promise.resolve([]),
-      materialIds.length ? in4Query<Record<string, unknown>>(`
+      materialIds.length ? in4QueryCached<Record<string, unknown>>(`
         SELECT f.MATERIAL_ID, f.PO_ID, h.PO_NO, h.PO_DT, COALESCE(sp.PrintName, sp.NAME) supplier, pr.NAME project, f.PROJECT_ID,
                f.BASE_PO_QTY qty, f.NET_RATE rate, f.MATERIAL_VALUE value, f.GRN_QTY grn_qty
         FROM BI.FACT_PURCHASE_ORDER_DETAILS f

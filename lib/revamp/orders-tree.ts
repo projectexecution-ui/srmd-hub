@@ -69,7 +69,7 @@ import { formatINR } from '@/lib/utils'
 import { skillLabel, resolveName, skillKey } from '@/lib/names'
 import { loadNameIndex } from '@/lib/names-data'
 import { createClient } from '@/lib/supabase/server'
-import { in4Query, in4Config } from '@/lib/in4/db'
+import { in4QueryCached, in4Config } from '@/lib/in4/db'
 
 /** One bill (IN4 "abstract" / certificate) against one line item. */
 export interface LineBill {
@@ -484,7 +484,7 @@ async function readIn4Headers(woIds: number[], poNos: string[]): Promise<Pick<So
     for (let i = 0; i < woIds.length; i += 500) {
       const chunk = woIds.slice(i, i + 500).filter(Number.isInteger)
       if (!chunk.length) continue
-      const rows = await in4Query<Record<string, unknown>>(`
+      const rows = await in4QueryCached<Record<string, unknown>>(`
         SELECT WO_ID, WO_GROSS_VALUE, WO_PAID_AMT, WO_ADVANCE_PAID_AMT, WO_ADVANCE_RECOVERED_AMT, WO_RETENTION_AMT
         FROM BI.FACT_ENGG_WORK_ORDER WHERE WO_ID IN (${chunk.join(',')})`)
       for (const r of rows) {
@@ -497,7 +497,7 @@ async function readIn4Headers(woIds: number[], poNos: string[]): Promise<Pick<So
     const lits = poNos.map(sqlLiteral).filter((s): s is string => s != null)
     for (let i = 0; i < lits.length; i += 300) {
       const chunk = lits.slice(i, i + 300)
-      const rows = await in4Query<Record<string, unknown>>(`
+      const rows = await in4QueryCached<Record<string, unknown>>(`
         SELECT PO_ID, PO_NO, PO_VALUE, PO_MATERIAL_VALUE, PO_TAX_ADDITIONS, PO_FREIGHT_CHARGES, PO_HANDLING_CHARGE, PO_OTHER_CHARGES, PAID_AMT
         FROM BI.PURCHASE_ORDER_HEADER WHERE PO_NO IN (${chunk.join(',')})`)
       for (const r of rows) {
@@ -524,7 +524,7 @@ async function readIn4PoPayments(poIds: number[]): Promise<SupplierPayRow[] | nu
     for (let i = 0; i < poIds.length; i += 500) {
       const chunk = poIds.slice(i, i + 500).filter(Number.isInteger)
       if (!chunk.length) continue
-      const got = await in4Query<Record<string, unknown>>(`
+      const got = await in4QueryCached<Record<string, unknown>>(`
         WITH g AS (SELECT DISTINCT GRN_ID, PO_ID FROM BI.FACT_PURCHASE_GRN_DETAILS)
         SELECT g.PO_ID GRN_PO_ID, p.PO_ID BILL_PO_ID, h.PO_NO BILL_PO_NO,
                SUM(p.LANDED_COST) LANDED, SUM(p.PAID_AMT) PAID, SUM(p.TAX_DEDUCTION_AMT) TDS,

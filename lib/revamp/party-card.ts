@@ -4,7 +4,7 @@
 // mirror; every figure live from IN4's own facts. SELECT only.
 
 import { createClient } from '@/lib/supabase/server'
-import { in4Query, in4Config } from '@/lib/in4/db'
+import { in4QueryCached, in4Config } from '@/lib/in4/db'
 import { flagParties, oneLine, type Party, type In4Read } from './masters-in4'
 
 export interface PartyOrder {
@@ -53,7 +53,7 @@ export async function loadPartyCard(kind: 'contractor' | 'supplier', id: number)
 
   try {
     if (kind === 'contractor') {
-      const rows = await in4Query<Record<string, unknown>>(`
+      const rows = await in4QueryCached<Record<string, unknown>>(`
         SELECT w.ID, w.DISPLAY_NO, w.CREATION_DT, pr.NAME project, k.NAME category, st.NAME status,
                f.WO_GROSS_VALUE gross, f.WO_PAID_AMT paid, f.WO_RETENTION_AMT retention
         FROM BI.FACT_ENGG_WORK_ORDER f
@@ -71,7 +71,7 @@ export async function loadPartyCard(kind: 'contractor' | 'supplier', id: number)
       return { card: { ...empty, orders, totals: totalsOf(orders) }, in4: 'live' }
     }
     const [rows, prices] = await Promise.all([
-      in4Query<Record<string, unknown>>(`
+      in4QueryCached<Record<string, unknown>>(`
         SELECT h.PO_ID, h.PO_NO, h.PO_DT, pr.NAME project, h.PO_CATEGORY category, h.STATUS status, h.GRN_STATUS,
                h.PO_VALUE gross, h.PAID_AMT paid,
                (SELECT MIN(gh.GRN_DT) FROM BI.FACT_PURCHASE_GRN_DETAILS d JOIN BI.DIM_PURCHASE_GRN_HEADER gh ON gh.GRN_ID = d.GRN_ID WHERE d.PO_ID = h.PO_ID) first_grn
@@ -79,7 +79,7 @@ export async function loadPartyCard(kind: 'contractor' | 'supplier', id: number)
         LEFT JOIN ENGG_PROJECT pr ON pr.ID = h.PROJECT_ID
         WHERE h.SUPPLIER_ID = ${id}
         ORDER BY h.PO_DT DESC`),
-      in4Query<Record<string, unknown>>(`
+      in4QueryCached<Record<string, unknown>>(`
         SELECT TOP 25 m.NAME material, x.my_rate, y.min_rate, y.suppliers
         FROM (SELECT MATERIAL_ID, SUM(NET_RATE * BASE_PO_QTY) / NULLIF(SUM(BASE_PO_QTY), 0) my_rate FROM BI.FACT_PURCHASE_ORDER_DETAILS WHERE SUPPLIER_ID = ${id} AND NET_RATE > 0 GROUP BY MATERIAL_ID) x
         JOIN (SELECT MATERIAL_ID, MIN(NET_RATE) min_rate, COUNT(DISTINCT SUPPLIER_ID) suppliers FROM BI.FACT_PURCHASE_ORDER_DETAILS WHERE NET_RATE > 0 GROUP BY MATERIAL_ID) y ON y.MATERIAL_ID = x.MATERIAL_ID

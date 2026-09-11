@@ -11,7 +11,7 @@
 // than one supplier at rates 20 % or more apart — the spread a Head wants
 // to see before the next PO. SELECT only.
 
-import { in4Query, in4Config } from '@/lib/in4/db'
+import { in4QueryCached, in4Config } from '@/lib/in4/db'
 import type { In4Read } from './masters-in4'
 
 export interface PoRateLine {
@@ -76,7 +76,7 @@ export async function searchMaterialRates(q: string): Promise<{ materials: Mater
   if (!in4Config()) return { materials: [], in4: 'not-configured' }
   if (!q.trim()) return { materials: [], in4: 'live' }
   try {
-    const rows = await in4Query<Record<string, unknown>>(`
+    const rows = await in4QueryCached<Record<string, unknown>>(`
       SELECT TOP 1500 f.MATERIAL_ID, m.NAME material, u.NAME uom, f.PO_ID, h.PO_NO, h.PO_DT,
              f.SUPPLIER_ID, COALESCE(sp.PrintName, sp.NAME) supplier, pr.NAME project,
              f.BASE_PO_QTY qty, f.NET_RATE rate, f.MATERIAL_VALUE value
@@ -111,7 +111,7 @@ export interface MaterialOverviewRow {
 export async function loadMaterialRateOverview(): Promise<{ rows: MaterialOverviewRow[] } & In4Read> {
   if (!in4Config()) return { rows: [], in4: 'not-configured' }
   try {
-    const rows = await in4Query<Record<string, unknown>>(`
+    const rows = await in4QueryCached<Record<string, unknown>>(`
       SELECT TOP 300 f.MATERIAL_ID, m.NAME material, u.NAME uom, COUNT(*) lines, COUNT(DISTINCT f.SUPPLIER_ID) suppliers,
              MIN(f.NET_RATE) min_rate, MAX(f.NET_RATE) max_rate, SUM(f.MATERIAL_VALUE) spend, MAX(h.PO_DT) last_dt
       FROM BI.FACT_PURCHASE_ORDER_DETAILS f
@@ -146,7 +146,7 @@ export async function searchBoqRates(q: string): Promise<{ lines: BoqRateLine[];
   if (!in4Config()) return { lines: [], capped: false, in4: 'not-configured' }
   if (!q.trim()) return { lines: [], capped: false, in4: 'live' }
   try {
-    const rows = await in4Query<Record<string, unknown>>(`
+    const rows = await in4QueryCached<Record<string, unknown>>(`
       SELECT TOP 400 d.WO_ID, w.DISPLAY_NO wo_no, w.CREATION_DT, sp.FIRM_NAME contractor, pr.NAME project,
              d.BOQ_SUBNAME, d.BOQ_DESCRIPTION, d.UOM, f.QUANTITY, f.RATE
       FROM BI.DIM_ENGG_WORK_ORDER_BOQ d
