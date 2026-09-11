@@ -1,6 +1,7 @@
 import Link from 'next/link'
 import { requirePermission } from '@/lib/auth'
 import { createClient } from '@/lib/supabase/server'
+import { createClient as createServiceClient } from '@supabase/supabase-js'
 import { PageHeader } from '@/components/PageHeader'
 import { getModuleLabels, labelFor } from '@/lib/module-labels'
 import { loadRoof } from '@/lib/notifications/roof'
@@ -26,6 +27,10 @@ export const dynamic = 'force-dynamic'
 export default async function ReportsPage() {
   await requirePermission('admin-settings', 'view')
   const supabase = await createClient()
+  // notifications and their deliveries are readable only by their own recipient,
+  // so "last sent" and "ever by Telegram" need the service key to see everyone's.
+  const svcUrl = process.env.NEXT_PUBLIC_SUPABASE_URL, svcKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+  const history = svcUrl && svcKey ? createServiceClient(svcUrl, svcKey, { auth: { persistSession: false } }) : supabase
 
   const [{ rows }, labels, usersRes, mutesRes] = await Promise.all([
     loadRoof(),
@@ -43,8 +48,8 @@ export default async function ReportsPage() {
   await Promise.all(scheduled.map(async r => {
     const type = notificationTypeFor(r.message.key)
     const [{ data }, tg] = await Promise.all([
-      supabase.from('notifications').select('created_at').eq('type', type).order('created_at', { ascending: false }).limit(1).maybeSingle(),
-      supabase.from('notifications').select('id, notification_deliveries!inner(channel)').eq('type', type).eq('notification_deliveries.channel', 'telegram').limit(1),
+      history.from('notifications').select('created_at').eq('type', type).order('created_at', { ascending: false }).limit(1).maybeSingle(),
+      history.from('notifications').select('id, notification_deliveries!inner(channel)').eq('type', type).eq('notification_deliveries.channel', 'telegram').limit(1),
     ])
     lastSent.set(r.message.key, (data?.created_at as string | undefined) ?? null)
     telegramUsed.set(r.message.key, ((tg.data ?? []) as unknown[]).length > 0)
