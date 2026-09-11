@@ -24,6 +24,8 @@ export interface WoCertRow {
 export interface SupCertRow {
   certificate_id: number; kind: string | null; certificate_no: string | null; status: number | null
   supplier_id: number | null; supplier_name: string | null; po_id: number | null; category: string | null
+  /** From IN4's DIM_PURCHASE_SUPPLIER_PAY since 11 Sep 2026; null on advances and until the next sync. */
+  certificate_date?: string | null; invoice_date?: string | null
   certified_amt: number | null; landed_cost: number | null; tax_deduction: number | null
   adv_recovery: number | null; debit_note_adj: number | null; retention: number | null
   payable: number | null; paid: number | null; outstanding: number | null
@@ -62,7 +64,12 @@ export interface Payment {
   confirmation: Confirmation | null
   /** Set on IN4 rows folded into another because they are the same bill twice. */
   duplicateOf: string | null
+  /** IN4 status 6. Left out of the true figures; visible with the raw toggle. */
+  cancelled: boolean
 }
+
+/** IN4's cancelled status — the same value lib/in4/contractor.ts and supplier.ts drop from the reports. */
+export const CANCELLED_STATUS = 6
 
 export interface DuplicateGroup { kept: Payment; dropped: Payment[] }
 
@@ -73,6 +80,8 @@ export interface PaymentsBook {
   bills: Payment[]
   duplicates: DuplicateGroup[]
   totals: { paid: number; contractorPaid: number; supplierPaid: number; confirmedPaid: number; awaitingPaid: number; undatedPaid: number; count: number }
+  /** Cancelled certificates IN4 still lists (status 6). Out of the true figures. */
+  cancelled: number
 }
 
 const n = (v: unknown): number => (typeof v === 'number' && isFinite(v) ? v : 0)
@@ -96,34 +105,39 @@ function fromWo(r: WoCertRow, conf: Confirmation | null): Payment {
     kind: r.certificate_type?.trim() || (r.kind === 'advance' ? 'Advance' : r.kind === 'misc' ? 'Misc' : 'Running'),
     billDate, bankDate, date: bankDate ?? billDate,
     gross: n(r.gross_bill_amt), deductions: n(r.deductions) + n(r.recoveries), retention: n(r.retention_amt),
-    paid: n(r.paid_amt), outstanding: n(r.outstanding_amt), confirmation: conf, duplicateOf: null,
+    paid: n(r.paid_amt), outstanding: n(r.outstanding_amt), confirmation: conf, duplicateOf: null, cancelled: r.status === CANCELLED_STATUS,
   }
 }
 function fromSup(r: SupCertRow, conf: Confirmation | null): Payment {
   const bankDate = conf?.status === 'confirmed' || conf?.status === 'explained' ? day(conf.bank_date) : null
+  const billDate = day(r.invoice_date) ?? day(r.certificate_date)
   return {
     id: paymentId('supplier', r.certificate_id), source: 'supplier', certificateId: r.certificate_id,
     party: r.supplier_name?.trim() || '(no party named in IN4)', partyId: r.supplier_id,
     against: r.po_id ? `PO #${r.po_id}` : null, billNo: r.certificate_no?.trim() || null,
     kind: r.kind === 'advance' ? 'Supplier advance' : 'Supplier',
-    billDate: null, bankDate, date: bankDate,
+    billDate, bankDate, date: bankDate ?? billDate,
     gross: n(r.landed_cost) || n(r.certified_amt), deductions: n(r.tax_deduction) + n(r.adv_recovery) + n(r.debit_note_adj), retention: n(r.retention),
-    paid: n(r.paid), outstanding: n(r.outstanding), confirmation: conf, duplicateOf: null,
+    paid: n(r.paid), outstanding: n(r.outstanding), confirmation: conf, duplicateOf: null, cancelled: r.status === CANCELLED_STATUS,
   }
 }
 
 /**
- * IN4 sometimes carries the same bill twice (WO 270's SRASSK-GHB/10 on 2 Feb
- * 2026: one row paid, one unpaid, same amount). Same party, same order, same
- * bill number, same gross = one bill. Keep the row that was paid (then the
- * latest); fold the rest and say so.
+ * Most "duplicates" in IN4 are a cancelled certificate (status 6) beside the
+ * one that replaced it — those are dropped before we get here. What remains
+ * is the same bill genuinely listed twice (an advance recorded twice, a misc
+ * bill re-entered): same party, same order, same bill number, same gross,
+ * same kind of certificate. Keep the row that was paid (then the latest);
+ * fold the rest and say so. An advance and a final bill sharing a number are
+ * two different documents and are never folded.
  */
 export function foldDuplicates(rows: Payment[]): { kept: Payment[]; groups: DuplicateGroup[] } {
   const byKey = new Map<string, Payment[]>()
   for (const p of rows) {
     const bill = normBill(p.billNo)
     if (!bill) { byKey.set(`solo:${p.id}`, [p]); continue }
-    const key = `${p.source}|${p.partyId ?? p.party}|${p.against ?? ''}|${bill}|${Math.round(p.gross)}`
+    const family = /advance/i.test(p.kind) ? 'advance' : /misc/i.test(p.kind) ? 'misc' : 'bill'
+    const key = `${p.source}|${p.partyId ?? p.party}|${p.against ?? ''}|${bill}|${Math.round(p.gross)}|${family}`
     byKey.set(key, [...(byKey.get(key) ?? []), p])
   }
   const kept: Payment[] = []
@@ -148,13 +162,15 @@ export function buildPayments(
     ...wo.map(r => fromWo(r, conf.get(paymentId('wo', r.certificate_id)) ?? null)),
     ...sup.map(r => fromSup(r, conf.get(paymentId('supplier', r.certificate_id)) ?? null)),
   ]
-  const folded = foldDuplicates(all)
+  // True figures: cancelled certificates out, genuine repeats folded. Raw: IN4 as it is.
+  const live = all.filter(p => !p.cancelled)
+  const folded = foldDuplicates(live)
   const bills = opts.raw ? all : folded.kept
   const payments = bills.filter(p => p.paid > 0).sort((a, b) => String(b.date ?? '').localeCompare(String(a.date ?? '')) || b.paid - a.paid)
   const sum = (xs: Payment[], f: (p: Payment) => number) => xs.reduce((s, p) => s + f(p), 0)
   const confirmed = payments.filter(p => p.bankDate)
   return {
-    payments, bills, duplicates: folded.groups,
+    payments, bills, duplicates: folded.groups, cancelled: all.length - live.length,
     totals: {
       paid: sum(payments, p => p.paid),
       contractorPaid: sum(payments.filter(p => p.source === 'wo'), p => p.paid),

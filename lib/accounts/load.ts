@@ -15,7 +15,7 @@ export interface AccountsLoad {
   statements: Array<{ id: string; created_at: string; range_label: string; row_count: number; file_name: string }>
 }
 
-const EMPTY_BOOK: PaymentsBook = { payments: [], bills: [], duplicates: [], totals: { paid: 0, contractorPaid: 0, supplierPaid: 0, confirmedPaid: 0, awaitingPaid: 0, undatedPaid: 0, count: 0 } }
+const EMPTY_BOOK: PaymentsBook = { payments: [], bills: [], duplicates: [], cancelled: 0, totals: { paid: 0, contractorPaid: 0, supplierPaid: 0, confirmedPaid: 0, awaitingPaid: 0, undatedPaid: 0, count: 0 } }
 
 /** The IN4 sub-projects a CT Hub project is linked to — the same two hops the WO/PO tree takes. */
 export async function in4SubprojectIds(projectId: string): Promise<{ ids: number[]; error: string | null }> {
@@ -40,7 +40,7 @@ export async function loadAccounts(projectId: string, opts: { raw?: boolean } = 
       .select('certificate_id, kind, certificate_type, status, contractor_id, contractor_name, wo_id, wo_no, invoice_no, invoice_date, creation_dt, gross_bill_amt, deductions, recoveries, retention_amt, paid_amt, outstanding_amt')
       .in('subproject_id', ids).range(f, t)),
     fetchAll<SupCertRow>((f, t) => supabase.from('in4_supplier_certificates')
-      .select('certificate_id, kind, certificate_no, status, supplier_id, supplier_name, po_id, category, certified_amt, landed_cost, tax_deduction, adv_recovery, debit_note_adj, retention, payable, paid, outstanding')
+      .select('certificate_id, kind, certificate_no, status, supplier_id, supplier_name, po_id, category, certificate_date, invoice_date, certified_amt, landed_cost, tax_deduction, adv_recovery, debit_note_adj, retention, payable, paid, outstanding')
       .in('subproject_id', ids).range(f, t)),
     supabase.from('accounts_payment_confirmations').select('source, certificate_id, bank_date, bank_ref, amount_in_books, status, remark').eq('project_id', projectId),
     supabase.from('accounts_statements').select('id, created_at, range_label, row_count, file_name').eq('project_id', projectId).order('created_at', { ascending: false }).limit(12),

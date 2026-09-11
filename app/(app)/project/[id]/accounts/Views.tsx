@@ -42,10 +42,11 @@ function DateCell({ p }: { p: Payment }) {
     </span>
   )
 }
-function RawToggle({ projectId, view, params, dupCount }: { projectId: string; view: number; params: ViewParams; dupCount: number }) {
+function RawToggle({ projectId, view, params, dupCount, cancelled = 0 }: { projectId: string; view: number; params: ViewParams; dupCount: number; cancelled?: number }) {
+  const bits = [cancelled > 0 ? `${cancelled} cancelled in IN4` : null, dupCount > 0 ? `${dupCount} bill${dupCount === 1 ? '' : 's'} listed twice` : null].filter(Boolean)
   return (
     <span className="inline-flex items-center gap-2 text-[12px] text-gray-600">
-      {dupCount > 0 && <span className="inline-flex items-center gap-1 text-amber-700"><AlertTriangle className="h-3.5 w-3.5" />{dupCount} bill{dupCount === 1 ? '' : 's'} IN4 lists twice</span>}
+      {bits.length > 0 && <span className="inline-flex items-center gap-1 text-amber-700" title="Left out of the true figures; the raw view shows them"><AlertTriangle className="h-3.5 w-3.5" />{bits.join(' · ')}</span>}
       <Link href={href(projectId, view, { raw: !params.raw }, params)} className={cn('rounded-full border px-2.5 py-1 min-h-[30px] inline-flex items-center', params.raw ? 'border-amber-400 bg-amber-50 text-amber-900' : 'border-gray-300 bg-white hover:border-gray-500')}>
         {params.raw ? 'Showing IN4 as-is — back to true figures' : 'Show IN4 as-is'}
       </Link>
@@ -81,7 +82,7 @@ export function PaymentsView({ projectId, acc, params }: { projectId: string; ac
       <div className="flex flex-wrap items-center gap-2">
         <Chip href={href(projectId, 0, { fy: null }, params)} on={!params.fy}>All years</Chip>
         {fys.map(f => <Chip key={f} href={href(projectId, 0, { fy: f }, params)} on={params.fy === f}>{f}</Chip>)}
-        <span className="ml-auto flex flex-wrap items-center gap-2"><RawToggle projectId={projectId} view={0} params={params} dupCount={acc.book.duplicates.length} /><ExportLinks projectId={projectId} what="payments" params={params} /></span>
+        <span className="ml-auto flex flex-wrap items-center gap-2"><RawToggle projectId={projectId} view={0} params={params} dupCount={acc.book.duplicates.length} cancelled={acc.book.cancelled} /><ExportLinks projectId={projectId} what="payments" params={params} /></span>
       </div>
       <div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
         <div className="overflow-x-auto">
@@ -91,10 +92,10 @@ export function PaymentsView({ projectId, acc, params }: { projectId: string; ac
             </thead>
             <tbody className="divide-y divide-gray-100 tabular-nums">
               {rows.map(p => (
-                <tr key={p.id} className={cn(p.duplicateOf && 'bg-amber-50/60')}>
+                <tr key={p.id} className={cn((p.duplicateOf || p.cancelled) && 'bg-amber-50/60')}>
                   <td className="px-3 py-2"><DateCell p={p} /></td>
                   <td className="px-3 py-2 text-gray-900">{p.party}</td>
-                  <td className="px-3 py-2 text-gray-600"><span className="font-mono text-[12px]">{p.against ?? '—'}</span><span className="ml-1.5 text-[10px] uppercase tracking-wide text-gray-400">{p.kind}</span>{p.duplicateOf && <span className="ml-1.5 text-[10px] uppercase tracking-wide text-amber-700">duplicate in IN4</span>}</td>
+                  <td className="px-3 py-2 text-gray-600"><span className="font-mono text-[12px]">{p.against ?? '—'}</span><span className="ml-1.5 text-[10px] uppercase tracking-wide text-gray-400">{p.kind}</span>{p.cancelled && <span className="ml-1.5 text-[10px] uppercase tracking-wide text-rose-700">cancelled in IN4</span>}{p.duplicateOf && <span className="ml-1.5 text-[10px] uppercase tracking-wide text-amber-700">listed twice in IN4</span>}</td>
                   <td className="px-3 py-2 text-gray-600">{p.billNo ?? '—'}</td>
                   <td className="px-3 py-2 text-right text-gray-700">{formatINR(p.gross)}</td>
                   <td className="px-3 py-2 text-right text-gray-700">{formatINR(p.deductions)}</td>
@@ -110,7 +111,7 @@ export function PaymentsView({ projectId, acc, params }: { projectId: string; ac
           </table>
         </div>
       </div>
-      <p className="text-[12px] text-gray-500 flex items-start gap-1.5"><Info className="h-3.5 w-3.5 mt-0.5 flex-shrink-0" /><span>Deductions = TDS and other cuts plus advance and debit-note recoveries. <b>bank</b> = the Trust confirmed this payment and its bank date is shown; <b>bill</b> = IN4’s bill or certificate date until then. Supplier payments have no date in IN4 at all.</span></p>
+      <p className="text-[12px] text-gray-500 flex items-start gap-1.5"><Info className="h-3.5 w-3.5 mt-0.5 flex-shrink-0" /><span>Deductions = TDS and other cuts plus advance and debit-note recoveries. <b>bank</b> = the Trust confirmed this payment and its bank date is shown; <b>bill</b> = IN4’s bill or certificate date until then. True figures leave out certificates IN4 has cancelled and show a bill IN4 lists twice once; “Show IN4 as-is” shows every row.</span></p>
     </div>
   )
 }
