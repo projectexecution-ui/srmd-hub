@@ -1,19 +1,21 @@
 'use client'
-// The six People grids. One shared Grid shell (pinned first column, pinned
-// header, search, hide-Anonymous), one cell type per grid.
+// People: one card per person by default (PersonCards); the six grids stay one
+// tap away as "Grid view" for changing many people at once.
 
-import { useMemo, useState, useTransition } from 'react'
-import { useRouter } from 'next/navigation'
-import { Check, Loader2, AlertTriangle, Search, X, Plus, Bell, Mail, Smartphone, Send, EyeOff, Eye } from 'lucide-react'
+import { useMemo, useState } from 'react'
+import { Check, AlertTriangle, Search, X, Plus, Bell, Mail, Smartphone, Send, EyeOff, Eye, Loader2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { setGrant, setApprover, setAssignment, setIndentHidden, setBillsAssignment, setChannel } from './actions'
 import type { GrantKey, Result } from '@/lib/revamp/people-grants'
+import { useCellRunner } from './CardBits'
+import { PersonCards } from './PersonCards'
 
-export interface Person { id: string; name: string; role: string; roleLabel: string; ccRole: string }
-export interface ProjectRow { id: string; label: string; name: string; isGroup: boolean }
+export interface Person { id: string; name: string; email: string; role: string; roleLabel: string; ccRole: string }
+export interface ProjectRow { id: string; label: string; name: string; code: string; shortName: string; isGroup: boolean }
 export interface PeopleData {
   people: Person[]
   projects: ProjectRow[]
+  roles: Array<{ key: string; label: string }>
   grants: Record<GrantKey, string[]>
   approvers: Array<{ project_id: string; user_id: string; role: string }>
   assignments: Array<{ user_id: string; project_id: string }>
@@ -37,14 +39,13 @@ const TABS: Array<{ id: TabId; label: string; hint: string }> = [
 
 const isAnon = (p: Person) => /^anonymous$/i.test(p.name)
 
-export function PeopleClient({ data, initialTab }: { data: PeopleData; initialTab?: string }) {
+export function PeopleClient({ data, initialTab, initialPerson }: { data: PeopleData; initialTab?: string; initialPerson?: string }) {
+  // ?tab=… (from a health link or an old bookmark) opens the grid straight away.
+  const [view, setView] = useState<'cards' | 'grid'>(TABS.some(t => t.id === initialTab) ? 'grid' : 'cards')
   const [tab, setTab] = useState<TabId>((TABS.some(t => t.id === initialTab) ? initialTab : 'powers') as TabId)
   const [q, setQ] = useState('')
   const [hideAnon, setHideAnon] = useState(true)
-  const [error, setError] = useState<string | null>(null)
-  const [busy, setBusy] = useState<string | null>(null)
-  const router = useRouter()
-  const [, start] = useTransition()
+  const { busy, error, run } = useCellRunner()
 
   const people = useMemo(() => {
     const s = q.trim().toLowerCase()
@@ -55,54 +56,52 @@ export function PeopleClient({ data, initialTab }: { data: PeopleData; initialTa
     return data.projects.filter(p => !s || p.label.toLowerCase().includes(s) || p.name.toLowerCase().includes(s))
   }, [data.projects, q])
 
-  /** Run one cell's action: optimistic UI is the caller's; we only surface errors and refresh. */
-  function run(key: string, fn: () => Promise<Result>) {
-    setBusy(key); setError(null)
-    start(async () => {
-      const r = await fn()
-      setBusy(null)
-      if (!r.ok) { setError(r.message ?? 'Could not save.'); return }
-      router.refresh()
-    })
-  }
-
   const current = TABS.find(t => t.id === tab)!
   return (
     <section className="rounded-2xl border border-gray-200 bg-white overflow-hidden">
       <div className="flex flex-wrap items-center gap-2 px-3 pt-3">
-        {TABS.map(t => (
+        <div className="inline-flex rounded-full border border-gray-200 p-0.5" role="group" aria-label="View">
+          <button type="button" aria-pressed={view === 'cards'} onClick={() => setView('cards')} className={cn('rounded-full px-3 py-1.5 text-[13px] font-medium min-h-[36px]', view === 'cards' ? 'bg-gray-900 text-white' : 'text-gray-700 hover:bg-gray-100')}>One person at a time</button>
+          <button type="button" aria-pressed={view === 'grid'} onClick={() => setView('grid')} className={cn('rounded-full px-3 py-1.5 text-[13px] font-medium min-h-[36px]', view === 'grid' ? 'bg-gray-900 text-white' : 'text-gray-700 hover:bg-gray-100')}>Grid view</button>
+        </div>
+        {view === 'grid' && TABS.map(t => (
           <button key={t.id} type="button" onClick={() => setTab(t.id)}
             className={cn('rounded-full px-3 py-1.5 text-[13px] font-medium min-h-[36px]', tab === t.id ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200')}>
             {t.label}
           </button>
         ))}
       </div>
-      <div className="flex flex-wrap items-center gap-3 px-4 py-3 border-b border-gray-100">
-        <p className="text-[12px] text-gray-500 flex-1 min-w-[16rem]">{current.hint}</p>
-        <label className="relative">
-          <Search className="h-3.5 w-3.5 text-gray-400 absolute left-2 top-1/2 -translate-y-1/2" />
-          <input value={q} onChange={e => setQ(e.target.value)} placeholder={tab === 'signs' ? 'Find a project' : 'Find a person'} className="h-9 rounded-lg border border-gray-200 pl-7 pr-2 text-[13px] w-56" />
-        </label>
-        {tab !== 'signs' && (
-          <label className="inline-flex items-center gap-1.5 text-[12px] text-gray-600 select-none">
-            <input type="checkbox" checked={hideAnon} onChange={e => setHideAnon(e.target.checked)} /> hide “Anonymous”
+      {view === 'grid' && (
+        <div className="flex flex-wrap items-center gap-3 px-4 py-3 border-b border-gray-100">
+          <p className="text-[12px] text-gray-500 flex-1 min-w-[16rem]">{current.hint}</p>
+          <label className="relative">
+            <Search className="h-3.5 w-3.5 text-gray-400 absolute left-2 top-1/2 -translate-y-1/2" />
+            <input value={q} onChange={e => setQ(e.target.value)} placeholder={tab === 'signs' ? 'Find a project' : 'Find a person'} className="h-9 rounded-lg border border-gray-200 pl-7 pr-2 text-[13px] w-56" />
           </label>
-        )}
-      </div>
+          {tab !== 'signs' && (
+            <label className="inline-flex items-center gap-1.5 text-[12px] text-gray-600 select-none">
+              <input type="checkbox" checked={hideAnon} onChange={e => setHideAnon(e.target.checked)} /> hide “Anonymous”
+            </label>
+          )}
+        </div>
+      )}
+      {view === 'cards' && <div className="border-b border-gray-100 mt-3" />}
       {error && <p className="px-4 py-2 text-[12px] text-rose-700 border-b border-rose-100 bg-rose-50 inline-flex items-center gap-1.5"><AlertTriangle className="h-3.5 w-3.5" />{error}</p>}
 
-      {tab === 'powers'  && <PowersGrid people={people} grants={data.grants} busy={busy} run={run} />}
-      {tab === 'signs'   && <SignsGrid projects={projects} people={data.people} approvers={data.approvers} busy={busy} run={run} />}
-      {tab === 'works'   && <TickGrid people={people} cols={data.projects.filter(p => !p.isGroup).map(p => ({ key: p.id, label: p.label, title: p.name }))}
+      {view === 'cards' && <div className="p-4"><PersonCards data={data} busy={busy} run={run} initialPerson={initialPerson} /></div>}
+
+      {view === 'grid' && tab === 'powers'  && <PowersGrid people={people} grants={data.grants} busy={busy} run={run} />}
+      {view === 'grid' && tab === 'signs'   && <SignsGrid projects={projects} people={data.people} approvers={data.approvers} busy={busy} run={run} />}
+      {view === 'grid' && tab === 'works'   && <TickGrid people={people} cols={data.projects.filter(p => !p.isGroup).map(p => ({ key: p.id, label: p.label, title: p.name }))}
         isOn={(u, c) => data.assignments.some(a => a.user_id === u && a.project_id === c)} busy={busy}
         onFlip={(u, c, on) => run(`${u}|${c}`, () => setAssignment(u, c, on))} onLabel="works on it" offLabel="not on it" />}
-      {tab === 'indents' && <TickGrid people={people} cols={data.indentProjects.map(n => ({ key: n, label: n, title: n }))}
+      {view === 'grid' && tab === 'indents' && <TickGrid people={people} cols={data.indentProjects.map(n => ({ key: n, label: n, title: n }))}
         isOn={(u, c) => !data.hiddenIndents.some(h => h.user_id === u && h.project_name === c)} busy={busy}
         onFlip={(u, c, on) => run(`${u}|${c}`, () => setIndentHidden(u, c, !on))} onLabel="sees it" offLabel="hidden" onIcon={Eye} offIcon={EyeOff} />}
-      {tab === 'bills'   && <TickGrid people={people} cols={data.billsCodes.map(c => ({ key: c.code, label: c.code, title: c.label }))}
+      {view === 'grid' && tab === 'bills'   && <TickGrid people={people} cols={data.billsCodes.map(c => ({ key: c.code, label: c.code, title: c.label }))}
         isOn={(u, c) => (data.billsAssignments[u] ?? []).includes(c)} busy={busy}
         onFlip={(u, c, on) => run(`${u}|${c}`, () => setBillsAssignment(u, c, on))} onLabel="in their digest" offLabel="not in their digest" />}
-      {tab === 'alerts'  && <AlertsGrid people={people} prefs={data.prefs} available={data.prefsAvailable} busy={busy} run={run} />}
+      {view === 'grid' && tab === 'alerts'  && <AlertsGrid people={people} prefs={data.prefs} available={data.prefsAvailable} busy={busy} run={run} />}
     </section>
   )
 }

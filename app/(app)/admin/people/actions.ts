@@ -7,6 +7,7 @@ import { revalidatePath } from 'next/cache'
 import { createClient as createServiceClient } from '@supabase/supabase-js'
 import { createClient } from '@/lib/supabase/server'
 import { getMyProfile, isPortalOwner } from '@/lib/auth'
+import { getRoleLabels } from '@/lib/role-labels'
 import { GRANT_KEYS, type GrantKey, type Result } from '@/lib/revamp/people-grants'
 
 
@@ -78,6 +79,18 @@ export async function setBillsAssignment(userId: string, code: string, on: boole
   const { error } = await supabase.from('app_settings').upsert({ key: 'bills_digest_assignments', value: JSON.stringify(map) }, { onConflict: 'key' })
   if (error) return fail(error)
   revalidatePath('/admin/people'); revalidatePath('/bills-pipeline/digest-settings'); revalidatePath('/admin/email')
+  return { ok: true }
+}
+
+/** One role per person (AGENTS.md). Admins change it here or on Users & roles; never your own, so you cannot lock yourself out. */
+export async function setRole(userId: string, role: string): Promise<Result> {
+  const me = await guard(); if (!me) return denied
+  if (userId === me.id) return { ok: false, message: 'Change your own role from Users & roles, with another admin present.' }
+  if (!(role in (await getRoleLabels()))) return { ok: false, message: 'Unknown role.' }
+  const supabase = await createClient()
+  const { error } = await supabase.from('profiles').update({ role }).eq('id', userId)
+  if (error) return fail(error)
+  revalidatePath('/admin/people'); revalidatePath('/admin/projects'); revalidatePath('/admin/users')
   return { ok: true }
 }
 

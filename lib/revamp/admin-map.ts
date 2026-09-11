@@ -42,6 +42,7 @@ export const ADMIN_SCREENS: AdminScreen[] = [
   { href: '/procurement-tracker/admin',  label: 'Procurement visibility', module: 'procurement-tracker', area: 'people', hint: 'Which projects each person sees in the tracker', visibilitySlug: 'procurement-tracker' },
 
   // ── Approvals & rules ──
+  { href: '/admin/projects',             label: 'Projects',             module: '',            area: 'approvals', hint: 'One card per project: who signs each stage, who works on it, who sees its indents', adminOnly: true },
   { href: '/admin/approvals',            label: 'Approval chains',      module: '',            area: 'approvals', hint: 'Who may move a document to the next stage, per module' },
   { href: '/admin/delete-requests',      label: 'Delete requests',      module: '',            area: 'approvals', hint: 'Approve or refuse deletions that need a second pair of eyes' },
   { href: '/admin/recycle-bin',          label: 'Recycle bin',          module: '',            area: 'approvals', hint: 'Restore anything deleted — nothing is removed automatically' },

@@ -47,7 +47,7 @@ export function checkHealth(i: HealthInputs): HealthFinding[] {
       severity: 'blocker',
       title: `${i.projectsNoApprover} project${i.projectsNoApprover === 1 ? ' has' : 's have'} no approver`,
       detail: 'A budget raised on one of these has nobody to go to, and simply sits there.',
-      href: '/admin/people?tab=signs',
+      href: '/admin/projects',
       fixLabel: 'Name them',
     })
   }
