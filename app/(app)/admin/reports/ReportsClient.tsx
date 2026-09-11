@@ -15,6 +15,8 @@ export interface ReportRow {
   channels: string[]; channelsOn: string[]; respectsRules: boolean; enabled: boolean
   recipients: string[]; who: string; warning?: string
   lastSent: string | null; job: string | null; settingsHref: string
+  /** Has anything for this report ever gone out by Telegram? False = nobody on its list has linked Telegram, so "on" would be an empty promise. */
+  telegramUsed: boolean
 }
 export interface MatrixUser { id: string; name: string; role: string }
 export interface MuteRow { userId: string; event: string; channel: string }
@@ -152,13 +154,21 @@ function Channels({ r, busyKey, pending, onToggle }: { r: ReportRow; busyKey: st
         const Icon = CHANNEL_ICON[c] ?? Bell
         const applies = r.respectsRules
         const on = applies && r.channelsOn.includes(c)
+        // Telegram only reaches people who linked it. Switched on but never used
+        // by this report = nobody on its list has Telegram, so it stays grey.
+        const idle = c === 'telegram' && on && !r.telegramUsed
         const busy = pending && busyKey === `${r.key}:${c}`
+        const title = !applies ? 'Sends straight to its own address list — channels do not apply'
+          : idle ? 'Telegram is allowed, but nothing has ever gone out by Telegram for this report — nobody who gets it has linked Telegram. Tap to switch off.'
+          : `${CHANNEL_LABEL[c]}: ${on ? 'on — tap to switch off' : 'off — tap to switch on'}`
         return (
           <button key={c} type="button" disabled={busy || !applies} onClick={() => onToggle(r, c, !on)}
             aria-pressed={on}
-            title={applies ? `${CHANNEL_LABEL[c]}: ${on ? 'on — tap to switch off' : 'off — tap to switch on'}` : 'Sends straight to its own address list — channels do not apply'}
+            title={title}
             className={cn('inline-flex h-8 min-w-[74px] items-center justify-center gap-1.5 rounded-md px-2 text-[12px] font-medium',
-              !applies ? 'text-gray-300 cursor-not-allowed' : on ? 'bg-emerald-600 text-white' : 'text-gray-400 hover:bg-gray-100 hover:text-gray-700')}>
+              !applies ? 'text-gray-300 cursor-not-allowed'
+              : idle ? 'text-gray-400 border border-dashed border-gray-300 hover:bg-gray-100'
+              : on ? 'bg-emerald-600 text-white' : 'text-gray-400 hover:bg-gray-100 hover:text-gray-700')}>
             {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Icon className="h-3.5 w-3.5" />}{CHANNEL_LABEL[c]}
           </button>
         )

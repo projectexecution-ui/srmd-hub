@@ -37,10 +37,17 @@ export default async function ReportsPage() {
   // Last time each scheduled message actually went out — the newest notification of its type.
   const scheduled = rows.filter(r => r.message.kind === 'scheduled')
   const lastSent = new Map<string, string | null>()
+  // Has this report ever produced a Telegram delivery? If not, nobody on its
+  // list has linked Telegram, and the switch shows grey rather than a green lie.
+  const telegramUsed = new Map<string, boolean>()
   await Promise.all(scheduled.map(async r => {
     const type = notificationTypeFor(r.message.key)
-    const { data } = await supabase.from('notifications').select('created_at').eq('type', type).order('created_at', { ascending: false }).limit(1).maybeSingle()
+    const [{ data }, tg] = await Promise.all([
+      supabase.from('notifications').select('created_at').eq('type', type).order('created_at', { ascending: false }).limit(1).maybeSingle(),
+      supabase.from('notifications').select('id, notification_deliveries!inner(channel)').eq('type', type).eq('notification_deliveries.channel', 'telegram').limit(1),
+    ])
     lastSent.set(r.message.key, (data?.created_at as string | undefined) ?? null)
+    telegramUsed.set(r.message.key, ((tg.data ?? []) as unknown[]).length > 0)
   }))
 
   const reportRows: ReportRow[] = scheduled.map(r => ({
@@ -57,6 +64,7 @@ export default async function ReportsPage() {
     who: r.message.recipients.who,
     warning: r.warning,
     lastSent: lastSent.get(r.message.key) ?? null,
+    telegramUsed: telegramUsed.get(r.message.key) ?? false,
     job: REPORT_JOB[r.message.key] ?? null,
     settingsHref: r.message.settingsHref,
   }))
