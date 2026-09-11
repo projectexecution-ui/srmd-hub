@@ -67,7 +67,7 @@ export async function setWeeklyRecipient(
   // Mirror as user-scope rules so notify_user() honours the choice whichever screen
   // sends: "gets it" off = every rule-gated channel off (the route also skips the
   // person entirely, because the Telegram DM is not rule-gated); e-mail = email only.
-  const channels = channel === 'card' ? ['in_app', 'email', 'web_push'] : ['email']
+  const channels = channel === 'card' ? ['in_app', 'email', 'web_push', 'telegram'] : ['email']
   const { error } = on
     ? await supabase.from('notification_rules').delete().eq('scope', 'user').eq('scope_key', userId).eq('event_type', WEEKLY_EVENT).in('channel', channels)
     : await supabase.from('notification_rules').upsert(
@@ -78,7 +78,7 @@ export async function setWeeklyRecipient(
 }
 
 /** Global channel switch for this report — the same rule row the Messages page writes. */
-export async function setWeeklyChannel(channel: 'in_app' | 'email' | 'web_push', on: boolean): Promise<Result> {
+export async function setWeeklyChannel(channel: 'in_app' | 'email' | 'web_push' | 'telegram', on: boolean): Promise<Result> {
   const me = await guard(); if (!me) return denied
   const supabase = await createClient()
   const { error } = await supabase.from('notification_rules').upsert(

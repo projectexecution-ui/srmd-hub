@@ -3,7 +3,7 @@ import { useState, useTransition } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
-import { ChevronDown, ChevronRight, Clock, Zap, Mail, Bell, Smartphone, ExternalLink, AlertTriangle, Loader2, Check } from 'lucide-react'
+import { ChevronDown, ChevronRight, Clock, Zap, Mail, Bell, Smartphone, Send, ExternalLink, AlertTriangle, Loader2, Check } from 'lucide-react'
 import type { OutboundMessage } from '@/lib/notifications/catalog'
 import { parseAddresses, serialiseAddresses, parseAssignments } from '@/lib/notifications/catalog'
 import { saveRecipientSetting } from './actions'
@@ -18,7 +18,7 @@ interface Props {
   projectLists: Record<'bills' | 'tracker', ProjectOpt[]>
 }
 
-const CHANNEL_ICON = { in_app: Bell, email: Mail, web_push: Smartphone } as const
+const CHANNEL_ICON = { in_app: Bell, email: Mail, web_push: Smartphone, telegram: Send } as const
 
 export function RecipientsClient({ groups, settings, people, projectLists }: Props) {
   const [open, setOpen] = useState<string | null>(null)

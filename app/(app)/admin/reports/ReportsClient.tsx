@@ -20,10 +20,10 @@ export interface MatrixUser { id: string; name: string; role: string }
 export interface MuteRow { userId: string; event: string; channel: string }
 interface EventCol { key: string; label: string; kind: 'instant' | 'scheduled' }
 
-const CHANNEL_ICON: Record<string, React.ComponentType<{ className?: string }>> = { in_app: Bell, email: Mail, web_push: Smartphone }
-const CHANNEL_LABEL: Record<string, string> = { in_app: 'In-app', email: 'E-mail', web_push: 'Phone' }
-/** Every report shows the same three switches, in the same order, so the column reads as one control. */
-const ALL_CHANNELS = ['in_app', 'email', 'web_push']
+const CHANNEL_ICON: Record<string, React.ComponentType<{ className?: string }>> = { in_app: Bell, email: Mail, web_push: Smartphone, telegram: Send }
+const CHANNEL_LABEL: Record<string, string> = { in_app: 'In-app', email: 'E-mail', web_push: 'Phone', telegram: 'Telegram' }
+/** Every report shows the same four switches, in the same order, so the column reads as one control. */
+const ALL_CHANNELS = ['in_app', 'email', 'web_push', 'telegram']
 const MUTE_CHANNELS = ALL_CHANNELS
 
 export function ReportsClient({ reports, events, users, initialMutes }: { reports: ReportRow[]; events: EventCol[]; users: MatrixUser[]; initialMutes: MuteRow[] }) {
@@ -94,7 +94,7 @@ function ScheduledTable({ reports }: { reports: ReportRow[] }) {
             <tr>
               <th className="px-4 py-2 font-semibold">Report</th>
               <th className="px-3 py-2 font-semibold w-[140px]">When</th>
-              <th className="px-3 py-2 font-semibold w-[250px]">Channels</th>
+              <th className="px-3 py-2 font-semibold w-[330px]">Channels</th>
               <th className="px-3 py-2 font-semibold">Goes to</th>
               <th className="px-3 py-2 font-semibold w-[150px]">Last sent</th>
               <th className="px-3 py-2 w-[56px]"><span className="sr-only">Send now</span></th>

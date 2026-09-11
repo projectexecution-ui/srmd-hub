@@ -59,7 +59,7 @@ export default async function WeeklyReportPage() {
     budgetAsOf: loaded.freshness.budget,
     thisMonday: loaded.thisMonday,
     lastSent: (lastRes.data?.created_at as string | undefined) ?? null,
-    channels: { in_app: !globalOff.has('in_app'), email: !globalOff.has('email'), web_push: !globalOff.has('web_push') },
+    channels: { in_app: !globalOff.has('in_app'), email: !globalOff.has('email'), web_push: !globalOff.has('web_push'), telegram: !globalOff.has('telegram') },
     groupConnected: !!groupRes.data?.value,
     people,
     recipients,

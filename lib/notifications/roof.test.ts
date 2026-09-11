@@ -41,7 +41,7 @@ describe('what the roof reports about the live setup', () => {
 
   it('does not flag a message that still has one channel on', () => {
     const r = row('cc_ws_returned')
-    expect(r.channelsOn).toEqual(['in_app', 'web_push'])
+    expect(r.channelsOn).toEqual(['in_app', 'web_push', 'telegram'])
     expect(r.warning).toBeUndefined()
   })
 
@@ -49,7 +49,7 @@ describe('what the roof reports about the live setup', () => {
   // the list red and make the warnings worthless.
   it('treats a message with no rule rows as fully on', () => {
     const r = row('comment_mention')
-    expect(r.channelsOn).toEqual(['in_app', 'email', 'web_push'])
+    expect(r.channelsOn).toEqual(['in_app', 'email', 'web_push', 'telegram'])
     expect(r.warning).toBeUndefined()
   })
 

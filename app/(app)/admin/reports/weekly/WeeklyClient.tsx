@@ -25,7 +25,7 @@ export interface WeeklyPageData {
   budgetAsOf: string | null
   thisMonday: string
   lastSent: string | null
-  channels: { in_app: boolean; email: boolean; web_push: boolean }
+  channels: { in_app: boolean; email: boolean; web_push: boolean; telegram: boolean }
   groupConnected: boolean
   people: Array<{ id: string; name: string; roleLabel: string; ccRole: string }>
   recipients: Array<{ id: string; card: boolean; email: boolean }>
@@ -100,8 +100,9 @@ export function WeeklyClient({ data }: { data: WeeklyPageData }) {
       <section className="rounded-2xl border border-gray-200 bg-white p-4">
         <h2 className="text-sm font-bold text-gray-900">Channels</h2>
         <p className="text-[12px] text-gray-500 mb-3">Switch a channel off for everyone at once — for example e-mail when inboxes fill up. Per-person choices are below.</p>
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2">
-          <ChannelRow icon={Bell} label="In-app card" hint="The bell in the hub, and the Telegram card for people who linked Telegram" on={data.channels.in_app} busy={busy === 'ch:in_app'} onClick={() => run('ch:in_app', () => setWeeklyChannel('in_app', !data.channels.in_app))} />
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-2">
+          <ChannelRow icon={Bell} label="In-app" hint="The bell in the hub" on={data.channels.in_app} busy={busy === 'ch:in_app'} onClick={() => run('ch:in_app', () => setWeeklyChannel('in_app', !data.channels.in_app))} />
+          <ChannelRow icon={Send} label="Telegram card" hint="DM to each recipient who linked Telegram" on={data.channels.telegram} busy={busy === 'ch:telegram'} onClick={() => run('ch:telegram', () => setWeeklyChannel('telegram', !data.channels.telegram))} />
           <ChannelRow icon={Mail} label="E-mail" hint="One mail per recipient, Monday morning" on={data.channels.email} busy={busy === 'ch:email'} onClick={() => run('ch:email', () => setWeeklyChannel('email', !data.channels.email))} />
           <ChannelRow icon={Smartphone} label="Phone" hint="Browser notification, for people who turned it on" on={data.channels.web_push} busy={busy === 'ch:web_push'} onClick={() => run('ch:web_push', () => setWeeklyChannel('web_push', !data.channels.web_push))} />
           <ChannelRow icon={FileText} label="PDFs to the Telegram group" hint={data.groupConnected ? 'One-pager, by category, by sub-category, one file per main project' : 'No group connected — connect it from the Telegram card on Cost Control settings'} on={data.cfg.groupPdfs && data.groupConnected} busy={busy === 'ch:group'} onClick={() => run('ch:group', () => setWeeklySwitch('groupPdfs', !data.cfg.groupPdfs))} />
@@ -241,7 +242,7 @@ function Recipients({ data, busy, run }: { data: WeeklyPageData; busy: string | 
       <div className="px-4 py-3 border-b border-gray-100 flex flex-wrap items-center gap-3">
         <div className="min-w-0 flex-1">
           <h2 className="text-sm font-bold text-gray-900">Who gets it <span className="ml-1 text-[11px] font-normal text-gray-400 tabular-nums">{data.recipients.length} people</span></h2>
-          <p className="text-[12px] text-gray-500">{data.recipientsChosen ? 'Chosen by hand. ' : 'Not chosen yet, so everyone holding a management role gets it. The first tap keeps this list and makes it yours. '}“Gets it” = the bell, the Telegram card and the phone alert. E-mail is separate, so you can quieten inboxes without losing the card. Switching “Gets it” off stops everything for that person.</p>
+          <p className="text-[12px] text-gray-500">{data.recipientsChosen ? 'Chosen by hand. ' : 'Not chosen yet, so everyone holding a management role gets it. The first tap keeps this list and makes it yours. '}“Gets it” = the bell, the Telegram card and the phone alert. E-mail is separate, so you can quieten inboxes without losing the card. Switching “Gets it” off stops everything for that person. To silence one channel for everyone, use the Channels switches above.</p>
         </div>
         <label className="inline-flex items-center gap-1.5 text-[12px] text-gray-600 select-none"><input type="checkbox" checked={showAll} onChange={e => setShowAll(e.target.checked)} /> show everyone</label>
       </div>
