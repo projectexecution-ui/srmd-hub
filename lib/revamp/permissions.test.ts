@@ -107,7 +107,7 @@ describe('pills', () => {
     expect(landingSub(p, budget, 1)).toBe(1)
     expect(landingSub(deny(engineer, 'ws:budget:by-category', 'ws:budget:by-order'), budget, 0)).toBe(-1)
     const accounts = findWorkspaceTab('accounts')!
-    expect(landingSub(engineer, accounts, 3)).toBe(0) // no pills: always 0
+    expect(landingSub(engineer, accounts, 3)).toBe(3) // six pills since 11 Sep 2026; an allowed ask is honoured
   })
   it('the ribbon gets one list per visible tab', () => {
     const p = deny(engineer, 'ws:budget:by-order')

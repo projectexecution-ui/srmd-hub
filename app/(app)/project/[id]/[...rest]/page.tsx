@@ -33,10 +33,10 @@ export default async function ProjectTabPage({
 }: {
   params: Promise<{ id: string; rest: string[] }>
   /** Which sub-tab pill is selected, same `?view=` the landing tab uses. */
-  searchParams: Promise<{ view?: string; f?: string; q?: string; g?: string; age?: string }>
+  searchParams: Promise<{ view?: string; f?: string; q?: string; g?: string; age?: string; raw?: string; fy?: string; party?: string }>
 }) {
   const { id, rest } = await params
-  const { view: viewParam, f, q, g, age } = await searchParams
+  const { view: viewParam, f, q, g, age, raw, fy, party } = await searchParams
   const slug = rest?.[0] ?? ''
   // Tabs the fifteen-tab ribbon absorbed are now a VIEW of another tab, so
   // an old bookmark, email link or approval card lands on that view instead
@@ -114,7 +114,7 @@ export default async function ProjectTabPage({
 
   // Every figure here is the WO/PO tree's own, regrouped by what is due, what
   // is held back and who is owed — so it can never disagree with the tree.
-  if (slug === 'accounts')    return <AccountsTab projectId={id} />
+  if (slug === 'accounts')    return <AccountsTab projectId={id} view={view} params={{ raw: raw === '1', fy: fy?.trim() || null, party: party?.trim() || null }} />
 
   if (slug === 'setup') {
     // The existing Setup screen, rendered INSIDE the cockpit — not a redirect.

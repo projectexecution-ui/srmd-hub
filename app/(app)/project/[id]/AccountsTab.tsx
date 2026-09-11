@@ -5,17 +5,41 @@ import { EmptyState } from '@/components/ui/empty-state'
 import { RowDetailProvider, RowDetailToggle, RowDetail } from '@/components/cost-control/project-tree'
 import { loadOrdersTree } from '@/lib/revamp/orders-tree'
 import { buildAccounts, type AccountsOrder, type PartyAccount } from '@/lib/revamp/accounts-data'
+import { loadAccounts } from '@/lib/accounts/load'
+import { PaymentsView, FyView, MonthView, ReconcileView, LedgerView, type ViewParams } from './accounts/Views'
 
 /**
- * Accounts — the WO/PO tree's money regrouped by what an accounts person
- * asks: what is due now, which deliveries have no bill yet, what is held
- * back, and each party's account. One screen, four sections, every section
- * collapsed to its total until opened (Aksha: collapse by default). Nothing
- * here is computed afresh — see lib/revamp/accounts-data.ts.
- *
- * Reviewer-only: it is project-level money, like Approvals.
+ * Accounts — six pills (Aksha's mind-map, 11 Sep 2026):
+ *   0 Payments · 1 FY-wise · 2 Month-wise · 3 Reconcile with Trust ·
+ *   4 Party ledgers · 5 Due & held (the original four sections).
+ * Pills 0–4 read the IN4 certificate mirrors through lib/accounts; pill 5 is
+ * the WO/PO tree regrouped, exactly as before. Reviewer-only and on the named
+ * Accounts list, like the route guard says.
  */
-export async function AccountsTab({ projectId }: { projectId: string }) {
+export async function AccountsTab({ projectId, view = 0, params = { raw: false, fy: null, party: null } }: { projectId: string; view?: number; params?: ViewParams }) {
+  if (view === 5) return <DueHeldView projectId={projectId} />
+  const acc = await loadAccounts(projectId, { raw: params.raw })
+  if (!acc.linked && !acc.error) {
+    return (
+      <EmptyState
+        icon={<Link2Off className="h-10 w-10" />}
+        title="Not linked to IN4"
+        description="This project is not mapped to an IN4 project yet, so there are no payments to account for. Link it under Setup."
+        action={<Link href={`/project/${projectId}/setup`} className="inline-flex items-center rounded-lg bg-indigo-700 px-3.5 py-2 text-xs font-semibold text-white hover:bg-indigo-800 min-h-[44px]">Open Setup</Link>}
+      />
+    )
+  }
+  if (acc.error) return <EmptyState title="The payments could not be read" description={acc.error} />
+  if (view === 1) return <FyView projectId={projectId} acc={acc} params={params} />
+  if (view === 2) return <MonthView projectId={projectId} acc={acc} params={params} />
+  if (view === 3) return <ReconcileView projectId={projectId} acc={acc} />
+  if (view === 4) return <LedgerView projectId={projectId} acc={acc} params={params} />
+  return <PaymentsView projectId={projectId} acc={acc} params={params} />
+}
+
+/** Pill 5 — the WO/PO tree's money regrouped by what an accounts person asks:
+ *  due now, received not billed, held back, by party (lib/revamp/accounts-data.ts). */
+async function DueHeldView({ projectId }: { projectId: string }) {
   const tree = await loadOrdersTree(projectId)
 
   if (!tree.linked) {
