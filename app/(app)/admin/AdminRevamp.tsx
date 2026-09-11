@@ -85,7 +85,7 @@ export async function AdminRevamp({ isAdmin, disabledSlugs = [], shellCard = nul
           <Door href="/admin/people" icon={Users} title="People"
             text="Who is in the hub, what each person may open and do, how they are alerted."
             count={`${counts.people} people`} />
-          <Door href="/admin/people?tab=signs" icon={Building2} title="Projects"
+          <Door href="/admin/projects" icon={Building2} title="Projects"
             text="Who signs each project, who works on it, who sees its indents."
             count={counts.projectsNoHead > 0 ? `${counts.projects} projects · ${counts.projectsNoHead} need a head` : `${counts.projects} projects`} />
           <Door href="/admin/reports" icon={Mail} title="Messages"
