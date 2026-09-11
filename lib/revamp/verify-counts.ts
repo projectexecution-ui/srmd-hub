@@ -25,21 +25,41 @@ export const subprojectIdsFor = cache(async (projectId: string): Promise<number[
 export interface VerifyCounts { indents: number; wos: number; pos: number }
 const NONE: VerifyCounts = { indents: 0, wos: 0, pos: 0 }
 
-/** Documents at Verify (113) or Amended & Verify (117) on these sub-projects. Zeros when IN4 is not there — a badge must never be a reason a page fails. */
+// Tag for revalidating every verify count at once.
+export const VERIFY_TAG = 'in4-verify'
+
+/** Documents at Verify (113) or Amended & Verify (117) on these sub-projects.
+ *  Zeros when IN4 is not there — a badge must never be a reason a page fails.
+ *
+ *  Cached for a minute ACROSS requests, not just within one. react's cache()
+ *  alone deduped this inside a single render but left every project page load
+ *  paying a fresh IN4 round trip — measured at 0.5-1.7s, average 907ms, and it
+ *  blocks the layout because the ribbon needs it. A badge that is up to a
+ *  minute stale is fine; a second on every click is not. Keyed by the
+ *  sub-project list, so two projects never share an entry. */
+const cachedVerifyCounts = unstable_cache(
+  async (list: string): Promise<VerifyCounts> => {
+    try {
+      const [row] = await in4Query<Record<string, unknown>>(`
+        SELECT
+          (SELECT COUNT(*) FROM PURCH_INDENT i WHERE i.STATUS IN (113, 117) AND i.SUBPROJECT_ID IN (${list})) indents,
+          (SELECT COUNT(*) FROM ENGG_WORK_ORDER w WHERE w.STATUS IN (113, 117) AND w.SUBPROJECT_ID IN (${list})) wos,
+          (SELECT COUNT(*) FROM PURCH_PURCHASE_ORDER p WHERE p.STATUS IN (113, 117) AND p.SUBPROJECT_ID IN (${list})) pos`)
+      return { indents: Number(row?.indents ?? 0), wos: Number(row?.wos ?? 0), pos: Number(row?.pos ?? 0) }
+    } catch {
+      return NONE
+    }
+  },
+  ['in4-verify-project'],
+  { tags: [VERIFY_TAG], revalidate: 60 },
+)
+
 export const loadVerifyCounts = cache(async (subprojectIds: readonly number[]): Promise<VerifyCounts> => {
   const ids = subprojectIds.filter(Number.isInteger)
   if (!in4Config() || ids.length === 0) return NONE
-  const list = ids.join(',')
-  try {
-    const [row] = await in4Query<Record<string, unknown>>(`
-      SELECT
-        (SELECT COUNT(*) FROM PURCH_INDENT i WHERE i.STATUS IN (113, 117) AND i.SUBPROJECT_ID IN (${list})) indents,
-        (SELECT COUNT(*) FROM ENGG_WORK_ORDER w WHERE w.STATUS IN (113, 117) AND w.SUBPROJECT_ID IN (${list})) wos,
-        (SELECT COUNT(*) FROM PURCH_PURCHASE_ORDER p WHERE p.STATUS IN (113, 117) AND p.SUBPROJECT_ID IN (${list})) pos`)
-    return { indents: Number(row?.indents ?? 0), wos: Number(row?.wos ?? 0), pos: Number(row?.pos ?? 0) }
-  } catch {
-    return NONE
-  }
+  // Sorted, so the same set of sub-projects is one cache entry however it
+  // arrives ordered.
+  return cachedVerifyCounts([...ids].sort((a, b) => a - b).join(','))
 })
 
 /** The ribbon's badge map and the words under each. Pure. */
@@ -146,8 +166,6 @@ async function fetchVerifyPortfolio(): Promise<VerifyPortfolio> {
     return EMPTY_PORTFOLIO
   }
 }
-
-export const VERIFY_TAG = 'in4-verify'
 
 /** Cached for a minute: a badge that is 60 seconds stale is fine, an IN4 round
  *  trip on every page load in the app is not. */
