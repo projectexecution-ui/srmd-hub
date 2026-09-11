@@ -7,11 +7,18 @@ import { in4Query } from './db'
 export interface In4Project {
   id: number; name: string; ex_code: string | null; parent_project_id: number | null
   cert_company_id: number | null; status: number | null; budget_amt: number | null
+  /** Plan dates, the readable status and the site address — mirrored so the
+   *  Project Master screen never has to reach across to us-east-1 for them. */
+  estimated_start_dt: string | null; estimated_end_dt: string | null
+  status_name: string | null
+  addr: string | null; pin: string | null; city: string | null
 }
 export interface In4Subproject {
   id: number; project_id: number; name: string; ex_code: string | null; is_active: boolean
   status: number | null; construction_area_ft: number | null; budget: number | null
   parent_subproject_id: number | null; is_common_service: boolean
+  estimated_start_dt: string | null; estimated_end_dt: string | null
+  status_name: string | null
 }
 export interface In4Skill { id: number; name: string; parent_id: number; short_name: string | null; is_active: boolean }
 export interface In4MaterialType { id: number; kind: 'type' | 'subtype'; parent_id: number | null; name: string; is_active: boolean }
@@ -66,21 +73,36 @@ const str = (v: unknown): string | null => { const s = v == null ? '' : String(v
 const day = (v: unknown): string | null => { if (v == null) return null; const d = new Date(v as string); return Number.isNaN(d.getTime()) ? null : d.toISOString().slice(0, 10) }
 
 export async function extractProjects(): Promise<In4Project[]> {
+  // The address lives three tables away in IN4; resolving it here means the
+  // screen reads one flat row instead of learning that chain.
   const rows = await in4Query<Record<string, unknown>>(`
-    SELECT ID, NAME, EX_CODE, PARENT_PROJECT_ID, CERT_COMPANY_ID, STATUS, BUDGET_AMT FROM ENGG_PROJECT`)
+    SELECT p.ID, p.NAME, p.EX_CODE, p.PARENT_PROJECT_ID, p.CERT_COMPANY_ID, p.STATUS, p.BUDGET_AMT,
+           p.ESTIMATED_START_DT, p.ESTIMATED_END_DT, st.NAME status_name,
+           a.ADDR, a.PIN, l.NAME city
+      FROM ENGG_PROJECT p
+      LEFT JOIN COMMON_ADDRESS a ON a.ID = TRY_CAST(p.ADDR_ID AS int)
+      LEFT JOIN COMMON_LOCATION_LOOKUP l ON l.ID = a.LOCATION_ID
+      LEFT JOIN COMMON_STATUS_LOOKUP st ON st.ID = p.STATUS`)
   return rows.map(r => ({
     id: n(r.ID), name: String(r.NAME ?? '').trim(), ex_code: (r.EX_CODE as string | null)?.trim() ?? null,
     parent_project_id: r.PARENT_PROJECT_ID == null ? null : n(r.PARENT_PROJECT_ID),
     cert_company_id: r.CERT_COMPANY_ID == null ? null : n(r.CERT_COMPANY_ID),
     status: r.STATUS == null ? null : n(r.STATUS), budget_amt: r.BUDGET_AMT == null ? null : n(r.BUDGET_AMT),
+    estimated_start_dt: day(r.ESTIMATED_START_DT), estimated_end_dt: day(r.ESTIMATED_END_DT),
+    status_name: (r.status_name as string | null)?.trim() || null,
+    addr: (r.ADDR as string | null)?.trim() || null,
+    pin: (r.PIN as string | null)?.toString().trim() || null,
+    city: (r.city as string | null)?.trim() || null,
   }))
 }
 
 export async function extractSubprojects(): Promise<In4Subproject[]> {
   const rows = await in4Query<Record<string, unknown>>(`
-    SELECT ID, PROJECT_ID, SUBPROJECT_NAME, EX_CODE, ISACTIVE, STATUS, CONSTRUCTION_AREA_FEET, BUDGET,
-           PARENT_SUBPROJECT_ID, IS_COMMON_SERVICE
-    FROM ENGG_SUBPROJECT`)
+    SELECT sp.ID, sp.PROJECT_ID, sp.SUBPROJECT_NAME, sp.EX_CODE, sp.ISACTIVE, sp.STATUS,
+           sp.CONSTRUCTION_AREA_FEET, sp.BUDGET, sp.PARENT_SUBPROJECT_ID, sp.IS_COMMON_SERVICE,
+           sp.ESTIMATED_START_DT, sp.ESTIMATED_END_DT, st.NAME status_name
+      FROM ENGG_SUBPROJECT sp
+      LEFT JOIN COMMON_STATUS_LOOKUP st ON st.ID = sp.STATUS`)
   return rows.map(r => ({
     id: n(r.ID), project_id: n(r.PROJECT_ID), name: String(r.SUBPROJECT_NAME ?? '').replace(/\s+/g, ' ').trim(),
     ex_code: (r.EX_CODE as string | null)?.trim() ?? null, is_active: !!r.ISACTIVE,
@@ -89,6 +111,8 @@ export async function extractSubprojects(): Promise<In4Subproject[]> {
     budget: r.BUDGET == null ? null : n(r.BUDGET),
     parent_subproject_id: r.PARENT_SUBPROJECT_ID == null ? null : n(r.PARENT_SUBPROJECT_ID),
     is_common_service: !!r.IS_COMMON_SERVICE,
+    estimated_start_dt: day(r.ESTIMATED_START_DT), estimated_end_dt: day(r.ESTIMATED_END_DT),
+    status_name: (r.status_name as string | null)?.trim() || null,
   }))
 }
 

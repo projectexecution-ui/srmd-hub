@@ -35,7 +35,10 @@ import { fetchAll } from '@/lib/revamp/orders-tree'
 import { getRoleLabels } from '@/lib/role-labels'
 import type { Role } from '@/lib/types'
 
-export type In4State = 'live' | 'not-configured' | 'unavailable'
+/** 'mirror' is not a failure. A screen served from the Supabase copy on
+ *  purpose — because reaching us-east-1 on every page load cost half a second
+ *  a query — says how fresh it is rather than warning about itself. */
+export type In4State = 'live' | 'mirror' | 'not-configured' | 'unavailable'
 export interface In4Read { in4: In4State; in4Error?: string }
 
 const s = (v: unknown) => (v == null || String(v).trim() === '' ? null : String(v).trim())
@@ -226,60 +229,41 @@ async function loadHubLinks(): Promise<Map<number, string[]>> {
   return out
 }
 
+/**
+ * Project Master, served entirely from the Supabase mirror.
+ *
+ * It used to read ENGG_PROJECT and ENGG_SUBPROJECT live, with this same
+ * mirror as a fallback for when IN4 was unreachable. IN4 is an RDS in
+ * us-east-1 and the app runs in Mumbai, so those two reads crossed the ocean
+ * on every page load — measured at roughly half a second each of pure
+ * network, with the query itself taking no time at all. Supabase is in
+ * ap-south-1, the same city as the app.
+ *
+ * The fallback was only ever a fallback because the mirror lacked the plan
+ * dates, the readable status and the site address — it showed those as blank.
+ * The masters feed carries them now, so the fallback became the whole thing
+ * and the live path is gone.
+ */
 export async function loadProjectMaster(): Promise<{ projects: MainProject[] } & In4Read> {
-  const [r, wo, links] = await Promise.all([
-    live(async () => {
-      const [projects, subs] = await Promise.all([
-        in4QueryCached<Record<string, unknown>>(`
-          SELECT p.ID, p.NAME, p.EX_CODE, p.ESTIMATED_START_DT, p.ESTIMATED_END_DT, st.NAME status,
-                 co.CompanyCode trust_code, co.CompanyName trust_name, a.ADDR, a.PIN, l.NAME city
-          FROM ENGG_PROJECT p
-          LEFT JOIN COMMON.TBLCOMMONCOMPANY co ON co.CompanyID = p.CERT_COMPANY_ID
-          LEFT JOIN COMMON_ADDRESS a ON a.ID = TRY_CAST(p.ADDR_ID AS int)
-          LEFT JOIN COMMON_LOCATION_LOOKUP l ON l.ID = a.LOCATION_ID
-          LEFT JOIN COMMON_STATUS_LOOKUP st ON st.ID = p.STATUS
-          ORDER BY p.NAME`),
-        in4QueryCached<Record<string, unknown>>(`
-          SELECT sp.ID, sp.PROJECT_ID, sp.SUBPROJECT_NAME, sp.EX_CODE, sp.ESTIMATED_START_DT, sp.ESTIMATED_END_DT,
-                 sp.ISACTIVE, st.NAME status
-          FROM ENGG_SUBPROJECT sp
-          LEFT JOIN COMMON_STATUS_LOOKUP st ON st.ID = sp.STATUS
-          ORDER BY sp.SUBPROJECT_NAME`),
-      ])
-      return { projects, subs }
-    }),
-    loadWoIndex(),
-    loadHubLinks(),
-  ])
+  const [wo, links] = await Promise.all([loadWoIndex(), loadHubLinks()])
 
   const subOf = (subs: Array<Record<string, unknown>>, projectId: number): SubProject[] =>
     subs.filter(x => n(x.PROJECT_ID ?? x.project_id) === projectId).map(x => ({
       id: n(x.ID ?? x.id), name: s(x.SUBPROJECT_NAME ?? x.name) ?? '', code: s(x.EX_CODE ?? x.ex_code),
-      start: iso(x.ESTIMATED_START_DT), end: iso(x.ESTIMATED_END_DT),
-      status: s(x.status), isActive: x.ISACTIVE == null ? (x.is_active as boolean ?? true) : Boolean(x.ISACTIVE),
+      start: iso(x.ESTIMATED_START_DT ?? x.estimated_start_dt), end: iso(x.ESTIMATED_END_DT ?? x.estimated_end_dt),
+      status: s(x.status ?? x.status_name), isActive: x.ISACTIVE == null ? (x.is_active as boolean ?? true) : Boolean(x.ISACTIVE),
       workOrders: wo.bySubproject.get(n(x.ID ?? x.id)) ?? 0,
       hubProjects: links.get(n(x.ID ?? x.id)) ?? [],
     }))
 
-  if (r.data) {
-    const projects: MainProject[] = r.data.projects.map(p => {
-      const subs = subOf(r.data!.subs, n(p.ID))
-      return {
-        id: n(p.ID), name: s(p.NAME) ?? '', code: s(p.EX_CODE),
-        trustCode: s(p.trust_code), trustName: s(p.trust_name),
-        address: oneLine(p.ADDR), pin: s(p.PIN), city: s(p.city),
-        start: iso(p.ESTIMATED_START_DT), end: iso(p.ESTIMATED_END_DT), status: s(p.status),
-        workOrders: wo.byProject.get(n(p.ID)) ?? 0,
-        subs, hubProjects: [...new Set(subs.flatMap(x => x.hubProjects))],
-      }
-    })
-    return { projects, in4: 'live' }
-  }
-
   const supabase = await createClient()
   const [pr, sp, co] = await Promise.all([
-    supabase.from('in4_projects').select('id, name, ex_code, cert_company_id').order('name'),
-    supabase.from('in4_subprojects').select('id, project_id, name, ex_code, is_active').order('name'),
+    supabase.from('in4_projects')
+      .select('id, name, ex_code, cert_company_id, estimated_start_dt, estimated_end_dt, status_name, addr, pin, city')
+      .order('name'),
+    supabase.from('in4_subprojects')
+      .select('id, project_id, name, ex_code, is_active, estimated_start_dt, estimated_end_dt, status_name')
+      .order('name'),
     supabase.from('in4_companies').select('id, name, code'),
   ])
   const trust = new Map(((co.data ?? []) as Array<{ id: number; name: string; code: string | null }>).map(c => [c.id, c]))
@@ -288,11 +272,12 @@ export async function loadProjectMaster(): Promise<{ projects: MainProject[] } &
     const t = trust.get(n(p.cert_company_id))
     return {
       id: n(p.id), name: s(p.name) ?? '', code: s(p.ex_code), trustCode: t?.code ?? null, trustName: t?.name ?? null,
-      address: null, pin: null, city: null, start: null, end: null, status: null,
+      address: oneLine(p.addr), pin: s(p.pin), city: s(p.city),
+      start: iso(p.estimated_start_dt), end: iso(p.estimated_end_dt), status: s(p.status_name),
       workOrders: wo.byProject.get(n(p.id)) ?? 0, subs, hubProjects: [...new Set(subs.flatMap(x => x.hubProjects))],
     }
   })
-  return { projects, in4: r.in4, in4Error: r.in4Error }
+  return { projects, in4: 'mirror' }
 }
 
 /* ── 3. Contact Master ──────────────────────────────────────────────────── */

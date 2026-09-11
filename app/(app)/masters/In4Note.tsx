@@ -5,7 +5,8 @@ import type { In4State } from '@/lib/revamp/masters-in4'
  *  and why. Silent when everything is live, so a working page carries no
  *  banner. */
 export function In4Note({ in4, error, what }: { in4: In4State; error?: string; what: string }) {
-  if (in4 === 'live') return null
+  // 'mirror' is a deliberate choice, not a fault — no banner.
+  if (in4 === 'live' || in4 === 'mirror') return null
   return (
     <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[12px] text-amber-900 flex items-start gap-2">
       <AlertTriangle className="h-3.5 w-3.5 mt-0.5 flex-shrink-0" />
