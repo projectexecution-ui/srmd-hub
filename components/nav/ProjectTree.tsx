@@ -13,6 +13,7 @@ import { buildProjectTree, countTree, projectIdFromPath, type FlatProject } from
 import { projectHref } from '@/lib/revamp/tabs'
 import { isRevampNow } from '@/lib/revamp/live'
 import { readOpenMap, writeOpenMap, readFlag, writeFlag } from '@/lib/nav-prefs'
+import { VERIFY_PILL } from '@/lib/revamp/verify-pill'
 
 const OPEN_KEY = 'srmd_nav_projects_open'
 const LANE_KEY = 'srmd_nav_projects_lane'
@@ -24,6 +25,10 @@ interface Props {
    *  collapsed group carries its children's queue. Amber, because it is work
    *  on your desk rather than a count of what exists. */
   approvals?: Record<string, number>
+  /** project id → documents sitting at Verify in IN4, rolled up the same way.
+   *  Teal, not amber: this is not on your CT Hub desk, it is parked in IN4
+   *  waiting to be verified there. */
+  verify?: Record<string, number>
   mobile?: boolean
   /** Desktop rail collapsed to icons — render one icon that opens the list page. */
   collapsed?: boolean
@@ -32,7 +37,7 @@ interface Props {
   revamp?: boolean
 }
 
-export function ProjectTree({ projects, approvals = {}, mobile = false, collapsed = false, onNavigate, revamp = isRevampNow() }: Props) {
+export function ProjectTree({ projects, approvals = {}, verify = {}, mobile = false, collapsed = false, onNavigate, revamp = isRevampNow() }: Props) {
   const pathname = usePathname()
   const tree = useMemo(() => buildProjectTree(projects), [projects])
   const activeId = projectIdFromPath(pathname)
@@ -76,6 +81,7 @@ export function ProjectTree({ projects, approvals = {}, mobile = false, collapse
   }
 
   // Every project's own queue, for the lane header.
+  const laneVerify = Object.values(verify).reduce((t, n) => t + n, 0)
   const laneWaiting = Object.values(approvals).length
     ? projects.reduce((t, p) => t + (p.parentId ? (approvals[p.id] ?? 0) : 0), 0)
       + projects.reduce((t, p) => t + (p.parentId ? 0 : (approvals[p.id] ?? 0)), 0)
@@ -104,6 +110,7 @@ export function ProjectTree({ projects, approvals = {}, mobile = false, collapse
         <FolderKanban className={cn('h-5 w-5 flex-shrink-0', activeId ? 'text-blue-600' : 'text-gray-400')} />
         <span className="flex-1 text-left truncate">Projects</span>
         {laneWaiting > 0 && <WaitPill n={laneWaiting} />}
+        {laneVerify > 0 && <VerifyPill n={laneVerify} />}
         <span className="text-[11px] font-semibold text-gray-400 tabular-nums">{countTree(tree)}</span>
         <ChevronDown className={cn('h-4 w-4 flex-shrink-0 text-gray-400 transition-transform', laneOpen && 'rotate-180')} />
       </button>
@@ -133,6 +140,7 @@ export function ProjectTree({ projects, approvals = {}, mobile = false, collapse
                   <Building2 className="h-4 w-4 flex-shrink-0 text-gray-400" />
                   <span className="truncate">{g.label}</span>
                   {(approvals[g.id] ?? 0) > 0 && <WaitPill n={approvals[g.id]} className="ml-auto" />}
+                  {(verify[g.id] ?? 0) > 0 && <VerifyPill n={verify[g.id]} className={(approvals[g.id] ?? 0) > 0 ? 'ml-1' : 'ml-auto'} />}
                 </Link>
               )
             }
@@ -148,7 +156,8 @@ export function ProjectTree({ projects, approvals = {}, mobile = false, collapse
                   <Link href={projectHref(g.id, revamp)} onClick={onNavigate} className={cn(linkCls(g.id === activeId), 'flex-1 min-w-0 font-medium')} title={g.name}>
                     <span className="truncate">{g.label}</span>
                     {(approvals[g.id] ?? 0) > 0 && <WaitPill n={approvals[g.id]} className="ml-auto" />}
-                    <span className={cn('text-[10px] text-gray-400 tabular-nums', (approvals[g.id] ?? 0) > 0 ? 'ml-1.5' : 'ml-auto')}>{g.children.length}</span>
+                    {(verify[g.id] ?? 0) > 0 && <VerifyPill n={verify[g.id]} className={(approvals[g.id] ?? 0) > 0 ? 'ml-1' : 'ml-auto'} />}
+                    <span className={cn('text-[10px] text-gray-400 tabular-nums', ((approvals[g.id] ?? 0) > 0 || (verify[g.id] ?? 0) > 0) ? 'ml-1.5' : 'ml-auto')}>{g.children.length}</span>
                   </Link>
                 </div>
                 {o && (
@@ -157,6 +166,7 @@ export function ProjectTree({ projects, approvals = {}, mobile = false, collapse
                       <Link key={c.id} href={projectHref(c.id, revamp)} onClick={onNavigate} className={linkCls(c.id === activeId)} title={c.name}>
                         <span className="truncate">{c.code ?? c.name}</span>
                         {(approvals[c.id] ?? 0) > 0 && <WaitPill n={approvals[c.id]} className="ml-auto" />}
+                        {(verify[c.id] ?? 0) > 0 && <VerifyPill n={verify[c.id]} className={(approvals[c.id] ?? 0) > 0 ? 'ml-1' : 'ml-auto'} />}
                       </Link>
                     ))}
                   </div>
@@ -167,6 +177,24 @@ export function ProjectTree({ projects, approvals = {}, mobile = false, collapse
         </div>
       )}
     </div>
+  )
+}
+
+/** Sitting at Verify in IN4 — somebody else's screen, not this one. Teal so
+ *  it never reads as the amber "yours to approve". */
+function VerifyPill({ n, className }: { n: number; className?: string }) {
+  return (
+    <span
+      title={`${n} document${n === 1 ? '' : 's'} at Verify in IN4`}
+      className={cn(
+        'inline-flex items-center justify-center rounded-full',
+        VERIFY_PILL,
+        'text-[10px] font-bold tabular-nums min-w-[17px] h-[17px] px-1 flex-shrink-0',
+        className,
+      )}
+    >
+      {n}
+    </span>
   )
 }
 

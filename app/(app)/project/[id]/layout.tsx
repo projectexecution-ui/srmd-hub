@@ -182,6 +182,8 @@ export default async function ProjectWorkspaceLayout({
             /* This project's own Cost Control queue, for the Approvals tab. */
             badges={{ approvals: approvalCounts.byProject[id] ?? 0, ...verify.badges }}
             badgeTitles={verify.titles}
+            /* Approvals are amber (your desk); the IN4 Verify counts are teal. */
+            badgeTone={Object.fromEntries(Object.keys(verify.badges).map(k => [k, 'in4' as const]))}
           />
         </div>
       </div>

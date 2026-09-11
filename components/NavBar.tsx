@@ -31,6 +31,8 @@ interface NavBarProps {
   projects?: FlatProject[]
   /** project id → approvals waiting on this person, rolled up to parents. */
   approvals?: Record<string, number>
+  /** project id → documents at Verify in IN4, rolled up the same way. */
+  verify?: Record<string, number>
   /** Collapsed flag read from the cookie on the server, so the first paint is
    *  already right and nothing has to stay invisible until hydration. */
   initialCollapsed?: boolean
@@ -57,7 +59,7 @@ const GROUPS_OPEN_KEY = 'srmd_nav_groups_open'
 
 type NavItem = { href: string; label: string; icon: typeof LayoutDashboard; slug: string | null }
 
-export default function NavBar({ profile, permissions, disabledSlugs = [], isPortalOwner = false, moduleLabels = {}, sidebarGroups = [], projects = [], approvals = {}, initialCollapsed, revampOn = isRevampNow() }: NavBarProps) {
+export default function NavBar({ profile, permissions, disabledSlugs = [], isPortalOwner = false, moduleLabels = {}, sidebarGroups = [], projects = [], approvals = {}, verify = {}, initialCollapsed, revampOn = isRevampNow() }: NavBarProps) {
   const disabled = new Set(disabledSlugs)
   const pathname = usePathname()
   const router = useRouter()
@@ -242,13 +244,13 @@ export default function NavBar({ profile, permissions, disabledSlugs = [], isPor
               {revamp
                 ? <>
                     {primaryLinks.map(it => it.label === 'Projects' && projects.length > 0
-                      ? <ProjectTree key="tree" projects={projects} approvals={approvals} revamp={revampOn} mobile onNavigate={() => setOpen(false)} />
+                      ? <ProjectTree key="tree" projects={projects} approvals={approvals} verify={verify} revamp={revampOn} mobile onNavigate={() => setOpen(false)} />
                       : renderLink(it, true))}
                     {tree.groups.map(g => renderGroup(g, true))}
                   </>
                 : <>
                     {renderLink(dashboardLink, true)}
-                    {showProjectsLane && <ProjectTree projects={projects} approvals={approvals} revamp={revampOn} mobile onNavigate={() => setOpen(false)} />}
+                    {showProjectsLane && <ProjectTree projects={projects} approvals={approvals} verify={verify} revamp={revampOn} mobile onNavigate={() => setOpen(false)} />}
                     {tree.groups.map(g => renderGroup(g, true))}
                     {tree.ungrouped.map(it => renderLink(it, true))}
                     {bottomLinks.map(it => renderLink(it, true))}
@@ -318,20 +320,20 @@ export default function NavBar({ profile, permissions, disabledSlugs = [], isPor
           {collapsed ? (
             <>
               {renderLink(dashboardLink, false)}
-              {showProjectsLane && <ProjectTree projects={projects} approvals={approvals} revamp={revampOn} collapsed />}
+              {showProjectsLane && <ProjectTree projects={projects} approvals={approvals} verify={verify} revamp={revampOn} collapsed />}
               {flatLinks.slice(1).map(it => renderLink(it, false))}
             </>
           ) : revamp ? (
             <>
               {primaryLinks.map(it => it.label === 'Projects' && projects.length > 0
-                ? <ProjectTree key="tree" projects={projects} approvals={approvals} revamp={revampOn} />
+                ? <ProjectTree key="tree" projects={projects} approvals={approvals} verify={verify} revamp={revampOn} />
                 : renderLink(it, false))}
               {tree.groups.map(g => renderGroup(g, false))}
             </>
           ) : (
             <>
               {renderLink(dashboardLink, false)}
-              {showProjectsLane && <ProjectTree projects={projects} approvals={approvals} revamp={revampOn} />}
+              {showProjectsLane && <ProjectTree projects={projects} approvals={approvals} verify={verify} revamp={revampOn} />}
               {tree.groups.map(g => renderGroup(g, false))}
               {tree.ungrouped.map(it => renderLink(it, false))}
               {bottomLinks.map(it => renderLink(it, false))}

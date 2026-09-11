@@ -17,6 +17,9 @@ import { ReturnedToEngineer } from '@/components/dashboard/ReturnedToEngineer'
 import { getReturnedToEngineer } from '@/lib/cost-control/returned-to-engineer'
 import { getRevampOn } from '@/lib/revamp/shell-switch'
 import { WorkStrip } from './WorkStrip'
+import { VerifyInIn4, type VerifyRow } from '@/components/dashboard/VerifyInIn4'
+import { loadVerifyPortfolio } from '@/lib/revamp/verify-counts'
+import { getShell } from '@/lib/shell'
 
 export const dynamic = 'force-dynamic'
 
@@ -53,6 +56,20 @@ export default async function DashboardPage() {
   // Anything not folded into a project group (non-CC, or a CC item whose sheet
   // couldn't be read) stays in the simple list so nothing silently disappears.
   const otherInbox = inbox.filter(i => !(i.doc_id && groupedIds.has(i.doc_id)))
+
+  // What is sitting at Verify in IN4. The same cached portfolio read the
+  // sidebar uses, so the two can never disagree; scoped here to the projects
+  // this person's own tree carries, because the home page must not name a
+  // project they cannot open.
+  const [verifyPortfolio, shellForVerify] = await Promise.all([loadVerifyPortfolio(), getShell()])
+  const visibleProjects = new Map((shellForVerify?.projects ?? []).map(p => [p.id, p]))
+  const verifyRows: VerifyRow[] = Object.entries(verifyPortfolio.byProject)
+    .filter(([projectId]) => visibleProjects.has(projectId))
+    .map(([projectId, c]) => {
+      const p = visibleProjects.get(projectId)!
+      return { projectId, label: p.code ?? p.name, indents: c.indents, wos: c.wos, pos: c.pos }
+    })
+    .sort((a, b) => (b.indents + b.wos + b.pos) - (a.indents + a.wos + a.pos) || a.label.localeCompare(b.label))
 
   // Budgets this person returned that are still with the engineer. Kept out of
   // the inbox above on purpose — they are not his to approve — but he is the
@@ -115,6 +132,11 @@ export default async function DashboardPage() {
 
       {/* Needs you now — the actionable heart of the home, above everything else */}
       <NeedsYouNow budgetProjects={budgetProjects} otherItems={otherInbox} totalCount={inbox.length} moduleLabels={moduleLabels} error={!!inboxError} />
+
+      {/* Parked in IN4 rather than on a desk here — below the CT Hub queue,
+          in the same teal it wears on the ribbon and the projects lane.
+          Renders nothing when IN4 has nothing at Verify. */}
+      <VerifyInIn4 rows={verifyRows} unassigned={verifyPortfolio.unassigned} />
 
       {/* Returned budgets — NOT the approver's to act on, so deliberately below
           "Needs you now" and quieter. A chasing list, so the loop gets closed. */}

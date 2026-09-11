@@ -7,6 +7,7 @@ import {
   Briefcase, Settings2, type LucideIcon,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { VERIFY_PILL } from '@/lib/revamp/verify-pill'
 import {
   activeWorkspaceSlug, activeSubTab, workspaceHref, ribbonFor, findWorkspaceTab,
   type WorkspaceTab,
@@ -39,17 +40,21 @@ const ICONS: Record<string, LucideIcon> = {
  * a server concern; this component only draws.
  */
 export function Ribbon({
-  projectId, tabs, pills, canSetup, badges = {}, badgeTitles = {},
+  projectId, tabs, pills, canSetup, badges = {}, badgeTitles = {}, badgeTone = {},
 }: {
   projectId: string
   tabs: WorkspaceTab[]
   /** tab slug → the pill indices this person may open. A tab absent here shows all its pills. */
   pills?: Record<string, number[]>
-  /** tab slug → a count to show on that tab, in amber. Used for approvals
-   *  waiting on THIS person; general so another lane can carry one later. */
+  /** tab slug → a count to show on that tab. Amber by default. */
   badges?: Record<string, number>
   /** Words for a badge's tooltip; "n waiting on you" when absent. */
   badgeTitles?: Record<string, string>
+  /** tab slug → which queue the count belongs to. 'waiting' (amber) is
+   *  work on this person's desk in CT Hub; 'in4' (teal) is sitting at
+   *  Verify in IN4. They are different jobs for different people, so they
+   *  must not share a colour. */
+  badgeTone?: Record<string, 'waiting' | 'in4'>
   canSetup: boolean
 }) {
   const pathname = usePathname()
@@ -101,13 +106,19 @@ export function Ribbon({
                   >
                     <span className="relative flex-shrink-0">
                       <Icon className="h-[17px] w-[17px]" strokeWidth={1.6} />
-                      {/* The yellow count, pinned to the icon so it reads at
-                          both ribbon widths — the label is hidden under
-                          1180px and a badge beside it would vanish with it. */}
+                      {/* The count, pinned to the icon so it reads at both
+                          ribbon widths — the label is hidden under 1180px and
+                          a badge beside it would vanish with it. */}
                       {(badges[tab.slug] ?? 0) > 0 && (
                         <span
                           title={badgeTitles[tab.slug] ?? `${badges[tab.slug]} waiting on you`}
-                          className="absolute -top-1.5 -right-2 inline-flex items-center justify-center rounded-full bg-amber-100 text-amber-800 border border-amber-300 text-[9px] font-bold tabular-nums min-w-[15px] h-[15px] px-[3px]"
+                          className={cn(
+                            'absolute -top-1.5 -right-2 inline-flex items-center justify-center rounded-full',
+                            'text-[9px] font-bold tabular-nums min-w-[15px] h-[15px] px-[3px]',
+                            badgeTone[tab.slug] === 'in4'
+                              ? VERIFY_PILL
+                              : 'bg-amber-100 text-amber-800 border border-amber-300',
+                          )}
                         >
                           {badges[tab.slug]}
                         </span>

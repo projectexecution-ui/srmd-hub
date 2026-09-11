@@ -13,6 +13,7 @@ import { getSidebarGroups } from '@/lib/sidebar-groups.server'
 import { getShell } from '@/lib/shell'
 import { getRevampOn } from '@/lib/revamp/shell-switch'
 import { getMyApprovalCounts, rollUpCounts } from '@/lib/revamp/approval-counts'
+import { loadVerifyPortfolio, verifyTotal } from '@/lib/revamp/verify-counts'
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const [profile, permissions, disabledSlugs, portalOwner, moduleLabelsMap, sidebarGroups, shell, approvalCounts, revampOn] = await Promise.all([
@@ -32,6 +33,11 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     // The "CT Hub V1" toggle: which sidebar everyone gets (lib/revamp/live.ts).
     getRevampOn(),
   ])
+  // Documents sitting at Verify in IN4, for the teal counts on the projects
+  // lane. Cached for a minute and shared by every page, so the sidebar does
+  // not pay an IN4 round trip on each navigation. Empty when IN4 is away.
+  const verifyPortfolio = await loadVerifyPortfolio()
+
   // Flatten { label, description } → just label for the NavBar prop shape.
   const moduleLabels: Record<string, string> = Object.fromEntries(
     Object.entries(moduleLabelsMap).map(([slug, m]) => [slug, m.label]),
@@ -67,6 +73,12 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           sidebarGroups={sidebarGroups}
           projects={shell?.projects ?? []}
           approvals={rollUpCounts(approvalCounts.byProject, shell?.projects ?? [])}
+          /* What is parked at Verify in IN4, per project. One cached query for
+             the whole app — see loadVerifyPortfolio — not one per project. */
+          verify={rollUpCounts(
+            Object.fromEntries(Object.entries(verifyPortfolio.byProject).map(([id, c]) => [id, verifyTotal(c)])),
+            shell?.projects ?? [],
+          )}
           initialCollapsed={navCollapsed}
           revampOn={revampOn}
         />
