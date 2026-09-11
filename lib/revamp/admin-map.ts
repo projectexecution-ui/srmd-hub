@@ -38,12 +38,12 @@ export const ADMIN_SCREENS: AdminScreen[] = [
   // ── People & access ──
   { href: '/admin/users',                label: 'Users & roles',        module: '',            area: 'people', hint: 'Accounts, roles, access requests, per-module overrides' },
   { href: '/admin/people',               label: 'People',               module: '',            area: 'people', hint: 'Six grids: who may do what, who signs which project, who works where, who sees which indents, who gets the bills e-mail, alert channels', adminOnly: true },
-  { href: '/admin/permissions',          label: 'Permissions',          module: '',            area: 'people', hint: 'The role × module grid, and the delete rules' },
+  { href: '/admin/permissions',          label: 'What roles can open',  module: '',            area: 'people', hint: 'The role × module grid, and the delete rules' },
   { href: '/procurement-tracker/admin',  label: 'Procurement visibility', module: 'procurement-tracker', area: 'people', hint: 'Which projects each person sees in the tracker', visibilitySlug: 'procurement-tracker' },
 
   // ── Approvals & rules ──
   { href: '/admin/projects',             label: 'Projects',             module: '',            area: 'approvals', hint: 'One card per project: who signs each stage, who works on it, who sees its indents', adminOnly: true },
-  { href: '/admin/approvals',            label: 'Approval chains',      module: '',            area: 'approvals', hint: 'Who may move a document to the next stage, per module' },
+  { href: '/admin/approvals',            label: 'Who signs, in order',  module: '',            area: 'approvals', hint: 'The rules per module — who may move a document to the next stage' },
   { href: '/admin/delete-requests',      label: 'Delete requests',      module: '',            area: 'approvals', hint: 'Approve or refuse deletions that need a second pair of eyes' },
   { href: '/admin/recycle-bin',          label: 'Recycle bin',          module: '',            area: 'approvals', hint: 'Restore anything deleted — nothing is removed automatically' },
   { href: '/bills-booking/admin',        label: 'Bills desks',          module: 'bills-booking', area: 'approvals', hint: 'Who works each desk, per project', visibilitySlug: 'bills-booking' },
@@ -54,9 +54,9 @@ export const ADMIN_SCREENS: AdminScreen[] = [
   { href: '/cost-control/admin/disciplines', label: 'Work categories',  module: 'cost-control', area: 'lists', hint: 'Disciplines and sub-skills used by every project' },
 
   // ── System ──
-  { href: '/admin/reports',              label: 'Reports & digests',    module: '',            area: 'system', hint: 'Every scheduled report in one place — channels, who gets it, last sent, send now — and a person-by-person mute matrix', adminOnly: true },
-  { href: '/admin/email',                label: 'Email & notifications', module: '',           area: 'system', hint: 'Everything the hub sends and who receives it — all modules, one list' },
-  { href: '/admin/notifications',        label: 'Notification switches', module: '',           area: 'system', hint: 'Turn each alert on or off per channel, and check job health' },
+  { href: '/admin/reports',              label: 'Messages',             module: '',            area: 'system', hint: 'Every report and digest in one place — channels, who gets it, last sent, send now — and a person-by-person mute list', adminOnly: true },
+  { href: '/admin/email',                label: 'Every message, who gets it', module: '',      area: 'system', hint: 'The full list of what the hub sends and who receives it — all modules' },
+  { href: '/admin/notifications',        label: 'Instant alerts',       module: '',            area: 'system', hint: 'Turn each alert on or off per channel, and check job health' },
   { href: '/admin/dashboard-modules',    label: 'Modules on/off',       module: '',            area: 'system', hint: 'Switch a module off for everyone, or rename it', adminOnly: true },
   { href: '/admin/sidebar-groups',       label: 'Sidebar groups',       module: '',            area: 'system', hint: 'Nest modules under names you choose', adminOnly: true },
   { href: '/cost-control/settings',      label: 'Cost Control settings', module: 'cost-control', area: 'system', hint: 'Feature switches, field names, engineer visibility' },

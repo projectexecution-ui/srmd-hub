@@ -73,12 +73,12 @@ export default async function ReportsPage() {
   return (
     <div className="p-4 md:p-6 max-w-7xl mx-auto space-y-4">
       <PageHeader
-        title="Reports & digests"
+        title="Messages"
         back="/admin"
-        subtitle="Every scheduled report in one place: on or off per channel, who gets it, when it last went, send it now. Below, decide person by person."
+        subtitle="Every report and digest the hub sends: on or off per channel, who gets it, when it last went, send it now. Below, mute a person from any of them."
       />
       <p className="text-[12px] text-gray-500">
-        Address lists and per-project assignments are edited on <Link href="/admin/email" className="text-indigo-700 hover:underline">Email &amp; notifications</Link>; instant alerts (approvals, mentions, IN4 verify) are switched on <Link href="/admin/notifications" className="text-indigo-700 hover:underline">Notification switches</Link>. The matrix here mutes a person from any of them.
+        Instant alerts (approvals, mentions, IN4 verify) are switched on <Link href="/admin/notifications" className="text-indigo-700 hover:underline">Instant alerts</Link>; every message with its address list is on <Link href="/admin/email" className="text-indigo-700 hover:underline">Every message, who gets it</Link>. Who gets the bills digest is set per person on <Link href="/admin/people" className="text-indigo-700 hover:underline">People</Link>.
       </p>
       <ReportsClient reports={reportRows} events={events} users={users} initialMutes={mutes} />
     </div>

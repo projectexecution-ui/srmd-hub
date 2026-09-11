@@ -146,8 +146,7 @@ const MORE = new Set<string>([
 ])
 /** Plain words on the fold; the map keeps its short labels for the A–Z. */
 const MORE_LABEL: Record<string, string> = {
-  '/admin/permissions': 'What each role can open',
-  '/admin/approvals': 'Who signs, in what order (rules)',
+  '/admin/approvals': 'Who signs, in order (rules by module)',
   '/admin/users': 'Accounts & access requests',
   '/admin/recycle-bin': 'Deleted things — get one back',
   '/admin/delete-requests': 'Deleted things — requests waiting',
