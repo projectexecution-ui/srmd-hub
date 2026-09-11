@@ -41,7 +41,7 @@ export const ADMIN_SCREENS: AdminScreen[] = [
   { href: '/admin/users',                    label: 'Users & roles',           module: '',                    area: 'people', hint: 'Accounts, roles, access requests, per-module overrides' },
   { href: '/admin/people',                   label: 'People',                  module: '',                    area: 'people', hint: 'Who may do what, who signs which project, who works where, who sees which indents, bills e-mail, alert channels — six grids' },
   { href: '/admin/projects',                 label: 'Projects',                module: '',                    area: 'people', hint: 'One card per project: who signs each stage, who works on it, who sees its indents' },
-  { href: '/admin/permissions',              label: 'Permissions matrix',      module: '',                    area: 'people', hint: 'The role × module grid: view / edit / admin / delete' },
+  { href: '/admin/permissions',              label: 'What roles can open',      module: '',                    area: 'people', hint: 'The role × module grid: view / edit / admin / delete' },
   { href: '/procurement-tracker/admin',      label: 'Procurement visibility',  module: 'procurement-tracker', area: 'people', hint: 'Which projects each person sees in the tracker, closed projects' },
   { href: '/bills-booking/admin',            label: 'Bills desks',             module: 'bills-booking',       area: 'people', hint: 'Who works each desk, per project' },
 
