@@ -67,10 +67,10 @@ export async function extractSupplierCerts(): Promise<In4SupplierCert[]> {
     ), catagg AS (
       SELECT CERTIFICATE_ID, STRING_AGG(type_name, ',') WITHIN GROUP (ORDER BY type_name) category FROM cats GROUP BY CERTIFICATE_ID
     ), nos AS (
-      SELECT CERTIFICATE_ID, MAX(CAST(CERTIFICATE_NO AS NVARCHAR(50))) certificate_no FROM BI.DIM_PURCHASE_SUPPLIER_PAY GROUP BY CERTIFICATE_ID
+      SELECT CERTIFICATE_ID, MAX(CAST(CERTIFICATE_NO AS NVARCHAR(50))) certificate_no, MAX(CERTIFICATE_DT) certificate_dt, MAX(INVOICE_DT) invoice_dt FROM BI.DIM_PURCHASE_SUPPLIER_PAY GROUP BY CERTIFICATE_ID
     )
     SELECT 'payment' kind, f.CERTIFICATE_ID, MAX(nos.certificate_no) certificate_no, MAX(f.SUBPROJECT_ID) subproject_id, MAX(f.SUPPLIER_ID) supplier_id, MAX(f.PO_ID) po_id, MAX(f.STATUS_ID) status,
-           MAX(c.category) category,
+           MAX(c.category) category, MAX(nos.certificate_dt) certificate_dt, MAX(nos.invoice_dt) invoice_dt,
            SUM(f.CERTIFIED_AMT) certified, SUM(f.LANDED_COST) landed, SUM(f.TAX_ADDITION_AMT) tax_add, SUM(f.TAX_DEDUCTION_AMT) tax_ded,
            SUM(f.ADV_RECOVERY_AMT) adv_recovery, SUM(f.DEBIT_NOTE_ADJ_AMT) debit_note, SUM(f.RETENTION_AMT) retention,
            SUM(f.PAYABLE_AMT) payable, SUM(f.PAID_AMT) paid, SUM(f.CERTIFIED_OUT_AMT) outstanding
@@ -80,7 +80,7 @@ export async function extractSupplierCerts(): Promise<In4SupplierCert[]> {
     GROUP BY f.CERTIFICATE_ID
     UNION ALL
     SELECT 'advance', a.CERTIFICATE_ID, MAX(CAST(a.CERTIFICATE_NO AS NVARCHAR(50))), MAX(a.SUBPROJECT_ID), MAX(a.SUPPLIER_ID), MAX(a.PO_ID), MAX(a.STATUS_ID),
-           NULL,
+           NULL, NULL, NULL,
            SUM(a.CERTIFIED_AMT), SUM(a.GROSS_AMT), 0, 0,
            0, 0, 0,
            SUM(a.GROSS_AMT), SUM(a.TILL_DT_PAID_AMT), SUM(a.OUTSTANDING_AMT)
@@ -89,7 +89,7 @@ export async function extractSupplierCerts(): Promise<In4SupplierCert[]> {
   return rows.map(r => ({
     kind: r.kind as In4SupplierCert['kind'], certificate_id: n(r.CERTIFICATE_ID), certificate_no: sn(r.certificate_no),
     project_id: null, subproject_id: n(r.subproject_id), supplier_id: ni(r.supplier_id), po_id: ni(r.po_id), status: n(r.status),
-    category: sn(r.category),
+    category: sn(r.category), certificate_date: d(r.certificate_dt), invoice_date: d(r.invoice_dt),
     certified: n(r.certified), landed: n(r.landed), tax_add: n(r.tax_add), tax_ded: n(r.tax_ded),
     adv_recovery: n(r.adv_recovery), debit_note: n(r.debit_note), retention: n(r.retention),
     payable: n(r.payable), paid: n(r.paid), outstanding: n(r.outstanding),
