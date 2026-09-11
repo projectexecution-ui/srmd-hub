@@ -54,6 +54,7 @@ export const ADMIN_SCREENS: AdminScreen[] = [
   { href: '/cost-control/admin/disciplines', label: 'Work categories',  module: 'cost-control', area: 'lists', hint: 'Disciplines and sub-skills used by every project' },
 
   // ── System ──
+  { href: '/admin/reports/weekly',       label: 'Weekly report',        module: '',            area: 'system', hint: 'The Monday Budget vs Actual: what goes in, how it is grouped, channels, who gets it, send now', adminOnly: true },
   { href: '/admin/reports',              label: 'Messages',             module: '',            area: 'system', hint: 'Every report and digest in one place — channels, who gets it, last sent, send now — and a person-by-person mute list', adminOnly: true },
   { href: '/admin/email',                label: 'Every message, who gets it', module: '',      area: 'system', hint: 'The full list of what the hub sends and who receives it — all modules' },
   { href: '/admin/notifications',        label: 'Instant alerts',       module: '',            area: 'system', hint: 'Turn each alert on or off per channel, and check job health' },

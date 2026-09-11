@@ -78,7 +78,7 @@ export default async function ReportsPage() {
         subtitle="Every report and digest the hub sends: on or off per channel, who gets it, when it last went, send it now. Below, mute a person from any of them."
       />
       <p className="text-[12px] text-gray-500">
-        Instant alerts (approvals, mentions, IN4 verify) are switched on <Link href="/admin/notifications" className="text-indigo-700 hover:underline">Instant alerts</Link>; every message with its address list is on <Link href="/admin/email" className="text-indigo-700 hover:underline">Every message, who gets it</Link>. Who gets the bills digest is set per person on <Link href="/admin/people" className="text-indigo-700 hover:underline">People</Link>.
+        The Monday Budget vs Actual has its own page — <Link href="/admin/reports/weekly" className="text-indigo-700 hover:underline">Weekly report</Link> — for the list, the grouping, channels and who gets it. Instant alerts (approvals, mentions, IN4 verify) are switched on <Link href="/admin/notifications" className="text-indigo-700 hover:underline">Instant alerts</Link>; every message with its address list is on <Link href="/admin/email" className="text-indigo-700 hover:underline">Every message, who gets it</Link>. Who gets the bills digest is set per person on <Link href="/admin/people" className="text-indigo-700 hover:underline">People</Link>.
       </p>
       <ReportsClient reports={reportRows} events={events} users={users} initialMutes={mutes} />
     </div>

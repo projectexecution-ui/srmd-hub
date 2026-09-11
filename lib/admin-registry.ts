@@ -51,6 +51,7 @@ export const ADMIN_SCREENS: AdminScreen[] = [
   { href: '/admin/recycle-bin',              label: 'Recycle bin',             module: '',                    area: 'approvals', hint: 'Restore anything deleted — nothing is removed automatically' },
 
   // ── Emails & alerts ──
+  { href: '/admin/reports/weekly',           label: 'Weekly report',           module: 'cost-control',        area: 'system', hint: 'The Monday Budget vs Actual — list, grouping, channels, recipients, send now' },
   { href: '/admin/reports',                  label: 'Reports & digests',       module: '',                    area: 'notifications', hint: 'Every scheduled report: channels, recipients, last sent, send now; mute any person from any message' },
   { href: '/admin/notifications',            label: 'Notification switches',   module: '',                    area: 'notifications', hint: 'Each alert on/off per channel and role; scheduled-job health' },
   { href: '/admin/notifications/recipients', label: 'Who receives what',       module: '',                    area: 'notifications', hint: 'Every email and alert the hub sends, with its recipients — edit the lists from one place' },

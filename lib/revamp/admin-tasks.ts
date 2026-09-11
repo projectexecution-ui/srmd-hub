@@ -83,6 +83,7 @@ export const ADMIN_TASKS: AdminTask[] = [
       { href: '/admin/email', why: 'See every message, who receives it, and what reaches nobody', optional: true },
       { href: '/admin/notifications', why: 'Turn an alert on or off, per channel' },
       { href: '/bills-pipeline/digest-settings', why: 'Set who gets the bills digest and the stuck list', optional: true },
+      { href: '/admin/reports/weekly', why: 'The Monday Budget vs Actual — what goes in, how it is grouped, who gets it', optional: true },
     ],
   },
   {
