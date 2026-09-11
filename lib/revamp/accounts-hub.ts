@@ -21,6 +21,49 @@ export interface TrustRow {
   paid: number
   outstanding: number
   retention: number
+  /** Ageing of what is still outstanding, by invoice date. The figure that
+   *  makes a trust total mean something: on 11 Sep 2026, 64% of everything
+   *  owed was already past 90 days. */
+  amt_0_30: number
+  amt_31_90: number
+  amt_over90: number
+  amt_undated: number
+  n_over90: number
+  n_undated: number
+  /** Contractors and suppliers are paid by different people on different
+   *  cycles, so the split is worth carrying. */
+  outst_contractor: number
+  outst_supplier: number
+  projects: number
+  parties: number
+}
+
+export interface TrustProjectRow {
+  project_label: string
+  /** The CT Hub projects this IN4 project covers — often one, sometimes
+   *  several, occasionally none. */
+  hub_codes: string | null
+  hub_project_id: string | null
+  certificates: number
+  certified: number
+  paid: number
+  outstanding: number
+  retention: number
+  amt_over90: number
+}
+
+export interface TrustPartyRow {
+  kind: 'contractor' | 'supplier'
+  party_id: number | null
+  party_name: string
+  certificates: number
+  certified: number
+  paid: number
+  outstanding: number
+  retention: number
+  /** Age of the oldest certificate still unpaid. Null when that one has no
+   *  date in IN4 — "unknown", which is not the same as "new". */
+  oldest_unpaid_days: number | null
 }
 
 export interface PartyRow {
@@ -79,6 +122,37 @@ export function loadByTrust(): Promise<Result<TrustRow>> {
     trust_name: (r.trust_name as string) ?? null,
     certificates: num(r.certificates), certified: num(r.certified),
     paid: num(r.paid), outstanding: num(r.outstanding), retention: num(r.retention),
+    amt_0_30: num(r.amt_0_30), amt_31_90: num(r.amt_31_90),
+    amt_over90: num(r.amt_over90), amt_undated: num(r.amt_undated),
+    n_over90: num(r.n_over90), n_undated: num(r.n_undated),
+    outst_contractor: num(r.outst_contractor), outst_supplier: num(r.outst_supplier),
+    projects: num(r.projects), parties: num(r.parties),
+  }))
+}
+
+/** The projects under one trust. Grouped by IN4's project, which is what the
+ *  trust certifies against — and the same unit the summary counts, so the
+ *  two never report a different number of projects. */
+export function loadTrustProjects(trustId: number): Promise<Result<TrustProjectRow>> {
+  return call('cc_accounts_trust_projects', { p_trust: trustId }, r => ({
+    project_label: (r.project_label as string) ?? '—',
+    hub_codes: (r.hub_codes as string) ?? null,
+    hub_project_id: (r.hub_project_id as string) ?? null,
+    certificates: num(r.certificates), certified: num(r.certified),
+    paid: num(r.paid), outstanding: num(r.outstanding),
+    retention: num(r.retention), amt_over90: num(r.amt_over90),
+  }))
+}
+
+/** Who this one trust owes, and for how long. */
+export function loadTrustParties(trustId: number): Promise<Result<TrustPartyRow>> {
+  return call('cc_accounts_trust_parties', { p_trust: trustId }, r => ({
+    kind: (r.kind as TrustPartyRow['kind']) ?? 'contractor',
+    party_id: r.party_id == null ? null : Number(r.party_id),
+    party_name: (r.party_name as string) ?? '—',
+    certificates: num(r.certificates), certified: num(r.certified),
+    paid: num(r.paid), outstanding: num(r.outstanding), retention: num(r.retention),
+    oldest_unpaid_days: r.oldest_unpaid_days == null ? null : Number(r.oldest_unpaid_days),
   }))
 }
 
