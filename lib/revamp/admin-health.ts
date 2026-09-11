@@ -47,8 +47,8 @@ export function checkHealth(i: HealthInputs): HealthFinding[] {
       severity: 'blocker',
       title: `${i.projectsNoApprover} project${i.projectsNoApprover === 1 ? ' has' : 's have'} no approver`,
       detail: 'A budget raised on one of these has nobody to go to, and simply sits there.',
-      href: '/cost-control',
-      fixLabel: 'Set approvers',
+      href: '/admin/people?tab=signs',
+      fixLabel: 'Name them',
     })
   }
 
@@ -61,7 +61,7 @@ export function checkHealth(i: HealthInputs): HealthFinding[] {
         : `${i.silentMessages.length} alerts reach nobody`,
       detail: `Switched on but delivering nothing — ${i.silentMessages.slice(0, 3).map(m => m.label).join(', ')}`
         + (i.silentMessages.length > 3 ? ` and ${i.silentMessages.length - 3} more.` : '.'),
-      href: '/admin/email',
+      href: '/admin/reports',
       fixLabel: 'See which',
     })
   }
