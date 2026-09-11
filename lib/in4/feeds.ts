@@ -242,6 +242,7 @@ async function runSupplier(sb: SupabaseClient, now: string, mode: FeedMode, acto
   await upsertAll(sb, 'in4_supplier_certificates', certs.map(c => ({
     kind: c.kind, certificate_id: c.certificate_id, certificate_no: c.certificate_no, project_id: c.project_id, subproject_id: c.subproject_id,
     supplier_id: c.supplier_id, supplier_name: names.supplierName(c.supplier_id) || null, po_id: c.po_id, status: c.status, category: c.category,
+    certificate_date: c.certificate_date ?? null, invoice_date: c.invoice_date ?? null,
     certified_amt: c.certified, landed_cost: c.landed, tax_addition: c.tax_add, tax_deduction: c.tax_ded, adv_recovery: c.adv_recovery,
     debit_note_adj: c.debit_note, retention: c.retention, payable: c.payable, paid: c.paid, outstanding: c.outstanding, synced_at: now,
   })), 'kind,certificate_id')

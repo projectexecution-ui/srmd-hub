@@ -26,6 +26,9 @@ export interface In4SupplierCert {
   po_id: number | null
   status: number
   category: string | null
+  /** From BI.DIM_PURCHASE_SUPPLIER_PAY (11 Sep 2026) — null for advances and older mirrors. */
+  certificate_date?: string | null
+  invoice_date?: string | null
   certified: number
   landed: number
   tax_add: number
