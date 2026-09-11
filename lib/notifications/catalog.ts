@@ -111,10 +111,10 @@ export const SCHEDULED_MESSAGES: OutboundMessage[] = [
   },
   {
     key: 'cc_budget_vs_actual_report', label: 'Cost Control — Budget vs Actual (weekly)', module: 'cost-control', kind: 'scheduled',
-    trigger: 'The portfolio tree — Budget · Spent · Outstanding, flagging stale sources.',
-    channels: ['in_app'], respectsRules: true,
-    recipients: { kind: 'derived', who: 'Cost Control reviewers only — confidential' },
-    schedule: 'Monday morning — Telegram card', settingsHref: RULES_PAGE,
+    trigger: 'The Monday card and PDFs — Budget · Approved · Paid · Balance per main project, Δ since last Monday.',
+    channels: ['in_app', 'email', 'web_push'], respectsRules: true,
+    recipients: { kind: 'derived', who: 'The people chosen on the Weekly report page (management roles until chosen)' },
+    schedule: 'Monday 09:00 IST, once — card by DM, PDFs to the reports group', settingsHref: '/admin/reports/weekly',
   },
 ]
 
