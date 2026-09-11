@@ -62,7 +62,7 @@ export interface OutboundMessage {
   settingsHref: string
 }
 
-const ALL: NotificationChannelKey[] = ['in_app', 'email', 'web_push']
+const ALL: NotificationChannelKey[] = ['in_app', 'email', 'web_push', 'telegram']
 const RULES_PAGE = '/admin/notifications'
 
 /** The scheduled reports — the ones that had no single home. */

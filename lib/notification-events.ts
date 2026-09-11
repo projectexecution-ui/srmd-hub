@@ -152,12 +152,14 @@ export const NOTIFICATION_EVENTS: NotificationEventDef[] = [
   },
 ]
 
-/** Channels the admin policy controls. (Telegram is per-user only; web_push
- *  is added here once the push sender is built.) */
+/** Channels the admin policy controls. Telegram joined on 11 Sep 2026 once
+ *  notify_user() started asking notification_allowed() for it (migration
+ *  20260911_notify_user_telegram_rule) — before that no switch could stop a DM. */
 export const NOTIFICATION_CHANNELS = [
   { key: 'in_app', label: 'In-app', help: 'The bell inside CT HUB.' },
   { key: 'email', label: 'Email', help: 'Sent to the user’s email.' },
   { key: 'web_push', label: 'Phone', help: 'Push notification on the phone/desktop, even when CT HUB is closed.' },
+  { key: 'telegram', label: 'Telegram', help: 'Telegram card or message, for people who linked Telegram from their Settings.' },
 ] as const
 
 export type NotificationChannelKey = (typeof NOTIFICATION_CHANNELS)[number]['key']
