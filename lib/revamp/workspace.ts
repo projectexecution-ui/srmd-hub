@@ -73,10 +73,12 @@ export const WORKSPACE_TABS: WorkspaceTab[] = [
   { slug: 'sc-budgets', ribbon: 'SC Budget', label: 'SC Budget', group: 'money', icon: 'Layers',
     subs: ['Report', 'Category totals', 'Contractors'],
     permissionSlug: 'budget-vs-actual-v2', built: true },
-  // One screen, four sections (due · received not billed · held back · by
-  // party); no pills, they would only split what reads better together.
+  // Aksha's mind-map, 11 Sep 2026: payment reports (date-wise, FY-wise,
+  // month-wise), reconcile with the Trust's accounts, party ledgers in Tally
+  // format. The original four sections (due · received not billed · held back
+  // · by party) stay as the last pill.
   { slug: 'accounts', ribbon: 'Accounts', label: 'Accounts', group: 'money', icon: 'CreditCard',
-    subs: [],
+    subs: ['Payments', 'FY-wise', 'Month-wise', 'Reconcile with Trust', 'Party ledgers', 'Due & held'],
     permissionSlug: 'cost-control', built: true, reviewerOnly: true },
 
   // ── Procurement ──────────────────────────────────────────────────────────
