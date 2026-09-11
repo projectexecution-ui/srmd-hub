@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { buildCategoryTree, consultantSkillNames, oneLine, splitParties, flagParties, matchesQuery, looksLikeGstin, looksLikePan, type Party, boqKey, lastOrderLinks } from './masters-in4'
+import { buildCategoryTree, consultantSkillNames, oneLine, splitParties, flagParties, matchesQuery, looksLikeGstin, looksLikePan, type Party, lastOrderLinks } from './masters-in4'
 
 const SKILLS = [
   { id: -1, name: 'Sub Project Milestone', parent_id: 0 },
@@ -95,10 +95,6 @@ describe('oneLine — IN4 addresses as one tidy line', () => {
 })
 
 describe('the last order behind a master row (Aksha, 10 Sep 2026)', () => {
-  it('boqKey treats null and empty the same and trims, so the summary and the last-WO query meet', () => {
-    expect(boqKey('Civil Work.', 'PCC', null, 'CUM', 16504)).toBe('Civil Work.|PCC||CUM|16504')
-    expect(boqKey('Civil Work.', ' PCC ', '', 'CUM', '16504')).toBe('Civil Work.|PCC||CUM|16504')
-  })
   it('a WO offers its print and the project tab; a PO adds the ledger; nothing when unlinked', () => {
     const wo = { kind: 'wo' as const, id: 1842, ref: 'WO/SRJT/SRAH/2026-27/4', date: null, party: 'SANDEEP KUMAR', rate: 145, qty: 650, project: 'SRAH', subprojectId: 31, hubProjectId: 'abc' }
     expect(lastOrderLinks(wo).map(l => [l.label, l.href])).toEqual([['WO SRAH/2026-27/4', '/api/in4/work-order/1842/print'], ['In project', '/project/abc/wo-po?q=WO%2FSRJT%2FSRAH%2F2026-27%2F4']])

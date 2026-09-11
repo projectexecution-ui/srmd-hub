@@ -48,12 +48,12 @@ const base = (): In4Extract => ({
     { subproject_id: SP, budget_period_id: 1701, material_type_id: 235, material_subtype_id: 0,   budget_allocated: 52_000.12 },     // type with no sub-type rows → category line
   ],
   workOrders: [
-    { wo_id: 624,  subproject_id: SP, category_id: 1,   subcategory_id: 243, status: 2, display_no: null, contractor_id: null, wo_value: 56_487_314.29, wo_gross_value: 66_655_030.87, wo_paid_amt: 0, wo_advance_balance_amt: 531_394.15 },
-    { wo_id: 1710, subproject_id: SP, category_id: 307, subcategory_id: 0,   status: 2, display_no: null, contractor_id: null, wo_value: 5_229_106.65,  wo_gross_value: 6_170_345.85,  wo_paid_amt: 0, wo_advance_balance_amt: 0 },
-    { wo_id: 1831, subproject_id: SP, category_id: 338, subcategory_id: 351, status: 2, display_no: null, contractor_id: null, wo_value: 5_118_500, wo_gross_value: 5_118_500, wo_paid_amt: 0, wo_advance_balance_amt: 1_791_475 },
-    { wo_id: 1925, subproject_id: SP, category_id: 338, subcategory_id: 354, status: 2, display_no: null, contractor_id: null, wo_value: 1_975_000, wo_gross_value: 1_975_000, wo_paid_amt: 0, wo_advance_balance_amt: 987_500 },
-    { wo_id: 1926, subproject_id: SP, category_id: 338, subcategory_id: 354, status: 2, display_no: null, contractor_id: null, wo_value: 899_250,   wo_gross_value: 899_250,   wo_paid_amt: 0, wo_advance_balance_amt: 750_000 },
-    { wo_id: 9999, subproject_id: SP, category_id: 1,   subcategory_id: 243, status: 66, display_no: null, contractor_id: null, wo_value: 1e9, wo_gross_value: 1e9, wo_paid_amt: 0, wo_advance_balance_amt: 0 }, // terminated — ignored
+    { wo_id: 624,  subproject_id: SP, category_id: 1,   subcategory_id: 243, status: 2, display_no: null, contractor_id: null, creation_dt: null, wo_value: 56_487_314.29, wo_gross_value: 66_655_030.87, wo_paid_amt: 0, wo_advance_balance_amt: 531_394.15 },
+    { wo_id: 1710, subproject_id: SP, category_id: 307, subcategory_id: 0,   status: 2, display_no: null, contractor_id: null, creation_dt: null, wo_value: 5_229_106.65,  wo_gross_value: 6_170_345.85,  wo_paid_amt: 0, wo_advance_balance_amt: 0 },
+    { wo_id: 1831, subproject_id: SP, category_id: 338, subcategory_id: 351, status: 2, display_no: null, contractor_id: null, creation_dt: null, wo_value: 5_118_500, wo_gross_value: 5_118_500, wo_paid_amt: 0, wo_advance_balance_amt: 1_791_475 },
+    { wo_id: 1925, subproject_id: SP, category_id: 338, subcategory_id: 354, status: 2, display_no: null, contractor_id: null, creation_dt: null, wo_value: 1_975_000, wo_gross_value: 1_975_000, wo_paid_amt: 0, wo_advance_balance_amt: 987_500 },
+    { wo_id: 1926, subproject_id: SP, category_id: 338, subcategory_id: 354, status: 2, display_no: null, contractor_id: null, creation_dt: null, wo_value: 899_250,   wo_gross_value: 899_250,   wo_paid_amt: 0, wo_advance_balance_amt: 750_000 },
+    { wo_id: 9999, subproject_id: SP, category_id: 1,   subcategory_id: 243, status: 66, display_no: null, contractor_id: null, creation_dt: null, wo_value: 1e9, wo_gross_value: 1e9, wo_paid_amt: 0, wo_advance_balance_amt: 0 }, // terminated — ignored
   ],
   // The waterproofing WO's BOQ, summed per sub-skill (what the report splits by).
   boqShares: [

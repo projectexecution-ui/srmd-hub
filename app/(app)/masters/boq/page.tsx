@@ -6,7 +6,7 @@ import { RowDetailProvider, RowDetailToggle, RowDetail } from '@/components/cost
 import { loadBoqOverview, loadBoqCategory, loadBoqSearch, matchesQuery, lastOrderLinks, type BoqGroup, type BoqItem } from '@/lib/revamp/masters-in4'
 import { formatINR, formatDate } from '@/lib/utils'
 import { MasterTable } from '../MasterTable'
-import { In4Note } from '../In4Note'
+import { In4Note, in4Arrived } from '../In4Note'
 import { MasterSearchBox } from '../MasterSearchBox'
 
 export const dynamic = 'force-dynamic'
@@ -81,7 +81,7 @@ async function Overview() {
         }))}
         exportName="boq-categories"
         searchPlaceholder="Filter the categories…"
-        emptyMessage={in4 === 'live' ? 'IN4 holds no work-order BOQ items.' : 'The BOQ items are read live from IN4, which was not reached.'}
+        emptyMessage={in4Arrived(in4) ? 'IN4 holds no work-order BOQ items.' : 'The BOQ items could not be read just now.'}
       />
     </div>
   )
@@ -101,7 +101,7 @@ async function SearchView({ q }: { q: string }) {
       {capped && <p className="text-[12px] text-amber-700">Only the first 300 are shown — add a word to narrow it.</p>}
       <div className="rounded-lg border border-gray-200 bg-white">
         <ItemsTable items={items} showCategory />
-        {items.length === 0 && in4 === 'live' && <p className="px-4 py-8 text-center text-[13px] text-gray-500">No BOQ item in IN4 matches “{q}”. Try one word, or a different spelling.</p>}
+        {items.length === 0 && in4Arrived(in4) && <p className="px-4 py-8 text-center text-[13px] text-gray-500">No BOQ item in IN4 matches “{q}”. Try one word, or a different spelling.</p>}
       </div>
     </div>
   )
@@ -133,7 +133,7 @@ async function CategoryView({ id, q }: { id: number; q: string }) {
 
         <div className="rounded-lg border border-gray-200 bg-white divide-y divide-gray-100">
           {shown.map(g => <Group key={g.name} g={g} open={!!needle} />)}
-          {shown.length === 0 && in4 === 'live' && (
+          {shown.length === 0 && in4Arrived(in4) && (
             <p className="px-4 py-8 text-center text-[13px] text-gray-500">
               {needle ? <>Nothing here matches “{needle}”. <Link href={`/masters/boq?q=${encodeURIComponent(needle)}`} className="text-indigo-700 hover:underline">Search every category</Link>.</> : 'IN4 holds no work-order BOQ items under this category.'}
             </p>

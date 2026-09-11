@@ -1,0 +1,11 @@
+-- The work order's creation date, mirrored.
+--
+-- The BOQ Master screens answer "when was this item last used, and on which
+-- work order" — both of which need the WO's date. The mirror carried the WO's
+-- value, contractor and status but not its date, which is the one field that
+-- kept those screens reading live IN4 across the Atlantic. BI.FACT_ENGG_WORK_ORDER
+-- does not hold it; ENGG_WORK_ORDER.CREATION_DT does, and the extractor already
+-- joins that table for STATUS and DISPLAY_NO.
+--
+-- Date, not timestamp: it is shown as a day and a timezone would only shift it.
+alter table public.in4_work_orders add column if not exists creation_dt date;

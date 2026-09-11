@@ -22,11 +22,12 @@
 //     7), mirrored.
 //   · BOQ — IN4 has NO BOQ master table; BOQ items exist only inside work
 //     orders. What it does hold is every item ever ordered, per category, so
-//     that is what is shown, named as such: 1,388 BOQ names, 7,286
-//     descriptions, with how often and at what rate each was used.
+//     that is what is shown, named as such: 1,415 BOQ names, 9,551
+//     descriptions, with how often and at what rate each was used. Read from
+//     the mirror since 11 Sep 2026 — see the in4_boq_items note below.
 //
-// Live IN4 where the mirror lacks the field (addresses, dates, GST, BOQ);
-// the mirror where it has it. Every IN4 read is a SELECT. Nothing writes.
+// Live IN4 where the mirror lacks the field (addresses, GST); the mirror
+// where it has it. Every IN4 read is a SELECT. Nothing writes.
 // [[feedback_dont_guess_follow_the_source]]
 
 import { createClient } from '@/lib/supabase/server'
@@ -479,10 +480,6 @@ export function lastOrderLinks(o: LastOrder | null): Array<{ label: string; href
 }
 const shortDoc = (ref: string | null) => String(ref ?? '').replace(/^(IND|PO|GRN|WO|DRAFT-PO)\/[A-Z0-9]+\//, '')
 
-/** The key a BOQ item is grouped by, the same in the summary and the last-WO query. Pure. */
-export const boqKey = (name: unknown, subname: unknown, description: unknown, uom: unknown, subcat: unknown) =>
-  [name, subname, description, uom, subcat].map(v => (v == null ? '' : String(v).trim())).join('|')
-
 /** Last approved PO per material, one live query (ROW_NUMBER over IN4's PO facts). */
 export async function loadLastPoByMaterial(): Promise<{ byMaterial: Map<number, LastOrder> } & In4Read> {
   const [r, hub] = await Promise.all([
@@ -526,62 +523,61 @@ export interface BoqItem {
   name?: string | null
 }
 
-const LAST_WO_SQL = (where: string) => `
-      SELECT x.BOQ_NAME, x.BOQ_SUBNAME, x.BOQ_DESCRIPTION, x.UOM, x.WORK_SUBCATEGORY_ID, x.WO_ID, x.wo_no, x.CREATION_DT, x.contractor, x.RATE, x.QUANTITY, x.project, x.SUBPROJECT_ID
-      FROM (
-        SELECT d.BOQ_NAME, d.BOQ_SUBNAME, d.BOQ_DESCRIPTION, d.UOM, d.WORK_SUBCATEGORY_ID, d.WO_ID, w.DISPLAY_NO wo_no, w.CREATION_DT, sp.FIRM_NAME contractor, f.RATE, f.QUANTITY, pr.NAME project, w.SUBPROJECT_ID,
-               ROW_NUMBER() OVER (PARTITION BY d.BOQ_NAME, d.BOQ_SUBNAME, d.BOQ_DESCRIPTION, d.UOM, d.WORK_SUBCATEGORY_ID ORDER BY w.CREATION_DT DESC, d.ITEM_ID DESC) rn
-        FROM BI.DIM_ENGG_WORK_ORDER_BOQ d
-        LEFT JOIN BI.FACT_ENGG_WORK_ORDER_BOQ f ON f.ITEM_ID = d.ITEM_ID
-        LEFT JOIN ENGG_WORK_ORDER w ON w.ID = d.WO_ID
-        LEFT JOIN ENGG_SERVICE_PROVIDER sp ON sp.ID = w.SERVICE_PROVIDER_ID
-        LEFT JOIN ENGG_PROJECT pr ON pr.ID = w.PROJECT_ID
-        WHERE ${where}
-      ) x WHERE x.rn = 1`
+/** One row of the in4_boq_items RPC: an item's aggregate with, folded into the
+ *  same row, the last work order it appeared on. IN4 needed two queries for
+ *  that — a GROUP BY and a ROW_NUMBER() window — which the app stitched back
+ *  together on a composite key. Postgres does both in one pass, so the key is
+ *  gone, and so is the second crossing of the Atlantic. */
+interface BoqRow {
+  cat: number | null; name: string | null; subname: string | null; description: string | null
+  uom: string | null; subcategory_id: number | null
+  wos: number; min_rate: string | null; max_rate: string | null; last_used: string | null
+  last_wo_id: number | null; last_ref: string | null; last_date: string | null; last_party: string | null
+  last_rate: string | null; last_qty: string | null; last_project: string | null; last_subproject_id: number | null
+}
 
-function lastWoFrom(x: Record<string, unknown>, hub: Map<number, string>): LastOrder {
-  const sub = x.SUBPROJECT_ID == null ? null : n(x.SUBPROJECT_ID)
+/** Paged, always. Category 149 alone holds 1,807 items and PostgREST stops at
+ *  1,000 without reporting anything. */
+async function boqRows(args: Record<string, unknown>): Promise<{ rows: BoqRow[] } & In4Read> {
+  const supabase = await createClient()
+  const { rows, error } = await fetchAll<BoqRow>((from, to) => supabase.rpc('in4_boq_items', args).range(from, to))
+  if (error) return { rows: [], in4: 'unavailable', in4Error: error }
+  return { rows, in4: 'mirror' }
+}
+
+/** Postgres hands numerics back as strings; the screen wants a number or null. */
+const num = (v: unknown) => (v == null ? null : Number(v))
+
+function boqItem(x: BoqRow, names: Map<number, { name: string; code: string | null }>, hub: Map<number, string>): BoqItem {
+  const sub = x.last_subproject_id
   return {
-    kind: 'wo', id: n(x.WO_ID), ref: s(x.wo_no), date: iso(x.CREATION_DT), party: s(x.contractor),
-    rate: x.RATE == null ? null : Number(x.RATE), qty: x.QUANTITY == null ? null : Number(x.QUANTITY),
-    project: s(x.project), subprojectId: sub, hubProjectId: sub == null ? null : hub.get(sub) ?? null,
+    subname: s(x.subname), description: s(x.description), uom: s(x.uom),
+    subcategory: names.get(n(x.subcategory_id))?.name ?? null,
+    workOrders: n(x.wos), minRate: num(x.min_rate), maxRate: num(x.max_rate),
+    lastUsed: iso(x.last_used),
+    last: x.last_wo_id == null ? null : {
+      kind: 'wo', id: x.last_wo_id, ref: s(x.last_ref), date: iso(x.last_date), party: s(x.last_party),
+      rate: num(x.last_rate), qty: num(x.last_qty),
+      project: s(x.last_project), subprojectId: sub, hubProjectId: sub == null ? null : hub.get(sub) ?? null,
+    },
   }
 }
 
-const sqlLike = (q: string) => `%${q.replace(/'/g, "''").replace(/[%_[]/g, ch => `[${ch}]`)}%`
-
-/** BOQ items across every category whose name, sub-name or description contains the words — each with its last work order. Live. */
+/** BOQ items across every category whose name, sub-name or description contains the words — each with its last work order. */
 export async function loadBoqSearch(q: string): Promise<{ items: BoqItem[]; capped: boolean } & In4Read> {
   const needle = q.trim()
-  if (!needle) return { items: [], capped: false, in4: 'live' }
-  const words = needle.split(/\s+/).filter(Boolean)
-  const cond = (col: string) => words.map(w => `${col} LIKE '${sqlLike(w)}'`).join(' AND ')
-  const where = `((${cond('d.BOQ_SUBNAME')}) OR (${cond('d.BOQ_DESCRIPTION')}) OR (${cond('d.BOQ_NAME')}))`
-  const [sum, last, names, hub] = await Promise.all([
-    live(() => in4QueryCached<Record<string, unknown>>(`
-      SELECT TOP 300 d.WORK_CATEGORY_ID, d.BOQ_NAME, d.BOQ_SUBNAME, d.BOQ_DESCRIPTION, d.UOM, d.WORK_SUBCATEGORY_ID,
-             COUNT(DISTINCT d.WO_ID) wos, MIN(f.RATE) min_rate, MAX(f.RATE) max_rate, MAX(w.CREATION_DT) last_used
-      FROM BI.DIM_ENGG_WORK_ORDER_BOQ d
-      LEFT JOIN BI.FACT_ENGG_WORK_ORDER_BOQ f ON f.ITEM_ID = d.ITEM_ID
-      LEFT JOIN ENGG_WORK_ORDER w ON w.ID = d.WO_ID
-      WHERE ${where}
-      GROUP BY d.WORK_CATEGORY_ID, d.BOQ_NAME, d.BOQ_SUBNAME, d.BOQ_DESCRIPTION, d.UOM, d.WORK_SUBCATEGORY_ID
-      ORDER BY MAX(w.CREATION_DT) DESC`)),
-    live(() => in4QueryCached<Record<string, unknown>>(LAST_WO_SQL(where))),
+  if (!needle) return { items: [], capped: false, in4: 'mirror' }
+  const [r, names, hub] = await Promise.all([
+    boqRows({ p_q: needle, p_limit: 300 }),
     skillNames(),
     loadHubProjectBySubproject(),
   ])
-  if (!sum.data) return { items: [], capped: false, in4: sum.in4, in4Error: sum.in4Error }
-  const lastBy = new Map<string, LastOrder>()
-  for (const x of last.data ?? []) lastBy.set(boqKey(x.BOQ_NAME, x.BOQ_SUBNAME, x.BOQ_DESCRIPTION, x.UOM, x.WORK_SUBCATEGORY_ID), lastWoFrom(x, hub))
-  const items: BoqItem[] = sum.data.map(x => ({
-    name: s(x.BOQ_NAME), category: names.get(n(x.WORK_CATEGORY_ID))?.name ?? null,
-    subname: s(x.BOQ_SUBNAME), description: s(x.BOQ_DESCRIPTION), uom: s(x.UOM),
-    subcategory: names.get(n(x.WORK_SUBCATEGORY_ID))?.name ?? null,
-    workOrders: n(x.wos), minRate: x.min_rate == null ? null : Number(x.min_rate), maxRate: x.max_rate == null ? null : Number(x.max_rate),
-    lastUsed: iso(x.last_used), last: lastBy.get(boqKey(x.BOQ_NAME, x.BOQ_SUBNAME, x.BOQ_DESCRIPTION, x.UOM, x.WORK_SUBCATEGORY_ID)) ?? null,
+  if (r.in4 !== 'mirror') return { items: [], capped: false, in4: r.in4, in4Error: r.in4Error }
+  const items: BoqItem[] = r.rows.map(x => ({
+    ...boqItem(x, names, hub),
+    name: s(x.name), category: names.get(n(x.cat))?.name ?? null,
   }))
-  return { items, capped: items.length >= 300, in4: 'live' }
+  return { items, capped: items.length >= 300, in4: 'mirror' }
 }
 export interface BoqGroup { name: string; items: BoqItem[]; workOrders: number }
 
@@ -594,18 +590,10 @@ async function skillNames(): Promise<Map<number, { name: string; code: string | 
 const NO_CATEGORY = { name: '(no category on the work order)', code: null }
 
 export async function loadBoqOverview(): Promise<{ categories: BoqCategory[]; totals: { names: number; items: number; workOrders: number } } & In4Read> {
-  const [r, names] = await Promise.all([
-    live(() => in4QueryCached<Record<string, unknown>>(`
-      SELECT d.WORK_CATEGORY_ID cat,
-             COUNT(DISTINCT d.BOQ_NAME) names,
-             COUNT(DISTINCT CONCAT(d.BOQ_NAME, '|', d.BOQ_SUBNAME, '|', d.BOQ_DESCRIPTION)) items,
-             COUNT(DISTINCT d.WO_ID) wos
-      FROM BI.DIM_ENGG_WORK_ORDER_BOQ d
-      GROUP BY d.WORK_CATEGORY_ID`)),
-    skillNames(),
-  ])
-  if (!r.data) return { categories: [], totals: { names: 0, items: 0, workOrders: 0 }, in4: r.in4, in4Error: r.in4Error }
-  const categories: BoqCategory[] = r.data.map(x => {
+  const supabase = await createClient()
+  const [r, names] = await Promise.all([supabase.rpc('in4_boq_overview'), skillNames()])
+  if (r.error) return { categories: [], totals: { names: 0, items: 0, workOrders: 0 }, in4: 'unavailable', in4Error: r.error.message }
+  const categories: BoqCategory[] = ((r.data ?? []) as Array<Record<string, unknown>>).map(x => {
     const id = n(x.cat)
     const k = names.get(id) ?? NO_CATEGORY
     return { id, name: k.name, code: k.code, names: n(x.names), items: n(x.items), workOrders: n(x.wos) }
@@ -617,54 +605,33 @@ export async function loadBoqOverview(): Promise<{ categories: BoqCategory[]; to
       items: categories.reduce((t, c) => t + c.items, 0),
       workOrders: categories.reduce((t, c) => t + c.workOrders, 0),
     },
-    in4: 'live',
+    in4: 'mirror',
   }
 }
 
 export async function loadBoqCategory(categoryId: number): Promise<{ category: BoqCategory | null; groups: BoqGroup[] } & In4Read> {
-  if (!Number.isInteger(categoryId) || categoryId < 0) return { category: null, groups: [], in4: 'live' }
-  const [r, names, last, hub] = await Promise.all([
-    live(() => in4QueryCached<Record<string, unknown>>(`
-      SELECT d.BOQ_NAME, d.BOQ_SUBNAME, d.BOQ_DESCRIPTION, d.UOM, d.WORK_SUBCATEGORY_ID,
-             COUNT(DISTINCT d.WO_ID) wos, MIN(f.RATE) min_rate, MAX(f.RATE) max_rate, MAX(w.CREATION_DT) last_used
-      FROM BI.DIM_ENGG_WORK_ORDER_BOQ d
-      LEFT JOIN BI.FACT_ENGG_WORK_ORDER_BOQ f ON f.ITEM_ID = d.ITEM_ID
-      LEFT JOIN ENGG_WORK_ORDER w ON w.ID = d.WO_ID
-      WHERE d.WORK_CATEGORY_ID = ${categoryId}
-      GROUP BY d.BOQ_NAME, d.BOQ_SUBNAME, d.BOQ_DESCRIPTION, d.UOM, d.WORK_SUBCATEGORY_ID
-      ORDER BY d.BOQ_NAME, d.BOQ_SUBNAME, d.BOQ_DESCRIPTION`)),
+  if (!Number.isInteger(categoryId) || categoryId < 0) return { category: null, groups: [], in4: 'mirror' }
+  const [r, names, hub] = await Promise.all([
+    boqRows({ p_category_id: categoryId }),
     skillNames(),
-    // The last work order each item was on — so the row leads to a document.
-    live(() => in4QueryCached<Record<string, unknown>>(LAST_WO_SQL(`d.WORK_CATEGORY_ID = ${categoryId}`))),
     loadHubProjectBySubproject(),
   ])
-  if (!r.data) return { category: null, groups: [], in4: r.in4, in4Error: r.in4Error }
+  if (r.in4 !== 'mirror') return { category: null, groups: [], in4: r.in4, in4Error: r.in4Error }
   const k = names.get(categoryId) ?? NO_CATEGORY
-  const lastBy = new Map<string, LastOrder>()
-  for (const x of last.data ?? []) lastBy.set(boqKey(x.BOQ_NAME, x.BOQ_SUBNAME, x.BOQ_DESCRIPTION, x.UOM, x.WORK_SUBCATEGORY_ID), lastWoFrom(x, hub))
   const groups = new Map<string, BoqGroup>()
-  const wosInGroup = new Map<string, Set<number>>()
-  for (const x of r.data) {
-    const name = s(x.BOQ_NAME) ?? '(no BOQ name)'
+  for (const x of r.rows) {
+    const name = s(x.name) ?? '(no BOQ name)'
     const g = groups.get(name) ?? { name, items: [], workOrders: 0 }
-    g.items.push({
-      subname: s(x.BOQ_SUBNAME), description: s(x.BOQ_DESCRIPTION), uom: s(x.UOM),
-      subcategory: names.get(n(x.WORK_SUBCATEGORY_ID))?.name ?? null,
-      workOrders: n(x.wos),
-      minRate: x.min_rate == null ? null : Number(x.min_rate), maxRate: x.max_rate == null ? null : Number(x.max_rate),
-      lastUsed: iso(x.last_used),
-      last: lastBy.get(boqKey(x.BOQ_NAME, x.BOQ_SUBNAME, x.BOQ_DESCRIPTION, x.UOM, x.WORK_SUBCATEGORY_ID)) ?? null,
-    })
+    g.items.push(boqItem(x, names, hub))
     g.workOrders = Math.max(g.workOrders, n(x.wos))
     groups.set(name, g)
-    void wosInGroup
   }
   const list = [...groups.values()].sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }))
   const items = list.reduce((t, g) => t + g.items.length, 0)
   return {
     category: { id: categoryId, name: k.name, code: k.code, names: list.length, items, workOrders: Math.max(0, ...list.map(g => g.workOrders)) },
     groups: list,
-    in4: 'live',
+    in4: 'mirror',
   }
 }
 

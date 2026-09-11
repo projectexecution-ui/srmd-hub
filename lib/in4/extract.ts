@@ -36,7 +36,7 @@ export interface In4BudgetMatLine {
 }
 export interface In4WorkOrder {
   wo_id: number; subproject_id: number; category_id: number; subcategory_id: number; status: number
-  display_no: string | null; contractor_id: number | null
+  display_no: string | null; contractor_id: number | null; creation_dt: string | null
   wo_value: number; wo_gross_value: number; wo_paid_amt: number; wo_advance_balance_amt: number
 }
 /** WO value split by BOQ item into sub-categories — the report attributes a WO
@@ -163,12 +163,13 @@ export async function extractBudgetMaterial(): Promise<In4BudgetMatLine[]> {
 export async function extractWorkOrders(): Promise<In4WorkOrder[]> {
   const rows = await in4Query<Record<string, unknown>>(`
     SELECT f.WO_ID, f.SUBPROJECT_ID, f.WORK_CATEGORY_ID, f.WORK_SUBCATEGORY_ID, w.STATUS, w.DISPLAY_NO, f.CONTRACTOR_ID,
-           f.WO_VALUE, f.WO_GROSS_VALUE, f.WO_PAID_AMT, f.WO_ADVANCE_BALANCE_AMT
+           w.CREATION_DT, f.WO_VALUE, f.WO_GROSS_VALUE, f.WO_PAID_AMT, f.WO_ADVANCE_BALANCE_AMT
     FROM BI.FACT_ENGG_WORK_ORDER f
     JOIN ENGG_WORK_ORDER w ON w.ID = f.WO_ID`)
   return rows.map(r => ({
     wo_id: n(r.WO_ID), subproject_id: n(r.SUBPROJECT_ID), category_id: n(r.WORK_CATEGORY_ID), subcategory_id: n(r.WORK_SUBCATEGORY_ID),
     status: n(r.STATUS), display_no: (r.DISPLAY_NO as string | null) ?? null, contractor_id: r.CONTRACTOR_ID == null ? null : n(r.CONTRACTOR_ID),
+    creation_dt: day(r.CREATION_DT),
     wo_value: n(r.WO_VALUE), wo_gross_value: n(r.WO_GROSS_VALUE), wo_paid_amt: n(r.WO_PAID_AMT), wo_advance_balance_amt: n(r.WO_ADVANCE_BALANCE_AMT),
   }))
 }
