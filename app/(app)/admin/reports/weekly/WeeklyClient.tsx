@@ -8,6 +8,7 @@ import { useRouter } from 'next/navigation'
 import { AlertTriangle, Check, Loader2, Send, FileText, Bell, Mail, Smartphone, Plus, Trash2 } from 'lucide-react'
 import { cn, formatDateTime } from '@/lib/utils'
 import { formatINRShort } from '@/lib/format-short'
+import { confirm } from '@/components/ui/confirm-dialog'
 import type { WeeklyConfig, WeeklyLine } from '@/lib/weekly-report/config'
 import { UNPLACED_GROUP } from '@/lib/weekly-report/config'
 import { saveWeeklyLines, setWeeklySwitch, setWeeklyRecipient, setWeeklyChannel, type Result } from './actions'
@@ -88,7 +89,7 @@ export function WeeklyClient({ data }: { data: WeeklyPageData }) {
             className="inline-flex items-center gap-1.5 rounded-lg border border-gray-300 bg-white px-3 py-2 text-[13px] font-semibold min-h-[40px] hover:bg-gray-50 disabled:opacity-60">
             {busy === 'group' ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileText className="h-4 w-4" />} PDFs to group (test)
           </button>
-          <button type="button" disabled={!!busy} onClick={() => { if (confirm(sentThisWeek ? 'This week already went out. Send it again to everyone?' : 'Send the real Monday report to everyone now? This marks the week as sent.')) post('now', { sendNow: true }, r => `Sent to ${r.sent} people${r.group ? ` · group ${r.group}` : ''}. Week ${r.week} marked as sent.`) }}
+          <button type="button" disabled={!!busy} onClick={async () => { if (await confirm(sentThisWeek ? 'This week already went out. Send it again to everyone?' : 'Send the real Monday report to everyone now? This marks the week as sent.')) post('now', { sendNow: true }, r => `Sent to ${r.sent} people${r.group ? ` · group ${r.group}` : ''}. Week ${r.week} marked as sent.`) }}
             className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-600 px-3 py-2 text-[13px] font-semibold text-white min-h-[40px] hover:bg-indigo-700 disabled:opacity-60">
             {busy === 'now' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />} Send now
           </button>
