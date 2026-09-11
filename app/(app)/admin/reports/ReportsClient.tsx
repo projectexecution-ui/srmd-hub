@@ -4,7 +4,8 @@
 
 import { useMemo, useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
-import { Bell, Mail, Smartphone, Loader2, Send, Check, AlertTriangle, VolumeX, Volume2, Search } from 'lucide-react'
+import Link from 'next/link'
+import { Bell, Mail, Smartphone, Loader2, Send, Check, AlertTriangle, VolumeX, Volume2, Search, Settings2 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { formatDateTime, cn } from '@/lib/utils'
 import { saveChannel } from '../email/actions'
@@ -21,7 +22,9 @@ interface EventCol { key: string; label: string; kind: 'instant' | 'scheduled' }
 
 const CHANNEL_ICON: Record<string, React.ComponentType<{ className?: string }>> = { in_app: Bell, email: Mail, web_push: Smartphone }
 const CHANNEL_LABEL: Record<string, string> = { in_app: 'In-app', email: 'E-mail', web_push: 'Phone' }
-const MUTE_CHANNELS = ['in_app', 'email', 'web_push']
+/** Every report shows the same three switches, in the same order, so the column reads as one control. */
+const ALL_CHANNELS = ['in_app', 'email', 'web_push']
+const MUTE_CHANNELS = ALL_CHANNELS
 
 export function ReportsClient({ reports, events, users, initialMutes }: { reports: ReportRow[]; events: EventCol[]; users: MatrixUser[]; initialMutes: MuteRow[] }) {
   return (
@@ -38,15 +41,15 @@ function ScheduledTable({ reports }: { reports: ReportRow[] }) {
   const router = useRouter()
   const [pending, start] = useTransition()
   const [busyKey, setBusyKey] = useState<string | null>(null)
-  const [note, setNote] = useState<{ key: string; ok: boolean; text: string } | null>(null)
+  const [note, setNote] = useState<{ ok: boolean; text: string } | null>(null)
 
   function toggle(r: ReportRow, channel: string, on: boolean) {
     setBusyKey(`${r.key}:${channel}`); setNote(null)
     start(async () => {
       const res = await saveChannel(r.key, channel, on)
       setBusyKey(null)
-      setNote({ key: r.key, ok: res.ok, text: res.message })
-      if (res.ok) router.refresh()
+      if (!res.ok) setNote({ ok: false, text: res.message })
+      else router.refresh()
     })
   }
 
@@ -56,49 +59,67 @@ function ScheduledTable({ reports }: { reports: ReportRow[] }) {
     try {
       const res = await fetch('/api/cron/run-job', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ key: r.job }) })
       const j = await res.json().catch(() => ({}))
-      setNote({ key: r.key, ok: res.ok, text: res.ok ? 'Sent — it goes out to whoever is on the list right now.' : (j.error || `The job answered ${j.status ?? res.status}.`) })
+      setNote({ ok: res.ok, text: res.ok ? `${r.label} sent — to whoever is on its list right now.` : (j.error || `The job answered ${j.status ?? res.status}.`) })
       if (res.ok) router.refresh()
     } catch (e) {
-      setNote({ key: r.key, ok: false, text: e instanceof Error ? e.message : 'Could not run it.' })
+      setNote({ ok: false, text: e instanceof Error ? e.message : 'Could not run it.' })
     } finally {
       setBusyKey(null)
     }
   }
 
+  const offCount = reports.filter(r => r.respectsRules && r.channelsOn.length === 0).length
+
   return (
     <section className="rounded-2xl border border-gray-200 bg-white overflow-hidden">
-      <div className="px-4 py-3 border-b border-gray-100">
-        <h2 className="text-sm font-bold text-gray-900">Scheduled reports &amp; digests <span className="ml-1 text-[11px] font-normal text-gray-400 tabular-nums">{reports.length}</span></h2>
+      <div className="px-4 py-3 border-b border-gray-100 flex flex-wrap items-center gap-3">
+        <div className="min-w-0 flex-1">
+          <h2 className="text-sm font-bold text-gray-900">Scheduled reports &amp; digests <span className="ml-1 text-[11px] font-normal text-gray-400 tabular-nums">{reports.length}</span></h2>
+          <p className="text-[12px] text-gray-500">Tap a channel to switch it on or off for everyone who gets that report. Green is on.{offCount > 0 && <span className="text-amber-700"> {offCount} report{offCount === 1 ? ' has' : 's have'} every channel off.</span>}</p>
+        </div>
+        <span className="hidden sm:inline-flex items-center gap-3 text-[11px] text-gray-500">
+          {ALL_CHANNELS.map(c => { const Icon = CHANNEL_ICON[c]; return <span key={c} className="inline-flex items-center gap-1"><Icon className="h-3 w-3" />{CHANNEL_LABEL[c]}</span> })}
+        </span>
       </div>
+      {note && (
+        <p className={cn('px-4 py-2 text-[12px] border-b inline-flex items-center gap-1.5 w-full', note.ok ? 'bg-emerald-50 border-emerald-100 text-emerald-800' : 'bg-rose-50 border-rose-100 text-rose-800')}>
+          {note.ok ? <Check className="h-3.5 w-3.5" /> : <AlertTriangle className="h-3.5 w-3.5" />}{note.text}
+        </p>
+      )}
+
       {/* Desktop */}
       <div className="hidden md:block overflow-x-auto">
-        <table className="w-full text-sm table-fixed">
+        <table className="w-full text-sm">
           <thead className="bg-gray-50 text-left text-[11px] uppercase tracking-wide text-gray-500">
             <tr>
-              <th className="px-4 py-2 w-[300px]">Report</th>
-              <th className="px-3 py-2 w-[150px]">When</th>
-              <th className="px-3 py-2 w-[150px]">Channels</th>
-              <th className="px-3 py-2">Goes to</th>
-              <th className="px-3 py-2 w-[170px]">Last sent</th>
-              <th className="px-3 py-2 w-[120px]"></th>
+              <th className="px-4 py-2 font-semibold">Report</th>
+              <th className="px-3 py-2 font-semibold w-[140px]">When</th>
+              <th className="px-3 py-2 font-semibold w-[250px]">Channels</th>
+              <th className="px-3 py-2 font-semibold">Goes to</th>
+              <th className="px-3 py-2 font-semibold w-[150px]">Last sent</th>
+              <th className="px-3 py-2 w-[56px]"><span className="sr-only">Send now</span></th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
             {reports.map(r => (
-              <tr key={r.key} className="align-top">
-                <td className="px-4 py-2.5">
-                  <div className="font-medium text-gray-900">{r.label}</div>
-                  <div className="text-[11px] text-gray-500 truncate" title={r.trigger}>{r.moduleLabel} · {r.trigger}</div>
-                  {note?.key === r.key && <p className={cn('mt-1 text-[11px] inline-flex items-center gap-1', note.ok ? 'text-emerald-700' : 'text-rose-700')}>{note.ok ? <Check className="h-3 w-3" /> : <AlertTriangle className="h-3 w-3" />}{note.text}</p>}
+              <tr key={r.key} className="align-middle hover:bg-gray-50/60">
+                <td className="px-4 py-3">
+                  <div className="font-medium text-gray-900 leading-tight">{r.label}</div>
+                  <div className="text-[11px] text-gray-500 mt-0.5 flex items-center gap-1.5">
+                    <span>{r.moduleLabel}</span>
+                    {r.settingsHref && r.settingsHref !== '/admin/notifications' && (
+                      <Link href={r.settingsHref} className="inline-flex items-center gap-0.5 text-indigo-700 hover:underline"><Settings2 className="h-3 w-3" /> set up</Link>
+                    )}
+                  </div>
                 </td>
-                <td className="px-3 py-2.5 text-[12px] text-gray-600">{r.schedule}</td>
-                <td className="px-3 py-2.5"><Channels r={r} busyKey={busyKey} pending={pending} onToggle={toggle} /></td>
-                <td className="px-3 py-2.5 text-[12px] text-gray-700">
+                <td className="px-3 py-3 text-[12px] text-gray-600 leading-snug">{r.schedule}</td>
+                <td className="px-3 py-3"><Channels r={r} busyKey={busyKey} pending={pending} onToggle={toggle} /></td>
+                <td className="px-3 py-3 text-[12px] text-gray-700 leading-snug">
                   {r.recipients.length ? r.recipients.join(' · ') : <span className="text-gray-400">{r.who}</span>}
                   {r.warning && <p className="text-[11px] text-amber-700 mt-0.5 inline-flex items-center gap-1"><AlertTriangle className="h-3 w-3" />{r.warning}</p>}
                 </td>
-                <td className="px-3 py-2.5 text-[12px] text-gray-600 tabular-nums">{r.lastSent ? formatDateTime(r.lastSent) : <span className="text-gray-400">never</span>}</td>
-                <td className="px-3 py-2.5 text-right"><SendNow r={r} busy={busyKey === `${r.key}:send`} onSend={sendNow} /></td>
+                <td className="px-3 py-3 text-[12px] text-gray-600 tabular-nums">{r.lastSent ? formatDateTime(r.lastSent) : <span className="text-gray-400">never</span>}</td>
+                <td className="px-3 py-3 text-right"><SendNow r={r} busy={busyKey === `${r.key}:send`} onSend={sendNow} /></td>
               </tr>
             ))}
           </tbody>
@@ -107,16 +128,15 @@ function ScheduledTable({ reports }: { reports: ReportRow[] }) {
       {/* Mobile */}
       <ul className="md:hidden divide-y divide-gray-100">
         {reports.map(r => (
-          <li key={r.key} className="px-4 py-3 space-y-1.5">
-            <div className="font-medium text-gray-900">{r.label}</div>
-            <div className="text-[11px] text-gray-500">{r.moduleLabel} · {r.schedule}</div>
-            <Channels r={r} busyKey={busyKey} pending={pending} onToggle={toggle} />
-            <div className="text-[12px] text-gray-700">{r.recipients.length ? r.recipients.join(' · ') : <span className="text-gray-400">{r.who}</span>}</div>
-            <div className="flex items-center justify-between gap-2">
-              <span className="text-[11px] text-gray-500">Last sent {r.lastSent ? formatDateTime(r.lastSent) : 'never'}</span>
+          <li key={r.key} className="px-4 py-3 space-y-2">
+            <div className="flex items-start justify-between gap-2">
+              <div><div className="font-medium text-gray-900">{r.label}</div><div className="text-[11px] text-gray-500">{r.moduleLabel} · {r.schedule}</div></div>
               <SendNow r={r} busy={busyKey === `${r.key}:send`} onSend={sendNow} />
             </div>
-            {note?.key === r.key && <p className={cn('text-[11px]', note.ok ? 'text-emerald-700' : 'text-rose-700')}>{note.text}</p>}
+            <Channels r={r} busyKey={busyKey} pending={pending} onToggle={toggle} />
+            <div className="text-[12px] text-gray-700">{r.recipients.length ? r.recipients.join(' · ') : <span className="text-gray-400">{r.who}</span>}</div>
+            {r.warning && <p className="text-[11px] text-amber-700 inline-flex items-center gap-1"><AlertTriangle className="h-3 w-3" />{r.warning}</p>}
+            <div className="text-[11px] text-gray-500">Last sent {r.lastSent ? formatDateTime(r.lastSent) : 'never'}</div>
           </li>
         ))}
       </ul>
@@ -124,18 +144,22 @@ function ScheduledTable({ reports }: { reports: ReportRow[] }) {
   )
 }
 
+/** Three labelled switches, identical on every row. A report that sends to its own address list shows them greyed with the reason. */
 function Channels({ r, busyKey, pending, onToggle }: { r: ReportRow; busyKey: string | null; pending: boolean; onToggle: (r: ReportRow, channel: string, on: boolean) => void }) {
-  if (!r.respectsRules) return <span className="text-[11px] text-gray-400" title="Sends straight to its address list — channels do not apply">own address list</span>
   return (
-    <div className="inline-flex overflow-hidden rounded-md border border-gray-200 divide-x divide-gray-200 bg-white">
-      {r.channels.map(c => {
+    <div className="inline-flex rounded-lg border border-gray-200 bg-white p-0.5 gap-0.5" role="group" aria-label={`Channels for ${r.label}`}>
+      {ALL_CHANNELS.map(c => {
         const Icon = CHANNEL_ICON[c] ?? Bell
-        const on = r.channelsOn.includes(c)
+        const applies = r.respectsRules
+        const on = applies && r.channelsOn.includes(c)
         const busy = pending && busyKey === `${r.key}:${c}`
         return (
-          <button key={c} type="button" disabled={busy} onClick={() => onToggle(r, c, !on)} title={`${CHANNEL_LABEL[c] ?? c}: ${on ? 'on — click to switch off' : 'off — click to switch on'}`}
-            className={cn('inline-flex h-8 w-9 items-center justify-center', on ? 'bg-emerald-50 text-emerald-700' : 'bg-white text-gray-300 hover:text-gray-500')}>
-            {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Icon className="h-3.5 w-3.5" />}
+          <button key={c} type="button" disabled={busy || !applies} onClick={() => onToggle(r, c, !on)}
+            aria-pressed={on}
+            title={applies ? `${CHANNEL_LABEL[c]}: ${on ? 'on — tap to switch off' : 'off — tap to switch on'}` : 'Sends straight to its own address list — channels do not apply'}
+            className={cn('inline-flex h-8 min-w-[74px] items-center justify-center gap-1.5 rounded-md px-2 text-[12px] font-medium',
+              !applies ? 'text-gray-300 cursor-not-allowed' : on ? 'bg-emerald-600 text-white' : 'text-gray-400 hover:bg-gray-100 hover:text-gray-700')}>
+            {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Icon className="h-3.5 w-3.5" />}{CHANNEL_LABEL[c]}
           </button>
         )
       })}
@@ -144,11 +168,12 @@ function Channels({ r, busyKey, pending, onToggle }: { r: ReportRow; busyKey: st
 }
 
 function SendNow({ r, busy, onSend }: { r: ReportRow; busy: boolean; onSend: (r: ReportRow) => void }) {
-  if (!r.job) return <span className="text-[11px] text-gray-400">on its own trigger</span>
+  if (!r.job) return <span className="text-[11px] text-gray-400 whitespace-nowrap">own trigger</span>
   return (
-    <button type="button" disabled={busy} onClick={() => onSend(r)}
-      className="inline-flex items-center gap-1.5 rounded-lg border border-indigo-200 bg-white px-2.5 text-[12px] font-semibold text-indigo-700 hover:bg-indigo-50 min-h-[36px] disabled:opacity-60">
-      {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />} Send now
+    <button type="button" disabled={busy} onClick={() => onSend(r)} title="Send now"
+      className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-gray-200 bg-white text-indigo-700 hover:bg-indigo-50 hover:border-indigo-200 disabled:opacity-60">
+      {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+      <span className="sr-only">Send {r.label} now</span>
     </button>
   )
 }
