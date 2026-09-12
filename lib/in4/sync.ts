@@ -68,6 +68,12 @@ async function loadMirror(sb: SupabaseClient, x: In4Extract, reports: Map<number
   await upsertAll(sb, 'in4_subprojects', x.subprojects.map(s => ({ ...s, synced_at: now })), 'id')
   await upsertAll(sb, 'in4_skills', x.skills.map(s => ({ id: s.id, name: s.name, code: splitCode(s.name).code || null, parent_id: s.parent_id, short_name: s.short_name, is_active: s.is_active, synced_at: now })), 'id')
   await upsertAll(sb, 'in4_work_orders', x.workOrders.map(w => ({ ...w, synced_at: now })), 'wo_id')
+  // A work order that has left IN4 must leave here too. extractWorkOrders()
+  // returns EVERY row of the fact, so anything still carrying an older stamp
+  // is gone from IN4 — WO 1236 sat here for four days after it vanished, and
+  // showed up as a 47th work order on a contact card that IN4 says has 46.
+  const stale = await sb.from('in4_work_orders').delete().lt('synced_at', now)
+  if (stale.error) throw new Error(`in4_work_orders cleanup: ${stale.error.message}`)
   await upsertAll(sb, 'in4_wo_certificates', x.certificates.map(c => ({ ...c, kind: 'wo', synced_at: now })), 'kind,certificate_id')
 
   const lines: Record<string, unknown>[] = []
