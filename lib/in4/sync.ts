@@ -68,13 +68,27 @@ async function loadMirror(sb: SupabaseClient, x: In4Extract, reports: Map<number
   await upsertAll(sb, 'in4_subprojects', x.subprojects.map(s => ({ ...s, synced_at: now })), 'id')
   await upsertAll(sb, 'in4_skills', x.skills.map(s => ({ id: s.id, name: s.name, code: splitCode(s.name).code || null, parent_id: s.parent_id, short_name: s.short_name, is_active: s.is_active, synced_at: now })), 'id')
   await upsertAll(sb, 'in4_work_orders', x.workOrders.map(w => ({ ...w, synced_at: now })), 'wo_id')
-  // A work order that has left IN4 must leave here too. extractWorkOrders()
-  // returns EVERY row of the fact, so anything still carrying an older stamp
-  // is gone from IN4 — WO 1236 sat here for four days after it vanished, and
-  // showed up as a 47th work order on a contact card that IN4 says has 46.
-  const stale = await sb.from('in4_work_orders').delete().lt('synced_at', now)
-  if (stale.error) throw new Error(`in4_work_orders cleanup: ${stale.error.message}`)
   await upsertAll(sb, 'in4_wo_certificates', x.certificates.map(c => ({ ...c, kind: 'wo', synced_at: now })), 'kind,certificate_id')
+
+  // A row that has left IN4 must leave here too. Each of these four extracts
+  // returns EVERY row of its IN4 table, so after the upserts above anything
+  // still carrying an older stamp is gone from IN4 and should go.
+  //
+  // This was missing, and it showed: WO 1236 sat in in4_work_orders for four
+  // days after it left BI.FACT_ENGG_WORK_ORDER, and turned up as a 47th work
+  // order on a contact card that IN4 says has 46.
+  //
+  // in4_wo_certificates is deliberately NOT in this list. Two feeds write it —
+  // this one from BI.FACT_ENGG_WO_PAYMENTS as kind 'wo', and the contractor
+  // feed from ENGG_RPT_WO_CERTIFICATE_DETAILS as 'wo', 'advance' and 'misc' —
+  // and that feed already prunes the whole table. Pruning here as well would
+  // delete its 1,610 advance and misc rows on every budget sync. It is safe to
+  // leave to that feed because its certificates are a strict superset of this
+  // one's: 3,107 against 3,066, with none belonging to this feed alone.
+  for (const table of ['in4_projects', 'in4_subprojects', 'in4_skills', 'in4_work_orders']) {
+    const { error } = await sb.from(table).delete().lt('synced_at', now)
+    if (error) throw new Error(`${table} cleanup: ${error.message}`)
+  }
 
   const lines: Record<string, unknown>[] = []
   for (const r of reports.values()) {
