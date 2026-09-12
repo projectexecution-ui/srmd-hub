@@ -2,27 +2,37 @@
 
 // The register — every entry raised on the project, and who each one is with.
 //
-// Two renderings of the same list, as every screen in this app has: a wide
-// table from xl (its minimum width is 1,000px, and the workspace container
+// LAYOUT. Two renderings of the same list, as every screen in this app has: a
+// wide table from xl (its minimum width is 1,000px and the workspace container
 // gives 1,008px at 1280 — at md it overflowed on a laptop), and a stack of
 // cards below that. Touch a column here and change the card too.
+//
+// READING ORDER. A person opens this to answer one question — what needs me —
+// so the screen answers it in this order: the four figures, then the view
+// switch already set to their own list, then the rows. Overdue rows carry a
+// rail and a full red age bar, so lateness is a SHAPE before it is a number.
+//
+// GROUPING is the quiet power here. Fifty entries flat is a scroll; the same
+// fifty by assignee is a conversation with four people.
 
-import { useMemo, useState, useTransition } from 'react'
+import { useEffect, useMemo, useRef, useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
-import { ClipboardList, Search } from 'lucide-react'
-import { EmptyState } from '@/components/ui/empty-state'
+import { ClipboardList, Search, Plus } from 'lucide-react'
 import { MentionTextarea } from '@/components/mentions/MentionTextarea'
 import { formatDate, formatINR } from '@/lib/utils'
 import {
-  FILTER_LABEL, KINDS, KIND_BY_KEY, PRIORITY_LABEL, STATUS_LABEL,
-  applyFilter, daysOverdue, daysWaiting, defaultAssignee, defaultDueDate,
+  KINDS, KIND_BY_KEY, PRIORITY_LABEL, STATUS_LABEL,
+  applyFilter, daysBetween, daysOverdue, daysWaiting, defaultAssignee, defaultDueDate,
   isLive, sortRegister, summarise,
-  type Priority, type RegisterFilter, type RegisterRow, type Stakeholder, type ThreadKind,
+  type Priority, type RegisterFilter, type RegisterRow, type Stakeholder, type ThreadKind, type Tone,
 } from '@/lib/site-register/types'
 import { raiseEntry } from '@/lib/site-register/actions'
 import type { AssigneeOption, PersonOption } from '@/lib/site-register/queries'
 import { EntryDrawer } from './EntryDrawer'
-import { Counter, Pill, Who } from './ui'
+import {
+  Avatar, AgeBar, Button, Chip, EmptyPanel, Field, FIELD, Label, Metric, Modal,
+  Notice, Pill, SectionHead, Segmented, Status, SURFACE,
+} from './ui'
 
 export interface RegisterClientProps {
   projectId: string
@@ -34,7 +44,6 @@ export interface RegisterClientProps {
   canWrite: boolean
   people: PersonOption[]
   stakeholders: AssigneeOption[]
-  /** For the coverage hint when a discipline has nobody named. */
   stakeholderRecords: Stakeholder[]
   categories: Array<{ id: string; name: string; subs: Array<{ id: string; name: string }> }>
   disciplines: Array<{ id: string; name: string }>
@@ -43,216 +52,369 @@ export interface RegisterClientProps {
   openEntryId: string | null
 }
 
-const FILTERS: RegisterFilter[] = ['mine', 'overdue', 'live', 'cost', 'closed']
+type GroupBy = 'none' | 'assignee' | 'category' | 'kind'
+
+const GROUPS: Array<{ key: GroupBy; label: string }> = [
+  { key: 'none', label: 'No grouping' },
+  { key: 'assignee', label: 'By person' },
+  { key: 'category', label: 'By category' },
+  { key: 'kind', label: 'By type' },
+]
+
+/** The status a row shows, as one decision — used by the table, the card and
+ *  the drawer, so they can never disagree. */
+export function statusOf(r: RegisterRow): { tone: Tone; text: string; over: number } {
+  const over = daysOverdue(r.dueOn)
+  if (r.status === 'closed') return { tone: 'emerald', text: 'Closed', over: 0 }
+  if (r.status === 'cancelled') return { tone: 'slate', text: 'Cancelled', over: 0 }
+  if (over > 0) return { tone: 'rose', text: `Overdue ${over}d`, over }
+  if (r.status === 'responded') return { tone: 'sky', text: 'Responded', over: 0 }
+  return { tone: 'slate', text: STATUS_LABEL[r.status], over: 0 }
+}
 
 export function RegisterClient(props: RegisterClientProps) {
   const [filter, setFilter] = useState<RegisterFilter>(props.initialFilter)
-  const [kind, setKind] = useState<ThreadKind | 'all'>('all')
+  const [kinds, setKinds] = useState<Set<ThreadKind>>(new Set())
+  const [groupBy, setGroupBy] = useState<GroupBy>('none')
+  const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
   const [q, setQ] = useState('')
   const [open, setOpen] = useState<string | null>(props.openEntryId)
   const [raising, setRaising] = useState(false)
+  const [cursor, setCursor] = useState(-1)
+  const searchRef = useRef<HTMLInputElement>(null)
   const router = useRouter()
 
   const summary = useMemo(
     () => summarise(props.rows, props.myId, props.closedDurations),
     [props.rows, props.myId, props.closedDurations],
   )
+  const counts = useMemo(() => ({
+    mine: applyFilter(props.rows, 'mine', 'all', props.myId).length,
+    overdue: applyFilter(props.rows, 'overdue', 'all', props.myId).length,
+    live: applyFilter(props.rows, 'live', 'all', props.myId).length,
+    closed: applyFilter(props.rows, 'closed', 'all', props.myId).length,
+  }), [props.rows, props.myId])
 
   const shown = useMemo(() => {
-    const base = applyFilter(props.rows, filter, kind, props.myId)
+    const base = applyFilter(props.rows, filter, 'all', props.myId)
+      .filter(r => kinds.size === 0 || kinds.has(r.kind))
     const needle = q.trim().toLowerCase()
     const searched = needle
-      ? base.filter(r => [r.ref, r.title, r.categoryName, r.subCategoryName, r.assignedToName, r.location]
+      ? base.filter(r => [r.ref, r.title, r.categoryName, r.subCategoryName, r.assignedToName, r.location, r.raisedByName]
           .some(v => (v ?? '').toLowerCase().includes(needle)))
       : base
     return sortRegister(searched)
-  }, [props.rows, filter, kind, q, props.myId])
+  }, [props.rows, filter, kinds, q, props.myId])
+
+  // Grouped, in the order the groups should be worked: the reader's own first
+  // when grouping by person, otherwise most rows first.
+  const sections = useMemo(() => {
+    if (groupBy === 'none') return [{ key: 'all', label: '', rows: shown }]
+    const by = new Map<string, RegisterRow[]>()
+    for (const r of shown) {
+      const k = groupBy === 'assignee' ? (r.assignedToName ?? 'Unassigned')
+        : groupBy === 'category' ? (r.categoryName ?? 'No category')
+        : KIND_BY_KEY[r.kind].label
+      const arr = by.get(k)
+      if (arr) arr.push(r); else by.set(k, [r])
+    }
+    return [...by.entries()]
+      .map(([label, rows]) => ({ key: label, label, rows }))
+      .sort((a, b) => b.rows.length - a.rows.length || a.label.localeCompare(b.label))
+  }, [shown, groupBy])
+
+  const flat = useMemo(
+    () => sections.filter(s => !collapsed.has(s.key)).flatMap(s => s.rows),
+    [sections, collapsed],
+  )
+
+  // Keyboard: / to search, j/k to move, Enter to open, Escape to clear.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (open || raising) return
+      const el = e.target as HTMLElement | null
+      const typing = el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable)
+      if (e.key === '/' && !typing) { e.preventDefault(); searchRef.current?.focus(); return }
+      if (typing) return
+      if (e.key === 'j' || e.key === 'ArrowDown') { e.preventDefault(); setCursor(c => Math.min(flat.length - 1, c + 1)) }
+      else if (e.key === 'k' || e.key === 'ArrowUp') { e.preventDefault(); setCursor(c => Math.max(0, c - 1)) }
+      else if (e.key === 'Enter' && cursor >= 0 && flat[cursor]) { e.preventDefault(); setOpen(flat[cursor].id) }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [flat, cursor, open, raising])
+
+  useEffect(() => {
+    if (cursor < 0 || !flat[cursor]) return
+    document.getElementById(`entry-${flat[cursor].id}`)?.scrollIntoView({ block: 'nearest' })
+  }, [cursor, flat])
+
+  const toggleKind = (k: ThreadKind) => {
+    const next = new Set(kinds)
+    if (next.has(k)) next.delete(k); else next.add(k)
+    setKinds(next)
+    setCursor(-1)
+  }
+  const toggleSection = (key: string) => {
+    const next = new Set(collapsed)
+    if (next.has(key)) next.delete(key); else next.add(key)
+    setCollapsed(next)
+  }
 
   return (
-    <section className="space-y-3">
-      <header className="flex flex-wrap items-start gap-x-3 gap-y-1">
-        <div>
-          <h2 className="text-sm font-bold text-gray-900">Discussions</h2>
-          <p className="text-xs text-gray-500">
-            Site issues, requests for information, instructions, decisions and non-conformances on{' '}
-            {props.scopeAll ? 'every project you can see' : props.projectName}. Each one is assigned to a person, with a date it is due back.
-          </p>
-        </div>
-        {props.canWrite && (
-          <button
-            onClick={() => setRaising(true)}
-            className="ml-auto rounded-lg bg-indigo-700 px-3.5 text-xs font-semibold text-white hover:bg-indigo-800 min-h-[44px]"
-          >
-            New entry
-          </button>
+    <section className="space-y-3.5">
+      <SectionHead
+        title="Discussions"
+        subtitle={<>Site issues, requests for information, instructions, decisions and non-conformances on{' '}
+          <b className="text-gray-700">{props.scopeAll ? 'every project you can see' : props.projectName}</b>. Each is assigned to one
+          person, with a date it is due back.</>}
+        actions={props.canWrite && (
+          <Button kind="primary" onClick={() => setRaising(true)}>
+            <Plus className="h-3.5 w-3.5" /> New entry
+          </Button>
         )}
-      </header>
+      />
 
-      {/* Counters — what a person needs to know before reading a single row. */}
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
-        <Counter label="Assigned to me" value={summary.mine} note={summary.mine ? 'open with you now' : 'nothing with you'} emphasise />
-        <Counter label="Overdue" value={summary.overdue} tone={summary.overdue ? 'rose' : 'slate'} note={`past the response date`} />
-        <Counter label="Open" value={summary.live} note="still to be settled" />
-        <Counter label="Cost impact" value={summary.costTotal ? formatINR(summary.costTotal) : '—'} tone="amber" note={`${summary.costCount} entr${summary.costCount === 1 ? 'y' : 'ies'} flagged`} />
-        <Counter label="Average days to close" value={summary.avgDaysToClose ?? '—'} note={summary.avgDaysToClose == null ? 'nothing closed yet' : 'over everything closed'} />
+      {/* The four figures, in the order they are acted on. */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5">
+        <Metric
+          label="Assigned to me" value={summary.mine} lead
+          note={summary.mine ? 'open with you now' : 'nothing waiting on you'}
+          bar={summary.live > 0 ? { of: summary.live, value: summary.mine } : undefined}
+        />
+        <Metric
+          label="Overdue" value={summary.overdue} tone={summary.overdue ? 'rose' : 'slate'}
+          note={summary.overdue ? 'past the response date' : 'everything within its date'}
+          bar={summary.live > 0 ? { of: summary.live, value: summary.overdue } : undefined}
+        />
+        <Metric
+          label="Cost impact" value={summary.costTotal ? formatINR(summary.costTotal) : '—'} tone="amber"
+          note={`${summary.costCount} entr${summary.costCount === 1 ? 'y' : 'ies'} carrying a figure`}
+        />
+        <Metric
+          label="Average days to close" value={summary.avgDaysToClose ?? '—'}
+          note={summary.avgDaysToClose == null ? 'nothing closed yet' : 'over everything closed'}
+        />
       </div>
 
-      {/* Filters. The kind row first, because that is how people think about
-          what they are looking for; the state row second. */}
-      <div className="rounded-lg border border-gray-200 bg-white p-2.5 space-y-2">
-        <div className="flex flex-wrap items-center gap-1.5">
-          <Chip on={kind === 'all'} onClick={() => setKind('all')}>All kinds</Chip>
-          {KINDS.map(k => (
-            <Chip key={k.key} on={kind === k.key} onClick={() => setKind(k.key)}>{k.label}</Chip>
-          ))}
-        </div>
-        <div className="flex flex-wrap items-center gap-1.5">
-          {FILTERS.map(f => (
-            <Chip key={f} on={filter === f} dark onClick={() => setFilter(f)}>{FILTER_LABEL[f]}</Chip>
-          ))}
-          <label className="relative ml-auto">
-            <Search className="h-3.5 w-3.5 text-gray-400 absolute left-2 top-1/2 -translate-y-1/2" />
+      {/* Command bar: the view, the search, and the two shaping controls. */}
+      <div className={`${SURFACE} p-2.5 space-y-2.5`}>
+        <div className="flex flex-wrap items-center gap-2">
+          <Segmented
+            value={filter}
+            onChange={v => { setFilter(v); setCursor(-1) }}
+            options={[
+              { key: 'mine', label: 'Assigned to me', count: counts.mine, tone: 'sky' },
+              { key: 'overdue', label: 'Overdue', count: counts.overdue, tone: 'rose' },
+              { key: 'live', label: 'Open', count: counts.live },
+              { key: 'closed', label: 'Closed', count: counts.closed },
+            ]}
+          />
+          <label className="relative ml-auto min-w-[200px] flex-1 sm:flex-none sm:w-72">
+            <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-gray-400" />
             <input
+              ref={searchRef}
               value={q}
-              onChange={e => setQ(e.target.value)}
-              placeholder="Search reference, subject, person"
+              onChange={e => { setQ(e.target.value); setCursor(-1) }}
+              placeholder="Search reference, subject, person   /"
               aria-label="Search the register"
-              className="w-full sm:w-64 text-[12px] border border-gray-300 rounded-md pl-7 pr-2 py-1.5 min-h-[36px]"
+              className={`${FIELD} pl-8 text-[12px] min-h-[36px]`}
             />
           </label>
-          <span className="text-[12px] text-gray-500 tabular-nums">{shown.length} shown</span>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-1.5">
+          {KINDS.map(k => (
+            <Chip key={k.key} on={kinds.has(k.key)} onClick={() => toggleKind(k.key)}>
+              {k.label}
+            </Chip>
+          ))}
+          {/* Its own line below the type chips until there is room beside
+              them — at 760px the two rows ran together and the group control
+              read as a sixth chip. */}
+          <div className="flex basis-full items-center gap-2 sm:basis-auto sm:ml-auto">
+            <Label>Group</Label>
+            <Segmented size="sm" value={groupBy} onChange={setGroupBy} options={GROUPS} />
+          </div>
         </div>
       </div>
 
       {shown.length === 0 ? (
-        <div className="rounded-lg border border-gray-200 bg-white">
-          <EmptyState
-            icon={<ClipboardList className="h-8 w-8" />}
-            title={props.rows.length === 0 ? 'Nothing has been raised yet' : 'Nothing matches this filter'}
-            description={props.rows.length === 0
-              ? 'The first site issue, query or instruction raised on this project will appear here, with whoever it is assigned to and the date it is due back.'
-              : 'Try a wider filter, or clear the search.'}
-            action={props.rows.length === 0 && props.canWrite
-              ? <button onClick={() => setRaising(true)} className="rounded-lg bg-indigo-700 px-3.5 text-xs font-semibold text-white min-h-[44px]">Raise the first entry</button>
-              : <button onClick={() => { setFilter('live'); setKind('all'); setQ('') }} className="text-[13px] font-semibold text-indigo-700">Show every open entry</button>}
-          />
-        </div>
+        <EmptyPanel
+          icon={<ClipboardList className="h-5 w-5" />}
+          title={props.rows.length === 0 ? 'Nothing has been raised yet' : 'Nothing matches this view'}
+          description={props.rows.length === 0
+            ? 'The first site issue, query or instruction raised here will appear with whoever it is assigned to and the date it is due back.'
+            : 'Try a wider view, clear the type filters, or empty the search.'}
+          action={props.rows.length === 0 && props.canWrite
+            ? <Button kind="primary" onClick={() => setRaising(true)}>Raise the first entry</Button>
+            : <Button onClick={() => { setFilter('live'); setKinds(new Set()); setQ('') }}>Show every open entry</Button>}
+        />
       ) : (
-        <>
-          {/* ── Desktop ─────────────────────────────────────────────────── */}
-          <div className="hidden xl:block rounded-lg border border-gray-200 bg-white overflow-hidden">
-            <div className="overflow-auto max-h-[620px]">
-              <table className="w-full text-[13px]" style={{ minWidth: 1000 }}>
-                <thead className="sticky top-0 z-10 bg-gray-50 border-b border-gray-200">
-                  <tr className="text-left text-[11px] uppercase tracking-wide text-gray-500">
-                    <th className="px-3 py-2 font-semibold w-[132px]">Reference</th>
-                    <th className="px-3 py-2 font-semibold">Subject</th>
-                    <th className="px-3 py-2 font-semibold w-[190px]">Category</th>
-                    <th className="px-3 py-2 font-semibold w-[180px]">Assigned to</th>
-                    <th className="px-3 py-2 font-semibold w-[104px]">Response due</th>
-                    <th className="px-3 py-2 font-semibold w-[110px] text-right">Cost impact</th>
-                    <th className="px-3 py-2 font-semibold w-[116px]">Status</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-100">
-                  {shown.map(r => {
-                    const over = daysOverdue(r.dueOn)
-                    const k = KIND_BY_KEY[r.kind]
-                    return (
-                      <tr
-                        key={r.id}
-                        onClick={() => setOpen(r.id)}
-                        className={`cursor-pointer hover:bg-indigo-50/40 ${over > 0 && isLive(r.status) ? 'bg-rose-50/40' : ''}`}
-                      >
-                        <td className="px-3 py-2.5 align-top"><Pill tone={k.tone} strong>{r.ref}</Pill></td>
-                        <td className="px-3 py-2.5 align-top">
-                          <p className="font-semibold text-gray-900 leading-snug">{r.title}</p>
-                          <p className="text-[11px] text-gray-500 mt-0.5">
-                            {k.label} · raised by {r.raisedByName ?? 'someone'}
-                            {r.priority === 'critical' && <span className="text-rose-700 font-semibold"> · Critical</span>}
-                            {r.escalated && <span className="text-amber-700 font-semibold"> · escalated</span>}
-                            {props.scopeAll && <span className="text-indigo-700 font-semibold"> · {r.projectName}</span>}
-                          </p>
-                        </td>
-                        <td className="px-3 py-2.5 align-top text-[12px] text-gray-600">
-                          <p className="text-gray-800">{r.categoryName ?? '—'}</p>
-                          {r.subCategoryName && <p>{r.subCategoryName}</p>}
-                          {r.location && <p className="text-gray-400">{r.location}</p>}
-                        </td>
-                        <td className="px-3 py-2.5 align-top">
-                          <div className="flex items-start gap-2">
-                            <Who name={r.assignedToName} />
-                            <div>
-                              <p className="text-[12px] font-semibold text-gray-800 leading-tight">{r.assignedToName ?? 'Unassigned'}</p>
-                              {isLive(r.status) && (
-                                <p className={`text-[11px] ${over > 0 ? 'text-rose-700 font-semibold' : 'text-gray-500'}`}>
-                                  {daysWaiting(r.assignedAt) === 0 ? 'since today' : `${daysWaiting(r.assignedAt)} days`}
-                                </p>
-                              )}
-                            </div>
-                          </div>
-                        </td>
-                        <td className={`px-3 py-2.5 align-top text-[12px] tabular-nums ${over > 0 && isLive(r.status) ? 'text-rose-700 font-bold' : 'text-gray-700'}`}>
-                          {r.dueOn ? formatDate(r.dueOn) : '—'}
-                        </td>
-                        <td className={`px-3 py-2.5 align-top text-[12px] tabular-nums text-right ${r.costImpact ? 'text-amber-800 font-semibold' : 'text-gray-300'}`}>
-                          {r.costImpact ? formatINR(r.costImpact) : '—'}
-                        </td>
-                        <td className="px-3 py-2.5 align-top">
-                          <Pill tone={r.status === 'closed' ? 'emerald' : over > 0 ? 'rose' : r.status === 'responded' ? 'sky' : 'slate'}>
-                            {over > 0 && isLive(r.status) ? `Overdue ${over}d` : STATUS_LABEL[r.status]}
-                          </Pill>
-                        </td>
-                      </tr>
-                    )
-                  })}
-                </tbody>
-              </table>
-            </div>
-          </div>
+        <div className="space-y-2.5">
+          {sections.map(section => {
+            const isCollapsed = collapsed.has(section.key)
+            return (
+              <div key={section.key} className={groupBy === 'none' ? '' : 'space-y-1.5'}>
+                {groupBy !== 'none' && (
+                  <button
+                    onClick={() => toggleSection(section.key)}
+                    aria-expanded={!isCollapsed}
+                    className="flex w-full items-center gap-2 px-1 py-1 text-left min-h-[36px]"
+                  >
+                    <span className="text-gray-400 text-[11px] w-3">{isCollapsed ? '▸' : '▾'}</span>
+                    {groupBy === 'assignee' && <Avatar name={section.label} />}
+                    <span className="text-[13px] font-semibold text-gray-800">{section.label}</span>
+                    <span className="text-[11px] text-gray-400 tabular-nums">{section.rows.length}</span>
+                    {section.rows.some(r => daysOverdue(r.dueOn) > 0 && isLive(r.status)) && (
+                      <Pill tone="rose">{section.rows.filter(r => daysOverdue(r.dueOn) > 0 && isLive(r.status)).length} overdue</Pill>
+                    )}
+                    <span className="ml-auto h-px flex-1 bg-gray-100" aria-hidden />
+                  </button>
+                )}
 
-          {/* ── Phone and tablet ────────────────────────────────────────── */}
-          <div className="xl:hidden rounded-lg border border-gray-200 bg-white divide-y divide-gray-100 overflow-hidden">
-            {shown.map(r => {
-              const over = daysOverdue(r.dueOn)
-              const k = KIND_BY_KEY[r.kind]
-              return (
-                <button
-                  key={r.id}
-                  onClick={() => setOpen(r.id)}
-                  className={`w-full text-left px-3.5 py-3 hover:bg-gray-50 min-h-[44px] ${over > 0 && isLive(r.status) ? 'border-l-2 border-l-rose-500' : ''}`}
-                >
-                  <div className="flex flex-wrap items-center gap-1.5">
-                    <Pill tone={k.tone} strong>{r.ref}</Pill>
-                    {r.priority === 'critical' && <Pill tone="rose">Critical</Pill>}
-                    <Pill tone={r.status === 'closed' ? 'emerald' : over > 0 ? 'rose' : r.status === 'responded' ? 'sky' : 'slate'}>
-                      {over > 0 && isLive(r.status) ? `Overdue ${over}d` : STATUS_LABEL[r.status]}
-                    </Pill>
-                    {props.scopeAll && <span className="text-[11px] font-semibold text-indigo-700">{r.projectName}</span>}
-                  </div>
-                  <p className="text-[13px] font-semibold text-gray-900 mt-1.5 leading-snug">{r.title}</p>
-                  <p className="text-[12px] text-gray-500 mt-0.5">
-                    {[r.categoryName, r.subCategoryName].filter(Boolean).join(' › ') || k.label}
-                    {r.location ? ` · ${r.location}` : ''}
-                  </p>
-                  <div className="flex items-center gap-2 mt-2">
-                    <Who name={r.assignedToName} />
-                    <p className="text-[12px] text-gray-600">
-                      {r.assignedToName ?? 'Unassigned'}
-                      {isLive(r.status) && ` · ${daysWaiting(r.assignedAt) === 0 ? 'today' : `${daysWaiting(r.assignedAt)}d`}`}
-                    </p>
-                    <p className={`ml-auto text-[12px] tabular-nums ${over > 0 && isLive(r.status) ? 'text-rose-700 font-bold' : 'text-gray-500'}`}>
-                      {r.dueOn ? `due ${formatDate(r.dueOn)}` : 'no date'}
-                    </p>
-                  </div>
-                  {r.costImpact ? (
-                    <p className="text-[12px] text-amber-800 font-semibold tabular-nums mt-1">Cost impact {formatINR(r.costImpact)}</p>
-                  ) : null}
-                </button>
-              )
-            })}
-          </div>
-        </>
+                {!isCollapsed && (
+                  <>
+                    {/* ── Desktop ─────────────────────────────────────── */}
+                    <div className={`hidden xl:block overflow-hidden ${SURFACE}`}>
+                      <div className="overflow-auto max-h-[640px]">
+                        <table className="w-full text-[13px]" style={{ minWidth: 1000 }}>
+                          <thead className="sticky top-0 z-10 bg-gray-50/95 backdrop-blur">
+                            <tr className="text-left text-[11px] uppercase tracking-[0.06em] text-gray-500 border-b border-gray-200">
+                              <th className="px-3 py-2 font-semibold w-[136px]">Reference</th>
+                              <th className="px-3 py-2 font-semibold">Subject</th>
+                              <th className="px-3 py-2 font-semibold w-[186px]">Category</th>
+                              <th className="px-3 py-2 font-semibold w-[178px]">Assigned to</th>
+                              <th className="px-3 py-2 font-semibold w-[112px]">Response due</th>
+                              <th className="px-3 py-2 font-semibold w-[108px] text-right">Cost impact</th>
+                              <th className="px-3 py-2 font-semibold w-[116px]">Status</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-gray-100">
+                            {section.rows.map(r => {
+                              const k = KIND_BY_KEY[r.kind]
+                              const st = statusOf(r)
+                              const waiting = daysWaiting(r.assignedAt)
+                              const allowed = r.dueOn && r.assignedAt
+                                ? Math.max(1, daysBetween(r.assignedAt.slice(0, 10), r.dueOn.slice(0, 10)))
+                                : k.defaultDays
+                              const focused = flat[cursor]?.id === r.id
+                              return (
+                                <tr
+                                  key={r.id}
+                                  id={`entry-${r.id}`}
+                                  onClick={() => setOpen(r.id)}
+                                  className={`group cursor-pointer transition-colors ${focused ? 'bg-indigo-50/70' : 'hover:bg-gray-50/80'}`}
+                                >
+                                  <td className="relative px-3 py-2.5 align-top">
+                                    {st.over > 0 && <span className="absolute left-0 top-1.5 bottom-1.5 w-[3px] rounded-r bg-rose-500" aria-hidden />}
+                                    <Pill tone={k.tone} strong>{r.ref}</Pill>
+                                  </td>
+                                  <td className="px-3 py-2.5 align-top">
+                                    <p className="font-semibold text-gray-900 leading-snug">{r.title}</p>
+                                    <p className="mt-0.5 text-[11px] text-gray-500">
+                                      {k.label} · raised by {r.raisedByName ?? 'someone'}
+                                      {r.priority === 'critical' && <span className="text-rose-700 font-semibold"> · Critical</span>}
+                                      {r.priority === 'high' && <span className="text-amber-700 font-semibold"> · High</span>}
+                                      {r.escalated && <span className="text-amber-700 font-semibold"> · escalated</span>}
+                                      {props.scopeAll && <span className="text-indigo-700 font-semibold"> · {r.projectName}</span>}
+                                      {r.posts > 1 && <span className="text-gray-400"> · {r.posts} replies</span>}
+                                    </p>
+                                  </td>
+                                  <td className="px-3 py-2.5 align-top text-[12px] text-gray-600">
+                                    <p className="text-gray-800">{r.categoryName ?? '—'}</p>
+                                    {r.subCategoryName && <p className="truncate">{r.subCategoryName}</p>}
+                                    {r.location && <p className="text-gray-400">{r.location}</p>}
+                                  </td>
+                                  <td className="px-3 py-2.5 align-top">
+                                    <div className="flex items-start gap-2">
+                                      <Avatar name={r.assignedToName} />
+                                      <div className="min-w-0">
+                                        <p className="text-[12px] font-semibold text-gray-800 leading-tight truncate">
+                                          {r.assignedToName ?? 'Unassigned'}
+                                        </p>
+                                        {isLive(r.status) && (
+                                          <>
+                                            <p className={`text-[11px] ${st.over > 0 ? 'text-rose-700 font-semibold' : 'text-gray-500'}`}>
+                                              {waiting === 0 ? 'since today' : `${waiting} day${waiting === 1 ? '' : 's'}`}
+                                            </p>
+                                            <AgeBar elapsed={waiting} allowed={allowed} over={st.over > 0} />
+                                          </>
+                                        )}
+                                      </div>
+                                    </div>
+                                  </td>
+                                  <td className={`px-3 py-2.5 align-top text-[12px] tabular-nums ${st.over > 0 ? 'text-rose-700 font-bold' : 'text-gray-700'}`}>
+                                    {r.dueOn ? formatDate(r.dueOn) : '—'}
+                                  </td>
+                                  <td className={`px-3 py-2.5 align-top text-right text-[12px] tabular-nums ${r.costImpact ? 'text-amber-800 font-semibold' : 'text-gray-300'}`}>
+                                    {r.costImpact ? formatINR(r.costImpact) : '—'}
+                                  </td>
+                                  <td className="px-3 py-2.5 align-top"><Status tone={st.tone}>{st.text}</Status></td>
+                                </tr>
+                              )
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+
+                    {/* ── Phone and tablet ───────────────────────────── */}
+                    <div className={`xl:hidden overflow-hidden divide-y divide-gray-100 ${SURFACE}`}>
+                      {section.rows.map(r => {
+                        const k = KIND_BY_KEY[r.kind]
+                        const st = statusOf(r)
+                        const waiting = daysWaiting(r.assignedAt)
+                        return (
+                          <button
+                            key={r.id}
+                            id={`entry-${r.id}`}
+                            onClick={() => setOpen(r.id)}
+                            className="relative w-full px-3.5 py-3 text-left hover:bg-gray-50 min-h-[44px]"
+                          >
+                            {st.over > 0 && <span className="absolute left-0 top-2 bottom-2 w-[3px] rounded-r bg-rose-500" aria-hidden />}
+                            <div className="flex flex-wrap items-center gap-1.5">
+                              <Pill tone={k.tone} strong>{r.ref}</Pill>
+                              {r.priority === 'critical' && <Pill tone="rose">Critical</Pill>}
+                              <span className="ml-auto"><Status tone={st.tone}>{st.text}</Status></span>
+                            </div>
+                            <p className="mt-1.5 text-[13px] font-semibold text-gray-900 leading-snug">{r.title}</p>
+                            <p className="mt-0.5 text-[12px] text-gray-500">
+                              {[r.categoryName, r.subCategoryName].filter(Boolean).join(' › ') || k.label}
+                              {r.location ? ` · ${r.location}` : ''}
+                              {props.scopeAll ? ` · ${r.projectName}` : ''}
+                            </p>
+                            <div className="mt-2 flex items-center gap-2">
+                              <Avatar name={r.assignedToName} />
+                              <p className="text-[12px] text-gray-600 truncate">
+                                {r.assignedToName ?? 'Unassigned'}
+                                {isLive(r.status) && ` · ${waiting === 0 ? 'today' : `${waiting}d`}`}
+                              </p>
+                              <p className={`ml-auto text-[12px] tabular-nums shrink-0 ${st.over > 0 ? 'text-rose-700 font-bold' : 'text-gray-500'}`}>
+                                {r.dueOn ? `due ${formatDate(r.dueOn)}` : 'no date'}
+                              </p>
+                            </div>
+                            {r.costImpact ? (
+                              <p className="mt-1 text-[12px] font-semibold text-amber-800 tabular-nums">
+                                Cost impact {formatINR(r.costImpact)}
+                              </p>
+                            ) : null}
+                          </button>
+                        )
+                      })}
+                    </div>
+                  </>
+                )}
+              </div>
+            )
+          })}
+
+          <p className="px-1 text-[11px] text-gray-400">
+            {shown.length} shown · <b className="font-semibold text-gray-500">/</b> to search,{' '}
+            <b className="font-semibold text-gray-500">j</b> / <b className="font-semibold text-gray-500">k</b> to move,{' '}
+            <b className="font-semibold text-gray-500">Enter</b> to open
+          </p>
+        </div>
       )}
 
       {open && (
@@ -268,31 +430,14 @@ export function RegisterClient(props: RegisterClientProps) {
       )}
 
       {raising && (
-        <RaiseForm
-          {...props}
-          onClose={() => setRaising(false)}
-          onDone={id => { setRaising(false); setOpen(id) }}
-        />
+        <RaiseForm {...props} onClose={() => setRaising(false)} onDone={id => { setRaising(false); setOpen(id) }} />
       )}
     </section>
   )
 }
 
-function Chip({ on, dark, onClick, children }: { on: boolean; dark?: boolean; onClick: () => void; children: React.ReactNode }) {
-  const active = dark ? 'bg-gray-900 border-gray-900 text-white' : 'bg-indigo-600 border-indigo-600 text-white'
-  return (
-    <button
-      onClick={onClick}
-      aria-pressed={on}
-      className={`px-2.5 py-1.5 rounded-md text-[12px] font-semibold border min-h-[36px] ${on ? active : 'bg-white border-gray-300 text-gray-600 hover:bg-gray-50'}`}
-    >
-      {children}
-    </button>
-  )
-}
-
 /* ── Raising ─────────────────────────────────────────────────────────────
- * Two steps on purpose. Choosing the kind first is what lets the rest of the
+ * Two steps on purpose. Choosing the type first is what lets the rest of the
  * form be short: it sets the response allowance, the default priority and the
  * words on the description box. Nobody types a reference number.
  */
@@ -325,8 +470,8 @@ function RaiseForm({
   }
 
   // Addressing it is the step people get wrong, so the project's own
-  // Stakeholders answer it: the named lead for that discipline is filled in
-  // the moment a discipline is chosen.
+  // Stakeholders answer it: the named lead for that discipline fills in the
+  // moment a discipline is chosen.
   const pickDiscipline = (id: string) => {
     setDisciplineId(id)
     const lead = defaultAssignee(id || null, stakeholderRecords)
@@ -338,10 +483,7 @@ function RaiseForm({
     const isStake = assigned.startsWith('s:')
     start(async () => {
       const res = await raiseEntry({
-        projectId,
-        kind,
-        title,
-        body,
+        projectId, kind, title, body,
         disciplineId: disciplineId || null,
         categoryId: categoryId || null,
         subCategoryId: subId || null,
@@ -360,150 +502,126 @@ function RaiseForm({
   }
 
   return (
-    <>
-      <div className="fixed inset-0 bg-gray-900/40 z-40" onClick={onClose} aria-hidden />
-      <div className="fixed inset-0 z-50 grid place-items-center p-3 pointer-events-none">
-        <div className="bg-white rounded-xl w-full max-w-[620px] max-h-[88vh] overflow-y-auto shadow-2xl pointer-events-auto">
-          <div className="px-5 py-4 border-b border-gray-200 flex items-start gap-3 sticky top-0 bg-white z-10">
-            <div>
-              <p className="text-[15px] font-bold text-gray-900">New entry</p>
-              <p className="text-[12px] text-gray-500">
-                {kind ? KIND_BY_KEY[kind].label : 'Choose what it is. Everything after that is short.'}
+    <Modal
+      title={kind ? KIND_BY_KEY[kind].label : 'New entry'}
+      subtitle={kind ? 'Four fields and it is raised.' : 'Choose what it is — everything after that is short.'}
+      onClose={onClose}
+      width="lg"
+    >
+      {!kind ? (
+        <div className="grid sm:grid-cols-2 gap-2">
+          {KINDS.map(k => (
+            <button
+              key={k.key}
+              onClick={() => pickKind(k.key)}
+              className={`group rounded-xl bg-white p-3.5 text-left ring-1 ring-gray-200 transition-all hover:ring-indigo-300 hover:shadow-[0_2px_8px_rgba(16,24,40,0.06)] min-h-[44px]`}
+            >
+              <div className="flex items-center gap-2">
+                <Pill tone={k.tone} strong>{k.code}</Pill>
+                <p className="text-[13px] font-semibold text-gray-900">{k.label}</p>
+              </div>
+              <p className="mt-1.5 text-[12px] leading-relaxed text-gray-600">{k.purpose}</p>
+              <p className="mt-1.5 text-[11px] text-gray-400">
+                Response in {k.defaultDays} working day{k.defaultDays === 1 ? '' : 's'}
               </p>
-            </div>
-            <button onClick={onClose} className="ml-auto text-gray-400 text-xl leading-none px-2 min-h-[44px]" aria-label="Close">&times;</button>
+            </button>
+          ))}
+        </div>
+      ) : (
+        <div className="space-y-3.5">
+          {error && <Notice>{error}</Notice>}
+
+          <Field label="Subject">
+            <input value={title} onChange={e => setTitle(e.target.value)} maxLength={200}
+              placeholder="One line — what this is about" className={FIELD} />
+          </Field>
+
+          <Field label="Description">
+            <MentionTextarea value={body} onChange={(v, ids) => { setBody(v); setMentions(ids) }}
+              rows={4} maxLength={8000}
+              placeholder={kind === 'instruction' ? 'What is to be done or stopped, and by when' : 'What was seen, and what is needed'} />
+          </Field>
+
+          <div className="grid sm:grid-cols-2 gap-3">
+            <Field label="Category">
+              <select value={categoryId} onChange={e => { setCategoryId(e.target.value); setSubId('') }} className={FIELD}>
+                <option value="">Not tied to one</option>
+                {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+              </select>
+            </Field>
+            <Field label="Sub-category">
+              <select value={subId} onChange={e => setSubId(e.target.value)} disabled={!subs.length}
+                className={`${FIELD} disabled:bg-gray-50 disabled:text-gray-400`}>
+                <option value="">{subs.length ? 'Not tied to one' : 'Choose a category first'}</option>
+                {subs.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+              </select>
+            </Field>
+            <Field label="Discipline">
+              <select value={disciplineId} onChange={e => pickDiscipline(e.target.value)} className={FIELD}>
+                <option value="">None</option>
+                {disciplines.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
+              </select>
+            </Field>
+            <Field label="Location on site">
+              <input value={location} onChange={e => setLocation(e.target.value)} placeholder="Block, floor or area" className={FIELD} />
+            </Field>
           </div>
 
-          {!kind ? (
-            <div className="p-4 grid sm:grid-cols-2 gap-2">
-              {KINDS.map(k => (
-                <button
-                  key={k.key}
-                  onClick={() => pickKind(k.key)}
-                  className="text-left rounded-lg border border-gray-200 bg-white p-3 hover:border-indigo-300 hover:bg-indigo-50/40 min-h-[44px]"
-                >
-                  <p className="text-[13px] font-bold text-gray-900">{k.label}</p>
-                  <p className="text-[12px] text-gray-600 mt-0.5 leading-snug">{k.purpose}</p>
-                  <p className="text-[11px] text-gray-400 mt-1">Reference {k.code} · response in {k.defaultDays} working day{k.defaultDays === 1 ? '' : 's'}</p>
-                </button>
-              ))}
-            </div>
-          ) : (
-            <div className="p-4 space-y-3">
-              {error && <p className="rounded border border-rose-200 bg-rose-50 px-3 py-2 text-[12px] text-rose-800">{error}</p>}
-
-              <Field label="Subject">
-                <input value={title} onChange={e => setTitle(e.target.value)} maxLength={200}
-                  placeholder="One line — what this is about"
-                  className="w-full text-[13px] border border-gray-300 rounded px-2 py-2 min-h-[40px]" />
-              </Field>
-
-              <Field label="Description">
-                <MentionTextarea value={body} onChange={(v, ids) => { setBody(v); setMentions(ids) }}
-                  rows={4} maxLength={8000}
-                  placeholder={kind === 'instruction' ? 'What is to be done or stopped, and by when' : 'What was seen, and what is needed'} />
-              </Field>
-
-              <div className="grid sm:grid-cols-2 gap-3">
-                <Field label="Category">
-                  <select value={categoryId} onChange={e => { setCategoryId(e.target.value); setSubId('') }}
-                    className="w-full text-[13px] border border-gray-300 rounded px-2 py-2 bg-white min-h-[40px]">
-                    <option value="">Not tied to one</option>
-                    {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-                  </select>
-                </Field>
-                <Field label="Sub-category">
-                  <select value={subId} onChange={e => setSubId(e.target.value)} disabled={!subs.length}
-                    className="w-full text-[13px] border border-gray-300 rounded px-2 py-2 bg-white min-h-[40px] disabled:bg-gray-50">
-                    <option value="">{subs.length ? 'Not tied to one' : 'Choose a category first'}</option>
-                    {subs.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-                  </select>
-                </Field>
-                <Field label="Discipline">
-                  <select value={disciplineId} onChange={e => pickDiscipline(e.target.value)}
-                    className="w-full text-[13px] border border-gray-300 rounded px-2 py-2 bg-white min-h-[40px]">
-                    <option value="">None</option>
-                    {disciplines.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
-                  </select>
-                </Field>
-                <Field label="Location on site">
-                  <input value={location} onChange={e => setLocation(e.target.value)} placeholder="Block, floor or area"
-                    className="w-full text-[13px] border border-gray-300 rounded px-2 py-2 min-h-[40px]" />
-                </Field>
-              </div>
-
-              <Field label="Assigned to" hint="Filled in from this project's Stakeholders when a discipline is chosen.">
-                <select value={assigned} onChange={e => setAssigned(e.target.value)}
-                  className="w-full text-[13px] border border-gray-300 rounded px-2 py-2 bg-white min-h-[40px]">
-                  <option value="">Choose a person or firm…</option>
-                  <optgroup label="CT Hub users">
-                    {people.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-                  </optgroup>
-                  {stakeholders.length > 0 && (
-                    <optgroup label="Project stakeholders">
-                      {stakeholders.map(s => (
-                        <option key={s.id} value={`s:${s.id}`}>{s.name}{s.discipline ? ` — ${s.discipline}` : ''}</option>
-                      ))}
-                    </optgroup>
-                  )}
-                </select>
-              </Field>
-
-              <div className="grid sm:grid-cols-2 gap-3">
-                <Field label="Response due">
-                  <input type="date" value={due} onChange={e => setDue(e.target.value)}
-                    className="w-full text-[13px] border border-gray-300 rounded px-2 py-2 min-h-[40px]" />
-                </Field>
-                <Field label="Priority">
-                  <select value={priority} onChange={e => setPriority(e.target.value as Priority)}
-                    className="w-full text-[13px] border border-gray-300 rounded px-2 py-2 bg-white min-h-[40px]">
-                    {(['low', 'normal', 'high', 'critical'] as Priority[]).map(p =>
-                      <option key={p} value={p}>{PRIORITY_LABEL[p]}</option>)}
-                  </select>
-                </Field>
-              </div>
-
-              {!showCost ? (
-                <button onClick={() => setShowCost(true)} className="text-[12px] font-semibold text-indigo-700">
-                  + This has a cost impact
-                </button>
-              ) : (
-                <div className="rounded-lg border border-amber-200 bg-amber-50/60 p-3 space-y-2">
-                  <Field label="Cost impact">
-                    <input value={cost} onChange={e => setCost(e.target.value)} inputMode="decimal" placeholder="Amount in rupees"
-                      className="w-full text-[13px] border border-gray-300 rounded px-2 py-2 min-h-[40px] tabular-nums" />
-                  </Field>
-                  <input value={costNote} onChange={e => setCostNote(e.target.value)} placeholder="What the figure covers"
-                    className="w-full text-[13px] border border-gray-300 rounded px-2 py-2 min-h-[40px]" />
-                  <p className="text-[11px] text-gray-600">No budget moves from here. It marks the entry so the money is not forgotten.</p>
-                </div>
+          <Field label="Assigned to" hint="Filled in from this project's Stakeholders the moment a discipline is chosen.">
+            <select value={assigned} onChange={e => setAssigned(e.target.value)} className={FIELD}>
+              <option value="">Choose a person or firm…</option>
+              <optgroup label="CT Hub users">
+                {people.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+              </optgroup>
+              {stakeholders.length > 0 && (
+                <optgroup label="Project stakeholders">
+                  {stakeholders.map(s => (
+                    <option key={s.id} value={`s:${s.id}`}>{s.name}{s.discipline ? ` — ${s.discipline}` : ''}</option>
+                  ))}
+                </optgroup>
               )}
+            </select>
+          </Field>
 
-              <div className="flex items-center gap-2 pt-1">
-                <button onClick={() => setKind(null)} className="text-[12px] font-semibold text-gray-600 min-h-[40px]">Back</button>
-                <button
-                  onClick={submit}
-                  disabled={pending || !title.trim() || !body.trim() || !assigned}
-                  className="ml-auto rounded-lg bg-indigo-700 px-4 py-2 text-[13px] font-semibold text-white disabled:opacity-50 min-h-[44px]"
-                >
-                  {pending ? 'Saving…' : 'Raise it'}
-                </button>
-              </div>
-              {!assigned && <p className="text-[11px] text-gray-500 text-right">Choose who it is assigned to — an entry always has someone responsible.</p>}
+          <div className="grid sm:grid-cols-2 gap-3">
+            <Field label="Response due">
+              <input type="date" value={due} onChange={e => setDue(e.target.value)} className={FIELD} />
+            </Field>
+            <Field label="Priority">
+              <select value={priority} onChange={e => setPriority(e.target.value as Priority)} className={FIELD}>
+                {(['low', 'normal', 'high', 'critical'] as Priority[]).map(p =>
+                  <option key={p} value={p}>{PRIORITY_LABEL[p]}</option>)}
+              </select>
+            </Field>
+          </div>
+
+          {!showCost ? (
+            <button onClick={() => setShowCost(true)} className="text-[12px] font-semibold text-indigo-700 hover:underline">
+              + This has a cost impact
+            </button>
+          ) : (
+            <div className="rounded-xl bg-amber-50/60 p-3 ring-1 ring-amber-200 space-y-2">
+              <Field label="Cost impact">
+                <input value={cost} onChange={e => setCost(e.target.value)} inputMode="decimal"
+                  placeholder="Amount in rupees" className={`${FIELD} tabular-nums`} />
+              </Field>
+              <input value={costNote} onChange={e => setCostNote(e.target.value)}
+                placeholder="What the figure covers" className={FIELD} />
+              <p className="text-[11px] text-gray-600">No budget moves from here. It marks the entry so the money is not forgotten.</p>
             </div>
           )}
-        </div>
-      </div>
-    </>
-  )
-}
 
-function Field({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
-  return (
-    <div>
-      <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-500 mb-1">{label}</p>
-      {children}
-      {hint && <p className="text-[11px] text-gray-500 mt-1">{hint}</p>}
-    </div>
+          <div className="flex items-center gap-2 pt-1">
+            <Button kind="ghost" onClick={() => setKind(null)}>Back</Button>
+            <div className="ml-auto flex items-center gap-2">
+              {!assigned && <p className="text-[11px] text-gray-500">Choose who it is assigned to</p>}
+              <Button kind="primary" onClick={submit} disabled={pending || !title.trim() || !body.trim() || !assigned}>
+                {pending ? 'Saving…' : 'Raise it'}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+    </Modal>
   )
 }

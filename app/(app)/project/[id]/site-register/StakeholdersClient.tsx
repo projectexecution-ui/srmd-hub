@@ -1,23 +1,31 @@
 'use client'
 
-// Stakeholders — the people and firms on this project, grouped, with the
-// consultants' own order value read from IN4.
+// Stakeholders — the people and firms on this project, and what each one is
+// responsible for.
 //
-// The reading screen carries no configuration. Which disciplines the project
-// uses, who is on it and copying either elsewhere all live behind buttons that
-// only appear for someone who may use them, and each opens a panel over the
-// page rather than sitting on it.
+// A DIRECTORY, NOT A TABLE. Each person here is six short facts — name, part,
+// discipline, how to reach them, and whether they answer for their discipline
+// — and a table spends a whole row on that while making the phone version a
+// different screen. Cards carry all six, reflow from one column to three, and
+// are the same object on a phone as on a laptop.
+//
+// The coverage strip above the cards is the reason to open the tab at all: it
+// shows, at a glance, which disciplines have somebody and which have nobody.
+// Configuration stays behind buttons — Aksha, 12 Sep 2026: hidden, and shown
+// when required.
 
 import { useMemo, useState, useTransition } from 'react'
-import { Users } from 'lucide-react'
-import { EmptyState } from '@/components/ui/empty-state'
+import { Users, Mail, Phone, Star } from 'lucide-react'
 import { formatINR } from '@/lib/utils'
 import { ORG_LABEL, ORG_ORDER, type Discipline, type OrgKind, type Stakeholder } from '@/lib/site-register/types'
 import {
   applyCopy, planCopy, removeStakeholder, restoreStakeholder,
   saveStakeholder, setProjectDisciplines, type CopyPlanLine,
 } from '@/lib/site-register/actions'
-import { Counter, Pill, Who } from './ui'
+import {
+  Avatar, Button, EmptyPanel, Field, FIELD, Label, Metric, Modal,
+  Notice, Pill, SectionHead, Segmented, SURFACE,
+} from './ui'
 
 interface Party { id: number; kind: string; name: string; city: string | null }
 interface User { id: string; name: string; role: string; email: string | null }
@@ -32,7 +40,7 @@ export interface StakeholdersClientProps {
    * contractor-report module, which is off for contractor, engineer and
    * site_staff — so this tab can never show a contractor another contractor's
    * account while /reports refuses them. The figures are stripped on the
-   * server when false; this only decides whether the column exists.
+   * server when false; this only decides whether the card shows a footer.
    */
   canSeeMoney: boolean
   disciplines: Discipline[]
@@ -54,8 +62,8 @@ export function StakeholdersClient(props: StakeholdersClientProps) {
   const [editing, setEditing] = useState<Stakeholder | null>(null)
   const [showPast, setShowPast] = useState(false)
 
-  const active = props.people.filter(p => p.isActive)
-  const past = props.people.filter(p => !p.isActive)
+  const active = useMemo(() => props.people.filter(p => p.isActive), [props.people])
+  const past = useMemo(() => props.people.filter(p => !p.isActive), [props.people])
   const shown = useMemo(() => {
     const base = showPast ? props.people : active
     return group === 'all' ? base : base.filter(p => p.orgKind === group)
@@ -64,77 +72,93 @@ export function StakeholdersClient(props: StakeholdersClientProps) {
   const consultants = active.filter(p => p.orgKind === 'consultant')
   const committed = active.reduce((s, p) => s + (p.orderValue ?? 0), 0)
   const enabled = props.disciplines.filter(d => props.enabledIds.includes(d.id))
+  const coveredIds = new Set(active.filter(p => p.disciplineId).map(p => p.disciplineId as string))
 
   const openEdit = (p: Stakeholder | null) => { setEditing(p); setOverlay('person') }
 
   return (
-    <section className="space-y-3">
-      <header className="flex flex-wrap items-start gap-x-3 gap-y-2">
-        <div>
-          <h2 className="text-sm font-bold text-gray-900">Stakeholders</h2>
-          <p className="text-xs text-gray-500">
-            Everyone attached to {props.projectName} and their part in it. Consultants are a group here — their order value
-            comes from IN4 by the party each one is pinned to.
-          </p>
-        </div>
-        {props.canConfigure && (
-          <div className="ml-auto flex flex-wrap gap-1.5">
-            <button onClick={() => openEdit(null)} className="rounded-lg bg-indigo-700 px-3.5 text-xs font-semibold text-white hover:bg-indigo-800 min-h-[44px]">
-              Add a stakeholder
-            </button>
-            <button onClick={() => setOverlay('disciplines')} className="rounded-lg border border-gray-300 bg-white px-3 text-xs font-semibold text-gray-700 min-h-[44px]">
-              Disciplines
-            </button>
-            <button onClick={() => setOverlay('copy')} className="rounded-lg border border-gray-300 bg-white px-3 text-xs font-semibold text-gray-700 min-h-[44px]">
-              Copy to…
-            </button>
-          </div>
+    <section className="space-y-3.5">
+      <SectionHead
+        title="Stakeholders"
+        subtitle={<>Everyone attached to <b className="text-gray-700">{props.projectName}</b> and their part in it. Consultants are a
+          group here — each one pinned to its IN4 party, so what it has been ordered comes from IN4 rather than from anyone typing.</>}
+        actions={props.canConfigure && (
+          <>
+            <Button kind="primary" onClick={() => openEdit(null)}>Add a stakeholder</Button>
+            <Button onClick={() => setOverlay('disciplines')}>Disciplines</Button>
+            <Button onClick={() => setOverlay('copy')}>Copy to…</Button>
+          </>
         )}
-      </header>
+      />
 
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-        <Counter label="On the project" value={active.length} note={past.length ? `${past.length} no longer on it` : 'all current'} />
-        <Counter
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5">
+        <Metric label="On the project" value={active.length} lead
+          note={past.length ? `${past.length} no longer on it` : 'all current'} />
+        <Metric
           label="Disciplines in use"
           value={props.configured ? enabled.length : 'All'}
           note={props.configured ? `of ${props.disciplines.length} available` : 'not narrowed for this project yet'}
         />
-        <Counter label="Consultants" value={consultants.length} note={consultants.length ? 'appointed' : 'none appointed'} />
+        <Metric label="Covered" value={props.configured ? `${enabled.filter(d => coveredIds.has(d.id)).length}` : coveredIds.size}
+          tone={props.gaps.length ? 'amber' : 'emerald'}
+          note={props.gaps.length ? `${props.gaps.length} with nobody named` : 'every discipline has someone'}
+          bar={enabled.length ? { of: enabled.length, value: enabled.filter(d => coveredIds.has(d.id)).length } : undefined}
+        />
         {props.canSeeMoney
-          ? <Counter label="Committed by order" value={committed ? formatINR(committed) : '—'} note="from IN4, by party" tone="slate" />
-          : <Counter label="Pinned to IN4" value={active.filter(p => p.in4PartyId != null).length} note="their orders are on WO / PO" tone="slate" />}
+          ? <Metric label="Committed by order" value={committed ? formatINR(committed) : '—'} note="from IN4, by party" />
+          : <Metric label="Consultants" value={consultants.length} note={consultants.length ? 'appointed' : 'none appointed'} />}
       </div>
 
-      {/* The reason to open this tab: a discipline the project says it uses,
-          with nobody to send anything to. */}
-      {props.gaps.length > 0 && (
-        <div className="rounded-lg border border-amber-300 bg-amber-50 p-3.5">
-          <p className="text-[13px] font-bold text-amber-900">
-            {props.gaps.length === 1 ? 'One discipline has nobody named' : `${props.gaps.length} disciplines have nobody named`}
-          </p>
-          <p className="text-[12px] text-amber-900 mt-0.5">
-            An entry raised against {props.gaps.length === 1 ? 'it' : 'these'} has nowhere to go, so it stays with whoever raised it.
-          </p>
-          <div className="flex flex-wrap gap-1.5 mt-2">
-            {props.gaps.map(d => <Pill key={d.id} tone="amber">{d.name}</Pill>)}
+      {/* ── Coverage: the reason to open this tab ───────────────────────── */}
+      {props.configured && enabled.length > 0 && (
+        <div className={`${SURFACE} p-3.5`}>
+          <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+            <Label>Discipline coverage</Label>
+            {props.gaps.length > 0 && (
+              <p className="text-[12px] text-amber-800">
+                An entry raised against a discipline with nobody named has nowhere to go — it stays with whoever raised it.
+              </p>
+            )}
           </div>
-          {props.canConfigure && (
-            <button onClick={() => openEdit(null)} className="mt-2 text-[12px] font-semibold text-amber-900 underline">
-              Name someone
+          <div className="mt-2.5 flex flex-wrap gap-1.5">
+            {enabled.map(d => {
+              const covered = coveredIds.has(d.id)
+              const lead = active.find(p => p.disciplineId === d.id && p.isLead)
+              return (
+                <span
+                  key={d.id}
+                  title={lead ? `${d.name} — ${lead.name}` : covered ? d.name : `${d.name} — nobody named`}
+                  className={`inline-flex items-center gap-1.5 rounded-full py-1 pl-2 pr-2.5 text-[12px] font-semibold ring-1
+                    ${covered ? 'bg-white text-gray-700 ring-gray-200' : 'bg-amber-50 text-amber-900 ring-amber-300'}`}
+                >
+                  <span className={`h-1.5 w-1.5 rounded-full ${covered ? 'bg-emerald-500' : 'bg-amber-500'}`} aria-hidden />
+                  {d.name}
+                  {lead && <Avatar name={lead.name} />}
+                </span>
+              )
+            })}
+          </div>
+          {props.gaps.length > 0 && props.canConfigure && (
+            <button onClick={() => openEdit(null)} className="mt-2.5 text-[12px] font-semibold text-amber-900 hover:underline">
+              Name someone for {props.gaps.length === 1 ? props.gaps[0].name : `${props.gaps.length} disciplines`}
             </button>
           )}
         </div>
       )}
 
-      <div className="flex flex-wrap items-center gap-1.5">
-        <GroupChip on={group === 'all'} onClick={() => setGroup('all')} count={active.length}>Everyone</GroupChip>
-        {ORG_ORDER.map(o => (
-          <GroupChip key={o} on={group === o} onClick={() => setGroup(o)} count={active.filter(p => p.orgKind === o).length}>
-            {ORG_LABEL[o]}
-          </GroupChip>
-        ))}
+      {/* ── Who, by register ───────────────────────────────────────────── */}
+      <div className="flex flex-wrap items-center gap-2">
+        <Segmented
+          size="sm"
+          value={group}
+          onChange={setGroup}
+          options={[
+            { key: 'all' as const, label: 'Everyone', count: active.length },
+            ...ORG_ORDER.map(o => ({ key: o, label: ORG_LABEL[o], count: active.filter(p => p.orgKind === o).length })),
+          ]}
+        />
         {past.length > 0 && (
-          <label className="ml-auto inline-flex items-center gap-2 text-[12px] text-gray-600 cursor-pointer min-h-[36px]">
+          <label className="ml-auto inline-flex min-h-[36px] cursor-pointer items-center gap-2 text-[12px] text-gray-600">
             <input type="checkbox" checked={showPast} onChange={e => setShowPast(e.target.checked)} className="h-4 w-4 accent-indigo-600" />
             Include {past.length} no longer on the project
           </label>
@@ -142,180 +166,119 @@ export function StakeholdersClient(props: StakeholdersClientProps) {
       </div>
 
       {shown.length === 0 ? (
-        <div className="rounded-lg border border-gray-200 bg-white">
-          <EmptyState
-            icon={<Users className="h-8 w-8" />}
-            title={props.people.length === 0 ? 'Nobody is on this project yet' : 'Nobody in this group'}
-            description={props.people.length === 0
-              ? 'Add the architect, the site engineer and the main contractor first — those three make the register route itself.'
-              : 'Try another group, or add someone.'}
-            action={props.canConfigure
-              ? <button onClick={() => openEdit(null)} className="rounded-lg bg-indigo-700 px-3.5 text-xs font-semibold text-white min-h-[44px]">Add a stakeholder</button>
-              : undefined}
-          />
-        </div>
+        <EmptyPanel
+          icon={<Users className="h-5 w-5" />}
+          title={props.people.length === 0 ? 'Nobody is on this project yet' : 'Nobody in this group'}
+          description={props.people.length === 0
+            ? 'Add the architect, the site engineer and the main contractor first — those three are what make the register address itself.'
+            : 'Try another group, or add someone.'}
+          action={props.canConfigure
+            ? <Button kind="primary" onClick={() => openEdit(null)}>Add a stakeholder</Button>
+            : undefined}
+        />
       ) : (
-        <>
-          {/* ── Desktop ─────────────────────────────────────────────────── */}
-          <div className="hidden xl:block rounded-lg border border-gray-200 bg-white overflow-hidden">
-            <div className="overflow-auto">
-              <table className="w-full text-[13px]" style={{ minWidth: 920 }}>
-                <thead className="bg-gray-50 border-b border-gray-200">
-                  <tr className="text-left text-[11px] uppercase tracking-wide text-gray-500">
-                    <th className="px-3 py-2 font-semibold">Name</th>
-                    <th className="px-3 py-2 font-semibold w-[160px]">Discipline</th>
-                    <th className="px-3 py-2 font-semibold w-[180px]">Part on this project</th>
-                    <th className="px-3 py-2 font-semibold w-[190px]">Contact</th>
-                    {props.canSeeMoney && <th className="px-3 py-2 font-semibold w-[150px] text-right">Order value / paid</th>}
-                    {props.canConfigure && <th className="px-3 py-2 font-semibold w-[92px]" />}
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-100">
-                  {shown.map(p => (
-                    <tr key={p.id} className={p.isActive ? 'hover:bg-gray-50' : 'bg-gray-50/70 text-gray-400'}>
-                      <td className="px-3 py-2.5 align-top">
-                        <div className="flex items-start gap-2">
-                          <Who name={p.name} />
-                          <div>
-                            <p className="text-[13px] font-semibold text-gray-900 leading-snug">
-                              {p.name}
-                              {p.isLead && <span className="ml-1.5"><Pill tone="emerald">Lead</Pill></span>}
-                              {!p.isActive && <span className="ml-1.5"><Pill>No longer on the project</Pill></span>}
-                            </p>
-                            <p className="text-[11px] text-gray-500">{ORG_LABEL[p.orgKind]}{p.notes ? ` · ${p.notes}` : ''}</p>
-                          </div>
-                        </div>
-                      </td>
-                      <td className="px-3 py-2.5 align-top text-[12px] text-gray-700">{p.disciplineName ?? '—'}</td>
-                      <td className="px-3 py-2.5 align-top text-[12px] text-gray-700">{p.roleOnProject ?? '—'}</td>
-                      <td className="px-3 py-2.5 align-top text-[11px] text-gray-500 break-all">
-                        {p.email ?? p.phone ?? (p.in4PartyId ? `IN4 party #${p.in4PartyId}` : <span className="text-amber-800 font-semibold">No contact recorded</span>)}
-                      </td>
-                      {props.canSeeMoney && (
-                      <td className="px-3 py-2.5 align-top text-right text-[12px] tabular-nums">
-                        {p.orderValue != null ? (
-                          <>
-                            <p className="font-semibold text-gray-900">{formatINR(p.orderValue)}</p>
-                            <p className="text-[11px] text-gray-500">paid {formatINR(p.paid ?? 0)} · {p.orders} order{p.orders === 1 ? '' : 's'}</p>
-                          </>
-                        ) : p.in4PartyId ? (
-                          <span className="text-gray-400">no orders here</span>
-                        ) : (
-                          <span className="text-gray-300">not pinned to IN4</span>
-                        )}
-                      </td>
-                      )}
-                      {props.canConfigure && (
-                        <td className="px-3 py-2.5 align-top text-right">
-                          <RowActions p={p} onEdit={() => openEdit(p)} projectId={props.projectId} />
-                        </td>
-                      )}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-
-          {/* ── Phone and tablet ────────────────────────────────────────── */}
-          <div className="xl:hidden rounded-lg border border-gray-200 bg-white divide-y divide-gray-100">
-            {shown.map(p => (
-              <div key={p.id} className={`px-3.5 py-3 ${p.isActive ? '' : 'bg-gray-50/70'}`}>
-                <div className="flex items-start gap-2">
-                  <Who name={p.name} />
-                  <div className="min-w-0">
-                    <p className="text-[13px] font-semibold text-gray-900 leading-snug">
-                      {p.name}
-                      {p.isLead && <span className="ml-1.5"><Pill tone="emerald">Lead</Pill></span>}
-                    </p>
-                    <p className="text-[12px] text-gray-600">{p.roleOnProject ?? ORG_LABEL[p.orgKind]}</p>
-                    <p className="text-[11px] text-gray-400">{p.disciplineName ?? 'No discipline'}</p>
-                    {props.canSeeMoney && p.orderValue != null && (
-                      <p className="text-[12px] text-gray-700 tabular-nums mt-1">{formatINR(p.orderValue)} · paid {formatINR(p.paid ?? 0)}</p>
-                    )}
-                  </div>
-                  <div className="ml-auto flex flex-col items-end gap-1">
-                    {p.email && <a href={`mailto:${p.email}`} className="text-[12px] font-semibold text-indigo-700 min-h-[44px] flex items-center">E-mail</a>}
-                    {p.phone && <a href={`tel:${p.phone}`} className="text-[12px] font-semibold text-indigo-700 min-h-[44px] flex items-center">Call</a>}
-                    {props.canConfigure && (
-                      <button onClick={() => openEdit(p)} className="text-[12px] font-semibold text-gray-600 min-h-[44px]">Edit</button>
-                    )}
-                  </div>
+        // One grid at every width — the card is the same object on a phone as
+        // on a laptop, so there is no second rendering to keep in step.
+        <div className="grid gap-2.5 sm:grid-cols-2 xl:grid-cols-3">
+          {shown.map(p => (
+            <article
+              key={p.id}
+              className={`${SURFACE} flex flex-col p-3.5 transition-shadow ${p.isActive ? 'hover:shadow-[0_2px_10px_rgba(16,24,40,0.07)]' : 'opacity-60'}`}
+            >
+              <div className="flex items-start gap-2.5">
+                <Avatar name={p.name} size="lg" />
+                <div className="min-w-0 flex-1">
+                  <p className="flex items-center gap-1.5 text-[13px] font-semibold leading-snug text-gray-900">
+                    <span className="truncate">{p.name}</span>
+                    {p.isLead && <Star className="h-3 w-3 shrink-0 fill-amber-400 text-amber-500" aria-label="Answers for this discipline" />}
+                  </p>
+                  <p className="truncate text-[12px] text-gray-600">{p.roleOnProject ?? ORG_LABEL[p.orgKind]}</p>
                 </div>
+                {props.canConfigure && (
+                  <RowActions p={p} onEdit={() => openEdit(p)} projectId={props.projectId} />
+                )}
               </div>
-            ))}
-          </div>
-        </>
+
+              <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
+                {p.disciplineName ? <Pill tone="slate">{p.disciplineName}</Pill> : <span className="text-[11px] text-gray-400">No discipline</span>}
+                <Pill tone="slate">{ORG_LABEL[p.orgKind]}</Pill>
+                {!p.isActive && <Pill tone="slate">No longer on the project</Pill>}
+              </div>
+
+              {p.notes && <p className="mt-2 text-[11px] leading-relaxed text-gray-500">{p.notes}</p>}
+
+              <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
+                {p.email && (
+                  <a href={`mailto:${p.email}`}
+                    className="inline-flex min-h-[36px] items-center gap-1.5 rounded-lg bg-gray-50 px-2.5 text-[12px] font-semibold text-gray-700 ring-1 ring-gray-200 hover:bg-gray-100">
+                    <Mail className="h-3.5 w-3.5" /> E-mail
+                  </a>
+                )}
+                {p.phone && (
+                  <a href={`tel:${p.phone}`}
+                    className="inline-flex min-h-[36px] items-center gap-1.5 rounded-lg bg-gray-50 px-2.5 text-[12px] font-semibold text-gray-700 ring-1 ring-gray-200 hover:bg-gray-100">
+                    <Phone className="h-3.5 w-3.5" /> Call
+                  </a>
+                )}
+                {!p.email && !p.phone && (
+                  <span className="text-[11px] text-amber-800">
+                    {p.in4PartyId ? `Pinned to IN4 party #${p.in4PartyId} — no contact recorded` : 'No contact recorded'}
+                  </span>
+                )}
+              </div>
+
+              {props.canSeeMoney && (
+                <div className="mt-auto border-t border-gray-100 pt-2.5 text-[12px] tabular-nums">
+                  {p.orderValue != null ? (
+                    <div className="flex items-baseline gap-2">
+                      <span className="font-semibold text-gray-900">{formatINR(p.orderValue)}</span>
+                      <span className="text-[11px] text-gray-500">
+                        paid {formatINR(p.paid ?? 0)} · {p.orders} order{p.orders === 1 ? '' : 's'}
+                      </span>
+                    </div>
+                  ) : (
+                    <span className="text-[11px] text-gray-400">
+                      {p.in4PartyId ? 'No orders on this project' : 'Not pinned to IN4'}
+                    </span>
+                  )}
+                </div>
+              )}
+            </article>
+          ))}
+        </div>
       )}
 
       {!props.canConfigure && (
-        <p className="text-[12px] text-gray-500">
+        <p className="px-1 text-[11px] text-gray-500">
           Who is on the project, and which disciplines it uses, are set by an admin or an Atm Head.
         </p>
       )}
 
-      {overlay === 'disciplines' && (
-        <DisciplinePanel {...props} onClose={() => setOverlay('none')} />
-      )}
-      {overlay === 'person' && (
-        <PersonPanel {...props} editing={editing} onClose={() => { setOverlay('none'); setEditing(null) }} />
-      )}
-      {overlay === 'copy' && (
-        <CopyPanel {...props} onClose={() => setOverlay('none')} />
-      )}
+      {overlay === 'disciplines' && <DisciplinePanel {...props} onClose={() => setOverlay('none')} />}
+      {overlay === 'person' && <PersonPanel {...props} editing={editing} onClose={() => { setOverlay('none'); setEditing(null) }} />}
+      {overlay === 'copy' && <CopyPanel {...props} onClose={() => setOverlay('none')} />}
     </section>
-  )
-}
-
-function GroupChip({ on, count, onClick, children }: { on: boolean; count: number; onClick: () => void; children: React.ReactNode }) {
-  return (
-    <button
-      onClick={onClick}
-      aria-pressed={on}
-      className={`px-2.5 py-1.5 rounded-md text-[12px] font-semibold border min-h-[36px] ${on ? 'bg-gray-900 border-gray-900 text-white' : 'bg-white border-gray-300 text-gray-600 hover:bg-gray-50'}`}
-    >
-      {children} <span className="opacity-70 tabular-nums">{count}</span>
-    </button>
   )
 }
 
 function RowActions({ p, projectId, onEdit }: { p: Stakeholder; projectId: string; onEdit: () => void }) {
   const [pending, start] = useTransition()
   return (
-    <div className="flex justify-end gap-2">
-      <button onClick={onEdit} className="text-[12px] font-semibold text-gray-600 hover:text-gray-900">Edit</button>
+    <div className="flex shrink-0 items-center gap-1">
+      <button onClick={onEdit} className="rounded px-1.5 py-1 text-[11px] font-semibold text-gray-500 hover:bg-gray-100 hover:text-gray-900">
+        Edit
+      </button>
       <button
         disabled={pending}
-        onClick={() => start(async () => { if (p.isActive) await removeStakeholder(p.id, projectId); else await restoreStakeholder(p.id, projectId) })}
-        className="text-[12px] font-semibold text-gray-400 hover:text-rose-700 disabled:opacity-50"
+        onClick={() => start(async () => {
+          if (p.isActive) await removeStakeholder(p.id, projectId)
+          else await restoreStakeholder(p.id, projectId)
+        })}
+        className="rounded px-1.5 py-1 text-[11px] font-semibold text-gray-400 hover:bg-rose-50 hover:text-rose-700 disabled:opacity-50"
       >
         {p.isActive ? 'Remove' : 'Restore'}
       </button>
     </div>
-  )
-}
-
-/* ── Overlay shell ───────────────────────────────────────────────────────── */
-
-function Overlay({ title, subtitle, onClose, children, wide }: {
-  title: string; subtitle?: string; onClose: () => void; children: React.ReactNode; wide?: boolean
-}) {
-  return (
-    <>
-      <div className="fixed inset-0 bg-gray-900/40 z-40" onClick={onClose} aria-hidden />
-      <div className="fixed inset-0 z-50 grid place-items-center p-3 pointer-events-none">
-        <div className={`bg-white rounded-xl w-full ${wide ? 'max-w-[720px]' : 'max-w-[560px]'} max-h-[88vh] overflow-y-auto shadow-2xl pointer-events-auto`}>
-          <div className="px-5 py-4 border-b border-gray-200 flex items-start gap-3 sticky top-0 bg-white z-10">
-            <div>
-              <p className="text-[15px] font-bold text-gray-900">{title}</p>
-              {subtitle && <p className="text-[12px] text-gray-500">{subtitle}</p>}
-            </div>
-            <button onClick={onClose} className="ml-auto text-gray-400 text-xl leading-none px-2 min-h-[44px]" aria-label="Close">&times;</button>
-          </div>
-          <div className="p-5">{children}</div>
-        </div>
-      </div>
-    </>
   )
 }
 
@@ -334,13 +297,13 @@ function DisciplinePanel({ projectId, disciplines, enabledIds, people, onClose }
   }
 
   return (
-    <Overlay
+    <Modal
       title="Disciplines on this project"
       subtitle="Only the ones ticked are offered when raising an entry or naming a stakeholder."
       onClose={onClose}
-      wide
+      width="lg"
     >
-      <div className="grid sm:grid-cols-2 gap-1.5">
+      <div className="grid gap-1.5 sm:grid-cols-2">
         {disciplines.map(d => {
           const on = chosen.has(d.id)
           const inUse = used.has(d.id)
@@ -348,34 +311,38 @@ function DisciplinePanel({ projectId, disciplines, enabledIds, people, onClose }
             <button
               key={d.id}
               onClick={() => toggle(d.id)}
-              className={`flex items-center gap-2 text-left rounded-lg border px-3 py-2 min-h-[44px] ${on ? 'border-indigo-300 bg-indigo-50' : 'border-gray-200 bg-white'}`}
+              aria-pressed={on}
+              className={`flex min-h-[44px] items-center gap-2.5 rounded-xl px-3 py-2 text-left ring-1 transition-colors
+                ${on ? 'bg-indigo-50/70 ring-indigo-300' : 'bg-white ring-gray-200 hover:bg-gray-50'}`}
             >
-              <span className={`text-[15px] leading-none ${on ? 'text-indigo-600' : 'text-gray-300'}`}>{on ? '☑' : '☐'}</span>
+              <span className={`grid h-4 w-4 shrink-0 place-items-center rounded ring-1 ${on ? 'bg-indigo-600 text-white ring-indigo-600' : 'bg-white ring-gray-300'}`} aria-hidden>
+                {on && <span className="text-[10px] leading-none">✓</span>}
+              </span>
               <span className={`text-[13px] ${on ? 'font-semibold text-indigo-900' : 'text-gray-600'}`}>{d.name}</span>
               {inUse && <span className="ml-auto text-[11px] text-gray-500">in use</span>}
             </button>
           )
         })}
       </div>
-      <p className="text-[12px] text-gray-500 mt-3">
+      <p className="mt-3 text-[12px] leading-relaxed text-gray-500">
         Switching one off does not remove anyone already named in it — they stay, and the discipline is simply not offered for
-        anything new. {used.size > 0 && `${used.size} of these have someone named.`}
+        anything new.{used.size > 0 && ` ${used.size} of these have someone named.`}
       </p>
-      {error && <p className="mt-2 rounded border border-rose-200 bg-rose-50 px-3 py-2 text-[12px] text-rose-800">{error}</p>}
-      <div className="flex justify-end gap-2 mt-4">
-        <button onClick={onClose} className="px-3.5 py-2 rounded-md border border-gray-300 text-[13px] font-semibold text-gray-700 min-h-[40px]">Cancel</button>
-        <button
+      {error && <div className="mt-2"><Notice>{error}</Notice></div>}
+      <div className="mt-4 flex justify-end gap-2">
+        <Button onClick={onClose}>Cancel</Button>
+        <Button
+          kind="primary"
           disabled={pending}
           onClick={() => start(async () => {
             const r = await setProjectDisciplines(projectId, [...chosen])
             if (!r.ok) setError(r.error ?? 'That did not save.'); else onClose()
           })}
-          className="px-3.5 py-2 rounded-md bg-indigo-700 text-white text-[13px] font-semibold disabled:opacity-50 min-h-[40px]"
         >
           {pending ? 'Saving…' : `Save — ${chosen.size} on`}
-        </button>
+        </Button>
       </div>
-    </Overlay>
+    </Modal>
   )
 }
 
@@ -408,32 +375,25 @@ function PersonPanel({
   const chosenParty = parties.find(p => String(p.id) === partyId)
 
   return (
-    <Overlay
+    <Modal
       title={editing ? 'Edit stakeholder' : 'Add a stakeholder'}
       subtitle={editing ? editing.name : 'A person or firm, and what they are responsible for here.'}
       onClose={onClose}
     >
-      <div className="space-y-3">
-        {error && <p className="rounded border border-rose-200 bg-rose-50 px-3 py-2 text-[12px] text-rose-800">{error}</p>}
+      <div className="space-y-3.5">
+        {error && <Notice>{error}</Notice>}
 
-        <div>
-          <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-500 mb-1">Which register</p>
-          <div className="flex flex-wrap gap-1.5">
-            {ORG_ORDER.map(o => (
-              <button
-                key={o}
-                onClick={() => setOrgKind(o)}
-                className={`px-2.5 py-1.5 rounded-md text-[12px] font-semibold border min-h-[36px] ${orgKind === o ? 'bg-gray-900 border-gray-900 text-white' : 'bg-white border-gray-300 text-gray-600'}`}
-              >
-                {ORG_LABEL[o]}
-              </button>
-            ))}
-          </div>
-        </div>
+        <Field label="Which register">
+          <Segmented
+            size="sm"
+            value={orgKind}
+            onChange={setOrgKind}
+            options={ORG_ORDER.map(o => ({ key: o, label: ORG_LABEL[o] }))}
+          />
+        </Field>
 
         {orgKind === 'team' ? (
-          <div>
-            <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-500 mb-1">Who</p>
+          <Field label="Who" hint="A team member is a CT Hub user, so entries assigned to them reach them in the hub.">
             <select
               value={userId}
               onChange={e => {
@@ -441,103 +401,95 @@ function PersonPanel({
                 const u = users.find(x => x.id === e.target.value)
                 if (u) { setName(u.name); setEmail(u.email ?? '') }
               }}
-              className="w-full text-[13px] border border-gray-300 rounded px-2 py-2 bg-white min-h-[40px]"
+              className={FIELD}
             >
               <option value="">Choose a CT Hub user…</option>
               {users.map(u => <option key={u.id} value={u.id}>{u.name} — {u.role}</option>)}
             </select>
-            <p className="text-[11px] text-gray-500 mt-1">A team member is a CT Hub user, so entries assigned to them reach them in the hub.</p>
-          </div>
+          </Field>
         ) : orgKind === 'authority' ? (
-          <div>
-            <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-500 mb-1">Name</p>
-            <input value={name} onChange={e => setName(e.target.value)} placeholder="e.g. DGVCL — Valsad"
-              className="w-full text-[13px] border border-gray-300 rounded px-2 py-2 min-h-[40px]" />
-            <p className="text-[11px] text-gray-500 mt-1">Authorities are typed in — IN4 holds no register for them.</p>
-          </div>
+          <Field label="Name" hint="Authorities are typed in — IN4 holds no register for them.">
+            <input value={name} onChange={e => setName(e.target.value)} placeholder="e.g. DGVCL — Valsad" className={FIELD} />
+          </Field>
         ) : (
-          <div>
-            <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-500 mb-1">Pin to the IN4 party</p>
-            {chosenParty ? (
-              <div className="flex items-center gap-2 rounded border border-indigo-200 bg-indigo-50 px-3 py-2">
-                <p className="text-[13px] font-semibold text-indigo-900">{chosenParty.name}</p>
-                {chosenParty.city && <p className="text-[11px] text-indigo-700">{chosenParty.city}</p>}
-                <button onClick={() => { setPartyId(''); setPartyQ('') }} className="ml-auto text-[12px] font-semibold text-indigo-700">Change</button>
-              </div>
-            ) : (
-              <>
-                <input value={partyQ} onChange={e => setPartyQ(e.target.value)} placeholder="Type two letters of the firm's name"
-                  className="w-full text-[13px] border border-gray-300 rounded px-2 py-2 min-h-[40px]" />
-                {matches.length > 0 && (
-                  <div className="mt-1 max-h-48 overflow-y-auto rounded border border-gray-200 divide-y divide-gray-100">
-                    {matches.map(p => (
-                      <button
-                        key={`${p.kind}-${p.id}`}
-                        onClick={() => { setPartyId(String(p.id)); if (!name) setName(p.name) }}
-                        className="w-full text-left px-3 py-2 hover:bg-gray-50 min-h-[44px]"
-                      >
-                        <p className="text-[13px] text-gray-900">{p.name}</p>
-                        <p className="text-[11px] text-gray-500">{p.kind}{p.city ? ` · ${p.city}` : ''}</p>
-                      </button>
-                    ))}
-                  </div>
-                )}
-                {partyQ.trim().length >= 2 && matches.length === 0 && (
-                  <p className="text-[12px] text-gray-500 mt-1">No IN4 party matches. Type the name below and leave it unpinned — the order value will simply be blank.</p>
-                )}
-              </>
-            )}
-            <div className="mt-2">
-              <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-500 mb-1">Name shown here</p>
-              <input value={name} onChange={e => setName(e.target.value)} placeholder="The firm's name"
-                className="w-full text-[13px] border border-gray-300 rounded px-2 py-2 min-h-[40px]" />
-            </div>
+          <div className="space-y-2.5">
+            <Field label="Pin to the IN4 party">
+              {chosenParty ? (
+                <div className="flex items-center gap-2 rounded-xl bg-indigo-50 px-3 py-2 ring-1 ring-indigo-200">
+                  <p className="text-[13px] font-semibold text-indigo-900">{chosenParty.name}</p>
+                  {chosenParty.city && <p className="text-[11px] text-indigo-700">{chosenParty.city}</p>}
+                  <button onClick={() => { setPartyId(''); setPartyQ('') }} className="ml-auto text-[12px] font-semibold text-indigo-700 hover:underline">
+                    Change
+                  </button>
+                </div>
+              ) : (
+                <>
+                  <input value={partyQ} onChange={e => setPartyQ(e.target.value)}
+                    placeholder="Type two letters of the firm's name" className={FIELD} />
+                  {matches.length > 0 && (
+                    <div className="mt-1 max-h-48 divide-y divide-gray-100 overflow-y-auto rounded-xl ring-1 ring-gray-200">
+                      {matches.map(p => (
+                        <button
+                          key={`${p.kind}-${p.id}`}
+                          onClick={() => { setPartyId(String(p.id)); if (!name) setName(p.name) }}
+                          className="min-h-[44px] w-full px-3 py-2 text-left hover:bg-gray-50"
+                        >
+                          <p className="text-[13px] text-gray-900">{p.name}</p>
+                          <p className="text-[11px] text-gray-500">{p.kind}{p.city ? ` · ${p.city}` : ''}</p>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                  {partyQ.trim().length >= 2 && matches.length === 0 && (
+                    <p className="mt-1 text-[12px] text-gray-500">
+                      No IN4 party matches. Type the name below and leave it unpinned — the order value is simply blank.
+                    </p>
+                  )}
+                </>
+              )}
+            </Field>
+            <Field label="Name shown here">
+              <input value={name} onChange={e => setName(e.target.value)} placeholder="The firm's name" className={FIELD} />
+            </Field>
           </div>
         )}
 
-        <div className="grid sm:grid-cols-2 gap-3">
-          <div>
-            <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-500 mb-1">Discipline</p>
-            <select value={disciplineId} onChange={e => setDisciplineId(e.target.value)}
-              className="w-full text-[13px] border border-gray-300 rounded px-2 py-2 bg-white min-h-[40px]">
+        <div className="grid gap-3 sm:grid-cols-2">
+          <Field label="Discipline">
+            <select value={disciplineId} onChange={e => setDisciplineId(e.target.value)} className={FIELD}>
               <option value="">None</option>
               {enabled.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
             </select>
-          </div>
-          <div>
-            <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-500 mb-1">Part on this project</p>
-            <input value={role} onChange={e => setRole(e.target.value)} placeholder="e.g. Lead Architect, Site Engineer"
-              className="w-full text-[13px] border border-gray-300 rounded px-2 py-2 min-h-[40px]" />
-          </div>
-          <div>
-            <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-500 mb-1">E-mail</p>
-            <input value={email} onChange={e => setEmail(e.target.value)} inputMode="email"
-              className="w-full text-[13px] border border-gray-300 rounded px-2 py-2 min-h-[40px]" />
-          </div>
-          <div>
-            <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-500 mb-1">Phone</p>
-            <input value={phone} onChange={e => setPhone(e.target.value)} inputMode="tel"
-              className="w-full text-[13px] border border-gray-300 rounded px-2 py-2 min-h-[40px]" />
-          </div>
+          </Field>
+          <Field label="Part on this project">
+            <input value={role} onChange={e => setRole(e.target.value)} placeholder="e.g. Lead Architect, Site Engineer" className={FIELD} />
+          </Field>
+          <Field label="E-mail">
+            <input value={email} onChange={e => setEmail(e.target.value)} inputMode="email" className={FIELD} />
+          </Field>
+          <Field label="Phone">
+            <input value={phone} onChange={e => setPhone(e.target.value)} inputMode="tel" className={FIELD} />
+          </Field>
         </div>
 
-        <label className={`flex items-start gap-2 rounded-lg border p-3 cursor-pointer ${disciplineId ? 'border-gray-200' : 'border-gray-100 opacity-50'}`}>
-          <input type="checkbox" checked={isLead} disabled={!disciplineId} onChange={e => setIsLead(e.target.checked)} className="mt-0.5 h-4 w-4 accent-indigo-600" />
-          <span className="text-[13px] text-gray-700">
+        <label className={`flex cursor-pointer items-start gap-2.5 rounded-xl p-3 ring-1 ${disciplineId ? 'bg-white ring-gray-200' : 'bg-gray-50 ring-gray-100 opacity-60'}`}>
+          <input type="checkbox" checked={isLead} disabled={!disciplineId} onChange={e => setIsLead(e.target.checked)}
+            className="mt-0.5 h-4 w-4 accent-indigo-600" />
+          <span className="text-[13px] leading-relaxed text-gray-700">
             <b>Answers for this discipline.</b> New entries of this discipline are addressed to them without anyone choosing.
-            One person or firm per discipline; naming a new one replaces the old.
+            One per discipline; naming a new one replaces the old.
           </span>
         </label>
 
-        <div>
-          <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-500 mb-1">Note</p>
-          <input value={notes} onChange={e => setNotes(e.target.value)} placeholder="Anything worth knowing about their involvement"
-            className="w-full text-[13px] border border-gray-300 rounded px-2 py-2 min-h-[40px]" />
-        </div>
+        <Field label="Note">
+          <input value={notes} onChange={e => setNotes(e.target.value)}
+            placeholder="Anything worth knowing about their involvement" className={FIELD} />
+        </Field>
 
         <div className="flex justify-end gap-2 pt-1">
-          <button onClick={onClose} className="px-3.5 py-2 rounded-md border border-gray-300 text-[13px] font-semibold text-gray-700 min-h-[40px]">Cancel</button>
-          <button
+          <Button onClick={onClose}>Cancel</Button>
+          <Button
+            kind="primary"
             disabled={pending || name.trim().length < 2}
             onClick={() => start(async () => {
               const r = await saveStakeholder({
@@ -548,22 +500,18 @@ function PersonPanel({
                 userId: orgKind === 'team' ? (userId || null) : null,
                 in4PartyKind: partyId ? partyKind : null,
                 in4PartyId: partyId ? Number(partyId) : null,
-                name,
-                roleOnProject: role,
-                email,
-                phone,
+                name, roleOnProject: role, email, phone,
                 isLead: isLead && !!disciplineId,
                 notes,
               })
               if (!r.ok) setError(r.error ?? 'That did not save.'); else onClose()
             })}
-            className="px-3.5 py-2 rounded-md bg-indigo-700 text-white text-[13px] font-semibold disabled:opacity-50 min-h-[40px]"
           >
             {pending ? 'Saving…' : editing ? 'Save changes' : 'Add to the project'}
-          </button>
+          </Button>
         </div>
       </div>
-    </Overlay>
+    </Modal>
   )
 }
 
@@ -587,61 +535,68 @@ function CopyPanel({ projectId, projectName, otherProjects, onClose }: Stakehold
   }
 
   return (
-    <Overlay
+    <Modal
       title={`Copy from ${projectName}`}
       subtitle="Set one project up properly, then give the rest the same shape in a click."
       onClose={onClose}
-      wide
+      width="lg"
     >
       {done ? (
         <div className="space-y-3">
-          <p className="text-[13px] text-gray-800">Copied to {targets.size} project{targets.size === 1 ? '' : 's'}.</p>
-          <p className="text-[12px] text-gray-500">Nothing that was already there was changed. Open any of them to check.</p>
-          <button onClick={onClose} className="px-3.5 py-2 rounded-md bg-indigo-700 text-white text-[13px] font-semibold min-h-[40px]">Done</button>
+          <Notice tone="emerald">Copied to {targets.size} project{targets.size === 1 ? '' : 's'}. Nothing already there was changed.</Notice>
+          <Button kind="primary" onClick={onClose}>Done</Button>
         </div>
       ) : (
         <div className="space-y-4">
-          <div>
-            <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-500 mb-1.5">What to copy</p>
-            <label className="flex items-center gap-2 text-[13px] text-gray-700 cursor-pointer min-h-[36px]">
-              <input type="checkbox" checked={withDisciplines} onChange={e => { setWithDisciplines(e.target.checked); setPlan(null) }} className="h-4 w-4 accent-indigo-600" />
-              Which disciplines the project uses
-            </label>
-            <label className="flex items-center gap-2 text-[13px] text-gray-700 cursor-pointer min-h-[36px]">
-              <input type="checkbox" checked={withPeople} onChange={e => { setWithPeople(e.target.checked); setPlan(null) }} className="h-4 w-4 accent-indigo-600" />
-              The people and firms, with their disciplines and parts
-            </label>
-          </div>
-
-          <div>
-            <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-500 mb-1.5">To which projects</p>
-            <div className="grid sm:grid-cols-2 gap-1.5 max-h-56 overflow-y-auto">
-              {otherProjects.map(p => (
-                <label key={p.id} className="flex items-center gap-2 text-[13px] text-gray-700 cursor-pointer border border-gray-200 rounded px-2 py-1.5 min-h-[40px]">
-                  <input type="checkbox" checked={targets.has(p.id)} onChange={() => toggle(p.id)} className="h-4 w-4 accent-indigo-600" />
-                  {p.name}
-                </label>
-              ))}
+          <Field label="What to copy">
+            <div className="space-y-1">
+              <label className="flex min-h-[36px] cursor-pointer items-center gap-2 text-[13px] text-gray-700">
+                <input type="checkbox" checked={withDisciplines} onChange={e => { setWithDisciplines(e.target.checked); setPlan(null) }}
+                  className="h-4 w-4 accent-indigo-600" />
+                Which disciplines the project uses
+              </label>
+              <label className="flex min-h-[36px] cursor-pointer items-center gap-2 text-[13px] text-gray-700">
+                <input type="checkbox" checked={withPeople} onChange={e => { setWithPeople(e.target.checked); setPlan(null) }}
+                  className="h-4 w-4 accent-indigo-600" />
+                The people and firms, with their disciplines and parts
+              </label>
             </div>
-          </div>
+          </Field>
 
-          <div>
-            <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-500 mb-1.5">If a project already has something</p>
-            <label className="flex gap-2 items-start text-[13px] text-gray-700 cursor-pointer">
-              <input type="radio" checked={mode === 'add'} onChange={() => { setMode('add'); setPlan(null) }} className="mt-1 accent-indigo-600" />
-              <span><b>Add what is missing.</b> Nothing already there is changed or removed.</span>
-            </label>
-            <label className="flex gap-2 items-start text-[13px] text-gray-700 cursor-pointer mt-1">
-              <input type="radio" checked={mode === 'match'} onChange={() => { setMode('match'); setPlan(null) }} className="mt-1 accent-indigo-600" />
-              <span><b>Make the disciplines match exactly.</b> Also switches off disciplines {projectName} does not use. People are never removed.</span>
-            </label>
-          </div>
+          <Field label="To which projects">
+            <div className="grid max-h-56 gap-1.5 overflow-y-auto sm:grid-cols-2">
+              {otherProjects.map(p => {
+                const on = targets.has(p.id)
+                return (
+                  <label key={p.id}
+                    className={`flex min-h-[40px] cursor-pointer items-center gap-2 rounded-lg px-2.5 py-1.5 text-[13px] ring-1 transition-colors
+                      ${on ? 'bg-indigo-50/70 text-indigo-900 ring-indigo-300' : 'bg-white text-gray-700 ring-gray-200 hover:bg-gray-50'}`}>
+                    <input type="checkbox" checked={on} onChange={() => toggle(p.id)} className="h-4 w-4 accent-indigo-600" />
+                    {p.name}
+                  </label>
+                )
+              })}
+            </div>
+          </Field>
 
-          {error && <p className="rounded border border-rose-200 bg-rose-50 px-3 py-2 text-[12px] text-rose-800">{error}</p>}
+          <Field label="If a project already has something">
+            <div className="space-y-1">
+              <label className="flex cursor-pointer items-start gap-2 text-[13px] text-gray-700">
+                <input type="radio" checked={mode === 'add'} onChange={() => { setMode('add'); setPlan(null) }} className="mt-1 accent-indigo-600" />
+                <span><b>Add what is missing.</b> Nothing already there is changed or removed.</span>
+              </label>
+              <label className="flex cursor-pointer items-start gap-2 text-[13px] text-gray-700">
+                <input type="radio" checked={mode === 'match'} onChange={() => { setMode('match'); setPlan(null) }} className="mt-1 accent-indigo-600" />
+                <span><b>Make the disciplines match exactly.</b> Also switches off disciplines {projectName} does not use. People are never removed.</span>
+              </label>
+            </div>
+          </Field>
+
+          {error && <Notice>{error}</Notice>}
 
           {plan && (
-            <div className="rounded-lg border border-indigo-200 bg-indigo-50 p-3">
-              <p className="text-[12px] font-bold text-indigo-900 mb-1.5">This is exactly what will happen</p>
+            <div className="rounded-xl bg-indigo-50/70 p-3.5 ring-1 ring-indigo-200">
+              <p className="mb-1.5 text-[12px] font-bold text-indigo-900">This is exactly what will happen</p>
               <div className="space-y-1.5">
                 {plan.map(l => (
                   <p key={l.projectId} className="text-[13px] text-gray-800">
@@ -655,33 +610,32 @@ function CopyPanel({ projectId, projectName, otherProjects, onClose }: Stakehold
           )}
 
           <div className="flex justify-end gap-2">
-            <button onClick={onClose} className="px-3.5 py-2 rounded-md border border-gray-300 text-[13px] font-semibold text-gray-700 min-h-[40px]">Cancel</button>
+            <Button onClick={onClose}>Cancel</Button>
             {!plan ? (
-              <button
+              <Button
                 disabled={pending || targets.size === 0 || (!withDisciplines && !withPeople)}
                 onClick={() => start(async () => {
                   const r = await planCopy(projectId, [...targets], { disciplines: withDisciplines, people: withPeople, mode })
                   if (!r.ok) setError(r.error ?? 'That could not be worked out.'); else { setError(null); setPlan(r.lines) }
                 })}
-                className="px-3.5 py-2 rounded-md bg-gray-900 text-white text-[13px] font-semibold disabled:opacity-50 min-h-[40px]"
               >
                 {pending ? 'Checking…' : 'Show me what will happen'}
-              </button>
+              </Button>
             ) : (
-              <button
+              <Button
+                kind="primary"
                 disabled={pending}
                 onClick={() => start(async () => {
                   const r = await applyCopy(projectId, [...targets], { disciplines: withDisciplines, people: withPeople, mode })
                   if (!r.ok) setError(r.error ?? 'That did not save.'); else setDone(true)
                 })}
-                className="px-3.5 py-2 rounded-md bg-indigo-700 text-white text-[13px] font-semibold disabled:opacity-50 min-h-[40px]"
               >
                 {pending ? 'Copying…' : 'Copy now'}
-              </button>
+              </Button>
             )}
           </div>
         </div>
       )}
-    </Overlay>
+    </Modal>
   )
 }
