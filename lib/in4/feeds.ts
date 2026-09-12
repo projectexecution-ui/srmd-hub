@@ -20,7 +20,7 @@ import {
 } from './extract-feeds'
 import { buildContractorDocs, compareContractor } from './contractor'
 import { buildSupplierDocs, compareSupplier } from './supplier'
-import { splitCode, cleanLabel } from './compute'
+import { splitCode } from './compute'
 import { revalidateReportState } from '@/lib/report-state-cache'
 import type { ReportDoc as ContractorDoc } from '@/lib/contractor-report'
 import type { ReportDoc as SupplierDoc } from '@/lib/supplier-report'
@@ -128,7 +128,13 @@ async function runMasters(sb: SupabaseClient, now: string): Promise<{ rows: numb
   ]
   await upsertAll(sb, 'in4_projects', projects.map(p => ({ ...p, synced_at: now })), 'id')
   await upsertAll(sb, 'in4_subprojects', subprojects.map(s => ({ ...s, synced_at: now })), 'id')
-  await upsertAll(sb, 'in4_skills', skills.map(s => ({ id: s.id, name: s.name, code: splitCode(cleanLabel(s.name)).code || null, parent_id: s.parent_id, short_name: s.short_name, is_active: s.is_active, synced_at: now })), 'id')
+  // Same expression as the budget sync in lib/in4/sync.ts, which writes this
+  // table too — two feeds computing one column two ways is a flip-flop waiting
+  // to happen. cleanLabel used to wrap this; it strips "(M)" from MATERIAL
+  // names and no skill name carries one (checked: 0 of 462), so it never
+  // changed a code here. Both feeds agreed on all 462 codes before this and
+  // still do — this removes the chance of them disagreeing later.
+  await upsertAll(sb, 'in4_skills', skills.map(s => ({ id: s.id, name: s.name, code: splitCode(s.name).code || null, parent_id: s.parent_id, short_name: s.short_name, is_active: s.is_active, synced_at: now })), 'id')
   await upsertAll(sb, 'in4_parties', parties.map(p => ({ ...p, synced_at: now })), 'kind,id')
   await upsertAll(sb, 'in4_materials', materials.map(m => ({ ...m, synced_at: now })), 'id')
   await upsertAll(sb, 'in4_stores', stores.map(s => ({ ...s, synced_at: now })), 'id')
