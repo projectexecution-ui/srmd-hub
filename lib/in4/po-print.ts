@@ -254,8 +254,11 @@ export async function loadPoPrint(poId: number): Promise<PoPrintData> {
   if (!in4Config()) throw new In4NotConfigured()
   if (!Number.isInteger(poId) || poId <= 0) throw new Error(`Not a purchase-order id: ${poId}`)
 
-  // The template IN4 actually prints for event 33, by its own print log.
-  const [tpl] = await in4Query<{ TemplateID: number; TemplateName: string; html: string }>(`
+  // The template and the order need only the purchase-order id — neither waits
+  // on the other, so they cross the ocean together rather than one after the next.
+  const [[tpl], [po]] = await Promise.all([
+    // The template IN4 actually prints for event 33, by its own print log.
+    in4Query<{ TemplateID: number; TemplateName: string; html: string }>(`
     SELECT TOP 1 t.TemplateID, t.TemplateName, CAST(t.TemplateHtml AS nvarchar(MAX)) AS html
     FROM COMMON_HtmlTemplate t
     LEFT JOIN (
@@ -264,10 +267,9 @@ export async function loadPoPrint(poId: number): Promise<PoPrintData> {
     ) p ON p.TEMPLATE_ID = t.TemplateID
     WHERE t.EventID = 33 AND t.Active = 1
       AND LEN(CAST(t.TemplateHtml AS nvarchar(MAX))) > 0
-    ORDER BY p.last_print DESC, p.prints DESC, t.LastModifiedOn DESC`)
-  if (!tpl?.html) throw new Error('IN4 holds no active purchase-order print template (event 33).')
+    ORDER BY p.last_print DESC, p.prints DESC, t.LastModifiedOn DESC`),
 
-  const [po] = await in4Query<Record<string, unknown>>(`
+    in4Query<Record<string, unknown>>(`
     SELECT p.ID, p.DISPLAY_NO, p.CREATED_DT, p.PAYMENT_TERMS, p.DELIVERY_SITE, p.DISCOUNT_AMOUNT,
            p.FREIGHT, p.FREIGHT_CHARGES, p.HANDLING_CHARGES, p.OTHER_CHARGES, p.TOTAL_VALUE,
            p.SUPP_QUOTATION_NO, p.POREFNO, p.STATUS, p.ACTIVE_AMENDMENT_ID,
@@ -299,7 +301,9 @@ export async function loadPoPrint(poId: number): Promise<PoPrintData> {
     OUTER APPLY (SELECT TOP 1 g.GSTIN_NO FROM FIN_COMPANY_GSTIN_LOOKUP g
                  WHERE g.COMPANY_ID = co.CompanyID
                  ORDER BY CASE WHEN g.STATE_ID = co.StateID THEN 0 ELSE 1 END, g.ID) gst
-    WHERE p.ID = ${poId}`)
+    WHERE p.ID = ${poId}`),
+  ])
+  if (!tpl?.html) throw new Error('IN4 holds no active purchase-order print template (event 33).')
   if (!po) throw new Error(`IN4 has no purchase order with id ${poId}.`)
 
   const [lines, indents, schedule, conditions, taxes] = await Promise.all([

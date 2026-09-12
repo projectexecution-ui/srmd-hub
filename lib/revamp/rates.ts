@@ -12,6 +12,7 @@
 // to see before the next PO. SELECT only.
 
 import { in4QueryCached, in4Config } from '@/lib/in4/db'
+import { createClient } from '@/lib/supabase/server'
 import type { In4Read } from './masters-in4'
 
 export interface PoRateLine {
@@ -141,30 +142,23 @@ export interface BoqRateLine {
   subname: string | null; description: string | null; uom: string | null; qty: number; rate: number
 }
 
-/** Work-order BOQ lines whose sub-name or description matches. Live. */
+/** Work-order BOQ lines whose sub-name or description matches.
+ *
+ *  From the mirror. Every table this needed — the WO BOQ items, the work
+ *  orders and their dates, the contractors, the projects — was already
+ *  mirrored, so this one was crossing to us-east-1 for data that had been
+ *  sitting in Mumbai all along. */
 export async function searchBoqRates(q: string): Promise<{ lines: BoqRateLine[]; capped: boolean } & In4Read> {
-  if (!in4Config()) return { lines: [], capped: false, in4: 'not-configured' }
-  if (!q.trim()) return { lines: [], capped: false, in4: 'live' }
-  try {
-    const rows = await in4QueryCached<Record<string, unknown>>(`
-      SELECT TOP 400 d.WO_ID, w.DISPLAY_NO wo_no, w.CREATION_DT, sp.FIRM_NAME contractor, pr.NAME project,
-             d.BOQ_SUBNAME, d.BOQ_DESCRIPTION, d.UOM, f.QUANTITY, f.RATE
-      FROM BI.DIM_ENGG_WORK_ORDER_BOQ d
-      JOIN BI.FACT_ENGG_WORK_ORDER_BOQ f ON f.ITEM_ID = d.ITEM_ID
-      JOIN ENGG_WORK_ORDER w ON w.ID = d.WO_ID
-      LEFT JOIN ENGG_SERVICE_PROVIDER sp ON sp.ID = w.SERVICE_PROVIDER_ID
-      LEFT JOIN ENGG_SUBPROJECT sub ON sub.ID = w.SUBPROJECT_ID
-      LEFT JOIN ENGG_PROJECT pr ON pr.ID = sub.PROJECT_ID
-      WHERE (d.BOQ_SUBNAME LIKE '${like(q)}' OR d.BOQ_DESCRIPTION LIKE '${like(q)}' OR d.BOQ_NAME LIKE '${like(q)}') AND f.RATE > 0
-      ORDER BY w.CREATION_DT DESC`)
-    return {
-      lines: rows.map(r => ({
-        woId: n(r.WO_ID), woNo: s(r.wo_no), date: iso(r.CREATION_DT), contractor: s(r.contractor), project: s(r.project),
-        subname: s(r.BOQ_SUBNAME), description: s(r.BOQ_DESCRIPTION), uom: s(r.UOM), qty: n(r.QUANTITY), rate: n(r.RATE),
-      })),
-      capped: rows.length >= 400, in4: 'live',
-    }
-  } catch (e) {
-    return { lines: [], capped: false, in4: 'unavailable', in4Error: e instanceof Error ? e.message : String(e) }
+  if (!q.trim()) return { lines: [], capped: false, in4: 'mirror' }
+  const supabase = await createClient()
+  const { data, error } = await supabase.rpc('in4_boq_rate_search', { p_q: q, p_limit: 400 })
+  if (error) return { lines: [], capped: false, in4: 'unavailable', in4Error: error.message }
+  const rows = (data ?? []) as Array<Record<string, unknown>>
+  return {
+    lines: rows.map(r => ({
+      woId: n(r.wo_id), woNo: s(r.wo_no), date: iso(r.wo_dt), contractor: s(r.contractor), project: s(r.project),
+      subname: s(r.subname), description: s(r.description), uom: s(r.uom), qty: n(r.qty), rate: n(r.rate),
+    })),
+    capped: rows.length >= 400, in4: 'mirror',
   }
 }

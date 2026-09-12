@@ -253,10 +253,14 @@ export async function loadWoPrint(woId: number): Promise<WoPrintData> {
   if (!in4Config()) throw new In4NotConfigured()
   if (!Number.isInteger(woId) || woId <= 0) throw new Error(`Not a work-order id: ${woId}`)
 
-  // Which template IN4 actually prints for event 3 (work order), decided by
-  // IN4's own print log rather than by a name — then the newest active one as
-  // a fallback if nothing has been printed yet.
-  const [tpl] = await in4Query<{ TemplateID: number; TemplateName: string; html: string }>(`
+  // Four reads that each need only the work-order id and none of which waits
+  // on another — they used to go one after the next, which on a link to
+  // Virginia meant four round trips for one page.
+  const [[tpl], [wo], boqPrint, conds] = await Promise.all([
+    // Which template IN4 actually prints for event 3 (work order), decided by
+    // IN4's own print log rather than by a name — then the newest active one
+    // as a fallback if nothing has been printed yet.
+    in4Query<{ TemplateID: number; TemplateName: string; html: string }>(`
     SELECT TOP 1 t.TemplateID, t.TemplateName, CAST(t.TemplateHtml AS nvarchar(MAX)) AS html
     FROM COMMON_HtmlTemplate t
     LEFT JOIN (
@@ -265,10 +269,9 @@ export async function loadWoPrint(woId: number): Promise<WoPrintData> {
     ) p ON p.TEMPLATE_ID = t.TemplateID
     WHERE t.EventID = 3 AND t.Active = 1
       AND LEN(CAST(t.TemplateHtml AS nvarchar(MAX))) > 0
-    ORDER BY p.last_print DESC, p.prints DESC, t.LastModifiedOn DESC`)
-  if (!tpl?.html) throw new Error('IN4 holds no active work-order print template (event 3).')
+    ORDER BY p.last_print DESC, p.prints DESC, t.LastModifiedOn DESC`),
 
-  const [wo] = await in4Query<Record<string, unknown>>(`
+    in4Query<Record<string, unknown>>(`
     SELECT w.ID, w.DISPLAY_NO, w.WORK_DESCRIPTION, w.FROM_DT, w.TO_DT,
            w.WORK_ORDER_VALUE, w.WO_GROSS_VALUE, w.CREATION_DT, w.WO_PRINT_DATE,
            w.RETENTION_PCT, w.DISCOUNT_PCT, w.DISCOUNT_AMT, w.LABOUR_LICENSE_EXPIRY_DT,
@@ -298,15 +301,28 @@ export async function loadWoPrint(woId: number): Promise<WoPrintData> {
     OUTER APPLY (SELECT TOP 1 g.GSTIN_NO FROM FIN_COMPANY_GSTIN_LOOKUP g
                  WHERE g.COMPANY_ID = co.CompanyID
                  ORDER BY CASE WHEN g.STATE_ID = co.StateID THEN 0 ELSE 1 END, g.ID) gst
-    WHERE w.ID = ${woId}`)
+    WHERE w.ID = ${woId}`),
+
+    // IN4's own printed BOQ block for this order — its subtotal rows and all.
+    in4Query<Record<string, unknown>>(`
+      SELECT SLNO, NAME, DESCRIPTION, UNIT, QUANTITY, RATE, AMOUNT
+      FROM ENGG_WO_BOQ_PRINT_DETAILS WHERE WORK_ORDER_ID = ${woId}
+      ORDER BY TRY_CAST(SLNO AS float), SLNO`),
+
+    // The contract conditions. The header's own TERMS_CONDITIONS column is
+    // EMPTY on the orders checked — WO 623 has 0 characters there and 16,379
+    // across ten rows of this table. Reading the header column alone printed a
+    // work order with no terms on it at all.
+    in4Query<Record<string, unknown>>(`
+      SELECT c.CONDITION_ID, CAST(c.CONDITIONS AS nvarchar(MAX)) html
+      FROM ENGG_WORK_ORDER_TERMS_AND_CONDITION c
+      WHERE c.WORK_ORDER_ID = ${woId} AND LEN(CAST(c.CONDITIONS AS nvarchar(MAX))) > 0
+      ORDER BY c.ID`),
+  ])
+  if (!tpl?.html) throw new Error('IN4 holds no active work-order print template (event 3).')
   if (!wo) throw new Error(`IN4 has no work order with id ${woId}.`)
 
-  // IN4's own printed BOQ block for this order — its subtotal rows and all.
-  let boq = await in4Query<Record<string, unknown>>(`
-    SELECT SLNO, NAME, DESCRIPTION, UNIT, QUANTITY, RATE, AMOUNT
-    FROM ENGG_WO_BOQ_PRINT_DETAILS WHERE WORK_ORDER_ID = ${woId}
-    ORDER BY TRY_CAST(SLNO AS float), SLNO`)
-
+  let boq = boqPrint
   let boqSource: WoSources['boq'] = boq.length > 0 ? 'print' : 'none'
 
   // 876 of IN4's 2,157 work orders have NOTHING in that print table, and
@@ -328,16 +344,6 @@ export async function loadWoPrint(woId: number): Promise<WoPrintData> {
       WHERE f.WO_ID = ${woId}`)
     if (boq.length > 0) boqSource = 'ordered'
   }
-
-  // The contract conditions. The header's own TERMS_CONDITIONS column is
-  // EMPTY on the orders checked — WO 623 has 0 characters there and 16,379
-  // across ten rows of this table. Reading the header column alone printed a
-  // work order with no terms on it at all.
-  const conds = await in4Query<Record<string, unknown>>(`
-    SELECT c.CONDITION_ID, CAST(c.CONDITIONS AS nvarchar(MAX)) html
-    FROM ENGG_WORK_ORDER_TERMS_AND_CONDITION c
-    WHERE c.WORK_ORDER_ID = ${woId} AND LEN(CAST(c.CONDITIONS AS nvarchar(MAX))) > 0
-    ORDER BY c.ID`)
 
   const displayNo = String(wo.DISPLAY_NO ?? `WO ${woId}`)
   const str = (v: unknown) => (v == null || String(v).trim() === '' ? null : String(v).trim())
