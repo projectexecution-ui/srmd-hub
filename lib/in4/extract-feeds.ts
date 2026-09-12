@@ -9,6 +9,9 @@ import type { In4SupplierCert } from './supplier'
 
 const n = (v: unknown): number => (v == null ? 0 : Number(v))
 const ni = (v: unknown): number | null => (v == null ? null : Number(v))
+/** Like ni, for money and quantities: null stays null. A rate of null and a
+ *  rate of zero mean different things on a rate screen. */
+const num = (v: unknown): number | null => (v == null ? null : Number(v))
 const s = (v: unknown): string => (v == null ? '' : String(v).replace(/\s+/g, ' ').trim())
 const sn = (v: unknown): string | null => { const t = s(v); return t ? t : null }
 /** A calendar date with the time dropped — these are shown as days, and a
@@ -242,6 +245,108 @@ export async function extractLastPoByMaterial(): Promise<In4LastPo[]> {
     material_id: n(r.MATERIAL_ID), po_id: n(r.PO_ID), po_no: sn(r.PO_NO), po_dt: day(r.PO_DT),
     supplier_id: ni(r.SUPPLIER_ID), rate: r.rate == null ? null : Number(r.rate), qty: r.qty == null ? null : Number(r.qty),
     project_id: ni(r.PROJECT_ID), subproject_id: ni(r.SUBPROJECT_ID),
+  }))
+}
+
+/* ── The purchase side: what was ordered, received and billed ──────────── */
+
+export interface In4PurchaseOrder {
+  po_id: number; po_no: string | null; po_dt: string | null
+  supplier_id: number | null; project_id: number | null; po_category: string | null
+  po_value: number | null; payable_amt: number | null; paid_amt: number | null
+  status_id: number | null; status: string | null; grn_status: string | null
+}
+export async function extractPurchaseOrders(): Promise<In4PurchaseOrder[]> {
+  const rows = await in4Query<Record<string, unknown>>(`
+    SELECT PO_ID, PO_NO, PO_DT, SUPPLIER_ID, PROJECT_ID, PO_CATEGORY,
+           PO_VALUE, PAYABLE_AMT, PAID_AMT, STATUS_ID, STATUS, GRN_STATUS
+    FROM BI.PURCHASE_ORDER_HEADER`)
+  return rows.map(r => ({
+    po_id: n(r.PO_ID), po_no: sn(r.PO_NO), po_dt: day(r.PO_DT),
+    supplier_id: ni(r.SUPPLIER_ID), project_id: ni(r.PROJECT_ID), po_category: sn(r.PO_CATEGORY),
+    po_value: num(r.PO_VALUE), payable_amt: num(r.PAYABLE_AMT), paid_amt: num(r.PAID_AMT),
+    status_id: ni(r.STATUS_ID), status: sn(r.STATUS), grn_status: sn(r.GRN_STATUS),
+  }))
+}
+
+export interface In4PoItem {
+  item_id: number; po_id: number; indent_id: number | null; wo_id: number | null
+  project_id: number | null; subproject_id: number | null; supplier_id: number | null
+  material_id: number | null; uom_id: number | null
+  base_po_qty: number | null; grn_qty: number | null; net_rate: number | null; material_value: number | null
+}
+export async function extractPoItems(): Promise<In4PoItem[]> {
+  const rows = await in4Query<Record<string, unknown>>(`
+    SELECT ITEM_ID, PO_ID, INDENT_ID, WO_ID, PROJECT_ID, SUBPROJECT_ID, SUPPLIER_ID, MATERIAL_ID, UOM_ID,
+           BASE_PO_QTY, GRN_QTY, NET_RATE, MATERIAL_VALUE
+    FROM BI.FACT_PURCHASE_ORDER_DETAILS`)
+  return rows.map(r => ({
+    item_id: n(r.ITEM_ID), po_id: n(r.PO_ID), indent_id: ni(r.INDENT_ID), wo_id: ni(r.WO_ID),
+    project_id: ni(r.PROJECT_ID), subproject_id: ni(r.SUBPROJECT_ID), supplier_id: ni(r.SUPPLIER_ID),
+    material_id: ni(r.MATERIAL_ID), uom_id: ni(r.UOM_ID),
+    base_po_qty: num(r.BASE_PO_QTY), grn_qty: num(r.GRN_QTY), net_rate: num(r.NET_RATE), material_value: num(r.MATERIAL_VALUE),
+  }))
+}
+
+export interface In4GrnItem {
+  auto_id: number; grn_id: number | null; po_id: number | null; indent_id: number | null
+  material_id: number | null; subproject_id: number | null; supplier_id: number | null
+  store_id: number | null; uom_id: number | null
+  received_qty: number | null; grn_material_cost: number | null
+  grn_no: string | null; grn_dt: string | null; delivery_challan_no: string | null
+}
+export async function extractGrnItems(): Promise<In4GrnItem[]> {
+  const rows = await in4Query<Record<string, unknown>>(`
+    SELECT d.AUTO_ID, d.GRN_ID, d.PO_ID, d.INDENT_ID, d.MATERIAL_ID, d.SUBPROJECT_ID, d.SUPPLIER_ID,
+           d.STORE_ID, d.UOM_ID, d.RECIEVED_QTY, d.GRN_MATERIAL_COST,
+           g.GRN_NO, g.GRN_DT, g.DELIVERY_CHALAN_NO
+    FROM BI.FACT_PURCHASE_GRN_DETAILS d
+    LEFT JOIN BI.DIM_PURCHASE_GRN_HEADER g ON g.GRN_ID = d.GRN_ID`)
+  return rows.map(r => ({
+    auto_id: n(r.AUTO_ID), grn_id: ni(r.GRN_ID), po_id: ni(r.PO_ID), indent_id: ni(r.INDENT_ID),
+    material_id: ni(r.MATERIAL_ID), subproject_id: ni(r.SUBPROJECT_ID), supplier_id: ni(r.SUPPLIER_ID),
+    store_id: ni(r.STORE_ID), uom_id: ni(r.UOM_ID),
+    received_qty: num(r.RECIEVED_QTY), grn_material_cost: num(r.GRN_MATERIAL_COST),
+    grn_no: sn(r.GRN_NO), grn_dt: day(r.GRN_DT), delivery_challan_no: sn(r.DELIVERY_CHALAN_NO),
+  }))
+}
+
+/** Supplier bill lines at their true grain — one row per (certificate, GRN,
+ *  material). Finer than in4_supplier_certificates on purpose: a bill can
+ *  cover GRNs raised against a DIFFERENT purchase order, and the PO ledger
+ *  names that order. */
+export interface In4SupplierPayLine {
+  auto_id: number; certificate_id: number | null; po_id: number | null; grn_id: number | null
+  supplier_id: number | null; subproject_id: number | null; material_id: number | null
+  certificate_no: number | null; certificate_dt: string | null
+  invoice_no: string | null; invoice_dt: string | null; status_name: string | null
+  landed_cost: number | null; certified_amt: number | null; paid_amt: number | null
+  tax_deduction_amt: number | null; retention_amt: number | null; adv_recovery_amt: number | null
+}
+/** The fact and its dimension are read SEPARATELY and joined here, not by IN4.
+ *  Neither table is indexed on AUTO_ID, so asking SQL Server to join them is a
+ *  4,485 x 4,485 nested loop — over eight minutes, measured, against 0.7 s for
+ *  the two plain reads. The sync gets 120 seconds on Vercel; this is the
+ *  difference between it finishing and it timing out. */
+export async function extractSupplierPayLines(): Promise<In4SupplierPayLine[]> {
+  const [facts, dims] = await Promise.all([
+    in4Query<Record<string, unknown>>(`
+      SELECT AUTO_ID, CERTIFICATE_ID, PO_ID, GRN_ID, SUPPLIER_ID, SUBPROJECT_ID, MATERIAL_ID,
+             LANDED_COST, CERTIFIED_AMT, PAID_AMT, TAX_DEDUCTION_AMT, RETENTION_AMT, ADV_RECOVERY_AMT
+      FROM BI.FACT_PURCHASE_SUPPLIER_PAY`),
+    in4Query<Record<string, unknown>>(`
+      SELECT AUTO_ID, CERTIFICATE_NO, CERTIFICATE_DT, INVOICE_NO, INVOICE_DT, STATUS_NAME
+      FROM BI.DIM_PURCHASE_SUPPLIER_PAY`),
+  ])
+  const dim = new Map(dims.map(d => [n(d.AUTO_ID), d]))
+  const rows = facts.map(f => ({ ...(dim.get(n(f.AUTO_ID)) ?? {}), ...f }))
+  return rows.map(r => ({
+    auto_id: n(r.AUTO_ID), certificate_id: ni(r.CERTIFICATE_ID), po_id: ni(r.PO_ID), grn_id: ni(r.GRN_ID),
+    supplier_id: ni(r.SUPPLIER_ID), subproject_id: ni(r.SUBPROJECT_ID), material_id: ni(r.MATERIAL_ID),
+    certificate_no: ni(r.CERTIFICATE_NO), certificate_dt: day(r.CERTIFICATE_DT),
+    invoice_no: sn(r.INVOICE_NO), invoice_dt: day(r.INVOICE_DT), status_name: sn(r.STATUS_NAME),
+    landed_cost: num(r.LANDED_COST), certified_amt: num(r.CERTIFIED_AMT), paid_amt: num(r.PAID_AMT),
+    tax_deduction_amt: num(r.TAX_DEDUCTION_AMT), retention_amt: num(r.RETENTION_AMT), adv_recovery_amt: num(r.ADV_RECOVERY_AMT),
   }))
 }
 

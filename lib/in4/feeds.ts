@@ -16,7 +16,7 @@ import { extractProjects, extractSubprojects, extractSkills, extractWoBoqItems, 
 import {
   extractContractorCerts, extractSupplierCerts,
   extractParties, extractMaterials, extractStores, extractCompanies, extractCompanyGstins, extractUoms,
-  extractLastPoByMaterial,
+  extractLastPoByMaterial, extractPurchaseOrders, extractPoItems, extractGrnItems, extractSupplierPayLines,
 } from './extract-feeds'
 import { buildContractorDocs, compareContractor } from './contractor'
 import { buildSupplierDocs, compareSupplier } from './supplier'
@@ -27,9 +27,9 @@ import type { ReportDoc as SupplierDoc } from '@/lib/supplier-report'
 import { pruneHistory } from './history-retention'
 import { readManualUpload } from './manual-upload'
 
-export type Feed = 'budget' | 'contractor' | 'supplier' | 'masters' | 'boq'
+export type Feed = 'budget' | 'contractor' | 'supplier' | 'masters' | 'boq' | 'purchase'
 export type FeedMode = 'shadow' | 'live' | 'mirror'
-export const FEEDS: Feed[] = ['budget', 'contractor', 'supplier', 'masters', 'boq']
+export const FEEDS: Feed[] = ['budget', 'contractor', 'supplier', 'masters', 'boq', 'purchase']
 
 export const FEED_LIVE_KEY: Partial<Record<Feed, string>> = {
   budget: 'in4_budget_live', contractor: 'in4_contractor_live', supplier: 'in4_supplier_live', boq: 'in4_boq_live',
@@ -42,6 +42,7 @@ export const FEED_META: Record<Feed, { label: string; replaces: string; page: st
   supplier:   { label: 'Supplier report', replaces: 'the "All Purchase Payments Report" Excel on /supplier-report', page: '/supplier-report', source: 'BI.FACT_PURCHASE_SUPPLIER_PAY · BI.FACT_PURCHASE_SUPPLIER_ADV_PAY' },
   masters:    { label: 'Masters (contractors, suppliers, materials, stores, trusts, units)', replaces: 'nothing — mirrors IN4 for the Masters screens', page: '/admin/masters', source: 'ENGG_SERVICE_PROVIDER · PURCH_SUPPLIER · PURCH_MATERIAL_LOOKUP · BI.DIM_STORE · COMMON.TBLCOMMONCOMPANY · COMMON_UOM_LOOKUP' },
   boq:        { label: 'WO BOQ items (ordered vs certified)', replaces: 'nothing yet — mirrors ordered BOQ + per-bill certified quantities for later use', page: '/admin/in4', source: 'BI.FACT_ENGG_WORK_ORDER_BOQ · BI.DIM_ENGG_WORK_ORDER_BOQ · BI.FACT_ENGG_WO_ABSTRACT_BOQ · ENGG_BOQ_ABSTRACT' },
+  purchase:   { label: 'Purchase history (orders, receipts, supplier bills)', replaces: 'nothing — mirrors IN4 so the rate screens, contact cards and PO ledger stop reading it live', page: '/admin/in4', source: 'BI.PURCHASE_ORDER_HEADER · BI.FACT_PURCHASE_ORDER_DETAILS · BI.FACT_PURCHASE_GRN_DETAILS · BI.FACT_PURCHASE_SUPPLIER_PAY' },
 }
 
 export interface FeedResult {
@@ -90,7 +91,7 @@ async function dropStale(sb: SupabaseClient, table: string, now: string, filter?
 }
 
 async function readMode(sb: SupabaseClient, feed: Feed, force?: 'shadow' | 'live'): Promise<FeedMode> {
-  if (feed === 'masters') return 'mirror'
+  if (feed === 'masters' || feed === 'purchase') return 'mirror'
   if (force) return force
   const key = FEED_LIVE_KEY[feed]!
   const { data } = await sb.from('app_settings').select('value').eq('key', key).maybeSingle()
@@ -113,7 +114,7 @@ export async function readFeedModes(sb: { from: SupabaseClient['from'] }): Promi
   const { data } = await sb.from('app_settings').select('key, value').in('key', keys)
   const on = new Set((data ?? []).filter(r => String(r.value) === 'true').map(r => r.key as string))
   const out = {} as Record<Feed, FeedMode>
-  for (const f of FEEDS) out[f] = f === 'masters' ? 'mirror' : on.has(FEED_LIVE_KEY[f]!) ? 'live' : 'shadow'
+  for (const f of FEEDS) out[f] = f === 'masters' || f === 'purchase' ? 'mirror' : on.has(FEED_LIVE_KEY[f]!) ? 'live' : 'shadow'
   return out
 }
 
@@ -139,6 +140,23 @@ async function runMasters(sb: SupabaseClient, now: string): Promise<{ rows: numb
   const rows = projects.length + subprojects.length + skills.length + parties.length + materials.length + stores.length + companies.length + gstins.length + uoms.length + lastPo.length
   const contractors = parties.filter(p => p.kind === 'contractor').length
   return { rows, summary: `${contractors} contractors · ${parties.length - contractors} suppliers · ${materials.length} materials · ${stores.length} stores · ${companies.length} trusts · ${uoms.length} units · ${lastPo.length} last POs` }
+}
+
+// ── The purchase mirror: what was ordered, received and billed ───────────────
+//
+// History only. Indents, approval state and audit trails are deliberately NOT
+// here — they change during the working day, and this runs twice.
+async function runPurchase(sb: SupabaseClient, now: string): Promise<{ rows: number; summary: string }> {
+  const [orders, items, grns, pay] = [
+    await extractPurchaseOrders(), await extractPoItems(), await extractGrnItems(), await extractSupplierPayLines(),
+  ]
+  await upsertAll(sb, 'in4_purchase_orders', orders.map(o => ({ ...o, synced_at: now })), 'po_id')
+  await upsertAll(sb, 'in4_po_items', items.map(i => ({ ...i, synced_at: now })), 'item_id')
+  await upsertAll(sb, 'in4_grn_items', grns.map(g => ({ ...g, synced_at: now })), 'auto_id')
+  await upsertAll(sb, 'in4_supplier_pay_lines', pay.map(p => ({ ...p, synced_at: now })), 'auto_id')
+  for (const t of ['in4_purchase_orders', 'in4_po_items', 'in4_grn_items', 'in4_supplier_pay_lines']) await dropStale(sb, t, now)
+  const rows = orders.length + items.length + grns.length + pay.length
+  return { rows, summary: `${orders.length} purchase orders · ${items.length} ordered lines · ${grns.length} receipts · ${pay.length} bill lines` }
 }
 
 // ── WO BOQ items: ordered rows + certified-per-bill (abstract) rows ────────────
@@ -277,6 +295,7 @@ export async function runFeed(feed: Exclude<Feed, 'budget'>, opts: FeedOptions):
   try {
     let out: { rows: number; comparison?: unknown; wrote?: boolean; summary: string }
     if (feed === 'masters') out = await runMasters(sb, startedAt)
+    else if (feed === 'purchase') out = await runPurchase(sb, startedAt)
     else if (feed === 'boq') out = await runBoq(sb, startedAt)
     else if (feed === 'contractor') out = await runContractor(sb, startedAt, mode, opts.actorId ?? null)
     else out = await runSupplier(sb, startedAt, mode, opts.actorId ?? null)
