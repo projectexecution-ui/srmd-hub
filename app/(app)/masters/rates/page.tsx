@@ -8,7 +8,7 @@ import { formatINR, formatDate } from '@/lib/utils'
 import { MasterTable, type MasterRow } from '../MasterTable'
 import { MasterSearchBox } from '../MasterSearchBox'
 import { ViewPills } from '../ViewPills'
-import { In4Note } from '../In4Note'
+import { In4Note, in4Arrived } from '../In4Note'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
@@ -53,7 +53,7 @@ async function MaterialRatesView({ q, onlySpread }: { q: string; onlySpread: boo
       <>
         <MasterSearchBox action="/masters/rates" initial={q} placeholder="Search a material by name or code — e.g. cement, GI pipe, Pidilite…" />
         <In4Note in4={in4} error={in4Error} what="purchase rates" />
-        {in4 === 'live' && materials.length === 0 && (
+        {in4Arrived(in4) && materials.length === 0 && (
           <p className="rounded-lg border border-gray-200 bg-white px-4 py-8 text-center text-sm text-gray-500">
             No purchase order in IN4 carries a material matching “{q}”. <Link href={`/masters/items?q=${encodeURIComponent(q)}`} className="text-indigo-700 hover:underline">Look in the Item master</Link> — it may exist there without ever being bought.
           </p>

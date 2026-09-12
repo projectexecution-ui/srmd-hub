@@ -1,4 +1,11 @@
--- Backfill for the purchase mirror, as IN4 held it on 12 Sep 2026.
+-- The purchase mirror's opening rows, as IN4 held them on 12 Sep 2026.
+--
+-- This replaces an earlier attempt that failed to apply. That one keyed
+-- in4_po_items on item_id alone, and ITEM_ID is NOT unique in IN4: two lines
+-- on purchase order 1166 appear twice at different rates, so Postgres refused
+-- the whole statement — ON CONFLICT DO UPDATE cannot touch the same row twice.
+-- The table is keyed on (item_id, rate_key) now and both rows are kept, which
+-- is what IN4 itself reads.
 --
 -- Without this the rate screens, contact cards and PO ledger would be empty
 -- until the first purchase sync. The feed keeps them current from then on.
@@ -1965,7 +1972,7 @@ insert into public.in4_po_items (item_id,po_id,indent_id,wo_id,project_id,subpro
 (487,236,209,473,19,34,22,846,16,120,120,135.6,16272),
 (438,213,209,473,19,34,22,848,20,4,4,585,2340),
 (442,213,209,473,19,34,22,852,20,2,0,34.2,68.4)
-on conflict (item_id) do update set po_id=excluded.po_id, indent_id=excluded.indent_id, wo_id=excluded.wo_id, project_id=excluded.project_id, subproject_id=excluded.subproject_id, supplier_id=excluded.supplier_id, material_id=excluded.material_id, uom_id=excluded.uom_id, base_po_qty=excluded.base_po_qty, grn_qty=excluded.grn_qty, net_rate=excluded.net_rate, material_value=excluded.material_value, synced_at=now();
+on conflict (item_id,rate_key) do update set po_id=excluded.po_id, indent_id=excluded.indent_id, wo_id=excluded.wo_id, project_id=excluded.project_id, subproject_id=excluded.subproject_id, supplier_id=excluded.supplier_id, material_id=excluded.material_id, uom_id=excluded.uom_id, base_po_qty=excluded.base_po_qty, grn_qty=excluded.grn_qty, net_rate=excluded.net_rate, material_value=excluded.material_value, synced_at=now();
 
 insert into public.in4_po_items (item_id,po_id,indent_id,wo_id,project_id,subproject_id,supplier_id,material_id,uom_id,base_po_qty,grn_qty,net_rate,material_value) values
 (449,213,209,473,19,34,22,856,20,10,0,405.35,4053.5),
@@ -2468,7 +2475,7 @@ insert into public.in4_po_items (item_id,po_id,indent_id,wo_id,project_id,subpro
 (1137,392,305,720,8,10,93,1324,30,3658,3656.67,46.051,168454.55800000002),
 (1306,432,306,721,8,10,93,1321,30,294.5,294,36.4704,10740.532799999999),
 (1003,367,306,721,8,10,93,1320,30,3983.5,3983.5,36.4704,145279.83839999998)
-on conflict (item_id) do update set po_id=excluded.po_id, indent_id=excluded.indent_id, wo_id=excluded.wo_id, project_id=excluded.project_id, subproject_id=excluded.subproject_id, supplier_id=excluded.supplier_id, material_id=excluded.material_id, uom_id=excluded.uom_id, base_po_qty=excluded.base_po_qty, grn_qty=excluded.grn_qty, net_rate=excluded.net_rate, material_value=excluded.material_value, synced_at=now();
+on conflict (item_id,rate_key) do update set po_id=excluded.po_id, indent_id=excluded.indent_id, wo_id=excluded.wo_id, project_id=excluded.project_id, subproject_id=excluded.subproject_id, supplier_id=excluded.supplier_id, material_id=excluded.material_id, uom_id=excluded.uom_id, base_po_qty=excluded.base_po_qty, grn_qty=excluded.grn_qty, net_rate=excluded.net_rate, material_value=excluded.material_value, synced_at=now();
 
 insert into public.in4_po_items (item_id,po_id,indent_id,wo_id,project_id,subproject_id,supplier_id,material_id,uom_id,base_po_qty,grn_qty,net_rate,material_value) values
 (1307,433,306,721,8,10,93,1320,30,5797,5797,36.4672,211400.3584),
@@ -2971,7 +2978,7 @@ insert into public.in4_po_items (item_id,po_id,indent_id,wo_id,project_id,subpro
 (1725,550,452,571,9,7,121,139,20,15,15,561.028,8415.42),
 (1728,550,452,571,9,7,121,1263,20,2,2,946.0473,1892.0946),
 (1729,550,452,571,9,7,121,1267,20,15,15,506.0253,7590.3795)
-on conflict (item_id) do update set po_id=excluded.po_id, indent_id=excluded.indent_id, wo_id=excluded.wo_id, project_id=excluded.project_id, subproject_id=excluded.subproject_id, supplier_id=excluded.supplier_id, material_id=excluded.material_id, uom_id=excluded.uom_id, base_po_qty=excluded.base_po_qty, grn_qty=excluded.grn_qty, net_rate=excluded.net_rate, material_value=excluded.material_value, synced_at=now();
+on conflict (item_id,rate_key) do update set po_id=excluded.po_id, indent_id=excluded.indent_id, wo_id=excluded.wo_id, project_id=excluded.project_id, subproject_id=excluded.subproject_id, supplier_id=excluded.supplier_id, material_id=excluded.material_id, uom_id=excluded.uom_id, base_po_qty=excluded.base_po_qty, grn_qty=excluded.grn_qty, net_rate=excluded.net_rate, material_value=excluded.material_value, synced_at=now();
 
 insert into public.in4_po_items (item_id,po_id,indent_id,wo_id,project_id,subproject_id,supplier_id,material_id,uom_id,base_po_qty,grn_qty,net_rate,material_value) values
 (1835,586,452,571,9,7,130,1252,20,11,11,7553,83083),
@@ -3474,7 +3481,7 @@ insert into public.in4_po_items (item_id,po_id,indent_id,wo_id,project_id,subpro
 (2328,698,549,833,8,31,31,1284,20,500,500,88,44000),
 (1996,614,550,692,9,7,13,2055,30,6000,6000,14.4033,86419.8),
 (2689,796,551,771,8,54,65,1395,30,20873,0,52,1085396)
-on conflict (item_id) do update set po_id=excluded.po_id, indent_id=excluded.indent_id, wo_id=excluded.wo_id, project_id=excluded.project_id, subproject_id=excluded.subproject_id, supplier_id=excluded.supplier_id, material_id=excluded.material_id, uom_id=excluded.uom_id, base_po_qty=excluded.base_po_qty, grn_qty=excluded.grn_qty, net_rate=excluded.net_rate, material_value=excluded.material_value, synced_at=now();
+on conflict (item_id,rate_key) do update set po_id=excluded.po_id, indent_id=excluded.indent_id, wo_id=excluded.wo_id, project_id=excluded.project_id, subproject_id=excluded.subproject_id, supplier_id=excluded.supplier_id, material_id=excluded.material_id, uom_id=excluded.uom_id, base_po_qty=excluded.base_po_qty, grn_qty=excluded.grn_qty, net_rate=excluded.net_rate, material_value=excluded.material_value, synced_at=now();
 
 insert into public.in4_po_items (item_id,po_id,indent_id,wo_id,project_id,subproject_id,supplier_id,material_id,uom_id,base_po_qty,grn_qty,net_rate,material_value) values
 (2690,796,551,771,8,54,65,1396,30,1784,0,56,99904),
@@ -3977,7 +3984,7 @@ insert into public.in4_po_items (item_id,po_id,indent_id,wo_id,project_id,subpro
 (2532,755,650,1331,8,86,136,2627,20,2,0,6112.425,12224.85),
 (2533,755,651,1333,8,86,136,2607,20,4,4,6112.425,24449.7),
 (2534,755,652,1334,8,86,136,2612,20,2,2,6112.425,12224.85)
-on conflict (item_id) do update set po_id=excluded.po_id, indent_id=excluded.indent_id, wo_id=excluded.wo_id, project_id=excluded.project_id, subproject_id=excluded.subproject_id, supplier_id=excluded.supplier_id, material_id=excluded.material_id, uom_id=excluded.uom_id, base_po_qty=excluded.base_po_qty, grn_qty=excluded.grn_qty, net_rate=excluded.net_rate, material_value=excluded.material_value, synced_at=now();
+on conflict (item_id,rate_key) do update set po_id=excluded.po_id, indent_id=excluded.indent_id, wo_id=excluded.wo_id, project_id=excluded.project_id, subproject_id=excluded.subproject_id, supplier_id=excluded.supplier_id, material_id=excluded.material_id, uom_id=excluded.uom_id, base_po_qty=excluded.base_po_qty, grn_qty=excluded.grn_qty, net_rate=excluded.net_rate, material_value=excluded.material_value, synced_at=now();
 
 insert into public.in4_po_items (item_id,po_id,indent_id,wo_id,project_id,subproject_id,supplier_id,material_id,uom_id,base_po_qty,grn_qty,net_rate,material_value) values
 (2535,755,653,1335,8,86,136,2617,20,1,0,6112.425,6112.425),
@@ -4480,7 +4487,7 @@ insert into public.in4_po_items (item_id,po_id,indent_id,wo_id,project_id,subpro
 (3274,949,833,1306,8,86,32,2946,18,50,50,110,5500),
 (3275,949,833,1306,8,86,32,2947,18,100,100,70,7000),
 (3146,932,834,652,8,10,32,1060,20,3,3,1435,4305)
-on conflict (item_id) do update set po_id=excluded.po_id, indent_id=excluded.indent_id, wo_id=excluded.wo_id, project_id=excluded.project_id, subproject_id=excluded.subproject_id, supplier_id=excluded.supplier_id, material_id=excluded.material_id, uom_id=excluded.uom_id, base_po_qty=excluded.base_po_qty, grn_qty=excluded.grn_qty, net_rate=excluded.net_rate, material_value=excluded.material_value, synced_at=now();
+on conflict (item_id,rate_key) do update set po_id=excluded.po_id, indent_id=excluded.indent_id, wo_id=excluded.wo_id, project_id=excluded.project_id, subproject_id=excluded.subproject_id, supplier_id=excluded.supplier_id, material_id=excluded.material_id, uom_id=excluded.uom_id, base_po_qty=excluded.base_po_qty, grn_qty=excluded.grn_qty, net_rate=excluded.net_rate, material_value=excluded.material_value, synced_at=now();
 
 insert into public.in4_po_items (item_id,po_id,indent_id,wo_id,project_id,subproject_id,supplier_id,material_id,uom_id,base_po_qty,grn_qty,net_rate,material_value) values
 (3348,949,835,853,8,31,32,2964,18,40,40,200,8000),
@@ -4983,7 +4990,7 @@ insert into public.in4_po_items (item_id,po_id,indent_id,wo_id,project_id,subpro
 (4167,1198,1074,892,8,31,121,135,20,2,2,1330,2660),
 (4385,1241,1074,892,8,31,121,1254,20,7,7,227.5,1592.5),
 (4171,1199,1075,1272,8,71,121,867,20,15,15,1020,15300)
-on conflict (item_id) do update set po_id=excluded.po_id, indent_id=excluded.indent_id, wo_id=excluded.wo_id, project_id=excluded.project_id, subproject_id=excluded.subproject_id, supplier_id=excluded.supplier_id, material_id=excluded.material_id, uom_id=excluded.uom_id, base_po_qty=excluded.base_po_qty, grn_qty=excluded.grn_qty, net_rate=excluded.net_rate, material_value=excluded.material_value, synced_at=now();
+on conflict (item_id,rate_key) do update set po_id=excluded.po_id, indent_id=excluded.indent_id, wo_id=excluded.wo_id, project_id=excluded.project_id, subproject_id=excluded.subproject_id, supplier_id=excluded.supplier_id, material_id=excluded.material_id, uom_id=excluded.uom_id, base_po_qty=excluded.base_po_qty, grn_qty=excluded.grn_qty, net_rate=excluded.net_rate, material_value=excluded.material_value, synced_at=now();
 
 insert into public.in4_po_items (item_id,po_id,indent_id,wo_id,project_id,subproject_id,supplier_id,material_id,uom_id,base_po_qty,grn_qty,net_rate,material_value) values
 (4172,1199,1075,1272,8,71,121,1244,20,15,15,320,4800),
@@ -5486,7 +5493,7 @@ insert into public.in4_po_items (item_id,po_id,indent_id,wo_id,project_id,subpro
 (4252,1210,1125,1810,24,100,76,3306,20,11,11,77.52000000000001,852.7200000000001),
 (4362,1237,1125,1810,24,100,76,3297,20,5,5,1146.8200000000002,5734.1),
 (4363,1237,1125,1810,24,100,76,3298,20,6,6,627.3,3763.7999999999997)
-on conflict (item_id) do update set po_id=excluded.po_id, indent_id=excluded.indent_id, wo_id=excluded.wo_id, project_id=excluded.project_id, subproject_id=excluded.subproject_id, supplier_id=excluded.supplier_id, material_id=excluded.material_id, uom_id=excluded.uom_id, base_po_qty=excluded.base_po_qty, grn_qty=excluded.grn_qty, net_rate=excluded.net_rate, material_value=excluded.material_value, synced_at=now();
+on conflict (item_id,rate_key) do update set po_id=excluded.po_id, indent_id=excluded.indent_id, wo_id=excluded.wo_id, project_id=excluded.project_id, subproject_id=excluded.subproject_id, supplier_id=excluded.supplier_id, material_id=excluded.material_id, uom_id=excluded.uom_id, base_po_qty=excluded.base_po_qty, grn_qty=excluded.grn_qty, net_rate=excluded.net_rate, material_value=excluded.material_value, synced_at=now();
 
 insert into public.in4_po_items (item_id,po_id,indent_id,wo_id,project_id,subproject_id,supplier_id,material_id,uom_id,base_po_qty,grn_qty,net_rate,material_value) values
 (4412,1249,1129,1836,10,8,48,2853,20,8,0,2440,19520),
@@ -5989,7 +5996,7 @@ insert into public.in4_po_items (item_id,po_id,indent_id,wo_id,project_id,subpro
 (4889,1335,1220,2015,24,100,166,1371,20,200,200,129,25800),
 (4890,1335,1220,2015,24,100,166,1372,20,200,200,34.13,6826.000000000001),
 (4891,1335,1220,2015,24,100,166,1373,20,10,10,79.13,791.3)
-on conflict (item_id) do update set po_id=excluded.po_id, indent_id=excluded.indent_id, wo_id=excluded.wo_id, project_id=excluded.project_id, subproject_id=excluded.subproject_id, supplier_id=excluded.supplier_id, material_id=excluded.material_id, uom_id=excluded.uom_id, base_po_qty=excluded.base_po_qty, grn_qty=excluded.grn_qty, net_rate=excluded.net_rate, material_value=excluded.material_value, synced_at=now();
+on conflict (item_id,rate_key) do update set po_id=excluded.po_id, indent_id=excluded.indent_id, wo_id=excluded.wo_id, project_id=excluded.project_id, subproject_id=excluded.subproject_id, supplier_id=excluded.supplier_id, material_id=excluded.material_id, uom_id=excluded.uom_id, base_po_qty=excluded.base_po_qty, grn_qty=excluded.grn_qty, net_rate=excluded.net_rate, material_value=excluded.material_value, synced_at=now();
 
 insert into public.in4_po_items (item_id,po_id,indent_id,wo_id,project_id,subproject_id,supplier_id,material_id,uom_id,base_po_qty,grn_qty,net_rate,material_value) values
 (4892,1335,1220,2015,24,100,166,1374,38,25,25,100,2500),
@@ -6492,7 +6499,7 @@ insert into public.in4_po_items (item_id,po_id,indent_id,wo_id,project_id,subpro
 (5426,1446,1389,2153,16,17,76,1668,15,3,0,1102.2,3306.6000000000004),
 (5335,1442,1391,2151,34,108,171,1969,30,57.5,0,195,11212.5),
 (5327,1440,1393,2115,12,12,22,4104,23,1,1,139.84,139.84)
-on conflict (item_id) do update set po_id=excluded.po_id, indent_id=excluded.indent_id, wo_id=excluded.wo_id, project_id=excluded.project_id, subproject_id=excluded.subproject_id, supplier_id=excluded.supplier_id, material_id=excluded.material_id, uom_id=excluded.uom_id, base_po_qty=excluded.base_po_qty, grn_qty=excluded.grn_qty, net_rate=excluded.net_rate, material_value=excluded.material_value, synced_at=now();
+on conflict (item_id,rate_key) do update set po_id=excluded.po_id, indent_id=excluded.indent_id, wo_id=excluded.wo_id, project_id=excluded.project_id, subproject_id=excluded.subproject_id, supplier_id=excluded.supplier_id, material_id=excluded.material_id, uom_id=excluded.uom_id, base_po_qty=excluded.base_po_qty, grn_qty=excluded.grn_qty, net_rate=excluded.net_rate, material_value=excluded.material_value, synced_at=now();
 
 insert into public.in4_po_items (item_id,po_id,indent_id,wo_id,project_id,subproject_id,supplier_id,material_id,uom_id,base_po_qty,grn_qty,net_rate,material_value) values
 (5316,1440,1393,2115,12,12,22,4099,23,5,5,169.5,847.5),
@@ -6575,7 +6582,7 @@ insert into public.in4_po_items (item_id,po_id,indent_id,wo_id,project_id,subpro
 (5520,1452,1410,632,9,7,180,4192,20,1,0,147475,147475),
 (5494,1448,1415,2183,24,100,9,1482,13,2000,0,27,54000),
 (5497,1450,1416,2182,12,56,9,1482,13,2000,0,27,54000)
-on conflict (item_id) do update set po_id=excluded.po_id, indent_id=excluded.indent_id, wo_id=excluded.wo_id, project_id=excluded.project_id, subproject_id=excluded.subproject_id, supplier_id=excluded.supplier_id, material_id=excluded.material_id, uom_id=excluded.uom_id, base_po_qty=excluded.base_po_qty, grn_qty=excluded.grn_qty, net_rate=excluded.net_rate, material_value=excluded.material_value, synced_at=now();
+on conflict (item_id,rate_key) do update set po_id=excluded.po_id, indent_id=excluded.indent_id, wo_id=excluded.wo_id, project_id=excluded.project_id, subproject_id=excluded.subproject_id, supplier_id=excluded.supplier_id, material_id=excluded.material_id, uom_id=excluded.uom_id, base_po_qty=excluded.base_po_qty, grn_qty=excluded.grn_qty, net_rate=excluded.net_rate, material_value=excluded.material_value, synced_at=now();
 
 insert into public.in4_grn_items (auto_id,grn_id,po_id,indent_id,material_id,subproject_id,supplier_id,store_id,uom_id,received_qty,grn_material_cost,grn_no,grn_dt,delivery_challan_no) values
 (1,1,1,2,1,7,1,1,13,5,200,'GRN/SRJT/SRAH/2023-24/1','2023-04-25','GST-2250'),

@@ -151,7 +151,7 @@ async function runPurchase(sb: SupabaseClient, now: string): Promise<{ rows: num
     await extractPurchaseOrders(), await extractPoItems(), await extractGrnItems(), await extractSupplierPayLines(),
   ]
   await upsertAll(sb, 'in4_purchase_orders', orders.map(o => ({ ...o, synced_at: now })), 'po_id')
-  await upsertAll(sb, 'in4_po_items', items.map(i => ({ ...i, synced_at: now })), 'item_id')
+  await upsertAll(sb, 'in4_po_items', items.map(i => ({ ...i, synced_at: now })), 'item_id,rate_key')
   await upsertAll(sb, 'in4_grn_items', grns.map(g => ({ ...g, synced_at: now })), 'auto_id')
   await upsertAll(sb, 'in4_supplier_pay_lines', pay.map(p => ({ ...p, synced_at: now })), 'auto_id')
   for (const t of ['in4_purchase_orders', 'in4_po_items', 'in4_grn_items', 'in4_supplier_pay_lines']) await dropStale(sb, t, now)

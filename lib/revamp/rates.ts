@@ -11,8 +11,8 @@
 // than one supplier at rates 20 % or more apart — the spread a Head wants
 // to see before the next PO. SELECT only.
 
-import { in4QueryCached, in4Config } from '@/lib/in4/db'
 import { createClient } from '@/lib/supabase/server'
+import { fetchAll } from '@/lib/revamp/orders-tree'
 import type { In4Read } from './masters-in4'
 
 export interface PoRateLine {
@@ -70,35 +70,21 @@ export function summariseMaterialRates(lines: readonly PoRateLine[]): MaterialRa
   return out.sort((a, b) => b.spend - a.spend)
 }
 
-const like = (q: string) => `%${q.trim().replace(/'/g, "''").replace(/[%_\[\]]/g, '')}%`
 
 /** Every PO line for materials whose name matches. Live. */
 export async function searchMaterialRates(q: string): Promise<{ materials: MaterialRates[] } & In4Read> {
-  if (!in4Config()) return { materials: [], in4: 'not-configured' }
-  if (!q.trim()) return { materials: [], in4: 'live' }
-  try {
-    const rows = await in4QueryCached<Record<string, unknown>>(`
-      SELECT TOP 1500 f.MATERIAL_ID, m.NAME material, u.NAME uom, f.PO_ID, h.PO_NO, h.PO_DT,
-             f.SUPPLIER_ID, COALESCE(sp.PrintName, sp.NAME) supplier, pr.NAME project,
-             f.BASE_PO_QTY qty, f.NET_RATE rate, f.MATERIAL_VALUE value
-      FROM BI.FACT_PURCHASE_ORDER_DETAILS f
-      JOIN PURCH_MATERIAL_LOOKUP m ON m.ID = f.MATERIAL_ID
-      LEFT JOIN COMMON_UOM_LOOKUP u ON u.ID = m.UNIT_OF_MEASUREMENT
-      JOIN BI.PURCHASE_ORDER_HEADER h ON h.PO_ID = f.PO_ID
-      LEFT JOIN PURCH_SUPPLIER sp ON sp.ID = f.SUPPLIER_ID
-      LEFT JOIN ENGG_PROJECT pr ON pr.ID = f.PROJECT_ID
-      WHERE (m.NAME LIKE '${like(q)}' OR m.CODE LIKE '${like(q)}') AND f.NET_RATE > 0
-      ORDER BY m.NAME, h.PO_DT DESC`)
-    return { materials: summariseMaterialRates(rows.map(toLine)), in4: 'live' }
-  } catch (e) {
-    return { materials: [], in4: 'unavailable', in4Error: e instanceof Error ? e.message : String(e) }
-  }
+  if (!q.trim()) return { materials: [], in4: 'mirror' }
+  const supabase = await createClient()
+  const { rows, error } = await fetchAll<Record<string, unknown>>(
+    (from, to) => supabase.rpc('in4_material_rate_search', { p_q: q, p_limit: 1500 }).range(from, to))
+  if (error) return { materials: [], in4: 'unavailable', in4Error: error }
+  return { materials: summariseMaterialRates(rows.map(toLine)), in4: 'mirror' }
 }
 
 const toLine = (r: Record<string, unknown>): PoRateLine => ({
-  materialId: n(r.MATERIAL_ID), material: s(r.material) ?? `Material ${r.MATERIAL_ID}`, uom: s(r.uom),
-  poId: n(r.PO_ID), poNo: s(r.PO_NO), date: iso(r.PO_DT),
-  supplierId: r.SUPPLIER_ID == null ? null : n(r.SUPPLIER_ID), supplier: s(r.supplier), project: s(r.project),
+  materialId: n(r.material_id), material: s(r.material) ?? `Material ${r.material_id}`, uom: s(r.uom),
+  poId: n(r.po_id), poNo: s(r.po_no), date: iso(r.po_dt),
+  supplierId: r.supplier_id == null ? null : n(r.supplier_id), supplier: s(r.supplier), project: s(r.project),
   qty: n(r.qty), rate: n(r.rate), value: n(r.value),
 })
 
@@ -108,32 +94,20 @@ export interface MaterialOverviewRow {
   spread: number
 }
 
-/** The 300 materials SRMD has spent most on, with their rate spread. Live. */
+/** The 300 materials SRMD has spent most on, with their rate spread. */
 export async function loadMaterialRateOverview(): Promise<{ rows: MaterialOverviewRow[] } & In4Read> {
-  if (!in4Config()) return { rows: [], in4: 'not-configured' }
-  try {
-    const rows = await in4QueryCached<Record<string, unknown>>(`
-      SELECT TOP 300 f.MATERIAL_ID, m.NAME material, u.NAME uom, COUNT(*) lines, COUNT(DISTINCT f.SUPPLIER_ID) suppliers,
-             MIN(f.NET_RATE) min_rate, MAX(f.NET_RATE) max_rate, SUM(f.MATERIAL_VALUE) spend, MAX(h.PO_DT) last_dt
-      FROM BI.FACT_PURCHASE_ORDER_DETAILS f
-      JOIN PURCH_MATERIAL_LOOKUP m ON m.ID = f.MATERIAL_ID
-      LEFT JOIN COMMON_UOM_LOOKUP u ON u.ID = m.UNIT_OF_MEASUREMENT
-      JOIN BI.PURCHASE_ORDER_HEADER h ON h.PO_ID = f.PO_ID
-      WHERE f.NET_RATE > 0
-      GROUP BY f.MATERIAL_ID, m.NAME, u.NAME
-      ORDER BY spend DESC`)
-    return {
-      rows: rows.map(r => {
-        const minRate = n(r.min_rate), maxRate = n(r.max_rate)
-        return {
-          materialId: n(r.MATERIAL_ID), material: s(r.material) ?? '', uom: s(r.uom), lines: n(r.lines), suppliers: n(r.suppliers),
-          minRate, maxRate, spend: n(r.spend), lastDate: iso(r.last_dt), spread: minRate > 0 ? (maxRate - minRate) / minRate : 0,
-        }
-      }),
-      in4: 'live',
-    }
-  } catch (e) {
-    return { rows: [], in4: 'unavailable', in4Error: e instanceof Error ? e.message : String(e) }
+  const supabase = await createClient()
+  const { data, error } = await supabase.rpc('in4_material_rate_overview', { p_limit: 300 })
+  if (error) return { rows: [], in4: 'unavailable', in4Error: error.message }
+  return {
+    rows: ((data ?? []) as Array<Record<string, unknown>>).map(r => {
+      const minRate = n(r.min_rate), maxRate = n(r.max_rate)
+      return {
+        materialId: n(r.material_id), material: s(r.material) ?? '', uom: s(r.uom), lines: n(r.lines), suppliers: n(r.suppliers),
+        minRate, maxRate, spend: n(r.spend), lastDate: iso(r.last_dt), spread: minRate > 0 ? (maxRate - minRate) / minRate : 0,
+      }
+    }),
+    in4: 'mirror',
   }
 }
 

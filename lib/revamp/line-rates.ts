@@ -11,7 +11,9 @@
 // finds its earlier self even with "7." numbering or spacing differences.
 // Live from IN4, SELECT only. Loaded per order, lazily, when a line is opened.
 
-import { in4QueryCached, in4Config } from '@/lib/in4/db'
+import { createClient } from '@/lib/supabase/server'
+import { fetchAll } from '@/lib/revamp/orders-tree'
+import type { In4State } from '@/lib/revamp/masters-in4'
 import { buildPriceContext, referenceRate, priceDelta, type PoRateLine, type MaterialContext, type LastPurchase } from './approver'
 import { referencesFor, normaliseBoq, stripBoqNumber } from './order-approvals'
 
@@ -50,7 +52,7 @@ export interface LineRate {
 export interface OrderLineRates {
   kind: 'wo' | 'po'
   lines: LineRate[]
-  in4: 'live' | 'not-configured' | 'unavailable'
+  in4: In4State
   error: string | null
 }
 
@@ -63,7 +65,6 @@ const iso = (v: unknown): string | null => {
   const t = d.toISOString()
   return t.startsWith('1900-01-01') ? null : t
 }
-const like = (v: string) => v.replace(/[%_[]/g, ch => `[${ch}]`).replace(/'/g, "''")
 
 /** One line's history folded into the shape the panel shows. Pure, so the
  *  never-bought and cheaper/dearer cases are tested rather than eyeballed. */
@@ -111,7 +112,6 @@ const EMPTY = (kind: 'wo' | 'po', in4: OrderLineRates['in4'], error: string | nu
  *  captured. Never throws — a failure returns in4:'unavailable' with lines
  *  still listed but blank, so the panel says so. */
 export async function loadOrderLineRates(kind: 'wo' | 'po', in4Id: number | null, ref?: string | null): Promise<OrderLineRates> {
-  if (!in4Config()) return EMPTY(kind, 'not-configured')
   try {
     return kind === 'po' ? await loadPo(in4Id, ref) : await loadWo(in4Id)
   } catch (e) {
@@ -120,57 +120,48 @@ export async function loadOrderLineRates(kind: 'wo' | 'po', in4Id: number | null
 }
 
 async function loadPo(poId: number | null, ref?: string | null): Promise<OrderLineRates> {
-  const where = poId != null && Number.isInteger(poId)
-    ? `p.ID = ${poId}`
-    : ref && /^[A-Za-z0-9/_\-. ]{1,60}$/.test(ref) ? `p.DISPLAY_NO = '${ref.replace(/'/g, "''")}'` : null
-  if (!where) return EMPTY('po', 'unavailable', 'no purchase-order id')
+  const byId = poId != null && Number.isInteger(poId)
+  if (!byId && !ref) return EMPTY('po', 'unavailable', 'no purchase-order id')
+  const supabase = await createClient()
 
-  const items = await in4QueryCached<Record<string, unknown>>(`
-    SELECT p.PROJECT_ID, pi.ID item_id, pi.MATERIAL_ID, m.NAME material, u.NAME uom, f.NET_RATE rate
-    FROM PURCH_PURCHASE_ORDER p
-    JOIN PURCH_PURCHASE_ORDER_ITEMS pi ON pi.PURCHASE_ORDER_ID = p.ID
-    LEFT JOIN PURCH_MATERIAL_LOOKUP m ON m.ID = pi.MATERIAL_ID
-    LEFT JOIN COMMON_UOM_LOOKUP u ON u.ID = m.UNIT_OF_MEASUREMENT
-    LEFT JOIN BI.FACT_PURCHASE_ORDER_DETAILS f ON f.ITEM_ID = pi.ID
-    WHERE ${where} ORDER BY pi.ID`)
-  if (items.length === 0) return EMPTY('po', 'live')
+  const { data: itemRows, error: itemErr } = await supabase.rpc('in4_po_lines',
+    byId ? { p_po_id: poId } : { p_ref: ref })
+  if (itemErr) return EMPTY('po', 'unavailable', itemErr.message)
+  const items = (itemRows ?? []) as Array<Record<string, unknown>>
+  if (items.length === 0) return EMPTY('po', 'mirror')
 
-  const projectId = items[0].PROJECT_ID == null ? null : n(items[0].PROJECT_ID)
-  const materialIds = [...new Set(items.map(i => i.MATERIAL_ID).filter((x): x is number => x != null).map(Number))]
+  const projectId = items[0].project_id == null ? null : n(items[0].project_id)
+  const materialIds = [...new Set(items.map(i => i.material_id).filter((x): x is number => x != null).map(Number))]
 
   // Every prior PO line for these materials (this PO excluded), folded per material.
-  const hist = materialIds.length ? await in4QueryCached<Record<string, unknown>>(`
-    SELECT f.MATERIAL_ID, f.PO_ID, h.PO_NO, h.PO_DT, COALESCE(sp.PrintName, sp.NAME) supplier, pr.NAME project, f.PROJECT_ID,
-           f.BASE_PO_QTY qty, f.NET_RATE rate, f.MATERIAL_VALUE value, f.GRN_QTY grn_qty
-    FROM BI.FACT_PURCHASE_ORDER_DETAILS f
-    JOIN BI.PURCHASE_ORDER_HEADER h ON h.PO_ID = f.PO_ID
-    LEFT JOIN PURCH_SUPPLIER sp ON sp.ID = f.SUPPLIER_ID
-    LEFT JOIN ENGG_PROJECT pr ON pr.ID = f.PROJECT_ID
-    WHERE f.MATERIAL_ID IN (${materialIds.join(',')}) AND f.NET_RATE > 0 AND h.STATUS_ID = 2 ${poId != null ? `AND f.PO_ID <> ${poId}` : ''}
-    ORDER BY h.PO_DT DESC`) : []
+  const hist = materialIds.length
+    ? (await fetchAll<Record<string, unknown>>((from, to) => supabase
+        .rpc('in4_material_po_history', { p_material_ids: materialIds, p_exclude_po: byId ? poId : null, p_approved_only: true })
+        .range(from, to))).rows
+    : []
   const histLines: PoRateLine[] = hist.map(r => ({
-    materialId: n(r.MATERIAL_ID), poId: n(r.PO_ID), poNo: s(r.PO_NO), date: iso(r.PO_DT),
-    supplier: s(r.supplier), project: s(r.project), projectId: r.PROJECT_ID == null ? null : n(r.PROJECT_ID),
+    materialId: n(r.material_id), poId: n(r.po_id), poNo: s(r.po_no), date: iso(r.po_dt),
+    supplier: s(r.supplier), project: s(r.project), projectId: r.project_id == null ? null : n(r.project_id),
     qty: n(r.qty), rate: n(r.rate), value: n(r.value), grnQty: n(r.grn_qty),
   }))
   const ctxByMaterial = buildPriceContext(histLines, projectId)
 
   // Near-name suggestions for the materials with no history at all.
   const orphans = items
-    .filter(i => { const c = ctxByMaterial.get(n(i.MATERIAL_ID)); return !c || c.purchases === 0 })
+    .filter(i => { const c = ctxByMaterial.get(n(i.material_id)); return !c || c.purchases === 0 })
     .map(i => ({ name: s(i.material), uom: s(i.uom) }))
     .filter((x): x is { name: string; uom: string | null } => !!x.name)
   const suggByLine = await poSuggestions(orphans, materialIds)
 
   const lines = items.map(i => {
-    const name = s(i.material) ?? `Material ${n(i.MATERIAL_ID)}`
+    const name = s(i.material) ?? `Material ${n(i.material_id)}`
     return toLineRate(
       { key: lineKey(name, s(i.uom)), itemId: n(i.item_id), name, uom: s(i.uom), rate: i.rate == null ? null : n(i.rate) },
-      ctxByMaterial.get(n(i.MATERIAL_ID)),
+      ctxByMaterial.get(n(i.material_id)),
       suggByLine.get(lineKey(name, null)) ?? [],
     )
   })
-  return { kind: 'po', lines, in4: 'live', error: null }
+  return { kind: 'po', lines, in4: 'mirror', error: null }
 }
 
 /** A unit reduced to a comparison key, so "SqFt" == "sqft" == "Sq. Ft.". */
@@ -185,25 +176,19 @@ async function poSuggestions(orphans: Array<{ name: string; uom: string | null }
   const tokens = [...new Set(orphans.flatMap(o => nameTokens(o.name)))].slice(0, 40)
   if (tokens.length === 0) return out
   try {
-    const cands = await in4QueryCached<Record<string, unknown>>(`
-      SELECT TOP 80 m.ID, m.NAME, u.NAME uom
-      FROM PURCH_MATERIAL_LOOKUP m
-      LEFT JOIN COMMON_UOM_LOOKUP u ON u.ID = m.UNIT_OF_MEASUREMENT
-      WHERE (${tokens.map(t => `m.NAME LIKE '%${like(t)}%'`).join(' OR ')})
-        ${excludeIds.length ? `AND m.ID NOT IN (${excludeIds.join(',')})` : ''}`)
-    const candIds = cands.map(c => n(c.ID)).filter(Boolean)
+    const supabase = await createClient()
+    const { data: candRows } = await supabase.rpc('in4_material_name_search',
+      { p_tokens: tokens, p_exclude_ids: excludeIds, p_limit: 80 })
+    const cands = (candRows ?? []) as Array<Record<string, unknown>>
+    const candIds = cands.map(c => n(c.id)).filter(Boolean)
     if (candIds.length === 0) return out
-    const rates = await in4QueryCached<Record<string, unknown>>(`
-      SELECT f.MATERIAL_ID, h.PO_DT, f.NET_RATE, COALESCE(sp.PrintName, sp.NAME) supplier
-      FROM BI.FACT_PURCHASE_ORDER_DETAILS f
-      JOIN BI.PURCHASE_ORDER_HEADER h ON h.PO_ID = f.PO_ID
-      LEFT JOIN PURCH_SUPPLIER sp ON sp.ID = f.SUPPLIER_ID
-      WHERE f.MATERIAL_ID IN (${candIds.join(',')}) AND f.NET_RATE > 0 AND h.STATUS_ID = 2
-      ORDER BY h.PO_DT DESC`)
+    const { data: rateRows } = await supabase.rpc('in4_material_last_rate', { p_material_ids: candIds })
     const lastByMat = new Map<number, { rate: number; date: string | null; supplier: string | null }>()
-    for (const r of rates) { const id = n(r.MATERIAL_ID); if (!lastByMat.has(id)) lastByMat.set(id, { rate: n(r.NET_RATE), date: iso(r.PO_DT), supplier: s(r.supplier) }) }
+    for (const r of ((rateRows ?? []) as Array<Record<string, unknown>>)) {
+      lastByMat.set(n(r.material_id), { rate: n(r.rate), date: iso(r.po_dt), supplier: s(r.supplier) })
+    }
     const pool = cands
-      .map(c => { const last = lastByMat.get(n(c.ID)); return last ? { name: s(c.NAME) ?? '', uom: s(c.uom), lastRate: last.rate, date: last.date, supplier: last.supplier, tokens: nameTokens(s(c.NAME) ?? '') } : null })
+      .map(c => { const last = lastByMat.get(n(c.id)); return last ? { name: s(c.name) ?? '', uom: s(c.uom), lastRate: last.rate, date: last.date, supplier: last.supplier, tokens: nameTokens(s(c.name) ?? '') } : null })
       .filter((x): x is RateSuggestion & { tokens: string[] } => !!x && x.name !== '')
     // Per orphan line, keep only same-unit candidates (when the line has a unit),
     // so a ₹648/box tile never appears against a ₹52/SqFt one. Keyed by name.
@@ -219,30 +204,24 @@ async function poSuggestions(orphans: Array<{ name: string; uom: string | null }
 
 async function loadWo(woId: number | null): Promise<OrderLineRates> {
   if (woId == null || !Number.isInteger(woId)) return EMPTY('wo', 'unavailable', 'no work-order id')
-  const items = await in4QueryCached<Record<string, unknown>>(`
-    SELECT w.PROJECT_ID, d.ITEM_ID, d.BOQ_SUBNAME, d.UOM, f.RATE
-    FROM ENGG_WORK_ORDER w
-    JOIN BI.DIM_ENGG_WORK_ORDER_BOQ d ON d.WO_ID = w.ID
-    JOIN BI.FACT_ENGG_WORK_ORDER_BOQ f ON f.ITEM_ID = d.ITEM_ID
-    WHERE w.ID = ${woId} ORDER BY d.ITEM_ID`)
-  if (items.length === 0) return EMPTY('wo', 'live')
-  const projectId = items[0].PROJECT_ID == null ? null : n(items[0].PROJECT_ID)
+  const supabase = await createClient()
+  const { data: itemRows, error: itemErr } = await supabase.rpc('in4_wo_boq_lines', { p_wo_id: woId })
+  if (itemErr) return EMPTY('wo', 'unavailable', itemErr.message)
+  const items = (itemRows ?? []) as Array<Record<string, unknown>>
+  if (items.length === 0) return EMPTY('wo', 'mirror')
+  const projectId = items[0].project_id == null ? null : n(items[0].project_id)
 
-  const boqNames = [...new Set(items.map(i => stripBoqNumber(s(i.BOQ_SUBNAME))).filter(x => x.length >= 3))]
-  const refs = boqNames.length ? await in4QueryCached<Record<string, unknown>>(`
-    SELECT d.BOQ_SUBNAME, d.UOM, d.WO_ID, w.DISPLAY_NO wo_no, w.CREATION_DT, sp.FIRM_NAME party, w.PROJECT_ID, pr.NAME project, f.QUANTITY, f.RATE, f.AMT
-    FROM BI.DIM_ENGG_WORK_ORDER_BOQ d
-    JOIN BI.FACT_ENGG_WORK_ORDER_BOQ f ON f.ITEM_ID = d.ITEM_ID
-    JOIN ENGG_WORK_ORDER w ON w.ID = d.WO_ID
-    LEFT JOIN ENGG_SERVICE_PROVIDER sp ON sp.ID = w.SERVICE_PROVIDER_ID
-    LEFT JOIN ENGG_PROJECT pr ON pr.ID = w.PROJECT_ID
-    WHERE w.STATUS = 2 AND f.RATE > 0 AND w.ID <> ${woId} AND (${boqNames.map(x => `d.BOQ_SUBNAME LIKE '%${like(x)}%'`).join(' OR ')})
-    ORDER BY w.CREATION_DT DESC`) : []
+  const boqNames = [...new Set(items.map(i => stripBoqNumber(s(i.subname))).filter(x => x.length >= 3))]
+  const refs = boqNames.length
+    ? (await fetchAll<Record<string, unknown>>((from, to) => supabase
+        .rpc('in4_wo_boq_reference_lines', { p_names: boqNames, p_exclude_wo: woId })
+        .range(from, to))).rows
+    : []
   const refLines = refs.map(r => ({
-    key: normaliseBoq(s(r.BOQ_SUBNAME), s(r.UOM)), materialId: 0, poId: n(r.WO_ID), poNo: s(r.wo_no), date: iso(r.CREATION_DT),
-    supplier: s(r.party), project: s(r.project), projectId: r.PROJECT_ID == null ? null : n(r.PROJECT_ID), qty: n(r.QUANTITY), rate: n(r.RATE), value: n(r.AMT), grnQty: 0,
+    key: normaliseBoq(s(r.subname), s(r.uom)), materialId: 0, poId: n(r.wo_id), poNo: s(r.wo_no), date: iso(r.wo_dt),
+    supplier: s(r.party), project: s(r.project), projectId: r.project_id == null ? null : n(r.project_id), qty: n(r.qty), rate: n(r.rate), value: n(r.amt), grnQty: 0,
   }))
-  const keys = items.map(i => normaliseBoq(s(i.BOQ_SUBNAME), s(i.UOM)))
+  const keys = items.map(i => normaliseBoq(s(i.subname), s(i.uom)))
   const ctxByKey = referencesFor(refLines, keys, projectId)
 
   // Near-name suggestions: prior WO lines whose name matched by LIKE but under a
@@ -250,17 +229,17 @@ async function loadWo(woId: number | null): Promise<OrderLineRates> {
   const byKeyLast = new Map<string, RateSuggestion & { tokens: string[] }>()
   for (const r of refLines) {
     if (byKeyLast.has(r.key)) continue
-    const name = String(refs.find(x => normaliseBoq(s(x.BOQ_SUBNAME), s(x.UOM)) === r.key)?.BOQ_SUBNAME ?? '').trim()
+    const name = String(refs.find(x => normaliseBoq(s(x.subname), s(x.uom)) === r.key)?.subname ?? '').trim()
     byKeyLast.set(r.key, { name: stripBoqNumber(name), uom: null, lastRate: r.rate, date: r.date, supplier: r.supplier, tokens: nameTokens(name) })
   }
   const pool = [...byKeyLast.values()]
 
   const lines = items.map(i => {
-    const name = s(i.BOQ_SUBNAME) ?? '(unnamed item)'
-    const key = normaliseBoq(name, s(i.UOM))
+    const name = s(i.subname) ?? '(unnamed item)'
+    const key = normaliseBoq(name, s(i.uom))
     const ctx = ctxByKey.get(key)
     const suggestions = ctx && ctx.purchases > 0 ? [] : rankSuggestions(name, pool.filter(p => normaliseBoq(p.name, null) !== normaliseBoq(name, null)))
-    return { ...toLineRate({ key, itemId: n(i.ITEM_ID), name, uom: s(i.UOM), rate: i.RATE == null ? null : n(i.RATE) }, ctx, suggestions) }
+    return { ...toLineRate({ key, itemId: n(i.item_id), name, uom: s(i.uom), rate: i.rate == null ? null : n(i.rate) }, ctx, suggestions) }
   })
-  return { kind: 'wo', lines, in4: 'live', error: null }
+  return { kind: 'wo', lines, in4: 'mirror', error: null }
 }

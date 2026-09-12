@@ -7,7 +7,9 @@
 // Aksha, 10 Sep 2026: "wear an Approver hat — it should come in an IE-type
 // table along with all details."
 
-import { in4QueryCached, in4Config } from '@/lib/in4/db'
+import { createClient } from '@/lib/supabase/server'
+import { fetchAll } from '@/lib/revamp/orders-tree'
+import type { In4State } from '@/lib/revamp/masters-in4'
 
 export interface PoRateLine {
   materialId: number
@@ -82,35 +84,26 @@ export function priceDelta(rate: number | null, ctx: MaterialContext | undefined
   return (rate - ref.rate) / ref.rate * 100
 }
 
-export interface PriceContext { byMaterial: Map<number, MaterialContext>; in4: 'live' | 'not-configured' | 'unavailable'; error: string | null }
+export interface PriceContext { byMaterial: Map<number, MaterialContext>; in4: In4State; error: string | null }
 
-const chunks = <T,>(xs: T[], size: number) => { const out: T[][] = []; for (let i = 0; i < xs.length; i += size) out.push(xs.slice(i, i + size)); return out }
 
-/** Live: every PO line ever raised for these materials. */
+/** What these materials have cost before, from the mirror.
+ *
+ *  This counts EVERY purchase order, approved or not — unlike the line-rates
+ *  panel, which counts only approved ones. That difference was in IN4's own
+ *  two queries and is kept: an approver comparing a price wants to see what
+ *  else is in flight, not only what is already signed. */
 export async function loadPriceContext(materialIds: readonly (number | null)[], projectId: number | null): Promise<PriceContext> {
   const ids = [...new Set(materialIds.filter((x): x is number => Number.isInteger(x)))]
-  if (!in4Config()) return { byMaterial: new Map(), in4: 'not-configured', error: null }
-  if (ids.length === 0) return { byMaterial: new Map(), in4: 'live', error: null }
-  try {
-    const lines: PoRateLine[] = []
-    for (const c of chunks(ids, 400)) {
-      const rows = await in4QueryCached<Record<string, unknown>>(`
-        SELECT f.MATERIAL_ID, f.PO_ID, h.PO_NO, h.PO_DT, COALESCE(sp.PrintName, sp.NAME) supplier, pr.NAME project, f.PROJECT_ID,
-               f.BASE_PO_QTY qty, f.NET_RATE rate, f.MATERIAL_VALUE value, f.GRN_QTY grn_qty
-        FROM BI.FACT_PURCHASE_ORDER_DETAILS f
-        JOIN BI.PURCHASE_ORDER_HEADER h ON h.PO_ID = f.PO_ID
-        LEFT JOIN PURCH_SUPPLIER sp ON sp.ID = f.SUPPLIER_ID
-        LEFT JOIN ENGG_PROJECT pr ON pr.ID = f.PROJECT_ID
-        WHERE f.MATERIAL_ID IN (${c.join(',')}) AND f.NET_RATE > 0
-        ORDER BY h.PO_DT DESC`)
-      for (const r of rows) lines.push({
-        materialId: n(r.MATERIAL_ID), poId: n(r.PO_ID), poNo: s(r.PO_NO), date: iso(r.PO_DT),
-        supplier: s(r.supplier), project: s(r.project), projectId: r.PROJECT_ID == null ? null : n(r.PROJECT_ID),
-        qty: n(r.qty), rate: n(r.rate), value: n(r.value), grnQty: n(r.grn_qty),
-      })
-    }
-    return { byMaterial: buildPriceContext(lines, projectId), in4: 'live', error: null }
-  } catch (e) {
-    return { byMaterial: new Map(), in4: 'unavailable', error: e instanceof Error ? e.message : String(e) }
-  }
+  if (ids.length === 0) return { byMaterial: new Map(), in4: 'mirror', error: null }
+  const supabase = await createClient()
+  const { rows, error } = await fetchAll<Record<string, unknown>>((from, to) =>
+    supabase.rpc('in4_material_po_history', { p_material_ids: ids, p_approved_only: false }).range(from, to))
+  if (error) return { byMaterial: new Map(), in4: 'unavailable', error }
+  const lines: PoRateLine[] = rows.map(r => ({
+    materialId: n(r.material_id), poId: n(r.po_id), poNo: s(r.po_no), date: iso(r.po_dt),
+    supplier: s(r.supplier), project: s(r.project), projectId: r.project_id == null ? null : n(r.project_id),
+    qty: n(r.qty), rate: n(r.rate), value: n(r.value), grnQty: n(r.grn_qty),
+  }))
+  return { byMaterial: buildPriceContext(lines, projectId), in4: 'mirror', error: null }
 }

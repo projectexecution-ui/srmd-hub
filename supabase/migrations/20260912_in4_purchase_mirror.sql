@@ -32,8 +32,16 @@ create index if not exists in4_purchase_orders_supplier_idx on public.in4_purcha
 
 -- One row per ordered line. 5,080 rows. net_rate is the rate the rate screens
 -- compare; base_po_qty the quantity they weight it by.
+--
+-- ITEM_ID is NOT unique here. Two lines appear twice — items 3727 and 4369,
+-- both on purchase order 1166, identical except for the rate (33.5721 and
+-- 38.2255). That is an IN4 amendment: the fact keeps the line at both rates
+-- instead of replacing it, and IN4's own rate screens read both, so this keeps
+-- both rather than quietly picking one. (item_id, net_rate) IS unique across
+-- all 5,080 rows, but net_rate is null on nine of them and a key cannot be
+-- null — hence rate_key, net_rate with null folded to -1 so it can be keyed on.
 create table if not exists public.in4_po_items (
-  item_id        integer primary key,
+  item_id        integer not null,
   po_id          integer not null,
   indent_id      integer,
   wo_id          integer,
@@ -46,7 +54,9 @@ create table if not exists public.in4_po_items (
   grn_qty        numeric,
   net_rate       numeric,
   material_value numeric,
-  synced_at      timestamptz not null default now()
+  rate_key       numeric generated always as (coalesce(net_rate, -1)) stored,
+  synced_at      timestamptz not null default now(),
+  primary key (item_id, rate_key)
 );
 create index if not exists in4_po_items_po_idx       on public.in4_po_items (po_id);
 create index if not exists in4_po_items_material_idx on public.in4_po_items (material_id);

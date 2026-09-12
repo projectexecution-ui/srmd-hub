@@ -15,8 +15,6 @@
 // paid) + advances as paid; retention is held separately; still to pay =
 // Ordered (with GST) − money out − retention.
 
-import { in4QueryCached, in4Config } from '@/lib/in4/db'
-import { In4NotConfigured } from '@/lib/in4/wo-print'
 import { createClient } from '@/lib/supabase/server'
 import { cleanBillNo } from '@/lib/revamp/orders-tree'
 
@@ -137,55 +135,32 @@ const iso = (v: unknown): string | null => {
 const n = (v: unknown) => (v == null ? 0 : Number(v))
 const s = (v: unknown) => (v == null || String(v).trim() === '' ? null : String(v).trim())
 
-/** One purchase order's ledger, live. Null when IN4 has no such order.
- *  Throws In4NotConfigured when the deployment has no IN4 login. */
+/** One purchase order's ledger, from the mirror. Null when there is no such
+  *  order. */
 export async function loadPoLedger(poId: number): Promise<{ poId: number; ref: string; party: string | null; ordered: number; headerPaid: number; ledger: PoLedger } | null> {
-  if (!in4Config()) throw new In4NotConfigured()
-  const [hdr] = await in4QueryCached<Record<string, unknown>>(`
-    SELECT h.PO_ID, h.PO_NO, h.PO_VALUE, h.PAID_AMT, COALESCE(sp.PrintName, sp.NAME) supplier
-    FROM BI.PURCHASE_ORDER_HEADER h
-    LEFT JOIN PURCH_PURCHASE_ORDER p ON p.ID = h.PO_ID
-    LEFT JOIN PURCH_SUPPLIER sp ON sp.ID = p.SUPPLIER_ID
-    WHERE h.PO_ID = ${poId}`)
-  if (!hdr) return null
-
   const supabase = await createClient()
-  const [grns, bills, adv] = await Promise.all([
-    in4QueryCached<Record<string, unknown>>(`
-      SELECT d.GRN_ID, g.GRN_NO, g.GRN_DT, g.DELIVERY_CHALAN_NO, m.NAME material, u.NAME uom,
-             d.RECIEVED_QTY, d.GRN_MATERIAL_COST
-      FROM BI.FACT_PURCHASE_GRN_DETAILS d
-      LEFT JOIN BI.DIM_PURCHASE_GRN_HEADER g ON g.GRN_ID = d.GRN_ID
-      LEFT JOIN PURCH_MATERIAL_LOOKUP m ON m.ID = d.MATERIAL_ID
-      LEFT JOIN COMMON_UOM_LOOKUP u ON u.ID = d.UOM_ID
-      -- A GRN line of nothing (0 qty, 0 value) is IN4's placeholder, not a receipt.
-      WHERE d.PO_ID = ${poId} AND (d.RECIEVED_QTY <> 0 OR d.GRN_MATERIAL_COST <> 0)
-      ORDER BY g.GRN_DT, d.GRN_ID, d.AUTO_ID`),
-    in4QueryCached<Record<string, unknown>>(`
-      WITH g AS (SELECT DISTINCT GRN_ID FROM BI.FACT_PURCHASE_GRN_DETAILS WHERE PO_ID = ${poId})
-      SELECT p.CERTIFICATE_ID, p.PO_ID bill_po_id, hh.PO_NO bill_po_no,
-             MAX(d.CERTIFICATE_NO) cert_no, MAX(d.CERTIFICATE_DT) cert_dt,
-             MAX(d.INVOICE_NO) invoice_no, MAX(d.INVOICE_DT) invoice_dt, MAX(d.STATUS_NAME) status_name,
-             SUM(p.LANDED_COST) landed, SUM(p.CERTIFIED_AMT) certified, SUM(p.PAID_AMT) paid,
-             SUM(p.TAX_DEDUCTION_AMT) tds, SUM(p.RETENTION_AMT) retention, SUM(p.ADV_RECOVERY_AMT) adv_recovery
-      FROM BI.FACT_PURCHASE_SUPPLIER_PAY p
-      JOIN g ON g.GRN_ID = p.GRN_ID
-      LEFT JOIN BI.DIM_PURCHASE_SUPPLIER_PAY d ON d.AUTO_ID = p.AUTO_ID
-      LEFT JOIN BI.PURCHASE_ORDER_HEADER hh ON hh.PO_ID = p.PO_ID
-      GROUP BY p.CERTIFICATE_ID, p.PO_ID, hh.PO_NO`),
+  // Four reads, all local now, so they go together rather than in a chain.
+  const [hdrRes, grnRes, billRes, adv] = await Promise.all([
+    supabase.rpc('in4_po_ledger_header', { p_po_id: poId }),
+    supabase.rpc('in4_po_ledger_grns', { p_po_id: poId }),
+    supabase.rpc('in4_po_ledger_bills', { p_po_id: poId }),
     supabase.from('in4_supplier_certificates')
       .select('certificate_id, certificate_no, status, landed_cost, paid, tax_deduction, retention, adv_recovery')
       .eq('kind', 'advance').eq('po_id', poId),
   ])
+  const hdr = ((hdrRes.data ?? []) as Array<Record<string, unknown>>)[0]
+  if (!hdr) return null
+  const grns = (grnRes.data ?? []) as Array<Record<string, unknown>>
+  const bills = (billRes.data ?? []) as Array<Record<string, unknown>>
 
   const ledger = buildPoLedger(
-    n(hdr.PO_VALUE), poId,
+    n(hdr.po_value), poId,
     grns.map(g => ({
-      grnId: n(g.GRN_ID), grnNo: s(g.GRN_NO), date: iso(g.GRN_DT), challan: s(g.DELIVERY_CHALAN_NO),
-      material: s(g.material), uom: s(g.uom), qty: n(g.RECIEVED_QTY), value: n(g.GRN_MATERIAL_COST),
+      grnId: n(g.grn_id), grnNo: s(g.grn_no), date: iso(g.grn_dt), challan: s(g.challan),
+      material: s(g.material), uom: s(g.uom), qty: n(g.qty), value: n(g.value),
     })),
     bills.map(b => ({
-      certificateId: n(b.CERTIFICATE_ID), certificateNo: s(b.cert_no), certificateDate: iso(b.cert_dt),
+      certificateId: n(b.certificate_id), certificateNo: s(b.cert_no), certificateDate: iso(b.cert_dt),
       invoiceNo: s(b.invoice_no), invoiceDate: iso(b.invoice_dt), status: s(b.status_name),
       billPoId: n(b.bill_po_id), billPoNo: s(b.bill_po_no),
       landed: n(b.landed), certified: n(b.certified), paid: n(b.paid), tds: n(b.tds),
@@ -196,5 +171,5 @@ export async function loadPoLedger(poId: number): Promise<{ poId: number; ref: s
       landed: n(a.landed_cost), paid: n(a.paid), tds: n(a.tax_deduction), retention: n(a.retention), advanceRecovered: n(a.adv_recovery),
     })),
   )
-  return { poId, ref: s(hdr.PO_NO) ?? `PO ${poId}`, party: s(hdr.supplier), ordered: n(hdr.PO_VALUE), headerPaid: n(hdr.PAID_AMT), ledger }
+  return { poId, ref: s(hdr.po_no) ?? `PO ${poId}`, party: s(hdr.supplier), ordered: n(hdr.po_value), headerPaid: n(hdr.paid_amt), ledger }
 }
