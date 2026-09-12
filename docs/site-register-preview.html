@@ -1,0 +1,1001 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>CT Hub Site Register</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  :root{
+    color-scheme: light;
+    --ink:#0f172a; --body:#334155; --muted:#64748b; --line:#e2e8f0;
+    --paper:#ffffff; --ground:#f1f5f9; --accent:#4f46e5;
+  }
+  body{margin:0;background:var(--ground); color:var(--body); font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;}
+  .tnum{font-variant-numeric:tabular-nums}
+  .scrollx{overflow-x:auto}
+  .drawer{transition:transform .18s ease}
+  [hidden]{display:none!important}
+  .tree-line{border-left:1px solid var(--line)}
+  ::-webkit-scrollbar{height:8px;width:8px}
+  ::-webkit-scrollbar-thumb{background:#cbd5e1;border-radius:8px}
+  .phone{width:375px;height:660px;border:10px solid #0f172a;border-radius:30px;overflow:hidden;background:#fff;box-shadow:0 18px 40px -18px rgba(15,23,42,.45)}
+  .phone-scroll{height:100%;overflow-y:auto;overflow-x:hidden;-webkit-overflow-scrolling:touch}
+  button:focus-visible,a:focus-visible,input:focus-visible{outline:2px solid #4f46e5;outline-offset:2px}
+  @media (prefers-reduced-motion: reduce){*{transition:none!important;animation:none!important}}
+</style>
+
+<div class="min-h-screen">
+
+  <!-- ── Preview chrome ─────────────────────────────────────────────────── -->
+  <header class="bg-white border-b border-slate-200">
+    <div class="max-w-[1240px] mx-auto px-4 md:px-6 py-3 flex flex-wrap items-center gap-x-4 gap-y-2">
+      <div class="flex items-center gap-2.5">
+        <div class="h-7 w-7 rounded bg-indigo-600 text-white grid place-items-center text-[13px] font-bold">CT</div>
+        <div>
+          <p class="text-[13px] font-bold text-slate-900 leading-tight">Site Register — design preview</p>
+          <p class="text-[11px] text-slate-500 leading-tight">Nothing here is live. Figures and names are real CT Hub / IN4 data, arranged to show the shape.</p>
+        </div>
+      </div>
+      <div class="ml-auto flex items-center gap-2">
+        <label class="text-[11px] text-slate-500">Project</label>
+        <select id="proj" class="text-[13px] border border-slate-300 rounded-md px-2 py-1.5 bg-white text-slate-800 min-h-[36px]">
+          <option>SRAH</option><option>NGH A</option><option>NGH B</option><option>P2 A01</option><option>Welcome Centre Extension</option>
+        </select>
+      </div>
+    </div>
+    <!-- section tabs -->
+    <div class="max-w-[1240px] mx-auto px-4 md:px-6">
+      <nav class="flex gap-1 -mb-px overflow-x-auto" id="tabs">
+        <button data-pane="disc" class="tab px-3.5 py-2.5 text-[13px] font-semibold border-b-2 whitespace-nowrap min-h-[44px]">Discussions</button>
+        <button data-pane="stake" class="tab px-3.5 py-2.5 text-[13px] font-semibold border-b-2 whitespace-nowrap min-h-[44px]">Stakeholders</button>
+        <button data-pane="dec" class="tab px-3.5 py-2.5 text-[13px] font-semibold border-b-2 whitespace-nowrap min-h-[44px]">Decisions &amp; Specs</button>
+        <button data-pane="how" class="tab px-3.5 py-2.5 text-[13px] font-semibold border-b-2 whitespace-nowrap min-h-[44px]">How it holds together</button>
+      </nav>
+    </div>
+  </header>
+
+  <main class="max-w-[1240px] mx-auto px-4 md:px-6 py-5 space-y-5">
+
+    <!-- ══════════════════════════════ DISCUSSIONS ══════════════════════════ -->
+    <section id="pane-disc" class="space-y-4">
+
+      <div class="rounded-lg border border-indigo-200 bg-indigo-50/60 px-4 py-3">
+        <p class="text-[13px] text-slate-800"><b>The one idea:</b> every thread has exactly one person holding it right now — the <b>ball in court</b> — and a date it is due back. A conversation nobody owns is the gap this closes. Today&rsquo;s Discussions tab only replays comments left on budget sheets; nothing there can be assigned, dated or closed.</p>
+      </div>
+
+      <!-- KPI strip -->
+      <div class="grid grid-cols-2 md:grid-cols-5 gap-2.5">
+        <div class="rounded-lg border-2 border-indigo-300 bg-white p-3">
+          <p class="text-[11px] font-semibold uppercase tracking-wide text-indigo-700">In my court</p>
+          <p class="text-2xl font-bold text-slate-900 tnum leading-tight mt-0.5">3</p>
+          <p class="text-[11px] text-slate-500">1 due today</p>
+        </div>
+        <div class="rounded-lg border border-slate-200 bg-white p-3">
+          <p class="text-[11px] font-semibold uppercase tracking-wide text-rose-700">Overdue</p>
+          <p class="text-2xl font-bold text-rose-700 tnum leading-tight mt-0.5">2</p>
+          <p class="text-[11px] text-slate-500">oldest 6 days</p>
+        </div>
+        <div class="rounded-lg border border-slate-200 bg-white p-3">
+          <p class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Open</p>
+          <p class="text-2xl font-bold text-slate-900 tnum leading-tight mt-0.5">8</p>
+          <p class="text-[11px] text-slate-500">across 5 categories</p>
+        </div>
+        <div class="rounded-lg border border-slate-200 bg-white p-3">
+          <p class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Cost impact flagged</p>
+          <p class="text-2xl font-bold text-amber-700 tnum leading-tight mt-0.5">₹18.4 L</p>
+          <p class="text-[11px] text-slate-500">3 threads, not yet in budget</p>
+        </div>
+        <div class="rounded-lg border border-slate-200 bg-white p-3">
+          <p class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Avg. days to answer</p>
+          <p class="text-2xl font-bold text-slate-900 tnum leading-tight mt-0.5">2.4</p>
+          <p class="text-[11px] text-slate-500">consultants 5.1</p>
+        </div>
+      </div>
+
+      <!-- filters -->
+      <div class="rounded-lg border border-slate-200 bg-white p-3 space-y-2.5">
+        <div class="flex flex-wrap items-center gap-1.5" id="typeChips"></div>
+        <div class="flex flex-wrap items-center gap-2">
+          <button class="qf px-2.5 py-1.5 rounded-md text-[12px] font-semibold border min-h-[36px]" data-q="mine">In my court</button>
+          <button class="qf px-2.5 py-1.5 rounded-md text-[12px] font-semibold border min-h-[36px]" data-q="overdue">Overdue</button>
+          <button class="qf px-2.5 py-1.5 rounded-md text-[12px] font-semibold border min-h-[36px]" data-q="cost">Has cost impact</button>
+          <button class="qf px-2.5 py-1.5 rounded-md text-[12px] font-semibold border min-h-[36px]" data-q="closed">Closed</button>
+          <span class="text-slate-300">|</span>
+          <button class="qf px-2.5 py-1.5 rounded-md text-[12px] font-semibold border min-h-[36px]" data-q="all">Everything on SRAH</button>
+          <button class="qf px-2.5 py-1.5 rounded-md text-[12px] font-semibold border min-h-[36px]" data-q="hub">All 45 projects</button>
+          <span class="ml-auto text-[12px] text-slate-500" id="count"></span>
+          <button class="px-3 py-1.5 rounded-md bg-indigo-600 text-white text-[12px] font-semibold min-h-[36px]" id="raiseBtn">+ Raise</button>
+        </div>
+      </div>
+
+      <!-- desktop register -->
+      <div class="hidden xl:block rounded-lg border border-slate-200 bg-white overflow-hidden">
+        <div class="scrollx max-h-[520px] overflow-y-auto">
+          <table class="w-full text-[13px]" style="min-width:1060px">
+            <thead class="sticky top-0 bg-slate-50 border-b border-slate-200 z-10">
+              <tr class="text-left text-[11px] uppercase tracking-wide text-slate-500">
+                <th class="px-3 py-2 font-semibold w-[86px]">Ref</th>
+                <th class="px-3 py-2 font-semibold">Subject</th>
+                <th class="px-3 py-2 font-semibold w-[190px]">Where</th>
+                <th class="px-3 py-2 font-semibold w-[178px]">Ball in court</th>
+                <th class="px-3 py-2 font-semibold w-[96px]">Due</th>
+                <th class="px-3 py-2 font-semibold w-[110px]">Cost</th>
+                <th class="px-3 py-2 font-semibold w-[112px]">Status</th>
+              </tr>
+            </thead>
+            <tbody id="rows" class="divide-y divide-slate-100"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- phone -->
+      <div class="xl:hidden"></div>
+      <div class="flex flex-col lg:flex-row gap-5 items-start">
+        <div class="hidden xl:block shrink-0">
+          <p class="text-[11px] font-semibold uppercase tracking-wide text-slate-500 mb-2">Same register on a phone</p>
+          <div class="phone"><div class="phone-scroll" id="phoneDisc"></div></div>
+        </div>
+        <div class="xl:hidden w-full">
+          <div class="rounded-lg border border-slate-200 bg-white divide-y divide-slate-100" id="cardsDisc"></div>
+        </div>
+        <div class="flex-1 space-y-3">
+          <div class="rounded-lg border border-slate-200 bg-white p-4">
+            <p class="text-[13px] font-bold text-slate-900 mb-2">What makes it advanced, in plain words</p>
+            <ul class="text-[13px] space-y-1.5 text-slate-700 list-disc pl-4">
+              <li><b>Ball in court.</b> One owner, shown with how long it has sat there. Handing over is one click and is logged.</li>
+              <li><b>Due date and escalation.</b> Overdue goes red; past the escalation days it appears on the Atm Head&rsquo;s desk on its own.</li>
+              <li><b>Five kinds, one register.</b> Site issue · Query (RFI) · Instruction · Decision · Non-conformance. Same screen, filtered.</li>
+              <li><b>Cost impact is a field, not a sentence.</b> Flag it and the thread offers &ldquo;raise a working sheet&rdquo; — the money never leaves the paper trail.</li>
+              <li><b>Routing from Stakeholders.</b> A structural query addresses the structural consultant because that is who the project says it is.</li>
+              <li><b>Closed by the person who raised it</b>, never by the person answering. That is the industry rule and it is what makes the count trustworthy.</li>
+              <li><b>Nothing is deleted.</b> Edits show as edited, status changes are stamped, and the whole trail prints.</li>
+            </ul>
+          </div>
+          <div class="rounded-lg border border-slate-200 bg-white p-4">
+            <p class="text-[13px] font-bold text-slate-900 mb-2">The gaps this removes for everyday users</p>
+            <ul class="text-[13px] space-y-1.5 text-slate-700 list-disc pl-4">
+              <li>Raising is photo-first on a phone: camera → one line → who. No reference number to invent, no form to learn.</li>
+              <li>Every screen opens on <b>&ldquo;In my court&rdquo;</b>, so a person sees their own list before the project&rsquo;s.</li>
+              <li>Recipients are pre-filled. Getting it to the wrong person needs effort.</li>
+              <li>A thread can never be &ldquo;open, owned by nobody&rdquo; — the form will not save without an owner.</li>
+              <li>Voice note and WhatsApp-style photo attach; consultants who never log in can answer by e-mail and the reply lands in the thread.</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ══════════════════════════════ STAKEHOLDERS ═════════════════════════ -->
+    <section id="pane-stake" class="space-y-4" hidden>
+
+      <div class="rounded-lg border border-indigo-200 bg-indigo-50/60 px-4 py-3 space-y-1">
+        <p class="text-[13px] text-slate-800"><b>One list of everyone on the project</b>, cut by discipline. Consultants stop being a separate tab and become a filter here — and because each consultant is pinned to their IN4 party, their work-order value, paid and balance ride along, which is all the old Consultants tab was for.</p>
+        <p class="text-[12px] text-slate-600">Disciplines are chosen per project. Landscape is off on SRAH because there is none. Nothing irrelevant is ever shown.</p>
+      </div>
+
+      <!-- discipline picker -->
+      <div class="rounded-lg border border-slate-200 bg-white p-4 space-y-3">
+        <div class="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+          <p class="text-[13px] font-bold text-slate-900">Disciplines on this project</p>
+          <p class="text-[12px] text-slate-500" id="discCount"></p>
+          <button class="ml-auto px-3 py-1.5 rounded-md border border-slate-300 text-[12px] font-semibold text-slate-700 min-h-[36px]" id="copyBtn">Copy to other projects…</button>
+        </div>
+        <div class="flex flex-wrap gap-1.5" id="discList"></div>
+        <p class="text-[12px] text-slate-500">Tap to switch a discipline on or off for SRAH. The full master has 24; an admin can add more once and every project sees it.</p>
+      </div>
+
+      <!-- coverage warnings -->
+      <div class="rounded-lg border border-amber-300 bg-amber-50 p-3.5">
+        <p class="text-[13px] font-bold text-amber-900 mb-1.5">Coverage check — 2 things the project says it needs and has nobody for</p>
+        <ul class="text-[13px] text-amber-900 space-y-1">
+          <li>· <b>Structural</b> is switched on and has no consultant. 14 structural queries were raised last quarter and went to the Architect by default.</li>
+          <li>· <b>Fire &amp; life safety</b> — the budget has category <i>09 Fire Fighting Works</i> enabled with ₹1.42 Cr, but no consultant and no contractor is named here.</li>
+        </ul>
+      </div>
+
+      <div class="flex flex-col xl:flex-row gap-5 items-start">
+        <div class="flex-1 min-w-0 w-full space-y-3">
+          <div class="flex flex-wrap gap-1.5" id="orgChips"></div>
+          <div class="rounded-lg border border-slate-200 bg-white overflow-hidden">
+            <div class="scrollx">
+              <table class="w-full text-[13px]" style="min-width:880px">
+                <thead class="bg-slate-50 border-b border-slate-200">
+                  <tr class="text-left text-[11px] uppercase tracking-wide text-slate-500">
+                    <th class="px-3 py-2 font-semibold">Name</th>
+                    <th class="px-3 py-2 font-semibold w-[150px]">Discipline</th>
+                    <th class="px-3 py-2 font-semibold w-[170px]">Part on this project</th>
+                    <th class="px-3 py-2 font-semibold w-[190px]">Reach</th>
+                    <th class="px-3 py-2 font-semibold w-[150px] text-right">Order value / paid</th>
+                  </tr>
+                </thead>
+                <tbody id="stakeRows" class="divide-y divide-slate-100"></tbody>
+              </table>
+            </div>
+          </div>
+          <p class="text-[12px] text-slate-500">Order value comes from IN4 by the party pin — nobody types it. A row with no pin says so, in the row, instead of showing a blank.</p>
+        </div>
+
+        <div class="hidden xl:block shrink-0">
+          <p class="text-[11px] font-semibold uppercase tracking-wide text-slate-500 mb-2">On a phone</p>
+          <div class="phone"><div class="phone-scroll" id="phoneStake"></div></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ══════════════════════════ DECISIONS & SPECS ════════════════════════ -->
+    <section id="pane-dec" class="space-y-4" hidden>
+
+      <div class="rounded-lg border border-indigo-200 bg-indigo-50/60 px-4 py-3 space-y-1">
+        <p class="text-[13px] text-slate-800"><b>The tree is the project&rsquo;s category list</b> — the same categories and sub-categories the budget already uses, so nothing new to set up. You tick which ones actually need a decision; SRAH needs 34 of its 91.</p>
+        <p class="text-[12px] text-slate-600">A decision here is a specification someone has to live with: make, model, finish, size, rate basis. It carries who decided it, when, and what it replaced.</p>
+      </div>
+
+      <div class="grid grid-cols-2 md:grid-cols-4 gap-2.5">
+        <div class="rounded-lg border border-slate-200 bg-white p-3">
+          <p class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Marked applicable</p>
+          <p class="text-2xl font-bold text-slate-900 tnum mt-0.5">34</p><p class="text-[11px] text-slate-500">of 91 sub-categories</p>
+        </div>
+        <div class="rounded-lg border border-slate-200 bg-white p-3">
+          <p class="text-[11px] font-semibold uppercase tracking-wide text-emerald-700">Decided</p>
+          <p class="text-2xl font-bold text-emerald-700 tnum mt-0.5">19</p><p class="text-[11px] text-slate-500">3 superseded once</p>
+        </div>
+        <div class="rounded-lg border border-slate-200 bg-white p-3">
+          <p class="text-[11px] font-semibold uppercase tracking-wide text-amber-700">Awaiting decision</p>
+          <p class="text-2xl font-bold text-amber-700 tnum mt-0.5">11</p><p class="text-[11px] text-slate-500">4 with someone waiting</p>
+        </div>
+        <div class="rounded-lg border-2 border-rose-300 bg-white p-3">
+          <p class="text-[11px] font-semibold uppercase tracking-wide text-rose-700">Blocking procurement</p>
+          <p class="text-2xl font-bold text-rose-700 tnum mt-0.5">4</p><p class="text-[11px] text-slate-500">indent due inside 21 days</p>
+        </div>
+      </div>
+
+      <div class="rounded-lg border border-slate-200 bg-white p-3 flex flex-wrap items-center gap-2">
+        <button class="df px-2.5 py-1.5 rounded-md text-[12px] font-semibold border min-h-[36px]" data-f="applicable">Applicable only</button>
+        <button class="df px-2.5 py-1.5 rounded-md text-[12px] font-semibold border min-h-[36px]" data-f="pending">Awaiting decision</button>
+        <button class="df px-2.5 py-1.5 rounded-md text-[12px] font-semibold border min-h-[36px]" data-f="blocking">Blocking procurement</button>
+        <button class="df px-2.5 py-1.5 rounded-md text-[12px] font-semibold border min-h-[36px]" data-f="all">Whole category list</button>
+        <label class="ml-auto inline-flex items-center gap-2 text-[12px] font-semibold text-slate-700 cursor-pointer">
+          <input type="checkbox" id="editMode" class="h-4 w-4 accent-indigo-600"> Choose what is applicable
+        </label>
+        <button class="px-3 py-1.5 rounded-md border border-slate-300 text-[12px] font-semibold text-slate-700 min-h-[36px]" id="copyBtn2">Copy this selection to…</button>
+      </div>
+
+      <div class="flex flex-col xl:flex-row gap-5 items-start">
+        <div class="flex-1 min-w-0 w-full rounded-lg border border-slate-200 bg-white overflow-hidden">
+          <div class="max-h-[560px] overflow-y-auto" id="tree"></div>
+        </div>
+        <div class="hidden xl:block shrink-0">
+          <p class="text-[11px] font-semibold uppercase tracking-wide text-slate-500 mb-2">On a phone</p>
+          <div class="phone"><div class="phone-scroll" id="phoneDec"></div></div>
+        </div>
+      </div>
+
+      <div class="rounded-lg border border-slate-200 bg-white p-4">
+        <p class="text-[13px] font-bold text-slate-900 mb-2">Why the tree, and not a list</p>
+        <ul class="text-[13px] space-y-1.5 text-slate-700 list-disc pl-4">
+          <li>It is the budget&rsquo;s own category → sub-category shape, so a decision sits exactly where the money for it sits. Open a sub-category in Budget and the decision is right there.</li>
+          <li>Ticking a parent ticks its children; a half-ticked parent shows a dash, so 91 rows are set in about a minute.</li>
+          <li>A decision that is still open <b>and</b> has an indent coming up inside its lead time turns red. That is the one number that saves a delay.</li>
+          <li>Superseding is honest: the old spec stays visible with its date, so &ldquo;we changed the tile in July&rdquo; has a record.</li>
+        </ul>
+      </div>
+    </section>
+
+    <!-- ══════════════════════════ HOW IT HOLDS TOGETHER ════════════════════ -->
+    <section id="pane-how" class="space-y-4" hidden>
+      <div class="rounded-lg border border-slate-200 bg-white p-5 space-y-4">
+        <h2 class="text-[15px] font-bold text-slate-900">Three pages, one spine</h2>
+        <p class="text-[13px] text-slate-700 max-w-[65ch]">They are not three modules. Stakeholders says who exists and what each one is responsible for; Decisions says what has to be settled and by when; Discussions is how anything gets from one state to the other. Build them apart and each one quietly needs a list of people typed again.</p>
+
+        <div class="grid md:grid-cols-3 gap-3">
+          <div class="rounded-lg border border-slate-200 p-3.5">
+            <p class="text-[12px] font-bold uppercase tracking-wide text-indigo-700">Stakeholders feeds</p>
+            <ul class="text-[13px] text-slate-700 mt-1.5 space-y-1">
+              <li>· who a query of each discipline goes to</li>
+              <li>· who may take a decision in that discipline</li>
+              <li>· the distribution list on every thread</li>
+              <li>· the consultant cost figures, from IN4</li>
+            </ul>
+          </div>
+          <div class="rounded-lg border border-slate-200 p-3.5">
+            <p class="text-[12px] font-bold uppercase tracking-wide text-indigo-700">Decisions feeds</p>
+            <ul class="text-[13px] text-slate-700 mt-1.5 space-y-1">
+              <li>· the red flag on an indent whose spec is not settled</li>
+              <li>· the spec printed on a work order&rsquo;s BOQ</li>
+              <li>· &ldquo;decided on&rdquo; against the budget sub-category</li>
+            </ul>
+          </div>
+          <div class="rounded-lg border border-slate-200 p-3.5">
+            <p class="text-[12px] font-bold uppercase tracking-wide text-indigo-700">Discussions feeds</p>
+            <ul class="text-[13px] text-slate-700 mt-1.5 space-y-1">
+              <li>· a decision, when a thread ends in one</li>
+              <li>· a working sheet, when a thread has cost</li>
+              <li>· the daily digest and the Telegram card</li>
+              <li>· each person&rsquo;s response time</li>
+            </ul>
+          </div>
+        </div>
+
+        <div class="rounded-lg border border-slate-200 bg-slate-50 p-4">
+          <p class="text-[13px] font-bold text-slate-900 mb-2">What CT Hub already has that this reuses</p>
+          <div class="grid sm:grid-cols-2 gap-x-6 gap-y-1 text-[13px] text-slate-700">
+            <p>· Categories and sub-categories — 91 on SRAH, already per-project</p>
+            <p>· @mentions and the mention renderer, from sheet comments</p>
+            <p>· Notifications, digests, Telegram cards and the switches</p>
+            <p>· Approvals matrix, for who may close or decide</p>
+            <p>· IN4 parties, work orders and paid figures</p>
+            <p>· Project floors, for the location field</p>
+            <p>· Attachments, the same store the sheets use</p>
+            <p>· Permissions per module, per role, per person</p>
+          </div>
+        </div>
+
+        <div class="rounded-lg border border-slate-200 p-4">
+          <p class="text-[13px] font-bold text-slate-900 mb-2">What it needs that does not exist yet</p>
+          <p class="text-[13px] text-slate-700 max-w-[65ch]">Seven new tables, all additive — no existing table changes shape. <span class="text-slate-500">disciplines · project_disciplines · project_stakeholders · threads · thread_posts · thread_events · decisions (with revisions).</span> The existing sheet comments stay where they are and appear in the register as a sixth, read-only kind, so no history is lost and nothing has to be migrated on day one.</p>
+        </div>
+
+        <div class="rounded-lg border border-slate-200 p-4">
+          <p class="text-[13px] font-bold text-slate-900 mb-2">Order I would build it in</p>
+          <ol class="text-[13px] text-slate-700 space-y-1 list-decimal pl-5 max-w-[70ch]">
+            <li><b>Stakeholders + disciplines + copy-to-projects.</b> Everything else routes through it, and on its own it already answers &ldquo;who is the architect on P2&rdquo;.</li>
+            <li><b>Discussions.</b> The register, the drawer, ball-in-court, due dates, the phone capture. Notifications on the existing rails.</li>
+            <li><b>Decisions &amp; Specs.</b> The tree, applicability, revisions — then the link back into indents, which is where it earns its keep.</li>
+          </ol>
+          <p class="text-[12px] text-slate-500 mt-2">Each step is usable on its own and none of them touches Approvals.</p>
+        </div>
+
+        <div class="rounded-lg border border-slate-200 bg-white p-4">
+          <p class="text-[13px] font-bold text-slate-900 mb-2">Decisions I need from you before building</p>
+          <ol class="text-[13px] text-slate-700 space-y-1.5 list-decimal pl-5 max-w-[72ch]">
+            <li><b>The word &ldquo;discipline&rdquo; is already taken.</b> In CT Hub today a discipline means a budget category (Civil, Electrical, Interiors). The stakeholder sense is different (Architecture, Structural, MEP). I would call the new one <b>Discipline</b> on screen and rename the budget one to <b>Category</b>, which is what everyone calls it anyway — or keep both and live with the collision.</li>
+            <li><b>Can consultants and contractors log in?</b> Full answer-in-the-thread access, or replies by e-mail only. It changes who sees project figures.</li>
+            <li><b>Who may close a thread</b> — only the raiser, or also the Atm Head.</li>
+            <li><b>Escalation days</b> — after how many days does an unanswered thread land on the Atm Head, and does it go further to the Project Head.</li>
+            <li><b>Does a cost-impact thread create a working sheet automatically</b>, or only offer the button.</li>
+          </ol>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <p class="max-w-[1240px] mx-auto px-4 md:px-6 pb-8 text-[12px] text-slate-500">Preview only — no data is saved. Project names, categories, sub-categories, people and consultant firms are the real ones from CT Hub and IN4; thread contents and decisions are illustrative.</p>
+</div>
+
+<!-- ── Thread drawer ──────────────────────────────────────────────────────── -->
+<div id="scrim" hidden class="fixed inset-0 bg-slate-900/40 z-40"></div>
+<aside id="drawer" hidden class="fixed top-0 right-0 h-full w-full sm:w-[540px] bg-white z-50 shadow-2xl overflow-y-auto drawer">
+  <div id="drawerBody"></div>
+</aside>
+
+<!-- ── Copy modal ─────────────────────────────────────────────────────────── -->
+<div id="copyScrim" hidden class="fixed inset-0 bg-slate-900/40 z-40 grid place-items-center p-4">
+  <div class="bg-white rounded-xl w-full max-w-[560px] max-h-[86vh] overflow-y-auto shadow-2xl">
+    <div class="px-5 py-4 border-b border-slate-200 flex items-start gap-3">
+      <div>
+        <p class="text-[15px] font-bold text-slate-900" id="copyTitle">Copy to other projects</p>
+        <p class="text-[12px] text-slate-500" id="copySub"></p>
+      </div>
+      <button class="ml-auto text-slate-400 text-xl leading-none" id="copyClose" aria-label="Close">&times;</button>
+    </div>
+    <div class="p-5 space-y-4">
+      <div>
+        <p class="text-[12px] font-bold uppercase tracking-wide text-slate-500 mb-1.5">What to copy</p>
+        <div class="space-y-1.5" id="copyWhat"></div>
+      </div>
+      <div>
+        <p class="text-[12px] font-bold uppercase tracking-wide text-slate-500 mb-1.5">To which projects</p>
+        <div class="grid grid-cols-2 gap-1.5" id="copyTargets"></div>
+      </div>
+      <div>
+        <p class="text-[12px] font-bold uppercase tracking-wide text-slate-500 mb-1.5">If the project already has something</p>
+        <label class="flex gap-2 items-start text-[13px] text-slate-700 cursor-pointer"><input type="radio" name="mode" checked class="mt-1 accent-indigo-600"><span><b>Add what is missing</b> — nothing there is changed or removed.</span></label>
+        <label class="flex gap-2 items-start text-[13px] text-slate-700 cursor-pointer mt-1"><input type="radio" name="mode" class="mt-1 accent-indigo-600"><span><b>Make it match exactly</b> — also switches off what SRAH does not have. Shown as a list before it happens.</span></label>
+      </div>
+      <div class="rounded-lg border border-indigo-200 bg-indigo-50 p-3">
+        <p class="text-[12px] font-bold text-indigo-900 mb-1">Before it happens you see exactly this</p>
+        <p class="text-[13px] text-slate-800 tnum" id="copyPreview">NGH B — 6 disciplines added, 9 people added, 2 already there and left alone.<br>P2 A01 — 6 disciplines added, 9 people added, 1 conflict: P2 A01 already names a different Architect.</p>
+      </div>
+      <div class="flex gap-2 justify-end">
+        <button class="px-3.5 py-2 rounded-md border border-slate-300 text-[13px] font-semibold text-slate-700 min-h-[40px]" id="copyCancel">Cancel</button>
+        <button class="px-3.5 py-2 rounded-md bg-indigo-600 text-white text-[13px] font-semibold min-h-[40px]">Copy — and keep it undoable for 24 h</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── Raise modal ────────────────────────────────────────────────────────── -->
+<div id="raiseScrim" hidden class="fixed inset-0 bg-slate-900/40 z-40 grid place-items-center p-4">
+  <div class="bg-white rounded-xl w-full max-w-[600px] max-h-[86vh] overflow-y-auto shadow-2xl">
+    <div class="px-5 py-4 border-b border-slate-200 flex items-start gap-3">
+      <div>
+        <p class="text-[15px] font-bold text-slate-900">Raise something on SRAH</p>
+        <p class="text-[12px] text-slate-500">Pick what it is. Everything after this is three fields.</p>
+      </div>
+      <button class="ml-auto text-slate-400 text-xl leading-none" id="raiseClose" aria-label="Close">&times;</button>
+    </div>
+    <div class="p-5 grid sm:grid-cols-2 gap-2.5" id="raiseCards"></div>
+    <div class="px-5 pb-5">
+      <div class="rounded-lg border border-slate-200 bg-slate-50 p-3.5">
+        <p class="text-[12px] font-bold uppercase tracking-wide text-slate-500 mb-1.5">Then, on one screen</p>
+        <div class="space-y-2 text-[13px] text-slate-700">
+          <p><b>What is it</b> — one line, and a photo. On a phone the camera opens first.</p>
+          <p><b>Where</b> — category and sub-category, and block/floor if you want. Both remember your last answer.</p>
+          <p><b>Who</b> — pre-filled from the project&rsquo;s Stakeholders for that discipline. Change it if you like.</p>
+          <p><b>By when</b> — defaults to three working days. Critical defaults to today.</p>
+          <p class="text-[12px] text-slate-500 pt-1 border-t border-slate-200">Cost impact and linking a work order are one tap further in, not in the way of someone reporting a leak.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ── data ──────────────────────────────────────────────────────────────── */
+const ME = 'Ambrishkumar Mistry';
+const TYPES = [
+  {k:'issue', label:'Site issue',  short:'SI',  tone:'amber'},
+  {k:'rfi',   label:'Query (RFI)', short:'RFI', tone:'sky'},
+  {k:'instr', label:'Instruction', short:'INS', tone:'violet'},
+  {k:'dec',   label:'Decision',    short:'DEC', tone:'emerald'},
+  {k:'ncr',   label:'Non-conformance', short:'NCR', tone:'rose'},
+];
+const TONE = {
+  amber:['bg-amber-100','text-amber-800','border-amber-200'],
+  sky:['bg-sky-100','text-sky-800','border-sky-200'],
+  violet:['bg-violet-100','text-violet-800','border-violet-200'],
+  emerald:['bg-emerald-100','text-emerald-800','border-emerald-200'],
+  rose:['bg-rose-100','text-rose-800','border-rose-200'],
+  slate:['bg-slate-100','text-slate-700','border-slate-200'],
+};
+const T = [
+ {ref:'NCR-002', type:'ncr', title:'Cube result 21.4 N/mm² against M25 — raft pour 7',
+  cat:'Civil', sub:'Concrete Work', loc:'Block B · Raft', ball:'Milan Patel', ballRole:'Contractor', days:1, due:'12 Sep', overdue:false, pri:'Critical', cost:'₹ 6.80 L', status:'Open', proj:'SRAH',
+  by:'Ambrishkumar Mistry', when:'11 Sep, 4:40 pm',
+  posts:[
+   {who:'Ambrishkumar Mistry', role:'Site Engineer', when:'11 Sep, 4:40 pm', body:'28-day cube for raft pour 7 came at 21.4 against M25. Second set also low at 22.1. Lab report and the pour card attached. Stopping backfill on that grid until this is settled.', attach:['cube-report-p7.pdf','pour-card-7.jpg']},
+   {who:'Milan Patel', role:'Contractor', when:'11 Sep, 6:05 pm', body:'Batching slip shows correct mix. Requesting core test before any remedy is decided.'},
+   {who:'Atmarpit Yash', role:'Project Head', when:'12 Sep, 9:12 am', body:'Core test agreed, at contractor cost. @Ambrishkumar Mistry please get the structural check done in parallel — do not wait for the core result to start it.'},
+  ],
+  links:['WO/SRAH/CIV/0042 — Milan Patel','Sheet SRAH-CIV-018','Decision: Concrete grade — raft'],
+  watch:['Atmarpit Yash','Atm Akshay','Amit Gala','Subhash M']},
+
+ {ref:'INS-009', type:'instr', title:'Hold MS fabrication until revised structural drawing is issued',
+  cat:'Civil', sub:'Steel Fabrication Works', loc:'Block A · Level 2', ball:ME, ballRole:'Site Engineer', days:0, due:'Today', overdue:false, pri:'Critical', cost:'—', status:'Open', proj:'SRAH',
+  by:'Atmarpit Yash', when:'12 Sep, 8:30 am',
+  posts:[
+   {who:'Atmarpit Yash', role:'Project Head', when:'12 Sep, 8:30 am', body:'Instruction: stop all MS fabrication for the Level 2 canopy. The section was changed in yesterday’s review and the drawing is being revised. Confirm to me today that fabrication has stopped and tell me how much material is already cut.', attach:['review-note-11sep.pdf']},
+  ],
+  links:['WO/SRAH/CIV/0061 — Abhiraj Steel Buildings LLP','Decision: Canopy section'],
+  watch:['Atm Akshay','SNK Design Studio']},
+
+ {ref:'RFI-042', type:'rfi', title:'Tile layout at prayer hall entrance is not shown on the GFC',
+  cat:'Finishes', sub:'Flooring — Vitrified', loc:'Block A · Ground', ball:'SNK Design Studio', ballRole:'Architect', days:6, due:'6 Sep', overdue:true, pri:'High', cost:'₹ 2.10 L', status:'Open', proj:'SRAH',
+  by:ME, when:'3 Sep, 11:02 am',
+  posts:[
+   {who:'Ambrishkumar Mistry', role:'Site Engineer', when:'3 Sep, 11:02 am', body:'GFC A-204 shows the border but not the setting-out for the 800×800 at the entrance. Laying starts Monday. Need the start line and the cut policy at the threshold.', attach:['A-204-marked.jpg']},
+   {who:'Atm Akshay', role:'Atm Head', when:'9 Sep, 10:15 am', body:'@SNK Design Studio this is now 6 days. Flooring gang is on site. Please answer today.'},
+  ],
+  links:['Indent IND/SRAH/0311 — 1,240 sqm vitrified','Decision: Flooring — prayer hall'],
+  watch:['Atm Akshay','Atmarpit Yash'], esc:true},
+
+ {ref:'SI-018', type:'issue', title:'Seepage at UGT wall on the lift-pit side',
+  cat:'Waterproofing Works', sub:'Lift-Pit Waterproofing Chemical', loc:'Block A · Basement', ball:ME, ballRole:'Site Engineer', days:2, due:'14 Sep', overdue:false, pri:'High', cost:'₹ 9.50 L', status:'Open', proj:'SRAH',
+  by:'Atm Akshay', when:'10 Sep, 5:20 pm',
+  posts:[
+   {who:'Atm Akshay', role:'Atm Head', when:'10 Sep, 5:20 pm', body:'Wet patch along 4 m of the UGT wall next to the lift pit, worse after Tuesday’s rain. Photos attached. Want a cause and a proposal, not a patch.', attach:['ugt-wall-1.jpg','ugt-wall-2.jpg']},
+   {who:'Ambrishkumar Mistry', role:'Site Engineer', when:'11 Sep, 9:40 am', body:'Opened one patch. The construction joint was not treated with the swellable strip on that stretch. Getting a quote for crystalline injection over 4 m; flagging cost impact so it does not surprise anyone later.'},
+  ],
+  links:['Sheet SRAH-WPF-006 (draft)','WO/SRAH/WPF/0018'],
+  watch:['Atmarpit Yash','Amit Gala']},
+
+ {ref:'SI-015', type:'issue', title:'HT line shifting held up — objection from adjoining plot',
+  cat:'Infra Works', sub:'Utility Disconnection & Relocation', loc:'Site · North edge', ball:'Amit Gala', ballRole:'Atm Head', days:4, due:'9 Sep', overdue:true, pri:'High', cost:'—', status:'Open', proj:'SRAH',
+  by:ME, when:'2 Sep, 3:15 pm',
+  posts:[
+   {who:'Ambrishkumar Mistry', role:'Site Engineer', when:'2 Sep, 3:15 pm', body:'DGVCL team came but could not start — the adjoining plot owner objected to the pole position. Their letter is attached. This blocks the north boundary wall.', attach:['objection-letter.pdf']},
+   {who:'Amit Gala', role:'Atm Head', when:'5 Sep, 12:00 pm', body:'Meeting them on Monday with the revised alignment. Will update.'},
+  ],
+  links:['Decision: Boundary wall alignment'], watch:['Atmarpit Yash'], esc:true},
+
+ {ref:'DEC-005', type:'dec', title:'External stone finalised — Dholpur beige, honed, 25 mm',
+  cat:'External Facade Works', sub:'Marble or Stone Cladding', loc:'Block A · Facade', ball:'—', ballRole:'', days:0, due:'—', overdue:false, pri:'Normal', cost:'—', status:'Closed', proj:'SRAH',
+  by:'Atmarpit Yash', when:'28 Aug, 11:00 am',
+  posts:[
+   {who:'SNK Design Studio', role:'Architect', when:'26 Aug, 4:00 pm', body:'Three samples placed on the mock-up panel. Recommending Dholpur beige honed for weathering and for matching the existing campus.', attach:['mockup-panel.jpg']},
+   {who:'Atmarpit Yash', role:'Project Head', when:'28 Aug, 11:00 am', body:'Decided: Dholpur beige, honed, 25 mm, from the approved quarry. This is the spec for all external cladding on Block A. Recorded against Facade → Marble or Stone Cladding.'},
+  ],
+  links:['Decision record: Facade stone','WO/SRAH/FAC/0009'], watch:['Atm Akshay',ME]},
+
+ {ref:'RFI-039', type:'rfi', title:'Chajja projection at Level 3 clashes with the AC drain line',
+  cat:'Mechanical Works', sub:'HVAC Works', loc:'Block A · Level 3', ball:'—', ballRole:'', days:0, due:'—', overdue:false, pri:'Normal', cost:'—', status:'Closed', proj:'SRAH',
+  by:'MEP Head Construction SRMD', when:'19 Aug, 10:00 am',
+  posts:[
+   {who:'MEP Head Construction SRMD', role:'MEP Head', when:'19 Aug, 10:00 am', body:'Drain routing on the east face runs straight through the chajja. Need either a sleeve or a re-route before plastering.'},
+   {who:'SNK Design Studio', role:'Architect', when:'21 Aug, 2:30 pm', body:'Sleeve is acceptable at 150 mm below the top. Marked drawing attached.', attach:['A-311-R2.pdf']},
+   {who:'MEP Head Construction SRMD', role:'MEP Head', when:'22 Aug, 9:00 am', body:'Answered and done. Closing.'},
+  ],
+  links:['Drawing A-311 R2'], watch:[ME]},
+
+ {ref:'OBS-011', type:'issue', title:'Scaffolding without toe boards on the Block B east face',
+  cat:'Site Pre-lims', sub:'Site Admin — Safety', loc:'Block B · East', ball:'Milan Patel', ballRole:'Contractor', days:1, due:'13 Sep', overdue:false, pri:'High', cost:'—', status:'Open', proj:'SRAH',
+  by:'Atm Akshay', when:'11 Sep, 11:30 am',
+  posts:[{who:'Atm Akshay', role:'Atm Head', when:'11 Sep, 11:30 am', body:'Two bays without toe boards and one ladder not tied. Photos attached. Fix today and send a photo back.', attach:['scaffold-1.jpg']}],
+  links:[], watch:[ME]},
+
+ {ref:'RFI-051', type:'rfi', title:'Structural check for the revised canopy section',
+  cat:'Civil', sub:'MS Structure and Ferrari Fabric', loc:'Block A · Level 2', ball:ME, ballRole:'Site Engineer', days:0, due:'15 Sep', overdue:false, pri:'High', cost:'—', status:'Open', proj:'SRAH',
+  by:'Atmarpit Yash', when:'12 Sep, 9:20 am',
+  posts:[{who:'Atmarpit Yash', role:'Project Head', when:'12 Sep, 9:20 am', body:'Raised off INS-009. No structural consultant is named on SRAH, so this is sitting with the site engineer — which is the thing Stakeholders needs to fix.'}],
+  links:['INS-009'], watch:['Atm Akshay'], noConsultant:true},
+
+ {ref:'SI-021', type:'issue', title:'NGH B — water tanker access blocked by the stacked shuttering',
+  cat:'Site Pre-lims', sub:'Temporary Access Road', loc:'NGH B · Gate 2', ball:'Atm Akshay', ballRole:'Atm Head', days:1, due:'13 Sep', overdue:false, pri:'Normal', cost:'—', status:'Open', proj:'NGH B',
+  by:'Parimal Srmd', when:'11 Sep, 2:00 pm',
+  posts:[{who:'Parimal Srmd', role:'Coordinator', when:'11 Sep, 2:00 pm', body:'Tanker could not reach the far end this morning. Shuttering stacked on the turning. Shown here so you can see the register works across projects, not only inside one.'}],
+  links:[], watch:[]},
+];
+
+/* stakeholders */
+const DISC = [
+ {n:'Architecture', on:true},{n:'Structural', on:true},{n:'Interior', on:true},{n:'MEP — Electrical', on:true},
+ {n:'MEP — Plumbing & Fire', on:true},{n:'HVAC', on:true},{n:'Civil / Site', on:true},{n:'Façade', on:true},
+ {n:'Landscape', on:false},{n:'Lighting', on:true},{n:'Acoustics', on:false},{n:'AV & ICT', on:true},
+ {n:'Kitchen', on:true},{n:'Signage & Artefacts', on:true},{n:'Quantity Surveying', on:true},{n:'Project Management (PMC)', on:false},
+ {n:'Survey', on:true},{n:'Geotech & Soil', on:true},{n:'Third-party Inspection', on:true},{n:'Green Building / IGBC', on:false},
+ {n:'Water — WTP / STP', on:true},{n:'Safety & EHS', on:true},{n:'Liaison & Approvals', on:true},{n:'Vaastu', on:false},
+];
+const ORGS = ['Everyone','SRMD team','Consultants','Contractors','Vendors','Authorities'];
+const S = [
+ {name:'Atmarpit Yash', org:'SRMD team', disc:'All', part:'Project Head — final say', reach:'projecthead@construction.srmd.org', val:'', sub:'Approves budgets and decisions'},
+ {name:'Atm Akshay', org:'SRMD team', disc:'All', part:'Atm Head — SRAH', reach:'atmarpitakshay@gmail.com', val:'', sub:'Escalation point, 2 days'},
+ {name:'Ambrishkumar Mistry', org:'SRMD team', disc:'Civil / Site', part:'Site Engineer', reach:'ambrish.srmd@gmail.com', val:'', sub:'Raises and closes site issues'},
+ {name:'MEP Head Construction SRMD', org:'SRMD team', disc:'MEP — Electrical', part:'MEP lead — all services', reach:'mep.head@construction.srmd.org', val:'', sub:'Also HVAC, Plumbing & Fire'},
+ {name:'Subhash M', org:'SRMD team', disc:'Quantity Surveying', part:'Billing — certificates', reach:'billing@construction.srmd.org', val:'', sub:''},
+ {name:'Mayank Adhvaryoo', org:'SRMD team', disc:'—', part:'Back office — accounts', reach:'mayank.srmd@gmail.com', val:'', sub:''},
+ {name:'SNK Design Studio', org:'Consultants', disc:'Architecture', part:'Lead Architect', reach:'Pinned to IN4 party · 16 WOs', val:'₹19.35 L', paid:'₹14.20 L', sub:'Answers RFIs on Architecture, Interior, Façade'},
+ {name:'Prajakta Rajendra Kabara', org:'Consultants', disc:'Interior', part:'Interior Designer', reach:'Pinned to IN4 party · 3 WOs', val:'₹2.10 L', paid:'₹1.40 L', sub:''},
+ {name:'BOQ Solutions', org:'Consultants', disc:'Quantity Surveying', part:'BOQ & rate analysis', reach:'Pinned to IN4 party · 2 WOs', val:'₹2.01 L', paid:'₹2.01 L', sub:''},
+ {name:'Bhumi Research Center', org:'Consultants', disc:'Geotech & Soil', part:'Soil investigation', reach:'Pinned to IN4 party · 1 WO', val:'₹0.23 L', paid:'₹0.23 L', sub:'Engagement finished — kept for the record'},
+ {name:'MACJ Vapi Valsad Private Limited', org:'Consultants', disc:'Third-party Inspection', part:'Independent inspection', reach:'Pinned to IN4 party · 1 WO', val:'₹4.13 L', paid:'₹2.50 L', sub:''},
+ {name:'Accu Tape Engineers', org:'Consultants', disc:'Survey', part:'Setting-out & survey', reach:'Pinned to IN4 party · 5 WOs', val:'₹0.48 L', paid:'₹0.48 L', sub:''},
+ {name:'— not appointed —', org:'Consultants', disc:'Structural', part:'Structural Consultant', reach:'Nobody named', val:'', sub:'14 structural queries went to the Architect instead', gap:true},
+ {name:'— not appointed —', org:'Consultants', disc:'MEP — Plumbing & Fire', part:'Fire & life safety', reach:'Nobody named', val:'', sub:'Category 09 Fire Fighting Works is live with ₹1.42 Cr', gap:true},
+ {name:'Milan Patel', org:'Contractors', disc:'Civil / Site', part:'Main civil contractor', reach:'milan.srmd@gmail.com · IN4 party', val:'₹6.42 Cr', paid:'₹4.81 Cr', sub:'Has a CT Hub login'},
+ {name:'Abhiraj Steel Buildings LLP', org:'Contractors', disc:'Civil / Site', part:'PEB & steel structure', reach:'Pinned to IN4 party', val:'₹0.12 L', paid:'—', sub:''},
+ {name:'Taiton Trading Private Limited', org:'Vendors', disc:'Façade', part:'Stone supply', reach:'Pinned to IN4 party · 16 POs', val:'₹19.35 L', paid:'₹12.00 L', sub:''},
+ {name:'DGVCL — Valsad', org:'Authorities', disc:'Liaison & Approvals', part:'HT line shifting', reach:'Typed in — no IN4 party', val:'', sub:'Open issue SI-015 sits with them'},
+];
+
+/* decisions tree */
+const TREE = [
+ {cat:'Site Pre-lims', subs:[
+   {n:'Site Clearing Work', ap:false},{n:'Labour Camps', ap:false},{n:'Porta Cabins', ap:true, st:'decided', spec:'2 units, 20×10, AC, Feb 2026', by:'Atm Akshay', on:'14 Feb'},
+   {n:'Site Prelims Compound Wall', ap:true, st:'decided', spec:'GI sheet 8 ft on MS posts @3 m', by:'Atm Akshay', on:'20 Feb'},{n:'Soil Investigation', ap:false},{n:'Temporary Access Road', ap:false}]},
+ {cat:'Earthworks — Building', subs:[
+   {n:'Excavation & Backfilling & Compaction', ap:true, st:'decided', spec:'Backfill in 200 mm layers, 95% Proctor', by:'Atmarpit Yash', on:'3 Mar'},
+   {n:'Rock Breaking Works', ap:true, st:'pending', need:'Chemical vs breaker — quote awaited', ball:'Milan Patel'},
+   {n:'Excavated Material Carting Cost', ap:false},{n:'Rubble-soling', ap:false}]},
+ {cat:'Civil', subs:[
+   {n:'Concrete Work', ap:true, st:'decided', spec:'M25 raft & columns, M30 shear wall, fly-ash 25%', by:'Atmarpit Yash', on:'8 Mar', rev:'Superseded M25→M30 for shear wall on 2 Jun'},
+   {n:'Masonry Works', ap:true, st:'decided', spec:'AAC 200 mm external, 100 mm internal', by:'Atm Akshay', on:'12 Mar'},
+   {n:'Plaster Works', ap:true, st:'decided', spec:'Internal gypsum, external 20 mm sand-face', by:'Atm Akshay', on:'12 Mar'},
+   {n:'MS Structure and Ferrari Fabric', ap:true, st:'blocking', need:'Canopy section changed 11 Sep — revised drawing awaited', ball:'SNK Design Studio', ind:'Indent due in 9 days'},
+   {n:'Steel Fabrication Works', ap:true, st:'blocking', need:'Held by INS-009 until the structural check is back', ball:ME, ind:'WO already placed'},
+   {n:'Shuttering Works', ap:false},{n:'Tremix Works', ap:false},{n:'Anti Termite Treatment', ap:true, st:'pending', need:'Pre- and post-construction chemical to be fixed', ball:'MEP Head'},
+   {n:'China Mosaic Works', ap:false},{n:'Expansion Joint', ap:true, st:'pending', need:'Cover plate profile — 3 options with the architect', ball:'SNK Design Studio'}]},
+ {cat:'External Facade Works', subs:[
+   {n:'Marble or Stone Cladding', ap:true, st:'decided', spec:'Dholpur beige, honed, 25 mm, dry cladding', by:'Atmarpit Yash', on:'28 Aug'},
+   {n:'Glass Facade', ap:true, st:'decided', spec:'DGU 6-12-6, SHGC ≤0.27, Saint-Gobain or equal', by:'Atmarpit Yash', on:'2 Jul'},
+   {n:'GRC Jali', ap:true, st:'blocking', need:'Pattern not frozen — mould lead time 6 weeks', ball:'SNK Design Studio', ind:'Indent due in 14 days'},
+   {n:'Facade Lighting', ap:true, st:'pending', need:'Warm 2700K vs 3000K, on the lighting consultant', ball:'Lighting consultant'},
+   {n:'Canopies', ap:false},{n:'Brick or UCR Cladding', ap:false}]},
+ {cat:'Waterproofing Works', subs:[
+   {n:'Building & Terrace Waterproofing Works', ap:true, st:'decided', spec:'APP membrane 3 mm + protective screed', by:'Atm Akshay', on:'19 May'},
+   {n:'Toilets & Other Areas Waterproofing', ap:true, st:'decided', spec:'Two-coat crystalline, 7-day ponding test', by:'Atm Akshay', on:'19 May'},
+   {n:'Lift-Pit Waterproofing Chemical', ap:true, st:'pending', need:'Remedy for SI-018 — injection vs re-treat the joint', ball:ME, link:'SI-018'},
+   {n:'Flower beds waterproofing Chemical', ap:false},{n:'Rain Water Protection', ap:false}]},
+ {cat:'Mechanical Works', subs:[
+   {n:'HVAC Works', ap:true, st:'decided', spec:'VRF, 3 outdoor banks, R-32', by:'MEP Head', on:'6 Jun'},
+   {n:'Cold Storage', ap:false},{n:'Lifts', ap:true, st:'blocking', need:'Make and speed not frozen — 26-week lead time', ball:'Atmarpit Yash', ind:'Order needed this month'}]},
+ {cat:'Electrical Works', subs:[
+   {n:'Internal Wiring', ap:true, st:'decided', spec:'FRLS copper, Polycab or equal, 1.5/2.5/4 sqmm', by:'MEP Head', on:'14 Jun'},
+   {n:'Switchgear & Panels', ap:true, st:'pending', need:'Schneider vs L&T — rate comparison with the QS', ball:'BOQ Solutions'},
+   {n:'DG Set', ap:true, st:'pending', need:'250 vs 320 kVA, pending the final load list', ball:'MEP Head'},
+   {n:'Earthing', ap:false}]},
+ {cat:'Finishes', subs:[
+   {n:'Flooring — Vitrified', ap:true, st:'pending', need:'Layout at the prayer hall entrance — RFI-042 open 6 days', ball:'SNK Design Studio', link:'RFI-042'},
+   {n:'Flooring — Natural Stone', ap:true, st:'decided', spec:'Kota blue, 20 mm, machine-cut, corridors', by:'Atmarpit Yash', on:'11 Jul'},
+   {n:'Painting', ap:true, st:'pending', need:'Shade card — 3 options with the trustees', ball:'Atmarpit Yash'},
+   {n:'False Ceiling', ap:true, st:'decided', spec:'Gypsum 12.5 mm, Gyproc, moisture-resistant in wet areas', by:'MEP Head', on:'28 Jul'},
+   {n:'Doors & Windows', ap:true, st:'decided', spec:'Teak frame + flush shutter; UPVC windows, 2-track', by:'Atm Akshay', on:'4 Aug'}]},
+ {cat:'Interiors', subs:[
+   {n:'Loose Furniture', ap:true, st:'pending', need:'Layout approved, makes not frozen', ball:'Prajakta R Kabara'},
+   {n:'Modular Kitchen', ap:true, st:'decided', spec:'SS 304 counters, 1.5 mm, Hettich hardware', by:'Atm Akshay', on:'30 Jul'},
+   {n:'Wardrobes', ap:false},{n:'Wall Panelling', ap:false}]},
+ {cat:'Landscape', subs:[{n:'Softscape', ap:false},{n:'Hardscape', ap:false},{n:'Irrigation', ap:false}]},
+ {cat:'Signages & Artefacts', subs:[
+   {n:'Wayfinding Signage', ap:true, st:'pending', need:'Gujarati + English, font and size not fixed', ball:'SNK Design Studio'},
+   {n:'Artefacts & Murals', ap:true, st:'decided', spec:'Brass relief at the entrance, artist approved', by:'Atmarpit Yash', on:'20 Aug'}]},
+ {cat:'Consultants Cost', subs:[{n:'Design Fees', ap:false},{n:'Inspection Fees', ap:false}]},
+];
+
+/* ── helpers ───────────────────────────────────────────────────────────── */
+const $ = s => document.querySelector(s);
+const $$ = s => [...document.querySelectorAll(s)];
+const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const typeOf = k => TYPES.find(t => t.k === k);
+function pill(text, tone, extra){ const t = TONE[tone]||TONE.slate; return `<span class="inline-flex items-center rounded-full border ${t[0]} ${t[1]} ${t[2]} px-2 py-0.5 text-[11px] font-semibold ${extra||''}">${esc(text)}</span>`; }
+function initials(n){ return n.split(/\s+/).filter(Boolean).slice(0,2).map(w=>w[0]).join('').toUpperCase(); }
+function avatar(n, cls){ if(n==='—') return ''; return `<span class="inline-grid place-items-center h-6 w-6 rounded-full bg-slate-200 text-slate-700 text-[10px] font-bold shrink-0 ${cls||''}">${esc(initials(n))}</span>`; }
+
+/* ── tabs ──────────────────────────────────────────────────────────────── */
+const PANES = ['disc','stake','dec','how'];
+function showPane(p){
+  PANES.forEach(x => { $('#pane-'+x).hidden = x !== p; });
+  $$('#tabs .tab').forEach(b => {
+    const on = b.dataset.pane === p;
+    b.className = 'tab px-3.5 py-2.5 text-[13px] font-semibold border-b-2 whitespace-nowrap min-h-[44px] ' +
+      (on ? 'border-indigo-600 text-indigo-700' : 'border-transparent text-slate-500 hover:text-slate-800');
+  });
+  window.scrollTo({top:0});
+}
+$('#tabs').addEventListener('click', e => { const b = e.target.closest('.tab'); if(b) showPane(b.dataset.pane); });
+
+/* ── discussions ───────────────────────────────────────────────────────── */
+let fType = 'all', fQuick = 'mine';
+function chips(){
+  const all = `<button class="tc px-2.5 py-1.5 rounded-md text-[12px] font-semibold border min-h-[36px]" data-t="all">All kinds</button>`;
+  $('#typeChips').innerHTML = all + TYPES.map(t =>
+    `<button class="tc px-2.5 py-1.5 rounded-md text-[12px] font-semibold border min-h-[36px]" data-t="${t.k}">${t.label}</button>`).join('');
+  paintChips();
+}
+function paintChips(){
+  $$('.tc').forEach(b => {
+    const on = b.dataset.t === fType;
+    b.className = 'tc px-2.5 py-1.5 rounded-md text-[12px] font-semibold border min-h-[36px] ' +
+      (on ? 'bg-indigo-600 border-indigo-600 text-white' : 'bg-white border-slate-300 text-slate-600 hover:bg-slate-50');
+  });
+  $$('.qf').forEach(b => {
+    const on = b.dataset.q === fQuick;
+    b.className = 'qf px-2.5 py-1.5 rounded-md text-[12px] font-semibold border min-h-[36px] ' +
+      (on ? 'bg-slate-900 border-slate-900 text-white' : 'bg-white border-slate-300 text-slate-600 hover:bg-slate-50');
+  });
+}
+function filtered(){
+  return T.filter(t => {
+    if(fType !== 'all' && t.type !== fType) return false;
+    if(fQuick === 'mine')    return t.ball === ME && t.status === 'Open' && t.proj === 'SRAH';
+    if(fQuick === 'overdue') return t.overdue;
+    if(fQuick === 'cost')    return t.cost !== '—';
+    if(fQuick === 'closed')  return t.status === 'Closed';
+    if(fQuick === 'all')     return t.proj === 'SRAH';
+    return true;
+  });
+}
+function statusPill(t){
+  if(t.status === 'Closed') return pill('Closed','emerald');
+  if(t.overdue) return pill('Overdue ' + t.days + ' d','rose');
+  return pill('Open','slate');
+}
+function renderRows(){
+  const list = filtered();
+  $('#count').textContent = list.length + (list.length === 1 ? ' thread' : ' threads');
+  $('#rows').innerHTML = list.map(t => {
+    const ty = typeOf(t.type);
+    return `<tr class="row hover:bg-indigo-50/40 cursor-pointer ${t.overdue?'bg-rose-50/40':''}" data-ref="${t.ref}">
+      <td class="px-3 py-2.5 align-top">${pill(t.ref, ty.tone)}</td>
+      <td class="px-3 py-2.5 align-top">
+        <p class="font-semibold text-slate-900 leading-snug">${esc(t.title)}</p>
+        <p class="text-[12px] text-slate-500 mt-0.5">${esc(ty.label)} · raised by ${esc(t.by)}${t.pri==='Critical'?' · <span class="text-rose-700 font-semibold">Critical</span>':''}${t.esc?' · <span class="text-amber-700 font-semibold">escalated</span>':''}${t.noConsultant?' · <span class="text-amber-700 font-semibold">no consultant for this discipline</span>':''}</p>
+      </td>
+      <td class="px-3 py-2.5 align-top text-[12px] text-slate-600"><p class="text-slate-800">${esc(t.cat)}</p><p>${esc(t.sub)}</p><p class="text-slate-400">${esc(t.loc)}</p></td>
+      <td class="px-3 py-2.5 align-top">
+        ${t.ball==='—' ? '<span class="text-[12px] text-slate-400">—</span>' :
+        `<div class="flex items-start gap-2">${avatar(t.ball)}<div><p class="text-[12px] font-semibold text-slate-800 leading-tight">${esc(t.ball)}</p><p class="text-[11px] ${t.overdue?'text-rose-700 font-semibold':'text-slate-500'}">${t.days===0?'since today':t.days+' day'+(t.days===1?'':'s')}</p></div></div>`}
+      </td>
+      <td class="px-3 py-2.5 align-top text-[12px] ${t.overdue?'text-rose-700 font-bold':'text-slate-700'} tnum">${esc(t.due)}</td>
+      <td class="px-3 py-2.5 align-top text-[12px] tnum ${t.cost!=='—'?'text-amber-800 font-semibold':'text-slate-400'}">${esc(t.cost)}</td>
+      <td class="px-3 py-2.5 align-top">${statusPill(t)}</td>
+    </tr>`;
+  }).join('') || `<tr><td colspan="7" class="px-4 py-10 text-center text-[13px] text-slate-500">Nothing matches. <button class="text-indigo-700 font-semibold underline" onclick="document.querySelector('[data-q=all]').click()">Show everything on SRAH</button></td></tr>`;
+  const cards = list.map(t => {
+    const ty = typeOf(t.type);
+    return `<button class="row w-full text-left px-3.5 py-3 hover:bg-slate-50 ${t.overdue?'border-l-2 border-l-rose-500':''}" data-ref="${t.ref}">
+      <div class="flex items-center gap-1.5 flex-wrap">${pill(t.ref, ty.tone)}${t.pri==='Critical'?pill('Critical','rose'):''}${statusPill(t)}</div>
+      <p class="text-[13px] font-semibold text-slate-900 mt-1.5 leading-snug">${esc(t.title)}</p>
+      <p class="text-[12px] text-slate-500 mt-0.5">${esc(t.cat)} · ${esc(t.loc)}</p>
+      <div class="flex items-center gap-2 mt-2">${avatar(t.ball)}
+        <p class="text-[12px] text-slate-600">${t.ball==='—'?'closed':esc(t.ball)+' · '+(t.days===0?'today':t.days+' d')}</p>
+        <p class="ml-auto text-[12px] ${t.overdue?'text-rose-700 font-bold':'text-slate-500'} tnum">due ${esc(t.due)}</p></div>
+    </button>`;
+  }).join('') || '<p class="p-6 text-center text-[13px] text-slate-500">Nothing matches.</p>';
+  const head = `<div class="sticky top-0 bg-white border-b border-slate-200 px-3.5 py-2.5 z-10">
+      <p class="text-[14px] font-bold text-slate-900">Discussions</p>
+      <p class="text-[11px] text-slate-500">SRAH · ${list.length} shown</p>
+      <div class="flex gap-1.5 mt-2 overflow-x-auto pb-0.5">
+        <span class="px-2 py-1 rounded-full bg-slate-900 text-white text-[11px] font-semibold whitespace-nowrap">In my court 3</span>
+        <span class="px-2 py-1 rounded-full bg-white border border-slate-300 text-slate-600 text-[11px] font-semibold whitespace-nowrap">Overdue 2</span>
+        <span class="px-2 py-1 rounded-full bg-white border border-slate-300 text-slate-600 text-[11px] font-semibold whitespace-nowrap">All</span>
+      </div></div>`;
+  const fab = `<div class="p-3"><div class="rounded-xl bg-indigo-600 text-white px-4 py-3 text-center text-[13px] font-bold">📷 &nbsp;Raise with a photo</div>
+     <p class="text-[11px] text-slate-500 text-center mt-1.5">Camera first. One line. Pick who. That is the whole form.</p></div>`;
+  $('#phoneDisc').innerHTML = head + `<div class="divide-y divide-slate-100">${cards}</div>` + fab;
+  $('#cardsDisc').innerHTML = cards;
+}
+$('#typeChips').addEventListener('click', e => { const b = e.target.closest('.tc'); if(!b) return; fType = b.dataset.t; paintChips(); renderRows(); });
+$$('.qf').forEach(b => b.addEventListener('click', () => { fQuick = b.dataset.q; paintChips(); renderRows(); }));
+document.addEventListener('click', e => { const r = e.target.closest('.row'); if(r) openThread(r.dataset.ref); });
+
+/* drawer */
+function openThread(ref){
+  const t = T.find(x => x.ref === ref); if(!t) return;
+  const ty = typeOf(t.type);
+  const posts = t.posts.map((p, i) => `
+    <div class="px-4 py-3 ${p.role==='Project Head'&&t.type==='instr'?'bg-violet-50 border-l-2 border-l-violet-500':''}">
+      <div class="flex items-center gap-2">${avatar(p.who)}
+        <div><p class="text-[13px] font-bold text-slate-900 leading-tight">${esc(p.who)}</p>
+        <p class="text-[11px] text-slate-500">${esc(p.role)} · ${esc(p.when)}</p></div>
+        ${i===0?'<span class="ml-auto text-[11px] text-slate-400">opened it</span>':''}
+      </div>
+      <p class="text-[13px] text-slate-700 mt-2 whitespace-pre-wrap leading-relaxed">${esc(p.body).replace(/@([A-Za-z][A-Za-z. ]+)/g,'<span class="bg-indigo-100 text-indigo-800 rounded px-1 font-semibold">@$1</span>')}</p>
+      ${p.attach?`<div class="flex flex-wrap gap-1.5 mt-2">${p.attach.map(a=>`<span class="inline-flex items-center gap-1 rounded border border-slate-200 bg-slate-50 px-2 py-1 text-[11px] text-slate-600">📎 ${esc(a)}</span>`).join('')}</div>`:''}
+    </div>`).join('');
+  $('#drawerBody').innerHTML = `
+    <div class="sticky top-0 bg-white border-b border-slate-200 px-4 py-3 z-10">
+      <div class="flex items-start gap-2">
+        <div class="flex flex-wrap items-center gap-1.5">${pill(t.ref, ty.tone)}${pill(ty.label, ty.tone)}${t.pri==='Critical'?pill('Critical','rose'):''}${statusPill(t)}</div>
+        <button class="ml-auto text-slate-400 text-2xl leading-none px-1" onclick="closeDrawer()" aria-label="Close">&times;</button>
+      </div>
+      <h3 class="text-[15px] font-bold text-slate-900 mt-2 leading-snug">${esc(t.title)}</h3>
+      <p class="text-[12px] text-slate-500 mt-0.5">${esc(t.cat)} › ${esc(t.sub)} · ${esc(t.loc)} · raised by ${esc(t.by)} on ${esc(t.when)}</p>
+    </div>
+
+    <div class="px-4 py-3 bg-slate-50 border-b border-slate-200">
+      <div class="flex flex-wrap items-center gap-x-4 gap-y-2">
+        <div>
+          <p class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Ball in court</p>
+          <div class="flex items-center gap-2 mt-1">${avatar(t.ball)}
+            <div><p class="text-[13px] font-bold text-slate-900 leading-tight">${t.ball==='—'?'Nobody — it is closed':esc(t.ball)}</p>
+            <p class="text-[11px] ${t.overdue?'text-rose-700 font-semibold':'text-slate-500'}">${t.ball==='—'?'':esc(t.ballRole)+' · '+(t.days===0?'since this morning':t.days+' days')+' · due '+esc(t.due)}</p></div></div>
+        </div>
+        <div class="ml-auto">
+          <p class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Cost impact</p>
+          <p class="text-[15px] font-bold ${t.cost!=='—'?'text-amber-800':'text-slate-400'} tnum mt-0.5">${esc(t.cost)}</p>
+        </div>
+      </div>
+      ${t.esc?`<p class="mt-2 text-[12px] text-amber-800 bg-amber-50 border border-amber-200 rounded px-2.5 py-1.5"><b>Escalated.</b> Past 3 days with no answer, so it went to the Atm Head on its own and appears on the Project Head’s Monday card.</p>`:''}
+      ${t.noConsultant?`<p class="mt-2 text-[12px] text-amber-800 bg-amber-50 border border-amber-200 rounded px-2.5 py-1.5"><b>No consultant for Structural on SRAH.</b> This query had nowhere to go, so it stayed with the site engineer. Fix it once in Stakeholders and every later structural query routes itself.</p>`:''}
+      <div class="flex flex-wrap gap-1.5 mt-2.5">
+        <button class="px-2.5 py-1.5 rounded-md bg-indigo-600 text-white text-[12px] font-semibold min-h-[36px]">Reply</button>
+        <button class="px-2.5 py-1.5 rounded-md border border-slate-300 bg-white text-slate-700 text-[12px] font-semibold min-h-[36px]">Hand over to…</button>
+        <button class="px-2.5 py-1.5 rounded-md border border-slate-300 bg-white text-slate-700 text-[12px] font-semibold min-h-[36px]">Change the due date</button>
+        ${t.cost!=='—'?'<button class="px-2.5 py-1.5 rounded-md border border-amber-300 bg-amber-50 text-amber-900 text-[12px] font-semibold min-h-[36px]">Raise a working sheet for this</button>':''}
+        ${t.status==='Open'?`<button class="px-2.5 py-1.5 rounded-md border border-emerald-300 bg-emerald-50 text-emerald-800 text-[12px] font-semibold min-h-[36px]">${t.by===ME?'Close it':'Ask '+esc(t.by.split(' ')[0])+' to close'}</button>`:''}
+        <button class="px-2.5 py-1.5 rounded-md border border-slate-300 bg-white text-slate-700 text-[12px] font-semibold min-h-[36px]">Record as a decision</button>
+      </div>
+      ${t.status==='Open'&&t.by!==ME?'<p class="text-[11px] text-slate-500 mt-1.5">Only the person who raised it can close it. That is what keeps the closed count worth reading.</p>':''}
+    </div>
+
+    <div class="divide-y divide-slate-100">${posts}</div>
+
+    <div class="px-4 py-3 border-t border-slate-200">
+      <div class="rounded-lg border border-slate-300 p-2.5">
+        <p class="text-[12px] text-slate-400">Write a reply… use @ to pull someone in</p>
+        <div class="flex gap-1.5 mt-2.5">
+          <span class="text-[11px] border border-slate-200 rounded px-2 py-1 text-slate-500">📷 Photo</span>
+          <span class="text-[11px] border border-slate-200 rounded px-2 py-1 text-slate-500">📎 File</span>
+          <span class="text-[11px] border border-slate-200 rounded px-2 py-1 text-slate-500">🎤 Voice note</span>
+          <span class="ml-auto text-[11px] bg-indigo-600 text-white rounded px-2.5 py-1 font-semibold">Send</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="px-4 py-3 border-t border-slate-200 grid sm:grid-cols-2 gap-4">
+      <div>
+        <p class="text-[11px] font-semibold uppercase tracking-wide text-slate-500 mb-1.5">Attached to</p>
+        ${t.links.length?t.links.map(l=>`<p class="text-[12px] text-indigo-700 font-medium">→ ${esc(l)}</p>`).join(''):'<p class="text-[12px] text-slate-400">Nothing yet</p>'}
+      </div>
+      <div>
+        <p class="text-[11px] font-semibold uppercase tracking-wide text-slate-500 mb-1.5">Watching (${t.watch.length})</p>
+        <div class="flex flex-wrap gap-1">${t.watch.map(w=>`<span class="text-[11px] bg-slate-100 text-slate-700 rounded-full px-2 py-0.5">${esc(w)}</span>`).join('')||'<span class="text-[12px] text-slate-400">Nobody</span>'}</div>
+        <p class="text-[11px] text-slate-500 mt-1.5">Filled from Stakeholders. Anyone can stop watching.</p>
+      </div>
+    </div>
+
+    <div class="px-4 py-3 border-t border-slate-200 bg-slate-50">
+      <p class="text-[11px] font-semibold uppercase tracking-wide text-slate-500 mb-1.5">Trail</p>
+      <div class="text-[12px] text-slate-600 space-y-0.5">
+        <p>· Raised by ${esc(t.by)} — ${esc(t.when)}</p>
+        <p>· Ball passed to ${t.ball==='—'?'nobody':esc(t.ball)}${t.days?' — '+t.days+' day'+(t.days===1?'':'s')+' ago':' — today'}</p>
+        ${t.esc?'<p>· Escalated automatically to the Atm Head after 3 days</p>':''}
+        ${t.status==='Closed'?'<p>· Closed by '+esc(t.by)+' — verified on site</p>':''}
+        <p class="text-slate-400">Every line is stamped and nothing can be deleted. The whole trail prints as one page.</p>
+      </div>
+    </div>`;
+  $('#drawer').hidden = false; $('#scrim').hidden = false; document.body.style.overflow = 'hidden';
+}
+function closeDrawer(){ $('#drawer').hidden = true; $('#scrim').hidden = true; document.body.style.overflow = ''; }
+$('#scrim').addEventListener('click', closeDrawer);
+document.addEventListener('keydown', e => { if(e.key === 'Escape'){ closeDrawer(); $('#copyScrim').hidden = true; $('#raiseScrim').hidden = true; document.body.style.overflow=''; } });
+
+/* ── stakeholders ──────────────────────────────────────────────────────── */
+let fOrg = 'Everyone';
+function renderDisc(){
+  $('#discList').innerHTML = DISC.map((d, i) =>
+    `<button class="dchip px-2.5 py-1.5 rounded-full text-[12px] font-semibold border min-h-[36px] ${d.on?'bg-indigo-50 border-indigo-300 text-indigo-800':'bg-white border-slate-200 text-slate-400'}" data-i="${i}">
+      ${d.on?'✓ ':'+ '}${esc(d.n)}</button>`).join('');
+  $('#discCount').textContent = DISC.filter(d => d.on).length + ' on · ' + DISC.filter(d => !d.on).length + ' off';
+}
+$('#discList').addEventListener('click', e => { const b = e.target.closest('.dchip'); if(!b) return; DISC[+b.dataset.i].on = !DISC[+b.dataset.i].on; renderDisc(); });
+function renderStake(){
+  $('#orgChips').innerHTML = ORGS.map(o => {
+    const n = o === 'Everyone' ? S.length : S.filter(s => s.org === o).length;
+    const on = o === fOrg;
+    return `<button class="oc px-2.5 py-1.5 rounded-md text-[12px] font-semibold border min-h-[36px] ${on?'bg-slate-900 border-slate-900 text-white':'bg-white border-slate-300 text-slate-600 hover:bg-slate-50'}" data-o="${esc(o)}">${esc(o)} <span class="opacity-70 tnum">${n}</span></button>`;
+  }).join('');
+  const list = S.filter(s => fOrg === 'Everyone' || s.org === fOrg);
+  $('#stakeRows').innerHTML = list.map(s => `
+    <tr class="${s.gap?'bg-amber-50/60':''} hover:bg-slate-50">
+      <td class="px-3 py-2.5 align-top">
+        <div class="flex items-start gap-2">${s.gap?'<span class="inline-grid place-items-center h-6 w-6 rounded-full bg-amber-200 text-amber-800 text-[11px] font-bold shrink-0">!</span>':avatar(s.name)}
+          <div><p class="text-[13px] font-semibold ${s.gap?'text-amber-900 italic':'text-slate-900'} leading-snug">${esc(s.name)}</p>
+          ${s.sub?`<p class="text-[11px] text-slate-500 leading-snug mt-0.5">${esc(s.sub)}</p>`:''}</div></div>
+      </td>
+      <td class="px-3 py-2.5 align-top text-[12px] text-slate-700">${esc(s.disc)}</td>
+      <td class="px-3 py-2.5 align-top text-[12px] text-slate-700">${esc(s.part)}</td>
+      <td class="px-3 py-2.5 align-top text-[11px] ${s.reach==='Nobody named'?'text-amber-800 font-semibold':'text-slate-500'} break-all">${esc(s.reach)}</td>
+      <td class="px-3 py-2.5 align-top text-right text-[12px] tnum">${s.val?`<p class="font-semibold text-slate-900">${esc(s.val)}</p><p class="text-[11px] text-slate-500">paid ${esc(s.paid||'—')}</p>`:'<span class="text-slate-300">—</span>'}</td>
+    </tr>`).join('');
+  $('#phoneStake').innerHTML = `<div class="sticky top-0 bg-white border-b border-slate-200 px-3.5 py-2.5 z-10">
+      <p class="text-[14px] font-bold text-slate-900">Stakeholders</p><p class="text-[11px] text-slate-500">SRAH · ${S.length} people and firms</p>
+      <div class="flex gap-1.5 mt-2 overflow-x-auto pb-0.5">${ORGS.slice(0,4).map((o,i)=>`<span class="px-2 py-1 rounded-full ${i===0?'bg-slate-900 text-white':'bg-white border border-slate-300 text-slate-600'} text-[11px] font-semibold whitespace-nowrap">${esc(o)}</span>`).join('')}</div></div>
+    <div class="divide-y divide-slate-100">${S.map(s=>`
+      <div class="px-3.5 py-3 ${s.gap?'bg-amber-50':''}">
+        <div class="flex items-start gap-2">${s.gap?'<span class="inline-grid place-items-center h-6 w-6 rounded-full bg-amber-200 text-amber-800 text-[11px] font-bold shrink-0">!</span>':avatar(s.name)}
+          <div class="min-w-0"><p class="text-[13px] font-semibold ${s.gap?'text-amber-900 italic':'text-slate-900'} leading-snug">${esc(s.name)}</p>
+          <p class="text-[12px] text-slate-600">${esc(s.part)}</p>
+          <p class="text-[11px] text-slate-400">${esc(s.disc)}</p>
+          ${s.val?`<p class="text-[12px] text-slate-700 tnum mt-1">${esc(s.val)} · paid ${esc(s.paid||'—')}</p>`:''}</div>
+          ${s.gap?'':'<span class="ml-auto text-[11px] text-indigo-700 font-semibold shrink-0">Call</span>'}</div>
+      </div>`).join('')}</div>`;
+}
+$('#orgChips').addEventListener('click', e => { const b = e.target.closest('.oc'); if(!b) return; fOrg = b.dataset.o; renderStake(); });
+
+/* ── decisions tree ────────────────────────────────────────────────────── */
+let fDec = 'applicable', editMode = false;
+const open = new Set(['Civil','External Facade Works','Waterproofing Works']);
+function stTag(s){
+  if(s.st === 'decided') return pill('Decided','emerald');
+  if(s.st === 'blocking') return pill('Blocking','rose');
+  if(s.st === 'pending') return pill('Awaiting','amber');
+  return '';
+}
+function subVisible(s){
+  if(fDec === 'all') return true;
+  if(fDec === 'applicable') return s.ap;
+  if(fDec === 'pending') return s.ap && (s.st === 'pending' || s.st === 'blocking');
+  if(fDec === 'blocking') return s.ap && s.st === 'blocking';
+  return true;
+}
+function renderTree(){
+  $('#tree').innerHTML = TREE.map(c => {
+    const subs = c.subs.filter(subVisible);
+    if(!subs.length && fDec !== 'all') return '';
+    const on = c.subs.filter(s => s.ap).length, tot = c.subs.length;
+    const box = on === 0 ? '☐' : on === tot ? '☑' : '⊟';
+    const isOpen = open.has(c.cat);
+    return `<div class="border-b border-slate-100 last:border-0">
+      <div class="flex items-center gap-2 px-3 py-2.5 hover:bg-slate-50 cursor-pointer catrow" data-cat="${esc(c.cat)}">
+        <span class="text-slate-400 text-[12px] w-3">${isOpen?'▾':'▸'}</span>
+        ${editMode?`<span class="catbox text-[15px] ${on?'text-indigo-600':'text-slate-300'}" data-cat="${esc(c.cat)}">${box}</span>`:''}
+        <p class="text-[13px] font-bold text-slate-900">${esc(c.cat)}</p>
+        <span class="text-[11px] text-slate-500 tnum">${on} of ${tot} applicable</span>
+        <div class="ml-auto flex gap-1">
+          ${c.subs.filter(s=>s.ap&&s.st==='blocking').length?pill(c.subs.filter(s=>s.ap&&s.st==='blocking').length+' blocking','rose'):''}
+          ${c.subs.filter(s=>s.ap&&s.st==='pending').length?pill(c.subs.filter(s=>s.ap&&s.st==='pending').length+' awaiting','amber'):''}
+          ${c.subs.filter(s=>s.ap&&s.st==='decided').length?pill(c.subs.filter(s=>s.ap&&s.st==='decided').length+' decided','emerald'):''}
+        </div>
+      </div>
+      ${isOpen?`<div class="pl-6 pb-1">${subs.map(s=>`
+        <div class="tree-line pl-3 py-2 pr-3 flex items-start gap-2 ${s.st==='blocking'&&s.ap?'bg-rose-50/50':''} ${!s.ap?'opacity-55':''}">
+          ${editMode?`<button class="subbox text-[15px] ${s.ap?'text-indigo-600':'text-slate-300'} leading-none mt-0.5" data-cat="${esc(c.cat)}" data-sub="${esc(s.n)}">${s.ap?'☑':'☐'}</button>`:'<span class="text-slate-300 mt-1">·</span>'}
+          <div class="min-w-0 flex-1">
+            <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
+              <p class="text-[13px] font-semibold text-slate-800">${esc(s.n)}</p>
+              ${s.ap?stTag(s):'<span class="text-[11px] text-slate-400">not applicable here</span>'}
+              ${s.link?`<span class="text-[11px] text-indigo-700 font-semibold">↔ ${esc(s.link)}</span>`:''}
+            </div>
+            ${s.ap&&s.st==='decided'?`<p class="text-[12px] text-slate-700 mt-0.5">${esc(s.spec)}</p>
+              <p class="text-[11px] text-slate-500">${esc(s.by)} · ${esc(s.on)}${s.rev?` · <span class="text-amber-700 font-semibold">${esc(s.rev)}</span>`:''}</p>`:''}
+            ${s.ap&&s.st!=='decided'&&s.st?`<p class="text-[12px] text-slate-700 mt-0.5">${esc(s.need)}</p>
+              <p class="text-[11px] ${s.ind?'text-rose-700 font-semibold':'text-slate-500'}">with ${esc(s.ball)}${s.ind?' · '+esc(s.ind):''}</p>`:''}
+            ${s.ap&&!s.st?'<p class="text-[12px] text-slate-400 mt-0.5">Marked applicable — nothing recorded yet</p>':''}
+          </div>
+          ${s.ap?`<button class="text-[11px] font-semibold text-indigo-700 shrink-0 mt-0.5">${s.st==='decided'?'History':'Record'}</button>`:''}
+        </div>`).join('')}</div>`:''}
+    </div>`;
+  }).join('');
+  const flat = TREE.flatMap(c => c.subs.filter(s => s.ap && s.st).map(s => ({...s, cat:c.cat})));
+  $('#phoneDec').innerHTML = `<div class="sticky top-0 bg-white border-b border-slate-200 px-3.5 py-2.5 z-10">
+      <p class="text-[14px] font-bold text-slate-900">Decisions &amp; Specs</p>
+      <p class="text-[11px] text-slate-500">SRAH · 19 of 34 decided</p>
+      <div class="h-1.5 rounded-full bg-slate-200 mt-2 overflow-hidden"><div class="h-full bg-emerald-500" style="width:56%"></div></div></div>
+    <div class="divide-y divide-slate-100">${flat.map(s=>`
+      <div class="px-3.5 py-2.5 ${s.st==='blocking'?'border-l-2 border-l-rose-500':''}">
+        <p class="text-[11px] text-slate-400">${esc(s.cat)}</p>
+        <p class="text-[13px] font-semibold text-slate-900 leading-snug">${esc(s.n)}</p>
+        <p class="text-[12px] text-slate-600 mt-0.5">${esc(s.st==='decided'?s.spec:s.need)}</p>
+        <div class="mt-1.5">${stTag(s)}</div>
+      </div>`).join('')}</div>`;
+}
+$('#tree').addEventListener('click', e => {
+  const sb = e.target.closest('.subbox');
+  if(sb){ const c = TREE.find(x => x.cat === sb.dataset.cat); const s = c.subs.find(y => y.n === sb.dataset.sub); s.ap = !s.ap; renderTree(); return; }
+  const cb = e.target.closest('.catbox');
+  if(cb){ const c = TREE.find(x => x.cat === cb.dataset.cat); const all = c.subs.every(s => s.ap); c.subs.forEach(s => s.ap = !all); renderTree(); return; }
+  const cr = e.target.closest('.catrow');
+  if(cr){ const k = cr.dataset.cat; open.has(k) ? open.delete(k) : open.add(k); renderTree(); }
+});
+$$('.df').forEach(b => b.addEventListener('click', () => {
+  fDec = b.dataset.f;
+  $$('.df').forEach(x => x.className = 'df px-2.5 py-1.5 rounded-md text-[12px] font-semibold border min-h-[36px] ' +
+    (x.dataset.f === fDec ? 'bg-slate-900 border-slate-900 text-white' : 'bg-white border-slate-300 text-slate-600 hover:bg-slate-50'));
+  renderTree();
+}));
+$('#editMode').addEventListener('change', e => {
+  editMode = e.target.checked;
+  if(editMode){ TREE.forEach(c => open.add(c.cat)); fDec = 'all';
+    $$('.df').forEach(x => x.className = 'df px-2.5 py-1.5 rounded-md text-[12px] font-semibold border min-h-[36px] ' +
+      (x.dataset.f === 'all' ? 'bg-slate-900 border-slate-900 text-white' : 'bg-white border-slate-300 text-slate-600 hover:bg-slate-50')); }
+  renderTree();
+});
+
+/* ── modals ────────────────────────────────────────────────────────────── */
+const TARGETS = ['NGH A','NGH B','NGH C','P2 A01','P2 A02','P2 A03','Welcome Centre Extension','Ekant Kutir','New Row House Infra','CV4'];
+function openCopy(kind){
+  $('#copyTitle').textContent = kind === 'stake' ? 'Copy stakeholders to other projects' : 'Copy this applicability to other projects';
+  $('#copySub').textContent = kind === 'stake' ? 'From SRAH — 18 people and firms, 18 disciplines on' : 'From SRAH — 34 of 91 sub-categories marked applicable';
+  $('#copyWhat').innerHTML = (kind === 'stake'
+    ? [['Which disciplines are on', true], ['Consultants and their disciplines', true], ['SRMD team and their parts', true], ['Contractors and vendors', false], ['Who answers which discipline (routing)', true]]
+    : [['Which categories are applicable', true], ['Which sub-categories are applicable', true], ['The decisions already recorded', false], ['Required-by dates', false]])
+    .map(([l, on]) => `<label class="flex items-center gap-2 text-[13px] text-slate-700 cursor-pointer"><input type="checkbox" ${on?'checked':''} class="h-4 w-4 accent-indigo-600">${esc(l)}</label>`).join('');
+  $('#copyTargets').innerHTML = TARGETS.map((p, i) =>
+    `<label class="flex items-center gap-2 text-[13px] text-slate-700 cursor-pointer border border-slate-200 rounded px-2 py-1.5"><input type="checkbox" ${i<2?'checked':''} class="h-4 w-4 accent-indigo-600">${esc(p)}</label>`).join('');
+  $('#copyPreview').innerHTML = kind === 'stake'
+    ? 'NGH B — 6 disciplines switched on, 9 people added, 2 already there and left alone.<br>P2 A01 — 6 disciplines switched on, 9 people added. <b>1 conflict:</b> P2 A01 already names a different Architect, so that row is skipped and listed.'
+    : 'NGH B — 22 sub-categories marked applicable, 4 already were.<br>P2 A01 — 19 marked applicable. <b>Note:</b> P2 A01 does not have <i>External Facade Works</i> enabled at all, so its 6 rows are skipped.';
+  $('#copyScrim').hidden = false;
+}
+$('#copyBtn').addEventListener('click', () => openCopy('stake'));
+$('#copyBtn2').addEventListener('click', () => openCopy('dec'));
+['#copyClose','#copyCancel'].forEach(s => $(s).addEventListener('click', () => $('#copyScrim').hidden = true));
+$('#copyScrim').addEventListener('click', e => { if(e.target.id === 'copyScrim') $('#copyScrim').hidden = true; });
+
+$('#raiseCards').innerHTML = [
+ ['Site issue','Something is wrong on site and needs fixing.','amber','🔧'],
+ ['Query (RFI)','You need an answer from design before you can carry on.','sky','❓'],
+ ['Instruction','You are telling someone to do — or stop — something.','violet','📋'],
+ ['Decision','Something has been settled and must be on record.','emerald','✅'],
+ ['Non-conformance','Work done does not meet the spec.','rose','⚠️'],
+ ['Just a note','No owner, no date. Goes on the project wall.','slate','💬'],
+].map(([t, d, tone, ic]) => {
+  const c = TONE[tone];
+  return `<button class="text-left rounded-lg border ${c[2]} ${c[0]} p-3 hover:brightness-95 min-h-[44px]">
+    <p class="text-[13px] font-bold ${c[1]}">${ic} ${esc(t)}</p>
+    <p class="text-[12px] text-slate-600 mt-0.5 leading-snug">${esc(d)}</p></button>`;
+}).join('');
+$('#raiseBtn').addEventListener('click', () => $('#raiseScrim').hidden = false);
+$('#raiseClose').addEventListener('click', () => $('#raiseScrim').hidden = true);
+$('#raiseScrim').addEventListener('click', e => { if(e.target.id === 'raiseScrim') $('#raiseScrim').hidden = true; });
+
+/* ── boot ──────────────────────────────────────────────────────────────── */
+chips(); renderRows(); renderDisc(); renderStake();
+$$('.df').forEach(x => x.className = 'df px-2.5 py-1.5 rounded-md text-[12px] font-semibold border min-h-[36px] ' +
+  (x.dataset.f === 'applicable' ? 'bg-slate-900 border-slate-900 text-white' : 'bg-white border-slate-300 text-slate-600 hover:bg-slate-50'));
+renderTree(); showPane('disc');
+</script>
+</body>
+</html>

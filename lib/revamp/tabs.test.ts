@@ -33,7 +33,10 @@ describe('coming-soon lanes', () => {
     // plus Consultants & Specialised Cost, which the fifteen-tab ribbon gives
     // its own lane under People (see lib/revamp/workspace.ts).
     // 16 since 10 Sep 2026: JMRs, Material In-Out and Schedules left with their modules.
-    expect(PROJECT_TABS).toHaveLength(16)
+    // 15 from 12 Sep 2026: Consultants & Specialised Cost became the
+    // Consultants group inside Stakeholders, where each consultant's order
+    // value is read from IN4 — the tab's whole purpose, one screen earlier.
+    expect(PROJECT_TABS).toHaveLength(15)
     for (const label of [
       'Budget vs Actual', 'Budget by WO/PO', 'Pending Approvals', 'Discussions',
       'Stake Holders', 'Drawings', 'Decisions & Specs', 'QC', 'Indents',
@@ -125,8 +128,10 @@ describe('coming-soon lanes', () => {
 
   it('leaves the built count honest', () => {
     const { built, total } = builtCount()
-    expect(built).toBe(9)
-    expect(total).toBe(16)
+    // 11 from 12 Sep 2026: the Site Register built Discussions properly and
+    // brought Stakeholders and Decisions & Specs with it.
+    expect(built).toBe(11)
+    expect(total).toBe(15)
     expect(BUILT_TABS).toHaveLength(built)
     expect(COMING_SOON_TABS).toHaveLength(total - built)
   })
@@ -205,7 +210,7 @@ describe('a tab never grants what the module refuses', () => {
     // The built tabs they may open — the greyed coming-soon lanes show to
     // everyone and are asserted separately.
     expect(labels.filter(l => BUILT_TABS.some(t => t.label === l)))
-      .toEqual(['Budget vs Actual', 'Discussions', 'Indents', 'WO / POs'])
+      .toEqual(['Budget vs Actual', 'Discussions', 'Stake Holders', 'Decisions & Specs', 'Indents', 'WO / POs'])
   })
 
   it('shows Pending Approvals to a reviewer', () => {

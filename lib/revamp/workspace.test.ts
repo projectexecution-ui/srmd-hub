@@ -13,9 +13,12 @@ describe('the ribbon is twelve tabs in five groups', () => {
     expect(WORKSPACE_TABS).toHaveLength(12)
   })
 
-  it('groups them 4 · 2 · 1 · 2 · 3', () => {
+  // 4 · 2 · 1 · 3 · 2 since 12 Sep 2026: Decisions & Specifications joined
+  // Documents (a specification is a document), and Consultants left People to
+  // become a group inside Stakeholders. The ribbon stays at twelve.
+  it('groups them 4 · 2 · 1 · 3 · 2', () => {
     const counts = RIBBON_GROUPS.map(g => WORKSPACE_TABS.filter(t => t.group === g.id).length)
-    expect(counts).toEqual([4, 2, 1, 2, 3])
+    expect(counts).toEqual([4, 2, 1, 3, 2])
   })
 
   it('puts every tab in a declared group', () => {
@@ -70,7 +73,7 @@ describe('permissions still decide what is shown', () => {
 
   it('keeps unbuilt tabs visible — they are the roadmap, and carry no data', () => {
     const tabs = visibleWorkspaceTabs({ 'cost-control': { view: true } }, new Set(), false)
-    expect(tabs.map(t => t.slug)).toEqual(expect.arrayContaining(['qc', 'drawings', 'consultants']))
+    expect(tabs.map(t => t.slug)).toEqual(expect.arrayContaining(['qc', 'drawings']))
     // Accounts is built and reviewer-only now, so a non-reviewer does not see it.
     expect(tabs.map(t => t.slug)).not.toContain('accounts')
   })

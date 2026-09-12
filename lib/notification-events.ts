@@ -145,6 +145,24 @@ export const NOTIFICATION_EVENTS: NotificationEventDef[] = [
     audience: 'The tagged person',
   },
   {
+    type: 'sr_assigned',
+    label: 'Site Register — an entry is assigned to you',
+    description: 'A site issue, query, instruction or non-conformance has been put in your name, with a date it is due back. Sent when it is raised and again whenever it is reassigned to you.',
+    audience: 'The person it is assigned to',
+  },
+  {
+    type: 'sr_replied',
+    label: 'Site Register — a reply on your entry',
+    description: 'Someone has replied on an entry you raised or one assigned to you. A reply from the assigned person also returns the entry to whoever raised it.',
+    audience: 'The other party on the entry',
+  },
+  {
+    type: 'sr_closed',
+    label: 'Site Register — an entry was closed',
+    description: 'The person who raised an entry has closed it. Goes to whoever it was last assigned to, so nobody keeps working on something already settled.',
+    audience: 'The person it was assigned to',
+  },
+  {
     type: 'email_health',
     label: 'Notification delivery problem',
     description: 'Bell-only alert to admins when email or phone-push alerts could not be delivered after retries (so a broken channel can still report itself).',

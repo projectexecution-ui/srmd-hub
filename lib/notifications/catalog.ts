@@ -132,12 +132,16 @@ const INSTANT_RECIPIENTS: Record<string, RecipientSource> = {
   cc_transfer_confirmed: { kind: 'actor',     who: 'The person who requested the transfer' },
   cc_transfer_mismatch:  { kind: 'derived',   who: 'The requester and the approver' },
   comment_mention:       { kind: 'actor',     who: 'The tagged person' },
+  sr_assigned:           { kind: 'actor',     who: 'The person the entry is assigned to' },
+  sr_replied:            { kind: 'actor',     who: 'The other party on the entry' },
+  sr_closed:             { kind: 'actor',     who: 'The person it was last assigned to' },
   email_health:          { kind: 'derived',   who: 'Admins' },
 }
 
 const INSTANT_MODULE: Record<string, string> = {
   access_request: 'admin-users', access_approved: 'admin-users', email_health: 'admin-settings',
   approval_pending: 'approvals', comment_mention: 'cost-control',
+  sr_assigned: 'cost-control', sr_replied: 'cost-control', sr_closed: 'cost-control',
   cc_estimate_approved: 'cost-control', cc_ws_returned: 'cost-control', cc_budget_approved: 'cost-control', cc_budget_transfer: 'cost-control',
   cc_transfer_pending: 'cost-control', cc_transfer_rejected: 'cost-control', cc_transfer_awaiting_in4: 'cost-control', cc_transfer_confirmed: 'cost-control', cc_transfer_mismatch: 'cost-control',
 }

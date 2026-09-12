@@ -10,7 +10,10 @@ import { getMyPermissions, getDisabledModuleSlugs, scopePermissions } from '@/li
 import { Hammer, ArrowRight, Database } from 'lucide-react'
 import { OverviewTab } from '../OverviewTab'
 import { ReportsTab } from '../ReportsTab'
-import { ProcurementTab, WoPoTab, DiscussionsTab } from '../MoreTabs'
+import { ProcurementTab, WoPoTab } from '../MoreTabs'
+import { RegisterTab } from '../site-register/RegisterTab'
+import { StakeholdersTab } from '../site-register/StakeholdersTab'
+import { DecisionsTab } from '../site-register/DecisionsTab'
 import { ApprovalsTab } from '../ApprovalsTab'
 import { ScBudgetsTab } from '../ScBudgetsTab'
 import { AccountsTab } from '../AccountsTab'
@@ -33,10 +36,12 @@ export default async function ProjectTabPage({
 }: {
   params: Promise<{ id: string; rest: string[] }>
   /** Which sub-tab pill is selected, same `?view=` the landing tab uses. */
-  searchParams: Promise<{ view?: string; f?: string; q?: string; g?: string; age?: string; raw?: string; fy?: string; party?: string }>
+  searchParams: Promise<{ view?: string; f?: string; q?: string; g?: string; age?: string; raw?: string; fy?: string; party?: string; scope?: string; entry?: string }>
 }) {
   const { id, rest } = await params
-  const { view: viewParam, f, q, g, age, raw, fy, party } = await searchParams
+  // `scope=all` widens the register to every project the reader may see;
+  // `entry=<id>` opens one straight from a notification or an e-mail link.
+  const { view: viewParam, f, q, g, age, raw, fy, party, scope, entry } = await searchParams
   const slug = rest?.[0] ?? ''
   // Tabs the fifteen-tab ribbon absorbed are now a VIEW of another tab, so
   // an old bookmark, email link or approval card lands on that view instead
@@ -91,7 +96,13 @@ export default async function ProjectTabPage({
 
   if (slug === 'overview')    return <OverviewTab projectId={id} />
   if (slug === 'reports')     return <ReportsTab projectId={id} />
-  if (slug === 'discussions') return <DiscussionsTab projectId={id} />
+
+  // The Site Register — three tabs, one spine. Stakeholders says who exists
+  // and what each is responsible for; Decisions says what has to be settled;
+  // Discussions is how anything moves between the two.
+  if (slug === 'discussions')  return <RegisterTab projectId={id} view={view} scopeAll={scope === 'all'} openEntryId={entry ?? null} />
+  if (slug === 'stakeholders') return <StakeholdersTab projectId={id} view={view} />
+  if (slug === 'decisions')    return <DecisionsTab projectId={id} view={view} />
 
   // Indents and WO/POs are two pages on the mind map and two views of the one
   // tracker — its `global` snapshot holds the indents, its `po` snapshot the

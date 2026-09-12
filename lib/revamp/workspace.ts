@@ -101,17 +101,24 @@ export const WORKSPACE_TABS: WorkspaceTab[] = [
   { slug: 'reports', ribbon: 'Reports', label: 'Reports', group: 'documents', icon: 'FileBarChart',
     subs: ['Saved', 'Scheduled'],
     permissionSlug: 'contractor-report', built: true },
+  // Decisions & Specifications — the budget's own category tree, with the
+  // specification agreed against each sub-category that needs one. Its own tab
+  // again (it was a pill of Discussions) because Aksha asked for the tree and
+  // for choosing what is applicable, and neither fits inside another page.
+  { slug: 'decisions', ribbon: 'Decisions', label: 'Decisions & Specifications', group: 'documents', icon: 'ClipboardCheck',
+    subs: ['Category wise', 'Sub-category wise'],
+    permissionSlug: 'cost-control', built: true },
 
   // ── People ───────────────────────────────────────────────────────────────
+  // Consultants are a GROUP inside Stakeholders, not a tab of their own: the
+  // old tab existed to carry their cost, and a stakeholder pinned to its IN4
+  // party carries that in the row. One fewer place to look.
   { slug: 'stakeholders', ribbon: 'Stakeholders', label: 'Stakeholders', group: 'people', icon: 'Users',
-    subs: ['SRMD team', 'Consultants', 'Contractors', 'Vendors'],
-    permissionSlug: 'cost-control', built: false },
-  { slug: 'discussions', ribbon: 'Discussions', label: 'Discussions', group: 'people', icon: 'MessageSquare',
-    subs: ['Open', 'Resolved', 'Decisions log'],
+    subs: ['Everyone', 'SRMD team', 'Consultants', 'Contractors', 'Vendors'],
     permissionSlug: 'cost-control', built: true },
-  { slug: 'consultants', ribbon: 'Consultants', label: 'Consultants & Specialised Cost', group: 'people', icon: 'Briefcase',
-    subs: ['Category wise', 'Sub-category wise'],
-    permissionSlug: 'cost-control', built: false },
+  { slug: 'discussions', ribbon: 'Discussions', label: 'Discussions', group: 'people', icon: 'MessageSquare',
+    subs: ['Open entries', 'Assigned to me', 'Overdue', 'Closed'],
+    permissionSlug: 'cost-control', built: true },
 ]
 
 /**
@@ -120,10 +127,12 @@ export const WORKSPACE_TABS: WorkspaceTab[] = [
  * lands somewhere sensible instead of on a 404.
  */
 export const ABSORBED: Record<string, { slug: string; sub: number }> = {
-  'wo-view':   { slug: '',            sub: 1 }, // → Budget · Category — WO/PO wise
-  'payments':  { slug: 'accounts',    sub: 0 }, // → Accounts (due, held back, by party)
-  'decisions': { slug: 'discussions', sub: 2 }, // → Discussions · Decisions log
-  'overview':  { slug: '',            sub: 0 }, // Overview folded into Budget
+  'wo-view':     { slug: '',             sub: 1 }, // → Budget · Category — WO/PO wise
+  'payments':    { slug: 'accounts',     sub: 0 }, // → Accounts (due, held back, by party)
+  'overview':    { slug: '',             sub: 0 }, // Overview folded into Budget
+  // Consultants became a group inside Stakeholders on 12 Sep 2026, so its old
+  // address lands on that group rather than on a tab that no longer exists.
+  'consultants': { slug: 'stakeholders', sub: 2 }, // → Stakeholders · Consultants
 }
 
 /**

@@ -73,7 +73,13 @@ export const PROJECT_TABS: ProjectTab[] = [
   // "Budget Vs Actual: Cat Sub Cat Wise".
   { slug: '',             label: 'Budget vs Actual', hint: 'Category and sub-category, against the ERP position',   built: true,  permissionSlug: 'cost-control' },
   { slug: 'approvals',    label: 'Pending Approvals', hint: 'Budget requests part-way through their sign-off chain', built: true,  permissionSlug: 'cost-control', reviewerOnly: true },
-  { slug: 'discussions',  label: 'Discussions',      hint: 'Every comment on this project, in one place',           built: true,  permissionSlug: 'cost-control' },
+  // The Site Register — site issues, requests for information, instructions,
+  // decisions and non-conformances, each assigned to one person with a
+  // response date. Built 12 Sep 2026; the working-sheet comments it used to
+  // replay are still shown, as their own read-only kind.
+  { slug: 'discussions',  label: 'Discussions',      hint: 'Entries raised on this project, and who each is with',  built: true,  permissionSlug: 'cost-control' },
+  { slug: 'stakeholders', label: 'Stake Holders',    hint: 'Everyone attached to this project and their part in it', built: true,  permissionSlug: 'cost-control' },
+  { slug: 'decisions',    label: 'Decisions & Specs', hint: 'Specifications to be settled, by category and sub-category', built: true, permissionSlug: 'cost-control' },
   { slug: 'procurement',  label: 'Indents',          hint: 'Indents raised, and what is still to be ordered',       built: true,  permissionSlug: 'procurement-tracker' },
   { slug: 'wo-po',        label: 'WO / POs',         hint: 'The Indent → PO tracker: POs raised, deliveries due',   built: true,  permissionSlug: 'procurement-tracker' },
   { slug: 'reports',      label: 'Reports',          hint: 'Contractor, Supplier and Bills for this project',       built: true,  permissionSlug: 'contractor-report' },
@@ -116,13 +122,13 @@ export const PROJECT_TABS: ProjectTab[] = [
   // hide the roadmap from nearly everyone (daily-site-report is off portal-wide,
   // most roles have no `schedule`). `futureSlug` keeps the map.
   { slug: 'wo-view',      label: 'Budget by WO/PO',  hint: 'The same budget seen work-order wise, not category wise', built: false, permissionSlug: 'cost-control' },
-  { slug: 'stakeholders', label: 'Stake Holders',    hint: 'Everyone attached to this project and their part in it',  built: false, permissionSlug: 'cost-control' },
   { slug: 'drawings',     label: 'Drawings',         hint: 'Not captured anywhere yet — the first stage of the WO chain', built: false, permissionSlug: 'cost-control' },
-  { slug: 'decisions',    label: 'Decisions & Specs', hint: 'Decisions taken, by category and sub-category',          built: false, permissionSlug: 'cost-control' },
   { slug: 'qc',           label: 'QC',               hint: 'Daily site quality checks and the trend over time',       built: false, permissionSlug: 'cost-control' },
-  // Its own ribbon tab under People (workspace.ts), not a view of Stakeholders:
-  // consultants carry a cost line, which is what "& Specialised Cost" means.
-  { slug: 'consultants',  label: 'Consultants',      hint: 'Consultants and specialised cost, by category',           built: false, permissionSlug: 'cost-control' },
+  // Consultants was its own tab because consultants carry a cost line. It is
+  // now the Consultants group inside Stakeholders, where each one is pinned to
+  // its IN4 party and the order value, paid and balance ride along in the row
+  // — the tab's whole reason for existing, one screen earlier. Its old address
+  // redirects there (ABSORBED in workspace.ts).
   // ── Blocked: no data exists ──────────────────────────────────────────────
   { slug: 'payments',     label: 'Payment Reports',  hint: 'What has actually been paid out on this project',         built: false, permissionSlug: 'cost-control',
     blockedBy: 'The payments table is empty — CT Hub has never held payment records. Needs an IN4 or Zoho export.' },
