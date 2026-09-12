@@ -4,7 +4,7 @@ import { PageHeader } from '@/components/PageHeader'
 import { loadItemMaster, loadLastPoByMaterial, lastOrderLinks } from '@/lib/revamp/masters-in4'
 import { formatINR, formatDate } from '@/lib/utils'
 import { MasterTable, type MasterRow } from '../MasterTable'
-import { In4Note } from '../In4Note'
+import { In4Note, in4Arrived } from '../In4Note'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
@@ -40,7 +40,7 @@ export default async function ItemsMasterPage({ searchParams }: { searchParams: 
         hsn: i.hsn ? { text: i.hsn, mono: true } : { text: '—', tone: 'muted' },
         last: o
           ? { text: o.party ?? 'supplier not named', sub: [o.date ? formatDate(o.date) : null, o.rate != null ? `@ ${formatINR(o.rate)}` : null, o.project].filter(Boolean).join(' · ') || undefined, links: lastOrderLinks(o) }
-          : { text: lastPo.in4 === 'live' ? 'never bought' : '—', tone: 'muted' },
+          : { text: in4Arrived(lastPo.in4) ? 'never bought' : '—', tone: 'muted' },
       },
     }
   })

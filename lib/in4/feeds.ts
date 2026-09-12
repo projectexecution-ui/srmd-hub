@@ -16,6 +16,7 @@ import { extractProjects, extractSubprojects, extractSkills, extractWoBoqItems, 
 import {
   extractContractorCerts, extractSupplierCerts,
   extractParties, extractMaterials, extractStores, extractCompanies, extractCompanyGstins, extractUoms,
+  extractLastPoByMaterial,
 } from './extract-feeds'
 import { buildContractorDocs, compareContractor } from './contractor'
 import { buildSupplierDocs, compareSupplier } from './supplier'
@@ -119,10 +120,10 @@ export async function readFeedModes(sb: { from: SupabaseClient['from'] }): Promi
 // ── The masters mirror ───────────────────────────────────────────────────────
 
 async function runMasters(sb: SupabaseClient, now: string): Promise<{ rows: number; summary: string }> {
-  const [projects, subprojects, skills, parties, materials, stores, companies, gstins, uoms] = [
+  const [projects, subprojects, skills, parties, materials, stores, companies, gstins, uoms, lastPo] = [
     await extractProjects(), await extractSubprojects(), await extractSkills(),
     await extractParties(), await extractMaterials(), await extractStores(), await extractCompanies(),
-    await extractCompanyGstins(), await extractUoms(),
+    await extractCompanyGstins(), await extractUoms(), await extractLastPoByMaterial(),
   ]
   await upsertAll(sb, 'in4_projects', projects.map(p => ({ ...p, synced_at: now })), 'id')
   await upsertAll(sb, 'in4_subprojects', subprojects.map(s => ({ ...s, synced_at: now })), 'id')
@@ -133,10 +134,11 @@ async function runMasters(sb: SupabaseClient, now: string): Promise<{ rows: numb
   await upsertAll(sb, 'in4_companies', companies.map(c => ({ ...c, synced_at: now })), 'id')
   await upsertAll(sb, 'in4_company_gstins', gstins.map(g => ({ ...g, synced_at: now })), 'id')
   await upsertAll(sb, 'in4_uoms', uoms.map(u => ({ ...u, synced_at: now })), 'id')
-  for (const t of ['in4_parties', 'in4_materials', 'in4_stores', 'in4_companies', 'in4_company_gstins', 'in4_uoms']) await dropStale(sb, t, now)
-  const rows = projects.length + subprojects.length + skills.length + parties.length + materials.length + stores.length + companies.length + gstins.length + uoms.length
+  await upsertAll(sb, 'in4_last_po_by_material', lastPo.map(p => ({ ...p, synced_at: now })), 'material_id')
+  for (const t of ['in4_parties', 'in4_materials', 'in4_stores', 'in4_companies', 'in4_company_gstins', 'in4_uoms', 'in4_last_po_by_material']) await dropStale(sb, t, now)
+  const rows = projects.length + subprojects.length + skills.length + parties.length + materials.length + stores.length + companies.length + gstins.length + uoms.length + lastPo.length
   const contractors = parties.filter(p => p.kind === 'contractor').length
-  return { rows, summary: `${contractors} contractors · ${parties.length - contractors} suppliers · ${materials.length} materials · ${stores.length} stores · ${companies.length} trusts · ${uoms.length} units` }
+  return { rows, summary: `${contractors} contractors · ${parties.length - contractors} suppliers · ${materials.length} materials · ${stores.length} stores · ${companies.length} trusts · ${uoms.length} units · ${lastPo.length} last POs` }
 }
 
 // ── WO BOQ items: ordered rows + certified-per-bill (abstract) rows ────────────

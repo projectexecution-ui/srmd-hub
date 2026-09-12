@@ -27,13 +27,13 @@
 //     descriptions, with how often and at what rate each was used. Read from
 //     the mirror since 11 Sep 2026 — see the in4_boq_items note below.
 //
-// Served from the mirror, which is in Mumbai with the app. The one read still
-// going to IN4 live is the last purchase order behind an item, which the
-// mirror has no copy of. Every IN4 read is a SELECT. Nothing writes.
+// Every one of these screens is served from the Supabase mirror, which sits in
+// Mumbai with the app rather than in us-east-1 with IN4. Nothing in this file
+// opens a connection to IN4 any more; the masters sync fills the mirror once a
+// day, and only ever with SELECTs.
 // [[feedback_dont_guess_follow_the_source]]
 
 import { createClient } from '@/lib/supabase/server'
-import { in4QueryCached, in4Config } from '@/lib/in4/db'
 import { fetchAll } from '@/lib/revamp/orders-tree'
 import { getRoleLabels } from '@/lib/role-labels'
 import type { Role } from '@/lib/types'
@@ -61,14 +61,6 @@ export function oneLine(v: unknown): string | null {
   return t.replace(/\s*[\r\n]+\s*/g, ', ').replace(/\s*,(\s*,)+/g, ',').replace(/\s+/g, ' ').replace(/[,\s]+$/, '').trim() || null
 }
 
-async function live<T>(fn: () => Promise<T>): Promise<{ data: T | null } & In4Read> {
-  if (!in4Config()) return { data: null, in4: 'not-configured' }
-  try {
-    return { data: await fn(), in4: 'live' }
-  } catch (e) {
-    return { data: null, in4: 'unavailable', in4Error: e instanceof Error ? e.message : String(e) }
-  }
-}
 
 /* ── Work-order counts from the mirror, shared by three masters ─────────── */
 
@@ -462,34 +454,33 @@ export function lastOrderLinks(o: LastOrder | null): Array<{ label: string; href
 }
 const shortDoc = (ref: string | null) => String(ref ?? '').replace(/^(IND|PO|GRN|WO|DRAFT-PO)\/[A-Z0-9]+\//, '')
 
-/** Last approved PO per material, one live query (ROW_NUMBER over IN4's PO facts). */
+/**
+ * The last approved purchase order behind each material.
+ *
+ * IN4 works this out with a ROW_NUMBER() over 5,069 PO lines, and Item Master
+ * asked it to do so on every page load — from Mumbai, against an RDS in
+ * us-east-1. The masters sync now runs that query once a day and keeps the
+ * answer, one row per material, in the mirror.
+ *
+ * 2,446 rows, so paged: PostgREST stops at 1,000 and says nothing.
+ */
 export async function loadLastPoByMaterial(): Promise<{ byMaterial: Map<number, LastOrder> } & In4Read> {
+  const supabase = await createClient()
   const [r, hub] = await Promise.all([
-    live(() => in4QueryCached<Record<string, unknown>>(`
-      SELECT x.MATERIAL_ID, x.PO_ID, x.PO_NO, x.PO_DT, x.supplier, x.rate, x.qty, x.project, x.SUBPROJECT_ID
-      FROM (
-        SELECT f.MATERIAL_ID, f.PO_ID, h.PO_NO, h.PO_DT, COALESCE(sp.PrintName, sp.NAME) supplier, f.NET_RATE rate, f.BASE_PO_QTY qty, pr.NAME project, p.SUBPROJECT_ID,
-               ROW_NUMBER() OVER (PARTITION BY f.MATERIAL_ID ORDER BY h.PO_DT DESC, f.PO_ID DESC) rn
-        FROM BI.FACT_PURCHASE_ORDER_DETAILS f
-        JOIN BI.PURCHASE_ORDER_HEADER h ON h.PO_ID = f.PO_ID
-        LEFT JOIN PURCH_PURCHASE_ORDER p ON p.ID = f.PO_ID
-        LEFT JOIN PURCH_SUPPLIER sp ON sp.ID = f.SUPPLIER_ID
-        LEFT JOIN ENGG_PROJECT pr ON pr.ID = f.PROJECT_ID
-        WHERE h.STATUS_ID = 2
-      ) x WHERE x.rn = 1`)),
+    fetchAll<Record<string, unknown>>((from, to) => supabase.rpc('in4_last_po_per_material').range(from, to)),
     loadHubProjectBySubproject(),
   ])
-  if (!r.data) return { byMaterial: new Map(), in4: r.in4, in4Error: r.in4Error }
+  if (r.error) return { byMaterial: new Map(), in4: 'unavailable', in4Error: r.error }
   const byMaterial = new Map<number, LastOrder>()
-  for (const x of r.data) {
-    const sub = x.SUBPROJECT_ID == null ? null : n(x.SUBPROJECT_ID)
-    byMaterial.set(n(x.MATERIAL_ID), {
-      kind: 'po', id: n(x.PO_ID), ref: s(x.PO_NO), date: iso(x.PO_DT), party: s(x.supplier),
+  for (const x of r.rows) {
+    const sub = x.subproject_id == null ? null : n(x.subproject_id)
+    byMaterial.set(n(x.material_id), {
+      kind: 'po', id: n(x.po_id), ref: s(x.po_no), date: iso(x.po_dt), party: s(x.supplier),
       rate: x.rate == null ? null : Number(x.rate), qty: x.qty == null ? null : Number(x.qty),
       project: s(x.project), subprojectId: sub, hubProjectId: sub == null ? null : hub.get(sub) ?? null,
     })
   }
-  return { byMaterial, in4: 'live' }
+  return { byMaterial, in4: 'mirror' }
 }
 
 /* ── 6. BOQ Master (derived — IN4 has no BOQ master table) ─────────────── */

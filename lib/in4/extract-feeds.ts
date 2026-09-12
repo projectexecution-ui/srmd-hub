@@ -11,6 +11,9 @@ const n = (v: unknown): number => (v == null ? 0 : Number(v))
 const ni = (v: unknown): number | null => (v == null ? null : Number(v))
 const s = (v: unknown): string => (v == null ? '' : String(v).replace(/\s+/g, ' ').trim())
 const sn = (v: unknown): string | null => { const t = s(v); return t ? t : null }
+/** A calendar date with the time dropped — these are shown as days, and a
+ *  timestamp would only invite a timezone to shift them. */
+const day = (v: unknown): string | null => { if (v == null) return null; const d = new Date(v as string); return Number.isNaN(d.getTime()) ? null : d.toISOString().slice(0, 10) }
 const d = (v: unknown): string | null => {
   if (v == null) return null
   const t = v instanceof Date ? v : new Date(String(v))
@@ -208,6 +211,38 @@ export async function extractCompanyGstins(): Promise<In4CompanyGstin[]> {
   return rows
     .map(r => ({ id: n(r.ID), company_id: n(r.COMPANY_ID), gstin: s(r.GSTIN_NO), address: sn(r.Address), pincode: sn(r.Pincode) }))
     .filter(g => g.gstin)
+}
+
+/** The most recent APPROVED purchase order each material appeared on — the
+ *  answer Item Master shows, computed by IN4 and mirrored as one row per
+ *  material. Supplier and project are kept as ids: in4_parties and
+ *  in4_projects already hold those names.
+ *
+ *  The sub-project is read from the fact table. The screen used to take it
+ *  from PURCH_PURCHASE_ORDER.SUBPROJECT_ID, which IN4 leaves empty on all
+ *  1,450 purchase orders — so the “In project” link never appeared. The
+ *  fact's own SUBPROJECT_ID is filled on every one of the 5,069 lines. */
+export interface In4LastPo {
+  material_id: number; po_id: number; po_no: string | null; po_dt: string | null
+  supplier_id: number | null; rate: number | null; qty: number | null
+  project_id: number | null; subproject_id: number | null
+}
+export async function extractLastPoByMaterial(): Promise<In4LastPo[]> {
+  const rows = await in4Query<Record<string, unknown>>(`
+    SELECT x.MATERIAL_ID, x.PO_ID, x.PO_NO, x.PO_DT, x.SUPPLIER_ID, x.rate, x.qty, x.PROJECT_ID, x.SUBPROJECT_ID
+    FROM (
+      SELECT f.MATERIAL_ID, f.PO_ID, h.PO_NO, h.PO_DT, f.SUPPLIER_ID, f.NET_RATE rate, f.BASE_PO_QTY qty,
+             f.PROJECT_ID, NULLIF(f.SUBPROJECT_ID, 0) SUBPROJECT_ID,
+             ROW_NUMBER() OVER (PARTITION BY f.MATERIAL_ID ORDER BY h.PO_DT DESC, f.PO_ID DESC) rn
+      FROM BI.FACT_PURCHASE_ORDER_DETAILS f
+      JOIN BI.PURCHASE_ORDER_HEADER h ON h.PO_ID = f.PO_ID
+      WHERE h.STATUS_ID = 2
+    ) x WHERE x.rn = 1`)
+  return rows.map(r => ({
+    material_id: n(r.MATERIAL_ID), po_id: n(r.PO_ID), po_no: sn(r.PO_NO), po_dt: day(r.PO_DT),
+    supplier_id: ni(r.SUPPLIER_ID), rate: r.rate == null ? null : Number(r.rate), qty: r.qty == null ? null : Number(r.qty),
+    project_id: ni(r.PROJECT_ID), subproject_id: ni(r.SUBPROJECT_ID),
+  }))
 }
 
 export interface In4Uom { id: number; name: string; is_active: boolean }
