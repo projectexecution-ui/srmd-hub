@@ -27,6 +27,14 @@ export interface StakeholdersClientProps {
   projectName: string
   initialGroup: OrgKind | 'all'
   canConfigure: boolean
+  /**
+   * May this person see what a party has been ordered and paid? Follows the
+   * contractor-report module, which is off for contractor, engineer and
+   * site_staff — so this tab can never show a contractor another contractor's
+   * account while /reports refuses them. The figures are stripped on the
+   * server when false; this only decides whether the column exists.
+   */
+  canSeeMoney: boolean
   disciplines: Discipline[]
   enabledIds: string[]
   /** False until someone narrows the list — see StakeholderData.configured. */
@@ -92,7 +100,9 @@ export function StakeholdersClient(props: StakeholdersClientProps) {
           note={props.configured ? `of ${props.disciplines.length} available` : 'not narrowed for this project yet'}
         />
         <Counter label="Consultants" value={consultants.length} note={consultants.length ? 'appointed' : 'none appointed'} />
-        <Counter label="Committed by order" value={committed ? formatINR(committed) : '—'} note="from IN4, by party" tone="slate" />
+        {props.canSeeMoney
+          ? <Counter label="Committed by order" value={committed ? formatINR(committed) : '—'} note="from IN4, by party" tone="slate" />
+          : <Counter label="Pinned to IN4" value={active.filter(p => p.in4PartyId != null).length} note="their orders are on WO / PO" tone="slate" />}
       </div>
 
       {/* The reason to open this tab: a discipline the project says it uses,
@@ -156,7 +166,7 @@ export function StakeholdersClient(props: StakeholdersClientProps) {
                     <th className="px-3 py-2 font-semibold w-[160px]">Discipline</th>
                     <th className="px-3 py-2 font-semibold w-[180px]">Part on this project</th>
                     <th className="px-3 py-2 font-semibold w-[190px]">Contact</th>
-                    <th className="px-3 py-2 font-semibold w-[150px] text-right">Order value / paid</th>
+                    {props.canSeeMoney && <th className="px-3 py-2 font-semibold w-[150px] text-right">Order value / paid</th>}
                     {props.canConfigure && <th className="px-3 py-2 font-semibold w-[92px]" />}
                   </tr>
                 </thead>
@@ -181,6 +191,7 @@ export function StakeholdersClient(props: StakeholdersClientProps) {
                       <td className="px-3 py-2.5 align-top text-[11px] text-gray-500 break-all">
                         {p.email ?? p.phone ?? (p.in4PartyId ? `IN4 party #${p.in4PartyId}` : <span className="text-amber-800 font-semibold">No contact recorded</span>)}
                       </td>
+                      {props.canSeeMoney && (
                       <td className="px-3 py-2.5 align-top text-right text-[12px] tabular-nums">
                         {p.orderValue != null ? (
                           <>
@@ -193,6 +204,7 @@ export function StakeholdersClient(props: StakeholdersClientProps) {
                           <span className="text-gray-300">not pinned to IN4</span>
                         )}
                       </td>
+                      )}
                       {props.canConfigure && (
                         <td className="px-3 py-2.5 align-top text-right">
                           <RowActions p={p} onEdit={() => openEdit(p)} projectId={props.projectId} />
@@ -218,7 +230,7 @@ export function StakeholdersClient(props: StakeholdersClientProps) {
                     </p>
                     <p className="text-[12px] text-gray-600">{p.roleOnProject ?? ORG_LABEL[p.orgKind]}</p>
                     <p className="text-[11px] text-gray-400">{p.disciplineName ?? 'No discipline'}</p>
-                    {p.orderValue != null && (
+                    {props.canSeeMoney && p.orderValue != null && (
                       <p className="text-[12px] text-gray-700 tabular-nums mt-1">{formatINR(p.orderValue)} · paid {formatINR(p.paid ?? 0)}</p>
                     )}
                   </div>
