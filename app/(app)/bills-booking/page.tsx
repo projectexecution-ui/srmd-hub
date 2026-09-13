@@ -117,6 +117,11 @@ export default async function BillsBookingPage() {
       <PageHeader title="Bills Approval" back="/" subtitle="Contractor & vendor bills — by trust, project and sub-project.">
         <div className="flex items-center gap-2">
           {canAdmin && (
+            <Link href="/bills-booking/in-flight" className="inline-flex items-center gap-1.5 rounded-lg border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50">
+              <Clock className="h-4 w-4" /> In flight
+            </Link>
+          )}
+          {canAdmin && (
             <Link href="/bills-booking/overview" className="inline-flex items-center gap-1.5 rounded-lg border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50">
               <ReceiptText className="h-4 w-4" /> Money waiting
             </Link>
