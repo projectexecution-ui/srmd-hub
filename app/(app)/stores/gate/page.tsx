@@ -1,8 +1,8 @@
 import Link from 'next/link'
-import { loadEntries, loadLists, listsOf } from '@/lib/stores/queries'
+import { loadEntries, loadLists, listsOf, loadRecentParties } from '@/lib/stores/queries'
 import { fmtQty, type Stage } from '@/lib/stores/core'
 import { Section, Empty, Scroller, th, td, tdNum, StageChip, RegisterChip, When } from '../ui'
-import { GateInForm } from './GateInForm'
+import { GateInForm, StorekeeperCta } from './GateInForm'
 
 export const dynamic = 'force-dynamic'
 
@@ -18,20 +18,25 @@ export default async function GatePage({
   const { stage } = await searchParams
   const active = (STAGES.find(s => s.key === stage)?.key ?? 'gate') as Stage | 'all'
 
-  const [entries, lists] = await Promise.all([
+  const [entries, lists, recent, waiting] = await Promise.all([
     loadEntries({ stage: active === 'all' ? null : active, limit: 200 }),
     loadLists(),
+    loadRecentParties(),
+    loadEntries({ stage: 'gate', limit: 200 }),
   ])
   const modes = listsOf(lists, 'delivery_mode').filter(m => m.isActive)
 
   return (
     <div className="space-y-6">
-      <Section
-        title="Step 1 · Security records the vehicle"
-        note="Nine things and the papers. No item, no rate, no project — that is the storekeeper's half."
-      >
-        <GateInForm modes={modes.map(m => ({ id: m.id, name: m.name }))} />
-      </Section>
+      {/* The guard's door and the storekeeper's door, side by side and equal —
+          they are two different people arriving at the same screen. */}
+      <div className="grid gap-3 sm:grid-cols-2">
+        <GateInForm
+          modes={modes.map(m => ({ id: m.id, name: m.name }))}
+          recentParties={recent}
+        />
+        <StorekeeperCta waiting={waiting.length} />
+      </div>
 
       <Section title="The register" note="Every vehicle through the gate, newest first">
         <div className="flex flex-wrap gap-1.5">

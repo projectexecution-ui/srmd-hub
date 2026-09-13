@@ -2,152 +2,256 @@
 
 import { useRouter } from 'next/navigation'
 import { useState, useTransition } from 'react'
+import { CheckCircle2, ClipboardList, Warehouse, Camera } from 'lucide-react'
 import { createGateEntry } from '@/lib/stores/actions'
-import { missingForGate, type Register } from '@/lib/stores/core'
-import { Field, inputClass, Btn, Notice } from '../ui'
+import {
+  T, stepsFor, canLeave, summaryOf, modePhrase, modeIcon,
+  type GateStep, type GateAnswers,
+} from '@/lib/stores/lang'
+import {
+  Bi, Progress, Question, BigChoice, BigInput, QuickPicks, BottomBar, FieldCard, BigNotice,
+} from '../field'
 
 /**
- * The guard's screen.
+ * The guard's screen — one question at a time.
  *
- * The FIRST question is which register this is, because that one answer
- * decides everything downstream — vendor material goes to site and never
- * becomes stock; SRMD material goes to the store and does. Asking it plainly,
- * first, in words rather than jargon, is the whole reason the two registers
- * never get mixed up later.
+ * It replaced a single form of nine fields. A form is fine for someone who
+ * reads it once and learns the shape; it is the wrong object entirely for
+ * somebody who reads English slowly, standing at a gate with a lorry waiting.
+ * One question fills the screen, is written in both languages, and the answer
+ * is usually a tap rather than typing.
+ *
+ * Only three answers are compulsory — what, who, how. A guard who cannot read
+ * the licence plate through the dust must still be able to finish, or the
+ * lorry waits at the gate for a number nobody has.
  */
-const REGISTERS: Array<{ key: Register; title: string; sub: string }> = [
-  { key: 'vendor', title: 'Vendor material — goes to site', sub: 'Delivered against a PO or WO, straight to the project' },
-  { key: 'srm',    title: 'SRMD stock — goes to the store',  sub: 'Into our own store, to be issued out later' },
-]
-
-export function GateInForm({ modes }: { modes: Array<{ id: string; name: string }> }) {
+export function GateInForm({
+  modes, recentParties = [],
+}: {
+  modes: Array<{ id: string; name: string }>
+  recentParties?: string[]
+}) {
   const router = useRouter()
   const [pending, start] = useTransition()
   const [open, setOpen] = useState(false)
-  const [result, setResult] = useState<{ ok: boolean; message: string } | null>(null)
+  const [i, setI] = useState(0)
+  const [a, setA] = useState<GateAnswers>({})
+  const [saved, setSaved] = useState<{ no: string } | null>(null)
+  const [error, setError] = useState<string | null>(null)
 
-  const [register, setRegister] = useState<Register>('srm')
-  const [partyName, setPartyName] = useState('')
-  const [vehicleNo, setVehicleNo] = useState('')
-  const [driverName, setDriverName] = useState('')
-  const [driverMobile, setDriverMobile] = useState('')
-  const [driverLicence, setDriverLicence] = useState('')
-  const [deliveryModeId, setDeliveryModeId] = useState('')
-  const [remarks, setRemarks] = useState('')
+  const steps = stepsFor(a)
+  const step = steps[Math.min(i, steps.length - 1)]
+  const set = (patch: Partial<GateAnswers>) => setA(prev => ({ ...prev, ...patch }))
 
-  const handMode = modes.find(m => /hand/i.test(m.name))
-  const isHand = !!handMode && deliveryModeId === handMode.id
-  const missing = missingForGate({
-    register, partyName, vehicleNo, driverName,
-    deliveryModeId: isHand ? 'hand' : deliveryModeId,
+  const reset = () => { setA({}); setI(0); setSaved(null); setError(null) }
+
+  const submit = () => start(async () => {
+    setError(null)
+    const mode = modes.find(m => m.name === a.modeName)
+    const r = await createGateEntry({
+      register: a.register ?? 'srm',
+      partyName: a.partyName ?? '',
+      vehicleNo: a.vehicleNo, driverName: a.driverName,
+      driverMobile: a.driverMobile, driverLicence: a.driverLicence,
+      deliveryModeId: mode?.id ?? null,
+    })
+    if (r.ok && r.data) { setSaved({ no: r.data.no }); router.refresh() }
+    else setError(r.message)
   })
 
-  const reset = () => {
-    setPartyName(''); setVehicleNo(''); setDriverName(''); setDriverMobile('')
-    setDriverLicence(''); setRemarks('')
-  }
-
+  /* ── Closed ───────────────────────────────────────────────────────────── */
   if (!open) {
     return (
-      <div className="flex flex-wrap items-center gap-3">
-        <Btn onClick={() => { setOpen(true); setResult(null) }}>Record a vehicle</Btn>
-        <p className="text-[12.5px] text-gray-500">Takes about two minutes on a phone.</p>
-      </div>
+      <button
+        type="button" onClick={() => { setOpen(true); reset() }}
+        className="w-full sm:w-auto inline-flex items-center gap-3 rounded-2xl bg-indigo-700 px-5 py-4 min-h-[64px]
+          text-white shadow-sm active:bg-indigo-800"
+      >
+        <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-white/15">
+          <ClipboardList className="h-5 w-5" strokeWidth={2.5} />
+        </span>
+        <span className="text-left">
+          <span className="block text-[17px] font-bold leading-tight">{T.gateTitle.en}</span>
+          <span className="block text-[15px] leading-tight text-indigo-100" lang="gu">{T.gateTitle.gu}</span>
+        </span>
+      </button>
     )
   }
 
-  return (
-    <div className="rounded-xl border border-gray-200 bg-white p-4 max-w-xl space-y-4">
-      <div>
-        <span className="block text-[10.5px] font-bold uppercase tracking-wider text-gray-500 mb-1.5">
-          What is coming in<span className="text-rose-600 ml-0.5">*</span>
-        </span>
-        <div className="grid gap-2">
-          {REGISTERS.map(r => (
-            <button
-              key={r.key} type="button" onClick={() => setRegister(r.key)}
-              className={`text-left rounded-lg border px-3 py-2.5 min-h-[44px] ${
-                register === r.key ? 'border-indigo-500 bg-indigo-50 ring-1 ring-indigo-200' : 'border-gray-300 bg-white hover:bg-gray-50'
-              }`}
-            >
-              <span className="block text-[13px] font-semibold text-gray-900">{r.title}</span>
-              <span className="block text-[11.5px] text-gray-500 mt-0.5">{r.sub}</span>
-            </button>
-          ))}
+  /* ── Saved ────────────────────────────────────────────────────────────── */
+  if (saved) {
+    return (
+      <FieldCard>
+        <div className="pb-5 text-center space-y-4">
+          <span className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-emerald-100">
+            <CheckCircle2 className="h-9 w-9 text-emerald-700" strokeWidth={2.5} />
+          </span>
+          <div>
+            <p className="text-[22px] font-bold text-emerald-900">{T.saved.en}</p>
+            <p className="text-[19px] text-emerald-800" lang="gu">{T.saved.gu}</p>
+          </div>
+          <p className="font-mono text-[26px] font-bold text-gray-900 tracking-tight">{saved.no}</p>
+          <p className="text-[14px] text-gray-500">
+            {T.savedSub.en}<span lang="gu" className="block">{T.savedSub.gu}</span>
+          </p>
         </div>
+        <BottomBar nextLabel={T.newEntry} onNext={reset}>
+          <button type="button" onClick={() => { setOpen(false); reset() }}
+            className="w-full mb-2.5 rounded-2xl border-2 border-gray-300 bg-white min-h-[52px] text-[15px] font-semibold text-gray-700 active:bg-gray-100">
+            {T.cancel.en} · <span lang="gu">{T.cancel.gu}</span>
+          </button>
+        </BottomBar>
+      </FieldCard>
+    )
+  }
+
+  /* ── The wizard ───────────────────────────────────────────────────────── */
+  const last = i >= steps.length - 1
+  const ready = canLeave(step, a)
+
+  return (
+    <FieldCard>
+      <div className="space-y-5 pb-2">
+        <Progress current={i} total={steps.length} />
+
+        {step === 'what' && (
+          <>
+            <Question t={T.qWhat} />
+            <div className="space-y-2.5">
+              <BigChoice
+                icon="truck" selected={a.register === 'vendor'}
+                onClick={() => { set({ register: 'vendor' }); setI(i + 1) }}
+                t={T.vendorTitle} sub={T.vendorSub}
+              />
+              <BigChoice
+                icon="other" selected={a.register === 'srm'}
+                onClick={() => { set({ register: 'srm' }); setI(i + 1) }}
+                t={T.srmTitle} sub={T.srmSub}
+              />
+            </div>
+          </>
+        )}
+
+        {step === 'who' && (
+          <>
+            <Question t={T.qWho} hint={T.whoHint} />
+            <QuickPicks options={recentParties} onPick={v => set({ partyName: v })} />
+            <BigInput value={a.partyName ?? ''} onChange={v => set({ partyName: v })} autoFocus />
+          </>
+        )}
+
+        {step === 'how' && (
+          <>
+            <Question t={T.qHow} />
+            <div className="space-y-2.5">
+              {modes.map(m => (
+                <BigChoice
+                  key={m.id} t={modePhrase(m.name)} icon={modeIcon(m.name)}
+                  selected={a.modeName === m.name}
+                  onClick={() => { set({ modeName: m.name }); setI(i + 1) }}
+                />
+              ))}
+            </div>
+          </>
+        )}
+
+        {step === 'vehicle' && (
+          <>
+            <Question t={T.qVehicle} hint={T.vehicleHint} />
+            <BigInput upper value={a.vehicleNo ?? ''} onChange={v => set({ vehicleNo: v })}
+              placeholder="GJ 05 BX 4417" autoFocus />
+          </>
+        )}
+
+        {step === 'driver' && (
+          <>
+            <Question t={T.qDriver} />
+            <div className="space-y-3.5">
+              <BigInput t={T.driverName} value={a.driverName ?? ''} onChange={v => set({ driverName: v })} autoFocus />
+              <BigInput t={T.driverMobile} mode="tel" value={a.driverMobile ?? ''} onChange={v => set({ driverMobile: v })} />
+              <BigInput t={T.driverLicence} value={a.driverLicence ?? ''} onChange={v => set({ driverLicence: v })} upper />
+            </div>
+          </>
+        )}
+
+        {step === 'papers' && (
+          <>
+            <Question t={T.qPapers} hint={T.papersHint} />
+            <div className="rounded-2xl border-2 border-dashed border-gray-300 bg-gray-50 px-4 py-8 text-center">
+              <Camera className="mx-auto h-10 w-10 text-gray-300" strokeWidth={1.75} />
+              <p className="mt-2.5 text-[16px] font-semibold text-gray-500">{T.photoSoon.en}</p>
+              <p className="text-[15px] text-gray-400" lang="gu">{T.photoSoon.gu}</p>
+              <p className="mt-2 text-[12.5px] text-gray-400 max-w-[28ch] mx-auto">
+                Waiting on the decision about how long pictures are kept.
+              </p>
+            </div>
+          </>
+        )}
+
+        {step === 'check' && (
+          <>
+            <Question t={T.qCheck} />
+            <dl className="rounded-2xl border-2 border-gray-200 divide-y divide-gray-100 overflow-hidden">
+              {summaryOf(a).map((row, n) => (
+                <div key={n} className="flex items-start gap-3 px-4 py-3">
+                  <dt className="w-[42%] shrink-0">
+                    <span className="block text-[13px] font-semibold text-gray-500">{row.label.en}</span>
+                    {row.label.gu && <span className="block text-[13px] text-gray-400" lang="gu">{row.label.gu}</span>}
+                  </dt>
+                  <dd className="flex-1 text-[17px] font-semibold text-gray-900 break-words">{row.value}</dd>
+                </div>
+              ))}
+            </dl>
+            {error && <BigNotice kind="bad" title={error} />}
+          </>
+        )}
       </div>
 
-      <Field label="Who is delivering" required>
-        <input className={inputClass} value={partyName} onChange={e => setPartyName(e.target.value)}
-          placeholder="Shree Balaji Steel Traders" autoComplete="off" />
-      </Field>
+      <BottomBar
+        onBack={i > 0 ? () => { setI(i - 1); setError(null) } : undefined}
+        onNext={last ? submit : () => setI(i + 1)}
+        nextLabel={last ? T.save : T.next}
+        nextDisabled={!ready}
+        busy={pending}
+      >
+        {/* Never a dead button with no explanation: say what is missing, in
+            both languages, right where the thumb is about to press. */}
+        {!ready && (
+          <p className="mb-2.5 text-center text-[14px] font-semibold text-amber-800">
+            {T.needed.en} · <span lang="gu">{T.needed.gu}</span>
+          </p>
+        )}
+        {ready && !last && (step === 'vehicle' || step === 'driver' || step === 'papers') && (
+          <button type="button" onClick={() => setI(i + 1)}
+            className="w-full mb-2.5 text-center text-[14px] font-semibold text-gray-400 min-h-[44px]">
+            {T.skip.en} · <span lang="gu">{T.skip.gu}</span>
+          </button>
+        )}
+      </BottomBar>
+    </FieldCard>
+  )
+}
 
-      <div className="grid grid-cols-2 gap-3">
-        <Field label="Delivery mode">
-          <select className={inputClass} value={deliveryModeId} onChange={e => setDeliveryModeId(e.target.value)}>
-            <option value="">Pick one</option>
-            {modes.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
-          </select>
-        </Field>
-        <Field label="Vehicle number" hint={isHand ? 'Not needed — hand delivered' : undefined}>
-          <input className={inputClass} value={vehicleNo} onChange={e => setVehicleNo(e.target.value.toUpperCase())}
-            placeholder="GJ 05 BX 4417" disabled={isHand} autoComplete="off" />
-        </Field>
-      </div>
-
-      <Field label="Driver name">
-        <input className={inputClass} value={driverName} onChange={e => setDriverName(e.target.value)}
-          disabled={isHand} autoComplete="off" />
-      </Field>
-
-      <div className="grid grid-cols-2 gap-3">
-        <Field label="Driver mobile">
-          <input className={inputClass} value={driverMobile} onChange={e => setDriverMobile(e.target.value)}
-            inputMode="tel" disabled={isHand} autoComplete="off" />
-        </Field>
-        <Field label="Driver licence">
-          <input className={inputClass} value={driverLicence} onChange={e => setDriverLicence(e.target.value)}
-            disabled={isHand} autoComplete="off" />
-        </Field>
-      </div>
-
-      <Field label="Remarks">
-        <input className={inputClass} value={remarks} onChange={e => setRemarks(e.target.value)} autoComplete="off" />
-      </Field>
-
-      <div className="rounded-lg border border-dashed border-gray-300 bg-gray-50 px-3 py-3 text-center">
-        <p className="text-[12.5px] text-gray-600">📷 Delivery challan · Bill / invoice · E-way bill</p>
-        <p className="text-[11.5px] text-gray-400 mt-0.5">
-          Not wired yet — waiting on your answer about how long photos are kept.
+/** The storekeeper's own front door, same visual language as the guard's. */
+export function StorekeeperCta({ waiting }: { waiting: number }) {
+  return (
+    <div className={`rounded-2xl border-2 px-4 py-4 flex items-center gap-3.5 ${
+      waiting > 0 ? 'border-amber-300 bg-amber-50' : 'border-gray-200 bg-white'}`}>
+      <span className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-xl ${
+        waiting > 0 ? 'bg-amber-500 text-white' : 'bg-gray-100 text-gray-400'}`}>
+        <Warehouse className="h-6 w-6" strokeWidth={2} />
+      </span>
+      <div className="min-w-0">
+        <p className="text-[16px] font-bold text-gray-900">
+          {waiting > 0 ? `${waiting} ${waiting === 1 ? 'vehicle' : 'vehicles'} to count in` : 'Nothing waiting'}
+        </p>
+        <p className="text-[15px] text-indigo-800" lang="gu">
+          {waiting > 0 ? `${waiting} ગાડી ગણવાની બાકી` : 'કંઈ બાકી નથી'}
         </p>
       </div>
-
-      {/* Say what is missing; never disable the button without saying why. */}
-      {missing.length > 0 && (
-        <Notice kind="info">Still needed: {missing.join(' · ')}</Notice>
+      {waiting > 0 && (
+        <Bi t={T.waiting} size="sm" className="ml-auto text-right hidden sm:block" />
       )}
-      {result && <Notice kind={result.ok ? 'ok' : 'bad'}>{result.message}</Notice>}
-
-      <div className="flex flex-wrap gap-2">
-        <Btn
-          busy={pending}
-          onClick={() => start(async () => {
-            const r = await createGateEntry({
-              register, partyName, vehicleNo, driverName, driverMobile, driverLicence,
-              deliveryModeId: deliveryModeId || null, remarks,
-            })
-            setResult(r)
-            if (r.ok) { reset(); router.refresh() }
-          })}
-        >
-          Save &amp; send to storekeeper
-        </Btn>
-        <Btn kind="ghost" onClick={() => { setOpen(false); setResult(null) }}>Close</Btn>
-      </div>
-
-      <p className="text-[11.5px] text-gray-500">
-        Your name and the time are stamped on it as the security signature.
-      </p>
     </div>
   )
 }

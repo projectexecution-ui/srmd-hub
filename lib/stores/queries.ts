@@ -406,6 +406,31 @@ export async function loadReturnables(projectId?: string | null): Promise<Return
   return outstandingReturnables(lines)
 }
 
+/**
+ * The shops that have delivered here lately, most-used first.
+ *
+ * Shown as tap-chips above the "who brought it" field. The same six names come
+ * back week after week, and tapping one beats spelling it — which matters most
+ * for the person we are asking to type the least.
+ */
+export async function loadRecentParties(limit = 6): Promise<string[]> {
+  const supabase = await createClient()
+  const { data } = await supabase
+    .from('mio_entries')
+    .select('party_name')
+    .not('party_name', 'is', null)
+    .neq('stage', 'void')
+    .order('entry_at', { ascending: false })
+    .limit(120)
+
+  const count = new Map<string, number>()
+  for (const r of data ?? []) {
+    const name = (r.party_name as string | null)?.trim()
+    if (name) count.set(name, (count.get(name) ?? 0) + 1)
+  }
+  return [...count.entries()].sort((a, b) => b[1] - a[1]).slice(0, limit).map(([n]) => n)
+}
+
 /** IN4's PO lines for one PO number — what was ordered and how much has landed
  *  already, so the storekeeper ticks rather than types. */
 export interface PoLine {
