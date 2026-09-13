@@ -20,7 +20,7 @@ export default async function StoresHome() {
   return (
     <div className="space-y-6">
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        <Tile href="/stores/gate?stage=gate" label="Waiting on storekeeper" count={counts.toComplete}
+        <Tile href="/stores/gate" label="Waiting on storekeeper" count={counts.toComplete}
           sub="Vehicles recorded at the gate, not yet counted in" tone="amber" />
         <Tile href="/stores/requests?status=pending" label="Requests to approve" count={counts.pendingRequests}
           sub="With Mayank / Kanti" tone="blue" />
