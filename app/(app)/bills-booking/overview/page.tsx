@@ -8,6 +8,8 @@ import { ReceiptText } from 'lucide-react'
 import { rollUpProjects, type CertRow, type ProjectRow } from '@/lib/bills-booking/overview'
 import { formatINR } from '@/lib/utils'
 
+const KIND_LABEL: Record<string, string> = { wo: 'work-order bills', advance: 'advances', misc: 'misc expenses' }
+
 export const dynamic = 'force-dynamic'
 
 /** Money that is still owed, by project, read from the IN4 mirror.
@@ -49,7 +51,7 @@ export default async function BillsOverviewPage() {
     </div>
   )
 
-  const { rows, totals, asOf } = rollUpProjects(certs, (projData ?? []) as ProjectRow[])
+  const { rows, totals, byKind } = rollUpProjects(certs, (projData ?? []) as ProjectRow[])
 
   return (
     <div className="p-4 md:p-6 max-w-6xl mx-auto space-y-4">
@@ -73,6 +75,11 @@ export default async function BillsOverviewPage() {
             <Stat k="Work orders" v={String(totals.wos)} s="carrying a live bill" />
             <Stat k="Oldest" v={`${totals.oldest} d`} s="since the bill was raised" />
           </div>
+
+          <p className="text-xs text-gray-500 -mt-1">
+            Made up of {byKind.map(k => `${k.bills} ${KIND_LABEL[k.kind] ?? k.kind} (${formatINR(k.outstanding)})`).join(' · ')}.
+            Work-order bills are the ones to check against IN4; advances and misc expenses are separate documents there.
+          </p>
 
           <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white">
             <table className="w-full text-sm">

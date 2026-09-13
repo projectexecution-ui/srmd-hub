@@ -27,9 +27,16 @@ export interface OverviewRow {
   oldest: number
 }
 
+export interface KindSplit { kind: string; bills: number; outstanding: number }
+
 export interface Overview {
   rows: OverviewRow[]
   totals: { bills: number; wos: number; outstanding: number; oldest: number }
+  /** Work-order bills, advances and misc expenses are three different documents
+   *  in IN4 with three different routes. The headline adds them up; this says
+   *  what it is made of, so the figure can be checked against IN4's own
+   *  work-order number rather than looking inexplicably larger than it. */
+  byKind: KindSplit[]
   /** Null unless the mirror has been synced since display_no/status_name landed. */
   asOf: string | null
 }
@@ -54,6 +61,7 @@ const daysSince = (iso: string | null, now: number): number => {
 export function rollUpProjects(certs: CertRow[], projects: ProjectRow[], now = Date.now()): Overview {
   const name = new Map(projects.map(p => [p.id, p.name]))
   const acc = new Map<number, { bills: number; wos: Set<number>; outstanding: number; oldest: number }>()
+  const kinds = new Map<string, KindSplit>()
   let anyStatus = false
 
   for (const c of certs) {
@@ -61,6 +69,9 @@ export function rollUpProjects(certs: CertRow[], projects: ProjectRow[], now = D
     if (isDead(c.status_name)) continue
     const amt = Number(c.outstanding_amt || 0)
     if (amt <= 0) continue
+    const k = c.kind || 'wo'
+    const ks = kinds.get(k) ?? { kind: k, bills: 0, outstanding: 0 }
+    ks.bills++; ks.outstanding += amt; kinds.set(k, ks)
     const pid = c.project_id ?? 0
     let a = acc.get(pid)
     if (!a) { a = { bills: 0, wos: new Set(), outstanding: 0, oldest: 0 }; acc.set(pid, a) }
@@ -89,5 +100,6 @@ export function rollUpProjects(certs: CertRow[], projects: ProjectRow[], now = D
     oldest: rows.reduce((s, r) => Math.max(s, r.oldest), 0),
   }
 
-  return { rows, totals, asOf: anyStatus ? 'with statuses' : null }
+  const byKind = [...kinds.values()].sort((a, b) => b.outstanding - a.outstanding)
+  return { rows, totals, byKind, asOf: anyStatus ? 'with statuses' : null }
 }

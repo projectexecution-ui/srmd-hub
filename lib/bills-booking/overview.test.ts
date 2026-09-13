@@ -68,3 +68,18 @@ describe('bills overview roll-up', () => {
     expect(rows[0].outstanding).toBe(50)
   })
 })
+
+describe('bills overview — what the headline is made of', () => {
+  it('splits by document kind, biggest first, using the same exclusions', () => {
+    const { byKind, totals } = rollUpProjects([
+      cert({ certificate_id: 1, kind: 'wo', outstanding_amt: 5000 }),
+      cert({ certificate_id: 2, kind: 'misc', outstanding_amt: 300 }),
+      cert({ certificate_id: 3, kind: 'advance', outstanding_amt: 100 }),
+      cert({ certificate_id: 4, kind: 'wo', outstanding_amt: 900, status_name: 'Cancelled' }),
+    ], projects, NOW)
+
+    expect(byKind.map(k => k.kind)).toEqual(['wo', 'misc', 'advance'])
+    expect(byKind.find(k => k.kind === 'wo')).toMatchObject({ bills: 1, outstanding: 5000 })
+    expect(byKind.reduce((s, k) => s + k.outstanding, 0)).toBe(totals.outstanding)
+  })
+})
