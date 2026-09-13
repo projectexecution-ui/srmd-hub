@@ -166,7 +166,7 @@ describe('the matrix rows', () => {
     expect(money.slice(1, 3).every(r => r.parent === 'ws:budget')).toBe(true)
     const all = sections.flatMap(s => s.rows)
     for (const t of [...WORKSPACE_TABS, SETUP_TAB]) expect(all.some(r => r.slug === tabSlug(t))).toBe(true)
-    expect(all.filter(r => r.kind === 'tab')).toHaveLength(13)
+    expect(all.filter(r => r.kind === 'tab')).toHaveLength(14)
     expect(all.filter(r => r.kind === 'sub')).toHaveLength(WORKSPACE_TABS.reduce((t, x) => t + x.subs.length, 0))
   })
   it('marks reviewer-only and unbuilt tabs, and says what a tab inherits', () => {

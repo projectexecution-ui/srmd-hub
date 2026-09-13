@@ -1,4 +1,5 @@
 import { isRevampNow } from './live'
+import { PILOT_PROJECT_IDS } from '../stores/core'
 
 // The project cockpit's tab list — ONE source of truth, the same way
 // lib/modules.ts is the one source for modules. Pure (no Supabase, no React)
@@ -29,6 +30,11 @@ export interface ProjectTab {
    *  engineer, who clicks it and is thrown out of the cockpit with no reason
    *  given. Module permission alone is not always the whole gate. */
   reviewerOnly?: boolean
+  /** A PILOT tab: only on these projects, and only for an admin. Mirrors the
+   *  same field on WorkspaceTab so the two lists can never disagree about who
+   *  sees it — the ribbon reads the workspace list, but anything reaching for
+   *  PROJECT_TABS must get the same answer. */
+  pilotProjectIds?: readonly string[]
   /** For a coming-soon tab: the module it will belong to once built. Recorded
    *  so the eventual permission is a map rather than a guess. */
   futureSlug?: string
@@ -83,6 +89,12 @@ export const PROJECT_TABS: ProjectTab[] = [
   { slug: 'procurement',  label: 'Indents',          hint: 'Indents raised, and what is still to be ordered',       built: true,  permissionSlug: 'procurement-tracker' },
   { slug: 'wo-po',        label: 'WO / POs',         hint: 'The Indent → PO tracker: POs raised, deliveries due',   built: true,  permissionSlug: 'procurement-tracker' },
   { slug: 'reports',      label: 'Reports',          hint: 'Contractor, Supplier and Bills for this project',       built: true,  permissionSlug: 'contractor-report' },
+  // Material In & Out — this project's half of the gate register. A PILOT:
+  // NGH B only and admin only, set on the ribbon entry in workspace.ts
+  // (pilotProjectIds). Aksha, 13 Sep 2026: "make the Section in only NGH B
+  // Project as of now … we will need to work in thoroghly for any Flaws".
+  { slug: 'material',     label: 'Material In & Out', hint: 'What came in for this project, what went out, what is still to return', built: true, permissionSlug: 'cost-control',
+    pilotProjectIds: PILOT_PROJECT_IDS },
 
   // TOP MANAGEMENT ONLY — Aksha, 2026-09-03: "not to be seen by Eng level but
   // only managment - not also Mayank bhai should not be able to see - atm heads
@@ -238,8 +250,9 @@ export function visibleTabs(
   perms: Record<string, { view?: boolean } | undefined>,
   disabled: Set<string> = new Set(),
   isReviewer = true,
+  ctx: { projectId?: string | null; isAdmin?: boolean } = {},
 ): ProjectTab[] {
-  return PROJECT_TABS.filter(t => canOpenTab(t, perms, disabled, isReviewer))
+  return PROJECT_TABS.filter(t => canOpenTab(t, perms, disabled, isReviewer, ctx))
 }
 
 /** Whether this person may open one specific tab. */
@@ -248,8 +261,12 @@ export function canOpenTab(
   perms: Record<string, { view?: boolean } | undefined>,
   disabled: Set<string> = new Set(),
   isReviewer = true,
+  /** Where it is being opened. A pilot tab needs its own project AND an
+   *  admin; omitting this means neither, which is the safe direction. */
+  ctx: { projectId?: string | null; isAdmin?: boolean } = {},
 ): boolean {
   if (tab.reviewerOnly && !isReviewer) return false
+  if (tab.pilotProjectIds && !(ctx.isAdmin && ctx.projectId && tab.pilotProjectIds.includes(ctx.projectId))) return false
   return perms[tab.permissionSlug]?.view === true && !disabled.has(tab.permissionSlug)
 }
 

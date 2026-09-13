@@ -7,18 +7,20 @@ import {
 
 const ALL_VIEW = new Proxy({}, { get: () => ({ view: true }) }) as Record<string, { view: boolean }>
 
-// Twelve since 10 Sep 2026: Material, JMR and Schedule left with their modules (clean-up round 1).
-describe('the ribbon is twelve tabs in five groups', () => {
-  it('has exactly twelve', () => {
-    expect(WORKSPACE_TABS).toHaveLength(12)
+// Twelve since 10 Sep 2026: JMR and Schedule left with their modules (clean-up
+// round 1). Thirteen from 13 Sep 2026: Material In & Out came back as a PILOT —
+// it is in the ribbon DATA, but only NGH B and only an admin ever sees it.
+describe('the ribbon is thirteen tabs in five groups', () => {
+  it('has exactly thirteen', () => {
+    expect(WORKSPACE_TABS).toHaveLength(13)
   })
 
-  // 4 · 2 · 1 · 3 · 2 since 12 Sep 2026: Decisions & Specifications joined
-  // Documents (a specification is a document), and Consultants left People to
-  // become a group inside Stakeholders. The ribbon stays at twelve.
-  it('groups them 4 · 2 · 1 · 3 · 2', () => {
+  // 4 · 2 · 2 · 3 · 2 since 13 Sep 2026: Material In & Out joined Site, beside
+  // QC. Decisions & Specifications sits in Documents (a specification is a
+  // document) and Consultants is a group inside Stakeholders, not a tab.
+  it('groups them 4 · 2 · 2 · 3 · 2', () => {
     const counts = RIBBON_GROUPS.map(g => WORKSPACE_TABS.filter(t => t.group === g.id).length)
-    expect(counts).toEqual([4, 2, 1, 3, 2])
+    expect(counts).toEqual([4, 2, 2, 3, 2])
   })
 
   it('puts every tab in a declared group', () => {
@@ -28,7 +30,7 @@ describe('the ribbon is twelve tabs in five groups', () => {
 
   it('gives each tab a unique slug, with Budget as the index', () => {
     const slugs = WORKSPACE_TABS.map(t => t.slug)
-    expect(new Set(slugs).size).toBe(12)
+    expect(new Set(slugs).size).toBe(13)
     expect(slugs[0]).toBe('')
   })
 

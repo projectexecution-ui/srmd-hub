@@ -19,7 +19,7 @@
 // the client NavBar.
 
 import {
-  LayoutDashboard, Building2, Receipt, Library, Shield, Archive, CreditCard,
+  LayoutDashboard, Building2, Receipt, Library, Shield, Archive, CreditCard, Warehouse,
   type LucideIcon,
 } from 'lucide-react'
 
@@ -56,6 +56,13 @@ export const REVAMP_PRIMARY: RevampNavItem[] = [
   // is why it is a lane and not a tab. Shown only to the people named in
   // Cost Control settings; see buildRevampNav below.
   { href: '/accounts',       label: 'Accounts',  icon: CreditCard,      slug: 'cost-control',   built: true },
+  // Material In & Out — the main-gate register, the store and what it holds.
+  // A lane rather than only a project tab because the gate is ONE queue for
+  // the whole ashram and one warehouse holds material for eleven sites;
+  // neither question can be answered from inside a single project.
+  // Shown to ADMIN ONLY for now — Aksha, 13 Sep 2026: "for now keep it
+  // visible for me only Admin - so we can check and do any changes required".
+  { href: '/stores',         label: 'Stores',    icon: Warehouse,       slug: null,             built: true },
   { href: '/masters',        label: 'Masters',   icon: Library,         slug: 'cost-control',   built: true },
   { href: '/admin',          label: 'Admin',     icon: Shield,          slug: null,             built: true },
 ]
@@ -106,7 +113,7 @@ export function buildRevampNav(
   disabledSlugs: Set<string>,
   /** canSeeAccounts is the named list in Cost Control settings, resolved on
    *  the server — roles cannot draw that line, four people hold `head`. */
-  opts: { canSeeAdmin: boolean; canSeeAccounts?: boolean },
+  opts: { canSeeAdmin: boolean; canSeeAccounts?: boolean; canSeeStores?: boolean },
 ): { primary: RevampNavItem[]; groups: RevampNavGroup[] } {
   const allowed = (it: RevampNavItem) => {
     if (it.slug === null) return true
@@ -119,6 +126,10 @@ export function buildRevampNav(
     // Absent, not greyed: a greyed lane still announces that the report
     // exists, and "not to be seen" means not seen.
     .filter(it => it.href !== '/accounts' || opts.canSeeAccounts === true)
+    // Stores is being reviewed, so only the reviewer sees it. When it opens
+    // up this becomes a permission slug like every other lane — the flag is
+    // the pilot, not the design.
+    .filter(it => it.href !== '/stores' || opts.canSeeStores === true)
     .filter(allowed)
 
   // Five lanes and nothing under them. The groups array stays in the shape so

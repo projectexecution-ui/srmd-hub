@@ -1,5 +1,6 @@
 import { describe, it, expect, afterEach, vi } from 'vitest'
 import { PROJECT_TABS, tabHref, activeTabSlug, findTab, builtCount, projectHref, visibleTabs, canOpenTab, COMING_SOON_TABS, BUILT_TABS, BLOCKED_ITEM_VIEWS } from './tabs'
+import { PILOT_PROJECT_IDS } from '../stores/core'
 
 const P = '11111111-2222-3333-4444-555555555555'
 
@@ -36,7 +37,9 @@ describe('coming-soon lanes', () => {
     // 15 from 12 Sep 2026: Consultants & Specialised Cost became the
     // Consultants group inside Stakeholders, where each consultant's order
     // value is read from IN4 — the tab's whole purpose, one screen earlier.
-    expect(PROJECT_TABS).toHaveLength(15)
+    // 16 from 13 Sep 2026: Material In & Out came back as a pilot — in the
+    // list so the cockpit routes it, gated to NGH B and an admin.
+    expect(PROJECT_TABS).toHaveLength(16)
     for (const label of [
       'Budget vs Actual', 'Budget by WO/PO', 'Pending Approvals', 'Discussions',
       'Stake Holders', 'Drawings', 'Decisions & Specs', 'QC', 'Indents',
@@ -130,8 +133,9 @@ describe('coming-soon lanes', () => {
     const { built, total } = builtCount()
     // 11 from 12 Sep 2026: the Site Register built Discussions properly and
     // brought Stakeholders and Decisions & Specs with it.
-    expect(built).toBe(11)
-    expect(total).toBe(15)
+    // 12 from 13 Sep 2026: Material In & Out — built, but a pilot.
+    expect(built).toBe(12)
+    expect(total).toBe(16)
     expect(BUILT_TABS).toHaveLength(built)
     expect(COMING_SOON_TABS).toHaveLength(total - built)
   })
@@ -161,8 +165,24 @@ describe('a tab never grants what the module refuses', () => {
     expect(visibleTabs(ROLES.head).map(t => t.label)).not.toContain('Indent → PO')
   })
 
-  it('still gives an admin every tab', () => {
-    expect(visibleTabs(ROLES.admin)).toHaveLength(PROJECT_TABS.length)
+  it('still gives an admin every tab, on the project the pilot runs on', () => {
+    const onPilot = { projectId: PILOT_PROJECT_IDS[0], isAdmin: true }
+    expect(visibleTabs(ROLES.admin, new Set(), true, onPilot)).toHaveLength(PROJECT_TABS.length)
+  })
+
+  it('keeps the pilot tab off every other project, even for an admin', () => {
+    const elsewhere = { projectId: '768e48c0-6a01-4c95-b406-1ccc8c82a93b', isAdmin: true } // SRAH
+    const labels = visibleTabs(ROLES.admin, new Set(), true, elsewhere).map(t => t.label)
+    expect(labels).not.toContain('Material In & Out')
+    expect(labels).toHaveLength(PROJECT_TABS.length - 1)
+  })
+
+  it('keeps the pilot tab from a non-admin standing on the pilot project itself', () => {
+    const onPilot = { projectId: PILOT_PROJECT_IDS[0], isAdmin: false }
+    expect(visibleTabs(ROLES.head, new Set(), true, onPilot).map(t => t.label)).not.toContain('Material In & Out')
+    // And with no context at all — the default — it is absent, which is the
+    // safe direction for anything reaching for PROJECT_TABS without one.
+    expect(visibleTabs(ROLES.admin).map(t => t.label)).not.toContain('Material In & Out')
   })
 
   it('always keeps Budget, Discussions and Setup — every role holds cost-control', () => {

@@ -13,6 +13,7 @@
 // strip did — the shell can never widen anyone's access.
 
 import { PROJECT_TABS, type ProjectTab } from './tabs'
+import { PILOT_PROJECT_IDS } from '../stores/core'
 
 export type RibbonGroup = 'money' | 'procurement' | 'site' | 'documents' | 'people'
 
@@ -41,6 +42,15 @@ export interface WorkspaceTab {
   built: boolean
   /** Needs Cost Control reviewer standing on top of the module permission. */
   reviewerOnly?: boolean
+  /**
+   * A PILOT tab: shown only on these projects, and only to an admin.
+   *
+   * Aksha, 13 Sep 2026 — "make the Section in only NGH B Project as of now …
+   * we will need to work in thoroghly for any Flaws". One project, one
+   * reviewer, until the shape is settled. Deleting this field is how the tab
+   * goes everywhere; nothing else about it is provisional.
+   */
+  pilotProjectIds?: readonly string[]
 }
 
 /**
@@ -90,6 +100,15 @@ export const WORKSPACE_TABS: WorkspaceTab[] = [
     permissionSlug: 'procurement-tracker', built: true },
 
   // ── Site ─────────────────────────────────────────────────────────────────
+  // Material In & Out, from Aksha's mind map. This project's half of the gate
+  // register: what came in for it, what was issued to it, and what it still
+  // has to give back. The cross-project half — the gate queue, the item
+  // master, the whole store — is the Stores lane, because neither is
+  // answerable from inside one project.
+  { slug: 'material', ribbon: 'Material', label: 'Material In & Out', group: 'site', icon: 'Warehouse',
+    subs: ['In', 'Issued out', 'To return', 'Requests'],
+    permissionSlug: 'cost-control', built: true,
+    pilotProjectIds: PILOT_PROJECT_IDS },
   { slug: 'qc', ribbon: 'QC', label: 'QC', group: 'site', icon: 'ShieldCheck',
     subs: ['Category wise', 'Sub-category wise', 'Level wise', 'QC checklist'],
     permissionSlug: 'cost-control', built: false },
@@ -188,10 +207,14 @@ export function visibleWorkspaceTabs(
   perms: PermissionLike,
   disabledSlugs: Set<string> | string[],
   isReviewer: boolean,
+  /** Where it is being opened — a pilot tab needs its own project and an
+   *  admin. Omitted means neither, which is the safe direction. */
+  ctx: { projectId?: string | null; isAdmin?: boolean } = {},
 ): WorkspaceTab[] {
   const disabled = disabledSlugs instanceof Set ? disabledSlugs : new Set(disabledSlugs)
   return WORKSPACE_TABS.filter(t => {
     if (t.reviewerOnly && !isReviewer) return false
+    if (t.pilotProjectIds && !(ctx.isAdmin && ctx.projectId && t.pilotProjectIds.includes(ctx.projectId))) return false
     // An unbuilt tab shows no data, so it is gated on being in the cockpit at
     // all rather than on the module it will one day use — otherwise the
     // roadmap would be invisible to nearly everyone.

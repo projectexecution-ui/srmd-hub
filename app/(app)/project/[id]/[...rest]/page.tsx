@@ -6,7 +6,7 @@ import { canOpenAccounts } from '@/lib/revamp/accounts-access'
 import { findTab, PROJECT_TABS, tabHref, type ProjectTab } from '@/lib/revamp/tabs'
 import { ABSORBED, activeSubTab, findWorkspaceTab, workspaceHref } from '@/lib/revamp/workspace'
 import { canOpenWorkspaceTab, landingSub, scopedPerms } from '@/lib/revamp/permissions'
-import { getMyPermissions, getDisabledModuleSlugs, scopePermissions } from '@/lib/auth'
+import { getMyPermissions, getDisabledModuleSlugs, scopePermissions, getMyProfile } from '@/lib/auth'
 import { Hammer, ArrowRight, Database } from 'lucide-react'
 import { OverviewTab } from '../OverviewTab'
 import { ReportsTab } from '../ReportsTab'
@@ -15,6 +15,7 @@ import { RegisterTab } from '../site-register/RegisterTab'
 import { StakeholdersTab } from '../site-register/StakeholdersTab'
 import { DecisionsTab } from '../site-register/DecisionsTab'
 import { ApprovalsTab } from '../ApprovalsTab'
+import { MaterialTab } from '../MaterialTab'
 import { ScBudgetsTab } from '../ScBudgetsTab'
 import { AccountsTab } from '../AccountsTab'
 import ProjectSetupPage from '@/app/(app)/cost-control/projects/[id]/setup/page'
@@ -69,9 +70,14 @@ export default async function ProjectTabPage({
   const wsTab = findWorkspaceTab(slug)
   const isReviewer = await checkIsCcReviewer()
   if (wsTab) {
-    const [perms, disabled] = await Promise.all([getMyPermissions(), getDisabledModuleSlugs()])
-    if (!canOpenWorkspaceTab(perms, wsTab, disabled, isReviewer)) {
+    const [perms, disabled, profile] = await Promise.all([getMyPermissions(), getDisabledModuleSlugs(), getMyProfile()])
+    // A pilot tab (Material In & Out) is open on its own project, to an admin,
+    // and nowhere else. Hiding it from the ribbon is not the gate — the
+    // address has to refuse it too, or the pilot is one typed URL wide.
+    const pilotCtx = { projectId: id, isAdmin: profile?.role === 'admin' }
+    if (!canOpenWorkspaceTab(perms, wsTab, disabled, isReviewer, pilotCtx)) {
       if (tab.reviewerOnly && !isReviewer) notFound()
+      if (wsTab.pilotProjectIds) notFound()
       redirect('/dashboard')
     }
     const asked = activeSubTab(wsTab, viewParam)
@@ -115,6 +121,11 @@ export default async function ProjectTabPage({
   // Approvals is the live My-Approvals card, narrowed to this project — same
   // loader and same component, so the two can never quote different money.
   if (slug === 'approvals')   return <ApprovalsTab projectId={id} view={view} />
+
+  // Material In & Out — this project's half of the gate register. The route
+  // guard above already refused anyone outside the pilot, so by here this is
+  // NGH B and an admin.
+  if (slug === 'material')    return <MaterialTab projectId={id} view={view} />
 
   // Restored from the parked set — both are on the mind map and both were
   // already built and tested; only their row in PROJECT_TABS was removed.

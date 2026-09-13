@@ -88,9 +88,18 @@ describe('revamped left pane', () => {
     expect(without.primary.map(i => i.label)).not.toContain('Masters')
   })
 
-  it('is six lanes — Dashboard, Projects, Bills, Accounts, Masters, Admin', () => {
-    expect(REVAMP_PRIMARY.map(i => i.label)).toEqual(['Dashboard', 'Projects', 'Bills', 'Accounts', 'Masters', 'Admin'])
+  // Stores joined on 13 Sep 2026 — Material In & Out. Admin-only while it is
+  // reviewed, so most people still see six.
+  it('is seven lanes — Dashboard, Projects, Bills, Accounts, Stores, Masters, Admin', () => {
+    expect(REVAMP_PRIMARY.map(i => i.label)).toEqual(['Dashboard', 'Projects', 'Bills', 'Accounts', 'Stores', 'Masters', 'Admin'])
     expect(REVAMP_OLD_SCREENS.length).toBeGreaterThan(0)
+  })
+
+  it('hides Stores from everyone but the reviewer, including a portal admin who was not flagged', () => {
+    const seen = (opts: { canSeeAdmin: boolean; canSeeStores?: boolean }) =>
+      buildRevampNav(allow('cost-control'), new Set(), opts).primary.map(i => i.label)
+    expect(seen({ canSeeAdmin: true })).not.toContain('Stores')
+    expect(seen({ canSeeAdmin: false, canSeeStores: true })).toContain('Stores')
   })
 
   // Accounts is a named list in settings, not a role — four people hold

@@ -1,6 +1,6 @@
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
-import { requirePermission, getDisabledModuleSlugs } from '@/lib/auth'
+import { requirePermission, getDisabledModuleSlugs, getMyProfile } from '@/lib/auth'
 import { ChevronLeft } from 'lucide-react'
 import { loadWorkspaceHeader } from '@/lib/revamp/workspace-header'
 import { SETUP_TAB } from '@/lib/revamp/workspace'
@@ -75,7 +75,10 @@ export default async function ProjectWorkspaceLayout({
   // ribbon exactly as before (lib/revamp/permissions.ts).
   // Accounts is for named people on top of the reviewer rule (lib/revamp/accounts-access.ts).
   const accountsOk = await canOpenAccounts()
-  const tabs = visibleWorkspaceTabsV2(perms, disabled, isReviewer).filter(t => t.slug !== 'accounts' || accountsOk)
+  // Material In & Out is a pilot: NGH B only, admin only, until Aksha has
+  // picked it apart (13 Sep 2026). Everything else ignores this context.
+  const pilotCtx = { projectId: id, isAdmin: (await getMyProfile())?.role === 'admin' }
+  const tabs = visibleWorkspaceTabsV2(perms, disabled, isReviewer, pilotCtx).filter(t => t.slug !== 'accounts' || accountsOk)
   const pills = allowedSubsByTab(perms, tabs)
   const canSetup = canOpenWorkspaceTab(perms, SETUP_TAB, disabled, isReviewer)
   // What is at Verify in IN4 for this project — the approver's turn — as yellow

@@ -109,16 +109,38 @@ export function landingSub(perms: PermLike, tab: WorkspaceTab, asked: number): n
   return ok.length ? ok[0] : -1
 }
 
-/** The ribbon's rule, with tab rows honoured: reviewer standing, the module switch, then access. */
-export function canOpenWorkspaceTab(perms: PermLike, tab: WorkspaceTab, disabled: Set<string> | string[], isReviewer: boolean): boolean {
+/**
+ * Where the tab is being opened, for a tab that is still a pilot.
+ *
+ * A pilot tab appears on its listed projects and only for an admin, so a
+ * section under review cannot be found by anyone who has not been asked to
+ * review it. Omitting the context means "not on a project", which a pilot tab
+ * then fails — the safe direction.
+ */
+export interface TabContext { projectId?: string | null; isAdmin?: boolean }
+
+/** A pilot tab is open only on its own projects, and only to a reviewer. */
+export function tabInPilot(tab: WorkspaceTab, ctx: TabContext = {}): boolean {
+  if (!tab.pilotProjectIds) return true
+  if (!ctx.isAdmin) return false
+  return !!ctx.projectId && tab.pilotProjectIds.includes(ctx.projectId)
+}
+
+/** The ribbon's rule, with tab rows honoured: reviewer standing, the pilot, the module switch, then access. */
+export function canOpenWorkspaceTab(
+  perms: PermLike, tab: WorkspaceTab, disabled: Set<string> | string[], isReviewer: boolean, ctx: TabContext = {},
+): boolean {
   const off = disabled instanceof Set ? disabled : new Set(disabled)
   if (tab.reviewerOnly && !isReviewer) return false
+  if (!tabInPilot(tab, ctx)) return false
   if (off.has(tab.built ? tab.permissionSlug : 'cost-control')) return false
   return tabAccess(perms, tab).view
 }
 
-export function visibleWorkspaceTabsV2(perms: PermLike, disabled: Set<string> | string[], isReviewer: boolean): WorkspaceTab[] {
-  return WORKSPACE_TABS.filter(t => canOpenWorkspaceTab(perms, t, disabled, isReviewer))
+export function visibleWorkspaceTabsV2(
+  perms: PermLike, disabled: Set<string> | string[], isReviewer: boolean, ctx: TabContext = {},
+): WorkspaceTab[] {
+  return WORKSPACE_TABS.filter(t => canOpenWorkspaceTab(perms, t, disabled, isReviewer, ctx))
 }
 
 /** For the ribbon: which pill indices each visible tab may show. */
