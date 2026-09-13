@@ -5,7 +5,7 @@ import { requireBillsAccess } from '@/lib/bills-booking/access'
 import { PageHeader } from '@/components/PageHeader'
 import { QueryError } from '@/components/ui/query-error'
 import { EmptyState } from '@/components/ui/empty-state'
-import { Plus, ReceiptText, AlertTriangle, Clock, Users } from 'lucide-react'
+import { Plus, ReceiptText, AlertTriangle, Clock, Users, Landmark, PackageCheck } from 'lucide-react'
 import { PIPELINE, slaFor, isTerminal, type BbStage } from '@/lib/bills-booking/stages'
 import { BillingTree, type TrustNode, type Leaf } from './BillingTree'
 
@@ -117,16 +117,6 @@ export default async function BillsBookingPage() {
       <PageHeader title="Bills Approval" back="/" subtitle="Contractor & vendor bills — by trust, project and sub-project.">
         <div className="flex items-center gap-2">
           {canAdmin && (
-            <Link href="/bills-booking/in-flight" className="inline-flex items-center gap-1.5 rounded-lg border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50">
-              <Clock className="h-4 w-4" /> In flight
-            </Link>
-          )}
-          {canAdmin && (
-            <Link href="/bills-booking/overview" className="inline-flex items-center gap-1.5 rounded-lg border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50">
-              <ReceiptText className="h-4 w-4" /> Money waiting
-            </Link>
-          )}
-          {canAdmin && (
             <Link href="/bills-booking/admin" className="inline-flex items-center gap-1.5 rounded-lg border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50">
               <Users className="h-4 w-4" /> Desks
             </Link>
@@ -138,6 +128,27 @@ export default async function BillsBookingPage() {
           )}
         </div>
       </PageHeader>
+
+      {/* The four read-only views over IN4. A strip, not six header buttons —
+          they are places to look, not actions, and the header is for actions. */}
+      {canAdmin && (
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-2">
+          {([
+            { href: '/bills-booking/in-flight', icon: Clock, label: 'In flight', hint: 'Who is sitting on what' },
+            { href: '/bills-booking/overview', icon: ReceiptText, label: 'Money waiting', hint: 'Open bills by project' },
+            { href: '/bills-booking/retention', icon: Landmark, label: 'Retention', hint: 'Held and not given back' },
+            { href: '/bills-booking/closure', icon: PackageCheck, label: 'Never closed', hint: 'No final bill, gone quiet' },
+          ] as const).map(v => (
+            <Link key={v.href} href={v.href}
+                  className="rounded-xl border border-gray-200 bg-white px-3 py-2.5 hover:border-indigo-300 hover:bg-indigo-50/40 min-h-[44px]">
+              <div className="flex items-center gap-1.5 text-sm font-semibold text-gray-800">
+                <v.icon className="h-4 w-4 text-indigo-600" /> {v.label}
+              </div>
+              <div className="text-[11px] text-gray-500 mt-0.5">{v.hint}</div>
+            </Link>
+          ))}
+        </div>
+      )}
 
       {error ? (
         <QueryError what="the bills" message={error.message} />
