@@ -77,6 +77,9 @@ export const CRON_JOBS: CronJob[] = [
   // IN4's approval trail. Runs on both passes because the whole point is
   // noticing an approval on the day it happens, not the morning after.
   { key: 'in4-trail',             policy: 'each',  am: '/api/cron/in4-sync?cron=1&feed=trail',      pm: '/api/cron/in4-sync?cron=1&feed=trail' },
+  // The sanction-vs-IN4 check. Runs after in4-trail on the same pass so it
+  // compares against a mirror refreshed minutes earlier, not yesterday's.
+  { key: 'bills-reconcile',       policy: 'each', module: 'bills-booking', am: '/api/cron/bills-reconcile?cron=1', pm: '/api/cron/bills-reconcile?cron=1' },
   { key: 'bph-sync',              policy: 'each', module: 'cost-control',  am: '/api/cron/bph-sync?cron=1',            pm: '/api/cron/bph-sync?cron=1' },
   { key: 'email-retry',           policy: 'each',  am: '/api/cron/email-retry?cron=1',         pm: '/api/cron/email-retry?cron=1' },
   // Google Drive archive — copies new uploads to the Shared drive and moves the

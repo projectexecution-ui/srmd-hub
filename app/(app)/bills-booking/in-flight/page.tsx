@@ -6,6 +6,7 @@ import { QueryError } from '@/components/ui/query-error'
 import { EmptyState } from '@/components/ui/empty-state'
 import { Clock } from 'lucide-react'
 import { buildInFlight, IN_FLIGHT, type FlightCert, type FlightEvent } from '@/lib/bills-booking/in-flight'
+import { SanctionButton } from './SanctionButton'
 import { formatINR } from '@/lib/utils'
 
 export const dynamic = 'force-dynamic'
@@ -41,6 +42,10 @@ export default async function InFlightPage() {
     if (error) evErr = error.message
     events = (data ?? []) as FlightEvent[]
   }
+
+  const { data: sanctioned } = await supabase
+    .from('bb_sanctions').select('certificate_id').is('superseded_by', null)
+  const already = new Set((sanctioned ?? []).map(r => r.certificate_id as number))
 
   if (certErr) return (
     <div className="p-4 md:p-6 max-w-6xl mx-auto">
@@ -110,6 +115,7 @@ export default async function InFlightPage() {
                   <th className="text-right font-semibold px-3 py-2">At desk</th>
                   <th className="text-right font-semibold px-3 py-2">Age</th>
                   <th className="text-left font-semibold px-3 py-2">Last moved by</th>
+                  <th className="text-right font-semibold px-3 py-2">Sanction</th>
                 </tr>
               </thead>
               <tbody>
@@ -131,6 +137,11 @@ export default async function InFlightPage() {
                       {r.movedBy ?? '—'}
                       {r.remark ? <span className="block text-[10.5px] text-gray-400">“{r.remark}”</span> : null}
                     </td>
+                    <td className="px-3 py-2 text-right">
+                      {already.has(r.certificateId)
+                        ? <span className="text-[11px] font-semibold text-emerald-700">Sanctioned</span>
+                        : <SanctionButton certificateId={r.certificateId} amount={r.outstanding} displayNo={r.displayNo} />}
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -138,7 +149,7 @@ export default async function InFlightPage() {
                 <tr className="border-t-2 border-gray-200 bg-gray-50 font-semibold">
                   <td className="px-3 py-2" colSpan={3}>{totals.bills} bills in flight</td>
                   <td className="px-3 py-2 text-right tabular-nums">{formatINR(totals.outstanding)}</td>
-                  <td className="px-3 py-2" colSpan={4}></td>
+                  <td className="px-3 py-2" colSpan={5}></td>
                 </tr>
               </tfoot>
             </table>
