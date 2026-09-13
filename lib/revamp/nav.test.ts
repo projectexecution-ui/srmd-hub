@@ -37,7 +37,7 @@ describe('revamped left pane', () => {
 
   it('lists the old screens a person may still open, for the Admin fold', () => {
     const labels = oldScreensFor(allow('procurement-tracker', 'stuck-bills', 'bills-booking'), new Set()).map(i => i.label)
-    expect(labels).toEqual(['Indent → PO', 'Stuck Bills', 'Bills Booking'])
+    expect(labels).toEqual(['Indent → PO', 'Stuck Bills', 'Bills Approval'])
     // A switched-off module drops out even when the role holds it.
     expect(oldScreensFor(allow('bills-booking'), new Set(['bills-booking']))).toEqual([])
   })

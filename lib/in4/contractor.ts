@@ -21,6 +21,9 @@ export interface In4ContractorCert {
   certificate_id: number
   certificate_type_id: number | null
   certificate_type: string | null
+  /** The number on the document — "ENP/SRASSK/SQ/2026-27/237". Not certificate_id,
+   *  which is IN4's internal serial. Show this one to people. */
+  display_no: string | null
   wo_id: number | null
   wo_no: string | null
   wo_value: number
@@ -30,6 +33,8 @@ export interface In4ContractorCert {
   subskill_id: number | null
   contractor_id: number | null
   status: number
+  /** COMMON_STATUS_LOOKUP name for `status`, resolved by IN4 rather than here. */
+  status_name: string | null
   invoice_no: string | null
   invoice_date: string | null
   creation_dt: string | null

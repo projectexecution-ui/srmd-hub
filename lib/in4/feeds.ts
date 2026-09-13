@@ -244,9 +244,10 @@ async function runContractor(sb: SupabaseClient, now: string, mode: FeedMode, ac
 
   await upsertAll(sb, 'in4_wo_certificates', certs.map(c => ({
     kind: c.kind, certificate_id: c.certificate_id, certificate_type_id: c.certificate_type_id, certificate_type: c.certificate_type,
+    display_no: c.display_no,
     wo_id: c.wo_id ?? 0, wo_no: c.wo_no, wo_value: c.wo_value, project_id: c.project_id, subproject_id: c.subproject_id,
     category_id: c.skill_id ?? 0, subcategory_id: c.subskill_id ?? 0, contractor_id: c.contractor_id, contractor_name: names.contractorName(c.contractor_id) || null,
-    status: c.status, invoice_no: c.invoice_no, invoice_date: c.invoice_date, creation_dt: c.creation_dt,
+    status: c.status, status_name: c.status_name, invoice_no: c.invoice_no, invoice_date: c.invoice_date, creation_dt: c.creation_dt,
     gross_bill_amt: c.gross, certified_amt: c.certified, paid_amt: c.paid, recoveries: c.recoveries, deductions: c.deductions,
     retention_amt: c.retention, outstanding_amt: c.outstanding, synced_at: now,
   })), 'kind,certificate_id')

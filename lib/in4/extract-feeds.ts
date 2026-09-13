@@ -27,34 +27,39 @@ const d = (v: unknown): string | null => {
 
 export async function extractContractorCerts(): Promise<In4ContractorCert[]> {
   const rows = await in4Query<Record<string, unknown>>(`
-    SELECT 'wo' kind, c.CERTIFICATE_ID, c.CERTIFICATE_TYPE_ID type_id, c.CERTIFICATE_SUBTYPE type_name, c.WORK_ORDER_ID wo_id, w.DISPLAY_NO wo_no, w.WORK_ORDER_VALUE wo_value,
-           w.PROJECT_ID, w.SUBPROJECT_ID, w.SKILL_ID, w.SUB_SKILL_ID, w.SERVICE_PROVIDER_ID contractor_id, c.STATUS,
+    SELECT 'wo' kind, c.CERTIFICATE_ID, c.CERTIFICATE_TYPE_ID type_id, c.CERTIFICATE_SUBTYPE type_name, pa.DISPLAY_NO display_no, c.WORK_ORDER_ID wo_id, w.DISPLAY_NO wo_no, w.WORK_ORDER_VALUE wo_value,
+           w.PROJECT_ID, w.SUBPROJECT_ID, w.SKILL_ID, w.SUB_SKILL_ID, w.SERVICE_PROVIDER_ID contractor_id, c.STATUS, sl.NAME status_name,
            c.INVOICE_NO, c.INVOICE_DATE, c.CREATION_DT,
            c.GROSS_AMT gross,
            (ISNULL(c.ADVANCE_RECOVERY_AMT,0) + ISNULL(c.MISC_EXPENSE_RECOVERY_AMT,0) + ISNULL(c.MATERIAL_ADJUSTMENT,0) + ISNULL(c.DEBIT_NOTE_RECOVERY_AMT,0)) recoveries,
            c.PAID_AMT paid, (ISNULL(c.TAX_DED,0) + ISNULL(c.ADDITIONAL_DEDUCTION_AMT,0)) deductions, c.RETENTION_AMT retention, c.Amt_Outstanding outstanding, c.CERTIFICATE_AMT certified
     FROM ENGG_RPT_WO_CERTIFICATE_DETAILS c
     JOIN ENGG_WORK_ORDER w ON w.ID = c.WORK_ORDER_ID
+    LEFT JOIN ENGG_WO_PAYMENT_AUTHORISATION pa ON pa.ID = c.CERTIFICATE_ID
+    LEFT JOIN COMMON_STATUS_LOOKUP sl ON sl.ID = c.STATUS
     UNION ALL
-    SELECT 'advance', a.CERTIFICATE_ID, 1, 'Advance', a.WO_ID, w.DISPLAY_NO, w.WORK_ORDER_VALUE,
-           w.PROJECT_ID, a.SUBPROJECT_ID, w.SKILL_ID, w.SUB_SKILL_ID, w.SERVICE_PROVIDER_ID, a.STATUS,
+    SELECT 'advance', a.CERTIFICATE_ID, 1, 'Advance', aa.DISPLAY_NO, a.WO_ID, w.DISPLAY_NO, w.WORK_ORDER_VALUE,
+           w.PROJECT_ID, a.SUBPROJECT_ID, w.SKILL_ID, w.SUB_SKILL_ID, w.SERVICE_PROVIDER_ID, a.STATUS, sl2.NAME,
            a.BILL_NO, a.BILL_DT, a.CREATED_DT,
            a.GROSS_BILL_AMT, 0, (ISNULL(a.PAYABLE_AMT,0) - ISNULL(a.OUTSTANDING_AMT,0)), ISNULL(a.TAX_DEDUCTION_AMT,0), 0, a.OUTSTANDING_AMT, a.CERTIFIED_AMT
     FROM BI.ENGG_ADVANCE_PAYMENTS_HEADER a
     JOIN ENGG_WORK_ORDER w ON w.ID = a.WO_ID
+    LEFT JOIN ENGG_WO_ADVANCE_AUTHORISATION aa ON aa.ID = a.CERTIFICATE_ID
+    LEFT JOIN COMMON_STATUS_LOOKUP sl2 ON sl2.ID = a.STATUS
     UNION ALL
-    SELECT 'misc', m.CERTIFICATE_ID, 0, 'Misc', NULL, NULL, 0,
-           sp.PROJECT_ID, m.SUBPROJECT_ID, NULL, NULL, m.CONTRACTOR_ID, m.STATUS,
+    SELECT 'misc', m.CERTIFICATE_ID, 0, 'Misc', NULL, NULL, NULL, 0,
+           sp.PROJECT_ID, m.SUBPROJECT_ID, NULL, NULL, m.CONTRACTOR_ID, m.STATUS, sl3.NAME,
            m.BILL_NO, m.BILL_DT, m.CREATED_DT,
            m.GROSS_BILL_AMT, ISNULL(m.RECOVERED_AMT,0), (ISNULL(m.GROSS_BILL_AMT,0) - ISNULL(m.TAX_DEDUCTION_AMT,0) - ISNULL(m.OUTSTANDING_AMT,0)), ISNULL(m.TAX_DEDUCTION_AMT,0), 0, m.OUTSTANDING_AMT, m.CERTIFICATE_AMT
     FROM BI.ENGG_MISC_PAYMENTS_HEADER m
-    JOIN ENGG_SUBPROJECT sp ON sp.ID = m.SUBPROJECT_ID`)
+    JOIN ENGG_SUBPROJECT sp ON sp.ID = m.SUBPROJECT_ID
+    LEFT JOIN COMMON_STATUS_LOOKUP sl3 ON sl3.ID = m.STATUS`)
   return rows.map(r => ({
     kind: r.kind as In4ContractorCert['kind'], certificate_id: n(r.CERTIFICATE_ID),
-    certificate_type_id: ni(r.type_id), certificate_type: sn(r.type_name),
+    certificate_type_id: ni(r.type_id), certificate_type: sn(r.type_name), display_no: sn(r.display_no),
     wo_id: ni(r.wo_id), wo_no: sn(r.wo_no), wo_value: n(r.wo_value),
     project_id: ni(r.PROJECT_ID), subproject_id: n(r.SUBPROJECT_ID), skill_id: ni(r.SKILL_ID), subskill_id: ni(r.SUB_SKILL_ID),
-    contractor_id: ni(r.contractor_id), status: n(r.STATUS),
+    contractor_id: ni(r.contractor_id), status: n(r.STATUS), status_name: sn(r.status_name),
     invoice_no: sn(r.INVOICE_NO), invoice_date: d(r.INVOICE_DATE), creation_dt: d(r.CREATION_DT),
     gross: n(r.gross), recoveries: n(r.recoveries), paid: n(r.paid), deductions: n(r.deductions), retention: n(r.retention), outstanding: n(r.outstanding), certified: n(r.certified),
   }))

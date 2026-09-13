@@ -93,7 +93,7 @@ export const REVAMP_OLD_SCREENS: RevampNavItem[] = [
  *   Daily Site Report   1 report, module switched off
  */
 export const REVAMP_PARKED: RevampNavItem[] = [
-  { href: '/bills-booking',     label: 'Bills Booking',     icon: Archive,   slug: 'bills-booking',     built: true },
+  { href: '/bills-booking',     label: 'Bills Approval',     icon: Archive,   slug: 'bills-booking',     built: true },
 ]
 
 export interface PermissionMap {

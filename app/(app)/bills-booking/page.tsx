@@ -113,8 +113,13 @@ export default async function BillsBookingPage() {
 
   return (
     <div className="p-4 md:p-6 max-w-5xl mx-auto space-y-4">
-      <PageHeader title="Bills Booking" back="/" subtitle="Contractor & vendor bills — by trust, project and sub-project.">
+      <PageHeader title="Bills Approval" back="/" subtitle="Contractor & vendor bills — by trust, project and sub-project.">
         <div className="flex items-center gap-2">
+          {canAdmin && (
+            <Link href="/bills-booking/overview" className="inline-flex items-center gap-1.5 rounded-lg border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50">
+              <ReceiptText className="h-4 w-4" /> Money waiting
+            </Link>
+          )}
           {canAdmin && (
             <Link href="/bills-booking/admin" className="inline-flex items-center gap-1.5 rounded-lg border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50">
               <Users className="h-4 w-4" /> Desks

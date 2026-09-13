@@ -11,8 +11,9 @@ const names = {
 }
 
 const cert = (over: Partial<In4ContractorCert>): In4ContractorCert => ({
-  kind: 'wo', certificate_id: 1, certificate_type_id: 3, certificate_type: 'Running', wo_id: 100, wo_no: 'WO/SRET/WH/2024-25/1', wo_value: 1_000_000,
-  project_id: 10, subproject_id: 40, skill_id: 1, subskill_id: null, contractor_id: 3, status: 15,
+  kind: 'wo', certificate_id: 1, certificate_type_id: 3, certificate_type: 'Running', display_no: 'ENP/SRET/WH/2024-25/1',
+  wo_id: 100, wo_no: 'WO/SRET/WH/2024-25/1', wo_value: 1_000_000,
+  project_id: 10, subproject_id: 40, skill_id: 1, subskill_id: null, contractor_id: 3, status: 15, status_name: 'Paid',
   invoice_no: 'RA-1', invoice_date: '2025-01-10', creation_dt: '2025-01-12',
   gross: 118_000, recoveries: 10_000, paid: 100_000, deductions: 2_000, retention: 5_900, outstanding: 100, certified: 100_000, ...over,
 })
