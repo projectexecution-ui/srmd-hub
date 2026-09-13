@@ -1,4 +1,4 @@
-// IN4 live sync — one route, five feeds.
+// IN4 live sync — one route, one feed per call.
 //
 //   GET  ?cron=1[&feed=…]  — the cron dispatcher, twice a day, one call per feed
 //                            (Bearer CRON_SECRET). No feed = the budget report.

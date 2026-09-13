@@ -360,3 +360,41 @@ export async function extractUoms(): Promise<In4Uom[]> {
   const rows = await in4Query<Record<string, unknown>>(`SELECT ID, NAME, IsActive FROM COMMON_UOM_LOOKUP`)
   return rows.map(r => ({ id: n(r.ID), name: s(r.NAME), is_active: r.IsActive == null ? true : Boolean(r.IsActive) }))
 }
+
+// ── The approval trail ───────────────────────────────────────────────────────
+
+export interface In4CertEvent {
+  event_id: number
+  certificate_id: number
+  display_no: string | null
+  at: string
+  status: number
+  status_name: string | null
+  actor_id: number | null
+  actor_name: string | null
+  remark: string | null
+}
+
+/** Every movement of every work-order payment certificate: who, when, to what
+ *  status, and the reason they typed. IN4 keeps this in
+ *  ENGG_WO_PAYMENT_AUDIT_TRAIL and never edits a row, so the mirror is
+ *  append-only in practice and keyed on IN4's own event id.
+ *
+ *  The timestamp is kept to the second, not truncated to a day. Three
+ *  approvals eighty-four seconds apart is a real and useful pattern, and a
+ *  date would erase it. */
+export async function extractCertEvents(): Promise<In4CertEvent[]> {
+  const rows = await in4Query<Record<string, unknown>>(`
+    SELECT t.ID event_id, t.AUTHORISATION_ID certificate_id, a.DISPLAY_NO display_no,
+           t.MODIFIED_DT at, t.STATUS status, s.NAME status_name,
+           t.MODIFIED_BY actor_id, e.EMP_NAME actor_name, t.Remarks remark
+      FROM ENGG_WO_PAYMENT_AUDIT_TRAIL t
+      LEFT JOIN ENGG_WO_PAYMENT_AUTHORISATION a ON a.ID = t.AUTHORISATION_ID
+      LEFT JOIN COMMON_STATUS_LOOKUP s ON s.ID = t.STATUS
+      LEFT JOIN BI.DIM_HR_EMPLOYEE_MASTER e ON e.EMP_ID = t.MODIFIED_BY`)
+  return rows.map(r => ({
+    event_id: n(r.event_id), certificate_id: n(r.certificate_id), display_no: sn(r.display_no),
+    at: new Date(r.at as string).toISOString(), status: n(r.status), status_name: sn(r.status_name),
+    actor_id: ni(r.actor_id), actor_name: sn(r.actor_name), remark: sn(r.remark),
+  }))
+}
