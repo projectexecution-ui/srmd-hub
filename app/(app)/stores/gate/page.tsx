@@ -1,8 +1,9 @@
 import Link from 'next/link'
-import { loadEntries, loadLists, listsOf, loadRecentParties } from '@/lib/stores/queries'
+import { loadEntries, loadLists, listsOf, loadRecentParties, loadFieldLang } from '@/lib/stores/queries'
 import { fmtQty, type Stage } from '@/lib/stores/core'
 import { Section, Empty, Scroller, th, td, tdNum, StageChip, RegisterChip, When } from '../ui'
 import { GateInForm, StorekeeperCta } from './GateInForm'
+import { FieldLangProvider } from '../field'
 
 export const dynamic = 'force-dynamic'
 
@@ -18,11 +19,12 @@ export default async function GatePage({
   const { stage } = await searchParams
   const active = (STAGES.find(s => s.key === stage)?.key ?? 'gate') as Stage | 'all'
 
-  const [entries, lists, recent, waiting] = await Promise.all([
+  const [entries, lists, recent, waiting, fieldLang] = await Promise.all([
     loadEntries({ stage: active === 'all' ? null : active, limit: 200 }),
     loadLists(),
     loadRecentParties(),
     loadEntries({ stage: 'gate', limit: 200 }),
+    loadFieldLang(),
   ])
   const modes = listsOf(lists, 'delivery_mode').filter(m => m.isActive)
 
@@ -30,13 +32,15 @@ export default async function GatePage({
     <div className="space-y-6">
       {/* The guard's door and the storekeeper's door, side by side and equal —
           they are two different people arriving at the same screen. */}
-      <div className="grid gap-3 sm:grid-cols-2">
-        <GateInForm
-          modes={modes.map(m => ({ id: m.id, name: m.name }))}
-          recentParties={recent}
-        />
-        <StorekeeperCta waiting={waiting.length} />
-      </div>
+      <FieldLangProvider lang={fieldLang}>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <GateInForm
+            modes={modes.map(m => ({ id: m.id, name: m.name }))}
+            recentParties={recent}
+          />
+          <StorekeeperCta waiting={waiting.length} />
+        </div>
+      </FieldLangProvider>
 
       <Section title="The register" note="Every vehicle through the gate, newest first">
         <div className="flex flex-wrap gap-1.5">

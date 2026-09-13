@@ -4,6 +4,8 @@ import { useRouter } from 'next/navigation'
 import { useState, useTransition } from 'react'
 import { saveListRow, setListActive, saveItem } from '@/lib/stores/actions'
 import type { ListRow, ItemRow } from '@/lib/stores/queries'
+import type { FieldLang } from '@/lib/stores/lang'
+import { LanguagePanel } from './LanguagePanel'
 import { formatINR } from '@/lib/utils'
 import { Field, inputClass, Btn, Notice, Empty, Scroller, th, td, tdNum } from '../ui'
 
@@ -20,21 +22,27 @@ const KINDS: Array<{ kind: Kind; title: string; note: string }> = [
 ]
 
 export function MastersClient({
-  lists, items, companies, projects,
+  lists, items, companies, projects, fieldLang, isAdmin,
 }: {
   lists: ListRow[]
   items: ItemRow[]
   companies: Array<{ id: number; code: string; name: string }>
   projects: Array<{ id: string; name: string }>
+  fieldLang: FieldLang
+  isAdmin: boolean
 }) {
   const router = useRouter()
-  const [openKind, setOpenKind] = useState<Kind | 'items'>('location')
+  const [openKind, setOpenKind] = useState<Kind | 'items' | 'language'>('location')
 
   return (
     <div className="space-y-4">
       <div className="overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0">
         <div className="flex gap-1.5 min-w-max">
-          {[...KINDS.map(k => ({ key: k.kind as Kind | 'items', label: k.title })), { key: 'items' as const, label: 'Items' }].map(t => (
+          {[
+            ...KINDS.map(k => ({ key: k.kind as Kind | 'items' | 'language', label: k.title })),
+            { key: 'items' as const, label: 'Items' },
+            { key: 'language' as const, label: 'Language' },
+          ].map(t => (
             <button
               key={t.key} type="button" onClick={() => setOpenKind(t.key)}
               className={`rounded-lg px-3 py-2 text-[12.5px] font-semibold whitespace-nowrap min-h-[44px] ${
@@ -47,7 +55,9 @@ export function MastersClient({
         </div>
       </div>
 
-      {openKind === 'items'
+      {openKind === 'language'
+        ? <LanguagePanel current={fieldLang} isAdmin={isAdmin} />
+        : openKind === 'items'
         ? <ItemsPanel items={items} disciplines={lists.filter(l => l.kind === 'discipline' && l.isActive)} onDone={() => router.refresh()} />
         : (() => {
             const spec = KINDS.find(k => k.kind === openKind)!

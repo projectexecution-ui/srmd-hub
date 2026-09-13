@@ -1,5 +1,8 @@
 import { describe, it, expect } from 'vitest'
-import { T, ALL_PHRASES, modePhrase, modeIcon, stepsFor, canLeave, summaryOf, GATE_STEPS } from './lang'
+import {
+  T, ALL_PHRASES, modePhrase, modeIcon, stepsFor, canLeave, summaryOf, GATE_STEPS,
+  show, parseFieldLang, DEFAULT_FIELD_LANG, FIELD_LANG_KEY,
+} from './lang'
 
 describe('the bilingual dictionary', () => {
   it('gives every phrase both languages, non-empty', () => {
@@ -103,5 +106,55 @@ describe('the words themselves', () => {
   it('labels the two registers by where the material GOES, not by system name', () => {
     expect(T.vendorSub.en).toContain('site')
     expect(T.srmSub.en).toContain('store')
+  })
+})
+
+describe('the language switch', () => {
+  it('defaults to Gujarati, which is what the gate staff read', () => {
+    expect(DEFAULT_FIELD_LANG).toBe('gu')
+  })
+
+  it('shows Gujarati alone when set to gu', () => {
+    const s = show(T.qWho, 'gu')
+    expect(s.lead).toBe(T.qWho.gu)
+    expect(s.leadLang).toBe('gu')
+    expect(s.second).toBeNull()
+  })
+
+  it('leads with English and follows with Gujarati when set to both', () => {
+    const s = show(T.qWho, 'both')
+    expect(s.lead).toBe(T.qWho.en)
+    expect(s.second).toBe(T.qWho.gu)
+    expect(s.secondLang).toBe('gu')
+  })
+
+  it('falls back to English when a phrase has no Gujarati — a blank label is worse', () => {
+    const invented = { en: 'Bullock cart', gu: '' }
+    for (const lang of ['gu', 'both'] as const) {
+      const s = show(invented, lang)
+      expect(s.lead).toBe('Bullock cart')
+      expect(s.leadLang).toBe('en')
+      expect(s.second).toBeNull()
+    }
+  })
+
+  it('never returns an empty lead, whatever it is handed', () => {
+    for (const [, p] of ALL_PHRASES) {
+      for (const lang of ['gu', 'both'] as const) {
+        expect(show(p, lang).lead.length).toBeGreaterThan(0)
+      }
+    }
+  })
+
+  it('reads a stored value, and refuses to crash on a bad one', () => {
+    expect(parseFieldLang('gu')).toBe('gu')
+    expect(parseFieldLang('both')).toBe('both')
+    for (const junk of [null, undefined, '', 'hi', 'GU', 42, {}]) {
+      expect(parseFieldLang(junk)).toBe('gu')
+    }
+  })
+
+  it('keys the setting where app_settings is already admin-write-only', () => {
+    expect(FIELD_LANG_KEY).toBe('mio_field_language')
   })
 })

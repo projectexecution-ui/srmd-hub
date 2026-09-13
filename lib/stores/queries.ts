@@ -4,6 +4,7 @@ import {
   foldStock, outstandingReturnables, type Movement, type StockRow,
   type ReturnableLine, type ReturnableRow, type Register, type Stage,
 } from './core'
+import { FIELD_LANG_KEY, DEFAULT_FIELD_LANG, parseFieldLang, type FieldLang } from './lang'
 
 /**
  * Reads for the Stores section. SELECT only — every write lives in actions.ts
@@ -56,6 +57,28 @@ export interface EntryRow {
 }
 
 const num = (v: unknown): number => (typeof v === 'number' ? v : Number(v ?? 0)) || 0
+
+/**
+ * Which language the gate and storekeeper screens speak.
+ *
+ * Stored in app_settings under one key. Not a new table and not a column on
+ * profiles: it is one flag for the whole site, and app_settings is already
+ * admin-write-only at the database level — which is exactly the rule Aksha
+ * asked for ("give that option to Admin only to switch on and off").
+ *
+ * Never throws. A missing row, a bad value or a failed read all resolve to
+ * Gujarati, because the gate screen must render whatever the settings say.
+ */
+export async function loadFieldLang(): Promise<FieldLang> {
+  try {
+    const supabase = await createClient()
+    const { data } = await supabase
+      .from('app_settings').select('value').eq('key', FIELD_LANG_KEY).maybeSingle()
+    return parseFieldLang(data?.value)
+  } catch {
+    return DEFAULT_FIELD_LANG
+  }
+}
 
 /** Every master row, both levels of location, in display order. */
 export async function loadLists(): Promise<ListRow[]> {

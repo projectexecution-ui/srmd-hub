@@ -1,8 +1,8 @@
 'use client'
 
-import type { ReactNode } from 'react'
+import { createContext, useContext, type ReactNode } from 'react'
 import { Check, ChevronLeft, Truck, Package, Hand, Container, Car, Box } from 'lucide-react'
-import type { Phrase } from '@/lib/stores/lang'
+import { show, DEFAULT_FIELD_LANG, type Phrase, type FieldLang } from '@/lib/stores/lang'
 
 /**
  * The FIELD kit — for the screens a security guard and a storekeeper use on a
@@ -12,7 +12,7 @@ import type { Phrase } from '@/lib/stores/lang'
  * dense because Aksha reads them at a laptop; these are the opposite:
  *
  *   · ONE question per screen, so nothing has to be scanned
- *   · every label in English AND Gujarati, same size, neither subordinate
+ *   · Gujarati by default, with an admin-only switch to show English too
  *   · 64px targets and 17px type — a gloved thumb in bright sun
  *   · a picture on every choice, because the picture is read first
  *   · the primary action fixed to the bottom, always in the same place
@@ -21,18 +21,42 @@ import type { Phrase } from '@/lib/stores/lang'
  * here. Mixing the two is what makes an app that is wrong for both.
  */
 
+/* ── Which language this screen speaks ──────────────────────────────────── */
+
+/**
+ * Context rather than a prop: a dozen nested components need it, and threading
+ * the language through every one of them is how a single screen ends up half
+ * translated. The default is Gujarati, so a component rendered outside the
+ * provider is still right for the person this kit exists for.
+ */
+const LangCtx = createContext<FieldLang>(DEFAULT_FIELD_LANG)
+export const useFieldLang = () => useContext(LangCtx)
+
+export function FieldLangProvider({ lang, children }: { lang: FieldLang; children: ReactNode }) {
+  return <LangCtx.Provider value={lang}>{children}</LangCtx.Provider>
+}
+
 /* ── Bilingual label ────────────────────────────────────────────────────── */
 
+/**
+ * A label, in whichever language the site is set to.
+ *
+ * In Gujarati mode the single line takes the LARGER of the two sizes — the
+ * point of dropping the English was to spend that height on bigger type, not
+ * to leave the screen half empty.
+ */
 export function Bi({ t, size = 'md', className = '' }: { t: Phrase; size?: 'sm' | 'md' | 'lg'; className?: string }) {
-  const [en, gu] = size === 'lg'
-    ? ['text-[22px] leading-tight font-bold', 'text-[19px] leading-tight']
-    : size === 'sm'
-      ? ['text-[13px] font-semibold', 'text-[13px]']
-      : ['text-[16px] font-semibold', 'text-[15px]']
+  const s = show(t, useFieldLang())
+  const lead = size === 'lg'
+    ? 'text-[22px] leading-tight font-bold'
+    : size === 'sm' ? 'text-[14px] font-semibold' : 'text-[17px] font-semibold'
+  const second = size === 'lg'
+    ? 'text-[19px] leading-tight'
+    : size === 'sm' ? 'text-[13px]' : 'text-[15px]'
   return (
     <span className={`block ${className}`}>
-      <span className={`block text-gray-900 ${en}`}>{t.en}</span>
-      {t.gu && <span className={`block text-indigo-800/80 ${gu}`} lang="gu">{t.gu}</span>}
+      <span className={`block text-gray-900 ${lead}`} lang={s.leadLang}>{s.lead}</span>
+      {s.second && <span className={`block text-indigo-800/80 ${second}`} lang={s.secondLang}>{s.second}</span>}
     </span>
   )
 }
@@ -54,13 +78,20 @@ export function Progress({ current, total }: { current: number; total: number })
 }
 
 export function Question({ t, hint }: { t: Phrase; hint?: Phrase }) {
+  const lang = useFieldLang()
+  const q = show(t, lang)
+  const h = hint ? show(hint, lang) : null
   return (
     <div className="space-y-1">
-      <h2 className="text-[24px] font-bold text-gray-900 leading-tight text-balance">{t.en}</h2>
-      {t.gu && <p className="text-[21px] text-indigo-800 leading-tight" lang="gu">{t.gu}</p>}
-      {hint && (
-        <p className="text-[14px] text-gray-500 pt-1.5">
-          {hint.en}{hint.gu && <span lang="gu"> · {hint.gu}</span>}
+      {/* Bigger in one-language mode — 26px is what the freed line pays for. */}
+      <h2 className={`font-bold text-gray-900 leading-tight text-balance ${q.second ? 'text-[24px]' : 'text-[26px]'}`}
+        lang={q.leadLang}>
+        {q.lead}
+      </h2>
+      {q.second && <p className="text-[21px] text-indigo-800 leading-tight" lang={q.secondLang}>{q.second}</p>}
+      {h && (
+        <p className={`text-gray-500 pt-1.5 ${h.second ? 'text-[14px]' : 'text-[15px]'}`} lang={h.leadLang}>
+          {h.lead}{h.second && <span lang={h.secondLang}> · {h.second}</span>}
         </p>
       )}
     </div>
@@ -74,10 +105,21 @@ const ICONS = {
 } as const
 export type IconKey = keyof typeof ICONS
 
+/** The consequence line under a choice's title — "goes straight to the site". */
+function ChoiceSub({ sub }: { sub: Phrase }) {
+  const s = show(sub, useFieldLang())
+  return (
+    <span className="block mt-1">
+      <span className="block text-[13.5px] leading-snug text-gray-500" lang={s.leadLang}>{s.lead}</span>
+      {s.second && <span className="block text-[13px] leading-snug text-indigo-700/60" lang={s.secondLang}>{s.second}</span>}
+    </span>
+  )
+}
+
 /**
- * A big tappable card. The tick is on the LEFT edge as a filled block rather
- * than a small check in the corner — at arm's length in sunlight, a colour
- * change across the whole card is what reads, not an icon.
+ * A big tappable card. The whole card changes colour when picked rather than a
+ * small check in the corner — at arm's length in sunlight, a colour change
+ * across the card is what reads, not an icon.
  */
 export function BigChoice({
   t, sub, icon, selected, onClick,
@@ -102,12 +144,7 @@ export function BigChoice({
           one width that matters here. */}
       <span className="flex-1 min-w-0">
         <Bi t={t} size="md" />
-        {sub && (
-          <span className="block mt-1">
-            <span className="block text-[13.5px] leading-snug text-gray-500">{sub.en}</span>
-            {sub.gu && <span className="block text-[13px] leading-snug text-indigo-700/60" lang="gu">{sub.gu}</span>}
-          </span>
-        )}
+        {sub && <ChoiceSub sub={sub} />}
       </span>
       <span className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full border-2
         ${selected ? 'border-indigo-600 bg-indigo-600 text-white' : 'border-gray-300'}`}>
@@ -178,6 +215,17 @@ export function QuickPicks({ options, onPick }: { options: string[]; onPick: (v:
  * under the thumb and never moves between screens — a guard learns one place
  * to press and stops reading the button at all.
  */
+function BtnLabel({ t, busy }: { t: Phrase; busy?: boolean }) {
+  const s = show(t, useFieldLang())
+  if (busy) return <span className="block text-[17px] leading-tight">…</span>
+  return (
+    <>
+      <span className={`block leading-tight ${s.second ? 'text-[17px]' : 'text-[19px]'}`} lang={s.leadLang}>{s.lead}</span>
+      {s.second && <span className="block text-[15px] leading-tight opacity-90" lang={s.secondLang}>{s.second}</span>}
+    </>
+  )
+}
+
 export function BottomBar({
   onBack, onNext, nextLabel, nextDisabled, busy, children,
 }: {
@@ -206,8 +254,7 @@ export function BottomBar({
           className="flex-1 rounded-2xl bg-indigo-700 px-5 min-h-[60px] text-white font-bold
             active:bg-indigo-800 disabled:bg-gray-200 disabled:text-gray-400 transition-colors"
         >
-          <span className="block text-[17px] leading-tight">{busy ? '…' : nextLabel.en}</span>
-          {!busy && nextLabel.gu && <span className="block text-[15px] leading-tight opacity-90" lang="gu">{nextLabel.gu}</span>}
+          <BtnLabel t={nextLabel} busy={busy} />
         </button>
       </div>
     </div>
@@ -226,6 +273,16 @@ export function FieldCard({ children }: { children: ReactNode }) {
 }
 
 /** What a field screen shows when it has nothing to say — never a blank box. */
+function NoticeLabel({ t, ok }: { t: Phrase; ok: boolean }) {
+  const s = show(t, useFieldLang())
+  return (
+    <>
+      <p className={`text-[17px] font-bold ${ok ? 'text-emerald-900' : 'text-rose-900'}`} lang={s.leadLang}>{s.lead}</p>
+      {s.second && <p className={`text-[16px] ${ok ? 'text-emerald-800' : 'text-rose-800'}`} lang={s.secondLang}>{s.second}</p>}
+    </>
+  )
+}
+
 export function BigNotice({ kind, title, sub }: { kind: 'ok' | 'bad'; title: Phrase | string; sub?: string }) {
   const ok = kind === 'ok'
   return (
@@ -233,12 +290,7 @@ export function BigNotice({ kind, title, sub }: { kind: 'ok' | 'bad'; title: Phr
       ok ? 'border-emerald-300 bg-emerald-50' : 'border-rose-300 bg-rose-50'}`}>
       {typeof title === 'string'
         ? <p className={`text-[16px] font-bold ${ok ? 'text-emerald-900' : 'text-rose-900'} whitespace-pre-line`}>{title}</p>
-        : (
-          <>
-            <p className={`text-[17px] font-bold ${ok ? 'text-emerald-900' : 'text-rose-900'}`}>{title.en}</p>
-            {title.gu && <p className={`text-[16px] ${ok ? 'text-emerald-800' : 'text-rose-800'}`} lang="gu">{title.gu}</p>}
-          </>
-        )}
+        : <NoticeLabel t={title} ok={ok} />}
       {sub && <p className={`text-[14px] mt-1 ${ok ? 'text-emerald-800' : 'text-rose-800'}`}>{sub}</p>}
     </div>
   )

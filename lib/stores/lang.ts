@@ -23,6 +23,57 @@ export interface Phrase {
 
 const p = (en: string, gu: string): Phrase => ({ en, gu })
 
+/* ── Which language the field screens speak ─────────────────────────────── */
+
+/**
+ * Aksha, 13 Sep 2026: "yes make it Gujarati only with language switch - give
+ * that option to Admin only to switch on and off".
+ *
+ * So the field screens are GUJARATI by default and the English line is a
+ * switch an admin turns on. Showing both was costing half the screen to a line
+ * the guard never reads; spending it on bigger Gujarati instead is the whole
+ * point of asking him.
+ *
+ * One setting for the whole site rather than one per person: there is no
+ * sign-in for the gate phone worth calling a profile, and a guard should never
+ * be able to change the language of a screen he shares with the next shift.
+ */
+export type FieldLang = 'gu' | 'both'
+
+export const FIELD_LANG_KEY = 'mio_field_language'
+export const DEFAULT_FIELD_LANG: FieldLang = 'gu'
+
+/** Anything unrecognised falls back to the default rather than throwing — a
+ *  bad settings row must not take the gate screen down. */
+export function parseFieldLang(raw: unknown): FieldLang {
+  return raw === 'both' || raw === 'gu' ? raw : DEFAULT_FIELD_LANG
+}
+
+export interface Shown {
+  /** The line to lead with, always non-empty. */
+  lead: string
+  /** Its lang attribute, so the Gujarati font and screen readers are right. */
+  leadLang: 'gu' | 'en'
+  /** The second line, or null when there is only one. */
+  second: string | null
+  secondLang: 'gu' | 'en'
+}
+
+/**
+ * What one phrase shows, given the setting.
+ *
+ * The fallback matters more than the rule: a phrase with no Gujarati — a
+ * delivery mode an admin invented, say — shows its English even in Gujarati
+ * mode. A blank label is worse than the wrong language.
+ */
+export function show(t: Phrase, lang: FieldLang): Shown {
+  const gu = t.gu?.trim()
+  const en = t.en?.trim() ?? ''
+  if (!gu) return { lead: en, leadLang: 'en', second: null, secondLang: 'en' }
+  if (lang === 'gu') return { lead: gu, leadLang: 'gu', second: null, secondLang: 'en' }
+  return { lead: en, leadLang: 'en', second: gu, secondLang: 'gu' }
+}
+
 export const T = {
   /* ── The gate wizard ──────────────────────────────────────────────────── */
   gateTitle:      p('Vehicle at the gate',      'ગેટ પર ગાડી'),
