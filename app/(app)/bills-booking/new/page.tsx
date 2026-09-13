@@ -1,12 +1,12 @@
 import { createClient } from '@/lib/supabase/server'
-import { requirePermission } from '@/lib/auth'
+import { requireBillsWrite } from '@/lib/bills-booking/access'
 import { PageHeader } from '@/components/PageHeader'
 import { BillForm } from './BillForm'
 
 export const dynamic = 'force-dynamic'
 
 export default async function NewBillPage() {
-  await requirePermission('bills-booking', 'edit')
+  await requireBillsWrite()
   const supabase = await createClient()
   const [{ data: projects }, { data: vendors }, { data: disciplines }] = await Promise.all([
     supabase.from('projects').select('id, code, name').is('archived_at', null).order('code'),

@@ -1,6 +1,6 @@
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/server'
-import { requirePermission } from '@/lib/auth'
+import { requireBillsAccess } from '@/lib/bills-booking/access'
 import { PageHeader } from '@/components/PageHeader'
 import { QueryError } from '@/components/ui/query-error'
 import { EmptyState } from '@/components/ui/empty-state'
@@ -18,7 +18,7 @@ export const dynamic = 'force-dynamic'
  *  unpaid and part-paid certificate across every project, which is a number no
  *  desk user has any reason to see and nobody has ever been shown. */
 export default async function BillsOverviewPage() {
-  await requirePermission('bills-booking', 'admin')
+  await requireBillsAccess()
   const supabase = await createClient()
 
   // PostgREST caps a plain select at 1,000 rows and there are ~4,700

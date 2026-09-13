@@ -1,6 +1,7 @@
 import { notFound } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
-import { requirePermission, getMyPermissions, can } from '@/lib/auth'
+import { getMyPermissions, can } from '@/lib/auth'
+import { requireBillsAccess } from '@/lib/bills-booking/access'
 import { PageHeader } from '@/components/PageHeader'
 import { Card } from '@/components/ui/card'
 import { PIPELINE, stageDef, stageIndex, type BbStage } from '@/lib/bills-booking/stages'
@@ -21,7 +22,7 @@ type Ev = {
 }
 
 export default async function BillDetailPage({ params }: { params: Promise<{ id: string }> }) {
-  await requirePermission('bills-booking', 'view')
+  await requireBillsAccess()
   const canEdit = can(await getMyPermissions(), 'bills-booking', 'edit')
   const { id } = await params
   const supabase = await createClient()

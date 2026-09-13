@@ -1,6 +1,7 @@
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/server'
-import { requirePermission, getMyPermissions, can } from '@/lib/auth'
+import { getMyPermissions, can } from '@/lib/auth'
+import { requireBillsAccess } from '@/lib/bills-booking/access'
 import { PageHeader } from '@/components/PageHeader'
 import { QueryError } from '@/components/ui/query-error'
 import { EmptyState } from '@/components/ui/empty-state'
@@ -27,7 +28,7 @@ type Row = {
 }
 
 export default async function BillsBookingPage() {
-  await requirePermission('bills-booking', 'view')
+  await requireBillsAccess()
   const perms = await getMyPermissions()
   const canEdit = can(perms, 'bills-booking', 'edit')
   const canAdmin = can(perms, 'bills-booking', 'admin')
