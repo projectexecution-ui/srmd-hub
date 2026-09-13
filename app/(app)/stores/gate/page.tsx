@@ -1,11 +1,8 @@
 import Link from 'next/link'
-import { loadEntries, loadLists, listsOf, loadRecentParties, loadFieldLang } from '@/lib/stores/queries'
+import { loadEntries, loadLists, listsOf, loadRecentParties } from '@/lib/stores/queries'
 import { fmtQty, type Stage } from '@/lib/stores/core'
 import { Section, Empty, Scroller, th, td, tdNum, StageChip, RegisterChip, When } from '../ui'
-import { getMyProfile } from '@/lib/auth'
 import { GateInForm, StorekeeperCta } from './GateInForm'
-import { LanguageToggle } from './LanguageToggle'
-import { FieldLangProvider } from '../field'
 
 export const dynamic = 'force-dynamic'
 
@@ -21,33 +18,25 @@ export default async function GatePage({
   const { stage } = await searchParams
   const active = (STAGES.find(s => s.key === stage)?.key ?? 'gate') as Stage | 'all'
 
-  const [entries, lists, recent, waiting, fieldLang, profile] = await Promise.all([
+  const [entries, lists, recent, waiting] = await Promise.all([
     loadEntries({ stage: active === 'all' ? null : active, limit: 200 }),
     loadLists(),
     loadRecentParties(),
     loadEntries({ stage: 'gate', limit: 200 }),
-    loadFieldLang(),
-    getMyProfile(),
   ])
   const modes = listsOf(lists, 'delivery_mode').filter(m => m.isActive)
 
   return (
     <div className="space-y-6">
-      {/* The switch sits ON the screen it governs — it first shipped only as
-          the seventh tab of Masters and could not be found. */}
-      <LanguageToggle current={fieldLang} isAdmin={profile?.role === 'admin'} />
-
       {/* The guard's door and the storekeeper's door, side by side and equal —
           they are two different people arriving at the same screen. */}
-      <FieldLangProvider lang={fieldLang}>
-        <div className="grid gap-3 sm:grid-cols-2">
-          <GateInForm
-            modes={modes.map(m => ({ id: m.id, name: m.name }))}
-            recentParties={recent}
-          />
-          <StorekeeperCta waiting={waiting.length} />
-        </div>
-      </FieldLangProvider>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <GateInForm
+          modes={modes.map(m => ({ id: m.id, name: m.name }))}
+          recentParties={recent}
+        />
+        <StorekeeperCta waiting={waiting.length} />
+      </div>
 
       <Section title="The register" note="Every vehicle through the gate, newest first">
         <div className="flex flex-wrap gap-1.5">

@@ -1,10 +1,9 @@
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
-import { loadEntry, loadItems, loadLists, listsOf, storableLocations, locationLabel, loadFieldLang } from '@/lib/stores/queries'
+import { loadEntry, loadItems, loadLists, listsOf, storableLocations, locationLabel } from '@/lib/stores/queries'
 import { createsStock } from '@/lib/stores/core'
 import { CompleteForm } from './CompleteForm'
-import { FieldLangProvider } from '../../field'
 import { EntryDetailPanels } from './EntryDetailPanels'
 
 export const dynamic = 'force-dynamic'
@@ -15,10 +14,9 @@ export default async function GateEntryPage({ params }: { params: Promise<{ id: 
   if (!entry) notFound()
 
   const supabase = await createClient()
-  const [lists, items, fieldLang, { data: projects }] = await Promise.all([
+  const [lists, items, { data: projects }] = await Promise.all([
     loadLists(),
     loadItems(),
-    loadFieldLang(),
     supabase.from('projects').select('id, name').order('name'),
   ])
 
@@ -36,7 +34,6 @@ export default async function GateEntryPage({ params }: { params: Promise<{ id: 
       <EntryDetailPanels entry={entry} />
 
       {entry.stage === 'gate' && entry.direction === 'in' && (
-        <FieldLangProvider lang={fieldLang}>
         <CompleteForm
           entryId={entry.id}
           entryNo={entry.no}
@@ -48,7 +45,6 @@ export default async function GateEntryPage({ params }: { params: Promise<{ id: 
           projects={(projects ?? []).map(p => ({ id: p.id as string, name: p.name as string }))}
           items={items.filter(i => i.isActive).map(i => ({ id: i.id, name: i.name, unit: i.unit, lastRate: i.lastRate, in4MaterialId: i.in4MaterialId }))}
         />
-        </FieldLangProvider>
       )}
     </div>
   )

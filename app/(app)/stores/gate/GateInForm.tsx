@@ -4,12 +4,9 @@ import { useRouter } from 'next/navigation'
 import { useState, useTransition } from 'react'
 import { CheckCircle2, ClipboardList, Warehouse, Camera } from 'lucide-react'
 import { createGateEntry } from '@/lib/stores/actions'
+import { T, stepsFor, canLeave, summaryOf, modeIcon, type GateAnswers } from '@/lib/stores/lang'
 import {
-  T, stepsFor, canLeave, summaryOf, modePhrase, modeIcon,
-  type GateStep, type GateAnswers,
-} from '@/lib/stores/lang'
-import {
-  Bi, Progress, Question, BigChoice, BigInput, QuickPicks, BottomBar, FieldCard, BigNotice,
+  Progress, Question, BigChoice, BigInput, QuickPicks, BottomBar, FieldCard, BigNotice,
 } from '../field'
 
 /**
@@ -18,8 +15,8 @@ import {
  * It replaced a single form of nine fields. A form is fine for someone who
  * reads it once and learns the shape; it is the wrong object entirely for
  * somebody who reads English slowly, standing at a gate with a lorry waiting.
- * One question fills the screen, is written in both languages, and the answer
- * is usually a tap rather than typing.
+ * One question fills the screen, in plain words, and the answer is usually a
+ * tap rather than typing.
  *
  * Only three answers are compulsory — what, who, how. A guard who cannot read
  * the licence plate through the dust must still be able to finish, or the
@@ -70,10 +67,7 @@ export function GateInForm({
         <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-white/15">
           <ClipboardList className="h-5 w-5" strokeWidth={2.5} />
         </span>
-        <span className="text-left">
-          <span className="block text-[17px] font-bold leading-tight">{T.gateTitle.en}</span>
-          <span className="block text-[15px] leading-tight text-indigo-100" lang="gu">{T.gateTitle.gu}</span>
-        </span>
+        <span className="text-[17px] font-bold">{T.gateTitle}</span>
       </button>
     )
   }
@@ -86,19 +80,14 @@ export function GateInForm({
           <span className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-emerald-100">
             <CheckCircle2 className="h-9 w-9 text-emerald-700" strokeWidth={2.5} />
           </span>
-          <div>
-            <p className="text-[22px] font-bold text-emerald-900">{T.saved.en}</p>
-            <p className="text-[19px] text-emerald-800" lang="gu">{T.saved.gu}</p>
-          </div>
+          <p className="text-[22px] font-bold text-emerald-900">{T.saved}</p>
           <p className="font-mono text-[26px] font-bold text-gray-900 tracking-tight">{saved.no}</p>
-          <p className="text-[14px] text-gray-500">
-            {T.savedSub.en}<span lang="gu" className="block">{T.savedSub.gu}</span>
-          </p>
+          <p className="text-[14px] text-gray-500">{T.savedSub}</p>
         </div>
         <BottomBar nextLabel={T.newEntry} onNext={reset}>
           <button type="button" onClick={() => { setOpen(false); reset() }}
             className="w-full mb-2.5 rounded-2xl border-2 border-gray-300 bg-white min-h-[52px] text-[15px] font-semibold text-gray-700 active:bg-gray-100">
-            {T.cancel.en} · <span lang="gu">{T.cancel.gu}</span>
+            {T.cancel}
           </button>
         </BottomBar>
       </FieldCard>
@@ -146,7 +135,7 @@ export function GateInForm({
             <div className="space-y-2.5">
               {modes.map(m => (
                 <BigChoice
-                  key={m.id} t={modePhrase(m.name)} icon={modeIcon(m.name)}
+                  key={m.id} t={m.name} icon={modeIcon(m.name)}
                   selected={a.modeName === m.name}
                   onClick={() => { set({ modeName: m.name }); setI(i + 1) }}
                 />
@@ -179,8 +168,7 @@ export function GateInForm({
             <Question t={T.qPapers} hint={T.papersHint} />
             <div className="rounded-2xl border-2 border-dashed border-gray-300 bg-gray-50 px-4 py-8 text-center">
               <Camera className="mx-auto h-10 w-10 text-gray-300" strokeWidth={1.75} />
-              <p className="mt-2.5 text-[16px] font-semibold text-gray-500">{T.photoSoon.en}</p>
-              <p className="text-[15px] text-gray-400" lang="gu">{T.photoSoon.gu}</p>
+              <p className="mt-2.5 text-[16px] font-semibold text-gray-500">{T.photoSoon}</p>
               <p className="mt-2 text-[12.5px] text-gray-400 max-w-[28ch] mx-auto">
                 Waiting on the decision about how long pictures are kept.
               </p>
@@ -194,10 +182,7 @@ export function GateInForm({
             <dl className="rounded-2xl border-2 border-gray-200 divide-y divide-gray-100 overflow-hidden">
               {summaryOf(a).map((row, n) => (
                 <div key={n} className="flex items-start gap-3 px-4 py-3">
-                  <dt className="w-[42%] shrink-0">
-                    <span className="block text-[13px] font-semibold text-gray-500">{row.label.en}</span>
-                    {row.label.gu && <span className="block text-[13px] text-gray-400" lang="gu">{row.label.gu}</span>}
-                  </dt>
+                  <dt className="w-[42%] shrink-0 text-[13px] font-semibold text-gray-500">{row.label}</dt>
                   <dd className="flex-1 text-[17px] font-semibold text-gray-900 break-words">{row.value}</dd>
                 </div>
               ))}
@@ -217,14 +202,12 @@ export function GateInForm({
         {/* Never a dead button with no explanation: say what is missing, in
             both languages, right where the thumb is about to press. */}
         {!ready && (
-          <p className="mb-2.5 text-center text-[14px] font-semibold text-amber-800">
-            {T.needed.en} · <span lang="gu">{T.needed.gu}</span>
-          </p>
+          <p className="mb-2.5 text-center text-[14px] font-semibold text-amber-800">{T.needed}</p>
         )}
         {ready && !last && (step === 'vehicle' || step === 'driver' || step === 'papers') && (
           <button type="button" onClick={() => setI(i + 1)}
             className="w-full mb-2.5 text-center text-[14px] font-semibold text-gray-400 min-h-[44px]">
-            {T.skip.en} · <span lang="gu">{T.skip.gu}</span>
+            {T.skip}
           </button>
         )}
       </BottomBar>
@@ -245,13 +228,10 @@ export function StorekeeperCta({ waiting }: { waiting: number }) {
         <p className="text-[16px] font-bold text-gray-900">
           {waiting > 0 ? `${waiting} ${waiting === 1 ? 'vehicle' : 'vehicles'} to count in` : 'Nothing waiting'}
         </p>
-        <p className="text-[15px] text-indigo-800" lang="gu">
-          {waiting > 0 ? `${waiting} ગાડી ગણવાની બાકી` : 'કંઈ બાકી નથી'}
+        <p className="text-[13px] text-gray-500">
+          {waiting > 0 ? 'Open one to count the material in' : 'Every vehicle has been counted in'}
         </p>
       </div>
-      {waiting > 0 && (
-        <Bi t={T.waiting} size="sm" className="ml-auto text-right hidden sm:block" />
-      )}
     </div>
   )
 }

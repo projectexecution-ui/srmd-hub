@@ -8,7 +8,7 @@ import { loadPoForEntry } from './po-action'
 import { missingForComplete, fmtQty, type Register } from '@/lib/stores/core'
 import { T } from '@/lib/stores/lang'
 import { formatINR } from '@/lib/utils'
-import { Bi, BigInput, Stepper, BigNotice } from '../../field'
+import { Label, BigInput, Stepper, BigNotice } from '../../field'
 
 interface Opt { id: string; name: string; code?: string | null }
 interface ItemOpt { id: string; name: string; unit: string; lastRate: number | null; in4MaterialId: number | null }
@@ -107,7 +107,7 @@ export function CompleteForm({
           <PackageCheck className="h-5.5 w-5.5" strokeWidth={2} />
         </span>
         <div className="min-w-0">
-          <Bi t={T.skTitle} size="lg" />
+          <h2 className="text-[22px] font-bold text-gray-900 leading-tight">{T.skTitle}</h2>
           <p className="text-[13px] text-gray-600 mt-1">
             {makesStock
               ? 'Saving this is what creates stock.'
@@ -119,21 +119,21 @@ export function CompleteForm({
       {/* Who and where — three answers, stacked on a phone. */}
       <div className="grid sm:grid-cols-3 gap-3">
         <label className="block space-y-1.5">
-          <Bi t={T.whichTrust} size="sm" />
+          <Label t={T.whichTrust} />
           <select className={sel} value={entityId} onChange={e => setEntityId(e.target.value)}>
             <option value="">—</option>
             {entities.map(e => <option key={e.id} value={e.id}>{e.code || e.name}</option>)}
           </select>
         </label>
         <label className="block space-y-1.5">
-          <Bi t={T.whichProject} size="sm" />
+          <Label t={T.whichProject} />
           <select className={sel} value={projectId} onChange={e => setProjectId(e.target.value)}>
             <option value="">—</option>
             {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
           </select>
         </label>
         <label className="block space-y-1.5">
-          <Bi t={{ en: 'Item category', gu: 'વસ્તુનો પ્રકાર' }} size="sm" />
+          <Label t={T.itemCategory} />
           <select className={sel} value={itemCategoryId} onChange={e => setItemCategoryId(e.target.value)}>
             <option value="">—</option>
             {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
@@ -153,10 +153,7 @@ export function CompleteForm({
               text-white font-semibold active:bg-black disabled:bg-gray-200 disabled:text-gray-400 sm:w-auto w-full"
           >
             <Download className="h-5 w-5" strokeWidth={2.2} />
-            <span className="text-left">
-              <span className="block text-[15px] leading-tight">{poBusy ? '…' : T.fillFromIn4.en}</span>
-              <span className="block text-[13px] leading-tight opacity-80" lang="gu">{T.fillFromIn4.gu}</span>
-            </span>
+            <span className="text-[15px]">{poBusy ? '…' : T.fillFromIn4}</span>
           </button>
         </div>
         {poNote && <BigNotice kind={poNote.ok ? 'ok' : 'bad'} title={poNote.text} />}
@@ -164,7 +161,7 @@ export function CompleteForm({
 
       {makesStock && (
         <label className="block space-y-1.5">
-          <Bi t={T.whereKept} size="sm" />
+          <Label t={T.whereKept} />
           <select className={sel} value={locationId} onChange={e => setLocationId(e.target.value)}>
             <option value="">—</option>
             {locations.map(l => <option key={l.id} value={l.id}>{l.label}</option>)}
@@ -184,15 +181,15 @@ export function CompleteForm({
                 </span>
                 {lines.length > 1 && (
                   <button type="button" onClick={() => setLines(ls => ls.filter(x => x.key !== l.key))}
-                    aria-label={T.remove.en}
+                    aria-label={T.remove}
                     className="inline-flex items-center gap-1.5 rounded-lg px-2.5 min-h-[44px] text-[13px] font-semibold text-rose-700 active:bg-rose-50">
-                    <Trash2 className="h-4 w-4" /> {T.remove.en}
+                    <Trash2 className="h-4 w-4" /> {T.remove}
                   </button>
                 )}
               </div>
 
               <label className="block space-y-1.5">
-                <Bi t={T.item} size="sm" />
+                <Label t={T.item} />
                 <select className={sel} value={l.itemId} onChange={e => pickItem(l.key, e.target.value)}>
                   <option value="">—</option>
                   {itemList.map(i => <option key={i.id} value={i.id}>{i.name}</option>)}
@@ -201,20 +198,20 @@ export function CompleteForm({
               </label>
 
               <div className="space-y-1.5">
-                <Bi t={T.qty} size="sm" />
+                <Label t={T.qty} />
                 <Stepper value={l.qty} onChange={v => setLine(l.key, { qty: v })} unit={l.unit || undefined} />
               </div>
 
               <div className="grid grid-cols-2 gap-3 items-end">
                 <label className="block space-y-1.5">
-                  <Bi t={T.rate} size="sm" />
+                  <Label t={T.rate} />
                   <input
                     className={sel} value={l.rate} inputMode="decimal"
                     onChange={e => setLine(l.key, { rate: e.target.value })}
                   />
                 </label>
                 <div className="space-y-1.5">
-                  <Bi t={T.amount} size="sm" />
+                  <Label t={T.amount} />
                   <p className="min-h-[56px] flex items-center px-3.5 rounded-xl bg-gray-50 border-2 border-gray-100
                     text-[17px] font-bold tabular-nums text-gray-900">
                     {amount > 0 ? formatINR(amount) : '—'}
@@ -225,7 +222,7 @@ export function CompleteForm({
               <label className="flex items-center gap-3 rounded-xl border-2 border-gray-200 px-3.5 py-2.5 min-h-[56px] active:bg-gray-50">
                 <input type="checkbox" className="h-6 w-6 accent-amber-600 shrink-0" checked={l.returnable}
                   onChange={e => setLine(l.key, { returnable: e.target.checked })} />
-                <Bi t={T.mustComeBack} size="sm" />
+                <span className="text-[15px] font-semibold text-gray-800">{T.mustComeBack}</span>
               </label>
             </div>
           )
@@ -237,13 +234,13 @@ export function CompleteForm({
             bg-white min-h-[60px] text-[15px] font-semibold text-gray-600 active:bg-gray-50"
         >
           <Plus className="h-5 w-5" strokeWidth={2.5} />
-          {T.addItem.en} · <span lang="gu">{T.addItem.gu}</span>
+          {T.addItem}
         </button>
       </div>
 
       {!makesStock && (
         <p className="text-[12.5px] text-gray-600 bg-white rounded-xl border border-gray-200 px-3.5 py-2.5">
-          Only what is ticked <b>{T.mustComeBack.en}</b> matters here. The rest went to site and is not stock —
+          Only what is ticked <b>{T.mustComeBack}</b> matters here. The rest went to site and is not stock —
           counting it in would create a balance nobody ever uses up.
         </p>
       )}
@@ -255,7 +252,7 @@ export function CompleteForm({
         </div>
       )}
 
-      {missing.length > 0 && <BigNotice kind="bad" title={`${T.needed.en}: ${missing.join(' · ')}`} />}
+      {missing.length > 0 && <BigNotice kind="bad" title={`${T.needed}: ${missing.join(' · ')}`} />}
       {result && <BigNotice kind={result.ok ? 'ok' : 'bad'} title={result.message} />}
 
       <button
@@ -276,12 +273,9 @@ export function CompleteForm({
         className="w-full rounded-2xl bg-indigo-700 min-h-[64px] text-white font-bold active:bg-indigo-800
           disabled:bg-gray-200 disabled:text-gray-400"
       >
-        <span className="block text-[17px] leading-tight">
-          {pending ? '…' : makesStock ? T.takeIntoStock.en : `Complete ${entryNo}`}
+        <span className="text-[18px]">
+          {pending ? '…' : makesStock ? T.takeIntoStock : `Complete ${entryNo}`}
         </span>
-        {!pending && makesStock && (
-          <span className="block text-[15px] leading-tight opacity-90" lang="gu">{T.takeIntoStock.gu}</span>
-        )}
       </button>
     </div>
   )

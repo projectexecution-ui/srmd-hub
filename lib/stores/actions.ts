@@ -4,7 +4,6 @@ import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
 import { getMyProfile } from '@/lib/auth'
 import { entryNo, checkIssue, createsStock, type Register } from './core'
-import { FIELD_LANG_KEY, type FieldLang } from './lang'
 import { loadStock } from './queries'
 
 /**
@@ -558,34 +557,6 @@ export async function importIn4Material(materialId: number): Promise<Result<{ id
   revalidatePath('/stores')
   return done(`${mat.name} added${rate?.rate != null ? ` at ₹${Number(rate.rate).toLocaleString('en-IN')}` : ''}.`,
     { id: data.id as string, name: data.name as string })
-}
-
-/**
- * Turn the English line on the gate screens on or off. ADMIN ONLY.
- *
- * Aksha, 13 Sep 2026: "give that option to Admin only to switch on and off".
- * The role is checked HERE rather than relying on the Stores section being
- * admin-only today — when the section widens to storekeepers and guards, this
- * must not widen with it. A guard changing the language of a phone he shares
- * with the next shift is not a setting, it is a prank.
- */
-export async function setFieldLang(lang: FieldLang): Promise<Result> {
-  const profile = await me()
-  if (profile.role !== 'admin') {
-    return fail('Only an admin can change the language. Ask Aksha.')
-  }
-  if (lang !== 'gu' && lang !== 'both') return fail('That is not a language option.')
-
-  const supabase = await createClient()
-  const { error } = await supabase
-    .from('app_settings')
-    .upsert({ key: FIELD_LANG_KEY, value: lang }, { onConflict: 'key' })
-  if (error) return fail(explain(error, 'change the language'))
-
-  revalidatePath('/stores')
-  return done(lang === 'gu'
-    ? 'The gate screens now show Gujarati only.'
-    : 'The gate screens now show English above the Gujarati.')
 }
 
 /** Opening stock — one adjustment per item per place, before the gate starts.
