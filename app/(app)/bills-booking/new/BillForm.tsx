@@ -38,7 +38,6 @@ export function BillForm({ projects, disciplines, in4Wos, in4Projects }: {
   const [vendorText, setVendorText] = useState('')
   const [work, setWork] = useState('')
   const [billNo, setBillNo] = useState('')
-  const [raNo, setRaNo] = useState('')
   const [billDate, setBillDate] = useState('')
   const [claimed, setClaimed] = useState('')
   const [abstractNo, setAbstractNo] = useState('')
@@ -61,11 +60,11 @@ export function BillForm({ projects, disciplines, in4Wos, in4Projects }: {
   const thisBill = Number(claimed) || 0
   const overWO = usingWo && woValue != null && woValue > 0 && paidTill + thisBill > woValue
 
-  function pickWo(w: PickableWo | null) {
-    setWo(w)
-    if (!w) return
-    if (!raNo && w.bills > 0) setRaNo('RA-' + (w.bills + 1))
-  }
+  // The RA number is a count, not a decision — it only says which bill this is
+  // on that work order. IN4 already knows how many have been raised, so it is
+  // derived rather than asked for. Without a work order there is no series to
+  // count, and inventing one would be worse than leaving it empty.
+  const raNo = usingWo ? 'RA-' + (wo.bills + 1) : ''
 
   async function submit() {
     if (!projectId) { setErr('Pick the CT Hub project this books against'); return }
@@ -81,7 +80,7 @@ export function BillForm({ projects, disciplines, in4Wos, in4Projects }: {
         discipline_id: disciplineId || null,
         discipline: disciplines.find(d => d.id === disciplineId)?.name || null,
         work: work.trim() || null,
-        bill_no: billNo.trim() || null, ra_no: raNo.trim() || null,
+        bill_no: billNo.trim() || null, ra_no: raNo || null,
         bill_date: billDate || null, claimed_amount: thisBill, trust: trust || null,
         wo_value: woValue, paid_till_date: paidTill,
         abstract_no_in4: abstractNo.trim() || null,
@@ -119,7 +118,7 @@ export function BillForm({ projects, disciplines, in4Wos, in4Projects }: {
       {/* 2 — the work order, found by typing */}
       {AGAINST_WO.has(billType) && (
         <Section n={2} title="Which work order?">
-          {!noOrder && <WoPicker wos={in4Wos} picked={wo} onPick={pickWo} projectNames={projectNames} />}
+          {!noOrder && <WoPicker wos={in4Wos} picked={wo} onPick={setWo} projectNames={projectNames} />}
 
           <label className="mt-3 flex items-start gap-2 text-sm">
             <input type="checkbox" checked={noOrder} className="mt-0.5 h-4 w-4"
@@ -151,7 +150,7 @@ export function BillForm({ projects, disciplines, in4Wos, in4Projects }: {
           </div>
         )}
 
-        <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+        <div className="grid grid-cols-3 gap-3">
           <div>
             <Label htmlFor="bno">Bill no</Label>
             <Input id="bno" value={billNo} onChange={e => setBillNo(e.target.value)} placeholder="from the invoice" />
@@ -164,12 +163,14 @@ export function BillForm({ projects, disciplines, in4Wos, in4Projects }: {
             <Label htmlFor="cl">This bill *</Label>
             <MoneyInput id="cl" value={claimed} onChange={setClaimed} placeholder="0" />
           </div>
-          <div>
-            <Label htmlFor="ra">RA no</Label>
-            <Input id="ra" value={raNo} onChange={e => setRaNo(e.target.value)}
-                   placeholder={usingWo && wo.bills > 0 ? 'suggested' : 'RA-1'} />
-          </div>
         </div>
+
+        {raNo && (
+          <p className="mt-2 text-xs text-gray-500">
+            This will be <b className="font-mono text-gray-800">{raNo}</b> on that work order
+            {wo!.bills > 0 ? ` — ${wo!.bills} ${wo!.bills === 1 ? 'bill has' : 'bills have'} been raised against it so far` : ' — the first bill against it'}.
+          </p>
+        )}
 
         <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
           <div>
