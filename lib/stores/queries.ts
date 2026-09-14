@@ -377,12 +377,12 @@ export async function loadReturnables(projectId?: string | null): Promise<Return
   const supabase = await createClient()
   const { data } = await supabase
     .from('mio_entry_lines')
-    .select(`id, item_id, unit, qty, returnable,
+    .select(`id, item_id, unit, qty, returnable, returns_line_id,
              mio_items ( name ),
              mio_entries!inner ( id, no, direction, register, stage, entry_at, project_id, party_name,
                                  linked_entry_id, projects:project_id ( name ) )`)
     .eq('returnable', true)
-    .limit(1000)
+    .limit(2000)
 
   // An embedded to-one relation comes back as an object, but the generated
   // types describe `!inner` as an array. Normalise once rather than casting at
@@ -395,15 +395,26 @@ export async function loadReturnables(projectId?: string | null): Promise<Return
     return e && e.stage !== 'void'
   })
 
-  // Anything returned so far, keyed by the entry it answers.
-  const returnedBy = new Map<string, number>()
+  // Anything returned so far, keyed by the LINE it answers.
+  //
+  // Per line, not per entry: one gate entry can bring in props and shuttering
+  // both marked returnable, and netting a partial return of the props against
+  // the entry would quietly settle the shuttering too. `returns_line_id` makes
+  // it exact. Returns recorded before that column existed carry null and are
+  // still matched at entry level, so nothing already booked is lost.
+  const returnedByLine = new Map<string, number>()
+  const returnedByEntry = new Map<string, number>()
   for (const r of rows) {
     const e = one(r.mio_entries)
     if (e.direction !== 'out') continue
+    const line = (r.returns_line_id as string | null) ?? null
+    if (line) { returnedByLine.set(line, (returnedByLine.get(line) ?? 0) + num(r.qty)); continue }
     const target = e.linked_entry_id as string | null
-    if (!target) continue
-    returnedBy.set(target, (returnedBy.get(target) ?? 0) + num(r.qty))
+    if (target) returnedByEntry.set(target, (returnedByEntry.get(target) ?? 0) + num(r.qty))
   }
+  // An entry-level return with no line is spread over that entry's lines in
+  // order, so an old record still nets to the right total.
+  const spread = new Map<string, number>(returnedByEntry)
 
   const lines: ReturnableLine[] = rows
     .filter(r => one(r.mio_entries).direction === 'in')
@@ -411,19 +422,30 @@ export async function loadReturnables(projectId?: string | null): Promise<Return
     .map(r => {
       const e = one(r.mio_entries)
       const proj = (one(e.projects) as { name?: string } | null)?.name ?? 'Unassigned'
+      const lineId = r.id as string
+      const qty = num(r.qty)
+      let returned = returnedByLine.get(lineId) ?? 0
+      // Take what is left of any entry-level (pre-column) return.
+      const pool = spread.get(e.id as string) ?? 0
+      if (pool > 0) {
+        const take = Math.min(pool, Math.max(0, qty - returned))
+        returned += take
+        spread.set(e.id as string, pool - take)
+      }
       return {
+        lineId,
         entryId: e.id as string,
         entryNo: (e.no as string) ?? '',
         itemId: r.item_id as string,
         itemName: ((r.mio_items as { name?: string } | null)?.name) ?? '—',
         unit: (r.unit as string) ?? '',
-        qty: num(r.qty),
+        qty,
         heldBy: proj,
         owedTo: e.register === 'vendor'
           ? `${(e.party_name as string) ?? 'Vendor'} (vendor)`
           : 'CT Warehouse',
         since: e.entry_at as string,
-        returned: returnedBy.get(e.id as string) ?? 0,
+        returned,
       }
     })
 

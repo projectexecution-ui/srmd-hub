@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   entryNo, linkedNo, foldStock, availableAt, availableAnywhere, checkIssue,
-  outstandingReturnables, missingForGate, missingForComplete, createsStock, heldItemCount,
+  outstandingReturnables, checkReturn, missingForGate, missingForComplete, createsStock, heldItemCount,
   fmtQty, isPilotProject, PILOT_PROJECT_IDS, type Movement, type ReturnableLine,
 } from './core'
 
@@ -132,7 +132,7 @@ describe('the only-from-stock rule', () => {
 
 describe('returnables', () => {
   const base = (o: Partial<ReturnableLine>): ReturnableLine => ({
-    entryId: 'e1', entryNo: 'In: 01Aug26/001', itemId: 'A', itemName: 'Prop 3.0m', unit: 'Nos',
+    lineId: 'l1', entryId: 'e1', entryNo: 'In: 01Aug26/001', itemId: 'A', itemName: 'Prop 3.0m', unit: 'Nos',
     qty: 100, heldBy: 'NGH B', owedTo: 'CT Warehouse', since: '2026-09-01T00:00:00.000Z', returned: 0, ...o,
   })
   const today = new Date('2026-09-13T00:00:00.000Z')
@@ -241,5 +241,56 @@ describe('the Items held tile', () => {
 
   it('is zero on an empty store', () => {
     expect(heldItemCount([])).toBe(0)
+  })
+})
+
+describe('returning material', () => {
+  const rows = outstandingReturnables([
+    { lineId: 'props', entryId: 'e1', entryNo: 'In: 05Aug26/001', itemId: 'A', itemName: 'Prop 3.0m',
+      unit: 'Nos', qty: 300, heldBy: 'NGH B', owedTo: 'Shah (vendor)', since: '2026-08-05T00:00:00.000Z', returned: 120 },
+    { lineId: 'plate', entryId: 'e1', entryNo: 'In: 05Aug26/001', itemId: 'B', itemName: 'Shuttering Plate',
+      unit: 'Nos', qty: 50, heldBy: 'NGH B', owedTo: 'Shah (vendor)', since: '2026-08-05T00:00:00.000Z', returned: 0 },
+  ], new Date('2026-09-14T00:00:00.000Z'))
+
+  it('settles each line on its own, not the whole entry', () => {
+    // Both lines are on ONE gate entry. Returning props must not touch plates.
+    expect(rows.find(r => r.lineId === 'props')!.outstanding).toBe(180)
+    expect(rows.find(r => r.lineId === 'plate')!.outstanding).toBe(50)
+  })
+
+  it('allows a return up to what is still out', () => {
+    expect(checkReturn(rows, 'props', 180).ok).toBe(true)
+    expect(checkReturn(rows, 'props', 1).ok).toBe(true)
+  })
+
+  it('refuses more than is out — giving back too much invents stock', () => {
+    const r = checkReturn(rows, 'props', 181)
+    expect(r.ok).toBe(false)
+    expect(r.reason).toContain('180')
+    expect(r.reason).toContain('invent')
+  })
+
+  it('refuses zero, and a line that is not outstanding', () => {
+    expect(checkReturn(rows, 'props', 0).ok).toBe(false)
+    expect(checkReturn(rows, 'nope', 5).ok).toBe(false)
+  })
+
+  it('always says why it refused', () => {
+    for (const [line, qty] of [['props', 999], ['props', 0], ['nope', 1]] as const) {
+      const r = checkReturn(rows, line, qty)
+      expect(r.ok).toBe(false)
+      expect((r.reason ?? '').length).toBeGreaterThan(10)
+    }
+  })
+
+  it('orders the list the same way twice when two debts are the same age', () => {
+    const twice = [0, 1].map(() => outstandingReturnables([
+      { lineId: 'b', entryId: 'e', entryNo: 'n', itemId: 'i', itemName: 'Same', unit: 'Nos',
+        qty: 5, heldBy: 'p', owedTo: 'o', since: '2026-09-01T00:00:00.000Z', returned: 0 },
+      { lineId: 'a', entryId: 'e', entryNo: 'n', itemId: 'i', itemName: 'Same', unit: 'Nos',
+        qty: 5, heldBy: 'p', owedTo: 'o', since: '2026-09-01T00:00:00.000Z', returned: 0 },
+    ]).map(r => r.lineId))
+    expect(twice[0]).toEqual(twice[1])
+    expect(twice[0]).toEqual(['a', 'b'])
   })
 })

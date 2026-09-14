@@ -31,7 +31,7 @@ export default async function GateEntryPage({ params }: { params: Promise<{ id: 
         ← Back to the register
       </Link>
 
-      <EntryDetailPanels entry={entry} />
+      <EntryDetailPanels entry={entry} places={locations} />
 
       {entry.stage === 'gate' && entry.direction === 'in' && (
         <CompleteForm

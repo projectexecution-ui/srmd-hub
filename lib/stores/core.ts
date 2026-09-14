@@ -159,6 +159,9 @@ export function fmtQty(n: number): string {
 /* ── Returnables ────────────────────────────────────────────────────────── */
 
 export interface ReturnableLine {
+  /** The LINE, not the entry — two returnable items on one entry are two
+   *  separate debts and a partial return of one must not net against the other. */
+  lineId: string
   entryId: string
   entryNo: string
   itemId: string
@@ -170,11 +173,42 @@ export interface ReturnableLine {
   /** Who it is owed back to — the lending project, or the vendor. */
   owedTo: string
   since: string
-  /** Quantities already returned against this entry line. */
+  /** Quantities already returned against this line. */
   returned: number
 }
 
+/** One return being recorded: how much of which outstanding line came back. */
+export interface ReturnInput { lineId: string; qty: number }
+
+export interface ReturnCheck { ok: boolean; reason?: string; outstanding: number }
+
+/**
+ * May this much be returned against this line?
+ *
+ * Refuses more than is outstanding. Giving back more than went out is not a
+ * generous mistake — it silently invents stock, and the returnables list then
+ * reads as settled when it is not.
+ */
+export function checkReturn(
+  rows: readonly ReturnableRow[], lineId: string, qty: number,
+): ReturnCheck {
+  const row = rows.find(r => r.lineId === lineId)
+  if (!row) return { ok: false, reason: 'That line is not outstanding.', outstanding: 0 }
+  if (!(qty > 0)) return { ok: false, reason: 'Quantity must be more than zero.', outstanding: row.outstanding }
+  if (qty > row.outstanding) {
+    return {
+      ok: false, outstanding: row.outstanding,
+      reason: `Only ${fmtQty(row.outstanding)} ${row.unit} is still out. Returning more would invent stock.`,
+    }
+  }
+  return { ok: true, outstanding: row.outstanding }
+}
+
 export interface ReturnableRow extends ReturnableLine { outstanding: number; days: number }
+
+/** Whether a returnable debt counts as overdue enough to chase. 30 days is the
+ *  line the screen already colours at; naming it keeps report and screen level. */
+export const CHASE_AFTER_DAYS = 30
 
 /**
  * What still owes its way back — the map's only report under Returnable
@@ -192,7 +226,10 @@ export function outstandingReturnables(lines: readonly ReturnableLine[], today =
     }))
     .filter(r => r.outstanding > 0)
     // Oldest first: the 56-day machine matters more than this morning's props.
-    .sort((a, b) => b.days - a.days || a.itemName.localeCompare(b.itemName))
+    // Oldest first: the 56-day machine matters more than this morning's props.
+    // Tie broken by name then line id, so the list does not reshuffle between
+    // loads when two debts are the same age.
+    .sort((a, b) => b.days - a.days || a.itemName.localeCompare(b.itemName) || a.lineId.localeCompare(b.lineId))
 }
 
 /* ── What a gate entry still needs ──────────────────────────────────────── */
