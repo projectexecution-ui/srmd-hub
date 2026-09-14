@@ -18,6 +18,16 @@ export interface PickableWo {
   woId: number
   woNo: string
   projectId: number | null
+  /** IN4's sub-project — present on every one of the 1,685 numbered work
+   *  orders, and the key everything about where a bill books hangs off. Taken
+   *  from the work order itself, not from its certificates, so a work order
+   *  with no bills yet resolves exactly like one with ten. */
+  subprojectId: number | null
+  /** The IN4 skill the order was raised under, resolved to a name and to a CT
+   *  Hub discipline by lib/bills-booking/booking.ts. */
+  categoryId: number | null
+  /** ENGG_WORK_ORDER.WORK_DESCRIPTION — the scope, read rather than typed. */
+  workDescription: string | null
   contractorId: number | null
   contractor: string
   /** Ordered value including GST — the figure to compare a bill against. */
@@ -45,6 +55,7 @@ interface WoRow {
   wo_id: number; display_no: string | null; contractor_id: number | null
   wo_value: number | null; wo_gross_value: number | null; wo_retention_amt: number | null
   status_name: string | null
+  subproject_id: number | null; category_id: number | null; work_description: string | null
 }
 interface CertRow {
   wo_id: number; project_id: number | null; subproject_id: number | null; status_name: string | null
@@ -88,6 +99,9 @@ export function buildPickList(
       woId: w.wo_id,
       woNo: w.display_no,
       projectId: a?.projectId ?? null,
+      subprojectId: w.subproject_id ?? null,
+      categoryId: w.category_id ?? null,
+      workDescription: w.work_description?.trim() || null,
       contractorId: w.contractor_id,
       contractor: (w.contractor_id != null && contractors.get(w.contractor_id)) || '',
       orderedGross,
@@ -122,7 +136,7 @@ export async function loadPickList(sb: SupabaseClient): Promise<PickData> {
   }
 
   const [wos, certs, parties, projects] = await Promise.all([
-    pageAll<WoRow>('in4_work_orders', 'wo_id, display_no, contractor_id, wo_value, wo_gross_value, wo_retention_amt, status_name'),
+    pageAll<WoRow>('in4_work_orders', 'wo_id, display_no, contractor_id, wo_value, wo_gross_value, wo_retention_amt, status_name, subproject_id, category_id, work_description'),
     pageAll<CertRow>('in4_wo_certificates', 'wo_id, project_id, subproject_id, status_name, gross_bill_amt, retention_amt, certified_amt, invoice_no, creation_dt'),
     pageAll<{ id: number; name: string; kind: string }>('in4_parties', 'id, name, kind'),
     pageAll<{ id: number; name: string }>('in4_projects', 'id, name'),
@@ -132,8 +146,11 @@ export async function loadPickList(sb: SupabaseClient): Promise<PickData> {
   // an id, so filtering by kind is not optional.
   const contractors = new Map(parties.filter(p => p.kind === 'contractor').map(p => [p.id, p.name]))
   // Billed-to-date and the RA count must not include design or consultancy
-  // certificates, or the balance offered on a construction bill is wrong.
+  // certificates, or the balance offered on a construction bill is wrong. The
+  // work orders themselves are filtered on the same list, so a Design order
+  // cannot be picked at all — the section does not show that work anywhere.
   const excluded = await loadOutOfScope(sb)
   const inScope = certs.filter(c => !rowOutOfScope(excluded, c.subproject_id))
-  return { wos: buildPickList(wos, inScope, contractors), projects }
+  const woInScope = wos.filter(w => !rowOutOfScope(excluded, w.subproject_id))
+  return { wos: buildPickList(woInScope, inScope, contractors), projects }
 }

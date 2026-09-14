@@ -5,7 +5,8 @@ const contractors = new Map([[5, 'Amin Developers'], [3, 'Desai Construction Pvt
 
 const wo = (o: Partial<Parameters<typeof buildPickList>[0][number]> = {}) => ({
   wo_id: 2149, display_no: 'WO/SRASSK/SQ/2026-27/105', contractor_id: 5,
-  wo_value: 3_832_500, wo_gross_value: 4_522_350, wo_retention_amt: 0, status_name: 'Approved', ...o,
+  wo_value: 3_832_500, wo_gross_value: 4_522_350, wo_retention_amt: 0, status_name: 'Approved',
+  subproject_id: 5, category_id: 46, work_description: 'Tiling and finishes to lobby', ...o,
 })
 const cert = (o: Partial<Parameters<typeof buildPickList>[1][number]> = {}) => ({
   wo_id: 2149, project_id: 5, subproject_id: 5, status_name: 'Approved',

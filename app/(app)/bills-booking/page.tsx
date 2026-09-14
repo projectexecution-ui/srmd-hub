@@ -5,7 +5,7 @@ import { requireBillsAccess } from '@/lib/bills-booking/access'
 import { PageHeader } from '@/components/PageHeader'
 import { QueryError } from '@/components/ui/query-error'
 import { EmptyState } from '@/components/ui/empty-state'
-import { Plus, ReceiptText, AlertTriangle, Clock, Users, Landmark, PackageCheck, ShieldCheck, CalendarDays, FileQuestion } from 'lucide-react'
+import { Plus, ReceiptText, AlertTriangle, Clock, Users, Landmark, PackageCheck, ShieldCheck, CalendarDays, FileQuestion, MapPin } from 'lucide-react'
 import { PIPELINE, slaFor, isTerminal, type BbStage } from '@/lib/bills-booking/stages'
 import { BillingTree, type TrustNode, type Leaf } from './BillingTree'
 
@@ -141,6 +141,11 @@ export default async function BillsBookingPage() {
             { href: '/bills-booking/sanctions', icon: ShieldCheck, label: 'Sanctions', hint: 'What you approved vs IN4' },
             { href: '/bills-booking/daily', icon: CalendarDays, label: 'Daily report', hint: 'Paid, and at each trust' },
             { href: '/bills-booking/no-order', icon: FileQuestion, label: 'No work order', hint: 'Misc, and bills before the WO' },
+            // Not an action, a place to look: which IN4 sub-projects still have
+            // no CT Hub project and no Atm Head, so bills on them arrive with
+            // nobody to go to. Separate from /bills-booking/admin, which is who
+            // sits at each desk in the flow.
+            { href: '/bills-booking/mapping', icon: MapPin, label: 'Where bills book', hint: 'Sub-project → project & Atm Head' },
           ] as const).map(v => (
             <Link key={v.href} href={v.href}
                   className="rounded-xl border border-gray-200 bg-white px-3 py-2.5 hover:border-indigo-300 hover:bg-indigo-50/40 min-h-[44px]">

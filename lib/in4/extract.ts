@@ -37,6 +37,10 @@ export interface In4BudgetMatLine {
 export interface In4WorkOrder {
   wo_id: number; subproject_id: number; category_id: number; subcategory_id: number; status: number
   display_no: string | null; contractor_id: number | null; creation_dt: string | null; status_name: string | null
+  /** ENGG_WORK_ORDER.WORK_DESCRIPTION — what the order is for, in the engineer's
+   *  own words. Present on 2,176 of 2,181 orders, which is why Bills Approval
+   *  reads the scope off the order instead of asking anybody to retype it. */
+  work_description: string | null
   wo_value: number; wo_gross_value: number; wo_paid_amt: number; wo_advance_balance_amt: number; wo_retention_amt: number
 }
 /** WO value split by BOQ item into sub-categories — the report attributes a WO
@@ -186,14 +190,15 @@ export async function extractBudgetMaterial(): Promise<In4BudgetMatLine[]> {
 export async function extractWorkOrders(): Promise<In4WorkOrder[]> {
   const rows = await in4Query<Record<string, unknown>>(`
     SELECT f.WO_ID, f.SUBPROJECT_ID, f.WORK_CATEGORY_ID, f.WORK_SUBCATEGORY_ID, w.STATUS, w.DISPLAY_NO, f.CONTRACTOR_ID,
-           w.CREATION_DT, st.NAME status_name, f.WO_VALUE, f.WO_GROSS_VALUE, f.WO_PAID_AMT, f.WO_ADVANCE_BALANCE_AMT, f.WO_RETENTION_AMT
+           w.CREATION_DT, st.NAME status_name, w.WORK_DESCRIPTION work_description,
+           f.WO_VALUE, f.WO_GROSS_VALUE, f.WO_PAID_AMT, f.WO_ADVANCE_BALANCE_AMT, f.WO_RETENTION_AMT
     FROM BI.FACT_ENGG_WORK_ORDER f
     JOIN ENGG_WORK_ORDER w ON w.ID = f.WO_ID
     LEFT JOIN COMMON_STATUS_LOOKUP st ON st.ID = w.STATUS`)
   return rows.map(r => ({
     wo_id: n(r.WO_ID), subproject_id: n(r.SUBPROJECT_ID), category_id: n(r.WORK_CATEGORY_ID), subcategory_id: n(r.WORK_SUBCATEGORY_ID),
     status: n(r.STATUS), display_no: (r.DISPLAY_NO as string | null) ?? null, contractor_id: r.CONTRACTOR_ID == null ? null : n(r.CONTRACTOR_ID),
-    creation_dt: day(r.CREATION_DT), status_name: str(r.status_name),
+    creation_dt: day(r.CREATION_DT), status_name: str(r.status_name), work_description: str(r.work_description),
     wo_value: n(r.WO_VALUE), wo_gross_value: n(r.WO_GROSS_VALUE), wo_paid_amt: n(r.WO_PAID_AMT), wo_advance_balance_amt: n(r.WO_ADVANCE_BALANCE_AMT),
     wo_retention_amt: n(r.WO_RETENTION_AMT),
   }))

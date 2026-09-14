@@ -20,6 +20,8 @@ export function WoPicker({ wos, picked, onPick, projectNames }: {
   wos: PickableWo[]
   picked: PickableWo | null
   onPick: (w: PickableWo | null) => void
+  /** IN4 project names, used only to say which building a match belongs to
+   *  while somebody is still choosing between several. */
   projectNames: Map<number, string>
 }) {
   const [q, setQ] = useState('')
@@ -33,16 +35,15 @@ export function WoPicker({ wos, picked, onPick, projectNames }: {
   }, [wos, q])
 
   if (picked) {
-    const project = picked.projectId != null ? projectNames.get(picked.projectId) : null
     return (
       <div className="rounded-lg border border-indigo-200 bg-indigo-50/50 p-3">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
             <div className="font-mono text-sm font-semibold">{picked.woNo}</div>
-            <div className="text-xs text-gray-600">
-              {picked.contractor || 'contractor not named in IN4'}
-              {project ? ` · ${project}` : ''}
-            </div>
+            {/* Where it books is NOT repeated here — the panel below it carries
+                the sub-project, the CT Hub project and the Atm Head, all read
+                off this work order. */}
+            <div className="text-xs text-gray-600">{picked.contractor || 'contractor not named in IN4'}</div>
           </div>
           <button type="button" onClick={() => { onPick(null); setQ('') }}
                   className="shrink-0 inline-flex items-center gap-1 text-xs font-semibold text-gray-600 hover:text-gray-900 min-h-[32px]">
@@ -92,7 +93,10 @@ export function WoPicker({ wos, picked, onPick, projectNames }: {
                         className="flex w-full items-center justify-between gap-3 px-3 py-2 text-left hover:bg-indigo-50 min-h-[44px]">
                   <span className="min-w-0">
                     <span className="block font-mono text-xs">{w.woNo}</span>
-                    <span className="block truncate text-[11px] text-gray-500">{w.contractor || '—'}</span>
+                    <span className="block truncate text-[11px] text-gray-500">
+                      {w.contractor || '—'}
+                      {w.projectId != null && projectNames.get(w.projectId) ? ` · ${projectNames.get(w.projectId)}` : ''}
+                    </span>
                   </span>
                   <span className="shrink-0 text-right">
                     <span className="block text-xs tabular-nums font-medium">{formatINR(w.balance)}</span>

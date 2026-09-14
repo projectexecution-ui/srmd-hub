@@ -1,5 +1,5 @@
 'use client'
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { Card } from '@/components/ui/card'
@@ -9,7 +9,9 @@ import { Label } from '@/components/ui/label'
 import { MoneyInput } from '@/components/ui/money-input'
 import { Loader2, Send } from 'lucide-react'
 import { WoPicker } from './WoPicker'
+import { DeskPanel } from './DeskPanel'
 import type { PickableWo } from '@/lib/bills-booking/wo-picker'
+import { resolveBooking, bookingGaps, type BookingMaps, type Booking } from '@/lib/bills-booking/booking'
 import { formatINR } from '@/lib/utils'
 
 type Opt = { id: string; code?: string; name: string }
@@ -20,9 +22,35 @@ type Opt = { id: string; code?: string; name: string }
  *  people to type something wrong to get past a field. */
 const AGAINST_WO = new Set(['Running', 'Full & Final', 'Advance'])
 
-export function BillForm({ projects, disciplines, in4Wos, in4Projects }: {
+/** What the server sends, as plain arrays — Maps do not survive the boundary
+ *  between a server component and a client one. */
+export interface BookingSeed {
+  subprojects: Array<[number, string]>
+  linked: Array<[number, { id: string; code: string | null; name: string }]>
+  desks: Array<[number, { subproject_id: number; in4_name: string | null; cc_project_id: string | null; atm_head_id: string | null; note: string | null }]>
+  projectHeads: Array<[string, Array<{ id: string; name: string }>]>
+  people: Array<[string, { id: string; name: string }]>
+  ctProjects: Array<[string, { id: string; code: string | null; name: string }]>
+  skills: Array<[number, string]>
+  disciplines: Array<[string, { id: string; name: string }]>
+}
+
+const hydrate = (s: BookingSeed): BookingMaps => ({
+  subprojects: new Map(s.subprojects),
+  linked: new Map(s.linked),
+  desks: new Map(s.desks),
+  projectHeads: new Map(s.projectHeads),
+  people: new Map(s.people),
+  ctProjects: new Map(s.ctProjects),
+  skills: new Map(s.skills),
+  disciplines: new Map(s.disciplines),
+})
+
+export function BillForm({ projects, disciplines, in4Wos, in4Projects, seed, canAdmin }: {
   projects: Opt[]; disciplines: Opt[]
   in4Wos: PickableWo[]; in4Projects: Array<{ id: number; name: string }>
+  seed: BookingSeed
+  canAdmin: boolean
 }) {
   const router = useRouter()
   const supabase = createClient()
@@ -33,19 +61,26 @@ export function BillForm({ projects, disciplines, in4Wos, in4Projects }: {
   const [wo, setWo] = useState<PickableWo | null>(null)
   const [noOrder, setNoOrder] = useState(false)
 
+  // Only used when there is no work order to read any of this off.
   const [projectId, setProjectId] = useState('')
   const [disciplineId, setDisciplineId] = useState('')
   const [vendorText, setVendorText] = useState('')
-  const [work, setWork] = useState('')
+  const [workManual, setWorkManual] = useState('')
   const [billNo, setBillNo] = useState('')
   const [billDate, setBillDate] = useState('')
   const [claimed, setClaimed] = useState('')
   const [abstractNo, setAbstractNo] = useState('')
   const [orderNoManual, setOrderNoManual] = useState('')
 
+  const [maps, setMaps] = useState<BookingMaps>(() => hydrate(seed))
+
   const projectNames = new Map(in4Projects.map(p => [p.id, p.name]))
   const needsWo = AGAINST_WO.has(billType) && !noOrder
   const usingWo = needsWo && !!wo
+
+  // Where it books, worked out from the work order rather than asked for.
+  const booking: Booking = useMemo(() => resolveBooking(usingWo ? wo : null, maps), [usingWo, wo, maps])
+  const gaps = bookingGaps(booking)
 
   // Everything below is what IN4 supplies once a work order is chosen. It is
   // not asked for, and it is not editable: the point of reading IN4 is that
@@ -57,6 +92,14 @@ export function BillForm({ projects, disciplines, in4Wos, in4Projects }: {
   const woValue = usingWo ? Math.round(wo.orderedGross) : null
   const paidTill = usingWo ? Math.round(wo.billedGross) : 0
 
+  // The scope and the CT Hub project are read off the order when there is one.
+  const finalProjectId = usingWo ? booking.projectId : (projectId || null)
+  const finalDisciplineId = usingWo ? booking.disciplineId : (disciplineId || null)
+  const finalDisciplineName = usingWo
+    ? (booking.disciplineName ?? booking.categoryIn4)
+    : (disciplines.find(d => d.id === disciplineId)?.name ?? null)
+  const work = usingWo ? booking.scope : (workManual.trim() || null)
+
   const thisBill = Number(claimed) || 0
   const overWO = usingWo && woValue != null && woValue > 0 && paidTill + thisBill > woValue
 
@@ -67,23 +110,28 @@ export function BillForm({ projects, disciplines, in4Wos, in4Projects }: {
   const raNo = usingWo ? 'RA-' + (wo.bills + 1) : ''
 
   async function submit() {
-    if (!projectId) { setErr('Pick the CT Hub project this books against'); return }
-    if (needsWo && !wo) { setErr('Find the work order, or tick “no work order yet”'); return }
+    // A bill with no CT Hub project is still a bill that arrived. It is
+    // recorded against its IN4 sub-project and shows on the desks screen as a
+    // gap — it is never refused, because refusing it just means it is kept in
+    // somebody's drawer instead.
+    if (!usingWo && !projectId) { setErr('Pick the CT Hub project this books against'); return }
+    if (needsWo && !wo) { setErr('Find the work order, or tick "no work order yet"'); return }
     if (!contractor) { setErr('Name the contractor or vendor'); return }
     if (!(thisBill > 0)) { setErr('Enter what this bill is for'); return }
     setBusy(true); setErr(null)
     const { data, error } = await supabase.rpc('bb_rpc_create_bill', {
       p: {
         order_type: orderType, bill_type: billType, bill_category: null,
-        ct_other_dept: 'CT', order_no: orderNo, project_id: projectId,
+        ct_other_dept: 'CT', order_no: orderNo, project_id: finalProjectId,
         vendor_id: null, vendor_text: contractor,
-        discipline_id: disciplineId || null,
-        discipline: disciplines.find(d => d.id === disciplineId)?.name || null,
-        work: work.trim() || null,
+        discipline_id: finalDisciplineId,
+        discipline: finalDisciplineName,
+        work,
         bill_no: billNo.trim() || null, ra_no: raNo || null,
         bill_date: billDate || null, claimed_amount: thisBill, trust: trust || null,
         wo_value: woValue, paid_till_date: paidTill,
         abstract_no_in4: abstractNo.trim() || null,
+        in4_subproject_id: booking.subprojectId,
       },
     })
     if (error) { setBusy(false); setErr(error.message); return }
@@ -115,10 +163,19 @@ export function BillForm({ projects, disciplines, in4Wos, in4Projects }: {
         </p>
       </Section>
 
-      {/* 2 — the work order, found by typing */}
+      {/* 2 — the work order, found by typing. Everything about where the bill
+          books follows from this one choice. */}
       {AGAINST_WO.has(billType) && (
         <Section n={2} title="Which work order?">
           {!noOrder && <WoPicker wos={in4Wos} picked={wo} onPick={setWo} projectNames={projectNames} />}
+
+          {usingWo && (
+            <DeskPanel
+              booking={booking} gaps={gaps} projects={projects} people={seed.people.map(([, p]) => p)}
+              canAdmin={canAdmin}
+              onSaved={desk => setMaps(m => ({ ...m, desks: new Map(m.desks).set(desk.subproject_id, desk) }))}
+            />
+          )}
 
           <label className="mt-3 flex items-start gap-2 text-sm">
             <input type="checkbox" checked={noOrder} className="mt-0.5 h-4 w-4"
@@ -173,10 +230,30 @@ export function BillForm({ projects, disciplines, in4Wos, in4Projects }: {
         )}
 
         <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
-          <div>
-            <Label htmlFor="work">Work / scope</Label>
-            <Input id="work" value={work} onChange={e => setWork(e.target.value)} placeholder="e.g. Excavation and rock breaking" />
-          </div>
+          {/* Scope and category are read off the work order when there is one.
+              Without one there is nothing to read, so they are asked. */}
+          {!usingWo && (
+            <>
+              <div>
+                <Label htmlFor="work">Work / scope</Label>
+                <Input id="work" value={workManual} onChange={e => setWorkManual(e.target.value)} placeholder="e.g. Excavation and rock breaking" />
+              </div>
+              <div>
+                <Label htmlFor="proj">CT Hub project *</Label>
+                <select id="proj" value={projectId} onChange={e => setProjectId(e.target.value)} className={sel}>
+                  <option value="">— select —</option>
+                  {projects.map(p => <option key={p.id} value={p.id}>{p.code} — {p.name}</option>)}
+                </select>
+              </div>
+              <div>
+                <Label htmlFor="disc">Category</Label>
+                <select id="disc" value={disciplineId} onChange={e => setDisciplineId(e.target.value)} className={sel}>
+                  <option value="">— select —</option>
+                  {disciplines.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
+                </select>
+              </div>
+            </>
+          )}
           <div>
             <Label htmlFor="abs">Abstract no (IN4)</Label>
             <Input id="abs" value={abstractNo} onChange={e => setAbstractNo(e.target.value)} placeholder="if one exists already" />
@@ -191,31 +268,6 @@ export function BillForm({ projects, disciplines, in4Wos, in4Projects }: {
             It is flagged automatically; the bill still goes for checking.
           </div>
         )}
-      </Section>
-
-      {/* 4 — where it books in CT Hub */}
-      <Section n={AGAINST_WO.has(billType) ? 4 : 3} title="Where it books">
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-          <div>
-            <Label htmlFor="proj">CT Hub project *</Label>
-            <select id="proj" value={projectId} onChange={e => setProjectId(e.target.value)} className={sel}>
-              <option value="">— select —</option>
-              {projects.map(p => <option key={p.id} value={p.id}>{p.code} — {p.name}</option>)}
-            </select>
-            {usingWo && wo.projectId != null && (
-              <p className="mt-1 text-[11px] text-gray-500">
-                IN4 has this work order under <b>{projectNames.get(wo.projectId) ?? '—'}</b>.
-              </p>
-            )}
-          </div>
-          <div>
-            <Label htmlFor="disc">Category (Internal Estimate)</Label>
-            <select id="disc" value={disciplineId} onChange={e => setDisciplineId(e.target.value)} className={sel}>
-              <option value="">— select —</option>
-              {disciplines.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
-            </select>
-          </div>
-        </div>
       </Section>
 
       <Button onClick={submit} disabled={busy} className="bg-indigo-600 hover:bg-indigo-700">

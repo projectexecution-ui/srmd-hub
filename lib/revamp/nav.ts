@@ -19,7 +19,7 @@
 // the client NavBar.
 
 import {
-  LayoutDashboard, Building2, Receipt, Library, Shield, Archive, CreditCard, Warehouse,
+  LayoutDashboard, Building2, Receipt, Library, Shield, Archive, CreditCard, Warehouse, ReceiptText,
   type LucideIcon,
 } from 'lucide-react'
 
@@ -31,6 +31,10 @@ export interface RevampNavItem {
   slug: string | null
   /** False = the lane exists in the plan but the page is not written yet. */
   built: boolean
+  /** Needs `can_admin` on the slug, not just `can_view`. Used where the pages
+   *  themselves demand admin — a lane gated more loosely than the page behind
+   *  it is a link that refuses the person who clicks it. */
+  adminOnly?: boolean
 }
 
 export interface RevampNavGroup {
@@ -63,6 +67,12 @@ export const REVAMP_PRIMARY: RevampNavItem[] = [
   // Shown to ADMIN ONLY for now — Aksha, 13 Sep 2026: "for now keep it
   // visible for me only Admin - so we can check and do any changes required".
   { href: '/stores',         label: 'Stores',    icon: Warehouse,       slug: null,             built: true },
+  // Bills Approval — every contractor and vendor bill across every project,
+  // from entry to Approved. It was parked when it held 2 records; it now sits
+  // over the live IN4 certificate ledger and is the section Aksha asked for in
+  // the pane (13 Sep 2026: "make the Whole Section in Left Pane for Admin
+  // only"). Admin-only, matching requireBillsAccess() on every page inside it.
+  { href: '/bills-booking',  label: 'Bills Approval', icon: ReceiptText, slug: 'bills-booking',  built: true, adminOnly: true },
   { href: '/masters',        label: 'Masters',   icon: Library,         slug: 'cost-control',   built: true },
   { href: '/admin',          label: 'Admin',     icon: Shield,          slug: null,             built: true },
 ]
@@ -91,13 +101,16 @@ export const REVAMP_OLD_SCREENS: RevampNavItem[] = [
  *   Established Rates   374 rates, module switched off
  *   Comparison          0 records, module switched off
  *   Daily Site Report   1 report, module switched off
+ *
+ * Bills Approval left this list on 14 Sep 2026: it stopped being a two-record
+ * module and became the section over IN4's live certificate ledger, so it is a
+ * lane of its own above. The list is empty now and stays as the place to park
+ * the next one.
  */
-export const REVAMP_PARKED: RevampNavItem[] = [
-  { href: '/bills-booking',     label: 'Bills Approval',     icon: Archive,   slug: 'bills-booking',     built: true },
-]
+export const REVAMP_PARKED: RevampNavItem[] = []
 
 export interface PermissionMap {
-  [slug: string]: { view?: boolean } | undefined
+  [slug: string]: { view?: boolean; admin?: boolean } | undefined
 }
 
 /**
@@ -118,6 +131,11 @@ export function buildRevampNav(
   const allowed = (it: RevampNavItem) => {
     if (it.slug === null) return true
     if (disabledSlugs.has(it.slug)) return false
+    // `view` on the matrix is not enough for an admin-only lane: four roles
+    // carry view on bills-booking today and every page inside it calls
+    // requirePermission(..., 'admin'). Gating the lane the same way keeps the
+    // pane from offering a door that will not open.
+    if (it.adminOnly) return permissions[it.slug]?.admin === true
     return permissions[it.slug]?.view === true
   }
 
@@ -144,6 +162,7 @@ export function buildRevampNav(
  */
 export function oldScreensFor(permissions: PermissionMap, disabledSlugs: Set<string>): RevampNavItem[] {
   const allowed = (it: RevampNavItem) =>
-    it.slug !== null && !disabledSlugs.has(it.slug) && permissions[it.slug]?.view === true
+    it.slug !== null && !disabledSlugs.has(it.slug) &&
+    (it.adminOnly ? permissions[it.slug]?.admin === true : permissions[it.slug]?.view === true)
   return [...REVAMP_OLD_SCREENS, ...REVAMP_PARKED].filter(allowed)
 }

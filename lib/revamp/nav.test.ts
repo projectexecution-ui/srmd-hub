@@ -36,10 +36,10 @@ describe('revamped left pane', () => {
   })
 
   it('lists the old screens a person may still open, for the Admin fold', () => {
-    const labels = oldScreensFor(allow('procurement-tracker', 'stuck-bills', 'bills-booking'), new Set()).map(i => i.label)
-    expect(labels).toEqual(['Indent → PO', 'Stuck Bills', 'Bills Approval'])
+    const labels = oldScreensFor(allow('procurement-tracker', 'stuck-bills'), new Set()).map(i => i.label)
+    expect(labels).toEqual(['Indent → PO', 'Stuck Bills'])
     // A switched-off module drops out even when the role holds it.
-    expect(oldScreensFor(allow('bills-booking'), new Set(['bills-booking']))).toEqual([])
+    expect(oldScreensFor(allow('stuck-bills'), new Set(['stuck-bills']))).toEqual([])
   })
 
   it('drops a branch entirely when none of its screens are visible', () => {
@@ -88,11 +88,27 @@ describe('revamped left pane', () => {
     expect(without.primary.map(i => i.label)).not.toContain('Masters')
   })
 
-  // Stores joined on 13 Sep 2026 — Material In & Out. Admin-only while it is
-  // reviewed, so most people still see six.
-  it('is seven lanes — Dashboard, Projects, Bills, Accounts, Stores, Masters, Admin', () => {
-    expect(REVAMP_PRIMARY.map(i => i.label)).toEqual(['Dashboard', 'Projects', 'Bills', 'Accounts', 'Stores', 'Masters', 'Admin'])
+  // Stores joined on 13 Sep 2026 — Material In & Out. Bills Approval joined on
+  // 14 Sep 2026, out of REVAMP_PARKED: it stopped being a two-record module and
+  // became the section over IN4's live certificate ledger. Both are admin-only,
+  // so most people still see five.
+  it('is eight lanes — Dashboard, Projects, Bills, Accounts, Stores, Bills Approval, Masters, Admin', () => {
+    expect(REVAMP_PRIMARY.map(i => i.label)).toEqual(['Dashboard', 'Projects', 'Bills', 'Accounts', 'Stores', 'Bills Approval', 'Masters', 'Admin'])
     expect(REVAMP_OLD_SCREENS.length).toBeGreaterThan(0)
+  })
+
+  // The pages inside Bills Approval all call requirePermission(…, 'admin'),
+  // and four roles hold plain `view` on the slug today. A lane gated on view
+  // would be a door that refuses whoever opens it.
+  it('shows Bills Approval on can_admin only, never on can_view', () => {
+    const labels = (perm: Record<string, { view?: boolean; admin?: boolean }>) =>
+      buildRevampNav(perm, new Set(), ADMIN).primary.map(i => i.label)
+    expect(labels({ 'bills-booking': { view: true, admin: true } })).toContain('Bills Approval')
+    expect(labels({ 'bills-booking': { view: true } })).not.toContain('Bills Approval')
+    expect(labels({})).not.toContain('Bills Approval')
+    // …and the module switch still wins over the permission.
+    expect(buildRevampNav({ 'bills-booking': { view: true, admin: true } }, new Set(['bills-booking']), ADMIN)
+      .primary.map(i => i.label)).not.toContain('Bills Approval')
   })
 
   it('hides Stores from everyone but the reviewer, including a portal admin who was not flagged', () => {
