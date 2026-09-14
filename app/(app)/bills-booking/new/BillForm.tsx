@@ -8,10 +8,15 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { MoneyInput } from '@/components/ui/money-input'
 import { Loader2, Send } from 'lucide-react'
+import { WoPicker } from './WoPicker'
+import type { PickableWo } from '@/lib/bills-booking/wo-picker'
 
 type Opt = { id: string; code?: string; name: string }
 
-export function BillForm({ projects, vendors, disciplines }: { projects: Opt[]; vendors: Opt[]; disciplines: Opt[] }) {
+export function BillForm({ projects, vendors, disciplines, in4Wos, in4Projects }: {
+  projects: Opt[]; vendors: Opt[]; disciplines: Opt[]
+  in4Wos: PickableWo[]; in4Projects: Array<{ id: number; name: string }>
+}) {
   const router = useRouter()
   const supabase = createClient()
   const [busy, setBusy] = useState(false)
@@ -35,6 +40,23 @@ export function BillForm({ projects, vendors, disciplines }: { projects: Opt[]; 
   const [paidTill, setPaidTill] = useState('')
   const [abstractNo, setAbstractNo] = useState('')
   const [trust, setTrust] = useState('')
+  const [in4ProjectId, setIn4ProjectId] = useState<number | null>(null)
+  const [in4WoId, setIn4WoId] = useState<number | null>(null)
+
+  // Picking a work order fills everything IN4 already holds. The fields stay
+  // editable afterwards — IN4 is the starting point, not a cage — but nobody
+  // has to retype a number the ERP can supply, and retyping is exactly where
+  // the wrong abstract number came from in Zoho.
+  function applyWo(w: PickableWo | null) {
+    setIn4WoId(w?.woId ?? null)
+    if (!w) return
+    setOrderNo(w.woNo)
+    setWoValue(String(Math.round(w.orderedGross)))
+    setPaidTill(String(Math.round(w.billedGross)))
+    if (w.trust) setTrust(w.trust)
+    if (w.contractor) { setVendorText(w.contractor); setVendorId('') }
+    if (!raNo && w.bills > 0) setRaNo('RA-' + (w.bills + 1))
+  }
 
   const noWO = orderType === 'Without WO/PO'
   const woNum = Number(woValue) || 0
@@ -88,6 +110,14 @@ export function BillForm({ projects, vendors, disciplines }: { projects: Opt[]; 
         <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
           <b>No WO/PO issued.</b> This bill is flagged to be <b>regularised</b> — a work order will need to be raised. It still flows for checking.
         </div>
+      )}
+
+      {!noWO && orderType === 'WO' && (
+        <WoPicker
+          wos={in4Wos} projects={in4Projects}
+          projectId={in4ProjectId} woId={in4WoId}
+          onProject={setIn4ProjectId} onWo={applyWo}
+        />
       )}
 
       <div className="grid grid-cols-2 gap-3 md:grid-cols-3">

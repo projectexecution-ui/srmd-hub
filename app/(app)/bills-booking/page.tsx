@@ -5,7 +5,7 @@ import { requireBillsAccess } from '@/lib/bills-booking/access'
 import { PageHeader } from '@/components/PageHeader'
 import { QueryError } from '@/components/ui/query-error'
 import { EmptyState } from '@/components/ui/empty-state'
-import { Plus, ReceiptText, AlertTriangle, Clock, Users, Landmark, PackageCheck, ShieldCheck } from 'lucide-react'
+import { Plus, ReceiptText, AlertTriangle, Clock, Users, Landmark, PackageCheck, ShieldCheck, CalendarDays, FileQuestion } from 'lucide-react'
 import { PIPELINE, slaFor, isTerminal, type BbStage } from '@/lib/bills-booking/stages'
 import { BillingTree, type TrustNode, type Leaf } from './BillingTree'
 
@@ -129,16 +129,18 @@ export default async function BillsBookingPage() {
         </div>
       </PageHeader>
 
-      {/* The five views over IN4. A strip, not a row of header buttons —
+      {/* The seven views over IN4. A strip, not a row of header buttons —
           they are places to look, not actions, and the header is for actions. */}
       {canAdmin && (
-        <div className="grid grid-cols-2 lg:grid-cols-5 gap-2">
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-2">
           {([
             { href: '/bills-booking/in-flight', icon: Clock, label: 'In flight', hint: 'Who is sitting on what' },
             { href: '/bills-booking/overview', icon: ReceiptText, label: 'Money waiting', hint: 'Open bills by project' },
             { href: '/bills-booking/retention', icon: Landmark, label: 'Retention', hint: 'Held and not given back' },
             { href: '/bills-booking/closure', icon: PackageCheck, label: 'Never closed', hint: 'No final bill, gone quiet' },
             { href: '/bills-booking/sanctions', icon: ShieldCheck, label: 'Sanctions', hint: 'What you approved vs IN4' },
+            { href: '/bills-booking/daily', icon: CalendarDays, label: 'Daily report', hint: 'Paid, and at each trust' },
+            { href: '/bills-booking/no-order', icon: FileQuestion, label: 'No work order', hint: 'Misc, and bills before the WO' },
           ] as const).map(v => (
             <Link key={v.href} href={v.href}
                   className="rounded-xl border border-gray-200 bg-white px-3 py-2.5 hover:border-indigo-300 hover:bg-indigo-50/40 min-h-[44px]">
