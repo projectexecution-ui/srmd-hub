@@ -8,6 +8,7 @@ import { cn, formatINR, formatDate, todayIST } from '@/lib/utils'
 import type { AccountsLoad } from '@/lib/accounts/load'
 import { fyOf, rollupByFy, rollupByMonth, buildPartyLedger, tallyBalance, type Payment } from '@/lib/accounts/payments'
 import { ReconcileClient, type OpenItem } from './ReconcileClient'
+import { PartyPicker } from './PartyPicker'
 
 export interface ViewParams { raw: boolean; fy: string | null; party: string | null }
 
@@ -211,7 +212,10 @@ export function ReconcileView({ projectId, acc }: { projectId: string; acc: Acco
 /* ── 4 · Party ledgers ────────────────────────────────────────────────────── */
 
 export function LedgerView({ projectId, acc, params }: { projectId: string; acc: AccountsLoad; params: ViewParams }) {
-  const parties = [...new Map(acc.book.bills.map(b => [b.party, (acc.book.bills.filter(x => x.party === b.party).reduce((s, x) => s + x.gross, 0))])).entries()].sort((a, b) => b[1] - a[1]).map(([name]) => name)
+  const partyTotals = [...new Map(acc.book.bills.map(b => [b.party, (acc.book.bills.filter(x => x.party === b.party).reduce((s, x) => s + x.gross, 0))])).entries()]
+    .sort((a, b) => b[1] - a[1])
+    .map(([name, gross]) => ({ name, gross }))
+  const parties = partyTotals.map(p => p.name)
   const party = params.party && parties.includes(params.party) ? params.party : (parties[0] ?? null)
   if (!party) return <p className="text-[13px] text-gray-400 py-8 text-center">No bills on this project yet.</p>
   const fys = [...new Set(acc.book.bills.filter(b => b.party === party).map(b => fyOf(b.date)).filter(Boolean) as string[])].sort().reverse()
@@ -223,10 +227,10 @@ export function LedgerView({ projectId, acc, params }: { projectId: string; acc:
         <label className="text-[12px] text-gray-500">Party</label>
         <form action={`/project/${projectId}/accounts`} method="get" className="inline-flex items-center gap-1.5">
           <input type="hidden" name="view" value="4" />{params.raw && <input type="hidden" name="raw" value="1" />}{fy && <input type="hidden" name="fy" value={fy} />}
-          <select name="party" defaultValue={party} className="h-9 max-w-[280px] rounded-lg border border-gray-300 bg-white px-2 text-[13px]">
-            {parties.map(p => <option key={p} value={p}>{p}</option>)}
-          </select>
-          <button type="submit" className="rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-[12.5px] font-semibold min-h-[36px] hover:bg-gray-50">Open</button>
+          <PartyPicker name="party" value={party} parties={partyTotals} />
+          <noscript>
+            <button type="submit" className="rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-[12.5px] font-semibold min-h-[36px] hover:bg-gray-50">Open</button>
+          </noscript>
         </form>
         <Chip href={href(projectId, 4, { fy: null, party }, params)} on={!fy}>All years</Chip>
         {fys.map(f => <Chip key={f} href={href(projectId, 4, { fy: f, party }, params)} on={fy === f}>{f}</Chip>)}

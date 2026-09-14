@@ -305,50 +305,32 @@ export const createsStock = (register: Register): boolean => register !== 'vendo
 
 /* ── Project picker grouping ────────────────────────────────────────────── */
 
-export interface ProjectOpt {
-  id: string
-  name: string
-  /** The heading this project sits under in a picker. */
-  group: string
-}
+// Moved to lib/projects.ts once Bills Booking and Cost Control needed the same
+// order. Re-exported so the Stores imports keep working and there stays ONE
+// implementation — two would drift, and a picker that groups differently on
+// two screens is worse than one that does not group at all.
+export { groupProjects, UNGROUPED, type ProjectOpt } from '@/lib/projects'
 
-/** Standalone projects — no parent, no children — go last, under this. */
-export const UNGROUPED = 'On their own'
+/* ── Reading an IN4 order number ────────────────────────────────────────── */
 
 /**
- * Order projects so a picker can walk the array and open a new <optgroup>
- * whenever `group` changes.
+ * Which trust is paying, read off the order number.
  *
- * A parent heads its own group and is the first option inside it, because
- * "NGH" is itself a bookable project and not only a heading. A project whose
- * parent has been deleted falls back to UNGROUPED rather than vanishing —
- * an option that silently disappears is how material gets booked to the
- * wrong site.
+ * IN4 numbers read PO/SRASSK/AB/2026-27/94 — kind, trust, project, year,
+ * serial — and for 1,448 of the 1,451 orders the trust is the second segment.
+ * Three are PO/DO/SRET/RU/…, where the second segment is "DO" and the trust is
+ * third.
+ *
+ * So this does not trust the POSITION. It looks for a segment that is one of
+ * the trusts we actually hold, and returns nothing when no segment is. That
+ * way a number in a shape nobody has seen yet leaves the field empty for the
+ * storekeeper rather than filling it with "DO".
  */
-export function groupProjects(
-  rows: ReadonlyArray<{ id: string; name: string; parentId: string | null }>,
-): ProjectOpt[] {
-  const nameById = new Map(rows.map(r => [r.id, r.name]))
-  const hasKids = new Set(rows.map(r => r.parentId).filter(Boolean) as string[])
-
-  const opts: ProjectOpt[] = rows.map(r => ({
-    id: r.id,
-    name: r.name,
-    group: r.parentId
-      ? nameById.get(r.parentId) ?? UNGROUPED
-      : hasKids.has(r.id) ? r.name : UNGROUPED,
-  }))
-
-  return opts.sort((a, b) => {
-    if (a.group !== b.group) {
-      if (a.group === UNGROUPED) return 1
-      if (b.group === UNGROUPED) return -1
-      return a.group.localeCompare(b.group)
-    }
-    // Inside a group: the parent first (it shares the group's name), then
-    // its children by name.
-    const aHead = a.name === a.group ? 0 : 1
-    const bHead = b.name === b.group ? 0 : 1
-    return aHead - bHead || a.name.localeCompare(b.name)
-  })
+export function entityCodeFromOrderNo(no: string, knownCodes: readonly string[]): string | null {
+  const known = new Map(knownCodes.map(c => [c.toUpperCase().replace(/\s+/g, ''), c]))
+  for (const part of no.replace(/^DRAFT-/i, '').split('/')) {
+    const hit = known.get(part.toUpperCase().replace(/\s+/g, ''))
+    if (hit) return hit
+  }
+  return null
 }

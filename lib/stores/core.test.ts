@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import {
   entryNo, linkedNo, foldStock, availableAt, availableAnywhere, checkIssue,
   outstandingReturnables, checkReturn, missingForGate, missingForComplete, createsStock, heldItemCount,
-  fmtQty, isPilotProject, PILOT_PROJECT_IDS, RETURNABLES_ON, groupProjects, UNGROUPED,
+  fmtQty, isPilotProject, PILOT_PROJECT_IDS, RETURNABLES_ON, groupProjects, UNGROUPED, entityCodeFromOrderNo,
   type Movement, type ReturnableLine,
 } from './core'
 
@@ -354,5 +354,36 @@ describe('groupProjects — the picker order', () => {
     const out = groupProjects(rows)
     expect(out).toHaveLength(rows.length)
     expect(new Set(out.map(o => o.id))).toEqual(new Set(rows.map(r => r.id)))
+  })
+})
+
+describe('entityCodeFromOrderNo — which trust is paying', () => {
+  // The four trusts CT Hub actually holds.
+  const OURS = ['SRASSK', 'SRET', 'SRJT', 'SRMD FA']
+
+  it('reads the trust out of a real IN4 order number', () => {
+    expect(entityCodeFromOrderNo('PO/SRASSK/AB/2026-27/94', OURS)).toBe('SRASSK')
+    expect(entityCodeFromOrderNo('PO/SRJT/SRAH/2026-27/37', OURS)).toBe('SRJT')
+  })
+
+  it('finds the trust wherever it sits, not by counting segments', () => {
+    // 1,448 of 1,451 orders put it second; three read PO/DO/SRET/RU/…, where
+    // "DO" is not a trust at all.
+    expect(entityCodeFromOrderNo('PO/DO/SRET/RU/2023-24/1', OURS)).toBe('SRET')
+  })
+
+  it('ignores the DRAFT- prefix, which is about status not trust', () => {
+    expect(entityCodeFromOrderNo('DRAFT-PO/SRASSK/NGH/2026-27/1445', OURS)).toBe('SRASSK')
+  })
+
+  it('gives nothing rather than a guess when no segment is one of ours', () => {
+    expect(entityCodeFromOrderNo('123', OURS)).toBeNull()
+    expect(entityCodeFromOrderNo('', OURS)).toBeNull()
+    expect(entityCodeFromOrderNo('PO/DO/RU/2023-24/1', OURS)).toBeNull()
+    expect(entityCodeFromOrderNo('PO/SRASSK/AB/2026-27/94', [])).toBeNull()
+  })
+
+  it('matches however the code is spaced or cased', () => {
+    expect(entityCodeFromOrderNo('PO/srmdfa/AB/2026-27/1', OURS)).toBe('SRMD FA')
   })
 })

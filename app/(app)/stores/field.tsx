@@ -207,13 +207,19 @@ export function FieldCard({ children }: { children: ReactNode }) {
 }
 
 /** What a field screen shows when it has something to say — never a blank box. */
-export function BigNotice({ kind, title, sub }: { kind: 'ok' | 'bad'; title: string; sub?: string }) {
-  const ok = kind === 'ok'
+/** Three kinds, because two were not enough once IN4 could fill the form in:
+ *  "I could not fill the project, and here is why" is neither a success nor a
+ *  fault, and colouring it red teaches the storekeeper to ignore red. */
+export function BigNotice({ kind, title, sub }: { kind: 'ok' | 'bad' | 'info'; title: string; sub?: string }) {
+  const tone = kind === 'ok'
+    ? { box: 'border-emerald-300 bg-emerald-50', head: 'text-emerald-900', body: 'text-emerald-800' }
+    : kind === 'info'
+      ? { box: 'border-amber-300 bg-amber-50', head: 'text-amber-900', body: 'text-amber-800' }
+      : { box: 'border-rose-300 bg-rose-50', head: 'text-rose-900', body: 'text-rose-800' }
   return (
-    <div role="alert" className={`rounded-2xl border-2 px-4 py-3.5 ${
-      ok ? 'border-emerald-300 bg-emerald-50' : 'border-rose-300 bg-rose-50'}`}>
-      <p className={`text-[16px] font-bold whitespace-pre-line ${ok ? 'text-emerald-900' : 'text-rose-900'}`}>{title}</p>
-      {sub && <p className={`text-[14px] mt-1 ${ok ? 'text-emerald-800' : 'text-rose-800'}`}>{sub}</p>}
+    <div role="alert" className={`rounded-2xl border-2 px-4 py-3.5 ${tone.box}`}>
+      <p className={`text-[16px] font-bold whitespace-pre-line ${tone.head}`}>{title}</p>
+      {sub && <p className={`text-[14px] mt-1 ${tone.body}`}>{sub}</p>}
     </div>
   )
 }

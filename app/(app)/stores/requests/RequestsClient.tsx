@@ -1,11 +1,12 @@
 'use client'
 
 import { useRouter } from 'next/navigation'
-import { useState, useTransition } from 'react'
+import { useMemo, useState, useTransition } from 'react'
 import { raiseRequest, decideRequest, issueRequest } from '@/lib/stores/actions'
 import { checkIssue, fmtQty, RETURNABLES_ON, type StockRow } from '@/lib/stores/core'
 import { formatDate, formatDateTime } from '@/lib/utils'
 import type { RequestRow, ProjectOpt } from '@/lib/stores/queries'
+import { SearchableSelect } from '@/components/ui/searchable-select'
 import {
   Field, inputClass, Btn, Notice, Empty, Section, StatusChip, Scroller, th, td, tdNum, GroupedOptions,
 } from '../ui'
@@ -17,7 +18,7 @@ let seq = 0
 const newLine = (): Line => ({ key: `r${++seq}`, itemId: '', unit: '', qty: '', returnable: false })
 
 export function RequestsClient({
-  requests, projects, items, locations, modes, stock,
+  requests, projects, items, locations, modes, stock, recentItemIds = [],
 }: {
   requests: RequestRow[]
   projects: ProjectOpt[]
@@ -25,6 +26,8 @@ export function RequestsClient({
   locations: Array<{ id: string; label: string }>
   modes: Opt[]
   stock: Array<Pick<StockRow, 'itemId' | 'locationId' | 'qty'>>
+  /** Items this store handled lately — held at the top of the item picker. */
+  recentItemIds?: readonly string[]
 }) {
   const router = useRouter()
   const rows: StockRow[] = stock.map(s => ({ ...s, lastRate: null }))
@@ -35,7 +38,7 @@ export function RequestsClient({
         title="Step 3 · An engineer asks for material"
         note="Stock is shown while asking, so nobody requests what is not there"
       >
-        <RaiseForm projects={projects} items={items} stock={rows} onDone={() => router.refresh()} />
+        <RaiseForm projects={projects} items={items} stock={rows} recentItemIds={recentItemIds} onDone={() => router.refresh()} />
       </Section>
 
       <Section title="Requests">
@@ -57,10 +60,10 @@ export function RequestsClient({
 /* ── Raise ──────────────────────────────────────────────────────────────── */
 
 function RaiseForm({
-  projects, items, stock, onDone,
+  projects, items, stock, recentItemIds, onDone,
 }: {
   projects: ProjectOpt[]; items: Array<{ id: string; name: string; unit: string }>
-  stock: StockRow[]; onDone: () => void
+  stock: StockRow[]; recentItemIds: readonly string[]; onDone: () => void
 }) {
   const [pending, start] = useTransition()
   const [open, setOpen] = useState(false)
@@ -73,6 +76,11 @@ function RaiseForm({
 
   const setLine = (key: string, patch: Partial<Line>) =>
     setLines(ls => ls.map(l => (l.key === key ? { ...l, ...patch } : l)))
+
+  const itemOptions = useMemo(
+    () => items.map(i => ({ id: i.id, label: i.name, hint: i.unit })),
+    [items],
+  )
 
   const held = (itemId: string) => stock.filter(s => s.itemId === itemId && s.qty > 0)
 
@@ -109,16 +117,17 @@ function RaiseForm({
             <div key={l.key} className="rounded-lg border border-gray-200 p-3 space-y-2">
               <div className="grid sm:grid-cols-[2fr_1fr_1fr] gap-2">
                 <Field label="Item">
-                  <select
-                    className={inputClass} value={l.itemId}
-                    onChange={e => {
-                      const it = items.find(i => i.id === e.target.value)
-                      setLine(l.key, { itemId: e.target.value, unit: it?.unit ?? '' })
+                  <SearchableSelect
+                    value={l.itemId}
+                    onChange={id => {
+                      const it = items.find(i => i.id === id)
+                      setLine(l.key, { itemId: id, unit: it?.unit ?? '' })
                     }}
-                  >
-                    <option value="">Pick an item</option>
-                    {items.map(i => <option key={i.id} value={i.id}>{i.name}</option>)}
-                  </select>
+                    options={itemOptions}
+                    pinned={recentItemIds}
+                    placeholder="Type three letters"
+                    emptyText="No item by that name"
+                  />
                 </Field>
                 <Field label="Qty">
                   <input className={inputClass} value={l.qty} inputMode="decimal"

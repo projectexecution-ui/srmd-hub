@@ -2,6 +2,7 @@ import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import {
   loadEntry, loadItems, loadLists, listsOf, storableLocations, locationLabel, loadProjectOptions,
+  loadRecentItemIds,
 } from '@/lib/stores/queries'
 import { createsStock } from '@/lib/stores/core'
 import { CompleteForm } from './CompleteForm'
@@ -14,10 +15,11 @@ export default async function GateEntryPage({ params }: { params: Promise<{ id: 
   const entry = await loadEntry(id)
   if (!entry) notFound()
 
-  const [lists, items, projects] = await Promise.all([
+  const [lists, items, projects, recentItemIds] = await Promise.all([
     loadLists(),
     loadItems(),
     loadProjectOptions(),
+    loadRecentItemIds(),
   ])
 
   const locations = storableLocations(lists).map(l => ({
@@ -44,6 +46,8 @@ export default async function GateEntryPage({ params }: { params: Promise<{ id: 
           locations={locations}
           projects={projects}
           items={items.filter(i => i.isActive).map(i => ({ id: i.id, name: i.name, unit: i.unit, lastRate: i.lastRate, in4MaterialId: i.in4MaterialId }))}
+          recentItemIds={recentItemIds}
+          gateParty={entry.partyName}
         />
       )}
     </div>

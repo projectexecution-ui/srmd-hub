@@ -1,7 +1,7 @@
 import Link from 'next/link'
 import {
   loadRequests, loadItems, loadLists, loadStock, storableLocations, locationLabel, listsOf,
-  loadProjectOptions,
+  loadProjectOptions, loadRecentItemIds,
 } from '@/lib/stores/queries'
 import { RequestsClient } from './RequestsClient'
 
@@ -19,12 +19,13 @@ export default async function RequestsPage({
   const { status } = await searchParams
   const active = FILTERS.find(f => f.key === status)?.key ?? 'pending'
 
-  const [requests, items, lists, stock, projects] = await Promise.all([
+  const [requests, items, lists, stock, projects, recentItemIds] = await Promise.all([
     loadRequests({ status: active || null }),
     loadItems(),
     loadLists(),
     loadStock(),
     loadProjectOptions(),
+    loadRecentItemIds(),
   ])
 
   const locations = storableLocations(lists).map(l => ({ id: l.id, label: locationLabel(lists, l.id) ?? l.name }))
@@ -48,6 +49,7 @@ export default async function RequestsPage({
       <RequestsClient
         requests={requests}
         projects={projects}
+        recentItemIds={recentItemIds}
         items={items.filter(i => i.isActive).map(i => ({ id: i.id, name: i.name, unit: i.unit }))}
         locations={locations}
         modes={listsOf(lists, 'delivery_mode').filter(m => m.isActive).map(m => ({ id: m.id, name: m.name }))}

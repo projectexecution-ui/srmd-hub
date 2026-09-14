@@ -4,10 +4,12 @@ import { createClient } from '@/lib/supabase/client'
 import { Card } from '@/components/ui/card'
 import { toast } from 'sonner'
 import { X, Plus } from 'lucide-react'
+import { GroupedOptions } from '@/components/ui/grouped-options'
+import { groupProjectRows } from '@/lib/projects'
 
 export type DeskState = { global: string[]; overrides: Record<string, string[]> }
 type User = { id: string; name: string }
-type Project = { id: string; code: string }
+type Project = { id: string; code: string; name?: string; parent_project_id?: string | null }
 
 export function DeskMembersEditor({ desks, users, projects, initial }: {
   desks: { key: string; label: string }[]
@@ -113,7 +115,7 @@ function AddProjectOverride({ projects, users, onAdd }: {
       <span className="text-[11px] text-gray-400">Override a project</span>
       <select className={sel} value={proj} onChange={e => setProj(e.target.value)}>
         <option value="">Project…</option>
-        {projects.map(p => <option key={p.id} value={p.id}>{p.code}</option>)}
+        <GroupedOptions rows={groupProjectRows(projects.map(p => ({ ...p, name: p.name ?? p.code })))} />
       </select>
       <select className={sel} value={user} onChange={e => setUser(e.target.value)}>
         <option value="">User…</option>
