@@ -7,6 +7,7 @@ import { EmptyState } from '@/components/ui/empty-state'
 import { Clock } from 'lucide-react'
 import { buildInFlight, IN_FLIGHT, type FlightCert, type FlightEvent } from '@/lib/bills-booking/in-flight'
 import { SanctionButton } from './SanctionButton'
+import { CardList, Card, CardTotal } from '../Cards'
 import { formatINR } from '@/lib/utils'
 import { loadOutOfScope, rowOutOfScope, SCOPE_NOTE } from '@/lib/bills-booking/scope'
 
@@ -25,7 +26,7 @@ export default async function InFlightPage() {
 
   const { data: certData, error: certErr } = await supabase
     .from('in4_wo_certificates')
-    .select('certificate_id, kind, display_no, wo_no, contractor_name, project_id, subproject_id, status_name, outstanding_amt, creation_dt')
+    .select('certificate_id, kind, display_no, invoice_no, wo_no, contractor_name, project_id, subproject_id, status_name, outstanding_amt, creation_dt')
     .in('status_name', LIVE)
 
   const excluded = await loadOutOfScope(supabase)
@@ -105,7 +106,38 @@ export default async function InFlightPage() {
             </p>
           ) : null}
 
-          <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white">
+          {/* Phone: the same rows, and the Sanction button reachable without
+              scrolling sideways past eight columns to find it. */}
+          <CardList>
+            {rows.map(r => (
+              <Card
+                key={r.certificateId}
+                title={r.displayNo}
+                sub={<>{r.contractor}{r.woNo ? ` · ${r.woNo}` : ''}</>}
+                amount={formatINR(r.outstanding)}
+                amountLabel="payable"
+                flagged={r.atDesk != null && r.atDesk > 30}
+                facts={[
+                  { k: 'With', v: <>{r.desk}<span className="block text-[10.5px] text-gray-400">{r.status}</span></> },
+                  { k: 'At desk', v: r.atDesk == null ? '—' : `${r.atDesk} d`, tone: r.atDesk != null && r.atDesk > 30 ? 'bad' : undefined },
+                  { k: 'Age', v: `${r.age} d` },
+                  { k: 'Last moved by', v: r.movedBy ?? '—' },
+                ]}
+                note={r.remark ? `“${r.remark}”` : undefined}
+                action={
+                  already.has(r.certificateId)
+                    ? <span className="text-xs font-semibold text-emerald-700">Sanctioned</span>
+                    : r.kind !== 'wo'
+                      ? <span className="text-xs text-gray-500">{r.kind === 'misc' ? 'Misc expense' : r.kind} — sanctioning applies to work-order certificates only.</span>
+                      : <SanctionButton certificateId={r.certificateId} amount={r.outstanding} displayNo={r.displayNo} />
+                }
+              />
+            ))}
+            <CardTotal n={totals.bills} label="bills in flight" amount={formatINR(totals.outstanding)} />
+          </CardList>
+
+          {/* Desktop */}
+          <div className="hidden overflow-x-auto rounded-xl border border-gray-200 bg-white md:block">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-gray-200 bg-gray-50 text-[11px] uppercase tracking-wide text-gray-500">
@@ -142,7 +174,16 @@ export default async function InFlightPage() {
                     <td className="px-3 py-2 text-right">
                       {already.has(r.certificateId)
                         ? <span className="text-[11px] font-semibold text-emerald-700">Sanctioned</span>
-                        : <SanctionButton certificateId={r.certificateId} amount={r.outstanding} displayNo={r.displayNo} />}
+                        : r.kind !== 'wo'
+                          // Not hidden and not a dead button: sanctioning reads the
+                          // work-order certificate, and a misc expense is a different
+                          // document in IN4. Pressing it used to return "not in the IN4
+                          // mirror, sync and try again", which sent people off to run a
+                          // sync that changed nothing.
+                          ? <span className="text-[11px] text-gray-500" title="Sanctioning applies to work-order certificates only">
+                              {r.kind === 'misc' ? 'misc expense' : r.kind} — not sanctioned here
+                            </span>
+                          : <SanctionButton certificateId={r.certificateId} amount={r.outstanding} displayNo={r.displayNo} />}
                     </td>
                   </tr>
                 ))}

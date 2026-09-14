@@ -1,10 +1,11 @@
 'use client'
 
 import { useState } from 'react'
+import Link from 'next/link'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
-import { Check, Loader2, Pencil } from 'lucide-react'
+import { Check, ChevronRight, Loader2, Pencil } from 'lucide-react'
 import { saveProjectDesk } from '@/app/actions/bills-desk'
 import type { DeskCoverage } from '@/lib/bills-booking/desks'
 
@@ -138,12 +139,23 @@ function Row({ r, projects, people, onSaved }: {
         <td className="px-4 py-2.5">
           <Value v={r.atmHeads.map(p => p.name).join(', ') || null} note={sourceNote(r.atmSource)} empty="nobody assigned" />
         </td>
-        <td className="px-4 py-2.5 text-right">
+        <td className="whitespace-nowrap px-4 py-2.5 text-right">
           {!e.open && (
-            <button type="button" onClick={() => e.setOpen(true)}
-                    className="inline-flex items-center gap-1 text-xs font-semibold text-indigo-700 hover:text-indigo-900 min-h-[32px]">
-              <Pencil className="h-3.5 w-3.5" /> {r.hasDesk ? 'Change' : 'Set'}
-            </button>
+            <>
+              <button type="button" onClick={() => e.setOpen(true)}
+                      className="inline-flex items-center gap-1 text-xs font-semibold text-indigo-700 hover:text-indigo-900 min-h-[32px]">
+                <Pencil className="h-3.5 w-3.5" /> {r.hasDesk ? 'Change' : 'Set'}
+              </button>
+              {/* The quick edit above is the project and the Atm Head only.
+                  Everything else about a Bills Approval project — all six
+                  desks, the short name, copying another project's desks
+                  across — is one sitting's worth of decisions and has its own
+                  page. */}
+              <Link href={`/bills-booking/mapping/${r.subprojectId}`}
+                    className="ml-3 inline-flex items-center gap-0.5 text-xs font-semibold text-gray-600 hover:text-gray-900 min-h-[32px]">
+                Desks <ChevronRight className="h-3.5 w-3.5" />
+              </Link>
+            </>
           )}
         </td>
       </tr>
@@ -168,10 +180,16 @@ function CardRow({ r, projects, people, onSaved }: {
           <div className="text-xs text-gray-500">{r.wos.toLocaleString('en-IN')} work orders</div>
         </div>
         {!e.open && (
-          <button type="button" onClick={() => e.setOpen(true)}
-                  className="shrink-0 inline-flex items-center gap-1 text-xs font-semibold text-indigo-700 min-h-[44px]">
-            <Pencil className="h-3.5 w-3.5" /> {r.hasDesk ? 'Change' : 'Set'}
-          </button>
+          <div className="flex shrink-0 flex-col items-end">
+            <button type="button" onClick={() => e.setOpen(true)}
+                    className="inline-flex items-center gap-1 text-xs font-semibold text-indigo-700 min-h-[44px]">
+              <Pencil className="h-3.5 w-3.5" /> {r.hasDesk ? 'Change' : 'Set'}
+            </button>
+            <Link href={`/bills-booking/mapping/${r.subprojectId}`}
+                  className="inline-flex items-center gap-0.5 text-xs font-semibold text-gray-600 min-h-[44px]">
+              Desks <ChevronRight className="h-3.5 w-3.5" />
+            </Link>
+          </div>
         )}
       </div>
       <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2 text-xs">

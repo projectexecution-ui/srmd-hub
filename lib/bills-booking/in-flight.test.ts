@@ -4,10 +4,12 @@ import { buildInFlight, isInFlight, type FlightCert, type FlightEvent } from './
 const NOW = new Date('2026-09-13T12:00:00Z').getTime()
 
 const cert = (o: Partial<FlightCert>): FlightCert => ({
-  certificate_id: 1, kind: 'wo', display_no: 'ENP/SRASSK/SQ/2026-27/237', wo_no: 'WO/SRASSK/SQ/2026-27/105',
+  certificate_id: 1, kind: 'wo', display_no: 'ENP/SRASSK/SQ/2026-27/237', invoice_no: null, wo_no: 'WO/SRASSK/SQ/2026-27/105',
   contractor_name: 'Amin Developers', project_id: 5, subproject_id: 5, status_name: 'Submitted',
   outstanding_amt: 1_261_817, creation_dt: '2026-09-12', ...o,
 })
+// Most checks below care only about the rows.
+const rowsOf = (c: FlightCert[], e: FlightEvent[], now: number) => buildInFlight(c, e, now).rows
 const ev = (o: Partial<FlightEvent>): FlightEvent => ({
   certificate_id: 1, at: '2026-09-12T16:08:48.960Z', status_name: 'Submitted',
   actor_name: 'Jay Bharucha', remark: '', ...o,
@@ -79,8 +81,37 @@ describe('in-flight queue', () => {
     expect(byStatus.map(s => s.status)).toEqual(['Verify', 'Approved'])   // pipeline order, not count order
   })
 
-  it('falls back to the internal id only when IN4 has no document number', () => {
+  it('never shows the internal id, whatever else is missing', () => {
+    // It used to fall back to '#77'. That is the DISPLAY_ID serial, meaningless
+    // outside the database, and it was filling most of this screen.
     const { rows } = buildInFlight([cert({ certificate_id: 77, display_no: null })], [], NOW)
-    expect(rows[0].displayNo).toBe('#77')
+    expect(rows[0].displayNo).not.toBe('#77')
+  })
+})
+
+describe('the number a person reads', () => {
+  it('never falls back to the internal serial', () => {
+    // Every misc certificate in IN4 has a blank ENP — 1,248 of 4,717 — and the
+    // fallback used to be `#2891`, which was 63% of the screen and a number
+    // nobody in the building recognises.
+    const [r] = rowsOf([cert({ kind: 'misc', display_no: null, wo_no: null, invoice_no: 'CASH/2026/41' })], [], NOW)
+    expect(r.displayNo).toBe('CASH/2026/41')
+    expect(r.displayNo).not.toMatch(/^#/)
+  })
+
+  it('falls to the work-order number, then says so plainly', () => {
+    const [a] = rowsOf([cert({ display_no: null, invoice_no: null })], [], NOW)
+    expect(a.displayNo).toBe('WO/SRASSK/SQ/2026-27/105')
+    const [b] = rowsOf([cert({ display_no: null, invoice_no: null, wo_no: null })], [], NOW)
+    expect(b.displayNo).toBe('no number in IN4')
+  })
+
+  it('carries the kind, so a misc row is not offered a Sanction button that always fails', () => {
+    // sanctionCertificate filters kind = 'wo'; pressing it on a misc row
+    // returned "not in the IN4 mirror, sync and try again", which is not what
+    // happened and sent people off to run a sync that changed nothing.
+    const [r] = rowsOf([cert({ kind: 'MISC' })], [], NOW)
+    expect(r.kind).toBe('misc')
+    expect(rowsOf([cert({ kind: null })], [], NOW)[0].kind).toBe('wo')
   })
 })

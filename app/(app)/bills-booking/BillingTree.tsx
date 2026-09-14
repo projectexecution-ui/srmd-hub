@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { ChevronRight, Building2, Landmark, Layers } from 'lucide-react'
 import { StagePill } from './StagePill'
 import type { BbStage } from '@/lib/bills-booking/stages'
+import { formatINR, formatINRCompact } from '@/lib/utils'
 
 export type Leaf = {
   id: string; vendor: string; billNo: string | null; orderType: string
@@ -12,13 +13,6 @@ export type Leaf = {
 export type SubNode = { key: string; label: string; n: number; value: number; bills: Leaf[] }
 export type MainNode = { key: string; label: string; n: number; value: number; subs: SubNode[] }
 export type TrustNode = { key: string; label: string; n: number; value: number; mains: MainNode[] }
-
-const cr = (n: number) => {
-  const v = Number(n || 0)
-  if (v >= 1e7) return '₹' + (v / 1e7).toFixed(2) + ' Cr'
-  if (v >= 1e5) return '₹' + (v / 1e5).toFixed(1).replace(/\.0$/, '') + ' L'
-  return '₹' + v.toLocaleString('en-IN')
-}
 
 function useOpen(initial = false) {
   const [open, setOpen] = useState(initial)
@@ -29,7 +23,7 @@ function Agg({ n, value }: { n: number; value: number }) {
   return (
     <span className="ml-auto flex shrink-0 items-center gap-2 text-xs tabular-nums text-gray-500">
       <span>{n} bill{n === 1 ? '' : 's'}</span>
-      <span className="font-bold text-gray-800">{cr(value)}</span>
+      <span className="font-bold text-gray-800">{formatINRCompact(value)}</span>
     </span>
   )
 }
@@ -109,7 +103,7 @@ function Sub({ s }: { s: SubNode }) {
                   </div>
                   <span className="text-[11px] text-gray-400">Bill {b.billNo || '—'}</span>
                 </div>
-                <span className="text-[13px] font-bold tabular-nums text-gray-900">₹{b.amount.toLocaleString('en-IN')}</span>
+                <span className="text-[13px] font-bold tabular-nums text-gray-900">{formatINR(b.amount)}</span>
                 <StagePill stage={b.stage} />
               </Link>
             </li>

@@ -20,7 +20,7 @@ export interface TimelineSeg {
   breached: boolean
 }
 
-export function buildTimeline(eventsAsc: RawEvent[], currentStage: BbStage, nowMs: number): TimelineSeg[] {
+export function buildTimeline(eventsAsc: RawEvent[], currentStage: BbStage, nowMs: number = Date.now()): TimelineSeg[] {
   const segs: TimelineSeg[] = []
   let enteredAt: string | null = null
   let stage: BbStage | null = null

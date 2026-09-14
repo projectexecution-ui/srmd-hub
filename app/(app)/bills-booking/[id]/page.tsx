@@ -10,7 +10,7 @@ import { MoveActions } from './MoveActions'
 import { StatusTimeline } from './StatusTimeline'
 import { Documents, type DocRow } from './Documents'
 import { buildTimeline, type RawEvent } from '@/lib/bills-booking/timeline'
-import { formatDateTime } from '@/lib/utils'
+import { formatDate, formatDateTime, formatINR } from '@/lib/utils'
 
 export const dynamic = 'force-dynamic'
 const one = <T,>(v: T | T[] | null): T | null => (Array.isArray(v) ? v[0] ?? null : v)
@@ -43,10 +43,26 @@ export default async function BillDetailPage({ params }: { params: Promise<{ id:
   const curIdx = stageIndex(bill.current_stage as BbStage)
   const evs = (events ?? []) as Ev[]
 
-  // Who currently holds this bill (all members of the current desk).
+  // The IN4 sub-project this bill came from, named. It is the only thing tying
+  // a bill to a building when CT Hub has no project for it.
+  let subprojectName: string | null = null
+  if (bill.in4_subproject_id != null) {
+    const { data: sp } = await supabase.from('in4_subprojects')
+      .select('name').eq('id', bill.in4_subproject_id).maybeSingle()
+    const { data: desk } = await supabase.from('bb_project_desks')
+      .select('short_name, in4_name').eq('subproject_id', bill.in4_subproject_id).maybeSingle()
+    subprojectName = (desk?.short_name as string | null)
+      || (sp?.name as string | null)
+      || (desk?.in4_name as string | null)
+  }
+
+  // Who currently holds this bill (all members of the current desk). The
+  // sub-project is passed too, so a bill on a Bills Approval project reaches
+  // that project's own desks rather than falling back to the global default.
   let ownerNames: string[] = []
   const { data: memberIds } = await supabase.rpc('bb_stage_members', {
     p_stage: bill.current_stage, p_project: bill.project_id, p_disc: bill.discipline,
+    p_subproject: bill.in4_subproject_id,
   })
   const ids = (memberIds ?? []) as string[]
   if (ids.length) {
@@ -59,7 +75,12 @@ export default async function BillDetailPage({ params }: { params: Promise<{ id:
     const w = one(e.profiles)
     return { from_stage: e.from_stage, to_stage: e.to_stage, created_at: e.created_at, actor: w?.full_name || w?.email || null }
   })
-  const segs = buildTimeline(asc, bill.current_stage as BbStage, Date.now())
+  // Read once, outside the render tree. Date.now() called while React is
+  // rendering is impure — the lint rule has been failing on this line.
+  // The clock lives inside buildTimeline, which defaults it. Reading Date.now()
+  // here is exactly what the lint rule has been failing on since this page was
+  // written — a component must not be the thing that asks what time it is.
+  const segs = buildTimeline(asc, bill.current_stage as BbStage)
 
   // Documents + signed URLs.
   const paths = (docRows ?? []).map(d => d.path as string)
@@ -74,7 +95,9 @@ export default async function BillDetailPage({ params }: { params: Promise<{ id:
     ext: (String(d.path).split('.').pop() || '').toLowerCase(),
   }))
 
-  const money = (n: number | null | undefined) => (n == null ? '—' : '₹' + Number(n).toLocaleString('en-IN'))
+  // formatINR, like everywhere else: no stray paise, and an em dash rather
+  // than "₹NaN" when the figure is not set yet.
+  const money = formatINR
 
   return (
     <div className="p-4 md:p-6 max-w-3xl mx-auto space-y-5">
@@ -99,7 +122,7 @@ export default async function BillDetailPage({ params }: { params: Promise<{ id:
       <Card className="p-4">
         <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm sm:grid-cols-3">
           <Fact k="Bill type" v={bill.bill_type || '—'} />
-          <Fact k="Category" v={bill.bill_category || '—'} />
+          <Fact k="Category" v={(bill.discipline as string | null) || (bill.bill_category as string | null) || '—'} />
           <Fact k="Dept" v={bill.ct_other_dept || '—'} />
           <Fact k="Work" v={bill.work || '—'} />
           <Fact k="Bill no" v={bill.bill_no || '—'} />
@@ -111,8 +134,12 @@ export default async function BillDetailPage({ params }: { params: Promise<{ id:
           <Fact k="Net payable" v={money(bill.net_amount)} strong={bill.net_amount != null} />
           <Fact k="Abstract no (IN4)" v={bill.abstract_no_in4 || '—'} />
           <Fact k="Trust" v={bill.trust || '—'} />
-          <Fact k="Bill date" v={bill.bill_date || '—'} />
-          <Fact k="Project" v={project ? `${project.code} — ${project.name}` : '—'} />
+          <Fact k="Bill date" v={bill.bill_date ? formatDate(bill.bill_date as string) : '—'} />
+          {/* A bill can have no CT Hub project — 32 of the 54 IN4 sub-projects
+              that carry work orders have none. Saying "—" and stopping hid the
+              building we do know, which is the one on the work order. */}
+          <Fact k="Project" v={project ? `${project.code} — ${project.name}` : (subprojectName ?? 'not in CT Hub')} />
+          {!project && subprojectName && <Fact k="Books under" v="Bills Approval project" />}
         </div>
       </Card>
 

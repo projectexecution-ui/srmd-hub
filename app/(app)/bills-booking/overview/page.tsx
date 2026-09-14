@@ -8,6 +8,7 @@ import { ReceiptText } from 'lucide-react'
 import { rollUpProjects, type CertRow, type ProjectRow } from '@/lib/bills-booking/overview'
 import { formatINR } from '@/lib/utils'
 import { loadOutOfScope, rowOutOfScope, SCOPE_NOTE } from '@/lib/bills-booking/scope'
+import { CardList, Card as MCard, CardTotal } from '../Cards'
 
 const KIND_LABEL: Record<string, string> = { wo: 'work-order bills', advance: 'advances', misc: 'misc expenses' }
 
@@ -85,7 +86,23 @@ export default async function BillsOverviewPage() {
             Work-order bills are the ones to check against IN4; advances and misc expenses are separate documents there.
           </p>
 
-          <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white">
+          {/* Phone */}
+          <CardList>
+            {rows.map(r => (
+              <MCard key={r.projectId} title={r.project}
+                     amount={formatINR(r.outstanding)} amountLabel="waiting"
+                     flagged={r.oldest > 365}
+                     facts={[
+                       { k: 'Bills open', v: String(r.bills) },
+                       { k: 'Work orders', v: String(r.wos) },
+                       { k: 'Oldest', v: `${r.oldest} d`, tone: r.oldest > 365 ? 'bad' : r.oldest > 30 ? 'warn' : undefined },
+                     ]} />
+            ))}
+            <CardTotal n={rows.length} label="projects" amount={formatINR(totals.outstanding)} />
+          </CardList>
+
+          {/* Desktop */}
+          <div className="hidden overflow-x-auto rounded-xl border border-gray-200 bg-white md:block">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-gray-200 bg-gray-50 text-[11px] uppercase tracking-wide text-gray-500">

@@ -166,7 +166,7 @@ describe('the matrix rows', () => {
     expect(money.slice(1, 3).every(r => r.parent === 'ws:budget')).toBe(true)
     const all = sections.flatMap(s => s.rows)
     for (const t of [...WORKSPACE_TABS, SETUP_TAB]) expect(all.some(r => r.slug === tabSlug(t))).toBe(true)
-    expect(all.filter(r => r.kind === 'tab')).toHaveLength(14)
+    expect(all.filter(r => r.kind === 'tab')).toHaveLength(15)   // +Bills, 14 Sep 2026
     expect(all.filter(r => r.kind === 'sub')).toHaveLength(WORKSPACE_TABS.reduce((t, x) => t + x.subs.length, 0))
   })
   it('marks reviewer-only and unbuilt tabs, and says what a tab inherits', () => {
@@ -181,7 +181,7 @@ describe('the matrix rows', () => {
     expect(powers.find(r => r.slug === 'cost-control')?.label).toBe('Projects')
     expect(powers.find(r => r.slug === 'procurement-tracker')?.label).toBe('Procurement')
     const shown = new Set(sections.flatMap(s => s.rows).map(r => r.slug))
-    for (const s of ['indents', 'pos', 'grns', 'invoices', 'payments', 'vendors', 'inventory', 'uploads', 'blueprint-demo', 'budget-vs-actual', 'comparison', 'established-rates', 'daily-site-report', 'schedule', 'bills-booking', 'ecc', 'projects', 'attendance']) {
+    for (const s of ['indents', 'pos', 'grns', 'invoices', 'payments', 'vendors', 'inventory', 'uploads', 'blueprint-demo', 'budget-vs-actual', 'comparison', 'established-rates', 'daily-site-report', 'schedule', 'ecc', 'projects', 'attendance']) {
       expect(shown.has(s), s).toBe(false)
     }
   })

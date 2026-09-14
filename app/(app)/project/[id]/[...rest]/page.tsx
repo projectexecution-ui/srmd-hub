@@ -16,6 +16,7 @@ import { StakeholdersTab } from '../site-register/StakeholdersTab'
 import { DecisionsTab } from '../site-register/DecisionsTab'
 import { ApprovalsTab } from '../ApprovalsTab'
 import { MaterialTab } from '../MaterialTab'
+import { BillsTab } from '../BillsTab'
 import { ScBudgetsTab } from '../ScBudgetsTab'
 import { AccountsTab } from '../AccountsTab'
 import ProjectSetupPage from '@/app/(app)/cost-control/projects/[id]/setup/page'
@@ -126,6 +127,10 @@ export default async function ProjectTabPage({
   // guard above already refused anyone outside the pilot, so by here this is
   // NGH B and an admin.
   if (slug === 'material')    return <MaterialTab projectId={id} view={view} />
+
+  // Bills Approval for this project. Same pilot terms — the route guard above
+  // already refused anyone outside it, so by here this is NGH B and an admin.
+  if (slug === 'bills')       return <BillsTab projectId={id} view={view} />
 
   // Restored from the parked set — both are on the mind map and both were
   // already built and tested; only their row in PROJECT_TABS was removed.

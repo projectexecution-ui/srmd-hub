@@ -12,6 +12,7 @@ export interface FlightCert {
   certificate_id: number
   kind: string | null
   display_no: string | null
+  invoice_no: string | null
   wo_no: string | null
   contractor_name: string | null
   project_id: number | null
@@ -46,6 +47,14 @@ export const isInFlight = (s: string | null): boolean => !!s && DESK.has(s.trim(
 
 export interface FlightRow {
   certificateId: number
+  /** wo | advance | misc. A misc expense is a different document in IN4 and
+   *  cannot be sanctioned from here, so the screen has to be able to tell them
+   *  apart rather than offering a button that always fails. */
+  kind: string
+  /** The number a person reads. Never the internal serial: every misc
+   *  certificate has a blank ENP — 1,248 of the 4,717 in the mirror — and
+   *  printing `#2891` there filled 63% of this screen with a number nobody in
+   *  the building recognises. */
   displayNo: string
   woNo: string | null
   contractor: string
@@ -93,7 +102,8 @@ export function buildInFlight(certs: FlightCert[], events: FlightEvent[], now = 
     const ev = last.get(c.certificate_id)
     rows.push({
       certificateId: c.certificate_id,
-      displayNo: c.display_no || `#${c.certificate_id}`,
+      kind: (c.kind ?? 'wo').trim().toLowerCase(),
+      displayNo: c.display_no || c.invoice_no || c.wo_no || 'no number in IN4',
       woNo: c.wo_no,
       contractor: c.contractor_name || '—',
       status,

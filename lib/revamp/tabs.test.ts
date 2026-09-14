@@ -12,7 +12,7 @@ const ROLES = {
   head:       view('cost-control', 'contractor-report', 'bills-pipeline', 'budget-vs-actual-v2'),
   engineer:   view('cost-control', 'procurement-tracker', 'jmr', 'warehouse'),
   contractor: view('cost-control', 'procurement-tracker'),
-  admin:      view('cost-control', 'contractor-report', 'procurement-tracker', 'bills-pipeline', 'jmr', 'warehouse', 'budget-vs-actual-v2'),
+  admin:      view('cost-control', 'contractor-report', 'procurement-tracker', 'bills-pipeline', 'jmr', 'warehouse', 'budget-vs-actual-v2', 'bills-booking'),
   uploader:   view('cost-control', 'contractor-report', 'procurement-tracker', 'bills-pipeline', 'jmr', 'warehouse'),
   viewer:     view('cost-control', 'contractor-report', 'procurement-tracker'),
   founder:    view('cost-control', 'contractor-report', 'procurement-tracker', 'budget-vs-actual-v2'),
@@ -39,7 +39,7 @@ describe('coming-soon lanes', () => {
     // value is read from IN4 — the tab's whole purpose, one screen earlier.
     // 16 from 13 Sep 2026: Material In & Out came back as a pilot — in the
     // list so the cockpit routes it, gated to NGH B and an admin.
-    expect(PROJECT_TABS).toHaveLength(16)
+    expect(PROJECT_TABS).toHaveLength(17)   // +Bills Approval, 14 Sep 2026
     for (const label of [
       'Budget vs Actual', 'Budget by WO/PO', 'Pending Approvals', 'Discussions',
       'Stake Holders', 'Drawings', 'Decisions & Specs', 'QC', 'Indents',
@@ -134,8 +134,8 @@ describe('coming-soon lanes', () => {
     // 11 from 12 Sep 2026: the Site Register built Discussions properly and
     // brought Stakeholders and Decisions & Specs with it.
     // 12 from 13 Sep 2026: Material In & Out — built, but a pilot.
-    expect(built).toBe(12)
-    expect(total).toBe(16)
+    expect(built).toBe(13)
+    expect(total).toBe(17)
     expect(BUILT_TABS).toHaveLength(built)
     expect(COMING_SOON_TABS).toHaveLength(total - built)
   })
@@ -173,8 +173,10 @@ describe('a tab never grants what the module refuses', () => {
   it('keeps the pilot tab off every other project, even for an admin', () => {
     const elsewhere = { projectId: '768e48c0-6a01-4c95-b406-1ccc8c82a93b', isAdmin: true } // SRAH
     const labels = visibleTabs(ROLES.admin, new Set(), true, elsewhere).map(t => t.label)
+    // Two pilots now — Material In & Out and Bills Approval, both NGH B only.
     expect(labels).not.toContain('Material In & Out')
-    expect(labels).toHaveLength(PROJECT_TABS.length - 1)
+    expect(labels).not.toContain('Bills Approval')
+    expect(labels).toHaveLength(PROJECT_TABS.length - 2)
   })
 
   it('keeps the pilot tab from a non-admin standing on the pilot project itself', () => {

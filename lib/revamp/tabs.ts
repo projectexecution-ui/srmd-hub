@@ -96,6 +96,14 @@ export const PROJECT_TABS: ProjectTab[] = [
   { slug: 'material',     label: 'Material In & Out', hint: 'What came in for this project, what went out, what is still to return', built: true, permissionSlug: 'cost-control',
     pilotProjectIds: PILOT_PROJECT_IDS },
 
+  // Bills Approval for this project. Same pilot terms as Material In & Out —
+  // NGH B only, admin only. Aksha, 14 Sep 2026: "For Now build in One Project
+  // like NGH B that also for Admin with all ur Flows which u are recomending -
+  // as this module is new for everyone and i need to check within us more
+  // deeply before releasing."
+  { slug: 'bills',        label: 'Bills Approval', hint: 'Bills on this project — in flight, money waiting, and what was entered here', built: true, permissionSlug: 'bills-booking',
+    pilotProjectIds: PILOT_PROJECT_IDS },
+
   // TOP MANAGEMENT ONLY — Aksha, 2026-09-03: "not to be seen by Eng level but
   // only managment - not also Mayank bhai should not be able to see - atm heads
   // can", then "No Parimal also cant see".

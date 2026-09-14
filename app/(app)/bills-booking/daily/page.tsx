@@ -7,6 +7,7 @@ import { QueryError } from '@/components/ui/query-error'
 import { buildDaily, type DailyCert, type DailyEvent, type DailyRow } from '@/lib/bills-booking/daily'
 import { formatINR, formatDate } from '@/lib/utils'
 import { loadOutOfScope, rowOutOfScope, SCOPE_NOTE } from '@/lib/bills-booking/scope'
+import { CardList, Card as MCard, CardTotal } from '../Cards'
 
 export const dynamic = 'force-dynamic'
 
@@ -121,7 +122,25 @@ function Table({ rows, total, whenLabel, byLabel, amountLabel, showDays }: {
   rows: DailyRow[]; total: number; whenLabel: string; byLabel: string; amountLabel: string; showDays?: boolean
 }) {
   return (
-    <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white">
+    <>
+      {/* Phone. This is the report Billing shares with management, often from a
+          phone, and it was three wide tables with no card view at all. One
+          <Table> feeds all three sections, so they all get one here. */}
+      <CardList>
+        {rows.map(r => (
+          <MCard key={r.certificateId} title={r.displayNo} sub={<>{r.contractor} · {r.project}</>}
+                 amount={formatINR(r.amount)} amountLabel={amountLabel.toLowerCase()}
+                 flagged={!!showDays && (r.days ?? 0) > 7}
+                 facts={[
+                   { k: whenLabel, v: r.on ? formatDate(r.on) : '—' },
+                   ...(showDays ? [{ k: 'Days', v: r.days == null ? '—' : String(r.days), tone: (r.days ?? 0) > 7 ? ('bad' as const) : undefined }] : []),
+                   { k: byLabel, v: r.by ?? '—' },
+                 ]} />
+        ))}
+        <CardTotal n={rows.length} label={rows.length === 1 ? 'bill' : 'bills'} amount={formatINR(total)} />
+      </CardList>
+
+    <div className="hidden overflow-x-auto rounded-xl border border-gray-200 bg-white md:block">
       <table className="w-full text-sm">
         <thead>
           <tr className="border-b border-gray-200 bg-gray-50 text-[11px] uppercase tracking-wide text-gray-500">
@@ -160,5 +179,6 @@ function Table({ rows, total, whenLabel, byLabel, amountLabel, showDays }: {
         </tfoot>
       </table>
     </div>
+    </>
   )
 }

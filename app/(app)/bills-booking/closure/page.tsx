@@ -80,7 +80,7 @@ export default async function ClosurePage({
                 </tr>
               </thead>
               <tbody>
-                {lane.rows.slice(0, 200).map(r => (
+                {lane.rows.map(r => (
                   <tr key={r.woId} className="border-b border-gray-100 last:border-0 hover:bg-gray-50">
                     <td className="px-3 py-2 font-mono text-[11px]">{r.woNo}</td>
                     <td className="px-3 py-2">{(r.contractorId && names.contractor.get(r.contractorId)) || '—'}</td>
@@ -94,7 +94,7 @@ export default async function ClosurePage({
               </tbody>
               <tfoot>
                 <tr className="border-t-2 border-gray-200 bg-gray-50 font-semibold">
-                  <td className="px-3 py-2" colSpan={3}>{lane.rows.length} work orders{lane.rows.length > 200 ? ' (first 200 shown)' : ''}</td>
+                  <td className="px-3 py-2" colSpan={3}>{lane.rows.length} work orders</td>
                   <td className="px-3 py-2"></td>
                   <td className="px-3 py-2 text-right tabular-nums">{formatINR(lane.rows.reduce((s, r) => s + r.neverBilled, 0))}</td>
                   <td className="px-3 py-2 text-right tabular-nums">{formatINR(lane.rows.reduce((s, r) => s + r.retentionHeld, 0))}</td>

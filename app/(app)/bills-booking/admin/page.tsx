@@ -6,17 +6,11 @@ import { Card } from '@/components/ui/card'
 import { Landmark } from 'lucide-react'
 import { personName } from '@/lib/utils'
 import { DeskMembersEditor, type DeskState } from './DeskMembersEditor'
+import { DESKS } from '@/lib/bills-booking/desk-list'
+export { DESKS }
 
 export const dynamic = 'force-dynamic'
 
-export const DESKS = [
-  { key: 'erp', label: 'ERP entry' },
-  { key: 'site_head', label: 'Site Head' },
-  { key: 'disc_head_civil', label: 'CT Disc Head — Civil' },
-  { key: 'disc_head_mep', label: 'CT Disc Head — MEP' },
-  { key: 'ct_head', label: 'CT Head' },
-  { key: 'ct_billing', label: 'CT Billing (also Trust / Paid)' },
-] as const
 
 export default async function BillsDesksPage() {
   await requireBillsAccess()

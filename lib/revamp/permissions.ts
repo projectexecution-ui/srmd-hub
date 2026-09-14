@@ -190,6 +190,10 @@ export const POWERS: Power[] = [
   { slug: 'supplier-report',     lane: 'workspace', label: 'Reports — suppliers',   hint: 'Supplier billing on the Reports tab.' },
   { slug: 'bills-pipeline',      lane: 'portal',    label: 'Bills',           hint: 'The Bills lane — the ERP team’s weekly SRA / SRET work.' },
   { slug: 'stuck-bills',         lane: 'portal',    label: 'Bills — stuck bills', hint: 'The stuck-bills checklist.' },
+  // Bills Approval joined the pane and the cockpit on 14 Sep 2026, so the
+  // matrix has to be able to show it. Admin is the real gate on every screen
+  // inside it; view and edit are recorded for the day the desks open up.
+  { slug: 'bills-booking',       lane: 'portal',    label: 'Bills Approval', hint: 'The whole approval flow over IN4 — admin only today, and the Bills tab inside a project.' },
   { slug: 'approvals',           lane: 'portal',    label: 'My Approvals',    hint: 'The approvals inbox.' },
   { slug: 'admin-users',         lane: 'portal',    label: 'Admin — users & roles', hint: 'Users, roles, the allowlist.' },
   { slug: 'admin-permissions',   lane: 'portal',    label: 'Admin — permissions',   hint: 'This matrix.' },

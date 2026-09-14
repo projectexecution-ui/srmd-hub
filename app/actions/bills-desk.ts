@@ -25,6 +25,7 @@ export async function saveProjectDesk(input: {
   subprojectId: number
   ccProjectId?: string | null
   atmHeadId?: string | null
+  shortName?: string | null
   note?: string | null
 }): Promise<{ ok: boolean; error?: string }> {
   await requireBillsWrite()
@@ -54,6 +55,7 @@ export async function saveProjectDesk(input: {
   const { error } = await supabase.from('bb_project_desks').upsert({
     subproject_id: input.subprojectId,
     in4_name: name,
+    short_name: input.shortName?.trim() || null,
     cc_project_id: input.ccProjectId || null,
     atm_head_id: input.atmHeadId || null,
     note: input.note?.trim() || null,
@@ -64,6 +66,67 @@ export async function saveProjectDesk(input: {
   if (error) return { ok: false, error: error.message }
 
   revalidatePath('/bills-booking/mapping')
+  revalidatePath(`/bills-booking/mapping/${input.subprojectId}`)
   revalidatePath('/bills-booking/new')
   return { ok: true }
+}
+
+/**
+ * Seat somebody at one desk of a Bills Approval project, or take them off it.
+ *
+ * The desks were keyed on a CT Hub project and nothing else, which is why the
+ * 32 sub-projects without one could never be given a Site Head, a Disc Head, a
+ * CT Head or a Billing desk — 887 of the 1,228 numbered work orders. A desk row
+ * can now hang off the IN4 sub-project instead, and the resolution order is
+ * the sub-project's own desk, then the project's, then the default team.
+ */
+export async function setDeskMember(input: {
+  subprojectId: number
+  desk: string
+  userId: string
+  on: boolean
+}): Promise<{ ok: boolean; error?: string }> {
+  await requireBillsWrite()
+  const supabase = await createClient()
+
+  const fn = input.on ? 'bb_rpc_add_desk_member' : 'bb_rpc_remove_desk_member'
+  const { error } = await supabase.rpc(fn, {
+    p_desk: input.desk, p_project: null, p_user: input.userId, p_subproject: input.subprojectId,
+  })
+  if (error) return { ok: false, error: error.message }
+
+  revalidatePath(`/bills-booking/mapping/${input.subprojectId}`)
+  return { ok: true }
+}
+
+/**
+ * Copy one Bills Approval project's desks onto another.
+ *
+ * Aksha, 14 Sep 2026: "keep it copyable". Raj Uphaar alone is five
+ * sub-projects — Execution, Infra Work, Interior Scope, Landscape, ICT Team —
+ * that all want the same people, and typing them five times is how one of them
+ * quietly ends up different.
+ *
+ * It REPLACES rather than merges: "copy the desks from Raj Uphaar" means this
+ * should end up looking like Raj Uphaar, not like both of them at once. The
+ * screen says so before the click.
+ */
+export async function copyDesks(input: {
+  toSubprojectId: number
+  fromSubprojectId?: number | null
+  fromProjectId?: string | null
+}): Promise<{ ok: boolean; error?: string; count?: number }> {
+  await requireBillsWrite()
+  const supabase = await createClient()
+
+  const { data, error } = await supabase.rpc('bb_rpc_copy_desks', {
+    p_to_subproject: input.toSubprojectId,
+    p_from_subproject: input.fromSubprojectId ?? null,
+    p_from_project: input.fromProjectId ?? null,
+  })
+  if (error) return { ok: false, error: error.message }
+
+  revalidatePath(`/bills-booking/mapping/${input.toSubprojectId}`)
+  revalidatePath('/bills-booking/mapping')
+  return { ok: true, count: Number(data ?? 0) }
 }

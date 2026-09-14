@@ -6,18 +6,17 @@ import { PageHeader } from '@/components/PageHeader'
 import { QueryError } from '@/components/ui/query-error'
 import { EmptyState } from '@/components/ui/empty-state'
 import { Plus, ReceiptText, AlertTriangle, Clock, Users, Landmark, PackageCheck, ShieldCheck, CalendarDays, FileQuestion, MapPin } from 'lucide-react'
-import { PIPELINE, slaFor, isTerminal, type BbStage } from '@/lib/bills-booking/stages'
+import { PIPELINE, isTerminal, daysAtStage, isOverSla, type BbStage } from '@/lib/bills-booking/stages'
 import { BillingTree, type TrustNode, type Leaf } from './BillingTree'
+import { formatINR, formatINRCompact } from '@/lib/utils'
 
 export const dynamic = 'force-dynamic'
 const one = <T,>(v: T | T[] | null): T | null => (Array.isArray(v) ? v[0] ?? null : v)
-const cr = (n: number) => {
-  const v = Number(n || 0)
-  if (v >= 1e7) return '₹' + (v / 1e7).toFixed(2) + ' Cr'
-  if (v >= 1e5) return '₹' + (v / 1e5).toFixed(1).replace(/\.0$/, '') + ' L'
-  return '₹' + v.toLocaleString('en-IN')
-}
-const daysIn = (iso: string | null) => (iso ? (Date.now() - new Date(iso).getTime()) / 86_400_000 : 0)
+// One money rule for the whole section: compact on a headline tile, full
+// rupees in a row. Both come from lib/utils now — this file, BillingTree and
+// the detail page each carried their own version and they disagreed.
+// The SLA maths moved to lib/bills-booking/stages.ts for the same reason, and
+// because a component that reads Date.now() is impure.
 
 type Row = {
   id: string; order_type: string; bill_type: string | null; bill_no: string | null
@@ -34,13 +33,22 @@ export default async function BillsBookingPage() {
   const canAdmin = can(perms, 'bills-booking', 'admin')
   const supabase = await createClient()
 
-  const [{ data: billData, error }, { data: projData }] = await Promise.all([
-    supabase.from('bb_bills')
-      .select('id, order_type, bill_type, bill_no, claimed_amount, net_amount, current_stage, stage_since, discipline, trust, project_id, wo_pending, amendment_flag, vendors(name), vendor_text')
-      .order('created_at', { ascending: false }),
-    supabase.from('projects').select('id, code, name, parent_project_id'),
-  ])
-  const rows = (billData ?? []) as Row[]
+  const COLS ='id, order_type, bill_type, bill_no, claimed_amount, net_amount, current_stage, stage_since, discipline, trust, project_id, wo_pending, amendment_flag, vendors(name), vendor_text'
+
+  // PostgREST stops at 1,000 rows and hands back the first page without a
+  // word, so every KPI on this screen would quietly become a sample of the
+  // newest thousand bills. The rest of the section pages; this page did not.
+  const rows: Row[] = []
+  let error: { message: string } | null = null
+  for (let from = 0; ; from += 1000) {
+    const { data, error: e } = await supabase.from('bb_bills').select(COLS)
+      .order('created_at', { ascending: false }).range(from, from + 999)
+    if (e) { error = e; break }
+    const page = (data ?? []) as unknown as Row[]
+    rows.push(...page)
+    if (page.length < 1000) break
+  }
+  const { data: projData } = await supabase.from('projects').select('id, code, name, parent_project_id')
   type Proj = { code: string; name: string; parent: string | null }
   const proj = new Map<string, Proj>(
     (projData ?? []).map(p => [p.id as string, { code: p.code as string, name: p.name as string, parent: p.parent_project_id as string | null }]),
@@ -51,7 +59,7 @@ export default async function BillsBookingPage() {
 
   // ── Insights ──
   const live = rows.filter(r => !isTerminal(r.current_stage))
-  const overSla = (r: Row) => { const s = slaFor(r.current_stage); return s != null && daysIn(r.stage_since) > s }
+  const overSla = (r: Row) => isOverSla(r.current_stage, r.stage_since)
   const lateBills = live.filter(overSla)
   const woIssues = live.filter(r => r.wo_pending || r.amendment_flag)
   const paidCount = rows.filter(r => r.current_stage === 'paid').length
@@ -63,7 +71,7 @@ export default async function BillsBookingPage() {
     .map(r => {
       const reason = r.amendment_flag ? { t: 'IN4 amendment', c: 'bg-rose-100 text-rose-700' }
         : r.wo_pending ? { t: 'No WO', c: 'bg-amber-100 text-amber-800' }
-          : { t: `Over SLA ${Math.round(daysIn(r.stage_since))}d`, c: 'bg-orange-100 text-orange-800' }
+          : { t: `Over SLA ${Math.round(daysAtStage(r.stage_since))}d`, c: 'bg-orange-100 text-orange-800' }
       return { r, reason }
     })
     .sort((a, b) => amt(b.r) - amt(a.r))
@@ -106,7 +114,7 @@ export default async function BillsBookingPage() {
 
   const KPIS = [
     { label: 'Live bills', value: String(live.length), tone: 'text-slate-900' },
-    { label: 'In pipeline', value: cr(pipelineValue), tone: 'text-indigo-700' },
+    { label: 'In pipeline', value: formatINRCompact(pipelineValue), tone: 'text-indigo-700' },
     { label: 'Over SLA', value: String(lateBills.length), tone: lateBills.length ? 'text-rose-600' : 'text-gray-400' },
     { label: 'WO / amendment', value: String(woIssues.length), tone: woIssues.length ? 'text-amber-700' : 'text-gray-400' },
     { label: 'Paid', value: String(paidCount), tone: 'text-emerald-700' },
@@ -189,7 +197,7 @@ export default async function BillsBookingPage() {
                       <span className="truncate text-[13px] font-semibold text-gray-900">{vendorOf(r)}</span>
                       <span className="rounded bg-slate-800 px-1.5 py-px text-[10px] font-bold text-white">{projCode(r)}</span>
                       <span className={`rounded px-1.5 py-px text-[10px] font-bold ${reason.c}`}>{reason.t}</span>
-                      <span className="ml-auto text-[13px] font-bold tabular-nums text-gray-900">₹{amt(r).toLocaleString('en-IN')}</span>
+                      <span className="ml-auto text-[13px] font-bold tabular-nums text-gray-900">{formatINR(amt(r))}</span>
                     </Link>
                   </li>
                 ))}
@@ -207,7 +215,7 @@ export default async function BillsBookingPage() {
                     <Clock className="h-3 w-3" /> <span className="truncate">{s.label}</span>
                   </div>
                   <div className="mt-1 text-lg font-bold tabular-nums text-gray-900">{n}</div>
-                  <div className="text-[10.5px] text-gray-500">{cr(v)}</div>
+                  <div className="text-[10.5px] text-gray-500">{formatINRCompact(v)}</div>
                 </div>
               ))}
             </div>

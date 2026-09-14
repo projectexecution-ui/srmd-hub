@@ -270,10 +270,20 @@ export function BillForm({ projects, disciplines, in4Wos, in4Projects, seed, can
         )}
       </Section>
 
-      <Button onClick={submit} disabled={busy} className="bg-indigo-600 hover:bg-indigo-700">
-        {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-        Enter bill &amp; send to Site Head
-      </Button>
+      <div>
+        <Button onClick={submit} disabled={busy} className="bg-indigo-600 hover:bg-indigo-700">
+          {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+          Enter bill
+        </Button>
+        {/* It used to say "& send to Site Head", which it has never done: a new
+            bill lands at Entered — the ERP desk, which is whoever typed it —
+            and waits. Saying so is the fix. Forwarding on create would skip a
+            step the flow is meant to have. */}
+        <p className="mt-2 text-xs text-gray-500">
+          It lands at <b>Entered</b>, your own desk, with the trail starting from this moment.
+          Open it and forward to the Site Head once the measurement sheet is attached.
+        </p>
+      </div>
     </Card>
   )
 }

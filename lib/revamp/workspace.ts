@@ -92,6 +92,17 @@ export const WORKSPACE_TABS: WorkspaceTab[] = [
     permissionSlug: 'cost-control', built: true, reviewerOnly: true },
 
   // ── Procurement ──────────────────────────────────────────────────────────
+  // Bills Approval, this project's share of it. A PILOT on the same terms as
+  // Material In & Out — NGH B only, admin only. Aksha, 14 Sep 2026: "For Now
+  // build in One Project like NGH B that also for Admin … as this module is
+  // new for everyone and i need to check within us more deeply before
+  // releasing." NGH B is a real test: 29 work orders, 57 certificates, two Atm
+  // Heads already on it in Cost Control.
+  { slug: 'bills', ribbon: 'Bills', label: 'Bills Approval', group: 'money', icon: 'ReceiptText',
+    subs: ['In flight', 'Money waiting', 'Entered here', 'Retention'],
+    permissionSlug: 'bills-booking', built: true,
+    pilotProjectIds: PILOT_PROJECT_IDS },
+
   { slug: 'procurement', ribbon: 'Indents', label: 'Indents', group: 'procurement', icon: 'ClipboardList',
     subs: ['By category', 'Tracker'],
     permissionSlug: 'procurement-tracker', built: true },

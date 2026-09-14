@@ -48,7 +48,12 @@ export default async function RetentionPage({
             <Stat k="Held in total" v={formatINR(lane.totals.held)} s={`${lane.totals.wos} work orders`} />
             <Stat k="Quiet 6 months +" v={formatINR(lane.shown.held)} s={`${lane.shown.wos} work orders`} />
             <Stat k="On live work" v={formatINR(lane.active.held)} s={`${lane.active.wos} billed inside 3 months`} />
-            <Stat k="Due-back dates set" v="0" s="IN4 holds none — every one is blank" />
+            {/* Was a hardcoded "0" for due-back dates. True today, but a typed
+                literal cannot notice when it stops being true, and IN4's
+                retention-expiry field is not mirrored at all so there is
+                nothing to count. This one is computed from the rows on screen. */}
+            <Stat k="No final bill" v={String(lane.rows.filter(r => !r.hasFinal).length)}
+                  s="of these work orders were never closed out" />
           </div>
 
           <div className="rounded-xl border border-gray-200 bg-white overflow-x-auto">
@@ -88,7 +93,7 @@ export default async function RetentionPage({
                 </tr>
               </thead>
               <tbody>
-                {rows.slice(0, 200).map(r => (
+                {rows.map(r => (
                   <tr key={r.woId} className="border-b border-gray-100 last:border-0 hover:bg-gray-50">
                     <td className="px-3 py-2 font-mono text-[11px]">{r.woNo}</td>
                     <td className="px-3 py-2">{(r.contractorId && names.contractor.get(r.contractorId)) || '—'}</td>
@@ -107,7 +112,7 @@ export default async function RetentionPage({
               </tbody>
               <tfoot>
                 <tr className="border-t-2 border-gray-200 bg-gray-50 font-semibold">
-                  <td className="px-3 py-2" colSpan={3}>{rows.length} work orders{rows.length > 200 ? ' (first 200 shown)' : ''}</td>
+                  <td className="px-3 py-2" colSpan={3}>{rows.length} work orders</td>
                   <td className="px-3 py-2 text-right tabular-nums">{formatINR(rows.reduce((s, r) => s + r.held, 0))}</td>
                   <td className="px-3 py-2" colSpan={2}></td>
                 </tr>

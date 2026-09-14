@@ -87,6 +87,10 @@ export default async function NoOrderPage() {
 
   const overAMonth = early.filter(e => e.ahead > 30)
 
+  // Counted, not asserted. It was a typed "0" — true when it was written,
+  // and unable to notice if IN4 ever let one through.
+  const blankWo = certs.filter(c => c.kind === 'wo' && live(c) && !c.wo_no).length
+
   return (
     <div className="p-4 md:p-6 max-w-6xl mx-auto space-y-5">
       <PageHeader
@@ -99,7 +103,7 @@ export default async function NoOrderPage() {
         <Stat k="Misc expenses open" v={formatINR(miscTotal)} s={`${misc.length} bills, never have a WO`} />
         <Stat k="Billed before the order" v={String(early.length)} s="of all live work-order bills" />
         <Stat k="Waited over a month" v={String(overAMonth.length)} s="the ones worth looking at" />
-        <Stat k="Certificates with no WO" v="0" s="IN4 refuses to raise one" />
+        <Stat k="Certificates with no WO" v={String(blankWo)} s={blankWo === 0 ? 'IN4 refuses to raise one' : 'IN4 let these through — look'} />
       </div>
 
       <div className="rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-xs text-gray-600">
@@ -129,7 +133,7 @@ export default async function NoOrderPage() {
                 </tr>
               </thead>
               <tbody>
-                {misc.slice(0, 100).map(c => (
+                {misc.map(c => (
                   <tr key={`m${c.certificate_id}`} className="border-b border-gray-100 last:border-0 hover:bg-gray-50">
                     <td className="px-3 py-2 font-mono text-[11px]">{c.invoice_no || `#${c.certificate_id}`}</td>
                     <td className="px-3 py-2">{c.contractor_name || '—'}</td>
@@ -142,7 +146,7 @@ export default async function NoOrderPage() {
               </tbody>
               <tfoot>
                 <tr className="border-t-2 border-gray-200 bg-gray-50 font-semibold">
-                  <td className="px-3 py-2" colSpan={3}>{misc.length} bills{misc.length > 100 ? ' (first 100 shown)' : ''}</td>
+                  <td className="px-3 py-2" colSpan={3}>{misc.length} bills</td>
                   <td className="px-3 py-2 text-right tabular-nums">{formatINR(miscTotal)}</td>
                   <td className="px-3 py-2" colSpan={2}></td>
                 </tr>
@@ -174,7 +178,7 @@ export default async function NoOrderPage() {
                 </tr>
               </thead>
               <tbody>
-                {overAMonth.slice(0, 100).map(({ c, made, ahead }) => (
+                {overAMonth.map(({ c, made, ahead }) => (
                   <tr key={`e${c.certificate_id}`} className="border-b border-gray-100 last:border-0 hover:bg-gray-50">
                     <td className="px-3 py-2 font-mono text-[11px]">{c.display_no || `#${c.certificate_id}`}</td>
                     <td className="px-3 py-2">{c.contractor_name || '—'}</td>
@@ -188,7 +192,7 @@ export default async function NoOrderPage() {
               <tfoot>
                 <tr className="border-t-2 border-gray-200 bg-gray-50 font-semibold">
                   <td className="px-3 py-2" colSpan={6}>
-                    {overAMonth.length} bills waited over a month{overAMonth.length > 100 ? ' (first 100 shown)' : ''} ·
+                    {overAMonth.length} bills waited over a month ·
                     {' '}{early.length - overAMonth.length} more were inside a month, which is just paperwork catching up
                   </td>
                 </tr>

@@ -7,6 +7,7 @@ import { ShieldCheck } from 'lucide-react'
 import { formatINR } from '@/lib/utils'
 import { formatDateTime } from '@/lib/utils'
 import { CheckNowButton } from './CheckNowButton'
+import { CardList, Card as MCard, CardTotal } from '../Cards'
 
 export const dynamic = 'force-dynamic'
 
@@ -84,7 +85,31 @@ export default async function SanctionsPage() {
             </p>
           )}
 
-          <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white">
+          {/* Phone */}
+          <CardList>
+            {rows.map(r => {
+              const v = VERDICT[r.verdict ?? ''] ?? { label: 'Not checked yet', cls: '' }
+              const diff = r.in4_amount != null ? Number(r.in4_amount) - Number(r.sanctioned_amount) : null
+              const bad = r.verdict === 'amount_differs' || r.verdict === 'gone'
+              return (
+                <MCard key={r.id} flagged={bad}
+                       title={r.display_no || r.wo_no || 'no number in IN4'}
+                       sub={<>{r.contractor_name || '—'}{r.project_name ? ` · ${r.project_name}` : ''}</>}
+                       amount={formatINR(Number(r.sanctioned_amount))} amountLabel="sanctioned"
+                       facts={[
+                         { k: 'Verdict', v: v.label, tone: bad ? 'bad' : r.verdict === 'matched' ? 'good' : undefined },
+                         { k: 'IN4 says', v: r.in4_amount == null ? '—' : formatINR(Number(r.in4_amount)), tone: diff != null && Math.abs(diff) > 1 ? 'bad' : undefined },
+                         { k: 'Sanctioned by', v: one(r.profiles)?.full_name || '—' },
+                         { k: 'Keyed into IN4 by', v: r.in4_approved_by || '—' },
+                       ]}
+                       note={formatDateTime(r.sanctioned_at)} />
+              )
+            })}
+            <CardTotal n={rows.length} label="sanctions" amount={formatINR(rows.reduce((s, r) => s + Number(r.sanctioned_amount || 0), 0))} />
+          </CardList>
+
+          {/* Desktop */}
+          <div className="hidden overflow-x-auto rounded-xl border border-gray-200 bg-white md:block">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-gray-200 bg-gray-50 text-[11px] uppercase tracking-wide text-gray-500">

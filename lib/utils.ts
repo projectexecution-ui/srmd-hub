@@ -60,6 +60,23 @@ export function formatINR(n: number | string | null | undefined): string {
   return INR.format(v as number)
 }
 
+/** The same money, short enough for a headline tile: ₹4.80 Cr, ₹12.3 L.
+ *
+ *  A KPI is read at a glance and ₹4,79,85,466 is not glanceable; a table cell
+ *  is read to be checked and ₹4.80 Cr is not checkable. So the section uses
+ *  this on tiles and `formatINR` everywhere else, rather than a local copy of
+ *  the rule per page — there were three of those, each slightly different, and
+ *  none of them handled a null. */
+export function formatINRCompact(n: number | string | null | undefined): string {
+  const v = typeof n === 'string' ? Number(n) : n
+  if (v === null || v === undefined || !Number.isFinite(v as number)) return '—'
+  const num = v as number
+  const abs = Math.abs(num)
+  if (abs >= 1e7) return '₹' + (num / 1e7).toFixed(2) + ' Cr'
+  if (abs >= 1e5) return '₹' + (num / 1e5).toFixed(1).replace(/\.0$/, '') + ' L'
+  return INR.format(num)
+}
+
 export function formatNumber(n: number | string | null | undefined, decimals = 2): string {
   const v = typeof n === 'string' ? Number(n) : n
   if (v === null || v === undefined || !Number.isFinite(v as number)) return '—'
