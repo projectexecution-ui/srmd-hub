@@ -4,6 +4,7 @@ import {
   foldStock, outstandingReturnables, heldItemCount, type Movement, type StockRow,
   type ReturnableLine, type ReturnableRow, type Register, type Stage,
 } from './core'
+import type { RegisterSpec, RegisterFilter, RegisterRow } from './registers'
 
 /**
  * Reads for the Stores section. SELECT only — every write lives in actions.ts
@@ -551,4 +552,85 @@ export async function loadCounts(projectId?: string | null): Promise<{
     returnablesOut: returnables.length,
     itemsHeld: heldItemCount(stock),
   }
+}
+
+/* ── The four registers ─────────────────────────────────────────────────── */
+
+/**
+ * One register's rows: the gate entries of one direction and one register,
+ * read line by line, filtered the way the mind map asks —
+ * "Select Period · Select Vendor · Select Project · Select Disciplines".
+ *
+ * The SAME entries every other screen reads, so a register can never quote a
+ * quantity the gate does not have.
+ */
+export async function loadRegister(
+  spec: RegisterSpec, f: RegisterFilter = {},
+): Promise<RegisterRow[]> {
+  const supabase = await createClient()
+  let q = supabase
+    .from('mio_entry_lines')
+    .select(`id, item_id, unit, qty, rate, amount,
+             mio_items ( name, discipline_id ),
+             mio_entries!inner ( id, no, direction, register, stage, entry_at, entry_date,
+                                 party_name, po_wo_no, remarks, location_id, project_id, entity_id,
+                                 projects:project_id ( name ),
+                                 entity:entity_id ( name, code ),
+                                 linked:linked_entry_id ( no ) )`)
+    .eq('mio_entries.direction', spec.direction)
+    .eq('mio_entries.register', spec.register)
+    .neq('mio_entries.stage', 'void')
+    .limit(5000)
+
+  if (f.from) q = q.gte('mio_entries.entry_date', f.from)
+  if (f.to) q = q.lte('mio_entries.entry_date', f.to)
+  if (f.projectId) q = q.eq('mio_entries.project_id', f.projectId)
+  if (f.party) q = q.ilike('mio_entries.party_name', `%${f.party}%`)
+
+  const [{ data }, lists] = await Promise.all([q, loadLists()])
+  const one = (v: unknown) => (Array.isArray(v) ? v[0] : v) as Record<string, unknown>
+  const disciplineName = new Map(
+    listsOf(lists, 'discipline').map(d => [d.id, d.name]),
+  )
+
+  const rows: RegisterRow[] = (data ?? []).map(r => {
+    const e = one(r.mio_entries)
+    const item = one(r.mio_items) as { name?: string; discipline_id?: string | null } | null
+    const ent = one(e.entity) as { name?: string; code?: string } | null
+    return {
+      entryId: e.id as string,
+      entryNo: (e.no as string) ?? '',
+      linkedNo: ((one(e.linked) as { no?: string } | null)?.no) ?? null,
+      day: e.entry_date as string,
+      party: (e.party_name as string | null) ?? null,
+      projectName: ((one(e.projects) as { name?: string } | null)?.name) ?? null,
+      entity: ent?.code ?? ent?.name ?? null,
+      place: locationLabel(lists, (e.location_id as string | null) ?? null),
+      itemId: r.item_id as string,
+      itemName: item?.name ?? '—',
+      discipline: item?.discipline_id ? disciplineName.get(item.discipline_id) ?? null : null,
+      unit: (r.unit as string) ?? '',
+      qty: num(r.qty),
+      rate: r.rate == null ? null : num(r.rate),
+      amount: r.amount == null ? null : num(r.amount),
+      poWoNo: (e.po_wo_no as string | null) ?? null,
+      remarks: (e.remarks as string | null) ?? null,
+    }
+  })
+
+  // Discipline lives on the ITEM, not the entry, so it cannot be a database
+  // filter without a join Supabase will not give us here. Filtered after —
+  // correct either way, and the row counts are small enough that it is free.
+  const wanted = f.disciplineId ? disciplineName.get(f.disciplineId) ?? null : null
+  const filtered = wanted ? rows.filter(r => r.discipline === wanted) : rows
+
+  return filtered.sort((a, b) => b.day.localeCompare(a.day) || a.itemName.localeCompare(b.itemName))
+}
+
+/** The vendors that appear on the gate, for the register's party picker. */
+export async function loadRegisterParties(): Promise<string[]> {
+  const supabase = await createClient()
+  const { data } = await supabase
+    .from('mio_entries').select('party_name').not('party_name', 'is', null).neq('stage', 'void').limit(2000)
+  return [...new Set((data ?? []).map(r => (r.party_name as string).trim()).filter(Boolean))].sort()
 }
