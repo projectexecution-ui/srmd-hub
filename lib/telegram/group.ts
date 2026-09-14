@@ -28,15 +28,15 @@ export async function hasReportsGroup(supabase: any): Promise<boolean> {
   return (await groupChatId(supabase)) != null
 }
 
-/** Post a PDF (or any file) to the reports group via the Bot API sendDocument. */
-export async function sendPdfToGroup(
-  supabase: any,
+/** Post a PDF (or any file) to ONE chat via the Bot API sendDocument. The chat
+ *  is a group id or a person's DM chat id — the Bot API makes no distinction. */
+export async function sendPdfToChat(
+  chatId: string,
   opts: { filename: string; pdf: Uint8Array; caption?: string },
 ): Promise<{ ok: true } | { skipped: string } | { ok: false; error: string }> {
   const token = process.env.TELEGRAM_BOT_TOKEN
   if (!token) return { skipped: 'no-token' }
-  const chatId = await groupChatId(supabase)
-  if (!chatId) return { skipped: 'no-group' }
+  if (!chatId) return { skipped: 'no-chat' }
   try {
     const form = new FormData()
     form.append('chat_id', chatId)
@@ -48,6 +48,24 @@ export async function sendPdfToGroup(
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : 'sendDocument-failed' }
   }
+}
+
+/** Post a PDF (or any file) to the reports group. */
+export async function sendPdfToGroup(
+  supabase: any,
+  opts: { filename: string; pdf: Uint8Array; caption?: string },
+): Promise<{ ok: true } | { skipped: string } | { ok: false; error: string }> {
+  const chatId = await groupChatId(supabase)
+  if (!chatId) return { skipped: 'no-group' }
+  return sendPdfToChat(chatId, opts)
+}
+
+/** One person's own Telegram DM chat, or null when they have not connected it. */
+export async function personChatId(supabase: any, userId: string): Promise<string | null> {
+  const { data } = await supabase
+    .from('notification_preferences').select('telegram_chat_id, telegram').eq('user_id', userId).maybeSingle()
+  const id = (data?.telegram_chat_id ?? '').toString().trim()
+  return id || null
 }
 
 export interface GroupBroadcast {
