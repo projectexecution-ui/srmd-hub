@@ -5,6 +5,7 @@ import type { BillCalc } from '@/lib/bills-booking/load-calc'
 import type { BillLadder } from '@/lib/bills-booking/calc'
 import type { AbstractSheet } from '@/lib/bills-booking/abstract'
 import { formatNumber } from '@/lib/utils'
+import { Particular } from './Particular'
 
 /** How this bill adds up, and every bill already raised on the same order.
  *
@@ -206,7 +207,7 @@ function Sheet({ s }: { s: AbstractSheet }) {
         {s.rows.map(r => (
           <div key={r.itemId} className={`rounded-lg border p-3 ${r.overrun ? 'border-rose-200 bg-rose-50/40' : 'border-gray-200'}`}>
             <div className="flex items-start justify-between gap-2">
-              <span className="text-[13px] font-medium text-gray-900">{r.item}</span>
+              <span className="min-w-0 flex-1"><Particular text={r.item} /></span>
               <span className="shrink-0 text-sm font-semibold tabular-nums">{formatINR(r.thisAmt)}</span>
             </div>
             <div className="mt-1 text-[11px] text-gray-500">
@@ -233,7 +234,7 @@ function Sheet({ s }: { s: AbstractSheet }) {
           <tbody>
             {s.rows.map(r => (
               <tr key={r.itemId} className={`border-b border-gray-100 last:border-0 ${r.overrun ? 'bg-rose-50/40' : 'hover:bg-gray-50'}`}>
-                <td className="px-3 py-2 text-[13px]">{r.item}</td>
+                <td className="max-w-[300px] px-3 py-2 align-top"><Particular text={r.item} /></td>
                 <td className="px-3 py-2 text-xs text-gray-500">{r.uom ?? '—'}</td>
                 <td className="px-3 py-2 text-right tabular-nums text-gray-600">{qty(r.orderedQty)}</td>
                 <td className="px-3 py-2 text-right tabular-nums text-gray-600">{formatINR(r.rate)}</td>

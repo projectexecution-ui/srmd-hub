@@ -9,6 +9,8 @@ import { Button } from '@/components/ui/button'
 import { Check, Loader2, Ruler } from 'lucide-react'
 import { priceAbstract, type MakerLine } from '@/lib/bills-booking/maker'
 import { formatINR, formatNumber } from '@/lib/utils'
+import { Particular, ExpandAll } from './Particular'
+import { shortenBoq } from '@/lib/bills-booking/shorten'
 
 /** The Abstract Sheet, filled in CT Hub.
  *
@@ -50,6 +52,9 @@ export function AbstractMaker({ billId, woNo, vendor, work, seed, gstPct, retent
     [lines, gst, ret])
 
   const touched = sheet.lines.filter(l => l.thisQty !== 0).length
+  // How many rows actually hide something, for the Show-full-text control.
+  const [expandAll, setExpandAll] = useState(false)
+  const hidden = useMemo(() => seed.filter(l => shortenBoq(l.particular).shortened).length, [seed])
 
   function save() {
     setErr(null)
@@ -84,6 +89,10 @@ export function AbstractMaker({ billId, woNo, vendor, work, seed, gstPct, retent
         </span>
       </div>
 
+      <div className="flex items-center justify-end border-b border-gray-100 px-4 py-1.5">
+        <ExpandAll on={expandAll} onToggle={() => setExpandAll(v => !v)} n={hidden} />
+      </div>
+
       <dl className="grid grid-cols-1 gap-x-6 gap-y-1 border-b border-gray-200 px-4 py-3 text-[13px] sm:grid-cols-2">
         <div><dt className="inline w-16 font-semibold text-gray-500">Vendor </dt><dd className="inline">{vendor}</dd></div>
         <div><dt className="inline w-16 font-semibold text-gray-500">WO No </dt><dd className="inline font-mono text-xs">{woNo}</dd></div>
@@ -107,7 +116,9 @@ export function AbstractMaker({ billId, woNo, vendor, work, seed, gstPct, retent
             {sheet.lines.map(l => (
               <tr key={l.sr} className={l.overrun ? 'bg-rose-50' : 'hover:bg-gray-50/60'}>
                 <Td l>{l.sr}</Td>
-                <Td l className="max-w-[260px] whitespace-normal">{l.particular}</Td>
+                <Td l className="max-w-[300px] whitespace-normal align-top">
+                  <Particular text={l.particular} expandAll={expandAll} />
+                </Td>
                 <Td>{n(l.orderedQty)}</Td>
                 <Td>{l.uom ?? '—'}</Td>
                 <Td>{m(l.rate)}</Td>
