@@ -5,7 +5,8 @@ import { useState, useTransition } from 'react'
 import { correctEntry, voidEntry } from '@/lib/stores/actions'
 import { fmtQty } from '@/lib/stores/core'
 import { formatDateTime, formatINR } from '@/lib/utils'
-import type { EntryDetail } from '@/lib/stores/queries'
+import { PenLine } from 'lucide-react'
+import type { EntryDetail, Signature } from '@/lib/stores/queries'
 import { Field, inputClass, Btn, Notice, StageChip, RegisterChip, Scroller, th, td, tdNum } from '../../ui'
 
 /** The fields a correction may touch. Anything that would change what the
@@ -55,6 +56,21 @@ export function EntryDetailPanels({ entry }: { entry: EntryDetail }) {
           <Cell label="Handed over to" value={entry.handedOverTo} />
           <Cell label="Remarks" value={entry.remarks} />
         </dl>
+
+        {/* The mind map's signature points. Shown, not just stored — an entry
+            whose signatures are invisible is an entry nobody has signed. */}
+        <div className="mt-5 pt-4 border-t border-gray-100">
+          <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400 mb-2.5">Signed by</p>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+            <Signed label="Security" sig={entry.signatures.security} />
+            <Signed label="SRM Incharge" sig={entry.signatures.incharge} />
+            <Signed
+              label="Receiver"
+              sig={entry.signatures.receiver}
+              missingHint="No receipt step yet — the person taking the material has nowhere to sign."
+            />
+          </div>
+        </div>
       </div>
 
       {entry.lines.length > 0 && (
@@ -126,6 +142,38 @@ export function EntryDetailPanels({ entry }: { entry: EntryDetail }) {
             ))}
           </div>
         </details>
+      )}
+    </div>
+  )
+}
+
+/**
+ * One signature point.
+ *
+ * A name and a time, because that is what the app can actually prove — the
+ * person was signed in and pressed the button. Where nothing has been signed
+ * it says so plainly, and where nothing CAN be signed yet it says that too,
+ * rather than leaving a blank that reads like an oversight.
+ */
+function Signed({ label, sig, missingHint }: { label: string; sig: Signature; missingHint?: string }) {
+  const signed = !!sig.at
+  return (
+    <div className={`rounded-lg border px-3 py-2.5 ${
+      signed ? 'border-emerald-200 bg-emerald-50/60' : 'border-dashed border-gray-300 bg-gray-50'}`}>
+      <p className="text-[10px] font-bold uppercase tracking-wider text-gray-500">{label}</p>
+      {signed ? (
+        <>
+          <p className="text-[13.5px] font-semibold text-gray-900 mt-0.5 flex items-center gap-1.5">
+            <PenLine className="h-3.5 w-3.5 text-emerald-700 shrink-0" />
+            {sig.who || 'Signed'}
+          </p>
+          <p className="text-[11.5px] text-gray-500">{formatDateTime(sig.at)}</p>
+        </>
+      ) : (
+        <>
+          <p className="text-[13px] text-gray-400 mt-0.5">Not signed</p>
+          {missingHint && <p className="text-[11px] text-gray-400 leading-snug mt-0.5">{missingHint}</p>}
+        </>
       )}
     </div>
   )

@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   entryNo, linkedNo, foldStock, availableAt, availableAnywhere, checkIssue,
-  outstandingReturnables, missingForGate, missingForComplete, createsStock,
+  outstandingReturnables, missingForGate, missingForComplete, createsStock, heldItemCount,
   fmtQty, isPilotProject, PILOT_PROJECT_IDS, type Movement, type ReturnableLine,
 } from './core'
 
@@ -211,5 +211,35 @@ describe('quantity formatting', () => {
 
   it('keeps a real fraction', () => {
     expect(fmtQty(12.5)).toBe('12.5')
+  })
+})
+
+describe('the Items held tile', () => {
+  it('counts ITEMS, not item-and-place rows', () => {
+    // The bug it fixes: an item kept in two stores counted twice, so the tile
+    // read 728 against an item master of 659 — a number that cannot be true.
+    const stock = foldStock([
+      mv({ itemId: 'A', qty: 10, locationId: 'L1' }),
+      mv({ itemId: 'A', qty: 5, locationId: 'L2' }),
+      mv({ itemId: 'B', qty: 3, locationId: 'L1' }),
+    ])
+    expect(stock).toHaveLength(3)        // three item-and-place rows
+    expect(heldItemCount(stock)).toBe(2) // two things held
+  })
+
+  it('does not count something that has run out', () => {
+    const stock = foldStock([
+      mv({ itemId: 'A', qty: 10 }), mv({ itemId: 'A', qty: -10 }),
+      mv({ itemId: 'B', qty: 1 }),
+    ])
+    expect(heldItemCount(stock)).toBe(1)
+  })
+
+  it('does not count a negative balance as something held', () => {
+    expect(heldItemCount(foldStock([mv({ itemId: 'A', qty: -5 })]))).toBe(0)
+  })
+
+  it('is zero on an empty store', () => {
+    expect(heldItemCount([])).toBe(0)
   })
 })
