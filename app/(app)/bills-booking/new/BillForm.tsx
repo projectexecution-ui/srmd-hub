@@ -10,11 +10,18 @@ import { MoneyInput } from '@/components/ui/money-input'
 import { Loader2, Send } from 'lucide-react'
 import { WoPicker } from './WoPicker'
 import type { PickableWo } from '@/lib/bills-booking/wo-picker'
+import { formatINR } from '@/lib/utils'
 
 type Opt = { id: string; code?: string; name: string }
 
-export function BillForm({ projects, vendors, disciplines, in4Wos, in4Projects }: {
-  projects: Opt[]; vendors: Opt[]; disciplines: Opt[]
+/** Bill types that are drawn against a work order. Advance is here because it
+ *  is raised against one even though it has no measurement behind it; petty
+ *  cash and misc never are, and asking for a WO on those is how you teach
+ *  people to type something wrong to get past a field. */
+const AGAINST_WO = new Set(['Running', 'Full & Final', 'Advance'])
+
+export function BillForm({ projects, disciplines, in4Wos, in4Projects }: {
+  projects: Opt[]; disciplines: Opt[]
   in4Wos: PickableWo[]; in4Projects: Array<{ id: number; name: string }>
 }) {
   const router = useRouter()
@@ -22,61 +29,61 @@ export function BillForm({ projects, vendors, disciplines, in4Wos, in4Projects }
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState<string | null>(null)
 
-  const [orderType, setOrderType] = useState<'WO' | 'PO' | 'Without WO/PO'>('WO')
   const [billType, setBillType] = useState('Running')
-  const [billCategory, setBillCategory] = useState('')
-  const [ctDept, setCtDept] = useState('CT')
-  const [orderNo, setOrderNo] = useState('')
-  const [projectId, setProjectId] = useState(projects[0]?.id ?? '')
-  const [vendorId, setVendorId] = useState('')
-  const [vendorText, setVendorText] = useState('')
+  const [wo, setWo] = useState<PickableWo | null>(null)
+  const [noOrder, setNoOrder] = useState(false)
+
+  const [projectId, setProjectId] = useState('')
   const [disciplineId, setDisciplineId] = useState('')
+  const [vendorText, setVendorText] = useState('')
   const [work, setWork] = useState('')
   const [billNo, setBillNo] = useState('')
   const [raNo, setRaNo] = useState('')
   const [billDate, setBillDate] = useState('')
   const [claimed, setClaimed] = useState('')
-  const [woValue, setWoValue] = useState('')
-  const [paidTill, setPaidTill] = useState('')
   const [abstractNo, setAbstractNo] = useState('')
-  const [trust, setTrust] = useState('')
-  const [in4ProjectId, setIn4ProjectId] = useState<number | null>(null)
-  const [in4WoId, setIn4WoId] = useState<number | null>(null)
+  const [orderNoManual, setOrderNoManual] = useState('')
 
-  // Picking a work order fills everything IN4 already holds. The fields stay
-  // editable afterwards — IN4 is the starting point, not a cage — but nobody
-  // has to retype a number the ERP can supply, and retyping is exactly where
-  // the wrong abstract number came from in Zoho.
-  function applyWo(w: PickableWo | null) {
-    setIn4WoId(w?.woId ?? null)
+  const projectNames = new Map(in4Projects.map(p => [p.id, p.name]))
+  const needsWo = AGAINST_WO.has(billType) && !noOrder
+  const usingWo = needsWo && !!wo
+
+  // Everything below is what IN4 supplies once a work order is chosen. It is
+  // not asked for, and it is not editable: the point of reading IN4 is that
+  // nobody retypes a figure the ERP already holds.
+  const orderType = noOrder || !AGAINST_WO.has(billType) ? 'Without WO/PO' : 'WO'
+  const orderNo = usingWo ? wo.woNo : orderNoManual.trim()
+  const contractor = usingWo ? wo.contractor : vendorText.trim()
+  const trust = usingWo ? (wo.trust ?? '') : ''
+  const woValue = usingWo ? Math.round(wo.orderedGross) : null
+  const paidTill = usingWo ? Math.round(wo.billedGross) : 0
+
+  const thisBill = Number(claimed) || 0
+  const overWO = usingWo && woValue != null && woValue > 0 && paidTill + thisBill > woValue
+
+  function pickWo(w: PickableWo | null) {
+    setWo(w)
     if (!w) return
-    setOrderNo(w.woNo)
-    setWoValue(String(Math.round(w.orderedGross)))
-    setPaidTill(String(Math.round(w.billedGross)))
-    if (w.trust) setTrust(w.trust)
-    if (w.contractor) { setVendorText(w.contractor); setVendorId('') }
     if (!raNo && w.bills > 0) setRaNo('RA-' + (w.bills + 1))
   }
 
-  const noWO = orderType === 'Without WO/PO'
-  const woNum = Number(woValue) || 0
-  const overWO = !noWO && woNum > 0 && (Number(paidTill) || 0) + (Number(claimed) || 0) > woNum
-
   async function submit() {
-    if (!projectId) { setErr('Pick a project'); return }
-    if (!vendorId && !vendorText.trim()) { setErr('Pick a vendor or type the contractor name'); return }
+    if (!projectId) { setErr('Pick the CT Hub project this books against'); return }
+    if (needsWo && !wo) { setErr('Find the work order, or tick “no work order yet”'); return }
+    if (!contractor) { setErr('Name the contractor or vendor'); return }
+    if (!(thisBill > 0)) { setErr('Enter what this bill is for'); return }
     setBusy(true); setErr(null)
     const { data, error } = await supabase.rpc('bb_rpc_create_bill', {
       p: {
-        order_type: orderType, bill_type: billType, bill_category: billCategory.trim() || null,
-        ct_other_dept: ctDept || null, order_no: orderNo.trim(), project_id: projectId,
-        vendor_id: vendorId || null, vendor_text: vendorText.trim() || null,
+        order_type: orderType, bill_type: billType, bill_category: null,
+        ct_other_dept: 'CT', order_no: orderNo, project_id: projectId,
+        vendor_id: null, vendor_text: contractor,
         discipline_id: disciplineId || null,
         discipline: disciplines.find(d => d.id === disciplineId)?.name || null,
         work: work.trim() || null,
         bill_no: billNo.trim() || null, ra_no: raNo.trim() || null,
-        bill_date: billDate || null, claimed_amount: Number(claimed) || 0, trust: trust.trim() || null,
-        wo_value: noWO ? null : (Number(woValue) || null), paid_till_date: Number(paidTill) || 0,
+        bill_date: billDate || null, claimed_amount: thisBill, trust: trust || null,
+        wo_value: woValue, paid_till_date: paidTill,
         abstract_no_in4: abstractNo.trim() || null,
       },
     })
@@ -85,146 +92,147 @@ export function BillForm({ projects, vendors, disciplines, in4Wos, in4Projects }
     router.push(id ? `/bills-booking/${id}` : '/bills-booking')
   }
 
-  const sel = 'h-10 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm'
+  const sel = 'h-10 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm mt-1'
 
   return (
-    <Card className="p-5 space-y-4">
+    <Card className="p-5 space-y-5">
       {err && <p role="alert" className="text-sm text-rose-700 bg-rose-50 border border-rose-200 rounded-lg px-3 py-2">{err}</p>}
 
-      <div className="grid grid-cols-2 gap-3">
-        <div>
-          <Label htmlFor="otype">Order type</Label>
-          <select id="otype" value={orderType} onChange={e => setOrderType(e.target.value as typeof orderType)} className={sel}>
-            <option value="WO">WO (contractor)</option>
-            <option value="PO">PO (vendor)</option>
-            <option value="Without WO/PO">Without WO/PO</option>
-          </select>
+      {/* 1 — what kind of bill, because it decides whether the rest applies */}
+      <Section n={1} title="What kind of bill is this?">
+        <div className="flex flex-wrap gap-2">
+          {['Running', 'Full & Final', 'Advance', 'Petty Cash', 'Misc'].map(t => (
+            <button key={t} type="button" onClick={() => { setBillType(t); setWo(null); setNoOrder(false) }}
+                    className={`rounded-lg border px-3 py-2 text-sm font-semibold min-h-[44px] ${
+                      billType === t ? 'border-indigo-600 bg-indigo-600 text-white' : 'border-gray-300 text-gray-700 hover:bg-gray-50'}`}>
+              {t}
+            </button>
+          ))}
         </div>
-        <div>
-          <Label htmlFor="ono">{noWO ? 'Reference (optional)' : `${orderType} number`}</Label>
-          <Input id="ono" value={orderNo} onChange={e => setOrderNo(e.target.value)} placeholder={noWO ? '—' : 'WO/SRASSK/…'} disabled={noWO} />
-        </div>
-      </div>
+        <p className="mt-2 text-xs text-gray-500">
+          {AGAINST_WO.has(billType)
+            ? 'Drawn against a work order. Find it below and IN4 fills the rest.'
+            : 'No work order and no abstract — these go straight to Billing with a head of account.'}
+        </p>
+      </Section>
 
-      {noWO && (
-        <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
-          <b>No WO/PO issued.</b> This bill is flagged to be <b>regularised</b> — a work order will need to be raised. It still flows for checking.
-        </div>
+      {/* 2 — the work order, found by typing */}
+      {AGAINST_WO.has(billType) && (
+        <Section n={2} title="Which work order?">
+          {!noOrder && <WoPicker wos={in4Wos} picked={wo} onPick={pickWo} projectNames={projectNames} />}
+
+          <label className="mt-3 flex items-start gap-2 text-sm">
+            <input type="checkbox" checked={noOrder} className="mt-0.5 h-4 w-4"
+                   onChange={e => { setNoOrder(e.target.checked); if (e.target.checked) setWo(null) }} />
+            <span>
+              <b>No work order yet</b>
+              <span className="block text-xs text-gray-500">
+                The bill came first and the WO is still to be raised. A third of bills arrive this way.
+                It is recorded now, ages from its own bill date, and stops before the Atm desk until a number is attached.
+              </span>
+            </span>
+          </label>
+
+          {noOrder && (
+            <div className="mt-3">
+              <Label htmlFor="ono">Reference, if there is one</Label>
+              <Input id="ono" value={orderNoManual} onChange={e => setOrderNoManual(e.target.value)} placeholder="optional" />
+            </div>
+          )}
+        </Section>
       )}
 
-      {!noWO && orderType === 'WO' && (
-        <WoPicker
-          wos={in4Wos} projects={in4Projects}
-          projectId={in4ProjectId} woId={in4WoId}
-          onProject={setIn4ProjectId} onWo={applyWo}
-        />
-      )}
-
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-3">
-        <div>
-          <Label htmlFor="btype">Bill type</Label>
-          <select id="btype" value={billType} onChange={e => setBillType(e.target.value)} className={sel}>
-            {['Running', 'Advance', 'Full & Final', 'Petty Cash', 'Misc'].map(t => <option key={t} value={t}>{t}</option>)}
-          </select>
-        </div>
-        <div>
-          <Label htmlFor="cat">Bill category</Label>
-          <Input id="cat" value={billCategory} onChange={e => setBillCategory(e.target.value)} placeholder="e.g. RA / Labour" />
-        </div>
-        <div>
-          <Label htmlFor="dept">CT / Other dept</Label>
-          <select id="dept" value={ctDept} onChange={e => setCtDept(e.target.value)} className={sel}>
-            <option value="CT">CT</option>
-            <option value="Other">Other</option>
-          </select>
-        </div>
-      </div>
-
-      <div className="grid grid-cols-2 gap-3">
-        <div>
-          <Label htmlFor="proj">Project *</Label>
-          <select id="proj" value={projectId} onChange={e => setProjectId(e.target.value)} className={sel}>
-            {projects.map(p => <option key={p.id} value={p.id}>{p.code} — {p.name}</option>)}
-          </select>
-        </div>
-        <div>
-          <Label htmlFor="disc">Category (Internal Estimate)</Label>
-          <select id="disc" value={disciplineId} onChange={e => setDisciplineId(e.target.value)} className={sel}>
-            <option value="">— select —</option>
-            {disciplines.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
-          </select>
-        </div>
-      </div>
-
-      <div className="grid grid-cols-2 gap-3">
-        <div>
-          <Label htmlFor="ven">Vendor / contractor</Label>
-          <select id="ven" value={vendorId} onChange={e => setVendorId(e.target.value)} className={sel}>
-            <option value="">— pick or type below —</option>
-            {vendors.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
-          </select>
-        </div>
-        <div>
-          <Label htmlFor="vent">…or type the name</Label>
-          <Input id="vent" value={vendorText} onChange={e => setVendorText(e.target.value)} placeholder="e.g. Desai Construction" disabled={!!vendorId} />
-        </div>
-      </div>
-
-      <div>
-        <Label htmlFor="work">Work / scope</Label>
-        <Input id="work" value={work} onChange={e => setWork(e.target.value)} placeholder="e.g. Excavation and rock breaking works" />
-      </div>
-
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-        <div>
-          <Label htmlFor="bno">Bill no</Label>
-          <Input id="bno" value={billNo} onChange={e => setBillNo(e.target.value)} />
-        </div>
-        <div>
-          <Label htmlFor="ra">RA no</Label>
-          <Input id="ra" value={raNo} onChange={e => setRaNo(e.target.value)} placeholder="MS-04" />
-        </div>
-        <div>
-          <Label htmlFor="bd">Bill date</Label>
-          <Input id="bd" type="date" value={billDate} onChange={e => setBillDate(e.target.value)} />
-        </div>
-        <div>
-          <Label htmlFor="tr">Trust</Label>
-          <Input id="tr" value={trust} onChange={e => setTrust(e.target.value)} placeholder="SRA / SRET" />
-        </div>
-      </div>
-
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-        {!noWO && (
-          <div>
-            <Label htmlFor="wov">{orderType} value</Label>
-            <MoneyInput id="wov" value={woValue} onChange={setWoValue} placeholder="0" />
+      {/* 3 — only what IN4 cannot know */}
+      <Section n={AGAINST_WO.has(billType) ? 3 : 2} title="The bill itself">
+        {(!usingWo) && (
+          <div className="mb-3">
+            <Label htmlFor="vent">Contractor / vendor *</Label>
+            <Input id="vent" value={vendorText} onChange={e => setVendorText(e.target.value)} placeholder="e.g. Desai Construction" />
           </div>
         )}
-        <div>
-          <Label htmlFor="ptd">Paid till date</Label>
-          <MoneyInput id="ptd" value={paidTill} onChange={setPaidTill} placeholder="0" />
-        </div>
-        <div>
-          <Label htmlFor="cl">This bill amount *</Label>
-          <MoneyInput id="cl" value={claimed} onChange={setClaimed} placeholder="0" />
-        </div>
-        <div>
-          <Label htmlFor="abs">Abstract no (IN4)</Label>
-          <Input id="abs" value={abstractNo} onChange={e => setAbstractNo(e.target.value)} />
-        </div>
-      </div>
 
-      {overWO && (
-        <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-800">
-          <b>WO budget short.</b> Paid-so-far + this bill ({(((Number(paidTill) || 0) + (Number(claimed) || 0))).toLocaleString('en-IN')}) exceeds the {orderType} value ({woNum.toLocaleString('en-IN')}) by <b>₹{(((Number(paidTill) || 0) + (Number(claimed) || 0)) - woNum).toLocaleString('en-IN')}</b> — an <b>amendment in IN4</b> will be needed before payment. It&apos;s flagged automatically.
+        <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+          <div>
+            <Label htmlFor="bno">Bill no</Label>
+            <Input id="bno" value={billNo} onChange={e => setBillNo(e.target.value)} placeholder="from the invoice" />
+          </div>
+          <div>
+            <Label htmlFor="bd">Bill date</Label>
+            <Input id="bd" type="date" value={billDate} onChange={e => setBillDate(e.target.value)} />
+          </div>
+          <div>
+            <Label htmlFor="cl">This bill *</Label>
+            <MoneyInput id="cl" value={claimed} onChange={setClaimed} placeholder="0" />
+          </div>
+          <div>
+            <Label htmlFor="ra">RA no</Label>
+            <Input id="ra" value={raNo} onChange={e => setRaNo(e.target.value)}
+                   placeholder={usingWo && wo.bills > 0 ? 'suggested' : 'RA-1'} />
+          </div>
         </div>
-      )}
+
+        <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
+          <div>
+            <Label htmlFor="work">Work / scope</Label>
+            <Input id="work" value={work} onChange={e => setWork(e.target.value)} placeholder="e.g. Excavation and rock breaking" />
+          </div>
+          <div>
+            <Label htmlFor="abs">Abstract no (IN4)</Label>
+            <Input id="abs" value={abstractNo} onChange={e => setAbstractNo(e.target.value)} placeholder="if one exists already" />
+          </div>
+        </div>
+
+        {overWO && (
+          <div className="mt-3 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-800">
+            <b>This takes the work order past its value.</b> Billed so far {formatINR(paidTill)} plus this
+            bill {formatINR(thisBill)} is {formatINR(paidTill + thisBill)} against {formatINR(woValue ?? 0)} ordered —
+            over by <b>{formatINR(paidTill + thisBill - (woValue ?? 0))}</b>. An amendment in IN4 is needed before payment.
+            It is flagged automatically; the bill still goes for checking.
+          </div>
+        )}
+      </Section>
+
+      {/* 4 — where it books in CT Hub */}
+      <Section n={AGAINST_WO.has(billType) ? 4 : 3} title="Where it books">
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+          <div>
+            <Label htmlFor="proj">CT Hub project *</Label>
+            <select id="proj" value={projectId} onChange={e => setProjectId(e.target.value)} className={sel}>
+              <option value="">— select —</option>
+              {projects.map(p => <option key={p.id} value={p.id}>{p.code} — {p.name}</option>)}
+            </select>
+            {usingWo && wo.projectId != null && (
+              <p className="mt-1 text-[11px] text-gray-500">
+                IN4 has this work order under <b>{projectNames.get(wo.projectId) ?? '—'}</b>.
+              </p>
+            )}
+          </div>
+          <div>
+            <Label htmlFor="disc">Category (Internal Estimate)</Label>
+            <select id="disc" value={disciplineId} onChange={e => setDisciplineId(e.target.value)} className={sel}>
+              <option value="">— select —</option>
+              {disciplines.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
+            </select>
+          </div>
+        </div>
+      </Section>
 
       <Button onClick={submit} disabled={busy} className="bg-indigo-600 hover:bg-indigo-700">
         {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
         Enter bill &amp; send to Site Head
       </Button>
     </Card>
+  )
+}
+
+function Section({ n, title, children }: { n: number; title: string; children: React.ReactNode }) {
+  return (
+    <section>
+      <h2 className="mb-2 flex items-center gap-2 text-sm font-semibold text-gray-900">
+        <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-gray-900 text-[11px] font-bold text-white">{n}</span>
+        {title}
+      </h2>
+      {children}
+    </section>
   )
 }
