@@ -106,6 +106,21 @@ export function availableAnywhere(stock: readonly StockRow[], itemId: string): n
   return stock.filter(r => r.itemId === itemId).reduce((s, r) => s + r.qty, 0)
 }
 
+/**
+ * How many different things we hold — for the "Items held" tile.
+ *
+ * Counts ITEMS, not item-and-place rows. The tile first shipped counting rows,
+ * so one item kept in two stores counted twice and the figure read 728 against
+ * an item master of 659 — a number that cannot be true and quietly says the
+ * screen is not to be trusted. An item is held once however many shelves it
+ * sits on.
+ */
+export function heldItemCount(stock: readonly StockRow[]): number {
+  const held = new Set<string>()
+  for (const r of stock) if (r.qty > 0) held.add(r.itemId)
+  return held.size
+}
+
 export interface IssueCheck { ok: boolean; reason?: string; available: number }
 
 /**

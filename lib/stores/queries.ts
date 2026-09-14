@@ -1,7 +1,7 @@
 import 'server-only'
 import { createClient } from '@/lib/supabase/server'
 import {
-  foldStock, outstandingReturnables, type Movement, type StockRow,
+  foldStock, outstandingReturnables, heldItemCount, type Movement, type StockRow,
   type ReturnableLine, type ReturnableRow, type Register, type Stage,
 } from './core'
 
@@ -187,6 +187,12 @@ export async function loadEntries(opts: {
   })
 }
 
+export interface Signature {
+  /** Who signed — the typed name where there is one, else the account. */
+  who: string | null
+  at: string | null
+}
+
 export interface EntryDetail extends EntryRow {
   entityId: string | null
   deliveryModeId: string | null
@@ -198,9 +204,10 @@ export interface EntryDetail extends EntryRow {
   handedOverParty: string | null
   handedOverTo: string | null
   inchargeName: string | null
-  securitySignedAt: string | null
-  receiverSignedAt: string | null
-  inchargeSignedAt: string | null
+  /** The three signature points the mind map asks for. Captured since the
+   *  section shipped and, until now, displayed nowhere — which is the same as
+   *  not capturing them. */
+  signatures: { security: Signature; incharge: Signature; receiver: Signature }
   lines: Array<{ id: string; itemId: string; itemName: string; unit: string; qty: number; rate: number | null; amount: number | null; returnable: boolean }>
   photos: Array<{ id: string; kind: string; path: string }>
   edits: Array<{ id: string; field: string; oldValue: string | null; newValue: string | null; changedAt: string; changedBy: string | null }>
@@ -211,6 +218,9 @@ export async function loadEntry(id: string): Promise<EntryDetail | null> {
   const { data } = await supabase
     .from('mio_entries')
     .select(`*, projects:project_id ( name ), creator:created_by ( full_name ), linked:linked_entry_id ( no ),
+             securitySigner:security_signed_by ( full_name ),
+             inchargeSigner:incharge_signed_by ( full_name ),
+             receiverSigner:receiver_signed_by ( full_name ),
              mio_entry_lines ( id, item_id, unit, qty, rate, amount, returnable, mio_items ( name ) ),
              mio_photos ( id, kind, path )`)
     .eq('id', id)
@@ -259,9 +269,23 @@ export async function loadEntry(id: string): Promise<EntryDetail | null> {
     handedOverParty: (data.handed_over_party as string | null) ?? null,
     handedOverTo: (data.handed_over_to as string | null) ?? null,
     inchargeName: (data.incharge_name as string | null) ?? null,
-    securitySignedAt: (data.security_signed_at as string | null) ?? null,
-    receiverSignedAt: (data.receiver_signed_at as string | null) ?? null,
-    inchargeSignedAt: (data.incharge_signed_at as string | null) ?? null,
+    signatures: {
+      security: {
+        who: (data.security_by as string | null)
+          ?? ((data.securitySigner as { full_name?: string } | null)?.full_name ?? null),
+        at: (data.security_signed_at as string | null) ?? null,
+      },
+      incharge: {
+        who: (data.incharge_name as string | null)
+          ?? ((data.inchargeSigner as { full_name?: string } | null)?.full_name ?? null),
+        at: (data.incharge_signed_at as string | null) ?? null,
+      },
+      receiver: {
+        who: (data.handed_over_to as string | null)
+          ?? ((data.receiverSigner as { full_name?: string } | null)?.full_name ?? null),
+        at: (data.receiver_signed_at as string | null) ?? null,
+      },
+    },
     lines: rawLines.map(l => ({
       id: l.id as string,
       itemId: l.item_id as string,
@@ -503,6 +527,6 @@ export async function loadCounts(projectId?: string | null): Promise<{
     toComplete: (gate as { count: number | null }).count ?? 0,
     pendingRequests: (reqs as { count: number | null }).count ?? 0,
     returnablesOut: returnables.length,
-    itemsHeld: stock.filter(r => r.qty > 0).length,
+    itemsHeld: heldItemCount(stock),
   }
 }
