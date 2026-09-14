@@ -10,8 +10,8 @@ import type { Booking, DeskRow, Person } from '@/lib/bills-booking/booking'
 
 /** Where this bill books — shown as facts, and fixable on the spot.
  *
- *  IN4 answers this for 24 of the 54 sub-projects that have work orders. The
- *  other 30 — Staff Facilities Block, Raj Uphaar, the Warehouse, Raj Saurabh —
+ *  IN4 answers this for 22 of the 54 sub-projects that have work orders. The
+ *  other 32 — Staff Facilities Block, Raj Uphaar, RU Infra Work, Raj Saurabh —
  *  have no CT Hub project at all, and they carry most of the money. Aksha, 14
  *  Sep 2026: "if any missing project in CT then u can make an individual in
  *  Bills Approval for approving and assigning the Atm head."

@@ -12,8 +12,8 @@ export const dynamic = 'force-dynamic'
  *  Approval knows where it books and who approves it.
  *
  *  This is the one screen that exists because CT Hub and IN4 do not cover the
- *  same ground. 24 of the 54 sub-projects with work orders reach a CT Hub
- *  project through IN4's own links; the other 30 have no CT Hub project at all,
+ *  same ground. 22 of the 54 sub-projects with work orders reach a live CT Hub
+ *  project through IN4's own links; the other 32 have none at all,
  *  and they include Staff Facilities Block, Raj Uphaar, RU Infra Work and Raj
  *  Saurabh — most of the money. Setting a desk here answers, once, what the
  *  entry form would otherwise have to ask on every bill.

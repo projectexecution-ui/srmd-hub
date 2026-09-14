@@ -18,11 +18,12 @@
  *
  *  Two of those can come up empty, and both are normal rather than broken:
  *
- *  CT Hub has 45 projects; IN4 has 54 sub-projects with billed work orders, and
- *  24 of them reach a CT Hub project. The other 30 include Staff Facilities
- *  Block (149 WOs), Raj Uphaar (136), RU Infra Work (112), Raj Saurabh (90) —
- *  most of the money. They are not mis-mapped: CT Hub has no project for those
- *  buildings at all, because Cost Control only covers a subset. Making the
+ *  CT Hub has 45 projects; IN4 has 54 sub-projects with numbered work orders,
+ *  and 22 of them reach a live CT Hub project — 341 of the 1,228 work orders.
+ *  The other 32 include Staff Facilities Block (149 work orders), Raj Uphaar
+ *  (136), RU Infra Work (112) and Raj Saurabh (90) — most of the money. They
+ *  are not mis-mapped: CT Hub has no project for those buildings at all,
+ *  because Cost Control covers a subset of the ashram. Making the
  *  clerk choose from a list that does not contain the right answer produces a
  *  wrong answer. So Bills Approval keeps its own desk for a sub-project, and an
  *  admin sets it once — that is `bb_project_desks`.

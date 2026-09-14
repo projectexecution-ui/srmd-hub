@@ -4,12 +4,13 @@
 -- work order carries the project, the scope and the category; making somebody
 -- pick them again is both slower and a chance to pick wrong.
 --
--- It maps for 285 of the 1,082 work orders that have been billed. The chain is
--- in4_subproject_links → cc_bph_project_links → projects. The other 797 belong
--- to IN4 sub-projects that have no CT Hub project at all — Raj Uphaar,
--- Warehouse, Staff Facilities Block, Common Facility Block and DN Extension
--- among them, which is most of the money. Forcing a dropdown for those means
--- either filing the bill against the wrong building or not filing it.
+-- It maps for 341 of the 1,228 numbered work orders. The chain is
+-- in4_subproject_links → cc_bph_project_links → projects. The other 887 belong
+-- to IN4 sub-projects that have no CT Hub project at all — Staff Facilities
+-- Block, Raj Uphaar, RU Infra Work, Raj Saurabh, Common Facility Block and DN
+-- Extension among them, which is most of the money. Forcing a dropdown for
+-- those means either filing the bill against the wrong building or not filing
+-- it.
 --
 -- So Bills Approval keeps its own desk for an IN4 sub-project: optionally
 -- pointed at a CT Hub project once one exists, and carrying the Atm Head who
