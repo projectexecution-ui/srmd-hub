@@ -1,7 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { billLadder, woHistory, type CertMoney, type BillLadder, type WoHistory } from './calc'
 import { buildAbstractSheet, type AbstractSheet, type AbstractLine, type BoqLine } from './abstract'
-import { seedLines, type MakerLine } from './maker'
+import { seedLines, pickRate, type MakerLine, type RatePick } from './maker'
 
 /** The live IN4 position behind one CT Hub bill.
  *
@@ -210,7 +210,7 @@ export async function loadAbstractSheet(
 export async function loadMakerSeed(
   sb: SupabaseClient,
   opts: { billId: string; woNo: string },
-): Promise<{ lines: MakerLine[]; gstPct: number; retentionPct: number } | null> {
+): Promise<{ lines: MakerLine[]; gst: RatePick; retention: RatePick } | null> {
   const { data: wo } = await sb.from('in4_work_orders')
     .select('wo_id').eq('display_no', opts.woNo).maybeSingle()
   if (!wo) return null
@@ -221,7 +221,7 @@ export async function loadMakerSeed(
     sb.from('in4_wo_abstract_items').select('item_id, executed_quantity, executed_amt').eq('wo_id', woId),
     sb.from('bb_bill_lines').select('sr, item_id, this_qty').eq('bill_id', opts.billId),
     sb.from('in4_wo_certificates')
-      .select('certified_amt, gross_bill_amt, retention_amt, status_name').eq('wo_id', woId),
+      .select('certified_amt, gross_bill_amt, retention_amt, status_name, creation_dt').eq('wo_id', woId),
   ])
   if (!boqData?.length) return null
 
@@ -252,18 +252,24 @@ export async function loadMakerSeed(
   const saved = new Map((mine ?? []).map(r => [Number(r.item_id), Number(r.this_qty ?? 0)]))
   for (const l of lines) if (l.itemId != null && saved.has(l.itemId)) l.thisQty = saved.get(l.itemId)!
 
-  // The rates this order has actually carried, so the sheet opens on the right
-  // ones instead of a house rule nobody agreed. 60% of IN4 bills have no tax.
+  // The rate this order actually carries — read PER BILL and never blended.
+  // Averaging across the order gave "GST @ 14.4%" on WO/SRASSK/SQ/2023-24/7,
+  // whose 27 bills carry 0% or 18% and nothing in between. See pickRate.
   const live = (certData ?? []).filter(c =>
     !['cancelled', 'reversed'].includes(((c.status_name as string | null) ?? '').trim().toLowerCase())
     && Number(c.certified_amt ?? 0) > 0)
-  const basic = live.reduce((s, c) => s + Number(c.certified_amt ?? 0), 0)
-  const gstPct = basic > 0
-    ? Math.round((live.reduce((s, c) => s + (Number(c.gross_bill_amt ?? 0) - Number(c.certified_amt ?? 0)), 0) / basic) * 1000) / 10
-    : 18
-  const retentionPct = basic > 0
-    ? Math.round((live.reduce((s, c) => s + Number(c.retention_amt ?? 0), 0) / basic) * 1000) / 10
-    : 5
 
-  return { lines, gstPct, retentionPct }
+  const gst = pickRate(live.map(c => ({
+    on: (c.creation_dt as string | null) ?? null,
+    part: Number(c.gross_bill_amt ?? 0) - Number(c.certified_amt ?? 0),
+    whole: Number(c.certified_amt ?? 0),
+  })), 18)
+
+  const retention = pickRate(live.map(c => ({
+    on: (c.creation_dt as string | null) ?? null,
+    part: Number(c.retention_amt ?? 0),
+    whole: Number(c.certified_amt ?? 0),
+  })), 5)
+
+  return { lines, gst, retention }
 }

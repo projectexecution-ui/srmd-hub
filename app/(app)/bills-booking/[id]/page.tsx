@@ -180,8 +180,8 @@ export default async function BillDetailPage({ params }: { params: Promise<{ id:
           vendor={vendor}
           work={bill.work as string | null}
           seed={maker.lines}
-          gstPct={(bill.gst_pct as number | null) ?? maker.gstPct}
-          retentionPct={(bill.retention_pct as number | null) ?? maker.retentionPct}
+          gst={bill.gst_pct != null ? { ...maker.gst, pct: bill.gst_pct as number } : maker.gst}
+          retention={bill.retention_pct != null ? { ...maker.retention, pct: bill.retention_pct as number } : maker.retention}
           canEdit={canEdit && openStages.includes(bill.current_stage as string)}
           raLabel={(bill.ra_no as string | null) ?? 'RA'}
         />

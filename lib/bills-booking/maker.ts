@@ -157,3 +157,78 @@ export function seedLines(
     }
   })
 }
+
+/* ── which rate to open the sheet on ─────────────────────────────────────── */
+
+/**
+ * Aksha, 14 Sep 2026, on seeing "GST @ 14.4%": "can u check why GST is shown
+ * like this - if its for example then its fine - else u need to chheck for
+ * flaw."
+ *
+ * It was a flaw, and a bad one. The sheet opened on a BLENDED AVERAGE across
+ * every bill of the order:
+ *
+ *     Σ(gross − certified) ÷ Σ certified
+ *
+ * On WO/SRASSK/SQ/2023-24/7 that gives 14.4% GST and 4% retention. Its 27
+ * bills carry 0% or 18% GST and 0% or 5% retention. NOTHING carries 14.4%.
+ *
+ * GST is statutory — 0, 5, 12, 18, 28 — and retention is a rule written into a
+ * contract. Neither is ever an average. And the number was pre-filled into the
+ * editable field that computes the tax, so a sheet saved without a second look
+ * would have been wrong.
+ *
+ * So: never blend. Work out what each bill actually carried, keep only rates
+ * that reproduce their own figure to the rupee, and open on the most recent
+ * one — that is what the next bill is most likely to carry. When the order's
+ * bills disagree, say so, because then it is a decision and not a default.
+ */
+export interface RateBill {
+  /** For ordering — the most recent bill wins. */
+  on: string | null
+  /** The deduction or the tax. */
+  part: number
+  /** The basic value it was worked out on. */
+  whole: number
+}
+
+export interface RatePick {
+  pct: number
+  /** `latest` — what the most recent bill carried. `default` — the order gave
+   *  nothing usable, so this is a stated fallback, not a fact. */
+  basis: 'latest' | 'default'
+  /** How many of the order's bills carried exactly this rate, out of how many. */
+  seen: number
+  total: number
+  /** The other rates the order's bills carried. Non-empty means the person has
+   *  to choose rather than accept. */
+  others: number[]
+}
+
+/** A rate only if applying it back reproduces the figure to the rupee. A bill
+ *  whose deduction does not divide cleanly carried an adjustment, not a rate,
+ *  and must not set the default for the next one. */
+function cleanRate(part: number, whole: number): number | null {
+  if (!(whole > 0)) return null
+  if (part === 0) return 0
+  if (part < 0) return null
+  const pct = Math.round((part / whole) * 10000) / 100
+  return Math.abs(whole * (pct / 100) - part) < 1 ? pct : null
+}
+
+export function pickRate(bills: RateBill[], fallback: number): RatePick {
+  const rated = bills
+    .map(b => ({ on: b.on ?? '', pct: cleanRate(b.part, b.whole) }))
+    .filter((b): b is { on: string; pct: number } => b.pct != null)
+    .sort((a, b) => a.on.localeCompare(b.on))
+
+  if (!rated.length) {
+    return { pct: fallback, basis: 'default', seen: 0, total: bills.length, others: [] }
+  }
+
+  const pct = rated[rated.length - 1].pct
+  const seen = rated.filter(r => r.pct === pct).length
+  const others = [...new Set(rated.map(r => r.pct))].filter(p => p !== pct).sort((a, b) => a - b)
+
+  return { pct, basis: 'latest', seen, total: rated.length, others }
+}

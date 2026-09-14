@@ -7,7 +7,7 @@ import { createClient } from '@/lib/supabase/client'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Check, Loader2, Ruler } from 'lucide-react'
-import { priceAbstract, type MakerLine } from '@/lib/bills-booking/maker'
+import { priceAbstract, type MakerLine, type RatePick } from '@/lib/bills-booking/maker'
 import { formatINR, formatNumber } from '@/lib/utils'
 import { Particular, ExpandAll } from './Particular'
 import { shortenBoq } from '@/lib/bills-booking/shorten'
@@ -23,14 +23,14 @@ import { shortenBoq } from '@/lib/bills-booking/shorten'
  *  balance, GST, retention and the green Net Payable line. The rate is never
  *  editable — it is what the work order ordered, and a rate somebody can
  *  retype is a rate that ends up wrong. */
-export function AbstractMaker({ billId, woNo, vendor, work, seed, gstPct, retentionPct, canEdit, raLabel }: {
+export function AbstractMaker({ billId, woNo, vendor, work, seed, gst: gstPick, retention: retPick, canEdit, raLabel }: {
   billId: string
   woNo: string
   vendor: string
   work: string | null
   seed: MakerLine[]
-  gstPct: number
-  retentionPct: number
+  gst: RatePick
+  retention: RatePick
   canEdit: boolean
   /** "RA-4", for the strip along the top. */
   raLabel: string
@@ -39,8 +39,8 @@ export function AbstractMaker({ billId, woNo, vendor, work, seed, gstPct, retent
   const supabase = createClient()
   const [busy, start] = useTransition()
   const [err, setErr] = useState<string | null>(null)
-  const [gst, setGst] = useState(String(gstPct))
-  const [ret, setRet] = useState(String(retentionPct))
+  const [gst, setGst] = useState(String(gstPick.pct))
+  const [ret, setRet] = useState(String(retPick.pct))
   const [qty, setQty] = useState<Record<number, string>>(
     () => Object.fromEntries(seed.map(l => [l.sr, l.thisQty ? String(l.thisQty) : ''])))
 
@@ -188,6 +188,9 @@ export function AbstractMaker({ billId, woNo, vendor, work, seed, gstPct, retent
         )}
       </div>
 
+      <RateNote label="GST" pick={gstPick} />
+      <RateNote label="Retention" pick={retPick} />
+
       {sheet.anyOverrun && (
         <p className="border-t border-rose-200 bg-rose-50 px-4 py-2.5 text-xs text-rose-800">
           Lines marked <b>over</b> are measured past the quantity ordered. That needs an amendment in IN4 before
@@ -201,6 +204,39 @@ export function AbstractMaker({ billId, woNo, vendor, work, seed, gstPct, retent
         leaves a line in its history.
       </p>
     </Card>
+  )
+}
+
+/** Where the rate came from — so a default reads as a default, and a
+ *  disagreement reads as a decision.
+ *
+ *  This exists because the sheet used to open on a BLENDED average and simply
+ *  assert it: "GST @ 14.4%" on an order whose bills carry 0% or 18%. A rate
+ *  that cannot say where it came from is a rate nobody can check. */
+function RateNote({ label, pick }: { label: string; pick: RatePick }) {
+  if (pick.basis === 'default') {
+    return (
+      <p className="border-t border-amber-200 bg-amber-50 px-4 py-2 text-[11.5px] text-amber-900">
+        <b>{label} @ {pick.pct}% is a fallback, not this order&apos;s rate.</b>{' '}
+        {pick.total === 0
+          ? 'This order has no bills yet to read one from.'
+          : 'None of its bills gave a rate that divides cleanly.'} Check it before saving.
+      </p>
+    )
+  }
+  if (pick.others.length) {
+    return (
+      <p className="border-t border-amber-200 bg-amber-50 px-4 py-2 text-[11.5px] text-amber-900">
+        <b>{label}: this order&apos;s bills disagree.</b> {pick.pct}% on the latest
+        ({pick.seen} of {pick.total}); {pick.others.map(o => `${o}%`).join(', ')} on the rest.
+        Set the one that applies to this bill.
+      </p>
+    )
+  }
+  return (
+    <p className="border-t border-gray-100 px-4 py-1.5 text-[11.5px] text-gray-500">
+      {label} @ {pick.pct}% — as on all {pick.total} of this order&apos;s bills.
+    </p>
   )
 }
 

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { priceAbstract, seedLines, type MakerLine } from './maker'
+import { priceAbstract, seedLines, pickRate, type MakerLine } from './maker'
 
 /** The concept sheet's own worked example, so the maker produces the numbers
  *  Aksha already approved the shape of: five lines measured on a bill against
@@ -128,5 +128,79 @@ describe('seeding the sheet from the work order', () => {
 
   it('numbers the rows from 1, for the # column', () => {
     expect(seedLines(boq, new Map()).map(l => l.sr)).toEqual([1, 2])
+  })
+})
+
+describe('which rate the sheet opens on', () => {
+  // The flaw Aksha caught. WO/SRASSK/SQ/2023-24/7 has 27 bills carrying 0% or
+  // 18% GST and 0% or 5% retention. Blending them gave "GST @ 14.4%" and
+  // "Retention @ 4%" — rates that exist on no bill anywhere, pre-filled into
+  // the field that computes the tax.
+  const mixed = [
+    { on: '2024-03-01', part: 0, whole: 500000 },       // no tax
+    { on: '2024-06-01', part: 90000, whole: 500000 },   // 18%
+    { on: '2024-09-01', part: 0, whole: 400000 },       // no tax
+    { on: '2025-01-01', part: 180000, whole: 1000000 }, // 18%
+  ]
+
+  it('never invents a blended rate', () => {
+    const p = pickRate(mixed, 18)
+    // The blend of these four is 14.4%. It must not appear.
+    expect(p.pct).not.toBe(14.4)
+    expect([0, 18]).toContain(p.pct)
+  })
+
+  it('opens on what the LAST bill carried', () => {
+    expect(pickRate(mixed, 18).pct).toBe(18)
+    const endsUntaxed = [...mixed, { on: '2025-06-01', part: 0, whole: 300000 }]
+    expect(pickRate(endsUntaxed, 18).pct).toBe(0)
+  })
+
+  it('says the order disagrees, so it reads as a decision not a default', () => {
+    const p = pickRate(mixed, 18)
+    expect(p.others).toEqual([0])
+    expect(p.seen).toBe(2)
+    expect(p.total).toBe(4)
+    expect(p.basis).toBe('latest')
+  })
+
+  it('stays quiet when every bill agrees', () => {
+    const p = pickRate([
+      { on: '2024-01-01', part: 90000, whole: 500000 },
+      { on: '2024-02-01', part: 18000, whole: 100000 },
+    ], 18)
+    expect(p.pct).toBe(18)
+    expect(p.others).toEqual([])
+    expect(p.seen).toBe(2)
+  })
+
+  // A deduction that does not divide cleanly is an adjustment, not a rate, and
+  // must not become the default for the next bill.
+  it('ignores a bill whose deduction is not a rate at all', () => {
+    const p = pickRate([
+      { on: '2024-01-01', part: 90000, whole: 500000 },  // clean 18%
+      { on: '2024-05-01', part: 11373, whole: 100000 },  // 11.373% — not a rate
+    ], 5)
+    expect(p.pct).toBe(18)
+    expect(p.total).toBe(1)
+  })
+
+  it('falls back and SAYS it is a fallback when nothing is usable', () => {
+    const p = pickRate([{ on: '2024-01-01', part: 11373, whole: 100000 }], 18)
+    expect(p).toMatchObject({ pct: 18, basis: 'default', seen: 0 })
+  })
+
+  it('treats a genuinely untaxed order as 0%, not as the 18% default', () => {
+    // 60% of IN4 bills carry no tax. Defaulting those to 18% would add lakhs.
+    const p = pickRate([
+      { on: '2024-01-01', part: 0, whole: 500000 },
+      { on: '2024-02-01', part: 0, whole: 250000 },
+    ], 18)
+    expect(p.pct).toBe(0)
+    expect(p.basis).toBe('latest')
+  })
+
+  it('copes with an order that has no bills yet', () => {
+    expect(pickRate([], 18)).toMatchObject({ pct: 18, basis: 'default', total: 0 })
   })
 })
