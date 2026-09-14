@@ -38,6 +38,10 @@ export interface ExamplePlan {
   woPending?: boolean
   amendment?: boolean
   /** Set only where the flow says it would exist by now. */
+  /** The IN4 certificate this example points at, where the flow says one would
+   *  exist by now. A REAL ENP number on the same work order, so the bill page
+   *  shows the certified ladder — basic, tax, retention, advance recovery, what
+   *  is left — instead of an estimate. */
   abstract?: string
   netFromClaim?: boolean
   orderType?: string
@@ -61,16 +65,16 @@ export const EXAMPLE_PLANS: ExamplePlan[] = [
   {
     n: 3, complexity: 'simple',
     title: 'With the Disc Head, abstract recorded',
-    check: 'The abstract number now shows on the bill, and the history says who recorded it and when.',
+    check: 'The abstract shows on the bill and the history says who recorded it. No certificate exists yet, so the calculation is the EXPECTED one, worked from the tax and retention this order has really carried.',
     woIndex: 2, stage: 'disc_head', daysAtDesk: 1, billType: 'Running', shareOfBalance: 0.3,
     abstract: 'ABS/SQ/2026-27/118',
   },
   {
     n: 4, complexity: 'simple',
     title: 'Waiting on the Atm Head',
-    check: 'This is the one that should appear in My Approvals with the word Approve on it.',
+    check: 'In My Approvals with the word Approve on it — and the calculation shows why payable is far below the bill: 2.72 lakh of advance being recovered on top of 10% retention.',
     woIndex: 3, stage: 'atm_approval', daysAtDesk: 4, billType: 'Running', shareOfBalance: 0.25,
-    abstract: 'ABS/SQ/2026-27/121',
+    abstract: 'ENP/SRJT/SRAH/2025-26/128',
   },
   {
     n: 5, complexity: 'complex',
@@ -82,9 +86,9 @@ export const EXAMPLE_PLANS: ExamplePlan[] = [
   {
     n: 6, complexity: 'complex',
     title: 'Takes the work order past its value',
-    check: 'The red amendment banner, with the arithmetic spelled out. It still moves — the flag does not block it.',
+    check: 'The red amendment banner with the arithmetic spelled out — and its certificate is one of the 20% where IN4 own figures do not add up, so the calculation shows both totals and says so rather than picking one.',
     woIndex: 5, stage: 'ct_head', daysAtDesk: 2, billType: 'Running', shareOfBalance: 1.2,
-    amendment: true, abstract: 'ABS/SQ/2026-27/131',
+    amendment: true, abstract: 'ENP/SRASSK/P2ST/2026-27/2',
   },
   {
     n: 7, complexity: 'complex',
@@ -104,16 +108,16 @@ export const EXAMPLE_PLANS: ExamplePlan[] = [
   {
     n: 9, complexity: 'complex',
     title: 'On a building CT Hub has no project for',
-    check: 'No CT Hub project, and it still books — against its IN4 sub-project. This is the case that covers 887 of the 1,228 work orders.',
+    check: 'No CT Hub project, and it still books — against its IN4 sub-project, the case covering 887 of the 1,228 work orders. Twelve bills behind it, two cancelled and greyed out.',
     woIndex: 6, stage: 'atm_approval', daysAtDesk: 6, billType: 'Running', shareOfBalance: 0.15,
-    abstract: 'ABS/SQ/2026-27/077',
+    abstract: 'ENP/SRASSK/SQ/2025-26/227',
   },
   {
     n: 10, complexity: 'complex',
     title: 'Certified down, sitting with the Trust',
-    check: 'Net payable is less than claimed — the CT Head cut it. Days at the Trust are counted but never called late, because nobody at CT can move it.',
+    check: 'Net payable is under the claim — the CT Head cut it. Days at the Trust are counted, never called late. And its certificate carries NO GST: 60% of IN4 bills do not.',
     woIndex: 7, stage: 'trust', daysAtDesk: 21, billType: 'Full & Final', shareOfBalance: 0.4,
-    netFromClaim: true, abstract: 'ABS/SQ/2026-27/066',
+    netFromClaim: true, abstract: 'ENA/SRASSK/NGH/2026-27/5',
   },
 ]
 

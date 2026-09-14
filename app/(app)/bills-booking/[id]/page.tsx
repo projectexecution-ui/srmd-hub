@@ -10,6 +10,8 @@ import { MoveActions } from './MoveActions'
 import { StatusTimeline } from './StatusTimeline'
 import { Documents, type DocRow } from './Documents'
 import { AbstractNo } from './AbstractNo'
+import { Calculation } from './Calculation'
+import { loadBillCalc } from '@/lib/bills-booking/load-calc'
 import { buildTimeline, type RawEvent } from '@/lib/bills-booking/timeline'
 import { formatDate, formatDateTime, formatINR } from '@/lib/utils'
 
@@ -81,6 +83,17 @@ export default async function BillDetailPage({ params }: { params: Promise<{ id:
   // written — a component must not be the thing that asks what time it is.
   const segs = buildTimeline(asc, bill.current_stage as BbStage)
 
+  // The live IN4 position behind this bill: how it adds up, and every bill
+  // already raised on the same work order. Null when the bill names no order —
+  // petty cash and misc have nothing to read.
+  const calc = await loadBillCalc(supabase, {
+    orderNo: bill.order_no as string | null,
+    billNo: bill.bill_no as string | null,
+    raNo: bill.ra_no as string | null,
+    claimed: Number(bill.claimed_amount ?? 0),
+    abstractNo: bill.abstract_no_in4 as string | null,
+  }).catch(() => null)
+
   // Documents + signed URLs.
   const paths = (docRows ?? []).map(d => d.path as string)
   const urlMap = new Map<string, string>()
@@ -150,6 +163,8 @@ export default async function BillDetailPage({ params }: { params: Promise<{ id:
           {!project && subprojectName && <Fact k="Books under" v="Bills Approval project" />}
         </div>
       </Card>
+
+      {calc && <Calculation calc={calc} />}
 
       {/* Stage ladder */}
       <Card className="p-4">
