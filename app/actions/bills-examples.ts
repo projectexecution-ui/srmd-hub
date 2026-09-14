@@ -46,8 +46,17 @@ export async function seedExamples(): Promise<{ ok: boolean; error?: string; mad
   const unmapped = usable.filter(w => !resolveBooking(w, maps).projectId)
   const mapped = usable.filter(w => resolveBooking(w, maps).projectId)
 
-  const chosen = [...mapped.slice(0, 6), unmapped[0] ?? mapped[6], mapped[7] ?? mapped[6]]
-    .filter((w): w is NonNullable<typeof w> => !!w)
+  // Four of the ten are PINNED to a specific work order, because those are the
+  // ones IN4 holds a real abstract sheet for — nine measured items on one, five
+  // on another, with the advance recovery that makes payable collapse. Taking
+  // whatever the query happened to return instead would put somebody else's
+  // measurement on the screen Aksha is reviewing.
+  const byNo = new Map(pick.wos.map(w => [w.woNo, w]))
+  const fallback = [...mapped.slice(0, 6), unmapped[0] ?? mapped[6], mapped[7] ?? mapped[6]]
+  const chosen = Array.from({ length: 8 }, (_, i) => {
+    const pinned = EXAMPLE_PLANS.find(pl => pl.woIndex === i && pl.pinnedWo)?.pinnedWo
+    return (pinned && byNo.get(pinned)) || fallback[i]
+  }).filter((w): w is NonNullable<typeof w> => !!w)
 
   const rows = buildExamples(EXAMPLE_PLANS, chosen, wo => {
     const b = resolveBooking(wo, maps)

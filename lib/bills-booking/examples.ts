@@ -29,6 +29,11 @@ export interface ExamplePlan {
   complexity: 'simple' | 'complex'
   /** Which of the picked work orders to draw from, by index. Null = no order. */
   woIndex: number | null
+  /** A specific work order, by number, where the example has to land on one —
+   *  the four that carry a real abstract sheet in IN4. The seeder looks it up
+   *  and puts it at `woIndex`; without it the measurement on screen would
+   *  belong to somebody else's order. */
+  pinnedWo?: string
   stage: BbStage
   daysAtDesk: number
   billType: string
@@ -37,7 +42,6 @@ export interface ExamplePlan {
   shareOfBalance: number
   woPending?: boolean
   amendment?: boolean
-  /** Set only where the flow says it would exist by now. */
   /** The IN4 certificate this example points at, where the flow says one would
    *  exist by now. A REAL ENP number on the same work order, so the bill page
    *  shows the certified ladder — basic, tax, retention, advance recovery, what
@@ -65,16 +69,16 @@ export const EXAMPLE_PLANS: ExamplePlan[] = [
   {
     n: 3, complexity: 'simple',
     title: 'With the Disc Head, abstract recorded',
-    check: 'The abstract shows on the bill and the history says who recorded it. No certificate exists yet, so the calculation is the EXPECTED one, worked from the tax and retention this order has really carried.',
+    check: 'The ABSTRACT SHEET — two measured items with their ordered quantity, what is measured to date and what is left. It adds up to the certified figure to the rupee.',
     woIndex: 2, stage: 'disc_head', daysAtDesk: 1, billType: 'Running', shareOfBalance: 0.3,
-    abstract: 'ABS/SQ/2026-27/118',
+    pinnedWo: 'WO/SRASSK/NGH/2025-26/271', abstract: 'ENP/SRASSK/NGH/2025-26/500',
   },
   {
     n: 4, complexity: 'simple',
     title: 'Waiting on the Atm Head',
-    check: 'In My Approvals with the word Approve on it — and the calculation shows why payable is far below the bill: 2.72 lakh of advance being recovered on top of 10% retention.',
+    check: 'In My Approvals saying Approve — a 5-line abstract sheet, and the calculation showing why payable collapses: 29.8 lakh of advance recovered against 33.8 lakh certified.',
     woIndex: 3, stage: 'atm_approval', daysAtDesk: 4, billType: 'Running', shareOfBalance: 0.25,
-    abstract: 'ENP/SRJT/SRAH/2025-26/128',
+    pinnedWo: 'WO/SRJT/SRAH/2025-26/5', abstract: 'ENP/SRJT/SRAH/2025-26/103',
   },
   {
     n: 5, complexity: 'complex',
@@ -88,7 +92,7 @@ export const EXAMPLE_PLANS: ExamplePlan[] = [
     title: 'Takes the work order past its value',
     check: 'The red amendment banner with the arithmetic spelled out — and its certificate is one of the 20% where IN4 own figures do not add up, so the calculation shows both totals and says so rather than picking one.',
     woIndex: 5, stage: 'ct_head', daysAtDesk: 2, billType: 'Running', shareOfBalance: 1.2,
-    amendment: true, abstract: 'ENP/SRASSK/P2ST/2026-27/2',
+    pinnedWo: 'WO/SRASSK/P2ST/2025-26/326', amendment: true, abstract: 'ENP/SRASSK/P2ST/2026-27/2',
   },
   {
     n: 7, complexity: 'complex',
@@ -108,9 +112,9 @@ export const EXAMPLE_PLANS: ExamplePlan[] = [
   {
     n: 9, complexity: 'complex',
     title: 'On a building CT Hub has no project for',
-    check: 'No CT Hub project, and it still books — against its IN4 sub-project, the case covering 887 of the 1,228 work orders. Twelve bills behind it, two cancelled and greyed out.',
+    check: 'No CT Hub project, and it still books against its IN4 sub-project — the case covering 887 of the 1,228 work orders. The richest sheet of the ten: 9 measured items, 83 lakh certified, 55 lakh of advance recovered.',
     woIndex: 6, stage: 'atm_approval', daysAtDesk: 6, billType: 'Running', shareOfBalance: 0.15,
-    abstract: 'ENP/SRASSK/SQ/2025-26/227',
+    pinnedWo: 'WO/SRASSK/SQ/2023-24/7', abstract: 'ENP/SRASSK/SQ/2024-25/42',
   },
   {
     n: 10, complexity: 'complex',

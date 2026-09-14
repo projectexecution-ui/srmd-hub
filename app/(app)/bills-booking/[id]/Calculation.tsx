@@ -1,8 +1,10 @@
 import { Card } from '@/components/ui/card'
-import { Calculator, Receipt } from 'lucide-react'
+import { Calculator, Receipt, Ruler } from 'lucide-react'
 import { formatINR, formatDate } from '@/lib/utils'
 import type { BillCalc } from '@/lib/bills-booking/load-calc'
 import type { BillLadder } from '@/lib/bills-booking/calc'
+import type { AbstractSheet } from '@/lib/bills-booking/abstract'
+import { formatNumber } from '@/lib/utils'
 
 /** How this bill adds up, and every bill already raised on the same order.
  *
@@ -11,7 +13,7 @@ import type { BillLadder } from '@/lib/bills-booking/calc'
  *  and nothing is assumed. Where a figure is an expectation rather than a
  *  certified fact, it says so on the panel rather than in a footnote. */
 export function Calculation({ calc }: { calc: BillCalc }) {
-  const { history, mine, mineCert, expected } = calc
+  const { history, mine, mineCert, expected, sheet } = calc
   const ladder = mine ?? expected
 
   return (
@@ -51,6 +53,8 @@ export function Calculation({ calc }: { calc: BillCalc }) {
           )}
         </Card>
       )}
+
+      {sheet && <Sheet s={sheet} />}
 
       <Card className="p-4">
         <p className="mb-1 flex items-center gap-1.5 text-xs font-bold uppercase tracking-wide text-gray-400">
@@ -171,4 +175,102 @@ function Pair({ k, v }: { k: string; v: string }) {
 }
 function Th({ children, right }: { children: React.ReactNode; right?: boolean }) {
   return <th className={`px-3 py-2 font-semibold ${right ? 'text-right' : 'text-left'}`}>{children}</th>
+}
+
+/** The abstract sheet — the measurement this bill is built from.
+ *
+ *  Aksha asked where it was, and it was nowhere. This is it: every BOQ item
+ *  measured on this bill, what was ordered against it, what has been measured
+ *  in total, and what is left. The thing a Disc Head actually checks. */
+function Sheet({ s }: { s: AbstractSheet }) {
+  const qty = (n: number) => formatNumber(n, n % 1 === 0 ? 0 : 2)
+  return (
+    <Card className="p-4">
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+        <p className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wide text-gray-400">
+          <Ruler className="h-3.5 w-3.5" /> Abstract sheet
+        </p>
+        <span className="font-mono text-[10.5px] text-gray-500">
+          {s.abstractNo ?? '—'}{s.on ? ` · ${formatDate(s.on)}` : ''}
+        </span>
+      </div>
+
+      <p className="mb-3 text-xs text-gray-500">
+        The measurement behind this bill — {s.rows.length} {s.rows.length === 1 ? 'item' : 'items'} from the work
+        order&apos;s BOQ. <b>This bill</b> is what was measured now; <b>to date</b> is everything measured on that
+        item including this bill; <b>balance</b> is what is still to do.
+      </p>
+
+      {/* Phone */}
+      <div className="space-y-2 md:hidden">
+        {s.rows.map(r => (
+          <div key={r.itemId} className={`rounded-lg border p-3 ${r.overrun ? 'border-rose-200 bg-rose-50/40' : 'border-gray-200'}`}>
+            <div className="flex items-start justify-between gap-2">
+              <span className="text-[13px] font-medium text-gray-900">{r.item}</span>
+              <span className="shrink-0 text-sm font-semibold tabular-nums">{formatINR(r.thisAmt)}</span>
+            </div>
+            <div className="mt-1 text-[11px] text-gray-500">
+              {qty(r.thisQty)} {r.uom} @ {formatINR(r.rate)}
+            </div>
+            <dl className="mt-2 grid grid-cols-3 gap-x-3 text-[11px]">
+              <Pair k="Ordered" v={`${qty(r.orderedQty)} ${r.uom ?? ''}`} />
+              <Pair k="To date" v={`${qty(r.cumulativeQty)} ${r.uom ?? ''}`} />
+              <Pair k="Balance" v={r.complete ? 'complete' : `${qty(r.balanceQty)} ${r.uom ?? ''}`} />
+            </dl>
+          </div>
+        ))}
+      </div>
+
+      {/* Desktop */}
+      <div className="hidden overflow-x-auto rounded-lg border border-gray-200 md:block">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="border-b border-gray-200 bg-gray-50 text-[11px] uppercase tracking-wide text-gray-500">
+              <Th>Item</Th><Th>Unit</Th><Th right>Ordered</Th><Th right>Rate</Th>
+              <Th right>This bill</Th><Th right>Amount</Th><Th right>To date</Th><Th right>Balance</Th>
+            </tr>
+          </thead>
+          <tbody>
+            {s.rows.map(r => (
+              <tr key={r.itemId} className={`border-b border-gray-100 last:border-0 ${r.overrun ? 'bg-rose-50/40' : 'hover:bg-gray-50'}`}>
+                <td className="px-3 py-2 text-[13px]">{r.item}</td>
+                <td className="px-3 py-2 text-xs text-gray-500">{r.uom ?? '—'}</td>
+                <td className="px-3 py-2 text-right tabular-nums text-gray-600">{qty(r.orderedQty)}</td>
+                <td className="px-3 py-2 text-right tabular-nums text-gray-600">{formatINR(r.rate)}</td>
+                <td className="px-3 py-2 text-right font-medium tabular-nums">{qty(r.thisQty)}</td>
+                <td className="px-3 py-2 text-right font-medium tabular-nums">{formatINR(r.thisAmt)}</td>
+                <td className="px-3 py-2 text-right tabular-nums text-gray-600">{qty(r.cumulativeQty)}</td>
+                <td className={`px-3 py-2 text-right tabular-nums ${
+                  r.overrun ? 'font-semibold text-rose-700' : r.complete ? 'text-emerald-700' : 'text-gray-500'}`}>
+                  {r.overrun ? `over by ${qty(Math.abs(r.balanceQty))}` : r.complete ? 'complete' : qty(r.balanceQty)}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+          <tfoot>
+            <tr className="border-t-2 border-gray-200 bg-gray-50 font-semibold">
+              <td className="px-3 py-2" colSpan={5}>{s.rows.length} {s.rows.length === 1 ? 'item' : 'items'} measured</td>
+              <td className="px-3 py-2 text-right tabular-nums">{formatINR(s.thisBill)}</td>
+              <td className="px-3 py-2" colSpan={2} />
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+
+      {s.rows.some(r => r.overrun) && (
+        <p className="mt-3 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-800">
+          Some lines are measured past the quantity ordered. That needs an amendment in IN4 before payment — it does
+          not stop the bill being checked.
+        </p>
+      )}
+
+      <p className="mt-3 text-xs text-gray-500">
+        {s.reconciles
+          ? <>These lines add up to {formatINR(s.thisBill)}, which is what IN4 certified for this bill.</>
+          : <><b className="text-amber-800">The lines do not add up to the certified figure.</b> They total {formatINR(s.thisBill)};
+              IN4 certified {formatINR(s.certified)} — a difference of {formatINR(Math.abs(s.outBy))}. Worth asking about
+              before this is approved.</>}
+      </p>
+    </Card>
+  )
 }
