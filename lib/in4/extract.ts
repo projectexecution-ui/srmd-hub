@@ -134,10 +134,19 @@ export async function extractMaterialTypes(): Promise<In4MaterialType[]> {
  *  base table — BI.FACT_ENGG_BUDGET_WC_LINE_ITEMS looked equivalent but drops
  *  lines (NGH B's 1204 Flooring, ₹34.4 L, was missing from it). */
 export async function extractBudgetWc(): Promise<In4BudgetWcLine[]> {
+  // Approved (2) AND Draft (13) budgets both count. Aksha, 14 Sep 2026: "in
+  // IN4 if it is draft it means that budget is being added and gone for
+  // approval" — so a draft is a live, in-flight budget, not a scribble.
+  // Leaving it out is what emptied the Budget column for NGH A/B/C and P2
+  // A-02/A-03 in the Monday report.
+  //
+  // Read from ENGG_BUDGET_PERIOD, not BI.DIM_ENGG_BUDGET_WC_HEADER: that BI
+  // dimension only ever holds work-category-APPROVED periods, which is the
+  // very reason drafts vanished.
   const rows = await in4Query<Record<string, unknown>>(`
     SELECT b.SUBPROJECT_ID, b.ENGG_BUDGET_PERIOD_ID, b.SKILL_ID, ISNULL(k.PARENT_ID, 0) PARENT_ID, b.Budget_Allocated
     FROM ENGG_SUBPROJECT_BUDGET b
-    JOIN BI.DIM_ENGG_BUDGET_WC_HEADER h ON h.BUDGET_PERIOD_ID = b.ENGG_BUDGET_PERIOD_ID AND h.STATUS = 2
+    JOIN ENGG_BUDGET_PERIOD ep ON ep.ID = b.ENGG_BUDGET_PERIOD_ID AND ep.WCB_STATUS IN (2, 13)
     LEFT JOIN ENGG_SKILLS_LOOKUP k ON k.ID = b.SKILL_ID`)
   return rows.map(r => ({
     subproject_id: n(r.SUBPROJECT_ID), budget_period_id: n(r.ENGG_BUDGET_PERIOD_ID),
@@ -149,11 +158,25 @@ export async function extractBudgetWc(): Promise<In4BudgetWcLine[]> {
  *  sum of its sub-type rows) — kept so the loader can fall back to it when a
  *  type has no sub-type rows, dropped otherwise or it would double count. */
 export async function extractBudgetMaterial(): Promise<In4BudgetMatLine[]> {
+  // A budget period carries TWO INDEPENDENT approvals: WCB_STATUS for the
+  // work-category budget and MB_STATUS for the material budget (2 = Approved,
+  // 13 = Draft, per COMMON_STATUS_LOOKUP). This read used to join
+  // BI.DIM_ENGG_BUDGET_WC_HEADER — the WORK-CATEGORY header — so an APPROVED
+  // material budget vanished whenever the work-category budget beside it was
+  // still a draft. That is why NGH A/B/C and P2 A-02/A-03 showed no budget at
+  // all in the Monday report (Aksha, 14 Sep 2026).
+  //
+  // Read the period's own statuses instead, and accept EITHER approval. The
+  // "or WCB_STATUS = 2" arm is not redundant: five sub-projects (Raj Saurabh,
+  // P2 Infra, NGH Infra, A-01, Jin Mandir — ₹8.90 Cr) carry MB_STATUS = 13
+  // under an approved work-category budget and are counted today; dropping
+  // them would be a silent regression. Measured against live IN4 on
+  // 14 Sep 2026: +₹14,67,67,567 recovered, ₹0 lost.
   const rows = await in4Query<Record<string, unknown>>(`
     SELECT b.SUBPROJECT_ID, b.ENGG_BUDGET_PERIOD_ID, b.MATERIAL_TYPE_ID, b.MATERIAL_SUBTYPE_ID, b.BUDGET_ALLOCATED
     FROM ENGG_SUBPROJECT_MATERIAL_BUDGET b
-    JOIN BI.DIM_ENGG_BUDGET_WC_HEADER h ON h.BUDGET_PERIOD_ID = b.ENGG_BUDGET_PERIOD_ID AND h.STATUS = 2
-    WHERE b.IS_BUDGETED = 1`)
+    JOIN ENGG_BUDGET_PERIOD ep ON ep.ID = b.ENGG_BUDGET_PERIOD_ID
+    WHERE b.IS_BUDGETED = 1 AND (ep.MB_STATUS IN (2, 13) OR ep.WCB_STATUS IN (2, 13))`)
   return rows.map(r => ({
     subproject_id: n(r.SUBPROJECT_ID), budget_period_id: n(r.ENGG_BUDGET_PERIOD_ID),
     material_type_id: n(r.MATERIAL_TYPE_ID), material_subtype_id: n(r.MATERIAL_SUBTYPE_ID), budget_allocated: n(r.BUDGET_ALLOCATED),
