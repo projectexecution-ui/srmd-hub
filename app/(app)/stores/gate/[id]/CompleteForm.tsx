@@ -5,7 +5,7 @@ import { useState, useTransition } from 'react'
 import { Download, Plus, Trash2, PackageCheck } from 'lucide-react'
 import { completeGateEntry, importIn4Material } from '@/lib/stores/actions'
 import { loadPoForEntry } from './po-action'
-import { missingForComplete, fmtQty, type Register } from '@/lib/stores/core'
+import { missingForComplete, fmtQty, RETURNABLES_ON, type Register } from '@/lib/stores/core'
 import { T } from '@/lib/stores/lang'
 import { formatINR } from '@/lib/utils'
 import { Label, BigInput, Stepper, BigNotice } from '../../field'
@@ -219,11 +219,13 @@ export function CompleteForm({
                 </div>
               </div>
 
-              <label className="flex items-center gap-3 rounded-xl border-2 border-gray-200 px-3.5 py-2.5 min-h-[56px] active:bg-gray-50">
-                <input type="checkbox" className="h-6 w-6 accent-amber-600 shrink-0" checked={l.returnable}
-                  onChange={e => setLine(l.key, { returnable: e.target.checked })} />
-                <span className="text-[15px] font-semibold text-gray-800">{T.mustComeBack}</span>
-              </label>
+              {RETURNABLES_ON && (
+                <label className="flex items-center gap-3 rounded-xl border-2 border-gray-200 px-3.5 py-2.5 min-h-[56px] active:bg-gray-50">
+                  <input type="checkbox" className="h-6 w-6 accent-amber-600 shrink-0" checked={l.returnable}
+                    onChange={e => setLine(l.key, { returnable: e.target.checked })} />
+                  <span className="text-[15px] font-semibold text-gray-800">{T.mustComeBack}</span>
+                </label>
+              )}
             </div>
           )
         })}
@@ -240,8 +242,11 @@ export function CompleteForm({
 
       {!makesStock && (
         <p className="text-[12.5px] text-gray-600 bg-white rounded-xl border border-gray-200 px-3.5 py-2.5">
-          Only what is ticked <b>{T.mustComeBack}</b> matters here. The rest went to site and is not stock —
-          counting it in would create a balance nobody ever uses up.
+          {RETURNABLES_ON
+            ? <>Only what is ticked <b>{T.mustComeBack}</b> matters here. The rest went to site and is not stock —
+                counting it in would create a balance nobody ever uses up.</>
+            : <>Vendor material goes straight to site, so none of this becomes stock. Lines are recorded for the
+                register only.</>}
         </p>
       )}
 

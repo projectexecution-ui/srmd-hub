@@ -13,7 +13,7 @@
 // strip did — the shell can never widen anyone's access.
 
 import { PROJECT_TABS, type ProjectTab } from './tabs'
-import { PILOT_PROJECT_IDS } from '../stores/core'
+import { PILOT_PROJECT_IDS, RETURNABLES_ON } from '../stores/core'
 
 export type RibbonGroup = 'money' | 'procurement' | 'site' | 'documents' | 'people'
 
@@ -106,7 +106,7 @@ export const WORKSPACE_TABS: WorkspaceTab[] = [
   // master, the whole store — is the Stores lane, because neither is
   // answerable from inside one project.
   { slug: 'material', ribbon: 'Material', label: 'Material In & Out', group: 'site', icon: 'Warehouse',
-    subs: ['In', 'Issued out', 'To return', 'Requests'],
+    subs: RETURNABLES_ON ? ['In', 'Issued out', 'To return', 'Requests'] : ['In', 'Issued out', 'Requests'],
     permissionSlug: 'cost-control', built: true,
     pilotProjectIds: PILOT_PROJECT_IDS },
   { slug: 'qc', ribbon: 'QC', label: 'QC', group: 'site', icon: 'ShieldCheck',

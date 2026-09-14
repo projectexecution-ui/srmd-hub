@@ -3,7 +3,7 @@
 import { useRouter } from 'next/navigation'
 import { useState, useTransition } from 'react'
 import { raiseRequest, decideRequest, issueRequest } from '@/lib/stores/actions'
-import { checkIssue, fmtQty, type StockRow } from '@/lib/stores/core'
+import { checkIssue, fmtQty, RETURNABLES_ON, type StockRow } from '@/lib/stores/core'
 import { formatDate, formatDateTime } from '@/lib/utils'
 import type { RequestRow } from '@/lib/stores/queries'
 import { Field, inputClass, Btn, Notice, Empty, Section, StatusChip, Scroller, th, td, tdNum } from '../ui'
@@ -93,7 +93,7 @@ function RaiseForm({
         </Field>
       </div>
 
-      {fromProjectId && (
+      {fromProjectId && RETURNABLES_ON && (
         <Notice kind="info">
           Borrowed material is always marked returnable — it belongs to the other project and has to go back.
         </Notice>
@@ -136,12 +136,14 @@ function RaiseForm({
               )}
 
               <div className="flex flex-wrap items-center gap-3">
-                <label className="inline-flex items-center gap-2 text-[12.5px] text-gray-700 min-h-[44px]">
-                  <input type="checkbox" className="h-5 w-5 accent-indigo-700"
-                    checked={l.returnable || !!fromProjectId} disabled={!!fromProjectId}
-                    onChange={e => setLine(l.key, { returnable: e.target.checked })} />
-                  Must come back
-                </label>
+                {RETURNABLES_ON && (
+                  <label className="inline-flex items-center gap-2 text-[12.5px] text-gray-700 min-h-[44px]">
+                    <input type="checkbox" className="h-5 w-5 accent-indigo-700"
+                      checked={l.returnable || !!fromProjectId} disabled={!!fromProjectId}
+                      onChange={e => setLine(l.key, { returnable: e.target.checked })} />
+                    Must come back
+                  </label>
+                )}
                 {lines.length > 1 && (
                   <button type="button" onClick={() => setLines(ls => ls.filter(x => x.key !== l.key))}
                     className="text-[12px] text-rose-700 hover:underline min-h-[44px]">Remove</button>
@@ -230,7 +232,7 @@ function RequestCard({
               <th className={th}>Item</th>
               <th className={`${th} text-right`}>Asked</th>
               <th className={`${th} text-right`}>Issued</th>
-              <th className={th}>Returnable</th>
+              {RETURNABLES_ON && <th className={th}>Returnable</th>}
               {issuing && <th className={`${th} text-right`}>Issue now</th>}
             </tr>
           </thead>
@@ -247,11 +249,13 @@ function RequestCard({
                   </td>
                   <td className={tdNum}>{fmtQty(l.qty)} {l.unit}</td>
                   <td className={tdNum}>{l.issuedQty > 0 ? fmtQty(l.issuedQty) : '—'}</td>
-                  <td className={td}>
-                    {l.returnable
-                      ? <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10.5px] font-bold text-amber-900">Yes</span>
-                      : <span className="text-gray-400 text-[12px]">No</span>}
-                  </td>
+                  {RETURNABLES_ON && (
+                    <td className={td}>
+                      {l.returnable
+                        ? <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10.5px] font-bold text-amber-900">Yes</span>
+                        : <span className="text-gray-400 text-[12px]">No</span>}
+                    </td>
+                  )}
                   {issuing && (
                     <td className={td}>
                       <input className={`${inputClass} w-24 text-right`} value={qtys[l.id] ?? ''} inputMode="decimal"

@@ -3,7 +3,7 @@
 import { useRouter } from 'next/navigation'
 import { useState, useTransition } from 'react'
 import { correctEntry, voidEntry, confirmReceipt } from '@/lib/stores/actions'
-import { fmtQty } from '@/lib/stores/core'
+import { fmtQty, RETURNABLES_ON } from '@/lib/stores/core'
 import { formatDateTime, formatINR } from '@/lib/utils'
 import { PenLine } from 'lucide-react'
 import type { EntryDetail, Signature } from '@/lib/stores/queries'
@@ -94,7 +94,7 @@ export function EntryDetailPanels({
                   <th className={`${th} text-right`}>Qty</th>
                   <th className={`${th} text-right`}>Rate</th>
                   <th className={`${th} text-right`}>Amount</th>
-                  <th className={th}>Returnable</th>
+                  {RETURNABLES_ON && <th className={th}>Returnable</th>}
                 </tr>
               </thead>
               <tbody>
@@ -105,18 +105,20 @@ export function EntryDetailPanels({
                     <td className={tdNum}>{fmtQty(l.qty)}</td>
                     <td className={tdNum}>{l.rate == null ? '—' : formatINR(l.rate)}</td>
                     <td className={tdNum}>{l.amount == null ? '—' : formatINR(l.amount)}</td>
-                    <td className={td}>
-                      {l.returnable
-                        ? <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10.5px] font-bold text-amber-900">Must come back</span>
-                        : <span className="text-gray-400 text-[12px]">No</span>}
-                    </td>
+                    {RETURNABLES_ON && (
+                      <td className={td}>
+                        {l.returnable
+                          ? <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10.5px] font-bold text-amber-900">Must come back</span>
+                          : <span className="text-gray-400 text-[12px]">No</span>}
+                      </td>
+                    )}
                   </tr>
                 ))}
                 {total > 0 && (
                   <tr className="bg-gray-50">
                     <td className={`${td} font-bold`} colSpan={4}>Total</td>
                     <td className={`${tdNum} font-bold`}>{formatINR(total)}</td>
-                    <td className={td}></td>
+                    {RETURNABLES_ON && <td className={td}></td>}
                   </tr>
                 )}
               </tbody>

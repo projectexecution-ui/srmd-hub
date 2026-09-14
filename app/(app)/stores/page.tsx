@@ -1,7 +1,7 @@
 import Link from 'next/link'
 import { loadCounts, loadEntries, loadItems, loadLists, storableLocations } from '@/lib/stores/queries'
 import { Tile, Section, Empty, Scroller, th, td, tdNum, StageChip, RegisterChip, When } from './ui'
-import { fmtQty } from '@/lib/stores/core'
+import { fmtQty, RETURNABLES_ON } from '@/lib/stores/core'
 
 export const dynamic = 'force-dynamic'
 
@@ -19,13 +19,11 @@ export default async function StoresHome() {
 
   return (
     <div className="space-y-6">
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+      <div className={`grid grid-cols-2 gap-3 ${RETURNABLES_ON ? 'lg:grid-cols-4' : 'lg:grid-cols-3'}`}>
         <Tile href="/stores/gate" label="Waiting on storekeeper" count={counts.toComplete}
           sub="Vehicles recorded at the gate, not yet counted in" tone="amber" />
         <Tile href="/stores/requests?status=pending" label="Requests to approve" count={counts.pendingRequests}
           sub="With Mayank / Kanti" tone="blue" />
-        <Tile href="/stores/returnables" label="Still to come back" count={counts.returnablesOut}
-          sub="Returnable material out on site" tone="amber" />
         <Tile href="/stores/stock" label="Items held" count={counts.itemsHeld}
           sub="Distinct items with stock on hand" tone="emerald" />
       </div>
@@ -116,9 +114,8 @@ export default async function StoresHome() {
         <ul className="text-[12.5px] text-gray-600 mt-1.5 space-y-1 list-disc pl-5">
           <li>Photos at the gate — the table and the bucket exist; the camera is not wired until you settle
             how long pictures are kept (query 5).</li>
-          <li>The five reports with period / vendor / discipline filters. Stock and To-return are here; the
-            other three are the same register filtered, once the shape is agreed.</li>
-          <li>Vendor returns going back out — the debt is tracked, clearing it is the next step.</li>
+          <li>Security’s check and video confirmation before a load is driven out.</li>
+          <li>Notifications — nobody is told when a vehicle is waiting or a request needs approving.</li>
         </ul>
       </div>
     </div>

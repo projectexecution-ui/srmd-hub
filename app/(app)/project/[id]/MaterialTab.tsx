@@ -1,7 +1,7 @@
 import Link from 'next/link'
 import { ArrowUpRight } from 'lucide-react'
 import { loadEntries, loadRequests, loadReturnables, loadLists, locationLabel } from '@/lib/stores/queries'
-import { fmtQty } from '@/lib/stores/core'
+import { fmtQty, RETURNABLES_ON } from '@/lib/stores/core'
 import { formatDate, formatDateTime, formatINR } from '@/lib/utils'
 import {
   Empty, Scroller, th, td, tdNum, StageChip, RegisterChip, StatusChip, When,
@@ -22,12 +22,16 @@ export async function MaterialTab({ projectId, view = 0 }: { projectId: string; 
   const [entries, requests, returnables, lists] = await Promise.all([
     loadEntries({ projectId, limit: 200 }),
     loadRequests({ projectId }),
-    loadReturnables(projectId),
+    RETURNABLES_ON ? loadReturnables(projectId) : Promise.resolve([]),
     loadLists(),
   ])
 
   const ins = entries.filter(e => e.direction === 'in' && e.stage !== 'void')
   const outs = entries.filter(e => e.direction === 'out' && e.stage !== 'void')
+  const PILLS = RETURNABLES_ON
+    ? ['In', 'Issued out', 'To return', 'Requests'] as const
+    : ['In', 'Issued out', 'Requests'] as const
+  const pill = PILLS[view] ?? PILLS[0]
 
   return (
     <div className="space-y-4">
@@ -41,10 +45,12 @@ export async function MaterialTab({ projectId, view = 0 }: { projectId: string; 
         </Link>
       </div>
 
-      {view === 0 && <InPanel rows={ins} />}
-      {view === 1 && <OutPanel rows={outs} />}
-      {view === 2 && <ReturnPanel rows={returnables} />}
-      {view === 3 && <RequestPanel rows={requests} />}
+      {/* Pills are named, not numbered: with returnables switched off the list
+          is three long, and a hard-coded index 3 would land on nothing. */}
+      {pill === 'In' && <InPanel rows={ins} />}
+      {pill === 'Issued out' && <OutPanel rows={outs} />}
+      {pill === 'To return' && <ReturnPanel rows={returnables} />}
+      {pill === 'Requests' && <RequestPanel rows={requests} />}
     </div>
   )
 }

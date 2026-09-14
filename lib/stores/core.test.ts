@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import {
   entryNo, linkedNo, foldStock, availableAt, availableAnywhere, checkIssue,
   outstandingReturnables, checkReturn, missingForGate, missingForComplete, createsStock, heldItemCount,
-  fmtQty, isPilotProject, PILOT_PROJECT_IDS, type Movement, type ReturnableLine,
+  fmtQty, isPilotProject, PILOT_PROJECT_IDS, RETURNABLES_ON, type Movement, type ReturnableLine,
 } from './core'
 
 const mv = (o: Partial<Movement> & { itemId: string; qty: number }): Movement => ({
@@ -292,5 +292,22 @@ describe('returning material', () => {
     ]).map(r => r.lineId))
     expect(twice[0]).toEqual(twice[1])
     expect(twice[0]).toEqual(['a', 'b'])
+  })
+})
+
+describe('the returnables switch', () => {
+  it('is off — Aksha, 14 Sep 2026: "not required now"', () => {
+    expect(RETURNABLES_ON).toBe(false)
+  })
+
+  it('does not delete the netting logic, so turning it back on shows the truth', () => {
+    // The whole point of OFF rather than DELETED: the arithmetic still works,
+    // so the list comes back with the real position rather than empty.
+    const rows = outstandingReturnables([{
+      lineId: 'l', entryId: 'e', entryNo: 'n', itemId: 'i', itemName: 'Prop', unit: 'Nos',
+      qty: 100, heldBy: 'NGH B', owedTo: 'Shah', since: '2026-08-01T00:00:00.000Z', returned: 40,
+    }], new Date('2026-09-14T00:00:00.000Z'))
+    expect(rows[0].outstanding).toBe(60)
+    expect(checkReturn(rows, 'l', 61).ok).toBe(false)
   })
 })

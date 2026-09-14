@@ -19,6 +19,24 @@ export const PILOT_PROJECT_IDS: readonly string[] = [
 export const isPilotProject = (projectId: string): boolean =>
   PILOT_PROJECT_IDS.includes(projectId)
 
+/**
+ * Returnables — the whole branch — switched OFF.
+ *
+ * Aksha, 14 Sep 2026: "keep the Returnable thing off for now - as that feature
+ * is not required now."
+ *
+ * OFF, not deleted. Flip this one constant and the tab, the tile, the two
+ * tick-boxes, the column and the project pill all come back exactly as they
+ * were — because every one of them reads this and nothing else.
+ *
+ * Nothing already recorded is touched: the `returnable` flags on existing
+ * lines and the returns booked against them stay in the database untouched, so
+ * turning it back on shows the real position rather than a blank list. The
+ * page itself stays reachable and SAYS it is off, rather than 404-ing on a
+ * bookmark — a screen that vanishes without explanation reads as a fault.
+ */
+export const RETURNABLES_ON = false
+
 export type Direction = 'in' | 'out'
 export type Register = 'vendor' | 'srm' | 'transfer'
 export type Stage = 'gate' | 'complete' | 'closed' | 'void'

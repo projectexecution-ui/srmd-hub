@@ -2,13 +2,13 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
+import { RETURNABLES_ON } from '@/lib/stores/core'
 
 const TABS = [
   { href: '/stores',             label: 'Overview' },
   { href: '/stores/gate',        label: 'Gate register' },
   { href: '/stores/requests',    label: 'Requests' },
   { href: '/stores/stock',       label: 'Stock' },
-  { href: '/stores/returnables', label: 'To return' },
   { href: '/stores/reports',     label: 'Reports' },
   { href: '/stores/masters',     label: 'Masters' },
 ]
@@ -16,6 +16,8 @@ const TABS = [
 /** One row, scrollable on a phone rather than wrapping into three lines. */
 export function StoresNav() {
   const path = usePathname()
+  // Returnables are switched off (lib/stores/core.ts). The page still exists
+  // and explains itself; it just does not sit in the row.
   return (
     <nav className="overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0">
       <div className="flex gap-1.5 border-b border-gray-200 min-w-max">
