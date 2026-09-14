@@ -68,7 +68,7 @@ export function Calculation({ calc, showIn4Sheet = true }: {
           <Receipt className="h-3.5 w-3.5" /> Bills on {calc.woNo}
         </p>
         <p className="mb-3 text-xs text-gray-500">
-          Every bill raised against this work order, live from IN4. {history.deadCount > 0 && (
+          Every bill raised against this work order, live from IN4 — newest first. {history.deadCount > 0 && (
             <>{history.deadCount} cancelled {history.deadCount === 1 ? 'bill is' : 'bills are'} shown greyed and counted nowhere.</>
           )}
         </p>
@@ -118,7 +118,7 @@ export function Calculation({ calc, showIn4Sheet = true }: {
                 <thead>
                   <tr className="border-b border-gray-200 bg-gray-50 text-[11px] uppercase tracking-wide text-gray-500">
                     <Th>Bill</Th><Th>Raised</Th><Th right>Basic</Th><Th right>Gross</Th>
-                    <Th right>Retention</Th><Th right>Paid</Th><Th right>Left to bill</Th><Th>Status</Th>
+                    <Th right>Retention</Th><Th right>Paid</Th><Th right>Left after</Th><Th>Status</Th>
                   </tr>
                 </thead>
                 <tbody>

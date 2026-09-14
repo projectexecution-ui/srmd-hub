@@ -112,13 +112,24 @@ describe('how a bill adds up', () => {
 })
 
 describe('the bills already on this work order', () => {
-  it('numbers them RA-1 up, oldest first, with the running position', () => {
+  // Newest first, because that is the bill being looked at. On an order with
+  // thirteen of them the current position used to be at the bottom of a scroll.
+  it('hands them back newest first, with RA numbers still counted from the oldest', () => {
     const h = woHistory(WO_1537, 6069440)
-    expect(h.rows.map(r => r.ra)).toEqual([1, 2, 3, 4, 5])
-    expect(h.rows[0].cumulativeGross).toBe(189369)
+    expect(h.rows.map(r => r.ra)).toEqual([5, 4, 3, 2, 1])
+    expect(h.rows[0].displayNo).toBe('ENP/SRASSK/NGH/2026-27/213')   // 22 Aug, the latest
+    expect(h.rows.at(-1)!.displayNo).toBe('ENP/SRASSK/NGH/2025-26/500') // 25 Mar, the first
+  })
+
+  it('still builds the cumulative in date order, so the top row is today', () => {
+    const h = woHistory(WO_1537, 6069440)
+    // The oldest bill's cumulative is just itself…
+    expect(h.rows.at(-1)!.cumulativeGross).toBe(189369)
     expect(h.billedGross).toBe(189369 + 335785 + 32096 + 544788 + 727237)
     expect(h.leftToBill).toBe(6069440 - h.billedGross)
-    expect(h.rows.at(-1)!.leftToBill).toBe(h.leftToBill)
+    // …and the newest row now carries the order's position today, at the top.
+    expect(h.rows[0].cumulativeGross).toBe(h.billedGross)
+    expect(h.rows[0].leftToBill).toBe(h.leftToBill)
   })
 
   it('adds up the retention actually held across the order', () => {

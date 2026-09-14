@@ -146,10 +146,19 @@ export function billLadder(c: CertMoney): BillLadder {
   }
 }
 
-/** Every bill raised on one work order, oldest first, with the running position.
+/** Every bill raised on one work order, NEWEST FIRST, with the running
+ *  position at each one.
  *
  *  This is the "live bills" half: an approver looking at RA-6 wants to see the
- *  five before it and what is left, not take the claim on trust. */
+ *  five before it and what is left, not take the claim on trust.
+ *
+ *  Aksha, 15 Sep 2026: "latest data should be first than last to review its
+ *  easy." Right — the newest bill is the one being looked at, and on an order
+ *  with thirteen of them the current position was at the bottom of a scroll.
+ *  The running totals are still COMPUTED oldest-first, because a cumulative
+ *  cannot be built any other way; only the order they are handed back in
+ *  flips. So the top row is the latest bill, and its  is the
+ *  order's position today. */
 export interface WoBillRow {
   certificateId: number
   ra: number
@@ -185,6 +194,7 @@ export interface WoHistory {
 const DEAD = new Set(['cancelled', 'reversed'])
 
 export function woHistory(certs: CertMoney[], orderedGross: number): WoHistory {
+  // Oldest first to build the cumulative…
   const sorted = [...certs].sort((a, b) =>
     (a.createdOn ?? '').localeCompare(b.createdOn ?? '') || a.certificateId - b.certificateId)
 
@@ -213,7 +223,9 @@ export function woHistory(certs: CertMoney[], orderedGross: number): WoHistory {
 
   const live = rows.filter(r => !r.dead)
   return {
-    rows,
+    // …newest first to read. RA numbers and cumulatives are unaffected — they
+    // were worked out above, in order.
+    rows: [...rows].reverse(),
     ordered: orderedGross,
     billedGross: cum,
     leftToBill: Math.max(0, r2(orderedGross - cum)),
