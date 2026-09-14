@@ -23,7 +23,7 @@ import { shortenBoq } from '@/lib/bills-booking/shorten'
  *  balance, GST, retention and the green Net Payable line. The rate is never
  *  editable — it is what the work order ordered, and a rate somebody can
  *  retype is a rate that ends up wrong. */
-export function AbstractMaker({ billId, woNo, vendor, work, seed, gst: gstPick, retention: retPick, canEdit, raLabel }: {
+export function AbstractMaker({ billId, woNo, vendor, work, seed, gst: gstPick, retention: retPick, canEdit, raLabel, ownSheet, in4Total }: {
   billId: string
   woNo: string
   vendor: string
@@ -34,6 +34,12 @@ export function AbstractMaker({ billId, woNo, vendor, work, seed, gst: gstPick, 
   canEdit: boolean
   /** "RA-4", for the strip along the top. */
   raLabel: string
+  /** True once CT Hub holds lines of its own for this bill. */
+  ownSheet: boolean
+  /** What IN4's own abstract for this bill totals, when it has one. Shown as a
+   *  single reconciling line — NOT as a second table, which is what confused
+   *  Aksha: two panels, both titled "Abstract sheet". */
+  in4Total: number | null
 }) {
   const router = useRouter()
   const supabase = createClient()
@@ -83,7 +89,12 @@ export function AbstractMaker({ billId, woNo, vendor, work, seed, gst: gstPick, 
       {/* Masthead, as on the concept sheet */}
       <div className="flex flex-wrap items-center gap-3 bg-slate-800 px-4 py-3 text-white">
         <Ruler className="h-4 w-4 shrink-0 text-amber-300" />
-        <h2 className="text-[15px] font-bold">Abstract Sheet — RA Bill</h2>
+        <div>
+          <h2 className="text-[15px] font-bold leading-tight">Abstract Sheet — RA Bill</h2>
+          <p className="text-[11px] text-slate-300">
+            {ownSheet ? 'Measured in CT Hub' : canEdit ? 'Not measured yet — type This Qty against each line' : 'Not measured yet'}
+          </p>
+        </div>
         <span className="ml-auto rounded-md bg-amber-300 px-2.5 py-0.5 text-[11px] font-extrabold text-slate-900">
           {raLabel} · {woNo}
         </span>
@@ -187,6 +198,19 @@ export function AbstractMaker({ billId, woNo, vendor, work, seed, gst: gstPick, 
           </Button>
         )}
       </div>
+
+      {in4Total != null && ownSheet && Math.abs(in4Total - sheet.basicThisBill) > 2 && (
+        <p className="border-t border-amber-200 bg-amber-50 px-4 py-2 text-[11.5px] text-amber-900">
+          <b>IN4 measured this bill differently.</b> Its own abstract totals {formatINR(in4Total)} against
+          the {formatINR(sheet.basicThisBill)} above — a difference of {formatINR(Math.abs(in4Total - sheet.basicThisBill))}.
+          Worth settling before the bill moves on.
+        </p>
+      )}
+      {in4Total != null && ownSheet && Math.abs(in4Total - sheet.basicThisBill) <= 2 && (
+        <p className="border-t border-emerald-200 bg-emerald-50 px-4 py-2 text-[11.5px] text-emerald-800">
+          Agrees with IN4 own abstract for this bill, to the rupee.
+        </p>
+      )}
 
       <RateNote label="GST" pick={gstPick} />
       <RateNote label="Retention" pick={retPick} />

@@ -13,7 +13,13 @@ import { Particular } from './Particular'
  *  Bills". Both halves are read out of the IN4 mirror — nothing here is typed
  *  and nothing is assumed. Where a figure is an expectation rather than a
  *  certified fact, it says so on the panel rather than in a footnote. */
-export function Calculation({ calc }: { calc: BillCalc }) {
+export function Calculation({ calc, showIn4Sheet = true }: {
+  calc: BillCalc
+  /** False when CT Hub has its own sheet for this bill — the Abstract maker
+   *  above is then the abstract, and showing IN4's read-back underneath it was
+   *  two panels of the same thing with the same title. */
+  showIn4Sheet?: boolean
+}) {
   const { history, mine, mineCert, expected, sheet } = calc
   const ladder = mine ?? expected
 
@@ -55,7 +61,7 @@ export function Calculation({ calc }: { calc: BillCalc }) {
         </Card>
       )}
 
-      {sheet && <Sheet s={sheet} />}
+      {sheet && showIn4Sheet && <Sheet s={sheet} />}
 
       <Card className="p-4">
         <p className="mb-1 flex items-center gap-1.5 text-xs font-bold uppercase tracking-wide text-gray-400">
@@ -189,7 +195,7 @@ function Sheet({ s }: { s: AbstractSheet }) {
     <Card className="p-4">
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
         <p className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wide text-gray-400">
-          <Ruler className="h-3.5 w-3.5" /> Abstract sheet
+          <Ruler className="h-3.5 w-3.5" /> Abstract sheet — as IN4 holds it
         </p>
         <span className="font-mono text-[10.5px] text-gray-500">
           {s.abstractNo ?? '—'}{s.on ? ` · ${formatDate(s.on)}` : ''}

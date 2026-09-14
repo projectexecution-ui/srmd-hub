@@ -103,6 +103,9 @@ export default async function BillDetailPage({ params }: { params: Promise<{ id:
     ? await loadMakerSeed(supabase, { billId: bill.id as string, woNo: bill.order_no as string }).catch(() => null)
     : null
 
+  // Which of the two abstracts this bill gets. Never both.
+  const showMaker = !!maker && (maker.ownSheet || !calc?.sheet)
+
   // Documents + signed URLs.
   const paths = (docRows ?? []).map(d => d.path as string)
   const urlMap = new Map<string, string>()
@@ -173,7 +176,13 @@ export default async function BillDetailPage({ params }: { params: Promise<{ id:
         </div>
       </Card>
 
-      {maker && (
+      {/* ONE abstract sheet, never two — Aksha, 15 Sep 2026: "why u are
+          showing 2 Abstracts - i am getting confused". Whoever measured it
+          owns the panel:
+            CT Hub has lines            → the maker, editable
+            else IN4 already has one    → IN4's, read-only (below)
+            else                        → the maker, blank, to fill */}
+      {showMaker && maker && (
         <AbstractMaker
           billId={bill.id as string}
           woNo={bill.order_no as string}
@@ -184,10 +193,15 @@ export default async function BillDetailPage({ params }: { params: Promise<{ id:
           retention={bill.retention_pct != null ? { ...maker.retention, pct: bill.retention_pct as number } : maker.retention}
           canEdit={canEdit && openStages.includes(bill.current_stage as string)}
           raLabel={(bill.ra_no as string | null) ?? 'RA'}
+          ownSheet={maker.ownSheet}
+          in4Total={calc?.sheet?.thisBill ?? null}
         />
       )}
 
-      {calc && <Calculation calc={calc} />}
+      {/* ONE abstract sheet, never two. The maker above IS the sheet when CT
+          Hub holds one; IN4's own is shown only when it does not, so the page
+          never puts two tables of the same thing side by side. */}
+      {calc && <Calculation calc={calc} showIn4Sheet={!showMaker} />}
 
       {/* Stage ladder */}
       <Card className="p-4">

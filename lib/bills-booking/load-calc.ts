@@ -210,7 +210,7 @@ export async function loadAbstractSheet(
 export async function loadMakerSeed(
   sb: SupabaseClient,
   opts: { billId: string; woNo: string },
-): Promise<{ lines: MakerLine[]; gst: RatePick; retention: RatePick } | null> {
+): Promise<{ lines: MakerLine[]; gst: RatePick; retention: RatePick; ownSheet: boolean } | null> {
   const { data: wo } = await sb.from('in4_work_orders')
     .select('wo_id').eq('display_no', opts.woNo).maybeSingle()
   if (!wo) return null
@@ -271,5 +271,9 @@ export async function loadMakerSeed(
     whole: Number(c.certified_amt ?? 0),
   })), 5)
 
-  return { lines, gst, retention }
+  // Whether CT Hub already holds a sheet of its own for this bill. It decides
+  // which of the two abstracts the page shows — never both.
+  const ownSheet = (mine ?? []).length > 0
+
+  return { lines, gst, retention, ownSheet }
 }
