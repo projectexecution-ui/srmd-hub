@@ -11,7 +11,8 @@ import { StatusTimeline } from './StatusTimeline'
 import { Documents, type DocRow } from './Documents'
 import { AbstractNo } from './AbstractNo'
 import { Calculation } from './Calculation'
-import { loadBillCalc } from '@/lib/bills-booking/load-calc'
+import { loadBillCalc, loadMakerSeed } from '@/lib/bills-booking/load-calc'
+import { AbstractMaker } from './AbstractMaker'
 import { buildTimeline, type RawEvent } from '@/lib/bills-booking/timeline'
 import { formatDate, formatDateTime, formatINR } from '@/lib/utils'
 
@@ -94,6 +95,14 @@ export default async function BillDetailPage({ params }: { params: Promise<{ id:
     abstractNo: bill.abstract_no_in4 as string | null,
   }).catch(() => null)
 
+  // The Abstract maker — the sheet filled HERE rather than in IN4. Offered
+  // while the bill is still ours to change; once it is with the Trust or paid,
+  // the measurement is history and the sheet is read-only.
+  const openStages = ['submitted', 'site_head', 'disc_head', 'ct_head']
+  const maker = bill.order_no
+    ? await loadMakerSeed(supabase, { billId: bill.id as string, woNo: bill.order_no as string }).catch(() => null)
+    : null
+
   // Documents + signed URLs.
   const paths = (docRows ?? []).map(d => d.path as string)
   const urlMap = new Map<string, string>()
@@ -163,6 +172,20 @@ export default async function BillDetailPage({ params }: { params: Promise<{ id:
           {!project && subprojectName && <Fact k="Books under" v="Bills Approval project" />}
         </div>
       </Card>
+
+      {maker && (
+        <AbstractMaker
+          billId={bill.id as string}
+          woNo={bill.order_no as string}
+          vendor={vendor}
+          work={bill.work as string | null}
+          seed={maker.lines}
+          gstPct={(bill.gst_pct as number | null) ?? maker.gstPct}
+          retentionPct={(bill.retention_pct as number | null) ?? maker.retentionPct}
+          canEdit={canEdit && openStages.includes(bill.current_stage as string)}
+          raLabel={(bill.ra_no as string | null) ?? 'RA'}
+        />
+      )}
 
       {calc && <Calculation calc={calc} />}
 

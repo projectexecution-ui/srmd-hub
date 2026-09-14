@@ -62,9 +62,10 @@ export const EXAMPLE_PLANS: ExamplePlan[] = [
   },
   {
     n: 2, complexity: 'simple',
-    title: 'With the Site Head, abstract not keyed yet',
-    check: 'The amber line under the move buttons: the abstract is filled in IN4 at this desk, and the number is recorded on the bill afterwards.',
+    title: 'The ABSTRACT MAKER — the sheet filled here, not in IN4',
+    check: 'Six BOQ lines off the work order, five of them measured. You type only This Qty; This Amt, Cumulative, Balance, GST, Retention and the green Net Payable all compute. Line 3 is already finished and says "done". Saving writes the figures onto the bill and leaves a line in its history.',
     woIndex: 1, stage: 'site_head', daysAtDesk: 3, billType: 'Running', shareOfBalance: 0.22,
+    pinnedWo: 'WO/SRJT/SRAH/2024-25/50',
   },
   {
     n: 3, complexity: 'simple',

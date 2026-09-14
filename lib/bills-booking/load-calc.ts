@@ -1,6 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { billLadder, woHistory, type CertMoney, type BillLadder, type WoHistory } from './calc'
 import { buildAbstractSheet, type AbstractSheet, type AbstractLine, type BoqLine } from './abstract'
+import { seedLines, type MakerLine } from './maker'
 
 /** The live IN4 position behind one CT Hub bill.
  *
@@ -193,4 +194,76 @@ export async function loadAbstractSheet(
   }))
 
   return buildAbstractSheet(mine, earlier, boq, opts.certified)
+}
+
+/* ── the maker ───────────────────────────────────────────────────────────── */
+
+/** Seed the Abstract maker for one bill.
+ *
+ *  Lines come from the work order's own BOQ, which is mirrored exact. What has
+ *  already been measured — by IN4's earlier abstracts and by earlier CT Hub
+ *  sheets on the same order — is folded in as `prior`, so the first thing a
+ *  Site Head sees is the balance still to do rather than a blank page.
+ *
+ *  Any quantities already saved on THIS bill come back in, so the sheet
+ *  reopens where it was left. */
+export async function loadMakerSeed(
+  sb: SupabaseClient,
+  opts: { billId: string; woNo: string },
+): Promise<{ lines: MakerLine[]; gstPct: number; retentionPct: number } | null> {
+  const { data: wo } = await sb.from('in4_work_orders')
+    .select('wo_id').eq('display_no', opts.woNo).maybeSingle()
+  if (!wo) return null
+  const woId = wo.wo_id as number
+
+  const [{ data: boqData }, { data: in4Lines }, { data: mine }, { data: certData }] = await Promise.all([
+    sb.from('in4_wo_boq_items').select('item_id, boq_name, description, uom, quantity, rate, amt').eq('wo_id', woId),
+    sb.from('in4_wo_abstract_items').select('item_id, executed_quantity, executed_amt').eq('wo_id', woId),
+    sb.from('bb_bill_lines').select('sr, item_id, this_qty').eq('bill_id', opts.billId),
+    sb.from('in4_wo_certificates')
+      .select('certified_amt, gross_bill_amt, retention_amt, status_name').eq('wo_id', woId),
+  ])
+  if (!boqData?.length) return null
+
+  // What IN4 already shows measured, per item.
+  const measured = new Map<number, { qty: number; amt: number }>()
+  for (const l of in4Lines ?? []) {
+    const id = Number(l.item_id)
+    const cur = measured.get(id) ?? { qty: 0, amt: 0 }
+    cur.qty += Number(l.executed_quantity ?? 0)
+    cur.amt += Number(l.executed_amt ?? 0)
+    measured.set(id, cur)
+  }
+
+  const lines = seedLines(
+    boqData.map(b => ({
+      itemId: Number(b.item_id),
+      name: (b.boq_name as string | null) ?? null,
+      description: (b.description as string | null) ?? null,
+      uom: (b.uom as string | null) ?? null,
+      orderedQty: Number(b.quantity ?? 0),
+      rate: Number(b.rate ?? 0),
+      orderedAmt: Number(b.amt ?? 0),
+    })),
+    measured,
+  )
+
+  // Put back whatever was already typed on this bill.
+  const saved = new Map((mine ?? []).map(r => [Number(r.item_id), Number(r.this_qty ?? 0)]))
+  for (const l of lines) if (l.itemId != null && saved.has(l.itemId)) l.thisQty = saved.get(l.itemId)!
+
+  // The rates this order has actually carried, so the sheet opens on the right
+  // ones instead of a house rule nobody agreed. 60% of IN4 bills have no tax.
+  const live = (certData ?? []).filter(c =>
+    !['cancelled', 'reversed'].includes(((c.status_name as string | null) ?? '').trim().toLowerCase())
+    && Number(c.certified_amt ?? 0) > 0)
+  const basic = live.reduce((s, c) => s + Number(c.certified_amt ?? 0), 0)
+  const gstPct = basic > 0
+    ? Math.round((live.reduce((s, c) => s + (Number(c.gross_bill_amt ?? 0) - Number(c.certified_amt ?? 0)), 0) / basic) * 1000) / 10
+    : 18
+  const retentionPct = basic > 0
+    ? Math.round((live.reduce((s, c) => s + Number(c.retention_amt ?? 0), 0) / basic) * 1000) / 10
+    : 5
+
+  return { lines, gstPct, retentionPct }
 }
