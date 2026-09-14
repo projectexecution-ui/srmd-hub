@@ -1,6 +1,6 @@
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/server'
-import { requirePermission } from '@/lib/auth'
+import { requireBillsAccess } from '@/lib/bills-booking/access'
 import { PageHeader } from '@/components/PageHeader'
 import { Card } from '@/components/ui/card'
 import { Landmark } from 'lucide-react'
@@ -19,7 +19,7 @@ export const DESKS = [
 ] as const
 
 export default async function BillsDesksPage() {
-  await requirePermission('bills-booking', 'admin')
+  await requireBillsAccess()
   const supabase = await createClient()
 
   const [{ data: users }, { data: projects }, { data: members }, { data: heads }] = await Promise.all([

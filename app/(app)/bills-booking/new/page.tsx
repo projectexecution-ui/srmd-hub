@@ -1,26 +1,53 @@
 import { createClient } from '@/lib/supabase/server'
-import { requirePermission } from '@/lib/auth'
+import { requireBillsWrite } from '@/lib/bills-booking/access'
 import { PageHeader } from '@/components/PageHeader'
-import { BillForm } from './BillForm'
+import { BillForm, type BookingSeed } from './BillForm'
+import { loadPickList } from '@/lib/bills-booking/wo-picker'
+import { loadBookingMaps } from '@/lib/bills-booking/desks'
 
 export const dynamic = 'force-dynamic'
 
 export default async function NewBillPage() {
-  await requirePermission('bills-booking', 'edit')
+  await requireBillsWrite()
   const supabase = await createClient()
-  const [{ data: projects }, { data: vendors }, { data: disciplines }] = await Promise.all([
+  const [{ data: projects }, { data: disciplines }, pick, maps] = await Promise.all([
     supabase.from('projects').select('id, code, name').is('archived_at', null).order('code'),
-    Promise.resolve({ data: [] as Array<{ id: string; name: string }> }), // hub Vendors list removed 10 Sep 2026
     supabase.from('cc_disciplines').select('id, name, display_order').eq('is_archived', false).order('display_order'),
+    // The work orders themselves, from IN4 — so picking one fills the
+    // contractor, the ordered value, what has been billed, the trust and the
+    // next RA number.
+    loadPickList(supabase).catch(() => ({ wos: [], projects: [] })),
+    // …and the mapping that says where a work order books and who approves it,
+    // so the old "Where it books" step is answered instead of asked.
+    loadBookingMaps(supabase),
   ])
+
+  // Maps do not cross the server/client boundary, so they go as entry arrays
+  // and are rebuilt once on the other side.
+  const seed: BookingSeed = {
+    subprojects: [...maps.subprojects],
+    linked: [...maps.linked],
+    desks: [...maps.desks],
+    projectHeads: [...maps.projectHeads],
+    people: [...maps.people],
+    ctProjects: [...maps.ctProjects],
+    skills: [...maps.skills],
+    disciplines: [...maps.disciplines],
+  }
 
   return (
     <div className="p-4 md:p-6 max-w-2xl mx-auto space-y-5">
       <PageHeader title="New bill" back="/bills-booking" subtitle="Enter a contractor (WO) or vendor (PO) bill to start the flow." />
       <BillForm
         projects={(projects ?? []).map(p => ({ id: p.id as string, code: p.code as string, name: p.name as string }))}
-        vendors={(vendors ?? []).map(v => ({ id: v.id as string, name: v.name as string }))}
         disciplines={(disciplines ?? []).map(d => ({ id: d.id as string, name: d.name as string }))}
+        in4Wos={pick.wos}
+        in4Projects={pick.projects}
+        seed={seed}
+        // Every page in this section already requires admin, so anyone who got
+        // here can set a desk. The prop stays so it survives the day desk users
+        // exist and this stops being true.
+        canAdmin
       />
     </div>
   )

@@ -38,7 +38,7 @@ export const MODULES: ModuleTile[] = [
   { slug: 'procurement-tracker', label: 'Indent → PO Tracker', description: 'Live from IN4 — every indent’s cycle (Indent → PO → GRN), what waits for approval, a PO or a delivery, and what is late', href: '/procurement-tracker', icon: FileSpreadsheet, tone: 'amber' },
   { slug: 'budget-vs-actual-v2', label: 'Budget vs Actual V2', description: 'Budget report as a tree — Budget · WO/PO Approved · Paid · Balance · Used% per project, with ₹/sft and open/closed status', href: '/budget-vs-actual-v2', icon: ListTree, tone: 'teal' },
   { slug: 'cost-control',     label: 'Cost Control',           description: 'Working Sheets, budgets & approvals (SRASSK)',                 href: '/cost-control',        icon: Calculator,      tone: 'indigo' },
-  { slug: 'bills-booking',    label: 'Bills Booking',          description: 'Contractor (WO) & vendor (PO) bills — entry → Site Head → CT → Atm → Trust → paid, all in one platform', href: '/bills-booking', icon: ReceiptText, tone: 'indigo' },
+  { slug: 'bills-booking',    label: 'Bills Approval',         description: 'Contractor (WO) & vendor (PO) bills — entry → Site Head → CT → Atm → Trust → paid, all in one platform', href: '/bills-booking', icon: ReceiptText, tone: 'indigo' },
   { slug: 'bills-pipeline',   label: 'Bills Pipeline',         description: 'Weekly SRA contractor bills command card — stalls, push list, pipeline bars', href: '/bills-pipeline', icon: Activity, tone: 'rose' },
   { slug: 'stuck-bills',      label: 'Bills Checklist',        description: 'Contractor bills pending with CT — verify documents before approval', href: '/stuck-bills', icon: ListChecks, tone: 'amber' },
   // Smart-Blueprint sandbox — proves the SLA + aging-dashboard UX in
