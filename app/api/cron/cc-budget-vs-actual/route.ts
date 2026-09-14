@@ -22,7 +22,7 @@ import { getMyUser, getMyPermissions, can } from '@/lib/auth'
 import { shownName, snapshotOf } from '@/lib/budget-v2'
 import { buildBudgetV2Report } from '@/lib/budget-v2-report'
 import { buildWeeklyOnePagerPdf, buildWeeklyDetailPdf, projectPdfFilename, groupPdfFilename, displayGroupName, UNGROUPED } from '@/lib/budget-v2-pdf'
-import { sendPdfToGroup } from '@/lib/telegram/group'
+import { sendPdfToGroup, sendPdfToChat, personChatId } from '@/lib/telegram/group'
 import { loadWeeklyReport, type WeeklyLoaded } from '@/lib/weekly-report/load'
 import { resolveRecipients, serializeWeeklyConfig, mondayOf, isMondayIST, WEEKLY_CONFIG_KEY, WEEKLY_EVENT } from '@/lib/weekly-report/config'
 
@@ -40,7 +40,7 @@ type Svc = ReturnType<typeof serviceClient>
 // The PDF set: one-pager, by category, by sub-category, then one forwardable
 // file per main project (a heading with 2+ lines travels as one file, a page
 // per line; a single-line heading gets its own file).
-async function sendPdfsToGroup(svc: Svc, loaded: WeeklyLoaded): Promise<{ sent: number; total: number; noGroup: boolean; errors: string[] }> {
+async function sendPdfsToGroup(svc: Svc, loaded: WeeklyLoaded, toChatId?: string): Promise<{ sent: number; total: number; noGroup: boolean; errors: string[] }> {
   const { result, freshness, delta, prevSnapshotWeek, prev } = loaded
   const base = { result, freshness, delta, prevSnapshotWeek }
   const tag = new Date(Date.now() + 5.5 * 3600 * 1000).toISOString().slice(0, 10)
@@ -73,7 +73,11 @@ async function sendPdfsToGroup(svc: Svc, loaded: WeeklyLoaded): Promise<{ sent: 
   let sent = 0, noGroup = false
   const errors: string[] = []
   for (const f of files) {
-    const r = await sendPdfToGroup(svc, { filename: f.name, pdf: f.pdf, caption: f.caption })
+    // `toChatId` sends the identical set to ONE chat (a person's DM) instead of
+    // the reports group — the "send to one person" path below.
+    const r = toChatId
+      ? await sendPdfToChat(toChatId, { filename: f.name, pdf: f.pdf, caption: f.caption })
+      : await sendPdfToGroup(svc, { filename: f.name, pdf: f.pdf, caption: f.caption })
     if ('skipped' in r) { if (r.skipped === 'no-group') noGroup = true; else errors.push(r.skipped) }
     else if (r.ok) sent++
     else errors.push(r.error)
@@ -162,7 +166,7 @@ export async function POST(req: Request) {
   if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
     return NextResponse.json({ ok: false, reason: 'Missing SUPABASE_SERVICE_ROLE_KEY' }, { status: 503 })
   }
-  const body = await req.json().catch(() => ({} as { onlyMe?: boolean; group?: boolean; sendNow?: boolean }))
+  const body = await req.json().catch(() => ({} as { onlyMe?: boolean; group?: boolean; sendNow?: boolean; toUser?: string })) as { onlyMe?: boolean; group?: boolean; sendNow?: boolean; toUser?: string }
   const svc = serviceClient()
 
   if (body?.sendNow) {
@@ -170,6 +174,19 @@ export async function POST(req: Request) {
     return NextResponse.json(res, { status: res.ok ? 200 : 500 })
   }
   const loaded = await loadWeeklyReport(svc)
+
+  // Send the PDF set to ONE person's Telegram, and nobody else. A one-off:
+  // nothing is marked as sent, no baseline is saved, the group is not posted to
+  // (Aksha, 14 Sep 2026 — "send all the reports on Telegram only to Atm Akshay").
+  if (body?.toUser) {
+    if (loaded.result.groups.length === 0) return NextResponse.json({ ok: false, reason: 'Nothing budgeted to report yet.' }, { status: 500 })
+    const chatId = await personChatId(svc, body.toUser)
+    if (!chatId) return NextResponse.json({ ok: false, reason: 'That person has not connected Telegram.' }, { status: 400 })
+    const r = await sendPdfsToGroup(svc, loaded, chatId)
+    if (r.sent === 0) return NextResponse.json({ ok: false, reason: r.errors[0] ? `Telegram: ${r.errors[0]}` : 'Nothing sent.' }, { status: 500 })
+    return NextResponse.json({ ok: true, sent: r.sent, total: r.total, errors: r.errors })
+  }
+
   if (body?.group) {
     if (loaded.result.groups.length === 0) return NextResponse.json({ ok: false, reason: 'Nothing budgeted to report yet.' }, { status: 500 })
     const g = await sendPdfsToGroup(svc, loaded)

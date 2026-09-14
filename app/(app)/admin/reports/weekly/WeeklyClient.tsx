@@ -52,7 +52,7 @@ export function WeeklyClient({ data }: { data: WeeklyPageData }) {
     })
   }
 
-  async function post(key: string, body: Record<string, boolean>, okText: (r: Record<string, unknown>) => string) {
+  async function post(key: string, body: Record<string, boolean | string>, okText: (r: Record<string, unknown>) => string) {
     setBusy(key); setFlash(null)
     try {
       const res = await fetch('/api/cron/cc-budget-vs-actual', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
@@ -89,6 +89,26 @@ export function WeeklyClient({ data }: { data: WeeklyPageData }) {
             className="inline-flex items-center gap-1.5 rounded-lg border border-gray-300 bg-white px-3 py-2 text-[13px] font-semibold min-h-[40px] hover:bg-gray-50 disabled:opacity-60">
             {busy === 'group' ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileText className="h-4 w-4" />} PDFs to group (test)
           </button>
+          {/* One-off: the same PDF set to ONE person's Telegram. Nothing is
+              marked sent, no baseline saved, the group is not posted to. */}
+          <select
+            aria-label="Send the PDF set to one person"
+            disabled={!!busy}
+            value=""
+            onChange={async e => {
+              const id = e.target.value
+              e.target.value = ''
+              if (!id) return
+              const who = data.people.find(p => p.id === id)?.name ?? 'that person'
+              if (await confirm(`Send the full PDF set to ${who} on Telegram only? Nobody else receives it.`)) {
+                post(`to:${id}`, { toUser: id }, r => `${r.sent} of ${r.total} PDFs sent to ${who} on Telegram.`)
+              }
+            }}
+            className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-[13px] font-semibold min-h-[40px] hover:bg-gray-50 disabled:opacity-60"
+          >
+            <option value="">{busy?.startsWith('to:') ? 'Sending…' : 'PDFs to one person…'}</option>
+            {data.people.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+          </select>
           <button type="button" disabled={!!busy} onClick={async () => { if (await confirm(sentThisWeek ? 'This week already went out. Send it again to everyone?' : 'Send the real Monday report to everyone now? This marks the week as sent.')) post('now', { sendNow: true }, r => `Sent to ${r.sent} people${r.group ? ` · group ${r.group}` : ''}. Week ${r.week} marked as sent.`) }}
             className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-600 px-3 py-2 text-[13px] font-semibold text-white min-h-[40px] hover:bg-indigo-700 disabled:opacity-60">
             {busy === 'now' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />} Send now
