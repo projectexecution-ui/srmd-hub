@@ -11,7 +11,8 @@ import {
 import { fmtQty } from '@/lib/stores/core'
 import { formatINR } from '@/lib/utils'
 import { GROUPS } from '@/lib/stores/registers'
-import { inputClass, Empty, Scroller, th, td, tdNum } from '../ui'
+import { inputClass, Empty, Scroller, th, td, tdNum, GroupedOptions } from '../ui'
+import type { ProjectOpt } from '@/lib/stores/queries'
 
 /**
  * One register, on screen and on paper.
@@ -30,7 +31,7 @@ export function RegisterClient({
   rows: RegisterRow[]
   filter: RegisterFilter
   parties: string[]
-  projects: Array<{ id: string; name: string }>
+  projects: ProjectOpt[]
   disciplines: Array<{ id: string; name: string }>
   names: { project?: string | null; discipline?: string | null }
 }) {
@@ -110,7 +111,7 @@ export function RegisterClient({
           <span className="block text-[10.5px] font-bold uppercase tracking-wider text-gray-500 mb-1">Project</span>
           <select className={inputClass} defaultValue={filter.projectId ?? ''} onChange={e => setParam('project', e.target.value)}>
             <option value="">Every project</option>
-            {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+            <GroupedOptions rows={projects} />
           </select>
         </label>
         <label className="block">

@@ -5,6 +5,8 @@ import {
   type ReturnableLine, type ReturnableRow, type Register, type Stage,
 } from './core'
 import type { RegisterSpec, RegisterFilter, RegisterRow } from './registers'
+import { groupProjects, type ProjectOpt } from './core'
+export type { ProjectOpt }
 
 /**
  * Reads for the Stores section. SELECT only — every write lives in actions.ts
@@ -633,4 +635,21 @@ export async function loadRegisterParties(): Promise<string[]> {
   const { data } = await supabase
     .from('mio_entries').select('party_name').not('party_name', 'is', null).neq('stage', 'void').limit(2000)
   return [...new Set((data ?? []).map(r => (r.party_name as string).trim()).filter(Boolean))].sort()
+}
+
+/* ── Project picker ─────────────────────────────────────────────────────── */
+
+/** Every project, ordered and grouped for a picker. See groupProjects. */
+export async function loadProjectOptions(): Promise<ProjectOpt[]> {
+  const supabase = await createClient()
+  const { data } = await supabase
+    .from('projects')
+    .select('id, name, parent_project_id')
+    .order('name')
+
+  return groupProjects((data ?? []).map(r => ({
+    id: r.id as string,
+    name: ((r.name as string) ?? '').trim(),
+    parentId: (r.parent_project_id as string | null) ?? null,
+  })))
 }

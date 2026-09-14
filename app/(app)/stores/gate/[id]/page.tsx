@@ -1,7 +1,8 @@
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
-import { createClient } from '@/lib/supabase/server'
-import { loadEntry, loadItems, loadLists, listsOf, storableLocations, locationLabel } from '@/lib/stores/queries'
+import {
+  loadEntry, loadItems, loadLists, listsOf, storableLocations, locationLabel, loadProjectOptions,
+} from '@/lib/stores/queries'
 import { createsStock } from '@/lib/stores/core'
 import { CompleteForm } from './CompleteForm'
 import { EntryDetailPanels } from './EntryDetailPanels'
@@ -13,11 +14,10 @@ export default async function GateEntryPage({ params }: { params: Promise<{ id: 
   const entry = await loadEntry(id)
   if (!entry) notFound()
 
-  const supabase = await createClient()
-  const [lists, items, { data: projects }] = await Promise.all([
+  const [lists, items, projects] = await Promise.all([
     loadLists(),
     loadItems(),
-    supabase.from('projects').select('id, name').order('name'),
+    loadProjectOptions(),
   ])
 
   const locations = storableLocations(lists).map(l => ({
@@ -42,7 +42,7 @@ export default async function GateEntryPage({ params }: { params: Promise<{ id: 
           entities={listsOf(lists, 'entity').filter(e => e.isActive).map(e => ({ id: e.id, name: e.name, code: e.code }))}
           categories={listsOf(lists, 'item_category').filter(c => c.isActive).map(c => ({ id: c.id, name: c.name }))}
           locations={locations}
-          projects={(projects ?? []).map(p => ({ id: p.id as string, name: p.name as string }))}
+          projects={projects}
           items={items.filter(i => i.isActive).map(i => ({ id: i.id, name: i.name, unit: i.unit, lastRate: i.lastRate, in4MaterialId: i.in4MaterialId }))}
         />
       )}

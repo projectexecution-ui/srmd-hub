@@ -5,6 +5,7 @@ import { createClient } from '@/lib/supabase/server'
 import { getMyProfile } from '@/lib/auth'
 import { entryNo, checkIssue, checkReturn, createsStock, type Register } from './core'
 import { loadStock, loadReturnables } from './queries'
+import { formatINR } from '@/lib/utils'
 
 /**
  * Every write in the Stores section.
@@ -694,7 +695,7 @@ export async function importIn4Material(materialId: number): Promise<Result<{ id
   if (error) return fail(explain(error, 'add the item'))
 
   revalidatePath('/stores')
-  return done(`${mat.name} added${rate?.rate != null ? ` at ₹${Number(rate.rate).toLocaleString('en-IN')}` : ''}.`,
+  return done(`${mat.name} added${rate?.rate != null ? ` at ${formatINR(rate.rate)}` : ''}.`,
     { id: data.id as string, name: data.name as string })
 }
 

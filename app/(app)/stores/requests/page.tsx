@@ -1,6 +1,8 @@
 import Link from 'next/link'
-import { createClient } from '@/lib/supabase/server'
-import { loadRequests, loadItems, loadLists, loadStock, storableLocations, locationLabel, listsOf } from '@/lib/stores/queries'
+import {
+  loadRequests, loadItems, loadLists, loadStock, storableLocations, locationLabel, listsOf,
+  loadProjectOptions,
+} from '@/lib/stores/queries'
 import { RequestsClient } from './RequestsClient'
 
 export const dynamic = 'force-dynamic'
@@ -17,13 +19,12 @@ export default async function RequestsPage({
   const { status } = await searchParams
   const active = FILTERS.find(f => f.key === status)?.key ?? 'pending'
 
-  const supabase = await createClient()
-  const [requests, items, lists, stock, { data: projects }] = await Promise.all([
+  const [requests, items, lists, stock, projects] = await Promise.all([
     loadRequests({ status: active || null }),
     loadItems(),
     loadLists(),
     loadStock(),
-    supabase.from('projects').select('id, name').order('name'),
+    loadProjectOptions(),
   ])
 
   const locations = storableLocations(lists).map(l => ({ id: l.id, label: locationLabel(lists, l.id) ?? l.name }))
@@ -46,7 +47,7 @@ export default async function RequestsPage({
 
       <RequestsClient
         requests={requests}
-        projects={(projects ?? []).map(p => ({ id: p.id as string, name: p.name as string }))}
+        projects={projects}
         items={items.filter(i => i.isActive).map(i => ({ id: i.id, name: i.name, unit: i.unit }))}
         locations={locations}
         modes={listsOf(lists, 'delivery_mode').filter(m => m.isActive).map(m => ({ id: m.id, name: m.name }))}

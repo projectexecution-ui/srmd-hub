@@ -2,7 +2,8 @@ import { describe, it, expect } from 'vitest'
 import {
   entryNo, linkedNo, foldStock, availableAt, availableAnywhere, checkIssue,
   outstandingReturnables, checkReturn, missingForGate, missingForComplete, createsStock, heldItemCount,
-  fmtQty, isPilotProject, PILOT_PROJECT_IDS, RETURNABLES_ON, type Movement, type ReturnableLine,
+  fmtQty, isPilotProject, PILOT_PROJECT_IDS, RETURNABLES_ON, groupProjects, UNGROUPED,
+  type Movement, type ReturnableLine,
 } from './core'
 
 const mv = (o: Partial<Movement> & { itemId: string; qty: number }): Movement => ({
@@ -309,5 +310,49 @@ describe('the returnables switch', () => {
     }], new Date('2026-09-14T00:00:00.000Z'))
     expect(rows[0].outstanding).toBe(60)
     expect(checkReturn(rows, 'l', 61).ok).toBe(false)
+  })
+})
+
+describe('groupProjects — the picker order', () => {
+  const P = (id: string, name: string, parentId: string | null = null) => ({ id, name, parentId })
+
+  it('puts a parent at the head of its own group, children after it by name', () => {
+    const out = groupProjects([
+      P('c', 'NGH C', 'p'), P('a', 'NGH A', 'p'), P('p', 'NGH'),
+    ])
+    expect(out.map(o => o.name)).toEqual(['NGH', 'NGH A', 'NGH C'])
+    expect(out.every(o => o.group === 'NGH')).toBe(true)
+  })
+
+  it('keeps each group contiguous, so one <optgroup> is opened per heading', () => {
+    const out = groupProjects([
+      P('p2', 'P2'), P('n', 'NGH'), P('p2a', 'P2 A01', 'p2'), P('nb', 'NGH B', 'n'),
+    ])
+    const seen: string[] = []
+    for (const o of out) if (seen[seen.length - 1] !== o.group) seen.push(o.group)
+    expect(seen).toEqual([...new Set(seen)])
+    expect(seen).toEqual(['NGH', 'P2'])
+  })
+
+  it('sends standalone projects to one group at the end', () => {
+    const out = groupProjects([
+      P('s', 'SRAH'), P('n', 'NGH'), P('nb', 'NGH B', 'n'), P('c', 'CV5'),
+    ])
+    expect(out.map(o => o.group)).toEqual(['NGH', 'NGH', UNGROUPED, UNGROUPED])
+    expect(out.slice(2).map(o => o.name)).toEqual(['CV5', 'SRAH'])
+  })
+
+  it('keeps an orphan rather than dropping it — a missing option books material to the wrong site', () => {
+    const out = groupProjects([P('x', 'Orphan', 'deleted-parent')])
+    expect(out).toEqual([{ id: 'x', name: 'Orphan', group: UNGROUPED }])
+  })
+
+  it('never loses or duplicates a project', () => {
+    const rows = [
+      P('p', 'NGH'), P('a', 'NGH A', 'p'), P('s', 'SRAH'), P('o', 'Orphan', 'gone'),
+    ]
+    const out = groupProjects(rows)
+    expect(out).toHaveLength(rows.length)
+    expect(new Set(out.map(o => o.id))).toEqual(new Set(rows.map(r => r.id)))
   })
 })

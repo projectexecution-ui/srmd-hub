@@ -1,7 +1,8 @@
 import { notFound } from 'next/navigation'
-import { createClient } from '@/lib/supabase/server'
 import { findRegister, type RegisterFilter } from '@/lib/stores/registers'
-import { loadRegister, loadRegisterParties, loadLists, listsOf } from '@/lib/stores/queries'
+import {
+  loadRegister, loadRegisterParties, loadLists, listsOf, loadProjectOptions,
+} from '@/lib/stores/queries'
 import { RegisterClient } from '../RegisterClient'
 
 export const dynamic = 'force-dynamic'
@@ -33,12 +34,11 @@ export default async function RegisterPage({
     disciplineId: sp.discipline?.trim() || null,
   }
 
-  const supabase = await createClient()
-  const [rows, parties, lists, { data: projects }] = await Promise.all([
+  const [rows, parties, lists, projects] = await Promise.all([
     loadRegister(spec, filter),
     loadRegisterParties(),
     loadLists(),
-    supabase.from('projects').select('id, name').order('name'),
+    loadProjectOptions(),
   ])
 
   const disciplines = listsOf(lists, 'discipline').filter(d => d.isActive).map(d => ({ id: d.id, name: d.name }))
@@ -49,10 +49,10 @@ export default async function RegisterPage({
       rows={rows}
       filter={filter}
       parties={parties}
-      projects={(projects ?? []).map(p => ({ id: p.id as string, name: p.name as string }))}
+      projects={projects}
       disciplines={disciplines}
       names={{
-        project: (projects ?? []).find(p => p.id === filter.projectId)?.name as string | undefined,
+        project: projects.find(p => p.id === filter.projectId)?.name,
         discipline: disciplines.find(d => d.id === filter.disciplineId)?.name,
       }}
     />

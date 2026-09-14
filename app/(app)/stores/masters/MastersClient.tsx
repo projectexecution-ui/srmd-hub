@@ -3,9 +3,9 @@
 import { useRouter } from 'next/navigation'
 import { useState, useTransition } from 'react'
 import { saveListRow, setListActive, saveItem } from '@/lib/stores/actions'
-import type { ListRow, ItemRow } from '@/lib/stores/queries'
-import { formatINR } from '@/lib/utils'
-import { Field, inputClass, Btn, Notice, Empty, Scroller, th, td, tdNum } from '../ui'
+import type { ListRow, ItemRow, ProjectOpt } from '@/lib/stores/queries'
+import { formatINR, formatNumber } from '@/lib/utils'
+import { Field, inputClass, Btn, Notice, Empty, Scroller, th, td, tdNum, GroupedOptions } from '../ui'
 
 type Kind = ListRow['kind']
 
@@ -25,7 +25,7 @@ export function MastersClient({
   lists: ListRow[]
   items: ItemRow[]
   companies: Array<{ id: number; code: string; name: string }>
-  projects: Array<{ id: string; name: string }>
+  projects: ProjectOpt[]
 }) {
   const router = useRouter()
   const [openKind, setOpenKind] = useState<Kind | 'items'>('location')
@@ -73,7 +73,7 @@ function ListPanel({
   spec: { kind: Kind; title: string; note: string }
   rows: ListRow[]
   companies: Array<{ id: number; code: string; name: string }>
-  projects: Array<{ id: string; name: string }>
+  projects: ProjectOpt[]
   onDone: () => void
 }) {
   const [pending, start] = useTransition()
@@ -130,7 +130,7 @@ function ListPanel({
           <Field label="Belongs to a project" hint="Optional. A shared warehouse belongs to nobody.">
             <select className={inputClass} value={projectId} onChange={e => setProjectId(e.target.value)}>
               <option value="">Shared</option>
-              {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+              <GroupedOptions rows={projects} />
             </select>
           </Field>
         )}
@@ -287,7 +287,7 @@ function ItemsPanel({
 
       <input
         className={`${inputClass} max-w-sm`} value={q} onChange={e => setQ(e.target.value)}
-        type="search" placeholder={`Search ${items.length} item${items.length === 1 ? '' : 's'}`}
+        type="search" placeholder={`Search ${formatNumber(items.length, 0)} item${items.length === 1 ? '' : 's'}`}
         aria-label="Search items"
       />
 

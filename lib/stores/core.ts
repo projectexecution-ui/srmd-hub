@@ -302,3 +302,53 @@ export function missingForComplete(d: EntryDraft): string[] {
  *  returnable lines are counted. One predicate, used by the action that
  *  writes movements and by the screen that explains why. */
 export const createsStock = (register: Register): boolean => register !== 'vendor'
+
+/* ── Project picker grouping ────────────────────────────────────────────── */
+
+export interface ProjectOpt {
+  id: string
+  name: string
+  /** The heading this project sits under in a picker. */
+  group: string
+}
+
+/** Standalone projects — no parent, no children — go last, under this. */
+export const UNGROUPED = 'On their own'
+
+/**
+ * Order projects so a picker can walk the array and open a new <optgroup>
+ * whenever `group` changes.
+ *
+ * A parent heads its own group and is the first option inside it, because
+ * "NGH" is itself a bookable project and not only a heading. A project whose
+ * parent has been deleted falls back to UNGROUPED rather than vanishing —
+ * an option that silently disappears is how material gets booked to the
+ * wrong site.
+ */
+export function groupProjects(
+  rows: ReadonlyArray<{ id: string; name: string; parentId: string | null }>,
+): ProjectOpt[] {
+  const nameById = new Map(rows.map(r => [r.id, r.name]))
+  const hasKids = new Set(rows.map(r => r.parentId).filter(Boolean) as string[])
+
+  const opts: ProjectOpt[] = rows.map(r => ({
+    id: r.id,
+    name: r.name,
+    group: r.parentId
+      ? nameById.get(r.parentId) ?? UNGROUPED
+      : hasKids.has(r.id) ? r.name : UNGROUPED,
+  }))
+
+  return opts.sort((a, b) => {
+    if (a.group !== b.group) {
+      if (a.group === UNGROUPED) return 1
+      if (b.group === UNGROUPED) return -1
+      return a.group.localeCompare(b.group)
+    }
+    // Inside a group: the parent first (it shares the group's name), then
+    // its children by name.
+    const aHead = a.name === a.group ? 0 : 1
+    const bHead = b.name === b.group ? 0 : 1
+    return aHead - bHead || a.name.localeCompare(b.name)
+  })
+}

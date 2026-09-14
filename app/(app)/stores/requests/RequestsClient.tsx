@@ -5,8 +5,10 @@ import { useState, useTransition } from 'react'
 import { raiseRequest, decideRequest, issueRequest } from '@/lib/stores/actions'
 import { checkIssue, fmtQty, RETURNABLES_ON, type StockRow } from '@/lib/stores/core'
 import { formatDate, formatDateTime } from '@/lib/utils'
-import type { RequestRow } from '@/lib/stores/queries'
-import { Field, inputClass, Btn, Notice, Empty, Section, StatusChip, Scroller, th, td, tdNum } from '../ui'
+import type { RequestRow, ProjectOpt } from '@/lib/stores/queries'
+import {
+  Field, inputClass, Btn, Notice, Empty, Section, StatusChip, Scroller, th, td, tdNum, GroupedOptions,
+} from '../ui'
 
 interface Opt { id: string; name: string }
 interface Line { key: string; itemId: string; unit: string; qty: string; returnable: boolean }
@@ -18,7 +20,7 @@ export function RequestsClient({
   requests, projects, items, locations, modes, stock,
 }: {
   requests: RequestRow[]
-  projects: Opt[]
+  projects: ProjectOpt[]
   items: Array<{ id: string; name: string; unit: string }>
   locations: Array<{ id: string; label: string }>
   modes: Opt[]
@@ -57,7 +59,7 @@ export function RequestsClient({
 function RaiseForm({
   projects, items, stock, onDone,
 }: {
-  projects: Opt[]; items: Array<{ id: string; name: string; unit: string }>
+  projects: ProjectOpt[]; items: Array<{ id: string; name: string; unit: string }>
   stock: StockRow[]; onDone: () => void
 }) {
   const [pending, start] = useTransition()
@@ -82,13 +84,13 @@ function RaiseForm({
         <Field label="For which project" required>
           <select className={inputClass} value={projectId} onChange={e => setProjectId(e.target.value)}>
             <option value="">Pick one</option>
-            {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+            <GroupedOptions rows={projects} />
           </select>
         </Field>
         <Field label="Borrowing from another project?" hint="Leave blank for a normal issue from the warehouse.">
           <select className={inputClass} value={fromProjectId} onChange={e => setFromProjectId(e.target.value)}>
             <option value="">No — from the store</option>
-            {projects.filter(p => p.id !== projectId).map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+            <GroupedOptions rows={projects.filter(p => p.id !== projectId)} />
           </select>
         </Field>
       </div>

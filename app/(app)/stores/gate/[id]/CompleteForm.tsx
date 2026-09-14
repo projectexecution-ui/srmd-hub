@@ -9,6 +9,8 @@ import { missingForComplete, fmtQty, RETURNABLES_ON, type Register } from '@/lib
 import { T } from '@/lib/stores/lang'
 import { formatINR } from '@/lib/utils'
 import { Label, BigInput, Stepper, BigNotice } from '../../field'
+import { GroupedOptions } from '../../ui'
+import type { ProjectOpt } from '@/lib/stores/queries'
 
 interface Opt { id: string; name: string; code?: string | null }
 interface ItemOpt { id: string; name: string; unit: string; lastRate: number | null; in4MaterialId: number | null }
@@ -34,7 +36,7 @@ export function CompleteForm({
 }: {
   entryId: string; entryNo: string; register: Register; makesStock: boolean
   entities: Opt[]; categories: Opt[]; locations: Array<{ id: string; label: string }>
-  projects: Opt[]; items: ItemOpt[]
+  projects: ProjectOpt[]; items: ItemOpt[]
 }) {
   const router = useRouter()
   const [pending, start] = useTransition()
@@ -129,7 +131,7 @@ export function CompleteForm({
           <Label t={T.whichProject} />
           <select className={sel} value={projectId} onChange={e => setProjectId(e.target.value)}>
             <option value="">—</option>
-            {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+            <GroupedOptions rows={projects} />
           </select>
         </label>
         <label className="block space-y-1.5">
