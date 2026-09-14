@@ -6,6 +6,7 @@ import { Card } from '@/components/ui/card'
 import { Landmark } from 'lucide-react'
 import { personName } from '@/lib/utils'
 import { DeskMembersEditor, type DeskState } from './DeskMembersEditor'
+import { Examples } from './Examples'
 import { DESKS } from '@/lib/bills-booking/desk-list'
 export { DESKS }
 
@@ -22,6 +23,15 @@ export default async function BillsDesksPage() {
     supabase.from('bb_desk_members').select('desk, project_id, user_id'),
     supabase.from('cc_project_approvers').select('user_id, profiles(full_name, email)').eq('role', 'head'),
   ])
+
+  // The walkthrough bills, so the list below can link straight to each one.
+  const { data: examples } = await supabase
+    .from('bb_bills').select('id, bill_no, work').eq('is_example', true).order('bill_no')
+  const exampleRows = (examples ?? []).map(e => ({
+    id: e.id as string,
+    billNo: e.bill_no as string | null,
+    title: (e.work as string | null) ?? '',
+  }))
 
   const initial: Record<string, DeskState> = {}
   for (const d of DESKS) initial[d.key] = { global: [], overrides: {} }
@@ -41,6 +51,8 @@ export default async function BillsDesksPage() {
     <div className="p-4 md:p-6 max-w-3xl mx-auto space-y-5">
       <PageHeader title="Bills desks" back="/bills-booking"
         subtitle="Who works each desk. Add a default team for all projects, and override per project. Any member of a desk can act." />
+
+      <Examples existing={exampleRows.length} live={exampleRows} />
 
       <DeskMembersEditor
         desks={DESKS as unknown as { key: string; label: string }[]}

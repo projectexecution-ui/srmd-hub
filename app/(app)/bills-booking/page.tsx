@@ -22,7 +22,7 @@ type Row = {
   id: string; order_type: string; bill_type: string | null; bill_no: string | null
   claimed_amount: number; net_amount: number | null; current_stage: BbStage; stage_since: string
   discipline: string | null; trust: string | null; project_id: string | null
-  wo_pending: boolean; amendment_flag: boolean
+  wo_pending: boolean; amendment_flag: boolean; is_example: boolean
   vendors: { name: string } | { name: string }[] | null; vendor_text: string | null
 }
 
@@ -33,7 +33,7 @@ export default async function BillsBookingPage() {
   const canAdmin = can(perms, 'bills-booking', 'admin')
   const supabase = await createClient()
 
-  const COLS ='id, order_type, bill_type, bill_no, claimed_amount, net_amount, current_stage, stage_since, discipline, trust, project_id, wo_pending, amendment_flag, vendors(name), vendor_text'
+  const COLS ='id, order_type, bill_type, bill_no, claimed_amount, net_amount, current_stage, stage_since, discipline, trust, project_id, wo_pending, amendment_flag, is_example, vendors(name), vendor_text'
 
   // PostgREST stops at 1,000 rows and hands back the first page without a
   // word, so every KPI on this screen would quietly become a sample of the
@@ -58,11 +58,16 @@ export default async function BillsBookingPage() {
   const projCode = (r: Row) => (r.project_id ? proj.get(r.project_id)?.code : '') || '—'
 
   // ── Insights ──
-  const live = rows.filter(r => !isTerminal(r.current_stage))
+  // The walkthrough bills stay in the list, badged, and out of every figure.
+  // A demo row counted as money is worse than no demo at all, and one flag on
+  // the row means a screen cannot badge it and total it at the same time.
+  const examples = rows.filter(r => r.is_example)
+  const real = rows.filter(r => !r.is_example)
+  const live = real.filter(r => !isTerminal(r.current_stage))
   const overSla = (r: Row) => isOverSla(r.current_stage, r.stage_since)
   const lateBills = live.filter(overSla)
   const woIssues = live.filter(r => r.wo_pending || r.amendment_flag)
-  const paidCount = rows.filter(r => r.current_stage === 'paid').length
+  const paidCount = real.filter(r => r.current_stage === 'paid').length
   const pipelineValue = live.reduce((a, r) => a + amt(r), 0)
 
   // Attention list (flagged), biggest money first
@@ -78,7 +83,7 @@ export default async function BillsBookingPage() {
 
   // Stage strip
   const stageStrip = PIPELINE.map(s => {
-    const g = rows.filter(r => r.current_stage === s.key)
+    const g = real.filter(r => r.current_stage === s.key)
     return { s, n: g.length, v: g.reduce((a, r) => a + amt(r), 0) }
   }).filter(x => x.n > 0)
 
@@ -107,6 +112,7 @@ export default async function BillsBookingPage() {
     const leaf: Leaf = {
       id: b.id, vendor: vendorOf(b), billNo: b.bill_no, orderType: b.order_type,
       billType: b.bill_type, discipline: b.discipline, stage: b.current_stage, amount: v,
+      isExample: b.is_example,
     }
     s.bills.push(leaf)
   }
@@ -136,6 +142,14 @@ export default async function BillsBookingPage() {
           )}
         </div>
       </PageHeader>
+
+      {examples.length > 0 && (
+        <p className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-2.5 text-xs text-amber-900">
+          <b>{examples.length} example bills</b> are in the list below, badged <b>EXAMPLE</b>. They are seeded from real
+          IN4 work orders so the figures behave, and they are left out of every total above.{' '}
+          <Link href="/bills-booking/admin" className="font-semibold underline">Remove them</Link> when you are done.
+        </p>
+      )}
 
       {/* The seven views over IN4. A strip, not a row of header buttons —
           they are places to look, not actions, and the header is for actions. */}

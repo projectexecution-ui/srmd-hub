@@ -270,7 +270,7 @@ export default async function MyApprovalsPage({
                             </span>
                           )}
                           <span className="inline-flex items-center rounded-full bg-amber-50 text-amber-800 px-2.5 py-1 text-[11px] font-semibold" title="What this item needs from you">
-                            {inboxActionLabel(r.next_stage)}
+                            {inboxActionLabel(r.next_stage, { moduleSlug: r.module_slug, fromStage: r.from_stage })}
                           </span>
                         </div>
                       </Link>
@@ -316,7 +316,7 @@ export default async function MyApprovalsPage({
                         </div>
                         <div className="mt-2.5 flex justify-end">
                           <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 text-amber-800 px-3 py-1.5 text-xs font-semibold">
-                            {inboxActionLabel(r.next_stage)}
+                            {inboxActionLabel(r.next_stage, { moduleSlug: r.module_slug, fromStage: r.from_stage })}
                             <ArrowRight className="h-3.5 w-3.5" />
                           </span>
                         </div>

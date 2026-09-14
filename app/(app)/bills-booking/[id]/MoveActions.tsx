@@ -9,8 +9,10 @@ import { MoneyInput } from '@/components/ui/money-input'
 import { Loader2, ArrowRight, Undo2, PauseCircle, PlayCircle, Ban } from 'lucide-react'
 import { stageDef, nextStage, prevStage, type BbStage } from '@/lib/bills-booking/stages'
 
-export function MoveActions({ billId, stage, netAmount, claimed, preHoldStage }: {
+export function MoveActions({ billId, stage, netAmount, claimed, preHoldStage, hasAbstract }: {
   billId: string; stage: BbStage; netAmount: number | null; claimed: number; preHoldStage: BbStage | null
+  /** Whether the IN4 abstract number has been recorded on this bill yet. */
+  hasAbstract: boolean
 }) {
   const router = useRouter()
   const supabase = createClient()
@@ -67,6 +69,16 @@ export function MoveActions({ billId, stage, netAmount, claimed, preHoldStage }:
       <p className="text-sm text-gray-700">
         At <b>{stageDef(stage).label}</b> ({stageDef(stage).desk}).{fwd && <> Forward sends it to <b>{stageDef(fwd).label}</b>.</>}
       </p>
+
+      {/* The abstract is keyed in IN4 at this desk — which is why the entry
+          form no longer asks for it. A reminder, never a block: a bill stopped
+          for a missing reference is a bill that stops being visible. */}
+      {stage === 'site_head' && !hasAbstract && (
+        <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+          The abstract is filled in IN4 at this desk. Record its number on the bill above once it exists —
+          that is what ties this record to the IN4 document. Forwarding without it is allowed.
+        </p>
+      )}
       {err && <p role="alert" className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">{err}</p>}
 
       {showAmount && (

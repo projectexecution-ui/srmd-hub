@@ -9,6 +9,8 @@ import { formatINR, formatINRCompact } from '@/lib/utils'
 export type Leaf = {
   id: string; vendor: string; billNo: string | null; orderType: string
   billType: string | null; discipline: string | null; stage: BbStage; amount: number
+  /** A seeded walkthrough bill. Badged here, and kept out of every total. */
+  isExample?: boolean
 }
 export type SubNode = { key: string; label: string; n: number; value: number; bills: Leaf[] }
 export type MainNode = { key: string; label: string; n: number; value: number; subs: SubNode[] }
@@ -97,6 +99,7 @@ function Sub({ s }: { s: SubNode }) {
                 <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap items-center gap-1.5">
                     <span className="truncate text-[13px] font-semibold text-gray-900">{b.vendor}</span>
+                    {b.isExample && <span className="rounded bg-amber-100 px-1 py-px text-[10px] font-semibold text-amber-800">EXAMPLE</span>}
                     <span className="rounded border border-gray-200 px-1 py-px text-[10px] font-semibold text-gray-500">{b.orderType}</span>
                     {b.billType && <span className="rounded bg-indigo-50 px-1 py-px text-[10px] font-semibold text-indigo-700">{b.billType}</span>}
                     {b.discipline && <span className="rounded bg-gray-100 px-1 py-px text-[10px] font-semibold text-gray-600">{b.discipline}</span>}

@@ -26,3 +26,25 @@ describe('inboxActionLabel', () => {
     expect(inboxActionLabel('')).toBe('Open')
   })
 })
+
+describe('Bills Approval', () => {
+  // Bills route on desks, not on approval_rules, so the inbox carries no
+  // next_stage for them and the verb comes from the stage they are AT.
+  it('names the action at each desk', () => {
+    const at = (s: string) => inboxActionLabel(null, { moduleSlug: 'bills-booking', fromStage: s })
+    expect(at('atm_approval')).toBe('Approve')
+    expect(at('ct_head')).toBe('Verify & forward')
+    expect(at('site_head')).toBe('Check & forward')
+    expect(at('ct_billing')).toBe('Make the certificate')
+  })
+
+  it('falls back to Open rather than printing a stage code', () => {
+    expect(inboxActionLabel(null, { moduleSlug: 'bills-booking', fromStage: 'on_hold' })).toBe('Open')
+    expect(inboxActionLabel(null, { moduleSlug: 'bills-booking' })).toBe('Open')
+  })
+
+  it('leaves every other module exactly as it was', () => {
+    expect(inboxActionLabel('ph_approved', { moduleSlug: 'cost-control', fromStage: 'submitted' })).toBe('Approve')
+    expect(inboxActionLabel('atm_approved')).toBe('Approve')
+  })
+})

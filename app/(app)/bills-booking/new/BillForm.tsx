@@ -68,9 +68,7 @@ export function BillForm({ projects, disciplines, in4Wos, in4Projects, seed, can
   const [workManual, setWorkManual] = useState('')
   const [billNo, setBillNo] = useState('')
   const [billDate, setBillDate] = useState('')
-  const [claimed, setClaimed] = useState('')
-  const [abstractNo, setAbstractNo] = useState('')
-  const [orderNoManual, setOrderNoManual] = useState('')
+  const [claimed, setClaimed] = useState('')  const [orderNoManual, setOrderNoManual] = useState('')
 
   const [maps, setMaps] = useState<BookingMaps>(() => hydrate(seed))
 
@@ -129,9 +127,7 @@ export function BillForm({ projects, disciplines, in4Wos, in4Projects, seed, can
         work,
         bill_no: billNo.trim() || null, ra_no: raNo || null,
         bill_date: billDate || null, claimed_amount: thisBill, trust: trust || null,
-        wo_value: woValue, paid_till_date: paidTill,
-        abstract_no_in4: abstractNo.trim() || null,
-        in4_subproject_id: booking.subprojectId,
+        wo_value: woValue, paid_till_date: paidTill,        in4_subproject_id: booking.subprojectId,
       },
     })
     if (error) { setBusy(false); setErr(error.message); return }
@@ -254,11 +250,13 @@ export function BillForm({ projects, disciplines, in4Wos, in4Projects, seed, can
               </div>
             </>
           )}
-          <div>
-            <Label htmlFor="abs">Abstract no (IN4)</Label>
-            <Input id="abs" value={abstractNo} onChange={e => setAbstractNo(e.target.value)} placeholder="if one exists already" />
-          </div>
         </div>
+
+        {/* The abstract number is NOT asked for here. Aksha, 14 Sep 2026: "why
+            Abstract Number - that will come ahead in process na ???" — it is
+            filled by the Site Head in IN4 after this bill exists, so at this
+            moment there is nothing to type. It is recorded on the bill itself
+            when it arrives. */}
 
         {overWO && (
           <div className="mt-3 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-800">

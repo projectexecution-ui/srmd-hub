@@ -27,7 +27,30 @@ const NEXT_STAGE_ACTION: Record<string, string> = {
   received: 'Receive',
 }
 
-export function inboxActionLabel(nextStage: string | null | undefined): string {
+/** What the person at a Bills Approval desk actually does next.
+ *
+ *  Bills route on desks, not on approval_rules, so `my_approval_inbox()`
+ *  returns no next_stage for them — the forward order lives in PIPELINE, and a
+ *  copy of it in SQL would be a second source of truth waiting to drift. The
+ *  verb is therefore read from the stage the bill is AT. */
+const BILL_STAGE_ACTION: Record<string, string> = {
+  submitted:    'Send to Site Head',
+  site_head:    'Check & forward',
+  disc_head:    'Check & forward',
+  ct_head:      'Verify & forward',
+  atm_approval: 'Approve',
+  ct_billing:   'Make the certificate',
+  trust:        'With the Trust',
+}
+
+export function inboxActionLabel(
+  nextStage: string | null | undefined,
+  opts?: { moduleSlug?: string; fromStage?: string | null },
+): string {
+  if (opts?.moduleSlug === 'bills-booking' && opts.fromStage) {
+    const verb = BILL_STAGE_ACTION[opts.fromStage]
+    if (verb) return verb
+  }
   if (!nextStage) return 'Open'
   const hit = NEXT_STAGE_ACTION[nextStage]
   if (hit) return hit

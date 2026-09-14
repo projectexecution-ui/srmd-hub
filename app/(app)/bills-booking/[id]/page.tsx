@@ -9,6 +9,7 @@ import { StagePill } from '../StagePill'
 import { MoveActions } from './MoveActions'
 import { StatusTimeline } from './StatusTimeline'
 import { Documents, type DocRow } from './Documents'
+import { AbstractNo } from './AbstractNo'
 import { buildTimeline, type RawEvent } from '@/lib/bills-booking/timeline'
 import { formatDate, formatDateTime, formatINR } from '@/lib/utils'
 
@@ -75,10 +76,8 @@ export default async function BillDetailPage({ params }: { params: Promise<{ id:
     const w = one(e.profiles)
     return { from_stage: e.from_stage, to_stage: e.to_stage, created_at: e.created_at, actor: w?.full_name || w?.email || null }
   })
-  // Read once, outside the render tree. Date.now() called while React is
-  // rendering is impure — the lint rule has been failing on this line.
   // The clock lives inside buildTimeline, which defaults it. Reading Date.now()
-  // here is exactly what the lint rule has been failing on since this page was
+  // here is exactly what the lint rule had been failing on since this page was
   // written — a component must not be the thing that asks what time it is.
   const segs = buildTimeline(asc, bill.current_stage as BbStage)
 
@@ -106,6 +105,13 @@ export default async function BillDetailPage({ params }: { params: Promise<{ id:
         <StagePill stage={bill.current_stage as BbStage} />
       </PageHeader>
 
+      {bill.is_example && (
+        <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+          <b>This is an example bill.</b> Seeded to walk the flow on — real IN4 work order, real arithmetic, but no real
+          money. It is left out of every total, and goes with the rest from <b>Bills desks</b>.
+        </div>
+      )}
+
       {/* WO status banners */}
       {bill.wo_pending && (
         <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
@@ -132,7 +138,9 @@ export default async function BillDetailPage({ params }: { params: Promise<{ id:
           <Fact k="This bill" v={money(bill.claimed_amount)} />
           <Fact k="Certified" v={money(bill.certified_amount)} />
           <Fact k="Net payable" v={money(bill.net_amount)} strong={bill.net_amount != null} />
-          <Fact k="Abstract no (IN4)" v={bill.abstract_no_in4 || '—'} />
+          {canEdit
+            ? <AbstractNo billId={bill.id as string} value={(bill.abstract_no_in4 as string | null) ?? null} stage={bill.current_stage as BbStage} />
+            : <Fact k="Abstract no (IN4)" v={(bill.abstract_no_in4 as string | null) || '—'} />}
           <Fact k="Trust" v={bill.trust || '—'} />
           <Fact k="Bill date" v={bill.bill_date ? formatDate(bill.bill_date as string) : '—'} />
           {/* A bill can have no CT Hub project — 32 of the 54 IN4 sub-projects
@@ -181,7 +189,8 @@ export default async function BillDetailPage({ params }: { params: Promise<{ id:
       {/* Move actions */}
       {canEdit && <MoveActions billId={bill.id as string} stage={bill.current_stage as BbStage}
         netAmount={bill.net_amount as number | null} claimed={bill.claimed_amount as number}
-        preHoldStage={(bill.pre_hold_stage as BbStage | null) ?? null} />}
+        preHoldStage={(bill.pre_hold_stage as BbStage | null) ?? null}
+        hasAbstract={!!bill.abstract_no_in4} />}
 
       {/* Audit trail */}
       <Card className="p-4">
@@ -194,9 +203,13 @@ export default async function BillDetailPage({ params }: { params: Promise<{ id:
                 <div className="mt-1 h-2 w-2 shrink-0 rounded-full bg-indigo-400" />
                 <div className="min-w-0">
                   <p className="text-gray-800">
-                    <b>{e.action === 'send_back' ? 'Sent back' : e.action === 'hold' ? 'Put on hold' : e.action === 'reject' ? 'Rejected' : 'Moved'}</b>
-                    {e.from_stage && <> from <span className="font-medium">{stageDef(e.from_stage).label}</span></>}
-                    {e.to_stage && <> → <span className="font-medium">{stageDef(e.to_stage).label}</span></>}
+                    <b>{e.action === 'send_back' ? 'Sent back' : e.action === 'hold' ? 'Put on hold' : e.action === 'reject' ? 'Rejected' : e.action === 'abstract' ? 'Abstract' : 'Moved'}</b>
+                    {/* An event that did not move the bill — recording the
+                        abstract number, say — would otherwise read "from CT
+                        Head → CT Head", which is noise in a trail people are
+                        meant to skim. */}
+                    {e.from_stage && e.from_stage !== e.to_stage && <> from <span className="font-medium">{stageDef(e.from_stage).label}</span></>}
+                    {e.to_stage && e.to_stage !== e.from_stage && <> → <span className="font-medium">{stageDef(e.to_stage).label}</span></>}
                     {e.amount_snapshot != null && <> · {money(e.amount_snapshot)}</>}
                   </p>
                   {e.comment && <p className="mt-0.5 text-[13px] text-gray-600">“{e.comment}”</p>}
