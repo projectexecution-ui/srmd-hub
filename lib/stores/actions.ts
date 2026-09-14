@@ -3,8 +3,8 @@
 import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
 import { getMyProfile } from '@/lib/auth'
-import { entryNo, checkIssue, createsStock, type Register } from './core'
-import { loadStock } from './queries'
+import { entryNo, checkIssue, checkReturn, createsStock, type Register } from './core'
+import { loadStock, loadReturnables } from './queries'
 
 /**
  * Every write in the Stores section.
@@ -381,6 +381,145 @@ export async function issueRequest(input: IssueInput): Promise<Result<{ no: stri
   return done(fullyServed
     ? `Issued as ${no}. ${req.no} is complete.`
     : `Issued as ${no}. ${req.no} stays open — some quantity is still to go.`, { no })
+}
+
+/* ── Step 4 · Returned items ─────────────────────────────────────────────── */
+
+export interface ReturnItemsInput {
+  /** The IN entry whose returnables are coming back. */
+  entryId: string
+  lines: Array<{ lineId: string; itemId: string; unit: string; qty: number }>
+  handedOverTo?: string
+  deliveryModeId?: string | null
+  remarks?: string
+}
+
+/**
+ * Record returnable material going back — the map's Step 4.
+ *
+ * Until now this was a one-way street: a debt could be created and never
+ * cleared, so the "still to come back" list only ever grew and would have
+ * stopped being believed within a month.
+ *
+ * The return is an OUT entry LINKED to the IN it answers, exactly as the map
+ * draws it — "Out: 15Aug26 (In: 15Aug26)" — and each returned line points at
+ * the original line, so two returnables on one entry settle separately.
+ *
+ * It does NOT touch stock. A vendor's props were never our stock (vendor
+ * material goes to site), and material issued from our store already left it.
+ * Writing a movement here would put back something that was never taken.
+ */
+export async function returnItems(input: ReturnItemsInput): Promise<Result<{ no: string }>> {
+  const profile = await me()
+  const supabase = await createClient()
+
+  const { data: origin } = await supabase
+    .from('mio_entries').select('id, no, register, stage, project_id, party_name')
+    .eq('id', input.entryId).maybeSingle()
+  if (!origin) return fail('That entry no longer exists.')
+  if (origin.stage === 'void') return fail('That entry was voided — there is nothing to return against it.')
+
+  const lines = (input.lines ?? []).filter(l => l.lineId && l.qty > 0)
+  if (lines.length === 0) return fail('Set a quantity against at least one line.')
+
+  // Check every line against what is actually still out, and report all the
+  // problems at once rather than one per attempt.
+  const outstanding = await loadReturnables()
+  const problems: string[] = []
+  for (const l of lines) {
+    const check = checkReturn(outstanding, l.lineId, l.qty)
+    if (!check.ok) {
+      const row = outstanding.find(r => r.lineId === l.lineId)
+      problems.push(`${row?.itemName ?? 'Item'}: ${check.reason}`)
+    }
+  }
+  if (problems.length) return fail(problems.join('\n'))
+
+  const today = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }))
+  const isoDate = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`
+  const { data: seq, error: seqErr } = await supabase.rpc('fn_mio_next_seq', { p_direction: 'out', p_date: isoDate })
+  if (seqErr) return fail(explain(seqErr, 'take an out number'))
+
+  const no = entryNo('out', isoDate, Number(seq) || 1)
+  const { data: entry, error: entryErr } = await supabase
+    .from('mio_entries')
+    .insert({
+      direction: 'out',
+      // A return keeps the register of the entry it answers, so a vendor's
+      // props go back on the vendor register and an internal loan on its own.
+      register: origin.register,
+      no, seq: Number(seq) || 1, entry_date: isoDate, stage: 'complete',
+      project_id: origin.project_id,
+      linked_entry_id: origin.id,
+      party_name: origin.party_name,
+      delivery_mode_id: input.deliveryModeId || null,
+      handed_over_to: input.handedOverTo?.trim() || null,
+      remarks: input.remarks?.trim() || null,
+      security_by: profile.full_name ?? profile.email,
+      security_signed_by: profile.id, security_signed_at: new Date().toISOString(),
+      created_by: profile.id, completed_by: profile.id, completed_at: new Date().toISOString(),
+    })
+    .select('id, no')
+    .single()
+  if (entryErr) return fail(explain(entryErr, 'record the return'))
+
+  const { error: lineErr } = await supabase.from('mio_entry_lines').insert(
+    lines.map(l => ({
+      entry_id: entry.id, item_id: l.itemId, unit: l.unit, qty: l.qty,
+      returnable: true, returns_line_id: l.lineId,
+    })),
+  )
+  if (lineErr) return fail(explain(lineErr, 'save the returned lines'))
+
+  const after = await loadReturnables()
+  const stillOut = after.filter(r => r.entryId === origin.id).length
+  revalidatePath('/stores')
+  return done(stillOut === 0
+    ? `Returned as ${no}. ${origin.no} is fully settled — nothing more to come back.`
+    : `Returned as ${no}. ${stillOut} line${stillOut === 1 ? '' : 's'} on ${origin.no} still to come back.`,
+    { no })
+}
+
+/* ── The receipt · the engineer signs for what he took ───────────────────── */
+
+/**
+ * The map's "SRM Engg receives the materails & checks & Signs", and its
+ * "Capture where the materials are being stored".
+ *
+ * Until now the receiver signature was written by nothing, so every entry
+ * showed an empty Receiver box for ever. This is the step that fills it.
+ */
+export async function confirmReceipt(input: {
+  entryId: string
+  toLocationId?: string | null
+  note?: string
+}): Promise<Result> {
+  const profile = await me()
+  const supabase = await createClient()
+
+  const { data: entry } = await supabase
+    .from('mio_entries').select('id, no, direction, stage, receiver_signed_at')
+    .eq('id', input.entryId).maybeSingle()
+  if (!entry) return fail('That entry no longer exists.')
+  if (entry.direction !== 'out') return fail('Only material going out is signed for on receipt.')
+  if (entry.stage === 'void') return fail('That entry was voided.')
+  if (entry.receiver_signed_at) return fail('This has already been signed for.')
+
+  const { error } = await supabase
+    .from('mio_entries')
+    .update({
+      receiver_signed_by: profile.id,
+      receiver_signed_at: new Date().toISOString(),
+      handed_over_to: profile.full_name ?? profile.email,
+      to_location_id: input.toLocationId || null,
+      remarks: input.note?.trim() || null,
+      stage: 'closed',
+    })
+    .eq('id', input.entryId)
+  if (error) return fail(explain(error, 'sign for this'))
+
+  revalidatePath('/stores')
+  return done(`Signed for. ${entry.no} is closed.`)
 }
 
 /* ── Corrections — Aksha, 13 Sep 2026: "yes", entries are editable ──────── */

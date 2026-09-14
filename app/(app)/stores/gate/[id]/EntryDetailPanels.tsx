@@ -2,7 +2,7 @@
 
 import { useRouter } from 'next/navigation'
 import { useState, useTransition } from 'react'
-import { correctEntry, voidEntry } from '@/lib/stores/actions'
+import { correctEntry, voidEntry, confirmReceipt } from '@/lib/stores/actions'
 import { fmtQty } from '@/lib/stores/core'
 import { formatDateTime, formatINR } from '@/lib/utils'
 import { PenLine } from 'lucide-react'
@@ -23,7 +23,14 @@ const CORRECTABLE = [
   { field: 'remarks', label: 'Remarks' },
 ] as const
 
-export function EntryDetailPanels({ entry }: { entry: EntryDetail }) {
+export function EntryDetailPanels({
+  entry, places = [],
+}: {
+  entry: EntryDetail
+  /** Where it could have been put down at the far end — the map's "capture
+   *  where the materials are being stored". */
+  places?: Array<{ id: string; label: string }>
+}) {
   const router = useRouter()
   const total = entry.lines.reduce((s, l) => s + (l.amount ?? 0), 0)
 
@@ -118,6 +125,12 @@ export function EntryDetailPanels({ entry }: { entry: EntryDetail }) {
         </div>
       )}
 
+      {/* The map's "SRM Engg receives the materails & checks & Signs". Only on
+          an OUT, and only while nobody has signed — once signed it is history. */}
+      {entry.direction === 'out' && entry.stage !== 'void' && !entry.signatures.receiver.at && (
+        <Receipt entryId={entry.id} entryNo={entry.no} places={places} onDone={() => router.refresh()} />
+      )}
+
       {entry.stage !== 'void' && <Corrections entry={entry} onDone={() => router.refresh()} />}
 
       {entry.edits.length > 0 && (
@@ -143,6 +156,65 @@ export function EntryDetailPanels({ entry }: { entry: EntryDetail }) {
           </div>
         </details>
       )}
+    </div>
+  )
+}
+
+/**
+ * Signing for material received.
+ *
+ * The one step that was missing from the whole chain: the map ends SRM Out with
+ * the engineer checking and signing, and until now nothing wrote that — so the
+ * Receiver box on every entry was empty for ever.
+ *
+ * Whoever is signed in signs. Their name and the moment are stamped, and the
+ * entry closes.
+ */
+function Receipt({
+  entryId, entryNo, places, onDone,
+}: {
+  entryId: string; entryNo: string
+  places: Array<{ id: string; label: string }>
+  onDone: () => void
+}) {
+  const [pending, start] = useTransition()
+  const [result, setResult] = useState<{ ok: boolean; message: string } | null>(null)
+  const [toLocation, setToLocation] = useState('')
+  const [note, setNote] = useState('')
+
+  return (
+    <div className="rounded-xl border-2 border-amber-200 bg-amber-50/50 p-4 space-y-3">
+      <div>
+        <p className="text-[14px] font-bold text-gray-900">Waiting to be signed for</p>
+        <p className="text-[12.5px] text-gray-600 mt-0.5">
+          Whoever received this material signs here. Your name and the time are stamped on {entryNo}.
+        </p>
+      </div>
+
+      <div className="grid sm:grid-cols-2 gap-3 max-w-2xl">
+        <Field label="Where it was put down" hint="Optional — the map's “capture where the materials are being stored”.">
+          <select className={inputClass} value={toLocation} onChange={e => setToLocation(e.target.value)}>
+            <option value="">Not recorded</option>
+            {places.map(p => <option key={p.id} value={p.id}>{p.label}</option>)}
+          </select>
+        </Field>
+        <Field label="Anything to note">
+          <input className={inputClass} value={note} onChange={e => setNote(e.target.value)} />
+        </Field>
+      </div>
+
+      {result && <Notice kind={result.ok ? 'ok' : 'bad'}>{result.message}</Notice>}
+
+      <Btn
+        busy={pending}
+        onClick={() => start(async () => {
+          const r = await confirmReceipt({ entryId, toLocationId: toLocation || null, note })
+          setResult(r)
+          if (r.ok) onDone()
+        })}
+      >
+        I received this
+      </Btn>
     </div>
   )
 }
