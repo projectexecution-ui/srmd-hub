@@ -64,6 +64,18 @@ const files = ROOTS.flatMap(r => {
   try { return sources(r) } catch { return [] }
 })
 
+/** Read once, scan nine times.
+ *
+ *  There is one test per dropped table, and each used to re-read every source
+ *  file — nine passes over ~400 files. That is pure I/O, it landed within a
+ *  few hundred milliseconds of vitest's 5s default, and it duly timed out the
+ *  moment anything else in the suite competed for the disk. The check itself
+ *  is unchanged; only the reading is shared. */
+const SOURCES: ReadonlyArray<{ rel: string; lines: string[] }> = files.map(f => ({
+  rel: f.split('\\').join('/'),
+  lines: readFileSync(f, 'utf8').split(/\r?\n/),
+}))
+
 describe('no code talks to a table the database dropped', () => {
   it('has source files to check', () => {
     expect(files.length).toBeGreaterThan(100)
@@ -77,10 +89,9 @@ describe('no code talks to a table the database dropped', () => {
       const embed = new RegExp(String.raw`[,'"\`(]\s*` + table + String.raw`\s*\([a-z_,\s]*\)`)
 
       const hits: string[] = []
-      for (const f of files) {
-        const rel = f.split('\\').join('/')
+      for (const { rel, lines } of SOURCES) {
         if (KNOWN_GATED_OFF.has(rel)) continue
-        readFileSync(f, 'utf8').split(/\r?\n/).forEach((line, i) => {
+        lines.forEach((line, i) => {
           if (from.test(line) || (embed.test(line) && /select\(/.test(line))) {
             hits.push(`${rel}:${i + 1}`)
           }
