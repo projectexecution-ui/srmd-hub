@@ -9,7 +9,7 @@ const wo = (o: Partial<LaneWo>): LaneWo => ({
   wo_gross_value: 2_93_92_432, status_name: 'Approved', ...o,
 })
 const cert = (o: Partial<LaneCert>): LaneCert => ({
-  wo_id: 1, project_id: 5, certificate_type: 'Running', status_name: 'Paid',
+  wo_id: 1, project_id: 5, subproject_id: 5, certificate_type: 'Running', status_name: 'Paid',
   gross_bill_amt: 100_000, retention_amt: 5_000, creation_dt: ago(400), ...o,
 })
 

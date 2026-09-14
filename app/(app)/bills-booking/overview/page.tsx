@@ -7,6 +7,7 @@ import { EmptyState } from '@/components/ui/empty-state'
 import { ReceiptText } from 'lucide-react'
 import { rollUpProjects, type CertRow, type ProjectRow } from '@/lib/bills-booking/overview'
 import { formatINR } from '@/lib/utils'
+import { loadOutOfScope, rowOutOfScope, SCOPE_NOTE } from '@/lib/bills-booking/scope'
 
 const KIND_LABEL: Record<string, string> = { wo: 'work-order bills', advance: 'advances', misc: 'misc expenses' }
 
@@ -30,7 +31,7 @@ export default async function BillsOverviewPage() {
   for (;;) {
     const { data, error } = await supabase
       .from('in4_wo_certificates')
-      .select('certificate_id, kind, display_no, project_id, wo_id, wo_no, status_name, outstanding_amt, creation_dt')
+      .select('certificate_id, kind, display_no, project_id, subproject_id, wo_id, wo_no, status_name, outstanding_amt, creation_dt')
       .gt('outstanding_amt', 0)
       .range(from, from + PAGE - 1)
     if (error) { certErr = error.message; break }
@@ -39,6 +40,8 @@ export default async function BillsOverviewPage() {
     if (page.length < PAGE) break
     from += PAGE
   }
+
+  const excluded = await loadOutOfScope(supabase)
 
   const { data: projData, error: projErr } = await supabase
     .from('in4_projects')
@@ -51,7 +54,8 @@ export default async function BillsOverviewPage() {
     </div>
   )
 
-  const { rows, totals, byKind } = rollUpProjects(certs, (projData ?? []) as ProjectRow[])
+  const inScope = certs.filter(c => !rowOutOfScope(excluded, c.subproject_id))
+  const { rows, totals, byKind } = rollUpProjects(inScope, (projData ?? []) as ProjectRow[])
 
   return (
     <div className="p-4 md:p-6 max-w-6xl mx-auto space-y-4">
@@ -119,7 +123,7 @@ export default async function BillsOverviewPage() {
 
           <p className="text-xs text-gray-500">
             Read from the IN4 mirror, not from CT Hub&apos;s own bills. Cancelled certificates are excluded;
-            everything else with a balance is counted, including part-paid.{' '}
+            everything else with a balance is counted, including part-paid. {SCOPE_NOTE}{' '}
             <Link href="/admin/in4" className="text-blue-600 hover:underline">Sync status</Link>
           </p>
         </>

@@ -4,12 +4,14 @@ import { PageHeader } from '@/components/PageHeader'
 import { QueryError } from '@/components/ui/query-error'
 
 import { formatINR, formatDate } from '@/lib/utils'
+import { loadOutOfScope, rowOutOfScope, SCOPE_NOTE } from '@/lib/bills-booking/scope'
 
 export const dynamic = 'force-dynamic'
 
 type Cert = {
   certificate_id: number; kind: string | null; display_no: string | null; wo_no: string | null
   contractor_name: string | null; project_id: number | null; status_name: string | null
+  subproject_id: number | null
   outstanding_amt: number | null; invoice_no: string | null; invoice_date: string | null; creation_dt: string | null
 }
 type Wo = { wo_id: number; display_no: string | null; creation_dt: string | null }
@@ -44,7 +46,9 @@ export default async function NoOrderPage() {
   let projRows: Array<{ id: number; name: string }> = []
   let err: string | null = null
   try {
-    certs = await page<Cert>('in4_wo_certificates', 'certificate_id, kind, display_no, wo_no, contractor_name, project_id, status_name, outstanding_amt, invoice_no, invoice_date, creation_dt')
+    certs = await page<Cert>('in4_wo_certificates', 'certificate_id, kind, display_no, wo_no, contractor_name, project_id, subproject_id, status_name, outstanding_amt, invoice_no, invoice_date, creation_dt')
+    const excluded = await loadOutOfScope(sb)
+    certs = certs.filter(c => !rowOutOfScope(excluded, c.subproject_id))
     wos = await page<Wo>('in4_work_orders', 'wo_id, display_no, creation_dt')
     projRows = await page<{ id: number; name: string }>('in4_projects', 'id, name')
   } catch (e) { err = e instanceof Error ? e.message : String(e) }
@@ -197,7 +201,7 @@ export default async function NoOrderPage() {
       <p className="text-xs text-gray-500">
         Cancelled and reversed certificates are excluded from both tables. The second table compares the bill&apos;s own
         invoice date against the day its work order was created — the only evidence the wait leaves behind, since the
-        bill cannot enter IN4 until the order exists.
+        bill cannot enter IN4 until the order exists. {SCOPE_NOTE}
       </p>
     </div>
   )

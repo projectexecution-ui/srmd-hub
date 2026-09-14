@@ -8,6 +8,7 @@ import { Clock } from 'lucide-react'
 import { buildInFlight, IN_FLIGHT, type FlightCert, type FlightEvent } from '@/lib/bills-booking/in-flight'
 import { SanctionButton } from './SanctionButton'
 import { formatINR } from '@/lib/utils'
+import { loadOutOfScope, rowOutOfScope, SCOPE_NOTE } from '@/lib/bills-booking/scope'
 
 export const dynamic = 'force-dynamic'
 
@@ -24,10 +25,11 @@ export default async function InFlightPage() {
 
   const { data: certData, error: certErr } = await supabase
     .from('in4_wo_certificates')
-    .select('certificate_id, kind, display_no, wo_no, contractor_name, project_id, status_name, outstanding_amt, creation_dt')
+    .select('certificate_id, kind, display_no, wo_no, contractor_name, project_id, subproject_id, status_name, outstanding_amt, creation_dt')
     .in('status_name', LIVE)
 
-  const certs = (certData ?? []) as FlightCert[]
+  const excluded = await loadOutOfScope(supabase)
+  const certs = ((certData ?? []) as FlightCert[]).filter(c => !rowOutOfScope(excluded, c.subproject_id))
 
   // Only the trail rows for the bills on screen — the full mirror is ~16,000
   // movements and all but a few hundred belong to bills that are long paid.
@@ -159,7 +161,7 @@ export default async function InFlightPage() {
             <b>At desk</b> is the gap since the bill last moved, from IN4&apos;s own approval trail —
             not the same as <b>age</b>, which runs from the day the bill was raised. Paid, part-paid,
             cancelled and reversed certificates are not here; held and sent-back ones are, because those are
-            the ones that go quiet.
+            the ones that go quiet. {SCOPE_NOTE}
           </p>
         </>
       )}

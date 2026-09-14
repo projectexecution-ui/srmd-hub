@@ -5,7 +5,7 @@ const NOW = new Date('2026-09-13T12:00:00Z').getTime()
 
 const cert = (o: Partial<FlightCert>): FlightCert => ({
   certificate_id: 1, kind: 'wo', display_no: 'ENP/SRASSK/SQ/2026-27/237', wo_no: 'WO/SRASSK/SQ/2026-27/105',
-  contractor_name: 'Amin Developers', project_id: 5, status_name: 'Submitted',
+  contractor_name: 'Amin Developers', project_id: 5, subproject_id: 5, status_name: 'Submitted',
   outstanding_amt: 1_261_817, creation_dt: '2026-09-12', ...o,
 })
 const ev = (o: Partial<FlightEvent>): FlightEvent => ({

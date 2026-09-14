@@ -6,7 +6,7 @@ const names = new Map([[5, 'Staff Facilities Block'], [12, 'New Guest House']])
 
 const cert = (o: Partial<DailyCert>): DailyCert => ({
   certificate_id: 1, display_no: 'ENP/SRASSK/SQ/2026-27/237', wo_no: 'WO/SRASSK/SQ/2026-27/105',
-  contractor_name: 'Amin Developers', project_id: 5, status_name: 'Approved',
+  contractor_name: 'Amin Developers', project_id: 5, subproject_id: 5, status_name: 'Approved',
   outstanding_amt: 1_261_817, creation_dt: '2026-09-12', ...o,
 })
 const ev = (o: Partial<DailyEvent>): DailyEvent => ({

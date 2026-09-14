@@ -8,7 +8,7 @@ const wo = (o: Partial<Parameters<typeof buildPickList>[0][number]> = {}) => ({
   wo_value: 3_832_500, wo_gross_value: 4_522_350, wo_retention_amt: 0, status_name: 'Approved', ...o,
 })
 const cert = (o: Partial<Parameters<typeof buildPickList>[1][number]> = {}) => ({
-  wo_id: 2149, project_id: 5, status_name: 'Approved',
+  wo_id: 2149, project_id: 5, subproject_id: 5, status_name: 'Approved',
   gross_bill_amt: 1_317_650, retention_amt: 55_833, certified_amt: 1_116_653,
   invoice_no: 'SR-26-27-67', creation_dt: '2026-09-12', ...o,
 })

@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { trustOf } from './daily'
+import { loadOutOfScope, rowOutOfScope } from './scope'
 
 /** The work orders you can bill against, assembled from IN4 so the entry form
  *  stops being a page of blank boxes.
@@ -46,7 +47,7 @@ interface WoRow {
   status_name: string | null
 }
 interface CertRow {
-  wo_id: number; project_id: number | null; status_name: string | null
+  wo_id: number; project_id: number | null; subproject_id: number | null; status_name: string | null
   gross_bill_amt: number | null; retention_amt: number | null
   certified_amt: number | null; invoice_no: string | null; creation_dt: string | null
 }
@@ -122,7 +123,7 @@ export async function loadPickList(sb: SupabaseClient): Promise<PickData> {
 
   const [wos, certs, parties, projects] = await Promise.all([
     pageAll<WoRow>('in4_work_orders', 'wo_id, display_no, contractor_id, wo_value, wo_gross_value, wo_retention_amt, status_name'),
-    pageAll<CertRow>('in4_wo_certificates', 'wo_id, project_id, status_name, gross_bill_amt, retention_amt, certified_amt, invoice_no, creation_dt'),
+    pageAll<CertRow>('in4_wo_certificates', 'wo_id, project_id, subproject_id, status_name, gross_bill_amt, retention_amt, certified_amt, invoice_no, creation_dt'),
     pageAll<{ id: number; name: string; kind: string }>('in4_parties', 'id, name, kind'),
     pageAll<{ id: number; name: string }>('in4_projects', 'id, name'),
   ])
@@ -130,5 +131,9 @@ export async function loadPickList(sb: SupabaseClient): Promise<PickData> {
   // in4_parties is keyed on (kind, id) — a supplier and a contractor can share
   // an id, so filtering by kind is not optional.
   const contractors = new Map(parties.filter(p => p.kind === 'contractor').map(p => [p.id, p.name]))
-  return { wos: buildPickList(wos, certs, contractors), projects }
+  // Billed-to-date and the RA count must not include design or consultancy
+  // certificates, or the balance offered on a construction bill is wrong.
+  const excluded = await loadOutOfScope(sb)
+  const inScope = certs.filter(c => !rowOutOfScope(excluded, c.subproject_id))
+  return { wos: buildPickList(wos, inScope, contractors), projects }
 }

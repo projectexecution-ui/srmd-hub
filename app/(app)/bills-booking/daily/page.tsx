@@ -6,6 +6,7 @@ import { QueryError } from '@/components/ui/query-error'
 
 import { buildDaily, type DailyCert, type DailyEvent, type DailyRow } from '@/lib/bills-booking/daily'
 import { formatINR, formatDate } from '@/lib/utils'
+import { loadOutOfScope, rowOutOfScope, SCOPE_NOTE } from '@/lib/bills-booking/scope'
 
 export const dynamic = 'force-dynamic'
 
@@ -27,7 +28,7 @@ export default async function DailyPage({
 
   const { data: certData, error } = await sb
     .from('in4_wo_certificates')
-    .select('certificate_id, display_no, wo_no, contractor_name, project_id, status_name, outstanding_amt, creation_dt')
+    .select('certificate_id, display_no, wo_no, contractor_name, project_id, subproject_id, status_name, outstanding_amt, creation_dt')
     .eq('kind', 'wo').in('status_name', LIVE)
 
   if (error) return (
@@ -37,7 +38,8 @@ export default async function DailyPage({
     </div>
   )
 
-  const certs = (certData ?? []) as DailyCert[]
+  const excluded = await loadOutOfScope(sb)
+  const certs = ((certData ?? []) as DailyCert[]).filter(c => !rowOutOfScope(excluded, c.subproject_id))
   let events: DailyEvent[] = []
   if (certs.length) {
     const { data } = await sb
@@ -109,7 +111,7 @@ export default async function DailyPage({
         own approval trail, which records the second each movement happened.{' '}
         <b>Submission and courier dates stay hand-entered</b> on the{' '}
         <Link href="/bills-pipeline/daily-report" className="text-blue-600 hover:underline">Bills Pipeline report</Link> —
-        they are facts about a cheque in a drawer and no database holds them.
+        they are facts about a cheque in a drawer and no database holds them. {SCOPE_NOTE}
       </p>
     </div>
   )

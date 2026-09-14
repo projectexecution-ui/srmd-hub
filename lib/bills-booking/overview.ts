@@ -8,6 +8,7 @@ export interface CertRow {
   kind: string | null
   display_no: string | null
   project_id: number | null
+  subproject_id: number | null
   wo_id: number | null
   wo_no: string | null
   status_name: string | null

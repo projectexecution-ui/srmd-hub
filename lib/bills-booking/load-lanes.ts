@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { rollCerts, type LaneWo, type LaneCert, type WoRoll } from './lanes'
+import { loadOutOfScope, rowOutOfScope } from './scope'
 
 /** Both lanes read the same two mirrors, so they load through here.
  *
@@ -31,14 +32,20 @@ export interface LaneData {
 export async function loadLaneData(sb: SupabaseClient): Promise<LaneData> {
   const [woRes, certRes, conRes, projRes] = await Promise.all([
     pageAll<LaneWo>(sb, 'in4_work_orders', 'wo_id, display_no, contractor_id, wo_gross_value, status_name'),
-    pageAll<LaneCert>(sb, 'in4_wo_certificates', 'wo_id, project_id, certificate_type, status_name, gross_bill_amt, retention_amt, creation_dt'),
+    pageAll<LaneCert>(sb, 'in4_wo_certificates', 'wo_id, project_id, subproject_id, certificate_type, status_name, gross_bill_amt, retention_amt, creation_dt'),
     pageAll<{ id: number; name: string; kind: string }>(sb, 'in4_parties', 'id, name, kind'),
     pageAll<{ id: number; name: string }>(sb, 'in4_projects', 'id, name'),
   ])
 
+  // Design and Professional Consultancy are out of this section, so their
+  // certificates never reach the roll-up — which means a work order billed
+  // only through them simply has no rows and drops out of both lanes.
+  const excluded = await loadOutOfScope(sb)
+  const inScope = certRes.rows.filter(c => !rowOutOfScope(excluded, c.subproject_id))
+
   return {
     wos: woRes.rows,
-    rolls: rollCerts(certRes.rows),
+    rolls: rollCerts(inScope),
     names: {
       contractor: new Map(conRes.rows.filter(c => c.kind === 'contractor').map(c => [c.id, c.name])),
       project: new Map(projRes.rows.map(p => [p.id, p.name])),

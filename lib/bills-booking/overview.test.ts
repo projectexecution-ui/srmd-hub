@@ -5,7 +5,7 @@ const NOW = new Date('2026-09-13T00:00:00Z').getTime()
 const projects: ProjectRow[] = [{ id: 12, name: 'New Guest House' }, { id: 5, name: 'Staff Facilities Block' }]
 
 const cert = (over: Partial<CertRow>): CertRow => ({
-  certificate_id: 1, kind: 'wo', display_no: 'ENP/X/1', project_id: 12, wo_id: 100, wo_no: 'WO/X/1',
+  certificate_id: 1, kind: 'wo', display_no: 'ENP/X/1', project_id: 12, subproject_id: 5, wo_id: 100, wo_no: 'WO/X/1',
   status_name: 'Approved', outstanding_amt: 1000, creation_dt: '2026-09-11', ...over,
 })
 

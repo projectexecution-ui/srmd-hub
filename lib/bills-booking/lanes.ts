@@ -21,6 +21,7 @@ export interface LaneCert {
   /** The work-order mirror has only a sub-project; the project id rides on the
    *  certificates, so it is carried through the roll-up. */
   project_id: number | null
+  subproject_id: number | null
   certificate_type: string | null
   status_name: string | null
   gross_bill_amt: number | null

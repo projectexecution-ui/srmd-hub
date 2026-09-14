@@ -21,6 +21,7 @@ export interface DailyCert {
   wo_no: string | null
   contractor_name: string | null
   project_id: number | null
+  subproject_id: number | null
   status_name: string | null
   outstanding_amt: number | null
   creation_dt: string | null
