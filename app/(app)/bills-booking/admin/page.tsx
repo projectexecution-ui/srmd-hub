@@ -21,7 +21,14 @@ export default async function BillsDesksPage() {
     supabase.from('profiles').select('id, full_name, name, email').eq('is_active', true).order('full_name'),
     supabase.from('projects').select('id, code, name').is('archived_at', null).order('code'),
     supabase.from('bb_desk_members').select('desk, project_id, user_id'),
-    supabase.from('cc_project_approvers').select('user_id, profiles(full_name, email)').eq('role', 'head'),
+    // The FK has to be named. cc_project_approvers points at profiles TWICE —
+    // user_id and assigned_by — so a bare `profiles(...)` embed is ambiguous
+    // and PostgREST refuses it rather than guessing. Same class of failure as
+    // the `vendors(name)` embed that 404'd every bill: invisible to TypeScript,
+    // invisible to the build, and invisible to any check run in SQL.
+    supabase.from('cc_project_approvers')
+      .select('user_id, profiles!cc_project_approvers_user_id_fkey(full_name, email)')
+      .eq('role', 'head'),
   ])
 
   // The walkthrough bills, so the list below can link straight to each one.

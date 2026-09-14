@@ -30,7 +30,7 @@ export default async function BillDetailPage({ params }: { params: Promise<{ id:
 
   const [{ data: bill }, { data: events }, { data: docRows }] = await Promise.all([
     supabase.from('bb_bills')
-      .select('*, projects(code, name), vendors(name)')
+      .select('*, projects(code, name)')
       .eq('id', id).maybeSingle(),
     supabase.from('bb_bill_events')
       .select('id, from_stage, to_stage, action, comment, amount_snapshot, created_at, profiles(full_name, email)')
@@ -40,7 +40,7 @@ export default async function BillDetailPage({ params }: { params: Promise<{ id:
   if (!bill) notFound()
 
   const project = one(bill.projects as { code: string; name: string } | null)
-  const vendor = one(bill.vendors as { name: string } | null)?.name || bill.vendor_text || '—'
+  const vendor = (bill.vendor_text as string | null) || '—'
   const curIdx = stageIndex(bill.current_stage as BbStage)
   const evs = (events ?? []) as Ev[]
 

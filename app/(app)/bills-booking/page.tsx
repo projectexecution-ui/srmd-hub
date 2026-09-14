@@ -23,7 +23,7 @@ type Row = {
   claimed_amount: number; net_amount: number | null; current_stage: BbStage; stage_since: string
   discipline: string | null; trust: string | null; project_id: string | null
   wo_pending: boolean; amendment_flag: boolean; is_example: boolean
-  vendors: { name: string } | { name: string }[] | null; vendor_text: string | null
+  vendor_text: string | null
 }
 
 export default async function BillsBookingPage() {
@@ -33,7 +33,7 @@ export default async function BillsBookingPage() {
   const canAdmin = can(perms, 'bills-booking', 'admin')
   const supabase = await createClient()
 
-  const COLS ='id, order_type, bill_type, bill_no, claimed_amount, net_amount, current_stage, stage_since, discipline, trust, project_id, wo_pending, amendment_flag, is_example, vendors(name), vendor_text'
+  const COLS ='id, order_type, bill_type, bill_no, claimed_amount, net_amount, current_stage, stage_since, discipline, trust, project_id, wo_pending, amendment_flag, is_example, vendor_text'
 
   // PostgREST stops at 1,000 rows and hands back the first page without a
   // word, so every KPI on this screen would quietly become a sample of the
@@ -54,7 +54,7 @@ export default async function BillsBookingPage() {
     (projData ?? []).map(p => [p.id as string, { code: p.code as string, name: p.name as string, parent: p.parent_project_id as string | null }]),
   )
   const amt = (r: Row) => Number(r.net_amount ?? r.claimed_amount ?? 0)
-  const vendorOf = (r: Row) => one(r.vendors)?.name || r.vendor_text || '—'
+  const vendorOf = (r: Row) => r.vendor_text || '—'
   const projCode = (r: Row) => (r.project_id ? proj.get(r.project_id)?.code : '') || '—'
 
   // ── Insights ──

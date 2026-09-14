@@ -90,7 +90,7 @@ export async function loadProjectBills(
       .select('wo_id, display_no, wo_gross_value, wo_paid_amt, wo_retention_amt, subproject_id')
       .in('subproject_id', inScope),
     sb.from('bb_bills')
-      .select('id, bill_no, bill_date, order_no, claimed_amount, net_amount, current_stage, vendor_text, in4_subproject_id, project_id, vendors(name)')
+      .select('id, bill_no, bill_date, order_no, claimed_amount, net_amount, current_stage, vendor_text, in4_subproject_id, project_id')
       .or(`project_id.eq.${ccProjectId},in4_subproject_id.in.(${inScope.join(',')})`),
   ])
 
@@ -110,7 +110,6 @@ export async function loadProjectBills(
   const wos = (woData ?? []) as Array<{ display_no: string | null; wo_gross_value: number | null; wo_paid_amt: number | null; wo_retention_amt: number | null }>
   const numbered = wos.filter(w => w.display_no)
 
-  const one = <T,>(v: T | T[] | null): T | null => (Array.isArray(v) ? v[0] ?? null : v)
 
   return {
     subprojectIds: inScope,
@@ -129,8 +128,7 @@ export async function loadProjectBills(
     },
     entered: (billData ?? []).map(b => ({
       id: b.id as string,
-      vendor: one(b.vendors as unknown as { name: string } | { name: string }[] | null)?.name
-        || (b.vendor_text as string | null) || '—',
+      vendor: (b.vendor_text as string | null) || '—',
       billNo: b.bill_no as string | null,
       stage: b.current_stage as string,
       amount: Number((b.net_amount ?? b.claimed_amount) || 0),
