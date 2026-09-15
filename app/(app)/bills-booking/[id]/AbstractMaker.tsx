@@ -6,7 +6,7 @@ import { toast } from 'sonner'
 import { createClient } from '@/lib/supabase/client'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { Check, Loader2, Ruler } from 'lucide-react'
+import { Check, ChevronDown, Loader2, Ruler } from 'lucide-react'
 import { priceAbstract, type MakerLine, type RatePick } from '@/lib/bills-booking/maker'
 import { formatINR, formatINRCompact, formatNumber, formatDate } from '@/lib/utils'
 import { Particular, ExpandAll } from './Particular'
@@ -82,9 +82,23 @@ export function AbstractMaker({ billId, woNo, vendor, work, seed, gst: gstPick, 
   // what RA-1 did eighteen months ago is history, not a comparison. So the
   // last three stand on their own and everything older becomes one Earlier
   // column, one click from being opened out again.
-  const [allBills, setAllBills] = useState(false)
+  // Aksha, 15 Sep 2026: "keep the RA 1 2 3 4 5 etc collapsable should show -
+  // it makes it easy view also whenever i want i can see."
+  //
+  // The control was a text link at the tail of a long legend line, and it only
+  // appeared on orders with more than three earlier bills — so on most bills
+  // there was nothing to click and the folding looked like it did not exist.
+  // It is a button now, it is on every order that has any earlier bill, and the
+  // folded column itself opens when clicked.
+  //
+  //   auto    the last three stand alone, anything older folds  (the default)
+  //   all     every RA bill as its own column
+  //   folded  every earlier bill in one column — the narrowest read
+  const [view, setView] = useState<'auto' | 'all' | 'folded'>('auto')
   const KEEP = 3
-  const rolled = allBills ? 0 : Math.max(0, earlierBills.length - KEEP)
+  const rolled = view === 'all' ? 0
+    : view === 'folded' ? earlierBills.length
+      : Math.max(0, earlierBills.length - KEEP)
   // Kept with their ORIGINAL position, so the label stays RA-4 and not RA-1 —
   // renumbering them would make the legend lie.
   const shownBills = earlierBills.map((b, i) => ({ ...b, i })).slice(rolled)
@@ -151,12 +165,16 @@ export function AbstractMaker({ billId, woNo, vendor, work, seed, gst: gstPick, 
               </span>
             ))}
           </span>
-          {earlierBills.length > KEEP && (
-            <button type="button" onClick={() => setAllBills(v => !v)}
-                    className="shrink-0 font-semibold text-indigo-700 underline underline-offset-2 hover:text-indigo-900">
-              {allBills ? `Roll up the older ${earlierBills.length - KEEP}` : `Show all ${earlierBills.length} as columns`}
-            </button>
-          )}
+          <button type="button"
+                  onClick={() => setView(rolled > 0 ? 'all' : 'folded')}
+                  className="inline-flex shrink-0 items-center gap-1 rounded-md border border-amber-300 bg-white px-2 py-1 text-[11px] font-semibold text-amber-900 hover:bg-amber-50 min-h-[28px]">
+            <ChevronDown className={`h-3 w-3 transition-transform ${rolled > 0 ? '' : 'rotate-180'}`} />
+            {/* Never a dead click: the button offers whichever of the two the
+                sheet is not already showing. */}
+            {rolled > 0
+              ? `Show all ${earlierBills.length} ${earlierBills.length === 1 ? 'bill' : 'bills'}`
+              : 'Fold earlier bills'}
+          </button>
         </div>
       )}
       <div className="flex items-center justify-end border-b border-gray-100 px-4 py-1.5">
@@ -179,9 +197,12 @@ export function AbstractMaker({ billId, woNo, vendor, work, seed, gst: gstPick, 
               <Th g="wo">WO Amt</Th>
               {rolled > 0 && (
                 <Th g="prev">
-                  <span title={earlierBills.slice(0, rolled).map((b, i) => `RA-${i + 1} ${b.billNo ?? ''}`).join(' · ')}>
+                  <button type="button" onClick={() => setView('all')}
+                          title={`Open: ${earlierBills.slice(0, rolled).map((b, i) => `RA-${i + 1} ${b.billNo ?? ''}`).join(' · ')}`}
+                          className="inline-flex items-center gap-0.5 font-bold uppercase tracking-wide text-amber-900 hover:text-indigo-700">
                     Earlier ({rolled})
-                  </span>
+                    <ChevronDown className="h-2.5 w-2.5 -rotate-90" />
+                  </button>
                 </Th>
               )}
               {shownBills.map(b => (
