@@ -71,7 +71,7 @@ describe('the gate wizard', () => {
     expect(stepsFor({})).toHaveLength(7)
   })
 
-  it('makes only what / who / how compulsory', () => {
+  it('makes what / who / how compulsory', () => {
     expect(canLeave('what', {})).toBe(false)
     expect(canLeave('what', { register: 'srm' })).toBe(true)
     expect(canLeave('who', { partyName: '  ' })).toBe(false)
@@ -81,9 +81,17 @@ describe('the gate wizard', () => {
 
   it('lets a guard finish without the vehicle, driver or licence', () => {
     // The lorry must not wait at the gate for a number nobody has.
-    for (const s of ['vehicle', 'driver', 'papers', 'check'] as const) {
+    for (const s of ['vehicle', 'driver', 'check'] as const) {
       expect(canLeave(s, {})).toBe(true)
     }
+  })
+
+  it('does NOT let the papers be skipped', () => {
+    // The mind map asks for "Pic of all Docs" on both registers, and it is the
+    // one part of a gate entry nobody can reconstruct from memory afterwards.
+    expect(canLeave('papers', {})).toBe(false)
+    expect(canLeave('papers', { photoCount: 0 })).toBe(false)
+    expect(canLeave('papers', { photoCount: 1 })).toBe(true)
   })
 
   it('shows only the answers actually given, in reading order', () => {

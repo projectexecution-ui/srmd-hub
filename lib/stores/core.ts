@@ -383,3 +383,46 @@ export function isServiceScope(name: string | null | undefined): boolean {
   if (!name) return false
   return /(professional\s+consultancy|consultancy|design)\b/i.test(name)
 }
+
+/**
+ * Which store to issue out of, when nobody has said.
+ *
+ * The screen already knows where the stock is — it prints "None here. 140 is
+ * held in another location — pick that one" under every line. Making the
+ * storekeeper then go and find that location by hand is asking them to act on
+ * information the screen is holding.
+ *
+ * Prefers a place that can satisfy the WHOLE request, because splitting an
+ * issue across two stores means two entries. Failing that, the place that
+ * covers the most lines, then the most quantity. Returns null when no place
+ * holds any of it — there is nothing to suggest, and the empty picker with
+ * its reasons underneath is the honest answer.
+ */
+export function bestIssueLocation(
+  stock: readonly StockRow[],
+  want: ReadonlyArray<{ itemId: string; qty: number }>,
+): string | null {
+  const lines = want.filter(w => w.itemId && w.qty > 0)
+  if (lines.length === 0) return null
+
+  const places = [...new Set(stock.filter(s => s.qty > 0 && s.locationId).map(s => s.locationId as string))]
+  let best: { id: string; full: number; covered: number; total: number } | null = null
+
+  for (const id of places) {
+    let full = 0, covered = 0, total = 0
+    for (const w of lines) {
+      const have = availableAt(stock, w.itemId, id)
+      if (have > 0) covered++
+      if (have >= w.qty) full++
+      total += Math.min(have, w.qty)
+    }
+    if (covered === 0) continue
+    const better =
+      !best ||
+      full > best.full ||
+      (full === best.full && covered > best.covered) ||
+      (full === best.full && covered === best.covered && total > best.total)
+    if (better) best = { id, full, covered, total }
+  }
+  return best?.id ?? null
+}

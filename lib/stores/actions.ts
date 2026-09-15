@@ -44,6 +44,10 @@ async function me() {
 export interface GateInput {
   register: Register
   partyName: string
+  /** IN4's supplier id when the gate picked from the list. Null when the name
+   *  was typed, which stays allowed — a shop IN4 has never heard of must still
+   *  be recordable at the gate. */
+  in4PartyId?: number | null
   vehicleNo?: string
   driverName?: string
   driverMobile?: string
@@ -78,6 +82,7 @@ export async function createGateEntry(input: GateInput): Promise<Result<{ id: st
       direction: 'in', register: input.register, no, seq: Number(seq) || 1, entry_date: isoDate,
       stage: 'gate',
       party_name: input.partyName.trim(),
+      in4_party_id: input.in4PartyId ?? null,
       vehicle_no: input.vehicleNo?.trim() || null,
       driver_name: input.driverName?.trim() || null,
       driver_mobile: input.driverMobile?.trim() || null,
@@ -288,7 +293,7 @@ export interface IssueInput {
  * and the whole issue is refused if any line fails. A half-written issue would
  * leave the register saying one thing and the stock another.
  */
-export async function issueRequest(input: IssueInput): Promise<Result<{ no: string }>> {
+export async function issueRequest(input: IssueInput): Promise<Result<{ id: string; no: string }>> {
   const profile = await me()
   const supabase = await createClient()
 
@@ -381,7 +386,8 @@ export async function issueRequest(input: IssueInput): Promise<Result<{ no: stri
   revalidatePath('/stores')
   return done(fullyServed
     ? `Issued as ${no}. ${req.no} is complete.`
-    : `Issued as ${no}. ${req.no} stays open — some quantity is still to go.`, { no })
+    : `Issued as ${no}. ${req.no} stays open — some quantity is still to go.`,
+    { id: entry.id as string, no })
 }
 
 /* ── Step 4 · Returned items ─────────────────────────────────────────────── */
@@ -719,4 +725,30 @@ export async function setOpeningStock(input: {
   if (input.rate != null) await supabase.from('mio_items').update({ last_rate: input.rate }).eq('id', input.itemId)
   revalidatePath('/stores')
   return done('Opening stock recorded.')
+}
+
+/**
+ * Record photographs that are already in the bucket.
+ *
+ * The bytes go from the browser straight to storage (see upload-photos.ts);
+ * only the paths come here, so the rows get the same audit stamping as every
+ * other write in this file.
+ */
+export async function recordPhotos(
+  entryId: string,
+  photos: ReadonlyArray<{ kind: string; path: string }>,
+): Promise<Result<{ count: number }>> {
+  if (photos.length === 0) return done('Nothing to record.', { count: 0 })
+  const me = await getMyProfile()
+  if (!me) return fail('Sign in first.')
+
+  const supabase = await createClient()
+  const { error } = await supabase.from('mio_photos').insert(
+    photos.map(p => ({ entry_id: entryId, kind: p.kind, path: p.path, created_by: me.id })),
+  )
+  if (error) return fail(explain(error, 'save the photos'))
+
+  revalidatePath('/stores')
+  revalidatePath(`/stores/gate/${entryId}`)
+  return done(`${photos.length} photo${photos.length === 1 ? '' : 's'} saved.`, { count: photos.length })
 }

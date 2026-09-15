@@ -253,3 +253,17 @@ export function Stepper({
     </div>
   )
 }
+
+/** A plain text switch between two ways of answering the same question.
+ *  Deliberately quiet — it is the way out, not the way through — but still
+ *  44px, because a guard taps it with a thumb like everything else. */
+export function SwitchLink({ onClick, children }: { onClick: () => void; children: ReactNode }) {
+  return (
+    <button
+      type="button" onClick={onClick}
+      className="inline-flex items-center min-h-[44px] text-[14px] font-semibold text-indigo-700 underline underline-offset-2 active:text-indigo-900"
+    >
+      {children}
+    </button>
+  )
+}

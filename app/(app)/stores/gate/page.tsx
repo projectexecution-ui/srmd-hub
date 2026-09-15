@@ -1,5 +1,7 @@
 import Link from 'next/link'
-import { loadEntries, loadLists, listsOf, loadRecentParties } from '@/lib/stores/queries'
+import {
+  loadEntries, loadLists, listsOf, loadRecentParties, loadSuppliers,
+} from '@/lib/stores/queries'
 import { fmtQty, type Stage } from '@/lib/stores/core'
 import { Section, Empty, Scroller, th, thNum, td, tdNum, StageChip, RegisterChip, When } from '../ui'
 import { GateInForm, StorekeeperCta } from './GateInForm'
@@ -35,11 +37,12 @@ export default async function GatePage({
   const way: 'in' | 'out' | null =
     direction === 'in' ? 'in' : direction === 'out' ? 'out' : null
 
-  const [entries, lists, recent, waiting] = await Promise.all([
+  const [entries, lists, recent, waiting, suppliers] = await Promise.all([
     loadEntries({ stage: active === 'all' ? null : active, direction: way, limit: 200 }),
     loadLists(),
     loadRecentParties(),
     loadEntries({ stage: 'gate', limit: 200 }),
+    loadSuppliers(),
   ])
   const modes = listsOf(lists, 'delivery_mode').filter(m => m.isActive)
 
@@ -51,6 +54,7 @@ export default async function GatePage({
         <GateInForm
           modes={modes.map(m => ({ id: m.id, name: m.name }))}
           recentParties={recent}
+          suppliers={suppliers}
         />
         <StorekeeperCta waiting={waiting.length} />
       </div>

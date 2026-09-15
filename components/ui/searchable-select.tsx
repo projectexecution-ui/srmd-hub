@@ -28,7 +28,7 @@ export type { SelectOption }
 export function SearchableSelect({
   value, onChange, options, placeholder = 'Select…', disabled = false, id,
   emptyText = 'No matches', required = false, size = 'normal',
-  pinned = [], pinnedLabel = 'Used here lately',
+  pinned = [], pinnedLabel = 'Used here lately', footer,
 }: {
   value: string
   onChange: (id: string) => void
@@ -43,6 +43,9 @@ export function SearchableSelect({
   /** Ids held at the top of the list, in this order. */
   pinned?: readonly string[]
   pinnedLabel?: string
+  /** Pinned to the bottom of the OPEN dropdown. For the way out of the list —
+   *  "not in the list, type it" — which is unreachable underneath the panel. */
+  footer?: React.ReactNode
 }) {
   const [open, setOpen] = React.useState(false)
   const [query, setQuery] = React.useState('')
@@ -181,6 +184,9 @@ export function SearchableSelect({
               )
             })}
           </ul>
+          {footer && (
+            <div className="border-t border-gray-100 bg-gray-50">{footer}</div>
+          )}
         </div>
       )}
     </div>
