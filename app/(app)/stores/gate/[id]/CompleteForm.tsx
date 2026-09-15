@@ -137,6 +137,13 @@ export function CompleteForm({
       const done: string[] = []
       const why: string[] = []
 
+      // A cancelled or draft order can still be attached — material does turn
+      // up against one — but never quietly. Said first, because it changes
+      // what the storekeeper should do next.
+      if (o.status) {
+        why.push(`IN4 has this order as ${o.status}. Check before taking the material in.`)
+      }
+
       // Trust — read off the order number, matched against the trusts we
       // actually hold rather than by position: 1,448 orders read
       // PO/SRASSK/AB/… but three read PO/DO/SRET/…, where position 2 is "DO".

@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import {
   entryNo, linkedNo, foldStock, availableAt, availableAnywhere, checkIssue,
   outstandingReturnables, checkReturn, missingForGate, missingForComplete, createsStock, heldItemCount,
-  fmtQty, isPilotProject, PILOT_PROJECT_IDS, RETURNABLES_ON, groupProjects, UNGROUPED, entityCodeFromOrderNo, categoryFor,
+  fmtQty, isPilotProject, PILOT_PROJECT_IDS, RETURNABLES_ON, groupProjects, UNGROUPED, entityCodeFromOrderNo, categoryFor, isServiceScope,
   type Movement, type ReturnableLine,
 } from './core'
 
@@ -416,5 +416,37 @@ describe('categoryFor — the category the screen already knows', () => {
 
   it('matches on the word, so a rename that keeps the word keeps working', () => {
     expect(categoryFor('srm', true, [{ id: 'x', name: 'Ordered / PO items' }])).toBe('x')
+  })
+})
+
+describe('isServiceScope — what never takes a delivery', () => {
+  it('catches the IN4 scopes that are fees rather than things', () => {
+    expect(isServiceScope('Raj Uphaar - Professional Consultancy')).toBe(true)
+    expect(isServiceScope('SRAH - Professional Consultancy')).toBe(true)
+    expect(isServiceScope('New Guest House - Infra Work - Design')).toBe(true)
+    expect(isServiceScope('Sheth House - Design')).toBe(true)
+    expect(isServiceScope('P2 Row Houses - Design')).toBe(true)
+  })
+
+  it('leaves the scopes material actually goes to', () => {
+    expect(isServiceScope('Raj Uphaar - Execution')).toBe(false)
+    expect(isServiceScope('Staff Facilities Block - Execution')).toBe(false)
+    expect(isServiceScope('RU Infra Work')).toBe(false)
+    expect(isServiceScope('NGH B')).toBe(false)
+    expect(isServiceScope('Warehouse - Execution')).toBe(false)
+    expect(isServiceScope('New Guest House - Common Expenses')).toBe(false)
+    expect(isServiceScope('Raj Uphaar - Interior Scope')).toBe(false)
+  })
+
+  it('does not fire on a word that merely contains one of them', () => {
+    // "Designation", "Redesigned Block" — a substring is not a scope.
+    expect(isServiceScope('Designation Block')).toBe(false)
+    expect(isServiceScope('Designer Tiles Store')).toBe(false)
+  })
+
+  it('treats nothing as nothing', () => {
+    expect(isServiceScope(null)).toBe(false)
+    expect(isServiceScope(undefined)).toBe(false)
+    expect(isServiceScope('')).toBe(false)
   })
 })

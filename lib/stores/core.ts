@@ -363,3 +363,24 @@ export function categoryFor(
   if (hasOrder) return find('order')
   return null
 }
+
+/* ── What belongs in a MATERIAL register ────────────────────────────────── */
+
+/**
+ * Scopes that are fees, not things — nothing is ever delivered against one.
+ *
+ * IN4 splits a project by scope: "Raj Uphaar - Execution" is building work,
+ * "Raj Uphaar - Professional Consultancy" is the architect's fee. 410 of the
+ * 1,616 approved work orders sit under a consultancy or design scope, and a
+ * lorry has never arrived against a single one of them.
+ *
+ * Aksha, 15 Sep 2026: "i dont want Professional Consultanty in any of the
+ * section" — so this filters both the order picker and the project picker
+ * inside Material In & Out. It is scoped to this section on purpose: the
+ * money modules must keep showing consultancy, because that is where the fee
+ * actually lives.
+ */
+export function isServiceScope(name: string | null | undefined): boolean {
+  if (!name) return false
+  return /(professional\s+consultancy|consultancy|design)\b/i.test(name)
+}

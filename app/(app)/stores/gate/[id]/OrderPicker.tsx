@@ -18,8 +18,14 @@ import { Label } from '../../field'
  *
  * Opened cold it shows the OPEN purchase orders — 89 of the 1,451, the only
  * ones a lorry could be delivering against today — so the common case needs no
- * typing at all. Searching runs on the server: 1,451 orders and 1,616 work
- * orders is not a list to ship to a phone.
+ * typing at all. SEARCHING looks at every purchase order whatever its status:
+ * 180 are draft, cancelled or terminated, and hiding those is why an order
+ * somebody was holding in their hand could not be found. They come back under
+ * their own heading with the status on the row.
+ *
+ * Work orders for consultancy or design are left out — they are fees, and no
+ * lorry has ever arrived against one. Searching runs on the server; 1,451
+ * orders and 1,616 work orders is not a list to ship to a phone.
  *
  * FIELD register: 56px control, 44px rows, one thing on screen at a time.
  */
@@ -111,8 +117,8 @@ export function OrderPicker({
             ) : (
               <ul>
                 {rows.map((r, i) => {
-                  const band = r.open ? T.openOrders : T.otherOrders
-                  const newBand = i === 0 || band !== (rows[i - 1].open ? T.openOrders : T.otherOrders)
+                  const band = bandOf(r)
+                  const newBand = i === 0 || band !== bandOf(rows[i - 1])
                   return (
                     <li key={r.key}>
                       {newBand && (
@@ -133,6 +139,9 @@ export function OrderPicker({
                             {r.projectName && <span>{r.projectName}</span>}
                             {r.date && <span>{formatDate(r.date)}</span>}
                             {r.value != null && r.value > 0 && <span>{formatINR(r.value)}</span>}
+                            {r.status && (
+                              <span className="font-semibold text-rose-700">{r.status} in IN4</span>
+                            )}
                             {r.linesDue != null && r.linesDue > 0 && (
                               <span className="font-semibold text-amber-800">
                                 {r.linesDue} {r.linesDue === 1 ? 'line' : 'lines'} still due
@@ -166,6 +175,20 @@ export function OrderPicker({
       )}
     </div>
   )
+}
+
+/**
+ * Which heading an order sits under.
+ *
+ * Three, not two. A cancelled or draft order has to be FINDABLE — a
+ * storekeeper who searches for a number they are holding and gets nothing
+ * concludes the order does not exist, when the truth is that somebody
+ * cancelled it in IN4 and that is worth knowing before the material is
+ * counted in.
+ */
+function bandOf(r: OrderOption): string {
+  if (r.status) return T.notUsableOrders
+  return r.open ? T.openOrders : T.otherOrders
 }
 
 /** A purchase order and a work order are different things; say so with a shape

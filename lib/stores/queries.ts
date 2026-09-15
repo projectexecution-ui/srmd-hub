@@ -5,7 +5,7 @@ import {
   type ReturnableLine, type ReturnableRow, type Register, type Stage,
 } from './core'
 import type { RegisterSpec, RegisterFilter, RegisterRow } from './registers'
-import { groupProjects, type ProjectOpt } from './core'
+import { groupProjects, isServiceScope, type ProjectOpt } from './core'
 import { loadAliasMap, resolveAlias } from '@/lib/aliases'
 export type { ProjectOpt }
 
@@ -528,6 +528,10 @@ export interface OrderOption {
   /** A purchase order with something still to come. Work orders carry no
    *  receiving status in the mirror, so this is always false for them. */
   open: boolean
+  /** IN4's own status, shown when it is anything but a plain approved order —
+   *  a draft or a cancelled one must still be FINDABLE, or the storekeeper
+   *  concludes the order does not exist. */
+  status: string | null
   /** Lines not yet fully received. null for a work order, which has none. */
   linesDue: number | null
 }
@@ -551,11 +555,16 @@ export async function searchOrders(query: string, limit = 40): Promise<OrderOpti
   // has no way to know the one they want was cut off.
   const poLimit = q ? limit : 200
 
+  // Searching looks at EVERY purchase order. Only the no-query default is
+  // narrowed to what is open — 180 of the 1,451 are draft, cancelled or
+  // terminated, and hiding them is why Aksha could not find orders he knew
+  // existed. They come back labelled rather than missing.
   let poQ = supabase
     .from('in4_purchase_orders')
     .select('po_id, po_no, po_dt, supplier_id, project_id, po_value, status, grn_status')
-    .eq('status', 'Approved')
-  poQ = q ? poQ.ilike('po_no', `%${q}%`) : poQ.in('grn_status', ['No', 'Partial'])
+  poQ = q
+    ? poQ.ilike('po_no', `%${q}%`)
+    : poQ.eq('status', 'Approved').in('grn_status', ['No', 'Partial'])
 
   let woQ = supabase
     .from('in4_work_orders')
@@ -583,6 +592,12 @@ export async function searchOrders(query: string, limit = 40): Promise<OrderOpti
   const projectById = new Map((projects ?? []).map(r => [r.id as number, (r.name as string) ?? '']))
   const subById = new Map((subs ?? []).map(r => [r.id as number, (r.name as string) ?? '']))
 
+  // A consultancy or design work order is a fee, not a delivery. 410 of the
+  // 1,616 approved ones are, and they were crowding out the orders a
+  // storekeeper is actually looking for.
+  const materialWos = (wos ?? []).filter(
+    w => !isServiceScope(subById.get(w.subproject_id as number)))
+
   // How many lines are still due, in one query rather than one per order.
   const poIds = (pos ?? []).map(p => p.po_id as number)
   const dueByPo = new Map<number, number>()
@@ -606,10 +621,11 @@ export async function searchOrders(query: string, limit = 40): Promise<OrderOpti
       projectName: projectById.get(p.project_id as number) ?? null,
       date: (p.po_dt as string | null) ?? null,
       value: p.po_value == null ? null : num(p.po_value),
-      open: p.grn_status === 'No' || p.grn_status === 'Partial',
+      open: p.status === 'Approved' && (p.grn_status === 'No' || p.grn_status === 'Partial'),
+      status: p.status === 'Approved' ? null : (p.status as string | null),
       linesDue: dueByPo.get(p.po_id as number) ?? 0,
     })),
-    ...(wos ?? []).map(w => ({
+    ...materialWos.map(w => ({
       key: `wo:${w.wo_id}`,
       kind: 'wo' as const,
       no: (w.display_no as string) ?? `WO ${w.wo_id}`,
@@ -618,13 +634,16 @@ export async function searchOrders(query: string, limit = 40): Promise<OrderOpti
       date: (w.creation_dt as string | null) ?? null,
       value: w.wo_value == null ? null : num(w.wo_value),
       open: false,
+      status: null,
       linesDue: null,
     })),
   ]
 
-  // Open purchase orders first, then newest.
+  // Three tiers: what could be arriving today, then what is finished, then
+  // what IN4 no longer considers a live order. Newest first inside each.
+  const tier = (o: OrderOption) => (o.open ? 0 : o.status ? 2 : 1)
   return rows.sort((a, b) =>
-    Number(b.open) - Number(a.open) || (b.date ?? '').localeCompare(a.date ?? ''))
+    tier(a) - tier(b) || (b.date ?? '').localeCompare(a.date ?? ''))
 }
 
 /** IN4's PO lines for one order — what was ordered and how much has landed
@@ -650,6 +669,9 @@ export interface OrderDetail {
   projectWhy: string | null
   date: string | null
   value: number | null
+  /** IN4's status when it is not a plain approved order — a cancelled or
+   *  draft order can still be picked, but never silently. */
+  status: string | null
   lines: PoLine[]
   /** Why there are no lines, when there are none to have. */
   linesWhy: string | null
@@ -689,6 +711,7 @@ export async function loadOrder(key: string): Promise<OrderDetail | null> {
       ...(await resolveHubProject(supabase, projectName)),
       date: (wo.creation_dt as string | null) ?? null,
       value: wo.wo_value == null ? null : num(wo.wo_value),
+      status: null,
       lines: [],
       // in4_wo_boq_items carries a work description and a uom, never a
       // material id, so its lines cannot become stock lines. Saying so beats
@@ -699,7 +722,7 @@ export async function loadOrder(key: string): Promise<OrderDetail | null> {
 
   const { data: po } = await supabase
     .from('in4_purchase_orders')
-    .select('po_id, po_no, po_dt, project_id, supplier_id, po_value')
+    .select('po_id, po_no, po_dt, project_id, supplier_id, po_value, status, grn_status')
     .eq('po_id', id).maybeSingle()
   if (!po) return null
 
@@ -726,6 +749,7 @@ export async function loadOrder(key: string): Promise<OrderDetail | null> {
     ...(await resolveHubProject(supabase, projectName)),
     date: (po.po_dt as string | null) ?? null,
     value: po.po_value == null ? null : num(po.po_value),
+    status: po.status === 'Approved' ? null : (po.status as string | null),
     lines: (items ?? []).map(i => {
       const m = byMat.get(i.material_id as number)
       return {
@@ -880,11 +904,18 @@ export async function loadProjectOptions(): Promise<ProjectOpt[]> {
     .select('id, name, parent_project_id')
     .order('name')
 
-  return groupProjects((data ?? []).map(r => ({
-    id: r.id as string,
-    name: ((r.name as string) ?? '').trim(),
-    parentId: (r.parent_project_id as string | null) ?? null,
-  })))
+  // Consultancy and design lines are fees, not places material goes. All
+  // seven of them have taken zero deliveries since the section existed, and
+  // dropping them also removes the three identical "Sheth House - Design"
+  // rows that no dropdown could tell apart. Only Material In & Out hides
+  // them — the money modules still need them.
+  return groupProjects((data ?? [])
+    .filter(r => !isServiceScope(r.name as string | null))
+    .map(r => ({
+      id: r.id as string,
+      name: ((r.name as string) ?? '').trim(),
+      parentId: (r.parent_project_id as string | null) ?? null,
+    })))
 }
 
 /**

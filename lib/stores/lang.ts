@@ -71,6 +71,7 @@ export const T = {
   orderSearch:    'Type any part of the number',
   openOrders:     'Open orders',
   otherOrders:    'Already received',
+  notUsableOrders: 'Cancelled or not approved',
   noOrder:        'Not against any order',
   orderNone:      'No order found',
   filledFromIn4:  'Filled in for you',
