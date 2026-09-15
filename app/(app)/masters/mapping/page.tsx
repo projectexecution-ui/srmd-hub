@@ -28,9 +28,9 @@ export default async function MappingPage() {
     loadAliasMap(supabase),
   ])
 
-  const projects: ProjectOption[] = ((projectsRes.data ?? []) as Array<{ id: string; code: string; name: string; archived_at: string | null }>)
+  const projects: ProjectOption[] = ((projectsRes.data ?? []) as Array<{ id: string; code: string; name: string; parent_project_id: string | null; archived_at: string | null }>)
     .filter(p => !p.archived_at)
-    .map(p => ({ id: p.id, code: p.code, name: p.name }))
+    .map(p => ({ id: p.id, code: p.code, name: p.name, parent_project_id: p.parent_project_id }))
   const projById = new Map(projects.map(p => [p.id, p]))
 
   type Cand = { source: AliasSource; alias: string; hint: string }

@@ -1,10 +1,25 @@
 import Link from 'next/link'
 import { loadEntries, loadLists, listsOf, loadRecentParties } from '@/lib/stores/queries'
 import { fmtQty, type Stage } from '@/lib/stores/core'
-import { Section, Empty, Scroller, th, td, tdNum, StageChip, RegisterChip, When } from '../ui'
+import { Section, Empty, Scroller, th, thNum, td, tdNum, StageChip, RegisterChip, When } from '../ui'
 import { GateInForm, StorekeeperCta } from './GateInForm'
 
 export const dynamic = 'force-dynamic'
+
+const WAYS: Array<{ key: 'in' | 'out' | null; label: string }> = [
+  { key: null,  label: 'In and out' },
+  { key: 'in',  label: 'In' },
+  { key: 'out', label: 'Out' },
+]
+
+/** Keep whichever filter the reader did not just click. */
+function gateHref(stage: Stage | 'all', way: 'in' | 'out' | null): string {
+  const q = new URLSearchParams()
+  if (stage !== 'gate') q.set('stage', stage)
+  if (way) q.set('direction', way)
+  const s = q.toString()
+  return s ? `/stores/gate?${s}` : '/stores/gate'
+}
 
 const STAGES: Array<{ key: Stage | 'all'; label: string }> = [
   { key: 'gate',     label: 'Waiting on storekeeper' },
@@ -14,12 +29,14 @@ const STAGES: Array<{ key: Stage | 'all'; label: string }> = [
 
 export default async function GatePage({
   searchParams,
-}: { searchParams: Promise<{ stage?: string }> }) {
-  const { stage } = await searchParams
+}: { searchParams: Promise<{ stage?: string; direction?: string }> }) {
+  const { stage, direction } = await searchParams
   const active = (STAGES.find(s => s.key === stage)?.key ?? 'gate') as Stage | 'all'
+  const way: 'in' | 'out' | null =
+    direction === 'in' ? 'in' : direction === 'out' ? 'out' : null
 
   const [entries, lists, recent, waiting] = await Promise.all([
-    loadEntries({ stage: active === 'all' ? null : active, limit: 200 }),
+    loadEntries({ stage: active === 'all' ? null : active, direction: way, limit: 200 }),
     loadLists(),
     loadRecentParties(),
     loadEntries({ stage: 'gate', limit: 200 }),
@@ -39,16 +56,31 @@ export default async function GatePage({
       </div>
 
       <Section title="The register" note="Every vehicle through the gate, newest first">
-        <div className="flex flex-wrap gap-1.5">
+        <div className="flex flex-wrap items-center gap-1.5">
           {STAGES.map(s => (
             <Link
               key={s.key}
-              href={s.key === 'gate' ? '/stores/gate' : `/stores/gate?stage=${s.key}`}
+              href={gateHref(s.key, way)}
               className={`rounded-lg px-3 py-2 text-[12.5px] font-semibold min-h-[44px] inline-flex items-center ${
                 active === s.key ? 'bg-indigo-700 text-white' : 'bg-white border border-gray-300 text-gray-700 hover:bg-gray-50'
               }`}
             >
               {s.label}
+            </Link>
+          ))}
+
+          {/* In and out are two different questions, so they filter separately
+              rather than being read off a prefix on the number. */}
+          <span className="mx-1 h-6 w-px bg-gray-200" aria-hidden />
+          {WAYS.map(w => (
+            <Link
+              key={w.key ?? 'both'}
+              href={gateHref(active, w.key)}
+              className={`rounded-lg px-3 py-2 text-[12.5px] font-semibold min-h-[44px] inline-flex items-center ${
+                way === w.key ? 'bg-gray-900 text-white' : 'bg-white border border-gray-300 text-gray-700 hover:bg-gray-50'
+              }`}
+            >
+              {w.label}
             </Link>
           ))}
         </div>
@@ -70,7 +102,7 @@ export default async function GatePage({
                   <th className={th}>Party</th>
                   <th className={th}>Vehicle / driver</th>
                   <th className={th}>Project</th>
-                  <th className={`${th} text-right`}>Lines</th>
+                  <th className={thNum}>Lines</th>
                   <th className={th}>Stage</th>
                   <th className={th}>Recorded</th>
                   <th className={th}></th>

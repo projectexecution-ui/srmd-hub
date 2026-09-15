@@ -5,7 +5,7 @@ import { useState, useTransition } from 'react'
 import { saveListRow, setListActive, saveItem } from '@/lib/stores/actions'
 import type { ListRow, ItemRow, ProjectOpt } from '@/lib/stores/queries'
 import { formatINR, formatNumber } from '@/lib/utils'
-import { Field, inputClass, Btn, Notice, Empty, Scroller, th, td, tdNum, GroupedOptions } from '../ui'
+import { Field, inputClass, Btn, Notice, Empty, Scroller, th, thNum, td, tdNum, GroupedOptions } from '../ui'
 
 type Kind = ListRow['kind']
 
@@ -15,7 +15,7 @@ const KINDS: Array<{ kind: Kind; title: string; note: string }> = [
   { kind: 'delivery_mode', title: 'Delivery modes', note: 'How material arrives and leaves.' },
   { kind: 'item_category', title: 'Item categories', note: 'What kind of material this is.' },
   { kind: 'discipline', title: 'Disciplines', note: 'Your ten, used to group the reports — not IN4’s 89 budget categories.' },
-  { kind: 'entity', title: 'PO / WO entities',
+  { kind: 'entity', title: 'Trusts',
     note: 'Which trust is paying. Seeded from IN4 and mapped to it — add one here with no IN4 match and point it at IN4 later.' },
 ]
 
@@ -305,7 +305,7 @@ function ItemsPanel({
               <tr>
                 <th className={th}>Item</th>
                 <th className={th}>Unit</th>
-                <th className={`${th} text-right`}>Last rate</th>
+                <th className={thNum}>Last rate</th>
                 <th className={th}>From IN4</th>
               </tr>
             </thead>

@@ -305,50 +305,81 @@ export const createsStock = (register: Register): boolean => register !== 'vendo
 
 /* ── Project picker grouping ────────────────────────────────────────────── */
 
-export interface ProjectOpt {
-  id: string
-  name: string
-  /** The heading this project sits under in a picker. */
-  group: string
-}
+// Moved to lib/projects.ts once Bills Booking and Cost Control needed the same
+// order. Re-exported so the Stores imports keep working and there stays ONE
+// implementation — two would drift, and a picker that groups differently on
+// two screens is worse than one that does not group at all.
+export { groupProjects, UNGROUPED, type ProjectOpt } from '@/lib/projects'
 
-/** Standalone projects — no parent, no children — go last, under this. */
-export const UNGROUPED = 'On their own'
+/* ── Reading an IN4 order number ────────────────────────────────────────── */
 
 /**
- * Order projects so a picker can walk the array and open a new <optgroup>
- * whenever `group` changes.
+ * Which trust is paying, read off the order number.
  *
- * A parent heads its own group and is the first option inside it, because
- * "NGH" is itself a bookable project and not only a heading. A project whose
- * parent has been deleted falls back to UNGROUPED rather than vanishing —
- * an option that silently disappears is how material gets booked to the
- * wrong site.
+ * IN4 numbers read PO/SRASSK/AB/2026-27/94 — kind, trust, project, year,
+ * serial — and for 1,448 of the 1,451 orders the trust is the second segment.
+ * Three are PO/DO/SRET/RU/…, where the second segment is "DO" and the trust is
+ * third.
+ *
+ * So this does not trust the POSITION. It looks for a segment that is one of
+ * the trusts we actually hold, and returns nothing when no segment is. That
+ * way a number in a shape nobody has seen yet leaves the field empty for the
+ * storekeeper rather than filling it with "DO".
  */
-export function groupProjects(
-  rows: ReadonlyArray<{ id: string; name: string; parentId: string | null }>,
-): ProjectOpt[] {
-  const nameById = new Map(rows.map(r => [r.id, r.name]))
-  const hasKids = new Set(rows.map(r => r.parentId).filter(Boolean) as string[])
+export function entityCodeFromOrderNo(no: string, knownCodes: readonly string[]): string | null {
+  const known = new Map(knownCodes.map(c => [c.toUpperCase().replace(/\s+/g, ''), c]))
+  for (const part of no.replace(/^DRAFT-/i, '').split('/')) {
+    const hit = known.get(part.toUpperCase().replace(/\s+/g, ''))
+    if (hit) return hit
+  }
+  return null
+}
 
-  const opts: ProjectOpt[] = rows.map(r => ({
-    id: r.id,
-    name: r.name,
-    group: r.parentId
-      ? nameById.get(r.parentId) ?? UNGROUPED
-      : hasKids.has(r.id) ? r.name : UNGROUPED,
-  }))
+/* ── What the form can work out for itself ──────────────────────────────── */
 
-  return opts.sort((a, b) => {
-    if (a.group !== b.group) {
-      if (a.group === UNGROUPED) return 1
-      if (b.group === UNGROUPED) return -1
-      return a.group.localeCompare(b.group)
-    }
-    // Inside a group: the parent first (it shares the group's name), then
-    // its children by name.
-    const aHead = a.name === a.group ? 0 : 1
-    const bHead = b.name === b.group ? 0 : 1
-    return aHead - bHead || a.name.localeCompare(b.name)
-  })
+/**
+ * Which item category an entry is, without asking.
+ *
+ * The mind map's three categories are not a free taxonomy — they say where the
+ * material stands:
+ *
+ *   Vendor Materials   the vendor register, material going straight to site
+ *   Ordered Items      there is a purchase order behind it
+ *   Returnable Items   it has to come back (switched off since 14 Sep)
+ *
+ * All three are decided by facts the screen already has, so asking the
+ * storekeeper to pick one is asking them to restate what they just did.
+ * Returns null only when nothing has been established yet — no order, and a
+ * register that could still go either way.
+ */
+export function categoryFor(
+  register: Register,
+  hasOrder: boolean,
+  categories: ReadonlyArray<{ id: string; name: string }>,
+): string | null {
+  const find = (word: string) =>
+    categories.find(c => c.name.toLowerCase().includes(word))?.id ?? null
+  if (register === 'vendor') return find('vendor')
+  if (hasOrder) return find('order')
+  return null
+}
+
+/* ── What belongs in a MATERIAL register ────────────────────────────────── */
+
+/**
+ * Scopes that are fees, not things — nothing is ever delivered against one.
+ *
+ * IN4 and CT Hub both split a project by scope: "Raj Uphaar - Execution" is
+ * building work, "Raj Uphaar - Professional Consultancy" is the architect's
+ * fee. Aksha, 15 Sep 2026: "i dont want Professional Consultanty in any of
+ * the section".
+ *
+ * This keeps those lines out of the Material In & Out project picker — all
+ * seven of them have taken zero deliveries since the section existed. Scoped
+ * to this section on purpose: the money modules must keep showing
+ * consultancy, because that is where the fee actually lives.
+ */
+export function isServiceScope(name: string | null | undefined): boolean {
+  if (!name) return false
+  return /(professional\s+consultancy|consultancy|design)\b/i.test(name)
 }

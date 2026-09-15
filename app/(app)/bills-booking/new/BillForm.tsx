@@ -13,8 +13,10 @@ import { DeskPanel } from './DeskPanel'
 import type { PickableOrder } from '@/lib/bills-booking/orders'
 import { resolveBooking, bookingGaps, type BookingMaps, type Booking } from '@/lib/bills-booking/booking'
 import { formatINR } from '@/lib/utils'
+import { GroupedOptions } from '@/components/ui/grouped-options'
+import { groupProjectRows } from '@/lib/projects'
 
-type Opt = { id: string; code?: string; name: string }
+type Opt = { id: string; code?: string; name: string; parent_project_id?: string | null }
 
 /** Bill types that are drawn against an order — a work order or a purchase
  *  order. Advance is here because it is raised against one even though it has
@@ -281,7 +283,7 @@ export function BillForm({ projects, disciplines, in4Wos, in4Pos, in4Projects, s
                 <Label htmlFor="proj">CT Hub project *</Label>
                 <select id="proj" value={projectId} onChange={e => setProjectId(e.target.value)} className={sel}>
                   <option value="">— select —</option>
-                  {projects.map(p => <option key={p.id} value={p.id}>{p.code} — {p.name}</option>)}
+                  <GroupedOptions rows={groupProjectRows(projects)} showCode />
                 </select>
               </div>
               <div>

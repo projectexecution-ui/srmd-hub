@@ -8,6 +8,8 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Loader2, Send, Ruler } from 'lucide-react'
+import { GroupedOptions } from '@/components/ui/grouped-options'
+import { groupProjectRows } from '@/lib/projects'
 
 interface ProjectOpt { id: string; code: string; name: string; built_up_sft: number | null }
 interface DRow      { id: string; code: string; name: string }
@@ -152,7 +154,7 @@ export function NewWSThumbruleForm({
           <Label>Project *</Label>
           <select value={projectId} onChange={e => { setProjectId(e.target.value); setDisciplineId(''); setSubSkillId('') }}
             required className="mt-1 flex h-10 w-full rounded-xl border border-gray-300 bg-white px-3 py-2 text-sm">
-            {projects.map(p => <option key={p.id} value={p.id}>{p.code} — {p.name}</option>)}
+            <GroupedOptions rows={groupProjectRows(projects)} showCode />
           </select>
         </div>
         <div>

@@ -9,6 +9,8 @@ import { Label } from '@/components/ui/label'
 import { Ruler, FileSpreadsheet, Download, ArrowRight } from 'lucide-react'
 import { createWorkingSheet } from '@/components/cost-control/ws-actions'
 import { downloadBoqTemplate } from '@/lib/cost-control/boq-template-xlsx'
+import { GroupedOptions } from '@/components/ui/grouped-options'
+import { groupProjectRows } from '@/lib/projects'
 
 interface ProjectLite { id: string; code: string; name: string }
 interface DRow { id: string; code: string; name: string }
@@ -137,7 +139,7 @@ export function NewWSForm({ projects, projectDisciplines, projectSubSkills, defa
           className="mt-1 flex h-10 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm"
         >
           <option value="">— choose project —</option>
-          {projects.map(p => <option key={p.id} value={p.id}>{p.code} · {p.name}</option>)}
+          <GroupedOptions rows={groupProjectRows(projects)} showCode />
         </select>
       </div>
 

@@ -1,16 +1,20 @@
 'use client'
 
 import { useRouter } from 'next/navigation'
-import { useState, useTransition } from 'react'
-import { Download, Plus, Trash2, PackageCheck } from 'lucide-react'
+import { useMemo, useState, useTransition } from 'react'
+import { Plus, Trash2, PackageCheck, Sparkles } from 'lucide-react'
 import { completeGateEntry, importIn4Material } from '@/lib/stores/actions'
-import { loadPoForEntry } from './po-action'
-import { missingForComplete, fmtQty, RETURNABLES_ON, type Register } from '@/lib/stores/core'
+import { loadOrderForEntry } from './po-action'
+import { OrderPicker } from './OrderPicker'
+import {
+  missingForComplete, fmtQty, entityCodeFromOrderNo, categoryFor, RETURNABLES_ON, type Register,
+} from '@/lib/stores/core'
 import { T } from '@/lib/stores/lang'
 import { formatINR } from '@/lib/utils'
-import { Label, BigInput, Stepper, BigNotice } from '../../field'
+import { Label, Stepper, BigNotice } from '../../field'
+import { SearchableSelect } from '@/components/ui/searchable-select'
 import { GroupedOptions } from '../../ui'
-import type { ProjectOpt } from '@/lib/stores/queries'
+import type { ProjectOpt, OrderDetail } from '@/lib/stores/queries'
 
 interface Opt { id: string; name: string; code?: string | null }
 interface ItemOpt { id: string; name: string; unit: string; lastRate: number | null; in4MaterialId: number | null }
@@ -18,6 +22,15 @@ interface Line { key: string; itemId: string; unit: string; qty: string; rate: s
 
 let seq = 0
 const newLine = (): Line => ({ key: `l${++seq}`, itemId: '', unit: '', qty: '', rate: '', returnable: false })
+
+/** Two names for the same shop, written by two people. Compared loosely on
+ *  purpose: "Yogi Electricals" and "YOGI ELECTRICALS " are the same delivery,
+ *  and warning about that would teach the storekeeper to ignore the warning. */
+function sameParty(a: string, b: string): boolean {
+  const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim()
+  const x = norm(a), y = norm(b)
+  return x === y || x.includes(y) || y.includes(x)
+}
 
 /**
  * The storekeeper's half — and the only place stock is created.
@@ -33,10 +46,17 @@ const newLine = (): Line => ({ key: `l${++seq}`, itemId: '', unit: '', qty: '', 
  */
 export function CompleteForm({
   entryId, entryNo, register, makesStock, entities, categories, locations, projects, items,
+  recentItemIds = [], gateParty = null, lastLocations = { byProject: {}, lastUsed: null },
 }: {
   entryId: string; entryNo: string; register: Register; makesStock: boolean
   entities: Opt[]; categories: Opt[]; locations: Array<{ id: string; label: string }>
   projects: ProjectOpt[]; items: ItemOpt[]
+  /** Items this store handled lately — held at the top of the item picker. */
+  recentItemIds?: readonly string[]
+  /** Who Security wrote down at the gate, to check the order against. */
+  gateParty?: string | null
+  /** Where this store put things last, per project and overall. */
+  lastLocations?: { byProject: Record<string, string>; lastUsed: string | null }
 }) {
   const router = useRouter()
   const [pending, start] = useTransition()
@@ -45,10 +65,24 @@ export function CompleteForm({
   const [entityId, setEntityId] = useState('')
   const [projectId, setProjectId] = useState('')
   const [poWoNo, setPoWoNo] = useState('')
-  const [itemCategoryId, setItemCategoryId] = useState('')
-  const [locationId, setLocationId] = useState(locations.length === 1 ? locations[0].id : '')
+  const [order, setOrder] = useState<string | null>(null)
+  // Vendor material is "Vendor Materials" before anything else is known, so it
+  // starts filled rather than waiting for the storekeeper to say so.
+  const [itemCategoryId, setItemCategoryId] = useState(
+    () => categoryFor(register, false, categories) ?? '',
+  )
+  // One place to put things means there is no question to ask. More than one
+  // means the last place this store used, which is nearly always right and is
+  // a dropdown away from being corrected.
+  const [locationId, setLocationId] = useState(() => {
+    if (locations.length === 1) return locations[0].id
+    const last = lastLocations.lastUsed
+    return last && locations.some(l => l.id === last) ? last : ''
+  })
   const [lines, setLines] = useState<Line[]>([newLine()])
   const [poNote, setPoNote] = useState<{ ok: boolean; text: string } | null>(null)
+  const [filledFrom, setFilledFrom] = useState<string[]>([])
+  const [orderParty, setOrderParty] = useState<string | null>(null)
   const [poBusy, setPoBusy] = useState(false)
   const [itemList, setItemList] = useState<ItemOpt[]>(items)
 
@@ -67,18 +101,95 @@ export function CompleteForm({
     setLine(key, { itemId, unit: item?.unit ?? '', rate: item?.lastRate != null ? String(item.lastRate) : '' })
   }
 
-  const fetchPo = () => {
-    setPoBusy(true); setPoNote(null)
-    start(async () => {
-      const po = await loadPoForEntry(poWoNo)
-      setPoBusy(false)
-      if (!po) { setPoNote({ ok: false, text: `IN4 has no order numbered "${poWoNo}".` }); return }
-      if (po.lines.length === 0) { setPoNote({ ok: false, text: `${po.poNo} has no items in IN4.` }); return }
+  // The unit is the second line, because 659 items include several that read
+  // alike until you reach "(300 MTR)" at the end of a truncated name.
+  const itemOptions = useMemo(
+    () => itemList.map(i => ({ id: i.id, label: i.name, hint: i.unit })),
+    [itemList],
+  )
 
+  const clearOrder = () => {
+    setOrder(null); setPoWoNo(''); setPoNote(null); setFilledFrom([]); setOrderParty(null)
+  }
+
+  /**
+   * Picking an order fills the form in.
+   *
+   * The rule everywhere below: fill it, or say why not — never guess. A field
+   * the storekeeper can see was filled, and from what, can be corrected. A
+   * field quietly set to the wrong project cannot, because nobody goes
+   * looking for it.
+   *
+   * Only EMPTY fields are filled. If the storekeeper already chose a project
+   * and then attaches an order, their answer stands — they were standing at
+   * the delivery and IN4 was not.
+   */
+  const pickOrder = (key: string) => {
+    setPoBusy(true); setPoNote(null); setFilledFrom([]); setOrderParty(null)
+    start(async () => {
+      const o: OrderDetail | null = await loadOrderForEntry(key)
+      setPoBusy(false)
+      if (!o) { setPoNote({ ok: false, text: 'That order could not be read from IN4.' }); return }
+
+      setOrder(o.no)
+      setPoWoNo(o.no)
+
+      const done: string[] = []
+      const why: string[] = []
+
+      // The picker only ever lists approved orders, so this is the rare race:
+      // somebody cancels the order in IN4 between the list being fetched and
+      // the storekeeper tapping it. Cheap to check, and the one case where the
+      // material should not simply be booked in.
+      if (o.status) {
+        why.push(`IN4 has this order as ${o.status}. Check before taking the material in.`)
+      }
+
+      // Trust — read off the order number, matched against the trusts we
+      // actually hold rather than by position: 1,448 orders read
+      // PO/SRASSK/AB/… but three read PO/DO/SRET/…, where position 2 is "DO".
+      if (!entityId) {
+        const code = entityCodeFromOrderNo(o.no, entities.map(e => e.code ?? ''))
+        const hit = code ? entities.find(e => e.code === code) : null
+        if (hit) { setEntityId(hit.id); done.push(`trust ${hit.code || hit.name}`) }
+        else why.push('The order number does not name one of our trusts — pick it.')
+      }
+
+      // Project — only when the alias table is certain what it is.
+      let landedProject = projectId
+      if (!projectId) {
+        if (o.projectId && projects.some(p => p.id === o.projectId)) {
+          setProjectId(o.projectId)
+          landedProject = o.projectId
+          done.push(`project ${projects.find(p => p.id === o.projectId)?.name ?? ''}`.trim())
+        } else if (o.projectWhy) why.push(o.projectWhy)
+      }
+
+      // Item category — an order IS the definition of "Ordered Items", so
+      // asking would be asking the storekeeper to restate what they just did.
+      if (!itemCategoryId) {
+        const cat = categoryFor(register, true, categories)
+        if (cat) {
+          setItemCategoryId(cat)
+          done.push(`item category ${categories.find(c => c.id === cat)?.name ?? ''}`.trim())
+        }
+      }
+
+      // Where it goes — the place this store last put material FOR THIS
+      // PROJECT beats the place it last put anything.
+      if (makesStock && landedProject) {
+        const forProject = lastLocations.byProject[landedProject]
+        if (forProject && forProject !== locationId && locations.some(l => l.id === forProject)) {
+          setLocationId(forProject)
+          done.push(`put away at ${locations.find(l => l.id === forProject)?.label ?? ''}`.trim())
+        }
+      }
+
+      // The ordered lines, at the quantity still due.
       const drafts: Line[] = []
       const known = new Map(itemList.filter(i => i.in4MaterialId).map(i => [i.in4MaterialId as number, i]))
       const added: ItemOpt[] = []
-      for (const l of po.lines) {
+      for (const l of o.lines) {
         let item = known.get(l.materialId)
         if (!item) {
           const r = await importIn4Material(l.materialId)
@@ -95,8 +206,24 @@ export function CompleteForm({
         })
       }
       if (added.length) setItemList(prev => [...prev, ...added])
-      setLines(drafts.length ? drafts : [newLine()])
-      setPoNote({ ok: true, text: `${po.poNo}${po.supplier ? ` · ${po.supplier}` : ''} — ${drafts.length} item${drafts.length === 1 ? '' : 's'} filled in. Quantities shown are what is still due; change any that differ.` })
+
+      // Never wipe lines the storekeeper already entered by hand.
+      const hasOwnLines = lines.some(l => l.itemId)
+      if (drafts.length && !hasOwnLines) {
+        setLines(drafts)
+        done.push(`${drafts.length} item${drafts.length === 1 ? '' : 's'}, quantity still due and rate`)
+      } else if (drafts.length) {
+        why.push(`${drafts.length} ordered item${drafts.length === 1 ? '' : 's'} not filled in — you had already started the list.`)
+      } else if (o.linesWhy) why.push(o.linesWhy)
+
+      // The supplier is NOT written anywhere: Security already recorded who
+      // turned up, and they were standing there. It is shown side by side
+      // instead, and only when the two names disagree — which is the one case
+      // worth a storekeeper's attention.
+      setOrderParty(o.party)
+
+      setFilledFrom(done)
+      setPoNote({ ok: true, text: why.join(' ') })
     })
   }
 
@@ -143,22 +270,36 @@ export function CompleteForm({
         </label>
       </div>
 
-      {/* The PO shortcut — the point of the whole screen. */}
+      {/* The order shortcut — the point of the whole screen. */}
       <div className="rounded-xl border-2 border-gray-200 bg-white p-3.5 space-y-3">
-        <div className="flex flex-col sm:flex-row sm:items-end gap-3">
-          <div className="flex-1">
-            <BigInput t={T.poNumber} value={poWoNo} onChange={setPoWoNo} placeholder="PO/26-27/0418" upper />
+        <OrderPicker value={order} onPick={pickOrder} onClear={clearOrder} gateParty={gateParty} />
+
+        {poBusy && <p className="text-[13.5px] text-gray-500">Reading the order…</p>}
+
+        {filledFrom.length > 0 && (
+          <div className="rounded-xl border-2 border-emerald-300 bg-emerald-50 p-3">
+            <p className="flex items-center gap-1.5 text-[12px] font-bold uppercase tracking-wide text-emerald-800">
+              <Sparkles className="h-4 w-4" /> {T.filledFromIn4}
+            </p>
+            <ul className="mt-1.5 space-y-0.5">
+              {filledFrom.map(f => (
+                <li key={f} className="text-[14px] text-emerald-900">· {f}</li>
+              ))}
+            </ul>
+            <p className="mt-1.5 text-[12.5px] text-emerald-800/80">{T.changeAnyDiffer}</p>
           </div>
-          <button
-            type="button" onClick={fetchPo} disabled={!poWoNo.trim() || poBusy}
-            className="inline-flex items-center justify-center gap-2 rounded-xl bg-gray-900 px-4 min-h-[64px]
-              text-white font-semibold active:bg-black disabled:bg-gray-200 disabled:text-gray-400 sm:w-auto w-full"
-          >
-            <Download className="h-5 w-5" strokeWidth={2.2} />
-            <span className="text-[15px]">{poBusy ? '…' : T.fillFromIn4}</span>
-          </button>
-        </div>
-        {poNote && <BigNotice kind={poNote.ok ? 'ok' : 'bad'} title={poNote.text} />}
+        )}
+
+        {/* Only when the two names disagree — otherwise it is noise. */}
+        {orderParty && gateParty && !sameParty(orderParty, gateParty) && (
+          <BigNotice
+            kind="bad"
+            title="Two different names"
+            sub={`Security wrote "${gateParty}" at the gate; this order is to "${orderParty}". Check it is the right order before saving.`}
+          />
+        )}
+
+        {poNote?.text && <BigNotice kind={poNote.ok ? 'info' : 'bad'} title={poNote.text} />}
       </div>
 
       {makesStock && (
@@ -190,14 +331,20 @@ export function CompleteForm({
                 )}
               </div>
 
-              <label className="block space-y-1.5">
+              <div className="block space-y-1.5">
                 <Label t={T.item} />
-                <select className={sel} value={l.itemId} onChange={e => pickItem(l.key, e.target.value)}>
-                  <option value="">—</option>
-                  {itemList.map(i => <option key={i.id} value={i.id}>{i.name}</option>)}
-                </select>
+                <SearchableSelect
+                  size="big"
+                  value={l.itemId}
+                  onChange={id => pickItem(l.key, id)}
+                  options={itemOptions}
+                  pinned={recentItemIds}
+                  pinnedLabel="Used here lately"
+                  placeholder="Type three letters"
+                  emptyText="No item by that name — add it in Masters"
+                />
                 {l.label && <span className="block text-[12px] text-gray-400">{l.label}</span>}
-              </label>
+              </div>
 
               <div className="space-y-1.5">
                 <Label t={T.qty} />

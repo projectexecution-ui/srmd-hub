@@ -162,6 +162,12 @@ export function Scroller({ children, min = 720 }: { children: ReactNode; min?: n
 }
 
 export const th = 'text-left text-[10px] font-bold uppercase tracking-wider text-gray-500 px-3 py-2 border-b border-gray-200 bg-gray-50 whitespace-nowrap'
+/** Right-aligned header, for a column of numbers. NOT :
+ *  both are text-align utilities of equal specificity, so which one wins is
+ *  decided by their order in the generated stylesheet rather than by the order
+ *  they are written in — the header drifted left while its column sat right. */
+export const thNum = 'text-right text-[10px] font-bold uppercase tracking-wider text-gray-500 px-3 py-2 border-b border-gray-200 bg-gray-50 whitespace-nowrap'
+
 export const td = 'px-3 py-2.5 text-[13px] text-gray-800 border-b border-gray-100 align-top'
 export const tdNum = `${td} text-right tabular-nums whitespace-nowrap`
 
@@ -207,29 +213,7 @@ export function When({ at }: { at: string | null | undefined }) {
 
 /* ── Pickers ────────────────────────────────────────────────────────────── */
 
-/**
- * <option>s for a picker whose rows already carry a `group`, wrapped in an
- * <optgroup> per heading. The rows must arrive grouped (loadProjectOptions
- * sorts them that way) — a repeated heading would open a second box.
- *
- * Native <optgroup> on purpose: it costs nothing, it needs no library, and
- * iOS shows the headings inside its own picker wheel, which a custom dropdown
- * would have to reinvent badly.
- */
-export function GroupedOptions({ rows }: { rows: ReadonlyArray<{ id: string; name: string; group: string }> }) {
-  const groups: Array<{ label: string; rows: Array<{ id: string; name: string }> }> = []
-  for (const r of rows) {
-    const last = groups[groups.length - 1]
-    if (last && last.label === r.group) last.rows.push(r)
-    else groups.push({ label: r.group, rows: [r] })
-  }
-  return (
-    <>
-      {groups.map(g => (
-        <optgroup key={g.label} label={g.label}>
-          {g.rows.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
-        </optgroup>
-      ))}
-    </>
-  )
-}
+// Moved to components/ui/grouped-options.tsx when the other eleven project
+// pickers in the app needed it too. Re-exported so nothing in Stores had to
+// move with it.
+export { GroupedOptions } from '@/components/ui/grouped-options'

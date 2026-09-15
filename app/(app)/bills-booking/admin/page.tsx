@@ -19,7 +19,7 @@ export default async function BillsDesksPage() {
 
   const [{ data: users }, { data: projects }, { data: members }, { data: heads }] = await Promise.all([
     supabase.from('profiles').select('id, full_name, name, email').eq('is_active', true).order('full_name'),
-    supabase.from('projects').select('id, code, name').is('archived_at', null).order('code'),
+    supabase.from('projects').select('id, code, name, parent_project_id').is('archived_at', null).order('code'),
     supabase.from('bb_desk_members').select('desk, project_id, user_id'),
     // The FK has to be named. cc_project_approvers points at profiles TWICE —
     // user_id and assigned_by — so a bare `profiles(...)` embed is ambiguous
@@ -64,7 +64,7 @@ export default async function BillsDesksPage() {
       <DeskMembersEditor
         desks={DESKS as unknown as { key: string; label: string }[]}
         users={(users ?? []).map(u => ({ id: u.id as string, name: personName(u.full_name as string | null, u.name as string | null, u.email as string | null) }))}
-        projects={(projects ?? []).map(p => ({ id: p.id as string, code: p.code as string }))}
+        projects={(projects ?? []).map(p => ({ id: p.id as string, code: p.code as string, name: p.name as string, parent_project_id: p.parent_project_id as string | null }))}
         initial={initial}
       />
 

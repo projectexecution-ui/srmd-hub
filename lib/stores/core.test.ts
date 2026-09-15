@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import {
   entryNo, linkedNo, foldStock, availableAt, availableAnywhere, checkIssue,
   outstandingReturnables, checkReturn, missingForGate, missingForComplete, createsStock, heldItemCount,
-  fmtQty, isPilotProject, PILOT_PROJECT_IDS, RETURNABLES_ON, groupProjects, UNGROUPED,
+  fmtQty, isPilotProject, PILOT_PROJECT_IDS, RETURNABLES_ON, groupProjects, UNGROUPED, entityCodeFromOrderNo, categoryFor, isServiceScope,
   type Movement, type ReturnableLine,
 } from './core'
 
@@ -354,5 +354,99 @@ describe('groupProjects — the picker order', () => {
     const out = groupProjects(rows)
     expect(out).toHaveLength(rows.length)
     expect(new Set(out.map(o => o.id))).toEqual(new Set(rows.map(r => r.id)))
+  })
+})
+
+describe('entityCodeFromOrderNo — which trust is paying', () => {
+  // The four trusts CT Hub actually holds.
+  const OURS = ['SRASSK', 'SRET', 'SRJT', 'SRMD FA']
+
+  it('reads the trust out of a real IN4 order number', () => {
+    expect(entityCodeFromOrderNo('PO/SRASSK/AB/2026-27/94', OURS)).toBe('SRASSK')
+    expect(entityCodeFromOrderNo('PO/SRJT/SRAH/2026-27/37', OURS)).toBe('SRJT')
+  })
+
+  it('finds the trust wherever it sits, not by counting segments', () => {
+    // 1,448 of 1,451 orders put it second; three read PO/DO/SRET/RU/…, where
+    // "DO" is not a trust at all.
+    expect(entityCodeFromOrderNo('PO/DO/SRET/RU/2023-24/1', OURS)).toBe('SRET')
+  })
+
+  it('ignores the DRAFT- prefix, which is about status not trust', () => {
+    expect(entityCodeFromOrderNo('DRAFT-PO/SRASSK/NGH/2026-27/1445', OURS)).toBe('SRASSK')
+  })
+
+  it('gives nothing rather than a guess when no segment is one of ours', () => {
+    expect(entityCodeFromOrderNo('123', OURS)).toBeNull()
+    expect(entityCodeFromOrderNo('', OURS)).toBeNull()
+    expect(entityCodeFromOrderNo('PO/DO/RU/2023-24/1', OURS)).toBeNull()
+    expect(entityCodeFromOrderNo('PO/SRASSK/AB/2026-27/94', [])).toBeNull()
+  })
+
+  it('matches however the code is spaced or cased', () => {
+    expect(entityCodeFromOrderNo('PO/srmdfa/AB/2026-27/1', OURS)).toBe('SRMD FA')
+  })
+})
+
+describe('categoryFor — the category the screen already knows', () => {
+  const CATS = [
+    { id: 'v', name: 'Vendor Materials' },
+    { id: 'o', name: 'Ordered Items' },
+    { id: 'r', name: 'Returnable Items' },
+  ]
+
+  it('vendor material is Vendor Materials, order or no order', () => {
+    expect(categoryFor('vendor', false, CATS)).toBe('v')
+    expect(categoryFor('vendor', true, CATS)).toBe('v')
+  })
+
+  it('an order on our own stock makes it Ordered Items', () => {
+    expect(categoryFor('srm', true, CATS)).toBe('o')
+  })
+
+  it('says nothing rather than guessing when nothing is established', () => {
+    expect(categoryFor('srm', false, CATS)).toBeNull()
+    expect(categoryFor('transfer', false, CATS)).toBeNull()
+  })
+
+  it('survives a renamed or missing category rather than picking the wrong one', () => {
+    expect(categoryFor('vendor', false, [{ id: 'o', name: 'Ordered Items' }])).toBeNull()
+    expect(categoryFor('srm', true, [])).toBeNull()
+  })
+
+  it('matches on the word, so a rename that keeps the word keeps working', () => {
+    expect(categoryFor('srm', true, [{ id: 'x', name: 'Ordered / PO items' }])).toBe('x')
+  })
+})
+
+describe('isServiceScope — what never takes a delivery', () => {
+  it('catches the IN4 scopes that are fees rather than things', () => {
+    expect(isServiceScope('Raj Uphaar - Professional Consultancy')).toBe(true)
+    expect(isServiceScope('SRAH - Professional Consultancy')).toBe(true)
+    expect(isServiceScope('New Guest House - Infra Work - Design')).toBe(true)
+    expect(isServiceScope('Sheth House - Design')).toBe(true)
+    expect(isServiceScope('P2 Row Houses - Design')).toBe(true)
+  })
+
+  it('leaves the scopes material actually goes to', () => {
+    expect(isServiceScope('Raj Uphaar - Execution')).toBe(false)
+    expect(isServiceScope('Staff Facilities Block - Execution')).toBe(false)
+    expect(isServiceScope('RU Infra Work')).toBe(false)
+    expect(isServiceScope('NGH B')).toBe(false)
+    expect(isServiceScope('Warehouse - Execution')).toBe(false)
+    expect(isServiceScope('New Guest House - Common Expenses')).toBe(false)
+    expect(isServiceScope('Raj Uphaar - Interior Scope')).toBe(false)
+  })
+
+  it('does not fire on a word that merely contains one of them', () => {
+    // "Designation", "Redesigned Block" — a substring is not a scope.
+    expect(isServiceScope('Designation Block')).toBe(false)
+    expect(isServiceScope('Designer Tiles Store')).toBe(false)
+  })
+
+  it('treats nothing as nothing', () => {
+    expect(isServiceScope(null)).toBe(false)
+    expect(isServiceScope(undefined)).toBe(false)
+    expect(isServiceScope('')).toBe(false)
   })
 })

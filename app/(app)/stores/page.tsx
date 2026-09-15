@@ -1,6 +1,8 @@
 import Link from 'next/link'
+import { ArrowDownToLine, ArrowUpFromLine } from 'lucide-react'
 import { loadCounts, loadEntries, loadItems, loadLists, storableLocations } from '@/lib/stores/queries'
-import { Tile, Section, Empty, Scroller, th, td, tdNum, StageChip, RegisterChip, When } from './ui'
+import { Tile, StageChip, RegisterChip } from './ui'
+import { formatDate, formatNumber } from '@/lib/utils'
 import { fmtQty, RETURNABLES_ON } from '@/lib/stores/core'
 
 export const dynamic = 'force-dynamic'
@@ -11,7 +13,7 @@ export const dynamic = 'force-dynamic'
  */
 export default async function StoresHome() {
   const [counts, recent, lists, items] = await Promise.all([
-    loadCounts(), loadEntries({ limit: 12 }), loadLists(), loadItems(),
+    loadCounts(), loadEntries({ limit: 40 }), loadLists(), loadItems(),
   ])
 
   const places = storableLocations(lists).length
@@ -52,62 +54,30 @@ export default async function StoresHome() {
         </div>
       )}
 
-      <Section
-        title="The gate, most recent first"
-        note="Every vehicle in and every issue out, across all projects"
-        right={
-          <Link href="/stores/gate" className="text-[12.5px] font-semibold text-indigo-700 hover:underline">
-            Open the register →
-          </Link>
-        }
-      >
-        {recent.length === 0 ? (
-          <Empty
-            title="Nothing has been through the gate yet"
-            hint="The first entry is Security recording a vehicle. Everything else follows from it."
-            action={
-              <Link href="/stores/gate" className="inline-flex items-center rounded-lg bg-indigo-700 px-3.5 py-2 text-[13px] font-semibold text-white hover:bg-indigo-800 min-h-[44px]">
-                Record a vehicle
-              </Link>
-            }
-          />
-        ) : (
-          <Scroller min={820}>
-            <table className="w-full border-collapse">
-              <thead>
-                <tr>
-                  <th className={th}>Number</th>
-                  <th className={th}>Register</th>
-                  <th className={th}>Party</th>
-                  <th className={th}>Vehicle</th>
-                  <th className={th}>Project</th>
-                  <th className={`${th} text-right`}>Lines</th>
-                  <th className={th}>Stage</th>
-                  <th className={th}>When</th>
-                </tr>
-              </thead>
-              <tbody>
-                {recent.map(e => (
-                  <tr key={e.id} className={e.stage === 'void' ? 'opacity-50' : ''}>
-                    <td className={td}>
-                      <Link href={`/stores/gate/${e.id}`} className="font-mono text-[12.5px] font-semibold text-indigo-700 hover:underline">
-                        {e.no}
-                      </Link>
-                    </td>
-                    <td className={td}><RegisterChip register={e.register} /></td>
-                    <td className={td}>{e.partyName ?? <span className="text-gray-400">—</span>}</td>
-                    <td className={`${td} font-mono text-[12px]`}>{e.vehicleNo ?? <span className="text-gray-400">—</span>}</td>
-                    <td className={td}>{e.projectName ?? <span className="text-gray-400">not set</span>}</td>
-                    <td className={tdNum}>{e.lineCount ? `${e.lineCount} · ${fmtQty(e.totalQty)}` : '—'}</td>
-                    <td className={td}><StageChip stage={e.stage} /></td>
-                    <td className={td}><When at={e.entryAt} /></td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </Scroller>
-        )}
-      </Section>
+      {/* In on one side, out on the other.
+          One table held both, interleaved, with the direction buried in a
+          prefix on the number and a chip three columns away — so "what came in
+          this week" could only be answered by reading every row. Two lists
+          answer it by looking. They also fit without a sideways scroll, which
+          the eight-column table never did on a laptop. */}
+      <div className="grid gap-4 lg:grid-cols-2">
+        <Flow
+          direction="in"
+          rows={recent.filter(e => e.direction === 'in')}
+          title="Came in"
+          note="Vehicles at the gate, newest first"
+          empty="Nothing has come in yet"
+          emptyHint="The first entry is Security recording a vehicle."
+        />
+        <Flow
+          direction="out"
+          rows={recent.filter(e => e.direction === 'out')}
+          title="Went out"
+          note="Issued to a project or handed back"
+          empty="Nothing has gone out yet"
+          emptyHint="Material leaves on an approved request."
+        />
+      </div>
 
       <div className="rounded-lg border border-gray-200 bg-gray-50/60 p-4">
         <p className="text-[12.5px] font-bold text-gray-800">What is not built yet</p>
@@ -119,5 +89,102 @@ export default async function StoresHome() {
         </ul>
       </div>
     </div>
+  )
+}
+
+/**
+ * One direction's recent movements, as rows rather than a table.
+ *
+ * A row is two lines: what it is on top, who and where underneath. Eight
+ * columns of which three were usually "—" is how the old table filled a
+ * laptop's width to say very little; this says the same in half the space and
+ * never scrolls sideways, so it reads the same on a phone.
+ */
+function Flow({
+  direction, rows, title, note, empty, emptyHint,
+}: {
+  direction: 'in' | 'out'
+  rows: Awaited<ReturnType<typeof loadEntries>>
+  title: string
+  note: string
+  empty: string
+  emptyHint: string
+}) {
+  const isIn = direction === 'in'
+  const shown = rows.slice(0, 8)
+  return (
+    <section className="rounded-xl border border-gray-200 bg-white overflow-hidden">
+      <header className={`flex items-center gap-2.5 border-b px-4 py-3 ${
+        isIn ? 'border-emerald-100 bg-emerald-50/60' : 'border-amber-100 bg-amber-50/60'}`}>
+        <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${
+          isIn ? 'bg-emerald-600' : 'bg-amber-600'} text-white`}>
+          {isIn ? <ArrowDownToLine className="h-4 w-4" strokeWidth={2.2} />
+                : <ArrowUpFromLine className="h-4 w-4" strokeWidth={2.2} />}
+        </span>
+        <div className="min-w-0">
+          <h3 className="text-[14px] font-bold text-gray-900 leading-tight">{title}</h3>
+          <p className="text-[11.5px] text-gray-500">{note}</p>
+        </div>
+        <span className="ml-auto text-[11.5px] font-semibold text-gray-400 tabular-nums">
+          {rows.length > shown.length ? `${shown.length} of ${formatNumber(rows.length, 0)}` : null}
+        </span>
+      </header>
+
+      {shown.length === 0 ? (
+        <p className="px-4 py-6 text-[13px] text-gray-500">
+          <span className="font-semibold text-gray-700">{empty}.</span> {emptyHint}
+        </p>
+      ) : (
+        <ul className="divide-y divide-gray-100">
+          {shown.map(e => (
+            <li key={e.id} className={e.stage === 'void' ? 'opacity-50' : ''}>
+              <Link
+                href={`/stores/gate/${e.id}`}
+                className="block px-4 py-2.5 hover:bg-gray-50 min-h-[44px]"
+              >
+                {/* Each side leads with the thing that side is about. Coming
+                    in, that is who brought it. Going out, it is where it went
+                    — an issue from our own stock has no supplier at all, so
+                    leading with the party would print "—" on most rows. */}
+                <div className="flex items-baseline gap-2">
+                  <span className="font-mono text-[12.5px] font-semibold text-indigo-700 shrink-0">
+                    {e.no.replace(/^(In|Out):\s*/, '')}
+                  </span>
+                  <span className="truncate text-[13px] text-gray-900">
+                    {isIn
+                      ? e.partyName ?? <span className="text-gray-400">no name given</span>
+                      : e.projectName ?? <span className="text-gray-400">project not set</span>}
+                  </span>
+                  <span className="ml-auto shrink-0 text-[11.5px] text-gray-400 tabular-nums">
+                    {formatDate(e.entryAt)}
+                  </span>
+                </div>
+                <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11.5px] text-gray-500">
+                  <RegisterChip register={e.register} />
+                  {isIn
+                    ? <span className={e.projectName ? '' : 'text-gray-400'}>
+                        {e.projectName ?? 'project not set yet'}
+                      </span>
+                    : e.partyName && <span>to {e.partyName}</span>}
+                  {e.lineCount > 0 && (
+                    <span className="tabular-nums">
+                      {formatNumber(e.lineCount, 0)} {e.lineCount === 1 ? 'item' : 'items'} · {fmtQty(e.totalQty)}
+                    </span>
+                  )}
+                  {e.stage !== 'complete' && <span className="ml-auto"><StageChip stage={e.stage} /></span>}
+                </div>
+              </Link>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      <Link
+        href={`/stores/gate?direction=${direction}`}
+        className="block border-t border-gray-100 bg-gray-50/60 px-4 py-2.5 text-[12.5px] font-semibold text-indigo-700 hover:bg-gray-100 min-h-[44px]"
+      >
+        {isIn ? 'Open the gate register →' : 'See everything issued out →'}
+      </Link>
+    </section>
   )
 }

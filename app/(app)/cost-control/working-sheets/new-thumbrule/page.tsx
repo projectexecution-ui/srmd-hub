@@ -29,7 +29,7 @@ export default async function NewWSThumbrulePage({
 
   const { data: projects } = await supabase
     .from('projects')
-    .select('id, code, name, built_up_sft')
+    .select('id, code, name, built_up_sft, parent_project_id')
     .not('cc_status', 'is', null)
     .order('code')
 
@@ -88,7 +88,7 @@ export default async function NewWSThumbrulePage({
       />
       <Card className="p-5">
         <NewWSThumbruleForm
-          projects={(projects ?? []).map(p => ({ id: p.id, code: p.code, name: p.name, built_up_sft: p.built_up_sft != null ? Number(p.built_up_sft) : null }))}
+          projects={(projects ?? []).map(p => ({ id: p.id, code: p.code, name: p.name, parent_project_id: p.parent_project_id, built_up_sft: p.built_up_sft != null ? Number(p.built_up_sft) : null }))}
           projectDisciplines={projectDisciplines}
           projectSubSkills={projectSubSkills}
           defaultProjectId={sp.project}

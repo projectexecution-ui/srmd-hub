@@ -1,15 +1,24 @@
 'use server'
 
 import { requirePermission } from '@/lib/auth'
-import { loadPoLines } from '@/lib/stores/queries'
+import { searchOrders, loadOrder } from '@/lib/stores/queries'
 
 /**
- * Look up one PO in the IN4 mirror, for the storekeeper's "Fill from IN4".
+ * The storekeeper's order picker, against the IN4 mirror.
  *
- * A thin server action rather than a route: the client needs it on demand and
- * it reads the mirror only, never IN4 itself.
+ * Server actions rather than a route: the client needs them on demand, and
+ * they read the mirror only, never IN4 itself.
+ *
+ * The search runs on the server on purpose. IN4 holds 1,451 purchase orders;
+ * shipping them to a phone to filter there would cost more than every other
+ * thing on the page put together.
  */
-export async function loadPoForEntry(poNo: string) {
+export async function searchOrdersForEntry(query: string, partyHint?: string | null) {
   await requirePermission('cost-control', 'view')
-  return loadPoLines(poNo)
+  return searchOrders(query, { partyHint })
+}
+
+export async function loadOrderForEntry(key: string) {
+  await requirePermission('cost-control', 'view')
+  return loadOrder(key)
 }

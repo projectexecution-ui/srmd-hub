@@ -8,8 +8,10 @@ import { Label } from '@/components/ui/label'
 import { Check, ChevronRight, Loader2, Pencil } from 'lucide-react'
 import { saveProjectDesk } from '@/app/actions/bills-desk'
 import type { DeskCoverage } from '@/lib/bills-booking/desks'
+import { GroupedOptions } from '@/components/ui/grouped-options'
+import { groupProjectRows } from '@/lib/projects'
 
-type Opt = { id: string; code?: string; name: string }
+type Opt = { id: string; code?: string; name: string; parent_project_id?: string | null }
 
 /** The worklist, on desktop as a table and on phone as cards — the same rows,
  *  the same order, the same edit. Kept collapsed: a row opens its two selects
@@ -98,7 +100,7 @@ function Editor({ r, projects, people, e }: {
           <select id={`p${r.subprojectId}`} value={e.pid} onChange={ev => e.setPid(ev.target.value)}
                   className={SEL} disabled={r.projectSource === 'in4'}>
             <option value="">— none, this building is not in CT Hub —</option>
-            {projects.map(p => <option key={p.id} value={p.id}>{p.code ? `${p.code} — ` : ''}{p.name}</option>)}
+            <GroupedOptions rows={groupProjectRows(projects)} showCode />
           </select>
           {r.projectSource === 'in4' && (
             <p className="mt-1 text-[11px] text-gray-500">IN4 maps this one, so it is not changed here.</p>

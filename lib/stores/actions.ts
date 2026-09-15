@@ -528,7 +528,7 @@ export async function confirmReceipt(input: {
 const FIELD_LABELS: Record<string, string> = {
   vehicle_no: 'Vehicle number', driver_name: 'Driver name', driver_mobile: 'Driver mobile',
   driver_licence: 'Driver licence', party_name: 'Party', remarks: 'Remarks',
-  handed_over_to: 'Handed over to', handed_over_party: 'Handed over party', po_wo_no: 'PO / WO number',
+  handed_over_to: 'Handed over to', handed_over_party: 'Handed over party', po_wo_no: 'Purchase order number',
 }
 
 /**

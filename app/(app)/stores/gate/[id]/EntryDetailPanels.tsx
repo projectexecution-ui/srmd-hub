@@ -7,7 +7,7 @@ import { fmtQty, RETURNABLES_ON } from '@/lib/stores/core'
 import { formatDateTime, formatINR } from '@/lib/utils'
 import { PenLine } from 'lucide-react'
 import type { EntryDetail, Signature } from '@/lib/stores/queries'
-import { Field, inputClass, Btn, Notice, StageChip, RegisterChip, Scroller, th, td, tdNum } from '../../ui'
+import { Field, inputClass, Btn, Notice, StageChip, RegisterChip, Scroller, th, thNum, td, tdNum } from '../../ui'
 
 /** The fields a correction may touch. Anything that would change what the
  *  ledger says — quantity, rate, the item itself — is deliberately not here:
@@ -18,7 +18,7 @@ const CORRECTABLE = [
   { field: 'driver_mobile', label: 'Driver mobile' },
   { field: 'driver_licence', label: 'Driver licence' },
   { field: 'party_name', label: 'Party' },
-  { field: 'po_wo_no', label: 'PO / WO number' },
+  { field: 'po_wo_no', label: 'Purchase order number' },
   { field: 'handed_over_to', label: 'Handed over to' },
   { field: 'remarks', label: 'Remarks' },
 ] as const
@@ -56,7 +56,7 @@ export function EntryDetailPanels({
           <Cell label="Mobile" value={entry.driverMobile} mono />
           <Cell label="Licence" value={entry.driverLicence} mono />
           <Cell label="Project" value={entry.projectName} />
-          <Cell label="PO / WO" value={entry.poWoNo} mono />
+          <Cell label="Purchase order" value={entry.poWoNo} mono />
           <Cell label="Put away at" value={entry.locationName} />
           <Cell label="Security" value={entry.securityBy} />
           <Cell label="SRM Incharge" value={entry.inchargeName} />
@@ -91,9 +91,9 @@ export function EntryDetailPanels({
                 <tr>
                   <th className={th}>Item</th>
                   <th className={th}>Unit</th>
-                  <th className={`${th} text-right`}>Qty</th>
-                  <th className={`${th} text-right`}>Rate</th>
-                  <th className={`${th} text-right`}>Amount</th>
+                  <th className={thNum}>Qty</th>
+                  <th className={thNum}>Rate</th>
+                  <th className={thNum}>Amount</th>
                   {RETURNABLES_ON && <th className={th}>Returnable</th>}
                 </tr>
               </thead>

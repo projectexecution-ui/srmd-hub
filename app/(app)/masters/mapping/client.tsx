@@ -6,8 +6,10 @@ import { QueryError } from '@/components/ui/query-error'
 import { CheckCircle2, CircleDashed, Ban, Search } from 'lucide-react'
 import type { AliasSource } from '@/lib/aliases'
 import { setAlias } from './actions'
+import { GroupedOptions } from '@/components/ui/grouped-options'
+import { groupProjectRows } from '@/lib/projects'
 
-export interface ProjectOption { id: string; code: string; name: string }
+export interface ProjectOption { id: string; code: string; name: string; parent_project_id?: string | null }
 export interface MappingRow {
   source: AliasSource
   alias: string
@@ -124,7 +126,7 @@ function Picker({ r, projects, disabled, readOnly, onChange }: { r: MappingRow; 
       <option value="">— not decided —</option>
       <option value={NOT_OURS}>Not ours (keep unattributed)</option>
       <optgroup label="Our projects">
-        {projects.map(p => <option key={p.id} value={p.id}>{p.code} · {p.name}</option>)}
+        <GroupedOptions rows={groupProjectRows(projects)} showCode />
       </optgroup>
     </select>
   )

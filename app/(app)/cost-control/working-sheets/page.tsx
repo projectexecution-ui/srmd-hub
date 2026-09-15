@@ -13,6 +13,8 @@ import { DeadlineBadge } from '@/components/cost-control/DeadlineBadge'
 import { FileText, Plus, FileSpreadsheet, Ruler, GitBranch } from 'lucide-react'
 import { formatINR, formatDate } from '@/lib/utils'
 import { getCcSettings } from '@/lib/cost-control/settings'
+import { GroupedOptions } from '@/components/ui/grouped-options'
+import { groupProjectRows } from '@/lib/projects'
 
 export const dynamic = 'force-dynamic'
 
@@ -139,7 +141,7 @@ export default async function WorkingSheetsPage({
 
   const [wsRes, projectsRes, profilesRes] = await Promise.all([
     q,
-    supabase.from('projects').select('id, code, name').not('cc_status', 'is', null).order('code'),
+    supabase.from('projects').select('id, code, name, parent_project_id').not('cc_status', 'is', null).order('code'),
     supabase.from('profiles').select('id, full_name, name').eq('is_active', true),
   ])
 
@@ -382,7 +384,7 @@ export default async function WorkingSheetsPage({
             className="h-8 rounded-xl border border-gray-300 bg-white px-2 text-xs text-gray-700"
           >
             <option value="">All projects</option>
-            {projects.map(p => <option key={p.id} value={p.id}>{p.code}</option>)}
+            <GroupedOptions rows={groupProjectRows(projects)} showCode />
           </select>
           {isManagement && (
             <select

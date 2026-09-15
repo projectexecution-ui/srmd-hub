@@ -4,7 +4,7 @@ import { loadEntries, loadRequests, loadReturnables, loadLists, locationLabel } 
 import { fmtQty, RETURNABLES_ON } from '@/lib/stores/core'
 import { formatDate, formatDateTime, formatINR } from '@/lib/utils'
 import {
-  Empty, Scroller, th, td, tdNum, StageChip, RegisterChip, StatusChip, When,
+  Empty, Scroller, th, thNum, td, tdNum, StageChip, RegisterChip, StatusChip, When,
 } from '@/app/(app)/stores/ui'
 
 /**
@@ -78,9 +78,9 @@ function InPanel({ rows }: { rows: Awaited<ReturnType<typeof loadEntries>> }) {
             <th className={th}>Register</th>
             <th className={th}>Party</th>
             <th className={th}>Vehicle</th>
-            <th className={th}>PO / WO</th>
+            <th className={th}>Purchase order</th>
             <th className={th}>Put away at</th>
-            <th className={`${th} text-right`}>Lines</th>
+            <th className={thNum}>Lines</th>
             <th className={th}>Stage</th>
             <th className={th}>When</th>
           </tr>
@@ -124,8 +124,8 @@ function OutPanel({ rows }: { rows: Awaited<ReturnType<typeof loadEntries>> }) {
             <th className={th}>Number</th>
             <th className={th}>Out of</th>
             <th className={th}>Handed to</th>
-            <th className={`${th} text-right`}>Lines</th>
-            <th className={`${th} text-right`}>Qty</th>
+            <th className={thNum}>Lines</th>
+            <th className={thNum}>Qty</th>
             <th className={th}>When</th>
           </tr>
         </thead>
@@ -159,9 +159,9 @@ function ReturnPanel({ rows }: { rows: Awaited<ReturnType<typeof loadReturnables
           <tr>
             <th className={th}>Item</th>
             <th className={th}>Owed to</th>
-            <th className={`${th} text-right`}>Out</th>
-            <th className={`${th} text-right`}>Back</th>
-            <th className={`${th} text-right`}>Still out</th>
+            <th className={thNum}>Out</th>
+            <th className={thNum}>Back</th>
+            <th className={thNum}>Still out</th>
             <th className={th}>Since</th>
           </tr>
         </thead>

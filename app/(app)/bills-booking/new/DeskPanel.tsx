@@ -7,6 +7,8 @@ import { Button } from '@/components/ui/button'
 import { Check, Loader2, MapPin, Pencil } from 'lucide-react'
 import { saveProjectDesk } from '@/app/actions/bills-desk'
 import type { Booking, DeskRow, Person } from '@/lib/bills-booking/booking'
+import { GroupedOptions } from '@/components/ui/grouped-options'
+import { groupProjectRows } from '@/lib/projects'
 
 /** Where this bill books — shown as facts, and fixable on the spot.
  *
@@ -23,7 +25,7 @@ import type { Booking, DeskRow, Person } from '@/lib/bills-booking/booking'
 export function DeskPanel({ booking, gaps, projects, people, canAdmin, onSaved }: {
   booking: Booking
   gaps: string[]
-  projects: Array<{ id: string; code?: string; name: string }>
+  projects: Array<{ id: string; code?: string; name: string; parent_project_id?: string | null }>
   people: Person[]
   canAdmin: boolean
   onSaved: (desk: DeskRow) => void
@@ -117,7 +119,7 @@ export function DeskPanel({ booking, gaps, projects, people, canAdmin, onSaved }
               <select id="dp" value={pid} onChange={e => setPid(e.target.value)} className={sel}
                       disabled={booking.projectSource === 'in4'}>
                 <option value="">— none, this building is not in CT Hub —</option>
-                {projects.map(p => <option key={p.id} value={p.id}>{p.code ? `${p.code} — ` : ''}{p.name}</option>)}
+                <GroupedOptions rows={groupProjectRows(projects)} showCode />
               </select>
               {booking.projectSource === 'in4' && (
                 <p className="mt-1 text-[11px] text-gray-500">IN4 maps this one already, so it is not changed here.</p>

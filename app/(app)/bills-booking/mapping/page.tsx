@@ -34,7 +34,7 @@ export default async function DesksPage() {
   }
 
   const { data: projects } = await supabase
-    .from('projects').select('id, code, name').is('archived_at', null).order('code')
+    .from('projects').select('id, code, name, parent_project_id').is('archived_at', null).order('code')
   const { data: people } = await supabase
     .from('profiles').select('id, full_name, name, email').eq('is_active', true).order('full_name')
 
@@ -71,7 +71,7 @@ export default async function DesksPage() {
 
       <DeskRows
         rows={rows}
-        projects={(projects ?? []).map(p => ({ id: p.id as string, code: (p.code as string) ?? '', name: p.name as string }))}
+        projects={(projects ?? []).map(p => ({ id: p.id as string, code: (p.code as string) ?? '', name: p.name as string, parent_project_id: p.parent_project_id as string | null }))}
         people={(people ?? []).map(p => ({
           id: p.id as string,
           name: ((p.full_name as string | null)?.trim() || (p.name as string | null)?.trim() || (p.email as string | null) || 'Unnamed user'),

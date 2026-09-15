@@ -5,8 +5,10 @@ import {
   type ReturnableLine, type ReturnableRow, type Register, type Stage,
 } from './core'
 import type { RegisterSpec, RegisterFilter, RegisterRow } from './registers'
-import { groupProjects, type ProjectOpt } from './core'
+import { groupProjects, isServiceScope, type ProjectOpt } from './core'
+import { loadAliasMap, resolveAlias } from '@/lib/aliases'
 export type { ProjectOpt }
+
 
 /**
  * Reads for the Stores section. SELECT only — every write lives in actions.ts
@@ -141,6 +143,7 @@ export async function loadStock(asOn?: string): Promise<StockRow[]> {
 export async function loadEntries(opts: {
   projectId?: string | null
   stage?: Stage | null
+  direction?: 'in' | 'out' | null
   limit?: number
 } = {}): Promise<EntryRow[]> {
   const supabase = await createClient()
@@ -157,6 +160,7 @@ export async function loadEntries(opts: {
 
   if (opts.projectId) q = q.eq('project_id', opts.projectId)
   if (opts.stage) q = q.eq('stage', opts.stage)
+  if (opts.direction) q = q.eq('direction', opts.direction)
 
   const { data } = await q
   const lists = await loadLists()
@@ -480,7 +484,186 @@ export async function loadRecentParties(limit = 6): Promise<string[]> {
   return [...count.entries()].sort((a, b) => b[1] - a[1]).slice(0, limit).map(([n]) => n)
 }
 
-/** IN4's PO lines for one PO number — what was ordered and how much has landed
+/* ── Purchase orders ────────────────────────────────────────────────────── */
+
+/**
+ * IN4 keys its party list by KIND AND ID TOGETHER: 423 contractors and 180
+ * suppliers, and every one of the 180 supplier ids is also a contractor id.
+ * Looking one up by id alone returns two rows where one is expected, so the
+ * lookup errored and the supplier name came back null — on all 1,451 orders,
+ * since the first day this screen existed. Never drop the kind.
+ */
+const SUPPLIER = 'supplier'
+
+type Sb = Awaited<ReturnType<typeof createClient>>
+
+async function partyName(supabase: Sb, kind: string, id: number | null): Promise<string | null> {
+  if (id == null) return null
+  const { data } = await supabase
+    .from('in4_parties').select('name').eq('kind', kind).eq('id', id).maybeSingle()
+  return ((data as { name?: string } | null)?.name as string | null) ?? null
+}
+
+async function partyNames(supabase: Sb, kind: string, ids: number[]): Promise<Map<number, string>> {
+  if (ids.length === 0) return new Map()
+  const { data } = await supabase
+    .from('in4_parties').select('id, name').eq('kind', kind).in('id', ids)
+  return new Map((data ?? []).map(r => [r.id as number, (r.name as string) ?? '']))
+}
+
+/** One row in the storekeeper's order picker. */
+export interface OrderOption {
+  /** The IN4 po_id, as a string. */
+  key: string
+  no: string
+  party: string | null
+  /** IN4's own project name, not a hub project. */
+  projectName: string | null
+  date: string | null
+  value: number | null
+  /** Something still to come on it. */
+  open: boolean
+  /** Lines not yet fully received. */
+  linesDue: number
+  /** This order's supplier is the name Security wrote at the gate. */
+  fromGateParty: boolean
+}
+
+/**
+ * Search the purchase orders for the picker.
+ *
+ * PURCHASE ORDERS ONLY. Work orders were here briefly because the field was
+ * labelled "PO / WO", and Aksha took them out again on 15 Sep 2026: "yes
+ * remove WO completely - only PO for this section". He is right — a work
+ * order is a contract for labour, its BOQ lines carry a description and a
+ * uom but never a material id, so it could never fill an item line; and 410
+ * of the 1,616 approved ones were consultancy and design fees that no lorry
+ * ever arrives against. Every purchase order, by contrast, is Material or
+ * Asset — something that physically turns up.
+ *
+ * The serial is what people say out loud — "PO ninety-four" — so a bare
+ * number matches anywhere in the number, tail included.
+ *
+ * Searching looks at EVERY order whatever its status: 180 of the 1,451 are
+ * draft, cancelled or terminated, and hiding those is why an order somebody
+ * was holding in their hand could not be found. With no query at all the list
+ * is the 89 that are open, because that is the honest answer to "what could
+ * be arriving now".
+ */
+export async function searchOrders(
+  query: string,
+  opts: { partyHint?: string | null; limit?: number } = {},
+): Promise<OrderOption[]> {
+  const supabase = await createClient()
+  const q = query.trim()
+  const limit = opts.limit ?? 40
+
+  // Approved orders only. Aksha, 15 Sep 2026: "Dont show Draft and unapporved
+  // one" — 180 of the 1,451 are draft, cancelled, terminated or mid-approval,
+  // and an order nobody has approved is not something to book material against.
+  const APPROVED = 'Approved'
+
+  // A storekeeper says the shop's name far more readily than the order number,
+  // so the name is searched too. Two queries rather than one PostgREST `.or()`
+  // string: the query is typed by a person and would have to be escaped into
+  // that filter syntax, and a comma in a shop's name would quietly break it.
+  const supplierIds = q ? await supplierIdsMatching(supabase, q) : []
+
+  const base = () => supabase
+    .from('in4_purchase_orders')
+    .select('po_id, po_no, po_dt, supplier_id, project_id, po_value, status, grn_status')
+    .eq('status', APPROVED)
+
+  let rowsRaw: Array<Record<string, unknown>> = []
+  if (q) {
+    const [byNo, byParty] = await Promise.all([
+      base().ilike('po_no', `%${q}%`).order('po_dt', { ascending: false }).limit(limit),
+      supplierIds.length
+        ? base().in('supplier_id', supplierIds).order('po_dt', { ascending: false }).limit(limit)
+        : Promise.resolve({ data: [] as Array<Record<string, unknown>> }),
+    ])
+    const seen = new Set<number>()
+    for (const r of [...(byNo.data ?? []), ...(byParty.data ?? [])]) {
+      const id = r.po_id as number
+      if (!seen.has(id)) { seen.add(id); rowsRaw.push(r) }
+    }
+  } else {
+    // With no query the list IS the answer — all 89 open orders, not the first
+    // 40 of them, because a storekeeper scrolling to the end of a capped list
+    // has no way to know the one they want was cut off.
+    const { data } = await base()
+      .in('grn_status', ['No', 'Partial'])
+      .order('po_dt', { ascending: false })
+      .limit(200)
+    rowsRaw = (data ?? []) as Array<Record<string, unknown>>
+  }
+
+  const projectIds = [...new Set(rowsRaw.map(p => p.project_id as number).filter(Boolean))]
+  const [suppliers, { data: projects }] = await Promise.all([
+    partyNames(supabase, SUPPLIER, [...new Set(rowsRaw.map(p => p.supplier_id as number).filter(Boolean))]),
+    projectIds.length
+      ? supabase.from('in4_projects').select('id, name').in('id', projectIds)
+      : Promise.resolve({ data: [] as Array<{ id: number; name: string }> }),
+  ])
+  const projectById = new Map((projects ?? []).map(r => [r.id as number, (r.name as string) ?? '']))
+
+  // How many lines are still due, in one query rather than one per order.
+  const poIds = rowsRaw.map(p => p.po_id as number)
+  const dueByPo = new Map<number, number>()
+  if (poIds.length) {
+    const { data: items } = await supabase
+      .from('in4_po_items').select('po_id, base_po_qty, grn_qty').in('po_id', poIds)
+    for (const i of items ?? []) {
+      if (num(i.grn_qty) < num(i.base_po_qty)) {
+        const pid = i.po_id as number
+        dueByPo.set(pid, (dueByPo.get(pid) ?? 0) + 1)
+      }
+    }
+  }
+
+  const hint = normName(opts.partyHint ?? '')
+  const rows: OrderOption[] = rowsRaw.map(p => {
+    const party = suppliers.get(p.supplier_id as number) ?? null
+    return {
+      key: String(p.po_id),
+      no: (p.po_no as string) ?? '',
+      party,
+      projectName: projectById.get(p.project_id as number) ?? null,
+      date: (p.po_dt as string | null) ?? null,
+      value: p.po_value == null ? null : num(p.po_value),
+      open: p.grn_status === 'No' || p.grn_status === 'Partial',
+      linesDue: dueByPo.get(p.po_id as number) ?? 0,
+      // Security already wrote down who turned up. Where that name matches a
+      // supplier, their orders are almost certainly the ones being looked for,
+      // so they go to the top rather than being hunted for.
+      fromGateParty: !!hint && !!party && normName(party).includes(hint),
+    }
+  })
+
+  // Three tiers: this delivery's own supplier, then anything else still open,
+  // then what is already fully received. Newest first inside each.
+  const tier = (o: OrderOption) => (o.fromGateParty && o.open ? 0 : o.open ? 1 : 2)
+  return rows.sort((a, b) =>
+    tier(a) - tier(b) || (b.date ?? '').localeCompare(a.date ?? ''))
+}
+
+/** The same loose comparison the gate uses — two people spell a shop two ways. */
+function normName(s: string): string {
+  return s.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim()
+}
+
+/** Suppliers whose name contains what was typed. */
+async function supplierIdsMatching(supabase: Sb, q: string): Promise<number[]> {
+  const { data } = await supabase
+    .from('in4_parties')
+    .select('id')
+    .eq('kind', SUPPLIER)
+    .ilike('name', `%${q}%`)
+    .limit(60)
+  return (data ?? []).map(r => r.id as number)
+}
+
+/** IN4's lines for one order — what was ordered and how much has landed
  *  already, so the storekeeper ticks rather than types. */
 export interface PoLine {
   in4PoItemId: number
@@ -492,34 +675,69 @@ export interface PoLine {
   rate: number
 }
 
-export async function loadPoLines(poNo: string): Promise<{ poNo: string; project: string | null; supplier: string | null; lines: PoLine[] } | null> {
-  if (!poNo.trim()) return null
+export interface OrderDetail {
+  no: string
+  party: string | null
+  /** IN4's own project name. */
+  projectName: string | null
+  /** The hub project it resolves to, or null with the reason in projectWhy. */
+  projectId: string | null
+  projectWhy: string | null
+  date: string | null
+  value: number | null
+  /** IN4's status when it is not a plain approved order — a cancelled or
+   *  draft order can still be picked, but never silently. */
+  status: string | null
+  lines: PoLine[]
+  /** Why there are no lines, when there are none to have. */
+  linesWhy: string | null
+}
+
+/**
+ * Everything one order can tell the storekeeper.
+ *
+ * The hub project is resolved through project_aliases — exact match on the
+ * normalised name, never fuzzy (lib/aliases.ts). Where IN4's project has no
+ * alias, projectId stays null and projectWhy says so, because a wrong project
+ * booked silently is worse than a blank one: nobody goes looking for it.
+ */
+export async function loadOrder(key: string): Promise<OrderDetail | null> {
+  const id = Number(key)
+  if (!Number.isFinite(id)) return null
   const supabase = await createClient()
+
   const { data: po } = await supabase
     .from('in4_purchase_orders')
-    .select('po_id, po_no, project_id, supplier_id')
-    .ilike('po_no', poNo.trim())
-    .maybeSingle()
+    .select('po_id, po_no, po_dt, project_id, supplier_id, po_value, status, grn_status')
+    .eq('po_id', id).maybeSingle()
   if (!po) return null
 
-  const { data: items } = await supabase
-    .from('in4_po_items')
-    .select('item_id, material_id, uom_id, base_po_qty, grn_qty, net_rate')
-    .eq('po_id', po.po_id)
-  if (!items?.length) return { poNo: po.po_no as string, project: null, supplier: null, lines: [] }
-
-  const materialIds = [...new Set(items.map(i => i.material_id as number).filter(Boolean))]
-  const [{ data: mats }, { data: party }] = await Promise.all([
-    supabase.from('in4_materials').select('id, name, uom').in('id', materialIds),
-    po.supplier_id ? supabase.from('in4_parties').select('name').eq('id', po.supplier_id).maybeSingle() : Promise.resolve({ data: null }),
+  const [{ data: items }, party, { data: project }] = await Promise.all([
+    supabase.from('in4_po_items')
+      .select('item_id, material_id, uom_id, base_po_qty, grn_qty, net_rate')
+      .eq('po_id', po.po_id),
+    partyName(supabase, SUPPLIER, (po.supplier_id as number | null) ?? null),
+    po.project_id
+      ? supabase.from('in4_projects').select('name').eq('id', po.project_id).maybeSingle()
+      : Promise.resolve({ data: null }),
   ])
+
+  const materialIds = [...new Set((items ?? []).map(i => i.material_id as number).filter(Boolean))]
+  const { data: mats } = materialIds.length
+    ? await supabase.from('in4_materials').select('id, name, uom').in('id', materialIds)
+    : { data: [] as Array<{ id: number; name: string; uom: string }> }
   const byMat = new Map((mats ?? []).map(m => [m.id as number, m]))
+  const projectName = ((project as { name?: string } | null)?.name as string | null) ?? null
 
   return {
-    poNo: po.po_no as string,
-    project: null,
-    supplier: (party as { name?: string } | null)?.name ?? null,
-    lines: items.map(i => {
+    no: (po.po_no as string) ?? '',
+    party,
+    projectName,
+    ...(await resolveHubProject(supabase, projectName)),
+    date: (po.po_dt as string | null) ?? null,
+    value: po.po_value == null ? null : num(po.po_value),
+    status: po.status === 'Approved' ? null : (po.status as string | null),
+    lines: (items ?? []).map(i => {
       const m = byMat.get(i.material_id as number)
       return {
         in4PoItemId: i.item_id as number,
@@ -531,10 +749,32 @@ export async function loadPoLines(poNo: string): Promise<{ poNo: string; project
         rate: num(i.net_rate),
       }
     }),
+    linesWhy: (items ?? []).length === 0 ? 'This order has no item lines in IN4.' : null,
   }
 }
 
-/** The counts the landing tiles show — one query each, all in parallel. */
+/** IN4 project name → hub project, through the alias table only. */
+async function resolveHubProject(
+  supabase: Sb,
+  projectName: string | null,
+): Promise<{ projectId: string | null; projectWhy: string | null }> {
+  if (!projectName) return { projectId: null, projectWhy: 'The order names no project in IN4.' }
+  try {
+    const map = await loadAliasMap(supabase, 'in4')
+    const hit = resolveAlias(map, projectName)
+    if (hit.kind === 'project') return { projectId: hit.projectId, projectWhy: null }
+    if (hit.kind === 'not-ours') {
+      return { projectId: null, projectWhy: `IN4 calls this "${projectName}", which is marked as not ours.` }
+    }
+    return {
+      projectId: null,
+      projectWhy: `IN4 calls this "${projectName}" — no hub project is mapped to that name yet.`,
+    }
+  } catch {
+    return { projectId: null, projectWhy: `Could not check what "${projectName}" maps to.` }
+  }
+}
+
 export async function loadCounts(projectId?: string | null): Promise<{
   toComplete: number; pendingRequests: number; returnablesOut: number; itemsHeld: number
 }> {
@@ -640,6 +880,10 @@ export async function loadRegisterParties(): Promise<string[]> {
 /* ── Project picker ─────────────────────────────────────────────────────── */
 
 /** Every project, ordered and grouped for a picker. See groupProjects. */
+
+/* ── Project picker ─────────────────────────────────────────────────────── */
+
+/** Every project, ordered and grouped for a picker. See groupProjects. */
 export async function loadProjectOptions(): Promise<ProjectOpt[]> {
   const supabase = await createClient()
   const { data } = await supabase
@@ -647,9 +891,75 @@ export async function loadProjectOptions(): Promise<ProjectOpt[]> {
     .select('id, name, parent_project_id')
     .order('name')
 
-  return groupProjects((data ?? []).map(r => ({
-    id: r.id as string,
-    name: ((r.name as string) ?? '').trim(),
-    parentId: (r.parent_project_id as string | null) ?? null,
-  })))
+  // Consultancy and design lines are fees, not places material goes. All
+  // seven of them have taken zero deliveries since the section existed, and
+  // dropping them also removes the three identical "Sheth House - Design"
+  // rows that no dropdown could tell apart. Only Material In & Out hides
+  // them — the money modules still need them.
+  return groupProjects((data ?? [])
+    .filter(r => !isServiceScope(r.name as string | null))
+    .map(r => ({
+      id: r.id as string,
+      name: ((r.name as string) ?? '').trim(),
+      parentId: (r.parent_project_id as string | null) ?? null,
+    })))
+}
+
+/**
+ * The items this store has handled lately, newest first.
+ *
+ * Pinned to the top of the item picker. Most gate entries repeat last week's:
+ * the same shop brings the same cable to the same store. 659 items in
+ * alphabetical order buries that; ten rows at the top answers it.
+ */
+export async function loadRecentItemIds(limit = 10): Promise<string[]> {
+  const supabase = await createClient()
+  const { data } = await supabase
+    .from('mio_entry_lines')
+    .select('item_id, created_at')
+    .order('created_at', { ascending: false })
+    .limit(300)
+
+  const seen: string[] = []
+  for (const r of data ?? []) {
+    const id = r.item_id as string | null
+    if (id && !seen.includes(id)) seen.push(id)
+    if (seen.length >= limit) break
+  }
+  return seen
+}
+
+/**
+ * Where this store put things last, so the form can offer it rather than ask.
+ *
+ * Keyed by project, with a fallback for "wherever we last put anything". A
+ * storekeeper works one site and puts material in the same two places every
+ * week; making them answer that afresh every entry is asking them to retype
+ * what the register already knows.
+ *
+ * Only completed entries count — a gate row has no location yet, and a voided
+ * one is not a precedent.
+ */
+export async function loadLastLocations(): Promise<{
+  byProject: Record<string, string>
+  lastUsed: string | null
+}> {
+  const supabase = await createClient()
+  const { data } = await supabase
+    .from('mio_entries')
+    .select('project_id, location_id, entry_at')
+    .not('location_id', 'is', null)
+    .neq('stage', 'void')
+    .order('entry_at', { ascending: false })
+    .limit(200)
+
+  const byProject: Record<string, string> = {}
+  let lastUsed: string | null = null
+  for (const r of data ?? []) {
+    const loc = r.location_id as string
+    if (!lastUsed) lastUsed = loc
+    const pid = r.project_id as string | null
+    if (pid && !byProject[pid]) byProject[pid] = loc
+  }
+  return { byProject, lastUsed }
 }

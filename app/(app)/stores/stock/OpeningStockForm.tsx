@@ -1,9 +1,10 @@
 'use client'
 
 import { useRouter } from 'next/navigation'
-import { useState, useTransition } from 'react'
+import { useMemo, useState, useTransition } from 'react'
 import { setOpeningStock } from '@/lib/stores/actions'
 import { Field, inputClass, Btn, Notice, Empty } from '../ui'
+import { SearchableSelect } from '@/components/ui/searchable-select'
 
 export function OpeningStockForm({
   items, locations,
@@ -18,6 +19,11 @@ export function OpeningStockForm({
   const [qty, setQty] = useState('')
   const [rate, setRate] = useState('')
   const [result, setResult] = useState<{ ok: boolean; message: string } | null>(null)
+
+  const itemOptions = useMemo(
+    () => items.map(i => ({ id: i.id, label: i.name, hint: i.unit })),
+    [items],
+  )
 
   if (items.length === 0 || locations.length === 0) {
     return (
@@ -34,17 +40,17 @@ export function OpeningStockForm({
     <div className="rounded-xl border border-gray-200 bg-white p-4 max-w-2xl space-y-3">
       <div className="grid sm:grid-cols-2 gap-3">
         <Field label="Item" required>
-          <select
-            className={inputClass} value={itemId}
-            onChange={e => {
-              setItemId(e.target.value)
-              const it = items.find(i => i.id === e.target.value)
+          <SearchableSelect
+            value={itemId}
+            onChange={id => {
+              setItemId(id)
+              const it = items.find(i => i.id === id)
               if (it?.lastRate != null && rate === '') setRate(String(it.lastRate))
             }}
-          >
-            <option value="">Pick an item</option>
-            {items.map(i => <option key={i.id} value={i.id}>{i.name} ({i.unit})</option>)}
-          </select>
+            options={itemOptions}
+            placeholder="Type three letters"
+            emptyText="No item by that name — add it in Masters"
+          />
         </Field>
         <Field label="Where it is" required>
           <select className={inputClass} value={locationId} onChange={e => setLocationId(e.target.value)}>
