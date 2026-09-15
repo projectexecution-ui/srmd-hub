@@ -628,7 +628,7 @@ export async function voidEntry(entryId: string, reason: string): Promise<Result
 
 export async function saveListRow(input: {
   id?: string | null
-  kind: 'entity' | 'delivery_mode' | 'item_category' | 'discipline' | 'location'
+  kind: 'entity' | 'delivery_mode' | 'item_category' | 'discipline' | 'location' | 'unit'
   name: string
   code?: string | null
   parentId?: string | null
@@ -776,4 +776,44 @@ export async function recordPhotos(
   revalidatePath('/stores')
   revalidatePath(`/stores/gate/${entryId}`)
   return done(`${photos.length} photo${photos.length === 1 ? '' : 's'} saved.`, { count: photos.length })
+}
+
+/* ── Who works where ────────────────────────────────────────────────────── */
+
+/**
+ * Put somebody on a site, or take them off it.
+ *
+ * Aksha, 15 Sep 2026: "i will set that up later - as Eng are not in CT Hub yet
+ * - but give me the desk to assign them". This is the desk's two verbs.
+ */
+export async function assignStaff(
+  userId: string, projectId: string, role: 'engineer' | 'site_head',
+): Promise<Result> {
+  const profile = await me()
+  if (!userId || !projectId) return fail('Pick both a person and a project.')
+
+  const supabase = await createClient()
+  const { error } = await supabase
+    .from('mio_project_staff')
+    .upsert(
+      { user_id: userId, project_id: projectId, role, is_active: true, created_by: profile.id },
+      { onConflict: 'project_id,user_id' },
+    )
+  if (error) return fail(explain(error, 'assign them to that project'))
+
+  revalidatePath('/stores/masters')
+  return done('Added.')
+}
+
+export async function unassignStaff(id: string): Promise<Result> {
+  await me()
+  const supabase = await createClient()
+  // Soft — the assignment is history once a request has been raised under it,
+  // and a hard delete would make an old request look like it came from nowhere.
+  const { error } = await supabase
+    .from('mio_project_staff').update({ is_active: false }).eq('id', id)
+  if (error) return fail(explain(error, 'remove them from that project'))
+
+  revalidatePath('/stores/masters')
+  return done('Removed.')
 }

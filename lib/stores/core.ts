@@ -458,3 +458,67 @@ export function bestIssueLocation(
   }
   return best?.id ?? null
 }
+
+/* ── Whose stock is whose ───────────────────────────────────────────────── */
+
+/**
+ * Aksha, 15 Sep 2026: "per Eng sees thier own project stock only - but the
+ * storekeeper can see all stock of all projects of all storage location".
+ *
+ * So there are two kinds of reader, and it is not a permission level — it is a
+ * job. A storekeeper HOLDS the material for eleven sites; hiding ten of them
+ * would stop them doing the work. An engineer is asking for their own site and
+ * has no business browsing another project's shelves.
+ */
+export type StockScope =
+  | { kind: 'all' }
+  | { kind: 'projects'; projectIds: readonly string[] }
+
+/** Roles that hold material rather than ask for it. */
+const KEEPERS = ['admin', 'founder', 'head', 'store_manager', 'security']
+
+export function stockScopeFor(
+  role: string | null | undefined,
+  assignedProjectIds: readonly string[],
+): StockScope {
+  if (role && KEEPERS.includes(role)) return { kind: 'all' }
+  return { kind: 'projects', projectIds: [...new Set(assignedProjectIds)] }
+}
+
+/**
+ * Which storage places a scope may look at.
+ *
+ * Locations hang off a SITE (the parent row), and it is the site that carries
+ * the project — so a spot is visible when its site belongs to a project the
+ * reader is on. A site with no project at all is a shared warehouse: visible
+ * to the keepers, and to nobody who is scoped to their own sites, because it
+ * is not theirs.
+ */
+export function visibleLocationIds(
+  scope: StockScope,
+  locations: ReadonlyArray<{ id: string; parentId: string | null; projectId: string | null }>,
+): string[] {
+  if (scope.kind === 'all') return locations.map(l => l.id)
+  if (scope.projectIds.length === 0) return []
+
+  const mine = new Set(scope.projectIds)
+  const byId = new Map(locations.map(l => [l.id, l]))
+  const projectOf = (l: { parentId: string | null; projectId: string | null }): string | null =>
+    l.projectId ?? (l.parentId ? byId.get(l.parentId)?.projectId ?? null : null)
+
+  return locations.filter(l => {
+    const p = projectOf(l)
+    return p != null && mine.has(p)
+  }).map(l => l.id)
+}
+
+/**
+ * Why a scoped reader is seeing nothing — never a blank screen with no reason.
+ * Returns null when there is nothing to explain.
+ */
+export function emptyScopeReason(scope: StockScope, visibleCount: number): string | null {
+  if (scope.kind === 'all' || visibleCount > 0) return null
+  return scope.projectIds.length === 0
+    ? 'You are not on any project yet, so there is no stock to show. Ask Aksha to add you under Masters → Who works where.'
+    : 'None of your projects has a store of its own yet. Material for your site is held in a shared warehouse, which the storekeeper issues from.'
+}
