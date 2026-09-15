@@ -2,6 +2,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import { billLadder, woHistory, type CertMoney, type BillLadder, type WoHistory } from './calc'
 import { buildAbstractSheet, type AbstractSheet, type AbstractLine, type BoqLine } from './abstract'
 import { seedLines, pickRate, type MakerLine, type RatePick } from './maker'
+import { buildGrnSheet, advancePosition, type GrnSheet, type AdvancePosition } from './purchase'
 
 /** The live IN4 position behind one CT Hub bill.
  *
@@ -38,8 +39,14 @@ export interface BillCalc {
    *  only when there is no real certificate yet, and always labelled as an
    *  expectation rather than a fact. */
   expected: BillLadder | null
-  /** The measurement behind this bill, line by line, when IN4 holds one. */
+  /** The measurement behind this bill, line by line, when IN4 holds one.
+   *  Work orders only — a purchase order is measured by what arrived. */
   sheet: AbstractSheet | null
+  /** The goods received behind this bill: the purchase side of `sheet`. */
+  grn: GrnSheet | null
+  /** The advance on this order and how much of it has been worked off, when it
+   *  took one. 215 purchase orders have, ₹9.9 Cr between them. */
+  advance: AdvancePosition | null
 }
 
 const n = (v: unknown) => Number(v ?? 0)
@@ -140,6 +147,9 @@ export async function loadBillCalc(
     mineCert,
     expected,
     sheet,
+    // Both belong to the purchase side of the same questions.
+    grn: null,
+    advance: null,
   }
 }
 
@@ -154,13 +164,13 @@ export async function loadBillCalc(
  *      debit_note_adj  → other recoveries tax_deduction → deductions
  *      paid            → paid             outstanding   → outstanding
  *
- *  `kind = 'advance'` rows are excluded. An advance is not a bill — it is money
- *  paid ahead and recovered out of later bills, and counting the 244 of them as
- *  billed would show every PO that took one as spent twice.
+ *  `kind = 'advance'` rows are not bills and are kept out of the history — an
+ *  advance is paid on the terms of the order and recovered out of the bills
+ *  that follow, so counting the 244 of them as billed would show every order
+ *  that took one as spent twice. They come back as their own position instead.
  *
- *  There is no abstract sheet: a purchase order is measured by goods received,
- *  not by a BOQ, so `sheet` is null rather than something made to look like
- *  one. */
+ *  Instead of an abstract there is a GRN, because that is what IN4 raises the
+ *  certificate against. See purchase.ts. */
 async function loadPoCalc(
   sb: SupabaseClient,
   bill: { orderNo: string; billNo: string | null; claimed: number; abstractNo: string | null },
@@ -168,20 +178,41 @@ async function loadPoCalc(
   const { data: poRow } = await sb.from('in4_purchase_orders')
     .select('po_id, po_value').eq('po_no', bill.orderNo).maybeSingle()
   if (!poRow) return null
+  const poId = poRow.po_id as number
 
-  const { data: certData } = await sb.from('in4_supplier_certificates')
-    .select('certificate_id, certificate_no, certificate_date, certified_amt, landed_cost, retention, adv_recovery, debit_note_adj, tax_deduction, paid, outstanding')
-    .eq('po_id', poRow.po_id as number)
-    .eq('kind', 'payment')
+  const [{ data: certData }, { data: lineData }] = await Promise.all([
+    sb.from('in4_supplier_certificates')
+      .select('kind, certificate_id, certificate_no, certificate_date, certified_amt, landed_cost, retention, adv_recovery, debit_note_adj, tax_deduction, paid, outstanding')
+      .eq('po_id', poId),
+    // One PO's pay lines are tens of rows, and they carry three things the
+    // certificate does not: the supplier's own invoice number, a real status
+    // name, and the GRN each line came in on.
+    sb.from('in4_supplier_pay_lines')
+      .select('certificate_id, grn_id, material_id, invoice_no, status_name, landed_cost, certified_amt')
+      .eq('po_id', poId),
+  ])
 
-  const certs: CertMoney[] = ((certData ?? []) as Record<string, unknown>[]).map(r => ({
+  const lines = (lineData ?? []) as Record<string, unknown>[]
+  const invoiceOf = new Map<number, string>()
+  const statusOf = new Map<number, string>()
+  for (const l of lines) {
+    const id = n(l.certificate_id)
+    const inv = (l.invoice_no as string | null)?.trim()
+    if (inv && !invoiceOf.has(id)) invoiceOf.set(id, inv)
+    const st = (l.status_name as string | null)?.trim()
+    if (st && !statusOf.has(id)) statusOf.set(id, st)
+  }
+
+  const all = (certData ?? []) as Record<string, unknown>[]
+  const toCert = (r: Record<string, unknown>): CertMoney => ({
     certificateId: n(r.certificate_id),
     displayNo: (r.certificate_no as string | null) ?? null,
-    // A supplier certificate holds no separate invoice number of its own — the
-    // certificate number IS what the bill is referred to by.
-    invoiceNo: (r.certificate_no as string | null) ?? null,
+    // The supplier's own bill number, which is what the person holding the
+    // paper is looking at. The certificate table does not carry it; its lines
+    // do, on 4,482 of 4,494.
+    invoiceNo: invoiceOf.get(n(r.certificate_id)) ?? (r.certificate_no as string | null) ?? null,
     createdOn: (r.certificate_date as string | null) ?? null,
-    statusName: null,
+    statusName: statusOf.get(n(r.certificate_id)) ?? null,
     certified: n(r.certified_amt),
     gross: n(r.landed_cost),
     retention: n(r.retention),
@@ -190,7 +221,10 @@ async function loadPoCalc(
     deductions: n(r.tax_deduction),
     paid: n(r.paid),
     outstanding: n(r.outstanding),
-  }))
+  })
+
+  const isAdvance = (r: Record<string, unknown>) => (r.kind as string | null) === 'advance'
+  const certs = all.filter(r => !isAdvance(r)).map(toCert)
 
   // po_value is gross, like the certificates it is compared against: on a
   // fulfilled purchase order the supplier bills sum to it to the rupee.
@@ -200,7 +234,7 @@ async function loadPoCalc(
   const key = (s: string | null | undefined) => (s ?? '').trim().toLowerCase()
   const mineCert = certs.find(c =>
     (bill.abstractNo && key(c.displayNo) === key(bill.abstractNo)) ||
-    (bill.billNo && key(c.invoiceNo) === key(bill.billNo))) ?? null
+    (bill.billNo && (key(c.invoiceNo) === key(bill.billNo) || key(c.displayNo) === key(bill.billNo)))) ?? null
 
   let expected: BillLadder | null = null
   if (!mineCert && bill.claimed > 0) {
@@ -218,6 +252,21 @@ async function loadPoCalc(
     }
   }
 
+  // The advance, and how much of it this order has worked off.
+  const advance = advancePosition(
+    all.filter(isAdvance).map(r => ({ gross: n(r.landed_cost), paid: n(r.paid) })),
+    certs.reduce((s, c) => s + c.advanceRecovery, 0),
+    mineCert?.advanceRecovery ?? 0,
+  )
+
+  const grn = mineCert
+    ? await loadGrnSheet(sb, {
+        poId,
+        lines: lines.filter(l => n(l.certificate_id) === mineCert.certificateId),
+        landed: mineCert.gross,
+      }).catch(() => null)
+    : null
+
   return {
     orderNo: bill.orderNo,
     kind: 'PO',
@@ -227,7 +276,78 @@ async function loadPoCalc(
     mineCert,
     expected,
     sheet: null,
+    grn,
+    advance,
   }
+}
+
+/** The goods received behind one supplier bill — the purchase side's abstract.
+ *
+ *  Aksha, 15 Sep 2026: "Supplier Certificate is raised - pls check post GRN -
+ *  so instead of Abstract PO follows GRN." Exactly so, and it holds up: the
+ *  lines of a bill sum to that bill's landed cost on all 1,376 certificates.
+ *
+ *  Quantities come from the receipt, money from the pay line, and what was
+ *  ordered from the PO itself, so the sheet answers the same three questions
+ *  the abstract does — this bill, received to date, still to come. */
+async function loadGrnSheet(
+  sb: SupabaseClient,
+  opts: { poId: number; lines: Record<string, unknown>[]; landed: number },
+): Promise<GrnSheet | null> {
+  if (!opts.lines.length) return null
+
+  const [{ data: itemData }, { data: grnData }] = await Promise.all([
+    sb.from('in4_po_items')
+      .select('material_id, uom_id, base_po_qty, grn_qty, net_rate, material_value').eq('po_id', opts.poId),
+    sb.from('in4_grn_items')
+      .select('grn_id, material_id, received_qty, grn_material_cost, grn_no, grn_dt, delivery_challan_no').eq('po_id', opts.poId),
+  ])
+
+  const items = (itemData ?? []) as Record<string, unknown>[]
+  const grns = (grnData ?? []) as Record<string, unknown>[]
+
+  const matIds = [...new Set([
+    ...items.map(i => i.material_id), ...opts.lines.map(l => l.material_id),
+  ].filter((v): v is number => typeof v === 'number'))]
+  const uomIds = [...new Set(items.map(i => i.uom_id).filter((v): v is number => typeof v === 'number'))]
+
+  const [{ data: matData }, { data: uomData }] = await Promise.all([
+    matIds.length ? sb.from('in4_materials').select('id, name').in('id', matIds) : Promise.resolve({ data: [] }),
+    uomIds.length ? sb.from('in4_uoms').select('id, name').in('id', uomIds) : Promise.resolve({ data: [] }),
+  ])
+  const matName = new Map((matData ?? []).map(m => [m.id as number, (m.name as string | null) ?? '']))
+  const uomName = new Map((uomData ?? []).map(u => [u.id as number, (u.name as string | null) ?? '']))
+
+  return buildGrnSheet(
+    opts.lines.map(l => ({
+      grnId: (l.grn_id as number | null) ?? null,
+      materialId: (l.material_id as number | null) ?? null,
+      landed: n(l.landed_cost),
+      certified: n(l.certified_amt),
+    })),
+    grns.map(g => ({
+      grnId: (g.grn_id as number | null) ?? null,
+      materialId: (g.material_id as number | null) ?? null,
+      qty: n(g.received_qty),
+      cost: n(g.grn_material_cost),
+      no: (g.grn_no as string | null) ?? null,
+      on: (g.grn_dt as string | null) ?? null,
+      challanNo: (g.delivery_challan_no as string | null) ?? null,
+    })),
+    items.map(i => {
+      const id = (i.material_id as number | null) ?? null
+      return {
+        materialId: id,
+        material: (id != null ? matName.get(id) : '') || `Material ${id ?? '—'}`,
+        uom: (i.uom_id != null ? uomName.get(i.uom_id as number) : null) || null,
+        orderedQty: n(i.base_po_qty),
+        rate: n(i.net_rate),
+        orderedAmt: n(i.material_value),
+        receivedQty: n(i.grn_qty),
+      }
+    }),
+    opts.landed,
+  )
 }
 
 /* ── the abstract sheet ──────────────────────────────────────────────────── */

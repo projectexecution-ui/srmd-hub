@@ -32,6 +32,12 @@
  *    category    WO  the IN4 skill id on the order
  *                PO  the skill NAME off its latest bill: "12 (M) Finishes".
  *                    A purchase order carries no skill of its own.
+ *    scope       WO  ENGG_WORK_ORDER.WORK_DESCRIPTION
+ *                PO  its material lines, biggest first — see poScope() in
+ *                    purchase.ts.
+ *    sub-project WO  on the order
+ *                PO  on its lines; IN4 leaves the header's own empty on all
+ *                    1,450 of them.
  */
 
 export interface PickableOrder {
@@ -45,19 +51,23 @@ export interface PickableOrder {
    *  somebody is still choosing between several. */
   projectId: number | null
   /** IN4's sub-project — the key everything about where a bill books hangs off.
-   *  A work order names one outright. A purchase order does not: it is taken
-   *  from the PO's own lines, the one carrying the most value. */
+   *  A work order names it on the order. A purchase order names it on its LINES:
+   *  IN4 leaves PURCH_PURCHASE_ORDER.SUBPROJECT_ID empty on all 1,450 orders
+   *  and fills the fact table's own on every one of the 5,080 lines. So it is
+   *  IN4's own field either way — read from the line rather than the header. */
   subprojectId: number | null
-  /** How many sub-projects the order actually spans. 1 for every work order and
-   *  for 1,402 of 1,451 POs; the other 49 are split across two to four, and the
-   *  screen says so rather than booking them somewhere silently. */
-  subprojectCount: number
+  /** Every sub-project the order touches, biggest share of the value first.
+   *  One for every work order and for 1,402 of 1,451 POs; the other 49 span two
+   *  to four, and the screen offers the choice rather than booking silently. */
+  subprojectIds: number[]
   /** The IN4 skill id, when the order carries one. Work orders do. */
   categoryId: number | null
   /** The IN4 skill NAME, when that is all there is. Purchase orders. */
   categoryName: string | null
-  /** The scope in the engineer's words. Work orders carry one; purchase orders
-   *  have no equivalent field, so it is asked for instead of invented. */
+  /** What the order is for. A work order carries a written description; a
+   *  purchase order carries a material list, which is the same answer in the
+   *  purchasing department's words — every one of the 5,080 lines names a
+   *  material, a UOM, a quantity and a rate. Either way it is read, not typed. */
   workDescription: string | null
   /** The contractor on a WO, the supplier on a PO. */
   partyId: number | null

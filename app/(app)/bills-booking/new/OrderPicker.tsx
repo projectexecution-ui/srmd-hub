@@ -23,7 +23,10 @@ export type OrderKind = 'WO' | 'PO'
  *  would put "…/2026-27/9" from a WO next to "…/2026-27/9" from a PO.
  *
  *  The project is then a fact IN4 tells us, not a question we ask twice. */
-export function OrderPicker({ kind, onKind, wos, pos, picked, onPick, projectNames }: {
+export function OrderPicker({
+  kind, onKind, wos, pos, picked, onPick, projectNames,
+  subprojectNames, booksTo, onSubproject,
+}: {
   kind: OrderKind
   onKind: (k: OrderKind) => void
   wos: PickableOrder[]
@@ -33,6 +36,12 @@ export function OrderPicker({ kind, onKind, wos, pos, picked, onPick, projectNam
   /** IN4 project names, used only to say which building a match belongs to
    *  while somebody is still choosing between several. */
   projectNames: Map<number, string>
+  /** IN4 sub-project names, for the orders that span more than one. */
+  subprojectNames: Map<number, string>
+  /** The sub-project this bill will book to — the order's own, unless somebody
+   *  has picked a different one of its lines' sub-projects. */
+  booksTo: number | null
+  onSubproject?: (id: number) => void
 }) {
   const [q, setQ] = useState('')
   const list = kind === 'WO' ? wos : pos
@@ -77,14 +86,29 @@ export function OrderPicker({ kind, onKind, wos, pos, picked, onPick, projectNam
         </dl>
 
         {/* 49 of the 1,451 purchase orders buy for two to four sub-projects at
-            once. It books to the one carrying the most money, and says so —
-            finding that out later, from a bill that landed on the wrong desk,
-            is the version of this that wastes a morning. */}
-        {p.subprojectCount > 1 && (
-          <p className="mt-2.5 text-[11px] text-amber-800">
-            This {p.kind} buys for <b>{p.subprojectCount} sub-projects</b>. It books to the one carrying the most
-            value, shown below — move it if this bill belongs to another.
-          </p>
+            once. IN4 names the sub-project on each LINE, so the order genuinely
+            has several — it opens on the one carrying the most value and the
+            rest are offered, because the person holding the bill knows which
+            building it is for and a wrong desk costs a morning. */}
+        {p.subprojectIds.length > 1 && (
+          <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50/60 p-2.5">
+            <p className="text-[11px] text-amber-900">
+              This {p.kind} buys for <b>{p.subprojectIds.length} sub-projects</b>. It is booked to the one carrying
+              the most value — pick another if this bill is for that one.
+            </p>
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              {p.subprojectIds.map(sid => (
+                <button key={sid} type="button" onClick={() => onSubproject?.(sid)}
+                        aria-pressed={booksTo === sid}
+                        className={`min-h-[32px] rounded-full border px-2.5 text-[11px] font-semibold ${
+                          booksTo === sid
+                            ? 'border-indigo-600 bg-indigo-600 text-white'
+                            : 'border-amber-300 bg-white text-amber-900 hover:border-indigo-400'}`}>
+                  {subprojectNames.get(sid) ?? `Sub-project ${sid}`}
+                </button>
+              ))}
+            </div>
+          </div>
         )}
 
         {p.balance === 0 && (

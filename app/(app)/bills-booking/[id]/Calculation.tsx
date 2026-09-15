@@ -1,9 +1,10 @@
 import { Card } from '@/components/ui/card'
-import { Calculator, Receipt, Ruler } from 'lucide-react'
+import { Calculator, PackageCheck, Receipt, Ruler, Wallet } from 'lucide-react'
 import { formatINR, formatDate } from '@/lib/utils'
 import type { BillCalc } from '@/lib/bills-booking/load-calc'
 import type { BillLadder } from '@/lib/bills-booking/calc'
 import type { AbstractSheet } from '@/lib/bills-booking/abstract'
+import type { GrnSheet, AdvancePosition } from '@/lib/bills-booking/purchase'
 import { formatNumber } from '@/lib/utils'
 import { Particular } from './Particular'
 
@@ -71,7 +72,14 @@ export function Calculation({ calc, showIn4Sheet = true }: {
         </Card>
       )}
 
+      {calc.advance && <Advance a={calc.advance} />}
+
       {sheet && showIn4Sheet && <Sheet s={sheet} />}
+
+      {/* A purchase order is not measured against a BOQ — the supplier's
+          certificate is raised on what was received. So this stands where the
+          abstract stands, and answers the same three questions. */}
+      {calc.grn && <Received s={calc.grn} />}
 
       <Card className="p-4">
         <p className="mb-1 flex items-center gap-1.5 text-xs font-bold uppercase tracking-wide text-gray-400">
@@ -286,6 +294,173 @@ function Sheet({ s }: { s: AbstractSheet }) {
           ? <>These lines add up to {formatINR(s.thisBill)}, which is what IN4 certified for this bill.</>
           : <><b className="text-amber-800">The lines do not add up to the certified figure.</b> They total {formatINR(s.thisBill)};
               IN4 certified {formatINR(s.certified)} — a difference of {formatINR(Math.abs(s.outBy))}. Worth asking about
+              before this is approved.</>}
+      </p>
+    </Card>
+  )
+}
+/** The advance on this order, and how much of it has been worked off.
+ *
+ *  Aksha, 15 Sep 2026: "Advance are done as per terms." It is a contractual
+ *  position, not noise — and without it a bill whose payable collapses to
+ *  nothing reads as a mistake instead of a recovery. 215 purchase orders carry
+ *  one, ₹9.9 Cr between them, of which ₹8.48 Cr has already come back. */
+function Advance({ a }: { a: AdvancePosition }) {
+  return (
+    <Card className="p-4">
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+        <p className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wide text-gray-400">
+          <Wallet className="h-3.5 w-3.5" /> Advance on this order
+        </p>
+        <span className={`rounded-full border px-2 py-0.5 text-[10.5px] font-semibold ${
+          a.settled
+            ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+            : 'border-amber-200 bg-amber-50 text-amber-800'}`}>
+          {a.settled ? 'fully recovered' : `${formatINR(a.outstanding)} still to recover`}
+        </span>
+      </div>
+
+      <div className="grid grid-cols-2 gap-px overflow-hidden rounded-lg border border-gray-200 bg-gray-200 sm:grid-cols-4">
+        <Tile k="Advance taken" v={formatINR(a.taken)} s={a.count === 1 ? 'one certificate' : `${a.count} certificates`} />
+        <Tile k="Paid out" v={formatINR(a.paid)} />
+        <Tile k="Recovered so far" v={formatINR(a.recovered)} s="across every bill" />
+        <Tile k="Still to recover" v={formatINR(a.outstanding)} strong />
+      </div>
+
+      <p className="mt-3 text-xs text-gray-500">
+        {a.thisBill > 0
+          ? <>This bill takes back <b className="text-gray-800">{formatINR(a.thisBill)}</b> of it — the deduction in
+             the ladder above. An advance is paid on the order&apos;s own terms and recovered out of the bills that
+             follow, so it is never counted as billed against the order.</>
+          : <>Nothing is recovered on this bill. An advance is paid on the order&apos;s own terms and recovered out of
+             the bills that follow, so it is never counted as billed against the order.</>}
+      </p>
+    </Card>
+  )
+}
+
+/** What arrived, and what this bill is therefore for.
+ *
+ *  Aksha, 15 Sep 2026: "Supplier Certificate is raised - pls check post GRN -
+ *  so instead of Abstract PO follows GRN." This is the purchase side's abstract
+ *  sheet, and it holds up better than the contractor side's: the lines of a
+ *  bill sum to that bill's landed cost on all 1,376 supplier certificates.
+ *
+ *  Quantities come from the goods receipt, money from IN4's own pay line, and
+ *  what was ordered from the purchase order — so it answers the same three
+ *  questions the abstract does: this bill, received to date, still to come. */
+function Received({ s }: { s: GrnSheet }) {
+  const qty = (n: number) => formatNumber(n, n % 1 === 0 ? 0 : 2)
+  // Where IN4's bill line and its receipt line disagree on quantity, the
+  // receipt's own figure is context, never the bill's share.
+  const show = (r: { thisQty: number | null; receiptQty: number | null; uom: string | null }) =>
+    r.thisQty != null ? `${qty(r.thisQty)} ${r.uom ?? ''}`.trim()
+      : r.receiptQty != null ? `part of ${qty(r.receiptQty)} ${r.uom ?? ''}`.trim()
+        : 'not stated'
+  const challans = s.grns.map(g => g.challan).filter(Boolean)
+
+  return (
+    <Card className="p-4">
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+        <p className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wide text-gray-400">
+          <PackageCheck className="h-3.5 w-3.5" /> Goods received — what this bill is for
+        </p>
+        <span className="text-right font-mono text-[10.5px] text-gray-500">
+          {s.grns.length === 0
+            ? '—'
+            : s.grns.map(g => `${g.no ?? 'GRN'}${g.on ? ` · ${formatDate(g.on)}` : ''}`).join('  ·  ')}
+        </span>
+      </div>
+
+      <p className="mb-3 text-xs text-gray-500">
+        A purchase order is measured by what arrived, not by a measurement sheet — IN4 raises the supplier&apos;s
+        certificate against the goods receipt. {s.rows.length} {s.rows.length === 1 ? 'material' : 'materials'} on
+        this bill. <b>This bill</b> is what came in now; <b>received</b> is everything received against that material
+        so far; <b>balance</b> is what is still to come.
+        {challans.length > 0 && <> Challan {challans.join(', ')}.</>}
+      </p>
+
+      {/* Phone */}
+      <div className="space-y-2 md:hidden">
+        {s.rows.map((r, i) => (
+          <div key={r.materialId ?? `x${i}`}
+               className={`rounded-lg border p-3 ${r.overrun ? 'border-rose-200 bg-rose-50/40' : 'border-gray-200'}`}>
+            <div className="flex items-start justify-between gap-2">
+              <span className="min-w-0 flex-1 text-[13px]">{r.material}</span>
+              <span className="shrink-0 text-sm font-semibold tabular-nums">{formatINR(r.thisAmt)}</span>
+            </div>
+            <div className="mt-1 text-[11px] text-gray-500">
+              {show(r)}{r.rate > 0 ? ` @ ${formatINR(r.rate)}` : ''}
+              {r.offOrder && <span className="ml-1 text-amber-700">· not on the order</span>}
+            </div>
+            {!r.offOrder && (
+              <dl className="mt-2 grid grid-cols-3 gap-x-3 text-[11px]">
+                <Pair k="Ordered" v={`${qty(r.orderedQty)} ${r.uom ?? ''}`} />
+                <Pair k="Received" v={`${qty(r.receivedQty)} ${r.uom ?? ''}`} />
+                <Pair k="Balance" v={r.complete ? 'complete' : `${qty(r.balanceQty)} ${r.uom ?? ''}`} />
+              </dl>
+            )}
+          </div>
+        ))}
+      </div>
+
+      {/* Desktop */}
+      <div className="hidden overflow-x-auto rounded-lg border border-gray-200 md:block">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="border-b border-gray-200 bg-gray-50 text-[11px] uppercase tracking-wide text-gray-500">
+              <Th>Material</Th><Th>Unit</Th><Th right>Ordered</Th><Th right>Rate</Th>
+              <Th right>This bill</Th><Th right>Amount</Th><Th right>Received</Th><Th right>Balance</Th>
+            </tr>
+          </thead>
+          <tbody>
+            {s.rows.map((r, i) => (
+              <tr key={r.materialId ?? `x${i}`}
+                  className={`border-b border-gray-100 last:border-0 ${r.overrun ? 'bg-rose-50/40' : 'hover:bg-gray-50'}`}>
+                <td className="max-w-[300px] px-3 py-2 align-top text-[13px]">
+                  {r.material}
+                  {r.offOrder && <span className="block text-[10.5px] text-amber-700">not on the purchase order</span>}
+                </td>
+                <td className="px-3 py-2 text-xs text-gray-500">{r.uom ?? '—'}</td>
+                <td className="px-3 py-2 text-right tabular-nums text-gray-600">{r.offOrder ? '—' : qty(r.orderedQty)}</td>
+                <td className="px-3 py-2 text-right tabular-nums text-gray-600">{r.rate > 0 ? formatINR(r.rate) : '—'}</td>
+                <td className="px-3 py-2 text-right font-medium tabular-nums">
+                  {r.thisQty != null ? qty(r.thisQty)
+                    : <span className="text-gray-400">{r.receiptQty != null ? `part of ${qty(r.receiptQty)}` : 'not stated'}</span>}
+                </td>
+                <td className="px-3 py-2 text-right font-medium tabular-nums">{formatINR(r.thisAmt)}</td>
+                <td className="px-3 py-2 text-right tabular-nums text-gray-600">{r.offOrder ? '—' : qty(r.receivedQty)}</td>
+                <td className={`px-3 py-2 text-right tabular-nums ${
+                  r.overrun ? 'font-semibold text-rose-700' : r.complete ? 'text-emerald-700' : 'text-gray-500'}`}>
+                  {r.offOrder ? '—'
+                    : r.overrun ? `over by ${qty(Math.abs(r.balanceQty))}`
+                      : r.complete ? 'complete' : qty(r.balanceQty)}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+          <tfoot>
+            <tr className="border-t-2 border-gray-200 bg-gray-50 font-semibold">
+              <td className="px-3 py-2" colSpan={5}>{s.rows.length} {s.rows.length === 1 ? 'material' : 'materials'} received</td>
+              <td className="px-3 py-2 text-right tabular-nums">{formatINR(s.thisBill)}</td>
+              <td className="px-3 py-2" colSpan={2} />
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+
+      {s.anyOverrun && (
+        <p className="mt-3 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-800">
+          More has been received than was ordered on some lines. That needs an amendment in IN4 before payment — it
+          does not stop the bill being checked.
+        </p>
+      )}
+
+      <p className="mt-3 text-xs text-gray-500">
+        {s.reconciles
+          ? <>These lines add up to {formatINR(s.thisBill)}, which is what IN4 bills for this certificate.</>
+          : <><b className="text-amber-800">The lines do not add up to the bill.</b> They total {formatINR(s.thisBill)};
+              IN4 bills {formatINR(s.landed)} — a difference of {formatINR(Math.abs(s.outBy))}. Worth asking about
               before this is approved.</>}
       </p>
     </Card>

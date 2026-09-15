@@ -5,7 +5,7 @@ import type { PickableOrder } from './orders'
 const TODAY = new Date('2026-09-14T00:00:00Z')
 
 const wo = (o: Partial<PickableOrder> = {}): PickableOrder => ({
-  kind: 'WO', orderId: 1, orderNo: 'WO/SRASSK/SQ/2026-27/105', projectId: 5, subprojectId: 12, subprojectCount: 1,
+  kind: 'WO', orderId: 1, orderNo: 'WO/SRASSK/SQ/2026-27/105', projectId: 5, subprojectId: 12, subprojectIds: [12],
   categoryId: 46, categoryName: null, workDescription: 'Tiling to lobby', partyId: 5,
   party: 'Amin Developers', orderedGross: 4_522_350, billedGross: 1_317_650,
   balance: 3_204_700, retentionPct: 5, trust: 'SRASSK', bills: 3,

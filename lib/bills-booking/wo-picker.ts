@@ -76,7 +76,7 @@ export function buildPickList(
       projectId: a?.projectId ?? null,
       subprojectId: w.subproject_id ?? null,
       // A work order names exactly one sub-project, on the order itself.
-      subprojectCount: w.subproject_id == null ? 0 : 1,
+      subprojectIds: w.subproject_id == null ? [] : [w.subproject_id],
       categoryId: w.category_id ?? null,
       categoryName: null,
       workDescription: w.work_description?.trim() || null,
@@ -117,22 +117,26 @@ export async function loadPickList(sb: SupabaseClient): Promise<PickData> {
     }
   }
 
-  const [wos, certs, parties, projects, pos, poItems, poCerts] = await Promise.all([
+  const [wos, certs, parties, projects, pos, poItems, poCerts, materials] = await Promise.all([
     pageAll<WoRow>('in4_work_orders', 'wo_id, display_no, contractor_id, wo_value, wo_gross_value, wo_retention_amt, status_name, subproject_id, category_id, work_description'),
     pageAll<CertRow>('in4_wo_certificates', 'wo_id, project_id, subproject_id, status_name, gross_bill_amt, retention_amt, certified_amt, invoice_no, creation_dt'),
     pageAll<{ id: number; name: string; kind: string }>('in4_parties', 'id, name, kind'),
     pageAll<{ id: number; name: string }>('in4_projects', 'id, name'),
     pageAll<PoRow>('in4_purchase_orders', 'po_id, po_no, supplier_id, project_id, po_value, status'),
-    // Only what says where the PO books — the material master is 4,097 rows and
-    // nothing on this screen reads a material name.
-    pageAll<PoItemRow>('in4_po_items', 'po_id, subproject_id, material_value'),
+    // Where the PO books and what it is for — both live on its lines.
+    pageAll<PoItemRow>('in4_po_items', 'po_id, subproject_id, material_id, material_value'),
     pageAll<SupplierCertRow>('in4_supplier_certificates', 'po_id, kind, certificate_no, certificate_date, category, certified_amt, landed_cost, retention'),
+    // 4,097 rows, two small columns. A purchase order is a BOQ and its material
+    // names are its scope — reading them is the difference between the form
+    // filling that field and asking somebody to retype it.
+    pageAll<{ id: number; name: string | null }>('in4_materials', 'id, name'),
   ])
 
   // in4_parties is keyed on (kind, id) — a supplier and a contractor can share
   // an id, so filtering by kind is not optional.
   const contractors = new Map(parties.filter(p => p.kind === 'contractor').map(p => [p.id, p.name]))
   const suppliers = new Map(parties.filter(p => p.kind === 'supplier').map(p => [p.id, p.name]))
+  const matNames = new Map(materials.filter(m => m.name).map(m => [m.id, m.name as string]))
   // Billed-to-date and the RA count must not include design or consultancy
   // certificates, or the balance offered on a construction bill is wrong. The
   // orders themselves are filtered on the same list, so a Design order cannot
@@ -145,7 +149,7 @@ export async function loadPickList(sb: SupabaseClient): Promise<PickData> {
     wos: buildPickList(woInScope, inScope, contractors),
     // A PO has no sub-project until its lines are read, so it is filtered after
     // it is built rather than before.
-    pos: buildPoList(pos, poItems, poCerts, suppliers)
+    pos: buildPoList(pos, poItems, poCerts, suppliers, matNames)
       .filter(p => !rowOutOfScope(excluded, p.subprojectId)),
     projects,
   }

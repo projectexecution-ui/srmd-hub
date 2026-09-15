@@ -62,6 +62,9 @@ export function BillForm({ projects, disciplines, in4Wos, in4Pos, in4Projects, s
   const [billType, setBillType] = useState('Running')
   const [kind, setKind] = useState<OrderKind>('WO')
   const [order, setOrder] = useState<PickableOrder | null>(null)
+  // Only set when somebody overrides which of a multi-sub-project order lines
+  // this bill belongs to. Cleared whenever the order changes.
+  const [subPick, setSubPick] = useState<number | null>(null)
   const [noOrder, setNoOrder] = useState(false)
 
   // Only used when there is no order to read any of this off.
@@ -82,7 +85,10 @@ export function BillForm({ projects, disciplines, in4Wos, in4Pos, in4Projects, s
   const party = kind === 'WO' ? 'contractor' : 'supplier'
 
   // Where it books, worked out from the order rather than asked for.
-  const booking: Booking = useMemo(() => resolveBooking(usingOrder ? order : null, maps), [usingOrder, order, maps])
+  const booksTo = subPick ?? order?.subprojectId ?? null
+  const booking: Booking = useMemo(
+    () => resolveBooking(usingOrder ? { ...order, subprojectId: booksTo } : null, maps),
+    [usingOrder, order, booksTo, maps])
   const gaps = bookingGaps(booking)
 
   // Everything below is what IN4 supplies once an order is chosen. It is not
@@ -162,7 +168,7 @@ export function BillForm({ projects, disciplines, in4Wos, in4Pos, in4Projects, s
       <Section n={1} title="What kind of bill is this?">
         <div className="flex flex-wrap gap-2">
           {['Running', 'Full & Final', 'Advance', 'Petty Cash', 'Misc'].map(t => (
-            <button key={t} type="button" onClick={() => { setBillType(t); setOrder(null); setNoOrder(false) }}
+            <button key={t} type="button" onClick={() => { setBillType(t); setOrder(null); setSubPick(null); setNoOrder(false) }}
                     className={`rounded-lg border px-3 py-2 text-sm font-semibold min-h-[44px] ${
                       billType === t ? 'border-indigo-600 bg-indigo-600 text-white' : 'border-gray-300 text-gray-700 hover:bg-gray-50'}`}>
               {t}
@@ -183,9 +189,11 @@ export function BillForm({ projects, disciplines, in4Wos, in4Pos, in4Projects, s
           {!noOrder && (
             <OrderPicker
               kind={kind}
-              onKind={k => { setKind(k); setOrder(null) }}
+              onKind={k => { setKind(k); setOrder(null); setSubPick(null) }}
               wos={in4Wos} pos={in4Pos}
-              picked={order} onPick={setOrder} projectNames={projectNames}
+              picked={order} onPick={o => { setOrder(o); setSubPick(null) }} projectNames={projectNames}
+              subprojectNames={new Map(seed.subprojects)}
+              booksTo={booksTo} onSubproject={setSubPick}
             />
           )}
 
