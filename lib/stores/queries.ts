@@ -17,7 +17,7 @@ export type { ProjectOpt }
 
 export interface ListRow {
   id: string
-  kind: 'entity' | 'delivery_mode' | 'item_category' | 'discipline' | 'location'
+  kind: 'entity' | 'delivery_mode' | 'item_category' | 'discipline' | 'location' | 'unit'
   name: string
   code: string | null
   parentId: string | null
@@ -63,6 +63,11 @@ export interface EntryRow {
 }
 
 const num = (v: unknown): number => (typeof v === 'number' ? v : Number(v ?? 0)) || 0
+
+/** PostgREST hands an embedded row back as an object or a one-element array
+ *  depending on how it inferred the relationship. Two functions below already
+ *  declare their own copy of this; those shadow it harmlessly. */
+const one = (v: unknown) => (Array.isArray(v) ? v[0] : v) as Record<string, unknown> | null
 
 /** Every master row, both levels of location, in display order. */
 export async function loadLists(): Promise<ListRow[]> {
@@ -1007,5 +1012,68 @@ export async function loadSuppliers(): Promise<SupplierOpt[]> {
     id: r.id as number,
     name: ((r.name as string) ?? '').trim(),
     hint: ((r.city as string | null) ?? '').trim() || null,
+  }))
+}
+
+/* ── Who works where ────────────────────────────────────────────────────── */
+
+export interface StaffRow {
+  id: string
+  userId: string
+  name: string
+  email: string
+  role: 'engineer' | 'site_head'
+  projectId: string
+  projectName: string
+}
+
+/** Every assignment, for the desk. */
+export async function loadProjectStaff(): Promise<StaffRow[]> {
+  const supabase = await createClient()
+  const { data } = await supabase
+    .from('mio_project_staff')
+    .select('id, user_id, project_id, role, profiles:user_id ( full_name, email ), projects:project_id ( name )')
+    .eq('is_active', true)
+
+  const rows = (data ?? []).map(r => {
+    const p = one(r.profiles) as { full_name?: string; email?: string } | null
+    const pr = one(r.projects) as { name?: string } | null
+    return {
+      id: r.id as string,
+      userId: r.user_id as string,
+      name: p?.full_name ?? p?.email ?? 'Someone',
+      email: p?.email ?? '',
+      role: (r.role as 'engineer' | 'site_head') ?? 'engineer',
+      projectId: r.project_id as string,
+      projectName: pr?.name ?? 'Unknown project',
+    }
+  })
+  return rows.sort((a, b) => a.name.localeCompare(b.name) || a.projectName.localeCompare(b.projectName))
+}
+
+/** The projects one person is on. Empty is a real answer, not a failure. */
+export async function loadMyProjectIds(userId: string): Promise<string[]> {
+  const supabase = await createClient()
+  const { data } = await supabase
+    .from('mio_project_staff')
+    .select('project_id')
+    .eq('user_id', userId)
+    .eq('is_active', true)
+  return (data ?? []).map(r => r.project_id as string)
+}
+
+/** Everyone who could be put on a site — engineers and the heads above them. */
+export async function loadAssignablePeople(): Promise<Array<{ id: string; name: string; role: string }>> {
+  const supabase = await createClient()
+  const { data } = await supabase
+    .from('profiles')
+    .select('id, full_name, email, role')
+    .in('role', ['engineer', 'site_staff', 'head', 'project_head'])
+    .eq('is_active', true)
+    .order('full_name')
+  return (data ?? []).map(r => ({
+    id: r.id as string,
+    name: (r.full_name as string) || (r.email as string) || 'Someone',
+    role: (r.role as string) ?? '',
   }))
 }

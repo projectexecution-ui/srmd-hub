@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import {
   entryNo, linkedNo, foldStock, availableAt, availableAnywhere, checkIssue,
   outstandingReturnables, checkReturn, missingForGate, missingForComplete, createsStock, heldItemCount,
-  fmtQty, isPilotProject, PILOT_PROJECT_IDS, RETURNABLES_ON, STORES_LIVE, canSeeStores, groupProjects, UNGROUPED, entityCodeFromOrderNo, categoryFor, isServiceScope, bestIssueLocation,
+  fmtQty, isPilotProject, PILOT_PROJECT_IDS, RETURNABLES_ON, STORES_LIVE, canSeeStores, stockScopeFor, visibleLocationIds, emptyScopeReason, groupProjects, UNGROUPED, entityCodeFromOrderNo, categoryFor, isServiceScope, bestIssueLocation,
   type Movement, type ReturnableLine, type StockRow,
 } from './core'
 
@@ -525,5 +525,60 @@ describe('canSeeStores — one rule for the lane, the page and going live', () =
     for (const r of ['viewer', 'contractor', 'billing', 'uploader']) {
       expect(canSeeStores(r)).toBe(false)
     }
+  })
+})
+
+describe('stockScopeFor / visibleLocationIds — whose stock is whose', () => {
+  // Aksha, 15 Sep 2026: "per Eng sees thier own project stock only - but the
+  // storekeeper can see all stock of all projects of all storage location".
+  const LOCS = [
+    { id: 'ct',      parentId: null,  projectId: null },        // shared warehouse
+    { id: 'ct-bay',  parentId: 'ct',  projectId: null },
+    { id: 'nghb',    parentId: null,  projectId: 'p-nghb' },
+    { id: 'nghb-wh', parentId: 'nghb', projectId: null },       // spot under NGH B
+    { id: 'ngha',    parentId: null,  projectId: 'p-ngha' },
+    { id: 'ngha-st', parentId: 'ngha', projectId: null },
+  ]
+
+  it('lets everyone who HOLDS material see all of it', () => {
+    for (const r of ['store_manager', 'admin', 'head', 'founder', 'security']) {
+      const scope = stockScopeFor(r, [])
+      expect(scope.kind).toBe('all')
+      expect(visibleLocationIds(scope, LOCS)).toHaveLength(LOCS.length)
+    }
+  })
+
+  it('limits an engineer to the sites they are on', () => {
+    const scope = stockScopeFor('engineer', ['p-nghb'])
+    expect(visibleLocationIds(scope, LOCS).sort()).toEqual(['nghb', 'nghb-wh'])
+  })
+
+  it('finds a spot through its SITE — the spot itself carries no project', () => {
+    // nghb-wh has projectId null; it is visible because its parent is NGH B's.
+    expect(visibleLocationIds(stockScopeFor('engineer', ['p-nghb']), LOCS)).toContain('nghb-wh')
+  })
+
+  it('does not hand an engineer the shared warehouse', () => {
+    const seen = visibleLocationIds(stockScopeFor('engineer', ['p-nghb']), LOCS)
+    expect(seen).not.toContain('ct')
+    expect(seen).not.toContain('ct-bay')
+  })
+
+  it('shows an unassigned engineer nothing, and says why', () => {
+    const scope = stockScopeFor('engineer', [])
+    const seen = visibleLocationIds(scope, LOCS)
+    expect(seen).toEqual([])
+    expect(emptyScopeReason(scope, seen.length)).toContain('not on any project')
+  })
+
+  it('explains an assigned engineer whose sites have no store of their own', () => {
+    const scope = stockScopeFor('engineer', ['p-with-no-store'])
+    const seen = visibleLocationIds(scope, LOCS)
+    expect(seen).toEqual([])
+    expect(emptyScopeReason(scope, seen.length)).toContain('shared warehouse')
+  })
+
+  it('never explains away a keeper who simply holds nothing', () => {
+    expect(emptyScopeReason(stockScopeFor('store_manager', []), 0)).toBeNull()
   })
 })

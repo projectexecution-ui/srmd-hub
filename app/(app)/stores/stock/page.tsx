@@ -1,5 +1,10 @@
-import { loadStock, loadItems, loadLists, storableLocations, locationLabel } from '@/lib/stores/queries'
-import { fmtQty } from '@/lib/stores/core'
+import {
+  loadStock, loadItems, loadLists, storableLocations, locationLabel, loadMyProjectIds, listsOf,
+} from '@/lib/stores/queries'
+import { getMyProfile } from '@/lib/auth'
+import {
+  fmtQty, stockScopeFor, visibleLocationIds, emptyScopeReason,
+} from '@/lib/stores/core'
 import { formatINR } from '@/lib/utils'
 import { Section, Empty, Scroller, th, thNum, td, tdNum } from '../ui'
 import { OpeningStockForm } from './OpeningStockForm'
@@ -12,6 +17,13 @@ export const dynamic = 'force-dynamic'
  * Folded from the ledger — including the "as on" figure, which is the same
  * fold stopped earlier rather than a second calculation. That is why the
  * stock screen can never disagree with the register.
+ *
+ * WHAT YOU SEE DEPENDS ON YOUR JOB, not your seniority. Aksha, 15 Sep 2026:
+ * "per Eng sees thier own project stock only - but the storekeeper can see all
+ * stock of all projects of all storage location". A storekeeper HOLDS material
+ * for eleven sites; hiding ten of them would stop them working. An engineer is
+ * asking for their own site and has no business browsing another project's
+ * shelves.
  */
 export default async function StockPage({
   searchParams,
@@ -19,11 +31,23 @@ export default async function StockPage({
   const { asOn } = await searchParams
   const valid = asOn && /^\d{4}-\d{2}-\d{2}$/.test(asOn) ? asOn : undefined
 
+  const profile = await getMyProfile()
+  const mine = profile ? await loadMyProjectIds(profile.id) : []
+  const scope = stockScopeFor(profile?.role, mine)
+
   const [stock, items, lists] = await Promise.all([loadStock(valid), loadItems(), loadLists()])
   const byItem = new Map(items.map(i => [i.id, i]))
-  const places = storableLocations(lists)
+  const allPlaces = storableLocations(lists)
+
+  const allowed = new Set(visibleLocationIds(
+    scope,
+    listsOf(lists, 'location').map(l => ({ id: l.id, parentId: l.parentId, projectId: l.projectId })),
+  ))
+  const places = allPlaces.filter(l => allowed.has(l.id))
+  const scopeNote = emptyScopeReason(scope, places.length)
 
   const rows = stock
+    .filter(s => scope.kind === 'all' || (s.locationId != null && allowed.has(s.locationId)))
     .map(s => ({
       ...s,
       name: byItem.get(s.itemId)?.name ?? 'Unknown item',
@@ -54,8 +78,11 @@ export default async function StockPage({
       >
         {rows.length === 0 ? (
           <Empty
-            title="Nothing in stock yet"
-            hint="Stock arrives two ways: through the gate, or as an opening balance below. Until there is some, nothing can be issued — an item can only be picked from stock."
+            // A scoped reader seeing nothing is a different fact from an empty
+            // store, and telling them the store is empty would be a lie.
+            title={scopeNote ? 'Nothing here for you' : 'Nothing in stock yet'}
+            hint={scopeNote
+              ?? 'Stock arrives two ways: through the gate, or as an opening balance below. Until there is some, nothing can be issued — an item can only be picked from stock.'}
           />
         ) : (
           <>

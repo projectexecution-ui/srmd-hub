@@ -3,7 +3,8 @@
 import { useRouter } from 'next/navigation'
 import { useState, useTransition } from 'react'
 import { saveListRow, setListActive, saveItem } from '@/lib/stores/actions'
-import type { ListRow, ItemRow, ProjectOpt } from '@/lib/stores/queries'
+import type { ListRow, ItemRow, ProjectOpt, StaffRow } from '@/lib/stores/queries'
+import { StaffDesk } from './StaffDesk'
 import { formatINR, formatNumber } from '@/lib/utils'
 import { Field, inputClass, Btn, Notice, Empty, Scroller, th, thNum, td, tdNum, GroupedOptions } from '../ui'
 
@@ -17,24 +18,32 @@ const KINDS: Array<{ kind: Kind; title: string; note: string }> = [
   { kind: 'discipline', title: 'Disciplines', note: 'Your ten, used to group the reports — not IN4’s 89 budget categories.' },
   { kind: 'entity', title: 'Trusts',
     note: 'Which trust is paying. Seeded from IN4 and mapped to it — add one here with no IN4 match and point it at IN4 later.' },
+  { kind: 'unit', title: 'Units',
+    note: 'Nos, Kgs, Lumsum and the rest. The map lists these as a master; the rows have been here since the start with no screen to edit them.' },
 ]
 
 export function MastersClient({
-  lists, items, companies, projects,
+  lists, items, companies, projects, staff, people,
 }: {
   lists: ListRow[]
   items: ItemRow[]
   companies: Array<{ id: number; code: string; name: string }>
   projects: ProjectOpt[]
+  staff: StaffRow[]
+  people: Array<{ id: string; name: string; role: string }>
 }) {
   const router = useRouter()
-  const [openKind, setOpenKind] = useState<Kind | 'items'>('location')
+  const [openKind, setOpenKind] = useState<Kind | 'items' | 'staff'>('location')
 
   return (
     <div className="space-y-4">
       <div className="overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0">
         <div className="flex gap-1.5 min-w-max">
-          {[...KINDS.map(k => ({ key: k.kind as Kind | 'items', label: k.title })), { key: 'items' as const, label: 'Items' }].map(t => (
+          {[
+            ...KINDS.map(k => ({ key: k.kind as Kind | 'items' | 'staff', label: k.title })),
+            { key: 'items' as const, label: 'Items' },
+            { key: 'staff' as const, label: 'Who works where' },
+          ].map(t => (
             <button
               key={t.key} type="button" onClick={() => setOpenKind(t.key)}
               className={`rounded-lg px-3 py-2 text-[12.5px] font-semibold whitespace-nowrap min-h-[44px] ${
@@ -47,7 +56,9 @@ export function MastersClient({
         </div>
       </div>
 
-      {openKind === 'items'
+      {openKind === 'staff'
+        ? <StaffDesk staff={staff} people={people} projects={projects} />
+        : openKind === 'items'
         ? <ItemsPanel items={items} disciplines={lists.filter(l => l.kind === 'discipline' && l.isActive)} onDone={() => router.refresh()} />
         : (() => {
             const spec = KINDS.find(k => k.kind === openKind)!
