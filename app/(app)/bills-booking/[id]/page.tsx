@@ -156,7 +156,7 @@ export default async function BillDetailPage({ params }: { params: Promise<{ id:
   const money = formatINR
 
   return (
-    <div className="p-4 md:p-6 max-w-3xl mx-auto space-y-5">
+    <div className="p-4 md:p-6 max-w-5xl mx-auto space-y-5">
       <PageHeader title={vendor} back="/bills-booking"
         subtitle={`${project?.code ?? ''} · ${bill.order_type} ${bill.order_no ?? ''}${bill.discipline ? ' · ' + bill.discipline : ''}`}>
         <StagePill stage={bill.current_stage as BbStage} />

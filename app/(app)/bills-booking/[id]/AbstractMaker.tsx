@@ -8,7 +8,7 @@ import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Check, Loader2, Ruler } from 'lucide-react'
 import { priceAbstract, type MakerLine, type RatePick } from '@/lib/bills-booking/maker'
-import { formatINR, formatNumber } from '@/lib/utils'
+import { formatINR, formatINRCompact, formatNumber } from '@/lib/utils'
 import { Particular, ExpandAll } from './Particular'
 import { shortenBoq } from '@/lib/bills-booking/shorten'
 
@@ -92,6 +92,10 @@ export function AbstractMaker({ billId, woNo, vendor, work, seed, gst: gstPick, 
 
   const n = (v: number) => (v === 0 ? '—' : formatNumber(v, v % 1 === 0 ? 0 : 2))
   const m = (v: number) => (v === 0 ? '—' : formatINR(v))
+  // Line amounts compact so all four column groups fit a laptop without a
+  // sideways scroll; the totals below stay in full rupees, because that is the
+  // figure being approved.
+  const mc = (v: number) => (v === 0 ? '—' : formatINRCompact(v))
 
   return (
     <Card className="overflow-hidden p-0">
@@ -128,11 +132,12 @@ export function AbstractMaker({ billId, woNo, vendor, work, seed, gst: gstPick, 
       {err && <p role="alert" className="mx-4 mt-3 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">{err}</p>}
 
       <div className="overflow-x-auto px-2 pt-2">
-        <table className="w-full min-w-[980px] border-collapse text-[12px]">
+        <table className="w-full min-w-[1020px] border-collapse text-[11.5px]">
           <thead>
             <tr>
               <Th l>#</Th><Th l>Particular</Th><Th>Qty</Th><Th>Unit</Th><Th>Rate</Th>
               <Th g="wo">WO Amt</Th>
+              <Th g="prev">Prev Qty</Th><Th g="prev">Prev Amt</Th>
               <Th g="this">This Qty</Th><Th g="this">This Amt</Th>
               <Th g="cum">Cum Qty</Th><Th g="cum">Cum Amt</Th>
               <Th g="bal">Bal Qty</Th><Th g="bal">Bal Amt</Th>
@@ -142,13 +147,15 @@ export function AbstractMaker({ billId, woNo, vendor, work, seed, gst: gstPick, 
             {sheet.lines.map(l => (
               <tr key={l.sr} className={l.overrun ? 'bg-rose-50' : 'hover:bg-gray-50/60'}>
                 <Td l>{l.sr}</Td>
-                <Td l className="max-w-[300px] whitespace-normal align-top">
+                <Td l className="max-w-[220px] whitespace-normal align-top">
                   <Particular text={l.particular} expandAll={expandAll} />
                 </Td>
                 <Td>{n(l.orderedQty)}</Td>
                 <Td>{l.uom ?? '—'}</Td>
                 <Td>{m(l.rate)}</Td>
-                <Td g="wo">{m(l.orderedAmt)}</Td>
+                <Td g="wo">{mc(l.orderedAmt)}</Td>
+                <Td g="prev">{n(l.priorQty)}</Td>
+                <Td g="prev">{mc(l.priorAmt)}</Td>
                 <Td g="this">
                   {canEdit ? (
                     <input
@@ -161,13 +168,13 @@ export function AbstractMaker({ billId, woNo, vendor, work, seed, gst: gstPick, 
                     />
                   ) : n(l.thisQty)}
                 </Td>
-                <Td g="this" className="font-semibold">{m(l.thisAmt)}</Td>
+                <Td g="this" className="font-semibold">{mc(l.thisAmt)}</Td>
                 <Td g="cum">{n(l.cumQty)}</Td>
-                <Td g="cum">{m(l.cumAmt)}</Td>
+                <Td g="cum">{mc(l.cumAmt)}</Td>
                 <Td g="bal" className={l.overrun ? 'font-semibold text-rose-700' : l.complete ? 'text-emerald-700' : ''}>
                   {l.overrun ? `over ${n(Math.abs(l.balQty))}` : l.complete ? 'done' : n(l.balQty)}
                 </Td>
-                <Td g="bal">{m(l.balAmt)}</Td>
+                <Td g="bal">{mc(l.balAmt)}</Td>
               </tr>
             ))}
           </tbody>
@@ -188,6 +195,9 @@ export function AbstractMaker({ billId, woNo, vendor, work, seed, gst: gstPick, 
                               className="w-[46px] rounded border border-slate-300 bg-white px-1 py-0.5 text-right text-[11px] tabular-nums text-gray-900" />%</>
                       : <> @ {t.rate}%</>
                   )}
+                </td>
+                <td className={`border border-gray-100 px-2 py-1.5 text-right tabular-nums ${t.kind === 'net' ? 'text-emerald-50' : 'text-gray-500'}`} colSpan={2}>
+                  {t.kind === 'retention' && t.previous > 0 ? '− ' : ''}{m(t.previous)}
                 </td>
                 <td className="border border-gray-100 px-2 py-1.5 text-right tabular-nums" colSpan={2}>
                   {t.kind === 'retention' && t.thisBill > 0 ? '− ' : ''}{m(t.thisBill)}
@@ -279,18 +289,18 @@ function RateNote({ label, pick }: { label: string; pick: RatePick }) {
   )
 }
 
-function Th({ children, l, g }: { children: React.ReactNode; l?: boolean; g?: 'wo' | 'this' | 'cum' | 'bal' }) {
-  const bg = g === 'this' ? 'bg-blue-100' : g === 'cum' ? 'bg-emerald-50' : g === 'wo' ? 'bg-slate-100' : g === 'bal' ? 'bg-gray-50' : 'bg-slate-100'
+function Th({ children, l, g }: { children: React.ReactNode; l?: boolean; g?: 'wo' | 'prev' | 'this' | 'cum' | 'bal' }) {
+  const bg = g === 'this' ? 'bg-blue-100' : g === 'prev' ? 'bg-amber-50' : g === 'cum' ? 'bg-emerald-50' : g === 'wo' ? 'bg-slate-100' : g === 'bal' ? 'bg-gray-50' : 'bg-slate-100'
   return (
-    <th className={`border border-gray-200 px-2 py-1.5 text-[10.5px] font-bold uppercase tracking-wide text-slate-700 ${bg} ${l ? 'text-left' : 'text-right'}`}>
+    <th className={`border border-gray-200 px-1.5 py-1.5 text-[10.5px] font-bold uppercase tracking-wide text-slate-700 ${bg} ${l ? 'text-left' : 'text-right'}`}>
       {children}
     </th>
   )
 }
-function Td({ children, l, g, className = '' }: { children: React.ReactNode; l?: boolean; g?: 'wo' | 'this' | 'cum' | 'bal'; className?: string }) {
-  const bg = g === 'this' ? 'bg-blue-50/70' : g === 'cum' ? 'bg-emerald-50/40' : g === 'wo' ? 'bg-slate-50/60' : ''
+function Td({ children, l, g, className = '' }: { children: React.ReactNode; l?: boolean; g?: 'wo' | 'prev' | 'this' | 'cum' | 'bal'; className?: string }) {
+  const bg = g === 'this' ? 'bg-blue-50/70' : g === 'prev' ? 'bg-amber-50/50' : g === 'cum' ? 'bg-emerald-50/40' : g === 'wo' ? 'bg-slate-50/60' : ''
   return (
-    <td className={`border border-gray-100 px-2 py-1 tabular-nums ${bg} ${l ? 'text-left' : 'text-right'} ${className}`}>
+    <td className={`border border-gray-100 px-1.5 py-1 tabular-nums ${bg} ${l ? 'text-left' : 'text-right'} ${className}`}>
       {children}
     </td>
   )

@@ -20,6 +20,7 @@ const SHEET: MakerLine[] = [
 
 const RATES = { gstPct: 18, retentionPct: 5 }
 const row = (s: ReturnType<typeof priceAbstract>, kind: string) => s.totals.find(t => t.kind === kind)!
+const r2 = (n: number) => Math.round(n * 100) / 100
 
 describe('the abstract maker', () => {
   it('prices each line from quantity × the ordered rate', () => {
@@ -43,13 +44,28 @@ describe('the abstract maker', () => {
     expect(exc.complete).toBe(true)
   })
 
-  it('carries every total across This, Cumulative and Balance', () => {
+  it('carries every total across Previous, This, Cumulative and Balance', () => {
     const s = priceAbstract(SHEET, RATES)
     expect(s.totals.map(t => t.kind)).toEqual(['sub', 'gst', 'total', 'retention', 'net'])
     for (const t of s.totals) {
+      expect(typeof t.previous).toBe('number')
       expect(typeof t.thisBill).toBe('number')
       expect(typeof t.cumulative).toBe('number')
       expect(typeof t.balance).toBe('number')
+    }
+  })
+
+  // Aksha, 15 Sep 2026: "why there is no Previous Bills Data". Cumulative alone
+  // makes you subtract in your head to see what this bill actually added, which
+  // on a running account is the one thing you are checking.
+  it('shows what was billed BEFORE this bill, and it adds up', () => {
+    const s = priceAbstract(SHEET, RATES)
+    // Only the Excavator line was measured earlier: 8,95,500.
+    expect(row(s, 'sub').previous).toBe(895500)
+    // Previous + this bill = cumulative, on every line of the ladder.
+    for (const t of s.totals) {
+      if (t.kind === 'net') continue
+      expect(r2(t.previous + t.thisBill), t.kind).toBe(t.cumulative)
     }
   })
 

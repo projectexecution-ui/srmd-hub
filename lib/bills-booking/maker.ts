@@ -45,9 +45,17 @@ export interface PricedLine extends MakerLine {
   overrun: boolean
 }
 
-/** One figure in each of the three groups. */
+/** One figure in each column group.
+ *
+ *  Aksha, 15 Sep 2026: "why there is no Previous Bills Data". Because the sheet
+ *  carried Work Order, This bill, Cumulative and Balance but never drew what had
+ *  been billed BEFORE — which is half of what makes a running account readable:
+ *  cumulative on its own makes you subtract in your head to see what this bill
+ *  actually added. */
 export interface TotalRow {
   label: string
+  /** Billed on every earlier bill of this order, before this one. */
+  previous: number
   thisBill: number
   cumulative: number
   balance: number
@@ -94,18 +102,25 @@ export function priceAbstract(
 
   const sum = (pick: (l: PricedLine) => number) => r2(priced.reduce((s, l) => s + pick(l), 0))
 
-  const basic = { thisBill: sum(l => l.thisAmt), cumulative: sum(l => l.cumAmt), balance: sum(l => l.balAmt) }
+  const basic = {
+    previous: sum(l => l.priorAmt),
+    thisBill: sum(l => l.thisAmt),
+    cumulative: sum(l => l.cumAmt),
+    balance: sum(l => l.balAmt),
+  }
   const pct = (n: number) => r2(n * rates.gstPct / 100)
   const ret = (n: number) => r2(n * rates.retentionPct / 100)
 
-  const gst = { thisBill: pct(basic.thisBill), cumulative: pct(basic.cumulative), balance: pct(basic.balance) }
+  const gst = { previous: pct(basic.previous), thisBill: pct(basic.thisBill), cumulative: pct(basic.cumulative), balance: pct(basic.balance) }
   const total = {
+    previous: r2(basic.previous + gst.previous),
     thisBill: r2(basic.thisBill + gst.thisBill),
     cumulative: r2(basic.cumulative + gst.cumulative),
     balance: r2(basic.balance + gst.balance),
   }
-  const retention = { thisBill: ret(basic.thisBill), cumulative: ret(basic.cumulative), balance: ret(basic.balance) }
+  const retention = { previous: ret(basic.previous), thisBill: ret(basic.thisBill), cumulative: ret(basic.cumulative), balance: ret(basic.balance) }
   const net = {
+    previous: r2(total.previous - retention.previous),
     thisBill: r2(total.thisBill - retention.thisBill),
     cumulative: r2(total.cumulative - retention.cumulative),
     // Retention on work not yet done is not money held — it is money that will
