@@ -49,6 +49,8 @@ export interface EntryRow {
   projectId: string | null
   projectName: string | null
   partyName: string | null
+  /** IN4 supplier id, when the gate picked one. */
+  in4PartyId: number | null
   vehicleNo: string | null
   driverName: string | null
   poWoNo: string | null
@@ -150,7 +152,7 @@ export async function loadEntries(opts: {
   let q = supabase
     .from('mio_entries')
     .select(`id, no, direction, register, stage, entry_at, entry_date, project_id, party_name,
-             vehicle_no, driver_name, po_wo_no, location_id, created_by,
+             vehicle_no, driver_name, po_wo_no, location_id, created_by, in4_party_id,
              projects:project_id ( name ),
              creator:created_by ( full_name ),
              linked:linked_entry_id ( no ),
@@ -181,6 +183,7 @@ export async function loadEntries(opts: {
       projectId: (r.project_id as string | null) ?? null,
       projectName: proj?.name ?? null,
       partyName: (r.party_name as string | null) ?? null,
+      in4PartyId: (r.in4_party_id as number | null) ?? null,
       vehicleNo: (r.vehicle_no as string | null) ?? null,
       driverName: (r.driver_name as string | null) ?? null,
       poWoNo: (r.po_wo_no as string | null) ?? null,
@@ -257,6 +260,7 @@ export async function loadEntry(id: string): Promise<EntryDetail | null> {
     projectId: (data.project_id as string | null) ?? null,
     projectName: proj?.name ?? null,
     partyName: (data.party_name as string | null) ?? null,
+    in4PartyId: (data.in4_party_id as number | null) ?? null,
     vehicleNo: (data.vehicle_no as string | null) ?? null,
     driverName: (data.driver_name as string | null) ?? null,
     poWoNo: (data.po_wo_no as string | null) ?? null,
@@ -552,7 +556,7 @@ export interface OrderOption {
  */
 export async function searchOrders(
   query: string,
-  opts: { partyHint?: string | null; limit?: number } = {},
+  opts: { partyHint?: string | null; partyId?: number | null; limit?: number } = {},
 ): Promise<OrderOption[]> {
   const supabase = await createClient()
   const q = query.trim()
@@ -621,9 +625,14 @@ export async function searchOrders(
     }
   }
 
-  const hint = normName(opts.partyHint ?? '')
+  // Where the gate PICKED a supplier there is an id, and the match is exact.
+  // Where it was typed, fall back to comparing the words — right about one
+  // time in seven on the names typed so far, which is why the picker exists.
+  const hintId = opts.partyId ?? null
+  const hint = hintId == null ? normName(opts.partyHint ?? '') : ''
   const rows: OrderOption[] = rowsRaw.map(p => {
     const party = suppliers.get(p.supplier_id as number) ?? null
+    const supplierId = p.supplier_id as number | null
     return {
       key: String(p.po_id),
       no: (p.po_no as string) ?? '',
@@ -636,7 +645,9 @@ export async function searchOrders(
       // Security already wrote down who turned up. Where that name matches a
       // supplier, their orders are almost certainly the ones being looked for,
       // so they go to the top rather than being hunted for.
-      fromGateParty: !!hint && !!party && normName(party).includes(hint),
+      fromGateParty: hintId != null
+        ? supplierId === hintId
+        : !!hint && !!party && normName(party).includes(hint),
     }
   })
 
@@ -962,4 +973,39 @@ export async function loadLastLocations(): Promise<{
     if (pid && !byProject[pid]) byProject[pid] = loc
   }
   return { byProject, lastUsed }
+}
+
+/* ── Who brings material ────────────────────────────────────────────────── */
+
+export interface SupplierOpt {
+  id: number
+  name: string
+  /** City, to tell two shops with the same name apart. */
+  hint: string | null
+}
+
+/**
+ * IN4's suppliers, for the gate.
+ *
+ * Suppliers only — not the 423 contractors. A purchase order's supplier_id
+ * points at kind='supplier', so this is exactly the list that can be matched
+ * back to an order, which is the whole point of picking from it.
+ *
+ * A contractor's lorry can still arrive; Security types the name and the entry
+ * saves with no id, which stays allowed for ever. The list is a shortcut, not
+ * a gate.
+ */
+export async function loadSuppliers(): Promise<SupplierOpt[]> {
+  const supabase = await createClient()
+  const { data } = await supabase
+    .from('in4_parties')
+    .select('id, name, city')
+    .eq('kind', 'supplier')
+    .eq('is_active', true)
+    .order('name')
+  return (data ?? []).map(r => ({
+    id: r.id as number,
+    name: ((r.name as string) ?? '').trim(),
+    hint: ((r.city as string | null) ?? '').trim() || null,
+  }))
 }

@@ -31,7 +31,7 @@ import { Label } from '../../field'
  * FIELD register: 56px control, 44px rows, one thing on screen at a time.
  */
 export function OrderPicker({
-  value, onPick, onClear, gateParty = null,
+  value, onPick, onClear, gateParty = null, gatePartyId = null,
 }: {
   /** The chosen order's number, or null. */
   value: string | null
@@ -39,6 +39,8 @@ export function OrderPicker({
   onClear: () => void
   /** Who Security wrote down — their open orders lead the list. */
   gateParty?: string | null
+  /** IN4's id for them, when the gate picked rather than typed. Exact match. */
+  gatePartyId?: number | null
 }) {
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
@@ -50,10 +52,10 @@ export function OrderPicker({
   useEffect(() => {
     if (!open) return
     const t = setTimeout(() => {
-      startSearch(async () => setRows(await searchOrdersForEntry(query, gateParty)))
+      startSearch(async () => setRows(await searchOrdersForEntry(query, { name: gateParty, id: gatePartyId })))
     }, query ? 250 : 0)
     return () => clearTimeout(t)
-  }, [query, open, gateParty])
+  }, [query, open, gateParty, gatePartyId])
 
   useEffect(() => { if (open) setTimeout(() => inputRef.current?.focus(), 30) }, [open])
 

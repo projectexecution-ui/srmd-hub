@@ -35,7 +35,10 @@ export const T = {
 
   // 2 · who
   qWho:           'Who has brought it?',
-  whoHint:        'Shop or company name',
+  whoHint:        'Pick the shop, or type the name',
+  notInList:      'Not in the list — type it',
+  backToList:     'Pick from the list instead',
+  typedByHand:    'Typed by hand',
 
   // 3 · how
   qHow:           'How has it come?',
@@ -121,6 +124,10 @@ export type GateStep = (typeof GATE_STEPS)[number]
 export interface GateAnswers {
   register?: 'vendor' | 'srm'
   partyName?: string
+  /** IN4's supplier id when the name was picked from the list rather than
+   *  typed. What makes the storekeeper's order picker exact instead of a
+   *  name-match. */
+  in4PartyId?: number | null
   modeName?: string
   vehicleNo?: string
   driverName?: string

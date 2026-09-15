@@ -44,6 +44,10 @@ async function me() {
 export interface GateInput {
   register: Register
   partyName: string
+  /** IN4's supplier id when the gate picked from the list. Null when the name
+   *  was typed, which stays allowed — a shop IN4 has never heard of must still
+   *  be recordable at the gate. */
+  in4PartyId?: number | null
   vehicleNo?: string
   driverName?: string
   driverMobile?: string
@@ -78,6 +82,7 @@ export async function createGateEntry(input: GateInput): Promise<Result<{ id: st
       direction: 'in', register: input.register, no, seq: Number(seq) || 1, entry_date: isoDate,
       stage: 'gate',
       party_name: input.partyName.trim(),
+      in4_party_id: input.in4PartyId ?? null,
       vehicle_no: input.vehicleNo?.trim() || null,
       driver_name: input.driverName?.trim() || null,
       driver_mobile: input.driverMobile?.trim() || null,

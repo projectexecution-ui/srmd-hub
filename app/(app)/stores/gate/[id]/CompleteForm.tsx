@@ -46,7 +46,7 @@ function sameParty(a: string, b: string): boolean {
  */
 export function CompleteForm({
   entryId, entryNo, register, makesStock, entities, categories, locations, projects, items,
-  recentItemIds = [], gateParty = null, lastLocations = { byProject: {}, lastUsed: null },
+  recentItemIds = [], gateParty = null, gatePartyId = null, lastLocations = { byProject: {}, lastUsed: null },
 }: {
   entryId: string; entryNo: string; register: Register; makesStock: boolean
   entities: Opt[]; categories: Opt[]; locations: Array<{ id: string; label: string }>
@@ -55,6 +55,8 @@ export function CompleteForm({
   recentItemIds?: readonly string[]
   /** Who Security wrote down at the gate, to check the order against. */
   gateParty?: string | null
+  /** IN4's id for them, when the gate picked from the list. */
+  gatePartyId?: number | null
   /** Where this store put things last, per project and overall. */
   lastLocations?: { byProject: Record<string, string>; lastUsed: string | null }
 }) {
@@ -272,7 +274,7 @@ export function CompleteForm({
 
       {/* The order shortcut — the point of the whole screen. */}
       <div className="rounded-xl border-2 border-gray-200 bg-white p-3.5 space-y-3">
-        <OrderPicker value={order} onPick={pickOrder} onClear={clearOrder} gateParty={gateParty} />
+        <OrderPicker value={order} onPick={pickOrder} onClear={clearOrder} gateParty={gateParty} gatePartyId={gatePartyId} />
 
         {poBusy && <p className="text-[13.5px] text-gray-500">Reading the order…</p>}
 

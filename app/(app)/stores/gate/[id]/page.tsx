@@ -49,6 +49,7 @@ export default async function GateEntryPage({ params }: { params: Promise<{ id: 
           items={items.filter(i => i.isActive).map(i => ({ id: i.id, name: i.name, unit: i.unit, lastRate: i.lastRate, in4MaterialId: i.in4MaterialId }))}
           recentItemIds={recentItemIds}
           gateParty={entry.partyName}
+          gatePartyId={entry.in4PartyId}
           lastLocations={lastLocations}
         />
       )}

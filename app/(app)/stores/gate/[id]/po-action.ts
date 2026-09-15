@@ -13,9 +13,12 @@ import { searchOrders, loadOrder } from '@/lib/stores/queries'
  * shipping them to a phone to filter there would cost more than every other
  * thing on the page put together.
  */
-export async function searchOrdersForEntry(query: string, partyHint?: string | null) {
+export async function searchOrdersForEntry(
+  query: string,
+  party?: { name?: string | null; id?: number | null },
+) {
   await requirePermission('cost-control', 'view')
-  return searchOrders(query, { partyHint })
+  return searchOrders(query, { partyHint: party?.name ?? null, partyId: party?.id ?? null })
 }
 
 export async function loadOrderForEntry(key: string) {
