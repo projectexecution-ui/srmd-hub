@@ -6,6 +6,9 @@ import { getMyProfile } from '@/lib/auth'
 import { entryNo, checkIssue, checkReturn, createsStock, type Register } from './core'
 import { loadStock, loadReturnables } from './queries'
 import { formatINR } from '@/lib/utils'
+import {
+  notifyGateWaiting, notifyRequestPending, notifyRequestDecided, notifyRequestIssued,
+} from './notify'
 
 /**
  * Every write in the Stores section.
@@ -98,6 +101,12 @@ export async function createGateEntry(input: GateInput): Promise<Result<{ id: st
     .single()
 
   if (error) return fail(explain(error, 'save the gate entry'))
+
+  // Somebody has to go and count it in. The previous warehouse module recorded
+  // this perfectly and told nobody, and that is why it was never used.
+  await notifyGateWaiting({
+    entryId: data.id as string, no, party: input.partyName.trim() || null, actorId: profile.id,
+  })
   revalidatePath('/stores')
   return done(`Saved as ${no}. The storekeeper can see it now.`, { id: data.id as string, no: data.no as string })
 }
@@ -246,6 +255,10 @@ export async function raiseRequest(input: RequestInput): Promise<Result<{ id: st
   )
   if (lineErr) return fail(explain(lineErr, 'save the request lines'))
 
+  await notifyRequestPending({
+    requestId: data.id as string, no, projectName: null,
+    lineCount: input.lines.length, actorId: profile.id,
+  })
   revalidatePath('/stores')
   return done(`${no} sent to Mayank / Kanti for approval.`, { id: data.id as string, no })
 }
@@ -254,7 +267,7 @@ export async function decideRequest(requestId: string, approve: boolean, note?: 
   const profile = await me()
   const supabase = await createClient()
 
-  const { data: req } = await supabase.from('mio_requests').select('id, no, status').eq('id', requestId).maybeSingle()
+  const { data: req } = await supabase.from('mio_requests').select('id, no, status, raised_by').eq('id', requestId).maybeSingle()
   if (!req) return fail('That request no longer exists.')
   if (req.status !== 'pending') return fail(`${req.no} has already been ${req.status}.`)
 
@@ -271,6 +284,12 @@ export async function decideRequest(requestId: string, approve: boolean, note?: 
     .eq('id', requestId)
   if (error) return fail(explain(error, 'record the decision'))
 
+  // A rejection the engineer never sees is the same as no decision at all —
+  // and the reason is the only useful part of it.
+  await notifyRequestDecided({
+    requestId, no: req.no as string, approved: approve, note: note?.trim() || null,
+    raisedBy: (req.raised_by as string | null) ?? null, actorId: profile.id,
+  })
   revalidatePath('/stores')
   return done(approve ? `${req.no} approved — the storekeeper can issue it now.` : `${req.no} rejected.`)
 }
@@ -298,7 +317,7 @@ export async function issueRequest(input: IssueInput): Promise<Result<{ id: stri
   const supabase = await createClient()
 
   const { data: req } = await supabase
-    .from('mio_requests').select('id, no, status, project_id, from_project_id').eq('id', input.requestId).maybeSingle()
+    .from('mio_requests').select('id, no, status, project_id, from_project_id, raised_by').eq('id', input.requestId).maybeSingle()
   if (!req) return fail('That request no longer exists.')
   if (req.status !== 'approved') {
     return fail(req.status === 'pending'
@@ -383,6 +402,12 @@ export async function issueRequest(input: IssueInput): Promise<Result<{ id: stri
   const fullyServed = (after ?? []).every(l => Number(l.issued_qty) >= Number(l.qty))
   await supabase.from('mio_requests').update({ status: fullyServed ? 'issued' : 'approved' }).eq('id', req.id)
 
+  // The engineer asked for it; they are the one waiting to hear it is coming.
+  await notifyRequestIssued({
+    no: req.no as string, entryNo: no,
+    raisedBy: (req.raised_by as string | null) ?? null,
+    actorId: profile.id, complete: fullyServed,
+  })
   revalidatePath('/stores')
   return done(fullyServed
     ? `Issued as ${no}. ${req.no} is complete.`

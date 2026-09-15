@@ -168,6 +168,35 @@ export const NOTIFICATION_EVENTS: NotificationEventDef[] = [
     description: 'Bell-only alert to admins when email or phone-push alerts could not be delivered after retries (so a broken channel can still report itself).',
     audience: 'Admins',
   },
+
+  // ── Material In & Out ──────────────────────────────────────────────────
+  // The four hand-offs in the mind map's process. The previous warehouse
+  // module recorded everything correctly and told nobody, and that — not the
+  // screens — is why it was never used.
+  {
+    type: 'mio_gate_waiting',
+    label: 'Material — vehicle at the gate',
+    description: 'Security has recorded a vehicle. The storekeeper is asked to count the material in and take it into stock.',
+    audience: 'Storekeepers',
+  },
+  {
+    type: 'mio_request_pending',
+    label: 'Material — request to approve',
+    description: 'An engineer has asked for material from the store.',
+    audience: 'Admins, Heads & Back office',
+  },
+  {
+    type: 'mio_request_decided',
+    label: 'Material — request approved or rejected',
+    description: 'The decision, and the reason when it is a rejection, goes back to the engineer who asked.',
+    audience: 'The engineer who raised it',
+  },
+  {
+    type: 'mio_request_issued',
+    label: 'Material — issued out',
+    description: 'The storekeeper has issued the material; the engineer who asked is told it is on its way.',
+    audience: 'The engineer who raised it',
+  },
 ]
 
 /** Channels the admin policy controls. Telegram joined on 11 Sep 2026 once
