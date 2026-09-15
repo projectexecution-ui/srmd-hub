@@ -61,6 +61,9 @@ export interface In4WoAbstractItem {
   abstract_id: number; wo_id: number; item_id: number
   executed_quantity: number; recommended_rate: number; executed_amt: number
   bill_no: string | null; display_no: string | null; abstract_dt: string | null
+  /** IN4 own approval state for the abstract: Approved, Verify, Draft,
+   *  Cancelled, Submitted, "No Items". Only Approved moves a bill on. */
+  status: string | null
 }
 export interface In4WoCertificate {
   certificate_id: number; wo_id: number; subproject_id: number; category_id: number; subcategory_id: number
@@ -236,13 +239,19 @@ export async function extractWoBoqItems(): Promise<In4WoBoqItem[]> {
 export async function extractWoAbstractItems(): Promise<In4WoAbstractItem[]> {
   const rows = await in4Query<Record<string, unknown>>(`
     SELECT a.ABSTRACT_ID, a.WO_ID, a.ITEM_ID, a.EXECUTED_QUANTITY, a.RECOMMENDED_RATE, a.EXECUTED_AMT,
-           h.BILL_NO, h.DISPLAY_NO, h.ABSTRACT_DT
+           h.BILL_NO, h.DISPLAY_NO, h.ABSTRACT_DT,
+           CAST(st.STATUS AS nvarchar(50)) STATUS
     FROM BI.FACT_ENGG_WO_ABSTRACT_BOQ a
-    LEFT JOIN dbo.ENGG_BOQ_ABSTRACT h ON h.ID = a.ABSTRACT_ID`)
+    LEFT JOIN dbo.ENGG_BOQ_ABSTRACT h ON h.ID = a.ABSTRACT_ID
+    -- One row per abstract, so this is the current state and not a history.
+    -- CAST because the column is nvarchar and carries "No Items" alongside the
+    -- real statuses; reading it as an int fails on those 14 rows.
+    LEFT JOIN dbo.ENGG_BOQ_ABSTRACT_STATUS st ON st.ABSTRACT_ID = a.ABSTRACT_ID`)
   return rows.map(r => ({
     abstract_id: n(r.ABSTRACT_ID), wo_id: n(r.WO_ID), item_id: n(r.ITEM_ID),
     executed_quantity: n(r.EXECUTED_QUANTITY), recommended_rate: n(r.RECOMMENDED_RATE), executed_amt: n(r.EXECUTED_AMT),
     bill_no: str(r.BILL_NO), display_no: str(r.DISPLAY_NO), abstract_dt: day(r.ABSTRACT_DT),
+    status: str(r.STATUS),
   }))
 }
 

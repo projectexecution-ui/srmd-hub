@@ -36,13 +36,13 @@ const abstracts: In4WoAbstractItem[] = [...bills]
   .map(([id, bill, dt, qty]) => ({
     abstract_id: id, wo_id: 623, item_id: ITEM,
     executed_quantity: qty, recommended_rate: 1016, executed_amt: qty * 1016,
-    bill_no: bill, display_no: null, abstract_dt: dt,
+    bill_no: bill, display_no: null, abstract_dt: dt, status: 'Approved',
   }))
 
 // A second WO's item that must NOT bleed in (different ITEM_ID).
 const noise: In4WoAbstractItem[] = [{
   abstract_id: 9999, wo_id: 900, item_id: 99999,
-  executed_quantity: 5000, recommended_rate: 1, executed_amt: 5000, bill_no: 'X/1', display_no: null, abstract_dt: '2025-01-01',
+  executed_quantity: 5000, recommended_rate: 1, executed_amt: 5000, bill_no: 'X/1', display_no: null, status: 'Approved', abstract_dt: '2025-01-01',
 }]
 
 describe('rollupWoBoqExecution — WO 623, item 6340', () => {

@@ -186,7 +186,10 @@ async function runBoq(sb: SupabaseClient, now: string): Promise<{ rows: number; 
   await upsertAll(sb, 'in4_wo_abstract_items', abstracts.map(a => ({
     abstract_id: a.abstract_id, item_id: a.item_id, wo_id: a.wo_id,
     executed_quantity: a.executed_quantity, recommended_rate: a.recommended_rate, executed_amt: a.executed_amt,
-    bill_no: a.bill_no, display_no: a.display_no, abstract_dt: a.abstract_dt, synced_at: now,
+    bill_no: a.bill_no, display_no: a.display_no, abstract_dt: a.abstract_dt,
+    // IN4 own approval state. Only "Approved" moves a bill on — see
+    // supabase/migrations/20260915_bb_measurement_status.sql.
+    status: a.status, synced_at: now,
   })), 'abstract_id,item_id')
   await dropStale(sb, 'in4_wo_abstract_items', now)
 

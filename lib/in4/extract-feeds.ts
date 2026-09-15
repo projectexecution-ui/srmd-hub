@@ -298,13 +298,16 @@ export interface In4GrnItem {
   material_id: number | null; subproject_id: number | null; supplier_id: number | null
   store_id: number | null; uom_id: number | null
   received_qty: number | null; grn_material_cost: number | null
+  /** IN4 own approval state for the receipt: Approved, or Submitted while it
+   *  is still being checked. Only Approved moves a bill on. */
+  status: string | null
   grn_no: string | null; grn_dt: string | null; delivery_challan_no: string | null
 }
 export async function extractGrnItems(): Promise<In4GrnItem[]> {
   const rows = await in4Query<Record<string, unknown>>(`
     SELECT d.AUTO_ID, d.GRN_ID, d.PO_ID, d.INDENT_ID, d.MATERIAL_ID, d.SUBPROJECT_ID, d.SUPPLIER_ID,
            d.STORE_ID, d.UOM_ID, d.RECIEVED_QTY, d.GRN_MATERIAL_COST,
-           g.GRN_NO, g.GRN_DT, g.DELIVERY_CHALAN_NO
+           g.GRN_NO, g.GRN_DT, g.DELIVERY_CHALAN_NO, g.STATUS
     FROM BI.FACT_PURCHASE_GRN_DETAILS d
     LEFT JOIN BI.DIM_PURCHASE_GRN_HEADER g ON g.GRN_ID = d.GRN_ID`)
   return rows.map(r => ({
@@ -313,6 +316,7 @@ export async function extractGrnItems(): Promise<In4GrnItem[]> {
     store_id: ni(r.STORE_ID), uom_id: ni(r.UOM_ID),
     received_qty: num(r.RECIEVED_QTY), grn_material_cost: num(r.GRN_MATERIAL_COST),
     grn_no: sn(r.GRN_NO), grn_dt: day(r.GRN_DT), delivery_challan_no: sn(r.DELIVERY_CHALAN_NO),
+    status: sn(r.STATUS),
   }))
 }
 
