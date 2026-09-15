@@ -1,128 +1,220 @@
 import type { PickableOrder } from './orders'
 import type { BbStage } from './stages'
 
-/** Ten bills to walk the flow on — simple first, awkward after.
+/** Twenty bills to walk the flow on — ten contractor, ten vendor.
  *
- *  Aksha, 14 Sep 2026: "make few 10 Live Examples - simple and complex in the
- *  Admin page which i can check and review and then we decide to remove."
+ *  Aksha, 15 Sep 2026: "remove old and todays test example and make a new set
+ *  of 10 Examples with this Logic / Also can u make similar for PO as well -
+ *  but the process is little diff than WO."
  *
- *  bb_bills holds three real records. Nobody can judge an approval chain from
- *  three, and nobody should have to learn it by typing ten bills first. So
- *  these are seeded — but from REAL IN4 work orders, with the contractor, the
- *  ordered value and what has already been billed read off the ERP, because a
- *  walkthrough on invented figures teaches you nothing about the arithmetic.
+ *  THE LOGIC these are built to demonstrate is the one he set out the same day:
+ *  the Site Head measures ONCE, in IN4, and CT Hub finds that measurement by
+ *  the bill number the ERP clerk already typed at entry. No abstract number to
+ *  re-key, no second sheet to fill. So every example below carries a REAL IN4
+ *  bill number, and the sheet that appears under it is IN4's own.
  *
- *  Deliberately spread across the desks, so the timeline, the waiting columns
- *  and the SLA colouring all have something to show, and deliberately
- *  including the cases that go wrong in real life: over the work-order value,
- *  no WO yet, a building CT Hub has no project for, held, rejected, paid.
+ *  It works because the abstract is the first document, not the last. Of 2,706
+ *  abstracts in the mirror, 661 are sitting there with no certificate at all,
+ *  and of those since certified 1,484 were dated BEFORE their certificate
+ *  against 13 after. Six of the ten work-order examples are deliberately in
+ *  that state — measured, not yet certified — because that is where a bill
+ *  spends most of its life and it is exactly what the Disc Head, CT Head and
+ *  Atm Head are looking at.
+ *
+ *  WHERE THE PO FLOW DIFFERS, which is the second half of what he asked:
+ *
+ *    the measurement   WO  an abstract the Site Head writes
+ *                      PO  a GRN — what the store actually received. IN4
+ *                          records it when the goods land, days before anyone
+ *                          raises a certificate, so a PO bill has something
+ *                          real to show from the moment it is entered.
+ *    the numbering     WO  a running account, RA-1, RA-2
+ *                      PO  no RA at all; IN4 numbers supplier certificates
+ *    the advance       WO  occasional
+ *                      PO  contractual and common — 215 orders, and on five of
+ *                          the examples below it takes the payable to zero
+ *    the scope         WO  a written description
+ *                      PO  the material list
  *
  *  Pure, so the plan can be read and tested without touching the database. */
 
 export interface ExamplePlan {
-  /** 1–10, the order they are created and shown in. */
+  /** 1–20, the order they are created and shown in. */
   n: number
+  kind: 'WO' | 'PO'
   /** What this one is for, in one line, shown on the admin screen. */
   title: string
   /** Why it is worth looking at — the thing to check when it opens. */
   check: string
   complexity: 'simple' | 'complex'
-  /** Which of the picked work orders to draw from, by index. Null = no order. */
-  woIndex: number | null
-  /** A specific work order, by number, where the example has to land on one —
-   *  the four that carry a real abstract sheet in IN4. The seeder looks it up
-   *  and puts it at `woIndex`; without it the measurement on screen would
-   *  belong to somebody else's order. */
-  pinnedWo?: string
+  /** The real IN4 order, by number. Every example draws on one: figures
+   *  invented for a walkthrough teach nothing about the arithmetic. */
+  order: string
+  /** The contractor's or supplier's own bill number, exactly as IN4 holds it.
+   *
+   *  This is the ONE key. IN4 writes it on the abstract (`bill_no`) and later
+   *  on the payment certificate (`invoice_no`), so typing it at entry is what
+   *  makes the measurement, the ladder and the reconciliation all find each
+   *  other. Null where IN4 genuinely has no bill number yet — the goods have
+   *  been received but the supplier has not invoiced, which is a real state and
+   *  the screen has to survive it. */
+  billNo: string | null
   stage: BbStage
   daysAtDesk: number
   billType: string
-  /** A share of what is left to bill on that work order. 1.2 deliberately
-   *  overshoots, to raise the amendment flag. */
-  shareOfBalance: number
-  woPending?: boolean
-  amendment?: boolean
-  /** The IN4 certificate this example points at, where the flow says one would
-   *  exist by now. A REAL ENP number on the same work order, so the bill page
-   *  shows the certified ladder — basic, tax, retention, advance recovery, what
-   *  is left — instead of an estimate. */
-  abstract?: string
+  /** What the bill claims, in rupees. A real figure off IN4 — the measured
+   *  value of the abstract, the gross of the certificate, or the value of the
+   *  goods received. */
+  claimed: number
+  /** Certified below the claim, so the CT Head's cut is visible. */
   netFromClaim?: boolean
-  orderType?: string
-  work?: string
-  vendor?: string
+  amendment?: boolean
 }
 
 export const EXAMPLE_PLANS: ExamplePlan[] = [
+  /* ── Work orders ─────────────────────────────────────────────────────── */
   {
-    n: 1, complexity: 'simple',
-    title: 'A plain running bill, just entered',
-    check: 'It sits at Entered — your own desk — not at the Site Head. That is what the form now says it does.',
-    woIndex: 0, stage: 'submitted', daysAtDesk: 0, billType: 'Running', shareOfBalance: 0.18,
+    n: 1, kind: 'WO', complexity: 'simple',
+    title: 'Just entered — and the abstract is ALREADY there',
+    check: 'This is the whole point of the new flow. Nobody has touched it since entry, yet the Abstract sheet is on the page: the Site Head measured it in IN4, and CT Hub found it by the bill number CV/RU-56. It says "measured in IN4 · not yet certified", because Billing has raised nothing — so there is no certified figure and the page does not pretend there is.',
+    order: 'WO/SRET/RU/2026-27/161', billNo: 'CV/RU-56',
+    stage: 'submitted', daysAtDesk: 0, billType: 'Running', claimed: 71_500,
   },
   {
-    n: 2, complexity: 'simple',
-    title: 'The ABSTRACT MAKER — the sheet filled here, not in IN4',
-    check: 'Six BOQ lines off the work order, five of them measured. You type only This Qty; This Amt, Cumulative, Balance, GST, Retention and the green Net Payable all compute. Line 3 is already finished and says "done". Saving writes the figures onto the bill and leaves a line in its history.',
-    woIndex: 1, stage: 'site_head', daysAtDesk: 3, billType: 'Running', shareOfBalance: 0.22,
-    pinnedWo: 'WO/SRJT/SRAH/2024-25/50',
+    n: 2, kind: 'WO', complexity: 'simple',
+    title: 'With the Site Head — 23 measured items',
+    check: 'The richest sheet of the twenty. Twenty-three BOQ lines with what was ordered, what is measured to date and what is left, all read out of IN4. Nothing was typed here. Abs/SRASSK/SQ/2026-27/206, made on 10 September.',
+    order: 'WO/SRASSK/SQ/2026-27/105', billNo: 'SR/26-27/67',
+    stage: 'site_head', daysAtDesk: 2, billType: 'Running', claimed: 11_16_653,
   },
   {
-    n: 3, complexity: 'simple',
-    title: 'With the Disc Head, abstract recorded',
-    check: 'The ABSTRACT SHEET — two measured items with their ordered quantity, what is measured to date and what is left. It adds up to the certified figure to the rupee.',
-    woIndex: 2, stage: 'disc_head', daysAtDesk: 1, billType: 'Running', shareOfBalance: 0.3,
-    pinnedWo: 'WO/SRASSK/NGH/2025-26/271', abstract: 'ENP/SRASSK/NGH/2025-26/500',
+    n: 3, kind: 'WO', complexity: 'simple',
+    title: 'With the Disc Head — ₹52 lakh, seven items',
+    check: 'A large measured bill on P2 A02, waiting on the discipline head. Seven items against a ₹2.79 crore order. The Bills-on-this-order table below shows every earlier bill and what is left after each.',
+    order: 'WO/SRASSK/P2ST/2025-26/326', billNo: 'SRASSK-PH02-A02/05',
+    stage: 'disc_head', daysAtDesk: 1, billType: 'Running', claimed: 52_35_271,
   },
   {
-    n: 4, complexity: 'simple',
-    title: 'Waiting on the Atm Head',
-    check: 'In My Approvals saying Approve — a 5-line abstract sheet, and the calculation showing why payable collapses: 29.8 lakh of advance recovered against 33.8 lakh certified.',
-    woIndex: 3, stage: 'atm_approval', daysAtDesk: 4, billType: 'Running', shareOfBalance: 0.25,
-    pinnedWo: 'WO/SRJT/SRAH/2025-26/5', abstract: 'ENP/SRJT/SRAH/2025-26/103',
+    n: 4, kind: 'WO', complexity: 'complex',
+    title: 'An awkward bill number still finds its sheet',
+    check: 'The bill number is "INVOICE NO -154/Dt-05-09-2026 & INVOICE NO-156/Dt-05-09-2026" — 59 characters, two invoices in one string, spaces and slashes. It still matches IN4 exactly, and sixteen measured items appear. This is why the match is on the stored number and never on a tidied-up version of it.',
+    order: 'WO/SRJT/SRAH/2024-25/47',
+    billNo: 'INVOICE NO -154/Dt-05-09-2026 & INVOICE NO-156/Dt-05-09-2026',
+    stage: 'ct_head', daysAtDesk: 3, billType: 'Running', claimed: 10_60_482,
   },
   {
-    n: 5, complexity: 'complex',
-    title: 'Past its SLA at the CT Head desk',
-    check: 'Nine days against a three-day limit. It counts in Over SLA on the home page and the timeline segment is red.',
-    woIndex: 4, stage: 'ct_head', daysAtDesk: 9, billType: 'Running', shareOfBalance: 0.2,
-    abstract: 'ABS/SQ/2026-27/094',
+    n: 5, kind: 'WO', complexity: 'complex',
+    title: 'Nine days at the CT Head desk — past its SLA',
+    check: 'Three days is the limit for this desk, so it is red on the home page, red in the desk list and red on the timeline. It is also the oldest thing waiting, which is why its desk sorts to the top.',
+    order: 'WO/SRASSK/VVST/2026-27/74', billNo: 'SRASSK-PH2-VVK/4',
+    stage: 'ct_head', daysAtDesk: 9, billType: 'Running', claimed: 4_82_448,
   },
   {
-    n: 6, complexity: 'complex',
-    title: 'Takes the work order past its value',
-    check: 'The red amendment banner with the arithmetic spelled out — and its certificate is one of the 20% where IN4 own figures do not add up, so the calculation shows both totals and says so rather than picking one.',
-    woIndex: 5, stage: 'ct_head', daysAtDesk: 2, billType: 'Running', shareOfBalance: 1.2,
-    pinnedWo: 'WO/SRASSK/P2ST/2025-26/326', amendment: true, abstract: 'ENP/SRASSK/P2ST/2026-27/2',
+    n: 6, kind: 'WO', complexity: 'complex',
+    title: 'With the Atm Head — certified, and the advance bites',
+    check: 'A real certificate exists for this one, so the full ladder shows: ₹98.07 L basic, ₹1.16 Cr gross, ₹4.76 L retention held and ₹9.52 L of advance recovered. Fifteen measured items that add up to the certified figure to the rupee. It also appears in My Approvals.',
+    order: 'WO/SRASSK/NGH/2024-25/271', billNo: 'SRASSK-GHA/10',
+    stage: 'atm_approval', daysAtDesk: 4, billType: 'Running', claimed: 1_15_72_438,
   },
   {
-    n: 7, complexity: 'complex',
-    title: 'The bill came before the work order',
-    check: 'Marked to be regularised. About a third of bills arrive this way; it ages from its own bill date and has no order number.',
-    woIndex: null, stage: 'site_head', daysAtDesk: 11, billType: 'Running', shareOfBalance: 0,
-    woPending: true, orderType: 'Without WO/PO',
-    vendor: 'Shreeji Enterprise', work: 'Shuttering and staging, block C',
-  },
-  {
-    n: 8, complexity: 'complex',
-    title: 'Petty cash, no order and no abstract',
-    check: 'Goes straight to Billing. No work order, no measurement, and the IN4 side of the form is skipped entirely.',
-    woIndex: null, stage: 'ct_billing', daysAtDesk: 2, billType: 'Petty Cash', shareOfBalance: 0,
-    orderType: 'Without WO/PO', vendor: 'Site petty cash', work: 'Tanker water, fortnight',
-  },
-  {
-    n: 9, complexity: 'complex',
+    n: 7, kind: 'WO', complexity: 'complex',
     title: 'On a building CT Hub has no project for',
-    check: 'No CT Hub project, and it still books against its IN4 sub-project — the case covering 887 of the 1,228 work orders. The richest sheet of the ten: 9 measured items, 83 lakh certified, 55 lakh of advance recovered.',
-    woIndex: 6, stage: 'atm_approval', daysAtDesk: 6, billType: 'Running', shareOfBalance: 0.15,
-    pinnedWo: 'WO/SRASSK/SQ/2023-24/7', abstract: 'ENP/SRASSK/SQ/2024-25/42',
+    check: 'Common Facility Block has no CT Hub project, and the bill still books — against its IN4 sub-project, shown as "Books under: Bills Approval project". This is the case covering most of the money: 887 of the 1,228 numbered work orders are on buildings with no CT Hub project at all.',
+    order: 'WO/SRET/RU/2025-26/271', billNo: '53',
+    stage: 'atm_approval', daysAtDesk: 6, billType: 'Running', claimed: 8_86_542,
   },
   {
-    n: 10, complexity: 'complex',
-    title: 'Certified down, sitting with the Trust',
-    check: 'Net payable is under the claim — the CT Head cut it. Days at the Trust are counted, never called late. And its certificate carries NO GST: 60% of IN4 bills do not.',
-    woIndex: 7, stage: 'trust', daysAtDesk: 21, billType: 'Full & Final', shareOfBalance: 0.4,
-    netFromClaim: true, abstract: 'ENA/SRASSK/NGH/2026-27/5',
+    n: 8, kind: 'WO', complexity: 'complex',
+    title: 'Takes the work order past its value',
+    check: 'The order is ₹88,949 and it is already fully measured; this claims 20% more. The red amendment banner spells out the arithmetic and says an IN4 amendment is needed before payment — and the bill still goes for checking rather than being blocked.',
+    order: 'WO/SRET/RU/2026-27/153', billNo: 'BILL NO 04',
+    stage: 'ct_head', daysAtDesk: 2, billType: 'Running', claimed: 1_06_739, amendment: true,
+  },
+  {
+    n: 9, kind: 'WO', complexity: 'complex',
+    title: 'At CT Billing — 41 measured items, certificate raised',
+    check: 'The longest sheet in the set: 41 items on one bill. Billing has keyed the certificate, so the ladder is real and the sheet now reconciles against a certified figure instead of saying there is nothing to compare. The whole ₹26.6 L was taken by advance recovery — net payable is nil.',
+    order: 'WO/SRJT/SRAH/2025-26/111', billNo: 'KC/BHI/015/26-27',
+    stage: 'ct_billing', daysAtDesk: 2, billType: 'Running', claimed: 26_59_165,
+  },
+  {
+    n: 10, kind: 'WO', complexity: 'complex',
+    title: 'Certified down, now with the Trust',
+    check: 'Net payable is under the claim — the CT Head cut it, and both figures are shown. Days at the Trust are counted but never coloured red: the bill has left CT and nobody here can move it. IN4 has it as Partially Paid with ₹87,861 still outstanding.',
+    order: 'WO/SRASSK/NGH/2024-25/270', billNo: 'SRASSK-GHB/11',
+    stage: 'trust', daysAtDesk: 12, billType: 'Full & Final', claimed: 51_83_822, netFromClaim: true,
+  },
+
+  /* ── Purchase orders ─────────────────────────────────────────────────── */
+  {
+    n: 11, kind: 'PO', complexity: 'simple',
+    title: 'PO just entered — the goods arrived today',
+    check: 'The PO answer to example 1. No supplier certificate exists, but seven materials worth ₹10.66 L were received against this order on 15 September and the panel shows them: "Goods received, not yet billed". A purchase order is measured by what arrived, not by a measurement sheet.',
+    order: 'PO/SRASSK/NGH/2026-27/88', billNo: null,
+    stage: 'submitted', daysAtDesk: 0, billType: 'Running', claimed: 10_65_979,
+  },
+  {
+    n: 12, kind: 'PO', complexity: 'simple',
+    title: 'PO with the Site Head — 43 materials received',
+    check: 'Forty-three electrical items received in one GRN against a ₹2.6 L order, every one with its ordered quantity, what has been received to date and the balance. No RA number anywhere: a supplier bill is not a running account.',
+    order: 'PO/SRASSK/AB/2026-27/94', billNo: null,
+    stage: 'site_head', daysAtDesk: 1, billType: 'Running', claimed: 2_59_919,
+  },
+  {
+    n: 13, kind: 'PO', complexity: 'simple',
+    title: 'PO with the Disc Head — eighteen small items',
+    check: 'A ₹22,562 order of machinery-store consumables, fully received. Small money, eighteen lines — the case where the material list matters more than the total, and where the scope on the bill is read off the order rather than typed.',
+    order: 'PO/SRASSK/NGH/2026-27/91', billNo: null,
+    stage: 'disc_head', daysAtDesk: 2, billType: 'Running', claimed: 22_562,
+  },
+  {
+    n: 14, kind: 'PO', complexity: 'complex',
+    title: 'PO with the Atm Head — 70 billed lines, one GRN',
+    check: 'A certified supplier bill: 70 pay lines folded into one row per material, all from a single goods receipt, adding up to ₹4.70 L — which is what IN4 bills, to the rupee. Supplier bills reconcile on 1,376 of 1,376 certificates, better than the contractor side manages.',
+    order: 'PO/SRET/RU/2025-26/300', billNo: '2951',
+    stage: 'atm_approval', daysAtDesk: 3, billType: 'Running', claimed: 4_70_446,
+  },
+  {
+    n: 15, kind: 'PO', complexity: 'complex',
+    title: 'The advance takes the whole bill',
+    check: 'Gross ₹2,99,666 and payable ZERO — every rupee recovered against the advance. The Advance panel shows ₹17.59 L taken on this order, what has come back and what is still to recover. Without that panel a bill worth nothing looks like a mistake instead of a recovery.',
+    order: 'PO/SRASSK/NGH/2026-27/9', billNo: 'SI26-27260502128',
+    stage: 'atm_approval', daysAtDesk: 5, billType: 'Running', claimed: 2_99_666,
+  },
+  {
+    n: 16, kind: 'PO', complexity: 'complex',
+    title: 'Part of the advance recovered, part paid',
+    check: 'The same order, a later bill: ₹3,07,838 gross, ₹2,42,642 recovered against the advance, ₹65,196 actually payable. Read it next to example 15 to see the advance running down.',
+    order: 'PO/SRASSK/NGH/2026-27/9', billNo: 'SI26-27260502328',
+    stage: 'ct_head', daysAtDesk: 4, billType: 'Running', claimed: 3_07_838,
+  },
+  {
+    n: 17, kind: 'PO', complexity: 'complex',
+    title: 'A PO that buys for three sub-projects',
+    check: 'Granite across three sub-projects on one order. The entry form offers all three as chips and books to the one carrying the most value; forty-nine purchase orders are like this. It has also taken two advances totalling ₹4.94 L with nothing billed against it yet.',
+    order: 'PO/SRET/RU/2025-26/253', billNo: null,
+    stage: 'site_head', daysAtDesk: 6, billType: 'Advance', claimed: 3_01_471,
+  },
+  {
+    n: 18, kind: 'PO', complexity: 'complex',
+    title: 'PO billed out in full',
+    check: 'Ordered ₹5,50,210, billed ₹5,50,208 — two rupees left, so Balance to bill is effectively nil and a further bill would be flagged. Forty-two plumbing materials on one certificate.',
+    order: 'PO/SRASSK/NGH/2025-26/120', billNo: '604',
+    stage: 'ct_billing', daysAtDesk: 2, billType: 'Full & Final', claimed: 5_50_208,
+  },
+  {
+    n: 19, kind: 'PO', complexity: 'complex',
+    title: 'A ₹1,770 bill, nine days late',
+    check: 'Small money still has to move. Three materials, ₹1,500 basic plus ₹270 GST, sitting nine days at a two-day desk. It proves the SLA colouring is about time, not size — and it is the kind of bill that quietly rots because nobody thinks it is worth chasing.',
+    order: 'PO/SRJT/SRAH/2026-27/27', billNo: '847/26-27',
+    stage: 'ct_head', daysAtDesk: 9, billType: 'Running', claimed: 1_770,
+  },
+  {
+    n: 20, kind: 'PO', complexity: 'complex',
+    title: 'PO paid, sitting with the Trust',
+    check: 'Certificate 1315, ₹3.42 L, paid in full in IN4. The days at the Trust are counted and never called late. This is the end state the whole chain is aiming at, and the figure came straight from IN4 rather than being typed here.',
+    order: 'PO/SRASSK/NGH/2026-27/20', billNo: '605',
+    stage: 'trust', daysAtDesk: 14, billType: 'Running', claimed: 3_42_776,
   },
 ]
 
@@ -135,7 +227,7 @@ export interface ExamplePayload extends Record<string, unknown> {
   in4_subproject_id: number | null
   vendor_text: string
   work: string | null
-  bill_no: string
+  bill_no: string | null
   ra_no: string | null
   bill_date: string
   claimed_amount: number
@@ -151,81 +243,58 @@ export interface ExamplePayload extends Record<string, unknown> {
   note: string
 }
 
-/** Turn a plan plus the work orders it draws on into rows to insert.
+/** Turn the plans plus the orders they name into rows to insert.
  *
  *  `today` is passed in rather than read, so the same plan always produces the
- *  same rows in a test. A plan whose work order is missing is skipped rather
- *  than invented — a walkthrough built on a WO that does not exist would teach
- *  the wrong arithmetic. */
+ *  same rows in a test. A plan whose order is missing from IN4 is skipped
+ *  rather than invented — a walkthrough built on an order that does not exist
+ *  would teach the wrong arithmetic. */
 export function buildExamples(
   plans: ExamplePlan[],
-  wos: PickableOrder[],
-  resolve: (wo: PickableOrder) => { projectId: string | null; subprojectId: number | null; discipline: string | null },
+  orders: Map<string, PickableOrder>,
+  resolve: (o: PickableOrder) => { projectId: string | null; subprojectId: number | null; discipline: string | null },
   today: Date = new Date(),
 ): ExamplePayload[] {
   const out: ExamplePayload[] = []
   const iso = (d: Date) => d.toISOString().slice(0, 10)
 
   for (const p of plans) {
-    const wo = p.woIndex == null ? null : wos[p.woIndex]
-    if (p.woIndex != null && !wo) continue
+    const o = orders.get(p.order)
+    if (!o) continue
 
     const billDate = new Date(today)
     billDate.setDate(billDate.getDate() - p.daysAtDesk - 2)
 
-    let claimed: number
-    let woValue: number | null = null
-    let paidTill = 0
-    let trust: string | null = null
-    let orderNo: string | null = null
-    let vendor = p.vendor ?? 'Example contractor'
-    let work = p.work ?? null
-    let projectId: string | null = null
-    let subprojectId: number | null = null
-    let discipline: string | null = null
-
-    if (wo) {
-      const r = resolve(wo)
-      projectId = r.projectId
-      subprojectId = r.subprojectId
-      discipline = r.discipline
-      orderNo = wo.orderNo
-      vendor = wo.party || vendor
-      work = wo.workDescription ?? work
-      trust = wo.trust
-      woValue = Math.round(wo.orderedGross)
-      paidTill = Math.round(wo.billedGross)
-      // A share of what is genuinely left, so the figures sit inside the real
-      // order rather than beside it. Floored so a fully-billed WO still gives
-      // a usable number.
-      const base = wo.balance > 0 ? wo.balance : wo.orderedGross
-      claimed = Math.max(1, Math.round(base * p.shareOfBalance))
-    } else {
-      // No order to read from, so a plain round figure — which is what a petty
-      // cash or pre-order bill actually looks like.
-      claimed = p.billType === 'Petty Cash' ? 18_500 : 742_000
-    }
-
+    const r = resolve(o)
     out.push({
-      order_type: p.orderType ?? 'WO',
+      // The one field the whole page branches on. A vendor bill entered as a
+      // work-order bill would look right and read the wrong IN4 tables.
+      order_type: o.kind,
       bill_type: p.billType,
-      order_no: orderNo,
-      project_id: projectId,
-      in4_subproject_id: subprojectId,
-      vendor_text: vendor,
-      work,
-      bill_no: `EX-${String(p.n).padStart(2, '0')}`,
-      ra_no: wo ? `RA-${wo.bills + 1}` : null,
+      order_no: o.orderNo,
+      project_id: r.projectId,
+      in4_subproject_id: r.subprojectId,
+      vendor_text: o.party || (o.kind === 'WO' ? 'Contractor not named in IN4' : 'Supplier not named in IN4'),
+      work: o.workDescription,
+      // The key. Not a made-up "EX-01" — without the real number nothing links
+      // and the example would demonstrate the opposite of the point.
+      bill_no: p.billNo,
+      // A running account is a work-order idea. IN4 numbers supplier
+      // certificates instead, so a PO bill carries no RA number rather than an
+      // invented one.
+      ra_no: o.kind === 'WO' ? `RA-${o.bills + 1}` : null,
       bill_date: iso(billDate),
-      claimed_amount: claimed,
+      claimed_amount: p.claimed,
       // Only where the CT Head has already locked it — before that desk there
       // is no certified figure, and inventing one would misread the flow.
-      net_amount: p.netFromClaim ? Math.round(claimed * 0.93) : null,
-      trust,
-      wo_value: woValue,
-      paid_till_date: paidTill,
-      abstract_no_in4: p.abstract ?? null,
-      wo_pending: p.woPending ?? false,
+      net_amount: p.netFromClaim ? Math.round(p.claimed * 0.93) : null,
+      trust: o.trust,
+      wo_value: Math.round(o.orderedGross),
+      paid_till_date: Math.round(o.billedGross),
+      // Never asked for at entry and never seeded: the abstract is found by the
+      // bill number now, which is the whole change these examples demonstrate.
+      abstract_no_in4: null,
+      wo_pending: false,
       amendment_flag: p.amendment ?? false,
       stage: p.stage,
       days_at_desk: p.daysAtDesk,

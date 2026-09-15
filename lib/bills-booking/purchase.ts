@@ -113,6 +113,11 @@ export interface GrnRow {
 }
 
 export interface GrnSheet {
+  /** True when this came off a supplier certificate — what IN4 has BILLED.
+   *  False when it is goods received against the order that no certificate
+   *  covers yet: the purchase side of an abstract made and awaiting Billing,
+   *  and what the approver is actually being asked to pass. */
+  billed: boolean
   rows: GrnRow[]
   /** The goods receipts this bill draws on. Usually one; up to eleven. */
   grns: Array<{ no: string | null; on: string | null; challan: string | null }>
@@ -127,6 +132,7 @@ export interface GrnSheet {
 
 export function buildGrnSheet(
   lines: PayLine[], receipts: GrnItem[], order: PoLine[], landed: number,
+  billed = true,
 ): GrnSheet | null {
   if (!lines.length) return null
 
@@ -203,6 +209,7 @@ export function buildGrnSheet(
   const outBy = r2(thisBill - landed)
 
   return {
+    billed,
     rows,
     // IN4 reuses one GRN number across many receipts on the same order —
     // "GRN/SRASSK/NGH/2026-27/1" appears on a dozen different dates — so the

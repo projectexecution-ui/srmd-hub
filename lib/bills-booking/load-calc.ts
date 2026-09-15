@@ -132,10 +132,28 @@ export async function loadBillCalc(
     }
   }
 
-  // The abstract sheet for this bill, matched on the contractor's invoice
-  // number. Only meaningful once a certificate exists.
-  const sheet = mineCert
-    ? await loadAbstractSheet(sb, { woNo, invoiceNo: mineCert.invoiceNo, certified: mineCert.certified }).catch(() => null)
+  // The abstract sheet for this bill, matched on the contractor's bill number.
+  //
+  // Aksha, 15 Sep 2026: "Site Head also does one entry in IN4 - and once
+  // Abstract is made in IN4 the Abstract ... is made with all previous data n
+  // current data - this will reduce overall process." He is right, and the
+  // mirror agrees: the abstract is the FIRST document. 661 of 2,706 abstracts
+  // sit in IN4 with no certificate at all, and of those since certified, 1,484
+  // were dated BEFORE their certificate against 13 after.
+  //
+  // So this no longer waits for a certificate. The key is the bill number the
+  // ERP clerk already types at entry — IN4 stores that same number on the
+  // abstract (bill_no) and later on the certificate (invoice_no) — so the Disc
+  // Head, CT Head and Atm Head see the real measurement while the bill is still
+  // with them, and the Site Head never types the sheet twice.
+  const sheetKey = mineCert?.invoiceNo ?? bill.billNo
+  const sheet = sheetKey
+    ? await loadAbstractSheet(sb, {
+        woNo, invoiceNo: sheetKey,
+        // No certificate yet means no figure to reconcile against, and the
+        // sheet must say so rather than implying a match.
+        certified: mineCert?.certified ?? null,
+      }).catch(() => null)
     : null
 
   return {
@@ -259,13 +277,19 @@ async function loadPoCalc(
     mineCert?.advanceRecovery ?? 0,
   )
 
+  // What this bill is for. Once Billing has raised the certificate that is its
+  // own pay lines; before that — where a bill spends most of its life — it is
+  // the goods RECEIVED against the order that no certificate covers yet. That
+  // is the purchase side of an abstract made and waiting, and it is what the
+  // Disc Head, CT Head and Atm Head are actually being asked to pass.
+  const billedGrns = new Set(lines.map(l => l.grn_id).filter((v): v is number => typeof v === 'number'))
   const grn = mineCert
     ? await loadGrnSheet(sb, {
         poId,
         lines: lines.filter(l => n(l.certificate_id) === mineCert.certificateId),
         landed: mineCert.gross,
       }).catch(() => null)
-    : null
+    : await loadUnbilledGrn(sb, { poId, billedGrns }).catch(() => null)
 
   return {
     orderNo: bill.orderNo,
@@ -292,7 +316,7 @@ async function loadPoCalc(
  *  the abstract does — this bill, received to date, still to come. */
 async function loadGrnSheet(
   sb: SupabaseClient,
-  opts: { poId: number; lines: Record<string, unknown>[]; landed: number },
+  opts: { poId: number; lines: Record<string, unknown>[]; landed: number; billed?: boolean },
 ): Promise<GrnSheet | null> {
   if (!opts.lines.length) return null
 
@@ -347,6 +371,7 @@ async function loadGrnSheet(
       }
     }),
     opts.landed,
+    opts.billed ?? true,
   )
 }
 
@@ -361,12 +386,12 @@ async function loadGrnSheet(
  *  abstract's own id in its own id space and matches nothing; see the note at
  *  the top of abstract.ts for how long that cost me.
  *
- *  Null when IN4 holds no abstract for this bill, which is normal: 2,085 of
- *  them reach a certificate, and a bill still moving through CT Hub has none
- *  yet at all. */
+ *  Null when IN4 holds no abstract under that number — normal for a bill the
+ *  Site Head has not measured yet, and the screen says which number it looked
+ *  for rather than showing an empty panel. */
 export async function loadAbstractSheet(
   sb: SupabaseClient,
-  opts: { woNo: string; invoiceNo: string | null; certified: number },
+  opts: { woNo: string; invoiceNo: string | null; certified: number | null },
 ): Promise<AbstractSheet | null> {
   const key = opts.invoiceNo?.trim()
   if (!key) return null
@@ -500,4 +525,45 @@ export async function loadMakerSeed(
   const ownSheet = (mine ?? []).length > 0
 
   return { lines, gst, retention, ownSheet }
+}
+
+/** Goods received against a purchase order that no supplier certificate covers
+ *  yet — the purchase side of an abstract made and awaiting Billing.
+ *
+ *  Aksha, 15 Sep 2026, on the PO flow: "the process is little diff than WO".
+ *  It is. A work order is measured by an abstract the Site Head writes; a
+ *  purchase order is measured by what physically arrived, and IN4 records that
+ *  as a GRN the moment the store receives it — days or weeks before anyone
+ *  raises a certificate. So a PO bill sitting with the Disc Head has something
+ *  real to show, and it is this.
+ *
+ *  The quantities here are certain by construction: the money and the receipt
+ *  are the same row, so there is no bill-covers-part-of-a-receipt problem — see
+ *  the note in purchase.ts about why that matters once a certificate exists. */
+async function loadUnbilledGrn(
+  sb: SupabaseClient,
+  opts: { poId: number; billedGrns: Set<number> },
+): Promise<GrnSheet | null> {
+  const { data: grnData } = await sb.from('in4_grn_items')
+    .select('grn_id, material_id, received_qty, grn_material_cost, grn_no, grn_dt, delivery_challan_no')
+    .eq('po_id', opts.poId)
+
+  const open = ((grnData ?? []) as Record<string, unknown>[])
+    .filter(g => typeof g.grn_id === 'number' && !opts.billedGrns.has(g.grn_id))
+  if (!open.length) return null
+
+  return loadGrnSheet(sb, {
+    poId: opts.poId,
+    // Each receipt line stands in for its own bill line: the money IS what the
+    // receipt says the goods cost, so nothing is inferred.
+    lines: open.map(g => ({
+      certificate_id: 0,
+      grn_id: g.grn_id,
+      material_id: g.material_id,
+      landed_cost: g.grn_material_cost,
+      certified_amt: g.grn_material_cost,
+    })),
+    landed: open.reduce((s, g) => s + Number(g.grn_material_cost ?? 0), 0),
+    billed: false,
+  })
 }

@@ -83,11 +83,16 @@ export interface AbstractSheet {
   cumulative: number
   ordered: number
   balance: number
-  /** What IN4 certified for this bill. */
-  certified: number
-  /** Whether the lines add up to it. Shown either way — a measurement sheet
-   *  that quietly disagrees with the money is the thing worth catching. */
-  reconciles: boolean
+  /** What IN4 certified for this bill. Null when no certificate exists yet —
+   *  the Site Head has made the abstract in IN4 and Billing has not keyed the
+   *  payment certificate, which is where a bill spends most of its life. There
+   *  is then nothing to reconcile against, and claiming a match either way
+   *  would be a lie. */
+  certified: number | null
+  /** Whether the lines add up to it. Null while there is no certified figure.
+   *  Shown either way once there is — a measurement sheet that quietly
+   *  disagrees with the money is the thing worth catching. */
+  reconciles: boolean | null
   outBy: number
 }
 
@@ -106,7 +111,7 @@ export function buildAbstractSheet(
   mine: AbstractLine[],
   earlier: AbstractLine[],
   boq: BoqLine[],
-  certified: number,
+  certified: number | null,
 ): AbstractSheet {
   const boqBy = new Map(boq.map(b => [b.itemId, b]))
 
@@ -158,7 +163,8 @@ export function buildAbstractSheet(
   rows.sort((a, b) => b.thisAmt - a.thisAmt)
 
   const thisBill = r2(rows.reduce((s, r) => s + r.thisAmt, 0))
-  const outBy = r2(thisBill - certified)
+  // Nothing to compare against until Billing keys the certificate.
+  const outBy = certified == null ? 0 : r2(thisBill - certified)
   const first = mine[0]
 
   return {
@@ -173,7 +179,7 @@ export function buildAbstractSheet(
     certified,
     // ₹2, because IN4 rounds each line and the total can drift by a rupee
     // either way — 85,511 + 199,054 = 284,565 against 284,564 certified.
-    reconciles: certified > 0 ? Math.abs(outBy) <= 2 : true,
+    reconciles: certified == null ? null : certified > 0 ? Math.abs(outBy) <= 2 : true,
     outBy,
   }
 }

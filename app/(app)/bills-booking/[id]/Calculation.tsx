@@ -215,8 +215,15 @@ function Sheet({ s }: { s: AbstractSheet }) {
         <p className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wide text-gray-400">
           <Ruler className="h-3.5 w-3.5" /> Abstract sheet — as IN4 holds it
         </p>
-        <span className="font-mono text-[10.5px] text-gray-500">
-          {s.abstractNo ?? '—'}{s.on ? ` · ${formatDate(s.on)}` : ''}
+        <span className="flex items-center gap-2">
+          {s.certified == null && (
+            <span className="rounded-full border border-blue-200 bg-blue-50 px-2 py-0.5 text-[10.5px] font-semibold text-blue-700">
+              measured in IN4 · not yet certified
+            </span>
+          )}
+          <span className="font-mono text-[10.5px] text-gray-500">
+            {s.abstractNo ?? '—'}{s.on ? ` · ${formatDate(s.on)}` : ''}
+          </span>
         </span>
       </div>
 
@@ -290,11 +297,18 @@ function Sheet({ s }: { s: AbstractSheet }) {
       )}
 
       <p className="mt-3 text-xs text-gray-500">
-        {s.reconciles
-          ? <>These lines add up to {formatINR(s.thisBill)}, which is what IN4 certified for this bill.</>
-          : <><b className="text-amber-800">The lines do not add up to the certified figure.</b> They total {formatINR(s.thisBill)};
-              IN4 certified {formatINR(s.certified)} — a difference of {formatINR(Math.abs(s.outBy))}. Worth asking about
-              before this is approved.</>}
+        {/* Until Billing keys the certificate there is no certified figure to
+            compare against, and claiming a match either way would be a lie.
+            This is where a bill spends most of its life. */}
+        {s.certified == null
+          ? <>The Site Head has measured this in IN4 — {formatINR(s.thisBill)} across {s.rows.length}{' '}
+              {s.rows.length === 1 ? 'item' : 'items'}. No payment certificate exists yet, so there is nothing to
+              reconcile it against. CT Billing raises that after approval, and it is checked automatically then.</>
+          : s.reconciles
+            ? <>These lines add up to {formatINR(s.thisBill)}, which is what IN4 certified for this bill.</>
+            : <><b className="text-amber-800">The lines do not add up to the certified figure.</b> They total {formatINR(s.thisBill)};
+                IN4 certified {formatINR(s.certified)} — a difference of {formatINR(Math.abs(s.outBy))}. Worth asking about
+                before this is approved.</>}
       </p>
     </Card>
   )
@@ -363,19 +377,30 @@ function Received({ s }: { s: GrnSheet }) {
     <Card className="p-4">
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
         <p className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wide text-gray-400">
-          <PackageCheck className="h-3.5 w-3.5" /> Goods received — what this bill is for
+          <PackageCheck className="h-3.5 w-3.5" /> {s.billed ? 'Goods received — what this bill is for' : 'Goods received, not yet billed'}
         </p>
-        <span className="text-right font-mono text-[10.5px] text-gray-500">
+        <span className="flex items-center gap-2 text-right">
+          {!s.billed && (
+            <span className="rounded-full border border-blue-200 bg-blue-50 px-2 py-0.5 text-[10.5px] font-semibold text-blue-700">
+              received in IN4 · no certificate yet
+            </span>
+          )}
+          <span className="font-mono text-[10.5px] text-gray-500">
           {s.grns.length === 0
             ? '—'
             : s.grns.map(g => `${g.no ?? 'GRN'}${g.on ? ` · ${formatDate(g.on)}` : ''}`).join('  ·  ')}
+          </span>
         </span>
       </div>
 
       <p className="mb-3 text-xs text-gray-500">
         A purchase order is measured by what arrived, not by a measurement sheet — IN4 raises the supplier&apos;s
-        certificate against the goods receipt. {s.rows.length} {s.rows.length === 1 ? 'material' : 'materials'} on
-        this bill. <b>This bill</b> is what came in now; <b>received</b> is everything received against that material
+        certificate against the goods receipt.{' '}
+        {s.billed
+          ? <>{s.rows.length} {s.rows.length === 1 ? 'material' : 'materials'} on this bill.</>
+          : <>These {s.rows.length} {s.rows.length === 1 ? 'material has' : 'materials have'} been received against this
+             order and no supplier certificate covers them yet — this is what the bill is being passed for. Billing
+             raises the certificate after approval.</>} <b>This bill</b> is what came in now; <b>received</b> is everything received against that material
         so far; <b>balance</b> is what is still to come.
         {challans.length > 0 && <> Challan {challans.join(', ')}.</>}
       </p>
@@ -457,7 +482,10 @@ function Received({ s }: { s: GrnSheet }) {
       )}
 
       <p className="mt-3 text-xs text-gray-500">
-        {s.reconciles
+        {!s.billed
+          ? <>{formatINR(s.thisBill)} of goods received, at what the receipt values them at. There is no certificate to
+             reconcile against yet; it is checked automatically once Billing raises one.</>
+          : s.reconciles
           ? <>These lines add up to {formatINR(s.thisBill)}, which is what IN4 bills for this certificate.</>
           : <><b className="text-amber-800">The lines do not add up to the bill.</b> They total {formatINR(s.thisBill)};
               IN4 bills {formatINR(s.landed)} — a difference of {formatINR(Math.abs(s.outBy))}. Worth asking about
