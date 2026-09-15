@@ -232,3 +232,49 @@ export function pickRate(bills: RateBill[], fallback: number): RatePick {
 
   return { pct, basis: 'latest', seen, total: rated.length, others }
 }
+
+/* ── the same sheet, when IN4 is the one that measured it ────────────────── */
+
+/** Turn IN4's own abstract into maker lines, so it renders in the SAME format.
+ *
+ *  Aksha, 15 Sep 2026: "why is the Abstract sheet is coming like this and not
+ *  like the screenshot". Because there were two renderings of one thing — the
+ *  maker in the concept-sheet format he approved, and a second, plainer table
+ *  for IN4's read-back with no totals ladder and no Work Order / Cumulative /
+ *  Balance grouping. Two formats for one document is the same mistake as two
+ *  panels for one document, which he caught on 14 September.
+ *
+ *  So there is one format now. IN4's measured quantities come through here and
+ *  are priced by the same `priceAbstract`, which means the Sub Total, GST,
+ *  Retention and Net Payable lines appear under an IN4 abstract exactly as they
+ *  do under one filled here. Nothing is recomputed differently — the rate and
+ *  the measured quantity are IN4's; only the presentation is shared. */
+export interface MeasuredRow {
+  itemId: number
+  item: string
+  uom: string | null
+  orderedQty: number
+  rate: number
+  orderedAmt: number
+  thisQty: number
+  thisAmt: number
+  cumulativeQty: number
+  cumulativeAmt: number
+}
+
+export function linesFromSheet(rows: MeasuredRow[]): MakerLine[] {
+  return rows.map((r, i) => ({
+    itemId: r.itemId,
+    sr: i + 1,
+    particular: r.item,
+    uom: r.uom,
+    orderedQty: r.orderedQty,
+    rate: r.rate,
+    orderedAmt: r.orderedAmt,
+    // The maker thinks in "what was measured BEFORE this bill"; IN4's sheet
+    // gives the running total including it. One subtraction, not a new source.
+    priorQty: q3(r.cumulativeQty - r.thisQty),
+    priorAmt: r2(r.cumulativeAmt - r.thisAmt),
+    thisQty: r.thisQty,
+  }))
+}

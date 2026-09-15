@@ -13,6 +13,7 @@ import { AbstractNo } from './AbstractNo'
 import { Calculation } from './Calculation'
 import { loadBillCalc, loadMakerSeed } from '@/lib/bills-booking/load-calc'
 import { AbstractMaker } from './AbstractMaker'
+import { linesFromSheet } from '@/lib/bills-booking/maker'
 import { buildTimeline, type RawEvent } from '@/lib/bills-booking/timeline'
 import { formatDate, formatDateTime, formatINR } from '@/lib/utils'
 
@@ -108,8 +109,23 @@ export default async function BillDetailPage({ params }: { params: Promise<{ id:
     ? await loadMakerSeed(supabase, { billId: bill.id as string, woNo: bill.order_no as string }).catch(() => null)
     : null
 
-  // Which of the two abstracts this bill gets. Never both.
-  const showMaker = !!maker && (maker.ownSheet || !calc?.sheet)
+  // ONE abstract format, whoever measured it.
+  //
+  // Aksha, 15 Sep 2026: "why is the Abstract sheet is coming like this and
+  // not like the screenshot". Because IN4's read-back had its own plainer
+  // table — no Work Order / This bill / Cumulative / Balance grouping and no
+  // Sub Total → GST → Retention → Net Payable ladder. Two renderings of one
+  // document, which is the same mistake as two panels for one document.
+  //
+  // So IN4's measured quantities are fed through the SAME component now, read
+  // only. The arithmetic is shared, the numbers are IN4's.
+  const in4Seed = calc?.sheet ? linesFromSheet(calc.sheet.rows) : null
+  const fromIn4 = !!in4Seed && !maker?.ownSheet
+  const in4Note = calc?.sheet
+    ? [calc.sheet.abstractNo, calc.sheet.on ? formatDate(calc.sheet.on) : null,
+       calc.sheet.certified == null ? 'not yet certified' : 'certified in IN4']
+        .filter(Boolean).join(' · ')
+    : null
 
   // Documents + signed URLs.
   const paths = (docRows ?? []).map(d => d.path as string)
@@ -187,26 +203,25 @@ export default async function BillDetailPage({ params }: { params: Promise<{ id:
             CT Hub has lines            → the maker, editable
             else IN4 already has one    → IN4's, read-only (below)
             else                        → the maker, blank, to fill */}
-      {showMaker && maker && (
+      {maker && (
         <AbstractMaker
           billId={bill.id as string}
           woNo={bill.order_no as string}
           vendor={vendor}
           work={bill.work as string | null}
-          seed={maker.lines}
+          seed={fromIn4 && in4Seed ? in4Seed : maker.lines}
           gst={bill.gst_pct != null ? { ...maker.gst, pct: bill.gst_pct as number } : maker.gst}
           retention={bill.retention_pct != null ? { ...maker.retention, pct: bill.retention_pct as number } : maker.retention}
-          canEdit={canEdit && openStages.includes(bill.current_stage as string)}
+          canEdit={!fromIn4 && canEdit && openStages.includes(bill.current_stage as string)}
           raLabel={(bill.ra_no as string | null) ?? 'RA'}
           ownSheet={maker.ownSheet}
           in4Total={calc?.sheet?.thisBill ?? null}
+          source={fromIn4 ? 'in4' : 'ct'}
+          sourceNote={fromIn4 ? in4Note : null}
         />
       )}
 
-      {/* ONE abstract sheet, never two. The maker above IS the sheet when CT
-          Hub holds one; IN4's own is shown only when it does not, so the page
-          never puts two tables of the same thing side by side. */}
-      {calc && <Calculation calc={calc} showIn4Sheet={!showMaker} />}
+      {calc && <Calculation calc={calc} />}
 
       {/* Stage ladder */}
       <Card className="p-4">

@@ -23,7 +23,7 @@ import { shortenBoq } from '@/lib/bills-booking/shorten'
  *  balance, GST, retention and the green Net Payable line. The rate is never
  *  editable — it is what the work order ordered, and a rate somebody can
  *  retype is a rate that ends up wrong. */
-export function AbstractMaker({ billId, woNo, vendor, work, seed, gst: gstPick, retention: retPick, canEdit, raLabel, ownSheet, in4Total }: {
+export function AbstractMaker({ billId, woNo, vendor, work, seed, gst: gstPick, retention: retPick, canEdit, raLabel, ownSheet, in4Total, source = 'ct', sourceNote }: {
   billId: string
   woNo: string
   vendor: string
@@ -36,6 +36,15 @@ export function AbstractMaker({ billId, woNo, vendor, work, seed, gst: gstPick, 
   raLabel: string
   /** True once CT Hub holds lines of its own for this bill. */
   ownSheet: boolean
+  /** Who measured what is on screen.  means the Site Head did it in IN4
+   *  and this is a read-back — same format, same arithmetic, different author.
+   *  Aksha, 15 Sep 2026: "why is the Abstract sheet is coming like this and not
+   *  like the screenshot". Because there used to be a second, plainer table for
+   *  this case. There is one format now. */
+  source?: 'ct' | 'in4'
+  /** One line under the masthead naming the IN4 document and whether Billing
+   *  has certified it yet. Composed by the page, which is what knows. */
+  sourceNote?: string | null
   /** What IN4's own abstract for this bill totals, when it has one. Shown as a
    *  single reconciling line — NOT as a second table, which is what confused
    *  Aksha: two panels, both titled "Abstract sheet". */
@@ -92,9 +101,15 @@ export function AbstractMaker({ billId, woNo, vendor, work, seed, gst: gstPick, 
         <div>
           <h2 className="text-[15px] font-bold leading-tight">Abstract Sheet — RA Bill</h2>
           <p className="text-[11px] text-slate-300">
-            {ownSheet ? 'Measured in CT Hub' : canEdit ? 'Not measured yet — type This Qty against each line' : 'Not measured yet'}
+            {source === 'in4'
+              ? 'Measured in IN4 by the Site Head — read back here'
+              : ownSheet ? 'Measured in CT Hub'
+                : canEdit ? 'Not measured yet — type This Qty against each line' : 'Not measured yet'}
           </p>
         </div>
+        {sourceNote && (
+          <span className="w-full text-[11px] text-slate-300 sm:w-auto">{sourceNote}</span>
+        )}
         <span className="ml-auto rounded-md bg-amber-300 px-2.5 py-0.5 text-[11px] font-extrabold text-slate-900">
           {raLabel} · {woNo}
         </span>
