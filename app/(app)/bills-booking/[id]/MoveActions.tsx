@@ -9,10 +9,13 @@ import { MoneyInput } from '@/components/ui/money-input'
 import { Loader2, ArrowRight, Undo2, PauseCircle, PlayCircle, Ban } from 'lucide-react'
 import { stageDef, nextStage, prevStage, type BbStage } from '@/lib/bills-booking/stages'
 
-export function MoveActions({ billId, stage, netAmount, claimed, preHoldStage, hasAbstract }: {
+export function MoveActions({ billId, stage, netAmount, claimed, preHoldStage, measured, orderType }: {
   billId: string; stage: BbStage; netAmount: number | null; claimed: number; preHoldStage: BbStage | null
-  /** Whether the IN4 abstract number has been recorded on this bill yet. */
-  hasAbstract: boolean
+  /** True when IN4 has APPROVED the measurement behind this bill — an approved
+   *  abstract for a work order, an approved goods receipt for a purchase order.
+   *  Null when the bill names no order at all. */
+  measured: boolean | null
+  orderType: string | null
 }) {
   const router = useRouter()
   const supabase = createClient()
@@ -22,6 +25,13 @@ export function MoveActions({ billId, stage, netAmount, claimed, preHoldStage, h
   const [net, setNet] = useState(netAmount != null ? String(netAmount) : '')
 
   const fwd = nextStage(stage)
+  // Aksha, 15 Sep 2026: "he has to make Abstract and GRN in IN4 after it
+  // approves it should go to CT DISC HEAD AUTO." So the Site Head desk has no
+  // Forward button: the bill leaves it when IN4 approves the measurement, and
+  // a person clicking Forward here would be claiming something IN4 has not
+  // said. Send back, hold and reject stay — those are decisions, not steps.
+  const waitsOnIn4 = stage === 'site_head' && measured !== null
+  const thing = orderType === 'PO' ? 'goods receipt' : 'abstract'
   const back = prevStage(stage)
   const showAmount = stage === 'ct_head' // CT Head locks the verified net
   const resumeTo = preHoldStage ?? 'site_head'
@@ -73,11 +83,23 @@ export function MoveActions({ billId, stage, netAmount, claimed, preHoldStage, h
       {/* The abstract is keyed in IN4 at this desk — which is why the entry
           form no longer asks for it. A reminder, never a block: a bill stopped
           for a missing reference is a bill that stops being visible. */}
-      {stage === 'site_head' && !hasAbstract && (
-        <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
-          The abstract is filled in IN4 at this desk. Record its number on the bill above once it exists —
-          that is what ties this record to the IN4 document. Forwarding without it is allowed.
-        </p>
+      {waitsOnIn4 && (
+        <div className={`rounded-lg border px-3 py-2 text-xs ${
+          measured ? 'border-emerald-200 bg-emerald-50 text-emerald-900' : 'border-blue-200 bg-blue-50 text-blue-900'}`}>
+          {measured ? (
+            <>
+              <b>IN4 has approved the {thing}.</b> This bill moves to the CT Disc Head on its own at the next sync —
+              nobody needs to forward it. If it was sent back, it only moves once IN4 approves a <b>revised</b>
+              {' '}measurement, so the same sheet cannot come straight back.
+            </>
+          ) : (
+            <>
+              <b>Waiting on IN4.</b> Make the {thing} in IN4 and get it approved; the bill then moves to the CT Disc
+              Head by itself. There is nothing to forward here — that is the point, so the measurement is only
+              entered once.
+            </>
+          )}
+        </div>
       )}
       {err && <p role="alert" className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">{err}</p>}
 
@@ -91,7 +113,7 @@ export function MoveActions({ billId, stage, netAmount, claimed, preHoldStage, h
       <Textarea value={comment} onChange={e => setComment(e.target.value)} rows={2} placeholder="Comment / checks (required to send back, hold or reject)" />
 
       <div className="flex flex-wrap gap-2">
-        {fwd && (
+        {fwd && !waitsOnIn4 && (
           <Button onClick={() => move(fwd, 'forward', 'fwd')} disabled={busy !== null} className="bg-indigo-600 hover:bg-indigo-700">
             {busy === 'fwd' ? <Loader2 className="h-4 w-4 animate-spin" /> : <ArrowRight className="h-4 w-4" />} Forward to {stageDef(fwd).label}
           </Button>

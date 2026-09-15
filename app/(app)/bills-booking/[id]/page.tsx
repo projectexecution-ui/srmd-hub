@@ -127,6 +127,17 @@ export default async function BillDetailPage({ params }: { params: Promise<{ id:
         .filter(Boolean).join(' · ')
     : null
 
+  // Has IN4 approved the measurement behind this bill? One function, shared
+  // with the sweep that does the moving, so the screen and the job can never
+  // disagree about whether a bill is ready.
+  let measured: boolean | null = null
+  if (bill.order_no) {
+    const { data: ref } = await supabase.rpc('bb_measurement_ref', {
+      p_order_type: bill.order_type, p_order_no: bill.order_no, p_bill_no: bill.bill_no,
+    })
+    measured = !!ref
+  }
+
   // Documents + signed URLs.
   const paths = (docRows ?? []).map(d => d.path as string)
   const urlMap = new Map<string, string>()
@@ -262,7 +273,7 @@ export default async function BillDetailPage({ params }: { params: Promise<{ id:
       {canEdit && <MoveActions billId={bill.id as string} stage={bill.current_stage as BbStage}
         netAmount={bill.net_amount as number | null} claimed={bill.claimed_amount as number}
         preHoldStage={(bill.pre_hold_stage as BbStage | null) ?? null}
-        hasAbstract={!!bill.abstract_no_in4} />}
+        measured={measured} orderType={bill.order_type as string | null} />}
 
       {/* Audit trail */}
       <Card className="p-4">

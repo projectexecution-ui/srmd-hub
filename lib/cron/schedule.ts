@@ -80,6 +80,11 @@ export const CRON_JOBS: CronJob[] = [
   // The sanction-vs-IN4 check. Runs after in4-trail on the same pass so it
   // compares against a mirror refreshed minutes earlier, not yesterday's.
   { key: 'bills-reconcile',       policy: 'each', module: 'bills-booking', am: '/api/cron/bills-reconcile?cron=1', pm: '/api/cron/bills-reconcile?cron=1' },
+  // The Site Head does not click Forward: IN4 approving the abstract or the
+  // goods receipt is what moves a bill to the CT Disc Head. Runs on both slots,
+  // right after the mirror refreshes, so a measurement approved in the morning
+  // does not wait until night.
+  { key: 'bills-advance',         policy: 'each', module: 'bills-booking', am: '/api/cron/bills-advance?cron=1',   pm: '/api/cron/bills-advance?cron=1' },
   { key: 'bph-sync',              policy: 'each', module: 'cost-control',  am: '/api/cron/bph-sync?cron=1',            pm: '/api/cron/bph-sync?cron=1' },
   { key: 'email-retry',           policy: 'each',  am: '/api/cron/email-retry?cron=1',         pm: '/api/cron/email-retry?cron=1' },
   // Google Drive archive — copies new uploads to the Shared drive and moves the
