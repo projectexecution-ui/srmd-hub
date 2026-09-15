@@ -9,6 +9,7 @@ import { Plus, ReceiptText, Clock, Users, Landmark, PackageCheck, ShieldCheck, C
 import { isTerminal, isOverSla, type BbStage } from '@/lib/bills-booking/stages'
 import { BillingTree, type TrustNode, type Leaf } from './BillingTree'
 import { WhoHolds } from './WhoHolds'
+import { CheckIn4Button } from './CheckIn4Button'
 import { whoHoldsWhat, summarise, type PendingBill } from '@/lib/bills-booking/holding'
 import { formatINRCompact } from '@/lib/utils'
 
@@ -176,7 +177,11 @@ export default async function BillsBookingPage() {
   return (
     <div className="p-4 md:p-6 max-w-5xl mx-auto space-y-4">
       <PageHeader title="Bills Approval" back="/" subtitle="Contractor & vendor bills — by trust, project and sub-project.">
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          {/* The Disc Head and every desk above waits on IN4 approving a
+              measurement. Twice a day is the schedule; this is the same check
+              on demand, so a bill approved this morning is not left sitting. */}
+          {canAdmin && <CheckIn4Button />}
           {canAdmin && (
             <Link href="/bills-booking/admin" className="inline-flex items-center gap-1.5 rounded-lg border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50">
               <Users className="h-4 w-4" /> Desks
