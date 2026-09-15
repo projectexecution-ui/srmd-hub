@@ -3,7 +3,9 @@
 import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
 import { getMyProfile } from '@/lib/auth'
-import { entryNo, checkIssue, checkReturn, createsStock, type Register } from './core'
+import {
+  entryNo, checkIssue, checkReturn, createsStock, approversForRequest, type Register,
+} from './core'
 import { loadStock, loadReturnables } from './queries'
 import { formatINR } from '@/lib/utils'
 import {
@@ -255,9 +257,22 @@ export async function raiseRequest(input: RequestInput): Promise<Result<{ id: st
   )
   if (lineErr) return fail(explain(lineErr, 'save the request lines'))
 
+  // Who this one belongs to depends on WHAT is on it: Civil and Finishes are
+  // Mayank's, MEP is Kanti's, and a request holding both is legitimately for
+  // both. The mapping is the code on the discipline row, so it is Aksha's to
+  // change in Masters rather than mine to compile in.
+  const { data: disc } = await supabase
+    .from('mio_items')
+    .select('discipline:discipline_id ( code )')
+    .in('id', input.lines.map(l => l.itemId))
+  const codes = (disc ?? []).map(r => {
+    const d = Array.isArray(r.discipline) ? r.discipline[0] : r.discipline
+    return (d as { code?: string } | null)?.code ?? null
+  })
+
   await notifyRequestPending({
     requestId: data.id as string, no, projectName: null,
-    lineCount: input.lines.length, actorId: profile.id,
+    lineCount: input.lines.length, approvers: approversForRequest(codes), actorId: profile.id,
   })
   revalidatePath('/stores')
   return done(`${no} sent to Mayank / Kanti for approval.`, { id: data.id as string, no })

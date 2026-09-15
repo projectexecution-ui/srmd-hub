@@ -5,7 +5,9 @@ import {
   type ReturnableLine, type ReturnableRow, type Register, type Stage,
 } from './core'
 import type { RegisterSpec, RegisterFilter, RegisterRow } from './registers'
-import { groupProjects, isServiceScope, type ProjectOpt } from './core'
+import {
+  groupProjects, isServiceScope, approversForRequest, type ProjectOpt, type ApproverKey,
+} from './core'
 import { loadAliasMap, resolveAlias } from '@/lib/aliases'
 export type { ProjectOpt }
 
@@ -339,6 +341,8 @@ export interface RequestRow {
   decidedByName: string | null
   decidedAt: string | null
   decisionNote: string | null
+  /** Whose approval this is — from the disciplines on its lines. */
+  approvers: ApproverKey[]
   lines: Array<{ id: string; itemId: string; itemName: string; unit: string; qty: number; issuedQty: number; returnable: boolean }>
 }
 
@@ -349,7 +353,8 @@ export async function loadRequests(opts: { projectId?: string | null; status?: s
     .select(`id, no, project_id, status, needed_by, remarks, raised_at, decided_at, decision_note,
              projects:project_id ( name ), from_project:from_project_id ( name ),
              raiser:raised_by ( full_name ), decider:decided_by ( full_name ),
-             mio_request_lines ( id, item_id, unit, qty, issued_qty, returnable, mio_items ( name ) )`)
+             mio_request_lines ( id, item_id, unit, qty, issued_qty, returnable,
+                                 mio_items ( name, discipline:discipline_id ( code ) ) )`)
     .order('raised_at', { ascending: false })
     .limit(200)
   if (opts.projectId) q = q.eq('project_id', opts.projectId)
@@ -370,6 +375,13 @@ export async function loadRequests(opts: { projectId?: string | null; status?: s
     decidedByName: ((r.decider as { full_name?: string } | null)?.full_name) ?? null,
     decidedAt: (r.decided_at as string | null) ?? null,
     decisionNote: (r.decision_note as string | null) ?? null,
+    approvers: approversForRequest(
+      ((r.mio_request_lines as Array<Record<string, unknown>> | null) ?? []).map(l => {
+        const item = one(l.mio_items) as { discipline?: unknown } | null
+        const d = one(item?.discipline) as { code?: string } | null
+        return d?.code ?? null
+      }),
+    ),
     lines: ((r.mio_request_lines as Array<Record<string, unknown>> | null) ?? []).map(l => ({
       id: l.id as string,
       itemId: l.item_id as string,

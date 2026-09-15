@@ -21,13 +21,15 @@ describe('the photographs the mind map asks for', () => {
     expect(storekeeperSlots(false).map(s => s.kind)).toEqual(['item'])
   })
 
-  it('asks for the material going out, and leaves the video optional', () => {
+  it('asks for the material going out AND the video of the load', () => {
     const byKind = Object.fromEntries(ISSUE_SLOTS.map(s => [s.kind, s]))
     expect(byKind.item.required).toBe(true)
-    // Nobody holds the `security` role yet; requiring their video would stop
-    // every issue until accounts exist.
-    expect(byKind.video.required).toBe(false)
     expect(byKind.video.video).toBe(true)
+    // Compulsory since 15 Sep 2026. It was optional only because nobody holds
+    // the security role, and Aksha removed that obstacle rather than the
+    // requirement: "else the store keeper to take a video if security
+    // unavailabel". With a fallback taker there is nobody left to block on.
+    expect(byKind.video.required).toBe(true)
   })
 })
 
@@ -46,8 +48,15 @@ describe('missingPhotos', () => {
     expect(missingPhotos(storekeeperSlots(true), { item: 3, location: 1 })).toEqual([])
   })
 
-  it('never blocks on an optional slot', () => {
-    expect(missingPhotos(ISSUE_SLOTS, { item: 1 })).toEqual([])
+  it('holds an issue until BOTH the photo and the video are there', () => {
+    expect(missingPhotos(ISSUE_SLOTS, {})).toEqual(['Photo of the material going out', 'Video of the load'])
+    expect(missingPhotos(ISSUE_SLOTS, { item: 1 })).toEqual(['Video of the load'])
+    expect(missingPhotos(ISSUE_SLOTS, { item: 1, video: 1 })).toEqual([])
+  })
+
+  it('still never blocks on a slot that is marked optional', () => {
+    const optional = [{ kind: 'other' as const, label: 'Anything else', hint: '', required: false }]
+    expect(missingPhotos(optional, {})).toEqual([])
   })
 })
 

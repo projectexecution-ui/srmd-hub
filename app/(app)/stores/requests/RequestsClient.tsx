@@ -4,7 +4,7 @@ import { useRouter } from 'next/navigation'
 import { useMemo, useState, useTransition } from 'react'
 import { raiseRequest, decideRequest, issueRequest } from '@/lib/stores/actions'
 import {
-  checkIssue, bestIssueLocation, fmtQty, RETURNABLES_ON, type StockRow,
+  checkIssue, bestIssueLocation, fmtQty, approverLabel, RETURNABLES_ON, type StockRow,
 } from '@/lib/stores/core'
 import { formatDate, formatDateTime } from '@/lib/utils'
 import type { RequestRow, ProjectOpt } from '@/lib/stores/queries'
@@ -23,7 +23,7 @@ let seq = 0
 const newLine = (): Line => ({ key: `r${++seq}`, itemId: '', unit: '', qty: '', returnable: false })
 
 export function RequestsClient({
-  requests, projects, items, locations, modes, stock, recentItemIds = [],
+  requests, projects, items, locations, modes, stock, recentItemIds = [], scopeNote = null,
 }: {
   requests: RequestRow[]
   projects: ProjectOpt[]
@@ -33,6 +33,8 @@ export function RequestsClient({
   stock: Array<Pick<StockRow, 'itemId' | 'locationId' | 'qty'>>
   /** Items this store handled lately — held at the top of the item picker. */
   recentItemIds?: readonly string[]
+  /** Why this person can raise for nothing, when that is the case. */
+  scopeNote?: string | null
 }) {
   const router = useRouter()
   const rows: StockRow[] = stock.map(s => ({ ...s, lastRate: null }))
@@ -43,7 +45,9 @@ export function RequestsClient({
         title="Step 3 · An engineer asks for material"
         note="Stock is shown while asking, so nobody requests what is not there"
       >
-        <RaiseForm projects={projects} items={items} stock={rows} recentItemIds={recentItemIds} onDone={() => router.refresh()} />
+        {projects.length === 0
+          ? <Notice kind="info">{scopeNote ?? 'You are not on any project yet, so there is nothing to ask for.'}</Notice>
+          : <RaiseForm projects={projects} items={items} stock={rows} recentItemIds={recentItemIds} onDone={() => router.refresh()} />}
       </Section>
 
       <Section title="Requests">
@@ -72,7 +76,8 @@ function RaiseForm({
 }) {
   const [pending, start] = useTransition()
   const [open, setOpen] = useState(false)
-  const [projectId, setProjectId] = useState('')
+  // One site means there is no question to ask — most engineers are on one.
+  const [projectId, setProjectId] = useState(projects.length === 1 ? projects[0].id : '')
   const [fromProjectId, setFromProjectId] = useState('')
   const [neededBy, setNeededBy] = useState('')
   const [remarks, setRemarks] = useState('')
@@ -248,6 +253,11 @@ function RequestCard({
       <div className="px-4 py-3 border-b border-gray-100 flex flex-wrap items-center gap-2.5">
         <span className="font-mono text-[13px] font-bold text-gray-900">{req.no}</span>
         <StatusChip status={req.status} />
+        {req.status === 'pending' && (
+          <span className="rounded bg-amber-100 px-1.5 py-0.5 text-[10.5px] font-semibold text-amber-900">
+            {approverLabel(req.approvers)}
+          </span>
+        )}
         <span className="text-[12.5px] text-gray-700">{req.projectName}</span>
         {req.fromProjectName && (
           <span className="rounded bg-teal-100 px-1.5 py-0.5 text-[10.5px] font-semibold text-teal-900">
