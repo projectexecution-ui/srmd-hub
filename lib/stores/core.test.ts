@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import {
   entryNo, linkedNo, foldStock, availableAt, availableAnywhere, checkIssue,
   outstandingReturnables, checkReturn, missingForGate, missingForComplete, createsStock, heldItemCount,
-  fmtQty, isPilotProject, PILOT_PROJECT_IDS, RETURNABLES_ON, groupProjects, UNGROUPED, entityCodeFromOrderNo, categoryFor, isServiceScope, bestIssueLocation,
+  fmtQty, isPilotProject, PILOT_PROJECT_IDS, RETURNABLES_ON, STORES_LIVE, canSeeStores, groupProjects, UNGROUPED, entityCodeFromOrderNo, categoryFor, isServiceScope, bestIssueLocation,
   type Movement, type ReturnableLine, type StockRow,
 } from './core'
 
@@ -499,5 +499,31 @@ describe('bestIssueLocation — which store to issue out of', () => {
   it('never suggests a place holding nothing, even at zero rows', () => {
     const zeroed = [s('x', 'empty', 0), s('x', 'has', 5)]
     expect(bestIssueLocation(zeroed, [{ itemId: 'x', qty: 1 }])).toBe('has')
+  })
+})
+
+describe('canSeeStores — one rule for the lane, the page and going live', () => {
+  it('is admin only while STORES_LIVE is off', () => {
+    // Aksha, 15 Sep 2026: "i am not making it LIVE as of now". The accounts
+    // exist; the section does not open for them yet.
+    expect(STORES_LIVE).toBe(false)
+    expect(canSeeStores('admin')).toBe(true)
+    for (const r of ['security', 'store_manager', 'engineer', 'head', 'founder', 'viewer']) {
+      expect(canSeeStores(r)).toBe(false)
+    }
+  })
+
+  it('refuses somebody with no role at all', () => {
+    expect(canSeeStores(null)).toBe(false)
+    expect(canSeeStores(undefined)).toBe(false)
+    expect(canSeeStores('')).toBe(false)
+  })
+
+  it('never opens for a role that has no part in the process', () => {
+    // True whichever way the switch is thrown — these roles are not in
+    // LIVE_ROLES, so going live must not quietly let them in.
+    for (const r of ['viewer', 'contractor', 'billing', 'uploader']) {
+      expect(canSeeStores(r)).toBe(false)
+    }
   })
 })

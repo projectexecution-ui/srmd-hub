@@ -20,6 +20,38 @@ export const isPilotProject = (projectId: string): boolean =>
   PILOT_PROJECT_IDS.includes(projectId)
 
 /**
+ * Who can open Material In & Out.
+ *
+ * Aksha, 15 Sep 2026: "create the security and storekeeper accounts - but i am
+ * not making it LIVE as of now". So the accounts exist and the roles below are
+ * written down and ready, and exactly one thing decides whether anyone but him
+ * can see the section.
+ *
+ * The roles are what the mind map's process needs, and no more:
+ *   security       records the vehicle at the gate
+ *   store_manager  counts the material in, puts it away, issues it out
+ *   engineer       raises a request for their site
+ *   head, founder  approve, and read the registers
+ *
+ * GOING LIVE IS TWO ACTS, deliberately. Flip STORES_LIVE, and apply
+ * supabase/migrations/20260915_material_in_out_go_live.sql — which is written
+ * and NOT applied. Either one alone is harmless: the app can hide a section
+ * the database would serve, and the database can serve a section the app does
+ * not show. Both are needed before anybody sees anything, and the migration
+ * says so at the top.
+ */
+export const STORES_LIVE = false
+
+const LIVE_ROLES: readonly string[] = [
+  'admin', 'founder', 'head', 'store_manager', 'security', 'engineer',
+]
+
+export function canSeeStores(role: string | null | undefined): boolean {
+  if (!role) return false
+  return STORES_LIVE ? LIVE_ROLES.includes(role) : role === 'admin'
+}
+
+/**
  * Returnables — the whole branch — switched OFF.
  *
  * Aksha, 14 Sep 2026: "keep the Returnable thing off for now - as that feature
