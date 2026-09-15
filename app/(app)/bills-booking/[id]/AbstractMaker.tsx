@@ -76,6 +76,19 @@ export function AbstractMaker({ billId, woNo, vendor, work, seed, gst: gstPick, 
   const touched = sheet.lines.filter(l => l.thisQty !== 0).length
   // How many rows actually hide something, for the Show-full-text control.
   const [expandAll, setExpandAll] = useState(false)
+  // Aksha, 15 Sep 2026: "make it last 3 RA bills and older roll into Earlier
+  // but expandable when requuired." Nineteen columns do not fit a laptop, and
+  // the bills that matter when checking a measurement are the recent ones —
+  // what RA-1 did eighteen months ago is history, not a comparison. So the
+  // last three stand on their own and everything older becomes one Earlier
+  // column, one click from being opened out again.
+  const [allBills, setAllBills] = useState(false)
+  const KEEP = 3
+  const rolled = allBills ? 0 : Math.max(0, earlierBills.length - KEEP)
+  // Kept with their ORIGINAL position, so the label stays RA-4 and not RA-1 —
+  // renumbering them would make the legend lie.
+  const shownBills = earlierBills.map((b, i) => ({ ...b, i })).slice(rolled)
+  const prevCols = (rolled > 0 ? 1 : 0) + Math.max(shownBills.length, earlierBills.length === 0 ? 1 : 0)
   const hidden = useMemo(() => seed.filter(l => shortenBoq(l.particular).shortened).length, [seed])
 
   function save() {
@@ -97,6 +110,7 @@ export function AbstractMaker({ billId, woNo, vendor, work, seed, gst: gstPick, 
     })
   }
 
+  const q3 = (v: number) => Math.round(v * 1000) / 1000
   const n = (v: number) => (v === 0 ? '—' : formatNumber(v, v % 1 === 0 ? 0 : 2))
   const m = (v: number) => (v === 0 ? '—' : formatINR(v))
   // Line amounts compact so all four column groups fit a laptop without a
@@ -127,15 +141,23 @@ export function AbstractMaker({ billId, woNo, vendor, work, seed, gst: gstPick, 
       </div>
 
       {earlierBills.length > 0 && (
-        <p className="border-b border-gray-100 bg-amber-50/40 px-4 py-1.5 text-[11px] text-gray-600">
-          <b className="text-gray-800">Earlier bills on this order:</b>{' '}
-          {earlierBills.map((b, i) => (
-            <span key={i}>
-              {i > 0 && '  ·  '}
-              <b>RA-{i + 1}</b> {b.billNo ?? '—'}{b.on ? ` (${formatDate(b.on)})` : ''}
-            </span>
-          ))}
-        </p>
+        <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1 border-b border-gray-100 bg-amber-50/40 px-4 py-1.5 text-[11px] text-gray-600">
+          <b className="text-gray-800">Earlier bills on this order:</b>
+          <span className="min-w-0 flex-1">
+            {earlierBills.map((b, i) => (
+              <span key={i} className={i < rolled ? 'text-gray-400' : undefined}>
+                {i > 0 && '  ·  '}
+                <b>RA-{i + 1}</b> {b.billNo ?? '—'}{b.on ? ` (${formatDate(b.on)})` : ''}
+              </span>
+            ))}
+          </span>
+          {earlierBills.length > KEEP && (
+            <button type="button" onClick={() => setAllBills(v => !v)}
+                    className="shrink-0 font-semibold text-indigo-700 underline underline-offset-2 hover:text-indigo-900">
+              {allBills ? `Roll up the older ${earlierBills.length - KEEP}` : `Show all ${earlierBills.length} as columns`}
+            </button>
+          )}
+        </div>
       )}
       <div className="flex items-center justify-end border-b border-gray-100 px-4 py-1.5">
         <ExpandAll on={expandAll} onToggle={() => setExpandAll(v => !v)} n={hidden} />
@@ -150,14 +172,21 @@ export function AbstractMaker({ billId, woNo, vendor, work, seed, gst: gstPick, 
       {err && <p role="alert" className="mx-4 mt-3 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">{err}</p>}
 
       <div className="overflow-x-auto px-2 pt-2">
-        <table style={{ minWidth: 1020 + earlierBills.length * 54 }} className="w-full border-collapse text-[11.5px]">
+        <table style={{ minWidth: 1020 + (prevCols - 1) * 54 }} className="w-full border-collapse text-[11.5px]">
           <thead>
             <tr>
               <Th l>#</Th><Th l>Particular</Th><Th>Qty</Th><Th>Unit</Th><Th>Rate</Th>
               <Th g="wo">WO Amt</Th>
-              {earlierBills.map((b, i) => (
-                <Th key={i} g="prev">
-                  <span title={`${b.billNo ?? 'earlier bill'}${b.on ? ` · ${formatDate(b.on)}` : ''}`}>RA-{i + 1}</span>
+              {rolled > 0 && (
+                <Th g="prev">
+                  <span title={earlierBills.slice(0, rolled).map((b, i) => `RA-${i + 1} ${b.billNo ?? ''}`).join(' · ')}>
+                    Earlier ({rolled})
+                  </span>
+                </Th>
+              )}
+              {shownBills.map(b => (
+                <Th key={b.i} g="prev">
+                  <span title={`${b.billNo ?? 'earlier bill'}${b.on ? ` · ${formatDate(b.on)}` : ''}`}>RA-{b.i + 1}</span>
                 </Th>
               ))}
               {earlierBills.length === 0 && <Th g="prev">Prev Qty</Th>}
@@ -178,8 +207,13 @@ export function AbstractMaker({ billId, woNo, vendor, work, seed, gst: gstPick, 
                 <Td>{l.uom ?? '—'}</Td>
                 <Td>{m(l.rate)}</Td>
                 <Td g="wo">{mc(l.orderedAmt)}</Td>
-                {earlierBills.map((_, i) => (
-                  <Td key={i} g="prev" className="text-gray-600">{n(l.history?.[i] ?? 0)}</Td>
+                {rolled > 0 && (
+                  <Td g="prev" className="text-gray-500">
+                    {n(q3((l.history ?? []).slice(0, rolled).reduce((a, b) => a + b, 0)))}
+                  </Td>
+                )}
+                {shownBills.map(b => (
+                  <Td key={b.i} g="prev" className="text-gray-600">{n(l.history?.[b.i] ?? 0)}</Td>
                 ))}
                 {earlierBills.length === 0 && <Td g="prev">{n(l.priorQty)}</Td>}
                 <Td g="prev">{mc(l.priorAmt)}</Td>
@@ -223,7 +257,7 @@ export function AbstractMaker({ billId, woNo, vendor, work, seed, gst: gstPick, 
                       : <> @ {t.rate}%</>
                   )}
                 </td>
-                <td className={`border border-gray-100 px-2 py-1.5 text-right tabular-nums ${t.kind === 'net' ? 'text-emerald-50' : 'text-gray-500'}`} colSpan={Math.max(earlierBills.length, 1) + 1}>
+                <td className={`border border-gray-100 px-2 py-1.5 text-right tabular-nums ${t.kind === 'net' ? 'text-emerald-50' : 'text-gray-500'}`} colSpan={Math.max(prevCols, 1) + 1}>
                   {t.kind === 'retention' && t.previous > 0 ? '− ' : ''}{m(t.previous)}
                 </td>
                 <td className="border border-gray-100 px-2 py-1.5 text-right tabular-nums" colSpan={2}>
