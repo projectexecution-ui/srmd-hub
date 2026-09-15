@@ -3,21 +3,24 @@ import { notFound } from 'next/navigation'
 import { getMyProfile } from '@/lib/auth'
 import { Warehouse } from 'lucide-react'
 import { StoresNav } from './StoresNav'
+import { canSeeStores } from '@/lib/stores/core'
 
 export const dynamic = 'force-dynamic'
 
 /**
  * Material In & Out — the org-level section.
  *
- * ADMIN ONLY while it is being reviewed (Aksha, 13 Sep 2026: "for now keep it
- * visible for me only Admin - so we can check and do any changes required").
+ * Who may open it is canSeeStores in lib/stores/core.ts — admin only until
+ * STORES_LIVE, which is off (Aksha, 13 Sep 2026: "for now keep it visible for
+ * me only Admin", and 15 Sep: "i am not making it LIVE as of now").
+ *
  * The gate is here rather than on each page so a new screen cannot be added
  * and forget it, and it is a real refusal — hiding the lane in the sidebar
  * would leave the section one typed URL wide.
  */
 export default async function StoresLayout({ children }: { children: React.ReactNode }) {
   const profile = await getMyProfile()
-  if (profile?.role !== 'admin') notFound()
+  if (!canSeeStores(profile?.role)) notFound()
 
   return (
     <div className="p-4 sm:p-6 max-w-6xl mx-auto space-y-5">

@@ -13,6 +13,7 @@ import { MODULES } from '@/lib/modules'
 import { buildNavTree, type SidebarGroup } from '@/lib/sidebar-groups'
 import { isRevampNow } from '@/lib/revamp/live'
 import { buildRevampNav } from '@/lib/revamp/nav'
+import { canSeeStores } from '@/lib/stores/core'
 import { readOpenMap, writeOpenMap } from '@/lib/nav-prefs'
 import NotificationBell from '@/components/NotificationBell'
 import { ProjectTree } from '@/components/nav/ProjectTree'
@@ -118,10 +119,10 @@ export default function NavBar({ profile, permissions, disabledSlugs = [], isPor
   const canSeeAdmin = isPortalOwner
     || profile.role === 'admin'
     || ['admin-users', 'admin-permissions', 'admin-settings'].some(s => permissions[s]?.view)
-  // Material In & Out is under review, so only an admin gets the lane —
-  // Aksha, 13 Sep 2026: "for now keep it visible for me only Admin". The page
-  // refuses everyone else as well, so hiding the lane is not the whole gate.
-  const canSeeStores = profile.role === 'admin'
+  // One rule, in lib/stores/core.ts, shared with the section's own refusal —
+  // hiding the lane was never the whole gate, and two copies of "who may see
+  // this" is how a section ends up one typed URL wide.
+  const showStores = canSeeStores(profile.role)
   const adminLink: NavItem | null = canSeeAdmin
     ? { href: '/admin', label: 'Admin', icon: Shield, slug: null }
     : null
@@ -138,7 +139,7 @@ export default function NavBar({ profile, permissions, disabledSlugs = [], isPor
   // well as the trial (lib/revamp/live.ts); with the "CT Hub V1" toggle on,
   // the old sidebar below is what renders.
   const revamp = revampOn
-    ? buildRevampNav(permissions, disabled, { canSeeAdmin, canSeeAccounts, canSeeStores })
+    ? buildRevampNav(permissions, disabled, { canSeeAdmin, canSeeAccounts, canSeeStores: showStores })
     : null
 
   // Fold the module links into admin-defined groups. When no groups exist,
