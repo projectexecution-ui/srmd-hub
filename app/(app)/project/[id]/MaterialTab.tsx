@@ -78,7 +78,7 @@ function InPanel({ rows }: { rows: Awaited<ReturnType<typeof loadEntries>> }) {
             <th className={th}>Register</th>
             <th className={th}>Party</th>
             <th className={th}>Vehicle</th>
-            <th className={th}>PO / WO</th>
+            <th className={th}>Purchase order</th>
             <th className={th}>Put away at</th>
             <th className={thNum}>Lines</th>
             <th className={th}>Stage</th>

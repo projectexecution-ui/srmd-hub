@@ -66,7 +66,7 @@ export const T = {
   whichTrust:     'Which trust is paying',
   whichProject:   'Which project',
   itemCategory:   'Item category',
-  poNumber:       'Which order is this against?',
+  poNumber:       'Which purchase order?',
   findOrder:      'Tap to find the order',
   orderSearch:    'Type any part of the number',
   openOrders:     'Open orders',

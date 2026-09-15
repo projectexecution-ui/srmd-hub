@@ -344,7 +344,7 @@ export function entityCodeFromOrderNo(no: string, knownCodes: readonly string[])
  * material stands:
  *
  *   Vendor Materials   the vendor register, material going straight to site
- *   Ordered Items      there is a purchase or work order behind it
+ *   Ordered Items      there is a purchase order behind it
  *   Returnable Items   it has to come back (switched off since 14 Sep)
  *
  * All three are decided by facts the screen already has, so asking the
@@ -369,16 +369,15 @@ export function categoryFor(
 /**
  * Scopes that are fees, not things — nothing is ever delivered against one.
  *
- * IN4 splits a project by scope: "Raj Uphaar - Execution" is building work,
- * "Raj Uphaar - Professional Consultancy" is the architect's fee. 410 of the
- * 1,616 approved work orders sit under a consultancy or design scope, and a
- * lorry has never arrived against a single one of them.
+ * IN4 and CT Hub both split a project by scope: "Raj Uphaar - Execution" is
+ * building work, "Raj Uphaar - Professional Consultancy" is the architect's
+ * fee. Aksha, 15 Sep 2026: "i dont want Professional Consultanty in any of
+ * the section".
  *
- * Aksha, 15 Sep 2026: "i dont want Professional Consultanty in any of the
- * section" — so this filters both the order picker and the project picker
- * inside Material In & Out. It is scoped to this section on purpose: the
- * money modules must keep showing consultancy, because that is where the fee
- * actually lives.
+ * This keeps those lines out of the Material In & Out project picker — all
+ * seven of them have taken zero deliveries since the section existed. Scoped
+ * to this section on purpose: the money modules must keep showing
+ * consultancy, because that is where the fee actually lives.
  */
 export function isServiceScope(name: string | null | undefined): boolean {
   if (!name) return false

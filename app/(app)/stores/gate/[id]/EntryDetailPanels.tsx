@@ -18,7 +18,7 @@ const CORRECTABLE = [
   { field: 'driver_mobile', label: 'Driver mobile' },
   { field: 'driver_licence', label: 'Driver licence' },
   { field: 'party_name', label: 'Party' },
-  { field: 'po_wo_no', label: 'PO / WO number' },
+  { field: 'po_wo_no', label: 'Purchase order number' },
   { field: 'handed_over_to', label: 'Handed over to' },
   { field: 'remarks', label: 'Remarks' },
 ] as const
@@ -56,7 +56,7 @@ export function EntryDetailPanels({
           <Cell label="Mobile" value={entry.driverMobile} mono />
           <Cell label="Licence" value={entry.driverLicence} mono />
           <Cell label="Project" value={entry.projectName} />
-          <Cell label="PO / WO" value={entry.poWoNo} mono />
+          <Cell label="Purchase order" value={entry.poWoNo} mono />
           <Cell label="Put away at" value={entry.locationName} />
           <Cell label="Security" value={entry.securityBy} />
           <Cell label="SRM Incharge" value={entry.inchargeName} />

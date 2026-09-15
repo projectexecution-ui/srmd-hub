@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState, useTransition } from 'react'
-import { Search, X, FileText, Hammer, ChevronRight } from 'lucide-react'
+import { Search, X, FileText, ChevronRight } from 'lucide-react'
 import { searchOrdersForEntry } from './po-action'
 import type { OrderOption } from '@/lib/stores/queries'
 import { T } from '@/lib/stores/lang'
@@ -23,16 +23,18 @@ import { Label } from '../../field'
  * somebody was holding in their hand could not be found. They come back under
  * their own heading with the status on the row.
  *
- * Work orders for consultancy or design are left out — they are fees, and no
- * lorry has ever arrived against one. Searching runs on the server; 1,451
- * orders and 1,616 work orders is not a list to ship to a phone.
+ * Purchase orders only. Work orders were offered here briefly and Aksha took
+ * them out on 15 Sep 2026 — they are contracts for labour, and a material
+ * register has no use for one. Searching runs on the server; 1,451 orders is
+ * not a list to ship to a phone.
  *
  * FIELD register: 56px control, 44px rows, one thing on screen at a time.
  */
 export function OrderPicker({
   value, onPick, onClear,
 }: {
-  value: { no: string; kind: 'po' | 'wo' } | null
+  /** The chosen order's number, or null. */
+  value: string | null
   onPick: (key: string) => void
   onClear: () => void
 }) {
@@ -58,8 +60,8 @@ export function OrderPicker({
       <div className="space-y-1.5">
         <Label t={T.poNumber} />
         <div className="flex items-center gap-2 rounded-xl border-2 border-emerald-300 bg-emerald-50 px-3.5 py-3 min-h-[56px]">
-          <OrderIcon kind={value.kind} />
-          <span className="flex-1 min-w-0 font-mono text-[14px] font-semibold text-gray-900 break-all">{value.no}</span>
+          <FileText className="h-5 w-5 shrink-0 text-indigo-600" aria-hidden />
+          <span className="flex-1 min-w-0 font-mono text-[14px] font-semibold text-gray-900 break-all">{value}</span>
           <button
             type="button" onClick={onClear} aria-label="Choose a different order"
             className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-gray-500 active:bg-emerald-100"
@@ -131,7 +133,7 @@ export function OrderPicker({
                         onClick={() => { onPick(r.key); setOpen(false); setQuery('') }}
                         className="flex w-full items-start gap-2.5 border-b border-gray-100 px-3 py-3 min-h-[44px] text-left active:bg-indigo-50"
                       >
-                        <OrderIcon kind={r.kind} />
+                        <FileText className="mt-0.5 h-5 w-5 shrink-0 text-indigo-600" aria-hidden />
                         <span className="min-w-0 flex-1">
                           <span className="block font-mono text-[13.5px] font-semibold text-gray-900 break-all">{r.no}</span>
                           <span className="mt-0.5 flex flex-wrap gap-x-2.5 gap-y-0.5 text-[12px] text-gray-500">
@@ -161,7 +163,7 @@ export function OrderPicker({
             <p className="border-t border-gray-100 bg-gray-50 px-3 py-2 text-[12px] text-gray-500">
               {query
                 ? `${rows.length} ${rows.length === 1 ? 'order' : 'orders'} match "${query}"`
-                : 'Every open order, plus the newest work orders. Type to search all of them.'}
+                : 'Every open purchase order. Type to search all of them, including closed ones.'}
             </p>
           )}
 
@@ -191,12 +193,3 @@ function bandOf(r: OrderOption): string {
   return r.open ? T.openOrders : T.otherOrders
 }
 
-/** A purchase order and a work order are different things; say so with a shape
- *  rather than a word, because the word is in the number anyway. */
-function OrderIcon({ kind }: { kind: 'po' | 'wo' }) {
-  return kind === 'wo' ? (
-    <Hammer className="h-5 w-5 shrink-0 text-amber-600" aria-label="Work order" />
-  ) : (
-    <FileText className="h-5 w-5 shrink-0 text-indigo-600" aria-label="Purchase order" />
-  )
-}

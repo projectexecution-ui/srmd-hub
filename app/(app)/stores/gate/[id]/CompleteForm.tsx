@@ -65,7 +65,7 @@ export function CompleteForm({
   const [entityId, setEntityId] = useState('')
   const [projectId, setProjectId] = useState('')
   const [poWoNo, setPoWoNo] = useState('')
-  const [order, setOrder] = useState<{ no: string; kind: 'po' | 'wo' } | null>(null)
+  const [order, setOrder] = useState<string | null>(null)
   // Vendor material is "Vendor Materials" before anything else is known, so it
   // starts filled rather than waiting for the storekeeper to say so.
   const [itemCategoryId, setItemCategoryId] = useState(
@@ -131,7 +131,7 @@ export function CompleteForm({
       setPoBusy(false)
       if (!o) { setPoNote({ ok: false, text: 'That order could not be read from IN4.' }); return }
 
-      setOrder({ no: o.no, kind: o.kind })
+      setOrder(o.no)
       setPoWoNo(o.no)
 
       const done: string[] = []
@@ -184,7 +184,7 @@ export function CompleteForm({
         }
       }
 
-      // Items. A work order has none to give — it lists work, not materials.
+      // The ordered lines, at the quantity still due.
       const drafts: Line[] = []
       const known = new Map(itemList.filter(i => i.in4MaterialId).map(i => [i.in4MaterialId as number, i]))
       const added: ItemOpt[] = []

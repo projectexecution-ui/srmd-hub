@@ -484,7 +484,7 @@ export async function loadRecentParties(limit = 6): Promise<string[]> {
   return [...count.entries()].sort((a, b) => b[1] - a[1]).slice(0, limit).map(([n]) => n)
 }
 
-/* ── Orders (IN4 purchase orders and work orders) ───────────────────────── */
+/* ── Purchase orders ────────────────────────────────────────────────────── */
 
 /**
  * IN4 keys its party list by KIND AND ID TOGETHER: 423 contractors and 180
@@ -494,7 +494,6 @@ export async function loadRecentParties(limit = 6): Promise<string[]> {
  * since the first day this screen existed. Never drop the kind.
  */
 const SUPPLIER = 'supplier'
-const CONTRACTOR = 'contractor'
 
 type Sb = Awaited<ReturnType<typeof createClient>>
 
@@ -512,53 +511,51 @@ async function partyNames(supabase: Sb, kind: string, ids: number[]): Promise<Ma
   return new Map((data ?? []).map(r => [r.id as number, (r.name as string) ?? '']))
 }
 
-export type OrderKind = 'po' | 'wo'
-
 /** One row in the storekeeper's order picker. */
 export interface OrderOption {
-  /** Stable across both kinds — "po:1234". */
+  /** The IN4 po_id, as a string. */
   key: string
-  kind: OrderKind
   no: string
   party: string | null
   /** IN4's own project name, not a hub project. */
   projectName: string | null
   date: string | null
   value: number | null
-  /** A purchase order with something still to come. Work orders carry no
-   *  receiving status in the mirror, so this is always false for them. */
+  /** Approved, and something still to come. */
   open: boolean
-  /** IN4's own status, shown when it is anything but a plain approved order —
-   *  a draft or a cancelled one must still be FINDABLE, or the storekeeper
-   *  concludes the order does not exist. */
+  /** IN4's status when it is anything but a plain approved order — a draft or
+   *  a cancelled one must still be FINDABLE, or the storekeeper concludes the
+   *  order does not exist. */
   status: string | null
-  /** Lines not yet fully received. null for a work order, which has none. */
-  linesDue: number | null
+  /** Lines not yet fully received. */
+  linesDue: number
 }
 
 /**
- * Search both order books for the picker.
+ * Search the purchase orders for the picker.
  *
- * The serial is what people say out loud — "PO ninety-four" — so a bare number
- * matches anywhere in the number, tail included. Open purchase orders sort
- * first: they are the only ones a lorry could be delivering against today.
+ * PURCHASE ORDERS ONLY. Work orders were here briefly because the field was
+ * labelled "PO / WO", and Aksha took them out again on 15 Sep 2026: "yes
+ * remove WO completely - only PO for this section". He is right — a work
+ * order is a contract for labour, its BOQ lines carry a description and a
+ * uom but never a material id, so it could never fill an item line; and 410
+ * of the 1,616 approved ones were consultancy and design fees that no lorry
+ * ever arrives against. Every purchase order, by contrast, is Material or
+ * Asset — something that physically turns up.
  *
- * With no query at all the list is exactly the open purchase orders (89 of the
- * 1,451 today) plus the newest few work orders, because that is the honest
- * answer to "what could be arriving now".
+ * The serial is what people say out loud — "PO ninety-four" — so a bare
+ * number matches anywhere in the number, tail included.
+ *
+ * Searching looks at EVERY order whatever its status: 180 of the 1,451 are
+ * draft, cancelled or terminated, and hiding those is why an order somebody
+ * was holding in their hand could not be found. With no query at all the list
+ * is the 89 that are open, because that is the honest answer to "what could
+ * be arriving now".
  */
 export async function searchOrders(query: string, limit = 40): Promise<OrderOption[]> {
   const supabase = await createClient()
   const q = query.trim()
-  // With no query the list IS the answer — all 89 open orders, not the first
-  // 40 of them, because a storekeeper scrolling to the end of a capped list
-  // has no way to know the one they want was cut off.
-  const poLimit = q ? limit : 200
 
-  // Searching looks at EVERY purchase order. Only the no-query default is
-  // narrowed to what is open — 180 of the 1,451 are draft, cancelled or
-  // terminated, and hiding them is why Aksha could not find orders he knew
-  // existed. They come back labelled rather than missing.
   let poQ = supabase
     .from('in4_purchase_orders')
     .select('po_id, po_no, po_dt, supplier_id, project_id, po_value, status, grn_status')
@@ -566,37 +563,21 @@ export async function searchOrders(query: string, limit = 40): Promise<OrderOpti
     ? poQ.ilike('po_no', `%${q}%`)
     : poQ.eq('status', 'Approved').in('grn_status', ['No', 'Partial'])
 
-  let woQ = supabase
-    .from('in4_work_orders')
-    .select('wo_id, display_no, creation_dt, contractor_id, subproject_id, wo_value')
-    .eq('status_name', 'Approved')
-  if (q) woQ = woQ.ilike('display_no', `%${q}%`)
-
-  const [{ data: pos }, { data: wos }] = await Promise.all([
-    poQ.order('po_dt', { ascending: false }).limit(poLimit),
-    woQ.order('creation_dt', { ascending: false }).limit(q ? limit : 10),
-  ])
+  // With no query the list IS the answer — all 89 open orders, not the first
+  // 40 of them, because a storekeeper scrolling to the end of a capped list
+  // has no way to know the one they want was cut off.
+  const { data: pos } = await poQ
+    .order('po_dt', { ascending: false })
+    .limit(q ? limit : 200)
 
   const projectIds = [...new Set((pos ?? []).map(p => p.project_id as number).filter(Boolean))]
-  const subIds = [...new Set((wos ?? []).map(w => w.subproject_id as number).filter(Boolean))]
-  const [suppliers, contractors, { data: projects }, { data: subs }] = await Promise.all([
+  const [suppliers, { data: projects }] = await Promise.all([
     partyNames(supabase, SUPPLIER, [...new Set((pos ?? []).map(p => p.supplier_id as number).filter(Boolean))]),
-    partyNames(supabase, CONTRACTOR, [...new Set((wos ?? []).map(w => w.contractor_id as number).filter(Boolean))]),
     projectIds.length
       ? supabase.from('in4_projects').select('id, name').in('id', projectIds)
       : Promise.resolve({ data: [] as Array<{ id: number; name: string }> }),
-    subIds.length
-      ? supabase.from('in4_subprojects').select('id, name').in('id', subIds)
-      : Promise.resolve({ data: [] as Array<{ id: number; name: string }> }),
   ])
   const projectById = new Map((projects ?? []).map(r => [r.id as number, (r.name as string) ?? '']))
-  const subById = new Map((subs ?? []).map(r => [r.id as number, (r.name as string) ?? '']))
-
-  // A consultancy or design work order is a fee, not a delivery. 410 of the
-  // 1,616 approved ones are, and they were crowding out the orders a
-  // storekeeper is actually looking for.
-  const materialWos = (wos ?? []).filter(
-    w => !isServiceScope(subById.get(w.subproject_id as number)))
 
   // How many lines are still due, in one query rather than one per order.
   const poIds = (pos ?? []).map(p => p.po_id as number)
@@ -612,32 +593,17 @@ export async function searchOrders(query: string, limit = 40): Promise<OrderOpti
     }
   }
 
-  const rows: OrderOption[] = [
-    ...(pos ?? []).map(p => ({
-      key: `po:${p.po_id}`,
-      kind: 'po' as const,
-      no: (p.po_no as string) ?? '',
-      party: suppliers.get(p.supplier_id as number) ?? null,
-      projectName: projectById.get(p.project_id as number) ?? null,
-      date: (p.po_dt as string | null) ?? null,
-      value: p.po_value == null ? null : num(p.po_value),
-      open: p.status === 'Approved' && (p.grn_status === 'No' || p.grn_status === 'Partial'),
-      status: p.status === 'Approved' ? null : (p.status as string | null),
-      linesDue: dueByPo.get(p.po_id as number) ?? 0,
-    })),
-    ...materialWos.map(w => ({
-      key: `wo:${w.wo_id}`,
-      kind: 'wo' as const,
-      no: (w.display_no as string) ?? `WO ${w.wo_id}`,
-      party: contractors.get(w.contractor_id as number) ?? null,
-      projectName: subById.get(w.subproject_id as number) ?? null,
-      date: (w.creation_dt as string | null) ?? null,
-      value: w.wo_value == null ? null : num(w.wo_value),
-      open: false,
-      status: null,
-      linesDue: null,
-    })),
-  ]
+  const rows: OrderOption[] = (pos ?? []).map(p => ({
+    key: String(p.po_id),
+    no: (p.po_no as string) ?? '',
+    party: suppliers.get(p.supplier_id as number) ?? null,
+    projectName: projectById.get(p.project_id as number) ?? null,
+    date: (p.po_dt as string | null) ?? null,
+    value: p.po_value == null ? null : num(p.po_value),
+    open: p.status === 'Approved' && (p.grn_status === 'No' || p.grn_status === 'Partial'),
+    status: p.status === 'Approved' ? null : (p.status as string | null),
+    linesDue: dueByPo.get(p.po_id as number) ?? 0,
+  }))
 
   // Three tiers: what could be arriving today, then what is finished, then
   // what IN4 no longer considers a live order. Newest first inside each.
@@ -646,7 +612,7 @@ export async function searchOrders(query: string, limit = 40): Promise<OrderOpti
     tier(a) - tier(b) || (b.date ?? '').localeCompare(a.date ?? ''))
 }
 
-/** IN4's PO lines for one order — what was ordered and how much has landed
+/** IN4's lines for one order — what was ordered and how much has landed
  *  already, so the storekeeper ticks rather than types. */
 export interface PoLine {
   in4PoItemId: number
@@ -659,7 +625,6 @@ export interface PoLine {
 }
 
 export interface OrderDetail {
-  kind: OrderKind
   no: string
   party: string | null
   /** IN4's own project name. */
@@ -677,7 +642,6 @@ export interface OrderDetail {
   linesWhy: string | null
 }
 
-
 /**
  * Everything one order can tell the storekeeper.
  *
@@ -687,38 +651,9 @@ export interface OrderDetail {
  * booked silently is worse than a blank one: nobody goes looking for it.
  */
 export async function loadOrder(key: string): Promise<OrderDetail | null> {
-  const [kind, rawId] = key.split(':')
-  const id = Number(rawId)
-  if ((kind !== 'po' && kind !== 'wo') || !Number.isFinite(id)) return null
+  const id = Number(key)
+  if (!Number.isFinite(id)) return null
   const supabase = await createClient()
-
-  if (kind === 'wo') {
-    const { data: wo } = await supabase
-      .from('in4_work_orders')
-      .select('wo_id, display_no, creation_dt, contractor_id, subproject_id, wo_value')
-      .eq('wo_id', id).maybeSingle()
-    if (!wo) return null
-    const [party, { data: sub }] = await Promise.all([
-      partyName(supabase, CONTRACTOR, (wo.contractor_id as number | null) ?? null),
-      wo.subproject_id
-        ? supabase.from('in4_subprojects').select('name').eq('id', wo.subproject_id).maybeSingle()
-        : Promise.resolve({ data: null }),
-    ])
-    const projectName = ((sub as { name?: string } | null)?.name as string | null) ?? null
-    const no = (wo.display_no as string) ?? `WO ${wo.wo_id}`
-    return {
-      kind, no, party, projectName,
-      ...(await resolveHubProject(supabase, projectName)),
-      date: (wo.creation_dt as string | null) ?? null,
-      value: wo.wo_value == null ? null : num(wo.wo_value),
-      status: null,
-      lines: [],
-      // in4_wo_boq_items carries a work description and a uom, never a
-      // material id, so its lines cannot become stock lines. Saying so beats
-      // an empty list the storekeeper reads as a failure.
-      linesWhy: 'A work order lists work, not materials — add what actually arrived.',
-    }
-  }
 
   const { data: po } = await supabase
     .from('in4_purchase_orders')
@@ -742,10 +677,11 @@ export async function loadOrder(key: string): Promise<OrderDetail | null> {
     : { data: [] as Array<{ id: number; name: string; uom: string }> }
   const byMat = new Map((mats ?? []).map(m => [m.id as number, m]))
   const projectName = ((project as { name?: string } | null)?.name as string | null) ?? null
-  const no = (po.po_no as string) ?? ''
 
   return {
-    kind, no, party, projectName,
+    no: (po.po_no as string) ?? '',
+    party,
+    projectName,
     ...(await resolveHubProject(supabase, projectName)),
     date: (po.po_dt as string | null) ?? null,
     value: po.po_value == null ? null : num(po.po_value),
