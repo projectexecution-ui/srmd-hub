@@ -112,3 +112,44 @@ describe('the abstract sheet', () => {
       .toEqual(['Wet areas — screed', 'Wet areas — membrane'])
   })
 })
+
+/** Aksha, 15 Sep 2026: "all RA bills should show not only previous Bill total".
+ *
+ *  A single Previous column says how much came before but not which bill it
+ *  came on — and on a running account that is the thing being checked: whether
+ *  this bill is re-measuring what an earlier one already claimed. */
+describe('every earlier bill as its own column', () => {
+  const THIRD: AbstractLine[] = [
+    line({ abstractId: 2600, abstractNo: 'Abs/…/99', billNo: 'KP362SRA09', on: '2026-07-02', itemId: 12221, qty: 5, rate: 896, amt: 4480 }),
+  ]
+
+  it('lists the earlier bills oldest first, once each', () => {
+    const s = buildAbstractSheet(THIRD, [...SECOND, ...FIRST], BOQ, null)
+    expect(s.earlierBills.map(b => b.billNo)).toEqual(['KP362SRA51', 'KP362SRA06'])
+  })
+
+  it('puts each earlier bill quantity in its own slot, in that order', () => {
+    const s = buildAbstractSheet(THIRD, [...SECOND, ...FIRST], BOQ, null)
+    const row = s.rows.find(r => r.itemId === 12221)!
+    // RA-1 measured 84.76, RA-2 measured 95.44, this bill adds 5.
+    expect(row.history).toEqual([84.76, 95.44])
+    expect(row.thisQty).toBe(5)
+    expect(row.cumulativeQty).toBe(185.2)
+  })
+
+  it('shows a zero where an earlier bill did not touch that item', () => {
+    const s = buildAbstractSheet(
+      [line({ abstractId: 2600, billNo: 'X3', on: '2026-07-02', itemId: 12206, qty: 10, rate: 1132, amt: 11320 })],
+      [...SECOND, ...FIRST], BOQ, null)
+    // Item 12206 appears on neither earlier bill, so both slots are empty
+    // rather than the column being dropped and the rows sliding left.
+    expect(s.rows[0].history).toEqual([0, 0])
+    expect(s.rows[0].history).toHaveLength(s.earlierBills.length)
+  })
+
+  it('has no columns at all on the first bill of an order', () => {
+    const s = buildAbstractSheet(FIRST, [], BOQ, null)
+    expect(s.earlierBills).toEqual([])
+    for (const r of s.rows) expect(r.history).toEqual([])
+  })
+})

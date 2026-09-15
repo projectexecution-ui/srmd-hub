@@ -228,6 +228,7 @@ export default async function BillDetailPage({ params }: { params: Promise<{ id:
           ownSheet={maker.ownSheet}
           in4Total={calc?.sheet?.thisBill ?? null}
           source={fromIn4 ? 'in4' : 'ct'}
+          earlierBills={fromIn4 ? calc?.sheet?.earlierBills ?? [] : []}
           sourceNote={fromIn4 ? in4Note : null}
         />
       )}

@@ -30,6 +30,9 @@ export interface MakerLine {
   /** Measured on earlier bills for this item. */
   priorQty: number
   priorAmt: number
+  /** What each earlier bill measured, oldest first — one per column. Empty on
+   *  a sheet being filled here, which has no earlier bills to show. */
+  history?: number[]
   /** The one number a person types. */
   thisQty: number
 }
@@ -275,6 +278,7 @@ export interface MeasuredRow {
   thisAmt: number
   cumulativeQty: number
   cumulativeAmt: number
+  history: number[]
 }
 
 export function linesFromSheet(rows: MeasuredRow[]): MakerLine[] {
@@ -291,5 +295,6 @@ export function linesFromSheet(rows: MeasuredRow[]): MakerLine[] {
     priorQty: q3(r.cumulativeQty - r.thisQty),
     priorAmt: r2(r.cumulativeAmt - r.thisAmt),
     thisQty: r.thisQty,
+    history: r.history,
   }))
 }

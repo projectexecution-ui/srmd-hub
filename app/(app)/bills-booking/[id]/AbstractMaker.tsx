@@ -8,7 +8,7 @@ import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Check, Loader2, Ruler } from 'lucide-react'
 import { priceAbstract, type MakerLine, type RatePick } from '@/lib/bills-booking/maker'
-import { formatINR, formatINRCompact, formatNumber } from '@/lib/utils'
+import { formatINR, formatINRCompact, formatNumber, formatDate } from '@/lib/utils'
 import { Particular, ExpandAll } from './Particular'
 import { shortenBoq } from '@/lib/bills-booking/shorten'
 
@@ -23,7 +23,7 @@ import { shortenBoq } from '@/lib/bills-booking/shorten'
  *  balance, GST, retention and the green Net Payable line. The rate is never
  *  editable — it is what the work order ordered, and a rate somebody can
  *  retype is a rate that ends up wrong. */
-export function AbstractMaker({ billId, woNo, vendor, work, seed, gst: gstPick, retention: retPick, canEdit, raLabel, ownSheet, in4Total, source = 'ct', sourceNote }: {
+export function AbstractMaker({ billId, woNo, vendor, work, seed, gst: gstPick, retention: retPick, canEdit, raLabel, ownSheet, in4Total, source = 'ct', sourceNote, earlierBills = [] }: {
   billId: string
   woNo: string
   vendor: string
@@ -45,6 +45,13 @@ export function AbstractMaker({ billId, woNo, vendor, work, seed, gst: gstPick, 
   /** One line under the masthead naming the IN4 document and whether Billing
    *  has certified it yet. Composed by the page, which is what knows. */
   sourceNote?: string | null
+  /** The earlier bills on this order, oldest first — one column each.
+   *
+   *  Aksha, 15 Sep 2026: "all RA bills should show not only previous Bill
+   *  total". A lump tells you how much came before but not which bill it came
+   *  on, and on a running account that is the thing being checked: whether
+   *  this bill is re-measuring what an earlier one already claimed. */
+  earlierBills?: Array<{ billNo: string | null; on: string | null }>
   /** What IN4's own abstract for this bill totals, when it has one. Shown as a
    *  single reconciling line — NOT as a second table, which is what confused
    *  Aksha: two panels, both titled "Abstract sheet". */
@@ -119,6 +126,17 @@ export function AbstractMaker({ billId, woNo, vendor, work, seed, gst: gstPick, 
         </span>
       </div>
 
+      {earlierBills.length > 0 && (
+        <p className="border-b border-gray-100 bg-amber-50/40 px-4 py-1.5 text-[11px] text-gray-600">
+          <b className="text-gray-800">Earlier bills on this order:</b>{' '}
+          {earlierBills.map((b, i) => (
+            <span key={i}>
+              {i > 0 && '  ·  '}
+              <b>RA-{i + 1}</b> {b.billNo ?? '—'}{b.on ? ` (${formatDate(b.on)})` : ''}
+            </span>
+          ))}
+        </p>
+      )}
       <div className="flex items-center justify-end border-b border-gray-100 px-4 py-1.5">
         <ExpandAll on={expandAll} onToggle={() => setExpandAll(v => !v)} n={hidden} />
       </div>
@@ -132,12 +150,18 @@ export function AbstractMaker({ billId, woNo, vendor, work, seed, gst: gstPick, 
       {err && <p role="alert" className="mx-4 mt-3 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">{err}</p>}
 
       <div className="overflow-x-auto px-2 pt-2">
-        <table className="w-full min-w-[1020px] border-collapse text-[11.5px]">
+        <table style={{ minWidth: 1020 + earlierBills.length * 54 }} className="w-full border-collapse text-[11.5px]">
           <thead>
             <tr>
               <Th l>#</Th><Th l>Particular</Th><Th>Qty</Th><Th>Unit</Th><Th>Rate</Th>
               <Th g="wo">WO Amt</Th>
-              <Th g="prev">Prev Qty</Th><Th g="prev">Prev Amt</Th>
+              {earlierBills.map((b, i) => (
+                <Th key={i} g="prev">
+                  <span title={`${b.billNo ?? 'earlier bill'}${b.on ? ` · ${formatDate(b.on)}` : ''}`}>RA-{i + 1}</span>
+                </Th>
+              ))}
+              {earlierBills.length === 0 && <Th g="prev">Prev Qty</Th>}
+              <Th g="prev">Prev Amt</Th>
               <Th g="this">This Qty</Th><Th g="this">This Amt</Th>
               <Th g="cum">Cum Qty</Th><Th g="cum">Cum Amt</Th>
               <Th g="bal">Bal Qty</Th><Th g="bal">Bal Amt</Th>
@@ -154,7 +178,10 @@ export function AbstractMaker({ billId, woNo, vendor, work, seed, gst: gstPick, 
                 <Td>{l.uom ?? '—'}</Td>
                 <Td>{m(l.rate)}</Td>
                 <Td g="wo">{mc(l.orderedAmt)}</Td>
-                <Td g="prev">{n(l.priorQty)}</Td>
+                {earlierBills.map((_, i) => (
+                  <Td key={i} g="prev" className="text-gray-600">{n(l.history?.[i] ?? 0)}</Td>
+                ))}
+                {earlierBills.length === 0 && <Td g="prev">{n(l.priorQty)}</Td>}
                 <Td g="prev">{mc(l.priorAmt)}</Td>
                 <Td g="this">
                   {canEdit ? (
@@ -196,7 +223,7 @@ export function AbstractMaker({ billId, woNo, vendor, work, seed, gst: gstPick, 
                       : <> @ {t.rate}%</>
                   )}
                 </td>
-                <td className={`border border-gray-100 px-2 py-1.5 text-right tabular-nums ${t.kind === 'net' ? 'text-emerald-50' : 'text-gray-500'}`} colSpan={2}>
+                <td className={`border border-gray-100 px-2 py-1.5 text-right tabular-nums ${t.kind === 'net' ? 'text-emerald-50' : 'text-gray-500'}`} colSpan={Math.max(earlierBills.length, 1) + 1}>
                   {t.kind === 'retention' && t.previous > 0 ? '− ' : ''}{m(t.previous)}
                 </td>
                 <td className="border border-gray-100 px-2 py-1.5 text-right tabular-nums" colSpan={2}>

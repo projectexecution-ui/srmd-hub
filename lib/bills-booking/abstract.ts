@@ -61,6 +61,13 @@ export interface SheetRow {
   /** Measured on THIS bill. */
   thisQty: number
   thisAmt: number
+  /** What each EARLIER bill measured on this item, oldest first.
+   *
+   *  Aksha, 15 Sep 2026: "all RA bills should show not only previous Bill
+   *  total". A single Previous column tells you how much came before but not
+   *  which bill it came on, and on a running account that is exactly what is
+   *  being checked — whether RA-3 quietly re-measured what RA-2 already had. */
+  history: number[]
   /** Everything measured on this item up to and including this bill. */
   cumulativeQty: number
   cumulativeAmt: number
@@ -74,6 +81,10 @@ export interface SheetRow {
 }
 
 export interface AbstractSheet {
+  /** The earlier bills on this work order, oldest first — one column each.
+   *  Empty when this is the first bill, which is when the whole group is
+   *  dropped rather than drawn as a row of dashes. */
+  earlierBills: Array<{ billNo: string | null; on: string | null }>
   abstractNo: string | null
   billNo: string | null
   on: string | null
@@ -122,6 +133,27 @@ export function buildAbstractSheet(
     priorAmt.set(e.itemId, (priorAmt.get(e.itemId) ?? 0) + e.amt)
   }
 
+  // The earlier bills as COLUMNS, oldest first. Keyed on the contractor's bill
+  // number because that is what IN4 groups an abstract by, and ordered by date
+  // so RA-1 sits left of RA-2 however the rows arrived.
+  const billOrder = new Map<string, { billNo: string | null; on: string | null }>()
+  for (const e of [...earlier].sort((a, b) => (a.on ?? '').localeCompare(b.on ?? '') || a.abstractId - b.abstractId)) {
+    const k = (e.billNo ?? '').trim().toLowerCase()
+    if (!billOrder.has(k)) billOrder.set(k, { billNo: e.billNo, on: e.on })
+  }
+  const earlierBills = [...billOrder.values()]
+  const columnOf = new Map([...billOrder.keys()].map((k, i) => [k, i]))
+
+  // qty per (item, earlier bill)
+  const perBill = new Map<number, number[]>()
+  for (const e of earlier) {
+    const col = columnOf.get((e.billNo ?? '').trim().toLowerCase())
+    if (col == null) continue
+    let row = perBill.get(e.itemId)
+    if (!row) { row = new Array(earlierBills.length).fill(0); perBill.set(e.itemId, row) }
+    row[col] = q3(row[col] + e.qty)
+  }
+
   // One row per item on this bill, even where the same item was split across
   // two lines of the same abstract.
   const merged = new Map<number, { qty: number; amt: number; rate: number }>()
@@ -146,6 +178,7 @@ export function buildAbstractSheet(
       orderedQty,
       rate: m.rate || b?.rate || 0,
       orderedAmt: b?.orderedAmt ?? 0,
+      history: perBill.get(itemId) ?? new Array(earlierBills.length).fill(0),
       thisQty: q3(m.qty),
       thisAmt: r2(m.amt),
       cumulativeQty,
@@ -168,6 +201,7 @@ export function buildAbstractSheet(
   const first = mine[0]
 
   return {
+    earlierBills,
     abstractNo: first?.abstractNo ?? null,
     billNo: first?.billNo ?? null,
     on: first?.on ?? null,
