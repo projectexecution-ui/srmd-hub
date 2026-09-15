@@ -5,7 +5,7 @@ import { useState, useTransition } from 'react'
 import { saveListRow, setListActive, saveItem } from '@/lib/stores/actions'
 import type { ListRow, ItemRow, ProjectOpt } from '@/lib/stores/queries'
 import { formatINR, formatNumber } from '@/lib/utils'
-import { Field, inputClass, Btn, Notice, Empty, Scroller, th, td, tdNum, GroupedOptions } from '../ui'
+import { Field, inputClass, Btn, Notice, Empty, Scroller, th, thNum, td, tdNum, GroupedOptions } from '../ui'
 
 type Kind = ListRow['kind']
 
@@ -305,7 +305,7 @@ function ItemsPanel({
               <tr>
                 <th className={th}>Item</th>
                 <th className={th}>Unit</th>
-                <th className={`${th} text-right`}>Last rate</th>
+                <th className={thNum}>Last rate</th>
                 <th className={th}>From IN4</th>
               </tr>
             </thead>

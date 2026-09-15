@@ -7,7 +7,7 @@ import { completeGateEntry, importIn4Material } from '@/lib/stores/actions'
 import { loadOrderForEntry } from './po-action'
 import { OrderPicker } from './OrderPicker'
 import {
-  missingForComplete, fmtQty, entityCodeFromOrderNo, RETURNABLES_ON, type Register,
+  missingForComplete, fmtQty, entityCodeFromOrderNo, categoryFor, RETURNABLES_ON, type Register,
 } from '@/lib/stores/core'
 import { T } from '@/lib/stores/lang'
 import { formatINR } from '@/lib/utils'
@@ -46,7 +46,7 @@ function sameParty(a: string, b: string): boolean {
  */
 export function CompleteForm({
   entryId, entryNo, register, makesStock, entities, categories, locations, projects, items,
-  recentItemIds = [], gateParty = null,
+  recentItemIds = [], gateParty = null, lastLocations = { byProject: {}, lastUsed: null },
 }: {
   entryId: string; entryNo: string; register: Register; makesStock: boolean
   entities: Opt[]; categories: Opt[]; locations: Array<{ id: string; label: string }>
@@ -55,6 +55,8 @@ export function CompleteForm({
   recentItemIds?: readonly string[]
   /** Who Security wrote down at the gate, to check the order against. */
   gateParty?: string | null
+  /** Where this store put things last, per project and overall. */
+  lastLocations?: { byProject: Record<string, string>; lastUsed: string | null }
 }) {
   const router = useRouter()
   const [pending, start] = useTransition()
@@ -64,8 +66,19 @@ export function CompleteForm({
   const [projectId, setProjectId] = useState('')
   const [poWoNo, setPoWoNo] = useState('')
   const [order, setOrder] = useState<{ no: string; kind: 'po' | 'wo' } | null>(null)
-  const [itemCategoryId, setItemCategoryId] = useState('')
-  const [locationId, setLocationId] = useState(locations.length === 1 ? locations[0].id : '')
+  // Vendor material is "Vendor Materials" before anything else is known, so it
+  // starts filled rather than waiting for the storekeeper to say so.
+  const [itemCategoryId, setItemCategoryId] = useState(
+    () => categoryFor(register, false, categories) ?? '',
+  )
+  // One place to put things means there is no question to ask. More than one
+  // means the last place this store used, which is nearly always right and is
+  // a dropdown away from being corrected.
+  const [locationId, setLocationId] = useState(() => {
+    if (locations.length === 1) return locations[0].id
+    const last = lastLocations.lastUsed
+    return last && locations.some(l => l.id === last) ? last : ''
+  })
   const [lines, setLines] = useState<Line[]>([newLine()])
   const [poNote, setPoNote] = useState<{ ok: boolean; text: string } | null>(null)
   const [filledFrom, setFilledFrom] = useState<string[]>([])
@@ -135,11 +148,33 @@ export function CompleteForm({
       }
 
       // Project — only when the alias table is certain what it is.
+      let landedProject = projectId
       if (!projectId) {
         if (o.projectId && projects.some(p => p.id === o.projectId)) {
           setProjectId(o.projectId)
+          landedProject = o.projectId
           done.push(`project ${projects.find(p => p.id === o.projectId)?.name ?? ''}`.trim())
         } else if (o.projectWhy) why.push(o.projectWhy)
+      }
+
+      // Item category — an order IS the definition of "Ordered Items", so
+      // asking would be asking the storekeeper to restate what they just did.
+      if (!itemCategoryId) {
+        const cat = categoryFor(register, true, categories)
+        if (cat) {
+          setItemCategoryId(cat)
+          done.push(`item category ${categories.find(c => c.id === cat)?.name ?? ''}`.trim())
+        }
+      }
+
+      // Where it goes — the place this store last put material FOR THIS
+      // PROJECT beats the place it last put anything.
+      if (makesStock && landedProject) {
+        const forProject = lastLocations.byProject[landedProject]
+        if (forProject && forProject !== locationId && locations.some(l => l.id === forProject)) {
+          setLocationId(forProject)
+          done.push(`put away at ${locations.find(l => l.id === forProject)?.label ?? ''}`.trim())
+        }
       }
 
       // Items. A work order has none to give — it lists work, not materials.

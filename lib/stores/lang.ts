@@ -73,7 +73,7 @@ export const T = {
   otherOrders:    'Already received',
   noOrder:        'Not against any order',
   orderNone:      'No order found',
-  filledFromIn4:  'Filled in from IN4',
+  filledFromIn4:  'Filled in for you',
   changeAnyDiffer: 'Change anything that differs',
   whereKept:      'Where has it been kept?',
   item:           'Item',

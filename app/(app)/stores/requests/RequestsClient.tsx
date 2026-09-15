@@ -8,7 +8,7 @@ import { formatDate, formatDateTime } from '@/lib/utils'
 import type { RequestRow, ProjectOpt } from '@/lib/stores/queries'
 import { SearchableSelect } from '@/components/ui/searchable-select'
 import {
-  Field, inputClass, Btn, Notice, Empty, Section, StatusChip, Scroller, th, td, tdNum, GroupedOptions,
+  Field, inputClass, Btn, Notice, Empty, Section, StatusChip, Scroller, th, thNum, td, tdNum, GroupedOptions,
 } from '../ui'
 
 interface Opt { id: string; name: string }
@@ -241,10 +241,10 @@ function RequestCard({
           <thead>
             <tr>
               <th className={th}>Item</th>
-              <th className={`${th} text-right`}>Asked</th>
-              <th className={`${th} text-right`}>Issued</th>
+              <th className={thNum}>Asked</th>
+              <th className={thNum}>Issued</th>
               {RETURNABLES_ON && <th className={th}>Returnable</th>}
-              {issuing && <th className={`${th} text-right`}>Issue now</th>}
+              {issuing && <th className={thNum}>Issue now</th>}
             </tr>
           </thead>
           <tbody>

@@ -334,3 +334,32 @@ export function entityCodeFromOrderNo(no: string, knownCodes: readonly string[])
   }
   return null
 }
+
+/* ── What the form can work out for itself ──────────────────────────────── */
+
+/**
+ * Which item category an entry is, without asking.
+ *
+ * The mind map's three categories are not a free taxonomy — they say where the
+ * material stands:
+ *
+ *   Vendor Materials   the vendor register, material going straight to site
+ *   Ordered Items      there is a purchase or work order behind it
+ *   Returnable Items   it has to come back (switched off since 14 Sep)
+ *
+ * All three are decided by facts the screen already has, so asking the
+ * storekeeper to pick one is asking them to restate what they just did.
+ * Returns null only when nothing has been established yet — no order, and a
+ * register that could still go either way.
+ */
+export function categoryFor(
+  register: Register,
+  hasOrder: boolean,
+  categories: ReadonlyArray<{ id: string; name: string }>,
+): string | null {
+  const find = (word: string) =>
+    categories.find(c => c.name.toLowerCase().includes(word))?.id ?? null
+  if (register === 'vendor') return find('vendor')
+  if (hasOrder) return find('order')
+  return null
+}

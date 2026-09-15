@@ -6,7 +6,7 @@ import { Undo2 } from 'lucide-react'
 import { returnItems } from '@/lib/stores/actions'
 import { checkReturn, fmtQty, CHASE_AFTER_DAYS, type ReturnableRow } from '@/lib/stores/core'
 import { formatDate } from '@/lib/utils'
-import { Field, inputClass, Btn, Notice, Empty, Scroller, th, td, tdNum } from '../ui'
+import { Field, inputClass, Btn, Notice, Empty, Scroller, th, thNum, td, tdNum } from '../ui'
 
 /**
  * Still to come back — and, now, the way to clear it.
@@ -49,9 +49,9 @@ export function ReturnClient({
               <th className={th}>Item</th>
               <th className={th}>Held by</th>
               <th className={th}>Owed to</th>
-              <th className={`${th} text-right`}>Out</th>
-              <th className={`${th} text-right`}>Back</th>
-              <th className={`${th} text-right`}>Still out</th>
+              <th className={thNum}>Out</th>
+              <th className={thNum}>Back</th>
+              <th className={thNum}>Still out</th>
               <th className={th}>Since</th>
               <th className={th}>Entry</th>
             </tr>

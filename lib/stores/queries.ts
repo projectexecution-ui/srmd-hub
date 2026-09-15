@@ -143,6 +143,7 @@ export async function loadStock(asOn?: string): Promise<StockRow[]> {
 export async function loadEntries(opts: {
   projectId?: string | null
   stage?: Stage | null
+  direction?: 'in' | 'out' | null
   limit?: number
 } = {}): Promise<EntryRow[]> {
   const supabase = await createClient()
@@ -159,6 +160,7 @@ export async function loadEntries(opts: {
 
   if (opts.projectId) q = q.eq('project_id', opts.projectId)
   if (opts.stage) q = q.eq('stage', opts.stage)
+  if (opts.direction) q = q.eq('direction', opts.direction)
 
   const { data } = await q
   const lists = await loadLists()
@@ -907,4 +909,39 @@ export async function loadRecentItemIds(limit = 10): Promise<string[]> {
     if (seen.length >= limit) break
   }
   return seen
+}
+
+/**
+ * Where this store put things last, so the form can offer it rather than ask.
+ *
+ * Keyed by project, with a fallback for "wherever we last put anything". A
+ * storekeeper works one site and puts material in the same two places every
+ * week; making them answer that afresh every entry is asking them to retype
+ * what the register already knows.
+ *
+ * Only completed entries count — a gate row has no location yet, and a voided
+ * one is not a precedent.
+ */
+export async function loadLastLocations(): Promise<{
+  byProject: Record<string, string>
+  lastUsed: string | null
+}> {
+  const supabase = await createClient()
+  const { data } = await supabase
+    .from('mio_entries')
+    .select('project_id, location_id, entry_at')
+    .not('location_id', 'is', null)
+    .neq('stage', 'void')
+    .order('entry_at', { ascending: false })
+    .limit(200)
+
+  const byProject: Record<string, string> = {}
+  let lastUsed: string | null = null
+  for (const r of data ?? []) {
+    const loc = r.location_id as string
+    if (!lastUsed) lastUsed = loc
+    const pid = r.project_id as string | null
+    if (pid && !byProject[pid]) byProject[pid] = loc
+  }
+  return { byProject, lastUsed }
 }

@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import {
   entryNo, linkedNo, foldStock, availableAt, availableAnywhere, checkIssue,
   outstandingReturnables, checkReturn, missingForGate, missingForComplete, createsStock, heldItemCount,
-  fmtQty, isPilotProject, PILOT_PROJECT_IDS, RETURNABLES_ON, groupProjects, UNGROUPED, entityCodeFromOrderNo,
+  fmtQty, isPilotProject, PILOT_PROJECT_IDS, RETURNABLES_ON, groupProjects, UNGROUPED, entityCodeFromOrderNo, categoryFor,
   type Movement, type ReturnableLine,
 } from './core'
 
@@ -385,5 +385,36 @@ describe('entityCodeFromOrderNo — which trust is paying', () => {
 
   it('matches however the code is spaced or cased', () => {
     expect(entityCodeFromOrderNo('PO/srmdfa/AB/2026-27/1', OURS)).toBe('SRMD FA')
+  })
+})
+
+describe('categoryFor — the category the screen already knows', () => {
+  const CATS = [
+    { id: 'v', name: 'Vendor Materials' },
+    { id: 'o', name: 'Ordered Items' },
+    { id: 'r', name: 'Returnable Items' },
+  ]
+
+  it('vendor material is Vendor Materials, order or no order', () => {
+    expect(categoryFor('vendor', false, CATS)).toBe('v')
+    expect(categoryFor('vendor', true, CATS)).toBe('v')
+  })
+
+  it('an order on our own stock makes it Ordered Items', () => {
+    expect(categoryFor('srm', true, CATS)).toBe('o')
+  })
+
+  it('says nothing rather than guessing when nothing is established', () => {
+    expect(categoryFor('srm', false, CATS)).toBeNull()
+    expect(categoryFor('transfer', false, CATS)).toBeNull()
+  })
+
+  it('survives a renamed or missing category rather than picking the wrong one', () => {
+    expect(categoryFor('vendor', false, [{ id: 'o', name: 'Ordered Items' }])).toBeNull()
+    expect(categoryFor('srm', true, [])).toBeNull()
+  })
+
+  it('matches on the word, so a rename that keeps the word keeps working', () => {
+    expect(categoryFor('srm', true, [{ id: 'x', name: 'Ordered / PO items' }])).toBe('x')
   })
 })

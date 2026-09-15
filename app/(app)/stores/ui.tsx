@@ -162,6 +162,12 @@ export function Scroller({ children, min = 720 }: { children: ReactNode; min?: n
 }
 
 export const th = 'text-left text-[10px] font-bold uppercase tracking-wider text-gray-500 px-3 py-2 border-b border-gray-200 bg-gray-50 whitespace-nowrap'
+/** Right-aligned header, for a column of numbers. NOT :
+ *  both are text-align utilities of equal specificity, so which one wins is
+ *  decided by their order in the generated stylesheet rather than by the order
+ *  they are written in — the header drifted left while its column sat right. */
+export const thNum = 'text-right text-[10px] font-bold uppercase tracking-wider text-gray-500 px-3 py-2 border-b border-gray-200 bg-gray-50 whitespace-nowrap'
+
 export const td = 'px-3 py-2.5 text-[13px] text-gray-800 border-b border-gray-100 align-top'
 export const tdNum = `${td} text-right tabular-nums whitespace-nowrap`
 

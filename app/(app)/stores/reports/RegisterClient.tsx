@@ -11,7 +11,7 @@ import {
 import { fmtQty } from '@/lib/stores/core'
 import { formatINR } from '@/lib/utils'
 import { GROUPS } from '@/lib/stores/registers'
-import { inputClass, Empty, Scroller, th, td, tdNum, GroupedOptions } from '../ui'
+import { inputClass, Empty, Scroller, th, thNum, td, tdNum, GroupedOptions } from '../ui'
 import type { ProjectOpt } from '@/lib/stores/queries'
 
 /**
@@ -172,10 +172,10 @@ export function RegisterClient({
                   <th className={th}>Item</th>
                   <th className={th}>Discipline</th>
                   <th className={th}>Where</th>
-                  <th className={`${th} text-right`}>Qty</th>
+                  <th className={thNum}>Qty</th>
                   <th className={th}>Unit</th>
-                  <th className={`${th} text-right`}>Rate</th>
-                  <th className={`${th} text-right`}>Amount</th>
+                  <th className={thNum}>Rate</th>
+                  <th className={thNum}>Amount</th>
                 </tr>
               </thead>
               <tbody>

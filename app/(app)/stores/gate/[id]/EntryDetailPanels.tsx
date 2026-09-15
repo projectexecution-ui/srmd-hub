@@ -7,7 +7,7 @@ import { fmtQty, RETURNABLES_ON } from '@/lib/stores/core'
 import { formatDateTime, formatINR } from '@/lib/utils'
 import { PenLine } from 'lucide-react'
 import type { EntryDetail, Signature } from '@/lib/stores/queries'
-import { Field, inputClass, Btn, Notice, StageChip, RegisterChip, Scroller, th, td, tdNum } from '../../ui'
+import { Field, inputClass, Btn, Notice, StageChip, RegisterChip, Scroller, th, thNum, td, tdNum } from '../../ui'
 
 /** The fields a correction may touch. Anything that would change what the
  *  ledger says — quantity, rate, the item itself — is deliberately not here:
@@ -91,9 +91,9 @@ export function EntryDetailPanels({
                 <tr>
                   <th className={th}>Item</th>
                   <th className={th}>Unit</th>
-                  <th className={`${th} text-right`}>Qty</th>
-                  <th className={`${th} text-right`}>Rate</th>
-                  <th className={`${th} text-right`}>Amount</th>
+                  <th className={thNum}>Qty</th>
+                  <th className={thNum}>Rate</th>
+                  <th className={thNum}>Amount</th>
                   {RETURNABLES_ON && <th className={th}>Returnable</th>}
                 </tr>
               </thead>

@@ -1,7 +1,7 @@
 import { loadStock, loadItems, loadLists, storableLocations, locationLabel } from '@/lib/stores/queries'
 import { fmtQty } from '@/lib/stores/core'
 import { formatINR } from '@/lib/utils'
-import { Section, Empty, Scroller, th, td, tdNum } from '../ui'
+import { Section, Empty, Scroller, th, thNum, td, tdNum } from '../ui'
 import { OpeningStockForm } from './OpeningStockForm'
 
 export const dynamic = 'force-dynamic'
@@ -65,10 +65,10 @@ export default async function StockPage({
                   <tr>
                     <th className={th}>Item</th>
                     <th className={th}>Where</th>
-                    <th className={`${th} text-right`}>In hand</th>
+                    <th className={thNum}>In hand</th>
                     <th className={th}>Unit</th>
-                    <th className={`${th} text-right`}>Last rate</th>
-                    <th className={`${th} text-right`}>Value</th>
+                    <th className={thNum}>Last rate</th>
+                    <th className={thNum}>Value</th>
                   </tr>
                 </thead>
                 <tbody>
