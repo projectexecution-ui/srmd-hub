@@ -2,7 +2,8 @@ import { describe, it, expect } from 'vitest'
 import {
   entryNo, linkedNo, foldStock, availableAt, availableAnywhere, checkIssue,
   outstandingReturnables, checkReturn, missingForGate, missingForComplete, createsStock, heldItemCount,
-  fmtQty, isPilotProject, PILOT_PROJECT_IDS, RETURNABLES_ON, STORES_LIVE, canSeeStores, stockScopeFor, visibleLocationIds, emptyScopeReason, groupProjects, UNGROUPED, entityCodeFromOrderNo, categoryFor, isServiceScope, bestIssueLocation,
+  fmtQty, isPilotProject, PILOT_PROJECT_IDS, RETURNABLES_ON, STORES_LIVE, canSeeStores, stockScopeFor, visibleLocationIds, emptyScopeReason,
+  approversForRequest, approverKeyOf, approverLabel, groupProjects, UNGROUPED, entityCodeFromOrderNo, categoryFor, isServiceScope, bestIssueLocation,
   type Movement, type ReturnableLine, type StockRow,
 } from './core'
 
@@ -580,5 +581,36 @@ describe('stockScopeFor / visibleLocationIds — whose stock is whose', () => {
 
   it('never explains away a keeper who simply holds nothing', () => {
     expect(emptyScopeReason(stockScopeFor('store_manager', []), 0)).toBeNull()
+  })
+})
+
+describe('approversForRequest — Civil/Finishes to MA, MEP to KK', () => {
+  it('sends a Civil or Finishes request to Mayank', () => {
+    expect(approversForRequest(['MA'])).toEqual(['MA'])
+    expect(approverLabel(approversForRequest(['MA']))).toBe('Mayank')
+  })
+
+  it('sends an MEP request to Kanti', () => {
+    expect(approversForRequest(['KK', 'KK'])).toEqual(['KK'])
+    expect(approverLabel(approversForRequest(['KK']))).toBe('Kanti')
+  })
+
+  it('sends a mixed request to BOTH — neither should be left unaware', () => {
+    // Cement and cable on one request is legitimate, and picking a winner
+    // would leave one of them not knowing there is something of theirs waiting.
+    expect(approversForRequest(['MA', 'KK', 'MA'])).toEqual(['MA', 'KK'])
+    expect(approverLabel(['MA', 'KK'])).toBe('Mayank and Kanti')
+  })
+
+  it('adds nobody for a line whose discipline is unset or unmapped', () => {
+    // A gap in the masters, not a reason to guess.
+    expect(approversForRequest([null, undefined, '', 'XX'])).toEqual([])
+    expect(approverLabel([])).toBe('Mayank or Kanti')
+  })
+
+  it('reads the code however it is typed', () => {
+    expect(approverKeyOf(' ma ')).toBe('MA')
+    expect(approverKeyOf('kk')).toBe('KK')
+    expect(approverKeyOf('Civil')).toBeNull()
   })
 })

@@ -80,9 +80,14 @@ export const ISSUE_SLOTS: readonly PhotoSlot[] = [
   },
   {
     kind: 'video',
-    label: 'Security’s video check',
-    hint: 'Short video of the load before the vehicle leaves',
-    required: false,
+    // Compulsory as of 15 Sep 2026. It was optional only because nobody holds
+    // the security role, and Aksha settled that: "Security to check the
+    // materials before loading & Video Confirmation here comes (else the store
+    // keeper to take a video if security unavailabel)". With a fallback taker
+    // there is nobody left for it to be blocked on.
+    label: 'Video of the load',
+    hint: 'Security takes it before loading — or the storekeeper, if Security is not there',
+    required: true,
     video: true,
   },
 ]

@@ -1,5 +1,6 @@
 import 'server-only'
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
+import { approverLabel, type ApproverKey } from './core'
 
 /** The service role, the same way every other notifier in the hub gets it:
  *  resolving who holds a role and writing a notification both need to see past
@@ -48,11 +49,11 @@ export type StoresEvent =
 const AUDIENCE: Record<StoresEvent, readonly string[]> = {
   // The person who has to go and count the material in.
   mio_gate_waiting: ['store_manager'],
-  // The mind map says MA/KK — Mayank (backoffice) and Kanti, who has no CT
-  // Hub account yet — plus the admin running the pilot. NOT 'head': that is
-  // Hiten, Yash and Amit, and copying three Atmarpit heads on every request
-  // for six bags of cement is how a notification becomes something people
-  // learn to ignore.
+  // Fallback only — see APPROVER_EMAIL. Used when a request's disciplines do
+  // not resolve to a named approver, so a request is never left unannounced.
+  // NOT 'head': that is Hiten, Yash and Amit, and copying three Atmarpit heads
+  // on every request for six bags of cement is how a notification becomes
+  // something people learn to ignore.
   mio_request_pending: ['admin', 'backoffice'],
   mio_request_decided: [],
   mio_request_issued: [],
@@ -103,6 +104,42 @@ async function send(
   return sent
 }
 
+/**
+ * MA and KK, as people.
+ *
+ * Aksha, 15 Sep 2026: "Civil & finishes items - approval goes to MA", "MEP
+ * related goes to KK". WHICH discipline maps to which is data — it is the code
+ * on the discipline row, editable in Masters. WHO MA and KK are is here,
+ * because it is two people and it has not changed since the mind map was drawn.
+ *
+ * Kanti has no CT Hub account. Rather than drop his half of the queue on the
+ * floor, anything routed to KK also reaches the admins until he has one, and
+ * the message says whose it really is.
+ */
+const APPROVER_EMAIL: Record<ApproverKey, string | null> = {
+  MA: 'mayank.srmd@gmail.com',
+  KK: null, // no account yet
+}
+
+async function idsForApprovers(keys: readonly ApproverKey[]): Promise<{ ids: string[]; unreachable: ApproverKey[] }> {
+  const emails = keys.map(k => APPROVER_EMAIL[k]).filter(Boolean) as string[]
+  const unreachable = keys.filter(k => !APPROVER_EMAIL[k])
+  const svc = svcClient()
+  if (!svc) return { ids: [], unreachable }
+
+  let ids: string[] = []
+  if (emails.length) {
+    const { data } = await svc.from('profiles').select('id').in('email', emails).eq('is_active', true)
+    ids = (data ?? []).map(r => r.id as string)
+  }
+  // Whoever we could not reach, the admins cover — a request nobody is told
+  // about is the failure this whole file exists to prevent.
+  if (unreachable.length || ids.length === 0) {
+    ids = [...ids, ...(await idsWithRole(AUDIENCE.mio_request_pending))]
+  }
+  return { ids, unreachable }
+}
+
 /** Security has recorded a vehicle. Somebody has to go and count it in. */
 export async function notifyGateWaiting(input: {
   entryId: string; no: string; party: string | null; actorId: string
@@ -123,16 +160,21 @@ export async function notifyGateWaiting(input: {
 
 /** An engineer has asked for material. */
 export async function notifyRequestPending(input: {
-  requestId: string; no: string; projectName: string | null; lineCount: number; actorId: string
+  requestId: string; no: string; projectName: string | null; lineCount: number
+  approvers: readonly ApproverKey[]; actorId: string
 }): Promise<number> {
   try {
-    const ids = (await idsWithRole(AUDIENCE.mio_request_pending)).filter(id => id !== input.actorId)
+    const { ids, unreachable } = await idsForApprovers(input.approvers)
+    const who = approverLabel(input.approvers)
+    const note = unreachable.length
+      ? ` This one is ${approverLabel(unreachable)}'s — who has no CT Hub account yet, so it is with you.`
+      : ''
     return await send(
-      ids, 'mio_request_pending',
-      `Material request to approve — ${input.no}`,
-      `${input.lineCount} item${input.lineCount === 1 ? '' : 's'}${input.projectName ? ` for ${input.projectName}` : ''}.`,
+      ids.filter(id => id !== input.actorId), 'mio_request_pending',
+      `Material request for ${who} — ${input.no}`,
+      `${input.lineCount} item${input.lineCount === 1 ? '' : 's'}${input.projectName ? ` for ${input.projectName}` : ''}.${note}`,
       '/stores/requests?status=pending',
-      { requestNo: input.no, project: input.projectName },
+      { requestNo: input.no, project: input.projectName, approvers: input.approvers },
     )
   } catch { return 0 }
 }

@@ -522,3 +522,53 @@ export function emptyScopeReason(scope: StockScope, visibleCount: number): strin
     ? 'You are not on any project yet, so there is no stock to show. Ask Aksha to add you under Masters → Who works where.'
     : 'None of your projects has a store of its own yet. Material for your site is held in a shared warehouse, which the storekeeper issues from.'
 }
+
+/* ── Who approves what ──────────────────────────────────────────────────── */
+
+/**
+ * Aksha, 15 Sep 2026: "the Civil & finishes items - approval goes to MA" and
+ * "MEP related goes to KK".
+ *
+ * The mapping lives on the DISCIPLINE ROW (mio_lists.code), not in this file,
+ * so Aksha changes it in Masters → Disciplines without a deploy. Three of the
+ * ten were not stated either way and carry a best guess — Exterior Facade and
+ * Steel Fabrication to MA, ICT to KK — which is exactly why it had to be
+ * editable rather than compiled in.
+ */
+export type ApproverKey = 'MA' | 'KK'
+
+export function approverKeyOf(disciplineCode: string | null | undefined): ApproverKey | null {
+  const c = (disciplineCode ?? '').trim().toUpperCase()
+  return c === 'MA' || c === 'KK' ? c : null
+}
+
+/**
+ * Who a whole request goes to.
+ *
+ * A request can hold Civil AND Electrical lines, so it can legitimately be for
+ * both. Returning both is the honest answer — the alternative is picking a
+ * winner and leaving one of them not knowing there is something of theirs in
+ * the queue.
+ *
+ * A line whose discipline is unset, or unmapped, adds nobody: that is a gap in
+ * the masters rather than a reason to guess.
+ */
+export function approversForRequest(
+  lineDisciplineCodes: ReadonlyArray<string | null | undefined>,
+): ApproverKey[] {
+  const keys = new Set<ApproverKey>()
+  for (const c of lineDisciplineCodes) {
+    const k = approverKeyOf(c)
+    if (k) keys.add(k)
+  }
+  // Stable order so the label reads the same way every time.
+  return (['MA', 'KK'] as const).filter(k => keys.has(k))
+}
+
+/** What the request card says, in words rather than initials. */
+export function approverLabel(keys: readonly ApproverKey[]): string {
+  const names = keys.map(k => (k === 'MA' ? 'Mayank' : 'Kanti'))
+  if (names.length === 0) return 'Mayank or Kanti'
+  if (names.length === 1) return names[0]
+  return names.join(' and ')
+}
