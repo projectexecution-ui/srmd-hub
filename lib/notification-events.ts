@@ -33,6 +33,12 @@ export const NOTIFICATION_EVENTS: NotificationEventDef[] = [
     audience: 'Eligible approvers',
   },
   {
+    type: 'bb_bill_sent_back',
+    label: 'Bills — a bill was sent back to you',
+    description: 'A desk further along returned a bill with a reason, which is compulsory to give. The people on the desk it went back to are told, with that reason, so a returned bill is not left resting until somebody thinks to look.',
+    audience: 'The desk the bill was sent back to',
+  },
+  {
     type: 'in4_indent_verify',
     label: 'IN4 — indent waiting for approval',
     description: 'An indent in IN4 reached Verify; the Atm Head of the linked project is asked to approve it in IN4.',

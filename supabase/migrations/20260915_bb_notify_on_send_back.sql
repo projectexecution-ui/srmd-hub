@@ -1,0 +1,26 @@
+-- Applied live on 15 Sep 2026. Recorded here so the schema is reproducible.
+--
+-- Tell the desk a bill is sent back TO, with the reason.
+--
+-- The reason was already recorded and already compulsory -- bb_rpc_move refuses
+-- a send back with an empty comment -- but it sat on the bill and the only way
+-- to find it was to go looking. A returned bill could rest for a week before
+-- anyone noticed.
+--
+-- Recipients come from bb_stage_members(p_to, project, discipline, SUB-PROJECT).
+-- The sub-project is passed here even though the membership gate above it still
+-- does not: the Atm desk and the per-building desks are only resolvable with
+-- it, and telling the wrong person is worse than telling nobody. The gate not
+-- passing it is a separate, known gap.
+--
+-- The notify is wrapped so a failed notice can never undo the move: the bill
+-- going back is the fact that matters, the message about it is not. The person
+-- who clicked is never notified of their own action.
+--
+-- Verified end to end by acting as the admin through request.jwt.claim.sub:
+-- RU-LT/05 sent back from the Disc Head produced one notice to Parimal Srmd
+-- carrying the reason, the order number and a link to the bill.
+--
+-- The full body lives in the database; this file records the shape and why.
+-- See also lib/notification-events.ts, which registers bb_bill_sent_back so it
+-- appears as a row an admin can switch off per channel.
