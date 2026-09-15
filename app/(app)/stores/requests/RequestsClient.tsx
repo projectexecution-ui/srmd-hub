@@ -3,10 +3,15 @@
 import { useRouter } from 'next/navigation'
 import { useMemo, useState, useTransition } from 'react'
 import { raiseRequest, decideRequest, issueRequest } from '@/lib/stores/actions'
-import { checkIssue, fmtQty, RETURNABLES_ON, type StockRow } from '@/lib/stores/core'
+import {
+  checkIssue, bestIssueLocation, fmtQty, RETURNABLES_ON, type StockRow,
+} from '@/lib/stores/core'
 import { formatDate, formatDateTime } from '@/lib/utils'
 import type { RequestRow, ProjectOpt } from '@/lib/stores/queries'
 import { SearchableSelect } from '@/components/ui/searchable-select'
+import { ISSUE_SLOTS, missingPhotos } from '@/lib/stores/photos'
+import { PhotoCapture, type Shot } from '../PhotoCapture'
+import { uploadEntryPhotos } from '../upload-photos'
 import {
   Field, inputClass, Btn, Notice, Empty, Section, StatusChip, Scroller, th, thNum, td, tdNum, GroupedOptions,
 } from '../ui'
@@ -213,9 +218,27 @@ function RequestCard({
   const [result, setResult] = useState<{ ok: boolean; message: string } | null>(null)
   const [note, setNote] = useState('')
   const [issuing, setIssuing] = useState(false)
-  const [locationId, setLocationId] = useState(locations.length === 1 ? locations[0].id : '')
+  // Start at the store that actually holds this request. The screen already
+  // knows — it prints "140 is held in another location" under the line — so
+  // making the storekeeper go and find that place by hand is asking them to
+  // act on information already in front of them.
+  const [locationId, setLocationId] = useState(() => {
+    if (locations.length === 1) return locations[0].id
+    const best = bestIssueLocation(stock, req.lines.map(l => ({
+      itemId: l.itemId, qty: Math.max(0, l.qty - l.issuedQty),
+    })))
+    return best && locations.some(l => l.id === best) ? best : ''
+  })
   const [modeId, setModeId] = useState('')
   const [handedTo, setHandedTo] = useState('')
+  const [shots, setShots] = useState<Shot[]>([])
+
+  // "Item Pics" on SRM Out, and Security's video check before loading — both
+  // named in the mind map. The video is optional until there are Security
+  // accounts to record it; the photograph is not.
+  const shotCounts = shots.reduce<Record<string, number>>(
+    (acc, sh) => ({ ...acc, [sh.kind]: (acc[sh.kind] ?? 0) + 1 }), {})
+  const missingShots = missingPhotos(ISSUE_SLOTS, shotCounts)
   const [qtys, setQtys] = useState<Record<string, string>>(
     Object.fromEntries(req.lines.map(l => [l.id, String(Math.max(0, l.qty - l.issuedQty))])),
   )
@@ -329,6 +352,18 @@ function RequestCard({
                   <input className={inputClass} value={handedTo} onChange={e => setHandedTo(e.target.value)} />
                 </Field>
               </div>
+              <div className="rounded-lg border border-gray-200 p-3 space-y-4">
+                {ISSUE_SLOTS.map(slot => (
+                  <PhotoCapture
+                    key={slot.kind} slot={slot} shots={shots} onChange={setShots} disabled={pending}
+                  />
+                ))}
+              </div>
+
+              {missingShots.length > 0 && (
+                <Notice kind="bad">Still needed: {missingShots.join(' · ')}</Notice>
+              )}
+
               <div className="flex flex-wrap gap-2">
                 <Btn
                   busy={pending}
@@ -339,9 +374,15 @@ function RequestCard({
                         .filter(l => Number(qtys[l.id] || 0) > 0)
                         .map(l => ({ requestLineId: l.id, itemId: l.itemId, unit: l.unit, qty: Number(qtys[l.id]), returnable: l.returnable })),
                     })
-                    setResult(r)
-                    if (r.ok) { setIssuing(false); onDone() }
+                    if (!r.ok || !r.data) { setResult(r); return }
+
+                    const up = await uploadEntryPhotos(r.data.id, shots.map(sh => ({ kind: sh.kind, file: sh.file })))
+                    setResult(up.failed > 0
+                      ? { ok: true, message: `${r.message} ${up.failed} photo${up.failed === 1 ? '' : 's'} did not upload.` }
+                      : r)
+                    setIssuing(false); onDone()
                   })}
+                  disabled={missingShots.length > 0}
                 >
                   Issue &amp; take out of stock
                 </Btn>

@@ -2,7 +2,7 @@
 
 import { useRouter } from 'next/navigation'
 import { useMemo, useState, useTransition } from 'react'
-import { CheckCircle2, ClipboardList, Warehouse, Camera } from 'lucide-react'
+import { CheckCircle2, ClipboardList, Warehouse } from 'lucide-react'
 import { createGateEntry } from '@/lib/stores/actions'
 import { T, stepsFor, canLeave, summaryOf, modeIcon, type GateAnswers } from '@/lib/stores/lang'
 import {
@@ -10,6 +10,9 @@ import {
 } from '../field'
 import { SearchableSelect } from '@/components/ui/searchable-select'
 import type { SupplierOpt } from '@/lib/stores/queries'
+import { GATE_SLOTS, missingPhotos } from '@/lib/stores/photos'
+import { PhotoCapture, type Shot } from '../PhotoCapture'
+import { uploadEntryPhotos } from '../upload-photos'
 
 /**
  * The guard's screen — one question at a time.
@@ -37,17 +40,21 @@ export function GateInForm({
   const [open, setOpen] = useState(false)
   const [i, setI] = useState(0)
   const [a, setA] = useState<GateAnswers>({})
-  const [saved, setSaved] = useState<{ no: string } | null>(null)
+  const [saved, setSaved] = useState<{ no: string; photosFailed?: number } | null>(null)
   const [error, setError] = useState<string | null>(null)
   // The escape hatch, and it must stay one: a lorry from a shop IN4 has never
   // heard of still has to be recordable, at the gate, in the rain.
   const [byHand, setByHand] = useState(false)
+  const [shots, setShots] = useState<Shot[]>([])
+
+  // canLeave is pure, so it is told the count rather than the files.
+  const answers: GateAnswers = { ...a, photoCount: shots.length }
 
   const steps = stepsFor(a)
   const step = steps[Math.min(i, steps.length - 1)]
   const set = (patch: Partial<GateAnswers>) => setA(prev => ({ ...prev, ...patch }))
 
-  const reset = () => { setA({}); setI(0); setSaved(null); setError(null); setByHand(false) }
+  const reset = () => { setA({}); setI(0); setSaved(null); setError(null); setByHand(false); setShots([]) }
 
   const supplierOptions = useMemo(
     () => suppliers.map(s => ({ id: String(s.id), label: s.name, hint: s.hint ?? undefined })),
@@ -72,8 +79,14 @@ export function GateInForm({
       driverMobile: a.driverMobile, driverLicence: a.driverLicence,
       deliveryModeId: mode?.id ?? null,
     })
-    if (r.ok && r.data) { setSaved({ no: r.data.no }); router.refresh() }
-    else setError(r.message)
+    if (!r.ok || !r.data) { setError(r.message); return }
+
+    // The entry is the record; the photographs support it. If the phone loses
+    // signal half way through the second one, the entry still stands and the
+    // screen says what did not make it rather than pretending or rolling back.
+    const up = await uploadEntryPhotos(r.data.id, shots.map(s => ({ kind: s.kind, file: s.file })))
+    setSaved({ no: r.data.no, photosFailed: up.failed })
+    router.refresh()
   })
 
   /* ── Closed ───────────────────────────────────────────────────────────── */
@@ -116,7 +129,7 @@ export function GateInForm({
 
   /* ── The wizard ───────────────────────────────────────────────────────── */
   const last = i >= steps.length - 1
-  const ready = canLeave(step, a)
+  const ready = canLeave(step, answers)
 
   return (
     <FieldCard>
@@ -223,13 +236,11 @@ export function GateInForm({
         {step === 'papers' && (
           <>
             <Question t={T.qPapers} hint={T.papersHint} />
-            <div className="rounded-2xl border-2 border-dashed border-gray-300 bg-gray-50 px-4 py-8 text-center">
-              <Camera className="mx-auto h-10 w-10 text-gray-300" strokeWidth={1.75} />
-              <p className="mt-2.5 text-[16px] font-semibold text-gray-500">{T.photoSoon}</p>
-              <p className="mt-2 text-[12.5px] text-gray-400 max-w-[28ch] mx-auto">
-                Waiting on the decision about how long pictures are kept.
-              </p>
-            </div>
+            {GATE_SLOTS.map(slot => (
+              <PhotoCapture
+                key={slot.kind} slot={slot} shots={shots} onChange={setShots} disabled={pending}
+              />
+            ))}
           </>
         )}
 
@@ -261,7 +272,7 @@ export function GateInForm({
         {!ready && (
           <p className="mb-2.5 text-center text-[14px] font-semibold text-amber-800">{T.needed}</p>
         )}
-        {ready && !last && (step === 'vehicle' || step === 'driver' || step === 'papers') && (
+        {ready && !last && (step === 'vehicle' || step === 'driver') && (
           <button type="button" onClick={() => setI(i + 1)}
             className="w-full mb-2.5 text-center text-[14px] font-semibold text-gray-400 min-h-[44px]">
             {T.skip}

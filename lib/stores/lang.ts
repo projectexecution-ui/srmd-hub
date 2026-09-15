@@ -55,8 +55,7 @@ export const T = {
 
   // 6 · papers
   qPapers:        'Photo of the papers',
-  papersHint:     'Challan, bill, e-way bill',
-  photoSoon:      'Camera coming soon',
+  papersHint:     'Challan, bill or e-way bill',
 
   // 7 · confirm
   qCheck:         'Check once, then save',
@@ -128,6 +127,8 @@ export interface GateAnswers {
    *  typed. What makes the storekeeper's order picker exact instead of a
    *  name-match. */
   in4PartyId?: number | null
+  /** How many photographs of the papers have been taken. */
+  photoCount?: number
   modeName?: string
   vehicleNo?: string
   driverName?: string
@@ -143,13 +144,24 @@ export function stepsFor(a: GateAnswers): GateStep[] {
   return GATE_STEPS.filter(s => !(byHand && (s === 'vehicle' || s === 'driver')))
 }
 
-/** Can this step be left? Only the first three answers are compulsory — a guard
- *  who does not have the driver's licence must still be able to finish, or the
- *  lorry waits at the gate for a number nobody has. */
+/**
+ * Can this step be left?
+ *
+ * What / who / how are compulsory because without them there is no entry, and
+ * the vehicle and driver are NOT — a guard who cannot read the plate through
+ * the dust must still be able to finish, or the lorry waits at the gate for a
+ * number nobody has.
+ *
+ * The papers are compulsory as of 15 Sep 2026. The mind map asks for "Pic of
+ * all Docs" on both registers and Aksha asked for it to be enforced; the photo
+ * is also the only part of a gate entry that cannot be reconstructed later
+ * from memory, so it is the one worth blocking on.
+ */
 export function canLeave(step: GateStep, a: GateAnswers): boolean {
   if (step === 'what') return !!a.register
   if (step === 'who') return !!a.partyName?.trim()
   if (step === 'how') return !!a.modeName
+  if (step === 'papers') return (a.photoCount ?? 0) > 0
   return true
 }
 

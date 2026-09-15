@@ -15,6 +15,9 @@ import { Label, Stepper, BigNotice } from '../../field'
 import { SearchableSelect } from '@/components/ui/searchable-select'
 import { GroupedOptions } from '../../ui'
 import type { ProjectOpt, OrderDetail } from '@/lib/stores/queries'
+import { storekeeperSlots, missingPhotos } from '@/lib/stores/photos'
+import { PhotoCapture, type Shot } from '../../PhotoCapture'
+import { uploadEntryPhotos } from '../../upload-photos'
 
 interface Opt { id: string; name: string; code?: string | null }
 interface ItemOpt { id: string; name: string; unit: string; lastRate: number | null; in4MaterialId: number | null }
@@ -87,12 +90,23 @@ export function CompleteForm({
   const [orderParty, setOrderParty] = useState<string | null>(null)
   const [poBusy, setPoBusy] = useState(false)
   const [itemList, setItemList] = useState<ItemOpt[]>(items)
+  const [shots, setShots] = useState<Shot[]>([])
+
+  // The mind map asks for "Item Pics" and "Storage Location Pics" here by
+  // name, and Aksha asked for both to be enforced. The location shot is
+  // dropped for vendor material, which never enters a store.
+  const slots = storekeeperSlots(makesStock)
+  const shotCounts = shots.reduce<Record<string, number>>(
+    (acc, sh) => ({ ...acc, [sh.kind]: (acc[sh.kind] ?? 0) + 1 }), {})
 
   const filled = lines.filter(l => l.itemId && Number(l.qty) > 0)
-  const missing = missingForComplete({
-    register, entityId: entityId || null, projectId: projectId || null,
-    locationId: locationId || null, lineCount: filled.length,
-  })
+  const missing = [
+    ...missingForComplete({
+      register, entityId: entityId || null, projectId: projectId || null,
+      locationId: locationId || null, lineCount: filled.length,
+    }),
+    ...missingPhotos(slots, shotCounts),
+  ]
   const total = filled.reduce((s, l) => s + Number(l.qty) * Number(l.rate || 0), 0)
 
   const setLine = (key: string, patch: Partial<Line>) =>
@@ -314,6 +328,17 @@ export function CompleteForm({
         </label>
       )}
 
+      {/* The mind map's "Item Pics" and "Storage Location Pics", right after
+          the place they refer to. The second one is the answer to "where is
+          it" that is not somebody's memory. */}
+      <div className="rounded-xl border-2 border-gray-200 bg-white p-3.5 space-y-4">
+        {slots.map(slot => (
+          <PhotoCapture
+            key={slot.kind} slot={slot} shots={shots} onChange={setShots} disabled={pending}
+          />
+        ))}
+      </div>
+
       {/* One card per item. */}
       <div className="space-y-3">
         {lines.map((l, n) => {
@@ -423,8 +448,16 @@ export function CompleteForm({
               returnable: l.returnable, in4PoItemId: l.in4PoItemId ?? null,
             })),
           })
-          setResult(r)
-          if (r.ok) router.refresh()
+          if (!r.ok) { setResult(r); return }
+
+          // Stock is created; the photographs follow. A failed upload is said
+          // plainly rather than rolling back a movement that has already been
+          // folded into the ledger.
+          const up = await uploadEntryPhotos(entryId, shots.map(sh => ({ kind: sh.kind, file: sh.file })))
+          setResult(up.failed > 0
+            ? { ok: true, message: `${r.message} ${up.failed} photo${up.failed === 1 ? '' : 's'} did not upload — open the entry and add ${up.failed === 1 ? 'it' : 'them'} again.` }
+            : r)
+          router.refresh()
         })}
         className="w-full rounded-2xl bg-indigo-700 min-h-[64px] text-white font-bold active:bg-indigo-800
           disabled:bg-gray-200 disabled:text-gray-400"

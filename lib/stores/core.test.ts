@@ -2,8 +2,8 @@ import { describe, it, expect } from 'vitest'
 import {
   entryNo, linkedNo, foldStock, availableAt, availableAnywhere, checkIssue,
   outstandingReturnables, checkReturn, missingForGate, missingForComplete, createsStock, heldItemCount,
-  fmtQty, isPilotProject, PILOT_PROJECT_IDS, RETURNABLES_ON, groupProjects, UNGROUPED, entityCodeFromOrderNo, categoryFor, isServiceScope,
-  type Movement, type ReturnableLine,
+  fmtQty, isPilotProject, PILOT_PROJECT_IDS, RETURNABLES_ON, groupProjects, UNGROUPED, entityCodeFromOrderNo, categoryFor, isServiceScope, bestIssueLocation,
+  type Movement, type ReturnableLine, type StockRow,
 } from './core'
 
 const mv = (o: Partial<Movement> & { itemId: string; qty: number }): Movement => ({
@@ -448,5 +448,56 @@ describe('isServiceScope — what never takes a delivery', () => {
     expect(isServiceScope(null)).toBe(false)
     expect(isServiceScope(undefined)).toBe(false)
     expect(isServiceScope('')).toBe(false)
+  })
+})
+
+describe('bestIssueLocation — which store to issue out of', () => {
+  const s = (itemId: string, locationId: string, qty: number): StockRow =>
+    ({ itemId, locationId, qty, lastRate: null })
+
+  const STOCK = [
+    s('tile-a', 'yunus', 0),
+    s('tile-a', 'ngh', 200),
+    s('tile-b', 'ngh', 500),
+    s('cable', 'yunus', 90),
+  ]
+
+  it('picks the place that can satisfy the whole request', () => {
+    expect(bestIssueLocation(STOCK, [
+      { itemId: 'tile-a', qty: 16 },
+      { itemId: 'tile-b', qty: 140 },
+    ])).toBe('ngh')
+  })
+
+  it('is exactly the answer to the message the screen already prints', () => {
+    // "None here. 200 is held in another location — pick that one."
+    expect(bestIssueLocation(STOCK, [{ itemId: 'tile-a', qty: 16 }])).toBe('ngh')
+  })
+
+  it('prefers covering the request in full over covering more lines', () => {
+    const mixed = [
+      s('x', 'partial', 1), s('y', 'partial', 1),   // both, but not enough
+      s('x', 'full', 100),                          // one line, in full
+    ]
+    expect(bestIssueLocation(mixed, [{ itemId: 'x', qty: 10 }, { itemId: 'y', qty: 10 }])).toBe('full')
+  })
+
+  it('falls back to the place holding the most when nothing covers it all', () => {
+    const thin = [s('x', 'a', 2), s('x', 'b', 7)]
+    expect(bestIssueLocation(thin, [{ itemId: 'x', qty: 50 }])).toBe('b')
+  })
+
+  it('suggests nothing when nowhere holds any of it', () => {
+    expect(bestIssueLocation(STOCK, [{ itemId: 'unknown', qty: 5 }])).toBeNull()
+    expect(bestIssueLocation([], [{ itemId: 'tile-a', qty: 5 }])).toBeNull()
+  })
+
+  it('ignores lines that are already fully issued', () => {
+    expect(bestIssueLocation(STOCK, [{ itemId: 'tile-a', qty: 0 }])).toBeNull()
+  })
+
+  it('never suggests a place holding nothing, even at zero rows', () => {
+    const zeroed = [s('x', 'empty', 0), s('x', 'has', 5)]
+    expect(bestIssueLocation(zeroed, [{ itemId: 'x', qty: 1 }])).toBe('has')
   })
 })
