@@ -97,13 +97,25 @@ export interface Booking {
 export interface BookableWo {
   subprojectId: number | null
   categoryId: number | null
+  /** IN4's category as a NAME, for an order that carries no skill id of its
+   *  own. A purchase order is one: the skill is written on its bills instead —
+   *  "12 (M) Finishes" — so that is what arrives here. Used only when
+   *  `categoryId` is null. */
+  categoryName?: string | null
   workDescription: string | null
 }
 
 /** IN4 prefixes every skill with its sort number: "12 Finishes", "03 Civil".
- *  CT Hub's discipline list is the same names without it. */
+ *  CT Hub's discipline list is the same names without it.
+ *
+ *  On the purchasing side IN4 puts the ledger it came out of between the two —
+ *  "12 (M) Finishes" for material, "13 (A) Interiors" for an asset — against
+ *  the same skill list. Dropping that marker is reading IN4's own convention,
+ *  exactly as dropping the sort number is; it lands Electrical Works, Finishes,
+ *  Plumbing Works, ICT, Infra Works, Interiors, Civil and Site Admin, which is
+ *  where the purchase money actually sits. */
 export const stripSkillNumber = (name: string): string =>
-  name.replace(/^\s*\d+\s+/, '').trim()
+  name.replace(/^\s*\d+\s+(?:\([MA]\)\s+)?/, '').trim()
 
 const EMPTY: Booking = {
   subprojectId: null, subprojectName: null,
@@ -133,7 +145,9 @@ export function resolveBooking(wo: BookableWo | null, m: BookingMaps): Booking {
   const atmHeads = deskHead ? [deskHead] : projectHeads
   const atmSource: Booking['atmSource'] = deskHead ? 'desk' : projectHeads.length ? 'project' : null
 
-  const categoryIn4 = wo.categoryId == null ? null : (m.skills.get(wo.categoryId) ?? null)
+  const categoryIn4 = wo.categoryId != null
+    ? (m.skills.get(wo.categoryId) ?? null)
+    : (wo.categoryName?.trim() || null)
   const disc = categoryIn4 ? m.disciplines.get(stripSkillNumber(categoryIn4).toLowerCase()) : undefined
 
   return {

@@ -17,7 +17,7 @@ const cert = (o: Partial<Parameters<typeof buildPickList>[1][number]> = {}) => (
 describe('work-order picker', () => {
   it('fills contractor, ordered value, billed and balance from IN4', () => {
     const [p] = buildPickList([wo()], [cert()], contractors)
-    expect(p.contractor).toBe('Amin Developers')
+    expect(p.party).toBe('Amin Developers')
     expect(p.orderedGross).toBe(4_522_350)
     expect(p.billedGross).toBe(1_317_650)
     expect(p.balance).toBe(3_204_700)
@@ -68,10 +68,10 @@ describe('work-order picker', () => {
       wo({ wo_id: 9, display_no: 'WO/SRASSK/A/9' }),
       wo({ wo_id: 5, display_no: null }),
     ], [], contractors)
-    expect(list.map(p => p.woId)).toEqual([9, 1])
+    expect(list.map(p => p.orderId)).toEqual([9, 1])
   })
 
   it('leaves the contractor blank rather than guessing when the party is unknown', () => {
-    expect(buildPickList([wo({ contractor_id: 999 })], [], contractors)[0].contractor).toBe('')
+    expect(buildPickList([wo({ contractor_id: 999 })], [], contractors)[0].party).toBe('')
   })
 })

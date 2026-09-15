@@ -1,4 +1,4 @@
-import type { PickableWo } from './wo-picker'
+import type { PickableOrder } from './orders'
 import type { BbStage } from './stages'
 
 /** Ten bills to walk the flow on — simple first, awkward after.
@@ -159,8 +159,8 @@ export interface ExamplePayload extends Record<string, unknown> {
  *  the wrong arithmetic. */
 export function buildExamples(
   plans: ExamplePlan[],
-  wos: PickableWo[],
-  resolve: (wo: PickableWo) => { projectId: string | null; subprojectId: number | null; discipline: string | null },
+  wos: PickableOrder[],
+  resolve: (wo: PickableOrder) => { projectId: string | null; subprojectId: number | null; discipline: string | null },
   today: Date = new Date(),
 ): ExamplePayload[] {
   const out: ExamplePayload[] = []
@@ -189,8 +189,8 @@ export function buildExamples(
       projectId = r.projectId
       subprojectId = r.subprojectId
       discipline = r.discipline
-      orderNo = wo.woNo
-      vendor = wo.contractor || vendor
+      orderNo = wo.orderNo
+      vendor = wo.party || vendor
       work = wo.workDescription ?? work
       trust = wo.trust
       woValue = Math.round(wo.orderedGross)

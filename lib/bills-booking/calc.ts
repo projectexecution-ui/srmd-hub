@@ -129,8 +129,10 @@ export function billLadder(c: CertMoney): BillLadder {
   if (c.recoveries > 0) steps.push({ label: 'Other recoveries', amount: c.recoveries, deduct: true })
   if (c.deductions > 0) steps.push({ label: 'Deductions', amount: c.deductions, deduct: true })
 
+  // "the contractor" would be wrong on a purchase order, where the same ladder
+  // is read against a supplier's bill.
   steps.push({ label: 'Net payable', amount: netPayable, total: true,
-    note: 'What the contractor is owed on this bill' })
+    note: 'What is owed on this bill, before payment' })
 
   if (c.paid > 0) {
     steps.push({ label: 'Already paid', amount: c.paid, deduct: true })

@@ -1,18 +1,18 @@
 import { describe, it, expect } from 'vitest'
 import { EXAMPLE_PLANS, buildExamples } from './examples'
-import type { PickableWo } from './wo-picker'
+import type { PickableOrder } from './orders'
 
 const TODAY = new Date('2026-09-14T00:00:00Z')
 
-const wo = (o: Partial<PickableWo> = {}): PickableWo => ({
-  woId: 1, woNo: 'WO/SRASSK/SQ/2026-27/105', projectId: 5, subprojectId: 12,
-  categoryId: 46, workDescription: 'Tiling to lobby', contractorId: 5,
-  contractor: 'Amin Developers', orderedGross: 4_522_350, billedGross: 1_317_650,
+const wo = (o: Partial<PickableOrder> = {}): PickableOrder => ({
+  kind: 'WO', orderId: 1, orderNo: 'WO/SRASSK/SQ/2026-27/105', projectId: 5, subprojectId: 12, subprojectCount: 1,
+  categoryId: 46, categoryName: null, workDescription: 'Tiling to lobby', partyId: 5,
+  party: 'Amin Developers', orderedGross: 4_522_350, billedGross: 1_317_650,
   balance: 3_204_700, retentionPct: 5, trust: 'SRASSK', bills: 3,
   lastBillNo: 'SR-26-27-67', status: 'Approved', ...o,
 })
 
-const wos = Array.from({ length: 8 }, (_, i) => wo({ woId: i + 1, woNo: `WO/SRASSK/SQ/2026-27/${100 + i}` }))
+const wos = Array.from({ length: 8 }, (_, i) => wo({ orderId: i + 1, orderNo: `WO/SRASSK/SQ/2026-27/${100 + i}` }))
 const resolve = () => ({ projectId: 'p-1', subprojectId: 12, discipline: 'Finishes' })
 
 describe('the ten walkthrough bills', () => {

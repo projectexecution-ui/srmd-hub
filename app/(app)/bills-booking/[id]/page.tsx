@@ -88,6 +88,7 @@ export default async function BillDetailPage({ params }: { params: Promise<{ id:
   // already raised on the same work order. Null when the bill names no order —
   // petty cash and misc have nothing to read.
   const calc = await loadBillCalc(supabase, {
+    orderType: bill.order_type as string | null,
     orderNo: bill.order_no as string | null,
     billNo: bill.bill_no as string | null,
     raNo: bill.ra_no as string | null,
@@ -98,8 +99,12 @@ export default async function BillDetailPage({ params }: { params: Promise<{ id:
   // The Abstract maker — the sheet filled HERE rather than in IN4. Offered
   // while the bill is still ours to change; once it is with the Trust or paid,
   // the measurement is history and the sheet is read-only.
+  //
+  // Work orders only. An abstract measures a BOQ line by line; a purchase order
+  // has no BOQ — it is received by GRN and billed against what arrived — so
+  // there is nothing to measure and no sheet to fill.
   const openStages = ['submitted', 'site_head', 'disc_head', 'ct_head']
-  const maker = bill.order_no
+  const maker = bill.order_no && bill.order_type === 'WO'
     ? await loadMakerSeed(supabase, { billId: bill.id as string, woNo: bill.order_no as string }).catch(() => null)
     : null
 

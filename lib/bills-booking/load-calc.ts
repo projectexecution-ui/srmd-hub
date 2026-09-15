@@ -5,14 +5,25 @@ import { seedLines, pickRate, type MakerLine, type RatePick } from './maker'
 
 /** The live IN4 position behind one CT Hub bill.
  *
- *  A bill in CT Hub carries a claimed figure and not much else. The work order
- *  it names has a real history in IN4 — every bill raised on it, what each was
+ *  A bill in CT Hub carries a claimed figure and not much else. The order it
+ *  names has a real history in IN4 — every bill raised on it, what each was
  *  certified at, what tax went on, what was held back and what has been paid.
- *  That is the arithmetic an approver needs, and CT Hub already mirrors it. */
+ *  That is the arithmetic an approver needs, and CT Hub already mirrors it.
+ *
+ *  Both sides of the house are read here. Work orders come from
+ *  `in4_wo_certificates`; purchase orders from `in4_supplier_certificates`,
+ *  which is the same shape under different column names and reconciles better:
+ *  payable = landed − tax deducted − advance − debit notes − retention on 1,334
+ *  of 1,376 supplier bills, and payable − paid = outstanding on all 1,376. The
+ *  ladder itself is shared, so a vendor bill is checked exactly the way a
+ *  contractor bill is. */
 
 export interface BillCalc {
   /** The order this bill is drawn against, as IN4 has it. */
-  woNo: string
+  orderNo: string
+  /** Which kind it is — the panel's wording follows it, and a purchase order
+   *  has no abstract sheet to show. */
+  kind: 'WO' | 'PO'
   orderedGross: number
   /** Every bill on that order, this one's predecessors included. */
   history: WoHistory
@@ -66,10 +77,15 @@ function ratesFrom(certs: CertMoney[]): { gst: number; retention: number } | nul
 
 export async function loadBillCalc(
   sb: SupabaseClient,
-  bill: { orderNo: string | null; billNo: string | null; raNo: string | null; claimed: number; abstractNo: string | null },
+  bill: {
+    orderType: string | null
+    orderNo: string | null; billNo: string | null; raNo: string | null
+    claimed: number; abstractNo: string | null
+  },
 ): Promise<BillCalc | null> {
   const woNo = bill.orderNo?.trim()
   if (!woNo) return null
+  if (bill.orderType === 'PO') return loadPoCalc(sb, { ...bill, orderNo: woNo })
 
   const { data: woRow } = await sb.from('in4_work_orders')
     .select('wo_id, wo_gross_value').eq('display_no', woNo).maybeSingle()
@@ -116,13 +132,101 @@ export async function loadBillCalc(
     : null
 
   return {
-    woNo,
+    orderNo: woNo,
+    kind: 'WO',
     orderedGross: ordered,
     history,
     mine: mineCert ? billLadder(mineCert) : null,
     mineCert,
     expected,
     sheet,
+  }
+}
+
+/* ── the same thing, for a purchase order ────────────────────────────────── */
+
+/** IN4's supplier certificate carries the identical ladder under different
+ *  names. Mapped once, here, so nothing downstream has to know which kind of
+ *  bill it is looking at:
+ *
+ *      certified_amt   → certified        landed_cost   → gross
+ *      retention       → retention        adv_recovery  → advance recovered
+ *      debit_note_adj  → other recoveries tax_deduction → deductions
+ *      paid            → paid             outstanding   → outstanding
+ *
+ *  `kind = 'advance'` rows are excluded. An advance is not a bill — it is money
+ *  paid ahead and recovered out of later bills, and counting the 244 of them as
+ *  billed would show every PO that took one as spent twice.
+ *
+ *  There is no abstract sheet: a purchase order is measured by goods received,
+ *  not by a BOQ, so `sheet` is null rather than something made to look like
+ *  one. */
+async function loadPoCalc(
+  sb: SupabaseClient,
+  bill: { orderNo: string; billNo: string | null; claimed: number; abstractNo: string | null },
+): Promise<BillCalc | null> {
+  const { data: poRow } = await sb.from('in4_purchase_orders')
+    .select('po_id, po_value').eq('po_no', bill.orderNo).maybeSingle()
+  if (!poRow) return null
+
+  const { data: certData } = await sb.from('in4_supplier_certificates')
+    .select('certificate_id, certificate_no, certificate_date, certified_amt, landed_cost, retention, adv_recovery, debit_note_adj, tax_deduction, paid, outstanding')
+    .eq('po_id', poRow.po_id as number)
+    .eq('kind', 'payment')
+
+  const certs: CertMoney[] = ((certData ?? []) as Record<string, unknown>[]).map(r => ({
+    certificateId: n(r.certificate_id),
+    displayNo: (r.certificate_no as string | null) ?? null,
+    // A supplier certificate holds no separate invoice number of its own — the
+    // certificate number IS what the bill is referred to by.
+    invoiceNo: (r.certificate_no as string | null) ?? null,
+    createdOn: (r.certificate_date as string | null) ?? null,
+    statusName: null,
+    certified: n(r.certified_amt),
+    gross: n(r.landed_cost),
+    retention: n(r.retention),
+    advanceRecovery: n(r.adv_recovery),
+    recoveries: n(r.debit_note_adj),
+    deductions: n(r.tax_deduction),
+    paid: n(r.paid),
+    outstanding: n(r.outstanding),
+  }))
+
+  // po_value is gross, like the certificates it is compared against: on a
+  // fulfilled purchase order the supplier bills sum to it to the rupee.
+  const ordered = n(poRow.po_value)
+  const history = woHistory(certs, ordered)
+
+  const key = (s: string | null | undefined) => (s ?? '').trim().toLowerCase()
+  const mineCert = certs.find(c =>
+    (bill.abstractNo && key(c.displayNo) === key(bill.abstractNo)) ||
+    (bill.billNo && key(c.invoiceNo) === key(bill.billNo))) ?? null
+
+  let expected: BillLadder | null = null
+  if (!mineCert && bill.claimed > 0) {
+    const rates = ratesFrom(certs)
+    if (rates) {
+      const basic = Math.round(bill.claimed / (1 + rates.gst))
+      const gross = Math.round(basic * (1 + rates.gst))
+      const retention = Math.round(basic * rates.retention)
+      expected = billLadder({
+        certificateId: 0, displayNo: null, invoiceNo: null, createdOn: null, statusName: null,
+        certified: basic, gross, retention,
+        advanceRecovery: 0, recoveries: 0, deductions: 0, paid: 0,
+        outstanding: gross - retention,
+      })
+    }
+  }
+
+  return {
+    orderNo: bill.orderNo,
+    kind: 'PO',
+    orderedGross: ordered,
+    history,
+    mine: mineCert ? billLadder(mineCert) : null,
+    mineCert,
+    expected,
+    sheet: null,
   }
 }
 

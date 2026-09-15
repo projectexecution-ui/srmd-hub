@@ -13,10 +13,10 @@ export default async function NewBillPage() {
   const [{ data: projects }, { data: disciplines }, pick, maps] = await Promise.all([
     supabase.from('projects').select('id, code, name').is('archived_at', null).order('code'),
     supabase.from('cc_disciplines').select('id, name, display_order').eq('is_archived', false).order('display_order'),
-    // The work orders themselves, from IN4 — so picking one fills the
-    // contractor, the ordered value, what has been billed, the trust and the
-    // next RA number.
-    loadPickList(supabase).catch(() => ({ wos: [], projects: [] })),
+    // The orders themselves, from IN4 — work orders and purchase orders both,
+    // so picking one fills the contractor or supplier, the ordered value, what
+    // has been billed, the trust and the next RA number.
+    loadPickList(supabase).catch(() => ({ wos: [], pos: [], projects: [] })),
     // …and the mapping that says where a work order books and who approves it,
     // so the old "Where it books" step is answered instead of asked.
     loadBookingMaps(supabase),
@@ -42,6 +42,7 @@ export default async function NewBillPage() {
         projects={(projects ?? []).map(p => ({ id: p.id as string, code: p.code as string, name: p.name as string }))}
         disciplines={(disciplines ?? []).map(d => ({ id: d.id as string, name: d.name as string }))}
         in4Wos={pick.wos}
+        in4Pos={pick.pos}
         in4Projects={pick.projects}
         seed={seed}
         // Every page in this section already requires admin, so anyone who got

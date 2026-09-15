@@ -22,6 +22,16 @@ export function Calculation({ calc, showIn4Sheet = true }: {
 }) {
   const { history, mine, mineCert, expected, sheet } = calc
   const ladder = mine ?? expected
+  // "work order" is wrong on a vendor bill, and an approver reading the wrong
+  // noun on an approval screen stops trusting the rest of it.
+  const noun = calc.kind === 'WO' ? 'work order' : 'purchase order'
+  // A work order's bills are a running account: RA-1, RA-2. A supplier's are
+  // not — IN4 numbers them as certificates — so they are counted, not renamed.
+  const seq = (n: number) => (calc.kind === 'WO' ? `RA-${n}` : `Bill ${n}`)
+  // IN4 mirrors a supplier certificate's status as a bare code (15, 6, 8, 2)
+  // with no name table behind it. A column of em dashes reads as broken, and
+  // inventing words for those codes would be worse, so it is not shown.
+  const showStatus = history.rows.some(r => r.status)
 
   return (
     <>
@@ -43,7 +53,7 @@ export function Calculation({ calc, showIn4Sheet = true }: {
           {!mine && (
             <p className="mb-3 text-xs text-gray-500">
               No certificate exists in IN4 for this bill yet, so this is what the claim works out to using the tax
-              and retention <b>this work order has actually carried</b> — not a house rate. The real figures replace
+              and retention <b>this {noun} has actually carried</b> — not a house rate. The real figures replace
               it the moment Billing keys the certificate.
             </p>
           )}
@@ -65,10 +75,10 @@ export function Calculation({ calc, showIn4Sheet = true }: {
 
       <Card className="p-4">
         <p className="mb-1 flex items-center gap-1.5 text-xs font-bold uppercase tracking-wide text-gray-400">
-          <Receipt className="h-3.5 w-3.5" /> Bills on {calc.woNo}
+          <Receipt className="h-3.5 w-3.5" /> Bills on {calc.orderNo}
         </p>
         <p className="mb-3 text-xs text-gray-500">
-          Every bill raised against this work order, live from IN4 — newest first. {history.deadCount > 0 && (
+          Every bill raised against this {noun}, live from IN4 — newest first. {history.deadCount > 0 && (
             <>{history.deadCount} cancelled {history.deadCount === 1 ? 'bill is' : 'bills are'} shown greyed and counted nowhere.</>
           )}
         </p>
@@ -95,7 +105,7 @@ export function Calculation({ calc, showIn4Sheet = true }: {
                     <div className="min-w-0">
                       <div className="truncate font-mono text-[11px] font-semibold">{r.displayNo || r.invoiceNo || '—'}</div>
                       <div className="text-[11px] text-gray-500">
-                        {r.dead ? r.status : `RA-${r.ra}`} · {r.on ? formatDate(r.on) : '—'}
+                        {r.dead ? r.status : seq(r.ra)} · {r.on ? formatDate(r.on) : '—'}
                       </div>
                     </div>
                     <div className="shrink-0 text-right">
@@ -118,7 +128,7 @@ export function Calculation({ calc, showIn4Sheet = true }: {
                 <thead>
                   <tr className="border-b border-gray-200 bg-gray-50 text-[11px] uppercase tracking-wide text-gray-500">
                     <Th>Bill</Th><Th>Raised</Th><Th right>Basic</Th><Th right>Gross</Th>
-                    <Th right>Retention</Th><Th right>Paid</Th><Th right>Left after</Th><Th>Status</Th>
+                    <Th right>Retention</Th><Th right>Paid</Th><Th right>Left after</Th>{showStatus && <Th>Status</Th>}
                   </tr>
                 </thead>
                 <tbody>
@@ -127,7 +137,7 @@ export function Calculation({ calc, showIn4Sheet = true }: {
                         className={`border-b border-gray-100 last:border-0 ${r.dead ? 'text-gray-400 line-through' : 'hover:bg-gray-50'}`}>
                       <td className="px-3 py-2">
                         <span className="font-mono text-[11px]">{r.displayNo || r.invoiceNo || '—'}</span>
-                        <span className="block text-[10.5px] text-gray-400">{r.dead ? '—' : `RA-${r.ra}`}</span>
+                        <span className="block text-[10.5px] text-gray-400">{r.dead ? '—' : seq(r.ra)}</span>
                       </td>
                       <td className="px-3 py-2 text-xs">{r.on ? formatDate(r.on) : '—'}</td>
                       <td className="px-3 py-2 text-right tabular-nums">{formatINR(r.certified)}</td>
@@ -135,7 +145,7 @@ export function Calculation({ calc, showIn4Sheet = true }: {
                       <td className="px-3 py-2 text-right tabular-nums">{formatINR(r.retention)}</td>
                       <td className="px-3 py-2 text-right tabular-nums">{formatINR(r.paid)}</td>
                       <td className="px-3 py-2 text-right tabular-nums text-gray-500">{formatINR(r.leftToBill)}</td>
-                      <td className="px-3 py-2 text-xs">{r.status ?? '—'}</td>
+                      {showStatus && <td className="px-3 py-2 text-xs">{r.status ?? '—'}</td>}
                     </tr>
                   ))}
                 </tbody>

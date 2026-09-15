@@ -34,7 +34,7 @@ export async function seedExamples(): Promise<{ ok: boolean; error?: string; mad
   }
 
   const [pick, maps] = await Promise.all([
-    loadPickList(supabase).catch(() => ({ wos: [], projects: [] })),
+    loadPickList(supabase).catch(() => ({ wos: [], pos: [], projects: [] })),
     loadBookingMaps(supabase),
   ])
 
@@ -42,7 +42,7 @@ export async function seedExamples(): Promise<{ ok: boolean; error?: string; mad
   // inside a real order rather than beside it. Example 9 wants one on a
   // building CT Hub has no project for — the case that covers most of the
   // money — so that one is picked deliberately rather than taken in turn.
-  const usable = pick.wos.filter(w => w.balance > 0 && w.contractor && w.subprojectId != null)
+  const usable = pick.wos.filter(w => w.balance > 0 && w.party && w.subprojectId != null)
   const unmapped = usable.filter(w => !resolveBooking(w, maps).projectId)
   const mapped = usable.filter(w => resolveBooking(w, maps).projectId)
 
@@ -51,7 +51,7 @@ export async function seedExamples(): Promise<{ ok: boolean; error?: string; mad
   // on another, with the advance recovery that makes payable collapse. Taking
   // whatever the query happened to return instead would put somebody else's
   // measurement on the screen Aksha is reviewing.
-  const byNo = new Map(pick.wos.map(w => [w.woNo, w]))
+  const byNo = new Map(pick.wos.map(w => [w.orderNo, w]))
   const fallback = [...mapped.slice(0, 6), unmapped[0] ?? mapped[6], mapped[7] ?? mapped[6]]
   const chosen = Array.from({ length: 8 }, (_, i) => {
     const pinned = EXAMPLE_PLANS.find(pl => pl.woIndex === i && pl.pinnedWo)?.pinnedWo

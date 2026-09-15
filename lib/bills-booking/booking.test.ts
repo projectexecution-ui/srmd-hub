@@ -125,6 +125,27 @@ describe('where a bill books, worked out from the work order', () => {
     expect(bookingGaps(b)).toEqual(['no CT Hub project', 'no Atm Head'])
   })
 
+  // A purchase order carries no skill id — IN4 writes the skill on its bills,
+  // as a name. It must reach the same CT Hub discipline a work order does.
+  it('resolves a purchase order by the category NAME when there is no skill id', () => {
+    const b = resolveBooking(
+      { subprojectId: SRAH_EXEC, categoryId: null, categoryName: '12 (M) Finishes', workDescription: null },
+      maps())
+    expect(b.categoryIn4).toBe('12 (M) Finishes')
+    expect(b.disciplineId).toBe('d-fin')
+    expect(b.disciplineName).toBe('Finishes')
+    expect(b.projectId).toBe('p-srah')
+    // A purchase order has no scope field, and one is not invented for it.
+    expect(b.scope).toBeNull()
+  })
+
+  it('prefers the skill id when the order carries one', () => {
+    const b = resolveBooking(
+      { subprojectId: SRAH_EXEC, categoryId: FINISHES, categoryName: '19 (M) Site Admin', workDescription: null },
+      maps())
+    expect(b.categoryIn4).toBe('12 Finishes')
+  })
+
   it('falls back to the name the desk recorded if IN4 no longer lists the sub-project', () => {
     const b = resolveBooking(wo(999), maps({
       desks: new Map([[999, { subproject_id: 999, in4_name: 'Retired sub-project', cc_project_id: null, atm_head_id: null, note: null }]]),
@@ -143,6 +164,15 @@ describe('IN4 skill names against CT Hub disciplines', () => {
     expect(stripSkillNumber('28 Temporary Acess Road')).toBe('Temporary Acess Road')
     expect(stripSkillNumber('25 Delay In Drawings, Contractor Idle Charges'))
       .toBe('Delay In Drawings, Contractor Idle Charges')
+  })
+
+  // On the purchasing side IN4 writes the ledger between the number and the
+  // name: "(M)" for material, "(A)" for asset, against the same skill list.
+  it('drops the material/asset marker a purchase bill carries', () => {
+    expect(stripSkillNumber('07 (M) Electrical Works')).toBe('Electrical Works')
+    expect(stripSkillNumber('12 (M) Finishes')).toBe('Finishes')
+    expect(stripSkillNumber('13 (A) Interiors')).toBe('Interiors')
+    expect(stripSkillNumber('36 (M) Infra Structures/Buildings')).toBe('Infra Structures/Buildings')
   })
 
   it('leaves a name that has no sort number alone', () => {
